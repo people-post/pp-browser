@@ -48,6 +48,7 @@ SettingsFlushMode SecuritySettingsSection::FlushMode() const {
 void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   state.group_invite_policy = bootstrap.profile_prefs.group_invite_policy;
   state.group_invite_policy_label = GroupInvitePolicyDisplayLabel(state.group_invite_policy);
+  state.crash_reports_enabled = bootstrap.profile_prefs.crash_reports_enabled ? "on" : "off";
   state.tool_permissions_summary = ToolPermissionsSummaryLabel(bootstrap.profile_prefs.tool_permissions);
   state.tool_permissions_has_saved =
       RememberedToolPermissionCount(bootstrap.profile_prefs.tool_permissions) > 0;
@@ -78,17 +79,27 @@ void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, 
 bool SecuritySettingsSection::IsPersisted(const SettingsUiState& state,
                                           const BootstrapResult& bootstrap) const {
   const bool invites_match = state.group_invite_policy == bootstrap.profile_prefs.group_invite_policy;
+  const bool crash_match =
+      (state.crash_reports_enabled == "on") == bootstrap.profile_prefs.crash_reports_enabled;
   const bool tools_match = state.tool_permissions_summary ==
                            ToolPermissionsSummaryLabel(bootstrap.profile_prefs.tool_permissions);
-  return invites_match && tools_match;
+  return invites_match && crash_match && tools_match;
 }
 
 Roe<void> SecuritySettingsSection::Flush(SettingsUiState& state, SessionStore& store) {
   ProfilePreferences prefs = store.Snapshot().profile_prefs;
-  if (state.group_invite_policy == prefs.group_invite_policy) {
+  const bool crash_enabled = state.crash_reports_enabled == "on";
+  const bool invites_changed = state.group_invite_policy != prefs.group_invite_policy;
+  const bool crash_changed = crash_enabled != prefs.crash_reports_enabled;
+  if (!invites_changed && !crash_changed) {
     return {};
   }
-  prefs.group_invite_policy = state.group_invite_policy;
+  if (invites_changed) {
+    prefs.group_invite_policy = state.group_invite_policy;
+  }
+  if (crash_changed) {
+    prefs.crash_reports_enabled = crash_enabled;
+  }
   prefs.schema_version = ProfilePreferences::kSchemaVersion;
   if (auto saved = store.SaveProfilePrefs(prefs); !saved) {
     return saved.error();

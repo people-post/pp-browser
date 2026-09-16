@@ -147,15 +147,23 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 |---------|-----------------|
 | Direct call-media | `call_media_direct_service_test` — [`src/domain/mesh/tests/call_media_direct_service_test.cpp`](../../src/domain/mesh/tests/call_media_direct_service_test.cpp) |
 | Media relay fan-out | `media_relay_service_test` — [`media_relay_service_test.cpp`](../../src/domain/mesh/tests/media_relay_service_test.cpp) |
-| Circuit + call-media | `circuit_call_media_compose_test` — [`circuit_call_media_compose_test.cpp`](../../src/domain/mesh/tests/circuit_call_media_compose_test.cpp) |
-| Circuit + media_relay | `circuit_media_relay_compose_test` — [`circuit_media_relay_compose_test.cpp`](../../src/domain/mesh/tests/circuit_media_relay_compose_test.cpp) |
+| Circuit + call-media | `amp_circuit_call_media_compose_test` — peer-id-only nest + private-MA hop-book poison contrast (hard-w5) — [`amp_circuit_call_media_compose_test.cpp`](../../src/domain/mesh/tests/amp_circuit_call_media_compose_test.cpp) |
+| Circuit + media_relay | `amp_circuit_media_relay_compose_test` — [`amp_circuit_media_relay_compose_test.cpp`](../../src/domain/mesh/tests/amp_circuit_media_relay_compose_test.cpp) |
+| AmpCircuitHopReach NAT policy | `amp_circuit_hop_reach_test` — skip EnsureAssociation / PreferredMultiaddr on nested; PeerId hop key — [`amp_circuit_hop_reach_test.cpp`](../../src/feature/conversations/tests/amp_circuit_hop_reach_test.cpp) |
+| Amp IPv6 dial preference | `reachability_test` / `amp_observed_addrs_test` / `mesh_hop_policy_test` — global `/ip6` > private `/ip4`; Reachable-via-v6; directory PreferredDial |
+| Amp IPv6 dial smoke | `amp_ipv6_dial_test` — MemoryIo `/ip6` EnsureAssociation + PreferredMultiaddr prefers global `/ip6` |
 | Circuit bridges | `circuit_relay_service_test` |
 | Call phase SM | `call_lifecycle_test` — [`src/feature/conversations/tests/call_lifecycle_test.cpp`](../../src/feature/conversations/tests/call_lifecycle_test.cpp) |
+| V037/V038 planner + TX-only | `call_lifecycle_test`, `call_topology_controller_test` (`InboundSfuAttachIgnoredWhenStatusDirectConnecting`), `call_tx_only_escalate_test` |
+| Invite listen MAs (no mDNS) | `call_listen_addrs_logic_test` — V038 D3 |
+| Answerer Kick / ScheduleStart → BeginSession | `call_answerer_kick_logic_test`, `call_media_bridge_answerer_start_test` — V038 D3 product glue |
+| N→planner select (Direct vs Hop) | `call_media_planner_select_logic_test` — Effective N; relay-cap SoftMigrate nudge gates |
+| Direct / Hop planner tables (V039) | `call_direct_planner_logic_test`, `call_hop_planner_logic_test` |
 
 Run (from a configured desktop build tree):
 
 ```bash
-ctest --test-dir build -R 'CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|AmpDirectChat' --output-on-failure --no-tests=error
+ctest --test-dir build -R 'CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|CallTxOnly|CallListenAddrs|CallAnswererKick|CallMediaBridgeAnswerer|CallMediaPlannerSelect|CallDirectPlanner|CallHopPlanner|InboundSfuAttachIgnoredWhenStatus|AmpDirectChat' --output-on-failure --no-tests=error
 ```
 
 Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` if a local tree renames targets.
@@ -224,6 +232,14 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | N-CHAOS | **Covered** (scaffold) | [`scripts/test/pp_node_chaos_smoke.sh`](../../scripts/test/pp_node_chaos_smoke.sh); driver `--suite chaos`. Kill client mid-attach; `docker restart`; pause/unpause. In-flight streams need not survive restart. |
 | N-MIX | **Covered** (scaffold) | [`scripts/test/pp_mix_hop_smoke.sh`](../../scripts/test/pp_mix_hop_smoke.sh): call-hop×2 ∥ N-FANOUT ∥ circuit-cap **M=2**. Combined load stays under N₀=8. Not chaos / cap sweep / soak. Driver `--suite mix`. |
 | N-HARD-FORCE | **Scaffold** | [`docker-compose.hard-lab.yml`](../../packaging/pp-node/docker-compose.hard-lab.yml) + [`scripts/test/pp_hard_force_smoke.sh`](../../scripts/test/pp_hard_force_smoke.sh); driver `--suite hard`. Isolation + circuit + media via hop. |
+| N-HARD-LOSSY | **Scaffold** | [`pp_hard_link_smoke.sh`](../../scripts/test/pp_hard_link_smoke.sh) `--profile lossy`; driver `--suite hard-w2`. Netem both peer legs; N-HARD-FORCE under impairment; one retry. |
+| N-HARD-ASYM | **Scaffold** | `pp_hard_link_smoke.sh --profile asym`; `--suite hard-w2`. Netem peer-a only. |
+| N-HARD-BW | **Scaffold** | `pp_hard_link_smoke.sh --profile bw`; `--suite hard-w2`. `tbf` both legs; B-HARD-CALL under cap. |
+| N-HARD-STALE-ADDR | **Scaffold** | [`pp_hard_disco_smoke.sh`](../../scripts/test/pp_hard_disco_smoke.sh) `--profile stale-addr`; `--suite hard-w3`. Stale direct fails; hop path with real MA. |
+| N-HARD-SEED-ONLY | **Scaffold** | `pp_hard_disco_smoke.sh --profile seed-only`; `--suite hard-w3`. Warm-hop + PeerId-only StartBridge. |
+| N-HARD-CGNAT-ISH | **Scaffold** | [`docker-compose.hard-lab-cgnat.yml`](../../packaging/pp-node/docker-compose.hard-lab-cgnat.yml) + [`pp_hard_nat_smoke.sh`](../../scripts/test/pp_hard_nat_smoke.sh); driver `--suite hard-w5`. Dual SNAT; hop public-only; A↛B + hop↛peer-private asserts. |
+| B-HARD-CALL-NAT | **Scaffold** | Phase-1: answerer `--warm-hop --min-rx-frames`; offerer `--via-hop --peer-id-only`. Status port **18628**. |
+| B-HARD-CALL-NAT-PRODUCT | **Scaffold** | Phase-2 same smoke `--phase product` / default `both`: offerer `--reach product` (punch→circuit). Reproduce: `PP_HARD_NAT_CALL_EXPECT=fail`. PR gate for the poison/EnsureAssociation policies: `amp_circuit_hop_reach_test` + ``PeerIdOnlyNestDoesNotPoisonRelayBookWithPrivateMa` / `PrivateTargetMultiaddrPoisonsRelayBook``. |
 | N-HARD-* (other) / N-ADMIT-HARD | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) |
 
 ---
@@ -247,18 +263,18 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 
 | ID | Status | Primary evidence |
 |----|--------|------------------|
-| B-CALL-DIRECT | **Partial** | In-process: `call_media_direct_service_test`, `CallMediaKeyStore` Put/Load; multi-process thin client: `pp-call-probe` + [`scripts/test/pp_call_direct_smoke.sh`](../../scripts/test/pp_call_direct_smoke.sh); product `CallMediaBridge` still untested as a unit |
-| B-CALL-HOP | **Covered** (scaffold) | In-process: `circuit_call_media_compose_test`, `circuit_media_relay_compose_test`; multi-process: `pp-call-probe --via-hop` + [`scripts/test/pp_call_hop_smoke.sh`](../../scripts/test/pp_call_hop_smoke.sh); driver `--suite call-hop` |
+| B-CALL-DIRECT | **Partial** (improved) | In-process: `call_media_direct_service_test`, `CallMediaKeyStore` Put/Load, `call_listen_addrs_logic_test`, `call_answerer_kick_logic_test`, `call_media_planner_select_logic_test`, `call_media_bridge_answerer_start_test` (ScheduleStart→StartSfu / MediaPending / HopLive Status gate); multi-process: `pp-call-probe` + [`pp_call_direct_smoke.sh`](../../scripts/test/pp_call_direct_smoke.sh); full Invite→Leave product still needs smoke |
+| B-CALL-HOP | **Covered** (scaffold) | In-process: `AmpCircuitCallMediaComposeTest` / `circuit_call_media_compose_test`, `circuit_media_relay_compose_test`; multi-process: `pp-call-probe --via-hop` + [`pp_call_hop_smoke.sh`](../../scripts/test/pp_call_hop_smoke.sh); driver `--suite call-hop`. **V038 D4 loopback gate.** |
 | B-TEARDOWN | **Partial** | `ConnectDetachKCycleNoHang` (direct); `--cycles` on `pp-call-probe` (direct and hop); Detach/timeout/Stop no-hang in services |
 | B-CONFLICT | **Covered** (scaffold) | In-process: `CallMediaDirectServiceTest.SecondInboundRejectedThenEndAndAccept`; multi-process: `pp-call-probe --expect busy` + [`scripts/test/pp_call_conflict_smoke.sh`](../../scripts/test/pp_call_conflict_smoke.sh); driver `--suite conflict`. Chrome copy still unit-only. |
 | B-MSG+CALL | **Covered** (scaffold) | Direct: `ChatDuringAndAfterCallMedia` + `pp_call_msg_smoke.sh` (`--suite msg-call`). Hop same-session: `CircuitCallMediaChatComposeTest.ChatDuringAndAfterCallViaCircuit` + `pp-call-probe --via-hop --with-chat` + [`scripts/test/pp_call_hop_msg_smoke.sh`](../../scripts/test/pp_call_hop_msg_smoke.sh); driver `--suite msg-call-hop`. Chat uses a **separate** circuit hop from call-media. |
 | B-UI | **Covered at unit** | `call_chrome_sync_test`, `call_conflict_copy_test`; GUI E2E manual only |
 | B-MIX | **Covered** (scaffold) | [`scripts/test/pp_mix_browser_smoke.sh`](../../scripts/test/pp_mix_browser_smoke.sh): call ∥ conflict ∥ msg-call (ports 47100/47120/47130). Driver `--suite mix` also runs N-MIX then same-session `pp_call_hop_msg_smoke.sh`. |
-| B-HARD-CALL | **Scaffold** | [`scripts/test/pp_hard_call_smoke.sh`](../../scripts/test/pp_hard_call_smoke.sh); driver `--suite hard` |
+| B-HARD-CALL | **Scaffold** (nightly gate) | [`scripts/test/pp_hard_call_smoke.sh`](../../scripts/test/pp_hard_call_smoke.sh); driver `--suite hard`. **V038 D4 NAT stand-in** (A↛B netns → circuit). Prefer green hard-lab over human NAT-pair dogfood for regression; promote hard-lab failures into compose/gtest. |
 | B-HARD-MSG+CALL | **Scaffold** | `pp_hard_call_smoke.sh --with-chat`; driver `--suite hard` |
 | B-HARD-* (Wave 6) | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md) Wave 6 |
 
-**Product-glue hole:** `CallMediaBridge` / full `CallSessionManager` path between lifecycle and direct media needs dedicated in-process coverage (Tier B) before claiming full product Invite→Leave.
+**Product-glue:** Answerer Kick gates + `ScheduleStartMediaAsAnswerer`→`BeginSession` covered in-process (`CallAnswererKick*` / `CallMediaBridgeAnswerer*`). Remaining hole is full CSM Invite→Leave E2E (smoke / hard-lab). **V038 rewrite debt** exits via unit + compose + `B-CALL-HOP` / `B-HARD-CALL` — not a required human NAT-pair dogfood ([p2p-av-calls CURRENT_STATE](../../projects/p2p-av-calls/CURRENT_STATE.md#rd-automated-exit-v038--prefer-over-device-dogfood)).
 
 ---
 
@@ -301,7 +317,7 @@ Nightly, not PR-blocking, **not** in `all`. Parallel **allowlisted** existing sm
 
 ## Soft designs — hard lab (Gate F)
 
-**Status:** Wave 1 **N-HARD-FORCE** scaffold green — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md), [projects/hard-lab/](../../projects/hard-lab/).
+**Status:** Wave 1–3 (STALE/SEED) scaffold green — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md), [projects/hard-lab/](../../projects/hard-lab/).
 
 **Problem:** Relay-smoke + host probes do not force **A↛B**. Deployment risk needs isolated nets + optional impairments.
 
@@ -310,17 +326,17 @@ Nightly, not PR-blocking, **not** in `all`. Parallel **allowlisted** existing sm
 ```text
 Wave 0  loopback + L0–L2 + B-CALL-HOP     (keep green)
 Wave 1  forced hop clean                  N-HARD-FORCE + B-HARD-CALL + B-HARD-MSG+CALL (**scaffold**)
-Wave 2  lossy / asym / bw
-Wave 3  stale / seed / dir / DHT / admit
+Wave 2  lossy / asym / bw                 N-HARD-LOSSY + ASYM + BW (**scaffold**; `--suite hard-w2`)
+Wave 3  stale / seed / dir / DHT / admit  STALE-ADDR + SEED-ONLY (**scaffold**; `--suite hard-w3`); DIR/DHT/ADMIT gated
 Wave 4  multi-hop circuit                 (after media-hop L3.5)
-Wave 5  NAT shapes / UPnP / v6            (weekly/manual)
+Wave 5  NAT shapes / UPnP / v6            N-HARD-CGNAT-ISH + B-HARD-CALL-NAT (**scaffold**; `--suite hard-w5`); hairpin/UPnP/v6 gated
 Wave 6  product stress on hard topo
 Wave 7  horizons                          (placeholders)
 ```
 
 **Sparse release set** (once Wave 1–3 exist): `N-HARD-FORCE` + `B-HARD-CALL` + `B-HARD-MSG+CALL` + `N-HARD-LOSSY` + `N-HARD-STALE-ADDR` (+ `N-HARD-MHOP-PATH` when L3.5 lands). Not PR-blocking until Wave 1 is stable in CI.
 
-**Driver:** `pp_local_test.sh run --suite hard` (Wave 1 trio; ports **18618**). Do not conflate with `--suite node` / relay-smoke (**18518**).
+**Driver:** `pp_local_test.sh run --suite hard` / `hard-w2` / `hard-w3` / `hard-w5`; Wave 1–3 ports **18618**; Wave 5 CGNAT **18628**. Do not conflate with `--suite node` / relay-smoke (**18518**).
 
 
 ---
@@ -373,4 +389,4 @@ Later work is intentionally underspecified until evidence exists:
 3. **Phase 2** — IMAGE_SMOKE L2 = **`N-FANOUT`** (`pp-node-probe --mode media-fanout`).
 4. **Phase 3** — **`N-CAP-MEDIA` sweep** (`--suite cap`); N-CAP-CIRCUIT; N-SOAK / N-CHAOS scaffolds (`--suite soak` / `--suite chaos`).
 5. **Phase 4** — thin-client **`B-CALL-DIRECT`** then **`B-CALL-HOP`** (`--suite call-hop`). Then **B-CONFLICT** / **B-MSG+CALL** scaffolds (`--suite conflict` / `--suite msg-call` / `--suite msg-call-hop`). Then interference + same-session mix (`--suite mix`).
-6. **Phase 5 (hard lab)** — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); **N-HARD-FORCE** scaffold via `--suite hard`; remaining waves per [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).
+6. **Phase 5 (hard lab)** — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); Wave 1 `--suite hard`; Wave 2 `--suite hard-w2`; Wave 3 STALE/SEED `--suite hard-w3`; Wave 5 CGNAT `--suite hard-w5`; remaining waves per [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).

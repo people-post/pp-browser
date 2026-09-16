@@ -86,6 +86,25 @@ TEST(CallMediaHealthTest, MutedDoesNotFlagReceivingOnly) {
   EXPECT_EQ(v.quality, CallPathQuality::Excellent);
 }
 
+TEST(CallMediaHealthTest, NoCaptureDoesNotFlagReceivingOnly) {
+  auto in = BaseHealthyInput();
+  in.engine.tx_audio_frames = 0;
+  in.engine.last_tx_audio_ms = 0;
+  in.engine.muted = false;
+  in.engine.capture_available = false;
+  const auto v = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(v.asymmetry, CallAudioAsymmetry::None);
+  EXPECT_EQ(v.quality, CallPathQuality::Excellent);
+}
+
+TEST(CallMediaHealthTest, DebugSubtitleCapsStaleRxAge) {
+  auto in = BaseHealthyInput(100'000);
+  in.engine.last_rx_audio_ms = in.now_ms - 60'000;
+  const auto v = EvaluateCallMediaHealth(in);
+  const std::string sub = FormatCallDebugSubtitle(v, in.now_ms);
+  EXPECT_NE(sub.find("rx9999ms"), std::string::npos) << sub;
+}
+
 TEST(CallMediaHealthTest, ReconnectingTakesPriority) {
   auto in = BaseHealthyInput();
   in.reconnecting = true;
@@ -94,12 +113,29 @@ TEST(CallMediaHealthTest, ReconnectingTakesPriority) {
   EXPECT_EQ(v.quality_bars, 1);
 }
 
-TEST(CallMediaHealthTest, PathKindRelayWhenSfu) {
+TEST(CallMediaHealthTest, PathKindMediaRelayWhenHopAttached) {
   auto in = BaseHealthyInput();
   in.engine.sfu_mode = true;
+  // 1:1 Amp sets sfu_mode without hop attach — must not force media_relay.
+  EXPECT_EQ(EvaluateCallMediaHealth(in).path_kind, "direct");
+  in.hop.attached = true;
   const auto v = EvaluateCallMediaHealth(in);
-  EXPECT_EQ(v.path_kind, "relay");
-  EXPECT_NE(FormatCallDebugSubtitle(v, in.now_ms).find("SFU"), std::string::npos);
+  EXPECT_EQ(v.path_kind, "media_relay");
+  EXPECT_NE(FormatCallDebugSubtitle(v, in.now_ms).find("media_relay"), std::string::npos);
+}
+
+TEST(CallMediaHealthTest, PathKindHonorsReachModes) {
+  auto in = BaseHealthyInput();
+  in.engine.sfu_mode = true; // 1:1 capture mode — reach label still wins
+  in.reach_path_kind = "circuit";
+  EXPECT_EQ(EvaluateCallMediaHealth(in).path_kind, "circuit");
+  in.reach_path_kind = "punched";
+  EXPECT_EQ(EvaluateCallMediaHealth(in).path_kind, "punched");
+  in.reach_path_kind = "direct";
+  EXPECT_EQ(EvaluateCallMediaHealth(in).path_kind, "direct");
+  in.hop.attached = true;
+  in.reach_path_kind = "circuit";
+  EXPECT_EQ(EvaluateCallMediaHealth(in).path_kind, "media_relay");
 }
 
 TEST(CallMediaHealthTest, DiagnosticsGate) {

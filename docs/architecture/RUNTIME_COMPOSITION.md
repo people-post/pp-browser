@@ -228,9 +228,9 @@ flowchart TB
 
 ## Threading
 
-**Canonical doc:** [THREADING.md](THREADING.md) — coordinator + worker pool model, `AppRuntime` API.
+**Canonical doc:** [THREADING.md](THREADING.md) — hybrid ownership: coordinator + Amp MeshPump + MeshControlPool + general worker pool.
 
-UI on main thread; blocking work on **worker pool** via `AppRuntime::PostWorker`; **coordinator** owns timer-driven policy. libp2p and call media run their own loops.
+UI on main thread; blocking HTTP/LLM on **worker pool** via `AppRuntime::PostWorker`; **coordinator** owns timer-driven policy (~1s hub / relay wake). Amp UDP drain and dial/`IoPumpUntil` waits are **MeshHost-owned** (MeshPump + MeshControlPool). Call media runs its own loops.
 
 ```mermaid
 flowchart TB
@@ -258,10 +258,12 @@ flowchart TB
     Pool --> P2pWork
   end
 
-  subgraph libp2p_stack["mesh host"]
-    LpIo["Libp2pHost io_thread_<br/><small>asio::io_context::run</small>"]
-    Host["libp2p::Host<br/><small>lib/libp2p — Yamux + Noise</small>"]
-    LpIo --> Host
+  subgraph mesh_host["MeshHost-owned"]
+    Pump["MeshPumpThread<br/><small>Drive ~5ms</small>"]
+    Ctrl["MeshControlPool 1–2<br/><small>Connect / IoPumpUntil</small>"]
+    Amp["AmpStack / MeshRuntime"]
+    Pump --> Amp
+    Ctrl -->|"Tick while waiting"| Amp
   end
 
   subgraph media_stack["Call media"]
@@ -270,10 +272,10 @@ flowchart TB
     Ring["CallRingtone thread_"]
   end
 
-  UIQ -->|"PostTask(IO) → pool"| Pool
-  Pool -->|"PostTask(UI) replies"| UIQ
-  Coord -->|"PostWorker blocking steps"| Pool
-  HubPolicy -.->|"async dial / streams"| LpIo
+  UIQ -->|"PostWorker"| Pool
+  Pool -->|"PostUI replies"| UIQ
+  Coord -->|"PostWorker blocking HTTP"| Pool
+  HubPolicy -.->|"mesh policy"| Amp
 ```
 
 ### Thread inventory
@@ -283,7 +285,8 @@ flowchart TB
 | **Main / UI** | `Application` + `AppRuntime` UI mailbox | `app/` · `foundation/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
 | **Coordinator** | `CoordinatorThread` | `foundation/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
 | **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `foundation/runtime/` | HTTP, LLM/tools, relay sync/send |
-| **libp2p IO** | `Libp2pHost` | `domain/mesh/` | `asio::io_context` run loop |
+| **Amp MeshPump** | `MeshHost` | `domain/mesh/host/` | `MeshRuntime::Drive` ~5ms (no libp2p `io_context`) |
+| **Mesh control** | `MeshHost` (`MeshControlPool`) | `domain/mesh/host/` | Connect / `IoPumpUntil` waits |
 | **Media capture / video** | `CallMediaEngine` | `domain/media/` | Dedicated capture + video encode loops |
 | **Ringtone** | `CallRingtone` | `domain/media/` | Playback loop thread |
 | **Notification watch** | `ILocalNotifier` (Linux) | `foundation/platform/desktop/` | D-Bus watcher; joined in `Shutdown` |
@@ -292,9 +295,9 @@ flowchart TB
 
 - **UI** owns RmlUi and controller mutations. `AppRuntime::PostUI` from pool/coordinator.
 - **Worker pool** runs blocking HTTP, LLM, relay orchestration. `PostTaskAndReply` is pool → UI.
-- **Coordinator** runs fast policy only; posts blocking steps to pool.
-- **libp2p IO** stays non-blocking; integration hops to pool via `PostLibp2pWorker`.
-- **Pause/resume:** `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` pauses coordinator + pool.
+- **Coordinator** runs fast policy only; posts blocking steps to pool (not Amp UDP).
+- **MeshHost** owns Amp pump + mesh-control waiters; `PostControl` for dial/`IoPumpUntil`.
+- **Pause/resume:** `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` pauses coordinator + general pool only (mesh/media follow their own lifetime).
 
 Full model: [THREADING.md](THREADING.md).
 

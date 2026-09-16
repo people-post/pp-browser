@@ -38,7 +38,9 @@ TEST(StatusHttpProtocolTest, LoopbackDetection) {
 TEST(StatusHttpProtocolTest, HealthzAndStatus) {
   pbr::StatusHttpSnapshot snap;
   snap.host_running = true;
-  snap.listen_multiaddr = "/ip4/0.0.0.0/udp/443/adp/1.0.0/p2p/12D3KooWTest";
+  snap.listen_multiaddr = "/ip6/2001:db8::1/udp/443/adp/1.0.0/p2p/12D3KooWTest";
+  snap.listen_multiaddrs = {snap.listen_multiaddr,
+                            "/ip4/10.0.0.5/udp/443/adp/1.0.0/p2p/12D3KooWTest"};
   snap.peer_id = "12D3KooWtest";
   snap.circuit_relay = true;
   snap.media_relay = false;
@@ -61,6 +63,10 @@ TEST(StatusHttpProtocolTest, HealthzAndStatus) {
   ASSERT_TRUE(sj);
   EXPECT_EQ(sj->getString("status").value_or(""), "reachable");
   EXPECT_EQ(sj->getString("listen").value_or(""), snap.listen_multiaddr);
+  const auto* listen_addrs = sj->getArray("listen_addrs");
+  ASSERT_NE(listen_addrs, nullptr);
+  ASSERT_EQ(listen_addrs->elements.size(), 2u);
+  EXPECT_EQ(pbr::asString(listen_addrs->elements[0]).value_or(""), snap.listen_multiaddrs[0]);
   EXPECT_EQ(sj->getString("peer_id").value_or(""), snap.peer_id);
   EXPECT_TRUE(sj->getIf<bool>("circuit_relay").value_or(false));
   EXPECT_FALSE(sj->getIf<bool>("media_relay").value_or(true));

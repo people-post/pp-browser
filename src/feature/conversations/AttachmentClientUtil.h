@@ -11,6 +11,8 @@
 #include "common/Error.h"
 
 #include <cstdint>
+#include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -28,7 +30,8 @@ Roe<PreparedChatAttachment> PrepareChatAttachmentFromFile(const std::string& pat
 struct ChatAttachmentUploadOptions {
   IChatBlobPeerClient* peer_client = nullptr;
   ContactsStore* contacts = nullptr;
-  const Thread* thread = nullptr;
+  /** Owned copy — required for async upload (no stack Thread*). */
+  std::optional<Thread> thread;
   std::string thread_id;
 };
 
@@ -36,5 +39,9 @@ struct ChatAttachmentUploadOptions {
 Roe<ChatAttachmentFields> UploadChatAttachmentFromFile(IBlobClient& blob, IdentityStore& identity,
                                                        const std::string& path,
                                                        const ChatAttachmentUploadOptions& options = {});
+
+void UploadChatAttachmentFromFileAsync(IBlobClient& blob, IdentityStore& identity, const std::string& path,
+                                       ChatAttachmentUploadOptions options,
+                                       std::function<void(Roe<ChatAttachmentFields>)> on_done);
 
 } // namespace pbr

@@ -7,9 +7,9 @@
 #include "gui/shell/ShellFeedbackPorts.h"
 #include "gui/shell/ShellNavigationPorts.h"
 
-#include <RmlUi/Core/DataModelHandle.h>
-#include <RmlUi/Core/Event.h>
-#include <RmlUi/Core/Types.h>
+#include <ui/data/DataModelHandle.h>
+#include <ui/dom/Event.h>
+#include <ui/base/Types.h>
 
 #include <functional>
 #include <optional>
@@ -17,7 +17,7 @@
 #include <vector>
 #include "common/PbrCompat.h"
 
-namespace Rml {
+namespace ui {
 class Context;
 class Element;
 }
@@ -29,19 +29,19 @@ public:
   enum class Mode { Insert, React };
 
   struct RailTab {
-    Rml::String id;
-    Rml::String glyph;
+    ui::String id;
+    ui::String glyph;
     bool active = false;
   };
 
   struct Cell {
-    Rml::String glyph;
+    ui::String glyph;
   };
 
   struct Section {
-    Rml::String id;
-    Rml::String element_id;
-    Rml::String label;
+    ui::String id;
+    ui::String element_id;
+    ui::String label;
     std::vector<Cell> cells;
   };
 
@@ -57,7 +57,7 @@ public:
   void BindFlowCoordinator(FlowCoordinatorPorts ports);
   void BindSessionStore(SessionStore& store);
 
-  bool RegisterModel(Rml::Context* context);
+  bool RegisterModel(ui::Context* context);
 
   void OpenInsert(std::function<void(std::string emoji, bool restore_composer_focus)> on_pick);
   void OpenReact(std::string message_id, std::function<void(std::string emoji)> on_pick);
@@ -86,15 +86,15 @@ private:
   void EnsureWindowAround(int center_index);
   void ApplyPendingScrollAdjust();
   bool IsBottomChromeEmojiOpen() const;
-  Rml::Element* FindScrollBody() const;
-  Rml::Element* FindSectionElement(const std::string& category_id) const;
+  ui::Element* FindScrollBody() const;
+  ui::Element* FindSectionElement(const std::string& category_id) const;
 
-  static void SelectEmojiCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args);
-  static void SelectCategoryCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args);
-  static void OnScrollCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
-  static void CancelCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&);
+  static void SelectEmojiCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList& args);
+  static void SelectCategoryCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList& args);
+  static void OnScrollCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList&);
+  static void CancelCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList&);
 
-  Rml::Context* context_ = nullptr;
+  ui::Context* context_ = nullptr;
   int layer_id_ = -1;
   Mode mode_ = Mode::Insert;
   /** True when Insert used mobile/compact bottom-chrome (IME slot) presentation. */
@@ -103,8 +103,8 @@ private:
   std::function<void(std::string, bool)> on_insert_pick_;
   std::function<void(std::string)> on_react_pick_;
 
-  Rml::String title_;
-  Rml::String active_category_;
+  ui::String title_;
+  ui::String active_category_;
   std::vector<RailTab> rail_tabs_;
   std::vector<Section> sections_;
   /** App-side window: cells bound for [window_begin, window_end); grow end on scroll, unload above. */

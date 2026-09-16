@@ -2,13 +2,13 @@
 
 #include "gui/shell/ShellGestureAxis.h"
 
-#include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/EventListener.h>
-#include <RmlUi/Core/Types.h>
+#include <ui/dom/Element.h>
+#include <ui/dom/EventListener.h>
+#include <ui/base/Types.h>
 
 #include <functional>
 
-namespace Rml {
+namespace ui {
 class Context;
 class Event;
 class ElementDocument;
@@ -16,27 +16,27 @@ class ElementDocument;
 
 namespace pbr {
 
-class ShellBottomSheetGesture : public Rml::EventListener {
+class ShellBottomSheetGesture : public ui::EventListener {
 public:
   using DismissCallback = std::function<void()>;
 
-  void Attach(Rml::Element* sheet, Rml::Context* context, float sheet_height_dp, DismissCallback on_dismiss,
+  void Attach(ui::Element* sheet, ui::Context* context, float sheet_height_dp, DismissCallback on_dismiss,
               ShellGestureAxisLock* axis_lock = nullptr);
   void Detach();
   void Abort();
 
-  void ProcessEvent(Rml::Event& event) override;
+  void ProcessEvent(ui::Event& event) override;
 
 private:
-  bool ShouldIgnoreTarget(Rml::Element* target) const;
-  bool ShouldStartSwipe(Rml::Element* target) const;
-  bool IsUnderSheet(Rml::Element* target) const;
-  bool IsChromeRegion(Rml::Element* target) const;
-  bool ScrollAncestorsAtTop(Rml::Element* target) const;
+  bool ShouldIgnoreTarget(ui::Element* target) const;
+  bool ShouldStartSwipe(ui::Element* target) const;
+  bool IsUnderSheet(ui::Element* target) const;
+  bool IsChromeRegion(ui::Element* target) const;
+  bool ScrollAncestorsAtTop(ui::Element* target) const;
   void PinScrollAncestorsAtTop();
-  void BeginArm(int x_px, int y_px, Rml::Element* target);
+  void BeginArm(int x_px, int y_px, ui::Element* target);
   void AbortArm(bool unlock_axis);
-  void UpdateDrag(int x_px, int y_px, Rml::Event& event);
+  void UpdateDrag(int x_px, int y_px, ui::Event& event);
   void EndDrag();
   void SetSheetOffset(float dy_dp, bool animate);
   void SetDocumentDragCapture(bool enabled);
@@ -45,10 +45,10 @@ private:
   float PixelDeltaToDp(int delta_px) const;
   float ResolveSheetHeightDp() const;
 
-  Rml::Element* sheet_ = nullptr;
-  Rml::ElementDocument* document_ = nullptr;
-  Rml::Context* context_ = nullptr;
-  Rml::Element* arm_target_ = nullptr;
+  ui::Element* sheet_ = nullptr;
+  ui::ElementDocument* document_ = nullptr;
+  ui::Context* context_ = nullptr;
+  ui::Element* arm_target_ = nullptr;
   float sheet_height_dp_ = 0.f;
   DismissCallback on_dismiss_;
   ShellGestureAxisLock* axis_lock_ = nullptr;

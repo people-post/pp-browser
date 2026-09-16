@@ -4,6 +4,7 @@
 #include "common/Logger.h"
 
 #include <atomic>
+#include <mutex>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -20,7 +21,25 @@ std::vector<std::function<void()>> g_foreground_listeners;
 std::atomic<bool> g_desktop_input_focused{true};
 std::atomic<bool> g_desktop_minimized{false};
 
+std::mutex g_log_mu;
+logging::Logger* g_log = nullptr;
+
 } // namespace
+
+void AppLifecycle::InitLogging() {
+  std::lock_guard lock(g_log_mu);
+  if (g_log != nullptr) {
+    return;
+  }
+  (void)logging::getLogger("Runtime");
+  static logging::Logger instance = logging::getLogger("Runtime.Lifecycle");
+  g_log = &instance;
+}
+
+logging::Logger& AppLifecycle::logger() {
+  InitLogging();
+  return *g_log;
+}
 
 AppLifecycleState AppLifecycle::Current() {
   return g_state;
@@ -43,7 +62,7 @@ bool AppLifecycle::IsUserAttentive() {
 void AppLifecycle::SetDesktopInputFocused(bool focused) {
   const bool prev = g_desktop_input_focused.exchange(focused, std::memory_order_relaxed);
   if (prev != focused) {
-    logging::getLogger("AppLifecycle").info
+    logger().info
         << "Desktop input focus=" << (focused ? "gained" : "lost");
   }
 }
@@ -61,7 +80,7 @@ void AppLifecycle::OnWillEnterBackground() {
   for (const auto& listener : g_background_listeners) {
     listener();
   }
-  logging::getLogger("AppLifecycle").info << "Entering background";
+  logger().info << "Entering background";
 }
 
 void AppLifecycle::OnDidEnterForeground() {
@@ -77,11 +96,11 @@ void AppLifecycle::OnDidEnterForeground() {
   for (const auto& listener : g_foreground_listeners) {
     listener();
   }
-  logging::getLogger("AppLifecycle").info << "Entering foreground";
+  logger().info << "Entering foreground";
 }
 
 void AppLifecycle::OnLowMemory() {
-  logging::getLogger("AppLifecycle").warning << "Low memory warning";
+  logger().warning << "Low memory warning";
 }
 
 void AppLifecycle::AddBackgroundListener(std::function<void()> listener) {

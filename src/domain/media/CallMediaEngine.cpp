@@ -5,6 +5,7 @@
 #include "domain/media/CallRingtone.h"
 #include "domain/media/CameraCaptureOrientation.h"
 #include "domain/media/IVideoCodec.h"
+#include "domain/media/SdlAudioBootstrap.h"
 #include "domain/media/VideoYuv.h"
 #include "common/Utilities.h"
 
@@ -12,6 +13,7 @@
 #include <opus.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <deque>
@@ -154,6 +156,8 @@ struct CallMediaEngine::Impl {
   StateChangedFn on_state_changed;
 
   bool sfu_mode = false;
+  /** Bumped on StartSfu so async StopMeshMedia can detect a newer session. */
+  std::atomic<uint64_t> session_generation{0};
   /** Shared so SoftMigrate can replace the callback while capture/video still invoke the old one. */
   std::shared_ptr<SfuSendFn> sfu_send;
   /**
@@ -441,16 +445,54 @@ struct CallMediaEngine::Impl {
 
   void JoinCaptureThread() {
     capture_running = false;
-    if (capture_thread.joinable()) {
-      capture_thread.join();
-    }
+    JoinThreadBudgeted(capture_thread, std::chrono::milliseconds::max(), "capture");
   }
 
   void JoinPlayoutThread() {
     playout_running = false;
-    if (playout_thread.joinable()) {
-      playout_thread.join();
+    JoinThreadBudgeted(playout_thread, std::chrono::milliseconds::max(), "playout");
+  }
+
+  /** Product quit: cap capture/playout joins so SDL device close cannot hang Shutdown. */
+  void JoinCaptureThreadBudgeted(std::chrono::milliseconds budget) {
+    capture_running = false;
+    JoinThreadBudgeted(capture_thread, budget, "capture");
+  }
+
+  void JoinPlayoutThreadBudgeted(std::chrono::milliseconds budget) {
+    playout_running = false;
+    JoinThreadBudgeted(playout_thread, budget, "playout");
+  }
+
+  void JoinThreadBudgeted(std::thread& thread, std::chrono::milliseconds budget, const char* name) {
+    if (!thread.joinable()) {
+      return;
     }
+    if (budget == std::chrono::milliseconds::max() || budget.count() <= 0) {
+      thread.join();
+      return;
+    }
+    auto finished = std::make_shared<std::atomic<bool>>(false);
+    std::thread waiter([finishing = std::move(thread), finished]() mutable {
+      if (finishing.joinable()) {
+        finishing.join();
+      }
+      finished->store(true, std::memory_order_release);
+    });
+    const auto deadline = std::chrono::steady_clock::now() + budget;
+    while (!finished->load(std::memory_order_acquire) &&
+           std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    if (finished->load(std::memory_order_acquire)) {
+      if (waiter.joinable()) {
+        waiter.join();
+      }
+      return;
+    }
+    SDL_Log("CallMediaEngine: %s join still live after %lldms — detaching (process exit must follow)",
+            name, static_cast<long long>(budget.count()));
+    waiter.detach();
   }
 
   void StartPlayoutLoop() {
@@ -518,10 +560,8 @@ struct CallMediaEngine::Impl {
   }
 
   Roe<void> EnsureAudioSubsystem() {
-    if (!SDL_WasInit(SDL_INIT_AUDIO)) {
-      if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
-        return Error(std::string("SDL_InitSubSystem(AUDIO) failed: ") + SDL_GetError());
-      }
+    if (!EnsureSdlAudioSubsystem()) {
+      return Error(std::string("SDL_InitSubSystem(AUDIO) failed: ") + SDL_GetError());
     }
     return {};
   }
@@ -1094,6 +1134,8 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     if (!*next_send) {
       return Error("SFU send callback required");
     }
+    // Invalidate any in-flight StopMeshMedia posted for a prior call_id / leftover purge.
+    impl_->session_generation.fetch_add(1, std::memory_order_acq_rel);
     if (impl_->active) {
       if (impl_->call_id == call_id && impl_->sfu_mode) {
         // SoftMigrate from libp2p→media_relay: swap callback; capture may still hold old shared_ptr.
@@ -1118,12 +1160,13 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     abandoned_send = nullptr;
     // 1:1 libp2p also uses StartSfu with stream_id=0 packets. SoftMigrate to media_relay must
     // drop that zombie track or it PLC-underruns forever and confuses stream_count (dogfood).
+    // Do NOT wipe live media_relay RX tracks on duplicate StartSfu send-swap (reattach storm).
     {
       std::lock_guard lock(impl_->mutex);
-      impl_->ClearAudioTracksLocked();
+      impl_->audio_tracks.erase(0);
       {
         std::lock_guard lg(impl_->sfu_rx_log_mu);
-        impl_->sfu_rx_logged_streams.clear();
+        impl_->sfu_rx_logged_streams.erase(0);
       }
     }
     // Android speaker / communication-mode route changes around SoftMigrate can leave the open
@@ -1265,6 +1308,7 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   h.connected = impl_->connected.load(std::memory_order_relaxed);
   h.sfu_mode = impl_->sfu_mode;
   h.muted = impl_->muted.load(std::memory_order_relaxed);
+  h.capture_available = impl_->capture_available;
   h.path_pressure = impl_->path_pressure.load(std::memory_order_relaxed);
   h.opus_target_bps = impl_->adaptation_target_audio_bps.load(std::memory_order_relaxed);
   h.outbound_drops = impl_->outbound_drops.load(std::memory_order_relaxed);
@@ -1324,8 +1368,14 @@ void CallMediaEngine::Stop() {
   {
     std::lock_guard drain(impl_->sfu_send_call_mu);
   }
-  impl_->JoinCaptureThread();
-  impl_->JoinPlayoutThread();
+  static constexpr std::chrono::milliseconds kShutdownJoinBudget{500};
+  impl_->JoinCaptureThreadBudgeted(kShutdownJoinBudget);
+  impl_->JoinPlayoutThreadBudgeted(kShutdownJoinBudget);
+  {
+    // Stop camera encode before TearDownAudioLocked so CloseCameraLocked does not unbounded-join.
+    impl_->video_running = false;
+    impl_->JoinThreadBudgeted(impl_->video_thread, kShutdownJoinBudget, "video");
+  }
   {
     std::lock_guard lock(impl_->mutex);
     impl_->TearDownAudioLocked();
@@ -1495,6 +1545,10 @@ void CallMediaEngine::SetConnectionState(const std::string& state) {
 std::string CallMediaEngine::ActiveCallId() const {
   std::lock_guard lock(impl_->mutex);
   return impl_->call_id;
+}
+
+uint64_t CallMediaEngine::MediaSessionGeneration() const {
+  return impl_->session_generation.load(std::memory_order_acquire);
 }
 
 std::string CallMediaEngine::ConnectionState() const {

@@ -6,6 +6,7 @@
 #include "domain/messaging/CallTypes.h"
 #include "common/Error.h"
 #include "feature/calls/CallLifecycle.h"
+#include "feature/calls/CallMediaSeat.h"
 
 #include <functional>
 #include <optional>
@@ -36,7 +37,7 @@ public:
   void SetOnChromeRefresh(std::function<void()> callback);
 
   void SweepExpiredInvites();
-  void PollPendingSfuAttach();
+  /** Chrome heal when media already reports failed (not a UI-tick poll). */
   void PollP2pConnectHealth();
 
   std::optional<std::string> TakeLastMediaError();
@@ -79,6 +80,13 @@ public:
   /** Requires Available(); CallController still needs tiles/levels via CallMediaEngine. */
   CallMediaEngine& Media();
   CallHopHealth HopHealth() const;
+  std::string MediaPathKind() const;
+  /** V036 Phase 2 dual-FSM: chrome Connected only when SeatMediaLive. */
+  CallMediaSeat::MediaState SeatMediaState(const std::string& call_id) const;
+  bool SeatMediaLive(const std::string& call_id) const;
+  /** V037: InCall + DirectLive|HopLive. */
+  bool MediaChromeLive() const;
+  CallMediaStatus MediaStatus() const;
 
   // Lifecycle
   const std::string& LastError() const;

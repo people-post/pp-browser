@@ -27,6 +27,7 @@ Agent entry points: [`AGENTS.md`](../AGENTS.md) (orientation), this map (stable 
 | [architecture/RUNTIME_COMPOSITION.md](architecture/RUNTIME_COMPOSITION.md) | App ↔ messaging / shell / chat / settings wiring + threads |
 | [architecture/OWNERSHIP.md](architecture/OWNERSHIP.md) | Parent-only destroy (repo-wide); mesh detail [A027](../projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy) |
 | [architecture/THREADING.md](architecture/THREADING.md) | Thread roles — coordinator, worker pool, `AppRuntime` |
+| [architecture/LOGGING.md](architecture/LOGGING.md) | Logger obtain rules — Module / static `InitLogging` / free-fn `Logger&` |
 | [architecture/UI_FUNCTIONAL_BOUNDARY.md](architecture/UI_FUNCTIONAL_BOUNDARY.md) | UI vs functional systems; state / config / actions / events; app-owned presenters |
 | [architecture/SERVICE_CAPABILITIES.md](architecture/SERVICE_CAPABILITIES.md) | Coarse readiness flags; early UI vs async mesh; port/service gating |
 | [architecture/PLATFORMS.md](architecture/PLATFORMS.md) | Desktop / Android / path providers |

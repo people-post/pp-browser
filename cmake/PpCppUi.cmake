@@ -1,25 +1,28 @@
-# Fetch / add people-post/pp-cpp-ui (RmlUi + FreeType/HarfBuzz/LunaSVG + SDL/GL backend).
+# Fetch / add people-post/pp-cpp-ui (first-party ui:: engine + FreeType/HarfBuzz/LunaSVG + SDL/GL).
 #
-# Prefer a local sibling checkout when present (ppweb3 workspace layout).
+# Prefer a local sibling checkout when present (ppweb3 workspace layout) — use this
+# when integrating unreleased develop before cutting a pp-cpp-ui release tag.
 # Otherwise pin a release tag from that repo's main line (PP_CPP_UI_GIT_TAG).
 #
 # Include after cmake/dependencies.cmake so FreeType can reuse libp2p zlib;
 # this file exports PP_BROWSER_SDL3_* for platform/media/render.
+# Targets: pp_ui / pp_ui_core / pp_ui_backend / ui::core (paths PP_LIB_UI_*).
 
 include(FetchContent)
+include(PpFetchPin)
 
 set(PP_CPP_UI_SOURCE_DIR "" CACHE PATH
   "Optional local checkout of pp-cpp-ui (overrides FetchContent)")
 set(PP_CPP_UI_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-ui.git"
   CACHE STRING "Git remote for pp-cpp-ui")
-set(PP_CPP_UI_GIT_TAG "v0.2.1"
-  CACHE STRING "Release tag on pp-cpp-ui main (not a branch name)")
+pp_fetch_git_tag(PP_CPP_UI_GIT_TAG "v0.3.0"
+  "Release tag on pp-cpp-ui main (not a branch name)")
 
-# RmlUi unit tests run in pp-cpp-ui CI (PP_UI_BUILD_TESTS), not in this repo.
-# Enabling RMLUI_TESTS here registers ctest entries under EXCLUDE_FROM_ALL and
-# leaves rmlui_unit_tests / *_NOT_BUILT stubs that fail browser CI.
+# UI engine unit tests run in pp-cpp-ui CI (PP_UI_BUILD_TESTS), not in this repo.
+# Enabling UI_TESTS here registers ctest entries under EXCLUDE_FROM_ALL and
+# leaves ui_unit_tests / *_NOT_BUILT stubs that fail browser CI.
 set(PP_UI_BUILD_TESTS OFF CACHE BOOL "Build pp-cpp-ui standalone tests" FORCE)
-set(RMLUI_TESTS OFF CACHE BOOL "Build RmlUi unit tests" FORCE)
+set(UI_TESTS OFF CACHE BOOL "Build UI engine unit tests" FORCE)
 
 # FreeType: no WOFF2 (brotli). pp-cpp-ui v0.2.1+ always vendors zlib+libpng.
 set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
@@ -47,8 +50,8 @@ else()
   FetchContent_MakeAvailable(pp_cpp_ui)
 endif()
 
-if(NOT TARGET pp_ui OR NOT TARGET pp_ui_rml OR NOT TARGET pp_ui_backend OR NOT TARGET RmlUi::Core)
-  message(FATAL_ERROR "pp-cpp-ui did not define pp_ui / pp_ui_rml / pp_ui_backend / RmlUi::Core")
+if(NOT TARGET pp_ui OR NOT TARGET pp_ui_core OR NOT TARGET pp_ui_backend OR NOT TARGET ui::core)
+  message(FATAL_ERROR "pp-cpp-ui did not define pp_ui / pp_ui_core / pp_ui_backend / ui::core")
 endif()
 
 if(NOT PP_UI_SDL3_TARGET OR NOT PP_UI_SDL3_IMAGE_TARGET)
@@ -62,7 +65,7 @@ if(NOT TARGET SDL::SDL)
   add_library(SDL_alias INTERFACE)
   add_library(SDL::SDL ALIAS SDL_alias)
   target_link_libraries(SDL_alias INTERFACE ${PP_BROWSER_SDL3_TARGET})
-  target_compile_definitions(SDL_alias INTERFACE RMLUI_SDL_VERSION_MAJOR=3)
+  target_compile_definitions(SDL_alias INTERFACE UI_SDL_VERSION_MAJOR=3)
 endif()
 
 if(NOT TARGET SDL_image::SDL_image)
@@ -73,7 +76,7 @@ endif()
 
 # Keep helper names used by existing CMakeLists.
 function(pp_browser_link_rmlui_core target)
-  target_link_libraries(${target} PRIVATE RmlUi::Core)
+  target_link_libraries(${target} PRIVATE ui::core)
   if(COMMAND pp_ui_link_svg_deps)
     pp_ui_link_svg_deps(${target})
   elseif(WIN32 AND TARGET lunasvg::lunasvg)

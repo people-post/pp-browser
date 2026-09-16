@@ -19,16 +19,18 @@ Ordering only. Ladder detail: [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md)
 - [x] Inventory status → scaffold in TEST_STRATEGY
 ## h2 — Wave 2 path quality
 
-- [ ] `tc netem` / `tbf` profile hooks (`lossy`, `asym`, `bw`)
-- [ ] **N-HARD-LOSSY**, **N-HARD-ASYM**; optional **N-HARD-BW**
-- [ ] Document flake/retry policy from first evidence
+- [x] `tc netem` / `tbf` profile hooks (`lossy`, `asym`, `bw`) on peer veth (`NET_ADMIN`)
+- [x] **N-HARD-LOSSY**, **N-HARD-ASYM**; optional **N-HARD-BW** (`pp_hard_link_smoke.sh`)
+- [x] Document flake/retry policy (one netem retry in `pp_hard_run_with_netem_retry`)
+- [x] `--suite hard-w2` driver entry
 
 ## h3 — Wave 3 discovery
 
-- [ ] **N-HARD-STALE-ADDR**, **N-HARD-SEED-ONLY**
+- [x] **N-HARD-STALE-ADDR**, **N-HARD-SEED-ONLY** (`pp_hard_disco_smoke.sh`; probe `direct-expect-fail` / `--peer-id-only` / `--warm-hop`)
 - [ ] **N-HARD-DIR** when directory lab hooks exist
 - [ ] **N-HARD-DHT** extending `pp_node_dht_smoke` into hard nets
 - [ ] **N-ADMIT-HARD** (closes deploy-profile gap on forced topo)
+- [x] `--suite hard-w3` driver entry (stale-addr → seed-only)
 
 ## h4 — Wave 4 multi-hop (blocked on L3.5)
 
@@ -42,7 +44,8 @@ Depends on [media-hop-reachability L3.5](../media-hop-reachability/PHASES.md#l35
 ## h5 — Wave 5 NAT shapes
 
 - [ ] Explicit product policy for hairpin fallback (**N-HARD-HAIRPIN**)
-- [ ] **N-HARD-CGNAT-ISH** SNAT lab
+- [x] **N-HARD-CGNAT-ISH** SNAT lab + **B-HARD-CALL-NAT** Phase-1 (`--via-hop --peer-id-only`)
+- [x] **B-HARD-CALL-NAT-PRODUCT** Phase-2 (`--reach product` punch→circuit; `--suite hard-w5` default `--phase both`)
 - [ ] Optional **N-HARD-UPNP** / **N-HARD-V6** / **N-HARD-PATH-MIGRATE**
 - [ ] Hole punch remains non-goal until stack ships it
 

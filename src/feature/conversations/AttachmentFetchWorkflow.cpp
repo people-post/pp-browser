@@ -166,23 +166,29 @@ void AttachmentFetchWorkflow::EnqueueJob(Job job, const bool force) {
 }
 
 void AttachmentFetchWorkflow::DrainQueue() {
-  for (;;) {
-    Job job;
-    {
-      std::lock_guard lock(mutex_);
-      if (queue_.empty()) {
-        draining_ = false;
-        return;
-      }
-      job = std::move(queue_.front());
-      queue_.erase(queue_.begin());
-      active_.insert(JobKey(job));
+  Job job;
+  {
+    std::lock_guard lock(mutex_);
+    if (queue_.empty()) {
+      draining_ = false;
+      return;
     }
-    RunJob(job);
+    job = std::move(queue_.front());
+    queue_.erase(queue_.begin());
+    active_.insert(JobKey(job));
+  }
+  RunJobAsync(std::move(job), [this]() { ContinueDrainOnWorker(); });
+}
+
+void AttachmentFetchWorkflow::ContinueDrainOnWorker() {
+  if (AppRuntime::IsRunning()) {
+    AppRuntime::PostWorkerNormal([this]() { DrainQueue(); });
+  } else {
+    DrainQueue();
   }
 }
 
-void AttachmentFetchWorkflow::RunJob(const Job& job) {
+void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done) {
   const std::string key = JobKey(job);
   AttachmentFetchContext context;
   context.thread_id = job.thread_id;
@@ -191,30 +197,55 @@ void AttachmentFetchWorkflow::RunJob(const Job& job) {
   context.identity = identity_;
   context.peer_client = peer_client_;
   context.profile_data_dir = profile_dir_;
-  auto plaintext = FetchAndDecryptAttachment(job.fields, context);
-  if (!plaintext) {
-    MarkFailed(key);
-    return;
-  }
-  const ByteVector bytes(plaintext->begin(), plaintext->end());
-  const ByteVector dek_copy = CopyDek();
-  if (dek_copy.empty() || profile_id_.empty()) {
-    MarkFailed(key);
-    return;
-  }
-  if (auto saved = SaveAttachmentPlaintext(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
-                                           bytes, job.fields.filename, dek_copy, profile_id_);
-      !saved) {
-    MarkFailed(key);
-    return;
-  }
-  const uint64_t size_hint = job.fields.byte_length > 0 ? job.fields.byte_length : bytes.size();
-  if (AttachmentAllowsInlinePrivateView(job.fields.mime, size_hint)) {
-    (void)EnsureAttachmentViewPath(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
-                                   job.fields.filename, dek_copy, profile_id_);
-  }
-  MaybeBuildPoster(job.thread_id, job.fields);
-  MarkReady(key);
+
+  FetchAndDecryptAttachmentAsync(
+      job.fields, context,
+      [this, key, job = std::move(job), on_done = std::move(on_done)](Roe<std::vector<uint8_t>> plaintext) mutable {
+        auto finish_job = [this, key, job = std::move(job), on_done = std::move(on_done),
+                           plaintext = std::move(plaintext)]() mutable {
+          if (!plaintext) {
+            MarkFailed(key);
+            if (on_done) {
+              on_done();
+            }
+            return;
+          }
+          const ByteVector bytes(plaintext->begin(), plaintext->end());
+          const ByteVector dek_copy = CopyDek();
+          if (dek_copy.empty() || profile_id_.empty()) {
+            MarkFailed(key);
+            if (on_done) {
+              on_done();
+            }
+            return;
+          }
+          if (auto saved = SaveAttachmentPlaintext(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
+                                                   bytes, job.fields.filename, dek_copy, profile_id_);
+              !saved) {
+            MarkFailed(key);
+            if (on_done) {
+              on_done();
+            }
+            return;
+          }
+          const uint64_t size_hint = job.fields.byte_length > 0 ? job.fields.byte_length : bytes.size();
+          if (AttachmentAllowsInlinePrivateView(job.fields.mime, size_hint)) {
+            (void)EnsureAttachmentViewPath(profile_dir_, job.thread_id, job.fields.content_hash, job.fields.mime,
+                                           job.fields.filename, dek_copy, profile_id_);
+          }
+          MaybeBuildPoster(job.thread_id, job.fields);
+          MarkReady(key);
+          if (on_done) {
+            on_done();
+          }
+        };
+        // Amp blob completions may arrive off-worker; keep SQLite/DEK work on Normal.
+        if (AppRuntime::IsRunning()) {
+          AppRuntime::PostWorkerNormal(std::move(finish_job));
+        } else {
+          finish_job();
+        }
+      });
 }
 
 void AttachmentFetchWorkflow::MarkFailed(const std::string& key) {

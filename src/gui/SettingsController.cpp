@@ -24,13 +24,13 @@
 #include "gui/BlobQuotaRecoveryFlow.h"
 #include "foundation/error/AppError.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Core.h>
-#include <RmlUi/Core/DataModelHandle.h>
-#include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/ElementDocument.h>
-#include <RmlUi/Core/Event.h>
-#include <RmlUi/Core/SystemInterface.h>
+#include <ui/dom/Context.h>
+#include <ui/Core.h>
+#include <ui/data/DataModelHandle.h>
+#include <ui/dom/Element.h>
+#include <ui/dom/ElementDocument.h>
+#include <ui/dom/Event.h>
+#include <ui/base/SystemInterface.h>
 #include <SDL3/SDL.h>
 
 #include <filesystem>
@@ -62,8 +62,8 @@ namespace {
 constexpr uint64_t kDebounceMs = 500;
 constexpr uint64_t kToastSuppressMs = 2000;
 
-Rml::String EventValue(Rml::Event& ev) {
-  return ev.GetParameter<Rml::String>("value", Rml::String());
+ui::String EventValue(ui::Event& ev) {
+  return ev.GetParameter<ui::String>("value", ui::String());
 }
 
 std::string ReachabilityStatusLabel(SettingsReachabilityView::Status status) {
@@ -105,8 +105,8 @@ std::string ReachabilitySummary(const SettingsReachabilityView& view) {
 }
 
 /** Anchor ShowActions float menus under the right side of a settings choice row. */
-Rml::Vector2i ChoiceRowMenuPosition(Rml::Event& ev) {
-  Rml::Element* target = ev.GetCurrentElement();
+ui::Vector2i ChoiceRowMenuPosition(ui::Event& ev) {
+  ui::Element* target = ev.GetCurrentElement();
   if (!target) {
     target = ev.GetTargetElement();
   }
@@ -114,10 +114,10 @@ Rml::Vector2i ChoiceRowMenuPosition(Rml::Event& ev) {
     return {0, 0};
   }
 
-  Rml::Element* anchor = target;
+  ui::Element* anchor = target;
   const int child_count = target->GetNumChildren();
   for (int i = 0; i < child_count; ++i) {
-    Rml::Element* child = target->GetChild(i);
+    ui::Element* child = target->GetChild(i);
     if (child && child->IsClassSet("settings-choice-value")) {
       anchor = child;
       break;
@@ -267,6 +267,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.language_label = bindings_.language_label.c_str();
   ui_state_.reduce_transparency = bindings_.reduce_transparency.c_str();
   ui_state_.call_diagnostics = bindings_.call_diagnostics.c_str();
+  ui_state_.crash_reports_enabled = bindings_.crash_reports_enabled.c_str();
   ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
   ui_state_.security_can_change_pin = bindings_.security_can_change_pin;
   ui_state_.security_can_export_link = bindings_.security_can_export_link;
@@ -342,6 +343,7 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.language_label = ui_state_.language_label.c_str();
   bindings_.reduce_transparency = ui_state_.reduce_transparency.c_str();
   bindings_.call_diagnostics = ui_state_.call_diagnostics.c_str();
+  bindings_.crash_reports_enabled = ui_state_.crash_reports_enabled.c_str();
   bindings_.profile_label = ui_state_.profile_label.c_str();
   bindings_.config_dir = ui_state_.config_dir.c_str();
   bindings_.data_dir = ui_state_.data_dir.c_str();
@@ -428,13 +430,13 @@ void SettingsController::ReloadFromDisk() {
   SyncBindingsFromSession();
 }
 
-bool SettingsController::RegisterModel(Rml::Context* context) {
+bool SettingsController::RegisterModel(ui::Context* context) {
   if (!context) {
     return false;
   }
   context_ = context;
 
-  return DataModelHost::Instance().Register(context, "settings", [this](Rml::DataModelConstructor& ctor) {
+  return DataModelHost::Instance().Register(context, "settings", [this](ui::DataModelConstructor& ctor) {
     auto& controller = *this;
     if (auto section_handle = ctor.RegisterStruct<SectionListRow>()) {
       section_handle.RegisterMember("id", &SectionListRow::id);
@@ -522,6 +524,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.Bind("language_label", &controller.bindings_.language_label);
     ctor.Bind("reduce_transparency", &controller.bindings_.reduce_transparency);
     ctor.Bind("call_diagnostics", &controller.bindings_.call_diagnostics);
+    ctor.Bind("crash_reports_enabled", &controller.bindings_.crash_reports_enabled);
     ctor.Bind("profile_label", &controller.bindings_.profile_label);
     ctor.Bind("config_dir", &controller.bindings_.config_dir);
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
@@ -567,6 +570,7 @@ bool SettingsController::RegisterModel(Rml::Context* context) {
     ctor.BindEventCallback("toggle_show_notifications", &SettingsController::ToggleShowNotificationsCallback);
     ctor.BindEventCallback("toggle_reduce_transparency", &SettingsController::ToggleReduceTransparencyCallback);
     ctor.BindEventCallback("toggle_call_diagnostics", &SettingsController::ToggleCallDiagnosticsCallback);
+    ctor.BindEventCallback("toggle_crash_reports", &SettingsController::ToggleCrashReportsCallback);
     ctor.BindEventCallback("toggle_auto_renew_registration", &SettingsController::ToggleAutoRenewRegistrationCallback);
     ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
     ctor.BindEventCallback("on_network_field_changed", &SettingsController::OnNetworkFieldChangedCallback);
@@ -664,6 +668,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "language_label");
   host.Dirty("settings", "reduce_transparency");
   host.Dirty("settings", "call_diagnostics");
+  host.Dirty("settings", "crash_reports_enabled");
   host.Dirty("settings", "profile_label");
   host.Dirty("settings", "config_dir");
   host.Dirty("settings", "data_dir");
@@ -720,14 +725,14 @@ void SettingsController::MountSelectedSettingsSection() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  Rml::ElementDocument* doc = context_->GetDocument(0);
+  ui::ElementDocument* doc = context_->GetDocument(0);
   if (!doc) {
     return;
   }
   const ShellChromeSnapshot chrome = ChromeSnapshot();
   const bool use_sheet_mount = show_detail_ || in_account_sheet_ || chrome.account_sheet_open;
   const char* mount_id = use_sheet_mount ? "settings-section-mount-sheet" : "settings-section-mount-pane";
-  Rml::Element* mount = doc->GetElementById(mount_id);
+  ui::Element* mount = doc->GetElementById(mount_id);
   if (!mount) {
     // Fallback: try the other mount if layout migration left only one present.
     mount = doc->GetElementById(use_sheet_mount ? "settings-section-mount-pane" : "settings-section-mount-sheet");
@@ -826,8 +831,8 @@ void SettingsController::SyncLayoutMode() {
   }
   compact_layout_ = compact;
 
-  const Rml::String saved_id = selected_id_;
-  const Rml::String saved_title = selected_title_;
+  const ui::String saved_id = selected_id_;
+  const ui::String saved_title = selected_title_;
   const bool had_detail = !saved_id.empty() || show_detail_;
 
   if (compact) {
@@ -1197,46 +1202,46 @@ void SettingsController::OnBackToList() {
   }
 }
 
-void SettingsController::SelectSectionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                const Rml::VariantList& args) {
+void SettingsController::SelectSectionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                const ui::VariantList& args) {
   if (args.empty()) {
     SettingsController::Instance().log().warning << "select_section called with no args";
     return;
   }
-  if (args[0].GetType() != Rml::Variant::STRING) {
+  if (args[0].GetType() != ui::Variant::STRING) {
     SettingsController::Instance().log().warning << "select_section arg type="
                                               << static_cast<int>(args[0].GetType());
     return;
   }
-  Instance().OnSelectSection(std::string(args[0].Get<Rml::String>().c_str()));
+  Instance().OnSelectSection(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void SettingsController::BackToListCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& /*args*/) {
+void SettingsController::BackToListCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                            const ui::VariantList& /*args*/) {
   Instance().OnBackToList();
 }
 
-void SettingsController::ResetSectionCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                              const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+void SettingsController::ResetSectionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                              const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().OnResetSection(std::string(args[0].Get<Rml::String>().c_str()));
+  Instance().OnResetSection(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void SettingsController::OnLlmFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                   const Rml::VariantList& /*args*/) {
+void SettingsController::OnLlmFieldChangedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                   const ui::VariantList& /*args*/) {
   Instance().MarkSectionDirty("llm");
 }
 
-void SettingsController::OnLlmPresetChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
-                                                    const Rml::VariantList& /*args*/) {
+void SettingsController::OnLlmPresetChangedCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                                    const ui::VariantList& /*args*/) {
   auto& controller = Instance();
   if (controller.suppress_auto_save_) {
     return;
   }
 
-  const Rml::String value = EventValue(ev);
+  const ui::String value = EventValue(ev);
   if (!value.empty()) {
     controller.bindings_.llm_preset = value;
   }
@@ -1270,13 +1275,13 @@ void SettingsController::OnLlmPresetChangedCallback(Rml::DataModelHandle /*model
   controller.FlushSection("llm");
 }
 
-void SettingsController::OnChooseThemeCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
-                                                 const Rml::VariantList& /*args*/) {
+void SettingsController::OnChooseThemeCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                                 const ui::VariantList& /*args*/) {
   Instance().OnChooseTheme(ev);
 }
 
-void SettingsController::OnChooseTheme(Rml::Event& ev) {
-  const Rml::Vector2i position = ChoiceRowMenuPosition(ev);
+void SettingsController::OnChooseTheme(ui::Event& ev) {
+  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
 
   const std::string current =
       bindings_.appearance.empty() ? "system" : std::string(bindings_.appearance.c_str());
@@ -1317,13 +1322,13 @@ void SettingsController::ApplyThemeChoice(const std::string& appearance_pref) {
   DirtyAll();
 }
 
-void SettingsController::OnChooseLanguageCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
-                                                    const Rml::VariantList& /*args*/) {
+void SettingsController::OnChooseLanguageCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                                    const ui::VariantList& /*args*/) {
   Instance().OnChooseLanguage(ev);
 }
 
-void SettingsController::OnChooseLanguage(Rml::Event& ev) {
-  const Rml::Vector2i position = ChoiceRowMenuPosition(ev);
+void SettingsController::OnChooseLanguage(ui::Event& ev) {
+  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
 
   if (!commands_.language_display_label || !commands_.available_locales) {
     log().warning << "OnChooseLanguage: locale ports not bound";
@@ -1380,13 +1385,13 @@ void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
   DirtyAll();
 }
 
-void SettingsController::OnChooseGroupInvitePolicyCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
-                                                           const Rml::VariantList& /*args*/) {
+void SettingsController::OnChooseGroupInvitePolicyCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                                           const ui::VariantList& /*args*/) {
   Instance().OnChooseGroupInvitePolicy(ev);
 }
 
-void SettingsController::OnChooseGroupInvitePolicy(Rml::Event& ev) {
-  const Rml::Vector2i position = ChoiceRowMenuPosition(ev);
+void SettingsController::OnChooseGroupInvitePolicy(ui::Event& ev) {
+  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
 
   const std::string current = bindings_.group_invite_policy.empty()
                                   ? "contacts_only"
@@ -1424,13 +1429,13 @@ void SettingsController::ApplyGroupInvitePolicyChoice(const std::string& policy)
   DirtyAll();
 }
 
-void SettingsController::OnChooseAttachmentDownloadPolicyCallback(Rml::DataModelHandle /*model*/, Rml::Event& ev,
-                                                                  const Rml::VariantList& /*args*/) {
+void SettingsController::OnChooseAttachmentDownloadPolicyCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                                                  const ui::VariantList& /*args*/) {
   Instance().OnChooseAttachmentDownloadPolicy(ev);
 }
 
-void SettingsController::OnChooseAttachmentDownloadPolicy(Rml::Event& ev) {
-  const Rml::Vector2i position = ChoiceRowMenuPosition(ev);
+void SettingsController::OnChooseAttachmentDownloadPolicy(ui::Event& ev) {
+  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
   const std::string current = bindings_.attachment_download_policy.empty()
                                   ? "smart"
                                   : std::string(bindings_.attachment_download_policy.c_str());
@@ -1479,8 +1484,8 @@ void SettingsController::ApplyAttachmentDownloadPolicyChoice(const std::string& 
   DirtyAll();
 }
 
-void SettingsController::DrainPendingAttachmentMediaCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                             const Rml::VariantList& /*args*/) {
+void SettingsController::DrainPendingAttachmentMediaCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                             const ui::VariantList& /*args*/) {
   Instance().OnDrainPendingAttachmentMedia();
 }
 
@@ -1493,8 +1498,8 @@ void SettingsController::OnDrainPendingAttachmentMedia() {
   UserFeedback::Ok(Tr("settings.storage.pending_media_started"));
 }
 
-void SettingsController::ClearDownloadedAttachmentsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                             const Rml::VariantList& /*args*/) {
+void SettingsController::ClearDownloadedAttachmentsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                             const ui::VariantList& /*args*/) {
   Instance().OnClearDownloadedAttachments();
 }
 
@@ -1562,8 +1567,8 @@ void SettingsController::ApplySupportDiscovery() {
       discovery->display_name.empty() ? Tr("support.entry.title").c_str() : discovery->display_name.c_str();
 }
 
-void SettingsController::OpenSupportChatCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                 const Rml::VariantList& /*args*/) {
+void SettingsController::OpenSupportChatCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                 const ui::VariantList& /*args*/) {
   Instance().OnOpenSupportChat();
 }
 
@@ -1590,13 +1595,13 @@ void SettingsController::OpenNetworkSettings() {
   OnSelectSection("network");
 }
 
-void SettingsController::OnIntegrationsFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                            const Rml::VariantList& /*args*/) {
+void SettingsController::OnIntegrationsFieldChangedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                            const ui::VariantList& /*args*/) {
   Instance().MarkSectionDirty("integrations");
 }
 
-void SettingsController::OnNetworkFieldChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                       const Rml::VariantList& /*args*/) {
+void SettingsController::OnNetworkFieldChangedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                       const ui::VariantList& /*args*/) {
   Instance().MarkSectionDirty("network");
 }
 
@@ -1690,8 +1695,8 @@ void SettingsController::AckReachabilityNudge(const std::string& status_key) {
   }
 }
 
-void SettingsController::ToggleNodeEnabledCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                   const Rml::VariantList& /*args*/) {
+void SettingsController::ToggleNodeEnabledCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                   const ui::VariantList& /*args*/) {
   auto& controller = Instance();
   if (!controller.bindings_.show_node_toggle) {
     return;
@@ -1706,32 +1711,32 @@ void SettingsController::ToggleNodeEnabledCallback(Rml::DataModelHandle /*model*
   controller.DirtyAll();
 }
 
-void SettingsController::RetestReachabilityCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                    const Rml::VariantList& /*args*/) {
+void SettingsController::RetestReachabilityCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                    const ui::VariantList& /*args*/) {
   if (Instance().Commands().run_reachability_probe) {
     Instance().Commands().run_reachability_probe(false);
   }
   Instance().SyncReachability();
 }
 
-void SettingsController::TryUpnpPortCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                             const Rml::VariantList& /*args*/) {
+void SettingsController::TryUpnpPortCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                             const ui::VariantList& /*args*/) {
   if (Instance().Commands().try_upnp_port_mapping) {
     Instance().Commands().try_upnp_port_mapping();
   }
   Instance().SyncReachability();
 }
 
-void SettingsController::ShowReachabilityHelpCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                      const Rml::VariantList& /*args*/) {
+void SettingsController::ShowReachabilityHelpCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                      const ui::VariantList& /*args*/) {
   auto& controller = Instance();
   controller.bindings_.show_reachability_help = true;
   controller.PullBindingsToUiState();
   controller.DirtyAll();
 }
 
-void SettingsController::DismissReachabilityHelpCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                         const Rml::VariantList& /*args*/) {
+void SettingsController::DismissReachabilityHelpCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                         const ui::VariantList& /*args*/) {
   auto& controller = Instance();
   const std::string help_kind = controller.bindings_.reachability_help_kind.c_str();
   controller.bindings_.show_reachability_help = false;
@@ -1742,8 +1747,8 @@ void SettingsController::DismissReachabilityHelpCallback(Rml::DataModelHandle /*
   controller.DirtyAll();
 }
 
-void SettingsController::ToggleCircuitRelayCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                    const Rml::VariantList& /*args*/) {
+void SettingsController::ToggleCircuitRelayCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                    const ui::VariantList& /*args*/) {
   auto& controller = Instance();
   if (!controller.bindings_.show_circuit_relay_toggle) {
     return;
@@ -1755,8 +1760,8 @@ void SettingsController::ToggleCircuitRelayCallback(Rml::DataModelHandle /*model
   controller.DirtyAll();
 }
 
-void SettingsController::ToggleMediaRelayCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                  const Rml::VariantList& /*args*/) {
+void SettingsController::ToggleMediaRelayCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                  const ui::VariantList& /*args*/) {
   auto& controller = Instance();
   if (!controller.bindings_.show_media_relay_toggle) {
     return;
@@ -1768,8 +1773,8 @@ void SettingsController::ToggleMediaRelayCallback(Rml::DataModelHandle /*model*/
   controller.DirtyAll();
 }
 
-void SettingsController::ToggleDhtCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                           const Rml::VariantList& /*args*/) {
+void SettingsController::ToggleDhtCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                           const ui::VariantList& /*args*/) {
   auto& controller = Instance();
   if (!controller.bindings_.show_dht_toggle) {
     return;
@@ -1780,8 +1785,8 @@ void SettingsController::ToggleDhtCallback(Rml::DataModelHandle /*model*/, Rml::
   controller.DirtyAll();
 }
 
-void SettingsController::TogglePreferContactsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                      const Rml::VariantList& /*args*/) {
+void SettingsController::TogglePreferContactsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                      const ui::VariantList& /*args*/) {
   auto& controller = Instance();
   if (!controller.bindings_.show_prefer_contacts_toggle) {
     return;
@@ -1793,14 +1798,14 @@ void SettingsController::TogglePreferContactsCallback(Rml::DataModelHandle /*mod
   controller.DirtyAll();
 }
 
-void SettingsController::OnProfileNicknameCommitCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                         const Rml::VariantList& /*args*/) {
+void SettingsController::OnProfileNicknameCommitCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                         const ui::VariantList& /*args*/) {
   // Persist on blur only when the field differs from last loaded/saved nickname.
   Instance().CommitProfileNickname(/*show_toast=*/false);
 }
 
-void SettingsController::ToggleShowNotificationsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                         const Rml::VariantList& /*args*/) {
+void SettingsController::ToggleShowNotificationsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                         const ui::VariantList& /*args*/) {
   auto& controller = Instance();
   controller.bindings_.show_notifications =
       controller.bindings_.show_notifications == "on" ? "off" : "on";
@@ -1809,8 +1814,8 @@ void SettingsController::ToggleShowNotificationsCallback(Rml::DataModelHandle /*
   controller.DirtyAll();
 }
 
-void SettingsController::ToggleReduceTransparencyCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                          const Rml::VariantList& /*args*/) {
+void SettingsController::ToggleReduceTransparencyCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                          const ui::VariantList& /*args*/) {
   auto& controller = Instance();
   controller.bindings_.reduce_transparency =
       controller.bindings_.reduce_transparency == "on" ? "off" : "on";
@@ -1819,8 +1824,8 @@ void SettingsController::ToggleReduceTransparencyCallback(Rml::DataModelHandle /
   controller.DirtyAll();
 }
 
-void SettingsController::ToggleCallDiagnosticsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                       const Rml::VariantList& /*args*/) {
+void SettingsController::ToggleCallDiagnosticsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                       const ui::VariantList& /*args*/) {
   auto& controller = Instance();
   controller.bindings_.call_diagnostics =
       controller.bindings_.call_diagnostics == "on" ? "off" : "on";
@@ -1829,8 +1834,18 @@ void SettingsController::ToggleCallDiagnosticsCallback(Rml::DataModelHandle /*mo
   controller.DirtyAll();
 }
 
-void SettingsController::ToggleAutoRenewRegistrationCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                             const Rml::VariantList& /*args*/) {
+void SettingsController::ToggleCrashReportsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                    const ui::VariantList& /*args*/) {
+  auto& controller = Instance();
+  controller.bindings_.crash_reports_enabled =
+      controller.bindings_.crash_reports_enabled == "on" ? "off" : "on";
+  controller.PullBindingsToUiState();
+  controller.MarkSectionDirty("security");
+  controller.DirtyAll();
+}
+
+void SettingsController::ToggleAutoRenewRegistrationCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                             const ui::VariantList& /*args*/) {
   auto& controller = Instance();
   controller.bindings_.auto_renew_registration =
       controller.bindings_.auto_renew_registration == "auto" ? "off" : "auto";
@@ -1839,43 +1854,43 @@ void SettingsController::ToggleAutoRenewRegistrationCallback(Rml::DataModelHandl
   controller.DirtyAll();
 }
 
-void SettingsController::OnRegisterProfileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                   const Rml::VariantList& /*args*/) {
+void SettingsController::OnRegisterProfileCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                   const ui::VariantList& /*args*/) {
   Instance().OnRegisterProfile();
 }
 
-void SettingsController::OnRotateBriefLlmKeyCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                     const Rml::VariantList& /*args*/) {
+void SettingsController::OnRotateBriefLlmKeyCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                     const ui::VariantList& /*args*/) {
   Instance().OnRotateBriefLlmKey();
 }
 
-void SettingsController::OnCopyProfileIdCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                 const Rml::VariantList& /*args*/) {
+void SettingsController::OnCopyProfileIdCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                 const ui::VariantList& /*args*/) {
   Instance().OnCopyProfileId();
 }
 
-void SettingsController::OnPickProfileIconCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                   const Rml::VariantList& /*args*/) {
+void SettingsController::OnPickProfileIconCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                   const ui::VariantList& /*args*/) {
   Instance().OnPickProfileIcon();
 }
 
-void SettingsController::OnClearProfileIconCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                    const Rml::VariantList& /*args*/) {
+void SettingsController::OnClearProfileIconCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                    const ui::VariantList& /*args*/) {
   Instance().OnClearProfileIcon();
 }
 
-void SettingsController::OnShareProfileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                const Rml::VariantList& /*args*/) {
+void SettingsController::OnShareProfileCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                const ui::VariantList& /*args*/) {
   Instance().OnShareProfile();
 }
 
-void SettingsController::OnAddMcpServerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                              const Rml::VariantList& /*args*/) {
+void SettingsController::OnAddMcpServerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                              const ui::VariantList& /*args*/) {
   Instance().OnAddMcpServer();
 }
 
-void SettingsController::OnRemoveMcpServerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                   const Rml::VariantList& args) {
+void SettingsController::OnRemoveMcpServerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                   const ui::VariantList& args) {
   if (args.empty()) {
     return;
   }
@@ -1953,7 +1968,7 @@ void SettingsController::OnCopyProfileId() {
     UserFeedback::Fail("No Peer ID yet — register on the network first.");
     return;
   }
-  if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
     system->SetClipboardText(bindings_.profile_peer_id);
   }
   UserFeedback::Ok("Peer ID copied");
@@ -2071,7 +2086,7 @@ void SettingsController::OnShareProfile() {
   if (!relay_id.empty()) {
     invite += " [" + relay_id + "]";
   }
-  if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
     system->SetClipboardText(invite.c_str());
   }
   UserFeedback::Ok("Invite copied");
@@ -2098,23 +2113,23 @@ void SettingsController::OnRemoveMcpServer(const int index) {
   MarkSectionDirty("integrations");
 }
 
-void SettingsController::OnChangePinCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                             const Rml::VariantList& /*args*/) {
+void SettingsController::OnChangePinCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                             const ui::VariantList& /*args*/) {
   Instance().OnChangePin();
 }
 
-void SettingsController::OnExportLinkDeviceCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                    const Rml::VariantList& /*args*/) {
+void SettingsController::OnExportLinkDeviceCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                    const ui::VariantList& /*args*/) {
   Instance().OnExportLinkDevice();
 }
 
-void SettingsController::OnClearUndeliveredCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                    const Rml::VariantList& /*args*/) {
+void SettingsController::OnClearUndeliveredCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                    const ui::VariantList& /*args*/) {
   Instance().OnClearUndeliveredOlderThan();
 }
 
-void SettingsController::OnResetToolPermissionsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                        const Rml::VariantList& /*args*/) {
+void SettingsController::OnResetToolPermissionsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                        const ui::VariantList& /*args*/) {
   Instance().OnResetToolPermissions();
 }
 
@@ -2179,8 +2194,8 @@ void SettingsController::OnClearUndeliveredOlderThan() {
       {});
 }
 
-void SettingsController::OnResetProfileCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                const Rml::VariantList& /*args*/) {
+void SettingsController::OnResetProfileCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                const ui::VariantList& /*args*/) {
   Instance().OnResetProfile();
 }
 
@@ -2278,7 +2293,7 @@ void SettingsController::OnExportLinkDevice() {
                 ReportFailure(result.error());
                 return;
               }
-              if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+              if (ui::SystemInterface* system = ui::GetSystemInterface()) {
                 system->SetClipboardText(result->c_str());
               }
               UserFeedback::Ok(Tr("settings.security.link_device.export_done"));
@@ -2400,11 +2415,11 @@ void SettingsController::RefreshCasLibrary() {
   ui_state_.cas_library_empty_label = Tr("settings.storage.library.empty");
 }
 
-void SettingsController::SetCasLibraryFilterCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
+void SettingsController::SetCasLibraryFilterCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList& args) {
   if (args.empty()) {
     return;
   }
-  Instance().OnSetCasLibraryFilter(args[0].Get<Rml::String>().c_str());
+  Instance().OnSetCasLibraryFilter(args[0].Get<ui::String>().c_str());
 }
 
 void SettingsController::OnSetCasLibraryFilter(const std::string& filter) {
@@ -2416,14 +2431,14 @@ void SettingsController::OnSetCasLibraryFilter(const std::string& filter) {
 }
 
 
-void SettingsController::ShareCasPubliclyCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
+void SettingsController::ShareCasPubliclyCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList& args) {
   if (args.empty()) {
     return;
   }
   Instance().OnShareCasPublicly(args[0].Get<int>());
 }
 
-void SettingsController::UnpublishCasCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
+void SettingsController::UnpublishCasCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList& args) {
   if (args.empty()) {
     return;
   }
@@ -2512,14 +2527,14 @@ void SettingsController::PerformUnpublishCas(const std::string& content_id_hex) 
 
 
 
-void SettingsController::CopyCasTipCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
+void SettingsController::CopyCasTipCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList& args) {
   if (args.empty()) {
     return;
   }
   Instance().OnCopyCasTip(args[0].Get<int>());
 }
 
-void SettingsController::FetchCasTipCallback(Rml::DataModelHandle, Rml::Event&, const Rml::VariantList&) {
+void SettingsController::FetchCasTipCallback(ui::DataModelHandle, ui::Event&, const ui::VariantList&) {
   Instance().OnFetchCasTip();
 }
 
@@ -2532,7 +2547,7 @@ void SettingsController::OnCopyCasTip(const int index) {
     return;
   }
   const std::string tip = FormatCasPublicTip(row.content_id_hex);
-  if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
     system->SetClipboardText(tip.c_str());
   }
   UserFeedback::Ok(Tr("settings.storage.library.copy_tip_done"));

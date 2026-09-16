@@ -103,12 +103,13 @@ void Apply(XxxEvent ev, /* small context */);
 
 | Work | Thread | Rule |
 |------|--------|------|
-| `setProtocolHandler` entry | Host **io** | Hop immediately for any work that might block a pool thread |
-| Call-media hello/ack (stream R/W) | Host **io** (async) | **Never** `BlockingRead`/`BlockingWrite` on WorkerPool — peer may stall forever |
-| Inbound handler / key fill (app logic) | Worker **Normal** | May hop after async hello read; must not hold a live stream wait |
-| Other control RPC still on Blocking* (dial-back, some circuit/relay JSON) | Worker **Normal** | Never Critical; migrate to async+deadline when touched (see remaining work) |
+| `setProtocolHandler` entry | Amp **MeshPump** | Hop immediately for any work that might block a general pool thread |
+| Call-media hello/ack (stream R/W) | Amp pump / async | **Never** `BlockingRead`/`BlockingWrite` on general WorkerPool — peer may stall forever |
+| Inbound handler / key fill (app logic) | Worker **Normal** or MeshControl | May hop after async hello read; must not hold a live stream wait on Critical |
+| Blocking Connect / `IoPumpUntil` facades | **MeshControlPool** (MeshHost-owned) | Interim until async `Connect(cb)` / A022-style callbacks; never park general WorkerPool |
+| Sync L4 RPC wrappers (test/harness façades) | MeshControlPool (default 1) or caller | SoftMigrate/attach/reattach, circuit hop reach, punch, and CallMediaBridge peer-reach product paths are Async; sync wrappers remain for tests |
 | SM `Apply` | **One strand per service** (mutex on Impl or serial queue) | All transitions enter there |
-| Duplex media R/W | Host **io** | Async pump; no BlockingWrite for fan-out |
+| Duplex media R/W | Amp pump | Async pump; no BlockingWrite for fan-out |
 | Product callbacks | Posted off SM strand | SM never calls UI directly |
 | Detach / Stop / ClearInboundHandler | Same SM strand | Completes waiters; **reset** streams; rejects further adopts |
 
@@ -239,13 +240,16 @@ stateDiagram-v2
 
 ### Remaining work (call-media / peer-honesty)
 
-| Item | Why not done yet |
-|------|------------------|
-| **Async `Connect(cb)` API** | Bridge (`CallMediaBridge`) still uses blocking `Connect()` on a worker for retry loops. Sync wait is **local + bounded** (timeout + teardown); stream IO underneath is already async. Changing the bridge API is a larger strangler (s1 freeze kept blocking Connect for s2). |
-| **Inbound handler must not stall Normal** | Handler hop is for key fill / tests; a hostile or buggy handler can still pin a pool thread. Detach/timeout **reset** the stream, but the handler itself is app code — needs a contract (no sleeps; or cancel token) when we next touch inbound key path. |
+Rewrite-debt tracking: [PHASES rd](PHASES.md#rd--amp-call-media-rewrite-debt-v038) / [V038](DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3).
+
+| Item | Status |
+|------|--------|
+| **Async `Connect(cb)` API** | **Landed:** `ICallMediaTransport::ConnectAsync` + `CallMediaBridge` grace/retry via coordinator timers; peer-reach `EnsurePeerReachableAsync` / `TryEnsureCallMediaReachableAsync`. Sync `Connect()` remains for tests/harnesses. |
+| **Inbound handler must not stall Normal** | **Open:** Handler hop is for key fill / tests; a hostile or buggy handler can still pin a pool thread. Detach/timeout **reset** the stream; needs a contract (no sleeps; or cancel token) when we next touch inbound key path. |
 | **`AsyncWriteStreamJson` cancel check** | Writes complete or fail via stream `reset()` on Detach/timeout; no separate cancel predicate. Enough for hello; add if write-queue stalls appear without reset. |
-| **Other protocols still on `Blocking*`** | Dial-back, some circuit / media-relay attach JSON still use WorkerPool `BlockingRead`/`Write`. Migrate when those paths are edited — same peer-honesty rule. Not in call-media SM scope. |
+| **Sync L4 RPC wrappers** | Product SoftMigrate/attach/reattach, circuit hop reach, and CallStack punch use Async. Sync façades remain for tests/harnesses (empty-pump park). |
 | **Dual-dial glare** | Higher PeerId keeps outbound; lower PeerId yields to inbound. `DualDialExactlyOneAdoptEachSide` guards a shared duplex (audio round-trip). |
+| **s4 circuit bridge SM** | Optional — only if Leave/abort hangs block dogfood (V038 D4). |
 
 ---
 
@@ -298,6 +302,46 @@ Defer unless bridge bugs block dogfood. Sketch only: `Admit → DialTarget → O
 
 ---
 
+## Planner machines (V039)
+
+Product Status (V037) arms **one** planner. Planners are Apply-based FSMs above transport SMs.
+
+```mermaid
+flowchart TB
+  Life[CallLifecycle Apply]
+  Direct[CallMediaBridge Direct Apply]
+  Hop[CallTopologyController Hop Apply]
+  Xport[CallMediaDirectService SM]
+  Relay[MediaRelay attach SM]
+  Life -->|DirectStar| Direct
+  Life -->|HopStar_Migrating| Hop
+  Direct --> Xport
+  Hop --> Relay
+```
+
+### Frozen open questions (pm0)
+
+| Question | Decision |
+|----------|----------|
+| Planner Apply strand | **UI** for product callbacks (PostUIFront); transport MeshPump / MeshControl |
+| Failed planner | Report once → Lifecycle Failed / ConnectFailedEvt; do not stick |
+| SoftMigrate during Direct Connecting | Lifecycle Deciding bumps `media_cancel_gen`; Direct ignores late Connect; Hop owns attach |
+| Epochs | Lifecycle `media_cancel_gen` cross-planner; Bridge `connect_generation_` / Topology `migrate_generation_` attempt-local |
+| Class names | Keep `CallMediaBridge` / `CallTopologyController` (no rename campaign) |
+| UI Poll* | **Removed** from CallController tick — Direct health timer + Hop attach-wait timer only |
+
+### Direct planner phases
+
+`Idle` → `Arming` → `KeyWait` | `Connecting` → `Live` | `DegradedTxOnly` → `Stopping` → `Idle`.
+
+### Hop planner phases
+
+`Idle` → `WaitingAttach` | `Migrating` | `Attaching` → `Live` → `Stopping` → `Idle`.
+
+Event catalogs and phase checklist: [DECISIONS V039](DECISIONS.md#v039--call-directhop-planner-machines); delivery [PHASES pm](PHASES.md#pm--call-planner-machines-v039).
+
+---
+
 ## Success criteria
 
 | Signal | Meaning |
@@ -307,3 +351,4 @@ Defer unless bridge bugs block dogfood. Sketch only: `Admit → DialTarget → O
 | Unit tests for illegal event sequences | Faked streams; no full mesh |
 | CALLS.md critical races point at SM phases | Races have a home |
 | Dogfood intent unchanged | Robustness without feature churn |
+| Planner logs `planner=Direct\|Hop phase=… event=…` | Product media path triage without Bridge/Topology archaeology |

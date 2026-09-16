@@ -55,7 +55,7 @@ pp_browser_add_feature_library(pp_gui
     pp_feature_conversations
     pp_foundation_platform
     pp_domain_ui
-    RmlUi::Core)
+    ui::core)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

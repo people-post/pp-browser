@@ -119,10 +119,17 @@ protected:
     }
   };
 
-  Roe<void> EstablishNestedCallMediaPath() {
+  /**
+   * @param peer_id_only when true, omit target_multiaddr (hop must already know B — warm path).
+   * @param override_multiaddr when set (and not peer_id_only), send this MA to the hop (poison probe).
+   */
+  Roe<void> EstablishNestedCallMediaPath(bool peer_id_only = false,
+                                         const std::string& override_multiaddr = {}) {
     CircuitBridgeTarget target;
     target.target_peer_id = harness_->peer_id_b;
-    target.target_multiaddr = harness_->ma_b;
+    if (!peer_id_only) {
+      target.target_multiaddr = override_multiaddr.empty() ? harness_->ma_b : override_multiaddr;
+    }
     target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
 
     Wait<CircuitTunnelBridgeResult> bridge_wait;
@@ -302,6 +309,96 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedEncryptedVideoOver16KiB) {
   EXPECT_EQ(received, video);
 
   a_call_->DetachLeg(leg_id);
+}
+
+/** Double-NAT dogfood pattern: B holds Session to R before A StartBridge. */
+TEST_F(AmpCircuitCallMediaComposeTest, BridgeAfterAnswererWarmToRelay) {
+  Wait<void> b_assoc;
+  harness_->mgr_b().EnsureAssociation("relay", b_assoc.LinkFn());
+  b_assoc.PumpUntilDone(*harness_);
+  ASSERT_TRUE(b_assoc.result) << b_assoc.result.error().message;
+  ASSERT_TRUE(harness_->mgr_b().IsConnected("relay"));
+  ASSERT_TRUE(harness_->mgr_r().FindLinkByPeerId(harness_->peer_id_b) != nullptr);
+
+  Wait<void> a_assoc;
+  harness_->mgr_a().EnsureAssociation("relay", a_assoc.LinkFn());
+  a_assoc.PumpUntilDone(*harness_);
+  ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
+
+  auto nested = EstablishNestedCallMediaPath();
+  ASSERT_TRUE(nested) << nested.error().message;
+  EXPECT_TRUE(harness_->mgr_a().IsConnected(harness_->peer_id_b));
+}
+
+/**
+ * hard-w5 Phase-2 regression: dialer has a private punch-synced advertise MA for B.
+ * Peer-id-only StartBridge must not send that MA to the hop (hop book stays SNAT/public).
+ */
+TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyNestDoesNotPoisonRelayBookWithPrivateMa) {
+  Wait<void> b_assoc;
+  harness_->mgr_b().EnsureAssociation("relay", b_assoc.LinkFn());
+  b_assoc.PumpUntilDone(*harness_);
+  ASSERT_TRUE(b_assoc.result) << b_assoc.result.error().message;
+  ASSERT_TRUE(harness_->mgr_r().FindLinkByPeerId(harness_->peer_id_b) != nullptr);
+
+  Wait<void> a_assoc;
+  harness_->mgr_a().EnsureAssociation("relay", a_assoc.LinkFn());
+  a_assoc.PumpUntilDone(*harness_);
+  ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
+
+  const std::string private_ma =
+      "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_b, private_ma)));
+  ASSERT_EQ(harness_->mgr_a().PreferredMultiaddr(harness_->peer_id_b).value_or(""), private_ma);
+
+  const auto relay_ma_before = harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b);
+  ASSERT_TRUE(relay_ma_before.has_value());
+  EXPECT_EQ(*relay_ma_before, harness_->ma_b);
+
+  auto nested = EstablishNestedCallMediaPath(/*peer_id_only=*/true);
+  ASSERT_TRUE(nested) << nested.error().message;
+  EXPECT_TRUE(harness_->mgr_a().IsConnected(harness_->peer_id_b));
+
+  const auto relay_ma_after = harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b);
+  ASSERT_TRUE(relay_ma_after.has_value());
+  EXPECT_EQ(*relay_ma_after, harness_->ma_b)
+      << "hop book must stay dialable; private punch MA must not overwrite";
+}
+
+/**
+ * Contrast: sending private target_multiaddr makes the hop RegisterEndpoint that MA
+ * (book overwrite). Do not wait for dial timeout — only assert the poison write.
+ */
+TEST_F(AmpCircuitCallMediaComposeTest, PrivateTargetMultiaddrPoisonsRelayBook) {
+  Wait<void> a_assoc;
+  harness_->mgr_a().EnsureAssociation("relay", a_assoc.LinkFn());
+  a_assoc.PumpUntilDone(*harness_);
+  ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
+
+  const std::string private_ma =
+      "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  ASSERT_EQ(harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b).value_or(""), harness_->ma_b);
+
+  CircuitBridgeTarget target;
+  target.target_peer_id = harness_->peer_id_b;
+  target.target_multiaddr = private_ma;
+  target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
+
+  Wait<CircuitTunnelBridgeResult> bridge_wait;
+  auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 500);
+  ASSERT_TRUE(static_cast<bool>(tunnel_id));
+  // Pump long enough for the hop to apply target_multiaddr RegisterEndpoint.
+  harness_->PumpUntil(
+      [&] {
+        const auto ma = harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b);
+        return ma && *ma == private_ma;
+      },
+      800);
+  circuit_a_->CancelTunnel(tunnel_id);
+
+  const auto relay_ma = harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b);
+  ASSERT_TRUE(relay_ma.has_value());
+  EXPECT_EQ(*relay_ma, private_ma) << "documents hop-book overwrite (hard-w5 poison mode)";
 }
 
 } // namespace

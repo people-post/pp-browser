@@ -2,13 +2,15 @@
 
 > **2026-09:** Product mesh is Amp-only; hop reachability uses `AmpCircuitHopReach` + `MeshHost::CircuitDeps()`. Hole punch planned as **Amp Coordinated Punch** ([HOLE_PUNCH.md](HOLE_PUNCH.md), H009) — not libp2p DCUtR. See [MESH.md](../../docs/architecture/MESH.md).
 
-**Last updated:** 2026-09-04 (L3.25c complete)
+**Last updated:** 2026-09-14 (Client circuit consume decoupled from host flag)
 
 ## Direction
 
 Hop **reachability** = **Amp mesh stack work** (H001/H007). App-layer `call_hop_addrs` prototype **removed**; do not re-land without ADR. Preference: **publish → punch → circuit → fail** (H002).
 
 **Spec:** [DESIGN.md](DESIGN.md) (concept-first). **Build order:** [PHASES.md](PHASES.md).
+
+`CallStack` builds `AmpCircuitHopReach` whenever Amp circuit tunnel is started — **not** gated on `capabilities.circuit_relay` (that flag is Node hosting only).
 
 ## Landed
 
@@ -20,6 +22,7 @@ Hop **reachability** = **Amp mesh stack work** (H001/H007). App-layer `call_hop_
 | **L2 advertised listen set** | Amp ch0 + dial-back / UPnP-derived ads |
 | **L3 circuit PeerId dial** | Circuit tunnel / hop reach — **single-hop**; SoftMigrate circuit fallback via `ICircuitHopReach` / `AmpCircuitHopReach` |
 | **L3 compose (loopback)** | Shared loopback partition fixture; call-media via R; media_relay quote/attach/fan-out via R |
+| **Circuit reserve** | `op=reserve` + `StartReserve` — answerer parks on org seed so R need not dial into NAT |
 
 ## In progress / gaps
 
@@ -40,7 +43,7 @@ Hop **reachability** = **Amp mesh stack work** (H001/H007). App-layer `call_hop_
 | Amp underlay | pp-cpp-amp (`PeerLink`, keepalive, `MaybeLearnPath`) |
 | Hop reach helper | `AmpCircuitHopReach` |
 | Partition compose tests | `src/domain/mesh/tests/` (`amp_circuit_*_compose_test`, loopback fixture) |
-| Hard lab (forced A↛B nets) | Design: [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); delivery [hard-lab](../hard-lab/) — not implemented |
+| Hard lab (forced A↛B nets) | Design: [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); delivery [hard-lab](../hard-lab/) — Wave 1–2 scaffold |
 
 ## Next
 

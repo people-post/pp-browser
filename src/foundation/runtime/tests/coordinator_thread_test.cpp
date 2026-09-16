@@ -121,3 +121,36 @@ TEST(CoordinatorThreadTest, ShutdownJoinsCleanly) {
   coordinator.Shutdown();
   SUCCEED();
 }
+
+TEST(CoordinatorThreadTest, ShutdownBudgetDetachesStuckHandler) {
+  CoordinatorThread coordinator;
+  coordinator.Start();
+
+  std::mutex mu;
+  std::condition_variable cv;
+  bool release_handler = false;
+  std::atomic<bool> entered{false};
+
+  coordinator.Post(CoordinatorPriority::Normal, [&]() {
+    entered.store(true);
+    std::unique_lock lock(mu);
+    cv.wait(lock, [&]() { return release_handler; });
+  });
+
+  WaitUntil([&]() { return entered.load(); }, std::chrono::milliseconds(2000));
+  ASSERT_TRUE(entered.load());
+
+  const auto t0 = std::chrono::steady_clock::now();
+  const bool ok = coordinator.Shutdown(std::chrono::milliseconds(80));
+  const auto elapsed = std::chrono::steady_clock::now() - t0;
+  EXPECT_FALSE(ok);
+  EXPECT_LT(elapsed, std::chrono::milliseconds(500));
+
+  {
+    std::lock_guard lock(mu);
+    release_handler = true;
+  }
+  cv.notify_all();
+  // Detached thread must finish so the test process does not hang on exit.
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+}

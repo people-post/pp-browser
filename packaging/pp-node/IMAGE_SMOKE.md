@@ -15,7 +15,7 @@ Automated checks for a **running** `pp-node` (Docker image, compose, or bare bin
 | **N-CAP-CIRCUIT** | Concurrent circuit bridges vs packaged hop | `pp-node-probe --mode circuit-cap` + `scripts/test/pp_node_circuit_cap_smoke.sh` | **Done** (soft SLO M≤4) |
 | **N-SOAK / N-CHAOS** | Churn + restart/kill | `--suite soak` / `--suite chaos` | **Done** (not PR-blocking) |
 | **N-MIX / B-MIX** | Parallel allowlisted smokes (interference) | `--suite mix` | **Done** (nightly; not in `all`) |
-| **Hard lab** | Forced A↛B nets + impairments / discovery (Tier C) | [HARD_LAB.md](HARD_LAB.md) + `--suite hard` | **Wave 1 scaffold** (force + call + msg-call); Wave 2+ open |
+| **Hard lab** | Forced A↛B nets + impairments / discovery (Tier C) | [HARD_LAB.md](HARD_LAB.md) + `--suite hard` / `hard-w2` / `hard-w3` | **Wave 1–3 (STALE/SEED) scaffold**; DIR/DHT/ADMIT + Wave 4+ open |
 
 ## CI / release
 
@@ -66,6 +66,8 @@ PP_NODE_STATUS_URL=http://127.0.0.1:18518 ./scripts/test/pp_node_image_smoke.sh
 
 # Caps intentionally off:
 ./scripts/test/pp_node_image_smoke.sh --expect-circuit=0 --expect-media=0
+
+Org / production seed images should keep **circuit + media on** (`--expect-circuit=1 --expect-media=1` or defaults from compose). `NodeBootstrap` sets an explicit **Public|Org** serve mask so stranger dialers are admitted without relying on an empty contact set.
 ```
 
 Asserts: `ok`/`host_running`, non-empty `peer_id` + Amp ADP `listen` (`/udp/…/adp/…`), expected boolean caps. Optional Bearer negative check when `PP_NODE_STATUS_TOKEN` is set.

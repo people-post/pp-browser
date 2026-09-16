@@ -12,9 +12,9 @@
 #include "gui/shell/ShellNavigationPorts.h"
 #include "gui/UnlockEnsurePorts.h"
 
-#include <RmlUi/Core/DataModelHandle.h>
-#include <RmlUi/Core/Event.h>
-#include <RmlUi/Core/Types.h>
+#include <ui/data/DataModelHandle.h>
+#include <ui/dom/Event.h>
+#include <ui/base/Types.h>
 
 #include <string>
 #include <unordered_map>
@@ -22,7 +22,7 @@
 #include <vector>
 #include "common/PbrCompat.h"
 
-namespace Rml {
+namespace ui {
 class Context;
 }
 
@@ -52,18 +52,18 @@ public:
   void BindSurfaceNotify(PeoplePickerSurfaceNotifyPorts ports);
 
   struct PickerRow {
-    Rml::String id;
-    Rml::String title;
-    Rml::String subtitle;
+    ui::String id;
+    ui::String title;
+    ui::String subtitle;
     bool selected = false;
     bool locked = false;
   };
 
   struct MemberSummaryRow {
-    Rml::String title;
+    ui::String title;
   };
 
-  bool RegisterModel(Rml::Context* context);
+  bool RegisterModel(ui::Context* context);
 
   /** Sessions + / Message a contact: 1→DM, 2+→group. */
   void OpenFree();
@@ -80,12 +80,12 @@ public:
   void Close();
 
 private:
-  static void ToggleContactCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnSearchChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ConfirmCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CancelCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void BackCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void CreateGroupCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ToggleContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnSearchChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ConfirmCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CancelCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void BackCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CreateGroupCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
   void Open(PeoplePickerMode mode, std::unordered_set<std::string> locked_ids);
   void SyncRows();
@@ -119,7 +119,7 @@ private:
   bool MessagingInitialized() const;
   bool MessagingReady() const;
 
-  Rml::Context* context_ = nullptr;
+  ui::Context* context_ = nullptr;
   int layer_id_ = -1;
   PeoplePickerMode mode_ = PeoplePickerMode::Free;
   std::unordered_set<std::string> locked_ids_;
@@ -127,13 +127,13 @@ private:
   std::vector<std::string> pending_member_ids_;
   std::vector<PickerRow> rows_;
   std::vector<MemberSummaryRow> member_summary_;
-  Rml::String search_query_;
-  Rml::String title_;
-  Rml::String step_;
-  Rml::String group_title_;
-  Rml::String group_title_help_;
-  Rml::String cta_label_;
-  Rml::String empty_hint_;
+  ui::String search_query_;
+  ui::String title_;
+  ui::String step_;
+  ui::String group_title_;
+  ui::String group_title_help_;
+  ui::String cta_label_;
+  ui::String empty_hint_;
   bool cta_enabled_ = false;
   MessagingContactsPorts contacts_ports_;
   MessagingPeoplePickerPorts picker_ports_;

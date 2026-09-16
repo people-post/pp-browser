@@ -1,16 +1,17 @@
 #include "foundation/platform/ui/RmlUi_Backend.h"
-#include "RmlUi_Platform_SDL.h"
-#include "RmlUi_Renderer_GL3.h"
+#include "foundation/runtime/AppRuntime.h"
+#include <ui/platform/Platform_SDL.h>
+#include <ui/render/Renderer_GL3.h>
 #include "TextLoupeRenderer.h"
 #include "CallVideoTileRenderer.h"
 #include "TouchSimOverlay.h"
-#include "GlBackend.h"
+#include <ui/render/GlBackend.h>
 #include "MobileGlLifecycle.h"
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Core.h>
-#include <RmlUi/Core/FileInterface.h>
-#include <RmlUi/Core/Log.h>
-#include <RmlUi/Core/Profiling.h>
+#include <ui/dom/Context.h>
+#include <ui/Core.h>
+#include <ui/base/FileInterface.h>
+#include <ui/base/Log.h>
+#include <ui/base/Profiling.h>
 
 #include <atomic>
 #include <cmath>
@@ -28,7 +29,7 @@
 	#include <SDL_image.h>
 #endif
 
-#if defined RMLUI_PLATFORM_EMSCRIPTEN
+#if defined UI_PLATFORM_EMSCRIPTEN
 	#include <emscripten.h>
 #elif SDL_MAJOR_VERSION == 2 && !(SDL_VIDEO_RENDER_OGL)
 	#error "Only the OpenGL SDL backend is supported."
@@ -43,10 +44,10 @@ class RenderInterface_GL3_SDL : public RenderInterface_GL3 {
 public:
 	RenderInterface_GL3_SDL() {}
 
-	Rml::TextureHandle LoadTexture(Rml::Vector2i& texture_dimensions, const Rml::String& source) override
+	ui::TextureHandle LoadTexture(ui::Vector2i& texture_dimensions, const ui::String& source) override
 	{
-		Rml::FileInterface* file_interface = Rml::GetFileInterface();
-		Rml::FileHandle file_handle = file_interface->Open(source);
+		ui::FileInterface* file_interface = ui::GetFileInterface();
+		ui::FileHandle file_handle = file_interface->Open(source);
 		if (!file_handle)
 			return {};
 
@@ -54,13 +55,13 @@ public:
 		const size_t buffer_size = file_interface->Tell(file_handle);
 		file_interface->Seek(file_handle, 0, SEEK_SET);
 
-		using Rml::byte;
-		Rml::UniquePtr<byte[]> buffer(new byte[buffer_size]);
+		using ui::byte;
+		ui::UniquePtr<byte[]> buffer(new byte[buffer_size]);
 		file_interface->Read(buffer.get(), buffer_size, file_handle);
 		file_interface->Close(file_handle);
 
 		const size_t i_ext = source.rfind('.');
-		Rml::String extension = (i_ext == Rml::String::npos ? Rml::String() : source.substr(i_ext + 1));
+		ui::String extension = (i_ext == ui::String::npos ? ui::String() : source.substr(i_ext + 1));
 
 #if SDL_MAJOR_VERSION >= 3
 		auto CreateSurface = [&]() { return IMG_LoadTyped_IO(SDL_IOFromMem(buffer.get(), int(buffer_size)), 1, extension.c_str()); };
@@ -101,7 +102,7 @@ public:
 				pixels[i + j] = byte(int(pixels[i + j]) * int(alpha) / 255);
 		}
 
-		Rml::TextureHandle texture_handle = RenderInterface_GL3::GenerateTexture({pixels, pixels_byte_size}, texture_dimensions);
+		ui::TextureHandle texture_handle = RenderInterface_GL3::GenerateTexture({pixels, pixels_byte_size}, texture_dimensions);
 
 		DestroySurface(surface);
 
@@ -127,11 +128,11 @@ struct BackendData {
 	/** Cross-thread: RequestForceFrame / SyncContext may set from any thread. */
 	std::atomic<bool> force_next_frame{false};
 };
-static Rml::UniquePtr<BackendData> data;
+static ui::UniquePtr<BackendData> data;
 #if SDL_MAJOR_VERSION >= 3
 static PreProcessEventCallback g_pre_process_event = nullptr;
 static LiveResizeRedrawCallback g_live_resize_redraw = nullptr;
-static Rml::Context* g_live_resize_context = nullptr;
+static ui::Context* g_live_resize_context = nullptr;
 static bool g_in_live_resize_redraw = false;
 static int g_live_resize_last_pixel_w = 0;
 static int g_live_resize_last_pixel_h = 0;
@@ -220,7 +221,7 @@ static std::atomic<bool> g_wake_pending{false};
 
 bool Backend::Initialize(const char* window_name, int width, int height, bool allow_resize, bool borderless)
 {
-	RMLUI_ASSERT(!data);
+	UI_ASSERT(!data);
 
 	// Mobile: lock UI to portrait so rotation does not tear down EGL / reshape the
 	// shell mid-frame (and so in-call video avoids orientation-related crashes).
@@ -233,12 +234,12 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	// Audio is initialized on demand by CallMediaEngine (a2); do not fail window
 	// bring-up if Pulse/ALSA is missing on a headless or minimal host.
 	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
-		Rml::Log::Message(Rml::Log::LT_ERROR, "SDL_Init failed: %s", SDL_GetError());
+		ui::Log::Message(ui::Log::LT_ERROR, "SDL_Init failed: %s", SDL_GetError());
 		return false;
 	}
 #else
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0) {
-		Rml::Log::Message(Rml::Log::LT_ERROR, "SDL_Init failed: %s", SDL_GetError());
+		ui::Log::Message(ui::Log::LT_ERROR, "SDL_Init failed: %s", SDL_GetError());
 		return false;
 	}
 #endif
@@ -251,7 +252,7 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	// Touch events are handled natively, no need to generate synthetic mouse events for touch devices.
 	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
 
-#if defined RMLUI_BACKEND_SIMULATE_TOUCH
+#if defined UI_BACKEND_SIMULATE_TOUCH
 	// Simulate touch events from mouse events for testing touch behavior on a desktop machine.
 	SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "1");
 #endif
@@ -293,20 +294,20 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 
 	if (!window)
 	{
-		Rml::Log::Message(Rml::Log::LT_ERROR, "SDL error on create window: %s", SDL_GetError());
+		ui::Log::Message(ui::Log::LT_ERROR, "SDL error on create window: %s", SDL_GetError());
 		return false;
 	}
 
 	SDL_GLContext glcontext = SDL_GL_CreateContext(window);
 	if (!glcontext)
 	{
-		Rml::Log::Message(Rml::Log::LT_ERROR, "SDL error on create GL context: %s", SDL_GetError());
+		ui::Log::Message(ui::Log::LT_ERROR, "SDL error on create GL context: %s", SDL_GetError());
 		SDL_DestroyWindow(window);
 		return false;
 	}
 	if (!SDL_GL_MakeCurrent(window, glcontext))
 	{
-		Rml::Log::Message(Rml::Log::LT_ERROR, "SDL error on MakeCurrent: %s", SDL_GetError());
+		ui::Log::Message(ui::Log::LT_ERROR, "SDL error on MakeCurrent: %s", SDL_GetError());
 		SDL_GL_DestroyContext(glcontext);
 		SDL_DestroyWindow(window);
 		return false;
@@ -315,16 +316,16 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 
 	if (!RmlGL3::Initialize())
 	{
-		Rml::Log::Message(Rml::Log::LT_ERROR, "Failed to initialize OpenGL renderer");
+		ui::Log::Message(ui::Log::LT_ERROR, "Failed to initialize OpenGL renderer");
 		return false;
 	}
 
-	data = Rml::MakeUnique<BackendData>();
+	data = ui::MakeUnique<BackendData>();
 
 	if (!data->render_interface)
 	{
 		data.reset();
-		Rml::Log::Message(Rml::Log::LT_ERROR, "Failed to initialize OpenGL3 render interface");
+		ui::Log::Message(ui::Log::LT_ERROR, "Failed to initialize OpenGL3 render interface");
 		return false;
 	}
 
@@ -344,7 +345,7 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	MobileGlLifecycle::InitIosDrawableFromWindow(window, data->uikit_framebuffer, data->uikit_renderbuffer);
 	if (data->uikit_framebuffer != 0) {
 		data->render_interface.SetOutputFramebuffer(data->uikit_framebuffer);
-		Rml::Log::Message(Rml::Log::LT_ERROR, "iOS drawable FBO=%u RBO=%u", data->uikit_framebuffer,
+		ui::Log::Message(ui::Log::LT_ERROR, "iOS drawable FBO=%u RBO=%u", data->uikit_framebuffer,
 			data->uikit_renderbuffer);
 	}
 #endif
@@ -358,7 +359,7 @@ bool Backend::Initialize(const char* window_name, int width, int height, bool al
 	return true;
 }
 
-void Backend::SyncContext(Rml::Context* context)
+void Backend::SyncContext(ui::Context* context)
 {
 	if (!data || !context)
 		return;
@@ -367,11 +368,11 @@ void Backend::SyncContext(Rml::Context* context)
 	int pixel_w = 0;
 	int pixel_h = 0;
 	SDL_GetWindowSizeInPixels(data->window, &pixel_w, &pixel_h);
-	context->SetDimensions(Rml::Vector2i(pixel_w, pixel_h));
+	context->SetDimensions(ui::Vector2i(pixel_w, pixel_h));
 	context->SetDensityIndependentPixelRatio(SDL_GetWindowDisplayScale(data->window));
 	data->render_interface.SetViewport(pixel_w, pixel_h);
 	data->force_next_frame.store(true, std::memory_order_release);
-	Rml::Log::Message(Rml::Log::LT_DEBUG, "SyncContext: %dx%d scale=%.3f", pixel_w, pixel_h,
+	ui::Log::Message(ui::Log::LT_DEBUG, "SyncContext: %dx%d scale=%.3f", pixel_w, pixel_h,
 		SDL_GetWindowDisplayScale(data->window));
 #else
 	(void)context;
@@ -384,7 +385,7 @@ void Backend::SetPreProcessEventHandler(PreProcessEventCallback callback)
 	g_pre_process_event = callback;
 }
 
-void Backend::SetLiveResizeHandler(Rml::Context* context, LiveResizeRedrawCallback callback)
+void Backend::SetLiveResizeHandler(ui::Context* context, LiveResizeRedrawCallback callback)
 {
 	g_live_resize_context = context;
 	g_live_resize_redraw = callback;
@@ -397,7 +398,7 @@ SDL_Window* Backend::GetWindow()
 	return data ? data->window : nullptr;
 }
 
-void Backend::RecoverAfterDeviceReset(Rml::Context* context)
+void Backend::RecoverAfterDeviceReset(ui::Context* context)
 {
 	if (!data)
 		return;
@@ -408,12 +409,12 @@ void Backend::RecoverAfterDeviceReset(Rml::Context* context)
 	else if (data->glcontext)
 		SDL_GL_MakeCurrent(data->window, data->glcontext);
 
-	Rml::Log::Message(Rml::Log::LT_WARNING, "Recovering GPU resources after RENDER_DEVICE_RESET");
+	ui::Log::Message(ui::Log::LT_WARNING, "Recovering GPU resources after RENDER_DEVICE_RESET");
 
 	// Drop RmlUi-owned GPU caches first (stale GL names), then rebuild renderer objects.
-	Rml::ReleaseTextures(&data->render_interface);
-	Rml::ReleaseCompiledGeometry(&data->render_interface);
-	Rml::ReleaseFontResources();
+	ui::ReleaseTextures(&data->render_interface);
+	ui::ReleaseCompiledGeometry(&data->render_interface);
+	ui::ReleaseFontResources();
 
 	TextLoupeRenderer::ReleaseGpuResources();
 	pbr::CallVideoTileRenderer::Instance().ReleaseGpuResources();
@@ -455,7 +456,7 @@ bool Backend::CanRender()
 
 void Backend::Shutdown()
 {
-	RMLUI_ASSERT(data);
+	UI_ASSERT(data);
 
 	TouchSimOverlay::Shutdown();
 
@@ -480,23 +481,23 @@ void Backend::Shutdown()
 	SDL_Quit();
 }
 
-Rml::SystemInterface* Backend::GetSystemInterface()
+ui::SystemInterface* Backend::GetSystemInterface()
 {
-	RMLUI_ASSERT(data);
+	UI_ASSERT(data);
 	return &data->system_interface;
 }
 
-Rml::RenderInterface* Backend::GetRenderInterface()
+ui::RenderInterface* Backend::GetRenderInterface()
 {
-	RMLUI_ASSERT(data);
+	UI_ASSERT(data);
 	return &data->render_interface;
 }
 
-bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_callback, bool power_save)
+bool Backend::ProcessEvents(ui::Context* context, KeyDownCallback key_down_callback, bool power_save)
 {
-	RMLUI_ASSERT(data && context);
+	UI_ASSERT(data && context);
 
-#if defined RMLUI_PLATFORM_EMSCRIPTEN
+#if defined UI_PLATFORM_EMSCRIPTEN
 
 	// Ideally we would hand over control of the main loop to emscripten:
 	//
@@ -619,7 +620,7 @@ bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_call
 				}
 			}
 #endif
-			const Rml::Input::KeyIdentifier key = RmlSDL::ConvertKey(GetKey(ev));
+			const ui::Input::KeyIdentifier key = RmlSDL::ConvertKey(GetKey(ev));
 			const int key_modifier = RmlSDL::GetKeyModifierState();
 			const float native_dp_ratio = GetDisplayScale();
 
@@ -678,12 +679,24 @@ bool Backend::ProcessEvents(Rml::Context* context, KeyDownCallback key_down_call
 
 void Backend::RequestExit()
 {
-	RMLUI_ASSERT(data);
+	UI_ASSERT(data);
 
 	data->running = false;
+	// Close feel: hide before Application::Shutdown joins mesh/runtime (can take hundreds of ms).
+	HideWindow();
+	// Arm quit deadline / watchdog as soon as the user closes (Application::Shutdown is idempotent).
+	pbr::AppRuntime::BeginShutdown();
 	// Unblock SDL_WaitEventTimeout in ProcessEvents so titlebar close is not capped
 	// by the power-save idle wait (up to 2s).
 	WakeEventLoop();
+}
+
+void Backend::HideWindow()
+{
+	if (!data || !data->window) {
+		return;
+	}
+	SDL_HideWindow(data->window);
 }
 
 void Backend::WakeEventLoop()
@@ -718,7 +731,7 @@ void Backend::RequestForceFrame()
 
 void Backend::BeginFrame()
 {
-	RMLUI_ASSERT(data);
+	UI_ASSERT(data);
 #if SDL_MAJOR_VERSION >= 3
 	if (data->glcontext && SDL_GL_GetCurrentContext() != data->glcontext)
 		SDL_GL_MakeCurrent(data->window, data->glcontext);
@@ -730,7 +743,7 @@ void Backend::BeginFrame()
 
 void Backend::PresentFrame()
 {
-	RMLUI_ASSERT(data);
+	UI_ASSERT(data);
 
 	data->render_interface.EndFrame();
 
@@ -748,5 +761,5 @@ void Backend::PresentFrame()
 	SDL_GL_SwapWindow(data->window);
 
 	// Optional, used to mark frames during performance profiling.
-	RMLUI_FrameMark;
+	UI_FrameMark;
 }

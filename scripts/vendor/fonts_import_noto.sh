@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
-# Download Noto Sans CJK Regular + Noto Color Emoji into assets/fonts/.
+# Download Noto Sans CJK Regular (shared OTC) + Noto Color Emoji into assets/fonts/.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FONTS="${ROOT}/assets/fonts"
-TMP="${ROOT}/.fonts_import_tmp"
 NOTO_CJK_REF="main"
-NOTO_CJK_BASE="https://github.com/notofonts/noto-cjk/raw/${NOTO_CJK_REF}/Sans/OTF"
+NOTO_CJK_OTC_URL="https://github.com/notofonts/noto-cjk/raw/${NOTO_CJK_REF}/Sans/OTC/NotoSansCJK-Regular.ttc"
 NOTO_COLOR_EMOJI_URL="https://github.com/googlefonts/noto-emoji/raw/main/fonts/NotoColorEmoji.ttf"
 NOTO_COLOR_EMOJI_LICENSE_URL="https://raw.githubusercontent.com/googlefonts/noto-emoji/main/fonts/LICENSE"
 
-mkdir -p "${FONTS}" "${TMP}"
+mkdir -p "${FONTS}"
 
 download() {
   local url="$1"
@@ -24,11 +23,16 @@ download() {
   mv "${dest}.part" "${dest}"
 }
 
-echo "==> Noto Sans CJK Regular (SC/JP/KR/TC)"
-download "${NOTO_CJK_BASE}/SimplifiedChinese/NotoSansCJKsc-Regular.otf" "${FONTS}/NotoSansCJKsc-Regular.otf"
-download "${NOTO_CJK_BASE}/Japanese/NotoSansCJKjp-Regular.otf" "${FONTS}/NotoSansCJKjp-Regular.otf"
-download "${NOTO_CJK_BASE}/Korean/NotoSansCJKkr-Regular.otf" "${FONTS}/NotoSansCJKkr-Regular.otf"
-download "${NOTO_CJK_BASE}/TraditionalChinese/NotoSansCJKtc-Regular.otf" "${FONTS}/NotoSansCJKtc-Regular.otf"
+echo "==> Noto Sans CJK Regular (shared OTC: JP/KR/SC/TC/HK + Mono)"
+download "${NOTO_CJK_OTC_URL}" "${FONTS}/NotoSansCJK-Regular.ttc"
+
+# Remove superseded per-language OTFs (outlines were duplicated ~4x on disk).
+for old in NotoSansCJKsc-Regular.otf NotoSansCJKjp-Regular.otf NotoSansCJKkr-Regular.otf NotoSansCJKtc-Regular.otf; do
+  if [[ -f "${FONTS}/${old}" ]]; then
+    echo "  remove superseded: ${old}"
+    rm -f "${FONTS}/${old}"
+  fi
+done
 
 echo "==> Noto Color Emoji (CBDT)"
 download "${NOTO_COLOR_EMOJI_URL}" "${FONTS}/NotoColorEmoji.ttf"
@@ -39,7 +43,7 @@ fi
 # Keep monochrome face as secondary fallback for environments without color glyphs.
 echo "==> Noto Emoji monochrome (secondary fallback)"
 if [[ ! -f "${FONTS}/NotoEmoji-Regular.ttf" ]]; then
-  cp "${ROOT}/src/lib/rmlui/Samples/assets/NotoEmoji-Regular.ttf" "${FONTS}/NotoEmoji-Regular.ttf"
+  echo "  missing NotoEmoji-Regular.ttf — copy from an RmlUi samples tree or restore from git history"
 fi
 
 if [[ ! -f "${FONTS}/NotoCJK-LICENSE.txt" ]]; then
@@ -62,4 +66,4 @@ if [[ -f "${FONTS}/NotoSansSC-Regular.subset.ttf" ]]; then
 fi
 
 echo "==> Done. Font sizes:"
-ls -lh "${FONTS}"/NotoSansCJK*.otf "${FONTS}"/NotoColorEmoji.ttf "${FONTS}"/NotoEmoji-Regular.ttf 2>/dev/null || true
+ls -lh "${FONTS}"/NotoSansCJK-Regular.ttc "${FONTS}"/NotoColorEmoji.ttf "${FONTS}"/NotoEmoji-Regular.ttf 2>/dev/null || true

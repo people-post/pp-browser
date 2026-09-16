@@ -15,14 +15,18 @@ namespace pbr {
 /**
  * `/pp-browser/rpc/chat/1.0.0` over AMP ChannelSession (PeerLinkManager::OpenChannel).
  * Product single-entry when MeshHost Amp is attached ([A020]); legacy path remains for tests/fallback.
+ *
+ * Prefer SendEnvelopeAsync when MeshPump + PostToIo are available; sync SendEnvelope parks.
  */
 class AmpDirectChatTransport : public IDirectMessageClient {
 public:
   using InboundHandler = IDirectMessageClient::InboundHandler;
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
+  using IoPost = std::function<void(std::function<void()>)>;
 
-  AmpDirectChatTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker = {});
+  AmpDirectChatTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker = {},
+                         IoPost post_io = {});
   ~AmpDirectChatTransport() override;
 
   AmpDirectChatTransport(const AmpDirectChatTransport&) = delete;
@@ -36,12 +40,16 @@ public:
   bool IsPeerReachable(const std::string& peer_identity_value) const override;
   Roe<void> SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) override;
 
+  void SendEnvelopeAsync(const std::string& peer_relay_user_id, const RelayEnvelope& envelope,
+                         std::function<void(Roe<void>)> on_done) override;
+
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
   IChatPeerLinks& links_;
   IoPump io_pump_;
   WorkerPost post_worker_;
+  IoPost post_io_;
   bool started_ = false;
 };
 

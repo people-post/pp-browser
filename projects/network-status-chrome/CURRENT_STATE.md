@@ -13,7 +13,7 @@ Product answers accepted and recorded as [S003–S011](DECISIONS.md). See [OPEN_
 |-------|----------|
 | Desktop status bar | 24dp, desktop + expanded only |
 | Left cluster | Brief · Direct · divider · Help · Inbound · Load pills · sparse label |
-| Brief / Direct / Help / Inbound | As s1 |
+| Brief / Direct / Help / Inbound | As s1 — **Direct = seed dial OK**, not in-call path (call Path is separate: direct/punched/circuit/media_relay) |
 | Load (s3) | Help on only; `circuit N` / `media N` when count > 0 (aggregates from `RelayRuntimeStats`) |
 | Popover | s2 inspect + Retest + deep-link; **Helper load** rows when helping under load |
 | Ports | `MessagingShellPorts` + `CircuitRelayService::RuntimeStats` / `MediaRelayService::RuntimeStats` |

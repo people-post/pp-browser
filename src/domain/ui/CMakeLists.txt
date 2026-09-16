@@ -14,7 +14,7 @@ pp_browser_add_domain_library(pp_domain_ui
   PUBLIC_LIBS
     pp_foundation_platform
     pp_foundation_i18n
-    RmlUi::Core)
+    ui::core)
 
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)

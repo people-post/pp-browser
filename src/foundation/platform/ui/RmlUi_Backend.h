@@ -1,24 +1,24 @@
 #pragma once
 
-#include <RmlUi/Core/Input.h>
-#include <RmlUi/Core/RenderInterface.h>
-#include <RmlUi/Core/SystemInterface.h>
-#include <RmlUi/Core/Types.h>
+#include <ui/base/Input.h>
+#include <ui/paint/RenderInterface.h>
+#include <ui/base/SystemInterface.h>
+#include <ui/base/Types.h>
 
-#ifndef RMLUI_SDL_VERSION_MAJOR
-#define RMLUI_SDL_VERSION_MAJOR 2
+#ifndef UI_SDL_VERSION_MAJOR
+#define UI_SDL_VERSION_MAJOR 2
 #endif
 
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
 #include <SDL3/SDL.h>
 #endif
 
-using KeyDownCallback = bool (*)(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier, float native_dp_ratio, bool priority);
-#if RMLUI_SDL_VERSION_MAJOR >= 3
-using PreProcessEventCallback = bool (*)(Rml::Context* context, SDL_Event& event, bool& propagate_event);
+using KeyDownCallback = bool (*)(ui::Context* context, ui::Input::KeyIdentifier key, int key_modifier, float native_dp_ratio, bool priority);
+#if UI_SDL_VERSION_MAJOR >= 3
+using PreProcessEventCallback = bool (*)(ui::Context* context, SDL_Event& event, bool& propagate_event);
 // Called from SDL_AddEventWatch while Poll/WaitEvent is blocked in a modal resize/drag.
 // Must SyncContext, Update layout, and Present so the OS does not stretch the last frame.
-using LiveResizeRedrawCallback = void (*)(Rml::Context* context);
+using LiveResizeRedrawCallback = void (*)(ui::Context* context);
 #endif
 
 namespace Backend {
@@ -27,25 +27,27 @@ bool Initialize(const char* window_name, int width, int height, bool allow_resiz
                 bool borderless = false);
 void Shutdown();
 
-Rml::SystemInterface* GetSystemInterface();
-Rml::RenderInterface* GetRenderInterface();
+ui::SystemInterface* GetSystemInterface();
+ui::RenderInterface* GetRenderInterface();
 
-void SyncContext(Rml::Context* context);
+void SyncContext(ui::Context* context);
 
 // True when the window has a current GL context and a positive pixel size.
 bool CanRender();
 
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
 void SetPreProcessEventHandler(PreProcessEventCallback callback);
 // Register context + redraw for live window resize (see SDL wiki AppFreezeDuringDrag).
-void SetLiveResizeHandler(Rml::Context* context, LiveResizeRedrawCallback callback);
+void SetLiveResizeHandler(ui::Context* context, LiveResizeRedrawCallback callback);
 SDL_Window* GetWindow();
 // Rebuild GL resources and invalidate RmlUi GPU caches after SDL_EVENT_RENDER_DEVICE_RESET.
-void RecoverAfterDeviceReset(Rml::Context* context);
+void RecoverAfterDeviceReset(ui::Context* context);
 #endif
 
-bool ProcessEvents(Rml::Context* context, KeyDownCallback key_down_callback = nullptr, bool power_save = false);
+bool ProcessEvents(ui::Context* context, KeyDownCallback key_down_callback = nullptr, bool power_save = false);
 void RequestExit();
+/** Hide the product window immediately (close feel); SDL destroy still happens in Shutdown. */
+void HideWindow();
 
 // Thread-safe: push an SDL user event (always push; do not coalesce-drop).
 void WakeEventLoop();

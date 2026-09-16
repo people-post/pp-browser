@@ -19,28 +19,27 @@ This document orients coding agents working in this repository.
 pp-browser is a native AI-oriented UI shell:
 
 - **SDL3 + OpenGL3** — product window host in `src/foundation/platform/ui/`; reusable Platform_SDL / Renderer_GL3 in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui)
-- **Hard-forked RmlUi** — UI layout via FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (fork sources live in that repo)
+- **First-party UI engine** — layout via FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (`ui::` / `#include <ui/…>`; RmlUi-derived)
 - **Hard-forked libp2p** — PeerId + key wire only in `src/lib/libp2p/` (A017; mesh underlay is Amp)
 - **Third-party libs** — curl and shared deps in [`third_party/`](third_party/); JSON via [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`Value`/`Object`); libsodium + PQ via [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3 / SDL3_image via pp-cpp-ui
 - **Layered source tree** — FetchContent `pp-cpp-common` + `pp-cpp-crypto` + `pp-cpp-ui` + `src/lib/`, `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/app/` — North Star: `app → feature → domain → foundation → common` in [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
 
-See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for the full picture. **UI ↔ functional boundary:** [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) (state / config / actions / events; app-owned presenters). **Networking:** [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md) (HTTP + Amp mesh); L4 kinds gate [docs/contracts/L4_PROTOCOL_KINDS.md](docs/contracts/L4_PROTOCOL_KINDS.md). Compatibility: [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md).
+See [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) for the full picture. **UI ↔ functional boundary:** [docs/architecture/UI_FUNCTIONAL_BOUNDARY.md](docs/architecture/UI_FUNCTIONAL_BOUNDARY.md) (state / config / actions / events; app-owned presenters). **Logging:** [docs/architecture/LOGGING.md](docs/architecture/LOGGING.md) (Module `redirectLogger` / static `InitLogging` / free-fn `Logger&`). **Networking:** [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md) (HTTP + Amp mesh); L4 kinds gate [docs/contracts/L4_PROTOCOL_KINDS.md](docs/contracts/L4_PROTOCOL_KINDS.md). Compatibility: [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md).
 
-## RmlUi is maintained in pp-cpp-ui
+## UI engine is maintained in pp-cpp-ui
 
-We **own and modify** the hard fork in sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (`rmlui/`). Consume via FetchContent / `../pp-cpp-ui`.
+We **own and modify** the engine in sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (`include/ui/`, `src/`). Consume via FetchContent / `../pp-cpp-ui`.
 
-- Edit RmlUi in **pp-cpp-ui** when app-level workarounds are insufficient (layout, text selection, new properties, etc.).
-- Document fork-specific changes in [docs/architecture/RMLUI_UPSTREAM.md](docs/architecture/RMLUI_UPSTREAM.md).
-- App-specific host/overlays stay in [`src/foundation/platform/ui/`](src/foundation/platform/ui/); product shell (theme/catalogs) in [`src/domain/ui/`](src/domain/ui/); reusable SDL/GL backend lives in pp-cpp-ui `backend/`.
+- Edit the engine in **pp-cpp-ui** when app-level workarounds are insufficient (layout, text selection, new properties, etc.).
+- Document integration notes in [docs/architecture/RMLUI_UPSTREAM.md](docs/architecture/RMLUI_UPSTREAM.md).
+- App-specific host/overlays stay in [`src/foundation/platform/ui/`](src/foundation/platform/ui/); product shell (theme/catalogs) in [`src/domain/ui/`](src/domain/ui/); reusable SDL/GL backend lives in pp-cpp-ui `src/platform` + `src/render`.
 
 ### Fork features (pp-browser)
 
 | Feature | Location (in pp-cpp-ui) | Usage |
 |---------|----------|--------|
-| Text selection in static content | `rmlui/Source/Core/Elements/ElementSelectableText.*`, `SelectionController.*` | RML attribute `selectable="text"`; participation API on `Element`; Ctrl+C copies selection |
-| User-agent baseline styles | `rmlui/Source/Core/UserAgentStyleSheet.*` | Auto-merged into every document; author RCSS overrides |
-| List markers (workaround) | `rmlui/Source/Core/ListMarker.*`, `Layout/InlineLevelBox.cpp` | `ul`/`ol` bullets until `list-style` exists — see [RMLUI_UPSTREAM.md](docs/architecture/RMLUI_UPSTREAM.md) |
+| Text selection in static content | `include/ui/dom/SelectionController.h`, `SelectionTypes.h` | RML attribute `selectable="text"`; participation API on `Element`; Ctrl+C copies selection |
+| User-agent baseline styles | `src/dom/UserAgentStyleSheet.*` | Auto-merged into every document; author RCSS overrides |
 
 ## libp2p is maintained in-tree (PeerId only)
 

@@ -1069,6 +1069,14 @@ select selectbox option:hover {
   border: 1dp #e5e7eb;
 }
 
+.me-identity-name {
+  color: #111111;
+}
+
+.me-identity-action {
+  color: #374151;
+}
+
 .settings-row {
   background-color: #ffffff;
   border: 1dp #e5e7eb;

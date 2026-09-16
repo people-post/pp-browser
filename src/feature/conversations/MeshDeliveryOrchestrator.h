@@ -71,7 +71,8 @@ public:
                       IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
                       GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
                       IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
-                      std::function<void(std::function<void()>)> amp_worker_post = {});
+                      std::function<void(std::function<void()>)> amp_worker_post = {},
+                      std::function<void(std::function<void()>)> amp_post_io = {});
 
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text,
                                      const SendRelayOptions& options = {});
@@ -112,6 +113,14 @@ public:
   void SetProfileDataDir(std::string profile_data_dir);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
   /**
+   * Bind Amp chat/history/blob/announce/broadcast on an existing orchestrator.
+   * Prefer this over destroying/recreating the orchestrator after messaging is ready —
+   * in-flight SyncInbox / PostWorker lambdas still hold `this`.
+   */
+  void AttachAmpTransports(IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
+                           std::function<void(std::function<void()>)> amp_worker_post = {},
+                           std::function<void(std::function<void()>)> amp_post_io = {});
+  /**
    * Stop Amp protocol handlers and drop transport objects while MeshHost/Amp is still alive.
    * Required before MeshHost::Stop — otherwise ~Amp*Transport::Stop UAFs PeerLinks.
    */
@@ -136,8 +145,11 @@ public:
   AmpBroadcastTransport* BroadcastServiceOrNull() const { return broadcast_.get(); }
   /**
    * Publish a signed tip locally then 1:1 Amp push to `peer_key`.
+   * Prefer Async when MeshPump is available; sync parks on PushTip.
    * Requires Amp peer-announce service + device identity keys.
    */
+  void PublishAndPushAnnounceAsync(const std::string& peer_key, const PeerAnnouncePublisher::Draft& draft,
+                                   int64_t now_ms, std::function<void(Roe<PeerAnnounceTipAck>)> on_done);
   Roe<PeerAnnounceTipAck> PublishAndPushAnnounce(const std::string& peer_key,
                                                  const PeerAnnouncePublisher::Draft& draft, int64_t now_ms);
   /**
@@ -151,7 +163,11 @@ public:
    */
   Roe<ThreadMessage> ReplyToAnnounceOverlay(const std::string& tip_peer_id, const std::string& join_handle,
                                             const std::string& text, const std::string& viewer_msg_id);
-  /** Publisher: sign+push a live_chat tip from a decoded overlay request. */
+  /** Publisher: sign+push a live_chat tip from a decoded overlay request. Prefer Async. */
+  void PublishLiveChatFromOverlayAsync(const std::string& peer_key, const std::string& topic_id,
+                                       const std::string& program_id, const std::string& join_handle,
+                                       const std::string& viewer_peer_id, const AnnounceOverlayReplyBody& body,
+                                       int64_t now_ms, std::function<void(Roe<PeerAnnounceTipAck>)> on_done);
   Roe<PeerAnnounceTipAck> PublishLiveChatFromOverlay(const std::string& peer_key, const std::string& topic_id,
                                                      const std::string& program_id, const std::string& join_handle,
                                                      const std::string& viewer_peer_id,
@@ -242,7 +258,8 @@ private:
                        bool relay_after_direct_attempt = false);
   void RegisterMockPeerKeyForReply(const std::string& peer_identity_value);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
-  void RunSyncOnIo(const std::string& thread_id, std::function<Roe<ChatSyncResult>()> task,
+  void RunSyncOnIo(const std::string& thread_id,
+                   std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,
                    std::function<void(Roe<ChatSyncResult>)> on_complete);
   bool IsE2ePrivateThread(const std::string& thread_id) const;
   bool IsThreadCompromised(const std::string& thread_id) const;

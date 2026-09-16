@@ -4,11 +4,12 @@
 # Do not track develop/main branch tips or auto-pick a sibling checkout.
 
 include(FetchContent)
+include(PpFetchPin)
 
 set(PP_CPP_CRYPTO_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-crypto.git"
   CACHE STRING "Git remote for pp-cpp-crypto")
-set(PP_CPP_CRYPTO_GIT_TAG "v0.2.0"
-  CACHE STRING "Release tag on pp-cpp-crypto main (not a branch name)")
+pp_fetch_git_tag(PP_CPP_CRYPTO_GIT_TAG "v0.2.0"
+  "Release tag on pp-cpp-crypto main (not a branch name)")
 
 set(PP_CRYPTO_BUILD_TESTS OFF CACHE BOOL "Build pp-cpp-crypto tests" FORCE)
 

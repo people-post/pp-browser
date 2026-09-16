@@ -11,9 +11,9 @@
 #include "common/Error.h"
 #include "common/Module.h"
 
-#include <RmlUi/Core/DataModelHandle.h>
-#include <RmlUi/Core/Event.h>
-#include <RmlUi/Core/Types.h>
+#include <ui/data/DataModelHandle.h>
+#include <ui/dom/Event.h>
+#include <ui/base/Types.h>
 
 #include <cstdint>
 #include <functional>
@@ -25,7 +25,7 @@
 #include <vector>
 #include "common/PbrCompat.h"
 
-namespace Rml {
+namespace ui {
 class Context;
 }
 
@@ -34,26 +34,26 @@ namespace pbr {
 class SettingsController : public Module {
 public:
   struct SectionListRow {
-    Rml::String id;
-    Rml::String title;
-    Rml::String subtitle;
+    ui::String id;
+    ui::String title;
+    ui::String subtitle;
     bool attention = false;
   };
 
   struct McpServerRow {
-    Rml::String id;
-    Rml::String url;
-    Rml::String command;
-    Rml::String args_text;
+    ui::String id;
+    ui::String url;
+    ui::String command;
+    ui::String args_text;
     bool enabled = true;
   };
 
   struct CasLibraryRow {
-    Rml::String content_id_hex;
-    Rml::String title;
-    Rml::String detail;
-    Rml::String realm_label;
-    Rml::String pin_label;
+    ui::String content_id_hex;
+    ui::String title;
+    ui::String detail;
+    ui::String realm_label;
+    ui::String pin_label;
     bool can_share_publicly = false;
     bool can_unpublish = false;
     bool can_copy_tip = false;
@@ -76,7 +76,7 @@ public:
   void BindUnlockEnsure(UnlockEnsurePorts ports);
   SettingsCommands& Commands();
   const SettingsCommands& Commands() const;
-  bool RegisterModel(Rml::Context* context);
+  bool RegisterModel(ui::Context* context);
   void OnNavTabActivated();
   /** Persist nickname / dirty sections when leaving Me (tab or sheet). */
   void OnMeSurfaceClosed();
@@ -101,110 +101,111 @@ public:
 
 private:
   struct SettingsBindings {
-    Rml::String llm_preset = "brief";
-    Rml::String llm_base_url;
-    Rml::String llm_model;
-    Rml::String llm_api_key;
-    Rml::String llm_api_key_env;
-    Rml::String promoted_mcp_url;
-    Rml::String search_provider = "duckduckgo";
+    ui::String llm_preset = "brief";
+    ui::String llm_base_url;
+    ui::String llm_model;
+    ui::String llm_api_key;
+    ui::String llm_api_key_env;
+    ui::String promoted_mcp_url;
+    ui::String search_provider = "duckduckgo";
     std::vector<McpServerRow> mcp_servers;
     std::vector<CasLibraryRow> cas_library_rows;
-    Rml::String cas_library_empty_label;
-    Rml::String relay_base_url;
-    Rml::String directory_base_url;
-    Rml::String registration_base_url;
-    Rml::String node_enabled = "on";
+    ui::String cas_library_empty_label;
+    ui::String relay_base_url;
+    ui::String directory_base_url;
+    ui::String registration_base_url;
+    ui::String node_enabled = "on";
     bool show_node_toggle = true;
-    Rml::String amp_listen_multiaddr;
-    Rml::String mesh_status_message;
-    Rml::String reachability_status_label;
-    Rml::String reachability_summary;
-    Rml::String reachability_help_kind;
+    ui::String amp_listen_multiaddr;
+    ui::String mesh_status_message;
+    ui::String reachability_status_label;
+    ui::String reachability_summary;
+    ui::String reachability_help_kind;
     bool show_connection_card = false;
     bool show_reachability_help = false;
-    Rml::String circuit_relay_enabled = "off";
+    ui::String circuit_relay_enabled = "off";
     bool show_circuit_relay_toggle = false;
-    Rml::String media_relay_enabled = "on";
+    ui::String media_relay_enabled = "on";
     bool show_media_relay_toggle = false;
-    Rml::String dht_enabled = "off";
+    ui::String dht_enabled = "off";
     bool show_dht_toggle = false;
-    Rml::String prefer_contacts_for_routing = "on";
+    ui::String prefer_contacts_for_routing = "on";
     bool show_prefer_contacts_toggle = false;
-    Rml::String profile_nickname;
-    Rml::String profile_peer_id;
-    Rml::String profile_relay_id;
-    Rml::String profile_public_key;
-    Rml::String profile_registered = "no";
-    Rml::String profile_registration_status = "not registered";
-    Rml::String profile_registration_expires;
-    Rml::String profile_register_label = "Register on network";
+    ui::String profile_nickname;
+    ui::String profile_peer_id;
+    ui::String profile_relay_id;
+    ui::String profile_public_key;
+    ui::String profile_registered = "no";
+    ui::String profile_registration_status = "not registered";
+    ui::String profile_registration_expires;
+    ui::String profile_register_label = "Register on network";
     bool profile_show_register = true;
     bool profile_show_rotate = false;
-    Rml::String profile_icon_src;
+    ui::String profile_icon_src;
     bool profile_has_icon = false;
     bool profile_icon_uploading = false;
     bool profile_show_clear_icon = false;
-    Rml::String profile_avatar_letter = "?";
+    ui::String profile_avatar_letter = "?";
     int profile_avatar_tone = 0;
-    Rml::String auto_renew_registration = "auto";
-    Rml::String show_notifications = "on";
-    Rml::String brief_llm_key_masked;
-    Rml::String appearance = "system";
-    Rml::String appearance_label = "System";
-    Rml::String language = "system";
-    Rml::String language_label = "System";
-    Rml::String reduce_transparency = "off";
-    Rml::String call_diagnostics = "off";
-    Rml::String profile_label;
-    Rml::String config_dir;
-    Rml::String data_dir;
-    Rml::String profile_dir;
-    Rml::String profile_size_label;
-    Rml::String attachment_cache_size_label;
-    Rml::String attachment_download_policy = "smart";
-    Rml::String attachment_download_policy_label;
-    Rml::String pin_protection_status;
+    ui::String auto_renew_registration = "auto";
+    ui::String show_notifications = "on";
+    ui::String brief_llm_key_masked;
+    ui::String appearance = "system";
+    ui::String appearance_label = "System";
+    ui::String language = "system";
+    ui::String language_label = "System";
+    ui::String reduce_transparency = "off";
+    ui::String call_diagnostics = "off";
+    ui::String crash_reports_enabled = "off";
+    ui::String profile_label;
+    ui::String config_dir;
+    ui::String data_dir;
+    ui::String profile_dir;
+    ui::String profile_size_label;
+    ui::String attachment_cache_size_label;
+    ui::String attachment_download_policy = "smart";
+    ui::String attachment_download_policy_label;
+    ui::String pin_protection_status;
     bool security_can_change_pin = false;
     bool security_can_export_link = false;
-    Rml::String pin_change_old;
-    Rml::String pin_change_new;
-    Rml::String pin_change_confirm;
-    Rml::String group_invite_policy = "contacts_only";
-    Rml::String group_invite_policy_label = "Contacts only";
-    Rml::String tool_permissions_summary = "None saved";
+    ui::String pin_change_old;
+    ui::String pin_change_new;
+    ui::String pin_change_confirm;
+    ui::String group_invite_policy = "contacts_only";
+    ui::String group_invite_policy_label = "Contacts only";
+    ui::String tool_permissions_summary = "None saved";
     bool tool_permissions_has_saved = false;
-    Rml::String app_name;
-    Rml::String app_version;
+    ui::String app_name;
+    ui::String app_version;
     bool support_visible = false;
-    Rml::String support_display_name;
-    Rml::String support_subtitle;
+    ui::String support_display_name;
+    ui::String support_subtitle;
   };
 
-  static void SelectSectionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void BackToListCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ResetSectionCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnLlmFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnLlmPresetChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnChooseThemeCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnChooseLanguageCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnChooseGroupInvitePolicyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnChooseAttachmentDownloadPolicyCallback(Rml::DataModelHandle model, Rml::Event& ev,
-                                                       const Rml::VariantList& args);
-  static void DrainPendingAttachmentMediaCallback(Rml::DataModelHandle model, Rml::Event& ev,
-                                                  const Rml::VariantList& args);
-  static void ClearDownloadedAttachmentsCallback(Rml::DataModelHandle model, Rml::Event& ev,
-                                                 const Rml::VariantList& args);
-  static void SetCasLibraryFilterCallback(Rml::DataModelHandle model, Rml::Event& ev,
-                                         const Rml::VariantList& args);
-  static void ShareCasPubliclyCallback(Rml::DataModelHandle model, Rml::Event& ev,
-                                      const Rml::VariantList& args);
-  static void UnpublishCasCallback(Rml::DataModelHandle model, Rml::Event& ev,
-                                  const Rml::VariantList& args);
-  static void CopyCasTipCallback(Rml::DataModelHandle model, Rml::Event& ev,
-                               const Rml::VariantList& args);
-  static void FetchCasTipCallback(Rml::DataModelHandle model, Rml::Event& ev,
-                                const Rml::VariantList& args);
+  static void SelectSectionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void BackToListCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ResetSectionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnLlmFieldChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnLlmPresetChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnChooseThemeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnChooseLanguageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnChooseGroupInvitePolicyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnChooseAttachmentDownloadPolicyCallback(ui::DataModelHandle model, ui::Event& ev,
+                                                       const ui::VariantList& args);
+  static void DrainPendingAttachmentMediaCallback(ui::DataModelHandle model, ui::Event& ev,
+                                                  const ui::VariantList& args);
+  static void ClearDownloadedAttachmentsCallback(ui::DataModelHandle model, ui::Event& ev,
+                                                 const ui::VariantList& args);
+  static void SetCasLibraryFilterCallback(ui::DataModelHandle model, ui::Event& ev,
+                                         const ui::VariantList& args);
+  static void ShareCasPubliclyCallback(ui::DataModelHandle model, ui::Event& ev,
+                                      const ui::VariantList& args);
+  static void UnpublishCasCallback(ui::DataModelHandle model, ui::Event& ev,
+                                  const ui::VariantList& args);
+  static void CopyCasTipCallback(ui::DataModelHandle model, ui::Event& ev,
+                               const ui::VariantList& args);
+  static void FetchCasTipCallback(ui::DataModelHandle model, ui::Event& ev,
+                                const ui::VariantList& args);
   void RefreshCasLibrary();
   void PushCasLibraryBindings();
   void OnSetCasLibraryFilter(const std::string& filter);
@@ -215,36 +216,37 @@ private:
   void PerformShareCasPublicly(const std::string& content_id_hex);
   void PerformUnpublishCas(const std::string& content_id_hex);
   void PerformFetchCasTip(const std::string& tip, const std::string& peer_relay_user_id);
-  static void ToggleShowNotificationsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ToggleReduceTransparencyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ToggleCallDiagnosticsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ToggleAutoRenewRegistrationCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnIntegrationsFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnNetworkFieldChangedCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ToggleNodeEnabledCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void RetestReachabilityCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void TryUpnpPortCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ShowReachabilityHelpCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void DismissReachabilityHelpCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ToggleCircuitRelayCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ToggleMediaRelayCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void ToggleDhtCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void TogglePreferContactsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnProfileNicknameCommitCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnRegisterProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnRotateBriefLlmKeyCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnCopyProfileIdCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnPickProfileIconCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnClearProfileIconCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnShareProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnAddMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnRemoveMcpServerCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnChangePinCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnExportLinkDeviceCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnClearUndeliveredCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnResetToolPermissionsCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OnResetProfileCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
-  static void OpenSupportChatCallback(Rml::DataModelHandle model, Rml::Event& ev, const Rml::VariantList& args);
+  static void ToggleShowNotificationsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleReduceTransparencyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleCallDiagnosticsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleCrashReportsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleAutoRenewRegistrationCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnIntegrationsFieldChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnNetworkFieldChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleNodeEnabledCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void RetestReachabilityCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void TryUpnpPortCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ShowReachabilityHelpCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void DismissReachabilityHelpCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleCircuitRelayCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleMediaRelayCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleDhtCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void TogglePreferContactsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnProfileNicknameCommitCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnRegisterProfileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnRotateBriefLlmKeyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnCopyProfileIdCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnPickProfileIconCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnClearProfileIconCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnShareProfileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnAddMcpServerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnRemoveMcpServerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnChangePinCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnExportLinkDeviceCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnClearUndeliveredCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnResetToolPermissionsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnResetProfileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OpenSupportChatCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
 
   void InitSections();
   SettingsSectionHandler* FindHandler(const std::string& section_id);
@@ -293,13 +295,13 @@ private:
   void OnResetToolPermissions();
   void OnResetProfile();
   void PerformResetProfile();
-  void OnChooseTheme(Rml::Event& ev);
+  void OnChooseTheme(ui::Event& ev);
   void ApplyThemeChoice(const std::string& appearance_pref);
-  void OnChooseLanguage(Rml::Event& ev);
+  void OnChooseLanguage(ui::Event& ev);
   void ApplyLanguageChoice(const std::string& language_pref);
-  void OnChooseGroupInvitePolicy(Rml::Event& ev);
+  void OnChooseGroupInvitePolicy(ui::Event& ev);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
-  void OnChooseAttachmentDownloadPolicy(Rml::Event& ev);
+  void OnChooseAttachmentDownloadPolicy(ui::Event& ev);
   void ApplyAttachmentDownloadPolicyChoice(const std::string& policy);
   void OnDrainPendingAttachmentMedia();
   void OnClearDownloadedAttachments();
@@ -310,15 +312,15 @@ private:
   std::vector<std::unique_ptr<SettingsSectionHandler>> section_handlers_;
   std::unordered_map<std::string, SettingsSectionHandler*> section_handlers_by_id_;
   std::vector<SectionListRow> sections_;
-  Rml::String selected_id_;
-  Rml::String selected_title_;
+  ui::String selected_id_;
+  ui::String selected_title_;
   bool in_account_sheet_ = false;
   bool show_detail_ = false;
   bool compact_layout_ = false;
   SettingsUiState ui_state_;
   SettingsBindings bindings_;
-  Rml::String status_;
-  Rml::Context* context_ = nullptr;
+  ui::String status_;
+  ui::Context* context_ = nullptr;
   /** Pane hydrate gate; also mirrored into UiEditSession remount depth. */
   bool suppress_auto_save_ = false;
   std::unordered_set<std::string> dirty_sections_;

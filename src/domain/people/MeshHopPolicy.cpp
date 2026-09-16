@@ -3,9 +3,6 @@
 #include "foundation/data/MeshRole.h"
 
 #include <algorithm>
-#include <array>
-#include <cstdlib>
-#include <sstream>
 #include <unordered_set>
 
 namespace pbr {
@@ -35,84 +32,23 @@ double MediaHopScore(const MeshHopCandidate& c, bool prefer_contacts) {
   return score;
 }
 
-std::string Ip4HostFromMultiaddr(const std::string& multiaddr) {
-  const std::string marker = "/ip4/";
-  const auto pos = multiaddr.find(marker);
-  if (pos == std::string::npos) {
-    return {};
-  }
-  const auto start = pos + marker.size();
-  const auto end = multiaddr.find('/', start);
-  if (end == std::string::npos) {
-    return multiaddr.substr(start);
-  }
-  return multiaddr.substr(start, end - start);
-}
-
-bool ParseIpv4Octets(const std::string& ip, std::array<int, 4>& out) {
-  std::istringstream ss(ip);
-  std::string part;
-  for (int i = 0; i < 4; ++i) {
-    if (!std::getline(ss, part, '.') || part.empty()) {
-      return false;
-    }
-    char* end = nullptr;
-    const long v = std::strtol(part.c_str(), &end, 10);
-    if (end == part.c_str() || v < 0 || v > 255) {
-      return false;
-    }
-    out[static_cast<size_t>(i)] = static_cast<int>(v);
-  }
-  return !std::getline(ss, part, '.');
-}
-
-bool IsPrivateIpv4Host(const std::string& ip) {
-  std::array<int, 4> octets{};
-  if (!ParseIpv4Octets(ip, octets)) {
-    return false;
-  }
-  if (octets[0] == 10) {
-    return true;
-  }
-  if (octets[0] == 172 && octets[1] >= 16 && octets[1] <= 31) {
-    return true;
-  }
-  if (octets[0] == 192 && octets[1] == 168) {
-    return true;
-  }
-  return false;
-}
-
 const RelayScope kEscalateOrder[] = {RelayScope::Link, RelayScope::Site, RelayScope::Social, RelayScope::Org,
                                      RelayScope::Public};
 
 std::string FirstMultiaddrForPeer(const Contact& contact, const std::string& peer_id) {
+  std::vector<std::string> matching;
   for (const std::string& ma : contact.multiaddrs) {
     if (PeerIdFromMultiaddr(ma) == peer_id) {
-      return ma;
+      matching.push_back(ma);
     }
   }
-  if (!contact.multiaddrs.empty()) {
-    return contact.multiaddrs.front();
+  if (!matching.empty()) {
+    return PreferredDialMultiaddr(matching);
   }
-  return {};
+  return PreferredDialMultiaddr(contact.multiaddrs);
 }
 
 } // namespace
-
-bool IsSameIpv4Subnet24(const std::string& multiaddr_a, const std::string& multiaddr_b) {
-  const std::string ip_a = Ip4HostFromMultiaddr(multiaddr_a);
-  const std::string ip_b = Ip4HostFromMultiaddr(multiaddr_b);
-  if (ip_a.empty() || ip_b.empty()) {
-    return false;
-  }
-  std::array<int, 4> a{};
-  std::array<int, 4> b{};
-  if (!ParseIpv4Octets(ip_a, a) || !ParseIpv4Octets(ip_b, b)) {
-    return false;
-  }
-  return a[0] == b[0] && a[1] == b[1] && a[2] == b[2];
-}
 
 RelayScopeMask CandidateRelayScopes(const MeshHopCandidate& candidate,
                                     const std::string& local_listen_multiaddr) {
@@ -128,8 +64,7 @@ RelayScopeMask CandidateRelayScopes(const MeshHopCandidate& candidate,
   if (candidate.multiaddr.empty()) {
     return mask;
   }
-  const std::string hop_ip = Ip4HostFromMultiaddr(candidate.multiaddr);
-  if (IsPrivateIpv4Host(hop_ip)) {
+  if (MultiaddrHasPrivateIpv4Host(candidate.multiaddr)) {
     mask |= static_cast<RelayScopeMask>(RelayScope::Site);
   }
   if (!local_listen_multiaddr.empty() && IsSameIpv4Subnet24(candidate.multiaddr, local_listen_multiaddr)) {
@@ -190,15 +125,7 @@ std::vector<MeshHopCandidate> CollectSeedHopCandidates(const std::vector<std::st
 }
 
 std::string PreferredDirectoryMultiaddr(const std::vector<std::string>& multiaddrs) {
-  for (const std::string& ma : multiaddrs) {
-    if (ma.find("/adp/") != std::string::npos) {
-      return ma;
-    }
-  }
-  if (!multiaddrs.empty()) {
-    return multiaddrs.front();
-  }
-  return {};
+  return PreferredDialMultiaddr(multiaddrs);
 }
 
 std::vector<MeshHopCandidate> CollectDirectoryHopCandidates(const std::vector<MeshDirectoryNode>& nodes) {
@@ -409,29 +336,6 @@ std::vector<MeshHopCandidate> PreferInCallMediaHops(
   in_call.insert(in_call.end(), std::make_move_iterator(rest.begin()),
                  std::make_move_iterator(rest.end()));
   return in_call;
-}
-
-std::vector<MeshHopCandidate> PreferLocalMediaHop(std::vector<MeshHopCandidate> ranked,
-                                                  const std::string& local_peer_id,
-                                                  const std::string& local_multiaddr) {
-  if (local_peer_id.empty()) {
-    return ranked;
-  }
-  std::vector<MeshHopCandidate> out;
-  out.reserve(ranked.size() + 1);
-  MeshHopCandidate local;
-  local.peer_id = local_peer_id;
-  local.multiaddr = local_multiaddr;
-  local.affinity = MeshHopAffinity::Contact;
-  local.dialable = true;
-  out.push_back(std::move(local));
-  for (MeshHopCandidate& c : ranked) {
-    if (c.peer_id == local_peer_id) {
-      continue;
-    }
-    out.push_back(std::move(c));
-  }
-  return out;
 }
 
 bool IsContactPeerId(const std::vector<Contact>& contacts, const std::string& peer_id) {

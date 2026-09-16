@@ -9,6 +9,7 @@
 #include "feature/calls/AmpMediaRelayClient.h"
 #include "feature/calls/CallDeliveryPorts.h"
 #include "feature/calls/CallMediaBridge.h"
+#include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallLifecycle.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallSessionManager.h"
@@ -21,6 +22,8 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -93,9 +96,12 @@ public:
   CallLifecycle* Lifecycle();
   CallMediaKeyStore* MediaKeys() { return call_media_keys_.get(); }
   CallMediaEngine* MediaEngine() { return call_media_engine_.get(); }
+  CallMediaSeat* MediaSeat() { return call_media_seat_.get(); }
 
   /** Abort in-flight call-media Connect before joining the worker pool (app shutdown). */
   void AbortCallMediaForShutdown();
+  /** True while CallMediaBridge Connect sequence is in flight (cheap for shutdown marks). */
+  bool IsConnectWorkerInflight() const;
   void WireMediaRelayDeps();
   void EnsureCallLifecycleBound();
   void SetEphemeralListenDesire(bool want);
@@ -112,6 +118,13 @@ public:
   Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key);
   /** L3.25c: upgrade call-media / hop from circuit R1 to direct via ACP. */
   Roe<void> TryUpgradeCallMediaToDirect(const std::string& peer_key);
+  /**
+   * Register bootstrap ADP endpoints and EnsureAssociation (async, fire-and-forget).
+   * Call before punch/circuit so org seed holds Sessions for double-NAT splice.
+   */
+  void WarmBootstrapSeedSessions();
+  /** Answerer: StartReserve on dialable bootstrap seeds after warm. */
+  void ReserveOnBootstrapSeeds();
 
 private:
   std::vector<std::string> CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const;
@@ -123,6 +136,7 @@ private:
   std::unique_ptr<CallSessionStore> call_session_store_;
   std::unique_ptr<CallMediaKeyStore> call_media_keys_;
   std::unique_ptr<CallMediaEngine> call_media_engine_;
+  std::unique_ptr<CallMediaSeat> call_media_seat_;
   std::unique_ptr<CallSessionManager> call_sessions_;
   std::unique_ptr<CallMediaBridge> call_media_bridge_;
   std::unique_ptr<CallLifecycle> call_lifecycle_;
@@ -134,6 +148,10 @@ private:
   std::unique_ptr<CallMediaAmpTransport> call_media_amp_;
   /** Lifecycle-driven N025 desire (mirrors old ConversationsHub::ephemeral_listen_desired_). */
   bool ephemeral_listen_desired_ = false;
+  /** Invite/accept listen multiaddrs by peer identity (V035 SoftMigrate scope). */
+  std::unordered_map<std::string, std::vector<std::string>> call_peer_listen_mas_;
+  /** PeerIds confirmed on LAN (mDNS / note_lan) for PreferLocal gating (V035). */
+  std::unordered_set<std::string> call_lan_confirmed_peers_;
 
   ICallMediaTransport* CallMediaTransport();
 };

@@ -1,10 +1,54 @@
 #include "domain/ai/LlmClient.h"
 
+#include "common/PlatformLimits.h"
+#include "common/ValueJson.h"
+#include "common/tests/LocalHttpServer.h"
+
 #include <gtest/gtest.h>
 
 #include <string>
 #include <utility>
 #include <vector>
+
+namespace {
+
+class LlmClientLimitsTest : public ::testing::Test {
+protected:
+  pbr::LlmClient Client() const {
+    pbr::LlmConfig config;
+    config.base_url = server_.Url() + "/v1";
+    config.model = "test-model";
+    config.require_api_key = false;
+    config.num_predict = 0;
+    return pbr::LlmClient(config);
+  }
+
+  void WriteResponse(std::string response) { server_.SetResponse(std::move(response)); }
+
+  pbr::test::LocalHttpServer server_;
+};
+
+pbr::ChatCompletionRequest RequestWithPayloadSize(const size_t payload_size) {
+  pbr::Object message;
+  message.set("role", "user");
+  message.set("content", "");
+  pbr::Object body;
+  body.set("model", "test-model");
+  body.set("messages", pbr::ArrayValue({pbr::ObjectValue(message)}));
+
+  const size_t overhead = pbr::DumpJson(body).size();
+  pbr::ChatCompletionRequest request;
+  request.messages = {{.role = "user", .content = std::string(payload_size - overhead, 'x')}};
+  return request;
+}
+
+std::string CompletionResponseOfSize(const size_t response_size) {
+  std::string response = R"({"choices":[{"finish_reason":"stop","message":{"content":"ok"}}]})";
+  response.append(response_size - response.size(), ' ');
+  return response;
+}
+
+} // namespace
 
 TEST(LlmClientTest, ParsesToolCallsAndContentResponses) {
   const std::string tool_response = R"({
@@ -92,4 +136,42 @@ TEST(LlmClientTest, RequiresApiKeyWhenConfigured) {
   auto result = client.Complete("sys", "user");
   ASSERT_FALSE(static_cast<bool>(result));
   EXPECT_NE(result.error().message.find("API key"), std::string::npos);
+}
+
+TEST_F(LlmClientLimitsTest, AcceptsRequestAtConfiguredLimit) {
+  WriteResponse(CompletionResponseOfSize(128));
+  const auto request = RequestWithPayloadSize(pbr::kMaxLlmRequestBytes);
+
+  auto result = Client().Complete(request);
+
+  ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
+  ASSERT_TRUE(result->content);
+  EXPECT_EQ(*result->content, "ok");
+}
+
+TEST_F(LlmClientLimitsTest, RejectsRequestOverConfiguredLimitBeforeCurl) {
+  const auto request = RequestWithPayloadSize(pbr::kMaxLlmRequestBytes + 1);
+
+  const auto result = Client().Complete(request);
+
+  ASSERT_FALSE(static_cast<bool>(result));
+  EXPECT_NE(result.error().message.find("request body exceeds limit of 2097152 bytes"), std::string::npos);
+}
+
+TEST_F(LlmClientLimitsTest, AcceptsResponseAtConfiguredLimit) {
+  WriteResponse(CompletionResponseOfSize(pbr::kMaxLlmResponseBytes));
+
+  auto result = Client().Complete("system", "user");
+
+  ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
+  EXPECT_EQ(*result, "ok");
+}
+
+TEST_F(LlmClientLimitsTest, RejectsResponseOverConfiguredLimit) {
+  WriteResponse(CompletionResponseOfSize(pbr::kMaxLlmResponseBytes + 1));
+
+  const auto result = Client().Complete("system", "user");
+
+  ASSERT_FALSE(static_cast<bool>(result));
+  EXPECT_NE(result.error().message.find("response body exceeds limit of 8388608 bytes"), std::string::npos);
 }

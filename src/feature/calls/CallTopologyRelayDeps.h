@@ -5,6 +5,7 @@
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
 #include "common/media/CallMediaHealth.h"
+#include "amp/link/Types.h"
 
 #include "common/Error.h"
 
@@ -26,10 +27,26 @@ public:
   virtual Roe<MediaRelayQuote> RequestQuote(const std::string& hop_peer_key,
                                             const MediaRelayQuoteRequest& request,
                                             int timeout_ms = 8000) = 0;
+  /** Prefer over sync RequestQuote when MeshPump + PostToIo are available. */
+  virtual void RequestQuoteAsync(const std::string& hop_peer_key, const MediaRelayQuoteRequest& request,
+                                 std::function<void(Roe<MediaRelayQuote>)> on_done, int timeout_ms = 8000) {
+    if (on_done) {
+      on_done(RequestQuote(hop_peer_key, request, timeout_ms));
+    }
+  }
   virtual Roe<MediaRelayAttachResult> AcceptAndAttach(
       const std::string& hop_peer_key, const std::string& quote_id, const std::string& call_id,
       const std::string& auth_stub, std::function<void(MediaDataFrame)> on_frame,
       int timeout_ms = 8000) = 0;
+  virtual void AcceptAndAttachAsync(const std::string& hop_peer_key, const std::string& quote_id,
+                                    const std::string& call_id, const std::string& auth_stub,
+                                    std::function<void(MediaDataFrame)> on_frame,
+                                    std::function<void(Roe<MediaRelayAttachResult>)> on_done,
+                                    int timeout_ms = 8000) {
+    if (on_done) {
+      on_done(AcceptAndAttach(hop_peer_key, quote_id, call_id, auth_stub, std::move(on_frame), timeout_ms));
+    }
+  }
   /** After AcceptAndAttach + StartSfu — begin inbound frame delivery. */
   virtual void StartClientFrameReader() = 0;
   /**
@@ -58,10 +75,28 @@ public:
 
   virtual Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) = 0;
   virtual bool IsDialable(const std::string& peer_key) const = 0;
+  /** PeerLink Connected — stricter than IsDialable (has_endpoint alone is not enough). */
+  virtual bool IsConnected(const std::string& peer_key) const {
+    (void)peer_key;
+    return false;
+  }
+  /** Kick ADP dial/handshake; optional for fakes. */
+  virtual void EnsureAssociation(const std::string& peer_key,
+                                 std::function<void(Roe<void>)> on_done) {
+    (void)peer_key;
+    if (on_done) {
+      on_done(Error("ensure association not available"));
+    }
+  }
   virtual std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const = 0;
   virtual void ClearDialBackoff(const std::string& peer_key) = 0;
   virtual void AbortInflightDial(const std::string& peer_key) = 0;
   virtual void ClearCallMediaCircuitHop(const std::string& peer_key) = 0;
+  /** True when call-media nested circuit carrier hop is installed for peer. */
+  virtual bool HasCallMediaCircuitHop(const std::string& peer_key) const {
+    (void)peer_key;
+    return false;
+  }
 };
 
 /** L3: circuit bridge fallback when hop PeerId is not directly dialable. */
@@ -70,12 +105,31 @@ public:
   virtual ~ICircuitHopReach() = default;
   /** Reach a media_relay hop (topology / prefetch). */
   virtual Roe<void> TryEnsureHopReachable(const std::string& hop_peer_id) = 0;
+  /** Prefer over sync when MeshPump + PostToIo are available. */
+  virtual void TryEnsureHopReachableAsync(const std::string& hop_peer_id,
+                                          std::function<void(Roe<void>)> on_done) {
+    if (on_done) {
+      on_done(TryEnsureHopReachable(hop_peer_id));
+    }
+  }
   /** Reach a call peer for 1:1 call-media when not directly dialable. */
   virtual Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key) = 0;
+  virtual void TryEnsureCallMediaReachableAsync(const std::string& peer_key,
+                                                std::function<void(Roe<void>)> on_done) {
+    if (on_done) {
+      on_done(TryEnsureCallMediaReachable(peer_key));
+    }
+  }
   /** L3.25c: punch via circuit R1 as introducer, then demote the circuit hop. */
   virtual Roe<void> TryUpgradeToDirect(const std::string& peer_key) {
     (void)peer_key;
     return Error("circuit upgrade not available");
+  }
+  virtual void TryUpgradeToDirectAsync(const std::string& peer_key,
+                                       std::function<void(Roe<void>)> on_done) {
+    if (on_done) {
+      on_done(TryUpgradeToDirect(peer_key));
+    }
   }
 };
 
@@ -86,6 +140,8 @@ public:
 
   void SetAmpLinks(IChatPeerLinks* amp_links) { amp_links_ = amp_links; }
   void SetAmpCircuitHops(AmpCircuitHopRegistry* hops) { amp_hops_ = hops; }
+  /** MeshRuntime::PostToIo — EnsureAssociation must run on the Amp IO strand. */
+  void SetPostIo(std::function<void(std::function<void()>)> post_io) { post_io_ = std::move(post_io); }
 
   Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) override {
     if (amp_links_) {
@@ -117,6 +173,37 @@ public:
     return amp_hops_ && static_cast<bool>(amp_hops_->Find(peer_key, kMediaRelayProtocolId));
   }
 
+  bool IsConnected(const std::string& peer_key) const override {
+    return amp_links_ && amp_links_->IsConnected(peer_key);
+  }
+
+  void EnsureAssociation(const std::string& peer_key,
+                         std::function<void(Roe<void>)> on_done) override {
+    auto run = [this, peer_key, on_done = std::move(on_done)]() mutable {
+      if (!amp_links_) {
+        if (on_done) {
+          on_done(Error("dial registry not available"));
+        }
+        return;
+      }
+      amp_links_->EnsureAssociation(peer_key, [on_done = std::move(on_done)](IChatPeerLinks::LinkRoe r) {
+        if (!on_done) {
+          return;
+        }
+        if (!r) {
+          on_done(Error(r.error().message));
+          return;
+        }
+        on_done({});
+      });
+    };
+    if (post_io_) {
+      post_io_(std::move(run));
+      return;
+    }
+    run();
+  }
+
   std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const override {
     if (amp_links_) {
       if (auto amp_ma = amp_links_->PreferredMultiaddr(peer_key)) {
@@ -133,12 +220,20 @@ public:
   void ClearCallMediaCircuitHop(const std::string& peer_key) override {
     if (amp_hops_) {
       amp_hops_->Clear(peer_key, kCallMediaDirectProtocolId);
+      amp_hops_->Clear(peer_key, pp::amp::kAmpCircuitCarrierProtocolId);
     }
+  }
+
+  bool HasCallMediaCircuitHop(const std::string& peer_key) const override {
+    return amp_hops_ &&
+           (static_cast<bool>(amp_hops_->Find(peer_key, pp::amp::kAmpCircuitCarrierProtocolId)) ||
+            amp_hops_->HasAny(peer_key));
   }
 
 private:
   IChatPeerLinks* amp_links_ = nullptr;
   AmpCircuitHopRegistry* amp_hops_ = nullptr;
+  std::function<void(std::function<void()>)> post_io_;
 };
 
 /** Forwards to ConversationsHub / CallStack wiring. */

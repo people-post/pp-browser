@@ -1,5 +1,7 @@
 #include "domain/ai/StructuredTextParser.h"
 
+#include "common/PlatformLimits.h"
+
 #include <gtest/gtest.h>
 
 #include <cassert>
@@ -308,4 +310,23 @@ TEST(StructuredTextParserTest, ComprehensiveParsingScenarios) {
   auto long_list_missing_items_result = pbr::StructuredTextParser::ParseBlocksJson(long_list_missing_items);
   assert(!long_list_missing_items_result.ok);
 
+}
+
+TEST(StructuredTextParserTest, BoundsRenderedRmlAtConfiguredLimit) {
+  const std::string empty_paragraph = R"({"blocks":[{"type":"paragraph","text":""}]})";
+  const auto empty_result = pbr::StructuredTextParser::ParseBlocksJson(empty_paragraph);
+  ASSERT_TRUE(empty_result.ok);
+
+  const size_t text_bytes = pbr::kMaxStructuredParserOutputBytes - empty_result.rml.size();
+  const auto at_limit = pbr::StructuredTextParser::ParseBlocksJson(
+      R"({"blocks":[{"type":"paragraph","text":")" + std::string(text_bytes, 'x') + R"("}]})");
+  ASSERT_TRUE(at_limit.ok);
+  EXPECT_EQ(at_limit.rml.size(), pbr::kMaxStructuredParserOutputBytes);
+
+  const auto over_limit = pbr::StructuredTextParser::ParseBlocksJson(
+      R"({"blocks":[{"type":"paragraph","text":")" + std::string(text_bytes + 1, 'x') + R"("}]})");
+  ASSERT_FALSE(over_limit.ok);
+  EXPECT_EQ(over_limit.error,
+            "Structured parser output exceeds limit of " + std::to_string(pbr::kMaxStructuredParserOutputBytes) +
+                " bytes");
 }

@@ -38,6 +38,7 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/host/MeshControlDispatch.h"
 #include "foundation/platform/NetworkConnectivity.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/data/PlatformDefaults.h"
@@ -62,6 +63,8 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <future>
+#include <thread>
 #include <unordered_set>
 
 #include "common/ValueJson.h"
@@ -278,7 +281,7 @@ void ConversationsHub::InstallOrgBackendClients(const AppConfig& config) {
 
 Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   StartupPhase phase("ConversationsHub::StartMesh");
-  if (shutdown_requested_.load(std::memory_order_acquire)) {
+  if (shutdown_requested_.load(std::memory_order_acquire) || AppRuntime::IsShuttingDown()) {
     return Error("shutdown in progress");
   }
   StopMesh();
@@ -431,7 +434,7 @@ void ConversationsHub::SyncLanMdnsAdvertisement() {
 
 
 void ConversationsHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
-  AppRuntime::PostWorkerNormal([this, peer]() {
+  MeshControlDispatch::Post([this, peer]() {
     if (peer.peer_id_base58.empty()) {
       return;
     }
@@ -659,7 +662,8 @@ void ConversationsHub::RegisterContactEndpoints() {
     if (target.peer_identity_value.empty()) {
       continue;
     }
-    for (const std::string& ma : contact.multiaddrs) {
+    // Last RegisterEndpoint wins PreferredMultiaddr — register worst→best (global /ip6 last).
+    for (const std::string& ma : OrderDialMultiaddrsWorstToBest(contact.multiaddrs)) {
       mesh_messaging_->RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
     }
     const std::vector<std::string> peer_ids = PeerIdsFromContact(contact);
@@ -675,7 +679,7 @@ void ConversationsHub::RegisterMeshDirectoryEndpoints() {
     return;
   }
   for (const MeshDirectoryNode& node : mesh_directory_cache_->Snapshot()) {
-    for (const std::string& ma : node.multiaddrs) {
+    for (const std::string& ma : OrderDialMultiaddrsWorstToBest(node.multiaddrs)) {
       if (ma.empty()) {
         continue;
       }
@@ -728,7 +732,7 @@ void ConversationsHub::ApplyDhtFindPeerResult(const std::string& peer_id, const 
   if (!mesh_messaging_ || peer_id.empty()) {
     return;
   }
-  for (const std::string& ma : record.multiaddrs) {
+  for (const std::string& ma : OrderDialMultiaddrsWorstToBest(record.multiaddrs)) {
     if (ma.empty()) {
       continue;
     }
@@ -754,7 +758,8 @@ void ConversationsHub::ConfigureAmpDhtProtocol() {
 
   AmpDhtProtocolConfig cfg;
   cfg.local_peer_id = mesh_->Amp()->LocalPeerId();
-  if (!mesh_->AmpListenMultiaddr().empty()) {
+  cfg.listen_multiaddrs = mesh_->AdvertisedListenMultiaddrs();
+  if (cfg.listen_multiaddrs.empty() && !mesh_->AmpListenMultiaddr().empty()) {
     cfg.listen_multiaddrs = {mesh_->AmpListenMultiaddr()};
   }
   if (auto priv = identity_->GetDeviceMlDsaPrivateKey()) {
@@ -813,7 +818,12 @@ MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, MeshHost& mesh, const
   if (mesh.Amp()) {
     ep.peer_id = mesh.Amp()->LocalPeerId();
   }
-  if (!mesh.AmpListenMultiaddr().empty()) {
+  for (const std::string& ma : mesh.AdvertisedListenMultiaddrs()) {
+    if (!ma.empty()) {
+      ep.multiaddrs.push_back(ma);
+    }
+  }
+  if (ep.multiaddrs.empty() && !mesh.AmpListenMultiaddr().empty()) {
     ep.multiaddrs.push_back(mesh.AmpListenMultiaddr());
   }
   for (const std::string& ma : mesh_cfg.advertise_multiaddrs) {
@@ -1029,16 +1039,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
 
   if (directory_) {
     mesh_directory_cache_ = std::make_unique<MeshDirectoryCache>([this]() -> Roe<std::vector<MeshDirectoryNode>> {
-      // N029 nd4: Amp directory twin first, then HTTP INameDirectory.
-      if (mesh_ && mesh_->AmpDirectory() && mesh_->AmpDirectory()->IsStarted()) {
-        auto amp_nodes = mesh_->AmpDirectory()->ListMeshNodes();
-        if (amp_nodes) {
-          auto rows = MeshDirectoryNodesFromHits(*amp_nodes);
-          if (!rows.empty()) {
-            return rows;
-          }
-        }
-      }
+      // Sync fetcher: HTTP INameDirectory (tests / async-unset path).
       if (!directory_) {
         return std::vector<MeshDirectoryNode>{};
       }
@@ -1048,6 +1049,39 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
         return records.error();
       }
       return MeshDirectoryNodesFromNameRecords(*records);
+    });
+    // N029 nd4: Amp directory twin first (no worker park), then HTTP on Normal.
+    mesh_directory_cache_->SetAsyncFetcher([this](std::function<void(Roe<std::vector<MeshDirectoryNode>>)> done) {
+      auto fetch_http = [this, done]() {
+        AppRuntime::PostWorkerNormal([this, done]() {
+          if (!directory_) {
+            done(std::vector<MeshDirectoryNode>{});
+            return;
+          }
+          DirectoryClientNameDirectory names(*directory_);
+          auto records = names.ListService("mesh_node");
+          if (!records) {
+            done(records.error());
+            return;
+          }
+          done(MeshDirectoryNodesFromNameRecords(*records));
+        });
+      };
+      if (mesh_ && mesh_->AmpDirectory() && mesh_->AmpDirectory()->IsStarted()) {
+        mesh_->AmpDirectory()->ListMeshNodesAsync(
+            [done, fetch_http](AmpDirectoryProtocol::ListRoe amp_nodes) {
+              if (amp_nodes) {
+                auto rows = MeshDirectoryNodesFromHits(*amp_nodes);
+                if (!rows.empty()) {
+                  done(std::move(rows));
+                  return;
+                }
+              }
+              fetch_http();
+            });
+        return;
+      }
+      fetch_http();
     });
     mesh_directory_cache_->SetOnUpdated([this]() {
       RegisterMeshDirectoryEndpoints();
@@ -1194,46 +1228,41 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
   if (!mesh_) {
     return {};
   }
+  if (!mesh_messaging_) {
+    return Error("local messaging stack not built");
+  }
 
   IChatPeerLinks* amp_links = nullptr;
   std::function<void()> amp_pump;
   std::function<void(std::function<void()>)> amp_worker;
+  std::function<void(std::function<void()>)> amp_post_io;
   if (auto chat = mesh_->ChatDeps(); chat) {
     amp_links = &chat->links;
     amp_pump = std::move(chat->io.io_pump);
     amp_worker = std::move(chat->io.post_worker);
+    amp_post_io = std::move(chat->io.post_io);
   }
   if (amp_pump && !amp_worker) {
-    amp_worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
+    amp_worker = [](std::function<void()> task) { MeshControlDispatch::Post(std::move(task)); };
+  }
+  if (!amp_links) {
+    log().warning << "AttachAmpMessagingStack: Amp chat deps unavailable";
+    return {};
   }
 
-  mesh_messaging_ = std::make_unique<MeshDeliveryOrchestrator>(
-      *store_, *contacts_, *identity_, relay_, *inbox_, signing_key_store_, *signing_resolver_, kem_key_store_,
-      *kem_resolver_, *psk_store_, *group_roster_, group_invite_gate_.get(), amp_links, std::move(amp_pump),
-      std::move(amp_worker));
-  mesh_messaging_->SetProfileDataDir(data_dir_);
-  mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
-  mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());
-  mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
+  // Keep the same MeshDeliveryOrchestrator instance — timers / SyncInbox workers may already
+  // hold `this`. Recreating here caused "mutex lock failed: Invalid argument" + segfault.
+  mesh_messaging_->AttachAmpTransports(amp_links, std::move(amp_pump), std::move(amp_worker),
+                                       std::move(amp_post_io));
   WireAttachmentDownloads();
-  group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
-                                                               *group_invite_gate_, *mesh_messaging_);
-  inbox_->SetGroupMembership(group_membership_.get());
-  mesh_messaging_->SetGroupMembership(group_membership_.get());
+  // Rebind call-control inbound now that Amp direct-chat transports exist.
   call_stack_->BuildSessions(MakeCallStackDeps());
   if (auto* calls = call_stack_->Calls()) {
     calls->SetInitiationBillingStore(initiation_billing_.get());
   }
-  actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
-                                                       group_membership_.get(), registration_, mesh_messaging_.get());
-  if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
-    const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs->group_invite_policy);
-    group_invite_gate_->SetInboundPolicy(policy);
-    group_membership_->SetInboundPolicy(policy);
-  }
   RegisterContactEndpoints();
-  if (agent_inbound_.IsBound()) {
-    router_ = std::make_unique<MessageRouter>(*inbox_, *mesh_messaging_, agent_inbound_, *store_);
+  if (mesh_directory_cache_) {
+    RegisterMeshDirectoryEndpoints();
   }
   if (shutdown_requested_.load(std::memory_order_acquire)) {
     DiscardMessagingBringUp();
@@ -1302,7 +1331,7 @@ void ConversationsHub::ScheduleMeshBringUp() {
 
 Roe<void> ConversationsHub::EnsureMessagingReady() {
   StartupPhase phase("ConversationsHub::EnsureMessagingReady");
-  if (shutdown_requested_.load(std::memory_order_acquire)) {
+  if (shutdown_requested_.load(std::memory_order_acquire) || AppRuntime::IsShuttingDown()) {
     return Error("shutdown in progress");
   }
   if (!initialized_) {
@@ -1382,18 +1411,11 @@ PeerSigningKeyStore& ConversationsHub::SigningKeys() {
   return signing_key_store_;
 }
 
-void ConversationsHub::TickAmpMesh() {
-  if (!messaging_ready_ || !mesh_) {
-    return;
-  }
-  mesh_->Tick();
-}
-
 void ConversationsHub::TickMesh() {
   if (!messaging_ready_) {
     return;
   }
-  // Mesh UDP drain is on amp_mesh_pump_timer_ (~5ms). Policy stays on the 1s timer.
+  // Mesh UDP drain is MeshHost MeshPumpThread (~5ms). Policy stays on the 1s timer.
   if (mesh_messaging_) {
     mesh_messaging_->TickMesh();
   }
@@ -1410,17 +1432,11 @@ void ConversationsHub::TickMesh() {
 
 namespace {
 
-/** Amp has no async reactor — product must Drive often enough for call-media / SFU / chat. */
-constexpr auto kAmpMeshPumpInterval = std::chrono::milliseconds(5);
 constexpr auto kHubPolicyTimerInterval = std::chrono::seconds(1);
 
 } // namespace
 
 void ConversationsHub::StartCoordinatorTimers() {
-  if (amp_mesh_pump_timer_id_ == 0 && mesh_) {
-    amp_mesh_pump_timer_id_ =
-        AppRuntime::ScheduleCoordinatorRepeating(kAmpMeshPumpInterval, [this]() { TickAmpMesh(); });
-  }
   if (hub_policy_timer_id_ == 0) {
     hub_policy_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(kHubPolicyTimerInterval, [this]() {
       TickMesh();
@@ -1445,10 +1461,6 @@ void ConversationsHub::StartCoordinatorTimers() {
 }
 
 void ConversationsHub::StopCoordinatorTimers() {
-  if (amp_mesh_pump_timer_id_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(amp_mesh_pump_timer_id_);
-    amp_mesh_pump_timer_id_ = 0;
-  }
   if (hub_policy_timer_id_ != 0) {
     AppRuntime::CancelCoordinatorTimer(hub_policy_timer_id_);
     hub_policy_timer_id_ = 0;
@@ -1656,8 +1668,11 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
   }
 
   std::vector<std::string> listen_addrs;
-  if (mesh_ && !mesh_->AmpListenMultiaddr().empty()) {
-    listen_addrs.push_back(mesh_->AmpListenMultiaddr());
+  if (mesh_) {
+    listen_addrs = mesh_->AdvertisedListenMultiaddrs();
+    if (listen_addrs.empty() && !mesh_->AmpListenMultiaddr().empty()) {
+      listen_addrs.push_back(mesh_->AmpListenMultiaddr());
+    }
   }
   auto applied = FinishAndPersistRegistration(Registration(), Identity(), identity->nickname, listen_addrs);
   if (!applied) {
@@ -1757,75 +1772,125 @@ Roe<void> ConversationsHub::FreeOldestRelayBlobSlot() {
 }
 
 Roe<ThreadMessage> ConversationsHub::SendAttachmentFromPath(const std::string& thread_id, const std::string& path) {
+  auto result_promise = std::make_shared<std::promise<Roe<ThreadMessage>>>();
+  auto result_future = result_promise->get_future();
+  SendAttachmentFromPathAsync(thread_id, path, [result_promise](Roe<ThreadMessage> value) {
+    try {
+      result_promise->set_value(std::move(value));
+    } catch (const std::future_error&) {
+    }
+  });
+  constexpr auto kWait = std::chrono::milliseconds(90000);
+  const auto deadline = std::chrono::steady_clock::now() + kWait;
+  while (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+    return Error("Attachment upload timed out");
+  }
+  return result_future.get();
+}
+
+void ConversationsHub::SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
+                                                   std::function<void(Roe<ThreadMessage>)> on_done) {
+  auto finish = [on_done = std::move(on_done)](Roe<ThreadMessage> value) {
+    if (on_done) {
+      on_done(std::move(value));
+    }
+  };
+
   if (!IsInitialized()) {
-    return Error("Messaging hub not initialized");
+    finish(Error("Messaging hub not initialized"));
+    return;
   }
   if (!IsMessagingReady()) {
-    return AppError::Pin(Err::Pin::Required, "Unlock profile PIN to send attachments");
+    finish(AppError::Pin(Err::Pin::Required, "Unlock profile PIN to send attachments"));
+    return;
   }
   if (!blob_) {
-    return Error("Blob client not configured");
+    finish(Error("Blob client not configured"));
+    return;
   }
   if (thread_id.empty()) {
-    return Error("No active thread");
+    finish(Error("No active thread"));
+    return;
   }
 
   auto thread = Store().GetThread(thread_id);
   if (!thread) {
-    return thread.error();
+    finish(thread.error());
+    return;
   }
   if (!*thread) {
-    return Error("Thread not found");
+    finish(Error("Thread not found"));
+    return;
   }
-  const Thread& active = **thread;
+  Thread active = **thread;
   if (active.kind == ThreadKind::Ai) {
-    return Error("Attachments are not supported in assistant threads");
+    finish(Error("Attachments are not supported in assistant threads"));
+    return;
   }
   if (active.kind != ThreadKind::Direct && active.kind != ThreadKind::Group) {
-    return Error("Attachments are not supported in this thread");
+    finish(Error("Attachments are not supported in this thread"));
+    return;
   }
 
   ChatAttachmentUploadOptions upload_opts;
   upload_opts.peer_client = mesh_messaging_ ? mesh_messaging_->PeerBlobClient() : nullptr;
   upload_opts.contacts = contacts_.get();
-  upload_opts.thread = &active;
+  upload_opts.thread = active;
   upload_opts.thread_id = thread_id;
-  auto fields = UploadChatAttachmentFromFile(*blob_, Identity(), path, upload_opts);
-  if (!fields) {
-    return fields.error();
-  }
 
-  SendRelayOptions opts;
-  opts.content_type = ChatContentType::Attachment;
-  opts.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(*fields);
-  const std::string display = fields->filename.empty() ? "Attachment" : fields->filename;
+  UploadChatAttachmentFromFileAsync(
+      *blob_, Identity(), path, std::move(upload_opts),
+      [this, thread_id, path, active = std::move(active), finish](Roe<ChatAttachmentFields> fields) mutable {
+        auto continue_send = [this, thread_id, path, active = std::move(active), finish = std::move(finish),
+                              fields = std::move(fields)]() mutable {
+          if (!fields) {
+            finish(fields.error());
+            return;
+          }
 
-  const ByteVector attachment_dek = Attachments().CopyDek();
+          SendRelayOptions opts;
+          opts.content_type = ChatContentType::Attachment;
+          opts.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(*fields);
+          const std::string display = fields->filename.empty() ? "Attachment" : fields->filename;
 
-  if (active.kind == ThreadKind::Group) {
-    auto sent = MeshMessaging().SendGroupMessage(thread_id, display, opts);
-    if (sent) {
-      if (!attachment_dek.empty() && !profile_id_.empty()) {
-        (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek, profile_id_);
-      }
-      Attachments().MaybeBuildPoster(thread_id, *fields);
-      if (attachment_downloads_) {
-        attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
-      }
-    }
-    return sent;
-  }
-  auto sent = MeshMessaging().SendUserMessage(thread_id, display, opts);
-  if (sent) {
-    if (!attachment_dek.empty() && !profile_id_.empty()) {
-      (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek, profile_id_);
-    }
-    Attachments().MaybeBuildPoster(thread_id, *fields);
-    if (attachment_downloads_) {
-      attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
-    }
-  }
-  return sent;
+          const ByteVector attachment_dek = Attachments().CopyDek();
+
+          if (active.kind == ThreadKind::Group) {
+            auto sent = MeshMessaging().SendGroupMessage(thread_id, display, opts);
+            if (sent) {
+              if (!attachment_dek.empty() && !profile_id_.empty()) {
+                (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek, profile_id_);
+              }
+              Attachments().MaybeBuildPoster(thread_id, *fields);
+              if (attachment_downloads_) {
+                attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
+              }
+            }
+            finish(std::move(sent));
+            return;
+          }
+          auto sent = MeshMessaging().SendUserMessage(thread_id, display, opts);
+          if (sent) {
+            if (!attachment_dek.empty() && !profile_id_.empty()) {
+              (void)CopyAttachmentPlaintextFile(data_dir_, thread_id, *fields, path, attachment_dek, profile_id_);
+            }
+            Attachments().MaybeBuildPoster(thread_id, *fields);
+            if (attachment_downloads_) {
+              attachment_downloads_->EnqueueFromMessage(thread_id, *sent);
+            }
+          }
+          finish(std::move(sent));
+        };
+        if (AppRuntime::IsRunning()) {
+          AppRuntime::PostWorkerNormal(std::move(continue_send));
+        } else {
+          continue_send();
+        }
+      });
 }
 
 AttachmentFetchWorkflow& ConversationsHub::Attachments() {
@@ -2423,7 +2488,7 @@ void ConversationsHub::Shutdown() {
       secrets_->UnregisterDekConsumer(call_stack_->MediaKeys());
     }
   }
-  // Stop libp2p / Connect workers before dropping session façade (Leave may still be dialing).
+  // Stop mesh (joins MeshControlPool + MeshPump) before dropping session façade.
   StopMesh();
   // Drop the call session manager before P2P — CSM holds a MeshDeliveryOrchestrator& reference.
   call_stack_->ResetSessions();

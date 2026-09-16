@@ -5,6 +5,7 @@
 #include "common/PbrCompat.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -25,8 +26,59 @@ namespace pbr {
 
 namespace {
 
-#if defined(__APPLE__) && TARGET_OS_IPHONE
 std::mutex g_file_mu;
+FILE* g_env_log_file = nullptr;
+
+const char* LevelTag(logging::Level level) {
+  switch (level) {
+  case logging::kLevelDebug:
+    return "D";
+  case logging::Level::INFO:
+    return "I";
+  case logging::Level::WARNING:
+    return "W";
+  case logging::kLevelError:
+  case logging::Level::CRITICAL:
+    return "E";
+  }
+  return "I";
+}
+
+/** Optional desktop/file sink when PP_BROWSER_LOG_FILE is set (run-pp-browser.bat). */
+class EnvFileLogHandler : public logging::Handler {
+public:
+  void emit(logging::Level level, const std::string& /*loggerName*/, const std::string& message) override {
+    if (level < level_ || !g_env_log_file) {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(g_file_mu);
+    if (!g_env_log_file) {
+      return;
+    }
+    std::fprintf(g_env_log_file, "[%s] %s\n", LevelTag(level), message.c_str());
+    std::fflush(g_env_log_file);
+  }
+};
+
+bool TryOpenEnvLogFile() {
+  const char* path = std::getenv("PP_BROWSER_LOG_FILE");
+  if (path == nullptr || path[0] == '\0') {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(g_file_mu);
+  if (g_env_log_file) {
+    return true;
+  }
+  g_env_log_file = std::fopen(path, "a");
+  if (!g_env_log_file) {
+    return false;
+  }
+  std::fprintf(g_env_log_file, "---- pp-browser log open path=%s ----\n", path);
+  std::fflush(g_env_log_file);
+  return true;
+}
+
+#if defined(__APPLE__) && TARGET_OS_IPHONE
 FILE* g_log_file = nullptr;
 
 void EnsureIosLogFile() {
@@ -46,24 +98,20 @@ void EnsureIosLogFile() {
 
 void WriteIosLog(logging::Level level, const std::string& message) {
   EnsureIosLogFile();
-  const char* tag = "I";
+  const char* tag = LevelTag(level);
   os_log_type_t os_type = OS_LOG_TYPE_INFO;
   switch (level) {
   case logging::kLevelDebug:
-    tag = "D";
     os_type = OS_LOG_TYPE_DEBUG;
     break;
   case logging::Level::INFO:
-    tag = "I";
     os_type = OS_LOG_TYPE_INFO;
     break;
   case logging::Level::WARNING:
-    tag = "W";
     os_type = OS_LOG_TYPE_DEFAULT;
     break;
   case logging::kLevelError:
   case logging::Level::CRITICAL:
-    tag = "E";
     os_type = OS_LOG_TYPE_ERROR;
     break;
   }
@@ -114,14 +162,23 @@ public:
 } // namespace
 
 void InstallPlatformLogSink() {
-  // Desktop: root ConsoleHandler (stderr) is installed in Logger.cpp.
-  // Mobile: add a platform handler (logcat / os_log + file).
-#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
   static bool installed = false;
   if (installed) {
     return;
   }
   installed = true;
+
+  // Desktop dogfood: PP_BROWSER_LOG_FILE (set by run-pp-browser.bat) — GUI apps often
+  // have no usable stdout/stderr, so open the file sink ourselves.
+  if (TryOpenEnvLogFile()) {
+    logging::getRootLogger().addHandler(std::make_shared<EnvFileLogHandler>());
+    if (const char* path = std::getenv("PP_BROWSER_LOG_FILE"); path && path[0]) {
+      logging::getRootLogger().info << "Desktop process log file=" << path;
+    }
+  }
+
+  // Mobile: add a platform handler (logcat / os_log + file).
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
   logging::getRootLogger().addHandler(std::make_shared<PlatformLogHandler>());
 #endif
 }

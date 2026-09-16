@@ -1,4 +1,5 @@
 #include "domain/media/CallRingtone.h"
+#include "domain/media/SdlAudioBootstrap.h"
 
 #include "foundation/platform/IAssetLocator.h"
 
@@ -7,6 +8,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <thread>
 #include <utility>
 
@@ -164,18 +166,61 @@ void CallRingtone::StopAndJoin() {
   RequestStop(/*wait=*/true);
 }
 
-void CallRingtone::RunLoop() {
-  if (!SDL_WasInit(SDL_INIT_AUDIO)) {
-    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
-      SDL_Log("CallRingtone: SDL_InitSubSystem(AUDIO) failed: %s", SDL_GetError());
-      playing_ = false;
-      return;
+bool CallRingtone::StopAndJoin(std::chrono::milliseconds budget) {
+  RequestStop(/*wait=*/false);
+
+  std::thread to_join;
+  {
+    std::lock_guard lock(mutex_);
+    if (joiner_.joinable()) {
+      to_join = std::move(joiner_);
+    } else if (thread_.joinable()) {
+      // RequestStop with empty joiner left playback on thread_ (no prior async Stop).
+      to_join = std::move(thread_);
     }
+  }
+  if (!to_join.joinable()) {
+    return true;
+  }
+
+  auto finished = std::make_shared<std::atomic<bool>>(false);
+  std::thread waiter([finishing = std::move(to_join), finished]() mutable {
+    if (finishing.joinable()) {
+      finishing.join();
+    }
+    finished->store(true, std::memory_order_release);
+  });
+
+  const auto deadline = std::chrono::steady_clock::now() + budget;
+  while (!finished->load(std::memory_order_acquire) &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+
+  if (finished->load(std::memory_order_acquire)) {
+    if (waiter.joinable()) {
+      waiter.join();
+    }
+    return true;
+  }
+
+  SDL_Log("CallRingtone::StopAndJoin: still live after %lldms — detaching (process exit must follow)",
+          static_cast<long long>(budget.count()));
+  waiter.detach();
+  return false;
+}
+
+void CallRingtone::RunLoop() {
+  if (!EnsureSdlAudioSubsystem()) {
+    SDL_Log("CallRingtone: SDL_InitSubSystem(AUDIO) failed: %s", SDL_GetError());
+    playing_ = false;
+    return;
   }
   SDL_AudioSpec want{};
   want.freq = wav_freq_;
   want.format = SDL_AUDIO_S16;
   want.channels = static_cast<Uint8>(wav_channels_);
+  SDL_Log("CallRingtone: opening playback driver=%s", SDL_GetCurrentAudioDriver());
   SDL_AudioStream* stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr);
   if (!stream) {
     SDL_Log("CallRingtone: playback open failed: %s", SDL_GetError());

@@ -1,27 +1,27 @@
 #pragma once
 
-#include <RmlUi/Core/DataModelHandle.h>
+#include <ui/data/DataModelHandle.h>
 
-#include <RmlUi/Core/Types.h>
+#include <ui/base/Types.h>
 #include <functional>
 #include <string>
 #include <unordered_map>
 
-namespace Rml {
+namespace ui {
 class Context;
 class DataModelConstructor;
 }
 
 namespace pbr {
 
-using DataModelSetupFn = std::function<void(Rml::DataModelConstructor&)>;
+using DataModelSetupFn = std::function<void(ui::DataModelConstructor&)>;
 
 class DataModelHost {
 public:
   static DataModelHost& Instance();
 
-  bool Register(Rml::Context* context, const std::string& name, DataModelSetupFn setup);
-  Rml::DataModelHandle Get(const std::string& name) const;
+  bool Register(ui::Context* context, const std::string& name, DataModelSetupFn setup);
+  ui::DataModelHandle Get(const std::string& name) const;
   void Dirty(const std::string& model, const std::string& key);
   void DirtyAll(const std::string& model);
   void Clear();
@@ -30,7 +30,7 @@ private:
   DataModelHost() = default;
 
   struct ModelEntry {
-    Rml::DataModelHandle handle;
+    ui::DataModelHandle handle;
   };
 
   std::unordered_map<std::string, ModelEntry> models_;

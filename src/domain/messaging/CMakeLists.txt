@@ -19,6 +19,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     CallSessionStore.cpp
     CallTypes.cpp
     SoftMigrateLogic.cpp
+    CallHopPlan.cpp
     SfuAttachFanout.cpp
     SfuAttachWaitLogic.cpp
     HopHintLogic.cpp

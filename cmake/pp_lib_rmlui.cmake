@@ -3,7 +3,7 @@
 
 if(NOT COMMAND pp_browser_link_rmlui_core)
   function(pp_browser_link_rmlui_core target)
-    target_link_libraries(${target} PRIVATE RmlUi::Core)
+    target_link_libraries(${target} PRIVATE ui::core)
     if(WIN32 AND TARGET lunasvg::lunasvg)
       target_link_libraries(${target} PRIVATE lunasvg::lunasvg)
     endif()

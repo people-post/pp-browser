@@ -158,13 +158,13 @@ pp_browser_add_foundation_library(pp_foundation_platform
     pp_foundation_platform_core
     pp_foundation_runtime
     pp_ui
-    RmlUi::Core
+    ui::core
     ${PP_BROWSER_SDL3_TARGET}
     ${PP_BROWSER_SDL3_IMAGE_TARGET})
 
-target_compile_definitions(pp_foundation_platform PUBLIC RMLUI_SDL_VERSION_MAJOR=3)
-if(RMLUI_BACKEND_SIMULATE_TOUCH)
-  target_compile_definitions(pp_foundation_platform PUBLIC RMLUI_BACKEND_SIMULATE_TOUCH)
+target_compile_definitions(pp_foundation_platform PUBLIC UI_SDL_VERSION_MAJOR=3)
+if(UI_BACKEND_SIMULATE_TOUCH)
+  target_compile_definitions(pp_foundation_platform PUBLIC UI_BACKEND_SIMULATE_TOUCH)
 endif()
 if(PP_BROWSER_IS_IOS)
   # OpenGLES is deprecated on iOS 12+; we still use ES3 via SDL until Metal.
@@ -173,8 +173,10 @@ endif()
 
 # Unprefixed includes for host/overlays (CallVideoTileRenderer.h, etc.).
 # Prefixed API: foundation/platform/ui/RmlUi_Backend.h, DesktopWindowChrome.h, …
+# Include_GL3.h (glad) lives under pp-cpp-ui src/render/gl.
 target_include_directories(pp_foundation_platform PUBLIC
-  ${PP_LIB_RMLUI_INCLUDE}
+  ${PP_LIB_UI_INCLUDE}
+  ${PP_LIB_UI_ROOT}/src/render/gl
   ${CMAKE_CURRENT_SOURCE_DIR}/ui
   ${CMAKE_CURRENT_SOURCE_DIR}/ui/gl
   ${CMAKE_CURRENT_SOURCE_DIR}/ui/renderer

@@ -92,15 +92,47 @@ void CallMediaAmpTransport::Detach() {
   active_leg_ = {};
 }
 
-Roe<void> CallMediaAmpTransport::Connect(const CallMediaDirectConnectParams& params,
-                                         CallMediaDirectCallbacks callbacks, int timeout_ms) {
+void CallMediaAmpTransport::ConnectAsync(const CallMediaDirectConnectParams& params,
+                                         CallMediaDirectCallbacks callbacks,
+                                         std::function<void(Roe<void>)> on_done, int timeout_ms) {
   if (!started_.load(std::memory_order_acquire)) {
-    return Error("amp call-media transport not started");
+    if (on_done) {
+      on_done(Error("amp call-media transport not started"));
+    }
+    return;
   }
   if (IsActive()) {
-    return {};
+    if (on_done) {
+      on_done({});
+    }
+    return;
   }
 
+  {
+    std::lock_guard lock(mu_);
+    active_params_ = params;
+  }
+
+  const CallMediaLegId leg_id = coordinator_.StartLeg(
+      params, std::move(callbacks),
+      [this, on_done = std::move(on_done)](Roe<void> result) mutable {
+        if (result) {
+          std::lock_guard lock(mu_);
+          active_leg_ = coordinator_.PrimaryLegId();
+        }
+        if (on_done) {
+          on_done(std::move(result));
+        }
+      },
+      timeout_ms);
+  {
+    std::lock_guard lock(mu_);
+    active_leg_ = leg_id;
+  }
+}
+
+Roe<void> CallMediaAmpTransport::Connect(const CallMediaDirectConnectParams& params,
+                                         CallMediaDirectCallbacks callbacks, int timeout_ms) {
   auto result_promise = std::make_shared<std::promise<Roe<void>>>();
   auto result_future = result_promise->get_future();
   auto settled = std::make_shared<std::atomic<bool>>(false);
@@ -115,19 +147,10 @@ Roe<void> CallMediaAmpTransport::Connect(const CallMediaDirectConnectParams& par
     }
   };
 
-  {
-    std::lock_guard lock(mu_);
-    active_params_ = params;
-  }
+  ConnectAsync(params, std::move(callbacks), [finish](Roe<void> result) { finish(std::move(result)); },
+               timeout_ms);
 
-  const CallMediaLegId leg_id =
-      coordinator_.StartLeg(params, std::move(callbacks),
-                            [finish](Roe<void> result) { finish(std::move(result)); }, timeout_ms);
-  {
-    std::lock_guard lock(mu_);
-    active_leg_ = leg_id;
-  }
-
+  // Product MeshPump drives Amp. Harnesses without a pump may supply io_pump_ (Tick).
   const auto deadline = Clock::now() + std::chrono::milliseconds(std::max(timeout_ms, 1));
   while (Clock::now() < deadline) {
     if (result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
@@ -145,7 +168,6 @@ Roe<void> CallMediaAmpTransport::Connect(const CallMediaDirectConnectParams& par
   }
 
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-    // Inbound may have already won while outbound Connect waited — do not tear it down.
     if (!IsActive()) {
       Detach();
     }

@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace Rml {
+namespace ui {
 class Context;
 }
 
@@ -18,8 +18,8 @@ public:
   static std::string ToAppearanceString(AppearanceMode mode);
 
   static bool ResolveDark(AppearanceMode preference);
-  static void ApplyAppearance(Rml::Context* context, AppearanceMode preference);
-  static void SyncSystemTheme(Rml::Context* context);
+  static void ApplyAppearance(ui::Context* context, AppearanceMode preference);
+  static void SyncSystemTheme(ui::Context* context);
 };
 
 } // namespace pbr

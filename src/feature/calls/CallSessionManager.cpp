@@ -1,7 +1,12 @@
+#include "feature/calls/CallMediaPaths.h"
 #include "feature/calls/CallSessionManager.h"
+#include "feature/calls/CallListenAddrsLogic.h"
+#include "feature/calls/CallAnswererKickLogic.h"
+#include "feature/calls/CallMediaPlannerSelectLogic.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/SessionKeyDeriver.h"
+#include "domain/media/CallMediaAdaptation.h"
 #include "domain/messaging/CallSessionLogic.h"
 #include "domain/messaging/AnnounceLiveJoinHandoff.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
@@ -81,21 +86,73 @@ void CallSessionManager::SetCallMediaBridge(CallMediaBridge* bridge) {
   call_media_bridge_ = bridge;
 }
 
+void CallSessionManager::SetMediaSeat(CallMediaSeat* seat) {
+  media_seat_ = seat;
+  topology_.SetMediaSeat(seat);
+}
+
+void CallSessionManager::SetLifecycle(CallLifecycle* lifecycle) {
+  lifecycle_ = lifecycle;
+  topology_.SetLifecycle(lifecycle);
+}
+
+void CallSessionManager::TopologyOnMediaStoppedForSeat(const std::string& call_id) {
+  topology_.OnMediaStopped(call_id);
+}
+
 void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity,
                                                   bool offerer) {
+  if (lifecycle_ && !lifecycle_->AllowsDirectPath()) {
+    log().info << "ScheduleStartDirectMedia skipped (Status disallows Bridge) call_id=" << call_id
+               << " status=" << CallMediaStatusName(lifecycle_->Status())
+               << " armed=" << CallArmedPlannerName(lifecycle_->ArmedPlanner());
+    return;
+  }
   if (!call_media_bridge_) {
     log().error << "ScheduleStartDirectMedia: mesh media bridge not configured call_id=" << call_id;
     last_media_error_ = "Call media unavailable";
     NotifyRingChanged();
     return;
   }
+  // V036 Phase 3: CSM is signaling-only for duplex start — Direct path façade owns Acquire+Schedule.
   log().info << "ScheduleStartDirectMedia libp2p role=" << (offerer ? "offerer" : "answerer")
                 << " call_id=" << call_id << " peer=" << peer_identity;
-  if (offerer) {
-    call_media_bridge_->ScheduleStartMediaAsOfferer(call_id, peer_identity);
-  } else {
-    call_media_bridge_->ScheduleStartMediaAsAnswerer(call_id, peer_identity);
+  CallDirectPath(call_media_bridge_, media_seat_).ScheduleStart(call_id, peer_identity, offerer);
+}
+
+void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_id) {
+  if (call_id.empty()) {
+    log().info << "KickAnswererDirectMediaIfArmed skip (empty call_id)";
+    return;
   }
+  std::string peer;
+  if (pending_answerer_kick_call_id_ == call_id && !pending_answerer_kick_peer_.empty()) {
+    peer = pending_answerer_kick_peer_;
+  } else {
+    auto resolved = PeerIdentityForCall(call_id);
+    if (resolved && resolved->has_value()) {
+      peer = **resolved;
+    }
+  }
+  CallAnswererKickDecisionInput in;
+  in.allows_direct_path = !lifecycle_ || lifecycle_->AllowsDirectPath();
+  // IsActive alone — do not require tx/connected (capture lags StartSfu; dogfood e157 thrash).
+  in.media_already_active_same_call = media_.IsActive() && media_.ActiveCallId() == call_id;
+  in.peer_nonempty = !peer.empty();
+  if (!ShouldKickAnswererDirectMedia(in)) {
+    if (!in.allows_direct_path) {
+      log().info << "KickAnswererDirectMediaIfArmed skip (Status disallows Bridge) call_id=" << call_id
+                 << " status=" << CallMediaStatusName(lifecycle_->Status());
+    } else if (in.media_already_active_same_call) {
+      log().info << "KickAnswererDirectMediaIfArmed skip (media already active) call_id=" << call_id;
+    } else {
+      log().warning << "KickAnswererDirectMediaIfArmed no peer call_id=" << call_id;
+    }
+    return;
+  }
+  log().info << "KickAnswererDirectMediaIfArmed call_id=" << call_id << " peer=" << peer
+             << " on_ui=" << (AppRuntime::CurrentlyOnUI() ? 1 : 0);
+  ScheduleStartDirectMedia(call_id, peer, false);
 }
 
 CallHopHealth CallSessionManager::HopHealth() const {
@@ -104,6 +161,13 @@ CallHopHealth CallSessionManager::HopHealth() const {
   }
   // Topology holds relay deps; sample via public IsSfuAttached + Media PathPressure elsewhere.
   return topology_.HopHealth();
+}
+
+std::string CallSessionManager::MediaPathKind() const {
+  if (!call_media_bridge_) {
+    return {};
+  }
+  return call_media_bridge_->MediaPathKind();
 }
 
 bool CallSessionManager::IsSfuAttached() const {
@@ -242,19 +306,10 @@ void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool 
   }
   const bool was = PeerHasMediaRelayCap(peer_id);
   peer_media_relay_caps_[peer_id] = media_relay;
-  // Phone initiator SoftMigrate may have run before this desktop Accept — nudge re-pick.
+  // Topology owns SoftMigrate nudge (N≥3 / attach-wait only — V038).
   if (media_relay && !was) {
     if (auto active = ActiveLocalCall(); active && active->has_value()) {
-      if (topology_.IsSfuAttachWaitActive() || !topology_.IsSfuAttached()) {
-        const std::string call_id = (*active)->call_id;
-        AppRuntime::PostWorkerNormal([this, call_id]() {
-          if (topology_.IsOnSfuForCall(call_id)) {
-            return;
-          }
-          (void)topology_.MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
-          NotifyRingChanged();
-        });
-      }
+      topology_.OnPeerMediaRelayCapLearned((*active)->call_id, peer_id);
     }
   }
 }
@@ -523,8 +578,12 @@ void CallSessionManager::StopCallMedia(const std::string& call_id) {
 }
 
 void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
-  // Detach media_relay BEFORE JoinCaptureThread. Capture may be blocked in BlockingWrite on the
-  // SFU stream; OnMediaStopped closes it so Stop/quit can finish (group-call hang).
+  // V036 Phase 3: CSM signaling-only for duplex stop — seat.Release owns Detach-then-Stop.
+  if (media_seat_) {
+    media_seat_->Release(call_id);
+    return;
+  }
+  // Tests / incomplete wiring without a seat.
   topology_.OnMediaStopped(call_id);
   if (call_media_bridge_) {
     call_media_bridge_->StopMeshMedia(call_id);
@@ -739,15 +798,12 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
     }
   }
   if (local_listen_multiaddrs_) {
-    invite.listen_multiaddrs = local_listen_multiaddrs_();
+    FillCallListenFields(local_listen_multiaddrs_(), invite.libp2p_peer_id, invite.listen_multiaddrs);
   }
+  // Explicit mesh PeerId wins over /p2p/ suffix derived from listen MAs.
   if (local_mesh_peer_id_) {
-    invite.libp2p_peer_id = local_mesh_peer_id_();
-  }
-  if (invite.libp2p_peer_id.empty()) {
-    const auto ids = PeerIdsFromListenMultiaddrs(invite.listen_multiaddrs);
-    if (!ids.empty()) {
-      invite.libp2p_peer_id = ids.front();
+    if (const std::string pid = local_mesh_peer_id_(); !pid.empty()) {
+      invite.libp2p_peer_id = pid;
     }
   }
   if (local_peer_caps_) {
@@ -813,6 +869,25 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
   if (auto cleared = LeaveCallIfActiveExcept(call_id); !cleared) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << cleared.error().message;
     return cleared.error();
+  }
+  // LeaveCallIfActiveExcept only sees Joined sessions. An Ended prior call can leave the
+  // engine in sfu_mode (Stop gated on ActiveCallId match) — purge before WaitForAttach.
+  // Never Release/Stop the call we are accepting (empty ActiveCallId used to target accept id
+  // and PostUIFront-Stop raced answerer StartSfu).
+  if (Media().IsActive() || Media().IsSfuMode()) {
+    const std::string leftover = Media().ActiveCallId();
+    if (!leftover.empty() && leftover != call_id) {
+      log().info << "AcceptInvite stopping leftover media call_id=" << leftover
+                 << " accept=" << call_id;
+      StopMediaIfCall(leftover);
+    } else if (leftover.empty()) {
+      log().info << "AcceptInvite stopping zombie engine (no ActiveCallId) accept=" << call_id;
+      if (call_media_bridge_) {
+        call_media_bridge_->StopMeshMedia({});
+      } else if (Media().IsActive() || Media().IsSfuMode()) {
+        Media().Stop();
+      }
+    }
   }
   auto pending = sessions_.LoadPendingInvite(call_id, *local);
   if (!pending || !pending->has_value() || (*pending)->status != "pending") {
@@ -885,28 +960,40 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
 
   // Runs on Accept worker thread (never Browser IO). Do not wait on ListenOn / PollInbox here.
   // ScheduleStart* only posts StartSfu onto UI — never run the engine on this thread.
-  auto joined_after = sessions_.CountJoined(call_id);
-  size_t n_joined = joined_after ? *joined_after : 0;
-  // Group invite seeds other callees as Ringing. CountJoined alone stays at 2 until they Accept,
-  // so we SoftMigrate/WaitForAttach when Joined+Ringing+Invited already implies N≥3.
-  if (auto all = sessions_.ListParticipants(call_id); all) {
-    size_t n_active = 0;
-    for (const CallParticipant& p : *all) {
-      if (p.state == CallParticipantState::Joined || p.state == CallParticipantState::Ringing ||
-          p.state == CallParticipantState::Invited) {
-        ++n_active;
-      }
-    }
-    if (n_active > n_joined) {
-      n_joined = n_active;
-    }
+  // N→planner: Topology for N≥3 / hint; else Bridge Direct (CallMediaPlannerSelectLogic / V038).
+  size_t n_joined = 0;
+  if (auto joined_after = sessions_.CountJoined(call_id)) {
+    n_joined = *joined_after;
   }
-  if (!topology_.OnLocalAcceptJoined(call_id, n_joined, row.sfu_hint)) {
+  size_t n_active = n_joined;
+  if (auto all = sessions_.ListParticipants(call_id); all) {
+    n_active = CountMediaPlannerActiveParticipants(*all);
+  }
+  const size_t planner_n = EffectiveMediaPlannerN(n_joined, n_active);
+  const bool topology_took_media =
+      topology_.OnLocalAcceptJoined(call_id, planner_n, row.sfu_hint);
+  bool schedule_answerer_direct = false;
+  if (!topology_took_media) {
     if (row.sfu_hint && !row.sfu_hint->empty()) {
       row.sfu_hint.reset();
       (void)sessions_.UpsertSession(row);
     }
-    ScheduleStartDirectMedia(call_id, inviter, false);
+    if (lifecycle_) {
+      lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+    }
+    // Drop stale SoftMigrate chrome ("Connecting group media…") from a prior hop attempt.
+    TopologyClearMediaActivity();
+    // Remember peer for Lifecycle KickAnswerer (UI) — PeerIdentityForCall can lag roster.
+    pending_answerer_kick_call_id_ = call_id;
+    pending_answerer_kick_peer_ = inviter;
+    // ScheduleStart after CallAccept is on the wire so offerer can arm inbound while we dial.
+    schedule_answerer_direct = true;
+  } else {
+    pending_answerer_kick_call_id_.clear();
+    pending_answerer_kick_peer_.clear();
+    log().info << "AcceptInvite topology owns media (no ScheduleStart) call_id=" << call_id
+               << " planner_n=" << planner_n
+               << " sfu_hint=" << (row.sfu_hint && !row.sfu_hint->empty() ? 1 : 0);
   }
   NotifyRingChanged();
 
@@ -921,15 +1008,11 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
     (void)initiation_billing_->MarkOpen(inviter);
   }
   if (local_listen_multiaddrs_) {
-    accept.listen_multiaddrs = local_listen_multiaddrs_();
+    FillCallListenFields(local_listen_multiaddrs_(), accept.libp2p_peer_id, accept.listen_multiaddrs);
   }
   if (local_mesh_peer_id_) {
-    accept.libp2p_peer_id = local_mesh_peer_id_();
-  }
-  if (accept.libp2p_peer_id.empty()) {
-    const auto ids = PeerIdsFromListenMultiaddrs(accept.listen_multiaddrs);
-    if (!ids.empty()) {
-      accept.libp2p_peer_id = ids.front();
+    if (const std::string pid = local_mesh_peer_id_(); !pid.empty()) {
+      accept.libp2p_peer_id = pid;
     }
   }
   if (local_peer_caps_) {
@@ -945,6 +1028,14 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
     log().warning << "CallAccept send failed call_id=" << call_id << " err=" << sent.error().message;
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << sent.error().message;
     return sent.error();
+  }
+
+  if (schedule_answerer_direct) {
+    log().info << "AcceptInvite → ScheduleStartDirectMedia (answerer) call_id=" << call_id
+               << " inviter=" << inviter << " planner_n=" << planner_n
+               << " listen_mas=" << accept.listen_multiaddrs.size()
+               << " peer_id=" << (accept.libp2p_peer_id.empty() ? 0 : 1);
+    ScheduleStartDirectMedia(call_id, inviter, false);
   }
 
   // Pull CallMediaKey ASAP — do not wait for the next UI-tick poll (Accept worker path).
@@ -1098,15 +1189,24 @@ Roe<void> CallSessionManager::EndCallLocal(CallSession& session, const std::opti
 }
 
 Roe<void> CallSessionManager::LeaveCall(const std::string& call_id) {
+  if (pending_answerer_kick_call_id_ == call_id) {
+    pending_answerer_kick_call_id_.clear();
+    pending_answerer_kick_peer_.clear();
+  }
   auto local = LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value()) {
+    // Still detach leftover SFU if the disk row is gone but capture is live.
+    StopMediaIfCall(call_id);
     return Error("Call session not found");
   }
   if ((*session)->state == CallSessionState::Ended) {
+    // Session already Ended (remote CallEnded / prior EndCallLocal) must still tear down
+    // media_relay — otherwise the next Accept inherits zombie RX and red "reconnecting".
+    StopMediaIfCall(call_id);
     return {};
   }
   StopMediaIfCall(call_id);
@@ -1287,10 +1387,6 @@ Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
     return call_media_bridge_->RetryMeshMedia(call_id);
   }
   return Error("Call media retry unavailable");
-}
-
-void CallSessionManager::PollPendingSfuAttach() {
-  topology_.PollPendingSfuAttach();
 }
 
 Roe<std::optional<CallSession>> CallSessionManager::SessionForCall(const std::string& call_id) const {
@@ -1493,16 +1589,27 @@ void CallSessionManager::TopologyNoteMediaAttempted(const std::string& call_id) 
   }
 }
 
-void CallSessionManager::TopologyBindMediaCallId(const std::string& /*call_id*/) {
+void CallSessionManager::TopologyBindMediaCallId(const std::string& call_id) {
+  // Hop path bind — CallHopPath façade (Acquire under seat).
+  if (media_seat_ && !call_id.empty()) {
+    (void)CallHopPath(&topology_, media_seat_).BindForAttach(call_id);
+  }
 }
 
 void CallSessionManager::TopologyClearMediaPeerIdentity() {
 }
 
 void CallSessionManager::TopologyReleaseDirectMedia() {
-  if (call_media_bridge_) {
-    call_media_bridge_->ReleaseDirectTransport();
+  // SoftMigrate path replace: Direct path ReleaseTransport under current seat token.
+  if (!call_media_bridge_) {
+    return;
   }
+  if (media_seat_) {
+    (void)CallDirectPath(call_media_bridge_, media_seat_)
+        .ReleaseTransport(media_seat_->CurrentToken());
+    return;
+  }
+  call_media_bridge_->ReleaseDirectTransport();
 }
 
 void CallSessionManager::TopologyRequestInboxSync() {
@@ -1530,6 +1637,28 @@ void CallSessionManager::P2pSetLastMediaError(std::string message) {
 
 Roe<std::optional<std::string>> CallSessionManager::P2pPeerIdentityForCall(const std::string& call_id) const {
   return PeerIdentityForCall(call_id);
+}
+
+Roe<std::optional<std::string>> CallSessionManager::MeshPeerIdForAccount(const std::string& account) const {
+  if (account.empty() || account.rfind("account:", 0) != 0) {
+    return std::optional<std::string>{};
+  }
+  for (const auto& [peer_id, relay] : peer_id_to_relay_) {
+    if (relay == account && !peer_id.empty()) {
+      return std::optional<std::string>{peer_id};
+    }
+  }
+  auto found = contacts_.FindByIdentity(account, ContactIdKind::Account);
+  if (!found) {
+    return found.error();
+  }
+  if (found->has_value()) {
+    const std::string peer_id = PeerIdFromContact(**found);
+    if (!peer_id.empty()) {
+      return std::optional<std::string>{peer_id};
+    }
+  }
+  return std::optional<std::string>{};
 }
 
 Roe<std::optional<std::string>> CallSessionManager::RelayIdentityForMeshPeerId(
@@ -1621,30 +1750,22 @@ bool CallSessionManager::P2pExpectGroupSfuMigration(const std::string& call_id) 
   if (call_id.empty()) {
     return false;
   }
-  if (topology_.IsAwaitingSfuRecovery() || topology_.IsSfuAttached()) {
-    return true;
+  CallExpectGroupSfuInput in;
+  in.awaiting_sfu_recovery = topology_.IsAwaitingSfuRecovery();
+  in.sfu_attached = topology_.IsSfuAttached();
+  if (auto n = sessions_.CountJoined(call_id)) {
+    in.joined_count = *n;
   }
-  // SoftMigrate can start on the hop when Joined+Ringing+Invited ≥ 3 while a guest's
-  // CountJoined is still 2 (Samsung Accept not on roster yet). Treat that as expect.
   if (auto all = sessions_.ListParticipants(call_id); all) {
-    size_t n_active = 0;
-    for (const CallParticipant& p : *all) {
-      if (p.state == CallParticipantState::Joined || p.state == CallParticipantState::Ringing ||
-          p.state == CallParticipantState::Invited) {
-        ++n_active;
-      }
-    }
-    if (n_active >= 3) {
-      return true;
-    }
-  } else if (auto n = sessions_.CountJoined(call_id); n && *n >= 3) {
-    return true;
+    in.active_roster_count = CountMediaPlannerActiveParticipants(*all);
+  } else {
+    in.active_roster_count = in.joined_count;
   }
   if (auto session = sessions_.LoadSession(call_id);
       session && *session && (*session)->sfu_hint && !(*session)->sfu_hint->empty()) {
-    return true;
+    in.has_sfu_hint = true;
   }
-  return false;
+  return ShouldExpectGroupSfuMigration(in);
 }
 
 void CallSessionManager::P2pNoteExpectSfuAttach(const std::string& call_id) {

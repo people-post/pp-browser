@@ -83,9 +83,9 @@ void WorkingSetController::Open(const std::string& entry_id, const int block_ind
   }
 
   shell_.working_set_active = true;
-  shell_.working_set_title = Rml::String(selected->title.c_str());
-  shell_.working_set_subtitle = Rml::String(selected->subtitle.c_str());
-  shell_.working_set_rml = Rml::String(selected->artifact_rml.c_str());
+  shell_.working_set_title = ui::String(selected->title.c_str());
+  shell_.working_set_subtitle = ui::String(selected->subtitle.c_str());
+  shell_.working_set_rml = ui::String(selected->artifact_rml.c_str());
   active_affinity_ = selected->affinity;
   active_entry_id_ = entry_id;
   SyncWidgetBindings(entry_id);
@@ -126,9 +126,9 @@ void WorkingSetController::ApplyFromParse(const std::string& entry_id,
                          active_affinity_ != WorkingSetAffinity::None;
 
   shell_.working_set_active = true;
-  shell_.working_set_title = Rml::String(primary->title.c_str());
-  shell_.working_set_subtitle = Rml::String(primary->subtitle.c_str());
-  shell_.working_set_rml = Rml::String(primary->artifact_rml.c_str());
+  shell_.working_set_title = ui::String(primary->title.c_str());
+  shell_.working_set_subtitle = ui::String(primary->subtitle.c_str());
+  shell_.working_set_rml = ui::String(primary->artifact_rml.c_str());
   active_affinity_ = primary->affinity;
   active_entry_id_ = entry_id;
   SyncWidgetBindings(entry_id);

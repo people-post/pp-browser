@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/Module.h"
 #include "common/WorkerPool.h"
 
 #include <cstddef>
@@ -18,15 +19,20 @@ struct ThreadRuntimeConfig {
  * Application-owned thread budget: worker pool + coordinator thread.
  * Start from the composition root (Application, pp-node); subsystems borrow via AppRuntime.
  */
-class ThreadRuntime {
+class ThreadRuntime : public Module {
 public:
   ThreadRuntime();
-  ~ThreadRuntime();
+  ~ThreadRuntime() override;
 
   ThreadRuntime(const ThreadRuntime&) = delete;
   ThreadRuntime& operator=(const ThreadRuntime&) = delete;
 
   void Start(const ThreadRuntimeConfig& config = {});
+  /**
+   * Budgeted join: coordinator ≤500ms, WorkerPool ≤500ms.
+   * On WorkerPool / coordinator detach timeout, ownership is released (leak until process exit)
+   * so we do not destroy while detached workers still run.
+   */
   void Shutdown();
 
   bool IsRunning() const { return running_; }

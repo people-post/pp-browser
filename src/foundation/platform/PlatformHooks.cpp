@@ -75,7 +75,7 @@ void PlatformHooks::Register() {
   }
 }
 
-Rml::FileInterface* PlatformHooks::PackagedFileInterface() {
+ui::FileInterface* PlatformHooks::PackagedFileInterface() {
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
   return g_packaged_file_interface;
 #else

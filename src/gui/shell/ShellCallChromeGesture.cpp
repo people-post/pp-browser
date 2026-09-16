@@ -1,9 +1,9 @@
 #include "gui/shell/ShellCallChromeGesture.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/ElementDocument.h>
-#include <RmlUi/Core/Event.h>
+#include <ui/dom/Context.h>
+#include <ui/dom/Element.h>
+#include <ui/dom/ElementDocument.h>
+#include <ui/dom/Event.h>
 
 #include <algorithm>
 #include <cmath>
@@ -18,11 +18,11 @@ constexpr int kDragDeadzonePx = 8;
 constexpr float kScrollTopEpsilonPx = 1.f;
 constexpr float kTapSlopDp = 10.f;
 
-int EventMouseX(const Rml::Event& event) {
+int EventMouseX(const ui::Event& event) {
   return event.GetParameter<int>("mouse_x", 0);
 }
 
-int EventMouseY(const Rml::Event& event) {
+int EventMouseY(const ui::Event& event) {
   return event.GetParameter<int>("mouse_y", 0);
 }
 
@@ -42,7 +42,7 @@ const char* CornerClass(int corner) {
 
 } // namespace
 
-void ShellCallChromeGesture::Attach(Rml::Element* root, Rml::Context* context, CallChromeMode mode,
+void ShellCallChromeGesture::Attach(ui::Element* root, ui::Context* context, CallChromeMode mode,
                                     Callbacks callbacks, ShellGestureAxisLock* axis_lock) {
   Detach();
   if (!root || !context) {
@@ -54,7 +54,7 @@ void ShellCallChromeGesture::Attach(Rml::Element* root, Rml::Context* context, C
   mode_ = mode;
   callbacks_ = std::move(callbacks);
   axis_lock_ = axis_lock;
-  root_->AddEventListener(Rml::EventId::Mousedown, this);
+  root_->AddEventListener(ui::EventId::Mousedown, this);
   attached_ = true;
   if (mode_ == CallChromeMode::Minimized) {
     SetChipOffset(0.f, 0.f, false);
@@ -71,7 +71,7 @@ void ShellCallChromeGesture::Detach() {
   SetOutsideTapCapture(false);
   SetDismissOwnsTopOverscroll(false);
   if (attached_ && root_) {
-    root_->RemoveEventListener(Rml::EventId::Mousedown, this);
+    root_->RemoveEventListener(ui::EventId::Mousedown, this);
   }
   root_ = nullptr;
   document_ = nullptr;
@@ -92,11 +92,11 @@ void ShellCallChromeGesture::SetDocumentDragCapture(bool enabled) {
     return;
   }
   if (enabled) {
-    document_->AddEventListener(Rml::EventId::Mousemove, this, true);
-    document_->AddEventListener(Rml::EventId::Mouseup, this, true);
+    document_->AddEventListener(ui::EventId::Mousemove, this, true);
+    document_->AddEventListener(ui::EventId::Mouseup, this, true);
   } else {
-    document_->RemoveEventListener(Rml::EventId::Mousemove, this, true);
-    document_->RemoveEventListener(Rml::EventId::Mouseup, this, true);
+    document_->RemoveEventListener(ui::EventId::Mousemove, this, true);
+    document_->RemoveEventListener(ui::EventId::Mouseup, this, true);
   }
   document_drag_capture_ = enabled;
 }
@@ -110,9 +110,9 @@ void ShellCallChromeGesture::UpdateDocumentClickCapture() {
     return;
   }
   if (enabled) {
-    document_->AddEventListener(Rml::EventId::Click, this, true);
+    document_->AddEventListener(ui::EventId::Click, this, true);
   } else {
-    document_->RemoveEventListener(Rml::EventId::Click, this, true);
+    document_->RemoveEventListener(ui::EventId::Click, this, true);
   }
   document_click_capture_ = enabled;
 }
@@ -141,12 +141,12 @@ float ShellCallChromeGesture::PixelDeltaToDp(int delta_px) const {
   return static_cast<float>(delta_px) / ratio;
 }
 
-bool ShellCallChromeGesture::ShouldIgnoreTarget(Rml::Element* target) const {
+bool ShellCallChromeGesture::ShouldIgnoreTarget(ui::Element* target) const {
   if (!target) {
     return true;
   }
-  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
-    const Rml::String& tag = node->GetTagName();
+  for (ui::Element* node = target; node; node = node->GetParentNode()) {
+    const ui::String& tag = node->GetTagName();
     if (tag == "textarea" || tag == "input" || tag == "select") {
       return true;
     }
@@ -160,12 +160,12 @@ bool ShellCallChromeGesture::ShouldIgnoreTarget(Rml::Element* target) const {
   return false;
 }
 
-bool ShellCallChromeGesture::ShouldIgnoreOutsideDismiss(Rml::Element* target) const {
+bool ShellCallChromeGesture::ShouldIgnoreOutsideDismiss(ui::Element* target) const {
   if (!target) {
     return true;
   }
-  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
-    const Rml::String& id = node->GetId();
+  for (ui::Element* node = target; node; node = node->GetParentNode()) {
+    const ui::String& id = node->GetId();
     if (id == "shell-call-ring-mount" || id == "shell-dialog-mount" || id == "shell-pin-gate-mount") {
       return true;
     }
@@ -177,11 +177,11 @@ bool ShellCallChromeGesture::ShouldIgnoreOutsideDismiss(Rml::Element* target) co
   return false;
 }
 
-bool ShellCallChromeGesture::IsUnderRoot(Rml::Element* target) const {
+bool ShellCallChromeGesture::IsUnderRoot(ui::Element* target) const {
   if (!root_ || !target) {
     return false;
   }
-  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
+  for (ui::Element* node = target; node; node = node->GetParentNode()) {
     if (node == root_) {
       return true;
     }
@@ -189,8 +189,8 @@ bool ShellCallChromeGesture::IsUnderRoot(Rml::Element* target) const {
   return false;
 }
 
-bool ShellCallChromeGesture::IsScrollRegion(Rml::Element* target) const {
-  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
+bool ShellCallChromeGesture::IsScrollRegion(ui::Element* target) const {
+  for (ui::Element* node = target; node; node = node->GetParentNode()) {
     if (node == root_) {
       break;
     }
@@ -201,8 +201,8 @@ bool ShellCallChromeGesture::IsScrollRegion(Rml::Element* target) const {
   return false;
 }
 
-bool ShellCallChromeGesture::ScrollAncestorsAtTop(Rml::Element* target) const {
-  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
+bool ShellCallChromeGesture::ScrollAncestorsAtTop(ui::Element* target) const {
+  for (ui::Element* node = target; node; node = node->GetParentNode()) {
     if (node->GetScrollHeight() > node->GetClientHeight() + 0.5f) {
       if (node->GetScrollTop() > kScrollTopEpsilonPx) {
         return false;
@@ -215,7 +215,7 @@ bool ShellCallChromeGesture::ScrollAncestorsAtTop(Rml::Element* target) const {
   return true;
 }
 
-bool ShellCallChromeGesture::ShouldArmImmersivePullDown(Rml::Element* target) const {
+bool ShellCallChromeGesture::ShouldArmImmersivePullDown(ui::Element* target) const {
   if (!IsUnderRoot(target) || ShouldIgnoreTarget(target)) {
     return false;
   }
@@ -229,7 +229,7 @@ void ShellCallChromeGesture::PinScrollAncestorsAtTop() {
   if (!arm_target_) {
     return;
   }
-  for (Rml::Element* node = arm_target_; node; node = node->GetParentNode()) {
+  for (ui::Element* node = arm_target_; node; node = node->GetParentNode()) {
     if (node->GetScrollHeight() > node->GetClientHeight() + 0.5f && node->GetScrollTop() < kScrollTopEpsilonPx) {
       node->SetScrollTop(0.f);
     }
@@ -293,8 +293,8 @@ int ShellCallChromeGesture::SnapCornerFromChipCenter() const {
   if (!root_ || !context_) {
     return 0;
   }
-  const auto box = root_->GetBox().GetSize(Rml::BoxArea::Border);
-  const Rml::Vector2f abs = root_->GetAbsoluteOffset(Rml::BoxArea::Border);
+  const auto box = root_->GetBox().GetSize(ui::BoxArea::Border);
+  const ui::Vector2f abs = root_->GetAbsoluteOffset(ui::BoxArea::Border);
   const float cx = abs.x + box.x * 0.5f;
   const float cy = abs.y + box.y * 0.5f;
   const float vw = static_cast<float>(context_->GetDimensions().x);
@@ -313,7 +313,7 @@ int ShellCallChromeGesture::SnapCornerFromChipCenter() const {
   return 3;
 }
 
-void ShellCallChromeGesture::BeginArm(int x_px, int y_px, Rml::Element* target) {
+void ShellCallChromeGesture::BeginArm(int x_px, int y_px, ui::Element* target) {
   tracking_ = true;
   dragging_ = false;
   arm_target_ = target;
@@ -353,7 +353,7 @@ void ShellCallChromeGesture::AbortArm(bool unlock_axis) {
   }
 }
 
-void ShellCallChromeGesture::UpdateDrag(int x_px, int y_px, Rml::Event& /*event*/) {
+void ShellCallChromeGesture::UpdateDrag(int x_px, int y_px, ui::Event& /*event*/) {
   if (!tracking_ || !root_) {
     return;
   }
@@ -479,13 +479,13 @@ void ShellCallChromeGesture::EndDrag() {
   }
 }
 
-void ShellCallChromeGesture::ProcessEvent(Rml::Event& event) {
+void ShellCallChromeGesture::ProcessEvent(ui::Event& event) {
   switch (event.GetId()) {
-  case Rml::EventId::Mousedown: {
+  case ui::EventId::Mousedown: {
     if (tracking_) {
       return;
     }
-    Rml::Element* target = event.GetTargetElement();
+    ui::Element* target = event.GetTargetElement();
     if (mode_ == CallChromeMode::Minimized) {
       if (!IsUnderRoot(target) || ShouldIgnoreTarget(target)) {
         return;
@@ -507,19 +507,19 @@ void ShellCallChromeGesture::ProcessEvent(Rml::Event& event) {
     BeginArm(EventMouseX(event), EventMouseY(event), target);
     break;
   }
-  case Rml::EventId::Mousemove:
+  case ui::EventId::Mousemove:
     if (tracking_) {
       UpdateDrag(EventMouseX(event), EventMouseY(event), event);
     }
     break;
-  case Rml::EventId::Mouseup:
+  case ui::EventId::Mouseup:
     if (tracking_) {
       EndDrag();
     }
     break;
-  case Rml::EventId::Click:
+  case ui::EventId::Click:
     if (mode_ == CallChromeMode::Expanded && outside_tap_capture_) {
-      Rml::Element* target = event.GetTargetElement();
+      ui::Element* target = event.GetTargetElement();
       if (!IsUnderRoot(target) && !ShouldIgnoreOutsideDismiss(target)) {
         if (callbacks_.on_minimize) {
           callbacks_.on_minimize();

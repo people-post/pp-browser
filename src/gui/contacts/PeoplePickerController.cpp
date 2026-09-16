@@ -187,13 +187,13 @@ bool PeoplePickerController::MessagingReady() const {
   return contacts_ports_.snapshot && contacts_ports_.snapshot().messaging_ready;
 }
 
-bool PeoplePickerController::RegisterModel(Rml::Context* context) {
+bool PeoplePickerController::RegisterModel(ui::Context* context) {
   if (!context) {
     return false;
   }
   context_ = context;
 
-  return DataModelHost::Instance().Register(context, "people_picker", [this](Rml::DataModelConstructor& ctor) {
+  return DataModelHost::Instance().Register(context, "people_picker", [this](ui::DataModelConstructor& ctor) {
     auto& controller = *this;
     if (auto row_handle = ctor.RegisterStruct<PickerRow>()) {
       row_handle.RegisterMember("id", &PickerRow::id);
@@ -722,36 +722,36 @@ void PeoplePickerController::DirtyAll() {
   host.Dirty("people_picker", "empty_hint");
 }
 
-void PeoplePickerController::ToggleContactCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                   const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+void PeoplePickerController::ToggleContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                   const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().OnToggleContact(std::string(args[0].Get<Rml::String>().c_str()));
+  Instance().OnToggleContact(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void PeoplePickerController::OnSearchChangedCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                     const Rml::VariantList& /*args*/) {
+void PeoplePickerController::OnSearchChangedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                     const ui::VariantList& /*args*/) {
   Instance().OnSearchChanged();
 }
 
-void PeoplePickerController::ConfirmCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                             const Rml::VariantList& /*args*/) {
+void PeoplePickerController::ConfirmCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                             const ui::VariantList& /*args*/) {
   Instance().OnConfirm();
 }
 
-void PeoplePickerController::CancelCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& /*args*/) {
+void PeoplePickerController::CancelCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                            const ui::VariantList& /*args*/) {
   Instance().OnCancel();
 }
 
-void PeoplePickerController::BackCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                          const Rml::VariantList& /*args*/) {
+void PeoplePickerController::BackCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                          const ui::VariantList& /*args*/) {
   Instance().OnBack();
 }
 
-void PeoplePickerController::CreateGroupCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                   const Rml::VariantList& /*args*/) {
+void PeoplePickerController::CreateGroupCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                   const ui::VariantList& /*args*/) {
   Instance().OnCreateGroup();
 }
 

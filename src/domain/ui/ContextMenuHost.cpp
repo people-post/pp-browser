@@ -2,15 +2,15 @@
 
 #include "foundation/i18n/LocalizationService.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/ElementDocument.h>
-#include <RmlUi/Core/Elements/ElementFormControlInput.h>
-#include <RmlUi/Core/Elements/ElementFormControlTextArea.h>
-#include <RmlUi/Core/Event.h>
-#include <RmlUi/Core/Input.h>
-#include <RmlUi/Core/SelectionController.h>
-#include <RmlUi/Core/SystemInterface.h>
+#include <ui/dom/Context.h>
+#include <ui/dom/Element.h>
+#include <ui/dom/ElementDocument.h>
+#include <ui/widgets/ElementFormControlInput.h>
+#include <ui/widgets/ElementFormControlTextArea.h>
+#include <ui/dom/Event.h>
+#include <ui/base/Input.h>
+#include <ui/dom/SelectionController.h>
+#include <ui/base/SystemInterface.h>
 
 #include <climits>
 #include <cstdio>
@@ -20,8 +20,8 @@ namespace pbr {
 
 namespace {
 
-Rml::Element* EventAnchorElement(Rml::Event& ev) {
-  Rml::Element* target = ev.GetCurrentElement();
+ui::Element* EventAnchorElement(ui::Event& ev) {
+  ui::Element* target = ev.GetCurrentElement();
   if (!target) {
     target = ev.GetTargetElement();
   }
@@ -30,25 +30,25 @@ Rml::Element* EventAnchorElement(Rml::Event& ev) {
 
 } // namespace
 
-Rml::Vector2i MenuPositionBelow(Rml::Element* element, float gap_px) {
-  Rml::Vector2i position{0, 0};
+ui::Vector2i MenuPositionBelow(ui::Element* element, float gap_px) {
+  ui::Vector2i position{0, 0};
   if (!element) {
     return position;
   }
-  const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
-  const Rml::Box& box = element->GetBox();
+  const ui::Vector2f offset = element->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Box& box = element->GetBox();
   position.x = static_cast<int>(offset.x);
-  position.y = static_cast<int>(offset.y + box.GetSize(Rml::BoxArea::Border).y + gap_px);
+  position.y = static_cast<int>(offset.y + box.GetSize(ui::BoxArea::Border).y + gap_px);
   return position;
 }
 
-Rml::Vector2i MenuPositionBelowRightAligned(Rml::Element* element, float menu_min_width_px, float gap_px) {
-  Rml::Vector2i position{0, 0};
+ui::Vector2i MenuPositionBelowRightAligned(ui::Element* element, float menu_min_width_px, float gap_px) {
+  ui::Vector2i position{0, 0};
   if (!element) {
     return position;
   }
-  const Rml::Vector2f offset = element->GetAbsoluteOffset(Rml::BoxArea::Border);
-  const Rml::Vector2f size = element->GetBox().GetSize(Rml::BoxArea::Border);
+  const ui::Vector2f offset = element->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f size = element->GetBox().GetSize(ui::BoxArea::Border);
   position.x = static_cast<int>(offset.x + size.x - menu_min_width_px);
   if (position.x < 0) {
     position.x = static_cast<int>(offset.x);
@@ -57,11 +57,11 @@ Rml::Vector2i MenuPositionBelowRightAligned(Rml::Element* element, float menu_mi
   return position;
 }
 
-Rml::Vector2i MenuPositionBelowEvent(Rml::Event& ev, float gap_px) {
+ui::Vector2i MenuPositionBelowEvent(ui::Event& ev, float gap_px) {
   return MenuPositionBelow(EventAnchorElement(ev), gap_px);
 }
 
-Rml::Vector2i MenuPositionBelowRightAlignedEvent(Rml::Event& ev, float menu_min_width_px, float gap_px) {
+ui::Vector2i MenuPositionBelowRightAlignedEvent(ui::Event& ev, float menu_min_width_px, float gap_px) {
   return MenuPositionBelowRightAligned(EventAnchorElement(ev), menu_min_width_px, gap_px);
 }
 
@@ -72,9 +72,9 @@ constexpr float kActionSheetInsetDp = 12.f;
 constexpr float kActionSheetBottomDp = 20.f;
 constexpr float kActionSheetMaxWidthDp = 480.f;
 
-Rml::Element* FindTextEditor(Rml::Element* element) {
-  for (Rml::Element* node = element; node; node = node->GetParentNode()) {
-    const Rml::String& tag = node->GetTagName();
+ui::Element* FindTextEditor(ui::Element* element) {
+  for (ui::Element* node = element; node; node = node->GetParentNode()) {
+    const ui::String& tag = node->GetTagName();
     if (tag == "textarea" || tag == "input") {
       return node;
     }
@@ -82,48 +82,48 @@ Rml::Element* FindTextEditor(Rml::Element* element) {
   return nullptr;
 }
 
-std::string GetEditorSelectedText(Rml::Element* editor) {
+std::string GetEditorSelectedText(ui::Element* editor) {
   if (!editor) {
     return {};
   }
   int start = 0;
   int end = 0;
-  Rml::String selected;
-  if (auto* textarea = rmlui_dynamic_cast<Rml::ElementFormControlTextArea*>(editor)) {
+  ui::String selected;
+  if (auto* textarea = ui_dynamic_cast<ui::ElementFormControlTextArea*>(editor)) {
     textarea->GetSelection(&start, &end, &selected);
-  } else if (auto* input = rmlui_dynamic_cast<Rml::ElementFormControlInput*>(editor)) {
+  } else if (auto* input = ui_dynamic_cast<ui::ElementFormControlInput*>(editor)) {
     input->GetSelection(&start, &end, &selected);
   }
   return selected;
 }
 
-void SelectAllInEditor(Rml::Element* editor) {
+void SelectAllInEditor(ui::Element* editor) {
   if (!editor) {
     return;
   }
   editor->Focus();
-  if (auto* textarea = rmlui_dynamic_cast<Rml::ElementFormControlTextArea*>(editor)) {
+  if (auto* textarea = ui_dynamic_cast<ui::ElementFormControlTextArea*>(editor)) {
     textarea->SetSelectionRange(0, INT_MAX);
-  } else if (auto* input = rmlui_dynamic_cast<Rml::ElementFormControlInput*>(editor)) {
+  } else if (auto* input = ui_dynamic_cast<ui::ElementFormControlInput*>(editor)) {
     input->SetSelectionRange(0, INT_MAX);
   }
 }
 
-void PasteIntoEditor(Rml::Element* editor) {
+void PasteIntoEditor(ui::Element* editor) {
   if (!editor) {
     return;
   }
   editor->Focus();
-  Rml::String clipboard;
-  if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+  ui::String clipboard;
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
     system->GetClipboardText(clipboard);
   }
   if (clipboard.empty()) {
     return;
   }
-  Rml::Dictionary parameters;
+  ui::Dictionary parameters;
   parameters["text"] = clipboard;
-  editor->DispatchEvent(Rml::EventId::Textinput, parameters);
+  editor->DispatchEvent(ui::EventId::Textinput, parameters);
 }
 
 void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuAction>& actions) {
@@ -160,12 +160,12 @@ ContextMenuHost& ContextMenuHost::Instance() {
   return host;
 }
 
-void ContextMenuHost::Install(Rml::Context* context) {
+void ContextMenuHost::Install(ui::Context* context) {
   context_ = context;
   if (!context_) {
     return;
   }
-  context_->SetTouchLongPressCallback([](Rml::Vector2i position, Rml::Element* target) {
+  context_->SetTouchLongPressCallback([](ui::Vector2i position, ui::Element* target) {
     ContextMenuHost::Instance().OnLongPress(position, target);
   });
 }
@@ -185,7 +185,7 @@ void ContextMenuHost::RegisterProvider(
   providers_.push_back(std::move(provider));
 }
 
-void ContextMenuHost::OnLongPress(Rml::Vector2i position, Rml::Element* target) {
+void ContextMenuHost::OnLongPress(ui::Vector2i position, ui::Element* target) {
   if (!context_) {
     return;
   }
@@ -196,12 +196,12 @@ void ContextMenuHost::OnLongPress(Rml::Vector2i position, Rml::Element* target) 
   ShowAt(request);
 }
 
-bool ContextMenuHost::OnContextPointer(Rml::Context* context, int x, int y) {
+bool ContextMenuHost::OnContextPointer(ui::Context* context, int x, int y) {
   if (!context) {
     return false;
   }
-  const Rml::Vector2f point(static_cast<float>(x), static_cast<float>(y));
-  Rml::Element* target = context->GetElementAtPoint(point);
+  const ui::Vector2f point(static_cast<float>(x), static_cast<float>(y));
+  ui::Element* target = context->GetElementAtPoint(point);
   if (!target) {
     return false;
   }
@@ -215,14 +215,14 @@ bool ContextMenuHost::OnContextPointer(Rml::Context* context, int x, int y) {
 
 std::vector<ContextMenuAction> ContextMenuHost::BuildTextActions() const {
   std::vector<ContextMenuAction> actions;
-  Rml::Context* context = menu_context_ ? menu_context_ : context_;
+  ui::Context* context = menu_context_ ? menu_context_ : context_;
   if (!context) {
     return actions;
   }
 
-  Rml::Element* editor = menu_editor_;
-  Rml::Element* target = menu_target_;
-  Rml::SelectionController* selection = context->GetSelectionController();
+  ui::Element* editor = menu_editor_;
+  ui::Element* target = menu_target_;
+  ui::SelectionController* selection = context->GetSelectionController();
   const std::string snapshot = copy_snapshot_;
 
   auto copy_enabled = [snapshot]() { return !snapshot.empty(); };
@@ -230,7 +230,7 @@ std::vector<ContextMenuAction> ContextMenuHost::BuildTextActions() const {
     if (snapshot.empty()) {
       return;
     }
-    if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+    if (ui::SystemInterface* system = ui::GetSystemInterface()) {
       system->SetClipboardText(snapshot);
     }
   };
@@ -272,16 +272,16 @@ std::vector<ContextMenuAction> ContextMenuHost::CollectActions(const ContextMenu
   return actions;
 }
 
-void ContextMenuHost::ClampFloatPanel(Rml::Vector2i preferred) {
+void ContextMenuHost::ClampFloatPanel(ui::Vector2i preferred) {
   if (!panel_ || !context_ || context_->GetNumDocuments() == 0) {
     return;
   }
 
-  Rml::ElementDocument* document = context_->GetDocument(0);
+  ui::ElementDocument* document = context_->GetDocument(0);
   document->UpdateDocument();
 
-  const Rml::Vector2i dims = context_->GetDimensions();
-  const Rml::Vector2f size = panel_->GetBox().GetSize(Rml::BoxArea::Border);
+  const ui::Vector2i dims = context_->GetDimensions();
+  const ui::Vector2f size = panel_->GetBox().GetSize(ui::BoxArea::Border);
   if (size.x <= 0.f || size.y <= 0.f || dims.x <= 0 || dims.y <= 0) {
     return;
   }
@@ -329,7 +329,7 @@ void ContextMenuHost::LayoutActionSheet() {
     return;
   }
 
-  const Rml::Vector2i dims = context_->GetDimensions();
+  const ui::Vector2i dims = context_->GetDimensions();
   if (dims.x <= 0 || dims.y <= 0) {
     return;
   }
@@ -365,10 +365,10 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  Rml::ElementDocument* document = context_->GetDocument(0);
-  Rml::Element* body = document;
-  if (Rml::Element* shell_root = document->GetElementById("shell-root")) {
-    if (Rml::Element* shell_body = shell_root->GetParentNode()) {
+  ui::ElementDocument* document = context_->GetDocument(0);
+  ui::Element* body = document;
+  if (ui::Element* shell_root = document->GetElementById("shell-root")) {
+    if (ui::Element* shell_body = shell_root->GetParentNode()) {
       body = shell_body;
     }
   }
@@ -398,7 +398,7 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
     out << "</div>";
   }
 
-  Rml::ElementPtr layer_element = document->CreateElement("div");
+  ui::ElementPtr layer_element = document->CreateElement("div");
   layer_element->SetAttribute("id", "context-menu-layer");
   layer_element->SetClass("context-menu-layer", true);
   if (presentation == Presentation::ActionSheet) {
@@ -410,8 +410,8 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
   if (!layer_) {
     return;
   }
-  layer_->AddEventListener(Rml::EventId::Mousedown, this, true);
-  layer_->AddEventListener(Rml::EventId::Click, this, true);
+  layer_->AddEventListener(ui::EventId::Mousedown, this, true);
+  layer_->AddEventListener(ui::EventId::Click, this, true);
 
   if (presentation == Presentation::Float) {
     ClampFloatPanel(request.position);
@@ -427,11 +427,11 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
   menu_editor_ = nullptr;
   copy_snapshot_.clear();
   if (menu_context_) {
-    Rml::Element* focus = menu_context_->GetFocusElement();
+    ui::Element* focus = menu_context_->GetFocusElement();
     menu_editor_ = FindTextEditor(focus ? focus : menu_target_);
     if (menu_editor_) {
       copy_snapshot_ = GetEditorSelectedText(menu_editor_);
-    } else if (Rml::SelectionController* selection = menu_context_->GetSelectionController()) {
+    } else if (ui::SelectionController* selection = menu_context_->GetSelectionController()) {
       copy_snapshot_ = selection->GetSelectedText();
     }
   }
@@ -455,7 +455,7 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
   RenderMenu(request, active_actions_, Presentation::Float);
 }
 
-void ContextMenuHost::ShowActions(Rml::Vector2i position, std::vector<ContextMenuAction> actions) {
+void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenuAction> actions) {
   Dismiss();
   if (!context_ || actions.empty()) {
     return;
@@ -492,14 +492,14 @@ void ContextMenuHost::Dismiss() {
   dismiss_pending_ = false;
   // Capture and clear before RemoveEventListener: DetachEvent invokes OnDetach, which
   // would otherwise null layer_ mid-function and crash the second RemoveEventListener.
-  Rml::Element* layer = layer_;
+  ui::Element* layer = layer_;
   layer_ = nullptr;
   panel_ = nullptr;
   presentation_ = Presentation::Float;
   if (layer) {
-    layer->RemoveEventListener(Rml::EventId::Mousedown, this, true);
-    layer->RemoveEventListener(Rml::EventId::Click, this, true);
-    if (Rml::Element* parent = layer->GetParentNode()) {
+    layer->RemoveEventListener(ui::EventId::Mousedown, this, true);
+    layer->RemoveEventListener(ui::EventId::Click, this, true);
+    if (ui::Element* parent = layer->GetParentNode()) {
       parent->RemoveChild(layer);
     }
   }
@@ -531,7 +531,7 @@ bool ContextMenuHost::HandleDismiss() {
   return true;
 }
 
-void ContextMenuHost::OnDetach(Rml::Element* element) {
+void ContextMenuHost::OnDetach(ui::Element* element) {
   if (element == layer_) {
     layer_ = nullptr;
     panel_ = nullptr;
@@ -540,9 +540,9 @@ void ContextMenuHost::OnDetach(Rml::Element* element) {
   }
 }
 
-int ContextMenuHost::FindMenuItemIndex(Rml::Element* target) const {
-  for (Rml::Element* node = target; node; node = node->GetParentNode()) {
-    const Rml::Variant* index_variant = node->GetAttribute("data-item-index");
+int ContextMenuHost::FindMenuItemIndex(ui::Element* target) const {
+  for (ui::Element* node = target; node; node = node->GetParentNode()) {
+    const ui::Variant* index_variant = node->GetAttribute("data-item-index");
     if (!index_variant) {
       continue;
     }
@@ -560,7 +560,7 @@ void ContextMenuHost::HandleMenuAction(int index) {
   }
   const ContextMenuAction action = active_actions_[static_cast<size_t>(index)];
 
-  Rml::Context* action_context = menu_context_ ? menu_context_ : context_;
+  ui::Context* action_context = menu_context_ ? menu_context_ : context_;
   // Copy run callback before deferred dismiss clears active_actions_.
   const std::function<void()> run = action.run;
   RequestDismiss();
@@ -569,24 +569,24 @@ void ContextMenuHost::HandleMenuAction(int index) {
     run();
   }
   if (action_context) {
-    if (Rml::SelectionController* selection = action_context->GetSelectionController()) {
+    if (ui::SelectionController* selection = action_context->GetSelectionController()) {
       selection->FinalizeSelection();
       selection->OnPointerUp();
     }
   }
 }
 
-void ContextMenuHost::ProcessEvent(Rml::Event& event) {
+void ContextMenuHost::ProcessEvent(ui::Event& event) {
   if (!layer_ || dismiss_pending_) {
     return;
   }
 
-  const Rml::EventId event_id = event.GetId();
-  if (event_id != Rml::EventId::Mousedown && event_id != Rml::EventId::Click) {
+  const ui::EventId event_id = event.GetId();
+  if (event_id != ui::EventId::Mousedown && event_id != ui::EventId::Click) {
     return;
   }
 
-  Rml::Element* target = event.GetTargetElement();
+  ui::Element* target = event.GetTargetElement();
   if (!target) {
     return;
   }
@@ -598,7 +598,7 @@ void ContextMenuHost::ProcessEvent(Rml::Event& event) {
   }
 
   // Cancel may be hit via a child text node path; walk up for the cancel id.
-  for (Rml::Element* node = target; node && node != layer_; node = node->GetParentNode()) {
+  for (ui::Element* node = target; node && node != layer_; node = node->GetParentNode()) {
     if (node->GetId() == "context-menu-cancel") {
       RequestDismiss();
       event.StopPropagation();
@@ -611,7 +611,7 @@ void ContextMenuHost::ProcessEvent(Rml::Event& event) {
     return;
   }
 
-  if (event_id == Rml::EventId::Mousedown) {
+  if (event_id == ui::EventId::Mousedown) {
     HandleMenuAction(index);
     event.StopPropagation();
   }

@@ -7,7 +7,7 @@
 
 #include "foundation/platform/ui/RmlUi_Backend.h"
 
-#include <RmlUi/Core/Context.h>
+#include <ui/dom/Context.h>
 #include <SDL3/SDL.h>
 
 namespace pbr {
@@ -34,7 +34,7 @@ void SdlAppEvents::Install() {
   Backend::SetPreProcessEventHandler(&SdlAppEvents::PreProcess);
 }
 
-bool SdlAppEvents::PreProcess(Rml::Context* context, SDL_Event& event, bool& propagate_event) {
+bool SdlAppEvents::PreProcess(ui::Context* context, SDL_Event& event, bool& propagate_event) {
   (void)propagate_event;
   const AppEventHooks& hooks = GetAppEventHooks();
   switch (event.type) {

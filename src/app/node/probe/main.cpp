@@ -29,6 +29,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -44,6 +45,7 @@ enum class ProbeMode {
   MediaSoak,
   BridgeTarget,
   BridgeViaHop,
+  DirectExpectFail,
   MediaRecv,
   MediaSend
 };
@@ -55,6 +57,7 @@ void PrintUsage(const char* argv0) {
       << "       [--advertise-host <ip>] [--attachers N|N,N,...] [--sweep A:B:S]\n"
       << "       [--bridges M|M,M,...] [--duration SEC] [--churn N]\n"
       << "       [--ready-file PATH] [--target-file PATH] [--call-id ID] [--hold-seconds N]\n"
+      << "       [--warm-hop <adp-ma>] [--peer-id-only] [--stale-ma <adp-ma>]\n"
       << "\n"
       << "Amp thin client against a live hop (pp-node Amp listen MA).\n"
       << "Hop example: /ip4/127.0.0.1/udp/4001/adp/1.0.0/p2p/<PeerId>\n"
@@ -66,7 +69,10 @@ void PrintUsage(const char* argv0) {
       << "  circuit-cap (N-CAP-CIRCUIT) M concurrent bridges + payload; print circuit_curve\n"
       << "  media-soak (N-SOAK)     attach/detach/fan-out loop for --duration (default 120s)\n"
       << "  bridge-target          hard-lab: listen; write ready-file; wait circuit payload\n"
+      << "                         optional --warm-hop: dial hop so it learns this peer (seed-only)\n"
       << "  bridge-via-hop         hard-lab: StartBridge via hop using target-file; send payload\n"
+      << "                         optional --peer-id-only: omit target_multiaddr (hop book)\n"
+      << "  direct-expect-fail     hard-lab: dial --stale-ma and require failure (N-HARD-STALE-ADDR)\n"
       << "  media-recv             hard-lab: quote/attach/subscribe; wait one frame\n"
       << "  media-send             hard-lab: quote/attach; send frames until recv ack or timeout\n"
       << "\n"
@@ -150,27 +156,55 @@ bool HasP2pSuffix(const std::string& ma) {
 }
 
 std::string RewriteWildcardListenHost(std::string multiaddr) {
-  const std::string from = "/ip4/0.0.0.0/";
-  const std::string to = "/ip4/127.0.0.1/";
-  const auto pos = multiaddr.find(from);
+  const std::string from4 = "/ip4/0.0.0.0/";
+  const std::string to4 = "/ip4/127.0.0.1/";
+  auto pos = multiaddr.find(from4);
   if (pos != std::string::npos) {
-    multiaddr.replace(pos, from.size(), to);
+    multiaddr.replace(pos, from4.size(), to4);
+    return multiaddr;
+  }
+  const std::string from6 = "/ip6/::/";
+  const std::string to6 = "/ip6/::1/";
+  pos = multiaddr.find(from6);
+  if (pos != std::string::npos) {
+    multiaddr.replace(pos, from6.size(), to6);
   }
   return multiaddr;
 }
 
 std::string RewriteListenHost(std::string multiaddr, const std::string& host) {
-  const std::string from0 = "/ip4/0.0.0.0/";
-  const std::string from1 = "/ip4/127.0.0.1/";
-  const std::string to = "/ip4/" + host + "/";
-  auto pos = multiaddr.find(from0);
-  if (pos != std::string::npos) {
-    multiaddr.replace(pos, from0.size(), to);
+  if (host.empty()) {
     return multiaddr;
   }
-  pos = multiaddr.find(from1);
-  if (pos != std::string::npos && host != "127.0.0.1") {
-    multiaddr.replace(pos, from1.size(), to);
+  const bool host_v6 = host.find(':') != std::string::npos;
+  if (host_v6) {
+    const std::string to = "/ip6/" + host + "/";
+    for (const char* from : {"/ip6/::/", "/ip6/::1/"}) {
+      const auto pos = multiaddr.find(from);
+      if (pos != std::string::npos) {
+        multiaddr.replace(pos, std::char_traits<char>::length(from), to);
+        return multiaddr;
+      }
+    }
+    return multiaddr;
+  }
+  const std::string to = "/ip4/" + host + "/";
+  for (const char* from : {"/ip4/0.0.0.0/", "/ip4/127.0.0.1/"}) {
+    const auto pos = multiaddr.find(from);
+    if (pos != std::string::npos) {
+      if (std::string_view(from) == "/ip4/127.0.0.1/" && host == "127.0.0.1") {
+        continue;
+      }
+      multiaddr.replace(pos, std::char_traits<char>::length(from), to);
+      return multiaddr;
+    }
+  }
+  for (const char* from : {"/ip6/::/", "/ip6/::1/"}) {
+    const auto pos = multiaddr.find(from);
+    if (pos != std::string::npos) {
+      multiaddr.replace(pos, std::char_traits<char>::length(from), to);
+      return multiaddr;
+    }
   }
   return multiaddr;
 }
@@ -340,7 +374,8 @@ void ArmProbeBridgeTarget(AmpPeer& target, std::mutex& mu, bool& got, std::vecto
 }
 
 int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
-  auto client = MakeLocalClient();
+  // Bind all interfaces so WAN hops (not only loopback lab) are reachable via sendto.
+  auto client = MakeLanClient();
   if (!client) {
     std::cerr << "error: client amp start: " << client.error().message << "\n";
     return 1;
@@ -914,7 +949,7 @@ int RunMediaSoak(const std::string& hop_ma, int duration_sec, int churn) {
 }
 
 int RunBridgeTarget(const std::string& advertise_host, const std::string& ready_file,
-                    const int hold_seconds) {
+                    const int hold_seconds, const std::string& warm_hop_ma) {
   if (ready_file.empty()) {
     std::cerr << "error: --ready-file required for bridge-target\n";
     return 2;
@@ -925,6 +960,8 @@ int RunBridgeTarget(const std::string& advertise_host, const std::string& ready_
     return 1;
   }
   std::string target_ma = RewriteListenHost((*target)->listen_ma, advertise_host);
+  // Advertise a dialable LAN MA on ch0 so hop book learns PeerId→MA (seed-only).
+  (*target)->Links().SetLocalListenMultiaddrs({target_ma});
   if (!WriteReadyFile(ready_file, (*target)->peer_id, target_ma)) {
     std::cerr << "error: write ready-file " << ready_file << "\n";
     return 1;
@@ -932,12 +969,42 @@ int RunBridgeTarget(const std::string& advertise_host, const std::string& ready_
   std::cout << "pp-node bridge-target ready peer=" << (*target)->peer_id << " ma=" << target_ma
             << "\n";
 
+  const std::vector<AmpPeer*> pumps = {target->get()};
+  if (!warm_hop_ma.empty()) {
+    if (auto reg = (*target)->Links().RegisterEndpoint("hop", warm_hop_ma); !reg) {
+      std::cerr << "error: register warm-hop: " << reg.error().message << "\n";
+      return 1;
+    }
+    std::atomic<bool> warm_done{false};
+    std::atomic<bool> warm_ok{false};
+    std::string warm_detail;
+    (*target)->Links().EnsureAssociation("hop", [&](pp::amp::PeerLinkManager::LinkRoe assoc) {
+      if (assoc) {
+        warm_ok.store(true, std::memory_order_release);
+      } else {
+        warm_detail = assoc.error().message;
+      }
+      warm_done.store(true, std::memory_order_release);
+    });
+    if (!PumpUntil(pumps, [&] { return warm_done.load(std::memory_order_acquire); }, 15000) ||
+        !warm_ok.load(std::memory_order_acquire)) {
+      std::cerr << "error: warm-hop associate: "
+                << (warm_detail.empty() ? "timeout" : warm_detail) << "\n";
+      return 1;
+    }
+    // Allow hop to ingest ch0 listen addrs into its peer book.
+    for (int i = 0; i < 50; ++i) {
+      PumpPeers(pumps);
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    std::cout << "ok  warm-hop associated\n";
+  }
+
   std::mutex target_mu;
   bool target_got = false;
   std::vector<uint8_t> target_payload;
   ArmProbeBridgeTarget(**target, target_mu, target_got, target_payload);
 
-  const std::vector<AmpPeer*> pumps = {target->get()};
   const int wait_ms = std::max(5, hold_seconds) * 1000;
   if (!PumpUntil(
           pumps,
@@ -963,7 +1030,7 @@ int RunBridgeTarget(const std::string& advertise_host, const std::string& ready_
   return 0;
 }
 
-int RunBridgeViaHop(const std::string& hop_ma, const std::string& target_file) {
+int RunBridgeViaHop(const std::string& hop_ma, const std::string& target_file, const bool peer_id_only) {
   if (target_file.empty()) {
     std::cerr << "error: --target-file required for bridge-via-hop\n";
     return 2;
@@ -973,6 +1040,9 @@ int RunBridgeViaHop(const std::string& hop_ma, const std::string& target_file) {
   if (!ReadTargetFile(target_file, target_peer, target_ma)) {
     std::cerr << "error: read target-file " << target_file << "\n";
     return 1;
+  }
+  if (peer_id_only) {
+    target_ma.clear();
   }
 
   auto client = MakeLanClient();
@@ -990,7 +1060,8 @@ int RunBridgeViaHop(const std::string& hop_ma, const std::string& target_file) {
   circuit->SetServeInbound(false);
   const std::vector<AmpPeer*> pumps = {client->get()};
 
-  std::cout << "pp-node bridge-via-hop hop=" << hop_ma << " target=" << target_peer << "\n";
+  std::cout << "pp-node bridge-via-hop hop=" << hop_ma << " target=" << target_peer
+            << (peer_id_only ? " peer-id-only=1" : "") << "\n";
 
   pbr::CircuitBridgeTarget bridge_target;
   bridge_target.target_peer_id = target_peer;
@@ -1025,6 +1096,60 @@ int RunBridgeViaHop(const std::string& hop_ma, const std::string& target_file) {
   (*client)->stack->Stop();
   std::cout << "ok  bridge-via-hop StartBridge + payload\n";
   std::cout << "pp-node bridge-via-hop PASSED\n";
+  return 0;
+}
+
+int RunDirectExpectFail(const std::string& stale_ma) {
+  if (stale_ma.empty()) {
+    std::cerr << "error: --stale-ma required for direct-expect-fail\n";
+    return 2;
+  }
+  auto parsed = pp::amp::ParseAdpMultiaddr(stale_ma);
+  if (!parsed) {
+    std::cerr << "error: parse --stale-ma: " << parsed.error().message << "\n";
+    return 2;
+  }
+  if (parsed->peer_id.empty()) {
+    std::cerr << "error: --stale-ma must include /p2p/<PeerId>\n";
+    return 2;
+  }
+
+  auto client = MakeLanClient();
+  if (!client) {
+    std::cerr << "error: client amp start: " << client.error().message << "\n";
+    return 1;
+  }
+  const std::string peer_key = parsed->peer_id;
+  if (auto reg = (*client)->Links().RegisterEndpoint(peer_key, stale_ma); !reg) {
+    std::cerr << "error: register stale endpoint: " << reg.error().message << "\n";
+    return 1;
+  }
+
+  std::atomic<bool> done{false};
+  std::atomic<bool> associated{false};
+  std::string detail;
+  (*client)->Links().EnsureAssociation(peer_key, [&](pp::amp::PeerLinkManager::LinkRoe assoc) {
+    if (assoc) {
+      associated.store(true, std::memory_order_release);
+    } else {
+      detail = assoc.error().message;
+    }
+    done.store(true, std::memory_order_release);
+  });
+
+  const std::vector<AmpPeer*> pumps = {client->get()};
+  const bool finished =
+      PumpUntil(pumps, [&] { return done.load(std::memory_order_acquire); }, 12000);
+  (*client)->stack->Stop();
+
+  if (associated.load(std::memory_order_acquire)) {
+    std::cerr << "error: direct dial to stale addr unexpectedly succeeded\n";
+    return 1;
+  }
+  std::cout << "ok  direct dial to stale addr failed (expected)"
+            << (finished ? "" : " (timeout)")
+            << (detail.empty() ? "" : (" detail=" + detail)) << "\n";
+  std::cout << "pp-node direct-expect-fail PASSED\n";
   return 0;
 }
 
@@ -1185,6 +1310,9 @@ int main(int argc, char** argv) {
   std::string target_file;
   std::string call_id = "pp-hard-force";
   int hold_seconds = 30;
+  std::string warm_hop_ma;
+  bool peer_id_only = false;
+  std::string stale_ma;
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
@@ -1213,6 +1341,12 @@ int main(int argc, char** argv) {
       call_id = argv[++i];
     } else if (std::strcmp(argv[i], "--hold-seconds") == 0 && i + 1 < argc) {
       hold_seconds = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--warm-hop") == 0 && i + 1 < argc) {
+      warm_hop_ma = argv[++i];
+    } else if (std::strcmp(argv[i], "--peer-id-only") == 0) {
+      peer_id_only = true;
+    } else if (std::strcmp(argv[i], "--stale-ma") == 0 && i + 1 < argc) {
+      stale_ma = argv[++i];
     } else if (std::strcmp(argv[i], "--mode") == 0 && i + 1 < argc) {
       ++i;
       if (std::strcmp(argv[i], "l1") == 0) {
@@ -1229,6 +1363,8 @@ int main(int argc, char** argv) {
         mode = ProbeMode::BridgeTarget;
       } else if (std::strcmp(argv[i], "bridge-via-hop") == 0) {
         mode = ProbeMode::BridgeViaHop;
+      } else if (std::strcmp(argv[i], "direct-expect-fail") == 0) {
+        mode = ProbeMode::DirectExpectFail;
       } else if (std::strcmp(argv[i], "media-recv") == 0) {
         mode = ProbeMode::MediaRecv;
       } else if (std::strcmp(argv[i], "media-send") == 0) {
@@ -1269,6 +1405,8 @@ int main(int argc, char** argv) {
       mode = ProbeMode::BridgeTarget;
     } else if (std::strcmp(env, "bridge-via-hop") == 0) {
       mode = ProbeMode::BridgeViaHop;
+    } else if (std::strcmp(env, "direct-expect-fail") == 0) {
+      mode = ProbeMode::DirectExpectFail;
     } else if (std::strcmp(env, "media-recv") == 0) {
       mode = ProbeMode::MediaRecv;
     } else if (std::strcmp(env, "media-send") == 0) {
@@ -1299,8 +1437,11 @@ int main(int argc, char** argv) {
   auto root = pbr::logging::getRootLogger();
   root.setLevel(pbr::logging::Level::INFO);
 
+  if (mode == ProbeMode::DirectExpectFail) {
+    return RunDirectExpectFail(stale_ma);
+  }
   if (mode == ProbeMode::BridgeTarget) {
-    return RunBridgeTarget(advertise_host, ready_file, hold_seconds);
+    return RunBridgeTarget(advertise_host, ready_file, hold_seconds, warm_hop_ma);
   }
 
   if (hop_ma.empty() || !HasP2pSuffix(hop_ma)) {
@@ -1316,7 +1457,7 @@ int main(int argc, char** argv) {
   hop_ma = RewriteWildcardListenHost(std::move(hop_ma));
 
   if (mode == ProbeMode::BridgeViaHop) {
-    return RunBridgeViaHop(hop_ma, target_file);
+    return RunBridgeViaHop(hop_ma, target_file, peer_id_only);
   }
   if (mode == ProbeMode::MediaRecv) {
     return RunMediaRecv(hop_ma, call_id, hold_seconds, ready_file);

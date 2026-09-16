@@ -84,6 +84,8 @@ struct AgentSession::Impl : public Module {
   std::mutex configure_mutex;
   std::condition_variable configure_cv;
   int configure_inflight = 0;
+  /** Serialize ConfigureOnIO body — concurrent Configure() raced mcp.Start/Stop (UAF → SEGV in logger). */
+  std::mutex configure_work_mutex;
 
   AppConfig config;
   std::unique_ptr<LlmClient> llm;
@@ -814,12 +816,14 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     }
   } inflight_guard{state};
 
+  // Serialize ConfigureOnIO body — concurrent Configure() raced mcp.Start/Stop (UAF → SEGV in logger).
   // Cancel() means "abort the active turn", not "abort agent configure". OnNewChat /
   // find-someone calls Cancel while Me→ReloadFromDisk may still be reconfiguring; tearing
   // down llm here left the session unconfigured and the next send showed MissingKey.
   // Do not PauseBackgroundWork here: this already runs on a worker pool thread. Pausing blocked
   // concurrent posts (profile unlock, inbox) until Resume — and a missed Resume left
   // unlock_in_progress stuck on Android.
+  std::lock_guard work_lock(state->configure_work_mutex);
   try {
     LlmConfig llm_config = state->config.llm;
     if (ResolvePreset(state->config) == "brief") {

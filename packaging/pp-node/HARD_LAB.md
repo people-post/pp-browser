@@ -1,6 +1,6 @@
 # Hard lab — forced-hop / NAT / impairment design
 
-**Status:** Wave 1 scaffold green (**N-HARD-FORCE** + **B-HARD-CALL** + **B-HARD-MSG+CALL**) — compose + probes + `--suite hard`; Wave 2+ open  
+**Status:** Wave 1–2 scaffold green; Wave 3 discovery scaffold (**N-HARD-STALE-ADDR** / **SEED-ONLY**) via `--suite hard-w3`; DIR/DHT/ADMIT-HARD still gated  
 **Tier:** ops / Tier C (multi-netns smoke)  
 **Doctrine:** [TESTING.md](../../docs/architecture/TESTING.md)  
 **Purposes / CI:** [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md) (`N-HARD-*`, `B-HARD-*`)  
@@ -72,14 +72,18 @@ Scenarios are **profiles** on one harness, not one-off mega-composes.
 
 **Not every cell is a CI job.** Sparse [release set](#sparse-release-set) below.
 
-### Link profiles (`tc netem` / `tbf` on veth — implement later)
+### Link profiles (`tc netem` / `tbf` on peer veth)
+
+Applied on **peer-a / peer-b** (`cap_add: NET_ADMIN`; `iproute2` in `Dockerfile.hard-peer`). Helpers: `pp_hard_link_apply` in `pp_hard_lab_lib.sh`.
 
 | Profile | Intent (starting knobs; tune with evidence) |
 |---------|-----------------------------------------------|
-| `clean` | No impairment |
-| `lossy` | ~2–5% loss, ~50–100 ms RTT, light jitter on A↔hop and/or B↔hop |
-| `asym` | One direction or one peer outbound-only / blackhole as designed |
-| `bw` | `tbf` cap on media path |
+| `clean` | No impairment (Wave 1) |
+| `lossy` | ~3% loss, ~75 ms ±15 ms on **both** A↔hop and B↔hop |
+| `asym` | Impaired **peer-a** only (~5% loss, ~150 ms ±20 ms); peer-b clean |
+| `bw` | `tbf` 512 kbit on both peer legs |
+
+Env overrides: `PP_HARD_LOSSY_NETEM`, `PP_HARD_ASYM_NETEM`, `PP_HARD_BW_TBF`.
 
 Flake policy: topology-force scenarios should be **deterministic**; netem may allow **one retry**.
 
@@ -153,6 +157,13 @@ Order: 6 → 7 → 8 → 9. Admission (#10) may parallel 6–7. Extends today’
 
 **Hole punch:** `non-goal` until the stack ships it.
 
+
+**Landed (scaffold):** `docker-compose.hard-lab-cgnat.yml` + `Dockerfile.hard-gw` + `pp_hard_nat_smoke.sh` / `--suite hard-w5`.
+Dual SNAT gateways; hop on public net only; `--min-rx-frames` duplex gate.
+- Phase-1 **B-HARD-CALL-NAT**: answerer `--warm-hop` + offerer `--via-hop --peer-id-only`
+- Phase-2 **B-HARD-CALL-NAT-PRODUCT**: same topo; offerer `--reach product` (punch via hop seed → nested circuit; punch miss is expected under dual-SNAT)
+Default `--phase both`. Reproduce mode: `PP_HARD_NAT_CALL_EXPECT=fail` (or `--expect-call fail`) passes only when the selected call phase fails.
+
 ### Wave 6 — Product stress on hard topology
 
 Same Wave 1 nets; harder product criteria (reuse B-* meanings):
@@ -205,15 +216,24 @@ Everything else: weekly, manual, or on-demand.
 
 ---
 
-## Implementation sketch (carry out later)
+## Implementation sketch
 
 ```text
-packaging/pp-node/docker-compose.hard-lab.yml   # nets + hop + peer-a/b
+packaging/pp-node/docker-compose.hard-lab.yml   # nets + hop + peer-a/b (NET_ADMIN)
 packaging/pp-node/Dockerfile.hard-peer          # Debian peer sidecar for host probes
-scripts/test/pp_hard_force_smoke.sh                  # N-HARD-FORCE runner
+scripts/test/pp_hard_lab_lib.sh                 # topology + link profile helpers
+scripts/test/pp_hard_force_smoke.sh             # N-HARD-FORCE runner
+scripts/test/pp_hard_call_smoke.sh              # B-HARD-CALL / MSG+CALL
+scripts/test/pp_hard_link_smoke.sh              # Wave 2: --profile lossy|asym|bw
+scripts/test/pp_hard_disco_smoke.sh             # Wave 3: --profile stale-addr|seed-only
 scripts/test/pp_local_test.sh run --suite hard       # Wave 1 entry
-pp-node-probe --mode bridge-target|bridge-via-hop|media-recv|media-send
+scripts/test/pp_local_test.sh run --suite hard-w2    # Wave 2 entry
+scripts/test/pp_local_test.sh run --suite hard-w3    # Wave 3 entry
+pp-node-probe --mode bridge-target|bridge-via-hop|direct-expect-fail|media-recv|media-send
 ```
 
 **Landed (Wave 1):** isolation + circuit/media force + product call + chat-during-call on forced nets.  
-**Next:** Wave 2 netem — see [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).
+**Landed (Wave 2 scaffold):** netem/tbf profiles + `N-HARD-LOSSY` / `ASYM` / `BW` via `--suite hard-w2`.  
+**Landed (Wave 3 scaffold):** `N-HARD-STALE-ADDR` / `SEED-ONLY` via `--suite hard-w3` (DIR/DHT/ADMIT-HARD still gated).  
+**Landed (Wave 5 scaffold):** dual-SNAT CGNAT-ish + B-HARD-CALL-NAT (+PRODUCT punch→circuit) via `--suite hard-w5`.  
+**Next:** Wave 3 remainder when directory/DHT/admit hooks exist — see [projects/hard-lab/PHASES.md](../../projects/hard-lab/PHASES.md).

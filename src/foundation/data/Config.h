@@ -61,7 +61,11 @@ struct SearchConfig {
 };
 
 struct MeshCapabilities {
-  /** Host circuit-relay bridge for NAT'd peers (n3). */
+  /**
+   * Host circuit-relay bridge for NAT'd peers (n3 / N009).
+   * Node + this flag → ServeInbound / publish. Clients consume org/contact
+   * circuit for dialability without enabling this (CallStack AmpCircuitHopReach).
+   */
   bool circuit_relay = false;
   /** Host blind media forwarder (n4-media / N018). Default on for Node hosts. */
   bool media_relay = true;

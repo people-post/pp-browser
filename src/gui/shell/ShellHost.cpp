@@ -22,13 +22,13 @@
 
 #include "foundation/platform/ui/RmlUi_Backend.h"
 
-#include <RmlUi/Core/Context.h>
-#include <RmlUi/Core/Core.h>
-#include <RmlUi/Core/DataModelHandle.h>
-#include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/ElementDocument.h>
-#include <RmlUi/Core/Log.h>
-#include <RmlUi/Core/SystemInterface.h>
+#include <ui/dom/Context.h>
+#include <ui/Core.h>
+#include <ui/data/DataModelHandle.h>
+#include <ui/dom/Element.h>
+#include <ui/dom/ElementDocument.h>
+#include <ui/base/Log.h>
+#include <ui/base/SystemInterface.h>
 
 #include <algorithm>
 #include <chrono>
@@ -39,7 +39,7 @@
 #include <sstream>
 #include <string>
 
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
 #include <SDL3/SDL.h>
 #endif
 
@@ -47,7 +47,7 @@ namespace pbr {
 
 namespace {
 
-NavTab NavTabFromString(const Rml::String& value) {
+NavTab NavTabFromString(const ui::String& value) {
   if (value == "contacts") {
     return NavTab::Contacts;
   }
@@ -117,8 +117,8 @@ void ShellHost::BindCallActions(CallActionsPorts ports) {
 }
 
 
-bool ShellHost::RegisterWindowModel(Rml::Context* context) {
-  return DataModelHost::Instance().Register(context, "window", [this](Rml::DataModelConstructor& ctor) {
+bool ShellHost::RegisterWindowModel(ui::Context* context) {
+  return DataModelHost::Instance().Register(context, "window", [this](ui::DataModelConstructor& ctor) {
     ShellHost& host = *this;
     if (auto toast_handle = ctor.RegisterStruct<ToastEntry>()) {
       toast_handle.RegisterMember("id", &ToastEntry::id);
@@ -326,7 +326,7 @@ bool ShellHost::RegisterWindowModel(Rml::Context* context) {
   });
 }
 
-void ShellHost::Initialize(Rml::Context* context) {
+void ShellHost::Initialize(ui::Context* context) {
   context_ = context;
   state_ = {};
   state_.layout_mode = LayoutMode::Expanded;
@@ -358,7 +358,7 @@ void ShellHost::Initialize(Rml::Context* context) {
   }
 }
 
-Rml::Element* ShellHost::ShellRoot() const {
+ui::Element* ShellHost::ShellRoot() const {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return nullptr;
   }
@@ -976,7 +976,7 @@ void ShellHost::SetActivityVisible(bool visible) {
   SetActivity(visible);
 }
 
-void ShellHost::SetActivity(bool visible, const Rml::String& message) {
+void ShellHost::SetActivity(bool visible, const ui::String& message) {
   state_.activity_visible = visible;
   if (!visible) {
     state_.statusbar_activity.clear();
@@ -1009,7 +1009,7 @@ void ShellHost::SaveFocus() {
   if (!context_) {
     return;
   }
-  if (Rml::Element* focus = context_->GetFocusElement()) {
+  if (ui::Element* focus = context_->GetFocusElement()) {
     saved_focus_id_ = focus->GetId();
   }
 }
@@ -1019,7 +1019,7 @@ void ShellHost::RestoreFocus() {
     saved_focus_id_.clear();
     return;
   }
-  if (Rml::Element* element = context_->GetDocument(0)->GetElementById(saved_focus_id_)) {
+  if (ui::Element* element = context_->GetDocument(0)->GetElementById(saved_focus_id_)) {
     element->Focus();
   }
   saved_focus_id_.clear();
@@ -1063,7 +1063,7 @@ void ShellHost::FlushPendingSyncLayout() {
   }
 }
 
-void ShellHost::ApplyLayoutModeFromContext(Rml::Context* context) {
+void ShellHost::ApplyLayoutModeFromContext(ui::Context* context) {
   if (!context) {
     return;
   }
@@ -1101,7 +1101,7 @@ void ShellHost::SetSafeAreaInsetsFromPrefs(int top_dp, int bottom_dp) {
 
 ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
   SafeAreaFromSdl insets{};
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
   // SDL_GetWindowSafeArea is in window coordinates (points on iOS, pixels on Android).
   // RmlUi "dp" values are multiplied by display scale into framebuffer pixels — convert
   // so both platforms clear the same physical inset.
@@ -1131,7 +1131,7 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
   return insets;
 }
 
-void ShellHost::RefreshSafeAreaInsets(Rml::Context* context) {
+void ShellHost::RefreshSafeAreaInsets(ui::Context* context) {
   (void)context;
   const SafeAreaFromSdl sdl = ReadSafeAreaFromSdl();
   if (sdl.bottom_dp >= kImeLatchMinDp) {
@@ -1170,7 +1170,7 @@ bool ShellHost::SetBottomChrome(const BottomChromeSpec& spec) {
   if (!UsesBottomChromePresentation() || spec.key.empty()) {
     return false;
   }
-  if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
     system->DeactivateKeyboard();
   }
   bottom_chrome_open_ = true;
@@ -1210,9 +1210,9 @@ void ShellHost::ApplySafeAreaLayout() {
   const int layout_bottom = bottom_chrome_open_ ? 0 : state_.safe_area_bottom_dp;
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
       config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp);
-  Rml::ElementDocument* doc = context_->GetDocument(0);
+  ui::ElementDocument* doc = context_->GetDocument(0);
 
-  auto set_dp = [](Rml::Element* element, const char* property, float value_dp) {
+  auto set_dp = [](ui::Element* element, const char* property, float value_dp) {
     if (!element) {
       return;
     }
@@ -1239,7 +1239,7 @@ void ShellHost::ApplySafeAreaLayout() {
                                    5.f, state_.titlebar_traffic_lights);
   }
 
-  if (Rml::Element* panel = doc->GetElementById("shell-emoji-keyboard-panel")) {
+  if (ui::Element* panel = doc->GetElementById("shell-emoji-keyboard-panel")) {
     set_dp(panel, "height",
            bottom_chrome_dp > 0.f ? bottom_chrome_dp : static_cast<float>(kDefaultEmojiKeyboardPanelDp));
   }
@@ -1318,18 +1318,18 @@ bool ShellHost::ApplyStatusbarCluster(const StatusbarClusterSnapshot& snap) {
   const bool inbound_ok = snap.inbound == StatusbarClusterSnapshot::InboundState::On;
   const bool inbound_off = snap.inbound == StatusbarClusterSnapshot::InboundState::Off;
 
-  const Rml::String label = snap.label.c_str();
+  const ui::String label = snap.label.c_str();
   const bool label_warn = snap.label_tone == StatusbarClusterSnapshot::LabelTone::Warn;
   const bool label_error = snap.label_tone == StatusbarClusterSnapshot::LabelTone::Error;
-  const Rml::String brief_title = snap.brief_title.c_str();
-  const Rml::String direct_title = snap.direct_title.c_str();
-  const Rml::String help_title = snap.help_title.c_str();
-  const Rml::String inbound_title = snap.inbound_title.c_str();
-  const Rml::String cluster_title = Tr("shell.statusbar.a11y.cluster").c_str();
-  const Rml::String load_circuit = snap.load_circuit_label.c_str();
-  const Rml::String load_media = snap.load_media_label.c_str();
-  const Rml::String load_circuit_title = snap.load_circuit_title.c_str();
-  const Rml::String load_media_title = snap.load_media_title.c_str();
+  const ui::String brief_title = snap.brief_title.c_str();
+  const ui::String direct_title = snap.direct_title.c_str();
+  const ui::String help_title = snap.help_title.c_str();
+  const ui::String inbound_title = snap.inbound_title.c_str();
+  const ui::String cluster_title = Tr("shell.statusbar.a11y.cluster").c_str();
+  const ui::String load_circuit = snap.load_circuit_label.c_str();
+  const ui::String load_media = snap.load_media_label.c_str();
+  const ui::String load_circuit_title = snap.load_circuit_title.c_str();
+  const ui::String load_media_title = snap.load_media_title.c_str();
 
   if (state_.statusbar_brief_visible == brief_visible && state_.statusbar_brief_ok == brief_ok &&
       state_.statusbar_brief_failed == brief_failed &&
@@ -1402,17 +1402,17 @@ void ShellHost::ClearStatusbarPopover() {
 }
 
 bool ShellHost::ApplyStatusbarPopover(const StatusbarPopoverSnapshot& snap) {
-  const Rml::String brief = snap.brief_label.c_str();
-  const Rml::String direct = snap.direct_label.c_str();
-  const Rml::String reach = snap.reachability_status_label.c_str();
-  const Rml::String summary = snap.reachability_summary.c_str();
-  const Rml::String help = snap.help_label.c_str();
-  const Rml::String upnp = snap.upnp_label.c_str();
-  const Rml::String error = snap.last_error.c_str();
+  const ui::String brief = snap.brief_label.c_str();
+  const ui::String direct = snap.direct_label.c_str();
+  const ui::String reach = snap.reachability_status_label.c_str();
+  const ui::String summary = snap.reachability_summary.c_str();
+  const ui::String help = snap.help_label.c_str();
+  const ui::String upnp = snap.upnp_label.c_str();
+  const ui::String error = snap.last_error.c_str();
   const bool error_visible = !snap.last_error.empty();
-  const Rml::String circuit_load = snap.circuit_load_label.c_str();
-  const Rml::String media_sessions = snap.media_sessions_label.c_str();
-  const Rml::String media_participants = snap.media_participants_label.c_str();
+  const ui::String circuit_load = snap.circuit_load_label.c_str();
+  const ui::String media_sessions = snap.media_sessions_label.c_str();
+  const ui::String media_participants = snap.media_participants_label.c_str();
 
   if (state_.statusbar_popover_brief_label == brief && state_.statusbar_popover_direct_label == direct &&
       state_.statusbar_popover_reach_label == reach && state_.statusbar_popover_reach_summary == summary &&
@@ -1495,21 +1495,21 @@ void ShellHost::PositionStatusbarPopover() {
   if (!state_.statusbar_popover_open || !context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  Rml::ElementDocument* doc = context_->GetDocument(0);
+  ui::ElementDocument* doc = context_->GetDocument(0);
   if (!doc) {
     return;
   }
-  Rml::Element* cluster = doc->GetElementById("shell-statusbar-cluster");
-  Rml::Element* panel = doc->GetElementById("shell-statusbar-popover");
+  ui::Element* cluster = doc->GetElementById("shell-statusbar-cluster");
+  ui::Element* panel = doc->GetElementById("shell-statusbar-popover");
   if (!cluster || !panel) {
     return;
   }
 
   doc->UpdateDocument();
-  const Rml::Vector2i dims = context_->GetDimensions();
-  const Rml::Vector2f cluster_offset = cluster->GetAbsoluteOffset(Rml::BoxArea::Border);
-  const Rml::Vector2f cluster_size = cluster->GetBox().GetSize(Rml::BoxArea::Border);
-  const Rml::Vector2f panel_size = panel->GetBox().GetSize(Rml::BoxArea::Border);
+  const ui::Vector2i dims = context_->GetDimensions();
+  const ui::Vector2f cluster_offset = cluster->GetAbsoluteOffset(ui::BoxArea::Border);
+  const ui::Vector2f cluster_size = cluster->GetBox().GetSize(ui::BoxArea::Border);
+  const ui::Vector2f panel_size = panel->GetBox().GetSize(ui::BoxArea::Border);
   if (panel_size.x <= 0.f || panel_size.y <= 0.f || dims.x <= 0 || dims.y <= 0) {
     return;
   }
@@ -1636,7 +1636,7 @@ std::string ShellHost::SerializeExpandedBase() const {
     out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
     out << "</div>";
   }
-  Rml::String primary_key = state_.primary_pane_key;
+  ui::String primary_key = state_.primary_pane_key;
   if (primary_key.empty() && state_.nav_tab == NavTab::Home) {
     primary_key = "home";
   }
@@ -1937,7 +1937,7 @@ std::string ShellHost::SerializeCallInProgress() const {
   if (!state_.call_in_progress.active) {
     return {};
   }
-  auto escape = [](const Rml::String& s) {
+  auto escape = [](const ui::String& s) {
     std::string out;
     out.reserve(s.size());
     for (char c : std::string(s.c_str())) {
@@ -2204,7 +2204,7 @@ void ShellHost::MountNavRail() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  Rml::Element* target = context_->GetDocument(0)->GetElementById("shell-nav-rail-mount");
+  ui::Element* target = context_->GetDocument(0)->GetElementById("shell-nav-rail-mount");
   if (!target) {
     return;
   }
@@ -2222,7 +2222,7 @@ void ShellHost::MountNavContent() {
   if (!key) {
     return;
   }
-  Rml::Element* target = context_->GetDocument(0)->GetElementById(("pane-body-" + std::string(key)).c_str());
+  ui::Element* target = context_->GetDocument(0)->GetElementById(("pane-body-" + std::string(key)).c_str());
   if (!target) {
     return;
   }
@@ -2236,7 +2236,7 @@ void ShellHost::MountComposer() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  Rml::ElementDocument* doc = context_->GetDocument(0);
+  ui::ElementDocument* doc = context_->GetDocument(0);
   const std::string body = ViewCatalog::LoadBody("composer");
   if (body.empty()) {
     return;
@@ -2244,7 +2244,7 @@ void ShellHost::MountComposer() {
 
   // Home landing mounts the composer inside the home view (centered with chips).
   if (state_.nav_tab == NavTab::Home && !state_.compact_chat_open) {
-    if (Rml::Element* target = doc->GetElementById("home-composer-mount")) {
+    if (ui::Element* target = doc->GetElementById("home-composer-mount")) {
       RmlMount::MountInner(target, body);
     }
     return;
@@ -2263,7 +2263,7 @@ void ShellHost::MountComposer() {
   }
 
   if (state_.layout_mode == LayoutMode::Expanded) {
-    Rml::Element* target = doc->GetElementById(("pane-composer-" + composer_pane->spec.key).c_str());
+    ui::Element* target = doc->GetElementById(("pane-composer-" + composer_pane->spec.key).c_str());
     if (target) {
       RmlMount::MountInner(target, body);
     }
@@ -2273,7 +2273,7 @@ void ShellHost::MountComposer() {
   if (!state_.compact_chat_open) {
     return;
   }
-  Rml::Element* target = doc->GetElementById("shell-composer-mount");
+  ui::Element* target = doc->GetElementById("shell-composer-mount");
   if (target) {
     RmlMount::MountInner(target, body);
   }
@@ -2289,7 +2289,7 @@ void ShellHost::AttachSwipeBackGesture() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  Rml::ElementDocument* doc = context_->GetDocument(0);
+  ui::ElementDocument* doc = context_->GetDocument(0);
   ShellSwipeBackGesture::AttachOptions options;
   options.width_dp_fallback = state_.shell_width_dp;
   options.dragging_class = "shell-swipe-dragging";
@@ -2297,10 +2297,10 @@ void ShellHost::AttachSwipeBackGesture() {
   options.require_edge = true;
 
   if (HasLocalBack("settings_detail")) {
-    Rml::Element* detail = doc->GetElementById("settings-detail-view");
+    ui::Element* detail = doc->GetElementById("settings-detail-view");
     // Listen on the pane body (full sheet width) so the 12dp settings-panel padding
     // and true screen-left edge still arm swipe-back; slide only the detail view.
-    Rml::Element* listen = doc->GetElementById("pane-body-settings");
+    ui::Element* listen = doc->GetElementById("pane-body-settings");
     if (!listen) {
       listen = doc->GetElementById("shell-account-sheet");
     }
@@ -2316,7 +2316,7 @@ void ShellHost::AttachSwipeBackGesture() {
   }
 
   if (!state_.transient_stack.empty()) {
-    if (Rml::Element* layer = doc->GetElementById("shell-transient-layer")) {
+    if (ui::Element* layer = doc->GetElementById("shell-transient-layer")) {
       options.chrome_classes = {"shell-transient-chrome", "shell-back-btn"};
       options.axis_lock = nullptr; // no sheet competition on transient
       swipe_back_gesture_.Attach(layer, context_, std::move(options),
@@ -2326,7 +2326,7 @@ void ShellHost::AttachSwipeBackGesture() {
   }
 
   if (state_.layout_mode == LayoutMode::Compact && state_.compact_chat_open) {
-    if (Rml::Element* overlay = doc->GetElementById("shell-chat-overlay")) {
+    if (ui::Element* overlay = doc->GetElementById("shell-chat-overlay")) {
       options.chrome_classes = {"shell-chat-overlay-chrome", "shell-back-btn"};
       options.axis_lock = nullptr;
       swipe_back_gesture_.Attach(overlay, context_, std::move(options), [this]() {
@@ -2340,7 +2340,7 @@ void ShellHost::AttachAccountSheetGesture() {
   if (!context_ || context_->GetNumDocuments() == 0 || !state_.account_sheet_open) {
     return;
   }
-  Rml::Element* sheet = context_->GetDocument(0)->GetElementById("shell-account-sheet");
+  ui::Element* sheet = context_->GetDocument(0)->GetElementById("shell-account-sheet");
   if (!sheet) {
     return;
   }
@@ -2360,15 +2360,15 @@ void ShellHost::MountPaneBodies() {
     if (!context_ || context_->GetNumDocuments() == 0) {
       return;
     }
-    Rml::ElementDocument* doc = context_->GetDocument(0);
-    Rml::Element* target = doc->GetElementById(("pane-body-" + key).c_str());
+    ui::ElementDocument* doc = context_->GetDocument(0);
+    ui::Element* target = doc->GetElementById(("pane-body-" + key).c_str());
     if (!target) {
       return;
     }
     const std::string body = ViewCatalog::LoadBody(key);
     if (body.empty()) {
       // Avoid silent blank panes (common when packaged asset reads fail).
-      Rml::Log::Message(Rml::Log::LT_ERROR, "ShellHost: failed to load view body for '%s'", key.c_str());
+      ui::Log::Message(ui::Log::LT_ERROR, "ShellHost: failed to load view body for '%s'", key.c_str());
       return;
     }
     RmlMount::MountInner(target, body);
@@ -2379,7 +2379,7 @@ void ShellHost::MountPaneBodies() {
   MountNavContent();
 
   if (state_.layout_mode == LayoutMode::Expanded) {
-    Rml::String primary_key = state_.primary_pane_key;
+    ui::String primary_key = state_.primary_pane_key;
     if (primary_key.empty() && state_.nav_tab == NavTab::Home) {
       primary_key = "home";
     }
@@ -2426,7 +2426,7 @@ void ShellHost::MountPaneBodies() {
     if (!context_ || context_->GetNumDocuments() == 0) {
       continue;
     }
-    Rml::Element* target =
+    ui::Element* target =
         context_->GetDocument(0)->GetElementById(("overlay-body-" + std::to_string(overlay.id)).c_str());
     if (!target) {
       continue;
@@ -2463,15 +2463,15 @@ void ShellHost::RemountBottomChromeNow() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  Rml::ElementDocument* doc = context_->GetDocument(0);
-  Rml::Element* mount = doc->GetElementById("shell-emoji-keyboard-mount");
+  ui::ElementDocument* doc = context_->GetDocument(0);
+  ui::Element* mount = doc->GetElementById("shell-emoji-keyboard-mount");
   if (!mount) {
     return;
   }
   const std::string html = SerializeBottomChrome();
   RmlMount::MountInner(mount, html);
   if (!html.empty()) {
-    Rml::Element* target = doc->GetElementById("shell-bottom-chrome-body");
+    ui::Element* target = doc->GetElementById("shell-bottom-chrome-body");
     if (target && !bottom_chrome_rml_path_.empty()) {
       const std::string body = ViewCatalog::LoadBody(bottom_chrome_rml_path_);
       if (!body.empty()) {
@@ -2483,7 +2483,7 @@ void ShellHost::RemountBottomChromeNow() {
 }
 
 void ShellHost::SyncLayout() {
-  Rml::Element* root = ShellRoot();
+  ui::Element* root = ShellRoot();
   if (!root) {
     return;
   }
@@ -2551,11 +2551,11 @@ void ShellHost::AttachCallChromeGesture() {
   if (!context_ || context_->GetNumDocuments() == 0 || !state_.call_in_progress.active) {
     return;
   }
-  Rml::ElementDocument* doc = context_->GetDocument(0);
+  ui::ElementDocument* doc = context_->GetDocument(0);
   if (!doc) {
     return;
   }
-  Rml::Element* root = doc->GetElementById("shell-call-chrome-root");
+  ui::Element* root = doc->GetElementById("shell-call-chrome-root");
   if (!root && state_.call_in_progress.mode == CallChromeMode::Minimized) {
     root = doc->GetElementById("shell-call-minimized-chip");
   }
@@ -2564,7 +2564,7 @@ void ShellHost::AttachCallChromeGesture() {
   }
   // Minimized: attach to the chip so drag/tap don't require the full-screen layer.
   if (state_.call_in_progress.mode == CallChromeMode::Minimized) {
-    if (Rml::Element* chip = doc->GetElementById("shell-call-minimized-chip")) {
+    if (ui::Element* chip = doc->GetElementById("shell-call-minimized-chip")) {
       root = chip;
     }
   }
@@ -2602,15 +2602,15 @@ void ShellHost::RemountCallChromeNow() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  Rml::ElementDocument* doc = context_->GetDocument(0);
+  ui::ElementDocument* doc = context_->GetDocument(0);
   if (!doc) {
     return;
   }
   DetachCallChromeGesture();
-  if (Rml::Element* ring_mount = doc->GetElementById("shell-call-ring-mount")) {
+  if (ui::Element* ring_mount = doc->GetElementById("shell-call-ring-mount")) {
     RmlMount::MountInner(ring_mount, SerializeCallRing());
   }
-  if (Rml::Element* bar_mount = doc->GetElementById("shell-call-in-progress-mount")) {
+  if (ui::Element* bar_mount = doc->GetElementById("shell-call-in-progress-mount")) {
     RmlMount::MountInner(bar_mount, SerializeCallInProgress());
   }
   DirtyCallChrome();
@@ -2643,11 +2643,11 @@ void ShellHost::RemountDialogChromeNow() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  Rml::ElementDocument* doc = context_->GetDocument(0);
+  ui::ElementDocument* doc = context_->GetDocument(0);
   if (!doc) {
     return;
   }
-  if (Rml::Element* mount = doc->GetElementById("shell-dialog-mount")) {
+  if (ui::Element* mount = doc->GetElementById("shell-dialog-mount")) {
     RmlMount::MountInner(mount, SerializeDialog());
   }
   DirtyFeedback();
@@ -2679,17 +2679,17 @@ void ShellHost::RemountPinGateChromeNow() {
   if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  Rml::ElementDocument* doc = context_->GetDocument(0);
+  ui::ElementDocument* doc = context_->GetDocument(0);
   if (!doc) {
     return;
   }
-  if (Rml::Element* mount = doc->GetElementById("shell-pin-gate-mount")) {
+  if (ui::Element* mount = doc->GetElementById("shell-pin-gate-mount")) {
     RmlMount::MountInner(mount, SerializePinGate());
   }
   DirtyPinGate();
 }
 
-void ShellHost::Update(Rml::Context* context) {
+void ShellHost::Update(ui::Context* context) {
   // Wall clock: power-save WaitEventTimeout can sleep up to ~2s between idle frames, so a
   // fake +=16ms clock made Short toasts linger far too long on idle mobile screens.
   // Must match ShellFeedback::ShowToast's default clock (steady_clock).
@@ -2730,7 +2730,7 @@ void ShellHost::Update(Rml::Context* context) {
   }
 }
 
-void ShellHost::NotifyFrameEnd(Rml::Context* context) {
+void ShellHost::NotifyFrameEnd(ui::Context* context) {
   if (!context) {
     return;
   }
@@ -2760,247 +2760,247 @@ void ShellHost::NotifyFrameEnd(Rml::Context* context) {
   }
 }
 
-void ShellHost::ToggleAuxiliaryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                      const Rml::VariantList& /*args*/) {
+void ShellHost::ToggleAuxiliaryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& /*args*/) {
   Instance().ToggleAuxiliary();
 }
 
-void ShellHost::OpenAuxiliaryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                      const Rml::VariantList& /*args*/) {
+void ShellHost::OpenAuxiliaryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& /*args*/) {
   Instance().OpenAuxiliary();
 }
 
-void ShellHost::SelectNavTabCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                     const Rml::VariantList& args) {
-  if (args.empty() || args[0].GetType() != Rml::Variant::STRING) {
+void ShellHost::SelectNavTabCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                     const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().SelectNavTab(NavTabFromString(args[0].Get<Rml::String>()));
+  Instance().SelectNavTab(NavTabFromString(args[0].Get<ui::String>()));
 }
 
-void ShellHost::CompactChatBackCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                        const Rml::VariantList& /*args*/) {
+void ShellHost::CompactChatBackCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                        const ui::VariantList& /*args*/) {
   Instance().RequestDismiss(DismissStyle::Instant, DismissTarget::CompactChatOverlay);
 }
 
-void ShellHost::OpenAccountSheetCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                         const Rml::VariantList& /*args*/) {
+void ShellHost::OpenAccountSheetCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                         const ui::VariantList& /*args*/) {
   Instance().OpenAccountSheet();
 }
 
-void ShellHost::CloseAccountSheetCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                          const Rml::VariantList& /*args*/) {
+void ShellHost::CloseAccountSheetCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                          const ui::VariantList& /*args*/) {
   // × always closes the sheet, even when a nested settings detail is open.
   Instance().CloseAccountSheet();
 }
 
-void ShellHost::PopTransientCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                     const Rml::VariantList& /*args*/) {
+void ShellHost::PopTransientCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                     const ui::VariantList& /*args*/) {
   Instance().RequestDismiss(DismissStyle::Instant, DismissTarget::Transient);
 }
 
-void ShellHost::CloseLayerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                   const Rml::VariantList& args) {
+void ShellHost::CloseLayerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                   const ui::VariantList& args) {
   const int layer_id = EventArgAsInt(args).value_or(-1);
   Instance().CloseLayer(layer_id);
 }
 
-void ShellHost::DismissBannerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                      const Rml::VariantList& /*args*/) {
+void ShellHost::DismissBannerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& /*args*/) {
   ShellHost& host = Instance();
   ShellFeedback::DismissBanner(host.state_);
   host.DirtyFeedback();
 }
 
-void ShellHost::DialogOkCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                 const Rml::VariantList& /*args*/) {
+void ShellHost::DialogOkCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                 const ui::VariantList& /*args*/) {
   ShellFeedback::DialogOk(Instance().state_);
 }
 
-void ShellHost::DialogCancelCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                     const Rml::VariantList& /*args*/) {
+void ShellHost::DialogCancelCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                     const ui::VariantList& /*args*/) {
   ShellFeedback::DialogCancel(Instance().state_);
 }
 
-void ShellHost::DialogToggleCheckboxCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                             const Rml::VariantList& /*args*/) {
+void ShellHost::DialogToggleCheckboxCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                             const ui::VariantList& /*args*/) {
   ShellHost& host = Instance();
   host.state_.dialog.checkbox_checked = !host.state_.dialog.checkbox_checked;
   host.DirtyFeedback();
 }
 
-void ShellHost::PinGateSubmitCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                      const Rml::VariantList& /*args*/) {
+void ShellHost::PinGateSubmitCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& /*args*/) {
   if (Instance().pin_gate_actions_.on_submit) {
     Instance().pin_gate_actions_.on_submit();
   }
 }
 
-void ShellHost::PinGateCancelCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                      const Rml::VariantList& /*args*/) {
+void ShellHost::PinGateCancelCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& /*args*/) {
   if (Instance().pin_gate_actions_.on_cancel) {
     Instance().pin_gate_actions_.on_cancel();
   }
 }
 
-void ShellHost::PinGateSetPinCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                      const Rml::VariantList& /*args*/) {
+void ShellHost::PinGateSetPinCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& /*args*/) {
   if (Instance().pin_gate_actions_.on_set_pin) {
     Instance().pin_gate_actions_.on_set_pin();
   }
 }
 
-void ShellHost::PinGateUseDefaultCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                          const Rml::VariantList& /*args*/) {
+void ShellHost::PinGateUseDefaultCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                          const ui::VariantList& /*args*/) {
   if (Instance().pin_gate_actions_.on_use_default) {
     Instance().pin_gate_actions_.on_use_default();
   }
 }
 
-void ShellHost::PinGateIdentityNewCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                           const Rml::VariantList& /*args*/) {
+void ShellHost::PinGateIdentityNewCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                           const ui::VariantList& /*args*/) {
   if (Instance().pin_gate_actions_.on_identity_new) {
     Instance().pin_gate_actions_.on_identity_new();
   }
 }
 
-void ShellHost::PinGateIdentityLinkCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& /*args*/) {
+void ShellHost::PinGateIdentityLinkCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                            const ui::VariantList& /*args*/) {
   if (Instance().pin_gate_actions_.on_identity_link) {
     Instance().pin_gate_actions_.on_identity_link();
   }
 }
 
-void ShellHost::CallAcceptCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                   const Rml::VariantList& /*args*/) {
+void ShellHost::CallAcceptCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                   const ui::VariantList& /*args*/) {
   Instance().log().warning << "call_accept click";
   if (Instance().call_actions_.accept_incoming) {
     Instance().call_actions_.accept_incoming();
   }
 }
 
-void ShellHost::CallAcceptChargeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                         const Rml::VariantList& /*args*/) {
+void ShellHost::CallAcceptChargeCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                         const ui::VariantList& /*args*/) {
   Instance().log().warning << "call_accept_charge click";
   if (Instance().call_actions_.accept_incoming_with_charge) {
     Instance().call_actions_.accept_incoming_with_charge();
   }
 }
 
-void ShellHost::CallDeclineCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                    const Rml::VariantList& /*args*/) {
+void ShellHost::CallDeclineCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                    const ui::VariantList& /*args*/) {
   if (Instance().call_actions_.decline_incoming) {
     Instance().call_actions_.decline_incoming();
   }
 }
 
-void ShellHost::CallLeaveCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                  const Rml::VariantList& /*args*/) {
+void ShellHost::CallLeaveCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                  const ui::VariantList& /*args*/) {
   if (Instance().call_actions_.leave_active) {
     Instance().call_actions_.leave_active();
   }
 }
 
-void ShellHost::CallRetryCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                  const Rml::VariantList& /*args*/) {
+void ShellHost::CallRetryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                  const ui::VariantList& /*args*/) {
   if (Instance().call_actions_.retry_connect) {
     Instance().call_actions_.retry_connect();
   }
 }
 
-void ShellHost::CallMuteCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                 const Rml::VariantList& /*args*/) {
+void ShellHost::CallMuteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                 const ui::VariantList& /*args*/) {
   if (Instance().call_actions_.toggle_mute) {
     Instance().call_actions_.toggle_mute();
   }
 }
 
-void ShellHost::CallCameraCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                   const Rml::VariantList& /*args*/) {
+void ShellHost::CallCameraCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                   const ui::VariantList& /*args*/) {
   if (Instance().call_actions_.toggle_camera) {
     Instance().call_actions_.toggle_camera();
   }
 }
 
-void ShellHost::CallSpeakerCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                    const Rml::VariantList& /*args*/) {
+void ShellHost::CallSpeakerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                    const ui::VariantList& /*args*/) {
   if (Instance().call_actions_.toggle_speaker) {
     Instance().call_actions_.toggle_speaker();
   }
 }
 
-void ShellHost::CallInviteCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                   const Rml::VariantList& /*args*/) {
+void ShellHost::CallInviteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                   const ui::VariantList& /*args*/) {
   if (Instance().call_actions_.open_mid_call_invite_picker) {
     Instance().call_actions_.open_mid_call_invite_picker();
   }
 }
 
-void ShellHost::CallMinimizeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                     const Rml::VariantList& /*args*/) {
+void ShellHost::CallMinimizeCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                     const ui::VariantList& /*args*/) {
   if (Instance().call_actions_.minimize_chrome) {
     Instance().call_actions_.minimize_chrome();
   }
 }
 
-void ShellHost::CallExpandCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                   const Rml::VariantList& /*args*/) {
+void ShellHost::CallExpandCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                   const ui::VariantList& /*args*/) {
   if (Instance().call_actions_.expand_chrome) {
     Instance().call_actions_.expand_chrome();
   }
 }
 
-void ShellHost::CallImmersiveCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                      const Rml::VariantList& /*args*/) {
+void ShellHost::CallImmersiveCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& /*args*/) {
   if (Instance().call_actions_.immersive_chrome) {
     Instance().call_actions_.immersive_chrome();
   }
 }
 
-void ShellHost::CallRestoreCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                    const Rml::VariantList& /*args*/) {
+void ShellHost::CallRestoreCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                    const ui::VariantList& /*args*/) {
   if (Instance().call_actions_.restore_chrome_from_minimized) {
     Instance().call_actions_.restore_chrome_from_minimized();
   }
 }
 
-void ShellHost::CallDetailsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                    const Rml::VariantList& /*args*/) {
+void ShellHost::CallDetailsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                    const ui::VariantList& /*args*/) {
   if (Instance().call_actions_.show_call_details) {
     Instance().call_actions_.show_call_details();
   }
 }
 
-void ShellHost::TitlebarMinimizeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                         const Rml::VariantList& /*args*/) {
+void ShellHost::TitlebarMinimizeCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                         const ui::VariantList& /*args*/) {
   DesktopWindowChrome::Minimize();
 }
 
-void ShellHost::TitlebarToggleMaximizeCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                               const Rml::VariantList& /*args*/) {
+void ShellHost::TitlebarToggleMaximizeCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                               const ui::VariantList& /*args*/) {
   DesktopWindowChrome::ToggleMaximize();
   ShellHost& host = Instance();
   host.state_.window_maximized = DesktopWindowChrome::IsMaximized();
   host.DirtyStatusChrome();
 }
 
-void ShellHost::TitlebarCloseCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                      const Rml::VariantList& /*args*/) {
+void ShellHost::TitlebarCloseCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& /*args*/) {
   DesktopWindowChrome::Close();
 }
 
-void ShellHost::ToggleStatusbarPopoverCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                               const Rml::VariantList& /*args*/) {
+void ShellHost::ToggleStatusbarPopoverCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                               const ui::VariantList& /*args*/) {
   Instance().ToggleStatusbarPopover();
 }
 
-void ShellHost::DismissStatusbarPopoverCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                const Rml::VariantList& /*args*/) {
+void ShellHost::DismissStatusbarPopoverCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                const ui::VariantList& /*args*/) {
   Instance().CloseStatusbarPopover();
 }
 
-void ShellHost::RetestStatusbarReachabilityCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                                    const Rml::VariantList& /*args*/) {
+void ShellHost::RetestStatusbarReachabilityCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                    const ui::VariantList& /*args*/) {
   auto& host = Instance();
   if (host.shell_messaging_ports_.retest_reachability) {
     host.shell_messaging_ports_.retest_reachability();
@@ -3009,8 +3009,8 @@ void ShellHost::RetestStatusbarReachabilityCallback(Rml::DataModelHandle /*model
   host.RefreshStatusbarCluster();
 }
 
-void ShellHost::OpenNetworkSettingsCallback(Rml::DataModelHandle /*model*/, Rml::Event& /*ev*/,
-                                            const Rml::VariantList& /*args*/) {
+void ShellHost::OpenNetworkSettingsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                            const ui::VariantList& /*args*/) {
   auto& host = Instance();
   host.CloseStatusbarPopover();
   if (host.shell_messaging_ports_.open_network_settings) {

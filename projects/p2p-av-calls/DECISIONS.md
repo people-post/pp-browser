@@ -593,9 +593,9 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 
 1. **Owner picks the hop** (sticky initiator SoftMigrate, unchanged V021/V022).
 2. **Admission:** the first dialer (or `AttachAsLocalHop`) that opens a `media_relay` session for `call_id` must pass normal contact/scope admission. **After** that session exists, further attaches to the same `call_id` are admitted even if the dialer is not in the hop’s contact set — including mid-call stranger joiners. Mobile remains non-Public for *new* sessions (V027); only join-to-existing-call is the exception.
-3. **Ranking:** when the initiator is a **durable Node** with `media_relay` started, prefer **self** as hop (`PreferLocalMediaHop` → `AttachAsLocalHop`) ahead of PreferInCall phones / seeds. **Not** for mobile ephemeral `media_relay` (V027) — phones must not SoftMigrate themselves into the SFU host role.
+3. **Ranking:** when the initiator is a **durable Node** with `media_relay` started **and call hop scope is Link/Site** (or Wide with non-private advertise MA), prefer **self** as hop (`PreferLocalMediaHop` → `AttachAsLocalHop`) ahead of PreferInCall phones / seeds. **Not** for mobile ephemeral `media_relay` (V027) — phones must not SoftMigrate themselves into the SFU host role. **Amended by [V035](#v035--scope-aware-softmigrate-hop-pick):** do not PreferLocal-first on Wide/cross-net calls.
 
-**Rationale:** Guests need not be mutual contacts of each other or of an in-call phone hop. Owner-sponsored call semantics match signaling (owner can reach each invitee). PreferLocal keeps the owner **Node** as the default host when available; ephemeral mobile Start() alone must not claim PreferLocal (dogfood: Android hop crash → peer `Connection reset`).
+**Rationale:** Guests need not be mutual contacts of each other or of an in-call phone hop. Owner-sponsored call semantics match signaling (owner can reach each invitee). PreferLocal keeps the owner **Node** as the default host when available on LAN; ephemeral mobile Start() alone must not claim PreferLocal (dogfood: Android hop crash → peer `Connection reset`).
 
 **Alternatives:** Require mutual contacts among all participants (rejected — UX); open mobile Public for new sessions (rejected — V027); signed owner attach tokens (deferred — same product rule, stronger crypto later).
 
@@ -606,15 +606,15 @@ Demand signals (“want hi?”, subscribe set) inform producers so they do not e
 **Decision:** For N≥3 SoftMigrate / attach:
 
 1. **Owner picks + broadcasts** (`CallSfuAttach`) remains the sole attach authority (V021/V028).
-2. **Ranking:** PreferLocal only for **durable Node** (`prefer_local_as_hop`). Do **not** PreferInCall phones as SFU host (amends V027 “in-call hop” for group SFU). Then ranked contact∪seed hops.
+2. **Ranking:** PreferLocal only for **durable Node** (`prefer_local_as_hop`) when scope allows ([V035](#v035--scope-aware-softmigrate-hop-pick)). Do **not** PreferInCall phones as SFU host (amends V027 “in-call hop” for group SFU). Then ranked contact∪seed hops.
 3. **Guest attach failure:** guest sends `call_sfu_attach_failed` with ordered `preferred_hop_peer_ids` (dialable hops, capped). Owner intersects with its dialable rank (excluding the failed hop):
-   - Intersection non-empty → SoftMigrate re-pick (preferred hop first) + new `CallSfuAttach` fan-out.
+   - Intersection non-empty → SoftMigrate re-pick under migration FSM (preferred hop first; same hop = re-fan-out only) + new `CallSfuAttach` fan-out. **Amended by V035:** hop-hint is rare recovery after a wrong-band first pick, not the primary WAN path.
    - Empty → `call_hop_refuse` to guest + eject; friendly copy for guest and owner toast.
 4. **Mid-call add/remove:** same SoftMigrate / hint / refuse loop when hop must change.
 
 **Rationale:** Owner cannot know guest↛hop a priori; guest prefs turn attach failure into switch-or-refuse instead of blind thrash or silent leave. Phones must not PreferLocal/PreferInCall into the SFU host role (dogfood crash).
 
-**Cross-link:** V023 / V027 / V028; [CALLS.md](../../docs/architecture/CALLS.md) media_relay.
+**Cross-link:** V023 / V027 / V028 / V035; [CALLS.md](../../docs/architecture/CALLS.md) media_relay.
 
 ---
 
@@ -755,3 +755,199 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 **Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); [HOST_RECEIVE_POLICY.md](HOST_RECEIVE_POLICY.md); [PHASES.md](PHASES.md) **lv** (libp2p video).
 
 ---
+
+## V035 — Scope-aware SoftMigrate hop pick
+
+**Date:** 2026-09-14  
+**Status:** Accepted (**implementing**)  
+**Decision:** SoftMigrate first-hop selection is **scope-aware** (N023 link → site → org), not PreferLocal-first with hop-hint recovery.
+
+1. **Call hop scope** — From joined peers’ invite/accept `listen_multiaddrs` vs local advertise:
+   - `Link` if every remote shares IPv4 /24 with local
+   - `Site` if every remote is private-IPv4 and local is private (v1)
+   - Else `Wide` (cross-net / unknown). **Empty remotes map or a remote with missing listen MAs → `Wide`** (fail closed toward public hop).
+2. **First hop** (`SelectCallMediaHop`):
+   - `Link` + durable Node + local advertise MA + **LAN reachability confirmed** (Amp connected / mDNS) → PreferLocal first
+   - `Site` → **never** PreferLocal (different private subnets cannot dial PreferLocal MA)
+   - Unconfirmed `Link` (same-/24 alone — common CGNAT/home collision) → treat PreferLocal as disallowed; pick org/directory public MA
+   - `Wide` → **never** PreferLocal with a private advertise MA; pick first dialable OrgSeed / DirectoryNode / DhtDiscovered with non-private MA
+   - PreferLocal on `Wide` only when local advertise MA is non-private
+   - Contact hops remain V030-gated (`media_relay` ad)
+3. **Fan-out** — PreferLocal `CallSfuAttach` with RFC1918 MA only when hop is PreferLocal **and** Link is LAN-confirmed. Never put RFC1918 PreferLocal MA on `CallSfuAttach` for Wide/unconfirmed calls.
+4. **Migration FSM** (per `call_id` on owner Topology):
+   - `Idle` → `Attaching(hop)` → `Attached(hop)`
+   - Same hop → re-fan-out only (no Detach)
+   - At most one SoftMigrate in flight; further hop-hints coalesce to `pending_hop_prefer_` and flush once
+   - `migrate_generation_` bumps on Leave/teardown — not on every hop-hint
+5. **Guest path** — Private hop MA only when same /24, local is private-only, **and** hop peer is LAN-confirmed; else fail-fast `call_sfu_attach_failed`. Ignore inbound attach/refuse for non-active `call_id`. Hop-hint is a rare re-pick after one attach failure to the *planned* hop, not the primary WAN path.
+
+**Supersedes / amends:** V028§3 PreferLocal-first ranking; V029 hop-hint as primary recovery (hints remain under FSM as rare re-pick). Keeps V021 owner pick, V025 no 1:1 auto-SFU, V027/V029 no phone PreferLocal host, V030 caps filter.
+
+**Rationale:** Cross-net dogfood PreferLocal-prepended private LAN MA into `CallSfuAttach` → guest timeout → hop-hint SoftMigrate gen stampede / stuck Connecting. Same RFC1918 /24 across different LANs falsely inferred Link — PreferLocal requires Amp/mDNS confirmation. Scope-aware first pick + idempotent migration matches [RELAY_SCOPE.md](../p2p-mesh/RELAY_SCOPE.md).
+
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); V021–V030; mesh N023.
+
+---
+
+## V036 — MediaSeat / exclusive media epoch
+
+**Date:** 2026-09-14
+**Status:** Accepted (**Phase 3 landed**)
+**Decision:** One process-wide **MediaSeat** owns the exclusive bind between `call_id` and call media (engine + path). Signaling (lifecycle / session / roster) stays separate.
+
+| API | Meaning |
+|-----|---------|
+| `Acquire(call_id)` | Exclusive bind. Releases any other bound call first. Returns a token (`epoch` + `call_id`). MediaState → `Connecting`. |
+| `Release(call_id \| token)` | Ordered teardown: topology Detach / `OnMediaStopped`, then engine `Stop` (UI). Clears bind → `Idle`. Stale token → no-op. |
+| `NoteStart(call_id)` | Confirms StartSfu under the bind; bumps epoch so in-flight `Release` cannot kill the new session. Stays `Connecting` until `NoteLive`. |
+| `NotePath(Direct \| Hop)` | SoftMigrate marks hop without `Release` (capture stays up). |
+| `NoteLive(call_id)` | Duplex ready — chrome **Connected** gate. |
+| `NoteFailed(call_id)` | Connect/attach failure for chrome. |
+| `BeginAttach` / `EndAttach*` | Single in-flight SFU attach (same hop coalesce; other hop defer). |
+| `MatchesToken` / `AllowsPathOp` | Strict epoch match vs path-op bind (survives NoteStart epoch bump). |
+| `IsBound(call_id)` / `IsLive(call_id)` / `State()` | Topology gates + dual-FSM chrome snapshot. |
+
+**Rules:**
+
+1. SoftMigrate = **path replace under the same token** (`NotePath(Hop)` + `ReleaseDirect`) — never seat `Release` (that would Stop capture).
+2. Leave / Ended session / Accept leftover purge → seat `Release` only (no parallel Stop policy outside the seat).
+3. `CallSfuAttach` / SoftMigrate / StartSfu stale work is keyed by seat epoch (absorbs ad-hoc `MediaSessionGeneration` races).
+4. **Chrome (Phase 2):** Connected only from **(signaling joined × media Live)**. `ReleaseDirect` → `DirectConnected` advances lifecycle `InCall` but must **not** alone paint Connected; `NoteLive` is required (direct stream up or hop attach complete). Reconnecting while Live comes from media health, not demoting seat to Connecting.
+5. **Attach flight (Phase 2):** at most one hop AcceptAndAttach under the seat; parallel `CallSfuAttach` coalesces or defers.
+6. **Path demotion (Phase 3):** `CallDirectPath` / `CallHopPath` façades over Bridge / Topology; path Start/ReleaseTransport/CompleteAttach require `AllowsPathOp(token)`. CSM is **signaling-only** for duplex start/stop (`ScheduleStart` / `seat.Release`) — does not call `StopMeshMedia` when a seat is wired.
+
+**Dogfood drivers:** End left SFU capture running → next call Connected/reconnecting with zombie RX; Accept async Stop raced `StartSfu` → both sides Calling; topology vetoed new `CallSfuAttach` via leftover engine `ActiveCallId`; JoinedLocal + leftover TX with no attach → sticky Calling; `ReleaseDirect` promoted Connected without duplex.
+
+**Phase 1:** `CallMediaSeat` + wire Stop/Start/active gates; keep `CallMediaBridge` / `CallTopologyController` names as Direct/Hop path implementations.
+**Phase 2:** dual-FSM chrome snapshot + seat-owned attach flight.
+**Phase 3:** thin Path facades (token-gated) + CSM signaling-only for duplex start/stop.
+
+**Rationale:** Topology, Bridge, Lifecycle, and disk `Active` rows each held a partial “who owns media?” clock. An exclusive seat makes begin/end and SoftMigrate races structural rather than heuristic.
+
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); V021 SoftMigrate; V026 Amp media; V035 scope-aware hop.
+
+---
+
+## V037 — CallLifecycle State + Status (one planner armed)
+
+**Date:** 2026-09-14
+**Status:** Accepted (phased)
+**Decision:** Evolve **`CallLifecycle`** into a hierarchical FSM: **`CallPhase` = State** (ring/accept/chrome shell) and **`CallMediaStatus` = Status** (which media planner may run). At most one planner is **armed** per `(phase, status)`. Seat bind/epoch ([V036](DECISIONS.md#v036--mediaseat--exclusive-media-epoch)) remains the exclusive media resource lock; Status is the **planner arming** authority (supersedes informal dual-FSM chrome wording where Status and seat Live diverge).
+
+### Status (under Calling-like phases / InCall)
+
+| Status | Armed | Allowed |
+|--------|-------|---------|
+| `None` | — | Idle / Ringing / Accepting |
+| `Deciding` | Lifecycle | Sync N/hint; choose next status; bump `media_cancel_gen` |
+| `DirectConnecting` | Bridge | 1:1 reach / Connect / StartSfu |
+| `HopWaiting` | Topology | WaitForAttach; reject ScheduleStart |
+| `HopAttaching` | Topology | AcceptAndAttach / StartSfu(hop) |
+| `DirectLive` / `HopLive` | Bridge / Topology | Health; chrome Connected |
+| `Migrating` | Topology | SoftMigrate sequence; Bridge must not ScheduleStart |
+| `DegradedTxOnly` | Bridge | TX-only escalate; chrome not Connected |
+| `Failed` | — | Retry / Leave |
+
+**Calling-like phases** (planner arming aliases until enum rename): `JoinedLocal`, `MediaPending`, `MediaConnecting`, plus `OutboundCalling` when media has started.
+
+### Invariants
+
+1. `ScheduleStartDirectMedia` / Bridge BeginSession only when Status arms Bridge (`DirectConnecting`, `DegradedTxOnly`).
+2. `OnInboundSfuAttach` / SoftMigrate start / CompleteAttach `StartSfu` only when Status arms Topology (`HopWaiting`, `HopAttaching`, `Migrating`).
+3. Entering `Deciding` or Leave bumps **`media_cancel_gen`**; late AcceptAndAttach must match gen + Status before StartSfu.
+4. Chrome **Connected** only for `InCall` + (`DirectLive` | `HopLive`) — not TX-only, not StartSfu alone.
+5. SoftMigrate is **`Migrating`** (exclusive), not concurrent Bridge+Topology.
+
+### Phases
+
+| Phase | Deliverable |
+|-------|-------------|
+| 0 | `CallMediaStatus` + cancel gen on Lifecycle; log `phase+status` |
+| 1 | Illegal-op gates on ScheduleStart / inbound attach / CompleteAttach |
+| 2 | Live/Failed ownership + chrome from Status |
+| 3 | SoftMigrate → `Migrating` |
+| 4 | Docs: Calling alias; cancel-gen ownership; race list |
+
+**Rationale:** Dogfood (brief hop audio then “direct” silence) came from Direct and Hop both armed after Accept chose P2P. One Status arming switch makes late hop StartSfu structurally illegal.
+
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); V036 MediaSeat; V021 SoftMigrate.
+
+---
+
+## V038 — N=2 circuit for NAT; SoftMigrate reserved for N≥3
+
+**Date:** 2026-09-14  
+**Status:** Accepted  
+**Decision:** Lock the Amp call-media rewrite payoff path for undialable peers. **Circuit** and **`media_relay` SoftMigrate** are different layers — do not use SoftMigrate as 1:1 NAT recovery.
+
+| Joined N | Media path | NAT / undialable |
+|----------|------------|------------------|
+| **2** | Prefer **direct** Amp call-media (`/pp-browser/realtime/1.0.0`) | **publish → punch → circuit-carried nested Session** (A024); never auto SoftMigrate / `media_relay` attach for NAT alone |
+| **≥3** | SoftMigrate → blind **`media_relay`** star (V021) | Circuit may still be used underneath to *reach* the hop PeerId |
+| **N drops to 2** | **Stay on SFU** until hangup (v1) | Avoid P2P↔SFU flip-flop (V021) |
+
+### Normative rules
+
+1. **Circuit enables PeerId dial** (opaque tunnel / nested carrier). Media remains A↔B E2E call-media under the call media key.
+2. **`media_relay` changes topology** (blind fan-out among joined peers). It is the multiparty SFU path, not the default 1:1 NAT fix.
+3. **Dialable ≠ duplex.** TX-only after DirectConnected escalates via **circuit Ensure** + re-`BeginSession` (once per call) — not SoftMigrate.
+4. **V037 Status** arms Bridge for Direct* / `DegradedTxOnly`; Topology for Hop* / `Migrating`. Inbound `CallSfuAttach` must not `StartSfu` while Status is Direct*.
+5. **`CallMediaEngine::StartSfu`** means start capture + duplex send fn for **both** 1:1 and hop — not “join SFU” alone (document-only; no rename campaign).
+
+**Rationale:** SoftMigrate-for-NAT mixed dialability with group topology, imported quote/attach/WaitForAttach UX onto plain 1:1, and misfired when no hop existed (V025). V026 already pointed undialable 1:1 at mesh hop/circuit; this ADR freezes that as the rewrite payoff requirement and bans reopening SoftMigrate-for-1:1 without a new ADR.
+
+**Alternatives:** Always SoftMigrate 1:1 to `media_relay` when undialable (rejected — false group path); revive WebRTC/ICE for NAT (rejected — V026 one peer stack).
+
+**Cross-link:** [V025](#v025--no-auto-sfu-for-11-ice-fail-retry-on-p2p); [V026](#v026--libp2p-only-call-media-http--libp2p-networking); [V037](#v037--calllifecycle-state--status-one-planner-armed); [L4_PROTOCOL_KINDS.md](../../docs/contracts/L4_PROTOCOL_KINDS.md) (NAT → circuit; call over NAT → nested realtime); [CALL_MEDIA_CIRCUIT.md](../adp/CALL_MEDIA_CIRCUIT.md); [CALLS.md](../../docs/architecture/CALLS.md); phase [rd](PHASES.md#rd--amp-call-media-rewrite-debt-v038).
+
+---
+
+## V039 — Call Direct/Hop planner machines
+
+**Date:** 2026-09-14  
+**Status:** Accepted (phased)  
+**Decision:** Layer **Apply-based planner machines** under `CallLifecycle` Status arming. Product chrome stays Lifecycle; N=2 media path is the **Direct planner** (today `CallMediaBridge`); N≥3 SoftMigrate/attach is the **Hop planner** (today `CallTopologyController`). Transport duplex/attach SMs remain under V033 / N026. No class rename campaign.
+
+### Layering
+
+| Layer | Owner | Role |
+|-------|--------|------|
+| Product State+Status | `CallLifecycle` | Phase chrome; Status arms one planner (V037) |
+| Direct planner | `CallMediaBridge` + `CallDirectPlannerLogic` | Schedule / key-wait / Connect / TX-only circuit / Release |
+| Hop planner | `CallTopologyController` + `CallHopPlannerLogic` | WaitForAttach / SoftMigrate / inbound CallSfuAttach |
+| Transport | `CallMediaDirectService` / media_relay attach SM | Stream hello/duplex / AcceptAndAttach |
+
+### Invariants
+
+1. Events in, effects out (`Apply`); illegal events ignored + logged — never assert on mesh reorder.
+2. At most one planner armed (`CallMediaStatus`).
+3. Cross-planner cancel uses Lifecycle `media_cancel_gen`; each planner keeps attempt-local gens (`connect_generation_`, `migrate_generation_`).
+4. SoftMigrate is Hop `SoftMigrateRequested` → Status `Migrating` — never a Bridge side flag / 1:1 NAT path (V038).
+5. Planner `Apply` product callbacks run on **UI** (PostUIFront); transport stays MeshPump / MeshControl.
+6. Failed planner reports Lifecycle `ConnectFailedEvt` / Status `Failed` once; do not stick in Failed.
+7. Primary control path is events + SM-owned timers — UI-tick `Poll*` is backstop only after timers land.
+
+### Event catalogs (normative names)
+
+**Direct:** `ScheduleOfferer`, `ScheduleAnswerer`, `KeyReady`, `KeyTimeout`, `ConnectSucceeded`, `ConnectFailed`, `TxOnlyGraceExpired`, `CircuitEscalated`, `ReleaseTransport`, `Stop`.
+
+**Hop:** `LocalAcceptN3`, `RemoteAcceptN3`, `SfuAttachInbound`, `SoftMigrateRequested`, `AttachSucceeded`, `AttachFailed`, `AttachWaitExpired`, `HopRefuse`, `Stop`.
+
+### Phases
+
+| Phase | Deliverable |
+|-------|-------------|
+| pm0 | This ADR + SESSION_MACHINES planner section + PHASES `pm` |
+| pm1 | Direct `Apply` strangler + pure logic gtests |
+| pm2 | Hop `Apply` strangler + SoftMigrate-as-event |
+| pm3 | SM timers replace PollMeshConnectHealth / PollPendingSfuAttach primary path |
+| pm4 | Lifecycle/CSM thin Accept media router; CALLS race homes → planner phases |
+
+**Rationale:** Hybrid callback + Status gates + UI polls caused dogfood races (stale hop StartSfu, Kick thrash, SoftMigrate-on-1:1). Layered FSMs with epoch cancel match Amp/NAT/glare/SoftMigrate without a mega-SM.
+
+**Alternatives:** Single mega event bus (rejected — Leave vs late Connect); rename Bridge→DirectPlanner campaign (rejected — noise); SoftMigrate-for-NAT (rejected — V038).
+
+**Cross-link:** [V033](#v033--transport-session-machines-not-host-wide-inbound-sm); [V037](#v037--calllifecycle-state--status-one-planner-armed); [V038](#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3); [SESSION_MACHINES.md](SESSION_MACHINES.md#planner-machines-v039); [CALLS.md](../../docs/architecture/CALLS.md); phase [pm](PHASES.md#pm--call-planner-machines-v039).
+
+---
+

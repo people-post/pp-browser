@@ -1,6 +1,6 @@
 #pragma once
 
-#include <RmlUi/Core/FileInterface.h>
+#include <ui/base/FileInterface.h>
 
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
@@ -10,13 +10,13 @@ namespace pbr {
 
 #if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
 
-class SdlAssetFileInterface : public Rml::FileInterface {
+class SdlAssetFileInterface : public ui::FileInterface {
 public:
-  Rml::FileHandle Open(const Rml::String& path) override;
-  void Close(Rml::FileHandle file) override;
-  size_t Read(void* buffer, size_t size, Rml::FileHandle file) override;
-  bool Seek(Rml::FileHandle file, long offset, int origin) override;
-  size_t Tell(Rml::FileHandle file) override;
+  ui::FileHandle Open(const ui::String& path) override;
+  void Close(ui::FileHandle file) override;
+  size_t Read(void* buffer, size_t size, ui::FileHandle file) override;
+  bool Seek(ui::FileHandle file, long offset, int origin) override;
+  size_t Tell(ui::FileHandle file) override;
 };
 
 #endif

@@ -29,24 +29,24 @@ SDL_IOWhence SeekOrigin(int origin) {
 
 } // namespace
 
-Rml::FileHandle SdlAssetFileInterface::Open(const Rml::String& path) {
+ui::FileHandle SdlAssetFileInterface::Open(const ui::String& path) {
   SDL_IOStream* stream = SDL_IOFromFile(path.c_str(), "rb");
-  return reinterpret_cast<Rml::FileHandle>(stream);
+  return reinterpret_cast<ui::FileHandle>(stream);
 }
 
-void SdlAssetFileInterface::Close(Rml::FileHandle file) {
+void SdlAssetFileInterface::Close(ui::FileHandle file) {
   SDL_CloseIO(reinterpret_cast<SDL_IOStream*>(file));
 }
 
-size_t SdlAssetFileInterface::Read(void* buffer, size_t size, Rml::FileHandle file) {
+size_t SdlAssetFileInterface::Read(void* buffer, size_t size, ui::FileHandle file) {
   return SDL_ReadIO(reinterpret_cast<SDL_IOStream*>(file), buffer, size);
 }
 
-bool SdlAssetFileInterface::Seek(Rml::FileHandle file, long offset, int origin) {
+bool SdlAssetFileInterface::Seek(ui::FileHandle file, long offset, int origin) {
   return SDL_SeekIO(reinterpret_cast<SDL_IOStream*>(file), static_cast<Sint64>(offset), SeekOrigin(origin)) >= 0;
 }
 
-size_t SdlAssetFileInterface::Tell(Rml::FileHandle file) {
+size_t SdlAssetFileInterface::Tell(ui::FileHandle file) {
   const Sint64 position = SDL_TellIO(reinterpret_cast<SDL_IOStream*>(file));
   return position >= 0 ? static_cast<size_t>(position) : 0;
 }

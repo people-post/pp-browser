@@ -7,8 +7,8 @@
 #include "common/thread/ThreadTypes.h"
 #include "domain/people/PeerDisplayLabel.h"
 
-#include <RmlUi/Core/Core.h>
-#include <RmlUi/Core/SystemInterface.h>
+#include <ui/Core.h>
+#include <ui/base/SystemInterface.h>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -147,7 +147,7 @@ void ChatThreadChrome::Update() {
         facade_ ? facade_->ResolveThreadLabel(*thread) : PeerDisplayLabel{};
     view_.thread_title = label.title.c_str();
     view_.thread_encrypted = thread->encrypted;
-    const Rml::String visual_kind = SessionVisualKind(*thread);
+    const ui::String visual_kind = SessionVisualKind(*thread);
     view_.thread_is_ai = visual_kind == "ai";
     view_.thread_is_private = visual_kind == "private";
     view_.thread_is_public = visual_kind == "public";
@@ -345,8 +345,8 @@ bool ChatThreadChrome::MaybePollPeerLink(const std::chrono::steady_clock::time_p
   if (!thread || thread->kind != ThreadKind::Direct) {
     return false;
   }
-  const Rml::String prev_status = view_.peer_link_status;
-  const Rml::String prev_banner = view_.peer_link_banner;
+  const ui::String prev_status = view_.peer_link_status;
+  const ui::String prev_banner = view_.peer_link_banner;
   const bool prev_show = view_.show_peer_link;
   const bool prev_banner_show = view_.show_peer_link_banner;
   const bool prev_retry = view_.show_retry_peer_dial;
@@ -555,7 +555,7 @@ void ChatThreadChrome::OnCopyPskKey() {
     }
     view_.psk_export_b64 = exported->master_psk_b64.c_str();
     view_.psk_fingerprint = exported->fingerprint.c_str();
-    if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+    if (ui::SystemInterface* system = ui::GetSystemInterface()) {
       system->SetClipboardText(view_.psk_export_b64);
     }
     view_.status = "Encryption key copied.";
@@ -690,7 +690,7 @@ void ChatThreadChrome::OnRotatePskExport() {
           NotifySurfaceChanged(notify_surface_changed_);
           return;
         }
-        if (Rml::SystemInterface* system = Rml::GetSystemInterface()) {
+        if (ui::SystemInterface* system = ui::GetSystemInterface()) {
           system->SetClipboardText(*bundle);
         }
         ShowAlert(

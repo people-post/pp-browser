@@ -31,14 +31,22 @@ public:
                   IChatHistoryPeerClient* peer_client = nullptr);
 
   Roe<ChatSyncResult> FetchChatTargetMessages(const std::string& thread_id, ChatHistoryRequest request);
+  void FetchChatTargetMessagesAsync(const std::string& thread_id, ChatHistoryRequest request,
+                                    std::function<void(Roe<ChatSyncResult>)> on_done);
   Roe<ChatSyncResult> TailSync(const std::string& thread_id);
+  void TailSyncAsync(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_done);
   Roe<ChatSyncResult> RepairGap(const std::string& thread_id, uint64_t gap_min, uint64_t gap_max);
+  void RepairGapAsync(const std::string& thread_id, uint64_t gap_min, uint64_t gap_max,
+                      std::function<void(Roe<ChatSyncResult>)> on_done);
   /** D059 — tail + known gap repair + one older-history page when applicable. */
   Roe<ChatSyncResult> UserInitiatedSync(const std::string& thread_id);
+  void UserInitiatedSyncAsync(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_done);
   /** D059 — gap banner: repair known gap range only (not unsent outbox). */
   Roe<ChatSyncResult> RetryGapSync(const std::string& thread_id);
+  void RetryGapSyncAsync(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_done);
   /** D052 — scroll-triggered older history page. */
   Roe<ChatSyncResult> ScrollBackfill(const std::string& thread_id);
+  void ScrollBackfillAsync(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_done);
 
   void SetOnMessagesChanged(std::function<void()> callback);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
@@ -47,6 +55,7 @@ public:
 
 private:
   Roe<ChatSyncResult> RepairKnownGap(const std::string& thread_id);
+  void RepairKnownGapAsync(const std::string& thread_id, std::function<void(Roe<ChatSyncResult>)> on_done);
   void MergeSyncResult(ChatSyncResult& aggregate, const ChatSyncResult& partial) const;
   void AdvanceContiguousThroughStoredSeqs(const std::string& thread_id, uint32_t session_epoch);
   Roe<ChatHistoryRequest> BuildRequest(const Thread& thread, uint32_t session_epoch, uint64_t history_floor_seq,

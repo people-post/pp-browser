@@ -4,11 +4,11 @@
 namespace pbr {
 
 #ifndef PP_BROWSER_RELEASE_VERSION
-#define PP_BROWSER_RELEASE_VERSION "0.1.0"
+#define PP_BROWSER_RELEASE_VERSION "1.0.0-rc14"
 #endif
 
 #ifndef PP_BROWSER_VERSION
-#define PP_BROWSER_VERSION "0.1.0"
+#define PP_BROWSER_VERSION "1.0.0"
 #endif
 
 /** Full release string (may include -rc / -beta); used for About and User-Agent. */

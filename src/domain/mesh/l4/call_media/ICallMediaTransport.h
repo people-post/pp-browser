@@ -82,6 +82,14 @@ public:
   virtual CallMediaSessionPhase Phase() const = 0;
   virtual void Detach() = 0;
 
+  /**
+   * Non-blocking connect: arms the outbound leg and invokes `on_done` when MediaReady,
+   * failed, timed out, or superseded. Prefer this over Connect(); MeshPump drives Amp.
+   */
+  virtual void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
+                            std::function<void(Roe<void>)> on_done, int timeout_ms = 15000) = 0;
+
+  /** Blocking convenience for tests/harnesses; product bridge uses ConnectAsync. */
   virtual Roe<void> Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                             int timeout_ms = 15000) = 0;
 

@@ -1,6 +1,7 @@
 #include "domain/ai/StructuredTextParser.h"
 
 #include "domain/ai/WorkingSetPolicy.h"
+#include "common/PlatformLimits.h"
 #include "common/chat/PeopleDiscoveryBlocks.h"
 
 #include "common/ValueJson.h"
@@ -942,6 +943,11 @@ ParseResult StructuredTextParser::ParseBlocksJson(const std::string& json, const
       text_stack << "<p class=\"muted\">Some blocks could not be displayed.</p>";
     }
     result.rml = "<div class=\"stack\">" + text_stack.str() + "</div>";
+  }
+
+  if (result.rml.size() > kMaxStructuredParserOutputBytes) {
+    return Fail("Structured parser output exceeds limit of " + std::to_string(kMaxStructuredParserOutputBytes) +
+                " bytes");
   }
 
   (void)render_mode;

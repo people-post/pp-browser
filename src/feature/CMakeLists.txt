@@ -20,6 +20,6 @@ add_library(pp_feature INTERFACE)
 target_link_libraries(pp_feature INTERFACE
   ${PP_FEATURE_MODULE_LIBS}
   pp_domain_ui
-  RmlUi::Core
+  ui::core
   CURL::libcurl
   Threads::Threads)

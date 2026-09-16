@@ -1,20 +1,20 @@
 #pragma once
 
-#include <RmlUi/Core/Input.h>
+#include <ui/base/Input.h>
 #include <functional>
 #include <vector>
 
-namespace Rml {
+namespace ui {
 class Context;
 }
 
 namespace pbr {
 
 struct KeyBinding {
-  Rml::Input::KeyIdentifier key = Rml::Input::KI_UNKNOWN;
+  ui::Input::KeyIdentifier key = ui::Input::KI_UNKNOWN;
   int required_modifiers = 0;
   int forbidden_modifiers = 0;
-  std::function<bool(Rml::Context*)> when;
+  std::function<bool(ui::Context*)> when;
   std::function<bool()> action;
   int priority = 0;
   bool priority_phase = true;
@@ -28,7 +28,7 @@ public:
   void Clear();
 
   /// Returns false when a binding consumed the key (stop further handling).
-  bool ProcessKeyDown(Rml::Context* context, Rml::Input::KeyIdentifier key, int key_modifier, bool priority_phase);
+  bool ProcessKeyDown(ui::Context* context, ui::Input::KeyIdentifier key, int key_modifier, bool priority_phase);
 
 private:
   std::vector<KeyBinding> bindings_;

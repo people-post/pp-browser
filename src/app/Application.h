@@ -19,7 +19,7 @@
 
 class FontEngineInterfaceHarfBuzz;
 
-namespace Rml {
+namespace ui {
 class Context;
 }
 
@@ -71,14 +71,14 @@ public:
 
 private:
   bool InitializeUiHost(const char* window_title, int window_width, int window_height,
-                        const BootstrapResult& bootstrap, Rml::Context*& context);
-  SettingsToolPorts WireSettings(Rml::Context* context);
+                        const BootstrapResult& bootstrap, ui::Context*& context);
+  SettingsToolPorts WireSettings(ui::Context* context);
   void WireShellPresenters(const SettingsToolPorts& settings_tool_ports);
   void WireCalls();
   void WireUnlockPinAndFlow();
   void WireAgentAndConfig();
-  bool MountPresenters(Rml::Context* context);
-  void WireHubLifecycle(Rml::Context* context, const BootstrapResult& bootstrap);
+  bool MountPresenters(ui::Context* context);
+  void WireHubLifecycle(ui::Context* context, const BootstrapResult& bootstrap);
 
   bool initialized_ = false;
   SessionStore store_;

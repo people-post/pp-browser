@@ -19,7 +19,7 @@
 #endif
 #endif
 
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
 #include <SDL3/SDL.h>
 #if !defined(_WIN32) && !defined(__APPLE__) && !defined(__ANDROID__)
 #include <X11/Xatom.h>
@@ -30,7 +30,7 @@
 namespace pbr {
 namespace {
 
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
 struct HitTestLayout {
   int titlebar_height_win = 36;
   int controls_width_win = 120;
@@ -158,7 +158,7 @@ bool DesktopWindowChrome::ControlsLeading() {
 }
 
 void DesktopWindowChrome::Install() {
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
   if (!Enabled()) {
     return;
   }
@@ -176,7 +176,7 @@ void DesktopWindowChrome::Install() {
 }
 
 void DesktopWindowChrome::RefreshAppearance() {
-#if RMLUI_SDL_VERSION_MAJOR >= 3 && defined(__APPLE__) && !TARGET_OS_IPHONE
+#if UI_SDL_VERSION_MAJOR >= 3 && defined(__APPLE__) && !TARGET_OS_IPHONE
   if (!Enabled()) {
     return;
   }
@@ -191,7 +191,7 @@ void DesktopWindowChrome::RefreshAppearance() {
 }
 
 void DesktopWindowChrome::Uninstall() {
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
   SDL_Window* window = Backend::GetWindow();
   if (window) {
     SDL_SetWindowHitTest(window, nullptr, nullptr);
@@ -205,7 +205,7 @@ void DesktopWindowChrome::Uninstall() {
 
 void DesktopWindowChrome::SetLayout(float titlebar_height_dp, float controls_width_dp,
                                     float edge_margin_dp, bool controls_leading) {
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
   if (!Enabled()) {
     return;
   }
@@ -232,7 +232,7 @@ void DesktopWindowChrome::SetLayout(float titlebar_height_dp, float controls_wid
 }
 
 void DesktopWindowChrome::Minimize() {
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
   if (!Enabled()) {
     return;
   }
@@ -243,7 +243,7 @@ void DesktopWindowChrome::Minimize() {
 }
 
 void DesktopWindowChrome::ToggleMaximize() {
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
   if (!Enabled()) {
     return;
   }
@@ -268,7 +268,7 @@ void DesktopWindowChrome::Close() {
 }
 
 bool DesktopWindowChrome::IsMaximized() {
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
   if (!Enabled()) {
     return false;
   }
@@ -279,7 +279,7 @@ bool DesktopWindowChrome::IsMaximized() {
 #endif
 }
 
-#if RMLUI_SDL_VERSION_MAJOR >= 3 && !defined(_WIN32) && !defined(__APPLE__) && \
+#if UI_SDL_VERSION_MAJOR >= 3 && !defined(_WIN32) && !defined(__APPLE__) && \
     !defined(__ANDROID__)
 // GNOME X11 ignores XDG_ACTIVATION_TOKEN (SDL only consumes it on Wayland).
 // Apply the notification ActivationToken as _NET_STARTUP_ID and activate via EWMH.
@@ -324,7 +324,7 @@ bool RaiseX11WithStartupId(SDL_Window* window, const std::string& token) {
 #endif
 
 void DesktopWindowChrome::RaiseAndFocus() {
-#if RMLUI_SDL_VERSION_MAJOR >= 3
+#if UI_SDL_VERSION_MAJOR >= 3
   if (!Enabled()) {
     return;
   }

@@ -14,6 +14,7 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallDeliveryPorts.h"
 #include "feature/calls/CallMediaBridge.h"
+#include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/BroadcastSessionCoordinator.h"
 #include "feature/calls/CallTopologyController.h"
@@ -30,8 +31,10 @@
 namespace pbr {
 
 /**
- * Call session lifecycle façade (a2 / V014 / a4).
- * Topology + mesh media live in CallTopologyController / CallMediaBridge.
+ * Call session lifecycle façade (a2 / V014 / a4) — V036 Phase 3 **signaling** owner.
+ * Duplex start/stop go through CallMediaSeat + CallDirectPath / CallHopPath; do not call
+ * CallMediaBridge::StopMeshMedia or engine StartSfu from here when a seat is wired.
+ * Topology + mesh media live in CallTopologyController / CallMediaBridge (path plugins).
  */
 class CallSessionManager : public Module, private CallTopologyHost, private CallMediaHost {
 public:
@@ -71,6 +74,12 @@ public:
   std::vector<std::string> ListMediaRelayCapablePeerIds() const;
   void SetMediaRelayDeps(MediaRelayDeps deps);
   void SetCallMediaBridge(CallMediaBridge* bridge);
+  /** V036 exclusive media epoch — Leave/Accept/Start gates. */
+  void SetMediaSeat(CallMediaSeat* seat);
+  /** V037 State+Status planner arming. */
+  void SetLifecycle(CallLifecycle* lifecycle);
+  /** Seat teardown hook: topology detach without re-entering seat.Release. */
+  void TopologyOnMediaStoppedForSeat(const std::string& call_id);
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
   void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
   InitiationBillingStore* InitiationBilling() const { return initiation_billing_; }
@@ -121,14 +130,20 @@ public:
   Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
 
+  /**
+   * V037: Lifecycle AcceptSucceeded (UI) re-arms answerer ScheduleStart when Status already
+   * AllowsDirectPath — covers worker PostUI races that left seat bound Idle / no BeginSession.
+   */
+  void KickAnswererDirectMediaIfArmed(const std::string& call_id);
+
   bool IsAwaitingSfuRecovery() const;
   bool IsSoftMigrateInFlight() const;
   bool IsSfuAttachWaitActive() const;
   bool IsP2pConnectFailed() const;
   bool P2pConnectMissingMic() const;
   Roe<void> RetryP2pMedia(const std::string& call_id);
+  /** Chrome heal when media already reports failed (not a UI-tick poll). */
   void PollP2pConnectHealth();
-  void PollPendingSfuAttach();
 
   std::optional<std::string> TakeLastMediaError();
   /** Latest hop/setup progress line for in-call chrome (empty when idle/connected). */
@@ -147,6 +162,8 @@ public:
   CallMediaEngine& Media();
   /** Combined hop health when SFU attached (empty otherwise). */
   CallHopHealth HopHealth() const;
+  /** 1:1 reach path from CallMediaBridge (direct|punched|circuit); empty if unknown. */
+  std::string MediaPathKind() const;
   bool IsSfuAttached() const;
 
   Roe<void> SetLocalAudioMuted(bool muted);
@@ -182,6 +199,7 @@ private:
   void P2pNotifyRingChanged() override;
   void P2pSetLastMediaError(std::string message) override;
   Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const override;
+  Roe<std::optional<std::string>> MeshPeerIdForAccount(const std::string& account) const override;
   Roe<std::optional<std::string>> RelayIdentityForMeshPeerId(const std::string& call_id,
                                                                   const std::string& peer_id) const override;
   bool P2pIsAwaitingSfuRecovery() const override;
@@ -243,9 +261,14 @@ private:
   CallTopologyController topology_;
   BroadcastSessionCoordinator broadcast_;
   CallMediaBridge* call_media_bridge_ = nullptr;
+  CallMediaSeat* media_seat_ = nullptr;
+  CallLifecycle* lifecycle_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;
+  /** Answerer AcceptInvite → Lifecycle KickAnswerer peer (UI), until Leave. */
+  std::string pending_answerer_kick_call_id_;
+  std::string pending_answerer_kick_peer_;
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;

@@ -1,5 +1,6 @@
 #include "foundation/runtime/AppRuntime.h"
 
+#include "foundation/runtime/AppLifecycle.h"
 #include "common/SequencedTaskRunner.h"
 
 #include <mutex>
@@ -23,6 +24,7 @@ void EnsureUIMailbox() {
 } // namespace
 
 void AppRuntime::InitializeUI() {
+  AppLifecycle::InitLogging();
   EnsureUIMailbox();
 }
 

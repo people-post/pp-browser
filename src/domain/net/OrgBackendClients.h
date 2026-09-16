@@ -48,6 +48,14 @@ public:
   virtual ~IChatHistoryPeerClient() = default;
   virtual bool IsPeerReachable(const std::string& peer_identity_value) const = 0;
   virtual Roe<ChatHistoryResponse> FetchChatHistory(const ChatHistoryRequest& request) = 0;
+
+  /** Prefer on product paths; default wraps sync FetchChatHistory. */
+  virtual void FetchChatHistoryAsync(const ChatHistoryRequest& request,
+                                     std::function<void(Roe<ChatHistoryResponse>)> on_done) {
+    if (on_done) {
+      on_done(FetchChatHistory(request));
+    }
+  }
 };
 
 class IChatBlobPeerClient {
@@ -56,6 +64,19 @@ public:
   virtual bool IsPeerReachable(const std::string& peer_identity_value) const = 0;
   virtual Roe<std::vector<uint8_t>> FetchChatBlob(const ChatBlobRequest& request) = 0;
   virtual Roe<void> PushChatBlob(const ChatBlobRequest& request, const std::vector<uint8_t>& ciphertext) = 0;
+
+  virtual void FetchChatBlobAsync(const ChatBlobRequest& request,
+                                  std::function<void(Roe<std::vector<uint8_t>>)> on_done) {
+    if (on_done) {
+      on_done(FetchChatBlob(request));
+    }
+  }
+  virtual void PushChatBlobAsync(const ChatBlobRequest& request, const std::vector<uint8_t>& ciphertext,
+                                 std::function<void(Roe<void>)> on_done) {
+    if (on_done) {
+      on_done(PushChatBlob(request, ciphertext));
+    }
+  }
 };
 
 /** Product blob entry (Amp or libp2p) — DEK + profile wiring for ConversationsHub. */

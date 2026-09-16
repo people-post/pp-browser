@@ -23,6 +23,8 @@ public:
   Roe<void> Route(const std::string& thread_id, const std::string& text,
                   std::optional<std::string> user_payload = std::nullopt);
 
+  static Roe<void> ValidateUserPayload(const std::optional<std::string>& user_payload);
+
   bool ExpectsAgentWork(const std::string& thread_id, const std::string& text,
                         const std::optional<std::string>& user_payload = std::nullopt) const;
 

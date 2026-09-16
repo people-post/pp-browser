@@ -3,12 +3,16 @@
 #include "foundation/crypto/AttachmentContentCipher.h"
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "feature/conversations/ChatBlobRequestUtil.h"
+#include "foundation/runtime/AppRuntime.h"
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iterator>
+#include <thread>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -80,23 +84,33 @@ std::string MimeFromFilename(const std::string& filename) {
   return "application/octet-stream";
 }
 
-Roe<void> TryPeerPush(const PreparedChatAttachment& prepared, IdentityStore& identity,
-                      const ChatAttachmentUploadOptions& options) {
+void TryPeerPushAsync(const PreparedChatAttachment& prepared, IdentityStore& identity,
+                      const ChatAttachmentUploadOptions& options,
+                      std::function<void(Roe<void>)> on_done) {
+  auto finish = [on_done = std::move(on_done)](Roe<void> value) {
+    if (on_done) {
+      on_done(std::move(value));
+    }
+  };
   if (!options.peer_client || !options.contacts || !options.thread || options.thread_id.empty()) {
-    return Error("Peer blob client not configured");
+    finish(Error("Peer blob client not configured"));
+    return;
   }
   if (options.thread->kind != ThreadKind::Direct || !ThreadChannelIsE2e(options.thread->channel)) {
-    return Error("Peer blob push requires E2E direct thread");
+    finish(Error("Peer blob push requires E2E direct thread"));
+    return;
   }
   auto request = BuildChatBlobRequest(*options.thread, *options.contacts, identity, ChatBlobOp::Push,
                                       options.thread_id, prepared.fields.content_hash);
   if (!request) {
-    return request.error();
+    finish(request.error());
+    return;
   }
   if (!options.peer_client->IsPeerReachable(request->peer_identity_value)) {
-    return Error("Peer-direct endpoint not registered");
+    finish(Error("Peer-direct endpoint not registered"));
+    return;
   }
-  return options.peer_client->PushChatBlob(*request, prepared.ciphertext);
+  options.peer_client->PushChatBlobAsync(*request, prepared.ciphertext, std::move(finish));
 }
 
 Roe<ChatAttachmentFields> UploadPreparedToRelay(IBlobClient& blob, const std::string& relay_user_id,
@@ -151,26 +165,75 @@ Roe<PreparedChatAttachment> PrepareChatAttachmentFromFile(const std::string& pat
   return prepared;
 }
 
-Roe<ChatAttachmentFields> UploadChatAttachmentFromFile(IBlobClient& blob, IdentityStore& identity,
-                                                       const std::string& path,
-                                                       const ChatAttachmentUploadOptions& options) {
+void UploadChatAttachmentFromFileAsync(IBlobClient& blob, IdentityStore& identity, const std::string& path,
+                                       ChatAttachmentUploadOptions options,
+                                       std::function<void(Roe<ChatAttachmentFields>)> on_done) {
+  auto finish = [on_done = std::move(on_done)](Roe<ChatAttachmentFields> value) {
+    if (on_done) {
+      on_done(std::move(value));
+    }
+  };
+
   auto relay_user_id = RequireRegisteredRelayUserId(identity);
   if (!relay_user_id) {
-    return relay_user_id.error();
+    finish(relay_user_id.error());
+    return;
   }
 
   auto prepared = PrepareChatAttachmentFromFile(path);
   if (!prepared) {
-    return prepared.error();
+    finish(prepared.error());
+    return;
   }
 
   if (options.thread && options.thread->kind == ThreadKind::Direct && ThreadChannelIsE2e(options.thread->channel)) {
-    if (auto pushed = TryPeerPush(*prepared, identity, options); pushed) {
-      return prepared->fields;
-    }
+    const std::string relay_id = *relay_user_id;
+    PreparedChatAttachment prepared_copy = *prepared;
+    TryPeerPushAsync(
+        prepared_copy, identity, options,
+        [&blob, relay_id, prepared_copy = std::move(prepared_copy), path, finish](Roe<void> pushed) mutable {
+          auto continue_result = [&blob, relay_id, prepared_copy = std::move(prepared_copy), path,
+                                  finish = std::move(finish), pushed = std::move(pushed)]() mutable {
+            if (pushed) {
+              finish(prepared_copy.fields);
+              return;
+            }
+            finish(UploadPreparedToRelay(blob, relay_id, prepared_copy, path));
+          };
+          if (AppRuntime::IsRunning()) {
+            AppRuntime::PostWorkerNormal(std::move(continue_result));
+          } else {
+            continue_result();
+          }
+        });
+    return;
   }
 
-  return UploadPreparedToRelay(blob, *relay_user_id, *prepared, path);
+  finish(UploadPreparedToRelay(blob, *relay_user_id, *prepared, path));
+}
+
+Roe<ChatAttachmentFields> UploadChatAttachmentFromFile(IBlobClient& blob, IdentityStore& identity,
+                                                       const std::string& path,
+                                                       const ChatAttachmentUploadOptions& options) {
+  auto result_promise = std::make_shared<std::promise<Roe<ChatAttachmentFields>>>();
+  auto result_future = result_promise->get_future();
+  UploadChatAttachmentFromFileAsync(blob, identity, path, options,
+                                    [result_promise](Roe<ChatAttachmentFields> value) {
+                                      try {
+                                        result_promise->set_value(std::move(value));
+                                      } catch (const std::future_error&) {
+                                      }
+                                    });
+  constexpr auto kWait = std::chrono::milliseconds(60000);
+  const auto deadline = std::chrono::steady_clock::now() + kWait;
+  while (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+    return Error("Attachment upload timed out");
+  }
+  return result_future.get();
 }
 
 } // namespace pbr

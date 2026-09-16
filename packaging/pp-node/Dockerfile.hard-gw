@@ -1,0 +1,15 @@
+# Hard-lab SNAT gateway (Wave 5 CGNAT-ish).
+# Dual-homed: private peer LAN + public hop LAN; MASQUERADE outbound; no unsolicited inbound.
+FROM debian:trixie-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      iproute2 \
+      iptables \
+      iputils-ping \
+      ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY hard-gw-entrypoint.sh /usr/local/bin/hard-gw-entrypoint.sh
+RUN chmod +x /usr/local/bin/hard-gw-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/hard-gw-entrypoint.sh"]

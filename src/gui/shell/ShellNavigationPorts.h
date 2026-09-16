@@ -68,7 +68,7 @@ struct ShellNavigationPorts {
   std::function<bool()> request_dismiss_instant;
   std::function<void()> refresh_dismiss_gestures;
   std::function<void()> request_remount_nav_rail;
-  std::function<void(bool visible, const Rml::String& message)> set_activity;
+  std::function<void(bool visible, const ui::String& message)> set_activity;
   std::function<void(bool restore_focus_after, const char* reason)> request_sync_layout;
   /** Bootstrap / deferred font load — UI-owned chrome readiness flag (apply / read-only). */
   std::function<void(bool)> set_fonts_ready;

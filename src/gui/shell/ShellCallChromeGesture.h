@@ -3,13 +3,13 @@
 #include "domain/ui/ShellTypes.h"
 #include "gui/shell/ShellGestureAxis.h"
 
-#include <RmlUi/Core/Element.h>
-#include <RmlUi/Core/EventListener.h>
-#include <RmlUi/Core/Types.h>
+#include <ui/dom/Element.h>
+#include <ui/dom/EventListener.h>
+#include <ui/base/Types.h>
 
 #include <functional>
 
-namespace Rml {
+namespace ui {
 class Context;
 class Event;
 class ElementDocument;
@@ -24,7 +24,7 @@ namespace pbr {
  * Immersive: pull down on non-button chrome, or pull down in roster at scroll top → Expanded.
  * Minimized: tap → restore; drag → move / corner snap. No swipe-to-mode.
  */
-class ShellCallChromeGesture : public Rml::EventListener {
+class ShellCallChromeGesture : public ui::EventListener {
 public:
   struct Callbacks {
     std::function<void()> on_minimize;
@@ -34,24 +34,24 @@ public:
     std::function<void(int corner)> on_chip_corner;
   };
 
-  void Attach(Rml::Element* root, Rml::Context* context, CallChromeMode mode, Callbacks callbacks,
+  void Attach(ui::Element* root, ui::Context* context, CallChromeMode mode, Callbacks callbacks,
               ShellGestureAxisLock* axis_lock = nullptr);
   void Detach();
   void Abort();
 
-  void ProcessEvent(Rml::Event& event) override;
+  void ProcessEvent(ui::Event& event) override;
 
 private:
-  bool ShouldIgnoreTarget(Rml::Element* target) const;
-  bool ShouldIgnoreOutsideDismiss(Rml::Element* target) const;
-  bool IsUnderRoot(Rml::Element* target) const;
-  bool IsScrollRegion(Rml::Element* target) const;
-  bool ScrollAncestorsAtTop(Rml::Element* target) const;
-  bool ShouldArmImmersivePullDown(Rml::Element* target) const;
+  bool ShouldIgnoreTarget(ui::Element* target) const;
+  bool ShouldIgnoreOutsideDismiss(ui::Element* target) const;
+  bool IsUnderRoot(ui::Element* target) const;
+  bool IsScrollRegion(ui::Element* target) const;
+  bool ScrollAncestorsAtTop(ui::Element* target) const;
+  bool ShouldArmImmersivePullDown(ui::Element* target) const;
   void PinScrollAncestorsAtTop();
-  void BeginArm(int x_px, int y_px, Rml::Element* target);
+  void BeginArm(int x_px, int y_px, ui::Element* target);
   void AbortArm(bool unlock_axis);
-  void UpdateDrag(int x_px, int y_px, Rml::Event& event);
+  void UpdateDrag(int x_px, int y_px, ui::Event& event);
   void EndDrag();
   void SetRootOffsetY(float dy_dp, bool animate);
   void SetChipOffset(float dx_dp, float dy_dp, bool animate);
@@ -64,10 +64,10 @@ private:
   int SnapCornerFromChipCenter() const;
   void ApplyCornerClass(int corner);
 
-  Rml::Element* root_ = nullptr;
-  Rml::ElementDocument* document_ = nullptr;
-  Rml::Context* context_ = nullptr;
-  Rml::Element* arm_target_ = nullptr;
+  ui::Element* root_ = nullptr;
+  ui::ElementDocument* document_ = nullptr;
+  ui::Context* context_ = nullptr;
+  ui::Element* arm_target_ = nullptr;
   CallChromeMode mode_ = CallChromeMode::Expanded;
   Callbacks callbacks_;
   ShellGestureAxisLock* axis_lock_ = nullptr;

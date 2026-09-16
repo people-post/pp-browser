@@ -121,6 +121,32 @@ Robustness refactor for long-lived host media sessions. Spec: [SESSION_MACHINES.
 - [x] Circuit compose loopbacks — `CircuitCallMediaComposeTest` + `CircuitMediaRelayComposeTest`
 - [ ] s4 — Optional circuit bridge SM; point CALLS.md critical races at phase homes
 
+## rd — Amp call-media rewrite debt (V038)
+
+Pay off post-V026/m2 migration so 1:1 Amp call-media is mature: frozen requirements, no SoftMigrate-for-NAT, V037 test coverage, dial matrix exit. Spec: [V038](DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3).
+
+- [x] D0 — V038 ADR + this phase; CURRENT_STATE next-agent → `rd`
+- [x] D1 — DESIGN / CALLS / SESSION_MACHINES / CURRENT_STATE: circuit vs `media_relay`; ConnectAsync landed; `StartSfu` naming note
+- [x] D2 — gtests: KickAnswerer Status gates; Direct* blocks hop StartSfu; TX-only circuit escalate
+- [x] D3 — **Automated:** `CallListenAddrsLogic` + Bridge answerer ScheduleStart/Kick gtests + `B-CALL-DIRECT` evidence; OEM sample optional
+- [x] D4 — **Automated:** `AmpCircuitCallMediaComposeTest` + `B-CALL-HOP` / `B-HARD-CALL` as NAT stand-in; CALLS V038; s4 deferred; no required human NAT pair
+
+**Non-goals:** `StartSfu` rename campaign; L3.5 multi-hop; SoftMigrate-for-1:1 reopen; s4 unless Leave hangs.  
+**Dogfood:** never the only gate — [TESTING.md](../../docs/architecture/TESTING.md); purpose IDs in [TEST_STRATEGY.md](../../docs/ops/TEST_STRATEGY.md).
+
+## pm — Call planner machines (V039)
+
+Layered Apply FSMs under Lifecycle Status: Direct (`CallMediaBridge`) and Hop (`CallTopologyController`). Spec: [V039](DECISIONS.md#v039--call-directhop-planner-machines); [SESSION_MACHINES planner section](SESSION_MACHINES.md#planner-machines-v039). Transport SMs remain V033 — do not rewrite call-media duplex in the same PR as a planner strangler.
+
+- [x] pm0 — V039 ADR + SESSION_MACHINES planner section + this phase; CURRENT_STATE next-agent → `pm`
+- [x] pm1 — Direct `Apply` + `CallDirectPlannerLogic` + gtests; Schedule/Key/Connect/TX-only/Release through Apply
+- [x] pm2 — Hop `Apply` + `CallHopPlannerLogic`; SoftMigrate-as-event; inbound attach Status gates
+- [x] pm3 — SM-owned timers replace `PollMeshConnectHealth` / `PollPendingSfuAttach` primary path
+- [x] pm4 — Lifecycle/CSM thin Accept media router; CALLS.md critical races → planner phases + epochs
+
+**Non-goals:** `StartSfu` rename; SoftMigrate-for-1:1; host-wide inbound SM; Drive-by transport rewrites in planner PRs.  
+**Exit:** purpose IDs `B-CALL-DIRECT` / `B-CALL-HOP` / `B-HARD-CALL` green; illegal planner sequences covered in gtest.
+
 ## lv — Video on libp2p (V034)
 
 Voice-on-libp2p is green ([m1](#m1--libp2p-only-voice-v026)). Video reuses a3 capture/tiles and N021 channel 1; it does **not** revive WebRTC.
