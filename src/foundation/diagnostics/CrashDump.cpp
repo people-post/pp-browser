@@ -22,8 +22,10 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <unistd.h>
-#if defined(__APPLE__) || defined(__linux__)
+// Android Bionic has no execinfo/backtrace (still defines __linux__).
+#if (defined(__APPLE__) || defined(__linux__)) && !defined(__ANDROID__)
 #include <execinfo.h>
+#define PP_BROWSER_HAS_EXECINFO_BACKTRACE 1
 #endif
 #else
 #ifndef WIN32_LEAN_AND_MEAN
@@ -120,7 +122,7 @@ void WriteSignalDump(int signo) {
   std::snprintf(num, sizeof(num), "%d\n", signo);
   WriteCString(fd, num);
 
-#if defined(__APPLE__) || defined(__linux__)
+#if defined(PP_BROWSER_HAS_EXECINFO_BACKTRACE)
   void* frames[64];
   const int nframes = ::backtrace(frames, 64);
   WriteCString(fd, "backtrace_frames=");
