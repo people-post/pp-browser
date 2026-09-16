@@ -254,6 +254,10 @@ Examples: feature/app headers that hold `SessionStore*` should `#include "founda
 
 Still keep headers focused: avoid pulling unrelated heavy trees when a small `*Types.h` / ports header already exists (e.g. `SettingsCommands`, `ChatSessionPorts`).
 
+### Free-function module names
+
+Prefer a **topic / capability** filename (`AttachmentFetch`, `ShellLayout`, `ChatAttachmentPrepare`) over `*Util` / `*Helper` grab-bags. Keep `*Codec` / `*Json` / `*Cache` when that is the job. Rare `*Util` is OK for small pure shared bags (`CryptoUtil`). Place by layer ownership; merge only within one capability, never “one Utilities.cpp per folder.”
+
 ## Migration order (when coding starts)
 
 1. Enforce domain peer bans in CI (`check_base_includes.sh` + `check_base_public_libs.sh` + legacy allowlists) for **new** edges. **Started:** peels into `common/{directory,thread,chat,media,ui}/` with thin thread headers + role ports (`IThreadCatalog` / `Transcript` / `Memory` / `Sync`); attachment upload/fetch helpers live in `feature/conversations`. Removed legacy edges include `mesh→people/net/media`, `ai→ui/messaging/net`, `messaging→net`, `ai→net`.

@@ -142,4 +142,6 @@ Prefer a role suffix that matches the type’s job. Do **not** add a new `*Servi
 | Session state machine | `*Coordinator` / `*Manager` | calls stack (prefer these over `*Service`) |
 | UI→functional edge | `*Ports` / `*Commands` | settings/CAS commands |
 
+**Free-function modules:** name the **capability** (`AttachmentFetch`, `ChatBlobRequest`, `RegistrationClient`, `BlobQuota`), not `*Util` / `*Utilities`. Reserve `*Util` only for tiny cross-cutting pure bags (`CryptoUtil`, `PeerIdUtil`). Prefer one file ≈ one capability; do not merge into per-folder mega-utils. Nest helpers under an owner type only when that type is the sole caller.
+
 **Agent one-liner:** Hub owns, Facade exposes, Store persists, Client speaks I/O, Protocol/Transport speaks Amp, Workflow orchestrates product steps, Engine is app/domain capability.
