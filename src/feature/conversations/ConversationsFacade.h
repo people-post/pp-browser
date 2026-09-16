@@ -8,7 +8,7 @@
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/net/OrgBackendClients.h"
-#include "domain/net/BlobQuotaUtil.h"
+#include "domain/net/BlobQuota.h"
 #include "domain/people/ContactTypes.h"
 #include "common/directory/IdentityTypes.h"
 #include "domain/people/ProfileIdentityView.h"

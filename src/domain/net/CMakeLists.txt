@@ -1,7 +1,7 @@
 pp_browser_add_domain_library(pp_domain_net
   SOURCES
     BlobClient.cpp
-    BlobQuotaUtil.cpp
+    BlobQuota.cpp
     BriefGuestLlmClient.cpp
     ClientCompat.cpp
     HttpBlobClient.cpp

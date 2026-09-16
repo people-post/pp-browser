@@ -1,4 +1,4 @@
-#include "feature/conversations/RegistrationClientUtil.h"
+#include "feature/conversations/RegistrationClient.h"
 #include "common/directory/IdentityTypes.h"
 #include "common/Utilities.h"
 
@@ -9,7 +9,7 @@ namespace {
 
 using namespace pbr;
 
-TEST(RegistrationClientUtilTest, ClassifyUnregistered) {
+TEST(RegistrationClientTest, ClassifyUnregistered) {
   LocalIdentity identity;
   EXPECT_EQ(ClassifyRegistration(identity), RegistrationStatus::Unregistered);
   EXPECT_FALSE(ShouldRenewRegistration(identity));
@@ -17,7 +17,7 @@ TEST(RegistrationClientUtilTest, ClassifyUnregistered) {
   EXPECT_EQ(RegistrationActionLabel(RegistrationStatus::Unregistered), "Register on network");
 }
 
-TEST(RegistrationClientUtilTest, ClassifyActiveExpiringExpired) {
+TEST(RegistrationClientTest, ClassifyActiveExpiringExpired) {
   LocalIdentity identity;
   identity.registered = true;
   identity.registration_expires_at = "2099-01-01T00:00:00.000Z";
@@ -37,7 +37,7 @@ TEST(RegistrationClientUtilTest, ClassifyActiveExpiringExpired) {
   EXPECT_EQ(RegistrationStatusLabel(RegistrationStatus::ExpiringSoon), "expiring soon");
 }
 
-TEST(RegistrationClientUtilTest, ApplyRegistrationResultPersistsFields) {
+TEST(RegistrationClientTest, ApplyRegistrationResultPersistsFields) {
   LocalIdentity identity;
   identity.brief_llm_guest_api_key = "brf_guest_old";
   RegistrationResult result{.success = true,
@@ -56,7 +56,7 @@ TEST(RegistrationClientUtilTest, ApplyRegistrationResultPersistsFields) {
   EXPECT_EQ(identity.initiation_floor, 99);
 }
 
-TEST(RegistrationClientUtilTest, ApplyRegistrationResultIgnoresMissingFloor) {
+TEST(RegistrationClientTest, ApplyRegistrationResultIgnoresMissingFloor) {
   LocalIdentity identity;
   identity.initiation_floor = 7;
   RegistrationResult result{.success = true, .relay_user_id = "relay:x"};
@@ -64,7 +64,7 @@ TEST(RegistrationClientUtilTest, ApplyRegistrationResultIgnoresMissingFloor) {
   EXPECT_EQ(identity.initiation_floor, 7);
 }
 
-TEST(RegistrationClientUtilTest, MarkRegistrationExpired) {
+TEST(RegistrationClientTest, MarkRegistrationExpired) {
   LocalIdentity identity;
   identity.registered = true;
   identity.registration_expires_at = "2099-01-01T00:00:00.000Z";

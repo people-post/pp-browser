@@ -99,7 +99,7 @@ Do not promote **blocked** → domain to “clean the folder.”
 |-----------|------|
 | `SqlitePskSessionStore`, PSK/epoch coordinators | `domain/messaging/` (flat) |
 | `CallMediaKeyStore` | `domain/messaging/` (flat) |
-| `ContactReachability`, `PeerBriefRoute`, `ProfileIconFetchUtil` | `domain/people/` (flat) |
+| `ContactReachability`, `PeerBriefRoute`, `ProfileIconFetch` | `domain/people/` (flat) |
 | `MobileEphemeralListenGate` | `domain/mesh/reachability/` (nested — peer already nests) |
 | `PeoplePickerLogic`, `CallConflictCopy` | `domain/ui/` (flat) |
 

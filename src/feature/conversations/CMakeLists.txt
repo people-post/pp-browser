@@ -1,9 +1,9 @@
 pp_browser_add_feature_library(pp_feature_conversations
   SOURCES
-    AttachmentClientUtil.cpp
+    AttachmentClient.cpp
     AttachmentFetchWorkflow.cpp
-    AttachmentFetchUtil.cpp
-    ChatBlobRequestUtil.cpp
+    AttachmentFetch.cpp
+    ChatBlobRequest.cpp
     ChatSyncWorkflow.cpp
     ContactActionDispatcher.cpp
     DirectoryShadowCache.cpp
@@ -26,11 +26,11 @@ pp_browser_add_feature_library(pp_feature_conversations
     MessagingPeoplePickerPorts.cpp
     MeshDeliveryOrchestrator.cpp
     PeerDisplayResolver.cpp
-    ProfileIconClientUtil.cpp
-    ProfileIconFetchUtil.cpp
+    ProfileIconClient.cpp
+    ProfileIconFetch.cpp
     PushDeviceCoordinator.cpp
     LinkDeviceCoordinator.cpp
-    RegistrationClientUtil.cpp
+    RegistrationClient.cpp
     RelayDirectoryKemKeyResolver.cpp
     RelayDirectorySigningKeyResolver.cpp
     RelayReceivePipeline.cpp

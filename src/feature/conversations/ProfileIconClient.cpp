@@ -1,4 +1,4 @@
-#include "feature/conversations/ProfileIconClientUtil.h"
+#include "feature/conversations/ProfileIconClient.h"
 
 #include "domain/people/ProfileIconCache.h"
 #include "common/Utilities.h"

@@ -1,10 +1,9 @@
 #pragma once
 
 #include "domain/ai/ToolRegistry.h"
+#include "feature/conversations/ConversationsFacade.h"
 
 namespace pbr {
-
-class ConversationsFacade;
 
 // Native messaging / people / identity tools as an MCP-shaped provider.
 class MessagingToolProvider : public IToolProvider {

@@ -4,7 +4,7 @@
 #include "domain/messaging/AttachmentCache.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/InitiationPricing.h"
-#include "feature/conversations/RegistrationClientUtil.h"
+#include "feature/conversations/RegistrationClient.h"
 #include "feature/conversations/LinkDeviceCoordinator.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/PushDeviceCoordinator.h"

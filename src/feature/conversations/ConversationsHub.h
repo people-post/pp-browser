@@ -27,7 +27,7 @@
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "domain/net/BlobClient.h"
-#include "domain/net/BlobQuotaUtil.h"
+#include "domain/net/BlobQuota.h"
 #include "domain/net/HttpBlobClient.h"
 #include "domain/net/OrgBackendClientsImpl.h"
 #include "domain/net/IPushDeviceClient.h"

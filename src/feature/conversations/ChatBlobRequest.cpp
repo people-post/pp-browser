@@ -1,4 +1,4 @@
-#include "feature/conversations/ChatBlobRequestUtil.h"
+#include "feature/conversations/ChatBlobRequest.h"
 
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "domain/messaging/AttachmentCache.h"

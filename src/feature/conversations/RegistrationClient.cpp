@@ -1,4 +1,4 @@
-#include "feature/conversations/RegistrationClientUtil.h"
+#include "feature/conversations/RegistrationClient.h"
 
 #include "domain/net/RegistrationSignPayload.h"
 #include "common/Utilities.h"

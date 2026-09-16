@@ -1,6 +1,5 @@
 #include "feature/conversations/MessagingTools.h"
 
-#include "feature/conversations/ConversationsFacade.h"
 
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
