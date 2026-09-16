@@ -1,8 +1,8 @@
 #include "feature/calls/CallMediaPaths.h"
 #include "feature/calls/CallSessionManager.h"
-#include "feature/calls/CallListenAddrsLogic.h"
-#include "feature/calls/CallAnswererKickLogic.h"
-#include "feature/calls/CallMediaPlannerSelectLogic.h"
+#include "domain/messaging/CallListenAddrsLogic.h"
+#include "domain/messaging/CallAnswererKickLogic.h"
+#include "domain/messaging/CallMediaPlannerSelectLogic.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/SessionKeyDeriver.h"

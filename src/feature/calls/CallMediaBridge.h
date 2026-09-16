@@ -6,7 +6,7 @@
 #include "feature/calls/CallLifecycle.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallMediaSeat.h"
-#include "feature/calls/CallDirectPlannerLogic.h"
+#include "domain/messaging/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 

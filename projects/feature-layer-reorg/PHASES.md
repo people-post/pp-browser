@@ -37,7 +37,7 @@ Clears sharp `feature/ui` → messaging engine includes.
 
 - [x] `ContactReachability` → `domain/people`
 - [x] `PeerBriefRoute` → `domain/people`
-- [ ] `ProfileIconFetchUtil` — **stays feature** (HTTP → would be people→net; demoted)
+- [ ] `ProfileIconFetch` — **stays feature** (HTTP → would be people→net; demoted)
 - [x] `MobileEphemeralListenGate` → `domain/mesh/reachability/`
 - [x] `PeoplePickerLogic` → `domain/ui` (optional same batch)
 - [x] `CallConflictCopy` → `domain/ui` (optional same batch)
@@ -48,7 +48,7 @@ Clears sharp `feature/ui` → messaging engine includes.
 - [x] Peel `ChatHistoryResponder` identity coupling; move → `domain/messaging` (mirror `ChatBlobResponder`)
 - [x] `IDirectMessageClient` → `common/chat/` (iface only; Amp impl stays)
 - [x] Revisit [CANDIDATES.md](CANDIDATES.md) “needs common peel” list; promote any newly unblocked items
-  - No promotions this batch; Amp façades / ProfileIconFetchUtil remain blocked/demoted
+  - No promotions this batch; Amp façades / ProfileIconFetch remain blocked/demoted
 
 ## f4 — Structural: extract calls (banded first)
 

@@ -1,6 +1,6 @@
 #include "feature/calls/CallTopologyController.h"
-#include "feature/calls/CallMediaPlannerSelectLogic.h"
-#include "feature/calls/CallHopPlannerLogic.h"
+#include "domain/messaging/CallMediaPlannerSelectLogic.h"
+#include "domain/messaging/CallHopPlannerLogic.h"
 
 #include "domain/media/CallMediaAdaptation.h"
 #include "domain/messaging/CallHopPlan.h"

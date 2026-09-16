@@ -28,7 +28,7 @@ user → context → Plan → Execute tools → Synthesize blocks → validate �
 | `TurnPlan` | `src/base/ai/TurnPlan.*` | `response_goal`, `tools`, `render_mode`, `synthesis_hints` — **no act/domain/commitment** |
 | `TurnPlanner` | `src/feature/ai/TurnPlanner.cpp` | LLM JSON plan; live `tools_summary` in prompt |
 | `IToolProvider` / `ToolRegistry` | `src/base/ai/IToolProvider.h`, `ToolRegistry.*` | MCP-shaped in-process registration (layer-safe for settings/messaging) |
-| `PayloadTurnPlanBuilder` | `src/feature/ai/PayloadTurnPlanBuilder.*` | Fast path for article/form/tool chip payloads |
+| `PayloadTurnPlanBuilder` | `src/domain/ai/PayloadTurnPlanBuilder.*` | Fast path for article/form/tool chip payloads |
 | `TurnExecutor` | `src/feature/ai/TurnExecutor.cpp` | Runs planned tools; permission gate; `people_list` shortcut |
 | `ToolPermissionPolicy` | `src/feature/ai/ToolPermissionPolicy.*` | allow / ask / deny from prefs + session grants |
 | `ParkedApproval` | `src/feature/ai/ParkedApproval.h` | Single in-flight in-chat confirm |

@@ -15,9 +15,9 @@
 #include "gui/PinGateActionPorts.h"
 #include "gui/shell/RmlMount.h"
 #include "gui/shell/ShellFeedback.h"
-#include "gui/shell/ShellInterruption.h"
-#include "gui/shell/ShellLayout.h"
-#include "gui/UiEditSession.h"
+#include "domain/ui/ShellInterruption.h"
+#include "domain/ui/ShellLayout.h"
+#include "domain/ui/UiEditSession.h"
 #include "domain/ui/ViewCatalog.h"
 
 #include "foundation/platform/ui/RmlUi_Backend.h"

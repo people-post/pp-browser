@@ -12,7 +12,7 @@ add_executable(pp-node
   StatusHttpProtocol.cpp
   StatusHttpServer.cpp
   # Registration HTTP orchestration (N027); HTTP/sign helpers via pp_domain_net.
-  ${CMAKE_SOURCE_DIR}/src/feature/conversations/RegistrationClientUtil.cpp
+  ${CMAKE_SOURCE_DIR}/src/feature/conversations/RegistrationClient.cpp
 )
 
 target_include_directories(pp-node PRIVATE

@@ -10,9 +10,6 @@
 
 namespace pbr {
 
-bool ProfileIconNeedsFetch(const std::string& profile_dir, const std::string& cache_key,
-                           const ProfileIconRef& icon);
-
 Roe<void> FetchProfileIcon(const std::string& profile_dir, const std::string& cache_key, const ProfileIconRef& icon);
 
 Roe<void> FetchProfileIconIfNeeded(const std::string& profile_dir, const std::string& cache_key,

@@ -196,7 +196,7 @@ Payloads remain **opaque** — no `call_id`, names, thread ids, or media. Failur
 
 ## Native agent tools
 
-[`MessagingTools`](../../src/gui/chat/MessagingTools.cpp) exposes `search_people`, `register_user`, and `update_profile_nickname` as native C++ tools calling `ConversationsHub` → `Http*Client` directly (not via MCP).
+[`MessagingTools`](../../src/feature/conversations/MessagingTools.cpp) exposes `search_people`, `register_user`, and `update_profile_nickname` as native C++ tools calling `ConversationsHub` → `Http*Client` directly (not via MCP).
 
 ## MCP client buckets
 

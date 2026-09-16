@@ -1,4 +1,4 @@
-#include "domain/net/BlobQuotaUtil.h"
+#include "domain/net/BlobQuota.h"
 #include "domain/net/BlobClient.h"
 #include "foundation/error/AppError.h"
 #include "domain/net/OrgBackendClientsImpl.h"
@@ -19,13 +19,13 @@ RelayBlobRecord MakeBlob(const std::string& blob_id, const std::string& created_
   return record;
 }
 
-TEST(BlobQuotaUtilTest, IsBlobQuotaErrorDetectsQuotaExceeded) {
+TEST(BlobQuotaTest, IsBlobQuotaErrorDetectsQuotaExceeded) {
   const Error quota = AppError::Blob(Err::Blob::QuotaExceeded, "Small file quota exceeded");
   EXPECT_TRUE(IsBlobQuotaError(quota));
   EXPECT_FALSE(IsBlobQuotaError(AppError::Network(Err::Network::HttpError, "HTTP 500")));
 }
 
-TEST(BlobQuotaUtilTest, PlanOldestRelayBlobDeletionSkipsProtectedBlob) {
+TEST(BlobQuotaTest, PlanOldestRelayBlobDeletionSkipsProtectedBlob) {
   MockBlobClient blob;
   BlobListResult listed;
   listed.blobs = {MakeBlob("newer", "2026-08-24T12:00:00.000Z", BlobPurpose::File),
@@ -38,7 +38,7 @@ TEST(BlobQuotaUtilTest, PlanOldestRelayBlobDeletionSkipsProtectedBlob) {
   EXPECT_EQ(plan->blob_to_delete.blob_id, "oldest");
 }
 
-TEST(BlobQuotaUtilTest, FreeOldestRelayBlobSlotDeletesOldestRemoteOnly) {
+TEST(BlobQuotaTest, FreeOldestRelayBlobSlotDeletesOldestRemoteOnly) {
   MockBlobClient blob;
   BlobListResult listed;
   listed.blobs = {MakeBlob("keep", "2026-08-24T12:00:00.000Z", BlobPurpose::File),
@@ -51,14 +51,14 @@ TEST(BlobQuotaUtilTest, FreeOldestRelayBlobSlotDeletesOldestRemoteOnly) {
   EXPECT_EQ(blob.DeletedBlobIds().front(), "delete-me");
 }
 
-TEST(BlobQuotaUtilTest, EmptyRelayUserIdRejected) {
+TEST(BlobQuotaTest, EmptyRelayUserIdRejected) {
   MockBlobClient blob;
   auto plan = PlanOldestRelayBlobDeletion(blob, "");
   ASSERT_FALSE(static_cast<bool>(plan));
   EXPECT_NE(plan.error().message.find("Register"), std::string::npos);
 }
 
-TEST(BlobQuotaUtilTest, UploadRelayBlobBytesSurfacesQuotaErrorFromPresign) {
+TEST(BlobQuotaTest, UploadRelayBlobBytesSurfacesQuotaErrorFromPresign) {
   MockBlobClient blob;
   blob.SetPresignError(AppError::Blob(Err::Blob::QuotaExceeded, "Small file quota exceeded"));
 

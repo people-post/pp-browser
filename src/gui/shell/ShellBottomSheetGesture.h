@@ -1,6 +1,6 @@
 #pragma once
 
-#include "gui/shell/ShellGestureAxis.h"
+#include "domain/ui/ShellGestureAxis.h"
 
 #include <ui/dom/Element.h>
 #include <ui/dom/EventListener.h>

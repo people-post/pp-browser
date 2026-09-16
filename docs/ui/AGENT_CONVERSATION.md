@@ -80,7 +80,7 @@ Each agent turn produces a [`TurnPlan`](../../src/base/ai/TurnPlan.h):
 | `render_mode` | `blocks` (default) or `people_list` (deterministic long_list, skips synthesis) |
 | `synthesis_hints` | Per-turn guidance for the synthesizer |
 
-**Payload fast path** — [`PayloadTurnPlanBuilder`](../../src/feature/ai/PayloadTurnPlanBuilder.cpp) maps known `user_payload` shapes (article actions, `blog_articles` pagination, form submissions, chip tool payloads) without an LLM call.
+**Payload fast path** — [`PayloadTurnPlanBuilder`](../../src/domain/ai/PayloadTurnPlanBuilder.cpp) maps known `user_payload` shapes (article actions, `blog_articles` pagination, form submissions, chip tool payloads) without an LLM call.
 
 **NL path** — [`TurnPlanner`](../../src/base/ai/TurnPlanner.cpp) emits a JSON plan; one repair retry on invalid output.
 

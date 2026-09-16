@@ -20,7 +20,4 @@ AppConfig ApplyLlmSettingsDraft(const AppConfig& base, const SettingsDraft& draf
 AppConfig ApplyIntegrationsSettingsDraft(const AppConfig& base, const SettingsUiState& state);
 AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState& state);
 
-std::vector<std::string> ParseArgsText(const std::string& args_text);
-std::string JoinArgsText(const std::vector<std::string>& args);
-
 } // namespace pbr

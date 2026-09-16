@@ -3,6 +3,7 @@ include(PpBrowserWarnings)
 # pp-browser cross-module utilities (FetchContent pp_common is the external common layer).
 add_library(pp_pbr_common STATIC
   media/CallMediaHealth.cpp
+  chat/AttachmentDownloadPolicy.cpp
   chat/ChatPayloadTypes.cpp
   chat/MessagingJson.cpp
   chat/PeopleDiscoveryBlocks.cpp

@@ -2,7 +2,7 @@
 
 #include "domain/ai/StructuredTextParser.h"
 #include "domain/ui/ChatFormHelper.h"
-#include "gui/chat/CalendarHelper.h"
+#include "domain/ui/CalendarHelper.h"
 #include "gui/chat/ChatWidgetStateBuilder.h"
 
 #include <sstream>

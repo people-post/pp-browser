@@ -1,42 +1,14 @@
 #include "feature/settings/SettingsLogic.h"
 
+#include "common/ArgsText.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/LlmPreset.h"
 #include "feature/settings/SettingsUiState.h"
 
-#include <sstream>
+#include "common/PbrCompat.h"
 
 namespace pbr {
-
-namespace {
-
-std::vector<std::string> SplitArgs(const std::string& text) {
-  std::vector<std::string> args;
-  std::istringstream stream(text);
-  std::string token;
-  while (stream >> token) {
-    args.push_back(token);
-  }
-  return args;
-}
-
-} // namespace
-
-std::vector<std::string> ParseArgsText(const std::string& args_text) {
-  return SplitArgs(args_text);
-}
-
-std::string JoinArgsText(const std::vector<std::string>& args) {
-  std::ostringstream out;
-  for (size_t i = 0; i < args.size(); ++i) {
-    if (i > 0) {
-      out << ' ';
-    }
-    out << args[i];
-  }
-  return out.str();
-}
 
 AppConfig ApplyLlmSettingsDraft(const AppConfig& base, const SettingsDraft& draft) {
   AppConfig config = base;

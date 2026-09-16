@@ -1,4 +1,4 @@
-#include "domain/messaging/AttachmentDownloadPolicy.h"
+#include "common/chat/AttachmentDownloadPolicy.h"
 
 #include "common/chat/MessagingLimits.h"
 

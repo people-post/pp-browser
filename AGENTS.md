@@ -70,7 +70,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | Theme / layout | `assets/themes/base.rcss`, [docs/ui/UI_DESIGN_SYSTEM.md](docs/ui/UI_DESIGN_SYSTEM.md) |
 | App entry / chat bootstrap | `src/app/Application.cpp`, `src/app/main.cpp`, `src/gui/chat/ChatController.cpp` |
 | Structured AI replies | `src/domain/ai/StructuredTextParser.cpp` |
-| Turn planning pipeline | `src/domain/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
+| Turn planning pipeline | `src/domain/ai/TurnPlan.*`, `src/domain/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | AI-centric intent / agency | [projects/ai-centric-interface/](projects/ai-centric-interface/), [docs/ui/AGENT_CONVERSATION.md](docs/ui/AGENT_CONVERSATION.md) |
 | P2P messaging | `src/feature/conversations/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
 | Chat storage / SQLite | `src/domain/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*`, [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
@@ -141,5 +141,7 @@ Prefer a role suffix that matches the type’s job. Do **not** add a new `*Servi
 | Multi-step product flow | `*Workflow` | `ChatSyncWorkflow`, `AttachmentFetchWorkflow`, `GroupMembershipWorkflow` |
 | Session state machine | `*Coordinator` / `*Manager` | calls stack (prefer these over `*Service`) |
 | UI→functional edge | `*Ports` / `*Commands` | settings/CAS commands |
+
+**Free-function modules:** name the **capability** (`AttachmentFetch`, `ChatBlobRequest`, `RegistrationClient`, `BlobQuota`), not `*Util` / `*Utilities`. Reserve `*Util` only for tiny cross-cutting pure bags (`CryptoUtil`, `PeerIdUtil`). Prefer one file ≈ one capability; do not merge into per-folder mega-utils. Nest helpers under an owner type only when that type is the sole caller.
 
 **Agent one-liner:** Hub owns, Facade exposes, Store persists, Client speaks I/O, Protocol/Transport speaks Amp, Workflow orchestrates product steps, Engine is app/domain capability.

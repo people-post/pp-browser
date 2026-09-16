@@ -2,10 +2,10 @@ pp_browser_add_domain_library(pp_domain_messaging
   SOURCES
     AttachmentCache.cpp
     AttachmentPlaintextMemoryCache.cpp
-    AttachmentDownloadPolicy.cpp
     AttachmentSuppressionStore.cpp
     CasStore.cpp
     CasLibrary.cpp
+    ChatAttachmentPrepare.cpp
     ObjectIndex.cpp
     AtAiParser.cpp
     AutoKeyEnvelopeResolver.cpp

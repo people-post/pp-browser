@@ -1,4 +1,4 @@
-#include "gui/shell/ShellInterruption.h"
+#include "domain/ui/ShellInterruption.h"
 
 namespace pbr {
 

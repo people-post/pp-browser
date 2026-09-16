@@ -274,9 +274,9 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
 | 1:1 phase / ring / listen desire | `feature/messaging` | **`CallLifecycle`** | Sole phase owner; see [Ringing handling](#ringing-handling) |
 | 1:1 Amp dial + connect-fail / Retry | `feature/messaging` | **`CallMediaBridge`** (`CallDirectPath`) | Direct path under seat token |
 | Soft-migrate / attach-wait / hop pick | `feature/messaging` | **`CallTopologyController`** (`CallHopPath`) | Hop path under seat token |
-| N→planner select (pure) | `feature/calls` | **`CallMediaPlannerSelectLogic`** | Effective N; arm Hop vs Direct; relay-cap SoftMigrate nudge gates |
-| Direct planner Apply (V039) | `feature/calls` | **`CallMediaBridge`** + **`CallDirectPlannerLogic`** | Schedule/Key/Connect/TX-only/Release; health timer |
-| Hop planner Apply (V039) | `feature/calls` | **`CallTopologyController`** + **`CallHopPlannerLogic`** | SoftMigrate/attach-wait/inbound SFU; attach-wait timer |
+| N→planner select (pure) | `domain/messaging` | **`CallMediaPlannerSelectLogic`** | Effective N; arm Hop vs Direct; relay-cap SoftMigrate nudge gates |
+| Direct planner Apply (V039) | `feature/calls` | **`CallMediaBridge`** + **`CallDirectPlannerLogic`** (`domain/messaging`) | Schedule/Key/Connect/TX-only/Release; health timer |
+| Hop planner Apply (V039) | `feature/calls` | **`CallTopologyController`** + **`CallHopPlannerLogic`** (`domain/messaging`) | SoftMigrate/attach-wait/inbound SFU; attach-wait timer |
 | Media keys wrap/unwrap | `feature/messaging` | `CallMediaKeyStore` | Unchanged |
 | Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync`, `ShellCallChromeGesture`, `ShellHost::ApplyCallChromeUpdate` | Layer identity / control *presence* / **mode** (Expanded/Immersive/Minimized — V031) / status kind → remount; mute/speaker/camera icons → DirtyCallChrome (`data-attr-src` + `data-class-*--on`); meters/pulse/quality chip → DirtyCallChrome; mobile speaker via `CallAudioSession` |
 | Call media health | `domain/media` + `feature/ui` | `CallMediaHealth`, `CallMediaEngine::HealthSnapshot`, hop `HealthSnapshot`, `CallController::ApplyMediaHealth` / `ShowCallDetails` | Tier A quality bars always; Call details for everyone; debug subtitle + rich diagnostics behind profile `call_diagnostics` or `--debug`; `media_health` INFO ~2s |

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "feature/calls/CallMediaPlannerSelectLogic.h"
+#include "domain/messaging/CallMediaPlannerSelectLogic.h"
 
 #include <cstdint>
 #include <string>

@@ -913,8 +913,8 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 | Layer | Owner | Role |
 |-------|--------|------|
 | Product State+Status | `CallLifecycle` | Phase chrome; Status arms one planner (V037) |
-| Direct planner | `CallMediaBridge` + `CallDirectPlannerLogic` | Schedule / key-wait / Connect / TX-only circuit / Release |
-| Hop planner | `CallTopologyController` + `CallHopPlannerLogic` | WaitForAttach / SoftMigrate / inbound CallSfuAttach |
+| Direct planner | `CallMediaBridge` + [`CallDirectPlannerLogic`](../../src/domain/messaging/CallDirectPlannerLogic.h) | Schedule / key-wait / Connect / TX-only circuit / Release |
+| Hop planner | `CallTopologyController` + [`CallHopPlannerLogic`](../../src/domain/messaging/CallHopPlannerLogic.h) | WaitForAttach / SoftMigrate / inbound CallSfuAttach |
 | Transport | `CallMediaDirectService` / media_relay attach SM | Stream hello/duplex / AcceptAndAttach |
 
 ### Invariants

@@ -3,13 +3,18 @@
 
 pp_browser_add_domain_library(pp_domain_ui
   SOURCES
+    CalendarHelper.cpp
     CallConflictCopy.cpp
     ChatFormHelper.cpp
+    ChatWidgetConfigBuilders.cpp
     ContextMenuHost.cpp
     EmojiCatalog.cpp
     InputCoordinator.cpp
     RmlVariantHelpers.cpp
+    ShellInterruption.cpp
+    ShellLayout.cpp
     Theme.cpp
+    UiEditSession.cpp
     ViewCatalog.cpp
   PUBLIC_LIBS
     pp_foundation_platform

@@ -1,7 +1,7 @@
 #include "feature/ai/TurnExecutor.h"
 
 #include "domain/ai/ToolResultFormatter.h"
-#include "feature/ai/PeopleDiscoveryContactAdapt.h"
+#include "domain/people/PeopleDiscoveryContactAdapt.h"
 #include "domain/people/ContactJson.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"

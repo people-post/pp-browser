@@ -77,7 +77,7 @@ Two buckets only:
 
 | Bucket | Examples | Not here |
 |--------|----------|----------|
-| **Basics** | `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `PbrCompat`, startup timing | SQLite, curl, SDL, RmlUi, Amp |
+| **Basics** | `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `PbrCompat`, `ArgsText`, `AttachmentDownloadPolicy`, startup timing | SQLite, curl, SDL, RmlUi, Amp |
 | **Domain contracts** | Ports (`IThreadStore`-shaped APIs, blob/relay interfaces), shared ids/enums, narrow DTOs two+ peers must name | Full codecs, stores, hubs, UI ports |
 
 Guardrails:
@@ -119,13 +119,13 @@ crypto
 
 | Path | Contents |
 |------|----------|
-| `domain/people/` | Identity and contacts stores; presentation DTOs |
-| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; **also hosts Content CAS for now** (`CasStore` / attachment CAS I/O — [C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner); peel to `domain/content` at P3/P4) |
+| `domain/people/` | Identity and contacts stores; presentation DTOs; registration classify (`RegistrationStatus`) |
+| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; pure call planner gates (`Call*Logic`); attachment prepare; **also hosts Content CAS for now** (`CasStore` / attachment CAS I/O — [C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner); peel to `domain/content` at P3/P4) |
 | `domain/net/` | HTTP client, service clients (no people/messaging policy) |
 | `domain/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
-| `domain/ai/` | LLM client, turn types, parsers; `conversation/`, `mcp/` sublibs |
-| `domain/ui/` | Product shell: theme, catalogs, input, context menu |
+| `domain/ai/` | LLM client, turn types, parsers, payload plan builder; `conversation/`, `mcp/` sublibs |
+| `domain/ui/` | Product shell: theme, catalogs, input, context menu, `ShellLayout`, `ShellInterruption`, `ShellGestureAxis`, calendar/form helpers, `UiEditSession`, chat widget config builders |
 
 Window host / Backend / overlays: `foundation/platform/ui/` (not a domain peer).
 
@@ -253,6 +253,10 @@ When a type lives in a **legal dependency** (same layer / lower layer / allowed 
 Examples: feature/app headers that hold `SessionStore*` should `#include "foundation/data/SessionStore.h"`, not `class SessionStore;`. Do **not** forward-declare lower-layer types just to keep a header “lean.”
 
 Still keep headers focused: avoid pulling unrelated heavy trees when a small `*Types.h` / ports header already exists (e.g. `SettingsCommands`, `ChatSessionPorts`).
+
+### Free-function module names
+
+Prefer a **topic / capability** filename (`AttachmentFetch`, `ShellLayout`, `ChatAttachmentPrepare`) over `*Util` / `*Helper` grab-bags. Keep `*Codec` / `*Json` / `*Cache` when that is the job. Rare `*Util` is OK for small pure shared bags (`CryptoUtil`). Place by layer ownership; merge only within one capability, never “one Utilities.cpp per folder.”
 
 ## Migration order (when coding starts)
 

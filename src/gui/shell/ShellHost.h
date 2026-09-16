@@ -11,7 +11,7 @@
 #include "gui/shell/ShellCallChromePorts.h"
 #include "gui/shell/ShellBottomSheetGesture.h"
 #include "gui/shell/ShellCallChromeGesture.h"
-#include "gui/shell/ShellGestureAxis.h"
+#include "domain/ui/ShellGestureAxis.h"
 #include "gui/shell/ShellSwipeBackGesture.h"
 
 #include <ui/data/DataModelHandle.h>

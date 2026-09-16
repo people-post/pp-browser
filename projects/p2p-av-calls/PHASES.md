@@ -128,7 +128,7 @@ Pay off post-V026/m2 migration so 1:1 Amp call-media is mature: frozen requireme
 - [x] D0 — V038 ADR + this phase; CURRENT_STATE next-agent → `rd`
 - [x] D1 — DESIGN / CALLS / SESSION_MACHINES / CURRENT_STATE: circuit vs `media_relay`; ConnectAsync landed; `StartSfu` naming note
 - [x] D2 — gtests: KickAnswerer Status gates; Direct* blocks hop StartSfu; TX-only circuit escalate
-- [x] D3 — **Automated:** `CallListenAddrsLogic` + Bridge answerer ScheduleStart/Kick gtests + `B-CALL-DIRECT` evidence; OEM sample optional
+- [x] D3 — **Automated:** [`CallListenAddrsLogic`](../../src/domain/messaging/CallListenAddrsLogic.h) + Bridge answerer ScheduleStart/Kick gtests + `B-CALL-DIRECT` evidence; OEM sample optional
 - [x] D4 — **Automated:** `AmpCircuitCallMediaComposeTest` + `B-CALL-HOP` / `B-HARD-CALL` as NAT stand-in; CALLS V038; s4 deferred; no required human NAT pair
 
 **Non-goals:** `StartSfu` rename campaign; L3.5 multi-hop; SoftMigrate-for-1:1 reopen; s4 unless Leave hangs.  
@@ -139,8 +139,8 @@ Pay off post-V026/m2 migration so 1:1 Amp call-media is mature: frozen requireme
 Layered Apply FSMs under Lifecycle Status: Direct (`CallMediaBridge`) and Hop (`CallTopologyController`). Spec: [V039](DECISIONS.md#v039--call-directhop-planner-machines); [SESSION_MACHINES planner section](SESSION_MACHINES.md#planner-machines-v039). Transport SMs remain V033 — do not rewrite call-media duplex in the same PR as a planner strangler.
 
 - [x] pm0 — V039 ADR + SESSION_MACHINES planner section + this phase; CURRENT_STATE next-agent → `pm`
-- [x] pm1 — Direct `Apply` + `CallDirectPlannerLogic` + gtests; Schedule/Key/Connect/TX-only/Release through Apply
-- [x] pm2 — Hop `Apply` + `CallHopPlannerLogic`; SoftMigrate-as-event; inbound attach Status gates
+- [x] pm1 — Direct `Apply` + [`CallDirectPlannerLogic`](../../src/domain/messaging/CallDirectPlannerLogic.h) + gtests; Schedule/Key/Connect/TX-only/Release through Apply
+- [x] pm2 — Hop `Apply` + [`CallHopPlannerLogic`](../../src/domain/messaging/CallHopPlannerLogic.h); SoftMigrate-as-event; inbound attach Status gates
 - [x] pm3 — SM-owned timers replace `PollMeshConnectHealth` / `PollPendingSfuAttach` primary path
 - [x] pm4 — Lifecycle/CSM thin Accept media router; CALLS.md critical races → planner phases + epochs
 

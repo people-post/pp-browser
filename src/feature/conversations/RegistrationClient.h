@@ -2,6 +2,7 @@
 
 #include "domain/net/OrgBackendClients.h"
 #include "domain/people/IdentityStore.h"
+#include "domain/people/RegistrationStatus.h"
 #include "common/directory/IdentityTypes.h"
 
 #include <cstdint>
@@ -11,20 +12,8 @@
 
 namespace pbr {
 
-enum class RegistrationStatus { Unregistered, Active, ExpiringSoon, Expired };
-
-RegistrationStatus ClassifyRegistration(const LocalIdentity& identity, int64_t now_ms = 0);
-/** True if expires within 14 days or already expired/empty while registered. */
-bool ShouldRenewRegistration(const LocalIdentity& identity, int64_t now_ms = 0);
-std::string RegistrationStatusLabel(RegistrationStatus status);
-/** Human label for UI button: "Register on network" vs "Renew registration". */
-std::string RegistrationActionLabel(RegistrationStatus status);
-
 /** Apply finish/rotate-style result onto identity fields (does not Update store). */
 void ApplyRegistrationResult(LocalIdentity& identity, const RegistrationResult& result);
-
-/** Mark registration as expired locally (does not Update store). */
-void MarkRegistrationExpired(LocalIdentity& identity);
 
 Roe<RegistrationResult> FinishRegistrationWithIdentity(IRegistrationClient& registration, IdentityStore& identity,
                                                        const std::string& nickname,

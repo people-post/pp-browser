@@ -17,7 +17,7 @@
 #include "domain/ui/ViewCatalog.h"
 #include "feature/ai/bindings/ActionRouter.h"
 #include "gui/chat/ChatController.h"
-#include "gui/chat/MessagingTools.h"
+#include "feature/conversations/MessagingTools.h"
 #include "feature/settings/SettingsTools.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/platform/IAssetLocator.h"

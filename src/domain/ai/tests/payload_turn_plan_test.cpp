@@ -1,4 +1,4 @@
-#include "feature/ai/PayloadTurnPlanBuilder.h"
+#include "domain/ai/PayloadTurnPlanBuilder.h"
 
 #include <gtest/gtest.h>
 

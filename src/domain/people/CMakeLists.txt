@@ -12,6 +12,7 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   MeshHopPolicy.cpp
   PeerBriefRoute.cpp
   PeerDisplayLabel.cpp
+  RegistrationStatus.cpp
 )
 
 pp_browser_add_domain_library(pp_domain_people
@@ -21,6 +22,7 @@ pp_browser_add_domain_library(pp_domain_people
     pp_foundation_data
     pp_foundation_crypto
     pp_foundation_identity
+    pp_foundation_platform_core
     sodium)
 
 if(PP_BROWSER_BUILD_TESTS)

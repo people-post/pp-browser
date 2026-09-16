@@ -37,7 +37,7 @@ Runtime UI updates use [`src/gui/RmlMount.cpp`](../../src/gui/RmlMount.cpp):
 
 Chat uses the role-based shell in [`src/gui/shell/ShellHost.*`](../../src/gui/shell/ShellHost.cpp):
 
-- **ShellLayout** — Compact/Expanded modes (768dp breakpoint)
+- **ShellLayout** (`domain/ui/ShellLayout`) — Compact/Expanded modes (768dp breakpoint)
 - **ShellHost** — Primary/Secondary/Auxiliary panes, overlays, Safari-style compact toolbar
 - **ShellInterruption** — Escape dismiss ordering
 - **ShellFeedback** — Banner, toast, alert/confirm dialog
