@@ -1,5 +1,6 @@
 #include "feature/settings/IntegrationsSettingsSection.h"
 
+#include "common/ArgsText.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/i18n/LocalizationService.h"

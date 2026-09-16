@@ -81,8 +81,8 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 
 | Gate | Purpose / evidence | Status |
 |------|-------------------|--------|
-| **D2 policy** | Lifecycle + topology Status gates; `CallTxOnlyEscalateLogic` | **PASS** (gtest) |
-| **D3 dial without mDNS** | `CallListenAddrsLogic` + invite encode round-trip; CSM fills invite/accept from provider | **PASS** (gtest) |
+| **D2 policy** | Lifecycle + topology Status gates; [`CallTxOnlyEscalateLogic`](../../src/domain/messaging/CallTxOnlyEscalateLogic.h) | **PASS** (gtest) |
+| **D3 dial without mDNS** | [`CallListenAddrsLogic`](../../src/domain/messaging/CallListenAddrsLogic.h) + invite encode round-trip; CSM fills invite/accept from provider | **PASS** (gtest) |
 | **D3 direct duplex** | `B-CALL-DIRECT`: Bridge answerer start + Kick logic gtests + `CallMediaDirectServiceTest` + `pp_call_direct_smoke` | **Improved** (ScheduleStart→StartSfu / MediaPending / HopLive gate); smoke scaffold for full Invite→Leave |
 | **D4 circuit duplex** | `B-CALL-HOP`: `AmpCircuitCallMediaComposeTest` + `pp_call_hop_smoke` | **PASS** loopback; smoke scaffold |
 | **D4 forced NAT stand-in** | `B-HARD-CALL` / `--suite hard` (A↛B netns → circuit) | Scaffold / nightly — **replaces** “two NATed phones” as regression wall |

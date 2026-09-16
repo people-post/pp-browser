@@ -63,7 +63,7 @@ Start points when exploring:
 - Conversations hub → `conversations/ConversationsHub.h`, `conversations/MeshDeliveryOrchestrator.h`
 - Call session → `calls/CallStack.h`
 - Window shell → `gui/shell/ShellHost.h`
-- Chat screen → `gui/chat/ChatController.h`, `gui/chat/MessagingTools.h`
+- Chat screen → `gui/chat/ChatController.h`, `feature/conversations/MessagingTools.h`
 - Settings apply → `settings/SettingsLogic.h`, `settings/SettingsSectionHandler.h`
 
 Includes use the repo root: `#include "feature/conversations/ConversationsHub.h"`. GUI includes use `gui/…` from `src/gui/` / `src/app/` only.

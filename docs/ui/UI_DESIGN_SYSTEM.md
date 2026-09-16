@@ -7,7 +7,7 @@ Source of truth for pp-browser theming, spacing, and component styling. AI-gener
 ## Principles
 
 - **Reliable** — loading, pending, failed delivery, and offline states use the same semantic colors everywhere (`semantic-warning`, `semantic-error`, delivery indicators).
-- **Responsive** — shell layout switches at 768dp (C++ `ShellLayout`); touch targets stay at least 44dp on compact layout.
+- **Responsive** — shell layout switches at 768dp (C++ [`ShellLayout`](../../src/domain/ui/ShellLayout.h)); touch targets stay at least 44dp on compact layout.
 - **Hierarchy through space** — importance is expressed with size, weight, spacing, and elevation—not decoration.
 
 ## Copy / labels
@@ -182,7 +182,7 @@ Three tiers reuse the same badge components; do not confuse them with semantic l
 | `.sidebar-unread` | Alias layout on session rows (extends `.badge-count`) |
 | `.contacts-trust-badge` | **Not** a notification badge — trust label only |
 
-Counts cap at **99+** in C++ (`FormatBadgeCount`). Home stays badge-free. **Sessions** shows aggregate P2P chat unread via `BadgeAggregator`. **Contacts** nav badge stays at 0 for now (Contacts is a people directory, not an inbox); later wire it only to contacts-tab action queues (e.g. intro/contact requests, pending invites Accept/Decline), never to chat unread. Per-row unread on the contacts list remains a secondary affordance.
+Counts cap at **99+** in C++ ([`FormatBadgeCount`](../../src/domain/ui/NavBadgeFormat.h)). Home stays badge-free. **Sessions** shows aggregate P2P chat unread via `BadgeAggregator`. **Contacts** nav badge stays at 0 for now (Contacts is a people directory, not an inbox); later wire it only to contacts-tab action queues (e.g. intro/contact requests, pending invites Accept/Decline), never to chat unread. Per-row unread on the contacts list remains a secondary affordance.
 
 ## Component classes (reuse before adding rules)
 

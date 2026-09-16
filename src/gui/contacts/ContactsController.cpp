@@ -20,7 +20,7 @@
 #include "feature/conversations/MessagingContactsPorts.h"
 #include "gui/shell/DataModelHost.h"
 #include "gui/UnlockEnsurePorts.h"
-#include "gui/UiEditSession.h"
+#include "domain/ui/UiEditSession.h"
 #include "gui/UserFeedback.h"
 
 #include "domain/ui/ShellTypes.h"

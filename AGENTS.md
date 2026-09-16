@@ -70,7 +70,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | Theme / layout | `assets/themes/base.rcss`, [docs/ui/UI_DESIGN_SYSTEM.md](docs/ui/UI_DESIGN_SYSTEM.md) |
 | App entry / chat bootstrap | `src/app/Application.cpp`, `src/app/main.cpp`, `src/gui/chat/ChatController.cpp` |
 | Structured AI replies | `src/domain/ai/StructuredTextParser.cpp` |
-| Turn planning pipeline | `src/domain/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
+| Turn planning pipeline | `src/domain/ai/TurnPlan.*`, `src/domain/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | AI-centric intent / agency | [projects/ai-centric-interface/](projects/ai-centric-interface/), [docs/ui/AGENT_CONVERSATION.md](docs/ui/AGENT_CONVERSATION.md) |
 | P2P messaging | `src/feature/conversations/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
 | Chat storage / SQLite | `src/domain/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*`, [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |

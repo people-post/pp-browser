@@ -1,7 +1,7 @@
 #include "feature/ai/AgentSession.h"
 #include "foundation/platform/Platform.h"
 
-#include "feature/ai/PayloadTurnPlanBuilder.h"
+#include "domain/ai/PayloadTurnPlanBuilder.h"
 #include "domain/ai/PromptBuilder.h"
 #include "domain/ai/StructuredTextParser.h"
 #include "domain/ai/ToolRegistry.h"

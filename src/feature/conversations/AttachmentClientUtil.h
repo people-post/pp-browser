@@ -1,8 +1,8 @@
 #pragma once
 
 #include "common/chat/ChatPayloadTypes.h"
-#include "common/chat/MessagingLimits.h"
 #include "common/thread/ThreadRecordTypes.h"
+#include "domain/messaging/ChatAttachmentPrepare.h"
 #include "domain/net/BlobClient.h"
 #include "domain/net/OrgBackendClients.h"
 #include "domain/people/ContactsStore.h"
@@ -18,14 +18,6 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
-
-struct PreparedChatAttachment {
-  ChatAttachmentFields fields;
-  std::vector<uint8_t> ciphertext;
-};
-
-/** Encrypt file bytes without uploading. */
-Roe<PreparedChatAttachment> PrepareChatAttachmentFromFile(const std::string& path);
 
 struct ChatAttachmentUploadOptions {
   IChatBlobPeerClient* peer_client = nullptr;

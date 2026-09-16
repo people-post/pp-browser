@@ -38,13 +38,11 @@ pp_browser_add_feature_library(pp_gui
     shell/ShellFeedbackPorts.cpp
     shell/ShellHost.cpp
     shell/ShellInterruption.cpp
-    shell/ShellLayout.cpp
     shell/ShellNavigationPorts.cpp
     shell/ShellPinGatePorts.cpp
     shell/ShellSetupPorts.cpp
     shell/ShellSwipeBackGesture.cpp
     BlobQuotaRecoveryFlow.cpp
-    UiEditSession.cpp
     UserFeedback.cpp
   PUBLIC_LIBS
     pp_feature_settings

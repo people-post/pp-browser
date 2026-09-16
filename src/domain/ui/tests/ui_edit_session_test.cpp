@@ -1,4 +1,4 @@
-#include "gui/UiEditSession.h"
+#include "domain/ui/UiEditSession.h"
 
 #include <gtest/gtest.h>
 

@@ -119,13 +119,13 @@ crypto
 
 | Path | Contents |
 |------|----------|
-| `domain/people/` | Identity and contacts stores; presentation DTOs |
-| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; **also hosts Content CAS for now** (`CasStore` / attachment CAS I/O — [C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner); peel to `domain/content` at P3/P4) |
+| `domain/people/` | Identity and contacts stores; presentation DTOs; registration classify (`RegistrationStatus`) |
+| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; pure call planner gates (`Call*Logic`); attachment prepare; **also hosts Content CAS for now** (`CasStore` / attachment CAS I/O — [C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner); peel to `domain/content` at P3/P4) |
 | `domain/net/` | HTTP client, service clients (no people/messaging policy) |
 | `domain/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
-| `domain/ai/` | LLM client, turn types, parsers; `conversation/`, `mcp/` sublibs |
-| `domain/ui/` | Product shell: theme, catalogs, input, context menu |
+| `domain/ai/` | LLM client, turn types, parsers, payload plan builder; `conversation/`, `mcp/` sublibs |
+| `domain/ui/` | Product shell: theme, catalogs, input, context menu, `ShellLayout`, calendar/form helpers, `UiEditSession` |
 
 Window host / Backend / overlays: `foundation/platform/ui/` (not a domain peer).
 

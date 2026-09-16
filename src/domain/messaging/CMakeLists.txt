@@ -6,6 +6,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     AttachmentSuppressionStore.cpp
     CasStore.cpp
     CasLibrary.cpp
+    ChatAttachmentPrepare.cpp
     ObjectIndex.cpp
     AtAiParser.cpp
     AutoKeyEnvelopeResolver.cpp

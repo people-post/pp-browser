@@ -10,7 +10,9 @@ pp_browser_add_domain_library(pp_domain_ui
     EmojiCatalog.cpp
     InputCoordinator.cpp
     RmlVariantHelpers.cpp
+    ShellLayout.cpp
     Theme.cpp
+    UiEditSession.cpp
     ViewCatalog.cpp
   PUBLIC_LIBS
     pp_foundation_platform

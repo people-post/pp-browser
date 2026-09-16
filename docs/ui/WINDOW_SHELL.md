@@ -8,7 +8,7 @@ The Window Shell replaces the old split-panel layout with a role-based, responsi
 
 | Subsystem | Module | Role |
 |-----------|--------|------|
-| Layout | `ShellLayout` | Pure width/mode/visibility math |
+| Layout | [`ShellLayout`](../../src/domain/ui/ShellLayout.h) | Pure width/mode/visibility math |
 | Navigation | `ShellHost`, `ViewCatalog`, `FlowCoordinator` | Pane registry, overlays, multi-step flows, DOM sync |
 | Interruption | `ShellInterruption` | Escape/back/scrim dismiss ordering |
 | Feedback | `ShellFeedback` | Toast, banner, alert/confirm dialog |

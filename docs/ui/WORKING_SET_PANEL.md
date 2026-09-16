@@ -191,7 +191,7 @@ Populated at parse time via `FinishAssistantReply` → `ApplyFromParse`.
 | New chat / thread switch | **Clear** working set (fixes current stale-preview bug) |
 | User dismisses panel (Escape / toggle) | Close visually; `auxiliary_available` stays true so user can reopen via chip |
 
-Pagination affinity: detect payload fast path in [`PayloadTurnPlanBuilder`](../../src/feature/ai/PayloadTurnPlanBuilder.cpp) (`blog_articles` + `before_id`) → same `WorkingSetAffinity::Feed`.
+Pagination affinity: detect payload fast path in [`PayloadTurnPlanBuilder`](../../src/domain/ai/PayloadTurnPlanBuilder.cpp) (`blog_articles` + `before_id`) → same `WorkingSetAffinity::Feed`.
 
 ### 6. Panel UI
 

@@ -19,7 +19,7 @@
 #include "gui/shell/RmlMount.h"
 #include "gui/UnlockEnsurePorts.h"
 #include "gui/SecuritySettingsSection.h"
-#include "gui/UiEditSession.h"
+#include "domain/ui/UiEditSession.h"
 #include "gui/UserFeedback.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
 #include "foundation/error/AppError.h"
