@@ -50,7 +50,7 @@ TEST(McpToolAdapterTest, BoundsSerializedToolResultsAtConfiguredLimit) {
   const auto tools = pbr::McpToolAdapter::ListTools(client);
   ASSERT_EQ(tools.size(), 1u);
 
-  const auto at_limit = tools.front().execute(pbr::Object{});
+  auto at_limit = tools.front().execute(pbr::Object{});
   ASSERT_TRUE(at_limit) << at_limit.error().message;
   EXPECT_EQ(at_limit->size(), pbr::kMaxMcpToolResultBytes);
 

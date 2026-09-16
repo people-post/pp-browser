@@ -2,12 +2,10 @@
 
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
+#include "common/tests/LocalHttpServer.h"
 
 #include <gtest/gtest.h>
 
-#include <chrono>
-#include <filesystem>
-#include <fstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -16,30 +14,18 @@ namespace {
 
 class LlmClientLimitsTest : public ::testing::Test {
 protected:
-  void SetUp() override {
-    response_dir_ = std::filesystem::temp_directory_path() /
-                    ("pbr_llm_client_test_" +
-                     std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
-    std::filesystem::create_directories(response_dir_ / "chat");
-  }
-
-  void TearDown() override { std::filesystem::remove_all(response_dir_); }
-
   pbr::LlmClient Client() const {
     pbr::LlmConfig config;
-    config.base_url = "file://" + response_dir_.string();
+    config.base_url = server_.Url() + "/v1";
     config.model = "test-model";
     config.require_api_key = false;
     config.num_predict = 0;
     return pbr::LlmClient(config);
   }
 
-  void WriteResponse(const std::string& response) const {
-    std::ofstream out(response_dir_ / "chat" / "completions", std::ios::binary);
-    out.write(response.data(), static_cast<std::streamsize>(response.size()));
-  }
+  void WriteResponse(std::string response) { server_.SetResponse(std::move(response)); }
 
-  std::filesystem::path response_dir_;
+  pbr::test::LocalHttpServer server_;
 };
 
 pbr::ChatCompletionRequest RequestWithPayloadSize(const size_t payload_size) {
@@ -156,7 +142,7 @@ TEST_F(LlmClientLimitsTest, AcceptsRequestAtConfiguredLimit) {
   WriteResponse(CompletionResponseOfSize(128));
   const auto request = RequestWithPayloadSize(pbr::kMaxLlmRequestBytes);
 
-  const auto result = Client().Complete(request);
+  auto result = Client().Complete(request);
 
   ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
   ASSERT_TRUE(result->content);
@@ -175,11 +161,10 @@ TEST_F(LlmClientLimitsTest, RejectsRequestOverConfiguredLimitBeforeCurl) {
 TEST_F(LlmClientLimitsTest, AcceptsResponseAtConfiguredLimit) {
   WriteResponse(CompletionResponseOfSize(pbr::kMaxLlmResponseBytes));
 
-  const auto result = Client().Complete("system", "user");
+  auto result = Client().Complete("system", "user");
 
   ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
-  ASSERT_TRUE(result->content);
-  EXPECT_EQ(*result->content, "ok");
+  EXPECT_EQ(*result, "ok");
 }
 
 TEST_F(LlmClientLimitsTest, RejectsResponseOverConfiguredLimit) {
