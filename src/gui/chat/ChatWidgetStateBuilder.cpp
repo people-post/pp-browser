@@ -1,6 +1,6 @@
 #include "gui/chat/ChatWidgetStateBuilder.h"
 
-#include "gui/chat/CalendarHelper.h"
+#include "domain/ui/CalendarHelper.h"
 
 #include <ui/data/DataModelHandle.h>
 #include "common/PbrCompat.h"

@@ -26,7 +26,7 @@
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "common/chat/ChatPayloadTypes.h"
-#include "domain/messaging/E2eIntegrityUtil.h"
+#include "common/thread/E2eIntegrityUtil.h"
 #include "domain/messaging/E2eRelayPayloadCodec.h"
 #include "domain/messaging/GroupE2ePayloadCodec.h"
 #include "domain/messaging/GroupRosterStore.h"

@@ -3,6 +3,7 @@
 
 pp_browser_add_domain_library(pp_domain_ui
   SOURCES
+    CalendarHelper.cpp
     CallConflictCopy.cpp
     ChatFormHelper.cpp
     ContextMenuHost.cpp

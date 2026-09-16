@@ -1,5 +1,5 @@
 #include "feature/calls/CallMediaBridge.h"
-#include "feature/calls/CallTxOnlyEscalateLogic.h"
+#include "domain/messaging/CallTxOnlyEscalateLogic.h"
 
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/messaging/SfuAttachFanout.h"

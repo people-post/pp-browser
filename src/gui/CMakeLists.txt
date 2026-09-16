@@ -7,14 +7,12 @@ pp_browser_add_feature_library(pp_gui
     BadgeAggregator.cpp
     CallChromeSync.cpp
     CallController.cpp
-    chat/CalendarHelper.cpp
     chat/ChatController.cpp
     chat/ChatDataModel.cpp
     chat/ChatThreadChrome.cpp
     chat/ChatTranscriptScroller.cpp
     chat/ChatWidgetHost.cpp
     chat/ChatWidgetStateBuilder.cpp
-    chat/MessagingTools.cpp
     chat/WorkingSetController.cpp
     ClientCompatController.cpp
     contacts/ContactsChromeSync.cpp

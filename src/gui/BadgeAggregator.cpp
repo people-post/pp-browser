@@ -12,16 +12,6 @@ void BadgeAggregator::BindShellNavigation(ShellNavigationPorts ports) {
   shell_navigation_ = std::move(ports);
 }
 
-std::string FormatBadgeCount(const int count) {
-  if (count <= 0) {
-    return "0";
-  }
-  if (count > 99) {
-    return "99+";
-  }
-  return std::to_string(count);
-}
-
 void BadgeAggregator::Refresh() {
   NavBadgeState next;
   if (source_) {

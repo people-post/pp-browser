@@ -1,4 +1,4 @@
-#include "gui/chat/MessagingTools.h"
+#include "feature/conversations/MessagingTools.h"
 
 #include "feature/conversations/ConversationsFacade.h"
 

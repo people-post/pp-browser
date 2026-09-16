@@ -1,4 +1,4 @@
-#include "gui/chat/CalendarHelper.h"
+#include "domain/ui/CalendarHelper.h"
 
 #include <gtest/gtest.h>
 
