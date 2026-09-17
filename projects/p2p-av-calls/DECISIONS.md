@@ -988,3 +988,49 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 
 ---
 
+## V041 — CallLifecycle signaling ports / Stack composition root
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md) (composition-root table)  
+**Decision:** `CallLifecycle` must not hold a standing `CallSessionManager*`. Stack installs **`CallLifecycleSignalingPorts`**. CallStack remains the sole sibling composition root (peers use ports / bind-args / Set* facets).
+
+### Ports
+
+| Port | Maps to |
+|------|---------|
+| `accept_invite` | `CallSessionManager::AcceptInvite` |
+| `decline_invite` | `DeclineInvite` |
+| `leave_call` | `LeaveCall` |
+| `retry_p2p_media` | `RetryP2pMedia` |
+| `kick_answerer_direct_media` | `KickAnswererDirectMediaIfArmed` |
+| `media_active_for_call` | engine active + `ActiveCallId` match |
+
+Async workers **copy** `std::function`s into lambdas; `ClearBinding` bumps `async_epoch_` and clears ports (same UAF rules as before).
+
+### Composition root (normative summary)
+
+| Piece | Standing ptrs to siblings | How wired |
+|-------|---------------------------|-----------|
+| CallStack | owns all | Bind*/Set*/deps |
+| CallLifecycle | none to CSM | SignallingPorts from Stack |
+| CallMediaSeat | none | teardown hooks from Stack |
+| CallMediaPlane | none to CSM/seat/life | BindBridge args + deps callbacks |
+| CallSessionManager | stores (ctor); lifecycle/bridge/seat as **installed facets** | Set* from Stack |
+
+### Phases
+
+| Phase | Deliverable |
+|-------|-------------|
+| ci0 | This ADR + PHASES `ci` |
+| ci1 | Ports + BindSignalingPorts |
+| ci2 | BindSeatTeardown on Stack |
+| ci3 | CALLS.md composition table |
+
+**Rationale:** Continues V040 — independence via stack wiring, not peer live-refs.
+
+**Alternatives:** Keep `Bind(CallSessionManager*)` (rejected — concrete sibling edge); Seat inside CSM (still deferred).
+
+**Cross-link:** [V040](#v040--callmediaplane--callstack-ownership-collapse); [V037](#v037--calllifecycle-state--status-one-planner-armed); [CALLS.md](../../docs/architecture/CALLS.md); phase [ci](PHASES.md#ci--callstack-composition-independence-lifecycle-ports).
+
+---
+

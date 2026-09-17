@@ -171,6 +171,18 @@ Thin `CallStack` to phase assembly; mesh-media siblings live under **`CallMediaP
 **Non-goals:** Seat inside CSM; Hub N025 listen *execution*; wire/behavior changes.  
 **Exit:** `call_ui_backend_stack_test` + `call_dual_stack_compose_test` + call lifecycle gtests green; CALLS.md names Amp + CallMediaPlane.
 
+## ci — CallStack composition independence (Lifecycle ports)
+
+Siblings stay independent; **CallStack** is the only graph knower — [V041](DECISIONS.md#v041--calllifecycle-signaling-ports--stack-composition-root).
+
+- [x] ci0 — ADR + PHASES
+- [x] ci1 — `CallLifecycleSignalingPorts`; drop `CallSessionManager*` from Lifecycle
+- [x] ci2 — `CallStack::BindSeatTeardown` helper
+- [x] ci3 — CALLS.md composition-root table
+
+**Non-goals:** Seat inside CSM; CSM↔Bridge pointer campaign; CallProfileStores.  
+**Exit:** lifecycle + stack compose gtests green; CALLS.md composition table.
+
 ## Later horizons
 
 - [ ] `video_hi` / simulcast

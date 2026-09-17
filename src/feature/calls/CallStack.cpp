@@ -9,6 +9,7 @@
 #include "domain/mesh/host/MeshControlDispatch.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/mesh/reachability/Reachability.h"
+#include "feature/calls/CallLifecyclePorts.h"
 
 #include <functional>
 #include <optional>
@@ -80,6 +81,75 @@ void CallStack::BindMediaProducts() {
   call_sessions_->SetCallMediaBridge(media_plane_->Bridge());
 }
 
+CallLifecycleSignalingPorts CallStack::MakeLifecycleSignalingPorts() {
+  CallLifecycleSignalingPorts ports;
+  ports.accept_invite = [this](const std::string& call_id) -> Roe<void> {
+    if (!call_sessions_) {
+      return Error("Calls unavailable");
+    }
+    return call_sessions_->AcceptInvite(call_id);
+  };
+  ports.decline_invite = [this](const std::string& call_id) -> Roe<void> {
+    if (!call_sessions_) {
+      return Error("Calls unavailable");
+    }
+    return call_sessions_->DeclineInvite(call_id);
+  };
+  ports.leave_call = [this](const std::string& call_id) -> Roe<void> {
+    if (!call_sessions_) {
+      return Error("Calls unavailable");
+    }
+    return call_sessions_->LeaveCall(call_id);
+  };
+  ports.retry_p2p_media = [this](const std::string& call_id) -> Roe<void> {
+    if (!call_sessions_) {
+      return Error("Calls unavailable");
+    }
+    return call_sessions_->RetryP2pMedia(call_id);
+  };
+  ports.kick_answerer_direct_media = [this](const std::string& call_id) {
+    if (call_sessions_) {
+      call_sessions_->KickAnswererDirectMediaIfArmed(call_id);
+    }
+  };
+  ports.media_active_for_call = [this](const std::string& call_id) {
+    return call_sessions_ && call_sessions_->Media().IsActive() &&
+           call_sessions_->Media().ActiveCallId() == call_id;
+  };
+  return ports;
+}
+
+void CallStack::BindSeatTeardown() {
+  if (!call_media_seat_) {
+    return;
+  }
+  call_media_seat_->SetTeardownHooks(
+      [this](const std::string& call_id) {
+        if (call_sessions_) {
+          call_sessions_->TopologyOnMediaStoppedForSeat(call_id);
+        }
+      },
+      [this](const std::string& call_id, uint64_t epoch_at_post, bool force) {
+        if (!force && call_media_seat_ && call_media_seat_->Epoch() != epoch_at_post) {
+          log().info << "MediaSeat stop skip stale call_id=" << call_id
+                     << " posted_epoch=" << epoch_at_post
+                     << " seat_epoch=" << call_media_seat_->Epoch();
+          return;
+        }
+        if (media_plane_ && media_plane_->Bridge()) {
+          media_plane_->StopMeshMedia(call_id);
+          return;
+        }
+        if (!call_media_engine_) {
+          return;
+        }
+        if (!call_media_engine_->IsActive() && !call_media_engine_->IsSfuMode()) {
+          return;
+        }
+        call_media_engine_->Stop();
+      });
+}
+
 Roe<void> CallStack::InitializeStores(const std::string& profile_db_path, const std::string& profile_id) {
   call_session_store_ = std::make_unique<CallSessionStore>(profile_db_path);
   call_media_keys_ = std::make_unique<CallMediaKeyStore>(profile_db_path, profile_id);
@@ -98,31 +168,7 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
                                                         *deps_.psk, *call_media_engine_);
   if (call_media_seat_) {
     call_sessions_->SetMediaSeat(call_media_seat_.get());
-    call_media_seat_->SetTeardownHooks(
-        [this](const std::string& call_id) {
-          if (call_sessions_) {
-            call_sessions_->TopologyOnMediaStoppedForSeat(call_id);
-          }
-        },
-        [this](const std::string& call_id, uint64_t epoch_at_post, bool force) {
-          if (!force && call_media_seat_ && call_media_seat_->Epoch() != epoch_at_post) {
-            log().info << "MediaSeat stop skip stale call_id=" << call_id
-                       << " posted_epoch=" << epoch_at_post
-                       << " seat_epoch=" << call_media_seat_->Epoch();
-            return;
-          }
-          if (media_plane_ && media_plane_->Bridge()) {
-            media_plane_->StopMeshMedia(call_id);
-            return;
-          }
-          if (!call_media_engine_) {
-            return;
-          }
-          if (!call_media_engine_->IsActive() && !call_media_engine_->IsSfuMode()) {
-            return;
-          }
-          call_media_engine_->Stop();
-        });
+    BindSeatTeardown();
   }
   if (deps_.bind_call_control) {
     CallControlInboundPorts inbound;
@@ -355,7 +401,7 @@ void CallStack::EnsureCallLifecycleBound() {
   if (!call_lifecycle_) {
     call_lifecycle_ = std::make_unique<CallLifecycle>();
   }
-  call_lifecycle_->Bind(call_sessions_.get());
+  call_lifecycle_->BindSignalingPorts(MakeLifecycleSignalingPorts());
   call_lifecycle_->SetOnListenDesireChanged([this](bool want) { SetEphemeralListenDesire(want); });
   call_sessions_->SetLifecycle(call_lifecycle_.get());
   if (media_plane_) {

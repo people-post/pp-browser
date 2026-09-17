@@ -1,4 +1,5 @@
 #include "feature/calls/CallLifecycle.h"
+#include "feature/calls/CallLifecyclePorts.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionManager.h"
@@ -233,7 +234,40 @@ protected:
     csm_->SetCallMediaBridge(bridge_.get());
     csm_->SetMediaSeat(seat_.get());
     csm_->SetLifecycle(lifecycle_.get());
-    lifecycle_->Bind(csm_.get());
+    CallLifecycleSignalingPorts ports;
+    ports.accept_invite = [this](const std::string& call_id) -> Roe<void> {
+      if (!csm_) {
+        return Error("Calls unavailable");
+      }
+      return csm_->AcceptInvite(call_id);
+    };
+    ports.decline_invite = [this](const std::string& call_id) -> Roe<void> {
+      if (!csm_) {
+        return Error("Calls unavailable");
+      }
+      return csm_->DeclineInvite(call_id);
+    };
+    ports.leave_call = [this](const std::string& call_id) -> Roe<void> {
+      if (!csm_) {
+        return Error("Calls unavailable");
+      }
+      return csm_->LeaveCall(call_id);
+    };
+    ports.retry_p2p_media = [this](const std::string& call_id) -> Roe<void> {
+      if (!csm_) {
+        return Error("Calls unavailable");
+      }
+      return csm_->RetryP2pMedia(call_id);
+    };
+    ports.kick_answerer_direct_media = [this](const std::string& call_id) {
+      if (csm_) {
+        csm_->KickAnswererDirectMediaIfArmed(call_id);
+      }
+    };
+    ports.media_active_for_call = [this](const std::string& call_id) {
+      return csm_ && csm_->Media().IsActive() && csm_->Media().ActiveCallId() == call_id;
+    };
+    lifecycle_->BindSignalingPorts(std::move(ports));
 
     seat_->SetTeardownHooks(
         [this](const std::string& call_id) {

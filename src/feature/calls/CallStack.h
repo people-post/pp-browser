@@ -130,6 +130,8 @@ private:
   void SyncMediaPlaneDeps();
   /** After plane Wire: BindBridge + CSM SetMediaRelayDeps / SetCallMediaBridge. */
   void BindMediaProducts();
+  void BindSeatTeardown();
+  CallLifecycleSignalingPorts MakeLifecycleSignalingPorts();
 
   CallStackDeps deps_;
   std::unique_ptr<CallSessionStore> call_session_store_;

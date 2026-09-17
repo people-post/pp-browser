@@ -2,6 +2,7 @@
 
 #include "common/Module.h"
 #include "domain/messaging/CallLifecycleTypes.h"
+#include "feature/calls/CallLifecyclePorts.h"
 
 #include <atomic>
 #include <cstdint>
@@ -12,14 +13,13 @@
 
 namespace pbr {
 
-class CallSessionManager;
-
 /**
  * Orchestrates call State + media Status (V037). Controllers post clicks here;
  * session/media/listen subsystems report outcomes here. Never calls ListenOn or
  * encrypt on the caller thread.
  *
  * Transitions: pure `DecideCallLifecycleTransition` (domain); this class executes actions.
+ * Signaling I/O via CallLifecycleSignalingPorts from CallStack (V041) — no CallSessionManager*.
  */
 class CallLifecycle : public Module {
 public:
@@ -31,7 +31,7 @@ public:
     ClearBinding();
   }
 
-  void Bind(CallSessionManager* sessions);
+  void BindSignalingPorts(CallLifecycleSignalingPorts ports);
   void ClearBinding();
 
   void SetOnChromeRefresh(ChromeRefreshFn fn);
@@ -82,7 +82,7 @@ private:
   void PostLeaveCall(const std::string& call_id);
   void PostRetryMedia(const std::string& call_id);
 
-  CallSessionManager* sessions_ = nullptr;
+  CallLifecycleSignalingPorts ports_;
   CallPhase phase_ = CallPhase::Idle;
   CallMediaStatus status_ = CallMediaStatus::None;
   uint64_t media_cancel_gen_ = 0;
