@@ -558,16 +558,8 @@ void CallController::RefreshPendingRing() {
     active_call_id_ = (*active)->call_id;
     ClearRing();
 
-    // Unanswered outbound: offerer stays Joined until Leave — without a TTL the Calling bar
-    // sticks forever and masks a reverse inbound ring as "previous or new call?".
-    if (backend->Phase() == CallPhase::OutboundCalling && !backend->Media().IsActive() &&
-        (*active)->created_at > 0 &&
-        util::NowUnixMs() - (*active)->created_at >= kDefaultCallInviteTtlMs) {
-      log().warning
-          << "outbound unanswered timeout call_id=" << (*active)->call_id;
-      backend->Apply(CallLifecycleEvent::LeaveClicked, (*active)->call_id);
-      return;
-    }
+    // Outbound unanswered TTL → Leave lives in CallSessionManager::SweepExpiredInvites
+    // (CALLS design; Tick already sweeps). Do not duplicate LeaveClicked here.
 
     // Direct connect failed: keep chrome for Retry/End on 1:1. Group SFU recovery keeps chrome too.
     // Do not auto-LeaveCall on `failed` — that erased the session before the user could retry.

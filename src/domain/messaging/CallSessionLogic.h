@@ -58,6 +58,14 @@ public:
                                              const std::string& sender_identity,
                                              const std::string& local_identity,
                                              const std::string& active_call_id, bool sender_joined);
+
+  /**
+   * CALLS: offerer OutboundCalling with no media past invite TTL → auto-Leave.
+   * Pure predicate — CSM SweepExpiredInvites owns the side effect.
+   */
+  static bool ShouldAutoLeaveOutboundUnanswered(bool outbound_calling, bool media_active,
+                                                int64_t session_created_at_ms, int64_t now_ms,
+                                                int64_t ttl_ms = kDefaultCallInviteTtlMs);
 };
 
 } // namespace pbr

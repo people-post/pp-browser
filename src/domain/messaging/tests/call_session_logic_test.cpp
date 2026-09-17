@@ -30,6 +30,17 @@ TEST(CallSessionLogicTest, TransitionOnLeaveHostless) {
   EXPECT_EQ(CallSessionLogic::TransitionOnLeave(CallSessionState::Ended, 0), CallSessionState::Ended);
 }
 
+TEST(CallSessionLogicTest, ShouldAutoLeaveOutboundUnanswered) {
+  constexpr int64_t kCreated = 1'000'000;
+  constexpr int64_t kTtl = kDefaultCallInviteTtlMs;
+  EXPECT_FALSE(CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(false, false, kCreated, kCreated + kTtl));
+  EXPECT_FALSE(CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(true, true, kCreated, kCreated + kTtl));
+  EXPECT_FALSE(CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(true, false, 0, kCreated + kTtl));
+  EXPECT_FALSE(CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(true, false, kCreated, kCreated + kTtl - 1));
+  EXPECT_TRUE(CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(true, false, kCreated, kCreated + kTtl));
+  EXPECT_TRUE(CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(true, false, kCreated, kCreated + kTtl + 1));
+}
+
 TEST(CallSessionLogicTest, InviteExpiry) {
   PendingCallInvite invite;
   invite.status = "pending";

@@ -118,4 +118,14 @@ bool CallSessionLogic::ShouldHonorInboundVideoRefresh(const std::string& refresh
   return true;
 }
 
+bool CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(const bool outbound_calling,
+                                                         const bool media_active,
+                                                         const int64_t session_created_at_ms,
+                                                         const int64_t now_ms, const int64_t ttl_ms) {
+  if (!outbound_calling || media_active || session_created_at_ms <= 0 || ttl_ms <= 0) {
+    return false;
+  }
+  return now_ms - session_created_at_ms >= ttl_ms;
+}
+
 } // namespace pbr

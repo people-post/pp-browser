@@ -299,6 +299,35 @@ Roe<void> CallSessionManager::HandleInboundDecline(const std::string& detail_jso
   participant.state = CallParticipantState::Declined;
   (void)sessions_.UpsertParticipant(participant);
   (void)sessions_.UpdateInviteStatus(decline->call_id, identity, "declined");
+
+  // CALLS: Decline clears offerer OutboundCalling / sticky Calling bar. End when no remote
+  // remains Joined/Ringing/Invited (typical 1:1). Group multi-invitee keeps the call if others
+  // still ring. EndCallLocal → RemoteEnded when lifecycle is bound to this call_id.
+  auto local = LocalRelayIdentity();
+  auto session = sessions_.LoadSession(decline->call_id);
+  if (local && session && session->has_value() && (*session)->state != CallSessionState::Ended) {
+    bool remote_interest = false;
+    if (auto parts = sessions_.ListParticipants(decline->call_id); parts) {
+      for (const CallParticipant& row : *parts) {
+        if (row.identity == *local) {
+          continue;
+        }
+        if (row.state == CallParticipantState::Joined || row.state == CallParticipantState::Ringing ||
+            row.state == CallParticipantState::Invited) {
+          remote_interest = true;
+          break;
+        }
+      }
+    }
+    if (!remote_interest) {
+      std::optional<int64_t> duration;
+      if ((*session)->created_at > 0) {
+        duration = util::NowUnixMs() - (*session)->created_at;
+      }
+      return EndCallLocal(**session, duration);
+    }
+  }
+
   NotifyRingChanged();
   return {};
 }

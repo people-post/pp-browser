@@ -158,9 +158,9 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 | V037/V038 planner + TX-only | `call_lifecycle_test`, `call_topology_controller_test` (`InboundSfuAttachIgnoredWhenStatusDirectConnecting`), `call_tx_only_escalate_test` |
 | Invite listen MAs (no mDNS) | `call_listen_addrs_logic_test` — V038 D3 |
 | Answerer Kick / ScheduleStart → BeginSession | `call_answerer_kick_logic_test`, `call_media_bridge_answerer_start_test` — V038 D3 product glue |
-| CSM Invite→Leave compose + inbound arms | `call_session_inbound_compose_test` — full CSM dispatch matrix (Invite→Leave, K-cycle, conflict Accept, restart abandon, MediaKey, HopRefuse, Broadcast arm/accept, StartCall, Retry) + Bridge offerer/KeyReady/ReleaseDirect; lifecycle Retry re-arms DirectConnecting; **remote Leave/Ended → RemoteEnded Idle** (no local LeaveClicked) |
+| CSM Invite→Leave compose + inbound arms | `call_session_inbound_compose_test` — Invite→Leave, K-cycle, conflict, Decline, **outbound unanswered TTL via SweepExpiredInvites**, MediaKey, HopRefuse, Broadcast, StartCall, Retry; **remote Leave/Ended/Decline → Idle**; Bridge offerer/KeyReady/ReleaseDirect |
 | CallStack + CallUiBackend façade | `call_ui_backend_stack_test` — InitializeStores→BuildSessions + `BindTestMediaPath` → Available/InviteSeen→Accept→Leave, **Invite→InCall media path**, Decline, StartCall, Broadcast arm/accept, ResetSessions unavailable |
-| Dual CallStack product wire | `call_dual_stack_compose_test` — Offer↔Answer Invite/Accept/InCall/Leave (**offerer Idle on remote Leave**, no chrome heal); **K-cycle**; **Accept second invite ends prior** (B-CONFLICT) |
+| Dual CallStack product wire | `call_dual_stack_compose_test` — Offer↔Answer Invite/Accept/InCall/Leave (**offerer Idle on remote Leave**); **Answer Decline → offerer Idle**; **K-cycle**; **Accept second invite ends prior** (B-CONFLICT) |
 | N→planner select (Direct vs Hop) | `call_media_planner_select_logic_test` — Effective N; relay-cap SoftMigrate nudge gates |
 | Direct / Hop planner tables (V039) | `call_direct_planner_logic_test`, `call_hop_planner_logic_test` |
 
@@ -278,7 +278,7 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | B-HARD-MSG+CALL | **Scaffold** | `pp_hard_call_smoke.sh --with-chat`; driver `--suite hard` |
 | B-HARD-* (Wave 6) | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md) Wave 6 |
 
-**Product-glue:** Answerer Kick + Bridge + CSM + CallStack/CallUiBackend + dual-stack Invite/Accept/InCall/Leave + K-cycle + **conflict Accept-B-ends-A** covered in-process (`CallDualStack*`). Remote Leave/Ended drives `RemoteEnded` → Idle (no offerer LeaveClicked heal). Amp smokes green locally: `pp_call_direct_smoke`, `pp_call_conflict_smoke`. Hard-lab / `pp-call-probe` product invite wire across OS processes still deferred (probe remains Amp duplex + busy reject). **V038 rewrite debt** exits via unit + compose + `B-CALL-HOP` / `B-HARD-CALL` — not a required human NAT-pair dogfood ([p2p-av-calls CURRENT_STATE](../../projects/p2p-av-calls/CURRENT_STATE.md#rd-automated-exit-v038--prefer-over-device-dogfood)).
+**Product-glue:** Answerer Kick + Bridge + CSM + CallStack/CallUiBackend + dual-stack Invite/Accept/InCall/Leave + Decline + K-cycle + **conflict Accept-B-ends-A** covered in-process (`CallDualStack*`). Remote Leave/Ended/Decline drive `RemoteEnded` → Idle when no remote interest remains (no offerer LeaveClicked heal). Amp smokes green locally: `pp_call_direct_smoke`, `pp_call_conflict_smoke`. Hard-lab / `pp-call-probe` product invite wire across OS processes still deferred (probe remains Amp duplex + busy reject). **V038 rewrite debt** exits via unit + compose + `B-CALL-HOP` / `B-HARD-CALL` — not a required human NAT-pair dogfood ([p2p-av-calls CURRENT_STATE](../../projects/p2p-av-calls/CURRENT_STATE.md#rd-automated-exit-v038--prefer-over-device-dogfood)).
 
 ---
 

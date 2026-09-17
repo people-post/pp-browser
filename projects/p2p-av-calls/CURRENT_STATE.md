@@ -72,6 +72,8 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 | **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** + circuit compose; **ConnectAsync landed**; leftovers: inbound-handler stall contract, sync L4 façades for tests; optional s4 if Leave hangs — [SESSION_MACHINES.md](SESSION_MACHINES.md#remaining-work-call-media--peer-honesty) |
 | **Answerer MediaKey wait** | Exhaustion → `ConnectFailed` + `call.error.media_key_timeout` (no stuck MediaPending); KeyReady kick covered in Bridge + compose MediaKey unwrap |
 | **Remote Leave / CallEnded chrome** | `EndCallLocal` applies `RemoteEnded` when lifecycle `ActiveCallId` matches — offerer Idle without local LeaveClicked (gtest inbound Leave/Ended + dual-stack; stale id ignored) |
+| **Inbound Decline clears offerer** | `HandleInboundDecline` `EndCallLocal` when no remote Joined/Ringing/Invited remain (1:1); keeps call if another invitee still rings; dual-stack Decline wire (gtest) |
+| **Outbound unanswered TTL** | `CallSessionLogic::ShouldAutoLeaveOutboundUnanswered` + `SweepExpiredInvites` LeaveCall (feature, not GUI-only); CallController Tick sweeps — gtest logic + compose |
 | **Retry after ConnectFailed** | Lifecycle `RetryClicked` re-arms `DirectConnecting` before `RetryP2pMedia`/`BeginSession` (gtest `RetryClickedRearms*` / `RetryP2pMediaAfterConnectFailed`) |
 | **lv video** | Prefer loopback/probe; OEM dogfood only for Camera/HW encode |
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
@@ -101,7 +103,7 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 ## Next agent — start here
 
 1. Keep **pm** / **rd** green: unit + `call` / `call-hop` / `hard` / `conflict` purpose IDs.
-2. Optional: `pp-call-probe` product invite wire (CallStack/CSM over Amp chat) — large; prefer dual-stack gtests unless OS-process invite is blocking.
+2. Optional: `pp_call_hop_smoke` when Docker image ready; or `pp-call-probe` product invite wire (large).
 3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay` if group SoftMigrate blocked.
 
 ## Agent traps

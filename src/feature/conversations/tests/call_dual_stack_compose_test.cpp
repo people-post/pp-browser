@@ -434,6 +434,41 @@ TEST_F(CallDualStackComposeTest, OfferAnswerKCycleTeardown) {
   EXPECT_FALSE(answer_.stack->HasActiveLocalCall());
 }
 
+TEST_F(CallDualStackComposeTest, OfferInviteAnswerDeclineClearsOfferer) {
+  // CALLS: answer Decline → CallDecline on wire → offerer Idle (no LeaveClicked / TTL).
+  Thread thread;
+  thread.id = "thread:dual-decline";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+
+  auto started = offer_.ui->StartCall(thread.id, false, {answer_.local_identity});
+  ASSERT_TRUE(started) << started.error().message;
+  const std::string call_id = started->call_id;
+  offer_.ui->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  EXPECT_EQ(offer_.ui->Phase(), CallPhase::OutboundCalling);
+
+  PumpWire();
+  auto pending = answer_.ui->TopPendingInvite();
+  ASSERT_TRUE(pending && pending->has_value());
+  EXPECT_EQ((*pending)->call_id, call_id);
+
+  answer_.ui->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  answer_.ui->Apply(CallLifecycleEvent::DeclineClicked, call_id);
+
+  DrainUntil([&]() {
+    PumpWire();
+    return answer_.ui->Phase() == CallPhase::Idle && offer_.ui->Phase() == CallPhase::Idle &&
+           !offer_.stack->HasActiveLocalCall();
+  });
+  EXPECT_EQ(answer_.ui->Phase(), CallPhase::Idle);
+  EXPECT_EQ(offer_.ui->Phase(), CallPhase::Idle)
+      << "offerer must Idle on remote Decline without local LeaveClicked";
+  EXPECT_FALSE(offer_.stack->HasActiveLocalCall());
+  EXPECT_FALSE(answer_.stack->HasActiveLocalCall());
+}
+
 TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   // B-CONFLICT: Accept call B while InCall on A ends A (LeaveCallIfActiveExcept) across stacks.
   Thread thread;

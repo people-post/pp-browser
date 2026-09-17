@@ -1404,26 +1404,46 @@ void CallSessionManager::SweepExpiredInvites() {
   if (!local) {
     return;
   }
-  auto pending = sessions_.ListPendingInvitesForInvitee(*local);
-  if (!pending) {
-    return;
-  }
   const int64_t now = util::NowUnixMs();
   bool changed = false;
-  for (PendingCallInvite& invite : *pending) {
-    if (invite.status != "pending") {
-      continue;
-    }
-    if (CallSessionLogic::IsInviteExpired(invite, now)) {
-      (void)sessions_.UpdateInviteStatus(invite.call_id, invite.invitee_identity, "expired");
-      CallParticipant participant;
-      participant.call_id = invite.call_id;
-      participant.identity = invite.invitee_identity;
-      participant.state = CallParticipantState::Missed;
-      (void)sessions_.UpsertParticipant(participant);
-      changed = true;
+  if (auto pending = sessions_.ListPendingInvitesForInvitee(*local); pending) {
+    for (PendingCallInvite& invite : *pending) {
+      if (invite.status != "pending") {
+        continue;
+      }
+      if (CallSessionLogic::IsInviteExpired(invite, now)) {
+        (void)sessions_.UpdateInviteStatus(invite.call_id, invite.invitee_identity, "expired");
+        CallParticipant participant;
+        participant.call_id = invite.call_id;
+        participant.identity = invite.invitee_identity;
+        participant.state = CallParticipantState::Missed;
+        (void)sessions_.UpsertParticipant(participant);
+        changed = true;
+      }
     }
   }
+
+  // CALLS outbound unanswered: clear sticky Calling bar without waiting on GUI LeaveClicked.
+  if (lifecycle_ && lifecycle_->Phase() == CallPhase::OutboundCalling && !media_.IsActive()) {
+    auto active = ActiveLocalCall();
+    if (active && active->has_value() &&
+        CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(true, false, (*active)->created_at, now)) {
+      const std::string call_id = (*active)->call_id;
+      if (lifecycle_->ActiveCallId() == call_id) {
+        log().warning << "outbound unanswered timeout call_id=" << call_id;
+        if (auto left = LeaveCall(call_id); !left) {
+          log().warning << "outbound unanswered LeaveCall failed call_id=" << call_id
+                        << " err=" << left.error().message;
+          auto session = sessions_.LoadSession(call_id);
+          if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
+            (void)EndCallLocal(**session, std::nullopt);
+          }
+        }
+        return;
+      }
+    }
+  }
+
   if (changed) {
     NotifyRingChanged();
   }

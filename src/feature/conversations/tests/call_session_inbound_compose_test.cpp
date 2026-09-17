@@ -922,6 +922,82 @@ TEST_F(CallSessionInboundComposeTest, DeclineClickedClearsPendingViaLifecycle) {
   EXPECT_FALSE(pending->has_value());
 }
 
+TEST_F(CallSessionInboundComposeTest, InboundDeclineClearsOffererOutboundCalling) {
+  // CALLS: peer Decline → offerer Idle (no local LeaveClicked / TTL wait).
+  const std::string call_id = "call:inbound-decline";
+  SeedOffererRingingCall(call_id);
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  ASSERT_EQ(lifecycle_->Phase(), CallPhase::OutboundCalling);
+  ASSERT_TRUE(csm_->ActiveLocalCall()->has_value());
+
+  CallDeclineDetail decline;
+  decline.call_id = call_id;
+  decline.identity = "account:peer";
+  auto detail = CallControlCodec::EncodeDecline(decline);
+  ASSERT_TRUE(detail);
+  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallDecline, "Declined",
+                                                  *detail, "account:peer");
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+
+  auto loaded = sessions_->LoadSession(call_id);
+  ASSERT_TRUE(loaded && loaded->has_value());
+  EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::Idle)
+      << "inbound CallDecline must EndCallLocal → RemoteEnded";
+  EXPECT_TRUE(lifecycle_->ActiveCallId().empty());
+  auto active = csm_->ActiveLocalCall();
+  ASSERT_TRUE(active);
+  EXPECT_FALSE(active->has_value());
+}
+
+TEST_F(CallSessionInboundComposeTest, InboundDeclineKeepsCallWhenOtherInviteeStillRinging) {
+  // Group-shaped: one Decline must not end while another remote still rings.
+  const std::string call_id = "call:decline-keep";
+  SeedOffererRingingCall(call_id);
+  CallParticipant other;
+  other.call_id = call_id;
+  other.identity = "account:other";
+  other.state = CallParticipantState::Ringing;
+  ASSERT_TRUE(sessions_->UpsertParticipant(other));
+
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  ASSERT_EQ(lifecycle_->Phase(), CallPhase::OutboundCalling);
+
+  CallDeclineDetail decline;
+  decline.call_id = call_id;
+  decline.identity = "account:peer";
+  auto detail = CallControlCodec::EncodeDecline(decline);
+  ASSERT_TRUE(detail);
+  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallDecline, "Declined",
+                                                  *detail, "account:peer");
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+
+  auto loaded = sessions_->LoadSession(call_id);
+  ASSERT_TRUE(loaded && loaded->has_value());
+  EXPECT_NE((*loaded)->state, CallSessionState::Ended)
+      << "first Decline must keep session while account:other still Ringing";
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::OutboundCalling)
+      << "got phase=" << CallPhaseName(lifecycle_->Phase());
+  EXPECT_EQ(lifecycle_->ActiveCallId(), call_id);
+
+  CallDeclineDetail decline_other;
+  decline_other.call_id = call_id;
+  decline_other.identity = "account:other";
+  auto detail_other = CallControlCodec::EncodeDecline(decline_other);
+  ASSERT_TRUE(detail_other);
+  auto msg_other = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallDecline, "Declined",
+                                                        *detail_other, "account:other");
+  ASSERT_TRUE(msg_other);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg_other, "account:other"));
+
+  loaded = sessions_->LoadSession(call_id);
+  ASSERT_TRUE(loaded && loaded->has_value());
+  EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::Idle);
+}
+
 TEST_F(CallSessionInboundComposeTest, InboundVideoRefreshHonoredOnlyWhenJoinedActive) {
   const std::string call_id = "call:vref";
   // Wrong call / not joined → no-op success.
@@ -1058,6 +1134,58 @@ TEST_F(CallSessionInboundComposeTest, StartCallOutboundCreatesSessionAndInvite) 
   EXPECT_GE(sent_control_messages_, 1);
   auto key = keys_->LoadEpochKey(started->call_id, 1);
   ASSERT_TRUE(key && key->has_value());
+}
+
+TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesAutoLeavesOutboundUnanswered) {
+  // CALLS: OutboundCalling + no media past TTL → Leave via Sweep (not GUI LeaveClicked).
+  ASSERT_TRUE(store_->SetDek(TestDek()));
+  Thread thread;
+  thread.id = "thread:dm-ttl";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Peer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(store_->UpsertThread(thread));
+
+  auto started = csm_->StartCall(thread.id, false, {"account:peer"});
+  ASSERT_TRUE(started) << started.error().message;
+  const std::string call_id = started->call_id;
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  ASSERT_EQ(lifecycle_->Phase(), CallPhase::OutboundCalling);
+
+  // Age the session past invite TTL without waiting 60s.
+  auto session = sessions_->LoadSession(call_id);
+  ASSERT_TRUE(session && session->has_value());
+  (*session)->created_at = util::NowUnixMs() - kDefaultCallInviteTtlMs - 1;
+  ASSERT_TRUE(sessions_->UpsertSession(**session));
+
+  csm_->SweepExpiredInvites();
+  DrainUntil([&]() {
+    return lifecycle_->Phase() == CallPhase::Idle && !csm_->ActiveLocalCall()->has_value();
+  });
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::Idle);
+  auto loaded = sessions_->LoadSession(call_id);
+  ASSERT_TRUE(loaded && loaded->has_value());
+  EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
+  EXPECT_FALSE(lifecycle_->WantEphemeralListen());
+}
+
+TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesSkipsOutboundBeforeTtl) {
+  ASSERT_TRUE(store_->SetDek(TestDek()));
+  Thread thread;
+  thread.id = "thread:dm-ttl-early";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Peer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(store_->UpsertThread(thread));
+
+  auto started = csm_->StartCall(thread.id, false, {"account:peer"});
+  ASSERT_TRUE(started) << started.error().message;
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
+  ASSERT_EQ(lifecycle_->Phase(), CallPhase::OutboundCalling);
+
+  csm_->SweepExpiredInvites();
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::OutboundCalling);
+  EXPECT_TRUE(csm_->ActiveLocalCall()->has_value());
 }
 
 TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
