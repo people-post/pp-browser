@@ -774,6 +774,10 @@ void CallStack::Shutdown() {
   if (call_lifecycle_) {
     call_lifecycle_->ClearBinding();
   }
+  // LeaveCall / DeclineInvite workers must finish while sessions_ / seat still live.
+  if (!AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000))) {
+    log().warning << "CallStack::Shutdown: DrainWorkersThenUI budget exceeded";
+  }
   call_media_bridge_.reset();
   media_bridge_bound_sessions_ = nullptr;
   call_media_amp_.reset();

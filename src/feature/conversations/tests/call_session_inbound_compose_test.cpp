@@ -271,10 +271,8 @@ protected:
     if (media_) {
       media_->Stop();
     }
-    // Drain UI/worker replies while CSM/bridge still alive (avoid UAF on late AcceptInvite).
-    for (int i = 0; i < 50; ++i) {
-      AppRuntime::RunUITasks();
-    }
+    // Drain UI/worker replies while CSM/bridge still alive (avoid UAF on late Accept/Decline).
+    (void)AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000));
     bridge_.reset();
     csm_.reset();
     lifecycle_.reset();
@@ -939,6 +937,7 @@ TEST_F(CallSessionInboundComposeTest, DeclineClickedClearsPendingViaLifecycle) {
     auto pending = csm_->TopPendingInvite();
     return pending && !pending->has_value() && lifecycle_->Phase() == CallPhase::Idle;
   });
+  EXPECT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000)));
   EXPECT_EQ(lifecycle_->Phase(), CallPhase::Idle);
   auto pending = csm_->TopPendingInvite();
   ASSERT_TRUE(pending);

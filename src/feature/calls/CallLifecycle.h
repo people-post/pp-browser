@@ -2,8 +2,10 @@
 
 #include "common/Module.h"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include "common/PbrCompat.h"
 
@@ -85,6 +87,9 @@ public:
   using ListenDesireFn = std::function<void(bool want)>;
 
   CallLifecycle() = default;
+  ~CallLifecycle() override {
+    ClearBinding();
+  }
 
   void Bind(CallSessionManager* sessions);
   void ClearBinding();
@@ -141,6 +146,12 @@ private:
   CallPhase phase_ = CallPhase::Idle;
   CallMediaStatus status_ = CallMediaStatus::None;
   uint64_t media_cancel_gen_ = 0;
+  /**
+   * Shared so worker/UI lambdas can detect ClearBinding / destroy without touching
+   * a dangling `this` (stale DeclineInvite/LeaveCall replies across tests).
+   */
+  std::shared_ptr<std::atomic<uint64_t>> async_epoch_ =
+      std::make_shared<std::atomic<uint64_t>>(0);
   std::string call_id_;
   std::string accepting_call_id_;
   std::string last_ring_call_id_;

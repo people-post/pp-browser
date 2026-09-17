@@ -219,6 +219,8 @@ protected:
   }
 
   void TearDown() override {
+    // Finish LeaveCall/DeclineInvite workers before destroying the stack.
+    (void)AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000));
     ui_.reset();
     if (stack_) {
       stack_->AbortCallMediaForShutdown();
@@ -239,7 +241,6 @@ protected:
       mesh_control_->Shutdown();
     }
     mesh_control_.reset();
-    // Drain DeclineInvite / LeaveCall workers before wipe (Windows: file in use).
     AppRuntime::ShutdownUI();
     AppRuntime::Shutdown();
     std::error_code ec;
@@ -404,6 +405,7 @@ TEST_F(CallUiBackendStackTest, DeclineViaBackendClearsPending) {
     auto pending = ui_->TopPendingInvite();
     return pending && !pending->has_value() && ui_->Phase() == CallPhase::Idle;
   });
+  EXPECT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000)));
   EXPECT_EQ(ui_->Phase(), CallPhase::Idle);
   auto pending = ui_->TopPendingInvite();
   ASSERT_TRUE(pending);
@@ -436,6 +438,8 @@ TEST_F(CallUiBackendStackTest, StartCallAndLeaveViaBackend) {
     auto after = ui_->ActiveLocalCall();
     return after && !after->has_value();
   });
+  // LeaveClicked posts LeaveCall on Critical — flush before TearDown destroys the seat/CSM.
+  EXPECT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000)));
   EXPECT_EQ(ui_->Phase(), CallPhase::Idle);
 }
 

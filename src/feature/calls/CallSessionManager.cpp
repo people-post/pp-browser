@@ -1108,7 +1108,6 @@ Roe<void> CallSessionManager::DeclineInvite(const std::string& call_id) {
   if (!pending || !pending->has_value() || (*pending)->status != "pending") {
     return Error("Pending call invite not found");
   }
-  (void)sessions_.UpdateInviteStatus(call_id, *local, "declined");
 
   CallParticipant participant;
   participant.call_id = call_id;
@@ -1123,11 +1122,13 @@ Roe<void> CallSessionManager::DeclineInvite(const std::string& call_id) {
   if (!detail) {
     return detail.error();
   }
+  // Send before clearing pending so UI DrainUntil(pending empty) cannot race mid-send.
   if (auto sent = SendCallDirectMessage((*pending)->inviter_identity, CallControlType::CallDecline, *detail,
                                         "Call declined");
       !sent) {
     return sent.error();
   }
+  (void)sessions_.UpdateInviteStatus(call_id, *local, "declined");
   NotifyRingChanged();
   return {};
 }

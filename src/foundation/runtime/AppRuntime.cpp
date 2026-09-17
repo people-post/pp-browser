@@ -142,6 +142,32 @@ size_t AppRuntime::WorkerTotalQueuedCount() {
   return g_thread_runtime->Workers().TotalQueuedCount();
 }
 
+bool AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds budget) {
+  if (!IsRunning()) {
+    RunUITasks();
+    return true;
+  }
+  ResumeBackgroundWork();
+  std::atomic<bool> done{false};
+  // Critical first so we sit behind LeaveCall (Critical); then Normal behind DeclineInvite.
+  PostWorker(WorkerLane::Critical, [&done]() {
+    PostWorker(WorkerLane::Normal, [&done]() {
+      PostUI([&done]() { done.store(true, std::memory_order_release); });
+    });
+  });
+  const auto deadline = std::chrono::steady_clock::now() + budget;
+  while (!done.load(std::memory_order_acquire)) {
+    RunUITasks();
+    if (std::chrono::steady_clock::now() >= deadline) {
+      RunUITasks();
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  RunUITasks();
+  return true;
+}
+
 void AppRuntime::Shutdown() {
   if (!IsRunning()) {
     return;

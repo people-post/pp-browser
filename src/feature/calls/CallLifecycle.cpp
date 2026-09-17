@@ -5,6 +5,9 @@
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
 
+#include <atomic>
+#include <memory>
+
 namespace pbr {
 
 const char* CallPhaseName(const CallPhase phase) {
@@ -116,6 +119,10 @@ void CallLifecycle::Bind(CallSessionManager* sessions) {
 }
 
 void CallLifecycle::ClearBinding() {
+  // Invalidate in-flight Accept/Decline/Leave UI replies before nulling sessions_.
+  if (async_epoch_) {
+    async_epoch_->fetch_add(1, std::memory_order_acq_rel);
+  }
   sessions_ = nullptr;
   phase_ = CallPhase::Idle;
   status_ = CallMediaStatus::None;
@@ -123,6 +130,8 @@ void CallLifecycle::ClearBinding() {
   call_id_.clear();
   accepting_call_id_.clear();
   want_ephemeral_listen_ = false;
+  on_chrome_refresh_ = nullptr;
+  on_listen_desire_ = nullptr;
   UpdateListenDesire();
 }
 
@@ -306,7 +315,12 @@ void CallLifecycle::NotifyChrome() {
     on_chrome_refresh_();
     return;
   }
-  AppRuntime::PostUI([this]() {
+  const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
+  auto guard = async_epoch_;
+  AppRuntime::PostUI([this, guard, epoch]() {
+    if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+      return;
+    }
     if (on_chrome_refresh_) {
       on_chrome_refresh_();
     }
@@ -315,16 +329,24 @@ void CallLifecycle::NotifyChrome() {
 
 void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
   CallSessionManager* sessions = sessions_;
+  const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
+  auto guard = async_epoch_;
   AppRuntime::ResumeBackgroundWork();
   // Never Browser IO — AcceptInvite was starved behind PollInbox on Samsung (queued, no IO enter).
   // Same escape hatch as offerer Connect worker / call-control MediaKey send.
-  AppRuntime::PostWorkerCritical([this, sessions, call_id]() {
+  AppRuntime::PostWorkerCritical([this, sessions, call_id, guard, epoch]() {
+    if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+      return;
+    }
     log().info << "AcceptInvite worker enter call_id=" << call_id;
     Roe<void> accepted = Error("Calls unavailable");
     if (sessions) {
       accepted = sessions->AcceptInvite(call_id);
     }
-    AppRuntime::PostUI([this, call_id, accepted = std::move(accepted)]() mutable {
+    AppRuntime::PostUI([this, call_id, accepted = std::move(accepted), guard, epoch]() mutable {
+      if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+        return;
+      }
       // B-CONFLICT: Accept B while AcceptInvite(A) still runs — drop A's late UI result so it
       // cannot JoinedLocal/RemoteEnded-clobber B (or Idle after LeaveCallIfActiveExcept).
       if (accepting_call_id_ != call_id && call_id_ != call_id) {
@@ -346,6 +368,8 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
 
 void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
   CallSessionManager* sessions = sessions_;
+  const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
+  auto guard = async_epoch_;
   AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
       WorkerLane::Normal,
       [sessions, call_id]() -> Roe<void> {
@@ -354,7 +378,10 @@ void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
         }
         return sessions->DeclineInvite(call_id);
       },
-      [this, call_id](Roe<void> declined) {
+      [this, call_id, guard, epoch](Roe<void> declined) {
+        if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+          return;
+        }
         if (!declined) {
           log().warning << "DeclineInvite failed call_id=" << call_id
                         << " err=" << declined.error().message;
@@ -365,6 +392,8 @@ void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
 
 void CallLifecycle::PostLeaveCall(const std::string& call_id) {
   CallSessionManager* sessions = sessions_;
+  const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
+  auto guard = async_epoch_;
   // Critical: must not sit behind Normal work while Connect (also Critical) still dials —
   // StopMeshMedia aborts Connect via connect_generation_.
   AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
@@ -375,7 +404,10 @@ void CallLifecycle::PostLeaveCall(const std::string& call_id) {
         }
         return sessions->LeaveCall(call_id);
       },
-      [this, call_id](Roe<void> left) {
+      [this, call_id, guard, epoch](Roe<void> left) {
+        if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+          return;
+        }
         if (!left) {
           log().warning << "LeaveCall failed call_id=" << call_id << " err=" << left.error().message;
         }
@@ -385,6 +417,8 @@ void CallLifecycle::PostLeaveCall(const std::string& call_id) {
 
 void CallLifecycle::PostRetryMedia(const std::string& call_id) {
   CallSessionManager* sessions = sessions_;
+  const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
+  auto guard = async_epoch_;
   // Re-arm Direct before RetryP2pMedia → BeginSession (Failed Status blocks AllowsDirectPath).
   SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
   AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
@@ -395,7 +429,10 @@ void CallLifecycle::PostRetryMedia(const std::string& call_id) {
         }
         return sessions->RetryP2pMedia(call_id);
       },
-      [this, call_id](Roe<void> retried) {
+      [this, call_id, guard, epoch](Roe<void> retried) {
+        if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+          return;
+        }
         if (!retried) {
           log().warning << "RetryP2pMedia failed call_id=" << call_id
                         << " err=" << retried.error().message;
@@ -462,7 +499,14 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
     PostAcceptInvite(call_id);
     // Defer chrome refresh so the Accept click returns before ring teardown / DirtyCallChrome.
     if (AppRuntime::CurrentlyOnUI()) {
-      AppRuntime::PostUI([this]() { NotifyChrome(); });
+      const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
+      auto guard = async_epoch_;
+      AppRuntime::PostUI([this, guard, epoch]() {
+        if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+          return;
+        }
+        NotifyChrome();
+      });
     } else {
       NotifyChrome();
     }
@@ -527,7 +571,12 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
                    << " status=" << CallMediaStatusName(status_);
         sessions_->KickAnswererDirectMediaIfArmed(kick_id);
         // One follow-up Kick if the worker PostUIFront StartSfu has not armed the engine yet.
-        AppRuntime::PostUI([this, kick_id]() {
+        const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
+        auto guard = async_epoch_;
+        AppRuntime::PostUI([this, kick_id, guard, epoch]() {
+          if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+            return;
+          }
           if (!sessions_ || call_id_ != kick_id || !AllowsDirectPath()) {
             return;
           }
