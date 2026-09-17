@@ -44,7 +44,7 @@ CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions
                                              ICallMediaTransport& direct, IDialRegistry* dial,
                                              ICircuitHopReach* circuit_reach)
     : host_(host), sessions_(sessions), media_keys_(media_keys), media_(media), direct_(direct), dial_(dial),
-      circuit_reach_(circuit_reach) {
+      circuit_reach_(circuit_reach), media_key_inbox_poll_rounds_(kMediaKeyInboxPollRounds) {
   redirectLogger("CallMediaBridge");
 
   direct_.SetInboundHandler([this](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
@@ -202,6 +202,10 @@ bool CallMediaBridge::HasActiveDirectStream() const {
 
 void CallMediaBridge::SetLifecycle(CallLifecycle* lifecycle) {
   lifecycle_ = lifecycle;
+}
+
+void CallMediaBridge::SetMediaKeyInboxPollRoundsForTest(const int rounds) {
+  media_key_inbox_poll_rounds_ = rounds < 0 ? 0 : rounds;
 }
 
 void CallMediaBridge::SetMediaSeat(CallMediaSeat* seat) {
@@ -1369,7 +1373,8 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
       // Accept-time SyncInbox often races the offerer's MediaKey send — keep polling.
       // SyncInbox coalesces via poll_again_; do not assume each Request starts HTTP.
       AppRuntime::PostWorkerBackground([this, call_id]() {
-        for (int i = 0; i < kMediaKeyInboxPollRounds; ++i) {
+        const int rounds = media_key_inbox_poll_rounds_;
+        for (int i = 0; i < rounds; ++i) {
           if (stopping_.load(std::memory_order_acquire) || pending_answerer_call_id_ != call_id) {
             return;
           }

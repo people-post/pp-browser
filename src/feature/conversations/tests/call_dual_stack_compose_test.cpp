@@ -376,6 +376,24 @@ protected:
     answer_inbox_.clear();
   }
 
+  void FinishOfferLeaveExpectBothIdle(const std::string& call_id) {
+    offer_.ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+    // Symmetric: offerer Leave must Idle answerer without answer LeaveClicked.
+    DrainUntil([&]() {
+      PumpWire();
+      const bool answer_idle = answer_.ui->Phase() == CallPhase::Idle && !answer_.stack->HasActiveLocalCall();
+      const bool offer_idle = offer_.ui->Phase() == CallPhase::Idle && !offer_.stack->HasActiveLocalCall();
+      return answer_idle && offer_idle;
+    });
+    EXPECT_EQ(offer_.ui->Phase(), CallPhase::Idle);
+    EXPECT_EQ(answer_.ui->Phase(), CallPhase::Idle)
+        << "answerer must Idle on remote Leave without local LeaveClicked";
+    EXPECT_FALSE(answer_.stack->HasActiveLocalCall());
+    EXPECT_FALSE(offer_.stack->HasActiveLocalCall());
+    offer_inbox_.clear();
+    answer_inbox_.clear();
+  }
+
   /** Offer StartCall → Answer Accept → both InCall → Answer Leave → both Idle (no offer heal). */
   std::string RunOfferAnswerInCallLeave(const std::string& thread_id) {
     const std::string call_id = RunOfferAnswerToInCall(thread_id);
@@ -405,6 +423,20 @@ TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
   const std::string call_id = RunOfferAnswerInCallLeave(thread.id);
   ASSERT_FALSE(call_id.empty());
   EXPECT_GE(answer_.transport->connect_async_calls, 1);
+}
+
+TEST_F(CallDualStackComposeTest, OfferLeaveClearsAnswererIdle) {
+  // CALLS remote end (symmetric): offerer Leave → answerer Idle without answer LeaveClicked.
+  Thread thread;
+  thread.id = "thread:dual-offer-leave";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+
+  const std::string call_id = RunOfferAnswerToInCall(thread.id);
+  ASSERT_FALSE(call_id.empty());
+  FinishOfferLeaveExpectBothIdle(call_id);
 }
 
 TEST_F(CallDualStackComposeTest, OfferAnswerKCycleTeardown) {

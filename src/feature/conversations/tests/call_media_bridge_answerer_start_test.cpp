@@ -12,10 +12,12 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
+#include <chrono>
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -272,6 +274,33 @@ TEST_F(CallMediaBridgeAnswererStartTest, MissingKeyDefersMediaPending) {
   EXPECT_FALSE(media_->IsActive());
   EXPECT_EQ(lifecycle_->Phase(), CallPhase::MediaPending);
   // Inbox poll is PostWorkerBackground — assert defer contract here; sync may land after RunUITasks.
+  bridge_->PrepareForTeardown(0);
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, MissingKeyWaitExhaustionConnectFailed) {
+  // CALLS / CURRENT_STATE: deferred MediaKey exhaustion → ConnectFailed (not stuck MediaPending).
+  const std::string call_id = "call:answerer-key-timeout";
+  SeedActiveCall(call_id);
+
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->SetMediaKeyInboxPollRoundsForTest(0);
+
+  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::MediaPending);
+
+  for (int i = 0; i < 500; ++i) {
+    AppRuntime::RunUITasks();
+    if (lifecycle_->Phase() == CallPhase::ConnectFailed) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::ConnectFailed)
+      << "got phase=" << CallPhaseName(lifecycle_->Phase());
+  EXPECT_TRUE(bridge_->IsMeshConnectFailed());
+  EXPECT_FALSE(host_->last_error.empty());
   bridge_->PrepareForTeardown(0);
 }
 

@@ -157,10 +157,10 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 | Call phase SM | `call_lifecycle_test` — [`src/feature/conversations/tests/call_lifecycle_test.cpp`](../../src/feature/conversations/tests/call_lifecycle_test.cpp) |
 | V037/V038 planner + TX-only | `call_lifecycle_test`, `call_topology_controller_test` (`InboundSfuAttachIgnoredWhenStatusDirectConnecting`), `call_tx_only_escalate_test` |
 | Invite listen MAs (no mDNS) | `call_listen_addrs_logic_test` — V038 D3 |
-| Answerer Kick / ScheduleStart → BeginSession | `call_answerer_kick_logic_test`, `call_media_bridge_answerer_start_test` — V038 D3 product glue |
+| Answerer Kick / ScheduleStart → BeginSession | `call_answerer_kick_logic_test`, `call_media_bridge_answerer_start_test` — V038 D3 product glue; **MediaKey wait exhaustion → ConnectFailed** |
 | CSM Invite→Leave compose + inbound arms | `call_session_inbound_compose_test` — Invite→Leave, K-cycle, conflict, Decline, **outbound unanswered TTL**, **incoming expire → Idle**, MediaKey, HopRefuse, Broadcast, StartCall, Retry; **remote Leave/Ended/Decline → Idle**; Bridge offerer/KeyReady/ReleaseDirect |
 | CallStack + CallUiBackend façade | `call_ui_backend_stack_test` — InitializeStores→BuildSessions + `BindTestMediaPath` → Available/InviteSeen→Accept→Leave, **Invite→InCall media path**, Decline, StartCall, Broadcast arm/accept, ResetSessions unavailable |
-| Dual CallStack product wire | `call_dual_stack_compose_test` — Offer↔Answer Invite/Accept/InCall/Leave (**offerer Idle on remote Leave**); **Answer Decline → offerer Idle**; **K-cycle**; **Accept second invite ends prior** (B-CONFLICT) |
+| Dual CallStack product wire | `call_dual_stack_compose_test` — Offer↔Answer Invite/Accept/InCall/Leave (**either side Leave Idles peer**); **Answer Decline → offerer Idle**; **K-cycle**; **Accept second invite ends prior** (B-CONFLICT) |
 | N→planner select (Direct vs Hop) | `call_media_planner_select_logic_test` — Effective N; relay-cap SoftMigrate nudge gates |
 | Direct / Hop planner tables (V039) | `call_direct_planner_logic_test`, `call_hop_planner_logic_test` |
 

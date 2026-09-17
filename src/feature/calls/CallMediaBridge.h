@@ -51,6 +51,12 @@ public:
   void OnMediaKeyReady(const std::string& call_id);
 
   /**
+   * Test seam: answerer deferred-key inbox poll rounds (production default 90 ≈ 90s).
+   * Set 0 so KeyTimeout → ConnectFailed is reachable without a long sleep.
+   */
+  void SetMediaKeyInboxPollRoundsForTest(int rounds);
+
+  /**
    * SoftMigrate: close 1:1 call-media stream without CallMediaEngine::Stop so SFU capture continues.
    * Prefer ReleaseDirectTransport(token) when a MediaSeat is wired.
    */
@@ -180,6 +186,7 @@ private:
   uint64_t direct_health_timer_id_ = 0;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;
   std::unordered_set<std::string> media_attempted_calls_;
+  int media_key_inbox_poll_rounds_ = 90;
   std::atomic<uint32_t> audio_seq_{0};
   /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */
   std::atomic<uint32_t> inbound_remote_stream_{0};
