@@ -54,7 +54,7 @@ public:
   /** Queued worker tasks across lanes (0 if runtime not running). */
   static size_t WorkerTotalQueuedCount();
 
-  // --- UI mailbox (GUI; drained by Application each frame) ---
+  // --- Main/UI mailbox (runtime_core; GUI drains each frame, headless lazy-inits) ---
   static void InitializeUI();
   static void ShutdownUI();
   static void PostUI(std::function<void()> task);

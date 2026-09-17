@@ -3,6 +3,7 @@
 #include "foundation/runtime/ThreadRuntime.h"
 #include "foundation/runtime/WorkerDispatch.h"
 #include "common/Logger.h"
+#include "common/SequencedTaskRunner.h"
 #include "common/PbrCompat.h"
 
 #include <atomic>
@@ -25,6 +26,19 @@ bool g_watchdog_armed = false;
 
 std::mutex g_log_mu;
 logging::Logger* g_log = nullptr;
+
+// Sequenced "UI"/main mailbox — process runtime (not RmlUi). Used by GUI frame drain
+// and by headless/domain reply paths (e.g. MeshDirectoryCache → PostUI).
+std::unique_ptr<SequencedTaskRunner> g_ui_runner;
+std::function<void()> g_ui_wake_callback;
+
+void EnsureUIMailbox() {
+  static std::mutex init_mutex;
+  std::lock_guard lock(init_mutex);
+  if (!g_ui_runner) {
+    g_ui_runner = std::make_unique<SequencedTaskRunner>();
+  }
+}
 
 /** Boundary helper: takes Logger& (do not copy Logger — LogProxy binds to `this`). */
 void RunShutdownWatchdog(logging::Logger& log, uint64_t gen,
@@ -144,6 +158,62 @@ void AppRuntime::Shutdown() {
 
 bool AppRuntime::IsRunning() {
   return g_thread_runtime != nullptr && g_thread_runtime->IsRunning();
+}
+
+void AppRuntime::InitializeUI() {
+  InitLogging();
+  EnsureUIMailbox();
+}
+
+void AppRuntime::ShutdownUI() {
+  g_ui_wake_callback = nullptr;
+  if (g_ui_runner) {
+    g_ui_runner->Stop();
+    g_ui_runner.reset();
+  }
+}
+
+void AppRuntime::PostUI(std::function<void()> task) {
+  if (!task) {
+    return;
+  }
+  EnsureUIMailbox();
+  g_ui_runner->PostTask(std::move(task));
+  if (g_ui_wake_callback) {
+    g_ui_wake_callback();
+  }
+}
+
+void AppRuntime::PostUIFront(std::function<void()> task) {
+  if (!task) {
+    return;
+  }
+  EnsureUIMailbox();
+  g_ui_runner->PostTaskFront(std::move(task));
+  if (g_ui_wake_callback) {
+    g_ui_wake_callback();
+  }
+}
+
+void AppRuntime::RunUITasks() {
+  if (g_ui_runner) {
+    g_ui_runner->RunPendingTasks();
+  }
+}
+
+bool AppRuntime::HasPendingUITasks() {
+  EnsureUIMailbox();
+  return g_ui_runner && g_ui_runner->HasPendingTasks();
+}
+
+bool AppRuntime::CurrentlyOnUI() {
+  EnsureUIMailbox();
+  return g_ui_runner && g_ui_runner->IsRunningOnThisThread();
+}
+
+void AppRuntime::SetUIWakeCallback(std::function<void()> callback) {
+  EnsureUIMailbox();
+  g_ui_wake_callback = std::move(callback);
 }
 
 void AppRuntime::PostWorker(WorkerLane lane, std::function<void()> task) {

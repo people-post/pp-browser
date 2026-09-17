@@ -1,7 +1,6 @@
 #pragma once
 
 #include "common/Error.h"
-#include "foundation/data/UserPreferences.h"
 
 #include <functional>
 #include <map>
@@ -21,7 +20,7 @@ struct LocaleInfo {
 
 class LocalizationService {
 public:
-  /** UI language preference projected from ProfilePreferences. */
+  /** Language slice applied by the composition root (not a disk DTO). */
   struct Prefs {
     std::string language = "system";
 
@@ -29,7 +28,6 @@ public:
     bool operator!=(const Prefs& other) const { return !(*this == other); }
   };
 
-  static Prefs Project(const ProfilePreferences& prefs);
   void Apply(const Prefs& prefs);
 
   static LocalizationService& Instance();
@@ -42,7 +40,7 @@ public:
   std::string PreferredLanguage() const { return preferred_; }
   std::string ResolvedLanguage() const { return resolved_; }
 
-  /** Override OS locales for tests (empty = use SDL). */
+  /** Override OS locales for tests (empty = use env / Win32 locale APIs). */
   void SetSystemLocalesForTest(std::vector<std::string> locales);
   void ClearSystemLocalesForTest();
 

@@ -1,3 +1,6 @@
+# AssetIO / IAssetLocator / DesktopAssetLocator live in platform_core so i18n
+# and pp-node never need pp_foundation_platform (SDL / RmlUi). Desktop AssetIO
+# is ifstream-only; mobile packaged reads use SDL (linked onto core below).
 set(_pp_platform_core_sources
   DeploymentProfile.cpp
   Platform.cpp
@@ -10,18 +13,19 @@ set(_pp_platform_core_sources
   ExecutablePath.cpp
   os/OsFile_Posix.cpp
   os/OsProcess_Posix.cpp
+  os/OsLocale_Posix.cpp
   CurlSsl.cpp
+  AssetIO.cpp
+  IAssetLocator.cpp
+  DesktopAssetLocator.cpp
 )
 
 set(_pp_platform_gui_sources
   AndroidAssetLocator.cpp
   AndroidPathProvider.cpp
   AppEventHooks.cpp
-  AssetIO.cpp
-  DesktopAssetLocator.cpp
   DesktopLocalNotifier.cpp
   desktop/LocalNotifierActivation.cpp
-  IAssetLocator.cpp
   ILocalNotifier.cpp
   IosAssetLocator.cpp
   IosPathProvider.cpp
@@ -65,6 +69,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   list(APPEND _pp_platform_core_sources
     os/OsFile_Win32.cpp
     os/OsProcess_Win32.cpp
+    os/OsLocale_Win32.cpp
     os/OsExecutablePath_Win32.cpp
     desktop/PathProvider_Win32.cpp
   )
@@ -97,24 +102,23 @@ else()
   )
 endif()
 
-# Headless pp-node still needs AssetIO / IAssetLocator for i18n (via pp_foundation_error).
-# Desktop AssetIO is ifstream-only; no SDL. CurlSsl TLS defaults already live in core.
-if(PP_BROWSER_HEADLESS)
-  list(APPEND _pp_platform_core_sources
-    AssetIO.cpp
-    IAssetLocator.cpp
-    DesktopAssetLocator.cpp
-  )
-endif()
-
-# Headless-safe platform surface (paths, env credentials, OS file/time/process).
-# No SDL / RmlUi — used by pp-node and by pp_foundation_data.
+# Headless-safe platform surface (paths, assets, env credentials, OS file/time/process).
+# No RmlUi / desktop SDL — used by pp-node, i18n, and pp_foundation_data.
 pp_browser_add_foundation_library(pp_foundation_platform_core
   SOURCES
     ${_pp_platform_core_sources}
   PUBLIC_LIBS
     CURL::libcurl
 )
+
+# Mobile packaged AssetIO uses SDL_IOFromFile; pp-node is desktop-only so this
+# does not widen the headless link surface.
+if(PP_BROWSER_IS_MOBILE)
+  if(NOT PP_BROWSER_SDL3_TARGET)
+    message(FATAL_ERROR "pp_foundation_platform_core: PP_BROWSER_SDL3_TARGET unset on mobile")
+  endif()
+  target_link_libraries(pp_foundation_platform_core PUBLIC ${PP_BROWSER_SDL3_TARGET})
+endif()
 
 # DesktopPathProvider::BundleAssetsDir() reads these; they must be set on the
 # target that compiles it, not only on the app target (which links this lib).

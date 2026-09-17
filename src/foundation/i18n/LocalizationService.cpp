@@ -2,15 +2,11 @@
 
 #include "foundation/platform/AssetIO.h"
 #include "foundation/platform/IAssetLocator.h"
+#include "foundation/platform/os/OsLocale.h"
 #include "common/ValueJson.h"
-
-#if !defined(PP_BROWSER_HEADLESS)
-#include <SDL3/SDL_locale.h>
-#endif
 
 #include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <filesystem>
 #include "common/PbrCompat.h"
 
@@ -27,10 +23,6 @@ bool LooksLikeLocaleObject(const Object& root) {
 LocalizationService& LocalizationService::Instance() {
   static LocalizationService service;
   return service;
-}
-
-LocalizationService::Prefs LocalizationService::Project(const ProfilePreferences& prefs) {
-  return {.language = prefs.language};
 }
 
 void LocalizationService::Apply(const Prefs& prefs) {
@@ -250,49 +242,11 @@ std::vector<std::string> LocalizationService::PreferredSystemLocales() const {
     return system_locales_override_;
   }
 
+  // OS backends live in foundation/platform/os/OsLocale_* (no #ifdef here).
   std::vector<std::string> out;
-#if defined(PP_BROWSER_HEADLESS)
-  // pp-node / headless: no SDL — honor POSIX locale env (first non-empty / non-C).
-  for (const char* key : {"LC_ALL", "LC_MESSAGES", "LANG"}) {
-    const char* value = std::getenv(key);
-    if (value == nullptr || value[0] == '\0') {
-      continue;
-    }
-    std::string tag = value;
-    // Drop encoding / modifier: en_US.UTF-8 → en_US
-    const auto dot = tag.find('.');
-    if (dot != std::string::npos) {
-      tag.resize(dot);
-    }
-    const auto at = tag.find('@');
-    if (at != std::string::npos) {
-      tag.resize(at);
-    }
-    if (tag == "C" || tag == "POSIX") {
-      continue;
-    }
+  for (const std::string& tag : os::PreferredSystemLocales()) {
     out.push_back(NormalizeTag(tag));
-    break;
   }
-#else
-  int count = 0;
-  SDL_Locale** locales = SDL_GetPreferredLocales(&count);
-  if (locales == nullptr) {
-    return out;
-  }
-  for (int i = 0; i < count; ++i) {
-    if (locales[i] == nullptr || locales[i]->language == nullptr) {
-      continue;
-    }
-    std::string tag = locales[i]->language;
-    if (locales[i]->country != nullptr && locales[i]->country[0] != '\0') {
-      tag.push_back('-');
-      tag += locales[i]->country;
-    }
-    out.push_back(std::move(tag));
-  }
-  SDL_free(locales);
-#endif
   return out;
 }
 
