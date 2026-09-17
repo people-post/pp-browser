@@ -18,6 +18,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **V038 rewrite debt** | N=2 = direct → punch → **circuit** call-media; SoftMigrate / `media_relay` = **N≥3 only** — [DECISIONS V038](DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3); phase [rd](PHASES.md#rd--amp-call-media-rewrite-debt-v038) |
 | **N→planner select** | [`CallMediaPlannerSelectLogic`](../../src/domain/messaging/CallMediaPlannerSelectLogic.h) + Topology `OnPeerMediaRelayCapLearned`; CSM Accept no longer owns SoftMigrate nudge trees |
 | **V039 planner FSMs** | **pm0–pm4 landed** — Direct/Hop `Apply` + logic gtests; health/attach-wait SM timers; CALLS race homes → planner phases — [DECISIONS V039](DECISIONS.md#v039--call-directhop-planner-machines) |
+| **V040 CallMediaPlane** | **Landed (cs0–cs2)** — `CallMediaPlane` owns Amp/dial/relay/hop/bridge/dial book; Lifecycle sole N025 desire; CALLS.md ownership promoted — [DECISIONS V040](DECISIONS.md#v040--callmediaplane--callstack-ownership-collapse); phase [cs](PHASES.md#cs--callstack-ownership-collapse-callmediaplane) |
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |
@@ -103,7 +104,7 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 
 ## Next agent — start here
 
-1. Keep **pm** / **rd** green: unit + `call` / `call-hop` / `hard` / `conflict` purpose IDs.
+1. Keep **pm** / **rd** / **cs** green: unit + `call` / `call-hop` / `hard` / `conflict` purpose IDs.
 2. Optional: `pp_call_hop_smoke` when Docker image ready; or `pp-call-probe` product invite wire (large).
 3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay` if group SoftMigrate blocked.
 
@@ -116,6 +117,9 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 | SoftMigrate invents NAT | Stack dialable? then quote |
 | Put SoftMigrate relay-cap nudge in CSM | Topology `OnPeerMediaRelayCapLearned` + [`CallMediaPlannerSelectLogic`](../../src/domain/messaging/CallMediaPlannerSelectLogic.h) |
 | Invent N025 listen from `TopPendingInvite` on tick | Lifecycle `WantEphemeralListen` only |
+| Duplicate listen desire on CallStack | Lifecycle sole desire; stack only syncs Hub N025 execution |
+| Put Amp dial/relay/hop unique_ptrs on CallStack | **V040** — `CallMediaPlane` owns mesh-media siblings |
+| Re-inline relay/dial/hop/bridge into mega-`Wire` | Keep `Wire` a thin orchestrator; follow [AGENTS.md](../../AGENTS.md#conventions) function-complexity convention |
 | Full-shell `SyncLayout` for Accept chrome | `RemountCallChrome` into `#shell-call-*-mount` only |
 | Host-wide inbound request SM / rewrite working call-media “while here” | V033 — targeted session SMs; [SESSION_MACHINES.md](SESSION_MACHINES.md) docs first |
 | Move `CallLifecycle` phases into `integration/host` | Product SM stays in feature; transport SM in host |

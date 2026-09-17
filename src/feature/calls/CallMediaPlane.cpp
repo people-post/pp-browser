@@ -1,0 +1,625 @@
+#include "feature/calls/CallMediaPlane.h"
+
+#include "foundation/data/MeshRole.h"
+#include "domain/mesh/host/MeshPorts.h"
+#include "domain/messaging/CallTypes.h"
+#include "domain/people/DirectChatTargetFromContact.h"
+#include "domain/people/ContactTypes.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/MeshHopPolicy.h"
+#include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
+#include "domain/mesh/reachability/PunchLogic.h"
+#include "domain/mesh/reachability/AmpPunchCoordinator.h"
+#include "domain/mesh/reachability/Reachability.h"
+#include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/host/MeshControlDispatch.h"
+
+#include <algorithm>
+#include <functional>
+#include <optional>
+#include <vector>
+#include "common/PbrCompat.h"
+
+namespace pbr {
+namespace {
+
+void CompletePunch(std::function<void(Roe<void>)> on_done, AmpPunchCoordinator::PunchRoe punched,
+                   const char* fail_fallback) {
+  if (!on_done) {
+    return;
+  }
+  if (!punched) {
+    on_done(Error(punched.error().message));
+    return;
+  }
+  if (!punched->ok) {
+    on_done(Error(punched->error.empty() ? fail_fallback : punched->error));
+    return;
+  }
+  on_done(Roe<void>());
+}
+
+} // namespace
+
+CallMediaPlane::CallMediaPlane() {
+  redirectLogger("CallMediaPlane");
+}
+
+CallMediaPlane::~CallMediaPlane() {
+  Clear();
+}
+
+const AppConfig& CallMediaPlane::config() const {
+  return deps_.config();
+}
+
+void CallMediaPlane::SetDeps(CallMediaPlaneDeps deps) {
+  deps_ = std::move(deps);
+}
+
+void CallMediaPlane::SetLiveRefs(CallMediaPlaneLiveRefs refs) {
+  live_ = refs;
+}
+
+void CallMediaPlane::OnMeshStarted() {
+  MeshHost* m = mesh();
+  if (!m || !m->IsRunning()) {
+    return;
+  }
+  call_media_amp_.reset();
+
+  if (!m->Amp()) {
+    log().warning << "call-media transport unavailable (Amp required)";
+    Wire();
+    return;
+  }
+  auto pump = [m]() { m->Tick(); };
+  CallMediaAmpTransport::WorkerPost worker = [](std::function<void()> task) {
+    MeshControlDispatch::Post(std::move(task));
+  };
+  call_media_amp_ =
+      std::make_unique<CallMediaAmpTransport>(m->Amp()->Runtime(), std::move(pump), std::move(worker));
+  call_media_amp_->Start();
+  log().info << "call-media transport=amp";
+  Wire();
+}
+
+ICallMediaTransport* CallMediaPlane::Transport() {
+  if (test_media_transport_) {
+    return test_media_transport_;
+  }
+  return call_media_amp_.get();
+}
+
+void CallMediaPlane::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial) {
+  test_media_transport_ = transport;
+  test_dial_ = dial;
+  if (live_.sessions) {
+    Wire();
+  }
+}
+
+void CallMediaPlane::Wire() {
+  if (!live_.sessions || !live_.session_store || !live_.media_keys || !live_.media_engine) {
+    return;
+  }
+  MeshHost* m = mesh();
+  IoPump io_pump;
+  IoPost post_io;
+  if (auto chat = m ? m->ChatDeps() : std::nullopt) {
+    io_pump = chat->io.io_pump;
+    post_io = chat->io.post_io;
+  }
+  const bool use_amp_relay = WireMediaRelayClient(m, io_pump, post_io);
+  WireDialRegistry(m, use_amp_relay, post_io);
+  WireCircuitHopReach(m, use_amp_relay, io_pump, post_io);
+
+  IDialRegistry* dial = test_dial_ ? test_dial_ : dial_registry_.get();
+  live_.sessions->SetMediaRelayDeps(BuildMediaRelayDeps(m, use_amp_relay, dial));
+  WireMediaBridge(dial);
+}
+
+bool CallMediaPlane::WireMediaRelayClient(MeshHost* m, const IoPump& io_pump, const IoPost& post_io) {
+  const bool use_amp_relay =
+      m && m->Amp() && m->AmpMediaRelayCoord() && m->AmpMediaRelayCoord()->IsStarted();
+  if (use_amp_relay) {
+    media_relay_client_ = std::make_unique<AmpMediaRelayClient>(
+        *m->AmpMediaRelayCoord(), io_pump, m->Amp()->LocalPeerId(), post_io);
+    log().info << "media-relay transport=amp";
+  } else {
+    media_relay_client_.reset();
+    log().warning << "media-relay transport unavailable (Amp required)";
+  }
+  return use_amp_relay;
+}
+
+void CallMediaPlane::WireDialRegistry(MeshHost* m, bool use_amp_relay, const IoPost& post_io) {
+  // Keep dial registry stable across N025 listen sync — recreating mid-call drops answerer state.
+  if (!dial_registry_) {
+    dial_registry_ = std::make_unique<PeerSessionDialRegistry>();
+  }
+  dial_registry_->SetAmpLinks(use_amp_relay && m && m->ChatDeps() ? &m->ChatDeps()->links : nullptr);
+  dial_registry_->SetAmpCircuitHops(use_amp_relay && m && m->AmpCircuitHops() ? m->AmpCircuitHops()
+                                                                              : nullptr);
+  if (auto chat = m ? m->ChatDeps() : std::nullopt) {
+    dial_registry_->SetPostIo(chat->io.post_io);
+  } else {
+    dial_registry_->SetPostIo(post_io);
+  }
+}
+
+void CallMediaPlane::WireCircuitHopReach(MeshHost* m, bool use_amp_relay, const IoPump& io_pump,
+                                         const IoPost& post_io) {
+  const bool use_amp_circuit = use_amp_relay && m && m->AmpCircuitTunnel() &&
+                               m->AmpCircuitTunnel()->IsStarted() && m->AmpCircuitHops();
+  if (!use_amp_circuit) {
+    circuit_hop_reach_.reset();
+    return;
+  }
+  auto circuit = m->CircuitDeps();
+  if (!circuit) {
+    circuit_hop_reach_.reset();
+    return;
+  }
+  IChatPeerLinks* punch_links = &circuit->links;
+  circuit_hop_reach_ = std::make_unique<AmpCircuitHopReach>(
+      circuit->tunnel, circuit->hops, circuit->links, io_pump,
+      [this](const std::string& exclude) { return CollectDialableCircuitRelayIds(exclude); },
+      [this, m, punch_links](const std::string& target_peer_id,
+                            std::function<void(Roe<void>)> on_done) {
+        TryColdPunchAsync(m, punch_links, target_peer_id, std::move(on_done));
+      },
+      [this, m](const std::string& introducer_peer_key, const std::string& target_peer_id,
+                std::function<void(Roe<void>)> on_done) {
+        TryUpgradePunchAsync(m, introducer_peer_key, target_peer_id, std::move(on_done));
+      },
+      post_io);
+  log().info << "circuit-hop reach=amp";
+}
+
+void CallMediaPlane::TryColdPunchAsync(MeshHost* m, IChatPeerLinks* punch_links,
+                                       const std::string& target_peer_id,
+                                       std::function<void(Roe<void>)> on_done) {
+  if (!on_done) {
+    return;
+  }
+  if (!m || !punch_links) {
+    on_done(Error("amp punch unavailable"));
+    return;
+  }
+  auto* punch = m->AmpPunch();
+  if (!punch || !punch->IsStarted()) {
+    on_done(Error("amp punch unavailable"));
+    return;
+  }
+  std::vector<std::string> contact_ids;
+  if (deps_.contacts) {
+    if (auto listed = deps_.contacts->List()) {
+      for (const auto& hop : CollectContactHopCandidates(*listed)) {
+        if (!hop.peer_id.empty()) {
+          contact_ids.push_back(hop.peer_id);
+        }
+      }
+    }
+  }
+  MeshConfig mesh_cfg = config().mesh;
+  NormalizeMeshConfig(mesh_cfg);
+  std::vector<std::string> seed_ids;
+  for (const auto& hop : CollectSeedHopCandidates(mesh_cfg.bootstrap_peers)) {
+    if (!hop.peer_id.empty()) {
+      seed_ids.push_back(hop.peer_id);
+    }
+  }
+  auto intro = PickPunchIntroducer(
+      contact_ids, seed_ids, target_peer_id,
+      [punch_links](const std::string& id) { return punch_links->GetLinkSnapshot(id).has_endpoint; },
+      [punch_links](const std::string& id) { return punch_links->IsConnected(id); });
+  if (!intro) {
+    on_done(Error("no punch introducer"));
+    return;
+  }
+  punch->TryColdPunchAsync(
+      *intro, target_peer_id, punch->LocalCandidateAddrs(),
+      [on_done = std::move(on_done)](AmpPunchCoordinator::PunchRoe punched) mutable {
+        CompletePunch(std::move(on_done), std::move(punched), "punch failed");
+      },
+      2000);
+}
+
+void CallMediaPlane::TryUpgradePunchAsync(MeshHost* m, const std::string& introducer_peer_key,
+                                          const std::string& target_peer_id,
+                                          std::function<void(Roe<void>)> on_done) {
+  if (!on_done) {
+    return;
+  }
+  if (!m) {
+    on_done(Error("amp punch unavailable"));
+    return;
+  }
+  auto* punch = m->AmpPunch();
+  if (!punch || !punch->IsStarted()) {
+    on_done(Error("amp punch unavailable"));
+    return;
+  }
+  punch->TryUpgradePunchAsync(
+      introducer_peer_key, target_peer_id, punch->LocalCandidateAddrs(),
+      [on_done = std::move(on_done)](AmpPunchCoordinator::PunchRoe punched) mutable {
+        CompletePunch(std::move(on_done), std::move(punched), "upgrade punch failed");
+      },
+      2000);
+}
+
+bool CallMediaPlane::PeerLanConfirmed(const std::string& peer_id) const {
+  if (peer_id.empty()) {
+    return false;
+  }
+  if (dial_book_.lan_confirmed_peers.count(peer_id) > 0) {
+    return true;
+  }
+  MeshHost* host = mesh();
+  if (!host) {
+    return false;
+  }
+  if (auto chat = host->ChatDeps()) {
+    if (chat->links.IsConnected(peer_id)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+CallSessionManager::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps(MeshHost* m,
+                                                                       bool use_amp_relay,
+                                                                       IDialRegistry* dial) {
+  CallSessionManager::MediaRelayDeps deps;
+  deps.relay = media_relay_client_.get();
+  deps.dial = dial;
+  deps.circuit_reach = circuit_hop_reach_.get();
+  MeshConfig mesh_cfg = config().mesh;
+  NormalizeMeshConfig(mesh_cfg);
+  deps.bootstrap_peers = mesh_cfg.bootstrap_peers;
+  deps.prefer_contacts = mesh_cfg.prefer_contacts_for_routing;
+  deps.list_directory_nodes = deps_.list_directory_nodes;
+  deps.list_dht_nodes = deps_.list_dht_nodes;
+  deps.seed_dial_ok = deps_.seed_dial_ok;
+  deps.prefer_local_as_hop = ResolveMeshRole(config().mesh) == MeshRole::Node &&
+                             mesh_cfg.capabilities.media_relay && use_amp_relay && m &&
+                             m->AmpMediaRelayCoord() && m->AmpMediaRelayCoord()->IsStarted();
+  const std::vector<std::string> advertised =
+      deps_.local_listen_multiaddrs ? deps_.local_listen_multiaddrs() : std::vector<std::string>{};
+  if (!advertised.empty()) {
+    deps.local_listen_multiaddr = advertised.front();
+  } else if (m && !m->AmpListenMultiaddr().empty()) {
+    deps.local_listen_multiaddr = m->AmpListenMultiaddr();
+  }
+  deps.local_advertise_multiaddrs = advertised;
+  deps.resolve_local_advertise = deps_.local_listen_multiaddrs;
+  deps.peer_has_media_relay = [this](const std::string& peer_id) {
+    return live_.sessions && live_.sessions->PeerHasMediaRelayCap(peer_id);
+  };
+  deps.list_media_relay_peers = [this]() {
+    if (!live_.sessions) {
+      return std::vector<std::string>{};
+    }
+    return live_.sessions->ListMediaRelayCapablePeerIds();
+  };
+  deps.resolve_remote_listen_by_peer = [this]() { return dial_book_.peer_listen_mas; };
+  deps.peer_lan_confirmed = [this](const std::string& peer_id) { return PeerLanConfirmed(peer_id); };
+  if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos ||
+      deps.local_listen_multiaddr.find("/ip6/::/") != std::string::npos) {
+    deps.local_listen_multiaddr.clear();
+  }
+  return deps;
+}
+
+void CallMediaPlane::WireMediaBridge(IDialRegistry* dial) {
+  ICallMediaTransport* transport = Transport();
+  if (!transport || !dial) {
+    call_media_bridge_.reset();
+    media_bridge_bound_sessions_ = nullptr;
+    live_.sessions->SetCallMediaBridge(nullptr);
+    return;
+  }
+  const bool sessions_changed = (media_bridge_bound_sessions_ != live_.sessions);
+  if (!call_media_bridge_ || sessions_changed) {
+    call_media_bridge_ = std::make_unique<CallMediaBridge>(
+        live_.sessions->AsMediaHost(), *live_.session_store, *live_.media_keys, *live_.media_engine,
+        *transport, dial, circuit_hop_reach_.get());
+    live_.sessions->SetCallMediaBridge(call_media_bridge_.get());
+    media_bridge_bound_sessions_ = live_.sessions;
+    log().info << "CallMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0)
+               << " transport=" << (test_media_transport_ ? "test" : "amp") << ")";
+  } else {
+    call_media_bridge_->SetReachDeps(dial, circuit_hop_reach_.get());
+  }
+  if (live_.seat) {
+    call_media_bridge_->SetMediaSeat(live_.seat);
+  }
+  if (live_.lifecycle) {
+    call_media_bridge_->SetLifecycle(live_.lifecycle);
+  }
+  call_media_bridge_->SetSeedWarm([this]() { WarmBootstrapSeedSessions(); });
+  call_media_bridge_->SetSeedReserve([this]() { ReserveOnBootstrapSeeds(); });
+}
+
+void CallMediaPlane::PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit) {
+  if (abort_inflight_circuit) {
+    abort_inflight_circuit();
+  }
+  if (call_media_bridge_) {
+    call_media_bridge_->PrepareForTeardown(0);
+  }
+  if (abort_inflight_circuit) {
+    abort_inflight_circuit();
+  }
+  if (ICallMediaTransport* transport = Transport()) {
+    transport->ClearInboundHandler();
+    transport->Stop();
+  }
+  media_relay_client_.reset();
+}
+
+void CallMediaPlane::FinishMeshStop() {
+  call_media_bridge_.reset();
+  media_bridge_bound_sessions_ = nullptr;
+  call_media_amp_.reset();
+  dial_registry_.reset();
+}
+
+void CallMediaPlane::DetachRelayClient() {
+  if (media_relay_client_) {
+    media_relay_client_->Detach();
+  }
+}
+
+void CallMediaPlane::AbortBridgeAndTransport() {
+  if (call_media_bridge_) {
+    call_media_bridge_->PrepareForTeardown(0);
+  }
+  if (ICallMediaTransport* transport = Transport()) {
+    transport->Detach();
+  }
+}
+
+bool CallMediaPlane::IsConnectWorkerInflight() const {
+  return call_media_bridge_ && call_media_bridge_->IsConnectWorkerInflight();
+}
+
+void CallMediaPlane::ResetRelayClients() {
+  media_relay_client_.reset();
+  dial_registry_.reset();
+}
+
+void CallMediaPlane::Clear() {
+  call_media_bridge_.reset();
+  media_bridge_bound_sessions_ = nullptr;
+  call_media_amp_.reset();
+  test_media_transport_ = nullptr;
+  test_dial_ = nullptr;
+  media_relay_client_.reset();
+  dial_registry_.reset();
+  circuit_hop_reach_.reset();
+  dial_book_ = {};
+}
+
+void CallMediaPlane::StopMeshMedia(const std::string& call_id) {
+  if (call_media_bridge_) {
+    call_media_bridge_->StopMeshMedia(call_id);
+  }
+}
+
+void CallMediaPlane::MergeDialBookListenAddrs(const std::string& identity,
+                                             const std::vector<std::string>& ranked) {
+  std::vector<std::string>& stored = dial_book_.peer_listen_mas[identity];
+  for (const std::string& ma : ranked) {
+    if (ma.empty()) {
+      continue;
+    }
+    if (std::find(stored.begin(), stored.end(), ma) == stored.end()) {
+      stored.push_back(ma);
+    }
+  }
+}
+
+std::string CallMediaPlane::PeerIdFromListenMultiaddr(const std::string& ma) {
+  const auto p2p_pos = ma.rfind("/p2p/");
+  if (p2p_pos == std::string::npos) {
+    return {};
+  }
+  std::string peer_id = ma.substr(p2p_pos + 5);
+  const auto slash = peer_id.find('/');
+  if (slash != std::string::npos) {
+    peer_id.resize(slash);
+  }
+  return peer_id;
+}
+
+void CallMediaPlane::RegisterOneListenMultiaddr(const std::string& identity, const std::string& ma) {
+  if (ma.empty()) {
+    return;
+  }
+  const std::string ip = IpHostFromMultiaddrPrefix(ma);
+  if (IsLikelyUndialableLanIpv4(ip)) {
+    log().info << "Call listen addr skipped undialable dial_key=" << identity << " ma=" << ma;
+    return;
+  }
+  const std::string peer_id = PeerIdFromListenMultiaddr(ma);
+  if (dial_registry_) {
+    (void)dial_registry_->RegisterEndpoint(identity, ma);
+    dial_registry_->ClearDialBackoff(identity);
+    if (!peer_id.empty()) {
+      (void)dial_registry_->RegisterEndpoint(peer_id, ma);
+      dial_registry_->ClearDialBackoff(peer_id);
+      if (deps_.note_lan_mdns_peer_id) {
+        deps_.note_lan_mdns_peer_id(peer_id);
+      }
+    }
+  }
+  if (deps_.register_peer_direct_endpoint) {
+    deps_.register_peer_direct_endpoint(identity, ma);
+    if (!peer_id.empty() && peer_id != identity) {
+      deps_.register_peer_direct_endpoint(peer_id, ma);
+    }
+  }
+  if (!peer_id.empty() && identity.rfind("account:", 0) == 0 && live_.sessions) {
+    live_.sessions->NoteMeshPeerIdForRelay(identity, peer_id);
+  }
+  log().info << "Call listen addr registered dial_key=" << identity << " ma=" << ma;
+}
+
+void CallMediaPlane::RegisterCallPeerListenMultiaddrs(const std::string& identity,
+                                                     const std::vector<std::string>& multiaddrs) {
+  if (identity.empty() || multiaddrs.empty()) {
+    return;
+  }
+  const std::vector<std::string> ranked = RankAmpDialMultiaddrs(multiaddrs);
+  MergeDialBookListenAddrs(identity, ranked);
+  // PeerLinkManager::RegisterEndpoint keeps the last write — register worst→best so
+  // PreferredMultiaddr lands on global /ip6 (or public /ip4) ahead of private LAN.
+  for (auto it = ranked.rbegin(); it != ranked.rend(); ++it) {
+    RegisterOneListenMultiaddr(identity, *it);
+  }
+}
+
+std::vector<std::string> CallMediaPlane::CollectDialableCircuitRelayIds(
+    const std::string& exclude_peer_id) const {
+  std::vector<std::string> relay_ids;
+  MeshHost* m = mesh();
+  IChatPeerLinks* amp_links = nullptr;
+  if (m) {
+    if (auto chat = m->ChatDeps()) {
+      amp_links = &chat->links;
+    }
+  }
+  AmpCircuitHopRegistry* amp_hops = m ? m->AmpCircuitHops() : nullptr;
+  if (!amp_links && !amp_hops) {
+    return relay_ids;
+  }
+  std::vector<Contact> contacts;
+  if (deps_.contacts) {
+    if (auto listed = deps_.contacts->List()) {
+      contacts = std::move(*listed);
+    }
+  }
+  MeshConfig mesh_cfg = config().mesh;
+  NormalizeMeshConfig(mesh_cfg);
+  std::vector<MeshDirectoryNode> directory_nodes;
+  if (deps_.list_directory_nodes) {
+    directory_nodes = deps_.list_directory_nodes();
+  }
+  std::vector<MeshDirectoryNode> dht_nodes;
+  if (deps_.list_dht_nodes) {
+    dht_nodes = deps_.list_dht_nodes();
+  }
+  const bool include_seeds = !deps_.seed_dial_ok || deps_.seed_dial_ok();
+  auto hops = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, mesh_cfg.bootstrap_peers,
+                                  mesh_cfg.prefer_contacts_for_routing, include_seeds);
+  relay_ids.reserve(hops.size());
+  for (const MeshHopCandidate& hop : hops) {
+    if (hop.peer_id.empty() || hop.peer_id == exclude_peer_id) {
+      continue;
+    }
+    if (!hop.multiaddr.empty() && amp_links && IsAdpMultiaddr(hop.multiaddr)) {
+      (void)amp_links->RegisterEndpoint(hop.peer_id, hop.multiaddr);
+    } else if (hop.multiaddr.empty() && amp_links) {
+      if (auto ma = amp_links->PreferredMultiaddr(hop.peer_id)) {
+        (void)amp_links->RegisterEndpoint(hop.peer_id, *ma);
+      }
+    }
+    const bool amp_ok = amp_links && amp_links->GetLinkSnapshot(hop.peer_id).has_endpoint;
+    const bool hop_ok = amp_hops && amp_hops->HasAny(hop.peer_id);
+    if (amp_ok || hop_ok) {
+      relay_ids.push_back(hop.peer_id);
+    }
+  }
+  return relay_ids;
+}
+
+void CallMediaPlane::WarmBootstrapSeedSessions() {
+  MeshHost* m = mesh();
+  if (!m) {
+    return;
+  }
+  auto chat = m->ChatDeps();
+  if (!chat) {
+    return;
+  }
+  MeshConfig mesh_cfg = config().mesh;
+  NormalizeMeshConfig(mesh_cfg);
+  for (const auto& hop : CollectSeedHopCandidates(mesh_cfg.bootstrap_peers)) {
+    if (hop.peer_id.empty()) {
+      continue;
+    }
+    if (!hop.multiaddr.empty() && IsAdpMultiaddr(hop.multiaddr)) {
+      (void)chat->links.RegisterEndpoint(hop.peer_id, hop.multiaddr);
+    }
+    if (!chat->links.GetLinkSnapshot(hop.peer_id).has_endpoint) {
+      continue;
+    }
+    if (chat->links.IsConnected(hop.peer_id)) {
+      continue;
+    }
+    chat->links.EnsureAssociation(hop.peer_id, [](IChatPeerLinks::LinkRoe) {});
+  }
+}
+
+void CallMediaPlane::ReserveOnBootstrapSeeds() {
+  MeshHost* m = mesh();
+  if (!m || !m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
+    return;
+  }
+  WarmBootstrapSeedSessions();
+  auto chat = m->ChatDeps();
+  if (!chat) {
+    return;
+  }
+  MeshConfig mesh_cfg = config().mesh;
+  NormalizeMeshConfig(mesh_cfg);
+  for (const auto& hop : CollectSeedHopCandidates(mesh_cfg.bootstrap_peers)) {
+    if (hop.peer_id.empty()) {
+      continue;
+    }
+    if (!chat->links.GetLinkSnapshot(hop.peer_id).has_endpoint) {
+      continue;
+    }
+    (void)m->AmpCircuitTunnel()->StartReserve(hop.peer_id, {}, 30000);
+    log().info << "circuit reserve started on seed peer=" << hop.peer_id;
+  }
+}
+
+Roe<void> CallMediaPlane::TryEnsureCircuitHopReachable(const std::string& hop_peer_id) {
+  if (AppRuntime::IsShuttingDown()) {
+    log().debug << "TryEnsureCircuitHopReachable rejected: shutting down";
+    return Error("shutdown in progress");
+  }
+  if (!circuit_hop_reach_) {
+    return Error("Amp circuit reach required");
+  }
+  return circuit_hop_reach_->TryEnsureHopReachable(hop_peer_id);
+}
+
+Roe<void> CallMediaPlane::TryEnsureCallMediaReachable(const std::string& peer_key) {
+  if (AppRuntime::IsShuttingDown()) {
+    log().debug << "TryEnsureCallMediaReachable rejected: shutting down";
+    return Error("shutdown in progress");
+  }
+  if (!circuit_hop_reach_) {
+    return Error("Amp circuit reach required");
+  }
+  if (peer_key.empty()) {
+    return Error("missing call peer");
+  }
+  return circuit_hop_reach_->TryEnsureCallMediaReachable(peer_key);
+}
+
+Roe<void> CallMediaPlane::TryUpgradeCallMediaToDirect(const std::string& peer_key) {
+  if (!circuit_hop_reach_) {
+    return Error("amp circuit reach required");
+  }
+  if (peer_key.empty()) {
+    return Error("missing call peer");
+  }
+  return circuit_hop_reach_->TryUpgradeToDirect(peer_key);
+}
+
+} // namespace pbr

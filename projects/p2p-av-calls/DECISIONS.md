@@ -951,3 +951,40 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 
 ---
 
+## V040 — CallMediaPlane / CallStack ownership collapse
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md) (ConversationsHub / CallStack + file map)  
+**Decision:** `CallStack` is a **phase assembler** only. Co-lived mesh-media objects move under **`CallMediaPlane`**. N025 listen *desire* lives solely on `CallLifecycle` (no duplicate stack bool).
+
+### Ownership
+
+| Owner | Owns |
+|-------|------|
+| **CallStack** | `CallStackDeps`; profile stores (`CallSessionStore`, `CallMediaKeyStore`, `CallMediaEngine`); `CallSessionManager`; `CallLifecycle`; `CallMediaSeat`; `unique_ptr<CallMediaPlane>`; phase hooks (`InitializeStores` / `BuildSessions` / mesh start-stop / `Shutdown`) |
+| **CallMediaPlane** | Amp call-media transport; `PeerSessionDialRegistry`; `AmpMediaRelayClient`; `AmpCircuitHopReach`; `CallMediaBridge` (+ bound-CSM pointer); test transport/dial overrides; dial book (peer listen multiaddrs + LAN-confirmed PeerIds); `Wire` / reach / warm-bootstrap helpers |
+
+### Rules
+
+1. Hub / `CallUiBackend` / Application keep calling **`CallStack::*`**; stack thin-forwards to the plane where needed.
+2. Do **not** recreate dial registry / bridge mid-call on N025 listen sync — rebuild bridge only when `CallSessionManager*` changes.
+3. Listen desire: `CallLifecycle::WantEphemeralListen` only; stack callback only runs Hub `sync_mobile_ephemeral_listen`.
+4. Seat stays on CallStack (not inside CSM) in this ADR.
+5. Hub still owns mesh admission, LAN mDNS note glue, N025 listen *execution*.
+
+### Phases
+
+| Phase | Deliverable |
+|-------|-------------|
+| cs0 | This ADR + PHASES `cs`; drop `ephemeral_listen_desired_` |
+| cs1 | `CallMediaPlane` extract (behavior-preserving) |
+| cs2 | CALLS.md ownership promote; trim redundant stack helpers |
+
+**Rationale:** CallStack accumulated sibling unique_ptrs and wiring that belong with mesh media lifetime, not signaling/lifecycle assembly.
+
+**Alternatives:** Fat Bridge owning dial/relay (rejected — Bridge is Direct planner); Seat inside CSM now (deferred — couples signaling to media epoch).
+
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); phase [cs](PHASES.md#cs--callstack-ownership-collapse-callmediaplane); [V036](#v036--mediaseat--exclusive-media-epoch); [V037](#v037--calllifecycle-state--status-one-planner-armed).
+
+---
+

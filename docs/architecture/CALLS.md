@@ -269,7 +269,7 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
 | Control encode/decode | `base/messaging` | `CallControlCodec` | Unchanged |
 | PC / Opus / H264 / SDL | `domain/media` | `CallMediaEngine` | libp2p/SFU packet transport only |
 | Adaptation policy | `domain/media` | `CallMediaAdaptation`, `CallMediaTopology` | Unchanged |
-| Call stack ownership (CSM + lifecycle + media bridge + CallMediaDirect + relay/dial/circuit clients) | `feature/messaging` | **`CallStack`** | Owns call-media unique_ptrs; Hub holds `unique_ptr<CallStack>` and forwards `Calls()`/`Lifecycle()`; `CallUiBackend` binds it |
+| Call stack ownership (phase assembly + media plane) | `feature/calls` | **`CallStack`** + **`CallMediaPlane`** | Stack owns stores / CSM / Lifecycle / Seat and phase-orders the plane; plane owns Amp transport + dial/relay/hop + bridge + dial book ([V040](../../projects/p2p-av-calls/DECISIONS.md#v040--callmediaplane--callstack-ownership-collapse)); Hub holds `unique_ptr<CallStack>` and forwards `Calls()`/`Lifecycle()`; `CallUiBackend` binds the stack |
 | **Exclusive media bind (epoch)** | `feature/calls` | **`CallMediaSeat`** + **`CallDirectPath` / `CallHopPath`** ([V036](../../projects/p2p-av-calls/DECISIONS.md#v036--mediaseat--exclusive-media-epoch)) | Sole `Acquire`/`Release`/`NoteLive`/`IsBound`; path plugins token-gated (`AllowsPathOp`); SoftMigrate = path replace under same token |
 | Session lifecycle + inbound dispatch | `feature/messaging` | **`CallSessionManager`** | Signaling only for duplex start/stop (seat + path façades); mute/camera stay device controls |
 | 1:1 phase / ring / listen desire | `feature/messaging` | **`CallLifecycle`** | Sole phase owner; see [Ringing handling](#ringing-handling) |
@@ -290,7 +290,7 @@ UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints fro
 ## Major systems (relationships)
 
 ### ConversationsHub / CallStack
-`CallStack` (feature/messaging) owns the call-media objects — `CallSessionStore`, `CallMediaKeyStore`, `CallMediaEngine`, `CallSessionManager`, `CallLifecycle`, `CallMediaBridge`, `CallMediaDirectService`, `MediaRelayServiceClient`, `PeerSessionDialRegistry`, `CircuitHopReachClient` — plus `WireMediaRelayDeps`, lifecycle binding, N025 listen desire, and the call-scoped reachability helpers (`TryEnsureCallMediaReachable` / `TryEnsureCircuitHopReachable`). `ConversationsHub` holds a `unique_ptr<CallStack>`, forwards `Calls()`/`Lifecycle()`, injects mesh/config/mDNS glue via `CallStackDeps`, and still owns mesh admission, LAN mDNS, N025 listen *execution* (Hub `SyncMobileEphemeralListen`), and inbound control routing via `RelayReceivePipeline` → `ApplyInboundControl`. Build/teardown order: Hub `Initialize`/`BuildMessagingStack` → `CallStack::InitializeStores`/`BuildSessions`; mesh up → `OnMeshServicesStarted`; `StopMesh` → `PrepareForMeshStop` (bracketed by mesh circuit aborts) → `mesh_->Stop()` → `FinishMeshStop`.
+`CallStack` (`feature/calls`) is a **phase assembler** ([V040](../../projects/p2p-av-calls/DECISIONS.md#v040--callmediaplane--callstack-ownership-collapse)): profile stores (`CallSessionStore`, `CallMediaKeyStore`, `CallMediaEngine`), `CallSessionManager`, `CallLifecycle`, `CallMediaSeat`, and `unique_ptr<CallMediaPlane>`. **`CallMediaPlane`** owns Amp call-media transport, `PeerSessionDialRegistry`, `AmpMediaRelayClient`, `AmpCircuitHopReach`, `CallMediaBridge`, the dial book (peer listen multiaddrs + LAN-confirmed PeerIds), and `Wire` / reach / warm-bootstrap helpers. N025 listen *desire* is sole on `CallLifecycle::WantEphemeralListen` (stack only wakes Hub sync). `ConversationsHub` holds a `unique_ptr<CallStack>`, forwards `Calls()`/`Lifecycle()`, injects mesh/config/mDNS glue via `CallStackDeps`, and still owns mesh admission, LAN mDNS, N025 listen *execution* (Hub `SyncMobileEphemeralListen`), and inbound control routing via `RelayReceivePipeline` → `ApplyInboundControl`. Build/teardown order: Hub `Initialize`/`BuildMessagingStack` → `CallStack::InitializeStores`/`BuildSessions`; mesh up → `OnMeshServicesStarted`; `StopMesh` → `PrepareForMeshStop` (bracketed by mesh circuit aborts) → `mesh_->Stop()` → `FinishMeshStop`. Do **not** recreate dial registry / bridge mid-call on N025 listen sync — rebuild bridge only when `CallSessionManager*` changes. Plane `Wire()` is a thin orchestrator over named helpers (`WireMediaRelayClient` → `WireDialRegistry` → `WireCircuitHopReach` → `BuildMediaRelayDeps` → `WireMediaBridge`) — keep it that way under the general [function complexity](../../AGENTS.md#conventions) convention.
 
 ### CallSessionManager (façade)
 **Should own:** create/end session, invite/accept/decline/leave, roster fan-out, media-key rotate-on-leave, orphan cleanup after restart, inbound control **dispatch**.
@@ -443,15 +443,17 @@ Landed (behavior-preserving + who-picks fix):
 
 | Path | Role |
 |------|------|
+| `src/feature/calls/CallStack.*` | Phase assembler — stores / CSM / Lifecycle / Seat + owns `CallMediaPlane` |
+| `src/feature/calls/CallMediaPlane.*` | Mesh-media plane — Amp transport, dial/relay/hop, bridge, dial book, Wire |
 | `src/feature/calls/CallLifecycle.*` | 1:1 phase machine — ring/accept/listen/media sequencing |
 | `src/feature/calls/CallInboundHandlers.cpp` | Per-type inbound call-control arms (`HandleInbound*`) |
 | `src/feature/calls/CallSessionManager.*` | Façade — session + thin inbound dispatch |
 | `src/feature/calls/CallMediaHost.h` | Narrow host façade for mesh media side effects |
-| `src/feature/calls/CallMediaBridge.*` | libp2p 1:1 media — key defer, dial/retry, connect-fail |
-| `src/domain/mesh/CallMediaDirectService.*` | Direct call-media protocol + IO-thread duplex pump |
+| `src/feature/calls/CallMediaBridge.*` | Amp 1:1 media — key defer, dial/retry, connect-fail (Direct planner) |
+| `src/domain/mesh/l4/call_media/CallMediaAmpTransport.*` | Amp call-media transport |
 | `src/domain/mesh/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
 | `src/feature/calls/CallTopologyController.*` | SFU / soft-migrate / attach-wait / hop-addr cache + gather |
-| `src/feature/calls/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + real wrappers |
+| `src/feature/calls/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + `PeerSessionDialRegistry` |
 | `src/domain/messaging/CallMediaKeyStore.*` | Epoch key wrap |
 | `src/gui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |
 | `src/domain/media/CallMediaEngine.*` | Opus/H264/SDL capture; libp2p/SFU packet transport |

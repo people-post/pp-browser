@@ -160,6 +160,17 @@ Voice-on-libp2p is green ([m1](#m1--libp2p-only-voice-v026)). Video reuses a3 ca
 - [x] Camera gating / health copy / HOST_RECEIVE_POLICY
 - [ ] Device dogfood: Android↔Android LAN video; one desktop pair; N=3 hop with two cameras
 
+## cs — CallStack ownership collapse (CallMediaPlane)
+
+Thin `CallStack` to phase assembly; mesh-media siblings live under **`CallMediaPlane`**. Behavior-preserving move — [V040](DECISIONS.md#v040--callmediaplane--callstack-ownership-collapse).
+
+- [x] cs0 — ADR + PHASES; remove duplicate `ephemeral_listen_desired_` (Lifecycle is sole desire)
+- [x] cs1 — `CallMediaPlane` owns Amp transport / dial / relay / hop-reach / bridge / dial book; stack thin-forwards
+- [x] cs2 — Trim redundant stack surface; promote ownership map into [CALLS.md](../../docs/architecture/CALLS.md)
+
+**Non-goals:** Seat inside CSM; Hub N025 listen *execution*; wire/behavior changes.  
+**Exit:** `call_ui_backend_stack_test` + `call_dual_stack_compose_test` + call lifecycle gtests green; CALLS.md names Amp + CallMediaPlane.
+
 ## Later horizons
 
 - [ ] `video_hi` / simulcast
