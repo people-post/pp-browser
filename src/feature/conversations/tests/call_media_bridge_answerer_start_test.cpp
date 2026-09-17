@@ -114,7 +114,10 @@ public:
   CallMediaSessionPhase Phase() const override {
     return active ? CallMediaSessionPhase::MediaReady : CallMediaSessionPhase::Idle;
   }
-  void Detach() override { active = false; }
+  void Detach() override {
+    active = false;
+    ++detach_calls;
+  }
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
                     std::function<void(Roe<void>)> on_done, int /*timeout_ms*/) override {
     ++connect_async_calls;
@@ -145,6 +148,7 @@ public:
   bool started = false;
   bool active = false;
   int connect_async_calls = 0;
+  int detach_calls = 0;
   CallMediaDirectConnectParams last_params;
   CallMediaDirectConnectParams active_params;
   std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> inbound;
@@ -288,6 +292,64 @@ TEST_F(CallMediaBridgeAnswererStartTest, HopLiveStatusDoesNotStartDirectDuplex) 
   // InCall + HopLive: ScheduleStart must not re-arm Direct or StartSfu.
   EXPECT_FALSE(media_->IsActive());
   EXPECT_EQ(lifecycle_->Status(), CallMediaStatus::HopLive);
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, OffererScheduleStartActivatesMedia) {
+  const std::string call_id = "call:offerer-key";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  ASSERT_TRUE(lifecycle_->AllowsDirectPath());
+
+  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  AppRuntime::RunUITasks();
+
+  EXPECT_TRUE(bridge_->MediaAttempted(call_id));
+  EXPECT_TRUE(media_->IsActive());
+  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  // Offerer Connect waits inbound grace before ConnectAsync — do not assert dial yet.
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, DeferredKeyThenOnMediaKeyReadyActivatesMedia) {
+  const std::string call_id = "call:deferred-key";
+  SeedActiveCall(call_id);
+
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+
+  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::MediaPending);
+  EXPECT_FALSE(media_->IsActive());
+
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  bridge_->OnMediaKeyReady(call_id);
+  AppRuntime::RunUITasks();
+
+  EXPECT_TRUE(media_->IsActive());
+  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  EXPECT_NE(lifecycle_->Phase(), CallPhase::MediaPending);
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, ReleaseDirectTransportDetachesWithoutStoppingEngine) {
+  const std::string call_id = "call:release-direct";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  AppRuntime::RunUITasks();
+  ASSERT_TRUE(media_->IsActive());
+
+  const int detaches_before = transport_->detach_calls;
+  bridge_->ReleaseDirectTransport();
+
+  EXPECT_GT(transport_->detach_calls, detaches_before);
+  EXPECT_TRUE(media_->IsActive()) << "SoftMigrate ReleaseDirect must keep engine capture";
+  EXPECT_EQ(media_->ActiveCallId(), call_id);
 }
 
 } // namespace

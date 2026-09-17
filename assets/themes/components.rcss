@@ -123,14 +123,14 @@ select selectbox option {
 .chat-header {
   display: flex;
   flex-direction: row;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 12dp;
+  gap: 8dp;
   flex-shrink: 0;
   box-sizing: border-box;
-  margin-bottom: 12dp;
-  padding: 8dp 12dp;
-  border-radius: 8dp;
+  margin-bottom: 8dp;
+  padding: 6dp 10dp;
+  border-radius: 6dp;
 }
 
 .chat-header-secure-row {
@@ -138,15 +138,15 @@ select selectbox option {
   flex-direction: row;
   align-items: center;
   gap: 6dp;
-  margin-bottom: 4dp;
+  margin-bottom: 2dp;
 }
 
-.chat-header-type-row {
+.chat-header-title-row {
   display: flex;
   flex-direction: row;
   align-items: center;
   gap: 6dp;
-  margin-bottom: 4dp;
+  min-width: 0;
 }
 
 .chat-header-type-icon {
@@ -154,15 +154,11 @@ select selectbox option {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18dp;
-  height: 18dp;
+  width: 16dp;
+  height: 16dp;
 }
 
 .chat-header-type-icon svg {
-  flex-shrink: 0;
-}
-
-.chat-type-badge {
   flex-shrink: 0;
 }
 
@@ -171,12 +167,8 @@ select selectbox option {
   min-width: 0;
 }
 
-.chat-header-title {
-  margin: 0;
-}
-
 .chat-peer-link {
-  margin: 2dp 0 0 0;
+  margin: 1dp 0 0 0;
   opacity: 0.85;
 }
 
@@ -190,8 +182,15 @@ select selectbox option {
 }
 
 .chat-header-title {
-  font-size: 22dp;
-  margin-bottom: 4dp;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 18dp;
+  font-weight: normal;
+}
+
+.chat-header-subtitle {
+  margin: 1dp 0 0 0;
 }
 
 .chat-header-title-btn {
@@ -205,14 +204,12 @@ select selectbox option {
 
 .chat-preview-btn {
   flex-shrink: 0;
-  margin-top: 2dp;
 }
 
 .chat-header-actions {
   flex-shrink: 0;
-  align-items: flex-start;
-  gap: 8dp;
-  margin-top: 2dp;
+  align-items: center;
+  gap: 6dp;
 }
 
 .chat-header-call-btn,
@@ -2451,7 +2448,7 @@ call-video-tile {
 }
 
 .chat-panel .chat-header-title {
-  font-size: 22dp;
+  font-size: 18dp;
 }
 
 .chat-panel .chat-messages-wrap {

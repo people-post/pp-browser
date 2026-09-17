@@ -6,7 +6,7 @@
      data-class-chat-shell--e2e="thread_is_private">
   <div class="chat-header">
     <div class="chat-header-main">
-      <div class="chat-header-type-row">
+      <div class="chat-header-title-row">
         <div class="chat-header-type-icon" data-if="thread_is_ai">
           <svg src="../icons/sparkle.svg" width="16" height="16" crop-to-content="true"></svg>
         </div>
@@ -19,16 +19,12 @@
         <div class="chat-header-type-icon" data-if="thread_is_group">
           <svg src="../icons/group.svg" width="16" height="16" crop-to-content="true"></svg>
         </div>
-        <span class="text-xs chat-type-badge" data-if="thread_is_ai">Assistant</span>
-        <span class="text-xs chat-type-badge" data-if="thread_is_private">Private</span>
-        <span class="text-xs chat-type-badge" data-if="thread_is_public">Chat</span>
-        <span class="text-xs chat-type-badge" data-if="thread_is_group">Group</span>
+        <button class="chat-header-title chat-header-title-btn" type="button"
+                data-if="show_peer_sheet" data-rml="thread_title"
+                data-event-click="open_peer_sheet()"></button>
+        <h1 class="chat-header-title" data-if="!show_peer_sheet" data-rml="thread_title"></h1>
       </div>
-      <button class="heading-1 chat-header-title chat-header-title-btn" type="button"
-              data-if="show_peer_sheet" data-rml="thread_title"
-              data-event-click="open_peer_sheet()"></button>
-      <h1 class="heading-1 chat-header-title" data-if="!show_peer_sheet" data-rml="thread_title"></h1>
-      <p class="text muted" data-rml="thread_subtitle"></p>
+      <p class="text-xs muted chat-header-subtitle" data-rml="thread_subtitle"></p>
       <p class="text-xs chat-peer-link" data-if="show_peer_link" data-rml="peer_link_status"></p>
     </div>
     <div class="chat-header-actions row">

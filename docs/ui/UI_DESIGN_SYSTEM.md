@@ -54,8 +54,8 @@ Utility class: `.gap-sm` = 8dp bottom margin (legacy).
 | `.text-xs` | 12dp | Meta, timestamps, secure badge |
 | `.text-sm` / `.btn`, `.field` | 14dp | Toolbar, labels, inputs |
 | `body` / `.text-base` | 16dp | Body copy |
-| `.text-lg` / `.settings-section-title` | 18dp | Section titles |
-| `.text-xl` / `.chat-header-title` | 22dp | Pane titles |
+| `.text-lg` / `.settings-section-title` / `.chat-header-title` | 18dp | Section titles, chat pane title |
+| `.text-xl` | 22dp | Large pane titles |
 | `.text-2xl` / `.heading-1` | 28dp | Hero headings |
 | `.heading-2` | 20dp | Secondary headings |
 | `.heading-3` | 16dp | Tertiary headings |
@@ -154,12 +154,12 @@ Visual distinction by chat type — icons and accent rails, not plaintext Privat
 
 **Sidebar:** leading type icon for kind; selection uses a clear filled row + 3dp accent rail (idle rows have no rail). No text tier badge.
 
-**Chat header:** type icon + short label (Assistant / Private / Chat / Group) + human subtitle. Thread tools (Clear history, Forget AI memory, Sync with peer) live in a `⋯` overflow menu (`.chat-header-more-btn` → `ContextMenuHost`); Details stays visible. Private keeps the secure shell tint (`.chat-shell--e2e` / `.chat-shell--private`).
+**Chat header (compact):** type icon inline with title on one row; muted subtitle on the second. No text kind labels (icon + accent rail carry kind). Thread tools (Clear history, Forget AI memory, Sync with peer) live in a `⋯` overflow menu (`.chat-header-more-btn` → `ContextMenuHost`); Details stays visible. Private keeps the secure shell tint (`.chat-shell--e2e` / `.chat-shell--private`).
 
 | Element | Public (`.chat-shell--public`) | Private (`.chat-shell--e2e`) |
 |---------|-------------------------------|------------------------------|
-| Header | Neutral left border | Secure surface tint + teal left border |
-| Type row | Message icon + “Chat” | Lock icon + “Private” |
+| Header | Neutral 3dp left border | Secure surface tint + teal 3dp left border |
+| Title row | Message icon + peer/thread name | Lock icon + peer/thread name |
 | Subtitle | “Encrypted · easy start” | “Verified private · E2E” |
 | Composer | `border-subtle` | Stronger secure border |
 
@@ -204,7 +204,7 @@ Shared `.btn` geometry is **capsule** (`border-radius: 999dp`) at **44dp** min-h
 
 ### Chat
 
-`.chat-panel`, `.chat-header`, `.chat-header-actions`, `.chat-header-more-btn`, `.chat-shell--ai`, `.chat-shell--private`, `.chat-shell--public`, `.chat-shell--group`, `.chat-shell--e2e`, `.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-working-set-chip`
+`.chat-panel`, `.chat-header`, `.chat-header-title-row`, `.chat-header-title`, `.chat-header-subtitle`, `.chat-header-actions`, `.chat-header-more-btn`, `.chat-shell--ai`, `.chat-shell--private`, `.chat-shell--public`, `.chat-shell--group`, `.chat-shell--e2e`, `.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-working-set-chip`
 
 ### Home landing
 

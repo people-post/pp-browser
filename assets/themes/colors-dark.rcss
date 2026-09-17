@@ -1211,27 +1211,27 @@ select selectbox option:hover {
 
 .chat-shell--e2e .chat-header {
   background-color: #134e4a;
-  border-left: 4dp #2dd4bf;
-  padding-left: 12dp;
-  border-radius: 0 8dp 8dp 0;
+  border-left: 3dp #2dd4bf;
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
 }
 
 .chat-shell--ai .chat-header {
-  border-left: 4dp #6366f1;
-  padding-left: 12dp;
-  border-radius: 0 8dp 8dp 0;
+  border-left: 3dp #6366f1;
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
 }
 
 .chat-shell--public .chat-header {
-  border-left: 4dp #4b5563;
-  padding-left: 12dp;
-  border-radius: 0 8dp 8dp 0;
+  border-left: 3dp #4b5563;
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
 }
 
 .chat-shell--group .chat-header {
-  border-left: 4dp #f59e0b;
-  padding-left: 12dp;
-  border-radius: 0 8dp 8dp 0;
+  border-left: 3dp #f59e0b;
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
 }
 
 .prompt-composer--e2e {
@@ -1246,20 +1246,21 @@ select selectbox option:hover {
   color: #2dd4bf;
 }
 
-.chat-shell--ai .chat-type-badge {
-  color: #818cf8;
+.chat-shell--ai .chat-header-type-icon svg {
+  image-color: #818cf8;
 }
 
-.chat-shell--private .chat-type-badge {
-  color: #2dd4bf;
+.chat-shell--private .chat-header-type-icon svg,
+.chat-shell--e2e .chat-header-type-icon svg {
+  image-color: #2dd4bf;
 }
 
-.chat-shell--public .chat-type-badge {
-  color: #9ca3af;
+.chat-shell--public .chat-header-type-icon svg {
+  image-color: #9ca3af;
 }
 
-.chat-shell--group .chat-type-badge {
-  color: #fbbf24;
+.chat-shell--group .chat-header-type-icon svg {
+  image-color: #fbbf24;
 }
 
 .chat-header-call-btn,
