@@ -45,10 +45,6 @@ LocalizationService& LocalizationService::Instance() {
   return service;
 }
 
-LocalizationService::Prefs LocalizationService::Project(const ProfilePreferences& prefs) {
-  return {.language = prefs.language};
-}
-
 void LocalizationService::Apply(const Prefs& prefs) {
   SetPreferredLanguage(prefs.language);
 }

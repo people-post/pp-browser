@@ -28,7 +28,7 @@ void ConfigApplyBridge::InstallListeners() {
   last_policy_ = ConversationsHub::ProjectPolicy(snap.profile_prefs);
   last_notifications_ = ConversationsHub::ProjectNotifications(snap.profile_prefs);
   last_chrome_ = ShellHost::ProjectChrome(snap.profile_prefs);
-  last_locale_ = LocalizationService::Project(snap.profile_prefs);
+  last_locale_ = LocalizationService::Prefs{.language = snap.profile_prefs.language};
   last_agent_ = ChatController::ProjectAgent(snap.config);
 
   store_->AddConfigListener([this](const AppConfig& config) { OnConfig(config); });
@@ -82,7 +82,7 @@ void ConfigApplyBridge::OnProfilePrefs(const ProfilePreferences& prefs) {
     });
   }
 
-  const LocalizationService::Prefs locale = LocalizationService::Project(prefs);
+  const LocalizationService::Prefs locale{.language = prefs.language};
   if (!last_locale_ || locale != *last_locale_) {
     last_locale_ = locale;
     // SaveProfilePrefs may run on a worker (agent settings tools). Locale listeners
