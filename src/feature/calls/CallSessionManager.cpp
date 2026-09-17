@@ -1184,6 +1184,12 @@ Roe<void> CallSessionManager::EndCallLocal(CallSession& session, const std::opti
       (void)AppendOriginHistory(*session.origin_thread_id, CallControlType::CallEnded, "Call ended", *detail);
     }
   }
+  // Product chrome: remote Leave/Ended (and any EndCallLocal for the bound call) must Idle
+  // lifecycle without a local LeaveClicked. Skip when lifecycle already moved to another call
+  // (e.g. Accept B → LeaveCallIfActiveExcept ends A while Accepting B).
+  if (lifecycle_ && lifecycle_->ActiveCallId() == session.call_id) {
+    lifecycle_->Apply(CallLifecycleEvent::RemoteEnded, session.call_id);
+  }
   NotifyRingChanged();
   return {};
 }

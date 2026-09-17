@@ -75,6 +75,13 @@ void ChatThreadChrome::ResetPanelState() {
   view_.peer_link_banner = "";
   view_.show_peer_link = false;
   view_.show_peer_link_banner = false;
+  view_.peer_link_direct = false;
+  view_.peer_link_via_hop = false;
+  view_.peer_link_via_relay = false;
+  view_.peer_link_connecting = false;
+  view_.peer_link_degraded = false;
+  view_.peer_link_failed = false;
+  view_.peer_link_ready = false;
   view_.show_retry_peer_dial = false;
   view_.thread_encrypted = false;
   view_.thread_is_ai = false;
@@ -113,6 +120,13 @@ void ChatThreadChrome::UpdatePeerLink() {
   view_.peer_link_banner = "";
   view_.show_peer_link = false;
   view_.show_peer_link_banner = false;
+  view_.peer_link_direct = false;
+  view_.peer_link_via_hop = false;
+  view_.peer_link_via_relay = false;
+  view_.peer_link_connecting = false;
+  view_.peer_link_degraded = false;
+  view_.peer_link_failed = false;
+  view_.peer_link_ready = false;
   view_.show_retry_peer_dial = false;
   if (!messaging_ready_ || !PortsMessagingReady(facade_)) {
     return;
@@ -133,6 +147,31 @@ void ChatThreadChrome::UpdatePeerLink() {
   view_.show_peer_link_banner = link.show_banner && !link.banner_message.empty();
   view_.peer_link_banner = link.banner_message.c_str();
   view_.show_retry_peer_dial = link.show_retry;
+  switch (link.path_kind) {
+  case ThreadPeerPathKind::Direct:
+    view_.peer_link_direct = true;
+    break;
+  case ThreadPeerPathKind::ViaHop:
+    view_.peer_link_via_hop = true;
+    break;
+  case ThreadPeerPathKind::ViaRelay:
+    view_.peer_link_via_relay = true;
+    break;
+  case ThreadPeerPathKind::Connecting:
+    view_.peer_link_connecting = true;
+    break;
+  case ThreadPeerPathKind::Degraded:
+    view_.peer_link_degraded = true;
+    break;
+  case ThreadPeerPathKind::Failed:
+    view_.peer_link_failed = true;
+    break;
+  case ThreadPeerPathKind::Ready:
+    view_.peer_link_ready = true;
+    break;
+  case ThreadPeerPathKind::None:
+    break;
+  }
 }
 
 void ChatThreadChrome::Update() {
@@ -302,6 +341,13 @@ void ChatThreadChrome::Update() {
     view_.peer_link_banner = "";
     view_.show_peer_link = false;
     view_.show_peer_link_banner = false;
+    view_.peer_link_direct = false;
+    view_.peer_link_via_hop = false;
+    view_.peer_link_via_relay = false;
+    view_.peer_link_connecting = false;
+    view_.peer_link_degraded = false;
+    view_.peer_link_failed = false;
+    view_.peer_link_ready = false;
     view_.show_retry_peer_dial = false;
     view_.thread_encrypted = false;
     view_.thread_is_ai = false;
@@ -350,10 +396,20 @@ bool ChatThreadChrome::MaybePollPeerLink(const std::chrono::steady_clock::time_p
   const bool prev_show = view_.show_peer_link;
   const bool prev_banner_show = view_.show_peer_link_banner;
   const bool prev_retry = view_.show_retry_peer_dial;
+  const bool prev_direct = view_.peer_link_direct;
+  const bool prev_hop = view_.peer_link_via_hop;
+  const bool prev_relay = view_.peer_link_via_relay;
+  const bool prev_connecting = view_.peer_link_connecting;
+  const bool prev_degraded = view_.peer_link_degraded;
+  const bool prev_failed = view_.peer_link_failed;
+  const bool prev_ready = view_.peer_link_ready;
   UpdatePeerLink();
   return view_.peer_link_status != prev_status || view_.peer_link_banner != prev_banner ||
          view_.show_peer_link != prev_show || view_.show_peer_link_banner != prev_banner_show ||
-         view_.show_retry_peer_dial != prev_retry;
+         view_.show_retry_peer_dial != prev_retry || view_.peer_link_direct != prev_direct ||
+         view_.peer_link_via_hop != prev_hop || view_.peer_link_via_relay != prev_relay ||
+         view_.peer_link_connecting != prev_connecting || view_.peer_link_degraded != prev_degraded ||
+         view_.peer_link_failed != prev_failed || view_.peer_link_ready != prev_ready;
 }
 
 void ChatThreadChrome::OnRetryPeerDial() {

@@ -150,6 +150,13 @@ private:
     ui::String peer_link_banner;
     bool show_peer_link = false;
     bool show_peer_link_banner = false;
+    bool peer_link_direct = false;
+    bool peer_link_via_hop = false;
+    bool peer_link_via_relay = false;
+    bool peer_link_connecting = false;
+    bool peer_link_degraded = false;
+    bool peer_link_failed = false;
+    bool peer_link_ready = false;
     bool show_retry_peer_dial = false;
     bool thread_encrypted = false;
     bool thread_is_ai = false;

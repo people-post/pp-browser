@@ -541,6 +541,10 @@ TEST_F(CallSessionInboundComposeTest, InboundCallEndedEndsActiveSession) {
   local.joined_at = session.created_at;
   ASSERT_TRUE(sessions_->UpsertParticipant(local));
 
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  lifecycle_->Apply(CallLifecycleEvent::DirectConnected, call_id);
+  ASSERT_EQ(lifecycle_->Phase(), CallPhase::InCall);
+
   CallEndedDetail ended;
   ended.call_id = call_id;
   ended.duration_ms = 1500;
@@ -554,6 +558,9 @@ TEST_F(CallSessionInboundComposeTest, InboundCallEndedEndsActiveSession) {
   auto loaded = sessions_->LoadSession(call_id);
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::Idle)
+      << "CallEnded → EndCallLocal must Apply RemoteEnded (no local LeaveClicked)";
+  EXPECT_TRUE(lifecycle_->ActiveCallId().empty());
 }
 
 TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia) {
@@ -671,6 +678,11 @@ TEST_F(CallSessionInboundComposeTest, InboundPeerLeaveEndsActiveOneToOne) {
   peer.joined_at = session.created_at;
   ASSERT_TRUE(sessions_->UpsertParticipant(peer));
 
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  lifecycle_->Apply(CallLifecycleEvent::DirectConnected, call_id);
+  ASSERT_EQ(lifecycle_->Phase(), CallPhase::InCall);
+  ASSERT_EQ(lifecycle_->ActiveCallId(), call_id);
+
   CallLeaveDetail leave;
   leave.call_id = call_id;
   leave.identity = "account:peer";
@@ -684,6 +696,10 @@ TEST_F(CallSessionInboundComposeTest, InboundPeerLeaveEndsActiveOneToOne) {
   auto loaded = sessions_->LoadSession(call_id);
   ASSERT_TRUE(loaded && loaded->has_value());
   EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::Idle)
+      << "peer Leave → EndCallLocal must Apply RemoteEnded (no local LeaveClicked)";
+  EXPECT_TRUE(lifecycle_->ActiveCallId().empty());
+  EXPECT_FALSE(lifecycle_->WantEphemeralListen());
 }
 
 TEST_F(CallSessionInboundComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
@@ -723,6 +739,9 @@ TEST_F(CallSessionInboundComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   auto active = csm_->ActiveLocalCall();
   ASSERT_TRUE(active && active->has_value());
   EXPECT_EQ((*active)->call_id, call_b);
+  // Ending A must not RemoteEnded-clobber Accepting/Joined B.
+  EXPECT_NE(lifecycle_->Phase(), CallPhase::Idle);
+  EXPECT_EQ(lifecycle_->ActiveCallId(), call_b);
 
   lifecycle_->Apply(CallLifecycleEvent::LeaveClicked, call_b);
   DrainUntil([&]() {

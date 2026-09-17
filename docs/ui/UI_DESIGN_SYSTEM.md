@@ -154,13 +154,13 @@ Visual distinction by chat type — icons and accent rails, not plaintext Privat
 
 **Sidebar:** leading type icon for kind; selection uses a clear filled row + 3dp accent rail (idle rows have no rail). No text tier badge.
 
-**Chat header (compact):** type icon inline with title on one row; muted subtitle on the second. No text kind labels (icon + accent rail carry kind). Thread tools (Clear history, Forget AI memory, Sync with peer) live in a `⋯` overflow menu (`.chat-header-more-btn` → `ContextMenuHost`); Details stays visible. Private keeps the secure shell tint (`.chat-shell--e2e` / `.chat-shell--private`).
+**Chat header (compact):** type icon inline with title on one row; muted subtitle + optional peer-path chip on the meta row. Peer path uses tinted SVGs (`status-direct` / `status-hop` / `status-relay`) driven by `ThreadPeerPathKind` (`Direct` · `Via hop` · `Via relay` · short-lived `Connecting…` for dial/handshake/punch · degraded/failed/ready) — not a copy of the desktop status bar. No text kind labels (icon + accent rail carry chat kind). Thread tools live in a `⋯` overflow menu (`.chat-header-more-btn` → `ContextMenuHost`); Details stays visible. Private keeps the secure shell tint (`.chat-shell--e2e` / `.chat-shell--private`).
 
 | Element | Public (`.chat-shell--public`) | Private (`.chat-shell--e2e`) |
 |---------|-------------------------------|------------------------------|
 | Header | Neutral 3dp left border | Secure surface tint + teal 3dp left border |
 | Title row | Message icon + peer/thread name | Lock icon + peer/thread name |
-| Subtitle | “Encrypted · easy start” | “Verified private · E2E” |
+| Meta row | Path chip (when direct) + subtitle (“Encrypted · easy start”) | Path chip + “Verified private · E2E” |
 | Composer | `border-subtle` | Stronger secure border |
 
 Data binding: `thread_is_ai` / `thread_is_private` / `thread_is_public` / `thread_is_group` on chat model; `session.kind` on shell sessions.
@@ -204,7 +204,7 @@ Shared `.btn` geometry is **capsule** (`border-radius: 999dp`) at **44dp** min-h
 
 ### Chat
 
-`.chat-panel`, `.chat-header`, `.chat-header-title-row`, `.chat-header-title`, `.chat-header-subtitle`, `.chat-header-actions`, `.chat-header-more-btn`, `.chat-shell--ai`, `.chat-shell--private`, `.chat-shell--public`, `.chat-shell--group`, `.chat-shell--e2e`, `.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-working-set-chip`
+`.chat-panel`, `.chat-header`, `.chat-header-title-row`, `.chat-header-title`, `.chat-header-meta-row`, `.chat-header-subtitle`, `.chat-peer-path`, `.chat-header-actions`, `.chat-header-more-btn`, `.chat-shell--ai`, `.chat-shell--private`, `.chat-shell--public`, `.chat-shell--group`, `.chat-shell--e2e`, `.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-working-set-chip`
 
 ### Home landing
 

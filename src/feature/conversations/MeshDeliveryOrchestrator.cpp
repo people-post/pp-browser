@@ -680,6 +680,7 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
 
   if (peer.empty()) {
     view.phase = MeshPeerLinkPhase::Unavailable;
+    view.path_kind = ThreadPeerPathKind::Failed;
     view.status_label = "Can't connect";
     view.banner_message = "Add a Peer ID with multiaddr, or a Relay ID, to message.";
     view.show_banner = true;
@@ -690,18 +691,28 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
     const MeshPeerLinkSnapshot snap = amp_links_->GetLinkSnapshot(peer);
     view.phase = snap.phase;
     view.has_direct_endpoint = snap.has_endpoint;
+    view.carrier_backed = snap.carrier_backed;
     view.backoff_seconds = static_cast<int>((snap.backoff_remaining.count() + 999) / 1000);
     switch (snap.phase) {
     case MeshPeerLinkPhase::Connected:
-      view.status_label = "Direct";
+      if (snap.carrier_backed) {
+        view.path_kind = ThreadPeerPathKind::ViaHop;
+        view.status_label = "Via hop";
+      } else {
+        view.path_kind = ThreadPeerPathKind::Direct;
+        view.status_label = "Direct";
+      }
       break;
     case MeshPeerLinkPhase::Dialing:
     case MeshPeerLinkPhase::Handshaking:
+      // Includes hole-punch burst dial — short-lived, never a settled badge.
+      view.path_kind = ThreadPeerPathKind::Connecting;
       view.status_label = "Connecting…";
       view.banner_message = "Trying a direct link…";
       view.show_banner = true;
       break;
     case MeshPeerLinkPhase::Backoff:
+      view.path_kind = ThreadPeerPathKind::Degraded;
       view.status_label = view.backoff_seconds > 0
                               ? ("Retrying soon (" + std::to_string(view.backoff_seconds) + "s)")
                               : "Retrying soon";
@@ -715,17 +726,21 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
       view.show_retry = true;
       break;
     case MeshPeerLinkPhase::Idle:
+      view.path_kind = ThreadPeerPathKind::Ready;
       view.status_label = view.relay_available ? "Ready · relay available" : "Ready to connect";
       break;
     case MeshPeerLinkPhase::Unavailable:
     default:
       if (view.relay_available) {
+        view.path_kind = ThreadPeerPathKind::ViaRelay;
         view.status_label = "Via relay";
       } else if (snap.has_endpoint) {
+        view.path_kind = ThreadPeerPathKind::Failed;
         view.status_label = "Offline";
         view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
         view.show_banner = true;
       } else {
+        view.path_kind = ThreadPeerPathKind::Failed;
         view.status_label = "Can't connect";
         view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
         view.show_banner = true;
@@ -737,8 +752,10 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
 
   view.phase = MeshPeerLinkPhase::Unavailable;
   if (view.relay_available) {
+    view.path_kind = ThreadPeerPathKind::ViaRelay;
     view.status_label = "Via relay";
   } else {
+    view.path_kind = ThreadPeerPathKind::Failed;
     view.status_label = "Offline";
     view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
     view.show_banner = true;

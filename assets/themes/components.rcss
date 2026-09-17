@@ -167,8 +167,39 @@ select selectbox option {
   min-width: 0;
 }
 
+.chat-header-meta-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6dp;
+  margin-top: 1dp;
+  min-width: 0;
+}
+
+.chat-peer-path {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4dp;
+  flex-shrink: 0;
+}
+
+.chat-peer-path-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12dp;
+  height: 12dp;
+}
+
+.chat-peer-path-icon svg {
+  flex-shrink: 0;
+}
+
 .chat-peer-link {
-  margin: 1dp 0 0 0;
+  margin: 0;
   opacity: 0.85;
 }
 
@@ -190,7 +221,9 @@ select selectbox option {
 }
 
 .chat-header-subtitle {
-  margin: 1dp 0 0 0;
+  margin: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .chat-header-title-btn {

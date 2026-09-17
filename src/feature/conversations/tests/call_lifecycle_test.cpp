@@ -164,6 +164,18 @@ TEST_F(CallLifecycleTest, ConnectFailedThenRemoteEndedClears) {
   EXPECT_FALSE(life_.WantEphemeralListen());
 }
 
+TEST_F(CallLifecycleTest, RemoteEndedIgnoredForStaleCallId) {
+  life_.Apply(CallLifecycleEvent::DirectConnected, "call:active");
+  EXPECT_EQ(life_.Phase(), CallPhase::InCall);
+
+  life_.Apply(CallLifecycleEvent::RemoteEnded, "call:prior");
+  EXPECT_EQ(life_.Phase(), CallPhase::InCall);
+  EXPECT_EQ(life_.ActiveCallId(), "call:active");
+
+  life_.Apply(CallLifecycleEvent::RemoteEnded, "call:active");
+  EXPECT_EQ(life_.Phase(), CallPhase::Idle);
+}
+
 TEST_F(CallLifecycleTest, ConnectFailedIgnoredFromIdle) {
   life_.Apply(CallLifecycleEvent::ConnectFailedEvt, "call:1");
   EXPECT_EQ(life_.Phase(), CallPhase::Idle);

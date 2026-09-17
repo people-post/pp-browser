@@ -1263,6 +1263,34 @@ select selectbox option:hover {
   image-color: #b45309;
 }
 
+.chat-peer-path--direct svg {
+  image-color: #4d7358;
+}
+
+.chat-peer-path--hop svg {
+  image-color: #b88445;
+}
+
+.chat-peer-path--relay svg {
+  image-color: #6b7280;
+}
+
+.chat-peer-path--connecting svg {
+  image-color: #9ca3af;
+}
+
+.chat-peer-path--degraded svg {
+  image-color: #b88445;
+}
+
+.chat-peer-path--failed svg {
+  image-color: #b86b6b;
+}
+
+.chat-peer-path--ready svg {
+  image-color: #9ca3af;
+}
+
 .chat-header-call-btn,
 .chat-header-more-btn {
   background-color: #e5e7eb;

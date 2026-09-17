@@ -270,6 +270,13 @@ ChatController::ChatController()
                  .peer_link_banner = chat_.peer_link_banner,
                  .show_peer_link = chat_.show_peer_link,
                  .show_peer_link_banner = chat_.show_peer_link_banner,
+                 .peer_link_direct = chat_.peer_link_direct,
+                 .peer_link_via_hop = chat_.peer_link_via_hop,
+                 .peer_link_via_relay = chat_.peer_link_via_relay,
+                 .peer_link_connecting = chat_.peer_link_connecting,
+                 .peer_link_degraded = chat_.peer_link_degraded,
+                 .peer_link_failed = chat_.peer_link_failed,
+                 .peer_link_ready = chat_.peer_link_ready,
                  .show_retry_peer_dial = chat_.show_retry_peer_dial,
                  .thread_encrypted = chat_.thread_encrypted,
                  .thread_is_ai = chat_.thread_is_ai,
@@ -2799,6 +2806,13 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.Bind("peer_link_banner", &controller.chat_.peer_link_banner);
         ctor.Bind("show_peer_link", &controller.chat_.show_peer_link);
         ctor.Bind("show_peer_link_banner", &controller.chat_.show_peer_link_banner);
+        ctor.Bind("peer_link_direct", &controller.chat_.peer_link_direct);
+        ctor.Bind("peer_link_via_hop", &controller.chat_.peer_link_via_hop);
+        ctor.Bind("peer_link_via_relay", &controller.chat_.peer_link_via_relay);
+        ctor.Bind("peer_link_connecting", &controller.chat_.peer_link_connecting);
+        ctor.Bind("peer_link_degraded", &controller.chat_.peer_link_degraded);
+        ctor.Bind("peer_link_failed", &controller.chat_.peer_link_failed);
+        ctor.Bind("peer_link_ready", &controller.chat_.peer_link_ready);
         ctor.Bind("show_retry_peer_dial", &controller.chat_.show_retry_peer_dial);
         ctor.Bind("thread_encrypted", &controller.chat_.thread_encrypted);
         ctor.Bind("thread_is_ai", &controller.chat_.thread_is_ai);

@@ -542,7 +542,17 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
 
   case CallLifecycleEvent::DeclineDone:
   case CallLifecycleEvent::LeaveDone:
+    accepting_call_id_.clear();
+    SetPhase(CallPhase::Idle, {}, ev);
+    NotifyChrome();
+    break;
+
   case CallLifecycleEvent::RemoteEnded:
+    // Ignore stale EndCallLocal for a prior call while Accept/InCall is already on another id.
+    if (!call_id.empty() && !call_id_.empty() && call_id != call_id_) {
+      log().info << "RemoteEnded ignored stale call_id=" << call_id << " active=" << call_id_;
+      return;
+    }
     accepting_call_id_.clear();
     SetPhase(CallPhase::Idle, {}, ev);
     NotifyChrome();

@@ -23,6 +23,13 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "peer_link_banner");
   DataModelHost::Instance().Dirty("chat", "show_peer_link");
   DataModelHost::Instance().Dirty("chat", "show_peer_link_banner");
+  DataModelHost::Instance().Dirty("chat", "peer_link_direct");
+  DataModelHost::Instance().Dirty("chat", "peer_link_via_hop");
+  DataModelHost::Instance().Dirty("chat", "peer_link_via_relay");
+  DataModelHost::Instance().Dirty("chat", "peer_link_connecting");
+  DataModelHost::Instance().Dirty("chat", "peer_link_degraded");
+  DataModelHost::Instance().Dirty("chat", "peer_link_failed");
+  DataModelHost::Instance().Dirty("chat", "peer_link_ready");
   DataModelHost::Instance().Dirty("chat", "show_retry_peer_dial");
   DataModelHost::Instance().Dirty("chat", "thread_encrypted");
   DataModelHost::Instance().Dirty("chat", "thread_is_ai");

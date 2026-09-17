@@ -24,8 +24,28 @@
                 data-event-click="open_peer_sheet()"></button>
         <h1 class="chat-header-title" data-if="!show_peer_sheet" data-rml="thread_title"></h1>
       </div>
-      <p class="text-xs muted chat-header-subtitle" data-rml="thread_subtitle"></p>
-      <p class="text-xs chat-peer-link" data-if="show_peer_link" data-rml="peer_link_status"></p>
+      <div class="chat-header-meta-row">
+        <div class="chat-peer-path" data-if="show_peer_link"
+             data-class-chat-peer-path--direct="peer_link_direct"
+             data-class-chat-peer-path--hop="peer_link_via_hop"
+             data-class-chat-peer-path--relay="peer_link_via_relay"
+             data-class-chat-peer-path--connecting="peer_link_connecting"
+             data-class-chat-peer-path--degraded="peer_link_degraded"
+             data-class-chat-peer-path--failed="peer_link_failed"
+             data-class-chat-peer-path--ready="peer_link_ready">
+          <div class="chat-peer-path-icon" data-if="peer_link_direct || peer_link_connecting || peer_link_degraded || peer_link_failed || peer_link_ready">
+            <svg src="../icons/status-direct.svg" width="12" height="12" crop-to-content="true"></svg>
+          </div>
+          <div class="chat-peer-path-icon" data-if="peer_link_via_hop">
+            <svg src="../icons/status-hop.svg" width="12" height="12" crop-to-content="true"></svg>
+          </div>
+          <div class="chat-peer-path-icon" data-if="peer_link_via_relay">
+            <svg src="../icons/status-relay.svg" width="12" height="12" crop-to-content="true"></svg>
+          </div>
+          <p class="text-xs chat-peer-link" data-rml="peer_link_status"></p>
+        </div>
+        <p class="text-xs muted chat-header-subtitle" data-rml="thread_subtitle"></p>
+      </div>
     </div>
     <div class="chat-header-actions row">
       <button class="chat-header-call-btn" type="button" data-if="show_call_actions"

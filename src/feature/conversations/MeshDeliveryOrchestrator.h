@@ -50,9 +50,22 @@ class AttachmentFetchWorkflow;
 class IChatHistoryPeerClient;
 class IChatBlobPeerClient;
 
+/** Product-facing path for chat header chrome (not dial/punch mechanics). */
+enum class ThreadPeerPathKind {
+  None = 0,
+  Direct,      // live ADP PeerLink
+  ViaHop,      // live circuit/media carrier PeerLink
+  ViaRelay,    // Brief/HTTP message relay only (no live mesh link)
+  Connecting,  // dial / handshake / punch — short-lived
+  Degraded,    // backoff / retry soon
+  Failed,      // offline / can't connect
+  Ready,       // idle, not yet dialing
+};
+
 /** Aggregated peer-link UX for a direct chat thread. */
 struct ThreadPeerLinkView {
   MeshPeerLinkPhase phase = MeshPeerLinkPhase::Unavailable;
+  ThreadPeerPathKind path_kind = ThreadPeerPathKind::None;
   std::string status_label;
   std::string banner_message;
   bool show_banner = false;
@@ -60,6 +73,7 @@ struct ThreadPeerLinkView {
   int backoff_seconds = 0;
   bool has_direct_endpoint = false;
   bool relay_available = false;
+  bool carrier_backed = false;
 };
 
 class MeshDeliveryOrchestrator : public Module {

@@ -71,6 +71,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 | Hop peerstore / circuit | media-hop **L1–L3** + loopback compose landed; **L3.5 multi-hop** later (transitive R1↛B) |
 | **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** + circuit compose; **ConnectAsync landed**; leftovers: inbound-handler stall contract, sync L4 façades for tests; optional s4 if Leave hangs — [SESSION_MACHINES.md](SESSION_MACHINES.md#remaining-work-call-media--peer-honesty) |
 | **Answerer MediaKey wait** | Exhaustion → `ConnectFailed` + `call.error.media_key_timeout` (no stuck MediaPending); KeyReady kick covered in Bridge + compose MediaKey unwrap |
+| **Remote Leave / CallEnded chrome** | `EndCallLocal` applies `RemoteEnded` when lifecycle `ActiveCallId` matches — offerer Idle without local LeaveClicked (gtest inbound Leave/Ended + dual-stack; stale id ignored) |
 | **Retry after ConnectFailed** | Lifecycle `RetryClicked` re-arms `DirectConnecting` before `RetryP2pMedia`/`BeginSession` (gtest `RetryClickedRearms*` / `RetryP2pMediaAfterConnectFailed`) |
 | **lv video** | Prefer loopback/probe; OEM dogfood only for Camera/HW encode |
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
@@ -84,7 +85,7 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 |------|-------------------|--------|
 | **D2 policy** | Lifecycle + topology Status gates; [`CallTxOnlyEscalateLogic`](../../src/domain/messaging/CallTxOnlyEscalateLogic.h) | **PASS** (gtest) |
 | **D3 dial without mDNS** | [`CallListenAddrsLogic`](../../src/domain/messaging/CallListenAddrsLogic.h) + invite encode round-trip; CSM fills invite/accept from provider | **PASS** (gtest) |
-| **D3 direct duplex** | `B-CALL-DIRECT`: Bridge answerer/offerer/KeyReady/ReleaseDirect + Kick logic + `CallMediaLegCoordinatorTest` + `call_session_inbound_compose_test` (Invite→AcceptClicked→Leave) + `call_ui_backend_stack_test` (CallStack+CallUiBackend Invite→**InCall**) + `pp_call_direct_smoke` | **Improved** (in-process CSM + CallUiBackend media path); thin smoke still Amp duplex scaffold |
+| **D3 direct duplex** | `B-CALL-DIRECT`: Bridge + Kick + CSM compose + CallUiBackend + dual-stack (Invite/InCall/Leave + K-cycle + conflict) + `pp_call_direct_smoke` / `pp_call_conflict_smoke` | **Improved** (in-process product wire + K-cycle + conflict); Amp smokes green |
 | **D4 circuit duplex** | `B-CALL-HOP`: `AmpCircuitCallMediaComposeTest` + `pp_call_hop_smoke` | **PASS** loopback; smoke scaffold |
 | **D4 forced NAT stand-in** | `B-HARD-CALL` / `--suite hard` (A↛B netns → circuit) | Scaffold / nightly — **replaces** “two NATed phones” as regression wall |
 | **OEM sample** | Audio session / Android mic-speaker — `covered-above` for policy | Optional; m1 LAN mobile already claimed |
@@ -99,8 +100,9 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 
 ## Next agent — start here
 
-1. Keep **pm** / **rd** green: unit + `call` / `call-hop` / `hard` purpose IDs.
-2. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay` if group SoftMigrate blocked.
+1. Keep **pm** / **rd** green: unit + `call` / `call-hop` / `hard` / `conflict` purpose IDs.
+2. Optional: `pp-call-probe` product invite wire (CallStack/CSM over Amp chat) — large; prefer dual-stack gtests unless OS-process invite is blocking.
+3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay` if group SoftMigrate blocked.
 
 ## Agent traps
 

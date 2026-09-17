@@ -28,6 +28,13 @@ public:
     ui::String& peer_link_banner;
     bool& show_peer_link;
     bool& show_peer_link_banner;
+    bool& peer_link_direct;
+    bool& peer_link_via_hop;
+    bool& peer_link_via_relay;
+    bool& peer_link_connecting;
+    bool& peer_link_degraded;
+    bool& peer_link_failed;
+    bool& peer_link_ready;
     bool& show_retry_peer_dial;
     bool& thread_encrypted;
     bool& thread_is_ai;

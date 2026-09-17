@@ -14,13 +14,38 @@ This is **complete risk accounting**, not line-coverage at every tier. A behavio
 
 ---
 
+## Design as oracle
+
+Tests guard **documented product intent** — architecture docs, ADRs, contracts, and purpose IDs (`B-*` / `N-*`) — not the current call graph or whatever the harness had to do to finish green.
+
+Code is under test; **docs are the oracle** for *what* must stay true. Line/branch coverage is a discovery aid, not the goal.
+
+1. **Start from a normative sentence** — e.g. [CALLS.md](CALLS.md) “Leave / remote end → Idle”, an ADR rule, or a purpose ID in [TEST_STRATEGY.md](../ops/TEST_STRATEGY.md).
+2. **Write the case so a wrong implementation fails** — assert user-visible / state outcomes (phase, session, listen, media). Avoid steps that exist only to make today’s code pass.
+3. **Heal / workaround in a fixture is a signal** — treat it as a product bug or `glue-gap`, not as harness lore to keep forever.
+4. **When code and docs disagree** — fix the docs or the code in the same change; do not encode the drift in the test.
+5. **Name tests after the behavior** — `InboundPeerLeaveClearsLifecycle`, not `EndCallLocalHelperPath`.
+
+Every compose/smoke case should cite a **purpose ID** or a **doc sentence**. Pure engines (codecs, planner tables) still need thorough unit cases — those logic headers / ADRs *are* the design.
+
+**Worked example (chrome heal):** a dual-stack Leave path went green by applying a local `LeaveClicked` on the offerer after the answerer left. That matched current code, not CALLS “remote end → Idle”. The design-oracle assert is: peer Leave/`CallEnded` → offerer `Idle` **without** a local Leave click. The heal was removed; `EndCallLocal` applies `RemoteEnded` when the bound call ends.
+
+### Legacy suites
+
+Much of the existing inventory pre-dates this rule and may still mirror implementation or carry fixture heals. That is expected debt, **not** a freeze.
+
+When a case you are already touching (or that blocks the change under review) asserts today’s sequence instead of documented intent, **tighten it in the same change**: drop the heal, assert the designed outcome, and fix product code if that turns red. Do **not** open a repo-wide rewrite of old tests; do **not** preserve a green-but-wrong assert out of courtesy to the prior harness.
+
+---
+
 ## Decision rules
 
-1. **Cheapest layer that answers the question** — pick the purpose, then the cheapest tier that can prove it.
-2. **Push complexity down** — prefer seams in `common` / `foundation` / `domain` that unit tests can almost fully cover. If an integration path is too expensive or flaky to own, first ask whether a real lower-layer seam would make the behavior unit-testable.
-3. **Higher tiers verify wiring and environment** — they do not re-prove codec, SM, or store rules already covered below.
-4. **Extract only for real product boundaries** — do not invent test-only “libs.” Push into foundation/domain (or owned `src/lib/` / FetchContent stacks) when the logic is a coherent engine two features could share; leave genuine composition, lifetimes, and packaging at feature/app/smoke.
-5. **Promote failures downward** — when a higher tier (integration / smoke / hard lab) finds a bug, ask whether a cheaper gtest can lock the invariant before relying on Docker. See [When a higher tier finds a bug](#when-a-higher-tier-finds-a-bug).
+1. **Design as oracle** — lock documented intent; see [Design as oracle](#design-as-oracle).
+2. **Cheapest layer that answers the question** — pick the purpose, then the cheapest tier that can prove it.
+3. **Push complexity down** — prefer seams in `common` / `foundation` / `domain` that unit tests can almost fully cover. If an integration path is too expensive or flaky to own, first ask whether a real lower-layer seam would make the behavior unit-testable.
+4. **Higher tiers verify wiring and environment** — they do not re-prove codec, SM, or store rules already covered below.
+5. **Extract only for real product boundaries** — do not invent test-only “libs.” Push into foundation/domain (or owned `src/lib/` / FetchContent stacks) when the logic is a coherent engine two features could share; leave genuine composition, lifetimes, and packaging at feature/app/smoke.
+6. **Promote failures downward** — when a higher tier (integration / smoke / hard lab) finds a bug, ask whether a cheaper gtest can lock the invariant before relying on Docker. See [When a higher tier finds a bug](#when-a-higher-tier-finds-a-bug).
 
 ---
 
@@ -31,7 +56,7 @@ Smoke and hard-lab are **discovery** tools for deploy/topology reality. They are
 **Agent checklist** after a failure at integration / smoke / hard lab:
 
 1. **Reproduce cheaper?** Can the same failure mode be shown with in-process loopback, a feature gtest, or a domain unit test?
-2. **If yes** — fix the code **and** add/extend the lower-tier test in the same change set (or immediately after). Keep the higher-tier scenario as packaging/topology evidence (`covered-above` for the env part; policy owned below).
+2. **If yes** — fix the code **and** add/extend the lower-tier test in the same change set (or immediately after). Keep the higher-tier scenario as packaging/topology evidence (`covered-above` for the env part; policy owned below). Assert the **designed** outcome (not a harness heal).
 3. **If no** — document why (`covered-above`, `cost/flake`, or true multi-netns-only) in the purpose inventory / suite ledger.
 4. **Do not** leave “only `--suite hard` catches this” for a one-line reachability/policy mistake that loopback can prove.
 
@@ -99,7 +124,7 @@ Every high-risk behavior should have a **named home tier and evidence**, or an *
 
 | Content | Home |
 |---------|------|
-| Doctrine (this file): tiers, push-down, skips, layer map | [`docs/architecture/TESTING.md`](TESTING.md) |
+| Doctrine (this file): design-as-oracle, tiers, push-down, skips, layer map | [`docs/architecture/TESTING.md`](TESTING.md) |
 | CI ladder, purpose IDs (`N-*` / `B-*` / `N-HARD-*`), compose PR set, scripts, soak/chaos | [`docs/ops/TEST_STRATEGY.md`](../ops/TEST_STRATEGY.md) |
 | Hard lab topology / scenario ladder (Tier C deploy simulation) | [`packaging/pp-node/HARD_LAB.md`](../../packaging/pp-node/HARD_LAB.md) — delivery [projects/hard-lab/](../../projects/hard-lab/) |
 | In-flight matrices while a project ships | `projects/<name>/TEST_MATRIX.md` (e.g. [adp/TEST_MATRIX.md](../../projects/adp/TEST_MATRIX.md)) |
@@ -146,10 +171,12 @@ Cross-cutting product journeys (calls, hop, messaging across processes) keep **p
 
 ## Practical default for new work
 
-1. Put rules / codecs / stores in domain or foundation → **unit**.
-2. Wire a typical path in feature with real collaborators (fakes only at true ports) → **integration**.
-3. Add **smoke** only if packaging, multi-process, or env can break what lower tiers cannot see.
-4. If step 2 feels huge → pause and ask whether step 1 missed a seam.
+1. Write (or cite) the **design sentence** / purpose ID the case must guard.
+2. Put rules / codecs / stores in domain or foundation → **unit**.
+3. Wire a typical path in feature with real collaborators (fakes only at true ports) → **integration**; assert outcomes, not today’s helper sequence.
+4. Add **smoke** only if packaging, multi-process, or env can break what lower tiers cannot see.
+5. If step 3 feels huge → pause and ask whether step 2 missed a seam.
+6. If the fixture needs a heal to finish → stop; fix product or mark `glue-gap` / `non-goal`.
 
 ---
 
@@ -162,6 +189,9 @@ Cross-cutting product journeys (calls, hop, messaging across processes) keep **p
 - Line-coverage % as a gate instead of behavior accounting
 - Test-only abstractions that violate layer include rules
 - Duplicating pass/fail criteria in both a module ledger and the ops purpose catalog
+- Asserting today’s call sequence / helper path instead of the designed outcome
+- Chrome/heal steps that paper over missing product events (green but not guarding design)
+- “Cover this function” without a design sentence or purpose ID to protect
 
 ---
 
