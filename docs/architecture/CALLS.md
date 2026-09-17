@@ -22,11 +22,12 @@ Do **not** restate the full product decision table here — link DECISIONS. Prom
 
 ## Call lifecycle
 
-1:1 call phases are owned by [`CallLifecycle`](../../src/feature/calls/CallLifecycle.h) (`Idle` → `Ringing` / `OutboundCalling` → `Accepting` → `JoinedLocal` → `MediaPending` / `MediaConnecting` → `InCall` / `ConnectFailed`). `CallController` only posts clicks and paints chrome; session/media/listen report outcomes into `Apply(event)`.
+1:1 call phases are owned by [`CallLifecycle`](../../src/feature/calls/CallLifecycle.h) (`Idle` → `Ringing` / `OutboundCalling` → `Accepting` → `JoinedLocal` → `MediaPending` / `MediaConnecting` → `InCall` / `ConnectFailed`). **Transitions** are pure [`DecideCallLifecycleTransition`](../../src/domain/messaging/CallLifecycleTransitionLogic.h) (gtest table); `Apply` only executes named actions (`PostAcceptInvite`, chrome, kick). `CallController` posts clicks and paints chrome; session/media/listen report outcomes into `Apply(event)`. Heavy media logic stays in Bridge / Topology planners (V039) — not in phase handlers.
 
 | Owner | Responsibility |
 |-------|----------------|
-| **CallLifecycle** | Phase enum, transitions, thread policy, listen desire, `ShouldSuppressRing` |
+| **CallLifecycle** | Phase/Status enums, execute transition actions, thread policy, listen desire, `ShouldSuppressRing` |
+| **CallLifecycleTransitionLogic** | Pure `(phase, status, event) → Outcome` table (no I/O) |
 | **CallController** | Rml clicks → `Apply(event)`; ring / in-call chrome via `apply_chrome_update` → ShellHost Remount / DirtyCallChrome |
 | **CallSessionManager** | Persist session/invite/roster; encode/send controls; notify lifecycle |
 | **CallMediaBridge** | Media-key defer, dial/retry; report `MediaDeferred` / `DirectConnected` / `ConnectFailed` |

@@ -1,5 +1,6 @@
 #include "feature/calls/CallLifecycle.h"
 
+#include "domain/messaging/CallLifecycleTransitionLogic.h"
 #include "feature/calls/CallSessionManager.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
@@ -445,59 +446,99 @@ void CallLifecycle::PostRetryMedia(const std::string& call_id) {
 }
 
 void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_id_arg) {
-  std::string call_id = call_id_arg;
-  if (call_id.empty()) {
-    call_id = call_id_;
+  CallLifecycleTransitionContext ctx;
+  ctx.phase = phase_;
+  ctx.status = status_;
+  ctx.active_call_id = call_id_;
+  ctx.accepting_call_id = accepting_call_id_;
+  ctx.last_ring_call_id = last_ring_call_id_;
+  ctx.event_call_id = call_id_arg;
+  ctx.sessions_bound = sessions_ != nullptr;
+  ctx.allows_direct_path = AllowsDirectPath();
+
+  const CallLifecycleTransitionOutcome out = DecideCallLifecycleTransition(ev, ctx);
+  const CallLifecycleAction actions = out.actions;
+  if (actions == CallLifecycleAction::None) {
+    return;
   }
 
-  switch (ev) {
-  case CallLifecycleEvent::InviteSeen:
-    if (phase_ == CallPhase::Idle || phase_ == CallPhase::Ringing) {
-      NoteRingCallId(call_id);
-      SetPhase(CallPhase::Ringing, call_id, ev);
-      NotifyChrome();
-    } else if (phase_ == CallPhase::OutboundCalling || phase_ == CallPhase::InCall ||
-               phase_ == CallPhase::MediaConnecting || phase_ == CallPhase::JoinedLocal ||
-               phase_ == CallPhase::MediaPending || phase_ == CallPhase::ConnectFailed) {
-      NoteRingCallId(call_id);
-      NotifyChrome();
+  if (HasAction(actions, CallLifecycleAction::LogIgnored)) {
+    if (out.ignore_reason) {
+      log().info << out.ignore_reason
+                 << (out.call_id.empty() ? "" : (" call_id=" + out.call_id));
     }
-    break;
-
-  case CallLifecycleEvent::InviteCleared:
-    if (phase_ == CallPhase::Ringing) {
-      SetPhase(CallPhase::Idle, {}, ev);
-      NotifyChrome();
-    }
-    break;
-
-  case CallLifecycleEvent::OutboundStarted:
-    SetPhase(CallPhase::OutboundCalling, call_id, ev);
-    SetStatusInternal(CallMediaStatus::Deciding, call_id, "OutboundStarted");
-    NotifyChrome();
-    break;
-
-  case CallLifecycleEvent::AcceptClicked: {
-    if (call_id.empty()) {
-      call_id = last_ring_call_id_;
-    }
-    if (call_id.empty()) {
-      log().info << "AcceptClicked ignored (no call_id)";
+    // "already in flight" still notifies chrome; pure ignore returns after log.
+    if (!HasAction(actions, CallLifecycleAction::NotifyChrome) &&
+        !HasAction(actions, CallLifecycleAction::DeferChrome)) {
       return;
     }
-    if (!accepting_call_id_.empty() && accepting_call_id_ == call_id) {
-      log().info << "AcceptClicked already in flight call_id=" << call_id;
-      NotifyChrome();
-      return;
+  }
+
+  if (HasAction(actions, CallLifecycleAction::NoteRing)) {
+    NoteRingCallId(out.call_id);
+  }
+  if (HasAction(actions, CallLifecycleAction::SetAccepting)) {
+    accepting_call_id_ = out.call_id;
+    last_ring_call_id_ = out.call_id;
+  }
+  if (HasAction(actions, CallLifecycleAction::ClearAccepting)) {
+    accepting_call_id_.clear();
+  }
+  if (HasAction(actions, CallLifecycleAction::SetPhase)) {
+    SetPhase(out.next_phase, out.call_id, ev);
+  } else if (HasAction(actions, CallLifecycleAction::LogKeepPhase)) {
+    log().info << "AcceptSucceeded keep phase=" << CallPhaseName(phase_)
+               << " status=" << CallMediaStatusName(status_) << " call_id=" << call_id_;
+  }
+  if (HasAction(actions, CallLifecycleAction::SetStatus)) {
+    SetStatusInternal(out.next_status, out.call_id,
+                      out.status_reason ? out.status_reason : CallLifecycleEventName(ev));
+  }
+
+  if (HasAction(actions, CallLifecycleAction::PostAcceptInvite)) {
+    log().info << "PostAcceptInvite queued call_id=" << out.call_id;
+    PostAcceptInvite(out.call_id);
+  }
+  if (HasAction(actions, CallLifecycleAction::PostDeclineInvite)) {
+    PostDeclineInvite(out.call_id);
+  }
+  if (HasAction(actions, CallLifecycleAction::PostLeaveCall)) {
+    PostLeaveCall(out.call_id);
+  }
+  if (HasAction(actions, CallLifecycleAction::PostRetryMedia)) {
+    PostRetryMedia(out.call_id);
+  }
+
+  if (HasAction(actions, CallLifecycleAction::KickAnswererDirectMedia)) {
+    const std::string kick_id = call_id_.empty() ? out.call_id : call_id_;
+    if (sessions_ && AllowsDirectPath()) {
+      log().info << "AcceptSucceeded KickAnswererDirectMedia StartSfu arm call_id=" << kick_id
+                 << " status=" << CallMediaStatusName(status_);
+      sessions_->KickAnswererDirectMediaIfArmed(kick_id);
+      const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
+      auto guard = async_epoch_;
+      AppRuntime::PostUI([this, kick_id, guard, epoch]() {
+        if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+          return;
+        }
+        if (!sessions_ || call_id_ != kick_id || !AllowsDirectPath()) {
+          return;
+        }
+        if (sessions_->Media().IsActive() && sessions_->Media().ActiveCallId() == kick_id) {
+          return;
+        }
+        log().info << "AcceptSucceeded retry KickAnswererDirectMedia StartSfu call_id="
+                   << kick_id << " status=" << CallMediaStatusName(status_);
+        sessions_->KickAnswererDirectMediaIfArmed(kick_id);
+      });
+    } else {
+      log().info << "AcceptSucceeded skip KickAnswerer StartSfu call_id=" << kick_id
+                 << " sessions=" << (sessions_ ? 1 : 0)
+                 << " status=" << CallMediaStatusName(status_);
     }
-    accepting_call_id_ = call_id;
-    last_ring_call_id_ = call_id;
-    SetPhase(CallPhase::Accepting, call_id, ev);
-    // Queue AcceptInvite on IO before chrome refresh — NotifyChrome/RefreshPendingRing
-    // must not gate session work (Samsung: mDNS advertise lock hung UI before this ran).
-    log().info << "PostAcceptInvite queued call_id=" << call_id;
-    PostAcceptInvite(call_id);
-    // Defer chrome refresh so the Accept click returns before ring teardown / DirtyCallChrome.
+  }
+
+  if (HasAction(actions, CallLifecycleAction::DeferChrome)) {
     if (AppRuntime::CurrentlyOnUI()) {
       const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
       auto guard = async_epoch_;
@@ -510,153 +551,8 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
     } else {
       NotifyChrome();
     }
-    break;
-  }
-
-  case CallLifecycleEvent::DeclineClicked:
-    if (call_id.empty()) {
-      call_id = last_ring_call_id_;
-    }
-    if (call_id.empty()) {
-      log().info << "DeclineClicked ignored (no call_id)";
-      return;
-    }
-    SetPhase(CallPhase::Idle, {}, ev);
+  } else if (HasAction(actions, CallLifecycleAction::NotifyChrome)) {
     NotifyChrome();
-    PostDeclineInvite(call_id);
-    break;
-
-  case CallLifecycleEvent::LeaveClicked:
-    if (call_id.empty()) {
-      log().info << "LeaveClicked ignored (no call_id)";
-      return;
-    }
-    SetPhase(CallPhase::Idle, {}, ev);
-    NotifyChrome();
-    PostLeaveCall(call_id);
-    break;
-
-  case CallLifecycleEvent::RetryClicked:
-    if (call_id.empty() || phase_ != CallPhase::ConnectFailed) {
-      log().info << "RetryClicked ignored phase=" << CallPhaseName(phase_);
-      return;
-    }
-    PostRetryMedia(call_id);
-    break;
-
-  case CallLifecycleEvent::AcceptSucceeded:
-    // Ignore stale AcceptInvite completion after chrome moved to another call_id (Accept B).
-    if (!call_id.empty() && !call_id_.empty() && call_id != call_id_) {
-      log().info << "AcceptSucceeded ignored stale call_id=" << call_id << " active=" << call_id_;
-      return;
-    }
-    accepting_call_id_.clear();
-    // Do not clobber MediaPending/MediaConnecting if answerer ScheduleStart already
-    // deferred (MediaDeferred) or keyed (MediaKeyReady) on the UI queue ahead of us.
-    if (phase_ != CallPhase::MediaPending && phase_ != CallPhase::MediaConnecting &&
-        phase_ != CallPhase::InCall) {
-      SetPhase(CallPhase::JoinedLocal, call_id, ev);
-    } else {
-      log().info << "AcceptSucceeded keep phase=" << CallPhaseName(phase_)
-                 << " status=" << CallMediaStatusName(status_) << " call_id=" << call_id_;
-    }
-    NotifyChrome();
-    // Answerer media must start on UI after Status is visible (worker ScheduleStart alone
-    // can PostUI before AcceptSucceeded and silently no-op if Status/session race).
-    // Log tokens include StartSfu so dogfood filters that omit CallSessionManager still see it.
-    {
-      const std::string kick_id = call_id_.empty() ? call_id : call_id_;
-      if (sessions_ && AllowsDirectPath()) {
-        log().info << "AcceptSucceeded KickAnswererDirectMedia StartSfu arm call_id=" << kick_id
-                   << " status=" << CallMediaStatusName(status_);
-        sessions_->KickAnswererDirectMediaIfArmed(kick_id);
-        // One follow-up Kick if the worker PostUIFront StartSfu has not armed the engine yet.
-        const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
-        auto guard = async_epoch_;
-        AppRuntime::PostUI([this, kick_id, guard, epoch]() {
-          if (!guard || guard->load(std::memory_order_acquire) != epoch) {
-            return;
-          }
-          if (!sessions_ || call_id_ != kick_id || !AllowsDirectPath()) {
-            return;
-          }
-          if (sessions_->Media().IsActive() && sessions_->Media().ActiveCallId() == kick_id) {
-            return;
-          }
-          log().info << "AcceptSucceeded retry KickAnswererDirectMedia StartSfu call_id="
-                     << kick_id << " status=" << CallMediaStatusName(status_);
-          sessions_->KickAnswererDirectMediaIfArmed(kick_id);
-        });
-      } else {
-        log().info << "AcceptSucceeded skip KickAnswerer StartSfu call_id=" << kick_id
-                   << " sessions=" << (sessions_ ? 1 : 0)
-                   << " status=" << CallMediaStatusName(status_);
-      }
-    }
-    break;
-
-  case CallLifecycleEvent::AcceptFailed:
-    if (!call_id.empty() && !call_id_.empty() && call_id != call_id_) {
-      log().info << "AcceptFailed ignored stale call_id=" << call_id << " active=" << call_id_;
-      return;
-    }
-    accepting_call_id_.clear();
-    SetPhase(CallPhase::Ringing, call_id, ev);
-    NotifyChrome();
-    break;
-
-  case CallLifecycleEvent::DeclineDone:
-  case CallLifecycleEvent::LeaveDone:
-    accepting_call_id_.clear();
-    SetPhase(CallPhase::Idle, {}, ev);
-    NotifyChrome();
-    break;
-
-  case CallLifecycleEvent::RemoteEnded:
-    // Ignore stale EndCallLocal for a prior call while Accept/InCall is already on another id.
-    if (!call_id.empty() && !call_id_.empty() && call_id != call_id_) {
-      log().info << "RemoteEnded ignored stale call_id=" << call_id << " active=" << call_id_;
-      return;
-    }
-    accepting_call_id_.clear();
-    SetPhase(CallPhase::Idle, {}, ev);
-    NotifyChrome();
-    break;
-
-  case CallLifecycleEvent::MediaDeferred:
-    if (phase_ == CallPhase::Accepting || phase_ == CallPhase::JoinedLocal ||
-        phase_ == CallPhase::OutboundCalling || phase_ == CallPhase::MediaConnecting) {
-      SetPhase(CallPhase::MediaPending, call_id, ev);
-      NotifyChrome();
-    }
-    break;
-
-  case CallLifecycleEvent::MediaKeyReady:
-    if (phase_ == CallPhase::MediaPending || phase_ == CallPhase::JoinedLocal ||
-        phase_ == CallPhase::Accepting) {
-      SetPhase(CallPhase::MediaConnecting, call_id, ev);
-      NotifyChrome();
-    }
-    break;
-
-  case CallLifecycleEvent::DirectConnected:
-    // Prefer existing Live/path Status; otherwise DirectLive.
-    if (status_ == CallMediaStatus::HopAttaching || status_ == CallMediaStatus::HopWaiting ||
-        status_ == CallMediaStatus::HopLive || status_ == CallMediaStatus::Migrating) {
-      SetStatusInternal(CallMediaStatus::HopLive, call_id, "DirectConnected");
-    } else if (status_ != CallMediaStatus::DirectLive && status_ != CallMediaStatus::HopLive) {
-      SetStatusInternal(CallMediaStatus::DirectLive, call_id, "DirectConnected");
-    }
-    SetPhase(CallPhase::InCall, call_id, ev);
-    NotifyChrome();
-    break;
-
-  case CallLifecycleEvent::ConnectFailedEvt:
-    if (phase_ != CallPhase::Idle) {
-      SetPhase(CallPhase::ConnectFailed, call_id, ev);
-      NotifyChrome();
-    }
-    break;
   }
 }
 

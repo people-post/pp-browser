@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Module.h"
+#include "domain/messaging/CallLifecycleTypes.h"
 
 #include <atomic>
 #include <cstdint>
@@ -14,72 +15,11 @@ namespace pbr {
 class CallSessionManager;
 
 /**
- * Call chrome / shell State (V037). JoinedLocal / MediaPending / MediaConnecting are
- * Calling-like for planner arming until a future rename.
- */
-enum class CallPhase {
-  Idle = 0,
-  Ringing,
-  Accepting,
-  OutboundCalling,
-  JoinedLocal,
-  MediaPending,
-  MediaConnecting,
-  InCall,
-  ConnectFailed,
-};
-
-/**
- * Media Status under Calling-like / InCall (V037). Arms at most one planner.
- */
-enum class CallMediaStatus {
-  None = 0,
-  Deciding,
-  DirectConnecting,
-  HopWaiting,
-  HopAttaching,
-  DirectLive,
-  HopLive,
-  Migrating,
-  DegradedTxOnly,
-  Failed,
-};
-
-enum class CallArmedPlanner {
-  None = 0,
-  Lifecycle,
-  Bridge,
-  Topology,
-};
-
-enum class CallLifecycleEvent {
-  InviteSeen = 0,
-  InviteCleared,
-  OutboundStarted,
-  AcceptClicked,
-  DeclineClicked,
-  LeaveClicked,
-  RetryClicked,
-  AcceptSucceeded,
-  AcceptFailed,
-  DeclineDone,
-  LeaveDone,
-  MediaDeferred,
-  MediaKeyReady,
-  DirectConnected,
-  ConnectFailedEvt,
-  RemoteEnded,
-};
-
-const char* CallPhaseName(CallPhase phase);
-const char* CallMediaStatusName(CallMediaStatus status);
-const char* CallArmedPlannerName(CallArmedPlanner planner);
-const char* CallLifecycleEventName(CallLifecycleEvent ev);
-
-/**
  * Orchestrates call State + media Status (V037). Controllers post clicks here;
  * session/media/listen subsystems report outcomes here. Never calls ListenOn or
  * encrypt on the caller thread.
+ *
+ * Transitions: pure `DecideCallLifecycleTransition` (domain); this class executes actions.
  */
 class CallLifecycle : public Module {
 public:
