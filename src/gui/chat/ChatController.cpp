@@ -2503,8 +2503,6 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
     working_set_.ApplyFromParse(action_entry_id, working_set_candidates, chat_actions);
 
     if (shared_ai_mode == AtAiMode::SharedReply || shared_ai_mode == AtAiMode::SharedFull) {
-      const std::string active_thread =
-          thread_id.empty() ? ActiveThreadId() : thread_id;
       std::string relay_plain = raw_output;
       if (StructuredTextParser::IsBlocksJsonDocument(raw_output)) {
         if (auto blocks_doc = TryParseObject(raw_output)) {
