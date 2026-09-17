@@ -157,7 +157,7 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 | V037/V038 planner + TX-only | `call_lifecycle_test`, `call_topology_controller_test` (`InboundSfuAttachIgnoredWhenStatusDirectConnecting`), `call_tx_only_escalate_test` |
 | Invite listen MAs (no mDNS) | `call_listen_addrs_logic_test` — V038 D3 |
 | Answerer Kick / ScheduleStart → BeginSession | `call_answerer_kick_logic_test`, `call_media_bridge_answerer_start_test` — V038 D3 product glue |
-| CSM Invite→Leave compose + inbound arms | `call_session_inbound_compose_test` — Invite/stale/decline/peer-Leave/Ended/MediaKey/offerer-Accept/HopRefuse/SfuAttach-ignored + AcceptClicked→Leave + K-cycle + second-Accept ends prior + restart abandon + sweep expired; Bridge offerer / KeyReady / ReleaseDirect |
+| CSM Invite→Leave compose + inbound arms | `call_session_inbound_compose_test` — full CSM dispatch matrix (Invite→Leave, K-cycle, conflict Accept, restart abandon, MediaKey, HopRefuse, Broadcast arm/accept, StartCall, Retry) + Bridge offerer/KeyReady/ReleaseDirect; lifecycle Retry re-arms DirectConnecting |
 | N→planner select (Direct vs Hop) | `call_media_planner_select_logic_test` — Effective N; relay-cap SoftMigrate nudge gates |
 | Direct / Hop planner tables (V039) | `call_direct_planner_logic_test`, `call_hop_planner_logic_test` |
 

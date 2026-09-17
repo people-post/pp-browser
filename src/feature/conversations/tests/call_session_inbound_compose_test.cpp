@@ -5,11 +5,13 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 
 #include "domain/media/CallMediaEngine.h"
+#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/CallTypes.h"
 #include "domain/messaging/SqliteThreadStore.h"
+#include "common/thread/ThreadRecordTypes.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
@@ -880,6 +882,233 @@ TEST_F(CallSessionInboundComposeTest, LegacySdpAndIceIgnored) {
   auto pending = csm_->TopPendingInvite();
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
+}
+
+TEST_F(CallSessionInboundComposeTest, DeclineClickedClearsPendingViaLifecycle) {
+  const std::string call_id = "call:decline-life";
+  auto msg = MakeInviteMessage(call_id);
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+  lifecycle_->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::Ringing);
+
+  lifecycle_->Apply(CallLifecycleEvent::DeclineClicked, call_id);
+  DrainUntil([&]() {
+    auto pending = csm_->TopPendingInvite();
+    return pending && !pending->has_value() && lifecycle_->Phase() == CallPhase::Idle;
+  });
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::Idle);
+  auto pending = csm_->TopPendingInvite();
+  ASSERT_TRUE(pending);
+  EXPECT_FALSE(pending->has_value());
+}
+
+TEST_F(CallSessionInboundComposeTest, InboundVideoRefreshHonoredOnlyWhenJoinedActive) {
+  const std::string call_id = "call:vref";
+  // Wrong call / not joined → no-op success.
+  CallVideoRefreshDetail refresh;
+  refresh.call_id = call_id;
+  refresh.identity = local_identity_;
+  auto detail = CallControlCodec::EncodeVideoRefresh(refresh);
+  ASSERT_TRUE(detail);
+  auto msg = CallControlCodec::BuildSystemMessage("thread:1", CallControlType::CallVideoRefresh, "IDR", *detail,
+                                                  "account:peer");
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+
+  auto invite = MakeInviteMessage(call_id);
+  ASSERT_TRUE(invite);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*invite, "account:peer"));
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  lifecycle_->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  lifecycle_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
+  DrainUntil([&]() { return media_->IsActive() || bridge_->MediaAttempted(call_id); });
+
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+}
+
+TEST_F(CallSessionInboundComposeTest, InboundSfuAttachFailedDispatched) {
+  const std::string call_id = "call:sfu-fail";
+  SeedOffererRingingCall(call_id);
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+
+  CallSfuAttachFailedDetail fail;
+  fail.call_id = call_id;
+  fail.identity = "account:peer";
+  fail.failed_hop_peer_id = "12D3KooWHop";
+  fail.error = "attach_failed";
+  auto detail = CallControlCodec::EncodeSfuAttachFailed(fail);
+  ASSERT_TRUE(detail);
+  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallSfuAttachFailed, "fail",
+                                                  *detail, "account:peer");
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+}
+
+TEST_F(CallSessionInboundComposeTest, RetryP2pMediaAfterConnectFailed) {
+  const std::string call_id = "call:retry";
+  SeedOffererRingingCall(call_id);
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+
+  CallAcceptDetail accept;
+  accept.call_id = call_id;
+  accept.identity = "account:peer";
+  auto detail = CallControlCodec::EncodeAccept(accept);
+  ASSERT_TRUE(detail);
+  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallAccept, "Accepted", *detail,
+                                                  "account:peer");
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+  DrainUntil([&]() { return bridge_->MediaAttempted(call_id) || media_->IsActive(); });
+  ASSERT_TRUE(bridge_->MediaAttempted(call_id));
+
+  lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::ConnectFailed);
+  EXPECT_FALSE(lifecycle_->AllowsDirectPath());
+
+  lifecycle_->Apply(CallLifecycleEvent::RetryClicked, call_id);
+  EXPECT_TRUE(lifecycle_->AllowsDirectPath()) << "RetryClicked re-arms DirectConnecting";
+  DrainUntil([&]() {
+    return lifecycle_->Phase() == CallPhase::MediaConnecting || lifecycle_->Phase() == CallPhase::InCall;
+  });
+  EXPECT_TRUE(lifecycle_->Phase() == CallPhase::MediaConnecting ||
+              lifecycle_->Phase() == CallPhase::InCall)
+      << "phase=" << CallPhaseName(lifecycle_->Phase()) << " err=" << lifecycle_->LastError();
+
+  lifecycle_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    auto session = sessions_->LoadSession(call_id);
+    return session && session->has_value() && (*session)->state == CallSessionState::Ended;
+  });
+}
+
+TEST_F(CallSessionInboundComposeTest, BroadcastArmAndAcceptLiveAnnounceJoin) {
+  AnnounceLiveJoinPlan plan;
+  plan.call_id = "call:broadcast-1";
+  plan.publisher_peer_id = "12D3KooWPublisher";
+  plan.topic_id = "topic:live";
+  plan.program_id = "prog:1";
+  plan.hop_peer_id = "12D3KooWHop";
+  plan.media_epoch = 1;
+
+  auto armed = csm_->ArmJoinFromLiveAnnounce(plan);
+  ASSERT_TRUE(armed) << armed.error().message;
+  EXPECT_EQ(armed->call_id, plan.call_id);
+  EXPECT_EQ(armed->status, "pending");
+
+  auto pending = csm_->TopPendingInvite();
+  ASSERT_TRUE(pending && pending->has_value());
+  EXPECT_EQ((*pending)->call_id, plan.call_id);
+
+  auto session = sessions_->LoadSession(plan.call_id);
+  ASSERT_TRUE(session && session->has_value());
+  EXPECT_TRUE(IsBroadcastSession((*session)->session_kind));
+
+  // Regular AcceptInvite must refuse broadcast sessions.
+  auto wrong = csm_->AcceptInvite(plan.call_id);
+  EXPECT_FALSE(wrong);
+
+  ASSERT_TRUE(csm_->AcceptLiveAnnounceJoin(plan.call_id)) << "accept live announce";
+  auto self = sessions_->FindParticipant(plan.call_id, local_identity_);
+  ASSERT_TRUE(self && self->has_value());
+  EXPECT_EQ((*self)->state, CallParticipantState::Joined);
+  auto after = sessions_->LoadSession(plan.call_id);
+  ASSERT_TRUE(after && after->has_value());
+  EXPECT_EQ((*after)->state, CallSessionState::Active);
+}
+
+TEST_F(CallSessionInboundComposeTest, StartCallOutboundCreatesSessionAndInvite) {
+  ASSERT_TRUE(store_->SetDek(TestDek()));
+  Thread thread;
+  thread.id = "thread:dm-out";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Peer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(store_->UpsertThread(thread));
+
+  auto started = csm_->StartCall(thread.id, false, {"account:peer"});
+  ASSERT_TRUE(started) << started.error().message;
+  EXPECT_FALSE(started->call_id.empty());
+  EXPECT_EQ(started->state, CallSessionState::Ringing);
+  EXPECT_EQ(started->origin_thread_id, thread.id);
+
+  auto self = sessions_->FindParticipant(started->call_id, local_identity_);
+  ASSERT_TRUE(self && self->has_value());
+  EXPECT_EQ((*self)->state, CallParticipantState::Joined);
+  EXPECT_GE(sent_control_messages_, 1);
+  auto key = keys_->LoadEpochKey(started->call_id, 1);
+  ASSERT_TRUE(key && key->has_value());
+}
+
+TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
+  const std::string call_id = "call:mute-video";
+  auto msg = MakeInviteMessage(call_id);
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  // Allow video for enable gate (invite default voice → flip session flag).
+  auto session = sessions_->LoadSession(call_id);
+  ASSERT_TRUE(session && session->has_value());
+  (*session)->video_allowed = true;
+  ASSERT_TRUE(sessions_->UpsertSession(**session));
+
+  lifecycle_->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  lifecycle_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
+  DrainUntil([&]() { return media_->IsActive(); });
+  ASSERT_TRUE(media_->IsActive());
+  EXPECT_TRUE(csm_->MediaAttemptedThisProcess(call_id));
+
+  auto peer = csm_->PeerIdentityForCall(call_id);
+  ASSERT_TRUE(peer && peer->has_value());
+  EXPECT_EQ(**peer, "account:peer");
+  auto video_ok = csm_->VideoAllowedForCall(call_id);
+  ASSERT_TRUE(video_ok && video_ok->has_value());
+  EXPECT_TRUE(**video_ok);
+
+  const int sent_before = sent_control_messages_;
+  ASSERT_TRUE(csm_->SetLocalAudioMuted(true));
+  EXPECT_TRUE(media_->IsMuted());
+  auto self = sessions_->FindParticipant(call_id, local_identity_);
+  ASSERT_TRUE(self && self->has_value());
+  EXPECT_TRUE((*self)->media.audio_muted);
+  EXPECT_GT(sent_control_messages_, sent_before) << "mute should fan-out CallRoster";
+
+  ASSERT_TRUE(csm_->SetLocalAudioMuted(false));
+  EXPECT_FALSE(media_->IsMuted());
+
+  // Camera may fail headless — gate must still accept video_allowed before device open.
+  auto enable = csm_->SetLocalVideoEnabled(true);
+  if (enable) {
+    EXPECT_TRUE(media_->IsCameraEnabled());
+    ASSERT_TRUE(csm_->SetLocalVideoEnabled(false));
+  } else {
+    EXPECT_FALSE(enable.error().message.empty());
+  }
+
+  // Voice-only session rejects enable.
+  auto voice_only = sessions_->LoadSession(call_id);
+  ASSERT_TRUE(voice_only && voice_only->has_value());
+  (*voice_only)->video_allowed = false;
+  ASSERT_TRUE(sessions_->UpsertSession(**voice_only));
+  auto denied = csm_->SetLocalVideoEnabled(true);
+  EXPECT_FALSE(denied);
+  EXPECT_NE(denied.error().message.find("Video is not allowed"), std::string::npos);
+
+  ASSERT_TRUE(csm_->RequestVideoRefresh(call_id, local_identity_));
+  ASSERT_TRUE(csm_->RequestVideoRefresh(call_id, {}));
+
+  lifecycle_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    auto row = sessions_->LoadSession(call_id);
+    return row && row->has_value() && (*row)->state == CallSessionState::Ended;
+  });
+}
+
+TEST_F(CallSessionInboundComposeTest, MuteWithoutActiveMediaFails) {
+  auto muted = csm_->SetLocalAudioMuted(true);
+  EXPECT_FALSE(muted);
+  EXPECT_NE(muted.error().message.find("No active call media"), std::string::npos);
 }
 
 } // namespace

@@ -70,7 +70,8 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 | **rd D3/D4** | **Automated gates** below (purpose IDs). Human OEM sample optional — never the only gate |
 | Hop peerstore / circuit | media-hop **L1–L3** + loopback compose landed; **L3.5 multi-hop** later (transitive R1↛B) |
 | **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** + circuit compose; **ConnectAsync landed**; leftovers: inbound-handler stall contract, sync L4 façades for tests; optional s4 if Leave hangs — [SESSION_MACHINES.md](SESSION_MACHINES.md#remaining-work-call-media--peer-honesty) |
-| **Answerer MediaKey wait** | Exhaustion → `ConnectFailed` + `call.error.media_key_timeout` (no stuck MediaPending) |
+| **Answerer MediaKey wait** | Exhaustion → `ConnectFailed` + `call.error.media_key_timeout` (no stuck MediaPending); KeyReady kick covered in Bridge + compose MediaKey unwrap |
+| **Retry after ConnectFailed** | Lifecycle `RetryClicked` re-arms `DirectConnecting` before `RetryP2pMedia`/`BeginSession` (gtest `RetryClickedRearms*` / `RetryP2pMediaAfterConnectFailed`) |
 | **lv video** | Prefer loopback/probe; OEM dogfood only for Camera/HW encode |
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
 | N≥3 unify engine on libp2p send/recv | N021 follow-on |

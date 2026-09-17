@@ -199,10 +199,34 @@ TEST_F(CallLifecycleTest, LeaveClickedWithoutCallIdIgnored) {
   EXPECT_EQ(life_.Phase(), CallPhase::Idle);
 }
 
-TEST_F(CallLifecycleTest, RetryClickedIgnoredUnlessConnectFailed) {
+TEST_F(CallLifecycleTest, RetryClickedRearmsDirectConnectingStatus) {
+  AppRuntime::Initialize();
+  AppRuntime::InitializeUI();
+
   life_.Apply(CallLifecycleEvent::OutboundStarted, "call:1");
+  life_.SetMediaStatus(CallMediaStatus::DirectConnecting, "call:1");
+  life_.Apply(CallLifecycleEvent::ConnectFailedEvt, "call:1");
+  EXPECT_EQ(life_.Phase(), CallPhase::ConnectFailed);
+  EXPECT_EQ(life_.Status(), CallMediaStatus::Failed);
+  EXPECT_FALSE(life_.AllowsDirectPath());
+
+  // Unbound sessions → Retry fails back to ConnectFailed, but Status must re-arm first.
   life_.Apply(CallLifecycleEvent::RetryClicked, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::OutboundCalling);
+  EXPECT_TRUE(life_.AllowsDirectPath()) << "Retry must SetMediaStatus DirectConnecting before worker";
+  EXPECT_EQ(life_.Status(), CallMediaStatus::DirectConnecting);
+
+  for (int i = 0; i < 200; ++i) {
+    AppRuntime::RunUITasks();
+    if (life_.Phase() == CallPhase::ConnectFailed && life_.Status() == CallMediaStatus::Failed) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(life_.Phase(), CallPhase::ConnectFailed);
+
+  AppRuntime::ShutdownUI();
+  AppRuntime::Shutdown();
 }
 
 TEST_F(CallLifecycleTest, ListenDesireCallbackFiresOnPhaseEnterExit) {

@@ -378,6 +378,8 @@ void CallLifecycle::PostLeaveCall(const std::string& call_id) {
 
 void CallLifecycle::PostRetryMedia(const std::string& call_id) {
   CallSessionManager* sessions = sessions_;
+  // Re-arm Direct before RetryP2pMedia → BeginSession (Failed Status blocks AllowsDirectPath).
+  SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
   AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
       WorkerLane::Normal,
       [sessions, call_id]() -> Roe<void> {
