@@ -1,4 +1,4 @@
-# Headless-safe runtime: worker pool + coordinator (pp-node, tests).
+# Headless-safe runtime: worker pool + coordinator + main/UI mailbox (pp-node, tests).
 pp_browser_add_foundation_library(pp_foundation_runtime_core
   SOURCES
     AppRuntime.cpp
@@ -15,11 +15,10 @@ if(PP_BROWSER_HEADLESS)
   return()
 endif()
 
-# GUI process runtime: UI mailbox, lifecycle, background sync cadence.
+# GUI process runtime: lifecycle + background sync cadence (mailbox is in runtime_core).
 pp_browser_add_foundation_library(pp_foundation_runtime
   SOURCES
     AppLifecycle.cpp
-    AppRuntimeGui.cpp
     BackgroundSyncScheduler.cpp
   PUBLIC_LIBS
     pp_foundation_runtime_core)
