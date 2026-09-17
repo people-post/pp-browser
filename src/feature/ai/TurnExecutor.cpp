@@ -175,7 +175,7 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
       ParsePeopleToolJson(raw, hits, contacts);
     }
 
-    PeopleDiscoveryBuildOptions options;
+    PeopleDiscoveryBuildOptions people_options;
     // Silent local lookup so directory rows can show "In contacts" and prefer Message.
     if (!hits.empty() && contacts.empty() && FindTool(tools, "list_contacts")) {
       auto local = tools.Execute("list_contacts", Object{});
@@ -187,14 +187,14 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
     for (const Contact& contact : contacts) {
       for (const ContactId& id : contact.ids) {
         if (!id.value.empty()) {
-          options.known_local_identity_values.insert(id.value);
+          people_options.known_local_identity_values.insert(id.value);
         }
       }
     }
 
     // Directory hits win the list; local contacts annotate "In contacts" / Message by contact_id.
     // Self hits are already dropped in ConversationsFacade::SearchPeople.
-    result.people_list_blocks = BuildPeopleDiscoveryBlocksJson(hits, contacts, options);
+    result.people_list_blocks = BuildPeopleDiscoveryBlocksJson(hits, contacts, people_options);
   }
 
   return result;
