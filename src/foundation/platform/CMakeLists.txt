@@ -13,6 +13,7 @@ set(_pp_platform_core_sources
   ExecutablePath.cpp
   os/OsFile_Posix.cpp
   os/OsProcess_Posix.cpp
+  os/OsLocale_Posix.cpp
   CurlSsl.cpp
   AssetIO.cpp
   IAssetLocator.cpp
@@ -68,6 +69,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   list(APPEND _pp_platform_core_sources
     os/OsFile_Win32.cpp
     os/OsProcess_Win32.cpp
+    os/OsLocale_Win32.cpp
     os/OsExecutablePath_Win32.cpp
     desktop/PathProvider_Win32.cpp
   )

@@ -2,20 +2,13 @@
 
 #include "foundation/platform/AssetIO.h"
 #include "foundation/platform/IAssetLocator.h"
+#include "foundation/platform/os/OsLocale.h"
 #include "common/ValueJson.h"
 
 #include <algorithm>
 #include <cctype>
-#include <cstdlib>
 #include <filesystem>
 #include "common/PbrCompat.h"
-
-#if defined(_WIN32)
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#endif
 
 namespace pbr {
 
@@ -23,19 +16,6 @@ namespace {
 
 bool LooksLikeLocaleObject(const Object& root) {
   return root.contains("locale") && root.getObject("strings") != nullptr;
-}
-
-// Strip encoding / modifier: en_US.UTF-8@euro → en_US
-std::string StripLocaleEncoding(std::string tag) {
-  const auto dot = tag.find('.');
-  if (dot != std::string::npos) {
-    tag.resize(dot);
-  }
-  const auto at = tag.find('@');
-  if (at != std::string::npos) {
-    tag.resize(at);
-  }
-  return tag;
 }
 
 } // namespace
@@ -262,31 +242,11 @@ std::vector<std::string> LocalizationService::PreferredSystemLocales() const {
     return system_locales_override_;
   }
 
-  // Keep i18n UI-free: no SDL_GetPreferredLocales (that forced pp_foundation_platform
-  // into pp-node via pp_foundation_error → i18n). POSIX env / Win32 APIs only.
+  // OS backends live in foundation/platform/os/OsLocale_* (no #ifdef here).
   std::vector<std::string> out;
-#if defined(_WIN32)
-  wchar_t name[LOCALE_NAME_MAX_LENGTH] = {};
-  if (GetUserDefaultLocaleName(name, LOCALE_NAME_MAX_LENGTH) > 0) {
-    char narrow[LOCALE_NAME_MAX_LENGTH] = {};
-    if (WideCharToMultiByte(CP_UTF8, 0, name, -1, narrow, sizeof(narrow), nullptr, nullptr) > 0) {
-      out.push_back(NormalizeTag(narrow));
-    }
-  }
-#else
-  for (const char* key : {"LC_ALL", "LC_MESSAGES", "LANG"}) {
-    const char* value = std::getenv(key);
-    if (value == nullptr || value[0] == '\0') {
-      continue;
-    }
-    std::string tag = StripLocaleEncoding(value);
-    if (tag == "C" || tag == "POSIX") {
-      continue;
-    }
+  for (const std::string& tag : os::PreferredSystemLocales()) {
     out.push_back(NormalizeTag(tag));
-    break;
   }
-#endif
   return out;
 }
 
