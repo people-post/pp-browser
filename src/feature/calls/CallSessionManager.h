@@ -13,11 +13,11 @@
 #include "domain/people/IdentityStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallDeliveryPorts.h"
-#include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/BroadcastSessionCoordinator.h"
 #include "feature/calls/CallTopologyController.h"
+#include "feature/calls/CallDirectMediaPorts.h"
 
 #include "common/Module.h"
 
@@ -73,7 +73,8 @@ public:
   bool PeerHasMediaRelayCap(const std::string& peer_id) const;
   std::vector<std::string> ListMediaRelayCapablePeerIds() const;
   void SetMediaRelayDeps(MediaRelayDeps deps);
-  void SetCallMediaBridge(CallMediaBridge* bridge);
+  /** Direct media ops (ScheduleStart / Retry / SoftMigrate release) — Stack installs from bridge. */
+  void SetDirectMediaPorts(CallDirectMediaPorts ports);
   /** V036 exclusive media epoch — Leave/Accept/Start gates. */
   void SetMediaSeat(CallMediaSeat* seat);
   /** V037 State+Status planner arming. */
@@ -260,7 +261,7 @@ private:
   CallMediaEngine& media_;
   CallTopologyController topology_;
   BroadcastSessionCoordinator broadcast_;
-  CallMediaBridge* call_media_bridge_ = nullptr;
+  CallDirectMediaPorts direct_media_;
   CallMediaSeat* media_seat_ = nullptr;
   CallLifecycle* lifecycle_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;

@@ -1,5 +1,6 @@
 #include "feature/calls/CallLifecycle.h"
 #include "feature/calls/CallLifecyclePorts.h"
+#include "feature/calls/CallDirectMediaPorts.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionManager.h"
@@ -231,7 +232,7 @@ protected:
                                                 dial_.get(), nullptr);
     bridge_->SetLifecycle(lifecycle_.get());
     bridge_->SetMediaSeat(seat_.get());
-    csm_->SetCallMediaBridge(bridge_.get());
+    csm_->SetDirectMediaPorts(MakeCallDirectMediaPorts(bridge_.get(), seat_.get()));
     csm_->SetMediaSeat(seat_.get());
     csm_->SetLifecycle(lifecycle_.get());
     CallLifecycleSignalingPorts ports;
@@ -297,7 +298,7 @@ protected:
       bridge_->PrepareForTeardown(500);
     }
     if (csm_) {
-      csm_->SetCallMediaBridge(nullptr);
+      csm_->SetDirectMediaPorts({});
       csm_->SetLifecycle(nullptr);
       csm_->SetMediaSeat(nullptr);
     }

@@ -183,6 +183,16 @@ Siblings stay independent; **CallStack** is the only graph knower — [V041](DEC
 **Non-goals:** Seat inside CSM; CSM↔Bridge pointer campaign; CallProfileStores.  
 **Exit:** lifecycle + stack compose gtests green; CALLS.md composition table.
 
+## dm — CSM Direct media ports (no CallMediaBridge*)
+
+Continue composition independence: CSM talks to Direct media only via **`CallDirectMediaPorts`** — [V042](DECISIONS.md#v042--calldirectmediaports--csm-without-callmediabridge).
+
+- [x] dm0 — ADR + ports + `MakeCallDirectMediaPorts`; Stack `BindMediaProducts` installs; drop `SetCallMediaBridge`
+- [x] dm1 — CALLS.md composition table + file map
+
+**Non-goals:** Seat ports campaign; Topology rewrite.  
+**Exit:** inbound compose + stack/dual-stack + lifecycle gtests green.
+
 ## Later horizons
 
 - [ ] `video_hi` / simulcast

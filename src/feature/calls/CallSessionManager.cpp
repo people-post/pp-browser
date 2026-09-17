@@ -82,8 +82,8 @@ void CallSessionManager::SetMediaRelayDeps(MediaRelayDeps deps) {
   topology_.SetMediaRelayDeps(std::move(deps));
 }
 
-void CallSessionManager::SetCallMediaBridge(CallMediaBridge* bridge) {
-  call_media_bridge_ = bridge;
+void CallSessionManager::SetDirectMediaPorts(CallDirectMediaPorts ports) {
+  direct_media_ = std::move(ports);
 }
 
 void CallSessionManager::SetMediaSeat(CallMediaSeat* seat) {
@@ -108,7 +108,7 @@ void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, co
                << " armed=" << CallArmedPlannerName(lifecycle_->ArmedPlanner());
     return;
   }
-  if (!call_media_bridge_) {
+  if (!direct_media_.schedule_start) {
     log().error << "ScheduleStartDirectMedia: mesh media bridge not configured call_id=" << call_id;
     last_media_error_ = "Call media unavailable";
     NotifyRingChanged();
@@ -117,7 +117,7 @@ void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, co
   // V036 Phase 3: CSM is signaling-only for duplex start — Direct path façade owns Acquire+Schedule.
   log().info << "ScheduleStartDirectMedia libp2p role=" << (offerer ? "offerer" : "answerer")
                 << " call_id=" << call_id << " peer=" << peer_identity;
-  CallDirectPath(call_media_bridge_, media_seat_).ScheduleStart(call_id, peer_identity, offerer);
+  direct_media_.schedule_start(call_id, peer_identity, offerer);
 }
 
 void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_id) {
@@ -164,10 +164,10 @@ CallHopHealth CallSessionManager::HopHealth() const {
 }
 
 std::string CallSessionManager::MediaPathKind() const {
-  if (!call_media_bridge_) {
+  if (!direct_media_.media_path_kind) {
     return {};
   }
-  return call_media_bridge_->MediaPathKind();
+  return direct_media_.media_path_kind();
 }
 
 bool CallSessionManager::IsSfuAttached() const {
@@ -320,8 +320,8 @@ void CallSessionManager::NoteMeshPeerIdForRelay(const std::string& relay_identit
     return;
   }
   peer_id_to_relay_[peer_id] = relay_identity;
-  if (call_media_bridge_) {
-    call_media_bridge_->NotePeerIdRelayMapping(peer_id, relay_identity);
+  if (direct_media_.note_peer_id_relay_mapping) {
+    direct_media_.note_peer_id_relay_mapping(peer_id, relay_identity);
   }
   auto found = contacts_.FindByIdentity(relay_identity, ContactIdKind::Account);
   if (!found || !found->has_value()) {
@@ -585,8 +585,8 @@ void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
   }
   // Tests / incomplete wiring without a seat.
   topology_.OnMediaStopped(call_id);
-  if (call_media_bridge_) {
-    call_media_bridge_->StopMeshMedia(call_id);
+  if (direct_media_.stop_mesh_media) {
+    direct_media_.stop_mesh_media(call_id);
   }
 }
 
@@ -882,8 +882,8 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
       StopMediaIfCall(leftover);
     } else if (leftover.empty()) {
       log().info << "AcceptInvite stopping zombie engine (no ActiveCallId) accept=" << call_id;
-      if (call_media_bridge_) {
-        call_media_bridge_->StopMeshMedia({});
+      if (direct_media_.stop_mesh_media) {
+        direct_media_.stop_mesh_media({});
       } else if (Media().IsActive() || Media().IsSfuMode()) {
         Media().Stop();
       }
@@ -1401,22 +1401,23 @@ bool CallSessionManager::IsSfuAttachWaitActive() const {
 }
 
 bool CallSessionManager::IsP2pConnectFailed() const {
-  return call_media_bridge_ && call_media_bridge_->IsMeshConnectFailed();
+  return direct_media_.is_connect_failed && direct_media_.is_connect_failed();
 }
 
 bool CallSessionManager::P2pConnectMissingMic() const {
-  return call_media_bridge_ && call_media_bridge_->IsMeshConnectFailed() && call_media_bridge_->MeshConnectMissingMic();
+  return direct_media_.connect_missing_mic && direct_media_.connect_missing_mic();
 }
 
 void CallSessionManager::PollP2pConnectHealth() {
-  if (call_media_bridge_) {
-    call_media_bridge_->PollMeshConnectHealth();
+  if (direct_media_.poll_connect_health) {
+    direct_media_.poll_connect_health();
   }
 }
 
 Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
-  if (call_media_bridge_ && call_media_bridge_->MediaAttempted(call_id)) {
-    return call_media_bridge_->RetryMeshMedia(call_id);
+  if (direct_media_.media_attempted && direct_media_.retry_mesh_media &&
+      direct_media_.media_attempted(call_id)) {
+    return direct_media_.retry_mesh_media(call_id);
   }
   return Error("Call media retry unavailable");
 }
@@ -1542,7 +1543,7 @@ void CallSessionManager::AbandonOrphanedCallsAfterRestart() {
 }
 
 bool CallSessionManager::MediaAttemptedThisProcess(const std::string& call_id) const {
-  return call_media_bridge_ && call_media_bridge_->MediaAttempted(call_id);
+  return direct_media_.media_attempted && direct_media_.media_attempted(call_id);
 }
 
 void CallSessionManager::ClearMediaCallbacks() {
@@ -1645,8 +1646,8 @@ void CallSessionManager::ClearMediaActivity() {
 }
 
 void CallSessionManager::TopologyNoteMediaAttempted(const std::string& call_id) {
-  if (call_media_bridge_) {
-    call_media_bridge_->NoteMediaAttempted(call_id);
+  if (direct_media_.note_media_attempted) {
+    direct_media_.note_media_attempted(call_id);
   }
 }
 
@@ -1662,15 +1663,9 @@ void CallSessionManager::TopologyClearMediaPeerIdentity() {
 
 void CallSessionManager::TopologyReleaseDirectMedia() {
   // SoftMigrate path replace: Direct path ReleaseTransport under current seat token.
-  if (!call_media_bridge_) {
-    return;
+  if (direct_media_.release_direct_transport) {
+    direct_media_.release_direct_transport();
   }
-  if (media_seat_) {
-    (void)CallDirectPath(call_media_bridge_, media_seat_)
-        .ReleaseTransport(media_seat_->CurrentToken());
-    return;
-  }
-  call_media_bridge_->ReleaseDirectTransport();
 }
 
 void CallSessionManager::TopologyRequestInboxSync() {

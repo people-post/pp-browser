@@ -10,6 +10,7 @@
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/mesh/reachability/Reachability.h"
 #include "feature/calls/CallLifecyclePorts.h"
+#include "feature/calls/CallDirectMediaPorts.h"
 
 #include <functional>
 #include <optional>
@@ -78,7 +79,8 @@ void CallStack::BindMediaProducts() {
   args.sessions_key = call_sessions_.get();
   media_plane_->BindBridge(args);
   call_sessions_->SetMediaRelayDeps(media_plane_->BuildMediaRelayDeps());
-  call_sessions_->SetCallMediaBridge(media_plane_->Bridge());
+  call_sessions_->SetDirectMediaPorts(
+      MakeCallDirectMediaPorts(media_plane_->Bridge(), call_media_seat_.get()));
 }
 
 CallLifecycleSignalingPorts CallStack::MakeLifecycleSignalingPorts() {
@@ -279,7 +281,7 @@ void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_c
     call_lifecycle_->ClearBinding();
   }
   if (call_sessions_) {
-    call_sessions_->SetCallMediaBridge(nullptr);
+    call_sessions_->SetDirectMediaPorts({});
     call_sessions_->SetMediaRelayDeps({});
   }
   if (media_plane_) {

@@ -1034,3 +1034,25 @@ Async workers **copy** `std::function`s into lambdas; `ClearBinding` bumps `asyn
 
 ---
 
+## V042 — CallDirectMediaPorts / CSM without CallMediaBridge*
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md) (composition-root table)  
+**Decision:** `CallSessionManager` must not hold a standing `CallMediaBridge*`. Stack installs **`CallDirectMediaPorts`** built by `MakeCallDirectMediaPorts(bridge, seat)` (wraps `CallDirectPath` + bridge ops).
+
+### Ports (representative)
+
+ScheduleStart / Retry / MediaAttempted / connect-fail health / NotePeerIdRelayMapping / StopMeshMedia (no-seat fallback) / ReleaseDirectTransport / OnMediaKeyReady / MediaPathKind.
+
+### Rules
+
+1. `BindMediaProducts` sets ports after `BindBridge`; mesh stop clears ports with `{}`.
+2. CSM keeps `CallMediaSeat*` as installed facet for hop bind / Release (follow-on).
+3. Behavior-preserving — same SoftMigrate / Kick / Accept KeyReady paths.
+
+**Rationale:** Same independence pattern as V041 Lifecycle ports; Direct planner stays on the plane.
+
+**Cross-link:** [V041](#v041--calllifecycle-signaling-ports--stack-composition-root); [V036](#v036--mediaseat--exclusive-media-epoch); phase [dm](PHASES.md#dm--csm-direct-media-ports-no-callmediabridge).
+
+---
+

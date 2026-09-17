@@ -142,8 +142,8 @@ Roe<void> CallSessionManager::HandleInboundInvite(const std::string& detail_json
         if (auto put = media_keys_.PutEpochKey(invite->call_id, session.media_epoch, *unwrapped); put) {
           log().info << "CallInvite embedded media key stored call_id=" << invite->call_id
                         << " epoch=" << session.media_epoch;
-          if (call_media_bridge_) {
-            call_media_bridge_->OnMediaKeyReady(invite->call_id);
+          if (direct_media_.on_media_key_ready) {
+            direct_media_.on_media_key_ready(invite->call_id);
           }
         } else {
           log().warning << "CallInvite media key store failed: " << put.error().message;
@@ -469,8 +469,8 @@ Roe<void> CallSessionManager::HandleInboundMediaKey(const std::string& detail_js
     }
   }
   // Mesh answerer Start waits for epoch key (V015); kick deferred BeginSession.
-  if (stored && call_media_bridge_) {
-    call_media_bridge_->OnMediaKeyReady(key->call_id);
+  if (stored && direct_media_.on_media_key_ready) {
+    direct_media_.on_media_key_ready(key->call_id);
   }
   return {};
 }

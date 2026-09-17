@@ -128,7 +128,7 @@ private:
   MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
   const AppConfig& config() const;
   void SyncMediaPlaneDeps();
-  /** After plane Wire: BindBridge + CSM SetMediaRelayDeps / SetCallMediaBridge. */
+  /** After plane Wire: BindBridge + CSM SetMediaRelayDeps / SetDirectMediaPorts. */
   void BindMediaProducts();
   void BindSeatTeardown();
   CallLifecycleSignalingPorts MakeLifecycleSignalingPorts();

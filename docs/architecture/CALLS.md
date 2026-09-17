@@ -298,7 +298,7 @@ UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints fro
 | **CallLifecycle** | phase / status | none to CSM | `CallLifecycleSignalingPorts` from Stack |
 | **CallMediaSeat** | exclusive media epoch | none | teardown hooks from Stack (`BindSeatTeardown`) |
 | **CallMediaPlane** | mesh + bridge object + dial book | none to CSM / seat / lifecycle | `BindBridge` args + deps callbacks |
-| **CallSessionManager** | signaling | stores (ctor); lifecycle / bridge / seat as **installed facets** | `SetLifecycle` / `SetCallMediaBridge` / `SetMediaSeat` from Stack |
+| **CallSessionManager** | signaling | stores (ctor); lifecycle / seat as **installed facets**; Direct media via ports | `SetLifecycle` / `SetDirectMediaPorts` / `SetMediaSeat` from Stack |
 
 ### CallSessionManager (façade)
 **Should own:** create/end session, invite/accept/decline/leave, roster fan-out, media-key rotate-on-leave, orphan cleanup after restart, inbound control **dispatch**.
@@ -455,6 +455,7 @@ Landed (behavior-preserving + who-picks fix):
 | `src/feature/calls/CallMediaPlane.*` | Mesh-media plane — Amp transport, dial/relay/hop, bridge, dial book, Wire |
 | `src/feature/calls/CallLifecycle.*` | 1:1 phase machine — ring/accept/listen/media sequencing |
 | `src/feature/calls/CallLifecyclePorts.h` | Stack-filled signaling ports for Lifecycle (V041) |
+| `src/feature/calls/CallDirectMediaPorts.*` | Stack-filled Direct media ports for CSM (V042) |
 | `src/feature/calls/CallInboundHandlers.cpp` | Per-type inbound call-control arms (`HandleInbound*`) |
 | `src/feature/calls/CallSessionManager.*` | Façade — session + thin inbound dispatch |
 | `src/feature/calls/CallMediaHost.h` | Narrow host façade for mesh media side effects |
