@@ -407,9 +407,7 @@ void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, 
     return;
   }
   if (state->turn_mode == AgentTurnMode::ScopedAssist && state->assist_mode != AtAiMode::Local) {
-    if (out_message_id) {
-      *out_message_id = util::GenerateUuid();
-    }
+    // Shared assist reply is persisted by the chat UI after render; do not invent a store id here.
     return;
   }
 
@@ -422,9 +420,13 @@ void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, 
   message.delivery = MessageDelivery::Local;
   message.relay_visible = state->turn_mode != AgentTurnMode::ScopedAssist;
   message.transport = MessageTransport::Local;
-  (void)state->thread_store->AppendMessage(message);
+  auto appended = state->thread_store->AppendMessage(message);
+  if (!appended) {
+    state->Log().warning << "Failed to persist assistant message: " << appended.error().message;
+    return;
+  }
   if (out_message_id) {
-    *out_message_id = message.id;
+    *out_message_id = appended->id.empty() ? message.id : appended->id;
   }
 }
 

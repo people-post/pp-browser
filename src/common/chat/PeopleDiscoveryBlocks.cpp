@@ -299,13 +299,24 @@ PeopleDiscoveryContactView ContactViewFromJson(const Object& json) {
   if (auto id = json.getString("id")) {
     contact.id = *id;
   }
-  if (auto display_name = json.getString("display_name")) {
+  if (const Object* local = json.getObject("local")) {
+    if (auto display_name = local->getString("display_name")) {
+      contact.display_name = *display_name;
+    }
+  } else if (auto display_name = json.getString("display_name")) {
     contact.display_name = *display_name;
   }
-  if (auto server_nickname = json.getString("server_nickname")) {
-    contact.server_nickname = *server_nickname;
+  if (const Object* remote = json.getObject("remote")) {
+    if (auto nickname = remote->getString("nickname")) {
+      contact.server_nickname = *nickname;
+    }
+    AppendContactIdsFromJson(*remote, contact.ids);
+  } else {
+    if (auto server_nickname = json.getString("server_nickname")) {
+      contact.server_nickname = *server_nickname;
+    }
+    AppendContactIdsFromJson(json, contact.ids);
   }
-  AppendContactIdsFromJson(json, contact.ids);
   return contact;
 }
 
@@ -331,6 +342,36 @@ Value RefineSearchFooter() {
 
 } // namespace
 
+std::unordered_set<std::string> SelfIdentityValuesFromLocal(const LocalIdentity& identity) {
+  std::unordered_set<std::string> out;
+  if (!identity.account_id.empty()) {
+    out.insert(identity.account_id);
+  }
+  if (!identity.relay_user_id.empty()) {
+    out.insert(identity.relay_user_id);
+  }
+  if (!identity.peer_id.empty()) {
+    out.insert(identity.peer_id);
+  }
+  return out;
+}
+
+bool DirectoryHitMatchesIdentities(const DirectoryHit& hit,
+                                   const std::unordered_set<std::string>& identities) {
+  if (identities.empty()) {
+    return false;
+  }
+  if (hit.account_id && identities.count(*hit.account_id) != 0) {
+    return true;
+  }
+  for (const ContactId& id : hit.ids) {
+    if (!id.value.empty() && identities.count(id.value) != 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& directory_hits,
                                            const std::vector<PeopleDiscoveryContactView>& contacts,
                                            const PeopleDiscoveryBuildOptions& options) {
@@ -339,8 +380,18 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& dire
       options.max_visible_items == 0 ? kDefaultMaxVisible : options.max_visible_items;
   const auto known = CollectKnownIdentities(contacts, options);
 
-  if (!directory_hits.empty()) {
-    const size_t total = directory_hits.size();
+  std::vector<DirectoryHit> filtered_hits;
+  filtered_hits.reserve(directory_hits.size());
+  for (const DirectoryHit& hit : directory_hits) {
+    if (!options.self_identity_values.empty() &&
+        DirectoryHitMatchesIdentities(hit, options.self_identity_values)) {
+      continue;
+    }
+    filtered_hits.push_back(hit);
+  }
+
+  if (!filtered_hits.empty()) {
+    const size_t total = filtered_hits.size();
     const size_t visible = std::min(total, max_visible);
 
     Object paragraph;
@@ -362,7 +413,7 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& dire
     std::vector<Value> items;
     items.reserve(visible);
     for (size_t i = 0; i < visible; ++i) {
-      const DirectoryHit& hit = directory_hits[i];
+      const DirectoryHit& hit = filtered_hits[i];
       const bool already =
           IdentityKnown(hit.ids, hit.account_id, known) ||
           MatchingContactId(hit.ids, hit.account_id, contacts).has_value();
@@ -445,7 +496,8 @@ std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json) {
     }
     if (item->contains("hit_id")) {
       hits.push_back(DirectoryHitFromJson(*item));
-    } else if (item->contains("id") && item->contains("display_name")) {
+    } else if (item->contains("id") &&
+               (item->contains("display_name") || item->contains("local") || item->contains("remote"))) {
       contacts.push_back(ContactViewFromJson(*item));
     }
   }

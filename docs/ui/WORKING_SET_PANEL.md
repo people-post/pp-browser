@@ -160,6 +160,8 @@ Teaser chip (entry placeholder injected later):
   data-event-click="open_working_set('__ENTRY__', 2)">View full list (12 items)</button>
 ```
 
+**Do not** append `chat_actions` from a panel `long_list` into the chat bubble (`HydrateChatActionButtons` skips when a working-set chip is present). Row Message/Add live only in the panel.
+
 Register `open_working_set(entry_id, block_index)` on `chat` and `shell` data models.
 
 ### 4. WorkingSetController
@@ -174,9 +176,10 @@ In-memory anchor (`WorkingSetController`):
 
 ```cpp
 std::map<std::string, std::vector<WorkingSetCandidate>> by_entry_;
+std::map<std::string, std::vector<TranscriptChatAction>> actions_by_entry_;
 ```
 
-Populated at parse time via `FinishAssistantReply` → `ApplyFromParse`.
+Populated at parse time via `FinishAssistantReply` → `ApplyFromParse`, and **persisted** on the assistant `ThreadMessage` as `working_set_json` (`WorkingSetCandidatesToJson`). On thread open, `RestoreWorkingSetsFromActiveThread` reloads maps from stored messages so per-reply chips keep working after leaving and returning.
 
 ### 5. Sticky task lifecycle
 
@@ -188,7 +191,9 @@ Populated at parse time via `FinishAssistantReply` → `ApplyFromParse`.
 | New reply, different affinity | **Replace** working set with new primary candidate |
 | Form submitted ([`SubmitForm`](../../src/gui/chat/ChatController.cpp)) | **Close** working set (task complete) |
 | Row action completed (`send_chat_action` with start_conversation etc.) | Close or collapse to chat status line |
-| New chat / thread switch | **Clear** working set (fixes current stale-preview bug) |
+| New chat / thread switch | **Clear** in-memory maps, then **restore** candidates from each message’s `working_set_json` (chips stay clickable) |
+| Legacy chip without `working_set_json` | Bubble shows muted **Results no longer available** (non-clickable) |
+| Open missing artifact | Panel shows unavailable copy; user can search again |
 | User dismisses panel (Escape / toggle) | Close visually; `auxiliary_available` stays true so user can reopen via chip |
 
 Pagination affinity: detect payload fast path in [`PayloadTurnPlanBuilder`](../../src/domain/ai/PayloadTurnPlanBuilder.cpp) (`blog_articles` + `before_id`) → same `WorkingSetAffinity::Feed`.

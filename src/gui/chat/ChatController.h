@@ -287,6 +287,7 @@ private:
   void CalendarNext(const std::string& entry_id);
   void SelectCalendarDay(const std::string& entry_id, const std::string& iso_date);
   void SyncDisplayFromThread();
+  void RestoreWorkingSetsFromActiveThread();
   void SyncShellSessions();
   void UpdateThreadChrome();
   void ResetChatPanelState();

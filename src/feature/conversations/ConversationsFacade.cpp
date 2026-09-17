@@ -8,8 +8,11 @@
 #include "feature/conversations/LinkDeviceCoordinator.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/PushDeviceCoordinator.h"
+#include "common/chat/PeopleDiscoveryBlocks.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
+
+#include <unordered_set>
 
 namespace pbr {
 
@@ -572,7 +575,26 @@ bool ConversationsFacade::IsHelpNetworkEnabled() { return hub_.IsHelpNetworkEnab
 // --- Messaging tools helpers ------------------------------------------------
 
 Roe<std::vector<DirectoryHit>> ConversationsFacade::SearchPeople(const std::string& query) {
-  return hub_.Directory().SearchPeople(query);
+  auto hits = hub_.Directory().SearchPeople(query);
+  if (!hits) {
+    return hits.error();
+  }
+  std::unordered_set<std::string> self_ids;
+  if (auto identity = hub_.Identity().Get()) {
+    self_ids = SelfIdentityValuesFromLocal(*identity);
+  }
+  if (self_ids.empty()) {
+    return hits;
+  }
+  std::vector<DirectoryHit> filtered;
+  filtered.reserve(hits->size());
+  for (DirectoryHit& hit : *hits) {
+    if (DirectoryHitMatchesIdentities(hit, self_ids)) {
+      continue;
+    }
+    filtered.push_back(std::move(hit));
+  }
+  return filtered;
 }
 
 Roe<std::vector<Contact>> ConversationsFacade::SearchLocalContacts(const std::string& query) {

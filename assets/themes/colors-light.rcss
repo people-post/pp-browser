@@ -1033,6 +1033,15 @@ select selectbox option:hover {
   background-color: #e5e7eb;
 }
 
+.chat-working-set-chip-disabled,
+.chat-working-set-chip-disabled:hover {
+  background-color: #f3f4f6;
+  color: #9ca3af;
+  border: 1dp #e5e7eb;
+  cursor: default;
+  opacity: 0.85;
+}
+
 .settings-section-title {
   color: #374151;
 }
@@ -1314,7 +1323,13 @@ select selectbox option:hover {
   border: 1dp #e5e7eb;
 }
 
+/* Float menus (right-click / long-press): invisible hit target only — no dim.
+   Compact action sheets keep a light scrim below. */
 .context-menu-scrim {
+  background-color: transparent;
+}
+
+.context-menu-layer--sheet .context-menu-scrim {
   background-color: #00000066;
 }
 

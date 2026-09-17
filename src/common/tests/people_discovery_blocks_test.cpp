@@ -88,4 +88,62 @@ TEST(PeopleDiscoveryBlocksTest, CapsLongResultsWithRefineFooter) {
   EXPECT_EQ(blocks.find("Person 10"), std::string::npos);
 }
 
+TEST(PeopleDiscoveryBlocksTest, DropsSelfIdentityHits) {
+  DirectoryHit self_hit;
+  self_hit.hit_id = "hit_me";
+  self_hit.display_name = "Me";
+  self_hit.nickname = "me";
+  self_hit.account_id = "account:me";
+  self_hit.ids = {{ContactIdKind::Account, "account:me", true},
+                  {ContactIdKind::RelayUser, "relay:me", false}};
+
+  DirectoryHit other;
+  other.hit_id = "hit_other";
+  other.display_name = "Other";
+  other.nickname = "other";
+  other.ids = {{ContactIdKind::RelayUser, "relay:other", true}};
+
+  PeopleDiscoveryBuildOptions options;
+  options.self_identity_values = {"account:me", "relay:me"};
+
+  const std::string blocks = BuildPeopleDiscoveryBlocksJson({self_hit, other}, {}, options);
+  EXPECT_EQ(blocks.find("\"title\":\"Me\""), std::string::npos);
+  EXPECT_NE(blocks.find("Other"), std::string::npos);
+  EXPECT_NE(blocks.find("Found 1 person"), std::string::npos);
+}
+
+TEST(PeopleDiscoveryBlocksTest, NestedContactJsonAnnotatesAlreadyKnown) {
+  DirectoryHit hit;
+  hit.hit_id = "hit_nested";
+  hit.display_name = "Nested";
+  hit.nickname = "nested";
+  hit.ids = {{ContactIdKind::RelayUser, "relay:nested1", true}};
+
+  const std::string contacts_json = R"([
+    {
+      "id": "c_nested",
+      "local": { "display_name": "Nested", "trust": "friendly" },
+      "remote": {
+        "nickname": "nested",
+        "ids": [{ "kind": "relay_user", "value": "relay:nested1", "primary": true }]
+      },
+      "overrides": {}
+    }
+  ])";
+  const std::string blocks = TryPeopleDiscoveryBlocksFromToolJson(contacts_json);
+  // list_contacts-shaped JSON alone builds a contacts long_list
+  EXPECT_NE(blocks.find("Nested"), std::string::npos);
+  EXPECT_NE(blocks.find("Message"), std::string::npos);
+
+  PeopleDiscoveryBuildOptions options;
+  options.known_local_identity_values.insert("relay:nested1");
+  PeopleDiscoveryContactView local;
+  local.id = "c_nested";
+  local.display_name = "Nested";
+  local.ids = {{ContactIdKind::RelayUser, "relay:nested1", true}};
+  const std::string annotated = BuildPeopleDiscoveryBlocksJson({hit}, {local}, options);
+  EXPECT_NE(annotated.find("In contacts"), std::string::npos);
+  EXPECT_EQ(annotated.find("Add contact"), std::string::npos);
+}
+
 } // namespace

@@ -44,7 +44,9 @@ void ParsePeopleToolJson(const std::string& raw, std::vector<DirectoryHit>& hits
     }
     if (item->contains("hit_id")) {
       hits.push_back(DirectoryHitFromJson(*item));
-    } else if (item->contains("id") && item->contains("display_name")) {
+    } else if (item->contains("id") &&
+               (item->contains("display_name") || item->contains("local") || item->contains("remote"))) {
+      // ContactsToJson uses nested local/remote; legacy flat rows still have display_name.
       contacts.push_back(ContactFromJson(*item));
     }
   }
@@ -191,6 +193,7 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
     }
 
     // Directory hits win the list; local contacts annotate "In contacts" / Message by contact_id.
+    // Self hits are already dropped in ConversationsFacade::SearchPeople.
     result.people_list_blocks = BuildPeopleDiscoveryBlocksJson(hits, contacts, options);
   }
 

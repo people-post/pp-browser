@@ -23,7 +23,9 @@ std::string InlineChatActionButtonsRml(const std::vector<TranscriptChatAction>& 
 
 std::string HydrateChatActionButtons(const std::string& assistant_rml,
                                      const std::vector<TranscriptChatAction>& chat_actions) {
-  if (chat_actions.empty() || assistant_rml.find("chat-suggestion") != std::string::npos) {
+  if (chat_actions.empty() || assistant_rml.find("chat-suggestion") != std::string::npos ||
+      assistant_rml.find("chat-working-set-chip") != std::string::npos) {
+    // Working-set replies keep Message/Add in the panel only — never dump into the bubble.
     return assistant_rml;
   }
 

@@ -14,7 +14,8 @@
 
 namespace pbr {
 
-/** Append legacy suggestion buttons when RML lacks chat-suggestion markup. */
+/** Append legacy suggestion buttons when RML lacks chat-suggestion markup.
+ *  Skips when a working-set chip is present — panel owns those row actions. */
 std::string HydrateChatActionButtons(const std::string& assistant_rml,
                                      const std::vector<TranscriptChatAction>& chat_actions);
 

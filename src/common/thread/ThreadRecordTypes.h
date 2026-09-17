@@ -65,6 +65,11 @@ struct ThreadMessage {
   std::optional<std::string> ai_invoke_mode;
   std::optional<std::string> content_rml;
   std::vector<TranscriptChatAction> chat_actions;
+  /**
+   * JSON snapshot of working-set panel candidates for this assistant reply
+   * (`WorkingSetCandidatesToJson`). Empty when the reply has no panel artifact.
+   */
+  std::optional<std::string> working_set_json;
   int64_t timestamp = 0;
   MessageDelivery delivery = MessageDelivery::Local;
   bool relay_visible = true;

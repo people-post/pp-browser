@@ -220,7 +220,7 @@ Shared `.btn` geometry is **capsule** (`border-radius: 999dp`) at **44dp** min-h
 
 **Compact floating chrome** (theme-only — see [Materials](#compact-floating-chrome-materials)): `.surface-chrome`, `.surface-chrome--frost`, `.surface-chrome--solid`, `.shell-bottom-chrome--frost`
 
-**Context menus:** `ShowAt` (long-press / right-click) always uses a viewport-clamped float near the pointer. `ShowActions` (chrome overflow such as `⋯`) uses the same float on expanded layout, and a bottom action sheet (`.context-menu-layer--sheet`) on compact layout. Sheet frame geometry is set in `ContextMenuHost::LayoutActionSheet` from the viewport; RCSS only styles the shell and stretched children. Confirmations stay in `.shell-dialog`.
+**Context menus:** `ShowAt` (long-press / right-click) always uses a viewport-clamped float near the pointer. `ShowActions` (chrome overflow such as `⋯`) uses the same float on expanded layout, and a bottom action sheet (`.context-menu-layer--sheet`) on compact layout. Float menus use a transparent `.context-menu-scrim` (click-outside dismiss only, no dim); compact sheets keep a light scrim. Sheet frame geometry is set in `ContextMenuHost::LayoutActionSheet` from the viewport; RCSS only styles the shell and stretched children. Confirmations stay in `.shell-dialog`.
 
 ## Compact floating chrome (materials)
 
