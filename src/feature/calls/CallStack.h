@@ -83,6 +83,11 @@ public:
   void BuildSessions(const CallStackDeps& deps);
   /** Phase B (mesh up): create/start Amp call-media transport + WireMediaRelayDeps. */
   void OnMeshServicesStarted();
+  /**
+   * Test-only: bind CallMediaBridge without Amp mesh.
+   * `transport` / `dial` are non-owning; call after BuildSessions. Re-runs WireMediaRelayDeps.
+   */
+  void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial);
   /** Teardown before mesh Stop: clear bindings, PrepareForTeardown; abort circuit via callback. */
   void PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit);
   /** Teardown after mesh Stop: reset media bridge / call-media transport / dial registry. */
@@ -146,6 +151,9 @@ private:
   std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
   std::unique_ptr<ICircuitHopReach> circuit_hop_reach_;
   std::unique_ptr<CallMediaAmpTransport> call_media_amp_;
+  /** Non-owning test overrides (BindTestMediaPath); prefer over Amp transport / PeerSessionDialRegistry. */
+  ICallMediaTransport* test_media_transport_ = nullptr;
+  IDialRegistry* test_dial_ = nullptr;
   /** Lifecycle-driven N025 desire (mirrors old ConversationsHub::ephemeral_listen_desired_). */
   bool ephemeral_listen_desired_ = false;
   /** Invite/accept listen multiaddrs by peer identity (V035 SoftMigrate scope). */

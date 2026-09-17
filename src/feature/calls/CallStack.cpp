@@ -163,7 +163,20 @@ void CallStack::OnMeshServicesStarted() {
   WireMediaRelayDeps();
 }
 
-ICallMediaTransport* CallStack::CallMediaTransport() { return call_media_amp_.get(); }
+ICallMediaTransport* CallStack::CallMediaTransport() {
+  if (test_media_transport_) {
+    return test_media_transport_;
+  }
+  return call_media_amp_.get();
+}
+
+void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial) {
+  test_media_transport_ = transport;
+  test_dial_ = dial;
+  if (call_sessions_) {
+    WireMediaRelayDeps();
+  }
+}
 
 bool CallStack::HasActiveLocalCall() {
   if (call_lifecycle_ && call_lifecycle_->WantEphemeralListen()) {
@@ -319,7 +332,8 @@ void CallStack::WireMediaRelayDeps() {
   }
   CallSessionManager::MediaRelayDeps deps;
   deps.relay = media_relay_client_.get();
-  deps.dial = dial_registry_.get();
+  IDialRegistry* dial = test_dial_ ? test_dial_ : dial_registry_.get();
+  deps.dial = dial;
   deps.circuit_reach = circuit_hop_reach_.get();
   MeshConfig mesh_cfg = config().mesh;
   NormalizeMeshConfig(mesh_cfg);
@@ -382,14 +396,14 @@ void CallStack::WireMediaRelayDeps() {
   }
   call_sessions_->SetMediaRelayDeps(std::move(deps));
 
-  if (ICallMediaTransport* transport = CallMediaTransport(); transport && dial_registry_) {
+  if (ICallMediaTransport* transport = CallMediaTransport(); transport && dial) {
     // Rebuild when CallSessionManager was replaced (BuildMessagingStack) — bridge holds a host&
     // into that object. Keep the same bridge across N025 listen sync on the same manager.
     const bool sessions_changed = (media_bridge_bound_sessions_ != call_sessions_.get());
     if (!call_media_bridge_ || sessions_changed) {
       call_media_bridge_ = std::make_unique<CallMediaBridge>(
           call_sessions_->AsMediaHost(), *call_session_store_, *call_media_keys_, *call_media_engine_,
-          *transport, dial_registry_.get(), circuit_hop_reach_.get());
+          *transport, dial, circuit_hop_reach_.get());
       call_sessions_->SetCallMediaBridge(call_media_bridge_.get());
       if (call_media_seat_) {
         call_media_bridge_->SetMediaSeat(call_media_seat_.get());
@@ -400,9 +414,9 @@ void CallStack::WireMediaRelayDeps() {
       call_media_bridge_->SetSeedWarm([this]() { WarmBootstrapSeedSessions(); });
       call_media_bridge_->SetSeedReserve([this]() { ReserveOnBootstrapSeeds(); });
       log().info << "CallMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0)
-                 << " transport=amp)";
+                 << " transport=" << (test_media_transport_ ? "test" : "amp") << ")";
     } else {
-      call_media_bridge_->SetReachDeps(dial_registry_.get(), circuit_hop_reach_.get());
+      call_media_bridge_->SetReachDeps(dial, circuit_hop_reach_.get());
       if (call_media_seat_) {
         call_media_bridge_->SetMediaSeat(call_media_seat_.get());
       }
@@ -763,6 +777,8 @@ void CallStack::Shutdown() {
   call_media_bridge_.reset();
   media_bridge_bound_sessions_ = nullptr;
   call_media_amp_.reset();
+  test_media_transport_ = nullptr;
+  test_dial_ = nullptr;
   media_relay_client_.reset();
   dial_registry_.reset();
   circuit_hop_reach_.reset();
