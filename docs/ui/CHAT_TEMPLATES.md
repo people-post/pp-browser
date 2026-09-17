@@ -24,9 +24,10 @@ Panel-eligible blocks (`long_list`, `form`, `calendar`, large `table`, etc.) ren
 
 `long_list` is a **presentation** block for scrollable feeds. The LLM discovers sources via MCP tool schemas, calls tools through function calling, maps the response into normalized `items[]`, then emits the block in its final reply.
 
-- **Row fields:** `title` (required), optional `id`, `subtitle`, `meta`
-- **Row actions:** `items[].actions[]` with `label`, `message`, optional `payload`
-- **Pagination:** `footer_actions[]` (e.g. "More" with `payload` containing `before_id`) → user message → LLM fetches next page via MCP → new `long_list` reply
+- **Row fields:** `title` (required), optional `id`, `subtitle`, `meta`, `avatar_letter`, `avatar_tone`
+- **Row actions:** `items[].actions[]` with `label`, `message`, optional `payload`, optional `style` (`primary`|`secondary`)
+- **People discovery:** runtime `people_list` builds rows with short ids + primary Add/Message; chat keeps a short count paragraph and opens the working set panel
+- **Pagination / refine:** `footer_actions[]` (e.g. "More" / "Refine search…")
 
 Reference example: `blog_articles` MCP tool → map `{ articles: [...] }` into rows.
 

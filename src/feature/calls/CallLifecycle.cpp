@@ -325,6 +325,13 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
       accepted = sessions->AcceptInvite(call_id);
     }
     AppRuntime::PostUI([this, call_id, accepted = std::move(accepted)]() mutable {
+      // B-CONFLICT: Accept B while AcceptInvite(A) still runs — drop A's late UI result so it
+      // cannot JoinedLocal/RemoteEnded-clobber B (or Idle after LeaveCallIfActiveExcept).
+      if (accepting_call_id_ != call_id && call_id_ != call_id) {
+        log().info << "AcceptInvite result ignored stale call_id=" << call_id
+                   << " active=" << call_id_ << " accepting=" << accepting_call_id_;
+        return;
+      }
       if (!accepted) {
         log().warning << "AcceptInvite failed call_id=" << call_id << " err=" << accepted.error().message;
         last_error_ = accepted.error().message;
@@ -494,6 +501,11 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
     break;
 
   case CallLifecycleEvent::AcceptSucceeded:
+    // Ignore stale AcceptInvite completion after chrome moved to another call_id (Accept B).
+    if (!call_id.empty() && !call_id_.empty() && call_id != call_id_) {
+      log().info << "AcceptSucceeded ignored stale call_id=" << call_id << " active=" << call_id_;
+      return;
+    }
     accepting_call_id_.clear();
     // Do not clobber MediaPending/MediaConnecting if answerer ScheduleStart already
     // deferred (MediaDeferred) or keyed (MediaKeyReady) on the UI queue ahead of us.
@@ -535,6 +547,10 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
     break;
 
   case CallLifecycleEvent::AcceptFailed:
+    if (!call_id.empty() && !call_id_.empty() && call_id != call_id_) {
+      log().info << "AcceptFailed ignored stale call_id=" << call_id << " active=" << call_id_;
+      return;
+    }
     accepting_call_id_.clear();
     SetPhase(CallPhase::Ringing, call_id, ev);
     NotifyChrome();

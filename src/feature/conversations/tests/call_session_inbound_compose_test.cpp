@@ -259,12 +259,21 @@ protected:
       lifecycle_->ClearBinding();
     }
     if (bridge_) {
-      bridge_->PrepareForTeardown(0);
+      // Brief wait so Connect/StartSfu workers release profile.db before remove_all (Windows).
+      bridge_->PrepareForTeardown(500);
     }
     if (csm_) {
       csm_->SetCallMediaBridge(nullptr);
       csm_->SetLifecycle(nullptr);
       csm_->SetMediaSeat(nullptr);
+    }
+    // Always Stop — StartSfu may arm capture after PrepareForTeardown cleared media_call_id_.
+    if (media_) {
+      media_->Stop();
+    }
+    // Drain UI/worker replies while CSM/bridge still alive (avoid UAF on late AcceptInvite).
+    for (int i = 0; i < 50; ++i) {
+      AppRuntime::RunUITasks();
     }
     bridge_.reset();
     csm_.reset();
@@ -272,9 +281,6 @@ protected:
     seat_.reset();
     transport_.reset();
     dial_.reset();
-    if (media_ && (media_->IsActive() || media_->IsSfuMode())) {
-      media_->Stop();
-    }
     media_.reset();
     psk_.reset();
     if (keys_) {
@@ -285,9 +291,11 @@ protected:
     identity_.reset();
     contacts_.reset();
     store_.reset();
-    std::filesystem::remove_all(data_dir_);
     AppRuntime::ShutdownUI();
     AppRuntime::Shutdown();
+    // Never throw from TearDown — Windows "file in use" must not abort the suite.
+    std::error_code ec;
+    std::filesystem::remove_all(data_dir_, ec);
   }
 
   Roe<ThreadMessage> MakeInviteMessage(const std::string& call_id,
@@ -715,13 +723,18 @@ TEST_F(CallSessionInboundComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   lifecycle_->Apply(CallLifecycleEvent::AcceptClicked, call_a);
   DrainUntil([&]() {
     auto active = csm_->ActiveLocalCall();
-    return active && active->has_value() && (*active)->call_id == call_a;
+    // Wait for AcceptInvite UI completion — reduces SQLITE_BUSY vs concurrent invite B upsert.
+    return active && active->has_value() && (*active)->call_id == call_a &&
+           lifecycle_->Phase() != CallPhase::Accepting;
   });
   ASSERT_TRUE(csm_->ActiveLocalCall()->has_value());
 
   auto msg_b = MakeInviteMessage(call_b);
   ASSERT_TRUE(msg_b);
-  ASSERT_TRUE(csm_->ApplyInboundControl(*msg_b, "account:peer"));
+  {
+    auto applied_b = csm_->ApplyInboundControl(*msg_b, "account:peer");
+    ASSERT_TRUE(applied_b) << (applied_b ? "" : applied_b.error().message);
+  }
   ASSERT_TRUE(keys_->PutEpochKey(call_b, 1, TestMediaKey()));
   lifecycle_->Apply(CallLifecycleEvent::InviteSeen, call_b);
   lifecycle_->Apply(CallLifecycleEvent::AcceptClicked, call_b);
@@ -1126,7 +1139,8 @@ TEST_F(CallSessionInboundComposeTest, BroadcastArmAndAcceptLiveAnnounceJoin) {
 TEST_F(CallSessionInboundComposeTest, StartCallOutboundCreatesSessionAndInvite) {
   ASSERT_TRUE(store_->SetDek(TestDek()));
   Thread thread;
-  thread.id = "thread:dm-out";
+  // Windows: thread id is a directory name under threads/ — no ':' (illegal path char).
+  thread.id = "thread-dm-out";
   thread.kind = ThreadKind::Direct;
   thread.title = "Peer";
   thread.updated_at = util::NowUnixMs();
@@ -1150,7 +1164,7 @@ TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesAutoLeavesOutboundUnans
   // CALLS: OutboundCalling + no media past TTL → Leave via Sweep (not GUI LeaveClicked).
   ASSERT_TRUE(store_->SetDek(TestDek()));
   Thread thread;
-  thread.id = "thread:dm-ttl";
+  thread.id = "thread-dm-ttl";
   thread.kind = ThreadKind::Direct;
   thread.title = "Peer";
   thread.updated_at = util::NowUnixMs();
@@ -1182,7 +1196,7 @@ TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesAutoLeavesOutboundUnans
 TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesSkipsOutboundBeforeTtl) {
   ASSERT_TRUE(store_->SetDek(TestDek()));
   Thread thread;
-  thread.id = "thread:dm-ttl-early";
+  thread.id = "thread-dm-ttl-early";
   thread.kind = ThreadKind::Direct;
   thread.title = "Peer";
   thread.updated_at = util::NowUnixMs();

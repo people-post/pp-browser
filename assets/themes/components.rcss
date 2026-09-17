@@ -715,6 +715,32 @@ select selectbox option {
   border-bottom: 0;
 }
 
+.chat-long-list-item-row {
+  align-items: flex-start;
+  gap: 10dp;
+}
+
+.chat-long-list-avatar {
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-long-list-avatar .avatar-letter {
+  font-size: 14dp;
+  color: #ffffff;
+}
+
+.chat-long-list-item-body {
+  display: block;
+  flex-grow: 1;
+  min-width: 0;
+}
+
 .chat-long-list-title {
   margin-bottom: 4dp;
 }
@@ -730,6 +756,10 @@ select selectbox option {
   gap: 8dp;
   flex-wrap: wrap;
   margin-top: 6dp;
+}
+
+.chat-suggestion-secondary {
+  opacity: 0.92;
 }
 
 .chat-action-list-item {

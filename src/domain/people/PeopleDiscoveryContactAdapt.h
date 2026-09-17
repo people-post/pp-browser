@@ -27,8 +27,9 @@ inline std::vector<PeopleDiscoveryContactView> ToPeopleDiscoveryContactViews(
 }
 
 inline std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& directory_hits,
-                                                  const std::vector<Contact>& contacts) {
-  return BuildPeopleDiscoveryBlocksJson(directory_hits, ToPeopleDiscoveryContactViews(contacts));
+                                                  const std::vector<Contact>& contacts,
+                                                  const PeopleDiscoveryBuildOptions& options = {}) {
+  return BuildPeopleDiscoveryBlocksJson(directory_hits, ToPeopleDiscoveryContactViews(contacts), options);
 }
 
 } // namespace pbr

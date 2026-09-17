@@ -939,6 +939,14 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
     return Error("Call is full");
   }
 
+  // Concurrent Accept B → LeaveCallIfActiveExcept may End this call while we are still on the
+  // AcceptInvite(A) worker. Do not resurrect an Ended row as Joined.
+  if (auto latest = sessions_.LoadSession(call_id); latest && latest->has_value() &&
+      (*latest)->state == CallSessionState::Ended) {
+    log().info << "AcceptInvite abort call already ended call_id=" << call_id;
+    return Error("Call already ended");
+  }
+
   const int64_t now = util::NowUnixMs();
   row.state = CallSessionLogic::TransitionOnRemoteJoined(row.state);
   if (auto saved = sessions_.UpsertSession(row); !saved) {
@@ -1028,6 +1036,23 @@ Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
     log().warning << "CallAccept send failed call_id=" << call_id << " err=" << sent.error().message;
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << sent.error().message;
     return sent.error();
+  }
+
+  // B-CONFLICT: Accept B may have moved chrome / LeaveCall'd us while CallAccept was on the wire.
+  // Do not ScheduleStart or report success for a superseded accept (stale AcceptSucceeded → Idle).
+  if (lifecycle_) {
+    const std::string& accepting = lifecycle_->AcceptingCallId();
+    const std::string& active = lifecycle_->ActiveCallId();
+    if ((!accepting.empty() && accepting != call_id) ||
+        (accepting.empty() && !active.empty() && active != call_id)) {
+      log().info << "AcceptInvite superseded after CallAccept call_id=" << call_id
+                 << " accepting=" << accepting << " active=" << active;
+      if (auto latest = sessions_.LoadSession(call_id);
+          latest && latest->has_value() && (*latest)->state != CallSessionState::Ended) {
+        (void)LeaveCall(call_id);
+      }
+      return Error("Accept superseded");
+    }
   }
 
   if (schedule_answerer_direct) {

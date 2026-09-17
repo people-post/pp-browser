@@ -234,14 +234,16 @@ protected:
     identity_.reset();
     contacts_.reset();
     store_.reset();
-    std::filesystem::remove_all(data_dir_);
     MeshControlDispatch::Uninstall();
     if (mesh_control_) {
       mesh_control_->Shutdown();
     }
     mesh_control_.reset();
+    // Drain DeclineInvite / LeaveCall workers before wipe (Windows: file in use).
     AppRuntime::ShutdownUI();
     AppRuntime::Shutdown();
+    std::error_code ec;
+    std::filesystem::remove_all(data_dir_, ec);
   }
 
   Roe<void> IngestInvite(const std::string& call_id) {
@@ -411,7 +413,8 @@ TEST_F(CallUiBackendStackTest, DeclineViaBackendClearsPending) {
 TEST_F(CallUiBackendStackTest, StartCallAndLeaveViaBackend) {
   ASSERT_TRUE(store_->SetDek(TestDek()));
   Thread thread;
-  thread.id = "thread:ui-out";
+  // Windows: thread id is a directory name under threads/ — no ':' (illegal path char).
+  thread.id = "thread-ui-out";
   thread.kind = ThreadKind::Direct;
   thread.title = "Peer";
   thread.updated_at = util::NowUnixMs();

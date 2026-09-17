@@ -48,7 +48,8 @@ selection {
 .btn-primary,
 .prompt-send-btn,
 .sidebar-new-chat,
-.contacts-find-btn {
+.contacts-find-btn,
+.chat-suggestion-primary {
   background-color: #4a6cf7;
   color: #ffffff;
 }
@@ -57,7 +58,8 @@ selection {
 .btn-primary:focus,
 .prompt-send-btn:hover,
 .sidebar-new-chat:hover,
-.contacts-find-btn:hover {
+.contacts-find-btn:hover,
+.chat-suggestion-primary:hover {
   background-color: #5a7cff;
 }
 

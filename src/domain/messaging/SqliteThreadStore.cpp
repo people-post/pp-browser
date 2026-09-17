@@ -191,6 +191,8 @@ Roe<void> ConfigureDb(sqlite3* db) {
   if (auto result = ExecSql(db, "PRAGMA foreign_keys=ON;"); !result) {
     return result.error();
   }
+  // Sibling CallSessionStore / CallMediaKeyStore open short-lived connections to the same file.
+  sqlite3_busy_timeout(db, 5000);
   return {};
 }
 
@@ -349,7 +351,13 @@ Roe<void> SqliteThreadStore::OpenProfileDbUnguarded() const {
 Roe<void> SqliteThreadStore::EnsureThreadDirectory(const std::string& thread_id) const {
   std::error_code ec;
   std::filesystem::create_directories(ThreadDir(data_dir_, thread_id), ec);
+  if (ec) {
+    return Error("Failed to create thread directory: " + thread_id + " (" + ec.message() + ")");
+  }
   std::filesystem::create_directories(std::filesystem::path(ThreadDir(data_dir_, thread_id)) / "blobs", ec);
+  if (ec) {
+    return Error("Failed to create thread blobs directory: " + thread_id + " (" + ec.message() + ")");
+  }
   return {};
 }
 
@@ -365,7 +373,12 @@ Roe<sqlite3*> SqliteThreadStore::OpenThreadDb(const std::string& thread_id) cons
     }
     ThreadDbHandle handle;
     if (sqlite3_open(ThreadDbFile(data_dir_, thread_id).c_str(), &handle.db) != SQLITE_OK) {
-      return Error("Failed to open thread.db: " + thread_id);
+      const std::string detail = handle.db ? sqlite3_errmsg(handle.db) : "sqlite3_open failed";
+      if (handle.db) {
+        sqlite3_close(handle.db);
+        handle.db = nullptr;
+      }
+      return Error("Failed to open thread.db: " + thread_id + " (" + detail + ")");
     }
     if (auto cfg = ConfigureDb(handle.db); !cfg) {
       sqlite3_close(handle.db);
@@ -816,7 +829,9 @@ Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
   if (auto dir = EnsureThreadDirectory(thread.id); !dir) {
     return dir.error();
   }
-  (void)OpenThreadDb(thread.id);
+  if (auto thread_db = OpenThreadDb(thread.id); !thread_db) {
+    return thread_db.error();
+  }
 
   std::lock_guard lock(profile_mutex_);
   std::vector<Value> participant_values;

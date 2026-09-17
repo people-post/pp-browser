@@ -176,6 +176,21 @@ TEST_F(CallLifecycleTest, RemoteEndedIgnoredForStaleCallId) {
   EXPECT_EQ(life_.Phase(), CallPhase::Idle);
 }
 
+TEST_F(CallLifecycleTest, AcceptSucceededIgnoredForStaleCallId) {
+  // B-CONFLICT: late AcceptInvite(A) must not JoinedLocal-clobber chrome already on B.
+  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:b");
+  EXPECT_EQ(life_.Phase(), CallPhase::JoinedLocal);
+  EXPECT_EQ(life_.ActiveCallId(), "call:b");
+
+  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:a");
+  EXPECT_EQ(life_.Phase(), CallPhase::JoinedLocal);
+  EXPECT_EQ(life_.ActiveCallId(), "call:b");
+
+  life_.Apply(CallLifecycleEvent::AcceptFailed, "call:a");
+  EXPECT_EQ(life_.Phase(), CallPhase::JoinedLocal);
+  EXPECT_EQ(life_.ActiveCallId(), "call:b");
+}
+
 TEST_F(CallLifecycleTest, ConnectFailedIgnoredFromIdle) {
   life_.Apply(CallLifecycleEvent::ConnectFailedEvt, "call:1");
   EXPECT_EQ(life_.Phase(), CallPhase::Idle);

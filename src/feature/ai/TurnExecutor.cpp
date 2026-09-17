@@ -172,7 +172,26 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
     for (const std::string& raw : raw_results) {
       ParsePeopleToolJson(raw, hits, contacts);
     }
-    result.people_list_blocks = BuildPeopleDiscoveryBlocksJson(hits, contacts);
+
+    PeopleDiscoveryBuildOptions options;
+    // Silent local lookup so directory rows can show "In contacts" and prefer Message.
+    if (!hits.empty() && contacts.empty() && FindTool(tools, "list_contacts")) {
+      auto local = tools.Execute("list_contacts", Object{});
+      if (local) {
+        std::vector<DirectoryHit> ignored_hits;
+        ParsePeopleToolJson(*local, ignored_hits, contacts);
+      }
+    }
+    for (const Contact& contact : contacts) {
+      for (const ContactId& id : contact.ids) {
+        if (!id.value.empty()) {
+          options.known_local_identity_values.insert(id.value);
+        }
+      }
+    }
+
+    // Directory hits win the list; local contacts annotate "In contacts" / Message by contact_id.
+    result.people_list_blocks = BuildPeopleDiscoveryBlocksJson(hits, contacts, options);
   }
 
   return result;

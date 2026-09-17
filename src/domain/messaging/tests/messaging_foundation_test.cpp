@@ -79,5 +79,7 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   const std::string blocks = BuildPeopleDiscoveryBlocksJson({hit}, std::vector<PeopleDiscoveryContactView>{});
   EXPECT_NE(blocks.find("long_list"), std::string::npos);
   EXPECT_NE(blocks.find("Alice Example"), std::string::npos);
+  EXPECT_NE(blocks.find("~alice"), std::string::npos);
+  EXPECT_NE(blocks.find("add_contact"), std::string::npos);
   EXPECT_NE(blocks.find("start_conversation"), std::string::npos);
 }

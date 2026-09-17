@@ -414,7 +414,8 @@ protected:
 TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
   // Product-shaped wire: Offer StartCall → Invite → Answer Accept → CallAccept → both media → Leave.
   Thread thread;
-  thread.id = "thread:dual-dm";
+  // Windows: thread id is a directory name under threads/ — no ':' (illegal path char).
+  thread.id = "thread-dual-dm";
   thread.kind = ThreadKind::Direct;
   thread.title = "Answer";
   thread.updated_at = util::NowUnixMs();
@@ -428,7 +429,7 @@ TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
 TEST_F(CallDualStackComposeTest, OfferLeaveClearsAnswererIdle) {
   // CALLS remote end (symmetric): offerer Leave → answerer Idle without answer LeaveClicked.
   Thread thread;
-  thread.id = "thread:dual-offer-leave";
+  thread.id = "thread-dual-offer-leave";
   thread.kind = ThreadKind::Direct;
   thread.title = "Answer";
   thread.updated_at = util::NowUnixMs();
@@ -442,7 +443,7 @@ TEST_F(CallDualStackComposeTest, OfferLeaveClearsAnswererIdle) {
 TEST_F(CallDualStackComposeTest, OfferAnswerKCycleTeardown) {
   // B-TEARDOWN: Leave→Idle→second Invite→InCall on dual CallStack (no stuck listen/media).
   Thread thread;
-  thread.id = "thread:dual-kcycle";
+  thread.id = "thread-dual-kcycle";
   thread.kind = ThreadKind::Direct;
   thread.title = "Answer";
   thread.updated_at = util::NowUnixMs();
@@ -469,7 +470,7 @@ TEST_F(CallDualStackComposeTest, OfferAnswerKCycleTeardown) {
 TEST_F(CallDualStackComposeTest, OfferInviteAnswerDeclineClearsOfferer) {
   // CALLS: answer Decline → CallDecline on wire → offerer Idle (no LeaveClicked / TTL).
   Thread thread;
-  thread.id = "thread:dual-decline";
+  thread.id = "thread-dual-decline";
   thread.kind = ThreadKind::Direct;
   thread.title = "Answer";
   thread.updated_at = util::NowUnixMs();
@@ -504,7 +505,7 @@ TEST_F(CallDualStackComposeTest, OfferInviteAnswerDeclineClearsOfferer) {
 TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   // B-CONFLICT: Accept call B while InCall on A ends A (LeaveCallIfActiveExcept) across stacks.
   Thread thread;
-  thread.id = "thread:dual-conflict";
+  thread.id = "thread-dual-conflict";
   thread.kind = ThreadKind::Direct;
   thread.title = "Answer";
   thread.updated_at = util::NowUnixMs();

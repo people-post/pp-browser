@@ -198,7 +198,8 @@ std::optional<std::string> ParseOptionalButtonPayload(const Object& block) {
 }
 
 ParseResult AppendChatActionButton(ParseResult& parent, const std::string& label, const std::string& message,
-                                   const std::optional<std::string>& payload) {
+                                   const std::optional<std::string>& payload,
+                                   const std::string& style = {}) {
   if (message.empty()) {
     return BlockError("button message must not be empty");
   }
@@ -206,9 +207,16 @@ ParseResult AppendChatActionButton(ParseResult& parent, const std::string& label
   const int index = static_cast<int>(parent.chat_actions.size());
   parent.chat_actions.push_back({label, message, payload});
 
+  std::string classes = "chat-suggestion";
+  if (style == "primary") {
+    classes += " chat-suggestion-primary";
+  } else if (style == "secondary") {
+    classes += " chat-suggestion-secondary";
+  }
+
   ParseResult result;
   result.ok = true;
-  result.rml = "<button class=\"chat-suggestion\" data-event-click=\"send_chat_action('__ENTRY__', " +
+  result.rml = "<button class=\"" + classes + "\" data-event-click=\"send_chat_action('__ENTRY__', " +
                std::to_string(index) + ")\">" + StructuredTextParser::EscapeText(label) + "</button>";
   return result;
 }
@@ -404,16 +412,45 @@ ParseResult ParseLongListActionButton(ParseResult& parent, const Value& action_v
   if (!action || !action->getString("label") || !action->getString("message")) {
     return BlockError("long_list actions require label and message");
   }
+  const std::string style = action->getString("style").value_or("");
   if (action->contains("payload")) {
     const auto payload = ParseOptionalButtonPayload(*action);
     if (!payload) {
       return BlockError("long_list action payload must be a JSON object or object string");
     }
     return AppendChatActionButton(parent, *action->getString("label"), *action->getString("message"),
-                                  payload);
+                                  payload, style);
   }
   return AppendChatActionButton(parent, *action->getString("label"), *action->getString("message"),
-                                std::nullopt);
+                                std::nullopt, style);
+}
+
+std::string RenderLongListItemBody(const Object& item) {
+  std::ostringstream out;
+  const bool has_avatar = item.getString("avatar_letter").has_value();
+  if (has_avatar) {
+    out << "<div class=\"row chat-long-list-item-row\">";
+    const int tone = static_cast<int>(item.getNonNegInt("avatar_tone").value_or(0) % 8);
+    out << "<div class=\"chat-long-list-avatar avatar-tone-" << tone << "\">";
+    out << "<p class=\"avatar-letter\">"
+        << StructuredTextParser::EscapeText(*item.getString("avatar_letter")) << "</p></div>";
+    out << "<div class=\"chat-long-list-item-body\">";
+  }
+
+  out << "<p class=\"chat-long-list-title\">" << StructuredTextParser::EscapeText(*item.getString("title"))
+      << "</p>";
+  if (auto subtitle = item.getString("subtitle")) {
+    out << "<p class=\"muted chat-long-list-subtitle\">" << StructuredTextParser::EscapeText(*subtitle)
+        << "</p>";
+  }
+  if (auto meta = item.getString("meta")) {
+    out << "<p class=\"muted chat-long-list-meta\">" << StructuredTextParser::EscapeText(*meta) << "</p>";
+  }
+
+  if (has_avatar) {
+    out << "</div></div>";
+  }
+  return out.str();
 }
 
 ParseResult ParseLongListBlock(const Object& block, ParseResult& parent) {
@@ -433,16 +470,7 @@ ParseResult ParseLongListBlock(const Object& block, ParseResult& parent) {
       return BlockError("long_list items require title");
     }
     out << "<div class=\"chat-long-list-item\">";
-    out << "<p class=\"chat-long-list-title\">" << StructuredTextParser::EscapeText(*item->getString("title"))
-        << "</p>";
-    if (auto subtitle = item->getString("subtitle")) {
-      out << "<p class=\"muted chat-long-list-subtitle\">"
-          << StructuredTextParser::EscapeText(*subtitle) << "</p>";
-    }
-    if (auto meta = item->getString("meta")) {
-      out << "<p class=\"muted chat-long-list-meta\">" << StructuredTextParser::EscapeText(*meta)
-          << "</p>";
-    }
+    out << RenderLongListItemBody(*item);
     if (const Array* actions = item->getArray("actions")) {
       out << "<div class=\"row chat-long-list-actions\">";
       for (const Value& action_value : actions->elements) {
@@ -493,16 +521,7 @@ ParseResult ParseLongListArtifact(const Object& block, ParseResult& parent) {
       return BlockError("long_list items require title");
     }
     out << "<div class=\"chat-long-list-item\">";
-    out << "<p class=\"chat-long-list-title\">" << StructuredTextParser::EscapeText(*item->getString("title"))
-        << "</p>";
-    if (auto subtitle = item->getString("subtitle")) {
-      out << "<p class=\"muted chat-long-list-subtitle\">"
-          << StructuredTextParser::EscapeText(*subtitle) << "</p>";
-    }
-    if (auto meta = item->getString("meta")) {
-      out << "<p class=\"muted chat-long-list-meta\">" << StructuredTextParser::EscapeText(*meta)
-          << "</p>";
-    }
+    out << RenderLongListItemBody(*item);
     if (const Array* actions = item->getArray("actions")) {
       out << "<div class=\"row chat-long-list-actions\">";
       for (const Value& action_value : actions->elements) {

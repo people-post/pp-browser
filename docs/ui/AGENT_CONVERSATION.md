@@ -92,7 +92,7 @@ Each agent turn produces a [`TurnPlan`](../../src/base/ai/TurnPlan.h):
 | `summarize` | Article action payloads | Heading + concise paragraph/card |
 | `answer_question` | Planner (NL) | Answer paragraph first; sources as support |
 | `headlines` | Planner (NL) | `list` of real headlines |
-| `people_discovery` | Planner or people chip payloads | `long_list` with Message/Add chips |
+| `people_discovery` | Planner or people chip payloads | `long_list` in working set (identity-first rows; Add/Message by contact state) |
 | `general` | Fallback | Blocks that best serve the ask |
 
 ## Dual-channel user messages (`user_payload`)

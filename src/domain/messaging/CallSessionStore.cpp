@@ -125,6 +125,9 @@ Roe<sqlite3*> CallSessionStore::OpenDb() const {
   if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
     return Error("Failed to open profile.db for call sessions");
   }
+  // Concurrent AcceptInvite / inbound invite / media-key writers share this file with
+  // SqliteThreadStore's long-lived profile.db handle — wait out SQLITE_BUSY on Windows CI.
+  sqlite3_busy_timeout(db, 5000);
   if (auto schema = EnsureSchema(db); !schema) {
     sqlite3_close(db);
     return schema.error();
@@ -379,9 +382,10 @@ Roe<void> CallSessionStore::UpsertPendingInvite(const PendingCallInvite& invite)
   const std::string session_kind = CallSessionKindToString(invite.session_kind);
   sqlite3_bind_text(stmt, 12, session_kind.c_str(), -1, SQLITE_TRANSIENT);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
+    const std::string detail = sqlite3_errmsg(*db);
     sqlite3_finalize(stmt);
     sqlite3_close(*db);
-    return Error("Failed to upsert pending call invite");
+    return Error("Failed to upsert pending call invite: " + detail);
   }
   sqlite3_finalize(stmt);
   sqlite3_close(*db);
