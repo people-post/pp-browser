@@ -4,15 +4,18 @@
 #include "foundation/platform/IAssetLocator.h"
 #include "common/ValueJson.h"
 
-#if !defined(PP_BROWSER_HEADLESS)
-#include <SDL3/SDL_locale.h>
-#endif
-
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include "common/PbrCompat.h"
+
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 namespace pbr {
 
@@ -20,6 +23,19 @@ namespace {
 
 bool LooksLikeLocaleObject(const Object& root) {
   return root.contains("locale") && root.getObject("strings") != nullptr;
+}
+
+// Strip encoding / modifier: en_US.UTF-8@euro → en_US
+std::string StripLocaleEncoding(std::string tag) {
+  const auto dot = tag.find('.');
+  if (dot != std::string::npos) {
+    tag.resize(dot);
+  }
+  const auto at = tag.find('@');
+  if (at != std::string::npos) {
+    tag.resize(at);
+  }
+  return tag;
 }
 
 } // namespace
@@ -250,48 +266,30 @@ std::vector<std::string> LocalizationService::PreferredSystemLocales() const {
     return system_locales_override_;
   }
 
+  // Keep i18n UI-free: no SDL_GetPreferredLocales (that forced pp_foundation_platform
+  // into pp-node via pp_foundation_error → i18n). POSIX env / Win32 APIs only.
   std::vector<std::string> out;
-#if defined(PP_BROWSER_HEADLESS)
-  // pp-node / headless: no SDL — honor POSIX locale env (first non-empty / non-C).
+#if defined(_WIN32)
+  wchar_t name[LOCALE_NAME_MAX_LENGTH] = {};
+  if (GetUserDefaultLocaleName(name, LOCALE_NAME_MAX_LENGTH) > 0) {
+    char narrow[LOCALE_NAME_MAX_LENGTH] = {};
+    if (WideCharToMultiByte(CP_UTF8, 0, name, -1, narrow, sizeof(narrow), nullptr, nullptr) > 0) {
+      out.push_back(NormalizeTag(narrow));
+    }
+  }
+#else
   for (const char* key : {"LC_ALL", "LC_MESSAGES", "LANG"}) {
     const char* value = std::getenv(key);
     if (value == nullptr || value[0] == '\0') {
       continue;
     }
-    std::string tag = value;
-    // Drop encoding / modifier: en_US.UTF-8 → en_US
-    const auto dot = tag.find('.');
-    if (dot != std::string::npos) {
-      tag.resize(dot);
-    }
-    const auto at = tag.find('@');
-    if (at != std::string::npos) {
-      tag.resize(at);
-    }
+    std::string tag = StripLocaleEncoding(value);
     if (tag == "C" || tag == "POSIX") {
       continue;
     }
     out.push_back(NormalizeTag(tag));
     break;
   }
-#else
-  int count = 0;
-  SDL_Locale** locales = SDL_GetPreferredLocales(&count);
-  if (locales == nullptr) {
-    return out;
-  }
-  for (int i = 0; i < count; ++i) {
-    if (locales[i] == nullptr || locales[i]->language == nullptr) {
-      continue;
-    }
-    std::string tag = locales[i]->language;
-    if (locales[i]->country != nullptr && locales[i]->country[0] != '\0') {
-      tag.push_back('-');
-      tag += locales[i]->country;
-    }
-    out.push_back(std::move(tag));
-  }
-  SDL_free(locales);
 #endif
   return out;
 }

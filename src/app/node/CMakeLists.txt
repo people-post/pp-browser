@@ -3,6 +3,7 @@ if(PP_BROWSER_IS_MOBILE)
 endif()
 
 include(PpBrowserWarnings)
+include(PpBrowserNoUiDeps)
 
 add_executable(pp-node
   main.cpp
@@ -38,6 +39,9 @@ if(TARGET OpenSSL::Crypto)
   target_link_libraries(pp-node PRIVATE OpenSSL::Crypto)
 endif()
 pp_browser_apply_warnings(pp-node)
+# Fail configure / link if a PUBLIC_LIBS edge reintroduces SDL/RmlUi/GUI.
+pp_browser_assert_no_ui_dependencies(pp-node)
+pp_browser_add_no_ui_link_check(pp-node)
 
 install(TARGETS pp-node RUNTIME DESTINATION bin)
 
