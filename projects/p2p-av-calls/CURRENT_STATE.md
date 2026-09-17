@@ -119,7 +119,8 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 | Invent N025 listen from `TopPendingInvite` on tick | Lifecycle `WantEphemeralListen` only |
 | Duplicate listen desire on CallStack | Lifecycle sole desire; stack only syncs Hub N025 execution |
 | Put Amp dial/relay/hop unique_ptrs on CallStack | **V040** — `CallMediaPlane` owns mesh-media siblings |
-| Re-inline relay/dial/hop/bridge into mega-`Wire` | Keep `Wire` a thin orchestrator; follow [AGENTS.md](../../AGENTS.md#conventions) function-complexity convention |
+| Cache CSM/stores/seat/lifecycle on the plane (`LiveRefs`) | Stack `BindMediaProducts` + deps callbacks only; plane `BindBridge` takes args per call |
+| Re-inline relay/dial/hop/bridge into mega-`Wire` | Keep `Wire` mesh-only; follow [AGENTS.md](../../AGENTS.md#conventions) function-complexity convention |
 | Full-shell `SyncLayout` for Accept chrome | `RemountCallChrome` into `#shell-call-*-mount` only |
 | Host-wide inbound request SM / rewrite working call-media “while here” | V033 — targeted session SMs; [SESSION_MACHINES.md](SESSION_MACHINES.md) docs first |
 | Move `CallLifecycle` phases into `integration/host` | Product SM stays in feature; transport SM in host |

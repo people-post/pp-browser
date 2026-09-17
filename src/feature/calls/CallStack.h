@@ -127,7 +127,9 @@ public:
 private:
   MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
   const AppConfig& config() const;
-  void SyncMediaPlane();
+  void SyncMediaPlaneDeps();
+  /** After plane Wire: BindBridge + CSM SetMediaRelayDeps / SetCallMediaBridge. */
+  void BindMediaProducts();
 
   CallStackDeps deps_;
   std::unique_ptr<CallSessionStore> call_session_store_;

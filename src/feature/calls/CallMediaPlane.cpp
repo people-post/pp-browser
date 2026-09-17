@@ -57,10 +57,6 @@ void CallMediaPlane::SetDeps(CallMediaPlaneDeps deps) {
   deps_ = std::move(deps);
 }
 
-void CallMediaPlane::SetLiveRefs(CallMediaPlaneLiveRefs refs) {
-  live_ = refs;
-}
-
 void CallMediaPlane::OnMeshStarted() {
   MeshHost* m = mesh();
   if (!m || !m->IsRunning()) {
@@ -91,18 +87,17 @@ ICallMediaTransport* CallMediaPlane::Transport() {
   return call_media_amp_.get();
 }
 
+IDialRegistry* CallMediaPlane::ActiveDial() const {
+  return test_dial_ ? test_dial_ : dial_registry_.get();
+}
+
 void CallMediaPlane::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial) {
   test_media_transport_ = transport;
   test_dial_ = dial;
-  if (live_.sessions) {
-    Wire();
-  }
+  Wire();
 }
 
 void CallMediaPlane::Wire() {
-  if (!live_.sessions || !live_.session_store || !live_.media_keys || !live_.media_engine) {
-    return;
-  }
   MeshHost* m = mesh();
   IoPump io_pump;
   IoPost post_io;
@@ -113,10 +108,74 @@ void CallMediaPlane::Wire() {
   const bool use_amp_relay = WireMediaRelayClient(m, io_pump, post_io);
   WireDialRegistry(m, use_amp_relay, post_io);
   WireCircuitHopReach(m, use_amp_relay, io_pump, post_io);
+}
 
-  IDialRegistry* dial = test_dial_ ? test_dial_ : dial_registry_.get();
-  live_.sessions->SetMediaRelayDeps(BuildMediaRelayDeps(m, use_amp_relay, dial));
-  WireMediaBridge(dial);
+CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() const {
+  MeshHost* m = mesh();
+  const bool use_amp_relay =
+      m && m->Amp() && m->AmpMediaRelayCoord() && m->AmpMediaRelayCoord()->IsStarted();
+  CallTopologyController::MediaRelayDeps deps;
+  deps.relay = media_relay_client_.get();
+  deps.dial = ActiveDial();
+  deps.circuit_reach = circuit_hop_reach_.get();
+  MeshConfig mesh_cfg = config().mesh;
+  NormalizeMeshConfig(mesh_cfg);
+  deps.bootstrap_peers = mesh_cfg.bootstrap_peers;
+  deps.prefer_contacts = mesh_cfg.prefer_contacts_for_routing;
+  deps.list_directory_nodes = deps_.list_directory_nodes;
+  deps.list_dht_nodes = deps_.list_dht_nodes;
+  deps.seed_dial_ok = deps_.seed_dial_ok;
+  deps.prefer_local_as_hop = ResolveMeshRole(config().mesh) == MeshRole::Node &&
+                             mesh_cfg.capabilities.media_relay && use_amp_relay && m &&
+                             m->AmpMediaRelayCoord() && m->AmpMediaRelayCoord()->IsStarted();
+  const std::vector<std::string> advertised =
+      deps_.local_listen_multiaddrs ? deps_.local_listen_multiaddrs() : std::vector<std::string>{};
+  if (!advertised.empty()) {
+    deps.local_listen_multiaddr = advertised.front();
+  } else if (m && !m->AmpListenMultiaddr().empty()) {
+    deps.local_listen_multiaddr = m->AmpListenMultiaddr();
+  }
+  deps.local_advertise_multiaddrs = advertised;
+  deps.resolve_local_advertise = deps_.local_listen_multiaddrs;
+  deps.peer_has_media_relay = deps_.peer_has_media_relay;
+  deps.list_media_relay_peers = deps_.list_media_relay_peers;
+  deps.resolve_remote_listen_by_peer = [this]() { return dial_book_.peer_listen_mas; };
+  deps.peer_lan_confirmed = [this](const std::string& peer_id) { return PeerLanConfirmed(peer_id); };
+  if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos ||
+      deps.local_listen_multiaddr.find("/ip6/::/") != std::string::npos) {
+    deps.local_listen_multiaddr.clear();
+  }
+  return deps;
+}
+
+void CallMediaPlane::BindBridge(const CallMediaBridgeBindArgs& args) {
+  ICallMediaTransport* transport = Transport();
+  IDialRegistry* dial = ActiveDial();
+  if (!transport || !dial || !args.host || !args.session_store || !args.media_keys ||
+      !args.media_engine) {
+    call_media_bridge_.reset();
+    media_bridge_bound_sessions_key_ = nullptr;
+    return;
+  }
+  const bool sessions_changed = (media_bridge_bound_sessions_key_ != args.sessions_key);
+  if (!call_media_bridge_ || sessions_changed) {
+    call_media_bridge_ = std::make_unique<CallMediaBridge>(
+        *args.host, *args.session_store, *args.media_keys, *args.media_engine, *transport, dial,
+        circuit_hop_reach_.get());
+    media_bridge_bound_sessions_key_ = args.sessions_key;
+    log().info << "CallMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0)
+               << " transport=" << (test_media_transport_ ? "test" : "amp") << ")";
+  } else {
+    call_media_bridge_->SetReachDeps(dial, circuit_hop_reach_.get());
+  }
+  if (args.seat) {
+    call_media_bridge_->SetMediaSeat(args.seat);
+  }
+  if (args.lifecycle) {
+    call_media_bridge_->SetLifecycle(args.lifecycle);
+  }
+  call_media_bridge_->SetSeedWarm([this]() { WarmBootstrapSeedSessions(); });
+  call_media_bridge_->SetSeedReserve([this]() { ReserveOnBootstrapSeeds(); });
 }
 
 bool CallMediaPlane::WireMediaRelayClient(MeshHost* m, const IoPump& io_pump, const IoPost& post_io) {
@@ -268,80 +327,6 @@ bool CallMediaPlane::PeerLanConfirmed(const std::string& peer_id) const {
   return false;
 }
 
-CallSessionManager::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps(MeshHost* m,
-                                                                       bool use_amp_relay,
-                                                                       IDialRegistry* dial) {
-  CallSessionManager::MediaRelayDeps deps;
-  deps.relay = media_relay_client_.get();
-  deps.dial = dial;
-  deps.circuit_reach = circuit_hop_reach_.get();
-  MeshConfig mesh_cfg = config().mesh;
-  NormalizeMeshConfig(mesh_cfg);
-  deps.bootstrap_peers = mesh_cfg.bootstrap_peers;
-  deps.prefer_contacts = mesh_cfg.prefer_contacts_for_routing;
-  deps.list_directory_nodes = deps_.list_directory_nodes;
-  deps.list_dht_nodes = deps_.list_dht_nodes;
-  deps.seed_dial_ok = deps_.seed_dial_ok;
-  deps.prefer_local_as_hop = ResolveMeshRole(config().mesh) == MeshRole::Node &&
-                             mesh_cfg.capabilities.media_relay && use_amp_relay && m &&
-                             m->AmpMediaRelayCoord() && m->AmpMediaRelayCoord()->IsStarted();
-  const std::vector<std::string> advertised =
-      deps_.local_listen_multiaddrs ? deps_.local_listen_multiaddrs() : std::vector<std::string>{};
-  if (!advertised.empty()) {
-    deps.local_listen_multiaddr = advertised.front();
-  } else if (m && !m->AmpListenMultiaddr().empty()) {
-    deps.local_listen_multiaddr = m->AmpListenMultiaddr();
-  }
-  deps.local_advertise_multiaddrs = advertised;
-  deps.resolve_local_advertise = deps_.local_listen_multiaddrs;
-  deps.peer_has_media_relay = [this](const std::string& peer_id) {
-    return live_.sessions && live_.sessions->PeerHasMediaRelayCap(peer_id);
-  };
-  deps.list_media_relay_peers = [this]() {
-    if (!live_.sessions) {
-      return std::vector<std::string>{};
-    }
-    return live_.sessions->ListMediaRelayCapablePeerIds();
-  };
-  deps.resolve_remote_listen_by_peer = [this]() { return dial_book_.peer_listen_mas; };
-  deps.peer_lan_confirmed = [this](const std::string& peer_id) { return PeerLanConfirmed(peer_id); };
-  if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos ||
-      deps.local_listen_multiaddr.find("/ip6/::/") != std::string::npos) {
-    deps.local_listen_multiaddr.clear();
-  }
-  return deps;
-}
-
-void CallMediaPlane::WireMediaBridge(IDialRegistry* dial) {
-  ICallMediaTransport* transport = Transport();
-  if (!transport || !dial) {
-    call_media_bridge_.reset();
-    media_bridge_bound_sessions_ = nullptr;
-    live_.sessions->SetCallMediaBridge(nullptr);
-    return;
-  }
-  const bool sessions_changed = (media_bridge_bound_sessions_ != live_.sessions);
-  if (!call_media_bridge_ || sessions_changed) {
-    call_media_bridge_ = std::make_unique<CallMediaBridge>(
-        live_.sessions->AsMediaHost(), *live_.session_store, *live_.media_keys, *live_.media_engine,
-        *transport, dial, circuit_hop_reach_.get());
-    live_.sessions->SetCallMediaBridge(call_media_bridge_.get());
-    media_bridge_bound_sessions_ = live_.sessions;
-    log().info << "CallMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0)
-               << " transport=" << (test_media_transport_ ? "test" : "amp") << ")";
-  } else {
-    call_media_bridge_->SetReachDeps(dial, circuit_hop_reach_.get());
-  }
-  if (live_.seat) {
-    call_media_bridge_->SetMediaSeat(live_.seat);
-  }
-  if (live_.lifecycle) {
-    call_media_bridge_->SetLifecycle(live_.lifecycle);
-  }
-  call_media_bridge_->SetSeedWarm([this]() { WarmBootstrapSeedSessions(); });
-  call_media_bridge_->SetSeedReserve([this]() { ReserveOnBootstrapSeeds(); });
-}
-
 void CallMediaPlane::PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit) {
   if (abort_inflight_circuit) {
     abort_inflight_circuit();
@@ -361,7 +346,7 @@ void CallMediaPlane::PrepareForMeshStop(const std::function<void()>& abort_infli
 
 void CallMediaPlane::FinishMeshStop() {
   call_media_bridge_.reset();
-  media_bridge_bound_sessions_ = nullptr;
+  media_bridge_bound_sessions_key_ = nullptr;
   call_media_amp_.reset();
   dial_registry_.reset();
 }
@@ -392,7 +377,7 @@ void CallMediaPlane::ResetRelayClients() {
 
 void CallMediaPlane::Clear() {
   call_media_bridge_.reset();
-  media_bridge_bound_sessions_ = nullptr;
+  media_bridge_bound_sessions_key_ = nullptr;
   call_media_amp_.reset();
   test_media_transport_ = nullptr;
   test_dial_ = nullptr;
@@ -461,8 +446,8 @@ void CallMediaPlane::RegisterOneListenMultiaddr(const std::string& identity, con
       deps_.register_peer_direct_endpoint(peer_id, ma);
     }
   }
-  if (!peer_id.empty() && identity.rfind("account:", 0) == 0 && live_.sessions) {
-    live_.sessions->NoteMeshPeerIdForRelay(identity, peer_id);
+  if (!peer_id.empty() && identity.rfind("account:", 0) == 0 && deps_.note_mesh_peer_id_for_relay) {
+    deps_.note_mesh_peer_id_for_relay(identity, peer_id);
   }
   log().info << "Call listen addr registered dial_key=" << identity << " ma=" << ma;
 }

@@ -12,7 +12,8 @@
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallLifecycle.h"
-#include "feature/calls/CallSessionManager.h"
+#include "feature/calls/CallMediaHost.h"
+#include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "domain/mesh/l4/call_media/CallMediaAmpTransport.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
@@ -36,11 +37,11 @@ struct CallDialBook {
 
 /**
  * Mesh-media plane under CallStack (V040): Amp transport, dial registry, media_relay client,
- * circuit hop reach, CallMediaBridge, and dial book. CallStack owns stores/CSM/lifecycle/seat
- * and phase-orders this plane.
+ * circuit hop reach, CallMediaBridge ownership, and dial book.
  *
- * Keep `Wire` and helpers shallow — do not re-inline relay/dial/hop/bridge setup into one
- * mega-function (see AGENTS.md: keep function complexity low).
+ * Does **not** hold standing pointers to CallStack siblings (CSM / stores / seat / lifecycle).
+ * Stack passes those only into `BindBridge` and fills deps callbacks. Keep `Wire` shallow
+ * (AGENTS.md function-complexity convention).
  */
 struct CallMediaPlaneDeps {
   ContactsStore* contacts = nullptr;
@@ -54,15 +55,24 @@ struct CallMediaPlaneDeps {
       register_peer_direct_endpoint;
   /** Stack computes advertise set (role + ephemeral desire + MeshHost). */
   std::function<std::vector<std::string>()> local_listen_multiaddrs;
+  /** SoftMigrate relay-cap queries — filled from CallSessionManager by CallStack. */
+  std::function<bool(const std::string& peer_id)> peer_has_media_relay;
+  std::function<std::vector<std::string>()> list_media_relay_peers;
+  /** Dial-book account: ↔ PeerId learning (CallSessionManager::NoteMeshPeerIdForRelay). */
+  std::function<void(const std::string& account_identity, const std::string& peer_id)>
+      note_mesh_peer_id_for_relay;
 };
 
-struct CallMediaPlaneLiveRefs {
-  CallSessionManager* sessions = nullptr;
+/** Args for one bridge bind; not retained on the plane after BindBridge returns. */
+struct CallMediaBridgeBindArgs {
+  CallMediaHost* host = nullptr;
   CallSessionStore* session_store = nullptr;
   CallMediaKeyStore* media_keys = nullptr;
   CallMediaEngine* media_engine = nullptr;
   CallMediaSeat* seat = nullptr;
   CallLifecycle* lifecycle = nullptr;
+  /** Rebuild key (typically CallSessionManager*); compare only, do not dereference as CSM. */
+  const void* sessions_key = nullptr;
 };
 
 class CallMediaPlane : public Module {
@@ -71,13 +81,18 @@ public:
   ~CallMediaPlane() override;
 
   void SetDeps(CallMediaPlaneDeps deps);
-  void SetLiveRefs(CallMediaPlaneLiveRefs refs);
 
   /** Phase B: create/start Amp call-media transport + Wire. */
   void OnMeshStarted();
-  /** Orchestrates relay/dial/hop/bridge helpers — keep thin; extend helpers, not this body. */
+  /** Mesh clients only (relay / dial / hop). Stack follows with BindBridge + CSM install. */
   void Wire();
   void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial);
+  /**
+   * Construct or refresh CallMediaBridge from stack-owned ingredients.
+   * Rebuilds when `sessions_key` changes; otherwise updates reach deps + seat/lifecycle.
+   */
+  void BindBridge(const CallMediaBridgeBindArgs& args);
+  CallTopologyController::MediaRelayDeps BuildMediaRelayDeps() const;
 
   /** Media half of mesh stop (bridge PrepareForTeardown + transport stop + relay reset). */
   void PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit);
@@ -109,15 +124,13 @@ private:
   MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
   const AppConfig& config() const;
   ICallMediaTransport* Transport();
+  IDialRegistry* ActiveDial() const;
 
   /** True when Amp media_relay coordinator is started. */
   bool WireMediaRelayClient(MeshHost* m, const IoPump& io_pump, const IoPost& post_io);
   void WireDialRegistry(MeshHost* m, bool use_amp_relay, const IoPost& post_io);
   void WireCircuitHopReach(MeshHost* m, bool use_amp_relay, const IoPump& io_pump,
                            const IoPost& post_io);
-  CallSessionManager::MediaRelayDeps BuildMediaRelayDeps(MeshHost* m, bool use_amp_relay,
-                                                         IDialRegistry* dial);
-  void WireMediaBridge(IDialRegistry* dial);
 
   void TryColdPunchAsync(MeshHost* m, IChatPeerLinks* punch_links, const std::string& target_peer_id,
                          std::function<void(Roe<void>)> on_done);
@@ -133,11 +146,10 @@ private:
   bool PeerLanConfirmed(const std::string& peer_id) const;
 
   CallMediaPlaneDeps deps_;
-  CallMediaPlaneLiveRefs live_;
   CallDialBook dial_book_;
 
   std::unique_ptr<CallMediaBridge> call_media_bridge_;
-  CallSessionManager* media_bridge_bound_sessions_ = nullptr;
+  const void* media_bridge_bound_sessions_key_ = nullptr;
   std::unique_ptr<IMediaRelayClient> media_relay_client_;
   std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
   std::unique_ptr<ICircuitHopReach> circuit_hop_reach_;

@@ -30,7 +30,7 @@ const AppConfig& CallStack::config() const {
   return deps_.config();
 }
 
-void CallStack::SyncMediaPlane() {
+void CallStack::SyncMediaPlaneDeps() {
   if (!media_plane_) {
     return;
   }
@@ -44,16 +44,40 @@ void CallStack::SyncMediaPlane() {
   plane_deps.note_lan_mdns_peer_id = deps_.note_lan_mdns_peer_id;
   plane_deps.register_peer_direct_endpoint = deps_.delivery.register_peer_direct_endpoint;
   plane_deps.local_listen_multiaddrs = [this]() { return LocalCallListenMultiaddrs(); };
+  plane_deps.peer_has_media_relay = [this](const std::string& peer_id) {
+    return call_sessions_ && call_sessions_->PeerHasMediaRelayCap(peer_id);
+  };
+  plane_deps.list_media_relay_peers = [this]() {
+    if (!call_sessions_) {
+      return std::vector<std::string>{};
+    }
+    return call_sessions_->ListMediaRelayCapablePeerIds();
+  };
+  plane_deps.note_mesh_peer_id_for_relay = [this](const std::string& account,
+                                                 const std::string& peer_id) {
+    if (call_sessions_) {
+      call_sessions_->NoteMeshPeerIdForRelay(account, peer_id);
+    }
+  };
   media_plane_->SetDeps(std::move(plane_deps));
+}
 
-  CallMediaPlaneLiveRefs live;
-  live.sessions = call_sessions_.get();
-  live.session_store = call_session_store_.get();
-  live.media_keys = call_media_keys_.get();
-  live.media_engine = call_media_engine_.get();
-  live.seat = call_media_seat_.get();
-  live.lifecycle = call_lifecycle_.get();
-  media_plane_->SetLiveRefs(live);
+void CallStack::BindMediaProducts() {
+  if (!media_plane_ || !call_sessions_ || !call_session_store_ || !call_media_keys_ ||
+      !call_media_engine_) {
+    return;
+  }
+  CallMediaBridgeBindArgs args;
+  args.host = &call_sessions_->AsMediaHost();
+  args.session_store = call_session_store_.get();
+  args.media_keys = call_media_keys_.get();
+  args.media_engine = call_media_engine_.get();
+  args.seat = call_media_seat_.get();
+  args.lifecycle = call_lifecycle_.get();
+  args.sessions_key = call_sessions_.get();
+  media_plane_->BindBridge(args);
+  call_sessions_->SetMediaRelayDeps(media_plane_->BuildMediaRelayDeps());
+  call_sessions_->SetCallMediaBridge(media_plane_->Bridge());
 }
 
 Roe<void> CallStack::InitializeStores(const std::string& profile_db_path, const std::string& profile_id) {
@@ -164,17 +188,19 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
 }
 
 void CallStack::OnMeshServicesStarted() {
-  SyncMediaPlane();
+  SyncMediaPlaneDeps();
   if (media_plane_) {
     media_plane_->OnMeshStarted();
   }
+  BindMediaProducts();
 }
 
 void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial) {
-  SyncMediaPlane();
+  SyncMediaPlaneDeps();
   if (media_plane_) {
     media_plane_->BindTestMediaPath(transport, dial);
   }
+  BindMediaProducts();
 }
 
 bool CallStack::HasActiveLocalCall() {
@@ -195,10 +221,11 @@ bool CallStack::WantEphemeralListen() const {
 }
 
 void CallStack::WireMediaRelayDeps() {
-  SyncMediaPlane();
+  SyncMediaPlaneDeps();
   if (media_plane_) {
     media_plane_->Wire();
   }
+  BindMediaProducts();
 }
 
 void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit) {
@@ -332,7 +359,6 @@ void CallStack::EnsureCallLifecycleBound() {
   call_lifecycle_->SetOnListenDesireChanged([this](bool want) { SetEphemeralListenDesire(want); });
   call_sessions_->SetLifecycle(call_lifecycle_.get());
   if (media_plane_) {
-    SyncMediaPlane();
     if (CallMediaBridge* bridge = media_plane_->Bridge()) {
       bridge->SetLifecycle(call_lifecycle_.get());
     }
