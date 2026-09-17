@@ -1,6 +1,7 @@
 #include "feature/calls/CallLifecycle.h"
 #include "feature/calls/CallLifecyclePorts.h"
 #include "feature/calls/CallDirectMediaPorts.h"
+#include "feature/calls/CallSessionLifecyclePorts.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionManager.h"
@@ -233,8 +234,10 @@ protected:
     bridge_->SetLifecycle(lifecycle_.get());
     bridge_->SetMediaSeat(seat_.get());
     csm_->SetDirectMediaPorts(MakeCallDirectMediaPorts(bridge_.get(), seat_.get()));
-    csm_->SetMediaSeat(seat_.get());
-    csm_->SetLifecycle(lifecycle_.get());
+    csm_->WireTopologySeat(seat_.get());
+    csm_->SetMediaSeatPorts(csm_->MakeSeatPorts(seat_.get()));
+    csm_->WireTopologyLifecycle(lifecycle_.get());
+    csm_->SetLifecyclePorts(MakeCallSessionLifecyclePorts(lifecycle_.get()));
     CallLifecycleSignalingPorts ports;
     ports.accept_invite = [this](const std::string& call_id) -> Roe<void> {
       if (!csm_) {
@@ -299,8 +302,10 @@ protected:
     }
     if (csm_) {
       csm_->SetDirectMediaPorts({});
-      csm_->SetLifecycle(nullptr);
-      csm_->SetMediaSeat(nullptr);
+      csm_->SetLifecyclePorts({});
+      csm_->SetMediaSeatPorts({});
+      csm_->WireTopologyLifecycle(nullptr);
+      csm_->WireTopologySeat(nullptr);
     }
     // Always Stop — StartSfu may arm capture after PrepareForTeardown cleared media_call_id_.
     if (media_) {

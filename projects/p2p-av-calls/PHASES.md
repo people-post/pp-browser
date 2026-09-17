@@ -193,6 +193,18 @@ Continue composition independence: CSM talks to Direct media only via **`CallDir
 **Non-goals:** Seat ports campaign; Topology rewrite.  
 **Exit:** inbound compose + stack/dual-stack + lifecycle gtests green.
 
+## sl — CSM Seat + Lifecycle ports (no sibling facets)
+
+Drop standing `CallLifecycle*` / `CallMediaSeat*` on CSM — [V043](DECISIONS.md#v043--callsessionlifecycleports--callmediaseatports).
+
+- [x] sl0 — ADR + AGENTS/CALLS anti same-class file-split note
+- [x] sl1 — `CallSessionLifecyclePorts`; `SetLifecyclePorts` + `WireTopologyLifecycle`
+- [x] sl2 — `CallMediaSeatPorts`; `SetMediaSeatPorts` + `WireTopologySeat`
+- [x] sl3 — Stack install/clear; compose test; CALLS composition table
+
+**Non-goals:** Host-adapter rewrite; peer reach book; chrome pass-through shrink; new same-class `.cpp` splits.  
+**Exit:** inbound compose + stack/dual-stack + answerer gtests green.
+
 ## Later horizons
 
 - [ ] `video_hi` / simulcast

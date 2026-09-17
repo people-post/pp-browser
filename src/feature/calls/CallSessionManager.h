@@ -18,6 +18,8 @@
 #include "feature/calls/BroadcastSessionCoordinator.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallDirectMediaPorts.h"
+#include "feature/calls/CallSessionLifecyclePorts.h"
+#include "feature/calls/CallMediaSeatPorts.h"
 
 #include "common/Module.h"
 
@@ -75,10 +77,16 @@ public:
   void SetMediaRelayDeps(MediaRelayDeps deps);
   /** Direct media ops (ScheduleStart / Retry / SoftMigrate release) — Stack installs from bridge. */
   void SetDirectMediaPorts(CallDirectMediaPorts ports);
-  /** V036 exclusive media epoch — Leave/Accept/Start gates. */
-  void SetMediaSeat(CallMediaSeat* seat);
-  /** V037 State+Status planner arming. */
-  void SetLifecycle(CallLifecycle* lifecycle);
+  /** Lifecycle ops (V043) — Stack installs; CSM must not hold CallLifecycle*. */
+  void SetLifecyclePorts(CallSessionLifecyclePorts ports);
+  /** Wire owned topology child only (not a CSM sibling facet). */
+  void WireTopologyLifecycle(CallLifecycle* lifecycle);
+  /** Seat ops (V043) — Stack installs; CSM must not hold CallMediaSeat*. */
+  void SetMediaSeatPorts(CallMediaSeatPorts ports);
+  /** Wire owned topology child only (not a CSM sibling facet). */
+  void WireTopologySeat(CallMediaSeat* seat);
+  /** Build seat ports over owned topology_ (Stack / compose tests). */
+  CallMediaSeatPorts MakeSeatPorts(CallMediaSeat* seat);
   /** Seat teardown hook: topology detach without re-entering seat.Release. */
   void TopologyOnMediaStoppedForSeat(const std::string& call_id);
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
@@ -234,7 +242,7 @@ private:
   Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
 
-  // Inbound call-control arms (CallInboundHandlers.cpp) — decode → store → one topology/bridge call.
+  // Inbound call-control arms — decode → store → one topology/bridge call (same TU).
   Roe<void> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
                                 const ThreadMessage& message, std::optional<int64_t> relay_created_at_ms,
                                 std::optional<int64_t> relay_server_time_ms, const std::string& local_identity);
@@ -262,8 +270,8 @@ private:
   CallTopologyController topology_;
   BroadcastSessionCoordinator broadcast_;
   CallDirectMediaPorts direct_media_;
-  CallMediaSeat* media_seat_ = nullptr;
-  CallLifecycle* lifecycle_ = nullptr;
+  CallSessionLifecyclePorts lifecycle_ports_;
+  CallMediaSeatPorts media_seat_ports_;
   InitiationBillingStore* initiation_billing_ = nullptr;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;

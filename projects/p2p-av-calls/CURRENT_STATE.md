@@ -21,6 +21,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **V040 CallMediaPlane** | **Landed (cs0–cs2)** — `CallMediaPlane` owns Amp/dial/relay/hop/bridge/dial book; Lifecycle sole N025 desire; CALLS.md ownership promoted — [DECISIONS V040](DECISIONS.md#v040--callmediaplane--callstack-ownership-collapse); phase [cs](PHASES.md#cs--callstack-ownership-collapse-callmediaplane) |
 | **V041 Lifecycle ports** | **Landed (ci0–ci3)** — `CallLifecycleSignalingPorts`; Stack composition root; CALLS.md table — [DECISIONS V041](DECISIONS.md#v041--calllifecycle-signaling-ports--stack-composition-root); phase [ci](PHASES.md#ci--callstack-composition-independence-lifecycle-ports) |
 | **V042 Direct media ports** | **Landed (dm)** — CSM `CallDirectMediaPorts`; no `CallMediaBridge*` — [DECISIONS V042](DECISIONS.md#v042--calldirectmediaports--csm-without-callmediabridge); phase [dm](PHASES.md#dm--csm-direct-media-ports-no-callmediabridge) |
+| **V043 Seat + Lifecycle ports** | **Landed (sl)** — CSM ports only; no `CallLifecycle*` / `CallMediaSeat*` facets — [DECISIONS V043](DECISIONS.md#v043--callsessionlifecycleports--callmediaseatports); phase [sl](PHASES.md#sl--csm-seat--lifecycle-ports-no-sibling-facets) |
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |
@@ -124,6 +125,8 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 | Cache CSM/stores/seat/lifecycle on the plane (`LiveRefs`) | Stack `BindMediaProducts` + deps callbacks only; plane `BindBridge` takes args per call |
 | Hold `CallSessionManager*` on CallLifecycle | **V041** — `CallLifecycleSignalingPorts` from Stack |
 | Hold `CallMediaBridge*` on CallSessionManager | **V042** — `CallDirectMediaPorts` from Stack |
+| Hold `CallLifecycle*` / `CallMediaSeat*` on CSM | **V043** — Lifecycle/Seat ports + `WireTopology*` for child only |
+| Split one class across `.cpp` files for size | Helpers in same TU or a new type — [AGENTS.md](../../AGENTS.md#conventions); inbound arms merged into `CallSessionManager.cpp` |
 | Re-inline relay/dial/hop/bridge into mega-`Wire` | Keep `Wire` mesh-only; follow [AGENTS.md](../../AGENTS.md#conventions) function-complexity convention |
 | Full-shell `SyncLayout` for Accept chrome | `RemountCallChrome` into `#shell-call-*-mount` only |
 | Host-wide inbound request SM / rewrite working call-media “while here” | V033 — targeted session SMs; [SESSION_MACHINES.md](SESSION_MACHINES.md) docs first |

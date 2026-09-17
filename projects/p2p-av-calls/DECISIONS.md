@@ -1047,12 +1047,39 @@ ScheduleStart / Retry / MediaAttempted / connect-fail health / NotePeerIdRelayMa
 ### Rules
 
 1. `BindMediaProducts` sets ports after `BindBridge`; mesh stop clears ports with `{}`.
-2. CSM keeps `CallMediaSeat*` as installed facet for hop bind / Release (follow-on).
+2. Seat / Lifecycle sibling facets removed in **V043** (`CallMediaSeatPorts` / `CallSessionLifecyclePorts`).
 3. Behavior-preserving — same SoftMigrate / Kick / Accept KeyReady paths.
 
 **Rationale:** Same independence pattern as V041 Lifecycle ports; Direct planner stays on the plane.
 
 **Cross-link:** [V041](#v041--calllifecycle-signaling-ports--stack-composition-root); [V036](#v036--mediaseat--exclusive-media-epoch); phase [dm](PHASES.md#dm--csm-direct-media-ports-no-callmediabridge).
+
+---
+
+## V043 — CallSessionLifecyclePorts + CallMediaSeatPorts
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md) (composition-root table)  
+**Decision:** `CallSessionManager` must not hold standing `CallLifecycle*` or `CallMediaSeat*` sibling facets. Stack installs **`CallSessionLifecyclePorts`** and **`CallMediaSeatPorts`**. Owned child `CallTopologyController` still receives seat/lifecycle via **`WireTopologySeat` / `WireTopologyLifecycle`** (composition, not peer live-refs).
+
+### Lifecycle ports (representative)
+
+`allows_direct_path` / status+armed names for logs / `set_direct_connecting` / accepting+active call ids / `apply_remote_ended` / `is_outbound_calling`.
+
+### Seat ports
+
+`release(call_id)` / `bind_hop_for_attach(call_id)` (closes over topology + seat via `MakeCallMediaSeatPorts`).
+
+### Rules
+
+1. Stack installs ports after CSM exists; mesh stop / reset clears ports with `{}` and wires topology null.
+2. Topology remains a CSM-owned child — `WireTopology*` is allowed; Bridge still gets seat/lifecycle from `BindBridge`.
+3. Behavior-preserving Accept / Kick / Sweep / StopMedia / hop bind.
+4. **Do not** split `CallSessionManager` across more `.cpp` files for size — [AGENTS.md](../../AGENTS.md#conventions); inbound arms stay in `CallSessionManager.cpp`.
+
+**Rationale:** Completes V041/V042 independence for the remaining CSM sibling facets.
+
+**Cross-link:** [V042](#v042--calldirectmediaports--csm-without-callmediabridge); [V041](#v041--calllifecycle-signaling-ports--stack-composition-root); phase [sl](PHASES.md#sl--csm-seat--lifecycle-ports-no-sibling-facets).
 
 ---
 
