@@ -1411,15 +1411,24 @@ void CallSessionManager::SweepExpiredInvites() {
       if (invite.status != "pending") {
         continue;
       }
-      if (CallSessionLogic::IsInviteExpired(invite, now)) {
-        (void)sessions_.UpdateInviteStatus(invite.call_id, invite.invitee_identity, "expired");
-        CallParticipant participant;
-        participant.call_id = invite.call_id;
-        participant.identity = invite.invitee_identity;
-        participant.state = CallParticipantState::Missed;
-        (void)sessions_.UpsertParticipant(participant);
-        changed = true;
+      if (!CallSessionLogic::IsInviteExpired(invite, now)) {
+        continue;
       }
+      (void)sessions_.UpdateInviteStatus(invite.call_id, invite.invitee_identity, "expired");
+      CallParticipant participant;
+      participant.call_id = invite.call_id;
+      participant.identity = invite.invitee_identity;
+      participant.state = CallParticipantState::Missed;
+      (void)sessions_.UpsertParticipant(participant);
+      // CALLS: expire → Idle (same chrome clear as Decline). EndCallLocal → RemoteEnded when
+      // lifecycle is still bound to this ringing invite.
+      auto session = sessions_.LoadSession(invite.call_id);
+      if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
+        (void)EndCallLocal(**session, std::nullopt);
+      } else if (lifecycle_ && lifecycle_->ActiveCallId() == invite.call_id) {
+        lifecycle_->Apply(CallLifecycleEvent::RemoteEnded, invite.call_id);
+      }
+      changed = true;
     }
   }
 

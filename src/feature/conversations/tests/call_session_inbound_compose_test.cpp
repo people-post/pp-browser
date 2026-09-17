@@ -808,6 +808,10 @@ TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesMarksMissed) {
   session.created_at = pending.created_at;
   ASSERT_TRUE(sessions_->UpsertSession(session));
 
+  lifecycle_->Apply(CallLifecycleEvent::InviteSeen, pending.call_id);
+  ASSERT_EQ(lifecycle_->Phase(), CallPhase::Ringing);
+  ASSERT_TRUE(lifecycle_->WantEphemeralListen());
+
   csm_->SweepExpiredInvites();
 
   auto top = csm_->TopPendingInvite();
@@ -816,6 +820,12 @@ TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesMarksMissed) {
   auto self = sessions_->FindParticipant(pending.call_id, local_identity_);
   ASSERT_TRUE(self && self->has_value());
   EXPECT_EQ((*self)->state, CallParticipantState::Missed);
+  auto loaded = sessions_->LoadSession(pending.call_id);
+  ASSERT_TRUE(loaded && loaded->has_value());
+  EXPECT_EQ((*loaded)->state, CallSessionState::Ended);
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::Idle)
+      << "CALLS expire → Idle (no DeclineClicked); got " << CallPhaseName(lifecycle_->Phase());
+  EXPECT_FALSE(lifecycle_->WantEphemeralListen());
 }
 
 TEST_F(CallSessionInboundComposeTest, InboundSfuAttachIgnoredWhileDirectConnecting) {

@@ -74,6 +74,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 | **Remote Leave / CallEnded chrome** | `EndCallLocal` applies `RemoteEnded` when lifecycle `ActiveCallId` matches — offerer Idle without local LeaveClicked (gtest inbound Leave/Ended + dual-stack; stale id ignored) |
 | **Inbound Decline clears offerer** | `HandleInboundDecline` `EndCallLocal` when no remote Joined/Ringing/Invited remain (1:1); keeps call if another invitee still rings; dual-stack Decline wire (gtest) |
 | **Outbound unanswered TTL** | `CallSessionLogic::ShouldAutoLeaveOutboundUnanswered` + `SweepExpiredInvites` LeaveCall (feature, not GUI-only); CallController Tick sweeps — gtest logic + compose |
+| **Incoming invite expire** | `SweepExpiredInvites` Missed + `EndCallLocal` → `RemoteEnded` clears Ringing Idle / listen (CALLS expire → Idle; gtest) |
 | **Retry after ConnectFailed** | Lifecycle `RetryClicked` re-arms `DirectConnecting` before `RetryP2pMedia`/`BeginSession` (gtest `RetryClickedRearms*` / `RetryP2pMediaAfterConnectFailed`) |
 | **lv video** | Prefer loopback/probe; OEM dogfood only for Camera/HW encode |
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
