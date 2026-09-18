@@ -13,7 +13,7 @@ pp_browser_add_feature_library(pp_feature_calls
     CallDirectMediaPorts.cpp
     CallSessionLifecyclePorts.cpp
     CallMediaSeatPorts.cpp
-    CallTopologyLifecyclePorts.cpp
+    CallHopArmingPorts.cpp
     CallTopologySeatPorts.cpp
     CallHopMigrateWorkflow.cpp
     CallSessionWorkflow.cpp

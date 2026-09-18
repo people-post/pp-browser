@@ -11,7 +11,7 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallTopologyHostPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/CallTopologyLifecyclePorts.h"
+#include "feature/calls/CallHopArmingPorts.h"
 #include "feature/calls/CallTopologySeatPorts.h"
 #include "feature/calls/CallHopMigrateWorkflow.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
@@ -39,7 +39,7 @@ namespace pbr {
  * Attach StartSfu requires a seat token when the seat is wired.
  *
  * SoftMigrate race clusters live on CallHopMigrateWorkflow (V047); this type keeps refs +
- * Host/Lifecycle/Seat ports for Topology-local control paths.
+ * Host/HopArming/Seat ports for Topology-local control paths.
  */
 class CallTopologyController : public Module {
 public:
@@ -54,8 +54,8 @@ public:
   void SetMediaKeyStore(CallMediaKeyStore* keys);
   /** V046 exclusive media bind / epoch via ports. */
   void SetSeatPorts(CallTopologySeatPorts ports);
-  /** V046 Status arming — empty ports = permissive (unit tests). */
-  void SetLifecyclePorts(CallTopologyLifecyclePorts ports);
+  /** V048 hop arming / progress — empty ports = permissive (unit tests). */
+  void SetHopArmingPorts(CallHopArmingPorts ports);
 
   bool IsAwaitingSfuRecovery() const;
   bool IsSfuAttached() const;
@@ -163,6 +163,7 @@ private:
   void FlushPendingInboundSfuAttach();
   void SubscribePublisherStream(uint32_t stream_id);
   void SetHopPlannerPhase(CallHopPlannerPhase next, CallHopPlannerEvent ev, const std::string& call_id);
+  void ReportHopProgress(CallHopPlannerPhase phase, const std::string& call_id);
   CallHopPlannerApplyContext BuildHopPlannerContext(const std::string& call_id, size_t effective_n,
                                                     bool has_sfu_hint) const;
   void ArmAttachWaitTimer(const std::string& call_id, int64_t deadline_ms);
@@ -210,7 +211,7 @@ private:
   CallMediaEngine& media_;
   CallMediaKeyStore* media_keys_ = nullptr;
   CallTopologySeatPorts seat_;
-  CallTopologyLifecyclePorts lifecycle_;
+  CallHopArmingPorts arming_;
   MediaRelayDeps relay_deps_;
 };
 

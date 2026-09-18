@@ -116,9 +116,9 @@ void CallTopologyController::SetSeatPorts(CallTopologySeatPorts ports) {
   seat_ = std::move(ports);
 }
 
-void CallTopologyController::SetLifecyclePorts(CallTopologyLifecyclePorts ports) {
-  hop_migrate_.SetLifecyclePorts(ports);
-  lifecycle_ = std::move(ports);
+void CallTopologyController::SetHopArmingPorts(CallHopArmingPorts ports) {
+  hop_migrate_.SetHopArmingPorts(ports);
+  arming_ = std::move(ports);
 }
 
 bool CallTopologyController::IsAwaitingSfuRecovery() const {
@@ -291,7 +291,7 @@ void CallTopologyController::OnAttachWaitTimerFire(const std::string& call_id) {
 CallHopPlannerApplyContext CallTopologyController::BuildHopPlannerContext(
     const std::string& call_id, size_t effective_n, bool has_sfu_hint) const {
   CallHopPlannerApplyContext ctx;
-  ctx.allows_hop_path = !lifecycle_.IsBound() || lifecycle_.allows_hop_path();
+  ctx.allows_hop_path = !arming_.IsBound() || arming_.hop_ops_allowed();
   ctx.should_arm_hop = ShouldArmHopPlanner(effective_n);
   ctx.has_sfu_hint = has_sfu_hint;
   ctx.soft_migrate_in_flight = flight_.in_flight;
@@ -309,6 +309,13 @@ void CallTopologyController::SetHopPlannerPhase(const CallHopPlannerPhase next,
              << CallHopPlannerPhaseName(next) << " event=" << CallHopPlannerEventName(ev)
              << " call_id=" << call_id
              << " migrate_gen=" << flight_.migrate_generation.load(std::memory_order_acquire);
+}
+
+void CallTopologyController::ReportHopProgress(const CallHopPlannerPhase phase,
+                                               const std::string& call_id) {
+  if (arming_.report_progress) {
+    arming_.report_progress(phase, call_id);
+  }
 }
 
 void CallTopologyController::Apply(CallHopPlannerEvent ev, const std::string& call_id) {
@@ -991,9 +998,7 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
                                                  const std::optional<std::string>& sfu_hint) {
   Apply(CallHopPlannerEvent::LocalAcceptN3, call_id);
   if (n_joined >= 3 && sfu_hint && !sfu_hint->empty()) {
-    if (lifecycle_.IsBound()) {
-      lifecycle_.set_media_status(CallMediaStatus::HopAttaching, call_id);
-    }
+    ReportHopProgress(CallHopPlannerPhase::Attaching, call_id);
     CallSfuAttachDetail attach;
     attach.call_id = call_id;
     attach.hop_peer_id = *sfu_hint;
@@ -1050,11 +1055,8 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
     if (sfu_.attached && media_.IsSfuMode() && media_.ActiveCallId() == call_id) {
       ClearSfuAttachWait();
       SyncSfuSubscriptions(call_id);
-      if (lifecycle_.IsBound()) {
-        Apply(CallHopPlannerEvent::AttachSucceeded, call_id);
       Apply(CallHopPlannerEvent::AttachSucceeded, call_id);
-    lifecycle_.set_media_status(CallMediaStatus::HopLive, call_id);
-      }
+      ReportHopProgress(CallHopPlannerPhase::Live, call_id);
       return true;
     }
     // Dogfood: CallSfuAttach often starts AcceptAndAttach before AcceptInvite finishes.
@@ -1063,9 +1065,7 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
     if (flight_.in_flight &&
         (flight_.call_id.empty() || flight_.call_id == call_id)) {
       log().info << "OnLocalAcceptJoined keep in-flight SoftMigrate/attach call_id=" << call_id;
-      if (lifecycle_.IsBound()) {
-        lifecycle_.set_media_status(CallMediaStatus::HopAttaching, call_id);
-      }
+      ReportHopProgress(CallHopPlannerPhase::Attaching, call_id);
       return true;
     }
     // PreferLocal Node may PickHop on LocalJoinedWithoutHint; phones/guests WaitForAttach.
@@ -1074,15 +1074,11 @@ bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, siz
         relay_deps_.prefer_local_as_hop && relay_deps_.relay && relay_deps_.relay->IsStarted();
     if (!may_prefer_local) {
       log().info << "OnLocalAcceptJoined WaitForAttach call_id=" << call_id << " n=" << n_joined;
-      if (lifecycle_.IsBound()) {
-        lifecycle_.set_media_status(CallMediaStatus::HopWaiting, call_id);
-      }
+      ReportHopProgress(CallHopPlannerPhase::WaitingAttach, call_id);
       FlushPendingInboundSfuAttach();
       return true;
     }
-    if (lifecycle_.IsBound()) {
-      lifecycle_.set_media_status(CallMediaStatus::HopAttaching, call_id);
-    }
+    ReportHopProgress(CallHopPlannerPhase::Attaching, call_id);
     const uint64_t gen = flight_.migrate_generation.fetch_add(1, std::memory_order_acq_rel) + 1;
     flight_.flight_gen = gen;
     flight_.in_flight = true;
@@ -1187,11 +1183,8 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
     BeginSfuAttachWait(call_id);
     host_.SetMediaActivity(Tr("call.status.setting_up_group"));
     host_.NotifyRingChanged();
-    if (lifecycle_.IsBound()) {
-      Apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
-      Apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
-    lifecycle_.set_media_status(CallMediaStatus::Migrating, call_id);
-    }
+    Apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
+    ReportHopProgress(CallHopPlannerPhase::Migrating, call_id);
     const uint64_t gen = flight_.migrate_generation.fetch_add(1, std::memory_order_acq_rel) + 1;
     flight_.flight_gen = gen;
     flight_.in_flight = true;
@@ -1302,10 +1295,8 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
   BeginSfuAttachWait(call_id);
   host_.SetMediaActivity(Tr("call.status.setting_up_group"));
   host_.NotifyRingChanged();
-  if (lifecycle_.IsBound()) {
-    Apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
-    lifecycle_.set_media_status(CallMediaStatus::Migrating, call_id);
-  }
+  Apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
+  ReportHopProgress(CallHopPlannerPhase::Migrating, call_id);
   const uint64_t gen = flight_.migrate_generation.fetch_add(1, std::memory_order_acq_rel) + 1;
   flight_.flight_gen = gen;
   flight_.in_flight = true;
@@ -1358,21 +1349,22 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
   if (auto joined = sessions_.CountJoined(call_id)) {
     n_joined = *joined;
   }
-  const bool status_allows_hop = !lifecycle_.IsBound() || lifecycle_.allows_hop_path();
+  const bool status_allows_hop = !arming_.IsBound() || arming_.hop_ops_allowed();
   const bool expect_group_attach =
       status_allows_hop &&
       (CallMediaTopology::ShouldUseMediaRelay(n_joined) || attach_wait_.call_id == call_id ||
        (flight_.in_flight && flight_.call_id == call_id) || sfu_.attached);
   if (!expect_group_attach) {
-    log().info << "OnInboundSfuAttach ignored (1:1 / Status disallows Hop) call_id=" << call_id
+    log().info << "OnInboundSfuAttach ignored (1:1 / hop not armed) call_id=" << call_id
                << " n_joined=" << n_joined << " hop=" << attach.hop_peer_id
-               << " status="
-               << (lifecycle_.IsBound() ? lifecycle_.status_name() : "null");
+               << " arming="
+               << (arming_.IsBound() && arming_.arming_debug_name ? arming_.arming_debug_name()
+                                                                  : "null");
     return {};
   }
   Apply(CallHopPlannerEvent::SfuAttachInbound, call_id);
-  if (lifecycle_.IsBound() && lifecycle_.status() == CallMediaStatus::HopWaiting) {
-    lifecycle_.set_media_status(CallMediaStatus::HopAttaching, call_id);
+  if (sfu_.hop_planner_phase == CallHopPlannerPhase::Attaching) {
+    ReportHopProgress(CallHopPlannerPhase::Attaching, call_id);
   }
   if (sfu_.attached && media_.ActiveCallId() == call_id &&
       (media_.IsSfuMode() || flight_.attached_hop_peer_id == attach.hop_peer_id)) {

@@ -9,7 +9,7 @@
 #include "domain/messaging/SoftMigrateLogic.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallTopologyHostPorts.h"
-#include "feature/calls/CallTopologyLifecyclePorts.h"
+#include "feature/calls/CallHopArmingPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallTopologySeatPorts.h"
 
@@ -31,7 +31,7 @@ namespace pbr {
 
 /**
  * SoftMigrate + SFU attach / guest reattach (V046/V047).
- * Owns race-state clusters; side effects via Host/Lifecycle/Seat ports + TopologyOps.
+ * Owns race-state clusters; side effects via Host/HopArming/Seat ports + TopologyOps.
  * No friend access into CallTopologyController.
  */
 class CallHopMigrateWorkflow : public Module {
@@ -110,7 +110,7 @@ public:
   CallHopMigrateWorkflow(CallSessionStore& sessions, CallMediaEngine& media);
 
   void SetHostPorts(CallTopologyHostPorts ports);
-  void SetLifecyclePorts(CallTopologyLifecyclePorts ports);
+  void SetHopArmingPorts(CallHopArmingPorts ports);
   void SetSeatPorts(CallTopologySeatPorts ports);
   void SetTopologyOps(TopologyOps ops);
   void SetMediaRelayDeps(CallTopologyMediaRelayDeps* deps);
@@ -159,7 +159,7 @@ private:
   CallMediaKeyStore* media_keys_ = nullptr;
   CallTopologyMediaRelayDeps* relay_deps_ = nullptr;
   CallTopologyHostPorts host_;
-  CallTopologyLifecyclePorts lifecycle_;
+  CallHopArmingPorts arming_;
   CallTopologySeatPorts seat_;
   TopologyOps ops_;
   SoftMigrateFlight flight_;

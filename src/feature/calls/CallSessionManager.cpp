@@ -254,8 +254,8 @@ void CallSessionManager::SetLifecyclePorts(CallSessionLifecyclePorts ports) {
   BindWorkflowHostPorts();
 }
 
-void CallSessionManager::SetTopologyLifecyclePorts(CallTopologyLifecyclePorts ports) {
-  topology_.SetLifecyclePorts(std::move(ports));
+void CallSessionManager::SetTopologyHopArmingPorts(CallHopArmingPorts ports) {
+  topology_.SetHopArmingPorts(std::move(ports));
 }
 
 void CallSessionManager::SetMediaSeatPorts(CallMediaSeatPorts ports) {

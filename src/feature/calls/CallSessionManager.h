@@ -80,8 +80,8 @@ public:
   void SetDirectMediaPorts(CallDirectMediaPorts ports);
   /** Lifecycle ops (V043) — Stack installs; CSM must not hold CallLifecycle*. */
   void SetLifecyclePorts(CallSessionLifecyclePorts ports);
-  /** Topology Lifecycle ports (V046) — Stack installs; Topology must not hold CallLifecycle*. */
-  void SetTopologyLifecyclePorts(CallTopologyLifecyclePorts ports);
+  /** Topology hop arming ports (V048) — Stack installs; Topology must not hold CallLifecycle*. */
+  void SetTopologyHopArmingPorts(CallHopArmingPorts ports);
   /** Seat ops (V043) — Stack installs; CSM must not hold CallMediaSeat*. */
   void SetMediaSeatPorts(CallMediaSeatPorts ports);
   /** Topology Seat ports (V046) — Stack installs; Topology must not hold CallMediaSeat*. */

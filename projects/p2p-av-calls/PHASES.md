@@ -255,8 +255,8 @@ Drop Topology friend + private poke — [V047](DECISIONS.md#v047--callhopmigrate
 Apply the repo-wide [composition vocabulary](../../docs/architecture/COMPOSITION_VOCABULARY.md) guideline ([V048](DECISIONS.md#v048--composition-vocabulary-no-upward-concepts)) to Topology/Workflow first (Lifecycle enums must not appear downward).
 
 - [x] ha0 — ADR (project guideline) + COMPOSITION_VOCABULARY.md + CALLS.md note
-- [ ] ha1 — Replace `CallTopologyLifecyclePorts` with hop-native arming / progress ports; Stack adapter maps to Lifecycle Status
-- [ ] ha2 — Drop `CallMediaStatus` / Lifecycle status reads from Topology + `CallHopMigrateWorkflow`; prefer single hop `Apply`/progress path
+- [x] ha1 — Replace `CallTopologyLifecyclePorts` with hop-native arming / progress ports; Stack adapter maps to Lifecycle Status
+- [x] ha2 — Drop `CallMediaStatus` / Lifecycle status reads from Topology + `CallHopMigrateWorkflow`; prefer single hop `Apply`/progress path
 - [ ] ha3 — Bridge Lifecycle pointer → ports (same guideline; optional same PR or follow-on)
 
 **Non-goals:** Ownership-tree change (Topology under Lifecycle); moving SoftMigrate races into Lifecycle; rewriting every non-calls debt site in this phase.  

@@ -1,6 +1,6 @@
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/CallTopologyLifecyclePorts.h"
+#include "feature/calls/CallHopArmingPorts.h"
 #include "feature/calls/CallTopologySeatPorts.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallLifecycle.h"
@@ -266,7 +266,7 @@ protected:
 
   void TearDown() override {
     if (topo_) {
-      topo_->SetLifecyclePorts({});
+      topo_->SetHopArmingPorts({});
     }
     lifecycle_.reset();
     topo_.reset();
@@ -338,7 +338,7 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachIgnoredWhenStatusDirectConnec
   lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
   ASSERT_TRUE(lifecycle_->AllowsDirectPath());
   ASSERT_FALSE(lifecycle_->AllowsHopPath());
-  topo_->SetLifecyclePorts(MakeCallTopologyLifecyclePorts(lifecycle_.get()));
+  topo_->SetHopArmingPorts(MakeCallHopArmingPorts(lifecycle_.get()));
 
   CallSfuAttachDetail attach;
   attach.call_id = call_id;
