@@ -92,9 +92,8 @@ std::string SoftMigrateNoHopMessage(const std::vector<std::string>& hop_failures
 
 } // namespace
 
-CallHopMigrateWorkflow::CallHopMigrateWorkflow(CallSessionStore& sessions, ContactsStore& contacts,
-                                               CallMediaEngine& media)
-    : sessions_(sessions), contacts_(contacts), media_(media) {
+CallHopMigrateWorkflow::CallHopMigrateWorkflow(CallSessionStore& sessions, CallMediaEngine& media)
+    : sessions_(sessions), media_(media) {
   redirectLogger("CallHopMigrateWorkflow");
 }
 

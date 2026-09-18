@@ -7,7 +7,6 @@
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/CallTypes.h"
 #include "domain/messaging/SoftMigrateLogic.h"
-#include "domain/people/ContactsStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallTopologyHostPorts.h"
 #include "feature/calls/CallTopologyLifecyclePorts.h"
@@ -108,7 +107,7 @@ public:
     bool IsBound() const { return static_cast<bool>(apply); }
   };
 
-  CallHopMigrateWorkflow(CallSessionStore& sessions, ContactsStore& contacts, CallMediaEngine& media);
+  CallHopMigrateWorkflow(CallSessionStore& sessions, CallMediaEngine& media);
 
   void SetHostPorts(CallTopologyHostPorts ports);
   void SetLifecyclePorts(CallTopologyLifecyclePorts ports);
@@ -156,7 +155,6 @@ private:
   bool IsMigrateGenerationCurrent(uint64_t gen) const;
 
   CallSessionStore& sessions_;
-  ContactsStore& contacts_;
   CallMediaEngine& media_;
   CallMediaKeyStore* media_keys_ = nullptr;
   CallTopologyMediaRelayDeps* relay_deps_ = nullptr;
