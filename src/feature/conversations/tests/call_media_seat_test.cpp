@@ -140,12 +140,18 @@ TEST(CallMediaSeatTest, PathTokenAllowsAfterNoteStart) {
 
 TEST(CallMediaPathsTest, HopBindAndDirectReleaseRequiresToken) {
   CallMediaSeat seat;
-  CallHopPath hop(&seat);
+  auto hop_ops = CallHopPath::Ops{};
+  hop_ops.acquire = [&seat](const std::string& cid) { return seat.Acquire(cid); };
+  hop_ops.allows_path_op = [&seat](const CallMediaSeat::Token& t) { return seat.AllowsPathOp(t); };
+  CallHopPath hop(std::move(hop_ops));
   auto token = hop.BindForAttach("call:1");
   EXPECT_FALSE(token.call_id.empty());
   EXPECT_TRUE(hop.Allows(token));
 
-  CallDirectPath direct(CallDirectPath::Ops{}, &seat);
+  auto direct_ops = CallDirectPath::Ops{};
+  direct_ops.allows_path_op = [&seat](const CallMediaSeat::Token& t) { return seat.AllowsPathOp(t); };
+  direct_ops.note_path = [&seat](CallMediaSeat::PathKind kind) { seat.NotePath(kind); };
+  CallDirectPath direct(std::move(direct_ops));
   // Empty release_transport → error; token still required for the seat NotePath path.
   auto released = direct.ReleaseTransport(token);
   EXPECT_FALSE(released);
@@ -155,7 +161,9 @@ TEST(CallMediaPathsTest, HopBindAndDirectReleaseRequiresToken) {
   unbound.epoch = 1;
   // Unbound token: AllowsPathOp false → early {} before ops check.
   seat.Acquire("call:2");
-  auto skip = CallDirectPath(CallDirectPath::Ops{}, &seat).ReleaseTransport(token);
+  auto skip_ops = CallDirectPath::Ops{};
+  skip_ops.allows_path_op = [&seat](const CallMediaSeat::Token& t) { return seat.AllowsPathOp(t); };
+  auto skip = CallDirectPath(std::move(skip_ops)).ReleaseTransport(token);
   EXPECT_TRUE(skip);
 }
 

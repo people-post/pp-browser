@@ -278,7 +278,12 @@ CallMediaSeatPorts CallSessionManager::MakeSeatPorts(CallMediaSeat* seat) {
     if (call_id.empty()) {
       return;
     }
-    (void)CallHopPath(seat).BindForAttach(call_id);
+    CallHopPath::Ops ops;
+    ops.acquire = [seat](const std::string& cid) { return seat->Acquire(cid); };
+    ops.allows_path_op = [seat](const CallMediaSeat::Token& token) {
+      return seat->AllowsPathOp(token);
+    };
+    (void)CallHopPath(std::move(ops)).BindForAttach(call_id);
   };
   return ports;
 }

@@ -89,6 +89,7 @@ struct CallMediaSeatPorts {
  * Duplex start/stop go through CallMediaSeat + CallDirectPath / CallHopPath; do not call
  * CallMediaBridge::StopMeshMedia or engine StartSfu from here when a seat is wired.
  * Topology + mesh media live in CallTopologyController / CallMediaBridge (path plugins).
+ * Path façades take Ops only — no standing CallMediaBridge* / CallMediaSeat* (V048).
  */
 class CallSessionManager : public Module, private CallMediaHost {
 public:

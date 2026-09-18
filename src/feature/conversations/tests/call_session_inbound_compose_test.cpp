@@ -302,7 +302,14 @@ CallDirectMediaPorts TestDirectMediaPorts(CallMediaBridge* bridge, CallMediaSeat
     ops.release_transport = [bridge](const CallMediaSeat::Token& token) {
       bridge->ReleaseDirectTransport(token);
     };
-    return CallDirectPath(std::move(ops), seat);
+    if (seat) {
+      ops.acquire = [seat](const std::string& cid) { return seat->Acquire(cid); };
+      ops.allows_path_op = [seat](const CallMediaSeat::Token& token) {
+        return seat->AllowsPathOp(token);
+      };
+      ops.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
+    }
+    return CallDirectPath(std::move(ops));
   };
   ports.schedule_start = [make_path](const std::string& call_id, const std::string& peer, bool offerer) {
     make_path().ScheduleStart(call_id, peer, offerer);

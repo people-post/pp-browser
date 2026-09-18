@@ -11,7 +11,8 @@ namespace pbr {
 
 /**
  * V036 Phase 3 — Direct path plugin façade.
- * Stack/CSM close over Bridge ops; this type does not hold CallMediaBridge*.
+ * Stack/CSM close over Bridge + seat ops; this type does not hold CallMediaBridge* or
+ * CallMediaSeat* (V048 ha8–ha9).
  */
 class CallDirectPath {
 public:
@@ -19,9 +20,12 @@ public:
     std::function<void(const std::string& call_id, const std::string& peer_identity, bool offerer)>
         schedule_start;
     std::function<void(const CallMediaSeat::Token& token)> release_transport;
+    std::function<CallMediaSeat::Token(const std::string& call_id)> acquire;
+    std::function<bool(const CallMediaSeat::Token& token)> allows_path_op;
+    std::function<void(CallMediaSeat::PathKind kind)> note_path;
   };
 
-  CallDirectPath(Ops ops, CallMediaSeat* seat);
+  explicit CallDirectPath(Ops ops);
 
   /** Bind + schedule 1:1 StartSfu (Acquire then schedule). */
   void ScheduleStart(const std::string& call_id, const std::string& peer_identity, bool offerer);
@@ -30,23 +34,28 @@ public:
 
 private:
   Ops ops_;
-  CallMediaSeat* seat_ = nullptr;
 };
 
 /**
  * V036 Phase 3 — Hop path seat bind façade.
  * Topology SoftMigrate/Attach remain on the controller; this only Acquire/AllowsPathOp.
+ * Does not hold CallMediaSeat* — callers project seat ops (V048 ha9).
  */
 class CallHopPath {
 public:
-  explicit CallHopPath(CallMediaSeat* seat);
+  struct Ops {
+    std::function<CallMediaSeat::Token(const std::string& call_id)> acquire;
+    std::function<bool(const CallMediaSeat::Token& token)> allows_path_op;
+  };
+
+  explicit CallHopPath(Ops ops);
 
   /** Acquire (or confirm) bind for hop attach; empty token on failure. */
   CallMediaSeat::Token BindForAttach(const std::string& call_id);
   bool Allows(const CallMediaSeat::Token& token) const;
 
 private:
-  CallMediaSeat* seat_ = nullptr;
+  Ops ops_;
 };
 
 } // namespace pbr
