@@ -1188,7 +1188,7 @@ Ownership stays under composition roots (`Application`, `CallStack`, …). **Dep
 
 ### First application (calls)
 
-`CallTopologyController` / `CallHopMigrateWorkflow` speak hop needs via **`CallHopArmingPorts`** (no `CallMediaStatus` in Topology/Workflow). Stack maps `report_progress` → Lifecycle Status. Same principle later for `CallMediaBridge`’s `CallLifecycle*` (phase **ha3**).
+`CallTopologyController` / `CallHopMigrateWorkflow` speak hop needs via **`CallHopArmingPorts`**. `CallMediaBridge` speaks Direct needs via **`CallDirectArmingPorts`** (no `CallLifecycle*` / `CallMediaStatus` in Bridge). Stack maps both → Lifecycle Status / `Apply` events.
 
 Topology needs (example of the litmus): arming, cancel epoch, hop-native progress, seat bind — not `CallMediaStatus` / `CallPhase`.
 

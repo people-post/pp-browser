@@ -3,7 +3,7 @@
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
-#include "feature/calls/CallLifecycle.h"
+#include "feature/calls/CallDirectArmingPorts.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "domain/messaging/CallDirectPlannerLogic.h"
@@ -100,7 +100,7 @@ public:
   /** Answerer: park circuit reserve on org seed (CallStack::ReserveOnBootstrapSeeds). */
   void SetSeedReserve(std::function<void()> reserve);
 
-  void SetLifecycle(CallLifecycle* lifecycle);
+  void SetDirectArmingPorts(CallDirectArmingPorts ports);
   /** V036 exclusive media epoch. */
   void SetMediaSeat(CallMediaSeat* seat);
 
@@ -156,7 +156,7 @@ private:
   ICallMediaTransport& direct_;
   IDialRegistry* dial_ = nullptr;
   ICircuitHopReach* circuit_reach_ = nullptr;
-  CallLifecycle* lifecycle_ = nullptr;
+  CallDirectArmingPorts arming_;
   CallMediaSeat* media_seat_ = nullptr;
   std::function<void()> seed_warm_;
   std::function<void()> seed_reserve_;

@@ -13,6 +13,7 @@
 #include "feature/calls/CallDirectMediaPorts.h"
 #include "feature/calls/CallSessionLifecyclePorts.h"
 #include "feature/calls/CallHopArmingPorts.h"
+#include "feature/calls/CallDirectArmingPorts.h"
 #include "feature/calls/CallTopologySeatPorts.h"
 
 #include <functional>
@@ -78,7 +79,6 @@ void CallStack::BindMediaProducts() {
   args.media_keys = call_media_keys_.get();
   args.media_engine = call_media_engine_.get();
   args.seat = call_media_seat_.get();
-  args.lifecycle = call_lifecycle_.get();
   args.sessions_key = call_sessions_.get();
   media_plane_->BindBridge(args);
   call_sessions_->SetMediaRelayDeps(media_plane_->BuildMediaRelayDeps());
@@ -91,6 +91,9 @@ void CallStack::BindMediaProducts() {
   if (call_lifecycle_) {
     call_sessions_->SetTopologyHopArmingPorts(MakeCallHopArmingPorts(call_lifecycle_.get()));
     call_sessions_->SetLifecyclePorts(MakeCallSessionLifecyclePorts(call_lifecycle_.get()));
+    if (CallMediaBridge* bridge = media_plane_->Bridge()) {
+      bridge->SetDirectArmingPorts(MakeCallDirectArmingPorts(call_lifecycle_.get()));
+    }
   }
 }
 
@@ -301,6 +304,9 @@ void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_c
     call_sessions_->SetMediaRelayDeps({});
   }
   if (media_plane_) {
+    if (CallMediaBridge* bridge = media_plane_->Bridge()) {
+      bridge->SetDirectArmingPorts({});
+    }
     media_plane_->PrepareForMeshStop(abort_inflight_circuit);
   } else if (abort_inflight_circuit) {
     abort_inflight_circuit();
@@ -425,7 +431,7 @@ void CallStack::EnsureCallLifecycleBound() {
   call_sessions_->SetLifecyclePorts(MakeCallSessionLifecyclePorts(call_lifecycle_.get()));
   if (media_plane_) {
     if (CallMediaBridge* bridge = media_plane_->Bridge()) {
-      bridge->SetLifecycle(call_lifecycle_.get());
+      bridge->SetDirectArmingPorts(MakeCallDirectArmingPorts(call_lifecycle_.get()));
     }
   }
 }

@@ -1,5 +1,6 @@
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallLifecycle.h"
+#include "feature/calls/CallDirectArmingPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 
 #include "domain/media/CallMediaEngine.h"
@@ -176,7 +177,7 @@ protected:
     lifecycle_ = std::make_unique<CallLifecycle>();
     bridge_ = std::make_unique<CallMediaBridge>(*host_, *sessions_, *keys_, *media_, *transport_, dial_.get(),
                                                 nullptr);
-    bridge_->SetLifecycle(lifecycle_.get());
+    bridge_->SetDirectArmingPorts(MakeCallDirectArmingPorts(lifecycle_.get()));
     dial_->force_dialable["account:peer"] = true;
     dial_->endpoints["account:peer"] = "/ip4/10.0.0.2/udp/1/p2p/12D3KooWPeer";
   }

@@ -257,7 +257,7 @@ Apply the repo-wide [composition vocabulary](../../docs/architecture/COMPOSITION
 - [x] ha0 — ADR (project guideline) + COMPOSITION_VOCABULARY.md + CALLS.md note
 - [x] ha1 — Replace `CallTopologyLifecyclePorts` with hop-native arming / progress ports; Stack adapter maps to Lifecycle Status
 - [x] ha2 — Drop `CallMediaStatus` / Lifecycle status reads from Topology + `CallHopMigrateWorkflow`; prefer single hop `Apply`/progress path
-- [ ] ha3 — Bridge Lifecycle pointer → ports (same guideline; optional same PR or follow-on)
+- [x] ha3 — Bridge Lifecycle pointer → `CallDirectArmingPorts` (same guideline)
 
 **Non-goals:** Ownership-tree change (Topology under Lifecycle); moving SoftMigrate races into Lifecycle; rewriting every non-calls debt site in this phase.  
 **Exit:** topology unit + inbound/dual-stack compose gtests green; Topology/Workflow headers free of `CallLifecycleTypes` Status writers.

@@ -3,6 +3,7 @@
 #include "feature/calls/CallDirectMediaPorts.h"
 #include "feature/calls/CallSessionLifecyclePorts.h"
 #include "feature/calls/CallHopArmingPorts.h"
+#include "feature/calls/CallDirectArmingPorts.h"
 #include "feature/calls/CallTopologySeatPorts.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaSeat.h"
@@ -233,7 +234,7 @@ protected:
                                                 std::move(delivery), *psk_, *media_);
     bridge_ = std::make_unique<CallMediaBridge>(csm_->AsMediaHost(), *sessions_, *keys_, *media_, *transport_,
                                                 dial_.get(), nullptr);
-    bridge_->SetLifecycle(lifecycle_.get());
+    bridge_->SetDirectArmingPorts(MakeCallDirectArmingPorts(lifecycle_.get()));
     bridge_->SetMediaSeat(seat_.get());
     csm_->SetDirectMediaPorts(MakeCallDirectMediaPorts(bridge_.get(), seat_.get()));
     csm_->SetTopologySeatPorts(MakeCallTopologySeatPorts(seat_.get()));

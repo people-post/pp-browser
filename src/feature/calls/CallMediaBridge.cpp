@@ -139,8 +139,8 @@ CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions
                      << " reason=" << reason;
           direct_.Detach();
           ClearMeshConnectFailed();
-          if (lifecycle_) {
-            lifecycle_->Apply(CallLifecycleEvent::DirectConnected, call_id);
+          if (arming_.on_connected) {
+            arming_.on_connected(call_id);
           }
           host_.P2pNotifyRingChanged();
           return;
@@ -158,8 +158,8 @@ CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions
           direct_.Detach();
           ClearMeshConnectFailed();
           host_.P2pRequestInboxSync();
-          if (lifecycle_) {
-            lifecycle_->Apply(CallLifecycleEvent::DirectConnected, call_id);
+          if (arming_.on_connected) {
+            arming_.on_connected(call_id);
           }
           host_.P2pNotifyRingChanged();
           return;
@@ -167,8 +167,8 @@ CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions
         log().warning << "Inbound call-media failed call_id=" << call_id << " reason=" << reason;
         mesh_connect_failed_ = true;
         host_.P2pSetLastMediaError(reason);
-        if (lifecycle_) {
-          lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+        if (arming_.on_connect_failed) {
+          arming_.on_connect_failed(call_id);
         }
         host_.P2pNotifyRingChanged();
       });
@@ -200,8 +200,8 @@ bool CallMediaBridge::HasActiveDirectStream() const {
   return direct_.IsActive();
 }
 
-void CallMediaBridge::SetLifecycle(CallLifecycle* lifecycle) {
-  lifecycle_ = lifecycle;
+void CallMediaBridge::SetDirectArmingPorts(CallDirectArmingPorts ports) {
+  arming_ = std::move(ports);
 }
 
 void CallMediaBridge::SetMediaKeyInboxPollRoundsForTest(const int rounds) {
@@ -215,7 +215,7 @@ void CallMediaBridge::SetMediaSeat(CallMediaSeat* seat) {
 CallDirectPlannerApplyContext CallMediaBridge::BuildDirectPlannerContext(
     const std::string& call_id, const std::string& peer_identity) const {
   CallDirectPlannerApplyContext ctx;
-  ctx.allows_direct_path = !lifecycle_ || lifecycle_->AllowsDirectPath();
+  ctx.allows_direct_path = !arming_.IsBound() || (arming_.direct_ops_allowed && arming_.direct_ops_allowed());
   ctx.stopping = stopping_.load(std::memory_order_acquire);
   ctx.peer_nonempty = !peer_identity.empty();
   if (!call_id.empty() && media_.IsActive() && media_.ActiveCallId() == call_id &&
@@ -278,8 +278,8 @@ void CallMediaBridge::Apply(CallDirectPlannerEvent ev, const std::string& call_i
         }
       }
       if (!cid.empty() && !peer.empty()) {
-        if (lifecycle_) {
-          lifecycle_->SetMediaStatus(CallMediaStatus::DegradedTxOnly, cid);
+        if (arming_.report_progress) {
+          arming_.report_progress(CallDirectPlannerPhase::DegradedTxOnly, cid);
         }
         EscalateTxOnlyViaCircuit(cid, peer);
       }
@@ -350,8 +350,8 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
       (direct_.IsActive() || host_.P2pIsSfuAttached())) {
     media_seat_->NoteLive(call_id);
   }
-  if (lifecycle_) {
-    lifecycle_->Apply(CallLifecycleEvent::DirectConnected, call_id);
+  if (arming_.on_connected) {
+    arming_.on_connected(call_id);
   }
   host_.P2pNotifyRingChanged();
 }
@@ -458,8 +458,8 @@ void CallMediaBridge::PollMeshConnectHealth() {
     media_seat_->NoteFailed(call_id);
   }
   Apply(CallDirectPlannerEvent::ConnectFailed, call_id, media_peer_identity_);
-  if (lifecycle_) {
-    lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+  if (arming_.on_connect_failed) {
+    arming_.on_connect_failed(call_id);
   }
   host_.P2pNotifyRingChanged();
 }
@@ -527,8 +527,8 @@ void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const
         media_seat_->NoteFailed(call_id);
       }
       mesh_connect_failed_ = true;
-      if (lifecycle_) {
-        lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+      if (arming_.on_connect_failed) {
+        arming_.on_connect_failed(call_id);
       }
       host_.P2pNotifyRingChanged();
     }
@@ -772,8 +772,8 @@ void CallMediaBridge::FinishConnectSequence(const uint64_t gen, const std::strin
                << " err=" << connected.error().message;
       mesh_connect_failed_ = true;
       host_.P2pSetLastMediaError(connected.error().message);
-      if (lifecycle_) {
-        lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+      if (arming_.on_connect_failed) {
+        arming_.on_connect_failed(call_id);
       }
       host_.P2pNotifyRingChanged();
     }
@@ -1021,9 +1021,9 @@ Roe<ByteVector> CallMediaBridge::LoadActiveMediaKey(const std::string& call_id) 
 
 Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::string& peer_identity,
                                               bool offerer) {
-  if (lifecycle_ && !lifecycle_->AllowsDirectPath()) {
-    log().info << "BeginSession skipped (Status disallows Bridge) call_id=" << call_id
-               << " status=" << CallMediaStatusName(lifecycle_->Status());
+  if (arming_.IsBound() && arming_.direct_ops_allowed && !arming_.direct_ops_allowed()) {
+    log().info << "BeginSession skipped (direct not armed) call_id=" << call_id
+               << " arming=" << (arming_.arming_debug_name ? arming_.arming_debug_name() : "?");
     return Error("direct path not armed");
   }
   auto key = LoadActiveMediaKey(call_id);
@@ -1221,8 +1221,8 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
                    << " reason=" << reason;
         direct_.Detach();
         ClearMeshConnectFailed();
-        if (lifecycle_) {
-          lifecycle_->Apply(CallLifecycleEvent::DirectConnected, captured_call_id);
+        if (arming_.on_connected) {
+          arming_.on_connected(captured_call_id);
         }
         host_.P2pNotifyRingChanged();
         return;
@@ -1240,8 +1240,8 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
         direct_.Detach();
         ClearMeshConnectFailed();
         host_.P2pRequestInboxSync();
-        if (lifecycle_) {
-          lifecycle_->Apply(CallLifecycleEvent::DirectConnected, captured_call_id);
+        if (arming_.on_connected) {
+          arming_.on_connected(captured_call_id);
         }
         host_.P2pNotifyRingChanged();
         return;
@@ -1252,8 +1252,8 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
       if (media_seat_) {
         media_seat_->NoteFailed(captured_call_id);
       }
-      if (lifecycle_) {
-        lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, captured_call_id);
+      if (arming_.on_connect_failed) {
+        arming_.on_connect_failed(captured_call_id);
       }
       host_.P2pNotifyRingChanged();
     });
@@ -1325,14 +1325,12 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
     log().info << "ScheduleStartMediaAsAnswerer UI enter call_id=" << call_id
                << " peer=" << peer_identity
                << " on_ui=" << (AppRuntime::CurrentlyOnUI() ? 1 : 0);
-    // Re-arm DirectConnecting before Apply so Status AllowsDirectPath for Schedule.
-    if (lifecycle_ && !lifecycle_->AllowsDirectPath()) {
-      const auto phase = lifecycle_->Phase();
-      if (phase == CallPhase::Accepting || phase == CallPhase::JoinedLocal ||
-          phase == CallPhase::MediaPending || phase == CallPhase::MediaConnecting) {
-        log().info << "ScheduleStartMediaAsAnswerer re-arm DirectConnecting call_id=" << call_id
-                   << " was_status=" << CallMediaStatusName(lifecycle_->Status());
-        lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+    // Re-arm Direct before Apply so product AllowsDirectPath for Schedule.
+    if (arming_.IsBound() && arming_.direct_ops_allowed && !arming_.direct_ops_allowed()) {
+      log().info << "ScheduleStartMediaAsAnswerer request_direct_arming call_id=" << call_id
+                 << " arming=" << (arming_.arming_debug_name ? arming_.arming_debug_name() : "?");
+      if (arming_.request_direct_arming) {
+        arming_.request_direct_arming(call_id);
       }
     }
     Apply(CallDirectPlannerEvent::ScheduleAnswerer, call_id, peer_identity);
@@ -1366,9 +1364,8 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
       pending_answerer_call_id_ = call_id;
       pending_answerer_peer_ = peer_identity;
       media_attempted_calls_.insert(call_id);
-      if (lifecycle_) {
-        // CallLifecycle log is dogfood-visible; Bridge module is filtered out.
-        lifecycle_->Apply(CallLifecycleEvent::MediaDeferred, call_id);
+      if (arming_.on_media_deferred) {
+        arming_.on_media_deferred(call_id);
       }
       // Accept-time SyncInbox often races the offerer's MediaKey send — keep polling.
       // SyncInbox coalesces via poll_again_; do not assume each Request starts HTTP.
@@ -1405,8 +1402,8 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
           mesh_connect_failed_ = true;
           host_.P2pSetLastMediaError(err);
           Apply(CallDirectPlannerEvent::KeyTimeout, call_id);
-          if (lifecycle_) {
-            lifecycle_->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+          if (arming_.on_connect_failed) {
+            arming_.on_connect_failed(call_id);
           }
           host_.P2pNotifyRingChanged();
         });
@@ -1420,13 +1417,11 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
       log().warning << "StartMediaAsAnswerer failed: " << started.error().message;
       host_.P2pSetLastMediaError(started.error().message);
       Apply(CallDirectPlannerEvent::ConnectFailed, call_id, peer_identity);
-      if (lifecycle_) {
-        log().warning << "CallLifecycle answerer StartSfu failed call_id=" << call_id
-                      << " err=" << started.error().message;
-      }
+      log().warning << "answerer StartSfu failed call_id=" << call_id
+                    << " err=" << started.error().message;
       host_.P2pNotifyRingChanged();
-    } else if (lifecycle_) {
-      log().info << "CallLifecycle answerer StartSfu ok call_id=" << call_id
+    } else {
+      log().info << "answerer StartSfu ok call_id=" << call_id
                  << " direct=" << (direct_.IsActive() ? 1 : 0)
                  << " engine=" << (media_.IsActive() ? 1 : 0);
     }
@@ -1463,8 +1458,8 @@ void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
     pending_answerer_call_id_.clear();
     pending_answerer_peer_.clear();
     Apply(CallDirectPlannerEvent::KeyReady, call_id, peer);
-    if (lifecycle_) {
-      lifecycle_->Apply(CallLifecycleEvent::MediaKeyReady, call_id);
+    if (arming_.on_media_key_ready) {
+      arming_.on_media_key_ready(call_id);
     }
     if (!peer.empty()) {
       ScheduleStartMediaAsAnswerer(call_id, peer);
@@ -1574,8 +1569,10 @@ void CallMediaBridge::ReleaseDirectTransportBody() {
   ClearMeshConnectFailed();
   // V036 Phase 2: signaling may advance to InCall, but chrome Connected requires seat Live
   // (set by CompleteAttachLocalToSfu NoteLive — not ReleaseDirect alone).
-  if (lifecycle_ && media_.IsActive() && media_.IsSfuMode()) {
-    lifecycle_->Apply(CallLifecycleEvent::DirectConnected, media_.ActiveCallId());
+  if (arming_.IsBound() && media_.IsActive() && media_.IsSfuMode()) {
+    if (arming_.on_connected) {
+      arming_.on_connected(media_.ActiveCallId());
+    }
   }
   host_.P2pNotifyRingChanged();
 }

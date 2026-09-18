@@ -312,7 +312,7 @@ Durable multi-party session/roster executor (store mutations + `CallSessionLogic
 ### CallTopologyController (V046/V047)
 Hop planner façade (`Apply` / On*). SoftMigrate + attach completion live in owned **`CallHopMigrateWorkflow`**, which **owns** race clusters and takes Host/HopArming/Seat ports + **TopologyOps** (no Topology friend). Topology holds refs into those clusters for local control paths. CSM fills Topology `HostPorts` (`CallTopologyHostPorts`); Stack installs **`CallHopArmingPorts`** / **`CallTopologySeatPorts`**. Clusters: `SoftMigrateFlight`, `AttachWait`, `InboundAttachGate`, `GuestSfuSession`, `PublisherStreams`, `SfuSurface`.
 
-**Vocabulary ([COMPOSITION_VOCABULARY.md](COMPOSITION_VOCABULARY.md), [V048](../../projects/p2p-av-calls/DECISIONS.md#v048--composition-vocabulary-no-upward-concepts)):** repo-wide — lower peers must not speak higher peers’ concepts. Topology/Workflow use hop-native **`CallHopArmingPorts`** (`hop_ops_allowed` / `soft_migrate_may_arm` / `report_progress`); Stack maps progress → Lifecycle `CallMediaStatus`.
+**Vocabulary ([COMPOSITION_VOCABULARY.md](COMPOSITION_VOCABULARY.md), [V048](../../projects/p2p-av-calls/DECISIONS.md#v048--composition-vocabulary-no-upward-concepts)):** repo-wide — lower peers must not speak higher peers’ concepts. Topology uses **`CallHopArmingPorts`**; Bridge uses **`CallDirectArmingPorts`** (`direct_ops_allowed` / outcomes / `report_progress`). Stack maps both → Lifecycle Status / `Apply` events.
 
 ### CallMediaSeat (V036)
 Process-wide exclusive bind `call_id` ↔ duplex. `Release` = topology Detach then engine Stop; `NoteStart` invalidates in-flight Release; SoftMigrate uses `NotePath(Hop)` without Release. Topology “active call” prefers `seat.IsBound`, not leftover engine `ActiveCallId`. **Phase 2:** `MediaState` (`Idle` / `Connecting` / `Live` / `Failed`) drives chrome Connected; `BeginAttach` serializes hop AcceptAndAttach. **Phase 3:** `CallDirectPath` / `CallHopPath` façades; Bridge/Topology path ops require `AllowsPathOp(token)`; CSM schedules Direct start / seat `Release` only (no parallel `StopMeshMedia` when seat wired).
@@ -477,6 +477,7 @@ Landed (behavior-preserving + who-picks fix):
 | `src/feature/calls/CallHopMigrateWorkflow.*` | SoftMigrate + SFU attach / guest reattach; owns race clusters (V047) |
 | `src/feature/calls/CallTopologyHostPorts.h` | CSM→Topology/HopMigrate HostPorts (V046/V047) |
 | `src/feature/calls/CallHopArmingPorts.*` | Stack-filled hop arming / progress ports for Topology (V048) |
+| `src/feature/calls/CallDirectArmingPorts.*` | Stack-filled Direct arming / outcomes ports for Bridge (V048) |
 | `src/feature/calls/CallTopologySeatPorts.*` | Stack-filled Seat ports for Topology (V046) |
 | `src/feature/calls/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + `PeerSessionDialRegistry` |
 | `src/domain/messaging/CallMediaKeyStore.*` | Epoch key wrap |

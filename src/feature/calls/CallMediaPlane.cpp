@@ -171,9 +171,6 @@ void CallMediaPlane::BindBridge(const CallMediaBridgeBindArgs& args) {
   if (args.seat) {
     call_media_bridge_->SetMediaSeat(args.seat);
   }
-  if (args.lifecycle) {
-    call_media_bridge_->SetLifecycle(args.lifecycle);
-  }
   call_media_bridge_->SetSeedWarm([this]() { WarmBootstrapSeedSessions(); });
   call_media_bridge_->SetSeedReserve([this]() { ReserveOnBootstrapSeeds(); });
 }
