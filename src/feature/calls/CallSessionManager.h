@@ -39,7 +39,7 @@ namespace pbr {
  * CallMediaBridge::StopMeshMedia or engine StartSfu from here when a seat is wired.
  * Topology + mesh media live in CallTopologyController / CallMediaBridge (path plugins).
  */
-class CallSessionManager : public Module, private CallTopologyHost, private CallMediaHost {
+class CallSessionManager : public Module, private CallMediaHost {
 public:
   using RingChangedFn = std::function<void()>;
   using MediaRelayDeps = CallTopologyController::MediaRelayDeps;
@@ -80,13 +80,13 @@ public:
   void SetDirectMediaPorts(CallDirectMediaPorts ports);
   /** Lifecycle ops (V043) — Stack installs; CSM must not hold CallLifecycle*. */
   void SetLifecyclePorts(CallSessionLifecyclePorts ports);
-  /** Wire owned topology child only (not a CSM sibling facet). */
-  void WireTopologyLifecycle(CallLifecycle* lifecycle);
+  /** Topology Lifecycle ports (V046) — Stack installs; Topology must not hold CallLifecycle*. */
+  void SetTopologyLifecyclePorts(CallTopologyLifecyclePorts ports);
   /** Seat ops (V043) — Stack installs; CSM must not hold CallMediaSeat*. */
   void SetMediaSeatPorts(CallMediaSeatPorts ports);
-  /** Wire owned topology child only (not a CSM sibling facet). */
-  void WireTopologySeat(CallMediaSeat* seat);
-  /** Build seat ports over owned topology_ (Stack / compose tests). */
+  /** Topology Seat ports (V046) — Stack installs; Topology must not hold CallMediaSeat*. */
+  void SetTopologySeatPorts(CallTopologySeatPorts ports);
+  /** Build CSM seat ports over owned topology_ (Stack / compose tests). */
   CallMediaSeatPorts MakeSeatPorts(CallMediaSeat* seat);
   /** Seat teardown hook: topology detach without re-entering seat.Release. */
   void TopologyOnMediaStoppedForSeat(const std::string& call_id);
@@ -184,23 +184,24 @@ public:
   void ClearMediaCallbacks();
 
 private:
-  // CallTopologyHost
-  Roe<std::string> TopologyLocalIdentity() const override;
-  Roe<void> TopologyLeaveCall(const std::string& call_id) override;
+  // Topology HostPorts helpers (V046 — not CallTopologyHost overrides)
+  Roe<std::string> TopologyLocalIdentity() const;
+  Roe<void> TopologyLeaveCall(const std::string& call_id);
   Roe<void> TopologyFanOutToJoined(const std::string& call_id, CallControlType type,
                                    const std::string& detail_json, const std::string& display,
-                                   const std::string& skip_identity) override;
+                                   const std::string& skip_identity);
   Roe<void> TopologySendDirect(const std::string& peer_identity, CallControlType type,
-                               const std::string& detail_json, const std::string& display) override;
-  void TopologyNotifyRingChanged() override;
-  void TopologySetLastMediaError(std::string message) override;
-  void TopologySetMediaActivity(std::string message) override;
-  void TopologyClearMediaActivity() override;
-  void TopologyNoteMediaAttempted(const std::string& call_id) override;
-  void TopologyBindMediaCallId(const std::string& call_id) override;
-  void TopologyClearMediaPeerIdentity() override;
-  void TopologyReleaseDirectMedia() override;
-  void TopologyRequestInboxSync() override;
+                               const std::string& detail_json, const std::string& display);
+  void TopologyNotifyRingChanged();
+  void TopologySetLastMediaError(std::string message);
+  void TopologySetMediaActivity(std::string message);
+  void TopologyClearMediaActivity();
+  void TopologyNoteMediaAttempted(const std::string& call_id);
+  void TopologyBindMediaCallId(const std::string& call_id);
+  void TopologyClearMediaPeerIdentity();
+  void TopologyReleaseDirectMedia();
+  void TopologyRequestInboxSync();
+  void BindTopologyHostPorts();
 
   // CallMediaHost
   Roe<std::string> P2pLocalIdentity() const override;

@@ -24,6 +24,8 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **V043 Seat + Lifecycle ports** | **Landed (sl)** — CSM ports only; no `CallLifecycle*` / `CallMediaSeat*` facets — [DECISIONS V043](DECISIONS.md#v043--callsessionlifecycleports--callmediaseatports); phase [sl](PHASES.md#sl--csm-seat--lifecycle-ports-no-sibling-facets) |
 | **V044 CallSessionWorkflow** | **Landed (sw)** — durable session/roster in CSM-owned Workflow — [DECISIONS V044](DECISIONS.md#v044--callsessionworkflow-durable-sessionroster); phase [sw](PHASES.md#sw--callsessionworkflow-extract) |
 | **V045 Workflow hygiene** | **Landed (wh)** — wire-before-commit Invite/Accept/Decline; Decline Ends local; query dedupe + Peek kick — [DECISIONS V045](DECISIONS.md#v045--callsessionworkflow-hygiene-wire-first--query-dedupe); phase [wh](PHASES.md#wh--callsessionworkflow-hygiene) |
+| **V046 Topology independence** | **Landed (tp)** — state clusters; HostPorts; Lifecycle/Seat ports; `CallHopMigrateWorkflow` — [DECISIONS V046](DECISIONS.md#v046--calltopologycontroller-independence); phase [tp](PHASES.md#tp--calltopologycontroller-independence-v046) |
+| **V047 HopMigrate no-friend** | **Landed (hm)** — Workflow owns race clusters + ports/Ops; Topology refs + TopologyOps; no friend — [DECISIONS V047](DECISIONS.md#v047--callhopmigrateworkflow-owns-clusters-no-friend); phase [hm](PHASES.md#hm--callhopmigrateworkflow-no-friend-v047) |
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |

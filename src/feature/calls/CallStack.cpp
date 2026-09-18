@@ -12,6 +12,8 @@
 #include "feature/calls/CallLifecyclePorts.h"
 #include "feature/calls/CallDirectMediaPorts.h"
 #include "feature/calls/CallSessionLifecyclePorts.h"
+#include "feature/calls/CallTopologyLifecyclePorts.h"
+#include "feature/calls/CallTopologySeatPorts.h"
 
 #include <functional>
 #include <optional>
@@ -83,11 +85,11 @@ void CallStack::BindMediaProducts() {
   call_sessions_->SetDirectMediaPorts(
       MakeCallDirectMediaPorts(media_plane_->Bridge(), call_media_seat_.get()));
   if (call_media_seat_) {
-    call_sessions_->WireTopologySeat(call_media_seat_.get());
+    call_sessions_->SetTopologySeatPorts(MakeCallTopologySeatPorts(call_media_seat_.get()));
     call_sessions_->SetMediaSeatPorts(call_sessions_->MakeSeatPorts(call_media_seat_.get()));
   }
   if (call_lifecycle_) {
-    call_sessions_->WireTopologyLifecycle(call_lifecycle_.get());
+    call_sessions_->SetTopologyLifecyclePorts(MakeCallTopologyLifecyclePorts(call_lifecycle_.get()));
     call_sessions_->SetLifecyclePorts(MakeCallSessionLifecyclePorts(call_lifecycle_.get()));
   }
 }
@@ -178,7 +180,7 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
                                                         *call_session_store_, *call_media_keys_, deps_.delivery,
                                                         *deps_.psk, *call_media_engine_);
   if (call_media_seat_) {
-    call_sessions_->WireTopologySeat(call_media_seat_.get());
+    call_sessions_->SetTopologySeatPorts(MakeCallTopologySeatPorts(call_media_seat_.get()));
     call_sessions_->SetMediaSeatPorts(call_sessions_->MakeSeatPorts(call_media_seat_.get()));
     BindSeatTeardown();
   }
@@ -294,8 +296,8 @@ void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_c
     call_sessions_->SetDirectMediaPorts({});
     call_sessions_->SetLifecyclePorts({});
     call_sessions_->SetMediaSeatPorts({});
-    call_sessions_->WireTopologyLifecycle(nullptr);
-    call_sessions_->WireTopologySeat(nullptr);
+    call_sessions_->SetTopologyLifecyclePorts({});
+    call_sessions_->SetTopologySeatPorts({});
     call_sessions_->SetMediaRelayDeps({});
   }
   if (media_plane_) {
@@ -419,7 +421,7 @@ void CallStack::EnsureCallLifecycleBound() {
   }
   call_lifecycle_->BindSignalingPorts(MakeLifecycleSignalingPorts());
   call_lifecycle_->SetOnListenDesireChanged([this](bool want) { SetEphemeralListenDesire(want); });
-  call_sessions_->WireTopologyLifecycle(call_lifecycle_.get());
+  call_sessions_->SetTopologyLifecyclePorts(MakeCallTopologyLifecyclePorts(call_lifecycle_.get()));
   call_sessions_->SetLifecyclePorts(MakeCallSessionLifecyclePorts(call_lifecycle_.get()));
   if (media_plane_) {
     if (CallMediaBridge* bridge = media_plane_->Bridge()) {

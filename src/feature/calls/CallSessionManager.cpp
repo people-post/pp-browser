@@ -69,10 +69,11 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
                                        CallDeliveryPorts delivery, IPskSessionStore& psk_store, CallMediaEngine& media)
     : store_(store), contacts_(contacts), identity_(identity), sessions_(sessions), media_keys_(media_keys),
       delivery_(std::move(delivery)), psk_store_(psk_store), media_(media),
-      topology_(*this, sessions, contacts, media), broadcast_(sessions, contacts, media_keys),
-      workflow_(store, contacts, identity, sessions, media_keys) {
+      topology_(sessions, contacts, media), broadcast_(sessions, contacts, media_keys),
+      workflow_(store, identity, sessions, media_keys) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
+  BindTopologyHostPorts();
   BroadcastSessionCoordinator::HostPorts ports;
   ports.local_relay_identity = [this]() { return LocalRelayIdentity(); };
   ports.local_mesh_peer_id = [this]() -> std::string {
@@ -92,6 +93,30 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
   };
   broadcast_.SetHostPorts(std::move(ports));
   BindWorkflowHostPorts();
+}
+
+void CallSessionManager::BindTopologyHostPorts() {
+  CallTopologyController::HostPorts ports;
+  ports.local_relay_identity = [this]() { return TopologyLocalIdentity(); };
+  ports.leave_call = [this](const std::string& call_id) { return TopologyLeaveCall(call_id); };
+  ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
+                                const std::string& display, const std::string& skip) {
+    return TopologyFanOutToJoined(call_id, type, detail, display, skip);
+  };
+  ports.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
+                             const std::string& display) {
+    return TopologySendDirect(peer, type, detail, display);
+  };
+  ports.notify_ring_changed = [this]() { TopologyNotifyRingChanged(); };
+  ports.set_last_media_error = [this](std::string message) { TopologySetLastMediaError(std::move(message)); };
+  ports.set_media_activity = [this](std::string message) { TopologySetMediaActivity(std::move(message)); };
+  ports.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
+  ports.note_media_attempted = [this](const std::string& call_id) { TopologyNoteMediaAttempted(call_id); };
+  ports.bind_media_call_id = [this](const std::string& call_id) { TopologyBindMediaCallId(call_id); };
+  ports.clear_media_peer_identity = [this]() { TopologyClearMediaPeerIdentity(); };
+  ports.release_direct_media = [this]() { TopologyReleaseDirectMedia(); };
+  ports.request_inbox_sync = [this]() { TopologyRequestInboxSync(); };
+  topology_.SetHostPorts(std::move(ports));
 }
 
 void CallSessionManager::BindWorkflowHostPorts() {
@@ -229,8 +254,8 @@ void CallSessionManager::SetLifecyclePorts(CallSessionLifecyclePorts ports) {
   BindWorkflowHostPorts();
 }
 
-void CallSessionManager::WireTopologyLifecycle(CallLifecycle* lifecycle) {
-  topology_.SetLifecycle(lifecycle);
+void CallSessionManager::SetTopologyLifecyclePorts(CallTopologyLifecyclePorts ports) {
+  topology_.SetLifecyclePorts(std::move(ports));
 }
 
 void CallSessionManager::SetMediaSeatPorts(CallMediaSeatPorts ports) {
@@ -238,8 +263,8 @@ void CallSessionManager::SetMediaSeatPorts(CallMediaSeatPorts ports) {
   BindWorkflowHostPorts();
 }
 
-void CallSessionManager::WireTopologySeat(CallMediaSeat* seat) {
-  topology_.SetMediaSeat(seat);
+void CallSessionManager::SetTopologySeatPorts(CallTopologySeatPorts ports) {
+  topology_.SetSeatPorts(std::move(ports));
 }
 
 CallMediaSeatPorts CallSessionManager::MakeSeatPorts(CallMediaSeat* seat) {

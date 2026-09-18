@@ -227,6 +227,29 @@ Post-V044 durable-path cleanup — [V045](DECISIONS.md#v045--callsessionworkflow
 **Non-goals:** Peer-reach book merge; Host adapters.  
 **Exit:** inbound compose + stack/dual-stack gtests green.
 
+## tp — CallTopologyController independence (V046)
+
+Hop SoftMigrate/attach composition cleanup — [V046](DECISIONS.md#v046--calltopologycontroller-independence).
+
+- [x] tp0 — ADR + SoftMigrateFlight / AttachWait / InboundAttachGate / GuestSfuSession / PublisherStreams / SfuSurface clusters
+- [x] tp1 — `CallTopologyHost` → HostPorts; CSM drops dual-inherit
+- [x] tp2 — `CallTopologyLifecyclePorts` + `CallTopologySeatPorts`; Stack install
+- [x] tp3 — `CallHopMigrateWorkflow` extract; CALLS promote
+
+**Non-goals:** Peer dial-book merge; Bridge facet ports; same-class Topology `.cpp` splits.  
+**Exit:** topology unit + inbound/dual-stack/ui-backend compose gtests green.
+
+## hm — CallHopMigrateWorkflow no-friend (V047)
+
+Drop Topology friend + private poke — [V047](DECISIONS.md#v047--callhopmigrateworkflow-owns-clusters-no-friend).
+
+- [x] hm0 — ADR; Workflow owns SoftMigrateFlight / AttachWait / InboundAttachGate / GuestSfuSession / PublisherStreams / SfuSurface
+- [x] hm1 — Host/Lifecycle/Seat ports + TopologyOps on Workflow; Topology refs + BindHopMigratePortsAndOps
+- [x] hm2 — CALLS.md promote; topology + compose gtests green
+
+**Non-goals:** Peer dial-book merge; Bridge facet ports.  
+**Exit:** topology unit + inbound compose gtests green.
+
 ## Later horizons
 
 - [ ] `video_hi` / simulcast

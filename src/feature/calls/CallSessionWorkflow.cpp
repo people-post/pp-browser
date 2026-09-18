@@ -5,18 +5,15 @@
 #include "domain/messaging/CallSessionLogic.h"
 #include "domain/messaging/InitiationPricing.h"
 #include "domain/messaging/PeerCapsLogic.h"
-#include "domain/people/ContactIdentity.h"
-#include "domain/people/ContactJson.h"
-#include "domain/people/ContactTypes.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                                         CallSessionStore& sessions, CallMediaKeyStore& media_keys)
-    : store_(store), contacts_(contacts), identity_(identity), sessions_(sessions), media_keys_(media_keys) {
+CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
+                                         CallMediaKeyStore& media_keys)
+    : store_(store), identity_(identity), sessions_(sessions), media_keys_(media_keys) {
   redirectLogger("CallSessionWorkflow");
 }
 

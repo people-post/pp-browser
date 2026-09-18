@@ -10,7 +10,6 @@
 #include "common/thread/ThreadRecordTypes.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "domain/messaging/CallSessionStore.h"
-#include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 
 #include <functional>
@@ -97,8 +96,8 @@ public:
     bool IsBound() const { return static_cast<bool>(local_relay_identity); }
   };
 
-  CallSessionWorkflow(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
-                      CallSessionStore& sessions, CallMediaKeyStore& media_keys);
+  CallSessionWorkflow(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
+                      CallMediaKeyStore& media_keys);
 
   void SetHostPorts(HostPorts ports);
   void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
@@ -146,7 +145,6 @@ public:
 
 private:
   IThreadStore& store_;
-  ContactsStore& contacts_;
   IdentityStore& identity_;
   CallSessionStore& sessions_;
   CallMediaKeyStore& media_keys_;

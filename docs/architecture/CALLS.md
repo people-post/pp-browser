@@ -299,7 +299,7 @@ UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints fro
 | **CallLifecycle** | phase / status | none to CSM | `CallLifecycleSignalingPorts` from Stack |
 | **CallMediaSeat** | exclusive media epoch | none | teardown hooks from Stack (`BindSeatTeardown`) |
 | **CallMediaPlane** | mesh + bridge object + dial book | none to CSM / seat / lifecycle | `BindBridge` args + deps callbacks |
-| **CallSessionManager** | signaling façade | stores (ctor); owns Workflow + Topology + Broadcast; Direct/Lifecycle/Seat via ports | `Set*Ports` / `WireTopology*` / `BindWorkflowHostPorts` |
+| **CallSessionManager** | signaling façade | stores (ctor); owns Workflow + Topology + Broadcast; Direct/Lifecycle/Seat via ports | `Set*Ports` / `SetTopology*Ports` / `BindWorkflowHostPorts` / `BindTopologyHostPorts` |
 
 ### CallSessionManager (façade)
 **Should own:** Hub-facing API, Topology/MediaHost, dial-book maps, delivery, port install, device mute/camera. Durable session/roster work lives in owned **`CallSessionWorkflow`** (V044).
@@ -308,6 +308,9 @@ UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints fro
 
 ### CallSessionWorkflow (V044)
 Durable multi-party session/roster executor (store mutations + `CallSessionLogic` transitions + invite/leave/inbound arms). Side effects via HostPorts from CSM — **not** a second chrome `CallPhase` machine.
+
+### CallTopologyController (V046/V047)
+Hop planner façade (`Apply` / On*). SoftMigrate + attach completion live in owned **`CallHopMigrateWorkflow`**, which **owns** race clusters and takes Host/Lifecycle/Seat ports + **TopologyOps** (no Topology friend). Topology holds refs into those clusters for local control paths. CSM fills Topology `HostPorts` (`CallTopologyHostPorts`); Stack installs **`CallTopologyLifecyclePorts`** / **`CallTopologySeatPorts`**. Clusters: `SoftMigrateFlight`, `AttachWait`, `InboundAttachGate`, `GuestSfuSession`, `PublisherStreams`, `SfuSurface`.
 
 ### CallMediaSeat (V036)
 Process-wide exclusive bind `call_id` ↔ duplex. `Release` = topology Detach then engine Stop; `NoteStart` invalidates in-flight Release; SoftMigrate uses `NotePath(Hop)` without Release. Topology “active call” prefers `seat.IsBound`, not leftover engine `ActiveCallId`. **Phase 2:** `MediaState` (`Idle` / `Connecting` / `Live` / `Failed`) drives chrome Connected; `BeginAttach` serializes hop AcceptAndAttach. **Phase 3:** `CallDirectPath` / `CallHopPath` façades; Bridge/Topology path ops require `AllowsPathOp(token)`; CSM schedules Direct start / seat `Release` only (no parallel `StopMeshMedia` when seat wired).
@@ -369,12 +372,12 @@ Extract without changing the external façade (`ConversationsHub::Calls()`, `Cal
 ### 1. `CallTopologyController` (feature adapter)
 Responsibilities:
 
-- Apply pure decisions; `MaybeSoftMigrateToSfu(call_id, trigger)`, `AttachLocalToSfu`, hop ranking via `IMediaRelayClient` / `IDialRegistry`
-- Attach-wait deadline + timeout leave (group only) via `SfuAttachWaitLogic`
+- Hop `Apply` / On*; SoftMigrate/attach → owned **`CallHopMigrateWorkflow`** (owns race clusters + ports/Ops; V046/V047)
+- Hop ranking via `IMediaRelayClient` / `IDialRegistry`; attach-wait via `SfuAttachWaitLogic`
 - Eject joiner when migrate fails but 1:1 P2P remains
 - ICE `failed` recovery **only** when N≥3 (historical group path; no WebRTC PC in product)
 
-State it owns: `sfu_attached_`, attach-wait call id/deadline, `awaiting_sfu_recovery_`, `soft_migrate_in_flight_`.  
+State clusters (V047 on Workflow; Topology refs): SoftMigrate flight, attach-wait, inbound attach gate, guest SFU session, publisher streams, SFU surface.  
 Session manager asks: “joined count is now N — what media action?”
 
 ### 2. `CallMediaBridge` (feature)
@@ -468,7 +471,11 @@ Landed (behavior-preserving + who-picks fix):
 | `src/feature/calls/CallMediaBridge.*` | Amp 1:1 media — key defer, dial/retry, connect-fail (Direct planner) |
 | `src/domain/mesh/l4/call_media/CallMediaAmpTransport.*` | Amp call-media transport |
 | `src/domain/mesh/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
-| `src/feature/calls/CallTopologyController.*` | SFU / soft-migrate / attach-wait / hop-addr cache + gather |
+| `src/feature/calls/CallTopologyController.*` | Hop planner façade / attach-wait / hop rank (V046/V047) |
+| `src/feature/calls/CallHopMigrateWorkflow.*` | SoftMigrate + SFU attach / guest reattach; owns race clusters (V047) |
+| `src/feature/calls/CallTopologyHostPorts.h` | CSM→Topology/HopMigrate HostPorts (V046/V047) |
+| `src/feature/calls/CallTopologyLifecyclePorts.*` | Stack-filled Lifecycle ports for Topology (V046) |
+| `src/feature/calls/CallTopologySeatPorts.*` | Stack-filled Seat ports for Topology (V046) |
 | `src/feature/calls/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + `PeerSessionDialRegistry` |
 | `src/domain/messaging/CallMediaKeyStore.*` | Epoch key wrap |
 | `src/gui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |

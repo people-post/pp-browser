@@ -1126,3 +1126,48 @@ Topology/MediaHost, dial-book maps, delivery, port install, device mute/camera, 
 
 ---
 
+## V046 — CallTopologyController independence
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md)  
+**Decision:** Apply the CSM composition-independence arc to **`CallTopologyController`**: cluster SoftMigrate/attach race state, replace virtual **`CallTopologyHost`** and raw Lifecycle/Seat facets with ports, then extract **`CallHopMigrateWorkflow`** owned by Topology. Topology remains the Hop planner façade (`Apply` / public On*).
+
+### Sequence
+
+1. **State clusters** — nested PODs: `SoftMigrateFlight`, `AttachWait`, `InboundAttachGate`, `GuestSfuSession`, `PublisherStreams`, `SfuSurface`.
+2. **HostPorts** — drop virtual `CallTopologyHost` + CSM dual-inheritance; CSM fills lambdas.
+3. **Lifecycle / Seat ports** — `CallTopologyLifecyclePorts` / `CallTopologySeatPorts` (Topology’s fuller seat surface; not CSM’s thinner `CallMediaSeatPorts`); Stack installs.
+4. **`CallHopMigrateWorkflow`** — SoftMigrate async + attach completion / guest reattach; Topology owns the member.
+
+### Rules
+
+1. No same-class multi-`.cpp` splits ([AGENTS.md](../../AGENTS.md)).
+2. Behavior-preserving SoftMigrate / attach races (port null-guards only).
+3. Pure who-picks stay in `SoftMigrateLogic` / `SfuAttachWaitLogic` / `CallHopPlannerLogic`.
+4. Do not start Workflow extract until Host + Lifecycle/Seat ports exist.
+
+**Non-goals:** Peer dial-book merge; `CallMediaHost` rewrite; Bridge Lifecycle/Seat ports in this ADR.
+
+**Cross-link:** [V043](#v043--callsessionlifecycleports--callmediaseatports); [V044](#v044--callsessionworkflow-durable-sessionroster); phase [tp](PHASES.md#tp--calltopologycontroller-independence-v046).
+
+---
+
+## V047 — CallHopMigrateWorkflow owns clusters (no friend)
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md)  
+**Decision:** Finish Topology ↔ SoftMigrate composition independence: **`CallHopMigrateWorkflow` owns** SoftMigrate/attach race clusters and takes **Host / Lifecycle / Seat ports + TopologyOps**. Drop **`friend class CallHopMigrateWorkflow`** and all private `topo_` field poke. Topology remains the Hop planner façade; it holds **references** into Workflow-owned clusters for local control paths and binds Ops/ports at construction / `Set*`.
+
+### Rules
+
+1. Shared types: `CallTopologyHostPorts`, `CallTopologyMediaRelayDeps` (no circular Workflow↔Topology headers for nested ports).
+2. TopologyOps covers Apply / rank / fan-out / attach-wait helpers that stay on Topology.
+3. Behavior-preserving SoftMigrate / attach races (null-guards only).
+4. No same-class multi-`.cpp` splits.
+
+**Non-goals:** Peer dial-book merge; Bridge facet ports; collapsing Topology façade into Workflow.
+
+**Cross-link:** [V046](#v046--calltopologycontroller-independence); phase [hm](PHASES.md#hm--callhopmigrateworkflow-no-friend-v047).
+
+---
+
