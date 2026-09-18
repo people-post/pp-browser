@@ -9,14 +9,14 @@ TEST(CallHopAttachLogicTest, FanoutClearsConsumedQuoteId) {
   CallSfuAttachDetail after;
   after.call_id = "call:1";
   after.hop_peer_id = "hop";
+  after.hop_multiaddr = "/ip4/1.2.3.4/tcp/1";
   after.quote_id = "consumed-quote";
-  after.multiaddrs = {"/ip4/1.2.3.4/tcp/1"};
 
   const CallSfuAttachDetail fanout = BuildSfuAttachFanout(after);
   EXPECT_EQ(fanout.call_id, "call:1");
   EXPECT_EQ(fanout.hop_peer_id, "hop");
+  EXPECT_EQ(fanout.hop_multiaddr, "/ip4/1.2.3.4/tcp/1");
   EXPECT_TRUE(fanout.quote_id.empty());
-  EXPECT_EQ(fanout.multiaddrs.size(), 1u);
 }
 
 TEST(CallHopAttachLogicTest, PublisherStreamIdStable) {
