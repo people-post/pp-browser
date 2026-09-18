@@ -51,7 +51,7 @@ Ports are allowed and encouraged. They must:
 
 | Area | Higher | Lower | Typical leak |
 |------|--------|-------|--------------|
-| Calls | `CallLifecycle` Status / chrome | Topology / Bridge planners | `CallMediaStatus` writers on hop/direct ports |
+| Calls | `CallLifecycle` Status / chrome | Topology / Bridge planners | *(cleared V048)* hop/direct arming ports; Stack projects |
 | Calls | `CallSessionManager` façade | Topology / Workflow | Grab-bag host that re-exports Lifecycle |
 | UI ↔ functional | Shell / presenters | Domain / feature engines | Functional code naming shell chrome types |
 | Mesh | Host / L3 policy | L4 sessions | Session code owning host-wide phase enums |
