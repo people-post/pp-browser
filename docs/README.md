@@ -26,6 +26,7 @@ Agent entry points: [`AGENTS.md`](../AGENTS.md) (orientation), this map (stable 
 | [architecture/TESTING.md](architecture/TESTING.md) | Testing doctrine: tiers, push-down seams, promote failures downward, skip taxonomy, doc homes |
 | [architecture/RUNTIME_COMPOSITION.md](architecture/RUNTIME_COMPOSITION.md) | App ↔ messaging / shell / chat / settings wiring + threads |
 | [architecture/OWNERSHIP.md](architecture/OWNERSHIP.md) | Parent-only destroy (repo-wide); mesh detail [A027](../projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy) |
+| [architecture/COMPOSITION_VOCABULARY.md](architecture/COMPOSITION_VOCABULARY.md) | No upward concepts through ports (repo-wide); calls [V048](../projects/p2p-av-calls/DECISIONS.md#v048--composition-vocabulary-no-upward-concepts) |
 | [architecture/THREADING.md](architecture/THREADING.md) | Thread roles — coordinator, worker pool, `AppRuntime` |
 | [architecture/LOGGING.md](architecture/LOGGING.md) | Logger obtain rules — Module / static `InitLogging` / free-fn `Logger&` |
 | [architecture/UI_FUNCTIONAL_BOUNDARY.md](architecture/UI_FUNCTIONAL_BOUNDARY.md) | UI vs functional systems; state / config / actions / events; app-owned presenters |

@@ -1,7 +1,7 @@
 # Runtime composition
 
 **Tier:** architecture  
-**Related:** [ARCHITECTURE.md](ARCHITECTURE.md) (system overview), [SRC_LAYOUT.md](SRC_LAYOUT.md) (layers / includes), [OWNERSHIP.md](OWNERSHIP.md) (parent-only destroy), [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md) (UI vs functional contracts), [ops/CONFIGURATION.md](../ops/CONFIGURATION.md) (disk DTOs → service slices).
+**Related:** [ARCHITECTURE.md](ARCHITECTURE.md) (system overview), [SRC_LAYOUT.md](SRC_LAYOUT.md) (layers / includes), [OWNERSHIP.md](OWNERSHIP.md) (parent-only destroy), [COMPOSITION_VOCABULARY.md](COMPOSITION_VOCABULARY.md) (no upward concepts through ports), [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md) (UI vs functional contracts), [ops/CONFIGURATION.md](../ops/CONFIGURATION.md) (disk DTOs → service slices).
 
 How **Application** relates to the main service modules at runtime: ownership, feature-link order, settings hot-reload, and **threading** (UI / IO / libp2p / media). Lifetime edges follow [OWNERSHIP.md](OWNERSHIP.md) (composition root owns services; children request stop).
 
