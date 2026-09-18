@@ -109,13 +109,41 @@ void CallTopologyController::SetMediaKeyStore(CallMediaKeyStore* keys) {
 }
 
 void CallTopologyController::SetSeatPorts(CallTopologySeatPorts ports) {
-  hop_migrate_->SetSeatPorts(ports);
+  hop_migrate_->SetSeatPorts(MakeMigrateSeatPorts(ports));
   seat_ = std::move(ports);
 }
 
 void CallTopologyController::SetHopArmingPorts(CallHopArmingPorts ports) {
-  hop_migrate_->SetHopArmingPorts(ports);
+  hop_migrate_->SetArmingPorts(MakeMigrateArmingPorts(ports));
   arming_ = std::move(ports);
+}
+
+CallHopMigrateArmingPorts CallTopologyController::MakeMigrateArmingPorts(
+    const CallHopArmingPorts& ports) const {
+  CallHopMigrateArmingPorts out;
+  out.migrate_ops_allowed = ports.hop_ops_allowed;
+  out.soft_migrate_may_arm = ports.soft_migrate_may_arm;
+  out.media_cancel_gen = ports.media_cancel_gen;
+  out.report_progress = ports.report_progress;
+  out.arming_debug_name = ports.arming_debug_name;
+  return out;
+}
+
+CallHopMigrateSeatPorts CallTopologyController::MakeMigrateSeatPorts(
+    const CallTopologySeatPorts& ports) const {
+  CallHopMigrateSeatPorts out;
+  out.is_bound = ports.is_bound;
+  out.acquire = ports.acquire;
+  out.allows_path_op = ports.allows_path_op;
+  out.begin_attach = ports.begin_attach;
+  out.end_attach_if_matching = ports.end_attach_if_matching;
+  out.has_attach_in_flight = ports.has_attach_in_flight;
+  out.attaching_hop = ports.attaching_hop;
+  out.note_connecting = ports.note_connecting;
+  out.note_start = ports.note_start;
+  out.note_path = ports.note_path;
+  out.note_live = ports.note_live;
+  return out;
 }
 
 bool CallTopologyController::IsAwaitingSfuRecovery() const {

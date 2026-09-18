@@ -101,11 +101,11 @@ void CallHopMigrateWorkflow::SetHostPorts(CallTopologyHostPorts ports) {
   host_ = std::move(ports);
 }
 
-void CallHopMigrateWorkflow::SetHopArmingPorts(CallHopArmingPorts ports) {
+void CallHopMigrateWorkflow::SetArmingPorts(CallHopMigrateArmingPorts ports) {
   arming_ = std::move(ports);
 }
 
-void CallHopMigrateWorkflow::SetSeatPorts(CallTopologySeatPorts ports) {
+void CallHopMigrateWorkflow::SetSeatPorts(CallHopMigrateSeatPorts ports) {
   seat_ = std::move(ports);
 }
 
@@ -166,7 +166,7 @@ void CallHopMigrateWorkflow::MaybeSoftMigrateToSfuAsync(const std::string& call_
     const bool ice_or_prefer =
         trigger == SoftMigrateTrigger::IceRecover || !prefer_hop_peer_id.empty();
     const bool may_arm = arming_.soft_migrate_may_arm && arming_.soft_migrate_may_arm();
-    const bool hop_armed = arming_.hop_ops_allowed && arming_.hop_ops_allowed();
+    const bool hop_armed = arming_.migrate_ops_allowed && arming_.migrate_ops_allowed();
     if (!n_requires_hop && !ice_or_prefer && may_arm) {
       log().info << "MaybeSoftMigrateToSfuAsync skipped (1:1 stay Direct) call_id=" << call_id
                  << " n_joined=" << n_joined
@@ -590,7 +590,7 @@ Roe<void> CallHopMigrateWorkflow::CompleteAttachLocalToSfu(
     }
   }
   // V048: hop must be armed; cancel gen must still match Deciding/Leave bumps.
-  if (arming_.IsBound() && arming_.hop_ops_allowed && !arming_.hop_ops_allowed()) {
+  if (arming_.IsBound() && arming_.migrate_ops_allowed && !arming_.migrate_ops_allowed()) {
     log().info << "AttachLocalToSfu aborted (hop not armed) call_id=" << call_id
                << " arming=" << (arming_.arming_debug_name ? arming_.arming_debug_name() : "?");
     relay_deps_->relay->Detach();
@@ -680,7 +680,7 @@ Roe<void> CallHopMigrateWorkflow::CompleteAttachLocalToSfu(
   // onto a fresh 1:1 — brief media_relay audio then chrome flipped to "direct" / silence.
   // Stampede (duplicate CallSfuAttach) still owns attaching_hop or flight_.flight_gen.
   // V048: hop arming is authority — never StartSfu when Direct* even if migrate gen "owns flight".
-  if (arming_.IsBound() && arming_.hop_ops_allowed && !arming_.hop_ops_allowed()) {
+  if (arming_.IsBound() && arming_.migrate_ops_allowed && !arming_.migrate_ops_allowed()) {
     log().info << "AttachLocalToSfu abort StartSfu (hop not armed before StartSfu) call_id="
                << call_id
                << " arming=" << (arming_.arming_debug_name ? arming_.arming_debug_name() : "?");

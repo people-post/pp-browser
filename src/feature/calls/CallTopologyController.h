@@ -12,6 +12,7 @@
 #include "feature/calls/CallTopologyHostPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallHopMigrateWorkflow.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
 
 #include "common/Error.h"
@@ -31,11 +32,9 @@
 
 namespace pbr {
 
-class CallHopMigrateWorkflow;
-
 /**
- * Hop arming / progress — Topology (+ owned Workflow) consumer contract (V048).
- * Empty ports = permissive (unit tests).
+ * Hop arming / progress — Topology consumer contract (V048).
+ * Empty ports = permissive (unit tests). Owner projects into owned Workflow migrate ports.
  */
 struct CallHopArmingPorts {
   std::function<bool()> hop_ops_allowed;
@@ -48,8 +47,8 @@ struct CallHopArmingPorts {
 };
 
 /**
- * MediaSeat façade for Topology (V046) — fuller than CSM CallMediaSeatPorts.
- * Topology must not hold CallMediaSeat*.
+ * MediaSeat façade for Topology (V046) — fuller than CSM CallMediaSeatPorts /
+ * Workflow CallHopMigrateSeatPorts. Topology must not hold CallMediaSeat*.
  */
 struct CallTopologySeatPorts {
   std::function<bool(const std::string& call_id)> is_bound;
@@ -184,6 +183,8 @@ public:
 
 private:
   void BindHopMigratePortsAndOps();
+  CallHopMigrateArmingPorts MakeMigrateArmingPorts(const CallHopArmingPorts& ports) const;
+  CallHopMigrateSeatPorts MakeMigrateSeatPorts(const CallTopologySeatPorts& ports) const;
   void ReportSfuAttachFailedToInitiator(const std::string& call_id, const std::string& failed_hop,
                                         const std::string& error);
   void RefuseGuestNoSharedHop(const std::string& call_id, const std::string& guest_identity);

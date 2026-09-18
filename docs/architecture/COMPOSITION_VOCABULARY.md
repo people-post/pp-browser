@@ -52,8 +52,10 @@ Ports are allowed and encouraged. They must:
 | Piece | Lives where |
 |-------|-------------|
 | Port **struct** | Consumer header (the type that `Set*Ports` / stores the ports) |
-| **`Make*` adapters** | Private methods on the composition root / owning façade that closes over producers (`CallStack::MakeHopArmingPorts`, `CallSessionManager::MakeSeatPorts`) |
+| **`Make*` adapters** | Private methods on the composition root / owning façade that closes over producers (`CallStack::MakeHopArmingPorts`, `CallTopologyController::MakeMigrateArmingPorts`, `CallSessionManager::MakeSeatPorts`) |
 | Free `Make*` + standalone `*Ports.{h,cpp}` | Avoid — duplicates the consumer contract and invites upward `#include`s |
+
+**Owned child:** a child product under a façade defines **its own** port structs in its vocabulary. The owning façade projects parent/sibling ports into the child’s ports (Topology → Workflow migrate arming/seat). The child must not `#include` the owner’s header for port types.
 
 Unit / compose tests act as mini-composers: define local helpers in the test TU (or empty ports), not shared free `Make*` in the feature library.
 

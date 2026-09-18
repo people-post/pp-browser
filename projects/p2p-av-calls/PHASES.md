@@ -259,6 +259,7 @@ Apply the repo-wide [composition vocabulary](../../docs/architecture/COMPOSITION
 - [x] ha2 — Drop `CallMediaStatus` / Lifecycle status reads from Topology + `CallHopMigrateWorkflow`; prefer single hop `Apply`/progress path
 - [x] ha3 — Bridge Lifecycle pointer → `CallDirectArmingPorts` (same guideline)
 - [x] ha4 — Port structs on consumer headers; `Make*` private on CallStack / CSM; delete free `*Ports.{h,cpp}`
+- [x] ha5 — Workflow owns migrate arming/seat ports; Topology projects (no Topology include in Workflow)
 
 **Non-goals:** Ownership-tree change (Topology under Lifecycle); moving SoftMigrate races into Lifecycle; rewriting every non-calls debt site in this phase.  
 **Exit:** topology unit + inbound/dual-stack compose gtests green; Topology/Workflow headers free of `CallLifecycleTypes` Status writers.
