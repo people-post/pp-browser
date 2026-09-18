@@ -208,8 +208,8 @@ void CallMediaBridge::SetMediaKeyInboxPollRoundsForTest(const int rounds) {
   media_key_inbox_poll_rounds_ = rounds < 0 ? 0 : rounds;
 }
 
-void CallMediaBridge::SetMediaSeat(CallMediaSeat* seat) {
-  media_seat_ = seat;
+void CallMediaBridge::SetSeatPorts(CallDirectSeatPorts ports) {
+  seat_ = std::move(ports);
 }
 
 CallDirectPlannerApplyContext CallMediaBridge::BuildDirectPlannerContext(
@@ -346,9 +346,9 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
   }
   // V036 Phase 2: seat Live is the chrome Connected gate — DirectConnected alone is signaling.
   // Prefer Live only when the direct stream is actually up (not StartSfu alone).
-  if (media_seat_ && media_.IsActive() && media_.ActiveCallId() == call_id &&
+  if (seat_.IsBound() && media_.IsActive() && media_.ActiveCallId() == call_id &&
       (direct_.IsActive() || host_.P2pIsSfuAttached())) {
-    media_seat_->NoteLive(call_id);
+    seat_.note_live(call_id);
   }
   if (arming_.on_connected) {
     arming_.on_connected(call_id);
@@ -454,8 +454,8 @@ void CallMediaBridge::PollMeshConnectHealth() {
   log().warning << "Mesh connect timeout call_id=" << call_id;
   mesh_connect_failed_ = true;
   mesh_connect_missing_mic_ = !media_.HasLocalCapture();
-  if (media_seat_) {
-    media_seat_->NoteFailed(call_id);
+  if (seat_.IsBound()) {
+    seat_.note_failed(call_id);
   }
   Apply(CallDirectPlannerEvent::ConnectFailed, call_id, media_peer_identity_);
   if (arming_.on_connect_failed) {
@@ -499,8 +499,8 @@ void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
 
 void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const std::string& peer) {
   Apply(CallDirectPlannerEvent::CircuitEscalated, call_id, peer);
-  if (media_seat_) {
-    media_seat_->NoteConnecting(call_id);
+  if (seat_.IsBound()) {
+    seat_.note_connecting(call_id);
   }
   media_.SetConnectionState("connecting");
   media_path_kind_.clear();
@@ -523,8 +523,8 @@ void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const
     if (auto started = BeginSession(call_id, peer, session_offerer_); !started) {
       log().warning << "TX-only escalate BeginSession failed: " << started.error().message;
       host_.P2pSetLastMediaError(started.error().message);
-      if (media_seat_) {
-        media_seat_->NoteFailed(call_id);
+      if (seat_.IsBound()) {
+        seat_.note_failed(call_id);
       }
       mesh_connect_failed_ = true;
       if (arming_.on_connect_failed) {
@@ -1105,9 +1105,9 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   const std::string captured_peer = peer_identity;
   const uint64_t send_gen = connect_generation_.load(std::memory_order_acquire);
   CallMediaSeat::Token seat_token;
-  if (media_seat_) {
-    seat_token = media_seat_->Acquire(call_id);
-    if (!media_seat_->AllowsPathOp(seat_token)) {
+  if (seat_.IsBound()) {
+    seat_token = seat_.acquire(call_id);
+    if (!seat_.allows_path_op(seat_token)) {
       return Error("media seat token rejected for direct path");
     }
   }
@@ -1126,12 +1126,12 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
       !started) {
     return started;
   }
-  if (media_seat_) {
-    media_seat_->NoteStart(call_id);
-    media_seat_->NotePath(CallMediaSeat::PathKind::Direct);
+  if (seat_.IsBound()) {
+    seat_.note_start(call_id);
+    seat_.note_path(CallMediaSeat::PathKind::Direct);
     // Duplex Live only after direct stream (CommitDirectConnected) — not StartSfu alone.
     if (!direct_.IsActive()) {
-      media_seat_->NoteConnecting(call_id);
+      seat_.note_connecting(call_id);
     }
   }
 
@@ -1249,8 +1249,8 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
       log().warning << "Call-media failed call_id=" << captured_call_id << " reason=" << reason;
       mesh_connect_failed_ = true;
       host_.P2pSetLastMediaError(reason);
-      if (media_seat_) {
-        media_seat_->NoteFailed(captured_call_id);
+      if (seat_.IsBound()) {
+        seat_.note_failed(captured_call_id);
       }
       if (arming_.on_connect_failed) {
         arming_.on_connect_failed(captured_call_id);
@@ -1529,18 +1529,18 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
 }
 
 void CallMediaBridge::ReleaseDirectTransport() {
-  if (media_seat_) {
-    ReleaseDirectTransport(media_seat_->CurrentToken());
+  if (seat_.IsBound()) {
+    ReleaseDirectTransport(seat_.current_token());
     return;
   }
   ReleaseDirectTransportBody();
 }
 
 void CallMediaBridge::ReleaseDirectTransport(const CallMediaSeat::Token& token) {
-  if (media_seat_) {
-    if (!media_seat_->AllowsPathOp(token)) {
+  if (seat_.IsBound()) {
+    if (!seat_.allows_path_op(token)) {
       log().info << "ReleaseDirectTransport skip (token not bound) call_id=" << token.call_id
-                 << " bound=" << media_seat_->BoundCallId();
+                 << " bound=" << (seat_.bound_call_id ? seat_.bound_call_id() : "");
       return;
     }
   }

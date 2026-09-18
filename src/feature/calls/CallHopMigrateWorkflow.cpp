@@ -97,7 +97,7 @@ CallHopMigrateWorkflow::CallHopMigrateWorkflow(CallSessionStore& sessions, CallM
   redirectLogger("CallHopMigrateWorkflow");
 }
 
-void CallHopMigrateWorkflow::SetHostPorts(CallTopologyHostPorts ports) {
+void CallHopMigrateWorkflow::SetHostPorts(CallHopMigrateHostPorts ports) {
   host_ = std::move(ports);
 }
 

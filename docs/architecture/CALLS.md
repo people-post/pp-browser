@@ -312,7 +312,7 @@ Durable multi-party session/roster executor (store mutations + `CallSessionLogic
 ### CallTopologyController (V046/V047)
 Hop planner façade (`Apply` / On*). SoftMigrate + attach completion live in owned **`CallHopMigrateWorkflow`**, which **owns** race clusters and takes Host + **`CallHopMigrateArmingPorts`** / **`CallHopMigrateSeatPorts`** + **TopologyOps** (no Topology friend / no Topology port types). Topology projects Stack-installed hop/seat ports into Workflow via private `MakeMigrate*Ports`. CSM fills Topology `HostPorts` (`CallTopologyHostPorts`); Stack installs Topology **`CallHopArmingPorts`** / **`CallTopologySeatPorts`**. Clusters: `SoftMigrateFlight`, `AttachWait`, `InboundAttachGate`, `GuestSfuSession`, `PublisherStreams`, `SfuSurface`.
 
-**Vocabulary ([COMPOSITION_VOCABULARY.md](COMPOSITION_VOCABULARY.md), [V048](../../projects/p2p-av-calls/DECISIONS.md#v048--composition-vocabulary-no-upward-concepts)):** repo-wide — lower peers must not speak higher peers’ concepts. Topology embeds **`CallHopArmingPorts`** / **`CallTopologySeatPorts`**; owned Workflow embeds migrate arming/seat ports; Bridge embeds **`CallDirectArmingPorts`**; CSM embeds Direct/Lifecycle/Seat ports. Stack / Topology private `Make*` (and CSM `MakeSeatPorts`) close over producers.
+**Vocabulary ([COMPOSITION_VOCABULARY.md](COMPOSITION_VOCABULARY.md), [V048](../../projects/p2p-av-calls/DECISIONS.md#v048--composition-vocabulary-no-upward-concepts)):** repo-wide — lower peers must not speak higher peers’ concepts. Topology embeds **`CallHopArmingPorts`** / **`CallTopologySeatPorts`**; owned Workflow embeds migrate host/arming/seat ports; Bridge embeds **`CallDirectArmingPorts`** / **`CallDirectSeatPorts`**; CSM embeds Direct/Lifecycle/Seat ports. Stack / Topology private `Make*` (and CSM `MakeSeatPorts`) close over producers.
 
 ### CallMediaSeat (V036)
 Process-wide exclusive bind `call_id` ↔ duplex. `Release` = topology Detach then engine Stop; `NoteStart` invalidates in-flight Release; SoftMigrate uses `NotePath(Hop)` without Release. Topology “active call” prefers `seat.IsBound`, not leftover engine `ActiveCallId`. **Phase 2:** `MediaState` (`Idle` / `Connecting` / `Live` / `Failed`) drives chrome Connected; `BeginAttach` serializes hop AcceptAndAttach. **Phase 3:** `CallDirectPath` / `CallHopPath` façades; Bridge/Topology path ops require `AllowsPathOp(token)`; CSM schedules Direct start / seat `Release` only (no parallel `StopMeshMedia` when seat wired).
@@ -468,11 +468,11 @@ Landed (behavior-preserving + who-picks fix):
 | `src/feature/calls/CallSessionWorkflow.*` | Durable session/roster workflow (V044/V045) — CSM-owned |
 | `src/feature/calls/CallSessionManager.*` | Façade — thin Start/Accept/Leave/inbound → Workflow |
 | `src/feature/calls/CallMediaHost.h` | Narrow host façade for mesh media side effects |
-| `src/feature/calls/CallMediaBridge.*` | Amp 1:1 media — key defer, dial/retry, connect-fail; embeds `CallDirectArmingPorts` (V048) |
+| `src/feature/calls/CallMediaBridge.*` | Amp 1:1 media — key defer, dial/retry, connect-fail; embeds `CallDirectArmingPorts` / `CallDirectSeatPorts` (V048) |
 | `src/domain/mesh/l4/call_media/CallMediaAmpTransport.*` | Amp call-media transport |
 | `src/domain/mesh/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
 | `src/feature/calls/CallTopologyController.*` | Hop planner façade; embeds `CallHopArmingPorts` / `CallTopologySeatPorts`; projects into owned Workflow (V046/V048) |
-| `src/feature/calls/CallHopMigrateWorkflow.*` | SoftMigrate + SFU attach; embeds `CallHopMigrateArmingPorts` / `CallHopMigrateSeatPorts` (V047/V048) |
+| `src/feature/calls/CallHopMigrateWorkflow.*` | SoftMigrate + SFU attach; embeds `CallHopMigrateHostPorts` / arming / seat ports (V047/V048) |
 | `src/feature/calls/CallTopologyHostPorts.h` | CSM→Topology/HopMigrate HostPorts (V046/V047) |
 | `src/feature/calls/CallStack.*` | Private `Make*Ports` adapters close over Lifecycle / Bridge / Seat |
 | `src/feature/calls/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + `PeerSessionDialRegistry` |

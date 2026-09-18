@@ -358,6 +358,25 @@ CallTopologySeatPorts TestTopologySeatPorts(CallMediaSeat* seat) {
   return ports;
 }
 
+CallDirectSeatPorts TestDirectSeatPorts(CallMediaSeat* seat) {
+  CallDirectSeatPorts ports;
+  if (!seat) {
+    return ports;
+  }
+  ports.acquire = [seat](const std::string& call_id) { return seat->Acquire(call_id); };
+  ports.allows_path_op = [seat](const CallMediaSeat::Token& token) {
+    return seat->AllowsPathOp(token);
+  };
+  ports.current_token = [seat]() { return seat->CurrentToken(); };
+  ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
+  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
+  ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
+  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
+  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
+  ports.note_failed = [seat](const std::string& call_id) { seat->NoteFailed(call_id); };
+  return ports;
+}
+
 class CallSessionInboundComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -410,7 +429,7 @@ protected:
     bridge_ = std::make_unique<CallMediaBridge>(csm_->AsMediaHost(), *sessions_, *keys_, *media_, *transport_,
                                                 dial_.get(), nullptr);
     bridge_->SetDirectArmingPorts(TestDirectArmingPorts(lifecycle_.get()));
-    bridge_->SetMediaSeat(seat_.get());
+    bridge_->SetSeatPorts(TestDirectSeatPorts(seat_.get()));
     csm_->SetDirectMediaPorts(TestDirectMediaPorts(bridge_.get(), seat_.get()));
     csm_->SetTopologySeatPorts(TestTopologySeatPorts(seat_.get()));
     csm_->SetMediaSeatPorts(csm_->MakeSeatPorts(seat_.get()));

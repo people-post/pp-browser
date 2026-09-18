@@ -76,7 +76,6 @@ void CallStack::BindMediaProducts() {
   args.session_store = call_session_store_.get();
   args.media_keys = call_media_keys_.get();
   args.media_engine = call_media_engine_.get();
-  args.seat = call_media_seat_.get();
   args.sessions_key = call_sessions_.get();
   media_plane_->BindBridge(args);
   call_sessions_->SetMediaRelayDeps(media_plane_->BuildMediaRelayDeps());
@@ -92,6 +91,9 @@ void CallStack::BindMediaProducts() {
     if (CallMediaBridge* bridge = media_plane_->Bridge()) {
       bridge->SetDirectArmingPorts(MakeDirectArmingPorts());
     }
+  }
+  if (CallMediaBridge* bridge = media_plane_->Bridge()) {
+    bridge->SetSeatPorts(MakeDirectSeatPorts());
   }
 }
 
@@ -304,6 +306,7 @@ void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_c
   if (media_plane_) {
     if (CallMediaBridge* bridge = media_plane_->Bridge()) {
       bridge->SetDirectArmingPorts({});
+      bridge->SetSeatPorts({});
     }
     media_plane_->PrepareForMeshStop(abort_inflight_circuit);
   } else if (abort_inflight_circuit) {
@@ -430,6 +433,7 @@ void CallStack::EnsureCallLifecycleBound() {
   if (media_plane_) {
     if (CallMediaBridge* bridge = media_plane_->Bridge()) {
       bridge->SetDirectArmingPorts(MakeDirectArmingPorts());
+      bridge->SetSeatPorts(MakeDirectSeatPorts());
     }
   }
 }
@@ -637,6 +641,26 @@ CallDirectMediaPorts CallStack::MakeDirectMediaPorts() const {
   ports.on_media_key_ready = [bridge](const std::string& call_id) {
     bridge->OnMediaKeyReady(call_id);
   };
+  return ports;
+}
+
+CallDirectSeatPorts CallStack::MakeDirectSeatPorts() const {
+  CallDirectSeatPorts ports;
+  CallMediaSeat* seat = call_media_seat_.get();
+  if (!seat) {
+    return ports;
+  }
+  ports.acquire = [seat](const std::string& call_id) { return seat->Acquire(call_id); };
+  ports.allows_path_op = [seat](const CallMediaSeat::Token& token) {
+    return seat->AllowsPathOp(token);
+  };
+  ports.current_token = [seat]() { return seat->CurrentToken(); };
+  ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
+  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
+  ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
+  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
+  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
+  ports.note_failed = [seat](const std::string& call_id) { seat->NoteFailed(call_id); };
   return ports;
 }
 

@@ -89,7 +89,7 @@ void CallTopologyController::BindHopMigratePortsAndOps() {
 }
 
 void CallTopologyController::SetHostPorts(HostPorts ports) {
-  hop_migrate_->SetHostPorts(ports);
+  hop_migrate_->SetHostPorts(MakeMigrateHostPorts(ports));
   host_ = std::move(ports);
 }
 
@@ -126,6 +126,22 @@ CallHopMigrateArmingPorts CallTopologyController::MakeMigrateArmingPorts(
   out.media_cancel_gen = ports.media_cancel_gen;
   out.report_progress = ports.report_progress;
   out.arming_debug_name = ports.arming_debug_name;
+  return out;
+}
+
+CallHopMigrateHostPorts CallTopologyController::MakeMigrateHostPorts(const HostPorts& ports) const {
+  CallHopMigrateHostPorts out;
+  out.local_relay_identity = ports.local_relay_identity;
+  out.fan_out_joined = ports.fan_out_joined;
+  out.notify_ring_changed = ports.notify_ring_changed;
+  out.set_last_media_error = ports.set_last_media_error;
+  out.set_media_activity = ports.set_media_activity;
+  out.clear_media_activity = ports.clear_media_activity;
+  out.note_media_attempted = ports.note_media_attempted;
+  out.bind_media_call_id = ports.bind_media_call_id;
+  out.clear_media_peer_identity = ports.clear_media_peer_identity;
+  out.release_direct_media = ports.release_direct_media;
+  out.request_inbox_sync = ports.request_inbox_sync;
   return out;
 }
 

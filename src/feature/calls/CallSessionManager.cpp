@@ -174,10 +174,10 @@ void CallSessionManager::BindWorkflowHostPorts() {
     topology_.OnInboundSfuAttachFailed(d);
   };
   ports.on_inbound_hop_refuse = [this](const CallHopRefuseDetail& d) { topology_.OnInboundHopRefuse(d); };
-  ports.topology_is_on_sfu_for_call = [this](const std::string& call_id) {
+  ports.is_on_sfu_for_call = [this](const std::string& call_id) {
     return topology_.IsOnSfuForCall(call_id);
   };
-  ports.topology_has_media_relay_hop_candidates = [this]() {
+  ports.has_media_relay_hop_candidates = [this]() {
     return topology_.HasMediaRelayHopCandidates();
   };
   ports.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
@@ -186,7 +186,7 @@ void CallSessionManager::BindWorkflowHostPorts() {
       delivery_.sync_inbox_from_wake(true);
     }
   };
-  ports.set_direct_connecting = [this](const std::string& call_id) {
+  ports.note_direct_connecting = [this](const std::string& call_id) {
     if (lifecycle_ports_.set_direct_connecting) {
       lifecycle_ports_.set_direct_connecting(call_id);
     }

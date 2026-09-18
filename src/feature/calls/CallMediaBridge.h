@@ -38,6 +38,24 @@ struct CallDirectArmingPorts {
 };
 
 /**
+ * MediaSeat façade for Direct path (V048 Bridge facet).
+ * Bridge must not hold CallMediaSeat* — Stack projects.
+ */
+struct CallDirectSeatPorts {
+  std::function<CallMediaSeat::Token(const std::string& call_id)> acquire;
+  std::function<bool(const CallMediaSeat::Token& token)> allows_path_op;
+  std::function<CallMediaSeat::Token()> current_token;
+  std::function<std::string()> bound_call_id;
+  std::function<void(const std::string& call_id)> note_connecting;
+  std::function<void(const std::string& call_id)> note_start;
+  std::function<void(CallMediaSeat::PathKind kind)> note_path;
+  std::function<void(const std::string& call_id)> note_live;
+  std::function<void(const std::string& call_id)> note_failed;
+
+  bool IsBound() const { return static_cast<bool>(acquire); }
+};
+
+/**
  * 1:1 call media (m1 / V026) — V036 Phase 3 **Direct path** plugin under CallMediaSeat.
  * Uses CallMediaEngine SFU-mode capture/playback with Opus frames over ICallMediaTransport
  * (Amp; [A020]). Path Start / ReleaseTransport require a seat token when the seat is wired.
@@ -117,8 +135,8 @@ public:
   void SetSeedReserve(std::function<void()> reserve);
 
   void SetDirectArmingPorts(CallDirectArmingPorts ports);
-  /** V036 exclusive media epoch. */
-  void SetMediaSeat(CallMediaSeat* seat);
+  /** V036 exclusive media epoch — Stack installs; Bridge must not hold CallMediaSeat*. */
+  void SetSeatPorts(CallDirectSeatPorts ports);
 
   /** Last successful 1:1 reach mode: direct | punched | circuit (empty before connect). */
   std::string MediaPathKind() const;
@@ -173,7 +191,7 @@ private:
   IDialRegistry* dial_ = nullptr;
   ICircuitHopReach* circuit_reach_ = nullptr;
   CallDirectArmingPorts arming_;
-  CallMediaSeat* media_seat_ = nullptr;
+  CallDirectSeatPorts seat_;
   std::function<void()> seed_warm_;
   std::function<void()> seed_reserve_;
   /** direct | punched | circuit — set by EnsurePeerReachableAsync. */

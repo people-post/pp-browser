@@ -183,6 +183,7 @@ public:
 
 private:
   void BindHopMigratePortsAndOps();
+  CallHopMigrateHostPorts MakeMigrateHostPorts(const HostPorts& ports) const;
   CallHopMigrateArmingPorts MakeMigrateArmingPorts(const CallHopArmingPorts& ports) const;
   CallHopMigrateSeatPorts MakeMigrateSeatPorts(const CallTopologySeatPorts& ports) const;
   void ReportSfuAttachFailedToInitiator(const std::string& call_id, const std::string& failed_hop,

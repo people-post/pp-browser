@@ -137,6 +137,7 @@ private:
   CallDirectArmingPorts MakeDirectArmingPorts() const;
   CallSessionLifecyclePorts MakeSessionLifecyclePorts() const;
   CallDirectMediaPorts MakeDirectMediaPorts() const;
+  CallDirectSeatPorts MakeDirectSeatPorts() const;
   CallTopologySeatPorts MakeTopologySeatPorts() const;
 
   CallStackDeps deps_;

@@ -68,7 +68,6 @@ struct CallMediaBridgeBindArgs {
   CallSessionStore* session_store = nullptr;
   CallMediaKeyStore* media_keys = nullptr;
   CallMediaEngine* media_engine = nullptr;
-  CallMediaSeat* seat = nullptr;
   /** Rebuild key (typically CallSessionManager*); compare only, do not dereference as CSM. */
   const void* sessions_key = nullptr;
 };

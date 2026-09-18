@@ -11,8 +11,8 @@
 namespace pbr {
 
 /**
- * CSM → Topology / HopMigrate side effects (V046/V047).
- * Shared so Workflow need not friend CallTopologyController.
+ * CSM → Topology side effects (V046).
+ * Topology projects a migrate subset into CallHopMigrateHostPorts for owned Workflow.
  */
 struct CallTopologyHostPorts {
   std::function<Roe<std::string>()> local_relay_identity;

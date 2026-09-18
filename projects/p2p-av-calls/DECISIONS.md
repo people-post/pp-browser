@@ -1188,7 +1188,7 @@ Ownership stays under composition roots (`Application`, `CallStack`, …). **Dep
 
 ### First application (calls)
 
-`CallTopologyController` speaks hop needs via **`CallHopArmingPorts`** (struct on Topology header). Owned **`CallHopMigrateWorkflow`** speaks migrate/attach needs via **`CallHopMigrateArmingPorts`** / **`CallHopMigrateSeatPorts`** (structs on Workflow header — Topology projects). `CallMediaBridge` speaks Direct needs via **`CallDirectArmingPorts`**. Stack / Topology private `Make*` adapters map → Lifecycle Status / `Apply` events — see [COMPOSITION_VOCABULARY.md § Port type ownership](../../docs/architecture/COMPOSITION_VOCABULARY.md#port-type-ownership).
+`CallTopologyController` speaks hop needs via **`CallHopArmingPorts`** (struct on Topology header). Owned **`CallHopMigrateWorkflow`** speaks migrate/attach needs via **`CallHopMigrateHostPorts`** / **`CallHopMigrateArmingPorts`** / **`CallHopMigrateSeatPorts`** (Topology projects). `CallMediaBridge` speaks Direct needs via **`CallDirectArmingPorts`** / **`CallDirectSeatPorts`**. Stack / Topology private `Make*` adapters map → Lifecycle Status / `Apply` events — see [COMPOSITION_VOCABULARY.md § Port type ownership](../../docs/architecture/COMPOSITION_VOCABULARY.md#port-type-ownership).
 
 Topology needs (example of the litmus): arming, cancel epoch, hop-native progress, seat bind — not `CallMediaStatus` / `CallPhase`.
 

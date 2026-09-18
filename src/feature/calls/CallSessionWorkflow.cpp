@@ -234,10 +234,10 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   // N≥3 requires media_relay soft-migrate (V021). Refuse mid-call guest invites when no hop
   // exists — otherwise Mac/Linux stay on 1:1 P2P while the invitee hangs on Connecting….
   const bool already_on_sfu =
-      (host_.topology_is_on_sfu_for_call && host_.topology_is_on_sfu_for_call(call_id)) ||
+      (host_.is_on_sfu_for_call && host_.is_on_sfu_for_call(call_id)) ||
       ((*session)->sfu_hint && !(*session)->sfu_hint->empty());
   if (*joined >= 2 && !already_on_sfu &&
-      !(host_.topology_has_media_relay_hop_candidates && host_.topology_has_media_relay_hop_candidates())) {
+      !(host_.has_media_relay_hop_candidates && host_.has_media_relay_hop_candidates())) {
     return Error("Adding a guest needs call hosting help (enable Help host calls on a computer that's helping the network)");
   }
 
@@ -551,8 +551,8 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
       row.sfu_hint.reset();
       (void)sessions_.UpsertSession(row);
     }
-    if (host_.set_direct_connecting) {
-      host_.set_direct_connecting(call_id);
+    if (host_.note_direct_connecting) {
+      host_.note_direct_connecting(call_id);
     }
     // Drop stale SoftMigrate chrome ("Connecting group media…") from a prior hop attempt.
     if (host_.clear_media_activity) {
@@ -1175,8 +1175,8 @@ Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_jso
     auto joined_after = sessions_.CountJoined(accept->call_id);
     const size_t n_joined = joined_after ? *joined_after : 0;
     if (!host_.on_remote_accept_joined(accept->call_id, n_joined, identity)) {
-      if (host_.set_direct_connecting) {
-        host_.set_direct_connecting(accept->call_id);
+      if (host_.note_direct_connecting) {
+        host_.note_direct_connecting(accept->call_id);
       }
       host_.schedule_start_direct(accept->call_id, identity, true);
     }

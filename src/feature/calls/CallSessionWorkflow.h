@@ -66,13 +66,13 @@ public:
     std::function<Roe<void>(const std::string& call_id, const CallSfuAttachDetail&)> on_inbound_sfu_attach;
     std::function<void(const CallSfuAttachFailedDetail&)> on_inbound_sfu_attach_failed;
     std::function<void(const CallHopRefuseDetail&)> on_inbound_hop_refuse;
-    std::function<bool(const std::string& call_id)> topology_is_on_sfu_for_call;
-    std::function<bool()> topology_has_media_relay_hop_candidates;
+    std::function<bool(const std::string& call_id)> is_on_sfu_for_call;
+    std::function<bool()> has_media_relay_hop_candidates;
 
     std::function<void()> clear_media_activity;
     std::function<void()> sync_inbox_from_wake;
 
-    std::function<void(const std::string& call_id)> set_direct_connecting;
+    std::function<void(const std::string& call_id)> note_direct_connecting;
     std::function<std::string()> accepting_call_id;
     std::function<std::string()> active_call_id;
     std::function<void(const std::string& call_id)> apply_remote_ended;
