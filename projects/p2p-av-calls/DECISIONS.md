@@ -1171,3 +1171,48 @@ Topology/MediaHost, dial-book maps, delivery, port install, device mute/camera, 
 
 ---
 
+## V048 — Hop planner vocabulary (no Lifecycle concepts downward)
+
+**Date:** 2026-09-18  
+**Status:** Accepted — design; code follow-up tracked in [PHASES.md](PHASES.md#ha--hop-arming-vocabulary-v048)  
+**Decision:** `CallStack` is the composition root. Sibling products (`CallLifecycle`, `CallTopologyController`, `CallMediaBridge`, `CallMediaSeat`, …) must not embed **codes, calls, or concepts** from a higher product into a lower one. Ports that still smuggle the parent’s domain model (enums, status writers named for chrome) are upward coupling — removing `CallLifecycle*` alone ([V046](#v046--calltopologycontroller-independence)) is not enough.
+
+### Hierarchy (knowledge arrows)
+
+```text
+CallStack
+  ├── CallLifecycle          (chrome State + CallMediaStatus arming — high)
+  ├── CallSessionManager
+  │     └── CallTopologyController → CallHopMigrateWorkflow  (hop planner — peer product)
+  ├── CallMediaBridge        (direct planner)
+  └── CallMediaSeat
+```
+
+Ownership stays flat under Stack. **Dependency of meaning** points downward or sideways via narrow capability ports; never upward.
+
+### What Topology needs (Lifecycle-free)
+
+| Need | Topology view | Not |
+|------|---------------|-----|
+| Arming / admission | “May hop ops run for this call?” | `CallMediaStatus` / `AllowsHopPath` naming |
+| Epoch / cancel | “Is this SoftMigrate/attach generation still valid?” | Owning leave/cancel product policy |
+| Progress out | Hop-native phase (Waiting / Attaching / Live / Migrating / Stopped) or reuse `CallHopPlannerPhase` | `set_media_status(CallMediaStatus, …)` |
+| Seat bind | Exclusive duplex / path token (seat ports) | Lifecycle `CallPhase` |
+
+### Rules
+
+1. **Lower peers export needs and events; Stack projects them upward.** Topology reports hop progress; Stack adapter maps to Lifecycle Status / chrome. Prefer “Lifecycle observes Topology” over “Topology drives Lifecycle.”
+2. **No `CallMediaStatus` / `CallLifecycleTypes` in Topology or `CallHopMigrateWorkflow` headers** after the follow-up pass. Replace `CallTopologyLifecyclePorts` with hop-native arming ports (e.g. `hop_ops_allowed`, `media_cancel_gen`, `on_hop_progress`).
+3. **Hop planner `Apply` / phase is source of truth for hop progress**; Lifecycle Status is arming + chrome projection — avoid dual writers of the same story.
+4. **Same principle applies later to Bridge** (still holds `CallLifecycle*` today) — not in this ADR’s code scope.
+
+### Non-goals (this ADR)
+
+- Implementing the port rename / adapter map (see phase **ha**).
+- Moving hop race clusters into Lifecycle.
+- Making Topology a child of Lifecycle in the ownership tree.
+
+**Cross-link:** [V037](#v037--calllifecycle-state--status-one-planner-armed); [V039](#v039--call-directhop-planner-machines); [V046](#v046--calltopologycontroller-independence); [CALLS.md](../../docs/architecture/CALLS.md#calltopologycontroller-v046v047).
+
+---
+

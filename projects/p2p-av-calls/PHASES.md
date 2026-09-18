@@ -250,6 +250,18 @@ Drop Topology friend + private poke — [V047](DECISIONS.md#v047--callhopmigrate
 **Non-goals:** Peer dial-book merge; Bridge facet ports.  
 **Exit:** topology unit + inbound compose gtests green.
 
+## ha — Hop arming vocabulary (V048)
+
+Topology/Workflow speak hop-native arming + progress only — no Lifecycle enums downward. Design: [V048](DECISIONS.md#v048--hop-planner-vocabulary-no-lifecycle-concepts-downward).
+
+- [x] ha0 — ADR + CALLS.md vocabulary note
+- [ ] ha1 — Replace `CallTopologyLifecyclePorts` with hop-native arming / progress ports; Stack adapter maps to Lifecycle Status
+- [ ] ha2 — Drop `CallMediaStatus` / Lifecycle status reads from Topology + `CallHopMigrateWorkflow`; prefer single hop `Apply`/progress path
+- [ ] ha3 — Bridge Lifecycle pointer → ports (same principle; optional same PR or follow-on)
+
+**Non-goals:** Ownership-tree change (Topology under Lifecycle); moving SoftMigrate races into Lifecycle.  
+**Exit:** topology unit + inbound/dual-stack compose gtests green; Topology/Workflow headers free of `CallLifecycleTypes` Status writers.
+
 ## Later horizons
 
 - [ ] `video_hi` / simulcast
