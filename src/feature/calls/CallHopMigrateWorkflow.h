@@ -8,10 +8,9 @@
 #include "domain/messaging/CallTypes.h"
 #include "domain/messaging/SoftMigrateLogic.h"
 #include "domain/messaging/CallMediaKeyStore.h"
-#include "feature/calls/CallTopologyHostPorts.h"
-#include "feature/calls/CallTopologyLifecyclePorts.h"
+#include "domain/people/MeshHopPolicy.h"
+#include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/CallTopologySeatPorts.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -30,9 +29,103 @@
 namespace pbr {
 
 /**
+ * SoftMigrate / attach host side effects — CallHopMigrateWorkflow consumer contract (V048).
+ * Subset of Topology host surface; Topology (owner) projects. Empty = no-op helpers.
+ */
+struct CallHopMigrateHostPorts {
+  std::function<Roe<std::string>()> local_relay_identity;
+  std::function<Roe<void>(const std::string& call_id, CallControlType type, const std::string& detail_json,
+                          const std::string& display, const std::string& skip_identity)>
+      fan_out_joined;
+  std::function<void()> notify_ring_changed;
+  std::function<void(std::string message)> set_last_media_error;
+  std::function<void(std::string message)> set_media_activity;
+  std::function<void()> clear_media_activity;
+  std::function<void(const std::string& call_id)> note_media_attempted;
+  std::function<void(const std::string& call_id)> bind_media_call_id;
+  std::function<void()> clear_media_peer_identity;
+  std::function<void()> release_direct_media;
+  std::function<void()> request_inbox_sync;
+
+  bool IsBound() const { return static_cast<bool>(local_relay_identity); }
+
+  void ClearMediaActivity() const {
+    if (clear_media_activity) {
+      clear_media_activity();
+    }
+  }
+  void NotifyRingChanged() const {
+    if (notify_ring_changed) {
+      notify_ring_changed();
+    }
+  }
+  void ClearMediaPeerIdentity() const {
+    if (clear_media_peer_identity) {
+      clear_media_peer_identity();
+    }
+  }
+  void ReleaseDirectMedia() const {
+    if (release_direct_media) {
+      release_direct_media();
+    }
+  }
+  void RequestInboxSync() const {
+    if (request_inbox_sync) {
+      request_inbox_sync();
+    }
+  }
+  void SetMediaActivity(std::string message) const {
+    if (set_media_activity) {
+      set_media_activity(std::move(message));
+    }
+  }
+  void SetLastMediaError(std::string message) const {
+    if (set_last_media_error) {
+      set_last_media_error(std::move(message));
+    }
+  }
+};
+
+/**
+ * SoftMigrate / attach arming — CallHopMigrateWorkflow consumer contract (V048).
+ * Empty ports = permissive (unit tests). Topology (owner) projects hop arming into these.
+ */
+struct CallHopMigrateArmingPorts {
+  std::function<bool()> migrate_ops_allowed;
+  std::function<bool()> soft_migrate_may_arm;
+  std::function<uint64_t()> media_cancel_gen;
+  std::function<void(CallHopPlannerPhase phase, const std::string& call_id)> report_progress;
+  std::function<const char*()> arming_debug_name;
+
+  bool IsBound() const { return static_cast<bool>(migrate_ops_allowed); }
+};
+
+/**
+ * MediaSeat façade for SoftMigrate / Attach (V047/V048).
+ * Subset of Topology's seat surface — only ops the migrate executor calls.
+ */
+struct CallHopMigrateSeatPorts {
+  std::function<bool(const std::string& call_id)> is_bound;
+  std::function<CallMediaSeat::Token(const std::string& call_id)> acquire;
+  std::function<bool(const CallMediaSeat::Token& token)> allows_path_op;
+  std::function<CallMediaSeat::AttachBeginResult(const std::string& call_id, const std::string& hop,
+                                                 CallMediaSeat::AttachTicket* ticket)>
+      begin_attach;
+  std::function<void(const std::string& call_id, const std::string& hop)> end_attach_if_matching;
+  std::function<bool()> has_attach_in_flight;
+  std::function<std::string()> attaching_hop;
+  std::function<void(const std::string& call_id)> note_connecting;
+  std::function<void(const std::string& call_id)> note_start;
+  std::function<void(CallMediaSeat::PathKind kind)> note_path;
+  std::function<void(const std::string& call_id)> note_live;
+
+  bool IsBound() const { return static_cast<bool>(is_bound); }
+};
+
+/**
  * SoftMigrate + SFU attach / guest reattach (V046/V047).
- * Owns race-state clusters; side effects via Host/Lifecycle/Seat ports + TopologyOps.
- * No friend access into CallTopologyController.
+ * Owns race-state clusters; side effects via Host/MigrateArming/MigrateSeat ports + TopologyOps.
+ * No friend access into CallTopologyController; does not include Topology vocabulary.
  */
 class CallHopMigrateWorkflow : public Module {
 public:
@@ -109,9 +202,9 @@ public:
 
   CallHopMigrateWorkflow(CallSessionStore& sessions, CallMediaEngine& media);
 
-  void SetHostPorts(CallTopologyHostPorts ports);
-  void SetLifecyclePorts(CallTopologyLifecyclePorts ports);
-  void SetSeatPorts(CallTopologySeatPorts ports);
+  void SetHostPorts(CallHopMigrateHostPorts ports);
+  void SetArmingPorts(CallHopMigrateArmingPorts ports);
+  void SetSeatPorts(CallHopMigrateSeatPorts ports);
   void SetTopologyOps(TopologyOps ops);
   void SetMediaRelayDeps(CallTopologyMediaRelayDeps* deps);
   void SetMediaKeyStore(CallMediaKeyStore* keys);
@@ -158,9 +251,9 @@ private:
   CallMediaEngine& media_;
   CallMediaKeyStore* media_keys_ = nullptr;
   CallTopologyMediaRelayDeps* relay_deps_ = nullptr;
-  CallTopologyHostPorts host_;
-  CallTopologyLifecyclePorts lifecycle_;
-  CallTopologySeatPorts seat_;
+  CallHopMigrateHostPorts host_;
+  CallHopMigrateArmingPorts arming_;
+  CallHopMigrateSeatPorts seat_;
   TopologyOps ops_;
   SoftMigrateFlight flight_;
   AttachWait attach_wait_;

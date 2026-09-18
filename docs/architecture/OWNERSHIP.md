@@ -1,7 +1,7 @@
 # Ownership — parent-only destroy
 
 **Tier:** architecture  
-**Related:** [RUNTIME_COMPOSITION.md](RUNTIME_COMPOSITION.md) (who owns what at the composition root), [SRC_LAYOUT.md](SRC_LAYOUT.md) (layer edges), [THREADING.md](THREADING.md) (affinity), mesh specialization [A027](../../projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy) / [AMP-CHANNEL § Ownership](../contracts/AMP-CHANNEL.md#ownership-hierarchy-a027).
+**Related:** [RUNTIME_COMPOSITION.md](RUNTIME_COMPOSITION.md) (who owns what at the composition root), [COMPOSITION_VOCABULARY.md](COMPOSITION_VOCABULARY.md) (no upward concepts through ports), [SRC_LAYOUT.md](SRC_LAYOUT.md) (layer edges), [THREADING.md](THREADING.md) (affinity), mesh specialization [A027](../../projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy) / [AMP-CHANNEL § Ownership](../contracts/AMP-CHANNEL.md#ownership-hierarchy-a027).
 
 ## Rule
 

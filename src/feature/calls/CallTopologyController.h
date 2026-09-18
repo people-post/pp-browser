@@ -11,8 +11,7 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallTopologyHostPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/CallTopologyLifecyclePorts.h"
-#include "feature/calls/CallTopologySeatPorts.h"
+#include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallHopMigrateWorkflow.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
 
@@ -22,6 +21,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -33,13 +33,51 @@
 namespace pbr {
 
 /**
+ * Hop arming / progress — Topology consumer contract (V048).
+ * Empty ports = permissive (unit tests). Owner projects into owned Workflow migrate ports.
+ */
+struct CallHopArmingPorts {
+  std::function<bool()> hop_ops_allowed;
+  std::function<bool()> soft_migrate_may_arm;
+  std::function<uint64_t()> media_cancel_gen;
+  std::function<void(CallHopPlannerPhase phase, const std::string& call_id)> report_progress;
+  std::function<const char*()> arming_debug_name;
+
+  bool IsBound() const { return static_cast<bool>(hop_ops_allowed); }
+};
+
+/**
+ * MediaSeat façade for Topology (V046) — fuller than CSM CallMediaSeatPorts /
+ * Workflow CallHopMigrateSeatPorts. Topology must not hold CallMediaSeat*.
+ */
+struct CallTopologySeatPorts {
+  std::function<bool(const std::string& call_id)> is_bound;
+  std::function<std::string()> bound_call_id;
+  std::function<CallMediaSeat::Token(const std::string& call_id)> acquire;
+  std::function<bool(const CallMediaSeat::Token& token)> allows_path_op;
+  std::function<CallMediaSeat::AttachBeginResult(const std::string& call_id, const std::string& hop,
+                                                 CallMediaSeat::AttachTicket* ticket)>
+      begin_attach;
+  std::function<void(const std::string& call_id, const std::string& hop)> end_attach_if_matching;
+  std::function<bool()> has_attach_in_flight;
+  std::function<std::string()> attaching_hop;
+  std::function<void(const std::string& call_id)> note_connecting;
+  std::function<void(const std::string& call_id)> note_start;
+  std::function<void(CallMediaSeat::PathKind kind)> note_path;
+  std::function<void(const std::string& call_id)> note_live;
+  std::function<void(const std::string& call_id)> cancel_attach_for_call;
+
+  bool IsBound() const { return static_cast<bool>(is_bound); }
+};
+
+/**
  * SFU soft-migrate / attach-wait / hop pick (V021 + V025) — V036 Phase 3 **Hop path** plugin
  * under CallMediaSeat. Pure who-picks / wait / fan-out live in base SoftMigrateLogic /
  * SfuAttachWaitLogic / SfuAttachFanout; this adapter owns IO + AppRuntime posting.
  * Attach StartSfu requires a seat token when the seat is wired.
  *
  * SoftMigrate race clusters live on CallHopMigrateWorkflow (V047); this type keeps refs +
- * Host/Lifecycle/Seat ports for Topology-local control paths.
+ * Host/HopArming/Seat ports for Topology-local control paths.
  */
 class CallTopologyController : public Module {
 public:
@@ -54,8 +92,8 @@ public:
   void SetMediaKeyStore(CallMediaKeyStore* keys);
   /** V046 exclusive media bind / epoch via ports. */
   void SetSeatPorts(CallTopologySeatPorts ports);
-  /** V046 Status arming — empty ports = permissive (unit tests). */
-  void SetLifecyclePorts(CallTopologyLifecyclePorts ports);
+  /** V048 hop arming / progress — empty ports = permissive (unit tests). */
+  void SetHopArmingPorts(CallHopArmingPorts ports);
 
   bool IsAwaitingSfuRecovery() const;
   bool IsSfuAttached() const;
@@ -140,10 +178,13 @@ public:
 
   /** V039 Hop planner Apply. */
   void Apply(CallHopPlannerEvent ev, const std::string& call_id = {});
-  CallHopPlannerPhase HopPlannerPhase() const { return sfu_.hop_planner_phase; }
+  CallHopPlannerPhase HopPlannerPhase() const;
 
 private:
   void BindHopMigratePortsAndOps();
+  CallHopMigrateHostPorts MakeMigrateHostPorts(const HostPorts& ports) const;
+  CallHopMigrateArmingPorts MakeMigrateArmingPorts(const CallHopArmingPorts& ports) const;
+  CallHopMigrateSeatPorts MakeMigrateSeatPorts(const CallTopologySeatPorts& ports) const;
   void ReportSfuAttachFailedToInitiator(const std::string& call_id, const std::string& failed_hop,
                                         const std::string& error);
   void RefuseGuestNoSharedHop(const std::string& call_id, const std::string& guest_identity);
@@ -163,6 +204,7 @@ private:
   void FlushPendingInboundSfuAttach();
   void SubscribePublisherStream(uint32_t stream_id);
   void SetHopPlannerPhase(CallHopPlannerPhase next, CallHopPlannerEvent ev, const std::string& call_id);
+  void ReportHopProgress(CallHopPlannerPhase phase, const std::string& call_id);
   CallHopPlannerApplyContext BuildHopPlannerContext(const std::string& call_id, size_t effective_n,
                                                     bool has_sfu_hint) const;
   void ArmAttachWaitTimer(const std::string& call_id, int64_t deadline_ms);
@@ -210,7 +252,7 @@ private:
   CallMediaEngine& media_;
   CallMediaKeyStore* media_keys_ = nullptr;
   CallTopologySeatPorts seat_;
-  CallTopologyLifecyclePorts lifecycle_;
+  CallHopArmingPorts arming_;
   MediaRelayDeps relay_deps_;
 };
 

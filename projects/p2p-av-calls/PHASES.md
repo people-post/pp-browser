@@ -250,6 +250,24 @@ Drop Topology friend + private poke — [V047](DECISIONS.md#v047--callhopmigrate
 **Non-goals:** Peer dial-book merge; Bridge facet ports.  
 **Exit:** topology unit + inbound compose gtests green.
 
+## ha — Hop arming vocabulary (V048 first application)
+
+Apply the repo-wide [composition vocabulary](../../docs/architecture/COMPOSITION_VOCABULARY.md) guideline ([V048](DECISIONS.md#v048--composition-vocabulary-no-upward-concepts)) to Topology/Workflow first (Lifecycle enums must not appear downward).
+
+- [x] ha0 — ADR (project guideline) + COMPOSITION_VOCABULARY.md + CALLS.md note
+- [x] ha1 — Replace `CallTopologyLifecyclePorts` with hop-native arming / progress ports; Stack adapter maps to Lifecycle Status
+- [x] ha2 — Drop `CallMediaStatus` / Lifecycle status reads from Topology + `CallHopMigrateWorkflow`; prefer single hop `Apply`/progress path
+- [x] ha3 — Bridge Lifecycle pointer → `CallDirectArmingPorts` (same guideline)
+- [x] ha4 — Port structs on consumer headers; `Make*` private on CallStack / CSM; delete free `*Ports.{h,cpp}`
+- [x] ha5 — Workflow owns migrate arming/seat ports; Topology projects (no Topology include in Workflow)
+- [x] ha6 — Bridge Direct seat ports; Workflow migrate host ports; SessionWorkflow HostPorts vocabulary trim
+- [x] ha7 — SessionWorkflow HostPorts nested clusters (wire/duplex/hop/chrome/reach); Lifecycle signaling ports on CallLifecycle.h
+- [x] ha8 — Topology value-owns Workflow + cluster refs; CallDirectPath ops (no Bridge*); CallHopPath seat-only
+- [x] ha9 — CallDirectPath / CallHopPath Ops-only (no CallMediaSeat*); Stack/CSM project seat into Ops
+
+**Non-goals:** Ownership-tree change (Topology under Lifecycle); moving SoftMigrate races into Lifecycle; rewriting every non-calls debt site in this phase.  
+**Exit:** topology unit + inbound/dual-stack compose gtests green; Topology/Workflow headers free of `CallLifecycleTypes` Status writers.
+
 ## Later horizons
 
 - [ ] `video_hi` / simulcast

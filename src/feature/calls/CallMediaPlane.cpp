@@ -168,12 +168,6 @@ void CallMediaPlane::BindBridge(const CallMediaBridgeBindArgs& args) {
   } else {
     call_media_bridge_->SetReachDeps(dial, circuit_hop_reach_.get());
   }
-  if (args.seat) {
-    call_media_bridge_->SetMediaSeat(args.seat);
-  }
-  if (args.lifecycle) {
-    call_media_bridge_->SetLifecycle(args.lifecycle);
-  }
   call_media_bridge_->SetSeedWarm([this]() { WarmBootstrapSeedSessions(); });
   call_media_bridge_->SetSeedReserve([this]() { ReserveOnBootstrapSeeds(); });
 }

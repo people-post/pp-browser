@@ -10,6 +10,7 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "feature/calls/CallDeliveryPorts.h"
+#include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaPlane.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallLifecycle.h"
@@ -132,6 +133,12 @@ private:
   void BindMediaProducts();
   void BindSeatTeardown();
   CallLifecycleSignalingPorts MakeLifecycleSignalingPorts();
+  CallHopArmingPorts MakeHopArmingPorts() const;
+  CallDirectArmingPorts MakeDirectArmingPorts() const;
+  CallSessionLifecyclePorts MakeSessionLifecyclePorts() const;
+  CallDirectMediaPorts MakeDirectMediaPorts() const;
+  CallDirectSeatPorts MakeDirectSeatPorts() const;
+  CallTopologySeatPorts MakeTopologySeatPorts() const;
 
   CallStackDeps deps_;
   std::unique_ptr<CallSessionStore> call_session_store_;

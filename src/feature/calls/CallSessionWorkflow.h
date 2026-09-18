@@ -22,15 +22,15 @@ namespace pbr {
 
 /**
  * Durable session / roster / invite-leave workflow (V044).
- * Owns store mutations + CallSessionLogic transitions. Side effects (wire, topology,
- * Direct/Lifecycle kicks) via HostPorts from CallSessionManager — not a second chrome SM.
+ * Owns store mutations + CallSessionLogic transitions. Side effects via HostPorts from
+ * CallSessionManager — not a second chrome SM. Nested clusters speak session needs (V048).
  */
 class CallSessionWorkflow : public Module {
 public:
-  struct HostPorts {
+  /** Delivery / roster wire + chrome activity banners. */
+  struct WirePorts {
     std::function<Roe<std::string>()> local_relay_identity;
     std::function<void()> notify_ring_changed;
-
     std::function<Roe<void>(const std::string& peer, CallControlType type, const std::string& detail,
                             const std::string& display)>
         send_direct;
@@ -44,18 +44,27 @@ public:
                             const std::string& detail)>
         append_origin_history;
     std::function<Roe<CallRosterDetail>(const std::string& call_id)> build_roster_detail;
+    std::function<void()> sync_inbox_from_wake;
+    std::function<void()> clear_media_activity;
 
+    bool IsBound() const { return static_cast<bool>(local_relay_identity); }
+  };
+
+  /** Duplex start/stop + engine queries the session workflow needs. */
+  struct DuplexPorts {
     std::function<void(const std::string& call_id)> stop_media_if_call;
     std::function<void(const std::string& call_id, const std::string& peer, bool offerer)>
         schedule_start_direct;
     std::function<void(const std::string& call_id)> on_media_key_ready;
-
     std::function<bool()> media_is_active;
     std::function<bool()> media_is_sfu_mode;
     std::function<std::string()> media_active_call_id;
     std::function<void()> media_request_keyframe;
     std::function<void()> media_stop;
+  };
 
+  /** Hop-path / SFU attach outcomes observed by durable session. */
+  struct HopPathPorts {
     std::function<bool(const std::string& call_id, size_t planner_n,
                        const std::optional<std::string>& sfu_hint)>
         on_local_accept_joined;
@@ -66,18 +75,21 @@ public:
     std::function<Roe<void>(const std::string& call_id, const CallSfuAttachDetail&)> on_inbound_sfu_attach;
     std::function<void(const CallSfuAttachFailedDetail&)> on_inbound_sfu_attach_failed;
     std::function<void(const CallHopRefuseDetail&)> on_inbound_hop_refuse;
-    std::function<bool(const std::string& call_id)> topology_is_on_sfu_for_call;
-    std::function<bool()> topology_has_media_relay_hop_candidates;
+    std::function<bool(const std::string& call_id)> is_on_sfu_for_call;
+    std::function<bool()> has_media_relay_hop_candidates;
+  };
 
-    std::function<void()> clear_media_activity;
-    std::function<void()> sync_inbox_from_wake;
-
-    std::function<void(const std::string& call_id)> set_direct_connecting;
+  /** Session chrome / arming observations (projected from Lifecycle by CSM). */
+  struct ChromePorts {
+    std::function<void(const std::string& call_id)> note_direct_connecting;
     std::function<std::string()> accepting_call_id;
     std::function<std::string()> active_call_id;
     std::function<void(const std::string& call_id)> apply_remote_ended;
     std::function<bool()> is_outbound_calling;
+  };
 
+  /** Peer reach, caps, listen addrs, media-key send. */
+  struct ReachPorts {
     std::function<void(const std::string& identity, const std::vector<std::string>&)> register_peer_listen;
     std::function<void(const std::string& identity, const CallPeerCaps& caps,
                        const std::vector<std::string>& listen)>
@@ -88,12 +100,19 @@ public:
     std::function<Roe<void>(const std::string& call_id, const std::string& peer, uint32_t epoch,
                             const std::string& key_id, const ByteVector& key)>
         send_media_key;
-
     std::function<std::vector<std::string>()> local_listen_multiaddrs;
     std::function<CallPeerCaps()> local_peer_caps;
     std::function<std::string()> local_mesh_peer_id;
+  };
 
-    bool IsBound() const { return static_cast<bool>(local_relay_identity); }
+  struct HostPorts {
+    WirePorts wire;
+    DuplexPorts duplex;
+    HopPathPorts hop;
+    ChromePorts chrome;
+    ReachPorts reach;
+
+    bool IsBound() const { return wire.IsBound(); }
   };
 
   CallSessionWorkflow(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,

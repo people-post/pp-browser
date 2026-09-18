@@ -97,15 +97,15 @@ CallHopMigrateWorkflow::CallHopMigrateWorkflow(CallSessionStore& sessions, CallM
   redirectLogger("CallHopMigrateWorkflow");
 }
 
-void CallHopMigrateWorkflow::SetHostPorts(CallTopologyHostPorts ports) {
+void CallHopMigrateWorkflow::SetHostPorts(CallHopMigrateHostPorts ports) {
   host_ = std::move(ports);
 }
 
-void CallHopMigrateWorkflow::SetLifecyclePorts(CallTopologyLifecyclePorts ports) {
-  lifecycle_ = std::move(ports);
+void CallHopMigrateWorkflow::SetArmingPorts(CallHopMigrateArmingPorts ports) {
+  arming_ = std::move(ports);
 }
 
-void CallHopMigrateWorkflow::SetSeatPorts(CallTopologySeatPorts ports) {
+void CallHopMigrateWorkflow::SetSeatPorts(CallHopMigrateSeatPorts ports) {
   seat_ = std::move(ports);
 }
 
@@ -154,11 +154,10 @@ void CallHopMigrateWorkflow::MaybeSoftMigrateToSfuAsync(const std::string& call_
     on_done(Error("shutdown in progress"));
     return;
   }
-  // V037: SoftMigrate from Direct* enters Migrating only when N≥3 (or IceRecover / prefer re-pick).
+  // V037/V048: SoftMigrate from Direct* enters Migrating only when N≥3 (or IceRecover / prefer).
   // Relay-cap nudge used expected_gen=0 and promoted 1:1 DirectConnecting → Migrating PreferLocal
   // while the peer stayed on circuit — dogfood "Connecting group media…" vs Connecting.
-  if (lifecycle_.IsBound()) {
-    const auto st = lifecycle_.status();
+  if (arming_.IsBound()) {
     size_t n_joined = 0;
     if (auto joined = sessions_.CountJoined(call_id)) {
       n_joined = *joined;
@@ -166,24 +165,24 @@ void CallHopMigrateWorkflow::MaybeSoftMigrateToSfuAsync(const std::string& call_
     const bool n_requires_hop = CallMediaTopology::ShouldUseMediaRelay(n_joined);
     const bool ice_or_prefer =
         trigger == SoftMigrateTrigger::IceRecover || !prefer_hop_peer_id.empty();
-    if (!n_requires_hop && !ice_or_prefer &&
-        (st == CallMediaStatus::DirectLive || st == CallMediaStatus::DirectConnecting ||
-         st == CallMediaStatus::DegradedTxOnly || st == CallMediaStatus::Deciding ||
-         st == CallMediaStatus::None)) {
+    const bool may_arm = arming_.soft_migrate_may_arm && arming_.soft_migrate_may_arm();
+    const bool hop_armed = arming_.migrate_ops_allowed && arming_.migrate_ops_allowed();
+    if (!n_requires_hop && !ice_or_prefer && may_arm) {
       log().info << "MaybeSoftMigrateToSfuAsync skipped (1:1 stay Direct) call_id=" << call_id
-                 << " n_joined=" << n_joined << " status=" << CallMediaStatusName(st)
+                 << " n_joined=" << n_joined
+                 << " arming=" << (arming_.arming_debug_name ? arming_.arming_debug_name() : "?")
                  << " trigger=" << static_cast<int>(trigger);
       on_done(Roe<void>());
       return;
     }
-    if (st == CallMediaStatus::DirectLive || st == CallMediaStatus::DirectConnecting ||
-        st == CallMediaStatus::DegradedTxOnly || st == CallMediaStatus::Deciding ||
-        st == CallMediaStatus::None) {
+    if (may_arm) {
       ops_.apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
-      lifecycle_.set_media_status(CallMediaStatus::Migrating, call_id);
-    } else if (!lifecycle_.allows_hop_path()) {
-      log().info << "MaybeSoftMigrateToSfuAsync skipped (Status disallows Hop) call_id=" << call_id
-                 << " status=" << CallMediaStatusName(st);
+      if (arming_.report_progress) {
+        arming_.report_progress(CallHopPlannerPhase::Migrating, call_id);
+      }
+    } else if (!hop_armed) {
+      log().info << "MaybeSoftMigrateToSfuAsync skipped (hop not armed) call_id=" << call_id
+                 << " arming=" << (arming_.arming_debug_name ? arming_.arming_debug_name() : "?");
       on_done(Error("hop path not armed"));
       return;
     }
@@ -590,16 +589,17 @@ Roe<void> CallHopMigrateWorkflow::CompleteAttachLocalToSfu(
       return Error("media seat token rejected for hop path");
     }
   }
-  // V037: Status must arm Topology; cancel gen must still match Deciding/Leave bumps.
-  if (lifecycle_.IsBound() && !lifecycle_.allows_hop_path()) {
-    log().info << "AttachLocalToSfu aborted (Status disallows Hop) call_id=" << call_id
-               << " status=" << lifecycle_.status_name();
+  // V048: hop must be armed; cancel gen must still match Deciding/Leave bumps.
+  if (arming_.IsBound() && arming_.migrate_ops_allowed && !arming_.migrate_ops_allowed()) {
+    log().info << "AttachLocalToSfu aborted (hop not armed) call_id=" << call_id
+               << " arming=" << (arming_.arming_debug_name ? arming_.arming_debug_name() : "?");
     relay_deps_->relay->Detach();
     return Error("attach aborted");
   }
-  if (lifecycle_.IsBound() && lifecycle_.media_cancel_gen() != cancel_gen_at_start) {
+  if (arming_.IsBound() && arming_.media_cancel_gen &&
+      arming_.media_cancel_gen() != cancel_gen_at_start) {
     log().info << "AttachLocalToSfu aborted (media_cancel_gen moved) call_id=" << call_id
-               << " want=" << cancel_gen_at_start << " have=" << lifecycle_.media_cancel_gen();
+               << " want=" << cancel_gen_at_start << " have=" << arming_.media_cancel_gen();
     relay_deps_->relay->Detach();
     return Error("attach aborted");
   }
@@ -661,9 +661,9 @@ Roe<void> CallHopMigrateWorkflow::CompleteAttachLocalToSfu(
       seat_.note_live(call_id);
       seat_.end_attach_if_matching(call_id, attach.hop_peer_id);
     }
-    if (lifecycle_.IsBound()) {
-      ops_.apply(CallHopPlannerEvent::AttachSucceeded, call_id);
-      lifecycle_.set_media_status(CallMediaStatus::HopLive, call_id);
+    ops_.apply(CallHopPlannerEvent::AttachSucceeded, call_id);
+    if (arming_.report_progress) {
+      arming_.report_progress(CallHopPlannerPhase::Live, call_id);
     }
     log().info << "AttachLocalToSfu done call_id=" << call_id << " hop=" << attach.hop_peer_id;
     return {};
@@ -679,20 +679,22 @@ Roe<void> CallHopMigrateWorkflow::CompleteAttachLocalToSfu(
   // Dogfood 1cee3df4: zombie AcceptAndAttach (gen 85→169 across Leave cycles) still StartSfu'd
   // onto a fresh 1:1 — brief media_relay audio then chrome flipped to "direct" / silence.
   // Stampede (duplicate CallSfuAttach) still owns attaching_hop or flight_.flight_gen.
-  // V037: Status is authority — never StartSfu when Direct* even if migrate gen "owns flight".
-  if (lifecycle_.IsBound() && !lifecycle_.allows_hop_path()) {
-    log().info << "AttachLocalToSfu abort StartSfu (Status disallows Hop before StartSfu) call_id="
-               << call_id << " status=" << lifecycle_.status_name();
+  // V048: hop arming is authority — never StartSfu when Direct* even if migrate gen "owns flight".
+  if (arming_.IsBound() && arming_.migrate_ops_allowed && !arming_.migrate_ops_allowed()) {
+    log().info << "AttachLocalToSfu abort StartSfu (hop not armed before StartSfu) call_id="
+               << call_id
+               << " arming=" << (arming_.arming_debug_name ? arming_.arming_debug_name() : "?");
     relay_deps_->relay->Detach();
     if (seat_.IsBound()) {
       seat_.end_attach_if_matching(call_id, attach.hop_peer_id);
     }
     return Error("attach aborted");
   }
-  if (lifecycle_.IsBound() && lifecycle_.media_cancel_gen() != cancel_gen_at_start) {
+  if (arming_.IsBound() && arming_.media_cancel_gen &&
+      arming_.media_cancel_gen() != cancel_gen_at_start) {
     log().info << "AttachLocalToSfu abort StartSfu (media_cancel_gen moved before StartSfu) call_id="
                << call_id << " want=" << cancel_gen_at_start
-               << " have=" << lifecycle_.media_cancel_gen();
+               << " have=" << arming_.media_cancel_gen();
     relay_deps_->relay->Detach();
     if (seat_.IsBound()) {
       seat_.end_attach_if_matching(call_id, attach.hop_peer_id);
@@ -805,9 +807,9 @@ Roe<void> CallHopMigrateWorkflow::CompleteAttachLocalToSfu(
     seat_.note_live(call_id);
     seat_.end_attach_if_matching(call_id, attach.hop_peer_id);
   }
-  if (lifecycle_.IsBound()) {
-    ops_.apply(CallHopPlannerEvent::AttachSucceeded, call_id);
-    lifecycle_.set_media_status(CallMediaStatus::HopLive, call_id);
+  ops_.apply(CallHopPlannerEvent::AttachSucceeded, call_id);
+  if (arming_.report_progress) {
+    arming_.report_progress(CallHopPlannerPhase::Live, call_id);
   }
   host_.ReleaseDirectMedia();
   host_.ClearMediaActivity();
@@ -843,7 +845,9 @@ void CallHopMigrateWorkflow::AttachLocalToSfuAsync(const std::string& call_id,
     return;
   }
   const uint64_t gen_at_start = flight_.migrate_generation.load(std::memory_order_acquire);
-  const uint64_t cancel_gen_at_start = lifecycle_.IsBound() ? lifecycle_.media_cancel_gen() : 0;
+  const uint64_t cancel_gen_at_start = arming_.IsBound() && arming_.media_cancel_gen
+                                           ? arming_.media_cancel_gen()
+                                           : 0;
   if (!relay_deps_ || !relay_deps_->relay || !relay_deps_->dial) {
     on_done(Error("media_relay not available"));
     return;

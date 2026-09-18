@@ -3,7 +3,6 @@
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
-#include "feature/calls/CallLifecycle.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "domain/messaging/CallDirectPlannerLogic.h"
@@ -20,6 +19,41 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+/**
+ * Direct arming / outcomes — CallMediaBridge consumer contract (V048).
+ * Empty ports = permissive (unit tests).
+ */
+struct CallDirectArmingPorts {
+  std::function<bool()> direct_ops_allowed;
+  std::function<void(const std::string& call_id)> request_direct_arming;
+  std::function<void(CallDirectPlannerPhase phase, const std::string& call_id)> report_progress;
+  std::function<void(const std::string& call_id)> on_connected;
+  std::function<void(const std::string& call_id)> on_connect_failed;
+  std::function<void(const std::string& call_id)> on_media_deferred;
+  std::function<void(const std::string& call_id)> on_media_key_ready;
+  std::function<const char*()> arming_debug_name;
+
+  bool IsBound() const { return static_cast<bool>(direct_ops_allowed); }
+};
+
+/**
+ * MediaSeat façade for Direct path (V048 Bridge facet).
+ * Bridge must not hold CallMediaSeat* — Stack projects.
+ */
+struct CallDirectSeatPorts {
+  std::function<CallMediaSeat::Token(const std::string& call_id)> acquire;
+  std::function<bool(const CallMediaSeat::Token& token)> allows_path_op;
+  std::function<CallMediaSeat::Token()> current_token;
+  std::function<std::string()> bound_call_id;
+  std::function<void(const std::string& call_id)> note_connecting;
+  std::function<void(const std::string& call_id)> note_start;
+  std::function<void(CallMediaSeat::PathKind kind)> note_path;
+  std::function<void(const std::string& call_id)> note_live;
+  std::function<void(const std::string& call_id)> note_failed;
+
+  bool IsBound() const { return static_cast<bool>(acquire); }
+};
 
 /**
  * 1:1 call media (m1 / V026) — V036 Phase 3 **Direct path** plugin under CallMediaSeat.
@@ -100,9 +134,9 @@ public:
   /** Answerer: park circuit reserve on org seed (CallStack::ReserveOnBootstrapSeeds). */
   void SetSeedReserve(std::function<void()> reserve);
 
-  void SetLifecycle(CallLifecycle* lifecycle);
-  /** V036 exclusive media epoch. */
-  void SetMediaSeat(CallMediaSeat* seat);
+  void SetDirectArmingPorts(CallDirectArmingPorts ports);
+  /** V036 exclusive media epoch — Stack installs; Bridge must not hold CallMediaSeat*. */
+  void SetSeatPorts(CallDirectSeatPorts ports);
 
   /** Last successful 1:1 reach mode: direct | punched | circuit (empty before connect). */
   std::string MediaPathKind() const;
@@ -156,8 +190,8 @@ private:
   ICallMediaTransport& direct_;
   IDialRegistry* dial_ = nullptr;
   ICircuitHopReach* circuit_reach_ = nullptr;
-  CallLifecycle* lifecycle_ = nullptr;
-  CallMediaSeat* media_seat_ = nullptr;
+  CallDirectArmingPorts arming_;
+  CallDirectSeatPorts seat_;
   std::function<void()> seed_warm_;
   std::function<void()> seed_reserve_;
   /** direct | punched | circuit — set by EnsurePeerReachableAsync. */

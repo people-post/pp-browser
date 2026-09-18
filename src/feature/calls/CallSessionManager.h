@@ -17,11 +17,9 @@
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/BroadcastSessionCoordinator.h"
 #include "feature/calls/CallTopologyController.h"
-#include "feature/calls/CallDirectMediaPorts.h"
-#include "feature/calls/CallSessionLifecyclePorts.h"
-#include "feature/calls/CallMediaSeatPorts.h"
 #include "feature/calls/CallSessionWorkflow.h"
 
+#include "common/Error.h"
 #include "common/Module.h"
 
 #include <functional>
@@ -33,11 +31,65 @@
 
 namespace pbr {
 
+class CallMediaBridge;
+
+/**
+ * Direct media façade for CallSessionManager (V042).
+ * CSM must not hold CallMediaBridge* — ops copy these functions.
+ */
+struct CallDirectMediaPorts {
+  std::function<void(const std::string& call_id, const std::string& peer_identity, bool offerer)>
+      schedule_start;
+  std::function<std::string()> media_path_kind;
+  std::function<void(const std::string& peer_id, const std::string& relay_identity)>
+      note_peer_id_relay_mapping;
+  std::function<void(const std::string& call_id)> stop_mesh_media;
+  std::function<bool()> is_connect_failed;
+  std::function<bool()> connect_missing_mic;
+  std::function<void()> poll_connect_health;
+  std::function<Roe<void>(const std::string& call_id)> retry_mesh_media;
+  std::function<bool(const std::string& call_id)> media_attempted;
+  std::function<void(const std::string& call_id)> note_media_attempted;
+  std::function<void()> release_direct_transport;
+  std::function<void(const std::string& call_id)> on_media_key_ready;
+
+  bool IsBound() const { return static_cast<bool>(schedule_start); }
+};
+
+/**
+ * Lifecycle façade for CallSessionManager (V043).
+ * CSM must not hold CallLifecycle* — ops copy these functions.
+ */
+struct CallSessionLifecyclePorts {
+  std::function<bool()> allows_direct_path;
+  std::function<const char*()> status_name;
+  std::function<const char*()> armed_planner_name;
+  std::function<void(const std::string& call_id)> set_direct_connecting;
+  std::function<std::string()> accepting_call_id;
+  std::function<std::string()> active_call_id;
+  std::function<void(const std::string& call_id)> apply_remote_ended;
+  std::function<bool()> is_outbound_calling;
+
+  bool IsBound() const { return static_cast<bool>(allows_direct_path); }
+};
+
+/**
+ * MediaSeat façade for CallSessionManager (V043).
+ * CSM must not hold CallMediaSeat* — ops copy these functions.
+ */
+struct CallMediaSeatPorts {
+  std::function<void(const std::string& call_id)> release;
+  std::function<void(const std::string& call_id)> bind_hop_for_attach;
+
+  bool IsBound() const { return static_cast<bool>(release); }
+};
+
 /**
  * Call session lifecycle façade (a2 / V014 / a4) — V036 Phase 3 **signaling** owner.
  * Duplex start/stop go through CallMediaSeat + CallDirectPath / CallHopPath; do not call
  * CallMediaBridge::StopMeshMedia or engine StartSfu from here when a seat is wired.
  * Topology + mesh media live in CallTopologyController / CallMediaBridge (path plugins).
+ * Path façades take Ops only — no standing CallMediaBridge* / CallMediaSeat* (V048).
  */
 class CallSessionManager : public Module, private CallMediaHost {
 public:
@@ -80,8 +132,8 @@ public:
   void SetDirectMediaPorts(CallDirectMediaPorts ports);
   /** Lifecycle ops (V043) — Stack installs; CSM must not hold CallLifecycle*. */
   void SetLifecyclePorts(CallSessionLifecyclePorts ports);
-  /** Topology Lifecycle ports (V046) — Stack installs; Topology must not hold CallLifecycle*. */
-  void SetTopologyLifecyclePorts(CallTopologyLifecyclePorts ports);
+  /** Topology hop arming ports (V048) — Stack installs; Topology must not hold CallLifecycle*. */
+  void SetTopologyHopArmingPorts(CallHopArmingPorts ports);
   /** Seat ops (V043) — Stack installs; CSM must not hold CallMediaSeat*. */
   void SetMediaSeatPorts(CallMediaSeatPorts ports);
   /** Topology Seat ports (V046) — Stack installs; Topology must not hold CallMediaSeat*. */

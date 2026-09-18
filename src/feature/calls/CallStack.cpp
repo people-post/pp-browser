@@ -9,11 +9,9 @@
 #include "domain/mesh/host/MeshControlDispatch.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/mesh/reachability/Reachability.h"
-#include "feature/calls/CallLifecyclePorts.h"
-#include "feature/calls/CallDirectMediaPorts.h"
-#include "feature/calls/CallSessionLifecyclePorts.h"
-#include "feature/calls/CallTopologyLifecyclePorts.h"
-#include "feature/calls/CallTopologySeatPorts.h"
+#include "feature/calls/CallMediaBridge.h"
+#include "feature/calls/CallMediaPaths.h"
+#include "domain/messaging/CallLifecycleTypes.h"
 
 #include <functional>
 #include <optional>
@@ -77,20 +75,24 @@ void CallStack::BindMediaProducts() {
   args.session_store = call_session_store_.get();
   args.media_keys = call_media_keys_.get();
   args.media_engine = call_media_engine_.get();
-  args.seat = call_media_seat_.get();
-  args.lifecycle = call_lifecycle_.get();
   args.sessions_key = call_sessions_.get();
   media_plane_->BindBridge(args);
   call_sessions_->SetMediaRelayDeps(media_plane_->BuildMediaRelayDeps());
   call_sessions_->SetDirectMediaPorts(
-      MakeCallDirectMediaPorts(media_plane_->Bridge(), call_media_seat_.get()));
+      MakeDirectMediaPorts());
   if (call_media_seat_) {
-    call_sessions_->SetTopologySeatPorts(MakeCallTopologySeatPorts(call_media_seat_.get()));
+    call_sessions_->SetTopologySeatPorts(MakeTopologySeatPorts());
     call_sessions_->SetMediaSeatPorts(call_sessions_->MakeSeatPorts(call_media_seat_.get()));
   }
   if (call_lifecycle_) {
-    call_sessions_->SetTopologyLifecyclePorts(MakeCallTopologyLifecyclePorts(call_lifecycle_.get()));
-    call_sessions_->SetLifecyclePorts(MakeCallSessionLifecyclePorts(call_lifecycle_.get()));
+    call_sessions_->SetTopologyHopArmingPorts(MakeHopArmingPorts());
+    call_sessions_->SetLifecyclePorts(MakeSessionLifecyclePorts());
+    if (CallMediaBridge* bridge = media_plane_->Bridge()) {
+      bridge->SetDirectArmingPorts(MakeDirectArmingPorts());
+    }
+  }
+  if (CallMediaBridge* bridge = media_plane_->Bridge()) {
+    bridge->SetSeatPorts(MakeDirectSeatPorts());
   }
 }
 
@@ -180,7 +182,7 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
                                                         *call_session_store_, *call_media_keys_, deps_.delivery,
                                                         *deps_.psk, *call_media_engine_);
   if (call_media_seat_) {
-    call_sessions_->SetTopologySeatPorts(MakeCallTopologySeatPorts(call_media_seat_.get()));
+    call_sessions_->SetTopologySeatPorts(MakeTopologySeatPorts());
     call_sessions_->SetMediaSeatPorts(call_sessions_->MakeSeatPorts(call_media_seat_.get()));
     BindSeatTeardown();
   }
@@ -296,11 +298,15 @@ void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_c
     call_sessions_->SetDirectMediaPorts({});
     call_sessions_->SetLifecyclePorts({});
     call_sessions_->SetMediaSeatPorts({});
-    call_sessions_->SetTopologyLifecyclePorts({});
+    call_sessions_->SetTopologyHopArmingPorts({});
     call_sessions_->SetTopologySeatPorts({});
     call_sessions_->SetMediaRelayDeps({});
   }
   if (media_plane_) {
+    if (CallMediaBridge* bridge = media_plane_->Bridge()) {
+      bridge->SetDirectArmingPorts({});
+      bridge->SetSeatPorts({});
+    }
     media_plane_->PrepareForMeshStop(abort_inflight_circuit);
   } else if (abort_inflight_circuit) {
     abort_inflight_circuit();
@@ -421,11 +427,12 @@ void CallStack::EnsureCallLifecycleBound() {
   }
   call_lifecycle_->BindSignalingPorts(MakeLifecycleSignalingPorts());
   call_lifecycle_->SetOnListenDesireChanged([this](bool want) { SetEphemeralListenDesire(want); });
-  call_sessions_->SetTopologyLifecyclePorts(MakeCallTopologyLifecyclePorts(call_lifecycle_.get()));
-  call_sessions_->SetLifecyclePorts(MakeCallSessionLifecyclePorts(call_lifecycle_.get()));
+  call_sessions_->SetTopologyHopArmingPorts(MakeHopArmingPorts());
+  call_sessions_->SetLifecyclePorts(MakeSessionLifecyclePorts());
   if (media_plane_) {
     if (CallMediaBridge* bridge = media_plane_->Bridge()) {
-      bridge->SetLifecycle(call_lifecycle_.get());
+      bridge->SetDirectArmingPorts(MakeDirectArmingPorts());
+      bridge->SetSeatPorts(MakeDirectSeatPorts());
     }
   }
 }
@@ -473,6 +480,238 @@ void CallStack::Shutdown() {
   call_media_engine_.reset();
   call_media_keys_.reset();
   call_session_store_.reset();
+}
+
+
+CallHopArmingPorts CallStack::MakeHopArmingPorts() const {
+  CallHopArmingPorts ports;
+  CallLifecycle* lifecycle = call_lifecycle_.get();
+  if (!lifecycle) {
+    return ports;
+  }
+  ports.hop_ops_allowed = [lifecycle]() { return lifecycle->AllowsHopPath(); };
+  ports.soft_migrate_may_arm = [lifecycle]() {
+    const CallMediaStatus st = lifecycle->Status();
+    return st == CallMediaStatus::DirectLive || st == CallMediaStatus::DirectConnecting ||
+           st == CallMediaStatus::DegradedTxOnly || st == CallMediaStatus::Deciding ||
+           st == CallMediaStatus::None;
+  };
+  ports.media_cancel_gen = [lifecycle]() { return lifecycle->MediaCancelGen(); };
+  ports.report_progress = [lifecycle](CallHopPlannerPhase phase, const std::string& call_id) {
+    CallMediaStatus mapped = CallMediaStatus::None;
+    switch (phase) {
+    case CallHopPlannerPhase::WaitingAttach:
+      mapped = CallMediaStatus::HopWaiting;
+      break;
+    case CallHopPlannerPhase::Attaching:
+      mapped = CallMediaStatus::HopAttaching;
+      break;
+    case CallHopPlannerPhase::Live:
+      mapped = CallMediaStatus::HopLive;
+      break;
+    case CallHopPlannerPhase::Migrating:
+      mapped = CallMediaStatus::Migrating;
+      break;
+    case CallHopPlannerPhase::Idle:
+    case CallHopPlannerPhase::Stopping:
+      return;
+    }
+    lifecycle->SetMediaStatus(mapped, call_id);
+  };
+  ports.arming_debug_name = [lifecycle]() { return CallMediaStatusName(lifecycle->Status()); };
+  return ports;
+}
+
+CallDirectArmingPorts CallStack::MakeDirectArmingPorts() const {
+  CallDirectArmingPorts ports;
+  CallLifecycle* lifecycle = call_lifecycle_.get();
+  if (!lifecycle) {
+    return ports;
+  }
+  ports.direct_ops_allowed = [lifecycle]() { return lifecycle->AllowsDirectPath(); };
+  ports.request_direct_arming = [lifecycle](const std::string& call_id) {
+    if (lifecycle->AllowsDirectPath()) {
+      return;
+    }
+    const CallPhase phase = lifecycle->Phase();
+    if (phase == CallPhase::Accepting || phase == CallPhase::JoinedLocal ||
+        phase == CallPhase::MediaPending || phase == CallPhase::MediaConnecting) {
+      lifecycle->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+    }
+  };
+  ports.report_progress = [lifecycle](CallDirectPlannerPhase phase, const std::string& call_id) {
+    CallMediaStatus mapped = CallMediaStatus::None;
+    switch (phase) {
+    case CallDirectPlannerPhase::Arming:
+    case CallDirectPlannerPhase::Connecting:
+    case CallDirectPlannerPhase::KeyWait:
+      mapped = CallMediaStatus::DirectConnecting;
+      break;
+    case CallDirectPlannerPhase::Live:
+      return;
+    case CallDirectPlannerPhase::DegradedTxOnly:
+      mapped = CallMediaStatus::DegradedTxOnly;
+      break;
+    case CallDirectPlannerPhase::Idle:
+    case CallDirectPlannerPhase::Stopping:
+      return;
+    }
+    lifecycle->SetMediaStatus(mapped, call_id);
+  };
+  ports.on_connected = [lifecycle](const std::string& call_id) {
+    lifecycle->Apply(CallLifecycleEvent::DirectConnected, call_id);
+  };
+  ports.on_connect_failed = [lifecycle](const std::string& call_id) {
+    lifecycle->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+  };
+  ports.on_media_deferred = [lifecycle](const std::string& call_id) {
+    lifecycle->Apply(CallLifecycleEvent::MediaDeferred, call_id);
+  };
+  ports.on_media_key_ready = [lifecycle](const std::string& call_id) {
+    lifecycle->Apply(CallLifecycleEvent::MediaKeyReady, call_id);
+  };
+  ports.arming_debug_name = [lifecycle]() { return CallMediaStatusName(lifecycle->Status()); };
+  return ports;
+}
+
+CallSessionLifecyclePorts CallStack::MakeSessionLifecyclePorts() const {
+  CallSessionLifecyclePorts ports;
+  CallLifecycle* lifecycle = call_lifecycle_.get();
+  if (!lifecycle) {
+    return ports;
+  }
+  ports.allows_direct_path = [lifecycle]() { return lifecycle->AllowsDirectPath(); };
+  ports.status_name = [lifecycle]() { return CallMediaStatusName(lifecycle->Status()); };
+  ports.armed_planner_name = [lifecycle]() {
+    return CallArmedPlannerName(lifecycle->ArmedPlanner());
+  };
+  ports.set_direct_connecting = [lifecycle](const std::string& call_id) {
+    lifecycle->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  };
+  ports.accepting_call_id = [lifecycle]() { return lifecycle->AcceptingCallId(); };
+  ports.active_call_id = [lifecycle]() { return lifecycle->ActiveCallId(); };
+  ports.apply_remote_ended = [lifecycle](const std::string& call_id) {
+    lifecycle->Apply(CallLifecycleEvent::RemoteEnded, call_id);
+  };
+  ports.is_outbound_calling = [lifecycle]() {
+    return lifecycle->Phase() == CallPhase::OutboundCalling;
+  };
+  return ports;
+}
+
+CallDirectMediaPorts CallStack::MakeDirectMediaPorts() const {
+  CallDirectMediaPorts ports;
+  CallMediaBridge* bridge = media_plane_ ? media_plane_->Bridge() : nullptr;
+  CallMediaSeat* seat = call_media_seat_.get();
+  if (!bridge) {
+    return ports;
+  }
+  auto make_path = [bridge, seat]() {
+    CallDirectPath::Ops ops;
+    ops.schedule_start = [bridge](const std::string& cid, const std::string& p, bool off) {
+      if (off) {
+        bridge->ScheduleStartMediaAsOfferer(cid, p);
+      } else {
+        bridge->ScheduleStartMediaAsAnswerer(cid, p);
+      }
+    };
+    ops.release_transport = [bridge](const CallMediaSeat::Token& token) {
+      bridge->ReleaseDirectTransport(token);
+    };
+    if (seat) {
+      ops.acquire = [seat](const std::string& cid) { return seat->Acquire(cid); };
+      ops.allows_path_op = [seat](const CallMediaSeat::Token& token) {
+        return seat->AllowsPathOp(token);
+      };
+      ops.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
+    }
+    return CallDirectPath(std::move(ops));
+  };
+  ports.schedule_start = [make_path](const std::string& call_id, const std::string& peer, bool offerer) {
+    make_path().ScheduleStart(call_id, peer, offerer);
+  };
+  ports.media_path_kind = [bridge]() { return bridge->MediaPathKind(); };
+  ports.note_peer_id_relay_mapping = [bridge](const std::string& peer_id,
+                                              const std::string& relay_identity) {
+    bridge->NotePeerIdRelayMapping(peer_id, relay_identity);
+  };
+  ports.stop_mesh_media = [bridge](const std::string& call_id) { bridge->StopMeshMedia(call_id); };
+  ports.is_connect_failed = [bridge]() { return bridge->IsMeshConnectFailed(); };
+  ports.connect_missing_mic = [bridge]() {
+    return bridge->IsMeshConnectFailed() && bridge->MeshConnectMissingMic();
+  };
+  ports.poll_connect_health = [bridge]() { bridge->PollMeshConnectHealth(); };
+  ports.retry_mesh_media = [bridge](const std::string& call_id) {
+    return bridge->RetryMeshMedia(call_id);
+  };
+  ports.media_attempted = [bridge](const std::string& call_id) {
+    return bridge->MediaAttempted(call_id);
+  };
+  ports.note_media_attempted = [bridge](const std::string& call_id) {
+    bridge->NoteMediaAttempted(call_id);
+  };
+  ports.release_direct_transport = [bridge, seat, make_path]() {
+    if (seat) {
+      (void)make_path().ReleaseTransport(seat->CurrentToken());
+      return;
+    }
+    bridge->ReleaseDirectTransport();
+  };
+  ports.on_media_key_ready = [bridge](const std::string& call_id) {
+    bridge->OnMediaKeyReady(call_id);
+  };
+  return ports;
+}
+
+CallDirectSeatPorts CallStack::MakeDirectSeatPorts() const {
+  CallDirectSeatPorts ports;
+  CallMediaSeat* seat = call_media_seat_.get();
+  if (!seat) {
+    return ports;
+  }
+  ports.acquire = [seat](const std::string& call_id) { return seat->Acquire(call_id); };
+  ports.allows_path_op = [seat](const CallMediaSeat::Token& token) {
+    return seat->AllowsPathOp(token);
+  };
+  ports.current_token = [seat]() { return seat->CurrentToken(); };
+  ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
+  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
+  ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
+  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
+  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
+  ports.note_failed = [seat](const std::string& call_id) { seat->NoteFailed(call_id); };
+  return ports;
+}
+
+CallTopologySeatPorts CallStack::MakeTopologySeatPorts() const {
+  CallTopologySeatPorts ports;
+  CallMediaSeat* seat = call_media_seat_.get();
+  if (!seat) {
+    return ports;
+  }
+  ports.is_bound = [seat](const std::string& call_id) { return seat->IsBound(call_id); };
+  ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
+  ports.acquire = [seat](const std::string& call_id) { return seat->Acquire(call_id); };
+  ports.allows_path_op = [seat](const CallMediaSeat::Token& token) {
+    return seat->AllowsPathOp(token);
+  };
+  ports.begin_attach = [seat](const std::string& call_id, const std::string& hop,
+                              CallMediaSeat::AttachTicket* ticket) {
+    return seat->BeginAttach(call_id, hop, ticket);
+  };
+  ports.end_attach_if_matching = [seat](const std::string& call_id, const std::string& hop) {
+    seat->EndAttachIfMatching(call_id, hop);
+  };
+  ports.has_attach_in_flight = [seat]() { return seat->HasAttachInFlight(); };
+  ports.attaching_hop = [seat]() { return seat->AttachingHopPeerId(); };
+  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
+  ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
+  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
+  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
+  ports.cancel_attach_for_call = [seat](const std::string& call_id) {
+    seat->CancelAttachForCall(call_id);
+  };
+  return ports;
 }
 
 } // namespace pbr

@@ -1038,7 +1038,7 @@ Async workers **copy** `std::function`s into lambdas; `ClearBinding` bumps `asyn
 
 **Date:** 2026-09-17  
 **Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md) (composition-root table)  
-**Decision:** `CallSessionManager` must not hold a standing `CallMediaBridge*`. Stack installs **`CallDirectMediaPorts`** built by `MakeCallDirectMediaPorts(bridge, seat)` (wraps `CallDirectPath` + bridge ops).
+**Decision:** `CallSessionManager` must not hold a standing `CallMediaBridge*`. Stack installs **`CallDirectMediaPorts`** via private `CallStack::MakeDirectMediaPorts()` (wraps `CallDirectPath` + bridge ops). Port struct lives on the consumer header (`CallSessionManager.h`).
 
 ### Ports (representative)
 
@@ -1068,7 +1068,7 @@ ScheduleStart / Retry / MediaAttempted / connect-fail health / NotePeerIdRelayMa
 
 ### Seat ports
 
-`release(call_id)` / `bind_hop_for_attach(call_id)` (closes over topology + seat via `MakeCallMediaSeatPorts`).
+`release(call_id)` / `bind_hop_for_attach(call_id)` (closes over topology + seat via `CallSessionManager::MakeSeatPorts`). Port structs live on `CallSessionManager.h`; Stack installs Lifecycle ports via private `MakeSessionLifecyclePorts()`.
 
 ### Rules
 
@@ -1168,6 +1168,37 @@ Topology/MediaHost, dial-book maps, delivery, port install, device mute/camera, 
 **Non-goals:** Peer dial-book merge; Bridge facet ports; collapsing Topology façade into Workflow.
 
 **Cross-link:** [V046](#v046--calltopologycontroller-independence); phase [hm](PHASES.md#hm--callhopmigrateworkflow-no-friend-v047).
+
+---
+
+## V048 — Composition vocabulary (no upward concepts)
+
+**Date:** 2026-09-18  
+**Status:** Accepted — project guideline; first code follow-up in [PHASES.md](PHASES.md#ha--hop-arming-vocabulary-v048)  
+**Decision:** Adopt a **repo-wide** composition rule: lower peers must not embed **codes, calls, or concepts** from higher peers. Ports that smuggle a sibling’s domain model (enums, chrome status writers) are upward coupling even when raw pointers are gone. Canonical write-up: [COMPOSITION_VOCABULARY.md](../../docs/architecture/COMPOSITION_VOCABULARY.md).
+
+Ownership stays under composition roots (`Application`, `CallStack`, …). **Dependency of meaning** points downward or sideways via narrow ports that speak the **consumer’s needs**; the root **projects** outcomes upward.
+
+### Rules
+
+1. Design ports from the lower peer’s POV (“what do I need / report?”), not from the higher peer’s type sheet.
+2. Higher products observe lower progress; lower products do not write higher chrome/policy enums.
+3. Shared neutral contracts may live in `common/`; higher-owned phase/Status types must not appear in lower headers.
+4. Applies beyond calls (mesh, UI↔functional, feature peers) — same litmus as [COMPOSITION_VOCABULARY.md](../../docs/architecture/COMPOSITION_VOCABULARY.md).
+
+### First application (calls)
+
+`CallTopologyController` speaks hop needs via **`CallHopArmingPorts`** (struct on Topology header). Owned **`CallHopMigrateWorkflow`** speaks migrate/attach needs via **`CallHopMigrateHostPorts`** / **`CallHopMigrateArmingPorts`** / **`CallHopMigrateSeatPorts`** (Topology projects). `CallMediaBridge` speaks Direct needs via **`CallDirectArmingPorts`** / **`CallDirectSeatPorts`**. **`CallDirectPath` / `CallHopPath`** take Ops only (no standing Bridge/Seat pointers). Stack / Topology private `Make*` adapters map → Lifecycle Status / `Apply` events — see [COMPOSITION_VOCABULARY.md § Port type ownership](../../docs/architecture/COMPOSITION_VOCABULARY.md#port-type-ownership).
+
+Topology needs (example of the litmus): arming, cancel epoch, hop-native progress, seat bind — not `CallMediaStatus` / `CallPhase`.
+
+### Non-goals (this ADR)
+
+- Implementing every debt site in one pass (phase **ha** starts with Topology).
+- Deepening ownership trees so Topology becomes a Lifecycle child.
+- Moving hop SoftMigrate races into Lifecycle.
+
+**Cross-link:** [COMPOSITION_VOCABULARY.md](../../docs/architecture/COMPOSITION_VOCABULARY.md); [OWNERSHIP.md](../../docs/architecture/OWNERSHIP.md); [V037](#v037--calllifecycle-state--status-one-planner-armed); [V039](#v039--call-directhop-planner-machines); [V046](#v046--calltopologycontroller-independence); [CALLS.md](../../docs/architecture/CALLS.md#calltopologycontroller-v046v047).
 
 ---
 

@@ -1,9 +1,8 @@
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/CallTopologyLifecyclePorts.h"
-#include "feature/calls/CallTopologySeatPorts.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallLifecycle.h"
+#include "domain/messaging/CallLifecycleTypes.h"
 
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallControlCodec.h"
@@ -28,6 +27,74 @@
 
 namespace pbr {
 namespace {
+
+CallHopArmingPorts TestHopArmingPorts(CallLifecycle* lifecycle) {
+  CallHopArmingPorts ports;
+  if (!lifecycle) {
+    return ports;
+  }
+  ports.hop_ops_allowed = [lifecycle]() { return lifecycle->AllowsHopPath(); };
+  ports.soft_migrate_may_arm = [lifecycle]() {
+    const CallMediaStatus st = lifecycle->Status();
+    return st == CallMediaStatus::DirectLive || st == CallMediaStatus::DirectConnecting ||
+           st == CallMediaStatus::DegradedTxOnly || st == CallMediaStatus::Deciding ||
+           st == CallMediaStatus::None;
+  };
+  ports.media_cancel_gen = [lifecycle]() { return lifecycle->MediaCancelGen(); };
+  ports.report_progress = [lifecycle](CallHopPlannerPhase phase, const std::string& call_id) {
+    CallMediaStatus mapped = CallMediaStatus::None;
+    switch (phase) {
+    case CallHopPlannerPhase::WaitingAttach:
+      mapped = CallMediaStatus::HopWaiting;
+      break;
+    case CallHopPlannerPhase::Attaching:
+      mapped = CallMediaStatus::HopAttaching;
+      break;
+    case CallHopPlannerPhase::Live:
+      mapped = CallMediaStatus::HopLive;
+      break;
+    case CallHopPlannerPhase::Migrating:
+      mapped = CallMediaStatus::Migrating;
+      break;
+    case CallHopPlannerPhase::Idle:
+    case CallHopPlannerPhase::Stopping:
+      return;
+    }
+    lifecycle->SetMediaStatus(mapped, call_id);
+  };
+  ports.arming_debug_name = [lifecycle]() { return CallMediaStatusName(lifecycle->Status()); };
+  return ports;
+}
+
+CallTopologySeatPorts TestTopologySeatPorts(CallMediaSeat* seat) {
+  CallTopologySeatPorts ports;
+  if (!seat) {
+    return ports;
+  }
+  ports.is_bound = [seat](const std::string& call_id) { return seat->IsBound(call_id); };
+  ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
+  ports.acquire = [seat](const std::string& call_id) { return seat->Acquire(call_id); };
+  ports.allows_path_op = [seat](const CallMediaSeat::Token& token) {
+    return seat->AllowsPathOp(token);
+  };
+  ports.begin_attach = [seat](const std::string& call_id, const std::string& hop,
+                              CallMediaSeat::AttachTicket* ticket) {
+    return seat->BeginAttach(call_id, hop, ticket);
+  };
+  ports.end_attach_if_matching = [seat](const std::string& call_id, const std::string& hop) {
+    seat->EndAttachIfMatching(call_id, hop);
+  };
+  ports.has_attach_in_flight = [seat]() { return seat->HasAttachInFlight(); };
+  ports.attaching_hop = [seat]() { return seat->AttachingHopPeerId(); };
+  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
+  ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
+  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
+  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
+  ports.cancel_attach_for_call = [seat](const std::string& call_id) {
+    seat->CancelAttachForCall(call_id);
+  };
+  return ports;
+}
 
 class FakeTopologyHost {
 public:
@@ -266,7 +333,7 @@ protected:
 
   void TearDown() override {
     if (topo_) {
-      topo_->SetLifecyclePorts({});
+      topo_->SetHopArmingPorts({});
     }
     lifecycle_.reset();
     topo_.reset();
@@ -338,7 +405,7 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachIgnoredWhenStatusDirectConnec
   lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
   ASSERT_TRUE(lifecycle_->AllowsDirectPath());
   ASSERT_FALSE(lifecycle_->AllowsHopPath());
-  topo_->SetLifecyclePorts(MakeCallTopologyLifecyclePorts(lifecycle_.get()));
+  topo_->SetHopArmingPorts(TestHopArmingPorts(lifecycle_.get()));
 
   CallSfuAttachDetail attach;
   attach.call_id = call_id;
@@ -1247,7 +1314,7 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
   AppRuntime::InitializeUI();
 
   CallMediaSeat seat;
-  topo_->SetSeatPorts(MakeCallTopologySeatPorts(&seat));
+  topo_->SetSeatPorts(TestTopologySeatPorts(&seat));
 
   const std::string old_id = "call:leftover-old";
   const std::string new_id = "call:leftover-new";

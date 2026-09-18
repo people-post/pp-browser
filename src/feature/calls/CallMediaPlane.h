@@ -11,7 +11,6 @@
 #include "feature/calls/AmpMediaRelayClient.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaSeat.h"
-#include "feature/calls/CallLifecycle.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
@@ -69,8 +68,6 @@ struct CallMediaBridgeBindArgs {
   CallSessionStore* session_store = nullptr;
   CallMediaKeyStore* media_keys = nullptr;
   CallMediaEngine* media_engine = nullptr;
-  CallMediaSeat* seat = nullptr;
-  CallLifecycle* lifecycle = nullptr;
   /** Rebuild key (typically CallSessionManager*); compare only, do not dereference as CSM. */
   const void* sessions_key = nullptr;
 };

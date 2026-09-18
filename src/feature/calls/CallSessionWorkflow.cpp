@@ -40,7 +40,7 @@ Roe<std::optional<CallSession>> CallSessionWorkflow::ActiveLocalCall() const {
   if (!host_.IsBound()) {
     return Error("Call session workflow host ports not bound");
   }
-  auto local = host_.local_relay_identity();
+  auto local = host_.wire.local_relay_identity();
   if (!local) {
     return local.error();
   }
@@ -63,7 +63,7 @@ Roe<std::optional<PendingCallInvite>> CallSessionWorkflow::TopPendingInvite() {
   }
   // Match CSM ListPendingInvites / StartCall gate — expire before reading "top".
   SweepExpiredInvites();
-  auto local = host_.local_relay_identity();
+  auto local = host_.wire.local_relay_identity();
   if (!local) {
     return local.error();
   }
@@ -107,7 +107,7 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
   if (invitee_identities.empty()) {
     return Error("At least one invitee required");
   }
-  auto local = host_.local_relay_identity();
+  auto local = host_.wire.local_relay_identity();
   if (!local) {
     return local.error();
   }
@@ -186,7 +186,7 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
   }
   const std::string started_text =
       video_allowed ? "Video call started" : "Voice call started";
-  if (auto hist = host_.append_origin_history(origin_thread_id, CallControlType::CallStarted, started_text, *started_detail);
+  if (auto hist = host_.wire.append_origin_history(origin_thread_id, CallControlType::CallStarted, started_text, *started_detail);
       !hist) {
     return hist.error();
   }
@@ -200,20 +200,20 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
     }
   }
 
-  if (host_.prefetch_reach) {
+  if (host_.reach.prefetch_reach) {
     for (const auto& _id : invitee_identities) {
       if (!_id.empty()) {
-        host_.prefetch_reach(_id);
+        host_.reach.prefetch_reach(_id);
       }
     }
   }
 
-  host_.notify_ring_changed();
+  host_.wire.notify_ring_changed();
   return session;
 }
 
 Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, const std::string& invitee_identity) {
-  auto local = host_.local_relay_identity();
+  auto local = host_.wire.local_relay_identity();
   if (!local) {
     return local.error();
   }
@@ -234,10 +234,10 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   // N≥3 requires media_relay soft-migrate (V021). Refuse mid-call guest invites when no hop
   // exists — otherwise Mac/Linux stay on 1:1 P2P while the invitee hangs on Connecting….
   const bool already_on_sfu =
-      (host_.topology_is_on_sfu_for_call && host_.topology_is_on_sfu_for_call(call_id)) ||
+      (host_.hop.is_on_sfu_for_call && host_.hop.is_on_sfu_for_call(call_id)) ||
       ((*session)->sfu_hint && !(*session)->sfu_hint->empty());
   if (*joined >= 2 && !already_on_sfu &&
-      !(host_.topology_has_media_relay_hop_candidates && host_.topology_has_media_relay_hop_candidates())) {
+      !(host_.hop.has_media_relay_hop_candidates && host_.hop.has_media_relay_hop_candidates())) {
     return Error("Adding a guest needs call hosting help (enable Help host calls on a computer that's helping the network)");
   }
 
@@ -265,8 +265,8 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   invite.origin_group_id = (*session)->origin_group_id;
   invite.sfu_hint = (*session)->sfu_hint;
   invite.expires_at = pending.expires_at;
-  if (host_.build_roster_detail) {
-    if (auto roster = host_.build_roster_detail(call_id); roster) {
+  if (host_.wire.build_roster_detail) {
+    if (auto roster = host_.wire.build_roster_detail(call_id); roster) {
       invite.participants = std::move(roster->participants);
     }
   }
@@ -276,8 +276,8 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   invite.media_key_id = (*session)->media_key_id;
   if (auto key_bytes = media_keys_.LoadEpochKey(call_id, (*session)->media_epoch);
       key_bytes && key_bytes->has_value()) {
-    if (host_.resolve_peer_session_key) {
-      if (auto session_key = host_.resolve_peer_session_key(invitee_identity)) {
+    if (host_.reach.resolve_peer_session_key) {
+      if (auto session_key = host_.reach.resolve_peer_session_key(invitee_identity)) {
         if (auto wrapped = CallMediaKeyStore::WrapKeyB64(*session_key, **key_bytes, call_id, invite.media_epoch,
                                                          invite.media_key_id)) {
           invite.wrapped_key_b64 = *wrapped;
@@ -290,17 +290,17 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
       }
     }
   }
-  if (host_.local_listen_multiaddrs) {
-    FillCallListenFields(host_.local_listen_multiaddrs(), invite.libp2p_peer_id, invite.listen_multiaddrs);
+  if (host_.reach.local_listen_multiaddrs) {
+    FillCallListenFields(host_.reach.local_listen_multiaddrs(), invite.libp2p_peer_id, invite.listen_multiaddrs);
   }
   // Explicit mesh PeerId wins over /p2p/ suffix derived from listen MAs.
-  if (host_.local_mesh_peer_id) {
-    if (const std::string pid = host_.local_mesh_peer_id(); !pid.empty()) {
+  if (host_.reach.local_mesh_peer_id) {
+    if (const std::string pid = host_.reach.local_mesh_peer_id(); !pid.empty()) {
       invite.libp2p_peer_id = pid;
     }
   }
-  if (host_.local_peer_caps) {
-    invite.caps = host_.local_peer_caps();
+  if (host_.reach.local_peer_caps) {
+    invite.caps = host_.reach.local_peer_caps();
     invite.caps.present = true;
   }
   int64_t offer_to_mark = 0;
@@ -325,9 +325,9 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   }
   const std::string display =
       (*session)->media_mode == CallMediaMode::Video ? "Incoming video call" : "Incoming voice call";
-  if (host_.prefetch_reach) host_.prefetch_reach(invitee_identity);
+  if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(invitee_identity);
   // Wire first — do not leave Ringing/pending debris if send fails.
-  if (auto sent = host_.send_direct(invitee_identity, CallControlType::CallInvite, *detail, display); !sent) {
+  if (auto sent = host_.wire.send_direct(invitee_identity, CallControlType::CallInvite, *detail, display); !sent) {
     return sent;
   }
 
@@ -371,7 +371,7 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
   }
   log().info << "AcceptInvite start call_id=" << call_id
              << " charge=" << InitiationChargeDecisionToWire(charge_decision);
-  auto local = host_.local_relay_identity();
+  auto local = host_.wire.local_relay_identity();
   if (!local) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << local.error().message;
     return local.error();
@@ -385,18 +385,18 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
   // engine in sfu_mode (Stop gated on ActiveCallId match) — purge before WaitForAttach.
   // Never Release/Stop the call we are accepting (empty ActiveCallId used to target accept id
   // and PostUIFront-Stop raced answerer StartSfu).
-  if ((host_.media_is_active && host_.media_is_active()) || (host_.media_is_sfu_mode && host_.media_is_sfu_mode())) {
-    const std::string leftover = (host_.media_active_call_id ? host_.media_active_call_id() : std::string{});
+  if ((host_.duplex.media_is_active && host_.duplex.media_is_active()) || (host_.duplex.media_is_sfu_mode && host_.duplex.media_is_sfu_mode())) {
+    const std::string leftover = (host_.duplex.media_active_call_id ? host_.duplex.media_active_call_id() : std::string{});
     if (!leftover.empty() && leftover != call_id) {
       log().info << "AcceptInvite stopping leftover media call_id=" << leftover
                  << " accept=" << call_id;
-      host_.stop_media_if_call(leftover);
+      host_.duplex.stop_media_if_call(leftover);
     } else if (leftover.empty()) {
       log().info << "AcceptInvite stopping zombie engine (no ActiveCallId) accept=" << call_id;
-      if (host_.stop_media_if_call) {
-        host_.stop_media_if_call({});
-      } else if (host_.media_stop) {
-        host_.media_stop();
+      if (host_.duplex.stop_media_if_call) {
+        host_.duplex.stop_media_if_call({});
+      } else if (host_.duplex.media_stop) {
+        host_.duplex.media_stop();
       }
     }
   }
@@ -407,7 +407,7 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
   }
   if (CallSessionLogic::IsInviteExpired(**pending, util::NowUnixMs())) {
     (void)sessions_.UpdateInviteStatus(call_id, *local, "expired");
-    host_.notify_ring_changed();
+    host_.wire.notify_ring_changed();
     log().warning << "AcceptInvite end call_id=" << call_id << " err=Call invite expired";
     return Error("Call invite expired");
   }
@@ -469,16 +469,16 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
     accept.offer_amount_minor = offer_minor;
     accept.charge_decision = InitiationChargeDecisionToWire(charge_decision);
   }
-  if (host_.local_listen_multiaddrs) {
-    FillCallListenFields(host_.local_listen_multiaddrs(), accept.libp2p_peer_id, accept.listen_multiaddrs);
+  if (host_.reach.local_listen_multiaddrs) {
+    FillCallListenFields(host_.reach.local_listen_multiaddrs(), accept.libp2p_peer_id, accept.listen_multiaddrs);
   }
-  if (host_.local_mesh_peer_id) {
-    if (const std::string pid = host_.local_mesh_peer_id(); !pid.empty()) {
+  if (host_.reach.local_mesh_peer_id) {
+    if (const std::string pid = host_.reach.local_mesh_peer_id(); !pid.empty()) {
       accept.libp2p_peer_id = pid;
     }
   }
-  if (host_.local_peer_caps) {
-    accept.caps = host_.local_peer_caps();
+  if (host_.reach.local_peer_caps) {
+    accept.caps = host_.reach.local_peer_caps();
     accept.caps.present = true;
   }
   auto detail = CallControlCodec::EncodeAccept(accept);
@@ -486,7 +486,7 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << detail.error().message;
     return detail.error();
   }
-  if (auto sent = host_.send_direct(inviter, CallControlType::CallAccept, *detail, "Call accepted"); !sent) {
+  if (auto sent = host_.wire.send_direct(inviter, CallControlType::CallAccept, *detail, "Call accepted"); !sent) {
     log().warning << "CallAccept send failed call_id=" << call_id << " err=" << sent.error().message;
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << sent.error().message;
     return sent.error();
@@ -516,9 +516,9 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
 
   // B-CONFLICT: Accept B may have moved chrome / LeaveCall'd us while CallAccept was on the wire.
   // Do not ScheduleStart or report success for a superseded accept (stale AcceptSucceeded → Idle).
-  if (host_.accepting_call_id && host_.active_call_id) {
-    const std::string accepting = host_.accepting_call_id();
-    const std::string active = host_.active_call_id();
+  if (host_.chrome.accepting_call_id && host_.chrome.active_call_id) {
+    const std::string accepting = host_.chrome.accepting_call_id();
+    const std::string active = host_.chrome.active_call_id();
     if ((!accepting.empty() && accepting != call_id) ||
         (accepting.empty() && !active.empty() && active != call_id)) {
       log().info << "AcceptInvite superseded after CallAccept call_id=" << call_id
@@ -544,19 +544,19 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
   }
   const size_t planner_n = EffectiveMediaPlannerN(n_joined, n_active);
   const bool topology_took_media =
-      host_.on_local_accept_joined && host_.on_local_accept_joined(call_id, planner_n, row.sfu_hint);
+      host_.hop.on_local_accept_joined && host_.hop.on_local_accept_joined(call_id, planner_n, row.sfu_hint);
   bool schedule_answerer_direct = false;
   if (!topology_took_media) {
     if (row.sfu_hint && !row.sfu_hint->empty()) {
       row.sfu_hint.reset();
       (void)sessions_.UpsertSession(row);
     }
-    if (host_.set_direct_connecting) {
-      host_.set_direct_connecting(call_id);
+    if (host_.chrome.note_direct_connecting) {
+      host_.chrome.note_direct_connecting(call_id);
     }
     // Drop stale SoftMigrate chrome ("Connecting group media…") from a prior hop attempt.
-    if (host_.clear_media_activity) {
-      host_.clear_media_activity();
+    if (host_.wire.clear_media_activity) {
+      host_.wire.clear_media_activity();
     }
     // Remember peer for Lifecycle KickAnswerer (UI) — PeerIdentityForCall can lag roster.
     pending_answerer_kick_call_id_ = call_id;
@@ -570,8 +570,8 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
                << " planner_n=" << planner_n
                << " sfu_hint=" << (row.sfu_hint && !row.sfu_hint->empty() ? 1 : 0);
   }
-  if (host_.notify_ring_changed) {
-    host_.notify_ring_changed();
+  if (host_.wire.notify_ring_changed) {
+    host_.wire.notify_ring_changed();
   }
 
   if (schedule_answerer_direct) {
@@ -579,14 +579,14 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
                << " inviter=" << inviter << " planner_n=" << planner_n
                << " listen_mas=" << accept.listen_multiaddrs.size()
                << " peer_id=" << (accept.libp2p_peer_id.empty() ? 0 : 1);
-    if (host_.schedule_start_direct) {
-      host_.schedule_start_direct(call_id, inviter, false);
+    if (host_.duplex.schedule_start_direct) {
+      host_.duplex.schedule_start_direct(call_id, inviter, false);
     }
   }
 
   // Pull CallMediaKey ASAP — do not wait for the next UI-tick poll (Accept worker path).
-  if (host_.sync_inbox_from_wake) {
-    host_.sync_inbox_from_wake();
+  if (host_.wire.sync_inbox_from_wake) {
+    host_.wire.sync_inbox_from_wake();
   }
 
   // Roster / prefetch after Accept returns — keep Accept worker snappy (no Accept hang UX).
@@ -597,20 +597,20 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
     if (!host_.IsBound()) {
       return;
     }
-    if (host_.build_roster_detail) {
-      if (auto roster = host_.build_roster_detail(accept_call_id); roster) {
+    if (host_.wire.build_roster_detail) {
+      if (auto roster = host_.wire.build_roster_detail(accept_call_id); roster) {
         if (auto roster_json = CallControlCodec::EncodeRoster(*roster); roster_json) {
-          if (host_.send_direct) {
-            (void)host_.send_direct(accept_inviter, CallControlType::CallRoster, *roster_json, "Call roster");
+          if (host_.wire.send_direct) {
+            (void)host_.wire.send_direct(accept_inviter, CallControlType::CallRoster, *roster_json, "Call roster");
           }
-          if (host_.fan_out_joined_and_ringing) {
-            (void)host_.fan_out_joined_and_ringing(accept_call_id, CallControlType::CallRoster, *roster_json,
+          if (host_.wire.fan_out_joined_and_ringing) {
+            (void)host_.wire.fan_out_joined_and_ringing(accept_call_id, CallControlType::CallRoster, *roster_json,
                                                    "Call roster", accept_local);
           }
         }
       }
     }
-    if (host_.prefetch_reach) host_.prefetch_reach(accept_inviter);
+    if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(accept_inviter);
   });
 
   log().info << "AcceptInvite end call_id=" << call_id << " ok";
@@ -618,7 +618,7 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
 }
 
 Roe<void> CallSessionWorkflow::DeclineInvite(const std::string& call_id) {
-  auto local = host_.local_relay_identity();
+  auto local = host_.wire.local_relay_identity();
   if (!local) {
     return local.error();
   }
@@ -635,10 +635,10 @@ Roe<void> CallSessionWorkflow::DeclineInvite(const std::string& call_id) {
     return detail.error();
   }
   // Send before clearing pending so UI DrainUntil(pending empty) cannot race mid-send.
-  if (!host_.send_direct) {
+  if (!host_.wire.send_direct) {
     return Error("Call session workflow host ports not bound");
   }
-  if (auto sent = host_.send_direct((*pending)->inviter_identity, CallControlType::CallDecline, *detail,
+  if (auto sent = host_.wire.send_direct((*pending)->inviter_identity, CallControlType::CallDecline, *detail,
                                     "Call declined");
       !sent) {
     return sent.error();
@@ -662,16 +662,16 @@ Roe<void> CallSessionWorkflow::DeclineInvite(const std::string& call_id) {
   auto session = sessions_.LoadSession(call_id);
   if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
     (void)EndCallLocal(**session, std::nullopt);
-  } else if (host_.active_call_id && host_.apply_remote_ended && host_.active_call_id() == call_id) {
-    host_.apply_remote_ended(call_id);
-  } else if (host_.notify_ring_changed) {
-    host_.notify_ring_changed();
+  } else if (host_.chrome.active_call_id && host_.chrome.apply_remote_ended && host_.chrome.active_call_id() == call_id) {
+    host_.chrome.apply_remote_ended(call_id);
+  } else if (host_.wire.notify_ring_changed) {
+    host_.wire.notify_ring_changed();
   }
   return {};
 }
 
 Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, const std::string& leaver_identity) {
-  auto local = host_.local_relay_identity();
+  auto local = host_.wire.local_relay_identity();
   if (!local) {
     return local.error();
   }
@@ -712,7 +712,7 @@ Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, c
     return saved.error();
   }
 
-  auto roster = host_.build_roster_detail(call_id);
+  auto roster = host_.wire.build_roster_detail(call_id);
   if (!roster) {
     return roster.error();
   }
@@ -725,39 +725,39 @@ Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, c
     if (peer == *local) {
       continue;
     }
-    (void)host_.send_media_key(call_id, peer, new_epoch, *media_key_id, *key);
-    (void)host_.send_direct(peer, CallControlType::CallRoster, *roster_json, "Call roster");
+    (void)host_.reach.send_media_key(call_id, peer, new_epoch, *media_key_id, *key);
+    (void)host_.wire.send_direct(peer, CallControlType::CallRoster, *roster_json, "Call roster");
   }
   return {};
 }
 
 Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms) {
-  if (host_.stop_media_if_call) {
-    host_.stop_media_if_call(session.call_id);
+  if (host_.duplex.stop_media_if_call) {
+    host_.duplex.stop_media_if_call(session.call_id);
   }
   session.state = CallSessionState::Ended;
   session.ended_at = util::NowUnixMs();
   if (auto saved = sessions_.UpsertSession(session); !saved) {
     return saved.error();
   }
-  if (session.origin_thread_id && host_.append_origin_history) {
+  if (session.origin_thread_id && host_.wire.append_origin_history) {
     CallEndedDetail ended;
     ended.call_id = session.call_id;
     ended.duration_ms = duration_ms;
     auto detail = CallControlCodec::EncodeEnded(ended);
     if (detail) {
-      (void)host_.append_origin_history(*session.origin_thread_id, CallControlType::CallEnded, "Call ended", *detail);
+      (void)host_.wire.append_origin_history(*session.origin_thread_id, CallControlType::CallEnded, "Call ended", *detail);
     }
   }
   // Product chrome: remote Leave/Ended (and any EndCallLocal for the bound call) must Idle
   // lifecycle without a local LeaveClicked. Skip when lifecycle already moved to another call
   // (e.g. Accept B → LeaveCallIfActiveExcept ends A while Accepting B).
-  if (host_.active_call_id && host_.apply_remote_ended &&
-      host_.active_call_id() == session.call_id) {
-    host_.apply_remote_ended(session.call_id);
+  if (host_.chrome.active_call_id && host_.chrome.apply_remote_ended &&
+      host_.chrome.active_call_id() == session.call_id) {
+    host_.chrome.apply_remote_ended(session.call_id);
   }
-  if (host_.notify_ring_changed) {
-    host_.notify_ring_changed();
+  if (host_.wire.notify_ring_changed) {
+    host_.wire.notify_ring_changed();
   }
   return {};
 }
@@ -766,28 +766,28 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id) {
   if (pending_answerer_kick_call_id_ == call_id) {
     ClearPendingAnswererKick();
   }
-  auto local = host_.local_relay_identity();
+  auto local = host_.wire.local_relay_identity();
   if (!local) {
     return local.error();
   }
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value()) {
     // Still detach leftover SFU if the disk row is gone but capture is live.
-    if (host_.stop_media_if_call) {
-      host_.stop_media_if_call(call_id);
+    if (host_.duplex.stop_media_if_call) {
+      host_.duplex.stop_media_if_call(call_id);
     }
     return Error("Call session not found");
   }
   if ((*session)->state == CallSessionState::Ended) {
     // Session already Ended (remote CallEnded / prior EndCallLocal) must still tear down
     // media_relay — otherwise the next Accept inherits zombie RX and red "reconnecting".
-    if (host_.stop_media_if_call) {
-      host_.stop_media_if_call(call_id);
+    if (host_.duplex.stop_media_if_call) {
+      host_.duplex.stop_media_if_call(call_id);
     }
     return {};
   }
-  if (host_.stop_media_if_call) {
-    host_.stop_media_if_call(call_id);
+  if (host_.duplex.stop_media_if_call) {
+    host_.duplex.stop_media_if_call(call_id);
   }
 
   const int64_t now = util::NowUnixMs();
@@ -807,8 +807,8 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id) {
   if (!detail) {
     return detail.error();
   }
-  if (host_.fan_out_joined) {
-    (void)host_.fan_out_joined(call_id, CallControlType::CallLeave, *detail, "Left the call", *local);
+  if (host_.wire.fan_out_joined) {
+    (void)host_.wire.fan_out_joined(call_id, CallControlType::CallLeave, *detail, "Left the call", *local);
   }
 
   auto joined = sessions_.CountJoined(call_id);
@@ -823,9 +823,9 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id) {
     ended.call_id = call_id;
     ended.duration_ms = duration;
     auto ended_json = CallControlCodec::EncodeEnded(ended);
-    if (ended_json && host_.fan_out_joined_and_ringing) {
+    if (ended_json && host_.wire.fan_out_joined_and_ringing) {
       // Notify Ringing/Invited invitees as well so offline inbox delivery can clear stale rings.
-      (void)host_.fan_out_joined_and_ringing(call_id, CallControlType::CallEnded, *ended_json, "Call ended",
+      (void)host_.wire.fan_out_joined_and_ringing(call_id, CallControlType::CallEnded, *ended_json, "Call ended",
                                              *local);
     }
     return EndCallLocal(**session, duration);
@@ -836,14 +836,14 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id) {
     return saved.error();
   }
   (void)MaybeRotateMediaKey(call_id, *local);
-  if (host_.notify_ring_changed) {
-    host_.notify_ring_changed();
+  if (host_.wire.notify_ring_changed) {
+    host_.wire.notify_ring_changed();
   }
   return {};
 }
 
 void CallSessionWorkflow::SweepExpiredInvites() {
-  auto local = host_.local_relay_identity();
+  auto local = host_.wire.local_relay_identity();
   if (!local) {
     return;
   }
@@ -868,22 +868,22 @@ void CallSessionWorkflow::SweepExpiredInvites() {
       auto session = sessions_.LoadSession(invite.call_id);
       if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
         (void)EndCallLocal(**session, std::nullopt);
-      } else if (host_.active_call_id && host_.apply_remote_ended &&
-                 host_.active_call_id() == invite.call_id) {
-        host_.apply_remote_ended(invite.call_id);
+      } else if (host_.chrome.active_call_id && host_.chrome.apply_remote_ended &&
+                 host_.chrome.active_call_id() == invite.call_id) {
+        host_.chrome.apply_remote_ended(invite.call_id);
       }
       changed = true;
     }
   }
 
   // CALLS outbound unanswered: clear sticky Calling bar without waiting on GUI LeaveClicked.
-  if (host_.is_outbound_calling && host_.is_outbound_calling() &&
-      !(host_.media_is_active && host_.media_is_active())) {
+  if (host_.chrome.is_outbound_calling && host_.chrome.is_outbound_calling() &&
+      !(host_.duplex.media_is_active && host_.duplex.media_is_active())) {
     auto active = ActiveLocalCall();
     if (active && active->has_value() &&
         CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(true, false, (*active)->created_at, now)) {
       const std::string call_id = (*active)->call_id;
-      if (host_.active_call_id && host_.active_call_id() == call_id) {
+      if (host_.chrome.active_call_id && host_.chrome.active_call_id() == call_id) {
         log().warning << "outbound unanswered timeout call_id=" << call_id;
         if (auto left = LeaveCall(call_id); !left) {
           log().warning << "outbound unanswered LeaveCall failed call_id=" << call_id
@@ -899,12 +899,12 @@ void CallSessionWorkflow::SweepExpiredInvites() {
   }
 
   if (changed) {
-    host_.notify_ring_changed();
+    host_.wire.notify_ring_changed();
   }
 }
 
 void CallSessionWorkflow::AbandonOrphanedCallsAfterRestart() {
-  auto local = host_.local_relay_identity();
+  auto local = host_.wire.local_relay_identity();
   if (!local) {
     return;
   }
@@ -957,7 +957,7 @@ void CallSessionWorkflow::AbandonOrphanedCallsAfterRestart() {
     }
   }
 
-  host_.notify_ring_changed();
+  host_.wire.notify_ring_changed();
 }
 
 Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_json,
@@ -991,7 +991,7 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
         decline.call_id = invite->call_id;
         decline.identity = local_identity;
         if (auto encoded = CallControlCodec::EncodeDecline(decline)) {
-          (void)host_.send_direct(sender_identity, CallControlType::CallDecline, *encoded,
+          (void)host_.wire.send_direct(sender_identity, CallControlType::CallDecline, *encoded,
                                       "Call declined (offer too low)");
         }
         return {};
@@ -1047,15 +1047,15 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
 
   // Media key embedded in invite (preferred); CallMediaKey message remains a backup.
   if (!invite->wrapped_key_b64.empty()) {
-    if (auto session_key = host_.resolve_peer_session_key(sender_identity)) {
+    if (auto session_key = host_.reach.resolve_peer_session_key(sender_identity)) {
       auto unwrapped = CallMediaKeyStore::UnwrapKeyB64(*session_key, invite->wrapped_key_b64, invite->call_id,
                                                        session.media_epoch, invite->media_key_id);
       if (unwrapped) {
         if (auto put = media_keys_.PutEpochKey(invite->call_id, session.media_epoch, *unwrapped); put) {
           log().info << "CallInvite embedded media key stored call_id=" << invite->call_id
                         << " epoch=" << session.media_epoch;
-          if (host_.on_media_key_ready) {
-            host_.on_media_key_ready(invite->call_id);
+          if (host_.duplex.on_media_key_ready) {
+            host_.duplex.on_media_key_ready(invite->call_id);
           }
         } else {
           log().warning << "CallInvite media key store failed: " << put.error().message;
@@ -1104,15 +1104,15 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
   self.identity = local_identity;
   self.state = CallParticipantState::Ringing;
   (void)sessions_.UpsertParticipant(self);
-  if (host_.register_peer_listen && !invite->listen_multiaddrs.empty()) {
-    host_.register_peer_listen(pending.inviter_identity, invite->listen_multiaddrs);
+  if (host_.reach.register_peer_listen && !invite->listen_multiaddrs.empty()) {
+    host_.reach.register_peer_listen(pending.inviter_identity, invite->listen_multiaddrs);
   }
   if (!invite->libp2p_peer_id.empty()) {
-    host_.note_mesh_peer_id_for_relay(pending.inviter_identity, invite->libp2p_peer_id);
+    host_.reach.note_mesh_peer_id_for_relay(pending.inviter_identity, invite->libp2p_peer_id);
   }
-  if (host_.note_caps_for_identity) host_.note_caps_for_identity(pending.inviter_identity, invite->caps, invite->listen_multiaddrs);
-  if (host_.prefetch_reach) host_.prefetch_reach(pending.inviter_identity);
-  host_.notify_ring_changed();
+  if (host_.reach.note_caps_for_identity) host_.reach.note_caps_for_identity(pending.inviter_identity, invite->caps, invite->listen_multiaddrs);
+  if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(pending.inviter_identity);
+  host_.wire.notify_ring_changed();
   return {};
 }
 
@@ -1125,13 +1125,13 @@ Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_jso
   }
   const std::string identity = accept->identity.empty() ? sender_identity : accept->identity;
   log().info << "Inbound CallAccept call_id=" << accept->call_id << " from=" << identity;
-  if (host_.register_peer_listen && !accept->listen_multiaddrs.empty()) {
-    host_.register_peer_listen(identity, accept->listen_multiaddrs);
+  if (host_.reach.register_peer_listen && !accept->listen_multiaddrs.empty()) {
+    host_.reach.register_peer_listen(identity, accept->listen_multiaddrs);
   }
   if (!accept->libp2p_peer_id.empty()) {
-    host_.note_mesh_peer_id_for_relay(identity, accept->libp2p_peer_id);
+    host_.reach.note_mesh_peer_id_for_relay(identity, accept->libp2p_peer_id);
   }
-  if (host_.note_caps_for_identity) host_.note_caps_for_identity(identity, accept->caps, accept->listen_multiaddrs);
+  if (host_.reach.note_caps_for_identity) host_.reach.note_caps_for_identity(identity, accept->caps, accept->listen_multiaddrs);
   CallParticipant participant;
   participant.call_id = accept->call_id;
   participant.identity = identity;
@@ -1152,7 +1152,7 @@ Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_jso
   if (session && session->has_value() && (*session)->state == CallSessionState::Ended) {
     log().info << "Inbound CallAccept ignored (ended session) call_id=" << accept->call_id
                << " from=" << identity;
-    host_.notify_ring_changed();
+    host_.wire.notify_ring_changed();
     return {};
   }
 
@@ -1160,7 +1160,7 @@ Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_jso
     const uint32_t epoch = (*session)->media_epoch;
     auto key_bytes = media_keys_.LoadEpochKey(accept->call_id, epoch);
     if (key_bytes && key_bytes->has_value()) {
-      if (auto keyed = host_.send_media_key(accept->call_id, identity, epoch, (*session)->media_key_id, **key_bytes);
+      if (auto keyed = host_.reach.send_media_key(accept->call_id, identity, epoch, (*session)->media_key_id, **key_bytes);
           !keyed) {
         log().warning << "CallMediaKey send failed call_id=" << accept->call_id
                       << " peer=" << identity << " err=" << keyed.error().message;
@@ -1174,27 +1174,27 @@ Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_jso
     }
     auto joined_after = sessions_.CountJoined(accept->call_id);
     const size_t n_joined = joined_after ? *joined_after : 0;
-    if (!host_.on_remote_accept_joined(accept->call_id, n_joined, identity)) {
-      if (host_.set_direct_connecting) {
-        host_.set_direct_connecting(accept->call_id);
+    if (!host_.hop.on_remote_accept_joined(accept->call_id, n_joined, identity)) {
+      if (host_.chrome.note_direct_connecting) {
+        host_.chrome.note_direct_connecting(accept->call_id);
       }
-      host_.schedule_start_direct(accept->call_id, identity, true);
+      host_.duplex.schedule_start_direct(accept->call_id, identity, true);
     }
     // Prefetch + roster fan-out after media kickoff — avoid starving MediaKey/Connect on IO.
     const std::string accept_call_id = accept->call_id;
     const std::string accept_peer = identity;
     AppRuntime::PostWorkerNormal([this, accept_call_id, accept_peer, local = local_identity]() {
-      if (host_.prefetch_reach) host_.prefetch_reach(accept_peer);
-      if (auto roster = host_.build_roster_detail(accept_call_id); roster) {
+      if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(accept_peer);
+      if (auto roster = host_.wire.build_roster_detail(accept_call_id); roster) {
         if (auto roster_json = CallControlCodec::EncodeRoster(*roster); roster_json) {
-          (void)host_.fan_out_joined_and_ringing(accept_call_id, CallControlType::CallRoster, *roster_json, "Call roster",
+          (void)host_.wire.fan_out_joined_and_ringing(accept_call_id, CallControlType::CallRoster, *roster_json, "Call roster",
                                          local);
         }
       }
     });
   }
 
-  host_.notify_ring_changed();
+  host_.wire.notify_ring_changed();
   return {};
 }
 
@@ -1215,7 +1215,7 @@ Roe<void> CallSessionWorkflow::HandleInboundDecline(const std::string& detail_js
   // CALLS: Decline clears offerer OutboundCalling / sticky Calling bar. End when no remote
   // remains Joined/Ringing/Invited (typical 1:1). Group multi-invitee keeps the call if others
   // still ring. EndCallLocal → RemoteEnded when lifecycle is bound to this call_id.
-  auto local = host_.local_relay_identity();
+  auto local = host_.wire.local_relay_identity();
   auto session = sessions_.LoadSession(decline->call_id);
   if (local && session && session->has_value() && (*session)->state != CallSessionState::Ended) {
     bool remote_interest = false;
@@ -1240,7 +1240,7 @@ Roe<void> CallSessionWorkflow::HandleInboundDecline(const std::string& detail_js
     }
   }
 
-  host_.notify_ring_changed();
+  host_.wire.notify_ring_changed();
   return {};
 }
 
@@ -1262,7 +1262,7 @@ Roe<void> CallSessionWorkflow::HandleInboundLeave(const std::string& detail_json
   auto session = sessions_.LoadSession(leave->call_id);
   if (identity == local_identity) {
     // Ejected after failed soft-migrate (or remote Leave for us): clear local chrome/media.
-    host_.clear_sfu_attach_wait();
+    host_.hop.clear_sfu_attach_wait();
     if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
       std::optional<int64_t> duration;
       if ((*session)->created_at > 0) {
@@ -1270,8 +1270,8 @@ Roe<void> CallSessionWorkflow::HandleInboundLeave(const std::string& detail_json
       }
       return EndCallLocal(**session, duration);
     }
-    host_.stop_media_if_call(leave->call_id);
-    host_.notify_ring_changed();
+    host_.duplex.stop_media_if_call(leave->call_id);
+    host_.wire.notify_ring_changed();
     return {};
   }
   if (session && session->has_value()) {
@@ -1288,7 +1288,7 @@ Roe<void> CallSessionWorkflow::HandleInboundLeave(const std::string& detail_json
     (void)sessions_.UpsertSession(**session);
     (void)MaybeRotateMediaKey(leave->call_id, identity);
   }
-  host_.notify_ring_changed();
+  host_.wire.notify_ring_changed();
   return {};
 }
 
@@ -1341,9 +1341,9 @@ Roe<void> CallSessionWorkflow::HandleInboundRoster(const std::string& detail_jso
   // Mid-call invite: CallAccept only reaches the inviter; initiator SoftMigrates when roster
   // shows N≥3 (V021 sticky initiator / V022 payer).
   if (auto joined = sessions_.CountJoined(roster->call_id); joined) {
-    host_.on_joined_count_observed(roster->call_id, *joined);
+    host_.hop.on_joined_count_observed(roster->call_id, *joined);
   }
-  host_.notify_ring_changed();
+  host_.wire.notify_ring_changed();
   return {};
 }
 
@@ -1363,7 +1363,7 @@ Roe<void> CallSessionWorkflow::HandleInboundMediaKey(const std::string& detail_j
   }
   bool stored = false;
   if (!key->wrapped_key_b64.empty()) {
-    auto session_key = host_.resolve_peer_session_key(sender_identity);
+    auto session_key = host_.reach.resolve_peer_session_key(sender_identity);
     if (session_key) {
       auto unwrapped = CallMediaKeyStore::UnwrapKeyB64(*session_key, key->wrapped_key_b64, key->call_id,
                                                         key->media_epoch, key->media_key_id);
@@ -1381,8 +1381,8 @@ Roe<void> CallSessionWorkflow::HandleInboundMediaKey(const std::string& detail_j
     }
   }
   // Mesh answerer Start waits for epoch key (V015); kick deferred BeginSession.
-  if (stored && host_.on_media_key_ready) {
-    host_.on_media_key_ready(key->call_id);
+  if (stored && host_.duplex.on_media_key_ready) {
+    host_.duplex.on_media_key_ready(key->call_id);
   }
   return {};
 }
@@ -1392,8 +1392,8 @@ Roe<void> CallSessionWorkflow::HandleInboundSfuAttach(const std::string& detail_
   if (!attach) {
     return attach.error();
   }
-  (void)host_.on_inbound_sfu_attach(attach->call_id, *attach);
-  host_.notify_ring_changed();
+  (void)host_.hop.on_inbound_sfu_attach(attach->call_id, *attach);
+  host_.wire.notify_ring_changed();
   return {};
 }
 
@@ -1406,8 +1406,8 @@ Roe<void> CallSessionWorkflow::HandleInboundSfuAttachFailed(const std::string& d
   if (failed->identity.empty()) {
     failed->identity = sender_identity;
   }
-  host_.on_inbound_sfu_attach_failed(*failed);
-  host_.notify_ring_changed();
+  host_.hop.on_inbound_sfu_attach_failed(*failed);
+  host_.wire.notify_ring_changed();
   return {};
 }
 
@@ -1416,8 +1416,8 @@ Roe<void> CallSessionWorkflow::HandleInboundHopRefuse(const std::string& detail_
   if (!refused) {
     return refused.error();
   }
-  host_.on_inbound_hop_refuse(*refused);
-  host_.notify_ring_changed();
+  host_.hop.on_inbound_hop_refuse(*refused);
+  host_.wire.notify_ring_changed();
   return {};
 }
 
@@ -1427,7 +1427,7 @@ Roe<void> CallSessionWorkflow::HandleInboundVideoRefresh(const std::string& deta
   if (!refresh) {
     return refresh.error();
   }
-  auto local = host_.local_relay_identity();
+  auto local = host_.wire.local_relay_identity();
   if (!local) {
     return local.error();
   }
@@ -1441,10 +1441,10 @@ Roe<void> CallSessionWorkflow::HandleInboundVideoRefresh(const std::string& deta
     }
   }
   if (!CallSessionLogic::ShouldHonorInboundVideoRefresh(refresh->call_id, refresh->identity, sender_identity,
-                                                        *local, (host_.media_active_call_id ? host_.media_active_call_id() : std::string{}), sender_joined)) {
+                                                        *local, (host_.duplex.media_active_call_id ? host_.duplex.media_active_call_id() : std::string{}), sender_joined)) {
     return {};
   }
-  if (host_.media_request_keyframe) host_.media_request_keyframe();
+  if (host_.duplex.media_request_keyframe) host_.duplex.media_request_keyframe();
   return {};
 }
 
@@ -1459,7 +1459,7 @@ Roe<void> CallSessionWorkflow::HandleInboundEnded(const std::string& detail_json
   if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
     return EndCallLocal(**session, ended->duration_ms);
   }
-  host_.notify_ring_changed();
+  host_.wire.notify_ring_changed();
   return {};
 }
 
