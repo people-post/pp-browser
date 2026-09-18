@@ -140,24 +140,23 @@ TEST(CallMediaSeatTest, PathTokenAllowsAfterNoteStart) {
 
 TEST(CallMediaPathsTest, HopBindAndDirectReleaseRequiresToken) {
   CallMediaSeat seat;
-  CallHopPath hop(nullptr, &seat);
+  CallHopPath hop(&seat);
   auto token = hop.BindForAttach("call:1");
   EXPECT_FALSE(token.call_id.empty());
   EXPECT_TRUE(hop.Allows(token));
 
-  CallDirectPath direct(nullptr, &seat);
-  // No bridge → error; token still required for the seat NotePath path.
+  CallDirectPath direct(CallDirectPath::Ops{}, &seat);
+  // Empty release_transport → error; token still required for the seat NotePath path.
   auto released = direct.ReleaseTransport(token);
   EXPECT_FALSE(released);
 
   CallMediaSeat::Token unbound;
   unbound.call_id = "call:other";
   unbound.epoch = 1;
-  // Unbound token: no-op success (skip) even without bridge… actually bridge null errors first.
-  // Bind wrong call then ReleaseTransport skips AllowsPathOp before bridge check when seat set.
+  // Unbound token: AllowsPathOp false → early {} before ops check.
   seat.Acquire("call:2");
-  auto skip = CallDirectPath(nullptr, &seat).ReleaseTransport(token);
-  EXPECT_TRUE(skip); // AllowsPathOp false → early {}
+  auto skip = CallDirectPath(CallDirectPath::Ops{}, &seat).ReleaseTransport(token);
+  EXPECT_TRUE(skip);
 }
 
 TEST(CallMediaSeatTest, AttachFlightSerializesHops) {

@@ -606,9 +606,22 @@ CallDirectMediaPorts CallStack::MakeDirectMediaPorts() const {
   if (!bridge) {
     return ports;
   }
-  ports.schedule_start = [bridge, seat](const std::string& call_id, const std::string& peer,
-                                        bool offerer) {
-    CallDirectPath(bridge, seat).ScheduleStart(call_id, peer, offerer);
+  auto make_path = [bridge, seat]() {
+    CallDirectPath::Ops ops;
+    ops.schedule_start = [bridge](const std::string& cid, const std::string& p, bool off) {
+      if (off) {
+        bridge->ScheduleStartMediaAsOfferer(cid, p);
+      } else {
+        bridge->ScheduleStartMediaAsAnswerer(cid, p);
+      }
+    };
+    ops.release_transport = [bridge](const CallMediaSeat::Token& token) {
+      bridge->ReleaseDirectTransport(token);
+    };
+    return CallDirectPath(std::move(ops), seat);
+  };
+  ports.schedule_start = [make_path](const std::string& call_id, const std::string& peer, bool offerer) {
+    make_path().ScheduleStart(call_id, peer, offerer);
   };
   ports.media_path_kind = [bridge]() { return bridge->MediaPathKind(); };
   ports.note_peer_id_relay_mapping = [bridge](const std::string& peer_id,
@@ -630,9 +643,9 @@ CallDirectMediaPorts CallStack::MakeDirectMediaPorts() const {
   ports.note_media_attempted = [bridge](const std::string& call_id) {
     bridge->NoteMediaAttempted(call_id);
   };
-  ports.release_direct_transport = [bridge, seat]() {
+  ports.release_direct_transport = [bridge, seat, make_path]() {
     if (seat) {
-      (void)CallDirectPath(bridge, seat).ReleaseTransport(seat->CurrentToken());
+      (void)make_path().ReleaseTransport(seat->CurrentToken());
       return;
     }
     bridge->ReleaseDirectTransport();

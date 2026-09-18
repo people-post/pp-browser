@@ -3,46 +3,49 @@
 #include "common/Error.h"
 #include "feature/calls/CallMediaSeat.h"
 
+#include <functional>
 #include <string>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-class CallMediaBridge;
-class CallTopologyController;
-
 /**
- * V036 Phase 3 — Direct path plugin façade over CallMediaBridge.
- * Path ops require a seat token (`AllowsPathOp`); CSM schedules via this, not raw Stop/Start.
+ * V036 Phase 3 — Direct path plugin façade.
+ * Stack/CSM close over Bridge ops; this type does not hold CallMediaBridge*.
  */
 class CallDirectPath {
 public:
-  CallDirectPath(CallMediaBridge* bridge, CallMediaSeat* seat);
+  struct Ops {
+    std::function<void(const std::string& call_id, const std::string& peer_identity, bool offerer)>
+        schedule_start;
+    std::function<void(const CallMediaSeat::Token& token)> release_transport;
+  };
 
-  /** Bind + schedule 1:1 StartSfu (Acquire then bridge Schedule*). */
+  CallDirectPath(Ops ops, CallMediaSeat* seat);
+
+  /** Bind + schedule 1:1 StartSfu (Acquire then schedule). */
   void ScheduleStart(const std::string& call_id, const std::string& peer_identity, bool offerer);
   /** SoftMigrate: drop 1:1 transport under token; seat stays bound. */
   Roe<void> ReleaseTransport(const CallMediaSeat::Token& token);
 
 private:
-  CallMediaBridge* bridge_ = nullptr;
+  Ops ops_;
   CallMediaSeat* seat_ = nullptr;
 };
 
 /**
- * V036 Phase 3 — Hop path plugin façade over CallTopologyController.
- * Topology SoftMigrate/Attach remain on the controller; this gates token checks.
+ * V036 Phase 3 — Hop path seat bind façade.
+ * Topology SoftMigrate/Attach remain on the controller; this only Acquire/AllowsPathOp.
  */
 class CallHopPath {
 public:
-  CallHopPath(CallTopologyController* topology, CallMediaSeat* seat);
+  explicit CallHopPath(CallMediaSeat* seat);
 
   /** Acquire (or confirm) bind for hop attach; empty token on failure. */
   CallMediaSeat::Token BindForAttach(const std::string& call_id);
   bool Allows(const CallMediaSeat::Token& token) const;
 
 private:
-  CallTopologyController* topology_ = nullptr;
   CallMediaSeat* seat_ = nullptr;
 };
 

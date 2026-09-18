@@ -274,11 +274,11 @@ CallMediaSeatPorts CallSessionManager::MakeSeatPorts(CallMediaSeat* seat) {
     return ports;
   }
   ports.release = [seat](const std::string& call_id) { seat->Release(call_id); };
-  ports.bind_hop_for_attach = [this, seat](const std::string& call_id) {
+  ports.bind_hop_for_attach = [seat](const std::string& call_id) {
     if (call_id.empty()) {
       return;
     }
-    (void)CallHopPath(&topology_, seat).BindForAttach(call_id);
+    (void)CallHopPath(seat).BindForAttach(call_id);
   };
   return ports;
 }

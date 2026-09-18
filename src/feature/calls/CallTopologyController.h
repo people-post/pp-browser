@@ -85,7 +85,6 @@ public:
   using MediaRelayDeps = CallTopologyMediaRelayDeps;
 
   CallTopologyController(CallSessionStore& sessions, ContactsStore& contacts, CallMediaEngine& media);
-  ~CallTopologyController() override;
 
   void SetHostPorts(HostPorts ports);
   void SetMediaRelayDeps(MediaRelayDeps deps);
@@ -232,7 +231,20 @@ private:
                                      const std::shared_ptr<std::atomic<bool>>& sfu_frames_ready,
                                      const std::vector<uint8_t>& media_key, uint32_t media_epoch);
 
-  std::unique_ptr<CallHopMigrateWorkflow> hop_migrate_;
+  using SoftMigrateFlight = CallHopMigrateWorkflow::SoftMigrateFlight;
+  using AttachWait = CallHopMigrateWorkflow::AttachWait;
+  using InboundAttachGate = CallHopMigrateWorkflow::InboundAttachGate;
+  using GuestSfuSession = CallHopMigrateWorkflow::GuestSfuSession;
+  using PublisherStreams = CallHopMigrateWorkflow::PublisherStreams;
+  using SfuSurface = CallHopMigrateWorkflow::SfuSurface;
+
+  CallHopMigrateWorkflow hop_migrate_;
+  SoftMigrateFlight& flight_;
+  AttachWait& attach_wait_;
+  InboundAttachGate& inbound_gate_;
+  GuestSfuSession& guest_;
+  PublisherStreams& publishers_;
+  SfuSurface& sfu_;
 
   HostPorts host_;
   CallSessionStore& sessions_;
