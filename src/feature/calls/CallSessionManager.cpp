@@ -8,7 +8,7 @@
 #include "foundation/crypto/SessionKeyDeriver.h"
 #include "domain/media/CallMediaAdaptation.h"
 #include "domain/messaging/CallSessionLogic.h"
-#include "domain/messaging/AnnounceLiveJoinHandoff.h"
+#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/messaging/InitiationPricing.h"

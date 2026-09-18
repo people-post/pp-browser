@@ -1,7 +1,8 @@
 #pragma once
 
-#include "domain/messaging/PeerAnnounceTypes.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
+#include "domain/messaging/CallTypes.h"
+#include "domain/messaging/PeerAnnounceTypes.h"
 
 #include "common/Error.h"
 
@@ -15,8 +16,9 @@
 namespace pbr {
 
 /**
- * Spine C (slice 0): plan joining a live program from a tip.
- * `call_id` is tip.join_handle (opaque call/session id). No SoftMigrate / media yet.
+ * Spine C: plan joining a live program from a tip, then materialize pending invite + ringing
+ * session for AcceptInvite. No SoftMigrate / media attach here.
+ * `call_id` is tip.join_handle (opaque call/session id).
  */
 struct AnnounceLiveJoinPlan {
   std::string call_id;
@@ -53,5 +55,22 @@ struct ArmLiveAnnounceJoinOpts {
 };
 
 Roe<AnnounceLiveJoinPlan> PlanAnnounceLiveJoin(const PeerAnnounceTip& tip);
+
+/** Pending invite + ringing session rows for AcceptInvite. */
+struct AnnounceLiveJoinHandoff {
+  PendingCallInvite pending;
+  CallSession session;
+};
+
+/**
+ * Build invite/session rows for `local_invitee_identity`.
+ * `inviter_identity` should be the publisher's call identity (Account when known,
+ * else PeerId). `video_allowed` defaults true for live broadcast tips.
+ */
+Roe<AnnounceLiveJoinHandoff> BuildAnnounceLiveJoinHandoff(const AnnounceLiveJoinPlan& plan,
+                                                          std::string_view local_invitee_identity,
+                                                          std::string_view inviter_identity,
+                                                          int64_t now_ms,
+                                                          bool video_allowed = true);
 
 } // namespace pbr

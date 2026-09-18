@@ -1,6 +1,5 @@
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/messaging/AnnounceLiveJoin.h"
-#include "domain/messaging/AnnounceLiveJoinHandoff.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "domain/messaging/SqliteThreadStore.h"
 

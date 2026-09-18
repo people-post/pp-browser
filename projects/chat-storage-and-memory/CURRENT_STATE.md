@@ -44,7 +44,7 @@ Historical Bucket B ([D092](DECISIONS.md#d092--release-scope-bucket-b)) plus pub
 | Area | Status | Location |
 |------|--------|----------|
 | **SqliteThreadStore** (v2a) | **Implemented** | `src/base/messaging/SqliteThreadStore.*` |
-| Legacy `JsonThreadStore` | Retained for tests | `src/base/messaging/JsonThreadStore.*` |
+| Legacy `JsonThreadStore` | **Removed** — wipe path on `SqliteThreadStore` only | — |
 | Profile-scoped paths | Implemented | `{data_dir}/profiles/{id}/threads/` — [CONFIGURATION.md](../../docs/contracts/DATA_LAYOUT.md) |
 | `IThreadStore` interface | Extended (routing, outbox, rich cols) | `src/base/messaging/IThreadStore.h` |
 | SQLite + libsodium on `pp_base` | **Linked** | `src/base/CMakeLists.txt` |

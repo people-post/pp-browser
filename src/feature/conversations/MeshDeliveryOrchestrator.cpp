@@ -8,7 +8,7 @@
 #include "feature/conversations/AmpBroadcastTransport.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
-#include "domain/messaging/AnnounceDmReply.h"
+#include "domain/messaging/AnnounceOverlayReply.h"
 #include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
