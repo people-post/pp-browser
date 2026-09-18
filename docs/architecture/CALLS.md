@@ -307,7 +307,7 @@ UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints fro
 **Should not own long-term:** libp2p stream lifecycle details, SFU quote/attach loops, or duplicated “if N≥3 …” trees in every accept path. Pure N→planner policy lives in **`CallMediaPlannerSelectLogic`**; Accept arms Bridge **or** Topology via `OnLocalAcceptJoined` / `ScheduleStartDirectMedia` (V039 Direct/Hop `Apply`). SoftMigrate relay-cap nudge is **`CallTopologyController::OnPeerMediaRelayCapLearned`** (N≥3 / attach-wait only).
 
 ### CallSessionWorkflow (V044)
-Durable multi-party session/roster executor (store mutations + `CallSessionLogic` transitions + invite/leave/inbound arms). Side effects via HostPorts from CSM — **not** a second chrome `CallPhase` machine.
+Durable multi-party session/roster executor (store mutations + `CallSessionLogic` transitions + invite/leave/inbound arms). Side effects via clustered **HostPorts** (`wire` / `duplex` / `hop` / `chrome` / `reach`) from CSM — **not** a second chrome `CallPhase` machine.
 
 ### CallTopologyController (V046/V047)
 Hop planner façade (`Apply` / On*). SoftMigrate + attach completion live in owned **`CallHopMigrateWorkflow`**, which **owns** race clusters and takes Host + **`CallHopMigrateArmingPorts`** / **`CallHopMigrateSeatPorts`** + **TopologyOps** (no Topology friend / no Topology port types). Topology projects Stack-installed hop/seat ports into Workflow via private `MakeMigrate*Ports`. CSM fills Topology `HostPorts` (`CallTopologyHostPorts`); Stack installs Topology **`CallHopArmingPorts`** / **`CallTopologySeatPorts`**. Clusters: `SoftMigrateFlight`, `AttachWait`, `InboundAttachGate`, `GuestSfuSession`, `PublisherStreams`, `SfuSurface`.
@@ -462,10 +462,9 @@ Landed (behavior-preserving + who-picks fix):
 |------|------|
 | `src/feature/calls/CallStack.*` | Phase assembler — stores / CSM / Lifecycle / Seat + owns `CallMediaPlane` |
 | `src/feature/calls/CallMediaPlane.*` | Mesh-media plane — Amp transport, dial/relay/hop, bridge, dial book, Wire |
-| `src/feature/calls/CallLifecycle.*` | 1:1 phase machine — ring/accept/listen/media sequencing |
-| `src/feature/calls/CallLifecyclePorts.h` | Stack-filled signaling ports for Lifecycle (V041) |
+| `src/feature/calls/CallLifecycle.*` | 1:1 phase machine — embeds `CallLifecycleSignalingPorts` (V041) |
 | `src/feature/calls/CallSessionManager.h` | Port structs for CSM: `CallDirectMediaPorts` / `CallSessionLifecyclePorts` / `CallMediaSeatPorts` (V042/V043); `MakeSeatPorts` private on CSM |
-| `src/feature/calls/CallSessionWorkflow.*` | Durable session/roster workflow (V044/V045) — CSM-owned |
+| `src/feature/calls/CallSessionWorkflow.*` | Durable session/roster workflow (V044/V045) — HostPorts clustered wire/duplex/hop/chrome/reach (V048) |
 | `src/feature/calls/CallSessionManager.*` | Façade — thin Start/Accept/Leave/inbound → Workflow |
 | `src/feature/calls/CallMediaHost.h` | Narrow host façade for mesh media side effects |
 | `src/feature/calls/CallMediaBridge.*` | Amp 1:1 media — key defer, dial/retry, connect-fail; embeds `CallDirectArmingPorts` / `CallDirectSeatPorts` (V048) |
@@ -473,7 +472,7 @@ Landed (behavior-preserving + who-picks fix):
 | `src/domain/mesh/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
 | `src/feature/calls/CallTopologyController.*` | Hop planner façade; embeds `CallHopArmingPorts` / `CallTopologySeatPorts`; projects into owned Workflow (V046/V048) |
 | `src/feature/calls/CallHopMigrateWorkflow.*` | SoftMigrate + SFU attach; embeds `CallHopMigrateHostPorts` / arming / seat ports (V047/V048) |
-| `src/feature/calls/CallTopologyHostPorts.h` | CSM→Topology/HopMigrate HostPorts (V046/V047) |
+| `src/feature/calls/CallTopologyHostPorts.h` | CSM→Topology HostPorts (V046); Topology projects migrate subset to Workflow |
 | `src/feature/calls/CallStack.*` | Private `Make*Ports` adapters close over Lifecycle / Bridge / Seat |
 | `src/feature/calls/CallTopologyRelayDeps.h` | `IMediaRelayClient` / `IDialRegistry` + `PeerSessionDialRegistry` |
 | `src/domain/messaging/CallMediaKeyStore.*` | Epoch key wrap |

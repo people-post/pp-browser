@@ -261,8 +261,9 @@ Apply the repo-wide [composition vocabulary](../../docs/architecture/COMPOSITION
 - [x] ha4 — Port structs on consumer headers; `Make*` private on CallStack / CSM; delete free `*Ports.{h,cpp}`
 - [x] ha5 — Workflow owns migrate arming/seat ports; Topology projects (no Topology include in Workflow)
 - [x] ha6 — Bridge Direct seat ports; Workflow migrate host ports; SessionWorkflow HostPorts vocabulary trim
+- [x] ha7 — SessionWorkflow HostPorts nested clusters (wire/duplex/hop/chrome/reach); Lifecycle signaling ports on CallLifecycle.h
 
-**Non-goals:** Ownership-tree change (Topology under Lifecycle); moving SoftMigrate races into Lifecycle; rewriting every non-calls debt site in this phase; full SessionWorkflow HostPorts cluster split.  
+**Non-goals:** Ownership-tree change (Topology under Lifecycle); moving SoftMigrate races into Lifecycle; rewriting every non-calls debt site in this phase.  
 **Exit:** topology unit + inbound/dual-stack compose gtests green; Topology/Workflow headers free of `CallLifecycleTypes` Status writers.
 
 ## Later horizons

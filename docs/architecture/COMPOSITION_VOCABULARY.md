@@ -55,7 +55,9 @@ Ports are allowed and encouraged. They must:
 | **`Make*` adapters** | Private methods on the composition root / owning façade that closes over producers (`CallStack::MakeHopArmingPorts`, `CallTopologyController::MakeMigrateArmingPorts`, `CallSessionManager::MakeSeatPorts`) |
 | Free `Make*` + standalone `*Ports.{h,cpp}` | Avoid — duplicates the consumer contract and invites upward `#include`s |
 
-**Owned child:** a child product under a façade defines **its own** port structs in its vocabulary. The owning façade projects parent/sibling ports into the child’s ports (Topology → Workflow migrate arming/seat). The child must not `#include` the owner’s header for port types.
+**Owned child:** a child product under a façade defines **its own** port structs in its vocabulary. The owning façade projects parent/sibling ports into the child’s ports (Topology → Workflow migrate arming/seat/host; CSM → SessionWorkflow clustered HostPorts). The child must not `#include` the owner’s header for port types.
+
+Large HostPorts façades may nest **consumer-named clusters** (e.g. SessionWorkflow `wire` / `duplex` / `hop` / `chrome` / `reach`) so the grab-bag stays readable without re-exporting sibling type names.
 
 Unit / compose tests act as mini-composers: define local helpers in the test TU (or empty ports), not shared free `Make*` in the feature library.
 
