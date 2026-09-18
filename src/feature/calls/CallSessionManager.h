@@ -20,6 +20,7 @@
 #include "feature/calls/CallDirectMediaPorts.h"
 #include "feature/calls/CallSessionLifecyclePorts.h"
 #include "feature/calls/CallMediaSeatPorts.h"
+#include "feature/calls/CallSessionWorkflow.h"
 
 #include "common/Module.h"
 
@@ -90,8 +91,8 @@ public:
   /** Seat teardown hook: topology detach without re-entering seat.Release. */
   void TopologyOnMediaStoppedForSeat(const std::string& call_id);
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
-  void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
-  InitiationBillingStore* InitiationBilling() const { return initiation_billing_; }
+  void SetInitiationBillingStore(InitiationBillingStore* store);
+  InitiationBillingStore* InitiationBilling() const { return workflow_.InitiationBilling(); }
   /** Offer amount stored for inviter when inbound invite carried pricing. */
   int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
   /** Set before AcceptClicked — consumed by AcceptInvite. */
@@ -241,8 +242,9 @@ private:
   void StopMediaIfCall(const std::string& call_id);
   Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
+  void BindWorkflowHostPorts();
 
-  // Inbound call-control arms — decode → store → one topology/bridge call (same TU).
+  // Inbound call-control arms — thin delegates to CallSessionWorkflow.
   Roe<void> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
                                 const ThreadMessage& message, std::optional<int64_t> relay_created_at_ms,
                                 std::optional<int64_t> relay_server_time_ms, const std::string& local_identity);
@@ -269,15 +271,10 @@ private:
   CallMediaEngine& media_;
   CallTopologyController topology_;
   BroadcastSessionCoordinator broadcast_;
+  CallSessionWorkflow workflow_;
   CallDirectMediaPorts direct_media_;
   CallSessionLifecyclePorts lifecycle_ports_;
   CallMediaSeatPorts media_seat_ports_;
-  InitiationBillingStore* initiation_billing_ = nullptr;
-  InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
-  bool pending_accept_charge_set_ = false;
-  /** Answerer AcceptInvite → Lifecycle KickAnswerer peer (UI), until Leave. */
-  std::string pending_answerer_kick_call_id_;
-  std::string pending_answerer_kick_peer_;
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;

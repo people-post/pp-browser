@@ -95,6 +95,7 @@ sequenceDiagram
 | Decline / TTL expire / `call_ended` → `Idle` | Clear ring; stop listen when no other call need |
 | Conflict (2nd invite while outbound/in-call) | Conflict copy (`End & Accept` / `Ignore`); Accept implies leave-other-except; single active call |
 | Same-call duplicate pending | Keep in-call chrome; do not flip back to ring |
+| Wire before durable Joined/pending (V045) | `CallInvite` / `CallAccept` / `CallDecline` succeed on the wire before Upsert Joined/Ringing/pending or planner arm; local Decline `EndCallLocal` like expire |
 
 Instrument: INFO `phase=… status=… event=…` and `WantEphemeralListen=` so “no AcceptIncoming” vs “Accept ok, media stuck” is obvious on Android (release emit floor promotes INFO → WARNING for `adb logcat -s pp-browser:W`).
 
@@ -298,12 +299,15 @@ UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints fro
 | **CallLifecycle** | phase / status | none to CSM | `CallLifecycleSignalingPorts` from Stack |
 | **CallMediaSeat** | exclusive media epoch | none | teardown hooks from Stack (`BindSeatTeardown`) |
 | **CallMediaPlane** | mesh + bridge object + dial book | none to CSM / seat / lifecycle | `BindBridge` args + deps callbacks |
-| **CallSessionManager** | signaling | stores (ctor); Direct / Lifecycle / Seat via **ports**; topology child wire only | `SetDirectMediaPorts` / `SetLifecyclePorts` / `SetMediaSeatPorts` + `WireTopology*` from Stack |
+| **CallSessionManager** | signaling façade | stores (ctor); owns Workflow + Topology + Broadcast; Direct/Lifecycle/Seat via ports | `Set*Ports` / `WireTopology*` / `BindWorkflowHostPorts` |
 
 ### CallSessionManager (façade)
-**Should own:** create/end session, invite/accept/decline/leave, roster fan-out, media-key rotate-on-leave, orphan cleanup after restart, inbound control **dispatch**.
+**Should own:** Hub-facing API, Topology/MediaHost, dial-book maps, delivery, port install, device mute/camera. Durable session/roster work lives in owned **`CallSessionWorkflow`** (V044).
 
 **Should not own long-term:** libp2p stream lifecycle details, SFU quote/attach loops, or duplicated “if N≥3 …” trees in every accept path. Pure N→planner policy lives in **`CallMediaPlannerSelectLogic`**; Accept arms Bridge **or** Topology via `OnLocalAcceptJoined` / `ScheduleStartDirectMedia` (V039 Direct/Hop `Apply`). SoftMigrate relay-cap nudge is **`CallTopologyController::OnPeerMediaRelayCapLearned`** (N≥3 / attach-wait only).
+
+### CallSessionWorkflow (V044)
+Durable multi-party session/roster executor (store mutations + `CallSessionLogic` transitions + invite/leave/inbound arms). Side effects via HostPorts from CSM — **not** a second chrome `CallPhase` machine.
 
 ### CallMediaSeat (V036)
 Process-wide exclusive bind `call_id` ↔ duplex. `Release` = topology Detach then engine Stop; `NoteStart` invalidates in-flight Release; SoftMigrate uses `NotePath(Hop)` without Release. Topology “active call” prefers `seat.IsBound`, not leftover engine `ActiveCallId`. **Phase 2:** `MediaState` (`Idle` / `Connecting` / `Live` / `Failed`) drives chrome Connected; `BeginAttach` serializes hop AcceptAndAttach. **Phase 3:** `CallDirectPath` / `CallHopPath` façades; Bridge/Topology path ops require `AllowsPathOp(token)`; CSM schedules Direct start / seat `Release` only (no parallel `StopMeshMedia` when seat wired).
@@ -384,7 +388,7 @@ Responsibilities:
 Does not decide SFU. Topology calls `StartSfu` / attach via session or engine APIs.
 
 ### 3. `CallSessionManager` (shrunk)
-Keeps store updates + thin `ApplyInboundControl` switch. Per-type arms (`HandleInboundInvite`, `HandleInboundAccept`, …) live in the same translation unit (`CallSessionManager.cpp`): decode → upsert roster/session → **one** call into topology or bridge.
+Keeps thin `ApplyInboundControl` switch → `CallSessionWorkflow::HandleInbound*`. Store mutations and invite/leave arms live on the Workflow (V044).
 
 ### 4. Inbound control flow (target)
 
@@ -440,7 +444,7 @@ Landed (behavior-preserving + who-picks fix):
 
 1. **Topology extract** — `CallTopologyController` owns soft-migrate / attach / wait / eject / hop helpers.
 2. **Libp2p media bridge** — `CallMediaBridge` owns schedule/dial/retry/stop-media + 1:1 connect-fail / Retry.
-3. **Dispatch cleanup** — thin `ApplyInboundControl` → `HandleInbound*` in `CallSessionManager.cpp`; arms call topology or bridge.
+3. **Dispatch cleanup** — thin `ApplyInboundControl` → `CallSessionWorkflow::HandleInbound*`.
 4. **Pure who-picks / wait / fan-out** — `SoftMigrateLogic`, `SfuAttachWaitLogic`, `SfuAttachFanout` + fakes (`IMediaRelayClient` / `IDialRegistry`).
 5. **Tests** — `CallMediaTopology` N≥3-only; SoftMigrate / wait / fan-out / topology controller unit tests; `media_relay_service_test` loopback remains integration.
 6. **m2 teardown** — removed `CallP2pSignalingBridge` + libdatachannel from build; wire-compat ignore for `call_sdp` / `call_ice`.
@@ -458,7 +462,8 @@ Landed (behavior-preserving + who-picks fix):
 | `src/feature/calls/CallDirectMediaPorts.*` | Stack-filled Direct media ports for CSM (V042) |
 | `src/feature/calls/CallSessionLifecyclePorts.*` | Stack-filled Lifecycle ports for CSM (V043) |
 | `src/feature/calls/CallMediaSeatPorts.*` | Stack-filled Seat ports for CSM (V043) |
-| `src/feature/calls/CallSessionManager.*` | Façade — session + inbound `HandleInbound*` + thin dispatch |
+| `src/feature/calls/CallSessionWorkflow.*` | Durable session/roster workflow (V044/V045) — CSM-owned |
+| `src/feature/calls/CallSessionManager.*` | Façade — thin Start/Accept/Leave/inbound → Workflow |
 | `src/feature/calls/CallMediaHost.h` | Narrow host façade for mesh media side effects |
 | `src/feature/calls/CallMediaBridge.*` | Amp 1:1 media — key defer, dial/retry, connect-fail (Direct planner) |
 | `src/domain/mesh/l4/call_media/CallMediaAmpTransport.*` | Amp call-media transport |

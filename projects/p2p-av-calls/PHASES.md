@@ -205,6 +205,28 @@ Drop standing `CallLifecycle*` / `CallMediaSeat*` on CSM — [V043](DECISIONS.md
 **Non-goals:** Host-adapter rewrite; peer reach book; chrome pass-through shrink; new same-class `.cpp` splits.  
 **Exit:** inbound compose + stack/dual-stack + answerer gtests green.
 
+## sw — CallSessionWorkflow extract
+
+Durable session/roster out of CSM — [V044](DECISIONS.md#v044--callsessionworkflow-durable-sessionroster).
+
+- [x] sw0 — ADR + `CallSessionWorkflow` + HostPorts + CSM `BindWorkflowHostPorts`
+- [x] sw1 — Leave/End/Decline/Sweep/Abandon + inbound Leave/Decline/Ended
+- [x] sw2 — Start/Invite/Accept + remaining inbound; thin CSM forwards
+
+**Non-goals:** Second chrome SM; Topology/Bridge move; multi-`.cpp` Workflow split.  
+**Exit:** inbound compose + stack/dual-stack + answerer gtests green.
+
+## wh — CallSessionWorkflow hygiene
+
+Post-V044 durable-path cleanup — [V045](DECISIONS.md#v045--callsessionworkflow-hygiene-wire-first--query-dedupe).
+
+- [x] wh0 — ADR + wire-before-commit Invite/Accept/Decline; Decline `EndCallLocal`
+- [x] wh1 — Workflow owns ActiveLocalCall/TopPending (+sweep); Peek kick; HostPorts null-guards
+- [x] wh2 — CALLS.md note; compose gtests green
+
+**Non-goals:** Peer-reach book merge; Host adapters.  
+**Exit:** inbound compose + stack/dual-stack gtests green.
+
 ## Later horizons
 
 - [ ] `video_hi` / simulcast

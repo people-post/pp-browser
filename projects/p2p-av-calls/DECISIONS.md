@@ -1083,3 +1083,46 @@ ScheduleStart / Retry / MediaAttempted / connect-fail health / NotePeerIdRelayMa
 
 ---
 
+## V044 — CallSessionWorkflow (durable session/roster)
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md)  
+**Decision:** Extract durable session / roster / invite-leave orchestration from `CallSessionManager` into CSM-owned **`CallSessionWorkflow`**. Not a second chrome Lifecycle — `CallLifecycle` remains the only local UX/Status machine (V037). Pure transitions stay in `CallSessionLogic`.
+
+### Pattern
+
+Mirror `BroadcastSessionCoordinator`: Workflow holds store refs; side effects via **`HostPorts`** filled by CSM (`BindWorkflowHostPorts`). Hub façade methods on CSM remain thin delegates.
+
+### Owns on Workflow
+
+Start/Invite/Accept/Decline/Leave/End, inbound `HandleInbound*`, Sweep/Abandon, media-key rotate-on-leave, initiation pending charge / answerer-kick memory.
+
+### Stays on CSM
+
+Topology/MediaHost, dial-book maps, delivery, port install, device mute/camera, chrome pass-throughs, `Broadcast()`.
+
+**Non-goals:** Parallel `Apply(SessionEvent)` chrome SM; splitting Workflow across `.cpp` files.
+
+**Cross-link:** [V043](#v043--callsessionlifecycleports--callmediaseatports); phase [sw](PHASES.md#sw--callsessionworkflow-extract).
+
+---
+
+## V045 — CallSessionWorkflow hygiene (wire-first + query dedupe)
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md)  
+**Decision:** After V044 extract, fix durable-session footguns without expanding HostAdapters / peer-reach book merge.
+
+### Rules
+
+1. **Wire before durable commit** for Invite / Accept / Decline: encode+`send_direct` success precedes Upsert Joined/Ringing/pending (and planner arm / MarkOffered). Failed send must not leave Joined or SoftMigrate half-started. B-CONFLICT superseded Accept still LeaveCall after wire Accept when chrome moved on.
+2. **Local Decline** ends the durable session like Sweep expire (`EndCallLocal`), clears sticky Accept charge / answerer-kick memory; Lifecycle still owns click → Idle.
+3. **Single query home:** `ActiveLocalCall` / `TopPendingInvite` live on Workflow; CSM thin-forwards. `TopPendingInvite` sweeps expired first (same gate as StartCall / ListPendingInvites).
+4. **`PeekPendingAnswererKick`** (rename; does not clear) + null-guards on optional `HostPorts` before invoke.
+
+**Non-goals:** Peer dial-book collapse into plane; Host adapter rewrite; transactional multi-invite StartCall rollback.
+
+**Cross-link:** [V044](#v044--callsessionworkflow-durable-sessionroster); phase [wh](PHASES.md#wh--callsessionworkflow-hygiene).
+
+---
+

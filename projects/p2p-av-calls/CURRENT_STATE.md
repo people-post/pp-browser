@@ -22,6 +22,8 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **V041 Lifecycle ports** | **Landed (ci0–ci3)** — `CallLifecycleSignalingPorts`; Stack composition root; CALLS.md table — [DECISIONS V041](DECISIONS.md#v041--calllifecycle-signaling-ports--stack-composition-root); phase [ci](PHASES.md#ci--callstack-composition-independence-lifecycle-ports) |
 | **V042 Direct media ports** | **Landed (dm)** — CSM `CallDirectMediaPorts`; no `CallMediaBridge*` — [DECISIONS V042](DECISIONS.md#v042--calldirectmediaports--csm-without-callmediabridge); phase [dm](PHASES.md#dm--csm-direct-media-ports-no-callmediabridge) |
 | **V043 Seat + Lifecycle ports** | **Landed (sl)** — CSM ports only; no `CallLifecycle*` / `CallMediaSeat*` facets — [DECISIONS V043](DECISIONS.md#v043--callsessionlifecycleports--callmediaseatports); phase [sl](PHASES.md#sl--csm-seat--lifecycle-ports-no-sibling-facets) |
+| **V044 CallSessionWorkflow** | **Landed (sw)** — durable session/roster in CSM-owned Workflow — [DECISIONS V044](DECISIONS.md#v044--callsessionworkflow-durable-sessionroster); phase [sw](PHASES.md#sw--callsessionworkflow-extract) |
+| **V045 Workflow hygiene** | **Landed (wh)** — wire-before-commit Invite/Accept/Decline; Decline Ends local; query dedupe + Peek kick — [DECISIONS V045](DECISIONS.md#v045--callsessionworkflow-hygiene-wire-first--query-dedupe); phase [wh](PHASES.md#wh--callsessionworkflow-hygiene) |
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |
