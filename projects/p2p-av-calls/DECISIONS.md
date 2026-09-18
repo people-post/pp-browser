@@ -1038,7 +1038,7 @@ Async workers **copy** `std::function`s into lambdas; `ClearBinding` bumps `asyn
 
 **Date:** 2026-09-17  
 **Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md) (composition-root table)  
-**Decision:** `CallSessionManager` must not hold a standing `CallMediaBridge*`. Stack installs **`CallDirectMediaPorts`** built by `MakeCallDirectMediaPorts(bridge, seat)` (wraps `CallDirectPath` + bridge ops).
+**Decision:** `CallSessionManager` must not hold a standing `CallMediaBridge*`. Stack installs **`CallDirectMediaPorts`** via private `CallStack::MakeDirectMediaPorts()` (wraps `CallDirectPath` + bridge ops). Port struct lives on the consumer header (`CallSessionManager.h`).
 
 ### Ports (representative)
 
@@ -1068,7 +1068,7 @@ ScheduleStart / Retry / MediaAttempted / connect-fail health / NotePeerIdRelayMa
 
 ### Seat ports
 
-`release(call_id)` / `bind_hop_for_attach(call_id)` (closes over topology + seat via `MakeCallMediaSeatPorts`).
+`release(call_id)` / `bind_hop_for_attach(call_id)` (closes over topology + seat via `CallSessionManager::MakeSeatPorts`). Port structs live on `CallSessionManager.h`; Stack installs Lifecycle ports via private `MakeSessionLifecyclePorts()`.
 
 ### Rules
 
@@ -1188,7 +1188,7 @@ Ownership stays under composition roots (`Application`, `CallStack`, …). **Dep
 
 ### First application (calls)
 
-`CallTopologyController` / `CallHopMigrateWorkflow` speak hop needs via **`CallHopArmingPorts`**. `CallMediaBridge` speaks Direct needs via **`CallDirectArmingPorts`** (no `CallLifecycle*` / `CallMediaStatus` in Bridge). Stack maps both → Lifecycle Status / `Apply` events.
+`CallTopologyController` / `CallHopMigrateWorkflow` speak hop needs via **`CallHopArmingPorts`** (struct on Topology header). `CallMediaBridge` speaks Direct needs via **`CallDirectArmingPorts`** (struct on Bridge header). Stack private `Make*` adapters map both → Lifecycle Status / `Apply` events — see [COMPOSITION_VOCABULARY.md § Port type ownership](../../docs/architecture/COMPOSITION_VOCABULARY.md#port-type-ownership).
 
 Topology needs (example of the litmus): arming, cancel epoch, hop-native progress, seat bind — not `CallMediaStatus` / `CallPhase`.
 

@@ -1,4 +1,5 @@
 #include "feature/calls/CallSessionManager.h"
+#include "feature/calls/CallMediaPaths.h"
 #include "domain/messaging/CallListenAddrsLogic.h"
 #include "domain/messaging/CallAnswererKickLogic.h"
 #include "domain/messaging/CallMediaPlannerSelectLogic.h"
@@ -268,7 +269,18 @@ void CallSessionManager::SetTopologySeatPorts(CallTopologySeatPorts ports) {
 }
 
 CallMediaSeatPorts CallSessionManager::MakeSeatPorts(CallMediaSeat* seat) {
-  return MakeCallMediaSeatPorts(&topology_, seat);
+  CallMediaSeatPorts ports;
+  if (!seat) {
+    return ports;
+  }
+  ports.release = [seat](const std::string& call_id) { seat->Release(call_id); };
+  ports.bind_hop_for_attach = [this, seat](const std::string& call_id) {
+    if (call_id.empty()) {
+      return;
+    }
+    (void)CallHopPath(&topology_, seat).BindForAttach(call_id);
+  };
+  return ports;
 }
 
 void CallSessionManager::TopologyOnMediaStoppedForSeat(const std::string& call_id) {

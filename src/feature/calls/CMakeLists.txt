@@ -10,12 +10,6 @@ pp_browser_add_feature_library(pp_feature_calls
     CallLifecycle.cpp
     CallMediaPlane.cpp
     BroadcastSessionCoordinator.cpp
-    CallDirectMediaPorts.cpp
-    CallSessionLifecyclePorts.cpp
-    CallMediaSeatPorts.cpp
-    CallHopArmingPorts.cpp
-    CallDirectArmingPorts.cpp
-    CallTopologySeatPorts.cpp
     CallHopMigrateWorkflow.cpp
     CallSessionWorkflow.cpp
     CallSessionManager.cpp

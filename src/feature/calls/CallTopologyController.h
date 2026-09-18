@@ -11,9 +11,7 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallTopologyHostPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/CallHopArmingPorts.h"
-#include "feature/calls/CallTopologySeatPorts.h"
-#include "feature/calls/CallHopMigrateWorkflow.h"
+#include "feature/calls/CallMediaSeat.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
 
 #include "common/Error.h"
@@ -22,6 +20,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -31,6 +30,46 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+class CallHopMigrateWorkflow;
+
+/**
+ * Hop arming / progress — Topology (+ owned Workflow) consumer contract (V048).
+ * Empty ports = permissive (unit tests).
+ */
+struct CallHopArmingPorts {
+  std::function<bool()> hop_ops_allowed;
+  std::function<bool()> soft_migrate_may_arm;
+  std::function<uint64_t()> media_cancel_gen;
+  std::function<void(CallHopPlannerPhase phase, const std::string& call_id)> report_progress;
+  std::function<const char*()> arming_debug_name;
+
+  bool IsBound() const { return static_cast<bool>(hop_ops_allowed); }
+};
+
+/**
+ * MediaSeat façade for Topology (V046) — fuller than CSM CallMediaSeatPorts.
+ * Topology must not hold CallMediaSeat*.
+ */
+struct CallTopologySeatPorts {
+  std::function<bool(const std::string& call_id)> is_bound;
+  std::function<std::string()> bound_call_id;
+  std::function<CallMediaSeat::Token(const std::string& call_id)> acquire;
+  std::function<bool(const CallMediaSeat::Token& token)> allows_path_op;
+  std::function<CallMediaSeat::AttachBeginResult(const std::string& call_id, const std::string& hop,
+                                                 CallMediaSeat::AttachTicket* ticket)>
+      begin_attach;
+  std::function<void(const std::string& call_id, const std::string& hop)> end_attach_if_matching;
+  std::function<bool()> has_attach_in_flight;
+  std::function<std::string()> attaching_hop;
+  std::function<void(const std::string& call_id)> note_connecting;
+  std::function<void(const std::string& call_id)> note_start;
+  std::function<void(CallMediaSeat::PathKind kind)> note_path;
+  std::function<void(const std::string& call_id)> note_live;
+  std::function<void(const std::string& call_id)> cancel_attach_for_call;
+
+  bool IsBound() const { return static_cast<bool>(is_bound); }
+};
 
 /**
  * SFU soft-migrate / attach-wait / hop pick (V021 + V025) — V036 Phase 3 **Hop path** plugin
@@ -47,6 +86,7 @@ public:
   using MediaRelayDeps = CallTopologyMediaRelayDeps;
 
   CallTopologyController(CallSessionStore& sessions, ContactsStore& contacts, CallMediaEngine& media);
+  ~CallTopologyController() override;
 
   void SetHostPorts(HostPorts ports);
   void SetMediaRelayDeps(MediaRelayDeps deps);
@@ -140,7 +180,7 @@ public:
 
   /** V039 Hop planner Apply. */
   void Apply(CallHopPlannerEvent ev, const std::string& call_id = {});
-  CallHopPlannerPhase HopPlannerPhase() const { return sfu_.hop_planner_phase; }
+  CallHopPlannerPhase HopPlannerPhase() const;
 
 private:
   void BindHopMigratePortsAndOps();
@@ -190,20 +230,7 @@ private:
                                      const std::shared_ptr<std::atomic<bool>>& sfu_frames_ready,
                                      const std::vector<uint8_t>& media_key, uint32_t media_epoch);
 
-  using SoftMigrateFlight = CallHopMigrateWorkflow::SoftMigrateFlight;
-  using AttachWait = CallHopMigrateWorkflow::AttachWait;
-  using InboundAttachGate = CallHopMigrateWorkflow::InboundAttachGate;
-  using GuestSfuSession = CallHopMigrateWorkflow::GuestSfuSession;
-  using PublisherStreams = CallHopMigrateWorkflow::PublisherStreams;
-  using SfuSurface = CallHopMigrateWorkflow::SfuSurface;
-
-  CallHopMigrateWorkflow hop_migrate_;
-  SoftMigrateFlight& flight_;
-  AttachWait& attach_wait_;
-  InboundAttachGate& inbound_gate_;
-  GuestSfuSession& guest_;
-  PublisherStreams& publishers_;
-  SfuSurface& sfu_;
+  std::unique_ptr<CallHopMigrateWorkflow> hop_migrate_;
 
   HostPorts host_;
   CallSessionStore& sessions_;

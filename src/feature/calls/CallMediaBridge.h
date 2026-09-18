@@ -3,7 +3,6 @@
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
-#include "feature/calls/CallDirectArmingPorts.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "domain/messaging/CallDirectPlannerLogic.h"
@@ -20,6 +19,23 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+/**
+ * Direct arming / outcomes — CallMediaBridge consumer contract (V048).
+ * Empty ports = permissive (unit tests).
+ */
+struct CallDirectArmingPorts {
+  std::function<bool()> direct_ops_allowed;
+  std::function<void(const std::string& call_id)> request_direct_arming;
+  std::function<void(CallDirectPlannerPhase phase, const std::string& call_id)> report_progress;
+  std::function<void(const std::string& call_id)> on_connected;
+  std::function<void(const std::string& call_id)> on_connect_failed;
+  std::function<void(const std::string& call_id)> on_media_deferred;
+  std::function<void(const std::string& call_id)> on_media_key_ready;
+  std::function<const char*()> arming_debug_name;
+
+  bool IsBound() const { return static_cast<bool>(direct_ops_allowed); }
+};
 
 /**
  * 1:1 call media (m1 / V026) — V036 Phase 3 **Direct path** plugin under CallMediaSeat.

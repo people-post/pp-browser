@@ -9,9 +9,8 @@
 #include "domain/messaging/SoftMigrateLogic.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallTopologyHostPorts.h"
-#include "feature/calls/CallHopArmingPorts.h"
+#include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/CallTopologySeatPorts.h"
 
 #include "common/Error.h"
 #include "common/Module.h"

@@ -47,6 +47,16 @@ Ports are allowed and encouraged. They must:
 2. Name **capabilities the consumer needs**, not the sibling’s type name as the API (`allows_ops`, `cancel_gen`, `on_progress` — not `set_call_media_status(CallMediaStatus)`).
 3. Stay null-guard friendly for unit tests (empty ports = permissive or no-op, documented).
 
+### Port type ownership
+
+| Piece | Lives where |
+|-------|-------------|
+| Port **struct** | Consumer header (the type that `Set*Ports` / stores the ports) |
+| **`Make*` adapters** | Private methods on the composition root / owning façade that closes over producers (`CallStack::MakeHopArmingPorts`, `CallSessionManager::MakeSeatPorts`) |
+| Free `Make*` + standalone `*Ports.{h,cpp}` | Avoid — duplicates the consumer contract and invites upward `#include`s |
+
+Unit / compose tests act as mini-composers: define local helpers in the test TU (or empty ports), not shared free `Make*` in the feature library.
+
 ## Where this shows up
 
 | Area | Higher | Lower | Typical leak |

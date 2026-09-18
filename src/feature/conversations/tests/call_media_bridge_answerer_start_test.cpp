@@ -1,7 +1,7 @@
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallLifecycle.h"
-#include "feature/calls/CallDirectArmingPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
+#include "domain/messaging/CallLifecycleTypes.h"
 
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallMediaKeyStore.h"
@@ -39,6 +39,49 @@ ByteVector TestMediaKey() {
     key[i] = static_cast<uint8_t>(0x10 + i);
   }
   return key;
+}
+
+CallDirectArmingPorts TestDirectArmingPorts(CallLifecycle* lifecycle) {
+  CallDirectArmingPorts ports;
+  if (!lifecycle) {
+    return ports;
+  }
+  ports.direct_ops_allowed = [lifecycle]() { return lifecycle->AllowsDirectPath(); };
+  ports.request_direct_arming = [lifecycle](const std::string& call_id) {
+    if (lifecycle->AllowsDirectPath()) {
+      return;
+    }
+    const CallPhase phase = lifecycle->Phase();
+    if (phase == CallPhase::Accepting || phase == CallPhase::JoinedLocal ||
+        phase == CallPhase::MediaPending || phase == CallPhase::MediaConnecting) {
+      lifecycle->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+    }
+  };
+  ports.report_progress = [lifecycle](CallDirectPlannerPhase phase, const std::string& call_id) {
+    if (phase == CallDirectPlannerPhase::Live || phase == CallDirectPlannerPhase::Idle ||
+        phase == CallDirectPlannerPhase::Stopping) {
+      return;
+    }
+    if (phase == CallDirectPlannerPhase::DegradedTxOnly) {
+      lifecycle->SetMediaStatus(CallMediaStatus::DegradedTxOnly, call_id);
+      return;
+    }
+    lifecycle->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  };
+  ports.on_connected = [lifecycle](const std::string& call_id) {
+    lifecycle->Apply(CallLifecycleEvent::DirectConnected, call_id);
+  };
+  ports.on_connect_failed = [lifecycle](const std::string& call_id) {
+    lifecycle->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+  };
+  ports.on_media_deferred = [lifecycle](const std::string& call_id) {
+    lifecycle->Apply(CallLifecycleEvent::MediaDeferred, call_id);
+  };
+  ports.on_media_key_ready = [lifecycle](const std::string& call_id) {
+    lifecycle->Apply(CallLifecycleEvent::MediaKeyReady, call_id);
+  };
+  ports.arming_debug_name = [lifecycle]() { return CallMediaStatusName(lifecycle->Status()); };
+  return ports;
 }
 
 class FakeMediaHost final : public CallMediaHost {
@@ -177,7 +220,7 @@ protected:
     lifecycle_ = std::make_unique<CallLifecycle>();
     bridge_ = std::make_unique<CallMediaBridge>(*host_, *sessions_, *keys_, *media_, *transport_, dial_.get(),
                                                 nullptr);
-    bridge_->SetDirectArmingPorts(MakeCallDirectArmingPorts(lifecycle_.get()));
+    bridge_->SetDirectArmingPorts(TestDirectArmingPorts(lifecycle_.get()));
     dial_->force_dialable["account:peer"] = true;
     dial_->endpoints["account:peer"] = "/ip4/10.0.0.2/udp/1/p2p/12D3KooWPeer";
   }
