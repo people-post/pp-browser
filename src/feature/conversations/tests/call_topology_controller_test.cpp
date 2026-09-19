@@ -7,7 +7,7 @@
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/CallSessionStore.h"
-#include "domain/messaging/SfuAttachFanout.h"
+#include "domain/messaging/CallHopAttachLogic.h"
 #include "domain/messaging/SoftMigrateLogic.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/mesh/host/MeshControlDispatch.h"

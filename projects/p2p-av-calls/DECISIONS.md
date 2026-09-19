@@ -1143,7 +1143,7 @@ Topology/MediaHost, dial-book maps, delivery, port install, device mute/camera, 
 
 1. No same-class multi-`.cpp` splits ([AGENTS.md](../../AGENTS.md)).
 2. Behavior-preserving SoftMigrate / attach races (port null-guards only).
-3. Pure who-picks stay in `SoftMigrateLogic` / `SfuAttachWaitLogic` / `CallHopPlannerLogic`.
+3. Pure who-picks stay in `SoftMigrateLogic` / `CallHopAttachLogic` / `CallHopPlannerLogic`.
 4. Do not start Workflow extract until Host + Lifecycle/Seat ports exist.
 
 **Non-goals:** Peer dial-book merge; `CallMediaHost` rewrite; Bridge Lifecycle/Seat ports in this ADR.

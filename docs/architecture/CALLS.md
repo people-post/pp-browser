@@ -367,15 +367,14 @@ Extract without changing the external façade (`ConversationsHub::Calls()`, `Cal
 | Unit | Job |
 |------|-----|
 | `SoftMigrateLogic` | Who-picks: initiator first hop (V021/V022); `JoinedCountObserved` / `RemoteAcceptObserved`; ICE → coordinator |
-| `SfuAttachWaitLogic` | Attach-wait poll; **no TimeoutLeave while migrate in flight** |
-| `SfuAttachFanout` | Fan-out detail with empty `quote_id`; publisher stream id |
+| `CallHopAttachLogic` | Attach-wait poll (**no TimeoutLeave while migrate in flight**); fan-out detail with empty `quote_id`; publisher stream id; hop-hint owner decision |
 | `MeshHopPolicy` | Contact∪seed rank; Prefer contacts; `ExcludeSelfHop`; `PreferLocalMediaHop` / `PreferInCallMediaHops` |
 
 ### 1. `CallTopologyController` (feature adapter)
 Responsibilities:
 
 - Hop `Apply` / On*; SoftMigrate/attach → owned **`CallHopMigrateWorkflow`** (owns race clusters + ports/Ops; V046/V047)
-- Hop ranking via `IMediaRelayClient` / `IDialRegistry`; attach-wait via `SfuAttachWaitLogic`
+- Hop ranking via `IMediaRelayClient` / `IDialRegistry`; attach-wait via `CallHopAttachLogic`
 - Eject joiner when migrate fails but 1:1 P2P remains
 - ICE `failed` recovery **only** when N≥3 (historical group path; no WebRTC PC in product)
 
@@ -450,7 +449,7 @@ Landed (behavior-preserving + who-picks fix):
 1. **Topology extract** — `CallTopologyController` owns soft-migrate / attach / wait / eject / hop helpers.
 2. **Libp2p media bridge** — `CallMediaBridge` owns schedule/dial/retry/stop-media + 1:1 connect-fail / Retry.
 3. **Dispatch cleanup** — thin `ApplyInboundControl` → `CallSessionWorkflow::HandleInbound*`.
-4. **Pure who-picks / wait / fan-out** — `SoftMigrateLogic`, `SfuAttachWaitLogic`, `SfuAttachFanout` + fakes (`IMediaRelayClient` / `IDialRegistry`).
+4. **Pure who-picks / wait / fan-out** — `SoftMigrateLogic`, `CallHopAttachLogic` + fakes (`IMediaRelayClient` / `IDialRegistry`).
 5. **Tests** — `CallMediaTopology` N≥3-only; SoftMigrate / wait / fan-out / topology controller unit tests; `media_relay_service_test` loopback remains integration.
 6. **m2 teardown** — removed `CallP2pSignalingBridge` + libdatachannel from build; wire-compat ignore for `call_sdp` / `call_ice`.
 
@@ -482,8 +481,7 @@ Landed (behavior-preserving + who-picks fix):
 | `src/base/messaging/CallSessionStore.*` | Persistence |
 | `src/base/messaging/CallSessionLogic.*` | Pure transitions / expiry / coordinator pick |
 | `src/base/messaging/SoftMigrateLogic.*` | Pure who-picks |
-| `src/base/messaging/SfuAttachWaitLogic.*` | Pure attach-wait poll |
-| `src/base/messaging/SfuAttachFanout.*` | Fan-out shape + publisher stream id |
+| `src/domain/messaging/CallHopAttachLogic.*` | Pure attach-wait / fan-out / hop-hint |
 | `src/base/messaging/CallControlCodec.*` | Wire JSON for call controls |
 | `src/base/people/MeshHopPolicy.*` | Contact∪seed hop rank / ExcludeSelfHop |
 | `src/domain/mesh/MediaRelayService.*` | Blind SFU |

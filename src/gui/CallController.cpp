@@ -6,7 +6,7 @@
 #include "domain/media/CallMediaEngine.h"
 #include "common/media/CallMediaHealth.h"
 #include "domain/messaging/CallTypes.h"
-#include "domain/messaging/SfuAttachFanout.h"
+#include "domain/messaging/CallHopAttachLogic.h"
 #include "domain/people/AvatarGlyph.h"
 #include "domain/people/ContactTypes.h"
 #include "foundation/runtime/AppRuntime.h"

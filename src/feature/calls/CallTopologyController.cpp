@@ -4,10 +4,8 @@
 
 #include "domain/media/CallMediaAdaptation.h"
 #include "domain/messaging/CallHopPlan.h"
-#include "domain/messaging/HopHintLogic.h"
+#include "domain/messaging/CallHopAttachLogic.h"
 #include "domain/messaging/InitiationPricing.h"
-#include "domain/messaging/SfuAttachFanout.h"
-#include "domain/messaging/SfuAttachWaitLogic.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/people/ContactTypes.h"
 #include "domain/people/MeshHopPolicy.h"

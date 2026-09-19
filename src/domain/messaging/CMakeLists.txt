@@ -11,7 +11,6 @@ pp_browser_add_domain_library(pp_domain_messaging
     AutoKeyEnvelopeResolver.cpp
     ChatBlobResponder.cpp
     ChatHistoryResponder.cpp
-    ChatHistoryStreamCodec.cpp
     ChatPayloadCodec.cpp
     CallControlCodec.cpp
     CallLifecycleTransitionLogic.cpp
@@ -21,9 +20,9 @@ pp_browser_add_domain_library(pp_domain_messaging
     CallTypes.cpp
     SoftMigrateLogic.cpp
     CallHopPlan.cpp
-    SfuAttachFanout.cpp
-    SfuAttachWaitLogic.cpp
-    HopHintLogic.cpp
+    CallHopAttachLogic.cpp
+    SqliteThreadSchema.cpp
+    SqliteThreadDb.cpp
     PeerCapsLogic.cpp
     ChatPayloadValidator.cpp
     ConversationSummaryCodec.cpp
@@ -48,16 +47,13 @@ pp_browser_add_domain_library(pp_domain_messaging
     PeerAnnouncePublisher.cpp
     PeerAnnounceRpcCodec.cpp
     PeerAnnounceKeyResolve.cpp
-    AnnounceDmReply.cpp
     AnnounceOverlayReply.cpp
     AnnounceNotificationInbox.cpp
     AnnounceLiveJoin.cpp
-    AnnounceLiveJoinHandoff.cpp
     BroadcastJoinTicket.cpp
     BroadcastLadderLogic.cpp
     BroadcastRpcCodec.cpp
     InitiationPricing.cpp
-    JsonThreadStore.cpp
     PskRotateCodec.cpp
     PskSessionCoordinator.cpp
     PublicPskLockCoordinator.cpp

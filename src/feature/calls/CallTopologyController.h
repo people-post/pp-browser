@@ -73,7 +73,7 @@ struct CallTopologySeatPorts {
 /**
  * SFU soft-migrate / attach-wait / hop pick (V021 + V025) — V036 Phase 3 **Hop path** plugin
  * under CallMediaSeat. Pure who-picks / wait / fan-out live in base SoftMigrateLogic /
- * SfuAttachWaitLogic / SfuAttachFanout; this adapter owns IO + AppRuntime posting.
+ * CallHopAttachLogic; this adapter owns IO + AppRuntime posting.
  * Attach StartSfu requires a seat token when the seat is wired.
  *
  * SoftMigrate race clusters live on CallHopMigrateWorkflow (V047); this type keeps refs +
