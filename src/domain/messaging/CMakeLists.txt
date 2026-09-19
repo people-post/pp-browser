@@ -21,6 +21,8 @@ pp_browser_add_domain_library(pp_domain_messaging
     SoftMigrateLogic.cpp
     CallHopPlan.cpp
     CallHopAttachLogic.cpp
+    SqliteThreadSchema.cpp
+    SqliteThreadDb.cpp
     PeerCapsLogic.cpp
     ChatPayloadValidator.cpp
     ConversationSummaryCodec.cpp
