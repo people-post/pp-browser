@@ -122,7 +122,13 @@ struct CircuitTunnelCoordinator::Impl {
 
   void ScheduleWhenChannelOpen(std::string peer_key, const uint32_t channel_id, const Clock::time_point deadline,
                                std::function<void(bool open)> done) {
+    if (!done) {
+      return;
+    }
     PostIo([this, peer_key = std::move(peer_key), channel_id, deadline, done = std::move(done)]() mutable {
+      if (!done) {
+        return;
+      }
       if (stopped.load(std::memory_order_acquire)) {
         done(false);
         return;

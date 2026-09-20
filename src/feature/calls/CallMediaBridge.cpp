@@ -23,6 +23,11 @@ namespace {
 constexpr int64_t kMeshConnectTimeoutMs = 75000;
 /** Must stay ≤ offerer inbound grace so answerer reverse-dial usually wins first. */
 constexpr int64_t kDialWaitBudgetMs = 12000;
+/**
+ * StartBridge (8s) + nested Establish (10s) + relay retry slack. Once circuit Ensure has started,
+ * do not expire the Bridge dial wait until this budget from circuit start (dogfood 8b452388).
+ */
+constexpr int64_t kCircuitEnsureBudgetMs = 20000;
 constexpr int kDialPollMs = 250;
 constexpr int kConnectAttempts = 5;
 /** Full newStream + Noise + hello; 2.5s was far too short on Android LAN. */
@@ -584,9 +589,11 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
              << " has_circuit_reach=" << (circuit_reach_ ? 1 : 0)
              << " budget_ms=" << dial_wait_budget_ms_;
 
-  const int64_t deadline = util::NowUnixMs() + dial_wait_budget_ms_;
+  const int64_t initial_deadline = util::NowUnixMs() + dial_wait_budget_ms_;
+  auto deadline = std::make_shared<int64_t>(initial_deadline);
   auto last_error = std::make_shared<Error>(Error("call peer not connected"));
   auto circuit_started = std::make_shared<bool>(false);
+  auto circuit_inflight = std::make_shared<bool>(false);
   auto assoc_started = std::make_shared<bool>(false);
   auto assoc_done = std::make_shared<bool>(false);
   auto settled = std::make_shared<std::atomic<bool>>(false);
@@ -599,9 +606,10 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     }
   };
   // Hard deadline independent of the poll tick chain (dogfood af934e: EnsureAssociation
-  // never called back and poll ticks never hit "still not connected").
+  // never called back and poll ticks never hit "still not connected"). Cover circuit Ensure
+  // slack so the watchdog cannot abort an in-flight StartBridge early.
   (void)AppRuntime::ScheduleCoordinatorOneShot(
-      std::chrono::milliseconds(dial_wait_budget_ms_ + 250),
+      std::chrono::milliseconds(dial_wait_budget_ms_ + kCircuitEnsureBudgetMs + 250),
       [this, peer_identity, finish, settled, last_error]() mutable {
         if (settled->load(std::memory_order_acquire)) {
           return;
@@ -612,8 +620,8 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
         finish(*last_error);
       });
   auto tick = std::make_shared<std::function<void()>>();
-  *tick = [this, peer_identity, connect_gen, finish, settled, deadline, last_error, circuit_started,
-           assoc_started, assoc_done, force_circuit, tick]() mutable {
+  *tick = [this, peer_identity, connect_gen, finish, settled, deadline, initial_deadline, last_error,
+           circuit_started, circuit_inflight, assoc_started, assoc_done, force_circuit, tick]() mutable {
     if (settled->load(std::memory_order_acquire)) {
       return;
     }
@@ -642,7 +650,17 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
       finish({});
       return;
     }
-    if (util::NowUnixMs() >= deadline) {
+    if (util::NowUnixMs() >= *deadline) {
+      // Do not AbortPending a live StartBridge because punch/assoc burned the short dial budget.
+      if (*circuit_inflight) {
+        (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs),
+                                                     [tick]() {
+                                                       if (tick && *tick) {
+                                                         (*tick)();
+                                                       }
+                                                     });
+        return;
+      }
       log().warning << "CallLifecycle StartSfu peer still not connected peer=" << peer_identity
                     << " last=" << last_error->message
                     << " dialable=" << (dial_->IsDialable(peer_identity) ? 1 : 0)
@@ -706,14 +724,22 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
         (force_circuit || !dial_->IsDialable(peer_identity) || *assoc_started ||
          (*assoc_done && !dial_->IsConnected(peer_identity)))) {
       *circuit_started = true;
-      log().info << "CallLifecycle StartSfu Ensure circuit/punch start peer=" << peer_identity;
+      *circuit_inflight = true;
+      const int64_t circuit_deadline = util::NowUnixMs() + kCircuitEnsureBudgetMs;
+      if (circuit_deadline > *deadline) {
+        *deadline = circuit_deadline;
+      }
+      log().info << "CallLifecycle StartSfu Ensure circuit/punch start peer=" << peer_identity
+                 << " circuit_budget_ms=" << kCircuitEnsureBudgetMs;
       circuit_reach_->TryEnsureCallMediaReachableAsync(
           peer_identity,
-          [this, peer_identity, connect_gen, finish, settled, last_error,
-           tick](Roe<void> via) mutable {
+          [this, peer_identity, connect_gen, finish, settled, last_error, circuit_inflight, deadline,
+           initial_deadline, tick](Roe<void> via) mutable {
             AppRuntime::PostCoordinatorNormal(
                 [this, peer_identity, connect_gen, finish = std::move(finish), settled, last_error,
-                 tick, via = std::move(via)]() mutable {
+                 circuit_inflight, deadline, initial_deadline, tick,
+                 via = std::move(via)]() mutable {
+                  *circuit_inflight = false;
                   if (settled->load(std::memory_order_acquire)) {
                     return;
                   }
@@ -745,6 +771,13 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                              << " err=" << last_error->message
                              << " via_ok=" << (via ? 1 : 0)
                              << " connected=" << (dial_ && dial_->IsConnected(peer_identity) ? 1 : 0);
+                  // Circuit slack only applies while StartBridge/nested is in flight. Once it
+                  // misses, fall back to the original dial budget (gtest uses 400ms).
+                  *deadline = initial_deadline;
+                  if (util::NowUnixMs() >= *deadline) {
+                    finish(*last_error);
+                    return;
+                  }
                   (void)AppRuntime::ScheduleCoordinatorOneShot(
                       std::chrono::milliseconds(kDialPollMs), [tick]() {
                         if (tick && *tick) {
@@ -1531,6 +1564,7 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   tx_only_escalation_done_ = false;
   ClearMeshConnectFailed();
   media_attempted_calls_.erase(call_id);
+  media_.SetOnStateChanged({});
 
   // CallMediaEngine::Stop tears down SDL capture — UI thread only (CALLS.md).
   // Always stop leftover media_relay even when ActiveCallId drifted or is empty

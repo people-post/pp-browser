@@ -313,5 +313,37 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureAcceptsHopPeerIdRelayKey) {
   EXPECT_EQ(recording_->preferred_multiaddr_calls, 0);
 }
 
+TEST_F(AmpCircuitHopReachTest, CallMediaEnsureStartsCircuitWithoutWaitingForSlowPunch) {
+  // Dogfood 8b452388: sequential punch burned ~8s of the 12s Bridge dial budget before
+  // StartBridge — AbortPending then killed the hop. Circuit must start while punch is still
+  // outstanding; first Connected wins.
+  WarmAnswererAndOfferer("relay");
+
+  auto punch_started = std::make_shared<std::atomic<bool>>(false);
+  auto hold_punch = std::make_shared<std::function<void(Roe<void>)>>();
+
+  AmpCircuitHopReach reach(
+      *circuit_a_, *hops_, *recording_, [this] { harness_->PumpAll(); },
+      [](const std::string&) { return std::vector<std::string>{"relay"}; },
+      [punch_started, hold_punch](const std::string&, std::function<void(Roe<void>)> on_done) {
+        punch_started->store(true, std::memory_order_release);
+        *hold_punch = std::move(on_done);
+      });
+
+  Wait<void> ensure_wait;
+  reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  ensure_wait.PumpUntilDone(*harness_);
+  ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
+  EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
+  EXPECT_TRUE(punch_started->load(std::memory_order_acquire));
+  EXPECT_TRUE(hold_punch && *hold_punch)
+      << "circuit must win while punch callback is still outstanding";
+  EXPECT_GE(recording_->nested_over_carrier_calls, 1);
+
+  if (hold_punch && *hold_punch) {
+    (*hold_punch)(Error("punch still pending"));
+  }
+}
+
 } // namespace
 } // namespace pbr
