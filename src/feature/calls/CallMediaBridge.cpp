@@ -7,8 +7,11 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 
+#include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <chrono>
 #include <thread>
 #include "common/PbrCompat.h"
@@ -57,22 +60,39 @@ CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions
       return;
     }
     // Offerer often dials before relay delivers CallMediaKey — wait briefly while inbox sync runs.
-    const int64_t key_deadline = util::NowUnixMs() + kInboundMediaKeyWaitMs;
-    while (util::NowUnixMs() < key_deadline) {
-      if (stopping_.load(std::memory_order_acquire)) {
-        return;
+    // Cancelable wait (V033): wake on key / teardown; no bare sleep_for on the worker hop.
+    {
+      std::unique_lock lock(inbound_key_mu_);
+      const auto deadline =
+          std::chrono::steady_clock::now() + std::chrono::milliseconds(kInboundMediaKeyWaitMs);
+      while (!stopping_.load(std::memory_order_acquire)) {
+        auto session_now = sessions_.LoadSession(params.call_id);
+        if (!session_now || !session_now->has_value() ||
+            (*session_now)->state == CallSessionState::Ended) {
+          return;
+        }
+        if (auto key = media_keys_.LoadEpochKey(params.call_id, params.media_epoch);
+            key && key->has_value()) {
+          params.media_key = **key;
+          break;
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+          break;
+        }
+        host_.P2pRequestInboxSync();
+        const auto slice_deadline =
+            std::min(deadline, std::chrono::steady_clock::now() + std::chrono::milliseconds(250));
+        inbound_key_cv_.wait_until(lock, slice_deadline, [this, &params]() {
+          if (stopping_.load(std::memory_order_acquire)) {
+            return true;
+          }
+          auto key = media_keys_.LoadEpochKey(params.call_id, params.media_epoch);
+          return static_cast<bool>(key && key->has_value());
+        });
       }
-      auto session_now = sessions_.LoadSession(params.call_id);
-      if (!session_now || !session_now->has_value() ||
-          (*session_now)->state == CallSessionState::Ended) {
-        return;
-      }
-      if (auto key = media_keys_.LoadEpochKey(params.call_id, params.media_epoch); key && key->has_value()) {
-        params.media_key = **key;
-        break;
-      }
-      host_.P2pRequestInboxSync();
-      std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    }
+    if (stopping_.load(std::memory_order_acquire)) {
+      return;
     }
     if (params.media_key.empty()) {
       log().info << "Inbound call-media hello before media key call_id=" << params.call_id;
@@ -1439,6 +1459,8 @@ void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
   if (call_id.empty()) {
     return;
   }
+  // Wake inbound hello key-wait (if any) before hopping to UI for deferred answerer start.
+  inbound_key_cv_.notify_all();
   // Hop to UI — inbound CallMediaKey is processed on Browser IO (inside PollInbox).
   AppRuntime::PostUI([this, call_id]() {
     std::string peer = pending_answerer_peer_;
@@ -1594,6 +1616,7 @@ void CallMediaBridge::NotePeerIdRelayMapping(const std::string& peer_id,
 
 void CallMediaBridge::PrepareForTeardown(int timeout_ms) {
   stopping_.store(true, std::memory_order_release);
+  inbound_key_cv_.notify_all();
   Apply(CallDirectPlannerEvent::Stop, media_call_id_, media_peer_identity_);
   connect_generation_.fetch_add(1, std::memory_order_acq_rel);
   CancelConnectTimers();

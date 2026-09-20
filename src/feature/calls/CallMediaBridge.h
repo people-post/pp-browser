@@ -12,8 +12,10 @@
 #include "common/Module.h"
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <unordered_set>
 #include "common/PbrCompat.h"
@@ -215,6 +217,9 @@ private:
   /** Bumped in StopMeshMedia so in-flight Connect workers abort instead of racing Detach/Stop. */
   std::atomic<uint64_t> connect_generation_{0};
   std::atomic<bool> stopping_{false};
+  /** Cancelable inbound hello MediaKey wait (notify from OnMediaKeyReady / PrepareForTeardown). */
+  std::mutex inbound_key_mu_;
+  std::condition_variable inbound_key_cv_;
   uint64_t offerer_grace_timer_id_ = 0;
   uint64_t connect_retry_timer_id_ = 0;
   uint64_t direct_health_timer_id_ = 0;
