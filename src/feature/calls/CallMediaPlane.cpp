@@ -571,8 +571,28 @@ void CallMediaPlane::ReserveOnBootstrapSeeds() {
     if (!chat->links.GetLinkSnapshot(hop.peer_id).has_endpoint) {
       continue;
     }
-    (void)m->AmpCircuitTunnel()->StartReserve(hop.peer_id, {}, 30000);
-    log().info << "circuit reserve started on seed peer=" << hop.peer_id;
+    const std::string seed = hop.peer_id;
+    auto start_reserve = [this, m, seed]() {
+      if (!m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
+        return;
+      }
+      (void)m->AmpCircuitTunnel()->StartReserve(seed, {}, 30000);
+      log().info << "circuit reserve started on seed peer=" << seed;
+    };
+    if (chat->links.IsConnected(seed)) {
+      start_reserve();
+      continue;
+    }
+    // WarmBootstrapSeedSessions fires EnsureAssociation without waiting — StartReserve needs a
+    // live PeerLink or OpenChannel fails silently and the seed never sees this peer (dogfood
+    // reverse-dial "endpoint not registered").
+    chat->links.EnsureAssociation(seed, [start_reserve = std::move(start_reserve)](
+                                            IChatPeerLinks::LinkRoe assoc) mutable {
+      if (!assoc) {
+        return;
+      }
+      start_reserve();
+    });
   }
 }
 

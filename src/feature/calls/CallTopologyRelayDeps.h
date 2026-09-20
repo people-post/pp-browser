@@ -113,10 +113,14 @@ public:
       on_done(TryEnsureHopReachable(hop_peer_id));
     }
   }
-  /** Reach a call peer for 1:1 call-media when not directly dialable. */
+  /** Reach a call peer for 1:1 call-media when not directly dialable.
+   *  `allow_circuit`: when false, punch only and wait for peer Connected (answerer waits for
+   *  offerer circuit dial — reverse-dial needs the offerer parked on the seed). */
   virtual Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key) = 0;
   virtual void TryEnsureCallMediaReachableAsync(const std::string& peer_key,
-                                                std::function<void(Roe<void>)> on_done) {
+                                                std::function<void(Roe<void>)> on_done,
+                                                bool allow_circuit = true) {
+    (void)allow_circuit;
     if (on_done) {
       on_done(TryEnsureCallMediaReachable(peer_key));
     }

@@ -198,7 +198,8 @@ public:
   }
 
   void TryEnsureCallMediaReachableAsync(const std::string& peer_key,
-                                        std::function<void(Roe<void>)> on_done) override {
+                                        std::function<void(Roe<void>)> on_done,
+                                        bool /*allow_circuit*/ = true) override {
     ++call_media_ensure_calls;
     last_peer = peer_key;
     if (dial) {

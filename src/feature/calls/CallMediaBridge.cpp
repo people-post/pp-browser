@@ -606,10 +606,11 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     }
   };
   // Hard deadline independent of the poll tick chain (dogfood af934e: EnsureAssociation
-  // never called back and poll ticks never hit "still not connected"). Cover circuit Ensure
-  // slack so the watchdog cannot abort an in-flight StartBridge early.
+  // never called back and poll ticks never hit "still not connected"). Cover answerer wait for
+  // offerer inbound grace + circuit Ensure slack.
   (void)AppRuntime::ScheduleCoordinatorOneShot(
-      std::chrono::milliseconds(dial_wait_budget_ms_ + kCircuitEnsureBudgetMs + 250),
+      std::chrono::milliseconds(dial_wait_budget_ms_ + kOffererInboundGraceMs + kCircuitEnsureBudgetMs +
+                                250),
       [this, peer_identity, finish, settled, last_error]() mutable {
         if (settled->load(std::memory_order_acquire)) {
           return;
@@ -725,12 +726,26 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
          (*assoc_done && !dial_->IsConnected(peer_identity)))) {
       *circuit_started = true;
       *circuit_inflight = true;
-      const int64_t circuit_deadline = util::NowUnixMs() + kCircuitEnsureBudgetMs;
-      if (circuit_deadline > *deadline) {
-        *deadline = circuit_deadline;
+      // Answerer: punch + wait for offerer inbound circuit. Reverse-dial StartBridge fails with
+      // "endpoint not registered" when fleet seeds do not see the offerer (dogfood 072a7425).
+      const bool allow_circuit = session_offerer_ || force_circuit;
+      if (allow_circuit) {
+        const int64_t circuit_deadline = util::NowUnixMs() + kCircuitEnsureBudgetMs;
+        if (circuit_deadline > *deadline) {
+          *deadline = circuit_deadline;
+        }
+      } else if (dial_wait_budget_ms_ >= kDialWaitBudgetMs) {
+        // Product answerer: cover offerer inbound grace + circuit dial slack (gtest keeps short budget).
+        const int64_t inbound_deadline =
+            util::NowUnixMs() + kOffererInboundGraceMs + kCircuitEnsureBudgetMs;
+        if (inbound_deadline > *deadline) {
+          *deadline = inbound_deadline;
+        }
       }
       log().info << "CallLifecycle StartSfu Ensure circuit/punch start peer=" << peer_identity
-                 << " circuit_budget_ms=" << kCircuitEnsureBudgetMs;
+                 << " circuit_budget_ms=" << kCircuitEnsureBudgetMs
+                 << " allow_circuit=" << (allow_circuit ? 1 : 0)
+                 << " role=" << (session_offerer_ ? "offerer" : "answerer");
       circuit_reach_->TryEnsureCallMediaReachableAsync(
           peer_identity,
           [this, peer_identity, connect_gen, finish, settled, last_error, circuit_inflight, deadline,
@@ -771,12 +786,17 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                              << " err=" << last_error->message
                              << " via_ok=" << (via ? 1 : 0)
                              << " connected=" << (dial_ && dial_->IsConnected(peer_identity) ? 1 : 0);
-                  // Circuit slack only applies while StartBridge/nested is in flight. Once it
-                  // misses, fall back to the original dial budget (gtest uses 400ms).
-                  *deadline = initial_deadline;
-                  if (util::NowUnixMs() >= *deadline) {
-                    finish(*last_error);
-                    return;
+                  // Answerer / seed "not registered": keep extended deadline for inbound. Hard miss:
+                  // restore short dial budget (gtest).
+                  const bool wait_inbound =
+                      !session_offerer_ ||
+                      last_error->message.find("not registered") != std::string::npos;
+                  if (!wait_inbound) {
+                    *deadline = initial_deadline;
+                    if (util::NowUnixMs() >= *deadline) {
+                      finish(*last_error);
+                      return;
+                    }
                   }
                   (void)AppRuntime::ScheduleCoordinatorOneShot(
                       std::chrono::milliseconds(kDialPollMs), [tick]() {
@@ -785,7 +805,8 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                         }
                       });
                 });
-          });
+          },
+          allow_circuit);
       (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs),
                                                    [tick]() {
                                                      if (tick && *tick) {
