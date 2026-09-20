@@ -1,5 +1,6 @@
 #include "domain/messaging/CallControlThreadLogic.h"
 
+#include "domain/messaging/CallThreadPresenceLogic.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/thread/ThreadChannel.h"
 #include "common/thread/ThreadTypes.h"
@@ -35,6 +36,36 @@ Roe<std::string> ResolveOrCreateE2ePublicDirectThread(IThreadStore& store,
     return thread.error();
   }
   return thread->id;
+}
+
+Roe<size_t> PruneOrphanCallControlShadows(IThreadStore& store,
+                                          const std::unordered_set<std::string>& protect_thread_ids) {
+  auto threads = store.ListThreads();
+  if (!threads) {
+    return threads.error();
+  }
+
+  size_t deleted = 0;
+  for (const Thread& thread : *threads) {
+    if (protect_thread_ids.count(thread.id) != 0) {
+      continue;
+    }
+    if (!HasPrivateE2eSibling(thread, *threads)) {
+      continue;
+    }
+    auto page = store.GetMessagesPage(thread.id, std::nullopt, kOrphanCallControlShadowScanLimit);
+    if (!page) {
+      continue;
+    }
+    if (!TranscriptIsOnlyCallControl(*page, kOrphanCallControlShadowScanLimit)) {
+      continue;
+    }
+    auto removed = store.DeleteThread(thread.id);
+    if (removed && *removed) {
+      ++deleted;
+    }
+  }
+  return deleted;
 }
 
 } // namespace pbr

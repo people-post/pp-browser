@@ -1,4 +1,5 @@
 #include "domain/messaging/CallThreadPresenceLogic.h"
+#include "domain/messaging/CallControlCodec.h"
 
 #include <gtest/gtest.h>
 
@@ -87,4 +88,23 @@ TEST(CallThreadPresenceLogicTest, MatchesGroupOrigin) {
   group.kind = ThreadKind::Group;
   group.group_id = "group:1";
   EXPECT_TRUE(ThreadMatchesActiveCall(group, session, {}));
+}
+
+TEST(CallThreadPresenceLogicTest, TranscriptOnlyCallControlRespectsScanLimit) {
+  EXPECT_TRUE(TranscriptIsOnlyCallControl({}, kOrphanCallControlShadowScanLimit));
+
+  auto invite = CallControlCodec::BuildSystemMessage("t", CallControlType::CallInvite, "ring", "{}", "me");
+  ASSERT_TRUE(static_cast<bool>(invite));
+  EXPECT_TRUE(TranscriptIsOnlyCallControl({*invite}, kOrphanCallControlShadowScanLimit));
+
+  ThreadMessage chat;
+  chat.content_type = ChatContentType::Text;
+  chat.text = "hi";
+  EXPECT_FALSE(TranscriptIsOnlyCallControl({*invite, chat}, kOrphanCallControlShadowScanLimit));
+
+  std::vector<ThreadMessage> full(kOrphanCallControlShadowScanLimit, *invite);
+  EXPECT_FALSE(TranscriptIsOnlyCallControl(full, kOrphanCallControlShadowScanLimit));
+
+  std::vector<ThreadMessage> under(kOrphanCallControlShadowScanLimit - 1, *invite);
+  EXPECT_TRUE(TranscriptIsOnlyCallControl(under, kOrphanCallControlShadowScanLimit));
 }

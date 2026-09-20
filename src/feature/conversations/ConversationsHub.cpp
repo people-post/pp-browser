@@ -11,6 +11,7 @@
 #include "feature/conversations/RelayDirectoryKemKeyResolver.h"
 #include "feature/conversations/RelayDirectorySigningKeyResolver.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
+#include "domain/messaging/CallControlThreadLogic.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
@@ -136,6 +137,9 @@ CallStackDeps ConversationsHub::MakeCallStackDeps() {
     deps.delivery.catch_up_after_call = [this]() {
       mesh_messaging_->SyncInboxFromWake(true);
       mesh_messaging_->TailSyncActiveE2eThread();
+      if (store_) {
+        (void)PruneOrphanCallControlShadows(*store_);
+      }
     };
     deps.bind_call_control = [this](CallControlInboundPorts ports) {
       mesh_messaging_->BindCallControlInbound(std::move(ports));

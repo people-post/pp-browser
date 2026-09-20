@@ -1,5 +1,6 @@
 #include "domain/messaging/CallThreadPresenceLogic.h"
 
+#include "domain/messaging/CallControlCodec.h"
 #include "common/thread/ThreadChannel.h"
 
 namespace pbr {
@@ -30,6 +31,18 @@ bool IsCallControlShadowThread(const Thread& thread, const std::vector<Thread>& 
     return false;
   }
   return HasPrivateE2eSibling(thread, all_threads);
+}
+
+bool TranscriptIsOnlyCallControl(const std::vector<ThreadMessage>& messages, size_t scan_limit) {
+  if (scan_limit == 0 || messages.size() >= scan_limit) {
+    return false;
+  }
+  for (const ThreadMessage& message : messages) {
+    if (!CallControlCodec::IsCallControlMessage(message)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool ThreadMatchesActiveCall(const Thread& thread, const CallSession& session,
