@@ -4,11 +4,8 @@
 
 namespace pbr {
 
-bool IsCallControlShadowThread(const Thread& thread, const std::vector<Thread>& all_threads) {
+bool HasPrivateE2eSibling(const Thread& thread, const std::vector<Thread>& all_threads) {
   if (thread.kind != ThreadKind::Direct || thread.channel != ThreadChannel::E2ePublic) {
-    return false;
-  }
-  if (!thread.preview.empty() || thread.unread_count != 0) {
     return false;
   }
   if (thread.peer_identity_value.empty()) {
@@ -26,6 +23,13 @@ bool IsCallControlShadowThread(const Thread& thread, const std::vector<Thread>& 
     }
   }
   return false;
+}
+
+bool IsCallControlShadowThread(const Thread& thread, const std::vector<Thread>& all_threads) {
+  if (!thread.preview.empty() || thread.unread_count != 0) {
+    return false;
+  }
+  return HasPrivateE2eSibling(thread, all_threads);
 }
 
 bool ThreadMatchesActiveCall(const Thread& thread, const CallSession& session,

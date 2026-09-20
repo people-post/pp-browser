@@ -29,6 +29,7 @@
 #include "common/thread/E2eIntegrityUtil.h"
 #include "domain/messaging/E2eRelayPayloadCodec.h"
 #include "domain/messaging/E2ePublicSessionLogic.h"
+#include "domain/messaging/CallControlThreadLogic.h"
 #include "domain/messaging/GroupE2ePayloadCodec.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/EnvelopeSigner.h"
@@ -662,11 +663,10 @@ Roe<ByteVector> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(const std::s
   if (peer_identity.empty()) {
     return Error("Peer identity required");
   }
-  DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
-  direct_target.peer_identity_value = peer_identity;
-  direct_target.channel = ThreadChannel::E2ePublic;
-
+  std::optional<std::string> prefer;
+  if (call_control_.active_call_origin_thread_id) {
+    prefer = call_control_.active_call_origin_thread_id();
+  }
   std::string contact_id;
   std::string dm_title = peer_identity;
   if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
@@ -678,15 +678,19 @@ Roe<ByteVector> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(const std::s
       }
     }
   }
-  auto thread = store_.FindOrCreateDirectThread(direct_target, contact_id, dm_title);
-  if (!thread) {
-    return thread.error();
+  auto thread_id = ResolveOrCreateE2ePublicDirectThread(store_, peer_identity, prefer, contact_id, dm_title);
+  if (!thread_id) {
+    return thread_id.error();
   }
-  auto session_epoch = store_.GetChatTargetSessionEpoch(thread->id);
+  auto thread = store_.GetThread(*thread_id);
+  if (!thread || !*thread) {
+    return Error("Call control thread missing");
+  }
+  auto session_epoch = store_.GetChatTargetSessionEpoch(*thread_id);
   if (!session_epoch) {
     return session_epoch.error();
   }
-  const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(*thread);
+  const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(**thread);
   auto peer_kem = kem_key_resolver_.Resolve(target_key.peer_identity_kind, target_key.peer_identity_value);
   if (!peer_kem) {
     return peer_kem.error();

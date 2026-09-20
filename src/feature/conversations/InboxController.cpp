@@ -1,5 +1,6 @@
 #include "feature/conversations/InboxController.h"
 
+#include "domain/messaging/CallThreadPresenceLogic.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "domain/ai/StructuredTextParser.h"
@@ -386,6 +387,10 @@ int InboxController::SumUnread() const {
   }
   int total = 0;
   for (const Thread& thread : *threads) {
+    // Public twin of a private DM — call/group control; never inflate the global badge.
+    if (HasPrivateE2eSibling(thread, *threads)) {
+      continue;
+    }
     total += thread.unread_count;
   }
   return total;
@@ -403,6 +408,9 @@ int InboxController::SumUnreadForContact(const std::string& contact_id) const {
   for (const Thread& thread : *threads) {
     if (std::find(thread.participant_contact_ids.begin(), thread.participant_contact_ids.end(), contact_id) ==
         thread.participant_contact_ids.end()) {
+      continue;
+    }
+    if (HasPrivateE2eSibling(thread, *threads)) {
       continue;
     }
     total += thread.unread_count;

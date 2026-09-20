@@ -20,9 +20,11 @@ TEST(CallThreadPresenceLogicTest, ShadowRequiresPrivateSiblingAndEmptyChrome) {
   priv.peer_identity_value = "account:bob";
   priv.preview = "hello";
 
+  EXPECT_TRUE(HasPrivateE2eSibling(pub, {pub, priv}));
   EXPECT_TRUE(IsCallControlShadowThread(pub, {pub, priv}));
 
   pub.preview = "hi";
+  EXPECT_TRUE(HasPrivateE2eSibling(pub, {pub, priv}));
   EXPECT_FALSE(IsCallControlShadowThread(pub, {pub, priv}));
   pub.preview = "";
   pub.unread_count = 1;

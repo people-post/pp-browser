@@ -116,6 +116,38 @@ TEST(InboxControllerUnreadTest, InactiveThreadIncrementsOnInbound) {
   EXPECT_EQ(loaded->value().preview, "ping");
 }
 
+TEST(InboxControllerUnreadTest, PublicTwinWithPrivateSiblingExcludedFromBadge) {
+  InboxTestEnv env("unread_shadow_twin");
+  ASSERT_TRUE(env.inbox->ListThreads());
+
+  Thread priv;
+  priv.id = "thread-priv";
+  priv.kind = ThreadKind::Direct;
+  priv.channel = ThreadChannel::E2e;
+  priv.peer_identity_value = "account:bob";
+  priv.participant_contact_ids = {"contact-1"};
+  priv.title = "Bob";
+  priv.updated_at = 1;
+  ASSERT_TRUE(env.store->UpsertThread(priv));
+
+  Thread pub;
+  pub.id = "thread-pub";
+  pub.kind = ThreadKind::Direct;
+  pub.channel = ThreadChannel::E2ePublic;
+  pub.peer_identity_value = "account:bob";
+  pub.participant_contact_ids = {"contact-1"};
+  pub.title = "Bob";
+  pub.updated_at = 2;
+  ASSERT_TRUE(env.store->UpsertThread(pub));
+
+  env.inbox->IncrementUnread(priv.id);
+  env.inbox->IncrementUnread(pub.id);
+  env.inbox->IncrementUnread(pub.id);
+
+  EXPECT_EQ(env.inbox->SumUnread(), 1);
+  EXPECT_EQ(env.inbox->SumUnreadForContact("contact-1"), 1);
+}
+
 TEST(InboxControllerTest, CreateClearCloseLeavesNoForcedAiHome) {
   InboxTestEnv env("ai_session_lifecycle");
 

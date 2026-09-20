@@ -20,6 +20,8 @@ struct CallControlInboundPorts {
                               std::optional<int64_t> relay_server_time_ms)>
       apply_inbound_control;
   std::function<bool()> has_active_local_call;
+  /** Active call origin thread id when present (prefer for e2e_public control DM). */
+  std::function<std::optional<std::string>()> active_call_origin_thread_id;
 
   bool IsBound() const { return static_cast<bool>(apply_inbound_control); }
 };

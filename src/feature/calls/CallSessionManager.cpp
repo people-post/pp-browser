@@ -13,6 +13,7 @@
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/messaging/InitiationPricing.h"
 #include "domain/messaging/PairwiseFanoutLogic.h"
+#include "domain/messaging/CallControlThreadLogic.h"
 #include "domain/messaging/PeerCapsLogic.h"
 #include "domain/messaging/SendRelayOptions.h"
 #include "domain/people/ContactIdentity.h"
@@ -591,25 +592,10 @@ Roe<std::string> CallSessionManager::LocalRelayIdentity() const {
 }
 
 Roe<std::string> CallSessionManager::EnsureCallControlThread(const std::string& peer_identity) {
-  if (peer_identity.empty()) {
-    return Error("Peer identity required");
-  }
-  // Prefer active-call origin when it is already the e2e_public DM for this peer (avoid a
-  // second catalog row for 1:1 calls started from that chat).
+  std::optional<std::string> prefer;
   if (auto active = ActiveLocalCall(); active && *active && (*active)->origin_thread_id) {
-    if (auto origin = store_.GetThread(*(*active)->origin_thread_id); origin && *origin) {
-      const Thread& thr = **origin;
-      if (thr.kind == ThreadKind::Direct && thr.channel == ThreadChannel::E2ePublic &&
-          thr.peer_identity_value == peer_identity) {
-        return thr.id;
-      }
-    }
+    prefer = *(*active)->origin_thread_id;
   }
-  DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
-  direct_target.peer_identity_value = peer_identity;
-  direct_target.channel = ThreadChannel::E2ePublic;
-
   std::string contact_id;
   std::string dm_title = peer_identity;
   if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
@@ -621,12 +607,7 @@ Roe<std::string> CallSessionManager::EnsureCallControlThread(const std::string& 
       }
     }
   }
-
-  auto thread = store_.FindOrCreateDirectThread(direct_target, contact_id, dm_title);
-  if (!thread) {
-    return thread.error();
-  }
-  return thread->id;
+  return ResolveOrCreateE2ePublicDirectThread(store_, peer_identity, prefer, contact_id, dm_title);
 }
 
 Roe<void> CallSessionManager::SendCallDirectMessage(const std::string& peer_identity, const CallControlType type,
