@@ -662,15 +662,23 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                                                      });
         return;
       }
-      log().warning << "CallLifecycle StartSfu peer still not connected peer=" << peer_identity
-                    << " last=" << last_error->message
-                    << " dialable=" << (dial_->IsDialable(peer_identity) ? 1 : 0)
-                    << " circuit_started=" << (*circuit_started ? 1 : 0)
-                    << " assoc_started=" << (*assoc_started ? 1 : 0);
-      finish(*last_error);
-      return;
+      if (circuit_reach_ && !*circuit_started && *assoc_started && !*assoc_done) {
+        *assoc_done = true;
+        log().warning << "CallLifecycle StartSfu EnsureAssociation hung peer=" << peer_identity
+                      << " pivoting to circuit";
+      } else {
+        log().warning << "CallLifecycle StartSfu peer still not connected peer=" << peer_identity
+                      << " last=" << last_error->message
+                      << " dialable=" << (dial_->IsDialable(peer_identity) ? 1 : 0)
+                      << " circuit_started=" << (*circuit_started ? 1 : 0)
+                      << " assoc_started=" << (*assoc_started ? 1 : 0);
+        finish(*last_error);
+        return;
+      }
     }
     // Endpoint known but PeerLink not Connected — kick EnsureAssociation on Amp IO.
+    // Do not start this in parallel with circuit StartBridge: dogfood 997c1c6f AVd ~10s after
+    // assoc sendto-miss overlapped an in-flight hop OpenChannel on the same ADP UDP path.
     if (!*assoc_started && dial_->IsDialable(peer_identity) && !wait_for_circuit) {
       *assoc_started = true;
       log().info << "CallLifecycle StartSfu EnsureAssociation start peer=" << peer_identity;
@@ -703,7 +711,7 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                     log().info << "CallLifecycle StartSfu EnsureAssociation miss peer=" << peer_identity
                                << " err=" << last_error->message;
                     // Dogfood: dialable private MA → dial timeout → DialInBackoff. Abort + clear
-                    // so parallel circuit nested can proceed (hard-lab dirty heal). Keep
+                    // so circuit nested can proceed after assoc settles (hard-lab dirty heal). Keep
                     // assoc_started so we do not hammer EnsureAssociation every poll.
                     if (dial_) {
                       dial_->AbortInflightDial(peer_identity);
@@ -718,11 +726,11 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                       });
                 });
           });
-      // Fall through: also start circuit/punch in parallel (do not wait forever on assoc).
+      // Wait for assoc to finish before StartBridge so the two ADP handshakes do not overlap.
     }
-    // Circuit/punch when forced, undialable, or ADP assoc already kicked / finished.
+    // Circuit/punch when forced, undialable, or ADP assoc already finished (not merely kicked).
     if (circuit_reach_ && !*circuit_started &&
-        (force_circuit || !dial_->IsDialable(peer_identity) || *assoc_started ||
+        (force_circuit || !dial_->IsDialable(peer_identity) ||
          (*assoc_done && !dial_->IsConnected(peer_identity)))) {
       *circuit_started = true;
       *circuit_inflight = true;
