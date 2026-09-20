@@ -56,10 +56,16 @@ Roe<std::pair<std::string, std::string>> NormalizeAmpCircuitTarget(pp::amp::Peer
     return std::make_pair(peer_id, target.target_multiaddr);
   }
   auto snap = links.GetLinkSnapshot(target.target_peer_id);
-  if (!snap.has_endpoint || snap.multiaddr.empty()) {
-    return Error("circuit target peer endpoint not registered");
+  if (snap.has_endpoint && !snap.multiaddr.empty()) {
+    return std::make_pair(target.target_peer_id, snap.multiaddr);
   }
-  return std::make_pair(target.target_peer_id, snap.multiaddr);
+  // Nested call-media is peer-id-only. Double-NAT answerer/offerer parks via op=reserve so the
+  // seed already has a Connected PeerLink without a dial-book MA (dogfood 997c1c6f: relay
+  // refused "endpoint not registered" while the far peer was only reserved/Connected).
+  if (links.IsConnected(target.target_peer_id)) {
+    return std::make_pair(target.target_peer_id, snap.multiaddr);
+  }
+  return Error("circuit target peer endpoint not registered");
 }
 
 } // namespace

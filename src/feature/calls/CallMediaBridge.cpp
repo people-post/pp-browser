@@ -1164,11 +1164,13 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
              << " call_id=" << call_id << " peer=" << peer_identity << " epoch=" << media_epoch
              << " keep_inbound=" << (keep_inbound ? 1 : 0);
 
-  // Answerer first (and offerer): hold outbound Session to org seed for punch/circuit splice.
+  // Both roles park on org seed: answerer reverse-dial makes the *offerer* the circuit target
+  // (dogfood 997c1c6f). Reserve keeps a Connected PeerLink so peer-id-only StartBridge can
+  // EnsureAssociation without dialing into NAT / requiring a dial-book MA.
   if (seed_warm_) {
     seed_warm_();
   }
-  if (!offerer && seed_reserve_) {
+  if (seed_reserve_) {
     seed_reserve_();
   }
 

@@ -135,7 +135,7 @@ public:
   void SetReachDeps(IDialRegistry* dial, ICircuitHopReach* circuit_reach);
   /** Fire-and-forget bootstrap seed warm (CallStack::WarmBootstrapSeedSessions). */
   void SetSeedWarm(std::function<void()> warm);
-  /** Answerer: park circuit reserve on org seed (CallStack::ReserveOnBootstrapSeeds). */
+  /** Both roles: park circuit reserve on org seed (CallStack::ReserveOnBootstrapSeeds). */
   void SetSeedReserve(std::function<void()> reserve);
 
   void SetDirectArmingPorts(CallDirectArmingPorts ports);

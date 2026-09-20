@@ -124,7 +124,7 @@ public:
    * Call before punch/circuit so org seed holds Sessions for double-NAT splice.
    */
   void WarmBootstrapSeedSessions();
-  /** Answerer: StartReserve on dialable bootstrap seeds after warm. */
+  /** Answerer/offerer: StartReserve on dialable bootstrap seeds after warm. */
   void ReserveOnBootstrapSeeds();
 
 private:
