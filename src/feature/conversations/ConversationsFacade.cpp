@@ -2,6 +2,7 @@
 
 #include "foundation/data/PricingTypes.h"
 #include "domain/messaging/AttachmentCache.h"
+#include "domain/messaging/CallThreadPresenceLogic.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/InitiationPricing.h"
 #include "feature/conversations/RegistrationClient.h"
@@ -75,6 +76,29 @@ const std::string& ConversationsFacade::ActiveThreadId() { return hub_.Inbox().A
 Roe<Thread> ConversationsFacade::GetActiveThread() { return hub_.Inbox().GetActiveThread(); }
 
 Roe<std::vector<Thread>> ConversationsFacade::ListThreads() { return hub_.Inbox().ListThreads(); }
+
+bool ConversationsFacade::ThreadHasActiveCall(const std::string& thread_id) {
+  if (thread_id.empty()) {
+    return false;
+  }
+  auto* calls = hub_.Calls();
+  if (!calls) {
+    return false;
+  }
+  auto active = calls->ActiveLocalCall();
+  if (!active || !*active) {
+    return false;
+  }
+  auto thread = GetThread(thread_id);
+  if (!thread || !*thread) {
+    return false;
+  }
+  std::vector<CallParticipant> joined;
+  if (auto parts = calls->ListJoinedParticipants((*active)->call_id); parts) {
+    joined = std::move(*parts);
+  }
+  return ThreadMatchesActiveCall(**thread, **active, joined);
+}
 
 Roe<Thread> ConversationsFacade::OpenThread(const std::string& thread_id) { return hub_.Inbox().OpenThread(thread_id); }
 

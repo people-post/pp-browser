@@ -22,6 +22,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     CallHopPlan.cpp
     CallHopAttachLogic.cpp
     PairwiseFanoutLogic.cpp
+    CallThreadPresenceLogic.cpp
     SqliteThreadSchema.cpp
     SqliteThreadDb.cpp
     PeerCapsLogic.cpp

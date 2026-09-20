@@ -36,6 +36,7 @@
 #include "domain/people/ContactJson.h"
 #include "feature/conversations/RegistrationClient.h"
 #include "domain/messaging/AtAiParser.h"
+#include "domain/messaging/CallThreadPresenceLogic.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/ChatPayloadValidator.h"
 #include "common/chat/MessagingLimits.h"
@@ -1226,6 +1227,9 @@ void ChatController::SyncShellSessions() {
 
   const std::string active_id = ActiveThreadId();
   for (const Thread& thread : sorted_threads) {
+    if (IsCallControlShadowThread(thread, sorted_threads)) {
+      continue;
+    }
     SessionRow row;
     row.id = thread.id.c_str();
     row.title = facade_

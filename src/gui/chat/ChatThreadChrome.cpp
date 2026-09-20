@@ -135,14 +135,29 @@ void ChatThreadChrome::UpdatePeerLink() {
     return;
   }
   auto thread = facade_->GetActiveThread();
-  if (!thread || thread->kind != ThreadKind::Direct) {
+  if (!thread || (thread->kind != ThreadKind::Direct && thread->kind != ThreadKind::Group)) {
     return;
   }
-  if (!facade_) {
+  const bool in_call = facade_->ThreadHasActiveCall(thread->id);
+  if (thread->kind == ThreadKind::Group) {
+    if (!in_call) {
+      return;
+    }
+    view_.show_peer_link = true;
+    view_.peer_link_status = Tr("call.chat.in_call").c_str();
+    view_.peer_link_ready = true;
     return;
   }
   const ThreadPeerLinkView link = facade_->GetThreadPeerLink(thread->id);
-  view_.show_peer_link = !link.status_label.empty();
+  view_.show_peer_link = !link.status_label.empty() || in_call;
+  if (in_call) {
+    // Prefer call presence over mesh path label while the call is live.
+    view_.peer_link_status = Tr("call.chat.in_call").c_str();
+    view_.peer_link_ready = true;
+    view_.show_peer_link_banner = false;
+    view_.show_retry_peer_dial = false;
+    return;
+  }
   view_.peer_link_status = link.status_label.c_str();
   view_.show_peer_link_banner = link.show_banner && !link.banner_message.empty();
   view_.peer_link_banner = link.banner_message.c_str();

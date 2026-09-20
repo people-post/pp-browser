@@ -69,6 +69,8 @@ public:
   const std::string& ActiveThreadId();
   Roe<Thread> GetActiveThread();
   Roe<std::vector<Thread>> ListThreads();
+  /** True when an active local call is for this thread (origin / peer / group). */
+  bool ThreadHasActiveCall(const std::string& thread_id);
   Roe<Thread> OpenThread(const std::string& thread_id);
   Roe<void> CloseThread(const std::string& thread_id);
   void ClearActiveThread();
