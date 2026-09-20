@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/messaging/SendRelayOptions.h"
+#include "foundation/crypto/CryptoTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/Error.h"
 
@@ -20,6 +21,11 @@ struct CallDeliveryPorts {
   std::function<void(bool force)> sync_inbox_from_wake;
   /** Register a dialable multiaddr for a peer identity (call listen bootstrap). */
   std::function<void(const std::string& identity, const std::string& multiaddr)> register_peer_direct_endpoint;
+  /**
+   * Ensure e2e_public session key for media-key wrap (AutoKey if missing).
+   * Fresh key_init is attached on the next send_user_message to that peer's control DM.
+   */
+  std::function<pp::Roe<ByteVector>(const std::string& peer_identity)> ensure_peer_session_key;
 
   bool IsBound() const {
     return static_cast<bool>(send_user_message) && static_cast<bool>(sync_inbox_from_wake);

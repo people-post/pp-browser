@@ -751,6 +751,10 @@ Roe<ByteVector> CallSessionManager::ResolvePeerSessionKey(const std::string& pee
     return record.error();
   }
   if (!record->has_value()) {
+    // AutoKey pre-warm via messaging (stashes key_init for the upcoming CallInvite send).
+    if (delivery_.ensure_peer_session_key) {
+      return delivery_.ensure_peer_session_key(peer_identity);
+    }
     return Error("No PSK session for peer");
   }
   const uint32_t active_epoch = (*record)->session_epoch;
@@ -759,6 +763,9 @@ Roe<ByteVector> CallSessionManager::ResolvePeerSessionKey(const std::string& pee
     return master_psk_b64.error();
   }
   if (!master_psk_b64->has_value()) {
+    if (delivery_.ensure_peer_session_key) {
+      return delivery_.ensure_peer_session_key(peer_identity);
+    }
     return Error("No PSK for active session epoch");
   }
   auto master_psk = Base64Decode(**master_psk_b64);

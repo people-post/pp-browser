@@ -245,6 +245,11 @@ public:
   void WarmPeerForThread(const std::string& thread_id);
   /** Warm Amp association by PeerId / dial key (call prefetch shares this with chat). */
   void WarmPeerByKey(const std::string& peer_key);
+  /**
+   * Ensure e2e_public AutoKey PSK exists for peer (call invite media-key wrap).
+   * Fresh encapsulation stashes key_init for the next SendUserMessage on that target.
+   */
+  Roe<ByteVector> EnsureE2ePublicSessionKey(const std::string& peer_identity);
   /** Snapshotted link UX for the open thread (header + soft banner). */
   ThreadPeerLinkView GetThreadPeerLink(const std::string& thread_id) const;
   /** Clear dial backoff and dial again for the thread's peer. */
@@ -338,6 +343,12 @@ private:
   mutable std::mutex account_relay_mutex_;
   /** Inbound-learned Account ID → Brief `relay:` (non-contact call/message). */
   std::unordered_map<std::string, std::string> account_to_relay_;
+  /**
+   * AutoKey key_init produced by EnsureE2ePublicSessionKey before the first outbound
+   * encrypt — keyed by `kind|value|channel` target identity.
+   */
+  mutable std::mutex pending_key_init_mutex_;
+  std::unordered_map<std::string, std::string> pending_e2e_public_key_init_;
   uint64_t last_relay_poll_ms_ = 0;
   /** 0 = Unknown, 1 = Ok, 2 = Failed — see BriefRelayHealthState. */
   std::atomic<int> brief_relay_health_{0};

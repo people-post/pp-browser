@@ -28,6 +28,7 @@
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/E2eIntegrityUtil.h"
 #include "domain/messaging/E2eRelayPayloadCodec.h"
+#include "domain/messaging/E2ePublicSessionLogic.h"
 #include "domain/messaging/GroupE2ePayloadCodec.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/EnvelopeSigner.h"
@@ -646,6 +647,63 @@ void MeshDeliveryOrchestrator::WarmPeerByKey(const std::string& peer_key) {
   if (amp_links_->GetLinkSnapshot(peer_key).has_endpoint) {
     amp_links_->EnsureAssociation(peer_key, [](IChatPeerLinks::LinkRoe) {});
   }
+}
+
+namespace {
+
+std::string ChatTargetKeyMapId(const ChatTargetKey& key) {
+  return key.peer_identity_kind + "|" + key.peer_identity_value + "|" +
+         std::to_string(static_cast<int>(key.channel));
+}
+
+} // namespace
+
+Roe<ByteVector> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(const std::string& peer_identity) {
+  if (peer_identity.empty()) {
+    return Error("Peer identity required");
+  }
+  DirectChatTarget direct_target;
+  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  direct_target.peer_identity_value = peer_identity;
+  direct_target.channel = ThreadChannel::E2ePublic;
+
+  std::string contact_id;
+  std::string dm_title = peer_identity;
+  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
+    if (*contact) {
+      contact_id = (*contact)->id;
+      dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+      if (dm_title.empty()) {
+        dm_title = peer_identity;
+      }
+    }
+  }
+  auto thread = store_.FindOrCreateDirectThread(direct_target, contact_id, dm_title);
+  if (!thread) {
+    return thread.error();
+  }
+  auto session_epoch = store_.GetChatTargetSessionEpoch(thread->id);
+  if (!session_epoch) {
+    return session_epoch.error();
+  }
+  const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(*thread);
+  auto peer_kem = kem_key_resolver_.Resolve(target_key.peer_identity_kind, target_key.peer_identity_value);
+  if (!peer_kem) {
+    return peer_kem.error();
+  }
+  auto peer_public = Base64Decode(peer_kem->kem_public_key_b64);
+  if (!peer_public) {
+    return peer_public.error();
+  }
+  auto ensured = EnsureE2ePublicMasterPsk(psk_store_, target_key, *session_epoch, *peer_public);
+  if (!ensured) {
+    return ensured.error();
+  }
+  if (ensured->key_init_b64 && !ensured->key_init_b64->empty()) {
+    std::lock_guard<std::mutex> lock(pending_key_init_mutex_);
+    pending_e2e_public_key_init_[ChatTargetKeyMapId(target_key)] = *ensured->key_init_b64;
+  }
+  return DeriveE2ePublicSessionKey(ensured->master_psk, *session_epoch);
 }
 
 ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string& thread_id) const {
@@ -1432,6 +1490,14 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
       master_psk = std::move(*decoded);
       if (options.key_init_b64 && !options.key_init_b64->empty()) {
         key_init_b64 = options.key_init_b64;
+      } else if ((*thread)->channel == ThreadChannel::E2ePublic) {
+        // Call invite may AutoKey-prewarm before encrypt; attach stashed key_init once.
+        std::lock_guard<std::mutex> lock(pending_key_init_mutex_);
+        const std::string map_id = ChatTargetKeyMapId(target_key);
+        if (auto it = pending_e2e_public_key_init_.find(map_id); it != pending_e2e_public_key_init_.end()) {
+          key_init_b64 = it->second;
+          pending_e2e_public_key_init_.erase(it);
+        }
       }
     }
     E2eEncryptParams params;
