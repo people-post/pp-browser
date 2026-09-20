@@ -132,6 +132,8 @@ public:
       on_done(TryUpgradeToDirect(peer_key));
     }
   }
+  /** Abort in-flight EnsureViaCircuit / punch chains (ConnectFailed / Leave / teardown). */
+  virtual void AbortPending() {}
 };
 
 /** Amp-only dial registry (PeerLinkManager + AmpCircuitHopRegistry). */

@@ -806,16 +806,22 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
   if (!err.empty()) {
     host_.P2pSetLastMediaError(err);
   }
+  // Stop late EnsureViaCircuit / StartBridge before chrome refresh (dogfood SIGSEGV after give-up).
+  if (circuit_reach_) {
+    circuit_reach_->AbortPending();
+  }
+  if (stop_media && (media_.IsActive() || media_.IsSfuMode())) {
+    // StopMeshMedia clears mesh_connect_failed_ for Leave hygiene — re-assert below.
+    StopMeshMedia(call_id);
+  } else if (dial_ && !media_peer_identity_.empty()) {
+    dial_->AbortInflightDial(media_peer_identity_);
+  }
   if (seat_.note_failed) {
     seat_.note_failed(call_id);
   }
   Apply(CallDirectPlannerEvent::ConnectFailed, call_id, media_peer_identity_);
   if (arming_.on_connect_failed) {
     arming_.on_connect_failed(call_id);
-  }
-  if (stop_media && (media_.IsActive() || media_.IsSfuMode())) {
-    // StopMeshMedia clears mesh_connect_failed_ for Leave hygiene — re-assert for chrome.
-    StopMeshMedia(call_id);
   }
   mesh_connect_failed_ = true;
   host_.P2pNotifyRingChanged();
@@ -1499,6 +1505,9 @@ void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
 void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   // Abort any Connect sequence before Detach — LeaveCall can run while Connect is mid-dial.
   // Do not clear connect_worker_inflight_ here — only the sequence clears it (shutdown waits).
+  if (circuit_reach_) {
+    circuit_reach_->AbortPending();
+  }
   Apply(CallDirectPlannerEvent::Stop, call_id, media_peer_identity_);
   connect_generation_.fetch_add(1, std::memory_order_acq_rel);
   CancelConnectTimers();
@@ -1624,6 +1633,9 @@ void CallMediaBridge::NotePeerIdRelayMapping(const std::string& peer_id,
 void CallMediaBridge::PrepareForTeardown(int timeout_ms) {
   stopping_.store(true, std::memory_order_release);
   inbound_key_cv_.notify_all();
+  if (circuit_reach_) {
+    circuit_reach_->AbortPending();
+  }
   Apply(CallDirectPlannerEvent::Stop, media_call_id_, media_peer_identity_);
   connect_generation_.fetch_add(1, std::memory_order_acq_rel);
   CancelConnectTimers();
