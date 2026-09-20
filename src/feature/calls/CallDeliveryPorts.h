@@ -6,7 +6,6 @@
 
 #include <functional>
 #include <string>
-#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -15,8 +14,8 @@ namespace pbr {
  * Softens calls→conversations: calls must not include MeshDeliveryOrchestrator.
  */
 struct CallDeliveryPorts {
-  std::function<Roe<ThreadMessage>(const std::string& thread_id, const std::string& text,
-                                   const SendRelayOptions& options)>
+  std::function<pp::Roe<ThreadMessage>(const std::string& thread_id, const std::string& text,
+                                       const SendRelayOptions& options)>
       send_user_message;
   std::function<void(bool force)> sync_inbox_from_wake;
   /** Register a dialable multiaddr for a peer identity (call listen bootstrap). */

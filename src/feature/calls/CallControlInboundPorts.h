@@ -6,7 +6,6 @@
 #include <functional>
 #include <optional>
 #include <string>
-#include "common/PbrCompat.h"
 
 namespace pbr {
 
@@ -16,9 +15,9 @@ namespace pbr {
  * include CallSessionManager once filled from CallStack.
  */
 struct CallControlInboundPorts {
-  std::function<Roe<void>(ThreadMessage& message, const std::string& sender_identity,
-                          std::optional<int64_t> relay_created_at_ms,
-                          std::optional<int64_t> relay_server_time_ms)>
+  std::function<pp::Roe<void>(ThreadMessage& message, const std::string& sender_identity,
+                              std::optional<int64_t> relay_created_at_ms,
+                              std::optional<int64_t> relay_server_time_ms)>
       apply_inbound_control;
   std::function<bool()> has_active_local_call;
 

@@ -635,9 +635,16 @@ void MeshDeliveryOrchestrator::WarmPeerForThread(const std::string& thread_id) {
       relay_fallback_notice_text_.clear();
     }
   }
-  amp_links_->MarkWarm(peer);
-  if (amp_links_->GetLinkSnapshot(peer).has_endpoint) {
-    amp_links_->EnsureAssociation(peer, [](IChatPeerLinks::LinkRoe) {});
+  WarmPeerByKey(peer);
+}
+
+void MeshDeliveryOrchestrator::WarmPeerByKey(const std::string& peer_key) {
+  if (!amp_links_ || peer_key.empty()) {
+    return;
+  }
+  amp_links_->MarkWarm(peer_key);
+  if (amp_links_->GetLinkSnapshot(peer_key).has_endpoint) {
+    amp_links_->EnsureAssociation(peer_key, [](IChatPeerLinks::LinkRoe) {});
   }
 }
 
@@ -782,10 +789,7 @@ void MeshDeliveryOrchestrator::RetryPeerDial(const std::string& thread_id) {
       relay_fallback_notice_text_.clear();
     }
   }
-  amp_links_->MarkWarm(peer);
-  if (amp_links_->GetLinkSnapshot(peer).has_endpoint) {
-    amp_links_->EnsureAssociation(peer, [](IChatPeerLinks::LinkRoe) {});
-  }
+  WarmPeerByKey(peer);
 }
 
 bool MeshDeliveryOrchestrator::IsE2ePrivateThread(const std::string& thread_id) const {

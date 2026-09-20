@@ -3,6 +3,7 @@
 #include "foundation/data/MeshRole.h"
 #include "domain/mesh/host/MeshPorts.h"
 #include "domain/messaging/CallTypes.h"
+#include "domain/messaging/PeerCapsLogic.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "foundation/runtime/AppRuntime.h"
@@ -48,13 +49,29 @@ void CallStack::SyncMediaPlaneDeps() {
   plane_deps.register_peer_direct_endpoint = deps_.delivery.register_peer_direct_endpoint;
   plane_deps.local_listen_multiaddrs = [this]() { return LocalCallListenMultiaddrs(); };
   plane_deps.peer_has_media_relay = [this](const std::string& peer_id) {
-    return call_sessions_ && call_sessions_->PeerHasMediaRelayCap(peer_id);
+    if (call_sessions_ && call_sessions_->PeerHasMediaRelayCap(peer_id)) {
+      return true;
+    }
+    // Mesh directory / DHT ads — SoftMigrate must not wait for Invite/Accept caps (V030).
+    if (deps_.list_directory_nodes &&
+        PeerHasMediaRelayInDirectory(peer_id, deps_.list_directory_nodes())) {
+      return true;
+    }
+    if (deps_.list_dht_nodes && PeerHasMediaRelayInDirectory(peer_id, deps_.list_dht_nodes())) {
+      return true;
+    }
+    return false;
   };
   plane_deps.list_media_relay_peers = [this]() {
-    if (!call_sessions_) {
-      return std::vector<std::string>{};
+    std::vector<std::string> from_caps;
+    if (call_sessions_) {
+      from_caps = call_sessions_->ListMediaRelayCapablePeerIds();
     }
-    return call_sessions_->ListMediaRelayCapablePeerIds();
+    const std::vector<MeshDirectoryNode> directory =
+        deps_.list_directory_nodes ? deps_.list_directory_nodes() : std::vector<MeshDirectoryNode>{};
+    const std::vector<MeshDirectoryNode> dht =
+        deps_.list_dht_nodes ? deps_.list_dht_nodes() : std::vector<MeshDirectoryNode>{};
+    return MergeMediaRelayCapablePeerIds(from_caps, directory, dht);
   };
   plane_deps.note_mesh_peer_id_for_relay = [this](const std::string& account,
                                                  const std::string& peer_id) {

@@ -243,6 +243,8 @@ public:
   void TickMesh();
   /** Warm connection for an open direct thread (background). */
   void WarmPeerForThread(const std::string& thread_id);
+  /** Warm Amp association by PeerId / dial key (call prefetch shares this with chat). */
+  void WarmPeerByKey(const std::string& peer_key);
   /** Snapshotted link UX for the open thread (header + soft banner). */
   ThreadPeerLinkView GetThreadPeerLink(const std::string& thread_id) const;
   /** Clear dial backoff and dial again for the thread's peer. */

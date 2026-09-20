@@ -594,6 +594,17 @@ Roe<std::string> CallSessionManager::EnsureCallControlThread(const std::string& 
   if (peer_identity.empty()) {
     return Error("Peer identity required");
   }
+  // Prefer active-call origin when it is already the e2e_public DM for this peer (avoid a
+  // second catalog row for 1:1 calls started from that chat).
+  if (auto active = ActiveLocalCall(); active && *active && (*active)->origin_thread_id) {
+    if (auto origin = store_.GetThread(*(*active)->origin_thread_id); origin && *origin) {
+      const Thread& thr = **origin;
+      if (thr.kind == ThreadKind::Direct && thr.channel == ThreadChannel::E2ePublic &&
+          thr.peer_identity_value == peer_identity) {
+        return thr.id;
+      }
+    }
+  }
   DirectChatTarget direct_target;
   direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
   direct_target.peer_identity_value = peer_identity;

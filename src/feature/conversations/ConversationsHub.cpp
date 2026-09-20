@@ -957,6 +957,8 @@ void ConversationsHub::PrefetchPeerReachability(const std::string& identity) {
   if (peer_id.empty()) {
     peer_id = identity;
   }
+  // Same Amp warm path as open-chat WarmPeerForThread — call invite/accept should share it.
+  mesh_messaging_->WarmPeerByKey(peer_id);
   if (mesh_ && mesh_->AmpDht() && ResolveMeshRole(config_.mesh) == MeshRole::Node &&
       config_.mesh.capabilities.dht) {
     mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](AmpDhtProtocol::FindPeerRoe result) {

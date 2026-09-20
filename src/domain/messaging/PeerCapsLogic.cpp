@@ -85,4 +85,56 @@ std::vector<std::string> PeerIdsFromListenMultiaddrs(const std::vector<std::stri
   return out;
 }
 
+bool DirectoryNodeAdvertisesMediaRelay(const MeshDirectoryNode& node) {
+  return node.media_relay && !node.peer_id.empty();
+}
+
+bool PeerHasMediaRelayInDirectory(const std::string& peer_id,
+                                  const std::vector<MeshDirectoryNode>& nodes) {
+  if (peer_id.empty()) {
+    return false;
+  }
+  for (const MeshDirectoryNode& node : nodes) {
+    if (node.peer_id == peer_id && DirectoryNodeAdvertisesMediaRelay(node)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::vector<std::string> MediaRelayPeerIdsFromDirectory(const std::vector<MeshDirectoryNode>& nodes) {
+  std::vector<std::string> out;
+  std::unordered_set<std::string> seen;
+  for (const MeshDirectoryNode& node : nodes) {
+    if (!DirectoryNodeAdvertisesMediaRelay(node) || !seen.insert(node.peer_id).second) {
+      continue;
+    }
+    out.push_back(node.peer_id);
+  }
+  return out;
+}
+
+std::vector<std::string> MergeMediaRelayCapablePeerIds(
+    const std::vector<std::string>& from_call_caps, const std::vector<MeshDirectoryNode>& directory_nodes,
+    const std::vector<MeshDirectoryNode>& dht_nodes) {
+  std::vector<std::string> out;
+  std::unordered_set<std::string> seen;
+  auto append = [&](const std::string& peer_id) {
+    if (peer_id.empty() || !seen.insert(peer_id).second) {
+      return;
+    }
+    out.push_back(peer_id);
+  };
+  for (const std::string& peer_id : from_call_caps) {
+    append(peer_id);
+  }
+  for (const std::string& peer_id : MediaRelayPeerIdsFromDirectory(directory_nodes)) {
+    append(peer_id);
+  }
+  for (const std::string& peer_id : MediaRelayPeerIdsFromDirectory(dht_nodes)) {
+    append(peer_id);
+  }
+  return out;
+}
+
 } // namespace pbr
