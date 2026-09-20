@@ -245,6 +245,18 @@ TEST(CallControlCodecTest, VideoRefreshRoundTrip) {
   EXPECT_FALSE(CallControlCodec::DecodeVideoRefresh(R"({"identity":"account:pub"})"));
 }
 
+TEST(CallControlCodecTest, PlumbingAndInboxChromeSuppress) {
+  EXPECT_TRUE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallMediaKey));
+  EXPECT_TRUE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallSfuAttach));
+  EXPECT_FALSE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallInvite));
+  EXPECT_FALSE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallRoster));
+
+  EXPECT_TRUE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallMediaKey));
+  EXPECT_TRUE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallRoster));
+  EXPECT_FALSE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallInvite));
+  EXPECT_FALSE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallEnded));
+}
+
 TEST(CallSessionLogicTest, VideoAllowedFromInvite) {
   CallInviteDetail voice;
   voice.media_mode = CallMediaMode::Voice;

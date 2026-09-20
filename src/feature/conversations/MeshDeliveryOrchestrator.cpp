@@ -1191,6 +1191,11 @@ void MeshDeliveryOrchestrator::MaybeTailSync(const std::string& thread_id) {
   if (!chat_sync_) {
     return;
   }
+  // SoftMigrate / Accept must not sit behind history TailSync on the Normal worker + relay HTTP.
+  if (HasActiveLocalCall()) {
+    log().info << "MaybeTailSync deferred (active call) thread=" << thread_id;
+    return;
+  }
   AppRuntime::PostWorkerNormal([this, thread_id]() {
     chat_sync_->TailSyncAsync(thread_id, [this](Roe<ChatSyncResult> result) {
       if (result && on_messages_changed_) {
@@ -1202,6 +1207,10 @@ void MeshDeliveryOrchestrator::MaybeTailSync(const std::string& thread_id) {
 
 void MeshDeliveryOrchestrator::MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope) {
   if (!chat_sync_ || !envelope.session_epoch) {
+    return;
+  }
+  if (HasActiveLocalCall()) {
+    log().info << "MaybeRepairGap deferred (active call) thread=" << thread_id;
     return;
   }
   auto sync_state = store_.GetPeerSyncState(thread_id, envelope.session_epoch);
@@ -2068,6 +2077,10 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
             continue;
           }
           const std::string& resolved_thread_id = outcome.thread_id;
+          if (outcome.suppress_inbox_chrome) {
+            // Call MediaKey / SFU / roster — apply side effects only; do not bump sidebar/unread.
+            continue;
+          }
           std::optional<std::string> preview;
           if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
             preview = decoded->text;

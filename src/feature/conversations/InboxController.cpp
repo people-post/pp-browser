@@ -54,18 +54,7 @@ std::string SystemLineRml(const std::string& text) {
 }
 
 bool IsPlumbingCallControl(const CallControlType type) {
-  switch (type) {
-  case CallControlType::CallMediaKey:
-  case CallControlType::CallSdp:
-  case CallControlType::CallIce:
-  case CallControlType::CallSfuAttach:
-  case CallControlType::CallSfuAttachFailed:
-  case CallControlType::CallHopRefuse:
-  case CallControlType::CallVideoRefresh:
-    return true;
-  default:
-    return false;
-  }
+  return CallControlCodec::IsPlumbingCallControl(type);
 }
 
 std::optional<std::string> CallDetailJson(const ThreadMessage& message) {

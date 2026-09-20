@@ -31,6 +31,11 @@ struct RelayReceiveOutcome {
   /** Set when `persisted` is true. */
   std::string thread_id;
   /**
+   * When true, MeshDelivery must not bump thread preview/unread or fire OS notices
+   * (call MediaKey / SFU / mid-call roster, etc.).
+   */
+  bool suppress_inbox_chrome = false;
+  /**
    * When set, the local user (owner) should publish owner-signed member_joined after ingest.
    * Filled on successful group_invite_accept apply.
    */

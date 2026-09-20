@@ -93,6 +93,14 @@ bool IsCallControlMessage(const ThreadMessage& message) {
   return CallControlCodec::IsCallControlMessage(message);
 }
 
+void MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome, const ThreadMessage& message) {
+  if (const auto type = CallControlCodec::ControlTypeFromMessage(message)) {
+    if (CallControlCodec::SuppressesInboxChrome(*type)) {
+      outcome.suppress_inbox_chrome = true;
+    }
+  }
+}
+
 } // namespace
 
 RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys,
@@ -637,6 +645,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
             side.transport = transport;
             side.sender_seq = envelope.sender_seq;
             side.session_epoch = envelope.session_epoch;
+            MaybeSuppressInboxChrome(outcome, side);
             (void)ApplyInboundCallMessage(side, envelope.sender_contact_id, envelope.relay_created_at_ms,
                                           envelope.relay_server_time_ms);
           }
@@ -831,6 +840,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       log().warning
           << "Apply call-control on " << static_cast<int>(decision_label)
           << " message_id=" << envelope.message_id;
+      MaybeSuppressInboxChrome(outcome, side);
       if (auto call = ApplyInboundCallMessage(side, envelope.sender_contact_id, envelope.relay_created_at_ms,
                                               envelope.relay_server_time_ms);
           !call) {
@@ -879,6 +889,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
                              resolved_thread_id);
           return outcome;
         }
+        MaybeSuppressInboxChrome(outcome, persisted);
         auto has_id = store_.HasMessageId(resolved_thread_id, envelope.message_id);
         if (has_id && !*has_id && store_.AppendMessage(persisted)) {
           outcome.persisted = true;
@@ -928,6 +939,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
                        resolved_thread_id);
     return outcome;
   }
+  MaybeSuppressInboxChrome(outcome, persisted);
   if (auto billing = ApplyInboundBillingMessage(persisted, envelope.sender_contact_id); !billing) {
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply billing update",
