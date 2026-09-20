@@ -340,5 +340,37 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureRunsCircuitBeforePunch) {
   EXPECT_FALSE(hold_punch && *hold_punch);
 }
 
+TEST_F(AmpCircuitHopReachTest, AbortPendingSkipsPunchFallback) {
+  // Leave / ConnectFailed must not fall through to punch after an aborted circuit miss.
+  WarmAnswererAndOfferer("relay");
+
+  auto punch_started = std::make_shared<std::atomic<bool>>(false);
+  auto hold_punch = std::make_shared<std::function<void(Roe<void>)>>();
+
+  AmpCircuitHopReach reach(
+      *circuit_a_, *hops_, *recording_, AmpCircuitHopReach::IoPump{},
+      [](const std::string&) {
+        // Force circuit miss without StartBridge so Abort can win before any tunnel work.
+        return std::vector<std::string>{};
+      },
+      [punch_started, hold_punch](const std::string&, std::function<void(Roe<void>)> on_done) {
+        punch_started->store(true, std::memory_order_release);
+        *hold_punch = std::move(on_done);
+      });
+
+  Wait<void> ensure_wait;
+  reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  // Empty relay list fails circuit synchronously, then starts punch (held). Abort before punch
+  // completion — finish must report aborted and must not treat punch as success.
+  ASSERT_TRUE(punch_started->load(std::memory_order_acquire));
+  ASSERT_TRUE(hold_punch && *hold_punch);
+  reach.AbortPending();
+  (*hold_punch)(Roe<void>());
+  ASSERT_TRUE(ensure_wait.done.load(std::memory_order_acquire));
+  ASSERT_FALSE(ensure_wait.result);
+  EXPECT_NE(ensure_wait.result.error().message.find("aborted"), std::string::npos)
+      << ensure_wait.result.error().message;
+}
+
 } // namespace
 } // namespace pbr
