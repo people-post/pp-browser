@@ -1443,6 +1443,7 @@ void ChatController::DownloadAttachment(const std::string& message_id) {
 
 void ChatController::UpdatePeerLinkChrome() {
   chrome_.UpdatePeerLink();
+  DirtyChatHeader();
 }
 
 void ChatController::ResetChatPanelState() {

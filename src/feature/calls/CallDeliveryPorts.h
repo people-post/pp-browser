@@ -27,6 +27,11 @@ struct CallDeliveryPorts {
    * When `first_message_key_init_b64` is set, attach it on the next call-control send.
    */
   std::function<pp::Roe<EnsuredE2ePublicSessionKey>(const std::string& peer_identity)> ensure_peer_session_key;
+  /**
+   * After the last local call ends — flush inbox + TailSync that were deferred while
+   * HasActiveLocalCall. No-op while another call is still ActiveLocalCall.
+   */
+  std::function<void()> catch_up_after_call;
 
   bool IsBound() const {
     return static_cast<bool>(send_user_message) && static_cast<bool>(sync_inbox_from_wake);

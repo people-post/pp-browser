@@ -10,6 +10,7 @@
 #include "gui/shell/ShellCallChromePorts.h"
 
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -29,6 +30,11 @@ public:
   void BindPeoplePickerNotify(PeoplePickerNotifyPorts ports);
   /** Call ring / in-call chrome without ShellHost::Instance(). Clear via BindShellCallChrome({}). */
   void BindShellCallChrome(ShellCallChromePorts ports);
+  /**
+   * Refresh chat peer-link / "In call" header when call chrome changes.
+   * Application wires ChatController — no ChatController::Instance().
+   */
+  void BindPeerLinkRefresh(std::function<void()> callback);
 
   void BindToMessaging();
   void Tick();
@@ -109,6 +115,7 @@ private:
   CallFunctionalPorts call_ports_;
   PeoplePickerNotifyPorts people_picker_notify_;
   ShellCallChromePorts shell_call_chrome_;
+  std::function<void()> peer_link_refresh_;
   /** Presenter-owned call chrome; pushed to ShellHost via apply_snapshot. */
   CallRingState ring_;
   CallInProgressState in_call_;

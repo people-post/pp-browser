@@ -726,6 +726,11 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   call_->BindCallPorts(
       MakeCallFunctionalPorts(*call_ui_, messaging, store_.IsInitialized() ? &store_ : nullptr));
   call_->BindShellCallChrome(MakeShellCallChromePorts(shell));
+  call_->BindPeerLinkRefresh([this]() {
+    if (chat_) {
+      chat_->UpdatePeerLinkChrome();
+    }
+  });
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
   flow_->BindShellNavigation(shell_navigation);
   people_picker_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
@@ -1109,6 +1114,7 @@ bool Application::MountPresenters(ui::Context* context) {
     if (call_) {
       call_->BindCallPorts({});
       call_->BindShellCallChrome({});
+      call_->BindPeerLinkRefresh(nullptr);
       call_->BindPeoplePickerNotify({});
     }
     if (chat_) {
@@ -1443,6 +1449,7 @@ void Application::Shutdown() {
   if (call_) {
     call_->BindCallPorts({});
     call_->BindShellCallChrome({});
+    call_->BindPeerLinkRefresh(nullptr);
     call_->BindPeoplePickerNotify({});
   }
   if (chat_) {

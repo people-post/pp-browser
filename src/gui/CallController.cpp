@@ -163,6 +163,10 @@ void CallController::BindShellCallChrome(ShellCallChromePorts ports) {
   shell_call_chrome_ = std::move(ports);
 }
 
+void CallController::BindPeerLinkRefresh(std::function<void()> callback) {
+  peer_link_refresh_ = std::move(callback);
+}
+
 void CallController::BindPeoplePickerNotify(PeoplePickerNotifyPorts ports) {
   people_picker_notify_ = std::move(ports);
 }
@@ -192,9 +196,19 @@ void CallController::BindToMessaging() {
   }
   backend->SetOnRingChanged([this]() {
     // Ingest may run on IO; shell/RmlUi updates must stay on UI.
-    AppRuntime::PostUI([this]() { RefreshPendingRing(); });
+    AppRuntime::PostUI([this]() {
+      RefreshPendingRing();
+      if (peer_link_refresh_) {
+        peer_link_refresh_();
+      }
+    });
   });
-  backend->SetOnChromeRefresh([this]() { RefreshPendingRing(); });
+  backend->SetOnChromeRefresh([this]() {
+    RefreshPendingRing();
+    if (peer_link_refresh_) {
+      peer_link_refresh_();
+    }
+  });
   bound_calls_ = identity;
   // Pick up post-restart abandon / pending ring after stack rebuild.
   RefreshPendingRing();

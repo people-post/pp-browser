@@ -876,12 +876,27 @@ Roe<void> CallSessionManager::MaybeRotateMediaKey(const std::string& call_id, co
 
 
 Roe<void> CallSessionManager::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms) {
-  return workflow_.EndCallLocal(session, duration_ms);
+  auto result = workflow_.EndCallLocal(session, duration_ms);
+  MaybeCatchUpAfterCall();
+  return result;
 }
 
 
 Roe<void> CallSessionManager::LeaveCall(const std::string& call_id) {
-  return workflow_.LeaveCall(call_id);
+  auto result = workflow_.LeaveCall(call_id);
+  MaybeCatchUpAfterCall();
+  return result;
+}
+
+void CallSessionManager::MaybeCatchUpAfterCall() {
+  if (!delivery_.catch_up_after_call) {
+    return;
+  }
+  auto active = ActiveLocalCall();
+  if (active && *active) {
+    return;
+  }
+  delivery_.catch_up_after_call();
 }
 
 

@@ -133,6 +133,10 @@ CallStackDeps ConversationsHub::MakeCallStackDeps() {
     deps.delivery.ensure_peer_session_key = [this](const std::string& peer_identity) {
       return mesh_messaging_->EnsureE2ePublicSessionKey(peer_identity);
     };
+    deps.delivery.catch_up_after_call = [this]() {
+      mesh_messaging_->SyncInboxFromWake(true);
+      mesh_messaging_->TailSyncActiveE2eThread();
+    };
     deps.bind_call_control = [this](CallControlInboundPorts ports) {
       mesh_messaging_->BindCallControlInbound(std::move(ports));
     };

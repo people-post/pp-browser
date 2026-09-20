@@ -111,6 +111,8 @@ public:
   void BindBadgeNotify(BadgeNotifyPorts ports);
   void BindInputCoordinator(InputCoordinator& input);
   void BindCallActions(CallActionsPorts ports);
+  /** Refresh peer-link / "In call" header (Application wires from CallController). */
+  void UpdatePeerLinkChrome();
   void BindUnlockEnsure(UnlockEnsurePorts ports);
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
@@ -303,7 +305,6 @@ private:
   void OnRetryPeerDial();
   void OnMessagesScroll();
   void OnJumpToLatest();
-  void UpdatePeerLinkChrome();
   void SendSharedAssistantRelay(const std::string& thread_id, AtAiMode mode, const std::string& plain_text);
   void WireMessagingBindings();
   /** Mint/cache free-tier Brief guest Bearer when registered key is missing. */

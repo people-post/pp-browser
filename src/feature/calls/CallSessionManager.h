@@ -299,6 +299,8 @@ private:
   Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
   void BindWorkflowHostPorts();
+  /** Flush deferred inbox/TailSync when no ActiveLocalCall remains. */
+  void MaybeCatchUpAfterCall();
 
   // Inbound call-control arms — thin delegates to CallSessionWorkflow.
   Roe<void> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
