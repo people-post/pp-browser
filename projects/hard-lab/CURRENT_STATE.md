@@ -13,8 +13,9 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 | HL004 E2E closeness | Accepted — CallStack+Amp on netns (not GUI); dirty-book first-class |
 | `--suite hard-w5` default `--phase all` | circuit + product + **dirty** + **stack** |
 | B-HARD-CALL-NAT-DIRTY | Green: `--reach bridge --force-dial-fail` + hop MarkHot (2s KA) + ClearDialBackoff |
-| B-HARD-CALL-NAT-STACK | `pp-call-probe --product-stack` (Invite/Accept + CallLifecycle + dirty media) |
-| CallMediaPlane test seam | `BindTestMediaPath(transport, dial, circuit_reach)` for full CallStack wire next |
+| B-HARD-CALL-NAT-STACK | `pp-call-probe --product-stack`: **CallStack+CallUiBackend** StartCall/Accept/Leave over Amp chat; MeshHost `AttachAmpStack` + `OnMeshServicesStarted` (real AmpCircuitHopReach; no BindTestMediaPath) |
+| CallMediaPlane test seam | `BindTestMediaPath` remains **gtest-only**; hard-lab stack uses production Wire |
+| Bridge Ensure account→PeerId | `EnsurePeerReachableAsync` resolves `account:` via `MeshPeerIdForAccount` before circuit/punch (gtest `EnsureReachResolvesAccountToMeshPeerId`) |
 | Dial-backoff gtest | `amp_circuit_hop_reach_test` + `call_media_bridge_answerer_start_test` |
 | Ensure→circuit heal | Bridge ClearDialBackoff on EnsureAssociation miss (Abort only while dial still in flight — finished callback must not double-drop) |
 | ConnectFailed stops media | gtest `CircuitHopMissStopsMediaOnConnectFailed` — not a hard-lab fail gate |
@@ -26,7 +27,7 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 
 | Area | State |
 |------|-------|
-| Full CallStack CSM Invite wire on hard topo | Seam ready; probe still uses CallLifecycle + chat envelopes |
+| Phase-2 `--reach product` probe helper | Still probe-local `EnsureProductCallMediaReach` (lower-tier oracle); stack mode owns product Ensure |
 | N-HARD-DIR / DHT / N-ADMIT-HARD | Blocked on product hooks |
 | Wave 4+ multi-hop | Blocked on L3.5 |
 | GUI / phones | Manual dogfood only |
@@ -34,6 +35,6 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 
 ## Next
 
-1. Promote product-stack to CallStack+CallUiBackend StartCall/Accept on Amp delivery (use BindTestMediaPath+circuit)
-2. Keep hard-w5 `all` green in nightly (success oracles)
+1. Keep hard-w5 `all` green in nightly (success oracles); stack fail → Bridge/reach fix + gtest promote
+2. Optionally retire Phase-2 probe EnsureProduct when stack path covers punch∥circuit on dual-SNAT
 3. N-HARD-DIR / DHT when hooks exist

@@ -100,7 +100,10 @@ public:
                                                              const std::string& /*peer_id*/) const override {
     return std::optional<std::string>("account:peer");
   }
-  Roe<std::optional<std::string>> MeshPeerIdForAccount(const std::string& /*account*/) const override {
+  Roe<std::optional<std::string>> MeshPeerIdForAccount(const std::string& account) const override {
+    if (auto it = account_to_peer.find(account); it != account_to_peer.end()) {
+      return std::optional<std::string>{it->second};
+    }
     return std::optional<std::string>{};
   }
   bool P2pIsAwaitingSfuRecovery() const override { return false; }
@@ -113,6 +116,7 @@ public:
   }
   void P2pRequestInboxSync() override { ++inbox_syncs; }
 
+  std::unordered_map<std::string, std::string> account_to_peer;
   int ring_notifies = 0;
   int media_key_resends = 0;
   int inbox_syncs = 0;
@@ -573,6 +577,37 @@ TEST_F(CallMediaBridgeAnswererStartTest, CircuitHopMissStopsMediaOnConnectFailed
   EXPECT_TRUE(bridge_->IsMeshConnectFailed());
   EXPECT_FALSE(media_->IsActive()) << "ConnectFailed must StopMeshMedia (no zombie TX)";
   EXPECT_EQ(bridge_->DirectPlannerPhase(), CallDirectPlannerPhase::Idle);
+  bridge_->PrepareForTeardown(0);
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, EnsureReachResolvesAccountToMeshPeerId) {
+  // Hard-lab / dogfood: BeginSession peer is account:; circuit StartBridge needs Amp PeerId.
+  const std::string call_id = "call:account-to-peerid";
+  const std::string mesh_peer = "12D3KooWEnsurePeerIdTarget";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  host_->account_to_peer["account:peer"] = mesh_peer;
+  dial_->endpoints.clear();
+  dial_->connected.clear();
+  dial_->force_dialable.clear();
+
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+
+  for (int i = 0; i < 200; ++i) {
+    AppRuntime::RunUITasks();
+    if (circuit_->call_media_ensure_calls > 0 || lifecycle_->Phase() == CallPhase::ConnectFailed ||
+        transport_->connect_async_calls > 0) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  ASSERT_GE(circuit_->call_media_ensure_calls, 1);
+  EXPECT_EQ(circuit_->last_peer, mesh_peer)
+      << "TryEnsureCallMediaReachable must use MeshPeerId, not account:";
   bridge_->PrepareForTeardown(0);
 }
 

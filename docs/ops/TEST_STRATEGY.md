@@ -245,7 +245,7 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | B-HARD-CALL-NAT | **Scaffold** | Phase-1: answerer `--warm-hop --min-rx-frames`; offerer `--via-hop --peer-id-only`. Status port **18628**. |
 | B-HARD-CALL-NAT-PRODUCT | **Scaffold** | Phase-2: `--reach product` (punch→circuit). Reproduce: `PP_HARD_NAT_CALL_EXPECT=fail`. |
 | B-HARD-CALL-NAT-DIRTY | **Green** | Phase-3: `--reach bridge --force-dial-fail` (HL004 dirty dial book; hop MarkHot + ClearDialBackoff). |
-| B-HARD-CALL-NAT-STACK | **Green** | Phase-4: `--product-stack` Invite/Accept + dirty media (invite wire covers chat; CallStack BindTest seam next). |
+| B-HARD-CALL-NAT-STACK | **Green target** | Phase-4: `--product-stack` CallUiBackend StartCall/Accept/Leave + real Amp CallStack Wire (no BindTestMediaPath mocks). |
 | hard-w5 default phase | **all** | `circuit+product+dirty+stack` (`both` = legacy circuit+product) |
 | N-HARD-* (other) / N-ADMIT-HARD | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) |
 

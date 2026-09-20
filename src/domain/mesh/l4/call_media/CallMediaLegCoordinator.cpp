@@ -809,7 +809,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         }
         bundle->params = answer_params;
         bundle->callbacks = std::move(answer_cbs);
-        if (bundle->params.peer_key.empty()) {
+        // Bridge inbound handler remaps peer_key to account: for mixer stream ids. Amp PeerLink
+        // stays under mesh PeerId — keep that for ResolveLink / PeerLinkMissing (HL004 dual-SNAT).
+        if (!peer_key.empty()) {
           bundle->params.peer_key = peer_key;
         }
         bundle->phase = CallMediaBundlePhase::AwaitingMedia;

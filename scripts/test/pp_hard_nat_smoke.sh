@@ -114,7 +114,12 @@ run_nat_call() {
   sleep 1
 
   local peer
-  peer="$(tr -d '\n' < "${PP_HARD_CGNAT_SHARE_DIR}/${ready_name}")"
+  peer="$(head -n1 "${PP_HARD_CGNAT_SHARE_DIR}/${ready_name}" | tr -d '\n')"
+  local peer_account=""
+  if [[ "${mode}" == "stack" ]]; then
+    peer_account="$(sed -n '2p' "${PP_HARD_CGNAT_SHARE_DIR}/${ready_name}" | tr -d '\n')"
+    [[ -n "${peer_account}" ]] || pp_hard_die "answerer ready-file missing account line (product-stack)"
+  fi
   echo "${label} hop=${HOP_MA_PUBLIC} peer=${peer} cycles=${CYCLES}"
 
   local off_args=(/probes/${CALL_BIN_NAME} --role offerer --peer "${peer}"
@@ -123,7 +128,7 @@ run_nat_call() {
   case "${mode}" in
     product) off_args+=(--reach product) ;;
     dirty) off_args+=(--reach bridge --force-dial-fail) ;;
-    stack) off_args+=(--product-stack) ;;
+    stack) off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms 3000 --timeout-ms 45000) ;;
     *) off_args+=(--peer-id-only) ;;
   esac
 
