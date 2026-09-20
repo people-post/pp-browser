@@ -195,6 +195,13 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
     if (invitee.empty() || invitee == *local) {
       continue;
     }
+    // Catalog warm before Invite / SoftMigrate fan-out (thread + directory create off the critical path).
+    if (host_.wire.ensure_control_thread) {
+      if (auto warmed = host_.wire.ensure_control_thread(invitee); !warmed) {
+        log().warning << "Call control thread warm failed peer=" << invitee
+                      << " err=" << warmed.error().message;
+      }
+    }
     if (auto invited = InviteParticipant(call_id, invitee); !invited) {
       return invited.error();
     }
@@ -270,6 +277,16 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
       invite.participants = std::move(roster->participants);
     }
   }
+  if (host_.reach.prefetch_reach) {
+    host_.reach.prefetch_reach(invitee_identity);
+  }
+  // Catalog + AutoKey before media-key wrap so CallInvite can embed wrapped_key_b64.
+  if (host_.wire.ensure_control_thread) {
+    if (auto warmed = host_.wire.ensure_control_thread(invitee_identity); !warmed) {
+      log().warning << "CallInvite control thread warm failed peer=" << invitee_identity
+                    << " err=" << warmed.error().message;
+    }
+  }
   // Embed epoch key in invite — separate CallMediaKey inbox rows are often ingested without
   // call-control side effects (BenignDuplicate / classifier), so Accept never sees the key.
   invite.media_epoch = (*session)->media_epoch;
@@ -286,7 +303,8 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
                         << " err=" << wrapped.error().message;
         }
       } else {
-        log().warning << "CallInvite media key skip; no peer session key peer=" << invitee_identity;
+        log().warning << "CallInvite media key skip; no peer session key peer=" << invitee_identity
+                      << " err=" << session_key.error().message;
       }
     }
   }
@@ -325,7 +343,6 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   }
   const std::string display =
       (*session)->media_mode == CallMediaMode::Video ? "Incoming video call" : "Incoming voice call";
-  if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(invitee_identity);
   // Wire first — do not leave Ringing/pending debris if send fails.
   if (auto sent = host_.wire.send_direct(invitee_identity, CallControlType::CallInvite, *detail, display); !sent) {
     return sent;

@@ -245,7 +245,7 @@ Rewrite-debt tracking: [PHASES rd](PHASES.md#rd--amp-call-media-rewrite-debt-v03
 | Item | Status |
 |------|--------|
 | **Async `Connect(cb)` API** | **Landed:** `ICallMediaTransport::ConnectAsync` + `CallMediaBridge` grace/retry via coordinator timers; peer-reach `EnsurePeerReachableAsync` / `TryEnsureCallMediaReachableAsync`. Sync `Connect()` remains for tests/harnesses. |
-| **Inbound handler must not stall Normal** | **Open:** Handler hop is for key fill / tests; a hostile or buggy handler can still pin a pool thread. Detach/timeout **reset** the stream; needs a contract (no sleeps; or cancel token) when we next touch inbound key path. |
+| **Inbound handler must not stall Normal** | **Landed:** Handler already on a worker hop; Bridge inbound MediaKey fill uses a cancelable `condition_variable` (notify on `OnMediaKeyReady` / `PrepareForTeardown`) instead of `sleep_for`. Contract documented on `ICallMediaTransport::SetInboundHandler`. |
 | **`AsyncWriteStreamJson` cancel check** | Writes complete or fail via stream `reset()` on Detach/timeout; no separate cancel predicate. Enough for hello; add if write-queue stalls appear without reset. |
 | **Sync L4 RPC wrappers** | Product SoftMigrate/attach/reattach, circuit hop reach, and CallStack punch use Async. Sync façades remain for tests/harnesses (empty-pump park). |
 | **Dual-dial glare** | Higher PeerId keeps outbound; lower PeerId yields to inbound. `DualDialExactlyOneAdoptEachSide` guards a shared duplex (audio round-trip). |

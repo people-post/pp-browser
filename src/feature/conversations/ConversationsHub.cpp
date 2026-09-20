@@ -11,6 +11,7 @@
 #include "feature/conversations/RelayDirectoryKemKeyResolver.h"
 #include "feature/conversations/RelayDirectorySigningKeyResolver.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
+#include "domain/messaging/CallControlThreadLogic.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
@@ -129,6 +130,16 @@ CallStackDeps ConversationsHub::MakeCallStackDeps() {
     deps.delivery.register_peer_direct_endpoint = [this](const std::string& identity,
                                                          const std::string& multiaddr) {
       mesh_messaging_->RegisterPeerDirectEndpoint(identity, multiaddr);
+    };
+    deps.delivery.ensure_peer_session_key = [this](const std::string& peer_identity) {
+      return mesh_messaging_->EnsureE2ePublicSessionKey(peer_identity);
+    };
+    deps.delivery.catch_up_after_call = [this]() {
+      mesh_messaging_->SyncInboxFromWake(true);
+      mesh_messaging_->TailSyncActiveE2eThread();
+      if (store_) {
+        (void)PruneOrphanCallControlShadows(*store_);
+      }
     };
     deps.bind_call_control = [this](CallControlInboundPorts ports) {
       mesh_messaging_->BindCallControlInbound(std::move(ports));
@@ -957,6 +968,8 @@ void ConversationsHub::PrefetchPeerReachability(const std::string& identity) {
   if (peer_id.empty()) {
     peer_id = identity;
   }
+  // Same Amp warm path as open-chat WarmPeerForThread — call invite/accept should share it.
+  mesh_messaging_->WarmPeerByKey(peer_id);
   if (mesh_ && mesh_->AmpDht() && ResolveMeshRole(config_.mesh) == MeshRole::Node &&
       config_.mesh.capabilities.dht) {
     mesh_->AmpDht()->FindPeer(peer_id, [this, peer_id](AmpDhtProtocol::FindPeerRoe result) {

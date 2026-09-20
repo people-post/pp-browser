@@ -1,5 +1,6 @@
 #include "feature/conversations/InboxController.h"
 
+#include "domain/messaging/CallThreadPresenceLogic.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "domain/ai/StructuredTextParser.h"
@@ -54,18 +55,7 @@ std::string SystemLineRml(const std::string& text) {
 }
 
 bool IsPlumbingCallControl(const CallControlType type) {
-  switch (type) {
-  case CallControlType::CallMediaKey:
-  case CallControlType::CallSdp:
-  case CallControlType::CallIce:
-  case CallControlType::CallSfuAttach:
-  case CallControlType::CallSfuAttachFailed:
-  case CallControlType::CallHopRefuse:
-  case CallControlType::CallVideoRefresh:
-    return true;
-  default:
-    return false;
-  }
+  return CallControlCodec::IsPlumbingCallControl(type);
 }
 
 std::optional<std::string> CallDetailJson(const ThreadMessage& message) {
@@ -397,6 +387,10 @@ int InboxController::SumUnread() const {
   }
   int total = 0;
   for (const Thread& thread : *threads) {
+    // Public twin of a private DM — call/group control; never inflate the global badge.
+    if (HasPrivateE2eSibling(thread, *threads)) {
+      continue;
+    }
     total += thread.unread_count;
   }
   return total;
@@ -414,6 +408,9 @@ int InboxController::SumUnreadForContact(const std::string& contact_id) const {
   for (const Thread& thread : *threads) {
     if (std::find(thread.participant_contact_ids.begin(), thread.participant_contact_ids.end(), contact_id) ==
         thread.participant_contact_ids.end()) {
+      continue;
+    }
+    if (HasPrivateE2eSibling(thread, *threads)) {
       continue;
     }
     total += thread.unread_count;

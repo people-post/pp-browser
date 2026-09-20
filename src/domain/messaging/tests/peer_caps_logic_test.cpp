@@ -100,5 +100,29 @@ TEST(PeerCapsLogicTest, MergeAdvertisedMediaRelayHopsPrependsMissing) {
   EXPECT_EQ(ranked[1].peer_id, "12D3KooWSeed");
 }
 
+TEST(PeerCapsLogicTest, DirectoryMediaRelayLookupAndMerge) {
+  MeshDirectoryNode with_relay;
+  with_relay.peer_id = "12D3KooWNode";
+  with_relay.media_relay = true;
+  MeshDirectoryNode no_relay;
+  no_relay.peer_id = "12D3KooWOther";
+  no_relay.media_relay = false;
+  MeshDirectoryNode dht_relay;
+  dht_relay.peer_id = "12D3KooWDht";
+  dht_relay.media_relay = true;
+
+  EXPECT_TRUE(DirectoryNodeAdvertisesMediaRelay(with_relay));
+  EXPECT_FALSE(DirectoryNodeAdvertisesMediaRelay(no_relay));
+  EXPECT_TRUE(PeerHasMediaRelayInDirectory("12D3KooWNode", {with_relay, no_relay}));
+  EXPECT_FALSE(PeerHasMediaRelayInDirectory("12D3KooWOther", {with_relay, no_relay}));
+
+  const auto merged =
+      MergeMediaRelayCapablePeerIds({"12D3KooWCallCap", "12D3KooWNode"}, {with_relay, no_relay}, {dht_relay});
+  ASSERT_EQ(merged.size(), 3u);
+  EXPECT_EQ(merged[0], "12D3KooWCallCap");
+  EXPECT_EQ(merged[1], "12D3KooWNode");
+  EXPECT_EQ(merged[2], "12D3KooWDht");
+}
+
 } // namespace
 } // namespace pbr

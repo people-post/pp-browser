@@ -23,6 +23,7 @@
 #include "common/Module.h"
 
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -274,6 +275,8 @@ private:
   void P2pRequestInboxSync() override;
 
   Roe<std::string> LocalRelayIdentity() const;
+  /** Mint/find e2e_public control DM before SoftMigrate / MediaKey fan-out (catalog warm). */
+  Roe<std::string> EnsureCallControlThread(const std::string& peer_identity);
   Roe<void> SendCallDirectMessage(const std::string& peer_identity, CallControlType type,
                                   const std::string& detail_json, const std::string& display);
   Roe<void> AppendOriginHistory(const std::string& thread_id, CallControlType type, const std::string& text,
@@ -296,6 +299,8 @@ private:
   Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
   void BindWorkflowHostPorts();
+  /** Flush deferred inbox/TailSync when no ActiveLocalCall remains. */
+  void MaybeCatchUpAfterCall();
 
   // Inbound call-control arms — thin delegates to CallSessionWorkflow.
   Roe<void> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
@@ -339,6 +344,12 @@ private:
   std::unordered_map<std::string, bool> peer_media_relay_caps_;
   /** mesh PeerId → relay: identity learned from CallAccept/Invite listen multiaddrs / mDNS. */
   std::unordered_map<std::string, std::string> peer_id_to_relay_;
+  /**
+   * AutoKey key_init from ensure_peer_session_key — attached on the next SendCallDirectMessage
+   * for that peer; kept until send succeeds so retries still carry key_init.
+   */
+  mutable std::mutex pending_call_key_init_mutex_;
+  mutable std::unordered_map<std::string, std::string> pending_call_key_init_;
   std::optional<std::string> last_media_error_;
   std::string media_activity_;
 };

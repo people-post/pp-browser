@@ -3,13 +3,14 @@
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/messaging/GroupMembershipCodec.h"
 #include "domain/messaging/GroupTypes.h"
+#include "domain/messaging/PairwiseFanoutLogic.h"
 #include "domain/messaging/SendRelayOptions.h"
 #include "domain/people/ContactJson.h"
 
 #include "common/Utilities.h"
 
 #include <optional>
-#include <set>
+#include <vector>
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
@@ -477,19 +478,31 @@ Roe<void> GroupMembershipWorkflow::FanOutMembershipEvent(const std::string& grou
   if (!members) {
     return members.error();
   }
-  std::set<std::string> notified;
+  std::vector<std::string> identities;
+  identities.reserve(members->size());
   for (const GroupRosterMember& member : *members) {
-    if (member.member_identity == skip_identity) {
-      continue;
-    }
-    notified.insert(member.member_identity);
-    if (auto sent = SendMembershipDirectMessage(member.member_identity, control_type, detail_json, display); !sent) {
-      return sent.error();
-    }
+    identities.push_back(member.member_identity);
   }
-  if (also_notify_identity && !also_notify_identity->empty() &&
-      notified.find(*also_notify_identity) == notified.end() && *also_notify_identity != skip_identity) {
-    (void)SendMembershipDirectMessage(*also_notify_identity, control_type, detail_json, display);
+  const auto targets = SelectPairwiseFanoutTargets(identities, skip_identity);
+  const auto result = FanOutPairwise(targets, PairwiseFanoutMode::FailFast,
+                                     [&](const std::string& identity) {
+                                       return SendMembershipDirectMessage(identity, control_type, detail_json,
+                                                                         display);
+                                     });
+  if (result.first_error) {
+    return *result.first_error;
+  }
+  if (also_notify_identity && !also_notify_identity->empty() && *also_notify_identity != skip_identity) {
+    bool already = false;
+    for (const std::string& id : targets) {
+      if (id == *also_notify_identity) {
+        already = true;
+        break;
+      }
+    }
+    if (!already) {
+      (void)SendMembershipDirectMessage(*also_notify_identity, control_type, detail_json, display);
+    }
   }
   return {};
 }
