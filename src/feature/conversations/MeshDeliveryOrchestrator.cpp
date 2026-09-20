@@ -650,16 +650,8 @@ void MeshDeliveryOrchestrator::WarmPeerByKey(const std::string& peer_key) {
   }
 }
 
-namespace {
-
-std::string ChatTargetKeyMapId(const ChatTargetKey& key) {
-  return key.peer_identity_kind + "|" + key.peer_identity_value + "|" +
-         std::to_string(static_cast<int>(key.channel));
-}
-
-} // namespace
-
-Roe<ByteVector> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(const std::string& peer_identity) {
+Roe<EnsuredE2ePublicSessionKey> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(
+    const std::string& peer_identity) {
   if (peer_identity.empty()) {
     return Error("Peer identity required");
   }
@@ -703,11 +695,16 @@ Roe<ByteVector> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(const std::s
   if (!ensured) {
     return ensured.error();
   }
-  if (ensured->key_init_b64 && !ensured->key_init_b64->empty()) {
-    std::lock_guard<std::mutex> lock(pending_key_init_mutex_);
-    pending_e2e_public_key_init_[ChatTargetKeyMapId(target_key)] = *ensured->key_init_b64;
+  auto session_key = DeriveE2ePublicSessionKey(ensured->master_psk, *session_epoch);
+  if (!session_key) {
+    return session_key.error();
   }
-  return DeriveE2ePublicSessionKey(ensured->master_psk, *session_epoch);
+  EnsuredE2ePublicSessionKey out;
+  out.session_key = std::move(*session_key);
+  if (ensured->key_init_b64 && !ensured->key_init_b64->empty()) {
+    out.first_message_key_init_b64 = std::move(*ensured->key_init_b64);
+  }
+  return out;
 }
 
 ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string& thread_id) const {
@@ -1494,14 +1491,6 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
       master_psk = std::move(*decoded);
       if (options.key_init_b64 && !options.key_init_b64->empty()) {
         key_init_b64 = options.key_init_b64;
-      } else if ((*thread)->channel == ThreadChannel::E2ePublic) {
-        // Call invite may AutoKey-prewarm before encrypt; attach stashed key_init once.
-        std::lock_guard<std::mutex> lock(pending_key_init_mutex_);
-        const std::string map_id = ChatTargetKeyMapId(target_key);
-        if (auto it = pending_e2e_public_key_init_.find(map_id); it != pending_e2e_public_key_init_.end()) {
-          key_init_b64 = it->second;
-          pending_e2e_public_key_init_.erase(it);
-        }
       }
     }
     E2eEncryptParams params;

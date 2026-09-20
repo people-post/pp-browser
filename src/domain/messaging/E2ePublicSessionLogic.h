@@ -18,6 +18,12 @@ struct E2ePublicPskEnsureResult {
   bool created = false;
 };
 
+/** Session key for CallMediaKey wrap, plus optional first-send AutoKey `key_init`. */
+struct EnsuredE2ePublicSessionKey {
+  ByteVector session_key;
+  std::optional<std::string> first_message_key_init_b64;
+};
+
 /**
  * Load existing e2e_public master PSK, or AutoKey-encapsulate to `peer_kem_public` and save.
  * Callers that wrap before the first outbound message must attach `key_init_b64` on that send

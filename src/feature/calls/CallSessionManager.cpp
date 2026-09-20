@@ -627,12 +627,22 @@ Roe<void> CallSessionManager::SendCallDirectMessage(const std::string& peer_iden
   opts.update_preview = false;
   // Call-control must not sit behind PollInbox on Normal workers (MediaKey + Accept).
   opts.critical_lane = true;
+  {
+    std::lock_guard<std::mutex> lock(pending_call_key_init_mutex_);
+    if (auto it = pending_call_key_init_.find(peer_identity); it != pending_call_key_init_.end()) {
+      opts.key_init_b64 = it->second;
+    }
+  }
   if (!delivery_.send_user_message) {
     return Error("Call delivery not bound");
   }
   auto sent = delivery_.send_user_message(*thread_id, display, opts);
   if (!sent) {
     return sent.error();
+  }
+  if (opts.key_init_b64) {
+    std::lock_guard<std::mutex> lock(pending_call_key_init_mutex_);
+    pending_call_key_init_.erase(peer_identity);
   }
   return {};
 }
@@ -732,9 +742,16 @@ Roe<ByteVector> CallSessionManager::ResolvePeerSessionKey(const std::string& pee
     return record.error();
   }
   if (!record->has_value()) {
-    // AutoKey pre-warm via messaging (stashes key_init for the upcoming CallInvite send).
     if (delivery_.ensure_peer_session_key) {
-      return delivery_.ensure_peer_session_key(peer_identity);
+      auto ensured = delivery_.ensure_peer_session_key(peer_identity);
+      if (!ensured) {
+        return ensured.error();
+      }
+      if (ensured->first_message_key_init_b64 && !ensured->first_message_key_init_b64->empty()) {
+        std::lock_guard<std::mutex> lock(pending_call_key_init_mutex_);
+        pending_call_key_init_[peer_identity] = *ensured->first_message_key_init_b64;
+      }
+      return ensured->session_key;
     }
     return Error("No PSK session for peer");
   }
@@ -745,7 +762,15 @@ Roe<ByteVector> CallSessionManager::ResolvePeerSessionKey(const std::string& pee
   }
   if (!master_psk_b64->has_value()) {
     if (delivery_.ensure_peer_session_key) {
-      return delivery_.ensure_peer_session_key(peer_identity);
+      auto ensured = delivery_.ensure_peer_session_key(peer_identity);
+      if (!ensured) {
+        return ensured.error();
+      }
+      if (ensured->first_message_key_init_b64 && !ensured->first_message_key_init_b64->empty()) {
+        std::lock_guard<std::mutex> lock(pending_call_key_init_mutex_);
+        pending_call_key_init_[peer_identity] = *ensured->first_message_key_init_b64;
+      }
+      return ensured->session_key;
     }
     return Error("No PSK for active session epoch");
   }

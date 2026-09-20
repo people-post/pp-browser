@@ -23,6 +23,7 @@
 #include "common/Module.h"
 
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -341,6 +342,12 @@ private:
   std::unordered_map<std::string, bool> peer_media_relay_caps_;
   /** mesh PeerId → relay: identity learned from CallAccept/Invite listen multiaddrs / mDNS. */
   std::unordered_map<std::string, std::string> peer_id_to_relay_;
+  /**
+   * AutoKey key_init from ensure_peer_session_key — attached on the next SendCallDirectMessage
+   * for that peer; kept until send succeeds so retries still carry key_init.
+   */
+  mutable std::mutex pending_call_key_init_mutex_;
+  mutable std::unordered_map<std::string, std::string> pending_call_key_init_;
   std::optional<std::string> last_media_error_;
   std::string media_activity_;
 };
