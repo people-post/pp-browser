@@ -679,6 +679,14 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     // Endpoint known but PeerLink not Connected — kick EnsureAssociation on Amp IO.
     // Do not start this in parallel with circuit StartBridge: dogfood 997c1c6f AVd ~10s after
     // assoc sendto-miss overlapped an in-flight hop OpenChannel on the same ADP UDP path.
+    // Offerer after inbound grace: skip direct dial — 15s already proved no path; sendto-miss
+    // poisons ADP and the next relay dial AVs (dogfood 131904).
+    if (session_offerer_ && !*assoc_started) {
+      *assoc_started = true;
+      *assoc_done = true;
+      log().info << "CallLifecycle StartSfu skip EnsureAssociation after offerer inbound grace peer="
+                 << peer_identity;
+    }
     if (!*assoc_started && dial_->IsDialable(peer_identity) && !wait_for_circuit) {
       *assoc_started = true;
       log().info << "CallLifecycle StartSfu EnsureAssociation start peer=" << peer_identity;
