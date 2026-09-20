@@ -214,9 +214,17 @@ public:
     return std::nullopt;
   }
 
-  void ClearDialBackoff(const std::string& /*peer_key*/) override {}
+  void ClearDialBackoff(const std::string& peer_key) override {
+    if (amp_links_) {
+      amp_links_->ClearDialBackoff(peer_key);
+    }
+  }
 
-  void AbortInflightDial(const std::string& /*peer_key*/) override {}
+  void AbortInflightDial(const std::string& peer_key) override {
+    if (amp_links_) {
+      amp_links_->AbortInflightDial(peer_key);
+    }
+  }
 
   void ClearCallMediaCircuitHop(const std::string& peer_key) override {
     if (amp_hops_) {

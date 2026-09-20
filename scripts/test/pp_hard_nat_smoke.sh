@@ -4,13 +4,15 @@
 # N-HARD-CGNAT-ISH     — topology asserts (A↛B, hop↛peer-private, peers→hop via SNAT)
 # B-HARD-CALL-NAT      — Phase-1: forced nested circuit (--via-hop --peer-id-only)
 # B-HARD-CALL-NAT-PRODUCT — Phase-2: product punch→circuit (--reach product --via-hop seed)
+# B-HARD-CALL-NAT-DIRTY   — Phase-3: dirty-book Bridge Ensure (--reach bridge --force-dial-fail)
+# B-HARD-CALL-NAT-STACK   — Phase-4: Invite/Accept control + dirty-book media (--product-stack)
 #
 # Reproduce gate (applies to the selected call phase):
 #   PP_HARD_NAT_CALL_EXPECT=success  (default) — call must pass
 #   PP_HARD_NAT_CALL_EXPECT=fail     — call must fail (lab reproduces dogfood)
 #
 # Prefer: ./scripts/test/pp_local_test.sh run --suite hard-w5
-# See packaging/pp-node/HARD_LAB.md Wave 5
+# See packaging/pp-node/HARD_LAB.md Wave 5 + projects/hard-lab/DECISIONS.md HL004
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -21,8 +23,8 @@ CALL_BIN_NAME="pp-call-probe"
 SKIP_UP=0
 CYCLES="${PP_CALL_PROBE_CYCLES:-1}"
 CALL_EXPECT="${PP_HARD_NAT_CALL_EXPECT:-success}"
-# circuit = Phase-1 via-hop shortcut; product = punch→circuit Ensure; both = circuit then product
-PHASE="${PP_HARD_NAT_PHASE:-both}"
+# circuit | product | dirty | stack | both | all
+PHASE="${PP_HARD_NAT_PHASE:-all}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -33,13 +35,12 @@ while [[ $# -gt 0 ]]; do
     --skip-up) SKIP_UP=1; shift ;;
     -h|--help)
       cat <<EOF
-Usage: $(basename "$0") [--status-url URL] [--cycles K] [--phase circuit|product|both]
+Usage: $(basename "$0") [--status-url URL] [--cycles K] [--phase PHASE]
                         [--expect-call success|fail] [--skip-up]
 
-  N-HARD-CGNAT-ISH + B-HARD-CALL-NAT(+PRODUCT) on dual-SNAT compose.
-  --phase circuit   forced nested circuit only (Phase-1)
-  --phase product   AmpCircuitHopReach punch→circuit (Phase-2)
-  --phase both      run circuit then product (default; hard-w5)
+  PHASE: circuit|product|dirty|stack|both|all
+    both   = circuit + product (legacy)
+    all    = circuit + product + dirty + stack (HL004 default)
   --expect-call fail  pass only if the call fails (reproduce dogfood)
 EOF
       exit 0
@@ -53,8 +54,8 @@ case "${CALL_EXPECT}" in
   *) pp_hard_die "--expect-call must be success|fail (got ${CALL_EXPECT})" ;;
 esac
 case "${PHASE}" in
-  circuit|product|both) ;;
-  *) pp_hard_die "--phase must be circuit|product|both (got ${PHASE})" ;;
+  circuit|product|dirty|stack|both|all) ;;
+  *) pp_hard_die "--phase must be circuit|product|dirty|stack|both|all (got ${PHASE})" ;;
 esac
 
 if [[ ! -x "${PP_HARD_PROBE_DIR}/${CALL_BIN_NAME}" ]]; then
@@ -70,7 +71,7 @@ pp_hard_kill_peer_probes() {
 }
 
 # run_nat_call <label> <call_id> <ready_name> <listen_ma> <mode>
-# mode: circuit | product
+# mode: circuit | product | dirty | stack
 run_nat_call() {
   local label="$1"
   local call_id="$2"
@@ -89,6 +90,9 @@ run_nat_call() {
     --advertise-host "${PEER_B_IP}" --ready-file "/share/${ready_name}"
     --hold-seconds "${hold}" --call-id "${call_id}"
     --warm-hop "${HOP_MA_PUBLIC}" --min-rx-frames "${CYCLES}")
+  if [[ "${mode}" == "stack" ]]; then
+    ans_args+=(--product-stack)
+  fi
 
   pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" "${ans_args[@]}" &
   local ans_pid=$!
@@ -116,11 +120,12 @@ run_nat_call() {
   local off_args=(/probes/${CALL_BIN_NAME} --role offerer --peer "${peer}"
     --via-hop "${HOP_MA_PUBLIC}"
     --cycles "${CYCLES}" --call-id "${call_id}" --timeout-ms 25000)
-  if [[ "${mode}" == "product" ]]; then
-    off_args+=(--reach product)
-  else
-    off_args+=(--peer-id-only)
-  fi
+  case "${mode}" in
+    product) off_args+=(--reach product) ;;
+    dirty) off_args+=(--reach bridge --force-dial-fail) ;;
+    stack) off_args+=(--product-stack) ;;
+    *) off_args+=(--peer-id-only) ;;
+  esac
 
   set +e
   pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" "${off_args[@]}"
@@ -163,14 +168,39 @@ run_nat_call() {
   return 0
 }
 
-if [[ "${PHASE}" == "circuit" || "${PHASE}" == "both" ]]; then
+run_phase() {
+  local want="$1"
+  case "${PHASE}" in
+    all) return 0 ;;
+    both)
+      if [[ "${want}" == "circuit" || "${want}" == "product" ]]; then
+        return 0
+      fi
+      return 1
+      ;;
+    "${want}") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if run_phase circuit; then
   run_nat_call "B-HARD-CALL-NAT" "pp-hard-call-nat" "call-nat.ready" \
     "${PP_HARD_NAT_CALL_LISTEN:-/ip4/0.0.0.0/udp/47160/adp/1.0.0}" circuit
 fi
 
-if [[ "${PHASE}" == "product" || "${PHASE}" == "both" ]]; then
+if run_phase product; then
   run_nat_call "B-HARD-CALL-NAT-PRODUCT" "pp-hard-call-nat-product" "call-nat-product.ready" \
     "${PP_HARD_NAT_PRODUCT_LISTEN:-/ip4/0.0.0.0/udp/47162/adp/1.0.0}" product
+fi
+
+if run_phase dirty; then
+  run_nat_call "B-HARD-CALL-NAT-DIRTY" "pp-hard-call-nat-dirty" "call-nat-dirty.ready" \
+    "${PP_HARD_NAT_DIRTY_LISTEN:-/ip4/0.0.0.0/udp/47164/adp/1.0.0}" dirty
+fi
+
+if run_phase stack; then
+  run_nat_call "B-HARD-CALL-NAT-STACK" "pp-hard-call-nat-stack" "call-nat-stack.ready" \
+    "${PP_HARD_NAT_STACK_LISTEN:-/ip4/0.0.0.0/udp/47166/adp/1.0.0}" stack
 fi
 
 echo "N-HARD-CGNAT-ISH + NAT call phase=${PHASE} PASSED"

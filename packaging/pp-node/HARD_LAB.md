@@ -162,7 +162,10 @@ Order: 6 → 7 → 8 → 9. Admission (#10) may parallel 6–7. Extends today’
 Dual SNAT gateways; hop on public net only; `--min-rx-frames` duplex gate.
 - Phase-1 **B-HARD-CALL-NAT**: answerer `--warm-hop` + offerer `--via-hop --peer-id-only`
 - Phase-2 **B-HARD-CALL-NAT-PRODUCT**: same topo; offerer `--reach product` (punch via hop seed → nested circuit; punch miss is expected under dual-SNAT)
-Default `--phase both`. Reproduce mode: `PP_HARD_NAT_CALL_EXPECT=fail` (or `--expect-call fail`) passes only when the selected call phase fails.
+- Phase-3 **B-HARD-CALL-NAT-DIRTY**: `--reach bridge --force-dial-fail` (register private peer MA + dial miss → ClearDialBackoff → peer-id-only circuit) — HL004 dogfood dial-book
+- Phase-4 **B-HARD-CALL-NAT-STACK**: `--product-stack` (CallLifecycle Invite/Accept over Amp chat + dirty-book media); CallStack BindTestMediaPath(+circuit) seam landed for full CSM wire next
+Default `--phase all` (circuit+product+dirty+stack). Legacy `both` = circuit+product. Reproduce mode: `PP_HARD_NAT_CALL_EXPECT=fail`.
+
 
 ### Wave 6 — Product stress on hard topology
 

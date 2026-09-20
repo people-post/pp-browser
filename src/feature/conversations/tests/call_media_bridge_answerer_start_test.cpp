@@ -130,6 +130,23 @@ public:
     return endpoints.find(peer_key) != endpoints.end() || force_dialable.count(peer_key) > 0;
   }
 
+  bool IsConnected(const std::string& peer_key) const override {
+    return connected.count(peer_key) > 0 && connected.at(peer_key);
+  }
+
+  void EnsureAssociation(const std::string& peer_key,
+                         std::function<void(Roe<void>)> on_done) override {
+    ++ensure_association_calls;
+    last_ensure_peer = peer_key;
+    if (on_done) {
+      if (ensure_result) {
+        on_done({});
+      } else {
+        on_done(Error(ensure_error));
+      }
+    }
+  }
+
   std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const override {
     const auto it = endpoints.find(peer_key);
     if (it != endpoints.end()) {
@@ -138,12 +155,61 @@ public:
     return std::nullopt;
   }
 
-  void ClearDialBackoff(const std::string& /*peer_key*/) override {}
+  void ClearDialBackoff(const std::string& peer_key) override {
+    ++clear_backoff_calls;
+    last_clear_backoff_peer = peer_key;
+  }
   void AbortInflightDial(const std::string& /*peer_key*/) override {}
   void ClearCallMediaCircuitHop(const std::string& /*peer_key*/) override {}
 
+  bool HasCallMediaCircuitHop(const std::string& peer_key) const override {
+    return circuit_hops.count(peer_key) > 0 && circuit_hops.at(peer_key);
+  }
+
   std::unordered_map<std::string, std::string> endpoints;
   std::unordered_map<std::string, bool> force_dialable;
+  std::unordered_map<std::string, bool> connected;
+  std::unordered_map<std::string, bool> circuit_hops;
+  int ensure_association_calls = 0;
+  int clear_backoff_calls = 0;
+  std::string last_ensure_peer;
+  std::string last_clear_backoff_peer;
+  bool ensure_result = true;
+  std::string ensure_error = "ensure association not available";
+};
+
+class FakeCircuitHopReach final : public ICircuitHopReach {
+public:
+  Roe<void> TryEnsureHopReachable(const std::string& /*hop_peer_id*/) override { return {}; }
+
+  Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key) override {
+    ++call_media_ensure_calls;
+    last_peer = peer_key;
+    if (dial) {
+      dial->connected[peer_key] = true;
+      dial->circuit_hops[peer_key] = true;
+    }
+    return call_media_result ? Roe<void>() : Error(call_media_error);
+  }
+
+  void TryEnsureCallMediaReachableAsync(const std::string& peer_key,
+                                        std::function<void(Roe<void>)> on_done) override {
+    ++call_media_ensure_calls;
+    last_peer = peer_key;
+    if (dial) {
+      dial->connected[peer_key] = true;
+      dial->circuit_hops[peer_key] = true;
+    }
+    if (on_done) {
+      on_done(call_media_result ? Roe<void>() : Error(call_media_error));
+    }
+  }
+
+  FakeDialRegistry* dial = nullptr;
+  int call_media_ensure_calls = 0;
+  std::string last_peer;
+  bool call_media_result = true;
+  std::string call_media_error = "circuit hop reach failed";
 };
 
 class FakeCallMediaTransport final : public ICallMediaTransport {
@@ -216,10 +282,12 @@ protected:
     media_ = std::make_unique<CallMediaEngine>();
     host_ = std::make_unique<FakeMediaHost>();
     dial_ = std::make_unique<FakeDialRegistry>();
+    circuit_ = std::make_unique<FakeCircuitHopReach>();
+    circuit_->dial = dial_.get();
     transport_ = std::make_unique<FakeCallMediaTransport>();
     lifecycle_ = std::make_unique<CallLifecycle>();
     bridge_ = std::make_unique<CallMediaBridge>(*host_, *sessions_, *keys_, *media_, *transport_, dial_.get(),
-                                                nullptr);
+                                                circuit_.get());
     bridge_->SetDirectArmingPorts(TestDirectArmingPorts(lifecycle_.get()));
     dial_->force_dialable["account:peer"] = true;
     dial_->endpoints["account:peer"] = "/ip4/10.0.0.2/udp/1/p2p/12D3KooWPeer";
@@ -232,6 +300,7 @@ protected:
     bridge_.reset();
     lifecycle_.reset();
     transport_.reset();
+    circuit_.reset();
     dial_.reset();
     host_.reset();
     if (media_ && media_->IsActive()) {
@@ -280,6 +349,7 @@ protected:
   std::unique_ptr<CallMediaEngine> media_;
   std::unique_ptr<FakeMediaHost> host_;
   std::unique_ptr<FakeDialRegistry> dial_;
+  std::unique_ptr<FakeCircuitHopReach> circuit_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
   std::unique_ptr<CallLifecycle> lifecycle_;
   std::unique_ptr<CallMediaBridge> bridge_;
@@ -423,6 +493,41 @@ TEST_F(CallMediaBridgeAnswererStartTest, ReleaseDirectTransportDetachesWithoutSt
   EXPECT_GT(transport_->detach_calls, detaches_before);
   EXPECT_TRUE(media_->IsActive()) << "SoftMigrate ReleaseDirect must keep engine capture";
   EXPECT_EQ(media_->ActiveCallId(), call_id);
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, DialableDialBackoffDoesNotHammerEnsureUsesCircuit) {
+  // Dogfood two-net answerer: peer dialable but EnsureAssociation → dial in backoff; circuit
+  // still marks Connected. Must not hammer EnsureAssociation every poll; Connect must succeed.
+  const std::string call_id = "call:dial-backoff-circuit";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  dial_->ensure_result = false;
+  dial_->ensure_error = "amp link: dial in backoff";
+  dial_->connected["account:peer"] = false;
+
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+
+  for (int i = 0; i < 200; ++i) {
+    AppRuntime::RunUITasks();
+    if (transport_->connect_async_calls > 0 || lifecycle_->Phase() == CallPhase::ConnectFailed ||
+        lifecycle_->Phase() == CallPhase::InCall) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  EXPECT_GE(circuit_->call_media_ensure_calls, 1) << "circuit reach must run when ADP dial is in backoff";
+  EXPECT_LE(dial_->ensure_association_calls, 2)
+      << "must not hammer EnsureAssociation while dial in backoff (got "
+      << dial_->ensure_association_calls << ")";
+  EXPECT_NE(lifecycle_->Phase(), CallPhase::ConnectFailed)
+      << "circuit Connected should prevent ConnectFailed; phase="
+      << CallPhaseName(lifecycle_->Phase()) << " err=" << host_->last_error;
+  EXPECT_GT(transport_->connect_async_calls, 0);
+  bridge_->PrepareForTeardown(0);
 }
 
 } // namespace

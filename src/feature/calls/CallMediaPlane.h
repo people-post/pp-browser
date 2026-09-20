@@ -85,6 +85,12 @@ public:
   void Wire();
   void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial);
   /**
+   * Test / hard-lab product-stack: Amp transport + dial + optional circuit reach without MeshHost.
+   * When `circuit_reach` is non-null it is used for Bridge Ensure (not owned; must outlive Wire).
+   */
+  void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
+                         ICircuitHopReach* circuit_reach);
+  /**
    * Construct or refresh CallMediaBridge from stack-owned ingredients.
    * Rebuilds when `sessions_key` changes; otherwise updates reach deps + seat/lifecycle.
    */
@@ -122,6 +128,7 @@ private:
   const AppConfig& config() const;
   ICallMediaTransport* Transport();
   IDialRegistry* ActiveDial() const;
+  ICircuitHopReach* ActiveCircuitReach() const;
 
   /** True when Amp media_relay coordinator is started. */
   bool WireMediaRelayClient(MeshHost* m, const IoPump& io_pump, const IoPost& post_io);
@@ -153,6 +160,7 @@ private:
   std::unique_ptr<CallMediaAmpTransport> call_media_amp_;
   ICallMediaTransport* test_media_transport_ = nullptr;
   IDialRegistry* test_dial_ = nullptr;
+  ICircuitHopReach* test_circuit_reach_ = nullptr;
 };
 
 } // namespace pbr

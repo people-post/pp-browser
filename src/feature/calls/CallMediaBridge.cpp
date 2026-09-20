@@ -698,7 +698,14 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                     *last_error = assoc.error();
                     log().info << "CallLifecycle StartSfu EnsureAssociation miss peer=" << peer_identity
                                << " err=" << last_error->message;
-                    *assoc_started = false;
+                    // Dogfood two-net: dialable private MA fails into DialInBackoff (30s default).
+                    // Resetting assoc_started hammers EnsureAssociation every poll and can starve
+                    // circuit/punch; keep assoc_started so we only wait on circuit/Connected.
+                    const bool dial_backoff =
+                        last_error->message.find("dial in backoff") != std::string::npos;
+                    if (!dial_backoff) {
+                      *assoc_started = false;
+                    }
                   }
                   (void)AppRuntime::ScheduleCoordinatorOneShot(
                       std::chrono::milliseconds(kDialPollMs), [tick]() { (*tick)(); });

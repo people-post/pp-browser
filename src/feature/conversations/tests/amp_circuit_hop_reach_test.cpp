@@ -213,6 +213,81 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSkipsEnsureAssociationAndPreferred
   EXPECT_GE(recording_->nested_over_carrier_calls, 1);
 }
 
+TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialBackoff) {
+  // Dogfood two-net: peer has_endpoint (dialable) but ADP dial is in backoff. Product Ensure must
+  // still reach Connected via nested circuit and must not call EnsureAssociation (hard-w5 Phase-2).
+  WarmAnswererAndOfferer("relay");
+
+  const std::string private_ma =
+      "/ip4/10.255.255.9/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_b, private_ma)));
+  ASSERT_TRUE(recording_->GetLinkSnapshot(harness_->peer_id_b).has_endpoint);
+  ASSERT_FALSE(recording_->IsConnected(harness_->peer_id_b));
+
+  // If EnsureAssociation were called, return dial-in-backoff (poison path CallMediaBridge used to hammer).
+  class BackoffChatPeerLinks final : public IChatPeerLinks {
+  public:
+    explicit BackoffChatPeerLinks(RecordingChatPeerLinks& inner) : inner_(inner) {}
+    std::optional<std::string> PreferredMultiaddr(const std::string& peer_id) const override {
+      return inner_.PreferredMultiaddr(peer_id);
+    }
+    Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) override {
+      return inner_.RegisterEndpoint(peer_key, multiaddr);
+    }
+    void EnsureAssociation(const std::string& peer_key, LinkCb on_complete) override {
+      ++ensure_backoff_calls;
+      last_ensure_peer = peer_key;
+      if (on_complete) {
+        on_complete(LinkRoe::error(Failure::Of(Err::DialInBackoff, "amp link: dial in backoff")));
+      }
+    }
+    void OpenChannel(const std::string& peer_key, const std::string& protocol_id,
+                     pp::amp::ChannelPolicy policy, ChannelCb on_complete) override {
+      inner_.OpenChannel(peer_key, protocol_id, std::move(policy), std::move(on_complete));
+    }
+    void EstablishNestedOverCarrier(const std::string& peer_key,
+                                    std::shared_ptr<pp::amp::ChannelSession> carrier, bool initiator,
+                                    LinkCb on_complete) override {
+      inner_.EstablishNestedOverCarrier(peer_key, std::move(carrier), initiator, std::move(on_complete));
+    }
+    void SetProtocolHandler(const std::string& protocol_id, ProtocolHandler handler) override {
+      inner_.SetProtocolHandler(protocol_id, std::move(handler));
+    }
+    void RemoveProtocolHandler(const std::string& protocol_id) override {
+      inner_.RemoveProtocolHandler(protocol_id);
+    }
+    MeshPeerLinkSnapshot GetLinkSnapshot(const std::string& peer_key) const override {
+      return inner_.GetLinkSnapshot(peer_key);
+    }
+    bool IsConnected(const std::string& peer_key) const override { return inner_.IsConnected(peer_key); }
+    void MarkWarm(const std::string& peer_key) override { inner_.MarkWarm(peer_key); }
+    pp::amp::PeerLink* FindLink(const std::string& peer_key) override { return inner_.FindLink(peer_key); }
+    const pp::amp::PeerLink* FindLink(const std::string& peer_key) const override {
+      return inner_.FindLink(peer_key);
+    }
+
+    RecordingChatPeerLinks& inner_;
+    int ensure_backoff_calls = 0;
+    std::string last_ensure_peer;
+  };
+
+  BackoffChatPeerLinks backoff_links(*recording_);
+  AmpCircuitHopReach reach(
+      *circuit_a_, *hops_, backoff_links, [this] { harness_->PumpAll(); },
+      [](const std::string&) { return std::vector<std::string>{"relay"}; },
+      [](const std::string&, std::function<void(Roe<void>)> on_done) {
+        on_done(Error("punch burst dial timed out"));
+      });
+
+  Wait<void> ensure_wait;
+  reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  ensure_wait.PumpUntilDone(*harness_);
+  ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
+  EXPECT_TRUE(backoff_links.IsConnected(harness_->peer_id_b));
+  EXPECT_EQ(backoff_links.ensure_backoff_calls, 0)
+      << "call-media Ensure must not ADP-dial a dialable-but-backoff peer (prefer circuit)";
+}
+
 TEST_F(AmpCircuitHopReachTest, CallMediaEnsureAcceptsHopPeerIdRelayKey) {
   WarmAnswererAndOfferer(harness_->peer_id_r);
   ASSERT_TRUE(recording_->GetLinkSnapshot(harness_->peer_id_r).has_endpoint);

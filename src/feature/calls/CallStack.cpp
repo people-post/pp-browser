@@ -285,9 +285,14 @@ void CallStack::OnMeshServicesStarted() {
 }
 
 void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial) {
+  BindTestMediaPath(transport, dial, nullptr);
+}
+
+void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
+                                  ICircuitHopReach* circuit_reach) {
   SyncMediaPlaneDeps();
   if (media_plane_) {
-    media_plane_->BindTestMediaPath(transport, dial);
+    media_plane_->BindTestMediaPath(transport, dial, circuit_reach);
   }
   BindMediaProducts();
 }

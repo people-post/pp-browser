@@ -120,13 +120,14 @@ struct CircuitTunnelCoordinator::Impl {
     return it == tunnels.end() ? nullptr : it->second.get();
   }
 
-  void ScheduleWhenChannelOpen(pp::amp::PeerLink* link, const uint32_t channel_id, const Clock::time_point deadline,
+  void ScheduleWhenChannelOpen(std::string peer_key, const uint32_t channel_id, const Clock::time_point deadline,
                                std::function<void(bool open)> done) {
-    PostIo([this, link, channel_id, deadline, done = std::move(done)]() mutable {
+    PostIo([this, peer_key = std::move(peer_key), channel_id, deadline, done = std::move(done)]() mutable {
       if (stopped.load(std::memory_order_acquire)) {
         done(false);
         return;
       }
+      auto* link = runtime->Links().FindLink(peer_key);
       if (!link || !link->Mux()) {
         done(false);
         return;
@@ -139,7 +140,7 @@ struct CircuitTunnelCoordinator::Impl {
         done(false);
         return;
       }
-      ScheduleWhenChannelOpen(link, channel_id, deadline, std::move(done));
+      ScheduleWhenChannelOpen(std::move(peer_key), channel_id, deadline, std::move(done));
     });
   }
 
@@ -380,7 +381,6 @@ struct CircuitTunnelCoordinator::Impl {
         tunnel.is_reserve ? pp::amp::CircuitTunnelChannelPolicy()
                           : PolicyForCircuitTarget(tunnel.target.target_protocol),
         [this, id, relay_key, deadline, request_json](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
-          pp::amp::PeerLink* link = nullptr;
           uint32_t channel_id = 0;
           {
             std::lock_guard lock(mu);
@@ -392,14 +392,13 @@ struct CircuitTunnelCoordinator::Impl {
               TearDown(*tunnel, false, false, channel.error().message);
               return;
             }
-            link = runtime->Links().FindLink(relay_key);
-            if (!link) {
+            if (!runtime->Links().FindLink(relay_key)) {
               TearDown(*tunnel, false, false, "amp circuit-relay: channel open failed");
               return;
             }
             channel_id = *channel;
           }
-          ScheduleWhenChannelOpen(link, channel_id, deadline,
+          ScheduleWhenChannelOpen(relay_key, channel_id, deadline,
                                   [this, id, relay_key, channel_id, request_json](const bool open) {
                                     std::lock_guard lock(mu);
                                     auto* tunnel = Find(id);
@@ -509,7 +508,6 @@ struct CircuitTunnelCoordinator::Impl {
       runtime->Links().OpenChannel(
           target_key, target_protocol, PolicyForCircuitTarget(target_protocol),
           [this, id, target_key, deadline](pp::amp::PeerLinkManager::ChannelRoe channel) {
-            pp::amp::PeerLink* link = nullptr;
             uint32_t channel_id = 0;
             {
               std::lock_guard lock(mu);
@@ -528,14 +526,13 @@ struct CircuitTunnelCoordinator::Impl {
                 TearDown(*tunnel, false, false, channel.error().message);
                 return;
               }
-              link = runtime->Links().FindLink(target_key);
-              if (!link) {
+              if (!runtime->Links().FindLink(target_key)) {
                 TearDown(*tunnel, false, false, "relay target stream timed out");
                 return;
               }
               channel_id = *channel;
             }
-            ScheduleWhenChannelOpen(link, channel_id, deadline, [this, id, target_key, channel_id](const bool open) {
+            ScheduleWhenChannelOpen(target_key, channel_id, deadline, [this, id, target_key, channel_id](const bool open) {
               std::lock_guard lock(mu);
               auto* tunnel = Find(id);
               if (!tunnel) {

@@ -82,6 +82,8 @@ public:
    * `transport` / `dial` are non-owning; call after BuildSessions. Re-runs Wire.
    */
   void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial);
+  void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
+                         ICircuitHopReach* circuit_reach);
   /** Teardown before mesh Stop: clear bindings, PrepareForTeardown; abort circuit via callback. */
   void PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit);
   /** Teardown after mesh Stop: reset media plane mesh objects. */

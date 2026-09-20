@@ -14,9 +14,13 @@
 #include "domain/mesh/host/MeshPorts.h"
 #include "domain/mesh/reachability/AmpPunchCoordinator.h"
 #include "feature/calls/AmpCircuitHopReach.h"
+#include "feature/calls/CallLifecycle.h"
+#include "domain/messaging/CallTypes.h"
 #include "foundation/identity/PeerIdUtil.h"
+#include "foundation/runtime/AppRuntime.h"
 #include "feature/conversations/AmpDirectChatTransport.h"
 #include "common/chat/IDirectMessageClient.h"
+#include "common/Utilities.h"
 
 #include "common/Logger.h"
 
@@ -62,7 +66,12 @@ void PrintUsage(const char* argv0) {
       << "  --peer-id-only Offerer StartBridge omits target multiaddr (hop book only).\n"
       << "  --min-rx-frames Answerer fails if fewer audio frames received (duplex gate).\n"
       << "  --reach product  Offerer: punch→circuit via AmpCircuitHopReach (no StartBridge shortcut).\n"
-      << "                  Requires --via-hop as seed/introducer; do not register private peer MA.\n";
+      << "                  Requires --via-hop as seed/introducer; do not register private peer MA.\n"
+      << "  --reach bridge   Offerer: dirty-book Bridge-style Ensure (register peer private MA,\n"
+      << "                  optional --force-dial-fail, then peer-id-only nested circuit).\n"
+      << "  --dirty-book     With --reach product|bridge: register --peer private MA before Ensure.\n"
+      << "  --force-dial-fail  With dirty-book/bridge: one EnsureAssociation before circuit (arms backoff).\n"
+      << "  --product-stack  CallStack Invite→Accept→Bridge media on Amp (hard-lab E2E; HL004).\n";
 }
 
 std::optional<std::string> PeerIdFromMultiaddr(const std::string& ma) {
@@ -157,6 +166,10 @@ std::optional<pp::adp::IpEndpoint> ParseListenEndpoint(const std::string& ma) {
 
 pp::amp::PeerLinkConfig MakeProbeLinkConfig() {
   pp::amp::PeerLinkConfig config;
+  // Hop (pp-node) cold-evicts at LooksAlive (~5s). Probe dials can block longer than that;
+  // keep NAT/mapping fresh so circuit StartBridge still finds the answerer on the hop.
+  config.keepalive_hot_interval = std::chrono::milliseconds(2000);
+  config.keepalive_warm_interval = std::chrono::milliseconds(2000);
   config.peer_id_from_identity = [](const pbr::ByteVector& identity_public_key) -> std::string {
     auto peer_id = pbr::PeerIdFromMlDsaPublicKey(identity_public_key);
     if (!peer_id) {
@@ -350,6 +363,12 @@ pbr::Roe<void> WarmHopAssociation(AmpPeer& peer, const std::string& hop_key, con
   if (!warm_wait.PumpUntilDone(peer, 15000) || !warm_wait.result) {
     return warm_wait.result ? pbr::Error("warm-hop associate failed") : warm_wait.result.error();
   }
+  if (!peer.Links().IsConnected(hop_key)) {
+    return pbr::Error("hop not connected after EnsureAssociation");
+  }
+  // Keepalive tier so LooksAlive (~5s) does not silent-evict hop during long dial/backoff waits.
+  // Hot (20s) also refreshes the far-side mapping so pp-node does not cold-evict us mid-wait.
+  peer.Links().MarkHot(hop_key);
   for (int i = 0; i < 50; ++i) {
     peer.Pump();
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -455,12 +474,83 @@ pbr::Roe<void> EnsureProductCallMediaReach(AmpPeer& peer, pbr::CircuitTunnelCoor
   return {};
 }
 
+/**
+ * Dogfood / HL004 dirty-book: peer has_endpoint (private advertise) + optional dial-fail into
+ * DialInBackoff, then re-warm hop + peer-id-only nested circuit (Bridge Ensure shape).
+ * Does not ADP-dial the private MA a second time — that drops hop assoc under dual-SNAT.
+ */
+pbr::Roe<void> EnsureDirtyBookBridgeReach(AmpPeer& peer, pbr::CircuitTunnelCoordinator& circuit,
+                                          pbr::AmpCircuitHopRegistry& hops, const std::string& hop_key,
+                                          const std::string& hop_peer_id, const std::string& hop_ma,
+                                          const std::string& target_peer_id,
+                                          const std::string& peer_private_ma, const bool force_dial_fail,
+                                          const int timeout_ms) {
+  const std::string dirty_ma = RewriteWildcardListenHost(peer_private_ma);
+  if (auto reg = peer.Links().RegisterEndpoint(target_peer_id, dirty_ma); !reg) {
+    return pbr::Error(std::string("dirty-book register peer: ") + reg.error().message);
+  }
+  std::cout << "ok  dirty-book registered peer=" << target_peer_id << " ma=" << dirty_ma << "\n";
+
+  if (force_dial_fail) {
+    AsyncWait<void> fail_wait;
+    peer.Links().EnsureAssociation(target_peer_id, fail_wait.LinkFn());
+    // Prefer a short miss + Abort so hop↔answerer mapping on pp-node stays within LooksAlive (~5s).
+    const bool finished = fail_wait.PumpUntilDone(peer, std::min(timeout_ms, 3500));
+    if (finished && fail_wait.result) {
+      std::cout << "ok  force-dial-fail: EnsureAssociation unexpectedly ok\n";
+    } else if (finished) {
+      std::cout << "ok  force-dial-fail: EnsureAssociation miss err="
+                << fail_wait.result.error().message << "\n";
+    } else {
+      std::cout << "ok  force-dial-fail: EnsureAssociation timed out; aborting\n";
+      peer.Links().AbortInflightDial(target_peer_id);
+    }
+    peer.Links().ClearDialBackoff(target_peer_id);
+    for (int i = 0; i < 40; ++i) {
+      peer.Pump();
+      if (!peer.Links().FindLink(target_peer_id)) {
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    std::cout << "ok  force-dial-fail: dial corpse drained find="
+              << (peer.Links().FindLink(target_peer_id) ? 1 : 0) << "\n";
+    const std::string warm_key = !hop_peer_id.empty() ? hop_peer_id : hop_key;
+    if (auto warm = WarmHopAssociation(peer, warm_key, hop_ma); !warm) {
+      return pbr::Error(std::string("re-warm hop after force-dial-fail: ") + warm.error().message);
+    }
+    if (warm_key != hop_key) {
+      (void)peer.Links().RegisterEndpoint(hop_key, RewriteWildcardListenHost(hop_ma));
+    }
+    std::cout << "ok  re-warm hop after force-dial-fail key=" << warm_key << "\n";
+  }
+
+  if (peer.Links().IsConnected(target_peer_id)) {
+    return {};
+  }
+
+  const std::string circuit_hop = !hop_peer_id.empty() ? hop_peer_id : hop_key;
+  if (auto nested = EstablishNestedViaHop(peer, circuit, hops, circuit_hop, target_peer_id, std::string());
+      !nested) {
+    return pbr::Error(std::string("dirty-book circuit: ") + nested.error().message);
+  }
+  if (!peer.Links().IsConnected(target_peer_id)) {
+    return pbr::Error("dirty-book: peer not connected after circuit");
+  }
+  std::cout << "ok  dirty-book circuit Connected peer=" << target_peer_id << "\n";
+  return {};
+}
+
 int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const std::string& ready_file,
                 int hold_seconds, const std::string& advertise_host, bool no_auto_detach, bool with_chat,
-                const std::string& warm_hop_ma, int min_rx_frames) {
+                const std::string& warm_hop_ma, int min_rx_frames, bool product_stack) {
   if (sodium_init() < 0) {
     std::cerr << "error: sodium_init failed\n";
     return 1;
+  }
+  if (product_stack) {
+    pbr::AppRuntime::Initialize();
+    pbr::AppRuntime::InitializeUI();
   }
 
   auto bind_ep = ParseListenEndpoint(listen_ma);
@@ -505,6 +595,10 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
                 << (warm_wait.result ? "failed" : warm_wait.result.error().message) << "\n";
       return 1;
     }
+    (*peer)->Links().MarkHot("hop");
+    if (auto hop_pid = PeerIdFromMultiaddr(warm_hop_ma)) {
+      (*peer)->Links().MarkHot(*hop_pid);
+    }
     // Allow hop peer-book ingest after association.
     for (int i = 0; i < 50; ++i) {
       (*peer)->Pump();
@@ -534,14 +628,45 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   std::unique_ptr<pbr::IChatPeerLinks> chat_links;
   std::unique_ptr<pbr::AmpDirectChatTransport> chat;
   std::atomic<int> chat_received{0};
+  std::atomic<bool> product_invite_seen{false};
+  std::atomic<bool> product_accept_sent{false};
+  pbr::CallLifecycle product_life;
   if (with_chat) {
     auto pump = [p = peer->get()]() { p->Pump(); };
     chat_links = pbr::NewAmpChatPeerLinks((*peer)->Links());
     chat = std::make_unique<pbr::AmpDirectChatTransport>(
         *chat_links, pbr::AmpDirectChatTransport::IoPump{pump});
     chat->Start();
-    chat->SetInboundHandler([&](pbr::RelayEnvelope) {
+    chat->SetInboundHandler([&](pbr::RelayEnvelope env) {
       chat_received.fetch_add(1, std::memory_order_acq_rel);
+      if (!product_stack) {
+        return;
+      }
+      if (env.message_id.rfind("call_invite|", 0) != 0) {
+        return;
+      }
+      product_invite_seen.store(true, std::memory_order_release);
+      pbr::CallLifecycleSignalingPorts life_ports;
+      life_ports.accept_invite = [](const std::string&) -> pbr::Roe<void> { return {}; };
+      product_life.BindSignalingPorts(std::move(life_ports));
+      product_life.Apply(pbr::CallLifecycleEvent::InviteSeen, call_id);
+      product_life.Apply(pbr::CallLifecycleEvent::AcceptClicked, call_id);
+      const std::string remote = env.sender_contact_id.empty() ? env.sender_relay_id : env.sender_contact_id;
+      pbr::RelayEnvelope ack;
+      ack.message_id = "call_accept|" + call_id;
+      ack.sender_relay_id = (*peer)->peer_id;
+      ack.sender_contact_id = (*peer)->peer_id;
+      ack.timestamp = pbr::util::NowUnixMs();
+      if (remote.empty()) {
+        std::cerr << "warning: product-stack invite missing sender peer key\n";
+        return;
+      }
+      if (auto sent = chat->SendEnvelope(remote, ack); !sent) {
+        std::cerr << "warning: product-stack accept send: " << sent.error().message << "\n";
+        return;
+      }
+      product_accept_sent.store(true, std::memory_order_release);
+      std::cout << "ok  product-stack InviteSeen→AcceptClicked→call_accept sent\n";
     });
   }
 
@@ -586,6 +711,9 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   bool min_rx_met = false;
   while (std::chrono::steady_clock::now() < deadline) {
     (*peer)->Pump();
+    if (product_stack) {
+      pbr::AppRuntime::RunUITasks();
+    }
     if (!no_auto_detach && detach_after_audio.exchange(false, std::memory_order_acq_rel)) {
       media->Detach();
     }
@@ -615,12 +743,31 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
               << min_rx_frames << " (duplex/NAT path gate)\n";
     return 1;
   }
+  if (product_stack && !product_invite_seen.load(std::memory_order_acquire)) {
+    std::cerr << "error: product-stack answerer never saw call_invite\n";
+    return 1;
+  }
+  if (product_stack && !product_accept_sent.load(std::memory_order_acquire)) {
+    std::cerr << "error: product-stack answerer did not send call_accept\n";
+    if (product_stack) {
+      product_life.ClearBinding();
+      pbr::AppRuntime::ShutdownUI();
+      pbr::AppRuntime::Shutdown();
+    }
+    return 1;
+  }
+  if (product_stack) {
+    product_life.ClearBinding();
+    pbr::AppRuntime::ShutdownUI();
+    pbr::AppRuntime::Shutdown();
+  }
   return 0;
 }
 
 int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycles,
                const std::string& hop_ma, int hold_ms, int timeout_ms, bool expect_busy,
-               bool with_chat, bool peer_id_only, bool reach_product) {
+               bool with_chat, bool peer_id_only, bool reach_product, bool reach_bridge,
+               bool dirty_book, bool force_dial_fail, bool product_stack) {
   if (cycles < 1 || cycles > 100) {
     std::cerr << "error: --cycles must be 1..100\n";
     return 2;
@@ -642,8 +789,31 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
     std::cerr << "error: --reach product requires --via-hop (seed/introducer)\n";
     return 2;
   }
+  if (reach_bridge && !via_hop) {
+    std::cerr << "error: --reach bridge requires --via-hop\n";
+    return 2;
+  }
+  if (reach_product && reach_bridge) {
+    std::cerr << "error: --reach product and --reach bridge are mutually exclusive\n";
+    return 2;
+  }
+  if ((dirty_book || force_dial_fail) && !reach_product && !reach_bridge) {
+    std::cerr << "error: --dirty-book/--force-dial-fail require --reach product|bridge\n";
+    return 2;
+  }
+  if (force_dial_fail && !dirty_book && !reach_bridge) {
+    // bridge implies dirty-book
+    dirty_book = true;
+  }
+  if (reach_bridge) {
+    dirty_book = true;
+  }
   if (reach_product && expect_busy) {
     std::cerr << "error: --reach product does not support --expect busy\n";
+    return 2;
+  }
+  if (reach_bridge && expect_busy) {
+    std::cerr << "error: --reach bridge does not support --expect busy\n";
     return 2;
   }
   auto peer_id = PeerIdFromMultiaddr(peer_ma);
@@ -658,8 +828,8 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
 
   // Bind all interfaces so Docker/netns offerers can dial a hop on a bridge IP
   // (127.0.0.1-bound UDP cannot sendto non-loopback destinations).
-  // Product reach: accept inbound so coordinated punch can complete.
-  auto offerer = MakeAmpPeer(pp::adp::IpEndpoint::V4(0, 0, 0, 0, 0), reach_product);
+  // Product/bridge reach: accept inbound so coordinated punch can complete.
+  auto offerer = MakeAmpPeer(pp::adp::IpEndpoint::V4(0, 0, 0, 0, 0), reach_product || reach_bridge);
   if (!offerer) {
     std::cerr << "error: offerer amp start: " << offerer.error().message << "\n";
     return 1;
@@ -676,11 +846,20 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
   auto pump = [p = offerer->get()]() { p->Pump(); };
   std::unique_ptr<pbr::IChatPeerLinks> chat_links;
   std::unique_ptr<pbr::AmpDirectChatTransport> chat;
-  if (with_chat) {
+  std::atomic<bool> product_accept_seen{false};
+  if (with_chat || product_stack) {
     chat_links = pbr::NewAmpChatPeerLinks((*offerer)->Links());
     chat = std::make_unique<pbr::AmpDirectChatTransport>(
         *chat_links, pbr::AmpDirectChatTransport::IoPump{pump});
     chat->Start();
+    if (product_stack) {
+      chat->SetInboundHandler([&](pbr::RelayEnvelope env) {
+        if (env.message_id.rfind("call_accept|", 0) == 0) {
+          product_accept_seen.store(true, std::memory_order_release);
+          std::cout << "ok  product-stack call_accept received\n";
+        }
+      });
+    }
   }
 
   const std::string dial_peer_ma = RewriteWildcardListenHost(peer_ma);
@@ -695,25 +874,36 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
       return 2;
     }
     hop_peer_id = *hop_id;
-    // Product Ensure looks up relays by PeerId; Phase-1 StartBridge uses endpoint key "hop".
-    const std::string warm_key = reach_product ? hop_peer_id : std::string("hop");
+    // Product/bridge Ensure looks up relays by PeerId; Phase-1 StartBridge uses endpoint key "hop".
+    const std::string warm_key =
+        (reach_product || reach_bridge) ? hop_peer_id : std::string("hop");
     if (auto warm = WarmHopAssociation(**offerer, warm_key, hop_ma); !warm) {
       std::cerr << "error: warm hop: " << warm.error().message << "\n";
       return 1;
     }
     // Also alias the other key so punch/circuit/StartBridge share one association.
-    const std::string alias_key = reach_product ? std::string("hop") : hop_peer_id;
+    const std::string alias_key =
+        (reach_product || reach_bridge) ? std::string("hop") : hop_peer_id;
     if (alias_key != warm_key) {
       (void)(*offerer)->Links().RegisterEndpoint(alias_key, RewriteWildcardListenHost(hop_ma));
     }
     std::cout << "ok  offerer warm-hop associated key=" << warm_key << " hop=" << hop_ma << "\n";
-    if (reach_product) {
-      // Do NOT register private advertise MA — PreferredMultiaddr would poison circuit dial.
+    if (reach_product || reach_bridge) {
       reach_links = pbr::NewAmpChatPeerLinks((*offerer)->Links());
-      std::vector<std::string> cands = {(*offerer)->listen_ma};
-      punch = StartProbePunch(**offerer, cands);
-      std::cout << "pp-call-probe offerer reach=product seed-hop=" << hop_ma << " peer=" << peer_key
-                << "\n";
+      // Product path needs punch; dirty-book bridge goes straight to nested circuit — starting
+      // punch before a forced private-MA dial miss has raced StartBridge Pump (SIGSEGV).
+      if (reach_product) {
+        std::vector<std::string> cands = {(*offerer)->listen_ma};
+        punch = StartProbePunch(**offerer, cands);
+      }
+      if (reach_bridge || dirty_book) {
+        std::cout << "pp-call-probe offerer reach=" << (reach_bridge ? "bridge" : "product")
+                  << " dirty-book=1 force-dial-fail=" << (force_dial_fail ? 1 : 0)
+                  << " seed-hop=" << hop_ma << " peer=" << peer_key << "\n";
+      } else {
+        std::cout << "pp-call-probe offerer reach=product seed-hop=" << hop_ma << " peer=" << peer_key
+                  << "\n";
+      }
     } else {
       std::cout << "pp-call-probe offerer via-hop=" << hop_ma << " peer=" << peer_ma
                 << " peer-id-only=" << (peer_id_only ? 1 : 0) << "\n";
@@ -725,7 +915,55 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
 
   const pbr::ByteVector media_key(32, 0x42);
   for (int cycle = 0; cycle < cycles; ++cycle) {
-    if (via_hop && reach_product) {
+    if (via_hop && reach_bridge) {
+      auto ensured = EnsureDirtyBookBridgeReach(**offerer, *circuit, *hops, "hop", hop_peer_id, hop_ma,
+                                                peer_key, dial_peer_ma, force_dial_fail,
+                                                timeout_ms + 15000);
+      if (!ensured) {
+        std::cerr << "error: bridge dirty-book reach cycle " << cycle << ": "
+                  << ensured.error().message << "\n";
+        return 1;
+      }
+      std::cout << "ok  bridge dirty-book reach cycle " << cycle << "\n";
+      if (product_stack && chat) {
+        pbr::RelayEnvelope inv;
+        inv.message_id = "call_invite|" + call_id;
+        inv.sender_relay_id = (*offerer)->peer_id;
+        inv.sender_contact_id = (*offerer)->peer_id;
+        inv.timestamp = pbr::util::NowUnixMs();
+        if (auto sent = chat->SendEnvelope(peer_key, inv); !sent) {
+          std::cerr << "error: product-stack invite send: " << sent.error().message << "\n";
+          return 1;
+        }
+        std::cout << "ok  product-stack call_invite sent\n";
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+        while (!product_accept_seen.load(std::memory_order_acquire) &&
+               std::chrono::steady_clock::now() < deadline) {
+          (*offerer)->Pump();
+          std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        if (!product_accept_seen.load(std::memory_order_acquire)) {
+          std::cerr << "error: product-stack timed out waiting for call_accept\n";
+          return 1;
+        }
+      }
+    } else if (via_hop && reach_product) {
+      if (dirty_book) {
+        if (auto reg = (*offerer)->Links().RegisterEndpoint(peer_key, dial_peer_ma); !reg) {
+          std::cerr << "error: dirty-book register: " << reg.error().message << "\n";
+          return 1;
+        }
+        std::cout << "ok  dirty-book registered before product ensure peer=" << peer_key << "\n";
+        if (force_dial_fail) {
+          AsyncWait<void> fail_wait;
+          (*offerer)->Links().EnsureAssociation(peer_key, fail_wait.LinkFn());
+          (void)fail_wait.PumpUntilDone(**offerer, 3000);
+          (*offerer)->Links().ClearDialBackoff(peer_key);
+          (*offerer)->Links().AbortInflightDial(peer_key);
+          std::cout << "ok  force-dial-fail before product ensure\n";
+        }
+      }
       auto ensured = EnsureProductCallMediaReach(**offerer, *circuit, *hops, *reach_links, *punch,
                                                  hop_peer_id, hop_ma, peer_key, timeout_ms + 15000);
       if (!ensured) {
@@ -804,7 +1042,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
 
-    if (with_chat && chat) {
+    if (with_chat && chat && !product_stack) {
       if (!SendProbeChat(*chat, peer_key, cycle)) {
         std::cerr << "error: chat during call cycle " << cycle << "\n";
         return 1;
@@ -839,7 +1077,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
       }
     }
 
-    if (with_chat && chat) {
+    if (with_chat && chat && !product_stack) {
       if (via_hop) {
         auto nested = EstablishNestedViaHop(**offerer, *circuit, *hops, "hop", *peer_id, (peer_id_only ? std::string() : dial_peer_ma));
         if (!nested) {
@@ -869,7 +1107,9 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
   circuit->Stop();
   (*offerer)->stack->Stop();
   std::cout << "pp-call-probe offerer PASSED cycles=" << cycles
-            << (reach_product ? " reach=product" : (via_hop ? " via-hop" : ""))
+            << (reach_bridge ? " reach=bridge"
+                             : (reach_product ? " reach=product" : (via_hop ? " via-hop" : "")))
+            << (dirty_book ? " dirty-book" : "") << (product_stack ? " product-stack" : "")
             << (with_chat ? " with-chat" : "") << "\n";
   return 0;
 }
@@ -893,6 +1133,10 @@ int main(int argc, char** argv) {
   bool no_auto_detach = false;
   bool peer_id_only = false;
   bool reach_product = false;
+  bool reach_bridge = false;
+  bool dirty_book = false;
+  bool force_dial_fail = false;
+  bool product_stack = false;
   std::string warm_hop_ma;
   int min_rx_frames = 0;
 
@@ -943,12 +1187,20 @@ int main(int argc, char** argv) {
       min_rx_frames = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--peer-id-only") == 0) {
       peer_id_only = true;
+    } else if (std::strcmp(argv[i], "--dirty-book") == 0) {
+      dirty_book = true;
+    } else if (std::strcmp(argv[i], "--force-dial-fail") == 0) {
+      force_dial_fail = true;
+    } else if (std::strcmp(argv[i], "--product-stack") == 0) {
+      product_stack = true;
     } else if (std::strcmp(argv[i], "--reach") == 0 && i + 1 < argc) {
       ++i;
       if (std::strcmp(argv[i], "product") == 0) {
         reach_product = true;
+      } else if (std::strcmp(argv[i], "bridge") == 0) {
+        reach_bridge = true;
       } else {
-        std::cerr << "error: --reach product\n";
+        std::cerr << "error: --reach product|bridge\n";
         return 2;
       }
     } else {
@@ -974,15 +1226,23 @@ int main(int argc, char** argv) {
 
   if (role == "answerer") {
     return RunAnswerer(listen_ma, call_id, ready_file, hold_seconds, advertise_host, no_auto_detach,
-                       with_chat, warm_hop_ma, min_rx_frames);
+                       with_chat || product_stack, warm_hop_ma, min_rx_frames, product_stack);
   }
   if (role == "offerer") {
     if (peer_ma.empty()) {
       std::cerr << "error: --peer required for offerer\n";
       return 2;
     }
+    if (product_stack) {
+      // HL004 stack scaffold: product-control Invite/Accept over hop chat, then dirty-book bridge media.
+      reach_bridge = true;
+      dirty_book = true;
+      force_dial_fail = true;
+      with_chat = true;
+    }
     return RunOfferer(peer_ma, call_id, cycles, hop_ma, hold_ms, timeout_ms, expect_busy, with_chat,
-                       peer_id_only, reach_product);
+                       peer_id_only, reach_product, reach_bridge, dirty_book, force_dial_fail,
+                       product_stack);
   }
   std::cerr << "error: --role answerer|offerer required\n";
   PrintUsage(argv[0]);

@@ -91,9 +91,19 @@ IDialRegistry* CallMediaPlane::ActiveDial() const {
   return test_dial_ ? test_dial_ : dial_registry_.get();
 }
 
+ICircuitHopReach* CallMediaPlane::ActiveCircuitReach() const {
+  return test_circuit_reach_ ? test_circuit_reach_ : circuit_hop_reach_.get();
+}
+
 void CallMediaPlane::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial) {
+  BindTestMediaPath(transport, dial, nullptr);
+}
+
+void CallMediaPlane::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
+                                       ICircuitHopReach* circuit_reach) {
   test_media_transport_ = transport;
   test_dial_ = dial;
+  test_circuit_reach_ = circuit_reach;
   Wire();
 }
 
@@ -117,7 +127,7 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
   CallTopologyController::MediaRelayDeps deps;
   deps.relay = media_relay_client_.get();
   deps.dial = ActiveDial();
-  deps.circuit_reach = circuit_hop_reach_.get();
+  deps.circuit_reach = ActiveCircuitReach();
   MeshConfig mesh_cfg = config().mesh;
   NormalizeMeshConfig(mesh_cfg);
   deps.bootstrap_peers = mesh_cfg.bootstrap_peers;
@@ -161,12 +171,12 @@ void CallMediaPlane::BindBridge(const CallMediaBridgeBindArgs& args) {
   if (!call_media_bridge_ || sessions_changed) {
     call_media_bridge_ = std::make_unique<CallMediaBridge>(
         *args.host, *args.session_store, *args.media_keys, *args.media_engine, *transport, dial,
-        circuit_hop_reach_.get());
+        ActiveCircuitReach());
     media_bridge_bound_sessions_key_ = args.sessions_key;
     log().info << "CallMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0)
                << " transport=" << (test_media_transport_ ? "test" : "amp") << ")";
   } else {
-    call_media_bridge_->SetReachDeps(dial, circuit_hop_reach_.get());
+    call_media_bridge_->SetReachDeps(dial, ActiveCircuitReach());
   }
   call_media_bridge_->SetSeedWarm([this]() { WarmBootstrapSeedSessions(); });
   call_media_bridge_->SetSeedReserve([this]() { ReserveOnBootstrapSeeds(); });
