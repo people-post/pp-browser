@@ -120,6 +120,8 @@ function(pp_browser_assert_no_ui_dependencies root_target)
 endfunction()
 
 # Post-link scan: fails if UI entrypoints landed in the binary despite CMake edges.
+# Windows/MSVC: prefer dumpbin — Strawberry/MinGW nm often cannot read ARM64 PE
+# ("file format not recognized") and would false-fail the build after a good link.
 function(pp_browser_add_no_ui_link_check target)
   if(NOT TARGET ${target})
     message(FATAL_ERROR "pp_browser_add_no_ui_link_check: not a target: ${target}")
@@ -127,15 +129,35 @@ function(pp_browser_add_no_ui_link_check target)
   if(CMAKE_CROSSCOMPILING)
     return()
   endif()
-  find_program(_pp_nm NAMES nm llvm-nm)
-  if(NOT _pp_nm)
-    message(STATUS "pp-browser: nm not found; skipping post-link UI symbol check for ${target}")
-    return()
+
+  set(_pp_symtool "")
+  set(_pp_symtool_kind "")
+  if(WIN32)
+    find_program(_pp_dumpbin NAMES dumpbin)
+    if(_pp_dumpbin)
+      set(_pp_symtool "${_pp_dumpbin}")
+      set(_pp_symtool_kind "dumpbin")
+    else()
+      message(STATUS
+        "pp-browser: dumpbin not found; skipping post-link UI symbol check for ${target} "
+        "(do not use Strawberry/MinGW nm on Windows PE)")
+      return()
+    endif()
+  else()
+    find_program(_pp_nm NAMES llvm-nm nm)
+    if(NOT _pp_nm)
+      message(STATUS "pp-browser: nm not found; skipping post-link UI symbol check for ${target}")
+      return()
+    endif()
+    set(_pp_symtool "${_pp_nm}")
+    set(_pp_symtool_kind "nm")
   endif()
+
   add_custom_command(TARGET ${target} POST_BUILD
     COMMAND ${CMAKE_COMMAND}
       -DPP_BROWSER_NO_UI_BINARY=$<TARGET_FILE:${target}>
-      -DPP_BROWSER_NO_UI_NM=${_pp_nm}
+      -DPP_BROWSER_NO_UI_SYMTOOL=${_pp_symtool}
+      -DPP_BROWSER_NO_UI_SYMTOOL_KIND=${_pp_symtool_kind}
       -DPP_BROWSER_NO_UI_LABEL=${target}
       -P ${CMAKE_SOURCE_DIR}/cmake/CheckNoUiSymbols.cmake
     COMMENT "Checking ${target} for UI/SDL symbols"
