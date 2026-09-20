@@ -313,10 +313,9 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureAcceptsHopPeerIdRelayKey) {
   EXPECT_EQ(recording_->preferred_multiaddr_calls, 0);
 }
 
-TEST_F(AmpCircuitHopReachTest, CallMediaEnsureStartsCircuitWithoutWaitingForSlowPunch) {
-  // Dogfood 8b452388: sequential punch burned ~8s of the 12s Bridge dial budget before
-  // StartBridge — AbortPending then killed the hop. Circuit must start while punch is still
-  // outstanding; first Connected wins.
+TEST_F(AmpCircuitHopReachTest, CallMediaEnsureRunsCircuitBeforePunch) {
+  // Dogfood 130521: punch∥circuit overlapped ADP OpenChannel after sendto-miss and AVd.
+  // Circuit must run first; punch stays idle while nested circuit succeeds.
   WarmAnswererAndOfferer("relay");
 
   auto punch_started = std::make_shared<std::atomic<bool>>(false);
@@ -335,14 +334,10 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureStartsCircuitWithoutWaitingForSlow
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
-  EXPECT_TRUE(punch_started->load(std::memory_order_acquire));
-  EXPECT_TRUE(hold_punch && *hold_punch)
-      << "circuit must win while punch callback is still outstanding";
+  EXPECT_FALSE(punch_started->load(std::memory_order_acquire))
+      << "successful circuit must not start punch (no ADP overlap)";
   EXPECT_GE(recording_->nested_over_carrier_calls, 1);
-
-  if (hold_punch && *hold_punch) {
-    (*hold_punch)(Error("punch still pending"));
-  }
+  EXPECT_FALSE(hold_punch && *hold_punch);
 }
 
 } // namespace

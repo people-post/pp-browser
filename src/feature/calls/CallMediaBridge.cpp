@@ -710,11 +710,11 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                     *last_error = assoc.error();
                     log().info << "CallLifecycle StartSfu EnsureAssociation miss peer=" << peer_identity
                                << " err=" << last_error->message;
-                    // Dogfood: dialable private MA → dial timeout → DialInBackoff. Abort + clear
-                    // so circuit nested can proceed after assoc settles (hard-lab dirty heal). Keep
-                    // assoc_started so we do not hammer EnsureAssociation every poll.
+                    // Dial already finished (this callback). ClearDialBackoff only — AbortInflightDial
+                    // on a Backoff link ScheduleDropLink's again and races the FinishDial drop
+                    // (dogfood 130521 AV ~10s after sendto-miss). Keep assoc_started so we do not
+                    // hammer EnsureAssociation every poll.
                     if (dial_) {
-                      dial_->AbortInflightDial(peer_identity);
                       dial_->ClearDialBackoff(peer_identity);
                     }
                   }

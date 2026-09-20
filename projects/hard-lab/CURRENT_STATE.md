@@ -16,7 +16,7 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 | B-HARD-CALL-NAT-STACK | `pp-call-probe --product-stack` (Invite/Accept + CallLifecycle + dirty media) |
 | CallMediaPlane test seam | `BindTestMediaPath(transport, dial, circuit_reach)` for full CallStack wire next |
 | Dial-backoff gtest | `amp_circuit_hop_reach_test` + `call_media_bridge_answerer_start_test` |
-| Ensure→circuit heal | Bridge AbortInflightDial + ClearDialBackoff on EnsureAssociation miss (GUI matches dirty probe) |
+| Ensure→circuit heal | Bridge ClearDialBackoff on EnsureAssociation miss (Abort only while dial still in flight — finished callback must not double-drop) |
 | ConnectFailed stops media | gtest `CircuitHopMissStopsMediaOnConnectFailed` — not a hard-lab fail gate |
 | AmpCircuitHopReach taxonomy | per-relay info logs + last-fail error string |
 | PeerLinkManager::ClearDialBackoff / AbortInflightDial | Abort no longer DropLink mid-handshake; FinishDial suppress-backoff; cold-evict uses DropLink |

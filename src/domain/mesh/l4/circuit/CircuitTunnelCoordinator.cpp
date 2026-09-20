@@ -62,7 +62,8 @@ Roe<std::pair<std::string, std::string>> NormalizeAmpCircuitTarget(pp::amp::Peer
   // Nested call-media is peer-id-only. Double-NAT answerer/offerer parks via op=reserve so the
   // seed already has a Connected PeerLink without a dial-book MA (dogfood 997c1c6f: relay
   // refused "endpoint not registered" while the far peer was only reserved/Connected).
-  if (links.IsConnected(target.target_peer_id)) {
+  // IsConnected(peer_id) only matches an exact dial key — inbound links are often alias/inbound:*.
+  if (links.CountConnectedLinksForPeerId(target.target_peer_id) > 0) {
     return std::make_pair(target.target_peer_id, snap.multiaddr);
   }
   return Error("circuit target peer endpoint not registered");
@@ -208,9 +209,12 @@ struct CircuitTunnelCoordinator::Impl {
     tunnel.finished = true;
     auto cb = std::move(tunnel.on_finished);
     tunnel.on_finished = nullptr;
-    if (cb) {
-      cb(std::move(result));
+    if (!cb) {
+      return;
     }
+    // Callers hold Impl::mu. try_relay → StartBridge → OpenChannel must not re-enter under lock
+    // (dogfood hop give-up / 130521). Deliver on the IO queue after TearDown returns.
+    PostIo([cb = std::move(cb), result = std::move(result)]() mutable { cb(std::move(result)); });
   }
 
   void TearDown(Tunnel& tunnel, const bool suppress_notify, const bool local_cancel, const std::string& error) {
@@ -322,7 +326,7 @@ struct CircuitTunnelCoordinator::Impl {
               if (tunnel->on_finished) {
                 auto cb = std::move(tunnel->on_finished);
                 tunnel->on_finished = nullptr;
-                cb(std::move(ok));
+                PostIo([cb = std::move(cb), ok = std::move(ok)]() mutable { cb(std::move(ok)); });
               }
               return true;
             }

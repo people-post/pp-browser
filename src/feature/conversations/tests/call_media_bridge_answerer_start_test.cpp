@@ -530,7 +530,8 @@ TEST_F(CallMediaBridgeAnswererStartTest, DialableDialBackoffDoesNotHammerEnsureU
       << "must not hammer EnsureAssociation while dial in backoff (got "
       << dial_->ensure_association_calls << ")";
   EXPECT_GE(dial_->clear_backoff_calls, 1) << "Ensure miss must ClearDialBackoff for circuit pivot";
-  EXPECT_GE(dial_->abort_inflight_calls, 1) << "Ensure miss must AbortInflightDial for circuit pivot";
+  // AbortInflightDial before ConnectAsync is OK; EnsureAssociation *miss callback* must not Abort
+  // (dial already finished — double ScheduleDropLink AVs). Miss path only Clears backoff.
   EXPECT_NE(lifecycle_->Phase(), CallPhase::ConnectFailed)
       << "circuit Connected should prevent ConnectFailed; phase="
       << CallPhaseName(lifecycle_->Phase()) << " err=" << host_->last_error;
