@@ -274,6 +274,8 @@ private:
   void P2pRequestInboxSync() override;
 
   Roe<std::string> LocalRelayIdentity() const;
+  /** Mint/find e2e_public control DM before SoftMigrate / MediaKey fan-out (catalog warm). */
+  Roe<std::string> EnsureCallControlThread(const std::string& peer_identity);
   Roe<void> SendCallDirectMessage(const std::string& peer_identity, CallControlType type,
                                   const std::string& detail_json, const std::string& display);
   Roe<void> AppendOriginHistory(const std::string& thread_id, CallControlType type, const std::string& text,

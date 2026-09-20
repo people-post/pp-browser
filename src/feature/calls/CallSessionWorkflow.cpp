@@ -195,6 +195,13 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
     if (invitee.empty() || invitee == *local) {
       continue;
     }
+    // Catalog warm before Invite / SoftMigrate fan-out (thread + directory create off the critical path).
+    if (host_.wire.ensure_control_thread) {
+      if (auto warmed = host_.wire.ensure_control_thread(invitee); !warmed) {
+        log().warning << "Call control thread warm failed peer=" << invitee
+                      << " err=" << warmed.error().message;
+      }
+    }
     if (auto invited = InviteParticipant(call_id, invitee); !invited) {
       return invited.error();
     }
@@ -326,6 +333,12 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   const std::string display =
       (*session)->media_mode == CallMediaMode::Video ? "Incoming video call" : "Incoming voice call";
   if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(invitee_identity);
+  if (host_.wire.ensure_control_thread) {
+    if (auto warmed = host_.wire.ensure_control_thread(invitee_identity); !warmed) {
+      log().warning << "CallInvite control thread warm failed peer=" << invitee_identity
+                    << " err=" << warmed.error().message;
+    }
+  }
   // Wire first — do not leave Ringing/pending debris if send fails.
   if (auto sent = host_.wire.send_direct(invitee_identity, CallControlType::CallInvite, *detail, display); !sent) {
     return sent;

@@ -34,6 +34,8 @@ public:
     std::function<Roe<void>(const std::string& peer, CallControlType type, const std::string& detail,
                             const std::string& display)>
         send_direct;
+    /** Pre-mint e2e_public control DM so SoftMigrate/roster fan-out does not race catalog create. */
+    std::function<Roe<std::string>(const std::string& peer)> ensure_control_thread;
     std::function<Roe<void>(const std::string& call_id, CallControlType type, const std::string& detail,
                             const std::string& display, const std::string& skip)>
         fan_out_joined;

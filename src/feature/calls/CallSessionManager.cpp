@@ -12,6 +12,7 @@
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/messaging/InitiationPricing.h"
+#include "domain/messaging/PairwiseFanoutLogic.h"
 #include "domain/messaging/PeerCapsLogic.h"
 #include "domain/messaging/SendRelayOptions.h"
 #include "domain/people/ContactIdentity.h"
@@ -128,6 +129,7 @@ void CallSessionManager::BindWorkflowHostPorts() {
                              const std::string& display) {
     return SendCallDirectMessage(peer, type, detail, display);
   };
+  ports.wire.ensure_control_thread = [this](const std::string& peer) { return EnsureCallControlThread(peer); };
   ports.wire.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
                                 const std::string& display, const std::string& skip) {
     return FanOutToJoined(call_id, type, detail, display, skip);
@@ -588,8 +590,10 @@ Roe<std::string> CallSessionManager::LocalRelayIdentity() const {
   return identity->account_id;
 }
 
-Roe<void> CallSessionManager::SendCallDirectMessage(const std::string& peer_identity, const CallControlType type,
-                                                    const std::string& detail_json, const std::string& display) {
+Roe<std::string> CallSessionManager::EnsureCallControlThread(const std::string& peer_identity) {
+  if (peer_identity.empty()) {
+    return Error("Peer identity required");
+  }
   DirectChatTarget direct_target;
   direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
   direct_target.peer_identity_value = peer_identity;
@@ -611,6 +615,15 @@ Roe<void> CallSessionManager::SendCallDirectMessage(const std::string& peer_iden
   if (!thread) {
     return thread.error();
   }
+  return thread->id;
+}
+
+Roe<void> CallSessionManager::SendCallDirectMessage(const std::string& peer_identity, const CallControlType type,
+                                                    const std::string& detail_json, const std::string& display) {
+  auto thread_id = EnsureCallControlThread(peer_identity);
+  if (!thread_id) {
+    return thread_id.error();
+  }
 
   SendRelayOptions opts;
   opts.content_type = ChatContentType::System;
@@ -625,7 +638,7 @@ Roe<void> CallSessionManager::SendCallDirectMessage(const std::string& peer_iden
   if (!delivery_.send_user_message) {
     return Error("Call delivery not bound");
   }
-  auto sent = delivery_.send_user_message(thread->id, display, opts);
+  auto sent = delivery_.send_user_message(*thread_id, display, opts);
   if (!sent) {
     return sent.error();
   }
@@ -679,18 +692,19 @@ Roe<void> CallSessionManager::FanOutToJoined(const std::string& call_id, const C
   if (!participants) {
     return participants.error();
   }
+  const auto targets = SelectCallFanoutIdentities(*participants, skip_identity, true, false);
   // Best-effort: one peer failure must not block CallSfuAttach / roster to the rest.
-  for (const CallParticipant& row : *participants) {
-    if (row.identity == skip_identity || row.state != CallParticipantState::Joined) {
-      continue;
-    }
-    if (auto sent = SendCallDirectMessage(row.identity, type, detail_json, display); !sent) {
-      log().warning << "FanOutToJoined send failed peer=" << row.identity << " type="
-                    << CallControlTypeToWire(type) << " err=" << sent.error().message;
-    } else {
-      log().info << "FanOutToJoined queued peer=" << row.identity
-                 << " type=" << CallControlTypeToWire(type);
-    }
+  const auto result = FanOutPairwise(targets, PairwiseFanoutMode::BestEffort,
+                                     [&](const std::string& identity) {
+                                       return SendCallDirectMessage(identity, type, detail_json, display);
+                                     });
+  for (size_t i = 0; i < result.failed_identities.size(); ++i) {
+    log().warning << "FanOutToJoined send failed peer=" << result.failed_identities[i] << " type="
+                  << CallControlTypeToWire(type) << " err="
+                  << (i < result.failure_messages.size() ? result.failure_messages[i] : std::string{});
+  }
+  if (result.succeeded > 0) {
+    log().info << "FanOutToJoined queued n=" << result.succeeded << " type=" << CallControlTypeToWire(type);
   }
   return {};
 }
@@ -702,18 +716,15 @@ Roe<void> CallSessionManager::FanOutToJoinedAndRinging(const std::string& call_i
   if (!participants) {
     return participants.error();
   }
-  for (const CallParticipant& row : *participants) {
-    if (row.identity == skip_identity) {
-      continue;
-    }
-    if (row.state != CallParticipantState::Joined && row.state != CallParticipantState::Ringing &&
-        row.state != CallParticipantState::Invited) {
-      continue;
-    }
-    if (auto sent = SendCallDirectMessage(row.identity, type, detail_json, display); !sent) {
-      log().warning << "FanOutToJoinedAndRinging send failed peer=" << row.identity << " type="
-                    << CallControlTypeToWire(type) << " err=" << sent.error().message;
-    }
+  const auto targets = SelectCallFanoutIdentities(*participants, skip_identity, true, true);
+  const auto result = FanOutPairwise(targets, PairwiseFanoutMode::BestEffort,
+                                     [&](const std::string& identity) {
+                                       return SendCallDirectMessage(identity, type, detail_json, display);
+                                     });
+  for (size_t i = 0; i < result.failed_identities.size(); ++i) {
+    log().warning << "FanOutToJoinedAndRinging send failed peer=" << result.failed_identities[i] << " type="
+                  << CallControlTypeToWire(type) << " err="
+                  << (i < result.failure_messages.size() ? result.failure_messages[i] : std::string{});
   }
   return {};
 }
