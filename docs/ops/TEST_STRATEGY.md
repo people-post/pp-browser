@@ -249,6 +249,8 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | hard-w5 default phase | **all** | `circuit+product+dirty+stack` (`both` = legacy circuit+product) |
 | N-HARD-* (other) / N-ADMIT-HARD | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) |
 
+**Routing mode map** (direct / punch / circuit hop / SFU `media_relay` / ConnectFailed teardown → tier): [HARD_LAB.md § Routing mode coverage](../../packaging/pp-node/HARD_LAB.md#routing-mode-coverage-success-oracles).
+
 ---
 
 ## Purpose catalog — pp-browser (`B-*`)
@@ -270,7 +272,7 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 
 | ID | Status | Primary evidence |
 |----|--------|------------------|
-| B-CALL-DIRECT | **Partial** (improved) | In-process: `call_media_leg_coordinator_test` (ex-`CallMediaDirectService`), `CallMediaKeyStore` Put/Load, `call_listen_addrs_logic_test`, `call_answerer_kick_logic_test`, `call_media_planner_select_logic_test`, `call_media_bridge_answerer_start_test` (answerer + offerer ScheduleStart / KeyReady / ReleaseDirect), `call_session_inbound_compose_test` (CSM Invite→AcceptClicked→Leave Idle), `call_ui_backend_stack_test` (CallStack+CallUiBackend Invite→InCall), `call_dual_stack_compose_test` (Offer↔Answer Invite/Accept/InCall/Leave wire); multi-process: `pp-call-probe` + [`pp_call_direct_smoke.sh`](../../scripts/test/pp_call_direct_smoke.sh); thin smoke still Amp duplex (not product CSM wire) |
+| B-CALL-DIRECT | **Partial** (improved) | In-process: `call_media_leg_coordinator_test` (ex-`CallMediaDirectService`), `CallMediaKeyStore` Put/Load, `call_listen_addrs_logic_test`, `call_answerer_kick_logic_test`, `call_media_planner_select_logic_test`, `call_media_bridge_answerer_start_test` (answerer + offerer ScheduleStart / KeyReady / ReleaseDirect / dial-backoff→circuit / **ConnectFailed stops media**), `call_session_inbound_compose_test` (CSM Invite→AcceptClicked→Leave Idle), `call_ui_backend_stack_test` (CallStack+CallUiBackend Invite→InCall), `call_dual_stack_compose_test` (Offer↔Answer Invite/Accept/InCall/Leave wire); multi-process: `pp-call-probe` + [`pp_call_direct_smoke.sh`](../../scripts/test/pp_call_direct_smoke.sh); thin smoke still Amp duplex (not product CSM wire) |
 | B-CALL-HOP | **Covered** (scaffold) | In-process: `AmpCircuitCallMediaComposeTest` / `circuit_call_media_compose_test`, `circuit_media_relay_compose_test`; multi-process: `pp-call-probe --via-hop` + [`pp_call_hop_smoke.sh`](../../scripts/test/pp_call_hop_smoke.sh); driver `--suite call-hop`. **V038 D4 loopback gate.** |
 | B-TEARDOWN | **Partial** (improved) | `ConnectDetachKCycleNoHang` (direct); `--cycles` on `pp-call-probe` (direct and hop); Detach/timeout/Stop no-hang in services; in-process `InviteAcceptLeaveKCycleTeardown` (CSM); `OfferAnswerKCycleTeardown` (dual CallStack Leave→Idle→re-Invite) |
 | B-CONFLICT | **Covered** (scaffold) | In-process: `CallMediaLegCoordinator` second-inbound reject; `AcceptSecondInviteEndsPriorActiveCall` (CSM + dual CallStack); multi-process: `pp-call-probe --expect busy` + [`scripts/test/pp_call_conflict_smoke.sh`](../../scripts/test/pp_call_conflict_smoke.sh); driver `--suite conflict`. Chrome copy still unit-only. |

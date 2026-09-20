@@ -4,7 +4,7 @@
 
 ## Direction
 
-Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complete**. Wave 5 CGNAT + HL004 dirty-book / product-stack control plane landed.
+Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complete**. Wave 5 CGNAT + HL004 dirty-book / product-stack control plane landed. **Success-first** routing mode map in [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md#routing-mode-coverage-success-oracles).
 
 ## Landed
 
@@ -16,6 +16,9 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 | B-HARD-CALL-NAT-STACK | `pp-call-probe --product-stack` (Invite/Accept + CallLifecycle + dirty media) |
 | CallMediaPlane test seam | `BindTestMediaPath(transport, dial, circuit_reach)` for full CallStack wire next |
 | Dial-backoff gtest | `amp_circuit_hop_reach_test` + `call_media_bridge_answerer_start_test` |
+| Ensure→circuit heal | Bridge AbortInflightDial + ClearDialBackoff on EnsureAssociation miss (GUI matches dirty probe) |
+| ConnectFailed stops media | gtest `CircuitHopMissStopsMediaOnConnectFailed` — not a hard-lab fail gate |
+| AmpCircuitHopReach taxonomy | per-relay info logs + last-fail error string |
 | PeerLinkManager::ClearDialBackoff / AbortInflightDial | Abort no longer DropLink mid-handshake; FinishDial suppress-backoff; cold-evict uses DropLink |
 | CircuitTunnelCoordinator | `ScheduleWhenChannelOpen` looks up PeerLink by key (no raw pointer across Io posts) |
 
@@ -27,9 +30,10 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 | N-HARD-DIR / DHT / N-ADMIT-HARD | Blocked on product hooks |
 | Wave 4+ multi-hop | Blocked on L3.5 |
 | GUI / phones | Manual dogfood only |
+| SFU `media_relay` on hard topo | N≥3 harness — Wave 1 B-HARD-CALL when ready |
 
 ## Next
 
 1. Promote product-stack to CallStack+CallUiBackend StartCall/Accept on Amp delivery (use BindTestMediaPath+circuit)
-2. Keep hard-w5 `all` green in nightly
+2. Keep hard-w5 `all` green in nightly (success oracles)
 3. N-HARD-DIR / DHT when hooks exist

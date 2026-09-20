@@ -159,7 +159,10 @@ public:
     ++clear_backoff_calls;
     last_clear_backoff_peer = peer_key;
   }
-  void AbortInflightDial(const std::string& /*peer_key*/) override {}
+  void AbortInflightDial(const std::string& peer_key) override {
+    ++abort_inflight_calls;
+    last_abort_peer = peer_key;
+  }
   void ClearCallMediaCircuitHop(const std::string& /*peer_key*/) override {}
 
   bool HasCallMediaCircuitHop(const std::string& peer_key) const override {
@@ -172,8 +175,10 @@ public:
   std::unordered_map<std::string, bool> circuit_hops;
   int ensure_association_calls = 0;
   int clear_backoff_calls = 0;
+  int abort_inflight_calls = 0;
   std::string last_ensure_peer;
   std::string last_clear_backoff_peer;
+  std::string last_abort_peer;
   bool ensure_result = true;
   std::string ensure_error = "ensure association not available";
 };
@@ -523,10 +528,49 @@ TEST_F(CallMediaBridgeAnswererStartTest, DialableDialBackoffDoesNotHammerEnsureU
   EXPECT_LE(dial_->ensure_association_calls, 2)
       << "must not hammer EnsureAssociation while dial in backoff (got "
       << dial_->ensure_association_calls << ")";
+  EXPECT_GE(dial_->clear_backoff_calls, 1) << "Ensure miss must ClearDialBackoff for circuit pivot";
+  EXPECT_GE(dial_->abort_inflight_calls, 1) << "Ensure miss must AbortInflightDial for circuit pivot";
   EXPECT_NE(lifecycle_->Phase(), CallPhase::ConnectFailed)
       << "circuit Connected should prevent ConnectFailed; phase="
       << CallPhaseName(lifecycle_->Phase()) << " err=" << host_->last_error;
   EXPECT_GT(transport_->connect_async_calls, 0);
+  bridge_->PrepareForTeardown(0);
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, CircuitHopMissStopsMediaOnConnectFailed) {
+  // Dogfood: Connect give-up must stop StartSfu capture (no zombie TX) and Direct→Idle.
+  const std::string call_id = "call:circuit-miss-stop";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  dial_->ensure_result = false;
+  dial_->ensure_error = "amp link manager: dial timeout [link: amp link: dial timeout]";
+  dial_->connected["account:peer"] = false;
+  circuit_->call_media_result = false;
+  circuit_->call_media_error = "circuit hop reach failed: relay !endpoint";
+  // FakeCircuit must not mark connected on miss.
+  circuit_->dial = nullptr;
+
+  bridge_->SetDialWaitBudgetMsForTest(400);
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  AppRuntime::RunUITasks();
+  ASSERT_TRUE(media_->IsActive()) << "BeginSession starts engine before Ensure settles";
+
+  for (int i = 0; i < 300; ++i) {
+    AppRuntime::RunUITasks();
+    if (lifecycle_->Phase() == CallPhase::ConnectFailed && !media_->IsActive()) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::ConnectFailed)
+      << "err=" << host_->last_error;
+  EXPECT_TRUE(bridge_->IsMeshConnectFailed());
+  EXPECT_FALSE(media_->IsActive()) << "ConnectFailed must StopMeshMedia (no zombie TX)";
+  EXPECT_EQ(bridge_->DirectPlannerPhase(), CallDirectPlannerPhase::Idle);
   bridge_->PrepareForTeardown(0);
 }
 

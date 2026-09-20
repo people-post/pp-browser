@@ -166,6 +166,19 @@ Dual SNAT gateways; hop on public net only; `--min-rx-frames` duplex gate.
 - Phase-4 **B-HARD-CALL-NAT-STACK**: `--product-stack` (CallLifecycle Invite/Accept over Amp chat + dirty-book media); CallStack BindTestMediaPath(+circuit) seam landed for full CSM wire next
 Default `--phase all` (circuit+product+dirty+stack). Legacy `both` = circuit+product. Reproduce mode: `PP_HARD_NAT_CALL_EXPECT=fail`.
 
+### Routing mode coverage (success oracles)
+
+Orthogonal to Wave topology. **Reach modes** (how A gets a PeerLink to B) ≠ **media topology** (Bridge 1:1 vs SoftMigrate `media_relay` SFU). Org HTTP call-control relay is signaling only — not a media path.
+
+| Mode | Product meaning | Cheapest oracle | Hard-lab / NAT |
+|------|-----------------|-----------------|----------------|
+| **Direct** | PeerLink Connected on usable MA; `path=direct` | loopback / LAN smoke | optional sanity |
+| **Punch** | ACP sync → upsert → Connected (`path=punched` or promote direct) | L3.25 punch compose / gtest | Phase-2 product: punch miss OK if circuit wins |
+| **Circuit hop** | Nested Session over circuit carrier; `path=circuit` | `amp_circuit_*` compose | **Primary** B-HARD-CALL-NAT / DIRTY / PRODUCT |
+| **SFU `media_relay`** | N≥3 SoftMigrate attach (blind hop) | SoftMigrate / media_relay loopback | Wave 1 B-HARD-CALL when N≥3 harness exists |
+| **ConnectFailed teardown** | Chrome fail + engine stop; clean Abort/shutdown | **gtest** (`call_media_bridge_answerer_start_test`) | not a hard-lab purpose |
+
+Hard-lab stays **success-first** (dirty book → circuit → duplex). Failure handling promotes downward to gtest ([TESTING.md](../../docs/architecture/TESTING.md)).
 
 ### Wave 6 — Product stress on hard topology
 

@@ -185,12 +185,7 @@ CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions
           return;
         }
         log().warning << "Inbound call-media failed call_id=" << call_id << " reason=" << reason;
-        mesh_connect_failed_ = true;
-        host_.P2pSetLastMediaError(reason);
-        if (arming_.on_connect_failed) {
-          arming_.on_connect_failed(call_id);
-        }
-        host_.P2pNotifyRingChanged();
+        SurfaceConnectFailed(call_id, reason, /*stop_media=*/true);
       });
     };
   });
@@ -226,6 +221,10 @@ void CallMediaBridge::SetDirectArmingPorts(CallDirectArmingPorts ports) {
 
 void CallMediaBridge::SetMediaKeyInboxPollRoundsForTest(const int rounds) {
   media_key_inbox_poll_rounds_ = rounds < 0 ? 0 : rounds;
+}
+
+void CallMediaBridge::SetDialWaitBudgetMsForTest(const int budget_ms) {
+  dial_wait_budget_ms_ = budget_ms > 0 ? budget_ms : kDialWaitBudgetMs;
 }
 
 void CallMediaBridge::SetSeatPorts(CallDirectSeatPorts ports) {
@@ -472,16 +471,8 @@ void CallMediaBridge::PollMeshConnectHealth() {
     return;
   }
   log().warning << "Mesh connect timeout call_id=" << call_id;
-  mesh_connect_failed_ = true;
   mesh_connect_missing_mic_ = !media_.HasLocalCapture();
-  if (seat_.IsBound()) {
-    seat_.note_failed(call_id);
-  }
-  Apply(CallDirectPlannerEvent::ConnectFailed, call_id, media_peer_identity_);
-  if (arming_.on_connect_failed) {
-    arming_.on_connect_failed(call_id);
-  }
-  host_.P2pNotifyRingChanged();
+  SurfaceConnectFailed(call_id, "mesh connect timeout", /*stop_media=*/true);
 }
 
 void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
@@ -542,15 +533,7 @@ void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const
                << " call_id=" << call_id;
     if (auto started = BeginSession(call_id, peer, session_offerer_); !started) {
       log().warning << "TX-only escalate BeginSession failed: " << started.error().message;
-      host_.P2pSetLastMediaError(started.error().message);
-      if (seat_.IsBound()) {
-        seat_.note_failed(call_id);
-      }
-      mesh_connect_failed_ = true;
-      if (arming_.on_connect_failed) {
-        arming_.on_connect_failed(call_id);
-      }
-      host_.P2pNotifyRingChanged();
+      SurfaceConnectFailed(call_id, started.error().message, /*stop_media=*/true);
     }
   });
 }
@@ -599,9 +582,9 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
              << " dialable=" << (dialable_before ? 1 : 0) << " connected=" << (connected_before ? 1 : 0)
              << " force_circuit=" << (force_circuit ? 1 : 0)
              << " has_circuit_reach=" << (circuit_reach_ ? 1 : 0)
-             << " budget_ms=" << kDialWaitBudgetMs;
+             << " budget_ms=" << dial_wait_budget_ms_;
 
-  const int64_t deadline = util::NowUnixMs() + kDialWaitBudgetMs;
+  const int64_t deadline = util::NowUnixMs() + dial_wait_budget_ms_;
   auto last_error = std::make_shared<Error>(Error("call peer not connected"));
   auto circuit_started = std::make_shared<bool>(false);
   auto assoc_started = std::make_shared<bool>(false);
@@ -611,12 +594,14 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     if (settled->exchange(true, std::memory_order_acq_rel)) {
       return;
     }
-    on_done(std::move(result));
+    if (on_done) {
+      on_done(std::move(result));
+    }
   };
   // Hard deadline independent of the poll tick chain (dogfood af934e: EnsureAssociation
   // never called back and poll ticks never hit "still not connected").
   (void)AppRuntime::ScheduleCoordinatorOneShot(
-      std::chrono::milliseconds(kDialWaitBudgetMs + 250),
+      std::chrono::milliseconds(dial_wait_budget_ms_ + 250),
       [this, peer_identity, finish, settled, last_error]() mutable {
         if (settled->load(std::memory_order_acquire)) {
           return;
@@ -698,17 +683,20 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                     *last_error = assoc.error();
                     log().info << "CallLifecycle StartSfu EnsureAssociation miss peer=" << peer_identity
                                << " err=" << last_error->message;
-                    // Dogfood two-net: dialable private MA fails into DialInBackoff (30s default).
-                    // Resetting assoc_started hammers EnsureAssociation every poll and can starve
-                    // circuit/punch; keep assoc_started so we only wait on circuit/Connected.
-                    const bool dial_backoff =
-                        last_error->message.find("dial in backoff") != std::string::npos;
-                    if (!dial_backoff) {
-                      *assoc_started = false;
+                    // Dogfood: dialable private MA → dial timeout → DialInBackoff. Abort + clear
+                    // so parallel circuit nested can proceed (hard-lab dirty heal). Keep
+                    // assoc_started so we do not hammer EnsureAssociation every poll.
+                    if (dial_) {
+                      dial_->AbortInflightDial(peer_identity);
+                      dial_->ClearDialBackoff(peer_identity);
                     }
                   }
                   (void)AppRuntime::ScheduleCoordinatorOneShot(
-                      std::chrono::milliseconds(kDialPollMs), [tick]() { (*tick)(); });
+                      std::chrono::milliseconds(kDialPollMs), [tick]() {
+                        if (tick && *tick) {
+                          (*tick)();
+                        }
+                      });
                 });
           });
       // Fall through: also start circuit/punch in parallel (do not wait forever on assoc).
@@ -758,15 +746,26 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                              << " via_ok=" << (via ? 1 : 0)
                              << " connected=" << (dial_ && dial_->IsConnected(peer_identity) ? 1 : 0);
                   (void)AppRuntime::ScheduleCoordinatorOneShot(
-                      std::chrono::milliseconds(kDialPollMs), [tick]() { (*tick)(); });
+                      std::chrono::milliseconds(kDialPollMs), [tick]() {
+                        if (tick && *tick) {
+                          (*tick)();
+                        }
+                      });
                 });
           });
       (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs),
-                                                   [tick]() { (*tick)(); });
+                                                   [tick]() {
+                                                     if (tick && *tick) {
+                                                       (*tick)();
+                                                     }
+                                                   });
       return;
     }
-    (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs),
-                                                 [tick]() { (*tick)(); });
+    (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs), [tick]() {
+      if (tick && *tick) {
+        (*tick)();
+      }
+    });
   };
   (*tick)();
 }
@@ -795,16 +794,31 @@ void CallMediaBridge::FinishConnectSequence(const uint64_t gen, const std::strin
       return;
     }
     if (!connected) {
-    log().info << "CallLifecycle StartSfu Connect give up call_id=" << call_id << " role=" << role
-               << " err=" << connected.error().message;
-      mesh_connect_failed_ = true;
-      host_.P2pSetLastMediaError(connected.error().message);
-      if (arming_.on_connect_failed) {
-        arming_.on_connect_failed(call_id);
-      }
-      host_.P2pNotifyRingChanged();
+      log().info << "CallLifecycle StartSfu Connect give up call_id=" << call_id << " role=" << role
+                 << " err=" << connected.error().message;
+      SurfaceConnectFailed(call_id, connected.error().message, /*stop_media=*/true);
     }
   });
+}
+
+void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std::string& err,
+                                           const bool stop_media) {
+  if (!err.empty()) {
+    host_.P2pSetLastMediaError(err);
+  }
+  if (seat_.note_failed) {
+    seat_.note_failed(call_id);
+  }
+  Apply(CallDirectPlannerEvent::ConnectFailed, call_id, media_peer_identity_);
+  if (arming_.on_connect_failed) {
+    arming_.on_connect_failed(call_id);
+  }
+  if (stop_media && (media_.IsActive() || media_.IsSfuMode())) {
+    // StopMeshMedia clears mesh_connect_failed_ for Leave hygiene — re-assert for chrome.
+    StopMeshMedia(call_id);
+  }
+  mesh_connect_failed_ = true;
+  host_.P2pNotifyRingChanged();
 }
 
 void CallMediaBridge::ScheduleOffererGracePoll(CallMediaDirectConnectParams params,
@@ -1274,15 +1288,7 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
         return;
       }
       log().warning << "Call-media failed call_id=" << captured_call_id << " reason=" << reason;
-      mesh_connect_failed_ = true;
-      host_.P2pSetLastMediaError(reason);
-      if (seat_.IsBound()) {
-        seat_.note_failed(captured_call_id);
-      }
-      if (arming_.on_connect_failed) {
-        arming_.on_connect_failed(captured_call_id);
-      }
-      host_.P2pNotifyRingChanged();
+      SurfaceConnectFailed(captured_call_id, reason, /*stop_media=*/true);
     });
   };
 
@@ -1338,9 +1344,7 @@ void CallMediaBridge::ScheduleStartMediaAsOfferer(const std::string& call_id,
                           call_id);
     if (auto started = StartMediaAsOfferer(call_id, peer_identity); !started) {
       log().warning << "StartMediaAsOfferer failed: " << started.error().message;
-      host_.P2pSetLastMediaError(started.error().message);
-      Apply(CallDirectPlannerEvent::ConnectFailed, call_id, peer_identity);
-      host_.P2pNotifyRingChanged();
+      SurfaceConnectFailed(call_id, started.error().message, /*stop_media=*/true);
     }
   });
 }
@@ -1442,11 +1446,7 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
                           call_id);
     if (auto started = StartMediaAsAnswerer(call_id, peer_identity); !started) {
       log().warning << "StartMediaAsAnswerer failed: " << started.error().message;
-      host_.P2pSetLastMediaError(started.error().message);
-      Apply(CallDirectPlannerEvent::ConnectFailed, call_id, peer_identity);
-      log().warning << "answerer StartSfu failed call_id=" << call_id
-                    << " err=" << started.error().message;
-      host_.P2pNotifyRingChanged();
+      SurfaceConnectFailed(call_id, started.error().message, /*stop_media=*/true);
     } else {
       log().info << "answerer StartSfu ok call_id=" << call_id
                  << " direct=" << (direct_.IsActive() ? 1 : 0)
