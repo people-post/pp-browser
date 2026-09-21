@@ -445,6 +445,43 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrivatePreferredFastFailsWhenNo
 }
 
 /**
+ * Event-driven ServeDial: StartBridge while B is not Connected, then associate B→R —
+ * PeerConnectedListener must resume the hop waiter (no wall-clock poll).
+ */
+TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyServeDialResumesWhenFarLegConnects) {
+  Wait<void> a_assoc;
+  harness_->mgr_a().EnsureAssociation("relay", a_assoc.LinkFn());
+  a_assoc.PumpUntilDone(*harness_);
+  ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
+  ASSERT_EQ(harness_->mgr_r().CountConnectedLinksForPeerId(harness_->peer_id_b), 0u);
+
+  CircuitBridgeTarget target;
+  target.target_peer_id = harness_->peer_id_b;
+  target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
+
+  Wait<CircuitTunnelBridgeResult> bridge_wait;
+  auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 8000);
+  ASSERT_TRUE(static_cast<bool>(tunnel_id));
+
+  // Let dialer open circuit channel + hop arm ServeDial wait (must still be pending).
+  for (int i = 0; i < 80 && !bridge_wait.done.load(std::memory_order_acquire); ++i) {
+    harness_->PumpAll();
+  }
+  ASSERT_FALSE(bridge_wait.done.load(std::memory_order_acquire))
+      << "ServeDial should wait for far leg, not fail immediately";
+
+  Wait<void> b_assoc;
+  harness_->mgr_b().EnsureAssociation("relay", b_assoc.LinkFn());
+  b_assoc.PumpUntilDone(*harness_);
+  ASSERT_TRUE(b_assoc.result) << b_assoc.result.error().message;
+  ASSERT_GT(harness_->mgr_r().CountConnectedLinksForPeerId(harness_->peer_id_b), 0u);
+
+  bridge_wait.PumpUntilDone(*harness_);
+  ASSERT_TRUE(bridge_wait.result) << bridge_wait.result.error().message;
+  EXPECT_TRUE(bridge_wait.result->ok);
+}
+
+/**
  * Contrast: sending private target_multiaddr makes the hop RegisterEndpoint that MA
  * (book overwrite). Do not wait for dial timeout — only assert the poison write.
  */

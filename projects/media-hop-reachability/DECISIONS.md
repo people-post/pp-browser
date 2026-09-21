@@ -131,18 +131,20 @@ Idle background reachability still uses **outbound dial + circuit** (and later p
 | Order | Sticky last-good → Connected → rest | `OrderCircuitRelayAttempts` |
 | Sticky retry | **Once** on other fast-fail; **repeat** on `not registered` | Other fast-fails sticky once; not-reg keeps sticky until bridge budget |
 | Sticky not-reg delay | **1.5s** (`kCircuitStickyNotRegisteredDelayMs`) | Between sticky not-reg StartBridge retries |
-| Hop ServeDial far-leg wait | **≤6s** (`kCircuitServeDialFarLegWaitMs`), capped by tunnel deadline | Hop absorbs answerer park race before failing not-registered |
+| Hop ServeDial far-leg wait | **Event-driven** (PeerConnected / reserve / deadline ≤6s) | No Tick poll-resume; deadline is a timer event |
 | Parallel StartBridge | **Forbidden** on first connect | Serial only (dogfood ADP path races) |
 
 Answerer remains punch-only + reserve (no reverse StartBridge on first pass). User Retry / TX-only escalate may open a **fresh** envelope later — not a longer first ring.
 
 **Layering (connectivity owns readiness):** Park/reserve and ServeDial far-leg wait live in mesh / `CallMediaPlane` / `CircuitTunnelCoordinator`. Session workflow only speaks consumer needs: `ensure_circuit_ready` (kick) and `await_circuit_ready` (Accept gate) — no seed vocabulary. Sticky not-reg retry stays in `AmpCircuitHopReach` (L3 hop reach).
 
-**Early circuit-ready (Ringing + Accept gate):** Offerer kicks ready on `StartCall`; answerer on inbound invite; `AcceptInvite` may **await** ready (up to 12s) before `CallAccept`. Hop ServeDial wait is the primary race absorber (needs Brief rebuild); Accept await is a thin product backstop.
+**ServeDial far-leg wait (event-driven):** When peer-id-only ServeDial has no Connected far leg, hop **arms a waiter** and returns. Resume on Amp `PeerConnectedListener` (PeerId), on live `op=reserve`, or on **deadline event** (`kCircuitServeDialFarLegWaitMs`, capped by tunnel deadline − slack). Do **not** poll-retry `BeginServe` from IoTick. Amp: `PeerLinkManager::SetPeerConnectedListener`.
+
+**Early circuit-ready (Ringing + Accept gate):** Offerer kicks ready on `StartCall`; answerer on inbound invite; `AcceptInvite` may **await** ready (up to 12s) before `CallAccept`. Hop event wait is the primary race absorber (needs Brief rebuild); Accept await is a thin product backstop.
 
 **Seed park gate:** Before private-Preferred `EnsureAssociation` and again before circuit/punch Ensure, await up to **12s** for any bootstrap/directory seed `IsConnected`. A timed-out pre-assoc park must **not** be treated as success (dogfood 88e16f5c: false park-ok → punch-only while offerer saw `endpoint not registered`). After a successful park, **skip** private-Preferred `EnsureAssociation` (dogfood 39412f: that UDP dial dropped the Brief PeerLink → dialer ServeDial `endpoint not registered`). Warm/reserve: connect **one** cold seed at a time, but **reserve all** Connected seeds (and continue serial cold reserve) so dialer StartBridge can land on hop2. Live Brief `op=reserve` is required for durable park; Connected PeerLink alone is enough for peer-id-only ServeDial when park actually succeeds.
 
-**Peer-id-only ServeDial:** Never fall through to dial-book Preferred. Private Preferred hangs hop `EnsureAssociation` until dialer WaitAck `circuit-relay bridge timed out` (dogfood dual-NAT / Windows dialer). Open call-media via `FindLinkByPeerId` + `OpenChannelOnLink` on the live link. Fast-fail `not registered` when not Connected so H010 sticky retry can advance.
+**Peer-id-only ServeDial:** Never fall through to dial-book Preferred. Private Preferred hangs hop `EnsureAssociation` until dialer WaitAck `circuit-relay bridge timed out` (dogfood dual-NAT / Windows dialer). Open call-media via `FindLinkByPeerId` + `OpenChannelOnLink` on the live link. Event-wait for Connected far leg; fail `not registered` on deadline so H010 sticky retry can advance.
 
 **Single policy home:** [`CircuitServeDialPolicy.h`](../../src/domain/mesh/l4/circuit/CircuitServeDialPolicy.h) — shared by hop `BeginServe` / `NormalizeAmpCircuitTarget` and CallMediaBridge seed-park skip (same dual-NAT rule, one header).
 
