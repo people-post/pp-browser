@@ -1,6 +1,6 @@
 #include "feature/conversations/AmpBroadcastTransport.h"
 
-#include "amp/link/PeerLink.h"
+#include "amp/link/LinkIdentity.h"
 
 #include "common/chat/IDirectMessageClient.h"
 #include "amp/L3/ChannelPolicy.h"
@@ -24,6 +24,10 @@ namespace pbr {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+int64_t SteadyDeadlineMs(const Clock::time_point deadline) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(deadline.time_since_epoch()).count();
+}
 
 std::vector<uint8_t> JsonToBody(const std::string& json_utf8) {
   return std::vector<uint8_t>(json_utf8.begin(), json_utf8.end());
@@ -264,14 +268,16 @@ struct AmpBroadcastTransport::Impl {
     return Error("expected broadcast request op");
   }
 
-  void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id) {
-    if (stopped.load(std::memory_order_acquire) || !links) {
+  void HandleInboundChannel(const std::string& remote_peer_id, const uint32_t channel_id) {
+    if (stopped.load(std::memory_order_acquire) || !links || remote_peer_id.empty()) {
       return;
     }
-    auto session = std::make_shared<pp::amp::ChannelSession>();
+    auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     auto policy = pp::amp::ControlJsonChannelPolicy();
-    session->Bind(*link.Mux(), channel_id, policy, [this, session](Roe<std::vector<uint8_t>> frame) {
-      if (!frame || stopped.load(std::memory_order_acquire)) {
+    *session_holder = links->BindChannel(
+        remote_peer_id, channel_id, policy, [this, session_holder](Roe<std::vector<uint8_t>> frame) {
+      auto session = *session_holder;
+      if (!session || !frame || stopped.load(std::memory_order_acquire)) {
         return false;
       }
       auto body = std::move(*frame);
@@ -325,10 +331,12 @@ void AmpBroadcastTransport::Start() {
   }
   started_ = true;
   impl_->stopped.store(false, std::memory_order_release);
-  links_.SetProtocolHandler(kRpcBroadcastProtocolId,
-                            [impl = impl_.get()](pp::amp::PeerLink& link, const uint32_t channel_id) {
-                              impl->HandleInboundChannel(link, channel_id);
-                            });
+  links_.SetProtocolHandler(
+      kRpcBroadcastProtocolId,
+      [impl = impl_.get()](pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
+                           const uint32_t channel_id) {
+        impl->HandleInboundChannel(remote_peer_id, channel_id);
+      });
 }
 
 void AmpBroadcastTransport::Stop() {
@@ -412,68 +420,72 @@ void AmpBroadcastTransport::RoundTripAsync(const std::string& peer_key, const st
 
   constexpr auto kSendTimeout = std::chrono::milliseconds(4000);
   const auto deadline = Clock::now() + kSendTimeout;
-  auto session = std::make_shared<pp::amp::ChannelSession>();
+  auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
 
-  auto finish = [finish_once, session](Roe<ResponseT> value) {
-    session->Close();
+  auto finish = [finish_once, session_holder](Roe<ResponseT> value) {
+    if (*session_holder) {
+      (*session_holder)->Close();
+    }
     (*finish_once)(std::move(value));
   };
 
   links_.OpenChannel(peer_key, kRpcBroadcastProtocolId, pp::amp::ControlJsonChannelPolicy(),
-                     [this, peer_key, request_json, expect_label, finish, settled, session,
+                     [this, peer_key, request_json, expect_label, finish, settled, session_holder,
                       deadline, is_response = std::move(is_response),
                       take_response = std::move(take_response)](IChatPeerLinks::ChannelRoe channel) mutable {
                        if (!channel) {
                          finish(Error(channel.error().message));
                          return;
                        }
-                       AmpScheduleWhenChannelOpen(
-                           post_io_, io_pump_,
-                           [this, peer_key, channel_id = *channel]() {
-                             auto* link = links_.FindLink(peer_key);
-                             return link && link->Mux() &&
-                                    link->Mux()->State(channel_id) == pp::amp::ChannelState::Open;
-                           },
-                           deadline,
-                           [this, peer_key, channel_id = *channel, request_json, expect_label, finish, settled, session,
+                       if (impl_->stopped.load(std::memory_order_acquire)) {
+                         finish(Error("amp broadcast service stopped"));
+                         return;
+                       }
+                       const uint32_t channel_id = *channel;
+                       links_.WhenChannelOpen(
+                           peer_key, channel_id, SteadyDeadlineMs(deadline),
+                           [this, peer_key, channel_id, request_json, expect_label, finish, settled, session_holder,
                             deadline, is_response = std::move(is_response),
                             take_response = std::move(take_response)](bool open) mutable {
+                             if (impl_->stopped.load(std::memory_order_acquire)) {
+                               finish(Error("amp broadcast service stopped"));
+                               return;
+                             }
                              if (!open) {
                                finish(Error("amp broadcast: channel open failed")
                                           .WithUser("Broadcast control request didn't confirm."));
                                return;
                              }
-                             auto* link = links_.FindLink(peer_key);
-                             if (!link || !link->Mux() ||
-                                 link->Mux()->State(channel_id) != pp::amp::ChannelState::Open) {
+
+                             *session_holder = links_.BindChannel(
+                                 peer_key, channel_id, pp::amp::ControlJsonChannelPolicy(),
+                                 [finish, expect_label, is_response = std::move(is_response),
+                                  take_response = std::move(take_response)](Roe<std::vector<uint8_t>> frame) {
+                                   if (!frame) {
+                                     finish(Error("Failed to read broadcast response")
+                                                .WithUser("Broadcast control request didn't confirm."));
+                                     return false;
+                                   }
+                                   const std::string json(frame->begin(), frame->end());
+                                   auto decoded = DecodeBroadcastRpcJson(json);
+                                   if (!decoded) {
+                                     finish(decoded.error());
+                                     return false;
+                                   }
+                                   if (!is_response(*decoded)) {
+                                     finish(Error(std::string("broadcast response was not ") + expect_label));
+                                     return false;
+                                   }
+                                   finish(take_response(std::move(*decoded)));
+                                   return false;
+                                 });
+                             if (!*session_holder) {
                                finish(Error("amp broadcast: channel open failed")
                                           .WithUser("Broadcast control request didn't confirm."));
                                return;
                              }
 
-                             session->Bind(*link->Mux(), channel_id, pp::amp::ControlJsonChannelPolicy(),
-                                           [finish, expect_label, is_response = std::move(is_response),
-                                            take_response = std::move(take_response)](Roe<std::vector<uint8_t>> frame) {
-                                             if (!frame) {
-                                               finish(Error("Failed to read broadcast response")
-                                                          .WithUser("Broadcast control request didn't confirm."));
-                                               return false;
-                                             }
-                                             const std::string json(frame->begin(), frame->end());
-                                             auto decoded = DecodeBroadcastRpcJson(json);
-                                             if (!decoded) {
-                                               finish(decoded.error());
-                                               return false;
-                                             }
-                                             if (!is_response(*decoded)) {
-                                               finish(Error(std::string("broadcast response was not ") + expect_label));
-                                               return false;
-                                             }
-                                             finish(take_response(std::move(*decoded)));
-                                             return false;
-                                           });
-
-                             if (!session->EnqueueOutbound(JsonToBody(request_json))) {
+                             if (!(*session_holder)->EnqueueOutbound(JsonToBody(request_json))) {
                                finish(Error("Failed to send broadcast request")
                                           .WithUser("Broadcast control request didn't confirm."));
                                return;
@@ -483,10 +495,8 @@ void AmpBroadcastTransport::RoundTripAsync(const std::string& peer_key, const st
                                finish(Error("amp broadcast send timed out")
                                           .WithUser("Broadcast control timed out."));
                              });
-                           },
-                           [this]() { return impl_->stopped.load(std::memory_order_acquire); });
+                           });
                      });
-
 }
 
 template <typename ResponseT>

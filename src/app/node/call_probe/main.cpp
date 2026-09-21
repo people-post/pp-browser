@@ -508,13 +508,13 @@ pbr::Roe<void> EnsureDirtyBookBridgeReach(AmpPeer& peer, pbr::CircuitTunnelCoord
     peer.Links().ClearDialBackoff(target_peer_id);
     for (int i = 0; i < 40; ++i) {
       peer.Pump();
-      if (!peer.Links().FindLink(target_peer_id)) {
+      if (!peer.Links().IsConnected(target_peer_id) && !peer.Links().IsReachable(target_peer_id)) {
         break;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
-    std::cout << "ok  force-dial-fail: dial corpse drained find="
-              << (peer.Links().FindLink(target_peer_id) ? 1 : 0) << "\n";
+    std::cout << "ok  force-dial-fail: dial corpse drained connected="
+              << (peer.Links().IsConnected(target_peer_id) ? 1 : 0) << "\n";
     const std::string warm_key = !hop_peer_id.empty() ? hop_peer_id : hop_key;
     if (auto warm = WarmHopAssociation(peer, warm_key, hop_ma); !warm) {
       return pbr::Error(std::string("re-warm hop after force-dial-fail: ") + warm.error().message);

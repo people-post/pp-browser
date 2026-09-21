@@ -694,10 +694,17 @@ void CircuitTunnelCoordinator::Start() {
   }
   impl_->stopped.store(false, std::memory_order_release);
   impl_->io_tick_id = runtime_.AddIoTick([impl = impl_.get()] { impl->TickDeadlines(); });
-  runtime_.Links().SetProtocolHandler(kCircuitRelayProtocolId,
-                                      [impl = impl_.get()](pp::amp::PeerLink& link, const uint32_t ch) {
-                                        impl->HandleInboundChannel(link, ch);
-                                      });
+  runtime_.Links().SetProtocolHandler(
+      kCircuitRelayProtocolId,
+      [impl = impl_.get()](pp::amp::LinkHandle handle, const std::string& /*remote_peer_id*/,
+                           const uint32_t ch) {
+        if (!impl->runtime) {
+          return;
+        }
+        impl->runtime->Links().WithLiveLink(handle, [&](pp::amp::PeerLink& link) {
+          impl->HandleInboundChannel(link, ch);
+        });
+      });
 }
 
 void CircuitTunnelCoordinator::Stop() {

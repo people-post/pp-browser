@@ -74,11 +74,23 @@ public:
 
   void MarkWarm(const std::string& peer_key) override { inner_.MarkWarm(peer_key); }
 
-  pp::amp::PeerLink* FindLink(const std::string& peer_key) override { return inner_.FindLink(peer_key); }
-
-  const pp::amp::PeerLink* FindLink(const std::string& peer_key) const override {
-    return inner_.FindLink(peer_key);
+  void WhenChannelOpen(const std::string& peer_key, uint32_t channel_id, int64_t deadline_ms,
+                       std::function<void(bool ok)> done) override {
+    inner_.WhenChannelOpen(peer_key, channel_id, deadline_ms, std::move(done));
   }
+
+  std::shared_ptr<pp::amp::ChannelSession> BindChannel(const std::string& peer_key, uint32_t channel_id,
+                                                       pp::amp::ChannelPolicy policy,
+                                                       pp::amp::ChannelSession::FrameHandler on_frame,
+                                                       pp::amp::ChannelSession::ClosedCallback on_closed) override {
+    return inner_.BindChannel(peer_key, channel_id, std::move(policy), std::move(on_frame), std::move(on_closed));
+  }
+
+  pp::amp::LinkSnapshotEx SnapshotByPeerId(const std::string& peer_id) const override {
+    return inner_.SnapshotByPeerId(peer_id);
+  }
+
+  bool IsReachable(const std::string& peer_id) const override { return inner_.IsReachable(peer_id); }
 
   mutable int preferred_multiaddr_calls = 0;
   mutable std::string last_preferred_peer;
@@ -263,11 +275,22 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialB
     MeshPeerLinkSnapshot GetLinkSnapshot(const std::string& peer_key) const override {
       return inner_.GetLinkSnapshot(peer_key);
     }
+    pp::amp::LinkSnapshotEx SnapshotByPeerId(const std::string& peer_id) const override {
+      return inner_.SnapshotByPeerId(peer_id);
+    }
     bool IsConnected(const std::string& peer_key) const override { return inner_.IsConnected(peer_key); }
+    bool IsReachable(const std::string& peer_id) const override { return inner_.IsReachable(peer_id); }
     void MarkWarm(const std::string& peer_key) override { inner_.MarkWarm(peer_key); }
-    pp::amp::PeerLink* FindLink(const std::string& peer_key) override { return inner_.FindLink(peer_key); }
-    const pp::amp::PeerLink* FindLink(const std::string& peer_key) const override {
-      return inner_.FindLink(peer_key);
+    void WhenChannelOpen(const std::string& peer_key, uint32_t channel_id, int64_t deadline_ms,
+                         std::function<void(bool ok)> done) override {
+      inner_.WhenChannelOpen(peer_key, channel_id, deadline_ms, std::move(done));
+    }
+    std::shared_ptr<pp::amp::ChannelSession> BindChannel(
+        const std::string& peer_key, uint32_t channel_id, pp::amp::ChannelPolicy policy,
+        pp::amp::ChannelSession::FrameHandler on_frame,
+        pp::amp::ChannelSession::ClosedCallback on_closed) override {
+      return inner_.BindChannel(peer_key, channel_id, std::move(policy), std::move(on_frame),
+                                std::move(on_closed));
     }
 
     RecordingChatPeerLinks& inner_;

@@ -376,26 +376,13 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
 
   void ScheduleWhenChannelOpen(const std::string& peer_key, const uint32_t channel_id,
                                const Clock::time_point deadline, std::function<void(bool open)> done) {
-    PostIo([this, self = shared_from_this(), peer_key, channel_id, deadline, done = std::move(done)]() mutable {
-      if (stopped.load(std::memory_order_acquire)) {
-        done(false);
-        return;
-      }
-      pp::amp::PeerLink* link = runtime ? runtime->Links().FindLink(peer_key) : nullptr;
-      if (!link || !link->Mux()) {
-        done(false);
-        return;
-      }
-      if (link->Mux()->State(channel_id) == pp::amp::ChannelState::Open) {
-        done(true);
-        return;
-      }
-      if (Clock::now() >= deadline) {
-        done(false);
-        return;
-      }
-      ScheduleWhenChannelOpen(peer_key, channel_id, deadline, std::move(done));
-    });
+    if (!runtime || peer_key.empty()) {
+      done(false);
+      return;
+    }
+    const int64_t deadline_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(deadline.time_since_epoch()).count();
+    runtime->Links().WhenChannelOpen(peer_key, channel_id, deadline_ms, std::move(done));
   }
 
   void TickDeadlines() {
@@ -1130,12 +1117,19 @@ void CallMediaLegCoordinator::Start() {
       impl->TickDeadlines();
     }
   });
-  runtime_.Links().SetProtocolHandler(kCallMediaDirectProtocolId,
-                                      [weak = std::weak_ptr(impl_)](pp::amp::PeerLink& link, const uint32_t ch) {
-                                        if (auto impl = weak.lock()) {
-                                          impl->HandleInboundChannel(link, ch);
-                                        }
-                                      });
+  runtime_.Links().SetProtocolHandler(
+      kCallMediaDirectProtocolId,
+      [weak = std::weak_ptr(impl_)](pp::amp::LinkHandle handle, const std::string& /*remote_peer_id*/,
+                                   const uint32_t ch) {
+        if (auto impl = weak.lock()) {
+          if (!impl->runtime) {
+            return;
+          }
+          impl->runtime->Links().WithLiveLink(handle, [&](pp::amp::PeerLink& link) {
+            impl->HandleInboundChannel(link, ch);
+          });
+        }
+      });
 }
 
 void CallMediaLegCoordinator::Stop() {

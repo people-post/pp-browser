@@ -125,38 +125,13 @@ struct AmpDialBackProtocol::Impl {
 
   void ScheduleWhenChannelOpen(const std::string& peer_key, const uint32_t channel_id,
                                const Clock::time_point deadline, std::function<void(bool open)> done) {
-    if (post_io) {
-      post_io([this, peer_key, channel_id, deadline, done = std::move(done)]() mutable {
-        if (stopped.load(std::memory_order_acquire) || !links) {
-          done(false);
-          return;
-        }
-        auto* link = links->FindLink(peer_key);
-        if (!link || !link->Mux()) {
-          done(false);
-          return;
-        }
-        if (link->Mux()->State(channel_id) == pp::amp::ChannelState::Open) {
-          done(true);
-          return;
-        }
-        if (Clock::now() >= deadline) {
-          done(false);
-          return;
-        }
-        ScheduleWhenChannelOpen(peer_key, channel_id, deadline, std::move(done));
-      });
+    if (!links || peer_key.empty()) {
+      done(false);
       return;
     }
-    // Harness path: park + optional Tick until Open (or timeout).
-    AmpParkUntil(
-        [&] {
-          auto* link = links ? links->FindLink(peer_key) : nullptr;
-          return link && link->Mux() && link->Mux()->State(channel_id) == pp::amp::ChannelState::Open;
-        },
-        deadline, io_pump);
-    auto* link = links ? links->FindLink(peer_key) : nullptr;
-    done(link && link->Mux() && link->Mux()->State(channel_id) == pp::amp::ChannelState::Open);
+    const int64_t deadline_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(deadline.time_since_epoch()).count();
+    links->WhenChannelOpen(peer_key, channel_id, deadline_ms, std::move(done));
   }
 
   void ServeProbe(std::shared_ptr<pp::amp::ChannelSession> session, std::vector<uint8_t> body) {
@@ -199,19 +174,22 @@ struct AmpDialBackProtocol::Impl {
     });
   }
 
-  void HandleInboundOnLink(pp::amp::PeerLink& link, const uint32_t channel_id) {
-    if (stopped.load(std::memory_order_acquire) || !links) {
+  void HandleInboundOnLink(pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
+                           const uint32_t channel_id) {
+    if (stopped.load(std::memory_order_acquire) || !links || remote_peer_id.empty()) {
       return;
     }
-    auto session = std::make_shared<pp::amp::ChannelSession>();
-    session->Bind(*link.Mux(), channel_id, pp::amp::ControlJsonChannelPolicy(),
-                  [this, session](Roe<std::vector<uint8_t>> frame) {
-                    if (!frame || stopped.load(std::memory_order_acquire)) {
-                      return false;
-                    }
-                    ServeProbe(session, std::move(*frame));
-                    return false;
-                  });
+    auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
+    *session_holder = links->BindChannel(
+        remote_peer_id, channel_id, pp::amp::ControlJsonChannelPolicy(),
+        [this, session_holder](Roe<std::vector<uint8_t>> frame) {
+          auto session = *session_holder;
+          if (!session || !frame || stopped.load(std::memory_order_acquire)) {
+            return false;
+          }
+          ServeProbe(session, std::move(*frame));
+          return false;
+        });
   }
 };
 
@@ -233,10 +211,12 @@ void AmpDialBackProtocol::Start() {
   }
   started_ = true;
   impl_->stopped.store(false, std::memory_order_release);
-  links_.SetProtocolHandler(kDialBackProtocolId,
-                            [impl = impl_.get()](pp::amp::PeerLink& link, const uint32_t channel_id) {
-                              impl->HandleInboundOnLink(link, channel_id);
-                            });
+  links_.SetProtocolHandler(
+      kDialBackProtocolId,
+      [impl = impl_.get()](pp::amp::LinkHandle handle, const std::string& remote_peer_id,
+                           const uint32_t channel_id) {
+        impl->HandleInboundOnLink(handle, remote_peer_id, channel_id);
+      });
 }
 
 void AmpDialBackProtocol::Stop() {

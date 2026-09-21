@@ -142,23 +142,15 @@ struct AmpMediaRelayCoordinator::Impl {
     return it == sessions.end() ? nullptr : it->second.get();
   }
 
-  void ScheduleWhenChannelOpen(pp::amp::PeerLink* link, const uint32_t channel_id,
+  void ScheduleWhenChannelOpen(const std::string& peer_key, const uint32_t channel_id,
                                const Clock::time_point deadline, std::function<void(bool open)> done) {
-    PostIo([this, link, channel_id, deadline, done = std::move(done)]() mutable {
-      if (stopped.load(std::memory_order_acquire) || !link || !link->Mux()) {
-        done(false);
-        return;
-      }
-      if (link->Mux()->State(channel_id) == pp::amp::ChannelState::Open) {
-        done(true);
-        return;
-      }
-      if (Clock::now() >= deadline) {
-        done(false);
-        return;
-      }
-      ScheduleWhenChannelOpen(link, channel_id, deadline, std::move(done));
-    });
+    if (!runtime || peer_key.empty()) {
+      done(false);
+      return;
+    }
+    const int64_t deadline_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(deadline.time_since_epoch()).count();
+    runtime->Links().WhenChannelOpen(peer_key, channel_id, deadline_ms, std::move(done));
   }
 
   void TickDeadlines() {
@@ -599,11 +591,10 @@ struct AmpMediaRelayCoordinator::Impl {
     return true;
   }
 
-  void BindClientChannel(Session& session, pp::amp::PeerLink& link, const uint32_t channel_id) {
-    session.channel = std::make_shared<pp::amp::ChannelSession>();
+  void BindClientChannel(Session& session, const std::string& peer_key, const uint32_t channel_id) {
     const MediaRelaySessionId id = session.id;
-    session.channel->Bind(
-        *link.Mux(), channel_id, pp::amp::MediaRelayClientChannelPolicy(),
+    session.channel = runtime->Links().BindChannel(
+        peer_key, channel_id, pp::amp::MediaRelayClientChannelPolicy(),
         [this, id](Roe<std::vector<uint8_t>> frame) {
           std::lock_guard lock(mu);
           auto* session = Find(id);
@@ -721,7 +712,6 @@ struct AmpMediaRelayCoordinator::Impl {
     runtime->Links().OpenChannel(
         hop, kMediaRelayProtocolId, pp::amp::MediaRelayClientChannelPolicy(),
         [this, id, hop, deadline, json](pp::amp::PeerLinkManager::ChannelRoe channel) {
-          pp::amp::PeerLink* link = nullptr;
           uint32_t channel_id = 0;
           {
             std::lock_guard lock(mu);
@@ -733,14 +723,9 @@ struct AmpMediaRelayCoordinator::Impl {
               TearDown(*session, false, false, channel.error().message);
               return;
             }
-            link = runtime->Links().FindLink(hop);
-            if (!link) {
-              TearDown(*session, false, false, "media-relay: hop link missing");
-              return;
-            }
             channel_id = *channel;
           }
-          ScheduleWhenChannelOpen(link, channel_id, deadline, [this, id, hop, channel_id, json](const bool open) {
+          ScheduleWhenChannelOpen(hop, channel_id, deadline, [this, id, hop, channel_id, json](const bool open) {
             std::lock_guard lock(mu);
             auto* session = Find(id);
             if (!session) {
@@ -750,14 +735,9 @@ struct AmpMediaRelayCoordinator::Impl {
               TearDown(*session, false, false, "media-relay: channel open failed");
               return;
             }
-            auto* link = runtime->Links().FindLink(hop);
-            if (!link || !link->Mux()) {
-              TearDown(*session, false, false, "media-relay: channel open failed");
-              return;
-            }
-            BindClientChannel(*session, *link, channel_id);
+            BindClientChannel(*session, hop, channel_id);
             session->phase = MediaRelayBundlePhase::WaitQuote;
-            if (!session->channel->EnqueueOutbound(JsonToBody(json))) {
+            if (!session->channel || !session->channel->EnqueueOutbound(JsonToBody(json))) {
               TearDown(*session, false, false, "failed to send quote");
             }
           });
@@ -781,7 +761,6 @@ struct AmpMediaRelayCoordinator::Impl {
     runtime->Links().OpenChannel(
         hop, kMediaRelayProtocolId, pp::amp::MediaRelayClientChannelPolicy(),
         [this, id, hop, deadline, json](pp::amp::PeerLinkManager::ChannelRoe channel) {
-          pp::amp::PeerLink* link = nullptr;
           uint32_t channel_id = 0;
           {
             std::lock_guard lock(mu);
@@ -793,14 +772,9 @@ struct AmpMediaRelayCoordinator::Impl {
               TearDown(*session, false, false, channel.error().message);
               return;
             }
-            link = runtime->Links().FindLink(hop);
-            if (!link) {
-              TearDown(*session, false, false, "media-relay: hop link missing");
-              return;
-            }
             channel_id = *channel;
           }
-          ScheduleWhenChannelOpen(link, channel_id, deadline, [this, id, hop, channel_id, json](const bool open) {
+          ScheduleWhenChannelOpen(hop, channel_id, deadline, [this, id, hop, channel_id, json](const bool open) {
             std::lock_guard lock(mu);
             auto* session = Find(id);
             if (!session) {
@@ -810,14 +784,9 @@ struct AmpMediaRelayCoordinator::Impl {
               TearDown(*session, false, false, "media-relay: channel open failed");
               return;
             }
-            auto* link = runtime->Links().FindLink(hop);
-            if (!link || !link->Mux()) {
-              TearDown(*session, false, false, "media-relay: channel open failed");
-              return;
-            }
-            BindClientChannel(*session, *link, channel_id);
+            BindClientChannel(*session, hop, channel_id);
             session->phase = MediaRelayBundlePhase::WaitAccept;
-            if (!session->channel->EnqueueOutbound(JsonToBody(json))) {
+            if (!session->channel || !session->channel->EnqueueOutbound(JsonToBody(json))) {
               TearDown(*session, false, false, "failed to send accept");
             }
           });
@@ -835,20 +804,22 @@ struct AmpMediaRelayCoordinator::Impl {
     channel.Close();
   }
 
-  void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id) {
-    if (stopped.load(std::memory_order_acquire) || !link.Mux()) {
+  void HandleInboundChannel(const std::string& remote_peer_id, const uint32_t channel_id) {
+    if (stopped.load(std::memory_order_acquire) || remote_peer_id.empty()) {
       return;
     }
-    auto channel = std::make_shared<pp::amp::ChannelSession>();
+    auto channel_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     auto host_sm = std::make_shared<MediaRelayAttachSm>();
-    host_sm->remote = link.RemotePeerId();
+    host_sm->remote = remote_peer_id;
     (void)host_sm->Apply(MediaRelayAttachEvent::StreamOpened);
 
-    channel->Bind(*link.Mux(), channel_id, pp::amp::MediaRelayClientChannelPolicy(),
-                  [this, channel, host_sm](Roe<std::vector<uint8_t>> frame) {
-                    if (!frame || stopped.load(std::memory_order_acquire)) {
-                      return false;
-                    }
+    *channel_holder = runtime->Links().BindChannel(
+        remote_peer_id, channel_id, pp::amp::MediaRelayClientChannelPolicy(),
+        [this, channel_holder, host_sm](Roe<std::vector<uint8_t>> frame) {
+          auto channel = *channel_holder;
+          if (!channel || !frame || stopped.load(std::memory_order_acquire)) {
+            return false;
+          }
                     if (frame->empty()) {
                       return true;
                     }
@@ -1053,10 +1024,10 @@ void AmpMediaRelayCoordinator::Start() {
   }
   impl_->stopped.store(false, std::memory_order_release);
   impl_->io_tick_id = runtime_.AddIoTick([impl = impl_.get()] { impl->TickDeadlines(); });
-  runtime_.Links().SetProtocolHandler(kMediaRelayProtocolId,
-                                      [impl = impl_.get()](pp::amp::PeerLink& link, const uint32_t ch) {
-                                        impl->HandleInboundChannel(link, ch);
-                                      });
+  runtime_.Links().SetProtocolHandler(
+      kMediaRelayProtocolId,
+      [impl = impl_.get()](pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
+                           const uint32_t ch) { impl->HandleInboundChannel(remote_peer_id, ch); });
 }
 
 void AmpMediaRelayCoordinator::Stop() {

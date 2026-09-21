@@ -358,18 +358,19 @@ struct AsyncWait {
 
 void ArmProbeBridgeTarget(AmpPeer& target, std::mutex& mu, bool& got, std::vector<uint8_t>& payload) {
   target.Links().SetProtocolHandler(
-      kProbeBridgeProtocol, [&](pp::amp::PeerLink& link, const uint32_t channel_id) {
-        auto session = std::make_shared<pp::amp::ChannelSession>();
-        session->Bind(*link.Mux(), channel_id, pp::amp::CircuitTunnelChannelPolicy(),
-                      [&, session](pbr::Roe<std::vector<uint8_t>> frame) {
-                        if (!frame) {
-                          return false;
-                        }
-                        std::lock_guard lock(mu);
-                        payload = *frame;
-                        got = true;
-                        return true;
-                      });
+      kProbeBridgeProtocol,
+      [&](pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id, const uint32_t channel_id) {
+        (void)target.Links().BindChannel(
+            remote_peer_id, channel_id, pp::amp::CircuitTunnelChannelPolicy(),
+            [&](pbr::Roe<std::vector<uint8_t>> frame) {
+              if (!frame) {
+                return false;
+              }
+              std::lock_guard lock(mu);
+              payload = *frame;
+              got = true;
+              return true;
+            });
       });
 }
 
