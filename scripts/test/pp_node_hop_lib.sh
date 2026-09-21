@@ -45,6 +45,15 @@ PY
 
 pp_node_advertise_host() {
   local advertise_host="${PP_NODE_PROBE_ADVERTISE_HOST:-}"
+  # Prefer the hop container's bridge gateway so circuit dial-back reaches the host
+  # from compose networks (docker0 is often unused / NO-CARRIER when hop is on
+  # pp-local-test_default or similar).
+  if [[ -z "${advertise_host}" ]]; then
+    local container="${PP_LOCAL_HOP_CONTAINER:-pp-node-relay-smoke-hop}"
+    if command -v docker >/dev/null 2>&1 && docker inspect "${container}" >/dev/null 2>&1; then
+      advertise_host="$(docker inspect "${container}" --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' 2>/dev/null | awk 'NF{print; exit}' || true)"
+    fi
+  fi
   if [[ -z "${advertise_host}" ]]; then
     if [[ -d /sys/class/net/docker0 ]]; then
       advertise_host="$(ip -4 -o addr show docker0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1 || true)"

@@ -19,6 +19,7 @@
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/error/AppError.h"
 #include "foundation/data/MeshRole.h"
+#include "foundation/data/AppPaths.h"
 #include "foundation/data/SessionStore.h"
 #include "foundation/data/UserPreferences.h"
 #include "domain/messaging/AttachmentCache.h"
@@ -705,18 +706,19 @@ std::vector<std::string> CollectDhtQueryPeerKeys(const std::vector<std::string>&
                                                  const std::vector<MeshDirectoryNode>& directory_nodes) {
   std::vector<std::string> keys;
   std::unordered_set<std::string> seen;
+  // Directory first (N027 L1), then L0 bootstrap seeds.
+  for (const MeshDirectoryNode& node : directory_nodes) {
+    if (node.peer_id.empty() || !seen.insert(node.peer_id).second) {
+      continue;
+    }
+    keys.push_back(node.peer_id);
+  }
   for (const std::string& ma : bootstrap_peers) {
     const std::string peer_id = PeerIdFromMultiaddr(ma);
     if (peer_id.empty() || !seen.insert(peer_id).second) {
       continue;
     }
     keys.push_back(peer_id);
-  }
-  for (const MeshDirectoryNode& node : directory_nodes) {
-    if (node.peer_id.empty() || !seen.insert(node.peer_id).second) {
-      continue;
-    }
-    keys.push_back(node.peer_id);
   }
   return keys;
 }
@@ -728,8 +730,11 @@ void ConversationsHub::RegisterDhtBootstrapEndpoints() {
     return;
   }
   MeshConfig mesh_cfg = config_.mesh;
-  NormalizeMeshConfig(mesh_cfg);
-  for (const std::string& ma : mesh_cfg.bootstrap_peers) {
+  std::vector<MeshDirectoryNode> directory_nodes;
+  if (mesh_directory_cache_) {
+    directory_nodes = mesh_directory_cache_->Snapshot();
+  }
+  for (const std::string& ma : ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes)) {
     const std::string peer_id = PeerIdFromMultiaddr(ma);
     if (peer_id.empty() || ma.empty()) {
       continue;
@@ -1063,6 +1068,10 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
       }
       return MeshDirectoryNodesFromNameRecords(*records);
     });
+    const std::string persist =
+        (std::filesystem::path(AppPaths::DataDir(config_.data_dir)) / "mesh_directory_nodes.json").string();
+    mesh_directory_cache_->SetPersistPath(persist);
+    mesh_directory_cache_->LoadPersisted();
     // N029 nd4: Amp directory twin first (no worker park), then HTTP on Normal.
     mesh_directory_cache_->SetAsyncFetcher([this](std::function<void(Roe<std::vector<MeshDirectoryNode>>)> done) {
       auto fetch_http = [this, done]() {

@@ -450,19 +450,22 @@ struct AmpPunchCoordinator::Impl {
     }
   }
 
-  void HandleInboundOnLink(pp::amp::PeerLink& link, uint32_t channel_id) {
-    if (stopped.load(std::memory_order_acquire) || !links) {
+  void HandleInboundOnLink(pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id_in,
+                           uint32_t channel_id) {
+    if (stopped.load(std::memory_order_acquire) || !links || remote_peer_id_in.empty()) {
       return;
     }
-    const std::string remote_peer_id = link.RemotePeerId();
-    auto session = std::make_shared<pp::amp::ChannelSession>();
+    const std::string remote_peer_id = remote_peer_id_in;
+    auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     auto phase = std::make_shared<std::string>("await_first");
     auto punch_remote_peer_id = std::make_shared<std::string>();
-    session->Bind(*link.Mux(), channel_id, PunchJsonChannelPolicy(std::chrono::milliseconds{8000}),
-                  [this, session, remote_peer_id, phase, punch_remote_peer_id](Roe<std::vector<uint8_t>> frame) {
-                    if (!frame || stopped.load(std::memory_order_acquire)) {
-                      return false;
-                    }
+    *session_holder = links->BindChannel(
+        remote_peer_id, channel_id, PunchJsonChannelPolicy(std::chrono::milliseconds{8000}),
+        [this, session_holder, remote_peer_id, phase, punch_remote_peer_id](Roe<std::vector<uint8_t>> frame) {
+          auto session = *session_holder;
+          if (!session || !frame || stopped.load(std::memory_order_acquire)) {
+            return false;
+          }
                     const std::string json_utf8(frame->begin(), frame->end());
                     RunWorker(post_worker, [this, session, remote_peer_id, phase, punch_remote_peer_id, json_utf8]() {
                       if (stopped.load(std::memory_order_acquire) || !links) {
@@ -589,10 +592,12 @@ void AmpPunchCoordinator::Start() {
   }
   started_ = true;
   impl_->stopped.store(false, std::memory_order_release);
-  links_.SetProtocolHandler(kAmpPunchProtocolId,
-                            [impl = impl_.get()](pp::amp::PeerLink& link, uint32_t channel_id) {
-                              impl->HandleInboundOnLink(link, channel_id);
-                            });
+  links_.SetProtocolHandler(
+      kAmpPunchProtocolId,
+      [impl = impl_.get()](pp::amp::LinkHandle handle, const std::string& remote_peer_id,
+                           uint32_t channel_id) {
+        impl->HandleInboundOnLink(handle, remote_peer_id, channel_id);
+      });
 }
 
 void AmpPunchCoordinator::Stop() {

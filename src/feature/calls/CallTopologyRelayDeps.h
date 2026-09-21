@@ -113,10 +113,14 @@ public:
       on_done(TryEnsureHopReachable(hop_peer_id));
     }
   }
-  /** Reach a call peer for 1:1 call-media when not directly dialable. */
+  /** Reach a call peer for 1:1 call-media when not directly dialable.
+   *  `allow_circuit`: when false, punch only and wait for peer Connected (answerer waits for
+   *  offerer circuit dial — reverse-dial needs the offerer parked on the seed). */
   virtual Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key) = 0;
   virtual void TryEnsureCallMediaReachableAsync(const std::string& peer_key,
-                                                std::function<void(Roe<void>)> on_done) {
+                                                std::function<void(Roe<void>)> on_done,
+                                                bool allow_circuit = true) {
+    (void)allow_circuit;
     if (on_done) {
       on_done(TryEnsureCallMediaReachable(peer_key));
     }
@@ -132,6 +136,8 @@ public:
       on_done(TryUpgradeToDirect(peer_key));
     }
   }
+  /** Abort in-flight EnsureViaCircuit / punch chains (ConnectFailed / Leave / teardown). */
+  virtual void AbortPending() {}
 };
 
 /** Amp-only dial registry (PeerLinkManager + AmpCircuitHopRegistry). */
@@ -141,20 +147,27 @@ public:
 
   void SetAmpLinks(IChatPeerLinks* amp_links) { amp_links_ = amp_links; }
   void SetAmpCircuitHops(AmpCircuitHopRegistry* hops) { amp_hops_ = hops; }
-  /** MeshRuntime::PostToIo — EnsureAssociation must run on the Amp IO strand. */
+  /** MeshRuntime::PostToIo — mutations must run on the Amp IO strand (MeshPump). */
   void SetPostIo(std::function<void(std::function<void()>)> post_io) { post_io_ = std::move(post_io); }
 
   Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) override {
-    if (amp_links_) {
-      if (IsAdpMultiaddr(multiaddr)) {
-        (void)amp_links_->RegisterEndpoint(peer_key, multiaddr);
-        if (auto peer_id = PeerIdFromAdpMultiaddr(multiaddr); peer_id && *peer_id != peer_key) {
-          (void)amp_links_->RegisterEndpoint(*peer_id, multiaddr);
-        }
-        return {};
-      }
+    if (!amp_links_) {
+      return Error("dial registry not available");
     }
-    return Error("dial registry not available");
+    if (!IsAdpMultiaddr(multiaddr)) {
+      return Error("dial registry not available");
+    }
+    auto run = [this, peer_key, multiaddr]() {
+      if (!amp_links_) {
+        return;
+      }
+      (void)amp_links_->RegisterEndpoint(peer_key, multiaddr);
+      if (auto peer_id = PeerIdFromAdpMultiaddr(multiaddr); peer_id && *peer_id != peer_key) {
+        (void)amp_links_->RegisterEndpoint(*peer_id, multiaddr);
+      }
+    };
+    PostAmpIo(std::move(run));
+    return {};
   }
 
   bool IsDialable(const std::string& peer_key) const override {
@@ -198,11 +211,7 @@ public:
         on_done({});
       });
     };
-    if (post_io_) {
-      post_io_(std::move(run));
-      return;
-    }
-    run();
+    PostAmpIo(std::move(run));
   }
 
   std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const override {
@@ -214,9 +223,21 @@ public:
     return std::nullopt;
   }
 
-  void ClearDialBackoff(const std::string& /*peer_key*/) override {}
+  void ClearDialBackoff(const std::string& peer_key) override {
+    PostAmpIo([this, peer_key]() {
+      if (amp_links_) {
+        amp_links_->ClearDialBackoff(peer_key);
+      }
+    });
+  }
 
-  void AbortInflightDial(const std::string& /*peer_key*/) override {}
+  void AbortInflightDial(const std::string& peer_key) override {
+    PostAmpIo([this, peer_key]() {
+      if (amp_links_) {
+        amp_links_->AbortInflightDial(peer_key);
+      }
+    });
+  }
 
   void ClearCallMediaCircuitHop(const std::string& peer_key) override {
     if (amp_hops_) {
@@ -232,6 +253,17 @@ public:
   }
 
 private:
+  void PostAmpIo(std::function<void()> task) {
+    if (!task) {
+      return;
+    }
+    if (post_io_) {
+      post_io_(std::move(task));
+      return;
+    }
+    task();
+  }
+
   IChatPeerLinks* amp_links_ = nullptr;
   AmpCircuitHopRegistry* amp_hops_ = nullptr;
   std::function<void(std::function<void()>)> post_io_;

@@ -91,6 +91,8 @@ public:
    * Set 0 so KeyTimeout → ConnectFailed is reachable without a long sleep.
    */
   void SetMediaKeyInboxPollRoundsForTest(int rounds);
+  /** Shrink EnsurePeerReachable deadline for gtests (0 = production default). */
+  void SetDialWaitBudgetMsForTest(int budget_ms);
 
   /**
    * SoftMigrate: close 1:1 call-media stream without CallMediaEngine::Stop so SFU capture continues.
@@ -133,8 +135,13 @@ public:
   void SetReachDeps(IDialRegistry* dial, ICircuitHopReach* circuit_reach);
   /** Fire-and-forget bootstrap seed warm (CallStack::WarmBootstrapSeedSessions). */
   void SetSeedWarm(std::function<void()> warm);
-  /** Answerer: park circuit reserve on org seed (CallStack::ReserveOnBootstrapSeeds). */
+  /** Both roles: park circuit reserve on org seed (CallStack::ReserveOnBootstrapSeeds). */
   void SetSeedReserve(std::function<void()> reserve);
+  /**
+   * Await at least one bootstrap/directory seed Connected before circuit/punch
+   * (CallMediaPlane::EnsureBootstrapSeedParkedAsync).
+   */
+  void SetSeedParkAwait(std::function<void(std::function<void(bool parked)>, int timeout_ms)> park);
 
   void SetDirectArmingPorts(CallDirectArmingPorts ports);
   /** V036 exclusive media epoch — Stack installs; Bridge must not hold CallMediaSeat*. */
@@ -166,6 +173,8 @@ private:
   void OnConnectAttemptFinished(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
                                 int attempt, Roe<void> connected);
   void FinishConnectSequence(uint64_t gen, const std::string& call_id, Roe<void> connected, const char* role);
+  /** Chrome ConnectFailed + Direct Idle; optionally StopMeshMedia (zombie TX / teardown). */
+  void SurfaceConnectFailed(const std::string& call_id, const std::string& err, bool stop_media);
   void CancelConnectTimers();
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
   /** Direct stream up: mark media connected when capture is live, always advance lifecycle/chrome. */
@@ -196,6 +205,7 @@ private:
   CallDirectSeatPorts seat_;
   std::function<void()> seed_warm_;
   std::function<void()> seed_reserve_;
+  std::function<void(std::function<void(bool parked)>, int timeout_ms)> seed_park_await_;
   /** direct | punched | circuit — set by EnsurePeerReachableAsync. */
   std::string media_path_kind_;
   /** When true, EnsurePeerReachableAsync must try circuit even if already dialable. */
@@ -226,6 +236,7 @@ private:
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;
   std::unordered_set<std::string> media_attempted_calls_;
   int media_key_inbox_poll_rounds_ = 90;
+  int64_t dial_wait_budget_ms_ = 12000;
   std::atomic<uint32_t> audio_seq_{0};
   /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */
   std::atomic<uint32_t> inbound_remote_stream_{0};

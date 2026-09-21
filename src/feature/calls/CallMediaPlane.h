@@ -85,6 +85,12 @@ public:
   void Wire();
   void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial);
   /**
+   * Test / hard-lab product-stack: Amp transport + dial + optional circuit reach without MeshHost.
+   * When `circuit_reach` is non-null it is used for Bridge Ensure (not owned; must outlive Wire).
+   */
+  void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
+                         ICircuitHopReach* circuit_reach);
+  /**
    * Construct or refresh CallMediaBridge from stack-owned ingredients.
    * Rebuilds when `sessions_key` changes; otherwise updates reach deps + seat/lifecycle.
    */
@@ -113,6 +119,11 @@ public:
   Roe<void> TryUpgradeCallMediaToDirect(const std::string& peer_key);
   void WarmBootstrapSeedSessions();
   void ReserveOnBootstrapSeeds();
+  /**
+   * Kick warm+reserve and invoke on_done(true) once any bootstrap/directory seed is Connected,
+   * or on_done(false) at timeout (H010 dogfood: answerer must park before offerer StartBridge).
+   */
+  void EnsureBootstrapSeedParkedAsync(std::function<void(bool parked)> on_done, int timeout_ms = 12000);
 
 private:
   using IoPump = std::function<void()>;
@@ -122,6 +133,7 @@ private:
   const AppConfig& config() const;
   ICallMediaTransport* Transport();
   IDialRegistry* ActiveDial() const;
+  ICircuitHopReach* ActiveCircuitReach() const;
 
   /** True when Amp media_relay coordinator is started. */
   bool WireMediaRelayClient(MeshHost* m, const IoPump& io_pump, const IoPost& post_io);
@@ -142,6 +154,11 @@ private:
   std::vector<std::string> CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const;
   bool PeerLanConfirmed(const std::string& peer_id) const;
 
+  void WarmBootstrapSeedSessionsOnIo();
+  void ReserveOnBootstrapSeedsOnIo();
+  bool AnyBootstrapSeedConnectedOnIo() const;
+  std::vector<std::string> EffectiveBootstrapSeedPeerIds() const;
+
   CallMediaPlaneDeps deps_;
   CallDialBook dial_book_;
 
@@ -153,6 +170,7 @@ private:
   std::unique_ptr<CallMediaAmpTransport> call_media_amp_;
   ICallMediaTransport* test_media_transport_ = nullptr;
   IDialRegistry* test_dial_ = nullptr;
+  ICircuitHopReach* test_circuit_reach_ = nullptr;
 };
 
 } // namespace pbr

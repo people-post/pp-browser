@@ -306,12 +306,8 @@ pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pp::adp::IpEndpoint& bind_e
   return peer;
 }
 
-pbr::Roe<std::unique_ptr<AmpPeer>> MakeLocalClient() {
-  return MakeAmpPeer(pp::adp::IpEndpoint::V4(127, 0, 0, 1, 0), false);
-}
-
 pbr::Roe<std::unique_ptr<AmpPeer>> MakeLanClient() {
-  // Bind all interfaces so Docker/netns peers can dial the hop on a bridge IP.
+  // Bind all interfaces so Docker/netns peers can dial / be dialed on bridge IPs.
   return MakeAmpPeer(pp::adp::IpEndpoint::V4(0, 0, 0, 0, 0), false);
 }
 
@@ -356,20 +352,31 @@ struct AsyncWait {
   }
 };
 
-void ArmProbeBridgeTarget(AmpPeer& target, std::mutex& mu, bool& got, std::vector<uint8_t>& payload) {
+void ArmProbeBridgeTarget(AmpPeer& target, std::mutex& mu, bool& got, std::vector<uint8_t>& payload,
+                          std::vector<std::shared_ptr<pp::amp::ChannelSession>>& keep_alive) {
   target.Links().SetProtocolHandler(
-      kProbeBridgeProtocol, [&](pp::amp::PeerLink& link, const uint32_t channel_id) {
-        auto session = std::make_shared<pp::amp::ChannelSession>();
-        session->Bind(*link.Mux(), channel_id, pp::amp::CircuitTunnelChannelPolicy(),
-                      [&, session](pbr::Roe<std::vector<uint8_t>> frame) {
-                        if (!frame) {
-                          return false;
-                        }
-                        std::lock_guard lock(mu);
-                        payload = *frame;
-                        got = true;
-                        return true;
-                      });
+      kProbeBridgeProtocol,
+      [&](pp::amp::LinkHandle handle, const std::string& /*remote_peer_id*/, const uint32_t channel_id) {
+        // Keep ChannelSession alive — Bind installs weak_ptr mux handlers; discarding the
+        // shared_ptr drops DATA immediately (L1 payload never observed).
+        target.Links().WithLiveLink(handle, [&](pp::amp::PeerLink& link) {
+          if (!link.Mux()) {
+            return;
+          }
+          auto session = std::make_shared<pp::amp::ChannelSession>();
+          session->Bind(*link.Mux(), channel_id, pp::amp::CircuitTunnelChannelPolicy(),
+                        [&](pbr::Roe<std::vector<uint8_t>> frame) {
+                          if (!frame) {
+                            return false;
+                          }
+                          std::lock_guard lock(mu);
+                          payload = *frame;
+                          got = true;
+                          return true;
+                        });
+          std::lock_guard lock(mu);
+          keep_alive.push_back(std::move(session));
+        });
       });
 }
 
@@ -391,7 +398,8 @@ int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
   std::mutex target_mu;
   bool target_got = false;
   std::vector<uint8_t> target_payload;
-  ArmProbeBridgeTarget(**target, target_mu, target_got, target_payload);
+  std::vector<std::shared_ptr<pp::amp::ChannelSession>> target_sessions;
+  ArmProbeBridgeTarget(**target, target_mu, target_got, target_payload, target_sessions);
 
   if (auto reg = (*client)->Links().RegisterEndpoint("hop", hop_ma); !reg) {
     std::cerr << "error: register hop: " << reg.error().message << "\n";
@@ -489,12 +497,13 @@ int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
 }
 
 int RunMediaFanout(const std::string& hop_ma) {
-  auto a = MakeLocalClient();
+  // Bind 0.0.0.0 — Docker hop listen MAs are bridge IPs (e.g. 172.24.0.2), not 127.0.0.1.
+  auto a = MakeLanClient();
   if (!a) {
     std::cerr << "error: client-a amp start: " << a.error().message << "\n";
     return 1;
   }
-  auto b = MakeLocalClient();
+  auto b = MakeLanClient();
   if (!b) {
     std::cerr << "error: client-b amp start: " << b.error().message << "\n";
     return 1;
@@ -657,7 +666,7 @@ MediaCapResult RunMediaCapOnce(const std::string& hop_ma, int attachers) {
   int transport_fails = 0;
   for (int i = 0; i < attachers; ++i) {
     auto c = std::make_unique<CapClient>();
-    auto peer = MakeLocalClient();
+    auto peer = MakeLanClient();
     if (!peer) {
       std::cerr << "error: client-" << i << " amp start: " << peer.error().message << "\n";
       result.hop_died = true;
@@ -781,6 +790,7 @@ struct CircuitTarget {
   std::mutex mu;
   bool got = false;
   std::vector<uint8_t> payload;
+  std::vector<std::shared_ptr<pp::amp::ChannelSession>> sessions;
 };
 
 int RunCircuitCapOnce(const std::string& hop_ma, const std::string& advertise_host, int bridges,
@@ -793,7 +803,7 @@ int RunCircuitCapOnce(const std::string& hop_ma, const std::string& advertise_ho
 
   std::cout << "pp-node N-CAP-CIRCUIT probe hop=" << hop_ma << " bridges=" << bridges << "\n";
 
-  auto client = MakeLocalClient();
+  auto client = MakeLanClient();
   if (!client) {
     std::cerr << "error: circuit-cap client amp start: " << client.error().message << "\n";
     return 1;
@@ -820,7 +830,7 @@ int RunCircuitCapOnce(const std::string& hop_ma, const std::string& advertise_ho
     }
     t->peer = std::move(*peer);
     t->advertise_ma = RewriteListenHost(t->peer->listen_ma, advertise_host);
-    ArmProbeBridgeTarget(*t->peer, t->mu, t->got, t->payload);
+    ArmProbeBridgeTarget(*t->peer, t->mu, t->got, t->payload, t->sessions);
     pumps.push_back(t->peer.get());
     targets.push_back(std::move(t));
   }
@@ -1003,7 +1013,8 @@ int RunBridgeTarget(const std::string& advertise_host, const std::string& ready_
   std::mutex target_mu;
   bool target_got = false;
   std::vector<uint8_t> target_payload;
-  ArmProbeBridgeTarget(**target, target_mu, target_got, target_payload);
+  std::vector<std::shared_ptr<pp::amp::ChannelSession>> target_sessions;
+  ArmProbeBridgeTarget(**target, target_mu, target_got, target_payload, target_sessions);
 
   const int wait_ms = std::max(5, hold_seconds) * 1000;
   if (!PumpUntil(

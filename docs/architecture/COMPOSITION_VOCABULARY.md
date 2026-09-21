@@ -67,6 +67,7 @@ Unit / compose tests act as mini-composers: define local helpers in the test TU 
 |------|--------|-------|--------------|
 | Calls | `CallLifecycle` Status / chrome | Topology / Bridge planners | *(cleared V048)* hop/direct arming ports; Stack projects |
 | Calls | `CallSessionManager` façade | Topology / Workflow | Grab-bag host that re-exports Lifecycle |
+| Calls / mesh | Leave / ConnectFailed | `AmpCircuitHopReach` | Abort must **hard-cancel** in-flight StartBridge (`CancelTunnel`) and must not fall through to punch |
 | UI ↔ functional | Shell / presenters | Domain / feature engines | Functional code naming shell chrome types |
 | Mesh | Host / L3 policy | L4 sessions | Session code owning host-wide phase enums |
 

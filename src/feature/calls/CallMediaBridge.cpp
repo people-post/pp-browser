@@ -6,6 +6,7 @@
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
+#include "common/directory/MeshHopDial.h"
 
 #include <algorithm>
 #include <atomic>
@@ -23,6 +24,12 @@ namespace {
 constexpr int64_t kMeshConnectTimeoutMs = 75000;
 /** Must stay ≤ offerer inbound grace so answerer reverse-dial usually wins first. */
 constexpr int64_t kDialWaitBudgetMs = 12000;
+/**
+ * AmpCircuitHopReach envelope (H010 / kCircuitReachEnvelopeMs) + nest settle slack.
+ * Once circuit Ensure has started, do not expire the Bridge dial wait until this budget
+ * from circuit start (dogfood 8b452388).
+ */
+constexpr int64_t kCircuitEnsureBudgetMs = 12000;
 constexpr int kDialPollMs = 250;
 constexpr int kConnectAttempts = 5;
 /** Full newStream + Noise + hello; 2.5s was far too short on Android LAN. */
@@ -36,6 +43,11 @@ constexpr int kInboundMediaKeyWaitMs = 8000;
  * while Windows was still in EnsurePeerReachable → dual-stream hello deadlock.
  */
 constexpr int64_t kOffererInboundGraceMs = 15000;
+/**
+ * Await bootstrap seed Connected before circuit/punch (H010). Must cover a full Amp hop
+ * dial (~8s) — 4s parked=0 while hop dial still in flight (dogfood fd4e3de).
+ */
+constexpr int kSeedParkAwaitMs = 12000;
 
 /** Rate-limit PeerId→relay unknown drops (PreferLocal / non-contact dogfood). */
 std::atomic<uint32_t> g_inbound_unmapped_audio_drops{0};
@@ -185,12 +197,7 @@ CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions
           return;
         }
         log().warning << "Inbound call-media failed call_id=" << call_id << " reason=" << reason;
-        mesh_connect_failed_ = true;
-        host_.P2pSetLastMediaError(reason);
-        if (arming_.on_connect_failed) {
-          arming_.on_connect_failed(call_id);
-        }
-        host_.P2pNotifyRingChanged();
+        SurfaceConnectFailed(call_id, reason, /*stop_media=*/true);
       });
     };
   });
@@ -207,6 +214,11 @@ void CallMediaBridge::SetSeedWarm(std::function<void()> warm) {
 
 void CallMediaBridge::SetSeedReserve(std::function<void()> reserve) {
   seed_reserve_ = std::move(reserve);
+}
+
+void CallMediaBridge::SetSeedParkAwait(
+    std::function<void(std::function<void(bool parked)>, int timeout_ms)> park) {
+  seed_park_await_ = std::move(park);
 }
 
 std::string CallMediaBridge::MediaPathKind() const {
@@ -226,6 +238,10 @@ void CallMediaBridge::SetDirectArmingPorts(CallDirectArmingPorts ports) {
 
 void CallMediaBridge::SetMediaKeyInboxPollRoundsForTest(const int rounds) {
   media_key_inbox_poll_rounds_ = rounds < 0 ? 0 : rounds;
+}
+
+void CallMediaBridge::SetDialWaitBudgetMsForTest(const int budget_ms) {
+  dial_wait_budget_ms_ = budget_ms > 0 ? budget_ms : kDialWaitBudgetMs;
 }
 
 void CallMediaBridge::SetSeatPorts(CallDirectSeatPorts ports) {
@@ -472,16 +488,8 @@ void CallMediaBridge::PollMeshConnectHealth() {
     return;
   }
   log().warning << "Mesh connect timeout call_id=" << call_id;
-  mesh_connect_failed_ = true;
   mesh_connect_missing_mic_ = !media_.HasLocalCapture();
-  if (seat_.IsBound()) {
-    seat_.note_failed(call_id);
-  }
-  Apply(CallDirectPlannerEvent::ConnectFailed, call_id, media_peer_identity_);
-  if (arming_.on_connect_failed) {
-    arming_.on_connect_failed(call_id);
-  }
-  host_.P2pNotifyRingChanged();
+  SurfaceConnectFailed(call_id, "mesh connect timeout", /*stop_media=*/true);
 }
 
 void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
@@ -542,15 +550,7 @@ void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const
                << " call_id=" << call_id;
     if (auto started = BeginSession(call_id, peer, session_offerer_); !started) {
       log().warning << "TX-only escalate BeginSession failed: " << started.error().message;
-      host_.P2pSetLastMediaError(started.error().message);
-      if (seat_.IsBound()) {
-        seat_.note_failed(call_id);
-      }
-      mesh_connect_failed_ = true;
-      if (arming_.on_connect_failed) {
-        arming_.on_connect_failed(call_id);
-      }
-      host_.P2pNotifyRingChanged();
+      SurfaceConnectFailed(call_id, started.error().message, /*stop_media=*/true);
     }
   });
 }
@@ -574,19 +574,35 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     on_done(Error("call-media aborted"));
     return;
   }
-  if (seed_warm_) {
-    seed_warm_();
+  // Seed park is owned by the circuit/punch gate (seed_park_await_). Do not kick warm+reserve
+  // here — BeginSession already reserved, and a second parallel EnsureAssociation on the same
+  // Brief hop races the first (dogfood fd4e3de double warm + dial timeout).
+  // Circuit/punch/OpenChannel keys are Amp PeerIds. Invite/Accept may pass account: — resolve
+  // before StartBridge or hop returns "endpoint not registered" (hard-lab / dogfood NAT).
+  std::string reach_key = peer_identity;
+  if (peer_identity.rfind("account:", 0) == 0) {
+    if (auto mapped = host_.MeshPeerIdForAccount(peer_identity);
+        mapped && mapped->has_value() && !mapped->value().empty()) {
+      reach_key = mapped->value();
+      log().info << "CallMedia Ensure account→PeerId account=" << peer_identity
+                 << " peer_id=" << reach_key;
+    }
   }
   // TX-only escalate: peer may already be "dialable" on a one-way path — still force circuit.
   const bool force_circuit = force_circuit_ensure_;
   force_circuit_ensure_ = false;
-  const bool connected_before = dial_->IsConnected(peer_identity);
-  const bool dialable_before = dial_->IsDialable(peer_identity);
+  const bool connected_before =
+      dial_->IsConnected(reach_key) ||
+      (reach_key != peer_identity && dial_->IsConnected(peer_identity));
+  const bool dialable_before =
+      dial_->IsDialable(reach_key) ||
+      (reach_key != peer_identity && dial_->IsDialable(peer_identity));
   // IsDialable (has_endpoint) ≠ Connected. Dogfood 19f845: dialable skip → OpenChannel on
   // connected=0 hung with no OpenChannel/timeout logs until Leave (~46s).
   if (connected_before && !force_circuit) {
     media_path_kind_ = "direct";
-    log().info << "CallLifecycle StartSfu peer connected peer=" << peer_identity;
+    log().info << "CallMedia peer connected peer=" << peer_identity
+               << " reach_key=" << reach_key;
     on_done({});
     return;
   }
@@ -595,15 +611,18 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     on_done(Error("call-media aborted"));
     return;
   }
-  log().info << "CallLifecycle StartSfu Ensure wait peer=" << peer_identity
-             << " dialable=" << (dialable_before ? 1 : 0) << " connected=" << (connected_before ? 1 : 0)
+  log().info << "CallMedia Ensure wait peer=" << peer_identity
+             << " reach_key=" << reach_key << " dialable=" << (dialable_before ? 1 : 0)
+             << " connected=" << (connected_before ? 1 : 0)
              << " force_circuit=" << (force_circuit ? 1 : 0)
              << " has_circuit_reach=" << (circuit_reach_ ? 1 : 0)
-             << " budget_ms=" << kDialWaitBudgetMs;
+             << " budget_ms=" << dial_wait_budget_ms_;
 
-  const int64_t deadline = util::NowUnixMs() + kDialWaitBudgetMs;
+  const int64_t initial_deadline = util::NowUnixMs() + dial_wait_budget_ms_;
+  auto deadline = std::make_shared<int64_t>(initial_deadline);
   auto last_error = std::make_shared<Error>(Error("call peer not connected"));
   auto circuit_started = std::make_shared<bool>(false);
+  auto circuit_inflight = std::make_shared<bool>(false);
   auto assoc_started = std::make_shared<bool>(false);
   auto assoc_done = std::make_shared<bool>(false);
   auto settled = std::make_shared<std::atomic<bool>>(false);
@@ -611,24 +630,57 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     if (settled->exchange(true, std::memory_order_acq_rel)) {
       return;
     }
-    on_done(std::move(result));
+    if (on_done) {
+      on_done(std::move(result));
+    }
   };
+  auto dial_connected = [this, reach_key, peer_identity]() {
+    return dial_ && (dial_->IsConnected(reach_key) ||
+                     (reach_key != peer_identity && dial_->IsConnected(peer_identity)));
+  };
+  auto dial_dialable = [this, reach_key, peer_identity]() {
+    return dial_ && (dial_->IsDialable(reach_key) ||
+                     (reach_key != peer_identity && dial_->IsDialable(peer_identity)));
+  };
+  // Dual-NAT: Preferred is often a private punch MA. Park on Brief *before* that dial so hop
+  // warm does not share ADP UDP with a doomed private EnsureAssociation (dogfood fd4e3de).
+  auto dial_public_direct = [this, reach_key, peer_identity]() {
+    if (!dial_) {
+      return false;
+    }
+    auto ma = dial_->PreferredMultiaddr(reach_key);
+    if ((!ma || ma->empty()) && reach_key != peer_identity) {
+      ma = dial_->PreferredMultiaddr(peer_identity);
+    }
+    return ma && !ma->empty() && MultiaddrHasPublicDialHost(*ma);
+  };
+  auto dial_has_circuit = [this, reach_key, peer_identity]() {
+    return dial_ && (dial_->HasCallMediaCircuitHop(reach_key) ||
+                     (reach_key != peer_identity && dial_->HasCallMediaCircuitHop(peer_identity)));
+  };
+  auto seed_park_started = std::make_shared<bool>(false);
+  auto seed_parked = std::make_shared<bool>(!seed_park_await_ || !circuit_reach_);
   // Hard deadline independent of the poll tick chain (dogfood af934e: EnsureAssociation
-  // never called back and poll ticks never hit "still not connected").
+  // never called back and poll ticks never hit "still not connected"). Cover answerer wait for
+  // offerer inbound grace + circuit Ensure slack.
   (void)AppRuntime::ScheduleCoordinatorOneShot(
-      std::chrono::milliseconds(kDialWaitBudgetMs + 250),
-      [this, peer_identity, finish, settled, last_error]() mutable {
+      std::chrono::milliseconds(dial_wait_budget_ms_ + kOffererInboundGraceMs + kCircuitEnsureBudgetMs +
+                                250),
+      [this, peer_identity, reach_key, finish, settled, last_error]() mutable {
         if (settled->load(std::memory_order_acquire)) {
           return;
         }
-        log().warning << "CallLifecycle StartSfu Ensure deadline watchdog peer=" << peer_identity
-                      << " last=" << last_error->message
-                      << " connected=" << (dial_ && dial_->IsConnected(peer_identity) ? 1 : 0);
+        // Do not dial_->IsConnected here — watchdog can fire during StartBridge dial timeout
+        // and race PeerLinkManager::FinishDial (dogfood 091029).
+        log().warning << "CallMedia Ensure deadline watchdog peer=" << peer_identity
+                      << " reach_key=" << reach_key << " last=" << last_error->message;
         finish(*last_error);
       });
   auto tick = std::make_shared<std::function<void()>>();
-  *tick = [this, peer_identity, connect_gen, finish, settled, deadline, last_error, circuit_started,
-           assoc_started, assoc_done, force_circuit, tick]() mutable {
+  *tick = [this, peer_identity, reach_key, connect_gen, finish, settled, deadline, initial_deadline,
+           last_error, circuit_started, circuit_inflight, assoc_started, assoc_done, force_circuit,
+           dial_connected, dial_dialable, dial_public_direct, dial_has_circuit, seed_park_started,
+           seed_parked, tick]() mutable {
     if (settled->load(std::memory_order_acquire)) {
       return;
     }
@@ -641,41 +693,104 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
       finish(Error("dial registry not available"));
       return;
     }
-    // While forcing circuit, ignore connected until Ensure has run (or hop is installed).
-    const bool wait_for_circuit =
-        force_circuit && !*circuit_started && !dial_->HasCallMediaCircuitHop(peer_identity);
-    if (dial_->IsConnected(peer_identity) && !wait_for_circuit) {
-      if (dial_->HasCallMediaCircuitHop(peer_identity)) {
+    // PeerLinkManager is Amp-IO only. Coordinator must not IsConnected/IsDialable while
+    // EnsureAssociation or circuit StartBridge mutates links_ (FinishDial/ScheduleDropLink at
+    // ~8s dial_timeout AVs — dogfood 085210 / 091029). Hop registry reads are mutexed.
+    const bool dial_mutating = *circuit_inflight || (*assoc_started && !*assoc_done);
+    const bool wait_for_circuit = force_circuit && !*circuit_started && !dial_has_circuit();
+    if (!dial_mutating && dial_connected() && !wait_for_circuit) {
+      if (dial_has_circuit()) {
         media_path_kind_ = "circuit";
       } else if (*circuit_started) {
         media_path_kind_ = "punched";
       } else if (media_path_kind_.empty()) {
         media_path_kind_ = "direct";
       }
-      log().info << "CallLifecycle StartSfu peer connected peer=" << peer_identity
-                 << " path=" << media_path_kind_;
+      log().info << "CallMedia peer connected peer=" << peer_identity
+                 << " reach_key=" << reach_key << " path=" << media_path_kind_;
       finish({});
       return;
     }
-    if (util::NowUnixMs() >= deadline) {
-      log().warning << "CallLifecycle StartSfu peer still not connected peer=" << peer_identity
-                    << " last=" << last_error->message
-                    << " dialable=" << (dial_->IsDialable(peer_identity) ? 1 : 0)
-                    << " circuit_started=" << (*circuit_started ? 1 : 0)
-                    << " assoc_started=" << (*assoc_started ? 1 : 0);
-      finish(*last_error);
+    if (util::NowUnixMs() >= *deadline) {
+      // Do not AbortPending a live StartBridge because punch/assoc burned the short dial budget.
+      if (*circuit_inflight) {
+        (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs),
+                                                     [tick]() {
+                                                       if (tick && *tick) {
+                                                         (*tick)();
+                                                       }
+                                                     });
+        return;
+      }
+      if (circuit_reach_ && !*circuit_started && *assoc_started && !*assoc_done) {
+        *assoc_done = true;
+        log().warning << "CallMedia EnsureAssociation hung peer=" << peer_identity
+                      << " reach_key=" << reach_key << " pivoting to circuit";
+      } else {
+        log().warning << "CallMedia peer still not connected peer=" << peer_identity
+                      << " reach_key=" << reach_key << " last=" << last_error->message
+                      << " circuit_started=" << (*circuit_started ? 1 : 0)
+                      << " assoc_started=" << (*assoc_started ? 1 : 0);
+        finish(*last_error);
+        return;
+      }
+    }
+    if (dial_mutating) {
+      // Assoc/circuit callbacks drive progress; keep the poll chain alive for deadline only.
+      (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs), [tick]() {
+        if (tick && *tick) {
+          (*tick)();
+        }
+      });
       return;
     }
     // Endpoint known but PeerLink not Connected — kick EnsureAssociation on Amp IO.
-    if (!*assoc_started && dial_->IsDialable(peer_identity) && !wait_for_circuit) {
+    // Do not start this in parallel with circuit StartBridge: dogfood 997c1c6f AVd ~10s after
+    // assoc sendto-miss overlapped an in-flight hop OpenChannel on the same ADP UDP path.
+    // Offerer after inbound grace: skip direct dial — 15s already proved no path; sendto-miss
+    // poisons ADP and the next relay dial AVs (dogfood 131904).
+    if (session_offerer_ && !*assoc_started) {
       *assoc_started = true;
-      log().info << "CallLifecycle StartSfu EnsureAssociation start peer=" << peer_identity;
+      *assoc_done = true;
+      log().info << "CallMedia skip EnsureAssociation after offerer inbound grace peer="
+                 << peer_identity << " reach_key=" << reach_key;
+    }
+    // Private Preferred: park Brief seed first so hop warm owns ADP UDP alone; then try LAN
+    // private dial (still useful on same-net). Public Preferred dials immediately.
+    if (!*seed_parked && !*seed_park_started && circuit_reach_ && seed_park_await_ &&
+        !dial_public_direct()) {
+      *seed_park_started = true;
+      log().info << "CallMedia seed park before private Preferred peer=" << peer_identity
+                 << " reach_key=" << reach_key;
+      seed_park_await_(
+          [this, seed_parked, tick](bool parked) mutable {
+            *seed_parked = true;
+            log().info << "CallMedia seed park (pre-assoc) parked=" << (parked ? 1 : 0);
+            AppRuntime::PostCoordinatorNormal([tick]() {
+              if (tick && *tick) {
+                (*tick)();
+              }
+            });
+          },
+          kSeedParkAwaitMs);
+      return;
+    }
+    if (!*assoc_started && dial_dialable() && !wait_for_circuit) {
+      *assoc_started = true;
+      log().info << "CallMedia EnsureAssociation start peer=" << peer_identity
+                 << " reach_key=" << reach_key;
       dial_->EnsureAssociation(
-          peer_identity, [this, peer_identity, connect_gen, finish, settled, last_error, assoc_done,
-                          assoc_started, tick](Roe<void> assoc) mutable {
+          reach_key, [this, peer_identity, reach_key, connect_gen, finish, settled, last_error,
+                      assoc_done, assoc_started, tick](Roe<void> assoc) mutable {
+            // EnsureAssociation cb runs on Amp IO (FinishDial). Snapshot before Coordinator hop.
+            const bool connected_now =
+                static_cast<bool>(assoc) && dial_ &&
+                (dial_->IsConnected(reach_key) ||
+                 (reach_key != peer_identity && dial_->IsConnected(peer_identity)));
             AppRuntime::PostCoordinatorNormal(
-                [this, peer_identity, connect_gen, finish = std::move(finish), settled, last_error,
-                 assoc_done, assoc_started, tick, assoc = std::move(assoc)]() mutable {
+                [this, peer_identity, reach_key, connect_gen, finish = std::move(finish), settled,
+                 last_error, assoc_done, assoc_started, connected_now, tick,
+                 assoc = std::move(assoc)]() mutable {
                   if (settled->load(std::memory_order_acquire)) {
                     return;
                   }
@@ -686,80 +801,179 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                     return;
                   }
                   if (assoc) {
-                    if (dial_ && dial_->IsConnected(peer_identity)) {
+                    if (connected_now) {
                       media_path_kind_ = "direct";
-                      log().info << "CallLifecycle StartSfu EnsureAssociation ok peer=" << peer_identity;
+                      log().info << "CallMedia EnsureAssociation ok peer=" << peer_identity
+                                 << " reach_key=" << reach_key;
                       finish({});
                       return;
                     }
-                    log().info << "CallLifecycle StartSfu EnsureAssociation ok but not connected peer="
-                               << peer_identity;
+                    log().info << "CallMedia EnsureAssociation ok but not connected peer="
+                               << peer_identity << " reach_key=" << reach_key;
                   } else {
                     *last_error = assoc.error();
-                    log().info << "CallLifecycle StartSfu EnsureAssociation miss peer=" << peer_identity
-                               << " err=" << last_error->message;
-                    *assoc_started = false;
-                  }
-                  (void)AppRuntime::ScheduleCoordinatorOneShot(
-                      std::chrono::milliseconds(kDialPollMs), [tick]() { (*tick)(); });
-                });
-          });
-      // Fall through: also start circuit/punch in parallel (do not wait forever on assoc).
-    }
-    // Circuit/punch when forced, undialable, or ADP assoc already kicked / finished.
-    if (circuit_reach_ && !*circuit_started &&
-        (force_circuit || !dial_->IsDialable(peer_identity) || *assoc_started ||
-         (*assoc_done && !dial_->IsConnected(peer_identity)))) {
-      *circuit_started = true;
-      log().info << "CallLifecycle StartSfu Ensure circuit/punch start peer=" << peer_identity;
-      circuit_reach_->TryEnsureCallMediaReachableAsync(
-          peer_identity,
-          [this, peer_identity, connect_gen, finish, settled, last_error,
-           tick](Roe<void> via) mutable {
-            AppRuntime::PostCoordinatorNormal(
-                [this, peer_identity, connect_gen, finish = std::move(finish), settled, last_error,
-                 tick, via = std::move(via)]() mutable {
-                  if (settled->load(std::memory_order_acquire)) {
-                    return;
-                  }
-                  if (connect_generation_.load(std::memory_order_acquire) != connect_gen ||
-                      stopping_.load(std::memory_order_acquire)) {
-                    finish(Error("call-media aborted"));
-                    return;
-                  }
-                  // has_endpoint / punch "ok" is not PeerLink Connected — dogfood 612b: via_ok=1
-                  // then OpenChannel hung on connected=0.
-                  if (dial_ && dial_->IsConnected(peer_identity)) {
-                    if (dial_->HasCallMediaCircuitHop(peer_identity)) {
-                      media_path_kind_ = "circuit";
-                    } else {
-                      media_path_kind_ = "punched";
+                    log().info << "CallMedia EnsureAssociation miss peer=" << peer_identity
+                               << " reach_key=" << reach_key << " err=" << last_error->message;
+                    // Dial already finished (this callback). ClearDialBackoff only — AbortInflightDial
+                    // on a Backoff link ScheduleDropLink's again and races the FinishDial drop
+                    // (dogfood 130521 AV ~10s after sendto-miss). Keep assoc_started so we do not
+                    // hammer EnsureAssociation every poll.
+                    if (dial_) {
+                      dial_->ClearDialBackoff(reach_key);
+                      if (reach_key != peer_identity) {
+                        dial_->ClearDialBackoff(peer_identity);
+                      }
                     }
-                    log().info << "CallLifecycle StartSfu peer reachable via circuit peer="
-                               << peer_identity << " path=" << media_path_kind_
-                               << " via_ok=" << (via ? 1 : 0);
-                    finish({});
-                    return;
                   }
-                  if (!via) {
-                    *last_error = via.error();
-                  } else {
-                    *last_error = Error("call peer not connected after circuit/punch");
-                  }
-                  log().info << "CallLifecycle StartSfu Ensure circuit/punch miss peer=" << peer_identity
-                             << " err=" << last_error->message
-                             << " via_ok=" << (via ? 1 : 0)
-                             << " connected=" << (dial_ && dial_->IsConnected(peer_identity) ? 1 : 0);
                   (void)AppRuntime::ScheduleCoordinatorOneShot(
-                      std::chrono::milliseconds(kDialPollMs), [tick]() { (*tick)(); });
+                      std::chrono::milliseconds(kDialPollMs), [tick]() {
+                        if (tick && *tick) {
+                          (*tick)();
+                        }
+                      });
                 });
           });
-      (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs),
-                                                   [tick]() { (*tick)(); });
+      // Wait for assoc to finish before StartBridge so the two ADP handshakes do not overlap.
+      (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs), [tick]() {
+        if (tick && *tick) {
+          (*tick)();
+        }
+      });
       return;
     }
-    (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs),
-                                                 [tick]() { (*tick)(); });
+    // Circuit/punch when forced, undialable, or ADP assoc already finished (not merely kicked).
+    if (circuit_reach_ && !*circuit_started &&
+        (force_circuit || !dial_dialable() || (*assoc_done && !dial_connected()))) {
+      *circuit_started = true;
+      *circuit_inflight = true;
+      // Answerer: punch + wait for offerer inbound circuit. Reverse-dial StartBridge fails with
+      // "endpoint not registered" when fleet seeds do not see the offerer (dogfood 072a7425).
+      const bool allow_circuit = session_offerer_ || force_circuit;
+      if (allow_circuit) {
+        const int64_t circuit_deadline = util::NowUnixMs() + kCircuitEnsureBudgetMs;
+        if (circuit_deadline > *deadline) {
+          *deadline = circuit_deadline;
+        }
+      } else if (dial_wait_budget_ms_ >= kDialWaitBudgetMs) {
+        // Product answerer: cover offerer inbound grace + circuit dial slack (gtest keeps short budget).
+        const int64_t inbound_deadline =
+            util::NowUnixMs() + kOffererInboundGraceMs + kCircuitEnsureBudgetMs;
+        if (inbound_deadline > *deadline) {
+          *deadline = inbound_deadline;
+        }
+      }
+      log().info << "CallMedia Ensure circuit/punch start peer=" << peer_identity
+                 << " reach_key=" << reach_key << " circuit_budget_ms=" << kCircuitEnsureBudgetMs
+                 << " allow_circuit=" << (allow_circuit ? 1 : 0)
+                 << " role=" << (session_offerer_ ? "offerer" : "answerer");
+      auto kick_reach =
+          [this, peer_identity, reach_key, connect_gen, finish, settled, last_error, circuit_inflight,
+           deadline, initial_deadline, tick, allow_circuit]() mutable {
+            circuit_reach_->TryEnsureCallMediaReachableAsync(
+                reach_key,
+                [this, peer_identity, reach_key, connect_gen, finish, settled, last_error,
+                 circuit_inflight, deadline, initial_deadline,
+                 tick](Roe<void> via) mutable {
+                  // AmpCircuitHopReach finishes on Amp IO — snapshot before Coordinator hop.
+                  const bool connected_now =
+                      dial_ && (dial_->IsConnected(reach_key) ||
+                                (reach_key != peer_identity && dial_->IsConnected(peer_identity)));
+                  const bool has_circuit_now =
+                      dial_ && (dial_->HasCallMediaCircuitHop(reach_key) ||
+                                (reach_key != peer_identity &&
+                                 dial_->HasCallMediaCircuitHop(peer_identity)));
+                  AppRuntime::PostCoordinatorNormal(
+                      [this, peer_identity, reach_key, connect_gen, finish = std::move(finish),
+                       settled, last_error, circuit_inflight, deadline, initial_deadline,
+                       connected_now, has_circuit_now, tick, via = std::move(via)]() mutable {
+                        *circuit_inflight = false;
+                        if (settled->load(std::memory_order_acquire)) {
+                          return;
+                        }
+                        if (connect_generation_.load(std::memory_order_acquire) != connect_gen ||
+                            stopping_.load(std::memory_order_acquire)) {
+                          finish(Error("call-media aborted"));
+                          return;
+                        }
+                        // has_endpoint / punch "ok" is not PeerLink Connected — dogfood 612b:
+                        // via_ok=1 then OpenChannel hung on connected=0.
+                        if (connected_now) {
+                          if (has_circuit_now) {
+                            media_path_kind_ = "circuit";
+                          } else {
+                            media_path_kind_ = "punched";
+                          }
+                          log().info << "CallMedia peer reachable via circuit peer=" << peer_identity
+                                     << " reach_key=" << reach_key << " path=" << media_path_kind_
+                                     << " via_ok=" << (via ? 1 : 0);
+                          finish({});
+                          return;
+                        }
+                        if (!via) {
+                          *last_error = via.error();
+                        } else {
+                          *last_error = Error("call peer not connected after circuit/punch");
+                        }
+                        log().info << "CallMedia Ensure circuit/punch miss peer=" << peer_identity
+                                   << " reach_key=" << reach_key << " err=" << last_error->message
+                                   << " via_ok=" << (via ? 1 : 0);
+                        // Answerer / seed "not registered": keep extended deadline for inbound.
+                        // Hard miss: restore short dial budget (gtest).
+                        const bool wait_inbound =
+                            !session_offerer_ ||
+                            last_error->message.find("not registered") != std::string::npos;
+                        if (!wait_inbound) {
+                          *deadline = initial_deadline;
+                          if (util::NowUnixMs() >= *deadline) {
+                            finish(*last_error);
+                            return;
+                          }
+                        }
+                        (void)AppRuntime::ScheduleCoordinatorOneShot(
+                            std::chrono::milliseconds(kDialPollMs), [tick]() {
+                              if (tick && *tick) {
+                                (*tick)();
+                              }
+                            });
+                      });
+                },
+                allow_circuit);
+          };
+      // Park on Brief/directory seed before StartBridge / punch-wait so the hop has a live
+      // PeerLink for peer-id-only ServeDial (dogfood bridge timeout when answerer never warmed).
+      // May already be done before private Preferred EnsureAssociation.
+      if (seed_park_await_ && !*seed_parked) {
+        *seed_park_started = true;
+        seed_park_await_(
+            [this, kick_reach = std::move(kick_reach), peer_identity, allow_circuit,
+             seed_parked](bool parked) mutable {
+              *seed_parked = true;
+              log().info << "CallMedia seed park before circuit/punch peer=" << peer_identity
+                         << " parked=" << (parked ? 1 : 0)
+                         << " allow_circuit=" << (allow_circuit ? 1 : 0);
+              AppRuntime::PostCoordinatorNormal(std::move(kick_reach));
+            },
+            kSeedParkAwaitMs);
+      } else {
+        if (*seed_park_started) {
+          log().info << "CallMedia seed park reuse before circuit/punch peer=" << peer_identity
+                     << " allow_circuit=" << (allow_circuit ? 1 : 0);
+        }
+        kick_reach();
+      }
+      (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs),
+                                                   [tick]() {
+                                                     if (tick && *tick) {
+                                                       (*tick)();
+                                                     }
+                                                   });
+      return;
+    }
+    (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs), [tick]() {
+      if (tick && *tick) {
+        (*tick)();
+      }
+    });
   };
   (*tick)();
 }
@@ -788,16 +1002,37 @@ void CallMediaBridge::FinishConnectSequence(const uint64_t gen, const std::strin
       return;
     }
     if (!connected) {
-    log().info << "CallLifecycle StartSfu Connect give up call_id=" << call_id << " role=" << role
-               << " err=" << connected.error().message;
-      mesh_connect_failed_ = true;
-      host_.P2pSetLastMediaError(connected.error().message);
-      if (arming_.on_connect_failed) {
-        arming_.on_connect_failed(call_id);
-      }
-      host_.P2pNotifyRingChanged();
+      log().info << "CallMedia Connect give up call_id=" << call_id << " role=" << role
+                 << " err=" << connected.error().message;
+      SurfaceConnectFailed(call_id, connected.error().message, /*stop_media=*/true);
     }
   });
+}
+
+void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std::string& err,
+                                           const bool stop_media) {
+  if (!err.empty()) {
+    host_.P2pSetLastMediaError(err);
+  }
+  // Stop late EnsureViaCircuit / StartBridge before chrome refresh (dogfood SIGSEGV after give-up).
+  if (circuit_reach_) {
+    circuit_reach_->AbortPending();
+  }
+  if (stop_media && (media_.IsActive() || media_.IsSfuMode())) {
+    // StopMeshMedia clears mesh_connect_failed_ for Leave hygiene — re-assert below.
+    StopMeshMedia(call_id);
+  } else if (dial_ && !media_peer_identity_.empty()) {
+    dial_->AbortInflightDial(media_peer_identity_);
+  }
+  if (seat_.note_failed) {
+    seat_.note_failed(call_id);
+  }
+  Apply(CallDirectPlannerEvent::ConnectFailed, call_id, media_peer_identity_);
+  if (arming_.on_connect_failed) {
+    arming_.on_connect_failed(call_id);
+  }
+  mesh_connect_failed_ = true;
+  host_.P2pNotifyRingChanged();
 }
 
 void CallMediaBridge::ScheduleOffererGracePoll(CallMediaDirectConnectParams params,
@@ -809,12 +1044,12 @@ void CallMediaBridge::ScheduleOffererGracePoll(CallMediaDirectConnectParams para
     return;
   }
   if (direct_.IsActive()) {
-    log().info << "CallLifecycle StartSfu offerer inbound during grace call_id=" << params.call_id;
+    log().info << "CallMedia offerer inbound during grace call_id=" << params.call_id;
     FinishConnectSequence(gen, params.call_id, {}, "offerer");
     return;
   }
   if (util::NowUnixMs() >= grace_deadline_ms) {
-    log().info << "CallLifecycle StartSfu offerer fallback dial call_id=" << params.call_id
+    log().info << "CallMedia offerer fallback dial call_id=" << params.call_id
                << " peer=" << params.peer_key;
     BeginConnectAttempt(std::move(params), std::move(cbs), gen, 1);
     return;
@@ -837,12 +1072,12 @@ void CallMediaBridge::OnConnectAttemptFinished(CallMediaDirectConnectParams para
     return;
   }
   if (connected || direct_.IsActive()) {
-    log().info << "CallLifecycle StartSfu Connect ok call_id=" << params.call_id
+    log().info << "CallMedia Connect ok call_id=" << params.call_id
                << " role=" << (params.offerer ? "offerer" : "answerer");
     FinishConnectSequence(gen, params.call_id, {}, params.offerer ? "offerer" : "answerer");
     return;
   }
-  log().warning << "CallLifecycle StartSfu Connect failed attempt=" << attempt
+  log().warning << "CallMedia Connect failed attempt=" << attempt
                 << " err=" << connected.error().message;
   if (dial_) {
     dial_->AbortInflightDial(params.peer_key);
@@ -933,21 +1168,21 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
   if (!direct_.IsActive()) {
     direct_.Detach();
   }
-  log().info << "CallLifecycle StartSfu ConnectAsync attempt=" << attempt << "/" << kConnectAttempts
+  log().info << "CallMedia ConnectAsync attempt=" << attempt << "/" << kConnectAttempts
              << " call_id=" << params.call_id << " peer=" << params.peer_key
              << " role=" << (params.offerer ? "offerer" : "answerer")
              << " timeout_ms=" << kConnectAttemptTimeoutMs;
   if (dial_) {
     if (auto ma = dial_->PreferredMultiaddr(params.peer_key)) {
-      log().info << "CallLifecycle StartSfu ConnectAsync ma=" << *ma << " peer=" << params.peer_key;
+      log().info << "CallMedia ConnectAsync ma=" << *ma << " peer=" << params.peer_key;
     } else {
-      log().info << "CallLifecycle StartSfu ConnectAsync ma=(none) peer=" << params.peer_key
+      log().info << "CallMedia ConnectAsync ma=(none) peer=" << params.peer_key
                  << " dialable=" << (dial_->IsDialable(params.peer_key) ? 1 : 0);
     }
   }
   const std::string connect_peer = params.peer_key;
   const std::string connect_call = params.call_id;
-  log().info << "CallLifecycle StartSfu ConnectAsync params call_id_len=" << params.call_id.size()
+  log().info << "CallMedia ConnectAsync params call_id_len=" << params.call_id.size()
              << " peer_len=" << params.peer_key.size() << " media_key_len=" << params.media_key.size();
   // Snapshot for the ConnectAsync args — never std::move(params) in the same call expression as
   // the `params` argument (unspecified eval order; dogfood c40c: empty media_key →
@@ -962,7 +1197,7 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
         // UI — not coordinator (Pause/backlog can drop Connect timeout → stuck Connecting).
         auto cont = [this, params = std::move(params), cbs = std::move(cbs), gen, attempt,
                      connected = std::move(connected), connect_peer, connect_call]() mutable {
-          log().info << "CallLifecycle StartSfu ConnectAsync done call_id=" << connect_call
+          log().info << "CallMedia ConnectAsync done call_id=" << connect_call
                      << " peer=" << connect_peer << " ok=" << (connected ? 1 : 0)
                      << (connected ? "" : (" err=" + connected.error().message));
           OnConnectAttemptFinished(std::move(params), std::move(cbs), gen, attempt,
@@ -987,7 +1222,7 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
         if (!connect_worker_inflight_.load(std::memory_order_acquire)) {
           return;
         }
-        log().warning << "CallLifecycle StartSfu ConnectAsync watchdog call_id=" << connect_call
+        log().warning << "CallMedia ConnectAsync watchdog call_id=" << connect_call
                       << " peer=" << connect_peer << " attempt=" << attempt;
         direct_.Detach();
         // Detach may not deliver on_finished if Mesh IO is wedged — force sequence progress.
@@ -1013,13 +1248,13 @@ void CallMediaBridge::StartConnectSequence(CallMediaDirectConnectParams params,
     if (dial_) {
       dial_->AbortInflightDial(params.peer_key);
     }
-    log().info << "CallLifecycle StartSfu Connect offerer wait inbound call_id=" << params.call_id
+    log().info << "CallMedia Connect offerer wait inbound call_id=" << params.call_id
                << " grace_ms=" << kOffererInboundGraceMs;
     const int64_t grace_deadline = util::NowUnixMs() + kOffererInboundGraceMs;
     ScheduleOffererGracePoll(std::move(params), std::move(cbs), gen, grace_deadline);
     return;
   }
-  log().info << "CallLifecycle StartSfu Connect answerer dial call_id=" << params.call_id
+  log().info << "CallMedia Connect answerer dial call_id=" << params.call_id
              << " peer=" << params.peer_key;
   BeginConnectAttempt(std::move(params), std::move(cbs), gen, 1);
 }
@@ -1100,16 +1335,18 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   const uint32_t media_epoch = (*session)->media_epoch;
   const ByteVector media_key = *key;
 
-  log().info << "CallLifecycle StartSfu BeginSession role=" << (offerer ? "offerer" : "answerer")
+  log().info << "CallMedia BeginSession role=" << (offerer ? "offerer" : "answerer")
              << " call_id=" << call_id << " peer=" << peer_identity << " epoch=" << media_epoch
              << " keep_inbound=" << (keep_inbound ? 1 : 0);
 
-  // Answerer first (and offerer): hold outbound Session to org seed for punch/circuit splice.
-  if (seed_warm_) {
-    seed_warm_();
-  }
-  if (!offerer && seed_reserve_) {
+  // Both roles park on org seed: answerer reverse-dial makes the *offerer* the circuit target
+  // (dogfood 997c1c6f). Reserve keeps a Connected PeerLink so peer-id-only StartBridge can
+  // EnsureAssociation without dialing into NAT / requiring a dial-book MA. Single entry —
+  // ReserveOnBootstrapSeeds registers + associates (do not also Warm in parallel).
+  if (seed_reserve_) {
     seed_reserve_();
+  } else if (seed_warm_) {
+    seed_warm_();
   }
 
   media_.SetOnStateChanged([this](const std::string& state) {
@@ -1187,17 +1424,17 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
         }
       }
       const bool mesh_after = dial_ && dial_->IsDialable(mesh_peer);
-      log().info << "CallLifecycle StartSfu dial key account→PeerId account=" << peer_identity
+      log().info << "CallMedia dial key account→PeerId account=" << peer_identity
                  << " peer_id=" << mesh_peer << " account_dialable=" << (account_dialable ? 1 : 0)
                  << " peer_dialable=" << (mesh_after ? 1 : 0);
       if (mesh_after || !account_dialable) {
         params.peer_key = mesh_peer;
       } else {
-        log().info << "CallLifecycle StartSfu dial key keep account (PeerId still undialable) account="
+        log().info << "CallMedia dial key keep account (PeerId still undialable) account="
                    << peer_identity;
       }
     } else {
-      log().info << "CallLifecycle StartSfu dial key account (no PeerId map) account=" << peer_identity
+      log().info << "CallMedia dial key account (no PeerId map) account=" << peer_identity
                  << " dialable=" << (dial_ && dial_->IsDialable(peer_identity) ? 1 : 0);
     }
   }
@@ -1267,15 +1504,7 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
         return;
       }
       log().warning << "Call-media failed call_id=" << captured_call_id << " reason=" << reason;
-      mesh_connect_failed_ = true;
-      host_.P2pSetLastMediaError(reason);
-      if (seat_.IsBound()) {
-        seat_.note_failed(captured_call_id);
-      }
-      if (arming_.on_connect_failed) {
-        arming_.on_connect_failed(captured_call_id);
-      }
-      host_.P2pNotifyRingChanged();
+      SurfaceConnectFailed(captured_call_id, reason, /*stop_media=*/true);
     });
   };
 
@@ -1331,9 +1560,7 @@ void CallMediaBridge::ScheduleStartMediaAsOfferer(const std::string& call_id,
                           call_id);
     if (auto started = StartMediaAsOfferer(call_id, peer_identity); !started) {
       log().warning << "StartMediaAsOfferer failed: " << started.error().message;
-      host_.P2pSetLastMediaError(started.error().message);
-      Apply(CallDirectPlannerEvent::ConnectFailed, call_id, peer_identity);
-      host_.P2pNotifyRingChanged();
+      SurfaceConnectFailed(call_id, started.error().message, /*stop_media=*/true);
     }
   });
 }
@@ -1435,11 +1662,7 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
                           call_id);
     if (auto started = StartMediaAsAnswerer(call_id, peer_identity); !started) {
       log().warning << "StartMediaAsAnswerer failed: " << started.error().message;
-      host_.P2pSetLastMediaError(started.error().message);
-      Apply(CallDirectPlannerEvent::ConnectFailed, call_id, peer_identity);
-      log().warning << "answerer StartSfu failed call_id=" << call_id
-                    << " err=" << started.error().message;
-      host_.P2pNotifyRingChanged();
+      SurfaceConnectFailed(call_id, started.error().message, /*stop_media=*/true);
     } else {
       log().info << "answerer StartSfu ok call_id=" << call_id
                  << " direct=" << (direct_.IsActive() ? 1 : 0)
@@ -1492,6 +1715,9 @@ void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
 void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   // Abort any Connect sequence before Detach — LeaveCall can run while Connect is mid-dial.
   // Do not clear connect_worker_inflight_ here — only the sequence clears it (shutdown waits).
+  if (circuit_reach_) {
+    circuit_reach_->AbortPending();
+  }
   Apply(CallDirectPlannerEvent::Stop, call_id, media_peer_identity_);
   connect_generation_.fetch_add(1, std::memory_order_acq_rel);
   CancelConnectTimers();
@@ -1515,6 +1741,7 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   tx_only_escalation_done_ = false;
   ClearMeshConnectFailed();
   media_attempted_calls_.erase(call_id);
+  media_.SetOnStateChanged({});
 
   // CallMediaEngine::Stop tears down SDL capture — UI thread only (CALLS.md).
   // Always stop leftover media_relay even when ActiveCallId drifted or is empty
@@ -1617,6 +1844,9 @@ void CallMediaBridge::NotePeerIdRelayMapping(const std::string& peer_id,
 void CallMediaBridge::PrepareForTeardown(int timeout_ms) {
   stopping_.store(true, std::memory_order_release);
   inbound_key_cv_.notify_all();
+  if (circuit_reach_) {
+    circuit_reach_->AbortPending();
+  }
   Apply(CallDirectPlannerEvent::Stop, media_call_id_, media_peer_identity_);
   connect_generation_.fetch_add(1, std::memory_order_acq_rel);
   CancelConnectTimers();

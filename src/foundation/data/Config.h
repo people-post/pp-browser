@@ -141,7 +141,9 @@ struct MeshConfig {
   bool node_enabled = true;
   /**
    * Seed / bootstrap dial targets (must include /p2p/<PeerId>).
-   * L0 cold-start / emergency (N002); mesh services prefer directory (N027).
+   * Empty → NormalizeMeshConfig fills hardcoded L0 defaults (N002).
+   * Config file overrides hardcoded. Runtime hops prefer HTTP directory /
+   * last-good disk cache (`mesh_directory_nodes.json`) ahead of this list (N027).
    */
   std::vector<std::string> bootstrap_peers;
   /**

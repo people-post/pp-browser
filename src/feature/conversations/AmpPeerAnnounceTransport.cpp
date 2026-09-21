@@ -1,6 +1,6 @@
 #include "feature/conversations/AmpPeerAnnounceTransport.h"
 
-#include "amp/link/PeerLink.h"
+#include "amp/link/LinkIdentity.h"
 
 #include "domain/messaging/PeerAnnounceCodec.h"
 #include "domain/messaging/PeerAnnounceRpcCodec.h"
@@ -25,6 +25,10 @@ namespace pbr {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+int64_t SteadyDeadlineMs(const Clock::time_point deadline) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(deadline.time_since_epoch()).count();
+}
 
 std::vector<uint8_t> JsonToBody(const std::string& json_utf8) {
   return std::vector<uint8_t>(json_utf8.begin(), json_utf8.end());
@@ -101,14 +105,16 @@ struct AmpPeerAnnounceTransport::Impl {
     return ack;
   }
 
-  void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id) {
-    if (stopped.load(std::memory_order_acquire) || !links || !feed) {
+  void HandleInboundChannel(const std::string& remote_peer_id, const uint32_t channel_id) {
+    if (stopped.load(std::memory_order_acquire) || !links || !feed || remote_peer_id.empty()) {
       return;
     }
-    auto session = std::make_shared<pp::amp::ChannelSession>();
+    auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     auto policy = pp::amp::ControlJsonChannelPolicy();
-    session->Bind(*link.Mux(), channel_id, policy, [this, session](Roe<std::vector<uint8_t>> frame) {
-      if (!frame || stopped.load(std::memory_order_acquire)) {
+    *session_holder = links->BindChannel(
+        remote_peer_id, channel_id, policy, [this, session_holder](Roe<std::vector<uint8_t>> frame) {
+      auto session = *session_holder;
+      if (!session || !frame || stopped.load(std::memory_order_acquire)) {
         return false;
       }
       auto body = std::move(*frame);
@@ -166,10 +172,12 @@ void AmpPeerAnnounceTransport::Start() {
   }
   started_ = true;
   impl_->stopped.store(false, std::memory_order_release);
-  links_.SetProtocolHandler(kRpcPeerAnnounceProtocolId,
-                            [impl = impl_.get()](pp::amp::PeerLink& link, const uint32_t channel_id) {
-                              impl->HandleInboundChannel(link, channel_id);
-                            });
+  links_.SetProtocolHandler(
+      kRpcPeerAnnounceProtocolId,
+      [impl = impl_.get()](pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
+                           const uint32_t channel_id) {
+        impl->HandleInboundChannel(remote_peer_id, channel_id);
+      });
 }
 
 void AmpPeerAnnounceTransport::Stop() {
@@ -190,7 +198,8 @@ void AmpPeerAnnounceTransport::SetOnTipIngested(OnTipIngested cb) {
 
 
 bool AmpPeerAnnounceTransport::IsPeerReachable(const std::string& peer_identity_value) const {
-  return links_.GetLinkSnapshot(peer_identity_value).has_endpoint || links_.IsConnected(peer_identity_value);
+  return links_.IsReachable(peer_identity_value) ||
+         links_.GetLinkSnapshot(peer_identity_value).has_endpoint || links_.IsConnected(peer_identity_value);
 }
 
 void AmpPeerAnnounceTransport::PushTipAsync(const std::string& peer_key, const PeerAnnounceTip& tip,
@@ -224,44 +233,43 @@ void AmpPeerAnnounceTransport::PushTipAsync(const std::string& peer_key, const P
 
   constexpr auto kSendTimeout = std::chrono::milliseconds(4000);
   const auto deadline = Clock::now() + kSendTimeout;
-  auto session = std::make_shared<pp::amp::ChannelSession>();
-  auto finish = [finish_once, session](Roe<PeerAnnounceTipAck> value) {
-    session->Close();
+  auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
+  auto finish = [finish_once, session_holder](Roe<PeerAnnounceTipAck> value) {
+    if (*session_holder) {
+      (*session_holder)->Close();
+    }
     (*finish_once)(std::move(value));
   };
 
   links_.OpenChannel(peer_key, kRpcPeerAnnounceProtocolId, pp::amp::ControlJsonChannelPolicy(),
-                     [this, peer_key, push_json = *push_json, finish, settled, session,
+                     [this, peer_key, push_json = *push_json, finish, settled, session_holder,
                       deadline](IChatPeerLinks::ChannelRoe channel) mutable {
                        if (!channel) {
                          finish(Error(channel.error().message));
                          return;
                        }
-                       AmpScheduleWhenChannelOpen(
-                           post_io_, io_pump_,
-                           [this, peer_key, channel_id = *channel]() {
-                             auto* link = links_.FindLink(peer_key);
-                             return link && link->Mux() &&
-                                    link->Mux()->State(channel_id) == pp::amp::ChannelState::Open;
-                           },
-                           deadline,
-                           [this, peer_key, channel_id = *channel, push_json, finish, settled, session,
+                       if (impl_->stopped.load(std::memory_order_acquire)) {
+                         finish(Error("amp peer-announce service stopped"));
+                         return;
+                       }
+                       const uint32_t channel_id = *channel;
+                       links_.WhenChannelOpen(
+                           peer_key, channel_id, SteadyDeadlineMs(deadline),
+                           [this, peer_key, channel_id, push_json, finish, settled, session_holder,
                             deadline](bool open) mutable {
+                             if (impl_->stopped.load(std::memory_order_acquire)) {
+                               finish(Error("amp peer-announce service stopped"));
+                               return;
+                             }
                              if (!open) {
                                finish(Error("amp peer-announce: channel open failed")
                                           .WithUser("Direct tip push didn't confirm."));
                                return;
                              }
-                             auto* link = links_.FindLink(peer_key);
-                             if (!link || !link->Mux() ||
-                                 link->Mux()->State(channel_id) != pp::amp::ChannelState::Open) {
-                               finish(Error("amp peer-announce: channel open failed")
-                                          .WithUser("Direct tip push didn't confirm."));
-                               return;
-                             }
 
-                             session->Bind(*link->Mux(), channel_id, pp::amp::ControlJsonChannelPolicy(),
-                                           [finish](Roe<std::vector<uint8_t>> ack_frame) {
+                             *session_holder = links_.BindChannel(
+                                 peer_key, channel_id, pp::amp::ControlJsonChannelPolicy(),
+                                 [finish](Roe<std::vector<uint8_t>> ack_frame) {
                                              if (!ack_frame) {
                                                finish(Error("Failed to read peer-announce tip_ack")
                                                           .WithUser("Direct tip push didn't confirm."));
@@ -281,7 +289,7 @@ void AmpPeerAnnounceTransport::PushTipAsync(const std::string& peer_key, const P
                                              return false;
                                            });
 
-                             if (!session->EnqueueOutbound(JsonToBody(push_json))) {
+                             if (!(*session_holder)->EnqueueOutbound(JsonToBody(push_json))) {
                                finish(Error("Failed to send peer-announce tip_push")
                                           .WithUser("Direct tip push didn't confirm."));
                                return;
@@ -291,8 +299,7 @@ void AmpPeerAnnounceTransport::PushTipAsync(const std::string& peer_key, const P
                                finish(Error("amp peer-announce send timed out")
                                           .WithUser("Direct tip push timed out."));
                              });
-                           },
-                           [this]() { return impl_->stopped.load(std::memory_order_acquire); });
+                           });
                      });
 }
 

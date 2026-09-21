@@ -366,6 +366,33 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyNestDoesNotPoisonRelayBookWithP
 }
 
 /**
+ * Hop Preferred poisoned private while answerer still Connected: peer-id-only must splice the
+ * live link (not dial the private MA into WaitAck timeout).
+ */
+TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrefersConnectedOverStalePrivatePreferred) {
+  Wait<void> b_assoc;
+  harness_->mgr_b().EnsureAssociation("relay", b_assoc.LinkFn());
+  b_assoc.PumpUntilDone(*harness_);
+  ASSERT_TRUE(b_assoc.result) << b_assoc.result.error().message;
+  ASSERT_TRUE(harness_->mgr_r().FindLinkByPeerId(harness_->peer_id_b) != nullptr);
+
+  Wait<void> a_assoc;
+  harness_->mgr_a().EnsureAssociation("relay", a_assoc.LinkFn());
+  a_assoc.PumpUntilDone(*harness_);
+  ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
+
+  const std::string private_ma =
+      "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_r().RegisterEndpoint(harness_->peer_id_b, private_ma)));
+  ASSERT_EQ(harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b).value_or(""), private_ma);
+  ASSERT_GT(harness_->mgr_r().CountConnectedLinksForPeerId(harness_->peer_id_b), 0);
+
+  auto nested = EstablishNestedCallMediaPath(/*peer_id_only=*/true);
+  ASSERT_TRUE(nested) << nested.error().message;
+  EXPECT_TRUE(harness_->mgr_a().IsConnected(harness_->peer_id_b));
+}
+
+/**
  * Contrast: sending private target_multiaddr makes the hop RegisterEndpoint that MA
  * (book overwrite). Do not wait for dial timeout — only assert the poison write.
  */
