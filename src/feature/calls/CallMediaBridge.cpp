@@ -658,8 +658,8 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     return dial_ && (dial_->HasCallMediaCircuitHop(reach_key) ||
                      (reach_key != peer_identity && dial_->HasCallMediaCircuitHop(peer_identity)));
   };
-  auto seed_park_started = std::make_shared<bool>(false);
-  auto seed_parked = std::make_shared<bool>(!seed_park_await_ || !circuit_reach_);
+  auto seed_park_preassoc_done = std::make_shared<bool>(!seed_park_await_ || !circuit_reach_);
+  auto seed_park_ok = std::make_shared<bool>(!seed_park_await_ || !circuit_reach_);
   // Hard deadline independent of the poll tick chain (dogfood af934e: EnsureAssociation
   // never called back and poll ticks never hit "still not connected"). Cover answerer wait for
   // offerer inbound grace + circuit Ensure slack.
@@ -679,8 +679,8 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
   auto tick = std::make_shared<std::function<void()>>();
   *tick = [this, peer_identity, reach_key, connect_gen, finish, settled, deadline, initial_deadline,
            last_error, circuit_started, circuit_inflight, assoc_started, assoc_done, force_circuit,
-           dial_connected, dial_dialable, dial_public_direct, dial_has_circuit, seed_park_started,
-           seed_parked, tick]() mutable {
+           dial_connected, dial_dialable, dial_public_direct, dial_has_circuit, seed_park_preassoc_done,
+           seed_park_ok, tick]() mutable {
     if (settled->load(std::memory_order_acquire)) {
       return;
     }
@@ -757,14 +757,15 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     }
     // Private Preferred: park Brief seed first so hop warm owns ADP UDP alone; then try LAN
     // private dial (still useful on same-net). Public Preferred dials immediately.
-    if (!*seed_parked && !*seed_park_started && circuit_reach_ && seed_park_await_ &&
-        !dial_public_direct()) {
-      *seed_park_started = true;
+    // Dogfood 88e16f5c: do NOT set park-ok on timeout — that skipped a real park before punch
+    // and the offerer got "endpoint not registered" on ServeDial.
+    if (!*seed_park_preassoc_done && circuit_reach_ && seed_park_await_ && !dial_public_direct()) {
+      *seed_park_preassoc_done = true;
       log().info << "CallMedia seed park before private Preferred peer=" << peer_identity
                  << " reach_key=" << reach_key;
       seed_park_await_(
-          [this, seed_parked, tick](bool parked) mutable {
-            *seed_parked = true;
+          [this, seed_park_ok, tick](bool parked) mutable {
+            *seed_park_ok = parked;
             log().info << "CallMedia seed park (pre-assoc) parked=" << (parked ? 1 : 0);
             AppRuntime::PostCoordinatorNormal([tick]() {
               if (tick && *tick) {
@@ -939,15 +940,14 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                 },
                 allow_circuit);
           };
-      // Park on Brief/directory seed before StartBridge / punch-wait so the hop has a live
-      // PeerLink for peer-id-only ServeDial (dogfood bridge timeout when answerer never warmed).
-      // May already be done before private Preferred EnsureAssociation.
-      if (seed_park_await_ && !*seed_parked) {
-        *seed_park_started = true;
+      // Always confirm Connected seed before StartBridge / punch-wait. Pre-assoc park may have
+      // timed out (parked=0) or a later private dial may have dropped the hop link — skipping
+      // here made offerer ServeDial return "endpoint not registered" (dogfood 88e16f5c).
+      if (seed_park_await_) {
         seed_park_await_(
             [this, kick_reach = std::move(kick_reach), peer_identity, allow_circuit,
-             seed_parked](bool parked) mutable {
-              *seed_parked = true;
+             seed_park_ok](bool parked) mutable {
+              *seed_park_ok = parked;
               log().info << "CallMedia seed park before circuit/punch peer=" << peer_identity
                          << " parked=" << (parked ? 1 : 0)
                          << " allow_circuit=" << (allow_circuit ? 1 : 0);
@@ -955,10 +955,6 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
             },
             kSeedParkAwaitMs);
       } else {
-        if (*seed_park_started) {
-          log().info << "CallMedia seed park reuse before circuit/punch peer=" << peer_identity
-                     << " allow_circuit=" << (allow_circuit ? 1 : 0);
-        }
         kick_reach();
       }
       (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs),
