@@ -4,6 +4,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/messaging/CallHopAttachLogic.h"
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
+#include "domain/mesh/l4/circuit/CircuitServeDialPolicy.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "common/directory/MeshHopDial.h"
@@ -777,10 +778,8 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
       return;
     }
     if (!*assoc_started && dial_dialable() && !wait_for_circuit) {
-      // After a successful seed park, do not UDP-dial a private Preferred: dogfood 39412f
-      // dropped the Brief PeerLink during that dial, so the offerer's ServeDial saw
-      // "endpoint not registered" even though we had just reserve-ok'd.
-      if (*seed_park_ok && !dial_public_direct()) {
+      // H010: after seed park, skip private Preferred dial (CircuitServeDialPolicy).
+      if (CallMediaShouldSkipPreferredDialAfterSeedPark(*seed_park_ok, dial_public_direct())) {
         *assoc_started = true;
         *assoc_done = true;
         log().info << "CallMedia skip EnsureAssociation private Preferred (seed parked) peer="

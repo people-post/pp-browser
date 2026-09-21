@@ -1,5 +1,6 @@
 #include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/l4/circuit/CircuitServeDialPolicy.h"
 
 #include "amp/L3/ChannelBridge.h"
 #include "domain/mesh/l4/shared/ChannelSessionSlot.h"
@@ -57,15 +58,11 @@ Roe<std::pair<std::string, std::string>> NormalizeAmpCircuitTarget(pp::amp::Peer
     }
     return std::make_pair(peer_id, target.target_multiaddr);
   }
-  // Peer-id-only (nested call-media): only a live Connected PeerLink is ServeDial-safe.
-  // Falling through to dial-book Preferred dials private/SNAT MAs into NAT → EnsureAssociation
-  // hangs until WaitAck fires "circuit-relay bridge timed out" (dogfood dual-NAT / Windows
-  // dialer). IsConnected(peer_id) only matches an exact dial key — inbound links are often
-  // alias/inbound:*. Answerer must park/reserve first so CountConnected > 0.
-  if (links.CountConnectedLinksForPeerId(target.target_peer_id) > 0) {
+  // Peer-id-only (nested call-media): H010 — live Connected only (CircuitServeDialPolicy).
+  if (CircuitPeerIdOnlyHasLiveFarLeg(links.CountConnectedLinksForPeerId(target.target_peer_id))) {
     return std::make_pair(target.target_peer_id, std::string{});
   }
-  return Error("circuit target peer endpoint not registered");
+  return Error(std::string(kCircuitTargetPeerNotRegistered));
 }
 
 } // namespace
@@ -536,14 +533,15 @@ struct CircuitTunnelCoordinator::Impl {
       return;
     }
 
-    // Live op=reserve keeps the answerer PeerLink warm. Prefer peer-id-only when reserved so a
-    // stale private Preferred is not EnsureAssociation'd into NAT (dogfood 39412f).
+    // Live op=reserve → peer-id-only Connected path (H010 CircuitServeDialPolicy).
     {
       std::lock_guard lock(mu);
       const std::string& tid = tunnel.target.target_peer_id;
       if (!tid.empty()) {
         auto it = reservations.find(tid);
-        if (it != reservations.end() && it->second.session && !it->second.session->IsClosed()) {
+        const bool live_res =
+            it != reservations.end() && it->second.session && !it->second.session->IsClosed();
+        if (CircuitServeDialClearTargetMaWhenReserved(live_res, !tunnel.target.target_multiaddr.empty())) {
           tunnel.target.target_multiaddr.clear();
         }
       }
@@ -559,13 +557,11 @@ struct CircuitTunnelCoordinator::Impl {
     const auto deadline = tunnel.deadline;
     const std::string target_protocol = tunnel.target.target_protocol;
 
-    // Peer-id-only + Connected: open call-media on the live link. Do not EnsureAssociation(PeerId)
-    // — that dials dial-book Preferred when PeerId is registered, and private Preferred hangs
-    // until dialer WaitAck "circuit-relay bridge timed out" (dogfood dual-NAT).
-    if (normalized->second.empty()) {
+    // Peer-id-only → OpenChannelOnLink on live far leg (H010); never EnsureAssociation→Preferred.
+    if (CircuitServeDialOpenOnLiveLink(normalized->second.empty())) {
       auto* live = runtime->Links().FindLinkByPeerId(target_key);
       if (!live || live->Phase() != pp::amp::PeerLinkPhase::Connected || !live->Mux()) {
-        fail_near("circuit target peer endpoint not registered");
+        fail_near(std::string(kCircuitTargetPeerNotRegistered));
         return;
       }
       const std::string dial_key = live->PeerKey();

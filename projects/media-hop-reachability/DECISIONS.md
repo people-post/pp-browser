@@ -138,6 +138,8 @@ Answerer remains punch-only + reserve (no reverse StartBridge on first pass). Us
 
 **Peer-id-only ServeDial:** Never fall through to dial-book Preferred. Private Preferred hangs hop `EnsureAssociation` until dialer WaitAck `circuit-relay bridge timed out` (dogfood dual-NAT / Windows dialer). Open call-media via `FindLinkByPeerId` + `OpenChannelOnLink` on the live link. Fast-fail `not registered` when not Connected so H010 sticky retry can advance.
 
+**Single policy home:** [`CircuitServeDialPolicy.h`](../../src/domain/mesh/l4/circuit/CircuitServeDialPolicy.h) — shared by hop `BeginServe` / `NormalizeAmpCircuitTarget` and CallMediaBridge seed-park skip (same dual-NAT rule, one header).
+
 CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~12s with settle slack), not N×20s.
 
 **Rationale:** Directory + DHT + seeds can yield many dialable PeerIds; full WaitAck per candidate blows the connecting window even when ranking is correct. Warm/reserve + short tries beat more candidates.
