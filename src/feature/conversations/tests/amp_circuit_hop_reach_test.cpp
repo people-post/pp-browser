@@ -1,5 +1,6 @@
 #include "feature/calls/AmpCircuitHopReach.h"
 
+#include "common/directory/MeshHopDial.h"
 #include "domain/mesh/host/MeshPorts.h"
 #include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
@@ -22,6 +23,7 @@ namespace {
  * - nested call-media must not call PreferredMultiaddr (private punch MA poison)
  * - must not EnsureAssociation on a known-but-undialable endpoint before circuit
  * - relay lookup by PeerId (not only alias "hop"/"relay") must work when that key has an endpoint
+ * - CollectDialableCircuitRelayIds must not RegisterEndpoint private hop MAs over public Preferred
  */
 class RecordingChatPeerLinks final : public IChatPeerLinks {
 public:
@@ -311,6 +313,52 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureAcceptsHopPeerIdRelayKey) {
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
   EXPECT_EQ(recording_->preferred_multiaddr_calls, 0);
+}
+
+TEST_F(AmpCircuitHopReachTest, PrivateHopMaDoesNotPoisonPublicPreferred) {
+  // Dogfood: CollectDialableCircuitRelayIds used to RegisterEndpoint directory private hop MAs
+  // over a seed-warmed public Preferred → StartBridge sendto fail. Gate keeps public Preferred;
+  // seed already has_endpoint so EnsureViaCircuit still dials the MemoryIo path (ma_r).
+  WarmAnswererAndOfferer(harness_->peer_id_r);
+  ASSERT_TRUE(recording_->GetLinkSnapshot(harness_->peer_id_r).has_endpoint);
+
+  const std::string public_ma =
+      "/ip4/203.0.113.50/udp/4001/adp/1.0.0/p2p/" + harness_->peer_id_r;
+  const std::string private_hop_ma =
+      "/ip4/10.255.255.7/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_r;
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_r, public_ma)));
+  ASSERT_EQ(recording_->PreferredMultiaddr(harness_->peer_id_r).value_or(""), public_ma);
+  EXPECT_FALSE(CircuitHopDialBookAllowsRegister(private_hop_ma));
+  EXPECT_TRUE(CircuitHopDialBookAllowsRegister(public_ma));
+
+  // Same gate CallMediaPlane::CollectDialableCircuitRelayIds uses.
+  if (IsAdpMultiaddr(private_hop_ma) && CircuitHopDialBookAllowsRegister(private_hop_ma)) {
+    (void)harness_->mgr_a().RegisterEndpoint(harness_->peer_id_r, private_hop_ma);
+  }
+  EXPECT_EQ(recording_->PreferredMultiaddr(harness_->peer_id_r).value_or(""), public_ma)
+      << "private hop MA must not overwrite public PreferredMultiaddr";
+
+  // Restore MemoryIo-dialable relay MA (public_ma is not on the harness fabric).
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_r, harness_->ma_r)));
+
+  AmpCircuitHopReach reach(
+      *circuit_a_, *hops_, *recording_, [this] { harness_->PumpAll(); },
+      [this](const std::string& exclude) {
+        std::vector<std::string> out;
+        if (harness_->peer_id_r != exclude) {
+          out.push_back(harness_->peer_id_r);
+        }
+        return out;
+      },
+      [](const std::string&, std::function<void(Roe<void>)> on_done) {
+        on_done(Error("punch burst dial timed out"));
+      });
+
+  Wait<void> ensure_wait;
+  reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  ensure_wait.PumpUntilDone(*harness_);
+  ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
+  EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
 }
 
 TEST_F(AmpCircuitHopReachTest, CallMediaEnsureRunsCircuitBeforePunch) {

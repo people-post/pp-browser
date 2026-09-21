@@ -508,11 +508,17 @@ std::vector<std::string> CallMediaPlane::CollectDialableCircuitRelayIds(
     if (hop.peer_id.empty() || hop.peer_id == exclude_peer_id) {
       continue;
     }
-    if (!hop.multiaddr.empty() && amp_links && IsAdpMultiaddr(hop.multiaddr)) {
+    // Dogfood: directory/contact hop MAs are often RFC1918 advertise addrs. Unconditional
+    // RegisterEndpoint overwrites a seed-warmed public PreferredMultiaddr and StartBridge
+    // then fails with `adp udp :send to`. Only write dialable hosts; keep existing endpoint.
+    if (!hop.multiaddr.empty() && amp_links && IsAdpMultiaddr(hop.multiaddr) &&
+        CircuitHopDialBookAllowsRegister(hop.multiaddr)) {
       (void)amp_links->RegisterEndpoint(hop.peer_id, hop.multiaddr);
     } else if (hop.multiaddr.empty() && amp_links) {
       if (auto ma = amp_links->PreferredMultiaddr(hop.peer_id)) {
-        (void)amp_links->RegisterEndpoint(hop.peer_id, *ma);
+        if (CircuitHopDialBookAllowsRegister(*ma)) {
+          (void)amp_links->RegisterEndpoint(hop.peer_id, *ma);
+        }
       }
     }
     const bool amp_ok = amp_links && amp_links->GetLinkSnapshot(hop.peer_id).has_endpoint;
@@ -539,7 +545,8 @@ void CallMediaPlane::WarmBootstrapSeedSessions() {
     if (hop.peer_id.empty()) {
       continue;
     }
-    if (!hop.multiaddr.empty() && IsAdpMultiaddr(hop.multiaddr)) {
+    if (!hop.multiaddr.empty() && IsAdpMultiaddr(hop.multiaddr) &&
+        CircuitHopDialBookAllowsRegister(hop.multiaddr)) {
       (void)chat->links.RegisterEndpoint(hop.peer_id, hop.multiaddr);
     }
     if (!chat->links.GetLinkSnapshot(hop.peer_id).has_endpoint) {

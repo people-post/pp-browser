@@ -1,6 +1,6 @@
 # Hard lab — current state
 
-**Last updated:** 2026-09-20
+**Last updated:** 2026-09-21
 
 ## Direction
 
@@ -19,7 +19,8 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 | Dial-backoff gtest | `amp_circuit_hop_reach_test` + `call_media_bridge_answerer_start_test` |
 | Ensure→circuit heal | Bridge ClearDialBackoff on EnsureAssociation miss (Abort only while dial still in flight — finished callback must not double-drop) |
 | ConnectFailed stops media | gtest `CircuitHopMissStopsMediaOnConnectFailed` — not a hard-lab fail gate |
-| AmpCircuitHopReach taxonomy | per-relay info logs + last-fail error string |
+| AmpCircuitHopReach taxonomy | per-relay info logs + last-fail error string; tunnel miss logs `preferred_ma=` |
+| Circuit hop dial-book gate | `CircuitHopDialBookAllowsRegister` — CollectDialable / WarmBootstrap skip private hop MAs (dogfood sendto poison); gtest `PrivateHopMaDoesNotPoisonPublicPreferred` |
 | PeerLinkManager::ClearDialBackoff / AbortInflightDial | Abort no longer DropLink mid-handshake; FinishDial suppress-backoff; cold-evict uses DropLink |
 | CircuitTunnelCoordinator | `ScheduleWhenChannelOpen` looks up PeerLink by key (no raw pointer across Io posts) |
 

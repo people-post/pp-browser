@@ -229,6 +229,16 @@ TEST(MeshHopPolicyTest, MultiaddrHasPublicDialHost) {
   EXPECT_FALSE(MultiaddrHasPublicDialHost(""));
 }
 
+TEST(MeshHopPolicyTest, CircuitHopDialBookAllowsRegister) {
+  // CollectDialableCircuitRelayIds / WarmBootstrapSeedSessions gate (dogfood sendto poison).
+  EXPECT_TRUE(CircuitHopDialBookAllowsRegister("/ip4/203.0.113.10/udp/4001/adp/1.0.0/p2p/hop"));
+  EXPECT_TRUE(CircuitHopDialBookAllowsRegister("/ip6/2001:db8::1/udp/4001/adp/1.0.0/p2p/hop"));
+  EXPECT_FALSE(CircuitHopDialBookAllowsRegister("/ip4/10.0.0.1/udp/4001/adp/1.0.0/p2p/hop"));
+  EXPECT_FALSE(CircuitHopDialBookAllowsRegister("/ip4/192.168.1.5/udp/4001/adp/1.0.0/p2p/hop"));
+  EXPECT_FALSE(CircuitHopDialBookAllowsRegister("/ip4/127.0.0.1/udp/4001/adp/1.0.0/p2p/hop"));
+  EXPECT_FALSE(CircuitHopDialBookAllowsRegister(""));
+}
+
 TEST(MeshHopPolicyTest, PreferredDialMultiaddrPrefersGlobalIpv6) {
   const std::string lan = "/ip4/192.168.1.10/udp/4001/adp/1.0.0/p2p/12D3KooWLan";
   const std::string pub4 = "/ip4/203.0.113.10/udp/4001/adp/1.0.0/p2p/12D3KooWPub";
