@@ -28,10 +28,20 @@ inline constexpr std::size_t kDefaultMeshBootstrapPeerCount =
 /** First default seed (compat / single-seed call sites). */
 inline constexpr const char* kDefaultMeshBootstrapPeer = kDefaultMeshBootstrapPeers[0];
 
+/**
+ * Retired L0 seed PeerIds (ops cut). NormalizeMeshConfig strips matching bootstrap MAs so
+ * upgrades do not keep dialing a dead door from an old config.json.
+ */
+inline constexpr const char* kRetiredMeshBootstrapPeerIds[] = {
+    "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR", // was 3.208.41.58
+};
+inline constexpr std::size_t kRetiredMeshBootstrapPeerIdCount =
+    sizeof(kRetiredMeshBootstrapPeerIds) / sizeof(kRetiredMeshBootstrapPeerIds[0]);
+
 /** Mobile → Client; desktop → Node iff node_enabled (N001). */
 MeshRole ResolveMeshRole(const MeshConfig& config);
 
-/** Fill empty bootstrap_peers with project defaults (config file > hardcoded when saving). */
+/** Strip retired seeds; fill empty bootstrap_peers with project defaults. */
 void NormalizeMeshConfig(MeshConfig& config);
 
 /**

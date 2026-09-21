@@ -8,6 +8,7 @@
 #include "amp/link/PeerLink.h"
 #include "amp/link/Types.h"
 #include "common/ValueJson.h"
+#include "common/directory/MeshHopDial.h"
 #include "domain/mesh/shared/AmpChannelOpen.h"
 
 #include <atomic>
@@ -57,15 +58,18 @@ Roe<std::pair<std::string, std::string>> NormalizeAmpCircuitTarget(pp::amp::Peer
     }
     return std::make_pair(peer_id, target.target_multiaddr);
   }
+  // Peer-id-only (nested call-media): prefer a live Connected PeerLink over dial-book Preferred.
+  // A stale/private Preferred wins EnsureAssociation into a hang → dialer WaitAck
+  // "circuit-relay bridge timed out" (dogfood dual-NAT / reserve). IsConnected(peer_id) only
+  // matches an exact dial key — inbound links are often alias/inbound:*.
+  if (links.CountConnectedLinksForPeerId(target.target_peer_id) > 0) {
+    return std::make_pair(target.target_peer_id, std::string{});
+  }
   auto snap = links.GetLinkSnapshot(target.target_peer_id);
   if (snap.has_endpoint && !snap.multiaddr.empty()) {
-    return std::make_pair(target.target_peer_id, snap.multiaddr);
-  }
-  // Nested call-media is peer-id-only. Double-NAT answerer/offerer parks via op=reserve so the
-  // seed already has a Connected PeerLink without a dial-book MA (dogfood 997c1c6f: relay
-  // refused "endpoint not registered" while the far peer was only reserved/Connected).
-  // IsConnected(peer_id) only matches an exact dial key — inbound links are often alias/inbound:*.
-  if (links.CountConnectedLinksForPeerId(target.target_peer_id) > 0) {
+    if (!CircuitHopMultiaddrIsUdpDialable(snap.multiaddr)) {
+      return Error("circuit target peer endpoint not dialable");
+    }
     return std::make_pair(target.target_peer_id, snap.multiaddr);
   }
   return Error("circuit target peer endpoint not registered");

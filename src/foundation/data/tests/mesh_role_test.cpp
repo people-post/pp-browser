@@ -20,6 +20,16 @@ TEST(MeshRoleTest, NormalizeKeepsConfigBootstrapPeers) {
   EXPECT_EQ(config.bootstrap_peers[0], "/ip4/1.2.3.4/udp/443/adp/1.0.0/p2p/12D3KooWConfigOnly");
 }
 
+TEST(MeshRoleTest, NormalizeStripsRetiredBootstrapAndFillsDefaults) {
+  pbr::MeshConfig config;
+  config.bootstrap_peers = {
+      "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
+  pbr::NormalizeMeshConfig(config);
+  ASSERT_EQ(config.bootstrap_peers.size(), pbr::kDefaultMeshBootstrapPeerCount);
+  EXPECT_EQ(config.bootstrap_peers[0], pbr::kDefaultMeshBootstrapPeers[0]);
+  EXPECT_EQ(config.bootstrap_peers[1], pbr::kDefaultMeshBootstrapPeers[1]);
+}
+
 TEST(MeshRoleTest, ResolveEffectivePrefersDirectoryThenConfig) {
   pbr::MeshConfig config;
   config.bootstrap_peers = {"/ip4/9.9.9.9/udp/443/adp/1.0.0/p2p/12D3KooWConfigSeed"};

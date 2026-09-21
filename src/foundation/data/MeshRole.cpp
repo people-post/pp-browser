@@ -2,6 +2,7 @@
 
 #include "foundation/platform/Platform.h"
 
+#include <algorithm>
 #include <unordered_set>
 
 namespace pbr {
@@ -14,6 +15,20 @@ MeshRole ResolveMeshRole(const MeshConfig& config) {
 }
 
 void NormalizeMeshConfig(MeshConfig& config) {
+  if (!config.bootstrap_peers.empty()) {
+    std::unordered_set<std::string> retired;
+    retired.reserve(kRetiredMeshBootstrapPeerIdCount);
+    for (std::size_t i = 0; i < kRetiredMeshBootstrapPeerIdCount; ++i) {
+      retired.insert(kRetiredMeshBootstrapPeerIds[i]);
+    }
+    config.bootstrap_peers.erase(
+        std::remove_if(config.bootstrap_peers.begin(), config.bootstrap_peers.end(),
+                       [&retired](const std::string& ma) {
+                         const std::string peer_id = PeerIdFromMultiaddr(ma);
+                         return !peer_id.empty() && retired.count(peer_id) > 0;
+                       }),
+        config.bootstrap_peers.end());
+  }
   if (!config.bootstrap_peers.empty()) {
     return;
   }

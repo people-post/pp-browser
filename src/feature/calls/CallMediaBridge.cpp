@@ -565,6 +565,11 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
   if (seed_warm_) {
     seed_warm_();
   }
+  // Re-park reserve while Ensure runs so late answerer/offerer still shows on the hop before
+  // peer-id-only StartBridge (BeginSession reserve can still be associating).
+  if (seed_reserve_) {
+    seed_reserve_();
+  }
   // Circuit/punch/OpenChannel keys are Amp PeerIds. Invite/Accept may pass account: — resolve
   // before StartBridge or hop returns "endpoint not registered" (hard-lab / dogfood NAT).
   std::string reach_key = peer_identity;

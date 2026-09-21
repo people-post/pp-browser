@@ -504,7 +504,8 @@ std::vector<std::string> CallMediaPlane::CollectDialableCircuitRelayIds(
     dht_nodes = deps_.list_dht_nodes();
   }
   const bool include_seeds = !deps_.seed_dial_ok || deps_.seed_dial_ok();
-  auto hops = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, mesh_cfg.bootstrap_peers,
+  const auto effective_seeds = ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes);
+  auto hops = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, effective_seeds,
                                   mesh_cfg.prefer_contacts_for_routing, include_seeds);
   relay_ids.reserve(hops.size());
   for (const MeshHopCandidate& hop : hops) {
