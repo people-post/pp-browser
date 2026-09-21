@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "domain/mesh/shared/AmpChannelOpen.h"
 
 namespace pbr {
 
@@ -380,9 +381,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       done(false);
       return;
     }
-    const int64_t deadline_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(deadline.time_since_epoch()).count();
-    runtime->Links().WhenChannelOpen(peer_key, channel_id, deadline_ms, std::move(done));
+    AmpWhenChannelOpen(runtime->Links(), peer_key, channel_id, deadline, std::move(done));
   }
 
   void TickDeadlines() {

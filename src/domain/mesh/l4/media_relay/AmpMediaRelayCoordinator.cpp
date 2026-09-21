@@ -5,6 +5,7 @@
 #include "domain/mesh/l4/media_relay/MediaRelayAttachSm.h"
 #include "domain/mesh/l4/media_relay/MediaRelayLogic.h"
 #include "common/ValueJson.h"
+#include "domain/mesh/shared/AmpChannelOpen.h"
 
 #include <algorithm>
 #include <atomic>
@@ -148,9 +149,7 @@ struct AmpMediaRelayCoordinator::Impl {
       done(false);
       return;
     }
-    const int64_t deadline_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(deadline.time_since_epoch()).count();
-    runtime->Links().WhenChannelOpen(peer_key, channel_id, deadline_ms, std::move(done));
+    AmpWhenChannelOpen(runtime->Links(), peer_key, channel_id, deadline, std::move(done));
   }
 
   void TickDeadlines() {

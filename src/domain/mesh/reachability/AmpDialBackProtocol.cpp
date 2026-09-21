@@ -5,6 +5,7 @@
 #include "amp/link/AdpMultiaddr.h"
 #include "common/SettledWait.h"
 #include "common/ValueJson.h"
+#include "domain/mesh/shared/AmpChannelOpen.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
 
 #include <atomic>
@@ -129,9 +130,7 @@ struct AmpDialBackProtocol::Impl {
       done(false);
       return;
     }
-    const int64_t deadline_ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(deadline.time_since_epoch()).count();
-    links->WhenChannelOpen(peer_key, channel_id, deadline_ms, std::move(done));
+    AmpWhenChannelOpen(*links, peer_key, channel_id, deadline, std::move(done));
   }
 
   void ServeProbe(std::shared_ptr<pp::amp::ChannelSession> session, std::vector<uint8_t> body) {

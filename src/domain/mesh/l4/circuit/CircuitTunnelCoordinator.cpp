@@ -7,6 +7,7 @@
 #include "amp/link/PeerLink.h"
 #include "amp/link/Types.h"
 #include "common/ValueJson.h"
+#include "domain/mesh/shared/AmpChannelOpen.h"
 
 #include <atomic>
 #include <chrono>
@@ -132,29 +133,11 @@ struct CircuitTunnelCoordinator::Impl {
     if (!done) {
       return;
     }
-    PostIo([this, peer_key = std::move(peer_key), channel_id, deadline, done = std::move(done)]() mutable {
-      if (!done) {
-        return;
-      }
-      if (stopped.load(std::memory_order_acquire)) {
-        done(false);
-        return;
-      }
-      auto* link = runtime->Links().FindLink(peer_key);
-      if (!link || !link->Mux()) {
-        done(false);
-        return;
-      }
-      if (link->Mux()->State(channel_id) == pp::amp::ChannelState::Open) {
-        done(true);
-        return;
-      }
-      if (Clock::now() >= deadline) {
-        done(false);
-        return;
-      }
-      ScheduleWhenChannelOpen(std::move(peer_key), channel_id, deadline, std::move(done));
-    });
+    if (stopped.load(std::memory_order_acquire) || !runtime || peer_key.empty()) {
+      done(false);
+      return;
+    }
+    AmpWhenChannelOpen(runtime->Links(), peer_key, channel_id, deadline, std::move(done));
   }
 
   void TickDeadlines() {
