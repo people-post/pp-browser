@@ -149,6 +149,9 @@ private:
   std::vector<std::string> CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const;
   bool PeerLanConfirmed(const std::string& peer_id) const;
 
+  void WarmBootstrapSeedSessionsOnIo();
+  void ReserveOnBootstrapSeedsOnIo();
+
   CallMediaPlaneDeps deps_;
   CallDialBook dial_book_;
 

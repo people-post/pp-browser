@@ -548,6 +548,25 @@ void CallMediaPlane::WarmBootstrapSeedSessions() {
   if (!chat) {
     return;
   }
+  // EnsureAssociation / RegisterEndpoint must run on Amp IO (dogfood 085210 Coordinator vs MeshPump).
+  auto post_io = chat->io.post_io;
+  auto task = [this]() { WarmBootstrapSeedSessionsOnIo(); };
+  if (post_io) {
+    post_io(std::move(task));
+  } else {
+    task();
+  }
+}
+
+void CallMediaPlane::WarmBootstrapSeedSessionsOnIo() {
+  MeshHost* m = mesh();
+  if (!m) {
+    return;
+  }
+  auto chat = m->ChatDeps();
+  if (!chat) {
+    return;
+  }
   MeshConfig mesh_cfg = config().mesh;
   NormalizeMeshConfig(mesh_cfg);
   for (const auto& hop : CollectSeedHopCandidates(mesh_cfg.bootstrap_peers)) {
@@ -583,7 +602,27 @@ void CallMediaPlane::ReserveOnBootstrapSeeds() {
   if (!m || !m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
     return;
   }
-  WarmBootstrapSeedSessions();
+  auto chat = m->ChatDeps();
+  if (!chat) {
+    return;
+  }
+  auto post_io = chat->io.post_io;
+  auto task = [this]() {
+    WarmBootstrapSeedSessionsOnIo();
+    ReserveOnBootstrapSeedsOnIo();
+  };
+  if (post_io) {
+    post_io(std::move(task));
+  } else {
+    task();
+  }
+}
+
+void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
+  MeshHost* m = mesh();
+  if (!m || !m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
+    return;
+  }
   auto chat = m->ChatDeps();
   if (!chat) {
     return;
