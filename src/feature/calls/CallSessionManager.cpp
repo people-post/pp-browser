@@ -220,10 +220,13 @@ void CallSessionManager::BindWorkflowHostPorts() {
   ports.reach.prefetch_reach = [this](const std::string& identity) {
     PrefetchReachForIdentity(prefetch_reach_, identity);
   };
-  ports.reach.park_circuit_seeds = [this]() {
-    if (park_circuit_seeds_) {
-      park_circuit_seeds_();
+  ports.reach.ensure_circuit_ready = [this]() {
+    if (ensure_circuit_ready_) {
+      ensure_circuit_ready_();
     }
+  };
+  ports.reach.await_circuit_ready = [this](int timeout_ms) {
+    return await_circuit_ready_ ? await_circuit_ready_(timeout_ms) : false;
   };
   ports.reach.note_mesh_peer_id_for_relay = [this](const std::string& relay, const std::string& peer_id) {
     NoteMeshPeerIdForRelay(relay, peer_id);
@@ -488,8 +491,12 @@ void CallSessionManager::SetPrefetchPeerReachability(PrefetchPeerReachFn callbac
   prefetch_reach_ = std::move(callback);
 }
 
-void CallSessionManager::SetParkCircuitSeeds(ParkCircuitSeedsFn callback) {
-  park_circuit_seeds_ = std::move(callback);
+void CallSessionManager::SetEnsureCircuitReady(EnsureCircuitReadyFn callback) {
+  ensure_circuit_ready_ = std::move(callback);
+}
+
+void CallSessionManager::SetAwaitCircuitReady(AwaitCircuitReadyFn callback) {
+  await_circuit_ready_ = std::move(callback);
 }
 
 void CallSessionManager::SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback) {

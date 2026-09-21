@@ -95,6 +95,8 @@ struct CircuitTunnelCoordinator::Impl {
     bool finished = false;
     bool local_cancel = false;
     bool is_reserve = false;
+    /** Absolute steady ms; 0 = not waiting for far PeerLink (peer-id-only ServeDial). */
+    int64_t serve_far_wait_deadline_ms = 0;
   };
 
   struct Reservation {
@@ -192,6 +194,7 @@ struct CircuitTunnelCoordinator::Impl {
     const auto now = Clock::now();
     std::vector<CircuitTunnelId> timed_out;
     std::vector<CircuitTunnelId> link_lost;
+    std::vector<CircuitTunnelId> serve_far_retry;
     std::vector<std::string> expired_reserves;
     {
       std::lock_guard lock(mu);
@@ -202,6 +205,9 @@ struct CircuitTunnelCoordinator::Impl {
         if (PeerLinkMissing(*tunnel)) {
           link_lost.push_back(tunnel->id);
           continue;
+        }
+        if (tunnel->phase == CircuitTunnelPhase::ServeDial && tunnel->serve_far_wait_deadline_ms != 0) {
+          serve_far_retry.push_back(tunnel->id);
         }
         if (tunnel->deadline.time_since_epoch().count() == 0) {
           continue;
@@ -226,6 +232,19 @@ struct CircuitTunnelCoordinator::Impl {
         }
         TearDown(*tunnel, false, false, "circuit-relay peer link lost");
       }
+    }
+    // Resume peer-id-only ServeDial while answerer may still be parking (H010).
+    // BeginServe locks mu — must not call it while TickDeadlines holds the lock.
+    for (const auto id : serve_far_retry) {
+      Tunnel* tunnel = nullptr;
+      {
+        std::lock_guard lock(mu);
+        tunnel = Find(id);
+        if (!tunnel || tunnel->finished || tunnel->phase != CircuitTunnelPhase::ServeDial) {
+          continue;
+        }
+      }
+      BeginServe(*tunnel);
     }
     for (const auto id : timed_out) {
       std::lock_guard lock(mu);
@@ -546,6 +565,33 @@ struct CircuitTunnelCoordinator::Impl {
         }
       }
     }
+
+    // Peer-id-only: wait briefly for answerer Connected before failing not-registered.
+    const bool peer_id_only =
+        tunnel.target.target_multiaddr.empty() && !tunnel.target.target_peer_id.empty();
+    if (peer_id_only) {
+      const int64_t now_ms =
+          std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch())
+              .count();
+      const int64_t tunnel_deadline_ms =
+          tunnel.deadline.time_since_epoch().count() == 0
+              ? 0
+              : std::chrono::duration_cast<std::chrono::milliseconds>(tunnel.deadline.time_since_epoch())
+                    .count();
+      const bool has_live = CircuitPeerIdOnlyHasLiveFarLeg(
+          runtime->Links().CountConnectedLinksForPeerId(tunnel.target.target_peer_id));
+      if (CircuitServeDialContinueWaitingForFarLeg(true, has_live, now_ms, tunnel_deadline_ms,
+                                                   tunnel.serve_far_wait_deadline_ms)) {
+        tunnel.phase = CircuitTunnelPhase::ServeDial;
+        return;
+      }
+      if (!has_live) {
+        fail_near(std::string(kCircuitTargetPeerNotRegistered));
+        return;
+      }
+      tunnel.serve_far_wait_deadline_ms = 0;
+    }
+
     auto normalized = NormalizeAmpCircuitTarget(runtime->Links(), tunnel.target);
     if (!normalized) {
       fail_near(normalized.error().message);

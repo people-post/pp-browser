@@ -129,13 +129,16 @@ Idle background reachability still uses **outbound dial + circuit** (and later p
 | Max StartBridge calls | **3** | Skips (`!endpoint`, undialable Preferred) do **not** count |
 | Nest Establish | **≤8s**, clamped by remaining | After ack only |
 | Order | Sticky last-good → Connected → rest | `OrderCircuitRelayAttempts` |
-| Sticky retry | **Once** on fast-fail (`not registered` / `not dialable`) | Answerer may still be parking; timeouts do **not** sticky-retry |
-| Sticky not-reg delay | **1.5s** (`kCircuitStickyNotRegisteredDelayMs`) | Before re-ServeDial on sticky; other fast-fails retry immediately |
+| Sticky retry | **Once** on other fast-fail; **repeat** on `not registered` | Other fast-fails sticky once; not-reg keeps sticky until bridge budget |
+| Sticky not-reg delay | **1.5s** (`kCircuitStickyNotRegisteredDelayMs`) | Between sticky not-reg StartBridge retries |
+| Hop ServeDial far-leg wait | **≤6s** (`kCircuitServeDialFarLegWaitMs`), capped by tunnel deadline | Hop absorbs answerer park race before failing not-registered |
 | Parallel StartBridge | **Forbidden** on first connect | Serial only (dogfood ADP path races) |
 
 Answerer remains punch-only + reserve (no reverse StartBridge on first pass). User Retry / TX-only escalate may open a **fresh** envelope later — not a longer first ring.
 
-**Early seed park (Ringing):** Offerer parks on `StartCall`; answerer parks on inbound invite (`HandleInboundInvite`) — **before Accept** — via `CallSessionManager::SetParkCircuitSeeds` → `CallStack::ReserveOnBootstrapSeeds`. Goal: by the time offerer `StartBridge`s after Accept, answerer already has a Connected far leg on the sticky hop (dogfood ac108401: dialer `not registered` while answerer still cold-dialing seed post-Accept). Sticky 1.5s not-reg delay is a backstop when park is still in flight.
+**Layering (connectivity owns readiness):** Park/reserve and ServeDial far-leg wait live in mesh / `CallMediaPlane` / `CircuitTunnelCoordinator`. Session workflow only speaks consumer needs: `ensure_circuit_ready` (kick) and `await_circuit_ready` (Accept gate) — no seed vocabulary. Sticky not-reg retry stays in `AmpCircuitHopReach` (L3 hop reach).
+
+**Early circuit-ready (Ringing + Accept gate):** Offerer kicks ready on `StartCall`; answerer on inbound invite; `AcceptInvite` may **await** ready (up to 12s) before `CallAccept`. Hop ServeDial wait is the primary race absorber (needs Brief rebuild); Accept await is a thin product backstop.
 
 **Seed park gate:** Before private-Preferred `EnsureAssociation` and again before circuit/punch Ensure, await up to **12s** for any bootstrap/directory seed `IsConnected`. A timed-out pre-assoc park must **not** be treated as success (dogfood 88e16f5c: false park-ok → punch-only while offerer saw `endpoint not registered`). After a successful park, **skip** private-Preferred `EnsureAssociation` (dogfood 39412f: that UDP dial dropped the Brief PeerLink → dialer ServeDial `endpoint not registered`). Warm/reserve: connect **one** cold seed at a time, but **reserve all** Connected seeds (and continue serial cold reserve) so dialer StartBridge can land on hop2. Live Brief `op=reserve` is required for durable park; Connected PeerLink alone is enough for peer-id-only ServeDial when park actually succeeds.
 

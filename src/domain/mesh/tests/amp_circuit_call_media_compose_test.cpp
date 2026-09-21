@@ -394,8 +394,9 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrefersConnectedOverStalePrivat
 }
 
 /**
- * Peer-id-only with private Preferred and no Connected answerer must fail fast
- * (not register → WaitAck hang → "circuit-relay bridge timed out"). Dogfood dual-NAT.
+ * Peer-id-only with private Preferred and no Connected answerer must not dial Preferred
+ * (WaitAck hang). Hop may wait briefly for a far leg, then fail not-registered — still
+ * well under a private-Preferred dial hang. Dogfood dual-NAT.
  */
 TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrivatePreferredFastFailsWhenNotConnected) {
   Wait<void> a_assoc;
@@ -417,7 +418,8 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrivatePreferredFastFailsWhenNo
 
   Wait<CircuitTunnelBridgeResult> bridge_wait;
   const auto t0 = std::chrono::steady_clock::now();
-  auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 4000);
+  // Short bridge budget so ServeDial far-leg wait caps quickly in this test.
+  auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 800);
   ASSERT_TRUE(static_cast<bool>(tunnel_id));
   bridge_wait.PumpUntilDone(*harness_);
   const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -427,7 +429,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrivatePreferredFastFailsWhenNo
   ASSERT_FALSE(bridge_wait.result);
   EXPECT_NE(bridge_wait.result.error().message.find("not registered"), std::string::npos)
       << bridge_wait.result.error().message;
-  EXPECT_LT(elapsed_ms, 1500) << "must not WaitAck-hang dialing private Preferred (elapsed_ms="
+  EXPECT_LT(elapsed_ms, 2500) << "must not WaitAck-hang dialing private Preferred (elapsed_ms="
                               << elapsed_ms << ")";
 }
 

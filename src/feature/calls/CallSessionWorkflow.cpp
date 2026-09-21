@@ -176,9 +176,9 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
     return saved.error();
   }
 
-  // Offerer parks early so both legs share Connected seeds by Accept time.
-  if (host_.reach.park_circuit_seeds) {
-    host_.reach.park_circuit_seeds();
+  // Offerer: kick circuit readiness early so StartBridge near-leg is warm by Accept.
+  if (host_.reach.ensure_circuit_ready) {
+    host_.reach.ensure_circuit_ready();
   }
 
   CallStartedDetail started;
@@ -402,6 +402,12 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
   if (auto cleared = LeaveCallIfActiveExcept(call_id); !cleared) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << cleared.error().message;
     return cleared.error();
+  }
+  // Thin product gate: connectivity owns park; session only awaits ready before CallAccept.
+  if (host_.reach.await_circuit_ready) {
+    const bool ready = host_.reach.await_circuit_ready(12000);
+    log().info << "AcceptInvite await_circuit_ready call_id=" << call_id
+               << " ready=" << (ready ? 1 : 0);
   }
   // LeaveCallIfActiveExcept only sees Joined sessions. An Ended prior call can leave the
   // engine in sfu_mode (Stop gated on ActiveCallId match) — purge before WaitForAttach.
@@ -1134,10 +1140,9 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
   }
   if (host_.reach.note_caps_for_identity) host_.reach.note_caps_for_identity(pending.inviter_identity, invite->caps, invite->listen_multiaddrs);
   if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(pending.inviter_identity);
-  // Park before Accept so offerer StartBridge after Accept finds a Connected far leg (dogfood
-  // ac108401: dialer not registered while answerer still cold-dialing seed post-Accept).
-  if (host_.reach.park_circuit_seeds) {
-    host_.reach.park_circuit_seeds();
+  // Answerer: kick circuit readiness on ring (park owned by CallMediaPlane).
+  if (host_.reach.ensure_circuit_ready) {
+    host_.reach.ensure_circuit_ready();
   }
   host_.wire.notify_ring_changed();
   return {};

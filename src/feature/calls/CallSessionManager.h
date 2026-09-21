@@ -106,9 +106,12 @@ public:
   void SetOnRingChangedMesh(RingChangedFn callback);
   using PrefetchPeerReachFn = std::function<void(const std::string& identity)>;
   void SetPrefetchPeerReachability(PrefetchPeerReachFn callback);
-  /** Dual-NAT: park/reserve on org seeds when invite rings (before Accept). */
-  using ParkCircuitSeedsFn = std::function<void()>;
-  void SetParkCircuitSeeds(ParkCircuitSeedsFn callback);
+  /** Mesh circuit readiness (park/reserve) — composition projects CallMediaPlane. */
+  using EnsureCircuitReadyFn = std::function<void()>;
+  void SetEnsureCircuitReady(EnsureCircuitReadyFn callback);
+  /** AcceptInvite may await circuit-ready before CallAccept. */
+  using AwaitCircuitReadyFn = std::function<bool(int timeout_ms)>;
+  void SetAwaitCircuitReady(AwaitCircuitReadyFn callback);
   /** Local `/ip4/…/tcp/…/p2p/…` listen set for call-control dial bootstrap. */
   using LocalListenMultiaddrsFn = std::function<std::vector<std::string>()>;
   void SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback);
@@ -339,7 +342,8 @@ private:
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;
-  ParkCircuitSeedsFn park_circuit_seeds_;
+  EnsureCircuitReadyFn ensure_circuit_ready_;
+  AwaitCircuitReadyFn await_circuit_ready_;
   LocalListenMultiaddrsFn local_listen_multiaddrs_;
   LocalPeerCapsFn local_peer_caps_;
   LocalMeshPeerIdFn local_mesh_peer_id_;

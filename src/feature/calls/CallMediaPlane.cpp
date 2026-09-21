@@ -14,6 +14,7 @@
 #include "domain/mesh/reachability/Reachability.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "domain/mesh/host/MeshControlDispatch.h"
+#include "domain/mesh/shared/AmpParkUntil.h"
 
 #include <algorithm>
 #include <atomic>
@@ -737,6 +738,21 @@ void CallMediaPlane::EnsureBootstrapSeedParkedAsync(std::function<void(bool park
   } else {
     (*poll)();
   }
+}
+
+bool CallMediaPlane::AwaitCircuitReady(const int timeout_ms) {
+  auto done = std::make_shared<std::atomic<bool>>(false);
+  auto parked = std::make_shared<bool>(false);
+  EnsureBootstrapSeedParkedAsync(
+      [done, parked](const bool ok) {
+        *parked = ok;
+        done->store(true, std::memory_order_release);
+      },
+      timeout_ms);
+  const int budget = timeout_ms > 0 ? timeout_ms : 12000;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(budget + 250);
+  AmpParkUntil([done] { return done->load(std::memory_order_acquire); }, deadline, {});
+  return *parked;
 }
 
 void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {

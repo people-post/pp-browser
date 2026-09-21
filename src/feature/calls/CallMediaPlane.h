@@ -119,11 +119,18 @@ public:
   Roe<void> TryUpgradeCallMediaToDirect(const std::string& peer_key);
   void WarmBootstrapSeedSessions();
   void ReserveOnBootstrapSeeds();
+  /** Connectivity: kick warm/reserve so this peer is ServeDial-reachable via org hops. */
+  void EnsureCircuitReady() { ReserveOnBootstrapSeeds(); }
   /**
    * Kick warm+reserve and invoke on_done(true) once any bootstrap/directory seed is Connected,
-   * or on_done(false) at timeout (H010 dogfood: answerer must park before offerer StartBridge).
+   * or on_done(false) at timeout (H010: answerer must be parkable before offerer StartBridge).
    */
   void EnsureBootstrapSeedParkedAsync(std::function<void(bool parked)> on_done, int timeout_ms = 12000);
+  /**
+   * Block until circuit-ready (any bootstrap seed Connected) or timeout.
+   * Safe on AcceptInvite worker — MeshPump / coordinator drive progress.
+   */
+  bool AwaitCircuitReady(int timeout_ms = 12000);
 
 private:
   using IoPump = std::function<void()>;
