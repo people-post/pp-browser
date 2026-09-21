@@ -13,6 +13,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace pbr {
@@ -394,8 +395,9 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrefersConnectedOverStalePrivat
 }
 
 /**
- * Peer-id-only with private Preferred and no Connected answerer must fail fast
- * (not register → WaitAck hang → "circuit-relay bridge timed out"). Dogfood dual-NAT.
+ * Peer-id-only with private Preferred and no Connected answerer must not dial Preferred
+ * (WaitAck hang). Hop may wait briefly for a far leg, then fail not-registered — still
+ * well under a private-Preferred dial hang. Dogfood dual-NAT.
  */
 TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrivatePreferredFastFailsWhenNotConnected) {
   Wait<void> a_assoc;
@@ -417,9 +419,20 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrivatePreferredFastFailsWhenNo
 
   Wait<CircuitTunnelBridgeResult> bridge_wait;
   const auto t0 = std::chrono::steady_clock::now();
-  auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 4000);
+  // Short bridge budget so ServeDial far-leg wait caps quickly in this test.
+  auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 800);
   ASSERT_TRUE(static_cast<bool>(tunnel_id));
-  bridge_wait.PumpUntilDone(*harness_);
+  // Harness PumpAll is a spin — sleep so ServeDial far-leg wait / tunnel deadline can elapse.
+  harness_->PumpUntil(
+      [&] {
+        if (bridge_wait.done.load(std::memory_order_acquire)) {
+          return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return false;
+      },
+      2000);
+  ASSERT_TRUE(bridge_wait.done.load(std::memory_order_acquire));
   const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                               std::chrono::steady_clock::now() - t0)
                               .count();
@@ -427,8 +440,45 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrivatePreferredFastFailsWhenNo
   ASSERT_FALSE(bridge_wait.result);
   EXPECT_NE(bridge_wait.result.error().message.find("not registered"), std::string::npos)
       << bridge_wait.result.error().message;
-  EXPECT_LT(elapsed_ms, 1500) << "must not WaitAck-hang dialing private Preferred (elapsed_ms="
+  EXPECT_LT(elapsed_ms, 2500) << "must not WaitAck-hang dialing private Preferred (elapsed_ms="
                               << elapsed_ms << ")";
+}
+
+/**
+ * Event-driven ServeDial: StartBridge while B is not Connected, then associate B→R —
+ * PeerConnectedListener must resume the hop waiter (no wall-clock poll).
+ */
+TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyServeDialResumesWhenFarLegConnects) {
+  Wait<void> a_assoc;
+  harness_->mgr_a().EnsureAssociation("relay", a_assoc.LinkFn());
+  a_assoc.PumpUntilDone(*harness_);
+  ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
+  ASSERT_EQ(harness_->mgr_r().CountConnectedLinksForPeerId(harness_->peer_id_b), 0u);
+
+  CircuitBridgeTarget target;
+  target.target_peer_id = harness_->peer_id_b;
+  target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
+
+  Wait<CircuitTunnelBridgeResult> bridge_wait;
+  auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 8000);
+  ASSERT_TRUE(static_cast<bool>(tunnel_id));
+
+  // Let dialer open circuit channel + hop arm ServeDial wait (must still be pending).
+  for (int i = 0; i < 80 && !bridge_wait.done.load(std::memory_order_acquire); ++i) {
+    harness_->PumpAll();
+  }
+  ASSERT_FALSE(bridge_wait.done.load(std::memory_order_acquire))
+      << "ServeDial should wait for far leg, not fail immediately";
+
+  Wait<void> b_assoc;
+  harness_->mgr_b().EnsureAssociation("relay", b_assoc.LinkFn());
+  b_assoc.PumpUntilDone(*harness_);
+  ASSERT_TRUE(b_assoc.result) << b_assoc.result.error().message;
+  ASSERT_GT(harness_->mgr_r().CountConnectedLinksForPeerId(harness_->peer_id_b), 0u);
+
+  bridge_wait.PumpUntilDone(*harness_);
+  ASSERT_TRUE(bridge_wait.result) << bridge_wait.result.error().message;
+  EXPECT_TRUE(bridge_wait.result->ok);
 }
 
 /**
