@@ -543,6 +543,18 @@ struct CircuitTunnelCoordinator::Impl {
       return;
     }
 
+    // Live op=reserve keeps the answerer PeerLink warm. Prefer peer-id-only when reserved so a
+    // stale private Preferred is not EnsureAssociation'd into NAT (dogfood 39412f).
+    {
+      std::lock_guard lock(mu);
+      const std::string& tid = tunnel.target.target_peer_id;
+      if (!tid.empty()) {
+        auto it = reservations.find(tid);
+        if (it != reservations.end() && it->second.session && !it->second.session->IsClosed()) {
+          tunnel.target.target_multiaddr.clear();
+        }
+      }
+    }
     auto normalized = NormalizeAmpCircuitTarget(runtime->Links(), tunnel.target);
     if (!normalized) {
       fail_near(normalized.error().message);

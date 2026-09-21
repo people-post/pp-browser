@@ -793,6 +793,8 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
     log().info << "circuit reserve started on seed peer=" << seed;
   };
 
+  // Reserve every Connected seed first. Dialer StartBridge may pick hop2 while answerer only
+  // parked hop1 → ServeDial "endpoint not registered" (dogfood 39412f).
   for (const auto& hop : hops) {
     if (hop.peer_id.empty()) {
       continue;
@@ -803,11 +805,10 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
     }
     if (chat->links.IsConnected(hop.peer_id)) {
       start_reserve(hop.peer_id);
-      return; // one parked seed is enough for peer-id-only ServeDial
     }
   }
 
-  // Serial cold dial across seeds; on miss advance so park window can cover hop2.
+  // Serial cold dial + reserve for remaining seeds (do not stop after first success).
   auto try_at = std::make_shared<std::function<void(size_t)>>();
   *try_at = [this, chat, hops = std::move(hops), start_reserve,
              try_at](size_t index) mutable {
@@ -818,8 +819,9 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
         continue;
       }
       if (chat->links.IsConnected(hop.peer_id)) {
-        start_reserve(hop.peer_id);
-        return;
+        // Already reserved in the Connected pass above.
+        ++index;
+        continue;
       }
       const std::string seed = hop.peer_id;
       const std::string restore_ma = hop.multiaddr;
@@ -841,6 +843,9 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
               (void)links->RegisterEndpoint(seed, restore_ma);
             }
             start_reserve(seed);
+            if (try_at && *try_at) {
+              (*try_at)(next);
+            }
           });
       return;
     }

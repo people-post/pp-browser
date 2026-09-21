@@ -777,70 +777,80 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
       return;
     }
     if (!*assoc_started && dial_dialable() && !wait_for_circuit) {
-      *assoc_started = true;
-      log().info << "CallMedia EnsureAssociation start peer=" << peer_identity
-                 << " reach_key=" << reach_key;
-      dial_->EnsureAssociation(
-          reach_key, [this, peer_identity, reach_key, connect_gen, finish, settled, last_error,
-                      assoc_done, assoc_started, tick](Roe<void> assoc) mutable {
-            // EnsureAssociation cb runs on Amp IO (FinishDial). Snapshot before Coordinator hop.
-            const bool connected_now =
-                static_cast<bool>(assoc) && dial_ &&
-                (dial_->IsConnected(reach_key) ||
-                 (reach_key != peer_identity && dial_->IsConnected(peer_identity)));
-            AppRuntime::PostCoordinatorNormal(
-                [this, peer_identity, reach_key, connect_gen, finish = std::move(finish), settled,
-                 last_error, assoc_done, assoc_started, connected_now, tick,
-                 assoc = std::move(assoc)]() mutable {
-                  if (settled->load(std::memory_order_acquire)) {
-                    return;
-                  }
-                  *assoc_done = true;
-                  if (connect_generation_.load(std::memory_order_acquire) != connect_gen ||
-                      stopping_.load(std::memory_order_acquire)) {
-                    finish(Error("call-media aborted"));
-                    return;
-                  }
-                  if (assoc) {
-                    if (connected_now) {
-                      media_path_kind_ = "direct";
-                      log().info << "CallMedia EnsureAssociation ok peer=" << peer_identity
-                                 << " reach_key=" << reach_key;
-                      finish({});
+      // After a successful seed park, do not UDP-dial a private Preferred: dogfood 39412f
+      // dropped the Brief PeerLink during that dial, so the offerer's ServeDial saw
+      // "endpoint not registered" even though we had just reserve-ok'd.
+      if (*seed_park_ok && !dial_public_direct()) {
+        *assoc_started = true;
+        *assoc_done = true;
+        log().info << "CallMedia skip EnsureAssociation private Preferred (seed parked) peer="
+                   << peer_identity << " reach_key=" << reach_key;
+      } else {
+        *assoc_started = true;
+        log().info << "CallMedia EnsureAssociation start peer=" << peer_identity
+                   << " reach_key=" << reach_key;
+        dial_->EnsureAssociation(
+            reach_key, [this, peer_identity, reach_key, connect_gen, finish, settled, last_error,
+                        assoc_done, assoc_started, tick](Roe<void> assoc) mutable {
+              // EnsureAssociation cb runs on Amp IO (FinishDial). Snapshot before Coordinator hop.
+              const bool connected_now =
+                  static_cast<bool>(assoc) && dial_ &&
+                  (dial_->IsConnected(reach_key) ||
+                   (reach_key != peer_identity && dial_->IsConnected(peer_identity)));
+              AppRuntime::PostCoordinatorNormal(
+                  [this, peer_identity, reach_key, connect_gen, finish = std::move(finish), settled,
+                   last_error, assoc_done, assoc_started, connected_now, tick,
+                   assoc = std::move(assoc)]() mutable {
+                    if (settled->load(std::memory_order_acquire)) {
                       return;
                     }
-                    log().info << "CallMedia EnsureAssociation ok but not connected peer="
-                               << peer_identity << " reach_key=" << reach_key;
-                  } else {
-                    *last_error = assoc.error();
-                    log().info << "CallMedia EnsureAssociation miss peer=" << peer_identity
-                               << " reach_key=" << reach_key << " err=" << last_error->message;
-                    // Dial already finished (this callback). ClearDialBackoff only — AbortInflightDial
-                    // on a Backoff link ScheduleDropLink's again and races the FinishDial drop
-                    // (dogfood 130521 AV ~10s after sendto-miss). Keep assoc_started so we do not
-                    // hammer EnsureAssociation every poll.
-                    if (dial_) {
-                      dial_->ClearDialBackoff(reach_key);
-                      if (reach_key != peer_identity) {
-                        dial_->ClearDialBackoff(peer_identity);
+                    *assoc_done = true;
+                    if (connect_generation_.load(std::memory_order_acquire) != connect_gen ||
+                        stopping_.load(std::memory_order_acquire)) {
+                      finish(Error("call-media aborted"));
+                      return;
+                    }
+                    if (assoc) {
+                      if (connected_now) {
+                        media_path_kind_ = "direct";
+                        log().info << "CallMedia EnsureAssociation ok peer=" << peer_identity
+                                   << " reach_key=" << reach_key;
+                        finish({});
+                        return;
+                      }
+                      log().info << "CallMedia EnsureAssociation ok but not connected peer="
+                                 << peer_identity << " reach_key=" << reach_key;
+                    } else {
+                      *last_error = assoc.error();
+                      log().info << "CallMedia EnsureAssociation miss peer=" << peer_identity
+                                 << " reach_key=" << reach_key << " err=" << last_error->message;
+                      // Dial already finished (this callback). ClearDialBackoff only — AbortInflightDial
+                      // on a Backoff link ScheduleDropLink's again and races the FinishDial drop
+                      // (dogfood 130521 AV ~10s after sendto-miss). Keep assoc_started so we do not
+                      // hammer EnsureAssociation every poll.
+                      if (dial_) {
+                        dial_->ClearDialBackoff(reach_key);
+                        if (reach_key != peer_identity) {
+                          dial_->ClearDialBackoff(peer_identity);
+                        }
                       }
                     }
-                  }
-                  (void)AppRuntime::ScheduleCoordinatorOneShot(
-                      std::chrono::milliseconds(kDialPollMs), [tick]() {
-                        if (tick && *tick) {
-                          (*tick)();
-                        }
-                      });
-                });
-          });
-      // Wait for assoc to finish before StartBridge so the two ADP handshakes do not overlap.
-      (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs), [tick]() {
-        if (tick && *tick) {
-          (*tick)();
-        }
-      });
-      return;
+                    (void)AppRuntime::ScheduleCoordinatorOneShot(
+                        std::chrono::milliseconds(kDialPollMs), [tick]() {
+                          if (tick && *tick) {
+                            (*tick)();
+                          }
+                        });
+                  });
+            });
+        // Wait for assoc to finish before StartBridge so the two ADP handshakes do not overlap.
+        (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs), [tick]() {
+          if (tick && *tick) {
+            (*tick)();
+          }
+        });
+        return;
+      }
     }
     // Circuit/punch when forced, undialable, or ADP assoc already finished (not merely kicked).
     if (circuit_reach_ && !*circuit_started &&
