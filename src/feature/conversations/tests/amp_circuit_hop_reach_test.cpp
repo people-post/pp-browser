@@ -108,7 +108,7 @@ protected:
     harness_->mgr_a().EnableNestedCarrierAccept(true);
     harness_->mgr_b().EnableNestedCarrierAccept(true);
 
-    chat_a_ = NewAmpChatPeerLinks(harness_->mgr_a());
+    chat_a_ = NewAmpChatPeerLinks(*harness_->runtime_a);
     recording_ = std::make_unique<RecordingChatPeerLinks>(*chat_a_);
     hops_ = std::make_unique<AmpCircuitHopRegistry>();
     circuit_r_ = std::make_unique<CircuitTunnelCoordinator>(*harness_->runtime_r);

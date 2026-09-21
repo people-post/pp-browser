@@ -156,7 +156,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 
 **Hard rule:** only worker-pool and mesh-control threads may block on network or disk for longer than a few milliseconds. Amp data-plane progress is `MeshRuntime::Drive` on the pump (and nested `Tick` from control waiters).
 
-**Amp PeerLink strand (hard):** `PeerLinkManager` is not thread-safe. Product call/mesh code that mutates dial book or association state — `RegisterEndpoint`, `ClearDialBackoff`, `AbortInflightDial`, `EnsureAssociation`, `OpenChannel`, circuit `StartBridge` / hop reach — must run on the Amp IO strand via `MeshRuntime::PostToIo` (exposed as `MeshChatDeps::io.post_io`). **Do not** poll `IsConnected` / `PreferredMultiaddr` / `GetLinkSnapshot` from Coordinator/UI while a dial or circuit bridge is in flight on the same manager — those reads race `FinishDial` / `ScheduleDropLink` (dogfood 091029 AV ~dial timeout). Snapshot on the IO callback before hopping to Coordinator. Opportunistic off-strand reads are only acceptable when no Amp dial mutation is known-active. With MeshPump running, **do not** pass a product `IoPump` that nested-`Drive`s from Coordinator/call-connect paths — MeshPump owns `Drive`; waiters use empty `io_pump` + `post_io` (dogfood 085210).
+**Amp PeerLink strand (hard):** `PeerLinkManager` is not internally locked. `MeshRuntime` serializes `Drive` / `PostToIo` under `io_mu_`. Product `AmpChatPeerLinks` takes the **same** lock via `MeshRuntime::WithIoLock` for every façade call so Coordinator/UI `IsConnected` / dial-book reads cannot race `FinishDial` / `ScheduleDropLink` (dogfood 091029 / 091740). Prefer `post_io` for multi-step dial/circuit work; with MeshPump running, pass empty `io_pump` + `post_io` (no nested `Drive`). L4 coordinators that call `runtime.Links()` must already be on the PostToIo/Drive path (lock held).
 
 **Peer honesty (Amp / peer streams):** do not park the **general** `WorkerPool` on peer-facing waits. Prefer async IO + local deadline + hard cancel. Call-media hello/ack is async+deadline; blocking bridge `Connect()` and remaining `IoPumpUntil` facades run on **MeshControlPool** as an interim until async `Connect(cb)` / A022-style callbacks. Details: [SESSION_MACHINES.md — Peer honesty rule](../../projects/p2p-av-calls/SESSION_MACHINES.md#peer-honesty-rule-stream-waits).
 
@@ -278,7 +278,7 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 
 | Date | Change |
 |------|--------|
-| 2026-09-21 | Amp PeerLink strand: PostToIo for dial/hop mutations; product Wire empty io_pump when MeshPump+post_io |
+| 2026-09-21 | Amp PeerLink strand: `MeshRuntime::WithIoLock` in pp-cpp-amp; AmpChatPeerLinks locks; product Wire empty io_pump; dial-registry PostToIo |
 | 2026-09-09 | Shutdown latency phases 0–5: BeginShutdown+watchdog; budgeted coordinator/WorkerPool/ringtone/media joins; IsShuttingDown gates; dogfood matrix |
 | 2026-09-09 | Shutdown latency: HideWindow on RequestExit; PrepareForTeardown(0); MeshControlPool join ≤500ms; shutdown timeline marks |
 | 2026-09-09 | CallMediaBridge peer-reach Async; CallSessionManager SoftMigrate nudge uses SoftMigrateAsync (no Worker park) |

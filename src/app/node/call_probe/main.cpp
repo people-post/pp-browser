@@ -790,7 +790,7 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   std::atomic<int> chat_received{0};
   if (with_chat) {
     auto pump = [p = peer->get()]() { p->Pump(); };
-    chat_links = pbr::NewAmpChatPeerLinks((*peer)->Links());
+    chat_links = pbr::NewAmpChatPeerLinks((*peer)->Runtime());
     chat = std::make_unique<pbr::AmpDirectChatTransport>(
         *chat_links, pbr::AmpDirectChatTransport::IoPump{pump});
     chat->Start();
@@ -955,7 +955,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
   std::unique_ptr<pbr::IChatPeerLinks> chat_links;
   std::unique_ptr<pbr::AmpDirectChatTransport> chat;
   if (with_chat) {
-    chat_links = pbr::NewAmpChatPeerLinks((*offerer)->Links());
+    chat_links = pbr::NewAmpChatPeerLinks((*offerer)->Runtime());
     chat = std::make_unique<pbr::AmpDirectChatTransport>(
         *chat_links, pbr::AmpDirectChatTransport::IoPump{pump});
     chat->Start();
@@ -988,7 +988,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
     }
     std::cout << "ok  offerer warm-hop associated key=" << warm_key << " hop=" << hop_ma << "\n";
     if (reach_product || reach_bridge) {
-      reach_links = pbr::NewAmpChatPeerLinks((*offerer)->Links());
+      reach_links = pbr::NewAmpChatPeerLinks((*offerer)->Runtime());
       // Product path needs punch; dirty-book bridge goes straight to nested circuit — starting
       // punch before a forced private-MA dial miss has raced StartBridge Pump (SIGSEGV).
       if (reach_product) {
