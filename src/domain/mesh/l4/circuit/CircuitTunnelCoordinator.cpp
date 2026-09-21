@@ -8,7 +8,6 @@
 #include "amp/link/PeerLink.h"
 #include "amp/link/Types.h"
 #include "common/ValueJson.h"
-#include "common/directory/MeshHopDial.h"
 #include "domain/mesh/shared/AmpChannelOpen.h"
 
 #include <atomic>
@@ -58,19 +57,13 @@ Roe<std::pair<std::string, std::string>> NormalizeAmpCircuitTarget(pp::amp::Peer
     }
     return std::make_pair(peer_id, target.target_multiaddr);
   }
-  // Peer-id-only (nested call-media): prefer a live Connected PeerLink over dial-book Preferred.
-  // A stale/private Preferred wins EnsureAssociation into a hang → dialer WaitAck
-  // "circuit-relay bridge timed out" (dogfood dual-NAT / reserve). IsConnected(peer_id) only
-  // matches an exact dial key — inbound links are often alias/inbound:*.
+  // Peer-id-only (nested call-media): only a live Connected PeerLink is ServeDial-safe.
+  // Falling through to dial-book Preferred dials private/SNAT MAs into NAT → EnsureAssociation
+  // hangs until WaitAck fires "circuit-relay bridge timed out" (dogfood dual-NAT / Windows
+  // dialer). IsConnected(peer_id) only matches an exact dial key — inbound links are often
+  // alias/inbound:*. Answerer must park/reserve first so CountConnected > 0.
   if (links.CountConnectedLinksForPeerId(target.target_peer_id) > 0) {
     return std::make_pair(target.target_peer_id, std::string{});
-  }
-  auto snap = links.GetLinkSnapshot(target.target_peer_id);
-  if (snap.has_endpoint && !snap.multiaddr.empty()) {
-    if (!CircuitHopMultiaddrIsUdpDialable(snap.multiaddr)) {
-      return Error("circuit target peer endpoint not dialable");
-    }
-    return std::make_pair(target.target_peer_id, snap.multiaddr);
   }
   return Error("circuit target peer endpoint not registered");
 }
@@ -565,6 +558,72 @@ struct CircuitTunnelCoordinator::Impl {
     const CircuitTunnelId id = tunnel.id;
     const auto deadline = tunnel.deadline;
     const std::string target_protocol = tunnel.target.target_protocol;
+
+    // Peer-id-only + Connected: open call-media on the live link. Do not EnsureAssociation(PeerId)
+    // — that dials dial-book Preferred when PeerId is registered, and private Preferred hangs
+    // until dialer WaitAck "circuit-relay bridge timed out" (dogfood dual-NAT).
+    if (normalized->second.empty()) {
+      auto* live = runtime->Links().FindLinkByPeerId(target_key);
+      if (!live || live->Phase() != pp::amp::PeerLinkPhase::Connected || !live->Mux()) {
+        fail_near("circuit target peer endpoint not registered");
+        return;
+      }
+      const std::string dial_key = live->PeerKey();
+      runtime->Links().OpenChannelOnLink(
+          *live, target_protocol, PolicyForCircuitTarget(target_protocol),
+          [this, id, dial_key, deadline](pp::amp::PeerLinkManager::ChannelRoe channel) {
+            uint32_t channel_id = 0;
+            {
+              std::lock_guard lock(mu);
+              auto* tunnel = Find(id);
+              if (!tunnel) {
+                return;
+              }
+              if (!channel) {
+                Object err;
+                err.set("v", int64_t{1});
+                err.set("ok", false);
+                err.set("error", channel.error().message);
+                if (tunnel->near_session) {
+                  tunnel->near_session->EnqueueOutbound(JsonToBody(DumpJson(err)));
+                }
+                TearDown(*tunnel, false, false, channel.error().message);
+                return;
+              }
+              if (!runtime->Links().FindLink(dial_key)) {
+                TearDown(*tunnel, false, false, "relay target stream timed out");
+                return;
+              }
+              channel_id = *channel;
+            }
+            ScheduleWhenChannelOpen(
+                dial_key, channel_id, deadline, [this, id, dial_key, channel_id](const bool open) {
+                  std::lock_guard lock(mu);
+                  auto* tunnel = Find(id);
+                  if (!tunnel) {
+                    return;
+                  }
+                  if (!open) {
+                    Object err;
+                    err.set("v", int64_t{1});
+                    err.set("ok", false);
+                    err.set("error", "relay target stream timed out");
+                    if (tunnel->near_session) {
+                      tunnel->near_session->EnqueueOutbound(JsonToBody(DumpJson(err)));
+                    }
+                    TearDown(*tunnel, false, false, "relay target stream timed out");
+                    return;
+                  }
+                  auto* link = runtime->Links().FindLink(dial_key);
+                  if (!link || !link->Mux()) {
+                    TearDown(*tunnel, false, false, "relay target stream timed out");
+                    return;
+                  }
+                  ContinueServeAfterTargetOpen(*tunnel, *link, channel_id);
+                });
+          });
+      return;
+    }
 
     runtime->Links().EnsureAssociation(target_key, [this, id, target_key, deadline, target_protocol](
                                                pp::amp::PeerLinkManager::LinkRoe assoc) {
