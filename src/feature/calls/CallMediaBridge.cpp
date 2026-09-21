@@ -24,10 +24,11 @@ constexpr int64_t kMeshConnectTimeoutMs = 75000;
 /** Must stay ≤ offerer inbound grace so answerer reverse-dial usually wins first. */
 constexpr int64_t kDialWaitBudgetMs = 12000;
 /**
- * StartBridge (8s) + nested Establish (10s) + relay retry slack. Once circuit Ensure has started,
- * do not expire the Bridge dial wait until this budget from circuit start (dogfood 8b452388).
+ * AmpCircuitHopReach envelope (H010 / kCircuitReachEnvelopeMs) + nest settle slack.
+ * Once circuit Ensure has started, do not expire the Bridge dial wait until this budget
+ * from circuit start (dogfood 8b452388).
  */
-constexpr int64_t kCircuitEnsureBudgetMs = 20000;
+constexpr int64_t kCircuitEnsureBudgetMs = 12000;
 constexpr int kDialPollMs = 250;
 constexpr int kConnectAttempts = 5;
 /** Full newStream + Noise + hello; 2.5s was far too short on Android LAN. */

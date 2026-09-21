@@ -113,3 +113,31 @@ Idle background reachability still uses **outbound dial + circuit** (and later p
 **Rationale:** After D10/A017 the underlay is Amp UDP; DCUtR-class behavior must be Amp-native. SoftMigrate must not grow a parallel NAT toolkit. Keepalive/`MaybeLearnPath` are not punch.  
 **Alternatives:** App ICE gather (rejected — H004/H007); wait forever on UPnP/IPv6 only (rejected — many outbound-only homes); circuit-only forever (rejected — cost/latency); public STUN farm (rejected — second trust plane).  
 **Spec:** [HOLE_PUNCH.md](HOLE_PUNCH.md). **Phase:** [L3.25](PHASES.md#l325--amp-coordinated-punch).
+
+---
+
+## H010 — Circuit StartBridge attempt budget (not exhaustive search)
+
+**Status:** Accepted  
+**Date:** 2026-09-21  
+**Decision:** First-connect `EnsureViaCircuit` treats dialable relays as a **ranked queue with a spend limit**, not an exhaustive walk.
+
+| Knob | Value | Notes |
+|------|-------|--------|
+| Envelope | **10s** (`kCircuitReachEnvelopeMs`) | Wall clock for the whole EnsureViaCircuit chain |
+| Per StartBridge | **≤4s**, clamped by remaining − nest slack | `CircuitStartBridgeTimeoutMs` |
+| Max StartBridge calls | **3** | Skips (`!endpoint`, undialable Preferred) do **not** count |
+| Nest Establish | **≤8s**, clamped by remaining | After ack only |
+| Order | Sticky last-good → Connected → rest | `OrderCircuitRelayAttempts` |
+| Sticky retry | **Once** on fast-fail (`not registered` / `not dialable`) | Answerer may still be parking; timeouts do **not** sticky-retry |
+| Parallel StartBridge | **Forbidden** on first connect | Serial only (dogfood ADP path races) |
+
+Answerer remains punch-only + reserve (no reverse StartBridge on first pass). User Retry / TX-only escalate may open a **fresh** envelope later — not a longer first ring.
+
+CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~12s with settle slack), not N×20s.
+
+**Rationale:** Directory + DHT + seeds can yield many dialable PeerIds; full WaitAck per candidate blows the connecting window even when ranking is correct. Warm/reserve + short tries beat more candidates.
+
+**Alternatives:** Fixed 20s×N (rejected — dogfood bridge timeout stack); parallel multi-bridge (rejected — UDP path AV); truncate candidate list only without remaining clamp (rejected — still burns on slow misses).
+
+**Code:** `CircuitHopAttemptBudget.h`, `AmpCircuitHopReach::EnsureViaCircuitAsync`.
