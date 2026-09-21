@@ -134,7 +134,7 @@ Idle background reachability still uses **outbound dial + circuit** (and later p
 
 Answerer remains punch-only + reserve (no reverse StartBridge on first pass). User Retry / TX-only escalate may open a **fresh** envelope later — not a longer first ring.
 
-**Seed park gate:** Before circuit/punch Ensure, both roles await up to **4s** for any bootstrap/directory seed `IsConnected` (`EnsureBootstrapSeedParkedAsync`), with loud warm/reserve miss logs. Live Brief hops succeed peer-id-only only when the far side has already associated (dogfood: answerer never parked → dialer WaitAck timeout).
+**Seed park gate:** Before private-Preferred `EnsureAssociation` and before circuit/punch Ensure, both roles await up to **12s** for any bootstrap/directory seed `IsConnected` (`EnsureBootstrapSeedParkedAsync` / `kSeedParkAwaitMs`). Warm/reserve dial **one** cold seed at a time (no parallel hop1∥hop2∥private Preferred). Public Preferred still dials immediately. Live Brief may still reject `op=reserve` (`unsupported op`); **Connected PeerLink alone** is enough for peer-id-only ServeDial — redeploy Brief with reserve support when available (dogfood fd4e3de).
 
 CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~12s with settle slack), not N×20s.
 

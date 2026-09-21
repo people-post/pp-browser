@@ -6,6 +6,7 @@
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
+#include "common/directory/MeshHopDial.h"
 
 #include <algorithm>
 #include <atomic>
@@ -42,6 +43,11 @@ constexpr int kInboundMediaKeyWaitMs = 8000;
  * while Windows was still in EnsurePeerReachable → dual-stream hello deadlock.
  */
 constexpr int64_t kOffererInboundGraceMs = 15000;
+/**
+ * Await bootstrap seed Connected before circuit/punch (H010). Must cover a full Amp hop
+ * dial (~8s) — 4s parked=0 while hop dial still in flight (dogfood fd4e3de).
+ */
+constexpr int kSeedParkAwaitMs = 12000;
 
 /** Rate-limit PeerId→relay unknown drops (PreferLocal / non-contact dogfood). */
 std::atomic<uint32_t> g_inbound_unmapped_audio_drops{0};
@@ -568,14 +574,9 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     on_done(Error("call-media aborted"));
     return;
   }
-  if (seed_warm_) {
-    seed_warm_();
-  }
-  // Re-park reserve while Ensure runs so late answerer/offerer still shows on the hop before
-  // peer-id-only StartBridge (BeginSession reserve can still be associating).
-  if (seed_reserve_) {
-    seed_reserve_();
-  }
+  // Seed park is owned by the circuit/punch gate (seed_park_await_). Do not kick warm+reserve
+  // here — BeginSession already reserved, and a second parallel EnsureAssociation on the same
+  // Brief hop races the first (dogfood fd4e3de double warm + dial timeout).
   // Circuit/punch/OpenChannel keys are Amp PeerIds. Invite/Accept may pass account: — resolve
   // before StartBridge or hop returns "endpoint not registered" (hard-lab / dogfood NAT).
   std::string reach_key = peer_identity;
@@ -641,10 +642,24 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     return dial_ && (dial_->IsDialable(reach_key) ||
                      (reach_key != peer_identity && dial_->IsDialable(peer_identity)));
   };
+  // Dual-NAT: Preferred is often a private punch MA. Park on Brief *before* that dial so hop
+  // warm does not share ADP UDP with a doomed private EnsureAssociation (dogfood fd4e3de).
+  auto dial_public_direct = [this, reach_key, peer_identity]() {
+    if (!dial_) {
+      return false;
+    }
+    auto ma = dial_->PreferredMultiaddr(reach_key);
+    if ((!ma || ma->empty()) && reach_key != peer_identity) {
+      ma = dial_->PreferredMultiaddr(peer_identity);
+    }
+    return ma && !ma->empty() && MultiaddrHasPublicDialHost(*ma);
+  };
   auto dial_has_circuit = [this, reach_key, peer_identity]() {
     return dial_ && (dial_->HasCallMediaCircuitHop(reach_key) ||
                      (reach_key != peer_identity && dial_->HasCallMediaCircuitHop(peer_identity)));
   };
+  auto seed_park_started = std::make_shared<bool>(false);
+  auto seed_parked = std::make_shared<bool>(!seed_park_await_ || !circuit_reach_);
   // Hard deadline independent of the poll tick chain (dogfood af934e: EnsureAssociation
   // never called back and poll ticks never hit "still not connected"). Cover answerer wait for
   // offerer inbound grace + circuit Ensure slack.
@@ -664,7 +679,8 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
   auto tick = std::make_shared<std::function<void()>>();
   *tick = [this, peer_identity, reach_key, connect_gen, finish, settled, deadline, initial_deadline,
            last_error, circuit_started, circuit_inflight, assoc_started, assoc_done, force_circuit,
-           dial_connected, dial_dialable, dial_has_circuit, tick]() mutable {
+           dial_connected, dial_dialable, dial_public_direct, dial_has_circuit, seed_park_started,
+           seed_parked, tick]() mutable {
     if (settled->load(std::memory_order_acquire)) {
       return;
     }
@@ -738,6 +754,26 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
       *assoc_done = true;
       log().info << "CallMedia skip EnsureAssociation after offerer inbound grace peer="
                  << peer_identity << " reach_key=" << reach_key;
+    }
+    // Private Preferred: park Brief seed first so hop warm owns ADP UDP alone; then try LAN
+    // private dial (still useful on same-net). Public Preferred dials immediately.
+    if (!*seed_parked && !*seed_park_started && circuit_reach_ && seed_park_await_ &&
+        !dial_public_direct()) {
+      *seed_park_started = true;
+      log().info << "CallMedia seed park before private Preferred peer=" << peer_identity
+                 << " reach_key=" << reach_key;
+      seed_park_await_(
+          [this, seed_parked, tick](bool parked) mutable {
+            *seed_parked = true;
+            log().info << "CallMedia seed park (pre-assoc) parked=" << (parked ? 1 : 0);
+            AppRuntime::PostCoordinatorNormal([tick]() {
+              if (tick && *tick) {
+                (*tick)();
+              }
+            });
+          },
+          kSeedParkAwaitMs);
+      return;
     }
     if (!*assoc_started && dial_dialable() && !wait_for_circuit) {
       *assoc_started = true;
@@ -905,16 +941,24 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
           };
       // Park on Brief/directory seed before StartBridge / punch-wait so the hop has a live
       // PeerLink for peer-id-only ServeDial (dogfood bridge timeout when answerer never warmed).
-      if (seed_park_await_) {
+      // May already be done before private Preferred EnsureAssociation.
+      if (seed_park_await_ && !*seed_parked) {
+        *seed_park_started = true;
         seed_park_await_(
-            [this, kick_reach = std::move(kick_reach), peer_identity, allow_circuit](bool parked) mutable {
+            [this, kick_reach = std::move(kick_reach), peer_identity, allow_circuit,
+             seed_parked](bool parked) mutable {
+              *seed_parked = true;
               log().info << "CallMedia seed park before circuit/punch peer=" << peer_identity
                          << " parked=" << (parked ? 1 : 0)
                          << " allow_circuit=" << (allow_circuit ? 1 : 0);
               AppRuntime::PostCoordinatorNormal(std::move(kick_reach));
             },
-            4000);
+            kSeedParkAwaitMs);
       } else {
+        if (*seed_park_started) {
+          log().info << "CallMedia seed park reuse before circuit/punch peer=" << peer_identity
+                     << " allow_circuit=" << (allow_circuit ? 1 : 0);
+        }
         kick_reach();
       }
       (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs),
@@ -1297,12 +1341,12 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
 
   // Both roles park on org seed: answerer reverse-dial makes the *offerer* the circuit target
   // (dogfood 997c1c6f). Reserve keeps a Connected PeerLink so peer-id-only StartBridge can
-  // EnsureAssociation without dialing into NAT / requiring a dial-book MA.
-  if (seed_warm_) {
-    seed_warm_();
-  }
+  // EnsureAssociation without dialing into NAT / requiring a dial-book MA. Single entry —
+  // ReserveOnBootstrapSeeds registers + associates (do not also Warm in parallel).
   if (seed_reserve_) {
     seed_reserve_();
+  } else if (seed_warm_) {
+    seed_warm_();
   }
 
   media_.SetOnStateChanged([this](const std::string& state) {

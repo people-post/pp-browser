@@ -123,7 +123,7 @@ public:
    * Kick warm+reserve and invoke on_done(true) once any bootstrap/directory seed is Connected,
    * or on_done(false) at timeout (H010 dogfood: answerer must park before offerer StartBridge).
    */
-  void EnsureBootstrapSeedParkedAsync(std::function<void(bool parked)> on_done, int timeout_ms = 4000);
+  void EnsureBootstrapSeedParkedAsync(std::function<void(bool parked)> on_done, int timeout_ms = 12000);
 
 private:
   using IoPump = std::function<void()>;
