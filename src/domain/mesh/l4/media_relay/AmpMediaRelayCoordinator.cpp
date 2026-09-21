@@ -57,6 +57,23 @@ MediaRelayQuote ParseQuoteResponse(const Object& root) {
   return q;
 }
 
+/** Parent-owned slot teardown ([A027]): close channel, then unbind mux handlers. */
+void CloseQuietSlot(std::shared_ptr<pp::amp::ChannelSession>& slot, pp::amp::PeerLink* link) {
+  auto session = std::move(slot);
+  if (!session) {
+    return;
+  }
+  // Only call into mux when this session is still bound to a live Connected link's mux.
+  // Destroyed ChannelMux (PeerLink drop) has bucket_count==0 → SIGFPE/SIGSEGV on hash%.
+  if (link && link->Mux() && link->Phase() == pp::amp::PeerLinkPhase::Connected &&
+      session->Mux() == link->Mux()) {
+    session->CloseQuiet();
+    session->ReleaseHandlers();
+  } else {
+    session->OrphanFromMux();
+  }
+}
+
 } // namespace
 
 struct AmpMediaRelayCoordinator::Impl {
@@ -152,19 +169,51 @@ struct AmpMediaRelayCoordinator::Impl {
     AmpWhenChannelOpen(runtime->Links(), peer_key, channel_id, deadline, std::move(done));
   }
 
+  pp::amp::PeerLink* ResolveLink(const std::string& peer_key) const {
+    if (!runtime || peer_key.empty()) {
+      return nullptr;
+    }
+    return runtime->Links().FindLink(peer_key);
+  }
+
+  /** PeerLink drop leaves ChannelSession mux_ dangling — tear down before L4 touches it. */
+  bool PeerLinkMissing(const Session& session) const {
+    if (!runtime || session.hop_peer_key.empty() || session.circuit_backed) {
+      return false;
+    }
+    return runtime->Links().FindLink(session.hop_peer_key) == nullptr;
+  }
+
   void TickDeadlines() {
     const auto now = Clock::now();
     std::vector<MediaRelaySessionId> timed_out;
+    std::vector<MediaRelaySessionId> link_lost;
     {
       std::lock_guard lock(mu);
       for (auto& [_, session] : sessions) {
-        if (!session || session->finished || session->deadline.time_since_epoch().count() == 0) {
+        if (!session || session->phase == MediaRelayBundlePhase::Closing) {
+          continue;
+        }
+        if (PeerLinkMissing(*session)) {
+          link_lost.push_back(session->id);
+          continue;
+        }
+        if (session->finished || session->deadline.time_since_epoch().count() == 0) {
           continue;
         }
         if (now >= session->deadline && session->phase != MediaRelayBundlePhase::Attached &&
             session->phase != MediaRelayBundlePhase::HostServe) {
           timed_out.push_back(session->id);
         }
+      }
+    }
+    for (const auto id : link_lost) {
+      std::lock_guard lock(mu);
+      if (auto* session = Find(id)) {
+        if (session->phase == MediaRelayBundlePhase::Closing) {
+          continue;
+        }
+        TearDown(*session, false, false, "media-relay peer link lost");
       }
     }
     for (const auto id : timed_out) {
@@ -203,8 +252,8 @@ struct AmpMediaRelayCoordinator::Impl {
                 const std::string& error) {
     session.local_cancel = local_cancel || session.local_cancel;
     session.phase = MediaRelayBundlePhase::Closing;
-    if (session.channel && !session.channel->IsClosed()) {
-      session.channel->CloseQuiet();
+    if (session.channel) {
+      CloseQuietSlot(session.channel, ResolveLink(session.hop_peer_key));
     }
     if (!session.finished) {
       if (session.role == MediaRelayBundleRole::ClientQuote) {
@@ -225,8 +274,8 @@ struct AmpMediaRelayCoordinator::Impl {
   }
 
   void DetachClientLocked() {
-    if (client_.channel && !client_.channel->IsClosed()) {
-      client_.channel->CloseQuiet();
+    if (client_.channel) {
+      CloseQuietSlot(client_.channel, ResolveLink(client_.hop_peer_key));
     }
     client_ = {};
     if (local_hop_part_) {
@@ -331,7 +380,7 @@ struct AmpMediaRelayCoordinator::Impl {
         ack.set("ok", true);
         ack.set("op", "detach");
         part->channel->EnqueueOutbound(JsonToBody(DumpJson(ack)));
-        part->channel->CloseQuiet();
+        CloseQuietSlot(part->channel, ResolveLink(part->peer_id));
       }
       session->participants.erase(
           std::remove_if(session->participants.begin(), session->participants.end(),
@@ -416,7 +465,7 @@ struct AmpMediaRelayCoordinator::Impl {
       if (!client_.channel) {
         return;
       }
-      client_.channel.reset();
+      CloseQuietSlot(client_.channel, ResolveLink(client_.hop_peer_key));
       client_.subscriptions.clear();
       client_.reader_started = false;
       // Keep the handler armed across reattach cycles (do not move it away).
@@ -436,7 +485,7 @@ struct AmpMediaRelayCoordinator::Impl {
     part->channel->SetFrameHandler([this, session, part](Roe<std::vector<uint8_t>> frame) {
       if (!frame) {
         if (part->channel) {
-          part->channel->CloseQuiet();
+          CloseQuietSlot(part->channel, ResolveLink(part->peer_id));
         }
         std::lock_guard lock(mu);
         session->participants.erase(
@@ -456,8 +505,8 @@ struct AmpMediaRelayCoordinator::Impl {
         continue;
       }
       for (auto& part : host->participants) {
-        if (part && part->channel && !part->channel->IsClosed()) {
-          part->channel->CloseQuiet();
+        if (part && part->channel) {
+          CloseQuietSlot(part->channel, ResolveLink(part->peer_id));
         }
       }
       host->participants.clear();
@@ -520,7 +569,7 @@ struct AmpMediaRelayCoordinator::Impl {
         session->phase = MediaRelayBundlePhase::Closing;
         FinishQuote(*session, std::move(quote));
         if (session->channel && !session->circuit_backed) {
-          session->channel->CloseQuiet();
+          CloseQuietSlot(session->channel, ResolveLink(session->hop_peer_key));
           sessions.erase(id.value);
           return false;
         }
@@ -625,7 +674,7 @@ struct AmpMediaRelayCoordinator::Impl {
             FinishQuote(*session, std::move(quote));
             // Direct quote channels are one-shot; circuit hops must stay open for attach.
             if (session->channel && !session->circuit_backed) {
-              session->channel->CloseQuiet();
+              CloseQuietSlot(session->channel, ResolveLink(session->hop_peer_key));
               sessions.erase(id.value);
               return false;
             }
@@ -1080,8 +1129,8 @@ void AmpMediaRelayCoordinator::AbortInflight() {
       }
       session->local_cancel = true;
       session->phase = MediaRelayBundlePhase::Closing;
-      if (session->channel && !session->channel->IsClosed()) {
-        session->channel->CloseQuiet();
+      if (session->channel) {
+        CloseQuietSlot(session->channel, impl_->ResolveLink(session->hop_peer_key));
       }
       if (!session->finished) {
         session->finished = true;

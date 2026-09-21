@@ -113,12 +113,10 @@ void CallMediaPlane::Wire() {
   IoPost post_io;
   if (auto chat = m ? m->ChatDeps() : std::nullopt) {
     post_io = chat->io.post_io;
-    // Product MeshPump owns Drive. Do not pass MakeL4IoPump into waiters — nested Tick/Drive
-    // from Coordinator-started ensure races PeerLink teardown (dogfood 085210). Harnesses
-    // without MeshPump omit post_io and supply io_pump via test Wire.
-    if (!post_io) {
-      io_pump = chat->io.io_pump;
-    }
+    // Product MeshPump: MakeL4IoPump is empty (prefer_mesh_pump). AttachAmpStack harnesses:
+    // MakeL4IoPump is Tick so sync TryEnsure* AmpParkUntil can drain PostToIo (hard-w5 stack).
+    // Always take io_pump — previously `if (!post_io)` dropped harness Tick and hung 30s.
+    io_pump = chat->io.io_pump;
   }
   const bool use_amp_relay = WireMediaRelayClient(m, io_pump, post_io);
   WireDialRegistry(m, use_amp_relay, post_io);
