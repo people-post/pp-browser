@@ -9,6 +9,7 @@
 #include <sodium.h>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <string>
@@ -390,6 +391,44 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrefersConnectedOverStalePrivat
   auto nested = EstablishNestedCallMediaPath(/*peer_id_only=*/true);
   ASSERT_TRUE(nested) << nested.error().message;
   EXPECT_TRUE(harness_->mgr_a().IsConnected(harness_->peer_id_b));
+}
+
+/**
+ * Peer-id-only with private Preferred and no Connected answerer must fail fast
+ * (not register → WaitAck hang → "circuit-relay bridge timed out"). Dogfood dual-NAT.
+ */
+TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrivatePreferredFastFailsWhenNotConnected) {
+  Wait<void> a_assoc;
+  harness_->mgr_a().EnsureAssociation("relay", a_assoc.LinkFn());
+  a_assoc.PumpUntilDone(*harness_);
+  ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
+
+  // Do not park B. Poison hop book with a private Preferred for B.
+  ASSERT_EQ(harness_->mgr_r().CountConnectedLinksForPeerId(harness_->peer_id_b), 0u);
+  const std::string private_ma =
+      "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_r().RegisterEndpoint(harness_->peer_id_b, private_ma)));
+  ASSERT_EQ(harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b).value_or(""), private_ma);
+
+  CircuitBridgeTarget target;
+  target.target_peer_id = harness_->peer_id_b;
+  target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
+  ASSERT_TRUE(target.target_multiaddr.empty());
+
+  Wait<CircuitTunnelBridgeResult> bridge_wait;
+  const auto t0 = std::chrono::steady_clock::now();
+  auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 4000);
+  ASSERT_TRUE(static_cast<bool>(tunnel_id));
+  bridge_wait.PumpUntilDone(*harness_);
+  const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now() - t0)
+                              .count();
+
+  ASSERT_FALSE(bridge_wait.result);
+  EXPECT_NE(bridge_wait.result.error().message.find("not registered"), std::string::npos)
+      << bridge_wait.result.error().message;
+  EXPECT_LT(elapsed_ms, 1500) << "must not WaitAck-hang dialing private Preferred (elapsed_ms="
+                              << elapsed_ms << ")";
 }
 
 /**

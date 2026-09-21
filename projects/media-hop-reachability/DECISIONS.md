@@ -136,7 +136,7 @@ Answerer remains punch-only + reserve (no reverse StartBridge on first pass). Us
 
 **Seed park gate:** Before private-Preferred `EnsureAssociation` and again before circuit/punch Ensure, await up to **12s** for any bootstrap/directory seed `IsConnected`. A timed-out pre-assoc park must **not** be treated as success (dogfood 88e16f5c: false park-ok → punch-only while offerer saw `endpoint not registered`). After a successful park, **skip** private-Preferred `EnsureAssociation` (dogfood 39412f: that UDP dial dropped the Brief PeerLink → dialer ServeDial `endpoint not registered`). Warm/reserve: connect **one** cold seed at a time, but **reserve all** Connected seeds (and continue serial cold reserve) so dialer StartBridge can land on hop2. Live Brief `op=reserve` is required for durable park; Connected PeerLink alone is enough for peer-id-only ServeDial when park actually succeeds.
 
-**Peer-id-only ServeDial:** Never fall through to dial-book Preferred. Private Preferred hangs hop `EnsureAssociation` until dialer WaitAck `circuit-relay bridge timed out` (dogfood dual-NAT / Windows dialer). Open call-media via `FindAnyConnectedLinkForRemotePeerId` + `OpenChannelOnLink` on the live link. Fast-fail `not registered` when not Connected so H010 sticky retry can advance.
+**Peer-id-only ServeDial:** Never fall through to dial-book Preferred. Private Preferred hangs hop `EnsureAssociation` until dialer WaitAck `circuit-relay bridge timed out` (dogfood dual-NAT / Windows dialer). Open call-media via `FindLinkByPeerId` + `OpenChannelOnLink` on the live link. Fast-fail `not registered` when not Connected so H010 sticky retry can advance.
 
 CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~12s with settle slack), not N×20s.
 
