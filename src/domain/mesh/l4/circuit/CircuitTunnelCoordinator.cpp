@@ -249,8 +249,20 @@ struct CircuitTunnelCoordinator::Impl {
     for (const auto id : timed_out) {
       std::lock_guard lock(mu);
       if (auto* tunnel = Find(id)) {
+        // Peer-id-only ServeDial wait expired via tunnel deadline — same terminal as fail_near.
+        const bool far_wait =
+            tunnel->phase == CircuitTunnelPhase::ServeDial && tunnel->serve_far_wait_deadline_ms != 0;
+        if (far_wait && tunnel->near_session) {
+          Object err;
+          err.set("v", int64_t{1});
+          err.set("ok", false);
+          err.set("error", std::string(kCircuitTargetPeerNotRegistered));
+          tunnel->near_session->EnqueueOutbound(JsonToBody(DumpJson(err)));
+        }
         TearDown(*tunnel, false, false,
-                 tunnel->is_reserve ? "circuit-relay reserve timed out" : "circuit-relay bridge timed out");
+                 far_wait ? std::string(kCircuitTargetPeerNotRegistered)
+                          : (tunnel->is_reserve ? "circuit-relay reserve timed out"
+                                                : "circuit-relay bridge timed out"));
       }
     }
     for (const auto& peer_id : expired_reserves) {

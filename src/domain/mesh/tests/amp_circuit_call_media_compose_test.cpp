@@ -13,6 +13,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace pbr {
@@ -421,7 +422,17 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrivatePreferredFastFailsWhenNo
   // Short bridge budget so ServeDial far-leg wait caps quickly in this test.
   auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 800);
   ASSERT_TRUE(static_cast<bool>(tunnel_id));
-  bridge_wait.PumpUntilDone(*harness_);
+  // Harness PumpAll is a spin — sleep so ServeDial far-leg wait / tunnel deadline can elapse.
+  harness_->PumpUntil(
+      [&] {
+        if (bridge_wait.done.load(std::memory_order_acquire)) {
+          return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return false;
+      },
+      2000);
+  ASSERT_TRUE(bridge_wait.done.load(std::memory_order_acquire));
   const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                               std::chrono::steady_clock::now() - t0)
                               .count();
