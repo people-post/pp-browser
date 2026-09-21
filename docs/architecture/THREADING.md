@@ -156,7 +156,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 
 **Hard rule:** only worker-pool and mesh-control threads may block on network or disk for longer than a few milliseconds. Amp data-plane progress is `MeshRuntime::Drive` on the pump (and nested `Tick` from control waiters).
 
-**Amp PeerLink strand (hard):** `PeerLinkManager` is not internally locked. `MeshRuntime` serializes `Drive` / `PostToIo` under `io_mu_`. Product `AmpChatPeerLinks` takes the **same** lock via `MeshRuntime::WithIoLock` for every façade call so Coordinator/UI `IsConnected` / dial-book reads cannot race `FinishDial` / `ScheduleDropLink` (dogfood 091029 / 091740). Prefer `post_io` for multi-step dial/circuit work; with MeshPump running, pass empty `io_pump` + `post_io` (no nested `Drive`). L4 coordinators that call `runtime.Links()` must already be on the PostToIo/Drive path (lock held).
+**Amp PeerLink strand (hard):** `MeshRuntime` serializes `Drive` / `PostToIo` under `io_mu_`. `PeerLinkManager` constructed via `MeshRuntime` shares that mutex on every public method (raw `Links()` from punch/DHT/reachability no longer races `FinishDial` / `ScheduleDropLink` map mutation — dogfood 093027). Product `AmpChatPeerLinks` still uses `WithIoLock` so `FindLink` pointers stay valid for the whole façade call. Prefer `post_io` for multi-step dial/circuit work; with MeshPump running, pass empty `io_pump` + `post_io` (no nested `Drive`). L4 coordinators that call `runtime.Links()` must already be on the PostToIo/Drive path (lock held).
 
 **Peer honesty (Amp / peer streams):** do not park the **general** `WorkerPool` on peer-facing waits. Prefer async IO + local deadline + hard cancel. Call-media hello/ack is async+deadline; blocking bridge `Connect()` and remaining `IoPumpUntil` facades run on **MeshControlPool** as an interim until async `Connect(cb)` / A022-style callbacks. Details: [SESSION_MACHINES.md — Peer honesty rule](../../projects/p2p-av-calls/SESSION_MACHINES.md#peer-honesty-rule-stream-waits).
 
@@ -278,7 +278,7 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 
 | Date | Change |
 |------|--------|
-| 2026-09-21 | Amp PeerLink strand: `MeshRuntime::WithIoLock` in pp-cpp-amp; AmpChatPeerLinks locks; product Wire empty io_pump; dial-registry PostToIo |
+| 2026-09-21 | Amp PeerLink strand: `MeshRuntime::WithIoLock`; PeerLinkManager shares `io_mu_`; AmpChatPeerLinks locks; product Wire empty io_pump; dial-registry PostToIo |
 | 2026-09-09 | Shutdown latency phases 0–5: BeginShutdown+watchdog; budgeted coordinator/WorkerPool/ringtone/media joins; IsShuttingDown gates; dogfood matrix |
 | 2026-09-09 | Shutdown latency: HideWindow on RequestExit; PrepareForTeardown(0); MeshControlPool join ≤500ms; shutdown timeline marks |
 | 2026-09-09 | CallMediaBridge peer-reach Async; CallSessionManager SoftMigrate nudge uses SoftMigrateAsync (no Worker park) |
