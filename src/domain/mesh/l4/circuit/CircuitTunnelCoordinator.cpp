@@ -148,17 +148,47 @@ struct CircuitTunnelCoordinator::Impl {
     return runtime->Links().FindLink(peer_key);
   }
 
-  /** PeerLink drop leaves ChannelSession mux_ dangling — tear down before CloseQuiet. */
+  /**
+   * PeerLink drop leaves ChannelSession mux_ dangling — tear down before CloseQuiet.
+   * Do not treat FindLink(key)==null alone as lost: ADP links are often under inbound:…
+   * or dial aliases while the tunnel key is PeerId ([A024] / dogfood dual-NAT). Match
+   * CallMediaLeg grace while a dialable endpoint remains during Open/WaitAck/ServeDial.
+   */
   bool PeerLinkMissing(const Tunnel& tunnel) const {
     if (!runtime) {
       return false;
     }
-    if (tunnel.near_session && !tunnel.relay_peer_key.empty() &&
-        runtime->Links().FindLink(tunnel.relay_peer_key) == nullptr) {
-      return true;
+    auto adp_gone = [this](const std::string& peer_id) {
+      if (peer_id.empty()) {
+        return false;
+      }
+      // Prefer PeerId connectivity (inbound alias / dial alias) over exact dial-key FindLink.
+      if (runtime->Links().CountConnectedLinksForPeerId(peer_id) > 0) {
+        return false;
+      }
+      return runtime->Links().FindLink(peer_id) == nullptr;
+    };
+    auto dialing_grace = [this](const CircuitTunnelPhase phase, const std::string& peer_id) {
+      if (peer_id.empty()) {
+        return false;
+      }
+      if (phase != CircuitTunnelPhase::OutboundOpen && phase != CircuitTunnelPhase::WaitAck &&
+          phase != CircuitTunnelPhase::ServeDial) {
+        return false;
+      }
+      return runtime->Links().GetLinkSnapshot(peer_id).has_endpoint;
+    };
+
+    if (tunnel.near_session) {
+      const std::string& near_key =
+          !tunnel.relay_peer_key.empty() ? tunnel.relay_peer_key : tunnel.dialer_peer_id;
+      if (!near_key.empty() && adp_gone(near_key) && !dialing_grace(tunnel.phase, near_key)) {
+        return true;
+      }
     }
     if (tunnel.far_session && !tunnel.target.target_peer_id.empty() &&
-        runtime->Links().FindLink(tunnel.target.target_peer_id) == nullptr) {
+        adp_gone(tunnel.target.target_peer_id) &&
+        !dialing_grace(tunnel.phase, tunnel.target.target_peer_id)) {
       return true;
     }
     return false;
@@ -676,6 +706,8 @@ struct CircuitTunnelCoordinator::Impl {
                      tunnel->id = CircuitTunnelId{next_id.fetch_add(1, std::memory_order_relaxed)};
                      tunnel->role = CircuitTunnelRole::RelayServe;
                      tunnel->dialer_peer_id = remote;
+                     // Near leg is dialer↔relay; key for PeerLinkMissing / CloseQuietSlot ResolveLink.
+                     tunnel->relay_peer_key = remote;
                      tunnel->near_session = near_session;
                      tunnel->target.target_peer_id = root.getString("target_peer_id").value_or("");
                      tunnel->target.target_multiaddr = root.getString("target_multiaddr").value_or("");
