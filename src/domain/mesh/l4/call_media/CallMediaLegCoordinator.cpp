@@ -1,5 +1,6 @@
 #include "domain/mesh/l4/call_media/CallMediaLegCoordinator.h"
 
+#include "domain/mesh/l4/shared/ChannelSessionSlot.h"
 #include "domain/mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/PeerLink.h"
@@ -94,23 +95,6 @@ void RunWorker(const CallMediaLegCoordinator::WorkerPost& post_worker, std::func
     post_worker(std::move(task));
   } else {
     task();
-  }
-}
-
-/** Parent-owned slot teardown ([A027]): close channel, then unbind mux handlers. */
-void CloseQuietSlot(std::shared_ptr<pp::amp::ChannelSession>& slot, pp::amp::PeerLink* link) {
-  auto session = std::move(slot);
-  if (!session) {
-    return;
-  }
-  // Only call into mux when this session is still bound to a live Connected link's mux.
-  // Destroyed ChannelMux (PeerLink drop) has bucket_count==0 → SIGFPE on unordered_map hash%.
-  if (link && link->Mux() && link->Phase() == pp::amp::PeerLinkPhase::Connected &&
-      session->Mux() == link->Mux()) {
-    session->CloseQuiet();
-    session->ReleaseHandlers();
-  } else {
-    session->OrphanFromMux();
   }
 }
 

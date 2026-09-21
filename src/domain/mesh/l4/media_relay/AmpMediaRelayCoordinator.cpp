@@ -1,5 +1,6 @@
 #include "domain/mesh/l4/media_relay/AmpMediaRelayCoordinator.h"
 
+#include "domain/mesh/l4/shared/ChannelSessionSlot.h"
 #include "domain/mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/link/PeerLink.h"
 #include "domain/mesh/l4/media_relay/MediaRelayAttachSm.h"
@@ -55,23 +56,6 @@ MediaRelayQuote ParseQuoteResponse(const Object& root) {
   q.ceiling_bytes = root.getIf<int64_t>("ceiling_bytes").value_or(0);
   q.ceiling_amount = root.getIf<double>("ceiling_amount").value_or(0.0);
   return q;
-}
-
-/** Parent-owned slot teardown ([A027]): close channel, then unbind mux handlers. */
-void CloseQuietSlot(std::shared_ptr<pp::amp::ChannelSession>& slot, pp::amp::PeerLink* link) {
-  auto session = std::move(slot);
-  if (!session) {
-    return;
-  }
-  // Only call into mux when this session is still bound to a live Connected link's mux.
-  // Destroyed ChannelMux (PeerLink drop) has bucket_count==0 → SIGFPE/SIGSEGV on hash%.
-  if (link && link->Mux() && link->Phase() == pp::amp::PeerLinkPhase::Connected &&
-      session->Mux() == link->Mux()) {
-    session->CloseQuiet();
-    session->ReleaseHandlers();
-  } else {
-    session->OrphanFromMux();
-  }
 }
 
 } // namespace

@@ -2,6 +2,7 @@
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 
 #include "amp/L3/ChannelBridge.h"
+#include "domain/mesh/l4/shared/ChannelSessionSlot.h"
 #include "domain/mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/link/AdpMultiaddr.h"
 #include "amp/link/PeerLink.h"
@@ -140,14 +141,42 @@ struct CircuitTunnelCoordinator::Impl {
     AmpWhenChannelOpen(runtime->Links(), peer_key, channel_id, deadline, std::move(done));
   }
 
+  pp::amp::PeerLink* ResolveLink(const std::string& peer_key) const {
+    if (!runtime || peer_key.empty()) {
+      return nullptr;
+    }
+    return runtime->Links().FindLink(peer_key);
+  }
+
+  /** PeerLink drop leaves ChannelSession mux_ dangling — tear down before CloseQuiet. */
+  bool PeerLinkMissing(const Tunnel& tunnel) const {
+    if (!runtime) {
+      return false;
+    }
+    if (tunnel.near_session && !tunnel.relay_peer_key.empty() &&
+        runtime->Links().FindLink(tunnel.relay_peer_key) == nullptr) {
+      return true;
+    }
+    if (tunnel.far_session && !tunnel.target.target_peer_id.empty() &&
+        runtime->Links().FindLink(tunnel.target.target_peer_id) == nullptr) {
+      return true;
+    }
+    return false;
+  }
+
   void TickDeadlines() {
     const auto now = Clock::now();
     std::vector<CircuitTunnelId> timed_out;
+    std::vector<CircuitTunnelId> link_lost;
     std::vector<std::string> expired_reserves;
     {
       std::lock_guard lock(mu);
       for (auto& [_, tunnel] : tunnels) {
-        if (!tunnel || tunnel->finished) {
+        if (!tunnel || tunnel->finished || tunnel->phase == CircuitTunnelPhase::Closing) {
+          continue;
+        }
+        if (PeerLinkMissing(*tunnel)) {
+          link_lost.push_back(tunnel->id);
           continue;
         }
         if (tunnel->deadline.time_since_epoch().count() == 0) {
@@ -165,6 +194,15 @@ struct CircuitTunnelCoordinator::Impl {
         }
       }
     }
+    for (const auto id : link_lost) {
+      std::lock_guard lock(mu);
+      if (auto* tunnel = Find(id)) {
+        if (tunnel->phase == CircuitTunnelPhase::Closing) {
+          continue;
+        }
+        TearDown(*tunnel, false, false, "circuit-relay peer link lost");
+      }
+    }
     for (const auto id : timed_out) {
       std::lock_guard lock(mu);
       if (auto* tunnel = Find(id)) {
@@ -178,9 +216,7 @@ struct CircuitTunnelCoordinator::Impl {
       if (it == reservations.end()) {
         continue;
       }
-      if (it->second.session && !it->second.session->IsClosed()) {
-        it->second.session->CloseQuiet();
-      }
+      CloseQuietSlot(it->second.session, ResolveLink(peer_id));
       reservations.erase(it);
     }
   }
@@ -211,11 +247,11 @@ struct CircuitTunnelCoordinator::Impl {
       auto bridge = std::move(tunnel.bridge);
       bridge->Stop();
     }
-    if (tunnel.near_session && !tunnel.near_session->IsClosed()) {
-      tunnel.near_session->CloseQuiet();
+    if (tunnel.near_session) {
+      CloseQuietSlot(tunnel.near_session, ResolveLink(tunnel.relay_peer_key));
     }
-    if (tunnel.far_session && !tunnel.far_session->IsClosed()) {
-      tunnel.far_session->CloseQuiet();
+    if (tunnel.far_session) {
+      CloseQuietSlot(tunnel.far_session, ResolveLink(tunnel.target.target_peer_id));
     }
     if (!tunnel.finished) {
       if (suppress_notify || local_cancel) {
@@ -731,10 +767,8 @@ void CircuitTunnelCoordinator::AbortInflight() {
         impl->TearDown(*tunnel, true, true, "circuit-relay aborted");
       }
     }
-    for (auto& [_, res] : impl->reservations) {
-      if (res.session && !res.session->IsClosed()) {
-        res.session->CloseQuiet();
-      }
+    for (auto& [peer_id, res] : impl->reservations) {
+      CloseQuietSlot(res.session, impl->ResolveLink(peer_id));
     }
     impl->reservations.clear();
   });
