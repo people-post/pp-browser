@@ -20,10 +20,12 @@ namespace {
 
 /**
  * hard-w5 Phase-2 policy locks for AmpCircuitHopReach:
- * - nested call-media must not call PreferredMultiaddr (private punch MA poison)
+ * - nested call-media must not PreferredMultiaddr the *target* (private punch MA poison);
+ *   relay Preferred may be read to skip undialable wildcard bind (dogfood 084055)
  * - must not EnsureAssociation on a known-but-undialable endpoint before circuit
  * - relay lookup by PeerId (not only alias "hop"/"relay") must work when that key has an endpoint
  * - CollectDialableCircuitRelayIds must not RegisterEndpoint private hop MAs over public Preferred
+ * - StartBridge must skip relays whose Preferred is /ip4/0.0.0.0 (capability ingest poison)
  */
 class RecordingChatPeerLinks final : public IChatPeerLinks {
 public:
@@ -210,8 +212,8 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSkipsEnsureAssociationAndPreferred
 
   EXPECT_EQ(recording_->ensure_association_calls, 0)
       << "must not dial private punch MA before circuit (hard-w5 Phase-2)";
-  EXPECT_EQ(recording_->preferred_multiaddr_calls, 0)
-      << "nested call-media must be peer-id-only (no PreferredMultiaddr poison)";
+  EXPECT_NE(recording_->last_preferred_peer, harness_->peer_id_b)
+      << "nested call-media must not PreferredMultiaddr the target (private punch MA poison)";
   EXPECT_GE(recording_->nested_over_carrier_calls, 1);
 }
 
@@ -312,7 +314,7 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureAcceptsHopPeerIdRelayKey) {
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
-  EXPECT_EQ(recording_->preferred_multiaddr_calls, 0);
+  EXPECT_NE(recording_->last_preferred_peer, harness_->peer_id_b);
 }
 
 TEST_F(AmpCircuitHopReachTest, PrivateHopMaDoesNotPoisonPublicPreferred) {
@@ -347,6 +349,44 @@ TEST_F(AmpCircuitHopReachTest, PrivateHopMaDoesNotPoisonPublicPreferred) {
         std::vector<std::string> out;
         if (harness_->peer_id_r != exclude) {
           out.push_back(harness_->peer_id_r);
+        }
+        return out;
+      },
+      [](const std::string&, std::function<void(Roe<void>)> on_done) {
+        on_done(Error("punch burst dial timed out"));
+      });
+
+  Wait<void> ensure_wait;
+  reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  ensure_wait.PumpUntilDone(*harness_);
+  ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
+  EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
+}
+
+TEST_F(AmpCircuitHopReachTest, SkipsWildcardPreferredRelayThenUsesDialable) {
+  // Dogfood 084055: capability ingest left Preferred=/ip4/0.0.0.0 on seed; StartBridge sendto
+  // then AV on next relay. Skip undialable Preferred and advance to a dialable hop.
+  WarmAnswererAndOfferer(harness_->peer_id_r);
+  const std::string wildcard_ma =
+      "/ip4/0.0.0.0/udp/53523/adp/1.0.0/p2p/" + harness_->peer_id_r;
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint(harness_->peer_id_r, wildcard_ma)));
+  ASSERT_EQ(recording_->PreferredMultiaddr(harness_->peer_id_r).value_or(""), wildcard_ma);
+  EXPECT_FALSE(CircuitHopMultiaddrIsUdpDialable(wildcard_ma));
+
+  // Alias "relay" keeps MemoryIo-dialable MA so StartBridge can succeed after skip.
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint("relay", harness_->ma_r)));
+  ASSERT_TRUE(CircuitHopMultiaddrIsUdpDialable(
+      recording_->PreferredMultiaddr("relay").value_or("")));
+
+  AmpCircuitHopReach reach(
+      *circuit_a_, *hops_, *recording_, [this] { harness_->PumpAll(); },
+      [this](const std::string& exclude) {
+        std::vector<std::string> out;
+        if (harness_->peer_id_r != exclude) {
+          out.push_back(harness_->peer_id_r);
+        }
+        if ("relay" != exclude) {
+          out.push_back("relay");
         }
         return out;
       },

@@ -521,8 +521,17 @@ std::vector<std::string> CallMediaPlane::CollectDialableCircuitRelayIds(
         }
       }
     }
-    const bool amp_ok = amp_links && amp_links->GetLinkSnapshot(hop.peer_id).has_endpoint;
     const bool hop_ok = amp_hops && amp_hops->HasAny(hop.peer_id);
+    bool amp_ok = false;
+    if (amp_links && amp_links->GetLinkSnapshot(hop.peer_id).has_endpoint) {
+      // Capability ingest can replace a public seed Preferred with /ip4/0.0.0.0 listen
+      // (dogfood 084055). Skip undialable Preferred unless already Connected (peer-id-only).
+      if (amp_links->IsConnected(hop.peer_id)) {
+        amp_ok = true;
+      } else if (auto ma = amp_links->PreferredMultiaddr(hop.peer_id)) {
+        amp_ok = CircuitHopMultiaddrIsUdpDialable(*ma);
+      }
+    }
     if (amp_ok || hop_ok) {
       relay_ids.push_back(hop.peer_id);
     }
@@ -555,7 +564,17 @@ void CallMediaPlane::WarmBootstrapSeedSessions() {
     if (chat->links.IsConnected(hop.peer_id)) {
       continue;
     }
-    chat->links.EnsureAssociation(hop.peer_id, [](IChatPeerLinks::LinkRoe) {});
+    // After assoc, peer-capability listen often injects /ip4/0.0.0.0 and overwrites Preferred.
+    // Re-apply the public bootstrap MA so StartBridge does not dial the wildcard bind.
+    const std::string restore_ma = hop.multiaddr;
+    const std::string peer_id = hop.peer_id;
+    IChatPeerLinks* links = &chat->links;
+    chat->links.EnsureAssociation(
+        hop.peer_id, [links, peer_id, restore_ma](IChatPeerLinks::LinkRoe) {
+          if (!restore_ma.empty() && CircuitHopDialBookAllowsRegister(restore_ma)) {
+            (void)links->RegisterEndpoint(peer_id, restore_ma);
+          }
+        });
   }
 }
 

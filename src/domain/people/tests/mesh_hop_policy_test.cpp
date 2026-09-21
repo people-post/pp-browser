@@ -239,6 +239,20 @@ TEST(MeshHopPolicyTest, CircuitHopDialBookAllowsRegister) {
   EXPECT_FALSE(CircuitHopDialBookAllowsRegister(""));
 }
 
+TEST(MeshHopPolicyTest, CircuitHopMultiaddrIsUdpDialable) {
+  // Dogfood 084055: capability ingest Preferred=/ip4/0.0.0.0 → sendto. Skip only wildcard bind.
+  EXPECT_FALSE(CircuitHopMultiaddrIsUdpDialable(""));
+  EXPECT_FALSE(CircuitHopMultiaddrIsUdpDialable("/ip4/0.0.0.0/udp/53523/adp/1.0.0/p2p/hop"));
+  EXPECT_FALSE(CircuitHopMultiaddrIsUdpDialable("/ip6/::/udp/4001/adp/1.0.0/p2p/hop"));
+  EXPECT_TRUE(CircuitHopMultiaddrIsUdpDialable("/ip4/203.0.113.10/udp/4001/adp/1.0.0/p2p/hop"));
+  EXPECT_TRUE(CircuitHopMultiaddrIsUdpDialable("/ip4/10.0.0.1/udp/4001/adp/1.0.0/p2p/hop"));
+  EXPECT_TRUE(CircuitHopMultiaddrIsUdpDialable("/ip4/192.168.1.5/udp/4001/adp/1.0.0/p2p/hop"));
+  EXPECT_TRUE(CircuitHopMultiaddrIsUdpDialable("/ip4/127.0.0.1/udp/4001/adp/1.0.0/p2p/hop"));
+  EXPECT_TRUE(CircuitHopMultiaddrIsUdpDialable("/ip6/2001:db8::1/udp/4001/adp/1.0.0/p2p/hop"));
+  EXPECT_TRUE(CircuitHopMultiaddrIsUdpDialable("/ip6/::1/udp/4001/adp/1.0.0/p2p/hop"));
+  EXPECT_TRUE(CircuitHopMultiaddrIsUdpDialable("/memory/1/p2p/hop"));
+}
+
 TEST(MeshHopPolicyTest, PreferredDialMultiaddrPrefersGlobalIpv6) {
   const std::string lan = "/ip4/192.168.1.10/udp/4001/adp/1.0.0/p2p/12D3KooWLan";
   const std::string pub4 = "/ip4/203.0.113.10/udp/4001/adp/1.0.0/p2p/12D3KooWPub";
