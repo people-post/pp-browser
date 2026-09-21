@@ -55,6 +55,7 @@ Roe<sqlite3*> CallMediaKeyStore::OpenDb() const {
   if (sqlite3_open(profile_db_path_.c_str(), &db) != SQLITE_OK) {
     return Error("Failed to open profile.db for call media keys");
   }
+  sqlite3_busy_timeout(db, 5000);
   CallSessionStore schema(profile_db_path_);
   if (auto ensured = schema.EnsureSchema(db); !ensured) {
     sqlite3_close(db);

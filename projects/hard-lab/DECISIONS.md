@@ -18,3 +18,10 @@
 **Status:** Accepted (2026-09-03)  
 **Decision:** Implement **forced hop on clean links** before netem, DHT, multi-hop, or CGNAT-ish profiles. Multi-hop hard-lab scenarios are blocked on media-hop **L3.5**.  
 **Rationale:** Biggest deployment gap vs relay-smoke is “A cannot reach B except via hop.” Impairments on a broken topology are noise.
+
+## HL004 — E2E closeness = CallStack + Amp on netns (not GUI)
+
+**Status:** Accepted (2026-09-20)  
+**Decision:** Hard-lab “close to dogfood” means **CallStack Invite→Accept→Bridge StartSfu→Leave** over real Amp on forced/CGNAT topo, with a first-class **dirty-book** profile (register peer private advertise MA / optional dial-fail→backoff before circuit). Full GUI stays out of the lab (HL001). Wave 6 product gate: **B-HARD-CALL-NAT-DIRTY** (reach under poisoned dial book) then **B-HARD-CALL-NAT-STACK** (`CallUiBackend` StartCall/Accept/Leave + real `OnMeshServicesStarted` Wire; `BindTestMediaPath` is gtest-only).
+**Rationale:** Two-network dogfood fails on GUI dial-book + Bridge Ensure, not on “can Amp carry one frame via hop.” Dirty-book + CallStack cover that without Rml/SDL flake. Promote policy misses to gtest ([TESTING.md](../../docs/architecture/TESTING.md)).
+**Alternatives:** Full `pp-browser` in Docker (rejected — cost/flake); only thin Amp duplex forever (rejected — misses product glue).

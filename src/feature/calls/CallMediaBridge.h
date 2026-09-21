@@ -3,23 +3,59 @@
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
-#include "feature/calls/CallLifecycle.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallMediaSeat.h"
-#include "feature/calls/CallDirectPlannerLogic.h"
+#include "domain/messaging/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 
 #include "common/Module.h"
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <unordered_set>
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+/**
+ * Direct arming / outcomes — CallMediaBridge consumer contract (V048).
+ * Empty ports = permissive (unit tests).
+ */
+struct CallDirectArmingPorts {
+  std::function<bool()> direct_ops_allowed;
+  std::function<void(const std::string& call_id)> request_direct_arming;
+  std::function<void(CallDirectPlannerPhase phase, const std::string& call_id)> report_progress;
+  std::function<void(const std::string& call_id)> on_connected;
+  std::function<void(const std::string& call_id)> on_connect_failed;
+  std::function<void(const std::string& call_id)> on_media_deferred;
+  std::function<void(const std::string& call_id)> on_media_key_ready;
+  std::function<const char*()> arming_debug_name;
+
+  bool IsBound() const { return static_cast<bool>(direct_ops_allowed); }
+};
+
+/**
+ * MediaSeat façade for Direct path (V048 Bridge facet).
+ * Bridge must not hold CallMediaSeat* — Stack projects.
+ */
+struct CallDirectSeatPorts {
+  std::function<CallMediaSeat::Token(const std::string& call_id)> acquire;
+  std::function<bool(const CallMediaSeat::Token& token)> allows_path_op;
+  std::function<CallMediaSeat::Token()> current_token;
+  std::function<std::string()> bound_call_id;
+  std::function<void(const std::string& call_id)> note_connecting;
+  std::function<void(const std::string& call_id)> note_start;
+  std::function<void(CallMediaSeat::PathKind kind)> note_path;
+  std::function<void(const std::string& call_id)> note_live;
+  std::function<void(const std::string& call_id)> note_failed;
+
+  bool IsBound() const { return static_cast<bool>(acquire); }
+};
 
 /**
  * 1:1 call media (m1 / V026) — V036 Phase 3 **Direct path** plugin under CallMediaSeat.
@@ -49,6 +85,14 @@ public:
 
   /** Answerer media waits for CallMediaKey (V015 epoch-1-on-accept); kick Start when key lands. */
   void OnMediaKeyReady(const std::string& call_id);
+
+  /**
+   * Test seam: answerer deferred-key inbox poll rounds (production default 90 ≈ 90s).
+   * Set 0 so KeyTimeout → ConnectFailed is reachable without a long sleep.
+   */
+  void SetMediaKeyInboxPollRoundsForTest(int rounds);
+  /** Shrink EnsurePeerReachable deadline for gtests (0 = production default). */
+  void SetDialWaitBudgetMsForTest(int budget_ms);
 
   /**
    * SoftMigrate: close 1:1 call-media stream without CallMediaEngine::Stop so SFU capture continues.
@@ -91,12 +135,17 @@ public:
   void SetReachDeps(IDialRegistry* dial, ICircuitHopReach* circuit_reach);
   /** Fire-and-forget bootstrap seed warm (CallStack::WarmBootstrapSeedSessions). */
   void SetSeedWarm(std::function<void()> warm);
-  /** Answerer: park circuit reserve on org seed (CallStack::ReserveOnBootstrapSeeds). */
+  /** Both roles: park circuit reserve on org seed (CallStack::ReserveOnBootstrapSeeds). */
   void SetSeedReserve(std::function<void()> reserve);
+  /**
+   * Await at least one bootstrap/directory seed Connected before circuit/punch
+   * (CallMediaPlane::EnsureBootstrapSeedParkedAsync).
+   */
+  void SetSeedParkAwait(std::function<void(std::function<void(bool parked)>, int timeout_ms)> park);
 
-  void SetLifecycle(CallLifecycle* lifecycle);
-  /** V036 exclusive media epoch. */
-  void SetMediaSeat(CallMediaSeat* seat);
+  void SetDirectArmingPorts(CallDirectArmingPorts ports);
+  /** V036 exclusive media epoch — Stack installs; Bridge must not hold CallMediaSeat*. */
+  void SetSeatPorts(CallDirectSeatPorts ports);
 
   /** Last successful 1:1 reach mode: direct | punched | circuit (empty before connect). */
   std::string MediaPathKind() const;
@@ -124,6 +173,8 @@ private:
   void OnConnectAttemptFinished(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
                                 int attempt, Roe<void> connected);
   void FinishConnectSequence(uint64_t gen, const std::string& call_id, Roe<void> connected, const char* role);
+  /** Chrome ConnectFailed + Direct Idle; optionally StopMeshMedia (zombie TX / teardown). */
+  void SurfaceConnectFailed(const std::string& call_id, const std::string& err, bool stop_media);
   void CancelConnectTimers();
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
   /** Direct stream up: mark media connected when capture is live, always advance lifecycle/chrome. */
@@ -150,10 +201,11 @@ private:
   ICallMediaTransport& direct_;
   IDialRegistry* dial_ = nullptr;
   ICircuitHopReach* circuit_reach_ = nullptr;
-  CallLifecycle* lifecycle_ = nullptr;
-  CallMediaSeat* media_seat_ = nullptr;
+  CallDirectArmingPorts arming_;
+  CallDirectSeatPorts seat_;
   std::function<void()> seed_warm_;
   std::function<void()> seed_reserve_;
+  std::function<void(std::function<void(bool parked)>, int timeout_ms)> seed_park_await_;
   /** direct | punched | circuit — set by EnsurePeerReachableAsync. */
   std::string media_path_kind_;
   /** When true, EnsurePeerReachableAsync must try circuit even if already dialable. */
@@ -175,11 +227,16 @@ private:
   /** Bumped in StopMeshMedia so in-flight Connect workers abort instead of racing Detach/Stop. */
   std::atomic<uint64_t> connect_generation_{0};
   std::atomic<bool> stopping_{false};
+  /** Cancelable inbound hello MediaKey wait (notify from OnMediaKeyReady / PrepareForTeardown). */
+  std::mutex inbound_key_mu_;
+  std::condition_variable inbound_key_cv_;
   uint64_t offerer_grace_timer_id_ = 0;
   uint64_t connect_retry_timer_id_ = 0;
   uint64_t direct_health_timer_id_ = 0;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;
   std::unordered_set<std::string> media_attempted_calls_;
+  int media_key_inbox_poll_rounds_ = 90;
+  int64_t dial_wait_budget_ms_ = 12000;
   std::atomic<uint32_t> audio_seq_{0};
   /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */
   std::atomic<uint32_t> inbound_remote_stream_{0};

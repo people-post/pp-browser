@@ -431,7 +431,7 @@ run_hard_w5() {
   export PP_HARD_PROBE_DIR="${BUILD_DIR}/src/app/node"
   export PP_HARD_CGNAT_SHARE_DIR="${PP_HARD_CGNAT_SHARE_DIR:-/tmp/pp-hard-lab-cgnat-share}"
   export PP_HARD_NAT_CALL_EXPECT="${PP_HARD_NAT_CALL_EXPECT:-success}"
-  export PP_HARD_NAT_PHASE="${PP_HARD_NAT_PHASE:-both}"
+  export PP_HARD_NAT_PHASE="${PP_HARD_NAT_PHASE:-all}"
   # Smoke owns CGNAT compose up/build (separate project from Wave 1 hard-lab).
   bash "${ROOT}/scripts/test/pp_hard_nat_smoke.sh" --status-url "${PP_HARD_CGNAT_STATUS_URL}"
 }

@@ -425,10 +425,12 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
   menu_context_ = request.context ? request.context : context_;
   menu_target_ = request.target;
   menu_editor_ = nullptr;
+  focus_restore_ = nullptr;
   copy_snapshot_.clear();
   if (menu_context_) {
     ui::Element* focus = menu_context_->GetFocusElement();
     menu_editor_ = FindTextEditor(focus ? focus : menu_target_);
+    focus_restore_ = focus ? focus : menu_editor_;
     if (menu_editor_) {
       copy_snapshot_ = GetEditorSelectedText(menu_editor_);
     } else if (ui::SelectionController* selection = menu_context_->GetSelectionController()) {
@@ -449,6 +451,7 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
     menu_context_ = nullptr;
     menu_target_ = nullptr;
     menu_editor_ = nullptr;
+    focus_restore_ = nullptr;
     return;
   }
   // Contextual menus stay anchored near the pointer/selection even on compact layout.
@@ -464,6 +467,7 @@ void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenu
   menu_context_ = context_;
   menu_target_ = nullptr;
   menu_editor_ = nullptr;
+  focus_restore_ = menu_context_ ? menu_context_->GetFocusElement() : nullptr;
   copy_snapshot_.clear();
   active_actions_ = std::move(actions);
 
@@ -477,6 +481,7 @@ void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenu
   if (!any_enabled) {
     active_actions_.clear();
     menu_context_ = nullptr;
+    focus_restore_ = nullptr;
     return;
   }
 
@@ -490,6 +495,10 @@ void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenu
 
 void ContextMenuHost::Dismiss() {
   dismiss_pending_ = false;
+  const bool restore_focus = restore_focus_on_dismiss_;
+  restore_focus_on_dismiss_ = false;
+  ui::Element* restore = restore_focus ? focus_restore_ : nullptr;
+  focus_restore_ = nullptr;
   // Capture and clear before RemoveEventListener: DetachEvent invokes OnDetach, which
   // would otherwise null layer_ mid-function and crash the second RemoveEventListener.
   ui::Element* layer = layer_;
@@ -508,11 +517,17 @@ void ContextMenuHost::Dismiss() {
   menu_target_ = nullptr;
   menu_editor_ = nullptr;
   copy_snapshot_.clear();
+  if (restore) {
+    restore->Focus();
+  }
 }
 
-void ContextMenuHost::RequestDismiss() {
+void ContextMenuHost::RequestDismiss(bool restore_focus) {
   // Defer DOM removal until after the current pointer event finishes. Removing the
   // hover/active target mid-mousedown leaves dangling Context::active pointers.
+  if (restore_focus) {
+    restore_focus_on_dismiss_ = true;
+  }
   dismiss_pending_ = true;
 }
 
@@ -527,6 +542,7 @@ bool ContextMenuHost::HandleDismiss() {
   if (!IsOpen() && !dismiss_pending_) {
     return false;
   }
+  restore_focus_on_dismiss_ = true;
   Dismiss();
   return true;
 }
@@ -592,7 +608,7 @@ void ContextMenuHost::ProcessEvent(ui::Event& event) {
   }
 
   if (target->GetId() == "context-menu-scrim" || target->GetId() == "context-menu-cancel") {
-    RequestDismiss();
+    RequestDismiss(/*restore_focus=*/true);
     event.StopPropagation();
     return;
   }
@@ -600,7 +616,7 @@ void ContextMenuHost::ProcessEvent(ui::Event& event) {
   // Cancel may be hit via a child text node path; walk up for the cancel id.
   for (ui::Element* node = target; node && node != layer_; node = node->GetParentNode()) {
     if (node->GetId() == "context-menu-cancel") {
-      RequestDismiss();
+      RequestDismiss(/*restore_focus=*/true);
       event.StopPropagation();
       return;
     }

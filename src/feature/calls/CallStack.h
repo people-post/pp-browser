@@ -3,44 +3,38 @@
 #include "foundation/data/Config.h"
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallSessionStore.h"
+#include "domain/messaging/SqlitePskSessionStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
-#include "feature/calls/AmpCircuitHopReach.h"
-#include "feature/calls/AmpMediaRelayClient.h"
+#include "common/thread/IThreadStore.h"
+#include "domain/people/ContactsStore.h"
+#include "domain/people/IdentityStore.h"
 #include "feature/calls/CallDeliveryPorts.h"
 #include "feature/calls/CallMediaBridge.h"
+#include "feature/calls/CallMediaPlane.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallLifecycle.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallControlInboundPorts.h"
-#include "domain/mesh/l4/call_media/CallMediaAmpTransport.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/host/MeshHost.h"
 
 #include <functional>
 #include <memory>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-class ContactsStore;
-class IdentityStore;
-class IThreadStore;
-class SqlitePskSessionStore;
-
 /**
- * Wave 3: call media / session / lifecycle stack extracted from ConversationsHub.
+ * Call media / session / lifecycle stack (Wave 3 / V040).
  *
- * Owns the call-media unique_ptrs (CSM + media engine/keys/store + mesh media bridge +
- * Amp call-media transport + media_relay client + dial registry + circuit hop reach + lifecycle)
- * and the call-scoped reachability helpers. The Hub owns `unique_ptr<CallStack>`, forwards
- * `Calls()`/`Lifecycle()`, and injects mesh/config/mDNS glue through CallStackDeps.
+ * Phase assembler: profile stores, CSM, Lifecycle, MediaSeat, and `CallMediaPlane`
+ * (Amp transport + dial/relay/hop + bridge). Hub owns `unique_ptr<CallStack>`, forwards
+ * `Calls()`/`Lifecycle()`, injects mesh/config/mDNS glue through CallStackDeps.
  *
  * CallUiBackend binds a CallStack& directly (not the Hub) for call APIs.
  */
@@ -79,13 +73,20 @@ public:
 
   /** Phase A (profile init, no mesh): create call session store, media key store, media engine. */
   Roe<void> InitializeStores(const std::string& profile_db_path, const std::string& profile_id);
-  /** Phase A: build CSM against current p2p, wire providers, bind lifecycle + relay deps. */
+  /** Phase A: build CSM against current p2p, wire providers, bind lifecycle + media plane. */
   void BuildSessions(const CallStackDeps& deps);
-  /** Phase B (mesh up): create/start Amp call-media transport + WireMediaRelayDeps. */
+  /** Phase B (mesh up): start Amp call-media transport + Wire media plane. */
   void OnMeshServicesStarted();
+  /**
+   * Test-only: bind CallMediaBridge without Amp mesh.
+   * `transport` / `dial` are non-owning; call after BuildSessions. Re-runs Wire.
+   */
+  void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial);
+  void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
+                         ICircuitHopReach* circuit_reach);
   /** Teardown before mesh Stop: clear bindings, PrepareForTeardown; abort circuit via callback. */
   void PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit);
-  /** Teardown after mesh Stop: reset media bridge / call-media transport / dial registry. */
+  /** Teardown after mesh Stop: reset media plane mesh objects. */
   void FinishMeshStop();
   /** Reset call session manager + lifecycle (Hub teardown ordering before p2p reset). */
   void ResetSessions();
@@ -105,7 +106,7 @@ public:
   void WireMediaRelayDeps();
   void EnsureCallLifecycleBound();
   void SetEphemeralListenDesire(bool want);
-  /** N025 desire: lifecycle wants listen OR an explicit desire is set. */
+  /** N025 desire: CallLifecycle::WantEphemeralListen only. */
   bool WantEphemeralListen() const;
   bool HasActiveLocalCall();
   /** Force relay client + dial registry rebuild on capability change (RefreshMeshCapabilities). */
@@ -123,14 +124,23 @@ public:
    * Call before punch/circuit so org seed holds Sessions for double-NAT splice.
    */
   void WarmBootstrapSeedSessions();
-  /** Answerer: StartReserve on dialable bootstrap seeds after warm. */
+  /** Answerer/offerer: StartReserve on dialable bootstrap seeds after warm. */
   void ReserveOnBootstrapSeeds();
 
 private:
-  std::vector<std::string> CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const;
-
   MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
   const AppConfig& config() const;
+  void SyncMediaPlaneDeps();
+  /** After plane Wire: BindBridge + CSM SetMediaRelayDeps / SetDirectMediaPorts. */
+  void BindMediaProducts();
+  void BindSeatTeardown();
+  CallLifecycleSignalingPorts MakeLifecycleSignalingPorts();
+  CallHopArmingPorts MakeHopArmingPorts() const;
+  CallDirectArmingPorts MakeDirectArmingPorts() const;
+  CallSessionLifecyclePorts MakeSessionLifecyclePorts() const;
+  CallDirectMediaPorts MakeDirectMediaPorts() const;
+  CallDirectSeatPorts MakeDirectSeatPorts() const;
+  CallTopologySeatPorts MakeTopologySeatPorts() const;
 
   CallStackDeps deps_;
   std::unique_ptr<CallSessionStore> call_session_store_;
@@ -138,22 +148,8 @@ private:
   std::unique_ptr<CallMediaEngine> call_media_engine_;
   std::unique_ptr<CallMediaSeat> call_media_seat_;
   std::unique_ptr<CallSessionManager> call_sessions_;
-  std::unique_ptr<CallMediaBridge> call_media_bridge_;
   std::unique_ptr<CallLifecycle> call_lifecycle_;
-  /** CallSessionManager the bridge was last built against (detect stack rebuild). */
-  CallSessionManager* media_bridge_bound_sessions_ = nullptr;
-  std::unique_ptr<IMediaRelayClient> media_relay_client_;
-  std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
-  std::unique_ptr<ICircuitHopReach> circuit_hop_reach_;
-  std::unique_ptr<CallMediaAmpTransport> call_media_amp_;
-  /** Lifecycle-driven N025 desire (mirrors old ConversationsHub::ephemeral_listen_desired_). */
-  bool ephemeral_listen_desired_ = false;
-  /** Invite/accept listen multiaddrs by peer identity (V035 SoftMigrate scope). */
-  std::unordered_map<std::string, std::vector<std::string>> call_peer_listen_mas_;
-  /** PeerIds confirmed on LAN (mDNS / note_lan) for PreferLocal gating (V035). */
-  std::unordered_set<std::string> call_lan_confirmed_peers_;
-
-  ICallMediaTransport* CallMediaTransport();
+  std::unique_ptr<CallMediaPlane> media_plane_;
 };
 
 } // namespace pbr

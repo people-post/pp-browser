@@ -80,7 +80,7 @@ Each agent turn produces a [`TurnPlan`](../../src/base/ai/TurnPlan.h):
 | `render_mode` | `blocks` (default) or `people_list` (deterministic long_list, skips synthesis) |
 | `synthesis_hints` | Per-turn guidance for the synthesizer |
 
-**Payload fast path** — [`PayloadTurnPlanBuilder`](../../src/feature/ai/PayloadTurnPlanBuilder.cpp) maps known `user_payload` shapes (article actions, `blog_articles` pagination, form submissions, chip tool payloads) without an LLM call.
+**Payload fast path** — [`PayloadTurnPlanBuilder`](../../src/domain/ai/PayloadTurnPlanBuilder.cpp) maps known `user_payload` shapes (article actions, `blog_articles` pagination, form submissions, chip tool payloads) without an LLM call.
 
 **NL path** — [`TurnPlanner`](../../src/base/ai/TurnPlanner.cpp) emits a JSON plan; one repair retry on invalid output.
 
@@ -92,7 +92,7 @@ Each agent turn produces a [`TurnPlan`](../../src/base/ai/TurnPlan.h):
 | `summarize` | Article action payloads | Heading + concise paragraph/card |
 | `answer_question` | Planner (NL) | Answer paragraph first; sources as support |
 | `headlines` | Planner (NL) | `list` of real headlines |
-| `people_discovery` | Planner or people chip payloads | `long_list` with Message/Add chips |
+| `people_discovery` | Planner or people chip payloads | `long_list` in working set (identity-first rows; Add/Message by contact state) |
 | `general` | Fallback | Blocks that best serve the ask |
 
 ## Dual-channel user messages (`user_payload`)

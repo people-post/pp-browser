@@ -8,7 +8,7 @@ The Window Shell replaces the old split-panel layout with a role-based, responsi
 
 | Subsystem | Module | Role |
 |-----------|--------|------|
-| Layout | `ShellLayout` | Pure width/mode/visibility math |
+| Layout | [`ShellLayout`](../../src/domain/ui/ShellLayout.h) | Pure width/mode/visibility math |
 | Navigation | `ShellHost`, `ViewCatalog`, `FlowCoordinator` | Pane registry, overlays, multi-step flows, DOM sync |
 | Interruption | `ShellInterruption` | Escape/back/scrim dismiss ordering |
 | Feedback | `ShellFeedback` | Toast, banner, alert/confirm dialog |
@@ -153,7 +153,7 @@ Escape, chrome back buttons, and swipe gestures share `ShellHost::RequestDismiss
 | Vertical sheet swipe | Forced `AccountSheet` (still works over settings detail) |
 | Account sheet × | `CloseAccountSheet()` (clears nested local back) |
 
-Nested list→detail inside a sheet (Me settings) uses `PushLocalBack("settings_detail", commit)` so Escape/swipe-back pop detail before dismissing the sheet. Swipe-back and sheet dismiss may both arm; `ShellGestureAxisLock` commits the dominant axis after the deadzone (edge horizontal → back; vertical from anywhere at scroll top → dismiss sheet).
+Nested list→detail inside a sheet (Me settings) uses `PushLocalBack("settings_detail", commit)` so Escape/swipe-back pop detail before dismissing the sheet. Swipe-back and sheet dismiss may both arm; [`ShellGestureAxisLock`](../../src/domain/ui/ShellGestureAxis.h) commits the dominant axis after the deadzone (edge horizontal → back; vertical from anywhere at scroll top → dismiss sheet).
 
 ## RML / data model
 

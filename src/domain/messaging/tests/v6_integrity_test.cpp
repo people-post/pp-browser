@@ -1,5 +1,5 @@
 #include "foundation/crypto/CryptoConstants.h"
-#include "domain/messaging/E2eIntegrityUtil.h"
+#include "common/thread/E2eIntegrityUtil.h"
 #include "domain/messaging/E2eIngestClassifier.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/SyncStateCodec.h"

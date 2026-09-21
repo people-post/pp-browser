@@ -24,7 +24,7 @@
 | Amp 1:1 tip transport | `feature/conversations/AmpPeerAnnounceTransport.*` |
 | Mesh advertise | `MeshHost` includes peer-announce protocol id |
 | Device publisher + inbound key resolve | `PeerAnnounceKeyResolve.*`; `MeshDeliveryOrchestrator` wires IdentityStore device ML-DSA + `PeerSigningKeyStore` kind `peer_id`; `PublishAndPushAnnounce` |
-| DM reply path (no in-topic speak) | `AnnounceDmReply.*` planner; `MeshDeliveryOrchestrator::ReplyToAnnouncePublisher` |
+| DM reply path (no in-topic speak) | `AnnounceOverlayReply.*` (`PlanAnnounceDmReply`); `MeshDeliveryOrchestrator::ReplyToAnnouncePublisher` |
 | Tests | `peer_announce_test.cpp` (codec/feed/publisher/rpc/key resolve/DM plan); `amp_peer_announce_service_test.cpp` |
 
 **Signing:** tips use **device ML-DSA-65** (PeerId-bound). Account-kind signing keys are **not** used for tip verify.
@@ -66,7 +66,7 @@
 | Piece | Path |
 |-------|------|
 | Live-join plan from tip (`call_id` = `join_handle`) | `AnnounceLiveJoin.*`; `MeshDeliveryOrchestrator::PlanLiveJoinFromAnnounceTip` / `PlanLiveJoinFromStoredAnnounce` |
-| Arm pending invite + ringing session from plan | `AnnounceLiveJoinHandoff.*`; `BroadcastSessionCoordinator::ArmJoinFromLiveAnnounce` via `CallSessionManager::Broadcast()` (no SoftMigrate/media) |
+| Arm pending invite + ringing session from plan | `BuildAnnounceLiveJoinHandoff` in `AnnounceLiveJoin.*`; `BroadcastSessionCoordinator::ArmJoinFromLiveAnnounce` via `CallSessionManager::Broadcast()` (no SoftMigrate/media) |
 | UI / facade tip→arm entry points | `CallUiBackend` / `ConversationsFacade` → `Broadcast().ArmJoinFromLiveAnnounce` |
 | Optional tip `hop_peer_id` → session `sfu_hint` | `PeerAnnounceTypes` / codec / publisher; plan + handoff carry through |
 | Accept without SoftMigrate / 1:1 media | `CallTopologyController::OnAnnounceViewerJoined`; `BroadcastSessionCoordinator::AcceptLiveAnnounceJoin`; facade `JoinLiveAnnounceFromTip` |

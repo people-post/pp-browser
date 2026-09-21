@@ -1,3 +1,4 @@
+#include "app/node/call_probe/ProductStackHarness.h"
 #include "amp/L1/Clock.h"
 #include "amp/L1/OsUdpDatagramIo.h"
 #include "amp/L1/Types.h"
@@ -14,9 +15,11 @@
 #include "domain/mesh/host/MeshPorts.h"
 #include "domain/mesh/reachability/AmpPunchCoordinator.h"
 #include "feature/calls/AmpCircuitHopReach.h"
+#include "domain/messaging/CallTypes.h"
 #include "foundation/identity/PeerIdUtil.h"
 #include "feature/conversations/AmpDirectChatTransport.h"
 #include "common/chat/IDirectMessageClient.h"
+#include "common/Utilities.h"
 
 #include "common/Logger.h"
 
@@ -62,7 +65,13 @@ void PrintUsage(const char* argv0) {
       << "  --peer-id-only Offerer StartBridge omits target multiaddr (hop book only).\n"
       << "  --min-rx-frames Answerer fails if fewer audio frames received (duplex gate).\n"
       << "  --reach product  Offerer: punch→circuit via AmpCircuitHopReach (no StartBridge shortcut).\n"
-      << "                  Requires --via-hop as seed/introducer; do not register private peer MA.\n";
+      << "                  Requires --via-hop as seed/introducer; do not register private peer MA.\n"
+      << "  --reach bridge   Offerer: dirty-book Bridge-style Ensure (register peer private MA,\n"
+      << "                  optional --force-dial-fail, then peer-id-only nested circuit).\n"
+      << "  --dirty-book     With --reach product|bridge: register --peer private MA before Ensure.\n"
+      << "  --force-dial-fail  With dirty-book/bridge: one EnsureAssociation before circuit (arms backoff).\n"
+      << "  --product-stack  CallStack+CallUiBackend StartCall/Accept/Leave on Amp (HL004; no media mocks).\n"
+      << "  --peer-account   Offerer (--product-stack): answerer Account ID from ready-file line 2.\n";
 }
 
 std::optional<std::string> PeerIdFromMultiaddr(const std::string& ma) {
@@ -157,6 +166,10 @@ std::optional<pp::adp::IpEndpoint> ParseListenEndpoint(const std::string& ma) {
 
 pp::amp::PeerLinkConfig MakeProbeLinkConfig() {
   pp::amp::PeerLinkConfig config;
+  // Hop (pp-node) cold-evicts at LooksAlive (~5s). Probe dials can block longer than that;
+  // keep NAT/mapping fresh so circuit StartBridge still finds the answerer on the hop.
+  config.keepalive_hot_interval = std::chrono::milliseconds(2000);
+  config.keepalive_warm_interval = std::chrono::milliseconds(2000);
   config.peer_id_from_identity = [](const pbr::ByteVector& identity_public_key) -> std::string {
     auto peer_id = pbr::PeerIdFromMlDsaPublicKey(identity_public_key);
     if (!peer_id) {
@@ -350,6 +363,12 @@ pbr::Roe<void> WarmHopAssociation(AmpPeer& peer, const std::string& hop_key, con
   if (!warm_wait.PumpUntilDone(peer, 15000) || !warm_wait.result) {
     return warm_wait.result ? pbr::Error("warm-hop associate failed") : warm_wait.result.error();
   }
+  if (!peer.Links().IsConnected(hop_key)) {
+    return pbr::Error("hop not connected after EnsureAssociation");
+  }
+  // Keepalive tier so LooksAlive (~5s) does not silent-evict hop during long dial/backoff waits.
+  // Hot (20s) also refreshes the far-side mapping so pp-node does not cold-evict us mid-wait.
+  peer.Links().MarkHot(hop_key);
   for (int i = 0; i < 50; ++i) {
     peer.Pump();
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -455,9 +474,240 @@ pbr::Roe<void> EnsureProductCallMediaReach(AmpPeer& peer, pbr::CircuitTunnelCoor
   return {};
 }
 
+/**
+ * Dogfood / HL004 dirty-book: peer has_endpoint (private advertise) + optional dial-fail into
+ * DialInBackoff, then re-warm hop + peer-id-only nested circuit (Bridge Ensure shape).
+ * Does not ADP-dial the private MA a second time — that drops hop assoc under dual-SNAT.
+ */
+pbr::Roe<void> EnsureDirtyBookBridgeReach(AmpPeer& peer, pbr::CircuitTunnelCoordinator& circuit,
+                                          pbr::AmpCircuitHopRegistry& hops, const std::string& hop_key,
+                                          const std::string& hop_peer_id, const std::string& hop_ma,
+                                          const std::string& target_peer_id,
+                                          const std::string& peer_private_ma, const bool force_dial_fail,
+                                          const int timeout_ms) {
+  const std::string dirty_ma = RewriteWildcardListenHost(peer_private_ma);
+  if (auto reg = peer.Links().RegisterEndpoint(target_peer_id, dirty_ma); !reg) {
+    return pbr::Error(std::string("dirty-book register peer: ") + reg.error().message);
+  }
+  std::cout << "ok  dirty-book registered peer=" << target_peer_id << " ma=" << dirty_ma << "\n";
+
+  if (force_dial_fail) {
+    AsyncWait<void> fail_wait;
+    peer.Links().EnsureAssociation(target_peer_id, fail_wait.LinkFn());
+    // Prefer a short miss + Abort so hop↔answerer mapping on pp-node stays within LooksAlive (~5s).
+    const bool finished = fail_wait.PumpUntilDone(peer, std::min(timeout_ms, 3500));
+    if (finished && fail_wait.result) {
+      std::cout << "ok  force-dial-fail: EnsureAssociation unexpectedly ok\n";
+    } else if (finished) {
+      std::cout << "ok  force-dial-fail: EnsureAssociation miss err="
+                << fail_wait.result.error().message << "\n";
+    } else {
+      std::cout << "ok  force-dial-fail: EnsureAssociation timed out; aborting\n";
+      peer.Links().AbortInflightDial(target_peer_id);
+    }
+    peer.Links().ClearDialBackoff(target_peer_id);
+    for (int i = 0; i < 40; ++i) {
+      peer.Pump();
+      if (!peer.Links().IsConnected(target_peer_id) && !peer.Links().IsReachable(target_peer_id)) {
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    std::cout << "ok  force-dial-fail: dial corpse drained connected="
+              << (peer.Links().IsConnected(target_peer_id) ? 1 : 0) << "\n";
+    const std::string warm_key = !hop_peer_id.empty() ? hop_peer_id : hop_key;
+    if (auto warm = WarmHopAssociation(peer, warm_key, hop_ma); !warm) {
+      return pbr::Error(std::string("re-warm hop after force-dial-fail: ") + warm.error().message);
+    }
+    if (warm_key != hop_key) {
+      (void)peer.Links().RegisterEndpoint(hop_key, RewriteWildcardListenHost(hop_ma));
+    }
+    std::cout << "ok  re-warm hop after force-dial-fail key=" << warm_key << "\n";
+  }
+
+  if (peer.Links().IsConnected(target_peer_id)) {
+    return {};
+  }
+
+  const std::string circuit_hop = !hop_peer_id.empty() ? hop_peer_id : hop_key;
+  if (auto nested = EstablishNestedViaHop(peer, circuit, hops, circuit_hop, target_peer_id, std::string());
+      !nested) {
+    return pbr::Error(std::string("dirty-book circuit: ") + nested.error().message);
+  }
+  if (!peer.Links().IsConnected(target_peer_id)) {
+    return pbr::Error("dirty-book: peer not connected after circuit");
+  }
+  std::cout << "ok  dirty-book circuit Connected peer=" << target_peer_id << "\n";
+  return {};
+}
+
+pbr::Roe<void> WarmHopAssociationViaHost(pbr::call_probe::ProductStackHarness& harness,
+                                         const std::string& hop_ma) {
+  auto* amp = harness.Host().Amp();
+  if (!amp) {
+    return pbr::Error("mesh amp down");
+  }
+  auto hop_id = PeerIdFromMultiaddr(hop_ma);
+  if (!hop_id) {
+    return pbr::Error("cannot parse hop peer id");
+  }
+  const std::string hop_rewritten = RewriteWildcardListenHost(hop_ma);
+  if (auto reg = amp->Links().RegisterEndpoint(*hop_id, hop_rewritten); !reg) {
+    return pbr::Error(reg.error().message);
+  }
+  (void)amp->Links().RegisterEndpoint("hop", hop_rewritten);
+  AsyncWait<void> warm_wait;
+  amp->Links().EnsureAssociation(*hop_id, warm_wait.LinkFn());
+  const bool done =
+      harness.PumpUntil([&] { return warm_wait.done.load(std::memory_order_acquire); }, 15000);
+  if (!done || !warm_wait.result) {
+    return warm_wait.result ? pbr::Error("warm-hop associate failed") : warm_wait.result.error();
+  }
+  if (!amp->Links().IsConnected(*hop_id)) {
+    return pbr::Error("hop not connected after EnsureAssociation");
+  }
+  amp->Links().MarkHot(*hop_id);
+  amp->Links().MarkHot("hop");
+  for (int i = 0; i < 50; ++i) {
+    harness.Pump();
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  return {};
+}
+
+int RunProductStackAnswerer(const std::string& listen_ma, const std::string& ready_file,
+                            int hold_seconds, const std::string& advertise_host,
+                            const std::string& warm_hop_ma, int min_rx_frames) {
+  if (sodium_init() < 0) {
+    std::cerr << "error: sodium_init failed\n";
+    return 1;
+  }
+  auto bind_ep = ParseListenEndpoint(listen_ma);
+  if (!bind_ep) {
+    std::cerr << "error: --listen must be Amp ADP multiaddr\n";
+    return 2;
+  }
+  auto peer = MakeAmpPeer(*bind_ep, true);
+  if (!peer) {
+    std::cerr << "error: answerer amp start: " << peer.error().message << "\n";
+    return 1;
+  }
+  std::string advertise = (*peer)->listen_ma;
+  if (!advertise_host.empty()) {
+    advertise = RewriteListenHost(std::move(advertise), advertise_host);
+  } else {
+    advertise = RewriteWildcardListenHost(std::move(advertise));
+  }
+  (*peer)->Links().SetLocalListenMultiaddrs({advertise});
+
+  auto clock = (*peer)->clock;
+  auto stack = std::move((*peer)->stack);
+  auto harness = pbr::call_probe::ProductStackHarness::Create(std::move(stack), std::move(clock),
+                                                              advertise, warm_hop_ma);
+  if (!harness) {
+    std::cerr << "error: product-stack harness: " << harness.error().message << "\n";
+    return 1;
+  }
+
+  if (!warm_hop_ma.empty()) {
+    if (auto warm = WarmHopAssociationViaHost(**harness, warm_hop_ma); !warm) {
+      std::cerr << "error: warm-hop: " << warm.error().message << "\n";
+      return 1;
+    }
+    std::cout << "ok  warm-hop associated hop=" << warm_hop_ma << "\n";
+  }
+
+  if (!ready_file.empty()) {
+    FILE* f = std::fopen(ready_file.c_str(), "w");
+    if (!f) {
+      std::cerr << "error: cannot write ready-file " << ready_file << "\n";
+      return 1;
+    }
+    std::fprintf(f, "%s\n%s\n", (*harness)->AdvertiseMa().c_str(),
+                 (*harness)->LocalAccountId().c_str());
+    std::fclose(f);
+  }
+  std::cout << "pp-call-probe answerer ready peer=" << (*harness)->AdvertiseMa()
+            << " account=" << (*harness)->LocalAccountId() << "\n";
+  std::cout.flush();
+
+  const int rc = (*harness)->RunAnswererHold(hold_seconds, min_rx_frames);
+  (*harness)->Shutdown();
+  std::cout << "pp-call-probe answerer exit product-stack rc=" << rc << "\n";
+  return rc;
+}
+
+int RunProductStackOfferer(const std::string& peer_ma, const std::string& peer_account,
+                           const std::string& hop_ma, int hold_ms, int timeout_ms) {
+  if (peer_account.empty()) {
+    std::cerr << "error: --product-stack offerer requires --peer-account\n";
+    return 2;
+  }
+  if (hop_ma.empty()) {
+    std::cerr << "error: --product-stack offerer requires --via-hop\n";
+    return 2;
+  }
+  if (sodium_init() < 0) {
+    std::cerr << "error: sodium_init failed\n";
+    return 1;
+  }
+  auto peer_id = PeerIdFromMultiaddr(peer_ma);
+  if (!peer_id) {
+    std::cerr << "error: cannot parse peer id from --peer\n";
+    return 2;
+  }
+  auto offerer = MakeAmpPeer(pp::adp::IpEndpoint::V4(0, 0, 0, 0, 0), true);
+  if (!offerer) {
+    std::cerr << "error: offerer amp start: " << offerer.error().message << "\n";
+    return 1;
+  }
+  std::string advertise = RewriteWildcardListenHost((*offerer)->listen_ma);
+  (*offerer)->Links().SetLocalListenMultiaddrs({advertise});
+
+  auto clock = (*offerer)->clock;
+  auto stack = std::move((*offerer)->stack);
+  auto harness = pbr::call_probe::ProductStackHarness::Create(std::move(stack), std::move(clock),
+                                                              advertise, hop_ma);
+  if (!harness) {
+    std::cerr << "error: product-stack harness: " << harness.error().message << "\n";
+    return 1;
+  }
+  if (auto warm = WarmHopAssociationViaHost(**harness, hop_ma); !warm) {
+    std::cerr << "error: warm hop: " << warm.error().message << "\n";
+    return 1;
+  }
+  std::cout << "ok  offerer warm-hop associated hop=" << hop_ma << "\n";
+
+  const std::string dial_peer_ma = RewriteWildcardListenHost(peer_ma);
+  if (auto up = (*harness)->UpsertPeerContact(peer_account, *peer_id, dial_peer_ma); !up) {
+    std::cerr << "error: upsert peer contact: " << up.error().message << "\n";
+    return 1;
+  }
+  // Invite/Accept ride Amp chat — under dual-SNAT that needs nested circuit first (HL004).
+  if (auto path = (*harness)->EnsurePeerCircuitPath(*peer_id); !path) {
+    std::cerr << "error: product-stack circuit path: " << path.error().message << "\n";
+    (*harness)->Shutdown();
+    return 1;
+  }
+
+  const int hold = hold_ms > 0 ? hold_ms : 2000;
+  if (auto ran = (*harness)->RunOffererCall(peer_account, hold, timeout_ms); !ran) {
+    std::cerr << "error: product-stack offerer: " << ran.error().message << "\n";
+    (*harness)->Shutdown();
+    return 1;
+  }
+  (*harness)->Shutdown();
+  std::cout << "pp-call-probe offerer PASSED product-stack\n";
+  return 0;
+}
+
 int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const std::string& ready_file,
                 int hold_seconds, const std::string& advertise_host, bool no_auto_detach, bool with_chat,
-                const std::string& warm_hop_ma, int min_rx_frames) {
+                const std::string& warm_hop_ma, int min_rx_frames, bool product_stack) {
+  if (product_stack) {
+    return RunProductStackAnswerer(listen_ma, ready_file, hold_seconds, advertise_host, warm_hop_ma,
+                                   min_rx_frames);
+  }
   if (sodium_init() < 0) {
     std::cerr << "error: sodium_init failed\n";
     return 1;
@@ -505,6 +755,10 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
                 << (warm_wait.result ? "failed" : warm_wait.result.error().message) << "\n";
       return 1;
     }
+    (*peer)->Links().MarkHot("hop");
+    if (auto hop_pid = PeerIdFromMultiaddr(warm_hop_ma)) {
+      (*peer)->Links().MarkHot(*hop_pid);
+    }
     // Allow hop peer-book ingest after association.
     for (int i = 0; i < 50; ++i) {
       (*peer)->Pump();
@@ -536,11 +790,11 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   std::atomic<int> chat_received{0};
   if (with_chat) {
     auto pump = [p = peer->get()]() { p->Pump(); };
-    chat_links = pbr::NewAmpChatPeerLinks((*peer)->Links());
+    chat_links = pbr::NewAmpChatPeerLinks((*peer)->Runtime());
     chat = std::make_unique<pbr::AmpDirectChatTransport>(
         *chat_links, pbr::AmpDirectChatTransport::IoPump{pump});
     chat->Start();
-    chat->SetInboundHandler([&](pbr::RelayEnvelope) {
+    chat->SetInboundHandler([&](pbr::RelayEnvelope /*env*/) {
       chat_received.fetch_add(1, std::memory_order_acq_rel);
     });
   }
@@ -608,7 +862,7 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   media->Stop();
   circuit->Stop();
   (*peer)->stack->Stop();
-    std::cout << "pp-call-probe answerer exit audio_frames=" << cycles_done
+  std::cout << "pp-call-probe answerer exit audio_frames=" << cycles_done
             << " chat_frames=" << chat_received.load() << "\n";
   if (min_rx_frames > 0 && cycles_done < min_rx_frames) {
     std::cerr << "error: answerer rx frames=" << cycles_done << " < min-rx-frames="
@@ -620,7 +874,8 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
 
 int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycles,
                const std::string& hop_ma, int hold_ms, int timeout_ms, bool expect_busy,
-               bool with_chat, bool peer_id_only, bool reach_product) {
+               bool with_chat, bool peer_id_only, bool reach_product, bool reach_bridge,
+               bool dirty_book, bool force_dial_fail) {
   if (cycles < 1 || cycles > 100) {
     std::cerr << "error: --cycles must be 1..100\n";
     return 2;
@@ -642,8 +897,31 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
     std::cerr << "error: --reach product requires --via-hop (seed/introducer)\n";
     return 2;
   }
+  if (reach_bridge && !via_hop) {
+    std::cerr << "error: --reach bridge requires --via-hop\n";
+    return 2;
+  }
+  if (reach_product && reach_bridge) {
+    std::cerr << "error: --reach product and --reach bridge are mutually exclusive\n";
+    return 2;
+  }
+  if ((dirty_book || force_dial_fail) && !reach_product && !reach_bridge) {
+    std::cerr << "error: --dirty-book/--force-dial-fail require --reach product|bridge\n";
+    return 2;
+  }
+  if (force_dial_fail && !dirty_book && !reach_bridge) {
+    // bridge implies dirty-book
+    dirty_book = true;
+  }
+  if (reach_bridge) {
+    dirty_book = true;
+  }
   if (reach_product && expect_busy) {
     std::cerr << "error: --reach product does not support --expect busy\n";
+    return 2;
+  }
+  if (reach_bridge && expect_busy) {
+    std::cerr << "error: --reach bridge does not support --expect busy\n";
     return 2;
   }
   auto peer_id = PeerIdFromMultiaddr(peer_ma);
@@ -658,8 +936,8 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
 
   // Bind all interfaces so Docker/netns offerers can dial a hop on a bridge IP
   // (127.0.0.1-bound UDP cannot sendto non-loopback destinations).
-  // Product reach: accept inbound so coordinated punch can complete.
-  auto offerer = MakeAmpPeer(pp::adp::IpEndpoint::V4(0, 0, 0, 0, 0), reach_product);
+  // Product/bridge reach: accept inbound so coordinated punch can complete.
+  auto offerer = MakeAmpPeer(pp::adp::IpEndpoint::V4(0, 0, 0, 0, 0), reach_product || reach_bridge);
   if (!offerer) {
     std::cerr << "error: offerer amp start: " << offerer.error().message << "\n";
     return 1;
@@ -677,7 +955,7 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
   std::unique_ptr<pbr::IChatPeerLinks> chat_links;
   std::unique_ptr<pbr::AmpDirectChatTransport> chat;
   if (with_chat) {
-    chat_links = pbr::NewAmpChatPeerLinks((*offerer)->Links());
+    chat_links = pbr::NewAmpChatPeerLinks((*offerer)->Runtime());
     chat = std::make_unique<pbr::AmpDirectChatTransport>(
         *chat_links, pbr::AmpDirectChatTransport::IoPump{pump});
     chat->Start();
@@ -695,25 +973,36 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
       return 2;
     }
     hop_peer_id = *hop_id;
-    // Product Ensure looks up relays by PeerId; Phase-1 StartBridge uses endpoint key "hop".
-    const std::string warm_key = reach_product ? hop_peer_id : std::string("hop");
+    // Product/bridge Ensure looks up relays by PeerId; Phase-1 StartBridge uses endpoint key "hop".
+    const std::string warm_key =
+        (reach_product || reach_bridge) ? hop_peer_id : std::string("hop");
     if (auto warm = WarmHopAssociation(**offerer, warm_key, hop_ma); !warm) {
       std::cerr << "error: warm hop: " << warm.error().message << "\n";
       return 1;
     }
     // Also alias the other key so punch/circuit/StartBridge share one association.
-    const std::string alias_key = reach_product ? std::string("hop") : hop_peer_id;
+    const std::string alias_key =
+        (reach_product || reach_bridge) ? std::string("hop") : hop_peer_id;
     if (alias_key != warm_key) {
       (void)(*offerer)->Links().RegisterEndpoint(alias_key, RewriteWildcardListenHost(hop_ma));
     }
     std::cout << "ok  offerer warm-hop associated key=" << warm_key << " hop=" << hop_ma << "\n";
-    if (reach_product) {
-      // Do NOT register private advertise MA — PreferredMultiaddr would poison circuit dial.
-      reach_links = pbr::NewAmpChatPeerLinks((*offerer)->Links());
-      std::vector<std::string> cands = {(*offerer)->listen_ma};
-      punch = StartProbePunch(**offerer, cands);
-      std::cout << "pp-call-probe offerer reach=product seed-hop=" << hop_ma << " peer=" << peer_key
-                << "\n";
+    if (reach_product || reach_bridge) {
+      reach_links = pbr::NewAmpChatPeerLinks((*offerer)->Runtime());
+      // Product path needs punch; dirty-book bridge goes straight to nested circuit — starting
+      // punch before a forced private-MA dial miss has raced StartBridge Pump (SIGSEGV).
+      if (reach_product) {
+        std::vector<std::string> cands = {(*offerer)->listen_ma};
+        punch = StartProbePunch(**offerer, cands);
+      }
+      if (reach_bridge || dirty_book) {
+        std::cout << "pp-call-probe offerer reach=" << (reach_bridge ? "bridge" : "product")
+                  << " dirty-book=1 force-dial-fail=" << (force_dial_fail ? 1 : 0)
+                  << " seed-hop=" << hop_ma << " peer=" << peer_key << "\n";
+      } else {
+        std::cout << "pp-call-probe offerer reach=product seed-hop=" << hop_ma << " peer=" << peer_key
+                  << "\n";
+      }
     } else {
       std::cout << "pp-call-probe offerer via-hop=" << hop_ma << " peer=" << peer_ma
                 << " peer-id-only=" << (peer_id_only ? 1 : 0) << "\n";
@@ -725,7 +1014,32 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
 
   const pbr::ByteVector media_key(32, 0x42);
   for (int cycle = 0; cycle < cycles; ++cycle) {
-    if (via_hop && reach_product) {
+    if (via_hop && reach_bridge) {
+      auto ensured = EnsureDirtyBookBridgeReach(**offerer, *circuit, *hops, "hop", hop_peer_id, hop_ma,
+                                                peer_key, dial_peer_ma, force_dial_fail,
+                                                timeout_ms + 15000);
+      if (!ensured) {
+        std::cerr << "error: bridge dirty-book reach cycle " << cycle << ": "
+                  << ensured.error().message << "\n";
+        return 1;
+      }
+      std::cout << "ok  bridge dirty-book reach cycle " << cycle << "\n";
+    } else if (via_hop && reach_product) {
+      if (dirty_book) {
+        if (auto reg = (*offerer)->Links().RegisterEndpoint(peer_key, dial_peer_ma); !reg) {
+          std::cerr << "error: dirty-book register: " << reg.error().message << "\n";
+          return 1;
+        }
+        std::cout << "ok  dirty-book registered before product ensure peer=" << peer_key << "\n";
+        if (force_dial_fail) {
+          AsyncWait<void> fail_wait;
+          (*offerer)->Links().EnsureAssociation(peer_key, fail_wait.LinkFn());
+          (void)fail_wait.PumpUntilDone(**offerer, 3000);
+          (*offerer)->Links().ClearDialBackoff(peer_key);
+          (*offerer)->Links().AbortInflightDial(peer_key);
+          std::cout << "ok  force-dial-fail before product ensure\n";
+        }
+      }
       auto ensured = EnsureProductCallMediaReach(**offerer, *circuit, *hops, *reach_links, *punch,
                                                  hop_peer_id, hop_ma, peer_key, timeout_ms + 15000);
       if (!ensured) {
@@ -869,8 +1183,9 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
   circuit->Stop();
   (*offerer)->stack->Stop();
   std::cout << "pp-call-probe offerer PASSED cycles=" << cycles
-            << (reach_product ? " reach=product" : (via_hop ? " via-hop" : ""))
-            << (with_chat ? " with-chat" : "") << "\n";
+            << (reach_bridge ? " reach=bridge"
+                             : (reach_product ? " reach=product" : (via_hop ? " via-hop" : "")))
+            << (dirty_book ? " dirty-book" : "") << (with_chat ? " with-chat" : "") << "\n";
   return 0;
 }
 
@@ -893,7 +1208,12 @@ int main(int argc, char** argv) {
   bool no_auto_detach = false;
   bool peer_id_only = false;
   bool reach_product = false;
+  bool reach_bridge = false;
+  bool dirty_book = false;
+  bool force_dial_fail = false;
+  bool product_stack = false;
   std::string warm_hop_ma;
+  std::string peer_account;
   int min_rx_frames = 0;
 
   for (int i = 1; i < argc; ++i) {
@@ -907,6 +1227,8 @@ int main(int argc, char** argv) {
       listen_ma = argv[++i];
     } else if (std::strcmp(argv[i], "--peer") == 0 && i + 1 < argc) {
       peer_ma = argv[++i];
+    } else if (std::strcmp(argv[i], "--peer-account") == 0 && i + 1 < argc) {
+      peer_account = argv[++i];
     } else if (std::strcmp(argv[i], "--via-hop") == 0 && i + 1 < argc) {
       hop_ma = argv[++i];
     } else if (std::strcmp(argv[i], "--advertise-host") == 0 && i + 1 < argc) {
@@ -943,12 +1265,20 @@ int main(int argc, char** argv) {
       min_rx_frames = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--peer-id-only") == 0) {
       peer_id_only = true;
+    } else if (std::strcmp(argv[i], "--dirty-book") == 0) {
+      dirty_book = true;
+    } else if (std::strcmp(argv[i], "--force-dial-fail") == 0) {
+      force_dial_fail = true;
+    } else if (std::strcmp(argv[i], "--product-stack") == 0) {
+      product_stack = true;
     } else if (std::strcmp(argv[i], "--reach") == 0 && i + 1 < argc) {
       ++i;
       if (std::strcmp(argv[i], "product") == 0) {
         reach_product = true;
+      } else if (std::strcmp(argv[i], "bridge") == 0) {
+        reach_bridge = true;
       } else {
-        std::cerr << "error: --reach product\n";
+        std::cerr << "error: --reach product|bridge\n";
         return 2;
       }
     } else {
@@ -974,15 +1304,18 @@ int main(int argc, char** argv) {
 
   if (role == "answerer") {
     return RunAnswerer(listen_ma, call_id, ready_file, hold_seconds, advertise_host, no_auto_detach,
-                       with_chat, warm_hop_ma, min_rx_frames);
+                       with_chat, warm_hop_ma, min_rx_frames, product_stack);
   }
   if (role == "offerer") {
     if (peer_ma.empty()) {
       std::cerr << "error: --peer required for offerer\n";
       return 2;
     }
+    if (product_stack) {
+      return RunProductStackOfferer(peer_ma, peer_account, hop_ma, hold_ms, timeout_ms);
+    }
     return RunOfferer(peer_ma, call_id, cycles, hop_ma, hold_ms, timeout_ms, expect_busy, with_chat,
-                       peer_id_only, reach_product);
+                      peer_id_only, reach_product, reach_bridge, dirty_book, force_dial_fail);
   }
   std::cerr << "error: --role answerer|offerer required\n";
   PrintUsage(argv[0]);

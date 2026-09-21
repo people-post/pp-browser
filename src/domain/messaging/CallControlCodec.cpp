@@ -550,4 +550,27 @@ bool CallControlCodec::IsCallControlMessage(const ThreadMessage& message) {
   return ControlTypeFromMessage(message).has_value();
 }
 
+bool CallControlCodec::IsPlumbingCallControl(const CallControlType type) {
+  switch (type) {
+  case CallControlType::CallMediaKey:
+  case CallControlType::CallSdp:
+  case CallControlType::CallIce:
+  case CallControlType::CallSfuAttach:
+  case CallControlType::CallSfuAttachFailed:
+  case CallControlType::CallHopRefuse:
+  case CallControlType::CallVideoRefresh:
+    return true;
+  default:
+    return false;
+  }
+}
+
+bool CallControlCodec::SuppressesInboxChrome(const CallControlType type) {
+  if (IsPlumbingCallControl(type)) {
+    return true;
+  }
+  // Mid-call mute/camera roster fan-out — keep optional history line, not sidebar noise.
+  return type == CallControlType::CallRoster;
+}
+
 } // namespace pbr

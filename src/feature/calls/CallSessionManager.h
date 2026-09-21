@@ -13,15 +13,17 @@
 #include "domain/people/IdentityStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallDeliveryPorts.h"
-#include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/BroadcastSessionCoordinator.h"
 #include "feature/calls/CallTopologyController.h"
+#include "feature/calls/CallSessionWorkflow.h"
 
+#include "common/Error.h"
 #include "common/Module.h"
 
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -30,13 +32,67 @@
 
 namespace pbr {
 
+class CallMediaBridge;
+
+/**
+ * Direct media façade for CallSessionManager (V042).
+ * CSM must not hold CallMediaBridge* — ops copy these functions.
+ */
+struct CallDirectMediaPorts {
+  std::function<void(const std::string& call_id, const std::string& peer_identity, bool offerer)>
+      schedule_start;
+  std::function<std::string()> media_path_kind;
+  std::function<void(const std::string& peer_id, const std::string& relay_identity)>
+      note_peer_id_relay_mapping;
+  std::function<void(const std::string& call_id)> stop_mesh_media;
+  std::function<bool()> is_connect_failed;
+  std::function<bool()> connect_missing_mic;
+  std::function<void()> poll_connect_health;
+  std::function<Roe<void>(const std::string& call_id)> retry_mesh_media;
+  std::function<bool(const std::string& call_id)> media_attempted;
+  std::function<void(const std::string& call_id)> note_media_attempted;
+  std::function<void()> release_direct_transport;
+  std::function<void(const std::string& call_id)> on_media_key_ready;
+
+  bool IsBound() const { return static_cast<bool>(schedule_start); }
+};
+
+/**
+ * Lifecycle façade for CallSessionManager (V043).
+ * CSM must not hold CallLifecycle* — ops copy these functions.
+ */
+struct CallSessionLifecyclePorts {
+  std::function<bool()> allows_direct_path;
+  std::function<const char*()> status_name;
+  std::function<const char*()> armed_planner_name;
+  std::function<void(const std::string& call_id)> set_direct_connecting;
+  std::function<std::string()> accepting_call_id;
+  std::function<std::string()> active_call_id;
+  std::function<void(const std::string& call_id)> apply_remote_ended;
+  std::function<bool()> is_outbound_calling;
+
+  bool IsBound() const { return static_cast<bool>(allows_direct_path); }
+};
+
+/**
+ * MediaSeat façade for CallSessionManager (V043).
+ * CSM must not hold CallMediaSeat* — ops copy these functions.
+ */
+struct CallMediaSeatPorts {
+  std::function<void(const std::string& call_id)> release;
+  std::function<void(const std::string& call_id)> bind_hop_for_attach;
+
+  bool IsBound() const { return static_cast<bool>(release); }
+};
+
 /**
  * Call session lifecycle façade (a2 / V014 / a4) — V036 Phase 3 **signaling** owner.
  * Duplex start/stop go through CallMediaSeat + CallDirectPath / CallHopPath; do not call
  * CallMediaBridge::StopMeshMedia or engine StartSfu from here when a seat is wired.
  * Topology + mesh media live in CallTopologyController / CallMediaBridge (path plugins).
+ * Path façades take Ops only — no standing CallMediaBridge* / CallMediaSeat* (V048).
  */
-class CallSessionManager : public Module, private CallTopologyHost, private CallMediaHost {
+class CallSessionManager : public Module, private CallMediaHost {
 public:
   using RingChangedFn = std::function<void()>;
   using MediaRelayDeps = CallTopologyController::MediaRelayDeps;
@@ -73,16 +129,23 @@ public:
   bool PeerHasMediaRelayCap(const std::string& peer_id) const;
   std::vector<std::string> ListMediaRelayCapablePeerIds() const;
   void SetMediaRelayDeps(MediaRelayDeps deps);
-  void SetCallMediaBridge(CallMediaBridge* bridge);
-  /** V036 exclusive media epoch — Leave/Accept/Start gates. */
-  void SetMediaSeat(CallMediaSeat* seat);
-  /** V037 State+Status planner arming. */
-  void SetLifecycle(CallLifecycle* lifecycle);
+  /** Direct media ops (ScheduleStart / Retry / SoftMigrate release) — Stack installs from bridge. */
+  void SetDirectMediaPorts(CallDirectMediaPorts ports);
+  /** Lifecycle ops (V043) — Stack installs; CSM must not hold CallLifecycle*. */
+  void SetLifecyclePorts(CallSessionLifecyclePorts ports);
+  /** Topology hop arming ports (V048) — Stack installs; Topology must not hold CallLifecycle*. */
+  void SetTopologyHopArmingPorts(CallHopArmingPorts ports);
+  /** Seat ops (V043) — Stack installs; CSM must not hold CallMediaSeat*. */
+  void SetMediaSeatPorts(CallMediaSeatPorts ports);
+  /** Topology Seat ports (V046) — Stack installs; Topology must not hold CallMediaSeat*. */
+  void SetTopologySeatPorts(CallTopologySeatPorts ports);
+  /** Build CSM seat ports over owned topology_ (Stack / compose tests). */
+  CallMediaSeatPorts MakeSeatPorts(CallMediaSeat* seat);
   /** Seat teardown hook: topology detach without re-entering seat.Release. */
   void TopologyOnMediaStoppedForSeat(const std::string& call_id);
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
-  void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
-  InitiationBillingStore* InitiationBilling() const { return initiation_billing_; }
+  void SetInitiationBillingStore(InitiationBillingStore* store);
+  InitiationBillingStore* InitiationBilling() const { return workflow_.InitiationBilling(); }
   /** Offer amount stored for inviter when inbound invite carried pricing. */
   int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
   /** Set before AcceptClicked — consumed by AcceptInvite. */
@@ -174,23 +237,24 @@ public:
   void ClearMediaCallbacks();
 
 private:
-  // CallTopologyHost
-  Roe<std::string> TopologyLocalIdentity() const override;
-  Roe<void> TopologyLeaveCall(const std::string& call_id) override;
+  // Topology HostPorts helpers (V046 — not CallTopologyHost overrides)
+  Roe<std::string> TopologyLocalIdentity() const;
+  Roe<void> TopologyLeaveCall(const std::string& call_id);
   Roe<void> TopologyFanOutToJoined(const std::string& call_id, CallControlType type,
                                    const std::string& detail_json, const std::string& display,
-                                   const std::string& skip_identity) override;
+                                   const std::string& skip_identity);
   Roe<void> TopologySendDirect(const std::string& peer_identity, CallControlType type,
-                               const std::string& detail_json, const std::string& display) override;
-  void TopologyNotifyRingChanged() override;
-  void TopologySetLastMediaError(std::string message) override;
-  void TopologySetMediaActivity(std::string message) override;
-  void TopologyClearMediaActivity() override;
-  void TopologyNoteMediaAttempted(const std::string& call_id) override;
-  void TopologyBindMediaCallId(const std::string& call_id) override;
-  void TopologyClearMediaPeerIdentity() override;
-  void TopologyReleaseDirectMedia() override;
-  void TopologyRequestInboxSync() override;
+                               const std::string& detail_json, const std::string& display);
+  void TopologyNotifyRingChanged();
+  void TopologySetLastMediaError(std::string message);
+  void TopologySetMediaActivity(std::string message);
+  void TopologyClearMediaActivity();
+  void TopologyNoteMediaAttempted(const std::string& call_id);
+  void TopologyBindMediaCallId(const std::string& call_id);
+  void TopologyClearMediaPeerIdentity();
+  void TopologyReleaseDirectMedia();
+  void TopologyRequestInboxSync();
+  void BindTopologyHostPorts();
 
   // CallMediaHost
   Roe<std::string> P2pLocalIdentity() const override;
@@ -211,6 +275,8 @@ private:
   void P2pRequestInboxSync() override;
 
   Roe<std::string> LocalRelayIdentity() const;
+  /** Mint/find e2e_public control DM before SoftMigrate / MediaKey fan-out (catalog warm). */
+  Roe<std::string> EnsureCallControlThread(const std::string& peer_identity);
   Roe<void> SendCallDirectMessage(const std::string& peer_identity, CallControlType type,
                                   const std::string& detail_json, const std::string& display);
   Roe<void> AppendOriginHistory(const std::string& thread_id, CallControlType type, const std::string& text,
@@ -232,8 +298,11 @@ private:
   void StopMediaIfCall(const std::string& call_id);
   Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
+  void BindWorkflowHostPorts();
+  /** Flush deferred inbox/TailSync when no ActiveLocalCall remains. */
+  void MaybeCatchUpAfterCall();
 
-  // Inbound call-control arms (CallInboundHandlers.cpp) — decode → store → one topology/bridge call.
+  // Inbound call-control arms — thin delegates to CallSessionWorkflow.
   Roe<void> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
                                 const ThreadMessage& message, std::optional<int64_t> relay_created_at_ms,
                                 std::optional<int64_t> relay_server_time_ms, const std::string& local_identity);
@@ -260,15 +329,10 @@ private:
   CallMediaEngine& media_;
   CallTopologyController topology_;
   BroadcastSessionCoordinator broadcast_;
-  CallMediaBridge* call_media_bridge_ = nullptr;
-  CallMediaSeat* media_seat_ = nullptr;
-  CallLifecycle* lifecycle_ = nullptr;
-  InitiationBillingStore* initiation_billing_ = nullptr;
-  InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
-  bool pending_accept_charge_set_ = false;
-  /** Answerer AcceptInvite → Lifecycle KickAnswerer peer (UI), until Leave. */
-  std::string pending_answerer_kick_call_id_;
-  std::string pending_answerer_kick_peer_;
+  CallSessionWorkflow workflow_;
+  CallDirectMediaPorts direct_media_;
+  CallSessionLifecyclePorts lifecycle_ports_;
+  CallMediaSeatPorts media_seat_ports_;
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;
@@ -280,6 +344,12 @@ private:
   std::unordered_map<std::string, bool> peer_media_relay_caps_;
   /** mesh PeerId → relay: identity learned from CallAccept/Invite listen multiaddrs / mDNS. */
   std::unordered_map<std::string, std::string> peer_id_to_relay_;
+  /**
+   * AutoKey key_init from ensure_peer_session_key — attached on the next SendCallDirectMessage
+   * for that peer; kept until send succeeds so retries still carry key_init.
+   */
+  mutable std::mutex pending_call_key_init_mutex_;
+  mutable std::unordered_map<std::string, std::string> pending_call_key_init_;
   std::optional<std::string> last_media_error_;
   std::string media_activity_;
 };

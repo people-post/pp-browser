@@ -1,11 +1,9 @@
 #include "domain/messaging/AtAiParser.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/PeopleDiscoveryBlocks.h"
-#include "domain/messaging/JsonThreadStore.h"
 #include "domain/messaging/RelayWirePayload.h"
 #include "domain/people/Ed25519Signer.h"
 
-#include <filesystem>
 #include <gtest/gtest.h>
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
@@ -29,20 +27,6 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   EXPECT_EQ(restored.id, "t1");
   EXPECT_EQ(restored.kind, ThreadKind::Direct);
   EXPECT_EQ(restored.channel, ThreadChannel::E2e);
-
-  const std::filesystem::path data_dir =
-      std::filesystem::temp_directory_path() / "pp_browser_messaging_test";
-  std::filesystem::remove_all(data_dir);
-  JsonThreadStore store(data_dir.string());
-  (void)store.UpsertThread(thread);
-
-  ThreadMessage message;
-  message.id = "m1";
-  message.thread_id = "t1";
-  message.sender_contact_id = kLocalSelfContactId;
-  message.text = "hello";
-  (void)store.AppendMessage(message);
-  EXPECT_TRUE(store.HasMessageId("t1", "m1"));
 
   auto payload_b64 = RelayWirePayload::EncodePlaintextText("hi");
   ASSERT_TRUE(static_cast<bool>(payload_b64));
@@ -79,5 +63,7 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   const std::string blocks = BuildPeopleDiscoveryBlocksJson({hit}, std::vector<PeopleDiscoveryContactView>{});
   EXPECT_NE(blocks.find("long_list"), std::string::npos);
   EXPECT_NE(blocks.find("Alice Example"), std::string::npos);
+  EXPECT_NE(blocks.find("~alice"), std::string::npos);
+  EXPECT_NE(blocks.find("add_contact"), std::string::npos);
   EXPECT_NE(blocks.find("start_conversation"), std::string::npos);
 }

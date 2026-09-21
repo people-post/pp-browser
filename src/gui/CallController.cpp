@@ -6,7 +6,7 @@
 #include "domain/media/CallMediaEngine.h"
 #include "common/media/CallMediaHealth.h"
 #include "domain/messaging/CallTypes.h"
-#include "domain/messaging/SfuAttachFanout.h"
+#include "domain/messaging/CallHopAttachLogic.h"
 #include "domain/people/AvatarGlyph.h"
 #include "domain/people/ContactTypes.h"
 #include "foundation/runtime/AppRuntime.h"
@@ -19,7 +19,7 @@
 #include "feature/calls/CallUiBackend.h"
 #include "gui/CallChromeSync.h"
 #include "domain/ui/CallConflictCopy.h"
-#include "gui/PaymentFeedback.h"
+#include "domain/ui/PaymentFeedback.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "CallVideoTileRenderer.h"
 #include "gui/UserFeedback.h"
@@ -163,6 +163,10 @@ void CallController::BindShellCallChrome(ShellCallChromePorts ports) {
   shell_call_chrome_ = std::move(ports);
 }
 
+void CallController::BindPeerLinkRefresh(std::function<void()> callback) {
+  peer_link_refresh_ = std::move(callback);
+}
+
 void CallController::BindPeoplePickerNotify(PeoplePickerNotifyPorts ports) {
   people_picker_notify_ = std::move(ports);
 }
@@ -192,9 +196,19 @@ void CallController::BindToMessaging() {
   }
   backend->SetOnRingChanged([this]() {
     // Ingest may run on IO; shell/RmlUi updates must stay on UI.
-    AppRuntime::PostUI([this]() { RefreshPendingRing(); });
+    AppRuntime::PostUI([this]() {
+      RefreshPendingRing();
+      if (peer_link_refresh_) {
+        peer_link_refresh_();
+      }
+    });
   });
-  backend->SetOnChromeRefresh([this]() { RefreshPendingRing(); });
+  backend->SetOnChromeRefresh([this]() {
+    RefreshPendingRing();
+    if (peer_link_refresh_) {
+      peer_link_refresh_();
+    }
+  });
   bound_calls_ = identity;
   // Pick up post-restart abandon / pending ring after stack rebuild.
   RefreshPendingRing();
@@ -558,16 +572,8 @@ void CallController::RefreshPendingRing() {
     active_call_id_ = (*active)->call_id;
     ClearRing();
 
-    // Unanswered outbound: offerer stays Joined until Leave — without a TTL the Calling bar
-    // sticks forever and masks a reverse inbound ring as "previous or new call?".
-    if (backend->Phase() == CallPhase::OutboundCalling && !backend->Media().IsActive() &&
-        (*active)->created_at > 0 &&
-        util::NowUnixMs() - (*active)->created_at >= kDefaultCallInviteTtlMs) {
-      log().warning
-          << "outbound unanswered timeout call_id=" << (*active)->call_id;
-      backend->Apply(CallLifecycleEvent::LeaveClicked, (*active)->call_id);
-      return;
-    }
+    // Outbound unanswered TTL → Leave lives in CallSessionManager::SweepExpiredInvites
+    // (CALLS design; Tick already sweeps). Do not duplicate LeaveClicked here.
 
     // Direct connect failed: keep chrome for Retry/End on 1:1. Group SFU recovery keeps chrome too.
     // Do not auto-LeaveCall on `failed` — that erased the session before the user could retry.

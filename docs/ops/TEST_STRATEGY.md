@@ -4,7 +4,7 @@
 
 How we stress and qualify **pp-node** (hop services) and **pp-browser** (product actions). Purpose IDs (`N-*`, `B-*`) are the vocabulary for multi-process work. Deploy smoke layers L0–L2 live in [IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md).
 
-**Doctrine** (tiers vs layers, push-down seams, promote failures downward, skip taxonomy, doc homes): [TESTING.md](../architecture/TESTING.md).  
+**Doctrine** (design as oracle, tiers vs layers, push-down seams, promote failures downward, skip taxonomy, doc homes): [TESTING.md](../architecture/TESTING.md).  
 **Hard lab** (forced A↛B / impairment ladder): [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md), [projects/hard-lab/](../../projects/hard-lab/).
 
 Related: [BUILD.md](BUILD.md), [CALLS.md](../architecture/CALLS.md), [NETWORKING.md](../architecture/NETWORKING.md).
@@ -15,12 +15,13 @@ Related: [BUILD.md](BUILD.md), [CALLS.md](../architecture/CALLS.md), [NETWORKING
 
 Repo-wide decision rules live in [TESTING.md](../architecture/TESTING.md). This file applies them to hop/browser qualification:
 
-1. **Purpose-first** — pick the question, then the cheapest layer that can answer it.
-2. **Cost order** — unit → local integration (in-process / loopback) → deploy smoke → multi-node / hard lab.
-3. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](../../src/domain/mesh/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.
-4. **Promote failures downward** — if smoke/hard-lab finds a policy bug that gtest can reproduce, lock it below; see [TESTING.md § When a higher tier finds a bug](../architecture/TESTING.md#when-a-higher-tier-finds-a-bug).
-5. **Three kinds of testing** (orthogonal to tiers) — correctness / reliability / capacity; see doctrine.
-6. **Do not merge** pp-node and pp-browser into one suite with shared pass criteria. Share fixtures where useful; qualify separately.
+1. **Design as oracle** — cases guard documented intent / purpose IDs, not the current call graph; see [TESTING.md § Design as oracle](../architecture/TESTING.md#design-as-oracle). Pre-existing cases may still mirror implementation — tighten them when spotted in the work at hand ([Legacy suites](../architecture/TESTING.md#legacy-suites)).
+2. **Purpose-first** — pick the question (cite a purpose ID or doc sentence), then the cheapest layer that can answer it.
+3. **Cost order** — unit → local integration (in-process / loopback) → deploy smoke → multi-node / hard lab.
+4. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](../../src/domain/mesh/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.
+5. **Promote failures downward** — if smoke/hard-lab finds a policy bug that gtest can reproduce, lock it below; see [TESTING.md § When a higher tier finds a bug](../architecture/TESTING.md#when-a-higher-tier-finds-a-bug).
+6. **Three kinds of testing** (orthogonal to tiers) — correctness / reliability / capacity; see doctrine.
+7. **Do not merge** pp-node and pp-browser into one suite with shared pass criteria. Share fixtures where useful; qualify separately.
 
 ---
 
@@ -145,25 +146,28 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 
 | Concern | ctest / sources |
 |---------|-----------------|
-| Direct call-media | `call_media_direct_service_test` — [`src/domain/mesh/tests/call_media_direct_service_test.cpp`](../../src/domain/mesh/tests/call_media_direct_service_test.cpp) |
+| Direct call-media | `call_media_leg_coordinator_test` — [`src/domain/mesh/tests/call_media_leg_coordinator_test.cpp`](../../src/domain/mesh/tests/call_media_leg_coordinator_test.cpp) |
 | Media relay fan-out | `media_relay_service_test` — [`media_relay_service_test.cpp`](../../src/domain/mesh/tests/media_relay_service_test.cpp) |
 | Circuit + call-media | `amp_circuit_call_media_compose_test` — peer-id-only nest + private-MA hop-book poison contrast (hard-w5) — [`amp_circuit_call_media_compose_test.cpp`](../../src/domain/mesh/tests/amp_circuit_call_media_compose_test.cpp) |
 | Circuit + media_relay | `amp_circuit_media_relay_compose_test` — [`amp_circuit_media_relay_compose_test.cpp`](../../src/domain/mesh/tests/amp_circuit_media_relay_compose_test.cpp) |
-| AmpCircuitHopReach NAT policy | `amp_circuit_hop_reach_test` — skip EnsureAssociation / PreferredMultiaddr on nested; PeerId hop key — [`amp_circuit_hop_reach_test.cpp`](../../src/feature/conversations/tests/amp_circuit_hop_reach_test.cpp) |
+| AmpCircuitHopReach NAT policy | `amp_circuit_hop_reach_test` — skip EnsureAssociation / PreferredMultiaddr on nested; PeerId hop key; **dialable+DialInBackoff still Connected via circuit** — [`amp_circuit_hop_reach_test.cpp`](../../src/feature/conversations/tests/amp_circuit_hop_reach_test.cpp) |
 | Amp IPv6 dial preference | `reachability_test` / `amp_observed_addrs_test` / `mesh_hop_policy_test` — global `/ip6` > private `/ip4`; Reachable-via-v6; directory PreferredDial |
 | Amp IPv6 dial smoke | `amp_ipv6_dial_test` — MemoryIo `/ip6` EnsureAssociation + PreferredMultiaddr prefers global `/ip6` |
 | Circuit bridges | `circuit_relay_service_test` |
 | Call phase SM | `call_lifecycle_test` — [`src/feature/conversations/tests/call_lifecycle_test.cpp`](../../src/feature/conversations/tests/call_lifecycle_test.cpp) |
 | V037/V038 planner + TX-only | `call_lifecycle_test`, `call_topology_controller_test` (`InboundSfuAttachIgnoredWhenStatusDirectConnecting`), `call_tx_only_escalate_test` |
 | Invite listen MAs (no mDNS) | `call_listen_addrs_logic_test` — V038 D3 |
-| Answerer Kick / ScheduleStart → BeginSession | `call_answerer_kick_logic_test`, `call_media_bridge_answerer_start_test` — V038 D3 product glue |
+| Answerer Kick / ScheduleStart → BeginSession | `call_answerer_kick_logic_test`, `call_media_bridge_answerer_start_test` — V038 D3 product glue; **MediaKey wait exhaustion → ConnectFailed**; **dialable DialInBackoff + circuit → no Ensure hammer / no ConnectFailed** |
+| CSM Invite→Leave compose + inbound arms | `call_session_inbound_compose_test` — Invite→Leave, K-cycle, conflict, Decline, **outbound unanswered TTL**, **incoming expire → Idle**, MediaKey, HopRefuse, Broadcast, StartCall, Retry; **remote Leave/Ended/Decline → Idle**; Bridge offerer/KeyReady/ReleaseDirect |
+| CallStack + CallUiBackend façade | `call_ui_backend_stack_test` — InitializeStores→BuildSessions + `BindTestMediaPath` → Available/InviteSeen→Accept→Leave, **Invite→InCall media path**, Decline, StartCall, Broadcast arm/accept, ResetSessions unavailable |
+| Dual CallStack product wire | `call_dual_stack_compose_test` — Offer↔Answer Invite/Accept/InCall/Leave (**either side Leave Idles peer**); **Answer Decline → offerer Idle**; **K-cycle**; **Accept second invite ends prior** (B-CONFLICT) |
 | N→planner select (Direct vs Hop) | `call_media_planner_select_logic_test` — Effective N; relay-cap SoftMigrate nudge gates |
 | Direct / Hop planner tables (V039) | `call_direct_planner_logic_test`, `call_hop_planner_logic_test` |
 
 Run (from a configured desktop build tree):
 
 ```bash
-ctest --test-dir build -R 'CallMediaDirect|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|CallTxOnly|CallListenAddrs|CallAnswererKick|CallMediaBridgeAnswerer|CallMediaPlannerSelect|CallDirectPlanner|CallHopPlanner|InboundSfuAttachIgnoredWhenStatus|AmpDirectChat' --output-on-failure --no-tests=error
+ctest --test-dir build -R 'CallMediaDirect|CallMediaLeg|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|CallTxOnly|CallListenAddrs|CallAnswererKick|CallMediaBridgeAnswerer|CallMediaPlannerSelect|CallDirectPlanner|CallHopPlanner|CallSessionInbound|CallUiBackendStack|CallDualStack|InboundSfuAttachIgnoredWhenStatus|AmpDirectChat' --output-on-failure --no-tests=error
 ```
 
 Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` if a local tree renames targets.
@@ -239,8 +243,13 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | N-HARD-SEED-ONLY | **Scaffold** | `pp_hard_disco_smoke.sh --profile seed-only`; `--suite hard-w3`. Warm-hop + PeerId-only StartBridge. |
 | N-HARD-CGNAT-ISH | **Scaffold** | [`docker-compose.hard-lab-cgnat.yml`](../../packaging/pp-node/docker-compose.hard-lab-cgnat.yml) + [`pp_hard_nat_smoke.sh`](../../scripts/test/pp_hard_nat_smoke.sh); driver `--suite hard-w5`. Dual SNAT; hop public-only; A↛B + hop↛peer-private asserts. |
 | B-HARD-CALL-NAT | **Scaffold** | Phase-1: answerer `--warm-hop --min-rx-frames`; offerer `--via-hop --peer-id-only`. Status port **18628**. |
-| B-HARD-CALL-NAT-PRODUCT | **Scaffold** | Phase-2 same smoke `--phase product` / default `both`: offerer `--reach product` (punch→circuit). Reproduce: `PP_HARD_NAT_CALL_EXPECT=fail`. PR gate for the poison/EnsureAssociation policies: `amp_circuit_hop_reach_test` + ``PeerIdOnlyNestDoesNotPoisonRelayBookWithPrivateMa` / `PrivateTargetMultiaddrPoisonsRelayBook``. |
+| B-HARD-CALL-NAT-PRODUCT | **Scaffold** | Phase-2: `--reach product` (punch→circuit). Reproduce: `PP_HARD_NAT_CALL_EXPECT=fail`. |
+| B-HARD-CALL-NAT-DIRTY | **Green** | Phase-3: `--reach bridge --force-dial-fail` (HL004 dirty dial book; hop MarkHot + ClearDialBackoff). |
+| B-HARD-CALL-NAT-STACK | **Green target** | Phase-4: `--product-stack` CallUiBackend StartCall/Accept/Leave + real Amp CallStack Wire (no BindTestMediaPath mocks). |
+| hard-w5 default phase | **all** | `circuit+product+dirty+stack` (`both` = legacy circuit+product) |
 | N-HARD-* (other) / N-ADMIT-HARD | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) |
+
+**Routing mode map** (direct / punch / circuit hop / SFU `media_relay` / ConnectFailed teardown → tier): [HARD_LAB.md § Routing mode coverage](../../packaging/pp-node/HARD_LAB.md#routing-mode-coverage-success-oracles).
 
 ---
 
@@ -263,18 +272,18 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 
 | ID | Status | Primary evidence |
 |----|--------|------------------|
-| B-CALL-DIRECT | **Partial** (improved) | In-process: `call_media_direct_service_test`, `CallMediaKeyStore` Put/Load, `call_listen_addrs_logic_test`, `call_answerer_kick_logic_test`, `call_media_planner_select_logic_test`, `call_media_bridge_answerer_start_test` (ScheduleStart→StartSfu / MediaPending / HopLive Status gate); multi-process: `pp-call-probe` + [`pp_call_direct_smoke.sh`](../../scripts/test/pp_call_direct_smoke.sh); full Invite→Leave product still needs smoke |
+| B-CALL-DIRECT | **Partial** (improved) | In-process: `call_media_leg_coordinator_test` (ex-`CallMediaDirectService`), `CallMediaKeyStore` Put/Load, `call_listen_addrs_logic_test`, `call_answerer_kick_logic_test`, `call_media_planner_select_logic_test`, `call_media_bridge_answerer_start_test` (answerer + offerer ScheduleStart / KeyReady / ReleaseDirect / dial-backoff→circuit / **ConnectFailed stops media**), `call_session_inbound_compose_test` (CSM Invite→AcceptClicked→Leave Idle), `call_ui_backend_stack_test` (CallStack+CallUiBackend Invite→InCall), `call_dual_stack_compose_test` (Offer↔Answer Invite/Accept/InCall/Leave wire); multi-process: `pp-call-probe` + [`pp_call_direct_smoke.sh`](../../scripts/test/pp_call_direct_smoke.sh); thin smoke still Amp duplex (not product CSM wire) |
 | B-CALL-HOP | **Covered** (scaffold) | In-process: `AmpCircuitCallMediaComposeTest` / `circuit_call_media_compose_test`, `circuit_media_relay_compose_test`; multi-process: `pp-call-probe --via-hop` + [`pp_call_hop_smoke.sh`](../../scripts/test/pp_call_hop_smoke.sh); driver `--suite call-hop`. **V038 D4 loopback gate.** |
-| B-TEARDOWN | **Partial** | `ConnectDetachKCycleNoHang` (direct); `--cycles` on `pp-call-probe` (direct and hop); Detach/timeout/Stop no-hang in services |
-| B-CONFLICT | **Covered** (scaffold) | In-process: `CallMediaDirectServiceTest.SecondInboundRejectedThenEndAndAccept`; multi-process: `pp-call-probe --expect busy` + [`scripts/test/pp_call_conflict_smoke.sh`](../../scripts/test/pp_call_conflict_smoke.sh); driver `--suite conflict`. Chrome copy still unit-only. |
+| B-TEARDOWN | **Partial** (improved) | `ConnectDetachKCycleNoHang` (direct); `--cycles` on `pp-call-probe` (direct and hop); Detach/timeout/Stop no-hang in services; in-process `InviteAcceptLeaveKCycleTeardown` (CSM); `OfferAnswerKCycleTeardown` (dual CallStack Leave→Idle→re-Invite) |
+| B-CONFLICT | **Covered** (scaffold) | In-process: `CallMediaLegCoordinator` second-inbound reject; `AcceptSecondInviteEndsPriorActiveCall` (CSM + dual CallStack); multi-process: `pp-call-probe --expect busy` + [`scripts/test/pp_call_conflict_smoke.sh`](../../scripts/test/pp_call_conflict_smoke.sh); driver `--suite conflict`. Chrome copy still unit-only. |
 | B-MSG+CALL | **Covered** (scaffold) | Direct: `ChatDuringAndAfterCallMedia` + `pp_call_msg_smoke.sh` (`--suite msg-call`). Hop same-session: `CircuitCallMediaChatComposeTest.ChatDuringAndAfterCallViaCircuit` + `pp-call-probe --via-hop --with-chat` + [`scripts/test/pp_call_hop_msg_smoke.sh`](../../scripts/test/pp_call_hop_msg_smoke.sh); driver `--suite msg-call-hop`. Chat uses a **separate** circuit hop from call-media. |
-| B-UI | **Covered at unit** | `call_chrome_sync_test`, `call_conflict_copy_test`; GUI E2E manual only |
+| B-UI | **Covered at unit** | `call_chrome_sync_test`, `call_conflict_copy_test`, `call_ui_backend_stack_test` (façade Available/phase/pending/active); GUI E2E manual only |
 | B-MIX | **Covered** (scaffold) | [`scripts/test/pp_mix_browser_smoke.sh`](../../scripts/test/pp_mix_browser_smoke.sh): call ∥ conflict ∥ msg-call (ports 47100/47120/47130). Driver `--suite mix` also runs N-MIX then same-session `pp_call_hop_msg_smoke.sh`. |
 | B-HARD-CALL | **Scaffold** (nightly gate) | [`scripts/test/pp_hard_call_smoke.sh`](../../scripts/test/pp_hard_call_smoke.sh); driver `--suite hard`. **V038 D4 NAT stand-in** (A↛B netns → circuit). Prefer green hard-lab over human NAT-pair dogfood for regression; promote hard-lab failures into compose/gtest. |
 | B-HARD-MSG+CALL | **Scaffold** | `pp_hard_call_smoke.sh --with-chat`; driver `--suite hard` |
 | B-HARD-* (Wave 6) | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md) Wave 6 |
 
-**Product-glue:** Answerer Kick gates + `ScheduleStartMediaAsAnswerer`→`BeginSession` covered in-process (`CallAnswererKick*` / `CallMediaBridgeAnswerer*`). Remaining hole is full CSM Invite→Leave E2E (smoke / hard-lab). **V038 rewrite debt** exits via unit + compose + `B-CALL-HOP` / `B-HARD-CALL` — not a required human NAT-pair dogfood ([p2p-av-calls CURRENT_STATE](../../projects/p2p-av-calls/CURRENT_STATE.md#rd-automated-exit-v038--prefer-over-device-dogfood)).
+**Product-glue:** Answerer Kick + Bridge + CSM + CallStack/CallUiBackend + dual-stack Invite/Accept/InCall/Leave + Decline + K-cycle + **conflict Accept-B-ends-A** covered in-process (`CallDualStack*`). Remote Leave/Ended/Decline drive `RemoteEnded` → Idle when no remote interest remains (no offerer LeaveClicked heal). Amp smokes green locally: `pp_call_direct_smoke`, `pp_call_conflict_smoke`. Hard-lab / `pp-call-probe` product invite wire across OS processes still deferred (probe remains Amp duplex + busy reject). **V038 rewrite debt** exits via unit + compose + `B-CALL-HOP` / `B-HARD-CALL` — not a required human NAT-pair dogfood ([p2p-av-calls CURRENT_STATE](../../projects/p2p-av-calls/CURRENT_STATE.md#rd-automated-exit-v038--prefer-over-device-dogfood)).
 
 ---
 

@@ -1,18 +1,15 @@
 #pragma once
 
 #include "domain/ai/StructuredTextParser.h"
+#include "domain/ui/ChatWidgetConfigBuilders.h"
 #include "domain/ui/ChatWidgetTypes.h"
 #include "common/PbrCompat.h"
 
 #include <ui/data/DataModelHandle.h>
 
-#include <map>
-#include <string>
+#include <vector>
 
 namespace pbr {
-
-FormWidgetState BuildFormWidgetState(const Object& config);
-CalendarWidgetState BuildCalendarWidgetState(const Object& config);
 
 void ApplyWidgetInits(const std::vector<WidgetInit>& inits, TurnWidgetState& state);
 

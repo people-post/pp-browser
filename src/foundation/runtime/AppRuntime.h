@@ -54,7 +54,15 @@ public:
   /** Queued worker tasks across lanes (0 if runtime not running). */
   static size_t WorkerTotalQueuedCount();
 
-  // --- UI mailbox (GUI; drained by Application each frame) ---
+  /**
+   * Wait until Critical then Normal worker lanes have drained past a barrier and the UI
+   * mailbox has run the barrier callback. Used by CallStack::Shutdown and call tests so
+   * LeaveCall/DeclineInvite workers finish before CallSessionManager is destroyed.
+   * @return true if the barrier completed within budget.
+   */
+  static bool DrainWorkersThenUI(std::chrono::milliseconds budget = std::chrono::milliseconds(2000));
+
+  // --- Main/UI mailbox (runtime_core; GUI drains each frame, headless lazy-inits) ---
   static void InitializeUI();
   static void ShutdownUI();
   static void PostUI(std::function<void()> task);

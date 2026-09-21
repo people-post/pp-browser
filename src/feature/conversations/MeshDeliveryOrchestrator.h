@@ -18,6 +18,7 @@
 #include "common/chat/IDirectMessageClient.h"
 #include "domain/messaging/PskSessionCoordinator.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
+#include "domain/messaging/E2ePublicSessionLogic.h"
 #include "feature/calls/CallControlInboundPorts.h"
 #include "feature/conversations/RelayReceivePipeline.h"
 #include "feature/conversations/GroupInviteGate.h"
@@ -50,9 +51,22 @@ class AttachmentFetchWorkflow;
 class IChatHistoryPeerClient;
 class IChatBlobPeerClient;
 
+/** Product-facing path for chat header chrome (not dial/punch mechanics). */
+enum class ThreadPeerPathKind {
+  None = 0,
+  Direct,      // live ADP PeerLink
+  ViaHop,      // live circuit/media carrier PeerLink
+  ViaRelay,    // Brief/HTTP message relay only (no live mesh link)
+  Connecting,  // dial / handshake / punch — short-lived
+  Degraded,    // backoff / retry soon
+  Failed,      // offline / can't connect
+  Ready,       // idle, not yet dialing
+};
+
 /** Aggregated peer-link UX for a direct chat thread. */
 struct ThreadPeerLinkView {
   MeshPeerLinkPhase phase = MeshPeerLinkPhase::Unavailable;
+  ThreadPeerPathKind path_kind = ThreadPeerPathKind::None;
   std::string status_label;
   std::string banner_message;
   bool show_banner = false;
@@ -60,6 +74,7 @@ struct ThreadPeerLinkView {
   int backoff_seconds = 0;
   bool has_direct_endpoint = false;
   bool relay_available = false;
+  bool carrier_backed = false;
 };
 
 class MeshDeliveryOrchestrator : public Module {
@@ -229,6 +244,13 @@ public:
   void TickMesh();
   /** Warm connection for an open direct thread (background). */
   void WarmPeerForThread(const std::string& thread_id);
+  /** Warm Amp association by PeerId / dial key (call prefetch shares this with chat). */
+  void WarmPeerByKey(const std::string& peer_key);
+  /**
+   * Ensure e2e_public AutoKey PSK exists for peer (call invite media-key wrap).
+   * Caller attaches `first_message_key_init_b64` on the outbound CallInvite send.
+   */
+  Roe<EnsuredE2ePublicSessionKey> EnsureE2ePublicSessionKey(const std::string& peer_identity);
   /** Snapshotted link UX for the open thread (header + soft banner). */
   ThreadPeerLinkView GetThreadPeerLink(const std::string& thread_id) const;
   /** Clear dial backoff and dial again for the thread's peer. */

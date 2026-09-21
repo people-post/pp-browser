@@ -1,6 +1,6 @@
 # P2P A/V calls — current state
 
-**Last updated:** 2026-09-14
+**Last updated:** 2026-09-17
 
 **North star:** [NETWORKING.md](../../docs/architecture/NETWORKING.md) + **[V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)** — HTTP + libp2p only; call media on libp2p (voice-first). **m2 done:** libdatachannel removed from build; wire-compat `call_sdp`/`call_ice` ignored.
 
@@ -16,8 +16,16 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **V036 MediaSeat** | **Phase 3 landed** — `CallDirectPath` / `CallHopPath` token façades; CSM signaling-only for duplex start/stop; Phase 1–2 bind/Live/attach flight retained — [DECISIONS V036](DECISIONS.md#v036--mediaseat--exclusive-media-epoch) |
 | **V037 State+Status FSM** | `CallPhase` + `CallMediaStatus`; one planner armed per pair; `media_cancel_gen`; gates on ScheduleStart / CallSfuAttach / CompleteAttach — [DECISIONS V037](DECISIONS.md#v037--calllifecycle-state--status-one-planner-armed) |
 | **V038 rewrite debt** | N=2 = direct → punch → **circuit** call-media; SoftMigrate / `media_relay` = **N≥3 only** — [DECISIONS V038](DECISIONS.md#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3); phase [rd](PHASES.md#rd--amp-call-media-rewrite-debt-v038) |
-| **N→planner select** | `CallMediaPlannerSelectLogic` + Topology `OnPeerMediaRelayCapLearned`; CSM Accept no longer owns SoftMigrate nudge trees |
+| **N→planner select** | [`CallMediaPlannerSelectLogic`](../../src/domain/messaging/CallMediaPlannerSelectLogic.h) + Topology `OnPeerMediaRelayCapLearned`; CSM Accept no longer owns SoftMigrate nudge trees |
 | **V039 planner FSMs** | **pm0–pm4 landed** — Direct/Hop `Apply` + logic gtests; health/attach-wait SM timers; CALLS race homes → planner phases — [DECISIONS V039](DECISIONS.md#v039--call-directhop-planner-machines) |
+| **V040 CallMediaPlane** | **Landed (cs0–cs2)** — `CallMediaPlane` owns Amp/dial/relay/hop/bridge/dial book; Lifecycle sole N025 desire; CALLS.md ownership promoted — [DECISIONS V040](DECISIONS.md#v040--callmediaplane--callstack-ownership-collapse); phase [cs](PHASES.md#cs--callstack-ownership-collapse-callmediaplane) |
+| **V041 Lifecycle ports** | **Landed (ci0–ci3)** — `CallLifecycleSignalingPorts`; Stack composition root; CALLS.md table — [DECISIONS V041](DECISIONS.md#v041--calllifecycle-signaling-ports--stack-composition-root); phase [ci](PHASES.md#ci--callstack-composition-independence-lifecycle-ports) |
+| **V042 Direct media ports** | **Landed (dm)** — CSM `CallDirectMediaPorts`; no `CallMediaBridge*` — [DECISIONS V042](DECISIONS.md#v042--calldirectmediaports--csm-without-callmediabridge); phase [dm](PHASES.md#dm--csm-direct-media-ports-no-callmediabridge) |
+| **V043 Seat + Lifecycle ports** | **Landed (sl)** — CSM ports only; no `CallLifecycle*` / `CallMediaSeat*` facets — [DECISIONS V043](DECISIONS.md#v043--callsessionlifecycleports--callmediaseatports); phase [sl](PHASES.md#sl--csm-seat--lifecycle-ports-no-sibling-facets) |
+| **V044 CallSessionWorkflow** | **Landed (sw)** — durable session/roster in CSM-owned Workflow — [DECISIONS V044](DECISIONS.md#v044--callsessionworkflow-durable-sessionroster); phase [sw](PHASES.md#sw--callsessionworkflow-extract) |
+| **V045 Workflow hygiene** | **Landed (wh)** — wire-before-commit Invite/Accept/Decline; Decline Ends local; query dedupe + Peek kick — [DECISIONS V045](DECISIONS.md#v045--callsessionworkflow-hygiene-wire-first--query-dedupe); phase [wh](PHASES.md#wh--callsessionworkflow-hygiene) |
+| **V046 Topology independence** | **Landed (tp)** — state clusters; HostPorts; Lifecycle/Seat ports; `CallHopMigrateWorkflow` — [DECISIONS V046](DECISIONS.md#v046--calltopologycontroller-independence); phase [tp](PHASES.md#tp--calltopologycontroller-independence-v046) |
+| **V047 HopMigrate no-friend** | **Landed (hm)** — Workflow owns race clusters + ports/Ops; Topology refs + TopologyOps; no friend — [DECISIONS V047](DECISIONS.md#v047--callhopmigrateworkflow-owns-clusters-no-friend); phase [hm](PHASES.md#hm--callhopmigrateworkflow-no-friend-v047) |
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |
@@ -69,8 +77,13 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 |------|-------|
 | **rd D3/D4** | **Automated gates** below (purpose IDs). Human OEM sample optional — never the only gate |
 | Hop peerstore / circuit | media-hop **L1–L3** + loopback compose landed; **L3.5 multi-hop** later (transitive R1↛B) |
-| **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** + circuit compose; **ConnectAsync landed**; leftovers: inbound-handler stall contract, sync L4 façades for tests; optional s4 if Leave hangs — [SESSION_MACHINES.md](SESSION_MACHINES.md#remaining-work-call-media--peer-honesty) |
-| **Answerer MediaKey wait** | Exhaustion → `ConnectFailed` + `call.error.media_key_timeout` (no stuck MediaPending) |
+| **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** + circuit compose; **ConnectAsync landed**; inbound MediaKey wait cancelable (**landed**); leftovers: sync L4 façades for tests; optional s4 if Leave hangs — [SESSION_MACHINES.md](SESSION_MACHINES.md#remaining-work-call-media--peer-honesty) |
+| **Answerer MediaKey wait** | Exhaustion → `ConnectFailed` + `call.error.media_key_timeout` (no stuck MediaPending); KeyReady kick + **timeout compose** (`SetMediaKeyInboxPollRoundsForTest(0)`) |
+| **Remote Leave / CallEnded chrome** | `EndCallLocal` applies `RemoteEnded` when lifecycle `ActiveCallId` matches — either side Leave Idles peer (dual-stack both directions); stale id ignored |
+| **Inbound Decline clears offerer** | `HandleInboundDecline` `EndCallLocal` when no remote Joined/Ringing/Invited remain (1:1); keeps call if another invitee still rings; dual-stack Decline wire (gtest) |
+| **Outbound unanswered TTL** | `CallSessionLogic::ShouldAutoLeaveOutboundUnanswered` + `SweepExpiredInvites` LeaveCall (feature, not GUI-only); CallController Tick sweeps — gtest logic + compose |
+| **Incoming invite expire** | `SweepExpiredInvites` Missed + `EndCallLocal` → `RemoteEnded` clears Ringing Idle / listen (CALLS expire → Idle; gtest) |
+| **Retry after ConnectFailed** | Lifecycle `RetryClicked` re-arms `DirectConnecting` before `RetryP2pMedia`/`BeginSession` (gtest `RetryClickedRearms*` / `RetryP2pMediaAfterConnectFailed`) |
 | **lv video** | Prefer loopback/probe; OEM dogfood only for Camera/HW encode |
 | Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
 | N≥3 unify engine on libp2p send/recv | N021 follow-on |
@@ -81,9 +94,9 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 
 | Gate | Purpose / evidence | Status |
 |------|-------------------|--------|
-| **D2 policy** | Lifecycle + topology Status gates; `CallTxOnlyEscalateLogic` | **PASS** (gtest) |
-| **D3 dial without mDNS** | `CallListenAddrsLogic` + invite encode round-trip; CSM fills invite/accept from provider | **PASS** (gtest) |
-| **D3 direct duplex** | `B-CALL-DIRECT`: Bridge answerer start + Kick logic gtests + `CallMediaDirectServiceTest` + `pp_call_direct_smoke` | **Improved** (ScheduleStart→StartSfu / MediaPending / HopLive gate); smoke scaffold for full Invite→Leave |
+| **D2 policy** | Lifecycle + topology Status gates; [`CallTxOnlyEscalateLogic`](../../src/domain/messaging/CallTxOnlyEscalateLogic.h) | **PASS** (gtest) |
+| **D3 dial without mDNS** | [`CallListenAddrsLogic`](../../src/domain/messaging/CallListenAddrsLogic.h) + invite encode round-trip; CSM fills invite/accept from provider | **PASS** (gtest) |
+| **D3 direct duplex** | `B-CALL-DIRECT`: Bridge + Kick + CSM compose + CallUiBackend + dual-stack (Invite/InCall/Leave + K-cycle + conflict) + `pp_call_direct_smoke` / `pp_call_conflict_smoke` | **Improved** (in-process product wire + K-cycle + conflict); Amp smokes green |
 | **D4 circuit duplex** | `B-CALL-HOP`: `AmpCircuitCallMediaComposeTest` + `pp_call_hop_smoke` | **PASS** loopback; smoke scaffold |
 | **D4 forced NAT stand-in** | `B-HARD-CALL` / `--suite hard` (A↛B netns → circuit) | Scaffold / nightly — **replaces** “two NATed phones” as regression wall |
 | **OEM sample** | Audio session / Android mic-speaker — `covered-above` for policy | Optional; m1 LAN mobile already claimed |
@@ -98,8 +111,9 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 
 ## Next agent — start here
 
-1. Keep **pm** / **rd** green: unit + `call` / `call-hop` / `hard` purpose IDs.
-2. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay` if group SoftMigrate blocked.
+1. Keep **pm** / **rd** / **cs** green: unit + `call` / `call-hop` / `hard` / `conflict` purpose IDs.
+2. Optional: `pp_call_hop_smoke` when Docker image ready; or `pp-call-probe` product invite wire (large).
+3. Mesh [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup); confirm seed `media_relay` if group SoftMigrate blocked.
 
 ## Agent traps
 
@@ -108,8 +122,16 @@ Doctrine: [TESTING.md](../../docs/architecture/TESTING.md) (promote downward); i
 | Reintroduce `call_hop_addrs` / app ICE gather | H007 — reachability **in** libp2p |
 | Extend libdatachannel for 1:1 | Removed in m2 — mesh media only |
 | SoftMigrate invents NAT | Stack dialable? then quote |
-| Put SoftMigrate relay-cap nudge in CSM | Topology `OnPeerMediaRelayCapLearned` + `CallMediaPlannerSelectLogic` |
+| Put SoftMigrate relay-cap nudge in CSM | Topology `OnPeerMediaRelayCapLearned` + [`CallMediaPlannerSelectLogic`](../../src/domain/messaging/CallMediaPlannerSelectLogic.h) |
 | Invent N025 listen from `TopPendingInvite` on tick | Lifecycle `WantEphemeralListen` only |
+| Duplicate listen desire on CallStack | Lifecycle sole desire; stack only syncs Hub N025 execution |
+| Put Amp dial/relay/hop unique_ptrs on CallStack | **V040** — `CallMediaPlane` owns mesh-media siblings |
+| Cache CSM/stores/seat/lifecycle on the plane (`LiveRefs`) | Stack `BindMediaProducts` + deps callbacks only; plane `BindBridge` takes args per call |
+| Hold `CallSessionManager*` on CallLifecycle | **V041** — `CallLifecycleSignalingPorts` from Stack |
+| Hold `CallMediaBridge*` on CallSessionManager | **V042** — `CallDirectMediaPorts` from Stack |
+| Hold `CallLifecycle*` / `CallMediaSeat*` on CSM | **V043** — Lifecycle/Seat ports + `WireTopology*` for child only |
+| Split one class across `.cpp` files for size | Helpers in same TU or a new type — [AGENTS.md](../../AGENTS.md#conventions); inbound arms merged into `CallSessionManager.cpp` |
+| Re-inline relay/dial/hop/bridge into mega-`Wire` | Keep `Wire` mesh-only; follow [AGENTS.md](../../AGENTS.md#conventions) function-complexity convention |
 | Full-shell `SyncLayout` for Accept chrome | `RemountCallChrome` into `#shell-call-*-mount` only |
 | Host-wide inbound request SM / rewrite working call-media “while here” | V033 — targeted session SMs; [SESSION_MACHINES.md](SESSION_MACHINES.md) docs first |
 | Move `CallLifecycle` phases into `integration/host` | Product SM stays in feature; transport SM in host |

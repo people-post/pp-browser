@@ -56,8 +56,8 @@ protected:
     harness_->mgr_a().EnableNestedCarrierAccept(true);
     harness_->mgr_b().EnableNestedCarrierAccept(true);
 
-    chat_a_ = NewAmpChatPeerLinks(harness_->mgr_a());
-    chat_b_ = NewAmpChatPeerLinks(harness_->mgr_b());
+    chat_a_ = NewAmpChatPeerLinks(*harness_->runtime_a);
+    chat_b_ = NewAmpChatPeerLinks(*harness_->runtime_b);
 
     hops_ = std::make_unique<AmpCircuitHopRegistry>();
     circuit_r_ = std::make_unique<CircuitTunnelCoordinator>(*harness_->runtime_r);

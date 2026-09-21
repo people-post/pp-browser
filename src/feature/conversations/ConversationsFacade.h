@@ -8,7 +8,7 @@
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/net/OrgBackendClients.h"
-#include "domain/net/BlobQuotaUtil.h"
+#include "domain/net/BlobQuota.h"
 #include "domain/people/ContactTypes.h"
 #include "common/directory/IdentityTypes.h"
 #include "domain/people/ProfileIdentityView.h"
@@ -69,6 +69,8 @@ public:
   const std::string& ActiveThreadId();
   Roe<Thread> GetActiveThread();
   Roe<std::vector<Thread>> ListThreads();
+  /** True when an active local call is for this thread (origin / peer / group). */
+  bool ThreadHasActiveCall(const std::string& thread_id);
   Roe<Thread> OpenThread(const std::string& thread_id);
   Roe<void> CloseThread(const std::string& thread_id);
   void ClearActiveThread();

@@ -18,6 +18,7 @@ struct TranscriptBodyPlaintext {
   std::string payload_json;
   std::optional<std::string> content_rml;
   std::vector<TranscriptChatAction> chat_actions;
+  std::optional<std::string> working_set_json;
 };
 
 class TranscriptBodyCodec {

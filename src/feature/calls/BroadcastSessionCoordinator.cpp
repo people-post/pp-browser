@@ -1,6 +1,6 @@
 #include "feature/calls/BroadcastSessionCoordinator.h"
 
-#include "domain/messaging/AnnounceLiveJoinHandoff.h"
+#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/messaging/CallSessionLogic.h"
 #include "domain/messaging/CallSessionStore.h"

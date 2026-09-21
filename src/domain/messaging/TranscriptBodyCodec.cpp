@@ -63,6 +63,9 @@ Roe<std::vector<uint8_t>> TranscriptBodyCodec::Encode(const TranscriptBodyPlaint
     json.set("content_rml", *body.content_rml);
   }
   json.set("chat_actions", ChatActionsToJson(body.chat_actions));
+  if (body.working_set_json && !body.working_set_json->empty()) {
+    json.set("working_set_json", *body.working_set_json);
+  }
   const std::string serialized = DumpJson(json);
   return std::vector<uint8_t>(serialized.begin(), serialized.end());
 }
@@ -94,6 +97,11 @@ Roe<TranscriptBodyPlaintext> TranscriptBodyCodec::Decode(const std::vector<uint8
   if (const Array* chat_actions = json->getArray("chat_actions")) {
     body.chat_actions = ChatActionsFromJson(chat_actions);
   }
+  if (auto working_set_json = json->getString("working_set_json")) {
+    if (!working_set_json->empty()) {
+      body.working_set_json = *working_set_json;
+    }
+  }
   return body;
 }
 
@@ -109,6 +117,7 @@ Roe<TranscriptBodyPlaintext> TranscriptBodyCodec::FromMessage(const ThreadMessag
       message.payload_json.empty() ? ChatPayloadCodec::BuildPayloadJson(message) : message.payload_json;
   body.content_rml = message.content_rml;
   body.chat_actions = message.chat_actions;
+  body.working_set_json = message.working_set_json;
   return body;
 }
 
@@ -117,6 +126,7 @@ Roe<void> TranscriptBodyCodec::ApplyToMessage(const TranscriptBodyPlaintext& bod
   message.payload_json = body.payload_json;
   message.content_rml = body.content_rml;
   message.chat_actions = body.chat_actions;
+  message.working_set_json = body.working_set_json;
   if (auto applied = ChatPayloadCodec::ApplyRowToMessage(body.chat_payload, message); !applied) {
     return applied.error();
   }

@@ -28,6 +28,7 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
 {config_dir}/config.json
 {data_dir}/profiles.json
 {data_dir}/machine.json
+{data_dir}/mesh_directory_nodes.json   # last-good GET /v1/mesh/nodes (N027 cold start; schema_version 1)
 {data_dir}/profiles/{id}/
   manifest.json
   preferences.json

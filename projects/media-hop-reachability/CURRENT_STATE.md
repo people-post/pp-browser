@@ -2,7 +2,7 @@
 
 > **2026-09:** Product mesh is Amp-only; hop reachability uses `AmpCircuitHopReach` + `MeshHost::CircuitDeps()`. Hole punch planned as **Amp Coordinated Punch** ([HOLE_PUNCH.md](HOLE_PUNCH.md), H009) — not libp2p DCUtR. See [MESH.md](../../docs/architecture/MESH.md).
 
-**Last updated:** 2026-09-14 (Client circuit consume decoupled from host flag)
+**Last updated:** 2026-09-21 (H010 circuit StartBridge attempt budget)
 
 ## Direction
 
@@ -17,10 +17,10 @@ Hop **reachability** = **Amp mesh stack work** (H001/H007). App-layer `call_hop_
 | Area | State |
 |------|-------|
 | Project docs | Ownership: Amp mesh implements; SoftMigrate consumes |
-| ADRs | H001–H009; circuit multi-hop plan [N024](../p2p-mesh/DECISIONS.md#n024--immediate-relay-as-service-broker); punch plan H009 |
+| ADRs | H001–H010; circuit multi-hop plan [N024](../p2p-mesh/DECISIONS.md#n024--immediate-relay-as-service-broker); punch plan H009; **H010** first-connect StartBridge envelope/caps |
 | **L1 peer address book** | Stack upsert on bootstrap/register/connect/dial-success; preferred dial addr helpers |
 | **L2 advertised listen set** | Amp ch0 + dial-back / UPnP-derived ads |
-| **L3 circuit PeerId dial** | Circuit tunnel / hop reach — **single-hop**; SoftMigrate circuit fallback via `ICircuitHopReach` / `AmpCircuitHopReach` |
+| **L3 circuit PeerId dial** | Circuit tunnel / hop reach — **single-hop**; SoftMigrate circuit fallback via `ICircuitHopReach` / `AmpCircuitHopReach`; **H010** attempt budget (10s envelope, ≤3 StartBridge, sticky+Connected order) |
 | **L3 compose (loopback)** | Shared loopback partition fixture; call-media via R; media_relay quote/attach/fan-out via R |
 | **Circuit reserve** | `op=reserve` + `StartReserve` — answerer parks on org seed so R need not dial into NAT |
 

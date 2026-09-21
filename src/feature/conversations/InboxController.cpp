@@ -1,5 +1,6 @@
 #include "feature/conversations/InboxController.h"
 
+#include "domain/messaging/CallThreadPresenceLogic.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "domain/ai/StructuredTextParser.h"
@@ -14,6 +15,7 @@
 #include "domain/messaging/PskRotateCodec.h"
 #include "domain/messaging/ReactionTypes.h"
 #include "domain/ui/ChatFormHelper.h"
+#include "common/ui/WorkingSetCodec.h"
 #include "common/EmojiKey.h"
 #include "common/Utilities.h"
 
@@ -41,7 +43,8 @@ std::string InlineChatActionButtonsRml(const std::vector<TranscriptChatAction>& 
 }
 
 std::string HydrateChatActions(const std::string& body_rml, const std::vector<TranscriptChatAction>& chat_actions) {
-  if (chat_actions.empty() || body_rml.find("chat-suggestion") != std::string::npos) {
+  if (chat_actions.empty() || body_rml.find("chat-suggestion") != std::string::npos ||
+      body_rml.find("chat-working-set-chip") != std::string::npos) {
     return body_rml;
   }
   return body_rml + InlineChatActionButtonsRml(chat_actions);
@@ -52,18 +55,7 @@ std::string SystemLineRml(const std::string& text) {
 }
 
 bool IsPlumbingCallControl(const CallControlType type) {
-  switch (type) {
-  case CallControlType::CallMediaKey:
-  case CallControlType::CallSdp:
-  case CallControlType::CallIce:
-  case CallControlType::CallSfuAttach:
-  case CallControlType::CallSfuAttachFailed:
-  case CallControlType::CallHopRefuse:
-  case CallControlType::CallVideoRefresh:
-    return true;
-  default:
-    return false;
-  }
+  return CallControlCodec::IsPlumbingCallControl(type);
 }
 
 std::optional<std::string> CallDetailJson(const ThreadMessage& message) {
@@ -395,6 +387,10 @@ int InboxController::SumUnread() const {
   }
   int total = 0;
   for (const Thread& thread : *threads) {
+    // Public twin of a private DM — call/group control; never inflate the global badge.
+    if (HasPrivateE2eSibling(thread, *threads)) {
+      continue;
+    }
     total += thread.unread_count;
   }
   return total;
@@ -412,6 +408,9 @@ int InboxController::SumUnreadForContact(const std::string& contact_id) const {
   for (const Thread& thread : *threads) {
     if (std::find(thread.participant_contact_ids.begin(), thread.participant_contact_ids.end(), contact_id) ==
         thread.participant_contact_ids.end()) {
+      continue;
+    }
+    if (HasPrivateE2eSibling(thread, *threads)) {
       continue;
     }
     total += thread.unread_count;
@@ -841,10 +840,20 @@ std::string InboxController::BuildUnsupportedRml(const ThreadMessage& /*message*
 
 std::string InboxController::BuildMessageRml(const ThreadMessage& message) const {
   if (message.content_rml) {
-    if (message.content_rml->find("__ENTRY__") != std::string::npos) {
-      return InjectEntryPlaceholders(*message.content_rml, message.id);
+    std::string rml = *message.content_rml;
+    if (rml.find("__ENTRY__") != std::string::npos) {
+      rml = InjectEntryPlaceholders(rml, message.id);
     }
-    return *message.content_rml;
+    const bool has_snapshot = message.working_set_json && !message.working_set_json->empty() &&
+                              !WorkingSetCandidatesFromJson(*message.working_set_json).empty();
+    // Legacy bug: panel row actions were dumped into the bubble as chat-suggestion chips.
+    if (ContentRmlHasWorkingSetChip(rml) || has_snapshot) {
+      rml = StripInlinedWorkingSetActionSuggestions(rml);
+    }
+    if (ContentRmlHasActiveWorkingSetChip(rml) && !has_snapshot) {
+      rml = MarkWorkingSetChipsUnavailable(rml);
+    }
+    return rml;
   }
   if (message.content_type == ChatContentType::System) {
     return BuildSystemRml(message);

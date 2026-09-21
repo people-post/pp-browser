@@ -62,6 +62,13 @@ public:
 
   static std::optional<CallControlType> ControlTypeFromMessage(const ThreadMessage& message);
   static bool IsCallControlMessage(const ThreadMessage& message);
+  /** MediaKey / SFU / ICE — hide from transcript (not user history). */
+  static bool IsPlumbingCallControl(CallControlType type);
+  /**
+   * Do not bump thread list preview / unread / OS notices (plumbing + mid-call roster).
+   * Invite/Accept/Ended/Leave still surface in the sidebar.
+   */
+  static bool SuppressesInboxChrome(CallControlType type);
 };
 
 } // namespace pbr

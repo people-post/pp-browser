@@ -69,8 +69,9 @@ flowchart LR
 
 ### Bootstrap (transitional)
 
-- Keep N002 hardcoded seed as L0 fallback.
-- Docs + hop policy: prefer directory-resolved mesh nodes when available; bootstrap remains cold-start / emergency dial.
+- Keep N002 hardcoded seeds as L0 fallback (filled into empty `mesh.bootstrap_peers`).
+- Non-empty config `bootstrap_peers` replaces hardcoded.
+- Docs + hop policy + warm-bootstrap: prefer directory-resolved mesh nodes (live HTTP / Amp twin, else `{data_dir}/mesh_directory_nodes.json` last-good) when available; bootstrap remains cold-start / emergency dial.
 - Later: bootstrap entries may be directory origins only.
 
 ## Delivery phases

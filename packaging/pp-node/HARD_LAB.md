@@ -162,7 +162,23 @@ Order: 6 → 7 → 8 → 9. Admission (#10) may parallel 6–7. Extends today’
 Dual SNAT gateways; hop on public net only; `--min-rx-frames` duplex gate.
 - Phase-1 **B-HARD-CALL-NAT**: answerer `--warm-hop` + offerer `--via-hop --peer-id-only`
 - Phase-2 **B-HARD-CALL-NAT-PRODUCT**: same topo; offerer `--reach product` (punch via hop seed → nested circuit; punch miss is expected under dual-SNAT)
-Default `--phase both`. Reproduce mode: `PP_HARD_NAT_CALL_EXPECT=fail` (or `--expect-call fail`) passes only when the selected call phase fails.
+- Phase-3 **B-HARD-CALL-NAT-DIRTY**: `--reach bridge --force-dial-fail` (register private peer MA + dial miss → ClearDialBackoff → peer-id-only circuit) — HL004 dogfood dial-book
+- Phase-4 **B-HARD-CALL-NAT-STACK**: `--product-stack` (CallStack+CallUiBackend StartCall/Accept/Leave over Amp chat delivery + real `OnMeshServicesStarted` Wire / AmpCircuitHopReach; no FakeCircuit / BindTestMediaPath). Ready-file line1=peer MA, line2=account; offerer `--peer-account`.
+Default `--phase all` (circuit+product+dirty+stack). Legacy `both` = circuit+product. Reproduce mode: `PP_HARD_NAT_CALL_EXPECT=fail`.
+
+### Routing mode coverage (success oracles)
+
+Orthogonal to Wave topology. **Reach modes** (how A gets a PeerLink to B) ≠ **media topology** (Bridge 1:1 vs SoftMigrate `media_relay` SFU). Org HTTP call-control relay is signaling only — not a media path.
+
+| Mode | Product meaning | Cheapest oracle | Hard-lab / NAT |
+|------|-----------------|-----------------|----------------|
+| **Direct** | PeerLink Connected on usable MA; `path=direct` | loopback / LAN smoke | optional sanity |
+| **Punch** | ACP sync → upsert → Connected (`path=punched` or promote direct) | L3.25 punch compose / gtest | Phase-2 product: punch miss OK if circuit wins |
+| **Circuit hop** | Nested Session over circuit carrier; `path=circuit` | `amp_circuit_*` compose | **Primary** B-HARD-CALL-NAT / DIRTY / PRODUCT |
+| **SFU `media_relay`** | N≥3 SoftMigrate attach (blind hop) | SoftMigrate / media_relay loopback | Wave 1 B-HARD-CALL when N≥3 harness exists |
+| **ConnectFailed teardown** | Chrome fail + engine stop; clean Abort/shutdown | **gtest** (`call_media_bridge_answerer_start_test`) | not a hard-lab purpose |
+
+Hard-lab stays **success-first** (dirty book → circuit → duplex). Failure handling promotes downward to gtest ([TESTING.md](../../docs/architecture/TESTING.md)).
 
 ### Wave 6 — Product stress on hard topology
 

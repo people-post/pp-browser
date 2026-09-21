@@ -111,6 +111,8 @@ public:
   void BindBadgeNotify(BadgeNotifyPorts ports);
   void BindInputCoordinator(InputCoordinator& input);
   void BindCallActions(CallActionsPorts ports);
+  /** Refresh peer-link / "In call" header (Application wires from CallController). */
+  void UpdatePeerLinkChrome();
   void BindUnlockEnsure(UnlockEnsurePorts ports);
   void BindShellNavigation(ShellNavigationPorts ports);
   void BindShellFeedback(ShellFeedbackPorts ports);
@@ -150,6 +152,13 @@ private:
     ui::String peer_link_banner;
     bool show_peer_link = false;
     bool show_peer_link_banner = false;
+    bool peer_link_direct = false;
+    bool peer_link_via_hop = false;
+    bool peer_link_via_relay = false;
+    bool peer_link_connecting = false;
+    bool peer_link_degraded = false;
+    bool peer_link_failed = false;
+    bool peer_link_ready = false;
     bool show_retry_peer_dial = false;
     bool thread_encrypted = false;
     bool thread_is_ai = false;
@@ -280,6 +289,7 @@ private:
   void CalendarNext(const std::string& entry_id);
   void SelectCalendarDay(const std::string& entry_id, const std::string& iso_date);
   void SyncDisplayFromThread();
+  void RestoreWorkingSetsFromActiveThread();
   void SyncShellSessions();
   void UpdateThreadChrome();
   void ResetChatPanelState();
@@ -295,7 +305,6 @@ private:
   void OnRetryPeerDial();
   void OnMessagesScroll();
   void OnJumpToLatest();
-  void UpdatePeerLinkChrome();
   void SendSharedAssistantRelay(const std::string& thread_id, AtAiMode mode, const std::string& plain_text);
   void WireMessagingBindings();
   /** Mint/cache free-tier Brief guest Bearer when registered key is missing. */

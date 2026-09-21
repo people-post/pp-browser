@@ -182,4 +182,23 @@ Roe<void> ClearProfileIconCache(const std::string& profile_dir, const std::strin
   return Roe<void>{};
 }
 
+bool ProfileIconNeedsFetch(const std::string& profile_dir, const std::string& cache_key,
+                           const ProfileIconRef& icon) {
+  if (icon.url.empty() || cache_key.empty()) {
+    return false;
+  }
+  const auto meta = LoadProfileIconCacheMeta(profile_dir, cache_key);
+  if (!meta) {
+    return true;
+  }
+  const ProfileIconCacheMeta& cached = meta.value();
+  if (!icon.url.empty() && !cached.url.empty() && cached.url != icon.url) {
+    return true;
+  }
+  if (!icon.blob_id.empty() && cached.blob_id != icon.blob_id) {
+    return true;
+  }
+  return ProfileIconLocalPath(profile_dir, cache_key).empty();
+}
+
 } // namespace pbr

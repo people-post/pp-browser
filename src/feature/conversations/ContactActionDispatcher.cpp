@@ -3,7 +3,7 @@
 #include "domain/messaging/GroupTypes.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
-#include "feature/conversations/RegistrationClientUtil.h"
+#include "feature/conversations/RegistrationClient.h"
 #include "domain/people/ContactIdentity.h"
 #include "domain/people/ContactJson.h"
 #include "domain/people/ContactTypes.h"

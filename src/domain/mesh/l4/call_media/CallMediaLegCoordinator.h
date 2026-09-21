@@ -33,6 +33,7 @@ public:
   void Start();
   void Stop();
 
+  /** See ICallMediaTransport::SetInboundHandler — no bare sleeps on the handler hop. */
   void SetInboundHandler(InboundHandler handler);
   void ClearInboundHandler();
 

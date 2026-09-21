@@ -3,6 +3,7 @@ if(PP_BROWSER_IS_MOBILE)
 endif()
 
 include(PpBrowserWarnings)
+include(PpBrowserNoUiDeps)
 
 add_executable(pp-node
   main.cpp
@@ -12,7 +13,7 @@ add_executable(pp-node
   StatusHttpProtocol.cpp
   StatusHttpServer.cpp
   # Registration HTTP orchestration (N027); HTTP/sign helpers via pp_domain_net.
-  ${CMAKE_SOURCE_DIR}/src/feature/conversations/RegistrationClientUtil.cpp
+  ${CMAKE_SOURCE_DIR}/src/feature/conversations/RegistrationClient.cpp
 )
 
 target_include_directories(pp-node PRIVATE
@@ -38,6 +39,9 @@ if(TARGET OpenSSL::Crypto)
   target_link_libraries(pp-node PRIVATE OpenSSL::Crypto)
 endif()
 pp_browser_apply_warnings(pp-node)
+# Fail configure / link if a PUBLIC_LIBS edge reintroduces SDL/RmlUi/GUI.
+pp_browser_assert_no_ui_dependencies(pp-node)
+pp_browser_add_no_ui_link_check(pp-node)
 
 install(TARGETS pp-node RUNTIME DESTINATION bin)
 
@@ -63,10 +67,13 @@ install(TARGETS pp-node-probe RUNTIME DESTINATION bin)
 
 # call_probe needs AmpDirectChatTransport (--with-chat); skip in headless (no messaging).
 if(TARGET pp_feature_conversations OR TARGET pp_domain_messaging)
-  add_executable(pp-call-probe call_probe/main.cpp)
+  add_executable(pp-call-probe
+    call_probe/main.cpp
+    call_probe/ProductStackHarness.cpp
+  )
   target_include_directories(pp-call-probe PRIVATE ${CMAKE_SOURCE_DIR}/src)
   target_link_libraries(pp-call-probe PRIVATE ${_pp_probe_libs})
-  # Phase-2 NAT: AmpCircuitHopReach (punch→circuit) lives in pp_feature_calls.
+  # Phase-2 NAT + HL004 product-stack: CallStack / AmpCircuitHopReach in pp_feature_calls.
   if(TARGET pp_feature_calls)
     target_link_libraries(pp-call-probe PRIVATE pp_feature_calls)
   endif()

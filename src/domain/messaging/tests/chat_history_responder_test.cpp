@@ -1,7 +1,6 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "domain/messaging/ChatHistoryResponder.h"
-#include "domain/messaging/ChatHistoryStreamCodec.h"
 #include "domain/messaging/E2eRelayPayloadCodec.h"
 #include "domain/messaging/EnvelopeSigner.h"
 #include "domain/messaging/SqliteThreadStore.h"
@@ -141,11 +140,3 @@ TEST(ChatHistoryResponderTest, RejectsNonParticipantRequester) {
   EXPECT_FALSE(static_cast<bool>(response));
 }
 
-TEST(ChatHistoryStreamCodecTest, RoundTripFrame) {
-  const std::string json = R"({"session_epoch":1,"order":"asc"})";
-  auto frame = ChatHistoryStreamCodec::EncodeFrame(json);
-  ASSERT_TRUE(static_cast<bool>(frame));
-  auto decoded = ChatHistoryStreamCodec::DecodeFrame(*frame);
-  ASSERT_TRUE(static_cast<bool>(decoded));
-  EXPECT_EQ(*decoded, json);
-}

@@ -25,16 +25,18 @@
 #include "domain/ui/InputCoordinator.h"
 #include "domain/ui/ChatFormHelper.h"
 #include "domain/ui/RmlVariantHelpers.h"
-#include "gui/chat/CalendarHelper.h"
+#include "domain/ui/CalendarHelper.h"
 #include "gui/chat/ChatWidgetStateBuilder.h"
+#include "common/ui/WorkingSetCodec.h"
 #include "common/Utilities.h"
 #include "common/StartupTiming.h"
 #include "foundation/platform/ui/RmlUi_Backend.h"
 #include "domain/messaging/GroupTypes.h"
 #include "domain/people/PeerDisplayLabel.h"
 #include "domain/people/ContactJson.h"
-#include "feature/conversations/RegistrationClientUtil.h"
+#include "feature/conversations/RegistrationClient.h"
 #include "domain/messaging/AtAiParser.h"
+#include "domain/messaging/CallThreadPresenceLogic.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/ChatPayloadValidator.h"
 #include "common/chat/MessagingLimits.h"
@@ -51,7 +53,7 @@
 #include "gui/UnlockEnsurePorts.h"
 #include "gui/shell/ShellHost.h"
 #include "gui/SettingsController.h"
-#include "gui/PaymentFeedback.h"
+#include "domain/ui/PaymentFeedback.h"
 #include "gui/UserFeedback.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
 #include "domain/mesh/reachability/Reachability.h"
@@ -270,6 +272,13 @@ ChatController::ChatController()
                  .peer_link_banner = chat_.peer_link_banner,
                  .show_peer_link = chat_.show_peer_link,
                  .show_peer_link_banner = chat_.show_peer_link_banner,
+                 .peer_link_direct = chat_.peer_link_direct,
+                 .peer_link_via_hop = chat_.peer_link_via_hop,
+                 .peer_link_via_relay = chat_.peer_link_via_relay,
+                 .peer_link_connecting = chat_.peer_link_connecting,
+                 .peer_link_degraded = chat_.peer_link_degraded,
+                 .peer_link_failed = chat_.peer_link_failed,
+                 .peer_link_ready = chat_.peer_link_ready,
                  .show_retry_peer_dial = chat_.show_retry_peer_dial,
                  .thread_encrypted = chat_.thread_encrypted,
                  .thread_is_ai = chat_.thread_is_ai,
@@ -843,6 +852,7 @@ void ChatController::RotatePskExportCallback(ui::DataModelHandle /*model*/, ui::
 void ChatController::FinalizeThreadDisplay() {
   working_set_.ClearAll();
   RefreshFromMessaging();
+  RestoreWorkingSetsFromActiveThread();
   // Always land on latest when opening/showing a thread (incl. re-open same id).
   scroller_.RequestScrollToLatest();
   if (ChromeSnapshot().layout_mode == LayoutMode::Compact &&
@@ -1217,6 +1227,9 @@ void ChatController::SyncShellSessions() {
 
   const std::string active_id = ActiveThreadId();
   for (const Thread& thread : sorted_threads) {
+    if (IsCallControlShadowThread(thread, sorted_threads)) {
+      continue;
+    }
     SessionRow row;
     row.id = thread.id.c_str();
     row.title = facade_
@@ -1430,6 +1443,7 @@ void ChatController::DownloadAttachment(const std::string& message_id) {
 
 void ChatController::UpdatePeerLinkChrome() {
   chrome_.UpdatePeerLink();
+  DirtyChatHeader();
 }
 
 void ChatController::ResetChatPanelState() {
@@ -1466,6 +1480,30 @@ void ChatController::SyncDisplayFromThread() {
   chat_.use_messages_layout = true;
 
   scroller_.EndDisplaySync(thread_changed, prev_tail_id, prev_count);
+}
+
+void ChatController::RestoreWorkingSetsFromActiveThread() {
+  if (!messaging_ready_ || !facade_) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty()) {
+    return;
+  }
+  auto messages = facade_->GetMessagesPage(thread_id, std::nullopt, 10000);
+  if (!messages) {
+    return;
+  }
+  for (const ThreadMessage& message : *messages) {
+    if (!message.working_set_json || message.working_set_json->empty()) {
+      continue;
+    }
+    auto candidates = WorkingSetCandidatesFromJson(*message.working_set_json);
+    if (candidates.empty()) {
+      continue;
+    }
+    (void)working_set_.RestoreEntry(message.id, candidates, message.chat_actions);
+  }
 }
 
 void ChatController::HandleLocalAction(const std::string& message, const std::optional<std::string>& payload) {
@@ -2296,36 +2334,44 @@ void ChatController::SendChatAction(const std::string& entry_id, int action_inde
     return;
   }
 
-  const std::string thread_id = ActiveThreadId();
-  auto messages = facade_->GetMessagesPage(thread_id, std::nullopt, 10000);
-  if (!messages) {
-    return;
-  }
-
-  for (const ThreadMessage& message : *messages) {
-    if (message.id != entry_id) {
-      continue;
-    }
-    if (action_index >= static_cast<int>(message.chat_actions.size())) {
-      return;
-    }
-    const TranscriptChatAction& action = message.chat_actions[static_cast<size_t>(action_index)];
-    // Copy by value: layout-mutating actions close the working set / remount panes. Doing that
-    // synchronously destroys the click target and leaves RmlUi data views with dangling aliases
-    // ("Variable address not found" → segfault). Defer like SettingsController section open.
-    const std::string action_message = action.message;
-    const std::optional<std::string> action_payload = action.payload;
-    const bool close_working_set = working_set_.ShouldCloseForAction(action_payload);
-    AppRuntime::PostUI([this, action_message, action_payload, close_working_set]() {
-      if (close_working_set) {
-        working_set_.Clear();
+  std::optional<TranscriptChatAction> resolved = working_set_.LookupChatAction(entry_id, action_index);
+  if (!resolved) {
+    const std::string thread_id = ActiveThreadId();
+    auto messages = facade_->GetMessagesPage(thread_id, std::nullopt, 10000);
+    if (messages) {
+      for (const ThreadMessage& message : *messages) {
+        if (message.id != entry_id) {
+          continue;
+        }
+        if (action_index >= static_cast<int>(message.chat_actions.size())) {
+          log().warning << "Chat action index out of range: entry=" << entry_id << " index=" << action_index
+                        << " size=" << message.chat_actions.size();
+          return;
+        }
+        resolved = message.chat_actions[static_cast<size_t>(action_index)];
+        break;
       }
-      HandleLocalAction(action_message, action_payload);
-    });
+    }
+  }
+
+  if (!resolved) {
+    log().warning << "Chat action entry not found: " << entry_id << " thread=" << ActiveThreadId()
+                  << " working_set_entry=" << working_set_.ActiveEntryId();
     return;
   }
 
-  log().warning << "Chat action entry not found: " << entry_id;
+  // Copy by value: layout-mutating actions close the working set / remount panes. Doing that
+  // synchronously destroys the click target and leaves RmlUi data views with dangling aliases
+  // ("Variable address not found" → segfault). Defer like SettingsController section open.
+  const std::string action_message = resolved->message;
+  const std::optional<std::string> action_payload = resolved->payload;
+  const bool close_working_set = working_set_.ShouldCloseForAction(action_payload);
+  AppRuntime::PostUI([this, action_message, action_payload, close_working_set]() {
+    if (close_working_set) {
+      working_set_.Clear();
+    }
+    HandleLocalAction(action_message, action_payload);
+  });
 }
 
 void ChatController::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, const bool from_llm,
@@ -2371,47 +2417,97 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
       chat_actions.push_back({action.label, action.message, action.payload});
     }
 
-    std::string hydrated = InjectEntryPlaceholders(parsed.rml, entry_id);
-    hydrated = HydrateChatActionButtons(hydrated, chat_actions);
+    // Working-set / bubble buttons must key send_chat_action to the ThreadMessage that
+    // actually stores chat_actions — not a stale agent entry id when we append a new row.
+    std::string action_entry_id = entry_id;
+    const std::string active_thread = thread_id.empty() ? ActiveThreadId() : thread_id;
+    bool message_exists = false;
+    if (messaging_ready_ && !action_entry_id.empty()) {
+      auto messages = facade_->GetMessagesPage(active_thread, std::nullopt, 10000);
+      if (messages) {
+        for (const ThreadMessage& message : *messages) {
+          if (message.id == action_entry_id) {
+            message_exists = true;
+            break;
+          }
+        }
+      }
+    }
+    if (messaging_ready_ && !message_exists) {
+      action_entry_id = util::GenerateUuid();
+    }
+
+    std::string hydrated = InjectEntryPlaceholders(parsed.rml, action_entry_id);
+    std::vector<WorkingSetCandidate> working_set_candidates =
+        working_set_.HydrateCandidates(parsed.working_set_candidates, action_entry_id);
+    // Panel owns long_list row actions; only inline chips for chat-only replies.
+    if (working_set_candidates.empty()) {
+      hydrated = HydrateChatActionButtons(hydrated, chat_actions);
+    }
+
+    std::optional<std::string> working_set_json;
+    if (!working_set_candidates.empty()) {
+      working_set_json = WorkingSetCandidatesToJson(working_set_candidates);
+    }
 
     const std::string assistant_open =
         ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", raw_output) + R"( selectable="text">)";
 
     if (messaging_ready_) {
-      const std::string active_thread = thread_id.empty() ? ActiveThreadId() : thread_id;
-      auto messages = facade_->GetMessagesPage(active_thread, std::nullopt, 10000);
-      bool updated = false;
-      if (messages) {
-        for (ThreadMessage& message : *messages) {
-          if (message.id == entry_id) {
-            message.content_rml = assistant_open + hydrated + "</div>";
-            message.chat_actions = chat_actions;
-            (void)facade_->UpdateMessage(message);
-            updated = true;
-            break;
+      if (message_exists) {
+        auto messages = facade_->GetMessagesPage(active_thread, std::nullopt, 10000);
+        if (messages) {
+          for (ThreadMessage& message : *messages) {
+            if (message.id == action_entry_id) {
+              message.content_rml = assistant_open + hydrated + "</div>";
+              message.chat_actions = chat_actions;
+              message.working_set_json = working_set_json;
+              (void)facade_->UpdateMessage(message);
+              break;
+            }
           }
         }
-      }
-      if (!updated) {
+      } else {
         ThreadMessage ai_message;
-        ai_message.id = util::GenerateUuid();
+        ai_message.id = action_entry_id;
         ai_message.thread_id = active_thread;
         ai_message.sender_contact_id = kAiAssistantContactId;
         ai_message.text = raw_output;
         ai_message.content_rml = assistant_open + hydrated + "</div>";
         ai_message.chat_actions = chat_actions;
+        ai_message.working_set_json = working_set_json;
         ai_message.timestamp = util::NowUnixMs();
         ai_message.transport = MessageTransport::Local;
-        (void)facade_->AppendMessage(ai_message);
+        if (auto appended = facade_->AppendMessage(ai_message)) {
+          if (!appended->id.empty()) {
+            action_entry_id = appended->id;
+            if (action_entry_id != ai_message.id) {
+              hydrated = InjectEntryPlaceholders(parsed.rml, action_entry_id);
+              working_set_candidates =
+                  working_set_.HydrateCandidates(parsed.working_set_candidates, action_entry_id);
+              if (working_set_candidates.empty()) {
+                hydrated = HydrateChatActionButtons(hydrated, chat_actions);
+              }
+              if (!working_set_candidates.empty()) {
+                working_set_json = WorkingSetCandidatesToJson(working_set_candidates);
+              }
+              ai_message.id = action_entry_id;
+              ai_message.content_rml = assistant_open + hydrated + "</div>";
+              ai_message.working_set_json = working_set_json;
+              (void)facade_->UpdateMessage(ai_message);
+            }
+          }
+        } else {
+          log().warning << "Failed to append assistant message for chat actions: "
+                        << appended.error().message;
+        }
       }
       (void)facade_->UpdatePreview(active_thread, parsed.rml);
     }
 
-    working_set_.ApplyFromParse(entry_id, parsed.working_set_candidates);
+    working_set_.ApplyFromParse(action_entry_id, working_set_candidates, chat_actions);
 
     if (shared_ai_mode == AtAiMode::SharedReply || shared_ai_mode == AtAiMode::SharedFull) {
-      const std::string active_thread =
-          thread_id.empty() ? ActiveThreadId() : thread_id;
       std::string relay_plain = raw_output;
       if (StructuredTextParser::IsBlocksJsonDocument(raw_output)) {
         if (auto blocks_doc = TryParseObject(raw_output)) {
@@ -2799,6 +2895,13 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.Bind("peer_link_banner", &controller.chat_.peer_link_banner);
         ctor.Bind("show_peer_link", &controller.chat_.show_peer_link);
         ctor.Bind("show_peer_link_banner", &controller.chat_.show_peer_link_banner);
+        ctor.Bind("peer_link_direct", &controller.chat_.peer_link_direct);
+        ctor.Bind("peer_link_via_hop", &controller.chat_.peer_link_via_hop);
+        ctor.Bind("peer_link_via_relay", &controller.chat_.peer_link_via_relay);
+        ctor.Bind("peer_link_connecting", &controller.chat_.peer_link_connecting);
+        ctor.Bind("peer_link_degraded", &controller.chat_.peer_link_degraded);
+        ctor.Bind("peer_link_failed", &controller.chat_.peer_link_failed);
+        ctor.Bind("peer_link_ready", &controller.chat_.peer_link_ready);
         ctor.Bind("show_retry_peer_dial", &controller.chat_.show_retry_peer_dial);
         ctor.Bind("thread_encrypted", &controller.chat_.thread_encrypted);
         ctor.Bind("thread_is_ai", &controller.chat_.thread_is_ai);

@@ -80,7 +80,8 @@ Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux
     "mesh_enabled": true,
     "amp_udp_port": 0,
     "bootstrap_peers": [
-      "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"
+      "/ip4/54.198.185.139/udp/443/adp/1.0.0/p2p/QmbgShE3J3G6fvEHqwTS5ooQiFnYn46rzn6cTexUGWdWaj",
+      "/ip4/44.218.209.223/udp/443/adp/1.0.0/p2p/Qmd2m4skBPf7YjPaAKcnhPuhzRv6wEnsf9QheZRANYGuM7"
     ]
   }
 }
@@ -182,7 +183,7 @@ See [D096](../../projects/chat-storage-and-memory/DECISIONS.md#d096--identity-ro
 - Secure / Public on contact detail are enabled when the contact is **routable** (relay ID, or peer ID + multiaddr). Otherwise a short hint is shown.
 - **Peer link status** (direct threads) — chat header shows live link state (`Connecting…` / `Direct` / `Via relay` / backoff countdown). Soft banner + **Retry connection** on dial backoff; toast when a send falls back to relay after a direct attempt.
 - Directory discovery still uses agent tools: `search_people`, `list_contacts`, `list_conversations`, `open_conversation`, `start_conversation`.
-- Results render as `long_list` blocks with **Message** / **Add contact** chips (`send_chat_action` + JSON `payload`).
+- Results render as `long_list` blocks with identity-first rows (title / ~nick · @shortId / optional “In contacts”) and primary **Add contact** or **Message** chips (`send_chat_action` + JSON `payload`).
 - **Registration** also via `register_user` / `update_profile_nickname` tools (alternate to Me tab).
 
 ## @ai in direct threads
@@ -215,7 +216,7 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/feature/conversations/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest |
 | `src/feature/conversations/MessageRouter.*` | Composer routing |
 | `src/feature/conversations/ContactActionDispatcher.*` | Chip payloads |
-| `src/gui/chat/MessagingTools.*` | Agent tool definitions |
+| `src/feature/conversations/MessagingTools.*` | Agent tool definitions |
 | `src/base/people/ContactsStore.*` | Local contacts.json; `AddEmpty` / `AddFromDirectoryHit` (merge) / `ApplyRemoteSnapshot` / `Upsert` |
 | `src/gui/contacts/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
 | `src/base/messaging/DirectChatTarget.*` | Contact → `ChatTargetKey` identity (relay preferred, peer fallback) |

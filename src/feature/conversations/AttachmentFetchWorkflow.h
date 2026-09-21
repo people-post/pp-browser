@@ -2,7 +2,7 @@
 
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/IDekConsumer.h"
-#include "domain/messaging/AttachmentDownloadPolicy.h"
+#include "common/chat/AttachmentDownloadPolicy.h"
 #include "domain/messaging/AttachmentSuppressionStore.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/IThreadStore.h"

@@ -1,83 +1,41 @@
 #pragma once
 
+#include "common/Error.h"
 #include "common/Module.h"
+#include "domain/messaging/CallLifecycleTypes.h"
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-class CallSessionManager;
-
 /**
- * Call chrome / shell State (V037). JoinedLocal / MediaPending / MediaConnecting are
- * Calling-like for planner arming until a future rename.
+ * Stack-filled signaling façade for CallLifecycle (V041).
+ * Lifecycle must not hold CallSessionManager* — workers copy these functions.
  */
-enum class CallPhase {
-  Idle = 0,
-  Ringing,
-  Accepting,
-  OutboundCalling,
-  JoinedLocal,
-  MediaPending,
-  MediaConnecting,
-  InCall,
-  ConnectFailed,
-};
+struct CallLifecycleSignalingPorts {
+  std::function<Roe<void>(const std::string& call_id)> accept_invite;
+  std::function<Roe<void>(const std::string& call_id)> decline_invite;
+  std::function<Roe<void>(const std::string& call_id)> leave_call;
+  std::function<Roe<void>(const std::string& call_id)> retry_p2p_media;
+  std::function<void(const std::string& call_id)> kick_answerer_direct_media;
+  /** True when call media engine is active for this call_id. */
+  std::function<bool(const std::string& call_id)> media_active_for_call;
 
-/**
- * Media Status under Calling-like / InCall (V037). Arms at most one planner.
- */
-enum class CallMediaStatus {
-  None = 0,
-  Deciding,
-  DirectConnecting,
-  HopWaiting,
-  HopAttaching,
-  DirectLive,
-  HopLive,
-  Migrating,
-  DegradedTxOnly,
-  Failed,
+  bool IsBound() const { return static_cast<bool>(accept_invite); }
 };
-
-enum class CallArmedPlanner {
-  None = 0,
-  Lifecycle,
-  Bridge,
-  Topology,
-};
-
-enum class CallLifecycleEvent {
-  InviteSeen = 0,
-  InviteCleared,
-  OutboundStarted,
-  AcceptClicked,
-  DeclineClicked,
-  LeaveClicked,
-  RetryClicked,
-  AcceptSucceeded,
-  AcceptFailed,
-  DeclineDone,
-  LeaveDone,
-  MediaDeferred,
-  MediaKeyReady,
-  DirectConnected,
-  ConnectFailedEvt,
-  RemoteEnded,
-};
-
-const char* CallPhaseName(CallPhase phase);
-const char* CallMediaStatusName(CallMediaStatus status);
-const char* CallArmedPlannerName(CallArmedPlanner planner);
-const char* CallLifecycleEventName(CallLifecycleEvent ev);
 
 /**
  * Orchestrates call State + media Status (V037). Controllers post clicks here;
  * session/media/listen subsystems report outcomes here. Never calls ListenOn or
  * encrypt on the caller thread.
+ *
+ * Transitions: pure `DecideCallLifecycleTransition` (domain); this class executes actions.
+ * Signaling I/O via CallLifecycleSignalingPorts from CallStack (V041) — no CallSessionManager*.
  */
 class CallLifecycle : public Module {
 public:
@@ -85,8 +43,11 @@ public:
   using ListenDesireFn = std::function<void(bool want)>;
 
   CallLifecycle() = default;
+  ~CallLifecycle() override {
+    ClearBinding();
+  }
 
-  void Bind(CallSessionManager* sessions);
+  void BindSignalingPorts(CallLifecycleSignalingPorts ports);
   void ClearBinding();
 
   void SetOnChromeRefresh(ChromeRefreshFn fn);
@@ -137,10 +98,16 @@ private:
   void PostLeaveCall(const std::string& call_id);
   void PostRetryMedia(const std::string& call_id);
 
-  CallSessionManager* sessions_ = nullptr;
+  CallLifecycleSignalingPorts ports_;
   CallPhase phase_ = CallPhase::Idle;
   CallMediaStatus status_ = CallMediaStatus::None;
   uint64_t media_cancel_gen_ = 0;
+  /**
+   * Shared so worker/UI lambdas can detect ClearBinding / destroy without touching
+   * a dangling `this` (stale DeclineInvite/LeaveCall replies across tests).
+   */
+  std::shared_ptr<std::atomic<uint64_t>> async_epoch_ =
+      std::make_shared<std::atomic<uint64_t>>(0);
   std::string call_id_;
   std::string accepting_call_id_;
   std::string last_ring_call_id_;

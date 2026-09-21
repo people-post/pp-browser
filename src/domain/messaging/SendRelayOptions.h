@@ -25,7 +25,7 @@ struct SendRelayOptions {
   bool critical_lane = false;
   /**
    * When set, attach this `key_init_b64` and encrypt with the **current** stored PSK
-   * (E027 `psk_rotate` — do not first-message encapsulate).
+   * (E027 `psk_rotate`, or call AutoKey pre-warm before the first CallInvite send).
    */
   std::optional<std::string> key_init_b64;
 };

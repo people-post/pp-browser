@@ -913,8 +913,8 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 | Layer | Owner | Role |
 |-------|--------|------|
 | Product State+Status | `CallLifecycle` | Phase chrome; Status arms one planner (V037) |
-| Direct planner | `CallMediaBridge` + `CallDirectPlannerLogic` | Schedule / key-wait / Connect / TX-only circuit / Release |
-| Hop planner | `CallTopologyController` + `CallHopPlannerLogic` | WaitForAttach / SoftMigrate / inbound CallSfuAttach |
+| Direct planner | `CallMediaBridge` + [`CallDirectPlannerLogic`](../../src/domain/messaging/CallDirectPlannerLogic.h) | Schedule / key-wait / Connect / TX-only circuit / Release |
+| Hop planner | `CallTopologyController` + [`CallHopPlannerLogic`](../../src/domain/messaging/CallHopPlannerLogic.h) | WaitForAttach / SoftMigrate / inbound CallSfuAttach |
 | Transport | `CallMediaDirectService` / media_relay attach SM | Stream hello/duplex / AcceptAndAttach |
 
 ### Invariants
@@ -948,6 +948,257 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 **Alternatives:** Single mega event bus (rejected — Leave vs late Connect); rename Bridge→DirectPlanner campaign (rejected — noise); SoftMigrate-for-NAT (rejected — V038).
 
 **Cross-link:** [V033](#v033--transport-session-machines-not-host-wide-inbound-sm); [V037](#v037--calllifecycle-state--status-one-planner-armed); [V038](#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3); [SESSION_MACHINES.md](SESSION_MACHINES.md#planner-machines-v039); [CALLS.md](../../docs/architecture/CALLS.md); phase [pm](PHASES.md#pm--call-planner-machines-v039).
+
+---
+
+## V040 — CallMediaPlane / CallStack ownership collapse
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md) (ConversationsHub / CallStack + file map)  
+**Decision:** `CallStack` is a **phase assembler** only. Co-lived mesh-media objects move under **`CallMediaPlane`**. N025 listen *desire* lives solely on `CallLifecycle` (no duplicate stack bool).
+
+### Ownership
+
+| Owner | Owns |
+|-------|------|
+| **CallStack** | `CallStackDeps`; profile stores (`CallSessionStore`, `CallMediaKeyStore`, `CallMediaEngine`); `CallSessionManager`; `CallLifecycle`; `CallMediaSeat`; `unique_ptr<CallMediaPlane>`; phase hooks (`InitializeStores` / `BuildSessions` / mesh start-stop / `Shutdown`) |
+| **CallMediaPlane** | Amp call-media transport; `PeerSessionDialRegistry`; `AmpMediaRelayClient`; `AmpCircuitHopReach`; `CallMediaBridge` (+ bound-CSM pointer); test transport/dial overrides; dial book (peer listen multiaddrs + LAN-confirmed PeerIds); `Wire` / reach / warm-bootstrap helpers |
+
+### Rules
+
+1. Hub / `CallUiBackend` / Application keep calling **`CallStack::*`**; stack thin-forwards to the plane where needed.
+2. Do **not** recreate dial registry / bridge mid-call on N025 listen sync — rebuild bridge only when `CallSessionManager*` changes.
+3. Listen desire: `CallLifecycle::WantEphemeralListen` only; stack callback only runs Hub `sync_mobile_ephemeral_listen`.
+4. Seat stays on CallStack (not inside CSM) in this ADR.
+5. Hub still owns mesh admission, LAN mDNS note glue, N025 listen *execution*.
+
+### Phases
+
+| Phase | Deliverable |
+|-------|-------------|
+| cs0 | This ADR + PHASES `cs`; drop `ephemeral_listen_desired_` |
+| cs1 | `CallMediaPlane` extract (behavior-preserving) |
+| cs2 | CALLS.md ownership promote; trim redundant stack helpers |
+
+**Rationale:** CallStack accumulated sibling unique_ptrs and wiring that belong with mesh media lifetime, not signaling/lifecycle assembly.
+
+**Alternatives:** Fat Bridge owning dial/relay (rejected — Bridge is Direct planner); Seat inside CSM now (deferred — couples signaling to media epoch).
+
+**Cross-link:** [CALLS.md](../../docs/architecture/CALLS.md); phase [cs](PHASES.md#cs--callstack-ownership-collapse-callmediaplane); [V036](#v036--mediaseat--exclusive-media-epoch); [V037](#v037--calllifecycle-state--status-one-planner-armed).
+
+---
+
+## V041 — CallLifecycle signaling ports / Stack composition root
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md) (composition-root table)  
+**Decision:** `CallLifecycle` must not hold a standing `CallSessionManager*`. Stack installs **`CallLifecycleSignalingPorts`**. CallStack remains the sole sibling composition root (peers use ports / bind-args / Set* facets).
+
+### Ports
+
+| Port | Maps to |
+|------|---------|
+| `accept_invite` | `CallSessionManager::AcceptInvite` |
+| `decline_invite` | `DeclineInvite` |
+| `leave_call` | `LeaveCall` |
+| `retry_p2p_media` | `RetryP2pMedia` |
+| `kick_answerer_direct_media` | `KickAnswererDirectMediaIfArmed` |
+| `media_active_for_call` | engine active + `ActiveCallId` match |
+
+Async workers **copy** `std::function`s into lambdas; `ClearBinding` bumps `async_epoch_` and clears ports (same UAF rules as before).
+
+### Composition root (normative summary)
+
+| Piece | Standing ptrs to siblings | How wired |
+|-------|---------------------------|-----------|
+| CallStack | owns all | Bind*/Set*/deps |
+| CallLifecycle | none to CSM | SignallingPorts from Stack |
+| CallMediaSeat | none | teardown hooks from Stack |
+| CallMediaPlane | none to CSM/seat/life | BindBridge args + deps callbacks |
+| CallSessionManager | stores (ctor); lifecycle/bridge/seat as **installed facets** | Set* from Stack |
+
+### Phases
+
+| Phase | Deliverable |
+|-------|-------------|
+| ci0 | This ADR + PHASES `ci` |
+| ci1 | Ports + BindSignalingPorts |
+| ci2 | BindSeatTeardown on Stack |
+| ci3 | CALLS.md composition table |
+
+**Rationale:** Continues V040 — independence via stack wiring, not peer live-refs.
+
+**Alternatives:** Keep `Bind(CallSessionManager*)` (rejected — concrete sibling edge); Seat inside CSM (still deferred).
+
+**Cross-link:** [V040](#v040--callmediaplane--callstack-ownership-collapse); [V037](#v037--calllifecycle-state--status-one-planner-armed); [CALLS.md](../../docs/architecture/CALLS.md); phase [ci](PHASES.md#ci--callstack-composition-independence-lifecycle-ports).
+
+---
+
+## V042 — CallDirectMediaPorts / CSM without CallMediaBridge*
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md) (composition-root table)  
+**Decision:** `CallSessionManager` must not hold a standing `CallMediaBridge*`. Stack installs **`CallDirectMediaPorts`** via private `CallStack::MakeDirectMediaPorts()` (wraps `CallDirectPath` + bridge ops). Port struct lives on the consumer header (`CallSessionManager.h`).
+
+### Ports (representative)
+
+ScheduleStart / Retry / MediaAttempted / connect-fail health / NotePeerIdRelayMapping / StopMeshMedia (no-seat fallback) / ReleaseDirectTransport / OnMediaKeyReady / MediaPathKind.
+
+### Rules
+
+1. `BindMediaProducts` sets ports after `BindBridge`; mesh stop clears ports with `{}`.
+2. Seat / Lifecycle sibling facets removed in **V043** (`CallMediaSeatPorts` / `CallSessionLifecyclePorts`).
+3. Behavior-preserving — same SoftMigrate / Kick / Accept KeyReady paths.
+
+**Rationale:** Same independence pattern as V041 Lifecycle ports; Direct planner stays on the plane.
+
+**Cross-link:** [V041](#v041--calllifecycle-signaling-ports--stack-composition-root); [V036](#v036--mediaseat--exclusive-media-epoch); phase [dm](PHASES.md#dm--csm-direct-media-ports-no-callmediabridge).
+
+---
+
+## V043 — CallSessionLifecyclePorts + CallMediaSeatPorts
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md) (composition-root table)  
+**Decision:** `CallSessionManager` must not hold standing `CallLifecycle*` or `CallMediaSeat*` sibling facets. Stack installs **`CallSessionLifecyclePorts`** and **`CallMediaSeatPorts`**. Owned child `CallTopologyController` still receives seat/lifecycle via **`WireTopologySeat` / `WireTopologyLifecycle`** (composition, not peer live-refs).
+
+### Lifecycle ports (representative)
+
+`allows_direct_path` / status+armed names for logs / `set_direct_connecting` / accepting+active call ids / `apply_remote_ended` / `is_outbound_calling`.
+
+### Seat ports
+
+`release(call_id)` / `bind_hop_for_attach(call_id)` (closes over topology + seat via `CallSessionManager::MakeSeatPorts`). Port structs live on `CallSessionManager.h`; Stack installs Lifecycle ports via private `MakeSessionLifecyclePorts()`.
+
+### Rules
+
+1. Stack installs ports after CSM exists; mesh stop / reset clears ports with `{}` and wires topology null.
+2. Topology remains a CSM-owned child — `WireTopology*` is allowed; Bridge still gets seat/lifecycle from `BindBridge`.
+3. Behavior-preserving Accept / Kick / Sweep / StopMedia / hop bind.
+4. **Do not** split `CallSessionManager` across more `.cpp` files for size — [AGENTS.md](../../AGENTS.md#conventions); inbound arms stay in `CallSessionManager.cpp`.
+
+**Rationale:** Completes V041/V042 independence for the remaining CSM sibling facets.
+
+**Cross-link:** [V042](#v042--calldirectmediaports--csm-without-callmediabridge); [V041](#v041--calllifecycle-signaling-ports--stack-composition-root); phase [sl](PHASES.md#sl--csm-seat--lifecycle-ports-no-sibling-facets).
+
+---
+
+## V044 — CallSessionWorkflow (durable session/roster)
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md)  
+**Decision:** Extract durable session / roster / invite-leave orchestration from `CallSessionManager` into CSM-owned **`CallSessionWorkflow`**. Not a second chrome Lifecycle — `CallLifecycle` remains the only local UX/Status machine (V037). Pure transitions stay in `CallSessionLogic`.
+
+### Pattern
+
+Mirror `BroadcastSessionCoordinator`: Workflow holds store refs; side effects via **`HostPorts`** filled by CSM (`BindWorkflowHostPorts`). Hub façade methods on CSM remain thin delegates.
+
+### Owns on Workflow
+
+Start/Invite/Accept/Decline/Leave/End, inbound `HandleInbound*`, Sweep/Abandon, media-key rotate-on-leave, initiation pending charge / answerer-kick memory.
+
+### Stays on CSM
+
+Topology/MediaHost, dial-book maps, delivery, port install, device mute/camera, chrome pass-throughs, `Broadcast()`.
+
+**Non-goals:** Parallel `Apply(SessionEvent)` chrome SM; splitting Workflow across `.cpp` files.
+
+**Cross-link:** [V043](#v043--callsessionlifecycleports--callmediaseatports); phase [sw](PHASES.md#sw--callsessionworkflow-extract).
+
+---
+
+## V045 — CallSessionWorkflow hygiene (wire-first + query dedupe)
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md)  
+**Decision:** After V044 extract, fix durable-session footguns without expanding HostAdapters / peer-reach book merge.
+
+### Rules
+
+1. **Wire before durable commit** for Invite / Accept / Decline: encode+`send_direct` success precedes Upsert Joined/Ringing/pending (and planner arm / MarkOffered). Failed send must not leave Joined or SoftMigrate half-started. B-CONFLICT superseded Accept still LeaveCall after wire Accept when chrome moved on.
+2. **Local Decline** ends the durable session like Sweep expire (`EndCallLocal`), clears sticky Accept charge / answerer-kick memory; Lifecycle still owns click → Idle.
+3. **Single query home:** `ActiveLocalCall` / `TopPendingInvite` live on Workflow; CSM thin-forwards. `TopPendingInvite` sweeps expired first (same gate as StartCall / ListPendingInvites).
+4. **`PeekPendingAnswererKick`** (rename; does not clear) + null-guards on optional `HostPorts` before invoke.
+
+**Non-goals:** Peer dial-book collapse into plane; Host adapter rewrite; transactional multi-invite StartCall rollback.
+
+**Cross-link:** [V044](#v044--callsessionworkflow-durable-sessionroster); phase [wh](PHASES.md#wh--callsessionworkflow-hygiene).
+
+---
+
+## V046 — CallTopologyController independence
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md)  
+**Decision:** Apply the CSM composition-independence arc to **`CallTopologyController`**: cluster SoftMigrate/attach race state, replace virtual **`CallTopologyHost`** and raw Lifecycle/Seat facets with ports, then extract **`CallHopMigrateWorkflow`** owned by Topology. Topology remains the Hop planner façade (`Apply` / public On*).
+
+### Sequence
+
+1. **State clusters** — nested PODs: `SoftMigrateFlight`, `AttachWait`, `InboundAttachGate`, `GuestSfuSession`, `PublisherStreams`, `SfuSurface`.
+2. **HostPorts** — drop virtual `CallTopologyHost` + CSM dual-inheritance; CSM fills lambdas.
+3. **Lifecycle / Seat ports** — `CallTopologyLifecyclePorts` / `CallTopologySeatPorts` (Topology’s fuller seat surface; not CSM’s thinner `CallMediaSeatPorts`); Stack installs.
+4. **`CallHopMigrateWorkflow`** — SoftMigrate async + attach completion / guest reattach; Topology owns the member.
+
+### Rules
+
+1. No same-class multi-`.cpp` splits ([AGENTS.md](../../AGENTS.md)).
+2. Behavior-preserving SoftMigrate / attach races (port null-guards only).
+3. Pure who-picks stay in `SoftMigrateLogic` / `CallHopAttachLogic` / `CallHopPlannerLogic`.
+4. Do not start Workflow extract until Host + Lifecycle/Seat ports exist.
+
+**Non-goals:** Peer dial-book merge; `CallMediaHost` rewrite; Bridge Lifecycle/Seat ports in this ADR.
+
+**Cross-link:** [V043](#v043--callsessionlifecycleports--callmediaseatports); [V044](#v044--callsessionworkflow-durable-sessionroster); phase [tp](PHASES.md#tp--calltopologycontroller-independence-v046).
+
+---
+
+## V047 — CallHopMigrateWorkflow owns clusters (no friend)
+
+**Date:** 2026-09-17  
+**Status:** Accepted — outcomes superseded by [CALLS.md](../../docs/architecture/CALLS.md)  
+**Decision:** Finish Topology ↔ SoftMigrate composition independence: **`CallHopMigrateWorkflow` owns** SoftMigrate/attach race clusters and takes **Host / Lifecycle / Seat ports + TopologyOps**. Drop **`friend class CallHopMigrateWorkflow`** and all private `topo_` field poke. Topology remains the Hop planner façade; it holds **references** into Workflow-owned clusters for local control paths and binds Ops/ports at construction / `Set*`.
+
+### Rules
+
+1. Shared types: `CallTopologyHostPorts`, `CallTopologyMediaRelayDeps` (no circular Workflow↔Topology headers for nested ports).
+2. TopologyOps covers Apply / rank / fan-out / attach-wait helpers that stay on Topology.
+3. Behavior-preserving SoftMigrate / attach races (null-guards only).
+4. No same-class multi-`.cpp` splits.
+
+**Non-goals:** Peer dial-book merge; Bridge facet ports; collapsing Topology façade into Workflow.
+
+**Cross-link:** [V046](#v046--calltopologycontroller-independence); phase [hm](PHASES.md#hm--callhopmigrateworkflow-no-friend-v047).
+
+---
+
+## V048 — Composition vocabulary (no upward concepts)
+
+**Date:** 2026-09-18  
+**Status:** Accepted — project guideline; first code follow-up in [PHASES.md](PHASES.md#ha--hop-arming-vocabulary-v048)  
+**Decision:** Adopt a **repo-wide** composition rule: lower peers must not embed **codes, calls, or concepts** from higher peers. Ports that smuggle a sibling’s domain model (enums, chrome status writers) are upward coupling even when raw pointers are gone. Canonical write-up: [COMPOSITION_VOCABULARY.md](../../docs/architecture/COMPOSITION_VOCABULARY.md).
+
+Ownership stays under composition roots (`Application`, `CallStack`, …). **Dependency of meaning** points downward or sideways via narrow ports that speak the **consumer’s needs**; the root **projects** outcomes upward.
+
+### Rules
+
+1. Design ports from the lower peer’s POV (“what do I need / report?”), not from the higher peer’s type sheet.
+2. Higher products observe lower progress; lower products do not write higher chrome/policy enums.
+3. Shared neutral contracts may live in `common/`; higher-owned phase/Status types must not appear in lower headers.
+4. Applies beyond calls (mesh, UI↔functional, feature peers) — same litmus as [COMPOSITION_VOCABULARY.md](../../docs/architecture/COMPOSITION_VOCABULARY.md).
+
+### First application (calls)
+
+`CallTopologyController` speaks hop needs via **`CallHopArmingPorts`** (struct on Topology header). Owned **`CallHopMigrateWorkflow`** speaks migrate/attach needs via **`CallHopMigrateHostPorts`** / **`CallHopMigrateArmingPorts`** / **`CallHopMigrateSeatPorts`** (Topology projects). `CallMediaBridge` speaks Direct needs via **`CallDirectArmingPorts`** / **`CallDirectSeatPorts`**. **`CallDirectPath` / `CallHopPath`** take Ops only (no standing Bridge/Seat pointers). Stack / Topology private `Make*` adapters map → Lifecycle Status / `Apply` events — see [COMPOSITION_VOCABULARY.md § Port type ownership](../../docs/architecture/COMPOSITION_VOCABULARY.md#port-type-ownership).
+
+Topology needs (example of the litmus): arming, cancel epoch, hop-native progress, seat bind — not `CallMediaStatus` / `CallPhase`.
+
+### Non-goals (this ADR)
+
+- Implementing every debt site in one pass (phase **ha** starts with Topology).
+- Deepening ownership trees so Topology becomes a Lifecycle child.
+- Moving hop SoftMigrate races into Lifecycle.
+
+**Cross-link:** [COMPOSITION_VOCABULARY.md](../../docs/architecture/COMPOSITION_VOCABULARY.md); [OWNERSHIP.md](../../docs/architecture/OWNERSHIP.md); [V037](#v037--calllifecycle-state--status-one-planner-armed); [V039](#v039--call-directhop-planner-machines); [V046](#v046--calltopologycontroller-independence); [CALLS.md](../../docs/architecture/CALLS.md#calltopologycontroller-v046v047).
 
 ---
 

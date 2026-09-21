@@ -8,7 +8,7 @@
 #include "feature/conversations/AmpBroadcastTransport.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
-#include "domain/messaging/AnnounceDmReply.h"
+#include "domain/messaging/AnnounceOverlayReply.h"
 #include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
@@ -26,8 +26,10 @@
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "common/chat/ChatPayloadTypes.h"
-#include "domain/messaging/E2eIntegrityUtil.h"
+#include "common/thread/E2eIntegrityUtil.h"
 #include "domain/messaging/E2eRelayPayloadCodec.h"
+#include "domain/messaging/E2ePublicSessionLogic.h"
+#include "domain/messaging/CallControlThreadLogic.h"
 #include "domain/messaging/GroupE2ePayloadCodec.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/EnvelopeSigner.h"
@@ -635,10 +637,74 @@ void MeshDeliveryOrchestrator::WarmPeerForThread(const std::string& thread_id) {
       relay_fallback_notice_text_.clear();
     }
   }
-  amp_links_->MarkWarm(peer);
-  if (amp_links_->GetLinkSnapshot(peer).has_endpoint) {
-    amp_links_->EnsureAssociation(peer, [](IChatPeerLinks::LinkRoe) {});
+  WarmPeerByKey(peer);
+}
+
+void MeshDeliveryOrchestrator::WarmPeerByKey(const std::string& peer_key) {
+  if (!amp_links_ || peer_key.empty()) {
+    return;
   }
+  amp_links_->MarkWarm(peer_key);
+  if (amp_links_->GetLinkSnapshot(peer_key).has_endpoint) {
+    amp_links_->EnsureAssociation(peer_key, [](IChatPeerLinks::LinkRoe) {});
+  }
+}
+
+Roe<EnsuredE2ePublicSessionKey> MeshDeliveryOrchestrator::EnsureE2ePublicSessionKey(
+    const std::string& peer_identity) {
+  if (peer_identity.empty()) {
+    return Error("Peer identity required");
+  }
+  std::optional<std::string> prefer;
+  if (call_control_.active_call_origin_thread_id) {
+    prefer = call_control_.active_call_origin_thread_id();
+  }
+  std::string contact_id;
+  std::string dm_title = peer_identity;
+  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
+    if (*contact) {
+      contact_id = (*contact)->id;
+      dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+      if (dm_title.empty()) {
+        dm_title = peer_identity;
+      }
+    }
+  }
+  auto thread_id = ResolveOrCreateE2ePublicDirectThread(store_, peer_identity, prefer, contact_id, dm_title);
+  if (!thread_id) {
+    return thread_id.error();
+  }
+  auto thread = store_.GetThread(*thread_id);
+  if (!thread || !*thread) {
+    return Error("Call control thread missing");
+  }
+  auto session_epoch = store_.GetChatTargetSessionEpoch(*thread_id);
+  if (!session_epoch) {
+    return session_epoch.error();
+  }
+  const ChatTargetKey target_key = E2eRelayPayloadCodec::ChatTargetFromThread(**thread);
+  auto peer_kem = kem_key_resolver_.Resolve(target_key.peer_identity_kind, target_key.peer_identity_value);
+  if (!peer_kem) {
+    return peer_kem.error();
+  }
+  auto peer_public = Base64Decode(peer_kem->kem_public_key_b64);
+  if (!peer_public) {
+    return peer_public.error();
+  }
+  auto ensured = EnsureE2ePublicMasterPsk(psk_store_, target_key, *session_epoch, *peer_public);
+  if (!ensured) {
+    return ensured.error();
+  }
+  auto session_key = DeriveE2ePublicSessionKey(ensured->master_psk, *session_epoch);
+  if (!session_key) {
+    return session_key.error();
+  }
+  EnsuredE2ePublicSessionKey out;
+  out.session_key = std::move(*session_key);
+  if (ensured->key_init_b64 && !ensured->key_init_b64->empty()) {
+    out.first_message_key_init_b64 = std::move(*ensured->key_init_b64);
+  }
+  return out;
 }
 
 ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string& thread_id) const {
@@ -680,6 +746,7 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
 
   if (peer.empty()) {
     view.phase = MeshPeerLinkPhase::Unavailable;
+    view.path_kind = ThreadPeerPathKind::Failed;
     view.status_label = "Can't connect";
     view.banner_message = "Add a Peer ID with multiaddr, or a Relay ID, to message.";
     view.show_banner = true;
@@ -690,18 +757,28 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
     const MeshPeerLinkSnapshot snap = amp_links_->GetLinkSnapshot(peer);
     view.phase = snap.phase;
     view.has_direct_endpoint = snap.has_endpoint;
+    view.carrier_backed = snap.carrier_backed;
     view.backoff_seconds = static_cast<int>((snap.backoff_remaining.count() + 999) / 1000);
     switch (snap.phase) {
     case MeshPeerLinkPhase::Connected:
-      view.status_label = "Direct";
+      if (snap.carrier_backed) {
+        view.path_kind = ThreadPeerPathKind::ViaHop;
+        view.status_label = "Via hop";
+      } else {
+        view.path_kind = ThreadPeerPathKind::Direct;
+        view.status_label = "Direct";
+      }
       break;
     case MeshPeerLinkPhase::Dialing:
     case MeshPeerLinkPhase::Handshaking:
+      // Includes hole-punch burst dial — short-lived, never a settled badge.
+      view.path_kind = ThreadPeerPathKind::Connecting;
       view.status_label = "Connecting…";
       view.banner_message = "Trying a direct link…";
       view.show_banner = true;
       break;
     case MeshPeerLinkPhase::Backoff:
+      view.path_kind = ThreadPeerPathKind::Degraded;
       view.status_label = view.backoff_seconds > 0
                               ? ("Retrying soon (" + std::to_string(view.backoff_seconds) + "s)")
                               : "Retrying soon";
@@ -715,17 +792,21 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
       view.show_retry = true;
       break;
     case MeshPeerLinkPhase::Idle:
+      view.path_kind = ThreadPeerPathKind::Ready;
       view.status_label = view.relay_available ? "Ready · relay available" : "Ready to connect";
       break;
     case MeshPeerLinkPhase::Unavailable:
     default:
       if (view.relay_available) {
+        view.path_kind = ThreadPeerPathKind::ViaRelay;
         view.status_label = "Via relay";
       } else if (snap.has_endpoint) {
+        view.path_kind = ThreadPeerPathKind::Failed;
         view.status_label = "Offline";
         view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
         view.show_banner = true;
       } else {
+        view.path_kind = ThreadPeerPathKind::Failed;
         view.status_label = "Can't connect";
         view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
         view.show_banner = true;
@@ -737,8 +818,10 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
 
   view.phase = MeshPeerLinkPhase::Unavailable;
   if (view.relay_available) {
+    view.path_kind = ThreadPeerPathKind::ViaRelay;
     view.status_label = "Via relay";
   } else {
+    view.path_kind = ThreadPeerPathKind::Failed;
     view.status_label = "Offline";
     view.banner_message = "No usable peer address — add a dialable multiaddr on the contact.";
     view.show_banner = true;
@@ -765,10 +848,7 @@ void MeshDeliveryOrchestrator::RetryPeerDial(const std::string& thread_id) {
       relay_fallback_notice_text_.clear();
     }
   }
-  amp_links_->MarkWarm(peer);
-  if (amp_links_->GetLinkSnapshot(peer).has_endpoint) {
-    amp_links_->EnsureAssociation(peer, [](IChatPeerLinks::LinkRoe) {});
-  }
+  WarmPeerByKey(peer);
 }
 
 bool MeshDeliveryOrchestrator::IsE2ePrivateThread(const std::string& thread_id) const {
@@ -1170,6 +1250,11 @@ void MeshDeliveryOrchestrator::MaybeTailSync(const std::string& thread_id) {
   if (!chat_sync_) {
     return;
   }
+  // SoftMigrate / Accept must not sit behind history TailSync on the Normal worker + relay HTTP.
+  if (HasActiveLocalCall()) {
+    log().info << "MaybeTailSync deferred (active call) thread=" << thread_id;
+    return;
+  }
   AppRuntime::PostWorkerNormal([this, thread_id]() {
     chat_sync_->TailSyncAsync(thread_id, [this](Roe<ChatSyncResult> result) {
       if (result && on_messages_changed_) {
@@ -1181,6 +1266,10 @@ void MeshDeliveryOrchestrator::MaybeTailSync(const std::string& thread_id) {
 
 void MeshDeliveryOrchestrator::MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope) {
   if (!chat_sync_ || !envelope.session_epoch) {
+    return;
+  }
+  if (HasActiveLocalCall()) {
+    log().info << "MaybeRepairGap deferred (active call) thread=" << thread_id;
     return;
   }
   auto sync_state = store_.GetPeerSyncState(thread_id, envelope.session_epoch);
@@ -2047,6 +2136,10 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
             continue;
           }
           const std::string& resolved_thread_id = outcome.thread_id;
+          if (outcome.suppress_inbox_chrome) {
+            // Call MediaKey / SFU / roster — apply side effects only; do not bump sidebar/unread.
+            continue;
+          }
           std::optional<std::string> preview;
           if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
             preview = decoded->text;

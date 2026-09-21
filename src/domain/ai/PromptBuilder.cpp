@@ -33,7 +33,8 @@ void AppendGoalRules(std::ostringstream& out, const ResponseGoal goal) {
     out << "- Quote specific story titles; do not list news homepages.\n";
     break;
   case ResponseGoal::PeopleDiscovery:
-    out << "- Render people results as a long_list with Message/Add actions.\n";
+    out << "- Prefer people_list render_mode (runtime builds the long_list). Do not invent unlabeled Add/Message chips.\n";
+    out << "- Each person row needs a clear title, nickname/short id subtitle, and at most one primary action.\n";
     break;
   case ResponseGoal::General:
     out << "- Address the user's request directly using tool results as context.\n";
@@ -94,7 +95,7 @@ Interactive blocks (click → user message via send_chat_action)
 11. action_list — items[]: { title, description?, actions[]: { label, message, payload? } }
 12. choice — prompt, options[]: { label, message, payload? }
 13. poll — question, options[]: { label, message, payload? }
-14. long_list — title?, items[]: { title, id?, subtitle?, meta?, actions[]? }; optional footer_actions[]: { label, message, payload? }
+14. long_list — title?, items[]: { title, id?, subtitle?, meta?, avatar_letter?, avatar_tone?, actions[]? }; actions may set style primary|secondary; optional footer_actions[]
 
 Reactive widgets (bound form fields / calendar inside the bubble)
 15. form — id, submit_template, fields[]: { id, label, field_type (text|textarea|select|checkbox|date), options? }; optional title, submit_label
@@ -108,8 +109,9 @@ WORKING SET PANEL
 LONG LIST + MCP WORKFLOW
 - For feeds and directories (articles, records, search hits), call MCP tools first via function calling — do not invent rows.
 - Read each tool inputSchema to choose fetch params; read tool result JSON to map rows into long_list items.
-- Map tool fields into item title, subtitle (short excerpt), and meta (date/tag/source as plain text).
-- Put per-row buttons in items[].actions; use footer_actions for pagination hints (e.g. payload with before_id).
+- Map tool fields into item title, subtitle (short excerpt or ~nick · @shortId), and meta (status/date as plain text — not raw opaque ids).
+- Put per-row buttons in items[].actions; use style "primary" for the main action; use footer_actions for refine/pagination.
+- For people rows: identify who they are in title/subtitle before any Add/Message actions.
 - Emit long_list only in the final blocks reply after tool calls complete. Never put tool calls inside blocks JSON.
 
 NOT SUPPORTED
@@ -148,8 +150,9 @@ std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_s
     out << "- You may call additional tools only if planned results are insufficient.\n";
     out << "- Never put tool calls inside blocks JSON. Tools use function calling only.\n";
     out << "- Never expose raw tool JSON in blocks; summarize in plain structured blocks.\n";
-    out << "- For people discovery use search_people or list_contacts, then emit long_list with Message/Add chips.\n";
-    out << "- Never invent contact or relay IDs; use tool results only.\n\n";
+    out << "- For people discovery set render_mode people_list (or emit long_list rows with title + subtitle/meta identifying each person).\n";
+    out << "- Never invent contact or relay IDs; use tool results only.\n";
+    out << "- Do not dump a wall of unlabeled Add contact / Message suggestion buttons.\n\n";
   }
 
   out << "USER INTENT PRIORITY\n";

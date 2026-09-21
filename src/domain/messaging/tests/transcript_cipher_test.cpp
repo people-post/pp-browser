@@ -19,6 +19,7 @@ TEST(TranscriptBodyCodecTest, RoundTripPreservesFields) {
   body.payload_json = R"({"control_type":"system"})";
   body.content_rml = "<p>rml</p>";
   body.chat_actions.push_back(TranscriptChatAction{.label = "Go", .message = "do it"});
+  body.working_set_json = R"({"candidates":[{"block_index":1,"kind":"long_list","affinity":"feed","auto_open":true,"title":"T","subtitle":"1 item","artifact_rml":"<div/>","teaser_rml":"<button/>"}]})";
 
   auto encoded = TranscriptBodyCodec::Encode(body);
   ASSERT_TRUE(encoded);
@@ -31,6 +32,8 @@ TEST(TranscriptBodyCodecTest, RoundTripPreservesFields) {
   EXPECT_EQ(*decoded->content_rml, *body.content_rml);
   ASSERT_EQ(decoded->chat_actions.size(), 1u);
   EXPECT_EQ(decoded->chat_actions.front().label, "Go");
+  ASSERT_TRUE(decoded->working_set_json);
+  EXPECT_EQ(*decoded->working_set_json, *body.working_set_json);
 }
 
 TEST(TranscriptCipherTest, MessageBodyRoundTripAndAadBind) {

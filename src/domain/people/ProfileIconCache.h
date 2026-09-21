@@ -39,4 +39,8 @@ Roe<void> SaveProfileIconCache(const std::string& profile_dir, const std::vector
 
 Roe<void> ClearProfileIconCache(const std::string& profile_dir, const std::string& cache_key = "self");
 
+/** True when URL/blob_id changed or local cache file is missing. */
+bool ProfileIconNeedsFetch(const std::string& profile_dir, const std::string& cache_key,
+                           const ProfileIconRef& icon);
+
 } // namespace pbr

@@ -62,12 +62,33 @@ void WorkingSetController::Clear() {
 
 void WorkingSetController::ClearAll() {
   by_entry_.clear();
+  actions_by_entry_.clear();
   Clear();
+}
+
+void WorkingSetController::ShowUnavailable(const std::string& entry_id) {
+  shell_.working_set_active = true;
+  shell_.working_set_title = "Results unavailable";
+  shell_.working_set_subtitle = "";
+  shell_.working_set_rml =
+      ui::String("<p class=\"muted\">These results are no longer available. Run the search again "
+                 "from chat if you still need them.</p>");
+  active_affinity_ = WorkingSetAffinity::None;
+  active_entry_id_ = entry_id;
+  shell_.working_set = {};
+  if (shell_navigation_.set_auxiliary_available) {
+    shell_navigation_.set_auxiliary_available(true);
+  }
+  if (shell_navigation_.open_auxiliary) {
+    shell_navigation_.open_auxiliary();
+  }
+  Dirty();
 }
 
 void WorkingSetController::Open(const std::string& entry_id, const int block_index) {
   const auto entry_it = by_entry_.find(entry_id);
   if (entry_it == by_entry_.end()) {
+    ShowUnavailable(entry_id);
     return;
   }
 
@@ -79,6 +100,7 @@ void WorkingSetController::Open(const std::string& entry_id, const int block_ind
     }
   }
   if (!selected) {
+    ShowUnavailable(entry_id);
     return;
   }
 
@@ -100,7 +122,8 @@ void WorkingSetController::Open(const std::string& entry_id, const int block_ind
 }
 
 void WorkingSetController::ApplyFromParse(const std::string& entry_id,
-                                          const std::vector<WorkingSetCandidate>& candidates) {
+                                          const std::vector<WorkingSetCandidate>& candidates,
+                                          std::vector<TranscriptChatAction> chat_actions) {
   if (candidates.empty()) {
     Clear();
     return;
@@ -108,6 +131,7 @@ void WorkingSetController::ApplyFromParse(const std::string& entry_id,
 
   const std::vector<WorkingSetCandidate> hydrated = HydrateCandidates(candidates, entry_id);
   by_entry_[entry_id] = hydrated;
+  actions_by_entry_[entry_id] = std::move(chat_actions);
 
   const WorkingSetCandidate* primary = nullptr;
   for (const WorkingSetCandidate& candidate : hydrated) {
@@ -144,6 +168,40 @@ void WorkingSetController::ApplyFromParse(const std::string& entry_id,
     }
   }
   Dirty();
+}
+
+std::vector<WorkingSetCandidate> WorkingSetController::RestoreEntry(
+    const std::string& entry_id, const std::vector<WorkingSetCandidate>& candidates,
+    std::vector<TranscriptChatAction> chat_actions) {
+  if (entry_id.empty() || candidates.empty()) {
+    return {};
+  }
+  std::vector<WorkingSetCandidate> hydrated = HydrateCandidates(candidates, entry_id);
+  by_entry_[entry_id] = hydrated;
+  actions_by_entry_[entry_id] = std::move(chat_actions);
+  if (shell_navigation_.set_auxiliary_available) {
+    shell_navigation_.set_auxiliary_available(true);
+  }
+  return hydrated;
+}
+
+bool WorkingSetController::HasEntry(const std::string& entry_id) const {
+  return by_entry_.find(entry_id) != by_entry_.end();
+}
+
+std::optional<TranscriptChatAction> WorkingSetController::LookupChatAction(const std::string& entry_id,
+                                                                           const int action_index) const {
+  if (action_index < 0 || entry_id.empty()) {
+    return std::nullopt;
+  }
+  const auto it = actions_by_entry_.find(entry_id);
+  if (it == actions_by_entry_.end()) {
+    return std::nullopt;
+  }
+  if (static_cast<size_t>(action_index) >= it->second.size()) {
+    return std::nullopt;
+  }
+  return it->second[static_cast<size_t>(action_index)];
 }
 
 bool WorkingSetController::ShouldCloseForAction(const std::optional<std::string>& payload) const {

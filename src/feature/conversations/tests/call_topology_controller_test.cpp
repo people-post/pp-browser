@@ -2,11 +2,12 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallLifecycle.h"
+#include "domain/messaging/CallLifecycleTypes.h"
 
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/CallSessionStore.h"
-#include "domain/messaging/SfuAttachFanout.h"
+#include "domain/messaging/CallHopAttachLogic.h"
 #include "domain/messaging/SoftMigrateLogic.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/mesh/host/MeshControlDispatch.h"
@@ -27,53 +28,119 @@
 namespace pbr {
 namespace {
 
-class FakeTopologyHost final : public CallTopologyHost {
-public:
-  Roe<std::string> TopologyLocalIdentity() const override {
-    if (local_identity.empty()) {
-      return Error("no local identity");
+CallHopArmingPorts TestHopArmingPorts(CallLifecycle* lifecycle) {
+  CallHopArmingPorts ports;
+  if (!lifecycle) {
+    return ports;
+  }
+  ports.hop_ops_allowed = [lifecycle]() { return lifecycle->AllowsHopPath(); };
+  ports.soft_migrate_may_arm = [lifecycle]() {
+    const CallMediaStatus st = lifecycle->Status();
+    return st == CallMediaStatus::DirectLive || st == CallMediaStatus::DirectConnecting ||
+           st == CallMediaStatus::DegradedTxOnly || st == CallMediaStatus::Deciding ||
+           st == CallMediaStatus::None;
+  };
+  ports.media_cancel_gen = [lifecycle]() { return lifecycle->MediaCancelGen(); };
+  ports.report_progress = [lifecycle](CallHopPlannerPhase phase, const std::string& call_id) {
+    CallMediaStatus mapped = CallMediaStatus::None;
+    switch (phase) {
+    case CallHopPlannerPhase::WaitingAttach:
+      mapped = CallMediaStatus::HopWaiting;
+      break;
+    case CallHopPlannerPhase::Attaching:
+      mapped = CallMediaStatus::HopAttaching;
+      break;
+    case CallHopPlannerPhase::Live:
+      mapped = CallMediaStatus::HopLive;
+      break;
+    case CallHopPlannerPhase::Migrating:
+      mapped = CallMediaStatus::Migrating;
+      break;
+    case CallHopPlannerPhase::Idle:
+    case CallHopPlannerPhase::Stopping:
+      return;
     }
-    return local_identity;
-  }
+    lifecycle->SetMediaStatus(mapped, call_id);
+  };
+  ports.arming_debug_name = [lifecycle]() { return CallMediaStatusName(lifecycle->Status()); };
+  return ports;
+}
 
-  Roe<void> TopologyLeaveCall(const std::string& call_id) override {
-    leave_calls.push_back(call_id);
-    return {};
+CallTopologySeatPorts TestTopologySeatPorts(CallMediaSeat* seat) {
+  CallTopologySeatPorts ports;
+  if (!seat) {
+    return ports;
   }
+  ports.is_bound = [seat](const std::string& call_id) { return seat->IsBound(call_id); };
+  ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
+  ports.acquire = [seat](const std::string& call_id) { return seat->Acquire(call_id); };
+  ports.allows_path_op = [seat](const CallMediaSeat::Token& token) {
+    return seat->AllowsPathOp(token);
+  };
+  ports.begin_attach = [seat](const std::string& call_id, const std::string& hop,
+                              CallMediaSeat::AttachTicket* ticket) {
+    return seat->BeginAttach(call_id, hop, ticket);
+  };
+  ports.end_attach_if_matching = [seat](const std::string& call_id, const std::string& hop) {
+    seat->EndAttachIfMatching(call_id, hop);
+  };
+  ports.has_attach_in_flight = [seat]() { return seat->HasAttachInFlight(); };
+  ports.attaching_hop = [seat]() { return seat->AttachingHopPeerId(); };
+  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
+  ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
+  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
+  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
+  ports.cancel_attach_for_call = [seat](const std::string& call_id) {
+    seat->CancelAttachForCall(call_id);
+  };
+  return ports;
+}
 
-  Roe<void> TopologyFanOutToJoined(const std::string& call_id, CallControlType type,
-                                   const std::string& detail_json, const std::string& /*display*/,
-                                   const std::string& /*skip_identity*/) override {
-    FanOut f;
-    f.call_id = call_id;
-    f.type = type;
-    f.detail_json = detail_json;
-    fanouts.push_back(std::move(f));
-    return {};
-  }
-
-  Roe<void> TopologySendDirect(const std::string& peer_identity, CallControlType type,
+class FakeTopologyHost {
+public:
+  CallTopologyController::HostPorts MakeHostPorts() {
+    CallTopologyController::HostPorts ports;
+    ports.local_relay_identity = [this]() -> Roe<std::string> {
+      if (local_identity.empty()) {
+        return Error("no local identity");
+      }
+      return local_identity;
+    };
+    ports.leave_call = [this](const std::string& call_id) -> Roe<void> {
+      leave_calls.push_back(call_id);
+      return {};
+    };
+    ports.fan_out_joined = [this](const std::string& call_id, CallControlType type,
+                                  const std::string& detail_json, const std::string& /*display*/,
+                                  const std::string& /*skip_identity*/) -> Roe<void> {
+      FanOut f;
+      f.call_id = call_id;
+      f.type = type;
+      f.detail_json = detail_json;
+      fanouts.push_back(std::move(f));
+      return {};
+    };
+    ports.send_direct = [this](const std::string& peer_identity, CallControlType type,
                                const std::string& detail_json,
-                               const std::string& /*display*/) override {
-    Direct d;
-    d.peer_identity = peer_identity;
-    d.type = type;
-    d.detail_json = detail_json;
-    directs.push_back(std::move(d));
-    return {};
+                               const std::string& /*display*/) -> Roe<void> {
+      Direct d;
+      d.peer_identity = peer_identity;
+      d.type = type;
+      d.detail_json = detail_json;
+      directs.push_back(std::move(d));
+      return {};
+    };
+    ports.notify_ring_changed = [this]() { ++ring_notifies; };
+    ports.set_last_media_error = [this](std::string message) { last_media_error = std::move(message); };
+    ports.set_media_activity = [this](std::string message) { media_activity = std::move(message); };
+    ports.clear_media_activity = [this]() { media_activity.clear(); };
+    ports.note_media_attempted = [this](const std::string& call_id) { media_attempted.push_back(call_id); };
+    ports.bind_media_call_id = [](const std::string& /*call_id*/) {};
+    ports.clear_media_peer_identity = []() {};
+    ports.release_direct_media = [this]() { ++direct_media_releases; };
+    ports.request_inbox_sync = [this]() { ++inbox_sync_requests; };
+    return ports;
   }
-
-  void TopologyNotifyRingChanged() override { ++ring_notifies; }
-  void TopologySetLastMediaError(std::string message) override { last_media_error = std::move(message); }
-  void TopologySetMediaActivity(std::string message) override { media_activity = std::move(message); }
-  void TopologyClearMediaActivity() override { media_activity.clear(); }
-  void TopologyNoteMediaAttempted(const std::string& call_id) override {
-    media_attempted.push_back(call_id);
-  }
-  void TopologyBindMediaCallId(const std::string& /*call_id*/) override {}
-  void TopologyClearMediaPeerIdentity() override {}
-  void TopologyReleaseDirectMedia() override { ++direct_media_releases; }
-  void TopologyRequestInboxSync() override { ++inbox_sync_requests; }
 
   struct FanOut {
     std::string call_id;
@@ -251,7 +318,8 @@ protected:
     host_ = std::make_unique<FakeTopologyHost>();
     dial_ = std::make_unique<FakeDialRegistry>();
     relay_ = std::make_unique<FakeMediaRelayClient>();
-    topo_ = std::make_unique<CallTopologyController>(*host_, *sessions_, *contacts_, *media_);
+    topo_ = std::make_unique<CallTopologyController>(*sessions_, *contacts_, *media_);
+    topo_->SetHostPorts(host_->MakeHostPorts());
 
     CallTopologyController::MediaRelayDeps deps;
     deps.relay = relay_.get();
@@ -265,7 +333,7 @@ protected:
 
   void TearDown() override {
     if (topo_) {
-      topo_->SetLifecycle(nullptr);
+      topo_->SetHopArmingPorts({});
     }
     lifecycle_.reset();
     topo_.reset();
@@ -337,7 +405,7 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachIgnoredWhenStatusDirectConnec
   lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
   ASSERT_TRUE(lifecycle_->AllowsDirectPath());
   ASSERT_FALSE(lifecycle_->AllowsHopPath());
-  topo_->SetLifecycle(lifecycle_.get());
+  topo_->SetHopArmingPorts(TestHopArmingPorts(lifecycle_.get()));
 
   CallSfuAttachDetail attach;
   attach.call_id = call_id;
@@ -1246,7 +1314,7 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
   AppRuntime::InitializeUI();
 
   CallMediaSeat seat;
-  topo_->SetMediaSeat(&seat);
+  topo_->SetSeatPorts(TestTopologySeatPorts(&seat));
 
   const std::string old_id = "call:leftover-old";
   const std::string new_id = "call:leftover-new";

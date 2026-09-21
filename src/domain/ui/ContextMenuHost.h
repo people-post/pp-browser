@@ -79,15 +79,18 @@ private:
   void LayoutActionSheet();
   int FindMenuItemIndex(ui::Element* target) const;
   void HandleMenuAction(int index);
-  void RequestDismiss();
+  void RequestDismiss(bool restore_focus = false);
 
   ui::Context* context_ = nullptr;
   ui::Context* menu_context_ = nullptr;
   ui::Element* menu_target_ = nullptr;
   ui::Element* menu_editor_ = nullptr;
+  /// Focused element when the menu opened; restored on outside / Escape / Cancel dismiss.
+  ui::Element* focus_restore_ = nullptr;
   ui::Element* layer_ = nullptr;
   ui::Element* panel_ = nullptr;
   bool dismiss_pending_ = false;
+  bool restore_focus_on_dismiss_ = false;
   bool compact_layout_ = false;
   Presentation presentation_ = Presentation::Float;
   std::string copy_snapshot_;

@@ -7,7 +7,7 @@ Source of truth for pp-browser theming, spacing, and component styling. AI-gener
 ## Principles
 
 - **Reliable** — loading, pending, failed delivery, and offline states use the same semantic colors everywhere (`semantic-warning`, `semantic-error`, delivery indicators).
-- **Responsive** — shell layout switches at 768dp (C++ `ShellLayout`); touch targets stay at least 44dp on compact layout.
+- **Responsive** — shell layout switches at 768dp (C++ [`ShellLayout`](../../src/domain/ui/ShellLayout.h)); touch targets stay at least 44dp on compact layout.
 - **Hierarchy through space** — importance is expressed with size, weight, spacing, and elevation—not decoration.
 
 ## Copy / labels
@@ -54,8 +54,8 @@ Utility class: `.gap-sm` = 8dp bottom margin (legacy).
 | `.text-xs` | 12dp | Meta, timestamps, secure badge |
 | `.text-sm` / `.btn`, `.field` | 14dp | Toolbar, labels, inputs |
 | `body` / `.text-base` | 16dp | Body copy |
-| `.text-lg` / `.settings-section-title` | 18dp | Section titles |
-| `.text-xl` / `.chat-header-title` | 22dp | Pane titles |
+| `.text-lg` / `.settings-section-title` / `.chat-header-title` | 18dp | Section titles, chat pane title |
+| `.text-xl` | 22dp | Large pane titles |
 | `.text-2xl` / `.heading-1` | 28dp | Hero headings |
 | `.heading-2` | 20dp | Secondary headings |
 | `.heading-3` | 16dp | Tertiary headings |
@@ -154,13 +154,13 @@ Visual distinction by chat type — icons and accent rails, not plaintext Privat
 
 **Sidebar:** leading type icon for kind; selection uses a clear filled row + 3dp accent rail (idle rows have no rail). No text tier badge.
 
-**Chat header:** type icon + short label (Assistant / Private / Chat / Group) + human subtitle. Thread tools (Clear history, Forget AI memory, Sync with peer) live in a `⋯` overflow menu (`.chat-header-more-btn` → `ContextMenuHost`); Details stays visible. Private keeps the secure shell tint (`.chat-shell--e2e` / `.chat-shell--private`).
+**Chat header (compact):** type icon inline with title on one row; muted subtitle + optional peer-path chip on the meta row. Peer path uses tinted SVGs (`status-direct` / `status-hop` / `status-relay`) driven by `ThreadPeerPathKind` (`Direct` · `Via hop` · `Via relay` · short-lived `Connecting…` for dial/handshake/punch · degraded/failed/ready) — not a copy of the desktop status bar. No text kind labels (icon + accent rail carry chat kind). Thread tools live in a `⋯` overflow menu (`.chat-header-more-btn` → `ContextMenuHost`); Details stays visible. Private keeps the secure shell tint (`.chat-shell--e2e` / `.chat-shell--private`).
 
 | Element | Public (`.chat-shell--public`) | Private (`.chat-shell--e2e`) |
 |---------|-------------------------------|------------------------------|
-| Header | Neutral left border | Secure surface tint + teal left border |
-| Type row | Message icon + “Chat” | Lock icon + “Private” |
-| Subtitle | “Encrypted · easy start” | “Verified private · E2E” |
+| Header | Neutral 3dp left border | Secure surface tint + teal 3dp left border |
+| Title row | Message icon + peer/thread name | Lock icon + peer/thread name |
+| Meta row | Path chip (when direct) + subtitle (“Encrypted · easy start”) | Path chip + “Verified private · E2E” |
 | Composer | `border-subtle` | Stronger secure border |
 
 Data binding: `thread_is_ai` / `thread_is_private` / `thread_is_public` / `thread_is_group` on chat model; `session.kind` on shell sessions.
@@ -182,7 +182,7 @@ Three tiers reuse the same badge components; do not confuse them with semantic l
 | `.sidebar-unread` | Alias layout on session rows (extends `.badge-count`) |
 | `.contacts-trust-badge` | **Not** a notification badge — trust label only |
 
-Counts cap at **99+** in C++ (`FormatBadgeCount`). Home stays badge-free. **Sessions** shows aggregate P2P chat unread via `BadgeAggregator`. **Contacts** nav badge stays at 0 for now (Contacts is a people directory, not an inbox); later wire it only to contacts-tab action queues (e.g. intro/contact requests, pending invites Accept/Decline), never to chat unread. Per-row unread on the contacts list remains a secondary affordance.
+Counts cap at **99+** in C++ ([`FormatBadgeCount`](../../src/domain/ui/NavBadgeFormat.h)). Home stays badge-free. **Sessions** shows aggregate P2P chat unread via `BadgeAggregator`. **Contacts** nav badge stays at 0 for now (Contacts is a people directory, not an inbox); later wire it only to contacts-tab action queues (e.g. intro/contact requests, pending invites Accept/Decline), never to chat unread. Per-row unread on the contacts list remains a secondary affordance.
 
 ## Component classes (reuse before adding rules)
 
@@ -204,7 +204,7 @@ Shared `.btn` geometry is **capsule** (`border-radius: 999dp`) at **44dp** min-h
 
 ### Chat
 
-`.chat-panel`, `.chat-header`, `.chat-header-actions`, `.chat-header-more-btn`, `.chat-shell--ai`, `.chat-shell--private`, `.chat-shell--public`, `.chat-shell--group`, `.chat-shell--e2e`, `.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-working-set-chip`
+`.chat-panel`, `.chat-header`, `.chat-header-title-row`, `.chat-header-title`, `.chat-header-meta-row`, `.chat-header-subtitle`, `.chat-peer-path`, `.chat-header-actions`, `.chat-header-more-btn`, `.chat-shell--ai`, `.chat-shell--private`, `.chat-shell--public`, `.chat-shell--group`, `.chat-shell--e2e`, `.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-working-set-chip`
 
 ### Home landing
 
@@ -220,7 +220,7 @@ Shared `.btn` geometry is **capsule** (`border-radius: 999dp`) at **44dp** min-h
 
 **Compact floating chrome** (theme-only — see [Materials](#compact-floating-chrome-materials)): `.surface-chrome`, `.surface-chrome--frost`, `.surface-chrome--solid`, `.shell-bottom-chrome--frost`
 
-**Context menus:** `ShowAt` (long-press / right-click) always uses a viewport-clamped float near the pointer. `ShowActions` (chrome overflow such as `⋯`) uses the same float on expanded layout, and a bottom action sheet (`.context-menu-layer--sheet`) on compact layout. Sheet frame geometry is set in `ContextMenuHost::LayoutActionSheet` from the viewport; RCSS only styles the shell and stretched children. Confirmations stay in `.shell-dialog`.
+**Context menus:** `ShowAt` (long-press / right-click) always uses a viewport-clamped float near the pointer. `ShowActions` (chrome overflow such as `⋯`) uses the same float on expanded layout, and a bottom action sheet (`.context-menu-layer--sheet`) on compact layout. Float menus use a transparent `.context-menu-scrim` (click-outside dismiss only, no dim); compact sheets keep a light scrim. Sheet frame geometry is set in `ContextMenuHost::LayoutActionSheet` from the viewport; RCSS only styles the shell and stretched children. Confirmations stay in `.shell-dialog`.
 
 ## Compact floating chrome (materials)
 

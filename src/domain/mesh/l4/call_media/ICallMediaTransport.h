@@ -73,6 +73,15 @@ public:
   virtual void Start() = 0;
   virtual void Stop() = 0;
 
+  /**
+   * Install the product callback for inbound call-media hello.
+   *
+   * **Contract (V033 / SESSION_MACHINES):** the handler runs on a worker hop and must not
+   * stall the pool with bare `sleep_for` / blocking I/O. Prefer a cancelable wait
+   * (condition_variable + teardown/key notify) or return promptly without a media key
+   * (transport will NACK the hello). Detach / ClearInboundHandler / Connect timeout still
+   * `reset()` the stream independently of this callback.
+   */
   virtual void SetInboundHandler(
       std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler) = 0;
   virtual void ClearInboundHandler() = 0;

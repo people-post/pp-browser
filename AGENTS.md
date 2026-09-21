@@ -70,7 +70,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | Theme / layout | `assets/themes/base.rcss`, [docs/ui/UI_DESIGN_SYSTEM.md](docs/ui/UI_DESIGN_SYSTEM.md) |
 | App entry / chat bootstrap | `src/app/Application.cpp`, `src/app/main.cpp`, `src/gui/chat/ChatController.cpp` |
 | Structured AI replies | `src/domain/ai/StructuredTextParser.cpp` |
-| Turn planning pipeline | `src/domain/ai/TurnPlan.*`, `src/feature/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
+| Turn planning pipeline | `src/domain/ai/TurnPlan.*`, `src/domain/ai/PayloadTurnPlanBuilder.*`, `TurnPlanner.*`, `TurnExecutor.*`, `AgentSession.cpp` |
 | AI-centric intent / agency | [projects/ai-centric-interface/](projects/ai-centric-interface/), [docs/ui/AGENT_CONVERSATION.md](docs/ui/AGENT_CONVERSATION.md) |
 | P2P messaging | `src/feature/conversations/`, [docs/architecture/P2P_MESSAGING.md](docs/architecture/P2P_MESSAGING.md), [docs/contracts/WIRE_SCHEMAS.md](docs/contracts/WIRE_SCHEMAS.md) |
 | Chat storage / SQLite | `src/domain/messaging/SqliteThreadStore.*`, `ChatPayloadCodec.*`, [projects/chat-storage-and-memory/](projects/chat-storage-and-memory/) |
@@ -90,7 +90,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | In-app settings (Me tab) | `src/gui/SettingsController.*`, `assets/views/settings.rml` |
 | Threading / async | [docs/architecture/THREADING.md](docs/architecture/THREADING.md) — `AppRuntime`, coordinator, worker pool |
 | Build | [docs/ops/BUILD.md](docs/ops/BUILD.md) |
-| Testing doctrine / tiers | [docs/architecture/TESTING.md](docs/architecture/TESTING.md) — cheapest tier, push-down seams, **promote failures downward**, skip taxonomy, doc homes |
+| Testing doctrine / tiers | [docs/architecture/TESTING.md](docs/architecture/TESTING.md) — **design as oracle**, cheapest tier, push-down seams, **promote failures downward**, skip taxonomy, doc homes |
 | Writing unit tests | [docs/ops/TEST_STRATEGY.md](docs/ops/TEST_STRATEGY.md#unit-test-conventions) — temp SQLite dirs, Windows file locks, gtest fixtures; purposes/inventory in same file |
 | Hard lab (forced hop / NAT) | [packaging/pp-node/HARD_LAB.md](packaging/pp-node/HARD_LAB.md) — design; delivery [projects/hard-lab/](projects/hard-lab/); driver `./scripts/test/pp_local_test.sh run --suite hard` |
 | Scripts (layout map) | [`scripts/README.md`](scripts/README.md) — `check/` `platform/` `vendor/` `test/` `dev/` |
@@ -106,9 +106,13 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 - For chat bubbles, use `selectable="text"` and `focus: none` so the draft textarea keeps focus. Suggestion buttons render inline inside assistant bubbles.
 - Keep fork diffs focused; note them in `RMLUI_UPSTREAM.md` when adding capabilities.
 - Respect layer dependencies: `app → feature → domain → foundation → common` (today paths still `base/` for foundation+domain; see [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)). Do not add new **domain peer → domain peer** edges; put shared seams in `src/common/` and wire in `feature/`.
+- **Design as oracle:** tests guard documented intent / purpose IDs, not today’s call graph or harness heals — [TESTING.md § Design as oracle](docs/architecture/TESTING.md#design-as-oracle). Older suites may still drift; when you hit a mismatch in work you are already doing, tighten that case in the same change (no courtesy freeze, no repo-wide rewrite).
 - **Promote test failures downward:** if smoke/hard-lab finds a policy bug that loopback/gtest can reproduce, fix **and** add the cheaper regression — see [TESTING.md § When a higher tier finds a bug](docs/architecture/TESTING.md#when-a-higher-tier-finds-a-bug).
 - **Parent-only destroy:** only the owner may destroy a child; callbacks request close — [OWNERSHIP.md](docs/architecture/OWNERSHIP.md) (mesh: [A027](projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy)).
+- **Composition vocabulary:** lower peers must not embed higher peers’ concepts (ports speak consumer needs; roots project upward) — [COMPOSITION_VOCABULARY.md](docs/architecture/COMPOSITION_VOCABULARY.md) ([V048](projects/p2p-av-calls/DECISIONS.md#v048--composition-vocabulary-no-upward-concepts)).
 - Prefer `#include` over forward declarations when the type is already a legal dependency (lower layer or allowed feature edge). Use forward decls to break cycles / upward edges, not to “lean” headers past `base`/`common` types — details in [SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md#prefer-include-over-forward-declaration).
+- **Keep function complexity low:** prefer shallow methods with one job. As a rule of thumb, avoid growing a single function past ~80–100 lines or nesting deep branching/lambdas when a named helper would clarify the steps. Orchestrators (`Wire`, `Build*`, phase hooks) should call helpers — do not re-inline multi-step setup into one mega-function. Extract when you touch the area; do not open a repo-wide rewrite.
+- **Do not split one class across `.cpp` files for size:** prefer named helpers in the **same** translation unit, or a **new type** with a clear role (`*Ports`, `*Coordinator`, logic in `domain/`). Do **not** add another `.cpp` that only implements more methods of an existing class to shrink a file (inbound call-control arms live in `CallSessionManager.cpp`).
 - **Temp SQLite dirs in tests:** never call `std::filesystem::remove_all` while `SqliteThreadStore` (or any object holding an open `sqlite3*`) is still alive — Windows CI fails with *file in use*. Use a gtest fixture; hold stores in `std::unique_ptr`; `reset()` them in `TearDown()` before cleanup. See [TEST_STRATEGY.md § Unit test conventions](docs/ops/TEST_STRATEGY.md#unit-test-conventions).
 
 ### Naming drift (reorg / renames)
@@ -141,5 +145,7 @@ Prefer a role suffix that matches the type’s job. Do **not** add a new `*Servi
 | Multi-step product flow | `*Workflow` | `ChatSyncWorkflow`, `AttachmentFetchWorkflow`, `GroupMembershipWorkflow` |
 | Session state machine | `*Coordinator` / `*Manager` | calls stack (prefer these over `*Service`) |
 | UI→functional edge | `*Ports` / `*Commands` | settings/CAS commands |
+
+**Free-function modules:** name the **capability** (`AttachmentFetch`, `ChatBlobRequest`, `RegistrationClient`, `BlobQuota`), not `*Util` / `*Utilities`. Reserve `*Util` only for tiny cross-cutting pure bags (`CryptoUtil`, `PeerIdUtil`). Prefer one file ≈ one capability; do not merge into per-folder mega-utils. Nest helpers under an owner type only when that type is the sole caller.
 
 **Agent one-liner:** Hub owns, Facade exposes, Store persists, Client speaks I/O, Protocol/Transport speaks Amp, Workflow orchestrates product steps, Engine is app/domain capability.

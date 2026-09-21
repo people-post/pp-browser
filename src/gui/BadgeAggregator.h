@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/ui/NavBadgeFormat.h"
 #include "domain/ui/ShellTypes.h"
 #include "gui/shell/ShellNavigationPorts.h"
 
@@ -33,7 +34,5 @@ private:
   std::function<BadgeUnreadInputs()> source_;
   ShellNavigationPorts shell_navigation_;
 };
-
-std::string FormatBadgeCount(int count);
 
 } // namespace pbr

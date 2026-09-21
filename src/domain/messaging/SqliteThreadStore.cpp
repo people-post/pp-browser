@@ -1,5 +1,6 @@
 #include "domain/messaging/SqliteThreadStore.h"
 
+#include "domain/messaging/SqliteThreadSchema.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/error/AppError.h"
 #include "domain/messaging/ChatPayloadCodec.h"
@@ -29,9 +30,6 @@ namespace pbr {
 
 namespace {
 
-constexpr int kProfileUserVersion = 4;
-constexpr int kThreadUserVersion = 2;
-
 std::optional<std::string> ControlTypeForDb(const ThreadMessage& message) {
   if (message.content_type != ChatContentType::System) {
     return std::nullopt;
@@ -56,371 +54,35 @@ std::optional<std::string> SqlTextOpt(sqlite3_stmt* stmt, const int index) {
   return SqlText(stmt, index);
 }
 
-constexpr const char* kProfileSchemaV1 = R"sql(
-CREATE TABLE IF NOT EXISTS threads (
-  id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL,
-  channel TEXT NOT NULL DEFAULT '',
-  group_id TEXT,
-  peer_identity_kind TEXT,
-  peer_identity_value TEXT,
-  title TEXT NOT NULL,
-  local_title TEXT NOT NULL DEFAULT '',
-  participant_contact_ids TEXT NOT NULL,
-  preview_enc BLOB,
-  updated_at INTEGER NOT NULL,
-  unread_count INTEGER NOT NULL DEFAULT 0,
-  session_epoch INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_threads_updated ON threads(updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_threads_direct ON threads(kind, channel, peer_identity_kind, peer_identity_value);
-
-CREATE TABLE IF NOT EXISTS outbox (
-  message_id TEXT PRIMARY KEY,
-  thread_id TEXT NOT NULL,
-  delivery TEXT NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_outbox_thread ON outbox(thread_id);
-CREATE INDEX IF NOT EXISTS idx_outbox_updated ON outbox(updated_at ASC);
-
-CREATE TABLE IF NOT EXISTS chat_targets (
-  peer_identity_kind TEXT NOT NULL,
-  peer_identity_value TEXT NOT NULL,
-  channel TEXT NOT NULL,
-  participant_contact_id TEXT,
-  local_thread_id TEXT NOT NULL,
-  session_epoch INTEGER NOT NULL DEFAULT 1,
-  next_outgoing_seq INTEGER NOT NULL DEFAULT 1,
-  master_psk_b64 TEXT,
-  psk_fingerprint TEXT,
-  psk_verified_at INTEGER,
-  retired_psks_json TEXT,
-  key_scope TEXT NOT NULL DEFAULT 'account',
-  thread_kem_pk_b64 TEXT,
-  thread_kem_sk_b64 TEXT,
-  peer_thread_kem_pk_b64 TEXT,
-  last_psk_rotate_at INTEGER,
-  psk_rotate_msg_count INTEGER NOT NULL DEFAULT 0,
-  last_rotation_id TEXT,
-  PRIMARY KEY (peer_identity_kind, peer_identity_value, channel)
-);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_targets_local_thread ON chat_targets(local_thread_id);
-)sql";
-
-constexpr const char* kMessageSelectColumns =
-    "id, display_order, sender_contact_id, content_enc, content_type, control_type, timestamp, relay_visible, "
-    "delivery, transport, sender_seq, session_epoch, target_message_id, generation, seq_owner_contact_id, "
-    "ai_invoke_mode";
-
-constexpr const char* kThreadSchemaV2 = R"sql(
-CREATE TABLE IF NOT EXISTS messages (
-  id TEXT PRIMARY KEY,
-  display_order INTEGER NOT NULL,
-  sender_contact_id TEXT NOT NULL,
-  content_enc BLOB NOT NULL,
-  content_type TEXT NOT NULL,
-  control_type TEXT,
-  timestamp INTEGER NOT NULL,
-  relay_visible INTEGER NOT NULL,
-  delivery TEXT NOT NULL,
-  transport TEXT,
-  sender_seq INTEGER,
-  session_epoch INTEGER,
-  target_message_id TEXT,
-  generation TEXT,
-  seq_owner_contact_id TEXT,
-  ai_invoke_mode TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_messages_display ON messages(display_order DESC);
-CREATE INDEX IF NOT EXISTS idx_messages_seq ON messages(session_epoch, sender_contact_id, sender_seq)
-  WHERE relay_visible = 1;
-CREATE INDEX IF NOT EXISTS idx_messages_delivery ON messages(delivery) WHERE relay_visible = 1;
-
-CREATE TABLE IF NOT EXISTS memory (
-  key TEXT PRIMARY KEY,
-  value_enc BLOB NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS sync_state (
-  peer_identity_kind TEXT NOT NULL,
-  peer_identity_value TEXT NOT NULL,
-  session_epoch INTEGER NOT NULL,
-  state_json TEXT NOT NULL,
-  PRIMARY KEY (peer_identity_kind, peer_identity_value, session_epoch)
-);
-)sql";
-
-std::string ThreadsRoot(const std::string& data_dir) {
-  return (std::filesystem::path(data_dir) / "threads").string();
-}
-
-std::string ProfileDbFile(const std::string& data_dir) {
-  return (std::filesystem::path(ThreadsRoot(data_dir)) / "profile.db").string();
-}
-
-std::string ThreadDir(const std::string& data_dir, const std::string& thread_id) {
-  return (std::filesystem::path(ThreadsRoot(data_dir)) / thread_id).string();
-}
-
-std::string ThreadDbFile(const std::string& data_dir, const std::string& thread_id) {
-  return (std::filesystem::path(ThreadDir(data_dir, thread_id)) / "thread.db").string();
-}
-
-Roe<void> ExecSql(sqlite3* db, const char* sql) {
-  char* err = nullptr;
-  if (sqlite3_exec(db, sql, nullptr, nullptr, &err) != SQLITE_OK) {
-    const std::string message = err ? err : "sqlite exec failed";
-    sqlite3_free(err);
-    return Error(message);
-  }
-  return {};
-}
-
-Roe<void> ApplyUserVersion(sqlite3* db, int version) {
-  if (auto result = ExecSql(db, ("PRAGMA user_version = " + std::to_string(version) + ";").c_str()); !result) {
-    return result.error();
-  }
-  return {};
-}
-
-Roe<void> ConfigureDb(sqlite3* db) {
-  if (auto result = ExecSql(db, "PRAGMA journal_mode=WAL;"); !result) {
-    return result.error();
-  }
-  if (auto result = ExecSql(db, "PRAGMA foreign_keys=ON;"); !result) {
-    return result.error();
-  }
-  return {};
-}
-
 std::string ContentTypeToDb(ChatContentType type) { return ChatContentTypeToDb(type); }
 
 ChatContentType ContentTypeFromDb(const std::string& value) { return ChatContentTypeFromDb(value); }
 
+
 } // namespace
 
-SqliteThreadStore::SqliteThreadStore(std::string data_dir) : data_dir_(std::move(data_dir)) {
+SqliteThreadStore::SqliteThreadStore(std::string data_dir) : db_(std::move(data_dir)) {
   redirectLogger("SqliteThreadStore");
-  profile_id_ = std::filesystem::path(data_dir_).filename().string();
-  if (profile_id_.empty()) {
-    profile_id_ = "default";
-  }
-}
-
-SqliteThreadStore::~SqliteThreadStore() {
-  ClearDek();
-  std::lock_guard profile_lock(profile_mutex_);
-  for (auto& [thread_id, handle] : thread_dbs_) {
-    (void)thread_id;
-    if (handle.db) {
-      sqlite3_close(handle.db);
-      handle.db = nullptr;
-    }
-  }
-  if (profile_db_) {
-    sqlite3_close(profile_db_);
-    profile_db_ = nullptr;
-  }
-}
-
-std::string SqliteThreadStore::ProfileDbPath() const {
-  return ProfileDbFile(data_dir_);
 }
 
 Roe<void> SqliteThreadStore::SetDek(ByteVector dek) {
-  if (dek.size() != 32u) {
-    return Error("Invalid DEK size");
-  }
-  std::lock_guard lock(dek_mutex_);
-  if (!dek_.empty()) {
-    sodium_memzero(dek_.data(), dek_.size());
-  }
-  dek_ = std::move(dek);
-  return {};
+  return db_.SetDek(std::move(dek));
 }
 
 void SqliteThreadStore::ClearDek() {
-  std::lock_guard lock(dek_mutex_);
-  if (!dek_.empty()) {
-    sodium_memzero(dek_.data(), dek_.size());
-    dek_.clear();
-  }
+  db_.ClearDek();
 }
 
-Roe<void> SqliteThreadStore::RequireDek() const {
-  std::lock_guard lock(dek_mutex_);
-  if (dek_.size() != 32u) {
-    return AppError::Pin(Err::Pin::Required, "Transcript store DEK not set (unlock profile vault first)");
-  }
-  return {};
+void SqliteThreadStore::Flush() {
+  db_.Flush();
 }
 
-Roe<void> SqliteThreadStore::EnsureInitialized() const {
-  if (initialized_) {
-    return {};
-  }
-  std::error_code ec;
-  std::filesystem::create_directories(ThreadsRoot(data_dir_), ec);
-  if (auto wipe = WipeLegacyJsonIfPresent(); !wipe) {
-    return wipe.error();
-  }
-  if (auto open = OpenProfileDb(); !open) {
-    return open.error();
-  }
-  if (auto repair = RepairOrphanThreadDirs(); !repair) {
-    return repair.error();
-  }
-  initialized_ = true;
-  return {};
-}
-
-Roe<void> SqliteThreadStore::WipeLegacyJsonIfPresent() const {
-  const std::filesystem::path index = std::filesystem::path(ThreadsRoot(data_dir_)) / "index.json";
-  if (!std::filesystem::exists(index)) {
-    return {};
-  }
-  std::error_code ec;
-  for (const auto& entry : std::filesystem::directory_iterator(ThreadsRoot(data_dir_), ec)) {
-    if (!entry.is_regular_file()) {
-      continue;
-    }
-    if (entry.path().extension() == ".json") {
-      std::filesystem::remove(entry.path(), ec);
-    }
-  }
-  return {};
-}
-
-Roe<void> SqliteThreadStore::OpenProfileDb() const {
-  if (profile_db_) {
-    return {};
-  }
-  auto opened = OpenProfileDbUnguarded();
-  if (!opened && profile_db_) {
-    // sqlite3_open() hands back a handle even when it fails, and every later
-    // step leaves it assigned too. Leaving it set would make the next call take
-    // the early return above and skip the schema-version check entirely, so the
-    // store would go on to read an incompatible database. profile_db_ stays
-    // non-null only once the database is fully usable.
-    sqlite3_close(profile_db_);
-    profile_db_ = nullptr;
-  }
-  return opened;
-}
-
-Roe<void> SqliteThreadStore::OpenProfileDbUnguarded() const {
-  const bool created = !std::filesystem::exists(ProfileDbFile(data_dir_));
-  if (sqlite3_open(ProfileDbFile(data_dir_).c_str(), &profile_db_) != SQLITE_OK) {
-    return Error("Failed to open profile.db");
-  }
-  if (auto cfg = ConfigureDb(profile_db_); !cfg) {
-    return cfg.error();
-  }
-  int user_version = 0;
-  sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(profile_db_, "PRAGMA user_version;", -1, &stmt, nullptr) == SQLITE_OK) {
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-      user_version = sqlite3_column_int(stmt, 0);
-    }
-    sqlite3_finalize(stmt);
-  }
-  if (created || user_version == 0) {
-    if (auto schema = ExecSql(profile_db_, kProfileSchemaV1); !schema) {
-      return schema.error();
-    }
-    if (auto version = ApplyUserVersion(profile_db_, kProfileUserVersion); !version) {
-      return version.error();
-    }
-  } else if (user_version != kProfileUserVersion) {
-    return Error("Incompatible profile.db — wipe profile data directory");
-  }
-  GroupRosterStore roster_store(ProfileDbFile(data_dir_));
-  if (auto group_schema = roster_store.EnsureSchema(profile_db_); !group_schema) {
-    return group_schema.error();
-  }
-  CallSessionStore call_store(ProfileDbFile(data_dir_));
-  if (auto call_schema = call_store.EnsureSchema(profile_db_); !call_schema) {
-    return call_schema.error();
-  }
-  return {};
-}
-
-Roe<void> SqliteThreadStore::EnsureThreadDirectory(const std::string& thread_id) const {
-  std::error_code ec;
-  std::filesystem::create_directories(ThreadDir(data_dir_, thread_id), ec);
-  std::filesystem::create_directories(std::filesystem::path(ThreadDir(data_dir_, thread_id)) / "blobs", ec);
-  return {};
-}
-
-Roe<sqlite3*> SqliteThreadStore::OpenThreadDb(const std::string& thread_id) const {
-  if (auto init = EnsureInitialized(); !init) {
-    return init.error();
-  }
-  std::lock_guard lock(thread_cache_mutex_);
-  auto it = thread_dbs_.find(thread_id);
-  if (it == thread_dbs_.end() || it->second.db == nullptr) {
-    if (auto dir = EnsureThreadDirectory(thread_id); !dir) {
-      return dir.error();
-    }
-    ThreadDbHandle handle;
-    if (sqlite3_open(ThreadDbFile(data_dir_, thread_id).c_str(), &handle.db) != SQLITE_OK) {
-      return Error("Failed to open thread.db: " + thread_id);
-    }
-    if (auto cfg = ConfigureDb(handle.db); !cfg) {
-      sqlite3_close(handle.db);
-      return cfg.error();
-    }
-    int user_version = 0;
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(handle.db, "PRAGMA user_version;", -1, &stmt, nullptr) == SQLITE_OK) {
-      if (sqlite3_step(stmt) == SQLITE_ROW) {
-        user_version = sqlite3_column_int(stmt, 0);
-      }
-      sqlite3_finalize(stmt);
-    }
-    if (user_version == 0) {
-      if (auto schema = ExecSql(handle.db, kThreadSchemaV2); !schema) {
-        sqlite3_close(handle.db);
-        return schema.error();
-      }
-      if (auto version = ApplyUserVersion(handle.db, kThreadUserVersion); !version) {
-        sqlite3_close(handle.db);
-        return version.error();
-      }
-    } else if (user_version != kThreadUserVersion) {
-      sqlite3_close(handle.db);
-      return Error("Incompatible thread.db — wipe profile data directory");
-    }
-    thread_dbs_[thread_id] = handle;
-    it = thread_dbs_.find(thread_id);
-  }
-  TouchThreadLru(thread_id);
-  EvictThreadDbsIfNeeded();
-  return it->second.db;
-}
-
-void SqliteThreadStore::TouchThreadLru(const std::string& thread_id) const {
-  thread_lru_.remove(thread_id);
-  thread_lru_.push_front(thread_id);
-}
-
-void SqliteThreadStore::EvictThreadDbsIfNeeded() const {
-  while (thread_dbs_.size() > kMaxOpenThreadDbs && !thread_lru_.empty()) {
-    const std::string evict_id = thread_lru_.back();
-    thread_lru_.pop_back();
-    auto it = thread_dbs_.find(evict_id);
-    if (it != thread_dbs_.end()) {
-      if (it->second.db) {
-        sqlite3_close(it->second.db);
-      }
-      thread_dbs_.erase(it);
-    }
-  }
+std::string SqliteThreadStore::ProfileDbPath() const {
+  return db_.ProfileDbPath();
 }
 
 Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(const std::string& thread_id, sqlite3_stmt* stmt) const {
-  if (auto dek = RequireDek(); !dek) {
+  if (auto dek = db_.RequireDek(); !dek) {
     return dek.error();
   }
   ThreadMessage message;
@@ -433,12 +95,8 @@ Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(const std::string& thread_i
     return Error("Missing encrypted message body");
   }
   ByteVector ciphertext(static_cast<const uint8_t*>(blob), static_cast<const uint8_t*>(blob) + blob_size);
-  ByteVector dek_copy;
-  {
-    std::lock_guard lock(dek_mutex_);
-    dek_copy = dek_;
-  }
-  auto plaintext = TranscriptCipher::DecryptMessageBody(dek_copy, profile_id_, thread_id, message.id, ciphertext);
+  ByteVector dek_copy = db_.CopyDek();
+  auto plaintext = TranscriptCipher::DecryptMessageBody(dek_copy, db_.profile_id(), thread_id, message.id, ciphertext);
   if (!plaintext) {
     return plaintext.error();
   }
@@ -471,7 +129,7 @@ Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(const std::string& thread_i
 
 Roe<ByteVector> SqliteThreadStore::EncryptMessageContent(const std::string& thread_id,
                                                          const ThreadMessage& message) const {
-  if (auto dek = RequireDek(); !dek) {
+  if (auto dek = db_.RequireDek(); !dek) {
     return dek.error();
   }
   auto body = TranscriptBodyCodec::FromMessage(message);
@@ -482,12 +140,8 @@ Roe<ByteVector> SqliteThreadStore::EncryptMessageContent(const std::string& thre
   if (!encoded) {
     return encoded.error();
   }
-  ByteVector dek_copy;
-  {
-    std::lock_guard lock(dek_mutex_);
-    dek_copy = dek_;
-  }
-  return TranscriptCipher::EncryptMessageBody(dek_copy, profile_id_, thread_id, message.id, *encoded);
+  ByteVector dek_copy = db_.CopyDek();
+  return TranscriptCipher::EncryptMessageBody(dek_copy, db_.profile_id(), thread_id, message.id, *encoded);
 }
 
 Roe<std::optional<ByteVector>> SqliteThreadStore::EncryptPreviewBlob(const std::string& thread_id,
@@ -495,15 +149,11 @@ Roe<std::optional<ByteVector>> SqliteThreadStore::EncryptPreviewBlob(const std::
   if (preview.empty()) {
     return std::optional<ByteVector>{};
   }
-  if (auto dek = RequireDek(); !dek) {
+  if (auto dek = db_.RequireDek(); !dek) {
     return dek.error();
   }
-  ByteVector dek_copy;
-  {
-    std::lock_guard lock(dek_mutex_);
-    dek_copy = dek_;
-  }
-  auto encrypted = TranscriptCipher::EncryptPreview(dek_copy, profile_id_, thread_id, preview);
+  ByteVector dek_copy = db_.CopyDek();
+  auto encrypted = TranscriptCipher::EncryptPreview(dek_copy, db_.profile_id(), thread_id, preview);
   if (!encrypted) {
     return encrypted.error();
   }
@@ -515,16 +165,12 @@ Roe<std::string> SqliteThreadStore::DecryptPreviewBlob(const std::string& thread
   if (!blob || blob_size <= 0) {
     return std::string{};
   }
-  if (auto dek = RequireDek(); !dek) {
+  if (auto dek = db_.RequireDek(); !dek) {
     return dek.error();
   }
   ByteVector ciphertext(static_cast<const uint8_t*>(blob), static_cast<const uint8_t*>(blob) + blob_size);
-  ByteVector dek_copy;
-  {
-    std::lock_guard lock(dek_mutex_);
-    dek_copy = dek_;
-  }
-  return TranscriptCipher::DecryptPreview(dek_copy, profile_id_, thread_id, ciphertext);
+  ByteVector dek_copy = db_.CopyDek();
+  return TranscriptCipher::DecryptPreview(dek_copy, db_.profile_id(), thread_id, ciphertext);
 }
 
 Roe<void> SqliteThreadStore::BindMessageInsert(sqlite3_stmt* stmt, const std::string& thread_id,
@@ -649,7 +295,7 @@ Roe<int64_t> SqliteThreadStore::NextDisplayOrder(sqlite3* thread_db) const {
 
 Roe<void> SqliteThreadStore::UpdateThreadCatalogFromMessage(const ThreadMessage& message,
                                                             const bool increment_unread) const {
-  std::lock_guard lock(profile_mutex_);
+  std::lock_guard lock(db_.profile_mutex());
   auto preview_enc = EncryptPreviewBlob(message.thread_id, message.text);
   if (!preview_enc) {
     return preview_enc.error();
@@ -657,8 +303,8 @@ Roe<void> SqliteThreadStore::UpdateThreadCatalogFromMessage(const ThreadMessage&
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "UPDATE threads SET updated_at = ?, preview_enc = ?, unread_count = unread_count + ? WHERE id = ?;";
-  if (sqlite3_prepare_v2(profile_db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
-    return Error(std::string("Failed to prepare catalog update: ") + sqlite3_errmsg(profile_db_));
+  if (sqlite3_prepare_v2(db_.profile_db(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error(std::string("Failed to prepare catalog update: ") + sqlite3_errmsg(db_.profile_db()));
   }
   sqlite3_bind_int64(stmt, 1, message.timestamp);
   if (preview_enc->has_value()) {
@@ -671,7 +317,7 @@ Roe<void> SqliteThreadStore::UpdateThreadCatalogFromMessage(const ThreadMessage&
   sqlite3_bind_text(stmt, 4, message.thread_id.c_str(), -1, SQLITE_TRANSIENT);
   const int rc = sqlite3_step(stmt);
   if (rc != SQLITE_DONE) {
-    const std::string err = sqlite3_errmsg(profile_db_);
+    const std::string err = sqlite3_errmsg(db_.profile_db());
     sqlite3_finalize(stmt);
     return Error("Failed to update thread catalog: " + err);
   }
@@ -679,67 +325,13 @@ Roe<void> SqliteThreadStore::UpdateThreadCatalogFromMessage(const ThreadMessage&
   return {};
 }
 
-Roe<void> SqliteThreadStore::RepairOrphanThreadDirs() const {
-  std::error_code ec;
-  for (const auto& entry : std::filesystem::directory_iterator(ThreadsRoot(data_dir_), ec)) {
-    if (!entry.is_directory()) {
-      continue;
-    }
-    const std::string thread_id = entry.path().filename().string();
-    if (thread_id == "blobs") {
-      continue;
-    }
-    const std::filesystem::path db_path = entry.path() / "thread.db";
-    if (!std::filesystem::exists(db_path)) {
-      continue;
-    }
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(profile_db_, "SELECT 1 FROM threads WHERE id = ? LIMIT 1;", -1, &stmt, nullptr) != SQLITE_OK) {
-      continue;
-    }
-    sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
-    const bool exists = sqlite3_step(stmt) == SQLITE_ROW;
-    sqlite3_finalize(stmt);
-    if (exists) {
-      continue;
-    }
-    const int64_t now = util::NowUnixMs();
-    if (sqlite3_prepare_v2(profile_db_,
-                           "INSERT INTO threads (id, kind, channel, title, participant_contact_ids, preview_enc, "
-                           "updated_at, unread_count) VALUES (?, 'ai', '', ?, '[]', NULL, ?, 0);",
-                           -1, &stmt, nullptr) != SQLITE_OK) {
-      continue;
-    }
-    sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, thread_id.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int64(stmt, 3, now);
-    sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-  }
-  return {};
-}
-
-void SqliteThreadStore::Flush() {
-  std::lock_guard profile_lock(profile_mutex_);
-  if (profile_db_) {
-    (void)ExecSql(profile_db_, "PRAGMA wal_checkpoint(PASSIVE);");
-  }
-  std::lock_guard thread_lock(thread_cache_mutex_);
-  for (auto& [thread_id, handle] : thread_dbs_) {
-    (void)thread_id;
-    if (handle.db) {
-      (void)ExecSql(handle.db, "PRAGMA wal_checkpoint(PASSIVE);");
-    }
-  }
-}
-
 Roe<std::vector<Thread>> SqliteThreadStore::ListThreads() const {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
-  std::lock_guard lock(profile_mutex_);
+  std::lock_guard lock(db_.profile_mutex());
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(profile_db_,
+  if (sqlite3_prepare_v2(db_.profile_db(),
                          "SELECT id, kind, channel, title, participant_contact_ids, updated_at, unread_count, "
                          "preview_enc, peer_identity_kind, peer_identity_value, group_id, local_title FROM threads "
                          "ORDER BY updated_at DESC;",
@@ -810,15 +402,14 @@ Roe<std::optional<Thread>> SqliteThreadStore::GetThread(const std::string& threa
 }
 
 Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
-  if (auto dir = EnsureThreadDirectory(thread.id); !dir) {
-    return dir.error();
+  if (auto thread_db = db_.OpenThreadDb(thread.id); !thread_db) {
+    return thread_db.error();
   }
-  (void)OpenThreadDb(thread.id);
 
-  std::lock_guard lock(profile_mutex_);
+  std::lock_guard lock(db_.profile_mutex());
   std::vector<Value> participant_values;
   participant_values.reserve(thread.participant_contact_ids.size());
   for (const std::string& id : thread.participant_contact_ids) {
@@ -837,7 +428,7 @@ Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
       "updated_at=excluded.updated_at, unread_count=excluded.unread_count, "
       "peer_identity_kind=excluded.peer_identity_kind, peer_identity_value=excluded.peer_identity_value, "
       "group_id=excluded.group_id;";
-  if (sqlite3_prepare_v2(profile_db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+  if (sqlite3_prepare_v2(db_.profile_db(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to upsert thread");
   }
   auto preview_enc = EncryptPreviewBlob(thread.id, thread.preview);
@@ -876,7 +467,7 @@ Roe<Thread> SqliteThreadStore::UpsertThread(const Thread& thread) {
 Roe<std::vector<ThreadMessage>> SqliteThreadStore::QueryMessages(const std::string& thread_id, const char* sql,
                                                                  std::optional<int64_t> before_display_order,
                                                                  size_t limit) const {
-  auto thread_db = OpenThreadDb(thread_id);
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -910,7 +501,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesPage(const std::st
   if (limit == 0) {
     limit = kDefaultMessagesPageSize;
   }
-  const std::string select_prefix = std::string("SELECT ") + kMessageSelectColumns + " FROM messages ";
+  const std::string select_prefix = std::string("SELECT ") + kSqliteThreadMessageSelectColumns + " FROM messages ";
   const std::string sql = before_display_order.has_value()
                                 ? select_prefix + "WHERE display_order < ? ORDER BY display_order DESC LIMIT ?;"
                                 : select_prefix + "ORDER BY display_order DESC LIMIT ?;";
@@ -928,7 +519,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessages(const std::string
 
 Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesForContext(const std::string& thread_id,
                                                                          const ContextBudget& budget) const {
-  auto thread_db = OpenThreadDb(thread_id);
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -943,7 +534,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesForContext(const s
   }
 
   sqlite3_stmt* stmt = nullptr;
-  const std::string context_sql = std::string("SELECT ") + kMessageSelectColumns +
+  const std::string context_sql = std::string("SELECT ") + kSqliteThreadMessageSelectColumns +
                                   " FROM messages WHERE content_type IN ('text', 'system') AND display_order > ? "
                                   "ORDER BY display_order DESC;";
   if (sqlite3_prepare_v2(*thread_db, context_sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -984,7 +575,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesForContext(const s
 }
 
 Roe<std::optional<ConversationSummary>> SqliteThreadStore::GetThreadMemory(const std::string& thread_id) const {
-  auto thread_db = OpenThreadDb(thread_id);
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -999,17 +590,13 @@ Roe<std::optional<ConversationSummary>> SqliteThreadStore::GetThreadMemory(const
     const void* blob = sqlite3_column_blob(stmt, 0);
     const int blob_size = sqlite3_column_bytes(stmt, 0);
     if (blob && blob_size > 0) {
-      if (auto dek = RequireDek(); !dek) {
+      if (auto dek = db_.RequireDek(); !dek) {
         sqlite3_finalize(stmt);
         return dek.error();
       }
       ByteVector ciphertext(static_cast<const uint8_t*>(blob), static_cast<const uint8_t*>(blob) + blob_size);
-      ByteVector dek_copy;
-      {
-        std::lock_guard lock(dek_mutex_);
-        dek_copy = dek_;
-      }
-      auto value_text = TranscriptCipher::DecryptMemoryValue(dek_copy, profile_id_, thread_id,
+      ByteVector dek_copy = db_.CopyDek();
+      auto value_text = TranscriptCipher::DecryptMemoryValue(dek_copy, db_.profile_id(), thread_id,
                                                              ConversationSummaryCodec::kSummaryKey, ciphertext);
       if (!value_text) {
         sqlite3_finalize(stmt);
@@ -1028,26 +615,22 @@ Roe<std::optional<ConversationSummary>> SqliteThreadStore::GetThreadMemory(const
 }
 
 Roe<void> SqliteThreadStore::SetThreadMemory(const std::string& thread_id, const ConversationSummary& summary) {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
   auto encoded = ConversationSummaryCodec::Encode(summary);
   if (!encoded) {
     return encoded.error();
   }
-  auto thread_db = OpenThreadDb(thread_id);
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
-  if (auto dek = RequireDek(); !dek) {
+  if (auto dek = db_.RequireDek(); !dek) {
     return dek.error();
   }
-  ByteVector dek_copy;
-  {
-    std::lock_guard lock(dek_mutex_);
-    dek_copy = dek_;
-  }
-  auto value_enc = TranscriptCipher::EncryptMemoryValue(dek_copy, profile_id_, thread_id,
+  ByteVector dek_copy = db_.CopyDek();
+  auto value_enc = TranscriptCipher::EncryptMemoryValue(dek_copy, db_.profile_id(), thread_id,
                                                         ConversationSummaryCodec::kSummaryKey, *encoded);
   if (!value_enc) {
     return value_enc.error();
@@ -1069,7 +652,7 @@ Roe<void> SqliteThreadStore::SetThreadMemory(const std::string& thread_id, const
 }
 
 Roe<void> SqliteThreadStore::ClearThreadMemory(const std::string& thread_id) {
-  auto thread_db = OpenThreadDb(thread_id);
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -1088,7 +671,7 @@ Roe<void> SqliteThreadStore::ClearThreadMemory(const std::string& thread_id) {
 
 Roe<int64_t> SqliteThreadStore::CountContextEligibleMessagesAfter(const std::string& thread_id,
                                                                   const int64_t after_display_order) const {
-  auto thread_db = OpenThreadDb(thread_id);
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -1109,12 +692,12 @@ Roe<int64_t> SqliteThreadStore::CountContextEligibleMessagesAfter(const std::str
 
 Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetContextEligibleMessagesAfter(
     const std::string& thread_id, const int64_t after_display_order) const {
-  auto thread_db = OpenThreadDb(thread_id);
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
   sqlite3_stmt* stmt = nullptr;
-  const std::string compaction_sql = std::string("SELECT ") + kMessageSelectColumns +
+  const std::string compaction_sql = std::string("SELECT ") + kSqliteThreadMessageSelectColumns +
                                      " FROM messages WHERE content_type IN ('text', 'system') AND display_order > ? "
                                      "ORDER BY display_order ASC;";
   if (sqlite3_prepare_v2(*thread_db, compaction_sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
@@ -1140,10 +723,10 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message
   if (message.text.size() > kMaxComposeTextBytes) {
     return Error("Message text exceeds compose limit");
   }
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
-  auto thread_db = OpenThreadDb(message.thread_id);
+  auto thread_db = db_.OpenThreadDb(message.thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -1195,7 +778,7 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessage(const ThreadMessage& message
 }
 
 Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
-  auto thread_db = OpenThreadDb(message.thread_id);
+  auto thread_db = db_.OpenThreadDb(message.thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -1225,7 +808,7 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
 }
 
 Roe<bool> SqliteThreadStore::HasMessageId(const std::string& thread_id, const std::string& message_id) const {
-  auto thread_db = OpenThreadDb(thread_id);
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -1244,7 +827,7 @@ Roe<int64_t> SqliteThreadStore::CountAnnotationsForTarget(const std::string& thr
   if (target_message_id.empty()) {
     return int64_t{0};
   }
-  auto thread_db = OpenThreadDb(thread_id);
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -1265,7 +848,7 @@ Roe<int64_t> SqliteThreadStore::CountAnnotationsForTarget(const std::string& thr
 }
 
 Roe<void> SqliteThreadStore::ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
 
@@ -1277,7 +860,7 @@ Roe<void> SqliteThreadStore::ClearMessages(const std::string& thread_id, const C
     return Error("Thread not found");
   }
 
-  auto thread_db = OpenThreadDb(thread_id);
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -1332,56 +915,56 @@ Roe<void> SqliteThreadStore::ClearMessages(const std::string& thread_id, const C
   }
 
   {
-    std::lock_guard profile_lock(profile_mutex_);
+    std::lock_guard profile_lock(db_.profile_mutex());
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(profile_db_, "DELETE FROM outbox WHERE thread_id = ?;", -1, &stmt, nullptr) == SQLITE_OK) {
+    if (sqlite3_prepare_v2(db_.profile_db(), "DELETE FROM outbox WHERE thread_id = ?;", -1, &stmt, nullptr) == SQLITE_OK) {
       sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
       sqlite3_step(stmt);
       sqlite3_finalize(stmt);
     }
-    if (sqlite3_prepare_v2(profile_db_, "UPDATE threads SET preview_enc = NULL, unread_count = 0 WHERE id = ?;", -1,
+    if (sqlite3_prepare_v2(db_.profile_db(), "UPDATE threads SET preview_enc = NULL, unread_count = 0 WHERE id = ?;", -1,
                            &stmt, nullptr) == SQLITE_OK) {
       sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
       sqlite3_step(stmt);
       sqlite3_finalize(stmt);
     }
   }
-  (void)ExecSql(*thread_db, "PRAGMA wal_checkpoint(PASSIVE);");
+  (void)SqliteThreadExecSql(*thread_db, "PRAGMA wal_checkpoint(PASSIVE);");
   return {};
 }
 
 Roe<bool> SqliteThreadStore::DeleteThread(const std::string& thread_id) {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
-  std::lock_guard profile_lock(profile_mutex_);
+  std::lock_guard profile_lock(db_.profile_mutex());
   ClearChatTargetThreadLinkUnlocked(thread_id);
   {
-    GroupRosterStore roster(ProfileDbFile(data_dir_));
+    GroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
     (void)roster.ClearGroupTargetByThreadId(thread_id);
   }
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(profile_db_, "DELETE FROM threads WHERE id = ?;", -1, &stmt, nullptr) == SQLITE_OK) {
+  if (sqlite3_prepare_v2(db_.profile_db(), "DELETE FROM threads WHERE id = ?;", -1, &stmt, nullptr) == SQLITE_OK) {
     sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
   }
-  if (sqlite3_prepare_v2(profile_db_, "DELETE FROM outbox WHERE thread_id = ?;", -1, &stmt, nullptr) == SQLITE_OK) {
+  if (sqlite3_prepare_v2(db_.profile_db(), "DELETE FROM outbox WHERE thread_id = ?;", -1, &stmt, nullptr) == SQLITE_OK) {
     sqlite3_bind_text(stmt, 1, thread_id.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
   }
 
-  CloseThreadDb(thread_id);
+  db_.CloseThreadDb(thread_id);
   std::error_code ec;
-  std::filesystem::remove_all(ThreadDir(data_dir_, thread_id), ec);
+  std::filesystem::remove_all(SqliteThreadDir(db_.data_dir(), thread_id), ec);
   return true;
 }
 
 Roe<void> SqliteThreadStore::UpsertChatTarget(const DirectChatTarget& target,
                                               const std::string& participant_contact_id,
                                               const std::string& local_thread_id) const {
-  std::lock_guard lock(profile_mutex_);
+  std::lock_guard lock(db_.profile_mutex());
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO chat_targets (peer_identity_kind, peer_identity_value, channel, participant_contact_id, "
@@ -1389,7 +972,7 @@ Roe<void> SqliteThreadStore::UpsertChatTarget(const DirectChatTarget& target,
       "VALUES (?, ?, ?, ?, ?, 1, 1) "
       "ON CONFLICT(peer_identity_kind, peer_identity_value, channel) DO UPDATE SET "
       "participant_contact_id=excluded.participant_contact_id, local_thread_id=excluded.local_thread_id;";
-  if (sqlite3_prepare_v2(profile_db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+  if (sqlite3_prepare_v2(db_.profile_db(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare chat_targets upsert");
   }
   const std::string channel = ThreadChannelToString(target.channel);
@@ -1407,14 +990,14 @@ Roe<void> SqliteThreadStore::UpsertChatTarget(const DirectChatTarget& target,
 }
 
 Roe<void> SqliteThreadStore::ClearChatTargetThreadLink(const std::string& thread_id) const {
-  std::lock_guard lock(profile_mutex_);
+  std::lock_guard lock(db_.profile_mutex());
   ClearChatTargetThreadLinkUnlocked(thread_id);
   return {};
 }
 
 void SqliteThreadStore::ClearChatTargetThreadLinkUnlocked(const std::string& thread_id) const {
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(profile_db_, "UPDATE chat_targets SET local_thread_id = '' WHERE local_thread_id = ?;", -1,
+  if (sqlite3_prepare_v2(db_.profile_db(), "UPDATE chat_targets SET local_thread_id = '' WHERE local_thread_id = ?;", -1,
                          &stmt, nullptr) != SQLITE_OK) {
     return;
   }
@@ -1424,13 +1007,13 @@ void SqliteThreadStore::ClearChatTargetThreadLinkUnlocked(const std::string& thr
 }
 
 Roe<void> SqliteThreadStore::UpsertOutboxRow(const std::string& message_id, const std::string& thread_id) const {
-  std::lock_guard lock(profile_mutex_);
+  std::lock_guard lock(db_.profile_mutex());
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO outbox (message_id, thread_id, delivery, updated_at) VALUES (?, ?, 'pending', ?) "
       "ON CONFLICT(message_id) DO UPDATE SET thread_id=excluded.thread_id, delivery='pending', "
       "updated_at=excluded.updated_at;";
-  if (sqlite3_prepare_v2(profile_db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+  if (sqlite3_prepare_v2(db_.profile_db(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare outbox upsert");
   }
   sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
@@ -1445,9 +1028,9 @@ Roe<void> SqliteThreadStore::UpsertOutboxRow(const std::string& message_id, cons
 }
 
 Roe<void> SqliteThreadStore::RemoveOutboxRow(const std::string& message_id) const {
-  std::lock_guard lock(profile_mutex_);
+  std::lock_guard lock(db_.profile_mutex());
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(profile_db_, "DELETE FROM outbox WHERE message_id = ?;", -1, &stmt, nullptr) != SQLITE_OK) {
+  if (sqlite3_prepare_v2(db_.profile_db(), "DELETE FROM outbox WHERE message_id = ?;", -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare outbox delete");
   }
   sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
@@ -1457,17 +1040,17 @@ Roe<void> SqliteThreadStore::RemoveOutboxRow(const std::string& message_id) cons
 }
 
 Roe<std::optional<Thread>> SqliteThreadStore::FindDirectThread(const DirectChatTarget& target) const {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
   std::optional<std::string> thread_id;
   {
-    std::lock_guard lock(profile_mutex_);
+    std::lock_guard lock(db_.profile_mutex());
     sqlite3_stmt* stmt = nullptr;
     const char* sql =
         "SELECT local_thread_id FROM chat_targets WHERE peer_identity_kind = ? AND peer_identity_value = ? AND "
         "channel = ? AND local_thread_id != '' LIMIT 1;";
-    if (sqlite3_prepare_v2(profile_db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+    if (sqlite3_prepare_v2(db_.profile_db(), sql, -1, &stmt, nullptr) != SQLITE_OK) {
       return Error("Failed to prepare chat_targets lookup");
     }
     const std::string channel = ThreadChannelToString(target.channel);
@@ -1549,19 +1132,19 @@ Roe<Thread> SqliteThreadStore::FindOrCreateDirectThread(const DirectChatTarget& 
 }
 
 Roe<std::optional<Thread>> SqliteThreadStore::FindGroupThread(const std::string& group_id) const {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
-  GroupRosterStore roster(ProfileDbFile(data_dir_));
+  GroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
   auto mapped_thread_id = roster.FindThreadIdForGroup(group_id);
   if (!mapped_thread_id) {
     return mapped_thread_id.error();
   }
   std::optional<std::string> thread_id = mapped_thread_id.value();
   if (!thread_id) {
-    std::lock_guard lock(profile_mutex_);
+    std::lock_guard lock(db_.profile_mutex());
     sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(profile_db_, "SELECT id FROM threads WHERE group_id = ? LIMIT 1;", -1, &stmt, nullptr) !=
+    if (sqlite3_prepare_v2(db_.profile_db(), "SELECT id FROM threads WHERE group_id = ? LIMIT 1;", -1, &stmt, nullptr) !=
         SQLITE_OK) {
       return Error("Failed to prepare group thread lookup");
     }
@@ -1603,7 +1186,7 @@ Roe<Thread> SqliteThreadStore::FindOrCreateGroupThread(const std::string& group_
     return saved.error();
   }
 
-  GroupRosterStore roster(ProfileDbFile(data_dir_));
+  GroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
   if (auto target = roster.UpsertGroupTarget(group_id, saved->id, 1, 1); !target) {
     return target.error();
   }
@@ -1630,7 +1213,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::ExportMessagesUpTo(
 }
 
 Roe<uint64_t> SqliteThreadStore::AllocateSenderSeq(const std::string& thread_id) {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
   auto thread = GetThread(thread_id);
@@ -1641,12 +1224,12 @@ Roe<uint64_t> SqliteThreadStore::AllocateSenderSeq(const std::string& thread_id)
     return Error("Thread not found");
   }
   if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
-    GroupRosterStore roster(ProfileDbFile(data_dir_));
+    GroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
     return roster.AllocateGroupSenderSeq(*(*thread)->group_id);
   }
-  std::lock_guard lock(profile_mutex_);
+  std::lock_guard lock(db_.profile_mutex());
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(profile_db_, "SELECT next_outgoing_seq FROM chat_targets WHERE local_thread_id = ? LIMIT 1;",
+  if (sqlite3_prepare_v2(db_.profile_db(), "SELECT next_outgoing_seq FROM chat_targets WHERE local_thread_id = ? LIMIT 1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare sender seq lookup");
   }
@@ -1658,7 +1241,7 @@ Roe<uint64_t> SqliteThreadStore::AllocateSenderSeq(const std::string& thread_id)
   const uint64_t seq = static_cast<uint64_t>(sqlite3_column_int64(stmt, 0));
   sqlite3_finalize(stmt);
 
-  if (sqlite3_prepare_v2(profile_db_, "UPDATE chat_targets SET next_outgoing_seq = next_outgoing_seq + 1 WHERE "
+  if (sqlite3_prepare_v2(db_.profile_db(), "UPDATE chat_targets SET next_outgoing_seq = next_outgoing_seq + 1 WHERE "
                                      "local_thread_id = ?;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare sender seq bump");
@@ -1673,7 +1256,7 @@ Roe<uint64_t> SqliteThreadStore::AllocateSenderSeq(const std::string& thread_id)
 }
 
 Roe<uint32_t> SqliteThreadStore::GetChatTargetSessionEpoch(const std::string& thread_id) const {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
   auto thread = GetThread(thread_id);
@@ -1684,12 +1267,12 @@ Roe<uint32_t> SqliteThreadStore::GetChatTargetSessionEpoch(const std::string& th
     return Error("Thread not found");
   }
   if ((*thread)->kind == ThreadKind::Group && (*thread)->group_id) {
-    GroupRosterStore roster(ProfileDbFile(data_dir_));
+    GroupRosterStore roster(SqliteThreadProfileDbFile(db_.data_dir()));
     return roster.GetGroupSessionEpoch(*(*thread)->group_id);
   }
-  std::lock_guard lock(profile_mutex_);
+  std::lock_guard lock(db_.profile_mutex());
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(profile_db_, "SELECT session_epoch FROM chat_targets WHERE local_thread_id = ? LIMIT 1;",
+  if (sqlite3_prepare_v2(db_.profile_db(), "SELECT session_epoch FROM chat_targets WHERE local_thread_id = ? LIMIT 1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare session epoch lookup");
   }
@@ -1719,7 +1302,7 @@ Roe<DirectChatTarget> SqliteThreadStore::DirectTargetForThread(const Thread& thr
 
 Roe<void> SqliteThreadStore::EnsurePeerSyncState(const std::string& thread_id, const DirectChatTarget& target,
                                                  const uint32_t session_epoch) const {
-  auto thread_db = OpenThreadDb(thread_id);
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -1772,7 +1355,7 @@ Roe<PeerSyncState> SqliteThreadStore::GetPeerSyncState(const std::string& thread
     return target.error();
   }
 
-  auto thread_db = OpenThreadDb(thread_id);
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -1809,7 +1392,7 @@ Roe<void> SqliteThreadStore::SetPeerSyncState(const std::string& thread_id, cons
     return target.error();
   }
 
-  auto thread_db = OpenThreadDb(thread_id);
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -1854,7 +1437,7 @@ Roe<void> SqliteThreadStore::CancelOldEpochPendingUnlocked(sqlite3* thread_db, c
 
   for (const std::string& message_id : message_ids) {
     sqlite3_stmt* outbox_stmt = nullptr;
-    if (sqlite3_prepare_v2(profile_db_, "DELETE FROM outbox WHERE message_id = ?;", -1, &outbox_stmt, nullptr) ==
+    if (sqlite3_prepare_v2(db_.profile_db(), "DELETE FROM outbox WHERE message_id = ?;", -1, &outbox_stmt, nullptr) ==
         SQLITE_OK) {
       sqlite3_bind_text(outbox_stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
       sqlite3_step(outbox_stmt);
@@ -1881,7 +1464,7 @@ Roe<void> SqliteThreadStore::CancelOldEpochPendingUnlocked(sqlite3* thread_db, c
 Roe<void> SqliteThreadStore::AdoptChatTargetEpochUnlocked(const std::string& thread_id,
                                                           const uint32_t new_session_epoch) const {
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(profile_db_,
+  if (sqlite3_prepare_v2(db_.profile_db(),
                          "UPDATE chat_targets SET session_epoch = ?, next_outgoing_seq = 1 WHERE local_thread_id = ?;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     return Error("Failed to prepare chat_targets epoch adopt");
@@ -1894,7 +1477,7 @@ Roe<void> SqliteThreadStore::AdoptChatTargetEpochUnlocked(const std::string& thr
   }
   sqlite3_finalize(stmt);
 
-  if (sqlite3_prepare_v2(profile_db_, "UPDATE threads SET session_epoch = ? WHERE id = ?;", -1, &stmt, nullptr) !=
+  if (sqlite3_prepare_v2(db_.profile_db(), "UPDATE threads SET session_epoch = ? WHERE id = ?;", -1, &stmt, nullptr) !=
       SQLITE_OK) {
     return Error("Failed to prepare threads epoch cache update");
   }
@@ -1934,11 +1517,11 @@ Roe<void> SqliteThreadStore::UpsertPeerSyncStateUnlocked(sqlite3* thread_db, con
 }
 
 Roe<void> SqliteThreadStore::CancelOldEpochPending(const std::string& thread_id, const uint32_t old_session_epoch) {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
-  std::lock_guard profile_lock(profile_mutex_);
-  auto thread_db = OpenThreadDb(thread_id);
+  std::lock_guard profile_lock(db_.profile_mutex());
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -1946,10 +1529,10 @@ Roe<void> SqliteThreadStore::CancelOldEpochPending(const std::string& thread_id,
 }
 
 Roe<void> SqliteThreadStore::AdoptChatTargetEpoch(const std::string& thread_id, const uint32_t new_session_epoch) {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
-  std::lock_guard profile_lock(profile_mutex_);
+  std::lock_guard profile_lock(db_.profile_mutex());
   return AdoptChatTargetEpochUnlocked(thread_id, new_session_epoch);
 }
 
@@ -1957,7 +1540,7 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessageWithPassiveEpochAdopt(const T
                                                                        const uint32_t old_session_epoch,
                                                                        const uint32_t new_session_epoch,
                                                                        const PeerSyncState& new_sync_state) {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
   auto thread = GetThread(message.thread_id);
@@ -1974,8 +1557,8 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessageWithPassiveEpochAdopt(const T
 
   ThreadMessage stored = message;
   {
-    std::lock_guard profile_lock(profile_mutex_);
-    auto thread_db = OpenThreadDb(message.thread_id);
+    std::lock_guard profile_lock(db_.profile_mutex());
+    auto thread_db = db_.OpenThreadDb(message.thread_id);
     if (!thread_db) {
       return thread_db.error();
     }
@@ -2030,7 +1613,7 @@ Roe<ThreadMessage> SqliteThreadStore::AppendMessageWithPassiveEpochAdopt(const T
 }
 
 Roe<uint32_t> SqliteThreadStore::BumpLocalChatTargetEpoch(const std::string& thread_id) {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
   auto thread = GetThread(thread_id);
@@ -2051,8 +1634,8 @@ Roe<uint32_t> SqliteThreadStore::BumpLocalChatTargetEpoch(const std::string& thr
   }
   const uint32_t new_epoch = *old_epoch + 1;
 
-  std::lock_guard profile_lock(profile_mutex_);
-  auto thread_db = OpenThreadDb(thread_id);
+  std::lock_guard profile_lock(db_.profile_mutex());
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
@@ -2071,13 +1654,13 @@ Roe<uint32_t> SqliteThreadStore::BumpLocalChatTargetEpoch(const std::string& thr
 
 Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesBySeqRange(const std::string& thread_id,
                                                                          const SeqRangeQuery& query) const {
-  auto thread_db = OpenThreadDb(thread_id);
+  auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
   }
 
   const char* order_clause = query.ascending ? "ASC" : "DESC";
-  std::string sql = std::string("SELECT ") + kMessageSelectColumns +
+  std::string sql = std::string("SELECT ") + kSqliteThreadMessageSelectColumns +
                     " FROM messages WHERE relay_visible = 1 AND session_epoch = ? AND sender_contact_id = ? AND "
                     "sender_seq IS NOT NULL";
   if (query.min_sender_seq) {
@@ -2120,7 +1703,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesBySeqRange(const s
 }
 
 Roe<void> SqliteThreadStore::ReconcileOutbox() {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
   auto pending_rows = ListPendingOutbox();
@@ -2179,26 +1762,13 @@ Roe<void> SqliteThreadStore::ReconcileOutbox() {
   }
   return {};
 }
-
-void SqliteThreadStore::CloseThreadDb(const std::string& thread_id) const {
-  std::lock_guard lock(thread_cache_mutex_);
-  auto it = thread_dbs_.find(thread_id);
-  if (it != thread_dbs_.end()) {
-    if (it->second.db) {
-      sqlite3_close(it->second.db);
-    }
-    thread_dbs_.erase(it);
-  }
-  thread_lru_.remove(thread_id);
-}
-
 Roe<std::vector<std::pair<std::string, std::string>>> SqliteThreadStore::ListPendingOutbox() const {
-  if (auto init = EnsureInitialized(); !init) {
+  if (auto init = db_.EnsureInitialized(); !init) {
     return init.error();
   }
-  std::lock_guard lock(profile_mutex_);
+  std::lock_guard lock(db_.profile_mutex());
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(profile_db_, "SELECT message_id, thread_id FROM outbox ORDER BY updated_at ASC;", -1, &stmt,
+  if (sqlite3_prepare_v2(db_.profile_db(), "SELECT message_id, thread_id FROM outbox ORDER BY updated_at ASC;", -1, &stmt,
                          nullptr) != SQLITE_OK) {
     return Error("Failed to list outbox");
   }

@@ -2,14 +2,18 @@
 
 #include "foundation/data/PricingTypes.h"
 #include "domain/messaging/AttachmentCache.h"
+#include "domain/messaging/CallThreadPresenceLogic.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/InitiationPricing.h"
-#include "feature/conversations/RegistrationClientUtil.h"
+#include "feature/conversations/RegistrationClient.h"
 #include "feature/conversations/LinkDeviceCoordinator.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/PushDeviceCoordinator.h"
+#include "common/chat/PeopleDiscoveryBlocks.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
+
+#include <unordered_set>
 
 namespace pbr {
 
@@ -72,6 +76,29 @@ const std::string& ConversationsFacade::ActiveThreadId() { return hub_.Inbox().A
 Roe<Thread> ConversationsFacade::GetActiveThread() { return hub_.Inbox().GetActiveThread(); }
 
 Roe<std::vector<Thread>> ConversationsFacade::ListThreads() { return hub_.Inbox().ListThreads(); }
+
+bool ConversationsFacade::ThreadHasActiveCall(const std::string& thread_id) {
+  if (thread_id.empty()) {
+    return false;
+  }
+  auto* calls = hub_.Calls();
+  if (!calls) {
+    return false;
+  }
+  auto active = calls->ActiveLocalCall();
+  if (!active || !*active) {
+    return false;
+  }
+  auto thread = GetThread(thread_id);
+  if (!thread || !*thread) {
+    return false;
+  }
+  std::vector<CallParticipant> joined;
+  if (auto parts = calls->ListJoinedParticipants((*active)->call_id); parts) {
+    joined = std::move(*parts);
+  }
+  return ThreadMatchesActiveCall(**thread, **active, joined);
+}
 
 Roe<Thread> ConversationsFacade::OpenThread(const std::string& thread_id) { return hub_.Inbox().OpenThread(thread_id); }
 
@@ -572,7 +599,26 @@ bool ConversationsFacade::IsHelpNetworkEnabled() { return hub_.IsHelpNetworkEnab
 // --- Messaging tools helpers ------------------------------------------------
 
 Roe<std::vector<DirectoryHit>> ConversationsFacade::SearchPeople(const std::string& query) {
-  return hub_.Directory().SearchPeople(query);
+  auto hits = hub_.Directory().SearchPeople(query);
+  if (!hits) {
+    return hits.error();
+  }
+  std::unordered_set<std::string> self_ids;
+  if (auto identity = hub_.Identity().Get()) {
+    self_ids = SelfIdentityValuesFromLocal(*identity);
+  }
+  if (self_ids.empty()) {
+    return hits;
+  }
+  std::vector<DirectoryHit> filtered;
+  filtered.reserve(hits->size());
+  for (DirectoryHit& hit : *hits) {
+    if (DirectoryHitMatchesIdentities(hit, self_ids)) {
+      continue;
+    }
+    filtered.push_back(std::move(hit));
+  }
+  return filtered;
 }
 
 Roe<std::vector<Contact>> ConversationsFacade::SearchLocalContacts(const std::string& query) {

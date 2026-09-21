@@ -48,7 +48,8 @@ selection {
 .btn-primary,
 .prompt-send-btn,
 .sidebar-new-chat,
-.contacts-find-btn {
+.contacts-find-btn,
+.chat-suggestion-primary {
   background-color: #6366f1;
   color: #ffffff;
 }
@@ -57,7 +58,8 @@ selection {
 .btn-primary:focus,
 .prompt-send-btn:hover,
 .sidebar-new-chat:hover,
-.contacts-find-btn:hover {
+.contacts-find-btn:hover,
+.chat-suggestion-primary:hover {
   background-color: #818cf8;
 }
 
@@ -1031,6 +1033,15 @@ select selectbox option:hover {
   background-color: #4b5563;
 }
 
+.chat-working-set-chip-disabled,
+.chat-working-set-chip-disabled:hover {
+  background-color: #1f2937;
+  color: #6b7280;
+  border: 1dp #374151;
+  cursor: default;
+  opacity: 0.85;
+}
+
 .settings-section-title {
   color: #e5e7eb;
 }
@@ -1211,27 +1222,27 @@ select selectbox option:hover {
 
 .chat-shell--e2e .chat-header {
   background-color: #134e4a;
-  border-left: 4dp #2dd4bf;
-  padding-left: 12dp;
-  border-radius: 0 8dp 8dp 0;
+  border-left: 3dp #2dd4bf;
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
 }
 
 .chat-shell--ai .chat-header {
-  border-left: 4dp #6366f1;
-  padding-left: 12dp;
-  border-radius: 0 8dp 8dp 0;
+  border-left: 3dp #6366f1;
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
 }
 
 .chat-shell--public .chat-header {
-  border-left: 4dp #4b5563;
-  padding-left: 12dp;
-  border-radius: 0 8dp 8dp 0;
+  border-left: 3dp #4b5563;
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
 }
 
 .chat-shell--group .chat-header {
-  border-left: 4dp #f59e0b;
-  padding-left: 12dp;
-  border-radius: 0 8dp 8dp 0;
+  border-left: 3dp #f59e0b;
+  padding-left: 10dp;
+  border-radius: 0 6dp 6dp 0;
 }
 
 .prompt-composer--e2e {
@@ -1246,20 +1257,49 @@ select selectbox option:hover {
   color: #2dd4bf;
 }
 
-.chat-shell--ai .chat-type-badge {
-  color: #818cf8;
+.chat-shell--ai .chat-header-type-icon svg {
+  image-color: #818cf8;
 }
 
-.chat-shell--private .chat-type-badge {
-  color: #2dd4bf;
+.chat-shell--private .chat-header-type-icon svg,
+.chat-shell--e2e .chat-header-type-icon svg {
+  image-color: #2dd4bf;
 }
 
-.chat-shell--public .chat-type-badge {
-  color: #9ca3af;
+.chat-shell--public .chat-header-type-icon svg {
+  image-color: #9ca3af;
 }
 
-.chat-shell--group .chat-type-badge {
-  color: #fbbf24;
+.chat-shell--group .chat-header-type-icon svg {
+  image-color: #fbbf24;
+}
+
+.chat-peer-path--direct svg {
+  image-color: #6b9a78;
+}
+
+.chat-peer-path--hop svg {
+  image-color: #bba15a;
+}
+
+.chat-peer-path--relay svg {
+  image-color: #9ca3af;
+}
+
+.chat-peer-path--connecting svg {
+  image-color: #6b7280;
+}
+
+.chat-peer-path--degraded svg {
+  image-color: #bba15a;
+}
+
+.chat-peer-path--failed svg {
+  image-color: #c98a8a;
+}
+
+.chat-peer-path--ready svg {
+  image-color: #6b7280;
 }
 
 .chat-header-call-btn,
@@ -1283,7 +1323,13 @@ select selectbox option:hover {
   border: 1dp #374151;
 }
 
+/* Float menus (right-click / long-press): invisible hit target only — no dim.
+   Compact action sheets keep a light scrim below. */
 .context-menu-scrim {
+  background-color: transparent;
+}
+
+.context-menu-layer--sheet .context-menu-scrim {
   background-color: #00000099;
 }
 
