@@ -77,6 +77,7 @@ struct CircuitTunnelCoordinator::Impl {
   std::atomic<bool> serve_inbound{true};
   std::atomic<uint64_t> next_id{1};
   pp::amp::MeshRuntime::IoTickId io_tick_id = 0;
+  pp::amp::PeerLinkManager::PeerConnectedListenerId peer_connected_listener_id_ = 0;
 
   struct Tunnel {
     CircuitTunnelId id;
@@ -955,11 +956,12 @@ void CircuitTunnelCoordinator::Start() {
   }
   impl_->stopped.store(false, std::memory_order_release);
   impl_->io_tick_id = runtime_.AddIoTick([impl = impl_.get()] { impl->TickDeadlines(); });
-  runtime_.Links().SetPeerConnectedListener([impl = impl_.get()](const std::string& peer_id) {
-    if (impl) {
-      impl->NotifyFarLegReady(peer_id);
-    }
-  });
+  impl_->peer_connected_listener_id_ = runtime_.Links().AddPeerConnectedListener(
+      [impl = impl_.get()](const std::string& peer_id) {
+        if (impl) {
+          impl->NotifyFarLegReady(peer_id);
+        }
+      });
   runtime_.Links().SetProtocolHandler(
       kCircuitRelayProtocolId,
       [impl = impl_.get()](pp::amp::LinkHandle handle, const std::string& /*remote_peer_id*/,
@@ -981,7 +983,10 @@ void CircuitTunnelCoordinator::Stop() {
   impl_->stopped.store(true, std::memory_order_release);
   runtime_.RemoveIoTick(impl_->io_tick_id);
   impl_->io_tick_id = 0;
-  runtime_.Links().ClearPeerConnectedListener();
+  if (impl_->peer_connected_listener_id_ != 0) {
+    runtime_.Links().RemovePeerConnectedListener(impl_->peer_connected_listener_id_);
+    impl_->peer_connected_listener_id_ = 0;
+  }
   runtime_.Links().RemoveProtocolHandler(kCircuitRelayProtocolId);
   AbortInflight();
 }

@@ -129,16 +129,18 @@ Idle background reachability still uses **outbound dial + circuit** (and later p
 | Max StartBridge calls | **3** | Skips (`!endpoint`, undialable Preferred) do **not** count |
 | Nest Establish | **≤8s**, clamped by remaining | After ack only |
 | Order | Sticky last-good → Connected → rest | `OrderCircuitRelayAttempts` |
-| Sticky retry | **Once** on other fast-fail; **repeat** on `not registered` | Other fast-fails sticky once; not-reg keeps sticky until bridge budget |
-| Sticky not-reg delay | **1.5s** (`kCircuitStickyNotRegisteredDelayMs`) | Between sticky not-reg StartBridge retries |
+| Sticky retry | **Once** on other fast-fail; **repeat** on `not registered` (immediate) | Hop event-waits far leg; dialer does not sleep before sticky not-reg retry |
 | Hop ServeDial far-leg wait | **Event-driven** (PeerConnected / reserve / deadline ≤6s) | No Tick poll-resume; deadline is a timer event |
+| Client seed park | **Event-driven** (PeerConnected on bootstrap PeerIds + deadline) | `EnsureBootstrapSeedParkedAsync` — no 250ms poll |
 | Parallel StartBridge | **Forbidden** on first connect | Serial only (dogfood ADP path races) |
 
 Answerer remains punch-only + reserve (no reverse StartBridge on first pass). User Retry / TX-only escalate may open a **fresh** envelope later — not a longer first ring.
 
 **Layering (connectivity owns readiness):** Park/reserve and ServeDial far-leg wait live in mesh / `CallMediaPlane` / `CircuitTunnelCoordinator`. Session workflow only speaks consumer needs: `ensure_circuit_ready` (kick) and `await_circuit_ready` (Accept gate) — no seed vocabulary. Sticky not-reg retry stays in `AmpCircuitHopReach` (L3 hop reach).
 
-**ServeDial far-leg wait (event-driven):** When peer-id-only ServeDial has no Connected far leg, hop **arms a waiter** and returns. Resume on Amp `PeerConnectedListener` (PeerId), on live `op=reserve`, or on **deadline event** (`kCircuitServeDialFarLegWaitMs`, capped by tunnel deadline − slack). Do **not** poll-retry `BeginServe` from IoTick. Amp: `PeerLinkManager::SetPeerConnectedListener`.
+**ServeDial far-leg wait (event-driven):** When peer-id-only ServeDial has no Connected far leg, hop **arms a waiter** and returns. Resume on Amp `PeerConnectedListener` (PeerId), on live `op=reserve`, or on **deadline event** (`kCircuitServeDialFarLegWaitMs`, capped by tunnel deadline − slack). Do **not** poll-retry `BeginServe` from IoTick. Amp: `PeerLinkManager::AddPeerConnectedListener` (multi-listener).
+
+**Client seed park (event-driven):** `EnsureBootstrapSeedParkedAsync` finishes on PeerConnected for a bootstrap/directory PeerId (or deadline). No 250ms poll. Dialer sticky not-reg retries immediately (hop already event-waits).
 
 **Early circuit-ready (Ringing + Accept gate):** Offerer kicks ready on `StartCall`; answerer on inbound invite; `AcceptInvite` may **await** ready (up to 12s) before `CallAccept`. Hop event wait is the primary race absorber (needs Brief rebuild); Accept await is a thin product backstop.
 

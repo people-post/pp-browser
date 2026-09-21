@@ -690,54 +690,93 @@ void CallMediaPlane::EnsureBootstrapSeedParkedAsync(std::function<void(bool park
   ReserveOnBootstrapSeeds();
   MeshHost* m = mesh();
   auto chat_opt = m ? m->ChatDeps() : std::nullopt;
-  if (!chat_opt) {
+  if (!chat_opt || !m->Amp()) {
     on_done(false);
     return;
   }
   const int budget = timeout_ms > 0 ? timeout_ms : 12000;
-  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(budget);
   auto settled = std::make_shared<std::atomic<bool>>(false);
-  auto finish = [settled, on_done = std::move(on_done)](const bool parked) mutable {
+  auto listener_id = std::make_shared<pp::amp::PeerLinkManager::PeerConnectedListenerId>(0);
+  auto deadline_timer = std::make_shared<uint64_t>(0);
+  auto* links = &m->Amp()->Runtime().Links();
+  auto finish = std::make_shared<std::function<void(bool)>>();
+  *finish = [settled, on_done = std::move(on_done), listener_id, deadline_timer,
+             links](const bool parked) mutable {
     if (settled->exchange(true, std::memory_order_acq_rel)) {
       return;
     }
+    if (*listener_id != 0) {
+      links->RemovePeerConnectedListener(*listener_id);
+      *listener_id = 0;
+    }
+    if (*deadline_timer != 0) {
+      AppRuntime::CancelCoordinatorTimer(*deadline_timer);
+      *deadline_timer = 0;
+    }
     on_done(parked);
   };
+
   auto post_io = chat_opt->io.post_io;
-  auto poll = std::make_shared<std::function<void()>>();
-  *poll = [this, deadline, finish, poll, post_io]() mutable {
-    if (AnyBootstrapSeedConnectedOnIo()) {
-      log().info << "bootstrap seed park ok";
-      finish(true);
-      return;
-    }
-    if (std::chrono::steady_clock::now() >= deadline) {
-      log().warning << "bootstrap seed park timeout (no Connected seed)";
-      finish(false);
-      return;
-    }
-    auto again = [poll]() {
-      if (poll && *poll) {
-        (*poll)();
+  auto try_finish_ok = [this, finish, post_io]() {
+    auto go = [this, finish]() {
+      if (AnyBootstrapSeedConnectedOnIo()) {
+        log().info << "bootstrap seed park ok";
+        (*finish)(true);
       }
     };
     if (post_io) {
-      post_io([again]() {
-        (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(250), again);
-      });
+      post_io(std::move(go));
     } else {
-      (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(250), again);
+      go();
     }
   };
-  if (post_io) {
-    post_io([poll]() {
-      if (poll && *poll) {
-        (*poll)();
-      }
-    });
-  } else {
-    (*poll)();
+
+  if (AnyBootstrapSeedConnectedOnIo()) {
+    log().info << "bootstrap seed park ok";
+    (*finish)(true);
+    return;
   }
+
+  std::unordered_set<std::string> seed_ids;
+  for (const auto& id : EffectiveBootstrapSeedPeerIds()) {
+    if (!id.empty()) {
+      seed_ids.insert(id);
+    }
+  }
+  if (seed_ids.empty()) {
+    log().warning << "bootstrap seed park timeout (no seed PeerIds)";
+    (*finish)(false);
+    return;
+  }
+
+  *listener_id = links->AddPeerConnectedListener(
+      [seed_ids = std::move(seed_ids), try_finish_ok](const std::string& peer_id) {
+        if (seed_ids.count(peer_id) == 0) {
+          return;
+        }
+        try_finish_ok();
+      });
+
+  // Connected may have landed between check and AddListener.
+  try_finish_ok();
+
+  *deadline_timer = AppRuntime::ScheduleCoordinatorOneShot(
+      std::chrono::milliseconds(budget), [this, finish, post_io]() {
+        auto go = [this, finish]() {
+          if (AnyBootstrapSeedConnectedOnIo()) {
+            log().info << "bootstrap seed park ok";
+            (*finish)(true);
+            return;
+          }
+          log().warning << "bootstrap seed park timeout (no Connected seed)";
+          (*finish)(false);
+        };
+        if (post_io) {
+          post_io(std::move(go));
+        } else {
+          go();
+        }
+      });
 }
 
 bool CallMediaPlane::AwaitCircuitReady(const int timeout_ms) {
