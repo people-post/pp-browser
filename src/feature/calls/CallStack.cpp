@@ -272,6 +272,7 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
       [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
         RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
       });
+  call_sessions_->SetParkCircuitSeeds([this]() { ReserveOnBootstrapSeeds(); });
   EnsureCallLifecycleBound();
   WireMediaRelayDeps();
 }

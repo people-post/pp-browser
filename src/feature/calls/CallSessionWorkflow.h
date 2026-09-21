@@ -97,6 +97,8 @@ public:
                        const std::vector<std::string>& listen)>
         note_caps_for_identity;
     std::function<void(const std::string& identity)> prefetch_reach;
+    /** Dual-NAT: start seed park/reserve as soon as invite rings (before Accept). */
+    std::function<void()> park_circuit_seeds;
     std::function<void(const std::string& relay, const std::string& peer_id)> note_mesh_peer_id_for_relay;
     std::function<Roe<ByteVector>(const std::string& peer)> resolve_peer_session_key;
     std::function<Roe<void>(const std::string& call_id, const std::string& peer, uint32_t epoch,

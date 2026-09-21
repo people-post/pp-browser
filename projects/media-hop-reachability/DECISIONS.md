@@ -130,9 +130,12 @@ Idle background reachability still uses **outbound dial + circuit** (and later p
 | Nest Establish | **≤8s**, clamped by remaining | After ack only |
 | Order | Sticky last-good → Connected → rest | `OrderCircuitRelayAttempts` |
 | Sticky retry | **Once** on fast-fail (`not registered` / `not dialable`) | Answerer may still be parking; timeouts do **not** sticky-retry |
+| Sticky not-reg delay | **1.5s** (`kCircuitStickyNotRegisteredDelayMs`) | Before re-ServeDial on sticky; other fast-fails retry immediately |
 | Parallel StartBridge | **Forbidden** on first connect | Serial only (dogfood ADP path races) |
 
 Answerer remains punch-only + reserve (no reverse StartBridge on first pass). User Retry / TX-only escalate may open a **fresh** envelope later — not a longer first ring.
+
+**Early seed park (Ringing):** Offerer parks on `StartCall`; answerer parks on inbound invite (`HandleInboundInvite`) — **before Accept** — via `CallSessionManager::SetParkCircuitSeeds` → `CallStack::ReserveOnBootstrapSeeds`. Goal: by the time offerer `StartBridge`s after Accept, answerer already has a Connected far leg on the sticky hop (dogfood ac108401: dialer `not registered` while answerer still cold-dialing seed post-Accept). Sticky 1.5s not-reg delay is a backstop when park is still in flight.
 
 **Seed park gate:** Before private-Preferred `EnsureAssociation` and again before circuit/punch Ensure, await up to **12s** for any bootstrap/directory seed `IsConnected`. A timed-out pre-assoc park must **not** be treated as success (dogfood 88e16f5c: false park-ok → punch-only while offerer saw `endpoint not registered`). After a successful park, **skip** private-Preferred `EnsureAssociation` (dogfood 39412f: that UDP dial dropped the Brief PeerLink → dialer ServeDial `endpoint not registered`). Warm/reserve: connect **one** cold seed at a time, but **reserve all** Connected seeds (and continue serial cold reserve) so dialer StartBridge can land on hop2. Live Brief `op=reserve` is required for durable park; Connected PeerLink alone is enough for peer-id-only ServeDial when park actually succeeds.
 

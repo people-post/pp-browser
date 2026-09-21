@@ -176,6 +176,11 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
     return saved.error();
   }
 
+  // Offerer parks early so both legs share Connected seeds by Accept time.
+  if (host_.reach.park_circuit_seeds) {
+    host_.reach.park_circuit_seeds();
+  }
+
   CallStartedDetail started;
   started.call_id = call_id;
   started.media_mode = session.media_mode;
@@ -1129,6 +1134,11 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
   }
   if (host_.reach.note_caps_for_identity) host_.reach.note_caps_for_identity(pending.inviter_identity, invite->caps, invite->listen_multiaddrs);
   if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(pending.inviter_identity);
+  // Park before Accept so offerer StartBridge after Accept finds a Connected far leg (dogfood
+  // ac108401: dialer not registered while answerer still cold-dialing seed post-Accept).
+  if (host_.reach.park_circuit_seeds) {
+    host_.reach.park_circuit_seeds();
+  }
   host_.wire.notify_ring_changed();
   return {};
 }

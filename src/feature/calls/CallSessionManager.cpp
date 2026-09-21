@@ -220,6 +220,11 @@ void CallSessionManager::BindWorkflowHostPorts() {
   ports.reach.prefetch_reach = [this](const std::string& identity) {
     PrefetchReachForIdentity(prefetch_reach_, identity);
   };
+  ports.reach.park_circuit_seeds = [this]() {
+    if (park_circuit_seeds_) {
+      park_circuit_seeds_();
+    }
+  };
   ports.reach.note_mesh_peer_id_for_relay = [this](const std::string& relay, const std::string& peer_id) {
     NoteMeshPeerIdForRelay(relay, peer_id);
   };
@@ -481,6 +486,10 @@ void CallSessionManager::SetOnRingChangedMesh(RingChangedFn callback) {
 
 void CallSessionManager::SetPrefetchPeerReachability(PrefetchPeerReachFn callback) {
   prefetch_reach_ = std::move(callback);
+}
+
+void CallSessionManager::SetParkCircuitSeeds(ParkCircuitSeedsFn callback) {
+  park_circuit_seeds_ = std::move(callback);
 }
 
 void CallSessionManager::SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback) {
