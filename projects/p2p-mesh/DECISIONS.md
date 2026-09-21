@@ -11,8 +11,15 @@
 ## N002 — Seed multiaddr IP + 443 + PeerId (no DNS)
 
 **Date:** 2026-07-26  
-**Decision:** Fixed bootstrap multiaddr is `/ip4/3.208.41.58/tcp/443/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR`. IP only — no DNS multiaddrs in v1.  
-**Rationale:** Deterministic Brief seed without DNS resolution failures; PeerId pins identity.
+**Updated:** 2026-09-21 (dual live Brief seeds; directory-first layering)  
+**Decision:** L0 hardcoded bootstrap multiaddrs are IP-only ADP seeds on UDP **443** (no DNS in v1). Current defaults:
+
+- `/ip4/54.198.185.139/udp/443/adp/1.0.0/p2p/QmbgShE3J3G6fvEHqwTS5ooQiFnYn46rzn6cTexUGWdWaj`
+- `/ip4/44.218.209.223/udp/443/adp/1.0.0/p2p/Qmd2m4skBPf7YjPaAKcnhPuhzRv6wEnsf9QheZRANYGuM7`
+
+Empty `mesh.bootstrap_peers` in config fills these; a non-empty config list **replaces** hardcoded. Runtime hop/warm prefer HTTP `GET /v1/mesh/nodes` (and last-good `{data_dir}/mesh_directory_nodes.json`) **ahead of** config/hardcoded ([N027](#n027--mesh-directory-entity_kind-pluggable-providers-bootstrapdirectory)). Change hardcoded only when ops cuts new long-lived seeds.  
+**Rationale:** Deterministic Brief door without DNS; directory absorbs IP churn without ship cycles.  
+**Supersedes:** prior single seed `3.208.41.58` / `12D3KooWCmq…` (retired).
 
 ## N003 — Desktop listen 18517; seed on 443
 

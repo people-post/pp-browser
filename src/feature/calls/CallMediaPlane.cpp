@@ -571,8 +571,12 @@ void CallMediaPlane::WarmBootstrapSeedSessionsOnIo() {
     return;
   }
   MeshConfig mesh_cfg = config().mesh;
-  NormalizeMeshConfig(mesh_cfg);
-  for (const auto& hop : CollectSeedHopCandidates(mesh_cfg.bootstrap_peers)) {
+  std::vector<MeshDirectoryNode> directory_nodes;
+  if (deps_.list_directory_nodes) {
+    directory_nodes = deps_.list_directory_nodes();
+  }
+  for (const auto& hop :
+       CollectSeedHopCandidates(ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes))) {
     if (hop.peer_id.empty()) {
       continue;
     }
@@ -631,8 +635,12 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
     return;
   }
   MeshConfig mesh_cfg = config().mesh;
-  NormalizeMeshConfig(mesh_cfg);
-  for (const auto& hop : CollectSeedHopCandidates(mesh_cfg.bootstrap_peers)) {
+  std::vector<MeshDirectoryNode> directory_nodes;
+  if (deps_.list_directory_nodes) {
+    directory_nodes = deps_.list_directory_nodes();
+  }
+  for (const auto& hop :
+       CollectSeedHopCandidates(ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes))) {
     if (hop.peer_id.empty()) {
       continue;
     }

@@ -80,7 +80,8 @@ Configure endpoints via user config (`~/.config/pp-browser/config.json` on Linux
     "mesh_enabled": true,
     "amp_udp_port": 0,
     "bootstrap_peers": [
-      "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"
+      "/ip4/54.198.185.139/udp/443/adp/1.0.0/p2p/QmbgShE3J3G6fvEHqwTS5ooQiFnYn46rzn6cTexUGWdWaj",
+      "/ip4/44.218.209.223/udp/443/adp/1.0.0/p2p/Qmd2m4skBPf7YjPaAKcnhPuhzRv6wEnsf9QheZRANYGuM7"
     ]
   }
 }
