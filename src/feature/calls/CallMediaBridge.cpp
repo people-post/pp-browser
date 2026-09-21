@@ -210,6 +210,11 @@ void CallMediaBridge::SetSeedReserve(std::function<void()> reserve) {
   seed_reserve_ = std::move(reserve);
 }
 
+void CallMediaBridge::SetSeedParkAwait(
+    std::function<void(std::function<void(bool parked)>, int timeout_ms)> park) {
+  seed_park_await_ = std::move(park);
+}
+
 std::string CallMediaBridge::MediaPathKind() const {
   if (!media_peer_identity_.empty() && dial_ && dial_->HasCallMediaCircuitHop(media_peer_identity_)) {
     return "circuit";
@@ -825,73 +830,93 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                  << " reach_key=" << reach_key << " circuit_budget_ms=" << kCircuitEnsureBudgetMs
                  << " allow_circuit=" << (allow_circuit ? 1 : 0)
                  << " role=" << (session_offerer_ ? "offerer" : "answerer");
-      circuit_reach_->TryEnsureCallMediaReachableAsync(
-          reach_key,
+      auto kick_reach =
           [this, peer_identity, reach_key, connect_gen, finish, settled, last_error, circuit_inflight,
-           deadline, initial_deadline, tick](Roe<void> via) mutable {
-            // AmpCircuitHopReach finishes on Amp IO — snapshot before Coordinator hop.
-            const bool connected_now =
-                dial_ && (dial_->IsConnected(reach_key) ||
-                          (reach_key != peer_identity && dial_->IsConnected(peer_identity)));
-            const bool has_circuit_now =
-                dial_ && (dial_->HasCallMediaCircuitHop(reach_key) ||
-                          (reach_key != peer_identity && dial_->HasCallMediaCircuitHop(peer_identity)));
-            AppRuntime::PostCoordinatorNormal(
-                [this, peer_identity, reach_key, connect_gen, finish = std::move(finish), settled,
-                 last_error, circuit_inflight, deadline, initial_deadline, connected_now,
-                 has_circuit_now, tick, via = std::move(via)]() mutable {
-                  *circuit_inflight = false;
-                  if (settled->load(std::memory_order_acquire)) {
-                    return;
-                  }
-                  if (connect_generation_.load(std::memory_order_acquire) != connect_gen ||
-                      stopping_.load(std::memory_order_acquire)) {
-                    finish(Error("call-media aborted"));
-                    return;
-                  }
-                  // has_endpoint / punch "ok" is not PeerLink Connected — dogfood 612b: via_ok=1
-                  // then OpenChannel hung on connected=0.
-                  if (connected_now) {
-                    if (has_circuit_now) {
-                      media_path_kind_ = "circuit";
-                    } else {
-                      media_path_kind_ = "punched";
-                    }
-                    log().info << "CallMedia peer reachable via circuit peer="
-                               << peer_identity << " reach_key=" << reach_key
-                               << " path=" << media_path_kind_ << " via_ok=" << (via ? 1 : 0);
-                    finish({});
-                    return;
-                  }
-                  if (!via) {
-                    *last_error = via.error();
-                  } else {
-                    *last_error = Error("call peer not connected after circuit/punch");
-                  }
-                  log().info << "CallMedia Ensure circuit/punch miss peer=" << peer_identity
-                             << " reach_key=" << reach_key << " err=" << last_error->message
-                             << " via_ok=" << (via ? 1 : 0);
-                  // Answerer / seed "not registered": keep extended deadline for inbound. Hard miss:
-                  // restore short dial budget (gtest).
-                  const bool wait_inbound =
-                      !session_offerer_ ||
-                      last_error->message.find("not registered") != std::string::npos;
-                  if (!wait_inbound) {
-                    *deadline = initial_deadline;
-                    if (util::NowUnixMs() >= *deadline) {
-                      finish(*last_error);
-                      return;
-                    }
-                  }
-                  (void)AppRuntime::ScheduleCoordinatorOneShot(
-                      std::chrono::milliseconds(kDialPollMs), [tick]() {
-                        if (tick && *tick) {
-                          (*tick)();
+           deadline, initial_deadline, tick, allow_circuit]() mutable {
+            circuit_reach_->TryEnsureCallMediaReachableAsync(
+                reach_key,
+                [this, peer_identity, reach_key, connect_gen, finish, settled, last_error,
+                 circuit_inflight, deadline, initial_deadline,
+                 tick](Roe<void> via) mutable {
+                  // AmpCircuitHopReach finishes on Amp IO — snapshot before Coordinator hop.
+                  const bool connected_now =
+                      dial_ && (dial_->IsConnected(reach_key) ||
+                                (reach_key != peer_identity && dial_->IsConnected(peer_identity)));
+                  const bool has_circuit_now =
+                      dial_ && (dial_->HasCallMediaCircuitHop(reach_key) ||
+                                (reach_key != peer_identity &&
+                                 dial_->HasCallMediaCircuitHop(peer_identity)));
+                  AppRuntime::PostCoordinatorNormal(
+                      [this, peer_identity, reach_key, connect_gen, finish = std::move(finish),
+                       settled, last_error, circuit_inflight, deadline, initial_deadline,
+                       connected_now, has_circuit_now, tick, via = std::move(via)]() mutable {
+                        *circuit_inflight = false;
+                        if (settled->load(std::memory_order_acquire)) {
+                          return;
                         }
+                        if (connect_generation_.load(std::memory_order_acquire) != connect_gen ||
+                            stopping_.load(std::memory_order_acquire)) {
+                          finish(Error("call-media aborted"));
+                          return;
+                        }
+                        // has_endpoint / punch "ok" is not PeerLink Connected — dogfood 612b:
+                        // via_ok=1 then OpenChannel hung on connected=0.
+                        if (connected_now) {
+                          if (has_circuit_now) {
+                            media_path_kind_ = "circuit";
+                          } else {
+                            media_path_kind_ = "punched";
+                          }
+                          log().info << "CallMedia peer reachable via circuit peer=" << peer_identity
+                                     << " reach_key=" << reach_key << " path=" << media_path_kind_
+                                     << " via_ok=" << (via ? 1 : 0);
+                          finish({});
+                          return;
+                        }
+                        if (!via) {
+                          *last_error = via.error();
+                        } else {
+                          *last_error = Error("call peer not connected after circuit/punch");
+                        }
+                        log().info << "CallMedia Ensure circuit/punch miss peer=" << peer_identity
+                                   << " reach_key=" << reach_key << " err=" << last_error->message
+                                   << " via_ok=" << (via ? 1 : 0);
+                        // Answerer / seed "not registered": keep extended deadline for inbound.
+                        // Hard miss: restore short dial budget (gtest).
+                        const bool wait_inbound =
+                            !session_offerer_ ||
+                            last_error->message.find("not registered") != std::string::npos;
+                        if (!wait_inbound) {
+                          *deadline = initial_deadline;
+                          if (util::NowUnixMs() >= *deadline) {
+                            finish(*last_error);
+                            return;
+                          }
+                        }
+                        (void)AppRuntime::ScheduleCoordinatorOneShot(
+                            std::chrono::milliseconds(kDialPollMs), [tick]() {
+                              if (tick && *tick) {
+                                (*tick)();
+                              }
+                            });
                       });
-                });
-          },
-          allow_circuit);
+                },
+                allow_circuit);
+          };
+      // Park on Brief/directory seed before StartBridge / punch-wait so the hop has a live
+      // PeerLink for peer-id-only ServeDial (dogfood bridge timeout when answerer never warmed).
+      if (seed_park_await_) {
+        seed_park_await_(
+            [this, kick_reach = std::move(kick_reach), peer_identity, allow_circuit](bool parked) mutable {
+              log().info << "CallMedia seed park before circuit/punch peer=" << peer_identity
+                         << " parked=" << (parked ? 1 : 0)
+                         << " allow_circuit=" << (allow_circuit ? 1 : 0);
+              AppRuntime::PostCoordinatorNormal(std::move(kick_reach));
+            },
+            4000);
+      } else {
+        kick_reach();
+      }
       (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs),
                                                    [tick]() {
                                                      if (tick && *tick) {

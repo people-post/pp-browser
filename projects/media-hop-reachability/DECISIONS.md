@@ -134,6 +134,8 @@ Idle background reachability still uses **outbound dial + circuit** (and later p
 
 Answerer remains punch-only + reserve (no reverse StartBridge on first pass). User Retry / TX-only escalate may open a **fresh** envelope later — not a longer first ring.
 
+**Seed park gate:** Before circuit/punch Ensure, both roles await up to **4s** for any bootstrap/directory seed `IsConnected` (`EnsureBootstrapSeedParkedAsync`), with loud warm/reserve miss logs. Live Brief hops succeed peer-id-only only when the far side has already associated (dogfood: answerer never parked → dialer WaitAck timeout).
+
 CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~12s with settle slack), not N×20s.
 
 **Rationale:** Directory + DHT + seeds can yield many dialable PeerIds; full WaitAck per candidate blows the connecting window even when ranking is correct. Warm/reserve + short tries beat more candidates.

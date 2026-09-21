@@ -119,6 +119,11 @@ public:
   Roe<void> TryUpgradeCallMediaToDirect(const std::string& peer_key);
   void WarmBootstrapSeedSessions();
   void ReserveOnBootstrapSeeds();
+  /**
+   * Kick warm+reserve and invoke on_done(true) once any bootstrap/directory seed is Connected,
+   * or on_done(false) at timeout (H010 dogfood: answerer must park before offerer StartBridge).
+   */
+  void EnsureBootstrapSeedParkedAsync(std::function<void(bool parked)> on_done, int timeout_ms = 4000);
 
 private:
   using IoPump = std::function<void()>;
@@ -151,6 +156,8 @@ private:
 
   void WarmBootstrapSeedSessionsOnIo();
   void ReserveOnBootstrapSeedsOnIo();
+  bool AnyBootstrapSeedConnectedOnIo() const;
+  std::vector<std::string> EffectiveBootstrapSeedPeerIds() const;
 
   CallMediaPlaneDeps deps_;
   CallDialBook dial_book_;

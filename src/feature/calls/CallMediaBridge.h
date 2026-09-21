@@ -137,6 +137,11 @@ public:
   void SetSeedWarm(std::function<void()> warm);
   /** Both roles: park circuit reserve on org seed (CallStack::ReserveOnBootstrapSeeds). */
   void SetSeedReserve(std::function<void()> reserve);
+  /**
+   * Await at least one bootstrap/directory seed Connected before circuit/punch
+   * (CallMediaPlane::EnsureBootstrapSeedParkedAsync).
+   */
+  void SetSeedParkAwait(std::function<void(std::function<void(bool parked)>, int timeout_ms)> park);
 
   void SetDirectArmingPorts(CallDirectArmingPorts ports);
   /** V036 exclusive media epoch — Stack installs; Bridge must not hold CallMediaSeat*. */
@@ -200,6 +205,7 @@ private:
   CallDirectSeatPorts seat_;
   std::function<void()> seed_warm_;
   std::function<void()> seed_reserve_;
+  std::function<void(std::function<void(bool parked)>, int timeout_ms)> seed_park_await_;
   /** direct | punched | circuit — set by EnsurePeerReachableAsync. */
   std::string media_path_kind_;
   /** When true, EnsurePeerReachableAsync must try circuit even if already dialable. */

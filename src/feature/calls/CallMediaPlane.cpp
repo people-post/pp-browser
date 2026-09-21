@@ -8,6 +8,7 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
+#include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 #include "domain/mesh/reachability/PunchLogic.h"
 #include "domain/mesh/reachability/AmpPunchCoordinator.h"
 #include "domain/mesh/reachability/Reachability.h"
@@ -15,6 +16,8 @@
 #include "domain/mesh/host/MeshControlDispatch.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -183,6 +186,10 @@ void CallMediaPlane::BindBridge(const CallMediaBridgeBindArgs& args) {
   }
   call_media_bridge_->SetSeedWarm([this]() { WarmBootstrapSeedSessions(); });
   call_media_bridge_->SetSeedReserve([this]() { ReserveOnBootstrapSeeds(); });
+  call_media_bridge_->SetSeedParkAwait(
+      [this](std::function<void(bool)> done, int timeout_ms) {
+        EnsureBootstrapSeedParkedAsync(std::move(done), timeout_ms);
+      });
 }
 
 bool CallMediaPlane::WireMediaRelayClient(MeshHost* m, const IoPump& io_pump, const IoPost& post_io) {
@@ -586,9 +593,11 @@ void CallMediaPlane::WarmBootstrapSeedSessionsOnIo() {
       (void)chat->links.RegisterEndpoint(hop.peer_id, hop.multiaddr);
     }
     if (!chat->links.GetLinkSnapshot(hop.peer_id).has_endpoint) {
+      log().info << "bootstrap warm skip peer=" << hop.peer_id << " reason=!endpoint";
       continue;
     }
     if (chat->links.IsConnected(hop.peer_id)) {
+      log().info << "bootstrap warm already connected peer=" << hop.peer_id;
       continue;
     }
     // After assoc, peer-capability listen often injects /ip4/0.0.0.0 and overwrites Preferred.
@@ -597,10 +606,16 @@ void CallMediaPlane::WarmBootstrapSeedSessionsOnIo() {
     const std::string peer_id = hop.peer_id;
     IChatPeerLinks* links = &chat->links;
     chat->links.EnsureAssociation(
-        hop.peer_id, [links, peer_id, restore_ma](IChatPeerLinks::LinkRoe) {
+        hop.peer_id, [this, links, peer_id, restore_ma](IChatPeerLinks::LinkRoe assoc) {
+          if (!assoc) {
+            log().warning << "bootstrap warm assoc miss peer=" << peer_id
+                          << " err=" << assoc.error().message;
+            return;
+          }
           if (!restore_ma.empty() && CircuitHopDialBookAllowsRegister(restore_ma)) {
             (void)links->RegisterEndpoint(peer_id, restore_ma);
           }
+          log().info << "bootstrap warm assoc ok peer=" << peer_id;
         });
   }
 }
@@ -608,10 +623,12 @@ void CallMediaPlane::WarmBootstrapSeedSessionsOnIo() {
 void CallMediaPlane::ReserveOnBootstrapSeeds() {
   MeshHost* m = mesh();
   if (!m || !m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
+    log().warning << "circuit reserve skipped: amp circuit tunnel not started";
     return;
   }
   auto chat = m->ChatDeps();
   if (!chat) {
+    log().warning << "circuit reserve skipped: no chat deps";
     return;
   }
   auto post_io = chat->io.post_io;
@@ -626,9 +643,101 @@ void CallMediaPlane::ReserveOnBootstrapSeeds() {
   }
 }
 
+std::vector<std::string> CallMediaPlane::EffectiveBootstrapSeedPeerIds() const {
+  MeshConfig mesh_cfg = config().mesh;
+  std::vector<MeshDirectoryNode> directory_nodes;
+  if (deps_.list_directory_nodes) {
+    directory_nodes = deps_.list_directory_nodes();
+  }
+  std::vector<std::string> out;
+  for (const auto& hop :
+       CollectSeedHopCandidates(ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes))) {
+    if (!hop.peer_id.empty()) {
+      out.push_back(hop.peer_id);
+    }
+  }
+  return out;
+}
+
+bool CallMediaPlane::AnyBootstrapSeedConnectedOnIo() const {
+  MeshHost* m = mesh();
+  if (!m) {
+    return false;
+  }
+  auto chat = m->ChatDeps();
+  if (!chat) {
+    return false;
+  }
+  for (const std::string& peer_id : EffectiveBootstrapSeedPeerIds()) {
+    if (chat->links.IsConnected(peer_id)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void CallMediaPlane::EnsureBootstrapSeedParkedAsync(std::function<void(bool parked)> on_done,
+                                                    const int timeout_ms) {
+  if (!on_done) {
+    return;
+  }
+  ReserveOnBootstrapSeeds();
+  MeshHost* m = mesh();
+  auto chat_opt = m ? m->ChatDeps() : std::nullopt;
+  if (!chat_opt) {
+    on_done(false);
+    return;
+  }
+  const int budget = timeout_ms > 0 ? timeout_ms : 4000;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(budget);
+  auto settled = std::make_shared<std::atomic<bool>>(false);
+  auto finish = [settled, on_done = std::move(on_done)](const bool parked) mutable {
+    if (settled->exchange(true, std::memory_order_acq_rel)) {
+      return;
+    }
+    on_done(parked);
+  };
+  auto post_io = chat_opt->io.post_io;
+  auto poll = std::make_shared<std::function<void()>>();
+  *poll = [this, deadline, finish, poll, post_io]() mutable {
+    if (AnyBootstrapSeedConnectedOnIo()) {
+      log().info << "bootstrap seed park ok";
+      finish(true);
+      return;
+    }
+    if (std::chrono::steady_clock::now() >= deadline) {
+      log().warning << "bootstrap seed park timeout (no Connected seed)";
+      finish(false);
+      return;
+    }
+    auto again = [poll]() {
+      if (poll && *poll) {
+        (*poll)();
+      }
+    };
+    if (post_io) {
+      post_io([again]() {
+        (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(250), again);
+      });
+    } else {
+      (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(250), again);
+    }
+  };
+  if (post_io) {
+    post_io([poll]() {
+      if (poll && *poll) {
+        (*poll)();
+      }
+    });
+  } else {
+    (*poll)();
+  }
+}
+
 void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
   MeshHost* m = mesh();
   if (!m || !m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
+    log().warning << "circuit reserve on-io skipped: tunnel not started";
     return;
   }
   auto chat = m->ChatDeps();
@@ -640,12 +749,17 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
   if (deps_.list_directory_nodes) {
     directory_nodes = deps_.list_directory_nodes();
   }
-  for (const auto& hop :
-       CollectSeedHopCandidates(ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes))) {
+  auto hops = CollectSeedHopCandidates(ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes));
+  // Prefer already-Connected seeds first so StartReserve does not race a cold dial.
+  std::stable_sort(hops.begin(), hops.end(), [&](const MeshHopCandidate& a, const MeshHopCandidate& b) {
+    return chat->links.IsConnected(a.peer_id) && !chat->links.IsConnected(b.peer_id);
+  });
+  for (const auto& hop : hops) {
     if (hop.peer_id.empty()) {
       continue;
     }
     if (!chat->links.GetLinkSnapshot(hop.peer_id).has_endpoint) {
+      log().info << "circuit reserve skip peer=" << hop.peer_id << " reason=!endpoint";
       continue;
     }
     const std::string seed = hop.peer_id;
@@ -653,7 +767,23 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
       if (!m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
         return;
       }
-      (void)m->AmpCircuitTunnel()->StartReserve(seed, {}, 30000);
+      const auto id = m->AmpCircuitTunnel()->StartReserve(
+          seed,
+          [this, seed](Roe<CircuitTunnelBridgeResult> result) {
+            if (!result || !result->ok) {
+              log().warning << "circuit reserve miss peer=" << seed
+                            << " err="
+                            << (!result ? result.error().message
+                                        : (result->error.empty() ? "rejected" : result->error));
+              return;
+            }
+            log().info << "circuit reserve ok peer=" << seed;
+          },
+          15000);
+      if (!id) {
+        log().warning << "circuit reserve StartReserve rejected peer=" << seed;
+        return;
+      }
       log().info << "circuit reserve started on seed peer=" << seed;
     };
     if (chat->links.IsConnected(seed)) {
@@ -663,9 +793,11 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
     // WarmBootstrapSeedSessions fires EnsureAssociation without waiting — StartReserve needs a
     // live PeerLink or OpenChannel fails silently and the seed never sees this peer (dogfood
     // reverse-dial "endpoint not registered").
-    chat->links.EnsureAssociation(seed, [start_reserve = std::move(start_reserve)](
-                                            IChatPeerLinks::LinkRoe assoc) mutable {
+    chat->links.EnsureAssociation(seed, [this, start_reserve = std::move(start_reserve),
+                                         seed](IChatPeerLinks::LinkRoe assoc) mutable {
       if (!assoc) {
+        log().warning << "circuit reserve assoc miss peer=" << seed
+                      << " err=" << assoc.error().message;
         return;
       }
       start_reserve();
