@@ -272,6 +272,14 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
       [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
         RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
       });
+  call_sessions_->SetEnsureCircuitReady([this]() {
+    if (media_plane_) {
+      media_plane_->EnsureCircuitReady();
+    }
+  });
+  call_sessions_->SetAwaitCircuitReady([this](int timeout_ms) {
+    return media_plane_ ? media_plane_->AwaitCircuitReady(timeout_ms) : false;
+  });
   EnsureCallLifecycleBound();
   WireMediaRelayDeps();
 }
