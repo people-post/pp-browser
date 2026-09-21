@@ -134,7 +134,9 @@ Idle background reachability still uses **outbound dial + circuit** (and later p
 
 Answerer remains punch-only + reserve (no reverse StartBridge on first pass). User Retry / TX-only escalate may open a **fresh** envelope later — not a longer first ring.
 
-**Seed park gate:** Before private-Preferred `EnsureAssociation` and before circuit/punch Ensure, both roles await up to **12s** for any bootstrap/directory seed `IsConnected` (`EnsureBootstrapSeedParkedAsync` / `kSeedParkAwaitMs`). Warm/reserve dial **one** cold seed at a time (no parallel hop1∥hop2∥private Preferred). Public Preferred still dials immediately. Live Brief may still reject `op=reserve` (`unsupported op`); **Connected PeerLink alone** is enough for peer-id-only ServeDial — redeploy Brief with reserve support when available (dogfood fd4e3de).
+**Seed park gate:** Before private-Preferred `EnsureAssociation` and again before circuit/punch Ensure, await up to **12s** for any bootstrap/directory seed `IsConnected`. A timed-out pre-assoc park must **not** be treated as success (dogfood 88e16f5c: false park-ok → punch-only while offerer saw `endpoint not registered`). After a successful park, **skip** private-Preferred `EnsureAssociation` (dogfood 39412f: that UDP dial dropped the Brief PeerLink → dialer ServeDial `endpoint not registered`). Warm/reserve: connect **one** cold seed at a time, but **reserve all** Connected seeds (and continue serial cold reserve) so dialer StartBridge can land on hop2. Live Brief `op=reserve` is required for durable park; Connected PeerLink alone is enough for peer-id-only ServeDial when park actually succeeds.
+
+**Peer-id-only ServeDial:** Never fall through to dial-book Preferred. Private Preferred hangs hop `EnsureAssociation` until dialer WaitAck `circuit-relay bridge timed out` (dogfood dual-NAT / Windows dialer). Open call-media via `FindLinkByPeerId` + `OpenChannelOnLink` on the live link. Fast-fail `not registered` when not Connected so H010 sticky retry can advance.
 
 CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~12s with settle slack), not N×20s.
 
