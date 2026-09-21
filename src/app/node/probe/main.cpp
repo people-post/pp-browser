@@ -47,7 +47,8 @@ enum class ProbeMode {
   BridgeViaHop,
   DirectExpectFail,
   MediaRecv,
-  MediaSend
+  MediaSend,
+  Reserve
 };
 
 void PrintUsage(const char* argv0) {
@@ -75,6 +76,7 @@ void PrintUsage(const char* argv0) {
       << "  direct-expect-fail     hard-lab: dial --stale-ma and require failure (N-HARD-STALE-ADDR)\n"
       << "  media-recv             hard-lab: quote/attach/subscribe; wait one frame\n"
       << "  media-send             hard-lab: quote/attach; send frames until recv ack or timeout\n"
+      << "  reserve                dial hop + StartReserve (verify op=reserve on live Brief)\n"
       << "\n"
       << "When the hop runs in Docker, pass --advertise-host for circuit dial-back\n"
       << "(e.g. docker0 bridge 172.17.0.1), not 127.0.0.1.\n"
@@ -378,6 +380,67 @@ void ArmProbeBridgeTarget(AmpPeer& target, std::mutex& mu, bool& got, std::vecto
           keep_alive.push_back(std::move(session));
         });
       });
+}
+
+int RunReserve(const std::string& hop_ma) {
+  auto client = MakeLanClient();
+  if (!client) {
+    std::cerr << "error: client amp start: " << client.error().message << "\n";
+    return 1;
+  }
+  if (auto reg = (*client)->Links().RegisterEndpoint("hop", hop_ma); !reg) {
+    std::cerr << "error: register hop: " << reg.error().message << "\n";
+    return 1;
+  }
+  auto circuit = std::make_unique<pbr::CircuitTunnelCoordinator>((*client)->Runtime());
+  circuit->Start();
+  circuit->SetServeInbound(false);
+
+  const std::vector<AmpPeer*> pumps = {client->get()};
+  std::cout << "pp-node reserve probe hop=" << hop_ma << "\n";
+
+  {
+    std::atomic<bool> warm_done{false};
+    std::atomic<bool> warm_ok{false};
+    std::string warm_detail;
+    (*client)->Links().EnsureAssociation("hop", [&](pp::amp::PeerLinkManager::LinkRoe assoc) {
+      if (assoc) {
+        warm_ok.store(true, std::memory_order_release);
+      } else {
+        warm_detail = assoc.error().message;
+      }
+      warm_done.store(true, std::memory_order_release);
+    });
+    if (!PumpUntil(pumps, [&] { return warm_done.load(std::memory_order_acquire); }, 15000) ||
+        !warm_ok.load(std::memory_order_acquire)) {
+      std::cerr << "error: hop associate: "
+                << (warm_detail.empty() ? "timeout" : warm_detail) << "\n";
+      return 1;
+    }
+    std::cout << "ok  hop associated\n";
+  }
+
+  {
+    AsyncWait<pbr::CircuitTunnelBridgeResult> wait;
+    auto tunnel_id = circuit->StartReserve("hop", wait.Fn(), 15000);
+    if (!tunnel_id) {
+      std::cerr << "error: StartReserve rejected locally\n";
+      return 1;
+    }
+    if (!wait.PumpUntilDone(pumps, 20000) || !wait.result) {
+      std::cerr << "error: reserve: "
+                << (wait.result ? wait.result->error : wait.result.error().message) << "\n";
+      return 1;
+    }
+    if (!wait.result->ok) {
+      std::cerr << "error: reserve refused: "
+                << (wait.result->error.empty() ? "rejected" : wait.result->error) << "\n";
+      return 1;
+    }
+    std::cout << "ok  circuit_relay StartReserve (op=reserve accepted)\n";
+  }
+  (*client)->stack->Stop();
+  return 0;
 }
 
 int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
@@ -1380,6 +1443,8 @@ int main(int argc, char** argv) {
         mode = ProbeMode::MediaRecv;
       } else if (std::strcmp(argv[i], "media-send") == 0) {
         mode = ProbeMode::MediaSend;
+      } else if (std::strcmp(argv[i], "reserve") == 0) {
+        mode = ProbeMode::Reserve;
       } else {
         std::cerr << "Unknown --mode: " << argv[i] << "\n";
         PrintUsage(argv[0]);
@@ -1469,6 +1534,9 @@ int main(int argc, char** argv) {
 
   if (mode == ProbeMode::BridgeViaHop) {
     return RunBridgeViaHop(hop_ma, target_file, peer_id_only);
+  }
+  if (mode == ProbeMode::Reserve) {
+    return RunReserve(hop_ma);
   }
   if (mode == ProbeMode::MediaRecv) {
     return RunMediaRecv(hop_ma, call_id, hold_seconds, ready_file);
