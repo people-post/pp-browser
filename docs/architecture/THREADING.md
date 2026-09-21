@@ -147,6 +147,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 |-----------|--------|
 | RmlUi / shell / input | UI |
 | Amp `Drive` / L3 mux affinity | MeshPump (and MeshControl while `IoPumpUntil`) |
+| Amp `PeerLinkManager` / `IChatPeerLinks` **mutations** | Amp IO strand only (`MeshRuntime::PostToIo`) |
 | Periodic sync / hub policy | Coordinator timers |
 | libcurl, UPnP, Argon2, long DB | Worker pool |
 | Amp control waits (`IoPumpUntil`, Connect grace) | MeshControlPool |
@@ -155,6 +156,8 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 
 **Hard rule:** only worker-pool and mesh-control threads may block on network or disk for longer than a few milliseconds. Amp data-plane progress is `MeshRuntime::Drive` on the pump (and nested `Tick` from control waiters).
 
+**Amp PeerLink strand (hard):** `PeerLinkManager` is not thread-safe. Product call/mesh code that mutates dial book or association state — `RegisterEndpoint`, `ClearDialBackoff`, `AbortInflightDial`, `EnsureAssociation`, `OpenChannel`, circuit `StartBridge` / hop reach — must run on the Amp IO strand via `MeshRuntime::PostToIo` (exposed as `MeshChatDeps::io.post_io`). Snapshot reads (`IsConnected`, `PreferredMultiaddr`, `GetLinkSnapshot`) may be called off-strand for opportunistic UX; treat them as best-effort. With MeshPump running, **do not** pass a product `IoPump` that nested-`Drive`s from Coordinator/call-connect paths — MeshPump owns `Drive`; waiters use empty `io_pump` + `post_io` (dogfood 085210: Coordinator vs MeshPump race ~dial timeout).
+
 **Peer honesty (Amp / peer streams):** do not park the **general** `WorkerPool` on peer-facing waits. Prefer async IO + local deadline + hard cancel. Call-media hello/ack is async+deadline; blocking bridge `Connect()` and remaining `IoPumpUntil` facades run on **MeshControlPool** as an interim until async `Connect(cb)` / A022-style callbacks. Details: [SESSION_MACHINES.md — Peer honesty rule](../../projects/p2p-av-calls/SESSION_MACHINES.md#peer-honesty-rule-stream-waits).
 
 ### Amp / mesh executors
@@ -162,6 +165,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 | Class | Dispatch | Examples |
 |-------|----------|----------|
 | **Pump** | `MeshPumpThread` | `MeshRuntime::Drive`, DHT host tick |
+| **IO strand** | `MeshRuntime::PostToIo` | PeerLink mutations, hop `EnsureViaCircuit*`, dial-registry mutators |
 | **Control** | `MeshControlPool` | reachability / remaining sync L4 parks (ConnectAsync no longer holds a control thread) |
 | **Compute / HTTP** | App `WorkerPool` | Brief HTTP, LLM, Argon2, SQLite |
 
@@ -274,6 +278,7 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 
 | Date | Change |
 |------|--------|
+| 2026-09-21 | Amp PeerLink strand: PostToIo for dial/hop mutations; product Wire empty io_pump when MeshPump+post_io |
 | 2026-09-09 | Shutdown latency phases 0–5: BeginShutdown+watchdog; budgeted coordinator/WorkerPool/ringtone/media joins; IsShuttingDown gates; dogfood matrix |
 | 2026-09-09 | Shutdown latency: HideWindow on RequestExit; PrepareForTeardown(0); MeshControlPool join ≤500ms; shutdown timeline marks |
 | 2026-09-09 | CallMediaBridge peer-reach Async; CallSessionManager SoftMigrate nudge uses SoftMigrateAsync (no Worker park) |
