@@ -640,13 +640,14 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
   (void)AppRuntime::ScheduleCoordinatorOneShot(
       std::chrono::milliseconds(dial_wait_budget_ms_ + kOffererInboundGraceMs + kCircuitEnsureBudgetMs +
                                 250),
-      [this, peer_identity, reach_key, finish, settled, last_error, dial_connected]() mutable {
+      [this, peer_identity, reach_key, finish, settled, last_error]() mutable {
         if (settled->load(std::memory_order_acquire)) {
           return;
         }
+        // Do not dial_->IsConnected here — watchdog can fire during StartBridge dial timeout
+        // and race PeerLinkManager::FinishDial (dogfood 091029).
         log().warning << "CallMedia Ensure deadline watchdog peer=" << peer_identity
-                      << " reach_key=" << reach_key << " last=" << last_error->message
-                      << " connected=" << (dial_connected() ? 1 : 0);
+                      << " reach_key=" << reach_key << " last=" << last_error->message;
         finish(*last_error);
       });
   auto tick = std::make_shared<std::function<void()>>();
@@ -665,9 +666,12 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
       finish(Error("dial registry not available"));
       return;
     }
-    // While forcing circuit, ignore connected until Ensure has run (or hop is installed).
+    // PeerLinkManager is Amp-IO only. Coordinator must not IsConnected/IsDialable while
+    // EnsureAssociation or circuit StartBridge mutates links_ (FinishDial/ScheduleDropLink at
+    // ~8s dial_timeout AVs — dogfood 085210 / 091029). Hop registry reads are mutexed.
+    const bool dial_mutating = *circuit_inflight || (*assoc_started && !*assoc_done);
     const bool wait_for_circuit = force_circuit && !*circuit_started && !dial_has_circuit();
-    if (dial_connected() && !wait_for_circuit) {
+    if (!dial_mutating && dial_connected() && !wait_for_circuit) {
       if (dial_has_circuit()) {
         media_path_kind_ = "circuit";
       } else if (*circuit_started) {
@@ -698,12 +702,20 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
       } else {
         log().warning << "CallMedia peer still not connected peer=" << peer_identity
                       << " reach_key=" << reach_key << " last=" << last_error->message
-                      << " dialable=" << (dial_dialable() ? 1 : 0)
                       << " circuit_started=" << (*circuit_started ? 1 : 0)
                       << " assoc_started=" << (*assoc_started ? 1 : 0);
         finish(*last_error);
         return;
       }
+    }
+    if (dial_mutating) {
+      // Assoc/circuit callbacks drive progress; keep the poll chain alive for deadline only.
+      (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs), [tick]() {
+        if (tick && *tick) {
+          (*tick)();
+        }
+      });
+      return;
     }
     // Endpoint known but PeerLink not Connected — kick EnsureAssociation on Amp IO.
     // Do not start this in parallel with circuit StartBridge: dogfood 997c1c6f AVd ~10s after
@@ -722,10 +734,15 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                  << " reach_key=" << reach_key;
       dial_->EnsureAssociation(
           reach_key, [this, peer_identity, reach_key, connect_gen, finish, settled, last_error,
-                      assoc_done, assoc_started, dial_connected, tick](Roe<void> assoc) mutable {
+                      assoc_done, assoc_started, tick](Roe<void> assoc) mutable {
+            // EnsureAssociation cb runs on Amp IO (FinishDial). Snapshot before Coordinator hop.
+            const bool connected_now =
+                static_cast<bool>(assoc) && dial_ &&
+                (dial_->IsConnected(reach_key) ||
+                 (reach_key != peer_identity && dial_->IsConnected(peer_identity)));
             AppRuntime::PostCoordinatorNormal(
                 [this, peer_identity, reach_key, connect_gen, finish = std::move(finish), settled,
-                 last_error, assoc_done, assoc_started, dial_connected, tick,
+                 last_error, assoc_done, assoc_started, connected_now, tick,
                  assoc = std::move(assoc)]() mutable {
                   if (settled->load(std::memory_order_acquire)) {
                     return;
@@ -737,7 +754,7 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                     return;
                   }
                   if (assoc) {
-                    if (dial_connected()) {
+                    if (connected_now) {
                       media_path_kind_ = "direct";
                       log().info << "CallMedia EnsureAssociation ok peer=" << peer_identity
                                  << " reach_key=" << reach_key;
@@ -770,6 +787,12 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                 });
           });
       // Wait for assoc to finish before StartBridge so the two ADP handshakes do not overlap.
+      (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(kDialPollMs), [tick]() {
+        if (tick && *tick) {
+          (*tick)();
+        }
+      });
+      return;
     }
     // Circuit/punch when forced, undialable, or ADP assoc already finished (not merely kicked).
     if (circuit_reach_ && !*circuit_started &&
@@ -799,11 +822,18 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
       circuit_reach_->TryEnsureCallMediaReachableAsync(
           reach_key,
           [this, peer_identity, reach_key, connect_gen, finish, settled, last_error, circuit_inflight,
-           deadline, initial_deadline, dial_connected, dial_has_circuit, tick](Roe<void> via) mutable {
+           deadline, initial_deadline, tick](Roe<void> via) mutable {
+            // AmpCircuitHopReach finishes on Amp IO — snapshot before Coordinator hop.
+            const bool connected_now =
+                dial_ && (dial_->IsConnected(reach_key) ||
+                          (reach_key != peer_identity && dial_->IsConnected(peer_identity)));
+            const bool has_circuit_now =
+                dial_ && (dial_->HasCallMediaCircuitHop(reach_key) ||
+                          (reach_key != peer_identity && dial_->HasCallMediaCircuitHop(peer_identity)));
             AppRuntime::PostCoordinatorNormal(
                 [this, peer_identity, reach_key, connect_gen, finish = std::move(finish), settled,
-                 last_error, circuit_inflight, deadline, initial_deadline, dial_connected,
-                 dial_has_circuit, tick, via = std::move(via)]() mutable {
+                 last_error, circuit_inflight, deadline, initial_deadline, connected_now,
+                 has_circuit_now, tick, via = std::move(via)]() mutable {
                   *circuit_inflight = false;
                   if (settled->load(std::memory_order_acquire)) {
                     return;
@@ -815,8 +845,8 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                   }
                   // has_endpoint / punch "ok" is not PeerLink Connected — dogfood 612b: via_ok=1
                   // then OpenChannel hung on connected=0.
-                  if (dial_connected()) {
-                    if (dial_has_circuit()) {
+                  if (connected_now) {
+                    if (has_circuit_now) {
                       media_path_kind_ = "circuit";
                     } else {
                       media_path_kind_ = "punched";
@@ -834,8 +864,7 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                   }
                   log().info << "CallMedia Ensure circuit/punch miss peer=" << peer_identity
                              << " reach_key=" << reach_key << " err=" << last_error->message
-                             << " via_ok=" << (via ? 1 : 0)
-                             << " connected=" << (dial_connected() ? 1 : 0);
+                             << " via_ok=" << (via ? 1 : 0);
                   // Answerer / seed "not registered": keep extended deadline for inbound. Hard miss:
                   // restore short dial budget (gtest).
                   const bool wait_inbound =
