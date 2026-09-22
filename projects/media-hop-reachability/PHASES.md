@@ -27,7 +27,19 @@ Implement **in Amp mesh** ([H001](DECISIONS.md#h001--separate-project-implementa
 - [x] Evolve custom circuit toward dial-by-PeerId when relay already has target (or reservation)
 - [x] SoftMigrate may use circuit when direct `IsDialable` fails (H005)
 - [x] Loopback compose: circuit + call-media + media_relay fan-out (`loopback_partition_fixture.h`)
+- [x] H010 first-connect StartBridge attempt budget (envelope, max bridges, sticky/Connected order)
 - **Gap:** L3 is **single-hop only** (one relay must direct-dial target). Multi-hop plan: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md) / [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned).
+- **Gap:** Dialer vs answerer still pick/park independently — [L3.1](#l31--circuit-r1-rendezvous).
+
+## L3.1 — Circuit R1 rendezvous
+
+Docs: [CIRCUIT_R1_RENDEZVOUS.md](CIRCUIT_R1_RENDEZVOUS.md), [H011](DECISIONS.md#h011--circuit-r1-rendezvous-dialer-authoritative). Completes single-hop meet when **multiple** dialable relays exist. **Before** multi-hop (L3.5); **parallel** to punch (L3.25).
+
+- [x] ADR + spec (H011, CIRCUIT_R1_RENDEZVOUS) — **done**
+- [ ] **L3.1a** — Shared `CircuitRendezvousSurface`; answerer reserves top-K + Connected (not seeds-only); dialer collect uses same builder
+- [ ] **L3.1b** — Optional answerer prefer last-good R1 in reserve order (no wire)
+- [ ] **L3.1c** — Optional post-ack `circuit_r1` PeerId announce + late-reserve (H007 carve-out)
+- [ ] **L3.1d** — Compose + `hard-w5` STACK gates; H010 budget regressions green
 
 ## L3.25 — Amp Coordinated Punch
 
