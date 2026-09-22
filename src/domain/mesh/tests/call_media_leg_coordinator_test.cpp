@@ -325,6 +325,54 @@ TEST_F(CallMediaLegCoordinatorTest, AudioSurvivesSingleDatagramLoss) {
   EXPECT_GE(b_audio.load(std::memory_order_acquire), kFrames - 1);
 }
 
+// B20: on_media must carry the wire seq/mark. With seq always 0 the playout jitter buffer treated every
+// frame as a duplicate and audio was 100% packet-loss concealment ("杂音").
+TEST_F(CallMediaLegCoordinatorTest, OnMediaCarriesSeqAndMark) {
+  const std::string call_id = "call-amp-seq";
+  ByteVector media_key(32, 0x66);
+  std::atomic<bool> b_connected{false};
+  std::mutex mu;
+  std::vector<std::pair<uint32_t, uint8_t>> seen;
+  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] { b_connected.store(true, std::memory_order_release); };
+    cbs.on_media = [&](uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>&) {
+      std::lock_guard lock(mu);
+      if (channel == 0) {
+        seen.emplace_back(seq, mark);
+      }
+    };
+  });
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+  LegCompletion leg_done;
+  const CallMediaLegId leg_id = a_call_->StartLeg(params, {}, leg_done.Fn(), 5000);
+  ASSERT_TRUE(leg_id);
+  leg_done.PumpUntilDone(*harness_);
+  ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
+  harness_->PumpUntil([&] { return b_connected.load(std::memory_order_acquire); });
+
+  const std::vector<uint8_t> opus = {7, 7, 7};
+  for (uint32_t seq = 41; seq <= 45; ++seq) {
+    ASSERT_TRUE(static_cast<bool>(a_call_->SendAudio(leg_id, opus, seq, seq == 41 ? 1 : 0)));
+    harness_->PumpBoth();
+  }
+  harness_->PumpUntil([&] { std::lock_guard lock(mu); return seen.size() >= 5; });
+  std::lock_guard lock(mu);
+  ASSERT_EQ(seen.size(), 5u);
+  for (size_t i = 0; i < seen.size(); ++i) {
+    EXPECT_EQ(seen[i].first, 41u + static_cast<uint32_t>(i));
+    EXPECT_EQ(seen[i].second, i == 0 ? 1 : 0);
+  }
+}
+
 TEST_F(CallMediaLegCoordinatorTest, DetachUnblocksConnectWait) {
   b_call_->Stop();
   b_call_ = std::make_unique<CallMediaLegCoordinator>(
@@ -405,7 +453,7 @@ TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedVideoRoundTripOver16KiB) {
       connected = true;
       cv.notify_one();
     };
-    cbs.on_media = [&](uint8_t channel, const std::vector<uint8_t>& payload) {
+    cbs.on_media = [&](uint8_t channel, uint32_t, uint8_t, const std::vector<uint8_t>& payload) {
       std::lock_guard lock(mu);
       received_ch = channel;
       received = payload;

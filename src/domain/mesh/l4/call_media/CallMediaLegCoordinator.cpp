@@ -644,7 +644,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       return true;
     }
     if (cbs.on_media) {
-      cbs.on_media(decoded->channel, decoded->payload);
+      cbs.on_media(decoded->channel, decoded->seq, decoded->mark, decoded->payload);
     } else if (decoded->channel == kCallMediaChannelAudio && cbs.on_audio) {
       cbs.on_audio(decoded->payload);
     }

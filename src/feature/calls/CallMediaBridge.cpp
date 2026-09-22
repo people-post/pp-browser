@@ -156,8 +156,8 @@ CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions
         CommitDirectConnected(call_id);
       });
     };
-    cbs.on_media = [this, call_id](uint8_t channel, const std::vector<uint8_t>& payload) {
-      DeliverInboundDirectMedia(call_id, channel, payload);
+    cbs.on_media = [this, call_id](uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload) {
+      DeliverInboundDirectMedia(call_id, channel, seq, mark, payload);
     };
     cbs.on_failed = [this, call_id](const std::string& reason) {
       AppRuntime::PostUI([this, call_id, reason]() {
@@ -393,9 +393,9 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
   host_.P2pNotifyRingChanged();
 }
 
-void CallMediaBridge::DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel,
-                                                      const std::vector<uint8_t>& payload) {
-  AppRuntime::PostUI([this, call_id, channel, payload]() {
+void CallMediaBridge::DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel, uint32_t seq,
+                                                      uint8_t mark, const std::vector<uint8_t>& payload) {
+  AppRuntime::PostUI([this, call_id, channel, seq, mark, payload]() {
     if (!media_.IsActive() || media_.ActiveCallId() != call_id) {
       return;
     }
@@ -432,6 +432,8 @@ void CallMediaBridge::DeliverInboundDirectMedia(const std::string& call_id, uint
     CallMediaEngine::SfuPacket pkt;
     pkt.stream_id = remote_stream;
     pkt.channel_id = channel;
+    pkt.seq = seq;
+    pkt.mark = mark;
     pkt.payload = payload;
     media_.OnSfuPacket(pkt);
   });
@@ -1452,8 +1454,8 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
     });
   };
   cbs.on_media = [this, captured_call_id, remote_stream = PublisherStreamIdForIdentity(captured_peer)](
-                     uint8_t channel, const std::vector<uint8_t>& payload) {
-    AppRuntime::PostUI([this, captured_call_id, remote_stream, channel, payload]() {
+                     uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload) {
+    AppRuntime::PostUI([this, captured_call_id, remote_stream, channel, seq, mark, payload]() {
       if (!media_.IsActive() || media_.ActiveCallId() != captured_call_id) {
         return;
       }
@@ -1463,6 +1465,8 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
       CallMediaEngine::SfuPacket pkt;
       pkt.stream_id = remote_stream;
       pkt.channel_id = channel;
+      pkt.seq = seq;
+      pkt.mark = mark;
       pkt.payload = payload;
       media_.OnSfuPacket(pkt);
     });

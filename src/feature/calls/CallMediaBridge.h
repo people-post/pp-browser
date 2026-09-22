@@ -179,7 +179,7 @@ private:
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
   /** Direct stream up: mark media connected when capture is live, always advance lifecycle/chrome. */
   void CommitDirectConnected(const std::string& call_id);
-  void DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel,
+  void DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel, uint32_t seq, uint8_t mark,
                                  const std::vector<uint8_t>& payload);
   void ReleaseDirectTransportBody();
   /** NAT dogfood: dialable "direct" with TX-only → force circuit ensure + re-dial. */
