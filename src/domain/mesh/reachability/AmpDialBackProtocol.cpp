@@ -7,6 +7,7 @@
 #include "common/ValueJson.h"
 #include "domain/mesh/shared/AmpChannelOpen.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 #include <atomic>
 #include <chrono>
@@ -123,6 +124,8 @@ struct AmpDialBackProtocol::Impl {
   WorkerPost post_worker;
   IoPost post_io;
   std::atomic<bool> stopped{false};
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
+  DeferredSelf deferred;
 
   void ScheduleWhenChannelOpen(const std::string& peer_key, const uint32_t channel_id,
                                const Clock::time_point deadline, std::function<void(bool open)> done) {
@@ -212,16 +215,18 @@ void AmpDialBackProtocol::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kDialBackProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle handle, const std::string& remote_peer_id,
-                           const uint32_t channel_id) {
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
+                                                const std::string& remote_peer_id,
+                                                const uint32_t channel_id) {
         impl->HandleInboundOnLink(handle, remote_peer_id, channel_id);
-      });
+      }));
 }
 
 void AmpDialBackProtocol::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   links_.RemoveProtocolHandler(kDialBackProtocolId);
+  impl_->deferred.Invalidate();
 }
 
 void AmpDialBackProtocol::ProbeAsync(const std::string& seed_peer_key,

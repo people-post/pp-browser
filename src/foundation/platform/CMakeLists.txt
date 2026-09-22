@@ -195,8 +195,15 @@ if(ANDROID)
   target_link_libraries(pp_foundation_platform PUBLIC log GLESv3 EGL)
 endif()
 
-# iOS: curl uses BoringSSL; OsTlsPlatformCurl_Ios installs a SecTrust verify callback.
+# iOS: curl uses BoringSSL; OsTlsPlatformCurl_Ios (in platform_core) installs a SecTrust
+# verify callback — OpenSSL headers/libs must be on the *core* target that compiles it (B8).
 if(PP_BROWSER_IS_IOS)
+  target_link_libraries(pp_foundation_platform_core PUBLIC
+    CURL::libcurl
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    "-framework Security"
+    "-framework CoreFoundation")
   target_link_libraries(pp_foundation_platform PUBLIC
     CURL::libcurl
     OpenSSL::SSL

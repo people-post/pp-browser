@@ -133,6 +133,24 @@ TEST(CallLifecycleTransitionLogicTest, ConnectFailedFromIdleNoOp) {
   EXPECT_EQ(out.actions, CallLifecycleAction::None);
 }
 
+TEST(CallLifecycleTransitionLogicTest, OutboundStartedArmsDecidingFromNone) {
+  auto ctx = Ctx(CallPhase::Idle);
+  ctx.event_call_id = "call:1";
+  const auto out = DecideCallLifecycleTransition(CallLifecycleEvent::OutboundStarted, ctx);
+  EXPECT_EQ(out.next_phase, CallPhase::OutboundCalling);
+  EXPECT_TRUE(HasAction(out.actions, CallLifecycleAction::SetStatus));
+  EXPECT_EQ(out.next_status, CallMediaStatus::Deciding);
+}
+
+TEST(CallLifecycleTransitionLogicTest, OutboundStartedDoesNotRegressDirectConnecting) {
+  auto ctx = Ctx(CallPhase::OutboundCalling, CallMediaStatus::DirectConnecting);
+  ctx.event_call_id = "call:1";
+  const auto out = DecideCallLifecycleTransition(CallLifecycleEvent::OutboundStarted, ctx);
+  EXPECT_EQ(out.next_phase, CallPhase::OutboundCalling);
+  EXPECT_FALSE(HasAction(out.actions, CallLifecycleAction::SetStatus));
+  EXPECT_EQ(out.next_status, CallMediaStatus::DirectConnecting);
+}
+
 TEST(CallLifecycleTransitionLogicTest, RetryOnlyFromConnectFailed) {
   auto ctx = Ctx(CallPhase::InCall);
   ctx.event_call_id = "call:1";

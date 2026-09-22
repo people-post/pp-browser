@@ -527,7 +527,6 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::string& peer_account, i
     return started.error();
   }
   const std::string call_id = started->call_id;
-  ui_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
   std::cout << "ok  product-stack StartCall call_id=" << call_id << " peer=" << peer_account << "\n";
 
   const bool reached = PumpUntil(
@@ -570,23 +569,29 @@ void ProductStackHarness::Shutdown() {
   if (!host_ && !stack_ && !ui_ && data_dir_.empty()) {
     return;
   }
+  // Keep chat up through Leave / AbortCallMediaForShutdown so call_leave fanout can send
+  // (stopping chat first logged "chat transport not started" on green hard-w5 STACK runs).
   if (ui_ && stack_ && stack_->HasActiveLocalCall()) {
     if (auto active = ui_->ActiveLocalCall(); active && active->has_value()) {
       ui_->Apply(CallLifecycleEvent::LeaveClicked, (*active)->call_id);
+      Pump();
     }
-  }
-  if (chat_) {
-    chat_->Stop();
-    chat_.reset();
   }
   if (stack_) {
     stack_->AbortCallMediaForShutdown();
+    Pump();
     stack_->PrepareForMeshStop([this]() {
       if (host_) {
         host_->AbortInflightCircuitRequests();
       }
     });
     stack_->FinishMeshStop();
+  }
+  if (chat_) {
+    chat_->Stop();
+    chat_.reset();
+  }
+  if (stack_) {
     stack_->Shutdown();
   }
   ui_.reset();

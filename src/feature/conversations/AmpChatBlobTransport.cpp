@@ -18,6 +18,7 @@
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 namespace pbr {
 namespace {
@@ -104,6 +105,8 @@ struct AmpChatBlobTransport::Impl {
   IoPost post_io;
   std::atomic<bool> stopped{false};
 
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
+  DeferredSelf deferred;
   ByteVector CopyDek() const {
     std::lock_guard lock(dek_mutex);
     if (dek.size() != kDataEncryptionKeySize) {
@@ -259,16 +262,18 @@ void AmpChatBlobTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kChatBlobProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
-                           const uint32_t channel_id) {
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle /*handle*/,
+                                                const std::string& remote_peer_id,
+                                                const uint32_t channel_id) {
         impl->HandleInboundChannel(remote_peer_id, channel_id);
-      });
+      }));
 }
 
 void AmpChatBlobTransport::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   links_.RemoveProtocolHandler(kChatBlobProtocolId);
+  impl_->deferred.Invalidate();
 }
 
 bool AmpChatBlobTransport::IsPeerReachable(const std::string& peer_identity_value) const {

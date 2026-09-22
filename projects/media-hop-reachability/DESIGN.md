@@ -105,9 +105,10 @@ Evolve custom circuit toward **PeerId-first** dial when a relay already has the 
 | Mode | Description | Maturity |
 |------|-------------|----------|
 | **Single-hop** | One relay direct-dials target | Shipped |
+| **R1 rendezvous** | Dialer picks immediate R1; answerer parks shared surface | Spec — [CIRCUIT_R1_RENDEZVOUS.md](CIRCUIT_R1_RENDEZVOUS.md) / H011 |
 | **Multi-hop v2** | Transitive paths via `bridge_path`, nested subcontract | Planned — [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md) |
 
-**Preference order:** stack address book + Reachable ads → **Amp Coordinated Punch** → circuit → SoftMigrate failure (H002). Circuit may enable dial to hop PeerId; prefer contact then seed bridges.
+**Preference order:** stack address book + Reachable ads → **Amp Coordinated Punch** → circuit → SoftMigrate failure (H002). Circuit may enable dial to hop PeerId; prefer contact then seed bridges. When several relays are dialable, **dialer chooses R1** and answerer **covers** that choice set (H011) — not bilateral hop voting.
 
 **Billing note:** Direct attach (A pays hop B) vs brokered attach (A pays immediate relay R1 only when R1 orchestrates path) — see H005 and mesh N024. Successful punch favors **direct attach**.
 
@@ -154,6 +155,10 @@ SoftMigrate: skip undialable hops; aggregated error if none work. Do not invent 
 
 ---
 
+## Circuit R1 rendezvous
+
+With multiple dialable relays, nested call-media needs both ends on the **same** immediate R1. Ownership: **dialer selects**, answerer **parks a shared surface** (optional post-ack PeerId confirm). Spec: [CIRCUIT_R1_RENDEZVOUS.md](CIRCUIT_R1_RENDEZVOUS.md). ADR: [H011](DECISIONS.md#h011--circuit-r1-rendezvous-dialer-authoritative). Attempt budget remains [H010](DECISIONS.md#h010--circuit-startbridge-attempt-budget-not-exhaustive-search).
+
 ## Multi-hop circuits
 
 When single-hop cannot reach target B, immediate relay R1 may subcontract upstream R2 within a hop cap. Consumer A still scores and pays **R1 only**.
@@ -168,7 +173,8 @@ Full protocol and session model: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md). B
 |------------|----------|-------|
 | Peer address book (L1) | Shipped | Amp-era book / upsert on bootstrap/connect |
 | Advertised listen set (L2) | Shipped | ch0 + dial-back / UPnP-derived addrs |
-| Circuit PeerId dial (L3) | Shipped | Single-hop; circuit fallback in SoftMigrate path |
+| Circuit PeerId dial (L3) | Shipped | Single-hop; H010 StartBridge budget |
+| Circuit R1 rendezvous (L3.1) | Spec | H011 — shared surface + dialer-authoritative pick |
 | Amp Coordinated Punch (L3.25) | Planned | H009, [HOLE_PUNCH.md](HOLE_PUNCH.md) |
 | Multi-hop circuit (L3.5) | Planned | H008, N024 — parallel to punch |
 | SoftMigrate consume only (L4) | In progress | Drop reliance on empty contact ma as only signal |
@@ -191,5 +197,7 @@ Detail and checkboxes: [PHASES.md](PHASES.md), [CURRENT_STATE.md](CURRENT_STATE.
 | No `call_hop_addrs` product path | H007 |
 | Multi-hop circuit chains | H008 |
 | Amp Coordinated Punch | H009 |
+| Circuit StartBridge attempt budget | H010 |
+| Circuit R1 rendezvous (dialer-authoritative) | H011 |
 
 Mesh cross-refs: N014 (contact-first), N022 (mesh investment), N024 (brokered relay). Call cross-ref: V026. Amp: D10, A017, A026, A027.

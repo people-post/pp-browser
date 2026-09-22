@@ -4,6 +4,7 @@
 #include "domain/mesh/host/MeshPorts.h"
 #include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
 #include "domain/mesh/tests/support/mesh_triple_harness.h"
 
 #include <gtest/gtest.h>
@@ -481,6 +482,36 @@ TEST_F(AmpCircuitHopReachTest, AbortPendingSkipsPunchFallback) {
   ASSERT_FALSE(ensure_wait.result);
   EXPECT_NE(ensure_wait.result.error().message.find("aborted"), std::string::npos)
       << ensure_wait.result.error().message;
+}
+
+/**
+ * L3.25 SoftMigrate path (H002): punch epoch miss → circuit fallback.
+ * TryEnsureHopReachable runs punch first; on window expiry / no dialable book entry,
+ * EnsureViaCircuit must still Install a media_relay hop.
+ */
+TEST_F(AmpCircuitHopReachTest, HopEnsureFallsThroughToCircuitAfterPunchWindowExpiry) {
+  WarmAnswererAndOfferer("relay");
+
+  ASSERT_FALSE(recording_->GetLinkSnapshot(harness_->peer_id_b).has_endpoint);
+  ASSERT_FALSE(hops_->Find(harness_->peer_id_b, kMediaRelayProtocolId).has_value());
+
+  auto punch_calls = std::make_shared<int>(0);
+  AmpCircuitHopReach reach(
+      *circuit_a_, *hops_, *recording_, [this] { harness_->PumpAll(); },
+      [](const std::string&) { return std::vector<std::string>{"relay"}; },
+      [punch_calls](const std::string&, std::function<void(Roe<void>)> on_done) {
+        ++(*punch_calls);
+        on_done(Error("punch burst window expired"));
+      });
+
+  Wait<void> ensure_wait;
+  reach.TryEnsureHopReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  ensure_wait.PumpUntilDone(*harness_);
+  ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
+  EXPECT_EQ(*punch_calls, 1);
+  EXPECT_TRUE(hops_->Find(harness_->peer_id_b, kMediaRelayProtocolId).has_value())
+      << "circuit fallback must Install media_relay hop after punch window expiry";
+  // resolved_multiaddr may be empty on loopback; SoftMigrate dialability is the hop Install.
 }
 
 } // namespace

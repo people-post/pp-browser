@@ -75,10 +75,13 @@ Idle background reachability still uses **outbound dial + circuit** (and later p
 
 ## H007 — No app-layer hop candidate exchange as product path
 
-**Status:** Accepted (updated 2026-09-04 — Amp stack wording)  
+**Status:** Accepted (updated 2026-09-21 — narrow R1 announce carve-out)  
 **Date:** 2026-07-31  
-**Decision:** Do **not** ship or reintroduce **`call_hop_addrs`** (or similar call-signaling multiaddr gather) as the durable hop reachability design. Uncommitted prototypes were removed. Temporary dogfood hacks need an explicit ADR if ever revived. Candidate exchange for punch belongs **in-stack** via introducer Sessions ([H009](#h009--amp-coordinated-punch-acp)), not call signaling.  
-**Rationale:** Duplicates what addr book / punch / circuit should do; fights “reachability inside Amp mesh.”  
+**Decision:** Do **not** ship or reintroduce **`call_hop_addrs`** (or similar call-signaling **multiaddr / candidate-list** gather) as the durable hop reachability design. Uncommitted prototypes were removed. Temporary dogfood hacks need an explicit ADR if ever revived. Candidate exchange for punch belongs **in-stack** via introducer Sessions ([H009](#h009--amp-coordinated-punch-acp)), not call signaling.
+
+**Narrow carve-out ([H011](#h011--circuit-r1-rendezvous-dialer-authoritative) L3.1c):** After the dialer has already chosen an immediate relay, an optional additive **single PeerId** field (`circuit_r1`) may confirm that choice so the answerer can late-reserve. **Forbidden:** lists of candidates, observed UDP endpoints, STUN, or pre-choice hop shopping over call control.
+
+**Rationale:** Duplicates what addr book / punch / circuit should do; fights “reachability inside Amp mesh.” One post-ack PeerId is rendezvous confirm, not gather.  
 **Alternatives:** Keep thin gather until L1 (rejected — prefer document gap + stack work).
 
 ---
@@ -159,3 +162,25 @@ CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~16s with settle s
 **Alternatives:** Fixed 20s×N (rejected — dogfood bridge timeout stack); parallel multi-bridge (rejected — UDP path AV); truncate candidate list only without remaining clamp (rejected — still burns on slow misses).
 
 **Code:** `CircuitHopAttemptBudget.h`, `AmpCircuitHopReach::EnsureViaCircuitAsync`.
+
+---
+
+## H011 — Circuit R1 rendezvous (dialer-authoritative)
+
+**Status:** Accepted — **L3.1a–d landed** (shared surface, sticky park, `call_circuit_r1`, hard-w5 STACK)  
+**Date:** 2026-09-21  
+**Decision:** Immediate circuit relay (**R1**) for nested call-media is a **dialer-authoritative rendezvous**, not bilateral hop consensus.
+
+| Party | Role |
+|-------|------|
+| **Dialer** | Sole selector of R1 (H010 ranked queue + budget) |
+| **Answerer** | Parks/reserves a **shared rendezvous surface** covering the dialer’s likely top-K; punch-only on first pass (no reverse StartBridge) |
+| **Optional confirm** | After StartBridge ack, dialer may announce **one** `circuit_r1` PeerId so answerer can late-reserve ([H007](#h007--no-app-layer-hop-candidate-exchange-as-product-path) carve-out) |
+
+**Shared surface:** Both sides derive the same ordered PeerId list from mesh eligibility (`BuildCircuitHopList` / dialability filter). Answerer must not use a seeds-only subset that the dialer can walk past. Coverage: all Connected members of the surface, plus enough members to cover **K = `kCircuitMaxStartBridgeAttempts`**.
+
+**Does not change:** H010 spend limits; H008 multi-hop path behind R1; V023 SoftMigrate `media_relay` B pick; session ports (`ensure_circuit_ready` / `await_circuit_ready` stay hop-PeerId-free).
+
+**Rationale:** Independent selection caused dual-NAT not-reg / bridge-timeout races (dialer hop2 vs answerer park hop1). Reserve-all and sticky retry are mitigations; ownership of “final R1” was undefined. Dialer-as-chooser matches H008/N024 “consumer picks one immediate relay.”  
+**Alternatives:** Bilateral vote / ICE-style pairs (rejected — H007, complexity); answerer picks and dialer follows (rejected — ServeDial is dialer-driven StartBridge); parallel StartBridge (rejected — H010); exhaustive search (rejected — H010); rely forever on reserve-all luck (rejected — surface asymmetry remains).  
+**Spec:** [CIRCUIT_R1_RENDEZVOUS.md](CIRCUIT_R1_RENDEZVOUS.md). **Phase:** [L3.1](PHASES.md#l31--circuit-r1-rendezvous).

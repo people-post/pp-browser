@@ -17,6 +17,9 @@
 #include "domain/mesh/l4/call_media/CallMediaAmpTransport.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/host/MeshHost.h"
+#include "common/directory/MeshHopTypes.h"
+
+#include "foundation/runtime/DeferredSelf.h"
 
 #include <functional>
 #include <memory>
@@ -60,6 +63,11 @@ struct CallMediaPlaneDeps {
   /** Dial-book account: ↔ PeerId learning (CallSessionManager::NoteMeshPeerIdForRelay). */
   std::function<void(const std::string& account_identity, const std::string& peer_id)>
       note_mesh_peer_id_for_relay;
+  /**
+   * H011 L3.1c: after dialer StartBridge ack, announce chosen R1 PeerId to the call peer.
+   * Filled by CallStack → CallSessionManager::AnnounceCircuitR1.
+   */
+  std::function<void(const std::string& circuit_r1_peer_id)> announce_circuit_r1;
 };
 
 /** Args for one bridge bind; not retained on the plane after BindBridge returns. */
@@ -122,6 +130,11 @@ public:
   /** Connectivity: kick warm/reserve so this peer is ServeDial-reachable via org hops. */
   void EnsureCircuitReady() { ReserveOnBootstrapSeeds(); }
   /**
+   * H011 L3.1c: StartReserve a specific R1 PeerId (late park after dialer chose / announce).
+   * No-op when peer empty or circuit tunnel not started.
+   */
+  void PreferLateReserve(const std::string& relay_peer_id);
+  /**
    * Kick warm+reserve and invoke on_done(true) once any bootstrap/directory seed is Connected,
    * or on_done(false) at timeout (H010: answerer must be parkable before offerer StartBridge).
    */
@@ -159,14 +172,25 @@ private:
   static std::string PeerIdFromListenMultiaddr(const std::string& ma);
 
   std::vector<std::string> CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const;
+  /**
+   * H011 shared rendezvous surface: same BuildCircuitHopList as dialer StartBridge collect.
+   * `exclude_peer_id` drops the call target. Does not filter dialability (reserve registers MAs).
+   */
+  std::vector<MeshHopCandidate> BuildCircuitRendezvousCandidates(
+      const std::string& exclude_peer_id = {}) const;
   bool PeerLanConfirmed(const std::string& peer_id) const;
 
   void WarmBootstrapSeedSessionsOnIo();
+  /** H011: StartReserve over shared rendezvous surface (not seeds-only). */
   void ReserveOnBootstrapSeedsOnIo();
+  void PreferLateReserveOnIo(const std::string& relay_peer_id);
   bool AnyBootstrapSeedConnectedOnIo() const;
   /** True when every EffectiveBootstrapSeedPeerId is Connected (empty set → false). */
   bool AllBootstrapSeedsConnectedOnIo() const;
   std::vector<std::string> EffectiveBootstrapSeedPeerIds() const;
+
+  /** Bump so inflight StartReserve / park / announce cbs no-op after mesh stop (AbortInflight Finish race). */
+  void InvalidateAsyncOps();
 
   CallMediaPlaneDeps deps_;
   CallDialBook dial_book_;
@@ -176,6 +200,13 @@ private:
   std::unique_ptr<IMediaRelayClient> media_relay_client_;
   std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
   std::unique_ptr<ICircuitHopReach> circuit_hop_reach_;
+  /** H011 L3.1b/c: last chosen / announced R1 PeerId for park sticky + late-reserve. */
+  std::string chosen_circuit_r1_;
+  /**
+   * DeferredSelf ticket for async IO callbacks that capture `this` (StartReserve Finish, park assoc).
+   * AbortInflight may still PostIo on_finished — Invalidate before teardown so those cbs skip `this`.
+   */
+  DeferredSelf deferred_;
   std::unique_ptr<CallMediaAmpTransport> call_media_amp_;
   ICallMediaTransport* test_media_transport_ = nullptr;
   IDialRegistry* test_dial_ = nullptr;

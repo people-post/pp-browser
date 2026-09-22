@@ -138,6 +138,11 @@ public:
   }
   /** Abort in-flight EnsureViaCircuit / punch chains (ConnectFailed / Leave / teardown). */
   virtual void AbortPending() {}
+  /**
+   * H011 L3.1b: last relay PeerId that completed a successful StartBridge Install.
+   * Empty when none yet. Answerer park may prefer this as sticky.
+   */
+  virtual std::string LastGoodRelayPeerKey() const { return {}; }
 };
 
 /** Amp-only dial registry (PeerLinkManager + AmpCircuitHopRegistry). */

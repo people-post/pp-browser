@@ -424,7 +424,6 @@ TEST_F(CallUiBackendStackTest, StartCallAndLeaveViaBackend) {
 
   auto started = ui_->StartCall(thread.id, false, {"account:peer"});
   ASSERT_TRUE(started) << started.error().message;
-  ui_->Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
   EXPECT_EQ(ui_->Phase(), CallPhase::OutboundCalling);
   EXPECT_TRUE(stack_->WantEphemeralListen());
 

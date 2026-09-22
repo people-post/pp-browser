@@ -58,7 +58,8 @@ struct CallMediaDirectCallbacks {
   std::function<void()> on_connected;
   std::function<void(const std::vector<uint8_t>& opus_payload)> on_audio;
   /** V034: all channels (0=Opus, 1=H264). When set, preferred over on_audio. */
-  std::function<void(uint8_t channel, const std::vector<uint8_t>& payload)> on_media;
+  /** seq/mark come from the wire frame; the playout jitter buffer orders and de-dupes on seq (B20). */
+  std::function<void(uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload)> on_media;
   std::function<void(const std::string& error)> on_failed;
 };
 

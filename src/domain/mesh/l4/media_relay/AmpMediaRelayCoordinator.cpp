@@ -7,6 +7,7 @@
 #include "domain/mesh/l4/media_relay/MediaRelayLogic.h"
 #include "common/ValueJson.h"
 #include "domain/mesh/shared/AmpChannelOpen.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 #include <algorithm>
 #include <atomic>
@@ -70,6 +71,10 @@ struct AmpMediaRelayCoordinator::Impl {
   std::atomic<bool> serve_inbound{true};
   std::atomic<uint64_t> next_id{1};
   pp::amp::MeshRuntime::IoTickId io_tick_id = 0;
+  /** PostIo(raw Impl*) — Invalidate on AbortInflight (Stop calls Abort). */
+  DeferredSelf deferred;
+  /** IoTick / protocol handler — Invalidate only on Stop (survives mid-life Abort). */
+  DeferredSelf lifetime;
 
   struct AmpHostParticipant {
     std::string peer_id;
@@ -129,9 +134,11 @@ struct AmpMediaRelayCoordinator::Impl {
   std::string local_hop_peer_id_;
 
   void PostIo(std::function<void()> task) {
-    if (runtime && task) {
-      runtime->PostToIo(std::move(task));
+    if (!runtime || !task) {
+      return;
     }
+    deferred.Post([rt = runtime](std::function<void()> t) { rt->PostToIo(std::move(t)); },
+                  std::move(task));
   }
 
   Session* Find(const MediaRelaySessionId id) {
@@ -1055,11 +1062,15 @@ void AmpMediaRelayCoordinator::Start() {
     return;
   }
   impl_->stopped.store(false, std::memory_order_release);
-  impl_->io_tick_id = runtime_.AddIoTick([impl = impl_.get()] { impl->TickDeadlines(); });
+  impl_->io_tick_id = runtime_.AddIoTick(impl_->lifetime.Bind([impl = impl_.get()] {
+    impl->TickDeadlines();
+  }));
   runtime_.Links().SetProtocolHandler(
       kMediaRelayProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
-                           const uint32_t ch) { impl->HandleInboundChannel(remote_peer_id, ch); });
+      impl_->lifetime.Bind([impl = impl_.get()](pp::amp::LinkHandle /*handle*/,
+                                                const std::string& remote_peer_id, const uint32_t ch) {
+        impl->HandleInboundChannel(remote_peer_id, ch);
+      }));
 }
 
 void AmpMediaRelayCoordinator::Stop() {
@@ -1069,6 +1080,7 @@ void AmpMediaRelayCoordinator::Stop() {
   impl_->io_tick_id = 0;
   runtime_.Links().RemoveProtocolHandler(kMediaRelayProtocolId);
   AbortInflight();
+  impl_->lifetime.Invalidate();
 }
 
 bool AmpMediaRelayCoordinator::IsStarted() const {
@@ -1133,6 +1145,8 @@ void AmpMediaRelayCoordinator::AbortInflight() {
   for (auto& cb : attach_cbs) {
     cb(Error("media-relay aborted"));
   }
+  // Poison already-queued PostIo(self) work; new posts after this capture a fresh snap.
+  impl_->deferred.Invalidate();
 }
 
 MediaRelaySessionId AmpMediaRelayCoordinator::StartQuote(const std::string& hop_peer_key,

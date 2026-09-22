@@ -36,6 +36,24 @@
   <false/>
   <key>UIViewControllerBasedStatusBarAppearance</key>
   <true/>
+  <!-- SDL 3.4+ UIScene lifecycle (B11). Matches SDLUIKitSceneDelegate. -->
+  <key>UIApplicationSceneManifest</key>
+  <dict>
+    <key>UIApplicationSupportsMultipleScenes</key>
+    <false/>
+    <key>UISceneConfigurations</key>
+    <dict>
+      <key>UIWindowSceneSessionRoleApplication</key>
+      <array>
+        <dict>
+          <key>UISceneConfigurationName</key>
+          <string>SDLSceneConfiguration</string>
+          <key>UISceneDelegateClassName</key>
+          <string>SDLUIKitSceneDelegate</string>
+        </dict>
+      </array>
+    </dict>
+  </dict>
   <key>UILaunchScreen</key>
   <dict/>
   <key>UIRequiredDeviceCapabilities</key>
