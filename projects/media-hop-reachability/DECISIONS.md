@@ -124,12 +124,13 @@ Idle background reachability still uses **outbound dial + circuit** (and later p
 
 | Knob | Value | Notes |
 |------|-------|--------|
-| Envelope | **10s** (`kCircuitReachEnvelopeMs`) | Wall clock for the whole EnsureViaCircuit chain |
-| Per StartBridge | **≤4s**, clamped by remaining − nest slack | `CircuitStartBridgeTimeoutMs` |
-| Max StartBridge calls | **3** | Skips (`!endpoint`, undialable Preferred) do **not** count |
+| Envelope | **14s** (`kCircuitReachEnvelopeMs`) | Covers answerer seed park (~12s) + nest Establish |
+| Per StartBridge | **≤4s**, nest slack held until last useful slice | `CircuitStartBridgeTimeoutMs` |
+| Max StartBridge calls | **4** | Skips (`!endpoint`, undialable Preferred) do **not** count |
 | Nest Establish | **≤8s**, clamped by remaining | After ack only |
 | Order | Sticky last-good → Connected → rest | `OrderCircuitRelayAttempts` |
-| Sticky retry | **Once** on other fast-fail (incl. WaitAck `bridge timed out`); **repeat** on `not registered` (immediate) | Hop event-waits far leg; dialer does not sleep before sticky not-reg retry |
+| Same-relay not-reg | **Repeat** until max bridges (no sticky required) | First dual-NAT often has empty sticky (dogfood bb3fbfab) |
+| Sticky retry | **Once** on other fast-fail (incl. WaitAck `bridge timed out`) | Hop event-waits far leg |
 | Hop ServeDial far-leg wait | **Event-driven** (PeerConnected / reserve / deadline ≤6s) | No Tick poll-resume; deadline is a timer event; **lost-wakeup recheck** after arm |
 | Client seed park | **Event-driven** (PeerConnected on bootstrap PeerIds + deadline) | `EnsureBootstrapSeedParkedAsync` — no 250ms poll |
 | Parallel StartBridge | **Forbidden** on first connect | Serial only (dogfood ADP path races) |
@@ -141,7 +142,7 @@ Answerer remains punch-only + reserve (no reverse StartBridge on first pass). Us
 
 **ServeDial far-leg wait (event-driven):** When peer-id-only ServeDial has no Connected far leg, hop **arms a waiter** and returns. Resume on Amp `PeerConnectedListener` (PeerId), on live `op=reserve`, or on **deadline event** (`kCircuitServeDialFarLegWaitMs`, capped by tunnel deadline − **750ms** slack). After arm, **re-check** Connected (lost-wakeup between Count and arm). Do **not** poll-retry `BeginServe` from IoTick. Amp: `PeerLinkManager::AddPeerConnectedListener` (multi-listener). Any ServeDial tunnel deadline must `fail_near` (ack) before TearDown — never leave dialer WaitAck to invent `bridge timed out`.
 
-**Client seed park (event-driven):** `EnsureBootstrapSeedParkedAsync` finishes on PeerConnected for a bootstrap/directory PeerId (or deadline). No 250ms poll. Dialer sticky not-reg retries immediately (hop already event-waits).
+**Client seed park (event-driven):** `EnsureBootstrapSeedParkedAsync` finishes on PeerConnected for a bootstrap/directory PeerId (or deadline). No 250ms poll. Dialer **same-relay** not-reg retries immediately (hop already event-waits); sticky not required.
 
 **Early circuit-ready (Ringing + Accept gate):** Offerer kicks ready on `StartCall`; answerer on inbound invite; `AcceptInvite` may **await** ready (up to 12s) before `CallAccept`. Hop event wait is the primary race absorber (needs Brief rebuild); Accept await is a thin product backstop.
 
@@ -151,7 +152,7 @@ Answerer remains punch-only + reserve (no reverse StartBridge on first pass). Us
 
 **Single policy home:** [`CircuitServeDialPolicy.h`](../../src/domain/mesh/l4/circuit/CircuitServeDialPolicy.h) — shared by hop `BeginServe` / `NormalizeAmpCircuitTarget` and CallMediaBridge seed-park skip (same dual-NAT rule, one header).
 
-CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~12s with settle slack), not N×20s.
+CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~16s with settle slack), not N×20s.
 
 **Rationale:** Directory + DHT + seeds can yield many dialable PeerIds; full WaitAck per candidate blows the connecting window even when ranking is correct. Warm/reserve + short tries beat more candidates.
 
