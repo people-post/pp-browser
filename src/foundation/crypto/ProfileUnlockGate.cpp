@@ -270,6 +270,17 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
                            /*clear_default_pin=*/false);
     return;
   }
+#ifdef PP_BROWSER_DEV_PIN
+  // Local dev builds only (-DPP_BROWSER_DEV_PIN=…): same deferred path as a typed PIN, no prompt.
+  // Deliberately not the Bootstrap-time unlock (--pin / PP_BROWSER_PIN): unlocking before the
+  // first present starts the mesh ahead of the UI and hangs iOS before the first frame.
+  if (PP_BROWSER_DEV_PIN[0] != '\0') {
+    StartupMark("deferred_dev_pin_unlock_begin");
+    RunUnlockAndReadyAsync(std::string(PP_BROWSER_DEV_PIN), /*set_default_pin=*/false,
+                           /*clear_default_pin=*/false);
+    return;
+  }
+#endif
 
   RequestShowUnlock(nullptr);
 }
