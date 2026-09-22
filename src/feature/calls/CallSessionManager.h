@@ -66,6 +66,7 @@ struct CallSessionLifecyclePorts {
   std::function<const char*()> status_name;
   std::function<const char*()> armed_planner_name;
   std::function<void(const std::string& call_id)> set_direct_connecting;
+  std::function<void(const std::string& call_id)> apply_outbound_started;
   std::function<std::string()> accepting_call_id;
   std::function<std::string()> active_call_id;
   std::function<void(const std::string& call_id)> apply_remote_ended;

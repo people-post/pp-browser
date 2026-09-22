@@ -840,7 +840,6 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
     return false;
   }
   active_call_id_ = started->call_id;
-  backend->Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
   RefreshPendingRing();
   return true;
 }

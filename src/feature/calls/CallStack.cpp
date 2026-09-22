@@ -638,6 +638,9 @@ CallSessionLifecyclePorts CallStack::MakeSessionLifecyclePorts() const {
   ports.set_direct_connecting = [lifecycle](const std::string& call_id) {
     lifecycle->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
   };
+  ports.apply_outbound_started = [lifecycle](const std::string& call_id) {
+    lifecycle->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  };
   ports.accepting_call_id = [lifecycle]() { return lifecycle->AcceptingCallId(); };
   ports.active_call_id = [lifecycle]() { return lifecycle->ActiveCallId(); };
   ports.apply_remote_ended = [lifecycle](const std::string& call_id) {

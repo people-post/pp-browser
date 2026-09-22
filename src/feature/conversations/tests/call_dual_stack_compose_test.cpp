@@ -324,7 +324,6 @@ protected:
       return {};
     }
     const std::string call_id = started->call_id;
-    offer_.ui->Apply(CallLifecycleEvent::OutboundStarted, call_id);
 
     auto key = offer_.stack->MediaKeys()->LoadEpochKey(call_id, 1);
     EXPECT_TRUE(key && key->has_value());
@@ -479,7 +478,6 @@ TEST_F(CallDualStackComposeTest, OfferInviteAnswerDeclineClearsOfferer) {
   auto started = offer_.ui->StartCall(thread.id, false, {answer_.local_identity});
   ASSERT_TRUE(started) << started.error().message;
   const std::string call_id = started->call_id;
-  offer_.ui->Apply(CallLifecycleEvent::OutboundStarted, call_id);
   EXPECT_EQ(offer_.ui->Phase(), CallPhase::OutboundCalling);
 
   PumpWire();
@@ -528,7 +526,6 @@ TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
     ASSERT_TRUE(offer_active && offer_active->has_value());
     EXPECT_EQ((*offer_active)->call_id, call_b);
   }
-  offer_.ui->Apply(CallLifecycleEvent::OutboundStarted, call_b);
 
   auto key_b = offer_.stack->MediaKeys()->LoadEpochKey(call_b, 1);
   ASSERT_TRUE(key_b && key_b->has_value());

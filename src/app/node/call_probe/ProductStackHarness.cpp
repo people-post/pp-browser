@@ -527,7 +527,6 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::string& peer_account, i
     return started.error();
   }
   const std::string call_id = started->call_id;
-  ui_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
   std::cout << "ok  product-stack StartCall call_id=" << call_id << " peer=" << peer_account << "\n";
 
   const bool reached = PumpUntil(

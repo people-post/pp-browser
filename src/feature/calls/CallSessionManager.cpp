@@ -194,6 +194,11 @@ void CallSessionManager::BindWorkflowHostPorts() {
       lifecycle_ports_.set_direct_connecting(call_id);
     }
   };
+  ports.chrome.note_outbound_started = [this](const std::string& call_id) {
+    if (lifecycle_ports_.apply_outbound_started) {
+      lifecycle_ports_.apply_outbound_started(call_id);
+    }
+  };
   ports.chrome.accepting_call_id = [this]() {
     return lifecycle_ports_.accepting_call_id ? lifecycle_ports_.accepting_call_id() : std::string{};
   };

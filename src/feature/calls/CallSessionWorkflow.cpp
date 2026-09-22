@@ -176,6 +176,11 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
     return saved.error();
   }
 
+  // Arm chrome before Invite / circuit warm so Accept cannot race past OutboundStarted.
+  if (host_.chrome.note_outbound_started) {
+    host_.chrome.note_outbound_started(call_id);
+  }
+
   // Offerer: kick circuit readiness early so StartBridge near-leg is warm by Accept.
   if (host_.reach.ensure_circuit_ready) {
     host_.reach.ensure_circuit_ready();
