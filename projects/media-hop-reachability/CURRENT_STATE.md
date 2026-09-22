@@ -2,7 +2,7 @@
 
 > **2026-09:** Product mesh is Amp-only; hop reachability uses `AmpCircuitHopReach` + `MeshHost::CircuitDeps()`. Hole punch planned as **Amp Coordinated Punch** ([HOLE_PUNCH.md](HOLE_PUNCH.md), H009) — not libp2p DCUtR. See [MESH.md](../../docs/architecture/MESH.md).
 
-**Last updated:** 2026-09-21 (H010 not-reg same-relay + 14s envelope)
+**Last updated:** 2026-09-21 (H010 multi-seed park + answerer skip Preferred)
 
 ## Direction
 

@@ -164,6 +164,8 @@ private:
   void WarmBootstrapSeedSessionsOnIo();
   void ReserveOnBootstrapSeedsOnIo();
   bool AnyBootstrapSeedConnectedOnIo() const;
+  /** True when every EffectiveBootstrapSeedPeerId is Connected (empty set → false). */
+  bool AllBootstrapSeedsConnectedOnIo() const;
   std::vector<std::string> EffectiveBootstrapSeedPeerIds() const;
 
   CallMediaPlaneDeps deps_;

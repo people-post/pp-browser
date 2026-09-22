@@ -779,11 +779,17 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     }
     if (!*assoc_started && dial_dialable() && !wait_for_circuit) {
       // H010: after seed park, skip private Preferred dial (CircuitServeDialPolicy).
-      if (CallMediaShouldSkipPreferredDialAfterSeedPark(*seed_park_ok, dial_public_direct())) {
+      // Answerer dual-NAT: never dial private Preferred — that UDP path drops the Brief
+      // PeerLink while offerer ServeDial needs us Connected (dogfood ae4900eb / 39412f).
+      const bool answerer_skip_private =
+          !session_offerer_ && circuit_reach_ && !dial_public_direct();
+      if (answerer_skip_private ||
+          CallMediaShouldSkipPreferredDialAfterSeedPark(*seed_park_ok, dial_public_direct())) {
         *assoc_started = true;
         *assoc_done = true;
-        log().info << "CallMedia skip EnsureAssociation private Preferred (seed parked) peer="
-                   << peer_identity << " reach_key=" << reach_key;
+        log().info << "CallMedia skip EnsureAssociation private Preferred"
+                   << (answerer_skip_private ? " (answerer)" : " (seed parked)")
+                   << " peer=" << peer_identity << " reach_key=" << reach_key;
       } else {
         *assoc_started = true;
         log().info << "CallMedia EnsureAssociation start peer=" << peer_identity
