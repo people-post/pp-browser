@@ -301,6 +301,37 @@ struct AmpPunchCoordinator::Impl {
   /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
   DeferredSelf deferred;
   std::vector<std::string>* local_addrs = nullptr;
+  /** Work that must not run under ChannelMux data/terminal callbacks (Windows SEH). */
+  std::vector<std::function<void()>> off_mux_work_;
+  bool draining_off_mux_ = false;
+
+  void ScheduleOffMux(std::function<void()> fn) {
+    if (!fn) {
+      return;
+    }
+    if (post_io) {
+      post_io(std::move(fn));
+      return;
+    }
+    off_mux_work_.push_back(std::move(fn));
+  }
+
+  void DrainOffMux() {
+    if (draining_off_mux_) {
+      return;
+    }
+    draining_off_mux_ = true;
+    while (!off_mux_work_.empty()) {
+      auto batch = std::move(off_mux_work_);
+      off_mux_work_.clear();
+      for (auto& fn : batch) {
+        if (fn) {
+          fn();
+        }
+      }
+    }
+    draining_off_mux_ = false;
+  }
 
 
   void FailSession(const std::shared_ptr<pp::amp::ChannelSession>& session, const std::string& epoch_id,
@@ -543,35 +574,42 @@ struct AmpPunchCoordinator::Impl {
                           return;
                         }
                         *phase = "bursting";
-                        // L3.25b: book remote candidate addrs under PeerId before/without burst win.
-                        for (const std::string& ma : SanitizePunchAddrs(sync->peer_addrs)) {
-                          if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
-                            if (!parsed->peer_id.empty()) {
-                              (void)links->RegisterEndpoint(parsed->peer_id, ma);
-                            }
+                        // Never BurstDial+Pump under the mux data callback — nested Drive/DropLink
+                        // UAFs on Windows (SEH 0xc0000005 in SyncWindowExpiry).
+                        ScheduleOffMux([this, session, sync = *sync, punch_remote_peer_id]() mutable {
+                          if (stopped.load(std::memory_order_acquire) || !links) {
+                            return;
                           }
-                        }
-                        auto burst = BurstDialCandidates(*links, io_pump, sync->peer_addrs, sync->window_ms);
-                        std::string remote_id = *punch_remote_peer_id;
-                        if (remote_id.empty()) {
-                          for (const std::string& ma : sync->peer_addrs) {
+                          for (const std::string& ma : SanitizePunchAddrs(sync.peer_addrs)) {
                             if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
-                              remote_id = parsed->peer_id;
-                              break;
+                              if (!parsed->peer_id.empty()) {
+                                (void)links->RegisterEndpoint(parsed->peer_id, ma);
+                              }
                             }
                           }
-                        }
-                        PublishIfPunchConnected(*links, remote_id, burst);
-                        PunchResult result;
-                        result.epoch_id = sync->epoch_id;
-                        result.ok = burst.ok;
-                        result.winner_multiaddr = burst.dialed;
-                        result.error = burst.ok ? "" : burst.error;
-                        (void)session->EnqueueOutbound(JsonToBody(EncodePunchResult(result)));
-                        if (io_pump) {
-                          io_pump();
-                        }
-                        session->Close();
+                          auto burst =
+                              BurstDialCandidates(*links, io_pump, sync.peer_addrs, sync.window_ms);
+                          std::string remote_id = *punch_remote_peer_id;
+                          if (remote_id.empty()) {
+                            for (const std::string& ma : sync.peer_addrs) {
+                              if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
+                                remote_id = parsed->peer_id;
+                                break;
+                              }
+                            }
+                          }
+                          PublishIfPunchConnected(*links, remote_id, burst);
+                          PunchResult result;
+                          result.epoch_id = sync.epoch_id;
+                          result.ok = burst.ok;
+                          result.winner_multiaddr = burst.dialed;
+                          result.error = burst.ok ? "" : burst.error;
+                          (void)session->EnqueueOutbound(JsonToBody(EncodePunchResult(result)));
+                          if (io_pump) {
+                            io_pump();
+                          }
+                          session->Close();
+                        });
                         return;
                       }
                     });
@@ -585,10 +623,21 @@ AmpPunchCoordinator::AmpPunchCoordinator(pp::amp::PeerLinkManager& links, IoPump
     : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
       post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
   impl_->links = &links_;
-  impl_->io_pump = io_pump_;
   impl_->post_worker = post_worker_;
   impl_->post_io = post_io_;
   impl_->local_addrs = &local_addrs_;
+  // Drain ScheduleOffMux work after each pump so BurstDial never runs under a mux callback
+  // when IoPost is unset (unit-test harnesses).
+  if (io_pump_) {
+    IoPump user_pump = std::move(io_pump_);
+    io_pump_ = [impl = impl_.get(), user_pump = std::move(user_pump)]() {
+      if (user_pump) {
+        user_pump();
+      }
+      impl->DrainOffMux();
+    };
+  }
+  impl_->io_pump = io_pump_;
 }
 
 AmpPunchCoordinator::~AmpPunchCoordinator() { Stop(); }
@@ -618,6 +667,7 @@ void AmpPunchCoordinator::Start() {
 void AmpPunchCoordinator::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
+  impl_->off_mux_work_.clear();
   links_.RemoveProtocolHandler(kAmpPunchProtocolId);
   impl_->deferred.Invalidate();
 }
@@ -789,28 +839,33 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                                   Failure::Of(Err::ProtocolError, "punch: invalid sync frame")));
                               return false;
                             }
-                            for (const std::string& ma : SanitizePunchAddrs(sync->peer_addrs)) {
-                              if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
-                                if (!parsed->peer_id.empty()) {
-                                  (void)links_.RegisterEndpoint(parsed->peer_id, ma);
-                                }
-                              }
-                            }
-                            auto burst =
-                                BurstDialCandidates(links_, io_pump_, sync->peer_addrs, sync->window_ms);
-                            PublishIfPunchConnected(links_, target_peer_id, burst);
-                            PunchResult result;
-                            result.epoch_id = sync->epoch_id;
-                            result.ok = burst.ok;
-                            result.winner_multiaddr = burst.dialed;
-                            result.error = burst.ok ? "" : burst.error;
-                            if (burst.ok) {
-                              (*finish)(result);
-                            } else {
-                              (*finish)(PunchRoe::error(Failure::Of(
-                                  Err::PunchFailed, burst.error.empty() ? "punch burst failed" : burst.error)));
-                            }
-                            return false;
+                            // Defer BurstDial+Pump off the mux callback (Windows SEH).
+                            impl_->ScheduleOffMux(
+                                [this, finish, target_peer_id, sync = *sync]() mutable {
+                                  for (const std::string& ma : SanitizePunchAddrs(sync.peer_addrs)) {
+                                    if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
+                                      if (!parsed->peer_id.empty()) {
+                                        (void)links_.RegisterEndpoint(parsed->peer_id, ma);
+                                      }
+                                    }
+                                  }
+                                  auto burst = BurstDialCandidates(links_, io_pump_, sync.peer_addrs,
+                                                                   sync.window_ms);
+                                  PublishIfPunchConnected(links_, target_peer_id, burst);
+                                  PunchResult result;
+                                  result.epoch_id = sync.epoch_id;
+                                  result.ok = burst.ok;
+                                  result.winner_multiaddr = burst.dialed;
+                                  result.error = burst.ok ? "" : burst.error;
+                                  if (burst.ok) {
+                                    (*finish)(result);
+                                  } else {
+                                    (*finish)(PunchRoe::error(Failure::Of(
+                                        Err::PunchFailed,
+                                        burst.error.empty() ? "punch burst failed" : burst.error)));
+                                  }
+                                });
+                            return true; // keep open until deferred finish closes
                           }
                           return true;
                         });
