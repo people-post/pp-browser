@@ -123,6 +123,11 @@ public:
   /** Connectivity: kick warm/reserve so this peer is ServeDial-reachable via org hops. */
   void EnsureCircuitReady() { ReserveOnBootstrapSeeds(); }
   /**
+   * H011 L3.1c: StartReserve a specific R1 PeerId (late park after dialer chose / announce).
+   * No-op when peer empty or circuit tunnel not started.
+   */
+  void PreferLateReserve(const std::string& relay_peer_id);
+  /**
    * Kick warm+reserve and invoke on_done(true) once any bootstrap/directory seed is Connected,
    * or on_done(false) at timeout (H010: answerer must be parkable before offerer StartBridge).
    */
@@ -171,6 +176,7 @@ private:
   void WarmBootstrapSeedSessionsOnIo();
   /** H011: StartReserve over shared rendezvous surface (not seeds-only). */
   void ReserveOnBootstrapSeedsOnIo();
+  void PreferLateReserveOnIo(const std::string& relay_peer_id);
   bool AnyBootstrapSeedConnectedOnIo() const;
   std::vector<std::string> EffectiveBootstrapSeedPeerIds() const;
 
@@ -182,6 +188,8 @@ private:
   std::unique_ptr<IMediaRelayClient> media_relay_client_;
   std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
   std::unique_ptr<ICircuitHopReach> circuit_hop_reach_;
+  /** H011 L3.1b/c: last chosen / announced R1 PeerId for park sticky + late-reserve. */
+  std::string chosen_circuit_r1_;
   std::unique_ptr<CallMediaAmpTransport> call_media_amp_;
   ICallMediaTransport* test_media_transport_ = nullptr;
   IDialRegistry* test_dial_ = nullptr;
