@@ -93,6 +93,7 @@ When a parent must post work that captures raw `this` / `Impl*` onto IO (or anot
 |-------|--------|
 | Amp L4 coordinators (`CircuitTunnelCoordinator`, `AmpMediaRelayCoordinator`, `CallMediaLegCoordinator`) | `Impl::PostIo` wraps `DeferredSelf::Post`; Invalidate on AbortInflight / Stop |
 | Amp protocols (`AmpPunchCoordinator`, `AmpDialBackProtocol`, `AmpDhtProtocol`, `AmpDirectoryProtocol`) | Protocol-handler `Bind`; Invalidate on Stop |
+| Conversation Amp transports (`AmpDirectChatTransport`, `AmpBroadcastTransport`, `AmpChatHistoryTransport`, `AmpPeerAnnounceTransport`, `AmpChatBlobTransport`) | Protocol-handler `Bind`; Invalidate on Stop |
 | `CallMediaPlane` | Reserve / park / OnRelayChosen cbs; Invalidate on Clear / PrepareForMeshStop |
 | `AmpCircuitHopReach` | AbortPending Invalidates; EnsureViaCircuit / punch cbs check Alive |
 | `CallLifecycle` | ClearBinding Invalidates; worker/UI Accept/Decline/Leave replies check Alive |

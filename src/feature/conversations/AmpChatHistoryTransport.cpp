@@ -15,6 +15,7 @@
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 namespace pbr {
 
@@ -61,6 +62,8 @@ struct AmpChatHistoryTransport::Impl {
   IoPost post_io;
   std::atomic<bool> stopped{false};
 
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
+  DeferredSelf deferred;
 
   void ServeRequest(std::shared_ptr<pp::amp::ChannelSession> session, std::vector<uint8_t> body) {
     RunWorker(post_worker, [this, session, body = std::move(body)]() mutable {
@@ -140,16 +143,18 @@ void AmpChatHistoryTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kChatHistoryProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
-                           const uint32_t channel_id) {
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle /*handle*/,
+                                                const std::string& remote_peer_id,
+                                                const uint32_t channel_id) {
         impl->HandleInboundChannel(remote_peer_id, channel_id);
-      });
+      }));
 }
 
 void AmpChatHistoryTransport::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   links_.RemoveProtocolHandler(kChatHistoryProtocolId);
+  impl_->deferred.Invalidate();
 }
 
 void AmpChatHistoryTransport::RegisterPeerEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr) {

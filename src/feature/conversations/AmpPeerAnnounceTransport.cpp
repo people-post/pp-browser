@@ -20,6 +20,7 @@
 
 #include "common/PbrCompat.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 namespace pbr {
 namespace {
@@ -56,6 +57,8 @@ struct AmpPeerAnnounceTransport::Impl {
   OnTipIngested on_tip_ingested;
   std::atomic<bool> stopped{false};
 
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
+  DeferredSelf deferred;
 
   std::optional<std::vector<uint8_t>> ResolveKey(const std::string& peer_id) {
     ResolvePublisherKey resolver;
@@ -174,16 +177,18 @@ void AmpPeerAnnounceTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kRpcPeerAnnounceProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
-                           const uint32_t channel_id) {
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle /*handle*/,
+                                                const std::string& remote_peer_id,
+                                                const uint32_t channel_id) {
         impl->HandleInboundChannel(remote_peer_id, channel_id);
-      });
+      }));
 }
 
 void AmpPeerAnnounceTransport::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   links_.RemoveProtocolHandler(kRpcPeerAnnounceProtocolId);
+  impl_->deferred.Invalidate();
 }
 
 void AmpPeerAnnounceTransport::SetPublisherKeyResolver(ResolvePublisherKey resolve_key) {

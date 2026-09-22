@@ -6,6 +6,7 @@
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/LinkIdentity.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 #include <atomic>
 #include <chrono>
@@ -49,6 +50,8 @@ struct AmpDirectChatTransport::Impl {
   InboundHandler inbound;
   std::atomic<bool> stopped{false};
 
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
+  DeferredSelf deferred;
   void HandleInboundChannel(const std::string& remote_peer_id, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire) || !links || remote_peer_id.empty()) {
       return;
@@ -120,16 +123,18 @@ void AmpDirectChatTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kDirectChatProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
-                           const uint32_t channel_id) {
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle /*handle*/,
+                                                const std::string& remote_peer_id,
+                                                const uint32_t channel_id) {
         impl->HandleInboundChannel(remote_peer_id, channel_id);
-      });
+      }));
 }
 
 void AmpDirectChatTransport::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   links_.RemoveProtocolHandler(kDirectChatProtocolId);
+  impl_->deferred.Invalidate();
   std::lock_guard lock(impl_->handler_mutex);
   impl_->inbound = nullptr;
 }
