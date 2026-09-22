@@ -36,7 +36,7 @@ Implement **in Amp mesh** ([H001](DECISIONS.md#h001--separate-project-implementa
 Docs: [CIRCUIT_R1_RENDEZVOUS.md](CIRCUIT_R1_RENDEZVOUS.md), [H011](DECISIONS.md#h011--circuit-r1-rendezvous-dialer-authoritative). Completes single-hop meet when **multiple** dialable relays exist. **Before** multi-hop (L3.5); **parallel** to punch (L3.25).
 
 - [x] ADR + spec (H011, CIRCUIT_R1_RENDEZVOUS) — **done**
-- [ ] **L3.1a** — Shared `CircuitRendezvousSurface`; answerer reserves top-K + Connected (not seeds-only); dialer collect uses same builder
+- [x] **L3.1a** — Shared `BuildCircuitRendezvousCandidates` / `CircuitRendezvousPolicy`; answerer reserves Connected + cold surface (same `BuildCircuitHopList` as dialer); unit policy tests
 - [ ] **L3.1b** — Optional answerer prefer last-good R1 in reserve order (no wire)
 - [ ] **L3.1c** — Optional post-ack `circuit_r1` PeerId announce + late-reserve (H007 carve-out)
 - [ ] **L3.1d** — Compose + `hard-w5` STACK gates; H010 budget regressions green

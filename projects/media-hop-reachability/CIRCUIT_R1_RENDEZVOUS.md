@@ -216,11 +216,11 @@ optional<string> LastGoodCircuitR1(peer);  // L3.1b
 
 | Today | Target |
 |-------|--------|
-| `CollectDialableCircuitRelayIds` | Shared `CircuitRendezvousSurface` |
-| `ReserveOnBootstrapSeedsOnIo` (seeds-only) | Reserve shared surface top-K + Connected |
+| `CollectDialableCircuitRelayIds` | Shared via `BuildCircuitRendezvousCandidates` (**L3.1a**) |
+| `ReserveOnBootstrapSeedsOnIo` (seeds-only) | Reserves shared surface Connected + cold (**L3.1a**) |
 | `OrderCircuitRelayAttempts` (dialer sticky) | Unchanged; dialer-local |
-| `EnsureViaCircuitAsync` | Unchanged H010 loop; optionally `NoteChosenCircuitR1` on ack |
-| `ensure_circuit_ready` / `await_circuit_ready` | Same ports; stronger park semantics underneath |
+| `EnsureViaCircuitAsync` | Unchanged H010 loop; optionally `NoteChosenCircuitR1` on ack (L3.1c) |
+| `ensure_circuit_ready` / `await_circuit_ready` | Same ports; park uses shared surface underneath |
 
 ## Related
 

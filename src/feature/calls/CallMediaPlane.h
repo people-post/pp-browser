@@ -17,6 +17,7 @@
 #include "domain/mesh/l4/call_media/CallMediaAmpTransport.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/host/MeshHost.h"
+#include "common/directory/MeshHopTypes.h"
 
 #include <functional>
 #include <memory>
@@ -159,9 +160,16 @@ private:
   static std::string PeerIdFromListenMultiaddr(const std::string& ma);
 
   std::vector<std::string> CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const;
+  /**
+   * H011 shared rendezvous surface: same BuildCircuitHopList as dialer StartBridge collect.
+   * `exclude_peer_id` drops the call target. Does not filter dialability (reserve registers MAs).
+   */
+  std::vector<MeshHopCandidate> BuildCircuitRendezvousCandidates(
+      const std::string& exclude_peer_id = {}) const;
   bool PeerLanConfirmed(const std::string& peer_id) const;
 
   void WarmBootstrapSeedSessionsOnIo();
+  /** H011: StartReserve over shared rendezvous surface (not seeds-only). */
   void ReserveOnBootstrapSeedsOnIo();
   bool AnyBootstrapSeedConnectedOnIo() const;
   std::vector<std::string> EffectiveBootstrapSeedPeerIds() const;
