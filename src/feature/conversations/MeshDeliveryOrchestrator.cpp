@@ -455,7 +455,8 @@ void MeshDeliveryOrchestrator::RegisterContactDirectEndpoints(const Contact& con
   };
   const AmpDialLocalContext local_ctx = CollectAmpDialLocalContext();
   auto register_ranked = [&](const std::vector<std::string>& multiaddrs) {
-    // Same-subnet private LAN first (B15); register worst→best so Preferred keeps the best.
+    // Same-subnet private LAN first (B15). Worst→best register: Amp DialBook promotes each
+    // write to Preferred while keeping prior candidates for short-timeout fallback (B15/B28).
     const auto ranked = RankAmpDialMultiaddrs(multiaddrs, local_ctx);
     for (auto it = ranked.rbegin(); it != ranked.rend(); ++it) {
       register_ma(target.peer_identity_value, *it);

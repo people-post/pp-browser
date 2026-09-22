@@ -20,8 +20,10 @@
 #include <algorithm>
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -301,20 +303,49 @@ void CallMediaPlane::TryColdPunchAsync(MeshHost* m, IChatPeerLinks* punch_links,
       seed_ids.push_back(hop.peer_id);
     }
   }
-  auto intro = PickPunchIntroducer(
-      contact_ids, seed_ids, target_peer_id,
-      [punch_links](const std::string& id) { return punch_links->GetLinkSnapshot(id).has_endpoint; },
-      [punch_links](const std::string& id) { return punch_links->IsConnected(id); });
-  if (!intro) {
-    on_done(Error("no punch introducer"));
-    return;
-  }
-  punch->TryColdPunchAsync(
-      *intro, target_peer_id, punch->LocalCandidateAddrs(),
-      [on_done = std::move(on_done)](AmpPunchCoordinator::PunchRoe punched) mutable {
-        CompletePunch(std::move(on_done), std::move(punched), "punch failed");
-      },
-      2000);
+  auto has_ep = [punch_links](const std::string& id) {
+    return punch_links->GetLinkSnapshot(id).has_endpoint;
+  };
+  auto is_conn = [punch_links](const std::string& id) { return punch_links->IsConnected(id); };
+
+  // B29: if the first introducer misses (target unknown / channel fail), try the next.
+  struct IntroAttempt {
+    std::unordered_set<std::string> tried;
+    std::function<void()> try_next;
+  };
+  auto attempt = std::make_shared<IntroAttempt>();
+  attempt->try_next = [attempt, punch, target_peer_id, contact_ids = std::move(contact_ids),
+                       seed_ids = std::move(seed_ids), has_ep, is_conn,
+                       on_done = std::move(on_done)]() mutable {
+    auto intro =
+        PickPunchIntroducer(contact_ids, seed_ids, target_peer_id, has_ep, is_conn, attempt->tried);
+    if (!intro) {
+      on_done(Error(attempt->tried.empty() ? "no punch introducer" : "punch introducers exhausted"));
+      return;
+    }
+    attempt->tried.insert(*intro);
+    punch->TryColdPunchAsync(
+        *intro, target_peer_id, punch->LocalCandidateAddrs(),
+        [attempt, on_done](AmpPunchCoordinator::PunchRoe punched) mutable {
+          if (punched && punched->ok) {
+            CompletePunch(std::move(on_done), std::move(punched), "punch failed");
+            return;
+          }
+          const std::string err =
+              !punched ? punched.error().message
+                       : (punched->error.empty() ? std::string("punch failed") : punched->error);
+          const bool try_another = err.find("unknown to introducer") != std::string::npos ||
+                                   err.find("introducer") != std::string::npos ||
+                                   err.find("not registered") != std::string::npos;
+          if (try_another) {
+            attempt->try_next();
+            return;
+          }
+          on_done(Error(err));
+        },
+        2000);
+  };
+  attempt->try_next();
 }
 
 void CallMediaPlane::TryUpgradePunchAsync(MeshHost* m, const std::string& introducer_peer_key,
@@ -501,8 +532,9 @@ void CallMediaPlane::RegisterCallPeerListenMultiaddrs(const std::string& identit
   }
   const std::vector<std::string> ranked = RankAmpDialMultiaddrs(multiaddrs, CollectAmpDialLocalContext());
   MergeDialBookListenAddrs(identity, ranked);
-  // PeerLinkManager::RegisterEndpoint keeps the last write — register worst→best so Preferred
-  // lands on the RankAmpDialMultiaddrs winner (same-subnet LAN when local context matches).
+  // Amp DialBook keeps a candidate list; RegisterEndpoint promotes to front (Preferred).
+  // Register worst→best so Preferred lands on the RankAmpDialMultiaddrs winner while
+  // earlier addrs remain as short-timeout fallbacks (B15/B28).
   for (auto it = ranked.rbegin(); it != ranked.rend(); ++it) {
     RegisterOneListenMultiaddr(identity, *it);
   }
