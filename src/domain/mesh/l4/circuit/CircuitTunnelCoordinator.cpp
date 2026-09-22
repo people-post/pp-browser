@@ -79,8 +79,10 @@ struct CircuitTunnelCoordinator::Impl {
   std::atomic<uint64_t> next_id{1};
   pp::amp::MeshRuntime::IoTickId io_tick_id = 0;
   pp::amp::PeerLinkManager::PeerConnectedListenerId peer_connected_listener_id_ = 0;
-  /** Guards PostIo(raw this) past Stop / AbortInflight — OWNERSHIP.md § DeferredSelf. */
+  /** PostIo(raw Impl*) — Invalidate on AbortInflight (Stop calls Abort). */
   DeferredSelf deferred;
+  /** IoTick / PeerConnected / protocol handler — Invalidate only on Stop (survives mid-life Abort). */
+  DeferredSelf lifetime;
 
   struct Tunnel {
     CircuitTunnelId id;
@@ -968,24 +970,25 @@ void CircuitTunnelCoordinator::Start() {
     return;
   }
   impl_->stopped.store(false, std::memory_order_release);
-  impl_->io_tick_id = runtime_.AddIoTick([impl = impl_.get()] { impl->TickDeadlines(); });
+  impl_->io_tick_id = runtime_.AddIoTick(impl_->lifetime.Bind([impl = impl_.get()] {
+    impl->TickDeadlines();
+  }));
   impl_->peer_connected_listener_id_ = runtime_.Links().AddPeerConnectedListener(
-      [impl = impl_.get()](const std::string& peer_id) {
-        if (impl) {
-          impl->NotifyFarLegReady(peer_id);
-        }
-      });
+      impl_->lifetime.Bind([impl = impl_.get()](const std::string& peer_id) {
+        impl->NotifyFarLegReady(peer_id);
+      }));
   runtime_.Links().SetProtocolHandler(
       kCircuitRelayProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle handle, const std::string& /*remote_peer_id*/,
-                           const uint32_t ch) {
+      impl_->lifetime.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
+                                                const std::string& /*remote_peer_id*/,
+                                                const uint32_t ch) {
         if (!impl->runtime) {
           return;
         }
         impl->runtime->Links().WithLiveLink(handle, [&](pp::amp::PeerLink& link) {
           impl->HandleInboundChannel(link, ch);
         });
-      });
+      }));
 }
 
 void CircuitTunnelCoordinator::Stop() {
@@ -1002,6 +1005,7 @@ void CircuitTunnelCoordinator::Stop() {
   }
   runtime_.Links().RemoveProtocolHandler(kCircuitRelayProtocolId);
   AbortInflight();
+  impl_->lifetime.Invalidate();
 }
 
 bool CircuitTunnelCoordinator::IsStarted() const {

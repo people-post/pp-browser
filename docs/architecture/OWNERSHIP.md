@@ -87,11 +87,13 @@ When a parent must post work that captures raw `this` / `Impl*` onto IO (or anot
 
 `Invalidate` only bumps a generation; already-queued callbacks no-op when their snap no longer matches. New posts after Invalidate capture the new snap and keep working until the next Invalidate.
 
+**Abort vs lifetime tickets (Amp L4):** `CircuitTunnelCoordinator` and `AmpMediaRelayCoordinator` keep two `DeferredSelf`s — `deferred` for `PostIo` (Invalidate on AbortInflight) and `lifetime` for IoTick / protocol / PeerConnected (Invalidate only on Stop). Mid-life Abort must not poison ticks still needed while Started. `CallMediaLegCoordinator` uses `weak_ptr(Impl)` for ticks/handlers instead of a lifetime ticket.
+
 ### Whitelist (who may capture raw self via DeferredSelf)
 
 | Owner | Notes |
 |-------|--------|
-| Amp L4 coordinators (`CircuitTunnelCoordinator`, `AmpMediaRelayCoordinator`, `CallMediaLegCoordinator`) | `Impl::PostIo` wraps `DeferredSelf::Post`; Invalidate on AbortInflight / Stop |
+| Amp L4 coordinators (`CircuitTunnelCoordinator`, `AmpMediaRelayCoordinator`, `CallMediaLegCoordinator`) | `PostIo` → `deferred`; circuit/media-relay also `lifetime` for ticks/handlers; call-media uses `weak_ptr` for ticks |
 | Amp protocols (`AmpPunchCoordinator`, `AmpDialBackProtocol`, `AmpDhtProtocol`, `AmpDirectoryProtocol`) | Protocol-handler `Bind`; Invalidate on Stop |
 | Conversation Amp transports (`AmpDirectChatTransport`, `AmpBroadcastTransport`, `AmpChatHistoryTransport`, `AmpPeerAnnounceTransport`, `AmpChatBlobTransport`) | Protocol-handler `Bind`; Invalidate on Stop |
 | `CallMediaPlane` | Reserve / park / OnRelayChosen cbs; Invalidate on Clear / PrepareForMeshStop |
