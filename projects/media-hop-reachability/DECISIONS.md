@@ -165,7 +165,7 @@ CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~12s with settle s
 
 ## H011 — Circuit R1 rendezvous (dialer-authoritative)
 
-**Status:** Accepted (plan — **not implemented**; L3.1)  
+**Status:** Accepted — **L3.1a–d landed** (shared surface, sticky park, `call_circuit_r1`, hard-w5 STACK)  
 **Date:** 2026-09-21  
 **Decision:** Immediate circuit relay (**R1**) for nested call-media is a **dialer-authoritative rendezvous**, not bilateral hop consensus.
 

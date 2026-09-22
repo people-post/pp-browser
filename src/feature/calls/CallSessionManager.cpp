@@ -509,13 +509,15 @@ void CallSessionManager::AnnounceCircuitR1(const std::string& circuit_r1_peer_id
   }
   auto active = ActiveLocalCall();
   if (!active || !active->has_value()) {
-    log().debug << "AnnounceCircuitR1 skipped: no active call r1=" << circuit_r1_peer_id;
+    pending_circuit_r1_announce_ = circuit_r1_peer_id;
+    log().debug << "AnnounceCircuitR1 pending (no active call) r1=" << circuit_r1_peer_id;
     return;
   }
   const std::string call_id = (*active)->call_id;
   auto peer = P2pPeerIdentityForCall(call_id);
   if (!peer || !peer->has_value() || (*peer)->empty()) {
-    log().debug << "AnnounceCircuitR1 skipped: no peer call_id=" << call_id
+    pending_circuit_r1_announce_ = circuit_r1_peer_id;
+    log().debug << "AnnounceCircuitR1 pending (no peer) call_id=" << call_id
                 << " r1=" << circuit_r1_peer_id;
     return;
   }
@@ -533,8 +535,17 @@ void CallSessionManager::AnnounceCircuitR1(const std::string& circuit_r1_peer_id
                   << " err=" << sent.error().message;
     return;
   }
+  pending_circuit_r1_announce_.clear();
   log().info << "AnnounceCircuitR1 sent call_id=" << call_id << " peer=" << **peer
              << " r1=" << circuit_r1_peer_id;
+}
+
+void CallSessionManager::FlushPendingCircuitR1Announce() {
+  if (pending_circuit_r1_announce_.empty()) {
+    return;
+  }
+  const std::string r1 = pending_circuit_r1_announce_;
+  AnnounceCircuitR1(r1);
 }
 
 void CallSessionManager::SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback) {
@@ -882,7 +893,12 @@ Roe<void> CallSessionManager::LeaveCallIfActiveExcept(const std::string& keep_ca
 
 Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_id, const bool video_allowed,
                                                const std::vector<std::string>& invitee_identities) {
-  return workflow_.StartCall(origin_thread_id, video_allowed, invitee_identities);
+  auto started = workflow_.StartCall(origin_thread_id, video_allowed, invitee_identities);
+  if (started) {
+    // Circuit path often chooses R1 before Invite (product-stack / hard-w5); flush wire announce.
+    FlushPendingCircuitR1Announce();
+  }
+  return started;
 }
 
 

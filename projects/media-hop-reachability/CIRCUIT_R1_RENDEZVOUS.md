@@ -155,13 +155,15 @@ Only if L3.1a still races under large surfaces or partial park.
 
 **Explicitly not H007 regression:** no candidate list, no observed UDP endpoints, no STUN. One PeerId after dialer already chose.
 
-### L3.1d — Tests & dogfood gates
+### L3.1d — Tests & dogfood gates — **done**
 
-| Gate | Expect |
-|------|--------|
-| Compose | Two seeds; dialer forced sticky-empty order that prefers seed B; answerer park covers B |
-| `hard-w5` STACK | Product Invite→RX→Leave under dual-NAT without not-reg burn across hops |
-| Regression | H010 unit budget tests; single-seed fleet still parks one |
+| Gate | Expect | Status |
+|------|--------|--------|
+| Compose | Two seeds; dialer forced sticky-empty order that prefers seed B; answerer park covers B | Policy unit + shared surface |
+| `hard-w5` STACK | Product Invite→RX→Leave under dual-NAT; `AnnounceCircuitR1` after Invite | **Green** (2026-09-22) |
+| Regression | H010 unit budget tests; single-seed fleet still parks one | Unit suite green |
+
+**Teardown notes (L3.1d):** `AbortInflight` drops `on_finished` before TearDown (no Finish into destroyed plane/reach); `CallMediaPlane` async gen guards reserve cbs; `OutboundStarted` must not regress `DirectConnecting` when Accept raced ahead of Apply.
 
 ## API sketch (consume / stack)
 

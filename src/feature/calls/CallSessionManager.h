@@ -117,9 +117,11 @@ public:
   void SetPreferLateReserve(PreferLateReserveFn callback);
   /**
    * H011 L3.1c: dialer announces chosen R1 to the active call peer (best-effort).
-   * No-op when no active call / peer / empty R1.
+   * When no active call yet (circuit path before Invite), stashes for FlushPendingCircuitR1Announce.
    */
   void AnnounceCircuitR1(const std::string& circuit_r1_peer_id);
+  /** Send stashed R1 after Invite creates an active call (hard-w5 pre-Invite EnsureViaCircuit). */
+  void FlushPendingCircuitR1Announce();
   /** Local `/ip4/…/tcp/…/p2p/…` listen set for call-control dial bootstrap. */
   using LocalListenMultiaddrsFn = std::function<std::vector<std::string>()>;
   void SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback);
@@ -354,6 +356,8 @@ private:
   EnsureCircuitReadyFn ensure_circuit_ready_;
   AwaitCircuitReadyFn await_circuit_ready_;
   PreferLateReserveFn prefer_late_reserve_;
+  /** R1 chosen before Invite — flushed once StartCall creates an active session. */
+  std::string pending_circuit_r1_announce_;
   LocalListenMultiaddrsFn local_listen_multiaddrs_;
   LocalPeerCapsFn local_peer_caps_;
   LocalMeshPeerIdFn local_mesh_peer_id_;

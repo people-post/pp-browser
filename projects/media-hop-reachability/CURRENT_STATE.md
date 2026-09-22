@@ -2,7 +2,7 @@
 
 > **2026-09:** Product mesh is Amp-only; hop reachability uses `AmpCircuitHopReach` + `MeshHost::CircuitDeps()`. Hole punch planned as **Amp Coordinated Punch** ([HOLE_PUNCH.md](HOLE_PUNCH.md), H009) — not libp2p DCUtR. See [MESH.md](../../docs/architecture/MESH.md).
 
-**Last updated:** 2026-09-21 (H011 L3.1c wire `call_circuit_r1`)
+**Last updated:** 2026-09-22 (H011 L3.1d hard-w5 STACK gate)
 
 ## Direction
 
@@ -24,12 +24,13 @@ Hop **reachability** = **Amp mesh stack work** (H001/H007). App-layer `call_hop_
 | **L3 compose (loopback)** | Shared loopback partition fixture; call-media via R; media_relay quote/attach/fan-out via R |
 | **Circuit reserve** | `op=reserve` + `StartReserve` — answerer parks **shared rendezvous surface** (`BuildCircuitHopList`, Connected-all + serial cold; H011 L3.1a) |
 | **L3.1a R1 rendezvous** | Shared collect/reserve builder + `CircuitRendezvousPolicy.h`; dialer/answerer no longer seeds-only asymmetric |
+| **L3.1b–d** | Sticky park + `call_circuit_r1` announce (flush after Invite) + hard-w5 STACK gate |
 
 ## In progress / gaps
 
 | Area | State |
 |------|-------|
-| **L3.1 Circuit R1 rendezvous** | Spec + **L3.1a–c landed** (shared surface, sticky park, `call_circuit_r1` announce); L3.1d hard-lab gates open — [CIRCUIT_R1_RENDEZVOUS.md](CIRCUIT_R1_RENDEZVOUS.md) |
+| **L3.1 Circuit R1 rendezvous** | **L3.1a–d landed** — [CIRCUIT_R1_RENDEZVOUS.md](CIRCUIT_R1_RENDEZVOUS.md) |
 | **L3.25 Amp Coordinated Punch** | Spec done; **L3.25a–c complete** — seed/contact introducer, PeerId upsert, punch-before-circuit, upgrade-from-circuit (R1→direct demote) — [HOLE_PUNCH.md](HOLE_PUNCH.md) |
 | **L3.5 multi-hop circuit** | Spec done — [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md); parallel to punch |
 | **L4 SoftMigrate consume** | Rank hops; skip undialable after circuit; drop empty contact ma — **loopback compose green**; punch upsert flips `IsDialable` (L3.25b) |
@@ -50,6 +51,6 @@ Hop **reachability** = **Amp mesh stack work** (H001/H007). App-layer `call_hop_
 
 ## Next
 
-1. **L3.1d** — hard-w5 / compose gates for rendezvous coverage
-2. **L3.5** — multi-hop circuit v2 when transitive reachability is needed (R1↛B, R2 can) — parallel
-3. Mesh invest: [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup)
+1. **L3.5** — multi-hop circuit v2 when transitive reachability is needed (R1↛B, R2 can) — parallel
+2. Mesh invest: [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup)
+3. Punch hard-lab: dual-dial race / sync-window expiry (L3.25 test gap)

@@ -1017,6 +1017,10 @@ void CircuitTunnelCoordinator::AbortInflight() {
     }
     for (const auto id : ids) {
       if (auto* tunnel = impl->Find(CircuitTunnelId{id})) {
+        // Teardown / mesh-stop: do not Finish into CallMediaPlane / AmpCircuitHopReach
+        // lambdas that may already be destroyed (hard-w5 offerer SIGSEGV after Leave).
+        // Reach uses AbortPending gen; reserve cbs use CallMediaPlane async_gen_.
+        tunnel->on_finished = nullptr;
         impl->TearDown(*tunnel, true, true, "circuit-relay aborted");
       }
     }

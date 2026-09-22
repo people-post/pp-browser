@@ -49,10 +49,23 @@ void CompletePunch(std::function<void(Roe<void>)> on_done, AmpPunchCoordinator::
 
 CallMediaPlane::CallMediaPlane() {
   redirectLogger("CallMediaPlane");
+  async_gen_ = std::make_shared<std::atomic<uint64_t>>(0);
 }
 
 CallMediaPlane::~CallMediaPlane() {
+  InvalidateAsyncOps();
   Clear();
+}
+
+void CallMediaPlane::InvalidateAsyncOps() {
+  if (async_gen_) {
+    async_gen_->fetch_add(1, std::memory_order_acq_rel);
+  }
+}
+
+bool CallMediaPlane::AsyncOpsAlive(const std::shared_ptr<std::atomic<uint64_t>>& gen,
+                                   const uint64_t snap) const {
+  return gen && gen->load(std::memory_order_acquire) == snap;
 }
 
 const AppConfig& CallMediaPlane::config() const {
@@ -250,8 +263,10 @@ void CallMediaPlane::WireCircuitHopReach(MeshHost* m, bool use_amp_relay, const 
         TryUpgradePunchAsync(m, introducer_peer_key, target_peer_id, std::move(on_done));
       },
       post_io);
-  reach->SetOnRelayChosen([this](const std::string& relay_peer_key) {
-    if (relay_peer_key.empty()) {
+  const uint64_t gen_snap = async_gen_->load(std::memory_order_acquire);
+  auto gen = async_gen_;
+  reach->SetOnRelayChosen([this, gen, gen_snap](const std::string& relay_peer_key) {
+    if (!AsyncOpsAlive(gen, gen_snap) || relay_peer_key.empty()) {
       return;
     }
     chosen_circuit_r1_ = relay_peer_key;
@@ -356,6 +371,11 @@ bool CallMediaPlane::PeerLanConfirmed(const std::string& peer_id) const {
 }
 
 void CallMediaPlane::PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit) {
+  // Drop OnRelayChosen + bump gen before AbortInflight Finish posts reserve cbs onto IO.
+  InvalidateAsyncOps();
+  if (auto* amp = dynamic_cast<AmpCircuitHopReach*>(circuit_hop_reach_.get())) {
+    amp->SetOnRelayChosen({});
+  }
   if (abort_inflight_circuit) {
     abort_inflight_circuit();
   }
@@ -404,6 +424,10 @@ void CallMediaPlane::ResetRelayClients() {
 }
 
 void CallMediaPlane::Clear() {
+  InvalidateAsyncOps();
+  if (auto* amp = dynamic_cast<AmpCircuitHopReach*>(circuit_hop_reach_.get())) {
+    amp->SetOnRelayChosen({});
+  }
   call_media_bridge_.reset();
   media_bridge_bound_sessions_key_ = nullptr;
   call_media_amp_.reset();
@@ -889,13 +913,20 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
              << " connected=" << connected_count << " cold_limit=" << cold_limit
              << " coverage_k=" << kCircuitRendezvousParkCoverage;
 
-  auto start_reserve = [this, m](const std::string& relay) {
+  auto start_reserve = [this, m, gen = async_gen_,
+                        gen_snap = async_gen_->load(std::memory_order_acquire)](const std::string& relay) {
+    if (!AsyncOpsAlive(gen, gen_snap)) {
+      return;
+    }
     if (!m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
       return;
     }
     const auto id = m->AmpCircuitTunnel()->StartReserve(
         relay,
-        [this, relay](Roe<CircuitTunnelBridgeResult> result) {
+        [this, relay, gen, gen_snap](Roe<CircuitTunnelBridgeResult> result) {
+          if (!AsyncOpsAlive(gen, gen_snap)) {
+            return;
+          }
           if (!result || !result->ok) {
             // Live Brief may still lack op=reserve (dogfood fd4e3de "unsupported op"). Connected
             // PeerLink alone is enough for peer-id-only ServeDial — log and keep the link.
@@ -931,8 +962,12 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
 
   // Serial cold dial + reserve for remaining surface members (cover_all_remaining).
   auto try_at = std::make_shared<std::function<void(size_t, size_t)>>();
-  *try_at = [this, chat, hops = std::move(hops), start_reserve, cold_limit,
-             try_at](size_t index, size_t cold_started) mutable {
+  *try_at = [this, chat, hops = std::move(hops), start_reserve, cold_limit, try_at,
+             gen = async_gen_, gen_snap = async_gen_->load(std::memory_order_acquire)](
+                size_t index, size_t cold_started) mutable {
+    if (!AsyncOpsAlive(gen, gen_snap)) {
+      return;
+    }
     while (index < hops.size()) {
       if (cold_started >= cold_limit) {
         return;
@@ -955,8 +990,11 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
       log().info << "circuit reserve assoc start peer=" << relay << " (serial index=" << index
                  << " cold=" << next_cold << "/" << cold_limit << ")";
       chat->links.EnsureAssociation(
-          relay, [this, start_reserve, links, relay, restore_ma, try_at, next,
-                  next_cold](IChatPeerLinks::LinkRoe assoc) mutable {
+          relay, [this, start_reserve, links, relay, restore_ma, try_at, next, next_cold, gen,
+                  gen_snap](IChatPeerLinks::LinkRoe assoc) mutable {
+            if (!AsyncOpsAlive(gen, gen_snap)) {
+              return;
+            }
             if (!assoc) {
               log().warning << "circuit reserve assoc miss peer=" << relay
                             << " err=" << assoc.error().message;
@@ -994,7 +1032,14 @@ void CallMediaPlane::PreferLateReserve(const std::string& relay_peer_id) {
     return;
   }
   auto post_io = chat->io.post_io;
-  auto task = [this, relay_peer_id]() { PreferLateReserveOnIo(relay_peer_id); };
+  const uint64_t gen_snap = async_gen_->load(std::memory_order_acquire);
+  auto gen = async_gen_;
+  auto task = [this, relay_peer_id, gen, gen_snap]() {
+    if (!AsyncOpsAlive(gen, gen_snap)) {
+      return;
+    }
+    PreferLateReserveOnIo(relay_peer_id);
+  };
   if (post_io) {
     post_io(std::move(task));
   } else {
@@ -1026,10 +1071,18 @@ void CallMediaPlane::PreferLateReserveOnIo(const std::string& relay_peer_id) {
     log().warning << "circuit late-reserve skip peer=" << relay_peer_id << " reason=!endpoint";
     return;
   }
-  auto start_one = [this, m, relay_peer_id]() {
+  const uint64_t gen_snap = async_gen_->load(std::memory_order_acquire);
+  auto gen = async_gen_;
+  auto start_one = [this, m, relay_peer_id, gen, gen_snap]() {
+    if (!AsyncOpsAlive(gen, gen_snap)) {
+      return;
+    }
     const auto id = m->AmpCircuitTunnel()->StartReserve(
         relay_peer_id,
-        [this, relay_peer_id](Roe<CircuitTunnelBridgeResult> result) {
+        [this, relay_peer_id, gen, gen_snap](Roe<CircuitTunnelBridgeResult> result) {
+          if (!AsyncOpsAlive(gen, gen_snap)) {
+            return;
+          }
           if (!result || !result->ok) {
             log().warning << "circuit late-reserve miss peer=" << relay_peer_id
                           << " err="
@@ -1051,8 +1104,11 @@ void CallMediaPlane::PreferLateReserveOnIo(const std::string& relay_peer_id) {
     return;
   }
   log().info << "circuit late-reserve assoc start peer=" << relay_peer_id;
-  chat->links.EnsureAssociation(relay_peer_id, [this, start_one,
-                                                relay_peer_id](IChatPeerLinks::LinkRoe assoc) {
+  chat->links.EnsureAssociation(relay_peer_id, [this, start_one, relay_peer_id, gen,
+                                                gen_snap](IChatPeerLinks::LinkRoe assoc) {
+    if (!AsyncOpsAlive(gen, gen_snap)) {
+      return;
+    }
     if (!assoc) {
       log().warning << "circuit late-reserve assoc miss peer=" << relay_peer_id
                     << " err=" << assoc.error().message;
