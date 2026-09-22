@@ -6,6 +6,7 @@
 #include "domain/mesh/reachability/PunchLogic.h"
 #include "common/SettledWait.h"
 #include "common/ValueJson.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 #include <atomic>
 #include <chrono>
@@ -285,6 +286,8 @@ struct AmpPunchCoordinator::Impl {
   IoPost post_io;
   AmpPunchCoordinator::ProbeInbound probe_inbound;
   std::atomic<bool> stopped{false};
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
+  DeferredSelf deferred;
   std::vector<std::string>* local_addrs = nullptr;
 
 
@@ -594,16 +597,17 @@ void AmpPunchCoordinator::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kAmpPunchProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle handle, const std::string& remote_peer_id,
-                           uint32_t channel_id) {
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
+                                                const std::string& remote_peer_id, uint32_t channel_id) {
         impl->HandleInboundOnLink(handle, remote_peer_id, channel_id);
-      });
+      }));
 }
 
 void AmpPunchCoordinator::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   links_.RemoveProtocolHandler(kAmpPunchProtocolId);
+  impl_->deferred.Invalidate();
 }
 
 void AmpPunchCoordinator::TryColdPunchAsync(const std::string& introducer_peer_key,

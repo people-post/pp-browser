@@ -3,11 +3,10 @@
 #include "common/Error.h"
 #include "common/Module.h"
 #include "domain/messaging/CallLifecycleTypes.h"
+#include "foundation/runtime/DeferredSelf.h"
 
-#include <atomic>
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <string>
 #include "common/PbrCompat.h"
 
@@ -103,11 +102,10 @@ private:
   CallMediaStatus status_ = CallMediaStatus::None;
   uint64_t media_cancel_gen_ = 0;
   /**
-   * Shared so worker/UI lambdas can detect ClearBinding / destroy without touching
+   * DeferredSelf so worker/UI lambdas detect ClearBinding / destroy without touching
    * a dangling `this` (stale DeclineInvite/LeaveCall replies across tests).
    */
-  std::shared_ptr<std::atomic<uint64_t>> async_epoch_ =
-      std::make_shared<std::atomic<uint64_t>>(0);
+  DeferredSelf deferred_;
   std::string call_id_;
   std::string accepting_call_id_;
   std::string last_ring_call_id_;
