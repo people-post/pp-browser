@@ -334,19 +334,25 @@ struct CircuitTunnelCoordinator::Impl {
     for (const auto id : timed_out) {
       std::lock_guard lock(mu);
       if (auto* tunnel = Find(id)) {
-        const bool far_wait =
-            tunnel->phase == CircuitTunnelPhase::ServeDial && tunnel->serve_far_wait_deadline_ms != 0;
-        if (far_wait && tunnel->near_session) {
+        // ServeDial must always fail_near before TearDown — otherwise dialer WaitAck expires as
+        // opaque `bridge timed out` (dogfood c44e34) and H010 sticky cannot classify the miss.
+        const bool serve_dial = tunnel->phase == CircuitTunnelPhase::ServeDial;
+        const bool far_wait = serve_dial && tunnel->serve_far_wait_deadline_ms != 0;
+        const std::string err_msg =
+            far_wait || (serve_dial && tunnel->target.target_multiaddr.empty() &&
+                         !tunnel->target.target_peer_id.empty())
+                ? std::string(kCircuitTargetPeerNotRegistered)
+                : (tunnel->is_reserve ? "circuit-relay reserve timed out"
+                                      : (serve_dial ? "relay target stream timed out"
+                                                    : "circuit-relay bridge timed out"));
+        if ((serve_dial || far_wait) && tunnel->near_session) {
           Object err;
           err.set("v", int64_t{1});
           err.set("ok", false);
-          err.set("error", std::string(kCircuitTargetPeerNotRegistered));
+          err.set("error", err_msg);
           tunnel->near_session->EnqueueOutbound(JsonToBody(DumpJson(err)));
         }
-        TearDown(*tunnel, false, false,
-                 far_wait ? std::string(kCircuitTargetPeerNotRegistered)
-                          : (tunnel->is_reserve ? "circuit-relay reserve timed out"
-                                                : "circuit-relay bridge timed out"));
+        TearDown(*tunnel, false, false, err_msg);
       }
     }
     for (const auto& peer_id : expired_reserves) {
@@ -679,9 +685,15 @@ struct CircuitTunnelCoordinator::Impl {
           return;
         }
         ArmFarLegWait(tunnel);
-        return;
+        // Lost-wakeup: PeerConnected / reserve may land between CountConnected and arm.
+        if (!CircuitPeerIdOnlyHasLiveFarLeg(
+                runtime->Links().CountConnectedLinksForPeerId(tunnel.target.target_peer_id))) {
+          return;
+        }
+        ClearFarLegWait(tunnel);
+      } else {
+        ClearFarLegWait(tunnel);
       }
-      ClearFarLegWait(tunnel);
     }
 
     auto normalized = NormalizeAmpCircuitTarget(runtime->Links(), tunnel.target);
