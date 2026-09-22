@@ -143,8 +143,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
    * They are invoked by CallbackLock only after `mu` is released: the transport/bridge
    * callbacks re-enter this coordinator (PrimaryLegId / IsActive), and `mu` is not
    * recursive, so invoking them under the lock deadlocked the Amp IO strand (B16).
+   * Named `pending_user_cbs` (not `deferred`) so it does not collide with DeferredSelf `io_deferred`.
    */
-  std::vector<std::function<void()>> deferred;
+  std::vector<std::function<void()>> pending_user_cbs;
 
   struct CallbackLock {
     explicit CallbackLock(Impl& impl) : impl_(impl), lock_(impl.mu) {}
@@ -154,7 +155,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         return;
       }
       std::vector<std::function<void()>> pending;
-      pending.swap(impl_.deferred);
+      pending.swap(impl_.pending_user_cbs);
       lock_.unlock();
       for (auto& fn : pending) {
         fn();
@@ -170,7 +171,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   pp::amp::MeshRuntime::IoTickId io_tick_id = 0;
   /** Guards PostIo(raw this) past Stop — OWNERSHIP.md § DeferredSelf.
    * IoTick / protocol use weak_ptr(Impl) instead of a separate lifetime ticket. */
-  DeferredSelf deferred;
+  DeferredSelf io_deferred;
 
   /** call_id → bundle */
   std::unordered_map<std::string, std::unique_ptr<Bundle>> bundles;
@@ -181,7 +182,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     if (!runtime || stopped.load(std::memory_order_acquire) || !task) {
       return;
     }
-    deferred.Post([rt = runtime](std::function<void()> t) {
+    io_deferred.Post([rt = runtime](std::function<void()> t) {
       if (rt) {
         rt->PostToIo(std::move(t));
       }
@@ -372,7 +373,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     LegFinished cb = std::move(bundle.on_finished);
     bundle.on_finished = {};
     if (cb) {
-      deferred.push_back([cb = std::move(cb), result = std::move(result)]() mutable { cb(std::move(result)); });
+      pending_user_cbs.push_back([cb = std::move(cb), result = std::move(result)]() mutable { cb(std::move(result)); });
     }
   }
 
@@ -401,7 +402,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         FinishBundle(bundle, Error("call-media aborted"));
       } else if (notify_failed) {
         if (bundle.callbacks.on_failed && !fail_message.empty()) {
-          deferred.push_back([on_failed = bundle.callbacks.on_failed, fail_message]() { on_failed(fail_message); });
+          pending_user_cbs.push_back([on_failed = bundle.callbacks.on_failed, fail_message]() { on_failed(fail_message); });
         }
         FinishBundle(bundle, Error(fail_message.empty() ? "call-media failed" : fail_message));
       } else {
@@ -420,7 +421,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
     bundle.phase = CallMediaBundlePhase::MediaReady;
     if (bundle.callbacks.on_connected) {
-      deferred.push_back(bundle.callbacks.on_connected);
+      pending_user_cbs.push_back(bundle.callbacks.on_connected);
     }
     FinishBundle(bundle, {});
   }
@@ -963,7 +964,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       LegFinished cb = std::move(on_finished);
       if (cb) {
         Roe<void> result = phase == CallMediaBundlePhase::MediaReady ? Roe<void>{} : Error("call-media aborted");
-        deferred.push_back([cb = std::move(cb), result = std::move(result)]() mutable { cb(std::move(result)); });
+        pending_user_cbs.push_back([cb = std::move(cb), result = std::move(result)]() mutable { cb(std::move(result)); });
       }
       return true;
     }
@@ -1198,7 +1199,7 @@ void CallMediaLegCoordinator::Stop() {
   }
   ClearInboundHandler();
   // Poison already-queued PostIo(self) work before dropping runtime.
-  impl_->deferred.Invalidate();
+  impl_->io_deferred.Invalidate();
   // Drop runtime before callers destroy MeshRuntime / harness (detached WorkerPost may resume).
   impl_->runtime = nullptr;
 }
