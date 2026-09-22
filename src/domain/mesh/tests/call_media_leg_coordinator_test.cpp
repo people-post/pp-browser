@@ -373,6 +373,68 @@ TEST_F(CallMediaLegCoordinatorTest, OnMediaCarriesSeqAndMark) {
   }
 }
 
+// B21: A evicts a Connected link (no auth RX for kAliveTimeoutMs) while B still sees it alive.
+// A's redial must not be rejected by B as a "duplicate" of the stale inbound link.
+TEST_F(CallMediaLegCoordinatorTest, RedialAfterPeerSilentlyDroppedLink) {
+  ByteVector media_key(32, 0x77);
+  std::atomic<int> b_connected{0};
+  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] { b_connected.fetch_add(1, std::memory_order_acq_rel); };
+  });
+  auto start = [&](const std::string& call_id, LegCompletion& done) {
+    CallMediaDirectConnectParams params;
+    params.peer_key = "b";
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.media_key = media_key;
+    params.offerer = true;
+    return a_call_->StartLeg(params, {}, done.Fn(), 5000);
+  };
+
+  LegCompletion first;
+  const CallMediaLegId leg1 = start("call-amp-zombie-1", first);
+  ASSERT_TRUE(leg1);
+  first.PumpUntilDone(*harness_);
+  ASSERT_TRUE(first.result) << first.result.error().message;
+  harness_->PumpUntil([&] { return b_connected.load(std::memory_order_acquire) >= 1; });
+  const std::string a_id = harness_->mgr_a().LocalPeerId();
+  ASSERT_NE(harness_->mgr_b().FindLinkByPeerId(a_id), nullptr);
+
+  // End the call first so no channel traffic refreshes liveness (matches the field trace:
+  // eviction happened 5 s after hangup).
+  a_call_->DetachLeg(leg1);
+  for (int i = 0; i < 5; ++i) {
+    harness_->PumpBoth();
+  }
+  ASSERT_NE(harness_->mgr_a().FindLink("b"), nullptr);
+
+  // A loses its side of the association and its Close never reaches B (field: A evicted the
+  // link after 5 s without RX; nothing told B).
+  {
+    auto* link = harness_->mgr_a().FindLink("b");
+    ASSERT_NE(link, nullptr);
+    ASSERT_NE(link->ConnectionOrNull(), nullptr);
+    harness_->io_a->DropNext(1);
+    link->ConnectionOrNull()->Close();
+  }
+  for (int i = 0; i < 5; ++i) {
+    harness_->PumpBoth();
+  }
+  EXPECT_EQ(harness_->mgr_a().FindLink("b"), nullptr) << "A should have evicted its closed link";
+  EXPECT_NE(harness_->mgr_b().FindLinkByPeerId(a_id), nullptr) << "B still holds its (stale) inbound link";
+
+  LegCompletion second;
+  const CallMediaLegId leg2 = start("call-amp-zombie-2", second);
+  ASSERT_TRUE(leg2);
+  second.PumpUntilDone(*harness_);
+  ASSERT_TRUE(second.result) << second.result.error().message;
+  harness_->PumpUntil([&] { return b_connected.load(std::memory_order_acquire) >= 2; });
+  EXPECT_GE(b_connected.load(std::memory_order_acquire), 2);
+}
+
 TEST_F(CallMediaLegCoordinatorTest, DetachUnblocksConnectWait) {
   b_call_->Stop();
   b_call_ = std::make_unique<CallMediaLegCoordinator>(
