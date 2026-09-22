@@ -186,7 +186,7 @@ prepare_profile() {
   fi
 
   if [[ -n "${IOS_PROVISIONING_PROFILE_BASE64:-}" ]]; then
-    TEMP_PROFILE="$(mktemp "${TMPDIR:-/tmp}/frame-ios.XXXXXX.mobileprovision")"
+    TEMP_PROFILE="$(mktemp "${TMPDIR:-/tmp}/frame-ios.XXXXXX")"
     decode_base64_to "$IOS_PROVISIONING_PROFILE_BASE64" "$TEMP_PROFILE"
     cp "$TEMP_PROFILE" "$profile_dir/"
     return
@@ -204,7 +204,7 @@ prepare_keychain() {
   require_cmd security
   local p12_path=""
   if [[ -n "${IOS_CERTIFICATE_BASE64:-}" ]]; then
-    TEMP_P12="$(mktemp "${TMPDIR:-/tmp}/frame-ios-cert.XXXXXX.p12")"
+    TEMP_P12="$(mktemp "${TMPDIR:-/tmp}/frame-ios-cert.XXXXXX")"
     decode_base64_to "$IOS_CERTIFICATE_BASE64" "$TEMP_P12"
     p12_path="$TEMP_P12"
   else
@@ -253,7 +253,7 @@ extract_profile_entitlements() {
   local out_file="$2"
 
   local profile_plist
-  profile_plist="$(mktemp "${TMPDIR:-/tmp}/frame-profile.XXXXXX.plist")"
+  profile_plist="$(mktemp "${TMPDIR:-/tmp}/frame-profile.XXXXXX")"
   if ! security cms -D -i "$profile_src" >"$profile_plist" 2>/dev/null \
       || ! plutil -extract Entitlements xml1 -o "$out_file" "$profile_plist" 2>/dev/null \
       || [[ ! -s "$out_file" ]]; then
@@ -302,7 +302,7 @@ cmd_sign_app() {
   fi
 
   if [[ -n "$profile_src" ]]; then
-    entitlements_tmp="$(mktemp "${TMPDIR:-/tmp}/frame-ents.XXXXXX.plist")"
+    entitlements_tmp="$(mktemp "${TMPDIR:-/tmp}/frame-ents.XXXXXX")"
     if extract_profile_entitlements "$profile_src" "$entitlements_tmp"; then
       entitlements="$entitlements_tmp"
       log "Using entitlements from provisioning profile ($(basename "$profile_src"))"
@@ -311,7 +311,7 @@ cmd_sign_app() {
       entitlements_tmp=""
       if ! is_distribution_method \
           && [[ -n "${IOS_DEVELOPMENT_TEAM:-}" && -n "${IOS_BUNDLE_IDENTIFIER:-}" ]]; then
-        entitlements_tmp="$(mktemp "${TMPDIR:-/tmp}/frame-ents.XXXXXX.plist")"
+        entitlements_tmp="$(mktemp "${TMPDIR:-/tmp}/frame-ents.XXXXXX")"
         cat >"$entitlements_tmp" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -476,7 +476,7 @@ prepare_asc_key() {
   fi
 
   if [[ -n "${IOS_ASC_P8_BASE64:-}" ]]; then
-    TEMP_ASC_P8="$(mktemp "${TMPDIR:-/tmp}/frame-asc.XXXXXX.p8")"
+    TEMP_ASC_P8="$(mktemp "${TMPDIR:-/tmp}/frame-asc.XXXXXX")"
     decode_base64_to "$IOS_ASC_P8_BASE64" "$TEMP_ASC_P8"
     cp "$TEMP_ASC_P8" "$dest"
     return
