@@ -30,3 +30,10 @@ pp_browser_add_foundation_library(pp_foundation_crypto
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
+
+# Local dev builds only: bake a profile PIN in so the unlock prompt is skipped on every launch
+# (also for iOS home-screen launches, which carry no environment). Never set in CI/release.
+set(PP_BROWSER_DEV_PIN "" CACHE STRING "Dev only: profile PIN compiled into PinResolver fallback")
+if(PP_BROWSER_DEV_PIN)
+  target_compile_definitions(pp_foundation_crypto PRIVATE "PP_BROWSER_DEV_PIN=\"${PP_BROWSER_DEV_PIN}\"")
+endif()
