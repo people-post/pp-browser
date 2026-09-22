@@ -24,6 +24,8 @@
 #include "domain/messaging/InitiationPricing.h"
 #include "foundation/data/PricingTypes.h"
 #include "domain/people/MeshHopPolicy.h"
+#include "domain/mesh/reachability/AmpObservedAddrs.h"
+#include "domain/mesh/reachability/Reachability.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/E2eIntegrityUtil.h"
@@ -428,6 +430,10 @@ void MeshDeliveryOrchestrator::PersistRelayCursor(const std::string& relay_user_
 void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id,
                                                      const std::string& multiaddr) {
   const bool is_adp = IsAdpMultiaddr(multiaddr);
+  // B6: never register undialable ADP hosts (0.0.0.0 / :: / link-local) into the dial book.
+  if (is_adp && !IsUsableAdpListen(multiaddr)) {
+    return;
+  }
   if (amp_links_ && is_adp) {
     (void)amp_links_->RegisterEndpoint(peer_relay_user_id, multiaddr);
   } else if (amp_links_) {
@@ -447,18 +453,24 @@ void MeshDeliveryOrchestrator::RegisterContactDirectEndpoints(const Contact& con
       RegisterPeerDirectEndpoint(dial_key, multiaddr);
     }
   };
+  const AmpDialLocalContext local_ctx = CollectAmpDialLocalContext();
+  auto register_ranked = [&](const std::vector<std::string>& multiaddrs) {
+    // Same-subnet private LAN first (B15); register worst→best so Preferred keeps the best.
+    const auto ranked = RankAmpDialMultiaddrs(multiaddrs, local_ctx);
+    for (auto it = ranked.rbegin(); it != ranked.rend(); ++it) {
+      register_ma(target.peer_identity_value, *it);
+    }
+  };
   if (!contact.remote.endpoints.empty()) {
     for (const DirectoryEndpoint& endpoint : contact.remote.endpoints) {
-      // Worst→best so PreferredMultiaddr prefers global /ip6 over private LAN.
-      for (const std::string& ma : OrderDialMultiaddrsWorstToBest(endpoint.multiaddrs)) {
-        register_ma(endpoint.peer_id, ma);
-        register_ma(target.peer_identity_value, ma);
+      const auto ranked = RankAmpDialMultiaddrs(endpoint.multiaddrs, local_ctx);
+      for (auto it = ranked.rbegin(); it != ranked.rend(); ++it) {
+        register_ma(endpoint.peer_id, *it);
+        register_ma(target.peer_identity_value, *it);
       }
     }
   } else {
-    for (const std::string& ma : OrderDialMultiaddrsWorstToBest(contact.multiaddrs)) {
-      register_ma(target.peer_identity_value, ma);
-    }
+    register_ranked(contact.multiaddrs);
   }
   for (const std::string& peer_id : PeerIdsFromContact(contact)) {
     if (amp_links_) {

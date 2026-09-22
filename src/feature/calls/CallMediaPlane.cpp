@@ -501,8 +501,8 @@ void CallMediaPlane::RegisterCallPeerListenMultiaddrs(const std::string& identit
   }
   const std::vector<std::string> ranked = RankAmpDialMultiaddrs(multiaddrs, CollectAmpDialLocalContext());
   MergeDialBookListenAddrs(identity, ranked);
-  // PeerLinkManager::RegisterEndpoint keeps the last write — register worst→best so
-  // PreferredMultiaddr lands on global /ip6 (or public /ip4) ahead of private LAN.
+  // PeerLinkManager::RegisterEndpoint keeps the last write — register worst→best so Preferred
+  // lands on the RankAmpDialMultiaddrs winner (same-subnet LAN when local context matches).
   for (auto it = ranked.rbegin(); it != ranked.rend(); ++it) {
     RegisterOneListenMultiaddr(identity, *it);
   }
