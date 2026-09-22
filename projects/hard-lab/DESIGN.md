@@ -27,6 +27,8 @@ Loopback partition fixtures already own SoftMigrate/circuit **policy**. Hard lab
 - Full GUI as the lab client.
 - PR-blocking netem / multi-hop before Wave 1 is boringly green.
 - Claiming carrier CGNAT / hole-punch coverage before those features ship.
+  Wave 5 **N-HARD-CGNAT-ISH** is forced/circuit under dual-SNAT only — not ACP punch.
+  Punch miss → circuit on Phase-2 product is success; **N-HARD-HOLEPUNCH** is Wave 7.
 - Multi-SFU media bitpaths (see [MULTI_HOP_CIRCUIT.md](../media-hop-reachability/MULTI_HOP_CIRCUIT.md)).
 
 ---

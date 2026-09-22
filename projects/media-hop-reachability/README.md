@@ -39,6 +39,7 @@ flowchart LR
 |----------|----------------|
 | How does dial-by-PeerId work? | [DESIGN.md](DESIGN.md) |
 | Amp Coordinated Punch | [HOLE_PUNCH.md](HOLE_PUNCH.md) |
+| Circuit R1 rendezvous (multi-candidate meet) | [CIRCUIT_R1_RENDEZVOUS.md](CIRCUIT_R1_RENDEZVOUS.md) |
 | Multi-hop circuit protocol | [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md) |
 | Who may relay, scope, pricing | [p2p-mesh DESIGN](../p2p-mesh/DESIGN.md), [RELAY_SCOPE.md](../p2p-mesh/RELAY_SCOPE.md) |
 | What's in the repo today? | [CURRENT_STATE.md](CURRENT_STATE.md) |
@@ -61,7 +62,8 @@ flowchart LR
 | File | Purpose |
 |------|---------|
 | [DESIGN.md](DESIGN.md) | **Authoritative spec** — stack model, consume API, ownership |
-| [HOLE_PUNCH.md](HOLE_PUNCH.md) | Amp Coordinated Punch plan — not implemented |
+| [HOLE_PUNCH.md](HOLE_PUNCH.md) | Amp Coordinated Punch plan |
+| [CIRCUIT_R1_RENDEZVOUS.md](CIRCUIT_R1_RENDEZVOUS.md) | Dialer-authoritative R1 meet when many relays — H011 / L3.1 |
 | [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md) | Multi-hop circuit plan — today single-hop |
 | [DECISIONS.md](DECISIONS.md) | ADRs (H001+) |
 | [PHASES.md](PHASES.md) | L0–L5 checklists |

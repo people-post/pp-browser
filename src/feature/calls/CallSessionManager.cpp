@@ -194,6 +194,11 @@ void CallSessionManager::BindWorkflowHostPorts() {
       lifecycle_ports_.set_direct_connecting(call_id);
     }
   };
+  ports.chrome.note_outbound_started = [this](const std::string& call_id) {
+    if (lifecycle_ports_.apply_outbound_started) {
+      lifecycle_ports_.apply_outbound_started(call_id);
+    }
+  };
   ports.chrome.accepting_call_id = [this]() {
     return lifecycle_ports_.accepting_call_id ? lifecycle_ports_.accepting_call_id() : std::string{};
   };
@@ -497,6 +502,55 @@ void CallSessionManager::SetEnsureCircuitReady(EnsureCircuitReadyFn callback) {
 
 void CallSessionManager::SetAwaitCircuitReady(AwaitCircuitReadyFn callback) {
   await_circuit_ready_ = std::move(callback);
+}
+
+void CallSessionManager::SetPreferLateReserve(PreferLateReserveFn callback) {
+  prefer_late_reserve_ = std::move(callback);
+}
+
+void CallSessionManager::AnnounceCircuitR1(const std::string& circuit_r1_peer_id) {
+  if (circuit_r1_peer_id.empty()) {
+    return;
+  }
+  auto active = ActiveLocalCall();
+  if (!active || !active->has_value()) {
+    pending_circuit_r1_announce_ = circuit_r1_peer_id;
+    log().debug << "AnnounceCircuitR1 pending (no active call) r1=" << circuit_r1_peer_id;
+    return;
+  }
+  const std::string call_id = (*active)->call_id;
+  auto peer = P2pPeerIdentityForCall(call_id);
+  if (!peer || !peer->has_value() || (*peer)->empty()) {
+    pending_circuit_r1_announce_ = circuit_r1_peer_id;
+    log().debug << "AnnounceCircuitR1 pending (no peer) call_id=" << call_id
+                << " r1=" << circuit_r1_peer_id;
+    return;
+  }
+  CallCircuitR1Detail detail;
+  detail.call_id = call_id;
+  detail.circuit_r1 = circuit_r1_peer_id;
+  auto encoded = CallControlCodec::EncodeCircuitR1(detail);
+  if (!encoded) {
+    log().warning << "AnnounceCircuitR1 encode failed call_id=" << call_id
+                  << " err=" << encoded.error().message;
+    return;
+  }
+  if (auto sent = SendCallDirectMessage(**peer, CallControlType::CallCircuitR1, *encoded, ""); !sent) {
+    log().warning << "AnnounceCircuitR1 send failed call_id=" << call_id << " peer=" << **peer
+                  << " err=" << sent.error().message;
+    return;
+  }
+  pending_circuit_r1_announce_.clear();
+  log().info << "AnnounceCircuitR1 sent call_id=" << call_id << " peer=" << **peer
+             << " r1=" << circuit_r1_peer_id;
+}
+
+void CallSessionManager::FlushPendingCircuitR1Announce() {
+  if (pending_circuit_r1_announce_.empty()) {
+    return;
+  }
+  const std::string r1 = pending_circuit_r1_announce_;
+  AnnounceCircuitR1(r1);
 }
 
 void CallSessionManager::SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback) {
@@ -844,7 +898,12 @@ Roe<void> CallSessionManager::LeaveCallIfActiveExcept(const std::string& keep_ca
 
 Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_id, const bool video_allowed,
                                                const std::vector<std::string>& invitee_identities) {
-  return workflow_.StartCall(origin_thread_id, video_allowed, invitee_identities);
+  auto started = workflow_.StartCall(origin_thread_id, video_allowed, invitee_identities);
+  if (started) {
+    // Circuit path often chooses R1 before Invite (product-stack / hard-w5); flush wire announce.
+    FlushPendingCircuitR1Announce();
+  }
+  return started;
 }
 
 
@@ -1110,6 +1169,23 @@ Roe<void> CallSessionManager::HandleInboundVideoRefresh(const std::string& detai
   return workflow_.HandleInboundVideoRefresh(detail_json, sender_identity);
 }
 
+Roe<void> CallSessionManager::HandleInboundCircuitR1(const std::string& detail_json) {
+  auto decoded = CallControlCodec::DecodeCircuitR1(detail_json);
+  if (!decoded) {
+    return decoded.error();
+  }
+  auto active = ActiveLocalCall();
+  if (!active || !active->has_value() || (*active)->call_id != decoded->call_id) {
+    log().info << "CallCircuitR1 ignored; no matching active call call_id=" << decoded->call_id
+               << " r1=" << decoded->circuit_r1;
+    return {};
+  }
+  log().info << "CallCircuitR1 inbound call_id=" << decoded->call_id << " r1=" << decoded->circuit_r1;
+  if (prefer_late_reserve_) {
+    prefer_late_reserve_(decoded->circuit_r1);
+  }
+  return {};
+}
 
 Roe<void> CallSessionManager::HandleInboundEnded(const std::string& detail_json,
                                                  const std::string& local_identity) {
@@ -1161,6 +1237,8 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     return HandleInboundHopRefuse(detail_json);
   case CallControlType::CallVideoRefresh:
     return HandleInboundVideoRefresh(detail_json, sender_identity);
+  case CallControlType::CallCircuitR1:
+    return HandleInboundCircuitR1(detail_json);
   case CallControlType::CallEnded:
     return HandleInboundEnded(detail_json, *local);
   case CallControlType::CallStarted:

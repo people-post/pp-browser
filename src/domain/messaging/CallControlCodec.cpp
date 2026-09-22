@@ -511,6 +511,26 @@ Roe<CallVideoRefreshDetail> CallControlCodec::DecodeVideoRefresh(const std::stri
   return detail;
 }
 
+Roe<std::string> CallControlCodec::EncodeCircuitR1(const CallCircuitR1Detail& detail) {
+  Object json;
+  json.set("call_id", detail.call_id);
+  json.set("circuit_r1", detail.circuit_r1);
+  return DumpJson(json);
+}
+
+Roe<CallCircuitR1Detail> CallControlCodec::DecodeCircuitR1(const std::string& detail_json) {
+  auto json = TryParseObject(detail_json);
+  auto call_id = json ? json->getString("call_id") : std::nullopt;
+  auto circuit_r1 = json ? json->getString("circuit_r1") : std::nullopt;
+  if (!json || !call_id || !circuit_r1 || circuit_r1->empty()) {
+    return Error("Invalid call_circuit_r1 detail");
+  }
+  CallCircuitR1Detail detail;
+  detail.call_id = *call_id;
+  detail.circuit_r1 = *circuit_r1;
+  return detail;
+}
+
 Roe<ThreadMessage> CallControlCodec::BuildSystemMessage(const std::string& thread_id, const CallControlType type,
                                                         const std::string& display_text,
                                                         const std::string& detail_json,
@@ -559,6 +579,7 @@ bool CallControlCodec::IsPlumbingCallControl(const CallControlType type) {
   case CallControlType::CallSfuAttachFailed:
   case CallControlType::CallHopRefuse:
   case CallControlType::CallVideoRefresh:
+  case CallControlType::CallCircuitR1:
     return true;
   default:
     return false;

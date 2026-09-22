@@ -60,6 +60,11 @@ enum class CallControlType {
   CallHopRefuse,
   /** Receiver asks publisher for an IDR (V034). */
   CallVideoRefresh,
+  /**
+   * H011 L3.1c: dialer announces chosen immediate circuit R1 PeerId so answerer can late-reserve.
+   * Additive plumbing — old peers ignore unknown control_type.
+   */
+  CallCircuitR1,
 };
 
 struct CallParticipantMedia {
@@ -276,6 +281,15 @@ struct CallVideoRefreshDetail {
   std::string call_id;
   /** Publisher identity whose video_lo should keyframe. Empty = local publisher. */
   std::string identity;
+};
+
+/**
+ * H011 L3.1c: dialer → answerer chosen immediate relay PeerId (no multiaddrs — H007 carve-out).
+ */
+struct CallCircuitR1Detail {
+  std::string call_id;
+  /** Immediate circuit relay PeerId (base58). */
+  std::string circuit_r1;
 };
 
 std::string GenerateCallId();

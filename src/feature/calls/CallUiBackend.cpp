@@ -169,7 +169,12 @@ Roe<void> CallUiBackend::LeaveCall(const std::string& call_id) {
 Roe<CallSession> CallUiBackend::StartCall(const std::string& origin_thread_id, const bool video_allowed,
                                           const std::vector<std::string>& invitee_identities) {
   if (auto* calls = stack_.Calls()) {
-    return calls->StartCall(origin_thread_id, video_allowed, invitee_identities);
+    auto started = calls->StartCall(origin_thread_id, video_allowed, invitee_identities);
+    if (started) {
+      // Idempotent if workflow already noted via lifecycle ports (preferred, pre-Invite).
+      Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
+    }
+    return started;
   }
   return UnavailableError();
 }

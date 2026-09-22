@@ -9,6 +9,7 @@
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/l4/circuit/CircuitRendezvousPolicy.h"
 #include "domain/mesh/reachability/PunchLogic.h"
 #include "domain/mesh/reachability/AmpPunchCoordinator.h"
 #include "domain/mesh/reachability/Reachability.h"
@@ -17,10 +18,10 @@
 #include "domain/mesh/shared/AmpParkUntil.h"
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <functional>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -50,7 +51,12 @@ CallMediaPlane::CallMediaPlane() {
 }
 
 CallMediaPlane::~CallMediaPlane() {
+  InvalidateAsyncOps();
   Clear();
+}
+
+void CallMediaPlane::InvalidateAsyncOps() {
+  deferred_.Invalidate();
 }
 
 const AppConfig& CallMediaPlane::config() const {
@@ -236,7 +242,7 @@ void CallMediaPlane::WireCircuitHopReach(MeshHost* m, bool use_amp_relay, const 
     return;
   }
   IChatPeerLinks* punch_links = &circuit->links;
-  circuit_hop_reach_ = std::make_unique<AmpCircuitHopReach>(
+  auto reach = std::make_unique<AmpCircuitHopReach>(
       circuit->tunnel, circuit->hops, circuit->links, io_pump,
       [this](const std::string& exclude) { return CollectDialableCircuitRelayIds(exclude); },
       [this, m, punch_links](const std::string& target_peer_id,
@@ -248,6 +254,17 @@ void CallMediaPlane::WireCircuitHopReach(MeshHost* m, bool use_amp_relay, const 
         TryUpgradePunchAsync(m, introducer_peer_key, target_peer_id, std::move(on_done));
       },
       post_io);
+  reach->SetOnRelayChosen(deferred_.Bind([this](const std::string& relay_peer_key) {
+    if (relay_peer_key.empty()) {
+      return;
+    }
+    chosen_circuit_r1_ = relay_peer_key;
+    log().info << "circuit rendezvous chosen R1=" << relay_peer_key;
+    if (deps_.announce_circuit_r1) {
+      deps_.announce_circuit_r1(relay_peer_key);
+    }
+  }));
+  circuit_hop_reach_ = std::move(reach);
   log().info << "circuit-hop reach=amp";
 }
 
@@ -343,6 +360,11 @@ bool CallMediaPlane::PeerLanConfirmed(const std::string& peer_id) const {
 }
 
 void CallMediaPlane::PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit) {
+  // Drop OnRelayChosen + bump gen before AbortInflight Finish posts reserve cbs onto IO.
+  InvalidateAsyncOps();
+  if (auto* amp = dynamic_cast<AmpCircuitHopReach*>(circuit_hop_reach_.get())) {
+    amp->SetOnRelayChosen({});
+  }
   if (abort_inflight_circuit) {
     abort_inflight_circuit();
   }
@@ -391,6 +413,10 @@ void CallMediaPlane::ResetRelayClients() {
 }
 
 void CallMediaPlane::Clear() {
+  InvalidateAsyncOps();
+  if (auto* amp = dynamic_cast<AmpCircuitHopReach*>(circuit_hop_reach_.get())) {
+    amp->SetOnRelayChosen({});
+  }
   call_media_bridge_.reset();
   media_bridge_bound_sessions_key_ = nullptr;
   call_media_amp_.reset();
@@ -399,6 +425,7 @@ void CallMediaPlane::Clear() {
   media_relay_client_.reset();
   dial_registry_.reset();
   circuit_hop_reach_.reset();
+  chosen_circuit_r1_.clear();
   dial_book_ = {};
 }
 
@@ -481,20 +508,9 @@ void CallMediaPlane::RegisterCallPeerListenMultiaddrs(const std::string& identit
   }
 }
 
-std::vector<std::string> CallMediaPlane::CollectDialableCircuitRelayIds(
+std::vector<MeshHopCandidate> CallMediaPlane::BuildCircuitRendezvousCandidates(
     const std::string& exclude_peer_id) const {
-  std::vector<std::string> relay_ids;
-  MeshHost* m = mesh();
-  IChatPeerLinks* amp_links = nullptr;
-  if (m) {
-    if (auto chat = m->ChatDeps()) {
-      amp_links = &chat->links;
-    }
-  }
-  AmpCircuitHopRegistry* amp_hops = m ? m->AmpCircuitHops() : nullptr;
-  if (!amp_links && !amp_hops) {
-    return relay_ids;
-  }
+  std::vector<MeshHopCandidate> out;
   std::vector<Contact> contacts;
   if (deps_.contacts) {
     if (auto listed = deps_.contacts->List()) {
@@ -515,11 +531,33 @@ std::vector<std::string> CallMediaPlane::CollectDialableCircuitRelayIds(
   const auto effective_seeds = ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes);
   auto hops = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, effective_seeds,
                                   mesh_cfg.prefer_contacts_for_routing, include_seeds);
-  relay_ids.reserve(hops.size());
-  for (const MeshHopCandidate& hop : hops) {
+  out.reserve(hops.size());
+  for (auto& hop : hops) {
     if (hop.peer_id.empty() || hop.peer_id == exclude_peer_id) {
       continue;
     }
+    out.push_back(std::move(hop));
+  }
+  return out;
+}
+
+std::vector<std::string> CallMediaPlane::CollectDialableCircuitRelayIds(
+    const std::string& exclude_peer_id) const {
+  std::vector<std::string> relay_ids;
+  MeshHost* m = mesh();
+  IChatPeerLinks* amp_links = nullptr;
+  if (m) {
+    if (auto chat = m->ChatDeps()) {
+      amp_links = &chat->links;
+    }
+  }
+  AmpCircuitHopRegistry* amp_hops = m ? m->AmpCircuitHops() : nullptr;
+  if (!amp_links && !amp_hops) {
+    return relay_ids;
+  }
+  auto hops = BuildCircuitRendezvousCandidates(exclude_peer_id);
+  relay_ids.reserve(hops.size());
+  for (const MeshHopCandidate& hop : hops) {
     // Dogfood: directory/contact hop MAs are often RFC1918 advertise addrs. Unconditional
     // RegisterEndpoint overwrites a seed-warmed public PreferredMultiaddr and StartBridge
     // then fails with `adp udp :send to`. Only write dialable hosts; keep existing endpoint.
@@ -804,13 +842,17 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
   if (!chat) {
     return;
   }
-  MeshConfig mesh_cfg = config().mesh;
-  std::vector<MeshDirectoryNode> directory_nodes;
-  if (deps_.list_directory_nodes) {
-    directory_nodes = deps_.list_directory_nodes();
+  // H011: same BuildCircuitHopList surface as dialer CollectDialableCircuitRelayIds (not
+  // seeds-only). Dialer sticky-reorder can StartBridge any surface member — park must cover it.
+  auto candidates = BuildCircuitRendezvousCandidates();
+  std::string sticky_r1 = chosen_circuit_r1_;
+  if (sticky_r1.empty() && circuit_hop_reach_) {
+    sticky_r1 = circuit_hop_reach_->LastGoodRelayPeerKey();
   }
-  auto hops = CollectSeedHopCandidates(ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes));
-  for (const auto& hop : hops) {
+  if (!sticky_r1.empty()) {
+    log().info << "circuit rendezvous park sticky R1=" << sticky_r1;
+  }
+  for (const auto& hop : candidates) {
     if (hop.peer_id.empty() || hop.multiaddr.empty()) {
       continue;
     }
@@ -818,38 +860,75 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
       (void)chat->links.RegisterEndpoint(hop.peer_id, hop.multiaddr);
     }
   }
-  std::stable_sort(hops.begin(), hops.end(), [&](const MeshHopCandidate& a, const MeshHopCandidate& b) {
-    return chat->links.IsConnected(a.peer_id) && !chat->links.IsConnected(b.peer_id);
-  });
 
-  auto start_reserve = [this, m](const std::string& seed) {
+  std::vector<std::string> surface_ids;
+  surface_ids.reserve(candidates.size());
+  for (const auto& hop : candidates) {
+    if (!hop.peer_id.empty()) {
+      surface_ids.push_back(hop.peer_id);
+    }
+  }
+  auto ordered_ids = OrderRendezvousParkAttempts(
+      std::move(surface_ids), sticky_r1,
+      [&](const std::string& peer_id) { return chat->links.IsConnected(peer_id); });
+
+  std::unordered_map<std::string, std::string> ma_by_peer;
+  for (const auto& hop : candidates) {
+    if (!hop.peer_id.empty() && !hop.multiaddr.empty()) {
+      ma_by_peer.emplace(hop.peer_id, hop.multiaddr);
+    }
+  }
+
+  std::vector<MeshHopCandidate> hops;
+  hops.reserve(ordered_ids.size());
+  for (const std::string& peer_id : ordered_ids) {
+    MeshHopCandidate hop;
+    hop.peer_id = peer_id;
+    if (auto it = ma_by_peer.find(peer_id); it != ma_by_peer.end()) {
+      hop.multiaddr = it->second;
+    }
+    hops.push_back(std::move(hop));
+  }
+
+  std::size_t connected_count = 0;
+  for (const auto& hop : hops) {
+    if (chat->links.IsConnected(hop.peer_id)) {
+      ++connected_count;
+    }
+  }
+  const std::size_t cold_limit = RendezvousColdDialLimit(
+      hops.size(), connected_count, kCircuitRendezvousParkCoverage, /*cover_all_remaining=*/true);
+  log().info << "circuit rendezvous reserve surface=" << hops.size()
+             << " connected=" << connected_count << " cold_limit=" << cold_limit
+             << " coverage_k=" << kCircuitRendezvousParkCoverage;
+
+  auto start_reserve = deferred_.Bind([this, m](const std::string& relay) {
     if (!m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
       return;
     }
     const auto id = m->AmpCircuitTunnel()->StartReserve(
-        seed,
-        [this, seed](Roe<CircuitTunnelBridgeResult> result) {
+        relay,
+        deferred_.Bind([this, relay](Roe<CircuitTunnelBridgeResult> result) {
           if (!result || !result->ok) {
             // Live Brief may still lack op=reserve (dogfood fd4e3de "unsupported op"). Connected
             // PeerLink alone is enough for peer-id-only ServeDial — log and keep the link.
-            log().warning << "circuit reserve miss peer=" << seed
+            log().warning << "circuit reserve miss peer=" << relay
                           << " err="
                           << (!result ? result.error().message
                                       : (result->error.empty() ? "rejected" : result->error));
             return;
           }
-          log().info << "circuit reserve ok peer=" << seed;
-        },
+          log().info << "circuit reserve ok peer=" << relay;
+        }),
         15000);
     if (!id) {
-      log().warning << "circuit reserve StartReserve rejected peer=" << seed;
+      log().warning << "circuit reserve StartReserve rejected peer=" << relay;
       return;
     }
-    log().info << "circuit reserve started on seed peer=" << seed;
-  };
+    log().info << "circuit reserve started on rendezvous peer=" << relay;
+  });
 
-  // Reserve every Connected seed first. Dialer StartBridge may pick hop2 while answerer only
-  // parked hop1 → ServeDial "endpoint not registered" (dogfood 39412f).
+  // Reserve every Connected surface member first (H011 / dogfood 39412f).
   for (const auto& hop : hops) {
     if (hop.peer_id.empty()) {
       continue;
@@ -863,11 +942,14 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
     }
   }
 
-  // Serial cold dial + reserve for remaining seeds (do not stop after first success).
-  auto try_at = std::make_shared<std::function<void(size_t)>>();
-  *try_at = [this, chat, hops = std::move(hops), start_reserve,
-             try_at](size_t index) mutable {
+  // Serial cold dial + reserve for remaining surface members (cover_all_remaining).
+  auto try_at = std::make_shared<std::function<void(size_t, size_t)>>();
+  *try_at = deferred_.Bind([this, chat, hops = std::move(hops), start_reserve, cold_limit, try_at](
+                               size_t index, size_t cold_started) mutable {
     while (index < hops.size()) {
+      if (cold_started >= cold_limit) {
+        return;
+      }
       const auto& hop = hops[index];
       if (hop.peer_id.empty() || !chat->links.GetLinkSnapshot(hop.peer_id).has_endpoint) {
         ++index;
@@ -878,34 +960,119 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
         ++index;
         continue;
       }
-      const std::string seed = hop.peer_id;
+      const std::string relay = hop.peer_id;
       const std::string restore_ma = hop.multiaddr;
       IChatPeerLinks* links = &chat->links;
       const size_t next = index + 1;
-      log().info << "circuit reserve assoc start peer=" << seed << " (serial index=" << index << ")";
+      const size_t next_cold = cold_started + 1;
+      log().info << "circuit reserve assoc start peer=" << relay << " (serial index=" << index
+                 << " cold=" << next_cold << "/" << cold_limit << ")";
       chat->links.EnsureAssociation(
-          seed, [this, start_reserve, links, seed, restore_ma, try_at,
-                 next](IChatPeerLinks::LinkRoe assoc) mutable {
+          relay, deferred_.Bind([this, start_reserve, links, relay, restore_ma, try_at, next,
+                                 next_cold](IChatPeerLinks::LinkRoe assoc) mutable {
             if (!assoc) {
-              log().warning << "circuit reserve assoc miss peer=" << seed
+              log().warning << "circuit reserve assoc miss peer=" << relay
                             << " err=" << assoc.error().message;
               if (try_at && *try_at) {
-                (*try_at)(next);
+                (*try_at)(next, next_cold);
               }
               return;
             }
             if (!restore_ma.empty() && CircuitHopDialBookAllowsRegister(restore_ma)) {
-              (void)links->RegisterEndpoint(seed, restore_ma);
+              (void)links->RegisterEndpoint(relay, restore_ma);
             }
-            start_reserve(seed);
+            start_reserve(relay);
             if (try_at && *try_at) {
-              (*try_at)(next);
+              (*try_at)(next, next_cold);
             }
-          });
+          }));
       return;
     }
-  };
-  (*try_at)(0);
+  });
+  (*try_at)(0, 0);
+}
+
+void CallMediaPlane::PreferLateReserve(const std::string& relay_peer_id) {
+  if (relay_peer_id.empty()) {
+    return;
+  }
+  chosen_circuit_r1_ = relay_peer_id;
+  MeshHost* m = mesh();
+  if (!m || !m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
+    log().warning << "circuit late-reserve skipped: tunnel not started peer=" << relay_peer_id;
+    return;
+  }
+  auto chat = m->ChatDeps();
+  if (!chat) {
+    return;
+  }
+  auto post_io = chat->io.post_io;
+  auto task = deferred_.Bind([this, relay_peer_id]() { PreferLateReserveOnIo(relay_peer_id); });
+  if (post_io) {
+    post_io(std::move(task));
+  } else {
+    task();
+  }
+}
+
+void CallMediaPlane::PreferLateReserveOnIo(const std::string& relay_peer_id) {
+  MeshHost* m = mesh();
+  if (!m || !m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
+    return;
+  }
+  auto chat = m->ChatDeps();
+  if (!chat || relay_peer_id.empty()) {
+    return;
+  }
+  // Ensure the chosen R1 is on the surface with a dialable MA when possible.
+  for (const auto& hop : BuildCircuitRendezvousCandidates()) {
+    if (hop.peer_id != relay_peer_id) {
+      continue;
+    }
+    if (!hop.multiaddr.empty() && IsAdpMultiaddr(hop.multiaddr) &&
+        CircuitHopDialBookAllowsRegister(hop.multiaddr)) {
+      (void)chat->links.RegisterEndpoint(hop.peer_id, hop.multiaddr);
+    }
+    break;
+  }
+  if (!chat->links.GetLinkSnapshot(relay_peer_id).has_endpoint) {
+    log().warning << "circuit late-reserve skip peer=" << relay_peer_id << " reason=!endpoint";
+    return;
+  }
+  auto start_one = deferred_.Bind([this, m, relay_peer_id]() {
+    const auto id = m->AmpCircuitTunnel()->StartReserve(
+        relay_peer_id,
+        deferred_.Bind([this, relay_peer_id](Roe<CircuitTunnelBridgeResult> result) {
+          if (!result || !result->ok) {
+            log().warning << "circuit late-reserve miss peer=" << relay_peer_id
+                          << " err="
+                          << (!result ? result.error().message
+                                      : (result->error.empty() ? "rejected" : result->error));
+            return;
+          }
+          log().info << "circuit late-reserve ok peer=" << relay_peer_id;
+        }),
+        15000);
+    if (!id) {
+      log().warning << "circuit late-reserve StartReserve rejected peer=" << relay_peer_id;
+      return;
+    }
+    log().info << "circuit late-reserve started peer=" << relay_peer_id;
+  });
+  if (chat->links.IsConnected(relay_peer_id)) {
+    start_one();
+    return;
+  }
+  log().info << "circuit late-reserve assoc start peer=" << relay_peer_id;
+  chat->links.EnsureAssociation(relay_peer_id,
+                                deferred_.Bind([this, start_one, relay_peer_id](IChatPeerLinks::LinkRoe assoc) {
+                                  if (!assoc) {
+                                    log().warning << "circuit late-reserve assoc miss peer=" << relay_peer_id
+                                                  << " err=" << assoc.error().message;
+                                    return;
+                                  }
+                                  start_one();
+                                }));
 }
 
 Roe<void> CallMediaPlane::TryEnsureCircuitHopReachable(const std::string& hop_peer_id) {

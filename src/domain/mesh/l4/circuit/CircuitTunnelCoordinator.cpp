@@ -10,6 +10,7 @@
 #include "amp/link/Types.h"
 #include "common/ValueJson.h"
 #include "domain/mesh/shared/AmpChannelOpen.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 #include <algorithm>
 #include <atomic>
@@ -78,6 +79,10 @@ struct CircuitTunnelCoordinator::Impl {
   std::atomic<uint64_t> next_id{1};
   pp::amp::MeshRuntime::IoTickId io_tick_id = 0;
   pp::amp::PeerLinkManager::PeerConnectedListenerId peer_connected_listener_id_ = 0;
+  /** PostIo(raw Impl*) — Invalidate on AbortInflight (Stop calls Abort). */
+  DeferredSelf deferred;
+  /** IoTick / PeerConnected / protocol handler — Invalidate only on Stop (survives mid-life Abort). */
+  DeferredSelf lifetime;
 
   struct Tunnel {
     CircuitTunnelId id;
@@ -113,6 +118,16 @@ struct CircuitTunnelCoordinator::Impl {
   std::unordered_map<std::string, std::vector<CircuitTunnelId>> far_leg_waiters_;
 
   void PostIo(std::function<void()> task) {
+    if (!runtime || !task) {
+      return;
+    }
+    // Exclusive deferred-self post: Invalidate on Abort/Stop makes queued raw-this work no-op.
+    deferred.Post([rt = runtime](std::function<void()> t) { rt->PostToIo(std::move(t)); },
+                  std::move(task));
+  }
+
+  /** Finish / reserve notify: callback-only (no Impl*) — do not gate on deferred. */
+  void PostFinishCb(std::function<void()> task) {
     if (!runtime || !task) {
       return;
     }
@@ -372,7 +387,7 @@ struct CircuitTunnelCoordinator::Impl {
     }
     // Callers hold Impl::mu. try_relay → StartBridge → OpenChannel must not re-enter under lock
     // (dogfood hop give-up / 130521). Deliver on the IO queue after TearDown returns.
-    PostIo([cb = std::move(cb), result = std::move(result)]() mutable { cb(std::move(result)); });
+    PostFinishCb([cb = std::move(cb), result = std::move(result)]() mutable { cb(std::move(result)); });
   }
 
   void TearDown(Tunnel& tunnel, const bool suppress_notify, const bool local_cancel, const std::string& error) {
@@ -486,7 +501,7 @@ struct CircuitTunnelCoordinator::Impl {
               if (tunnel->on_finished) {
                 auto cb = std::move(tunnel->on_finished);
                 tunnel->on_finished = nullptr;
-                PostIo([cb = std::move(cb), ok = std::move(ok)]() mutable { cb(std::move(ok)); });
+                PostFinishCb([cb = std::move(cb), ok = std::move(ok)]() mutable { cb(std::move(ok)); });
               }
               return true;
             }
@@ -955,24 +970,25 @@ void CircuitTunnelCoordinator::Start() {
     return;
   }
   impl_->stopped.store(false, std::memory_order_release);
-  impl_->io_tick_id = runtime_.AddIoTick([impl = impl_.get()] { impl->TickDeadlines(); });
+  impl_->io_tick_id = runtime_.AddIoTick(impl_->lifetime.Bind([impl = impl_.get()] {
+    impl->TickDeadlines();
+  }));
   impl_->peer_connected_listener_id_ = runtime_.Links().AddPeerConnectedListener(
-      [impl = impl_.get()](const std::string& peer_id) {
-        if (impl) {
-          impl->NotifyFarLegReady(peer_id);
-        }
-      });
+      impl_->lifetime.Bind([impl = impl_.get()](const std::string& peer_id) {
+        impl->NotifyFarLegReady(peer_id);
+      }));
   runtime_.Links().SetProtocolHandler(
       kCircuitRelayProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle handle, const std::string& /*remote_peer_id*/,
-                           const uint32_t ch) {
+      impl_->lifetime.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
+                                                const std::string& /*remote_peer_id*/,
+                                                const uint32_t ch) {
         if (!impl->runtime) {
           return;
         }
         impl->runtime->Links().WithLiveLink(handle, [&](pp::amp::PeerLink& link) {
           impl->HandleInboundChannel(link, ch);
         });
-      });
+      }));
 }
 
 void CircuitTunnelCoordinator::Stop() {
@@ -989,6 +1005,7 @@ void CircuitTunnelCoordinator::Stop() {
   }
   runtime_.Links().RemoveProtocolHandler(kCircuitRelayProtocolId);
   AbortInflight();
+  impl_->lifetime.Invalidate();
 }
 
 bool CircuitTunnelCoordinator::IsStarted() const {
@@ -1009,22 +1026,29 @@ bool CircuitTunnelCoordinator::ServeInbound() const {
 }
 
 void CircuitTunnelCoordinator::AbortInflight() {
-  impl_->PostIo([impl = impl_.get()] {
-    std::lock_guard lock(impl->mu);
+  // Sync under lock — never PostIo(raw Impl*) that can outlive Stop/TearDown.
+  // Null Finish cbs: CallMediaPlane / AmpCircuitHopReach may already be destroyed
+  // (hard-w5 offerer SIGSEGV after Leave). Reach uses AbortPending gen; reserve
+  // cbs use CallMediaPlane DeferredSelf.
+  {
+    std::lock_guard lock(impl_->mu);
     std::vector<uint64_t> ids;
-    for (auto& [id, _] : impl->tunnels) {
+    for (auto& [id, _] : impl_->tunnels) {
       ids.push_back(id);
     }
     for (const auto id : ids) {
-      if (auto* tunnel = impl->Find(CircuitTunnelId{id})) {
-        impl->TearDown(*tunnel, true, true, "circuit-relay aborted");
+      if (auto* tunnel = impl_->Find(CircuitTunnelId{id})) {
+        tunnel->on_finished = nullptr;
+        impl_->TearDown(*tunnel, true, true, "circuit-relay aborted");
       }
     }
-    for (auto& [peer_id, res] : impl->reservations) {
-      CloseQuietSlot(res.session, impl->ResolveLink(peer_id));
+    for (auto& [peer_id, res] : impl_->reservations) {
+      CloseQuietSlot(res.session, impl_->ResolveLink(peer_id));
     }
-    impl->reservations.clear();
-  });
+    impl_->reservations.clear();
+  }
+  // Poison already-queued PostIo(self) work; new posts after this capture a fresh snap.
+  impl_->deferred.Invalidate();
 }
 
 CircuitTunnelId CircuitTunnelCoordinator::StartBridge(const std::string& relay_peer_key,
