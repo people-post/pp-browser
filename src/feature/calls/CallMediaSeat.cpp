@@ -98,6 +98,13 @@ void CallMediaSeat::Release(const std::string& call_id) {
     // Epoch stays put — NoteStart/Acquire bump to invalidate in-flight Stop.
     log().info << "Release call_id=" << target << " epoch=" << epoch_at_post
                << " bound_now=" << bound_call_id_ << " media=" << MediaStateName(state_);
+    // B24: a stale Leave/Ended for an *older* call (relay inbox replays them on every poll)
+    // must not stop the engine that a live, different call is holding.
+    if (!bound_call_id_.empty() && bound_call_id_ != target && attach_call_id_ != target) {
+      log().info << "Release ignored: seat held by another call bound=" << bound_call_id_
+                 << " release=" << target;
+      return;
+    }
   }
   InvokeTeardown(target, epoch_at_post, /*force=*/false);
 }
