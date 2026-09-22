@@ -218,6 +218,70 @@ TEST_F(CallMediaLegCoordinatorTest, CallbacksMayReenterCoordinator) {
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
 }
 
+// B18: EnsureAssociation may move a Connected link's dial alias (one alias per link). The leg bound
+// on that link must survive: resolve by authenticated remote PeerId, not only by the alias.
+TEST_F(CallMediaLegCoordinatorTest, AliasRebindKeepsLegAlive) {
+  const std::string call_id = "call-amp-alias";
+  ByteVector media_key(32, 0x33);
+
+  std::atomic<bool> b_connected{false};
+  std::atomic<bool> b_failed{false};
+  std::atomic<int> b_audio{0};
+  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] { b_connected.store(true, std::memory_order_release); };
+    cbs.on_failed = [&](const std::string&) { b_failed.store(true, std::memory_order_release); };
+    cbs.on_audio = [&](const std::vector<uint8_t>&) { b_audio.fetch_add(1, std::memory_order_acq_rel); };
+  });
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+
+  LegCompletion leg_done;
+  const CallMediaLegId leg_id = a_call_->StartLeg(params, {}, leg_done.Fn(), 5000);
+  ASSERT_TRUE(leg_id);
+  leg_done.PumpUntilDone(*harness_);
+  ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
+  harness_->PumpUntil([&] { return b_connected.load(std::memory_order_acquire); });
+  ASSERT_TRUE(b_connected.load(std::memory_order_acquire));
+  ASSERT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  // Move B's inbound link alias: EnsureAssociation on a new key whose endpoint carries A's PeerId
+  // rebinds the existing Connected link to that key (the production path that broke the leg).
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_b().RegisterEndpoint("moved-alias", harness_->ma_a)));
+  std::atomic<bool> assoc_done{false};
+  harness_->runtime_b->PostToIo([&] {
+    harness_->mgr_b().EnsureAssociation("moved-alias", [&](pp::amp::PeerLinkManager::LinkRoe) {
+      assoc_done.store(true, std::memory_order_release);
+    });
+  });
+  harness_->PumpUntil([&] { return assoc_done.load(std::memory_order_acquire); });
+  ASSERT_TRUE(assoc_done.load(std::memory_order_acquire));
+  ASSERT_NE(harness_->mgr_b().FindLink("moved-alias"), nullptr);
+
+  // Let TickDeadlines run a few times (1 s cadence) — the leg must not be torn down as "peer link lost".
+  const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(2500);
+  while (std::chrono::steady_clock::now() < until) {
+    harness_->PumpBoth();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  EXPECT_FALSE(b_failed.load(std::memory_order_acquire));
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  const std::vector<uint8_t> opus = {1, 2, 3, 4};
+  auto sent = a_call_->SendAudio(leg_id, opus, 1, 0);
+  ASSERT_TRUE(sent) << sent.error().message;
+  harness_->PumpUntil([&] { return b_audio.load(std::memory_order_acquire) > 0; });
+  EXPECT_GT(b_audio.load(std::memory_order_acquire), 0);
+}
+
 TEST_F(CallMediaLegCoordinatorTest, DetachUnblocksConnectWait) {
   b_call_->Stop();
   b_call_ = std::make_unique<CallMediaLegCoordinator>(

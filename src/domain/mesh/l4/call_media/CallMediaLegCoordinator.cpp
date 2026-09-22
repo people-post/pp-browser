@@ -120,6 +120,14 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     CallMediaDirectCallbacks callbacks;
     LegFinished on_finished;
     Clock::time_point deadline{};
+    /**
+     * Authenticated remote PeerId and mux of the link our channels are bound on. The dial alias in
+     * params.peer_key can move (EnsureAssociation rebinds a Connected link from `account:` to the
+     * PeerId key — one alias per link), so lookups fall back to the remote PeerId and verify the
+     * mux is still the one we bound to.
+     */
+    std::string remote_peer_id;
+    pp::amp::ChannelMux* bound_mux = nullptr;
 
     std::shared_ptr<pp::amp::ChannelSession> outbound_control;
     std::shared_ptr<pp::amp::ChannelSession> inbound_control;
@@ -198,10 +206,33 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   }
 
   pp::amp::PeerLink* ResolveLink(const Bundle& bundle) const {
-    if (!runtime || bundle.params.peer_key.empty()) {
+    if (!runtime) {
       return nullptr;
     }
-    return runtime->Links().FindLink(bundle.params.peer_key);
+    pp::amp::PeerLink* link = nullptr;
+    if (!bundle.params.peer_key.empty()) {
+      link = runtime->Links().FindLink(bundle.params.peer_key);
+    }
+    if (!link && !bundle.remote_peer_id.empty()) {
+      link = runtime->Links().FindLinkByPeerId(bundle.remote_peer_id);
+    }
+    // A different link to the same remote does not carry our bound ChannelSessions.
+    if (link && bundle.bound_mux && link->Mux() != bundle.bound_mux) {
+      return nullptr;
+    }
+    return link;
+  }
+
+  void NoteBoundLink(Bundle& bundle, pp::amp::PeerLink& link) {
+    if (bundle.params.peer_key.empty()) {
+      bundle.params.peer_key = link.PeerKey();
+    }
+    if (bundle.remote_peer_id.empty()) {
+      bundle.remote_peer_id = link.RemotePeerId();
+    }
+    if (!bundle.bound_mux) {
+      bundle.bound_mux = link.Mux();
+    }
   }
 
   bool BundleMatchesLink(const Bundle& bundle, const pp::amp::PeerLink& link) const {
@@ -294,10 +325,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
 
   /** PeerLink erased (DropLink) — ChannelSession mux_ may already be dangling. */
   bool PeerLinkMissing(const Bundle& bundle) const {
-    if (!runtime || bundle.params.peer_key.empty()) {
+    if (!runtime || (bundle.params.peer_key.empty() && bundle.remote_peer_id.empty())) {
       return false;
     }
-    return runtime->Links().FindLink(bundle.params.peer_key) == nullptr;
+    return ResolveLink(bundle) == nullptr;
   }
 
   void DropRole(Bundle& bundle, const CallMediaChannelRole role) {
@@ -524,7 +555,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
                                 }
                                 return;
                               }
-                              auto* resolved = runtime->Links().FindLink(peer_key);
+                              auto* resolved = ResolveLink(*bundle);
                               if (!resolved) {
                                 TearDownBundle(*bundle, false, false, "amp call-media: peer link missing");
                                 return;
@@ -536,9 +567,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
 
   void BindControlChannel(Bundle& bundle, pp::amp::PeerLink& link, const uint32_t channel_id,
                           const CallMediaChannelRole role) {
-    if (bundle.params.peer_key.empty()) {
-      bundle.params.peer_key = link.PeerKey();
-    }
+    NoteBoundLink(bundle, link);
     auto channel_session = std::make_shared<pp::amp::ChannelSession>();
     const std::string call_id = bundle.call_id;
     channel_session->Bind(
@@ -563,9 +592,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   }
 
   void BindMediaChannel(Bundle& bundle, pp::amp::PeerLink& link, const uint32_t channel_id) {
-    if (bundle.params.peer_key.empty()) {
-      bundle.params.peer_key = link.PeerKey();
-    }
+    NoteBoundLink(bundle, link);
     auto channel_session = std::make_shared<pp::amp::ChannelSession>();
     const std::string call_id = bundle.call_id;
     channel_session->Bind(
@@ -789,7 +816,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         if (!bundle || bundle->phase != CallMediaBundlePhase::InboundHello) {
           return;
         }
-        pp::amp::PeerLink* resolved = runtime->Links().FindLink(peer_key);
+        pp::amp::PeerLink* resolved = ResolveLink(*bundle);
         if (!resolved) {
           return;
         }
