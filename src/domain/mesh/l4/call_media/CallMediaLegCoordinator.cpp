@@ -359,6 +359,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   void TearDownBundle(Bundle& bundle, const bool finish_with_abort, const bool notify_failed,
                       const std::string& fail_message) {
     const std::string call_id = bundle.call_id;
+    CallMediaLegLog().info << "CallMediaLeg teardown call_id=" << call_id << " peer=" << bundle.params.peer_key
+                           << " phase=" << BundlePhaseName(bundle.phase)
+                           << " abort=" << (finish_with_abort ? 1 : 0) << " notify=" << (notify_failed ? 1 : 0)
+                           << " reason=" << fail_message;
     bundle.local_cancel = bundle.local_cancel || finish_with_abort;
     bundle.phase = CallMediaBundlePhase::Closing;
     if (!bundle.finished) {
