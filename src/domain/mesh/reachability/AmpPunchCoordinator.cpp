@@ -80,6 +80,14 @@ BurstDialResult BurstDialCandidates(pp::amp::PeerLinkManager& links, AmpPunchCoo
   const int window = window_ms > 0 ? window_ms : 2000;
   const auto deadline = Clock::now() + std::chrono::milliseconds(window);
 
+  auto abort_burst_key = [&](const std::string& key) {
+    links.AbortInflightDial(key);
+    if (io_pump) {
+      io_pump();
+      io_pump();
+    }
+  };
+
   for (size_t i = 0; i < addrs.size(); ++i) {
     if (Clock::now() >= deadline) {
       break;
@@ -163,6 +171,7 @@ BurstDialResult BurstDialCandidates(pp::amp::PeerLinkManager& links, AmpPunchCoo
           return out;
         }
       }
+      abort_burst_key(key);
       out.error = "punch burst associated without a direct PeerLink";
       out.dialed = ma;
       continue;
@@ -186,6 +195,9 @@ BurstDialResult BurstDialCandidates(pp::amp::PeerLinkManager& links, AmpPunchCoo
         return out;
       }
     }
+    // Window expiry / dial timeout leaves an inflight Handshaking PeerLink unless aborted —
+    // late FinishDial + DropLink after SettledWait unwinds UAF'd on Windows CI.
+    abort_burst_key(key);
     out.error = err;
     out.dialed = ma;
   }
