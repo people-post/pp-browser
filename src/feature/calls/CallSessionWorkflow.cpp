@@ -1005,6 +1005,13 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
     log().info << "CallInvite ignored; already joined call_id=" << invite->call_id;
     return {};
   }
+  // B24: a replayed invite for a call this device already ended must not re-arm the ring
+  // (it hijacked the accept button mid-call and joined a dead call id).
+  if (auto ended = sessions_.LoadSession(invite->call_id);
+      ended && ended->has_value() && (*ended)->state == CallSessionState::Ended) {
+    log().info << "CallInvite ignored (ended session) call_id=" << invite->call_id;
+    return {};
+  }
   // P001: when we charge (local floor > 0), auto-reject offers below floor.
   if (initiation_billing_) {
     int64_t local_floor = 0;
@@ -1292,6 +1299,13 @@ Roe<void> CallSessionWorkflow::HandleInboundLeave(const std::string& detail_json
   (void)sessions_.UpsertParticipant(participant);
   auto joined = sessions_.CountJoined(leave->call_id);
   auto session = sessions_.LoadSession(leave->call_id);
+  // B24: relay inbox replays old call-control; an ended call's Leave must not re-run EndCallLocal
+  // (which stops whatever media a newer call is using).
+  if (session && session->has_value() && (*session)->state == CallSessionState::Ended) {
+    log().info << "Inbound CallLeave ignored (ended session) call_id=" << leave->call_id
+               << " from=" << identity;
+    return {};
+  }
   if (identity == local_identity) {
     // Ejected after failed soft-migrate (or remote Leave for us): clear local chrome/media.
     host_.hop.clear_sfu_attach_wait();
