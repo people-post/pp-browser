@@ -30,7 +30,7 @@ void ApplyRoute(bool speaker_on) {
 void ActivateForVoipCall() {
   AVAudioSession* session = [AVAudioSession sharedInstance];
   NSError* error = nil;
-  AVAudioSessionCategoryOptions options = AVAudioSessionCategoryOptionAllowBluetooth |
+  AVAudioSessionCategoryOptions options = AVAudioSessionCategoryOptionAllowBluetoothHFP |
                                           AVAudioSessionCategoryOptionAllowBluetoothA2DP;
   if (g_speakerphone.load()) {
     options |= AVAudioSessionCategoryOptionDefaultToSpeaker;
@@ -68,7 +68,7 @@ void SetSpeakerphoneOn(bool on) {
   }
   AVAudioSession* session = [AVAudioSession sharedInstance];
   NSError* error = nil;
-  AVAudioSessionCategoryOptions options = AVAudioSessionCategoryOptionAllowBluetooth |
+  AVAudioSessionCategoryOptions options = AVAudioSessionCategoryOptionAllowBluetoothHFP |
                                           AVAudioSessionCategoryOptionAllowBluetoothA2DP;
   if (on) {
     options |= AVAudioSessionCategoryOptionDefaultToSpeaker;

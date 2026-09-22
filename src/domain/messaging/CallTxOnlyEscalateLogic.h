@@ -5,8 +5,13 @@
 
 namespace pbr {
 
-/** After DirectConnected: TX alive + RX=0 for this long → force circuit (V038). */
-inline constexpr int64_t kCallTxOnlyEscalateGraceMs = 4000;
+/**
+ * After DirectConnected: TX alive + RX=0 for this long → force circuit (V038).
+ * The peer only starts sending once its CallAccept/BeginSession lands (relay inbox poll +
+ * answerer seed park can add several seconds); match the offerer inbound grace (15 s) so a
+ * healthy same-LAN direct leg is not torn down before the peer's capture starts.
+ */
+inline constexpr int64_t kCallTxOnlyEscalateGraceMs = 15000;
 inline constexpr uint64_t kCallTxOnlyEscalateMinTxFrames = 80;
 
 /** Pure gates for CallMediaBridge::MaybeEscalateTxOnlyDirect (unit-testable). */

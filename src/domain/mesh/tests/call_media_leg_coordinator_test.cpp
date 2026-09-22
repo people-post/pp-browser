@@ -153,6 +153,288 @@ TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedAudioRoundTrip) {
   EXPECT_FALSE(a_call_->IsLegActive(leg_id));
 }
 
+// B16: on_connected / on_finished are invoked from inside the Amp IO drain; the transport and the
+// bridge re-enter the coordinator from those callbacks (PrimaryLegId / IsActive). The coordinator
+// must not hold its own (non-recursive) mutex while invoking them, or the IO strand deadlocks.
+TEST_F(CallMediaLegCoordinatorTest, CallbacksMayReenterCoordinator) {
+  const std::string call_id = "call-amp-reenter";
+  ByteVector media_key(32, 0x24);
+
+  std::atomic<bool> b_connected{false};
+  std::atomic<bool> b_active_in_cb{false};
+  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] {
+      b_active_in_cb.store(b_call_->IsActive(), std::memory_order_release);
+      b_connected.store(true, std::memory_order_release);
+    };
+  });
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+
+  CallMediaDirectCallbacks cbs;
+  std::atomic<bool> a_connected{false};
+  std::atomic<bool> a_active_in_cb{false};
+  cbs.on_connected = [&] {
+    a_active_in_cb.store(a_call_->IsActive(), std::memory_order_release);
+    a_connected.store(true, std::memory_order_release);
+  };
+
+  LegCompletion leg_done;
+  CallMediaLegId leg_in_finished{};
+  auto inner = leg_done.Fn();
+  const CallMediaLegId leg_id = a_call_->StartLeg(
+      params, std::move(cbs),
+      [&, inner](pp::Roe<void> result) mutable {
+        // Mirrors CallMediaAmpTransport::ConnectAsync, which calls PrimaryLegId() here.
+        leg_in_finished = a_call_->PrimaryLegId();
+        inner(std::move(result));
+      },
+      5000);
+  ASSERT_TRUE(leg_id);
+
+  leg_done.PumpUntilDone(*harness_);
+  ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
+  EXPECT_EQ(leg_in_finished.value, leg_id.value);
+
+  harness_->PumpUntil([&] {
+    return a_connected.load(std::memory_order_acquire) && b_connected.load(std::memory_order_acquire);
+  });
+  ASSERT_TRUE(a_connected.load(std::memory_order_acquire));
+  ASSERT_TRUE(b_connected.load(std::memory_order_acquire));
+  EXPECT_TRUE(a_active_in_cb.load(std::memory_order_acquire));
+  EXPECT_TRUE(b_active_in_cb.load(std::memory_order_acquire));
+
+  a_call_->DetachLeg(leg_id);
+  harness_->PumpBoth();
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
+}
+
+// B18: EnsureAssociation may move a Connected link's dial alias (one alias per link). The leg bound
+// on that link must survive: resolve by authenticated remote PeerId, not only by the alias.
+TEST_F(CallMediaLegCoordinatorTest, AliasRebindKeepsLegAlive) {
+  const std::string call_id = "call-amp-alias";
+  ByteVector media_key(32, 0x33);
+
+  std::atomic<bool> b_connected{false};
+  std::atomic<bool> b_failed{false};
+  std::atomic<int> b_audio{0};
+  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] { b_connected.store(true, std::memory_order_release); };
+    cbs.on_failed = [&](const std::string&) { b_failed.store(true, std::memory_order_release); };
+    cbs.on_audio = [&](const std::vector<uint8_t>&) { b_audio.fetch_add(1, std::memory_order_acq_rel); };
+  });
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+
+  LegCompletion leg_done;
+  const CallMediaLegId leg_id = a_call_->StartLeg(params, {}, leg_done.Fn(), 5000);
+  ASSERT_TRUE(leg_id);
+  leg_done.PumpUntilDone(*harness_);
+  ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
+  harness_->PumpUntil([&] { return b_connected.load(std::memory_order_acquire); });
+  ASSERT_TRUE(b_connected.load(std::memory_order_acquire));
+  ASSERT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  // Move B's inbound link alias: EnsureAssociation on a new key whose endpoint carries A's PeerId
+  // rebinds the existing Connected link to that key (the production path that broke the leg).
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_b().RegisterEndpoint("moved-alias", harness_->ma_a)));
+  std::atomic<bool> assoc_done{false};
+  harness_->runtime_b->PostToIo([&] {
+    harness_->mgr_b().EnsureAssociation("moved-alias", [&](pp::amp::PeerLinkManager::LinkRoe) {
+      assoc_done.store(true, std::memory_order_release);
+    });
+  });
+  harness_->PumpUntil([&] { return assoc_done.load(std::memory_order_acquire); });
+  ASSERT_TRUE(assoc_done.load(std::memory_order_acquire));
+  ASSERT_NE(harness_->mgr_b().FindLink("moved-alias"), nullptr);
+
+  // Let TickDeadlines run a few times (1 s cadence) — the leg must not be torn down as "peer link lost".
+  const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(2500);
+  while (std::chrono::steady_clock::now() < until) {
+    harness_->PumpBoth();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  EXPECT_FALSE(b_failed.load(std::memory_order_acquire));
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  const std::vector<uint8_t> opus = {1, 2, 3, 4};
+  auto sent = a_call_->SendAudio(leg_id, opus, 1, 0);
+  ASSERT_TRUE(sent) << sent.error().message;
+  harness_->PumpUntil([&] { return b_audio.load(std::memory_order_acquire) > 0; });
+  EXPECT_GT(b_audio.load(std::memory_order_acquire), 0);
+}
+
+// B19: audio rides ADP best-effort (no retransmit). One lost datagram used to pin the receiver's
+// replay window; once the sender was a window ahead every later frame was rejected — one-way audio.
+TEST_F(CallMediaLegCoordinatorTest, AudioSurvivesSingleDatagramLoss) {
+  const std::string call_id = "call-amp-loss";
+  ByteVector media_key(32, 0x55);
+  std::atomic<bool> b_connected{false};
+  std::atomic<int> b_audio{0};
+  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] { b_connected.store(true, std::memory_order_release); };
+    cbs.on_audio = [&](const std::vector<uint8_t>&) { b_audio.fetch_add(1, std::memory_order_acq_rel); };
+  });
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+  LegCompletion leg_done;
+  const CallMediaLegId leg_id = a_call_->StartLeg(params, {}, leg_done.Fn(), 5000);
+  ASSERT_TRUE(leg_id);
+  leg_done.PumpUntilDone(*harness_);
+  ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
+  harness_->PumpUntil([&] { return b_connected.load(std::memory_order_acquire); });
+  ASSERT_TRUE(b_connected.load(std::memory_order_acquire));
+
+  const std::vector<uint8_t> opus = {9, 9, 9, 9};
+  constexpr int kFrames = 300;  // > replay window (64) after the hole
+  for (int i = 1; i <= kFrames; ++i) {
+    if (i == 10) {
+      harness_->io_a->DropNext(1);  // lose exactly one audio datagram A→B
+    }
+    auto sent = a_call_->SendAudio(leg_id, opus, static_cast<uint32_t>(i), 0);
+    ASSERT_TRUE(sent) << sent.error().message;
+    harness_->PumpBoth();
+  }
+  harness_->PumpUntil([&] { return b_audio.load(std::memory_order_acquire) >= kFrames - 1; }, 200);
+  EXPECT_GE(b_audio.load(std::memory_order_acquire), kFrames - 1);
+}
+
+// B20: on_media must carry the wire seq/mark. With seq always 0 the playout jitter buffer treated every
+// frame as a duplicate and audio was 100% packet-loss concealment ("杂音").
+TEST_F(CallMediaLegCoordinatorTest, OnMediaCarriesSeqAndMark) {
+  const std::string call_id = "call-amp-seq";
+  ByteVector media_key(32, 0x66);
+  std::atomic<bool> b_connected{false};
+  std::mutex mu;
+  std::vector<std::pair<uint32_t, uint8_t>> seen;
+  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] { b_connected.store(true, std::memory_order_release); };
+    cbs.on_media = [&](uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>&) {
+      std::lock_guard lock(mu);
+      if (channel == 0) {
+        seen.emplace_back(seq, mark);
+      }
+    };
+  });
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+  LegCompletion leg_done;
+  const CallMediaLegId leg_id = a_call_->StartLeg(params, {}, leg_done.Fn(), 5000);
+  ASSERT_TRUE(leg_id);
+  leg_done.PumpUntilDone(*harness_);
+  ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
+  harness_->PumpUntil([&] { return b_connected.load(std::memory_order_acquire); });
+
+  const std::vector<uint8_t> opus = {7, 7, 7};
+  for (uint32_t seq = 41; seq <= 45; ++seq) {
+    ASSERT_TRUE(static_cast<bool>(a_call_->SendAudio(leg_id, opus, seq, seq == 41 ? 1 : 0)));
+    harness_->PumpBoth();
+  }
+  harness_->PumpUntil([&] { std::lock_guard lock(mu); return seen.size() >= 5; });
+  std::lock_guard lock(mu);
+  ASSERT_EQ(seen.size(), 5u);
+  for (size_t i = 0; i < seen.size(); ++i) {
+    EXPECT_EQ(seen[i].first, 41u + static_cast<uint32_t>(i));
+    EXPECT_EQ(seen[i].second, i == 0 ? 1 : 0);
+  }
+}
+
+// B21: A evicts a Connected link (no auth RX for kAliveTimeoutMs) while B still sees it alive.
+// A's redial must not be rejected by B as a "duplicate" of the stale inbound link.
+TEST_F(CallMediaLegCoordinatorTest, RedialAfterPeerSilentlyDroppedLink) {
+  ByteVector media_key(32, 0x77);
+  std::atomic<int> b_connected{0};
+  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] { b_connected.fetch_add(1, std::memory_order_acq_rel); };
+  });
+  auto start = [&](const std::string& call_id, LegCompletion& done) {
+    CallMediaDirectConnectParams params;
+    params.peer_key = "b";
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.media_key = media_key;
+    params.offerer = true;
+    return a_call_->StartLeg(params, {}, done.Fn(), 5000);
+  };
+
+  LegCompletion first;
+  const CallMediaLegId leg1 = start("call-amp-zombie-1", first);
+  ASSERT_TRUE(leg1);
+  first.PumpUntilDone(*harness_);
+  ASSERT_TRUE(first.result) << first.result.error().message;
+  harness_->PumpUntil([&] { return b_connected.load(std::memory_order_acquire) >= 1; });
+  const std::string a_id = harness_->mgr_a().LocalPeerId();
+  ASSERT_NE(harness_->mgr_b().FindLinkByPeerId(a_id), nullptr);
+
+  // End the call first so no channel traffic refreshes liveness (matches the field trace:
+  // eviction happened 5 s after hangup).
+  a_call_->DetachLeg(leg1);
+  for (int i = 0; i < 5; ++i) {
+    harness_->PumpBoth();
+  }
+  ASSERT_NE(harness_->mgr_a().FindLink("b"), nullptr);
+
+  // A loses its side of the association and its Close never reaches B (field: A evicted the
+  // link after 5 s without RX; nothing told B).
+  {
+    auto* link = harness_->mgr_a().FindLink("b");
+    ASSERT_NE(link, nullptr);
+    ASSERT_NE(link->ConnectionOrNull(), nullptr);
+    harness_->io_a->DropNext(1);
+    link->ConnectionOrNull()->Close();
+  }
+  for (int i = 0; i < 5; ++i) {
+    harness_->PumpBoth();
+  }
+  EXPECT_EQ(harness_->mgr_a().FindLink("b"), nullptr) << "A should have evicted its closed link";
+  EXPECT_NE(harness_->mgr_b().FindLinkByPeerId(a_id), nullptr) << "B still holds its (stale) inbound link";
+
+  LegCompletion second;
+  const CallMediaLegId leg2 = start("call-amp-zombie-2", second);
+  ASSERT_TRUE(leg2);
+  second.PumpUntilDone(*harness_);
+  ASSERT_TRUE(second.result) << second.result.error().message;
+  harness_->PumpUntil([&] { return b_connected.load(std::memory_order_acquire) >= 2; });
+  EXPECT_GE(b_connected.load(std::memory_order_acquire), 2);
+}
+
 TEST_F(CallMediaLegCoordinatorTest, DetachUnblocksConnectWait) {
   b_call_->Stop();
   b_call_ = std::make_unique<CallMediaLegCoordinator>(
@@ -233,7 +515,7 @@ TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedVideoRoundTripOver16KiB) {
       connected = true;
       cv.notify_one();
     };
-    cbs.on_media = [&](uint8_t channel, const std::vector<uint8_t>& payload) {
+    cbs.on_media = [&](uint8_t channel, uint32_t, uint8_t, const std::vector<uint8_t>& payload) {
       std::lock_guard lock(mu);
       received_ch = channel;
       received = payload;
