@@ -268,7 +268,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedEncryptedVideoOver16KiB) {
       std::lock_guard lock(mu);
       answerer_connected = true;
     };
-    cbs.on_media = [&](uint8_t channel, const std::vector<uint8_t>& payload) {
+    cbs.on_media = [&](uint8_t channel, uint32_t, uint8_t, const std::vector<uint8_t>& payload) {
       std::lock_guard lock(mu);
       received_ch = channel;
       received = payload;
