@@ -112,6 +112,14 @@ public:
   /** AcceptInvite may await circuit-ready before CallAccept. */
   using AwaitCircuitReadyFn = std::function<bool(int timeout_ms)>;
   void SetAwaitCircuitReady(AwaitCircuitReadyFn callback);
+  /** H011 L3.1c: inbound call_circuit_r1 → answerer PreferLateReserve. */
+  using PreferLateReserveFn = std::function<void(const std::string& relay_peer_id)>;
+  void SetPreferLateReserve(PreferLateReserveFn callback);
+  /**
+   * H011 L3.1c: dialer announces chosen R1 to the active call peer (best-effort).
+   * No-op when no active call / peer / empty R1.
+   */
+  void AnnounceCircuitR1(const std::string& circuit_r1_peer_id);
   /** Local `/ip4/…/tcp/…/p2p/…` listen set for call-control dial bootstrap. */
   using LocalListenMultiaddrsFn = std::function<std::vector<std::string>()>;
   void SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback);
@@ -323,6 +331,7 @@ private:
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
+  Roe<void> HandleInboundCircuitR1(const std::string& detail_json);
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
 
   IThreadStore& store_;
@@ -344,6 +353,7 @@ private:
   PrefetchPeerReachFn prefetch_reach_;
   EnsureCircuitReadyFn ensure_circuit_ready_;
   AwaitCircuitReadyFn await_circuit_ready_;
+  PreferLateReserveFn prefer_late_reserve_;
   LocalListenMultiaddrsFn local_listen_multiaddrs_;
   LocalPeerCapsFn local_peer_caps_;
   LocalMeshPeerIdFn local_mesh_peer_id_;

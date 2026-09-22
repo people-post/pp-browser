@@ -219,8 +219,9 @@ optional<string> LastGoodCircuitR1(peer);  // L3.1b
 | `CollectDialableCircuitRelayIds` | Shared via `BuildCircuitRendezvousCandidates` (**L3.1a**) |
 | `ReserveOnBootstrapSeedsOnIo` (seeds-only) | Reserves shared surface Connected + cold (**L3.1a**) |
 | `OrderCircuitRelayAttempts` (dialer sticky) | Unchanged; dialer-local |
-| `EnsureViaCircuitAsync` | Unchanged H010 loop; optionally `NoteChosenCircuitR1` on ack (L3.1c) |
+| `EnsureViaCircuitAsync` | Unchanged H010 loop; `OnRelayChosen` → `AnnounceCircuitR1` (**L3.1c**) |
 | `ensure_circuit_ready` / `await_circuit_ready` | Same ports; park uses shared surface underneath |
+| — | Inbound `call_circuit_r1` → `PreferLateReserve` (**L3.1c**) |
 
 ## Related
 

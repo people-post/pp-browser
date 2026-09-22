@@ -39,7 +39,7 @@ Docs: [CIRCUIT_R1_RENDEZVOUS.md](CIRCUIT_R1_RENDEZVOUS.md), [H011](DECISIONS.md#
 - [x] **L3.1a** — Shared `BuildCircuitRendezvousCandidates` / `CircuitRendezvousPolicy`; answerer reserves Connected + cold surface (same `BuildCircuitHopList` as dialer); unit policy tests
 - [x] **L3.1b** — Answerer prefer last-good / chosen R1 sticky in park order (`OrderRendezvousParkAttempts` + `LastGoodRelayPeerKey`)
 - [x] **L3.1c (stack)** — `PreferLateReserve` + `OnRelayChosen` / `chosen_circuit_r1_` cache
-- [ ] **L3.1c (wire)** — Additive `circuit_r1` PeerId announce → answerer `PreferLateReserve` (H007 carve-out)
+- [x] **L3.1c (wire)** — Additive `call_circuit_r1` control → answerer `PreferLateReserve` (H007 carve-out)
 - [ ] **L3.1d** — Compose + `hard-w5` STACK gates; H010 budget regressions green
 
 ## L3.25 — Amp Coordinated Punch

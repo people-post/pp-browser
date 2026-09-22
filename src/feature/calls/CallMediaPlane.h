@@ -61,6 +61,11 @@ struct CallMediaPlaneDeps {
   /** Dial-book account: ↔ PeerId learning (CallSessionManager::NoteMeshPeerIdForRelay). */
   std::function<void(const std::string& account_identity, const std::string& peer_id)>
       note_mesh_peer_id_for_relay;
+  /**
+   * H011 L3.1c: after dialer StartBridge ack, announce chosen R1 PeerId to the call peer.
+   * Filled by CallStack → CallSessionManager::AnnounceCircuitR1.
+   */
+  std::function<void(const std::string& circuit_r1_peer_id)> announce_circuit_r1;
 };
 
 /** Args for one bridge bind; not retained on the plane after BindBridge returns. */

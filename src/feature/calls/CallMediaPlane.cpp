@@ -256,6 +256,9 @@ void CallMediaPlane::WireCircuitHopReach(MeshHost* m, bool use_amp_relay, const 
     }
     chosen_circuit_r1_ = relay_peer_key;
     log().info << "circuit rendezvous chosen R1=" << relay_peer_key;
+    if (deps_.announce_circuit_r1) {
+      deps_.announce_circuit_r1(relay_peer_key);
+    }
   });
   circuit_hop_reach_ = std::move(reach);
   log().info << "circuit-hop reach=amp";

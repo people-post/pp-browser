@@ -79,6 +79,11 @@ void CallStack::SyncMediaPlaneDeps() {
       call_sessions_->NoteMeshPeerIdForRelay(account, peer_id);
     }
   };
+  plane_deps.announce_circuit_r1 = [this](const std::string& circuit_r1) {
+    if (call_sessions_) {
+      call_sessions_->AnnounceCircuitR1(circuit_r1);
+    }
+  };
   media_plane_->SetDeps(std::move(plane_deps));
 }
 
@@ -279,6 +284,11 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
   });
   call_sessions_->SetAwaitCircuitReady([this](int timeout_ms) {
     return media_plane_ ? media_plane_->AwaitCircuitReady(timeout_ms) : false;
+  });
+  call_sessions_->SetPreferLateReserve([this](const std::string& relay_peer_id) {
+    if (media_plane_) {
+      media_plane_->PreferLateReserve(relay_peer_id);
+    }
   });
   EnsureCallLifecycleBound();
   WireMediaRelayDeps();

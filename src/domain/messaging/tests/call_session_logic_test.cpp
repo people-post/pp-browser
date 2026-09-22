@@ -118,6 +118,8 @@ TEST(CallControlTypeTest, WireRoundTripSdpAndIce) {
   EXPECT_EQ(CallControlTypeFromWire("call_hop_refuse"), CallControlType::CallHopRefuse);
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallVideoRefresh), "call_video_refresh");
   EXPECT_EQ(CallControlTypeFromWire("call_video_refresh"), CallControlType::CallVideoRefresh);
+  EXPECT_EQ(CallControlTypeToWire(CallControlType::CallCircuitR1), "call_circuit_r1");
+  EXPECT_EQ(CallControlTypeFromWire("call_circuit_r1"), CallControlType::CallCircuitR1);
 }
 
 TEST(CallControlCodecTest, SdpDetailRoundTrip) {
@@ -243,6 +245,22 @@ TEST(CallControlCodecTest, VideoRefreshRoundTrip) {
   EXPECT_EQ(decoded->call_id, detail.call_id);
   EXPECT_EQ(decoded->identity, detail.identity);
   EXPECT_FALSE(CallControlCodec::DecodeVideoRefresh(R"({"identity":"account:pub"})"));
+}
+
+TEST(CallControlCodecTest, CircuitR1RoundTrip) {
+  CallCircuitR1Detail detail;
+  detail.call_id = "call:r1";
+  detail.circuit_r1 = "QmRelayPeerIdExample";
+  auto encoded = CallControlCodec::EncodeCircuitR1(detail);
+  ASSERT_TRUE(encoded);
+  auto decoded = CallControlCodec::DecodeCircuitR1(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->call_id, detail.call_id);
+  EXPECT_EQ(decoded->circuit_r1, detail.circuit_r1);
+  EXPECT_FALSE(CallControlCodec::DecodeCircuitR1(R"({"call_id":"call:r1"})"));
+  EXPECT_FALSE(CallControlCodec::DecodeCircuitR1(R"({"call_id":"call:r1","circuit_r1":""})"));
+  EXPECT_TRUE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallCircuitR1));
+  EXPECT_TRUE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallCircuitR1));
 }
 
 TEST(CallControlCodecTest, PlumbingAndInboxChromeSuppress) {
