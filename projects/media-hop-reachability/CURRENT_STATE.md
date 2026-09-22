@@ -31,7 +31,7 @@ Hop **reachability** = **Amp mesh stack work** (H001/H007). App-layer `call_hop_
 | Area | State |
 |------|-------|
 | **L3.1 Circuit R1 rendezvous** | **L3.1a–d landed** — [CIRCUIT_R1_RENDEZVOUS.md](CIRCUIT_R1_RENDEZVOUS.md) |
-| **L3.25 Amp Coordinated Punch** | Spec done; **L3.25a–c complete** — seed/contact introducer, PeerId upsert, punch-before-circuit, upgrade-from-circuit (R1→direct demote) — [HOLE_PUNCH.md](HOLE_PUNCH.md) |
+| **L3.25 Amp Coordinated Punch** | Spec done; **L3.25a–c complete** + gap tests — dual-dial A026 race, sync-window expiry → PunchFailed / SoftMigrate circuit fallback; hard-lab must not overclaim CGNAT punch — [HOLE_PUNCH.md](HOLE_PUNCH.md) |
 | **L3.5 multi-hop circuit** | Spec done — [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md); parallel to punch |
 | **L4 SoftMigrate consume** | Rank hops; skip undialable after circuit; drop empty contact ma — **loopback compose green**; punch upsert flips `IsDialable` (L3.25b) |
 | **L5 directory / DHT** | Planned; closed-set for media hops |
@@ -53,4 +53,4 @@ Hop **reachability** = **Amp mesh stack work** (H001/H007). App-layer `call_hop_
 
 1. **L3.5** — multi-hop circuit v2 when transitive reachability is needed (R1↛B, R2 can) — parallel
 2. Mesh invest: [N022](../p2p-mesh/DECISIONS.md#n022--libp2p-investment-http-settle-preferred-chain-backup)
-3. Punch hard-lab: dual-dial race / sync-window expiry (L3.25 test gap)
+3. Punch hard-lab Wave 7 (**N-HARD-HOLEPUNCH**) only after measured NAT shapes — do not treat Wave 5 CGNAT-ish as punch coverage

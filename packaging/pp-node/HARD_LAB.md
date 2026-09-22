@@ -149,13 +149,13 @@ Order: 6 → 7 → 8 → 9. Admission (#10) may parallel 6–7. Extends today’
 
 | # | ID | Shape | Pass / caveat |
 |---|----|-------|---------------|
-| 15 | **N-HARD-CGNAT-ISH** | Separate SNAT gateways; no inbound without hop | Forced hop works; not every carrier CGNAT quirk |
+| 15 | **N-HARD-CGNAT-ISH** | Separate SNAT gateways; no inbound without hop | Forced hop works; not every carrier CGNAT quirk; **does not claim ACP punch / symmetric NAT** |
 | 16 | **N-HARD-HAIRPIN** | Both peers behind same NAT; hairpin may fail | Direct **or** hop fallback — **product policy must be explicit** before coding |
 | 17 | **N-HARD-UPNP** | UPnP/PCP mock or router lab | Reachability → Reachable; optional direct (org public hop may skip) |
 | 18 | **N-HARD-V6** | IPv6-only island ↔ dual-stack hop | Only if v6 listen is product-real |
 | 19 | **N-HARD-PATH-MIGRATE** | Change egress mid-call | Survive or clean renegotiate; Tier A/B own wire semantics |
 
-**Hole punch:** `non-goal` until the stack ships it.
+**Hole punch:** stack ACP is in-process (L3.25 gtests). Hard-lab **must not** treat Wave 5 CGNAT-ish or Phase-2 product as punch coverage — punch miss → circuit is success. Measured punch NAT shapes remain Wave 7 **N-HARD-HOLEPUNCH**.
 
 
 **Landed (scaffold):** `docker-compose.hard-lab-cgnat.yml` + `Dockerfile.hard-gw` + `pp_hard_nat_smoke.sh` / `--suite hard-w5`.
@@ -173,7 +173,7 @@ Orthogonal to Wave topology. **Reach modes** (how A gets a PeerLink to B) ≠ **
 | Mode | Product meaning | Cheapest oracle | Hard-lab / NAT |
 |------|-----------------|-----------------|----------------|
 | **Direct** | PeerLink Connected on usable MA; `path=direct` | loopback / LAN smoke | optional sanity |
-| **Punch** | ACP sync → upsert → Connected (`path=punched` or promote direct) | L3.25 punch compose / gtest | Phase-2 product: punch miss OK if circuit wins |
+| **Punch** | ACP sync → upsert → Connected (`path=punched` or promote direct) | L3.25 punch compose / gtest (dual-dial + window expiry) | Phase-2 product: punch miss OK if circuit wins; **no CGNAT punch claim** |
 | **Circuit hop** | Nested Session over circuit carrier; `path=circuit` | `amp_circuit_*` compose | **Primary** B-HARD-CALL-NAT / DIRTY / PRODUCT |
 | **SFU `media_relay`** | N≥3 SoftMigrate attach (blind hop) | SoftMigrate / media_relay loopback | Wave 1 B-HARD-CALL when N≥3 harness exists |
 | **ConnectFailed teardown** | Chrome fail + engine stop; clean Abort/shutdown | **gtest** (`call_media_bridge_answerer_start_test`) | not a hard-lab purpose |

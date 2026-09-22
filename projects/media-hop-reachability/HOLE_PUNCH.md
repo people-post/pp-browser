@@ -1,6 +1,6 @@
 # Amp Coordinated Punch (ACP) — plan
 
-**Status:** Spec accepted; **L3.25a+b complete** — seed/contact introducer cold punch, PeerId address-book upsert, SoftMigrate dialability via punch-before-circuit.
+**Status:** Spec accepted; **L3.25a–c complete** — seed/contact introducer cold punch, PeerId address-book upsert, SoftMigrate dialability via punch-before-circuit, upgrade-from-circuit (R1→direct demote). Gap tests: dual-dial A026 race + sync-window expiry → circuit fallback.
 **Stack ADR:** [H009](DECISIONS.md#h009--amp-coordinated-punch-acp)  
 **Preference order:** [H002](DECISIONS.md#h002--publish-in-stack--punch--circuit--fail)  
 **Underlay:** Amp UDP (D10 / A017) — not libp2p DCUtR as a product path  
@@ -131,8 +131,12 @@ Do not implement punch as “send more keepalives.”
 ## Testing
 
 - Loopback / dual-stack fixtures first (deterministic sync window).
-- Hard-lab NAT shapes only after v1 lands — do not claim CGNAT coverage early ([hard-lab](../hard-lab/DESIGN.md)).
+- Hard-lab NAT shapes only after v1 lands — do **not** claim CGNAT / symmetric-NAT punch coverage early ([hard-lab](../hard-lab/DESIGN.md), [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md)).
+  - Wave 5 **N-HARD-CGNAT-ISH** proves forced/circuit hop under dual-SNAT — **not** ACP punch success.
+  - Phase-2 **B-HARD-CALL-NAT-PRODUCT**: punch miss is OK when nested circuit wins.
+  - **N-HARD-HOLEPUNCH** stays Wave 7 until measured punch shapes exist.
 - Compose tests must assert A026 single Session and A027 parent-only teardown under dual-dial races.
+- Sync-window expiry must surface coded `PunchFailed` so SoftMigrate / hop reach falls through to circuit (H002).
 
 ## Phasing
 
@@ -142,6 +146,7 @@ Do not implement punch as “send more keepalives.”
 | **L3.25a** | Addr lifecycle clarity on Amp (observed/listen/advertise); cold punch via seed introducer |
 | **L3.25b** | Contact introducer; address-book upsert; SoftMigrate dialability benefit — **done** |
 | **L3.25c** | Upgrade-from-circuit (R1 as I); promote then demote circuit — **done** |
+| **L3.25 tests** | Dual-dial A026 race; sync-window expiry → PunchFailed + SoftMigrate circuit fallback; hard-lab no CGNAT overclaim — **done** |
 
 **Parallel:** [L3.5 multi-hop circuit](PHASES.md#l35--multi-hop-circuit-v2) — do not block punch on multi-hop or vice versa.
 

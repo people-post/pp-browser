@@ -51,7 +51,7 @@ Docs: [HOLE_PUNCH.md](HOLE_PUNCH.md), [H009](DECISIONS.md#h009--amp-coordinated-
 - [x] **L3.25a (complete)** — Introducer orchestration + simultaneous burst dial; A026 election + A027 teardown; seed-introducer cold compose test
 - [x] **L3.25b** — Contact introducer; address-book upsert on punch success; SoftMigrate dialability benefit
 - [x] **L3.25c** — Upgrade-from-circuit (R1 as introducer); promote direct PeerLink; demote circuit
-- [ ] Tests: dual-dial race, sync-window expiry → circuit fallback; no CGNAT overclaim in hard-lab
+- [x] Tests: dual-dial race (A026 single Session + loser burst alias retired); sync-window expiry → PunchFailed + SoftMigrate circuit fallback; hard-lab docs: no CGNAT / carrier-punch overclaim
 
 ## L3.5 — Multi-hop circuit v2
 
