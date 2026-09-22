@@ -19,10 +19,11 @@
 #include "domain/mesh/host/MeshHost.h"
 #include "common/directory/MeshHopTypes.h"
 
+#include "foundation/runtime/DeferredSelf.h"
+
 #include <functional>
 #include <memory>
 #include <string>
-#include <atomic>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -188,7 +189,6 @@ private:
 
   /** Bump so inflight StartReserve / park / announce cbs no-op after mesh stop (AbortInflight Finish race). */
   void InvalidateAsyncOps();
-  bool AsyncOpsAlive(const std::shared_ptr<std::atomic<uint64_t>>& gen, uint64_t snap) const;
 
   CallMediaPlaneDeps deps_;
   CallDialBook dial_book_;
@@ -201,10 +201,10 @@ private:
   /** H011 L3.1b/c: last chosen / announced R1 PeerId for park sticky + late-reserve. */
   std::string chosen_circuit_r1_;
   /**
-   * Generation for async IO callbacks that capture `this` (StartReserve Finish, park assoc).
-   * AbortInflight still PostIo's on_finished — bump before teardown so those cbs skip `this`.
+   * DeferredSelf ticket for async IO callbacks that capture `this` (StartReserve Finish, park assoc).
+   * AbortInflight may still PostIo on_finished — Invalidate before teardown so those cbs skip `this`.
    */
-  std::shared_ptr<std::atomic<uint64_t>> async_gen_;
+  DeferredSelf deferred_;
   std::unique_ptr<CallMediaAmpTransport> call_media_amp_;
   ICallMediaTransport* test_media_transport_ = nullptr;
   IDialRegistry* test_dial_ = nullptr;
