@@ -11,6 +11,7 @@
 #include "common/Logger.h"
 
 #include "common/ValueJson.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 #include <chrono>
 #include <cstring>
@@ -133,6 +134,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   std::atomic<bool> started{false};
   std::atomic<uint64_t> next_leg_id{1};
   pp::amp::MeshRuntime::IoTickId io_tick_id = 0;
+  /** Guards PostIo(raw this) past Stop — OWNERSHIP.md § DeferredSelf (weak_ptr ticks remain). */
+  DeferredSelf deferred;
 
   /** call_id → bundle */
   std::unordered_map<std::string, std::unique_ptr<Bundle>> bundles;
@@ -143,7 +146,11 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     if (!runtime || stopped.load(std::memory_order_acquire) || !task) {
       return;
     }
-    runtime->PostToIo(std::move(task));
+    deferred.Post([rt = runtime](std::function<void()> t) {
+      if (rt) {
+        rt->PostToIo(std::move(t));
+      }
+    }, std::move(task));
   }
 
   bool LocalWinsForLink(const pp::amp::PeerLink& link) const {
@@ -1136,6 +1143,8 @@ void CallMediaLegCoordinator::Stop() {
     }
   }
   ClearInboundHandler();
+  // Poison already-queued PostIo(self) work before dropping runtime.
+  impl_->deferred.Invalidate();
   // Drop runtime before callers destroy MeshRuntime / harness (detached WorkerPost may resume).
   impl_->runtime = nullptr;
 }

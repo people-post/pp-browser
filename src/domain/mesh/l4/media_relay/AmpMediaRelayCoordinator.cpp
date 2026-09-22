@@ -7,6 +7,7 @@
 #include "domain/mesh/l4/media_relay/MediaRelayLogic.h"
 #include "common/ValueJson.h"
 #include "domain/mesh/shared/AmpChannelOpen.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 #include <algorithm>
 #include <atomic>
@@ -70,6 +71,8 @@ struct AmpMediaRelayCoordinator::Impl {
   std::atomic<bool> serve_inbound{true};
   std::atomic<uint64_t> next_id{1};
   pp::amp::MeshRuntime::IoTickId io_tick_id = 0;
+  /** Guards PostIo(raw this) past Stop / AbortInflight — OWNERSHIP.md § DeferredSelf. */
+  DeferredSelf deferred;
 
   struct AmpHostParticipant {
     std::string peer_id;
@@ -129,9 +132,11 @@ struct AmpMediaRelayCoordinator::Impl {
   std::string local_hop_peer_id_;
 
   void PostIo(std::function<void()> task) {
-    if (runtime && task) {
-      runtime->PostToIo(std::move(task));
+    if (!runtime || !task) {
+      return;
     }
+    deferred.Post([rt = runtime](std::function<void()> t) { rt->PostToIo(std::move(t)); },
+                  std::move(task));
   }
 
   Session* Find(const MediaRelaySessionId id) {
@@ -1133,6 +1138,8 @@ void AmpMediaRelayCoordinator::AbortInflight() {
   for (auto& cb : attach_cbs) {
     cb(Error("media-relay aborted"));
   }
+  // Poison already-queued PostIo(self) work; new posts after this capture a fresh snap.
+  impl_->deferred.Invalidate();
 }
 
 MediaRelaySessionId AmpMediaRelayCoordinator::StartQuote(const std::string& hop_peer_key,

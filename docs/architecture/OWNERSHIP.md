@@ -91,7 +91,7 @@ When a parent must post work that captures raw `this` / `Impl*` onto IO (or anot
 
 | Owner | Notes |
 |-------|--------|
-| Amp L4 coordinators (`CircuitTunnelCoordinator`, later media-relay / call-media) | `Impl::PostIo` wraps `DeferredSelf::Post`; Invalidate on AbortInflight / Stop |
+| Amp L4 coordinators (`CircuitTunnelCoordinator`, `AmpMediaRelayCoordinator`, `CallMediaLegCoordinator`) | `Impl::PostIo` wraps `DeferredSelf::Post`; Invalidate on AbortInflight / Stop |
 | `CallMediaPlane` | Reserve / park / OnRelayChosen cbs; Invalidate on Clear / PrepareForMeshStop |
 
 Everything else: prefer parent-only destroy + sync Abort, `shared_ptr`/`weak_ptr` pins for dispatch, or finish callbacks that do **not** capture the owner. Do not spread raw-`this` posts outside this whitelist without updating this table.
