@@ -15,6 +15,13 @@ Roe<std::string> PinResolver::Resolve(std::string_view cli_pin) {
   if (env != nullptr && env[0] != '\0') {
     return std::string(env);
   }
+#ifdef PP_BROWSER_DEV_PIN
+  // Local dev builds only (-DPP_BROWSER_DEV_PIN=… / GCC_PREPROCESSOR_DEFINITIONS): skip the
+  // unlock prompt on every launch, including iOS home-screen launches with no environment.
+  if (PP_BROWSER_DEV_PIN[0] != '\0') {
+    return std::string(PP_BROWSER_DEV_PIN);
+  }
+#endif
   return AppError::Pin(Err::Pin::Required, "No PIN provided");
 }
 
