@@ -153,6 +153,71 @@ TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedAudioRoundTrip) {
   EXPECT_FALSE(a_call_->IsLegActive(leg_id));
 }
 
+// B16: on_connected / on_finished are invoked from inside the Amp IO drain; the transport and the
+// bridge re-enter the coordinator from those callbacks (PrimaryLegId / IsActive). The coordinator
+// must not hold its own (non-recursive) mutex while invoking them, or the IO strand deadlocks.
+TEST_F(CallMediaLegCoordinatorTest, CallbacksMayReenterCoordinator) {
+  const std::string call_id = "call-amp-reenter";
+  ByteVector media_key(32, 0x24);
+
+  std::atomic<bool> b_connected{false};
+  std::atomic<bool> b_active_in_cb{false};
+  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] {
+      b_active_in_cb.store(b_call_->IsActive(), std::memory_order_release);
+      b_connected.store(true, std::memory_order_release);
+    };
+  });
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+
+  CallMediaDirectCallbacks cbs;
+  std::atomic<bool> a_connected{false};
+  std::atomic<bool> a_active_in_cb{false};
+  cbs.on_connected = [&] {
+    a_active_in_cb.store(a_call_->IsActive(), std::memory_order_release);
+    a_connected.store(true, std::memory_order_release);
+  };
+
+  LegCompletion leg_done;
+  CallMediaLegId leg_in_finished{};
+  auto inner = leg_done.Fn();
+  const CallMediaLegId leg_id = a_call_->StartLeg(
+      params, std::move(cbs),
+      [&, inner](pp::Roe<void> result) mutable {
+        // Mirrors CallMediaAmpTransport::ConnectAsync, which calls PrimaryLegId() here.
+        leg_in_finished = a_call_->PrimaryLegId();
+        inner(std::move(result));
+      },
+      5000);
+  ASSERT_TRUE(leg_id);
+
+  leg_done.PumpUntilDone(*harness_);
+  ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
+  EXPECT_EQ(leg_in_finished.value, leg_id.value);
+
+  harness_->PumpUntil([&] {
+    return a_connected.load(std::memory_order_acquire) && b_connected.load(std::memory_order_acquire);
+  });
+  ASSERT_TRUE(a_connected.load(std::memory_order_acquire));
+  ASSERT_TRUE(b_connected.load(std::memory_order_acquire));
+  EXPECT_TRUE(a_active_in_cb.load(std::memory_order_acquire));
+  EXPECT_TRUE(b_active_in_cb.load(std::memory_order_acquire));
+
+  a_call_->DetachLeg(leg_id);
+  harness_->PumpBoth();
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
+}
+
 TEST_F(CallMediaLegCoordinatorTest, DetachUnblocksConnectWait) {
   b_call_->Stop();
   b_call_ = std::make_unique<CallMediaLegCoordinator>(
