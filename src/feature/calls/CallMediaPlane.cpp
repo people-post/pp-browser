@@ -644,7 +644,7 @@ void CallMediaPlane::WarmBootstrapSeedSessionsOnIo() {
     }
     if (chat->links.IsConnected(hop.peer_id)) {
       log().info << "bootstrap warm already connected peer=" << hop.peer_id;
-      return;
+      continue; // still warm remaining seeds (dialer may pick hop2 — dogfood ae4900eb)
     }
     const std::string restore_ma = hop.multiaddr;
     const std::string peer_id = hop.peer_id;
@@ -720,6 +720,27 @@ bool CallMediaPlane::AnyBootstrapSeedConnectedOnIo() const {
   return false;
 }
 
+bool CallMediaPlane::AllBootstrapSeedsConnectedOnIo() const {
+  MeshHost* m = mesh();
+  if (!m) {
+    return false;
+  }
+  auto chat = m->ChatDeps();
+  if (!chat) {
+    return false;
+  }
+  const auto ids = EffectiveBootstrapSeedPeerIds();
+  if (ids.empty()) {
+    return false;
+  }
+  for (const std::string& peer_id : ids) {
+    if (!chat->links.IsConnected(peer_id)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void CallMediaPlane::EnsureBootstrapSeedParkedAsync(std::function<void(bool parked)> on_done,
                                                     const int timeout_ms) {
   if (!on_done) {
@@ -755,10 +776,12 @@ void CallMediaPlane::EnsureBootstrapSeedParkedAsync(std::function<void(bool park
   };
 
   auto post_io = chat_opt->io.post_io;
+  // Prefer Connected on *all* Brief seeds before finishing — dialer StartBridge may pick hop2
+  // while answerer only parked hop1 (dogfood ae4900eb / 39412f). Deadline still accepts ≥1.
   auto try_finish_ok = [this, finish, post_io]() {
     auto go = [this, finish]() {
-      if (AnyBootstrapSeedConnectedOnIo()) {
-        log().info << "bootstrap seed park ok";
+      if (AllBootstrapSeedsConnectedOnIo()) {
+        log().info << "bootstrap seed park ok (all seeds Connected)";
         (*finish)(true);
       }
     };
@@ -769,8 +792,8 @@ void CallMediaPlane::EnsureBootstrapSeedParkedAsync(std::function<void(bool park
     }
   };
 
-  if (AnyBootstrapSeedConnectedOnIo()) {
-    log().info << "bootstrap seed park ok";
+  if (AllBootstrapSeedsConnectedOnIo()) {
+    log().info << "bootstrap seed park ok (all seeds Connected)";
     (*finish)(true);
     return;
   }
@@ -801,8 +824,13 @@ void CallMediaPlane::EnsureBootstrapSeedParkedAsync(std::function<void(bool park
   *deadline_timer = AppRuntime::ScheduleCoordinatorOneShot(
       std::chrono::milliseconds(budget), [this, finish, post_io]() {
         auto go = [this, finish]() {
+          if (AllBootstrapSeedsConnectedOnIo()) {
+            log().info << "bootstrap seed park ok (all seeds Connected)";
+            (*finish)(true);
+            return;
+          }
           if (AnyBootstrapSeedConnectedOnIo()) {
-            log().info << "bootstrap seed park ok";
+            log().info << "bootstrap seed park ok (partial — deadline with ≥1 Connected)";
             (*finish)(true);
             return;
           }

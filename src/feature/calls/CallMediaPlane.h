@@ -185,6 +185,8 @@ private:
   void ReserveOnBootstrapSeedsOnIo();
   void PreferLateReserveOnIo(const std::string& relay_peer_id);
   bool AnyBootstrapSeedConnectedOnIo() const;
+  /** True when every EffectiveBootstrapSeedPeerId is Connected (empty set → false). */
+  bool AllBootstrapSeedsConnectedOnIo() const;
   std::vector<std::string> EffectiveBootstrapSeedPeerIds() const;
 
   /** Bump so inflight StartReserve / park / announce cbs no-op after mesh stop (AbortInflight Finish race). */
