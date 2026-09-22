@@ -282,6 +282,49 @@ TEST_F(CallMediaLegCoordinatorTest, AliasRebindKeepsLegAlive) {
   EXPECT_GT(b_audio.load(std::memory_order_acquire), 0);
 }
 
+// B19: audio rides ADP best-effort (no retransmit). One lost datagram used to pin the receiver's
+// replay window; once the sender was a window ahead every later frame was rejected — one-way audio.
+TEST_F(CallMediaLegCoordinatorTest, AudioSurvivesSingleDatagramLoss) {
+  const std::string call_id = "call-amp-loss";
+  ByteVector media_key(32, 0x55);
+  std::atomic<bool> b_connected{false};
+  std::atomic<int> b_audio{0};
+  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] { b_connected.store(true, std::memory_order_release); };
+    cbs.on_audio = [&](const std::vector<uint8_t>&) { b_audio.fetch_add(1, std::memory_order_acq_rel); };
+  });
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+  LegCompletion leg_done;
+  const CallMediaLegId leg_id = a_call_->StartLeg(params, {}, leg_done.Fn(), 5000);
+  ASSERT_TRUE(leg_id);
+  leg_done.PumpUntilDone(*harness_);
+  ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
+  harness_->PumpUntil([&] { return b_connected.load(std::memory_order_acquire); });
+  ASSERT_TRUE(b_connected.load(std::memory_order_acquire));
+
+  const std::vector<uint8_t> opus = {9, 9, 9, 9};
+  constexpr int kFrames = 300;  // > replay window (64) after the hole
+  for (int i = 1; i <= kFrames; ++i) {
+    if (i == 10) {
+      harness_->io_a->DropNext(1);  // lose exactly one audio datagram A→B
+    }
+    auto sent = a_call_->SendAudio(leg_id, opus, static_cast<uint32_t>(i), 0);
+    ASSERT_TRUE(sent) << sent.error().message;
+    harness_->PumpBoth();
+  }
+  harness_->PumpUntil([&] { return b_audio.load(std::memory_order_acquire) >= kFrames - 1; }, 200);
+  EXPECT_GE(b_audio.load(std::memory_order_acquire), kFrames - 1);
+}
+
 TEST_F(CallMediaLegCoordinatorTest, DetachUnblocksConnectWait) {
   b_call_->Stop();
   b_call_ = std::make_unique<CallMediaLegCoordinator>(
