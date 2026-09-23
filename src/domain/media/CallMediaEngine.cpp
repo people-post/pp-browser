@@ -653,6 +653,9 @@ struct CallMediaEngine::Impl {
     // Accept stops ringtone async (UI must not join). Capture worker waits so we do not
     // OpenAudioDeviceStream(DEFAULT_PLAYBACK) while ringtone is still DestroyAudioStream'ing.
     CallRingtone::WaitUntilPlaybackDeviceReleased();
+    if (!capture_running.load(std::memory_order_acquire)) {
+      return Error("call media stopped");
+    }
 
     CallAudioSession::ApplyCaptureAudioHints();
     CallAudioSession::ActivateForVoipCall();
@@ -665,21 +668,37 @@ struct CallMediaEngine::Impl {
     SDL_AudioStream* new_capture = nullptr;
     SDL_AudioDeviceID new_capture_dev = 0;
     const bool new_capture_ok = TryOpenCaptureStream(want, &new_capture, &new_capture_dev);
+    if (!capture_running.load(std::memory_order_acquire)) {
+      if (new_capture) {
+        SDL_DestroyAudioStream(new_capture);
+      }
+      return Error("call media stopped");
+    }
 
     SDL_AudioStream* new_playback = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr);
-    if (!new_playback) {
+    if (!capture_running.load(std::memory_order_acquire)) {
+      if (new_playback) {
+        SDL_DestroyAudioStream(new_playback);
+      }
       if (new_capture) {
         SDL_DestroyAudioStream(new_capture);
       }
-      return Error(std::string("SDL playback open failed: ") + SDL_GetError());
+      return Error("call media stopped");
     }
-    SDL_AudioDeviceID new_playback_dev = SDL_GetAudioStreamDevice(new_playback);
-    if (!SDL_ResumeAudioDevice(new_playback_dev)) {
-      SDL_DestroyAudioStream(new_playback);
-      if (new_capture) {
-        SDL_DestroyAudioStream(new_capture);
+    SDL_AudioDeviceID new_playback_dev = 0;
+    if (!new_playback) {
+      // Headless CI / no default device: still run silence TX (same as no-capture path).
+      SDL_Log("CallMediaEngine: no playback device — RX muted; capture/silence TX still active: %s",
+              SDL_GetError());
+    } else {
+      new_playback_dev = SDL_GetAudioStreamDevice(new_playback);
+      if (!SDL_ResumeAudioDevice(new_playback_dev)) {
+        SDL_DestroyAudioStream(new_playback);
+        if (new_capture) {
+          SDL_DestroyAudioStream(new_capture);
+        }
+        return Error(std::string("SDL playback resume failed: ") + SDL_GetError());
       }
-      return Error(std::string("SDL playback resume failed: ") + SDL_GetError());
     }
 
     {
@@ -1350,7 +1369,11 @@ void CallMediaEngine::Stop() {
   {
     std::lock_guard lock(impl_->mutex);
     if (!impl_->active && !impl_->sfu_mode) {
-      return;
+      // Still join threads if a prior StartSfu left them running after a failed half-stop.
+      if (!impl_->capture_thread.joinable() && !impl_->playout_thread.joinable() &&
+          !impl_->video_thread.joinable()) {
+        return;
+      }
     }
     impl_->active = false;
     impl_->muted.store(false, std::memory_order_relaxed);
@@ -1368,13 +1391,15 @@ void CallMediaEngine::Stop() {
   {
     std::lock_guard drain(impl_->sfu_send_call_mu);
   }
-  static constexpr std::chrono::milliseconds kShutdownJoinBudget{500};
-  impl_->JoinCaptureThreadBudgeted(kShutdownJoinBudget);
-  impl_->JoinPlayoutThreadBudgeted(kShutdownJoinBudget);
+  // Always join — never detach. Budgeted detach raced TearDownAudioLocked / ~Impl with
+  // capture still inside SDL_OpenAudioDeviceStream (Windows CI headless: segfault after
+  // "OpenAudioDevices failed"). Product quit must wait for the worker; SDL open fails fast
+  // when no device is present.
+  impl_->JoinCaptureThread();
+  impl_->JoinPlayoutThread();
   {
-    // Stop camera encode before TearDownAudioLocked so CloseCameraLocked does not unbounded-join.
     impl_->video_running = false;
-    impl_->JoinThreadBudgeted(impl_->video_thread, kShutdownJoinBudget, "video");
+    impl_->JoinThreadBudgeted(impl_->video_thread, std::chrono::milliseconds::max(), "video");
   }
   {
     std::lock_guard lock(impl_->mutex);

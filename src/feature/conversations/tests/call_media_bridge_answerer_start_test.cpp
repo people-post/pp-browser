@@ -313,7 +313,9 @@ protected:
     circuit_.reset();
     dial_.reset();
     host_.reset();
-    if (media_ && media_->IsActive()) {
+    // Always Stop (joins capture) before destroy — headless Windows OpenAudioDevices can
+    // still be failing when TearDown runs; budgeted detach previously UAF'd here.
+    if (media_) {
       media_->Stop();
     }
     media_.reset();
