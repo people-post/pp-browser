@@ -605,9 +605,18 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
 
   auto session = std::make_shared<pp::amp::ChannelSession>();
   auto finish = std::make_shared<std::function<void(PunchRoe)>>();
-  *finish = [finish_once, session](PunchRoe value) {
-    session->Close();
-    (*finish_once)(std::move(value));
+  *finish = [this, finish_once, session](PunchRoe value) {
+    auto deliver = [finish_once, session, value = std::move(value)]() mutable {
+      if (session) {
+        session->Close();
+      }
+      (*finish_once)(std::move(value));
+    };
+    if (post_deferred_) {
+      post_deferred_(std::move(deliver));
+    } else {
+      deliver();
+    }
   };
 
   const auto read_timeout = RemainingTimeout(deadline);
@@ -735,7 +744,17 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                       (*finish)(PunchRoe::error(Failure::Of(Err::ProtocolError, "punch: failed to send connect")));
                       return;
                     }
-                    if (post_io_) {
+                    // Overall attempt deadline: prefer Amp-clock PostAfter; else PostToIo poll.
+                    const auto attempt_ms =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now());
+                    if (post_after_ && attempt_ms.count() > 0) {
+                      post_after_(attempt_ms, [finish, settled]() {
+                        if (!settled->load(std::memory_order_acquire)) {
+                          (*finish)(PunchRoe::error(
+                              Failure::Of(Err::Timeout, "punch: cold punch timed out")));
+                        }
+                      });
+                    } else if (post_io_) {
                       auto poll = std::make_shared<std::function<void()>>();
                       *poll = [this, finish, deadline, settled, poll]() {
                         if (settled->load(std::memory_order_acquire)) {
