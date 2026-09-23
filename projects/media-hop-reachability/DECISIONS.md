@@ -79,9 +79,11 @@ Idle background reachability still uses **outbound dial + circuit** (and later p
 **Date:** 2026-07-31  
 **Decision:** Do **not** ship or reintroduce **`call_hop_addrs`** (or similar call-signaling **multiaddr / candidate-list** gather) as the durable hop reachability design. Uncommitted prototypes were removed. Temporary dogfood hacks need an explicit ADR if ever revived. Candidate exchange for punch belongs **in-stack** via introducer Sessions ([H009](#h009--amp-coordinated-punch-acp)), not call signaling.
 
-**Narrow carve-out ([H011](#h011--circuit-r1-rendezvous-dialer-authoritative) L3.1c):** After the dialer has already chosen an immediate relay, an optional additive **single PeerId** field (`circuit_r1`) may confirm that choice so the answerer can late-reserve. **Forbidden:** lists of candidates, observed UDP endpoints, STUN, or pre-choice hop shopping over call control.
+**Narrow carve-outs:**
+- ([H011](#h011--circuit-r1-rendezvous-dialer-authoritative) L3.1c): After the dialer has already chosen an immediate relay, an optional additive **single PeerId** field (`circuit_r1`) may confirm that choice so the answerer can late-reserve. **Forbidden:** lists of candidates, observed UDP endpoints, STUN, or pre-choice hop shopping over call control.
+- ([H012](#h012--punch-via-call-signaling-when-no-amp-introducer) B29): When **no Amp introducer Session** is available (circuit not-reg / seeds cannot introduce), a **narrow ACP sync** may ride call-control — same punch semantics as H009, not a second hop-dial toolkit.
 
-**Rationale:** Duplicates what addr book / punch / circuit should do; fights “reachability inside Amp mesh.” One post-ack PeerId is rendezvous confirm, not gather.  
+**Rationale:** Duplicates what addr book / punch / circuit should do; fights “reachability inside Amp mesh.” One post-ack PeerId is rendezvous confirm, not gather. Signaling punch is only a fallback introducer channel when Amp I is missing.  
 **Alternatives:** Keep thin gather until L1 (rejected — prefer document gap + stack work).
 
 ---
@@ -145,7 +147,9 @@ Answerer remains punch-only + reserve (no reverse StartBridge on first pass). Us
 
 **ServeDial far-leg wait (event-driven):** When peer-id-only ServeDial has no Connected far leg, hop **arms a waiter** and returns. Resume on Amp `PeerConnectedListener` (PeerId), on live `op=reserve`, or on **deadline event** (`kCircuitServeDialFarLegWaitMs`, capped by tunnel deadline − **750ms** slack). After arm, **re-check** Connected (lost-wakeup between Count and arm). Do **not** poll-retry `BeginServe` from IoTick. Amp: `PeerLinkManager::AddPeerConnectedListener` (multi-listener). Any ServeDial tunnel deadline must `fail_near` (ack) before TearDown — never leave dialer WaitAck to invent `bridge timed out`.
 
-**Client seed park (event-driven):** `EnsureBootstrapSeedParkedAsync` finishes on PeerConnected for a bootstrap/directory PeerId (or deadline). No 250ms poll. Dialer **same-relay** not-reg retries immediately (hop already event-waits); sticky not required.
+**Client seed park (event-driven):** `EnsureBootstrapSeedParkedAsync` finishes on PeerConnected for a bootstrap/directory PeerId (or deadline). No 250ms poll. Dialer **same-relay** not-reg retries immediately (hop already event-waits); sticky not required. On that retry, dialer re-announces R1 (`OnRelayChosen` / `call_circuit_r1`) so answerer `PreferLateReserve` can re-park (B27).
+
+**Reserve key / re-park (B27):** `op=reserve` is keyed by the protocol-handler PeerId (not a possibly-empty mid-handshake `link.RemotePeerId()`). Empty remote refuses reserve. ServeDial logs `reservation_hit` / `connected_for_target`. Answerer arms a PeerConnected listener on the shared rendezvous surface and re-`StartReserve` when a surface peer reconnects after path change (stale reserve dies with the old ADP link).
 
 **Early circuit-ready (Ringing + Accept gate):** Offerer kicks ready on `StartCall`; answerer on inbound invite; `AcceptInvite` may **await** ready (up to 12s) before `CallAccept`. Hop event wait is the primary race absorber (needs Brief rebuild); Accept await is a thin product backstop.
 
@@ -184,3 +188,27 @@ CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~16s with settle s
 **Rationale:** Independent selection caused dual-NAT not-reg / bridge-timeout races (dialer hop2 vs answerer park hop1). Reserve-all and sticky retry are mitigations; ownership of “final R1” was undefined. Dialer-as-chooser matches H008/N024 “consumer picks one immediate relay.”  
 **Alternatives:** Bilateral vote / ICE-style pairs (rejected — H007, complexity); answerer picks and dialer follows (rejected — ServeDial is dialer-driven StartBridge); parallel StartBridge (rejected — H010); exhaustive search (rejected — H010); rely forever on reserve-all luck (rejected — surface asymmetry remains).  
 **Spec:** [CIRCUIT_R1_RENDEZVOUS.md](CIRCUIT_R1_RENDEZVOUS.md). **Phase:** [L3.1](PHASES.md#l31--circuit-r1-rendezvous).
+
+---
+
+## H012 — Punch via call signaling when no Amp introducer
+
+**Date:** 2026-09-23  
+**Status:** Accepted — **implemented** (L3.25d / B29 client path)  
+**Decision:** When Amp Coordinated Punch ([H009](#h009--amp-coordinated-punch-acp)) cannot run because **no introducer Session** exists to both peers (typical: circuit `endpoint not registered` on all seeds — B27), allow a **narrow carve-out of [H007](#h007--no-app-layer-hop-candidate-exchange-as-product-path)**: exchange **ACP punch candidates + sync window** over existing **call-control / relay inbox** signaling, then both sides simultaneous-dial under A026.
+
+| Allowed | Forbidden |
+|---------|-----------|
+| Observed Amp UDP endpoints already in addr book / dial-back / UPnP (same as H009 collect) | Reintroducing `call_hop_addrs` as SoftMigrate hop shopping |
+| Short punch epoch (nonce / window) mirrored from H009 | App STUN / WebRTC ICE (H004) |
+| Trigger only after Amp introducer path failed or is unavailable | Using signaling punch as the **primary** path when seeds can introduce |
+
+**Wire:** `call_punch_offer` / `call_punch_answer` (CallControlCodec) carrying candidate multiaddrs + sync window; `AmpPunchCoordinator::TrySignalingPunchBurstAsync` runs BurstDial without an Amp Session to I. Cold-punch exhaust in `CallMediaPlane` → `CallSessionManager::RequestSignalingPunch`.
+
+**Rationale:** Cross-net dogfood (PR #214 B29): ICMP to the right IPv6 answered but punch never burst because introducer needed circuit registration. Signaling already delivers Invite/Accept; it can stand in for I when Amp I is down without inventing a second reachability stack.
+
+**Alternatives:** Wait for B27 relay fix only (rejected — leaves punch dead until seeds work); public STUN farm (rejected — H004); circuit-only forever (rejected — cost/latency).
+
+**Spec:** [HOLE_PUNCH.md](HOLE_PUNCH.md#signaling-introducer-fallback-h012). **Phase:** [L3.25d](PHASES.md#l325--amp-coordinated-punch).
+
+---

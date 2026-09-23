@@ -37,7 +37,7 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, ResponseBuffer* 
 
 Roe<HttpResponse> Perform(const std::string& url, const char* method, const std::string& body,
                           const std::map<std::string, std::string>& headers,
-                          std::optional<size_t> max_response_bytes) {
+                          std::optional<size_t> max_response_bytes, HttpTimeout timeout) {
   CURL* curl = curl_easy_init();
   if (!curl) {
     return AppError::Internal("Failed to init curl");
@@ -50,7 +50,11 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
   curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+  const long total_s = timeout.total_s > 0 ? timeout.total_s : 30L;
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, total_s);
+  if (timeout.connect_s > 0) {
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, timeout.connect_s);
+  }
 
   struct curl_slist* header_list = nullptr;
   for (const auto& [key, value] : headers) {
@@ -94,20 +98,20 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
 } // namespace
 
 Roe<HttpResponse> HttpClient::Get(const std::string& url, const std::map<std::string, std::string>& headers,
-                                  std::optional<size_t> max_response_bytes) {
-  return Perform(url, "GET", {}, headers, max_response_bytes);
+                                  std::optional<size_t> max_response_bytes, HttpTimeout timeout) {
+  return Perform(url, "GET", {}, headers, max_response_bytes, timeout);
 }
 
 Roe<HttpResponse> HttpClient::Post(const std::string& url, const std::string& body,
                                    const std::map<std::string, std::string>& headers,
-                                   std::optional<size_t> max_response_bytes) {
-  return Perform(url, "POST", body, headers, max_response_bytes);
+                                   std::optional<size_t> max_response_bytes, HttpTimeout timeout) {
+  return Perform(url, "POST", body, headers, max_response_bytes, timeout);
 }
 
 Roe<HttpResponse> HttpClient::Put(const std::string& url, const std::string& body,
                                   const std::map<std::string, std::string>& headers,
-                                  std::optional<size_t> max_response_bytes) {
-  return Perform(url, "PUT", body, headers, max_response_bytes);
+                                  std::optional<size_t> max_response_bytes, HttpTimeout timeout) {
+  return Perform(url, "PUT", body, headers, max_response_bytes, timeout);
 }
 
 } // namespace pbr

@@ -671,14 +671,6 @@ void ConversationsHub::RegisterContactEndpoints() {
   lan_mdns_contact_peer_ids_.clear();
   for (const Contact& contact : *listed) {
     mesh_messaging_->RegisterContactDirectEndpoints(contact);
-    const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
-    if (target.peer_identity_value.empty()) {
-      continue;
-    }
-    // Last RegisterEndpoint wins PreferredMultiaddr — register worst→best (global /ip6 last).
-    for (const std::string& ma : OrderDialMultiaddrsWorstToBest(contact.multiaddrs)) {
-      mesh_messaging_->RegisterPeerDirectEndpoint(target.peer_identity_value, ma);
-    }
     const std::vector<std::string> peer_ids = PeerIdsFromContact(contact);
     for (const std::string& peer_id : peer_ids) {
       lan_mdns_contact_peer_ids_.insert(peer_id);
@@ -691,13 +683,13 @@ void ConversationsHub::RegisterMeshDirectoryEndpoints() {
   if (!mesh_messaging_ || !mesh_directory_cache_) {
     return;
   }
+  const AmpDialLocalContext local_ctx = CollectAmpDialLocalContext();
   for (const MeshDirectoryNode& node : mesh_directory_cache_->Snapshot()) {
-    for (const std::string& ma : OrderDialMultiaddrsWorstToBest(node.multiaddrs)) {
-      if (ma.empty()) {
-        continue;
-      }
-      mesh_messaging_->RegisterPeerDirectEndpoint(node.peer_id, ma);
+    if (node.peer_id.empty() || node.multiaddrs.empty()) {
+      continue;
     }
+    mesh_messaging_->RegisterPeerDirectEndpoints(node.peer_id,
+                                                 RankAmpDialMultiaddrs(node.multiaddrs, local_ctx));
   }
 }
 
@@ -749,12 +741,8 @@ void ConversationsHub::ApplyDhtFindPeerResult(const std::string& peer_id, const 
   if (!mesh_messaging_ || peer_id.empty()) {
     return;
   }
-  for (const std::string& ma : OrderDialMultiaddrsWorstToBest(record.multiaddrs)) {
-    if (ma.empty() || !IsUsableAdpListen(ma)) {
-      continue;
-    }
-    mesh_messaging_->RegisterPeerDirectEndpoint(peer_id, ma);
-  }
+  mesh_messaging_->RegisterPeerDirectEndpoints(peer_id,
+                                               RankAmpDialMultiaddrs(record.multiaddrs, CollectAmpDialLocalContext()));
 }
 
 void ConversationsHub::ConfigureAmpDhtProtocol() {

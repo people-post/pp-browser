@@ -290,6 +290,7 @@ protected:
     keys_ = std::make_unique<CallMediaKeyStore>(store_->ProfileDbPath());
     ASSERT_TRUE(keys_->SetDek(TestDek()));
     media_ = std::make_unique<CallMediaEngine>();
+    media_->SetSkipDeviceOpenForTest(true);
     host_ = std::make_unique<FakeMediaHost>();
     dial_ = std::make_unique<FakeDialRegistry>();
     circuit_ = std::make_unique<FakeCircuitHopReach>();
@@ -307,6 +308,9 @@ protected:
     if (bridge_) {
       bridge_->PrepareForTeardown(0);
     }
+    // Join the worker pool before destroying objects a still-running task may touch
+    // (see call_session_inbound_compose_test.cpp TearDown).
+    AppRuntime::Shutdown();
     bridge_.reset();
     lifecycle_.reset();
     transport_.reset();
@@ -327,7 +331,6 @@ protected:
     store_.reset();
     std::filesystem::remove_all(data_dir_);
     AppRuntime::ShutdownUI();
-    AppRuntime::Shutdown();
   }
 
   void SeedActiveCall(const std::string& call_id) {

@@ -156,6 +156,8 @@ struct CallMediaEngine::Impl {
   StateChangedFn on_state_changed;
 
   bool sfu_mode = false;
+  /** Test fixtures: skip SDL mic/camera open (silence TX only). */
+  std::atomic<bool> skip_device_open_for_test{false};
   /** Bumped on StartSfu so async StopMeshMedia can detect a newer session. */
   std::atomic<uint64_t> session_generation{0};
   /** Shared so SoftMigrate can replace the callback while capture/video still invoke the old one. */
@@ -646,6 +648,12 @@ struct CallMediaEngine::Impl {
   }
 
   Roe<void> OpenAudioDevices() {
+    if (skip_device_open_for_test.load(std::memory_order_relaxed)) {
+      std::lock_guard lock(mutex);
+      CloseAudioDevicesLocked();
+      capture_available = false;
+      return {};
+    }
     if (auto ok = EnsureAudioSubsystem(); !ok) {
       return ok.error();
     }
@@ -1043,6 +1051,10 @@ struct CallMediaEngine::Impl {
   }
 
   Roe<void> EnableCameraLocked() {
+    if (skip_device_open_for_test.load(std::memory_order_relaxed)) {
+      camera_enabled.store(false, std::memory_order_relaxed);
+      return Error("camera skipped (test)");
+    }
     if (camera_enabled.load(std::memory_order_relaxed) && camera) {
       return {};
     }
@@ -1137,6 +1149,10 @@ CallMediaEngine::~CallMediaEngine() {
 void CallMediaEngine::SetOnStateChanged(StateChangedFn callback) {
   std::lock_guard lock(impl_->mutex);
   impl_->on_state_changed = std::move(callback);
+}
+
+void CallMediaEngine::SetSkipDeviceOpenForTest(bool skip) {
+  impl_->skip_device_open_for_test.store(skip, std::memory_order_relaxed);
 }
 
 Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) {

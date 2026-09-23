@@ -58,6 +58,7 @@ CallMediaPlane::~CallMediaPlane() {
 }
 
 void CallMediaPlane::InvalidateAsyncOps() {
+  RemoveRendezvousReparkListener();
   deferred_.Invalidate();
 }
 
@@ -134,6 +135,7 @@ void CallMediaPlane::Wire() {
   const bool use_amp_relay = WireMediaRelayClient(m, io_pump, post_io, post_after);
   WireDialRegistry(m, use_amp_relay, post_io);
   WireCircuitHopReach(m, use_amp_relay, io_pump, post_io, post_after);
+  InstallRendezvousReparkListener();
 }
 
 CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() const {
@@ -316,12 +318,17 @@ void CallMediaPlane::TryColdPunchAsync(MeshHost* m, IChatPeerLinks* punch_links,
     std::function<void()> try_next;
   };
   auto attempt = std::make_shared<IntroAttempt>();
-  attempt->try_next = [attempt, punch, target_peer_id, contact_ids = std::move(contact_ids),
+  attempt->try_next = [this, attempt, punch, target_peer_id, contact_ids = std::move(contact_ids),
                        seed_ids = std::move(seed_ids), has_ep, is_conn,
                        on_done = std::move(on_done)]() mutable {
     auto intro =
         PickPunchIntroducer(contact_ids, seed_ids, target_peer_id, has_ep, is_conn, attempt->tried);
     if (!intro) {
+      if (deps_.request_signaling_punch) {
+        log().info << "punch introducers exhausted — H012 signaling fallback target=" << target_peer_id;
+        deps_.request_signaling_punch(target_peer_id, punch->LocalCandidateAddrs(), std::move(on_done));
+        return;
+      }
       on_done(Error(attempt->tried.empty() ? "no punch introducer" : "punch introducers exhausted"));
       return;
     }
@@ -494,39 +501,6 @@ std::string CallMediaPlane::PeerIdFromListenMultiaddr(const std::string& ma) {
   return peer_id;
 }
 
-void CallMediaPlane::RegisterOneListenMultiaddr(const std::string& identity, const std::string& ma) {
-  if (ma.empty()) {
-    return;
-  }
-  const std::string ip = IpHostFromMultiaddrPrefix(ma);
-  if (IsLikelyUndialableLanIpv4(ip)) {
-    log().info << "Call listen addr skipped undialable dial_key=" << identity << " ma=" << ma;
-    return;
-  }
-  const std::string peer_id = PeerIdFromListenMultiaddr(ma);
-  if (dial_registry_) {
-    (void)dial_registry_->RegisterEndpoint(identity, ma);
-    dial_registry_->ClearDialBackoff(identity);
-    if (!peer_id.empty()) {
-      (void)dial_registry_->RegisterEndpoint(peer_id, ma);
-      dial_registry_->ClearDialBackoff(peer_id);
-      if (deps_.note_lan_mdns_peer_id) {
-        deps_.note_lan_mdns_peer_id(peer_id);
-      }
-    }
-  }
-  if (deps_.register_peer_direct_endpoint) {
-    deps_.register_peer_direct_endpoint(identity, ma);
-    if (!peer_id.empty() && peer_id != identity) {
-      deps_.register_peer_direct_endpoint(peer_id, ma);
-    }
-  }
-  if (!peer_id.empty() && identity.rfind("account:", 0) == 0 && deps_.note_mesh_peer_id_for_relay) {
-    deps_.note_mesh_peer_id_for_relay(identity, peer_id);
-  }
-  log().info << "Call listen addr registered dial_key=" << identity << " ma=" << ma;
-}
-
 void CallMediaPlane::RegisterCallPeerListenMultiaddrs(const std::string& identity,
                                                      const std::vector<std::string>& multiaddrs) {
   if (identity.empty() || multiaddrs.empty()) {
@@ -534,11 +508,49 @@ void CallMediaPlane::RegisterCallPeerListenMultiaddrs(const std::string& identit
   }
   const std::vector<std::string> ranked = RankAmpDialMultiaddrs(multiaddrs, CollectAmpDialLocalContext());
   MergeDialBookListenAddrs(identity, ranked);
-  // Amp DialBook keeps a candidate list; RegisterEndpoint promotes to front (Preferred).
-  // Register worst→best so Preferred lands on the RankAmpDialMultiaddrs winner while
-  // earlier addrs remain as short-timeout fallbacks (B15/B28).
-  for (auto it = ranked.rbegin(); it != ranked.rend(); ++it) {
-    RegisterOneListenMultiaddr(identity, *it);
+  // B28: ingest best-first via RegisterEndpoints (atomic DialBook replace). Do not reverse
+  // RegisterEndpoint — PeerSessionDialRegistry posts each write async and out-of-order
+  // posts scramble Preferred / candidate order.
+  std::vector<std::string> dialable;
+  dialable.reserve(ranked.size());
+  for (const std::string& ma : ranked) {
+    if (ma.empty()) {
+      continue;
+    }
+    const std::string ip = IpHostFromMultiaddrPrefix(ma);
+    if (IsLikelyUndialableLanIpv4(ip)) {
+      log().info << "Call listen addr skipped undialable dial_key=" << identity << " ma=" << ma;
+      continue;
+    }
+    dialable.push_back(ma);
+  }
+  if (dialable.empty()) {
+    return;
+  }
+  const std::string peer_id = PeerIdFromListenMultiaddr(dialable.front());
+  if (dial_registry_) {
+    (void)dial_registry_->RegisterEndpoints(identity, dialable);
+    dial_registry_->ClearDialBackoff(identity);
+    if (!peer_id.empty()) {
+      dial_registry_->ClearDialBackoff(peer_id);
+      if (deps_.note_lan_mdns_peer_id) {
+        deps_.note_lan_mdns_peer_id(peer_id);
+      }
+    }
+  } else if (deps_.register_peer_direct_endpoint) {
+    // No dial registry: fall back to worst→best single RegisterEndpoint for Preferred.
+    for (auto it = dialable.rbegin(); it != dialable.rend(); ++it) {
+      deps_.register_peer_direct_endpoint(identity, *it);
+      if (!peer_id.empty() && peer_id != identity) {
+        deps_.register_peer_direct_endpoint(peer_id, *it);
+      }
+    }
+  }
+  if (!peer_id.empty() && identity.rfind("account:", 0) == 0 && deps_.note_mesh_peer_id_for_relay) {
+    deps_.note_mesh_peer_id_for_relay(identity, peer_id);
+  }
+  for (const std::string& ma : dialable) {
+    log().info << "Call listen addr registered dial_key=" << identity << " ma=" << ma;
   }
 }
 
@@ -1075,6 +1087,51 @@ void CallMediaPlane::PreferLateReserve(const std::string& relay_peer_id) {
   } else {
     task();
   }
+}
+
+void CallMediaPlane::InstallRendezvousReparkListener() {
+  RemoveRendezvousReparkListener();
+  MeshHost* m = mesh();
+  if (!m || !m->Amp() || !m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
+    return;
+  }
+  auto* links = &m->Amp()->Runtime().Links();
+  repark_listener_id_ = links->AddPeerConnectedListener(
+      deferred_.Bind([this](const std::string& peer_id) { OnRendezvousSeedReconnected(peer_id); }));
+  log().info << "circuit rendezvous re-park listener armed";
+}
+
+void CallMediaPlane::RemoveRendezvousReparkListener() {
+  if (repark_listener_id_ == 0) {
+    return;
+  }
+  MeshHost* m = mesh();
+  if (m && m->Amp()) {
+    m->Amp()->Runtime().Links().RemovePeerConnectedListener(repark_listener_id_);
+  }
+  repark_listener_id_ = 0;
+}
+
+void CallMediaPlane::OnRendezvousSeedReconnected(const std::string& peer_id) {
+  if (peer_id.empty()) {
+    return;
+  }
+  MeshHost* m = mesh();
+  if (!m || !m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
+    return;
+  }
+  bool on_surface = false;
+  for (const auto& hop : BuildCircuitRendezvousCandidates()) {
+    if (hop.peer_id == peer_id) {
+      on_surface = true;
+      break;
+    }
+  }
+  if (!on_surface) {
+    return;
+  }
+  log().info << "circuit rendezvous re-park on reconnect peer=" << peer_id;
+  PreferLateReserveOnIo(peer_id);
 }
 
 void CallMediaPlane::PreferLateReserveOnIo(const std::string& relay_peer_id) {

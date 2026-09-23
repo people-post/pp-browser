@@ -120,6 +120,10 @@ TEST(CallControlTypeTest, WireRoundTripSdpAndIce) {
   EXPECT_EQ(CallControlTypeFromWire("call_video_refresh"), CallControlType::CallVideoRefresh);
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallCircuitR1), "call_circuit_r1");
   EXPECT_EQ(CallControlTypeFromWire("call_circuit_r1"), CallControlType::CallCircuitR1);
+  EXPECT_EQ(CallControlTypeToWire(CallControlType::CallPunchOffer), "call_punch_offer");
+  EXPECT_EQ(CallControlTypeFromWire("call_punch_offer"), CallControlType::CallPunchOffer);
+  EXPECT_EQ(CallControlTypeToWire(CallControlType::CallPunchAnswer), "call_punch_answer");
+  EXPECT_EQ(CallControlTypeFromWire("call_punch_answer"), CallControlType::CallPunchAnswer);
 }
 
 TEST(CallControlCodecTest, SdpDetailRoundTrip) {
@@ -261,6 +265,29 @@ TEST(CallControlCodecTest, CircuitR1RoundTrip) {
   EXPECT_FALSE(CallControlCodec::DecodeCircuitR1(R"({"call_id":"call:r1","circuit_r1":""})"));
   EXPECT_TRUE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallCircuitR1));
   EXPECT_TRUE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallCircuitR1));
+}
+
+TEST(CallControlTypeTest, PunchWireRoundTrip) {
+  CallPunchDetail detail;
+  detail.call_id = "call:punch";
+  detail.epoch_id = "ep-1";
+  detail.window_ms = 1500;
+  detail.peer_id = "QmPunchPeer";
+  detail.addrs = {"/ip4/1.2.3.4/udp/1/adp/1.0.0/p2p/QmPunchPeer"};
+  auto encoded = CallControlCodec::EncodePunch(detail);
+  ASSERT_TRUE(static_cast<bool>(encoded));
+  auto decoded = CallControlCodec::DecodePunch(*encoded);
+  ASSERT_TRUE(static_cast<bool>(decoded));
+  EXPECT_EQ(decoded->call_id, detail.call_id);
+  EXPECT_EQ(decoded->epoch_id, detail.epoch_id);
+  EXPECT_EQ(decoded->window_ms, 1500);
+  EXPECT_EQ(decoded->peer_id, detail.peer_id);
+  ASSERT_EQ(decoded->addrs.size(), 1u);
+  EXPECT_EQ(decoded->addrs.front(), detail.addrs.front());
+  EXPECT_FALSE(CallControlCodec::DecodePunch(R"({"call_id":"call:x","epoch_id":"e"})"));
+  EXPECT_TRUE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallPunchOffer));
+  EXPECT_TRUE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallPunchAnswer));
+  EXPECT_TRUE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallPunchOffer));
 }
 
 TEST(CallControlCodecTest, PlumbingAndInboxChromeSuppress) {

@@ -165,8 +165,6 @@ private:
                                 std::function<void(Roe<void>)> on_done);
   /** Async dial/retry — does not park MeshControl for Connect timeout (ConnectAsync). */
   void StartConnectSequence(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen);
-  void ScheduleOffererGracePoll(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
-                                int64_t grace_deadline_ms);
   void BeginConnectAttempt(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
                            int attempt);
   void ContinueConnectAttemptAfterReachable(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs,
@@ -178,7 +176,7 @@ private:
   void SurfaceConnectFailed(const std::string& call_id, const std::string& err, bool stop_media);
   void CancelConnectTimers();
   /**
-   * Invalidate Connect epoch + cancel grace/retry timers + clear connect_worker_inflight_.
+   * Invalidate Connect epoch + cancel retry timers + clear connect_worker_inflight_.
    * Cancel alone drops the callbacks that would have cleared the waiter — abort must complete it
    * (THREADING.md Cancel / Abort contract).
    */
@@ -229,7 +227,7 @@ private:
   std::string inbound_deferred_peer_id_;
   bool mesh_connect_failed_ = false;
   bool mesh_connect_missing_mic_ = false;
-  /** Connect sequence in flight (async ConnectAsync / grace poll / reachability). */
+  /** Connect sequence in flight (async ConnectAsync / reachability). */
   std::atomic<bool> connect_worker_inflight_{false};
   /** Bumped in StopMeshMedia so in-flight Connect workers abort instead of racing Detach/Stop. */
   std::atomic<uint64_t> connect_generation_{0};
@@ -237,7 +235,6 @@ private:
   /** Cancelable inbound hello MediaKey wait (notify from OnMediaKeyReady / PrepareForTeardown). */
   std::mutex inbound_key_mu_;
   std::condition_variable inbound_key_cv_;
-  uint64_t offerer_grace_timer_id_ = 0;
   uint64_t connect_retry_timer_id_ = 0;
   uint64_t direct_health_timer_id_ = 0;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;

@@ -9,6 +9,7 @@
 #include "amp/link/PeerLink.h"
 #include "amp/link/Types.h"
 #include "common/ValueJson.h"
+#include "common/Logger.h"
 #include "domain/mesh/shared/AmpChannelOpen.h"
 #include "foundation/runtime/DeferredSelf.h"
 
@@ -24,6 +25,11 @@ namespace pbr {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+logging::Logger& CircuitTunnelLog() {
+  static logging::Logger log = logging::getLogger("CircuitTunnel");
+  return log;
+}
 
 pp::amp::ChannelPolicy PolicyForCircuitTarget(const std::string& target_protocol) {
   if (target_protocol == pp::amp::kAmpCircuitCarrierProtocolId) {
@@ -672,6 +678,7 @@ struct CircuitTunnelCoordinator::Impl {
     }
 
     // Live op=reserve → peer-id-only Connected path (H010 CircuitServeDialPolicy).
+    bool reservation_hit = false;
     {
       std::lock_guard lock(mu);
       const std::string& tid = tunnel.target.target_peer_id;
@@ -679,6 +686,7 @@ struct CircuitTunnelCoordinator::Impl {
         auto it = reservations.find(tid);
         const bool live_res =
             it != reservations.end() && it->second.session && !it->second.session->IsClosed();
+        reservation_hit = live_res;
         if (CircuitServeDialClearTargetMaWhenReserved(live_res, !tunnel.target.target_multiaddr.empty())) {
           tunnel.target.target_multiaddr.clear();
         }
@@ -688,9 +696,15 @@ struct CircuitTunnelCoordinator::Impl {
     // Peer-id-only: wait for answerer Connected (PeerConnected / reserve events), not Tick poll.
     const bool peer_id_only =
         tunnel.target.target_multiaddr.empty() && !tunnel.target.target_peer_id.empty();
+    const size_t connected_for_target =
+        peer_id_only ? runtime->Links().CountConnectedLinksForPeerId(tunnel.target.target_peer_id) : 0;
+    CircuitTunnelLog().info << "circuit ServeDial dialer=" << tunnel.dialer_peer_id
+                            << " serve_target=" << tunnel.target.target_peer_id
+                            << " peer_id_only=" << (peer_id_only ? 1 : 0)
+                            << " reservation_hit=" << (reservation_hit ? 1 : 0)
+                            << " connected_for_target=" << connected_for_target;
     if (peer_id_only) {
-      const bool has_live = CircuitPeerIdOnlyHasLiveFarLeg(
-          runtime->Links().CountConnectedLinksForPeerId(tunnel.target.target_peer_id));
+      const bool has_live = CircuitPeerIdOnlyHasLiveFarLeg(connected_for_target);
       if (!has_live) {
         const int64_t now_ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch())
@@ -861,13 +875,19 @@ struct CircuitTunnelCoordinator::Impl {
     });
   }
 
-  void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id) {
+  void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id,
+                            const std::string& handler_peer_id) {
     if (stopped.load(std::memory_order_acquire) || !runtime || !link.Mux()) {
       return;
     }
     auto near_session = std::make_shared<pp::amp::ChannelSession>();
     auto started_req = std::make_shared<std::atomic<bool>>(false);
-    const std::string remote = link.RemotePeerId();
+    // Prefer protocol-handler PeerId (authenticated) over link.RemotePeerId() which can be
+    // empty mid-handshake — empty reserve key breaks ServeDial lookup (B27).
+    std::string remote = !handler_peer_id.empty() ? handler_peer_id : link.RemotePeerId();
+    if (remote.empty()) {
+      remote = link.PeerKey();
+    }
     near_session->Bind(*link.Mux(), channel_id, pp::amp::CircuitTunnelChannelPolicy(),
                [this, near_session, started_req, remote](Roe<std::vector<uint8_t>> frame) {
                  if (!frame || stopped.load(std::memory_order_acquire)) {
@@ -917,6 +937,12 @@ struct CircuitTunnelCoordinator::Impl {
                    }
 
                    if (op == "reserve") {
+                     if (remote.empty()) {
+                       CircuitTunnelLog().warning
+                           << "circuit reserve refused: remote peer id unknown";
+                       refuse("circuit reserve: remote peer id unknown");
+                       return;
+                     }
                      const int timeout_ms =
                          static_cast<int>(root.getNonNegInt("timeout_ms").value_or(30000));
                      {
@@ -927,6 +953,8 @@ struct CircuitTunnelCoordinator::Impl {
                            Clock::now() + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 30000);
                        reservations[remote] = std::move(res);
                      }
+                     CircuitTunnelLog().info << "circuit reserve key=" << remote
+                                            << " timeout_ms=" << timeout_ms;
                      Object ack;
                      ack.set("v", int64_t{1});
                      ack.set("ok", true);
@@ -992,13 +1020,13 @@ void CircuitTunnelCoordinator::Start() {
   runtime_.Links().SetProtocolHandler(
       kCircuitRelayProtocolId,
       impl_->lifetime.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
-                                                const std::string& /*remote_peer_id*/,
+                                                const std::string& remote_peer_id,
                                                 const uint32_t ch) {
         if (!impl->runtime) {
           return;
         }
         impl->runtime->Links().WithLiveLink(handle, [&](pp::amp::PeerLink& link) {
-          impl->HandleInboundChannel(link, ch);
+          impl->HandleInboundChannel(link, ch, remote_peer_id);
         });
       }));
 }

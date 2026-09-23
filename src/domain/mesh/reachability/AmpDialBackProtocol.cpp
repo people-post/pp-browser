@@ -137,12 +137,27 @@ struct AmpDialBackProtocol::Impl {
     AmpWhenChannelOpen(Links(), peer_key, channel_id, deadline, std::move(done));
   }
 
-  void ServeProbe(std::shared_ptr<pp::amp::ChannelSession> session, std::vector<uint8_t> body) {
-    RunWorker(post_worker, [this, session, body = std::move(body)]() mutable {
+  void ServeProbe(std::shared_ptr<pp::amp::ChannelSession> session, std::string remote_peer_id,
+                  std::vector<uint8_t> body) {
+    RunWorker(post_worker, [this, session, remote_peer_id = std::move(remote_peer_id),
+                            body = std::move(body)]() mutable {
       if (stopped.load(std::memory_order_acquire) || !runtime) {
         return;
       }
       DialBackProbeResult result;
+      // B26: always report the seed's view of the client's Amp UDP endpoint on this association.
+      // Dialing the client's LAN advertise addrs often fails cross-NAT; the observed reflexive
+      // address is what peers need to dial.
+      if (auto* link = Links().FindLink(remote_peer_id)) {
+        if (auto* conn = link->ConnectionOrNull()) {
+          const auto ep = conn->PeerEndpoint();
+          if (ep.port != 0) {
+            if (auto ma = pp::amp::FormatAdpMultiaddr(ep, remote_peer_id)) {
+              result.observed = *ma;
+            }
+          }
+        }
+      }
       const std::string json_utf8(body.begin(), body.end());
       auto root = TryParseObject(json_utf8);
       if (!root) {
@@ -161,13 +176,17 @@ struct AmpDialBackProtocol::Impl {
             }
           }
           const int timeout_ms = static_cast<int>(root->getNonNegInt("timeout_ms").value_or(8000));
-          result = DialAmpTargets(Links(), io_pump, targets, timeout_ms);
+          auto dialed = DialAmpTargets(Links(), io_pump, targets, timeout_ms);
+          result.ok = dialed.ok;
+          result.dialed = std::move(dialed.dialed);
+          result.error = std::move(dialed.error);
         }
       }
       Object response;
       response.set("v", int64_t{1});
       response.set("ok", result.ok);
       response.set("dialed", result.dialed);
+      response.set("observed", result.observed);
       response.set("error", result.error);
       (void)session->EnqueueOutbound(JsonToBody(DumpJson(response)));
       session->Close();
@@ -182,12 +201,12 @@ struct AmpDialBackProtocol::Impl {
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     *session_holder = Links().BindChannel(
         remote_peer_id, channel_id, pp::amp::ControlJsonChannelPolicy(),
-        [this, session_holder](Roe<std::vector<uint8_t>> frame) {
+        [this, session_holder, remote_peer_id](Roe<std::vector<uint8_t>> frame) {
           auto session = *session_holder;
           if (!session || !frame || stopped.load(std::memory_order_acquire)) {
             return false;
           }
-          ServeProbe(session, std::move(*frame));
+          ServeProbe(session, remote_peer_id, std::move(*frame));
           return false;
         });
   }
@@ -322,6 +341,7 @@ void AmpDialBackProtocol::ProbeAsync(const std::string& seed_peer_key,
                                                DialBackProbeResult parsed;
                                                parsed.ok = root->getIf<bool>("ok").value_or(false);
                                                parsed.dialed = root->getString("dialed").value_or("");
+                                               parsed.observed = root->getString("observed").value_or("");
                                                parsed.error = root->getString("error").value_or("");
                                                (*finish)(parsed);
                                                return false;

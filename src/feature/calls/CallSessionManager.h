@@ -123,6 +123,20 @@ public:
   void AnnounceCircuitR1(const std::string& circuit_r1_peer_id);
   /** Send stashed R1 after Invite creates an active call (hard-w5 pre-Invite EnsureViaCircuit). */
   void FlushPendingCircuitR1Announce();
+  /**
+   * H012: send call_punch_offer over call-control and burst on answer (Amp introducer miss).
+   * `target_peer_id` is mesh PeerId; dial identity resolved from active call peer.
+   */
+  void RequestSignalingPunch(const std::string& target_peer_id, const std::vector<std::string>& my_addrs,
+                             std::function<void(Roe<void>)> on_done);
+  /** BurstDial peer candidates after call_punch_* exchange (Stack → AmpPunchCoordinator). */
+  using SignalingPunchBurstFn =
+      std::function<void(const std::vector<std::string>& peer_addrs, int window_ms,
+                         std::function<void(Roe<void>)> on_done)>;
+  void SetSignalingPunchBurst(SignalingPunchBurstFn callback);
+  /** Local Amp punch candidates for call_punch_answer. */
+  using LocalPunchAddrsFn = std::function<std::vector<std::string>()>;
+  void SetLocalPunchAddrsProvider(LocalPunchAddrsFn callback);
   /** Local `/ip4/…/tcp/…/p2p/…` listen set for call-control dial bootstrap. */
   using LocalListenMultiaddrsFn = std::function<std::vector<std::string>()>;
   void SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback);
@@ -335,7 +349,11 @@ private:
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundCircuitR1(const std::string& detail_json);
+  Roe<void> HandleInboundPunchOffer(const std::string& detail_json, const std::string& sender_identity);
+  Roe<void> HandleInboundPunchAnswer(const std::string& detail_json);
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
+
+  void CompletePendingSignalingPunch(const std::string& epoch_id, Roe<void> result);
 
   IThreadStore& store_;
   ContactsStore& contacts_;
@@ -359,6 +377,15 @@ private:
   PreferLateReserveFn prefer_late_reserve_;
   /** R1 chosen before Invite — flushed once StartCall creates an active session. */
   std::string pending_circuit_r1_announce_;
+  SignalingPunchBurstFn signaling_punch_burst_;
+  LocalPunchAddrsFn local_punch_addrs_;
+  struct PendingSignalingPunch {
+    std::string epoch_id;
+    std::string call_id;
+    std::string peer_identity;
+    std::function<void(Roe<void>)> on_done;
+  };
+  std::optional<PendingSignalingPunch> pending_signaling_punch_;
   LocalListenMultiaddrsFn local_listen_multiaddrs_;
   LocalPeerCapsFn local_peer_caps_;
   LocalMeshPeerIdFn local_mesh_peer_id_;

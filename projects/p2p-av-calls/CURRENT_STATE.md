@@ -1,10 +1,10 @@
 # P2P A/V calls — current state
 
-**Last updated:** 2026-09-17
+**Last updated:** 2026-09-23
 
 **North star:** [NETWORKING.md](../../docs/architecture/NETWORKING.md) + **[V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)** — HTTP + libp2p only; call media on libp2p (voice-first). **m2 done:** libdatachannel removed from build; wire-compat `call_sdp`/`call_ice` ignored.
 
-Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/CALLS.md](../../docs/architecture/CALLS.md) (**Call lifecycle**). Product rules: [DESIGN.md](DESIGN.md) / [DECISIONS.md](DECISIONS.md).
+Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/CALLS.md](../../docs/architecture/CALLS.md) (**Call lifecycle**). Product rules: [DESIGN.md](DESIGN.md) / [DECISIONS.md](DECISIONS.md). Cross-network B25–B31 triage: [CROSS_NETWORK_B25_B31.md](CROSS_NETWORK_B25_B31.md).
 
 ## Landed
 
@@ -52,7 +52,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 
 **Devices:** moto g7 play (`ZY323QRNJ9`) + Samsung SM-T380 (`dc07955772d54e6c`), same Wi‑Fi; package `dev.pp_browser.app`.
 
-**Path:** Invite-embedded MediaKey → N025 ephemeral listen → answerer reverse-dial (primary) / offerer dial after inbound grace if answerer dialable (asymmetric LAN) → hello/ack → `DirectConnected` / `InCall` → bidirectional Opus (AEAD under call media key).
+**Path:** Invite-embedded MediaKey → N025 ephemeral listen → **both roles dial immediately** ([V049](DECISIONS.md#v049--simultaneous-dial-on-accept-cross-nat-open) / B31; Amp A026 elects) → hello/ack → `DirectConnected` / `InCall` → bidirectional Opus (AEAD under call media key).
 
 **Matrix:**
 
@@ -66,7 +66,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 
 **Implementation notes (call-media):**
 
-- Answerer reverse-dials first; offerer waits ~8s for inbound then falls back to dial if the answerer is reachable (asymmetric LAN) — still one `newStream` at a time (`keep_inbound` if the other side wins the race)
+- **V049 / B31:** both offerer and answerer dial on Connect; `EnsureAssociation` re-attempts within the dial budget after backoff. Inbound still wins if it lands first (`keep_inbound`). Historical “answerer first / offerer 15 s grace” failed phone→Mac under stateful NAT.
 - Capture enqueues frames; **host IO thread** owns Yamux read/write (async pump) — do not block `read`/`write` on a worker while IO delivers
 - Yamux `WriteQueue` copies on enqueue; `ReadBuffer::consumePart` soft-fails bad offsets (see [LIBP2P_UPSTREAM.md](../../docs/architecture/LIBP2P_UPSTREAM.md))
 - Keep Accept / MediaKey-send / Connect / Poll HTTP **off** Browser IO
@@ -75,6 +75,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 
 | Area | State |
 |------|-------|
+| **Cross-net B26–B30** | B26/B28/B29 H012/B31 landed; B30 client poll fail-fast + infra still open — [CROSS_NETWORK_B25_B31.md](CROSS_NETWORK_B25_B31.md) |
 | **rd D3/D4** | **Automated gates** below (purpose IDs). Human OEM sample optional — never the only gate |
 | Hop peerstore / circuit | media-hop **L1–L3** + loopback compose landed; **L3.5 multi-hop** later (transitive R1↛B) |
 | **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** + circuit compose; **ConnectAsync landed**; inbound MediaKey wait cancelable (**landed**); leftovers: sync L4 façades for tests; optional s4 if Leave hangs — [SESSION_MACHINES.md](SESSION_MACHINES.md#remaining-work-call-media--peer-honesty) |

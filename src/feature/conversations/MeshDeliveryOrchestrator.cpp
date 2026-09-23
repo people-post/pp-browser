@@ -445,42 +445,69 @@ void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoint(const std::string& pee
   }
 }
 
+void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoints(
+    const std::string& peer_relay_user_id, const std::vector<std::string>& multiaddrs) {
+  if (peer_relay_user_id.empty() || multiaddrs.empty()) {
+    return;
+  }
+  std::vector<std::string> usable;
+  usable.reserve(multiaddrs.size());
+  bool any_non_adp = false;
+  for (const std::string& ma : multiaddrs) {
+    if (ma.empty()) {
+      continue;
+    }
+    if (IsAdpMultiaddr(ma)) {
+      if (!IsUsableAdpListen(ma)) {
+        continue;
+      }
+      usable.push_back(ma);
+    } else {
+      any_non_adp = true;
+      usable.push_back(ma);
+    }
+  }
+  if (usable.empty()) {
+    return;
+  }
+  if (amp_links_ && !any_non_adp) {
+    // B28: atomic best-first candidate list (callers pass RankAmpDialMultiaddrs order).
+    (void)amp_links_->RegisterEndpoints(peer_relay_user_id, usable);
+    return;
+  }
+  // Non-ADP / history path: last RegisterEndpoint wins Preferred — register worst→best.
+  for (auto it = usable.rbegin(); it != usable.rend(); ++it) {
+    RegisterPeerDirectEndpoint(peer_relay_user_id, *it);
+  }
+}
+
 void MeshDeliveryOrchestrator::RegisterContactDirectEndpoints(const Contact& contact) {
   const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
   if (target.peer_identity_value.empty()) {
     return;
   }
-  const auto register_ma = [this](const std::string& dial_key, const std::string& multiaddr) {
-    if (!dial_key.empty() && !multiaddr.empty()) {
-      RegisterPeerDirectEndpoint(dial_key, multiaddr);
-    }
-  };
   const AmpDialLocalContext local_ctx = CollectAmpDialLocalContext();
-  auto register_ranked = [&](const std::vector<std::string>& multiaddrs) {
-    // Same-subnet private LAN first (B15). Worst→best register: Amp DialBook promotes each
-    // write to Preferred while keeping prior candidates for short-timeout fallback (B15/B28).
-    const auto ranked = RankAmpDialMultiaddrs(multiaddrs, local_ctx);
-    for (auto it = ranked.rbegin(); it != ranked.rend(); ++it) {
-      register_ma(target.peer_identity_value, *it);
+  auto register_ranked = [&](const std::string& dial_key, const std::vector<std::string>& multiaddrs) {
+    if (dial_key.empty() || multiaddrs.empty()) {
+      return;
     }
+    RegisterPeerDirectEndpoints(dial_key, RankAmpDialMultiaddrs(multiaddrs, local_ctx));
   };
   if (!contact.remote.endpoints.empty()) {
     for (const DirectoryEndpoint& endpoint : contact.remote.endpoints) {
       const auto ranked = RankAmpDialMultiaddrs(endpoint.multiaddrs, local_ctx);
-      for (auto it = ranked.rbegin(); it != ranked.rend(); ++it) {
-        register_ma(endpoint.peer_id, *it);
-        register_ma(target.peer_identity_value, *it);
-      }
+      RegisterPeerDirectEndpoints(endpoint.peer_id, ranked);
+      RegisterPeerDirectEndpoints(target.peer_identity_value, ranked);
     }
   } else {
-    register_ranked(contact.multiaddrs);
+    register_ranked(target.peer_identity_value, contact.multiaddrs);
   }
   for (const std::string& peer_id : PeerIdsFromContact(contact)) {
     if (amp_links_) {
       if (auto ma = amp_links_->PreferredMultiaddr(peer_id)) {
-        register_ma(peer_id, *ma);
+        RegisterPeerDirectEndpoint(peer_id, *ma);
         if (target.peer_identity_value != peer_id) {
-          register_ma(target.peer_identity_value, *ma);
+          RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
         }
       }
     }

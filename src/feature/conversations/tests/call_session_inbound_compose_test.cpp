@@ -422,6 +422,7 @@ protected:
 
     psk_ = std::make_unique<MemoryPskStore>();
     media_ = std::make_unique<CallMediaEngine>();
+    media_->SetSkipDeviceOpenForTest(true);
     dial_ = std::make_unique<FakeDialRegistry>();
     transport_ = std::make_unique<FakeCallMediaTransport>();
     seat_ = std::make_unique<CallMediaSeat>();
@@ -529,6 +530,12 @@ protected:
     }
     // Drain UI/worker replies while CSM/bridge still alive (avoid UAF on late Accept/Decline).
     (void)AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000));
+    // Drain only proves a marker task passed; a worker task posted by the body (offerer Accept
+    // roster fan-out → SendCallDirectMessage → SqliteThreadStore) can still be running on
+    // another pool thread. Join the pool before destroying anything it may touch — ASan:
+    // heap-use-after-free in SqliteThreadStore::UpsertThread from FanOutToJoinedAndRinging
+    // (Windows CI SEGFAULT in InboundAcceptAsOffererSchedulesDirectMedia).
+    AppRuntime::Shutdown();
     bridge_.reset();
     csm_.reset();
     lifecycle_.reset();
@@ -546,7 +553,6 @@ protected:
     contacts_.reset();
     store_.reset();
     AppRuntime::ShutdownUI();
-    AppRuntime::Shutdown();
     // Never throw from TearDown — Windows "file in use" must not abort the suite.
     std::error_code ec;
     std::filesystem::remove_all(data_dir_, ec);
