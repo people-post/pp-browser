@@ -1,6 +1,6 @@
 # Amp Coordinated Punch (ACP) — plan
 
-**Status:** Spec accepted; **L3.25a+b complete** — seed/contact introducer cold punch, PeerId address-book upsert, SoftMigrate dialability via punch-before-circuit.
+**Status:** Spec accepted; **L3.25a–c complete** — seed/contact introducer cold punch, PeerId address-book upsert, SoftMigrate dialability via punch-before-circuit, upgrade-from-circuit (R1→direct demote). Gap tests: dual-dial A026 race + sync-window expiry → circuit fallback.
 **Stack ADR:** [H009](DECISIONS.md#h009--amp-coordinated-punch-acp)  
 **Preference order:** [H002](DECISIONS.md#h002--publish-in-stack--punch--circuit--fail)  
 **Underlay:** Amp UDP (D10 / A017) — not libp2p DCUtR as a product path  
@@ -131,8 +131,12 @@ Do not implement punch as “send more keepalives.”
 ## Testing
 
 - Loopback / dual-stack fixtures first (deterministic sync window).
-- Hard-lab NAT shapes only after v1 lands — do not claim CGNAT coverage early ([hard-lab](../hard-lab/DESIGN.md)).
+- Hard-lab NAT shapes only after v1 lands — do **not** claim CGNAT / symmetric-NAT punch coverage early ([hard-lab](../hard-lab/DESIGN.md), [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md)).
+  - Wave 5 **N-HARD-CGNAT-ISH** proves forced/circuit hop under dual-SNAT — **not** ACP punch success.
+  - Phase-2 **B-HARD-CALL-NAT-PRODUCT**: punch miss is OK when nested circuit wins.
+  - **N-HARD-HOLEPUNCH** stays Wave 7 until measured punch shapes exist.
 - Compose tests must assert A026 single Session and A027 parent-only teardown under dual-dial races.
+- Sync-window expiry must surface coded `PunchFailed` so SoftMigrate / hop reach falls through to circuit (H002).
 
 ## Phasing
 
@@ -142,8 +146,16 @@ Do not implement punch as “send more keepalives.”
 | **L3.25a** | Addr lifecycle clarity on Amp (observed/listen/advertise); cold punch via seed introducer |
 | **L3.25b** | Contact introducer; address-book upsert; SoftMigrate dialability benefit — **done** |
 | **L3.25c** | Upgrade-from-circuit (R1 as I); promote then demote circuit — **done** |
+| **L3.25 tests** | Dual-dial A026 race; sync-window expiry → PunchFailed + SoftMigrate circuit fallback; hard-lab no CGNAT overclaim — **done** |
+| **L3.25d** | Signaling introducer fallback ([H012](DECISIONS.md#h012--punch-via-call-signaling-when-no-amp-introducer)) when Amp I unavailable — **landed** (`call_punch_*` + `TrySignalingPunchBurstAsync`) |
 
 **Parallel:** [L3.5 multi-hop circuit](PHASES.md#l35--multi-hop-circuit-v2) — do not block punch on multi-hop or vice versa.
+
+## Signaling introducer fallback (H012)
+
+When cold punch cannot pick an Amp Session introducer (circuit not-reg on all seeds — dogfood B27/B29), **call-control** may carry the same collect + sync-window payload that H009 would send over Sessions to I. Both peers then run the existing simultaneous Amp dial / A026 election. This is **not** SoftMigrate hop shopping (`call_hop_addrs`); it is ACP with inbox as the introducer channel.
+
+Preference remains: Amp seed/contact/R1 introducer first; signaling fallback only after Amp I miss.
 
 ## Code anchors (targets)
 
@@ -160,6 +172,7 @@ Do not implement punch as “send more keepalives.”
 |-------|-----------|
 | Preference order | H002 |
 | No app STUN / gather | H004, H007 |
+| Signaling punch fallback | H012 |
 | Circuit billing | H005, N024 |
 | Multi-hop (parallel) | H008, MULTI_HOP_CIRCUIT.md |
 | Amp underlay | D10, A017, NETWORKING.md |

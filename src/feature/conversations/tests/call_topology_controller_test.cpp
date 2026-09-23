@@ -315,6 +315,7 @@ protected:
     sessions_ = std::make_unique<CallSessionStore>(store_->ProfileDbPath());
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
     media_ = std::make_unique<CallMediaEngine>();
+    media_->SetSkipDeviceOpenForTest(true);
     host_ = std::make_unique<FakeTopologyHost>();
     dial_ = std::make_unique<FakeDialRegistry>();
     relay_ = std::make_unique<FakeMediaRelayClient>();
@@ -335,6 +336,9 @@ protected:
     if (topo_) {
       topo_->SetHopArmingPorts({});
     }
+    // Idempotent: tests that Initialize AppRuntime join the pool before store_ reset (PR #216).
+    AppRuntime::Shutdown();
+    AppRuntime::ShutdownUI();
     lifecycle_.reset();
     topo_.reset();
     media_.reset();

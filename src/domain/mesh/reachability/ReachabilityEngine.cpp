@@ -199,11 +199,22 @@ void ReachabilityEngine::RunProbe(AmpReachabilityProbeDeps deps) {
               if (probed) {
                 result.signals.dial_back_ok = probed->ok;
                 result.signals.dial_back_dialed = probed->dialed;
+                result.signals.dial_back_observed = probed->observed;
                 if (!probed->ok) {
                   result.signals.dial_back_error = probed->error;
                 } else {
                   const std::string host = IpHostFromMultiaddrPrefix(probed->dialed);
                   if (probed->dialed.rfind("/ip6/", 0) == 0 && IsGlobalIpv6(host)) {
+                    result.signals.has_global_ipv6 = true;
+                  }
+                }
+                // B26: seed-observed reflexive counts as a public IPv4 listen signal for chrome.
+                if (!probed->observed.empty()) {
+                  const std::string oh = IpHostFromMultiaddrPrefix(probed->observed);
+                  if (probed->observed.rfind("/ip4/", 0) == 0 && IsPublicIpv4(oh)) {
+                    result.signals.has_public_listen_ip = true;
+                  }
+                  if (probed->observed.rfind("/ip6/", 0) == 0 && IsGlobalIpv6(oh)) {
                     result.signals.has_global_ipv6 = true;
                   }
                 }
@@ -215,8 +226,8 @@ void ReachabilityEngine::RunProbe(AmpReachabilityProbeDeps deps) {
             8000);
       });
 
-  // Product: MeshPump + PostToIo — do not park MeshControl on seed dial.
-  // Harness without post_io: AmpParkUntil + Tick until seed settles (then ProbeAsync continues).
+  // Product: MeshPump + PostAfter — do not park MeshControl on seed dial.
+  // Harness without post_after/post_io: AmpParkUntil + Tick until seed settles.
   AmpScheduleUntilSettled(
       deps.post_io, deps.io_pump, seed_settled, seed_deadline,
       [result, seed_settled, finish_once]() mutable {
@@ -225,7 +236,8 @@ void ReachabilityEngine::RunProbe(AmpReachabilityProbeDeps deps) {
         }
         result.signals.seed_dial_error = "seed dial timed out";
         finish_once(std::move(result));
-      });
+      },
+      deps.post_after);
 }
 
 std::string ReachabilityEngine::FormatOpsStatusJson() const {
@@ -238,6 +250,9 @@ std::string ReachabilityEngine::FormatOpsStatusJson() const {
   j.set("has_global_ipv6", snap.signals.has_global_ipv6);
   if (!snap.signals.dial_back_dialed.empty()) {
     j.set("dial_back_dialed", snap.signals.dial_back_dialed);
+  }
+  if (!snap.signals.dial_back_observed.empty()) {
+    j.set("dial_back_observed", snap.signals.dial_back_observed);
   }
   if (!snap.signals.upnp_external_ip.empty()) {
     j.set("upnp_external_ip", snap.signals.upnp_external_ip);

@@ -15,7 +15,7 @@ set(PP_CPP_UI_SOURCE_DIR "" CACHE PATH
   "Optional local checkout of pp-cpp-ui (overrides FetchContent)")
 set(PP_CPP_UI_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-ui.git"
   CACHE STRING "Git remote for pp-cpp-ui")
-pp_fetch_git_tag(PP_CPP_UI_GIT_TAG "v0.3.0"
+pp_fetch_git_tag(PP_CPP_UI_GIT_TAG "v0.3.1"
   "Release tag on pp-cpp-ui main (not a branch name)")
 
 # UI engine unit tests run in pp-cpp-ui CI (PP_UI_BUILD_TESTS), not in this repo.

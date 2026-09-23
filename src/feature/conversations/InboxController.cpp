@@ -644,6 +644,9 @@ std::string InboxController::BuildCallHistoryRml(const ThreadMessage& message,
   case CallControlType::CallSfuAttachFailed:
   case CallControlType::CallHopRefuse:
   case CallControlType::CallVideoRefresh:
+  case CallControlType::CallCircuitR1:
+  case CallControlType::CallPunchOffer:
+  case CallControlType::CallPunchAnswer:
     return {};
   }
 

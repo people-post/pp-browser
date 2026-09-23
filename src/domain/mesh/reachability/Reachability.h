@@ -28,6 +28,8 @@ struct ReachabilitySignals {
   std::string upnp_external_ip;
   int upnp_external_port = 0;
   std::string dial_back_dialed;
+  /** Seed-observed reflexive Amp multiaddr for this client (B26); may be set when dial_back_ok is false. */
+  std::string dial_back_observed;
   std::string seed_dial_error;
   std::string dial_back_error;
 };
@@ -100,6 +102,23 @@ std::vector<std::string> EnumerateDialableLanIpv4Hosts();
  * other. First entry is PreferredMultiaddr ingest order.
  */
 std::vector<std::string> RankAmpDialMultiaddrs(std::vector<std::string> multiaddrs);
+
+/** What the local host can actually dial; feeds RankAmpDialMultiaddrs(multiaddrs, ctx). */
+struct AmpDialLocalContext {
+  std::vector<std::string> lan_ipv4_hosts;  // dialable local LAN IPv4 hosts (same filters as advertise)
+  bool has_global_ipv6 = false;             // false → Amp socket is v4-only; /ip6 peers are unsendable
+};
+
+/** Snapshot of the local interfaces for AmpDialLocalContext. */
+AmpDialLocalContext CollectAmpDialLocalContext();
+
+/**
+ * RankAmpDialMultiaddrs with local knowledge: a private IPv4 on one of our /24s ranks first
+ * (same-LAN call), and /ip6 is demoted below IPv4 when we have no global IPv6 to send from.
+ * Ties fall back to AmpDialMultiaddrRank.
+ */
+std::vector<std::string> RankAmpDialMultiaddrs(std::vector<std::string> multiaddrs,
+                                               const AmpDialLocalContext& ctx);
 
 /** Rank key for tests (lower is preferred). */
 int AmpDialMultiaddrRank(const std::string& multiaddr);

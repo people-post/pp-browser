@@ -15,6 +15,7 @@
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 namespace pbr {
 
@@ -61,6 +62,8 @@ struct AmpChatHistoryTransport::Impl {
   IoPost post_io;
   std::atomic<bool> stopped{false};
 
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
+  DeferredSelf deferred;
 
   void ServeRequest(std::shared_ptr<pp::amp::ChannelSession> session, std::vector<uint8_t> body) {
     RunWorker(post_worker, [this, session, body = std::move(body)]() mutable {
@@ -93,9 +96,6 @@ struct AmpChatHistoryTransport::Impl {
                       if (!session->EnqueueOutbound(JsonToBody(response_json))) {
                         return;
                       }
-                      if (io_pump) {
-                        io_pump();
-                      }
     });
   }
 
@@ -119,9 +119,10 @@ struct AmpChatHistoryTransport::Impl {
 
 AmpChatHistoryTransport::AmpChatHistoryTransport(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
                                              IdentityStore& identity, IPskSessionStore& psk_store,
-                                             WorkerPost post_worker, IoPost post_io)
+                                             WorkerPost post_worker, IoPost post_io, IoAfter post_after)
     : impl_(std::make_unique<Impl>(store, identity, psk_store)), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
+      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
+      post_after_(std::move(post_after)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
   impl_->post_worker = post_worker_;
@@ -140,16 +141,18 @@ void AmpChatHistoryTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kChatHistoryProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
-                           const uint32_t channel_id) {
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle /*handle*/,
+                                                const std::string& remote_peer_id,
+                                                const uint32_t channel_id) {
         impl->HandleInboundChannel(remote_peer_id, channel_id);
-      });
+      }));
 }
 
 void AmpChatHistoryTransport::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   links_.RemoveProtocolHandler(kChatHistoryProtocolId);
+  impl_->deferred.Invalidate();
 }
 
 void AmpChatHistoryTransport::RegisterPeerEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr) {
@@ -260,7 +263,8 @@ void AmpChatHistoryTransport::FetchChatHistoryAsync(const ChatHistoryRequest& re
 
                                AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                                  (*finish)(Error("amp chat-history fetch timed out"));
-                               });
+                               },
+                                                      post_after_);
                              });
                        });
   });

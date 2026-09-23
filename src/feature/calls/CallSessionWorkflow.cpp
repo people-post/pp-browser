@@ -17,6 +17,14 @@ CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, IdentityStore& ide
   redirectLogger("CallSessionWorkflow");
 }
 
+CallSessionWorkflow::~CallSessionWorkflow() {
+  InvalidateDeferredOps();
+}
+
+void CallSessionWorkflow::InvalidateDeferredOps() {
+  deferred_.Invalidate();
+}
+
 void CallSessionWorkflow::SetHostPorts(HostPorts ports) {
   host_ = std::move(ports);
 }
@@ -174,6 +182,11 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
   self.joined_at = now;
   if (auto saved = sessions_.UpsertParticipant(self); !saved) {
     return saved.error();
+  }
+
+  // Arm chrome before Invite / circuit warm so Accept cannot race past OutboundStarted.
+  if (host_.chrome.note_outbound_started) {
+    host_.chrome.note_outbound_started(call_id);
   }
 
   // Offerer: kick circuit readiness early so StartBridge near-leg is warm by Accept.
@@ -621,7 +634,7 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
   const std::string accept_call_id = call_id;
   const std::string accept_inviter = inviter;
   const std::string accept_local = *local;
-  AppRuntime::PostWorkerNormal([this, accept_call_id, accept_inviter, accept_local]() {
+  AppRuntime::PostWorkerNormal(deferred_.Bind([this, accept_call_id, accept_inviter, accept_local]() {
     if (!host_.IsBound()) {
       return;
     }
@@ -639,7 +652,7 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
       }
     }
     if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(accept_inviter);
-  });
+  }));
 
   log().info << "AcceptInvite end call_id=" << call_id << " ok";
   return {};
@@ -1005,6 +1018,13 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
     log().info << "CallInvite ignored; already joined call_id=" << invite->call_id;
     return {};
   }
+  // B24: a replayed invite for a call this device already ended must not re-arm the ring
+  // (it hijacked the accept button mid-call and joined a dead call id).
+  if (auto ended = sessions_.LoadSession(invite->call_id);
+      ended && ended->has_value() && (*ended)->state == CallSessionState::Ended) {
+    log().info << "CallInvite ignored (ended session) call_id=" << invite->call_id;
+    return {};
+  }
   // P001: when we charge (local floor > 0), auto-reject offers below floor.
   if (initiation_billing_) {
     int64_t local_floor = 0;
@@ -1213,9 +1233,10 @@ Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_jso
       host_.duplex.schedule_start_direct(accept->call_id, identity, true);
     }
     // Prefetch + roster fan-out after media kickoff — avoid starving MediaKey/Connect on IO.
+    // DeferredSelf: CSM teardown must not race store_ while this worker still runs (PR #216).
     const std::string accept_call_id = accept->call_id;
     const std::string accept_peer = identity;
-    AppRuntime::PostWorkerNormal([this, accept_call_id, accept_peer, local = local_identity]() {
+    AppRuntime::PostWorkerNormal(deferred_.Bind([this, accept_call_id, accept_peer, local = local_identity]() {
       if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(accept_peer);
       if (auto roster = host_.wire.build_roster_detail(accept_call_id); roster) {
         if (auto roster_json = CallControlCodec::EncodeRoster(*roster); roster_json) {
@@ -1223,7 +1244,7 @@ Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_jso
                                          local);
         }
       }
-    });
+    }));
   }
 
   host_.wire.notify_ring_changed();
@@ -1292,6 +1313,13 @@ Roe<void> CallSessionWorkflow::HandleInboundLeave(const std::string& detail_json
   (void)sessions_.UpsertParticipant(participant);
   auto joined = sessions_.CountJoined(leave->call_id);
   auto session = sessions_.LoadSession(leave->call_id);
+  // B24: relay inbox replays old call-control; an ended call's Leave must not re-run EndCallLocal
+  // (which stops whatever media a newer call is using).
+  if (session && session->has_value() && (*session)->state == CallSessionState::Ended) {
+    log().info << "Inbound CallLeave ignored (ended session) call_id=" << leave->call_id
+               << " from=" << identity;
+    return {};
+  }
   if (identity == local_identity) {
     // Ejected after failed soft-migrate (or remote Leave for us): clear local chrome/media.
     host_.hop.clear_sfu_attach_wait();

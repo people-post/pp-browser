@@ -66,6 +66,7 @@ struct CallSessionLifecyclePorts {
   std::function<const char*()> status_name;
   std::function<const char*()> armed_planner_name;
   std::function<void(const std::string& call_id)> set_direct_connecting;
+  std::function<void(const std::string& call_id)> apply_outbound_started;
   std::function<std::string()> accepting_call_id;
   std::function<std::string()> active_call_id;
   std::function<void(const std::string& call_id)> apply_remote_ended;
@@ -112,6 +113,30 @@ public:
   /** AcceptInvite may await circuit-ready before CallAccept. */
   using AwaitCircuitReadyFn = std::function<bool(int timeout_ms)>;
   void SetAwaitCircuitReady(AwaitCircuitReadyFn callback);
+  /** H011 L3.1c: inbound call_circuit_r1 → answerer PreferLateReserve. */
+  using PreferLateReserveFn = std::function<void(const std::string& relay_peer_id)>;
+  void SetPreferLateReserve(PreferLateReserveFn callback);
+  /**
+   * H011 L3.1c: dialer announces chosen R1 to the active call peer (best-effort).
+   * When no active call yet (circuit path before Invite), stashes for FlushPendingCircuitR1Announce.
+   */
+  void AnnounceCircuitR1(const std::string& circuit_r1_peer_id);
+  /** Send stashed R1 after Invite creates an active call (hard-w5 pre-Invite EnsureViaCircuit). */
+  void FlushPendingCircuitR1Announce();
+  /**
+   * H012: send call_punch_offer over call-control and burst on answer (Amp introducer miss).
+   * `target_peer_id` is mesh PeerId; dial identity resolved from active call peer.
+   */
+  void RequestSignalingPunch(const std::string& target_peer_id, const std::vector<std::string>& my_addrs,
+                             std::function<void(Roe<void>)> on_done);
+  /** BurstDial peer candidates after call_punch_* exchange (Stack → AmpPunchCoordinator). */
+  using SignalingPunchBurstFn =
+      std::function<void(const std::vector<std::string>& peer_addrs, int window_ms,
+                         std::function<void(Roe<void>)> on_done)>;
+  void SetSignalingPunchBurst(SignalingPunchBurstFn callback);
+  /** Local Amp punch candidates for call_punch_answer. */
+  using LocalPunchAddrsFn = std::function<std::vector<std::string>()>;
+  void SetLocalPunchAddrsProvider(LocalPunchAddrsFn callback);
   /** Local `/ip4/…/tcp/…/p2p/…` listen set for call-control dial bootstrap. */
   using LocalListenMultiaddrsFn = std::function<std::vector<std::string>()>;
   void SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback);
@@ -323,7 +348,12 @@ private:
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
+  Roe<void> HandleInboundCircuitR1(const std::string& detail_json);
+  Roe<void> HandleInboundPunchOffer(const std::string& detail_json, const std::string& sender_identity);
+  Roe<void> HandleInboundPunchAnswer(const std::string& detail_json);
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
+
+  void CompletePendingSignalingPunch(const std::string& epoch_id, Roe<void> result);
 
   IThreadStore& store_;
   ContactsStore& contacts_;
@@ -344,6 +374,18 @@ private:
   PrefetchPeerReachFn prefetch_reach_;
   EnsureCircuitReadyFn ensure_circuit_ready_;
   AwaitCircuitReadyFn await_circuit_ready_;
+  PreferLateReserveFn prefer_late_reserve_;
+  /** R1 chosen before Invite — flushed once StartCall creates an active session. */
+  std::string pending_circuit_r1_announce_;
+  SignalingPunchBurstFn signaling_punch_burst_;
+  LocalPunchAddrsFn local_punch_addrs_;
+  struct PendingSignalingPunch {
+    std::string epoch_id;
+    std::string call_id;
+    std::string peer_identity;
+    std::function<void(Roe<void>)> on_done;
+  };
+  std::optional<PendingSignalingPunch> pending_signaling_punch_;
   LocalListenMultiaddrsFn local_listen_multiaddrs_;
   LocalPeerCapsFn local_peer_caps_;
   LocalMeshPeerIdFn local_mesh_peer_id_;

@@ -511,6 +511,57 @@ Roe<CallVideoRefreshDetail> CallControlCodec::DecodeVideoRefresh(const std::stri
   return detail;
 }
 
+Roe<std::string> CallControlCodec::EncodeCircuitR1(const CallCircuitR1Detail& detail) {
+  Object json;
+  json.set("call_id", detail.call_id);
+  json.set("circuit_r1", detail.circuit_r1);
+  return DumpJson(json);
+}
+
+Roe<CallCircuitR1Detail> CallControlCodec::DecodeCircuitR1(const std::string& detail_json) {
+  auto json = TryParseObject(detail_json);
+  auto call_id = json ? json->getString("call_id") : std::nullopt;
+  auto circuit_r1 = json ? json->getString("circuit_r1") : std::nullopt;
+  if (!json || !call_id || !circuit_r1 || circuit_r1->empty()) {
+    return Error("Invalid call_circuit_r1 detail");
+  }
+  CallCircuitR1Detail detail;
+  detail.call_id = *call_id;
+  detail.circuit_r1 = *circuit_r1;
+  return detail;
+}
+
+Roe<std::string> CallControlCodec::EncodePunch(const CallPunchDetail& detail) {
+  Object json;
+  json.set("call_id", detail.call_id);
+  json.set("epoch_id", detail.epoch_id);
+  json.set("window_ms", static_cast<int64_t>(detail.window_ms));
+  json.set("peer_id", detail.peer_id);
+  WriteStringArray(json, "addrs", detail.addrs);
+  return DumpJson(json);
+}
+
+Roe<CallPunchDetail> CallControlCodec::DecodePunch(const std::string& detail_json) {
+  auto json = TryParseObject(detail_json);
+  auto call_id = json ? json->getString("call_id") : std::nullopt;
+  auto epoch_id = json ? json->getString("epoch_id") : std::nullopt;
+  if (!json || !call_id || call_id->empty() || !epoch_id || epoch_id->empty()) {
+    return Error("Invalid call_punch detail");
+  }
+  CallPunchDetail detail;
+  detail.call_id = *call_id;
+  detail.epoch_id = *epoch_id;
+  detail.peer_id = json->getString("peer_id").value_or("");
+  if (auto window = json->getIf<int64_t>("window_ms")) {
+    detail.window_ms = static_cast<int>(*window);
+  }
+  detail.addrs = ReadStringArray(*json, "addrs");
+  if (detail.addrs.empty()) {
+    return Error("Invalid call_punch detail: no addrs");
+  }
+  return detail;
+}
+
 Roe<ThreadMessage> CallControlCodec::BuildSystemMessage(const std::string& thread_id, const CallControlType type,
                                                         const std::string& display_text,
                                                         const std::string& detail_json,
@@ -559,6 +610,9 @@ bool CallControlCodec::IsPlumbingCallControl(const CallControlType type) {
   case CallControlType::CallSfuAttachFailed:
   case CallControlType::CallHopRefuse:
   case CallControlType::CallVideoRefresh:
+  case CallControlType::CallCircuitR1:
+  case CallControlType::CallPunchOffer:
+  case CallControlType::CallPunchAnswer:
     return true;
   default:
     return false;

@@ -27,7 +27,21 @@ Implement **in Amp mesh** ([H001](DECISIONS.md#h001--separate-project-implementa
 - [x] Evolve custom circuit toward dial-by-PeerId when relay already has target (or reservation)
 - [x] SoftMigrate may use circuit when direct `IsDialable` fails (H005)
 - [x] Loopback compose: circuit + call-media + media_relay fan-out (`loopback_partition_fixture.h`)
+- [x] H010 first-connect StartBridge attempt budget (envelope, max bridges, sticky/Connected order)
 - **Gap:** L3 is **single-hop only** (one relay must direct-dial target). Multi-hop plan: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md) / [H008](DECISIONS.md#h008--multi-hop-circuit-chains-planned).
+- **Gap:** Dialer vs answerer still pick/park independently — [L3.1](#l31--circuit-r1-rendezvous).
+
+## L3.1 — Circuit R1 rendezvous
+
+Docs: [CIRCUIT_R1_RENDEZVOUS.md](CIRCUIT_R1_RENDEZVOUS.md), [H011](DECISIONS.md#h011--circuit-r1-rendezvous-dialer-authoritative). Completes single-hop meet when **multiple** dialable relays exist. **Before** multi-hop (L3.5); **parallel** to punch (L3.25).
+
+- [x] ADR + spec (H011, CIRCUIT_R1_RENDEZVOUS) — **done**
+- [x] **L3.1a** — Shared `BuildCircuitRendezvousCandidates` / `CircuitRendezvousPolicy`; answerer reserves Connected + cold surface (same `BuildCircuitHopList` as dialer); unit policy tests
+- [x] **L3.1b** — Answerer prefer last-good / chosen R1 sticky in park order (`OrderRendezvousParkAttempts` + `LastGoodRelayPeerKey`)
+- [x] **L3.1c (stack)** — `PreferLateReserve` + `OnRelayChosen` / `chosen_circuit_r1_` cache
+- [x] **L3.1c (wire)** — Additive `call_circuit_r1` control → answerer `PreferLateReserve` (H007 carve-out)
+- [x] **L3.1d** — `hard-w5` STACK green (rendezvous park + `AnnounceCircuitR1` flush after Invite; teardown AbortInflight drops Finish cbs; OutboundStarted does not regress DirectConnecting)
+- [x] **B27 (client)** — reserve keyed by handler PeerId; ServeDial keying logs; PeerConnected re-park on rendezvous surface; same-relay not-reg re-announces R1 (see [CROSS_NETWORK_B25_B31.md](../p2p-av-calls/CROSS_NETWORK_B25_B31.md))
 
 ## L3.25 — Amp Coordinated Punch
 
@@ -38,7 +52,8 @@ Docs: [HOLE_PUNCH.md](HOLE_PUNCH.md), [H009](DECISIONS.md#h009--amp-coordinated-
 - [x] **L3.25a (complete)** — Introducer orchestration + simultaneous burst dial; A026 election + A027 teardown; seed-introducer cold compose test
 - [x] **L3.25b** — Contact introducer; address-book upsert on punch success; SoftMigrate dialability benefit
 - [x] **L3.25c** — Upgrade-from-circuit (R1 as introducer); promote direct PeerLink; demote circuit
-- [ ] Tests: dual-dial race, sync-window expiry → circuit fallback; no CGNAT overclaim in hard-lab
+- [x] Tests: dual-dial race (A026 single Session + loser burst alias retired); sync-window expiry → PunchFailed + SoftMigrate circuit fallback; hard-lab docs: no CGNAT / carrier-punch overclaim
+- [x] **L3.25d** — Signaling introducer fallback ([H012](DECISIONS.md#h012--punch-via-call-signaling-when-no-amp-introducer)): `call_punch_*` control ↔ ACP burst when Amp I unavailable (B29)
 
 ## L3.5 — Multi-hop circuit v2
 

@@ -120,9 +120,7 @@ void CallLifecycle::BindSignalingPorts(CallLifecycleSignalingPorts ports) {
 
 void CallLifecycle::ClearBinding() {
   // Invalidate in-flight Accept/Decline/Leave UI replies before clearing ports.
-  if (async_epoch_) {
-    async_epoch_->fetch_add(1, std::memory_order_acq_rel);
-  }
+  deferred_.Invalidate();
   ports_ = {};
   phase_ = CallPhase::Idle;
   status_ = CallMediaStatus::None;
@@ -315,10 +313,10 @@ void CallLifecycle::NotifyChrome() {
     on_chrome_refresh_();
     return;
   }
-  const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
-  auto guard = async_epoch_;
+  const auto guard = deferred_.token();
+  const uint64_t epoch = deferred_.Snapshot();
   AppRuntime::PostUI([this, guard, epoch]() {
-    if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+    if (!DeferredSelf::Alive(guard, epoch)) {
       return;
     }
     if (on_chrome_refresh_) {
@@ -329,13 +327,13 @@ void CallLifecycle::NotifyChrome() {
 
 void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
   auto accept = ports_.accept_invite;
-  const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
-  auto guard = async_epoch_;
+  const auto guard = deferred_.token();
+  const uint64_t epoch = deferred_.Snapshot();
   AppRuntime::ResumeBackgroundWork();
   // Never Browser IO — AcceptInvite was starved behind PollInbox on Samsung (queued, no IO enter).
   // Same escape hatch as offerer Connect worker / call-control MediaKey send.
   AppRuntime::PostWorkerCritical([this, accept = std::move(accept), call_id, guard, epoch]() {
-    if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+    if (!DeferredSelf::Alive(guard, epoch)) {
       return;
     }
     log().info << "AcceptInvite worker enter call_id=" << call_id;
@@ -344,7 +342,7 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
       accepted = accept(call_id);
     }
     AppRuntime::PostUI([this, call_id, accepted = std::move(accepted), guard, epoch]() mutable {
-      if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+      if (!DeferredSelf::Alive(guard, epoch)) {
         return;
       }
       // B-CONFLICT: Accept B while AcceptInvite(A) still runs — drop A's late UI result so it
@@ -368,8 +366,8 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
 
 void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
   auto decline = ports_.decline_invite;
-  const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
-  auto guard = async_epoch_;
+  const auto guard = deferred_.token();
+  const uint64_t epoch = deferred_.Snapshot();
   AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
       WorkerLane::Normal,
       [decline = std::move(decline), call_id]() -> Roe<void> {
@@ -379,7 +377,7 @@ void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
         return decline(call_id);
       },
       [this, call_id, guard, epoch](Roe<void> declined) {
-        if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+        if (!DeferredSelf::Alive(guard, epoch)) {
           return;
         }
         if (!declined) {
@@ -392,8 +390,8 @@ void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
 
 void CallLifecycle::PostLeaveCall(const std::string& call_id) {
   auto leave = ports_.leave_call;
-  const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
-  auto guard = async_epoch_;
+  const auto guard = deferred_.token();
+  const uint64_t epoch = deferred_.Snapshot();
   // Critical: must not sit behind Normal work while Connect (also Critical) still dials —
   // StopMeshMedia aborts Connect via connect_generation_.
   AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
@@ -405,7 +403,7 @@ void CallLifecycle::PostLeaveCall(const std::string& call_id) {
         return leave(call_id);
       },
       [this, call_id, guard, epoch](Roe<void> left) {
-        if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+        if (!DeferredSelf::Alive(guard, epoch)) {
           return;
         }
         if (!left) {
@@ -417,8 +415,8 @@ void CallLifecycle::PostLeaveCall(const std::string& call_id) {
 
 void CallLifecycle::PostRetryMedia(const std::string& call_id) {
   auto retry = ports_.retry_p2p_media;
-  const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
-  auto guard = async_epoch_;
+  const auto guard = deferred_.token();
+  const uint64_t epoch = deferred_.Snapshot();
   // Re-arm Direct before RetryP2pMedia → BeginSession (Failed Status blocks AllowsDirectPath).
   SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
   AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
@@ -430,7 +428,7 @@ void CallLifecycle::PostRetryMedia(const std::string& call_id) {
         return retry(call_id);
       },
       [this, call_id, guard, epoch](Roe<void> retried) {
-        if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+        if (!DeferredSelf::Alive(guard, epoch)) {
           return;
         }
         if (!retried) {
@@ -516,10 +514,10 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
       log().info << "AcceptSucceeded KickAnswererDirectMedia StartSfu arm call_id=" << kick_id
                  << " status=" << CallMediaStatusName(status_);
       kick(kick_id);
-      const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
-      auto guard = async_epoch_;
+      const auto guard = deferred_.token();
+      const uint64_t epoch = deferred_.Snapshot();
       AppRuntime::PostUI([this, kick_id, kick, media_active, guard, epoch]() {
-        if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+        if (!DeferredSelf::Alive(guard, epoch)) {
           return;
         }
         if (!ports_.IsBound() || call_id_ != kick_id || !AllowsDirectPath()) {
@@ -543,10 +541,10 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
 
   if (HasAction(actions, CallLifecycleAction::DeferChrome)) {
     if (AppRuntime::CurrentlyOnUI()) {
-      const uint64_t epoch = async_epoch_->load(std::memory_order_acquire);
-      auto guard = async_epoch_;
+      const auto guard = deferred_.token();
+      const uint64_t epoch = deferred_.Snapshot();
       AppRuntime::PostUI([this, guard, epoch]() {
-        if (!guard || guard->load(std::memory_order_acquire) != epoch) {
+        if (!DeferredSelf::Alive(guard, epoch)) {
           return;
         }
         NotifyChrome();

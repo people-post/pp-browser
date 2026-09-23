@@ -12,6 +12,7 @@
 #include "domain/mesh/discovery/AmpDirectoryProtocol.h"
 #include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
 #include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
+#include "domain/mesh/reachability/AmpObservedAddrs.h"
 #include "common/directory/RelayScope.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
@@ -61,7 +62,7 @@ void ConfigurePpNodeAmpDht(MeshHost& mesh, IdentityStore& identity, const AppCon
   AmpDhtProtocolConfig cfg;
   cfg.local_peer_id = mesh.Amp()->LocalPeerId();
   cfg.listen_multiaddrs = mesh.AdvertisedListenMultiaddrs();
-  if (cfg.listen_multiaddrs.empty() && !mesh.AmpListenMultiaddr().empty()) {
+  if (cfg.listen_multiaddrs.empty() && IsUsableAdpListen(mesh.AmpListenMultiaddr())) {
     cfg.listen_multiaddrs = {mesh.AmpListenMultiaddr()};
   }
   if (auto priv = identity.GetDeviceMlDsaPrivateKey()) {
@@ -116,7 +117,7 @@ void ConfigurePpNodeAmpDirectory(MeshHost& mesh, IdentityStore& identity, const 
       ep.multiaddrs.push_back(ma);
     }
   }
-  if (ep.multiaddrs.empty() && !mesh.AmpListenMultiaddr().empty()) {
+  if (ep.multiaddrs.empty() && IsUsableAdpListen(mesh.AmpListenMultiaddr())) {
     ep.multiaddrs.push_back(mesh.AmpListenMultiaddr());
   }
   for (const std::string& ma : config.mesh.advertise_multiaddrs) {

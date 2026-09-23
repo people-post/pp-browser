@@ -468,7 +468,12 @@ Roe<RelayPollResult> HttpRelayClient::PollInbox(const std::string& requester_con
   body.set("timestamp", timestamp);
   body.set("signature", *signature);
   const std::string url = base_url_ + "/v1/inbox/poll";
-  const auto response = HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}});
+  // B30: poll-specific fail-fast (serialized polls on cellular; global 30s starved Accept/MediaKey).
+  // Other relay HTTP keeps default HttpTimeout{30}. Not an env knob.
+  constexpr HttpTimeout kRelayPollTimeout{.total_s = 10, .connect_s = 5};
+  const auto response =
+      HttpClient::Post(url, DumpJson(body), {{"Content-Type", "application/json"}},
+                       kMaxHttpClientBodyBytes, kRelayPollTimeout);
   if (!response) {
     return response.error();
   }

@@ -75,6 +75,21 @@ public:
   virtual ~IDialRegistry() = default;
 
   virtual Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) = 0;
+  /**
+   * Best-first candidate list (B28). Default reverse-registers so Preferred =
+   * multiaddrs.front(); PeerSessionDialRegistry uses Amp RegisterEndpoints atomically.
+   */
+  virtual Roe<void> RegisterEndpoints(const std::string& peer_key,
+                                      const std::vector<std::string>& multiaddrs) {
+    if (multiaddrs.empty()) {
+      return Error("dial registry: no multiaddrs");
+    }
+    Roe<void> last = {};
+    for (auto it = multiaddrs.rbegin(); it != multiaddrs.rend(); ++it) {
+      last = RegisterEndpoint(peer_key, *it);
+    }
+    return last;
+  }
   virtual bool IsDialable(const std::string& peer_key) const = 0;
   /** PeerLink Connected — stricter than IsDialable (has_endpoint alone is not enough). */
   virtual bool IsConnected(const std::string& peer_key) const {
@@ -138,6 +153,11 @@ public:
   }
   /** Abort in-flight EnsureViaCircuit / punch chains (ConnectFailed / Leave / teardown). */
   virtual void AbortPending() {}
+  /**
+   * H011 L3.1b: last relay PeerId that completed a successful StartBridge Install.
+   * Empty when none yet. Answerer park may prefer this as sticky.
+   */
+  virtual std::string LastGoodRelayPeerKey() const { return {}; }
 };
 
 /** Amp-only dial registry (PeerLinkManager + AmpCircuitHopRegistry). */
@@ -164,6 +184,34 @@ public:
       (void)amp_links_->RegisterEndpoint(peer_key, multiaddr);
       if (auto peer_id = PeerIdFromAdpMultiaddr(multiaddr); peer_id && *peer_id != peer_key) {
         (void)amp_links_->RegisterEndpoint(*peer_id, multiaddr);
+      }
+    };
+    PostAmpIo(std::move(run));
+    return {};
+  }
+
+  Roe<void> RegisterEndpoints(const std::string& peer_key,
+                              const std::vector<std::string>& multiaddrs) override {
+    if (!amp_links_) {
+      return Error("dial registry not available");
+    }
+    std::vector<std::string> adp;
+    adp.reserve(multiaddrs.size());
+    for (const std::string& ma : multiaddrs) {
+      if (IsAdpMultiaddr(ma)) {
+        adp.push_back(ma);
+      }
+    }
+    if (adp.empty()) {
+      return Error("dial registry not available");
+    }
+    auto run = [this, peer_key, adp]() {
+      if (!amp_links_) {
+        return;
+      }
+      (void)amp_links_->RegisterEndpoints(peer_key, adp);
+      if (auto peer_id = PeerIdFromAdpMultiaddr(adp.front()); peer_id && *peer_id != peer_key) {
+        (void)amp_links_->RegisterEndpoints(*peer_id, adp);
       }
     };
     PostAmpIo(std::move(run));

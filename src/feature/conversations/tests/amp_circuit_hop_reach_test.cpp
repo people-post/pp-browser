@@ -4,12 +4,15 @@
 #include "domain/mesh/host/MeshPorts.h"
 #include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
 #include "domain/mesh/tests/support/mesh_triple_harness.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
 
 #include <atomic>
+#include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -187,6 +190,21 @@ protected:
     ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
   }
 
+  AmpCircuitHopReach::IoPost PostIoA() {
+    return [this](std::function<void()> task) {
+      if (harness_ && harness_->runtime_a && task) {
+        harness_->runtime_a->PostToIo(std::move(task));
+      }
+    };
+  }
+  AmpCircuitHopReach::IoAfter PostAfterA() {
+    return [this](std::chrono::milliseconds delay, std::function<void()> task) {
+      if (harness_ && harness_->runtime_a && task) {
+        harness_->runtime_a->PostAfter(delay, std::move(task));
+      }
+    };
+  }
+
   std::unique_ptr<pbr::test::AmpMeshTripleHarness> harness_;
   std::unique_ptr<IChatPeerLinks> chat_a_;
   std::unique_ptr<RecordingChatPeerLinks> recording_;
@@ -214,7 +232,8 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSkipsEnsureAssociationAndPreferred
       // Punch miss (expected under dual-NAT) — fall through to nested circuit.
       [](const std::string&, std::function<void(Roe<void>)> on_done) {
         on_done(Error("punch burst dial timed out"));
-      });
+      },
+      AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
   reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
@@ -304,7 +323,8 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialB
       [](const std::string&) { return std::vector<std::string>{"relay"}; },
       [](const std::string&, std::function<void(Roe<void>)> on_done) {
         on_done(Error("punch burst dial timed out"));
-      });
+      },
+      AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
   reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
@@ -330,7 +350,8 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureAcceptsHopPeerIdRelayKey) {
         }
         return out;
       },
-      AmpCircuitHopReach::TryPunchAsync{});
+      AmpCircuitHopReach::TryPunchAsync{}, AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(),
+      PostAfterA());
 
   Wait<void> ensure_wait;
   reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
@@ -377,7 +398,8 @@ TEST_F(AmpCircuitHopReachTest, PrivateHopMaDoesNotPoisonPublicPreferred) {
       },
       [](const std::string&, std::function<void(Roe<void>)> on_done) {
         on_done(Error("punch burst dial timed out"));
-      });
+      },
+      AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
   reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
@@ -415,7 +437,8 @@ TEST_F(AmpCircuitHopReachTest, SkipsWildcardPreferredRelayThenUsesDialable) {
       },
       [](const std::string&, std::function<void(Roe<void>)> on_done) {
         on_done(Error("punch burst dial timed out"));
-      });
+      },
+      AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
   reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
@@ -438,7 +461,8 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureRunsCircuitBeforePunch) {
       [punch_started, hold_punch](const std::string&, std::function<void(Roe<void>)> on_done) {
         punch_started->store(true, std::memory_order_release);
         *hold_punch = std::move(on_done);
-      });
+      },
+      AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
   reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
@@ -468,6 +492,8 @@ TEST_F(AmpCircuitHopReachTest, AbortPendingSkipsPunchFallback) {
         punch_started->store(true, std::memory_order_release);
         *hold_punch = std::move(on_done);
       });
+  // Intentionally no post_io: empty-relay miss + punch start must run synchronously so Abort
+  // can win the race before any PostToIo turn.
 
   Wait<void> ensure_wait;
   reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
@@ -481,6 +507,37 @@ TEST_F(AmpCircuitHopReachTest, AbortPendingSkipsPunchFallback) {
   ASSERT_FALSE(ensure_wait.result);
   EXPECT_NE(ensure_wait.result.error().message.find("aborted"), std::string::npos)
       << ensure_wait.result.error().message;
+}
+
+/**
+ * L3.25 SoftMigrate path (H002): punch epoch miss → circuit fallback.
+ * TryEnsureHopReachable runs punch first; on window expiry / no dialable book entry,
+ * EnsureViaCircuit must still Install a media_relay hop.
+ */
+TEST_F(AmpCircuitHopReachTest, HopEnsureFallsThroughToCircuitAfterPunchWindowExpiry) {
+  WarmAnswererAndOfferer("relay");
+
+  ASSERT_FALSE(recording_->GetLinkSnapshot(harness_->peer_id_b).has_endpoint);
+  ASSERT_FALSE(hops_->Find(harness_->peer_id_b, kMediaRelayProtocolId).has_value());
+
+  auto punch_calls = std::make_shared<int>(0);
+  AmpCircuitHopReach reach(
+      *circuit_a_, *hops_, *recording_, [this] { harness_->PumpAll(); },
+      [](const std::string&) { return std::vector<std::string>{"relay"}; },
+      [punch_calls](const std::string&, std::function<void(Roe<void>)> on_done) {
+        ++(*punch_calls);
+        on_done(Error("punch burst window expired"));
+      },
+      AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
+
+  Wait<void> ensure_wait;
+  reach.TryEnsureHopReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  ensure_wait.PumpUntilDone(*harness_);
+  ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
+  EXPECT_EQ(*punch_calls, 1);
+  EXPECT_TRUE(hops_->Find(harness_->peer_id_b, kMediaRelayProtocolId).has_value())
+      << "circuit fallback must Install media_relay hop after punch window expiry";
+  // resolved_multiaddr may be empty on loopback; SoftMigrate dialability is the hop Install.
 }
 
 } // namespace

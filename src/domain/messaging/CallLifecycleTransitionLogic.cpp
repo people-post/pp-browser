@@ -43,11 +43,17 @@ CallLifecycleTransitionOutcome DecideCallLifecycleTransition(CallLifecycleEvent 
     return out;
 
   case CallLifecycleEvent::OutboundStarted:
-    out.actions = CallLifecycleAction::SetPhase | CallLifecycleAction::SetStatus |
-                  CallLifecycleAction::NotifyChrome;
+    out.actions = CallLifecycleAction::SetPhase | CallLifecycleAction::NotifyChrome;
     out.next_phase = CallPhase::OutboundCalling;
-    out.next_status = CallMediaStatus::Deciding;
-    out.status_reason = "OutboundStarted";
+    // Fast Accept can ScheduleStartDirectMedia before product Apply(OutboundStarted)
+    // (hard-w5 product-stack). Do not regress DirectConnecting/Live back to Deciding —
+    // that clears AllowsDirectPath and drops ScheduleOfferer / ConnectSucceeded.
+    if (ctx.status == CallMediaStatus::None || ctx.status == CallMediaStatus::Deciding ||
+        ctx.status == CallMediaStatus::Failed) {
+      out.actions |= CallLifecycleAction::SetStatus;
+      out.next_status = CallMediaStatus::Deciding;
+      out.status_reason = "OutboundStarted";
+    }
     return out;
 
   case CallLifecycleEvent::AcceptClicked: {

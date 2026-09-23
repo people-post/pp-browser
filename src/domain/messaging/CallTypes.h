@@ -60,6 +60,17 @@ enum class CallControlType {
   CallHopRefuse,
   /** Receiver asks publisher for an IDR (V034). */
   CallVideoRefresh,
+  /**
+   * H011 L3.1c: dialer announces chosen immediate circuit R1 PeerId so answerer can late-reserve.
+   * Additive plumbing — old peers ignore unknown control_type.
+   */
+  CallCircuitR1,
+  /**
+   * H012 / L3.25d: ACP punch candidates + sync window over call-control when Amp introducer
+   * is unavailable (B29). Additive — old peers ignore.
+   */
+  CallPunchOffer,
+  CallPunchAnswer,
 };
 
 struct CallParticipantMedia {
@@ -276,6 +287,27 @@ struct CallVideoRefreshDetail {
   std::string call_id;
   /** Publisher identity whose video_lo should keyframe. Empty = local publisher. */
   std::string identity;
+};
+
+/**
+ * H011 L3.1c: dialer → answerer chosen immediate relay PeerId (no multiaddrs — H007 carve-out).
+ */
+struct CallCircuitR1Detail {
+  std::string call_id;
+  /** Immediate circuit relay PeerId (base58). */
+  std::string circuit_r1;
+};
+
+/**
+ * H012: punch candidate exchange over call-control (same collect as H009, no Amp introducer Session).
+ */
+struct CallPunchDetail {
+  std::string call_id;
+  std::string epoch_id;
+  int window_ms = 2000;
+  std::vector<std::string> addrs;
+  /** Mesh PeerId of the sender (offer: initiator; answer: target). */
+  std::string peer_id;
 };
 
 std::string GenerateCallId();

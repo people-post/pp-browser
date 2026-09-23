@@ -210,6 +210,9 @@ protected:
     ASSERT_TRUE(ui_->Available());
     ASSERT_TRUE(inbound_bound_);
     sessions_identity_ = ui_->SessionsIdentity();
+    if (CallMediaEngine* media = stack_->MediaEngine()) {
+      media->SetSkipDeviceOpenForTest(true);
+    }
 
     transport_ = std::make_unique<FakeCallMediaTransport>();
     dial_ = std::make_unique<FakeDialRegistry>();
@@ -229,6 +232,14 @@ protected:
     stack_.reset();
     transport_.reset();
     dial_.reset();
+    MeshControlDispatch::Uninstall();
+    if (mesh_control_) {
+      mesh_control_->Shutdown();
+    }
+    mesh_control_.reset();
+    AppRuntime::ShutdownUI();
+    // Join the pool before resetting stores a worker may still touch (PR #216 follow-up).
+    AppRuntime::Shutdown();
     if (psk_) {
       psk_->ClearDek();
     }
@@ -236,13 +247,6 @@ protected:
     identity_.reset();
     contacts_.reset();
     store_.reset();
-    MeshControlDispatch::Uninstall();
-    if (mesh_control_) {
-      mesh_control_->Shutdown();
-    }
-    mesh_control_.reset();
-    AppRuntime::ShutdownUI();
-    AppRuntime::Shutdown();
     std::error_code ec;
     std::filesystem::remove_all(data_dir_, ec);
   }
@@ -424,7 +428,6 @@ TEST_F(CallUiBackendStackTest, StartCallAndLeaveViaBackend) {
 
   auto started = ui_->StartCall(thread.id, false, {"account:peer"});
   ASSERT_TRUE(started) << started.error().message;
-  ui_->Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
   EXPECT_EQ(ui_->Phase(), CallPhase::OutboundCalling);
   EXPECT_TRUE(stack_->WantEphemeralListen());
 

@@ -347,8 +347,7 @@ pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pbr::CircuitTunnelCoordinato
 std::unique_ptr<pbr::AmpPunchCoordinator> StartProbePunch(AmpPeer& peer,
                                                           const std::vector<std::string>& candidates) {
   auto punch = std::make_unique<pbr::AmpPunchCoordinator>(
-      peer.Links(), [&peer]() { peer.Pump(); }, pbr::AmpPunchCoordinator::WorkerPost{},
-      pbr::AmpPunchCoordinator::IoPost{});
+      peer.Runtime(), [&peer]() { peer.Pump(); });
   punch->SetLocalCandidateAddrs(candidates);
   punch->Start();
   return punch;

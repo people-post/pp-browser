@@ -19,6 +19,7 @@
 
 #include "common/PbrCompat.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 namespace pbr {
 namespace {
@@ -68,6 +69,8 @@ struct AmpBroadcastTransport::Impl {
   std::unordered_map<std::string, LiveProgramKey> live_keys;
   std::atomic<bool> stopped{false};
 
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
+  DeferredSelf deferred;
 
   int64_t NowMs() {
     ResolveNowMs resolver;
@@ -302,9 +305,6 @@ struct AmpBroadcastTransport::Impl {
         if (!session->EnqueueOutbound(JsonToBody(*response_json))) {
           return;
         }
-        if (io_pump) {
-          io_pump();
-        }
       });
       return false;
     });
@@ -314,9 +314,11 @@ struct AmpBroadcastTransport::Impl {
 
 
 
-AmpBroadcastTransport::AmpBroadcastTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker, IoPost post_io)
+AmpBroadcastTransport::AmpBroadcastTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker, IoPost post_io,
+                                             IoAfter post_after)
     : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
+      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
+      post_after_(std::move(post_after)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
   impl_->post_worker = post_worker_;
@@ -333,16 +335,18 @@ void AmpBroadcastTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kRpcBroadcastProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
-                           const uint32_t channel_id) {
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle /*handle*/,
+                                                const std::string& remote_peer_id,
+                                                const uint32_t channel_id) {
         impl->HandleInboundChannel(remote_peer_id, channel_id);
-      });
+      }));
 }
 
 void AmpBroadcastTransport::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   links_.RemoveProtocolHandler(kRpcBroadcastProtocolId);
+  impl_->deferred.Invalidate();
 }
 
 void AmpBroadcastTransport::SetPublisherKeyResolver(ResolvePublisherKey resolve_key) {
@@ -494,7 +498,8 @@ void AmpBroadcastTransport::RoundTripAsync(const std::string& peer_key, const st
                              AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                                finish(Error("amp broadcast send timed out")
                                           .WithUser("Broadcast control timed out."));
-                             });
+                             },
+                                                    post_after_);
                            });
                      });
 }

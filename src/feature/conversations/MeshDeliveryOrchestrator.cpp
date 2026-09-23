@@ -24,6 +24,8 @@
 #include "domain/messaging/InitiationPricing.h"
 #include "foundation/data/PricingTypes.h"
 #include "domain/people/MeshHopPolicy.h"
+#include "domain/mesh/reachability/AmpObservedAddrs.h"
+#include "domain/mesh/reachability/Reachability.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/E2eIntegrityUtil.h"
@@ -128,7 +130,8 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
                                          GroupRosterStore& group_roster, GroupInviteGate* invite_gate,
                                          IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
                                          std::function<void(std::function<void()>)> amp_worker_post,
-                                         std::function<void(std::function<void()>)> amp_post_io)
+                                         std::function<void(std::function<void()>)> amp_post_io,
+                                         std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after)
     : store_(store), contacts_(contacts), identity_(identity), relay_(relay), inbox_(inbox),
       signing_key_store_(signing_key_store), signing_key_resolver_(signing_key_resolver), kem_key_store_(kem_key_store),
       kem_key_resolver_(kem_key_resolver), psk_store_(psk_store), group_roster_(group_roster), amp_links_(amp_links),
@@ -139,7 +142,8 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
                                              invite_gate);
   // Blob + chat/history: Amp single entry ([A020] / D10). May also AttachAmpTransports later.
   if (amp_links) {
-    AttachAmpTransports(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io));
+    AttachAmpTransports(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io),
+                        std::move(amp_post_after));
   } else {
     log().warning << "direct chat/history/blob unavailable (Amp required)";
   }
@@ -428,6 +432,10 @@ void MeshDeliveryOrchestrator::PersistRelayCursor(const std::string& relay_user_
 void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id,
                                                      const std::string& multiaddr) {
   const bool is_adp = IsAdpMultiaddr(multiaddr);
+  // B6: never register undialable ADP hosts (0.0.0.0 / :: / link-local) into the dial book.
+  if (is_adp && !IsUsableAdpListen(multiaddr)) {
+    return;
+  }
   if (amp_links_ && is_adp) {
     (void)amp_links_->RegisterEndpoint(peer_relay_user_id, multiaddr);
   } else if (amp_links_) {
@@ -437,35 +445,69 @@ void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoint(const std::string& pee
   }
 }
 
+void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoints(
+    const std::string& peer_relay_user_id, const std::vector<std::string>& multiaddrs) {
+  if (peer_relay_user_id.empty() || multiaddrs.empty()) {
+    return;
+  }
+  std::vector<std::string> usable;
+  usable.reserve(multiaddrs.size());
+  bool any_non_adp = false;
+  for (const std::string& ma : multiaddrs) {
+    if (ma.empty()) {
+      continue;
+    }
+    if (IsAdpMultiaddr(ma)) {
+      if (!IsUsableAdpListen(ma)) {
+        continue;
+      }
+      usable.push_back(ma);
+    } else {
+      any_non_adp = true;
+      usable.push_back(ma);
+    }
+  }
+  if (usable.empty()) {
+    return;
+  }
+  if (amp_links_ && !any_non_adp) {
+    // B28: atomic best-first candidate list (callers pass RankAmpDialMultiaddrs order).
+    (void)amp_links_->RegisterEndpoints(peer_relay_user_id, usable);
+    return;
+  }
+  // Non-ADP / history path: last RegisterEndpoint wins Preferred — register worst→best.
+  for (auto it = usable.rbegin(); it != usable.rend(); ++it) {
+    RegisterPeerDirectEndpoint(peer_relay_user_id, *it);
+  }
+}
+
 void MeshDeliveryOrchestrator::RegisterContactDirectEndpoints(const Contact& contact) {
   const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
   if (target.peer_identity_value.empty()) {
     return;
   }
-  const auto register_ma = [this](const std::string& dial_key, const std::string& multiaddr) {
-    if (!dial_key.empty() && !multiaddr.empty()) {
-      RegisterPeerDirectEndpoint(dial_key, multiaddr);
+  const AmpDialLocalContext local_ctx = CollectAmpDialLocalContext();
+  auto register_ranked = [&](const std::string& dial_key, const std::vector<std::string>& multiaddrs) {
+    if (dial_key.empty() || multiaddrs.empty()) {
+      return;
     }
+    RegisterPeerDirectEndpoints(dial_key, RankAmpDialMultiaddrs(multiaddrs, local_ctx));
   };
   if (!contact.remote.endpoints.empty()) {
     for (const DirectoryEndpoint& endpoint : contact.remote.endpoints) {
-      // Worst→best so PreferredMultiaddr prefers global /ip6 over private LAN.
-      for (const std::string& ma : OrderDialMultiaddrsWorstToBest(endpoint.multiaddrs)) {
-        register_ma(endpoint.peer_id, ma);
-        register_ma(target.peer_identity_value, ma);
-      }
+      const auto ranked = RankAmpDialMultiaddrs(endpoint.multiaddrs, local_ctx);
+      RegisterPeerDirectEndpoints(endpoint.peer_id, ranked);
+      RegisterPeerDirectEndpoints(target.peer_identity_value, ranked);
     }
   } else {
-    for (const std::string& ma : OrderDialMultiaddrsWorstToBest(contact.multiaddrs)) {
-      register_ma(target.peer_identity_value, ma);
-    }
+    register_ranked(target.peer_identity_value, contact.multiaddrs);
   }
   for (const std::string& peer_id : PeerIdsFromContact(contact)) {
     if (amp_links_) {
       if (auto ma = amp_links_->PreferredMultiaddr(peer_id)) {
-        register_ma(peer_id, *ma);
+        RegisterPeerDirectEndpoint(peer_id, *ma);
         if (target.peer_identity_value != peer_id) {
-          register_ma(target.peer_identity_value, *ma);
+          RegisterPeerDirectEndpoint(target.peer_identity_value, *ma);
         }
       }
     }
@@ -2208,7 +2250,8 @@ void MeshDeliveryOrchestrator::SetAttachmentDownloads(AttachmentFetchWorkflow* d
 
 void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
                                                    std::function<void(std::function<void()>)> amp_worker_post,
-                                                   std::function<void(std::function<void()>)> amp_post_io) {
+                                                   std::function<void(std::function<void()>)> amp_post_io,
+                                                   std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after) {
   if (!amp_links) {
     log().warning << "AttachAmpTransports: amp_links is null";
     return;
@@ -2225,14 +2268,15 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, st
     worker = [](std::function<void()> task) { MeshControlDispatch::Post(std::move(task)); };
   }
 
-  auto blob = std::make_unique<AmpChatBlobTransport>(*amp_links_, amp_io_pump, store_, identity_, worker, amp_post_io);
+  auto blob = std::make_unique<AmpChatBlobTransport>(*amp_links_, amp_io_pump, store_, identity_, worker, amp_post_io,
+                                                     amp_post_after);
   blob->Start();
   peer_blob_ = std::move(blob);
 
   auto history = std::make_unique<AmpChatHistoryTransport>(*amp_links_, amp_io_pump, store_, identity_, psk_store_,
-                                                         worker, amp_post_io);
+                                                         worker, amp_post_io, amp_post_after);
   history->Start();
-  auto chat = std::make_unique<AmpDirectChatTransport>(*amp_links_, amp_io_pump, worker, amp_post_io);
+  auto chat = std::make_unique<AmpDirectChatTransport>(*amp_links_, amp_io_pump, worker, amp_post_io, amp_post_after);
   chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
   chat->Start();
   peer_history_ = std::move(history);
@@ -2240,7 +2284,7 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, st
   peer_announce_feed_ = std::make_unique<PeerAnnounceFeed>();
   peer_announce_ = std::make_unique<AmpPeerAnnounceTransport>(*amp_links_, *peer_announce_feed_, amp_io_pump, worker,
                                                            AmpPeerAnnounceTransport::ResolvePublisherKey{},
-                                                           amp_post_io);
+                                                           amp_post_io, amp_post_after);
   peer_announce_->SetPublisherKeyResolver([this](const std::string& tip_peer_id) -> std::optional<std::vector<uint8_t>> {
     std::string local_peer_id;
     std::vector<uint8_t> local_pk;
@@ -2267,7 +2311,7 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, st
     log().warning << "peer-announce publisher skipped (device ML-DSA unavailable)";
   }
   peer_announce_->Start();
-  broadcast_ = std::make_unique<AmpBroadcastTransport>(*amp_links_, amp_io_pump, worker, amp_post_io);
+  broadcast_ = std::make_unique<AmpBroadcastTransport>(*amp_links_, amp_io_pump, worker, amp_post_io, amp_post_after);
   broadcast_->SetPublisherKeyResolver([this](const std::string& peer_id) -> std::optional<std::vector<uint8_t>> {
     std::string local_peer_id;
     std::vector<uint8_t> local_pk;

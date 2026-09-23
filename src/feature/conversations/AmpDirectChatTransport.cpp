@@ -6,6 +6,7 @@
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/LinkIdentity.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 #include <atomic>
 #include <chrono>
@@ -49,6 +50,8 @@ struct AmpDirectChatTransport::Impl {
   InboundHandler inbound;
   std::atomic<bool> stopped{false};
 
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
+  DeferredSelf deferred;
   void HandleInboundChannel(const std::string& remote_peer_id, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire) || !links || remote_peer_id.empty()) {
       return;
@@ -86,9 +89,6 @@ struct AmpDirectChatTransport::Impl {
             if (!session->EnqueueOutbound(JsonToBody(kAck))) {
               return;
             }
-            if (io_pump) {
-              io_pump();
-            }
             if (handler) {
               handler(std::move(*envelope));
             }
@@ -99,9 +99,10 @@ struct AmpDirectChatTransport::Impl {
 };
 
 AmpDirectChatTransport::AmpDirectChatTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker,
-                                               IoPost post_io)
+                                               IoPost post_io, IoAfter post_after)
     : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
+      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
+      post_after_(std::move(post_after)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
   impl_->post_worker = post_worker_;
@@ -120,16 +121,18 @@ void AmpDirectChatTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kDirectChatProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
-                           const uint32_t channel_id) {
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle /*handle*/,
+                                                const std::string& remote_peer_id,
+                                                const uint32_t channel_id) {
         impl->HandleInboundChannel(remote_peer_id, channel_id);
-      });
+      }));
 }
 
 void AmpDirectChatTransport::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   links_.RemoveProtocolHandler(kDirectChatProtocolId);
+  impl_->deferred.Invalidate();
   std::lock_guard lock(impl_->handler_mutex);
   impl_->inbound = nullptr;
 }
@@ -235,14 +238,12 @@ void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_use
                                                  "Direct send didn't confirm — will use relay if available."));
                                return;
                              }
-                             if (io_pump_) {
-                               io_pump_();
-                             }
                              AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                                (*finish)(Error("amp direct chat send timed out")
                                              .WithUser("Direct send didn't confirm — will use relay if "
                                                        "available."));
-                             });
+                             },
+                                                    post_after_);
                            });
                      });
 }

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "amp/link/PeerLinkManager.h"
+#include "amp/link/MeshRuntime.h"
+#include "domain/mesh/reachability/PunchBurst.h"
 #include "domain/mesh/reachability/PunchTypes.h"
 #include "common/CodedFailure.h"
 #include "common/Error.h"
@@ -22,8 +23,13 @@ namespace pbr {
  * L3.25a–c: cold/upgrade punch — connect/offer/candidates/sync + burst; upgrade uses circuit R1 as introducer.
  * Dual-dial election is PeerLinkManager A026; loser teardown is parent-owned A027.
  *
- * Prefer TryColdPunchAsync / TryUpgradePunchAsync. Sync Try* parks until done; with MeshPump leave
- * IoPump empty. Optional IoPost schedules channel-open polls on MeshRuntime.
+ * Strand model (THREADING.md — exclusive Amp Drive):
+ * - Constructed on MeshRuntime&; PostToIo / PostDeferred / PostAfter / BurstDial come from runtime.
+ * - Mux frame handlers only PostToIo. Never call Tick/Drive/IoPump from SM work.
+ * - Sync-window burst via MeshRuntime::BurstDial.
+ * - AbortInflightDial + session Close + on_done via PostDeferred.
+ * - Prefer TryColdPunchAsync. Sync Try* may AmpParkUntil on a waiter that is the sole Amp driver
+ *   (test harness); IoPump must not be invoked from punch SM callbacks.
  */
 class AmpPunchCoordinator {
 public:
@@ -45,12 +51,10 @@ public:
 
   static Failure WrapLinkFailure(const pp::amp::PeerLinkManager::Failure& child);
 
+  /** Only for AmpParkUntil in sync Try* (harness sole driver). Empty when MeshPump owns Drive. */
   using IoPump = std::function<void()>;
-  using WorkerPost = std::function<void(std::function<void()>)>;
-  using IoPost = std::function<void(std::function<void()>)>;
 
-  AmpPunchCoordinator(pp::amp::PeerLinkManager& links, IoPump io_pump = {}, WorkerPost post_worker = {},
-                      IoPost post_io = {});
+  AmpPunchCoordinator(pp::amp::MeshRuntime& runtime, IoPump io_pump = {});
   ~AmpPunchCoordinator();
 
   AmpPunchCoordinator(const AmpPunchCoordinator&) = delete;
@@ -75,6 +79,13 @@ public:
                             const std::vector<std::string>& my_addrs, std::function<void(PunchRoe)> on_done,
                             int window_ms = 2000);
 
+  /**
+   * H012 / L3.25d: burst-dial peer candidates without an Amp introducer Session.
+   * Caller exchanged addrs + window over call-control (`call_punch_*`).
+   */
+  void TrySignalingPunchBurstAsync(const std::vector<std::string>& peer_addrs,
+                                   std::function<void(PunchRoe)> on_done, int window_ms = 2000);
+
   PunchRoe TryColdPunch(const std::string& introducer_peer_key, const std::string& target_peer_id,
                         const std::vector<std::string>& my_addrs, int window_ms = 2000);
 
@@ -90,10 +101,8 @@ private:
                     const std::vector<std::string>& my_addrs, int window_ms, const std::string& reason);
   struct Impl;
   std::unique_ptr<Impl> impl_;
-  pp::amp::PeerLinkManager& links_;
+  pp::amp::MeshRuntime& runtime_;
   IoPump io_pump_;
-  WorkerPost post_worker_;
-  IoPost post_io_;
   std::vector<std::string> local_addrs_;
   bool started_ = false;
 };

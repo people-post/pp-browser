@@ -18,6 +18,7 @@
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 namespace pbr {
 namespace {
@@ -104,6 +105,8 @@ struct AmpChatBlobTransport::Impl {
   IoPost post_io;
   std::atomic<bool> stopped{false};
 
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
+  DeferredSelf deferred;
   ByteVector CopyDek() const {
     std::lock_guard lock(dek_mutex);
     if (dek.size() != kDataEncryptionKeySize) {
@@ -172,9 +175,6 @@ struct AmpChatBlobTransport::Impl {
                             return;
                           }
                         }
-                        if (io_pump) {
-                          io_pump();
-                        }
                         session->Close();
                       });
                       return false;
@@ -199,9 +199,6 @@ struct AmpChatBlobTransport::Impl {
                       const std::string ack_json = pushed ? DumpJson(ChatBlobAckToJson(true))
                                                           : DumpJson(ChatBlobAckToJson(false, pushed.error().message));
                       (void)session->EnqueueOutbound(JsonToBody(ack_json));
-                      if (io_pump) {
-                        io_pump();
-                      }
                       session->Close();
                     });
                     return false;
@@ -210,9 +207,11 @@ struct AmpChatBlobTransport::Impl {
 };
 
 AmpChatBlobTransport::AmpChatBlobTransport(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
-                                       IdentityStore& identity, WorkerPost post_worker, IoPost post_io)
+                                       IdentityStore& identity, WorkerPost post_worker, IoPost post_io,
+                                       IoAfter post_after)
     : impl_(std::make_unique<Impl>(store, identity)), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
+      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
+      post_after_(std::move(post_after)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
   impl_->post_worker = post_worker_;
@@ -259,16 +258,18 @@ void AmpChatBlobTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kChatBlobProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
-                           const uint32_t channel_id) {
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle /*handle*/,
+                                                const std::string& remote_peer_id,
+                                                const uint32_t channel_id) {
         impl->HandleInboundChannel(remote_peer_id, channel_id);
-      });
+      }));
 }
 
 void AmpChatBlobTransport::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   links_.RemoveProtocolHandler(kChatBlobProtocolId);
+  impl_->deferred.Invalidate();
 }
 
 bool AmpChatBlobTransport::IsPeerReachable(const std::string& peer_identity_value) const {
@@ -367,7 +368,8 @@ void AmpChatBlobTransport::FetchChatBlobAsync(const ChatBlobRequest& request,
 
                                AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                                  finish(Error("amp chat-blob fetch timed out"));
-                               });
+                               },
+                                                      post_after_);
                              });
                        });
   });
@@ -494,7 +496,8 @@ void AmpChatBlobTransport::PushChatBlobAsync(const ChatBlobRequest& request,
 
                     AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                       finish(Error("amp chat-blob push timed out"));
-                    });
+                    },
+                                           post_after_);
                   });
             });
       });

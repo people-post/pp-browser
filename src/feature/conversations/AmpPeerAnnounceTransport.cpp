@@ -20,6 +20,7 @@
 
 #include "common/PbrCompat.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 namespace pbr {
 namespace {
@@ -56,6 +57,8 @@ struct AmpPeerAnnounceTransport::Impl {
   OnTipIngested on_tip_ingested;
   std::atomic<bool> stopped{false};
 
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
+  DeferredSelf deferred;
 
   std::optional<std::vector<uint8_t>> ResolveKey(const std::string& peer_id) {
     ResolvePublisherKey resolver;
@@ -141,9 +144,6 @@ struct AmpPeerAnnounceTransport::Impl {
         if (!session->EnqueueOutbound(JsonToBody(*ack_json))) {
           return;
         }
-        if (io_pump) {
-          io_pump();
-        }
       });
       return false;
     });
@@ -151,9 +151,11 @@ struct AmpPeerAnnounceTransport::Impl {
 };
 
 AmpPeerAnnounceTransport::AmpPeerAnnounceTransport(IChatPeerLinks& links, PeerAnnounceFeed& feed, IoPump io_pump,
-                                               WorkerPost post_worker, ResolvePublisherKey resolve_key, IoPost post_io)
+                                               WorkerPost post_worker, ResolvePublisherKey resolve_key, IoPost post_io,
+                                               IoAfter post_after)
     : impl_(std::make_unique<Impl>()), links_(links), feed_(feed), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
+      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
+      post_after_(std::move(post_after)) {
   impl_->links = &links_;
   impl_->feed = &feed_;
   impl_->io_pump = io_pump_;
@@ -174,16 +176,18 @@ void AmpPeerAnnounceTransport::Start() {
   impl_->stopped.store(false, std::memory_order_release);
   links_.SetProtocolHandler(
       kRpcPeerAnnounceProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
-                           const uint32_t channel_id) {
+      impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle /*handle*/,
+                                                const std::string& remote_peer_id,
+                                                const uint32_t channel_id) {
         impl->HandleInboundChannel(remote_peer_id, channel_id);
-      });
+      }));
 }
 
 void AmpPeerAnnounceTransport::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   links_.RemoveProtocolHandler(kRpcPeerAnnounceProtocolId);
+  impl_->deferred.Invalidate();
 }
 
 void AmpPeerAnnounceTransport::SetPublisherKeyResolver(ResolvePublisherKey resolve_key) {
@@ -298,7 +302,8 @@ void AmpPeerAnnounceTransport::PushTipAsync(const std::string& peer_key, const P
                              AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                                finish(Error("amp peer-announce send timed out")
                                           .WithUser("Direct tip push timed out."));
-                             });
+                             },
+                                                    post_after_);
                            });
                      });
 }

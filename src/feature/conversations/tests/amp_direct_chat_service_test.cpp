@@ -40,8 +40,12 @@ protected:
     ASSERT_TRUE(static_cast<bool>(harness_->chat_a().RegisterEndpoint("b", harness_->ma_b)));
     ASSERT_TRUE(static_cast<bool>(harness_->chat_b().RegisterEndpoint("a", harness_->ma_a)));
 
-    a_chat_ = std::make_unique<AmpDirectChatTransport>(harness_->chat_a(), [this] { harness_->PumpBoth(); });
-    b_chat_ = std::make_unique<AmpDirectChatTransport>(harness_->chat_b(), [this] { harness_->PumpBoth(); });
+    a_chat_ = std::make_unique<AmpDirectChatTransport>(harness_->chat_a(), [this] { harness_->PumpBoth(); },
+                                                       AmpDirectChatTransport::WorkerPost{},
+                                                       harness_->MakePostIoA(), harness_->MakePostAfterA());
+    b_chat_ = std::make_unique<AmpDirectChatTransport>(harness_->chat_b(), [this] { harness_->PumpBoth(); },
+                                                       AmpDirectChatTransport::WorkerPost{},
+                                                       harness_->MakePostIoB(), harness_->MakePostAfterB());
     a_chat_->Start();
     b_chat_->Start();
   }

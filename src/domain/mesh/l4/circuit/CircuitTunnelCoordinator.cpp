@@ -9,7 +9,9 @@
 #include "amp/link/PeerLink.h"
 #include "amp/link/Types.h"
 #include "common/ValueJson.h"
+#include "common/Logger.h"
 #include "domain/mesh/shared/AmpChannelOpen.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 #include <algorithm>
 #include <atomic>
@@ -23,6 +25,11 @@ namespace pbr {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+logging::Logger& CircuitTunnelLog() {
+  static logging::Logger log = logging::getLogger("CircuitTunnel");
+  return log;
+}
 
 pp::amp::ChannelPolicy PolicyForCircuitTarget(const std::string& target_protocol) {
   if (target_protocol == pp::amp::kAmpCircuitCarrierProtocolId) {
@@ -78,6 +85,10 @@ struct CircuitTunnelCoordinator::Impl {
   std::atomic<uint64_t> next_id{1};
   pp::amp::MeshRuntime::IoTickId io_tick_id = 0;
   pp::amp::PeerLinkManager::PeerConnectedListenerId peer_connected_listener_id_ = 0;
+  /** PostIo(raw Impl*) — Invalidate on AbortInflight (Stop calls Abort). */
+  DeferredSelf deferred;
+  /** IoTick / PeerConnected / protocol handler — Invalidate only on Stop (survives mid-life Abort). */
+  DeferredSelf lifetime;
 
   struct Tunnel {
     CircuitTunnelId id;
@@ -113,6 +124,16 @@ struct CircuitTunnelCoordinator::Impl {
   std::unordered_map<std::string, std::vector<CircuitTunnelId>> far_leg_waiters_;
 
   void PostIo(std::function<void()> task) {
+    if (!runtime || !task) {
+      return;
+    }
+    // Exclusive deferred-self post: Invalidate on Abort/Stop makes queued raw-this work no-op.
+    deferred.Post([rt = runtime](std::function<void()> t) { rt->PostToIo(std::move(t)); },
+                  std::move(task));
+  }
+
+  /** Finish / reserve notify: callback-only (no Impl*) — do not gate on deferred. */
+  void PostFinishCb(std::function<void()> task) {
     if (!runtime || !task) {
       return;
     }
@@ -378,7 +399,7 @@ struct CircuitTunnelCoordinator::Impl {
     }
     // Callers hold Impl::mu. try_relay → StartBridge → OpenChannel must not re-enter under lock
     // (dogfood hop give-up / 130521). Deliver on the IO queue after TearDown returns.
-    PostIo([cb = std::move(cb), result = std::move(result)]() mutable { cb(std::move(result)); });
+    PostFinishCb([cb = std::move(cb), result = std::move(result)]() mutable { cb(std::move(result)); });
   }
 
   void TearDown(Tunnel& tunnel, const bool suppress_notify, const bool local_cancel, const std::string& error) {
@@ -492,7 +513,7 @@ struct CircuitTunnelCoordinator::Impl {
               if (tunnel->on_finished) {
                 auto cb = std::move(tunnel->on_finished);
                 tunnel->on_finished = nullptr;
-                PostIo([cb = std::move(cb), ok = std::move(ok)]() mutable { cb(std::move(ok)); });
+                PostFinishCb([cb = std::move(cb), ok = std::move(ok)]() mutable { cb(std::move(ok)); });
               }
               return true;
             }
@@ -657,6 +678,7 @@ struct CircuitTunnelCoordinator::Impl {
     }
 
     // Live op=reserve → peer-id-only Connected path (H010 CircuitServeDialPolicy).
+    bool reservation_hit = false;
     {
       std::lock_guard lock(mu);
       const std::string& tid = tunnel.target.target_peer_id;
@@ -664,6 +686,7 @@ struct CircuitTunnelCoordinator::Impl {
         auto it = reservations.find(tid);
         const bool live_res =
             it != reservations.end() && it->second.session && !it->second.session->IsClosed();
+        reservation_hit = live_res;
         if (CircuitServeDialClearTargetMaWhenReserved(live_res, !tunnel.target.target_multiaddr.empty())) {
           tunnel.target.target_multiaddr.clear();
         }
@@ -673,9 +696,15 @@ struct CircuitTunnelCoordinator::Impl {
     // Peer-id-only: wait for answerer Connected (PeerConnected / reserve events), not Tick poll.
     const bool peer_id_only =
         tunnel.target.target_multiaddr.empty() && !tunnel.target.target_peer_id.empty();
+    const size_t connected_for_target =
+        peer_id_only ? runtime->Links().CountConnectedLinksForPeerId(tunnel.target.target_peer_id) : 0;
+    CircuitTunnelLog().info << "circuit ServeDial dialer=" << tunnel.dialer_peer_id
+                            << " serve_target=" << tunnel.target.target_peer_id
+                            << " peer_id_only=" << (peer_id_only ? 1 : 0)
+                            << " reservation_hit=" << (reservation_hit ? 1 : 0)
+                            << " connected_for_target=" << connected_for_target;
     if (peer_id_only) {
-      const bool has_live = CircuitPeerIdOnlyHasLiveFarLeg(
-          runtime->Links().CountConnectedLinksForPeerId(tunnel.target.target_peer_id));
+      const bool has_live = CircuitPeerIdOnlyHasLiveFarLeg(connected_for_target);
       if (!has_live) {
         const int64_t now_ms =
             std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch())
@@ -846,13 +875,19 @@ struct CircuitTunnelCoordinator::Impl {
     });
   }
 
-  void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id) {
+  void HandleInboundChannel(pp::amp::PeerLink& link, const uint32_t channel_id,
+                            const std::string& handler_peer_id) {
     if (stopped.load(std::memory_order_acquire) || !runtime || !link.Mux()) {
       return;
     }
     auto near_session = std::make_shared<pp::amp::ChannelSession>();
     auto started_req = std::make_shared<std::atomic<bool>>(false);
-    const std::string remote = link.RemotePeerId();
+    // Prefer protocol-handler PeerId (authenticated) over link.RemotePeerId() which can be
+    // empty mid-handshake — empty reserve key breaks ServeDial lookup (B27).
+    std::string remote = !handler_peer_id.empty() ? handler_peer_id : link.RemotePeerId();
+    if (remote.empty()) {
+      remote = link.PeerKey();
+    }
     near_session->Bind(*link.Mux(), channel_id, pp::amp::CircuitTunnelChannelPolicy(),
                [this, near_session, started_req, remote](Roe<std::vector<uint8_t>> frame) {
                  if (!frame || stopped.load(std::memory_order_acquire)) {
@@ -902,6 +937,12 @@ struct CircuitTunnelCoordinator::Impl {
                    }
 
                    if (op == "reserve") {
+                     if (remote.empty()) {
+                       CircuitTunnelLog().warning
+                           << "circuit reserve refused: remote peer id unknown";
+                       refuse("circuit reserve: remote peer id unknown");
+                       return;
+                     }
                      const int timeout_ms =
                          static_cast<int>(root.getNonNegInt("timeout_ms").value_or(30000));
                      {
@@ -912,6 +953,8 @@ struct CircuitTunnelCoordinator::Impl {
                            Clock::now() + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 30000);
                        reservations[remote] = std::move(res);
                      }
+                     CircuitTunnelLog().info << "circuit reserve key=" << remote
+                                            << " timeout_ms=" << timeout_ms;
                      Object ack;
                      ack.set("v", int64_t{1});
                      ack.set("ok", true);
@@ -967,24 +1010,25 @@ void CircuitTunnelCoordinator::Start() {
     return;
   }
   impl_->stopped.store(false, std::memory_order_release);
-  impl_->io_tick_id = runtime_.AddIoTick([impl = impl_.get()] { impl->TickDeadlines(); });
+  impl_->io_tick_id = runtime_.AddIoTick(impl_->lifetime.Bind([impl = impl_.get()] {
+    impl->TickDeadlines();
+  }));
   impl_->peer_connected_listener_id_ = runtime_.Links().AddPeerConnectedListener(
-      [impl = impl_.get()](const std::string& peer_id) {
-        if (impl) {
-          impl->NotifyFarLegReady(peer_id);
-        }
-      });
+      impl_->lifetime.Bind([impl = impl_.get()](const std::string& peer_id) {
+        impl->NotifyFarLegReady(peer_id);
+      }));
   runtime_.Links().SetProtocolHandler(
       kCircuitRelayProtocolId,
-      [impl = impl_.get()](pp::amp::LinkHandle handle, const std::string& /*remote_peer_id*/,
-                           const uint32_t ch) {
+      impl_->lifetime.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
+                                                const std::string& remote_peer_id,
+                                                const uint32_t ch) {
         if (!impl->runtime) {
           return;
         }
         impl->runtime->Links().WithLiveLink(handle, [&](pp::amp::PeerLink& link) {
-          impl->HandleInboundChannel(link, ch);
+          impl->HandleInboundChannel(link, ch, remote_peer_id);
         });
-      });
+      }));
 }
 
 void CircuitTunnelCoordinator::Stop() {
@@ -1001,6 +1045,7 @@ void CircuitTunnelCoordinator::Stop() {
   }
   runtime_.Links().RemoveProtocolHandler(kCircuitRelayProtocolId);
   AbortInflight();
+  impl_->lifetime.Invalidate();
 }
 
 bool CircuitTunnelCoordinator::IsStarted() const {
@@ -1021,22 +1066,29 @@ bool CircuitTunnelCoordinator::ServeInbound() const {
 }
 
 void CircuitTunnelCoordinator::AbortInflight() {
-  impl_->PostIo([impl = impl_.get()] {
-    std::lock_guard lock(impl->mu);
+  // Sync under lock — never PostIo(raw Impl*) that can outlive Stop/TearDown.
+  // Null Finish cbs: CallMediaPlane / AmpCircuitHopReach may already be destroyed
+  // (hard-w5 offerer SIGSEGV after Leave). Reach uses AbortPending gen; reserve
+  // cbs use CallMediaPlane DeferredSelf.
+  {
+    std::lock_guard lock(impl_->mu);
     std::vector<uint64_t> ids;
-    for (auto& [id, _] : impl->tunnels) {
+    for (auto& [id, _] : impl_->tunnels) {
       ids.push_back(id);
     }
     for (const auto id : ids) {
-      if (auto* tunnel = impl->Find(CircuitTunnelId{id})) {
-        impl->TearDown(*tunnel, true, true, "circuit-relay aborted");
+      if (auto* tunnel = impl_->Find(CircuitTunnelId{id})) {
+        tunnel->on_finished = nullptr;
+        impl_->TearDown(*tunnel, true, true, "circuit-relay aborted");
       }
     }
-    for (auto& [peer_id, res] : impl->reservations) {
-      CloseQuietSlot(res.session, impl->ResolveLink(peer_id));
+    for (auto& [peer_id, res] : impl_->reservations) {
+      CloseQuietSlot(res.session, impl_->ResolveLink(peer_id));
     }
-    impl->reservations.clear();
-  });
+    impl_->reservations.clear();
+  }
+  // Poison already-queued PostIo(self) work; new posts after this capture a fresh snap.
+  impl_->deferred.Invalidate();
 }
 
 CircuitTunnelId CircuitTunnelCoordinator::StartBridge(const std::string& relay_peer_key,

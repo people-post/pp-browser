@@ -83,4 +83,4 @@ Edit files under **pp-cpp-ui** `include/` / `src/` (separate repo commits). Prod
 
 ## Release pin
 
-FetchContent pins `PP_CPP_UI_GIT_TAG` (currently `v0.3.0`). A sibling `../pp-cpp-ui` checkout still overrides the pin for local develop work.
+FetchContent pins `PP_CPP_UI_GIT_TAG` (currently `v0.3.1`). A sibling `../pp-cpp-ui` checkout still overrides the pin for local develop work.

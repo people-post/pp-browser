@@ -114,9 +114,10 @@ public:
   void NotePeerIdRelayMapping(const std::string& peer_id, const std::string& relay_identity);
 
   /**
-   * Abort in-flight Connect (generation bump + Detach). Prefer timeout_ms=0 on shutdown so
+   * Abort in-flight Connect (`AbortConnectSequence` + Detach). Prefer timeout_ms=0 on shutdown so
    * the UI/shutdown strand does not sleep-spin; late Connect callbacks no-op on generation.
    * Must run before destroying this bridge / CallMediaDirectService / mesh host.
+   * See THREADING.md Cancel / Abort contract (arm ⇒ complete on cancel).
    */
   void PrepareForTeardown(int timeout_ms = 0);
 
@@ -164,8 +165,6 @@ private:
                                 std::function<void(Roe<void>)> on_done);
   /** Async dial/retry — does not park MeshControl for Connect timeout (ConnectAsync). */
   void StartConnectSequence(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen);
-  void ScheduleOffererGracePoll(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
-                                int64_t grace_deadline_ms);
   void BeginConnectAttempt(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
                            int attempt);
   void ContinueConnectAttemptAfterReachable(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs,
@@ -176,10 +175,16 @@ private:
   /** Chrome ConnectFailed + Direct Idle; optionally StopMeshMedia (zombie TX / teardown). */
   void SurfaceConnectFailed(const std::string& call_id, const std::string& err, bool stop_media);
   void CancelConnectTimers();
+  /**
+   * Invalidate Connect epoch + cancel retry timers + clear connect_worker_inflight_.
+   * Cancel alone drops the callbacks that would have cleared the waiter — abort must complete it
+   * (THREADING.md Cancel / Abort contract).
+   */
+  void AbortConnectSequence();
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
   /** Direct stream up: mark media connected when capture is live, always advance lifecycle/chrome. */
   void CommitDirectConnected(const std::string& call_id);
-  void DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel,
+  void DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel, uint32_t seq, uint8_t mark,
                                  const std::vector<uint8_t>& payload);
   void ReleaseDirectTransportBody();
   /** NAT dogfood: dialable "direct" with TX-only → force circuit ensure + re-dial. */
@@ -222,7 +227,7 @@ private:
   std::string inbound_deferred_peer_id_;
   bool mesh_connect_failed_ = false;
   bool mesh_connect_missing_mic_ = false;
-  /** Connect sequence in flight (async ConnectAsync / grace poll / reachability). */
+  /** Connect sequence in flight (async ConnectAsync / reachability). */
   std::atomic<bool> connect_worker_inflight_{false};
   /** Bumped in StopMeshMedia so in-flight Connect workers abort instead of racing Detach/Stop. */
   std::atomic<uint64_t> connect_generation_{0};
@@ -230,7 +235,6 @@ private:
   /** Cancelable inbound hello MediaKey wait (notify from OnMediaKeyReady / PrepareForTeardown). */
   std::mutex inbound_key_mu_;
   std::condition_variable inbound_key_cv_;
-  uint64_t offerer_grace_timer_id_ = 0;
   uint64_t connect_retry_timer_id_ = 0;
   uint64_t direct_health_timer_id_ = 0;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;

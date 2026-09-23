@@ -193,8 +193,10 @@ protected:
   }
 
   void TearDown() override {
-    TearSide(offer_);
-    TearSide(answer_);
+    // Soft-stop stacks first, then join AppRuntime before destroying stores — DrainWorkersThenUI
+    // alone does not wait for every pool thread (PR #216 follow-up).
+    SoftStopSide(offer_);
+    SoftStopSide(answer_);
     MeshControlDispatch::Uninstall();
     if (mesh_control_) {
       mesh_control_->Shutdown();
@@ -202,6 +204,8 @@ protected:
     mesh_control_.reset();
     AppRuntime::ShutdownUI();
     AppRuntime::Shutdown();
+    DestroySide(offer_);
+    DestroySide(answer_);
   }
 
   void BuildSide(StackSide& side, const char* tag, uint8_t dek_seed,
@@ -264,13 +268,16 @@ protected:
     side.stack->BuildSessions(deps);
     ASSERT_TRUE(side.ui->Available());
     ASSERT_TRUE(side.inbound.apply_inbound_control);
+    if (CallMediaEngine* media = side.stack->MediaEngine()) {
+      media->SetSkipDeviceOpenForTest(true);
+    }
 
     side.transport = std::make_unique<FakeCallMediaTransport>();
     side.dial = std::make_unique<FakeDialRegistry>();
     side.stack->BindTestMediaPath(side.transport.get(), side.dial.get());
   }
 
-  void TearSide(StackSide& side) {
+  void SoftStopSide(StackSide& side) {
     side.ui.reset();
     if (side.stack) {
       side.stack->AbortCallMediaForShutdown();
@@ -279,6 +286,9 @@ protected:
     side.stack.reset();
     side.transport.reset();
     side.dial.reset();
+  }
+
+  void DestroySide(StackSide& side) {
     if (side.psk) {
       side.psk->ClearDek();
     }
@@ -288,6 +298,7 @@ protected:
     side.store.reset();
     if (!side.data_dir.empty()) {
       std::filesystem::remove_all(side.data_dir);
+      side.data_dir.clear();
     }
   }
 
@@ -324,7 +335,6 @@ protected:
       return {};
     }
     const std::string call_id = started->call_id;
-    offer_.ui->Apply(CallLifecycleEvent::OutboundStarted, call_id);
 
     auto key = offer_.stack->MediaKeys()->LoadEpochKey(call_id, 1);
     EXPECT_TRUE(key && key->has_value());
@@ -479,7 +489,6 @@ TEST_F(CallDualStackComposeTest, OfferInviteAnswerDeclineClearsOfferer) {
   auto started = offer_.ui->StartCall(thread.id, false, {answer_.local_identity});
   ASSERT_TRUE(started) << started.error().message;
   const std::string call_id = started->call_id;
-  offer_.ui->Apply(CallLifecycleEvent::OutboundStarted, call_id);
   EXPECT_EQ(offer_.ui->Phase(), CallPhase::OutboundCalling);
 
   PumpWire();
@@ -528,7 +537,6 @@ TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
     ASSERT_TRUE(offer_active && offer_active->has_value());
     EXPECT_EQ((*offer_active)->call_id, call_b);
   }
-  offer_.ui->Apply(CallLifecycleEvent::OutboundStarted, call_b);
 
   auto key_b = offer_.stack->MediaKeys()->LoadEpochKey(call_b, 1);
   ASSERT_TRUE(key_b && key_b->has_value());
