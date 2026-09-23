@@ -15,7 +15,7 @@ Related: [BUILD.md](BUILD.md), [CALLS.md](../architecture/CALLS.md), [NETWORKING
 
 Repo-wide decision rules live in [TESTING.md](../architecture/TESTING.md). This file applies them to hop/browser qualification:
 
-1. **Design as oracle** — cases guard documented intent / purpose IDs, not the current call graph; see [TESTING.md § Design as oracle](../architecture/TESTING.md#design-as-oracle). Pre-existing cases may still mirror implementation — tighten them when spotted in the work at hand ([Legacy suites](../architecture/TESTING.md#legacy-suites)).
+1. **Design as oracle** — cases guard documented intent / purpose IDs, not the current call graph; see [TESTING.md § Design as oracle](../architecture/TESTING.md#design-as-oracle). Prefer narrowing or redesigning an over-wide case before heroic product fixes under harness constraints. Pre-existing cases may still mirror implementation — tighten them when spotted in the work at hand ([Legacy suites](../architecture/TESTING.md#legacy-suites)).
 2. **Purpose-first** — pick the question (cite a purpose ID or doc sentence), then the cheapest layer that can answer it.
 3. **Cost order** — unit → local integration (in-process / loopback) → deploy smoke → multi-node / hard lab.
 4. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](../../src/domain/mesh/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.

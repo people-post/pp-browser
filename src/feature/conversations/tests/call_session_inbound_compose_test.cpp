@@ -99,8 +99,6 @@ public:
   bool IsDialable(const std::string& peer_key) const override {
     return endpoints.find(peer_key) != endpoints.end() || force_dialable.count(peer_key) > 0;
   }
-  /** Unit fakes treat dialable as connected so EnsurePeerReachableAsync finishes immediately. */
-  bool IsConnected(const std::string& peer_key) const override { return IsDialable(peer_key); }
   std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const override {
     const auto it = endpoints.find(peer_key);
     if (it != endpoints.end()) {
@@ -828,14 +826,24 @@ TEST_F(CallSessionInboundComposeTest, InboundCallEndedEndsActiveSession) {
 }
 
 TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia) {
+  // B-CALL-DIRECT offerer glue only: inbound CallAccept → schedule_start(..., offerer=true)
+  // + session/peer Joined. Do not drive Bridge BeginSession / StartSfu / Connect grace —
+  // those belong to Bridge/engine tests (and TearDown must not inherit an armed Connect).
   const std::string call_id = "call:offerer-accept";
   SeedOffererRingingCall(call_id);
-  // Pairwise PSK so CallAccept → SendMediaKeyToPeer does not warn "No PSK session".
-  ByteVector master(32);
-  for (size_t i = 0; i < master.size(); ++i) {
-    master[i] = static_cast<uint8_t>(0x50 + i);
-  }
-  psk_->SeedMasterPsk(master);
+
+  std::string scheduled_call;
+  std::string scheduled_peer;
+  bool scheduled_offerer = false;
+  int schedule_calls = 0;
+  CallDirectMediaPorts spy = TestDirectMediaPorts(bridge_.get(), seat_.get());
+  spy.schedule_start = [&](const std::string& cid, const std::string& peer, bool offerer) {
+    ++schedule_calls;
+    scheduled_call = cid;
+    scheduled_peer = peer;
+    scheduled_offerer = offerer;
+  };
+  csm_->SetDirectMediaPorts(std::move(spy));
 
   lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
   lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
@@ -850,14 +858,12 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
   auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallAccept, "Accepted", *detail,
                                                   "account:peer");
   ASSERT_TRUE(msg);
-  const int sent_before = sent_control_messages_;
   ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
 
-  DrainUntil([&]() { return bridge_->MediaAttempted(call_id) || media_->IsActive(); });
-  EXPECT_TRUE(bridge_->MediaAttempted(call_id));
-  EXPECT_GT(sent_control_messages_, sent_before) << "CallMediaKey should send when PSK is seeded";
-  EXPECT_NE(last_sent_payload_.find("call_media_key"), std::string::npos)
-      << last_sent_payload_;
+  EXPECT_EQ(schedule_calls, 1);
+  EXPECT_EQ(scheduled_call, call_id);
+  EXPECT_EQ(scheduled_peer, "account:peer");
+  EXPECT_TRUE(scheduled_offerer);
 
   auto session = sessions_->LoadSession(call_id);
   ASSERT_TRUE(session && session->has_value());
@@ -865,10 +871,6 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
   auto peer = sessions_->FindParticipant(call_id, "account:peer");
   ASSERT_TRUE(peer && peer->has_value());
   EXPECT_EQ((*peer)->state, CallParticipantState::Joined);
-
-  // Stop media before TearDown so offerer grace / StartSfu cannot span Stop join.
-  lifecycle_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
-  EXPECT_EQ(lifecycle_->Phase(), CallPhase::Idle);
 }
 
 TEST_F(CallSessionInboundComposeTest, InboundMediaKeyUnwrapsAndKicksAnswerer) {

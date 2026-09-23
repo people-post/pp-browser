@@ -1002,6 +1002,14 @@ void CallMediaBridge::CancelConnectTimers() {
   }
 }
 
+void CallMediaBridge::AbortConnectSequence() {
+  connect_generation_.fetch_add(1, std::memory_order_acq_rel);
+  CancelConnectTimers();
+  // Offerer-grace / retry one-shots were the completers for connect_worker_inflight_.
+  // Cancelling them without clearing left TearDown waiting on a stuck flag.
+  connect_worker_inflight_.store(false, std::memory_order_release);
+}
+
 void CallMediaBridge::FinishConnectSequence(const uint64_t gen, const std::string& call_id,
                                             Roe<void> connected, const char* role) {
   if (connect_generation_.load(std::memory_order_acquire) != gen) {
@@ -1340,9 +1348,7 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   }
   // Abort in-flight Connect from a prior BeginSession (Kick thrash used to Stop without bumping).
   if (restarting && !keep_inbound) {
-    connect_generation_.fetch_add(1, std::memory_order_acq_rel);
-    CancelConnectTimers();
-    connect_worker_inflight_.store(false, std::memory_order_release);
+    AbortConnectSequence();
   }
 
   const uint32_t media_epoch = (*session)->media_epoch;
@@ -1729,13 +1735,11 @@ void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
 
 void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   // Abort any Connect sequence before Detach — LeaveCall can run while Connect is mid-dial.
-  // Do not clear connect_worker_inflight_ here — only the sequence clears it (shutdown waits).
   if (circuit_reach_) {
     circuit_reach_->AbortPending();
   }
   Apply(CallDirectPlannerEvent::Stop, call_id, media_peer_identity_);
-  connect_generation_.fetch_add(1, std::memory_order_acq_rel);
-  CancelConnectTimers();
+  AbortConnectSequence();
   CancelDirectHealthTimer();
   const std::string peer = media_peer_identity_;
   if (pending_answerer_call_id_ == call_id) {
@@ -1863,13 +1867,8 @@ void CallMediaBridge::PrepareForTeardown(int timeout_ms) {
     circuit_reach_->AbortPending();
   }
   Apply(CallDirectPlannerEvent::Stop, media_call_id_, media_peer_identity_);
-  connect_generation_.fetch_add(1, std::memory_order_acq_rel);
-  CancelConnectTimers();
+  AbortConnectSequence();
   CancelDirectHealthTimer();
-  // CancelConnectTimers drops offerer-grace / retry one-shots that would have cleared
-  // connect_worker_inflight_. Leaving it stuck made TearDown sleep the full timeout then
-  // unbounded-join capture (Windows CI hang after headless StartSfu).
-  connect_worker_inflight_.store(false, std::memory_order_release);
   const std::string peer = media_peer_identity_;
   const std::string call_id = media_call_id_;
   pending_answerer_call_id_.clear();
@@ -1885,9 +1884,9 @@ void CallMediaBridge::PrepareForTeardown(int timeout_ms) {
   media_call_id_.clear();
   ClearMeshConnectFailed();
 
-  // Shutdown path: do not sleep-spin on the caller (was up to 2s and dominated close latency).
-  // ConnectAsync / EnsurePeerReachableAsync observe stopping_ + connect_generation_ and exit.
-  // timeout_ms > 0: brief UI pump so PostUI abort continuations can run before media Stop.
+  // Product shutdown uses timeout_ms=0 (abort only). Positive budget: brief UI pump so any
+  // PostUI abort continuations run before media Stop; AbortConnectSequence already cleared
+  // the grace/retry waiter — re-arm of inflight after abort is unexpected.
   if (timeout_ms > 0) {
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);

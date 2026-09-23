@@ -233,7 +233,7 @@ RequestStop(gen) → Drain(deadline) → Join(deadline) → destroy
 
 | Owner | Notes |
 |-------|--------|
-| `CallStack` / `CallMediaBridge` | bump connect generation; `PrepareForTeardown(0)`; media engine budgeted joins |
+| `CallStack` / `CallMediaBridge` | bump connect generation; `AbortConnectSequence` / `PrepareForTeardown(0)`; media engine budgeted joins |
 | `ConversationsHub` / `MeshHost` | `RequestShutdown` / `shutdown_requested_`; MeshControl ≤500ms then MeshPump |
 | `AppRuntime` / `ThreadRuntime` | `BeginShutdown` then budgeted coordinator + WorkerPool |
 | LAN mDNS | stop advertise / join watcher before mesh destroy |
@@ -247,6 +247,28 @@ Sync façades reject new work when `AppRuntime::IsShuttingDown()` (debug log + `
 `CallMediaBridge::StartConnectSequence`, hub `StartMesh` / `EnsureMessagingReady`.
 
 Parent-only destroy: children request stop; only the owner joins and drops (`OWNERSHIP.md`).
+
+### Cancel / Abort contract (async waiters)
+
+Shutdown and Leave already use **generation invalidate** (`connect_generation_`, `media_cancel_gen`, Amp `AbortPending`). The missing rule is how that interacts with **local waiters** (`connect_worker_inflight_`, promise/cv, one-shot timers):
+
+```text
+Invalidate (bump gen / cancel flag)
+→ Interrupt (cancel timers, AbortPending, stream reset, cv.notify)
+→ Complete waiters for this epoch (failure path or abort clears the token)
+→ optional Drain(budget) → Join → destroy
+```
+
+**Invariant — arm ⇒ complete on cancel:** whoever arms a waiter owns finishing it when that work is aborted. If abort **cancels** the only callback that would have cleared `inflight` / completed a promise, the abort path must clear/complete it itself. Anti-pattern: `CancelCoordinatorTimer` then spin-wait on a flag that only that timer cleared.
+
+| Path | Contract |
+|------|----------|
+| Product quit / UI | `PrepareForTeardown(0)` = Abort only (no sleep-spin) — [Shutdown order](#shutdown-order-product) |
+| `CallMediaBridge` Connect | `AbortConnectSequence()` bumps gen, cancels grace/retry timers, **clears** `connect_worker_inflight_` |
+| Cross-planner SoftMigrate | Lifecycle `media_cancel_gen`; late Direct/Hop work no-ops — [CALLS.md](CALLS.md) / V037 |
+| Amp circuit / punch | `AbortPending` + Alive checks — [OWNERSHIP.md](OWNERSHIP.md) |
+
+Session machines: timeout / cancel / Detach must complete through the machine ([SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md)).
 
 ### Dogfood matrix (shutdown latency)
 
@@ -292,6 +314,7 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 
 | Date | Change |
 |------|--------|
+| 2026-09-23 | **Cancel / Abort contract:** arm ⇒ complete on cancel; Bridge `AbortConnectSequence` clears Connect waiter after canceling grace/retry timers |
 | 2026-09-23 | **Exclusive Amp Drive:** nested Drive refused; `PostDeferred` / `PostAfter`; L4 `MakeL4IoPump` always empty; punch on `MeshRuntime&` via `BurstDial`; pin pp-cpp-amp `v2.1.8` |
 | 2026-09-23 | DHT drop unused IoPump; directory sync via AmpParkUntil; `AmpScheduleUntilSettled` prefers PostAfter (`MeshIoContext.post_after`); never AmpParkUntil on Drive stack |
 | 2026-09-23 | Punch ACP: mux handlers PostToIo only; async introducer (no AmpParkUntil under mux); burst on IO strand |
