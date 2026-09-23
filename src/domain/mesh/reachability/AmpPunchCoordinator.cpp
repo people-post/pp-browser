@@ -80,6 +80,15 @@ void PublishIfPunchConnected(pp::amp::PeerLinkManager& links, const std::string&
   burst.dialed = winner;
 }
 
+
+PunchBurstResult ToPunchBurst(pp::amp::BurstDialResult r) {
+  PunchBurstResult out;
+  out.ok = r.ok;
+  out.dialed = std::move(r.dialed);
+  out.error = std::move(r.error);
+  return out;
+}
+
 std::string ResolvePeerKey(pp::amp::PeerLinkManager& links, const std::string& peer_id) {
   if (peer_id.empty()) {
     return {};
@@ -129,24 +138,27 @@ AmpPunchCoordinator::Failure AmpPunchCoordinator::WrapLinkFailure(
 }
 
 struct AmpPunchCoordinator::Impl {
-  pp::amp::PeerLinkManager* links = nullptr;
+  pp::amp::MeshRuntime* runtime = nullptr;
   IoPump io_pump; // AmpParkUntil only — never call from SM / PostToIo work
-  IoPost post_io;
-  IoPost post_deferred;
-  IoAfter post_after;
   AmpPunchCoordinator::ProbeInbound probe_inbound;
   std::atomic<bool> stopped{false};
   /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
   DeferredSelf deferred;
   std::vector<std::string>* local_addrs = nullptr;
 
+  pp::amp::PeerLinkManager& Links() { return runtime->Links(); }
+
+  std::function<void(std::function<void()>)> MakePostIo() {
+    return [this](std::function<void()> fn) { PostStrand(std::move(fn)); };
+  }
+
   /** Non-teardown SM work on MeshRuntime IO strand (connect/offer continuations). */
   void PostStrand(std::function<void()> fn) {
     if (!fn) {
       return;
     }
-    if (post_io) {
-      post_io(std::move(fn));
+    if (runtime) {
+      runtime->PostToIo(std::move(fn));
       return;
     }
     fn();
@@ -157,11 +169,10 @@ struct AmpPunchCoordinator::Impl {
     if (!fn) {
       return;
     }
-    if (post_deferred) {
-      post_deferred(std::move(fn));
+    if (runtime) {
+      runtime->PostDeferred(std::move(fn));
       return;
     }
-    // No deferred lane: run inline (test-only without MeshRuntime wiring).
     fn();
   }
 
@@ -212,14 +223,14 @@ struct AmpPunchCoordinator::Impl {
    */
   void RunIntroducerConnect(const std::shared_ptr<pp::amp::ChannelSession>& initiator_session,
                             const std::string& initiator_peer_id, PunchConnectRequest req) {
-    if (stopped.load(std::memory_order_acquire) || !links) {
+    if (stopped.load(std::memory_order_acquire) || !runtime) {
       return;
     }
     const int window_ms = req.window_ms > 0 ? req.window_ms : 2000;
-    const std::string epoch_id = MakeEpochId(links->LocalPeerId());
+    const std::string epoch_id = MakeEpochId(Links().LocalPeerId());
     const auto deadline = Clock::now() + std::chrono::milliseconds(window_ms + 3000);
 
-    const std::string target_key = ResolvePeerKey(*links, req.target_peer_id);
+    const std::string target_key = ResolvePeerKey(Links(), req.target_peer_id);
     if (target_key.empty()) {
       FailSession(initiator_session, epoch_id, "punch: target endpoint unknown to introducer");
       return;
@@ -236,7 +247,7 @@ struct AmpPunchCoordinator::Impl {
           // Stay on strand: candidate frames may arrive under mux — continue via PostStrand.
           PostStrand([this, target_session, initiator_session, epoch_id, window_ms, req,
                       value = std::move(value)]() mutable {
-            if (stopped.load(std::memory_order_acquire) || !links) {
+            if (stopped.load(std::memory_order_acquire) || !runtime) {
               target_session->Close();
               return;
             }
@@ -255,14 +266,14 @@ struct AmpPunchCoordinator::Impl {
         };
 
     const auto read_timeout = RemainingTimeout(deadline);
-    links->EnsureAssociation(
+    Links().EnsureAssociation(
         target_key, [this, target_key, initiator_peer_id, req, epoch_id, window_ms, finish_candidates,
                      target_session, deadline, read_timeout](pp::amp::PeerLinkManager::LinkRoe assoc) mutable {
           if (!assoc) {
             finish_candidates(CodedRoe<PunchCandidates, Err>::error(WrapLinkFailure(assoc.error())));
             return;
           }
-          links->OpenChannel(
+          Links().OpenChannel(
               target_key, kAmpPunchProtocolId, PunchJsonChannelPolicy(read_timeout),
               [this, target_key, initiator_peer_id, req, epoch_id, window_ms, finish_candidates, target_session,
                deadline, read_timeout](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
@@ -271,9 +282,9 @@ struct AmpPunchCoordinator::Impl {
                   return;
                 }
                 AmpScheduleWhenChannelOpen(
-                    post_io, io_pump,
+                    MakePostIo(), io_pump,
                     [this, target_key, channel_id = *channel]() {
-                      auto* link = links->FindLink(target_key);
+                      auto* link = Links().FindLink(target_key);
                       return link && link->Mux() &&
                              link->Mux()->State(channel_id) == pp::amp::ChannelState::Open;
                     },
@@ -285,7 +296,7 @@ struct AmpPunchCoordinator::Impl {
                             Failure::Of(Err::ChannelFailed, "punch: target channel open failed")));
                         return;
                       }
-                      auto* link = links->FindLink(target_key);
+                      auto* link = Links().FindLink(target_key);
                       if (!link || !link->Mux() ||
                           link->Mux()->State(channel_id) != pp::amp::ChannelState::Open) {
                         finish_candidates(CodedRoe<PunchCandidates, Err>::error(
@@ -334,19 +345,19 @@ struct AmpPunchCoordinator::Impl {
 
   void RunBurstAndReply(const std::shared_ptr<pp::amp::ChannelSession>& session, PunchSync sync,
                         std::string remote_peer_id) {
-    if (stopped.load(std::memory_order_acquire) || !links) {
+    if (stopped.load(std::memory_order_acquire) || !runtime) {
       return;
     }
     for (const std::string& ma : SanitizePunchAddrs(sync.peer_addrs)) {
       if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
         if (!parsed->peer_id.empty()) {
-          (void)links->RegisterEndpoint(parsed->peer_id, ma);
+          (void)Links().RegisterEndpoint(parsed->peer_id, ma);
         }
       }
     }
     auto complete = std::make_shared<std::function<void(PunchBurstResult)>>();
     *complete = [this, session, sync, remote_peer_id](PunchBurstResult burst) mutable {
-      if (stopped.load(std::memory_order_acquire) || !links || !session) {
+      if (stopped.load(std::memory_order_acquire) || !runtime || !session) {
         return;
       }
       std::string remote_id = remote_peer_id;
@@ -358,7 +369,7 @@ struct AmpPunchCoordinator::Impl {
           }
         }
       }
-      PublishIfPunchConnected(*links, remote_id, burst);
+      PublishIfPunchConnected(Links(), remote_id, burst);
       PunchResult result;
       result.epoch_id = sync.epoch_id;
       result.ok = burst.ok;
@@ -371,27 +382,16 @@ struct AmpPunchCoordinator::Impl {
         }
       });
     };
-    // Always async when PostToIo is set. Abort + complete settle via PostDeferred;
-    // sync window prefers Amp-clock PostAfter when wired.
-    if (post_io) {
-      std::function<void(std::function<void()>)> settle_on;
-      if (post_deferred) {
-        settle_on = [this](std::function<void()> fn) { PostDeferred(std::move(fn)); };
-      }
-      BurstDialCandidatesAsync(*links, post_io, sync.peer_addrs, sync.window_ms,
-                               [complete](PunchBurstResult burst) { (*complete)(std::move(burst)); },
-                               std::move(settle_on), post_after);
-    } else {
-      // No PostToIo: sync dial without nesting Drive (empty pump). Test-only.
-      (*complete)(BurstDialCandidates(*links, {}, sync.peer_addrs, sync.window_ms));
-    }
+    const int window = sync.window_ms > 0 ? sync.window_ms : 2000;
+    runtime->BurstDial(sync.peer_addrs, std::chrono::milliseconds(window),
+                       [complete](pp::amp::BurstDialResult r) { (*complete)(ToPunchBurst(std::move(r))); });
   }
 
   void HandleInboundFrame(const std::shared_ptr<pp::amp::ChannelSession>& session,
                           const std::string& remote_peer_id, const std::shared_ptr<std::string>& phase,
                           const std::shared_ptr<std::string>& punch_remote_peer_id,
                           const std::string& json_utf8) {
-    if (stopped.load(std::memory_order_acquire) || !links || !session) {
+    if (stopped.load(std::memory_order_acquire) || !runtime || !session) {
       return;
     }
     auto root = TryParseObject(json_utf8);
@@ -425,7 +425,7 @@ struct AmpPunchCoordinator::Impl {
       *phase = "await_sync";
       *punch_remote_peer_id = offer->initiator_peer_id;
       PunchCandidates reply;
-      reply.peer_id = links->LocalPeerId();
+      reply.peer_id = Links().LocalPeerId();
       reply.addrs = local_addrs ? SanitizePunchAddrs(*local_addrs) : std::vector<std::string>{};
       reply.nonce = offer->epoch_id;
       if (!session->EnqueueOutbound(JsonToBody(EncodePunchCandidates(reply)))) {
@@ -448,14 +448,14 @@ struct AmpPunchCoordinator::Impl {
 
   void HandleInboundOnLink(pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id_in,
                            uint32_t channel_id) {
-    if (stopped.load(std::memory_order_acquire) || !links || remote_peer_id_in.empty()) {
+    if (stopped.load(std::memory_order_acquire) || !runtime || remote_peer_id_in.empty()) {
       return;
     }
     const std::string remote_peer_id = remote_peer_id_in;
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     auto phase = std::make_shared<std::string>("await_first");
     auto punch_remote_peer_id = std::make_shared<std::string>();
-    *session_holder = links->BindChannel(
+    *session_holder = Links().BindChannel(
         remote_peer_id, channel_id, PunchJsonChannelPolicy(std::chrono::milliseconds{8000}),
         [this, session_holder, remote_peer_id, phase, punch_remote_peer_id](Roe<std::vector<uint8_t>> frame) {
           auto session = *session_holder;
@@ -472,19 +472,11 @@ struct AmpPunchCoordinator::Impl {
   }
 };
 
-AmpPunchCoordinator::AmpPunchCoordinator(pp::amp::PeerLinkManager& links, IoPump io_pump,
-                                         WorkerPost post_worker, IoPost post_io, IoPost post_deferred,
-                                         IoAfter post_after)
-    : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
-      post_deferred_(std::move(post_deferred)), post_after_(std::move(post_after)) {
-  impl_->links = &links_;
+AmpPunchCoordinator::AmpPunchCoordinator(pp::amp::MeshRuntime& runtime, IoPump io_pump)
+    : impl_(std::make_unique<Impl>()), runtime_(runtime), io_pump_(std::move(io_pump)) {
+  impl_->runtime = &runtime_;
   impl_->io_pump = io_pump_;
-  impl_->post_io = post_io_;
-  impl_->post_deferred = post_deferred_;
-  impl_->post_after = post_after_;
   impl_->local_addrs = &local_addrs_;
-  (void)post_worker_;
 }
 
 AmpPunchCoordinator::~AmpPunchCoordinator() { Stop(); }
@@ -503,7 +495,7 @@ void AmpPunchCoordinator::Start() {
   }
   started_ = true;
   impl_->stopped.store(false, std::memory_order_release);
-  links_.SetProtocolHandler(
+  runtime_.Links().SetProtocolHandler(
       kAmpPunchProtocolId,
       impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
                                                 const std::string& remote_peer_id, uint32_t channel_id) {
@@ -514,7 +506,7 @@ void AmpPunchCoordinator::Start() {
 void AmpPunchCoordinator::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
-  links_.RemoveProtocolHandler(kAmpPunchProtocolId);
+  runtime_.Links().RemoveProtocolHandler(kAmpPunchProtocolId);
   impl_->deferred.Invalidate();
 }
 
@@ -579,7 +571,7 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
     (*finish_once)(PunchRoe::error(Failure::Of(Err::NotStarted, "amp punch coordinator not started")));
     return;
   }
-  if (!links_.GetLinkSnapshot(introducer_peer_key).has_endpoint) {
+  if (!runtime_.Links().GetLinkSnapshot(introducer_peer_key).has_endpoint) {
     (*finish_once)(
         PunchRoe::error(Failure::Of(Err::EndpointNotRegistered, "introducer endpoint not registered")));
     return;
@@ -612,22 +604,18 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
       }
       (*finish_once)(std::move(value));
     };
-    if (post_deferred_) {
-      post_deferred_(std::move(deliver));
-    } else {
-      deliver();
-    }
+    impl_->PostDeferred(std::move(deliver));
   };
 
   const auto read_timeout = RemainingTimeout(deadline);
-  links_.EnsureAssociation(
+  runtime_.Links().EnsureAssociation(
       introducer_peer_key, [this, introducer_peer_key, target_peer_id, request_json, finish, session, deadline,
                             read_timeout, settled](pp::amp::PeerLinkManager::LinkRoe assoc) mutable {
         if (!assoc) {
           (*finish)(PunchRoe::error(WrapLinkFailure(assoc.error())));
           return;
         }
-        links_.OpenChannel(
+        runtime_.Links().OpenChannel(
             introducer_peer_key, kAmpPunchProtocolId, PunchJsonChannelPolicy(read_timeout),
             [this, introducer_peer_key, target_peer_id, request_json, finish, session, deadline, read_timeout,
              settled](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
@@ -636,9 +624,9 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                 return;
               }
               AmpScheduleWhenChannelOpen(
-                  post_io_, io_pump_,
+                  impl_->MakePostIo(), io_pump_,
                   [this, introducer_peer_key, channel_id = *channel]() {
-                    auto* link = links_.FindLink(introducer_peer_key);
+                    auto* link = runtime_.Links().FindLink(introducer_peer_key);
                     return link && link->Mux() &&
                            link->Mux()->State(channel_id) == pp::amp::ChannelState::Open;
                   },
@@ -650,7 +638,7 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                           Failure::Of(Err::ChannelFailed, "punch: introducer channel open failed")));
                       return;
                     }
-                    auto* link = links_.FindLink(introducer_peer_key);
+                    auto* link = runtime_.Links().FindLink(introducer_peer_key);
                     if (!link || !link->Mux() ||
                         link->Mux()->State(channel_id) != pp::amp::ChannelState::Open) {
                       (*finish)(PunchRoe::error(
@@ -680,7 +668,7 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                               return false;
                             }
                             if (result->ok) {
-                              PublishPunchWinnerAddrs(links_, target_peer_id, result->winner_multiaddr);
+                              PublishPunchWinnerAddrs(runtime_.Links(), target_peer_id, result->winner_multiaddr);
                               (*finish)(*result);
                             } else {
                               (*finish)(PunchRoe::error(Failure::Of(
@@ -699,13 +687,13 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                               for (const std::string& ma : SanitizePunchAddrs(sync.peer_addrs)) {
                                 if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
                                   if (!parsed->peer_id.empty()) {
-                                    (void)links_.RegisterEndpoint(parsed->peer_id, ma);
+                                    (void)runtime_.Links().RegisterEndpoint(parsed->peer_id, ma);
                                   }
                                 }
                               }
                               auto apply = [this, finish, target_peer_id,
                                             epoch = sync.epoch_id](PunchBurstResult burst) {
-                                PublishIfPunchConnected(links_, target_peer_id, burst);
+                                PublishIfPunchConnected(runtime_.Links(), target_peer_id, burst);
                                 PunchResult result;
                                 result.epoch_id = epoch;
                                 result.ok = burst.ok;
@@ -719,20 +707,12 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                                       burst.error.empty() ? "punch burst failed" : burst.error)));
                                 }
                               };
-                              // Always async when PostToIo is set; settle via PostDeferred; window via PostAfter.
-                              if (post_io_) {
-                                std::function<void(std::function<void()>)> settle_on;
-                                if (post_deferred_) {
-                                  settle_on = [this](std::function<void()> fn) {
-                                    impl_->PostDeferred(std::move(fn));
-                                  };
-                                }
-                                BurstDialCandidatesAsync(links_, post_io_, sync.peer_addrs, sync.window_ms,
-                                                         std::move(apply), std::move(settle_on),
-                                                         post_after_);
-                              } else {
-                                apply(BurstDialCandidates(links_, {}, sync.peer_addrs, sync.window_ms));
-                              }
+                              const int burst_window = sync.window_ms > 0 ? sync.window_ms : 2000;
+                              runtime_.BurstDial(
+                                  sync.peer_addrs, std::chrono::milliseconds(burst_window),
+                                  [apply = std::move(apply)](pp::amp::BurstDialResult r) mutable {
+                                    apply(ToPunchBurst(std::move(r)));
+                                  });
                             };
                             // Leave mux before dial/burst start.
                             impl_->PostStrand(std::move(run_burst));
@@ -744,34 +724,16 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                       (*finish)(PunchRoe::error(Failure::Of(Err::ProtocolError, "punch: failed to send connect")));
                       return;
                     }
-                    // Overall attempt deadline: prefer Amp-clock PostAfter; else PostToIo poll.
+                    // Overall attempt deadline on Amp clock.
                     const auto attempt_ms =
                         std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now());
-                    if (post_after_ && attempt_ms.count() > 0) {
-                      post_after_(attempt_ms, [finish, settled]() {
+                    if (attempt_ms.count() > 0) {
+                      runtime_.PostAfter(attempt_ms, [finish, settled]() {
                         if (!settled->load(std::memory_order_acquire)) {
                           (*finish)(PunchRoe::error(
                               Failure::Of(Err::Timeout, "punch: cold punch timed out")));
                         }
                       });
-                    } else if (post_io_) {
-                      auto poll = std::make_shared<std::function<void()>>();
-                      *poll = [this, finish, deadline, settled, poll]() {
-                        if (settled->load(std::memory_order_acquire)) {
-                          return;
-                        }
-                        if (Clock::now() >= deadline) {
-                          (*finish)(PunchRoe::error(
-                              Failure::Of(Err::Timeout, "punch: cold punch timed out")));
-                          return;
-                        }
-                        post_io_([poll, settled]() {
-                          if (!settled->load(std::memory_order_acquire)) {
-                            (*poll)();
-                          }
-                        });
-                      };
-                      post_io_([poll]() { (*poll)(); });
                     }
                   },
                   [this]() { return impl_->stopped.load(std::memory_order_acquire); });
