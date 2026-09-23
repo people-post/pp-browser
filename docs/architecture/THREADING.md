@@ -164,6 +164,8 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 
 **Punch / ACP:** Mux frame handlers only `PostToIo`. Sync-window burst via `MeshRuntime::BurstDial` (Amp-clock `PostAfter`, poll on `PostToIo`, Abort/`on_done` on `PostDeferred`). Sync `TryColdPunch` may `AmpParkUntil` only when the waiter **is** the sole Amp driver (test harness PumpAll); punch SM never invokes `IoPump`.
 
+**Dial-back:** Constructed on `MeshRuntime&`; probe deadlines via `PostAfter`. Sync `Probe` may `AmpParkUntil` with empty product IoPump.
+
 **Peer honesty (Amp / peer streams):** do not park the **general** `WorkerPool` on peer-facing waits. Prefer async IO + local deadline + hard cancel. Call-media hello/ack is async+deadline; blocking bridge `Connect()` and remaining wait facades run on **MeshControlPool** as an interim until async `Connect(cb)` / A022-style callbacks. Details: [SESSION_MACHINES.md — Peer honesty rule](../../projects/p2p-av-calls/SESSION_MACHINES.md#peer-honesty-rule-stream-waits).
 
 ### Amp / mesh executors
