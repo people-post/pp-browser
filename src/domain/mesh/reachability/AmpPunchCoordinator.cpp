@@ -387,7 +387,14 @@ struct AmpPunchCoordinator::Impl {
                           return;
                         }
                         *phase = "introducing";
-                        RunIntroducerConnect(session, remote_peer_id, *req);
+                        // RunIntroducerConnect AmpParkUntil+IoPump must not run under the mux
+                        // data callback (Windows SEH — stages 1–7 pass, only full e2e fails).
+                        ScheduleOffMux([this, session, remote_peer_id, req = *req]() {
+                          if (stopped.load(std::memory_order_acquire) || !links) {
+                            return;
+                          }
+                          RunIntroducerConnect(session, remote_peer_id, req);
+                        });
                         return;
                       }
                       if (op == "offer" && *phase == "await_first") {
@@ -396,20 +403,25 @@ struct AmpPunchCoordinator::Impl {
                           FailSession(session, "", "punch: invalid offer");
                           return;
                         }
-                        PunchCandidates reply;
-                        reply.peer_id = links->LocalPeerId();
-                        reply.addrs =
-                            local_addrs ? SanitizePunchAddrs(*local_addrs) : std::vector<std::string>{};
-                        reply.nonce = offer->epoch_id;
-                        if (!session->EnqueueOutbound(JsonToBody(EncodePunchCandidates(reply)))) {
-                          FailSession(session, offer->epoch_id, "punch: failed to send candidates");
-                          return;
-                        }
-                        if (io_pump) {
-                          io_pump();
-                        }
-                        *punch_remote_peer_id = offer->initiator_peer_id;
                         *phase = "await_sync";
+                        *punch_remote_peer_id = offer->initiator_peer_id;
+                        ScheduleOffMux([this, session, offer = *offer]() {
+                          if (stopped.load(std::memory_order_acquire) || !links || !session) {
+                            return;
+                          }
+                          PunchCandidates reply;
+                          reply.peer_id = links->LocalPeerId();
+                          reply.addrs =
+                              local_addrs ? SanitizePunchAddrs(*local_addrs) : std::vector<std::string>{};
+                          reply.nonce = offer.epoch_id;
+                          if (!session->EnqueueOutbound(JsonToBody(EncodePunchCandidates(reply)))) {
+                            FailSession(session, offer.epoch_id, "punch: failed to send candidates");
+                            return;
+                          }
+                          if (io_pump) {
+                            io_pump();
+                          }
+                        });
                         return;
                       }
                       if (op == "sync" && *phase == "await_sync") {
@@ -515,6 +527,12 @@ void AmpPunchCoordinator::Stop() {
   impl_->off_mux_work_.clear();
   links_.RemoveProtocolHandler(kAmpPunchProtocolId);
   impl_->deferred.Invalidate();
+}
+
+void AmpPunchCoordinator::DrainDeferred() {
+  if (impl_) {
+    impl_->DrainOffMux();
+  }
 }
 
 void AmpPunchCoordinator::TryColdPunchAsync(const std::string& introducer_peer_key,
