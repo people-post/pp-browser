@@ -171,7 +171,7 @@ jobs:
           ./scripts/platform/macos_sign_and_notarize.sh staple "${dmg_path}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: macos-installer
           path: build/*.dmg
@@ -268,7 +268,7 @@ jobs:
           echo "Packaged ${exe}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: windows-installer
           path: build/*.exe
@@ -401,7 +401,7 @@ jobs:
           echo "Packaged dist/android/pp-browser-${{ steps.version.outputs.release_version }}-android.apk"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: android-release-apk
           path: dist/android/*.apk

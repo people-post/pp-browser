@@ -244,7 +244,7 @@ jobs:
         run: ccache --show-stats || true
 
       - name: Upload APK
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: android-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
