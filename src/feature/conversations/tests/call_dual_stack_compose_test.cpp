@@ -193,8 +193,10 @@ protected:
   }
 
   void TearDown() override {
-    TearSide(offer_);
-    TearSide(answer_);
+    // Soft-stop stacks first, then join AppRuntime before destroying stores — DrainWorkersThenUI
+    // alone does not wait for every pool thread (PR #216 follow-up).
+    SoftStopSide(offer_);
+    SoftStopSide(answer_);
     MeshControlDispatch::Uninstall();
     if (mesh_control_) {
       mesh_control_->Shutdown();
@@ -202,6 +204,8 @@ protected:
     mesh_control_.reset();
     AppRuntime::ShutdownUI();
     AppRuntime::Shutdown();
+    DestroySide(offer_);
+    DestroySide(answer_);
   }
 
   void BuildSide(StackSide& side, const char* tag, uint8_t dek_seed,
@@ -264,13 +268,16 @@ protected:
     side.stack->BuildSessions(deps);
     ASSERT_TRUE(side.ui->Available());
     ASSERT_TRUE(side.inbound.apply_inbound_control);
+    if (CallMediaEngine* media = side.stack->MediaEngine()) {
+      media->SetSkipDeviceOpenForTest(true);
+    }
 
     side.transport = std::make_unique<FakeCallMediaTransport>();
     side.dial = std::make_unique<FakeDialRegistry>();
     side.stack->BindTestMediaPath(side.transport.get(), side.dial.get());
   }
 
-  void TearSide(StackSide& side) {
+  void SoftStopSide(StackSide& side) {
     side.ui.reset();
     if (side.stack) {
       side.stack->AbortCallMediaForShutdown();
@@ -279,6 +286,9 @@ protected:
     side.stack.reset();
     side.transport.reset();
     side.dial.reset();
+  }
+
+  void DestroySide(StackSide& side) {
     if (side.psk) {
       side.psk->ClearDek();
     }
@@ -288,6 +298,7 @@ protected:
     side.store.reset();
     if (!side.data_dir.empty()) {
       std::filesystem::remove_all(side.data_dir);
+      side.data_dir.clear();
     }
   }
 

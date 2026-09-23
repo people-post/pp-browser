@@ -422,6 +422,7 @@ protected:
 
     psk_ = std::make_unique<MemoryPskStore>();
     media_ = std::make_unique<CallMediaEngine>();
+    media_->SetSkipDeviceOpenForTest(true);
     dial_ = std::make_unique<FakeDialRegistry>();
     transport_ = std::make_unique<FakeCallMediaTransport>();
     seat_ = std::make_unique<CallMediaSeat>();

@@ -17,6 +17,14 @@ CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, IdentityStore& ide
   redirectLogger("CallSessionWorkflow");
 }
 
+CallSessionWorkflow::~CallSessionWorkflow() {
+  InvalidateDeferredOps();
+}
+
+void CallSessionWorkflow::InvalidateDeferredOps() {
+  deferred_.Invalidate();
+}
+
 void CallSessionWorkflow::SetHostPorts(HostPorts ports) {
   host_ = std::move(ports);
 }
@@ -626,7 +634,7 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
   const std::string accept_call_id = call_id;
   const std::string accept_inviter = inviter;
   const std::string accept_local = *local;
-  AppRuntime::PostWorkerNormal([this, accept_call_id, accept_inviter, accept_local]() {
+  AppRuntime::PostWorkerNormal(deferred_.Bind([this, accept_call_id, accept_inviter, accept_local]() {
     if (!host_.IsBound()) {
       return;
     }
@@ -644,7 +652,7 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
       }
     }
     if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(accept_inviter);
-  });
+  }));
 
   log().info << "AcceptInvite end call_id=" << call_id << " ok";
   return {};
@@ -1225,9 +1233,10 @@ Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_jso
       host_.duplex.schedule_start_direct(accept->call_id, identity, true);
     }
     // Prefetch + roster fan-out after media kickoff — avoid starving MediaKey/Connect on IO.
+    // DeferredSelf: CSM teardown must not race store_ while this worker still runs (PR #216).
     const std::string accept_call_id = accept->call_id;
     const std::string accept_peer = identity;
-    AppRuntime::PostWorkerNormal([this, accept_call_id, accept_peer, local = local_identity]() {
+    AppRuntime::PostWorkerNormal(deferred_.Bind([this, accept_call_id, accept_peer, local = local_identity]() {
       if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(accept_peer);
       if (auto roster = host_.wire.build_roster_detail(accept_call_id); roster) {
         if (auto roster_json = CallControlCodec::EncodeRoster(*roster); roster_json) {
@@ -1235,7 +1244,7 @@ Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_jso
                                          local);
         }
       }
-    });
+    }));
   }
 
   host_.wire.notify_ring_changed();

@@ -290,6 +290,7 @@ protected:
     keys_ = std::make_unique<CallMediaKeyStore>(store_->ProfileDbPath());
     ASSERT_TRUE(keys_->SetDek(TestDek()));
     media_ = std::make_unique<CallMediaEngine>();
+    media_->SetSkipDeviceOpenForTest(true);
     host_ = std::make_unique<FakeMediaHost>();
     dial_ = std::make_unique<FakeDialRegistry>();
     circuit_ = std::make_unique<FakeCircuitHopReach>();

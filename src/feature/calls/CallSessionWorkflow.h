@@ -4,6 +4,7 @@
 #include "domain/messaging/CallTypes.h"
 #include "domain/messaging/InitiationBillingStore.h"
 #include "foundation/data/PricingTypes.h"
+#include "foundation/runtime/DeferredSelf.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/thread/IThreadStore.h"
@@ -125,8 +126,11 @@ public:
 
   CallSessionWorkflow(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
                       CallMediaKeyStore& media_keys);
+  ~CallSessionWorkflow() override;
 
   void SetHostPorts(HostPorts ports);
+  /** Bump DeferredSelf so queued Accept/roster PostWorkerNormal cbs no-op (CSM teardown). */
+  void InvalidateDeferredOps();
   void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
   InitiationBillingStore* InitiationBilling() const { return initiation_billing_; }
 
@@ -176,6 +180,7 @@ private:
   CallSessionStore& sessions_;
   CallMediaKeyStore& media_keys_;
   HostPorts host_;
+  DeferredSelf deferred_;
   InitiationBillingStore* initiation_billing_ = nullptr;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;

@@ -110,6 +110,11 @@ public:
   void NoteUplinkBudget(int64_t per_user_up_bps);
   /** Force next encoded AU to be an IDR (SoftMigrate / call_video_refresh). */
   void RequestVideoKeyframe();
+  /**
+   * Test-only: StartSfu / SetCameraEnabled skip SDL mic/camera open (silence TX, no device prompts).
+   * Product must leave this false. Used by call compose fixtures (PR #216 follow-up).
+   */
+  void SetSkipDeviceOpenForTest(bool skip);
   /** Drain stream ids that need an IDR (decode fail / first gap). */
   std::vector<uint32_t> TakePendingVideoRefreshStreamIds();
 

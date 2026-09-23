@@ -1181,6 +1181,8 @@ bool CallSessionManager::MediaAttemptedThisProcess(const std::string& call_id) c
 }
 
 void CallSessionManager::ClearMediaCallbacks() {
+  // Drop deferred Accept roster fan-out before CallStack drains/resets CSM (PR #216 follow-up).
+  workflow_.InvalidateDeferredOps();
 }
 
 Roe<void> CallSessionManager::HandleInboundInvite(const std::string& detail_json,
