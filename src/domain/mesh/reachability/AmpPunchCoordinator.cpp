@@ -8,11 +8,11 @@
 #include "common/SettledWait.h"
 #include "common/ValueJson.h"
 #include "foundation/runtime/DeferredSelf.h"
+#include "domain/mesh/shared/AmpParkUntil.h"
 
 #include <atomic>
 #include <chrono>
 #include <thread>
-#include "domain/mesh/shared/AmpParkUntil.h"
 
 namespace pbr {
 namespace {
@@ -21,14 +21,6 @@ using Clock = std::chrono::steady_clock;
 
 std::vector<uint8_t> JsonToBody(const std::string& json_utf8) {
   return {json_utf8.begin(), json_utf8.end()};
-}
-
-void RunWorker(const AmpPunchCoordinator::WorkerPost& post_worker, std::function<void()> task) {
-  if (post_worker) {
-    post_worker(std::move(task));
-  } else {
-    task();
-  }
 }
 
 std::chrono::milliseconds RemainingTimeout(const Clock::time_point deadline) {
@@ -139,18 +131,15 @@ AmpPunchCoordinator::Failure AmpPunchCoordinator::WrapLinkFailure(
 struct AmpPunchCoordinator::Impl {
   pp::amp::PeerLinkManager* links = nullptr;
   IoPump io_pump;
-  WorkerPost post_worker;
   IoPost post_io;
   AmpPunchCoordinator::ProbeInbound probe_inbound;
   std::atomic<bool> stopped{false};
   /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
   DeferredSelf deferred;
   std::vector<std::string>* local_addrs = nullptr;
-  /** Work that must not run under ChannelMux data/terminal callbacks (Windows SEH). */
-  std::vector<std::function<void()>> off_mux_work_;
-  bool draining_off_mux_ = false;
 
-  void ScheduleOffMux(std::function<void()> fn) {
+  /** Enqueue on MeshRuntime IO strand. Mux callbacks must only call this — never dial/park inline. */
+  void PostStrand(std::function<void()> fn) {
     if (!fn) {
       return;
     }
@@ -158,26 +147,9 @@ struct AmpPunchCoordinator::Impl {
       post_io(std::move(fn));
       return;
     }
-    off_mux_work_.push_back(std::move(fn));
+    // Empty IoPost: run inline. Only safe when the caller is already off the mux stack.
+    fn();
   }
-
-  void DrainOffMux() {
-    if (draining_off_mux_) {
-      return;
-    }
-    draining_off_mux_ = true;
-    while (!off_mux_work_.empty()) {
-      auto batch = std::move(off_mux_work_);
-      off_mux_work_.clear();
-      for (auto& fn : batch) {
-        if (fn) {
-          fn();
-        }
-      }
-    }
-    draining_off_mux_ = false;
-  }
-
 
   void FailSession(const std::shared_ptr<pp::amp::ChannelSession>& session, const std::string& epoch_id,
                    const std::string& error) {
@@ -192,13 +164,47 @@ struct AmpPunchCoordinator::Impl {
     session->Close();
   }
 
+  void SendSyncPair(const std::shared_ptr<pp::amp::ChannelSession>& initiator_session,
+                    const std::shared_ptr<pp::amp::ChannelSession>& target_session,
+                    const std::string& epoch_id, int window_ms, const PunchConnectRequest& req,
+                    const PunchCandidates& candidates) {
+    PunchSync sync_to_initiator;
+    sync_to_initiator.epoch_id = epoch_id;
+    sync_to_initiator.peer_addrs = SanitizePunchAddrs(candidates.addrs);
+    sync_to_initiator.window_ms = window_ms;
+
+    PunchSync sync_to_target;
+    sync_to_target.epoch_id = epoch_id;
+    sync_to_target.peer_addrs = SanitizePunchAddrs(req.addrs);
+    sync_to_target.window_ms = window_ms;
+
+    if (!initiator_session->EnqueueOutbound(JsonToBody(EncodePunchSync(sync_to_initiator)))) {
+      FailSession(initiator_session, epoch_id, "punch: failed to send sync to initiator");
+      return;
+    }
+    if (target_session && !target_session->IsClosed()) {
+      if (!target_session->EnqueueOutbound(JsonToBody(EncodePunchSync(sync_to_target)))) {
+        FailSession(initiator_session, epoch_id, "punch: failed to send sync to target");
+        return;
+      }
+    }
+    // Flush sync frames; do not Close — initiator/target own burst + session lifetime.
+    if (io_pump) {
+      io_pump();
+      io_pump();
+      io_pump();
+    }
+  }
+
+  /**
+   * Introducer side of ACP: open punch channel to target, offer, then sync both ends.
+   * Fully async — no AmpParkUntil. Continuations run on the IO strand via callbacks / PostStrand.
+   */
   void RunIntroducerConnect(const std::shared_ptr<pp::amp::ChannelSession>& initiator_session,
                             const std::string& initiator_peer_id, PunchConnectRequest req) {
     if (stopped.load(std::memory_order_acquire) || !links) {
       return;
     }
-    const auto my_addrs =
-        local_addrs ? SanitizePunchAddrs(*local_addrs) : std::vector<std::string>{};
     const int window_ms = req.window_ms > 0 ? req.window_ms : 2000;
     const std::string epoch_id = MakeEpochId(links->LocalPeerId());
     const auto deadline = Clock::now() + std::chrono::milliseconds(window_ms + 3000);
@@ -209,16 +215,34 @@ struct AmpPunchCoordinator::Impl {
       return;
     }
 
-    SettledWait<PunchCandidates, Failure> candidates_wait;
     auto target_session = std::make_shared<pp::amp::ChannelSession>();
     auto target_settled = std::make_shared<std::atomic<bool>>(false);
-    auto finish_candidates = [target_settled, candidates_wait, target_session](CodedRoe<PunchCandidates, Err> value) {
-      if (target_settled->exchange(true, std::memory_order_acq_rel)) {
-        return;
-      }
-      target_session->Close();
-      candidates_wait.Finish(std::move(value));
-    };
+    auto finish_candidates =
+        [this, target_settled, target_session, initiator_session, epoch_id, window_ms,
+         req](CodedRoe<PunchCandidates, Err> value) {
+          if (target_settled->exchange(true, std::memory_order_acq_rel)) {
+            return;
+          }
+          // Stay on strand: candidate frames may arrive under mux — continue via PostStrand.
+          PostStrand([this, target_session, initiator_session, epoch_id, window_ms, req,
+                      value = std::move(value)]() mutable {
+            if (stopped.load(std::memory_order_acquire) || !links) {
+              target_session->Close();
+              return;
+            }
+            if (!value) {
+              target_session->Close();
+              FailSession(initiator_session, epoch_id, value.error().message);
+              return;
+            }
+            if (SanitizePunchAddrs(value->addrs).empty()) {
+              target_session->Close();
+              FailSession(initiator_session, epoch_id, "punch: target returned no candidates");
+              return;
+            }
+            SendSyncPair(initiator_session, target_session, epoch_id, window_ms, req, *value);
+          });
+        };
 
     const auto read_timeout = RemainingTimeout(deadline);
     links->EnsureAssociation(
@@ -299,45 +323,101 @@ struct AmpPunchCoordinator::Impl {
                     [this]() { return stopped.load(std::memory_order_acquire); });
               });
         });
+  }
 
-    AmpParkUntil([&] { return candidates_wait.IsSettled(); }, deadline, io_pump);
-    auto candidates = candidates_wait.Wait(
-        std::chrono::milliseconds(1), Failure::Of(Err::Timeout, "punch: waiting for target candidates timed out"));
-    if (!candidates) {
-      FailSession(initiator_session, epoch_id, candidates.error().message);
+  void RunBurstAndReply(const std::shared_ptr<pp::amp::ChannelSession>& session, PunchSync sync,
+                        std::string remote_peer_id) {
+    if (stopped.load(std::memory_order_acquire) || !links) {
       return;
     }
-    if (SanitizePunchAddrs(candidates->addrs).empty()) {
-      FailSession(initiator_session, epoch_id, "punch: target returned no candidates");
-      return;
-    }
-
-    PunchSync sync_to_initiator;
-    sync_to_initiator.epoch_id = epoch_id;
-    sync_to_initiator.peer_addrs = SanitizePunchAddrs(candidates->addrs);
-    sync_to_initiator.window_ms = window_ms;
-
-    PunchSync sync_to_target;
-    sync_to_target.epoch_id = epoch_id;
-    sync_to_target.peer_addrs = SanitizePunchAddrs(req.addrs);
-    sync_to_target.window_ms = window_ms;
-
-    if (!initiator_session->EnqueueOutbound(JsonToBody(EncodePunchSync(sync_to_initiator)))) {
-      FailSession(initiator_session, epoch_id, "punch: failed to send sync to initiator");
-      return;
-    }
-    if (!target_session->IsClosed()) {
-      if (!target_session->EnqueueOutbound(JsonToBody(EncodePunchSync(sync_to_target)))) {
-        FailSession(initiator_session, epoch_id, "punch: failed to send sync to target");
-        return;
+    for (const std::string& ma : SanitizePunchAddrs(sync.peer_addrs)) {
+      if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
+        if (!parsed->peer_id.empty()) {
+          (void)links->RegisterEndpoint(parsed->peer_id, ma);
+        }
       }
     }
-    // Flush sync frames; do not Close here — initiator/target own burst + session lifetime
-    // (closing + extended pumping nested under TryColdPunch was dropping PeerLinks).
+    auto burst = BurstDialCandidates(*links, io_pump, sync.peer_addrs, sync.window_ms);
+    if (remote_peer_id.empty()) {
+      for (const std::string& ma : sync.peer_addrs) {
+        if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
+          remote_peer_id = parsed->peer_id;
+          break;
+        }
+      }
+    }
+    PublishIfPunchConnected(*links, remote_peer_id, burst);
+    PunchResult result;
+    result.epoch_id = sync.epoch_id;
+    result.ok = burst.ok;
+    result.winner_multiaddr = burst.dialed;
+    result.error = burst.ok ? "" : burst.error;
+    (void)session->EnqueueOutbound(JsonToBody(EncodePunchResult(result)));
     if (io_pump) {
       io_pump();
-      io_pump();
-      io_pump();
+    }
+    session->Close();
+  }
+
+  void HandleInboundFrame(const std::shared_ptr<pp::amp::ChannelSession>& session,
+                          const std::string& remote_peer_id, const std::shared_ptr<std::string>& phase,
+                          const std::shared_ptr<std::string>& punch_remote_peer_id,
+                          const std::string& json_utf8) {
+    if (stopped.load(std::memory_order_acquire) || !links || !session) {
+      return;
+    }
+    auto root = TryParseObject(json_utf8);
+    if (!root) {
+      return;
+    }
+    const std::string op = PunchOp(*root).value_or("");
+    if (op == "probe" && *phase == "await_first") {
+      if (probe_inbound) {
+        *phase = "probe";
+        probe_inbound(session, std::vector<uint8_t>(json_utf8.begin(), json_utf8.end()));
+      }
+      return;
+    }
+    if (op == "connect" && *phase == "await_first") {
+      auto req = DecodePunchConnect(*root);
+      if (!req) {
+        FailSession(session, "", "punch: invalid connect");
+        return;
+      }
+      *phase = "introducing";
+      RunIntroducerConnect(session, remote_peer_id, *req);
+      return;
+    }
+    if (op == "offer" && *phase == "await_first") {
+      auto offer = DecodePunchOffer(*root);
+      if (!offer) {
+        FailSession(session, "", "punch: invalid offer");
+        return;
+      }
+      *phase = "await_sync";
+      *punch_remote_peer_id = offer->initiator_peer_id;
+      PunchCandidates reply;
+      reply.peer_id = links->LocalPeerId();
+      reply.addrs = local_addrs ? SanitizePunchAddrs(*local_addrs) : std::vector<std::string>{};
+      reply.nonce = offer->epoch_id;
+      if (!session->EnqueueOutbound(JsonToBody(EncodePunchCandidates(reply)))) {
+        FailSession(session, offer->epoch_id, "punch: failed to send candidates");
+        return;
+      }
+      if (io_pump) {
+        io_pump();
+      }
+      return;
+    }
+    if (op == "sync" && *phase == "await_sync") {
+      auto sync = DecodePunchSync(*root);
+      if (!sync) {
+        FailSession(session, "", "punch: invalid sync");
+        return;
+      }
+      *phase = "bursting";
+      RunBurstAndReply(session, *sync, *punch_remote_peer_id);
+      return;
     }
   }
 
@@ -357,121 +437,13 @@ struct AmpPunchCoordinator::Impl {
           if (!session || !frame || stopped.load(std::memory_order_acquire)) {
             return false;
           }
-                    const std::string json_utf8(frame->begin(), frame->end());
-                    RunWorker(post_worker, [this, session, remote_peer_id, phase, punch_remote_peer_id, json_utf8]() {
-                      if (stopped.load(std::memory_order_acquire) || !links) {
-                        return;
-                      }
-                      auto root = TryParseObject(json_utf8);
-                      if (!root) {
-                        return;
-                      }
-                      const std::string op = PunchOp(*root).value_or("");
-                      if (op == "probe" && *phase == "await_first") {
-                        AmpPunchCoordinator::ProbeInbound probe;
-                        {
-                          // probe_inbound set on coordinator; Impl holds copy
-                          probe = probe_inbound;
-                        }
-                        if (probe) {
-                          *phase = "probe";
-                          // body already in json_utf8
-                          probe(session, std::vector<uint8_t>(json_utf8.begin(), json_utf8.end()));
-                        }
-                        return;
-                      }
-                      if (op == "connect" && *phase == "await_first") {
-                        auto req = DecodePunchConnect(*root);
-                        if (!req) {
-                          FailSession(session, "", "punch: invalid connect");
-                          return;
-                        }
-                        *phase = "introducing";
-                        // RunIntroducerConnect AmpParkUntil+IoPump must not run under the mux
-                        // data callback (Windows SEH — stages 1–7 pass, only full e2e fails).
-                        ScheduleOffMux([this, session, remote_peer_id, req = *req]() {
-                          if (stopped.load(std::memory_order_acquire) || !links) {
-                            return;
-                          }
-                          RunIntroducerConnect(session, remote_peer_id, req);
-                        });
-                        return;
-                      }
-                      if (op == "offer" && *phase == "await_first") {
-                        auto offer = DecodePunchOffer(*root);
-                        if (!offer) {
-                          FailSession(session, "", "punch: invalid offer");
-                          return;
-                        }
-                        *phase = "await_sync";
-                        *punch_remote_peer_id = offer->initiator_peer_id;
-                        ScheduleOffMux([this, session, offer = *offer]() {
-                          if (stopped.load(std::memory_order_acquire) || !links || !session) {
-                            return;
-                          }
-                          PunchCandidates reply;
-                          reply.peer_id = links->LocalPeerId();
-                          reply.addrs =
-                              local_addrs ? SanitizePunchAddrs(*local_addrs) : std::vector<std::string>{};
-                          reply.nonce = offer.epoch_id;
-                          if (!session->EnqueueOutbound(JsonToBody(EncodePunchCandidates(reply)))) {
-                            FailSession(session, offer.epoch_id, "punch: failed to send candidates");
-                            return;
-                          }
-                          if (io_pump) {
-                            io_pump();
-                          }
-                        });
-                        return;
-                      }
-                      if (op == "sync" && *phase == "await_sync") {
-                        auto sync = DecodePunchSync(*root);
-                        if (!sync) {
-                          FailSession(session, "", "punch: invalid sync");
-                          return;
-                        }
-                        *phase = "bursting";
-                        // Never BurstDial+Pump under the mux data callback — nested Drive/DropLink
-                        // UAFs on Windows (SEH 0xc0000005 in SyncWindowExpiry).
-                        ScheduleOffMux([this, session, sync = *sync, punch_remote_peer_id]() mutable {
-                          if (stopped.load(std::memory_order_acquire) || !links) {
-                            return;
-                          }
-                          for (const std::string& ma : SanitizePunchAddrs(sync.peer_addrs)) {
-                            if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
-                              if (!parsed->peer_id.empty()) {
-                                (void)links->RegisterEndpoint(parsed->peer_id, ma);
-                              }
-                            }
-                          }
-                          auto burst =
-                              BurstDialCandidates(*links, io_pump, sync.peer_addrs, sync.window_ms);
-                          std::string remote_id = *punch_remote_peer_id;
-                          if (remote_id.empty()) {
-                            for (const std::string& ma : sync.peer_addrs) {
-                              if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
-                                remote_id = parsed->peer_id;
-                                break;
-                              }
-                            }
-                          }
-                          PublishIfPunchConnected(*links, remote_id, burst);
-                          PunchResult result;
-                          result.epoch_id = sync.epoch_id;
-                          result.ok = burst.ok;
-                          result.winner_multiaddr = burst.dialed;
-                          result.error = burst.ok ? "" : burst.error;
-                          (void)session->EnqueueOutbound(JsonToBody(EncodePunchResult(result)));
-                          if (io_pump) {
-                            io_pump();
-                          }
-                          session->Close();
-                        });
-                        return;
-                      }
-                    });
-                    return true; // keep open across connect/offer → sync
-                  });
+          const std::string json_utf8(frame->begin(), frame->end());
+          // Leave the mux stack before any dial/park/burst (Windows nested Drive UAF).
+          PostStrand([this, session, remote_peer_id, phase, punch_remote_peer_id, json_utf8]() {
+            HandleInboundFrame(session, remote_peer_id, phase, punch_remote_peer_id, json_utf8);
+          });
+          return true; // keep open across connect/offer → sync
+        });
   }
 };
 
@@ -480,21 +452,10 @@ AmpPunchCoordinator::AmpPunchCoordinator(pp::amp::PeerLinkManager& links, IoPump
     : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
       post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
   impl_->links = &links_;
-  impl_->post_worker = post_worker_;
+  impl_->io_pump = io_pump_;
   impl_->post_io = post_io_;
   impl_->local_addrs = &local_addrs_;
-  // Drain ScheduleOffMux work after each pump so BurstDial never runs under a mux callback
-  // when IoPost is unset (unit-test harnesses).
-  if (io_pump_) {
-    IoPump user_pump = std::move(io_pump_);
-    io_pump_ = [impl = impl_.get(), user_pump = std::move(user_pump)]() {
-      if (user_pump) {
-        user_pump();
-      }
-      impl->DrainOffMux();
-    };
-  }
-  impl_->io_pump = io_pump_;
+  (void)post_worker_;
 }
 
 AmpPunchCoordinator::~AmpPunchCoordinator() { Stop(); }
@@ -524,15 +485,8 @@ void AmpPunchCoordinator::Start() {
 void AmpPunchCoordinator::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
-  impl_->off_mux_work_.clear();
   links_.RemoveProtocolHandler(kAmpPunchProtocolId);
   impl_->deferred.Invalidate();
-}
-
-void AmpPunchCoordinator::DrainDeferred() {
-  if (impl_) {
-    impl_->DrainOffMux();
-  }
 }
 
 void AmpPunchCoordinator::TryColdPunchAsync(const std::string& introducer_peer_key,
@@ -572,6 +526,7 @@ AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::RunPunch(const std::string& i
   const auto deadline = Clock::now() + std::chrono::milliseconds(window + 4000);
   RunPunchAsync(introducer_peer_key, target_peer_id, my_addrs, window_ms, reason,
                 [wait](PunchRoe value) { wait.Finish(std::move(value)); });
+  // Park outside mux — caller IoPump must drain PostToIo (MeshRuntime::Pump / harness PumpAll).
   AmpParkUntil([&] { return wait.IsSettled(); }, deadline, io_pump_);
   return wait.Wait(std::chrono::milliseconds(1), Failure::Of(Err::Timeout, "punch: cold punch timed out"));
 }
@@ -702,32 +657,31 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                                   Failure::Of(Err::ProtocolError, "punch: invalid sync frame")));
                               return false;
                             }
-                            // Defer BurstDial+Pump off the mux callback (Windows SEH).
-                            impl_->ScheduleOffMux(
-                                [this, finish, target_peer_id, sync = *sync]() mutable {
-                                  for (const std::string& ma : SanitizePunchAddrs(sync.peer_addrs)) {
-                                    if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
-                                      if (!parsed->peer_id.empty()) {
-                                        (void)links_.RegisterEndpoint(parsed->peer_id, ma);
-                                      }
-                                    }
+                            // BurstDial parks with IoPump — must not run under mux.
+                            impl_->PostStrand([this, finish, target_peer_id, sync = *sync]() mutable {
+                              for (const std::string& ma : SanitizePunchAddrs(sync.peer_addrs)) {
+                                if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
+                                  if (!parsed->peer_id.empty()) {
+                                    (void)links_.RegisterEndpoint(parsed->peer_id, ma);
                                   }
-                                  auto burst = BurstDialCandidates(links_, io_pump_, sync.peer_addrs,
-                                                                   sync.window_ms);
-                                  PublishIfPunchConnected(links_, target_peer_id, burst);
-                                  PunchResult result;
-                                  result.epoch_id = sync.epoch_id;
-                                  result.ok = burst.ok;
-                                  result.winner_multiaddr = burst.dialed;
-                                  result.error = burst.ok ? "" : burst.error;
-                                  if (burst.ok) {
-                                    (*finish)(result);
-                                  } else {
-                                    (*finish)(PunchRoe::error(Failure::Of(
-                                        Err::PunchFailed,
-                                        burst.error.empty() ? "punch burst failed" : burst.error)));
-                                  }
-                                });
+                                }
+                              }
+                              auto burst =
+                                  BurstDialCandidates(links_, io_pump_, sync.peer_addrs, sync.window_ms);
+                              PublishIfPunchConnected(links_, target_peer_id, burst);
+                              PunchResult result;
+                              result.epoch_id = sync.epoch_id;
+                              result.ok = burst.ok;
+                              result.winner_multiaddr = burst.dialed;
+                              result.error = burst.ok ? "" : burst.error;
+                              if (burst.ok) {
+                                (*finish)(result);
+                              } else {
+                                (*finish)(PunchRoe::error(Failure::Of(
+                                    Err::PunchFailed,
+                                    burst.error.empty() ? "punch burst failed" : burst.error)));
+                              }
+                            });
                             return true; // keep open until deferred finish closes
                           }
                           return true;

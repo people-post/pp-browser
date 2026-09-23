@@ -348,7 +348,7 @@ std::unique_ptr<pbr::AmpPunchCoordinator> StartProbePunch(AmpPeer& peer,
                                                           const std::vector<std::string>& candidates) {
   auto punch = std::make_unique<pbr::AmpPunchCoordinator>(
       peer.Links(), [&peer]() { peer.Pump(); }, pbr::AmpPunchCoordinator::WorkerPost{},
-      pbr::AmpPunchCoordinator::IoPost{});
+      [&peer](std::function<void()> task) { peer.Runtime().PostToIo(std::move(task)); });
   punch->SetLocalCandidateAddrs(candidates);
   punch->Start();
   return punch;
