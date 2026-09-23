@@ -1866,6 +1866,10 @@ void CallMediaBridge::PrepareForTeardown(int timeout_ms) {
   connect_generation_.fetch_add(1, std::memory_order_acq_rel);
   CancelConnectTimers();
   CancelDirectHealthTimer();
+  // CancelConnectTimers drops offerer-grace / retry one-shots that would have cleared
+  // connect_worker_inflight_. Leaving it stuck made TearDown sleep the full timeout then
+  // unbounded-join capture (Windows CI hang after headless StartSfu).
+  connect_worker_inflight_.store(false, std::memory_order_release);
   const std::string peer = media_peer_identity_;
   const std::string call_id = media_call_id_;
   pending_answerer_call_id_.clear();
@@ -1883,12 +1887,8 @@ void CallMediaBridge::PrepareForTeardown(int timeout_ms) {
 
   // Shutdown path: do not sleep-spin on the caller (was up to 2s and dominated close latency).
   // ConnectAsync / EnsurePeerReachableAsync observe stopping_ + connect_generation_ and exit.
-  if (timeout_ms <= 0) {
-    if (connect_worker_inflight_.load(std::memory_order_acquire)) {
-      log().info << "PrepareForTeardown: Connect still inflight — continuing without wait "
-                    "(gen abort; MeshControl may still drain)";
-    }
-  } else {
+  // timeout_ms > 0: brief UI pump so PostUI abort continuations can run before media Stop.
+  if (timeout_ms > 0) {
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     while (connect_worker_inflight_.load(std::memory_order_acquire)) {
@@ -1899,12 +1899,14 @@ void CallMediaBridge::PrepareForTeardown(int timeout_ms) {
       if (std::chrono::steady_clock::now() >= deadline) {
         log().warning << "PrepareForTeardown: Connect sequence still inflight after " << timeout_ms
                       << "ms — proceeding (MeshControl/reachability may still be draining)";
+        connect_worker_inflight_.store(false, std::memory_order_release);
         break;
       }
       if (dial_ && !peer.empty()) {
         dial_->AbortInflightDial(peer);
       }
       direct_.Detach();
+      AppRuntime::RunUITasks();
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
   }
