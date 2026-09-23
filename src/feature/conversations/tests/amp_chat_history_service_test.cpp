@@ -6,9 +6,13 @@
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/mesh/tests/support/mesh_test_harness.h"
+#include "domain/people/IdentityStore.h"
+
+#include "common/Utilities.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <memory>
 #include <sodium.h>
 
 #include <chrono>
@@ -25,23 +29,27 @@ ByteVector TestDek() {
   return dek;
 }
 
+/** Windows CI: close SQLite before remove_all (TEST_STRATEGY.md). */
 class HistoryHarness {
 public:
   explicit HistoryHarness(const std::string& suffix)
-      : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_amp_history_" + suffix)),
-        store(data_dir.string()), identity(data_dir.string(), "test"), psk_store(store.ProfileDbPath(), "test") {
+      : data_dir(std::filesystem::temp_directory_path() /
+                 ("pp_browser_amp_history_" + suffix + "_" + util::GenerateUuid())) {
     std::filesystem::remove_all(data_dir);
-    if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
+    store = std::make_unique<SqliteThreadStore>(data_dir.string());
+    identity = std::make_unique<IdentityStore>(data_dir.string(), "test");
+    psk_store = std::make_unique<SqlitePskSessionStore>(store->ProfileDbPath(), "test");
+    if (!identity->SetDek(TestDek()) || !psk_store->SetDek(TestDek()) || !store->SetDek(TestDek())) {
       throw std::runtime_error("dek setup failed");
     }
-    if (!identity.LoadOrCreate()) {
+    if (!identity->LoadOrCreate()) {
       throw std::runtime_error("identity load failed");
     }
     {
-      LocalIdentity updated = *identity.Get();
+      LocalIdentity updated = *identity->Get();
       updated.relay_user_id = "relay:responder";
       updated.registered = true;
-      if (!identity.Update(updated)) {
+      if (!identity->Update(updated)) {
         throw std::runtime_error("identity update failed");
       }
     }
@@ -50,7 +58,7 @@ public:
     target.peer_identity_kind = "relay_user";
     target.peer_identity_value = "relay:requester";
     target.channel = ThreadChannel::E2e;
-    auto created = store.FindOrCreateDirectThread(target, "contact-requester", "Requester");
+    auto created = store->FindOrCreateDirectThread(target, "contact-requester", "Requester");
     if (!created) {
       throw std::runtime_error("thread create failed");
     }
@@ -65,9 +73,16 @@ public:
     }
     psk.master_psk_b64 = Base64Encode(*master);
     psk.psk_verified_at = 1;
-    if (!psk_store.Save(psk)) {
+    if (!psk_store->Save(psk)) {
       throw std::runtime_error("psk save");
     }
+  }
+
+  ~HistoryHarness() {
+    psk_store.reset();
+    identity.reset();
+    store.reset();
+    std::filesystem::remove_all(data_dir);
   }
 
   void SeedOutbound(uint64_t seq, const std::string& text) {
@@ -82,15 +97,15 @@ public:
     message.transport = MessageTransport::Local;
     message.sender_seq = seq;
     message.session_epoch = 1;
-    if (!store.AppendMessage(message)) {
+    if (!store->AppendMessage(message)) {
       throw std::runtime_error("append failed");
     }
   }
 
   std::filesystem::path data_dir;
-  SqliteThreadStore store;
-  IdentityStore identity;
-  SqlitePskSessionStore psk_store;
+  std::unique_ptr<SqliteThreadStore> store;
+  std::unique_ptr<IdentityStore> identity;
+  std::unique_ptr<SqlitePskSessionStore> psk_store;
   Thread thread;
 };
 
@@ -105,10 +120,10 @@ protected:
     mesh_ = std::move(*created);
 
     responder_history_ = std::make_unique<AmpChatHistoryTransport>(
-        mesh_->chat_b(), [this] { mesh_->PumpBoth(); }, data_->store, data_->identity, data_->psk_store,
+        mesh_->chat_b(), [this] { mesh_->PumpBoth(); }, *data_->store, *data_->identity, *data_->psk_store,
         AmpChatHistoryTransport::WorkerPost{}, mesh_->MakePostIoB(), mesh_->MakePostAfterB());
     client_history_ = std::make_unique<AmpChatHistoryTransport>(
-        mesh_->chat_a(), [this] { mesh_->PumpBoth(); }, data_->store, data_->identity, data_->psk_store,
+        mesh_->chat_a(), [this] { mesh_->PumpBoth(); }, *data_->store, *data_->identity, *data_->psk_store,
         AmpChatHistoryTransport::WorkerPost{}, mesh_->MakePostIoA(), mesh_->MakePostAfterA());
 
     ASSERT_TRUE(static_cast<bool>(mesh_->chat_a().RegisterEndpoint("relay:responder", mesh_->ma_b)));

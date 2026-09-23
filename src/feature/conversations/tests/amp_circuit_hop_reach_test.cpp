@@ -11,6 +11,8 @@
 #include <sodium.h>
 
 #include <atomic>
+#include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -188,6 +190,21 @@ protected:
     ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
   }
 
+  AmpCircuitHopReach::IoPost PostIoA() {
+    return [this](std::function<void()> task) {
+      if (harness_ && harness_->runtime_a && task) {
+        harness_->runtime_a->PostToIo(std::move(task));
+      }
+    };
+  }
+  AmpCircuitHopReach::IoAfter PostAfterA() {
+    return [this](std::chrono::milliseconds delay, std::function<void()> task) {
+      if (harness_ && harness_->runtime_a && task) {
+        harness_->runtime_a->PostAfter(delay, std::move(task));
+      }
+    };
+  }
+
   std::unique_ptr<pbr::test::AmpMeshTripleHarness> harness_;
   std::unique_ptr<IChatPeerLinks> chat_a_;
   std::unique_ptr<RecordingChatPeerLinks> recording_;
@@ -215,7 +232,8 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSkipsEnsureAssociationAndPreferred
       // Punch miss (expected under dual-NAT) — fall through to nested circuit.
       [](const std::string&, std::function<void(Roe<void>)> on_done) {
         on_done(Error("punch burst dial timed out"));
-      });
+      },
+      AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
   reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
@@ -305,7 +323,8 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialB
       [](const std::string&) { return std::vector<std::string>{"relay"}; },
       [](const std::string&, std::function<void(Roe<void>)> on_done) {
         on_done(Error("punch burst dial timed out"));
-      });
+      },
+      AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
   reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
@@ -331,7 +350,8 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureAcceptsHopPeerIdRelayKey) {
         }
         return out;
       },
-      AmpCircuitHopReach::TryPunchAsync{});
+      AmpCircuitHopReach::TryPunchAsync{}, AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(),
+      PostAfterA());
 
   Wait<void> ensure_wait;
   reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
@@ -378,7 +398,8 @@ TEST_F(AmpCircuitHopReachTest, PrivateHopMaDoesNotPoisonPublicPreferred) {
       },
       [](const std::string&, std::function<void(Roe<void>)> on_done) {
         on_done(Error("punch burst dial timed out"));
-      });
+      },
+      AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
   reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
@@ -416,7 +437,8 @@ TEST_F(AmpCircuitHopReachTest, SkipsWildcardPreferredRelayThenUsesDialable) {
       },
       [](const std::string&, std::function<void(Roe<void>)> on_done) {
         on_done(Error("punch burst dial timed out"));
-      });
+      },
+      AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
   reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
@@ -439,7 +461,8 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureRunsCircuitBeforePunch) {
       [punch_started, hold_punch](const std::string&, std::function<void(Roe<void>)> on_done) {
         punch_started->store(true, std::memory_order_release);
         *hold_punch = std::move(on_done);
-      });
+      },
+      AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
   reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
@@ -469,6 +492,8 @@ TEST_F(AmpCircuitHopReachTest, AbortPendingSkipsPunchFallback) {
         punch_started->store(true, std::memory_order_release);
         *hold_punch = std::move(on_done);
       });
+  // Intentionally no post_io: empty-relay miss + punch start must run synchronously so Abort
+  // can win the race before any PostToIo turn.
 
   Wait<void> ensure_wait;
   reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
@@ -502,7 +527,8 @@ TEST_F(AmpCircuitHopReachTest, HopEnsureFallsThroughToCircuitAfterPunchWindowExp
       [punch_calls](const std::string&, std::function<void(Roe<void>)> on_done) {
         ++(*punch_calls);
         on_done(Error("punch burst window expired"));
-      });
+      },
+      AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
   reach.TryEnsureHopReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
