@@ -125,6 +125,9 @@ public:
                                         const std::vector<std::string>& multiaddrs);
   Roe<void> TryEnsureCircuitHopReachable(const std::string& hop_peer_id);
   Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key);
+  /** Prefer over sync when the waiter can Drive (AttachAmpStack harness PumpUntil). */
+  void TryEnsureCallMediaReachableAsync(const std::string& peer_key,
+                                        std::function<void(Roe<void>)> on_done);
   Roe<void> TryUpgradeCallMediaToDirect(const std::string& peer_key);
   void WarmBootstrapSeedSessions();
   void ReserveOnBootstrapSeeds();

@@ -1162,6 +1162,26 @@ Roe<void> CallMediaPlane::TryEnsureCallMediaReachable(const std::string& peer_ke
   return circuit_hop_reach_->TryEnsureCallMediaReachable(peer_key);
 }
 
+void CallMediaPlane::TryEnsureCallMediaReachableAsync(const std::string& peer_key,
+                                                      std::function<void(Roe<void>)> on_done) {
+  if (!on_done) {
+    return;
+  }
+  if (AppRuntime::IsShuttingDown()) {
+    on_done(Error("shutdown in progress"));
+    return;
+  }
+  if (!circuit_hop_reach_) {
+    on_done(Error("Amp circuit reach required"));
+    return;
+  }
+  if (peer_key.empty()) {
+    on_done(Error("missing call peer"));
+    return;
+  }
+  circuit_hop_reach_->TryEnsureCallMediaReachableAsync(peer_key, std::move(on_done));
+}
+
 Roe<void> CallMediaPlane::TryUpgradeCallMediaToDirect(const std::string& peer_key) {
   if (!circuit_hop_reach_) {
     return Error("amp circuit reach required");

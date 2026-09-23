@@ -437,6 +437,18 @@ Roe<void> CallStack::TryEnsureCallMediaReachable(const std::string& peer_key) {
   return media_plane_->TryEnsureCallMediaReachable(peer_key);
 }
 
+void CallStack::TryEnsureCallMediaReachableAsync(const std::string& peer_key,
+                                                 std::function<void(Roe<void>)> on_done) {
+  if (!on_done) {
+    return;
+  }
+  if (!media_plane_) {
+    on_done(Error("Amp circuit reach required"));
+    return;
+  }
+  media_plane_->TryEnsureCallMediaReachableAsync(peer_key, std::move(on_done));
+}
+
 Roe<void> CallStack::TryUpgradeCallMediaToDirect(const std::string& peer_key) {
   if (!media_plane_) {
     return Error("amp circuit reach required");
