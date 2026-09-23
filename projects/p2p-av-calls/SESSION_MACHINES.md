@@ -230,8 +230,8 @@ stateDiagram-v2
 
 ### Golden scenarios (must pass before/after s2)
 
-1. Answerer reverse-dial wins → MediaReady; offerer inbound grace unused.
-2. Offerer fallback dial wins after grace → MediaReady; late reverse-dial closed (glare).
+1. Dual dial → MediaReady; A026 single adopt (either role’s outbound may win). — **loopback:** `DualDialExactlyOneAdoptEachSide`
+2. Late reverse-dial / glare loser closed without Critical deadlock.
 3. Dual dial race → exactly one adopt; other closed; no Critical deadlock. — **loopback:** `DualDialExactlyOneAdoptEachSide`
 4. Leave / Detach during Dialing or Hello* → Idle promptly; Connect unblocked (<15s hang). — **loopback:** `DetachUnblocksConnectWait`
 5. SoftMigrate ReleaseDirect → Detach without lifecycle ConnectFailed when SFU expected. — **loopback:** `FailAfterDetachDoesNotCallOnFailed`

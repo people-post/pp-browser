@@ -1202,3 +1202,24 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 
 ---
 
+## V049 — Simultaneous dial on Accept (cross-NAT open)
+
+**Date:** 2026-09-23  
+**Status:** Accepted — addresses dogfood **B31** ([PR #214](https://github.com/people-post/pp-browser/pull/214))  
+**Decision:** On call-media Connect, **both offerer and answerer dial immediately**. Within the dial budget, **re-attempt `EnsureAssociation`** after a short backoff when a miss (or ok-but-not-connected) leaves no Connected PeerLink. Do **not** wait a long offerer-only inbound grace before the first dial.
+
+**Rationale:** Carrier IPv6 and home-router firewalls drop unsolicited inbound UDP. A flow works only after the inside host has sent to that remote IP:port. The previous policy (answerer dials once; offerer waits ~15 s then falls back) made **Mac → phone** succeed (phone opens the carrier hole; Mac dials into it) and **phone → Mac** fail (Mac dials into a closed hole and stops; windows barely overlap). Amp already elects one PeerLink under [A026](../adp/DECISIONS.md#a026--one-session-per-peerid-under-dual-dial-mesh-election); `CallMediaDirect` claims one stream — the old Critical-pool dual-hello deadlock is gone.
+
+**Alternatives rejected:**
+- Keep asymmetric grace (fails reverse direction under stateful NAT).
+- Offerer-only dial (answerer never opens the carrier hole toward the Mac).
+- Punch-only without simultaneous ADP dial (still needs B27 introducer registration).
+
+**Implementation notes:** `CallMediaBridge::StartConnectSequence` dials both roles; miss path backs off ~1.5 s and clears `assoc_started` while budget remains (blocks circuit pivot during backoff). Extra wait after direct exhaustion renamed `kPeerDialOverlapMs` (shared, not offerer-only grace).
+
+**Still open (not this ADR):** B26 reflexive IPv4, B28 multi-candidate probing, B30 relay CN reachability / long-poll — see [CROSS_NETWORK_B25_B31.md](CROSS_NETWORK_B25_B31.md).
+
+**Cross-link:** [A026](../adp/DECISIONS.md#a026--one-session-per-peerid-under-dual-dial-mesh-election); [HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md); [SESSION_MACHINES.md](SESSION_MACHINES.md).
+
+---
+
