@@ -51,7 +51,7 @@ jobs:
           echo "CCACHE_DIR=${{ github.workspace }}/.cache/ccache" >> "$GITHUB_ENV"
 
       - name: Restore ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.CCACHE_DIR }}
           key: macOS-ccache-v2-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release.yml') }}
@@ -204,7 +204,7 @@ jobs:
           echo "CCACHE_DIR=${{ github.workspace }}/.cache/ccache" >> "$GITHUB_ENV"
 
       - name: Restore ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.CCACHE_DIR }}
           key: Windows-ccache-v2-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release.yml') }}
@@ -325,7 +325,7 @@ jobs:
           chmod -R u+rwX "$CCACHE_DIR" "$HOME/.gradle" "$GITHUB_WORKSPACE/android/.gradle"
 
       - name: Restore Android Gradle cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           # Intentionally omit android/build and android/app/.cxx — large intermediates
           # that often exhaust runner disk when restored.
@@ -338,7 +338,7 @@ jobs:
             ${{ runner.os }}-android-gradle-v3-
 
       - name: Restore Android ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ${{ runner.os }}-android-ccache-v4-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}
