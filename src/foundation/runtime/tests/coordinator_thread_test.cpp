@@ -110,6 +110,29 @@ TEST(CoordinatorThreadTest, CancelTimerPreventsFire) {
   coordinator.Shutdown();
 }
 
+TEST(CoordinatorThreadTest, TimerCallbackMayScheduleTimers) {
+  CoordinatorThread coordinator;
+  coordinator.Start();
+
+  // Several timers become due in the same tick; each callback schedules enough new
+  // one-shots to reallocate the timer vector while the coordinator is still firing
+  // the batch. Old code kept a reference into that vector across the callback (UAF).
+  constexpr int kDue = 4;
+  constexpr int kSpawn = 64;
+  std::atomic<int> fired{0};
+  for (int i = 0; i < kDue; ++i) {
+    coordinator.ScheduleOneShot(std::chrono::milliseconds(5), [&]() {
+      fired.fetch_add(1);
+      for (int j = 0; j < kSpawn; ++j) {
+        coordinator.ScheduleOneShot(std::chrono::milliseconds(1), [&]() { fired.fetch_add(1); });
+      }
+    });
+  }
+
+  WaitUntil([&]() { return fired.load() == kDue + kDue * kSpawn; }, std::chrono::milliseconds(2000));
+  coordinator.Shutdown();
+}
+
 TEST(CoordinatorThreadTest, ShutdownJoinsCleanly) {
   CoordinatorThread coordinator;
   coordinator.Start();
