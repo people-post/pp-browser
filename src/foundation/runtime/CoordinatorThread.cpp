@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <vector>
 
 namespace pbr {
 
@@ -228,6 +229,10 @@ std::chrono::steady_clock::time_point CoordinatorThread::NextTimerDeadlineLocked
 }
 
 void CoordinatorThread::FireDueTimersLocked(std::chrono::steady_clock::time_point now) {
+  // Collect due callbacks first: running them while iterating timers_ is unsafe because a
+  // callback may call ScheduleOneShot/ScheduleRepeating and reallocate the vector (ASan:
+  // heap-use-after-free on the range-for reference, e.g. CallMediaBridge reach retry).
+  std::vector<std::function<void()>> due;
   for (TimerEntry& timer : timers_) {
     if (timer.cancelled || timer.next_fire > now || !timer.fn) {
       continue;
@@ -237,10 +242,15 @@ void CoordinatorThread::FireDueTimersLocked(std::chrono::steady_clock::time_poin
     } else {
       timer.cancelled = true;
     }
-    std::function<void()> fn = timer.fn;
+    due.push_back(timer.fn);
+  }
+  for (std::function<void()>& fn : due) {
     mutex_.unlock();
     RunTaskSafely(fn);
     mutex_.lock();
+    if (stopped_) {
+      return;
+    }
   }
 
   timers_.erase(std::remove_if(timers_.begin(), timers_.end(),
