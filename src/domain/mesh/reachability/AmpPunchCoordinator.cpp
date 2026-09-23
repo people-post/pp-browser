@@ -138,8 +138,8 @@ struct AmpPunchCoordinator::Impl {
   DeferredSelf deferred;
   std::vector<std::string>* local_addrs = nullptr;
   /**
-   * Parking work (BurstDial+IoPump). Drained from the waiter IoPump stack only — never from
-   * MeshRuntime::DrainPostedIo (nested Pump under drain UAFs on Windows).
+   * Parking work (AbortInflightDial + burst complete). Drained from the waiter IoPump stack
+   * only — never from MeshRuntime::DrainPostedIo (nested Pump under drain UAFs on Windows).
    */
   std::vector<std::function<void()>> park_work_;
   bool draining_park_ = false;
@@ -156,7 +156,7 @@ struct AmpPunchCoordinator::Impl {
     fn();
   }
 
-  /** Queue BurstDial for the next outer IoPump (AmpParkUntil) — not PostToIo. */
+  /** Queue Abort/complete for the next outer IoPump (AmpParkUntil) — not PostToIo. */
   void SchedulePark(std::function<void()> fn) {
     if (!fn) {
       return;
@@ -393,8 +393,18 @@ struct AmpPunchCoordinator::Impl {
       }
       session->Close();
     };
-    // Prefer waiter-stack sync BurstDial (SchedulePark). Product MeshPump has empty IoPump → async.
-    if (io_pump) {
+    // Always async when PostToIo is set (tests + product). Sync BurstDial nests IoPump/Tick and
+    // SEHs on Windows even when started via SchedulePark. Abort + result complete settle onto
+    // SchedulePark when IoPump is present so they run on the AmpParkUntil / shared-pump stack.
+    if (post_io) {
+      std::function<void(std::function<void()>)> settle_on;
+      if (io_pump) {
+        settle_on = [this](std::function<void()> fn) { SchedulePark(std::move(fn)); };
+      }
+      BurstDialCandidatesAsync(*links, post_io, sync.peer_addrs, sync.window_ms,
+                               [complete](PunchBurstResult burst) { (*complete)(std::move(burst)); },
+                               std::move(settle_on));
+    } else if (io_pump) {
       SchedulePark([this, sync, complete]() {
         if (stopped.load(std::memory_order_acquire) || !links) {
           return;
@@ -402,8 +412,7 @@ struct AmpPunchCoordinator::Impl {
         (*complete)(BurstDialCandidates(*links, io_pump, sync.peer_addrs, sync.window_ms));
       });
     } else {
-      BurstDialCandidatesAsync(*links, post_io, sync.peer_addrs, sync.window_ms,
-                               [complete](PunchBurstResult burst) { (*complete)(std::move(burst)); });
+      (*complete)(BurstDialCandidates(*links, {}, sync.peer_addrs, sync.window_ms));
     }
   }
 
@@ -503,8 +512,8 @@ AmpPunchCoordinator::AmpPunchCoordinator(pp::amp::PeerLinkManager& links, IoPump
   impl_->post_io = post_io_;
   impl_->local_addrs = &local_addrs_;
   (void)post_worker_;
-  // Drain SchedulePark (BurstDial) before user pump so parking work runs on the AmpParkUntil
-  // stack — never nested under MeshRuntime::DrainPostedIo.
+  // Drain SchedulePark (Abort + burst complete) before user pump so settle work runs on the
+  // AmpParkUntil stack — never nested under MeshRuntime::DrainPostedIo.
   if (io_pump_) {
     IoPump user_pump = std::move(io_pump_);
     io_pump_ = [impl = impl_.get(), user_pump = std::move(user_pump)]() {
@@ -747,17 +756,28 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                                       burst.error.empty() ? "punch burst failed" : burst.error)));
                                 }
                               };
-                              if (io_pump_) {
-                                apply(BurstDialCandidates(links_, io_pump_, sync.peer_addrs, sync.window_ms));
-                              } else {
+                              // Always async when PostToIo is set; park Abort+complete when IoPump set.
+                              if (post_io_) {
+                                std::function<void(std::function<void()>)> settle_on;
+                                if (io_pump_) {
+                                  settle_on = [this](std::function<void()> fn) {
+                                    impl_->SchedulePark(std::move(fn));
+                                  };
+                                }
                                 BurstDialCandidatesAsync(links_, post_io_, sync.peer_addrs, sync.window_ms,
-                                                         std::move(apply));
+                                                         std::move(apply), std::move(settle_on));
+                              } else {
+                                apply(BurstDialCandidates(links_, io_pump_, sync.peer_addrs, sync.window_ms));
                               }
                             };
-                            if (io_pump_) {
+                            // Leave mux before dial/burst start. Async burst uses PostStrand;
+                            // sync-only (no PostToIo) still parks onto the waiter IoPump.
+                            if (post_io_) {
+                              impl_->PostStrand(std::move(run_burst));
+                            } else if (io_pump_) {
                               impl_->SchedulePark(std::move(run_burst));
                             } else {
-                              impl_->PostStrand(std::move(run_burst));
+                              run_burst();
                             }
                             return true;
                           }
