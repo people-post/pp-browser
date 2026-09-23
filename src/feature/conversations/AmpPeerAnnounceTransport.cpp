@@ -144,9 +144,6 @@ struct AmpPeerAnnounceTransport::Impl {
         if (!session->EnqueueOutbound(JsonToBody(*ack_json))) {
           return;
         }
-        if (io_pump) {
-          io_pump();
-        }
       });
       return false;
     });

@@ -175,9 +175,6 @@ struct AmpChatBlobTransport::Impl {
                             return;
                           }
                         }
-                        if (io_pump) {
-                          io_pump();
-                        }
                         session->Close();
                       });
                       return false;
@@ -202,9 +199,6 @@ struct AmpChatBlobTransport::Impl {
                       const std::string ack_json = pushed ? DumpJson(ChatBlobAckToJson(true))
                                                           : DumpJson(ChatBlobAckToJson(false, pushed.error().message));
                       (void)session->EnqueueOutbound(JsonToBody(ack_json));
-                      if (io_pump) {
-                        io_pump();
-                      }
                       session->Close();
                     });
                     return false;

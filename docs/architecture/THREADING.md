@@ -162,7 +162,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 
 **Amp PeerLink strand:** `MeshRuntime` is the product entry (`WhenChannelOpen` / `BindChannel` / `SnapshotByPeerId` / `IsReachable`). Never stash `PeerLink*`. Prefer `IsReachable(PeerId)` over exact-key `IsConnected`.
 
-**Punch / ACP:** Mux frame handlers only `PostToIo`. Burst via `BurstDialCandidatesAsync`. `AbortInflightDial` + session Close + result complete via `PostDeferred`. Sync `TryColdPunch` may `AmpParkUntil` only when the waiter **is** the sole Amp driver (test harness PumpAll); punch SM never invokes `IoPump`.
+**Punch / ACP:** Mux frame handlers only `PostToIo`. Burst via `BurstDialCandidatesAsync`. Sync window via `PostAfter` (Amp clock) when wired. `AbortInflightDial` + session Close + result complete via `PostDeferred`. Sync `TryColdPunch` may `AmpParkUntil` only when the waiter **is** the sole Amp driver (test harness PumpAll); punch SM never invokes `IoPump`.
 
 **Peer honesty (Amp / peer streams):** do not park the **general** `WorkerPool` on peer-facing waits. Prefer async IO + local deadline + hard cancel. Call-media hello/ack is async+deadline; blocking bridge `Connect()` and remaining wait facades run on **MeshControlPool** as an interim until async `Connect(cb)` / A022-style callbacks. Details: [SESSION_MACHINES.md — Peer honesty rule](../../projects/p2p-av-calls/SESSION_MACHINES.md#peer-honesty-rule-stream-waits).
 

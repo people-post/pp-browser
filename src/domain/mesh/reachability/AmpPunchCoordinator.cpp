@@ -133,6 +133,7 @@ struct AmpPunchCoordinator::Impl {
   IoPump io_pump; // AmpParkUntil only — never call from SM / PostToIo work
   IoPost post_io;
   IoPost post_deferred;
+  IoAfter post_after;
   AmpPunchCoordinator::ProbeInbound probe_inbound;
   std::atomic<bool> stopped{false};
   /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
@@ -370,7 +371,8 @@ struct AmpPunchCoordinator::Impl {
         }
       });
     };
-    // Always async when PostToIo is set. Abort + complete settle via PostDeferred.
+    // Always async when PostToIo is set. Abort + complete settle via PostDeferred;
+    // sync window prefers Amp-clock PostAfter when wired.
     if (post_io) {
       std::function<void(std::function<void()>)> settle_on;
       if (post_deferred) {
@@ -378,7 +380,7 @@ struct AmpPunchCoordinator::Impl {
       }
       BurstDialCandidatesAsync(*links, post_io, sync.peer_addrs, sync.window_ms,
                                [complete](PunchBurstResult burst) { (*complete)(std::move(burst)); },
-                               std::move(settle_on));
+                               std::move(settle_on), post_after);
     } else {
       // No PostToIo: sync dial without nesting Drive (empty pump). Test-only.
       (*complete)(BurstDialCandidates(*links, {}, sync.peer_addrs, sync.window_ms));
@@ -471,14 +473,16 @@ struct AmpPunchCoordinator::Impl {
 };
 
 AmpPunchCoordinator::AmpPunchCoordinator(pp::amp::PeerLinkManager& links, IoPump io_pump,
-                                         WorkerPost post_worker, IoPost post_io, IoPost post_deferred)
+                                         WorkerPost post_worker, IoPost post_io, IoPost post_deferred,
+                                         IoAfter post_after)
     : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
       post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
-      post_deferred_(std::move(post_deferred)) {
+      post_deferred_(std::move(post_deferred)), post_after_(std::move(post_after)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
   impl_->post_io = post_io_;
   impl_->post_deferred = post_deferred_;
+  impl_->post_after = post_after_;
   impl_->local_addrs = &local_addrs_;
   (void)post_worker_;
 }
@@ -706,7 +710,7 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                                       burst.error.empty() ? "punch burst failed" : burst.error)));
                                 }
                               };
-                              // Always async when PostToIo is set; settle Abort+complete via PostDeferred.
+                              // Always async when PostToIo is set; settle via PostDeferred; window via PostAfter.
                               if (post_io_) {
                                 std::function<void(std::function<void()>)> settle_on;
                                 if (post_deferred_) {
@@ -715,7 +719,8 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                                   };
                                 }
                                 BurstDialCandidatesAsync(links_, post_io_, sync.peer_addrs, sync.window_ms,
-                                                         std::move(apply), std::move(settle_on));
+                                                         std::move(apply), std::move(settle_on),
+                                                         post_after_);
                               } else {
                                 apply(BurstDialCandidates(links_, {}, sync.peer_addrs, sync.window_ms));
                               }

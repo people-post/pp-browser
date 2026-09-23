@@ -305,9 +305,6 @@ struct AmpBroadcastTransport::Impl {
         if (!session->EnqueueOutbound(JsonToBody(*response_json))) {
           return;
         }
-        if (io_pump) {
-          io_pump();
-        }
       });
       return false;
     });

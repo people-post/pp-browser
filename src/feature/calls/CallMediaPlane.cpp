@@ -125,9 +125,8 @@ void CallMediaPlane::Wire() {
   IoPost post_io;
   if (auto chat = m ? m->ChatDeps() : std::nullopt) {
     post_io = chat->io.post_io;
-    // Product MeshPump: MakeL4IoPump is empty (prefer_mesh_pump). AttachAmpStack harnesses:
-    // MakeL4IoPump is Tick so sync TryEnsure* AmpParkUntil can drain PostToIo (hard-w5 stack).
-    // Always take io_pump — previously `if (!post_io)` dropped harness Tick and hung 30s.
+    // Exclusive Amp Drive: MakeL4IoPump is always empty. MeshPump (or harness Tick loop)
+    // progresses Amp; sync waiters sleep. IoPump is not used to Tick from L4.
     io_pump = chat->io.io_pump;
   }
   const bool use_amp_relay = WireMediaRelayClient(m, io_pump, post_io);

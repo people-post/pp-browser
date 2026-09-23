@@ -89,9 +89,6 @@ struct AmpDirectChatTransport::Impl {
             if (!session->EnqueueOutbound(JsonToBody(kAck))) {
               return;
             }
-            if (io_pump) {
-              io_pump();
-            }
             if (handler) {
               handler(std::move(*envelope));
             }
@@ -239,9 +236,6 @@ void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_use
                                              .WithUser(
                                                  "Direct send didn't confirm — will use relay if available."));
                                return;
-                             }
-                             if (io_pump_) {
-                               io_pump_();
                              }
                              AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                                (*finish)(Error("amp direct chat send timed out")

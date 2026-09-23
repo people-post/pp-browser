@@ -169,9 +169,6 @@ struct AmpDialBackProtocol::Impl {
       response.set("dialed", result.dialed);
       response.set("error", result.error);
       (void)session->EnqueueOutbound(JsonToBody(DumpJson(response)));
-      if (io_pump) {
-        io_pump();
-      }
       session->Close();
     });
   }
@@ -334,9 +331,6 @@ void AmpDialBackProtocol::ProbeAsync(const std::string& seed_peer_key,
                                  (*finish)(ProbeRoe::error(
                                      Failure::Of(Err::ProtocolError, "Failed to send dial-back probe")));
                                  return;
-                               }
-                               if (io_pump_) {
-                                 io_pump_();
                                }
                                if (post_io_) {
                                  auto poll = std::make_shared<std::function<void()>>();
