@@ -232,6 +232,9 @@ public:
   Roe<void> ImportPskBundleJson(const std::string& thread_id, const std::string& bundle_json);
   Roe<void> MarkPskVerified(const std::string& thread_id);
   void RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id, const std::string& multiaddr);
+  /** B28: best-first candidate list (RankAmpDialMultiaddrs order) via Amp RegisterEndpoints. */
+  void RegisterPeerDirectEndpoints(const std::string& peer_relay_user_id,
+                                   const std::vector<std::string>& multiaddrs);
   /** Register all multiaddrs from a contact (keyed by relay id). */
   void RegisterContactDirectEndpoints(const Contact& contact);
   /**

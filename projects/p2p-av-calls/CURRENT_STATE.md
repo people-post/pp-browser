@@ -75,7 +75,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 
 | Area | State |
 |------|-------|
-| **Cross-net B26–B30** | B26 reflexive observe + B31 V049 landed; B28 probing + B29 H012/L3.25d + B30 relay path open — [CROSS_NETWORK_B25_B31.md](CROSS_NETWORK_B25_B31.md) |
+| **Cross-net B26–B30** | B26 reflexive observe + B28 RegisterEndpoints probing + B31 V049 landed; B29 H012/L3.25d + B30 relay path open — [CROSS_NETWORK_B25_B31.md](CROSS_NETWORK_B25_B31.md) |
 | **rd D3/D4** | **Automated gates** below (purpose IDs). Human OEM sample optional — never the only gate |
 | Hop peerstore / circuit | media-hop **L1–L3** + loopback compose landed; **L3.5 multi-hop** later (transitive R1↛B) |
 | **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** + circuit compose; **ConnectAsync landed**; inbound MediaKey wait cancelable (**landed**); leftovers: sync L4 façades for tests; optional s4 if Leave hangs — [SESSION_MACHINES.md](SESSION_MACHINES.md#remaining-work-call-media--peer-honesty) |

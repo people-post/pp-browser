@@ -174,7 +174,6 @@ private:
                             std::function<void(Roe<void>)> on_done);
 
   void MergeDialBookListenAddrs(const std::string& identity, const std::vector<std::string>& ranked);
-  void RegisterOneListenMultiaddr(const std::string& identity, const std::string& ma);
   static std::string PeerIdFromListenMultiaddr(const std::string& ma);
 
   std::vector<std::string> CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const;
