@@ -137,8 +137,14 @@ struct AmpPunchCoordinator::Impl {
   /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
   DeferredSelf deferred;
   std::vector<std::string>* local_addrs = nullptr;
+  /**
+   * Parking work (BurstDial+IoPump). Drained from the waiter IoPump stack only — never from
+   * MeshRuntime::DrainPostedIo (nested Pump under drain UAFs on Windows).
+   */
+  std::vector<std::function<void()>> park_work_;
+  bool draining_park_ = false;
 
-  /** Enqueue on MeshRuntime IO strand. Mux callbacks must only call this — never dial/park inline. */
+  /** Non-parking SM work on MeshRuntime IO strand (connect/offer continuations). */
   void PostStrand(std::function<void()> fn) {
     if (!fn) {
       return;
@@ -147,8 +153,32 @@ struct AmpPunchCoordinator::Impl {
       post_io(std::move(fn));
       return;
     }
-    // Empty IoPost: run inline. Only safe when the caller is already off the mux stack.
     fn();
+  }
+
+  /** Queue BurstDial for the next outer IoPump (AmpParkUntil) — not PostToIo. */
+  void SchedulePark(std::function<void()> fn) {
+    if (!fn) {
+      return;
+    }
+    park_work_.push_back(std::move(fn));
+  }
+
+  void DrainPark() {
+    if (draining_park_) {
+      return;
+    }
+    draining_park_ = true;
+    while (!park_work_.empty()) {
+      auto batch = std::move(park_work_);
+      park_work_.clear();
+      for (auto& fn : batch) {
+        if (fn) {
+          fn();
+        }
+      }
+    }
+    draining_park_ = false;
   }
 
   void FailSession(const std::shared_ptr<pp::amp::ChannelSession>& session, const std::string& epoch_id,
@@ -337,26 +367,42 @@ struct AmpPunchCoordinator::Impl {
         }
       }
     }
-    auto burst = BurstDialCandidates(*links, io_pump, sync.peer_addrs, sync.window_ms);
-    if (remote_peer_id.empty()) {
-      for (const std::string& ma : sync.peer_addrs) {
-        if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
-          remote_peer_id = parsed->peer_id;
-          break;
+    auto complete = [this, session, sync, remote_peer_id](PunchBurstResult burst) mutable {
+      if (stopped.load(std::memory_order_acquire) || !links || !session) {
+        return;
+      }
+      std::string remote_id = remote_peer_id;
+      if (remote_id.empty()) {
+        for (const std::string& ma : sync.peer_addrs) {
+          if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
+            remote_id = parsed->peer_id;
+            break;
+          }
         }
       }
-    }
-    PublishIfPunchConnected(*links, remote_peer_id, burst);
-    PunchResult result;
-    result.epoch_id = sync.epoch_id;
-    result.ok = burst.ok;
-    result.winner_multiaddr = burst.dialed;
-    result.error = burst.ok ? "" : burst.error;
-    (void)session->EnqueueOutbound(JsonToBody(EncodePunchResult(result)));
+      PublishIfPunchConnected(*links, remote_id, burst);
+      PunchResult result;
+      result.epoch_id = sync.epoch_id;
+      result.ok = burst.ok;
+      result.winner_multiaddr = burst.dialed;
+      result.error = burst.ok ? "" : burst.error;
+      (void)session->EnqueueOutbound(JsonToBody(EncodePunchResult(result)));
+      if (io_pump) {
+        io_pump();
+      }
+      session->Close();
+    };
+    // Prefer waiter-stack sync BurstDial (SchedulePark). Product MeshPump has empty IoPump → async.
     if (io_pump) {
-      io_pump();
+      SchedulePark([this, sync, complete = std::move(complete)]() mutable {
+        if (stopped.load(std::memory_order_acquire) || !links) {
+          return;
+        }
+        complete(BurstDialCandidates(*links, io_pump, sync.peer_addrs, sync.window_ms));
+      });
+    } else {
+      BurstDialCandidatesAsync(*links, post_io, sync.peer_addrs, sync.window_ms, std::move(complete));
     }
-    session->Close();
   }
 
   void HandleInboundFrame(const std::shared_ptr<pp::amp::ChannelSession>& session,
@@ -452,10 +498,21 @@ AmpPunchCoordinator::AmpPunchCoordinator(pp::amp::PeerLinkManager& links, IoPump
     : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
       post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
   impl_->links = &links_;
-  impl_->io_pump = io_pump_;
   impl_->post_io = post_io_;
   impl_->local_addrs = &local_addrs_;
   (void)post_worker_;
+  // Drain SchedulePark (BurstDial) before user pump so parking work runs on the AmpParkUntil
+  // stack — never nested under MeshRuntime::DrainPostedIo.
+  if (io_pump_) {
+    IoPump user_pump = std::move(io_pump_);
+    io_pump_ = [impl = impl_.get(), user_pump = std::move(user_pump)]() {
+      impl->DrainPark();
+      if (user_pump) {
+        user_pump();
+      }
+    };
+  }
+  impl_->io_pump = io_pump_;
 }
 
 AmpPunchCoordinator::~AmpPunchCoordinator() { Stop(); }
@@ -485,8 +542,15 @@ void AmpPunchCoordinator::Start() {
 void AmpPunchCoordinator::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
+  impl_->park_work_.clear();
   links_.RemoveProtocolHandler(kAmpPunchProtocolId);
   impl_->deferred.Invalidate();
+}
+
+void AmpPunchCoordinator::DrainParkWork() {
+  if (impl_) {
+    impl_->DrainPark();
+  }
 }
 
 void AmpPunchCoordinator::TryColdPunchAsync(const std::string& introducer_peer_key,
@@ -657,8 +721,7 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                                   Failure::Of(Err::ProtocolError, "punch: invalid sync frame")));
                               return false;
                             }
-                            // BurstDial parks with IoPump — must not run under mux.
-                            impl_->PostStrand([this, finish, target_peer_id, sync = *sync]() mutable {
+                            auto run_burst = [this, finish, target_peer_id, sync = *sync]() mutable {
                               for (const std::string& ma : SanitizePunchAddrs(sync.peer_addrs)) {
                                 if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
                                   if (!parsed->peer_id.empty()) {
@@ -666,23 +729,35 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                                   }
                                 }
                               }
-                              auto burst =
-                                  BurstDialCandidates(links_, io_pump_, sync.peer_addrs, sync.window_ms);
-                              PublishIfPunchConnected(links_, target_peer_id, burst);
-                              PunchResult result;
-                              result.epoch_id = sync.epoch_id;
-                              result.ok = burst.ok;
-                              result.winner_multiaddr = burst.dialed;
-                              result.error = burst.ok ? "" : burst.error;
-                              if (burst.ok) {
-                                (*finish)(result);
+                              auto apply = [this, finish, target_peer_id,
+                                            epoch = sync.epoch_id](PunchBurstResult burst) {
+                                PublishIfPunchConnected(links_, target_peer_id, burst);
+                                PunchResult result;
+                                result.epoch_id = epoch;
+                                result.ok = burst.ok;
+                                result.winner_multiaddr = burst.dialed;
+                                result.error = burst.ok ? "" : burst.error;
+                                if (burst.ok) {
+                                  (*finish)(result);
+                                } else {
+                                  (*finish)(PunchRoe::error(Failure::Of(
+                                      Err::PunchFailed,
+                                      burst.error.empty() ? "punch burst failed" : burst.error)));
+                                }
+                              };
+                              if (io_pump_) {
+                                apply(BurstDialCandidates(links_, io_pump_, sync.peer_addrs, sync.window_ms));
                               } else {
-                                (*finish)(PunchRoe::error(Failure::Of(
-                                    Err::PunchFailed,
-                                    burst.error.empty() ? "punch burst failed" : burst.error)));
+                                BurstDialCandidatesAsync(links_, post_io_, sync.peer_addrs, sync.window_ms,
+                                                         std::move(apply));
                               }
-                            });
-                            return true; // keep open until deferred finish closes
+                            };
+                            if (io_pump_) {
+                              impl_->SchedulePark(std::move(run_burst));
+                            } else {
+                              impl_->PostStrand(std::move(run_burst));
+                            }
+                            return true;
                           }
                           return true;
                         });
