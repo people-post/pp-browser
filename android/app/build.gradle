@@ -7,6 +7,7 @@ def enableFcm = googleServicesFile.exists()
 def ppBrowserVersion = project.findProperty('ppBrowserVersion') ?: '1.0.0'
 def ppBrowserReleaseVersion = project.findProperty('ppBrowserReleaseVersion') ?: '1.0.0-rc14'
 def ppBrowserCompilerCache = (project.findProperty('ppBrowserCompilerCache') ?: 'OFF').toString().toUpperCase()
+def ppBrowserAbiFilters = (project.findProperty('ppBrowserAbiFilters') ?: 'armeabi-v7a,arm64-v8a,x86_64').toString().split(',')
 def ppBrowserCmakeArgs = [
     "-DANDROID_PLATFORM=android-24",
     "-DANDROID_STL=c++_static",
@@ -38,7 +39,7 @@ android {
         externalNativeBuild {
             cmake {
                 arguments(*ppBrowserCmakeArgs)
-                abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
+                abiFilters(*ppBrowserAbiFilters)
             }
         }
     }

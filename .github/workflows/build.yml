@@ -3,8 +3,30 @@ name: build
 on:
   push:
     branches: [develop, main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'projects/**'
+      - 'design/**'
+      - 'reports/**'
+      - '.cursor/**'
+      - '.vscode/**'
+      - 'LICENSE'
   pull_request:
     branches: [develop, main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'projects/**'
+      - 'design/**'
+      - 'reports/**'
+      - '.cursor/**'
+      - '.vscode/**'
+      - 'LICENSE'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
@@ -29,6 +51,8 @@ jobs:
         os: [ubuntu-24.04, windows-2022, macos-14]
 
     runs-on: ${{ matrix.os }}
+    env:
+      CCACHE_COMPRESSLEVEL: 5
 
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +75,7 @@ jobs:
         run: |
           choco install nasm --no-progress -y
           echo "C:\Program Files\NASM" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          choco install ccache --no-progress -y
 
       - name: Install macOS deps
         if: runner.os == 'macOS'
@@ -59,39 +84,25 @@ jobs:
             brew install ccache
           fi
 
-      - name: Enable sccache
-        if: runner.os == 'Windows'
-        shell: bash
-        run: echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
-
-      - name: Setup sccache
-        if: runner.os == 'Windows'
-        uses: mozilla-actions/sccache-action@v0.0.10
-
       - name: Ensure ccache directory exists
-        if: runner.os != 'Windows'
+        shell: bash
         run: |
-          mkdir -p "$HOME/.cache/ccache"
-          echo "CCACHE_DIR=$HOME/.cache/ccache" >> "$GITHUB_ENV"
+          mkdir -p .cache/ccache
+          echo "CCACHE_DIR=${{ github.workspace }}/.cache/ccache" >> "$GITHUB_ENV"
 
       - name: Restore ccache
-        if: runner.os != 'Windows'
         uses: actions/cache@v4
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ${{ runner.os }}-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}
+          key: ${{ runner.os }}-ccache-v2-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}
           restore-keys: |
-            ${{ runner.os }}-ccache-v1-
+            ${{ runner.os }}-ccache-v2-
 
       - name: ccache stats (pre-build)
-        if: runner.os != 'Windows'
+        shell: bash
         run: |
           ccache --zero-stats || true
           ccache --show-stats || true
-
-      - name: sccache stats (pre-build)
-        if: runner.os == 'Windows'
-        run: sccache --zero-stats || true
 
       - name: Configure
         shell: bash
@@ -106,7 +117,7 @@ jobs:
 
       - name: Build
         shell: bash
-        run: cmake --build build --config Release -j 2
+        run: cmake --build build --config Release -j 4
 
       - name: Test
         shell: bash
@@ -129,12 +140,9 @@ jobs:
           test "$code" -eq 124
 
       - name: ccache stats (post-build)
-        if: always() && runner.os != 'Windows'
+        if: always()
+        shell: bash
         run: ccache --show-stats || true
-
-      - name: sccache stats (post-build)
-        if: always() && runner.os == 'Windows'
-        run: sccache --show-stats || true
 
   android:
     runs-on: ubuntu-24.04
@@ -147,7 +155,10 @@ jobs:
       CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros,pch_defines
       # Keep well under GitHub-hosted runner free disk (~14GB before cleanup).
       CCACHE_MAXSIZE: 2G
+      CCACHE_COMPRESSLEVEL: 5
       ORG_GRADLE_PROJECT_ppBrowserCompilerCache: ON
+      # Trim ccache working set to one ABI in CI; full set stays default for local/release builds.
+      ORG_GRADLE_PROJECT_ppBrowserAbiFilters: arm64-v8a
       GRADLE_OPTS: -Dorg.gradle.daemon=false
 
     steps:
