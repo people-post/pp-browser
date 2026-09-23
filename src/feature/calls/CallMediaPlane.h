@@ -21,6 +21,7 @@
 
 #include "foundation/runtime/DeferredSelf.h"
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <string>
@@ -148,6 +149,7 @@ public:
 private:
   using IoPump = std::function<void()>;
   using IoPost = std::function<void(std::function<void()>)>;
+  using IoAfter = std::function<void(std::chrono::milliseconds, std::function<void()>)>;
 
   MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
   const AppConfig& config() const;
@@ -156,10 +158,11 @@ private:
   ICircuitHopReach* ActiveCircuitReach() const;
 
   /** True when Amp media_relay coordinator is started. */
-  bool WireMediaRelayClient(MeshHost* m, const IoPump& io_pump, const IoPost& post_io);
+  bool WireMediaRelayClient(MeshHost* m, const IoPump& io_pump, const IoPost& post_io,
+                            const IoAfter& post_after);
   void WireDialRegistry(MeshHost* m, bool use_amp_relay, const IoPost& post_io);
   void WireCircuitHopReach(MeshHost* m, bool use_amp_relay, const IoPump& io_pump,
-                           const IoPost& post_io);
+                           const IoPost& post_io, const IoAfter& post_after);
 
   void TryColdPunchAsync(MeshHost* m, IChatPeerLinks* punch_links, const std::string& target_peer_id,
                          std::function<void(Roe<void>)> on_done);

@@ -151,9 +151,11 @@ struct AmpPeerAnnounceTransport::Impl {
 };
 
 AmpPeerAnnounceTransport::AmpPeerAnnounceTransport(IChatPeerLinks& links, PeerAnnounceFeed& feed, IoPump io_pump,
-                                               WorkerPost post_worker, ResolvePublisherKey resolve_key, IoPost post_io)
+                                               WorkerPost post_worker, ResolvePublisherKey resolve_key, IoPost post_io,
+                                               IoAfter post_after)
     : impl_(std::make_unique<Impl>()), links_(links), feed_(feed), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
+      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
+      post_after_(std::move(post_after)) {
   impl_->links = &links_;
   impl_->feed = &feed_;
   impl_->io_pump = io_pump_;
@@ -300,7 +302,8 @@ void AmpPeerAnnounceTransport::PushTipAsync(const std::string& peer_key, const P
                              AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                                finish(Error("amp peer-announce send timed out")
                                           .WithUser("Direct tip push timed out."));
-                             });
+                             },
+                                                    post_after_);
                            });
                      });
 }

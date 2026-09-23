@@ -6,6 +6,7 @@
 
 #include "common/Error.h"
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -25,6 +26,7 @@ public:
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
   using IoPost = std::function<void(std::function<void()>)>;
+  using IoAfter = std::function<void(std::chrono::milliseconds, std::function<void()>)>;
   /** Resolve publisher ML-DSA-65 public key for tip.peer_id (device key). */
   using ResolvePublisherKey = std::function<std::optional<std::vector<uint8_t>>(const std::string& peer_id)>;
   /** Fired after a tip is verified and ingested into the local feed (any thread). */
@@ -32,7 +34,7 @@ public:
 
   AmpPeerAnnounceTransport(IChatPeerLinks& links, PeerAnnounceFeed& feed, IoPump io_pump,
                          WorkerPost post_worker = {}, ResolvePublisherKey resolve_key = {},
-                         IoPost post_io = {});
+                         IoPost post_io = {}, IoAfter post_after = {});
   ~AmpPeerAnnounceTransport();
 
   AmpPeerAnnounceTransport(const AmpPeerAnnounceTransport&) = delete;
@@ -63,6 +65,7 @@ private:
   IoPump io_pump_;
   WorkerPost post_worker_;
   IoPost post_io_;
+  IoAfter post_after_;
   bool started_ = false;
 };
 

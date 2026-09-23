@@ -99,9 +99,10 @@ struct AmpDirectChatTransport::Impl {
 };
 
 AmpDirectChatTransport::AmpDirectChatTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker,
-                                               IoPost post_io)
+                                               IoPost post_io, IoAfter post_after)
     : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
+      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
+      post_after_(std::move(post_after)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
   impl_->post_worker = post_worker_;
@@ -241,7 +242,8 @@ void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_use
                                (*finish)(Error("amp direct chat send timed out")
                                              .WithUser("Direct send didn't confirm — will use relay if "
                                                        "available."));
-                             });
+                             },
+                                                    post_after_);
                            });
                      });
 }
