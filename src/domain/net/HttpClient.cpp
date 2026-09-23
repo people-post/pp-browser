@@ -7,6 +7,7 @@
 
 #include <curl/curl.h>
 
+#include <cstdlib>
 #include <limits>
 #include <optional>
 
@@ -50,7 +51,15 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
   curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+  // Dev knob: PP_BROWSER_HTTP_TIMEOUT_S. Relay inbox polls run serially, so on a lossy path
+  // (cellular → CloudFront) one stalled 30 s request delays every later poll; a shorter
+  // timeout lets the 2 s poll cadence recover (DEV/BUGS.md 2026-09-23 cross-network test).
+  static const long timeout_s = [] {
+    const char* env = std::getenv("PP_BROWSER_HTTP_TIMEOUT_S");
+    const long v = (env && env[0]) ? std::strtol(env, nullptr, 10) : 0;
+    return v > 0 ? v : 30L;
+  }();
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_s);
 
   struct curl_slist* header_list = nullptr;
   for (const auto& [key, value] : headers) {
