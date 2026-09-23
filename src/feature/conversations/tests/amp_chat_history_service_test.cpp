@@ -105,9 +105,11 @@ protected:
     mesh_ = std::move(*created);
 
     responder_history_ = std::make_unique<AmpChatHistoryTransport>(
-        mesh_->chat_b(), [this] { mesh_->PumpBoth(); }, data_->store, data_->identity, data_->psk_store);
+        mesh_->chat_b(), [this] { mesh_->PumpBoth(); }, data_->store, data_->identity, data_->psk_store,
+        AmpChatHistoryTransport::WorkerPost{}, mesh_->MakePostIoB(), mesh_->MakePostAfterB());
     client_history_ = std::make_unique<AmpChatHistoryTransport>(
-        mesh_->chat_a(), [this] { mesh_->PumpBoth(); }, data_->store, data_->identity, data_->psk_store);
+        mesh_->chat_a(), [this] { mesh_->PumpBoth(); }, data_->store, data_->identity, data_->psk_store,
+        AmpChatHistoryTransport::WorkerPost{}, mesh_->MakePostIoA(), mesh_->MakePostAfterA());
 
     ASSERT_TRUE(static_cast<bool>(mesh_->chat_a().RegisterEndpoint("relay:responder", mesh_->ma_b)));
 

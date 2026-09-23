@@ -54,9 +54,11 @@ protected:
 
     AmpPeerAnnounceTransport::WorkerPost no_worker;
     a_svc_ = std::make_unique<AmpPeerAnnounceTransport>(
-        harness_->chat_a(), feed_a_, [this] { harness_->PumpBoth(); }, no_worker, resolve);
+        harness_->chat_a(), feed_a_, [this] { harness_->PumpBoth(); }, no_worker, resolve,
+        harness_->MakePostIoA(), harness_->MakePostAfterA());
     b_svc_ = std::make_unique<AmpPeerAnnounceTransport>(
-        harness_->chat_b(), feed_b_, [this] { harness_->PumpBoth(); }, no_worker, resolve);
+        harness_->chat_b(), feed_b_, [this] { harness_->PumpBoth(); }, no_worker, resolve,
+        harness_->MakePostIoB(), harness_->MakePostAfterB());
     a_svc_->Start();
     b_svc_->Start();
   }
