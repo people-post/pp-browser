@@ -130,21 +130,16 @@ AmpPunchCoordinator::Failure AmpPunchCoordinator::WrapLinkFailure(
 
 struct AmpPunchCoordinator::Impl {
   pp::amp::PeerLinkManager* links = nullptr;
-  IoPump io_pump;
+  IoPump io_pump; // AmpParkUntil only — never call from SM / PostToIo work
   IoPost post_io;
+  IoPost post_deferred;
   AmpPunchCoordinator::ProbeInbound probe_inbound;
   std::atomic<bool> stopped{false};
   /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
   DeferredSelf deferred;
   std::vector<std::string>* local_addrs = nullptr;
-  /**
-   * Parking work (BurstDial+IoPump). Drained from the waiter IoPump stack only — never from
-   * MeshRuntime::DrainPostedIo (nested Pump under drain UAFs on Windows).
-   */
-  std::vector<std::function<void()>> park_work_;
-  bool draining_park_ = false;
 
-  /** Non-parking SM work on MeshRuntime IO strand (connect/offer continuations). */
+  /** Non-teardown SM work on MeshRuntime IO strand (connect/offer continuations). */
   void PostStrand(std::function<void()> fn) {
     if (!fn) {
       return;
@@ -156,29 +151,17 @@ struct AmpPunchCoordinator::Impl {
     fn();
   }
 
-  /** Queue BurstDial for the next outer IoPump (AmpParkUntil) — not PostToIo. */
-  void SchedulePark(std::function<void()> fn) {
+  /** Teardown lane — Abort / Close / on_done (MeshRuntime::PostDeferred). */
+  void PostDeferred(std::function<void()> fn) {
     if (!fn) {
       return;
     }
-    park_work_.push_back(std::move(fn));
-  }
-
-  void DrainPark() {
-    if (draining_park_) {
+    if (post_deferred) {
+      post_deferred(std::move(fn));
       return;
     }
-    draining_park_ = true;
-    while (!park_work_.empty()) {
-      auto batch = std::move(park_work_);
-      park_work_.clear();
-      for (auto& fn : batch) {
-        if (fn) {
-          fn();
-        }
-      }
-    }
-    draining_park_ = false;
+    // No deferred lane: run inline (test-only without MeshRuntime wiring).
+    fn();
   }
 
   void FailSession(const std::shared_ptr<pp::amp::ChannelSession>& session, const std::string& epoch_id,
@@ -188,10 +171,11 @@ struct AmpPunchCoordinator::Impl {
     result.ok = false;
     result.error = error;
     (void)session->EnqueueOutbound(JsonToBody(EncodePunchResult(result)));
-    if (io_pump) {
-      io_pump();
-    }
-    session->Close();
+    PostDeferred([session]() {
+      if (session) {
+        session->Close();
+      }
+    });
   }
 
   void SendSyncPair(const std::shared_ptr<pp::amp::ChannelSession>& initiator_session,
@@ -218,12 +202,7 @@ struct AmpPunchCoordinator::Impl {
         return;
       }
     }
-    // Flush sync frames; do not Close — initiator/target own burst + session lifetime.
-    if (io_pump) {
-      io_pump();
-      io_pump();
-      io_pump();
-    }
+    // Do not call IoPump/Tick here — next exclusive Drive flushes outbound.
   }
 
   /**
@@ -346,9 +325,6 @@ struct AmpPunchCoordinator::Impl {
                             Failure::Of(Err::ProtocolError, "punch: failed to send offer")));
                         return;
                       }
-                      if (io_pump) {
-                        io_pump();
-                      }
                     },
                     [this]() { return stopped.load(std::memory_order_acquire); });
               });
@@ -388,22 +364,24 @@ struct AmpPunchCoordinator::Impl {
       result.winner_multiaddr = burst.dialed;
       result.error = burst.ok ? "" : burst.error;
       (void)session->EnqueueOutbound(JsonToBody(EncodePunchResult(result)));
-      if (io_pump) {
-        io_pump();
-      }
-      session->Close();
-    };
-    // Prefer waiter-stack sync BurstDial (SchedulePark). Product MeshPump has empty IoPump → async.
-    if (io_pump) {
-      SchedulePark([this, sync, complete]() {
-        if (stopped.load(std::memory_order_acquire) || !links) {
-          return;
+      PostDeferred([session]() {
+        if (session) {
+          session->Close();
         }
-        (*complete)(BurstDialCandidates(*links, io_pump, sync.peer_addrs, sync.window_ms));
       });
-    } else {
+    };
+    // Always async when PostToIo is set. Abort + complete settle via PostDeferred.
+    if (post_io) {
+      std::function<void(std::function<void()>)> settle_on;
+      if (post_deferred) {
+        settle_on = [this](std::function<void()> fn) { PostDeferred(std::move(fn)); };
+      }
       BurstDialCandidatesAsync(*links, post_io, sync.peer_addrs, sync.window_ms,
-                               [complete](PunchBurstResult burst) { (*complete)(std::move(burst)); });
+                               [complete](PunchBurstResult burst) { (*complete)(std::move(burst)); },
+                               std::move(settle_on));
+    } else {
+      // No PostToIo: sync dial without nesting Drive (empty pump). Test-only.
+      (*complete)(BurstDialCandidates(*links, {}, sync.peer_addrs, sync.window_ms));
     }
   }
 
@@ -452,9 +430,6 @@ struct AmpPunchCoordinator::Impl {
         FailSession(session, offer->epoch_id, "punch: failed to send candidates");
         return;
       }
-      if (io_pump) {
-        io_pump();
-      }
       return;
     }
     if (op == "sync" && *phase == "await_sync") {
@@ -496,25 +471,16 @@ struct AmpPunchCoordinator::Impl {
 };
 
 AmpPunchCoordinator::AmpPunchCoordinator(pp::amp::PeerLinkManager& links, IoPump io_pump,
-                                         WorkerPost post_worker, IoPost post_io)
+                                         WorkerPost post_worker, IoPost post_io, IoPost post_deferred)
     : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
+      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
+      post_deferred_(std::move(post_deferred)) {
   impl_->links = &links_;
+  impl_->io_pump = io_pump_;
   impl_->post_io = post_io_;
+  impl_->post_deferred = post_deferred_;
   impl_->local_addrs = &local_addrs_;
   (void)post_worker_;
-  // Drain SchedulePark (BurstDial) before user pump so parking work runs on the AmpParkUntil
-  // stack — never nested under MeshRuntime::DrainPostedIo.
-  if (io_pump_) {
-    IoPump user_pump = std::move(io_pump_);
-    io_pump_ = [impl = impl_.get(), user_pump = std::move(user_pump)]() {
-      impl->DrainPark();
-      if (user_pump) {
-        user_pump();
-      }
-    };
-  }
-  impl_->io_pump = io_pump_;
 }
 
 AmpPunchCoordinator::~AmpPunchCoordinator() { Stop(); }
@@ -544,15 +510,8 @@ void AmpPunchCoordinator::Start() {
 void AmpPunchCoordinator::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
-  impl_->park_work_.clear();
   links_.RemoveProtocolHandler(kAmpPunchProtocolId);
   impl_->deferred.Invalidate();
-}
-
-void AmpPunchCoordinator::DrainParkWork() {
-  if (impl_) {
-    impl_->DrainPark();
-  }
 }
 
 void AmpPunchCoordinator::TryColdPunchAsync(const std::string& introducer_peer_key,
@@ -747,18 +706,22 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                                       burst.error.empty() ? "punch burst failed" : burst.error)));
                                 }
                               };
-                              if (io_pump_) {
-                                apply(BurstDialCandidates(links_, io_pump_, sync.peer_addrs, sync.window_ms));
-                              } else {
+                              // Always async when PostToIo is set; settle Abort+complete via PostDeferred.
+                              if (post_io_) {
+                                std::function<void(std::function<void()>)> settle_on;
+                                if (post_deferred_) {
+                                  settle_on = [this](std::function<void()> fn) {
+                                    impl_->PostDeferred(std::move(fn));
+                                  };
+                                }
                                 BurstDialCandidatesAsync(links_, post_io_, sync.peer_addrs, sync.window_ms,
-                                                         std::move(apply));
+                                                         std::move(apply), std::move(settle_on));
+                              } else {
+                                apply(BurstDialCandidates(links_, {}, sync.peer_addrs, sync.window_ms));
                               }
                             };
-                            if (io_pump_) {
-                              impl_->SchedulePark(std::move(run_burst));
-                            } else {
-                              impl_->PostStrand(std::move(run_burst));
-                            }
+                            // Leave mux before dial/burst start.
+                            impl_->PostStrand(std::move(run_burst));
                             return true;
                           }
                           return true;
@@ -766,9 +729,6 @@ void AmpPunchCoordinator::RunPunchAsync(const std::string& introducer_peer_key,
                     if (!session->EnqueueOutbound(JsonToBody(request_json))) {
                       (*finish)(PunchRoe::error(Failure::Of(Err::ProtocolError, "punch: failed to send connect")));
                       return;
-                    }
-                    if (io_pump_) {
-                      io_pump_();
                     }
                     if (post_io_) {
                       auto poll = std::make_shared<std::function<void()>>();
