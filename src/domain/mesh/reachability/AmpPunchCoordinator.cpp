@@ -367,7 +367,8 @@ struct AmpPunchCoordinator::Impl {
         }
       }
     }
-    auto complete = [this, session, sync, remote_peer_id](PunchBurstResult burst) mutable {
+    auto complete = std::make_shared<std::function<void(PunchBurstResult)>>();
+    *complete = [this, session, sync, remote_peer_id](PunchBurstResult burst) mutable {
       if (stopped.load(std::memory_order_acquire) || !links || !session) {
         return;
       }
@@ -394,14 +395,15 @@ struct AmpPunchCoordinator::Impl {
     };
     // Prefer waiter-stack sync BurstDial (SchedulePark). Product MeshPump has empty IoPump → async.
     if (io_pump) {
-      SchedulePark([this, sync, complete = std::move(complete)]() mutable {
+      SchedulePark([this, sync, complete]() {
         if (stopped.load(std::memory_order_acquire) || !links) {
           return;
         }
-        complete(BurstDialCandidates(*links, io_pump, sync.peer_addrs, sync.window_ms));
+        (*complete)(BurstDialCandidates(*links, io_pump, sync.peer_addrs, sync.window_ms));
       });
     } else {
-      BurstDialCandidatesAsync(*links, post_io, sync.peer_addrs, sync.window_ms, std::move(complete));
+      BurstDialCandidatesAsync(*links, post_io, sync.peer_addrs, sync.window_ms,
+                               [complete](PunchBurstResult burst) { (*complete)(std::move(burst)); });
     }
   }
 
