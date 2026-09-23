@@ -41,6 +41,7 @@ Docs: [CIRCUIT_R1_RENDEZVOUS.md](CIRCUIT_R1_RENDEZVOUS.md), [H011](DECISIONS.md#
 - [x] **L3.1c (stack)** — `PreferLateReserve` + `OnRelayChosen` / `chosen_circuit_r1_` cache
 - [x] **L3.1c (wire)** — Additive `call_circuit_r1` control → answerer `PreferLateReserve` (H007 carve-out)
 - [x] **L3.1d** — `hard-w5` STACK green (rendezvous park + `AnnounceCircuitR1` flush after Invite; teardown AbortInflight drops Finish cbs; OutboundStarted does not regress DirectConnecting)
+- [x] **B27 (client)** — reserve keyed by handler PeerId; ServeDial keying logs; PeerConnected re-park on rendezvous surface; same-relay not-reg re-announces R1 (see [CROSS_NETWORK_B25_B31.md](../p2p-av-calls/CROSS_NETWORK_B25_B31.md))
 
 ## L3.25 — Amp Coordinated Punch
 

@@ -58,6 +58,7 @@ CallMediaPlane::~CallMediaPlane() {
 }
 
 void CallMediaPlane::InvalidateAsyncOps() {
+  RemoveRendezvousReparkListener();
   deferred_.Invalidate();
 }
 
@@ -134,6 +135,7 @@ void CallMediaPlane::Wire() {
   const bool use_amp_relay = WireMediaRelayClient(m, io_pump, post_io, post_after);
   WireDialRegistry(m, use_amp_relay, post_io);
   WireCircuitHopReach(m, use_amp_relay, io_pump, post_io, post_after);
+  InstallRendezvousReparkListener();
 }
 
 CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() const {
@@ -1085,6 +1087,51 @@ void CallMediaPlane::PreferLateReserve(const std::string& relay_peer_id) {
   } else {
     task();
   }
+}
+
+void CallMediaPlane::InstallRendezvousReparkListener() {
+  RemoveRendezvousReparkListener();
+  MeshHost* m = mesh();
+  if (!m || !m->Amp() || !m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
+    return;
+  }
+  auto* links = &m->Amp()->Runtime().Links();
+  repark_listener_id_ = links->AddPeerConnectedListener(
+      deferred_.Bind([this](const std::string& peer_id) { OnRendezvousSeedReconnected(peer_id); }));
+  log().info << "circuit rendezvous re-park listener armed";
+}
+
+void CallMediaPlane::RemoveRendezvousReparkListener() {
+  if (repark_listener_id_ == 0) {
+    return;
+  }
+  MeshHost* m = mesh();
+  if (m && m->Amp()) {
+    m->Amp()->Runtime().Links().RemovePeerConnectedListener(repark_listener_id_);
+  }
+  repark_listener_id_ = 0;
+}
+
+void CallMediaPlane::OnRendezvousSeedReconnected(const std::string& peer_id) {
+  if (peer_id.empty()) {
+    return;
+  }
+  MeshHost* m = mesh();
+  if (!m || !m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
+    return;
+  }
+  bool on_surface = false;
+  for (const auto& hop : BuildCircuitRendezvousCandidates()) {
+    if (hop.peer_id == peer_id) {
+      on_surface = true;
+      break;
+    }
+  }
+  if (!on_surface) {
+    return;
+  }
+  log().info << "circuit rendezvous re-park on reconnect peer=" << peer_id;
+  PreferLateReserveOnIo(peer_id);
 }
 
 void CallMediaPlane::PreferLateReserveOnIo(const std::string& relay_peer_id) {

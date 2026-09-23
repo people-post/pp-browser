@@ -147,7 +147,9 @@ Answerer remains punch-only + reserve (no reverse StartBridge on first pass). Us
 
 **ServeDial far-leg wait (event-driven):** When peer-id-only ServeDial has no Connected far leg, hop **arms a waiter** and returns. Resume on Amp `PeerConnectedListener` (PeerId), on live `op=reserve`, or on **deadline event** (`kCircuitServeDialFarLegWaitMs`, capped by tunnel deadline − **750ms** slack). After arm, **re-check** Connected (lost-wakeup between Count and arm). Do **not** poll-retry `BeginServe` from IoTick. Amp: `PeerLinkManager::AddPeerConnectedListener` (multi-listener). Any ServeDial tunnel deadline must `fail_near` (ack) before TearDown — never leave dialer WaitAck to invent `bridge timed out`.
 
-**Client seed park (event-driven):** `EnsureBootstrapSeedParkedAsync` finishes on PeerConnected for a bootstrap/directory PeerId (or deadline). No 250ms poll. Dialer **same-relay** not-reg retries immediately (hop already event-waits); sticky not required.
+**Client seed park (event-driven):** `EnsureBootstrapSeedParkedAsync` finishes on PeerConnected for a bootstrap/directory PeerId (or deadline). No 250ms poll. Dialer **same-relay** not-reg retries immediately (hop already event-waits); sticky not required. On that retry, dialer re-announces R1 (`OnRelayChosen` / `call_circuit_r1`) so answerer `PreferLateReserve` can re-park (B27).
+
+**Reserve key / re-park (B27):** `op=reserve` is keyed by the protocol-handler PeerId (not a possibly-empty mid-handshake `link.RemotePeerId()`). Empty remote refuses reserve. ServeDial logs `reservation_hit` / `connected_for_target`. Answerer arms a PeerConnected listener on the shared rendezvous surface and re-`StartReserve` when a surface peer reconnects after path change (stale reserve dies with the old ADP link).
 
 **Early circuit-ready (Ringing + Accept gate):** Offerer kicks ready on `StartCall`; answerer on inbound invite; `AcceptInvite` may **await** ready (up to 12s) before `CallAccept`. Hop event wait is the primary race absorber (needs Brief rebuild); Accept await is a thin product backstop.
 

@@ -17,6 +17,7 @@
 #include "domain/mesh/l4/call_media/CallMediaAmpTransport.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/host/MeshHost.h"
+#include "amp/link/PeerLinkManager.h"
 #include "common/directory/MeshHopTypes.h"
 
 #include "foundation/runtime/DeferredSelf.h"
@@ -196,6 +197,13 @@ private:
   /** H011: StartReserve over shared rendezvous surface (not seeds-only). */
   void ReserveOnBootstrapSeedsOnIo();
   void PreferLateReserveOnIo(const std::string& relay_peer_id);
+  /**
+   * B27: when a rendezvous seed reconnects after path change, re-StartReserve so ServeDial
+   * can find the answerer under PeerId (stale op=reserve dies with the old ADP link).
+   */
+  void InstallRendezvousReparkListener();
+  void RemoveRendezvousReparkListener();
+  void OnRendezvousSeedReconnected(const std::string& peer_id);
   bool AnyBootstrapSeedConnectedOnIo() const;
   /** True when every EffectiveBootstrapSeedPeerId is Connected (empty set → false). */
   bool AllBootstrapSeedsConnectedOnIo() const;
@@ -214,6 +222,8 @@ private:
   std::unique_ptr<ICircuitHopReach> circuit_hop_reach_;
   /** H011 L3.1b/c: last chosen / announced R1 PeerId for park sticky + late-reserve. */
   std::string chosen_circuit_r1_;
+  /** B27: PeerConnected → re-StartReserve for rendezvous surface peers. */
+  pp::amp::PeerLinkManager::PeerConnectedListenerId repark_listener_id_ = 0;
   /**
    * DeferredSelf ticket for async IO callbacks that capture `this` (StartReserve Finish, park assoc).
    * AbortInflight may still PostIo on_finished — Invalidate before teardown so those cbs skip `this`.

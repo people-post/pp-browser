@@ -8,7 +8,7 @@
 |----|---------|--------|
 | **B25** | Warm closed ADP never evicted | **Fixed** (amp v2.1.8) |
 | **B26** | No public IPv4 candidate | **Landed (client):** seed dial-back returns `observed` reflexive Amp endpoint; advertise/punch merge requires usable public IPv4/IPv6 when present |
-| **B27** | Circuit not-reg / stuck on one relay | **Partial** — client advances relay after one same-relay not-reg; relay keying still needs ops visibility |
+| **B27** | Circuit not-reg / stuck on one relay | **Landed (client):** same-relay not-reg once then advance; reserve keyed by protocol-handler PeerId; ServeDial keying logs; answerer PeerConnected re-`StartReserve` on rendezvous surface; not-reg retry re-announces R1 |
 | **B28** | Wrong IPv6 of many dialed | **Landed (client):** ingest via Amp `RegisterEndpoints` (best-first); DialBook short-timeout `AdvanceDialCandidate` on miss |
 | **B29** | Punch needs circuit introducer | **Landed (client L3.25d):** `call_punch_offer`/`call_punch_answer` + `TrySignalingPunchBurstAsync` when Amp introducers exhausted ([H012](../media-hop-reachability/DECISIONS.md#h012--punch-via-call-signaling-when-no-amp-introducer)) |
 | **B30** | CN cellular relay poll stalls | **Partial (client):** PollInbox curl timeout 10s / connect 5s (coded); CN-reachable relay / push still infra |
@@ -26,5 +26,5 @@
 | Item | Next |
 |------|------|
 | **B30** | CN-reachable relay and/or long-poll/push (client poll fail-fast landed) |
-| **B27** | Relay reserve vs ServeDial lookup after network change |
+| **B27 dogfood** | Verify reserve/ServeDial + re-park after path change on CN↔home matrix |
 | **B29 dogfood** | Verify H012 signaling punch on CN↔home matrix |
