@@ -10,8 +10,8 @@
 | **B26** | No public IPv4 candidate | **Landed (client):** seed dial-back returns `observed` reflexive Amp endpoint; advertise/punch merge requires usable public IPv4/IPv6 when present |
 | **B27** | Circuit not-reg / stuck on one relay | **Partial** — client advances relay after one same-relay not-reg; relay keying still needs ops visibility |
 | **B28** | Wrong IPv6 of many dialed | **Landed (client):** ingest via Amp `RegisterEndpoints` (best-first); DialBook short-timeout `AdvanceDialCandidate` on miss |
-| **B29** | Punch needs circuit introducer | **Scoped:** [H012](../media-hop-reachability/DECISIONS.md#h012--punch-via-call-signaling-when-no-amp-introducer) punch-via-signaling when Amp I missing (L3.25d); Amp introducer path remains primary |
-| **B30** | CN cellular relay poll stalls | **Open** (infra / long-poll / push). Env knobs **removed** — not product policy |
+| **B29** | Punch needs circuit introducer | **Landed (client L3.25d):** `call_punch_offer`/`call_punch_answer` + `TrySignalingPunchBurstAsync` when Amp introducers exhausted ([H012](../media-hop-reachability/DECISIONS.md#h012--punch-via-call-signaling-when-no-amp-introducer)) |
+| **B30** | CN cellular relay poll stalls | **Partial (client):** PollInbox curl timeout 10s / connect 5s (coded); CN-reachable relay / push still infra |
 | **B31** | Asymmetric dial under stateful NAT | **Landed:** [V049](DECISIONS.md#v049--simultaneous-dial-on-accept-cross-nat-open) |
 
 ## Decisions (2026-09-23)
@@ -25,6 +25,6 @@
 
 | Item | Next |
 |------|------|
-| **B30** | CN-reachable relay and/or long-poll/push; optional poll-specific fail-fast (not global curl env) |
+| **B30** | CN-reachable relay and/or long-poll/push (client poll fail-fast landed) |
 | **B27** | Relay reserve vs ServeDial lookup after network change |
-| **B29 / L3.25d** | Implement `call_punch_*` ↔ `AmpPunchCoordinator` burst per H012 |
+| **B29 dogfood** | Verify H012 signaling punch on CN↔home matrix |

@@ -524,6 +524,51 @@ void AmpPunchCoordinator::TryUpgradePunchAsync(const std::string& introducer_pee
   RunPunchAsync(introducer_peer_key, target_peer_id, my_addrs, window_ms, "upgrade", std::move(on_done));
 }
 
+void AmpPunchCoordinator::TrySignalingPunchBurstAsync(const std::vector<std::string>& peer_addrs,
+                                                      std::function<void(PunchRoe)> on_done, int window_ms) {
+  if (!on_done) {
+    return;
+  }
+  if (!started_ || impl_->stopped.load(std::memory_order_acquire)) {
+    on_done(PunchRoe::error(Failure::Of(Err::NotStarted, "punch: not started")));
+    return;
+  }
+  const auto sanitized = SanitizePunchAddrs(peer_addrs);
+  if (sanitized.empty()) {
+    on_done(PunchRoe::error(Failure::Of(Err::InvalidRequest, "punch: no peer candidates")));
+    return;
+  }
+  std::string remote_peer_id;
+  for (const std::string& ma : sanitized) {
+    if (auto parsed = pp::amp::ParseAdpMultiaddr(ma)) {
+      if (!parsed->peer_id.empty()) {
+        (void)runtime_.Links().RegisterEndpoint(parsed->peer_id, ma);
+        if (remote_peer_id.empty()) {
+          remote_peer_id = parsed->peer_id;
+        }
+      }
+    }
+  }
+  const int burst_window = window_ms > 0 ? window_ms : 2000;
+  runtime_.BurstDial(
+      sanitized, std::chrono::milliseconds(burst_window),
+      [this, on_done = std::move(on_done), remote_peer_id](pp::amp::BurstDialResult r) mutable {
+        PunchBurstResult burst = ToPunchBurst(std::move(r));
+        PublishIfPunchConnected(runtime_.Links(), remote_peer_id, burst);
+        PunchResult result;
+        result.epoch_id = "signaling";
+        result.ok = burst.ok;
+        result.winner_multiaddr = burst.dialed;
+        result.error = burst.ok ? "" : burst.error;
+        if (burst.ok) {
+          on_done(result);
+        } else {
+          on_done(PunchRoe::error(
+              Failure::Of(Err::PunchFailed, burst.error.empty() ? "punch burst failed" : burst.error)));
+        }
+      });
+}
+
 AmpPunchCoordinator::PunchRoe AmpPunchCoordinator::TryColdPunch(const std::string& introducer_peer_key,
                                                                 const std::string& target_peer_id,
                                                                 const std::vector<std::string>& my_addrs,

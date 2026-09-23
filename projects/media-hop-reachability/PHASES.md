@@ -52,7 +52,7 @@ Docs: [HOLE_PUNCH.md](HOLE_PUNCH.md), [H009](DECISIONS.md#h009--amp-coordinated-
 - [x] **L3.25b** — Contact introducer; address-book upsert on punch success; SoftMigrate dialability benefit
 - [x] **L3.25c** — Upgrade-from-circuit (R1 as introducer); promote direct PeerLink; demote circuit
 - [x] Tests: dual-dial race (A026 single Session + loser burst alias retired); sync-window expiry → PunchFailed + SoftMigrate circuit fallback; hard-lab docs: no CGNAT / carrier-punch overclaim
-- [ ] **L3.25d** — Signaling introducer fallback ([H012](DECISIONS.md#h012--punch-via-call-signaling-when-no-amp-introducer)): `call_punch_*` control ↔ ACP burst when Amp I unavailable (B29)
+- [x] **L3.25d** — Signaling introducer fallback ([H012](DECISIONS.md#h012--punch-via-call-signaling-when-no-amp-introducer)): `call_punch_*` control ↔ ACP burst when Amp I unavailable (B29)
 
 ## L3.5 — Multi-hop circuit v2
 

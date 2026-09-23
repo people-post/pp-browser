@@ -10,6 +10,7 @@
 #include "domain/mesh/host/MeshControlDispatch.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/mesh/reachability/Reachability.h"
+#include "domain/mesh/reachability/AmpPunchCoordinator.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaPaths.h"
 #include "domain/messaging/CallLifecycleTypes.h"
@@ -84,6 +85,17 @@ void CallStack::SyncMediaPlaneDeps() {
       call_sessions_->AnnounceCircuitR1(circuit_r1);
     }
   };
+  plane_deps.request_signaling_punch =
+      [this](const std::string& target_peer_id, const std::vector<std::string>& my_addrs,
+             std::function<void(Roe<void>)> on_done) {
+        if (!call_sessions_) {
+          if (on_done) {
+            on_done(Error("Calls unavailable"));
+          }
+          return;
+        }
+        call_sessions_->RequestSignalingPunch(target_peer_id, my_addrs, std::move(on_done));
+      };
   media_plane_->SetDeps(std::move(plane_deps));
 }
 
@@ -290,6 +302,40 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
       media_plane_->PreferLateReserve(relay_peer_id);
     }
   });
+  call_sessions_->SetLocalPunchAddrsProvider([this]() -> std::vector<std::string> {
+    if (MeshHost* m = mesh(); m && m->AmpPunch()) {
+      return m->AmpPunch()->LocalCandidateAddrs();
+    }
+    return {};
+  });
+  call_sessions_->SetSignalingPunchBurst(
+      [this](const std::vector<std::string>& peer_addrs, int window_ms,
+             std::function<void(Roe<void>)> on_done) {
+        MeshHost* m = mesh();
+        AmpPunchCoordinator* punch = m ? m->AmpPunch() : nullptr;
+        if (!punch || !punch->IsStarted()) {
+          if (on_done) {
+            on_done(Error("amp punch unavailable"));
+          }
+          return;
+        }
+        punch->TrySignalingPunchBurstAsync(
+            peer_addrs,
+            [on_done = std::move(on_done)](AmpPunchCoordinator::PunchRoe punched) {
+              if (!on_done) {
+                return;
+              }
+              if (punched && punched->ok) {
+                on_done({});
+                return;
+              }
+              const std::string err =
+                  !punched ? punched.error().message
+                           : (punched->error.empty() ? std::string("punch burst failed") : punched->error);
+              on_done(Error(err));
+            },
+            window_ms);
+      });
   EnsureCallLifecycleBound();
   WireMediaRelayDeps();
 }

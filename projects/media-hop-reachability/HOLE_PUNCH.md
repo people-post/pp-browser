@@ -147,7 +147,7 @@ Do not implement punch as “send more keepalives.”
 | **L3.25b** | Contact introducer; address-book upsert; SoftMigrate dialability benefit — **done** |
 | **L3.25c** | Upgrade-from-circuit (R1 as I); promote then demote circuit — **done** |
 | **L3.25 tests** | Dual-dial A026 race; sync-window expiry → PunchFailed + SoftMigrate circuit fallback; hard-lab no CGNAT overclaim — **done** |
-| **L3.25d** | Signaling introducer fallback ([H012](DECISIONS.md#h012--punch-via-call-signaling-when-no-amp-introducer)) when Amp I unavailable — **planned** |
+| **L3.25d** | Signaling introducer fallback ([H012](DECISIONS.md#h012--punch-via-call-signaling-when-no-amp-introducer)) when Amp I unavailable — **landed** (`call_punch_*` + `TrySignalingPunchBurstAsync`) |
 
 **Parallel:** [L3.5 multi-hop circuit](PHASES.md#l35--multi-hop-circuit-v2) — do not block punch on multi-hop or vice versa.
 

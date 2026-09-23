@@ -69,6 +69,13 @@ struct CallMediaPlaneDeps {
    * Filled by CallStack → CallSessionManager::AnnounceCircuitR1.
    */
   std::function<void(const std::string& circuit_r1_peer_id)> announce_circuit_r1;
+  /**
+   * H012 / B29: when Amp introducers are exhausted, exchange punch candidates over call-control.
+   * Args: target mesh peer id, local candidate addrs, completion.
+   */
+  std::function<void(const std::string& target_peer_id, const std::vector<std::string>& my_addrs,
+                     std::function<void(Roe<void>)> on_done)>
+      request_signaling_punch;
 };
 
 /** Args for one bridge bind; not retained on the plane after BindBridge returns. */

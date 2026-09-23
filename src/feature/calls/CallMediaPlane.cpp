@@ -316,12 +316,17 @@ void CallMediaPlane::TryColdPunchAsync(MeshHost* m, IChatPeerLinks* punch_links,
     std::function<void()> try_next;
   };
   auto attempt = std::make_shared<IntroAttempt>();
-  attempt->try_next = [attempt, punch, target_peer_id, contact_ids = std::move(contact_ids),
+  attempt->try_next = [this, attempt, punch, target_peer_id, contact_ids = std::move(contact_ids),
                        seed_ids = std::move(seed_ids), has_ep, is_conn,
                        on_done = std::move(on_done)]() mutable {
     auto intro =
         PickPunchIntroducer(contact_ids, seed_ids, target_peer_id, has_ep, is_conn, attempt->tried);
     if (!intro) {
+      if (deps_.request_signaling_punch) {
+        log().info << "punch introducers exhausted — H012 signaling fallback target=" << target_peer_id;
+        deps_.request_signaling_punch(target_peer_id, punch->LocalCandidateAddrs(), std::move(on_done));
+        return;
+      }
       on_done(Error(attempt->tried.empty() ? "no punch introducer" : "punch introducers exhausted"));
       return;
     }

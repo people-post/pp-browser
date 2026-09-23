@@ -134,6 +134,10 @@ std::string CallControlTypeToWire(const CallControlType type) {
     return "call_video_refresh";
   case CallControlType::CallCircuitR1:
     return "call_circuit_r1";
+  case CallControlType::CallPunchOffer:
+    return "call_punch_offer";
+  case CallControlType::CallPunchAnswer:
+    return "call_punch_answer";
   }
   return "call_invite";
 }
@@ -183,6 +187,12 @@ std::optional<CallControlType> CallControlTypeFromWire(const std::string& value)
   }
   if (value == "call_circuit_r1") {
     return CallControlType::CallCircuitR1;
+  }
+  if (value == "call_punch_offer") {
+    return CallControlType::CallPunchOffer;
+  }
+  if (value == "call_punch_answer") {
+    return CallControlType::CallPunchAnswer;
   }
   return std::nullopt;
 }

@@ -192,7 +192,7 @@ CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~16s with settle s
 ## H012 — Punch via call signaling when no Amp introducer
 
 **Date:** 2026-09-23  
-**Status:** Accepted (plan — **not implemented**; scopes B29)  
+**Status:** Accepted — **implemented** (L3.25d / B29 client path)  
 **Decision:** When Amp Coordinated Punch ([H009](#h009--amp-coordinated-punch-acp)) cannot run because **no introducer Session** exists to both peers (typical: circuit `endpoint not registered` on all seeds — B27), allow a **narrow carve-out of [H007](#h007--no-app-layer-hop-candidate-exchange-as-product-path)**: exchange **ACP punch candidates + sync window** over existing **call-control / relay inbox** signaling, then both sides simultaneous-dial under A026.
 
 | Allowed | Forbidden |
@@ -201,7 +201,7 @@ CallMediaBridge `kCircuitEnsureBudgetMs` tracks the envelope (~16s with settle s
 | Short punch epoch (nonce / window) mirrored from H009 | App STUN / WebRTC ICE (H004) |
 | Trigger only after Amp introducer path failed or is unavailable | Using signaling punch as the **primary** path when seeds can introduce |
 
-**Wire sketch (product follow-on):** additive `call_punch_offer` / `call_punch_answer` (or one bidirectional control) carrying candidate multiaddrs + sync window; consumers call into `AmpPunchCoordinator` burst APIs without an Amp Session to I.
+**Wire:** `call_punch_offer` / `call_punch_answer` (CallControlCodec) carrying candidate multiaddrs + sync window; `AmpPunchCoordinator::TrySignalingPunchBurstAsync` runs BurstDial without an Amp Session to I. Cold-punch exhaust in `CallMediaPlane` → `CallSessionManager::RequestSignalingPunch`.
 
 **Rationale:** Cross-net dogfood (PR #214 B29): ICMP to the right IPv6 answered but punch never burst because introducer needed circuit registration. Signaling already delivers Invite/Accept; it can stand in for I when Amp I is down without inventing a second reachability stack.
 
