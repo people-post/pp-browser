@@ -25,7 +25,9 @@ HARD_STATUS_URL="${PP_HARD_STATUS_URL:-http://127.0.0.1:18618}"
 HARD_HOP_CONTAINER="${PP_HARD_HOP_CONTAINER:-pp-hard-lab-hop}"
 HOP_CONTAINER="${PP_LOCAL_HOP_CONTAINER:-pp-node-relay-smoke-hop}"
 STATUS_URL="${PP_NODE_STATUS_URL:-http://127.0.0.1:18518}"
-BUILD_DIR="${PP_LOCAL_BUILD_DIR:-${ROOT}/build}"
+# Absolute path required: compose treats unprefixed relative mounts as named volumes
+# (e.g. PP_LOCAL_BUILD_DIR=build → "undefined volume build/src/app/node").
+BUILD_DIR="$(cd "${PP_LOCAL_BUILD_DIR:-${ROOT}/build}" && pwd)"
 DOCKER_CONTEXT="${ROOT}/dist/pp-node/docker"
 READY_FILE="${PP_CALL_PROBE_READY_FILE:-/tmp/pp-call-probe.ready}"
 # gtest_discover_tests names are PascalCase fixture names (ctest -R is case-sensitive).

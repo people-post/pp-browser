@@ -25,6 +25,7 @@ Code is under test; **docs are the oracle** for *what* must stay true. Line/bran
 3. **Heal / workaround in a fixture is a signal** — treat it as a product bug or `glue-gap`, not as harness lore to keep forever.
 4. **When code and docs disagree** — fix the docs or the code in the same change; do not encode the drift in the test.
 5. **Name tests after the behavior** — `InboundPeerLeaveClearsLifecycle`, not `EndCallLocalHelperPath`.
+6. **Question the case before a hard product fix** — when CI fails inside a compose/integration test, first ask whether the case is testing the **documented intent** at the **cheapest sufficient tier**, or whether it over-drives unrelated work (real `StartSfu` / Connect grace / mesh) under today’s constraints. Prefer **narrowing the case** or **improving a seam** so the hard problem does not exist, over heroic product patches that only paper over an over-wide harness. Example: offerer `CallAccept` → schedule direct media is B-CALL-DIRECT glue; asserting that via a `schedule_start` spy is enough — do not inherit Bridge Connect + headless engine TearDown just to prove scheduling.
 
 Every compose/smoke case should cite a **purpose ID** or a **doc sentence**. Pure engines (codecs, planner tables) still need thorough unit cases — those logic headers / ADRs *are* the design.
 
@@ -40,7 +41,7 @@ When a case you are already touching (or that blocks the change under review) as
 
 ## Decision rules
 
-1. **Design as oracle** — lock documented intent; see [Design as oracle](#design-as-oracle).
+1. **Design as oracle** — lock documented intent; see [Design as oracle](#design-as-oracle). Prefer questioning an over-wide or heal-heavy case (and redesigning the seam) before fixing product code under bad harness constraints.
 2. **Cheapest layer that answers the question** — pick the purpose, then the cheapest tier that can prove it.
 3. **Push complexity down** — prefer seams in `common` / `foundation` / `domain` that unit tests can almost fully cover. If an integration path is too expensive or flaky to own, first ask whether a real lower-layer seam would make the behavior unit-testable.
 4. **Higher tiers verify wiring and environment** — they do not re-prove codec, SM, or store rules already covered below.

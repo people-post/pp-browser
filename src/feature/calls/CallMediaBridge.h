@@ -114,9 +114,10 @@ public:
   void NotePeerIdRelayMapping(const std::string& peer_id, const std::string& relay_identity);
 
   /**
-   * Abort in-flight Connect (generation bump + Detach). Prefer timeout_ms=0 on shutdown so
+   * Abort in-flight Connect (`AbortConnectSequence` + Detach). Prefer timeout_ms=0 on shutdown so
    * the UI/shutdown strand does not sleep-spin; late Connect callbacks no-op on generation.
    * Must run before destroying this bridge / CallMediaDirectService / mesh host.
+   * See THREADING.md Cancel / Abort contract (arm ⇒ complete on cancel).
    */
   void PrepareForTeardown(int timeout_ms = 0);
 
@@ -176,6 +177,12 @@ private:
   /** Chrome ConnectFailed + Direct Idle; optionally StopMeshMedia (zombie TX / teardown). */
   void SurfaceConnectFailed(const std::string& call_id, const std::string& err, bool stop_media);
   void CancelConnectTimers();
+  /**
+   * Invalidate Connect epoch + cancel grace/retry timers + clear connect_worker_inflight_.
+   * Cancel alone drops the callbacks that would have cleared the waiter — abort must complete it
+   * (THREADING.md Cancel / Abort contract).
+   */
+  void AbortConnectSequence();
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
   /** Direct stream up: mark media connected when capture is live, always advance lifecycle/chrome. */
   void CommitDirectConnected(const std::string& call_id);

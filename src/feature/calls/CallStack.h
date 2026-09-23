@@ -117,6 +117,8 @@ public:
                                         const std::vector<std::string>& multiaddrs);
   Roe<void> TryEnsureCircuitHopReachable(const std::string& hop_peer_id);
   Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key);
+  void TryEnsureCallMediaReachableAsync(const std::string& peer_key,
+                                        std::function<void(Roe<void>)> on_done);
   /** L3.25c: upgrade call-media / hop from circuit R1 to direct via ACP. */
   Roe<void> TryUpgradeCallMediaToDirect(const std::string& peer_key);
   /**

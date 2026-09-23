@@ -826,8 +826,24 @@ TEST_F(CallSessionInboundComposeTest, InboundCallEndedEndsActiveSession) {
 }
 
 TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia) {
+  // B-CALL-DIRECT offerer glue only: inbound CallAccept → schedule_start(..., offerer=true)
+  // + session/peer Joined. Do not drive Bridge BeginSession / StartSfu / Connect grace —
+  // those belong to Bridge/engine tests (and TearDown must not inherit an armed Connect).
   const std::string call_id = "call:offerer-accept";
   SeedOffererRingingCall(call_id);
+
+  std::string scheduled_call;
+  std::string scheduled_peer;
+  bool scheduled_offerer = false;
+  int schedule_calls = 0;
+  CallDirectMediaPorts spy = TestDirectMediaPorts(bridge_.get(), seat_.get());
+  spy.schedule_start = [&](const std::string& cid, const std::string& peer, bool offerer) {
+    ++schedule_calls;
+    scheduled_call = cid;
+    scheduled_peer = peer;
+    scheduled_offerer = offerer;
+  };
+  csm_->SetDirectMediaPorts(std::move(spy));
 
   lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
   lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
@@ -844,8 +860,10 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
   ASSERT_TRUE(msg);
   ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
 
-  DrainUntil([&]() { return bridge_->MediaAttempted(call_id) || media_->IsActive(); });
-  EXPECT_TRUE(bridge_->MediaAttempted(call_id));
+  EXPECT_EQ(schedule_calls, 1);
+  EXPECT_EQ(scheduled_call, call_id);
+  EXPECT_EQ(scheduled_peer, "account:peer");
+  EXPECT_TRUE(scheduled_offerer);
 
   auto session = sessions_->LoadSession(call_id);
   ASSERT_TRUE(session && session->has_value());

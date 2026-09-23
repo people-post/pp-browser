@@ -67,8 +67,30 @@ protected:
     circuit_a_->Start();
     circuit_a_->SetServeInbound(false);
 
-    a_chat_ = std::make_unique<AmpDirectChatTransport>(*chat_a_, [this] { harness_->PumpAll(); });
-    b_chat_ = std::make_unique<AmpDirectChatTransport>(*chat_b_, [this] { harness_->PumpAll(); });
+    a_chat_ = std::make_unique<AmpDirectChatTransport>(
+        *chat_a_, [this] { harness_->PumpAll(); }, AmpDirectChatTransport::WorkerPost{},
+        [this](std::function<void()> task) {
+          if (harness_->runtime_a && task) {
+            harness_->runtime_a->PostToIo(std::move(task));
+          }
+        },
+        [this](std::chrono::milliseconds delay, std::function<void()> task) {
+          if (harness_->runtime_a && task) {
+            harness_->runtime_a->PostAfter(delay, std::move(task));
+          }
+        });
+    b_chat_ = std::make_unique<AmpDirectChatTransport>(
+        *chat_b_, [this] { harness_->PumpAll(); }, AmpDirectChatTransport::WorkerPost{},
+        [this](std::function<void()> task) {
+          if (harness_->runtime_b && task) {
+            harness_->runtime_b->PostToIo(std::move(task));
+          }
+        },
+        [this](std::chrono::milliseconds delay, std::function<void()> task) {
+          if (harness_->runtime_b && task) {
+            harness_->runtime_b->PostAfter(delay, std::move(task));
+          }
+        });
     a_chat_->Start();
     b_chat_->Start();
   }

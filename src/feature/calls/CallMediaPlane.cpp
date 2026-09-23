@@ -20,8 +20,10 @@
 #include <algorithm>
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -121,16 +123,17 @@ void CallMediaPlane::Wire() {
   MeshHost* m = mesh();
   IoPump io_pump;
   IoPost post_io;
+  IoAfter post_after;
   if (auto chat = m ? m->ChatDeps() : std::nullopt) {
     post_io = chat->io.post_io;
-    // Product MeshPump: MakeL4IoPump is empty (prefer_mesh_pump). AttachAmpStack harnesses:
-    // MakeL4IoPump is Tick so sync TryEnsure* AmpParkUntil can drain PostToIo (hard-w5 stack).
-    // Always take io_pump — previously `if (!post_io)` dropped harness Tick and hung 30s.
+    post_after = chat->io.post_after;
+    // Exclusive Amp Drive: MakeL4IoPump is always empty. MeshPump (or harness Tick loop)
+    // progresses Amp; sync waiters sleep. IoPump is not used to Tick from L4.
     io_pump = chat->io.io_pump;
   }
-  const bool use_amp_relay = WireMediaRelayClient(m, io_pump, post_io);
+  const bool use_amp_relay = WireMediaRelayClient(m, io_pump, post_io, post_after);
   WireDialRegistry(m, use_amp_relay, post_io);
-  WireCircuitHopReach(m, use_amp_relay, io_pump, post_io);
+  WireCircuitHopReach(m, use_amp_relay, io_pump, post_io, post_after);
 }
 
 CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() const {
@@ -199,12 +202,13 @@ void CallMediaPlane::BindBridge(const CallMediaBridgeBindArgs& args) {
       });
 }
 
-bool CallMediaPlane::WireMediaRelayClient(MeshHost* m, const IoPump& io_pump, const IoPost& post_io) {
+bool CallMediaPlane::WireMediaRelayClient(MeshHost* m, const IoPump& io_pump, const IoPost& post_io,
+                                          const IoAfter& post_after) {
   const bool use_amp_relay =
       m && m->Amp() && m->AmpMediaRelayCoord() && m->AmpMediaRelayCoord()->IsStarted();
   if (use_amp_relay) {
     media_relay_client_ = std::make_unique<AmpMediaRelayClient>(
-        *m->AmpMediaRelayCoord(), io_pump, m->Amp()->LocalPeerId(), post_io);
+        *m->AmpMediaRelayCoord(), io_pump, m->Amp()->LocalPeerId(), post_io, post_after);
     log().info << "media-relay transport=amp";
   } else {
     media_relay_client_.reset();
@@ -229,7 +233,7 @@ void CallMediaPlane::WireDialRegistry(MeshHost* m, bool use_amp_relay, const IoP
 }
 
 void CallMediaPlane::WireCircuitHopReach(MeshHost* m, bool use_amp_relay, const IoPump& io_pump,
-                                         const IoPost& post_io) {
+                                         const IoPost& post_io, const IoAfter& post_after) {
   const bool use_amp_circuit = use_amp_relay && m && m->AmpCircuitTunnel() &&
                                m->AmpCircuitTunnel()->IsStarted() && m->AmpCircuitHops();
   if (!use_amp_circuit) {
@@ -253,7 +257,7 @@ void CallMediaPlane::WireCircuitHopReach(MeshHost* m, bool use_amp_relay, const 
                 std::function<void(Roe<void>)> on_done) {
         TryUpgradePunchAsync(m, introducer_peer_key, target_peer_id, std::move(on_done));
       },
-      post_io);
+      post_io, post_after);
   reach->SetOnRelayChosen(deferred_.Bind([this](const std::string& relay_peer_key) {
     if (relay_peer_key.empty()) {
       return;
@@ -301,20 +305,49 @@ void CallMediaPlane::TryColdPunchAsync(MeshHost* m, IChatPeerLinks* punch_links,
       seed_ids.push_back(hop.peer_id);
     }
   }
-  auto intro = PickPunchIntroducer(
-      contact_ids, seed_ids, target_peer_id,
-      [punch_links](const std::string& id) { return punch_links->GetLinkSnapshot(id).has_endpoint; },
-      [punch_links](const std::string& id) { return punch_links->IsConnected(id); });
-  if (!intro) {
-    on_done(Error("no punch introducer"));
-    return;
-  }
-  punch->TryColdPunchAsync(
-      *intro, target_peer_id, punch->LocalCandidateAddrs(),
-      [on_done = std::move(on_done)](AmpPunchCoordinator::PunchRoe punched) mutable {
-        CompletePunch(std::move(on_done), std::move(punched), "punch failed");
-      },
-      2000);
+  auto has_ep = [punch_links](const std::string& id) {
+    return punch_links->GetLinkSnapshot(id).has_endpoint;
+  };
+  auto is_conn = [punch_links](const std::string& id) { return punch_links->IsConnected(id); };
+
+  // B29: if the first introducer misses (target unknown / channel fail), try the next.
+  struct IntroAttempt {
+    std::unordered_set<std::string> tried;
+    std::function<void()> try_next;
+  };
+  auto attempt = std::make_shared<IntroAttempt>();
+  attempt->try_next = [attempt, punch, target_peer_id, contact_ids = std::move(contact_ids),
+                       seed_ids = std::move(seed_ids), has_ep, is_conn,
+                       on_done = std::move(on_done)]() mutable {
+    auto intro =
+        PickPunchIntroducer(contact_ids, seed_ids, target_peer_id, has_ep, is_conn, attempt->tried);
+    if (!intro) {
+      on_done(Error(attempt->tried.empty() ? "no punch introducer" : "punch introducers exhausted"));
+      return;
+    }
+    attempt->tried.insert(*intro);
+    punch->TryColdPunchAsync(
+        *intro, target_peer_id, punch->LocalCandidateAddrs(),
+        [attempt, on_done](AmpPunchCoordinator::PunchRoe punched) mutable {
+          if (punched && punched->ok) {
+            CompletePunch(std::move(on_done), std::move(punched), "punch failed");
+            return;
+          }
+          const std::string err =
+              !punched ? punched.error().message
+                       : (punched->error.empty() ? std::string("punch failed") : punched->error);
+          const bool try_another = err.find("unknown to introducer") != std::string::npos ||
+                                   err.find("introducer") != std::string::npos ||
+                                   err.find("not registered") != std::string::npos;
+          if (try_another) {
+            attempt->try_next();
+            return;
+          }
+          on_done(Error(err));
+        },
+        2000);
+  };
+  attempt->try_next();
 }
 
 void CallMediaPlane::TryUpgradePunchAsync(MeshHost* m, const std::string& introducer_peer_key,
@@ -501,8 +534,9 @@ void CallMediaPlane::RegisterCallPeerListenMultiaddrs(const std::string& identit
   }
   const std::vector<std::string> ranked = RankAmpDialMultiaddrs(multiaddrs, CollectAmpDialLocalContext());
   MergeDialBookListenAddrs(identity, ranked);
-  // PeerLinkManager::RegisterEndpoint keeps the last write — register worst→best so
-  // PreferredMultiaddr lands on global /ip6 (or public /ip4) ahead of private LAN.
+  // Amp DialBook keeps a candidate list; RegisterEndpoint promotes to front (Preferred).
+  // Register worst→best so Preferred lands on the RankAmpDialMultiaddrs winner while
+  // earlier addrs remain as short-timeout fallbacks (B15/B28).
   for (auto it = ranked.rbegin(); it != ranked.rend(); ++it) {
     RegisterOneListenMultiaddr(identity, *it);
   }
@@ -1126,6 +1160,26 @@ Roe<void> CallMediaPlane::TryEnsureCallMediaReachable(const std::string& peer_ke
     return Error("missing call peer");
   }
   return circuit_hop_reach_->TryEnsureCallMediaReachable(peer_key);
+}
+
+void CallMediaPlane::TryEnsureCallMediaReachableAsync(const std::string& peer_key,
+                                                      std::function<void(Roe<void>)> on_done) {
+  if (!on_done) {
+    return;
+  }
+  if (AppRuntime::IsShuttingDown()) {
+    on_done(Error("shutdown in progress"));
+    return;
+  }
+  if (!circuit_hop_reach_) {
+    on_done(Error("Amp circuit reach required"));
+    return;
+  }
+  if (peer_key.empty()) {
+    on_done(Error("missing call peer"));
+    return;
+  }
+  circuit_hop_reach_->TryEnsureCallMediaReachableAsync(peer_key, std::move(on_done));
 }
 
 Roe<void> CallMediaPlane::TryUpgradeCallMediaToDirect(const std::string& peer_key) {

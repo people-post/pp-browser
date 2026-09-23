@@ -49,6 +49,7 @@
 #include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 #include "domain/mesh/reachability/LanMdnsDiscovery.h"
+#include "domain/mesh/reachability/AmpObservedAddrs.h"
 #include "common/SettledWait.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/mesh/dht/DhtRecordCodec.h"
@@ -749,7 +750,7 @@ void ConversationsHub::ApplyDhtFindPeerResult(const std::string& peer_id, const 
     return;
   }
   for (const std::string& ma : OrderDialMultiaddrsWorstToBest(record.multiaddrs)) {
-    if (ma.empty()) {
+    if (ma.empty() || !IsUsableAdpListen(ma)) {
       continue;
     }
     mesh_messaging_->RegisterPeerDirectEndpoint(peer_id, ma);
@@ -775,7 +776,7 @@ void ConversationsHub::ConfigureAmpDhtProtocol() {
   AmpDhtProtocolConfig cfg;
   cfg.local_peer_id = mesh_->Amp()->LocalPeerId();
   cfg.listen_multiaddrs = mesh_->AdvertisedListenMultiaddrs();
-  if (cfg.listen_multiaddrs.empty() && !mesh_->AmpListenMultiaddr().empty()) {
+  if (cfg.listen_multiaddrs.empty() && IsUsableAdpListen(mesh_->AmpListenMultiaddr())) {
     cfg.listen_multiaddrs = {mesh_->AmpListenMultiaddr()};
   }
   if (auto priv = identity_->GetDeviceMlDsaPrivateKey()) {
@@ -839,7 +840,7 @@ MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, MeshHost& mesh, const
       ep.multiaddrs.push_back(ma);
     }
   }
-  if (ep.multiaddrs.empty() && !mesh.AmpListenMultiaddr().empty()) {
+  if (ep.multiaddrs.empty() && IsUsableAdpListen(mesh.AmpListenMultiaddr())) {
     ep.multiaddrs.push_back(mesh.AmpListenMultiaddr());
   }
   for (const std::string& ma : mesh_cfg.advertise_multiaddrs) {
@@ -1258,11 +1259,13 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
   std::function<void()> amp_pump;
   std::function<void(std::function<void()>)> amp_worker;
   std::function<void(std::function<void()>)> amp_post_io;
+  std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after;
   if (auto chat = mesh_->ChatDeps(); chat) {
     amp_links = &chat->links;
     amp_pump = std::move(chat->io.io_pump);
     amp_worker = std::move(chat->io.post_worker);
     amp_post_io = std::move(chat->io.post_io);
+    amp_post_after = std::move(chat->io.post_after);
   }
   if (amp_pump && !amp_worker) {
     amp_worker = [](std::function<void()> task) { MeshControlDispatch::Post(std::move(task)); };
@@ -1275,7 +1278,7 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
   // Keep the same MeshDeliveryOrchestrator instance — timers / SyncInbox workers may already
   // hold `this`. Recreating here caused "mutex lock failed: Invalid argument" + segfault.
   mesh_messaging_->AttachAmpTransports(amp_links, std::move(amp_pump), std::move(amp_worker),
-                                       std::move(amp_post_io));
+                                       std::move(amp_post_io), std::move(amp_post_after));
   WireAttachmentDownloads();
   // Rebind call-control inbound now that Amp direct-chat transports exist.
   call_stack_->BuildSessions(MakeCallStackDeps());
@@ -1692,7 +1695,7 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
   std::vector<std::string> listen_addrs;
   if (mesh_) {
     listen_addrs = mesh_->AdvertisedListenMultiaddrs();
-    if (listen_addrs.empty() && !mesh_->AmpListenMultiaddr().empty()) {
+    if (listen_addrs.empty() && IsUsableAdpListen(mesh_->AmpListenMultiaddr())) {
       listen_addrs.push_back(mesh_->AmpListenMultiaddr());
     }
   }

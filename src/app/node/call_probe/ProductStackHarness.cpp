@@ -20,6 +20,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <optional>
 #include <thread>
 
 namespace pbr {
@@ -277,9 +278,15 @@ Roe<void> ProductStackHarness::EnsurePeerCircuitPath(const std::string& peer_id)
   if (!stack_ || peer_id.empty()) {
     return Error("circuit path: missing stack/peer");
   }
-  auto ensured = stack_->TryEnsureCallMediaReachable(peer_id);
-  if (!ensured) {
-    return ensured.error();
+  // AttachAmpStack: no MeshPump. Sync TryEnsure AmpParkUntil sleeps unless MakeL4IoPump→Tick
+  // (harness sole driver). Prefer async + PumpUntil so Drive progress is explicit.
+  std::optional<Roe<void>> result;
+  stack_->TryEnsureCallMediaReachableAsync(peer_id, [&](Roe<void> value) { result = std::move(value); });
+  if (!PumpUntil([&] { return result.has_value(); }, 30000)) {
+    return Error("call-media circuit reach timed out");
+  }
+  if (!*result) {
+    return result->error();
   }
   if (host_ && host_->Amp() && !host_->Amp()->Links().IsConnected(peer_id)) {
     return Error("circuit path: peer not connected after Ensure");

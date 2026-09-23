@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <chrono>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -25,9 +26,10 @@ public:
   using IoPump = std::function<void()>;
   using WorkerPost = std::function<void(std::function<void()>)>;
   using IoPost = std::function<void(std::function<void()>)>;
+  using IoAfter = std::function<void(std::chrono::milliseconds, std::function<void()>)>;
 
   AmpChatBlobTransport(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
-                     WorkerPost post_worker = {}, IoPost post_io = {});
+                     WorkerPost post_worker = {}, IoPost post_io = {}, IoAfter post_after = {});
   ~AmpChatBlobTransport() override;
 
   AmpChatBlobTransport(const AmpChatBlobTransport&) = delete;
@@ -57,6 +59,7 @@ private:
   IoPump io_pump_;
   WorkerPost post_worker_;
   IoPost post_io_;
+  IoAfter post_after_;
   bool started_ = false;
 };
 

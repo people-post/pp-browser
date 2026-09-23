@@ -26,7 +26,6 @@
   align-items: center;
   justify-content: center;
   gap: 6dp;
-  line-height: normal;
 }
 
 .btn-icon svg {
@@ -208,7 +207,6 @@ select selectbox option {
   margin-bottom: 8dp;
   padding: 8dp 12dp;
   border-radius: 8dp;
-  background-color: var(--color-surface-elevated);
   gap: 8dp;
 }
 
@@ -1155,7 +1153,6 @@ select selectbox option {
   gap: 8dp;
   box-sizing: border-box;
   border-width: 1dp;
-  border-style: solid;
   border-radius: 8dp;
   z-index: 55;
 }
@@ -1388,12 +1385,10 @@ select selectbox option {
   flex-direction: column;
   overflow: hidden;
   transform: translateX(0);
-  transition: transform 250ms;
 }
 
 .shell-chat-overlay.shell-swipe-dragging,
 .shell-chat-overlay--dragging {
-  transition: none;
 }
 
 .shell-account-sheet-scrim {
@@ -1421,11 +1416,9 @@ select selectbox option {
   overflow: hidden;
   box-sizing: border-box;
   transform: translateY(0);
-  transition: transform 250ms;
 }
 
 .shell-account-sheet--dragging {
-  transition: none;
 }
 
 .shell-account-sheet-grabber {
@@ -1693,11 +1686,9 @@ select selectbox option {
      Matches WINDOW_SHELL interruption: transient > account > aux > chat. */
   z-index: 30;
   transform: translateX(0);
-  transition: transform 250ms;
 }
 
 .shell-layer-transient.shell-swipe-dragging {
-  transition: none;
 }
 
 .shell-layer-transient .shell-pane-transient {
@@ -2102,7 +2093,6 @@ select selectbox option {
   gap: 4dp;
   padding: 4dp 8dp;
   border-radius: 999dp;
-  background-color: var(--surface-2);
 }
 
 .shell-call-roster-name {
@@ -2174,7 +2164,6 @@ call-video-tile {
 }
 
 .shell-call-chrome--dragging {
-  transition: none;
 }
 
 /* Minimized chip: mount layer must not steal hits; only the chip is interactive.
@@ -2318,7 +2307,6 @@ call-video-tile {
   width: 56dp;
   height: 56dp;
   border-radius: 28dp;
-  object-fit: cover;
   margin: 0 auto 10dp auto;
   display: block;
 }
@@ -2370,7 +2358,6 @@ call-video-tile {
 }
 
 .shell-call-ring .shell-dialog-actions {
-  justify-content: stretch;
   gap: 10dp;
 }
 
@@ -2846,11 +2833,9 @@ call-video-tile {
 
 .settings-detail-view {
   transform: translateX(0);
-  transition: transform 250ms;
 }
 
 .settings-detail-view.shell-swipe-dragging {
-  transition: none;
 }
 
 .settings-header,
@@ -2921,7 +2906,6 @@ call-video-tile {
   min-height: 36dp;
   padding: 0;
   border-radius: 8dp;
-  line-height: normal;
 }
 
 .me-identity-status {
@@ -2978,7 +2962,6 @@ call-video-tile {
 .me-profile-avatar-image {
   width: 64dp;
   height: 64dp;
-  object-fit: cover;
 }
 
 .me-profile-avatar-image--compact {
@@ -3015,7 +2998,6 @@ call-video-tile {
 .contacts-row-avatar-image {
   width: 32dp;
   height: 32dp;
-  object-fit: cover;
 }
 
 .contacts-row-avatar-frame .avatar-letter {
@@ -3041,7 +3023,6 @@ call-video-tile {
 .contact-detail-avatar-image {
   width: 64dp;
   height: 64dp;
-  object-fit: cover;
 }
 
 .contact-detail-avatar-frame .avatar-letter {
@@ -3067,7 +3048,6 @@ call-video-tile {
   width: 48dp;
   height: 48dp;
   border-radius: 24dp;
-  object-fit: cover;
   margin-bottom: 8dp;
 }
 
@@ -3269,7 +3249,6 @@ call-video-tile {
   border-radius: 999dp;
   box-sizing: border-box;
   transform: translateX(0);
-  transition: transform 200ms;
   pointer-events: none;
 }
 
@@ -3562,7 +3541,6 @@ call-video-tile {
 
 .contacts-multiaddrs-field {
   min-height: 72dp;
-  resize: none;
 }
 
 .contacts-trust-actions {
