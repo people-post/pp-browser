@@ -280,6 +280,7 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 
 | Date | Change |
 |------|--------|
+| 2026-09-23 | Punch ACP: mux handlers PostToIo only; async introducer (no AmpParkUntil under mux); burst on IO strand |
 | 2026-09-21 | Amp link plane: LinkId + PeerPresence; WhenChannelOpen/BindChannel; completions via PostToIo; DialBook/LinkTable split; no product PeerLink* |
 | 2026-09-09 | Shutdown latency phases 0–5: BeginShutdown+watchdog; budgeted coordinator/WorkerPool/ringtone/media joins; IsShuttingDown gates; dogfood matrix |
 | 2026-09-09 | Shutdown latency: HideWindow on RequestExit; PrepareForTeardown(0); MeshControlPool join ≤500ms; shutdown timeline marks |
