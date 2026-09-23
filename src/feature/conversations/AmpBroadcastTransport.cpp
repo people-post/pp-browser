@@ -305,9 +305,6 @@ struct AmpBroadcastTransport::Impl {
         if (!session->EnqueueOutbound(JsonToBody(*response_json))) {
           return;
         }
-        if (io_pump) {
-          io_pump();
-        }
       });
       return false;
     });
@@ -317,9 +314,11 @@ struct AmpBroadcastTransport::Impl {
 
 
 
-AmpBroadcastTransport::AmpBroadcastTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker, IoPost post_io)
+AmpBroadcastTransport::AmpBroadcastTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker, IoPost post_io,
+                                             IoAfter post_after)
     : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
+      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
+      post_after_(std::move(post_after)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
   impl_->post_worker = post_worker_;
@@ -499,7 +498,8 @@ void AmpBroadcastTransport::RoundTripAsync(const std::string& peer_key, const st
                              AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                                finish(Error("amp broadcast send timed out")
                                           .WithUser("Broadcast control timed out."));
-                             });
+                             },
+                                                    post_after_);
                            });
                      });
 }

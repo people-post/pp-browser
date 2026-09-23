@@ -29,14 +29,14 @@ flowchart TB
   UI["1 · UI thread<br/>SDL · RmlUi · controllers"]
   Pump["2 · Amp MeshPump<br/>MeshHost-owned · Drive ~5ms"]
   Coord["3 · Coordinator<br/>mailbox · timer wheel · policy"]
-  Ctrl["4 · MeshControlPool 1–2<br/>MeshHost-owned · IoPumpUntil / Connect"]
+  Ctrl["4 · MeshControlPool 1–2<br/>MeshHost-owned · wait / Post only"]
   Pool["5 · Worker pool 2–4<br/>Critical · Normal · Background"]
   Plat["6 · Platform I/O optional<br/>Linux D-Bus notifier"]
   Media["Call media / ringtone<br/>per active call"]
 
   UI -->|"user intents"| Coord
   Coord -->|"blocking HTTP / LLM"| Pool
-  Ctrl -->|"Tick / Drive while waiting"| Pump
+  Ctrl -->|"Post / wait (no Tick)"| Pump
   Pool -->|"UI deltas"| UI
   Media -.->|"encode / capture"| UI
   Plat -->|"notification actions"| UI
@@ -146,29 +146,41 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 | Work kind | Run on |
 |-----------|--------|
 | RmlUi / shell / input | UI |
-| Amp `Drive` / L3 mux affinity | MeshPump (and MeshControl while `IoPumpUntil`) |
-| Amp `PeerLinkManager` / `IChatPeerLinks` **mutations** | Amp IO strand only (`MeshRuntime::PostToIo`) |
+| Amp `Drive` / L3 mux affinity | **Sole Amp driver** — MeshPump, or the test harness Tick loop acting as Amp |
+| Amp `PeerLinkManager` / `IChatPeerLinks` **mutations** | Amp IO strand (`MeshRuntime::PostToIo`) |
+| Amp teardown (Abort / Close / DropLink / L4 `on_done`) | `MeshRuntime::PostDeferred` |
+| Amp deadlines / sync windows | `MeshRuntime::PostAfter` (Amp clock) |
 | Periodic sync / hub policy | Coordinator timers |
 | libcurl, UPnP, Argon2, long DB | Worker pool |
-| Amp control waits (`IoPumpUntil`, Connect grace) | MeshControlPool |
+| Amp control waits (sleep until settled) | MeshControlPool — **must not Tick/Drive** |
 | Mic/camera encode | Call media threads |
 | Linux D-Bus | Notifier watch thread → UI activation handler |
 
-**Hard rule:** only worker-pool and mesh-control threads may block on network or disk for longer than a few milliseconds. Amp data-plane progress is `MeshRuntime::Drive` on the pump (and nested `Tick` from control waiters).
+**Hard rule:** only worker-pool and mesh-control threads may block on network or disk for longer than a few milliseconds. Amp data-plane progress is **exclusive** `MeshRuntime::Drive` on MeshPump (or the harness). Nested `Pump`/`Tick`/`Drive` is refused.
 
-**Amp PeerLink strand (hard):** `MeshRuntime` is the product entry (`WhenChannelOpen` / `BindChannel` / `SnapshotByPeerId` / `IsReachable`). `PeerLinkManager` shares `io_mu_`, assigns stable `LinkId`s, and posts association completions via `PostToIo` ([ADR_LINK_PLANE](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md)). Never stash `PeerLink*`. Prefer `IsReachable(PeerId)` over exact-key `IsConnected`. With MeshPump running, pass empty `io_pump` + `post_io` (no nested `Drive`). L4 that still calls `runtime.Links()` must stay on the PostToIo/Drive path.
+**Exclusive Amp Drive (hard):** Exactly one driver calls `Drive`/`Tick`/`Pump` per `MeshRuntime`. Product: `MeshPumpThread`. Tests: harness loop. L4 services (punch, hop, broadcast, messaging, dial-back, DHT) are state machines on that thread via `PostToIo` / `PostDeferred` / `PostAfter` — they never call Tick to “unstick” a wait. Product `MakeL4IoPump()` is empty (MeshPump owns Drive). AttachAmpStack harnesses may use `MakeL4IoPump`→`Tick` only from sync `AmpParkUntil` on the harness thread (sole driver) — never from mux/`PostToIo`. Frame handlers may only parse + Post; Abort/Close/complete go on `PostDeferred` after mux stack unwinds. See [ADR_LINK_PLANE](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md).
 
-**Punch / ACP:** Mux frame handlers only `PostToIo` (`PostStrand`). Introducer connect is fully async. Sync-window burst uses `BurstDialCandidatesAsync` whenever `IoPost` is set (tests + product). `AbortInflightDial` + result complete settle via `SchedulePark` / `DrainParkWork` onto the waiter IoPump stack when `IoPump` is present — never under `MeshRuntime::DrainPostedIo` (Windows SEH). Product MeshPump passes empty `IoPump` and settles on the IO strand. Sync `BurstDialCandidates` is test-only without `IoPost`.
+**Amp PeerLink strand:** `MeshRuntime` is the product entry (`WhenChannelOpen` / `BindChannel` / `SnapshotByPeerId` / `IsReachable`). Never stash `PeerLink*`. Prefer `IsReachable(PeerId)` over exact-key `IsConnected`.
 
-**Peer honesty (Amp / peer streams):** do not park the **general** `WorkerPool` on peer-facing waits. Prefer async IO + local deadline + hard cancel. Call-media hello/ack is async+deadline; blocking bridge `Connect()` and remaining `IoPumpUntil` facades run on **MeshControlPool** as an interim until async `Connect(cb)` / A022-style callbacks. Details: [SESSION_MACHINES.md — Peer honesty rule](../../projects/p2p-av-calls/SESSION_MACHINES.md#peer-honesty-rule-stream-waits).
+**Punch / ACP:** Mux frame handlers only `PostToIo`. Sync-window burst via `MeshRuntime::BurstDial` (Amp-clock `PostAfter`, poll on `PostToIo`, Abort/`on_done` on `PostDeferred`). Sync `TryColdPunch` may `AmpParkUntil` only when the waiter **is** the sole Amp driver (test harness PumpAll); punch SM never invokes `IoPump`.
+
+**Dial-back:** Constructed on `MeshRuntime&`; probe deadlines via `PostAfter`. Sync `Probe` may `AmpParkUntil` with empty product IoPump.
+
+**DHT / directory:** Constructed on `MeshRuntime&`. DHT has no IoPump (async-only). Directory sync `ListMeshNodes` uses `AmpParkUntil`. Chat/media settle timers prefer `MeshRuntime::PostAfter` via `AmpScheduleUntilSettled` (+ `MeshIoContext.post_after`).
+
+**Windows SEH (punch):** Nested `Drive`/`Pump` under mux or `DrainPostedIo` (legacy sync `BurstDialCandidates` + `IoPump`) caused `0xc0000005` on MSVC. Product path uses `MeshRuntime::BurstDial` (Amp-clock `PostAfter`, Abort/`on_done` on `PostDeferred`); mux handlers only `PostToIo`. `AmpScheduleUntilSettled` must not `AmpParkUntil`+`IoPump` from channel callbacks.
+
+**Peer honesty (Amp / peer streams):** do not park the **general** `WorkerPool` on peer-facing waits. Prefer async IO + local deadline + hard cancel. Call-media hello/ack is async+deadline; blocking bridge `Connect()` and remaining wait facades run on **MeshControlPool** as an interim until async `Connect(cb)` / A022-style callbacks. Details: [SESSION_MACHINES.md — Peer honesty rule](../../projects/p2p-av-calls/SESSION_MACHINES.md#peer-honesty-rule-stream-waits).
 
 ### Amp / mesh executors
 
 | Class | Dispatch | Examples |
 |-------|----------|----------|
-| **Pump** | `MeshPumpThread` | `MeshRuntime::Drive`, DHT host tick |
-| **IO strand** | `MeshRuntime::PostToIo` | PeerLink mutations, hop `EnsureViaCircuit*`, dial-registry mutators |
-| **Control** | `MeshControlPool` | reachability / remaining sync L4 parks (ConnectAsync no longer holds a control thread) |
+| **Pump (sole driver)** | `MeshPumpThread` | `MeshRuntime::Drive` |
+| **IO work lane** | `MeshRuntime::PostToIo` | PeerLink mutations, SM steps, dial start |
+| **Deferred teardown** | `MeshRuntime::PostDeferred` | Abort, Close, DropLink, L4 `on_done` |
+| **Timers** | `MeshRuntime::PostAfter` | punch window, channel-open deadlines |
+| **Control** | `MeshControlPool` | sleep-until-settled facades (no Tick) |
 | **Compute / HTTP** | App `WorkerPool` | Brief HTTP, LLM, Argon2, SQLite |
 
 Shared Amp helpers live under `pp-cpp-amp` + `domain/mesh/`. Frame size caps: `pp::amp::AmpChannelLimits`.
@@ -280,6 +292,8 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 
 | Date | Change |
 |------|--------|
+| 2026-09-23 | **Exclusive Amp Drive:** nested Drive refused; `PostDeferred` / `PostAfter`; L4 `MakeL4IoPump` always empty; punch on `MeshRuntime&` via `BurstDial`; pin pp-cpp-amp `v2.1.8` |
+| 2026-09-23 | DHT drop unused IoPump; directory sync via AmpParkUntil; `AmpScheduleUntilSettled` prefers PostAfter (`MeshIoContext.post_after`); never AmpParkUntil on Drive stack |
 | 2026-09-23 | Punch ACP: mux handlers PostToIo only; async introducer (no AmpParkUntil under mux); burst on IO strand |
 | 2026-09-21 | Amp link plane: LinkId + PeerPresence; WhenChannelOpen/BindChannel; completions via PostToIo; DialBook/LinkTable split; no product PeerLink* |
 | 2026-09-09 | Shutdown latency phases 0–5: BeginShutdown+watchdog; budgeted coordinator/WorkerPool/ringtone/media joins; IsShuttingDown gates; dogfood matrix |

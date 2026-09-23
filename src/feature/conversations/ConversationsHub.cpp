@@ -1259,11 +1259,13 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
   std::function<void()> amp_pump;
   std::function<void(std::function<void()>)> amp_worker;
   std::function<void(std::function<void()>)> amp_post_io;
+  std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after;
   if (auto chat = mesh_->ChatDeps(); chat) {
     amp_links = &chat->links;
     amp_pump = std::move(chat->io.io_pump);
     amp_worker = std::move(chat->io.post_worker);
     amp_post_io = std::move(chat->io.post_io);
+    amp_post_after = std::move(chat->io.post_after);
   }
   if (amp_pump && !amp_worker) {
     amp_worker = [](std::function<void()> task) { MeshControlDispatch::Post(std::move(task)); };
@@ -1276,7 +1278,7 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
   // Keep the same MeshDeliveryOrchestrator instance — timers / SyncInbox workers may already
   // hold `this`. Recreating here caused "mutex lock failed: Invalid argument" + segfault.
   mesh_messaging_->AttachAmpTransports(amp_links, std::move(amp_pump), std::move(amp_worker),
-                                       std::move(amp_post_io));
+                                       std::move(amp_post_io), std::move(amp_post_after));
   WireAttachmentDownloads();
   // Rebind call-control inbound now that Amp direct-chat transports exist.
   call_stack_->BuildSessions(MakeCallStackDeps());

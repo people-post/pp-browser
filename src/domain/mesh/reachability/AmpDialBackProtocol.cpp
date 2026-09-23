@@ -119,26 +119,27 @@ AmpDialBackProtocol::Failure AmpDialBackProtocol::WrapLinkFailure(const pp::amp:
 }
 
 struct AmpDialBackProtocol::Impl {
-  pp::amp::PeerLinkManager* links = nullptr;
+  pp::amp::MeshRuntime* runtime = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
-  IoPost post_io;
   std::atomic<bool> stopped{false};
   /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
   DeferredSelf deferred;
 
+  pp::amp::PeerLinkManager& Links() { return runtime->Links(); }
+
   void ScheduleWhenChannelOpen(const std::string& peer_key, const uint32_t channel_id,
                                const Clock::time_point deadline, std::function<void(bool open)> done) {
-    if (!links || peer_key.empty()) {
+    if (!runtime || peer_key.empty()) {
       done(false);
       return;
     }
-    AmpWhenChannelOpen(*links, peer_key, channel_id, deadline, std::move(done));
+    AmpWhenChannelOpen(Links(), peer_key, channel_id, deadline, std::move(done));
   }
 
   void ServeProbe(std::shared_ptr<pp::amp::ChannelSession> session, std::vector<uint8_t> body) {
     RunWorker(post_worker, [this, session, body = std::move(body)]() mutable {
-      if (stopped.load(std::memory_order_acquire) || !links) {
+      if (stopped.load(std::memory_order_acquire) || !runtime) {
         return;
       }
       DialBackProbeResult result;
@@ -160,7 +161,7 @@ struct AmpDialBackProtocol::Impl {
             }
           }
           const int timeout_ms = static_cast<int>(root->getNonNegInt("timeout_ms").value_or(8000));
-          result = DialAmpTargets(*links, io_pump, targets, timeout_ms);
+          result = DialAmpTargets(Links(), io_pump, targets, timeout_ms);
         }
       }
       Object response;
@@ -169,20 +170,17 @@ struct AmpDialBackProtocol::Impl {
       response.set("dialed", result.dialed);
       response.set("error", result.error);
       (void)session->EnqueueOutbound(JsonToBody(DumpJson(response)));
-      if (io_pump) {
-        io_pump();
-      }
       session->Close();
     });
   }
 
   void HandleInboundOnLink(pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
                            const uint32_t channel_id) {
-    if (stopped.load(std::memory_order_acquire) || !links || remote_peer_id.empty()) {
+    if (stopped.load(std::memory_order_acquire) || !runtime || remote_peer_id.empty()) {
       return;
     }
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
-    *session_holder = links->BindChannel(
+    *session_holder = Links().BindChannel(
         remote_peer_id, channel_id, pp::amp::ControlJsonChannelPolicy(),
         [this, session_holder](Roe<std::vector<uint8_t>> frame) {
           auto session = *session_holder;
@@ -195,14 +193,12 @@ struct AmpDialBackProtocol::Impl {
   }
 };
 
-AmpDialBackProtocol::AmpDialBackProtocol(pp::amp::PeerLinkManager& links, IoPump io_pump, WorkerPost post_worker,
-                                         IoPost post_io)
-    : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
-  impl_->links = &links_;
+AmpDialBackProtocol::AmpDialBackProtocol(pp::amp::MeshRuntime& runtime, IoPump io_pump, WorkerPost post_worker)
+    : impl_(std::make_unique<Impl>()), runtime_(runtime), io_pump_(std::move(io_pump)),
+      post_worker_(std::move(post_worker)) {
+  impl_->runtime = &runtime_;
   impl_->io_pump = io_pump_;
   impl_->post_worker = post_worker_;
-  impl_->post_io = post_io_;
 }
 
 AmpDialBackProtocol::~AmpDialBackProtocol() { Stop(); }
@@ -213,7 +209,7 @@ void AmpDialBackProtocol::Start() {
   }
   started_ = true;
   impl_->stopped.store(false, std::memory_order_release);
-  links_.SetProtocolHandler(
+  runtime_.Links().SetProtocolHandler(
       kDialBackProtocolId,
       impl_->deferred.Bind([impl = impl_.get()](pp::amp::LinkHandle handle,
                                                 const std::string& remote_peer_id,
@@ -225,7 +221,7 @@ void AmpDialBackProtocol::Start() {
 void AmpDialBackProtocol::Stop() {
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
-  links_.RemoveProtocolHandler(kDialBackProtocolId);
+  runtime_.Links().RemoveProtocolHandler(kDialBackProtocolId);
   impl_->deferred.Invalidate();
 }
 
@@ -247,7 +243,7 @@ void AmpDialBackProtocol::ProbeAsync(const std::string& seed_peer_key,
     (*finish_once)(ProbeRoe::error(Failure::Of(Err::NotStarted, "amp dial-back service not started")));
     return;
   }
-  if (!links_.GetLinkSnapshot(seed_peer_key).has_endpoint) {
+  if (!runtime_.Links().GetLinkSnapshot(seed_peer_key).has_endpoint) {
     (*finish_once)(ProbeRoe::error(Failure::Of(Err::EndpointNotRegistered, "seed peer endpoint not registered")));
     return;
   }
@@ -280,13 +276,13 @@ void AmpDialBackProtocol::ProbeAsync(const std::string& seed_peer_key,
   };
 
   const auto read_timeout = RemainingTimeout(deadline);
-  links_.EnsureAssociation(seed_peer_key, [this, seed_peer_key, request_json, finish, session, deadline,
+  runtime_.Links().EnsureAssociation(seed_peer_key, [this, seed_peer_key, request_json, finish, session, deadline,
                                            read_timeout, settled](pp::amp::PeerLinkManager::LinkRoe assoc) mutable {
     if (!assoc) {
       (*finish)(ProbeRoe::error(WrapLinkFailure(assoc.error())));
       return;
     }
-    links_.OpenChannel(seed_peer_key, kDialBackProtocolId, pp::amp::ControlJsonChannelPolicy(read_timeout),
+    runtime_.Links().OpenChannel(seed_peer_key, kDialBackProtocolId, pp::amp::ControlJsonChannelPolicy(read_timeout),
                        [this, seed_peer_key, request_json, finish, session, deadline, read_timeout,
                         settled](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
                          if (!channel) {
@@ -302,7 +298,7 @@ void AmpDialBackProtocol::ProbeAsync(const std::string& seed_peer_key,
                                      Failure::Of(Err::ChannelFailed, "amp dial-back: channel open failed")));
                                  return;
                                }
-                               auto* link = links_.FindLink(seed_peer_key);
+                               auto* link = runtime_.Links().FindLink(seed_peer_key);
                                if (!link || !link->Mux() ||
                                    link->Mux()->State(channel_id) != pp::amp::ChannelState::Open) {
                                  (*finish)(ProbeRoe::error(
@@ -335,27 +331,15 @@ void AmpDialBackProtocol::ProbeAsync(const std::string& seed_peer_key,
                                      Failure::Of(Err::ProtocolError, "Failed to send dial-back probe")));
                                  return;
                                }
-                               if (io_pump_) {
-                                 io_pump_();
-                               }
-                               if (post_io_) {
-                                 auto poll = std::make_shared<std::function<void()>>();
-                                 *poll = [this, finish, deadline, settled, poll]() {
-                                   if (settled->load(std::memory_order_acquire)) {
-                                     return;
-                                   }
-                                   if (Clock::now() >= deadline) {
+                               const auto attempt_ms =
+                                   std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now());
+                               if (attempt_ms.count() > 0) {
+                                 runtime_.PostAfter(attempt_ms, [finish, settled]() {
+                                   if (!settled->load(std::memory_order_acquire)) {
                                      (*finish)(ProbeRoe::error(
                                          Failure::Of(Err::Timeout, "dial-back probe timed out")));
-                                     return;
                                    }
-                                   post_io_([poll, settled]() {
-                                     if (!settled->load(std::memory_order_acquire)) {
-                                       (*poll)();
-                                     }
-                                   });
-                                 };
-                                 post_io_([poll]() { (*poll)(); });
+                                 });
                                }
                              });
                        });

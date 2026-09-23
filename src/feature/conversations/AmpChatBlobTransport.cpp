@@ -175,9 +175,6 @@ struct AmpChatBlobTransport::Impl {
                             return;
                           }
                         }
-                        if (io_pump) {
-                          io_pump();
-                        }
                         session->Close();
                       });
                       return false;
@@ -202,9 +199,6 @@ struct AmpChatBlobTransport::Impl {
                       const std::string ack_json = pushed ? DumpJson(ChatBlobAckToJson(true))
                                                           : DumpJson(ChatBlobAckToJson(false, pushed.error().message));
                       (void)session->EnqueueOutbound(JsonToBody(ack_json));
-                      if (io_pump) {
-                        io_pump();
-                      }
                       session->Close();
                     });
                     return false;
@@ -213,9 +207,11 @@ struct AmpChatBlobTransport::Impl {
 };
 
 AmpChatBlobTransport::AmpChatBlobTransport(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
-                                       IdentityStore& identity, WorkerPost post_worker, IoPost post_io)
+                                       IdentityStore& identity, WorkerPost post_worker, IoPost post_io,
+                                       IoAfter post_after)
     : impl_(std::make_unique<Impl>(store, identity)), links_(links), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)) {
+      post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
+      post_after_(std::move(post_after)) {
   impl_->links = &links_;
   impl_->io_pump = io_pump_;
   impl_->post_worker = post_worker_;
@@ -372,7 +368,8 @@ void AmpChatBlobTransport::FetchChatBlobAsync(const ChatBlobRequest& request,
 
                                AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                                  finish(Error("amp chat-blob fetch timed out"));
-                               });
+                               },
+                                                      post_after_);
                              });
                        });
   });
@@ -499,7 +496,8 @@ void AmpChatBlobTransport::PushChatBlobAsync(const ChatBlobRequest& request,
 
                     AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                       finish(Error("amp chat-blob push timed out"));
-                    });
+                    },
+                                           post_after_);
                   });
             });
       });

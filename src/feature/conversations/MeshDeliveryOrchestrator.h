@@ -34,6 +34,7 @@
 #include "domain/net/OrgBackendClients.h"
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -87,7 +88,8 @@ public:
                       GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
                       IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
                       std::function<void(std::function<void()>)> amp_worker_post = {},
-                      std::function<void(std::function<void()>)> amp_post_io = {});
+                      std::function<void(std::function<void()>)> amp_post_io = {},
+                      std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after = {});
 
   Roe<ThreadMessage> SendUserMessage(const std::string& thread_id, const std::string& text,
                                      const SendRelayOptions& options = {});
@@ -134,7 +136,8 @@ public:
    */
   void AttachAmpTransports(IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
-                           std::function<void(std::function<void()>)> amp_post_io = {});
+                           std::function<void(std::function<void()>)> amp_post_io = {},
+                           std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after = {});
   /**
    * Stop Amp protocol handlers and drop transport objects while MeshHost/Amp is still alive.
    * Required before MeshHost::Stop — otherwise ~Amp*Transport::Stop UAFs PeerLinks.
