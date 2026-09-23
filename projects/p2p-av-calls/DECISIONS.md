@@ -1217,7 +1217,7 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 
 **Implementation notes:** `CallMediaBridge::StartConnectSequence` dials both roles; miss path backs off ~1.5 s and clears `assoc_started` while budget remains (blocks circuit pivot during backoff). Extra wait after direct exhaustion renamed `kPeerDialOverlapMs` (shared, not offerer-only grace).
 
-**Still open (not this ADR):** B26 reflexive IPv4, B28 multi-candidate probing, B30 relay CN reachability / long-poll — see [CROSS_NETWORK_B25_B31.md](CROSS_NETWORK_B25_B31.md).
+**Still open (not this ADR):** B28 multi-candidate probing, B30 relay CN reachability / long-poll, B29 L3.25d punch-via-signaling implementation — see [CROSS_NETWORK_B25_B31.md](CROSS_NETWORK_B25_B31.md). B26 reflexive IPv4 via seed `observed` is landed.
 
 **Cross-link:** [A026](../adp/DECISIONS.md#a026--one-session-per-peerid-under-dual-dial-mesh-election); [HOLE_PUNCH.md](../media-hop-reachability/HOLE_PUNCH.md); [SESSION_MACHINES.md](SESSION_MACHINES.md).
 

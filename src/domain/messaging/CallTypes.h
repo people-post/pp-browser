@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <cstdlib>
 #include <optional>
 #include <string>
 #include <vector>
@@ -15,15 +14,6 @@ inline constexpr size_t kCallEngineeringMaxJoined = 8;
 inline constexpr size_t kCallProtocolSoftMaxJoined = 16;
 /** Default invite ring TTL. */
 inline constexpr int64_t kDefaultCallInviteTtlMs = 60'000;
-/** Effective ring / outbound-unanswered TTL; dev knob PP_BROWSER_CALL_INVITE_TTL_MS overrides. */
-inline int64_t CallInviteTtlMs() {
-  static const int64_t ttl = [] {
-    const char* env = std::getenv("PP_BROWSER_CALL_INVITE_TTL_MS");
-    const long long v = (env && env[0]) ? std::strtoll(env, nullptr, 10) : 0;
-    return v > 0 ? static_cast<int64_t>(v) : kDefaultCallInviteTtlMs;
-  }();
-  return ttl;
-}
 /** Slack added to relay-age gate (clock granularity / brief queue delay). */
 inline constexpr int64_t kCallInviteRelayAgeSlackMs = 5'000;
 /**

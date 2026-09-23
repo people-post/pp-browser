@@ -48,7 +48,7 @@ bool CallSessionLogic::ShouldDropStaleInvite(const CallInviteDetail& invite, con
   if (relay_created_at_ms && relay_server_time_ms && *relay_created_at_ms > 0 &&
       *relay_server_time_ms > 0) {
     const int64_t age = RelayInviteAgeMs(*relay_created_at_ms, *relay_server_time_ms);
-    return age > CallInviteTtlMs() + kCallInviteRelayAgeSlackMs;
+    return age > kDefaultCallInviteTtlMs + kCallInviteRelayAgeSlackMs;
   }
   if (!invite.expires_at) {
     return false;

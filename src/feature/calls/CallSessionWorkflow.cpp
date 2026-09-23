@@ -268,7 +268,7 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   pending.origin_thread_id = (*session)->origin_thread_id;
   pending.origin_group_id = (*session)->origin_group_id;
   pending.sfu_hint = (*session)->sfu_hint;
-  pending.expires_at = now + CallInviteTtlMs();
+  pending.expires_at = now + kDefaultCallInviteTtlMs;
   pending.created_at = now;
   pending.status = "pending";
 
@@ -1065,7 +1065,7 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
   pending.origin_thread_id = invite->origin_thread_id;
   pending.origin_group_id = invite->origin_group_id;
   pending.sfu_hint = invite->sfu_hint;
-  pending.expires_at = now + CallInviteTtlMs();
+  pending.expires_at = now + kDefaultCallInviteTtlMs;
   pending.created_at = message.timestamp > 0 ? message.timestamp : now;
   pending.status = "pending";
   if (auto saved = sessions_.UpsertPendingInvite(pending); !saved) {

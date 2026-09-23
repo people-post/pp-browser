@@ -65,7 +65,7 @@ public:
    */
   static bool ShouldAutoLeaveOutboundUnanswered(bool outbound_calling, bool media_active,
                                                 int64_t session_created_at_ms, int64_t now_ms,
-                                                int64_t ttl_ms = CallInviteTtlMs());
+                                                int64_t ttl_ms = kDefaultCallInviteTtlMs);
 };
 
 } // namespace pbr

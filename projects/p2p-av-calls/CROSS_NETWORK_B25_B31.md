@@ -1,42 +1,31 @@
 # Cross-network dogfood B25–B31 (PR #214)
 
-**Source:** [PR #214](https://github.com/people-post/pp-browser/pull/214) (Kenneth, 2026-09-23) — draft test notes + experimental env knobs.  
-**Test matrix:** phone on CN cellular ↔ Mac home Wi‑Fi (IPv6 on); develop `5acdb51e3`, amp v2.1.8 / ui v0.3.1.
+**Source:** [PR #214](https://github.com/people-post/pp-browser/pull/214) (Kenneth, 2026-09-23).  
+**Client follow-up:** [PR #215](https://github.com/people-post/pp-browser/pull/215).  
+**Test matrix:** phone on CN cellular ↔ Mac home Wi‑Fi; develop `5acdb51e3`, amp v2.1.8 / ui v0.3.1.
 
-First stable cross-network two-way audio observed (**Mac → phone**, IPv6 direct). Reverse direction failed for signaling latency + dial asymmetry.
+| Id | Summary | Status |
+|----|---------|--------|
+| **B25** | Warm closed ADP never evicted | **Fixed** (amp v2.1.8) |
+| **B26** | No public IPv4 candidate | **Landed (client):** seed dial-back returns `observed` reflexive Amp endpoint; advertise/punch merge requires usable public IPv4/IPv6 when present |
+| **B27** | Circuit not-reg / stuck on one relay | **Partial** — client advances relay after one same-relay not-reg; relay keying still needs ops visibility |
+| **B28** | Wrong IPv6 of many dialed | **Hack removed** (`PP_BROWSER_PREFER_PREFIX`); **open:** DialBook happy-eyeballs probing |
+| **B29** | Punch needs circuit introducer | **Scoped:** [H012](../media-hop-reachability/DECISIONS.md#h012--punch-via-call-signaling-when-no-amp-introducer) punch-via-signaling when Amp I missing (L3.25d); Amp introducer path remains primary |
+| **B30** | CN cellular relay poll stalls | **Open** (infra / long-poll / push). Env knobs **removed** — not product policy |
+| **B31** | Asymmetric dial under stateful NAT | **Landed:** [V049](DECISIONS.md#v049--simultaneous-dial-on-accept-cross-nat-open) |
 
-| Id | Summary | Owner | Status (2026-09-23) |
-|----|---------|-------|---------------------|
-| **B25** | Warm Connected link with closed ADP never evicted → `send on closed connection` | pp-cpp-amp | **Fixed** in amp (`PeerLinkManager` evicts `conn->IsClosed()` regardless of warm tier); in v2.1.8 pin |
-| **B26** | No public IPv4 candidate (LAN-only advertise) → cross-net punch has nothing useful | design / mesh | **Partial** — refresh advertised/punch addrs on reachability (`ec4e647d5`). Still missing STUN-like reflexive learn from seeds’ view of the association |
-| **B27** | Circuit `target peer endpoint not registered`; stuck on one relay | circuit + relay | **Partial** — same-relay not-reg once then advance (`CircuitShouldRetrySameRelayOnNotReg`). Needs relay-side visibility (what reserve registers vs tunnel lookup key after network change) |
-| **B28** | Wrong one of many peer IPv6 addrs dialed (last-write-wins) | DialBook / reachability | **Open** — `PP_BROWSER_PREFER_PREFIX` is a dev pin only; real fix is per-peer candidate list + short-timeout probing (happy eyeballs) |
-| **B29** | Punch needs circuit introducer; direct IPv6 ICMP≠UDP | punch + relay | **Partial** — cold punch tries next introducer; still blocked when all relays not-reg (B27). Longer-term: punch driven off signaling when no circuit |
-| **B30** | CN cellular → CloudFront relay inbox polls time out; serial 30 s HTTP stalls signaling | relay ops + client | **Open** — client knobs `PP_BROWSER_HTTP_TIMEOUT_S` / `PP_BROWSER_CALL_INVITE_TTL_MS` (defaults unchanged). Needs reachable relay endpoint and/or long-poll/push |
-| **B31** | Answerer one dial + offerer 15 s grace → only Mac-as-caller works under stateful NAT | call-media | **Addressed in client** — [V049](DECISIONS.md#v049--simultaneous-dial-on-accept-cross-nat-open): both dial immediately; re-dial within budget |
+## Decisions (2026-09-23)
 
-## Decisions still needed
+1. **No env knobs** for HTTP timeout / invite TTL — coded policy only; B30 needs relay path design, not dial-a-number experiments.
+2. **IPv4 required** — seed-observed reflexive public IPv4 is part of advertise/punch (B26), not IPv6-only.
+3. **No hacks** — `PP_BROWSER_PREFER_PREFIX` removed; B28 = real candidate probing.
+4. **Punch via signaling** — H012 scopes ACP over call-control when Amp introducer is unavailable (in addition to fixing B27).
 
-1. **B30 relay path (infra / protocol)**  
-   - Keep CloudFront + shorten client poll timeout by default?  
-   - Or add a CN-reachable relay endpoint?  
-   - Or replace serial short-poll with long-poll / push?  
-   Client knobs alone do not fix 80 s receive blackouts.
+## Still open (next work)
 
-2. **B26 reflexive IPv4**  
-   Learn public IP:port from seeds (STUN-shaped) vs require UPnP / global IPv6 only.
-
-3. **B28 candidate probing**  
-   Promote DialBook from single Preferred to probed candidate set (scope, timeouts, interaction with punch burst).
-
-4. **B27 / B29 relay registration**  
-   Confirm reserve key vs tunnel lookup after peer network change; whether punch may use inbox signaling as introducer without circuit.
-
-## Client knobs (PR #214 commit)
-
-| Env | Default | Experiment | Effect |
-|-----|---------|------------|--------|
-| `PP_BROWSER_HTTP_TIMEOUT_S` | 30 | 8 | `HttpClient` `CURLOPT_TIMEOUT` (all shared HTTP, including inbox polls) |
-| `PP_BROWSER_CALL_INVITE_TTL_MS` | 60000 | 120000 | Ring / outbound unanswered TTL |
-
-Defaults stay production-safe until B30 default policy is decided.
+| Item | Next |
+|------|------|
+| **B28** | Per-peer short-timeout candidate probing (amp DialBook already advances; browser ingest must stop last-write-wins Preferred) |
+| **B30** | CN-reachable relay and/or long-poll/push; optional poll-specific fail-fast (not global curl env) |
+| **B27** | Relay reserve vs ServeDial lookup after network change |
+| **B29 / L3.25d** | Implement `call_punch_*` ↔ `AmpPunchCoordinator` burst per H012 |
