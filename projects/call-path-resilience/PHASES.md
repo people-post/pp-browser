@@ -30,7 +30,7 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 - [ ] Drop inbound link on handshake error
 - [x] Warm/hot dead-peer detection: keepalive echo + eviction past the cadence window (reason `connection-dead`; amp keepalive v2) — a separate `Suspect` event deferred until a consumer needs it
 - [x] Liveness vs tier mismatch fixed: keepalive carries cadence, window = max(5 s, 5/2 × cadence) (amp docs/KEEPALIVE.md v2); product hot relaxed 2 s → 10 s, warm 60 s → 25 s
-- [ ] `MarkWarm` / `MarkHot` before link exists is remembered and applied on establish
+- [x] `MarkWarm` / `MarkHot` before link exists is remembered and applied on establish (amp `pending_keepalive_tiers_`)
 - [x] Warm/hot links keep a cadence in both directions (inbound too); cold peers honour the announced cadence
 - [ ] `MaybeLearnPath` after replay check (+ gtest: replayed packet from new address does not move the path)
 - [ ] `LinkTable::Insert` on occupied key: no orphan in `by_id_`; `ScheduleDropLink` by LinkId (not key) so a replacement link is never dropped

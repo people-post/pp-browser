@@ -129,6 +129,11 @@ public:
   Roe<void> Initialize(const AppConfig& config, const std::string& profile_data_dir);
   Roe<void> Reinitialize(const AppConfig& config, const std::string& profile_data_dir);
   void Shutdown();
+  /**
+   * Quit when the runtime teardown quiesce timed out: persist stores but free nothing
+   * (running tasks may still touch them — THREADING.md § Teardown quiesce).
+   */
+  void FlushForExit();
   bool IsInitialized() const { return initialized_; }
 
   /**
@@ -143,6 +148,8 @@ public:
    * the unlock worker — otherwise mesh comes up during join and StopMesh runs with no pool.
    */
   void RequestShutdown();
+  /** Undo RequestShutdown when the teardown was abandoned (profile reset quiesce timed out). */
+  void CancelShutdownRequest();
 
   void BindSessionStore(SessionStore& store);
 

@@ -111,6 +111,11 @@ namespace pbr {
 
 namespace {
 
+/** Runtime teardown quiesce budgets (THREADING.md § Teardown quiesce). Quit must stay inside
+ * AppRuntime::kShutdownDeadlineBudget (3 s watchdog); reset can wait for a slow relay call. */
+constexpr std::chrono::milliseconds kQuitQuiesceBudget{2000};
+constexpr std::chrono::milliseconds kProfileResetQuiesceBudget{10000};
+
 InputCoordinator* g_input_coordinator = nullptr;
 
 void WireShellPresentationEvents(ShellHost& shell, BadgeAggregator* badges, SettingsController& settings,
@@ -272,7 +277,19 @@ Roe<void> Application::ResetActiveProfile() {
 
   log().info << "Resetting profile data at " << profile_dir;
 
+  if (messaging_) {
+    messaging_->RequestShutdown();
+  }
+  // Same teardown quiesce as quit, but the process lives on: reopen before re-initializing.
+  if (!AppRuntime::QuiesceForTeardown(kProfileResetQuiesceBudget)) {
+    AppRuntime::ReopenAfterTeardown();
+    if (messaging_) {
+      messaging_->CancelShutdownRequest();
+    }
+    return AppError::Storage(Err::Storage::Unavailable, "Background work is still running — try again");
+  }
   ShutdownMessaging();
+  AppRuntime::ReopenAfterTeardown();
 
   std::error_code ec;
   std::filesystem::remove_all(profile_dir, ec);
@@ -1525,9 +1542,20 @@ void Application::Shutdown() {
       messaging_->RequestShutdown();
       StartupMark("shutdown_abort_call_media_done");
     }
-    {
+    // Owners post raw `this` to workers / coordinator / UI; let queued work (e.g. call_leave)
+    // finish and close the runtime gate before freeing them (THREADING.md § Teardown quiesce).
+    const bool quiesced = [&] {
+      StartupPhase phase("Shutdown::QuiesceRuntime");
+      return AppRuntime::QuiesceForTeardown(kQuitQuiesceBudget);
+    }();
+    if (quiesced) {
       StartupPhase phase("Shutdown::MessagingAndMesh");
       ShutdownMessaging();
+    } else if (messaging_) {
+      // Work still running may touch messaging: persist, then keep it alive until exit.
+      log().warning << "Shutdown: runtime work still running — skipping messaging teardown";
+      messaging_->FlushForExit();
+      (void)messaging_.release();
     }
     StartupMark("shutdown_stop_mesh_done");
     if (AppRuntime::IsRunning()) {

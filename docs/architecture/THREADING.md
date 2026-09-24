@@ -206,6 +206,7 @@ Shared Amp helpers live under `pp-cpp-amp` + `domain/mesh/`. Frame size caps: `p
 RequestExit → HideWindow (<100ms close feel)
 → AppRuntime::BeginShutdown (gen + 3s deadline + watchdog)
 → RequestShutdown → AbortCallMediaForShutdown (PrepareForTeardown non-blocking)
+→ AppRuntime::QuiesceForTeardown(≤2s) — see Teardown quiesce
 → MeshHost::Stop (abort L4 → MeshControlPool::Shutdown(≤500ms) → join MeshPump)
 → AppRuntime::Shutdown (coordinator ≤500ms + WorkerPool ≤500ms; detach+leak on timeout)
 → destroy hub / secrets / RmlUi / Backend::Shutdown
@@ -217,6 +218,23 @@ RequestExit → HideWindow (<100ms close feel)
 - `CallRingtone::StopAndJoin(≤500ms)`, `CallMediaEngine::Stop` capture/playout/video ≤500ms
 - `MeshControlPool::Shutdown` / `CoordinatorThread::Shutdown` / `WorkerPool::Shutdown`: join ≤500ms; on timeout detach and leak until process exit
 - Full graceful exit target: ~3s wall clock; `AppRuntime` watchdog calls `std::_Exit(0)` at deadline as **last resort** if joins hang
+
+### Teardown quiesce
+
+Owners post raw `this` onto the worker pool, coordinator and UI mailbox, but teardown frees them (hub, call stack, caches, …) **before** `AppRuntime::Shutdown` joins those threads — and profile reset never joins at all. One gate in `AppRuntime` covers every mailbox (dogfood 2026-09-24 SIGSEGV; audit of ~15 owners):
+
+| State | Posts (`PostWorker*` / `PostCoordinator*` / `PostUI*`) | Timers | Entered by |
+|-------|------------------------------------------------------|--------|------------|
+| **Open** | run | fire | start, `ReopenAfterTeardown` |
+| **Draining** | queued ones still run; posts from **inside** a running task (continuations, e.g. `call_leave` send) accepted; posts from outside (mesh threads, fresh work) dropped | dropped | `QuiesceForTeardown(budget)` |
+| **Closed** | every queued / new post no-ops | dropped | end of the drain (success or budget) |
+
+- `QuiesceForTeardown` resumes paused pools, pumps the UI mailbox when called on the UI thread, and waits until no gated work is pending or running (its own enclosing task excepted). Returns **false** at the budget: work is still running — do not free what it may touch.
+- Quit (`Application::Shutdown`): 2 s budget (inside the 3 s watchdog). On false: `ConversationsHub::FlushForExit` and leak messaging until exit.
+- Profile reset: 10 s budget, then `ShutdownMessaging` and `ReopenAfterTeardown` before re-initializing. On false: reopen, `CancelShutdownRequest`, report "try again" — nothing freed.
+- `ReopenAfterTeardown` bumps an epoch: posts and one-shot timers from before the quiesce stay dead; repeating timers resume (GUI timers must survive a reset — owners cancel their own).
+- `DrainWorkersThenUI` is a no-op once quiesced (the quiesce already drained).
+- Per-owner guards remain only for owners that die **mid-life** on their own strand (`DeferredSelf`, [OWNERSHIP.md](OWNERSHIP.md)); do not add per-owner gates for teardown.
 
 Timeline marks (grep `[startup]`): `shutdown_begin`, `shutdown_window_hidden`,
 `shutdown_context` (call_active / connect_inflight / worker_queued),
@@ -314,6 +332,7 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 
 | Date | Change |
 |------|--------|
+| 2026-09-24 | **Teardown quiesce:** `AppRuntime` gate (Open → Draining → Closed, epoch reopen) over workers / coordinator / UI; quit and profile reset quiesce before freeing messaging; hub `shutdown_requested_` cleared on re-Initialize |
 | 2026-09-23 | **Cancel / Abort contract:** arm ⇒ complete on cancel; Bridge `AbortConnectSequence` clears Connect waiter after canceling grace/retry timers |
 | 2026-09-23 | **Exclusive Amp Drive:** nested Drive refused; `PostDeferred` / `PostAfter`; L4 `MakeL4IoPump` always empty; punch on `MeshRuntime&` via `BurstDial`; pin pp-cpp-amp `v2.1.8` |
 | 2026-09-23 | DHT drop unused IoPump; directory sync via AmpParkUntil; `AmpScheduleUntilSettled` prefers PostAfter (`MeshIoContext.post_after`); never AmpParkUntil on Drive stack |
