@@ -24,6 +24,7 @@
 #include <unistd.h>
 // Android Bionic has no execinfo/backtrace (still defines __linux__).
 #if (defined(__APPLE__) || defined(__linux__)) && !defined(__ANDROID__)
+#include <dlfcn.h>
 #include <execinfo.h>
 #define PP_BROWSER_HAS_EXECINFO_BACKTRACE 1
 #endif
@@ -42,6 +43,8 @@ constexpr std::size_t kPathBytes = 1024;
 constexpr std::size_t kBreadcrumbDumpBytes = 24 * 1024;
 
 char g_dump_path[kPathBytes] = {};
+// Main image load address ("%p"), resolved at Install — lets tools map ASLR frames to the binary.
+char g_image_base[32] = {};
 std::atomic<bool> g_installed{false};
 std::atomic<bool> g_writing{false};
 std::terminate_handler g_prev_terminate = nullptr;
@@ -123,6 +126,11 @@ void WriteSignalDump(int signo) {
   WriteCString(fd, num);
 
 #if defined(PP_BROWSER_HAS_EXECINFO_BACKTRACE)
+  if (g_image_base[0] != '\0') {
+    WriteCString(fd, "image_base=");
+    WriteCString(fd, g_image_base);
+    WriteCString(fd, "\n");
+  }
   void* frames[64];
   const int nframes = ::backtrace(frames, 64);
   WriteCString(fd, "backtrace_frames=");
@@ -221,6 +229,13 @@ void CrashDump::Install(const std::string& data_dir) {
 
   CrashBreadcrumbs::InstallLoggerHandler();
   CrashBreadcrumbs::Append(std::string("CrashDump installed path=") + path);
+
+#if defined(PP_BROWSER_HAS_EXECINFO_BACKTRACE)
+  Dl_info info{};
+  if (::dladdr(reinterpret_cast<void*>(&CrashDump::Install), &info) != 0 && info.dli_fbase != nullptr) {
+    std::snprintf(g_image_base, sizeof(g_image_base), "%p", info.dli_fbase);
+  }
+#endif
 
   g_prev_terminate = std::set_terminate(OnTerminate);
 

@@ -207,6 +207,20 @@ Shared abstractions under `src/foundation/platform/` — see [PLATFORMS.md](../a
 - `AppLifecycle` — background IO pause, agent cancel, P2P poll guard
 - `ICredentialStore` / `EnvCredentialStore` — env-backed keys; Keystore deferred
 
+## Log file
+
+Desktop and mobile builds write the root log (same lines and level as the console) to `{data_dir}/logs/pp-browser.log`, flushed per line so the tail survives a crash. Each launch rotates the previous files to `pp-browser.1.log` … `pp-browser.5.log`. Files are owner-only (`0600`) and stay local — crash-report upload does not include them. Code: `foundation/diagnostics/LogFile.*`.
+
+| Flag | Effect |
+|------|--------|
+| `--log-file PATH` | Write the log to `PATH` (rotation uses the same name pattern next to it) |
+| `--no-log-file` | Disable the file log (console only) |
+| `--debug` | DEBUG level for console and file (desktop default is WARNING) |
+
+The log opens before config is read, so it lives under the **default** data root (like `diagnostics/crash_pending.txt`), not a config `data_dir` override. Two instances sharing one data root rotate each other's logs — isolate them with `--sandbox` or `XDG_DATA_HOME`.
+
+Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps, tees non-logger console output to `logs/console.log`, and on a crash keeps `diagnostics/crash-<stamp>.{txt,log}` plus a symbolized backtrace (`crash-<stamp>-symbolized.txt`, using the dump's `image_base=`).
+
 ## Environment variables
 
 | Variable | Purpose |
