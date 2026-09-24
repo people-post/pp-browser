@@ -409,7 +409,13 @@ TEST_F(CallMediaBridgeAnswererStartTest, ReservationRenewedWhileSessionLiveStops
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
   };
-  pump_for(std::chrono::milliseconds(200));
+  // Wait for renewals rather than counting them in a fixed window: coordinator timers are
+  // coarse on loaded CI runners (macOS saw the first 30 ms renewal after ~80 ms).
+  const auto renew_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (reserves.load() < 3 && std::chrono::steady_clock::now() < renew_deadline) {
+    AppRuntime::RunUITasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
   EXPECT_GE(reserves.load(), 3) << "lease renewed while live";
 
   bridge_->StopMeshMedia(call_id);
