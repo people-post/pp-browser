@@ -29,6 +29,8 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
 {data_dir}/profiles.json
 {data_dir}/machine.json
 {data_dir}/mesh_directory_nodes.json   # last-good GET /v1/mesh/nodes (N027 cold start; schema_version 1)
+{data_dir}/logs/pp-browser.log         # current launch log (0600; .1 … .5 = previous launches) — ops/CONFIGURATION.md § Log file
+{data_dir}/diagnostics/crash_pending.txt   # last fatal-signal dump (image_base=, raw frames, breadcrumbs); uploaded + cleared next launch
 {data_dir}/profiles/{id}/
   manifest.json
   preferences.json

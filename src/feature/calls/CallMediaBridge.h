@@ -93,6 +93,9 @@ public:
   void SetMediaKeyInboxPollRoundsForTest(int rounds);
   /** Shrink EnsurePeerReachable deadline for gtests (0 = production default). */
   void SetDialWaitBudgetMsForTest(int budget_ms);
+  void SetReserveRenewIntervalMsForTest(int interval_ms) { reserve_renew_interval_ms_ = interval_ms; }
+  /** Shrink per-attempt ConnectAsync timeout (and watchdog margin) for gtests (0 = production default). */
+  void SetConnectAttemptTimeoutMsForTest(int timeout_ms);
 
   /**
    * SoftMigrate: close 1:1 call-media stream without CallMediaEngine::Stop so SFU capture continues.
@@ -197,6 +200,10 @@ private:
   /** Arm health / TX-only / connect-timeout timer (pm3). */
   void ArmDirectHealthTimer();
   void CancelDirectHealthTimer();
+  /** Renew relay reservations (15 s lease) while a media session is connecting / live (k2). */
+  void ArmReserveRenewal();
+  void CancelReserveRenewal();
+  void OnReserveRenewFire();
   void OnDirectHealthTimerFire();
 
   CallMediaHost& host_;
@@ -215,6 +222,11 @@ private:
   std::string media_path_kind_;
   /** When true, EnsurePeerReachableAsync must try circuit even if already dialable. */
   bool force_circuit_ensure_ = false;
+  /** B39: force EnsurePeerReachableAsync to redial even when dial_->IsConnected reports a
+   *  (possibly stale) connected link. Set by OnConnectAttemptFinished after a dropped link. */
+  bool force_redial_ = false;
+  /** B39: true when the current attempt's Ensure short-circuited on an already-connected link. */
+  bool attempt_started_connected_ = false;
   bool session_offerer_ = false;
   int64_t direct_connected_at_ms_ = 0;
   bool tx_only_escalation_done_ = false;
@@ -236,11 +248,20 @@ private:
   std::mutex inbound_key_mu_;
   std::condition_variable inbound_key_cv_;
   uint64_t connect_retry_timer_id_ = 0;
+  /** B42: per-attempt ConnectAsync watchdog id; cancelled on attempt completion / CancelConnectTimers. */
+  uint64_t connect_watchdog_timer_id_ = 0;
+  /** B42: attempt number the watchdog / late-completion guards compare against. */
+  int connect_attempt_current_ = 0;
   uint64_t direct_health_timer_id_ = 0;
+  uint64_t reserve_renew_timer_id_ = 0;
+  /** Inside the 15 s StartReserve lease so consecutive leases overlap. */
+  int reserve_renew_interval_ms_ = 10000;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;
   std::unordered_set<std::string> media_attempted_calls_;
   int media_key_inbox_poll_rounds_ = 90;
   int64_t dial_wait_budget_ms_ = 12000;
+  /** Per-attempt ConnectAsync timeout (B42 test seam); production default kConnectAttemptTimeoutMs. */
+  int connect_attempt_timeout_ms_ = 15000;
   std::atomic<uint32_t> audio_seq_{0};
   /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */
   std::atomic<uint32_t> inbound_remote_stream_{0};

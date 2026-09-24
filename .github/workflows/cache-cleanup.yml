@@ -1,0 +1,47 @@
+name: cache-cleanup
+
+# Keeps Actions cache usage under the per-repo quota: drop a PR's caches once
+# merged/closed, and sweep stale entries left by force-pushes or abandoned branches.
+
+on:
+  pull_request_target:
+    types: [closed]
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  delete-pr-caches:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Delete caches for closed PR
+        run: gh cache delete --all --ref "refs/pull/${{ github.event.pull_request.number }}/merge" --succeed-on-no-caches
+
+  prune-stale-caches:
+    if: github.event_name != 'pull_request_target'
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Delete caches unused for 7+ days
+        run: |
+          set -euo pipefail
+          cutoff="$(date -u -d '7 days ago' +%s)"
+          gh cache list --limit 1000 --json id,lastAccessedAt \
+            | jq -r --argjson cutoff "$cutoff" \
+                '.[] | select((.lastAccessedAt | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) < $cutoff) | .id' \
+            | while read -r id; do
+                gh cache delete "$id"
+              done

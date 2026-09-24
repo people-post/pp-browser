@@ -62,6 +62,22 @@ public:
    */
   static bool DrainWorkersThenUI(std::chrono::milliseconds budget = std::chrono::milliseconds(2000));
 
+  // --- Teardown gate (docs/architecture/THREADING.md § Teardown quiesce) ---
+  /**
+   * Call before freeing objects that runtime tasks may reference (quit, profile reset).
+   * Draining: queued work still runs and running tasks may post continuations, but new work
+   * from outside (timer fires, mesh threads, fresh posts) is dropped; pumps the UI mailbox when
+   * called on the UI thread; waits until no gated work is pending or running (bounded).
+   * Then Closed: every queued/new post, UI task and one-shot timer no-ops.
+   * @return false if work was still running at the budget — do not free what it may touch.
+   */
+  static bool QuiesceForTeardown(std::chrono::milliseconds budget);
+  /** After teardown that keeps the process (profile reset): accept work again. Work posted
+   * before the quiesce stays dead (epoch); repeating timers resume. */
+  static void ReopenAfterTeardown();
+  /** True between QuiesceForTeardown and ReopenAfterTeardown. */
+  static bool IsTeardownQuiesced();
+
   // --- Main/UI mailbox (runtime_core; GUI drains each frame, headless lazy-inits) ---
   static void InitializeUI();
   static void ShutdownUI();
@@ -83,7 +99,13 @@ public:
   template <typename Result>
   static void PostWorkerAndReply(WorkerLane lane, std::function<Result()> work,
                                  std::function<void(Result)> on_done) {
-    WorkerDispatch::PostAndReply(lane, std::move(work), std::move(on_done));
+    // Through PostWorker so the teardown gate applies.
+    PostWorker(lane, [work = std::move(work), on_done = std::move(on_done)]() mutable {
+      Result result = work();
+      if (on_done) {
+        on_done(std::move(result));
+      }
+    });
   }
 
   template <typename Result>

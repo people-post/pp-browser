@@ -89,6 +89,8 @@ When a parent must post work that captures raw `this` / `Impl*` onto IO (or anot
 
 **Abort vs lifetime tickets (Amp L4):** `CircuitTunnelCoordinator` and `AmpMediaRelayCoordinator` keep two `DeferredSelf`s — `deferred` for `PostIo` (Invalidate on AbortInflight) and `lifetime` for IoTick / protocol / PeerConnected (Invalidate only on Stop). Mid-life Abort must not poison ticks still needed while Started. `CallMediaLegCoordinator` uses `weak_ptr(Impl)` for ticks/handlers instead of a lifetime ticket.
 
+**Teardown vs mid-life:** `DeferredSelf` is for owners that stop or abort **mid-life** on their own strand. Teardown of the messaging graph (quit, profile reset) is covered centrally by the `AppRuntime` gate — [THREADING.md § Teardown quiesce](THREADING.md#teardown-quiesce); do not add per-owner gates for it.
+
 ### Whitelist (who may capture raw self via DeferredSelf)
 
 | Owner | Notes |

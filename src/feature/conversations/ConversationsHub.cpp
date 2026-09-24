@@ -618,6 +618,10 @@ void ConversationsHub::RequestShutdown() {
   }
 }
 
+void ConversationsHub::CancelShutdownRequest() {
+  shutdown_requested_.store(false, std::memory_order_release);
+}
+
 void ConversationsHub::DiscardMessagingBringUp() {
   StopCoordinatorTimers();
   if (router_) {
@@ -980,6 +984,9 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   if (initialized_) {
     return {};
   }
+  // Profile reset re-initializes the same hub after Shutdown — without this StartMesh refused
+  // forever with "shutdown in progress".
+  shutdown_requested_.store(false, std::memory_order_release);
 
   config_ = config;
   data_dir_ = profile_data_dir;
@@ -2432,6 +2439,17 @@ void ConversationsHub::SuspendMeshColdPeers() {
   SyncMobileEphemeralListen();
 }
 
+
+void ConversationsHub::FlushForExit() {
+  if (!initialized_) {
+    return;
+  }
+  store_->Flush();
+  contacts_->Flush();
+  if (messaging_ready_) {
+    identity_->Flush();
+  }
+}
 
 void ConversationsHub::Shutdown() {
   if (!initialized_) {

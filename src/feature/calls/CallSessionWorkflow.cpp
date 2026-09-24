@@ -1177,9 +1177,6 @@ Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_jso
   }
   const std::string identity = accept->identity.empty() ? sender_identity : accept->identity;
   log().info << "Inbound CallAccept call_id=" << accept->call_id << " from=" << identity;
-  if (host_.reach.register_peer_listen && !accept->listen_multiaddrs.empty()) {
-    host_.reach.register_peer_listen(identity, accept->listen_multiaddrs);
-  }
   if (!accept->libp2p_peer_id.empty()) {
     host_.reach.note_mesh_peer_id_for_relay(identity, accept->libp2p_peer_id);
   }
@@ -1206,6 +1203,11 @@ Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_jso
                << " from=" << identity;
     host_.wire.notify_ring_changed();
     return {};
+  }
+  // B40: register the accept's listen addrs only for a live session. The relay replays old
+  // Accepts on every poll; registering those overwrote the DialBook with stale endpoints.
+  if (host_.reach.register_peer_listen && !accept->listen_multiaddrs.empty()) {
+    host_.reach.register_peer_listen(identity, accept->listen_multiaddrs);
   }
 
   if (session && session->has_value()) {

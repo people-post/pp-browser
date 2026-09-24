@@ -86,6 +86,10 @@ CallMediaSessionPhase CallMediaAmpTransport::Phase() const {
   return coordinator_.Phase();
 }
 
+CallMediaLinkKind CallMediaAmpTransport::ActiveLinkKind() const {
+  return coordinator_.ActiveLinkKind();
+}
+
 void CallMediaAmpTransport::Detach() {
   coordinator_.Detach();
   std::lock_guard lock(mu_);

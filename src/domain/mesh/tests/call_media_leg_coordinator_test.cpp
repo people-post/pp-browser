@@ -146,11 +146,14 @@ TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedAudioRoundTrip) {
   EXPECT_EQ(received, opus);
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
   EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
+  EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
 
   a_call_->DetachLeg(leg_id);
   harness_->PumpBoth();
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
   EXPECT_FALSE(a_call_->IsLegActive(leg_id));
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Unknown);
 }
 
 // B16: on_connected / on_finished are invoked from inside the Amp IO drain; the transport and the

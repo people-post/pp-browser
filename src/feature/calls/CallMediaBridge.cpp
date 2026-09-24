@@ -225,6 +225,11 @@ void CallMediaBridge::SetSeedParkAwait(
 }
 
 std::string CallMediaBridge::MediaPathKind() const {
+  // The bound link is the truth: an answerer's inbound leg can ride a relay carrier while the
+  // reach loop (and the dialer-only hop registry) think "punched" (dogfood 2026-09-24).
+  if (direct_.IsActive() && direct_.ActiveLinkKind() == CallMediaLinkKind::Relayed) {
+    return "circuit";
+  }
   if (!media_peer_identity_.empty() && dial_ && dial_->HasCallMediaCircuitHop(media_peer_identity_)) {
     return "circuit";
   }
@@ -245,6 +250,10 @@ void CallMediaBridge::SetMediaKeyInboxPollRoundsForTest(const int rounds) {
 
 void CallMediaBridge::SetDialWaitBudgetMsForTest(const int budget_ms) {
   dial_wait_budget_ms_ = budget_ms > 0 ? budget_ms : kDialWaitBudgetMs;
+}
+
+void CallMediaBridge::SetConnectAttemptTimeoutMsForTest(const int timeout_ms) {
+  connect_attempt_timeout_ms_ = timeout_ms > 0 ? timeout_ms : kConnectAttemptTimeoutMs;
 }
 
 void CallMediaBridge::SetSeatPorts(CallDirectSeatPorts ports) {
@@ -352,6 +361,38 @@ void CallMediaBridge::ArmDirectHealthTimer() {
       std::chrono::milliseconds(1000), [this]() {
         AppRuntime::PostUI([this]() { OnDirectHealthTimerFire(); });
       });
+}
+
+void CallMediaBridge::CancelReserveRenewal() {
+  if (reserve_renew_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(reserve_renew_timer_id_);
+    reserve_renew_timer_id_ = 0;
+  }
+}
+
+void CallMediaBridge::ArmReserveRenewal() {
+  CancelReserveRenewal();
+  if (!seed_reserve_) {
+    return;
+  }
+  // Reservations are a 15 s lease (StartReserve TTL) and nothing else renews them; a caller that
+  // dials after the lease lapses finds no park (dogfood 2026-09-24 "Couldn't connect"). 10 s keeps
+  // one lease overlapping the next, so the relay link also stays hot throughout.
+  reserve_renew_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(
+      std::chrono::milliseconds(reserve_renew_interval_ms_), [this]() {
+        AppRuntime::PostUI([this]() { OnReserveRenewFire(); });
+      });
+}
+
+void CallMediaBridge::OnReserveRenewFire() {
+  if (stopping_.load(std::memory_order_acquire) || media_call_id_.empty()) {
+    CancelReserveRenewal();
+    return;
+  }
+  log().info << "circuit reserve renew call_id=" << media_call_id_;
+  if (seed_reserve_) {
+    seed_reserve_();
+  }
 }
 
 void CallMediaBridge::OnDirectHealthTimerFire() {
@@ -510,7 +551,8 @@ void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
   in.already_done = tx_only_escalation_done_;
   in.sfu_attached = host_.P2pIsSfuAttached();
   in.stopping = stopping_.load();
-  in.media_path_kind = media_path_kind_;
+  // Bound-link truth: never "escalate via circuit" when media already rides a relay carrier.
+  in.media_path_kind = MediaPathKind();
   in.has_circuit_reach = circuit_reach_ != nullptr;
   in.direct_active = direct_.IsActive();
   in.active_call_id = call_id;
@@ -524,7 +566,7 @@ void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
     return;
   }
   tx_only_escalation_done_ = true;
-  log().warning << "Call-media TX-only on path=" << (media_path_kind_.empty() ? "unknown" : media_path_kind_)
+  log().warning << "Call-media TX-only on path=" << (in.media_path_kind.empty() ? "unknown" : in.media_path_kind)
                 << " — escalate via circuit call_id=" << call_id << " peer=" << peer
                 << " tx_frames=" << snap.tx_audio_frames;
   Apply(CallDirectPlannerEvent::TxOnlyGraceExpired, call_id, peer);
@@ -596,6 +638,10 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
   // TX-only escalate: peer may already be "dialable" on a one-way path — still force circuit.
   const bool force_circuit = force_circuit_ensure_;
   force_circuit_ensure_ = false;
+  // B39: peer changed network but amp still reports the old link Connected — force a redial
+  // instead of reusing it (set by OnConnectAttemptFinished after DropLink).
+  const bool force_redial = force_redial_;
+  force_redial_ = false;
   const bool connected_before =
       dial_->IsConnected(reach_key) ||
       (reach_key != peer_identity && dial_->IsConnected(peer_identity));
@@ -604,12 +650,18 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
       (reach_key != peer_identity && dial_->IsDialable(peer_identity));
   // IsDialable (has_endpoint) ≠ Connected. Dogfood 19f845: dialable skip → OpenChannel on
   // connected=0 hung with no OpenChannel/timeout logs until Leave (~46s).
-  if (connected_before && !force_circuit) {
+  if (connected_before && !force_circuit && !force_redial) {
+    attempt_started_connected_ = true;
     media_path_kind_ = "direct";
     log().info << "CallMedia peer connected peer=" << peer_identity
                << " reach_key=" << reach_key;
     on_done({});
     return;
+  }
+  attempt_started_connected_ = false;
+  if (connected_before && force_redial) {
+    log().info << "CallMedia forced redial (stale connected link) peer=" << peer_identity
+               << " reach_key=" << reach_key;
   }
   // Do not start circuit Ensure once shutdown/Leave has begun.
   if (stopping_.load(std::memory_order_acquire)) {
@@ -1035,6 +1087,10 @@ void CallMediaBridge::CancelConnectTimers() {
     AppRuntime::CancelCoordinatorTimer(connect_retry_timer_id_);
     connect_retry_timer_id_ = 0;
   }
+  if (connect_watchdog_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(connect_watchdog_timer_id_);
+    connect_watchdog_timer_id_ = 0;
+  }
 }
 
 void CallMediaBridge::AbortConnectSequence() {
@@ -1100,6 +1156,15 @@ void CallMediaBridge::OnConnectAttemptFinished(CallMediaDirectConnectParams para
     connect_worker_inflight_.store(false, std::memory_order_release);
     return;
   }
+  // B42: a late completion of an attempt that has already been superseded (watchdog already
+  // drove the retry forward) must not re-finish the sequence.
+  if (attempt != connect_attempt_current_) {
+    return;
+  }
+  if (connect_watchdog_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(connect_watchdog_timer_id_);
+    connect_watchdog_timer_id_ = 0;
+  }
   if (connected || direct_.IsActive()) {
     log().info << "CallMedia Connect ok call_id=" << params.call_id
                << " role=" << (params.offerer ? "offerer" : "answerer");
@@ -1111,6 +1176,16 @@ void CallMediaBridge::OnConnectAttemptFinished(CallMediaDirectConnectParams para
   if (dial_) {
     dial_->AbortInflightDial(params.peer_key);
     dial_->ClearDialBackoff(params.peer_key);
+  }
+  // B39: this attempt started on an already-"connected" link (or hit a transport-level failure
+  // typical of a dead link) — drop it so the next attempt redials fresh DialBook candidates
+  // instead of reusing the same stale PeerLink.
+  if (attempt_started_connected_ || connected.error().message.find("transport failed") != std::string::npos) {
+    if (dial_) {
+      dial_->DropLink(params.peer_key);
+    }
+    force_redial_ = true;
+    log().info << "CallMedia dropping stale link peer=" << params.peer_key << " attempt=" << attempt;
   }
   if (attempt >= kConnectAttempts) {
     FinishConnectSequence(gen, params.call_id, connected, params.offerer ? "offerer" : "answerer");
@@ -1197,10 +1272,11 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
   if (!direct_.IsActive()) {
     direct_.Detach();
   }
+  connect_attempt_current_ = attempt;
   log().info << "CallMedia ConnectAsync attempt=" << attempt << "/" << kConnectAttempts
              << " call_id=" << params.call_id << " peer=" << params.peer_key
              << " role=" << (params.offerer ? "offerer" : "answerer")
-             << " timeout_ms=" << kConnectAttemptTimeoutMs;
+             << " timeout_ms=" << connect_attempt_timeout_ms_;
   if (dial_) {
     if (auto ma = dial_->PreferredMultiaddr(params.peer_key)) {
       log().info << "CallMedia ConnectAsync ma=" << *ma << " peer=" << params.peer_key;
@@ -1218,7 +1294,6 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
   // "invalid connect params" with no leg outbound begin).
   CallMediaDirectConnectParams connect_params = params;
   CallMediaDirectCallbacks connect_cbs = cbs;
-  const bool offerer_role = connect_params.offerer;
   direct_.ConnectAsync(
       connect_params, connect_cbs,
       [this, params = std::move(params), cbs = std::move(cbs), gen, attempt, connect_peer,
@@ -1238,12 +1313,21 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
         }
         AppRuntime::PostUI(std::move(cont));
       },
-      kConnectAttemptTimeoutMs);
+      connect_attempt_timeout_ms_);
   // Bridge-side watchdog: CallMediaLeg TickDeadlines may not fire while OpenChannel/dial is stuck
   // on nested MeshRuntime::Pump (dogfood 19f845/612b: no ConnectAsync done until Leave).
-  (void)AppRuntime::ScheduleCoordinatorOneShot(
-      std::chrono::milliseconds(kConnectAttemptTimeoutMs + 1000),
-      [this, gen, attempt, connect_peer, connect_call, offerer_role]() {
+  // B42: this watchdog used to call FinishConnectSequence directly, which ended the WHOLE
+  // 5-attempt sequence on a single attempt's timeout. Route through OnConnectAttemptFinished
+  // instead so a timed-out attempt is retried like any other failure (drop-stale-link / retry /
+  // give up on the last attempt) — and guard on connect_attempt_current_ so a watchdog armed for
+  // a superseded attempt cannot fire while a later attempt is legitimately in flight.
+  if (connect_watchdog_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(connect_watchdog_timer_id_);
+  }
+  connect_watchdog_timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(
+      std::chrono::milliseconds(connect_attempt_timeout_ms_ + 1000),
+      [this, params = connect_params, cbs = connect_cbs, gen, attempt, connect_peer,
+       connect_call]() mutable {
         if (connect_generation_.load(std::memory_order_acquire) != gen ||
             stopping_.load(std::memory_order_acquire)) {
           return;
@@ -1251,13 +1335,23 @@ void CallMediaBridge::ContinueConnectAttemptAfterReachable(CallMediaDirectConnec
         if (!connect_worker_inflight_.load(std::memory_order_acquire)) {
           return;
         }
-        log().warning << "CallMedia ConnectAsync watchdog call_id=" << connect_call
-                      << " peer=" << connect_peer << " attempt=" << attempt;
-        direct_.Detach();
-        // Detach may not deliver on_finished if Mesh IO is wedged — force sequence progress.
-        FinishConnectSequence(gen, connect_call,
-                              Error("amp call-media connect timed out (watchdog)"),
-                              offerer_role ? "offerer" : "answerer");
+        // OnConnectAttemptFinished and the bridge's attempt state live on the UI thread (the
+        // ConnectAsync completion posts there too); only the atomics are checked here.
+        AppRuntime::PostUI([this, params = std::move(params), cbs = std::move(cbs), gen, attempt,
+                            connect_peer, connect_call]() mutable {
+          if (connect_generation_.load(std::memory_order_acquire) != gen ||
+              stopping_.load(std::memory_order_acquire) || connect_attempt_current_ != attempt ||
+              !connect_worker_inflight_.load(std::memory_order_acquire)) {
+            return;
+          }
+          log().warning << "CallMedia ConnectAsync watchdog call_id=" << connect_call
+                        << " peer=" << connect_peer << " attempt=" << attempt;
+          direct_.Detach();
+          // Detach may not deliver on_finished if Mesh IO is wedged — force attempt progress via
+          // the normal failure path (not FinishConnectSequence, so remaining attempts still run).
+          OnConnectAttemptFinished(std::move(params), std::move(cbs), gen, attempt,
+                                   Error("amp call-media connect timed out (watchdog)"));
+        });
       });
 }
 
@@ -1273,6 +1367,8 @@ void CallMediaBridge::StartConnectSequence(CallMediaDirectConnectParams params,
   }
   connect_worker_inflight_.store(true, std::memory_order_release);
   CancelConnectTimers();
+  force_redial_ = false;
+  attempt_started_connected_ = false;
   // V049 / B31: simultaneous open — both roles dial immediately. Carrier/home NAT only pass
   // flows the inside host started; waiting 15 s for answerer reverse-dial made phone→Mac fail
   // while Mac→phone worked. Amp A026 elects one PeerLink; CallMediaDirect claims one stream.
@@ -1368,6 +1464,7 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   // ReserveOnBootstrapSeeds registers + associates (do not also Warm in parallel).
   if (seed_reserve_) {
     seed_reserve_();
+    ArmReserveRenewal();
   } else if (seed_warm_) {
     seed_warm_();
   }
@@ -1744,6 +1841,7 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   Apply(CallDirectPlannerEvent::Stop, call_id, media_peer_identity_);
   AbortConnectSequence();
   CancelDirectHealthTimer();
+  CancelReserveRenewal();
   const std::string peer = media_peer_identity_;
   if (pending_answerer_call_id_ == call_id) {
     pending_answerer_call_id_.clear();
@@ -1872,6 +1970,7 @@ void CallMediaBridge::PrepareForTeardown(int timeout_ms) {
   Apply(CallDirectPlannerEvent::Stop, media_call_id_, media_peer_identity_);
   AbortConnectSequence();
   CancelDirectHealthTimer();
+  CancelReserveRenewal();
   const std::string peer = media_peer_identity_;
   const std::string call_id = media_call_id_;
   pending_answerer_call_id_.clear();

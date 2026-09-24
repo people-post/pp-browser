@@ -36,6 +36,7 @@ public:
   bool IsActive() const override;
   CallMediaDirectConnectParams ActiveParams() const override;
   CallMediaSessionPhase Phase() const override;
+  CallMediaLinkKind ActiveLinkKind() const override;
   void Detach() override;
 
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,

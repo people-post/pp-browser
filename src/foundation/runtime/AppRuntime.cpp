@@ -7,6 +7,7 @@
 #include "common/PbrCompat.h"
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdlib>
 #include <mutex>
 #include <thread>
@@ -38,6 +39,79 @@ void EnsureUIMailbox() {
   if (!g_ui_runner) {
     g_ui_runner = std::make_unique<SequencedTaskRunner>();
   }
+}
+
+/**
+ * Teardown gate over every runtime mailbox (THREADING.md § Teardown quiesce). Owners post raw
+ * `this` onto workers / coordinator / UI that teardown does not join before freeing them
+ * (dogfood 2026-09-24 SIGSEGV + audit of ~15 owners); one gate replaces per-owner guards.
+ */
+enum class TeardownState { Open, Draining, Closed };
+enum class GateKind { Posted, OneShotTimer, RepeatingTimer };
+
+struct TeardownGate {
+  std::mutex mu;
+  std::condition_variable cv;
+  TeardownState state = TeardownState::Open;
+  uint64_t epoch = 0;
+  /** Accepted posts not yet run or dropped. */
+  int64_t pending = 0;
+  /** Gated tasks executing now. */
+  int64_t running = 0;
+};
+
+TeardownGate g_gate;
+/** Nesting depth of gated tasks on this thread: continuations are allowed while draining. */
+thread_local int t_gated_depth = 0;
+
+/** Wrap `task` for the gate; empty result = drop the post. */
+std::function<void()> GateTask(std::function<void()> task, const GateKind kind) {
+  uint64_t epoch = 0;
+  {
+    std::lock_guard lock(g_gate.mu);
+    if (kind == GateKind::Posted) {
+      if (g_gate.state == TeardownState::Closed ||
+          (g_gate.state == TeardownState::Draining && t_gated_depth == 0)) {
+        return {};
+      }
+      ++g_gate.pending;
+    }
+    epoch = g_gate.epoch;
+  }
+  return [task = std::move(task), epoch, kind]() {
+    {
+      std::lock_guard lock(g_gate.mu);
+      bool run = false;
+      switch (kind) {
+      case GateKind::Posted:
+        --g_gate.pending;
+        run = g_gate.state != TeardownState::Closed && g_gate.epoch == epoch;
+        break;
+      case GateKind::OneShotTimer:
+        run = g_gate.state == TeardownState::Open && g_gate.epoch == epoch;
+        break;
+      case GateKind::RepeatingTimer:
+        // Owners cancel their repeating timers; GUI timers must survive a profile reset.
+        run = g_gate.state == TeardownState::Open;
+        break;
+      }
+      if (!run) {
+        g_gate.cv.notify_all();
+        return;
+      }
+      ++g_gate.running;
+    }
+    struct Leave {
+      ~Leave() {
+        --t_gated_depth;
+        std::lock_guard lock(g_gate.mu);
+        --g_gate.running;
+        g_gate.cv.notify_all();
+      }
+    } leave;
+    ++t_gated_depth;
+    task();
+  };
 }
 
 /** Boundary helper: takes Logger& (do not copy Logger — LogProxy binds to `this`). */
@@ -143,6 +217,10 @@ size_t AppRuntime::WorkerTotalQueuedCount() {
 }
 
 bool AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds budget) {
+  if (IsTeardownQuiesced()) {
+    // QuiesceForTeardown already drained and joined gated work; posts would be dropped.
+    return true;
+  }
   if (!IsRunning()) {
     RunUITasks();
     return true;
@@ -166,6 +244,67 @@ bool AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds budget) {
   }
   RunUITasks();
   return true;
+}
+
+bool AppRuntime::QuiesceForTeardown(const std::chrono::milliseconds budget) {
+  InitLogging();
+  {
+    std::lock_guard lock(g_gate.mu);
+    if (g_gate.state != TeardownState::Open) {
+      return g_gate.running <= t_gated_depth;
+    }
+    g_gate.state = TeardownState::Draining;
+  }
+  // Paused (background) pools would never drain their queue.
+  ResumeBackgroundWork();
+  const bool pump_ui = CurrentlyOnUI();
+  const int own_depth = t_gated_depth;
+  const auto deadline = std::chrono::steady_clock::now() + budget;
+  bool drained = false;
+  int64_t pending = 0;
+  int64_t running = 0;
+  for (;;) {
+    if (pump_ui) {
+      RunUITasks();
+    }
+    std::unique_lock lock(g_gate.mu);
+    pending = g_gate.pending;
+    running = g_gate.running;
+    // Our own enclosing gated task (quit / reset from a UI task) counts as running.
+    if (pending == 0 && running <= own_depth) {
+      drained = true;
+      break;
+    }
+    if (std::chrono::steady_clock::now() >= deadline) {
+      break;
+    }
+    g_gate.cv.wait_for(lock, std::chrono::milliseconds(5));
+  }
+  {
+    std::lock_guard lock(g_gate.mu);
+    g_gate.state = TeardownState::Closed;
+  }
+  if (drained) {
+    logger().info << "Teardown quiesce drained";
+  } else {
+    logger().warning << "Teardown quiesce budget " << budget.count() << " ms exceeded: pending=" << pending
+                     << " running=" << (running - own_depth);
+  }
+  return drained;
+}
+
+void AppRuntime::ReopenAfterTeardown() {
+  std::lock_guard lock(g_gate.mu);
+  if (g_gate.state == TeardownState::Open) {
+    return;
+  }
+  ++g_gate.epoch;
+  g_gate.state = TeardownState::Open;
+}
+
+bool AppRuntime::IsTeardownQuiesced() {
+  std::lock_guard lock(g_gate.mu);
+  return g_gate.state != TeardownState::Open;
 }
 
 void AppRuntime::Shutdown() {
@@ -203,8 +342,12 @@ void AppRuntime::PostUI(std::function<void()> task) {
   if (!task) {
     return;
   }
+  auto gated = GateTask(std::move(task), GateKind::Posted);
+  if (!gated) {
+    return;
+  }
   EnsureUIMailbox();
-  g_ui_runner->PostTask(std::move(task));
+  g_ui_runner->PostTask(std::move(gated));
   if (g_ui_wake_callback) {
     g_ui_wake_callback();
   }
@@ -214,8 +357,12 @@ void AppRuntime::PostUIFront(std::function<void()> task) {
   if (!task) {
     return;
   }
+  auto gated = GateTask(std::move(task), GateKind::Posted);
+  if (!gated) {
+    return;
+  }
   EnsureUIMailbox();
-  g_ui_runner->PostTaskFront(std::move(task));
+  g_ui_runner->PostTaskFront(std::move(gated));
   if (g_ui_wake_callback) {
     g_ui_wake_callback();
   }
@@ -250,7 +397,14 @@ void AppRuntime::PostWorker(WorkerLane lane, std::function<void()> task) {
   if (!g_testing_worker_override && !IsRunning()) {
     return;
   }
-  WorkerDispatch::Post(lane, std::move(task));
+  if (!task) {
+    return;
+  }
+  auto gated = GateTask(std::move(task), GateKind::Posted);
+  if (!gated) {
+    return;
+  }
+  WorkerDispatch::Post(lane, std::move(gated));
 }
 
 void AppRuntime::PostWorkerCritical(std::function<void()> task) {
@@ -303,7 +457,11 @@ void AppRuntime::PostCoordinator(CoordinatorPriority priority, std::function<voi
   if (!IsRunning() || !task) {
     return;
   }
-  g_thread_runtime->Coordinator().Post(priority, std::move(task));
+  auto gated = GateTask(std::move(task), GateKind::Posted);
+  if (!gated) {
+    return;
+  }
+  g_thread_runtime->Coordinator().Post(priority, std::move(gated));
 }
 
 void AppRuntime::PostCoordinatorCritical(std::function<void()> task) {
@@ -322,18 +480,19 @@ uint64_t AppRuntime::ScheduleCoordinatorRepeating(std::chrono::milliseconds inte
                                                   std::function<void()> fn) {
   // Mid-shutdown: ThreadRuntime clears running_ before joining workers; in-flight unlock
   // may still call StartCoordinatorTimers — no-op instead of Coordinator() assert.
-  if (!IsRunning()) {
+  if (!IsRunning() || !fn) {
     return 0;
   }
-  return g_thread_runtime->Coordinator().ScheduleRepeating(interval, std::move(fn));
+  return g_thread_runtime->Coordinator().ScheduleRepeating(
+      interval, GateTask(std::move(fn), GateKind::RepeatingTimer));
 }
 
 uint64_t AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds delay,
                                                 std::function<void()> fn) {
-  if (!IsRunning()) {
+  if (!IsRunning() || !fn) {
     return 0;
   }
-  return g_thread_runtime->Coordinator().ScheduleOneShot(delay, std::move(fn));
+  return g_thread_runtime->Coordinator().ScheduleOneShot(delay, GateTask(std::move(fn), GateKind::OneShotTimer));
 }
 
 void AppRuntime::CancelCoordinatorTimer(uint64_t timer_id) {

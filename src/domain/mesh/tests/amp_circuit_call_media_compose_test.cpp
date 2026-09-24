@@ -240,10 +240,75 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedHelloAndEncryptedAudioRoundT
   EXPECT_EQ(received, opus);
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
   EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  // Path label truth: both ends report the relay carrier (answerer showed "Punched" — dogfood 2026-09-24).
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+  EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
 
   a_call_->DetachLeg(leg_id);
   harness_->PumpUntil([&] { return a_call_->Phase() == CallMediaSessionPhase::Idle; }, 500);
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
+}
+
+// Dogfood 2026-09-24 (call-path-resilience k0 red test): call rides the relay carrier, a direct
+// (punched) link to the same peer comes up, then the relay path goes silent. Design (K001/K002,
+// M4/M5): media continues on the direct path. Today the leg is pinned to the carrier mux and
+// tears down with "amp call-media: peer link lost". Enable when k3/k4 land.
+TEST_F(AmpCircuitCallMediaComposeTest, DISABLED_CallSurvivesRelaySilenceWithDirectPath) {
+  auto nested = EstablishNestedCallMediaPath();
+  ASSERT_TRUE(nested) << nested.error().message;
+
+  const std::string call_id = "call-relay-then-direct";
+  ByteVector media_key(32, 0x42);
+  bool answerer_connected = false;
+  std::vector<uint8_t> received;
+  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] { answerer_connected = true; };
+    cbs.on_audio = [&](const std::vector<uint8_t>& opus) { received = opus; };
+  });
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = harness_->peer_id_b;
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+  std::atomic<bool> offerer_connected{false};
+  CallMediaDirectCallbacks cbs;
+  cbs.on_connected = [&] { offerer_connected.store(true, std::memory_order_release); };
+  LegCompletion leg_done;
+  const CallMediaLegId leg_id = a_call_->StartLeg(params, std::move(cbs), leg_done.Fn(), 8000);
+  ASSERT_TRUE(leg_id);
+  leg_done.PumpUntilDone(*harness_);
+  ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
+  harness_->PumpUntil([&] { return answerer_connected && offerer_connected.load(); }, 2500);
+  ASSERT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+
+  // "Punch" succeeds: a direct ADP link A↔B now coexists with the nested carrier link (A026).
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint("b-direct", harness_->ma_b)));
+  Wait<void> direct_wait;
+  harness_->mgr_a().EnsureAssociation("b-direct", direct_wait.LinkFn());
+  direct_wait.PumpUntilDone(*harness_);
+  ASSERT_TRUE(direct_wait.result) << direct_wait.result.error().message;
+
+  // Relay goes silent (its sends dropped); run past the ADP liveness window on the Amp clock.
+  harness_->io_r->SetDropRate(1.0);
+  for (int i = 0; i < 40; ++i) {
+    harness_->clock->Advance(250);
+    harness_->PumpAll();
+  }
+
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  const std::vector<uint8_t> opus = {0x0d, 0x1e, 0xc7};
+  auto sent = a_call_->SendAudio(leg_id, opus, 2, 0);
+  ASSERT_TRUE(sent) << sent.error().message;
+  harness_->PumpUntil([&] { return received == opus; }, 2500);
+  EXPECT_EQ(received, opus) << "audio must keep flowing on the direct path";
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
 }
 
 TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedEncryptedVideoOver16KiB) {

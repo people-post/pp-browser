@@ -6,11 +6,13 @@
 #include "common/media/CallMediaHealth.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/diagnostics/CrashDump.h"
+#include "foundation/diagnostics/LogFile.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/PlatformLogDefaults.h"
 #include "foundation/platform/PlatformLogSink.h"
 #include "foundation/platform/PlatformStartupHints.h"
 #include "foundation/platform/DeploymentProfile.h"
+#include "foundation/runtime/AppVersion.h"
 #include "foundation/runtime/ProductBranding.h"
 
 #include <SDL3/SDL_main.h>
@@ -52,6 +54,8 @@ int main(int argc, char** argv) {
   bool startup_timing = EnvTruthy("PP_BROWSER_STARTUP_TIMING");
   std::string profile_override;
   std::string pin;
+  std::string log_file_override;
+  bool log_file_enabled = true;
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--debug") == 0) {
@@ -66,6 +70,11 @@ int main(int argc, char** argv) {
     } else if (std::strcmp(argv[i], "--pin") == 0 && i + 1 < argc) {
       pin = argv[i + 1];
       ++i;
+    } else if (std::strcmp(argv[i], "--log-file") == 0 && i + 1 < argc) {
+      log_file_override = argv[i + 1];
+      ++i;
+    } else if (std::strcmp(argv[i], "--no-log-file") == 0) {
+      log_file_enabled = false;
     }
   }
 
@@ -99,6 +108,16 @@ int main(int argc, char** argv) {
 
   // Capture fatal signals / terminate into data_dir/diagnostics/crash_pending.txt.
   pbr::CrashDump::Install(pbr::AppPaths::DataDir());
+
+  if (log_file_enabled) {
+    const std::string log_path = pbr::LogFile::Install(
+        log_file_override.empty() ? pbr::LogFile::DefaultPath(pbr::AppPaths::DataDir()) : log_file_override);
+    if (!log_path.empty()) {
+      // WARNING so the header survives the desktop default level (every log starts with it).
+      root.warning << "Log file " << log_path << " version=" << pbr::AppVersionString()
+                << " level=" << LevelName(root.getLevel());
+    }
+  }
 
   if (!profile_override.empty()) {
     root.warning << "Using profile override '" << profile_override

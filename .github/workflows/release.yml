@@ -33,6 +33,8 @@ jobs:
   macos:
     needs: [guard]
     runs-on: macos-14
+    env:
+      CCACHE_COMPRESSLEVEL: 5
 
     steps:
       - uses: actions/checkout@v4
@@ -45,16 +47,16 @@ jobs:
 
       - name: Ensure ccache directory exists
         run: |
-          mkdir -p "$HOME/.cache/ccache"
-          echo "CCACHE_DIR=$HOME/.cache/ccache" >> "$GITHUB_ENV"
+          mkdir -p .cache/ccache
+          echo "CCACHE_DIR=${{ github.workspace }}/.cache/ccache" >> "$GITHUB_ENV"
 
       - name: Restore ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: macOS-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release.yml') }}
+          key: macOS-ccache-v2-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release.yml') }}
           restore-keys: |
-            macOS-ccache-v1-
+            macOS-ccache-v2-
 
       - name: ccache stats (pre-build)
         run: |
@@ -83,7 +85,7 @@ jobs:
             -DPP_BROWSER_PACKAGED_BUILD=ON
 
       - name: Build
-        run: cmake --build build --config Release -j 2
+        run: cmake --build build --config Release -j 4
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
@@ -169,7 +171,7 @@ jobs:
           ./scripts/platform/macos_sign_and_notarize.sh staple "${dmg_path}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: macos-installer
           path: build/*.dmg
@@ -181,6 +183,8 @@ jobs:
   windows:
     needs: [guard]
     runs-on: windows-2022
+    env:
+      CCACHE_COMPRESSLEVEL: 5
 
     steps:
       - uses: actions/checkout@v4
@@ -191,16 +195,27 @@ jobs:
         run: |
           choco install nasm --no-progress -y
           echo "C:\Program Files\NASM" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          choco install ccache --no-progress -y
 
-      - name: Enable sccache
+      - name: Ensure ccache directory exists
         shell: bash
-        run: echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+        run: |
+          mkdir -p .cache/ccache
+          echo "CCACHE_DIR=${{ github.workspace }}/.cache/ccache" >> "$GITHUB_ENV"
 
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.10
+      - name: Restore ccache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: Windows-ccache-v2-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/release.yml') }}
+          restore-keys: |
+            Windows-ccache-v2-
 
-      - name: sccache stats (pre-build)
-        run: sccache --zero-stats || true
+      - name: ccache stats (pre-build)
+        shell: bash
+        run: |
+          ccache --zero-stats || true
+          ccache --show-stats || true
 
       - name: Parse version from tag
         id: version
@@ -225,7 +240,7 @@ jobs:
             -DPP_BROWSER_PACKAGED_BUILD=ON
 
       - name: Build
-        run: cmake --build build --config Release -j 2
+        run: cmake --build build --config Release -j 4
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
@@ -253,14 +268,15 @@ jobs:
           echo "Packaged ${exe}"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: windows-installer
           path: build/*.exe
           if-no-files-found: error
 
-      - name: sccache stats (post-build)
-        run: sccache --show-stats || true
+      - name: ccache stats (post-build)
+        shell: bash
+        run: ccache --show-stats || true
 
   android:
     needs: [guard]
@@ -285,7 +301,7 @@ jobs:
       - name: Free disk space
         uses: ./.github/actions/free-disk-space
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
@@ -309,7 +325,7 @@ jobs:
           chmod -R u+rwX "$CCACHE_DIR" "$HOME/.gradle" "$GITHUB_WORKSPACE/android/.gradle"
 
       - name: Restore Android Gradle cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           # Intentionally omit android/build and android/app/.cxx — large intermediates
           # that often exhaust runner disk when restored.
@@ -322,7 +338,7 @@ jobs:
             ${{ runner.os }}-android-gradle-v3-
 
       - name: Restore Android ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.CCACHE_DIR }}
           key: ${{ runner.os }}-android-ccache-v4-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', 'android/**/CMakeLists.txt') }}
@@ -385,7 +401,7 @@ jobs:
           echo "Packaged dist/android/pp-browser-${{ steps.version.outputs.release_version }}-android.apk"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: android-release-apk
           path: dist/android/*.apk
@@ -417,7 +433,7 @@ jobs:
           path: dist/android
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: pp-browser ${{ github.ref_name }}
           draft: false
