@@ -225,6 +225,11 @@ void CallMediaBridge::SetSeedParkAwait(
 }
 
 std::string CallMediaBridge::MediaPathKind() const {
+  // The bound link is the truth: an answerer's inbound leg can ride a relay carrier while the
+  // reach loop (and the dialer-only hop registry) think "punched" (dogfood 2026-09-24).
+  if (direct_.IsActive() && direct_.ActiveLinkKind() == CallMediaLinkKind::Relayed) {
+    return "circuit";
+  }
   if (!media_peer_identity_.empty() && dial_ && dial_->HasCallMediaCircuitHop(media_peer_identity_)) {
     return "circuit";
   }
@@ -510,7 +515,8 @@ void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
   in.already_done = tx_only_escalation_done_;
   in.sfu_attached = host_.P2pIsSfuAttached();
   in.stopping = stopping_.load();
-  in.media_path_kind = media_path_kind_;
+  // Bound-link truth: never "escalate via circuit" when media already rides a relay carrier.
+  in.media_path_kind = MediaPathKind();
   in.has_circuit_reach = circuit_reach_ != nullptr;
   in.direct_active = direct_.IsActive();
   in.active_call_id = call_id;
@@ -524,7 +530,7 @@ void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
     return;
   }
   tx_only_escalation_done_ = true;
-  log().warning << "Call-media TX-only on path=" << (media_path_kind_.empty() ? "unknown" : media_path_kind_)
+  log().warning << "Call-media TX-only on path=" << (in.media_path_kind.empty() ? "unknown" : in.media_path_kind)
                 << " — escalate via circuit call_id=" << call_id << " peer=" << peer
                 << " tx_frames=" << snap.tx_audio_frames;
   Apply(CallDirectPlannerEvent::TxOnlyGraceExpired, call_id, peer);

@@ -129,6 +129,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
      */
     std::string remote_peer_id;
     pp::amp::ChannelMux* bound_mux = nullptr;
+    CallMediaLinkKind bound_link_kind = CallMediaLinkKind::Unknown;
 
     std::shared_ptr<pp::amp::ChannelSession> outbound_control;
     std::shared_ptr<pp::amp::ChannelSession> inbound_control;
@@ -241,6 +242,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
     if (!bundle.bound_mux) {
       bundle.bound_mux = link.Mux();
+      bundle.bound_link_kind =
+          link.IsCarrierBacked() ? CallMediaLinkKind::Relayed : CallMediaLinkKind::Direct;
     }
   }
 
@@ -1301,6 +1304,12 @@ CallMediaDirectConnectParams CallMediaLegCoordinator::ActiveParams() const {
   Impl::CallbackLock lock(*impl_);
   const auto* bundle = impl_->PrimaryBundle();
   return bundle ? bundle->params : CallMediaDirectConnectParams{};
+}
+
+CallMediaLinkKind CallMediaLegCoordinator::ActiveLinkKind() const {
+  Impl::CallbackLock lock(*impl_);
+  const auto* bundle = impl_->PrimaryBundle();
+  return bundle ? bundle->bound_link_kind : CallMediaLinkKind::Unknown;
 }
 
 CallMediaLegPhase CallMediaLegCoordinator::LegPhase(const CallMediaLegId id) const {

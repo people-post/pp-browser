@@ -50,6 +50,7 @@ public:
   bool IsActive() const;
   CallMediaLegId PrimaryLegId() const;
   CallMediaDirectConnectParams ActiveParams() const;
+  CallMediaLinkKind ActiveLinkKind() const;
   CallMediaLegPhase LegPhase(CallMediaLegId id) const;
   /** Transitional: maps active bundle phase → CallMediaSessionPhase for existing tests. */
   CallMediaSessionPhase Phase() const;

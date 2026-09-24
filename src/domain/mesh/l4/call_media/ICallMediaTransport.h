@@ -63,6 +63,15 @@ struct CallMediaDirectCallbacks {
   std::function<void(const std::string& error)> on_failed;
 };
 
+/** Kind of mesh link the active call-media channels are bound on (path label truth). */
+enum class CallMediaLinkKind {
+  Unknown,
+  /** ADP association (dialed or punched). */
+  Direct,
+  /** Nested link over a relay circuit carrier. */
+  Relayed,
+};
+
 /**
  * Single product entry for 1:1 call-media transport ([A020]).
  * Amp: CallMediaAmpTransport → CallMediaLegCoordinator.
@@ -90,6 +99,8 @@ public:
   virtual bool IsActive() const = 0;
   virtual CallMediaDirectConnectParams ActiveParams() const = 0;
   virtual CallMediaSessionPhase Phase() const = 0;
+  /** Link kind carrying the primary bundle's channels; Unknown until bound. */
+  virtual CallMediaLinkKind ActiveLinkKind() const { return CallMediaLinkKind::Unknown; }
   virtual void Detach() = 0;
 
   /**

@@ -14,16 +14,17 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 ## k0 — Observability + dogfood root cause (M1)
 
 - [x] Amp: `LinkEventListener` (Connected / Dropped+reason / PathChanged), posted off-strand; `MeshRuntime::AddLinkEventListener`; gtests (connected, dead, carrier-closed, path-changed) — `Suspect` moves to k1 with dead-peer detection
-- [ ] Amp: snapshot fields — transport kind (Direct / Punched / Carrier), remote endpoint, last-rx age
 - [x] pp-browser: `MeshLink` logger subscribes and logs every event (`MeshLinkEventLog`)
 - [x] Tag pp-cpp-amp with link events (v2.1.10) + pin in `cmake/PpCppAmp.cmake`
-- [ ] Fix path label: answerer inbound carrier counts as "circuit"; label reflects the link actually carrying media
+- [x] Fix path label: bundle records the bound link kind (`ICallMediaTransport::ActiveLinkKind`); `MediaPathKind()` = "circuit" whenever media rides a relay carrier; TX-only escalate uses the same truth
 - [ ] Dogfood repro with logs from caller, answerer **and** relay R1; record the 10.0 s trigger in DECISIONS (K-ADR or note) and in [p2p-av-calls/CROSS_NETWORK_B25_B31.md](../p2p-av-calls/CROSS_NETWORK_B25_B31.md) style triage
-- [ ] Loopback gtest reproducing the trace (relay leg + punched link, relay goes silent → today: teardown) as the k3/k4 red test
+- [x] Loopback red test `AmpCircuitCallMediaComposeTest.DISABLED_CallSurvivesRelaySilenceWithDirectPath` (relay leg + direct link, relay silent → today `peer link lost` on both legs); enable in k3/k4
 
 **Exit:** every link drop in a dogfood log has a reason; the 10 s trigger is explained.
 
 ## k1 — Amp link hygiene (M2)
+
+- [ ] Snapshot fields — transport kind (Direct / Punched / Carrier), remote endpoint, last-rx age (moved from k0; ship with this amp release)
 
 - [ ] Drop Connected carrier link on carrier close (no Backoff linger)
 - [ ] Drop inbound link on handshake error

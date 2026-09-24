@@ -236,6 +236,7 @@ public:
   CallMediaSessionPhase Phase() const override {
     return active ? CallMediaSessionPhase::MediaReady : CallMediaSessionPhase::Idle;
   }
+  CallMediaLinkKind ActiveLinkKind() const override { return link_kind; }
   void Detach() override {
     active = false;
     ++detach_calls;
@@ -269,6 +270,7 @@ public:
 
   bool started = false;
   bool active = false;
+  CallMediaLinkKind link_kind = CallMediaLinkKind::Unknown;
   int connect_async_calls = 0;
   int detach_calls = 0;
   CallMediaDirectConnectParams last_params;
@@ -369,6 +371,20 @@ protected:
   std::unique_ptr<CallLifecycle> lifecycle_;
   std::unique_ptr<CallMediaBridge> bridge_;
 };
+
+// Dogfood 2026-09-24: answerer showed "Punched" while its inbound leg rode a relay carrier.
+TEST_F(CallMediaBridgeAnswererStartTest, PathKindFollowsBoundLinkNotReachLoop) {
+  transport_->active = true;
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  EXPECT_EQ(bridge_->MediaPathKind(), "circuit");
+
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  EXPECT_NE(bridge_->MediaPathKind(), "circuit");
+
+  transport_->active = false;
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  EXPECT_NE(bridge_->MediaPathKind(), "circuit") << "stale bound kind must not label an idle transport";
+}
 
 TEST_F(CallMediaBridgeAnswererStartTest, KeyReadyScheduleStartActivatesMedia) {
   // Product glue: ScheduleStartMediaAsAnswerer (Kick / Accept) → BeginSession StartSfu when key present.
