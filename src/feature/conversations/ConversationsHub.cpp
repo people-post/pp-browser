@@ -77,6 +77,9 @@ namespace pbr {
 
 namespace {
 
+/** Wait for running orchestrator worker tasks (relay HTTP normally < 1 s; poll timeout 10 s). */
+constexpr std::chrono::milliseconds kOrchestratorQuiesceBudget{3000};
+
 std::string MaskBriefLlmApiKey(const std::string& key) {
   constexpr const char kPrefix[] = "brf_llm_";
   if (key.empty()) {
@@ -2503,10 +2506,25 @@ void ConversationsHub::Shutdown() {
   }
   // Stop mesh (joins MeshControlPool + MeshPump) before dropping session façade.
   StopMesh();
+  // Worker / UI tasks of the orchestrator capture raw `this` and the relay client; the worker pool
+  // is only joined later (AppRuntime::Shutdown). Close its gate and wait for running tasks — a
+  // relay Send inside curl while we freed them corrupted the heap (dogfood 2026-09-24).
+  const bool orchestrator_quiesced =
+      !mesh_messaging_ || mesh_messaging_->QuiesceAsyncWork(kOrchestratorQuiesceBudget);
+  if (!orchestrator_quiesced) {
+    log().warning << "Shutdown: orchestrator work still running after "
+                  << kOrchestratorQuiesceBudget.count()
+                  << " ms — leaking orchestrator + relay client until exit";
+  }
   // Drop the call session manager before P2P — CSM holds a MeshDeliveryOrchestrator& reference.
   call_stack_->ResetSessions();
   // Destroy P2P before groups — P2P held a non-owning Groups pointer.
-  mesh_messaging_.reset();
+  if (orchestrator_quiesced) {
+    mesh_messaging_.reset();
+  } else {
+    (void)mesh_messaging_.release();
+    (void)http_relay_.release();
+  }
   group_membership_.reset();
   group_invite_gate_.reset();
   group_roster_.reset();

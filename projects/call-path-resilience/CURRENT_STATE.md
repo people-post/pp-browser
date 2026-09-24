@@ -12,6 +12,7 @@
 | **k0 path label** | Call details path = bound link kind (`ActiveLinkKind`); answerer no longer shows "Punched" while on the relay carrier |
 | **k0 red test** | `DISABLED_CallSurvivesRelaySilenceWithDirectPath` reproduces the dogfood tail in loopback (relay silent → both legs `peer link lost` although a direct link is up) — the k3/k4 acceptance test |
 | **k2 relay reservations** | Dogfood 10:50 "Couldn't connect": reserved relay links evicted as `connection-dead` 8–11 s after park (cold link; peer's 5 s liveness) and the 15 s lease was never renewed. Now: relay link hot while reserved, product hot keepalive 2 s, reservations renewed every 10 s while a media session lives. |
+| Shutdown crash (not a k-phase) | Dogfood 10:51 SIGSEGV: relay Send (call_leave) on a worker while `ConversationsHub::Shutdown` freed the orchestrator + relay client. `TaskGate` guards orchestrator async work; Hub quiesces before destroy ([OWNERSHIP.md § TaskGate](../../docs/architecture/OWNERSHIP.md)). |
 | Dogfood tooling | `{data_dir}/logs/pp-browser.log`, `crash_pending.txt` `image_base=`, `scripts/dev/pp_dogfood.sh` ([CONFIGURATION.md § Log file](../../docs/ops/CONFIGURATION.md)) |
 
 ## Still open

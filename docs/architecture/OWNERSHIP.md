@@ -89,6 +89,14 @@ When a parent must post work that captures raw `this` / `Impl*` onto IO (or anot
 
 **Abort vs lifetime tickets (Amp L4):** `CircuitTunnelCoordinator` and `AmpMediaRelayCoordinator` keep two `DeferredSelf`s — `deferred` for `PostIo` (Invalidate on AbortInflight) and `lifetime` for IoTick / protocol / PeerConnected (Invalidate only on Stop). Mid-life Abort must not poison ticks still needed while Started. `CallMediaLegCoordinator` uses `weak_ptr(Impl)` for ticks/handlers instead of a lifetime ticket.
 
+## TaskGate (queued **and running** work)
+
+`DeferredSelf` cannot help a task that is already **running** when its owner is destroyed. When work on a pool the owner does not join (AppRuntime workers, UI queue) captures raw `this`, use [`foundation/runtime/TaskGate.h`](../../src/foundation/runtime/TaskGate.h): wrap every async entry point with `Guard`, and have the destroyer call `CloseAndWait(budget)` first. Guarded work no-ops once closed; `CloseAndWait` blocks until running guarded work returns. On timeout the owner (and anything its running work touches) must outlive it — leak at shutdown rather than free.
+
+| Owner | Notes |
+|-------|--------|
+| `MeshDeliveryOrchestrator` | Worker / UI posts + async completion callbacks (`PostWorkerGuarded` / `PostUiGuarded` / `Guarded`); `ConversationsHub::Shutdown` quiesces after `StopMesh` (3 s budget; leak orchestrator + relay client on timeout). Crash dogfood 2026-09-24: relay Send in curl while the Hub freed them. |
+
 ### Whitelist (who may capture raw self via DeferredSelf)
 
 | Owner | Notes |

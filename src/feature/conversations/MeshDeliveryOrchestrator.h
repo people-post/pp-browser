@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Module.h"
+#include "foundation/runtime/TaskGate.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "common/thread/IThreadStore.h"
@@ -143,6 +144,12 @@ public:
    * Required before MeshHost::Stop — otherwise ~Amp*Transport::Stop UAFs PeerLinks.
    */
   void DetachAmpTransports();
+  /**
+   * Shutdown: stop accepting async work (queued worker/UI tasks and late completion callbacks
+   * no-op) and wait up to `budget` for running ones. False ⇒ still running — the caller must not
+   * destroy us (or the relay client) yet. Crash dogfood 2026-09-24 (relay Send during teardown).
+   */
+  bool QuiesceAsyncWork(std::chrono::milliseconds budget);
   /** R019 peer-direct attachment blobs (null when mesh unavailable). */
   IChatBlobPeerClient* PeerBlobClient() const;
   IChatBlobPeerService* PeerBlobService() const;
@@ -263,6 +270,16 @@ public:
   void RetryPeerDial(const std::string& thread_id);
 
 private:
+  enum class WorkerLane { Normal, Critical, Background };
+
+  /** Every async entry point that touches `this` goes through the gate (see QuiesceAsyncWork). */
+  void PostWorkerGuarded(WorkerLane lane, std::function<void()> task);
+  void PostUiGuarded(std::function<void()> task);
+  template <typename F>
+  auto Guarded(F&& fn) const {
+    return async_gate_.Guard(std::forward<F>(fn));
+  }
+
   struct PendingRelaySend {
     RelayEnvelope envelope;
     std::string message_id;
@@ -357,6 +374,7 @@ private:
   /** Set when SyncInbox is requested while a poll is already in flight — worker re-polls. */
   std::atomic<bool> poll_again_{false};
   std::atomic<bool> sync_pending_{false};
+  TaskGate async_gate_;
 };
 
 } // namespace pbr
