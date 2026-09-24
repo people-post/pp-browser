@@ -2377,6 +2377,16 @@ call-video-tile {
   font-size: 14dp;
 }
 
+/* Unstyled <input type="checkbox"> renders at zero size (B38): give it a box. */
+input.checkbox {
+  width: 18dp;
+  height: 18dp;
+  border-width: 2dp;
+  border-radius: 4dp;
+  vertical-align: -4dp;
+  cursor: pointer;
+}
+
 .shell-dialog-actions {
   justify-content: flex-end;
   gap: 8dp;

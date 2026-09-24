@@ -1368,3 +1368,18 @@ select selectbox option:hover {
   image-color: #dc2626;
 }
 }
+
+input.checkbox {
+  border-color: #d1d5db;
+  background-color: transparent;
+}
+
+input.checkbox:hover,
+input.checkbox:focus {
+  border-color: #4a6cf7;
+}
+
+input.checkbox:checked {
+  border-color: #4a6cf7;
+  background-color: #4a6cf7;
+}
