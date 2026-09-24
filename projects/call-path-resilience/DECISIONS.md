@@ -93,6 +93,7 @@ Without a standby, primary-path loss goes to k4 re-anchor (`Reconnecting…`, re
 - **Reconnect window:** **30 s** of `Reconnecting…` with an empty path set before the call fails.
 
 **Rationale:** During a call the radio is already awake for 20 ms audio frames, so active-path keepalives are free; the battery cost is only on standby. Heartbeat-based silence avoids false failover on mute / Opus DTX. 30 s covers tunnels / elevators better than 20 s.  
+**Amendment (2026-09-24, k2):** a keepalive interval only keeps a link alive if it beats the **peer's** ADP liveness window (`kAliveTimeoutMs` 5 s) — the far end of our link is usually a cold inbound link that evicts us after 5 s without RX, whatever tier we hold. So until k1 changes Amp liveness (e.g. peers honour the sender's advertised tier / interval), product hot keepalive is **2 s** (`kProductHotKeepaliveInterval`, same as the hard-lab call probe); 10–15 s standby cadence is only possible after that Amp change. Warm (60 s, chat) has the same mismatch — k1.  
 **Alternatives rejected:** Uniform 5 s keepalive on every call link (standby radio wakeups on cellular); media-silence-only failover (mute ⇒ false switches).
 
 ---

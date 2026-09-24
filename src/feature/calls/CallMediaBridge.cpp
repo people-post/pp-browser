@@ -359,6 +359,38 @@ void CallMediaBridge::ArmDirectHealthTimer() {
       });
 }
 
+void CallMediaBridge::CancelReserveRenewal() {
+  if (reserve_renew_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(reserve_renew_timer_id_);
+    reserve_renew_timer_id_ = 0;
+  }
+}
+
+void CallMediaBridge::ArmReserveRenewal() {
+  CancelReserveRenewal();
+  if (!seed_reserve_) {
+    return;
+  }
+  // Reservations are a 15 s lease (StartReserve TTL) and nothing else renews them; a caller that
+  // dials after the lease lapses finds no park (dogfood 2026-09-24 "Couldn't connect"). 10 s keeps
+  // one lease overlapping the next, so the relay link also stays hot throughout.
+  reserve_renew_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(
+      std::chrono::milliseconds(reserve_renew_interval_ms_), [this]() {
+        AppRuntime::PostUI([this]() { OnReserveRenewFire(); });
+      });
+}
+
+void CallMediaBridge::OnReserveRenewFire() {
+  if (stopping_.load(std::memory_order_acquire) || media_call_id_.empty()) {
+    CancelReserveRenewal();
+    return;
+  }
+  log().info << "circuit reserve renew call_id=" << media_call_id_;
+  if (seed_reserve_) {
+    seed_reserve_();
+  }
+}
+
 void CallMediaBridge::OnDirectHealthTimerFire() {
   if (direct_planner_phase_ == CallDirectPlannerPhase::Idle ||
       direct_planner_phase_ == CallDirectPlannerPhase::KeyWait ||
@@ -1374,6 +1406,7 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   // ReserveOnBootstrapSeeds registers + associates (do not also Warm in parallel).
   if (seed_reserve_) {
     seed_reserve_();
+    ArmReserveRenewal();
   } else if (seed_warm_) {
     seed_warm_();
   }
@@ -1750,6 +1783,7 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   Apply(CallDirectPlannerEvent::Stop, call_id, media_peer_identity_);
   AbortConnectSequence();
   CancelDirectHealthTimer();
+  CancelReserveRenewal();
   const std::string peer = media_peer_identity_;
   if (pending_answerer_call_id_ == call_id) {
     pending_answerer_call_id_.clear();
@@ -1878,6 +1912,7 @@ void CallMediaBridge::PrepareForTeardown(int timeout_ms) {
   Apply(CallDirectPlannerEvent::Stop, media_call_id_, media_peer_identity_);
   AbortConnectSequence();
   CancelDirectHealthTimer();
+  CancelReserveRenewal();
   const std::string peer = media_peer_identity_;
   const std::string call_id = media_call_id_;
   pending_answerer_call_id_.clear();

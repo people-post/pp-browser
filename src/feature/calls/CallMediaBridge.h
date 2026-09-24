@@ -93,6 +93,7 @@ public:
   void SetMediaKeyInboxPollRoundsForTest(int rounds);
   /** Shrink EnsurePeerReachable deadline for gtests (0 = production default). */
   void SetDialWaitBudgetMsForTest(int budget_ms);
+  void SetReserveRenewIntervalMsForTest(int interval_ms) { reserve_renew_interval_ms_ = interval_ms; }
 
   /**
    * SoftMigrate: close 1:1 call-media stream without CallMediaEngine::Stop so SFU capture continues.
@@ -197,6 +198,10 @@ private:
   /** Arm health / TX-only / connect-timeout timer (pm3). */
   void ArmDirectHealthTimer();
   void CancelDirectHealthTimer();
+  /** Renew relay reservations (15 s lease) while a media session is connecting / live (k2). */
+  void ArmReserveRenewal();
+  void CancelReserveRenewal();
+  void OnReserveRenewFire();
   void OnDirectHealthTimerFire();
 
   CallMediaHost& host_;
@@ -237,6 +242,9 @@ private:
   std::condition_variable inbound_key_cv_;
   uint64_t connect_retry_timer_id_ = 0;
   uint64_t direct_health_timer_id_ = 0;
+  uint64_t reserve_renew_timer_id_ = 0;
+  /** Inside the 15 s StartReserve lease so consecutive leases overlap. */
+  int reserve_renew_interval_ms_ = 10000;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;
   std::unordered_set<std::string> media_attempted_calls_;
   int media_key_inbox_poll_rounds_ = 90;

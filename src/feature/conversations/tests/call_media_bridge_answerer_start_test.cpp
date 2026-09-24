@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
+#include <atomic>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -384,6 +385,38 @@ TEST_F(CallMediaBridgeAnswererStartTest, PathKindFollowsBoundLinkNotReachLoop) {
   transport_->active = false;
   transport_->link_kind = CallMediaLinkKind::Relayed;
   EXPECT_NE(bridge_->MediaPathKind(), "circuit") << "stale bound kind must not label an idle transport";
+}
+
+// k2: relay reservations are a 15 s lease — renew while the media session lives, stop on Stop.
+TEST_F(CallMediaBridgeAnswererStartTest, ReservationRenewedWhileSessionLiveStopsOnStop) {
+  std::atomic<int> reserves{0};
+  bridge_->SetSeedReserve([&] { reserves.fetch_add(1); });
+  bridge_->SetReserveRenewIntervalMsForTest(30);
+
+  const std::string call_id = "call:answerer-renew";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  AppRuntime::RunUITasks();
+  ASSERT_GE(reserves.load(), 1) << "BeginSession parks once";
+
+  const auto pump_for = [](std::chrono::milliseconds span) {
+    const auto until = std::chrono::steady_clock::now() + span;
+    while (std::chrono::steady_clock::now() < until) {
+      AppRuntime::RunUITasks();
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+  };
+  pump_for(std::chrono::milliseconds(200));
+  EXPECT_GE(reserves.load(), 3) << "lease renewed while live";
+
+  bridge_->StopMeshMedia(call_id);
+  pump_for(std::chrono::milliseconds(50));
+  const int after_stop = reserves.load();
+  pump_for(std::chrono::milliseconds(200));
+  EXPECT_EQ(reserves.load(), after_stop) << "no renewals after StopMeshMedia";
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, KeyReadyScheduleStartActivatesMedia) {

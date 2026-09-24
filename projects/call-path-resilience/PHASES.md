@@ -29,6 +29,7 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 - [ ] Drop Connected carrier link on carrier close (no Backoff linger)
 - [ ] Drop inbound link on handshake error
 - [ ] Warm/hot dead-peer detection → `Suspect` → drop (reason dead-ADP)
+- [ ] Liveness vs tier mismatch: remote evicts after 5 s regardless of our tier (warm 60 s / hot 20 s defaults useless for idle links) — e.g. advertise keepalive interval in the session so the peer extends its window; then relax product hot 2 s
 - [ ] `MarkWarm` / `MarkHot` before link exists is remembered and applied on establish
 - [ ] Hot inbound links send keepalives
 - [ ] `MaybeLearnPath` after replay check (+ gtest: replayed packet from new address does not move the path)
@@ -40,9 +41,11 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 
 ## k2 — Call keeps its links alive (M3) — early mitigation
 
-- [ ] Call path set links + relay outer links `MarkHot` while Live; `ClearWarm` at hangup
+- [x] Relay links holding a circuit reservation are hot (`CircuitTunnelCoordinator` counts Reserved tunnels per relay; `ClearWarm` when the last one ends)
+- [x] Product hot keepalive 2 s (`kProductHotKeepaliveInterval`, beats the peer's 5 s liveness — K008 amendment); tests share the product link config
+- [ ] Call path set links (media link, relay outer links of a relayed path) `MarkHot` while Live; `ClearWarm` at hangup
 - [ ] Call-scoped keepalive (K008): standby / relay outer links 10–15 s — Amp per-link interval override; device battery measurement picks the value
-- [ ] Refresh call-used circuit reservations before TTL while Live; release at hangup
+- [x] Renew circuit reservations every 10 s (15 s lease) from `BeginSession` until `StopMeshMedia` / teardown (`CallMediaBridge::ArmReserveRenewal`)
 - [ ] Stop the post-Live Ensure/punch loop from running unowned — it becomes the k3 candidate producer
 - [ ] Chat `WarmPeerByKey` ordering fixed via k1 (or reorder locally if k1 lags)
 

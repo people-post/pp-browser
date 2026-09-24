@@ -120,6 +120,12 @@ struct CircuitTunnelCoordinator::Impl {
   std::unordered_map<uint64_t, std::unique_ptr<Tunnel>> tunnels;
   /** Relay: PeerId → parked inbound circuit channel from answerer (op=reserve). */
   std::unordered_map<std::string, Reservation> reservations;
+  /**
+   * Client side: live Reserved tunnels per relay key. The relay never talks first, so a cold
+   * relay link idles past the 5 s ADP liveness window and is evicted with the reservation
+   * (dogfood 2026-09-24 "Couldn't connect"). Hot while ≥ 1 reservation is held (K008).
+   */
+  std::unordered_map<std::string, int> reserved_relays;
   /** PeerId → ServeDial tunnels waiting for Connected / reserve (H010 event wait). */
   std::unordered_map<std::string, std::vector<CircuitTunnelId>> far_leg_waiters_;
 
@@ -402,7 +408,28 @@ struct CircuitTunnelCoordinator::Impl {
     PostFinishCb([cb = std::move(cb), result = std::move(result)]() mutable { cb(std::move(result)); });
   }
 
+  void NoteReserveHeld(const std::string& relay_key) {
+    if (++reserved_relays[relay_key] == 1) {
+      runtime->Links().MarkHot(relay_key);
+    }
+  }
+
+  void NoteReserveReleased(Tunnel& tunnel) {
+    if (!tunnel.is_reserve || tunnel.phase != CircuitTunnelPhase::Reserved) {
+      return;
+    }
+    auto it = reserved_relays.find(tunnel.relay_peer_key);
+    if (it == reserved_relays.end()) {
+      return;
+    }
+    if (--it->second <= 0) {
+      reserved_relays.erase(it);
+      runtime->Links().ClearWarm(tunnel.relay_peer_key);
+    }
+  }
+
   void TearDown(Tunnel& tunnel, const bool suppress_notify, const bool local_cancel, const std::string& error) {
+    NoteReserveReleased(tunnel);
     if (tunnel.finished && !tunnel.bridge) {
       ClearFarLegWait(tunnel);
       tunnels.erase(tunnel.id.value);
@@ -506,6 +533,7 @@ struct CircuitTunnelCoordinator::Impl {
             tunnel->resolved_multiaddr = root->getString("resolved_multiaddr").value_or("");
             if (tunnel->is_reserve) {
               tunnel->phase = CircuitTunnelPhase::Reserved;
+              NoteReserveHeld(tunnel->relay_peer_key);
               CircuitTunnelBridgeResult ok;
               ok.ok = true;
               ok.session = tunnel->near_session;
