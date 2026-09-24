@@ -28,10 +28,10 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 
 - [ ] Drop Connected carrier link on carrier close (no Backoff linger)
 - [ ] Drop inbound link on handshake error
-- [ ] Warm/hot dead-peer detection → `Suspect` → drop (reason dead-ADP)
-- [ ] Liveness vs tier mismatch: remote evicts after 5 s regardless of our tier (warm 60 s / hot 20 s defaults useless for idle links) — e.g. advertise keepalive interval in the session so the peer extends its window; then relax product hot 2 s
+- [x] Warm/hot dead-peer detection: keepalive echo + eviction past the cadence window (reason `connection-dead`; amp keepalive v2) — a separate `Suspect` event deferred until a consumer needs it
+- [x] Liveness vs tier mismatch fixed: keepalive carries cadence, window = max(5 s, 5/2 × cadence) (amp docs/KEEPALIVE.md v2); product hot relaxed 2 s → 10 s, warm 60 s → 25 s
 - [ ] `MarkWarm` / `MarkHot` before link exists is remembered and applied on establish
-- [ ] Hot inbound links send keepalives
+- [x] Warm/hot links keep a cadence in both directions (inbound too); cold peers honour the announced cadence
 - [ ] `MaybeLearnPath` after replay check (+ gtest: replayed packet from new address does not move the path)
 - [ ] `LinkTable::Insert` on occupied key: no orphan in `by_id_`; `ScheduleDropLink` by LinkId (not key) so a replacement link is never dropped
 - [ ] `idle_ttl`: implement or delete
@@ -42,7 +42,7 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 ## k2 — Call keeps its links alive (M3) — early mitigation
 
 - [x] Relay links holding a circuit reservation are hot (`CircuitTunnelCoordinator` counts Reserved tunnels per relay; `ClearWarm` when the last one ends)
-- [x] Product hot keepalive 2 s (`kProductHotKeepaliveInterval`, beats the peer's 5 s liveness — K008 amendment); tests share the product link config
+- [x] Product keepalive cadences from `AmpLinkConfig.h` (hot 10 s, warm 25 s — K008); tests share the product link config
 - [ ] Call path set links (media link, relay outer links of a relayed path) `MarkHot` while Live; `ClearWarm` at hangup
 - [ ] Call-scoped keepalive (K008): standby / relay outer links 10–15 s — Amp per-link interval override; device battery measurement picks the value
 - [x] Renew circuit reservations every 10 s (15 s lease) from `BeginSession` until `StopMeshMedia` / teardown (`CallMediaBridge::ArmReserveRenewal`)
