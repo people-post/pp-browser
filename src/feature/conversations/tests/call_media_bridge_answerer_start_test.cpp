@@ -167,6 +167,11 @@ public:
     ++abort_inflight_calls;
     last_abort_peer = peer_key;
   }
+  void DropLink(const std::string& peer_key) override {
+    ++drop_link_calls;
+    last_drop_link_peer = peer_key;
+    connected[peer_key] = false;
+  }
   void ClearCallMediaCircuitHop(const std::string& /*peer_key*/) override {}
 
   bool HasCallMediaCircuitHop(const std::string& peer_key) const override {
@@ -180,9 +185,11 @@ public:
   int ensure_association_calls = 0;
   int clear_backoff_calls = 0;
   int abort_inflight_calls = 0;
+  int drop_link_calls = 0;
   std::string last_ensure_peer;
   std::string last_clear_backoff_peer;
   std::string last_abort_peer;
+  std::string last_drop_link_peer;
   bool ensure_result = true;
   std::string ensure_error = "ensure association not available";
 };
@@ -244,6 +251,17 @@ public:
                     std::function<void(Roe<void>)> on_done, int /*timeout_ms*/) override {
     ++connect_async_calls;
     last_params = params;
+    if (hang_first_n_connects > 0) {
+      --hang_first_n_connects;
+      return;
+    }
+    if (fail_first_n_connects > 0) {
+      --fail_first_n_connects;
+      if (on_done) {
+        on_done(Error(connect_fail_message));
+      }
+      return;
+    }
     active = true;
     active_params = params;
     if (callbacks.on_connected) {
@@ -271,6 +289,10 @@ public:
   bool active = false;
   int connect_async_calls = 0;
   int detach_calls = 0;
+  int fail_first_n_connects = 0;
+  int hang_first_n_connects = 0;
+  std::string connect_fail_message =
+      "amp link: transport failed [adp: adp udp: sendto dst=192.168.0.103:54410 errno=64]";
   CallMediaDirectConnectParams last_params;
   CallMediaDirectConnectParams active_params;
   std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> inbound;
@@ -613,6 +635,87 @@ TEST_F(CallMediaBridgeAnswererStartTest, EnsureReachResolvesAccountToMeshPeerId)
   ASSERT_GE(circuit_->call_media_ensure_calls, 1);
   EXPECT_EQ(circuit_->last_peer, mesh_peer)
       << "TryEnsureCallMediaReachable must use MeshPeerId, not account:";
+  bridge_->PrepareForTeardown(0);
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, StaleConnectedLinkIsDroppedAndRedialed) {
+  // B39: amp still reports the old link Connected after the peer changed network — the first
+  // ConnectAsync hits a dead link ("transport failed"); the bridge must DropLink and redial
+  // instead of reusing the same stale link on every attempt.
+  const std::string call_id = "call:stale-link";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  dial_->connected["account:peer"] = true;
+  // After DropLink resets connected=false, the redial's Ensure should fall back to circuit fast
+  // (short budget) rather than loop the "ok but not connected" backoff.
+  dial_->ensure_result = false;
+  dial_->ensure_error = "amp link: dial in backoff";
+  bridge_->SetDialWaitBudgetMsForTest(300);
+  transport_->fail_first_n_connects = 1;
+
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  ASSERT_TRUE(lifecycle_->AllowsDirectPath());
+
+  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  AppRuntime::RunUITasks();
+
+  for (int i = 0; i < 400; ++i) {
+    AppRuntime::RunUITasks();
+    if (transport_->connect_async_calls >= 2) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  EXPECT_EQ(dial_->drop_link_calls, 1);
+  EXPECT_EQ(dial_->last_drop_link_peer, "account:peer");
+  EXPECT_EQ(transport_->connect_async_calls, 2);
+  // Answerer + private Preferred skips EnsureAssociation and goes straight to circuit (existing
+  // behavior) — the signal that attempt 2 actually redialed (rather than short-circuiting on the
+  // stale "connected" link) is that Ensure ran the reachability path again.
+  EXPECT_GE(circuit_->call_media_ensure_calls, 1)
+      << "second attempt must redial via Ensure, not short-circuit on the stale link";
+  EXPECT_TRUE(media_->IsActive());
+  EXPECT_EQ(media_->ActiveCallId(), call_id);
+  bridge_->PrepareForTeardown(0);
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, WatchdogFailsOnlyTheAttempt) {
+  // B42: the per-attempt ConnectAsync watchdog must fail only the stuck attempt, not the whole
+  // 5-attempt sequence — attempt 2 must still be dialed and allowed to succeed.
+  const std::string call_id = "call:watchdog-attempt";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  dial_->ensure_result = false;
+  dial_->ensure_error = "amp link: dial in backoff";
+  dial_->connected["account:peer"] = false;
+  bridge_->SetDialWaitBudgetMsForTest(300);
+  bridge_->SetConnectAttemptTimeoutMsForTest(200);
+  transport_->hang_first_n_connects = 1;
+
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  ASSERT_TRUE(lifecycle_->AllowsDirectPath());
+
+  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  AppRuntime::RunUITasks();
+
+  // Watchdog margin (timeout + 1000ms) + 1500ms retry — allow generous wall-clock slack.
+  for (int i = 0; i < 500; ++i) {
+    AppRuntime::RunUITasks();
+    if (transport_->connect_async_calls >= 2) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  EXPECT_EQ(transport_->connect_async_calls, 2)
+      << "watchdog must have failed only attempt 1; attempt 2 must still be dialed";
+  EXPECT_TRUE(media_->IsActive());
+  EXPECT_EQ(media_->ActiveCallId(), call_id);
   bridge_->PrepareForTeardown(0);
 }
 
