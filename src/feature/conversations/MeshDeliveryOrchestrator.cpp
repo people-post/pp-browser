@@ -151,7 +151,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
                                                  peer_history_.get());
   chat_sync_->SetOnMessagesChanged([this]() {
     if (on_messages_changed_) {
-      PostUiGuarded([this]() { on_messages_changed_(); });
+      AppRuntime::PostUI([this]() { on_messages_changed_(); });
     }
   });
 }
@@ -365,7 +365,7 @@ void MeshDeliveryOrchestrator::SetRelayClient(IRelayClient* relay) {
                                                  peer_history_.get());
     chat_sync_->SetOnMessagesChanged([this]() {
       if (on_messages_changed_) {
-        PostUiGuarded([this]() { on_messages_changed_(); });
+        AppRuntime::PostUI([this]() { on_messages_changed_(); });
       }
     });
   }
@@ -614,14 +614,14 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
   }
 
   if (on_delivery_notice_) {
-    PostUiGuarded([this, notice]() {
+    AppRuntime::PostUI([this, notice]() {
       if (on_delivery_notice_) {
         on_delivery_notice_(notice);
       }
     });
   }
   if (on_messages_changed_) {
-    PostUiGuarded([this]() { on_messages_changed_(); });
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
 }
 
@@ -651,7 +651,7 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope) {
   }
   if (outcome.persisted || outcome.thread_changed) {
     if (on_messages_changed_) {
-      PostUiGuarded([this]() { on_messages_changed_(); });
+      AppRuntime::PostUI([this]() { on_messages_changed_(); });
     }
   }
 }
@@ -1035,7 +1035,7 @@ Roe<uint32_t> MeshDeliveryOrchestrator::StartNewSecureChat(const std::string& th
   }
   PurgeRetryQueueForThread(thread_id);
   if (on_messages_changed_) {
-    PostUiGuarded([this]() { on_messages_changed_(); });
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
   return *new_epoch;
 }
@@ -1058,7 +1058,7 @@ Roe<std::string> MeshDeliveryOrchestrator::RotatePskAndExportBundle(const std::s
   }
   PurgeRetryQueueForThread(thread_id);
   if (on_messages_changed_) {
-    PostUiGuarded([this]() { on_messages_changed_(); });
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
   return bundle;
 }
@@ -1129,18 +1129,18 @@ void MeshDeliveryOrchestrator::RunSyncOnIo(
     return;
   }
 
-  PostWorkerGuarded(WorkerLane::Normal, [this, task = std::move(task), on_complete = std::move(on_complete)]() mutable {
-    task(Guarded([this, on_complete = std::move(on_complete)](Roe<ChatSyncResult> result) mutable {
+  AppRuntime::PostWorkerNormal([this, task = std::move(task), on_complete = std::move(on_complete)]() mutable {
+    task([this, on_complete = std::move(on_complete)](Roe<ChatSyncResult> result) mutable {
       sync_pending_.store(false, std::memory_order_release);
       if (result && on_messages_changed_) {
-        PostUiGuarded([this]() { on_messages_changed_(); });
+        AppRuntime::PostUI([this]() { on_messages_changed_(); });
       }
       if (on_complete) {
         AppRuntime::PostUI([on_complete = std::move(on_complete), result = std::move(result)]() mutable {
           on_complete(std::move(result));
         });
       }
-    }));
+    });
   });
 }
 
@@ -1263,7 +1263,7 @@ void MeshDeliveryOrchestrator::NotifyDeliveryIssue(const Thread& thread, const s
       notice = "Relay rate limit — slow down messaging with new contacts.";
     }
   }
-  PostUiGuarded([this, notice]() {
+  AppRuntime::PostUI([this, notice]() {
     if (on_delivery_notice_) {
       on_delivery_notice_(notice);
     }
@@ -1280,7 +1280,7 @@ void MeshDeliveryOrchestrator::NotifyRelayFallback(const std::string& thread_id)
   if (!on_delivery_notice_) {
     return;
   }
-  PostUiGuarded([this, notice]() {
+  AppRuntime::PostUI([this, notice]() {
     if (on_delivery_notice_) {
       on_delivery_notice_(notice);
     }
@@ -1297,12 +1297,12 @@ void MeshDeliveryOrchestrator::MaybeTailSync(const std::string& thread_id) {
     log().info << "MaybeTailSync deferred (active call) thread=" << thread_id;
     return;
   }
-  PostWorkerGuarded(WorkerLane::Normal, [this, thread_id]() {
-    chat_sync_->TailSyncAsync(thread_id, Guarded([this](Roe<ChatSyncResult> result) {
+  AppRuntime::PostWorkerNormal([this, thread_id]() {
+    chat_sync_->TailSyncAsync(thread_id, [this](Roe<ChatSyncResult> result) {
       if (result && on_messages_changed_) {
-        PostUiGuarded([this]() { on_messages_changed_(); });
+        AppRuntime::PostUI([this]() { on_messages_changed_(); });
       }
-    }));
+    });
   });
 }
 
@@ -1323,12 +1323,12 @@ void MeshDeliveryOrchestrator::MaybeRepairGap(const std::string& thread_id, cons
   }
   const uint64_t gap_min = sync_state->contiguous_peer_seq + 1;
   const uint64_t gap_max = envelope.sender_seq - 1;
-  PostWorkerGuarded(WorkerLane::Normal, [this, thread_id, gap_min, gap_max]() {
-    chat_sync_->RepairGapAsync(thread_id, gap_min, gap_max, Guarded([this](Roe<ChatSyncResult> result) {
+  AppRuntime::PostWorkerNormal([this, thread_id, gap_min, gap_max]() {
+    chat_sync_->RepairGapAsync(thread_id, gap_min, gap_max, [this](Roe<ChatSyncResult> result) {
       if (result && on_messages_changed_) {
-        PostUiGuarded([this]() { on_messages_changed_(); });
+        AppRuntime::PostUI([this]() { on_messages_changed_(); });
       }
-    }));
+    });
   });
 }
 
@@ -1359,7 +1359,7 @@ void MeshDeliveryOrchestrator::ApplySendResult(const std::string& thread_id, con
     }
   }
   if (on_messages_changed_) {
-    PostUiGuarded([this]() { on_messages_changed_(); });
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
 }
 
@@ -1611,8 +1611,12 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
   // Amp dial key is Account ID (invite listen multiaddrs / contact endpoints). Brief uses relay:.
   auto send_work = [this, thread_id, envelope, message_id = message.id, amp_peer_key,
                     peer_relay_id, critical_lane = options.critical_lane]() mutable {
-    auto post_continue = [this, critical_lane](std::function<void()> fn) {
-      PostWorkerGuarded(critical_lane ? WorkerLane::Critical : WorkerLane::Normal, std::move(fn));
+    auto post_continue = [critical_lane](std::function<void()> fn) {
+      if (critical_lane) {
+        AppRuntime::PostWorkerCritical(std::move(fn));
+      } else {
+        AppRuntime::PostWorkerNormal(std::move(fn));
+      }
     };
     auto finish_relay = [this, thread_id, message_id, envelope, peer_relay_id,
                          critical_lane](bool tried_direct) mutable {
@@ -1655,8 +1659,8 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
     // Fire-and-forget Amp send: free this worker while MeshPump drives Open+ack.
     direct_chat_->SendEnvelopeAsync(
         amp_peer_key, envelope,
-        Guarded([this, thread_id, message_id, amp_peer_key, critical_lane, post_continue,
-                 finish_relay = std::move(finish_relay)](Roe<void> direct) mutable {
+        [this, thread_id, message_id, amp_peer_key, critical_lane, post_continue,
+         finish_relay = std::move(finish_relay)](Roe<void> direct) mutable {
           post_continue([this, thread_id, message_id, amp_peer_key, critical_lane, direct = std::move(direct),
                          finish_relay = std::move(finish_relay)]() mutable {
             if (direct) {
@@ -1670,14 +1674,18 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
             }
             finish_relay(true);
           });
-        }));
+        });
   };
-  // Call-control (MediaKey/Accept) must not sit behind PollInbox on Normal workers.
-  PostWorkerGuarded(options.critical_lane ? WorkerLane::Critical : WorkerLane::Normal, std::move(send_work));
+  if (options.critical_lane) {
+    // Call-control (MediaKey/Accept) must not sit behind PollInbox on Normal workers.
+    AppRuntime::PostWorkerCritical(std::move(send_work));
+  } else {
+    AppRuntime::PostWorkerNormal( std::move(send_work));
+  }
 
   // Always hop to UI — SendUserMessage runs on IO during membership fan-out (PublishMemberJoined).
   if (on_messages_changed_) {
-    PostUiGuarded([this]() { on_messages_changed_(); });
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
   if (!system_control && (*thread)->channel == ThreadChannel::E2ePublic) {
     (void)public_lock_.NoteTraffic(thread_id);
@@ -1890,7 +1898,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   }
 
   if (!encrypted->failed_member_identities.empty() && on_delivery_notice_) {
-    PostUiGuarded([this]() {
+    AppRuntime::PostUI([this]() {
       if (on_delivery_notice_) {
         on_delivery_notice_("Some group members couldn’t receive this message");
       }
@@ -1900,7 +1908,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
   appended->delivery = MessageDelivery::Relayed;
   (void)store_.UpdateMessage(*appended);
   if (on_messages_changed_) {
-    PostUiGuarded([this]() { on_messages_changed_(); });
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
   }
   return *appended;
 }
@@ -1975,7 +1983,7 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
     return;
   }
 
-  PostWorkerGuarded(WorkerLane::Normal, [this, pending = std::move(pending)]() mutable {
+  AppRuntime::PostWorkerNormal([this, pending = std::move(pending)]() mutable {
     if (!relay_) {
       std::lock_guard lock(retry_mutex_);
       retry_queue_.insert(retry_queue_.end(), std::make_move_iterator(pending.begin()),
@@ -2025,9 +2033,9 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
         const RelayEnvelope envelope = item.envelope;
         direct_chat_->SendEnvelopeAsync(
             peer_key, envelope,
-            Guarded([this, still_pending, process, index, item = std::move(item),
-                     try_relay = std::move(try_relay)](Roe<void> direct) mutable {
-              PostWorkerGuarded(WorkerLane::Normal, [this, still_pending, process, index, item = std::move(item),
+            [this, still_pending, process, index, item = std::move(item),
+             try_relay = std::move(try_relay)](Roe<void> direct) mutable {
+              AppRuntime::PostWorkerNormal([this, still_pending, process, index, item = std::move(item),
                                             try_relay = std::move(try_relay),
                                             direct = std::move(direct)]() mutable {
                 if (direct) {
@@ -2037,7 +2045,7 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
                 }
                 try_relay(std::move(item), true);
               });
-            }));
+            });
         return;
       }
       try_relay(std::move(item), false);
@@ -2091,7 +2099,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
 
   // HTTP PollInbox must NOT run on Browser IO — a 30s curl wait starved AcceptInvite / N025
   // Wire / MediaKey ingest on Samsung (PostAcceptInvite queued, never entered).
-  PostWorkerGuarded(WorkerLane::Background, [this]() {
+  AppRuntime::PostWorkerBackground([this]() {
     bool expected = false;
     if (!poll_pending_.compare_exchange_strong(expected, true)) {
       return;
@@ -2141,7 +2149,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
       }
 
       // Front of IO so ingest is not stuck behind other long work; HTTP already finished.
-      PostWorkerGuarded(WorkerLane::Critical, [this, local_account_id, local_relay_id = identity->relay_user_id,
+      AppRuntime::PostWorkerCritical( [this, local_account_id, local_relay_id = identity->relay_user_id,
                                                          messages = std::move(messages)]() mutable {
         bool changed = false;
         struct UnreadNotice {
@@ -2203,8 +2211,7 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
           const std::string ack_cursor = relay_cursor_;
           const std::string ack_user = local_relay_id;
           IRelayClient* relay = relay_;
-          // Guarded too: `relay` is owned by ConversationsHub and freed right after us.
-          PostWorkerGuarded(WorkerLane::Normal, [relay, ack_user, ack_cursor]() {
+          AppRuntime::PostWorkerNormal([relay, ack_user, ack_cursor]() {
             if (!relay) {
               return;
             }
@@ -2217,10 +2224,11 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
         }
 
         if (changed && on_messages_changed_) {
-          PostUiGuarded([this]() { on_messages_changed_(); });
+          AppRuntime::PostUI([this]() { on_messages_changed_(); });
         }
         if (!background_notices.empty() && on_background_unread_) {
-          PostUiGuarded([this, notices = std::move(background_notices)]() mutable {
+          AppRuntime::PostUI(
+                                  [this, notices = std::move(background_notices)]() mutable {
                                     for (auto& notice : notices) {
                                       on_background_unread_(std::move(notice.title),
                                                             std::move(notice.body),
@@ -2231,29 +2239,6 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
       });
     }
   });
-}
-
-bool MeshDeliveryOrchestrator::QuiesceAsyncWork(const std::chrono::milliseconds budget) {
-  return async_gate_.CloseAndWait(budget);
-}
-
-void MeshDeliveryOrchestrator::PostWorkerGuarded(const WorkerLane lane, std::function<void()> task) {
-  auto guarded = async_gate_.Guard(std::move(task));
-  switch (lane) {
-  case WorkerLane::Critical:
-    AppRuntime::PostWorkerCritical(std::move(guarded));
-    return;
-  case WorkerLane::Background:
-    AppRuntime::PostWorkerBackground(std::move(guarded));
-    return;
-  case WorkerLane::Normal:
-    AppRuntime::PostWorkerNormal(std::move(guarded));
-    return;
-  }
-}
-
-void MeshDeliveryOrchestrator::PostUiGuarded(std::function<void()> task) {
-  AppRuntime::PostUI(async_gate_.Guard(std::move(task)));
 }
 
 void MeshDeliveryOrchestrator::SetAttachmentDownloads(AttachmentFetchWorkflow* downloads) {
@@ -2386,7 +2371,7 @@ void MeshDeliveryOrchestrator::MaybeEnqueueAttachmentDownload(const RelayEnvelop
 
 void MeshDeliveryOrchestrator::NotifyMessagesChanged() {
   if (on_messages_changed_) {
-    PostUiGuarded([this]() {
+    AppRuntime::PostUI([this]() {
       if (on_messages_changed_) {
         on_messages_changed_();
       }
