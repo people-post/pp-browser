@@ -19,6 +19,8 @@
 
 ## Still open
 
+- **One-way audio stall on a relayed call (dogfood 2026-09-24 16:17, amp v2.2.x / pp-node 2.7.0):** call connects via relay `QmbgSh…`; after ~8 s caller→callee audio stops while callee→caller continues; **no link drops on either end** (keepalive v2 + k2 hold), caller keeps sending, no direct path on either side. Loopback rules out renewals on the carrying relay, reserves on the callee, lease expiry and a 2 s burst loss (`RelayedCallDisturbanceTest.*`). **Next: relay pp-node log for the window**; then k3/k4 (media-liveness failover would at least re-anchor).
+
 From PR #223 / #215 (dogfood 2026-09-24 evening, phone CN cellular ↔ Mac Wi‑Fi):
 - **B30** relay signaling latency on CN cellular (invite/accept 11–58 s late; phone `PollInbox ok=13 failed=97`) — now the dominant failure; relay/infra + client mitigation below (k4).
 - **B44** offerer `TxOnlyGraceExpired → CircuitEscalated` raced the answerer's successful redial; the failed escalation tore down the live direct call (k4).
