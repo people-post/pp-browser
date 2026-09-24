@@ -1,6 +1,6 @@
 # Call path resilience — current state
 
-**Last updated:** 2026-09-24 (project created; design K001–K010; open questions resolved except standby interval value + relay cap values)
+**Last updated:** 2026-09-24 (k0: Amp link events + `MeshLink` log landed locally; amp tag/pin pending)
 
 ## Landed
 
@@ -8,6 +8,7 @@
 |------|-------|
 | Project docs | README / DESIGN / PHASES / DECISIONS (K001–K010) |
 | Prerequisite fix | pp-cpp-amp **v2.1.9**: nested-carrier failure drop deferred to Tick (answerer SIGSEGV on carrier reset mid-handshake); pinned in `cmake/PpCppAmp.cmake` |
+| **k0 link events** | Amp `LinkEvent` (Connected / Dropped+`LinkDropReason` / PathChanged) via `MeshRuntime::AddLinkEventListener` ([ADR_LINK_PLANE §9](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md)); pp-browser `MeshLinkEventLog` logs them (`MeshLink`: connected/path INFO, drop of connected link WARNING, failed attempts DEBUG). Needs amp tag + pin before push. |
 | Dogfood tooling | `{data_dir}/logs/pp-browser.log`, `crash_pending.txt` `image_base=`, `scripts/dev/pp_dogfood.sh` ([CONFIGURATION.md § Log file](../../docs/ops/CONFIGURATION.md)) |
 
 ## Still open
@@ -17,8 +18,8 @@
 
 ## Next agent — start here
 
-1. **k0** in pp-cpp-amp: `LinkEventListener` + snapshot transport kind / remote endpoint / last-rx age; tag + pin.
-2. pp-browser `[MeshLink]` logger; rerun the cross-network dogfood with `scripts/dev/pp_dogfood.sh -- --debug` on both ends plus relay logs.
+1. Tag pp-cpp-amp (link events) and pin it; then rerun the cross-network dogfood with `scripts/dev/pp_dogfood.sh -- --debug` on both ends plus relay logs — `MeshLink` lines show which link died and why.
+2. Rest of k0: snapshot fields (transport kind / remote endpoint / last-rx age), answerer path-label fix, loopback red test.
 3. **k2** mitigation (hot call links + reserve refresh) can start in parallel — smallest change likely to stop the relay path dying mid-call.
 
 ## Agent traps

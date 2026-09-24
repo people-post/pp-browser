@@ -13,9 +13,10 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 
 ## k0 — Observability + dogfood root cause (M1)
 
-- [ ] Amp: `LinkEventListener` (Connected / Dropped+reason / PathChanged / Suspect), posted off-strand; gtest per drop reason (pp-cpp-amp release)
+- [x] Amp: `LinkEventListener` (Connected / Dropped+reason / PathChanged), posted off-strand; `MeshRuntime::AddLinkEventListener`; gtests (connected, dead, carrier-closed, path-changed) — `Suspect` moves to k1 with dead-peer detection
 - [ ] Amp: snapshot fields — transport kind (Direct / Punched / Carrier), remote endpoint, last-rx age
-- [ ] pp-browser: `[MeshLink]` logger subscribes and logs every event; pin new amp tag
+- [x] pp-browser: `MeshLink` logger subscribes and logs every event (`MeshLinkEventLog`)
+- [ ] Tag pp-cpp-amp with link events + pin in `cmake/PpCppAmp.cmake`
 - [ ] Fix path label: answerer inbound carrier counts as "circuit"; label reflects the link actually carrying media
 - [ ] Dogfood repro with logs from caller, answerer **and** relay R1; record the 10.0 s trigger in DECISIONS (K-ADR or note) and in [p2p-av-calls/CROSS_NETWORK_B25_B31.md](../p2p-av-calls/CROSS_NETWORK_B25_B31.md) style triage
 - [ ] Loopback gtest reproducing the trace (relay leg + punched link, relay goes silent → today: teardown) as the k3/k4 red test
