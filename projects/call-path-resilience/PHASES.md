@@ -35,6 +35,8 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 - [ ] `MaybeLearnPath` after replay check (+ gtest: replayed packet from new address does not move the path)
 - [ ] `LinkTable::Insert` on occupied key: no orphan in `by_id_`; `ScheduleDropLink` by LinkId (not key) so a replacement link is never dropped
 - [ ] `idle_ttl`: implement or delete
+- [x] `RequestDropLink(dial key | PeerId)` for stale links the product detects (B39, PR #223; reason `requested`)
+- [ ] Close an ADP association at once when the socket reports EHOSTDOWN / ENETUNREACH for its peer, instead of waiting for the liveness window (#215 B39 suggestion a)
 - [ ] pp-cpp-amp release + pin
 
 **Exit:** no link lingers in Backoff; dead warm/hot links evicted within 3 × interval.
@@ -47,6 +49,7 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 - [ ] Call-scoped keepalive (K008): standby / relay outer links 10–15 s — Amp per-link interval override; device battery measurement picks the value
 - [x] Renew circuit reservations every 10 s (15 s lease) from `BeginSession` until `StopMeshMedia` / teardown (`CallMediaBridge::ArmReserveRenewal`)
 - [ ] Stop the post-Live Ensure/punch loop from running unowned — it becomes the k3 candidate producer
+- [ ] Answerer's first dial waits ~12 s for `await_circuit_ready` / seed park (PR #223 call #5) — dial immediately, park in parallel
 - [ ] Chat `WarmPeerByKey` ordering fixed via k1 (or reorder locally if k1 lags)
 
 **Exit:** dogfood trace no longer loses the relay path while the call is live (even without migration).
@@ -60,6 +63,7 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 - [ ] Direct planner events `PathCandidate` / `PathMigrated` / `PathLost`; replace `ConnectSucceeded`-while-Live "keep"
 - [ ] Rewrite `TryUpgradeToDirectAsync`: migrate first, demote/standby after release (both roles)
 - [ ] Interop: old peer rejects migrate → call continues on current path
+- [ ] Trust an existing Connected link for a call only if its remote endpoint is in the call's current candidate set (invite/accept addrs); otherwise dial (#215 B39 suggestion b)
 - [ ] Loopback gtests: relay → punched with continuous seq; release ack; interop
 
 **Exit:** dogfood relay → punched upgrade moves media; relay becomes standby.
@@ -71,6 +75,8 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 - [ ] No standby → `Reconnecting` call status, relay re-anchor, 30 s window (K008); UI subtitle (i18n EN + zh-Hans)
 - [ ] `peer link lost` no longer tears down while the path set / window allows
 - [ ] TX-only escalate limited to initial connect
+- [ ] **B44:** offerer TX-only escalation first `DropLink` + redials direct; an escalation failure must not `SurfaceConnectFailed` once `direct_.IsActive()` again (PR #223 call #5)
+- [ ] **B30 mitigation:** offerer treats an inbound call-media Hello carrying the call's media key as an implicit Accept (direct media was up 17 s before the relay Accept arrived — PR #223 call #7)
 - [ ] Close p2p-av-calls a5 "Reconnect after brief network loss" (cross-link)
 
 **Exit:** killing the active path mid-call → ≤ 2 s gap with standby; recover within window without.
