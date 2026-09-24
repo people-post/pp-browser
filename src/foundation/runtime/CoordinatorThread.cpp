@@ -179,7 +179,16 @@ void CoordinatorThread::ThreadMain() {
 
     const auto deadline = NextTimerDeadlineLocked();
     if (deadline == std::chrono::steady_clock::time_point::max()) {
-      cv_.wait(lock, [this]() { return stopped_ || HasWorkLocked(); });
+      // HasWorkLocked() alone only covers the post queues — a ScheduleOneShot/ScheduleRepeating
+      // call while there are zero live timers notifies cv_ but does not satisfy that predicate,
+      // so the wakeup was lost and the newly-armed timer never got its FireDueTimersLocked look
+      // (start-up race: first-ever coordinator use in a process/test is a bare Schedule*, e.g.
+      // CallMediaBridge's B39 stale-link retry with no preceding Post). Re-check the timer
+      // deadline too so a fresh timer wakes this wait; NextTimerDeadlineLocked() is cheap.
+      cv_.wait(lock, [this]() {
+        return stopped_ || HasWorkLocked() ||
+               NextTimerDeadlineLocked() != std::chrono::steady_clock::time_point::max();
+      });
       continue;
     }
 
