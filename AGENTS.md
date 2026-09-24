@@ -78,6 +78,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | P2P mesh / Amp | [docs/architecture/MESH.md](docs/architecture/MESH.md), [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md), [projects/p2p-mesh/](projects/p2p-mesh/), [projects/adp/](projects/adp/) |
 | P2P A/V calls | [docs/architecture/CALLS.md](docs/architecture/CALLS.md), [projects/p2p-av-calls/](projects/p2p-av-calls/) |
 | Media hop reachability | [projects/media-hop-reachability/](projects/media-hop-reachability/) |
+| Call path migration / link events / mobility | [projects/call-path-resilience/](projects/call-path-resilience/) |
 | Network status chrome | [projects/network-status-chrome/](projects/network-status-chrome/) |
 | Contacts UI / store | `src/gui/contacts/ContactsController.*`, `src/domain/people/ContactsStore.*`, `assets/views/contacts.rml`, `contact_detail.rml` |
 | Profile icons / chat attachments | [docs/contracts/SERVICE_ENDPOINTS.md](docs/contracts/SERVICE_ENDPOINTS.md), [projects/relay-blob-upload/](projects/relay-blob-upload/) |
