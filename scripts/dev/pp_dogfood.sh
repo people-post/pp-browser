@@ -21,6 +21,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_DIR="${REPO_ROOT}/build"
 DATA_DIR_OVERRIDE=""
 SYMBOLIZE_ONLY=""
+BIN_OVERRIDE=""
 APP_ARGS=()
 
 usage() {
@@ -30,6 +31,7 @@ Usage: $(basename "$0") [options] [-- app args...]
   --build-dir DIR    Build tree holding src/app/pp-browser (default: build)
   --data-dir PATH    Override data root (default: platform data dir; -sandbox with --sandbox)
   --symbolize FILE   Only symbolize an existing crash dump against the build, then exit
+  --binary FILE      Binary to symbolize against (default: the build's pp-browser)
   -h, --help         Show this help
 
 Unknown options are passed to pp-browser. Log: {data_dir}/logs/pp-browser.log
@@ -109,13 +111,14 @@ while [[ $# -gt 0 ]]; do
     --build-dir) BUILD_DIR="$(cd "$2" && pwd)"; shift 2 ;;
     --data-dir) DATA_DIR_OVERRIDE="$2"; shift 2 ;;
     --symbolize) SYMBOLIZE_ONLY="$2"; shift 2 ;;
+    --binary) BIN_OVERRIDE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     --) shift; APP_ARGS+=("$@"); break ;;
     *) APP_ARGS+=("$1"); shift ;;
   esac
 done
 
-BIN="$(resolve_binary)"
+BIN="${BIN_OVERRIDE:-$(resolve_binary)}"
 if [[ ! -x "$BIN" ]]; then
   echo "error: no pp-browser binary at ${BIN} (build first or pass --build-dir)" >&2
   exit 2
@@ -133,7 +136,11 @@ DIAG_DIR="${DATA_DIR}/diagnostics"
 PENDING="${DIAG_DIR}/crash_pending.txt"
 mkdir -p "$DIAG_DIR"
 MARKER="$(mktemp)"
-trap 'rm -f "$MARKER"' EXIT
+# Pin the exact binary we run: a rebuild during the run replaces build/…/pp-browser (the linker
+# unlinks a running executable), and symbolizing against the new one gives garbage frames.
+RUN_BIN="${DIAG_DIR}/.run-binary"
+ln -f "$BIN" "$RUN_BIN" 2>/dev/null || cp "$BIN" "$RUN_BIN"
+trap 'rm -f "$MARKER" "$RUN_BIN"' EXIT
 
 ulimit -c unlimited 2>/dev/null || true
 
@@ -156,11 +163,14 @@ if [[ -f "$PENDING" && "$PENDING" -nt "$MARKER" ]]; then
   # The launch log becomes pp-browser.1.log on the next start — keep it with the crash.
   cp "${DATA_DIR}/logs/pp-browser.log" "${DIAG_DIR}/crash-${stamp}.log" 2>/dev/null
   cp "${DATA_DIR}/logs/console.log" "${DIAG_DIR}/crash-${stamp}-console.log" 2>/dev/null
-  symbolize_dump "$saved" "$BIN" "${DIAG_DIR}/crash-${stamp}-symbolized.txt"
+  # Keep the crashing binary for later re-symbolizing (hard link: no extra space while unchanged).
+  ln -f "$RUN_BIN" "${DIAG_DIR}/crash-${stamp}.bin" 2>/dev/null || cp "$RUN_BIN" "${DIAG_DIR}/crash-${stamp}.bin"
+  symbolize_dump "$saved" "${DIAG_DIR}/crash-${stamp}.bin" "${DIAG_DIR}/crash-${stamp}-symbolized.txt"
   echo "[dogfood] CRASH captured:"
   echo "[dogfood]   dump:       ${saved}"
   echo "[dogfood]   symbolized: ${DIAG_DIR}/crash-${stamp}-symbolized.txt"
   echo "[dogfood]   log:        ${DIAG_DIR}/crash-${stamp}.log"
   echo "[dogfood]   console:    ${DIAG_DIR}/crash-${stamp}-console.log"
+  echo "[dogfood]   binary:     ${DIAG_DIR}/crash-${stamp}.bin (re-symbolize: $(basename "$0") --symbolize <dump> --binary <this>)"
 fi
 exit "$status"
