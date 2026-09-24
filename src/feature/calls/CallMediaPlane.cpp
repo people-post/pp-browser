@@ -577,9 +577,16 @@ std::vector<MeshHopCandidate> CallMediaPlane::BuildCircuitRendezvousCandidates(
   const auto effective_seeds = ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes);
   auto hops = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, effective_seeds,
                                   mesh_cfg.prefer_contacts_for_routing, include_seeds);
+  // B41: the merged contact/directory/seed list can contain this node's own PeerId (and the
+  // call peer's); reserving on ourselves burns a 7-15 s dial budget per attempt.
+  std::string self_peer_id;
+  if (MeshHost* m = mesh(); m && m->Amp()) {
+    self_peer_id = m->Amp()->LocalPeerId();
+  }
   out.reserve(hops.size());
   for (auto& hop : hops) {
-    if (hop.peer_id.empty() || hop.peer_id == exclude_peer_id) {
+    if (hop.peer_id.empty() || hop.peer_id == exclude_peer_id ||
+        (!self_peer_id.empty() && hop.peer_id == self_peer_id)) {
       continue;
     }
     out.push_back(std::move(hop));
