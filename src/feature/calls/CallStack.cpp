@@ -11,6 +11,7 @@
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/mesh/reachability/Reachability.h"
 #include "domain/mesh/reachability/AmpPunchCoordinator.h"
+#include "domain/mesh/reachability/AmpObservedAddrs.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaPaths.h"
 #include "domain/messaging/CallLifecycleTypes.h"
@@ -459,6 +460,9 @@ std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
   if (addrs.empty() && !m->AmpListenMultiaddr().empty()) {
     addrs.push_back(m->AmpListenMultiaddr());
   }
+  // B40: a peer dialed our 169.254.x link-local address first. Never advertise addresses the
+  // peer cannot dial (link-local, wildcard, loopback) in call signaling.
+  std::erase_if(addrs, [](const std::string& ma) { return !IsUsableAdpListen(ma); });
   return RankAmpDialMultiaddrs(std::move(addrs));
 }
 

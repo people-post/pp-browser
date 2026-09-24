@@ -107,6 +107,9 @@ public:
   virtual std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const = 0;
   virtual void ClearDialBackoff(const std::string& peer_key) = 0;
   virtual void AbortInflightDial(const std::string& peer_key) = 0;
+  /** Close the live link for peer_key so the next dial uses fresh candidates (B39: stale
+   *  "connected" link after the peer changed network). Default no-op for fakes. */
+  virtual void DropLink(const std::string& /*peer_key*/) {}
   virtual void ClearCallMediaCircuitHop(const std::string& peer_key) = 0;
   /** True when call-media nested circuit carrier hop is installed for peer. */
   virtual bool HasCallMediaCircuitHop(const std::string& peer_key) const {
@@ -283,6 +286,14 @@ public:
     PostAmpIo([this, peer_key]() {
       if (amp_links_) {
         amp_links_->AbortInflightDial(peer_key);
+      }
+    });
+  }
+
+  void DropLink(const std::string& peer_key) override {
+    PostAmpIo([this, peer_key]() {
+      if (amp_links_) {
+        amp_links_->DropLink(peer_key);
       }
     });
   }
