@@ -30,7 +30,7 @@
   - **Single stop order:** `CallStack::StopMesh` (hub + probe); probe teardown = abort → quiesce → StopMesh → runtime join → free; `MeshHost::AttachAmpStack(…, AttachDrive::MeshPump)`.
   - The probe watchdog now fails a stuck teardown after 40 s and dumps every thread's backtrace (addr2line on the host), so the lab can't hang forever.
 - **Pre-existing flake (not yet investigated):** `CallUiBackendStackTest.*` segfaults under parallel load (`ctest -j8`: about 1 run in 2; 12 of 12 when 12 copies run at once, including on the baseline without these changes). Serial runs pass. Needs ASan.
-- **k1 small hygiene — fixed:** inbound dial key hex, ephemeral burst alias on inbound adopt (amp `c36bf10`, **not yet released/pinned**); reach loop "punched"/"direct" on a relay-carrier-only link (`IsConnectedDirect`).
+- **k1 small hygiene — fixed:** inbound dial key hex, ephemeral burst alias on inbound adopt (pp-cpp-amp **v2.2.2**, pinned); reach loop "punched"/"direct" on a relay-carrier-only link (`IsConnectedDirect`).
 
 From PR #223 / #215 (dogfood 2026-09-24 evening, phone CN cellular ↔ Mac Wi‑Fi):
 - **B30** relay signaling latency on CN cellular (invite/accept 11–58 s late; phone `PollInbox ok=13 failed=97`) — now the dominant failure; relay/infra + client mitigation below (k4).
