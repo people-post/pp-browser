@@ -19,7 +19,10 @@
 
 ## Still open
 
-- **One-way audio stall on a relayed call (dogfood 2026-09-24 16:17, amp v2.2.x / pp-node 2.7.0):** call connects via relay `QmbgSh…`; after ~8 s caller→callee audio stops while callee→caller continues; **no link drops on either end** (keepalive v2 + k2 hold), caller keeps sending, no direct path on either side. Loopback rules out renewals on the carrying relay, reserves on the callee, lease expiry and a 2 s burst loss (`RelayedCallDisturbanceTest.*`). **Next: relay pp-node log for the window**; then k3/k4 (media-liveness failover would at least re-anchor).
+- **One-way audio stall on relayed calls — root-caused and fixed (needs pp-node on relays):** the hop bound the dialer's circuit channel Control (Reliable, strict in-order) and never switched it to the carrier policy; the dialer sends best-effort, so the first lost / reordered frame wedged dialer→target for the rest of the call (dogfood 16:17). Reproduced in hard lab CGNAT (`delay 80ms loss 1%` on the caller) and loopback (`RelayedCallDisturbanceTest.CallerUplinkLossDoesNotWedgeCallerToCallee`); fixed in `CircuitTunnelCoordinator` (hop side). Lab after fix: 60 s both ways under 1 % and 2 % loss.
+- **Half-open call-media bundle taken as connected** (lab, 1 % loss + glare): InCall with no media, no retry — fixed (only MediaReady counts; `HalfOpenBundleIsNotAConnection`).
+- **Nested Reliable channels over a best-effort carrier** (call control, Amp chat, call-media hello over a relay): no end-to-end retransmission — lab `delay 120ms 30ms` (heavy reordering) fails call signaling (`amp direct chat send timed out`). A024 "dual outer lanes" follow-on; see k1.
+- `call_leave` over Amp chat through the relay often fails at hangup (`channel open failed`), so the peer only notices later; lab probes then hang until timeout.
 
 From PR #223 / #215 (dogfood 2026-09-24 evening, phone CN cellular ↔ Mac Wi‑Fi):
 - **B30** relay signaling latency on CN cellular (invite/accept 11–58 s late; phone `PollInbox ok=13 failed=97`) — now the dominant failure; relay/infra + client mitigation below (k4).

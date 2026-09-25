@@ -36,6 +36,9 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 - [ ] `LinkTable::Insert` on occupied key: no orphan in `by_id_`; `ScheduleDropLink` by LinkId (not key) so a replacement link is never dropped
 - [ ] `idle_ttl`: implement or delete
 - [x] `RequestDropLink(dial key | PeerId)` for stale links the product detects (B39, PR #223; reason `requested`)
+- [x] Hop applies the carrier policy to the dialer's leg of a call-media bridge (one-way stall root cause, 2026-09-24)
+- [ ] Reliable delivery for nested Reliable-class channels over a best-effort carrier (A024 dual outer lanes, or nested retransmit): call control / chat / hello fail under reordering + loss (lab `delay 120ms 30ms`)
+- [ ] Inbound link dial key renders the assoc id as broken hex (`inbound:=:>7=;…`) — fix the nibble encoding
 - [ ] Close an ADP association at once when the socket reports EHOSTDOWN / ENETUNREACH for its peer, instead of waiting for the liveness window (#215 B39 suggestion a)
 - [ ] pp-cpp-amp release + pin
 
@@ -105,7 +108,8 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 
 ## k7 — Tests, hard lab, promotion (continuous)
 
-- [ ] Hard-lab wave: punch-then-relay-drop, NAT rebind mid-call, short NAT timeout, network flip
+- [x] Hard-lab CGNAT long-hold stall repro: `pp-call-probe --rx-stall-ms/--watch-ms`, `PP_HARD_NAT_STACK_HOLD_MS` / `_RX_STALL_MS` / `_NETEM_A|B`
+- [ ] Hard-lab wave: punch-then-relay-drop, NAT rebind mid-call, short NAT timeout, network flip; netem profiles in CI (1 %/2 % loss must keep 60 s both ways)
 - [ ] Promote: CALLS.md (path set, migration, reconnect), WIRE_SCHEMAS (hello migrate, caps.mobility, control ops), MESH.md (link events, hygiene), amp docs/KEEPALIVE.md
 - [ ] Fix doc drift found in survey: calls CURRENT_STATE "V001–V038", CALLS.md "through V038", H009 "plan only" header
 
