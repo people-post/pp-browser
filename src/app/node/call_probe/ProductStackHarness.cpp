@@ -371,6 +371,10 @@ void ProductStackHarness::LearnAccountPeerId(const std::string& account_id,
 
 Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account,
                                                const ThreadMessage& msg) {
+  struct CountOnExit {
+    std::atomic<int>& n;
+    ~CountOnExit() { n.fetch_add(1, std::memory_order_release); }
+  } count{control_sends_};
   if (!chat_) {
     return Error("chat transport not started");
   }
@@ -554,19 +558,19 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
     }
     if (min_rx_frames > 0 && static_cast<int>(RxAudioFrames()) >= min_rx_frames) {
       min_rx_met = true;
-      if (rx_stall_ms_ <= 0) {
-        break;
-      }
     }
     if (ui_->Phase() == CallPhase::ConnectFailed) {
       std::cerr << "error: product-stack answerer ConnectFailed err=" << ui_->LastError() << "\n";
       return 1;
     }
-    if (rx_stall_ms_ > 0 && accepted) {
-      // Long hold: watch both directions until the offerer leaves.
-      if (auto stall = flow.Tick(RxAudioFrames(), TxAudioFrames())) {
-        std::cerr << "error: " << *stall << "\n";
-        return 1;
+    if (accepted) {
+      // Stay until the offerer leaves: hanging up on first RX ended the offerer's call before its
+      // own media phase once call_leave was actually delivered.
+      if (rx_stall_ms_ > 0) {
+        if (auto stall = flow.Tick(RxAudioFrames(), TxAudioFrames())) {
+          std::cerr << "error: " << *stall << "\n";
+          return 1;
+        }
       }
       if (ui_->Phase() == CallPhase::InCall) {
         was_in_call = true;
@@ -589,13 +593,7 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
   }
 
   if (!call_id.empty()) {
-    ui_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
-    (void)PumpUntil(
-        [this]() {
-          return ui_->Phase() == CallPhase::Idle &&
-                 (!stack_->MediaEngine() || !stack_->MediaEngine()->IsActive());
-        },
-        8000);
+    LeaveAndFlush(call_id);
   }
   std::cout << "ok  product-stack answerer leave rx_frames=" << RxAudioFrames() << "\n";
   return 0;
@@ -643,15 +641,23 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::string& peer_account, i
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
 
-  ui_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
-  (void)PumpUntil(
-      [this]() {
-        return ui_->Phase() == CallPhase::Idle &&
-               (!stack_->MediaEngine() || !stack_->MediaEngine()->IsActive());
-      },
-      8000);
+  LeaveAndFlush(call_id);
   std::cout << "ok  product-stack LeaveClicked Idle\n";
   return {};
+}
+
+void ProductStackHarness::LeaveAndFlush(const std::string& call_id) {
+  // LeaveCall sends call_leave after the UI is already Idle; returning (and Shutdown resetting
+  // chat_) before that raced the send — the peer never saw the hangup and hung to timeout.
+  const int sends_before = control_sends_.load(std::memory_order_acquire);
+  ui_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  (void)PumpUntil(
+      [this, sends_before]() {
+        return ui_->Phase() == CallPhase::Idle &&
+               (!stack_->MediaEngine() || !stack_->MediaEngine()->IsActive()) &&
+               control_sends_.load(std::memory_order_acquire) > sends_before;
+      },
+      8000);
 }
 
 void ProductStackHarness::Shutdown() {

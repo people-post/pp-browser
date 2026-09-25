@@ -13,6 +13,7 @@
 #include "feature/conversations/AmpDirectChatTransport.h"
 #include "foundation/data/Config.h"
 
+#include <atomic>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -52,6 +53,8 @@ public:
   /** Mesh Tick only — Amp chat io_pump must not drain UI (Accept send would StartSfu early). */
   void PumpMesh();
   bool PumpUntil(const std::function<bool()>& done, int timeout_ms);
+  /** LeaveClicked, then pump until Idle and the call_leave fanout has been sent. */
+  void LeaveAndFlush(const std::string& call_id);
 
   /** Answerer: auto-Accept pending invite; exit when min RX frames met or hold expires. */
   int RunAnswererHold(int hold_seconds, int min_rx_frames);
@@ -87,6 +90,8 @@ private:
   std::unique_ptr<CallUiBackend> ui_;
   CallControlInboundPorts inbound_;
   std::unique_ptr<AmpDirectChatTransport> chat_;
+  /** Call-control sends attempted — LeaveAndFlush waits on it (Leave fanout runs after Idle). */
+  std::atomic<int> control_sends_{0};
   std::string local_account_;
   std::string local_peer_id_;
   std::string advertise_ma_;

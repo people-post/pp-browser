@@ -154,6 +154,12 @@ run_nat_call() {
   local off_rc=$?
   set -e
 
+  # Give the answerer a moment to see call_leave and exit 0 on its own (143 = it never did).
+  local grace
+  for grace in $(seq 1 20); do
+    kill -0 "${ans_pid}" 2>/dev/null || break
+    sleep 0.5
+  done
   kill "${ans_pid}" 2>/dev/null || true
   set +e
   wait "${ans_pid}"
