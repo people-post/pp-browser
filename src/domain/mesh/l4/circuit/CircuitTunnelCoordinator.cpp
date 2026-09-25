@@ -1107,7 +1107,10 @@ void CircuitTunnelCoordinator::AbortInflight() {
   // Null Finish cbs: CallMediaPlane / AmpCircuitHopReach may already be destroyed
   // (hard-w5 offerer SIGSEGV after Leave). Reach uses AbortPending gen; reserve
   // cbs use CallMediaPlane DeferredSelf.
-  {
+  // Lock order is strand → mu (IO callbacks hold the strand). Off-IO callers (quit / Leave on
+  // the UI thread) take the strand first: mu → ClearWarm (strand) deadlocked against MeshPump's
+  // TickDeadlines (strand → mu) — pp-call-probe teardown hang, 2026-09-25.
+  runtime_.WithIoLock([this]() {
     std::lock_guard lock(impl_->mu);
     std::vector<uint64_t> ids;
     for (auto& [id, _] : impl_->tunnels) {
@@ -1123,7 +1126,7 @@ void CircuitTunnelCoordinator::AbortInflight() {
       CloseQuietSlot(res.session, impl_->ResolveLink(peer_id));
     }
     impl_->reservations.clear();
-  }
+  });
   // Poison already-queued PostIo(self) work; new posts after this capture a fresh snap.
   impl_->deferred.Invalidate();
 }

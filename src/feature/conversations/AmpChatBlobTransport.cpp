@@ -1,5 +1,7 @@
 #include "feature/conversations/AmpChatBlobTransport.h"
 
+#include "domain/mesh/l4/shared/InboundReply.h"
+
 #include "foundation/crypto/CryptoConstants.h"
 #include "domain/messaging/ChatBlobResponder.h"
 #include "common/chat/MessagingJson.h"
@@ -148,14 +150,16 @@ struct AmpChatBlobTransport::Impl {
                         return true;
                       }
 
-                      RunWorker(post_worker, [this, session, request = *request]() mutable {
+                      // Keep the channel open for the worker (InboundReply.h); `reply` closes it.
+                      auto reply = MakeInboundReply(session, post_io);
+                      RunWorker(post_worker, [this, reply, request = *request]() mutable {
                         if (stopped.load(std::memory_order_acquire)) {
-                          session->Close();
+                          reply->Close();
                           return;
                         }
                         auto local_identity = identity.Get();
                         if (!local_identity) {
-                          session->Close();
+                          reply->Close();
                           return;
                         }
                         const ByteVector dek_copy = CopyDek();
@@ -163,45 +167,40 @@ struct AmpChatBlobTransport::Impl {
                         auto ciphertext = ChatBlobResponder::ServeFetch(
                             store, request, local_identity->relay_user_id, profile_data_dir, dek_ptr, profile_id);
                         if (ciphertext) {
-                          if (!session->EnqueueOutbound(std::move(*ciphertext))) {
-                            session->Close();
-                            return;
-                          }
+                          reply->Send(std::move(*ciphertext));
                         } else {
                           const std::string ack_json =
                               DumpJson(ChatBlobAckToJson(false, ciphertext.error().message));
-                          if (!session->EnqueueOutbound(JsonToBody(ack_json))) {
-                            session->Close();
-                            return;
-                          }
+                          reply->Send(JsonToBody(ack_json));
                         }
-                        session->Close();
+                        reply->Close();
                       });
-                      return false;
+                      return true;
                     }
 
                     const ChatBlobRequest request = **pending_push;
                     pending_push->reset();
-                    RunWorker(post_worker, [this, session, request, ciphertext = std::move(body)]() mutable {
+                    auto reply = MakeInboundReply(session, post_io);
+                    RunWorker(post_worker, [this, reply, request, ciphertext = std::move(body)]() mutable {
                       if (stopped.load(std::memory_order_acquire)) {
-                        session->Close();
+                        reply->Close();
                         return;
                       }
                       auto local_identity = identity.Get();
                       if (!local_identity) {
                         const std::string ack_json = DumpJson(ChatBlobAckToJson(false, "Local relay identity missing"));
-                        (void)session->EnqueueOutbound(JsonToBody(ack_json));
-                        session->Close();
+                        reply->Send(JsonToBody(ack_json));
+                        reply->Close();
                         return;
                       }
                       auto pushed = ChatBlobResponder::ServePush(store, request, local_identity->relay_user_id,
                                                                  profile_data_dir, ciphertext);
                       const std::string ack_json = pushed ? DumpJson(ChatBlobAckToJson(true))
                                                           : DumpJson(ChatBlobAckToJson(false, pushed.error().message));
-                      (void)session->EnqueueOutbound(JsonToBody(ack_json));
-                      session->Close();
+                      reply->Send(JsonToBody(ack_json));
+                      reply->Close();
                     });
-                    return false;
+                    return true;
                   });
   }
 };
@@ -266,6 +265,10 @@ void AmpChatBlobTransport::Start() {
 }
 
 void AmpChatBlobTransport::Stop() {
+  // Idempotent: the destructor Stops again, possibly after MeshHost::Stop freed the runtime.
+  if (!started_) {
+    return;
+  }
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   links_.RemoveProtocolHandler(kChatBlobProtocolId);
