@@ -656,7 +656,10 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
   // connected=0 hung with no OpenChannel/timeout logs until Leave (~46s).
   if (connected_before && !force_circuit && !force_redial) {
     attempt_started_connected_ = true;
-    media_path_kind_ = "direct";
+    const bool direct_before =
+        dial_->IsConnectedDirect(reach_key) ||
+        (reach_key != peer_identity && dial_->IsConnectedDirect(peer_identity));
+    media_path_kind_ = direct_before ? "direct" : "circuit";
     log().info << "CallMedia peer connected peer=" << peer_identity
                << " reach_key=" << reach_key;
     on_done({});
@@ -700,6 +703,12 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     return dial_ && (dial_->IsConnected(reach_key) ||
                      (reach_key != peer_identity && dial_->IsConnected(peer_identity)));
   };
+  // Direct (ADP) only: the answerer's inbound relay carrier also reads "connected" (dogfood
+  // 2026-09-24 logged path=punched with no direct link at all).
+  auto dial_connected_direct = [this, reach_key, peer_identity]() {
+    return dial_ && (dial_->IsConnectedDirect(reach_key) ||
+                     (reach_key != peer_identity && dial_->IsConnectedDirect(peer_identity)));
+  };
   auto dial_dialable = [this, reach_key, peer_identity]() {
     return dial_ && (dial_->IsDialable(reach_key) ||
                      (reach_key != peer_identity && dial_->IsDialable(peer_identity)));
@@ -741,7 +750,7 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
   auto tick = std::make_shared<std::function<void()>>();
   *tick = [this, peer_identity, reach_key, connect_gen, finish, settled, deadline, initial_deadline,
            last_error, circuit_started, circuit_inflight, assoc_started, assoc_done, assoc_attempts,
-           force_circuit, dial_connected, dial_dialable, dial_public_direct, dial_has_circuit,
+           force_circuit, dial_connected, dial_connected_direct, dial_dialable, dial_public_direct, dial_has_circuit,
            seed_park_preassoc_done, seed_park_ok, tick]() mutable {
     if (settled->load(std::memory_order_acquire)) {
       return;
@@ -761,7 +770,7 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
     const bool dial_mutating = *circuit_inflight || (*assoc_started && !*assoc_done);
     const bool wait_for_circuit = force_circuit && !*circuit_started && !dial_has_circuit();
     if (!dial_mutating && dial_connected() && !wait_for_circuit) {
-      if (dial_has_circuit()) {
+      if (dial_has_circuit() || !dial_connected_direct()) {
         media_path_kind_ = "circuit";
       } else if (*circuit_started) {
         media_path_kind_ = "punched";
@@ -859,10 +868,14 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                   static_cast<bool>(assoc) && dial_ &&
                   (dial_->IsConnected(reach_key) ||
                    (reach_key != peer_identity && dial_->IsConnected(peer_identity)));
+              const bool direct_now =
+                  connected_now &&
+                  (dial_->IsConnectedDirect(reach_key) ||
+                   (reach_key != peer_identity && dial_->IsConnectedDirect(peer_identity)));
               AppRuntime::PostCoordinatorNormal(
                   [this, peer_identity, reach_key, connect_gen, finish = std::move(finish), settled,
                    last_error, assoc_done, assoc_started, assoc_attempts, deadline, connected_now,
-                   tick, assoc = std::move(assoc)]() mutable {
+                   direct_now, tick, assoc = std::move(assoc)]() mutable {
                     if (settled->load(std::memory_order_acquire)) {
                       return;
                     }
@@ -875,7 +888,7 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                     if (assoc) {
                       *assoc_done = true;
                       if (connected_now) {
-                        media_path_kind_ = "direct";
+                        media_path_kind_ = direct_now ? "direct" : "circuit";
                         log().info << "CallMedia EnsureAssociation ok peer=" << peer_identity
                                    << " reach_key=" << reach_key;
                         finish({});
@@ -992,9 +1005,12 @@ void CallMediaBridge::EnsurePeerReachableAsync(const std::string& peer_identity,
                       dial_ && (dial_->IsConnected(reach_key) ||
                                 (reach_key != peer_identity && dial_->IsConnected(peer_identity)));
                   const bool has_circuit_now =
-                      dial_ && (dial_->HasCallMediaCircuitHop(reach_key) ||
-                                (reach_key != peer_identity &&
-                                 dial_->HasCallMediaCircuitHop(peer_identity)));
+                      (dial_ && (dial_->HasCallMediaCircuitHop(reach_key) ||
+                                 (reach_key != peer_identity &&
+                                  dial_->HasCallMediaCircuitHop(peer_identity)))) ||
+                      // Connected only through a relay carrier: that is not a punch.
+                      (connected_now && dial_ && !dial_->IsConnectedDirect(reach_key) &&
+                       (reach_key == peer_identity || !dial_->IsConnectedDirect(peer_identity)));
                   AppRuntime::PostCoordinatorNormal(
                       [this, peer_identity, reach_key, connect_gen, finish = std::move(finish),
                        settled, last_error, circuit_inflight, deadline, initial_deadline,

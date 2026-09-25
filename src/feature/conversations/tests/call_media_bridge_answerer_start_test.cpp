@@ -21,6 +21,7 @@
 #include <atomic>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace pbr {
@@ -139,6 +140,10 @@ public:
     return connected.count(peer_key) > 0 && connected.at(peer_key);
   }
 
+  bool IsConnectedDirect(const std::string& peer_key) const override {
+    return IsConnected(peer_key) && carrier_only.count(peer_key) == 0;
+  }
+
   void EnsureAssociation(const std::string& peer_key,
                          std::function<void(Roe<void>)> on_done) override {
     ++ensure_association_calls;
@@ -183,6 +188,7 @@ public:
   std::unordered_map<std::string, bool> force_dialable;
   std::unordered_map<std::string, bool> connected;
   std::unordered_map<std::string, bool> circuit_hops;
+  std::unordered_set<std::string> carrier_only;
   int ensure_association_calls = 0;
   int clear_backoff_calls = 0;
   int abort_inflight_calls = 0;
@@ -590,6 +596,33 @@ TEST_F(CallMediaBridgeAnswererStartTest, ReleaseDirectTransportDetachesWithoutSt
   EXPECT_GT(transport_->detach_calls, detaches_before);
   EXPECT_TRUE(media_->IsActive()) << "SoftMigrate ReleaseDirect must keep engine capture";
   EXPECT_EQ(media_->ActiveCallId(), call_id);
+}
+
+// Dogfood 2026-09-24: the answerer's only link to the caller was the relay carrier; the reach
+// loop still logged path=punched / direct before any media was bound.
+TEST_F(CallMediaBridgeAnswererStartTest, CarrierOnlyLinkIsNotLabelledDirect) {
+  const std::string call_id = "call:carrier-only-label";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  dial_->connected["account:peer"] = true;
+  dial_->carrier_only.insert("account:peer");
+
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+
+  for (int i = 0; i < 200; ++i) {
+    AppRuntime::RunUITasks();
+    if (transport_->connect_async_calls > 0 || lifecycle_->Phase() == CallPhase::ConnectFailed) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+
+  ASSERT_GT(transport_->connect_async_calls, 0) << "err=" << host_->last_error;
+  EXPECT_EQ(bridge_->MediaPathKind(), "circuit");
+  bridge_->PrepareForTeardown(0);
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, DialableDialBackoffDoesNotHammerEnsureUsesCircuit) {
