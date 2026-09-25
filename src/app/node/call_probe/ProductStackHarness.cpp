@@ -451,6 +451,67 @@ void ProductStackHarness::OnChatInbound(RelayEnvelope env) {
   }
 }
 
+namespace {
+
+/**
+ * Per-second rx/tx trace + one-way stall detector for long holds (dogfood 2026-09-24 16:17: a
+ * relayed call lost caller→callee audio after ~8 s with every link still up).
+ */
+class MediaFlowMonitor {
+public:
+  /** `watch_ms` > 0: only judge stalls within this long after the first rx frame (the remote
+   * leaving at the end of its hold also flattens rx). */
+  MediaFlowMonitor(const char* role, int stall_ms, int watch_ms = 0)
+      : role_(role), stall_ms_(stall_ms), watch_ms_(watch_ms), start_(std::chrono::steady_clock::now()),
+        last_change_(start_), next_report_(start_) {}
+
+  /** Returns an error message once rx has been flat for stall_ms after first audio. */
+  std::optional<std::string> Tick(const uint64_t rx, const uint64_t tx) {
+    const auto now = std::chrono::steady_clock::now();
+    if (rx != last_rx_) {
+      if (last_rx_ == 0) {
+        first_rx_ = now;
+      }
+      last_rx_ = rx;
+      last_change_ = now;
+    }
+    if (now >= next_report_) {
+      std::cout << "flow " << role_ << " t=" << Ms(now - start_) / 1000.0 << "s rx=" << rx << " tx=" << tx
+                << "\n" << std::flush;
+      next_report_ = now + std::chrono::seconds(1);
+    }
+    const bool watching = watch_ms_ <= 0 || Ms(now - first_rx_) < watch_ms_;
+    if (stall_ms_ > 0 && rx > 0 && watching && Ms(now - last_change_) >= stall_ms_) {
+      return std::string("rx stall ") + role_ + ": rx=" + std::to_string(rx) + " flat since t=" +
+             std::to_string(Ms(last_change_ - start_) / 1000.0) + "s (tx=" + std::to_string(tx) + ")";
+    }
+    return std::nullopt;
+  }
+
+private:
+  static int64_t Ms(std::chrono::steady_clock::duration d) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(d).count();
+  }
+
+  const char* role_;
+  int stall_ms_;
+  int watch_ms_;
+  std::chrono::steady_clock::time_point first_rx_{};
+  std::chrono::steady_clock::time_point start_;
+  std::chrono::steady_clock::time_point last_change_;
+  std::chrono::steady_clock::time_point next_report_;
+  uint64_t last_rx_ = 0;
+};
+
+} // namespace
+
+uint64_t ProductStackHarness::TxAudioFrames() const {
+  if (!stack_ || !stack_->MediaEngine()) {
+    return 0;
+  }
+  return stack_->MediaEngine()->HealthSnapshot().tx_audio_frames;
+}
+
 uint64_t ProductStackHarness::RxAudioFrames() const {
   if (!stack_ || !stack_->MediaEngine()) {
     return 0;
@@ -463,6 +524,8 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
   std::string call_id;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(hold_seconds);
   bool min_rx_met = false;
+  bool was_in_call = false;
+  MediaFlowMonitor flow("answerer", rx_stall_ms_, rx_watch_ms_);
   while (std::chrono::steady_clock::now() < deadline) {
     Pump();
     if (!accepted) {
@@ -491,11 +554,26 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
     }
     if (min_rx_frames > 0 && static_cast<int>(RxAudioFrames()) >= min_rx_frames) {
       min_rx_met = true;
-      break;
+      if (rx_stall_ms_ <= 0) {
+        break;
+      }
     }
     if (ui_->Phase() == CallPhase::ConnectFailed) {
       std::cerr << "error: product-stack answerer ConnectFailed err=" << ui_->LastError() << "\n";
       return 1;
+    }
+    if (rx_stall_ms_ > 0 && accepted) {
+      // Long hold: watch both directions until the offerer leaves.
+      if (auto stall = flow.Tick(RxAudioFrames(), TxAudioFrames())) {
+        std::cerr << "error: " << *stall << "\n";
+        return 1;
+      }
+      if (ui_->Phase() == CallPhase::InCall) {
+        was_in_call = true;
+      } else if (was_in_call && ui_->Phase() == CallPhase::Idle) {
+        std::cout << "ok  product-stack answerer: offerer left rx_frames=" << RxAudioFrames() << "\n";
+        return min_rx_met || min_rx_frames <= 0 ? 0 : 1;
+      }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
@@ -553,10 +631,14 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::string& peer_account, i
             << " rx=" << RxAudioFrames() << "\n";
 
   const auto hold_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(hold_ms);
+  MediaFlowMonitor flow("offerer", rx_stall_ms_);
   while (std::chrono::steady_clock::now() < hold_deadline) {
     Pump();
     if (ui_->Phase() == CallPhase::ConnectFailed) {
       return Error(std::string("product-stack ConnectFailed during hold: ") + ui_->LastError());
+    }
+    if (auto stall = flow.Tick(RxAudioFrames(), TxAudioFrames())) {
+      return Error(*stall);
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }

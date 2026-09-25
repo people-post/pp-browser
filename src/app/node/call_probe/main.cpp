@@ -42,6 +42,11 @@
 
 namespace {
 
+/** --rx-stall-ms (product-stack): fail a hold when rx frames go flat. */
+int g_rx_stall_ms = 0;
+/** --watch-ms (answerer): stall window after first rx (offerer hold minus margin). */
+int g_rx_watch_ms = 0;
+
 void PrintUsage(const char* argv0) {
   std::cerr
       << "Usage:\n"
@@ -71,7 +76,10 @@ void PrintUsage(const char* argv0) {
       << "  --dirty-book     With --reach product|bridge: register --peer private MA before Ensure.\n"
       << "  --force-dial-fail  With dirty-book/bridge: one EnsureAssociation before circuit (arms backoff).\n"
       << "  --product-stack  CallStack+CallUiBackend StartCall/Accept/Leave on Amp (HL004; no media mocks).\n"
-      << "  --peer-account   Offerer (--product-stack): answerer Account ID from ready-file line 2.\n";
+      << "  --peer-account   Offerer (--product-stack): answerer Account ID from ready-file line 2.\n"
+      << "  --rx-stall-ms N  With --product-stack: log rx/tx per second and fail if rx frames stay\n"
+      << "                  flat for N ms mid-call (answerer then holds until the offerer leaves).\n"
+      << "  --watch-ms N     Answerer: judge rx stalls only for N ms after the first frame.\n";
 }
 
 std::optional<std::string> PeerIdFromMultiaddr(const std::string& ma) {
@@ -630,6 +638,8 @@ int RunProductStackAnswerer(const std::string& listen_ma, const std::string& rea
             << " account=" << (*harness)->LocalAccountId() << "\n";
   std::cout.flush();
 
+  (*harness)->SetRxStallMs(g_rx_stall_ms);
+  (*harness)->SetRxWatchMs(g_rx_watch_ms);
   const int rc = (*harness)->RunAnswererHold(hold_seconds, min_rx_frames);
   (*harness)->Shutdown();
   std::cout << "pp-call-probe answerer exit product-stack rc=" << rc << "\n";
@@ -690,6 +700,7 @@ int RunProductStackOfferer(const std::string& peer_ma, const std::string& peer_a
   }
 
   const int hold = hold_ms > 0 ? hold_ms : 2000;
+  (*harness)->SetRxStallMs(g_rx_stall_ms);
   if (auto ran = (*harness)->RunOffererCall(peer_account, hold, timeout_ms); !ran) {
     std::cerr << "error: product-stack offerer: " << ran.error().message << "\n";
     (*harness)->Shutdown();
@@ -1228,6 +1239,10 @@ int main(int argc, char** argv) {
       peer_ma = argv[++i];
     } else if (std::strcmp(argv[i], "--peer-account") == 0 && i + 1 < argc) {
       peer_account = argv[++i];
+    } else if (std::strcmp(argv[i], "--rx-stall-ms") == 0 && i + 1 < argc) {
+      g_rx_stall_ms = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--watch-ms") == 0 && i + 1 < argc) {
+      g_rx_watch_ms = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--via-hop") == 0 && i + 1 < argc) {
       hop_ma = argv[++i];
     } else if (std::strcmp(argv[i], "--advertise-host") == 0 && i + 1 < argc) {

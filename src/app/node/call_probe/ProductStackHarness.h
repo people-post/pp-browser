@@ -60,6 +60,11 @@ public:
 
   void Shutdown();
 
+  /** Fail the hold when rx audio frames stop increasing for `ms` after media started (0 = off). */
+  void SetRxStallMs(int ms) { rx_stall_ms_ = ms; }
+  /** Answerer: judge stalls only for this long after the first rx frame (0 = whole hold). */
+  void SetRxWatchMs(int ms) { rx_watch_ms_ = ms; }
+
 private:
   ProductStackHarness() = default;
   Roe<void> InitStoresAndStack(const std::string& hop_ma);
@@ -68,6 +73,7 @@ private:
   std::string AmpDialKeyForAccount(const std::string& account_id) const;
   void LearnAccountPeerId(const std::string& account_id, const std::string& peer_id);
   uint64_t RxAudioFrames() const;
+  uint64_t TxAudioFrames() const;
 
   std::shared_ptr<pp::adp::Clock> clock_;
   std::unique_ptr<MeshHost> host_;
@@ -87,6 +93,8 @@ private:
   ByteVector shared_session_key_;
   /** Invite/Accept libp2p_peer_id → dial key (CallMediaHost map is private on CSM). */
   std::unordered_map<std::string, std::string> account_to_peer_id_;
+  int rx_stall_ms_ = 0;
+  int rx_watch_ms_ = 0;
 };
 
 } // namespace call_probe
