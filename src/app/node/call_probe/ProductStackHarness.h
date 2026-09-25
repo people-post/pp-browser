@@ -18,6 +18,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
 namespace pbr {
@@ -49,12 +50,20 @@ public:
   /** Dual-SNAT: nested circuit to peer so Amp chat call-control can deliver before StartCall. */
   Roe<void> EnsurePeerCircuitPath(const std::string& peer_id);
 
+  /** Run the UI mailbox (main thread = UI). The mesh runs on MeshHost's MeshPump. */
   void Pump();
-  /** Mesh Tick only — Amp chat io_pump must not drain UI (Accept send would StartSfu early). */
-  void PumpMesh();
   bool PumpUntil(const std::function<bool()>& done, int timeout_ms);
   /** LeaveClicked, then pump until Idle and the call_leave fanout has been sent. */
   void LeaveAndFlush(const std::string& call_id);
+  /** Stderr marker for the shutdown step now running; the watchdog names it on a hang. */
+  void ShutdownStep(const char* step);
+  void ShutdownImpl();
+  /**
+   * Leave + teardown must finish within kTeardownBudget. A hang prints the step and aborts —
+   * core in /share when the lab mounts it (gdb on the host needs no ptrace for a core).
+   */
+  void ArmTeardownWatchdog();
+  void DisarmTeardownWatchdog();
 
   /** Answerer: auto-Accept pending invite; exit when min RX frames met or hold expires. */
   int RunAnswererHold(int hold_seconds, int min_rx_frames);
@@ -92,6 +101,9 @@ private:
   std::unique_ptr<AmpDirectChatTransport> chat_;
   /** Call-control sends attempted — LeaveAndFlush waits on it (Leave fanout runs after Idle). */
   std::atomic<int> control_sends_{0};
+  std::atomic<const char*> shutdown_step_{""};
+  std::thread teardown_watchdog_;
+  std::atomic<bool> teardown_done_{false};
   std::string local_account_;
   std::string local_peer_id_;
   std::string advertise_ma_;

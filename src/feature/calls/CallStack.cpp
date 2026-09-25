@@ -417,6 +417,15 @@ void CallStack::FinishMeshStop() {
   }
 }
 
+void CallStack::StopMesh(MeshHost& mesh, const std::function<void()>& detach_transports) {
+  PrepareForMeshStop([&mesh]() { mesh.AbortInflightCircuitRequests(); });
+  if (detach_transports) {
+    detach_transports();
+  }
+  mesh.Stop();
+  FinishMeshStop();
+}
+
 void CallStack::AbortCallMediaForShutdown() {
   // Unblock Connect workers stuck in circuit RequestBridge (~8–10s) BEFORE waiting/joining.
   if (MeshHost* m = mesh()) {

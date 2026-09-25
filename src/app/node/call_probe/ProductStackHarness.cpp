@@ -19,6 +19,14 @@
 #include "common/thread/ThreadRecordTypes.h"
 
 #include <chrono>
+#include <cstdlib>
+#if defined(__linux__)
+#include <csignal>
+#include <cstdio>
+#include <execinfo.h>
+#include <sys/syscall.h>
+#include <unistd.h>
+#endif
 #include <iostream>
 #include <optional>
 #include <thread>
@@ -55,6 +63,41 @@ std::optional<std::string> PeerIdFromMa(const std::string& ma) {
   return id;
 }
 
+#if defined(__linux__)
+std::atomic_flag g_stack_dump_busy = ATOMIC_FLAG_INIT;
+
+void DumpThisThreadStack(int /*sig*/) {
+  while (g_stack_dump_busy.test_and_set(std::memory_order_acquire)) {
+  }
+  void* frames[64];
+  const int n = backtrace(frames, 64);
+  char header[64];
+  const int len = std::snprintf(header, sizeof(header), "--- thread %ld\n", static_cast<long>(syscall(SYS_gettid)));
+  (void)!write(STDERR_FILENO, header, static_cast<size_t>(len));
+  backtrace_symbols_fd(frames, n, STDERR_FILENO);
+  g_stack_dump_busy.clear(std::memory_order_release);
+}
+
+/** Diagnostics for a stuck teardown: every thread prints its backtrace (addr2line on the host). */
+void DumpAllThreadStacks() {
+  void* warm[1];
+  (void)backtrace(warm, 1); // load libgcc unwinder outside the signal handler
+  std::signal(SIGUSR2, DumpThisThreadStack);
+  const long self = static_cast<long>(syscall(SYS_gettid));
+  std::error_code ec;
+  for (const auto& entry : std::filesystem::directory_iterator("/proc/self/task", ec)) {
+    const long tid = std::strtol(entry.path().filename().c_str(), nullptr, 10);
+    if (tid > 0 && tid != self) {
+      syscall(SYS_tgkill, static_cast<long>(getpid()), tid, SIGUSR2);
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+}
+#else
+void DumpAllThreadStacks() {}
+#endif
+
 } // namespace
 
 Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
@@ -76,7 +119,10 @@ Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
   harness->shared_session_key_ = SharedSessionKey();
 
   harness->host_ = std::make_unique<MeshHost>();
-  if (auto attached = harness->host_->AttachAmpStack(std::move(stack), harness->advertise_ma_);
+  // Own MeshPump like the product: with the main thread as sole Amp driver, any main-thread wait
+  // on work that needs mesh progress (capture send, parked worker) deadlocked (hard-w5 hang).
+  if (auto attached = harness->host_->AttachAmpStack(std::move(stack), harness->advertise_ma_,
+                                                     MeshHost::AttachDrive::MeshPump);
       !attached) {
     return attached.error();
   }
@@ -229,8 +275,10 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma) {
   if (!chat_deps) {
     return Error("MeshHost chat deps unavailable");
   }
-  auto pump_mesh = [this]() { PumpMesh(); };
-  chat_ = std::make_unique<AmpDirectChatTransport>(chat_deps->links, AmpDirectChatTransport::IoPump{pump_mesh});
+  // Same wiring as MeshDeliveryOrchestrator (empty io_pump under MeshPump).
+  chat_ = std::make_unique<AmpDirectChatTransport>(chat_deps->links, chat_deps->io.io_pump,
+                                                   chat_deps->io.post_worker, chat_deps->io.post_io,
+                                                   chat_deps->io.post_after);
   chat_->Start();
   chat_->SetInboundHandler([this](RelayEnvelope env) { OnChatInbound(std::move(env)); });
 
@@ -278,8 +326,7 @@ Roe<void> ProductStackHarness::EnsurePeerCircuitPath(const std::string& peer_id)
   if (!stack_ || peer_id.empty()) {
     return Error("circuit path: missing stack/peer");
   }
-  // AttachAmpStack: no MeshPump. Sync TryEnsure AmpParkUntil sleeps unless MakeL4IoPump→Tick
-  // (harness sole driver). Prefer async + PumpUntil so Drive progress is explicit.
+  // Async + PumpUntil: the completion lands on the UI mailbox.
   std::optional<Roe<void>> result;
   stack_->TryEnsureCallMediaReachableAsync(peer_id, [&](Roe<void> value) { result = std::move(value); });
   if (!PumpUntil([&] { return result.has_value(); }, 30000)) {
@@ -312,14 +359,8 @@ Roe<void> ProductStackHarness::EnsureOriginThread(const std::string& thread_id,
   return {};
 }
 
-void ProductStackHarness::PumpMesh() {
-  if (host_) {
-    host_->Tick();
-  }
-}
-
 void ProductStackHarness::Pump() {
-  PumpMesh();
+  // UI mailbox only — the mesh runs on MeshHost's MeshPump.
   AppRuntime::RunUITasks();
 }
 
@@ -650,51 +691,100 @@ void ProductStackHarness::LeaveAndFlush(const std::string& call_id) {
   // LeaveCall sends call_leave after the UI is already Idle; returning (and Shutdown resetting
   // chat_) before that raced the send — the peer never saw the hangup and hung to timeout.
   const int sends_before = control_sends_.load(std::memory_order_acquire);
+  ArmTeardownWatchdog();
+  ShutdownStep("leave-clicked");
   ui_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
-  (void)PumpUntil(
+  const bool flushed = PumpUntil(
       [this, sends_before]() {
         return ui_->Phase() == CallPhase::Idle &&
                (!stack_->MediaEngine() || !stack_->MediaEngine()->IsActive()) &&
                control_sends_.load(std::memory_order_acquire) > sends_before;
       },
       8000);
+  std::cerr << "probe leave flushed=" << flushed << " phase=" << CallPhaseName(ui_->Phase()) << std::endl;
+}
+
+void ProductStackHarness::ShutdownStep(const char* step) {
+  shutdown_step_.store(step, std::memory_order_release);
+  std::cerr << "probe shutdown: " << step << std::endl;
 }
 
 void ProductStackHarness::Shutdown() {
   if (!host_ && !stack_ && !ui_ && data_dir_.empty()) {
+    DisarmTeardownWatchdog();
     return;
   }
-  // Keep chat up through Leave / AbortCallMediaForShutdown so call_leave fanout can send
-  // (stopping chat first logged "chat transport not started" on green hard-w5 STACK runs).
+  // A blocked teardown must fail the probe, not hang the lab (the smoke has no exec timeout).
+  ArmTeardownWatchdog();
+  ShutdownImpl();
+  DisarmTeardownWatchdog();
+}
+
+void ProductStackHarness::ArmTeardownWatchdog() {
+  if (teardown_watchdog_.joinable()) {
+    return;
+  }
+  teardown_done_.store(false, std::memory_order_release);
+  teardown_watchdog_ = std::thread([this]() {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(40);
+    while (!teardown_done_.load(std::memory_order_acquire)) {
+      if (std::chrono::steady_clock::now() >= deadline) {
+        std::cerr << "error: probe teardown stuck at " << shutdown_step_.load(std::memory_order_acquire)
+                  << std::endl;
+        DumpAllThreadStacks();
+        std::error_code ec;
+        if (std::filesystem::is_directory("/share", ec)) {
+          std::filesystem::current_path("/share", ec);
+        }
+        std::abort();
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+  });
+}
+
+void ProductStackHarness::DisarmTeardownWatchdog() {
+  teardown_done_.store(true, std::memory_order_release);
+  if (teardown_watchdog_.joinable()) {
+    teardown_watchdog_.join();
+  }
+}
+
+void ProductStackHarness::ShutdownImpl() {
+  // Product quit order (THREADING.md § Shutdown order): abort call media → quiesce runtime →
+  // CallStack::StopMesh (joins MeshPump) → join runtime → free. Freeing the call stack while the
+  // mesh / workers still ran segfaulted in hard-w5 (2026-09-25).
   if (ui_ && stack_ && stack_->HasActiveLocalCall()) {
     if (auto active = ui_->ActiveLocalCall(); active && active->has_value()) {
-      ui_->Apply(CallLifecycleEvent::LeaveClicked, (*active)->call_id);
-      Pump();
+      LeaveAndFlush((*active)->call_id);
     }
   }
   if (stack_) {
+    ShutdownStep("abort-call-media");
     stack_->AbortCallMediaForShutdown();
-    Pump();
-    stack_->PrepareForMeshStop([this]() {
-      if (host_) {
-        host_->AbortInflightCircuitRequests();
-      }
-    });
-    stack_->FinishMeshStop();
   }
-  if (chat_) {
-    chat_->Stop();
-    chat_.reset();
+  ShutdownStep("quiesce");
+  if (!AppRuntime::QuiesceForTeardown(std::chrono::milliseconds(2000))) {
+    std::cerr << "warning: probe teardown quiesce budget exceeded" << std::endl;
   }
+  ShutdownStep("stop-mesh");
+  if (stack_ && host_) {
+    // Detach = destroy (product DetachAmpTransports): nothing may outlive the Amp stack.
+    stack_->StopMesh(*host_, [this]() { chat_.reset(); });
+  } else if (host_) {
+    host_->Stop();
+  }
+  chat_.reset();
+  host_.reset();
   if (stack_) {
+    ShutdownStep("call-stack-shutdown");
     stack_->Shutdown();
   }
+  ShutdownStep("runtime");
+  AppRuntime::Shutdown();
+  ShutdownStep("free");
   ui_.reset();
   stack_.reset();
-  if (host_) {
-    host_->Stop();
-    host_.reset();
-  }
   if (psk_) {
     psk_->ClearDek();
   }
@@ -708,7 +798,7 @@ void ProductStackHarness::Shutdown() {
     data_dir_.clear();
   }
   AppRuntime::ShutdownUI();
-  AppRuntime::Shutdown();
+  ShutdownStep("done");
 }
 
 } // namespace call_probe
