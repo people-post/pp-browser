@@ -1,5 +1,7 @@
 #include "feature/conversations/AmpChatHistoryTransport.h"
 
+#include "domain/mesh/l4/shared/InboundReply.h"
+
 #include "domain/messaging/ChatHistoryResponder.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
@@ -65,8 +67,8 @@ struct AmpChatHistoryTransport::Impl {
   /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
   DeferredSelf deferred;
 
-  void ServeRequest(std::shared_ptr<pp::amp::ChannelSession> session, std::vector<uint8_t> body) {
-    RunWorker(post_worker, [this, session, body = std::move(body)]() mutable {
+  void ServeRequest(std::shared_ptr<InboundReply> reply, std::vector<uint8_t> body) {
+    RunWorker(post_worker, [this, reply, body = std::move(body)]() mutable {
                       if (stopped.load(std::memory_order_acquire)) {
                         return;
                       }
@@ -93,9 +95,7 @@ struct AmpChatHistoryTransport::Impl {
                         return;
                       }
                       const std::string response_json = DumpJson(ChatHistoryResponseToJson(*response));
-                      if (!session->EnqueueOutbound(JsonToBody(response_json))) {
-                        return;
-                      }
+                      reply->Send(JsonToBody(response_json));
     });
   }
 
@@ -105,14 +105,15 @@ struct AmpChatHistoryTransport::Impl {
     }
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     *session_holder = links->BindChannel(
-        remote_peer_id, channel_id, pp::amp::ControlJsonChannelPolicy(),
+        remote_peer_id, channel_id, InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy()),
         [this, session_holder](Roe<std::vector<uint8_t>> frame) {
           auto session = *session_holder;
           if (!session || !frame || stopped.load(std::memory_order_acquire)) {
             return false;
           }
-          ServeRequest(session, std::move(*frame));
-          return false;
+          // Keep the channel open for the worker's reply (InboundReply.h); `reply` closes it.
+          ServeRequest(MakeInboundReply(session, post_io), std::move(*frame));
+          return true;
         });
   }
 };
@@ -149,6 +150,10 @@ void AmpChatHistoryTransport::Start() {
 }
 
 void AmpChatHistoryTransport::Stop() {
+  // Idempotent: the destructor Stops again, possibly after MeshHost::Stop freed the runtime.
+  if (!started_) {
+    return;
+  }
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   links_.RemoveProtocolHandler(kChatHistoryProtocolId);

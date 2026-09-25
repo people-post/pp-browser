@@ -13,10 +13,12 @@
 #include "feature/conversations/AmpDirectChatTransport.h"
 #include "foundation/data/Config.h"
 
+#include <atomic>
 #include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 #include <unordered_map>
 
 namespace pbr {
@@ -48,10 +50,20 @@ public:
   /** Dual-SNAT: nested circuit to peer so Amp chat call-control can deliver before StartCall. */
   Roe<void> EnsurePeerCircuitPath(const std::string& peer_id);
 
+  /** Run the UI mailbox (main thread = UI). The mesh runs on MeshHost's MeshPump. */
   void Pump();
-  /** Mesh Tick only — Amp chat io_pump must not drain UI (Accept send would StartSfu early). */
-  void PumpMesh();
   bool PumpUntil(const std::function<bool()>& done, int timeout_ms);
+  /** LeaveClicked, then pump until Idle and the call_leave fanout has been sent. */
+  void LeaveAndFlush(const std::string& call_id);
+  /** Stderr marker for the shutdown step now running; the watchdog names it on a hang. */
+  void ShutdownStep(const char* step);
+  void ShutdownImpl();
+  /**
+   * Leave + teardown must finish within kTeardownBudget. A hang prints the step and aborts —
+   * core in /share when the lab mounts it (gdb on the host needs no ptrace for a core).
+   */
+  void ArmTeardownWatchdog();
+  void DisarmTeardownWatchdog();
 
   /** Answerer: auto-Accept pending invite; exit when min RX frames met or hold expires. */
   int RunAnswererHold(int hold_seconds, int min_rx_frames);
@@ -59,6 +71,11 @@ public:
   Roe<void> RunOffererCall(const std::string& peer_account, int hold_ms, int timeout_ms);
 
   void Shutdown();
+
+  /** Fail the hold when rx audio frames stop increasing for `ms` after media started (0 = off). */
+  void SetRxStallMs(int ms) { rx_stall_ms_ = ms; }
+  /** Answerer: judge stalls only for this long after the first rx frame (0 = whole hold). */
+  void SetRxWatchMs(int ms) { rx_watch_ms_ = ms; }
 
 private:
   ProductStackHarness() = default;
@@ -68,6 +85,7 @@ private:
   std::string AmpDialKeyForAccount(const std::string& account_id) const;
   void LearnAccountPeerId(const std::string& account_id, const std::string& peer_id);
   uint64_t RxAudioFrames() const;
+  uint64_t TxAudioFrames() const;
 
   std::shared_ptr<pp::adp::Clock> clock_;
   std::unique_ptr<MeshHost> host_;
@@ -81,12 +99,19 @@ private:
   std::unique_ptr<CallUiBackend> ui_;
   CallControlInboundPorts inbound_;
   std::unique_ptr<AmpDirectChatTransport> chat_;
+  /** Call-control sends attempted — LeaveAndFlush waits on it (Leave fanout runs after Idle). */
+  std::atomic<int> control_sends_{0};
+  std::atomic<const char*> shutdown_step_{""};
+  std::thread teardown_watchdog_;
+  std::atomic<bool> teardown_done_{false};
   std::string local_account_;
   std::string local_peer_id_;
   std::string advertise_ma_;
   ByteVector shared_session_key_;
   /** Invite/Accept libp2p_peer_id → dial key (CallMediaHost map is private on CSM). */
   std::unordered_map<std::string, std::string> account_to_peer_id_;
+  int rx_stall_ms_ = 0;
+  int rx_watch_ms_ = 0;
 };
 
 } // namespace call_probe

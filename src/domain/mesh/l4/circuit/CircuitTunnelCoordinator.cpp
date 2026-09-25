@@ -1009,6 +1009,15 @@ struct CircuitTunnelCoordinator::Impl {
                      if (tunnel->target.target_protocol.empty()) {
                        tunnel->target.target_protocol = kCircuitRelayProtocolId;
                      }
+                     // The near leg was bound Control (Reliable, strict in-order) to read this JSON
+                     // request. A call-media carrier is sent best-effort by the dialer: keep Control
+                     // and the first lost / reordered frame makes the mux reject every later one
+                     // ("out of order seq") — dialer→target dead for the rest of the call (hard lab
+                     // CGNAT + 1 % loss; dogfood 2026-09-24 16:17). Match the far leg's policy.
+                     if (auto* mux = near_session->Mux()) {
+                       (void)mux->ApplyChannelPolicy(near_session->ChannelId(),
+                                                     PolicyForCircuitTarget(tunnel->target.target_protocol));
+                     }
                      const int timeout_ms = static_cast<int>(root.getNonNegInt("timeout_ms").value_or(8000));
                      tunnel->deadline =
                          Clock::now() + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 8000);
@@ -1098,7 +1107,10 @@ void CircuitTunnelCoordinator::AbortInflight() {
   // Null Finish cbs: CallMediaPlane / AmpCircuitHopReach may already be destroyed
   // (hard-w5 offerer SIGSEGV after Leave). Reach uses AbortPending gen; reserve
   // cbs use CallMediaPlane DeferredSelf.
-  {
+  // Lock order is strand → mu (IO callbacks hold the strand). Off-IO callers (quit / Leave on
+  // the UI thread) take the strand first: mu → ClearWarm (strand) deadlocked against MeshPump's
+  // TickDeadlines (strand → mu) — pp-call-probe teardown hang, 2026-09-25.
+  runtime_.WithIoLock([this]() {
     std::lock_guard lock(impl_->mu);
     std::vector<uint64_t> ids;
     for (auto& [id, _] : impl_->tunnels) {
@@ -1114,7 +1126,7 @@ void CircuitTunnelCoordinator::AbortInflight() {
       CloseQuietSlot(res.session, impl_->ResolveLink(peer_id));
     }
     impl_->reservations.clear();
-  }
+  });
   // Poison already-queued PostIo(self) work; new posts after this capture a fresh snap.
   impl_->deferred.Invalidate();
 }

@@ -578,31 +578,27 @@ void ConversationsHub::StopMesh() {
   mobile_ephemeral_start_inflight_at_ms_ = 0;
   mobile_ephemeral_stop_inflight_ = false;
   mobile_ephemeral_last_start_error_.clear();
-  // Call-media teardown before the mesh stops. The bridge PrepareForTeardown is bracketed by
-  // mesh circuit-request aborts so the Connect worker observes abort and unblocks (same order
-  // as before the CallStack split).
-  call_stack_->PrepareForMeshStop([this]() {
-    if (mesh_) {
-      mesh_->AbortInflightCircuitRequests();
+  auto detach_transports = [this]() {
+    if (lan_mdns_) {
+      lan_mdns_->Stop();
+      lan_mdns_.reset();
     }
-  });
-  if (lan_mdns_) {
-    lan_mdns_->Stop();
-    lan_mdns_.reset();
+    // Amp chat/announce/broadcast transports hold PeerLinks& — detach before MeshHost::Stop
+    // destroys Amp (otherwise ~AmpBroadcastTransport::Stop UAFs).
+    if (mesh_messaging_) {
+      mesh_messaging_->DetachAmpTransports();
+    }
+  };
+  if (!mesh_) {
+    call_stack_->PrepareForMeshStop({});
+    detach_transports();
+    call_stack_->FinishMeshStop();
+    return;
   }
-  // Amp chat/announce/broadcast transports hold PeerLinks& — detach before MeshHost::Stop
-  // destroys Amp (otherwise ~AmpBroadcastTransport::Stop UAFs).
-  if (mesh_messaging_) {
-    mesh_messaging_->DetachAmpTransports();
-  }
-  // MeshHost::Stop tears down media_relay, circuit, dial-back, and runtime (in that order).
-  // Keep bridge + dial registry alive until the mesh host joins its workers — inbound
-  // CallMediaKey wait and OpenStream completions may still touch them.
-  if (mesh_) {
-    mesh_->Stop();
-    mesh_.reset();
-  }
-  call_stack_->FinishMeshStop();
+  // Order (CallStack::StopMesh): call-media teardown bracketed by circuit aborts → detach →
+  // MeshHost::Stop (media_relay, circuit, dial-back, runtime; joins workers) → FinishMeshStop.
+  call_stack_->StopMesh(*mesh_, detach_transports);
+  mesh_.reset();
 }
 
 void ConversationsHub::AbortCallMediaForShutdown() {

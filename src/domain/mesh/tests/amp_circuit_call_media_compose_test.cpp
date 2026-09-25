@@ -249,6 +249,176 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedHelloAndEncryptedAudioRoundT
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
 }
 
+// A live relayed call must keep caller→callee audio through the disturbances a real call sees:
+// reservation renewals (k2), reserves aimed at the callee, lease expiry, burst loss on the relay hop.
+// Dogfood 2026-09-24 16:17 lost that direction mid-call; these ruled out each local cause.
+class RelayedCallDisturbanceTest : public AmpCircuitCallMediaComposeTest {
+protected:
+  bool LiveCall() {
+    auto nested = EstablishNestedCallMediaPath();
+    if (!nested) {
+      ADD_FAILURE() << nested.error().message;
+      return false;
+    }
+    b_call_->SetInboundHandler([this](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+      params.media_key = ByteVector(32, 0x42);
+      params.call_id = "call-renew-probe";
+      params.media_epoch = 1;
+      params.offerer = false;
+      cbs.on_connected = [this] { answerer_connected_ = true; };
+      cbs.on_audio = [this](const std::vector<uint8_t>& opus) { received_ = opus; };
+    });
+    CallMediaDirectConnectParams params;
+    params.peer_key = harness_->peer_id_b;
+    params.call_id = "call-renew-probe";
+    params.media_epoch = 1;
+    params.media_key = ByteVector(32, 0x42);
+    params.offerer = true;
+    CallMediaDirectCallbacks cbs;
+    cbs.on_connected = [this] { offerer_connected_ = true; };
+    leg_id_ = a_call_->StartLeg(params, std::move(cbs), leg_done_.Fn(), 8000);
+    leg_done_.PumpUntilDone(*harness_);
+    harness_->PumpUntil([&] { return answerer_connected_ && offerer_connected_.load(); }, 2500);
+    return answerer_connected_ && offerer_connected_.load() && AudioReaches({0x01}, 1);
+  }
+
+  bool AudioReaches(const std::vector<uint8_t>& opus, uint32_t seq) {
+    received_.clear();
+    if (!a_call_->SendAudio(leg_id_, opus, seq, 0)) {
+      return false;
+    }
+    harness_->PumpUntil([&] { return received_ == opus; }, 1500);
+    return received_ == opus;
+  }
+
+  void Reserve(const std::string& relay_key) {
+    Wait<CircuitTunnelBridgeResult> w;
+    (void)circuit_a_->StartReserve(relay_key, w.Fn(), 15000);
+    w.PumpUntilDone(*harness_, 1500);
+  }
+
+  CallMediaLegId leg_id_{};
+  LegCompletion leg_done_;
+  bool answerer_connected_ = false;
+  std::atomic<bool> offerer_connected_{false};
+  std::vector<uint8_t> received_;
+};
+
+TEST_F(RelayedCallDisturbanceTest, CallerReserveOnCarryingRelayKeepsAudio) {
+  ASSERT_TRUE(LiveCall());
+  Reserve("relay");
+  EXPECT_TRUE(AudioReaches({0x02, 0x02}, 2)) << "caller→callee audio lost after reserve on the carrying relay";
+}
+
+// Dogfood timeline: both ends parked on R before the call; B runs the product circuit coordinator
+// (not serving); A renews on R and (B41 gap) on B every 10 s while earlier leases expire.
+TEST_F(RelayedCallDisturbanceTest, RenewalsOverTimeKeepAudioBothWays) {
+  CircuitTunnelCoordinator circuit_b(*harness_->runtime_b);
+  circuit_b.Start();
+  circuit_b.SetServeInbound(false);
+  {
+    Wait<CircuitTunnelBridgeResult> wb;
+    (void)circuit_b.StartReserve("relay", wb.Fn(), 15000);
+    wb.PumpUntilDone(*harness_, 1500);
+  }
+  Reserve("relay");
+  ASSERT_TRUE(LiveCall());
+
+  std::vector<uint8_t> back;
+  for (int round = 0; round < 4; ++round) {
+    for (int i = 0; i < 40; ++i) {  // 10 s of Amp time
+      harness_->clock->Advance(250);
+      harness_->PumpAll();
+    }
+    Reserve("relay");
+    Reserve(harness_->peer_id_b);
+    {
+      Wait<CircuitTunnelBridgeResult> wb;
+      (void)circuit_b.StartReserve("relay", wb.Fn(), 15000);
+      wb.PumpUntilDone(*harness_, 1500);
+    }
+    const uint8_t tag = static_cast<uint8_t>(0x10 + round);
+    EXPECT_TRUE(AudioReaches({tag, tag}, 10u + static_cast<uint32_t>(round)))
+        << "caller→callee audio lost after renewal round " << round;
+    EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady) << "round " << round;
+    EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady) << "round " << round;
+  }
+  circuit_b.Stop();
+}
+
+// Same, with real-time lease expiry (coordinator deadlines use steady_clock): 300 ms leases renewed
+// every 200 ms, so superseded reservations expire and tear down on client and relay mid-call.
+TEST_F(RelayedCallDisturbanceTest, LeaseExpiryDuringCallKeepsAudio) {
+  CircuitTunnelCoordinator circuit_b(*harness_->runtime_b);
+  circuit_b.Start();
+  circuit_b.SetServeInbound(false);
+  auto reserve = [&](CircuitTunnelCoordinator& c, const std::string& key) {
+    Wait<CircuitTunnelBridgeResult> w;
+    (void)c.StartReserve(key, w.Fn(), 300);
+    w.PumpUntilDone(*harness_, 1500);
+  };
+  reserve(circuit_b, "relay");
+  reserve(*circuit_a_, "relay");
+  ASSERT_TRUE(LiveCall());
+  for (int round = 0; round < 12; ++round) {
+    const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+    while (std::chrono::steady_clock::now() < until) {
+      harness_->PumpAll();
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    reserve(*circuit_a_, "relay");
+    reserve(*circuit_a_, harness_->peer_id_b);
+    reserve(circuit_b, "relay");
+    const uint8_t tag = static_cast<uint8_t>(0x20 + round);
+    ASSERT_TRUE(AudioReaches({tag, tag}, 20u + static_cast<uint32_t>(round)))
+        << "caller→callee audio lost after lease round " << round;
+  }
+  circuit_b.Stop();
+}
+
+// ~2 s blackout on the relay hop (longer than ADP reliable retransmits) must not wedge one direction.
+TEST_F(RelayedCallDisturbanceTest, BurstLossOnRelayHopRecovers) {
+  ASSERT_TRUE(LiveCall());
+  // Keep media flowing while R's sends are blacked out for 2 s of Amp time.
+  harness_->io_r->SetDropRate(1.0);
+  for (int i = 0; i < 40; ++i) {
+    (void)a_call_->SendAudio(leg_id_, {0x55}, 100u + static_cast<uint32_t>(i), 0);
+    harness_->clock->Advance(50);
+    harness_->PumpAll();
+  }
+  harness_->io_r->SetDropRate(0.0);
+  for (int i = 0; i < 40; ++i) {
+    harness_->clock->Advance(50);
+    harness_->PumpAll();
+  }
+  EXPECT_TRUE(AudioReaches({0x66, 0x66}, 200)) << "caller→callee audio did not recover after burst loss";
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+}
+
+// Hard lab CGNAT stack (delay 80 ms + 1 % loss on the caller) / dogfood 2026-09-24 16:17: the hop
+// bound the dialer's circuit channel as Control (Reliable, strict in-order) while the dialer sends
+// the call-media carrier best-effort. One lost / reordered caller frame and the hop rejected every
+// later one ("out of order seq"): caller→callee dead for the rest of the call, reverse fine.
+TEST_F(RelayedCallDisturbanceTest, CallerUplinkLossDoesNotWedgeCallerToCallee) {
+  ASSERT_TRUE(LiveCall());
+  harness_->io_a->SetRngSeed(7);
+  harness_->io_a->SetDropRate(0.2);
+  for (int i = 0; i < 60; ++i) {
+    (void)a_call_->SendAudio(leg_id_, {0x77}, 300u + static_cast<uint32_t>(i), 0);
+    harness_->clock->Advance(20);
+    harness_->PumpAll();
+  }
+  harness_->io_a->SetDropRate(0.0);
+  EXPECT_TRUE(AudioReaches({0x78, 0x78}, 400)) << "caller→callee wedged after caller uplink loss";
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+}
+
+TEST_F(RelayedCallDisturbanceTest, CallerReserveOnCalleeViaCarrierKeepsAudio) {
+  ASSERT_TRUE(LiveCall());
+  Reserve(harness_->peer_id_b);
+  EXPECT_TRUE(AudioReaches({0x03, 0x03}, 3)) << "caller→callee audio lost after reserve on the callee via nested carrier";
+}
+
 // Dogfood 2026-09-24 (call-path-resilience k0 red test): call rides the relay carrier, a direct
 // (punched) link to the same peer comes up, then the relay path goes silent. Design (K001/K002,
 // M4/M5): media continues on the direct path. Today the leg is pinned to the carrier mux and

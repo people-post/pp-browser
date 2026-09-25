@@ -1181,14 +1181,19 @@ void CallMediaLegCoordinator::Start() {
 }
 
 void CallMediaLegCoordinator::Stop() {
-  impl_->started.store(false, std::memory_order_release);
+  // Idempotent: the destructor Stops again, possibly after MeshHost::Stop freed the runtime.
+  if (!impl_->started.exchange(false, std::memory_order_acq_rel)) {
+    return;
+  }
   impl_->stopped.store(true, std::memory_order_release);
   runtime_.RemoveIoTick(impl_->io_tick_id);
   impl_->io_tick_id = 0;
   runtime_.Links().RemoveProtocolHandler(kCallMediaDirectProtocolId);
   // Tear down synchronously: a PostIo(raw Impl*) races if the caller destroys then Pumps
-  // (macOS: "mutex lock failed: Invalid argument").
-  {
+  // (macOS: "mutex lock failed: Invalid argument"). Strand before the coordinator lock — IO
+  // callbacks hold the strand, so an off-IO Stop taking `mu` first can invert against MeshPump
+  // (see CircuitTunnelCoordinator::AbortInflight).
+  runtime_.WithIoLock([this]() {
     Impl::CallbackLock lock(*impl_);
     std::vector<std::string> ids;
     for (auto& [id, _] : impl_->bundles) {
@@ -1199,7 +1204,7 @@ void CallMediaLegCoordinator::Stop() {
         impl_->TearDownBundle(*b, true, false, "call-media aborted");
       }
     }
-  }
+  });
   ClearInboundHandler();
   // Poison already-queued PostIo(self) work before dropping runtime.
   impl_->io_deferred.Invalidate();

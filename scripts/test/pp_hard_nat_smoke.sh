@@ -25,6 +25,15 @@ CYCLES="${PP_CALL_PROBE_CYCLES:-1}"
 CALL_EXPECT="${PP_HARD_NAT_CALL_EXPECT:-success}"
 # circuit | product | dirty | stack | both | all
 PHASE="${PP_HARD_NAT_PHASE:-all}"
+# Stack phase long-hold knobs (one-way stall repro, dogfood 2026-09-24 16:17):
+#   PP_HARD_NAT_STACK_HOLD_MS  offerer hold after media (default 3000)
+#   PP_HARD_NAT_RX_STALL_MS    both probes fail if rx frames go flat this long (default 0 = off)
+STACK_HOLD_MS="${PP_HARD_NAT_STACK_HOLD_MS:-3000}"
+RX_STALL_MS="${PP_HARD_NAT_RX_STALL_MS:-0}"
+#   PP_HARD_NAT_NETEM_A / _B   tc netem spec on peer-a / peer-b during calls (e.g. cellular-ish
+#                              "delay 150ms 40ms distribution normal loss 2%"); empty = clean
+NETEM_A="${PP_HARD_NAT_NETEM_A:-}"
+NETEM_B="${PP_HARD_NAT_NETEM_B:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -85,14 +94,21 @@ run_nat_call() {
   rm -f "${PP_HARD_CGNAT_SHARE_DIR}/${ready_name}"
   pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" rm -f "/share/${ready_name}"
 
-  local hold=$((CYCLES * 20 + 60))
+  local hold=$((CYCLES * 20 + 60 + STACK_HOLD_MS / 1000))
   local ans_args=(/probes/${CALL_BIN_NAME} --role answerer --listen "${listen_ma}"
     --advertise-host "${PEER_B_IP}" --ready-file "/share/${ready_name}"
     --hold-seconds "${hold}" --call-id "${call_id}"
     --warm-hop "${HOP_MA_PUBLIC}" --min-rx-frames "${CYCLES}")
   if [[ "${mode}" == "stack" ]]; then
-    ans_args+=(--product-stack)
+    local watch_ms=$((STACK_HOLD_MS > 4000 ? STACK_HOLD_MS - 3000 : 0))
+    ans_args+=(--product-stack --rx-stall-ms "${RX_STALL_MS}" --watch-ms "${watch_ms}")
   fi
+  pp_hard_link_clear_container "${PP_HARD_CGNAT_PEER_A}"
+  pp_hard_link_clear_container "${PP_HARD_CGNAT_PEER_B}"
+  # shellcheck disable=SC2086
+  [[ -n "${NETEM_A}" ]] && pp_hard_qdisc_replace "${PP_HARD_CGNAT_PEER_A}" netem ${NETEM_A}
+  # shellcheck disable=SC2086
+  [[ -n "${NETEM_B}" ]] && pp_hard_qdisc_replace "${PP_HARD_CGNAT_PEER_B}" netem ${NETEM_B}
 
   pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" "${ans_args[@]}" &
   local ans_pid=$!
@@ -128,7 +144,8 @@ run_nat_call() {
   case "${mode}" in
     product) off_args+=(--reach product) ;;
     dirty) off_args+=(--reach bridge --force-dial-fail) ;;
-    stack) off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms 3000 --timeout-ms 45000) ;;
+    stack) off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms "${STACK_HOLD_MS}"
+             --rx-stall-ms "${RX_STALL_MS}" --timeout-ms 45000) ;;
     *) off_args+=(--peer-id-only) ;;
   esac
 
@@ -137,6 +154,12 @@ run_nat_call() {
   local off_rc=$?
   set -e
 
+  # Give the answerer a moment to see call_leave and exit 0 on its own (143 = it never did).
+  local grace
+  for grace in $(seq 1 20); do
+    kill -0 "${ans_pid}" 2>/dev/null || break
+    sleep 0.5
+  done
   kill "${ans_pid}" 2>/dev/null || true
   set +e
   wait "${ans_pid}"

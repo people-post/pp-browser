@@ -72,7 +72,10 @@ if(TARGET pp_feature_conversations OR TARGET pp_domain_messaging)
     call_probe/ProductStackHarness.cpp
   )
   target_include_directories(pp-call-probe PRIVATE ${CMAKE_SOURCE_DIR}/src)
-  target_link_libraries(pp-call-probe PRIVATE ${_pp_probe_libs})
+  target_link_libraries(pp-call-probe PRIVATE
+    ${_pp_probe_libs}
+    pp_foundation_platform_core
+  )
   # Phase-2 NAT + HL004 product-stack: CallStack / AmpCircuitHopReach in pp_feature_calls.
   if(TARGET pp_feature_calls)
     target_link_libraries(pp-call-probe PRIVATE pp_feature_calls)

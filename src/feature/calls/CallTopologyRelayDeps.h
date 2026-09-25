@@ -96,6 +96,8 @@ public:
     (void)peer_key;
     return false;
   }
+  /** Connected over a direct (ADP) link — IsConnected also counts a relay carrier link. */
+  virtual bool IsConnectedDirect(const std::string& peer_key) const { return IsConnected(peer_key); }
   /** Kick ADP dial/handshake; optional for fakes. */
   virtual void EnsureAssociation(const std::string& peer_key,
                                  std::function<void(Roe<void>)> on_done) {
@@ -240,6 +242,20 @@ public:
 
   bool IsConnected(const std::string& peer_key) const override {
     return amp_links_ && amp_links_->IsConnected(peer_key);
+  }
+
+  bool IsConnectedDirect(const std::string& peer_key) const override {
+    if (!amp_links_) {
+      return false;
+    }
+    // By PeerId: presence prefers the ADP link when both ADP and carrier exist (A024/A026).
+    const pp::amp::LinkSnapshotEx by_peer = amp_links_->SnapshotByPeerId(peer_key);
+    if (by_peer.transport == pp::amp::TransportClass::Adp &&
+        by_peer.base.phase == pp::amp::PeerLinkPhase::Connected) {
+      return true;
+    }
+    // Dial alias (account: …): its own link must not be a carrier.
+    return amp_links_->IsConnected(peer_key) && !amp_links_->GetLinkSnapshot(peer_key).carrier_backed;
   }
 
   void EnsureAssociation(const std::string& peer_key,

@@ -504,6 +504,10 @@ void AmpPunchCoordinator::Start() {
 }
 
 void AmpPunchCoordinator::Stop() {
+  // Idempotent: the destructor Stops again, possibly after MeshHost::Stop freed the runtime.
+  if (!started_) {
+    return;
+  }
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   runtime_.Links().RemoveProtocolHandler(kAmpPunchProtocolId);

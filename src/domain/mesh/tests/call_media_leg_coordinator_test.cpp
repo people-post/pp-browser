@@ -159,6 +159,41 @@ TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedAudioRoundTrip) {
 // B16: on_connected / on_finished are invoked from inside the Amp IO drain; the transport and the
 // bridge re-enter the coordinator from those callbacks (PrimaryLegId / IsActive). The coordinator
 // must not hold its own (non-recursive) mutex while invoking them, or the IO strand deadlocks.
+// Stop is idempotent: the destructor's Stop must not touch the runtime again. A second
+// RemoveProtocolHandler dropped the replacement owner's handler (and after MeshHost::Stop it
+// locked a freed runtime mutex — pp-call-probe teardown hang, 2026-09-25).
+TEST_F(CallMediaLegCoordinatorTest, DestroyAfterStopKeepsReplacementHandler) {
+  auto old_b = std::move(b_call_);
+  old_b->Stop();
+  b_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b);
+  b_call_->Start();
+  old_b.reset();
+
+  const std::string call_id = "call-replaced-owner";
+  ByteVector media_key(32, 0x24);
+  std::atomic<bool> answerer_connected{false};
+  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] { answerer_connected.store(true, std::memory_order_release); };
+  });
+
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+  LegCompletion leg_done;
+  ASSERT_TRUE(a_call_->StartLeg(params, {}, leg_done.Fn(), 3000));
+  leg_done.PumpUntilDone(*harness_);
+  ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
+  harness_->PumpUntil([&] { return answerer_connected.load(std::memory_order_acquire); });
+  EXPECT_TRUE(answerer_connected.load(std::memory_order_acquire));
+}
+
 TEST_F(CallMediaLegCoordinatorTest, CallbacksMayReenterCoordinator) {
   const std::string call_id = "call-amp-reenter";
   ByteVector media_key(32, 0x24);

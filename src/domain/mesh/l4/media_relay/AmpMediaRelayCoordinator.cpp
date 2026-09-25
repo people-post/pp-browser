@@ -1074,7 +1074,10 @@ void AmpMediaRelayCoordinator::Start() {
 }
 
 void AmpMediaRelayCoordinator::Stop() {
-  impl_->started.store(false, std::memory_order_release);
+  // Idempotent: the destructor Stops again, possibly after MeshHost::Stop freed the runtime.
+  if (!impl_->started.exchange(false, std::memory_order_acq_rel)) {
+    return;
+  }
   impl_->stopped.store(true, std::memory_order_release);
   runtime_.RemoveIoTick(impl_->io_tick_id);
   impl_->io_tick_id = 0;
@@ -1109,7 +1112,8 @@ void AmpMediaRelayCoordinator::AbortInflight() {
   // Sync under lock — never PostIo(raw Impl*) that can outlive Stop/TearDown.
   std::vector<QuoteFinished> quote_cbs;
   std::vector<AttachFinished> attach_cbs;
-  {
+  // Strand before mu (IO callbacks hold the strand); see CircuitTunnelCoordinator::AbortInflight.
+  runtime_.WithIoLock([&]() {
     std::lock_guard lock(impl_->mu);
     impl_->DetachClientLocked();
     impl_->ClearHostsLocked();
@@ -1138,7 +1142,7 @@ void AmpMediaRelayCoordinator::AbortInflight() {
       }
       impl_->sessions.erase(id);
     }
-  }
+  });
   for (auto& cb : quote_cbs) {
     cb(Error("media-relay aborted"));
   }

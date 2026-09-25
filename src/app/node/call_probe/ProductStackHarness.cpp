@@ -14,11 +14,13 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "foundation/platform/os/OsThreadStackDump.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/mesh/reachability/Reachability.h"
 #include "common/thread/ThreadRecordTypes.h"
 
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <optional>
 #include <thread>
@@ -76,7 +78,10 @@ Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
   harness->shared_session_key_ = SharedSessionKey();
 
   harness->host_ = std::make_unique<MeshHost>();
-  if (auto attached = harness->host_->AttachAmpStack(std::move(stack), harness->advertise_ma_);
+  // Own MeshPump like the product: with the main thread as sole Amp driver, any main-thread wait
+  // on work that needs mesh progress (capture send, parked worker) deadlocked (hard-w5 hang).
+  if (auto attached = harness->host_->AttachAmpStack(std::move(stack), harness->advertise_ma_,
+                                                     MeshHost::AttachDrive::MeshPump);
       !attached) {
     return attached.error();
   }
@@ -229,8 +234,10 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma) {
   if (!chat_deps) {
     return Error("MeshHost chat deps unavailable");
   }
-  auto pump_mesh = [this]() { PumpMesh(); };
-  chat_ = std::make_unique<AmpDirectChatTransport>(chat_deps->links, AmpDirectChatTransport::IoPump{pump_mesh});
+  // Same wiring as MeshDeliveryOrchestrator (empty io_pump under MeshPump).
+  chat_ = std::make_unique<AmpDirectChatTransport>(chat_deps->links, chat_deps->io.io_pump,
+                                                   chat_deps->io.post_worker, chat_deps->io.post_io,
+                                                   chat_deps->io.post_after);
   chat_->Start();
   chat_->SetInboundHandler([this](RelayEnvelope env) { OnChatInbound(std::move(env)); });
 
@@ -278,8 +285,7 @@ Roe<void> ProductStackHarness::EnsurePeerCircuitPath(const std::string& peer_id)
   if (!stack_ || peer_id.empty()) {
     return Error("circuit path: missing stack/peer");
   }
-  // AttachAmpStack: no MeshPump. Sync TryEnsure AmpParkUntil sleeps unless MakeL4IoPump→Tick
-  // (harness sole driver). Prefer async + PumpUntil so Drive progress is explicit.
+  // Async + PumpUntil: the completion lands on the UI mailbox.
   std::optional<Roe<void>> result;
   stack_->TryEnsureCallMediaReachableAsync(peer_id, [&](Roe<void> value) { result = std::move(value); });
   if (!PumpUntil([&] { return result.has_value(); }, 30000)) {
@@ -312,14 +318,8 @@ Roe<void> ProductStackHarness::EnsureOriginThread(const std::string& thread_id,
   return {};
 }
 
-void ProductStackHarness::PumpMesh() {
-  if (host_) {
-    host_->Tick();
-  }
-}
-
 void ProductStackHarness::Pump() {
-  PumpMesh();
+  // UI mailbox only — the mesh runs on MeshHost's MeshPump.
   AppRuntime::RunUITasks();
 }
 
@@ -371,6 +371,10 @@ void ProductStackHarness::LearnAccountPeerId(const std::string& account_id,
 
 Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account,
                                                const ThreadMessage& msg) {
+  struct CountOnExit {
+    std::atomic<int>& n;
+    ~CountOnExit() { n.fetch_add(1, std::memory_order_release); }
+  } count{control_sends_};
   if (!chat_) {
     return Error("chat transport not started");
   }
@@ -451,6 +455,67 @@ void ProductStackHarness::OnChatInbound(RelayEnvelope env) {
   }
 }
 
+namespace {
+
+/**
+ * Per-second rx/tx trace + one-way stall detector for long holds (dogfood 2026-09-24 16:17: a
+ * relayed call lost caller→callee audio after ~8 s with every link still up).
+ */
+class MediaFlowMonitor {
+public:
+  /** `watch_ms` > 0: only judge stalls within this long after the first rx frame (the remote
+   * leaving at the end of its hold also flattens rx). */
+  MediaFlowMonitor(const char* role, int stall_ms, int watch_ms = 0)
+      : role_(role), stall_ms_(stall_ms), watch_ms_(watch_ms), start_(std::chrono::steady_clock::now()),
+        last_change_(start_), next_report_(start_) {}
+
+  /** Returns an error message once rx has been flat for stall_ms after first audio. */
+  std::optional<std::string> Tick(const uint64_t rx, const uint64_t tx) {
+    const auto now = std::chrono::steady_clock::now();
+    if (rx != last_rx_) {
+      if (last_rx_ == 0) {
+        first_rx_ = now;
+      }
+      last_rx_ = rx;
+      last_change_ = now;
+    }
+    if (now >= next_report_) {
+      std::cout << "flow " << role_ << " t=" << Ms(now - start_) / 1000.0 << "s rx=" << rx << " tx=" << tx
+                << "\n" << std::flush;
+      next_report_ = now + std::chrono::seconds(1);
+    }
+    const bool watching = watch_ms_ <= 0 || Ms(now - first_rx_) < watch_ms_;
+    if (stall_ms_ > 0 && rx > 0 && watching && Ms(now - last_change_) >= stall_ms_) {
+      return std::string("rx stall ") + role_ + ": rx=" + std::to_string(rx) + " flat since t=" +
+             std::to_string(Ms(last_change_ - start_) / 1000.0) + "s (tx=" + std::to_string(tx) + ")";
+    }
+    return std::nullopt;
+  }
+
+private:
+  static int64_t Ms(std::chrono::steady_clock::duration d) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(d).count();
+  }
+
+  const char* role_;
+  int stall_ms_;
+  int watch_ms_;
+  std::chrono::steady_clock::time_point first_rx_{};
+  std::chrono::steady_clock::time_point start_;
+  std::chrono::steady_clock::time_point last_change_;
+  std::chrono::steady_clock::time_point next_report_;
+  uint64_t last_rx_ = 0;
+};
+
+} // namespace
+
+uint64_t ProductStackHarness::TxAudioFrames() const {
+  if (!stack_ || !stack_->MediaEngine()) {
+    return 0;
+  }
+  return stack_->MediaEngine()->HealthSnapshot().tx_audio_frames;
+}
+
 uint64_t ProductStackHarness::RxAudioFrames() const {
   if (!stack_ || !stack_->MediaEngine()) {
     return 0;
@@ -463,6 +528,8 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
   std::string call_id;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(hold_seconds);
   bool min_rx_met = false;
+  bool was_in_call = false;
+  MediaFlowMonitor flow("answerer", rx_stall_ms_, rx_watch_ms_);
   while (std::chrono::steady_clock::now() < deadline) {
     Pump();
     if (!accepted) {
@@ -491,11 +558,26 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
     }
     if (min_rx_frames > 0 && static_cast<int>(RxAudioFrames()) >= min_rx_frames) {
       min_rx_met = true;
-      break;
     }
     if (ui_->Phase() == CallPhase::ConnectFailed) {
       std::cerr << "error: product-stack answerer ConnectFailed err=" << ui_->LastError() << "\n";
       return 1;
+    }
+    if (accepted) {
+      // Stay until the offerer leaves: hanging up on first RX ended the offerer's call before its
+      // own media phase once call_leave was actually delivered.
+      if (rx_stall_ms_ > 0) {
+        if (auto stall = flow.Tick(RxAudioFrames(), TxAudioFrames())) {
+          std::cerr << "error: " << *stall << "\n";
+          return 1;
+        }
+      }
+      if (ui_->Phase() == CallPhase::InCall) {
+        was_in_call = true;
+      } else if (was_in_call && ui_->Phase() == CallPhase::Idle) {
+        std::cout << "ok  product-stack answerer: offerer left rx_frames=" << RxAudioFrames() << "\n";
+        return min_rx_met || min_rx_frames <= 0 ? 0 : 1;
+      }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
@@ -511,13 +593,7 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
   }
 
   if (!call_id.empty()) {
-    ui_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
-    (void)PumpUntil(
-        [this]() {
-          return ui_->Phase() == CallPhase::Idle &&
-                 (!stack_->MediaEngine() || !stack_->MediaEngine()->IsActive());
-        },
-        8000);
+    LeaveAndFlush(call_id);
   }
   std::cout << "ok  product-stack answerer leave rx_frames=" << RxAudioFrames() << "\n";
   return 0;
@@ -553,60 +629,121 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::string& peer_account, i
             << " rx=" << RxAudioFrames() << "\n";
 
   const auto hold_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(hold_ms);
+  MediaFlowMonitor flow("offerer", rx_stall_ms_);
   while (std::chrono::steady_clock::now() < hold_deadline) {
     Pump();
     if (ui_->Phase() == CallPhase::ConnectFailed) {
       return Error(std::string("product-stack ConnectFailed during hold: ") + ui_->LastError());
     }
+    if (auto stall = flow.Tick(RxAudioFrames(), TxAudioFrames())) {
+      return Error(*stall);
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
 
-  ui_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
-  (void)PumpUntil(
-      [this]() {
-        return ui_->Phase() == CallPhase::Idle &&
-               (!stack_->MediaEngine() || !stack_->MediaEngine()->IsActive());
-      },
-      8000);
+  LeaveAndFlush(call_id);
   std::cout << "ok  product-stack LeaveClicked Idle\n";
   return {};
 }
 
+void ProductStackHarness::LeaveAndFlush(const std::string& call_id) {
+  // LeaveCall sends call_leave after the UI is already Idle; returning (and Shutdown resetting
+  // chat_) before that raced the send — the peer never saw the hangup and hung to timeout.
+  const int sends_before = control_sends_.load(std::memory_order_acquire);
+  ArmTeardownWatchdog();
+  ShutdownStep("leave-clicked");
+  ui_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  const bool flushed = PumpUntil(
+      [this, sends_before]() {
+        return ui_->Phase() == CallPhase::Idle &&
+               (!stack_->MediaEngine() || !stack_->MediaEngine()->IsActive()) &&
+               control_sends_.load(std::memory_order_acquire) > sends_before;
+      },
+      8000);
+  std::cerr << "probe leave flushed=" << flushed << " phase=" << CallPhaseName(ui_->Phase()) << std::endl;
+}
+
+void ProductStackHarness::ShutdownStep(const char* step) {
+  shutdown_step_.store(step, std::memory_order_release);
+  std::cerr << "probe shutdown: " << step << std::endl;
+}
+
 void ProductStackHarness::Shutdown() {
   if (!host_ && !stack_ && !ui_ && data_dir_.empty()) {
+    DisarmTeardownWatchdog();
     return;
   }
-  // Keep chat up through Leave / AbortCallMediaForShutdown so call_leave fanout can send
-  // (stopping chat first logged "chat transport not started" on green hard-w5 STACK runs).
+  // A blocked teardown must fail the probe, not hang the lab (the smoke has no exec timeout).
+  ArmTeardownWatchdog();
+  ShutdownImpl();
+  DisarmTeardownWatchdog();
+}
+
+void ProductStackHarness::ArmTeardownWatchdog() {
+  if (teardown_watchdog_.joinable()) {
+    return;
+  }
+  teardown_done_.store(false, std::memory_order_release);
+  teardown_watchdog_ = std::thread([this]() {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(40);
+    while (!teardown_done_.load(std::memory_order_acquire)) {
+      if (std::chrono::steady_clock::now() >= deadline) {
+        std::cerr << "error: probe teardown stuck at " << shutdown_step_.load(std::memory_order_acquire)
+                  << std::endl;
+        os::DumpAllThreadStacks();
+        std::error_code ec;
+        if (std::filesystem::is_directory("/share", ec)) {
+          std::filesystem::current_path("/share", ec);
+        }
+        std::abort();
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+  });
+}
+
+void ProductStackHarness::DisarmTeardownWatchdog() {
+  teardown_done_.store(true, std::memory_order_release);
+  if (teardown_watchdog_.joinable()) {
+    teardown_watchdog_.join();
+  }
+}
+
+void ProductStackHarness::ShutdownImpl() {
+  // Product quit order (THREADING.md § Shutdown order): abort call media → quiesce runtime →
+  // CallStack::StopMesh (joins MeshPump) → join runtime → free. Freeing the call stack while the
+  // mesh / workers still ran segfaulted in hard-w5 (2026-09-25).
   if (ui_ && stack_ && stack_->HasActiveLocalCall()) {
     if (auto active = ui_->ActiveLocalCall(); active && active->has_value()) {
-      ui_->Apply(CallLifecycleEvent::LeaveClicked, (*active)->call_id);
-      Pump();
+      LeaveAndFlush((*active)->call_id);
     }
   }
   if (stack_) {
+    ShutdownStep("abort-call-media");
     stack_->AbortCallMediaForShutdown();
-    Pump();
-    stack_->PrepareForMeshStop([this]() {
-      if (host_) {
-        host_->AbortInflightCircuitRequests();
-      }
-    });
-    stack_->FinishMeshStop();
   }
-  if (chat_) {
-    chat_->Stop();
-    chat_.reset();
+  ShutdownStep("quiesce");
+  if (!AppRuntime::QuiesceForTeardown(std::chrono::milliseconds(2000))) {
+    std::cerr << "warning: probe teardown quiesce budget exceeded" << std::endl;
   }
+  ShutdownStep("stop-mesh");
+  if (stack_ && host_) {
+    // Detach = destroy (product DetachAmpTransports): nothing may outlive the Amp stack.
+    stack_->StopMesh(*host_, [this]() { chat_.reset(); });
+  } else if (host_) {
+    host_->Stop();
+  }
+  chat_.reset();
+  host_.reset();
   if (stack_) {
+    ShutdownStep("call-stack-shutdown");
     stack_->Shutdown();
   }
+  ShutdownStep("runtime");
+  AppRuntime::Shutdown();
+  ShutdownStep("free");
   ui_.reset();
   stack_.reset();
-  if (host_) {
-    host_->Stop();
-    host_.reset();
-  }
   if (psk_) {
     psk_->ClearDek();
   }
@@ -620,7 +757,7 @@ void ProductStackHarness::Shutdown() {
     data_dir_.clear();
   }
   AppRuntime::ShutdownUI();
-  AppRuntime::Shutdown();
+  ShutdownStep("done");
 }
 
 } // namespace call_probe

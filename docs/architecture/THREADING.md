@@ -158,7 +158,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 
 **Hard rule:** only worker-pool and mesh-control threads may block on network or disk for longer than a few milliseconds. Amp data-plane progress is **exclusive** `MeshRuntime::Drive` on MeshPump (or the harness). Nested `Pump`/`Tick`/`Drive` is refused.
 
-**Exclusive Amp Drive (hard):** Exactly one driver calls `Drive`/`Tick`/`Pump` per `MeshRuntime`. Product: `MeshPumpThread`. Tests: harness loop. L4 services (punch, hop, broadcast, messaging, dial-back, DHT) are state machines on that thread via `PostToIo` / `PostDeferred` / `PostAfter` — they never call Tick to “unstick” a wait. Product `MakeL4IoPump()` is empty (MeshPump owns Drive). AttachAmpStack harnesses may use `MakeL4IoPump`→`Tick` only from sync `AmpParkUntil` on the harness thread (sole driver) — never from mux/`PostToIo`. Frame handlers may only parse + Post; Abort/Close/complete go on `PostDeferred` after mux stack unwinds. See [ADR_LINK_PLANE](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md).
+**Exclusive Amp Drive (hard):** Exactly one driver calls `Drive`/`Tick`/`Pump` per `MeshRuntime`. Product: `MeshPumpThread`. Tests: harness loop (`AttachAmpStack` default `AttachDrive::Manual`, VirtualClock); wall-clock harnesses such as pp-call-probe pass `AttachDrive::MeshPump` and run the product threading — a main-thread driver deadlocked whenever main waited on work that needed mesh progress. L4 services (punch, hop, broadcast, messaging, dial-back, DHT) are state machines on that thread via `PostToIo` / `PostDeferred` / `PostAfter` — they never call Tick to “unstick” a wait. Product `MakeL4IoPump()` is empty (MeshPump owns Drive). AttachAmpStack harnesses may use `MakeL4IoPump`→`Tick` only from sync `AmpParkUntil` on the harness thread (sole driver) — never from mux/`PostToIo`. Frame handlers may only parse + Post; Abort/Close/complete go on `PostDeferred` after mux stack unwinds. **Lock order: Amp strand → L4 owner mutex.** IO callbacks already hold the strand when they take an L4 coordinator's `mu`; an off-IO entry point that mutates under `mu` and calls back into Amp (`Links()`, session close) must enter via `MeshRuntime::WithIoLock` first (`CircuitTunnelCoordinator` / `AmpMediaRelayCoordinator::AbortInflight`, `CallMediaLegCoordinator::Stop`) — `mu` → strand deadlocked against MeshPump (quit / Leave hang, 2026-09-25). Read-only accessors may take `mu` alone (leaf). **Inbound request answered from a worker:** bind with `InboundReplyPolicy(policy)` (no `read_once`), return `true`, and reply through `InboundReply` ([`l4/shared/InboundReply.h`](../../src/domain/mesh/l4/shared/InboundReply.h)) — `ChannelSession` is IO-affine, and returning `false` / `read_once` closes the channel before the worker replies (every Amp direct-chat ack was lost under MeshPump until 2026-09-25; sends fell back to the relay after 4 s). See [ADR_LINK_PLANE](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md).
 
 **Amp PeerLink strand:** `MeshRuntime` is the product entry (`WhenChannelOpen` / `BindChannel` / `SnapshotByPeerId` / `IsReachable`). Never stash `PeerLink*`. Prefer `IsReachable(PeerId)` over exact-key `IsConnected`.
 
@@ -249,6 +249,10 @@ Owners stop children with a fixed sequence — do not destroy while a joinable t
 RequestStop(gen) → Drain(deadline) → Join(deadline) → destroy
 ```
 
+**`Stop()` is idempotent.** Amp L4 protocols / transports (`*Protocol`, `*Coordinator`, `Amp*Transport`, `CallMediaLegCoordinator`) return early unless started: the owner's explicit `Stop` before `MeshHost::Stop` does the work, and the destructor's `Stop` runs when the Amp runtime may already be freed (a second `RemoveProtocolHandler` locked a freed runtime mutex — pp-call-probe teardown hang, 2026-09-25 — and dropped a replacement owner's handler).
+
+**Calls + mesh stop order** lives in one place, `CallStack::StopMesh(mesh, detach_transports)` (hub and pp-call-probe): `PrepareForMeshStop` bracketed by circuit aborts → detach (= destroy) Amp transports → `MeshHost::Stop` → `FinishMeshStop`.
+
 | Owner | Notes |
 |-------|--------|
 | `CallStack` / `CallMediaBridge` | bump connect generation; `AbortConnectSequence` / `PrepareForTeardown(0)`; media engine budgeted joins |
@@ -332,6 +336,8 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 
 | Date | Change |
 |------|--------|
+| 2026-09-25 | **InboundReply:** worker-answered L4 requests (direct chat, history, blob, broadcast, announce, DHT, directory, dial-back) reply on the IO lane with the channel held open — acks were dropped under MeshPump |
+| 2026-09-25 | **Idempotent Stop** for Amp L4 transports; `CallStack::StopMesh` single stop order; `MeshHost::AttachAmpStack(…, AttachDrive::MeshPump)` for wall-clock harnesses (pp-call-probe runs the product threading) |
 | 2026-09-24 | **Teardown quiesce:** `AppRuntime` gate (Open → Draining → Closed, epoch reopen) over workers / coordinator / UI; quit and profile reset quiesce before freeing messaging; hub `shutdown_requested_` cleared on re-Initialize |
 | 2026-09-23 | **Cancel / Abort contract:** arm ⇒ complete on cancel; Bridge `AbortConnectSequence` clears Connect waiter after canceling grace/retry timers |
 | 2026-09-23 | **Exclusive Amp Drive:** nested Drive refused; `PostDeferred` / `PostAfter`; L4 `MakeL4IoPump` always empty; punch on `MeshRuntime&` via `BurstDial`; pin pp-cpp-amp `v2.1.8` |

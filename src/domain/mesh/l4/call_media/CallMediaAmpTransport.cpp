@@ -105,7 +105,11 @@ void CallMediaAmpTransport::ConnectAsync(const CallMediaDirectConnectParams& par
     }
     return;
   }
-  if (IsActive()) {
+  // Only a finished leg short-circuits. A same-call bundle still in hello / AwaitingMedia is joined
+  // by StartLeg (AdoptOutboundIntoExisting) and completes when it reaches MediaReady or fails —
+  // reporting ok here made glare/loss half-handshakes look connected: InCall with no media, no
+  // retry (hard-lab CGNAT stack, delay 80 ms + 1 % loss, 2026-09-24).
+  if (Phase() == CallMediaSessionPhase::MediaReady) {
     if (on_done) {
       on_done({});
     }

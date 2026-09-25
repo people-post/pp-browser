@@ -1,5 +1,7 @@
 #include "feature/conversations/AmpPeerAnnounceTransport.h"
 
+#include "domain/mesh/l4/shared/InboundReply.h"
+
 #include "amp/link/LinkIdentity.h"
 
 #include "domain/messaging/PeerAnnounceCodec.h"
@@ -113,7 +115,7 @@ struct AmpPeerAnnounceTransport::Impl {
       return;
     }
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
-    auto policy = pp::amp::ControlJsonChannelPolicy();
+    auto policy = InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy());
     *session_holder = links->BindChannel(
         remote_peer_id, channel_id, policy, [this, session_holder](Roe<std::vector<uint8_t>> frame) {
       auto session = *session_holder;
@@ -121,7 +123,9 @@ struct AmpPeerAnnounceTransport::Impl {
         return false;
       }
       auto body = std::move(*frame);
-      RunWorker(post_worker, [this, session, body = std::move(body)]() mutable {
+      // Keep the channel open for the worker's reply (InboundReply.h); `reply` closes it.
+      auto reply = MakeInboundReply(session, post_io);
+      RunWorker(post_worker, [this, reply, body = std::move(body)]() mutable {
         if (stopped.load(std::memory_order_acquire)) {
           return;
         }
@@ -141,11 +145,9 @@ struct AmpPeerAnnounceTransport::Impl {
         if (!ack_json) {
           return;
         }
-        if (!session->EnqueueOutbound(JsonToBody(*ack_json))) {
-          return;
-        }
+        reply->Send(JsonToBody(*ack_json));
       });
-      return false;
+      return true;
     });
   }
 };
@@ -184,6 +186,10 @@ void AmpPeerAnnounceTransport::Start() {
 }
 
 void AmpPeerAnnounceTransport::Stop() {
+  // Idempotent: the destructor Stops again, possibly after MeshHost::Stop freed the runtime.
+  if (!started_) {
+    return;
+  }
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   links_.RemoveProtocolHandler(kRpcPeerAnnounceProtocolId);

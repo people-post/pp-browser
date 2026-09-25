@@ -88,6 +88,13 @@ public:
   void PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit);
   /** Teardown after mesh Stop: reset media plane mesh objects. */
   void FinishMeshStop();
+  /**
+   * The one call-side mesh stop order (hub and pp-call-probe): PrepareForMeshStop bracketed by
+   * circuit aborts → `detach_transports` (Amp transports holding PeerLinks&) → `mesh.Stop()`
+   * (joins MeshControl + MeshPump) → FinishMeshStop. Bridge + dial registry stay alive until
+   * the mesh has joined. Caller frees `mesh` afterwards.
+   */
+  void StopMesh(MeshHost& mesh, const std::function<void()>& detach_transports);
   /** Reset call session manager + lifecycle (Hub teardown ordering before p2p reset). */
   void ResetSessions();
   /** Final teardown: reset media engine / key store / session store. */

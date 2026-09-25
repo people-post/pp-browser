@@ -30,6 +30,17 @@
 namespace pbr {
 namespace {
 
+/**
+ * A rendezvous relay must be directly reachable: a peer we only reach through a relay carrier
+ * (typically the call peer itself) cannot relay for us — reserving on it just sends op=reserve
+ * over the call's own carrier ("circuit-relay service not ready"), every renewal (dogfood 16:17).
+ */
+bool ReachableOnlyViaCarrier(IChatPeerLinks& links, const std::string& peer_id) {
+  const pp::amp::LinkSnapshotEx snap = links.SnapshotByPeerId(peer_id);
+  return snap.transport == pp::amp::TransportClass::Carrier &&
+         snap.base.phase == pp::amp::PeerLinkPhase::Connected;
+}
+
 void CompletePunch(std::function<void(Roe<void>)> on_done, AmpPunchCoordinator::PunchRoe punched,
                    const char* fail_fallback) {
   if (!on_done) {
@@ -983,8 +994,12 @@ void CallMediaPlane::ReserveOnBootstrapSeedsOnIo() {
              << " connected=" << connected_count << " cold_limit=" << cold_limit
              << " coverage_k=" << kCircuitRendezvousParkCoverage;
 
-  auto start_reserve = deferred_.Bind([this, m](const std::string& relay) {
+  auto start_reserve = deferred_.Bind([this, m, chat](const std::string& relay) {
     if (!m->AmpCircuitTunnel() || !m->AmpCircuitTunnel()->IsStarted()) {
+      return;
+    }
+    if (ReachableOnlyViaCarrier(chat->links, relay)) {
+      log().info << "circuit reserve skip peer=" << relay << " reason=carrier-only";
       return;
     }
     const auto id = m->AmpCircuitTunnel()->StartReserve(
@@ -1148,6 +1163,10 @@ void CallMediaPlane::PreferLateReserveOnIo(const std::string& relay_peer_id) {
   }
   auto chat = m->ChatDeps();
   if (!chat || relay_peer_id.empty()) {
+    return;
+  }
+  if (ReachableOnlyViaCarrier(chat->links, relay_peer_id)) {
+    log().info << "circuit late-reserve skip peer=" << relay_peer_id << " reason=carrier-only";
     return;
   }
   // Ensure the chosen R1 is on the surface with a dialable MA when possible.

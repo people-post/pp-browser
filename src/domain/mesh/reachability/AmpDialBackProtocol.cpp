@@ -1,5 +1,7 @@
 #include "domain/mesh/reachability/AmpDialBackProtocol.h"
 
+#include "domain/mesh/l4/shared/InboundReply.h"
+
 #include "amp/L3/ChannelPolicy.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/AdpMultiaddr.h"
@@ -127,6 +129,10 @@ struct AmpDialBackProtocol::Impl {
   DeferredSelf deferred;
 
   pp::amp::PeerLinkManager& Links() { return runtime->Links(); }
+  /** IO lane for InboundReply (MeshHost::Stop joins MeshControl before freeing the runtime). */
+  InboundReply::IoPost IoPost() {
+    return [rt = runtime](std::function<void()> task) { rt->PostToIo(std::move(task)); };
+  }
 
   void ScheduleWhenChannelOpen(const std::string& peer_key, const uint32_t channel_id,
                                const Clock::time_point deadline, std::function<void(bool open)> done) {
@@ -137,27 +143,32 @@ struct AmpDialBackProtocol::Impl {
     AmpWhenChannelOpen(Links(), peer_key, channel_id, deadline, std::move(done));
   }
 
-  void ServeProbe(std::shared_ptr<pp::amp::ChannelSession> session, std::string remote_peer_id,
-                  std::vector<uint8_t> body) {
-    RunWorker(post_worker, [this, session, remote_peer_id = std::move(remote_peer_id),
-                            body = std::move(body)]() mutable {
+  /**
+   * B26: the seed's view of the client's Amp UDP endpoint on this association. Dialing the
+   * client's LAN advertise addrs often fails cross-NAT; the observed reflexive address is what
+   * peers need to dial. IO strand only (link state is IO-affine).
+   */
+  std::string ObservedMultiaddrOnIo(const std::string& remote_peer_id) {
+    if (auto* link = Links().FindLink(remote_peer_id)) {
+      if (auto* conn = link->ConnectionOrNull()) {
+        const auto ep = conn->PeerEndpoint();
+        if (ep.port != 0) {
+          if (auto ma = pp::amp::FormatAdpMultiaddr(ep, remote_peer_id)) {
+            return *ma;
+          }
+        }
+      }
+    }
+    return {};
+  }
+
+  void ServeProbe(std::shared_ptr<InboundReply> reply, std::string observed, std::vector<uint8_t> body) {
+    RunWorker(post_worker, [this, reply, observed = std::move(observed), body = std::move(body)]() mutable {
       if (stopped.load(std::memory_order_acquire) || !runtime) {
         return;
       }
       DialBackProbeResult result;
-      // B26: always report the seed's view of the client's Amp UDP endpoint on this association.
-      // Dialing the client's LAN advertise addrs often fails cross-NAT; the observed reflexive
-      // address is what peers need to dial.
-      if (auto* link = Links().FindLink(remote_peer_id)) {
-        if (auto* conn = link->ConnectionOrNull()) {
-          const auto ep = conn->PeerEndpoint();
-          if (ep.port != 0) {
-            if (auto ma = pp::amp::FormatAdpMultiaddr(ep, remote_peer_id)) {
-              result.observed = *ma;
-            }
-          }
-        }
-      }
+      result.observed = std::move(observed);
       const std::string json_utf8(body.begin(), body.end());
       auto root = TryParseObject(json_utf8);
       if (!root) {
@@ -188,8 +199,7 @@ struct AmpDialBackProtocol::Impl {
       response.set("dialed", result.dialed);
       response.set("observed", result.observed);
       response.set("error", result.error);
-      (void)session->EnqueueOutbound(JsonToBody(DumpJson(response)));
-      session->Close();
+      reply->Send(JsonToBody(DumpJson(response)));
     });
   }
 
@@ -200,14 +210,16 @@ struct AmpDialBackProtocol::Impl {
     }
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     *session_holder = Links().BindChannel(
-        remote_peer_id, channel_id, pp::amp::ControlJsonChannelPolicy(),
+        remote_peer_id, channel_id, InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy()),
         [this, session_holder, remote_peer_id](Roe<std::vector<uint8_t>> frame) {
           auto session = *session_holder;
           if (!session || !frame || stopped.load(std::memory_order_acquire)) {
             return false;
           }
-          ServeProbe(session, remote_peer_id, std::move(*frame));
-          return false;
+          // Keep the channel open for the worker's reply (InboundReply.h); `reply` closes it.
+          ServeProbe(MakeInboundReply(session, IoPost()), ObservedMultiaddrOnIo(remote_peer_id),
+                     std::move(*frame));
+          return true;
         });
   }
 };
@@ -238,6 +250,10 @@ void AmpDialBackProtocol::Start() {
 }
 
 void AmpDialBackProtocol::Stop() {
+  // Idempotent: the destructor Stops again, possibly after MeshHost::Stop freed the runtime.
+  if (!started_) {
+    return;
+  }
   started_ = false;
   impl_->stopped.store(true, std::memory_order_release);
   runtime_.Links().RemoveProtocolHandler(kDialBackProtocolId);
