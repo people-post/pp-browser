@@ -14,19 +14,13 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "foundation/platform/os/OsThreadStackDump.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/mesh/reachability/Reachability.h"
 #include "common/thread/ThreadRecordTypes.h"
 
 #include <chrono>
 #include <cstdlib>
-#if defined(__linux__)
-#include <csignal>
-#include <cstdio>
-#include <execinfo.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-#endif
 #include <iostream>
 #include <optional>
 #include <thread>
@@ -62,41 +56,6 @@ std::optional<std::string> PeerIdFromMa(const std::string& ma) {
   }
   return id;
 }
-
-#if defined(__linux__)
-std::atomic_flag g_stack_dump_busy = ATOMIC_FLAG_INIT;
-
-void DumpThisThreadStack(int /*sig*/) {
-  while (g_stack_dump_busy.test_and_set(std::memory_order_acquire)) {
-  }
-  void* frames[64];
-  const int n = backtrace(frames, 64);
-  char header[64];
-  const int len = std::snprintf(header, sizeof(header), "--- thread %ld\n", static_cast<long>(syscall(SYS_gettid)));
-  (void)!write(STDERR_FILENO, header, static_cast<size_t>(len));
-  backtrace_symbols_fd(frames, n, STDERR_FILENO);
-  g_stack_dump_busy.clear(std::memory_order_release);
-}
-
-/** Diagnostics for a stuck teardown: every thread prints its backtrace (addr2line on the host). */
-void DumpAllThreadStacks() {
-  void* warm[1];
-  (void)backtrace(warm, 1); // load libgcc unwinder outside the signal handler
-  std::signal(SIGUSR2, DumpThisThreadStack);
-  const long self = static_cast<long>(syscall(SYS_gettid));
-  std::error_code ec;
-  for (const auto& entry : std::filesystem::directory_iterator("/proc/self/task", ec)) {
-    const long tid = std::strtol(entry.path().filename().c_str(), nullptr, 10);
-    if (tid > 0 && tid != self) {
-      syscall(SYS_tgkill, static_cast<long>(getpid()), tid, SIGUSR2);
-      std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-  }
-  std::this_thread::sleep_for(std::chrono::milliseconds(300));
-}
-#else
-void DumpAllThreadStacks() {}
-#endif
 
 } // namespace
 
@@ -731,7 +690,7 @@ void ProductStackHarness::ArmTeardownWatchdog() {
       if (std::chrono::steady_clock::now() >= deadline) {
         std::cerr << "error: probe teardown stuck at " << shutdown_step_.load(std::memory_order_acquire)
                   << std::endl;
-        DumpAllThreadStacks();
+        os::DumpAllThreadStacks();
         std::error_code ec;
         if (std::filesystem::is_directory("/share", ec)) {
           std::filesystem::current_path("/share", ec);
