@@ -38,7 +38,9 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 - [x] `RequestDropLink(dial key | PeerId)` for stale links the product detects (B39, PR #223; reason `requested`)
 - [x] Hop applies the carrier policy to the dialer's leg of a call-media bridge (one-way stall root cause, 2026-09-24)
 - [ ] Reliable delivery for nested Reliable-class channels over a best-effort carrier (A024 dual outer lanes, or nested retransmit): call control / chat / hello fail under reordering + loss (lab `delay 120ms 30ms`)
-- [ ] Inbound link dial key renders the assoc id as broken hex (`inbound:=:>7=;…`) — fix the nibble encoding
+- [x] Inbound link dial key renders the assoc id as broken hex (`inbound:=:>7=;…`) — fix the nibble encoding (amp `c36bf10`)
+- [x] Inbound adopt keeps an ephemeral `amp:burst:N:` dial alias on the carrier link (amp `c36bf10`)
+- [x] Reach loop labels a carrier-only link "punched"/"direct" — `IDialRegistry::IsConnectedDirect`
 - [ ] Close an ADP association at once when the socket reports EHOSTDOWN / ENETUNREACH for its peer, instead of waiting for the liveness window (#215 B39 suggestion a)
 - [ ] pp-cpp-amp release + pin
 

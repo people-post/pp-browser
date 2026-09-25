@@ -1,6 +1,6 @@
 # Call path resilience — current state
 
-**Last updated:** 2026-09-24 (k0 code complete; k2 reservations; k1 keepalive v2 in amp v2.2.0; runtime teardown quiesce)
+**Last updated:** 2026-09-25 (one-way stall fix; k1 small hygiene; probe leave race)
 
 ## Landed
 
@@ -22,7 +22,8 @@
 - **One-way audio stall on relayed calls — root-caused and fixed (needs pp-node on relays):** the hop bound the dialer's circuit channel Control (Reliable, strict in-order) and never switched it to the carrier policy; the dialer sends best-effort, so the first lost / reordered frame wedged dialer→target for the rest of the call (dogfood 16:17). Reproduced in hard lab CGNAT (`delay 80ms loss 1%` on the caller) and loopback (`RelayedCallDisturbanceTest.CallerUplinkLossDoesNotWedgeCallerToCallee`); fixed in `CircuitTunnelCoordinator` (hop side). Lab after fix: 60 s both ways under 1 % and 2 % loss.
 - **Half-open call-media bundle taken as connected** (lab, 1 % loss + glare): InCall with no media, no retry — fixed (only MediaReady counts; `HalfOpenBundleIsNotAConnection`).
 - **Nested Reliable channels over a best-effort carrier** (call control, Amp chat, call-media hello over a relay): no end-to-end retransmission — lab `delay 120ms 30ms` (heavy reordering) fails call signaling (`amp direct chat send timed out`). A024 "dual outer lanes" follow-on; see k1.
-- `call_leave` over Amp chat through the relay often fails at hangup (`channel open failed`), so the peer only notices later; lab probes then hang until timeout.
+- ~~`call_leave` lost at hangup in the lab~~ — probe race, not product: `LeaveCall` sends after the UI is Idle and the probe shut chat down first; the answerer (short mode) also hung up on its first RX frame, which the lost leave had masked. Probe now flushes the leave and the answerer waits for the offerer; the smoke gives the answerer 10 s to exit on its own (143 now means "never saw the leave").
+- **k1 small hygiene — fixed:** inbound dial key hex, ephemeral burst alias on inbound adopt (amp `c36bf10`, **not yet released/pinned**); reach loop "punched"/"direct" on a relay-carrier-only link (`IsConnectedDirect`).
 
 From PR #223 / #215 (dogfood 2026-09-24 evening, phone CN cellular ↔ Mac Wi‑Fi):
 - **B30** relay signaling latency on CN cellular (invite/accept 11–58 s late; phone `PollInbox ok=13 failed=97`) — now the dominant failure; relay/infra + client mitigation below (k4).
