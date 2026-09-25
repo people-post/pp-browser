@@ -395,6 +395,24 @@ TEST_F(RelayedCallDisturbanceTest, BurstLossOnRelayHopRecovers) {
   EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
 }
 
+// Hard lab CGNAT stack (delay 80 ms + 1 % loss on the caller) / dogfood 2026-09-24 16:17: the hop
+// bound the dialer's circuit channel as Control (Reliable, strict in-order) while the dialer sends
+// the call-media carrier best-effort. One lost / reordered caller frame and the hop rejected every
+// later one ("out of order seq"): caller→callee dead for the rest of the call, reverse fine.
+TEST_F(RelayedCallDisturbanceTest, CallerUplinkLossDoesNotWedgeCallerToCallee) {
+  ASSERT_TRUE(LiveCall());
+  harness_->io_a->SetRngSeed(7);
+  harness_->io_a->SetDropRate(0.2);
+  for (int i = 0; i < 60; ++i) {
+    (void)a_call_->SendAudio(leg_id_, {0x77}, 300u + static_cast<uint32_t>(i), 0);
+    harness_->clock->Advance(20);
+    harness_->PumpAll();
+  }
+  harness_->io_a->SetDropRate(0.0);
+  EXPECT_TRUE(AudioReaches({0x78, 0x78}, 400)) << "caller→callee wedged after caller uplink loss";
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+}
+
 TEST_F(RelayedCallDisturbanceTest, CallerReserveOnCalleeViaCarrierKeepsAudio) {
   ASSERT_TRUE(LiveCall());
   Reserve(harness_->peer_id_b);

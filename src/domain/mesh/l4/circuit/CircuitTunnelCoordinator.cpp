@@ -1009,6 +1009,15 @@ struct CircuitTunnelCoordinator::Impl {
                      if (tunnel->target.target_protocol.empty()) {
                        tunnel->target.target_protocol = kCircuitRelayProtocolId;
                      }
+                     // The near leg was bound Control (Reliable, strict in-order) to read this JSON
+                     // request. A call-media carrier is sent best-effort by the dialer: keep Control
+                     // and the first lost / reordered frame makes the mux reject every later one
+                     // ("out of order seq") — dialer→target dead for the rest of the call (hard lab
+                     // CGNAT + 1 % loss; dogfood 2026-09-24 16:17). Match the far leg's policy.
+                     if (auto* mux = near_session->Mux()) {
+                       (void)mux->ApplyChannelPolicy(near_session->ChannelId(),
+                                                     PolicyForCircuitTarget(tunnel->target.target_protocol));
+                     }
                      const int timeout_ms = static_cast<int>(root.getNonNegInt("timeout_ms").value_or(8000));
                      tunnel->deadline =
                          Clock::now() + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 8000);
