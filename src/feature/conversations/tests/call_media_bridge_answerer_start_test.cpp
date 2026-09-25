@@ -239,10 +239,13 @@ public:
     inbound = std::move(handler);
   }
   void ClearInboundHandler() override { inbound = {}; }
-  bool IsActive() const override { return active; }
+  bool IsActive() const override { return active || half_open; }
   CallMediaDirectConnectParams ActiveParams() const override { return active_params; }
   CallMediaSessionPhase Phase() const override {
-    return active ? CallMediaSessionPhase::MediaReady : CallMediaSessionPhase::Idle;
+    if (active) {
+      return CallMediaSessionPhase::MediaReady;
+    }
+    return half_open ? CallMediaSessionPhase::HelloInbound : CallMediaSessionPhase::Idle;
   }
   CallMediaLinkKind ActiveLinkKind() const override { return link_kind; }
   void Detach() override {
@@ -293,6 +296,8 @@ public:
   int connect_async_calls = 0;
   int detach_calls = 0;
   int fail_first_n_connects = 0;
+  /** A bundle is mid-handshake (glare / loss): IsActive() true, phase not MediaReady. */
+  bool half_open = false;
   int hang_first_n_connects = 0;
   std::string connect_fail_message =
       "amp link: transport failed [adp: adp udp: sendto dst=192.168.0.103:54410 errno=64]";
@@ -771,6 +776,36 @@ TEST_F(CallMediaBridgeAnswererStartTest, WatchdogFailsOnlyTheAttempt) {
       << "watchdog must have failed only attempt 1; attempt 2 must still be dialed";
   EXPECT_TRUE(media_->IsActive());
   EXPECT_EQ(media_->ActiveCallId(), call_id);
+  bridge_->PrepareForTeardown(0);
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, HalfOpenBundleIsNotAConnection) {
+  // Hard lab CGNAT stack, delay 80 ms + 1 % loss: a failed attempt while a glare bundle sat in
+  // hello was committed Live ("InCall", no media, no retry). Only MediaReady is connected.
+  const std::string call_id = "call:half-open";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  dial_->ensure_result = false;
+  dial_->ensure_error = "amp link: dial in backoff";
+  dial_->connected["account:peer"] = false;
+  bridge_->SetDialWaitBudgetMsForTest(300);
+  bridge_->SetConnectAttemptTimeoutMsForTest(200);
+  transport_->half_open = true;
+  transport_->fail_first_n_connects = 1;
+
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  AppRuntime::RunUITasks();
+
+  for (int i = 0; i < 500 && transport_->connect_async_calls < 2; ++i) {
+    AppRuntime::RunUITasks();
+    if (transport_->connect_async_calls < 2) {  // attempt 2 may legitimately connect
+      EXPECT_NE(lifecycle_->Status(), CallMediaStatus::DirectLive) << "half-open bundle committed as Live";
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(transport_->connect_async_calls, 2) << "failed attempt must be retried, not taken as connected";
   bridge_->PrepareForTeardown(0);
 }
 

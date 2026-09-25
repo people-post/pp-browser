@@ -201,6 +201,8 @@ private:
   void ArmDirectHealthTimer();
   void CancelDirectHealthTimer();
   /** Renew relay reservations (15 s lease) while a media session is connecting / live (k2). */
+  /** Direct transport has a leg in MediaReady (not merely a bundle in hello / AwaitingMedia). */
+  bool DirectMediaReady() const;
   void ArmReserveRenewal();
   void CancelReserveRenewal();
   void OnReserveRenewFire();
