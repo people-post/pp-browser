@@ -461,6 +461,71 @@ TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloWithoutSessionIsRejected) {
   EXPECT_FALSE(cbs.on_connected);
 }
 
+// No-seat fallback (CallSessionManager::StopMediaIfCall) can reach StopMeshMedia from the thread
+// that handled an inbound Leave. Bridge state, the connect sequence and engine Stop are UI-only:
+// nothing may change until the UI queue runs the stop.
+TEST_F(CallMediaBridgeAnswererStartTest, OffUiStopMeshMediaRunsOnUiThread) {
+  const std::string call_id = "call:off-ui-stop";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  AppRuntime::RunUITasks();
+  ASSERT_TRUE(media_->IsActive());
+  ASSERT_TRUE(bridge_->MediaAttempted(call_id));
+  const auto phase_before = bridge_->DirectPlannerPhase();
+  ASSERT_NE(phase_before, CallDirectPlannerPhase::Idle);
+  const int detaches_before = transport_->detach_calls;
+
+  std::thread worker([&]() { bridge_->StopMeshMedia(call_id); });
+  worker.join();
+  EXPECT_TRUE(media_->IsActive()) << "engine Stop must not run off the UI thread";
+  EXPECT_TRUE(bridge_->MediaAttempted(call_id)) << "bridge state must not change off the UI thread";
+  EXPECT_EQ(bridge_->DirectPlannerPhase(), phase_before);
+  EXPECT_EQ(transport_->detach_calls, detaches_before);
+
+  AppRuntime::RunUITasks();
+  EXPECT_FALSE(media_->IsActive());
+  EXPECT_FALSE(bridge_->MediaAttempted(call_id));
+  EXPECT_EQ(bridge_->DirectPlannerPhase(), CallDirectPlannerPhase::Idle);
+  EXPECT_GT(transport_->detach_calls, detaches_before);
+  EXPECT_FALSE(bridge_->IsConnectWorkerInflight());
+}
+
+// A stop posted for call A that is overtaken by a new session (StartSfu for B) must not tear B
+// down — the whole stop is skipped, not just the engine part.
+TEST_F(CallMediaBridgeAnswererStartTest, OffUiStopIsStaleAfterNewSession) {
+  const std::string call_a = "call:off-ui-a";
+  const std::string call_b = "call:off-ui-b";
+  SeedActiveCall(call_a);
+  SeedActiveCall(call_b);
+  ASSERT_TRUE(keys_->PutEpochKey(call_a, 1, TestMediaKey()));
+  ASSERT_TRUE(keys_->PutEpochKey(call_b, 1, TestMediaKey()));
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_a);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_a);
+  bridge_->ScheduleStartMediaAsAnswerer(call_a, "account:peer");
+  AppRuntime::RunUITasks();
+  ASSERT_EQ(media_->ActiveCallId(), call_a);
+
+  std::thread worker([&]() { bridge_->StopMeshMedia(call_a); });
+  worker.join();
+
+  // B starts on the UI thread before the posted stop runs.
+  bridge_->StopMeshMedia(call_a);  // UI-thread stop of A (inline), as a real Accept of B would do
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_b);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_b);
+  bridge_->ScheduleStartMediaAsAnswerer(call_b, "account:peer");
+  ASSERT_EQ(media_->ActiveCallId(), call_b);
+  ASSERT_TRUE(bridge_->MediaAttempted(call_b));
+
+  AppRuntime::RunUITasks();  // runs the stale posted stop for A
+  EXPECT_TRUE(media_->IsActive()) << "stale stop tore down the newer session";
+  EXPECT_EQ(media_->ActiveCallId(), call_b);
+  EXPECT_TRUE(bridge_->MediaAttempted(call_b));
+  EXPECT_NE(bridge_->DirectPlannerPhase(), CallDirectPlannerPhase::Idle);
+}
+
 // k2: relay reservations are a 15 s lease — renew while the media session lives, stop on Stop.
 TEST_F(CallMediaBridgeAnswererStartTest, ReservationRenewedWhileSessionLiveStopsOnStop) {
   std::atomic<int> reserves{0};

@@ -69,6 +69,7 @@ public:
   CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions, CallMediaKeyStore& media_keys,
                         CallMediaEngine& media, ICallMediaTransport& direct, IDialRegistry* dial,
                         ICircuitHopReach* circuit_reach);
+  ~CallMediaBridge();
 
   bool IsMeshConnectFailed() const;
   bool MeshConnectMissingMic() const;
@@ -110,6 +111,8 @@ public:
   /**
    * Engine Stop — **seat teardown hook only** when MediaSeat is wired (V036).
    * CallSessionManager Leave/Accept must use seat.Release, not this.
+   * Any thread: off the UI thread the whole stop is posted to the front of the UI queue and
+   * skipped if a newer media session (StartSfu) started in the meantime.
    */
   void StopMeshMedia(const std::string& call_id);
   /**
@@ -163,6 +166,7 @@ public:
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
+  void StopMeshMediaOnUi(const std::string& call_id);
   /** Link to reach for this session's Connect (call roster → mesh keys, offerer → Reach). */
   PeerReachRequest BuildReachRequest(const CallMediaDirectConnectParams& params);
   /** Call-side reactions to the connect sequence (media key resend, path label, commit / fail). */
@@ -239,6 +243,8 @@ private:
   /** Bumped by AbortConnectSequence; the StartSfu send fn drops TX from an older generation. */
   std::atomic<uint64_t> connect_generation_{0};
   std::atomic<bool> stopping_{false};
+  /** Cleared in the destructor; guards stops posted from other threads. */
+  std::shared_ptr<std::atomic<bool>> alive_;
   uint64_t direct_health_timer_id_ = 0;
   uint64_t reserve_renew_timer_id_ = 0;
   /** Inside the 15 s StartReserve lease so consecutive leases overlap. */

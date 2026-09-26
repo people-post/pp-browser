@@ -31,6 +31,14 @@ void OnUi(std::function<void()> fn) {
 
 } // namespace
 
+void CallMediaConnectCoordinator::CheckUiThread(const char* what) const {
+  // Sequence state is UI-thread only (no lock). A caller on another thread is a bug — make it
+  // visible in dogfood logs rather than a silent race.
+  if (!AppRuntime::CurrentlyOnUI()) {
+    log().error << what << " called off the UI thread — sequence state is UI-only";
+  }
+}
+
 CallMediaConnectCoordinator::CallMediaConnectCoordinator(ICallMediaTransport& transport,
                                                          PeerReachCoordinator& reach)
     : transport_(transport), reach_(reach), alive_(std::make_shared<std::atomic<bool>>(true)),
@@ -77,6 +85,7 @@ void CallMediaConnectCoordinator::CancelTimers() {
 }
 
 void CallMediaConnectCoordinator::Abort() {
+  CheckUiThread("Abort");
   seq_.fetch_add(1, std::memory_order_acq_rel);
   CancelTimers();
   // Completes the pending reach inline; its continuation sees the new sequence and returns.
@@ -189,6 +198,7 @@ bool CallMediaConnectCoordinator::WaitForInboundKey(CallMediaDirectConnectParams
 }
 
 void CallMediaConnectCoordinator::Start(CallMediaConnectRequest request, CallMediaConnectHooks hooks) {
+  CheckUiThread("Start");
   Abort();
   if (AppRuntime::IsShuttingDown() || shut_down_.load(std::memory_order_acquire)) {
     log().debug << "Start rejected: shutting down call_id=" << request.params.call_id;

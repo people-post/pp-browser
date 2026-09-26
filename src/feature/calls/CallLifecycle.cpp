@@ -419,27 +419,22 @@ void CallLifecycle::PostRetryMedia(const std::string& call_id) {
   const uint64_t epoch = deferred_.Snapshot();
   // Re-arm Direct before RetryP2pMedia → BeginSession (Failed Status blocks AllowsDirectPath).
   SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
-  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
-      WorkerLane::Normal,
-      [retry = std::move(retry), call_id]() -> Roe<void> {
-        if (!retry) {
-          return Error("Calls unavailable");
-        }
-        return retry(call_id);
-      },
-      [this, call_id, guard, epoch](Roe<void> retried) {
-        if (!DeferredSelf::Alive(guard, epoch)) {
-          return;
-        }
-        if (!retried) {
-          log().warning << "RetryP2pMedia failed call_id=" << call_id
-                        << " err=" << retried.error().message;
-          Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
-          return;
-        }
-        SetPhase(CallPhase::MediaConnecting, call_id, CallLifecycleEvent::RetryClicked);
-        NotifyChrome();
-      });
+  // UI thread, not a worker: retry restarts the engine (StartSfu / Stop — SDL capture) and the
+  // bridge's connect sequence, which are UI-only like every other media start. Posted, not inline,
+  // so the retry never re-enters Apply.
+  AppRuntime::PostUI([this, retry = std::move(retry), call_id, guard, epoch]() {
+    if (!DeferredSelf::Alive(guard, epoch)) {
+      return;
+    }
+    const Roe<void> retried = retry ? retry(call_id) : Roe<void>(Error("Calls unavailable"));
+    if (!retried) {
+      log().warning << "RetryP2pMedia failed call_id=" << call_id << " err=" << retried.error().message;
+      Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+      return;
+    }
+    SetPhase(CallPhase::MediaConnecting, call_id, CallLifecycleEvent::RetryClicked);
+    NotifyChrome();
+  });
 }
 
 void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_id_arg) {

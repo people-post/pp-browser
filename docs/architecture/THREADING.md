@@ -286,6 +286,7 @@ Invalidate (bump gen / cancel flag)
 | Path | Contract |
 |------|----------|
 | Product quit / UI | `PrepareForTeardown(0)` = Abort only (no sleep-spin) — [Shutdown order](#shutdown-order-product) |
+| `CallMediaBridge` stop / retry | UI-only state. `StopMeshMedia` off UI → whole body `PostUIFront`, skipped if `MediaSessionGeneration` advanced (a newer `StartSfu`); alive token guards a destroyed bridge. Retry runs on UI (not a worker) — `RetryMeshMedia` refuses off UI |
 | `CallMediaBridge` Connect | `AbortConnectSequence()` bumps the send gen and calls `CallMediaConnectCoordinator::Abort()`: cancels watchdog / retry timers and the pending `PeerReachCoordinator` reach (completes inline), **clears** `InFlight`; completes no hook |
 | Cross-planner SoftMigrate | Lifecycle `media_cancel_gen`; late Direct/Hop work no-ops — [CALLS.md](CALLS.md) / V037 |
 | Amp circuit / punch | `AbortPending` + Alive checks — [OWNERSHIP.md](OWNERSHIP.md) |

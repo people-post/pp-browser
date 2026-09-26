@@ -116,6 +116,7 @@ private:
   void Finish(uint64_t seq, Roe<void> result);
   void CancelTimers();
   const char* Role() const;
+  void CheckUiThread(const char* what) const;
   void HandleInboundHello(CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs);
   /** Fills params.media_key if it arrives in time. False → reject (session gone / shut down). */
   bool WaitForInboundKey(CallMediaDirectConnectParams& params);

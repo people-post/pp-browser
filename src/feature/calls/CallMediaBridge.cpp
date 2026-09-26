@@ -37,6 +37,7 @@ CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions
       reach_(dial, circuit_reach), connect_(direct, reach_),
       media_key_inbox_poll_rounds_(kMediaKeyInboxPollRounds) {
   redirectLogger("CallMediaBridge");
+  alive_ = std::make_shared<std::atomic<bool>>(true);
 
   connect_.SetInboundPorts(MakeInboundPorts());
 }
@@ -166,6 +167,10 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
   }
   log().warning << "Call-media failed call_id=" << call_id << " reason=" << reason;
   SurfaceConnectFailed(call_id, reason, /*stop_media=*/true);
+}
+
+CallMediaBridge::~CallMediaBridge() {
+  alive_->store(false, std::memory_order_release);
 }
 
 void CallMediaBridge::SetReachDeps(IDialRegistry* dial, ICircuitHopReach* circuit_reach) {
@@ -1035,6 +1040,30 @@ void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
 }
 
 void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
+  if (AppRuntime::CurrentlyOnUI()) {
+    StopMeshMediaOnUi(call_id);
+    return;
+  }
+  // Bridge state, the connect sequence and CallMediaEngine::Stop (SDL capture — CALLS.md) are
+  // UI-thread only: hop the whole stop, not just the engine part. Front of the queue — Leave must
+  // not sit behind chrome refresh while capture feeds a detached SFU (zombie TX + red reconnecting
+  // on the next call). A StartSfu that lands first (AcceptInvite SoftMigrate / CallSfuAttach /
+  // a new call) makes this stop stale — it must not tear down the newer session.
+  const uint64_t session_gen = media_.MediaSessionGeneration();
+  AppRuntime::PostUIFront([this, alive = alive_, call_id, session_gen]() {
+    if (!alive->load(std::memory_order_acquire)) {
+      return;
+    }
+    if (media_.MediaSessionGeneration() != session_gen) {
+      log().info << "StopMeshMedia skip stale stop leave=" << call_id << " posted_gen=" << session_gen
+                 << " now=" << media_.MediaSessionGeneration();
+      return;
+    }
+    StopMeshMediaOnUi(call_id);
+  });
+}
+
+void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
   // Abort any Connect sequence before Detach — LeaveCall can run while Connect is mid-dial.
   reach_.AbortCircuitAttempts();
   Apply(CallDirectPlannerEvent::Stop, call_id, media_peer_identity_);
@@ -1059,38 +1088,19 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   media_attempted_calls_.erase(call_id);
   media_.SetOnStateChanged({});
 
-  // CallMediaEngine::Stop tears down SDL capture — UI thread only (CALLS.md).
   // Always stop leftover media_relay even when ActiveCallId drifted or is empty
   // (dogfood cbe535: End left SFU capture running → next call Connected/reconnecting,
   // zombie RX stream, no audio). One engine serves one call.
-  // Capture session generation so a later StartSfu (AcceptInvite SoftMigrate / CallSfuAttach)
-  // invalidates this Stop — otherwise PostUIFront Stop kills the new duplex (both sides Calling).
-  const uint64_t session_gen = media_.MediaSessionGeneration();
-  auto stop_engine = [this, call_id, session_gen]() {
-    if (media_.MediaSessionGeneration() != session_gen) {
-      log().info << "StopMeshMedia skip stale stop leave=" << call_id << " posted_gen=" << session_gen
-                 << " now=" << media_.MediaSessionGeneration();
-      return;
-    }
-    if (!media_.IsActive() && !media_.IsSfuMode()) {
-      return;
-    }
-    const std::string active = media_.ActiveCallId();
-    if (!active.empty() && !call_id.empty() && active != call_id) {
-      log().warning << "StopMeshMedia stopping mismatched engine call_id=" << active
-                    << " leave=" << call_id;
-    } else {
-      log().info << "StopMeshMedia stopping engine call_id=" << active << " leave=" << call_id;
-    }
-    media_.Stop();
-  };
-  if (AppRuntime::CurrentlyOnUI()) {
-    stop_engine();
-  } else {
-    // Front of UI queue — Leave/Accept must not sit behind chrome refresh while capture
-    // keeps feeding a detached SFU (zombie TX + red reconnecting on the next call).
-    AppRuntime::PostUIFront(std::move(stop_engine));
+  if (!media_.IsActive() && !media_.IsSfuMode()) {
+    return;
   }
+  const std::string active = media_.ActiveCallId();
+  if (!active.empty() && !call_id.empty() && active != call_id) {
+    log().warning << "StopMeshMedia stopping mismatched engine call_id=" << active << " leave=" << call_id;
+  } else {
+    log().info << "StopMeshMedia stopping engine call_id=" << active << " leave=" << call_id;
+  }
+  media_.Stop();
 }
 
 void CallMediaBridge::ReleaseDirectTransport() {
@@ -1189,6 +1199,11 @@ void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
 Roe<void> CallMediaBridge::RetryMeshMedia(const std::string& call_id) {
   if (call_id.empty()) {
     return Error("call_id required");
+  }
+  // Restarts the engine and the connect sequence — UI-only. Refuse rather than race.
+  if (!AppRuntime::CurrentlyOnUI()) {
+    log().error << "RetryMeshMedia called off the UI thread call_id=" << call_id;
+    return Error("call media retry must run on the UI thread");
   }
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
