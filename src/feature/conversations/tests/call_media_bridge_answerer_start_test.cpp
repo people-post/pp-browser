@@ -179,9 +179,9 @@ public:
     last_drop_link_peer = peer_key;
     connected[peer_key] = false;
   }
-  void ClearCallMediaCircuitHop(const std::string& /*peer_key*/) override {}
+  void ClearPeerCircuitHop(const std::string& /*peer_key*/) override {}
 
-  bool HasCallMediaCircuitHop(const std::string& peer_key) const override {
+  bool HasPeerCircuitHop(const std::string& peer_key) const override {
     return circuit_hops.count(peer_key) > 0 && circuit_hops.at(peer_key);
   }
 
@@ -206,7 +206,7 @@ class FakeCircuitHopReach final : public ICircuitHopReach {
 public:
   Roe<void> TryEnsureHopReachable(const std::string& /*hop_peer_id*/) override { return {}; }
 
-  Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key) override {
+  Roe<void> TryEnsurePeerReachable(const std::string& peer_key) override {
     ++call_media_ensure_calls;
     last_peer = peer_key;
     if (dial) {
@@ -216,7 +216,7 @@ public:
     return call_media_result ? Roe<void>() : Error(call_media_error);
   }
 
-  void TryEnsureCallMediaReachableAsync(const std::string& peer_key,
+  void TryEnsurePeerReachableAsync(const std::string& peer_key,
                                         std::function<void(Roe<void>)> on_done,
                                         bool /*allow_circuit*/ = true) override {
     // Runs on the Coordinator (PeerReachCoordinator) while the test thread reads the fields.
@@ -843,7 +843,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, EnsureReachResolvesAccountToMeshPeerId)
 
   ASSERT_GE(circuit_->call_media_ensure_calls, 1);
   EXPECT_EQ(circuit_->LastPeer(), mesh_peer)
-      << "TryEnsureCallMediaReachable must use MeshPeerId, not account:";
+      << "TryEnsurePeerReachable must use MeshPeerId, not account:";
   bridge_->PrepareForTeardown(0);
 }
 

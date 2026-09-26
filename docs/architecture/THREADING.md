@@ -263,9 +263,9 @@ RequestStop(gen) → Drain(deadline) → Join(deadline) → destroy
 | `CallRingtone` | `StopAndJoin(budget)` before `SDL_Quit` |
 
 Sync façades reject new work when `AppRuntime::IsShuttingDown()` (debug log + `Error("shutdown in progress")`):
-`CallStack::TryEnsureCircuitHopReachable`, `CallStack::TryEnsureCallMediaReachable`,
+`CallStack::TryEnsureCircuitHopReachable`, `CallStack::TryEnsurePeerReachable`,
 `CallTopologyController::MaybeSoftMigrateToSfu` (+ Async),
-`AmpCircuitHopReach::TryEnsureHopReachable` / `TryEnsureCallMediaReachable`,
+`AmpCircuitHopReach::TryEnsureHopReachable` / `TryEnsurePeerReachable`,
 `CallMediaBridge::StartConnectSequence`, hub `StartMesh` / `EnsureMessagingReady`.
 
 Parent-only destroy: children request stop; only the owner joins and drops (`OWNERSHIP.md`).

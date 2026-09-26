@@ -36,7 +36,7 @@ A ══MSH════════════════ B  (inner Session ov
 | Outer policy | `CircuitCarrierChannelPolicy` — BestEffort + FRAG-friendly queue (avoids ADP reliable_window stall) |
 | Carrier MSH | `PeerLink` carrier ctor + `MshAdpHandshake(chunked_wire=false)` |
 | Install / accept | `PeerLinkManager::EstablishNestedOverCarrier` / `EnableNestedCarrierAccept` |
-| Reach | `AmpCircuitHopReach::TryEnsureCallMediaReachable` (no `RegisterEndpoint`) |
+| Reach | `AmpCircuitHopReach::TryEnsurePeerReachable` (no `RegisterEndpoint`) |
 | L4 | `CallMediaLegCoordinator` opens via Connected nested link without ADP endpoint |
 | Tests | `amp_circuit_call_media_compose_test.cpp` |
 

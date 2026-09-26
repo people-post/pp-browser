@@ -489,14 +489,14 @@ Roe<void> CallStack::TryEnsureCircuitHopReachable(const std::string& hop_peer_id
   return media_plane_->TryEnsureCircuitHopReachable(hop_peer_id);
 }
 
-Roe<void> CallStack::TryEnsureCallMediaReachable(const std::string& peer_key) {
+Roe<void> CallStack::TryEnsurePeerReachable(const std::string& peer_key) {
   if (!media_plane_) {
     return Error("Amp circuit reach required");
   }
-  return media_plane_->TryEnsureCallMediaReachable(peer_key);
+  return media_plane_->TryEnsurePeerReachable(peer_key);
 }
 
-void CallStack::TryEnsureCallMediaReachableAsync(const std::string& peer_key,
+void CallStack::TryEnsurePeerReachableAsync(const std::string& peer_key,
                                                  std::function<void(Roe<void>)> on_done) {
   if (!on_done) {
     return;
@@ -505,7 +505,7 @@ void CallStack::TryEnsureCallMediaReachableAsync(const std::string& peer_key,
     on_done(Error("Amp circuit reach required"));
     return;
   }
-  media_plane_->TryEnsureCallMediaReachableAsync(peer_key, std::move(on_done));
+  media_plane_->TryEnsurePeerReachableAsync(peer_key, std::move(on_done));
 }
 
 Roe<void> CallStack::TryUpgradeCallMediaToDirect(const std::string& peer_key) {

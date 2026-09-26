@@ -292,7 +292,7 @@ Roe<void> ProductStackHarness::EnsurePeerCircuitPath(const std::string& peer_id)
   }
   // Async + PumpUntil: the completion lands on the UI mailbox.
   std::optional<Roe<void>> result;
-  stack_->TryEnsureCallMediaReachableAsync(peer_id, [&](Roe<void> value) { result = std::move(value); });
+  stack_->TryEnsurePeerReachableAsync(peer_id, [&](Roe<void> value) { result = std::move(value); });
   if (!PumpUntil([&] { return result.has_value(); }, 30000)) {
     return Error("call-media circuit reach timed out");
   }

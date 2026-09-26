@@ -1,7 +1,7 @@
 #include "feature/calls/CallMediaConnectCoordinator.h"
 
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/PeerReachCoordinator.h"
+#include "domain/mesh/reachability/PeerReachCoordinator.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include <chrono>
@@ -37,7 +37,7 @@ public:
     ++drop_calls;
     connected.erase(peer_key);
   }
-  void ClearCallMediaCircuitHop(const std::string& /*peer*/) override {}
+  void ClearPeerCircuitHop(const std::string& /*peer*/) override {}
 
   mutable std::mutex mu;
   std::unordered_set<std::string> connected;
@@ -50,8 +50,8 @@ class FakeCircuitReach final : public ICircuitHopReach {
 public:
   explicit FakeCircuitReach(FakeDialRegistry& dial) : dial_(dial) {}
   Roe<void> TryEnsureHopReachable(const std::string& /*hop*/) override { return {}; }
-  Roe<void> TryEnsureCallMediaReachable(const std::string& /*peer*/) override { return {}; }
-  void TryEnsureCallMediaReachableAsync(const std::string& peer_key, std::function<void(Roe<void>)> on_done,
+  Roe<void> TryEnsurePeerReachable(const std::string& /*peer*/) override { return {}; }
+  void TryEnsurePeerReachableAsync(const std::string& peer_key, std::function<void(Roe<void>)> on_done,
                                         bool /*allow_circuit*/) override {
     {
       std::lock_guard lock(dial_.mu);

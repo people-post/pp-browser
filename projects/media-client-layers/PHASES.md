@@ -17,9 +17,9 @@ l1 and l2 are refactors checked against existing tests + hard lab. l3 is the ris
 
 ## l1 — Reach moves to domain/mesh
 
-- [ ] `PeerReachCoordinator` + its dial / circuit ports (`IDialRegistry`, `ICircuitHopReach` from `feature/calls/CallTopologyRelayDeps.h`) move to `domain/mesh`; no call vocabulary in names or API
+- [x] `PeerReachCoordinator` + its dial / circuit ports (`IDialRegistry`, `ICircuitHopReach`, `PeerSessionDialRegistry`, `CircuitHopReachClient` → `domain/mesh/reachability/MeshReachPorts.h`) and `AmpCircuitHopReach` move to `domain/mesh/reachability`; neutral names (`TryEnsurePeerReachable*`, `Has/ClearPeerCircuitHop`, `ShouldSkipPrivatePreferredDialAfterSeedPark`); no `domain → feature` include
 - [ ] Hop reach (topology, `CallMediaPlane` hop `EnsureAssociation` paths, `AmpCircuitHopReach::TryEnsureHopReachable`) goes through it where behavior matches; differences recorded, not papered over
-- [ ] gtests move with the class; hard-lab `all` green
+- [x] gtests move with the class (`peer_reach_coordinator_test` → `domain/mesh/tests`); full suite green
 
 **Exit:** `domain/mesh` owns reaching any node; `feature/calls` only asks.
 

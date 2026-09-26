@@ -148,7 +148,7 @@
 - **Carrier-neutral MSH** — `MshAdpHandshake` optional non-chunked wire; `PeerLink` carrier mode over bridged `ChannelSession`
 - **`kAmpCircuitCarrierProtocolId` (`/amp/circuit-carrier/1.0.0`)** — Amp-owned outer splice target (not product L4); product uses library default; `CircuitCarrierChannelPolicy` BestEffort + FRAG-friendly outbound queue
 - **`PeerLinkManager::EstablishNestedOverCarrier` / `EnableNestedCarrierAccept`** — install virtual PeerLink after inner MSH; `OpenChannel` works without ADP endpoint; rekey refreshes protocol handlers
-- **`AmpCircuitHopReach::TryEnsureCallMediaReachable`** — bridge carrier + nested Session (no `RegisterEndpoint`); media-relay path unchanged
+- **`AmpCircuitHopReach::TryEnsurePeerReachable`** — bridge carrier + nested Session (no `RegisterEndpoint`); media-relay path unchanged
 - **`CallMediaLegCoordinator::StartLeg`** — reachable via endpoint **or** Connected nested/direct link
 - **MeshHost** enables nested carrier accept whenever Amp L4 is up
 - `pp_browser_mesh_test` — `AmpCircuitCallMediaComposeTest` (hello+audio, video >16KiB)

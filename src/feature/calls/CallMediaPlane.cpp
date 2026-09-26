@@ -1231,9 +1231,9 @@ Roe<void> CallMediaPlane::TryEnsureCircuitHopReachable(const std::string& hop_pe
   return circuit_hop_reach_->TryEnsureHopReachable(hop_peer_id);
 }
 
-Roe<void> CallMediaPlane::TryEnsureCallMediaReachable(const std::string& peer_key) {
+Roe<void> CallMediaPlane::TryEnsurePeerReachable(const std::string& peer_key) {
   if (AppRuntime::IsShuttingDown()) {
-    log().debug << "TryEnsureCallMediaReachable rejected: shutting down";
+    log().debug << "TryEnsurePeerReachable rejected: shutting down";
     return Error("shutdown in progress");
   }
   if (!circuit_hop_reach_) {
@@ -1242,10 +1242,10 @@ Roe<void> CallMediaPlane::TryEnsureCallMediaReachable(const std::string& peer_ke
   if (peer_key.empty()) {
     return Error("missing call peer");
   }
-  return circuit_hop_reach_->TryEnsureCallMediaReachable(peer_key);
+  return circuit_hop_reach_->TryEnsurePeerReachable(peer_key);
 }
 
-void CallMediaPlane::TryEnsureCallMediaReachableAsync(const std::string& peer_key,
+void CallMediaPlane::TryEnsurePeerReachableAsync(const std::string& peer_key,
                                                       std::function<void(Roe<void>)> on_done) {
   if (!on_done) {
     return;
@@ -1262,7 +1262,7 @@ void CallMediaPlane::TryEnsureCallMediaReachableAsync(const std::string& peer_ke
     on_done(Error("missing call peer"));
     return;
   }
-  circuit_hop_reach_->TryEnsureCallMediaReachableAsync(peer_key, std::move(on_done));
+  circuit_hop_reach_->TryEnsurePeerReachableAsync(peer_key, std::move(on_done));
 }
 
 Roe<void> CallMediaPlane::TryUpgradeCallMediaToDirect(const std::string& peer_key) {

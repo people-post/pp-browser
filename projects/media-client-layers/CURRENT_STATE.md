@@ -8,10 +8,11 @@
 | Phase | State |
 |-------|-------|
 | l0 — 1:1 split | Done: `PeerReachCoordinator`, `CallMediaConnectCoordinator` (both directions), bridge = call policy; stop / retry on UI; glare antisymmetric; SFU attach completion on UI; hard-lab COLD phases |
+| l1 — reach in `domain/mesh` | Move done: `domain/mesh/reachability/{MeshReachPorts.h, PeerReachCoordinator, AmpCircuitHopReach}`, neutral names. Hop reach not yet routed through `PeerReachCoordinator` |
 
 ## Next
 
-**l1** — move `PeerReachCoordinator` and its ports (`IDialRegistry`, `ICircuitHopReach`) to `domain/mesh`, then route hop reach through it.
+**l1 (rest)** — route hop reach (topology, `CallMediaPlane` hop paths) through `PeerReachCoordinator` where behavior matches; record the differences.
 
 ## Open questions
 

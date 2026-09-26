@@ -7,7 +7,7 @@
 #include "common/Error.h"
 #include "common/Module.h"
 #include "domain/people/ContactsStore.h"
-#include "feature/calls/AmpCircuitHopReach.h"
+#include "domain/mesh/reachability/AmpCircuitHopReach.h"
 #include "feature/calls/AmpMediaRelayClient.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaSeat.h"
@@ -132,9 +132,9 @@ public:
   void RegisterCallPeerListenMultiaddrs(const std::string& identity,
                                         const std::vector<std::string>& multiaddrs);
   Roe<void> TryEnsureCircuitHopReachable(const std::string& hop_peer_id);
-  Roe<void> TryEnsureCallMediaReachable(const std::string& peer_key);
+  Roe<void> TryEnsurePeerReachable(const std::string& peer_key);
   /** Prefer over sync when the waiter can Drive (AttachAmpStack harness PumpUntil). */
-  void TryEnsureCallMediaReachableAsync(const std::string& peer_key,
+  void TryEnsurePeerReachableAsync(const std::string& peer_key,
                                         std::function<void(Roe<void>)> on_done);
   Roe<void> TryUpgradeCallMediaToDirect(const std::string& peer_key);
   void WarmBootstrapSeedSessions();
