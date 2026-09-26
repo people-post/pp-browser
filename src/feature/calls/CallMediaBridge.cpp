@@ -33,8 +33,8 @@ CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions
                                              CallMediaKeyStore& media_keys, CallMediaEngine& media,
                                              ICallMediaTransport& direct, IDialRegistry* dial,
                                              ICircuitHopReach* circuit_reach)
-    : host_(host), sessions_(sessions), media_keys_(media_keys), media_(media), direct_(direct), dial_(dial),
-      circuit_reach_(circuit_reach), reach_(dial, circuit_reach), connect_(direct, reach_),
+    : host_(host), sessions_(sessions), media_keys_(media_keys), media_(media), direct_(direct),
+      reach_(dial, circuit_reach), connect_(direct, reach_),
       media_key_inbox_poll_rounds_(kMediaKeyInboxPollRounds) {
   redirectLogger("CallMediaBridge");
 
@@ -169,8 +169,6 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
 }
 
 void CallMediaBridge::SetReachDeps(IDialRegistry* dial, ICircuitHopReach* circuit_reach) {
-  dial_ = dial;
-  circuit_reach_ = circuit_reach;
   reach_.SetDeps(dial, circuit_reach);
 }
 
@@ -192,7 +190,7 @@ std::string CallMediaBridge::MediaPathKind() const {
   if (direct_.IsActive() && direct_.ActiveLinkKind() == CallMediaLinkKind::Relayed) {
     return "circuit";
   }
-  if (!media_peer_identity_.empty() && dial_ && dial_->HasCallMediaCircuitHop(media_peer_identity_)) {
+  if (reach_.HasRelayHop(media_peer_identity_)) {
     return "circuit";
   }
   switch (reach_kind_) {
@@ -532,7 +530,7 @@ void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
   in.stopping = stopping_.load();
   // Bound-link truth: never "escalate via circuit" when media already rides a relay carrier.
   in.media_path_kind = MediaPathKind();
-  in.has_circuit_reach = circuit_reach_ != nullptr;
+  in.has_circuit_reach = reach_.HasCircuitReach();
   in.direct_active = direct_.IsActive();
   in.active_call_id = call_id;
   in.media_call_id = media_call_id_;
@@ -559,10 +557,7 @@ void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const
   media_.SetConnectionState("connecting");
   reach_kind_ = PeerLinkKind::Unknown;
   direct_connected_at_ms_ = 0;
-  if (dial_) {
-    dial_->ClearCallMediaCircuitHop(peer);
-    dial_->ClearDialBackoff(peer);
-  }
+  reach_.ForgetPath(peer);
   // Re-open transport under circuit without full engine Stop (keep capture).
   AbortConnectSequence();
   force_circuit_ensure_ = true;  // consumed by the next reach (BuildReachRequest)
@@ -581,7 +576,7 @@ void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const
 }
 
 bool CallMediaBridge::ShouldUseMeshForPeer(const std::string& /*peer_identity*/) const {
-  return dial_ != nullptr;
+  return reach_.Available();
 }
 
 void CallMediaBridge::AbortConnectSequence() {
@@ -595,14 +590,12 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
     host_.P2pSetLastMediaError(err);
   }
   // Stop late EnsureViaCircuit / StartBridge before chrome refresh (dogfood SIGSEGV after give-up).
-  if (circuit_reach_) {
-    circuit_reach_->AbortPending();
-  }
+  reach_.AbortCircuitAttempts();
   if (stop_media && (media_.IsActive() || media_.IsSfuMode())) {
     // StopMeshMedia clears mesh_connect_failed_ for Leave hygiene — re-assert below.
     StopMeshMedia(call_id);
-  } else if (dial_ && !media_peer_identity_.empty()) {
-    dial_->AbortInflightDial(media_peer_identity_);
+  } else if (!media_peer_identity_.empty()) {
+    reach_.AbandonDial(media_peer_identity_);
   }
   if (seat_.note_failed) {
     seat_.note_failed(call_id);
@@ -823,29 +816,12 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   // Prefer mesh PeerId for OpenChannel. Account: may be "dialable" via a stale alias while the
   // Connected PeerLink lives under PeerId (dogfood 7bd62: AssociationNotReady forever).
   if (peer_identity.rfind("account:", 0) == 0) {
+    // Account → PeerId is roster knowledge (here); which key the mesh can dial is link knowledge.
     if (auto mapped = host_.MeshPeerIdForAccount(peer_identity);
         mapped && mapped->has_value() && !mapped->value().empty()) {
-      const std::string mesh_peer = **mapped;
-      const bool account_dialable = dial_ && dial_->IsDialable(peer_identity);
-      const bool mesh_dialable = dial_ && dial_->IsDialable(mesh_peer);
-      if (dial_ && account_dialable && !mesh_dialable) {
-        if (auto ma = dial_->PreferredMultiaddr(peer_identity)) {
-          (void)dial_->RegisterEndpoint(mesh_peer, *ma);
-        }
-      }
-      const bool mesh_after = dial_ && dial_->IsDialable(mesh_peer);
-      log().info << "CallMedia dial key account→PeerId account=" << peer_identity
-                 << " peer_id=" << mesh_peer << " account_dialable=" << (account_dialable ? 1 : 0)
-                 << " peer_dialable=" << (mesh_after ? 1 : 0);
-      if (mesh_after || !account_dialable) {
-        params.peer_key = mesh_peer;
-      } else {
-        log().info << "CallMedia dial key keep account (PeerId still undialable) account="
-                   << peer_identity;
-      }
+      params.peer_key = reach_.PreferDialKey(peer_identity, **mapped);
     } else {
-      log().info << "CallMedia dial key account (no PeerId map) account=" << peer_identity
-                 << " dialable=" << (dial_ && dial_->IsDialable(peer_identity) ? 1 : 0);
+      log().info << "CallMedia dial key account (no PeerId map) account=" << peer_identity;
     }
   }
 
@@ -1060,9 +1036,7 @@ void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
 
 void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   // Abort any Connect sequence before Detach — LeaveCall can run while Connect is mid-dial.
-  if (circuit_reach_) {
-    circuit_reach_->AbortPending();
-  }
+  reach_.AbortCircuitAttempts();
   Apply(CallDirectPlannerEvent::Stop, call_id, media_peer_identity_);
   AbortConnectSequence();
   CancelDirectHealthTimer();
@@ -1072,10 +1046,7 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
     pending_answerer_call_id_.clear();
     pending_answerer_peer_.clear();
   }
-  if (dial_ && !peer.empty()) {
-    dial_->AbortInflightDial(peer);
-    dial_->ClearCallMediaCircuitHop(peer);
-  }
+  reach_.ReleasePeer(peer);
   direct_.Detach();
   media_peer_identity_.clear();
   media_call_id_.clear();
@@ -1147,10 +1118,7 @@ void CallMediaBridge::ReleaseDirectTransportBody() {
   AbortConnectSequence();
   CancelDirectHealthTimer();
   const std::string peer = media_peer_identity_;
-  if (dial_ && !peer.empty()) {
-    dial_->AbortInflightDial(peer);
-    dial_->ClearCallMediaCircuitHop(peer);
-  }
+  reach_.ReleasePeer(peer);
   direct_.Detach();
   media_peer_identity_.clear();
   reach_kind_ = PeerLinkKind::Unknown;
@@ -1187,9 +1155,7 @@ void CallMediaBridge::NotePeerIdRelayMapping(const std::string& peer_id,
 
 void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
   stopping_.store(true, std::memory_order_release);
-  if (circuit_reach_) {
-    circuit_reach_->AbortPending();
-  }
+  reach_.AbortCircuitAttempts();
   Apply(CallDirectPlannerEvent::Stop, media_call_id_, media_peer_identity_);
   AbortConnectSequence();
   // Also releases waiting inbound hellos and drops the inbound handler before Detach, so late
@@ -1201,10 +1167,7 @@ void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
   const std::string call_id = media_call_id_;
   pending_answerer_call_id_.clear();
   pending_answerer_peer_.clear();
-  if (dial_ && !peer.empty()) {
-    dial_->AbortInflightDial(peer);
-    dial_->ClearCallMediaCircuitHop(peer);
-  }
+  reach_.ReleasePeer(peer);
   direct_.Detach();
   media_peer_identity_.clear();
   media_call_id_.clear();
@@ -1241,10 +1204,7 @@ Roe<void> CallMediaBridge::RetryMeshMedia(const std::string& call_id) {
     return Error("No peer for call retry");
   }
   ClearMeshConnectFailed();
-  if (dial_) {
-    dial_->ClearCallMediaCircuitHop(peer);
-    dial_->ClearDialBackoff(peer);
-  }
+  reach_.ForgetPath(peer);
   if (media_.IsActive() && media_.ActiveCallId() == call_id) {
     media_.Stop();
   }

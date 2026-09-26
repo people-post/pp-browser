@@ -212,8 +212,6 @@ private:
   CallMediaKeyStore& media_keys_;
   CallMediaEngine& media_;
   ICallMediaTransport& direct_;
-  IDialRegistry* dial_ = nullptr;
-  ICircuitHopReach* circuit_reach_ = nullptr;
   CallDirectArmingPorts arming_;
   CallDirectSeatPorts seat_;
   std::function<void()> seed_warm_;
