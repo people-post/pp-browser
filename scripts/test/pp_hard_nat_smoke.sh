@@ -3,14 +3,15 @@
 #
 # N-HARD-CGNAT-ISH     — topology asserts (A↛B, hop↛peer-private, peers→hop via SNAT)
 # B-HARD-CALL-NAT      — Phase-1: forced nested circuit (--via-hop --peer-id-only)
-# B-HARD-CALL-NAT-PRODUCT — Phase-2: product punch→circuit (--reach product --via-hop seed)
-# B-HARD-CALL-NAT-DIRTY   — Phase-3: dirty-book Bridge Ensure (--reach bridge --force-dial-fail)
+# (Phase-2 PRODUCT / Phase-3 DIRTY retired: they ran probe-local copies of the reach logic;
+#  COLD / COLD-DIRTY / COLD-AWAIT drive the product PeerReachCoordinator instead.)
 # B-HARD-CALL-NAT-STACK   — Phase-4: Invite/Accept control + dirty-book media (--product-stack)
 # B-HARD-CALL-NAT-COLD    — Phase-5: product stack, signaling via /share (relay-inbox stand-in),
 #                           so media reach starts with NO peer link: offerer PeerReachCoordinator
 #                           Reach (seed park → circuit), answerer Await (punch, wait for circuit)
 # B-HARD-CALL-NAT-COLD-DIRTY — Phase-6: as COLD with the answerer's private MA in the offerer's
-#                           dial book (H010: park before private dial, then skip it)
+#                           dial book and one forced dial miss (backoff left armed) — H010: park
+#                           before the private dial, then skip it; the product heals the backoff
 # B-HARD-CALL-NAT-COLD-AWAIT — Phase-7: as COLD with the offerer's uplink delayed, so the
 #                           answerer's media starts before the offerer's circuit lands and its
 #                           Await reach runs cold (dogfood: answerer waiting on the caller)
@@ -32,7 +33,7 @@ CALL_BIN_NAME="pp-call-probe"
 SKIP_UP=0
 CYCLES="${PP_CALL_PROBE_CYCLES:-1}"
 CALL_EXPECT="${PP_HARD_NAT_CALL_EXPECT:-success}"
-# circuit | product | dirty | stack | cold | cold-dirty | cold-await | both | all
+# circuit | stack | cold | cold-dirty | cold-await | all
 PHASE="${PP_HARD_NAT_PHASE:-all}"
 # Stack phase long-hold knobs (one-way stall repro, dogfood 2026-09-24 16:17):
 #   PP_HARD_NAT_STACK_HOLD_MS  offerer hold after media (default 3000)
@@ -56,9 +57,8 @@ while [[ $# -gt 0 ]]; do
 Usage: $(basename "$0") [--status-url URL] [--cycles K] [--phase PHASE]
                         [--expect-call success|fail] [--skip-up]
 
-  PHASE: circuit|product|dirty|stack|cold|cold-dirty|cold-await|both|all
-    both   = circuit + product (legacy)
-    all    = circuit + product + dirty + stack + cold + cold-dirty + cold-await (default)
+  PHASE: circuit|stack|cold|cold-dirty|cold-await|all
+    all    = circuit + stack + cold + cold-dirty + cold-await (default)
   --expect-call fail  pass only if the call fails (reproduce dogfood)
 EOF
       exit 0
@@ -72,8 +72,10 @@ case "${CALL_EXPECT}" in
   *) pp_hard_die "--expect-call must be success|fail (got ${CALL_EXPECT})" ;;
 esac
 case "${PHASE}" in
-  circuit|product|dirty|stack|cold|cold-dirty|cold-await|both|all) ;;
-  *) pp_hard_die "--phase must be circuit|product|dirty|stack|cold|cold-dirty|cold-await|both|all (got ${PHASE})" ;;
+  circuit|stack|cold|cold-dirty|cold-await|all) ;;
+  product|dirty|both)
+    pp_hard_die "--phase ${PHASE} was retired (probe-local reach copies); use cold / cold-dirty / cold-await" ;;
+  *) pp_hard_die "--phase must be circuit|stack|cold|cold-dirty|cold-await|all (got ${PHASE})" ;;
 esac
 
 if [[ ! -x "${PP_HARD_PROBE_DIR}/${CALL_BIN_NAME}" ]]; then
@@ -114,6 +116,8 @@ assert_cold_reach() {
     pp_hard_die "${label}: offerer PeerReachCoordinator never started a cold reach (reuse shortcut?)"
   case "${mode}" in
     cold-dirty)
+      grep -q 'force-dial-fail peer=.*backoff left armed\|force-dial-fail peer=.*aborted' "${off_log}" ||
+        pp_hard_die "${label}: forced dial miss did not happen (dirty book not poisoned)"
       grep -q '\[PeerReach\] skip EnsureAssociation private Preferred' "${off_log}" ||
         pp_hard_die "${label}: dirty book did not drive the H010 skip-private-Preferred branch" ;;
     cold-await)
@@ -138,7 +142,7 @@ assert_cold_reach() {
 }
 
 # run_nat_call <label> <call_id> <ready_name> <listen_ma> <mode>
-# mode: circuit | product | dirty | stack | cold | cold-dirty | cold-await
+# mode: circuit | stack | cold | cold-dirty | cold-await
 run_nat_call() {
   local label="$1"
   local call_id="$2"
@@ -217,14 +221,12 @@ run_nat_call() {
     --via-hop "${HOP_MA_PUBLIC}"
     --cycles "${CYCLES}" --call-id "${call_id}" --timeout-ms 25000)
   case "${mode}" in
-    product) off_args+=(--reach product) ;;
-    dirty) off_args+=(--reach bridge --force-dial-fail) ;;
     stack) off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms "${STACK_HOLD_MS}"
              --rx-stall-ms "${RX_STALL_MS}" --timeout-ms 45000) ;;
     cold|cold-dirty|cold-await)
       off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms "${hold_ms}"
                  --rx-stall-ms "${stall_ms}" --timeout-ms 60000 --signal-dir "${signal_dir}")
-      [[ "${mode}" == "cold-dirty" ]] && off_args+=(--dirty-book) ;;
+      [[ "${mode}" == "cold-dirty" ]] && off_args+=(--dirty-book --force-dial-fail) ;;
     *) off_args+=(--peer-id-only) ;;
   esac
 
@@ -281,32 +283,12 @@ run_nat_call() {
 
 run_phase() {
   local want="$1"
-  case "${PHASE}" in
-    all) return 0 ;;
-    both)
-      if [[ "${want}" == "circuit" || "${want}" == "product" ]]; then
-        return 0
-      fi
-      return 1
-      ;;
-    "${want}") return 0 ;;
-    *) return 1 ;;
-  esac
+  [[ "${PHASE}" == "all" || "${PHASE}" == "${want}" ]]
 }
 
 if run_phase circuit; then
   run_nat_call "B-HARD-CALL-NAT" "pp-hard-call-nat" "call-nat.ready" \
     "${PP_HARD_NAT_CALL_LISTEN:-/ip4/0.0.0.0/udp/47160/adp/1.0.0}" circuit
-fi
-
-if run_phase product; then
-  run_nat_call "B-HARD-CALL-NAT-PRODUCT" "pp-hard-call-nat-product" "call-nat-product.ready" \
-    "${PP_HARD_NAT_PRODUCT_LISTEN:-/ip4/0.0.0.0/udp/47162/adp/1.0.0}" product
-fi
-
-if run_phase dirty; then
-  run_nat_call "B-HARD-CALL-NAT-DIRTY" "pp-hard-call-nat-dirty" "call-nat-dirty.ready" \
-    "${PP_HARD_NAT_DIRTY_LISTEN:-/ip4/0.0.0.0/udp/47164/adp/1.0.0}" dirty
 fi
 
 if run_phase stack; then

@@ -490,6 +490,27 @@ void ProductStackHarness::PollSignalInbox() {
   }
 }
 
+void ProductStackHarness::ForceDialMiss(const std::string& peer_id) {
+  if (!host_ || !host_->Amp()) {
+    return;
+  }
+  auto done = std::make_shared<std::atomic<bool>>(false);
+  auto ok = std::make_shared<std::atomic<bool>>(false);
+  host_->Amp()->Links().EnsureAssociation(peer_id, [done, ok](pp::amp::PeerLinkManager::LinkRoe r) {
+    ok->store(static_cast<bool>(r), std::memory_order_release);
+    done->store(true, std::memory_order_release);
+  });
+  // Short: a long private dial under dual-SNAT can outlive the hop mapping (~5 s LooksAlive).
+  const bool finished = PumpUntil([&] { return done->load(std::memory_order_acquire); }, 3500);
+  if (!finished) {
+    host_->Amp()->Links().AbortInflightDial(peer_id);
+  }
+  std::cout << "ok  product-stack force-dial-fail peer=" << peer_id
+            << (finished ? (ok->load() ? " (unexpectedly ok)" : " (miss; backoff left armed)")
+                         : " (timed out; aborted)")
+            << "\n";
+}
+
 Roe<void> ProductStackHarness::RegisterPeerPrivateEndpoint(const std::string& peer_id,
                                                            const std::string& multiaddr) {
   if (!host_ || !host_->Amp()) {

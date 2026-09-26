@@ -60,6 +60,11 @@ public:
   bool UsesSignalDir() const { return !signal_dir_.empty(); }
   /** Dirty dial book: register the peer's private advertise MA as dialable (dogfood / H010). */
   Roe<void> RegisterPeerPrivateEndpoint(const std::string& peer_id, const std::string& multiaddr);
+  /**
+   * Dirty dial book, worse: one EnsureAssociation to the (private, undialable) peer MA so the
+   * link is left in dial backoff — the product reach must heal it. Backoff is NOT cleared here.
+   */
+  void ForceDialMiss(const std::string& peer_id);
 
   /** Run the UI mailbox (main thread = UI). The mesh runs on MeshHost's MeshPump. */
   void Pump();
