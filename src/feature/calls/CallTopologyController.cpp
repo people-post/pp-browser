@@ -427,7 +427,10 @@ void CallTopologyController::OnMediaStopped(const std::string& call_id) {
   inbound_gate_.last_fail_call_id.clear();
   inbound_gate_.last_fail_hop.clear();
   publishers_.local_stream_id = 0;
-  publishers_.remote_stream_ids.clear();
+  {
+    std::lock_guard lock(publishers_.mu);
+    publishers_.remote_stream_ids.clear();
+  }
   guest_.active_attach.reset();
   guest_.active_call_id.clear();
   guest_.reattach_attempts = 0;
@@ -766,7 +769,8 @@ void CallTopologyController::SubscribePublisherStream(uint32_t stream_id) {
   if (!relay_deps_.relay || stream_id == 0) {
     return;
   }
-  if (publishers_.local_stream_id != 0 && stream_id == publishers_.local_stream_id) {
+  const uint32_t local_stream = publishers_.local_stream_id.load();
+  if (local_stream != 0 && stream_id == local_stream) {
     return;
   }
   (void)relay_deps_.relay->Subscribe(stream_id, 0);
@@ -775,8 +779,14 @@ void CallTopologyController::SubscribePublisherStream(uint32_t stream_id) {
 }
 
 void CallTopologyController::MaybeRequestPublisherKeyframe(uint32_t stream_id) {
-  if (stream_id == 0 || !publishers_.video_refresh_sent.insert(stream_id).second) {
+  if (stream_id == 0) {
     return;
+  }
+  {
+    std::lock_guard lock(publishers_.mu);
+    if (!publishers_.video_refresh_sent.insert(stream_id).second) {
+      return;
+    }
   }
   const std::string call_id = media_.ActiveCallId();
   if (call_id.empty()) {
@@ -809,11 +819,14 @@ void CallTopologyController::NoteRemotePublisherFromAttach(const CallSfuAttachDe
   if (attach.publisher_stream_id == 0) {
     return;
   }
-  if (publishers_.local_stream_id != 0 &&
-      attach.publisher_stream_id == publishers_.local_stream_id) {
+  const uint32_t local_stream = publishers_.local_stream_id.load();
+  if (local_stream != 0 && attach.publisher_stream_id == local_stream) {
     return;
   }
-  publishers_.remote_stream_ids.insert(attach.publisher_stream_id);
+  {
+    std::lock_guard lock(publishers_.mu);
+    publishers_.remote_stream_ids.insert(attach.publisher_stream_id);
+  }
   if (sfu_.attached && media_.IsSfuMode() && media_.ActiveCallId() == attach.call_id) {
     log().info << "SFU subscribe announced stream=" << attach.publisher_stream_id
                << " call_id=" << attach.call_id;
@@ -860,31 +873,48 @@ void CallTopologyController::SyncSfuSubscriptions(const std::string& call_id) {
   if (!relay_deps_.relay || !sfu_.attached || !media_.IsSfuMode() || media_.ActiveCallId() != call_id) {
     return;
   }
-  // Streams announced via CallSfuAttach (covers incomplete Joined roster).
-  for (uint32_t stream : publishers_.remote_stream_ids) {
-    SubscribePublisherStream(stream);
+  // Runs on UI and on MeshControl (attach completion): update the stream sets under the lock,
+  // subscribe after releasing it (relay I/O takes the relay's own lock).
+  std::vector<uint32_t> to_subscribe;
+  {
+    // Streams announced via CallSfuAttach (covers incomplete Joined roster).
+    std::lock_guard lock(publishers_.mu);
+    to_subscribe.assign(publishers_.remote_stream_ids.begin(), publishers_.remote_stream_ids.end());
   }
   auto participants = sessions_.ListParticipants(call_id);
+  int subscribed = 0;
+  size_t announced = 0;
+  if (participants) {
+    auto local = host_.local_relay_identity();
+    for (const CallParticipant& p : *participants) {
+      if (p.state != CallParticipantState::Joined) {
+        continue;
+      }
+      if (local && p.identity == *local) {
+        continue;
+      }
+      const uint32_t stream = PublisherStreamIdForIdentity(p.identity);
+      {
+        std::lock_guard lock(publishers_.mu);
+        publishers_.remote_stream_ids.insert(stream);
+      }
+      to_subscribe.push_back(stream);
+      ++subscribed;
+      log().info << "SFU subscribe peer=" << p.identity << " stream=" << stream << " call_id=" << call_id;
+    }
+  }
+  {
+    std::lock_guard lock(publishers_.mu);
+    announced = publishers_.remote_stream_ids.size();
+  }
+  for (const uint32_t stream : to_subscribe) {
+    SubscribePublisherStream(stream);
+  }
   if (!participants) {
     return;
   }
-  auto local = host_.local_relay_identity();
-  int subscribed = 0;
-  for (const CallParticipant& p : *participants) {
-    if (p.state != CallParticipantState::Joined) {
-      continue;
-    }
-    if (local && p.identity == *local) {
-      continue;
-    }
-    const uint32_t stream = PublisherStreamIdForIdentity(p.identity);
-    publishers_.remote_stream_ids.insert(stream);
-    SubscribePublisherStream(stream);
-    ++subscribed;
-    log().info << "SFU subscribe peer=" << p.identity << " stream=" << stream << " call_id=" << call_id;
-  }
   log().info << "SyncSfuSubscriptions call_id=" << call_id << " peers=" << subscribed
-             << " announced=" << publishers_.remote_stream_ids.size();
+             << " announced=" << announced;
 }
 
 Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_id,

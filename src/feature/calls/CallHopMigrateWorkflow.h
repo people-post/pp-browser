@@ -161,8 +161,13 @@ public:
     bool reattach_in_flight = false;
   };
 
+  /**
+   * Written from the UI thread and from MeshControl (attach completion / inbound attach), so the
+   * sets are guarded by `mu` and the stream id is atomic. Do relay I/O outside `mu`.
+   */
   struct PublisherStreams {
-    uint32_t local_stream_id = 0;
+    std::atomic<uint32_t> local_stream_id{0};
+    std::mutex mu;
     std::unordered_set<uint32_t> remote_stream_ids;
     std::unordered_set<uint32_t> video_refresh_sent;
   };

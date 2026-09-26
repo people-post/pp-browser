@@ -50,6 +50,7 @@ struct CallMediaInboundHelloContext {
   CallMediaBundlePhase phase = CallMediaBundlePhase::Idle;
   bool has_outbound_control = false;
   bool offerer = false;
+  /** Role-aware, antisymmetric winner (LocalWinsCallMediaGlareForRoles). */
   bool local_wins_glare = true;
   /** Another call already bound/media-ready on this peer coordinator. */
   bool other_bundle_busy = false;

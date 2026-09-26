@@ -110,6 +110,28 @@ TEST(CoordinatorThreadTest, CancelTimerPreventsFire) {
   coordinator.Shutdown();
 }
 
+// A timer armed while the thread sleeps toward a later deadline must wake it — not fire at the
+// later deadline (connect retry 1.5 s fired at the cancelled 16 s watchdog's deadline).
+TEST(CoordinatorThreadTest, EarlierTimerWakesWaitOnLaterDeadline) {
+  CoordinatorThread coordinator;
+  coordinator.Start();
+
+  coordinator.ScheduleOneShot(std::chrono::seconds(30), []() {});
+  // Drain a probe so the thread is now waiting on the 30 s deadline.
+  std::atomic<bool> probe{false};
+  coordinator.Post(CoordinatorPriority::Normal, [&]() { probe.store(true); });
+  WaitUntil([&]() { return probe.load(); }, std::chrono::milliseconds(2000));
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+  std::atomic<bool> fired{false};
+  const auto armed = std::chrono::steady_clock::now();
+  coordinator.ScheduleOneShot(std::chrono::milliseconds(20), [&]() { fired.store(true); });
+  WaitUntil([&]() { return fired.load(); }, std::chrono::milliseconds(2000));
+  EXPECT_LT(std::chrono::steady_clock::now() - armed, std::chrono::milliseconds(1000));
+
+  coordinator.Shutdown();
+}
+
 TEST(CoordinatorThreadTest, TimerCallbackMayScheduleTimers) {
   CoordinatorThread coordinator;
   coordinator.Start();

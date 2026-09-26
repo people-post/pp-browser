@@ -428,7 +428,7 @@ run_hard_w5() {
   cmake_build_probes
   stage_hop_binary_if_newer
   ensure_docker_context
-  echo "=== suite hard-w5 (Wave 5: N-HARD-CGNAT-ISH + B-HARD-CALL-NAT + PRODUCT) ==="
+  echo "=== suite hard-w5 (Wave 5: N-HARD-CGNAT-ISH + B-HARD-CALL-NAT + STACK + COLD reach) ==="
   export PP_HARD_CGNAT_STATUS_URL="${PP_HARD_CGNAT_STATUS_URL:-http://127.0.0.1:18628}"
   export PP_HARD_PROBE_DIR="${BUILD_DIR}/src/app/node"
   export PP_HARD_CGNAT_SHARE_DIR="${PP_HARD_CGNAT_SHARE_DIR:-/tmp/pp-hard-lab-cgnat-share}"

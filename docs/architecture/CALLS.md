@@ -30,7 +30,9 @@ Do **not** restate the full product decision table here — link DECISIONS. Prom
 | **CallLifecycleTransitionLogic** | Pure `(phase, status, event) → Outcome` table (no I/O) |
 | **CallController** | Rml clicks → `Apply(event)`; ring / in-call chrome via `apply_chrome_update` → ShellHost Remount / DirtyCallChrome |
 | **CallSessionManager** | Persist session/invite/roster; encode/send controls; notify lifecycle |
-| **CallMediaBridge** | Media-key defer, dial/retry; report `MediaDeferred` / `DirectConnected` / `ConnectFailed` |
+| **CallMediaBridge** | Media-key defer, channel connect/retry; report `MediaDeferred` / `DirectConnected` / `ConnectFailed` |
+| **CallMediaConnectCoordinator** | Both directions of the 1:1 bundle. Outbound: per attempt reach a link then open the bundle; watchdog (B42), 5 retries, fresh-link feedback (B39). Inbound: owns the transport handler — accept once the epoch key is available (cancelable wait on the worker hop) via `CallMediaInboundPorts` |
+| **PeerReachCoordinator** | Call-agnostic link establishment to one peer (dial → circuit → punch, seed park); `Reach` / `Await` modes |
 | **ICallMediaTransport** | 1:1 `/pp-browser/realtime/1.0.0` — Amp `CallMediaAmpTransport` / `CallMediaLegCoordinator` ([A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol) / D10) |
 | **ConversationsHub** | N025 listen + mDNS as **lifecycle-driven** commands (`WantEphemeralListen`), not tick side effects |
 
@@ -385,11 +387,15 @@ Session manager asks: “joined count is now N — what media action?”
 Responsibilities:
 
 - `StartMediaAsOfferer` / `Answerer` + `Schedule*`
-- Reachability (dial registry / circuit hop), hello/ack, AEAD Opus over direct stream
-- Connect-fail / Retry for 1:1 libp2p dial
+- Builds the connect request (bundle params + link request) and hands it to the owned [`CallMediaConnectCoordinator`](../../src/feature/calls/CallMediaConnectCoordinator.h), which per attempt asks [`PeerReachCoordinator`](../../src/feature/calls/PeerReachCoordinator.h) for a link and opens the bundle on it (hello/ack, AEAD Opus)
+- Call-side hooks only: offerer media-key resend before each attempt, path label, commit Connected / surface ConnectFailed when the sequence finishes; `exclude_direct` after TX-only
 - `ReleaseDirectTransport` on soft-migrate (keep engine capture for SFU)
 
 Does not decide SFU. Topology calls `StartSfu` / attach via session or engine APIs.
+
+**Link / channel / call layers.** `CallMediaConnectCoordinator` knows the bundle protocol (params, ConnectAsync, MediaReady) and retry policy but not the call product (no engine, seat, planner, SFU); a give-up is posted and dropped if Abort / Start ran since. Inbound hellos reach the bridge only through `CallMediaInboundPorts` (session open, load / request key, accepted → callbacks) on the worker hop; the bridge maps the dialer's mesh PeerId to the roster identity (mixer stream id) **on the UI thread**, posted ahead of the bundle's own callbacks. `PeerReachCoordinator` takes mesh dial keys (PeerId first, aliases after) and a mode, and returns a Connected link kind (`Direct` / `Punched` / `Relayed`). It knows no call id, media key, roster identity or SFU state. **Glare (simultaneous open):** when both sides send a call-media hello on one link, exactly one wins — `LocalWinsCallMediaGlareForRoles`: offerer beats answerer; equal roles (e.g. two retries) fall back to the PeerId order. The winner rejects the inbound hello, the loser yields its outbound and adopts the inbound. (The earlier rule let an answerer always yield and an offerer with the lower PeerId yield too — both yielded and both bundles closed.)
+
+**Threads:** bridge state, `CallMediaConnectCoordinator` sequence state and engine `StartSfu` / `Stop` are UI-thread only. The SFU attach completion (`CallHopMigrateWorkflow::CompleteAttachLocalToSfu`: `StartSfu`, adaptation, seat, hop planner) is posted to UI after the attach network work; the topology's publisher-stream sets are mutex-guarded because inbound attach still writes them from MeshControl. Engine audio bitrate changes are applied by the capture thread before its next encode (Opus encoders are not thread-safe). `StopMeshMedia` is the one any-thread entry — off UI it posts its whole body to the front of the UI queue and skips it if a newer media session started meanwhile. Retry (`CallLifecycle::PostRetryMedia` → `RetryMeshMedia`) runs on UI; the bridge refuses an off-UI retry, and the connect coordinator logs an error if `Start` / `Abort` run off UI. The bridge holds no dial registry or circuit reach of its own: link-state changes go through named `PeerReachCoordinator` operations (`ForgetPath` before a re-selection, `ReleasePeer` when the call no longer needs the link, `AbortCircuitAttempts`, `PreferDialKey` for account-alias vs PeerId dial keys). The bridge maps call knowledge onto it: account → PeerId resolution, offerer → `Reach`, answerer → `Await` (invite/accept is the agreement that the peer reaches; the coordinator does not negotiate roles). All reach state lives on the Coordinator strand; the bridge's attempt state is UI-thread only.
 
 ### 3. `CallSessionManager` (shrunk)
 Keeps thin `ApplyInboundControl` switch → `CallSessionWorkflow::HandleInbound*`. Store mutations and invite/leave arms live on the Workflow (V044).
@@ -422,7 +428,7 @@ These are architectural, not one-off hacks.
 | Accept on UI / ring stuck | Samsung frozen Accept dialog | CallLifecycle AcceptClicked + Dirty-only chrome; see [Ringing handling](#ringing-handling) |
 | Answerer media before `CallMediaKey` | Hello rejected / silent call | Direct `KeyWait` → `KeyReady` / KeyTimeout; **exhaustion → `ConnectFailed` + `call.error.media_key_timeout`** |
 | N025 listen on UI tick | UI hitch; `/tcp/0` advertised | Late bind in fork; lifecycle desire; start listen on IO; mDNS after bound port |
-| Dual call-media dial (offerer fallback + late reverse-dial) | Connecting forever; Critical hello/ack deadlock; shutdown segfault | Offerer grace ≥ dial budget; async hello on host io_context; inbound MediaKey fill on worker with **cancelable wait** (notify on key/teardown — no bare sleep); handshake deadline + `reset()` on timeout/Detach (do not trust peer); one-stream adopt; reject inbound while outbound hello (`offerer_glare` / HelloOutbound); `ClearInboundHandler` on teardown — **home:** call-media session SM ([SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) / V033 s2a) |
+| Dual call-media dial (offerer fallback + late reverse-dial) | Connecting forever; Critical hello/ack deadlock; shutdown segfault | Offerer grace ≥ dial budget; async hello on host io_context; inbound MediaKey fill on worker with **cancelable wait** (`CallMediaConnectCoordinator`; notify on key/teardown — no bare sleep); handshake deadline + `reset()` on timeout/Detach (do not trust peer); one-stream adopt; reject inbound while outbound hello (`offerer_glare` / HelloOutbound); `ClearInboundHandler` on teardown — **home:** call-media session SM ([SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) / V033 s2a) |
 | SoftMigrate ReleaseDirect vs duplex EOF | Local Detach then `on_failed` / ConnectFailed | Intentional Detach sets Detaching/Idle first; late `Fail` ignored when already detaching — bridge still suppresses ConnectFailed when SFU expected |
 | Seat Live vs TX-only | Connected chrome with no RX | Direct `DegradedTxOnly` / `TxOnlyGraceExpired` + circuit escalate; health NoAudio overrides Connected (V037/V039) |
 

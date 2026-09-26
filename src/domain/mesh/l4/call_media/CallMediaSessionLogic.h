@@ -46,4 +46,11 @@ bool CallMediaFailNotifySuppressed(CallMediaSessionPhase phase);
  */
 bool LocalWinsCallMediaGlare(const std::string& local_peer_id, const std::string& remote_peer_id);
 
+/**
+ * Antisymmetric call-media glare winner (both sides must agree on exactly one winner): when the
+ * roles differ the offerer wins; with the same role (e.g. two retries) the PeerId order decides.
+ */
+bool LocalWinsCallMediaGlareForRoles(bool local_offerer, bool remote_offerer, const std::string& local_peer_id,
+                                     const std::string& remote_peer_id);
+
 } // namespace pbr

@@ -180,7 +180,7 @@ stateDiagram-v2
   HelloInbound --> Adopting: HelloOk
   HelloInbound --> Idle: HelloFail
   HelloInbound --> Idle: DetachRequested
-  Note right of HelloOutbound: InboundStream while HelloOutbound\n= glare reject only if local PeerId > remote
+  Note right of HelloOutbound: InboundStream while HelloOutbound\n= glare reject only if local wins (offerer beats answerer; same role → PeerId)
   Adopting --> MediaReady: DuplexStarted
   Adopting --> Failed: AdoptLost
   MediaReady --> Detaching: DetachRequested
@@ -194,7 +194,7 @@ stateDiagram-v2
 | Situation | Guard / transition |
 |-----------|-------------------|
 | Inbound while `MediaReady` / `Adopting` / `Detaching` | Reject: close stream; log ignore |
-| Inbound while `HelloOutbound` or `Dialing` (offerer fallback) | **Glare loser:** close inbound; keep outbound |
+| Inbound while `HelloOutbound` or `Dialing` (offerer fallback) | **Glare:** the winner (`LocalWinsCallMediaGlareForRoles` — offerer beats answerer, same role → PeerId) closes the inbound and keeps its outbound; the loser yields. Antisymmetric — see [CALLS.md](../../docs/architecture/CALLS.md) |
 | Inbound while `Idle` | → `HelloInbound` |
 | Second `ConnectRequested` while not Idle | Abort prior waiter or reject — pick one in s1; lean **Detach then Connect** |
 | SoftMigrate `ReleaseDirect` | `DetachRequested` from MediaReady; must **not** surface as `ConnectFailed` to lifecycle when SFU path active (bridge policy; SM only reports transport down) |
@@ -244,8 +244,8 @@ Rewrite-debt tracking: [PHASES rd](PHASES.md#rd--amp-call-media-rewrite-debt-v03
 
 | Item | Status |
 |------|--------|
-| **Async `Connect(cb)` API** | **Landed:** `ICallMediaTransport::ConnectAsync` + `CallMediaBridge` grace/retry via coordinator timers; peer-reach `EnsurePeerReachableAsync` / `TryEnsureCallMediaReachableAsync`. Sync `Connect()` remains for tests/harnesses. |
-| **Inbound handler must not stall Normal** | **Landed:** Handler already on a worker hop; Bridge inbound MediaKey fill uses a cancelable `condition_variable` (notify on `OnMediaKeyReady` / `PrepareForTeardown`) instead of `sleep_for`. Contract documented on `ICallMediaTransport::SetInboundHandler`. |
+| **Async `Connect(cb)` API** | **Landed:** `ICallMediaTransport::ConnectAsync` + `CallMediaBridge` grace/retry via coordinator timers; peer-reach `PeerReachCoordinator::Ensure` / `TryEnsureCallMediaReachableAsync`. Sync `Connect()` remains for tests/harnesses. |
+| **Inbound handler must not stall Normal** | **Landed:** Handler already on a worker hop; inbound MediaKey fill (now in `CallMediaConnectCoordinator`) uses a cancelable `condition_variable` (notify on `OnMediaKeyReady` → `NotifyKeyAvailable` / teardown `Shutdown`) instead of `sleep_for`. Contract documented on `ICallMediaTransport::SetInboundHandler`. |
 | **`AsyncWriteStreamJson` cancel check** | Writes complete or fail via stream `reset()` on Detach/timeout; no separate cancel predicate. Enough for hello; add if write-queue stalls appear without reset. |
 | **Sync L4 RPC wrappers** | Product SoftMigrate/attach/reattach, circuit hop reach, and CallStack punch use Async. Sync façades remain for tests/harnesses (empty-pump park). |
 | **Dual-dial glare** | Higher PeerId keeps outbound; lower PeerId yields to inbound. `DualDialExactlyOneAdoptEachSide` guards a shared duplex (audio round-trip). |
