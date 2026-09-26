@@ -36,6 +36,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     RelayReceivePipeline.cpp
   PUBLIC_LIBS
     pp_feature_calls
+    pp_feature_broadcast
     pp_foundation_crypto
     pp_domain_media
     pp_domain_messaging

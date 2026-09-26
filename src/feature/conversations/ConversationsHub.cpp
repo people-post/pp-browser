@@ -385,6 +385,7 @@ void ConversationsHub::StartMeshServices() {
 
   ApplyMeshAdmissionPolicies();
   call_stack_->OnMeshServicesStarted();
+  RebuildBroadcast();
   PublishNodeAdvertisedAddrs();
   SyncLanMdnsAdvertisement();
 }
@@ -573,7 +574,44 @@ void ConversationsHub::ApplyMeshAdmissionPolicies() {
 }
 
 
+void ConversationsHub::ResetBroadcast() {
+  broadcast_.reset();
+}
+
+void ConversationsHub::RebuildBroadcast() {
+  ResetBroadcast();
+  if (!mesh_ || !mesh_->IsRunning() || !mesh_messaging_) {
+    return;
+  }
+  auto chat = mesh_->ChatDeps();
+  if (!chat) {
+    return;
+  }
+  BroadcastMeshDeps deps;
+  deps.links = &chat->links;
+  deps.io = chat->io;
+  deps.relay = call_stack_->SharedRelayAttachPorts();
+  deps.publisher_key = [messaging = mesh_messaging_.get()](const std::string& peer_id) {
+    return messaging->ResolveAnnouncePublisherKey(peer_id);
+  };
+  broadcast_ = BroadcastHub::ForMesh(std::move(deps), MediaDeviceArbiter::Default());
+  if (!broadcast_) {
+    log().info << "broadcast viewer unavailable (media_relay not wired)";
+    return;
+  }
+  broadcast_->SetOnChanged([this]() {
+    if (on_broadcast_changed_) {
+      on_broadcast_changed_();
+    }
+  });
+}
+
+void ConversationsHub::SetOnBroadcastChanged(std::function<void()> callback) {
+  on_broadcast_changed_ = std::move(callback);
+}
+
 void ConversationsHub::StopMesh() {
+  ResetBroadcast();
   mobile_ephemeral_start_inflight_ = false;
   mobile_ephemeral_start_inflight_at_ms_ = 0;
   mobile_ephemeral_stop_inflight_ = false;
@@ -2249,6 +2287,7 @@ void ConversationsHub::RefreshMeshCapabilities() {
     mesh_->AmpCircuitTunnel()->SetServeInbound(role == MeshRole::Node &&
                                                config_.mesh.capabilities.circuit_relay);
   }
+  ResetBroadcast();  // borrows the relay client ResetRelayClients / WireMediaRelayDeps replace
   call_stack_->ResetRelayClients();
   if (mesh_->AmpMediaRelayCoord()) {
     mesh_->AmpMediaRelayCoord()->SetServeInbound(role == MeshRole::Node &&
@@ -2258,6 +2297,7 @@ void ConversationsHub::RefreshMeshCapabilities() {
   ConfigureAmpDirectoryProtocol();
   ApplyMeshAdmissionPolicies();
   call_stack_->WireMediaRelayDeps();
+  RebuildBroadcast();
   SyncMobileEphemeralListen();
 }
 

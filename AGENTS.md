@@ -77,7 +77,8 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | Mesh stream framing / hangs | [docs/architecture/LIBP2P_STREAMS.md](docs/architecture/LIBP2P_STREAMS.md), `src/domain/mesh/StreamFrameIo.*` |
 | P2P mesh / Amp | [docs/architecture/MESH.md](docs/architecture/MESH.md), [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md), [projects/p2p-mesh/](projects/p2p-mesh/), [projects/adp/](projects/adp/) |
 | P2P A/V calls | [docs/architecture/CALLS.md](docs/architecture/CALLS.md), [projects/p2p-av-calls/](projects/p2p-av-calls/) |
-| Reach / relay attach / media pipelines shared by calls + broadcast | [projects/media-client-layers/](projects/media-client-layers/) — `PeerReachCoordinator`, `CallMediaConnectCoordinator`; broadcast is a sibling feature, not a call |
+| Reach / relay attach / media pipelines shared by calls + broadcast | [projects/media-client-layers/](projects/media-client-layers/) — `PeerReachCoordinator`, `CallMediaConnectCoordinator`, `MediaDeviceArbiter`; broadcast is a sibling feature, not a call |
+| Live broadcast viewer | `src/feature/broadcast/` (`BroadcastHub`, `BroadcastViewerWorkflow`, `AmpBroadcastRpcClient`); facade `WatchLiveAnnounce`; [media-client-layers L013](projects/media-client-layers/DECISIONS.md) |
 | Media hop reachability | [projects/media-hop-reachability/](projects/media-hop-reachability/) |
 | Call path migration / link events / mobility | [projects/call-path-resilience/](projects/call-path-resilience/) |
 | Network status chrome | [projects/network-status-chrome/](projects/network-status-chrome/) |

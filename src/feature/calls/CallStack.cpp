@@ -36,6 +36,10 @@ const AppConfig& CallStack::config() const {
   return deps_.config();
 }
 
+MediaRelayAttachPorts CallStack::SharedRelayAttachPorts() const {
+  return media_plane_ ? media_plane_->SharedRelayAttachPorts() : MediaRelayAttachPorts{};
+}
+
 void CallStack::SyncMediaPlaneDeps() {
   if (!media_plane_) {
     return;

@@ -9,6 +9,7 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/mesh/reachability/AmpCircuitHopReach.h"
 #include "domain/mesh/l4/media_relay/AmpMediaRelayClient.h"
+#include "domain/mesh/l4/media_relay/MediaRelayAttach.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
@@ -100,6 +101,12 @@ public:
   void OnMeshStarted();
   /** Mesh clients only (relay / dial / hop). Stack follows with BindBridge + CSM install. */
   void Wire();
+  /**
+   * The neutral mesh objects this plane wires (media_relay client, dial registry, service reach),
+   * lent to other features (broadcast). Valid until the next WireMediaRelayDeps / ResetRelayClients
+   * / mesh stop — borrowers must be torn down before those (ConversationsHub does).
+   */
+  MediaRelayAttachPorts SharedRelayAttachPorts() const;
   void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial);
   /**
    * Test / hard-lab product-stack: Amp transport + dial + optional circuit reach without MeshHost.

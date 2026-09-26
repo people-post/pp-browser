@@ -22,8 +22,10 @@
 namespace pbr {
 
 /**
- * `/pp-browser/rpc/broadcast/1.0.0` ticket mint + ladder admit/redirect + slot-win
- * over AMP ChannelSession (Spine F). Domain codecs/ladder stay Amp-free.
+ * Serving side of `/pp-browser/rpc/broadcast/1.0.0` over AMP ChannelSession (Spine F): publisher
+ * ticket mint, hop ladder admit/redirect, relay slot-win. The asking side is
+ * `feature/broadcast/AmpBroadcastRpcClient` (media-client-layers l4c). Domain codecs/ladder stay
+ * Amp-free.
  */
 class AmpBroadcastTransport {
 public:
@@ -97,31 +99,7 @@ public:
 
   bool IsPeerReachable(const std::string& peer_identity_value) const;
 
-  Roe<BroadcastTicketResponse> RequestTicket(const std::string& peer_key, const BroadcastTicketRequest& req);
-  Roe<BroadcastViewerAttachResult> RequestViewerAttach(const std::string& peer_key,
-                                                       const BroadcastViewerAttachRequest& req);
-  Roe<BroadcastRelaySlotWinResult> RequestRelaySlotWin(const std::string& peer_key,
-                                                       const BroadcastRelaySlotWinRequest& req);
-
-  void RequestTicketAsync(const std::string& peer_key, const BroadcastTicketRequest& req,
-                          std::function<void(Roe<BroadcastTicketResponse>)> on_done);
-  void RequestViewerAttachAsync(const std::string& peer_key, const BroadcastViewerAttachRequest& req,
-                                std::function<void(Roe<BroadcastViewerAttachResult>)> on_done);
-  void RequestRelaySlotWinAsync(const std::string& peer_key, const BroadcastRelaySlotWinRequest& req,
-                                std::function<void(Roe<BroadcastRelaySlotWinResult>)> on_done);
-
 private:
-  template <typename ResponseT>
-  void RoundTripAsync(const std::string& peer_key, const std::string& request_json, const char* expect_label,
-                      std::function<bool(const BroadcastRpcMessage&)> is_response,
-                      std::function<ResponseT(BroadcastRpcMessage&&)> take_response,
-                      std::function<void(Roe<ResponseT>)> on_done);
-
-  template <typename ResponseT>
-  Roe<ResponseT> RoundTrip(const std::string& peer_key, const std::string& request_json, const char* expect_label,
-                           std::function<bool(const BroadcastRpcMessage&)> is_response,
-                           std::function<ResponseT(BroadcastRpcMessage&&)> take_response);
-
   struct Impl;
   std::unique_ptr<Impl> impl_;
   IChatPeerLinks& links_;

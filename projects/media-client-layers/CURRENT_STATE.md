@@ -10,6 +10,7 @@
 | l0 — 1:1 split | Done: `PeerReachCoordinator`, `CallMediaConnectCoordinator` (both directions), bridge = call policy; stop / retry on UI; glare antisymmetric; SFU attach completion on UI; hard-lab COLD phases |
 | l1 — reach in `domain/mesh` | Done: `domain/mesh/reachability/{MeshReachPorts.h, PeerReachCoordinator, AmpCircuitHopReach}`, neutral names. Hop reach stays a separate *service reach* ([L008](DECISIONS.md#l008--two-kinds-of-reach-link-reach-and-service-reach)) |
 | l2 — relay attach | Done: `domain/mesh/l4/media_relay/{IMediaRelayClient.h, AmpMediaRelayClient, MediaRelayAttach}`; group attach + guest reattach use `AttachToMediaRelayAsync` ([L009](DECISIONS.md#l009--relay-attach-is-a-stateless-capability-recovery-stays-with-each-feature)); wire `call_id` unchanged |
+| l4c — product wiring | Done: `AmpBroadcastRpcClient`; `BroadcastHub::ForMesh` owned by `ConversationsHub` on borrowed call-plane mesh objects ([L014](DECISIONS.md#l014--broadcast-borrows-the-call-planes-mesh-objects-until-a-neutral-mesh-media-plane-exists)); facade `WatchLiveAnnounce`; three-node compose test (ticket → relay → playback). No UI entry yet |
 | l4b — `feature/broadcast` | Done: `BroadcastHub` + `BroadcastViewerWorkflow` on ports (fakes in gtests); relay loss observers; sibling include ban in CI |
 | l4a — frame crypto + ladder | Done: neutral `MediaRelayFrameCrypto`; `BroadcastViewerLadder`; broadcast stream id / frame context ([L013](DECISIONS.md#l013--viewer-shape-ticket-from-the-publisher-client-side-ladder-direct-attach-to-hops-without-admission)) |
 | l3b — device arbiter | Done (audio + camera): `MediaDeviceArbiter` device thread + `AudioDeviceLease` (mic exclusive, speaker shared — [L011](DECISIONS.md#l011--speaker-is-shared-mic-exclusive-one-device-thread-either-way)); engine + ringtone hold leases; camera async on the video thread ([L012](DECISIONS.md#l012--camera-requests-are-asynchronous-the-video-thread-owns-camera-and-encoder)); quit drains closes before `SDL_Quit` |
@@ -17,7 +18,7 @@
 
 ## Next
 
-**l4c** — product wiring: split the broadcast RPC client out of `AmpBroadcastTransport`; build `BroadcastHub` next to the call stack from neutral mesh objects (relay client, dial registry, circuit reach, a hub-owned `PeerReachCoordinator` for the publisher); facade `WatchLiveAnnounce` / `StopWatching`; a call taking media stops the watch; compose test on the mesh harness. Before a release: dogfood the device arbiter (PHASES l3b). Separate threading item: `CallSessionWorkflow` / `CallMediaBridge` port rebinding (all remaining TSan reports).
+**l5** — broadcaster: `BroadcasterWorkflow` (capture-only session, mic lease, publish to the first relay via l2 on `BroadcastPublisherStreamId`), live key / ticket minting wired to the program (`PutLiveProgramKey`), hard-lab broadcaster → relay → viewers (with the redirect case from l4). Open alongside: a watch UI entry (no gui caller yet); pp-cpp-amp prompt refusal of unhandled protocols (ask before changing that repo); neutral mesh media plane (L014 exit). Before a release: dogfood the device arbiter (PHASES l3b).
 
 ## Open questions
 

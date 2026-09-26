@@ -80,13 +80,16 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 - [x] Relay transport-loss **observers** (`Add/RemoveClientTransportLostObserver`) next to the calls' handler slot, so both features hear losses without stealing each other's handler
 - [x] gtests (fake ports, real ML-DSA tickets, real playback engine on a device-less arbiter): admit / redirect / no-admission / ticket hop / attach failure / refusal / ticket problems / relay busy / loss + give-up / stop / late attach / paid quote / hub; TSan + ASan clean
 
-### l4c — Product wiring
+### l4c — Product wiring (done — [L014](DECISIONS.md#l014--broadcast-borrows-the-call-planes-mesh-objects-until-a-neutral-mesh-media-plane-exists))
 
-- [ ] Broadcast client RPC moves out of `AmpBroadcastTransport` (client vs server split)
-- [ ] Hub built next to the call stack from neutral mesh objects (relay client, dial registry, circuit reach); facade entry `WatchLiveAnnounce` / `StopWatching`
-- [ ] Compose test on the mesh harness: publisher-side ticket server + viewer workflow
+- [x] `AmpBroadcastRpcClient` (`feature/broadcast`): client half split out of `AmpBroadcastTransport` (now serving-only); completions never touch the client; admission uses a short timeout (1.5 s — Amp acks opens for unhandled protocols, so a plain relay only answers by timeout)
+- [x] `BroadcastHub::ForMesh` (RPC client + own `PeerReachCoordinator` for the publisher + viewer, UI via `AppRuntime`); `ConversationsHub` builds it after mesh services start, drops it before every relay rewire / mesh stop ([L014](DECISIONS.md#l014--broadcast-borrows-the-call-planes-mesh-objects-until-a-neutral-mesh-media-plane-exists)); `CallStack::SharedRelayAttachPorts`; `MeshDeliveryOrchestrator::ResolveAnnouncePublisherKey` (was duplicated) + `LatestAnnounceTip`
+- [x] Facade: `WatchLiveAnnounce`, `WatchStoredLiveAnnounce`, `StopWatchingBroadcast`, `BroadcastWatchStatus`
+- [x] Compose tests (`broadcast_viewer_compose_test`, three-node mesh): real ticket from the publisher's server → plain relay (no admission, timeout → direct attach) → publisher frames reach the viewer's playback engine; admitting hop admits; unknown program fails at the ticket
+- [x] Found + fixed on the way (own commit): media_relay client loss handler wiped by every attach (guest reattach-on-loss dead after the first attach), Detach lock-order inversion, hop channel leak; broadcast RPC server + client session cycles (LeakSanitizer)
+- [ ] UI: a watch surface (Notifications / announce banner → Watch / Stop, status line) — no gui caller yet
 
-**Exit:** a viewer listens without any call object. Hard-lab (publisher + relay + viewer, redirect case) moves to l5 (needs a real publisher).
+**Exit:** a viewer listens without any call object. **Met** (compose-tested end to end; product-wired; no UI entry yet). Hard-lab (publisher + relay + viewer, redirect case) moves to l5 (needs a real publisher).
 
 ## l5 — Broadcaster
 
@@ -100,6 +103,10 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 - [ ] peer-scoped-broadcast PHASES / CURRENT_STATE point at `feature/broadcast`
 
 ## Later
+
+- [ ] Neutral mesh media plane: move the media_relay client, dial registry, circuit reach, punch and seed parking out of `CallMediaPlane` into `domain/mesh`, owned outside calls and lent to both features ([L014](DECISIONS.md#l014--broadcast-borrows-the-call-planes-mesh-objects-until-a-neutral-mesh-media-plane-exists) exit)
+- [ ] pp-cpp-amp: refuse channel opens for protocols without a handler (prompt error instead of a silent drop → admission timeout); then drop the 1.5 s admission timeout
+- [ ] `AmpChatBlobTransport` inbound handler has the same session-holder cycle the broadcast server had (not fixed here — out of scope)
 
 - [ ] Viewer video (channel 1 decode path; subscribe plan adds channel)
 - [ ] Tree relay upstream leg uses the viewer client ([L005](DECISIONS.md#l005--a-tree-relay-pulls-upstream-with-the-viewer-client)) — with peer-scoped-broadcast B1

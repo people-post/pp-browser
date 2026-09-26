@@ -4,6 +4,7 @@
 #include "domain/media/MediaDeviceArbiter.h"
 #include "domain/messaging/PeerAnnounceTypes.h"
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
+#include "domain/mesh/host/MeshPorts.h"
 
 #include "common/Error.h"
 
@@ -20,8 +21,27 @@ namespace pbr {
  *
  * UI thread.
  */
+class AmpBroadcastRpcClient;
+class PeerReachCoordinator;
+
+/** Neutral mesh pieces the product hub is built from (app wiring hands them over). */
+struct BroadcastMeshDeps {
+  IChatPeerLinks* links = nullptr;
+  MeshIoContext io;
+  /** Lent by the call plane today; the hub must be destroyed before they are rewired (L013). */
+  MediaRelayAttachPorts relay;
+  std::function<std::optional<ByteVector>(const std::string& peer_id)> publisher_key;
+  std::function<std::string(const std::string& hop_peer_id)> hop_multiaddr;
+};
+
 class BroadcastHub {
 public:
+  /**
+   * Product hub: broadcast RPC client + a link-reach coordinator of its own (publisher tickets)
+   * + viewer, posting to the UI thread through AppRuntime. Null when the mesh pieces are missing.
+   */
+  static std::unique_ptr<BroadcastHub> ForMesh(BroadcastMeshDeps deps, MediaDeviceArbiter& devices);
+
   /** `ports.engine` is ignored: the hub owns a playback engine on `devices` (must outlive the hub). */
   BroadcastHub(BroadcastViewerPorts ports, MediaDeviceArbiter& devices);
   ~BroadcastHub();
@@ -38,6 +58,9 @@ public:
   void SetOnChanged(std::function<void()> callback);
 
 private:
+  // Destroyed after the viewer (declared first).
+  std::unique_ptr<AmpBroadcastRpcClient> rpc_;
+  std::unique_ptr<PeerReachCoordinator> reach_;
   std::unique_ptr<CallMediaEngine> engine_;
   std::unique_ptr<BroadcastViewerWorkflow> viewer_;
 };

@@ -115,6 +115,14 @@ IDialRegistry* CallMediaPlane::ActiveDial() const {
   return test_dial_ ? test_dial_ : dial_registry_.get();
 }
 
+MediaRelayAttachPorts CallMediaPlane::SharedRelayAttachPorts() const {
+  MediaRelayAttachPorts ports;
+  ports.relay = media_relay_client_.get();
+  ports.dial = ActiveDial();
+  ports.service_reach = ActiveCircuitReach();
+  return ports;
+}
+
 ICircuitHopReach* CallMediaPlane::ActiveCircuitReach() const {
   return test_circuit_reach_ ? test_circuit_reach_ : circuit_hop_reach_.get();
 }

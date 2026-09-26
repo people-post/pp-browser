@@ -20,6 +20,7 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/InitiationBillingStore.h"
+#include "feature/broadcast/BroadcastHub.h"
 #include "feature/calls/CallStack.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
 #include "domain/messaging/AttachmentSuppressionStore.h"
@@ -180,6 +181,13 @@ public:
   const CallStack& CallStackRef() const { return *call_stack_; }
   CallSessionManager* Calls();
   CallLifecycle* Lifecycle();
+  /**
+   * Live broadcast viewer (sibling of calls, media-client-layers L013). Null while the mesh is down;
+   * rebuilt — and any watch stopped — whenever the media_relay plane is rewired. UI thread.
+   */
+  BroadcastHub* Broadcast() { return broadcast_.get(); }
+  /** Fires (UI thread) on every viewer status change, across hub rebuilds. */
+  void SetOnBroadcastChanged(std::function<void()> callback);
   MessageRouter& Router();
   ContactActionDispatcher& Actions();
   bool HasRouter() const { return router_ != nullptr; }
@@ -309,6 +317,10 @@ private:
   void StopMesh();
   /** App-only mesh glue (LAN mDNS / policies) after MeshHost start. */
   void StartMeshServices();
+  /** Drop the broadcast hub (stops a watch) — before anything rewires the plane it borrows from. */
+  void ResetBroadcast();
+  /** Build the broadcast hub from the current mesh + call plane objects (no-op while mesh is down). */
+  void RebuildBroadcast();
   /** Undo BuildMessagingStack / StartMesh without a full hub Shutdown (shutdown race). */
   void DiscardMessagingBringUp();
   void ApplyMeshAdmissionPolicies();
@@ -395,6 +407,10 @@ private:
 
   // --- MeshHost (shared with pp-node) + app mesh glue ----------------------
   std::unique_ptr<MeshHost> mesh_;
+  // Borrows mesh links, the call plane's relay objects and mesh_messaging_ — declared after them so
+  // it is destroyed first (also reset explicitly in StopMesh / before relay rewires).
+  std::unique_ptr<BroadcastHub> broadcast_;
+  std::function<void()> on_broadcast_changed_;
   std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
   std::string mesh_last_error_;
   bool upnp_auto_tried_ = false;

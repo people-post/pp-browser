@@ -199,6 +199,11 @@ public:
    * Does not SoftMigrate or attach media yet.
    */
   Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip) const;
+  /** Latest stored signed tip for a program (announce feed). */
+  std::optional<PeerAnnounceTip> LatestAnnounceTip(const std::string& peer_id, const std::string& topic_id,
+                                                   const std::string& program_id) const;
+  /** A publisher's ML-DSA public key for verifying its tips / tickets (self, pinned, or learned). */
+  std::optional<std::vector<uint8_t>> ResolveAnnouncePublisherKey(const std::string& peer_id) const;
   /** Look up latest tip in the local feed then plan a live join. */
   Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromStoredAnnounce(const std::string& peer_id,
                                                            const std::string& topic_id,

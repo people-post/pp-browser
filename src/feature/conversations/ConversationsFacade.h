@@ -254,6 +254,16 @@ public:
   /** Plan+arm from tip then accept (defers media when hop_peer_id absent). */
   Roe<PendingCallInvite> JoinLiveAnnounceFromTip(const PeerAnnounceTip& tip);
 
+  // --- Live broadcast viewer (feature/broadcast — not a call; media-client-layers L013) ---
+  /** Listen to the live program a signed tip announces (replaces any current watch). UI thread. */
+  Roe<void> WatchLiveAnnounce(const PeerAnnounceTip& tip);
+  /** Same, from the latest stored tip of that program. */
+  Roe<void> WatchStoredLiveAnnounce(const std::string& peer_id, const std::string& topic_id,
+                                    const std::string& program_id);
+  void StopWatchingBroadcast();
+  /** Current watch (phase, hop, error); nullopt while broadcast viewing is unavailable. */
+  std::optional<BroadcastViewerWorkflow::Status> BroadcastWatchStatus();
+
   ConversationsHub& Hub() { return hub_; }
 
 private:

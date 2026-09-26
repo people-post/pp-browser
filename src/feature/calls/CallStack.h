@@ -81,6 +81,8 @@ public:
    * Test-only: bind CallMediaBridge without Amp mesh.
    * `transport` / `dial` are non-owning; call after BuildSessions. Re-runs Wire.
    */
+  /** Neutral mesh objects lent to broadcast — see CallMediaPlane::SharedRelayAttachPorts. */
+  MediaRelayAttachPorts SharedRelayAttachPorts() const;
   void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial);
   void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
                          ICircuitHopReach* circuit_reach);

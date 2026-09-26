@@ -697,4 +697,37 @@ Roe<PendingCallInvite> ConversationsFacade::JoinLiveAnnounceFromTip(const PeerAn
   return armed;
 }
 
+// --- Live broadcast viewer ---------------------------------------------------
+
+Roe<void> ConversationsFacade::WatchLiveAnnounce(const PeerAnnounceTip& tip) {
+  auto* broadcast = hub_.Broadcast();
+  if (!broadcast) {
+    return Error("Live broadcasts unavailable (mesh / media relay not ready)");
+  }
+  return broadcast->WatchLive(tip);
+}
+
+Roe<void> ConversationsFacade::WatchStoredLiveAnnounce(const std::string& peer_id, const std::string& topic_id,
+                                                       const std::string& program_id) {
+  auto tip = hub_.MeshMessaging().LatestAnnounceTip(peer_id, topic_id, program_id);
+  if (!tip) {
+    return Error("No stored announce for that program");
+  }
+  return WatchLiveAnnounce(*tip);
+}
+
+void ConversationsFacade::StopWatchingBroadcast() {
+  if (auto* broadcast = hub_.Broadcast()) {
+    broadcast->StopWatching();
+  }
+}
+
+std::optional<BroadcastViewerWorkflow::Status> ConversationsFacade::BroadcastWatchStatus() {
+  auto* broadcast = hub_.Broadcast();
+  if (!broadcast) {
+    return std::nullopt;
+  }
+  return broadcast->Viewer();
+}
+
 } // namespace pbr

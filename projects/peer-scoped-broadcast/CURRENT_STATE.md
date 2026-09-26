@@ -7,7 +7,7 @@
 |-------|--------|
 | A — calls hop trustworthy | Prerequisite (owned by p2p-av-calls / p2p-mesh); not changed here |
 | **B — signed tips without mesh** | **Exit met** — tips + Amp 1:1 + IdentityStore resolve + DM reply |
-| **C — tip + live** | **In progress** — plan + arm + accept (SFU via hop_peer_id; no SoftMigrate/1:1) |
+| **C — tip + live** | **In progress** — viewer moved to `feature/broadcast` (2026-09-26, [B008](DECISIONS.md), [media-client-layers l4](../media-client-layers/PHASES.md)): tip → ticket → ladder → receive-only attach → playback; the call-side arm/accept path is removed in media-client-layers l6. Publisher side (ticket minting from the live program) is l5 |
 | D — announce helpers | Not started |
 | E — CAS replay | Not started |
 | **F — media tree** | **B0/B1 + Amp handlers** — codecs + `AmpBroadcastTransport`; `BroadcastSessionCoordinator` split; SoftMigrate skip |

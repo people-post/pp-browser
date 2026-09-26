@@ -132,3 +132,13 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 - **Frames** use `SealMediaRelayFrame` / `OpenMediaRelayFrame` (neutral, `domain/mesh/l4/media_relay`) with context `broadcast-media|<program_id>|<join_handle>`; calls use the same framing under `call-media-sfu|<call_id>` (bytes unchanged).
 - **Relay client**: `AmpMediaRelayCoordinator` holds one client session per mesh host, shared with calls. The viewer refuses with a clear reason while a call holds it; per-holder client sessions are a Later item (running both is not needed now — not blocked by design).
 **Consequence:** l4 is testable end-to-end only against the test harness until l5 mints tickets (`PutLiveProgramKey`); the hard-lab phase moves to l5, where a real publisher exists.
+
+---
+
+## L014 — Broadcast borrows the call plane's mesh objects until a neutral mesh media plane exists
+
+**Date:** 2026-09-26
+**Status:** Accepted (interim; exit = PHASES "Neutral mesh media plane")
+**Decision:** The media_relay client, dial registry and circuit/service reach are owned by `CallMediaPlane` (feature/calls) and re-created on mesh (re)start and relay rewires. `ConversationsHub` — which owns both stacks — lends them to broadcast through `CallStack::SharedRelayAttachPorts()` and owns the `BroadcastHub` lifetime around them: built after mesh services start, **dropped before** `ResetRelayClients` / `WireMediaRelayDeps` / `StopMesh`, rebuilt after. Broadcast never includes calls (CI include ban).
+**Rationale:** Extracting those objects (plus punch and seed parking, 1.3k lines of `CallMediaPlane`) into `domain/mesh` is the right shape but a refactor of its own; borrowing through a neutral struct with explicit teardown ordering gets a working viewer now without dangling pointers. A rewire stops an active watch (rare: mesh restart / capability change).
+**Consequence:** Only one media_relay client session exists per mesh host (L013), so a call attaching replaces the viewer's session — observers carry `Replaced`, and the viewer fails with a clear reason.
