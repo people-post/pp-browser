@@ -164,7 +164,12 @@ Dual SNAT gateways; hop on public net only; `--min-rx-frames` duplex gate.
 - Phase-2 **B-HARD-CALL-NAT-PRODUCT**: same topo; offerer `--reach product` (punch via hop seed → nested circuit; punch miss is expected under dual-SNAT)
 - Phase-3 **B-HARD-CALL-NAT-DIRTY**: `--reach bridge --force-dial-fail` (register private peer MA + dial miss → ClearDialBackoff → peer-id-only circuit) — HL004 dogfood dial-book
 - Phase-4 **B-HARD-CALL-NAT-STACK**: `--product-stack` (CallStack+CallUiBackend StartCall/Accept/Leave over Amp chat delivery + real `OnMeshServicesStarted` Wire / AmpCircuitHopReach; no FakeCircuit / BindTestMediaPath). Ready-file line1=peer MA, line2=account; offerer `--peer-account`.
-Default `--phase all` (circuit+product+dirty+stack). Legacy `both` = circuit+product. Reproduce mode: `PP_HARD_NAT_CALL_EXPECT=fail`.
+- Phase-5 **B-HARD-CALL-NAT-COLD**: product stack with `--signal-dir /share/sig-<call>` on both probes — call control goes through files on the shared mount (relay-inbox stand-in), so **no peer link exists when media starts**. Gate: offerer `PeerReachCoordinator` logs `reach start … mode=reach` (a cold reach, not the reuse shortcut Phase-4 takes because Amp-chat signaling pre-builds the circuit) and ≥ `PP_HARD_NAT_COLD_MIN_RX` (100) audio frames received on **both** sides.
+- Phase-6 **B-HARD-CALL-NAT-COLD-DIRTY**: as COLD plus offerer `--dirty-book` (answerer's private MA registered). Gate adds the H010 branch: `skip EnsureAssociation private Preferred (seed parked)`.
+- Phase-7 **B-HARD-CALL-NAT-COLD-AWAIT**: as COLD with offerer uplink `PP_HARD_NAT_COLD_AWAIT_NETEM` (default `delay 250ms`) so the answerer's media starts before the offerer's circuit lands. Gate adds answerer `reach start … mode=await` (punch-only, waits for the offerer's circuit).
+- In COLD / COLD-DIRTY the answerer legitimately needs no reach of its own (it reuses the offerer's circuit or joins the offerer's live bundle); the audio gate proves it connected.
+
+Default `--phase all` (circuit+product+dirty+stack+cold+cold-dirty+cold-await). Legacy `both` = circuit+product. Reproduce mode: `PP_HARD_NAT_CALL_EXPECT=fail`.
 
 ### Routing mode coverage (success oracles)
 

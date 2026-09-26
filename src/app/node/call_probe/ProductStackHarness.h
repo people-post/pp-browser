@@ -14,6 +14,7 @@
 #include "foundation/data/Config.h"
 
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -50,6 +51,16 @@ public:
   /** Dual-SNAT: nested circuit to peer so Amp chat call-control can deliver before StartCall. */
   Roe<void> EnsurePeerCircuitPath(const std::string& peer_id);
 
+  /**
+   * Deliver call control through files under `dir` (a relay-inbox stand-in on the lab's shared
+   * mount) instead of Amp chat. No peer link is built for signaling, so call media must reach
+   * the peer from cold — the product shape (signaling via relay, media via mesh).
+   */
+  void SetSignalDir(std::filesystem::path dir);
+  bool UsesSignalDir() const { return !signal_dir_.empty(); }
+  /** Dirty dial book: register the peer's private advertise MA as dialable (dogfood / H010). */
+  Roe<void> RegisterPeerPrivateEndpoint(const std::string& peer_id, const std::string& multiaddr);
+
   /** Run the UI mailbox (main thread = UI). The mesh runs on MeshHost's MeshPump. */
   void Pump();
   bool PumpUntil(const std::function<bool()>& done, int timeout_ms);
@@ -81,6 +92,10 @@ private:
   ProductStackHarness() = default;
   Roe<void> InitStoresAndStack(const std::string& hop_ma);
   Roe<void> SendCallControl(const std::string& peer_account, const ThreadMessage& msg);
+  Roe<void> WriteSignal(const std::string& peer_account, const RelayEnvelope& env);
+  /** UI pump: hand files in our signal inbox to OnChatInbound on a worker (like relay IO). */
+  void PollSignalInbox();
+  std::filesystem::path SignalInbox(const std::string& account) const;
   void OnChatInbound(RelayEnvelope env);
   std::string AmpDialKeyForAccount(const std::string& account_id) const;
   void LearnAccountPeerId(const std::string& account_id, const std::string& peer_id);
@@ -112,6 +127,9 @@ private:
   std::unordered_map<std::string, std::string> account_to_peer_id_;
   int rx_stall_ms_ = 0;
   int rx_watch_ms_ = 0;
+  std::filesystem::path signal_dir_;
+  std::chrono::steady_clock::time_point next_signal_poll_{};
+  uint64_t signal_seq_ = 0;
 };
 
 } // namespace call_probe

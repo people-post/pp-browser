@@ -19,11 +19,16 @@
 #include "domain/mesh/reachability/Reachability.h"
 #include "common/thread/ThreadRecordTypes.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <optional>
+#include <sstream>
 #include <thread>
+#include <vector>
 
 namespace pbr {
 namespace call_probe {
@@ -321,6 +326,9 @@ Roe<void> ProductStackHarness::EnsureOriginThread(const std::string& thread_id,
 void ProductStackHarness::Pump() {
   // UI mailbox only — the mesh runs on MeshHost's MeshPump.
   AppRuntime::RunUITasks();
+  if (!signal_dir_.empty()) {
+    PollSignalInbox();
+  }
 }
 
 bool ProductStackHarness::PumpUntil(const std::function<bool()>& done, int timeout_ms) {
@@ -375,13 +383,6 @@ Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account,
     std::atomic<int>& n;
     ~CountOnExit() { n.fetch_add(1, std::memory_order_release); }
   } count{control_sends_};
-  if (!chat_) {
-    return Error("chat transport not started");
-  }
-  const std::string dial_key = AmpDialKeyForAccount(peer_account);
-  if (dial_key.empty()) {
-    return Error("missing amp dial key for call-control");
-  }
   Object body;
   body.set("thread_id", msg.thread_id);
   body.set("text", msg.text);
@@ -397,7 +398,108 @@ Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account,
   env.body.e2e.payload_b64 =
       Base64Encode(ByteVector(reinterpret_cast<const uint8_t*>(json.data()),
                               reinterpret_cast<const uint8_t*>(json.data()) + json.size()));
+  if (!signal_dir_.empty()) {
+    return WriteSignal(peer_account, env);
+  }
+  if (!chat_) {
+    return Error("chat transport not started");
+  }
+  const std::string dial_key = AmpDialKeyForAccount(peer_account);
+  if (dial_key.empty()) {
+    return Error("missing amp dial key for call-control");
+  }
   return chat_->SendEnvelope(dial_key, env);
+}
+
+void ProductStackHarness::SetSignalDir(std::filesystem::path dir) {
+  signal_dir_ = std::move(dir);
+  std::error_code ec;
+  std::filesystem::create_directories(SignalInbox(local_account_), ec);
+  std::cout << "ok  product-stack signaling via dir=" << signal_dir_.string() << " (no Amp chat path)\n";
+}
+
+std::filesystem::path ProductStackHarness::SignalInbox(const std::string& account) const {
+  std::string name = account;
+  std::replace_if(
+      name.begin(), name.end(), [](char c) { return !std::isalnum(static_cast<unsigned char>(c)) && c != '-'; },
+      '_');
+  return signal_dir_ / ("inbox-" + name);
+}
+
+Roe<void> ProductStackHarness::WriteSignal(const std::string& peer_account, const RelayEnvelope& env) {
+  const std::filesystem::path inbox = SignalInbox(peer_account);
+  std::error_code ec;
+  std::filesystem::create_directories(inbox, ec);
+  Object file;
+  file.set("message_id", env.message_id);
+  file.set("sender_relay_id", env.sender_relay_id);
+  file.set("sender_contact_id", env.sender_contact_id);
+  file.set("timestamp", static_cast<int64_t>(env.timestamp));
+  file.set("payload_b64", env.body.e2e.payload_b64);
+  std::ostringstream name;
+  name << std::setw(16) << std::setfill('0') << util::NowUnixMs() << "-" << std::setw(6) << ++signal_seq_ << "-"
+       << local_peer_id_.substr(0, 8);
+  const std::filesystem::path tmp = inbox / (name.str() + ".tmp");
+  {
+    std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+    out << DumpJson(file);
+    if (!out) {
+      return Error("signal write failed: " + tmp.string());
+    }
+  }
+  // Rename is atomic on one filesystem: the reader never sees a partial file.
+  std::filesystem::rename(tmp, inbox / (name.str() + ".json"), ec);
+  if (ec) {
+    return Error("signal rename failed: " + ec.message());
+  }
+  return {};
+}
+
+void ProductStackHarness::PollSignalInbox() {
+  const auto now = std::chrono::steady_clock::now();
+  if (now < next_signal_poll_) {
+    return;
+  }
+  next_signal_poll_ = now + std::chrono::milliseconds(100);
+  std::error_code ec;
+  std::vector<std::filesystem::path> files;
+  for (const auto& entry : std::filesystem::directory_iterator(SignalInbox(local_account_), ec)) {
+    if (entry.path().extension() == ".json") {
+      files.push_back(entry.path());
+    }
+  }
+  std::sort(files.begin(), files.end());
+  for (const auto& path : files) {
+    std::ifstream in(path, std::ios::binary);
+    std::stringstream buf;
+    buf << in.rdbuf();
+    in.close();
+    std::filesystem::remove(path, ec);
+    auto obj = TryParseObject(buf.str());
+    if (!obj) {
+      continue;
+    }
+    RelayEnvelope env;
+    env.message_id = obj->getString("message_id").value_or("");
+    env.sender_relay_id = obj->getString("sender_relay_id").value_or("");
+    env.sender_contact_id = obj->getString("sender_contact_id").value_or("");
+    env.timestamp = static_cast<int64_t>(obj->getNonNegInt("timestamp").value_or(0));
+    env.body.e2e.payload_b64 = obj->getString("payload_b64").value_or("");
+    // Relay inbox ingestion runs off the UI thread in the product — do the same.
+    AppRuntime::PostWorkerBackground([this, env = std::move(env)]() mutable { OnChatInbound(std::move(env)); });
+  }
+}
+
+Roe<void> ProductStackHarness::RegisterPeerPrivateEndpoint(const std::string& peer_id,
+                                                           const std::string& multiaddr) {
+  if (!host_ || !host_->Amp()) {
+    return Error("mesh amp down");
+  }
+  if (auto reg = host_->Amp()->Links().RegisterEndpoint(peer_id, multiaddr); !reg) {
+    return reg.error();
+  }
+  std::cout << "ok  product-stack dirty-book registered peer=" << peer_id << " ma=" << multiaddr << "\n";
+  return {};
 }
 
 void ProductStackHarness::OnChatInbound(RelayEnvelope env) {
@@ -539,7 +641,8 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
         const std::string inviter = (*pending)->inviter_identity;
         // Reverse Accept rides Amp chat: ensure nested path to inviter PeerId (map from invite).
         const std::string inviter_peer = AmpDialKeyForAccount(inviter);
-        if (!inviter_peer.empty() && inviter_peer != inviter) {
+        // Signal-dir: Accept goes back through the inbox — media must reach the peer from cold.
+        if (!UsesSignalDir() && !inviter_peer.empty() && inviter_peer != inviter) {
           if (!(host_ && host_->Amp() && host_->Amp()->Links().IsConnected(inviter_peer))) {
             if (auto path = EnsurePeerCircuitPath(inviter_peer); !path) {
               std::cerr << "warning: product-stack answerer circuit path: " << path.error().message

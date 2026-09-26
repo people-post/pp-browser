@@ -77,6 +77,9 @@ void PrintUsage(const char* argv0) {
       << "  --force-dial-fail  With dirty-book/bridge: one EnsureAssociation before circuit (arms backoff).\n"
       << "  --product-stack  CallStack+CallUiBackend StartCall/Accept/Leave on Amp (HL004; no media mocks).\n"
       << "  --peer-account   Offerer (--product-stack): answerer Account ID from ready-file line 2.\n"
+      << "  --signal-dir DIR With --product-stack (both roles): call control via files in DIR (relay-\n"
+      << "                  inbox stand-in); no pre-built peer path, so media reach starts cold.\n"
+      << "                  --dirty-book on the offerer then registers the peer's private MA first.\n"
       << "  --rx-stall-ms N  With --product-stack: log rx/tx per second and fail if rx frames stay\n"
       << "                  flat for N ms mid-call (answerer then holds until the offerer leaves).\n"
       << "  --watch-ms N     Answerer: judge rx stalls only for N ms after the first frame.\n";
@@ -584,7 +587,8 @@ pbr::Roe<void> WarmHopAssociationViaHost(pbr::call_probe::ProductStackHarness& h
 
 int RunProductStackAnswerer(const std::string& listen_ma, const std::string& ready_file,
                             int hold_seconds, const std::string& advertise_host,
-                            const std::string& warm_hop_ma, int min_rx_frames) {
+                            const std::string& warm_hop_ma, int min_rx_frames,
+                            const std::string& signal_dir) {
   if (sodium_init() < 0) {
     std::cerr << "error: sodium_init failed\n";
     return 1;
@@ -623,6 +627,9 @@ int RunProductStackAnswerer(const std::string& listen_ma, const std::string& rea
     }
     std::cout << "ok  warm-hop associated hop=" << warm_hop_ma << "\n";
   }
+  if (!signal_dir.empty()) {
+    (*harness)->SetSignalDir(signal_dir);
+  }
 
   if (!ready_file.empty()) {
     FILE* f = std::fopen(ready_file.c_str(), "w");
@@ -647,7 +654,8 @@ int RunProductStackAnswerer(const std::string& listen_ma, const std::string& rea
 }
 
 int RunProductStackOfferer(const std::string& peer_ma, const std::string& peer_account,
-                           const std::string& hop_ma, int hold_ms, int timeout_ms) {
+                           const std::string& hop_ma, int hold_ms, int timeout_ms,
+                           const std::string& signal_dir, bool dirty_book) {
   if (peer_account.empty()) {
     std::cerr << "error: --product-stack offerer requires --peer-account\n";
     return 2;
@@ -692,8 +700,18 @@ int RunProductStackOfferer(const std::string& peer_ma, const std::string& peer_a
     std::cerr << "error: upsert peer contact: " << up.error().message << "\n";
     return 1;
   }
-  // Invite/Accept ride Amp chat — under dual-SNAT that needs nested circuit first (HL004).
-  if (auto path = (*harness)->EnsurePeerCircuitPath(*peer_id); !path) {
+  if (!signal_dir.empty()) {
+    // Invite/Accept go through the inbox: no peer link exists when media starts (cold reach).
+    (*harness)->SetSignalDir(signal_dir);
+    if (dirty_book) {
+      if (auto reg = (*harness)->RegisterPeerPrivateEndpoint(*peer_id, dial_peer_ma); !reg) {
+        std::cerr << "error: dirty-book: " << reg.error().message << "\n";
+        (*harness)->Shutdown();
+        return 1;
+      }
+    }
+  } else if (auto path = (*harness)->EnsurePeerCircuitPath(*peer_id); !path) {
+    // Invite/Accept ride Amp chat — under dual-SNAT that needs nested circuit first (HL004).
     std::cerr << "error: product-stack circuit path: " << path.error().message << "\n";
     (*harness)->Shutdown();
     return 1;
@@ -713,10 +731,11 @@ int RunProductStackOfferer(const std::string& peer_ma, const std::string& peer_a
 
 int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const std::string& ready_file,
                 int hold_seconds, const std::string& advertise_host, bool no_auto_detach, bool with_chat,
-                const std::string& warm_hop_ma, int min_rx_frames, bool product_stack) {
+                const std::string& warm_hop_ma, int min_rx_frames, bool product_stack,
+                const std::string& signal_dir) {
   if (product_stack) {
     return RunProductStackAnswerer(listen_ma, ready_file, hold_seconds, advertise_host, warm_hop_ma,
-                                   min_rx_frames);
+                                   min_rx_frames, signal_dir);
   }
   if (sodium_init() < 0) {
     std::cerr << "error: sodium_init failed\n";
@@ -1224,6 +1243,7 @@ int main(int argc, char** argv) {
   bool product_stack = false;
   std::string warm_hop_ma;
   std::string peer_account;
+  std::string signal_dir;
   int min_rx_frames = 0;
 
   for (int i = 1; i < argc; ++i) {
@@ -1239,6 +1259,8 @@ int main(int argc, char** argv) {
       peer_ma = argv[++i];
     } else if (std::strcmp(argv[i], "--peer-account") == 0 && i + 1 < argc) {
       peer_account = argv[++i];
+    } else if (std::strcmp(argv[i], "--signal-dir") == 0 && i + 1 < argc) {
+      signal_dir = argv[++i];
     } else if (std::strcmp(argv[i], "--rx-stall-ms") == 0 && i + 1 < argc) {
       g_rx_stall_ms = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--watch-ms") == 0 && i + 1 < argc) {
@@ -1316,9 +1338,13 @@ int main(int argc, char** argv) {
     }
   }
 
+  if (!signal_dir.empty() && !product_stack) {
+    std::cerr << "error: --signal-dir requires --product-stack\n";
+    return 2;
+  }
   if (role == "answerer") {
     return RunAnswerer(listen_ma, call_id, ready_file, hold_seconds, advertise_host, no_auto_detach,
-                       with_chat, warm_hop_ma, min_rx_frames, product_stack);
+                       with_chat, warm_hop_ma, min_rx_frames, product_stack, signal_dir);
   }
   if (role == "offerer") {
     if (peer_ma.empty()) {
@@ -1326,7 +1352,7 @@ int main(int argc, char** argv) {
       return 2;
     }
     if (product_stack) {
-      return RunProductStackOfferer(peer_ma, peer_account, hop_ma, hold_ms, timeout_ms);
+      return RunProductStackOfferer(peer_ma, peer_account, hop_ma, hold_ms, timeout_ms, signal_dir, dirty_book);
     }
     return RunOfferer(peer_ma, call_id, cycles, hop_ma, hold_ms, timeout_ms, expect_busy, with_chat,
                       peer_id_only, reach_product, reach_bridge, dirty_book, force_dial_fail);
