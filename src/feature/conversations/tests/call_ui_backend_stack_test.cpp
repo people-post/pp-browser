@@ -18,6 +18,7 @@
 #include "common/Utilities.h"
 #include "common/thread/ThreadRecordTypes.h"
 
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <functional>
@@ -295,6 +296,8 @@ protected:
   int sent_control_ = 0;
   int inbox_syncs_ = 0;
   int listen_desires_ = 0;
+  /** Ring-changed may fire on IO/worker threads (LeaveCall runs on Critical) — fixture-owned, atomic. */
+  std::atomic<int> ring_changes_{0};
 };
 
 TEST_F(CallUiBackendStackTest, AvailableAndSessionsIdentityStable) {
@@ -311,9 +314,8 @@ TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
   ASSERT_TRUE(stack_->MediaKeys()->PutEpochKey(call_id, 1, TestMediaKey()));
 
   int chrome = 0;
-  int ring = 0;
   ui_->SetOnChromeRefresh([&]() { ++chrome; });
-  ui_->SetOnRingChanged([&]() { ++ring; });
+  ui_->SetOnRingChanged([this]() { ring_changes_.fetch_add(1); });
 
   ui_->Apply(CallLifecycleEvent::InviteSeen, call_id);
   EXPECT_EQ(ui_->Phase(), CallPhase::Ringing);
@@ -356,8 +358,10 @@ TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
     auto after = ui_->ActiveLocalCall();
     return after && !after->has_value();
   });
+  // LeaveClicked posts LeaveCall on Critical — flush before the body's locals go away.
+  EXPECT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000)));
   EXPECT_FALSE(stack_->HasActiveLocalCall());
-  EXPECT_GE(ring, 1);
+  EXPECT_GE(ring_changes_.load(), 1);
 }
 
 TEST_F(CallUiBackendStackTest, InviteAcceptMediaPathThroughBackend) {
