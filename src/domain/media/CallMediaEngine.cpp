@@ -172,7 +172,7 @@ struct CallMediaEngine::Impl {
   std::atomic<uint32_t> sfu_video_seq{0};
   std::atomic<bool> video_need_keyframe{false};
   std::atomic<bool> adaptation_camera_allowed{true};
-  int64_t adaptation_target_video_bps = 0;
+  std::atomic<int64_t> adaptation_target_video_bps{0};
   std::atomic<int64_t> adaptation_target_audio_bps{CallMediaAdaptation::kComfortAudioBps};
   std::atomic<double> path_pressure{0.0};
   std::atomic<uint64_t> outbound_drops{0};
@@ -227,6 +227,8 @@ struct CallMediaEngine::Impl {
   std::thread capture_thread;
   std::thread video_thread;
   std::thread playout_thread;
+  /** Halves of the running session; written under `mutex` in Start, read by the device thread. */
+  SessionSpec spec = SessionSpec::Duplex();
   std::atomic<bool> capture_running{false};
   std::atomic<bool> video_running{false};
   std::atomic<bool> playout_running{false};
@@ -665,8 +667,16 @@ struct CallMediaEngine::Impl {
       return Error("call media stopped");
     }
 
-    CallAudioSession::ApplyCaptureAudioHints();
-    CallAudioSession::ActivateForVoipCall();
+    SessionSpec want_spec;
+    {
+      std::lock_guard lock(mutex);
+      want_spec = spec;
+    }
+    if (want_spec.capture) {
+      // VoIP audio session only when the mic is ours (a playback-only viewer is not a call).
+      CallAudioSession::ApplyCaptureAudioHints();
+      CallAudioSession::ActivateForVoipCall();
+    }
 
     SDL_AudioSpec want{};
     want.freq = kSampleRate;
@@ -675,7 +685,7 @@ struct CallMediaEngine::Impl {
 
     SDL_AudioStream* new_capture = nullptr;
     SDL_AudioDeviceID new_capture_dev = 0;
-    const bool new_capture_ok = TryOpenCaptureStream(want, &new_capture, &new_capture_dev);
+    const bool new_capture_ok = want_spec.capture && TryOpenCaptureStream(want, &new_capture, &new_capture_dev);
     if (!capture_running.load(std::memory_order_acquire)) {
       if (new_capture) {
         SDL_DestroyAudioStream(new_capture);
@@ -683,7 +693,9 @@ struct CallMediaEngine::Impl {
       return Error("call media stopped");
     }
 
-    SDL_AudioStream* new_playback = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr);
+    SDL_AudioStream* new_playback =
+        want_spec.playback ? SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr)
+                           : nullptr;
     if (!capture_running.load(std::memory_order_acquire)) {
       if (new_playback) {
         SDL_DestroyAudioStream(new_playback);
@@ -694,7 +706,9 @@ struct CallMediaEngine::Impl {
       return Error("call media stopped");
     }
     SDL_AudioDeviceID new_playback_dev = 0;
-    if (!new_playback) {
+    if (!want_spec.playback) {
+      // Capture-only session: no speaker.
+    } else if (!new_playback) {
       // Headless CI / no default device: still run silence TX (same as no-capture path).
       SDL_Log("CallMediaEngine: no playback device — RX muted; capture/silence TX still active: %s",
               SDL_GetError());
@@ -772,13 +786,23 @@ struct CallMediaEngine::Impl {
         std::shared_ptr<SfuSendFn> send_fn;
         OpusEncoder* enc = nullptr;
         bool can_send = false;
+        bool capturing = true;
         {
           std::lock_guard lock(mutex);
+          capturing = spec.capture;
           enc = encoder;
-          can_send = sfu_mode && static_cast<bool>(sfu_send) && enc;
+          can_send = capturing && sfu_mode && static_cast<bool>(sfu_send) && enc;
           if (can_send) {
             send_fn = sfu_send;
           }
+        }
+        if (!capturing) {
+          // Playback-only: this thread only owns the devices (open / reopen) — nothing to encode.
+          if (util::NowUnixMs() - remote_level_ms.load(std::memory_order_relaxed) > 40) {
+            SmoothLevel(remote_output_level, 0.f);
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(kFrameMs));
+          continue;
         }
         bool paced_silence_frame = false;
         if (capture_stream) {
@@ -1071,6 +1095,8 @@ struct CallMediaEngine::Impl {
     if (auto ok = EnsureCameraSubsystem(); !ok) {
       return ok.error();
     }
+    // Local encoder is created with the camera, not the session: playback-only and audio-only
+    // sessions never open a hardware encoder (media-client-layers l3a).
     if (!video_codec) {
       video_codec = CreatePlatformVideoCodec();
     }
@@ -1103,6 +1129,8 @@ struct CallMediaEngine::Impl {
     if (video_codec) {
       if (auto cfg = video_codec->ConfigureEncoder(encode_width, encode_height, kVideoFps); !cfg) {
         encode_warn = cfg.error().message;
+      } else if (const int64_t bps = adaptation_target_video_bps.load(std::memory_order_relaxed); bps > 0) {
+        video_codec->SetTargetBitrate(bps);
       }
     }
 
@@ -1149,7 +1177,6 @@ struct CallMediaEngine::Impl {
 
 CallMediaEngine::CallMediaEngine() : impl_(std::make_unique<Impl>()) {
   redirectLogger("CallMediaEngine");
-  impl_->video_codec = CreatePlatformVideoCodec();
 }
 
 CallMediaEngine::~CallMediaEngine() {
@@ -1166,6 +1193,15 @@ void CallMediaEngine::SetSkipDeviceOpenForTest(bool skip) {
 }
 
 Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) {
+  return Start(call_id, SessionSpec::Duplex(), std::move(send));
+}
+
+CallMediaEngine::SessionSpec CallMediaEngine::ActiveSpec() const {
+  std::lock_guard lock(impl_->mutex);
+  return impl_->spec;
+}
+
+Roe<void> CallMediaEngine::Start(const std::string& call_id, const SessionSpec spec, SfuSendFn send) {
   StateChangedFn state_cb;
   std::shared_ptr<SfuSendFn> abandoned_send;
   bool need_rebuild = false;
@@ -1176,13 +1212,16 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     if (call_id.empty()) {
       return Error("call_id required");
     }
-    if (!*next_send) {
+    if (!spec.capture && !spec.playback) {
+      return Error("media session needs capture or playback");
+    }
+    if (spec.capture && !*next_send) {
       return Error("SFU send callback required");
     }
     // Invalidate any in-flight StopMeshMedia posted for a prior call_id / leftover purge.
     impl_->session_generation.fetch_add(1, std::memory_order_acq_rel);
     if (impl_->active) {
-      if (impl_->call_id == call_id && impl_->sfu_mode) {
+      if (impl_->call_id == call_id && impl_->sfu_mode && impl_->spec == spec) {
         // SoftMigrate from libp2p→media_relay: swap callback; capture may still hold old shared_ptr.
         abandoned_send = std::move(impl_->sfu_send);
         impl_->sfu_send = std::move(next_send);
@@ -1233,15 +1272,13 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
   }
   {
     std::lock_guard lock(impl_->mutex);
-    if (!impl_->video_codec) {
-      impl_->video_codec = CreatePlatformVideoCodec();
-    }
     if (auto codecs = impl_->EnsureOpusCodecs(); !codecs) {
       impl_->TearDownAudioLocked();
       return codecs.error();
     }
     impl_->sfu_mode = true;
-    impl_->sfu_send = std::move(next_send);
+    impl_->spec = spec;
+    impl_->sfu_send = spec.capture ? std::move(next_send) : nullptr;
     impl_->sfu_audio_seq.store(0);
     impl_->sfu_video_seq.store(0);
     impl_->call_id = call_id;
@@ -1262,8 +1299,8 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
     impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
     impl_->ApplyStateLocked("connected");
-    impl_->StartCaptureLoop();
-    if (!impl_->playout_thread.joinable()) {
+    impl_->StartCaptureLoop();  // device owner for both halves; encodes only when capturing
+    if (spec.playback && !impl_->playout_thread.joinable()) {
       impl_->StartPlayoutLoop();
     }
     state_cb = impl_->on_state_changed;
@@ -1278,7 +1315,7 @@ void CallMediaEngine::OnSfuPacket(const SfuPacket& packet) {
   // Must hold mutex: SoftMigrate StartSfu TearDownAudioLocked destroys opus/SDL while the
   // media_relay client reader can already deliver frames (guest attach dogfood crash).
   std::lock_guard lock(impl_->mutex);
-  if (!impl_->active || !impl_->sfu_mode || packet.payload.empty()) {
+  if (!impl_->active || !impl_->sfu_mode || !impl_->spec.playback || packet.payload.empty()) {
     return;
   }
   // PublisherStreamIdForIdentity("") == 1. Never a real media_relay publisher — only the
@@ -1316,12 +1353,13 @@ void CallMediaEngine::ClearRemoteAudioTracks() {
 }
 
 bool CallMediaEngine::IsSfuMode() const {
+  std::lock_guard lock(impl_->mutex);
   return impl_->sfu_mode;
 }
 
 void CallMediaEngine::ApplyAdaptation(const CallAdaptationDecision& decision) {
   impl_->adaptation_camera_allowed.store(decision.camera_allowed, std::memory_order_relaxed);
-  impl_->adaptation_target_video_bps = decision.target_video_lo_bps;
+  impl_->adaptation_target_video_bps.store(decision.target_video_lo_bps, std::memory_order_relaxed);
   const int64_t audio_bps =
       decision.target_audio_bps > 0 ? decision.target_audio_bps : CallMediaAdaptation::kComfortAudioBps;
   impl_->adaptation_target_audio_bps.store(audio_bps, std::memory_order_relaxed);
@@ -1350,9 +1388,7 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   CallMediaEngineHealth h;
   h.active = impl_->active.load(std::memory_order_relaxed);
   h.connected = impl_->connected.load(std::memory_order_relaxed);
-  h.sfu_mode = impl_->sfu_mode;
   h.muted = impl_->muted.load(std::memory_order_relaxed);
-  h.capture_available = impl_->capture_available;
   h.path_pressure = impl_->path_pressure.load(std::memory_order_relaxed);
   h.opus_target_bps = impl_->adaptation_target_audio_bps.load(std::memory_order_relaxed);
   h.outbound_drops = impl_->outbound_drops.load(std::memory_order_relaxed);
@@ -1365,13 +1401,14 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   h.rx_video_frames = impl_->rx_video_frames.load(std::memory_order_relaxed);
   h.tx_video_frames = impl_->tx_video_frames.load(std::memory_order_relaxed);
   h.last_rx_video_ms = impl_->last_rx_video_ms.load(std::memory_order_relaxed);
-  h.video_target_bps = impl_->adaptation_target_video_bps;
+  h.video_target_bps = impl_->adaptation_target_video_bps.load(std::memory_order_relaxed);
   h.local_level = impl_->local_input_level.load(std::memory_order_relaxed);
   h.remote_level = impl_->remote_output_level.load(std::memory_order_relaxed);
   {
     std::lock_guard lock(impl_->mutex);
     h.stream_count = impl_->audio_tracks.size();
     h.sfu_mode = impl_->sfu_mode;
+    h.capture_available = impl_->capture_available;
     h.streams.reserve(impl_->audio_tracks.size());
     for (const auto& [id, track] : impl_->audio_tracks) {
       if (!track) {
@@ -1430,6 +1467,7 @@ void CallMediaEngine::Stop() {
     std::lock_guard lock(impl_->mutex);
     impl_->TearDownAudioLocked();
     impl_->call_id.clear();
+    impl_->spec = SessionSpec::Duplex();
     impl_->ApplyStateLocked("closed");
     state_cb = impl_->on_state_changed;
   }
@@ -1460,6 +1498,9 @@ Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled) {
   std::lock_guard lock(impl_->mutex);
   if (!impl_->active) {
     return Error("Call media not active");
+  }
+  if (enabled && !impl_->spec.capture) {
+    return Error("camera needs a capturing session");
   }
   if (!enabled) {
     impl_->CloseCameraLocked();

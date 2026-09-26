@@ -4,7 +4,7 @@ Ordering and checkboxes only. **Status:** [CURRENT_STATE.md](CURRENT_STATE.md). 
 
 ```
 l0 (done) ── l1 (reach → domain/mesh, done) ── l2 (relay attach, done) ──┬── l4 (broadcast viewer) ── l5 (broadcaster) ── l6 (remove from calls)
-                                                   l3 (engine spec + device leases) ─┘
+                                l3a (spec, done) ── l3b (device leases) ── l3c? ─┘
 later: viewer video · relay upstream via viewer client · relay keyframe cache
 ```
 
@@ -37,12 +37,27 @@ l1 and l2 are refactors checked against existing tests + hard lab. l3 is the ris
 
 ## l3 — Engine session spec + device leases
 
-- [ ] Engine session spec: duplex / capture-only / playback-only; channels generic (0 = Opus, 1 = H264 …)
-- [ ] `DeviceArbiter`: leases per kind (mic / camera / speaker); policy exclusive with a clear refusal reason
-- [ ] No singleton assumption: pipelines are instances owned by the lease holder; remove "one engine serves one call" stops of other sessions
-- [ ] Calls use duplex through the arbiter; behavior unchanged (gtests + hard lab + dogfood)
+Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-owner-thread)): the engine's capture thread owns device open / reopen *and* send pacing, so the spec and the device ownership change are separate steps.
 
-**Exit:** a capture-only or playback-only session can run without starting the other half.
+### l3a — Session spec on the existing engine (done)
+
+- [x] `CallMediaEngine::SessionSpec` (`Duplex` / `CaptureOnly` / `PlaybackOnly`) + `Start(session_id, spec, send)`; `StartSfu` = duplex; `ActiveSpec()`
+- [x] Capture-only: no playback device, no playout thread, inbound packets ignored. Playback-only: no mic, no VoIP audio-session activation, no send fn, camera refused
+- [x] Local video encoder created with the camera, not the session (audio-only and viewer sessions never open VAAPI / VideoToolbox / MF)
+- [x] Health snapshot reads engine-mutex fields under the lock; video target atomic (TSan, first engine-level tests)
+- [x] gtests `media_session_spec_test` (engine-level, no devices); full suite, TSan media + call suites, hard-lab `hard-w5` green
+
+### l3b — `DeviceArbiter` on a device owner thread
+
+- [ ] `DeviceArbiter`: leases per kind (mic / camera / speaker); policy exclusive with a clear refusal reason; injectable, process default
+- [ ] One device thread owns SDL audio / camera open, close and reopen-on-loss; pipelines get streams through leases, never open devices (replaces the capture thread's device ownership)
+- [ ] Calls take duplex leases; behavior unchanged (gtests + hard lab + dogfood)
+
+### l3c — Pipeline instances (only if l4 / l5 need it)
+
+- [ ] No singleton assumption: pipelines are instances owned by the lease holder; remove "one engine serves one call" stops of other sessions; split / rename `CallMediaEngine` if the call name gets in the way
+
+**Exit:** a capture-only or playback-only session can run without starting the other half. **Met by l3a** (l3b / l3c are about sharing devices between sessions).
 
 ## l4 — feature/broadcast: viewer (audio)
 

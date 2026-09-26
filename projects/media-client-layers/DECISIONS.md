@@ -88,3 +88,13 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 **Decision:** The shared relay-attach layer is `AttachToMediaRelayAsync` (`domain/mesh/l4/media_relay/MediaRelayAttach.*`): ports (relay client, dial registry, service reach) + request (hop, dial hint, opaque session id / auth, caller-built quote request) + hooks (`accept_quote`, `still_wanted`, `on_frame`) → `MediaRelayAttached{quote_id, a_up_bps}`. It holds no state. Frame decryption, quote sizing, pricing, what happens after attach, and loss recovery (group: reattach with backoff; viewer: re-admit / redirect) stay in the feature.
 **Rationale:** Reading the group path showed the mechanism was copy-pasted twice (attach and guest reattach) and carried no state of its own; recovery differs per feature, so a stateful "coordinator" owning it would re-couple the features. The planned name `MediaRelayAttachCoordinator` is dropped (free-function capability naming, AGENTS role table).
 
+
+---
+
+## L010 — l3 splits: spec first, then a device owner thread
+
+**Date:** 2026-09-26
+**Status:** Accepted
+**Decision:** l3 lands as l3a (session spec on the existing `CallMediaEngine`), l3b (`DeviceArbiter` with one **device thread** owning SDL open / close / reopen-on-loss; pipelines receive streams through leases) and l3c (pipeline instances / rename, only if l4 / l5 need it). The local video encoder is created with the camera, not the session.
+**Rationale:** The engine's capture thread both owns the devices (opens both, reopens on loss, under the engine mutex) and paces sends; playout mixes into the stream that thread opened. A spec is a small change on that model; leases are not — revoking or handing over a device from another thread would race the capture thread's reopen. Giving devices one owner thread is the fix that makes leases sound, and it is cheaper before a second consumer (viewer / broadcaster) exists than after. The user prefers the better fix over the safer one and accepts threading risk earlier (2026-09-26).
+**Consequence:** l3b is a threading change inside `domain/media`; calls keep behavior and are verified with the engine gtests, TSan media + call suites and hard lab.

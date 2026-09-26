@@ -52,10 +52,34 @@ public:
   using SfuSendFn = std::function<void(const SfuPacket&)>;
 
   /**
+   * Which halves of a media session run (media-client-layers L003/L004). Calls are duplex; a
+   * broadcaster is capture-only (mic → encode → send); a viewer is playback-only (receive →
+   * decode → mix → speaker). Channels stay generic (0 = Opus, 1 = H264).
+   */
+  struct SessionSpec {
+    bool capture = true;
+    bool playback = true;
+
+    static SessionSpec Duplex() { return {true, true}; }
+    static SessionSpec CaptureOnly() { return {true, false}; }
+    static SessionSpec PlaybackOnly() { return {false, true}; }
+    bool operator==(const SessionSpec& o) const { return capture == o.capture && playback == o.playback; }
+  };
+
+  /**
    * Start capture + duplex send for Amp 1:1 call-media **or** media_relay hop (V038).
    * Name is historical — not “join SFU” alone; Bridge and Topology both call this.
    */
   Roe<void> StartSfu(const std::string& call_id, SfuSendFn send);
+  /**
+   * Start a media session with only the halves `spec` asks for. `send` is required when
+   * capturing and ignored otherwise. Capture-only never opens the speaker or decodes inbound
+   * packets; playback-only never opens the mic, activates the VoIP audio session or sends.
+   * `StartSfu` = `Start(call_id, SessionSpec::Duplex(), send)`.
+   */
+  Roe<void> Start(const std::string& session_id, SessionSpec spec, SfuSendFn send);
+  /** Halves of the active session (Duplex when idle). */
+  SessionSpec ActiveSpec() const;
   /** Inbound SFU payload (already demuxed to local subscribe; plaintext Opus). */
   void OnSfuPacket(const SfuPacket& packet);
   /**
