@@ -196,7 +196,11 @@ void CoordinatorThread::ThreadMain() {
       continue;
     }
 
-    cv_.wait_until(lock, deadline, [this]() { return stopped_ || HasWorkLocked(); });
+    // Also wake when a timer armed during the wait is due before `deadline` — otherwise it fires
+    // only at the later deadline (1.5 s connect retry fired at a cancelled 16 s watchdog's).
+    cv_.wait_until(lock, deadline, [this, deadline]() {
+      return stopped_ || HasWorkLocked() || NextTimerDeadlineLocked() < deadline;
+    });
   }
   thread_exited_.store(true, std::memory_order_release);
   cv_.notify_all();
