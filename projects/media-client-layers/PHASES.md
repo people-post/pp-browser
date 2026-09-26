@@ -4,7 +4,7 @@ Ordering and checkboxes only. **Status:** [CURRENT_STATE.md](CURRENT_STATE.md). 
 
 ```
 l0 (done) ── l1 (reach → domain/mesh, done) ── l2 (relay attach, done) ──┬── l4 (broadcast viewer) ── l5 (broadcaster) ── l6 (remove from calls)
-                                l3a (spec, done) ── l3b (audio leases, done · camera l3b-2) ── l3c? ─┘
+                                l3a (spec, done) ── l3b (audio + camera leases, done) ── l3c? ─┘
 later: viewer video · relay upstream via viewer client · relay keyframe cache
 ```
 
@@ -54,8 +54,10 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 - [x] Engine takes the leases its spec asks for (duplex: mic + speaker; playback-only: speaker) and reopens them in place; ringtone holds a speaker lease — `CallRingtone::WaitUntilPlaybackDeviceReleased` and its global holder count are gone
 - [x] Quit: `MediaDeviceArbiter::ShutdownDefault` after the runtime joins, before `SDL_Quit`
 - [x] gtests `media_device_arbiter_test` (fake backend: exclusivity, shared speaker, single device thread, no overlapping OS calls, FIFO close-before-open, I/O during reopen, engine leases per spec); full suite, TSan / ASan media, TSan call suites, hard-lab `hard-w5` green
-- [ ] Camera lease (l3b-2): `SDL_OpenCamera` still runs under the engine mutex on the caller's thread
-- [ ] Dogfood: Android speaker toggle / SoftMigrate reopen, macOS mic prompt, ring over an active call; Android leave — `CallAudioSession::Deactivate` can now run just before the device thread closes AudioRecord (closes are async)
+- [x] Camera lease (l3b-2, [L012](DECISIONS.md#l012--camera-requests-are-asynchronous-the-video-thread-owns-camera-and-encoder)): `CameraDeviceLease` (exclusive) opened on the device thread; `SetCameraEnabled` async (UI records request + display rotation; `CameraDisplayRotationDegrees` split from `ResolveCameraCaptureTransform`); video thread owns the camera lease and the local encoder; failures via `TakeCameraFailure` → `CallController` withdraws video; no join of the video thread under the engine mutex
+- [x] `VideoEncoderAvailable` is a host capability again (`PlatformVideoEncoderSupported`) — l3a had tied it to the lazily created encoder, hiding the camera button
+- [x] Linux VA-API: stage `vaPutImage` uploads at the 16-aligned surface size (edge-padded) — frame-sized staging overflowed the heap in radeonsi at 640×360 (found by the l3b-2 engine tests; `video_codec_encode_test`)
+- [ ] Dogfood: camera on / off on iOS (SDL camera opened off the main thread now), Android (NDK), macOS (permission prompt), Windows (MF); Android speaker toggle / SoftMigrate reopen, macOS mic prompt, ring over an active call; Android leave — `CallAudioSession::Deactivate` can now run just before the device thread closes AudioRecord (closes are async)
 
 ### l3c — Pipeline instances (only if l4 / l5 need it)
 

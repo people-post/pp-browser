@@ -1,5 +1,6 @@
 #include "domain/media/CallMediaEngine.h"
 #include "domain/media/MediaDeviceArbiter.h"
+#include "domain/media/VideoCodecUnavailable.h"
 
 #include <gtest/gtest.h>
 
@@ -71,10 +72,51 @@ private:
   std::chrono::steady_clock::time_point last_read_{};
 };
 
-class FakeBackend final : public IAudioDeviceBackend {
+/** 64×36 RGBA frames, one per 30 ms. */
+class FakeCamera final : public ICameraEndpoint {
+public:
+  explicit FakeCamera(DeviceLog& log) : log_(log) {}
+  ~FakeCamera() override {
+    log_.Enter("close camera");
+    log_.Leave();
+  }
+  CameraGeometry Geometry() const override { return CameraGeometry{0, 64, 36}; }
+  std::optional<VideoFrameRgba> NextFrame() override {
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last_ < std::chrono::milliseconds(30)) {
+      return std::nullopt;
+    }
+    last_ = now;
+    VideoFrameRgba frame;
+    frame.width = 64;
+    frame.height = 36;
+    frame.rgba.assign(64u * 36u * 4u, 0x80);
+    return frame;
+  }
+
+private:
+  DeviceLog& log_;
+  std::chrono::steady_clock::time_point last_{};
+};
+
+class FakeBackend final : public IMediaDeviceBackend {
 public:
   explicit FakeBackend(DeviceLog& log) : log_(log) {}
-  std::unique_ptr<IAudioEndpoint> Open(MediaDeviceKind kind, const AudioDeviceFormat& /*format*/,
+  std::unique_ptr<ICameraEndpoint> OpenCamera(const CameraRequestFormat& format, std::string* error) override {
+    last_display_rotation = format.display_rotation_deg;
+    std::this_thread::sleep_for(camera_open_delay.load());
+    log_.Enter("open camera");
+    log_.Leave();
+    if (!camera_present) {
+      *error = "No camera: none attached";
+      return nullptr;
+    }
+    return std::make_unique<FakeCamera>(log_);
+  }
+  std::atomic<bool> camera_present{true};
+  std::atomic<std::chrono::milliseconds> camera_open_delay{std::chrono::milliseconds(0)};
+  std::atomic<int> last_display_rotation{-1};
+  std::unique_ptr<IAudioEndpoint> OpenAudio(MediaDeviceKind kind, const AudioDeviceFormat& /*format*/,
                                        const std::function<bool()>& /*still_wanted*/,
                                        std::string* error) override {
     const std::string name = MediaDeviceKindName(kind);
@@ -231,10 +273,50 @@ TEST_F(MediaDeviceArbiterTest, ShutdownRunsQueuedClosesThenOpensInline) {
   EXPECT_TRUE((*after)->HasDevice());
 }
 
+TEST_F(MediaDeviceArbiterTest, CameraIsExclusiveAndFramesFlowThroughTheLease) {
+  CameraLeaseRequest request;
+  request.holder = "call:1";
+  auto camera = arbiter_->AcquireCamera(request);
+  ASSERT_TRUE(camera) << camera.error().message;
+  EXPECT_EQ((*camera)->Geometry().encode_width, 64);
+  request.holder = "call:2";
+  auto second = arbiter_->AcquireCamera(request);
+  ASSERT_FALSE(second);
+  EXPECT_EQ(second.error().message, "camera held by call:1");
+  std::optional<VideoFrameRgba> frame;
+  for (int i = 0; i < 20 && !frame; ++i) {
+    frame = (*camera)->NextFrame();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(frame);
+  EXPECT_EQ(frame->width, 64);
+  camera->reset();
+  Settle();
+  EXPECT_EQ(log_.Events().back(), "close camera");
+}
+
+TEST_F(MediaDeviceArbiterTest, MissingCameraIsRefusedAndFreesTheSlot) {
+  backend_->camera_present = false;
+  CameraLeaseRequest request;
+  request.holder = "call:1";
+  auto camera = arbiter_->AcquireCamera(request);
+  ASSERT_FALSE(camera);
+  EXPECT_EQ(camera.error().message, "No camera: none attached");
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Camera).empty());
+  backend_->camera_present = true;
+  EXPECT_TRUE(arbiter_->AcquireCamera(request));
+}
+
 // --- engine takes the leases its session spec asks for -----------------------------------------
 
 class EngineDeviceLeaseTest : public MediaDeviceArbiterTest {
 protected:
+  /** Engine on the fake devices, with a stub codec: these tests are about devices, not the host's HW. */
+  std::unique_ptr<CallMediaEngine> MakeEngine() {
+    auto engine = std::make_unique<CallMediaEngine>(*arbiter_);
+    engine->SetVideoCodecFactoryForTest([]() { return MakeUnavailableVideoCodec("test stub"); });
+    return engine;
+  }
   bool WaitHolders(MediaDeviceKind kind, size_t n) {
     for (int i = 0; i < 400; ++i) {
       if (arbiter_->Holders(kind).size() == n) {
@@ -250,7 +332,8 @@ protected:
 };
 
 TEST_F(EngineDeviceLeaseTest, DuplexHoldsMicAndSpeakerUnderTheSessionId) {
-  CallMediaEngine engine(*arbiter_);
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
   ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
   ASSERT_TRUE(WaitHolders(MediaDeviceKind::Mic, 1));
   ASSERT_TRUE(WaitHolders(MediaDeviceKind::Speaker, 1));
@@ -262,7 +345,8 @@ TEST_F(EngineDeviceLeaseTest, DuplexHoldsMicAndSpeakerUnderTheSessionId) {
 }
 
 TEST_F(EngineDeviceLeaseTest, PlaybackOnlyNeverTakesTheMic) {
-  CallMediaEngine engine(*arbiter_);
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
   ASSERT_TRUE(engine.Start("view:1", CallMediaEngine::SessionSpec::PlaybackOnly(), {}));
   ASSERT_TRUE(WaitHolders(MediaDeviceKind::Speaker, 1));
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -273,8 +357,10 @@ TEST_F(EngineDeviceLeaseTest, PlaybackOnlyNeverTakesTheMic) {
 // Two sessions in one process: the second is refused the mic (named holder) but still plays out —
 // running both is allowed, doubling the mic is not (policy lives in the arbiter, L003 / L011).
 TEST_F(EngineDeviceLeaseTest, SecondDuplexSessionIsRefusedTheMicButKeepsTheSpeaker) {
-  CallMediaEngine first(*arbiter_);
-  CallMediaEngine second(*arbiter_);
+  auto first_owned = MakeEngine();
+  CallMediaEngine& first = *first_owned;
+  auto second_owned = MakeEngine();
+  CallMediaEngine& second = *second_owned;
   ASSERT_TRUE(first.StartSfu("call:1", NoopSend()));
   ASSERT_TRUE(WaitHolders(MediaDeviceKind::Mic, 1));
   ASSERT_TRUE(second.StartSfu("call:2", NoopSend()));
@@ -285,8 +371,84 @@ TEST_F(EngineDeviceLeaseTest, SecondDuplexSessionIsRefusedTheMicButKeepsTheSpeak
   first.Stop();
 }
 
+// The UI toggles the camera; the open (slow here) must never run on its thread.
+TEST_F(EngineDeviceLeaseTest, CameraOpensOffTheCallerThreadAndPublishesAPreview) {
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
+  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  backend_->camera_open_delay = std::chrono::milliseconds(300);
+  const auto t0 = std::chrono::steady_clock::now();
+  ASSERT_TRUE(engine.SetCameraEnabled(true));
+  EXPECT_LT(std::chrono::steady_clock::now() - t0, std::chrono::milliseconds(100));
+  EXPECT_TRUE(engine.IsCameraEnabled()) << "requested = on until it fails or is turned off";
+  ASSERT_TRUE(WaitHolders(MediaDeviceKind::Camera, 1));
+  EXPECT_EQ(arbiter_->Holders(MediaDeviceKind::Camera).front(), "call:1");
+  EXPECT_EQ(backend_->last_display_rotation.load(), 0) << "rotation read on the caller, passed along";
+  CallMediaEngine::VideoTileFrame preview;
+  bool have_preview = false;
+  for (int i = 0; i < 200 && !have_preview; ++i) {
+    have_preview = engine.CopyLocalVideoFrame(preview);
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  ASSERT_TRUE(have_preview);
+  EXPECT_EQ(preview.width, 64);
+
+  ASSERT_TRUE(engine.SetCameraEnabled(false));
+  ASSERT_TRUE(WaitHolders(MediaDeviceKind::Camera, 0));
+  for (int i = 0; i < 100 && engine.CopyLocalVideoFrame(preview); ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  EXPECT_FALSE(engine.CopyLocalVideoFrame(preview)) << "preview cleared with the camera";
+  engine.Stop();
+}
+
+TEST_F(EngineDeviceLeaseTest, FailedCameraOpenFlipsBackAndIsReportedOnce) {
+  backend_->camera_present = false;
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
+  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(engine.SetCameraEnabled(true));
+  std::optional<std::string> failure;
+  for (int i = 0; i < 200 && !failure; ++i) {
+    failure = engine.TakeCameraFailure();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  ASSERT_TRUE(failure);
+  EXPECT_EQ(*failure, "No camera: none attached");
+  EXPECT_FALSE(engine.IsCameraEnabled());
+  EXPECT_FALSE(engine.TakeCameraFailure()) << "reported once";
+  engine.Stop();
+}
+
+TEST_F(EngineDeviceLeaseTest, StopDuringACameraOpenReleasesEverything) {
+  backend_->camera_open_delay = std::chrono::milliseconds(200);
+  {
+    auto engine_owned = MakeEngine();
+    CallMediaEngine& engine = *engine_owned;
+    ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+    ASSERT_TRUE(engine.SetCameraEnabled(true));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    engine.Stop();
+    EXPECT_FALSE(engine.IsCameraEnabled());
+  }
+  Settle();
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Camera).empty());
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Mic).empty());
+}
+
+// l3a regression: the camera button needs "can this host encode" before any camera is on.
+TEST_F(EngineDeviceLeaseTest, EncoderAvailabilityIsAHostCapabilityNotSessionState) {
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
+  EXPECT_EQ(engine.VideoEncoderAvailable(), PlatformVideoEncoderSupported());
+  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  EXPECT_EQ(engine.VideoEncoderAvailable(), PlatformVideoEncoderSupported());
+  engine.Stop();
+}
+
 TEST_F(EngineDeviceLeaseTest, ReopenKeepsLeasesAndReplacesEndpoints) {
-  CallMediaEngine engine(*arbiter_);
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
   ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
   ASSERT_TRUE(WaitHolders(MediaDeviceKind::Speaker, 1));
   const auto opens_before = [this]() {

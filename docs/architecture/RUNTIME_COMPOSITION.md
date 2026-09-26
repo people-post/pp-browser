@@ -288,7 +288,7 @@ flowchart TB
 | **Amp MeshPump** | `MeshHost` | `domain/mesh/host/` | `MeshRuntime::Drive` ~5ms (no libp2p `io_context`) |
 | **Mesh control** | `MeshHost` (`MeshControlPool`) | `domain/mesh/host/` | Connect / `IoPumpUntil` waits |
 | **Media capture / video** | `CallMediaEngine` | `domain/media/` | Dedicated capture + video encode loops |
-| **Media devices** | `MediaDeviceArbiter` | `domain/media/` | Device thread: every audio open / close / reopen; per-kind leases (mic exclusive, speaker shared) |
+| **Media devices** | `MediaDeviceArbiter` | `domain/media/` | Device thread: every audio / camera open / close / reopen; per-kind leases (mic + camera exclusive, speaker shared) |
 | **Ringtone** | `CallRingtone` | `domain/media/` | Playback loop thread (speaker lease) |
 | **Notification watch** | `ILocalNotifier` (Linux) | `foundation/platform/desktop/` | D-Bus watcher; joined in `Shutdown` |
 

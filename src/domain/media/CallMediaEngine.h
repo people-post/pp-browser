@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/media/CallMediaAdaptation.h"
+#include "domain/media/IVideoCodec.h"
 #include "domain/media/MediaDeviceArbiter.h"
 #include "common/media/CallMediaHealth.h"
 #include "common/Error.h"
@@ -11,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -113,9 +115,15 @@ public:
   /** Snapshot for chrome / logs (V032 instrumentation). */
   CallMediaEngineHealth HealthSnapshot() const;
 
-  /** Open/close SDL camera + encode. Best-effort: fails without killing voice (V019). */
+  /**
+   * Request the camera on / off (best-effort: never kills voice, V019). Call on the UI thread (reads display rotation). Enabling is
+   * asynchronous: the video thread opens the camera on the media device thread; IsCameraEnabled is
+   * true from the request until it is turned off or the open fails (then TakeCameraFailure says why).
+   */
   Roe<void> SetCameraEnabled(bool enabled);
   bool IsCameraEnabled() const;
+  /** Why the last camera request did not open, once (UI poll, like TakePendingVideoRefreshStreamIds). */
+  std::optional<std::string> TakeCameraFailure();
   /**
    * True when a fresh remote decoded frame is available (not stalled / cleared).
    * Call RefreshRemoteVideoHealth() from the UI tick before reading.
@@ -145,6 +153,8 @@ public:
    * Call before Start.
    */
   void SetSkipDeviceOpenForTest(bool skip);
+  /** Test-only: codecs for the local encoder / remote decoders (default: platform HW). Before Start. */
+  void SetVideoCodecFactoryForTest(std::function<std::unique_ptr<IVideoCodec>()> make);
   /** Drain stream ids that need an IDR (decode fail / first gap). */
   std::vector<uint32_t> TakePendingVideoRefreshStreamIds();
 

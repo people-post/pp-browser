@@ -1089,6 +1089,14 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   auto& in_call = in_call_;
   const bool muted = media.IsMuted();
   in_call.muted = muted;
+  if (auto failure = media.TakeCameraFailure()) {
+    // Camera opens asynchronously (media device thread): report the miss and withdraw the video
+    // flag the roster already advertised.
+    UserFeedback::Fail(*failure);
+    if (auto* failed_backend = Backend(); failed_backend && failed_backend->Available()) {
+      (void)failed_backend->SetLocalVideoEnabled(false);
+    }
+  }
   in_call.camera_on = media.IsCameraEnabled();
   in_call.show_speaker = CallAudioSession::SupportsSpeakerToggle();
   in_call.speaker_on = CallAudioSession::IsSpeakerphoneOn();

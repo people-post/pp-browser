@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/media/IVideoCodec.h"
 #include "common/Error.h"
 
 #include <chrono>
@@ -13,8 +14,8 @@
 
 namespace pbr {
 
-/** Device kinds a media pipeline can hold (camera joins in l3b-2 — media-client-layers L010). */
-enum class MediaDeviceKind : uint8_t { Mic, Speaker };
+/** Device kinds a media pipeline can hold (media-client-layers L010 / L011). */
+enum class MediaDeviceKind : uint8_t { Mic, Speaker, Camera };
 
 const char* MediaDeviceKindName(MediaDeviceKind kind);
 
@@ -36,30 +37,62 @@ public:
   virtual void Clear() = 0;
 };
 
-/** Opens OS endpoints. Called on the arbiter's device thread only; Open may block (OS mic prompt). */
-class IAudioDeviceBackend {
+/** What a camera holder asks for. */
+struct CameraRequestFormat {
+  /** Display rotation read on the requester's UI thread (`CameraDisplayRotationDegrees`). */
+  int display_rotation_deg = 0;
+  int fps = 20;
+};
+
+/** How to turn the opened camera's frames upright and what size to encode. */
+struct CameraGeometry {
+  int rotate_cw = 0;
+  int encode_width = 640;
+  int encode_height = 360;
+};
+
+/** One opened camera. NextFrame may run on any thread (one reader at a time). */
+class ICameraEndpoint {
 public:
-  virtual ~IAudioDeviceBackend() = default;
-  /**
-   * Null with `error` set when no device could be opened (headless, permission denied) — the lease
-   * is still granted without a device. `still_wanted` aborts platform open retries.
-   */
-  virtual std::unique_ptr<IAudioEndpoint> Open(MediaDeviceKind kind, const AudioDeviceFormat& format,
-                                               const std::function<bool()>& still_wanted,
-                                               std::string* error) = 0;
+  virtual ~ICameraEndpoint() = default;
+  virtual CameraGeometry Geometry() const = 0;
+  /** Latest sensor frame as RGBA (not yet rotated / cropped); nullopt when none is ready. */
+  virtual std::optional<VideoFrameRgba> NextFrame() = 0;
+};
+
+/**
+ * Opens OS endpoints. Called on the arbiter's device thread only; opens may block (OS mic prompt).
+ * Null with `error` set when no device could be opened (headless, permission denied).
+ */
+class IMediaDeviceBackend {
+public:
+  virtual ~IMediaDeviceBackend() = default;
+  /** An audio lease is still granted without a device. `still_wanted` aborts platform open retries. */
+  virtual std::unique_ptr<IAudioEndpoint> OpenAudio(MediaDeviceKind kind, const AudioDeviceFormat& format,
+                                                    const std::function<bool()>& still_wanted,
+                                                    std::string* error) = 0;
+  /** A camera lease is refused without a device. */
+  virtual std::unique_ptr<ICameraEndpoint> OpenCamera(const CameraRequestFormat& format, std::string* error) {
+    (void)format;
+    if (error) {
+      *error = "no camera backend";
+    }
+    return nullptr;
+  }
   /** Pause between closing and reopening `kind` (Android OEM route settle). */
   virtual std::chrono::milliseconds ReopenSettle(MediaDeviceKind /*kind*/) const { return {}; }
 };
 
-/** Backend with no devices: every lease is granted without an endpoint (tests, headless tools). */
-std::unique_ptr<IAudioDeviceBackend> CreateNullAudioDeviceBackend();
-/** SDL3 audio (default recording / playback device). */
-std::unique_ptr<IAudioDeviceBackend> CreateSdlAudioDeviceBackend();
+/** Backend with no devices: audio leases without endpoints, cameras refused (tests, headless tools). */
+std::unique_ptr<IMediaDeviceBackend> CreateNullMediaDeviceBackend();
+/** SDL3 audio (default recording / playback device) + SDL3 camera (front-facing preferred). */
+std::unique_ptr<IMediaDeviceBackend> CreateSdlMediaDeviceBackend();
 
 /** Which kinds admit one holder at a time. Shared kinds mix (the OS mixes playback streams). */
 struct MediaDeviceSharePolicy {
   bool exclusive_mic = true;
   bool exclusive_speaker = false;
+  bool exclusive_camera = true;
 
   bool Exclusive(MediaDeviceKind kind) const;
 };
@@ -103,6 +136,30 @@ private:
   std::shared_ptr<State> state_;
 };
 
+/** A granted camera. Release (destruction) closes it on the device thread without blocking. */
+class CameraDeviceLease {
+public:
+  ~CameraDeviceLease();
+  CameraDeviceLease(const CameraDeviceLease&) = delete;
+  CameraDeviceLease& operator=(const CameraDeviceLease&) = delete;
+
+  const std::string& Holder() const;
+  CameraGeometry Geometry() const;
+  std::optional<VideoFrameRgba> NextFrame();
+
+  struct State;
+
+private:
+  friend class MediaDeviceArbiter;
+  explicit CameraDeviceLease(std::shared_ptr<State> state);
+  std::shared_ptr<State> state_;
+};
+
+struct CameraLeaseRequest {
+  std::string holder;
+  CameraRequestFormat format;
+};
+
 struct AudioLeaseRequest {
   MediaDeviceKind kind = MediaDeviceKind::Speaker;
   /** Free label for logs and refusals (session id, "ringtone"). */
@@ -122,7 +179,7 @@ struct AudioLeaseRequest {
  */
 class MediaDeviceArbiter {
 public:
-  explicit MediaDeviceArbiter(std::unique_ptr<IAudioDeviceBackend> backend, MediaDeviceSharePolicy policy = {});
+  explicit MediaDeviceArbiter(std::unique_ptr<IMediaDeviceBackend> backend, MediaDeviceSharePolicy policy = {});
   ~MediaDeviceArbiter();
   MediaDeviceArbiter(const MediaDeviceArbiter&) = delete;
   MediaDeviceArbiter& operator=(const MediaDeviceArbiter&) = delete;
@@ -137,6 +194,8 @@ public:
    * permission can block for seconds). Refused only by policy ("mic held by <holder>").
    */
   Roe<std::unique_ptr<AudioDeviceLease>> AcquireAudio(const AudioLeaseRequest& request);
+  /** Blocking like AcquireAudio. Refused by policy ("camera held by …") or when no camera opens. */
+  Roe<std::unique_ptr<CameraDeviceLease>> AcquireCamera(const CameraLeaseRequest& request);
 
   /** Current holders of `kind` (empty when free). */
   std::vector<std::string> Holders(MediaDeviceKind kind) const;

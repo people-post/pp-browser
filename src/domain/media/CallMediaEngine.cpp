@@ -23,6 +23,7 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -40,97 +41,6 @@ constexpr int kVideoFps = 20;
 constexpr int64_t kRemoteVideoStallSoftMs = 2000;
 /** Hard stall: drop last frame so the tile does not freeze forever. */
 constexpr int64_t kRemoteVideoStallHardMs = 5000;
-
-/** Windows MF often returns NV12/YUY2 (sometimes bottom-up / negative pitch). Android usually
- *  converts cleanly via SDL; desktop needs pitch-safe + YUV fallbacks or preview stays empty. */
-bool ConvertCameraSurfaceToRgba(SDL_Surface* surface, VideoFrameRgba& out) {
-  if (!surface || !surface->pixels || surface->w < 2 || surface->h < 2) {
-    return false;
-  }
-
-  SDL_Surface* owned = nullptr;
-  SDL_Surface* src = surface;
-
-  // Normalize negative pitch (MF bottom-up) into a positive-pitch duplicate. SDL YUV converters
-  // treat pitch as Uint32 and mis-locate the UV plane when pitch is negative.
-  if (surface->pitch < 0) {
-    const int abs_pitch = -surface->pitch;
-    owned = SDL_CreateSurface(surface->w, surface->h, surface->format);
-    if (!owned || !owned->pixels) {
-      if (owned) {
-        SDL_DestroySurface(owned);
-      }
-      return false;
-    }
-    const auto* src_bottom = static_cast<const uint8_t*>(surface->pixels);
-    auto* dst_base = static_cast<uint8_t*>(owned->pixels);
-    if (SDL_ISPIXELFORMAT_FOURCC(surface->format)) {
-      // Contiguous planar: Y rows are bottom-up; UV plane follows the Y plane in memory.
-      const uint8_t* y_top = src_bottom + surface->pitch * (surface->h - 1);
-      for (int y = 0; y < surface->h; ++y) {
-        std::memcpy(dst_base + static_cast<size_t>(y) * static_cast<size_t>(owned->pitch),
-                    y_top + static_cast<size_t>(y) * static_cast<size_t>(abs_pitch),
-                    static_cast<size_t>(std::min(abs_pitch, owned->pitch)));
-      }
-      const size_t y_bytes = static_cast<size_t>(abs_pitch) * static_cast<size_t>(surface->h);
-      const uint8_t* uv_src = y_top + y_bytes;
-      uint8_t* uv_dst = dst_base + static_cast<size_t>(owned->pitch) * static_cast<size_t>(surface->h);
-      const int uv_rows = (surface->format == SDL_PIXELFORMAT_NV12 ||
-                           surface->format == SDL_PIXELFORMAT_NV21)
-                              ? (surface->h + 1) / 2
-                              : surface->h / 2;
-      for (int y = 0; y < uv_rows; ++y) {
-        std::memcpy(uv_dst + static_cast<size_t>(y) * static_cast<size_t>(owned->pitch),
-                    uv_src + static_cast<size_t>(y) * static_cast<size_t>(abs_pitch),
-                    static_cast<size_t>(std::min(abs_pitch, owned->pitch)));
-      }
-    } else {
-      // Packed RGB/YUV: pixels points at the last row; rebuild top-down.
-      const uint8_t* top = src_bottom + surface->pitch * (surface->h - 1);
-      const int row_bytes = std::min(abs_pitch, owned->pitch);
-      for (int y = 0; y < surface->h; ++y) {
-        std::memcpy(dst_base + static_cast<size_t>(y) * static_cast<size_t>(owned->pitch),
-                    top + static_cast<size_t>(y) * static_cast<size_t>(abs_pitch),
-                    static_cast<size_t>(row_bytes));
-      }
-    }
-    SDL_SetSurfaceColorspace(owned, SDL_GetSurfaceColorspace(surface));
-    src = owned;
-  }
-
-  bool ok = false;
-  SDL_Surface* converted =
-      SDL_ConvertSurfaceAndColorspace(src, SDL_PIXELFORMAT_RGBA32, nullptr, SDL_COLORSPACE_SRGB, 0);
-  if (converted && converted->pixels) {
-    ok = CopyRgbToRgba(static_cast<const uint8_t*>(converted->pixels), converted->w, converted->h,
-                       converted->pitch, true, out);
-    SDL_DestroySurface(converted);
-  }
-
-  if (!ok) {
-    const int pitch = src->pitch > 0 ? src->pitch : -src->pitch;
-    if (src->format == SDL_PIXELFORMAT_NV12) {
-      ok = Nv12ToRgba(static_cast<const uint8_t*>(src->pixels), src->w, src->h, pitch, out);
-    } else if (src->format == SDL_PIXELFORMAT_YUY2) {
-      ok = Yuy2ToRgba(static_cast<const uint8_t*>(src->pixels), src->w, src->h, pitch, out);
-    } else if (src->format == SDL_PIXELFORMAT_RGB24 || src->format == SDL_PIXELFORMAT_RGBA32 ||
-               src->format == SDL_PIXELFORMAT_XRGB8888 || src->format == SDL_PIXELFORMAT_ARGB8888 ||
-               src->format == SDL_PIXELFORMAT_XBGR8888 || src->format == SDL_PIXELFORMAT_ABGR8888) {
-      // Packed RGB with known channel layouts — try SDL again already failed; treat as byte RGB.
-      const bool has_alpha = SDL_BYTESPERPIXEL(src->format) >= 4;
-      ok = CopyRgbToRgba(static_cast<const uint8_t*>(src->pixels), src->w, src->h, pitch, has_alpha,
-                         out);
-    }
-  }
-
-  if (owned) {
-    SDL_DestroySurface(owned);
-  }
-  if (ok) {
-    ForceOpaqueAlphaInPlace(out.rgba);
-  }
-  return ok;
-}
 
 } // namespace
 
@@ -219,15 +129,18 @@ struct CallMediaEngine::Impl {
   std::mutex sfu_rx_log_mu;
   std::unordered_set<uint32_t> sfu_rx_logged_streams;
 
+  /** Local encoder: created, configured, fed and bitrate-adjusted by the video thread only
+   *  (reset by TearDown after that thread joined). */
   std::unique_ptr<IVideoCodec> video_codec;
+  /** Local encoder + remote decoders come from here (platform HW; tests inject a stub). */
+  std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
   std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> remote_decoders;
   static constexpr size_t kMaxRemoteVideoDecoders = 4;
-  SDL_Camera* camera = nullptr;
-  SDL_CameraID camera_id = 0;
-  /** Clockwise degrees to apply to sensor buffers before encode. */
-  int camera_rotate_cw = 0;
-  int encode_width = kDefaultVideoWidth;
-  int encode_height = kDefaultVideoHeight;
+  /** Display rotation read on the SetCameraEnabled caller's (UI) thread for the next camera open. */
+  std::atomic<int> camera_display_rotation{0};
+  /** Why the last requested camera did not open; taken by the UI (TakeCameraFailure). */
+  std::mutex camera_failure_mu;
+  std::string camera_failure;
 
   std::thread capture_thread;
   std::thread video_thread;
@@ -373,28 +286,21 @@ struct CallMediaEngine::Impl {
     last_remote_video_ms.store(0, std::memory_order_relaxed);
   }
 
-  void CloseCameraLocked() {
-    video_running = false;
-    if (video_thread.joinable()) {
-      video_thread.join();
-    }
-    if (camera) {
-      SDL_CloseCamera(camera);
-      camera = nullptr;
-      camera_id = 0;
-    }
-    camera_rotate_cw = 0;
-    encode_width = kDefaultVideoWidth;
-    encode_height = kDefaultVideoHeight;
+  /** Ask the video thread to release the camera (it resets the encoder and clears the preview).
+   *  Never joins: the video thread takes `mutex` to read the send callback. */
+  void RequestCameraOffLocked() {
     camera_enabled.store(false, std::memory_order_relaxed);
-    if (video_codec) {
-      video_codec->ResetEncoder();
-    }
-    {
-      std::lock_guard lock(video_frame_mutex);
-      local_video_frame = {};
-      local_video_frame.seq = ++local_video_seq;
-    }
+  }
+
+  void ClearLocalPreview() {
+    std::lock_guard lock(video_frame_mutex);
+    local_video_frame = {};
+    local_video_frame.seq = ++local_video_seq;
+  }
+
+  void NoteCameraFailure(const std::string& error) {
+    std::lock_guard lock(camera_failure_mu);
+    camera_failure = error;
   }
 
   void ClearAudioTracksLocked() {
@@ -415,7 +321,7 @@ struct CallMediaEngine::Impl {
     capture_running = false;
     playout_running = false;
     audio_reopen_requested.store(false, std::memory_order_relaxed);
-    CloseCameraLocked();
+    RequestCameraOffLocked();
     CloseAudioDevicesLocked();
     if (encoder) {
       opus_encoder_destroy(encoder);
@@ -832,104 +738,164 @@ struct CallMediaEngine::Impl {
 
   void StartVideoLoop() {
     video_running = true;
-    video_thread = std::thread([this]() {
-      const auto frame_period = std::chrono::milliseconds(1000 / kVideoFps);
-      bool need_keyframe = true;
-      bool logged_convert_fail = false;
-      while (video_running.load()) {
-        if (video_need_keyframe.exchange(false, std::memory_order_acq_rel)) {
+    video_thread = std::thread([this]() { RunVideoLoop(); });
+  }
+
+  void JoinVideoThread() {
+    video_running = false;
+    JoinThreadBudgeted(video_thread, std::chrono::milliseconds::max(), "video");
+  }
+
+  /**
+   * Video thread only: take the camera lease (open runs on the device thread). A failed open drops
+   * the request and records why; a request withdrawn while opening releases the lease again.
+   */
+  std::unique_ptr<CameraDeviceLease> OpenCameraLease() {
+    CameraLeaseRequest request;
+    {
+      std::lock_guard lock(mutex);
+      request.holder = call_id;
+    }
+    request.format.display_rotation_deg = camera_display_rotation.load(std::memory_order_relaxed);
+    request.format.fps = kVideoFps;
+    auto lease = DeviceArbiter().AcquireCamera(request);
+    if (!lease) {
+      camera_enabled.store(false, std::memory_order_relaxed);
+      NoteCameraFailure(lease.error().message);
+      SDL_Log("CallMediaEngine: camera: %s", lease.error().message.c_str());
+      return nullptr;
+    }
+    if (!camera_enabled.load(std::memory_order_relaxed)) {
+      return nullptr;
+    }
+    return std::move(*lease);
+  }
+
+  /** Video thread only. */
+  void ConfigureLocalEncoder(const CameraGeometry& geometry) {
+    // Created with the camera, not the session: playback-only and audio-only sessions never open a
+    // hardware encoder (media-client-layers l3a).
+    if (!video_codec) {
+      video_codec = make_video_codec();
+    }
+    if (!video_codec) {
+      return;
+    }
+    if (auto cfg = video_codec->ConfigureEncoder(geometry.encode_width, geometry.encode_height, kVideoFps); !cfg) {
+      SDL_Log("CallMediaEngine: video encode unavailable: %s — local preview may still work; voice continues",
+              cfg.error().message.c_str());
+    }
+  }
+
+  /** Video thread only: bitrate changes (ApplyAdaptation, any thread) land right before an encode. */
+  void ApplyVideoBitrate(int64_t& applied_bps) {
+    const int64_t want = adaptation_target_video_bps.load(std::memory_order_relaxed);
+    if (video_codec && want > 0 && want != applied_bps) {
+      video_codec->SetTargetBitrate(want);
+      applied_bps = want;
+    }
+  }
+
+  static VideoFrameRgba OrientFrame(VideoFrameRgba frame, int rotate_cw) {
+    VideoFrameRgba rotated;
+    if (rotate_cw == 90 && RotateRgba90Cw(frame, rotated)) {
+      return rotated;
+    }
+    if (rotate_cw == 270 && RotateRgba90Ccw(frame, rotated)) {
+      return rotated;
+    }
+    VideoFrameRgba twice;
+    if (rotate_cw == 180 && RotateRgba90Cw(frame, rotated) && RotateRgba90Cw(rotated, twice)) {
+      return twice;
+    }
+    return frame;
+  }
+
+  /** Video thread only: orient + crop → preview; encode → send on channel 1. */
+  void EncodeAndSend(VideoFrameRgba captured, const CameraGeometry& geometry, bool& need_keyframe) {
+    const VideoFrameRgba oriented = OrientFrame(std::move(captured), geometry.rotate_cw);
+    VideoFrameRgba fitted;
+    VideoFrameI420 i420;
+    if (!ScaleCenterCropRgba(oriented, geometry.encode_width, geometry.encode_height, fitted) ||
+        !RgbaToI420(fitted.rgba.data(), fitted.width, fitted.height, fitted.width * 4, true, i420)) {
+      return;
+    }
+    PublishLocalPreview(fitted);
+    if (!video_codec || !video_codec->HasEncoder()) {
+      return;
+    }
+    auto encoded = video_codec->Encode(i420, need_keyframe);
+    if (!encoded || encoded->annex_b.empty()) {
+      return;
+    }
+    need_keyframe = false;
+    std::shared_ptr<SfuSendFn> send_fn;
+    {
+      std::lock_guard lock(mutex);
+      if (sfu_mode && sfu_send) {
+        send_fn = sfu_send;
+      }
+    }
+    if (!send_fn) {
+      return;
+    }
+    SfuPacket pkt;
+    pkt.channel_id = 1;
+    pkt.seq = sfu_video_seq.fetch_add(1) + 1;
+    pkt.mark = encoded->keyframe ? 1 : 0;
+    pkt.payload = std::move(encoded->annex_b);
+    try {
+      std::lock_guard send_lock(sfu_send_call_mu);
+      (*send_fn)(pkt);
+      tx_video_frames.fetch_add(1, std::memory_order_relaxed);
+    } catch (...) {
+    }
+  }
+
+  /** The camera lease lives on this thread: open when wanted, release when not, frames in between. */
+  void RunVideoLoop() {
+    const auto frame_period = std::chrono::milliseconds(1000 / kVideoFps);
+    std::unique_ptr<CameraDeviceLease> camera;
+    CameraGeometry geometry;
+    bool need_keyframe = true;
+    int64_t applied_bps = 0;
+    while (video_running.load()) {
+      if (video_need_keyframe.exchange(false, std::memory_order_acq_rel)) {
+        need_keyframe = true;
+      }
+      const bool wanted = camera_enabled.load(std::memory_order_relaxed);
+      if (wanted && !camera) {
+        camera = OpenCameraLease();
+        if (camera) {
+          geometry = camera->Geometry();
+          ConfigureLocalEncoder(geometry);
+          applied_bps = 0;
           need_keyframe = true;
         }
-        const auto t0 = std::chrono::steady_clock::now();
-        if (!camera || !camera_enabled.load(std::memory_order_relaxed)) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(20));
-          continue;
+      } else if (!wanted && camera) {
+        camera.reset();
+        if (video_codec) {
+          video_codec->ResetEncoder();
         }
-        Uint64 timestamp_ns = 0;
-        SDL_Surface* surface = SDL_AcquireCameraFrame(camera, &timestamp_ns);
-        if (!surface) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(5));
-          continue;
-        }
-
-        VideoFrameI420 i420;
-        VideoFrameRgba captured;
-        if (ConvertCameraSurfaceToRgba(surface, captured)) {
-          VideoFrameRgba oriented = std::move(captured);
-          if (camera_rotate_cw == 90) {
-            VideoFrameRgba rotated;
-            if (RotateRgba90Cw(oriented, rotated)) {
-              oriented = std::move(rotated);
-            }
-          } else if (camera_rotate_cw == 270) {
-            VideoFrameRgba rotated;
-            if (RotateRgba90Ccw(oriented, rotated)) {
-              oriented = std::move(rotated);
-            }
-          } else if (camera_rotate_cw == 180) {
-            VideoFrameRgba once;
-            VideoFrameRgba twice;
-            if (RotateRgba90Cw(oriented, once) && RotateRgba90Cw(once, twice)) {
-              oriented = std::move(twice);
-            }
-          }
-
-          VideoFrameRgba fitted;
-          if (ScaleCenterCropRgba(oriented, encode_width, encode_height, fitted) &&
-              RgbaToI420(fitted.rgba.data(), fitted.width, fitted.height, fitted.width * 4, true,
-                         i420)) {
-            VideoFrameRgba preview = fitted;
-            PremultiplyRgbaInPlace(preview.rgba);
-            {
-              std::lock_guard lock(video_frame_mutex);
-              local_video_frame.width = preview.width;
-              local_video_frame.height = preview.height;
-              local_video_frame.rgba = std::move(preview.rgba);
-              local_video_frame.seq = ++local_video_seq;
-            }
-            if (video_codec && video_codec->HasEncoder()) {
-              auto encoded = video_codec->Encode(i420, need_keyframe);
-              if (encoded && !encoded->annex_b.empty()) {
-                need_keyframe = false;
-                std::shared_ptr<SfuSendFn> send_fn;
-                {
-                  std::lock_guard lock(mutex);
-                  if (sfu_mode && sfu_send) {
-                    send_fn = sfu_send;
-                  }
-                }
-                if (send_fn) {
-                  SfuPacket pkt;
-                  pkt.channel_id = 1;
-                  pkt.seq = sfu_video_seq.fetch_add(1) + 1;
-                  pkt.mark = encoded->keyframe ? 1 : 0;
-                  pkt.payload = encoded->annex_b;
-                  try {
-                    std::lock_guard send_lock(sfu_send_call_mu);
-                    (*send_fn)(pkt);
-                    tx_video_frames.fetch_add(1, std::memory_order_relaxed);
-                  } catch (...) {
-                  }
-                }
-              }
-            }
-          }
-        } else if (!logged_convert_fail) {
-          logged_convert_fail = true;
-          // Use SDL_Log — CallMediaEngine logger isn't safe from this worker without more wiring.
-          SDL_Log("CallMediaEngine: camera frame convert failed (format=%s pitch=%d %dx%d): %s",
-                  SDL_GetPixelFormatName(surface->format), surface->pitch, surface->w, surface->h,
-                  SDL_GetError());
-        }
-
-        SDL_ReleaseCameraFrame(camera, surface);
-
-        const auto elapsed = std::chrono::steady_clock::now() - t0;
-        if (elapsed < frame_period) {
-          std::this_thread::sleep_for(frame_period - elapsed);
-        }
+        ClearLocalPreview();
       }
-    });
+      if (!camera) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        continue;
+      }
+      const auto t0 = std::chrono::steady_clock::now();
+      ApplyVideoBitrate(applied_bps);
+      auto frame = camera->NextFrame();
+      if (!frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        continue;
+      }
+      EncodeAndSend(std::move(*frame), geometry, need_keyframe);
+      const auto elapsed = std::chrono::steady_clock::now() - t0;
+      if (elapsed < frame_period) {
+        std::this_thread::sleep_for(frame_period - elapsed);
+      }
+    }
   }
 
   void OnRemoteOpusFrame(uint32_t stream_id, uint32_t seq, const std::byte* data, size_t size) {
@@ -972,7 +938,7 @@ struct CallMediaEngine::Impl {
         if (remote_decoders.size() >= kMaxRemoteVideoDecoders) {
           return;
         }
-        auto created = CreatePlatformVideoCodec();
+        auto created = make_video_codec();
         if (!created) {
           return;
         }
@@ -1007,95 +973,6 @@ struct CallMediaEngine::Impl {
     PublishRemoteFrame(stream_id, std::move(*decoded));
   }
 
-  Roe<void> EnableCameraLocked() {
-    if (skip_device_open_for_test.load(std::memory_order_relaxed)) {
-      camera_enabled.store(false, std::memory_order_relaxed);
-      return Error("camera skipped (test)");
-    }
-    if (camera_enabled.load(std::memory_order_relaxed) && camera) {
-      return {};
-    }
-    if (auto ok = EnsureCameraSubsystem(); !ok) {
-      return ok.error();
-    }
-    // Local encoder is created with the camera, not the session: playback-only and audio-only
-    // sessions never open a hardware encoder (media-client-layers l3a).
-    if (!video_codec) {
-      video_codec = CreatePlatformVideoCodec();
-    }
-
-    int count = 0;
-    SDL_CameraID* cameras = SDL_GetCameras(&count);
-    if (!cameras || count <= 0) {
-      if (cameras) {
-        SDL_free(cameras);
-      }
-      return Error(std::string("No camera: ") + SDL_GetError());
-    }
-
-    SDL_CameraID chosen = cameras[0];
-    for (int i = 0; i < count; ++i) {
-      const SDL_CameraPosition pos = SDL_GetCameraPosition(cameras[i]);
-      if (pos == SDL_CAMERA_POSITION_FRONT_FACING) {
-        chosen = cameras[i];
-        break;
-      }
-    }
-    SDL_free(cameras);
-
-    const CameraCaptureTransform xform = ResolveCameraCaptureTransform(chosen);
-    encode_width = xform.encode_width;
-    encode_height = xform.encode_height;
-    camera_rotate_cw = xform.rotate_cw;
-
-    std::string encode_warn;
-    if (video_codec) {
-      if (auto cfg = video_codec->ConfigureEncoder(encode_width, encode_height, kVideoFps); !cfg) {
-        encode_warn = cfg.error().message;
-      } else if (const int64_t bps = adaptation_target_video_bps.load(std::memory_order_relaxed); bps > 0) {
-        video_codec->SetTargetBitrate(bps);
-      }
-    }
-
-    SDL_CameraSpec want{};
-    // Prefer a convertible packed/YUV format. UNKNOWN picks the driver's first enum
-    // entry (often MJPG/NV12 on Windows); conversion is handled in the capture loop.
-    want.format = SDL_PIXELFORMAT_UNKNOWN;
-    // Prefer landscape sensor buffers; rotate/crop into encode_* below.
-    want.width = std::max(encode_width, encode_height);
-    want.height = std::min(encode_width, encode_height);
-    want.framerate_numerator = kVideoFps;
-    want.framerate_denominator = 1;
-    camera = SDL_OpenCamera(chosen, &want);
-    if (!camera) {
-      // Fall back: ask SDL to deliver RGBA so the driver converts when possible.
-      want.format = SDL_PIXELFORMAT_RGBA32;
-      camera = SDL_OpenCamera(chosen, &want);
-    }
-    if (!camera) {
-      camera = SDL_OpenCamera(chosen, nullptr);
-    }
-    if (!camera) {
-      encode_width = kDefaultVideoWidth;
-      encode_height = kDefaultVideoHeight;
-      camera_rotate_cw = 0;
-      return Error(std::string("SDL_OpenCamera failed: ") + SDL_GetError());
-    }
-    camera_id = chosen;
-    camera_enabled.store(true, std::memory_order_relaxed);
-    if (!video_running.load()) {
-      StartVideoLoop();
-    }
-    if (!encode_warn.empty()) {
-      // Preview-only path; caller (CallMediaEngine) logs.
-      last_camera_warn = encode_warn;
-    } else {
-      last_camera_warn.clear();
-    }
-    return {};
-  }
-
-  std::string last_camera_warn;
 };
 
 CallMediaEngine::CallMediaEngine() : CallMediaEngine(MediaDeviceArbiter::Default()) {}
@@ -1115,11 +992,16 @@ void CallMediaEngine::SetOnStateChanged(StateChangedFn callback) {
   impl_->on_state_changed = std::move(callback);
 }
 
+void CallMediaEngine::SetVideoCodecFactoryForTest(std::function<std::unique_ptr<IVideoCodec>()> make) {
+  std::lock_guard lock(impl_->mutex);
+  impl_->make_video_codec = std::move(make);
+}
+
 void CallMediaEngine::SetSkipDeviceOpenForTest(bool skip) {
   impl_->skip_device_open_for_test.store(skip, std::memory_order_relaxed);
   std::lock_guard lock(impl_->mutex);
   if (skip && !impl_->test_devices) {
-    impl_->test_devices = std::make_unique<MediaDeviceArbiter>(CreateNullAudioDeviceBackend());
+    impl_->test_devices = std::make_unique<MediaDeviceArbiter>(CreateNullMediaDeviceBackend());
   }
   impl_->devices = skip ? impl_->test_devices.get() : impl_->own_devices;
 }
@@ -1199,6 +1081,7 @@ Roe<void> CallMediaEngine::Start(const std::string& call_id, const SessionSpec s
     impl_->playout_running = false;
     impl_->JoinCaptureThread();
     impl_->JoinPlayoutThread();
+    impl_->JoinVideoThread();  // outside `mutex`: the video thread takes it to read the send callback
     std::lock_guard lock(impl_->mutex);
     impl_->TearDownAudioLocked();
   }
@@ -1295,16 +1178,11 @@ void CallMediaEngine::ApplyAdaptation(const CallAdaptationDecision& decision) {
   const int64_t audio_bps =
       decision.target_audio_bps > 0 ? decision.target_audio_bps : CallMediaAdaptation::kComfortAudioBps;
   impl_->adaptation_target_audio_bps.store(audio_bps, std::memory_order_relaxed);
-  {
+  // Bitrates are applied by the threads that encode, right before their next frame (encoders are
+  // not thread-safe — calling opus_encoder_ctl here raced opus_encode, TSan).
+  if (!decision.camera_allowed) {
     std::lock_guard lock(impl_->mutex);
-    // Audio bitrate: the capture thread applies adaptation_target_audio_bps before its next encode
-    // (calling opus_encoder_ctl here raced opus_encode on that thread — TSan).
-    if (!decision.camera_allowed && impl_->camera_enabled.load(std::memory_order_relaxed)) {
-      impl_->CloseCameraLocked();
-    }
-    if (impl_->video_codec && decision.target_video_lo_bps > 0) {
-      impl_->video_codec->SetTargetBitrate(decision.target_video_lo_bps);
-    }
+    impl_->RequestCameraOffLocked();
   }
 }
 
@@ -1391,10 +1269,7 @@ void CallMediaEngine::Stop() {
   // when no device is present.
   impl_->JoinCaptureThread();
   impl_->JoinPlayoutThread();
-  {
-    impl_->video_running = false;
-    impl_->JoinThreadBudgeted(impl_->video_thread, std::chrono::milliseconds::max(), "video");
-  }
+  impl_->JoinVideoThread();
   {
     std::lock_guard lock(impl_->mutex);
     impl_->TearDownAudioLocked();
@@ -1427,29 +1302,41 @@ void CallMediaEngine::RequestAudioDeviceReopen() {
 }
 
 Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled) {
+  // Read on the caller's (UI) thread: iOS orientation is UIKit; the open itself runs elsewhere.
+  const int display_rotation = enabled ? CameraDisplayRotationDegrees() : 0;
   std::lock_guard lock(impl_->mutex);
   if (!impl_->active) {
     return Error("Call media not active");
   }
-  if (enabled && !impl_->spec.capture) {
-    return Error("camera needs a capturing session");
-  }
   if (!enabled) {
-    impl_->CloseCameraLocked();
+    impl_->RequestCameraOffLocked();
     return {};
+  }
+  if (!impl_->spec.capture) {
+    return Error("camera needs a capturing session");
   }
   if (!impl_->adaptation_camera_allowed.load(std::memory_order_relaxed)) {
     return Error("Camera blocked by adaptation (uplink/path)");
   }
-  auto opened = impl_->EnableCameraLocked();
-  if (!opened) {
-    return opened.error();
+  if (impl_->skip_device_open_for_test.load(std::memory_order_relaxed)) {
+    return Error("camera skipped (test)");
   }
-  if (!impl_->last_camera_warn.empty()) {
-    log().warning << "Video encode unavailable: " << impl_->last_camera_warn
-                  << " — local preview may still work; voice continues";
+  // Async: the video thread takes the camera lease (opened on the media device thread). A failed
+  // open flips IsCameraEnabled back to false and is reported through TakeCameraFailure.
+  impl_->camera_display_rotation.store(display_rotation, std::memory_order_relaxed);
+  impl_->camera_enabled.store(true, std::memory_order_relaxed);
+  if (!impl_->video_thread.joinable()) {
+    impl_->StartVideoLoop();
   }
   return {};
+}
+
+std::optional<std::string> CallMediaEngine::TakeCameraFailure() {
+  std::lock_guard lock(impl_->camera_failure_mu);
+  if (impl_->camera_failure.empty()) {
+    return std::nullopt;
+  }
+  return std::exchange(impl_->camera_failure, std::string());
 }
 
 bool CallMediaEngine::IsCameraEnabled() const {
@@ -1526,7 +1413,8 @@ void CallMediaEngine::RefreshRemoteVideoHealth() {
 }
 
 bool CallMediaEngine::VideoEncoderAvailable() const {
-  return impl_->video_codec && impl_->video_codec->EncoderSupported();
+  // Host capability, not session state: the local encoder only exists while the camera is on.
+  return PlatformVideoEncoderSupported();
 }
 
 bool CallMediaEngine::CameraPathAllowsVideo() const {

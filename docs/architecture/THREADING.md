@@ -319,7 +319,7 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 | Sync L4 test wrappers | AmpCircuitHopReach / AmpMediaRelayClient / SoftMigrate sync façades | Product paths Async; sync wrappers for tests (empty-pump park); gated when `IsShuttingDown` |
 | Detached MeshControl / WorkerPool / coordinator on join timeout | MeshHost::StopOwnedThreads / ThreadRuntime::Shutdown | Loud log + `unique_ptr::release`; process must exit soon (watchdog ≤3s) |
 | Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses joinable `joiner_`; budgeted `StopAndJoin` before `SDL_Quit`; speaker via a shared `MediaDeviceArbiter` lease |
-| Audio device open / close / reopen | `src/domain/media/MediaDeviceArbiter.*` | One device thread for every SDL audio open, close and reopen (no open races another holder's close); holders do I/O through `AudioDeviceLease`; `Acquire` / `Reopen` block the caller — never the UI thread |
+| Media device open / close / reopen | `src/domain/media/MediaDeviceArbiter.*` | One device thread for every SDL audio and camera open, close and reopen (no open races another holder's close); holders do I/O through `AudioDeviceLease` / `CameraDeviceLease`; `Acquire*` / `Reopen` block the caller — never the UI thread. Camera: `SetCameraEnabled` (UI) only records the request + display rotation; the engine's video thread takes the lease, owns the local encoder, and reports a failed open through `TakeCameraFailure` (polled by `CallController`) |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
 

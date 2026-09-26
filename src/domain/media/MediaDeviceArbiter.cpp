@@ -19,9 +19,9 @@ logging::Logger& ArbiterLog() {
   return log;
 }
 
-class NullAudioDeviceBackend final : public IAudioDeviceBackend {
+class NullMediaDeviceBackend final : public IMediaDeviceBackend {
 public:
-  std::unique_ptr<IAudioEndpoint> Open(MediaDeviceKind /*kind*/, const AudioDeviceFormat& /*format*/,
+  std::unique_ptr<IAudioEndpoint> OpenAudio(MediaDeviceKind /*kind*/, const AudioDeviceFormat& /*format*/,
                                        const std::function<bool()>& /*still_wanted*/,
                                        std::string* error) override {
     if (error) {
@@ -39,16 +39,26 @@ const char* MediaDeviceKindName(MediaDeviceKind kind) {
     return "mic";
   case MediaDeviceKind::Speaker:
     return "speaker";
+  case MediaDeviceKind::Camera:
+    return "camera";
   }
   return "device";
 }
 
 bool MediaDeviceSharePolicy::Exclusive(MediaDeviceKind kind) const {
-  return kind == MediaDeviceKind::Mic ? exclusive_mic : exclusive_speaker;
+  switch (kind) {
+  case MediaDeviceKind::Mic:
+    return exclusive_mic;
+  case MediaDeviceKind::Speaker:
+    return exclusive_speaker;
+  case MediaDeviceKind::Camera:
+    return exclusive_camera;
+  }
+  return true;
 }
 
-std::unique_ptr<IAudioDeviceBackend> CreateNullAudioDeviceBackend() {
-  return std::make_unique<NullAudioDeviceBackend>();
+std::unique_ptr<IMediaDeviceBackend> CreateNullMediaDeviceBackend() {
+  return std::make_unique<NullMediaDeviceBackend>();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -61,7 +71,7 @@ struct MediaDeviceArbiter::Core {
     std::string label;
   };
 
-  std::unique_ptr<IAudioDeviceBackend> backend;
+  std::unique_ptr<IMediaDeviceBackend> backend;
   MediaDeviceSharePolicy policy;
 
   mutable std::mutex mu;
@@ -146,50 +156,71 @@ struct MediaDeviceArbiter::Core {
 
 // ---------------------------------------------------------------------------------------------
 
-struct AudioDeviceLease::State {
+namespace {
+
+/** Shared by audio and camera leases: holder slot + endpoint guarded for I/O vs swap / close. */
+template <class Endpoint>
+struct LeaseSlot {
   std::weak_ptr<MediaDeviceArbiter::Core> core;
   MediaDeviceKind kind = MediaDeviceKind::Speaker;
   std::string holder;
-  AudioDeviceFormat format;
-  std::function<bool()> still_wanted;
   uint64_t id = 0;
 
   mutable std::mutex io_mu;
-  std::unique_ptr<IAudioEndpoint> endpoint;
+  std::unique_ptr<Endpoint> endpoint;
   std::string open_error;
 
-  /** Device thread only (or inline after Shutdown). */
-  void OpenOnDevice(IAudioDeviceBackend& backend) {
-    std::string error;
-    auto opened = backend.Open(kind, format, still_wanted ? still_wanted : [] { return true; }, &error);
-    if (!opened) {
-      ArbiterLog().info << MediaDeviceKindName(kind) << " open for " << holder << " gave no device: " << error;
-    }
+  void Install(std::unique_ptr<Endpoint> opened, const std::string& error) {
     std::lock_guard lock(io_mu);
     endpoint = std::move(opened);
     open_error = endpoint ? std::string() : error;
   }
 
-  std::unique_ptr<IAudioEndpoint> TakeEndpoint() {
+  std::unique_ptr<Endpoint> TakeEndpoint() {
     std::lock_guard lock(io_mu);
     return std::move(endpoint);
   }
+
+  /**
+   * Unhold now: an exclusive re-acquire right after release (session rebuild) must not be refused
+   * while the close is still queued. FIFO keeps that close ahead of the next open.
+   */
+  void Release() {
+    auto closing = std::shared_ptr<Endpoint>(TakeEndpoint());
+    auto live = core.lock();
+    if (!live) {
+      return;  // closes here, inline
+    }
+    live->Unhold(id);
+    if (closing) {
+      live->Post([closing = std::move(closing)]() mutable { closing.reset(); });
+    }
+  }
 };
+
+} // namespace
+
+struct AudioDeviceLease::State : LeaseSlot<IAudioEndpoint> {
+  AudioDeviceFormat format;
+  std::function<bool()> still_wanted;
+
+  /** Device thread only (or inline after Shutdown). */
+  void OpenOnDevice(IMediaDeviceBackend& backend) {
+    std::string error;
+    auto opened = backend.OpenAudio(kind, format, still_wanted ? still_wanted : [] { return true; }, &error);
+    if (!opened) {
+      ArbiterLog().info << MediaDeviceKindName(kind) << " open for " << holder << " gave no device: " << error;
+    }
+    Install(std::move(opened), error);
+  }
+};
+
+struct CameraDeviceLease::State : LeaseSlot<ICameraEndpoint> {};
 
 AudioDeviceLease::AudioDeviceLease(std::shared_ptr<State> state) : state_(std::move(state)) {}
 
 AudioDeviceLease::~AudioDeviceLease() {
-  // Unhold now: an exclusive re-acquire right after release (session rebuild) must not be refused
-  // while the close is still queued. FIFO keeps that close ahead of the next open.
-  auto endpoint = std::shared_ptr<IAudioEndpoint>(state_->TakeEndpoint());
-  auto core = state_->core.lock();
-  if (!core) {
-    return;  // endpoint closes here, inline
-  }
-  core->Unhold(state_->id);
-  if (endpoint) {
-    core->Post([endpoint = std::move(endpoint)]() mutable { endpoint.reset(); });
-  }
+  state_->Release();
 }
 
 MediaDeviceKind AudioDeviceLease::Kind() const {
@@ -249,11 +280,31 @@ Roe<void> AudioDeviceLease::Reopen() {
   return {};
 }
 
+CameraDeviceLease::CameraDeviceLease(std::shared_ptr<State> state) : state_(std::move(state)) {}
+
+CameraDeviceLease::~CameraDeviceLease() {
+  state_->Release();
+}
+
+const std::string& CameraDeviceLease::Holder() const {
+  return state_->holder;
+}
+
+CameraGeometry CameraDeviceLease::Geometry() const {
+  std::lock_guard lock(state_->io_mu);
+  return state_->endpoint ? state_->endpoint->Geometry() : CameraGeometry{};
+}
+
+std::optional<VideoFrameRgba> CameraDeviceLease::NextFrame() {
+  std::lock_guard lock(state_->io_mu);
+  return state_->endpoint ? state_->endpoint->NextFrame() : std::nullopt;
+}
+
 // ---------------------------------------------------------------------------------------------
 
-MediaDeviceArbiter::MediaDeviceArbiter(std::unique_ptr<IAudioDeviceBackend> backend, MediaDeviceSharePolicy policy)
+MediaDeviceArbiter::MediaDeviceArbiter(std::unique_ptr<IMediaDeviceBackend> backend, MediaDeviceSharePolicy policy)
     : core_(std::make_shared<Core>()) {
-  core_->backend = backend ? std::move(backend) : CreateNullAudioDeviceBackend();
+  core_->backend = backend ? std::move(backend) : CreateNullMediaDeviceBackend();
   core_->policy = policy;
   Core* core = core_.get();
   core_->thread = std::thread([core]() { core->Run(); });
@@ -272,7 +323,7 @@ std::atomic<MediaDeviceArbiter*> g_default{nullptr};
 MediaDeviceArbiter& MediaDeviceArbiter::Default() {
   // Never destroyed: leases may be released during static destruction; ShutdownDefault stops the thread.
   std::call_once(g_default_once, []() {
-    g_default.store(new MediaDeviceArbiter(CreateSdlAudioDeviceBackend()), std::memory_order_release);
+    g_default.store(new MediaDeviceArbiter(CreateSdlMediaDeviceBackend()), std::memory_order_release);
   });
   return *g_default.load(std::memory_order_acquire);
 }
@@ -299,6 +350,37 @@ Roe<std::unique_ptr<AudioDeviceLease>> MediaDeviceArbiter::AcquireAudio(const Au
   auto core = core_;
   core_->RunOnDevice([state, core]() { state->OpenOnDevice(*core->backend); });
   return std::unique_ptr<AudioDeviceLease>(new AudioDeviceLease(std::move(state)));
+}
+
+Roe<std::unique_ptr<CameraDeviceLease>> MediaDeviceArbiter::AcquireCamera(const CameraLeaseRequest& request) {
+  auto held = core_->Hold(MediaDeviceKind::Camera, request.holder);
+  if (!held) {
+    ArbiterLog().info << "refused camera to " << request.holder << ": " << held.error().message;
+    return held.error();
+  }
+  auto state = std::make_shared<CameraDeviceLease::State>();
+  state->core = core_;
+  state->kind = MediaDeviceKind::Camera;
+  state->holder = request.holder;
+  state->id = *held;
+  auto core = core_;
+  const CameraRequestFormat format = request.format;
+  core_->RunOnDevice([state, core, format]() {
+    std::string error;
+    auto opened = core->backend->OpenCamera(format, &error);
+    state->Install(std::move(opened), error);
+  });
+  auto lease = std::unique_ptr<CameraDeviceLease>(new CameraDeviceLease(state));
+  std::string error;
+  {
+    std::lock_guard lock(state->io_mu);
+    if (state->endpoint) {
+      return lease;
+    }
+    error = state->open_error.empty() ? std::string("no camera") : state->open_error;
+  }
+  lease.reset();  // unholds
+  return Error(error);
 }
 
 std::vector<std::string> MediaDeviceArbiter::Holders(MediaDeviceKind kind) const {

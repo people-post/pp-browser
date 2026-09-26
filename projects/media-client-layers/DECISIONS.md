@@ -108,3 +108,13 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 **Decision:** `MediaDeviceArbiter` policy per kind: **mic exclusive** (a second holder is refused with the holder's name and runs without a mic), **speaker shared** (the OS mixes playback streams). Every open / close / reopen, of any kind, runs on the arbiter's single device thread.
 **Rationale:** The ringtone plays over an active call when a second invite rings (`ring_.active` during `in_call_`); an exclusive speaker would silently drop that. The speaker conflict that existed was never sharing — it was an open racing another holder's close on different threads (ringtone `DestroyAudioStream` vs call-media `OpenAudioDeviceStream`, the Samsung Accept hang), patched with `WaitUntilPlaybackDeviceReleased`. Serializing device operations fixes that structurally, so sharing is safe; two captures of one mic, on the other hand, would double-send the user's voice.
 **Consequence:** Viewer + call can both play (not blocked, L003 goal); a second duplex session gets no mic until the first releases it. Policy is a `MediaDeviceSharePolicy` value — changeable without touching pipelines.
+
+---
+
+## L012 — Camera requests are asynchronous; the video thread owns camera and encoder
+
+**Date:** 2026-09-26
+**Status:** Accepted
+**Decision:** `CallMediaEngine::SetCameraEnabled(true)` validates, records the request and the display rotation (read on the caller's UI thread), and returns. The engine's video thread takes a `CameraDeviceLease` (exclusive; opened on the `MediaDeviceArbiter` device thread), creates and configures the local encoder, applies bitrate before each encode, and releases both when the request is withdrawn. A failed open clears the request and is reported once through `TakeCameraFailure`, which the UI polls (same idiom as `TakePendingVideoRefreshStreamIds`) to show the error and withdraw video from the roster.
+**Rationale:** The camera used to open synchronously on the UI thread under the engine mutex; routing that through the device thread would make the UI wait behind a mic permission prompt. The video thread already exists per session, so owning the lease there removes cross-thread encoder use (`SetTargetBitrate` from `ApplyAdaptation` raced `Encode`) and the join-under-mutex in the old `CloseCameraLocked` (the video thread takes the mutex to read the send callback). Display rotation is split from transform resolution because iOS reads UIKit (main thread only) and the device thread must never wait on main (UI `Stop` joins the capture thread, which can wait on the device thread).
+**Consequence:** `IsCameraEnabled` means "requested", not "frames flowing"; peers may briefly see video advertised before a failed open withdraws it.
