@@ -205,7 +205,7 @@ public:
                                     int /*timeout_ms*/) override {
     ++quote_calls;
     last_quote_hop = hop_peer_key;
-    last_quote_call_id = request.call_id;
+    last_quote_call_id = request.session_id;
     if (!quote_ok) {
       return Error(quote_error);
     }

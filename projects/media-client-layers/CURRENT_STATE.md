@@ -9,15 +9,15 @@
 |-------|-------|
 | l0 — 1:1 split | Done: `PeerReachCoordinator`, `CallMediaConnectCoordinator` (both directions), bridge = call policy; stop / retry on UI; glare antisymmetric; SFU attach completion on UI; hard-lab COLD phases |
 | l1 — reach in `domain/mesh` | Done: `domain/mesh/reachability/{MeshReachPorts.h, PeerReachCoordinator, AmpCircuitHopReach}`, neutral names. Hop reach stays a separate *service reach* ([L008](DECISIONS.md#l008--two-kinds-of-reach-link-reach-and-service-reach)) |
+| l2 — relay attach | Done: `domain/mesh/l4/media_relay/{IMediaRelayClient.h, AmpMediaRelayClient, MediaRelayAttach}`; group attach + guest reattach use `AttachToMediaRelayAsync` ([L009](DECISIONS.md#l009--relay-attach-is-a-stateless-capability-recovery-stays-with-each-feature)); wire `call_id` unchanged |
 
 ## Next
 
-**l2** — `MediaRelayAttachCoordinator` in `domain/mesh`: extract quote → `AcceptAndAttach` → reader → subscribe + reattach-on-loss from `CallHopMigrateWorkflow` (uses service reach), neutral session id; group joiner switches to it.
+**l3** — engine session spec (duplex / capture-only / playback-only, generic channels) + `DeviceArbiter` leases (exclusive policy); calls keep behavior. The riskiest phase (engine, SDL, UI-thread rules): own PR-sized commits, hard lab + dogfood.
 
 ## Open questions
 
 - Viewer ticket: fetched from the publisher 1:1 (a second reach) or delivered in the announce? (decides l4's reach count)
-- `MediaRelayTypes` `call_id` rename: wire field or internal only ([L006](DECISIONS.md#l006--same-media_relay-data-plane-own-aead-label-per-feature))
 - Seat vs arbiter: does `CallMediaSeat` keep call-path epochs only once `DeviceArbiter` owns devices (l3)?
 
 ## Agent traps

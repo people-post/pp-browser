@@ -8,6 +8,7 @@
 #include "domain/messaging/CallSessionLogic.h"
 #include "domain/messaging/CallHopAttachLogic.h"
 #include "domain/messaging/InitiationPricing.h"
+#include "domain/mesh/l4/media_relay/MediaRelayAttach.h"
 #include "domain/messaging/SoftMigrateLogic.h"
 #include "domain/mesh/host/MeshControlDispatch.h"
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
@@ -852,6 +853,42 @@ Roe<void> CallHopMigrateWorkflow::CompleteAttachLocalToSfu(
   return {};
 }
 
+MediaRelayAttachPorts CallHopMigrateWorkflow::RelayAttachPorts() const {
+  MediaRelayAttachPorts ports;
+  if (relay_deps_) {
+    ports.relay = relay_deps_->relay;
+    ports.dial = relay_deps_->dial;
+    ports.service_reach = relay_deps_->circuit_reach;
+  }
+  return ports;
+}
+
+MediaRelayAttachRequest CallHopMigrateWorkflow::MakeRelayAttachRequest(const std::string& call_id,
+                                                                       const CallSfuAttachDetail& attach) const {
+  MediaRelayAttachRequest request;
+  request.hop_peer_id = attach.hop_peer_id;
+  request.hop_multiaddr = attach.hop_multiaddr;
+  request.session_id = call_id;
+  request.auth = call_id;
+  request.quote.session_id = call_id;
+  auto joined = sessions_.CountJoined(call_id);
+  request.quote.participants = joined ? static_cast<int>(*joined) : 2;
+  const bool video_allowed = [&]() {
+    if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+      return (*session)->video_allowed;
+    }
+    return false;
+  }();
+  request.quote.want_up_bps = CallMediaAdaptation::QuoteWantUpBps(video_allowed);
+  request.quote.want_down_bps = request.quote.want_up_bps * std::max(1, request.quote.participants - 1);
+  return request;
+}
+
+std::function<Roe<void>(const MediaRelayQuote&)> CallHopMigrateWorkflow::RelayQuotePricingGate() {
+  // Calls only take volunteer / free hops today (pricing project gate).
+  return [](const MediaRelayQuote& quote) -> Roe<void> { return InitiationPricing::CheckRelayQuotePayable(quote.rate); };
+}
+
 void CallHopMigrateWorkflow::AttachLocalToSfuAsync(const std::string& call_id,
                                                    const CallSfuAttachDetail& attach_in,
                                                    std::function<void(Roe<void>)> on_done) {
@@ -1052,77 +1089,18 @@ void CallHopMigrateWorkflow::AttachLocalToSfuAsync(const std::string& call_id,
   if (attach.hop_multiaddr.empty()) {
     attach.hop_multiaddr = ops_.resolve_hop_multiaddr(attach.hop_peer_id);
   }
-  if (!attach.hop_multiaddr.empty()) {
-    (void)relay_deps_->dial->RegisterEndpoint(attach.hop_peer_id, attach.hop_multiaddr);
-    relay_deps_->dial->ClearDialBackoff(attach.hop_peer_id);
-  }
-
-  const std::string hop_for_ensure = attach.hop_peer_id;
-  const bool need_circuit =
-      !relay_deps_->dial->IsDialable(hop_for_ensure) && relay_deps_->circuit_reach != nullptr;
-  auto continue_quote = [this, call_id, attach = std::move(attach), on_sfu_frame = std::move(on_sfu_frame),
-                         finish_complete = std::move(finish_complete),
-                         on_done]() mutable {
-  if (!relay_deps_->dial->IsDialable(attach.hop_peer_id)) {
-    on_done(Error("hop not dialable"));
-    return;
-  }
-
-  MediaRelayQuoteRequest qreq;
-  qreq.call_id = call_id;
-  auto joined = sessions_.CountJoined(call_id);
-  qreq.participants = joined ? static_cast<int>(*joined) : 2;
-  const bool video_allowed = [&]() {
-    if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
-      return (*session)->video_allowed;
-    }
-    return false;
-  }();
-  qreq.want_up_bps = CallMediaAdaptation::QuoteWantUpBps(video_allowed);
-  qreq.want_down_bps = qreq.want_up_bps * std::max(1, qreq.participants - 1);
-
-  const std::string hop_peer_id = attach.hop_peer_id;
-  relay_deps_->relay->RequestQuoteAsync(
-      hop_peer_id, qreq,
-      [this, call_id, attach = std::move(attach), hop_peer_id, on_sfu_frame = std::move(on_sfu_frame),
-       finish_complete = std::move(finish_complete),
-       on_done](Roe<MediaRelayQuote> quote) mutable {
-        if (!quote || !quote->ok) {
-          on_done(Error(quote ? quote->error : quote.error().message));
+  MediaRelayAttachHooks hooks;
+  hooks.accept_quote = RelayQuotePricingGate();
+  hooks.on_frame = std::move(on_sfu_frame);
+  AttachToMediaRelayAsync(
+      RelayAttachPorts(), MakeRelayAttachRequest(call_id, attach), std::move(hooks),
+      [finish_complete = std::move(finish_complete), on_done](Roe<MediaRelayAttached> attached) mutable {
+        if (!attached) {
+          on_done(attached.error());
           return;
         }
-        if (auto payable = InitiationPricing::CheckRelayQuotePayable(quote->rate); !payable) {
-          log().info << "AttachLocalToSfu skip paid hop=" << hop_peer_id << " rate=" << quote->rate;
-          on_done(payable.error());
-          return;
-        }
-        const int64_t quote_a_up = quote->a_up_bps;
-        const std::string quote_id = quote->quote_id;
-        relay_deps_->relay->AcceptAndAttachAsync(
-            hop_peer_id, quote_id, call_id, call_id, std::move(on_sfu_frame),
-            [this, hop_peer_id, quote_id, quote_a_up, finish_complete = std::move(finish_complete),
-             on_done](Roe<MediaRelayAttachResult> attach_res) mutable {
-              if (!attach_res || !attach_res->ok) {
-                on_done(Error(attach_res ? attach_res->error : attach_res.error().message));
-                return;
-              }
-              log().info << "AttachLocalToSfu AcceptAndAttach ok hop=" << hop_peer_id
-                         << " quote=" << quote_id;
-              finish_complete(quote_a_up);
-            },
-            8000);
-      },
-      5000);
-  };
-
-  if (need_circuit) {
-    relay_deps_->circuit_reach->TryEnsureHopReachableAsync(
-        hop_for_ensure, [continue_quote = std::move(continue_quote)](Roe<void>) mutable {
-          PostControlOrRun(std::move(continue_quote));
-        });
-    return;
-  }
-  continue_quote();
+        finish_complete(attached->a_up_bps);
+      });
 }
 
 Roe<void> CallHopMigrateWorkflow::AttachLocalToSfu(const std::string& call_id,
@@ -1268,99 +1246,44 @@ void CallHopMigrateWorkflow::ReattachGuestSfuTransportAsync(const std::string& c
     if (attach.hop_multiaddr.empty()) {
       attach.hop_multiaddr = ops_.resolve_hop_multiaddr(attach.hop_peer_id);
     }
-    if (!attach.hop_multiaddr.empty()) {
-      (void)relay_deps_->dial->RegisterEndpoint(attach.hop_peer_id, attach.hop_multiaddr);
-      relay_deps_->dial->ClearDialBackoff(attach.hop_peer_id);
-    }
-
-    const std::string hop_for_ensure = attach.hop_peer_id;
-    const bool need_circuit =
-        !relay_deps_->dial->IsDialable(hop_for_ensure) && relay_deps_->circuit_reach != nullptr;
-    auto continue_quote = [this, call_id, attach = std::move(attach), gen_at_start,
-                           on_sfu_frame = std::move(on_sfu_frame), on_done]() mutable {
-    if (!relay_deps_->dial->IsDialable(attach.hop_peer_id)) {
-      on_done(Error("hop not dialable"));
-      return;
-    }
-
-    MediaRelayQuoteRequest qreq;
-    qreq.call_id = call_id;
-    auto joined = sessions_.CountJoined(call_id);
-    qreq.participants = joined ? static_cast<int>(*joined) : 2;
-    const bool video_allowed = [&]() {
-      if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
-        return (*session)->video_allowed;
-      }
-      return false;
-    }();
-    qreq.want_up_bps = CallMediaAdaptation::QuoteWantUpBps(video_allowed);
-    qreq.want_down_bps = qreq.want_up_bps * std::max(1, qreq.participants - 1);
-
-    const std::string hop_peer_id = attach.hop_peer_id;
-    relay_deps_->relay->RequestQuoteAsync(
-        hop_peer_id, qreq,
-        [this, call_id, attach = std::move(attach), hop_peer_id, gen_at_start,
-         on_sfu_frame = std::move(on_sfu_frame), on_done](Roe<MediaRelayQuote> quote) mutable {
-          if (!quote || !quote->ok) {
-            on_done(Error(quote ? quote->error : quote.error().message));
+    MediaRelayAttachHooks hooks;
+    hooks.accept_quote = RelayQuotePricingGate();
+    hooks.still_wanted = [this, gen_at_start]() { return IsMigrateGenerationCurrent(gen_at_start); };
+    hooks.on_frame = std::move(on_sfu_frame);
+    MediaRelayAttachRequest request = MakeRelayAttachRequest(call_id, attach);
+    AttachToMediaRelayAsync(
+        RelayAttachPorts(), std::move(request), std::move(hooks),
+        [this, call_id, attach = std::move(attach), gen_at_start,
+         on_done](Roe<MediaRelayAttached> attached) mutable {
+          if (!attached) {
+            on_done(attached.error());
             return;
           }
-          if (auto payable = InitiationPricing::CheckRelayQuotePayable(quote->rate); !payable) {
-            log().info << "ReattachGuestSfu skip paid hop=" << hop_peer_id << " rate=" << quote->rate;
-            on_done(payable.error());
-            return;
-          }
-          if (!IsMigrateGenerationCurrent(gen_at_start)) {
-            on_done(Error("reattach aborted"));
-            return;
-          }
-          const int64_t quote_a_up = quote->a_up_bps;
-          const std::string quote_id = quote->quote_id;
-          relay_deps_->relay->AcceptAndAttachAsync(
-              hop_peer_id, quote_id, call_id, call_id, std::move(on_sfu_frame),
-              [this, call_id, attach = std::move(attach), gen_at_start, quote_a_up,
-               on_done](Roe<MediaRelayAttachResult> attach_res) mutable {
-                if (!attach_res || !attach_res->ok) {
-                  on_done(Error(attach_res ? attach_res->error : attach_res.error().message));
-                  return;
-                }
-                PostControlOrRun([this, call_id, attach = std::move(attach), gen_at_start, quote_a_up,
-                                  on_done = std::move(on_done)]() mutable {
-                  std::lock_guard<std::mutex> attach_lock(inbound_gate_.mu);
-                  if (!IsMigrateGenerationCurrent(gen_at_start)) {
-                    relay_deps_->relay->Detach();
-                    on_done(Error("reattach aborted"));
-                    return;
-                  }
-                  if (publishers_.local_stream_id == 0) {
-                    publishers_.local_stream_id = ops_.publisher_stream_id_for_local();
-                  }
-                  relay_deps_->relay->StartClientFrameReader();
-                  sfu_.last_quote_a_up_bps = quote_a_up;
-                  guest_.active_attach = attach;
-                  guest_.active_call_id = call_id;
-                  ops_.note_remote_publisher_from_attach(attach);
-                  ops_.sync_sfu_subscriptions(call_id);
-                  ops_.announce_local_publisher(call_id, attach);
-                  ops_.refresh_adaptation(call_id);
-                  log().info << "ReattachGuestSfuTransport done call_id=" << call_id
-                             << " hop=" << attach.hop_peer_id;
-                  on_done(Roe<void>());
-                });
-              },
-              8000);
-        },
-        5000);
-    };
-
-    if (need_circuit) {
-      relay_deps_->circuit_reach->TryEnsureHopReachableAsync(
-          hop_for_ensure, [continue_quote = std::move(continue_quote)](Roe<void>) mutable {
-            PostControlOrRun(std::move(continue_quote));
+          const int64_t quote_a_up = attached->a_up_bps;
+          PostControlOrRun([this, call_id, attach = std::move(attach), gen_at_start, quote_a_up,
+                            on_done = std::move(on_done)]() mutable {
+            std::lock_guard<std::mutex> attach_lock(inbound_gate_.mu);
+            if (!IsMigrateGenerationCurrent(gen_at_start)) {
+              relay_deps_->relay->Detach();
+              on_done(Error("reattach aborted"));
+              return;
+            }
+            if (publishers_.local_stream_id == 0) {
+              publishers_.local_stream_id = ops_.publisher_stream_id_for_local();
+            }
+            relay_deps_->relay->StartClientFrameReader();
+            sfu_.last_quote_a_up_bps = quote_a_up;
+            guest_.active_attach = attach;
+            guest_.active_call_id = call_id;
+            ops_.note_remote_publisher_from_attach(attach);
+            ops_.sync_sfu_subscriptions(call_id);
+            ops_.announce_local_publisher(call_id, attach);
+            ops_.refresh_adaptation(call_id);
+            log().info << "ReattachGuestSfuTransport done call_id=" << call_id
+                       << " hop=" << attach.hop_peer_id;
+            on_done(Roe<void>());
           });
-      return;
-    }
-    continue_quote();
+        });
   });
 }
 

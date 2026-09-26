@@ -56,7 +56,7 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 **Status:** Accepted
 **Decision:** Broadcast uses the same `media_relay` frames through blind relays. Its frame AEAD label is its own (e.g. `broadcast|program_id|…`), distinct from `call-media-sfu|call_id|…`, so frames cannot be confused across features. `MediaRelayTypes` `call_id` becomes a neutral session id.
 **Rationale:** Reuses the proven relay path and [B003](../peer-scoped-broadcast/DECISIONS.md) encrypt-once; domain separation in the AEAD is cheap and prevents cross-use.
-**Open:** whether the neutral rename touches wire field names (compat per [COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md)) or stays internal.
+**Resolved (l2):** the wire field stays `"call_id"` — relays (pp-node) parse it; changing it would break mixed versions ([COMPATIBILITY.md](../../docs/contracts/COMPATIBILITY.md)). Only the client API is neutral: `IMediaRelayClient` parameters and `MediaRelayQuoteRequest::session_id`.
 
 ---
 
@@ -78,4 +78,13 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 - **Service reach** — `ICircuitHopReach::TryEnsureHopReachable` (`AmpCircuitHopReach`): success = the node's `media_relay` service is dialable — an endpoint, or a *protocol-keyed* circuit hop registered for `kMediaRelayProtocolId` (`register_endpoint`, not nested); punch first, then circuit. Used by relay attach (group joiner today, broadcast viewer / broadcaster later).
 **Rationale:** Found while doing l1: routing hops through `PeerReachCoordinator` would move `media_relay` from protocol-keyed circuit hops onto nested links — a transport change, not a refactor. Both are feature-neutral and now live side by side; l2's `MediaRelayAttachCoordinator` uses service reach.
 **Revisit:** if `media_relay` ever runs over nested links (e.g. with the k3 path set), link reach can subsume service reach.
+
+---
+
+## L009 — Relay attach is a stateless capability; recovery stays with each feature
+
+**Date:** 2026-09-26
+**Status:** Accepted
+**Decision:** The shared relay-attach layer is `AttachToMediaRelayAsync` (`domain/mesh/l4/media_relay/MediaRelayAttach.*`): ports (relay client, dial registry, service reach) + request (hop, dial hint, opaque session id / auth, caller-built quote request) + hooks (`accept_quote`, `still_wanted`, `on_frame`) → `MediaRelayAttached{quote_id, a_up_bps}`. It holds no state. Frame decryption, quote sizing, pricing, what happens after attach, and loss recovery (group: reattach with backoff; viewer: re-admit / redirect) stay in the feature.
+**Rationale:** Reading the group path showed the mechanism was copy-pasted twice (attach and guest reattach) and carried no state of its own; recovery differs per feature, so a stateful "coordinator" owning it would re-couple the features. The planned name `MediaRelayAttachCoordinator` is dropped (free-function capability naming, AGENTS role table).
 

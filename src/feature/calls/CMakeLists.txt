@@ -2,7 +2,6 @@
 # conversations binds CallControlInboundPorts — no MeshDeliveryOrchestrator include.
 pp_browser_add_feature_library(pp_feature_calls
   SOURCES
-    AmpMediaRelayClient.cpp
     CallMediaBridge.cpp
     CallMediaConnectCoordinator.cpp
     CallMediaSeat.cpp

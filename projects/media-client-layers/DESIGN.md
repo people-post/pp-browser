@@ -13,9 +13,9 @@ feature/calls                                             feature/broadcast
  └─ CallMediaConnectCoordinator (1:1 bundle)               └─ BroadcasterWorkflow
                                                                 capture-only → publish to first relay
         │                         │                                  │
-        │            MediaRelayAttachCoordinator  (domain/mesh)  ◄───┘
-        │              attach(hop, credentials, stream plan) → quote / AcceptAndAttach → reader;
-        │              reattach-on-loss; UI-thread state; generation; hooks
+        │            MediaRelayAttach  (domain/mesh, stateless — L009)  ◄───┘
+        │              AttachToMediaRelayAsync(ports, request, hooks) → service reach → quote →
+        │              quote gate → AcceptAndAttach; recovery stays with each feature
         │                         │
         │                         └──► service reach: ICircuitHopReach::TryEnsureHopReachable (domain/mesh)
         │                                media_relay dialable via protocol-keyed circuit hop (L008)
@@ -34,9 +34,9 @@ Devices:               DeviceArbiter — leases per kind (mic / camera / speaker
 | Concern | Shared layer | Calls policy | Broadcast policy |
 |---------|--------------|--------------|------------------|
 | Reach a node | `PeerReachCoordinator` (peer or hop; `Reach` / `Await`) | 1:1 peer; group hop | first relay; ticket from publisher (if fetched 1:1) |
-| Session on a relay | `MediaRelayAttachCoordinator` | group joiner: publish + subscribe N | viewer: receive-only one publisher; broadcaster: publish-only |
+| Session on a relay | `AttachToMediaRelayAsync` | group joiner: publish + subscribe N | viewer: receive-only one publisher; broadcaster: publish-only |
 | Admission | — | roster / media key | ticket (ML-DSA), admit-or-redirect ladder ([B007](../peer-scoped-broadcast/DECISIONS.md)) |
-| Recovery | reattach-on-loss (mechanism) | re-pick hop, attach wait | re-admit, follow redirect |
+| Recovery | — (re-run the attach) | re-pick hop, attach wait | re-admit, follow redirect |
 | Media | capture / playback pipelines | duplex | one-way per role |
 | Devices | `DeviceArbiter` leases | mic + speaker (+ camera) | broadcaster: mic (+ camera); viewer: speaker |
 | Frame AEAD label | — | `call-media-sfu\|call_id\|…` | own label, e.g. `broadcast\|program_id\|…` |

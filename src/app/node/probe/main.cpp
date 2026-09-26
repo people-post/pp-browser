@@ -483,7 +483,7 @@ int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
 
   {
     pbr::MediaRelayQuoteRequest qreq;
-    qreq.call_id = "pp-node-probe";
+    qreq.session_id = "pp-node-probe";
     qreq.participants = 1;
     AsyncWait<pbr::MediaRelayQuote> wait;
     if (!media->StartQuote("hop", qreq, wait.Fn(), 8000)) {
@@ -591,7 +591,7 @@ int RunMediaFanout(const std::string& hop_ma) {
   const std::vector<AmpPeer*> pumps = {a->get(), b->get()};
   const std::string call_id = "pp-node-fanout";
   pbr::MediaRelayQuoteRequest qreq;
-  qreq.call_id = call_id;
+  qreq.session_id = call_id;
   qreq.participants = 2;
 
   std::cout << "pp-node N-FANOUT probe hop=" << hop_ma << "\n";
@@ -758,7 +758,7 @@ MediaCapResult RunMediaCapOnce(const std::string& hop_ma, int attachers) {
 
     const auto t0 = std::chrono::steady_clock::now();
     pbr::MediaRelayQuoteRequest qreq;
-    qreq.call_id = call_id;
+    qreq.session_id = call_id;
     qreq.participants = attachers;
 
     AsyncWait<pbr::MediaRelayQuote> quote_wait;
@@ -1244,7 +1244,7 @@ int RunMediaRecv(const std::string& hop_ma, const std::string& call_id, const in
   const std::vector<AmpPeer*> pumps = {peer->get()};
 
   pbr::MediaRelayQuoteRequest qreq;
-  qreq.call_id = call_id;
+  qreq.session_id = call_id;
   qreq.participants = 2;
   AsyncWait<pbr::MediaRelayQuote> quote;
   if (!relay->StartQuote("hop", qreq, quote.Fn(), 10000)) {
@@ -1323,7 +1323,7 @@ int RunMediaSend(const std::string& hop_ma, const std::string& call_id, const in
   const std::vector<AmpPeer*> pumps = {peer->get()};
 
   pbr::MediaRelayQuoteRequest qreq;
-  qreq.call_id = call_id;
+  qreq.session_id = call_id;
   qreq.participants = 2;
   AsyncWait<pbr::MediaRelayQuote> quote;
   if (!relay->StartQuote("hop", qreq, quote.Fn(), 10000)) {

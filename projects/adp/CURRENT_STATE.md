@@ -130,7 +130,7 @@
 ## Landed (D9 step 5b — media-relay SoftMigrate single entry)
 
 - **`AmpMediaRelayCoordinator` DATA plane** — Subscribe, SendFrame, AttachAsLocalHop, StartClientFrameReader, Detach, host fan-out on `ChannelSession`
-- **`AmpMediaRelayClient`** — blocking `IMediaRelayClient` over coordinator ([A020])
+- **`AmpMediaRelayClient`** (`domain/mesh/l4/media_relay`) — `IMediaRelayClient` over coordinator ([A020])
 - **`CallStack::WireMediaRelayDeps`** picks Amp when `MeshHost::AmpMediaRelayCoord()` is started; libp2p fallback unchanged
 - **`PeerSessionDialRegistry`** mirrors ADP endpoints to Amp `PeerLinkManager` when on Amp path
 

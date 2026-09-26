@@ -8,7 +8,7 @@
 #include "common/Module.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/mesh/reachability/AmpCircuitHopReach.h"
-#include "feature/calls/AmpMediaRelayClient.h"
+#include "domain/mesh/l4/media_relay/AmpMediaRelayClient.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"

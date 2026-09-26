@@ -10,6 +10,7 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "feature/calls/CallMediaSeat.h"
+#include "domain/mesh/l4/media_relay/MediaRelayAttach.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 
 #include "common/Error.h"
@@ -251,6 +252,11 @@ public:
 
 private:
   bool IsMigrateGenerationCurrent(uint64_t gen) const;
+  /** media_relay attach mechanism (domain/mesh MediaRelayAttach) over this workflow's relay deps. */
+  MediaRelayAttachPorts RelayAttachPorts() const;
+  /** Call policy for a relay attach: session id / auth = call id; quote sized by roster + video. */
+  MediaRelayAttachRequest MakeRelayAttachRequest(const std::string& call_id, const CallSfuAttachDetail& attach) const;
+  static std::function<Roe<void>(const MediaRelayQuote&)> RelayQuotePricingGate();
 
   CallSessionStore& sessions_;
   CallMediaEngine& media_;

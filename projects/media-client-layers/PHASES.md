@@ -3,7 +3,7 @@
 Ordering and checkboxes only. **Status:** [CURRENT_STATE.md](CURRENT_STATE.md). **Spec:** [DESIGN.md](DESIGN.md).
 
 ```
-l0 (1:1 split, done) ── l1 (reach → domain/mesh) ── l2 (relay attach) ──┬── l4 (broadcast viewer) ── l5 (broadcaster) ── l6 (remove from calls)
+l0 (done) ── l1 (reach → domain/mesh, done) ── l2 (relay attach, done) ──┬── l4 (broadcast viewer) ── l5 (broadcaster) ── l6 (remove from calls)
                                                    l3 (engine spec + device leases) ─┘
 later: viewer video · relay upstream via viewer client · relay keyframe cache
 ```
@@ -23,14 +23,17 @@ l1 and l2 are refactors checked against existing tests + hard lab. l3 is the ris
 
 **Exit:** `domain/mesh` owns reaching any node (link reach + service reach); `feature/calls` only asks. **Met.**
 
-## l2 — MediaRelayAttachCoordinator
+## l2 — MediaRelayAttach (stateless capability — [L009](DECISIONS.md#l009--relay-attach-is-a-stateless-capability-recovery-stays-with-each-feature))
 
-- [ ] Extract quote → `AcceptAndAttach` → reader → subscribe + reattach-on-loss from `CallHopMigrateWorkflow` into `domain/mesh` (UI-thread state, generation, hooks; shape of `CallMediaConnectCoordinator`)
-- [ ] Stream plan input: `{publish?, subscribe streams, channels}` — no call / roster knowledge
-- [ ] `MediaRelayTypes` `call_id` → neutral session id (wire field name decision recorded; compat if on the wire)
-- [ ] Group joiner switches to it; topology / hop-migrate tests + hard-lab green
+- [x] `IMediaRelayClient` → `domain/mesh/l4/media_relay/IMediaRelayClient.h`; `AmpMediaRelayClient` → `domain/mesh/l4/media_relay` (git mv); neutral `session_id` parameters
+- [x] `AttachToMediaRelayAsync`: register dial hint → service reach when undialable → quote → `accept_quote` gate → `still_wanted` → AcceptAndAttach (ports + request + hooks; no call / roster knowledge); gtests `media_relay_attach_test`
+- [x] `MediaRelayQuoteRequest::call_id` → `session_id` in C++; wire field stays `"call_id"` ([L006](DECISIONS.md#l006--same-media_relay-data-plane-own-aead-label-per-feature) resolved)
+- [x] Group joiner attach **and** guest reattach use it (was copy-pasted twice); pricing gate + quote sizing + frame decrypt stay call policy
+- [x] Full suite, TSan (topology / bridge / connect), hard-lab `all` green
+- [ ] Gap: no hard-lab phase drives a group SFU attach through the product topology (covered by topology gtests with a fake relay + mesh `media_relay` compose tests) — add with l4's relay lab work
+- [ ] Stream plan (`{publish?, subscribe streams, channels}`) — moved to l3 / l4 where the engine and viewer need it
 
-**Exit:** a group joiner attaches through the neutral coordinator.
+**Exit:** a group joiner attaches through the neutral capability. **Met.**
 
 ## l3 — Engine session spec + device leases
 

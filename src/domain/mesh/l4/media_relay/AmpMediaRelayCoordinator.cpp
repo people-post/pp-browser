@@ -736,7 +736,7 @@ struct AmpMediaRelayCoordinator::Impl {
     Object req;
     req.set("v", int64_t{1});
     req.set("op", "quote");
-    req.set("call_id", request.call_id);
+    req.set("call_id", request.session_id);
     req.set("participants", int64_t{request.participants});
     req.set("want_up_bps", request.want_up_bps);
     req.set("want_down_bps", request.want_down_bps);
@@ -917,13 +917,13 @@ struct AmpMediaRelayCoordinator::Impl {
                         return false;
                       }
                       MediaRelayQuoteRequest req;
-                      req.call_id = root->getString("call_id").value_or("");
+                      req.session_id = root->getString("call_id").value_or("");
                       req.participants = static_cast<int>(root->getNonNegInt("participants").value_or(1));
                       req.want_up_bps = root->getIf<int64_t>("want_up_bps").value_or(0);
                       req.want_down_bps = root->getIf<int64_t>("want_down_bps").value_or(0);
-                      host_sm->call_id = req.call_id;
+                      host_sm->call_id = req.session_id;
                       auto q = BuildDefaultMediaRelayQuote(req);
-                      quotes_by_id[q.quote_id] = PendingQuote{q, req.call_id};
+                      quotes_by_id[q.quote_id] = PendingQuote{q, req.session_id};
                       Object quote_resp;
                       quote_resp.set("v", int64_t{1});
                       quote_resp.set("ok", true);
@@ -1183,7 +1183,7 @@ MediaRelaySessionId AmpMediaRelayCoordinator::StartQuote(const std::string& hop_
       session->id = id;
       session->role = MediaRelayBundleRole::ClientQuote;
       session->hop_peer_key = hop_peer_key;
-      session->call_id = request.call_id;
+      session->call_id = request.session_id;
       session->on_quote = std::move(on_finished);
       session->deadline = Clock::now() + std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 8000);
       raw = session.get();
