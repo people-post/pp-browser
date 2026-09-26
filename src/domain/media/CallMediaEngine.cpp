@@ -743,6 +743,10 @@ struct CallMediaEngine::Impl {
       pending.reserve(static_cast<size_t>(kFrameSamples) * 2);
       std::vector<unsigned char> opus_buf(4000);
       int64_t last_capture_pcm_ms = util::NowUnixMs();
+      // Opus encoders are not thread-safe: bitrate changes (ApplyAdaptation, any thread) are
+      // applied here, on the thread that encodes, right before the next frame.
+      OpusEncoder* bitrate_enc = nullptr;
+      int64_t applied_audio_bps = 0;
       int64_t last_capture_starve_reopen_ms = 0;
       while (capture_running.load()) {
         if (audio_reopen_requested.exchange(false, std::memory_order_acq_rel)) {
@@ -846,6 +850,12 @@ struct CallMediaEngine::Impl {
         }
         if (!can_send || !enc) {
           continue;
+        }
+        if (const int64_t want_bps = adaptation_target_audio_bps.load(std::memory_order_relaxed);
+            want_bps > 0 && (enc != bitrate_enc || want_bps != applied_audio_bps)) {
+          opus_encoder_ctl(enc, OPUS_SET_BITRATE(static_cast<int>(want_bps)));
+          bitrate_enc = enc;
+          applied_audio_bps = want_bps;
         }
         const int encoded =
             opus_encode(enc, pcm.data(), kFrameSamples, opus_buf.data(), static_cast<int>(opus_buf.size()));
@@ -1317,9 +1327,8 @@ void CallMediaEngine::ApplyAdaptation(const CallAdaptationDecision& decision) {
   impl_->adaptation_target_audio_bps.store(audio_bps, std::memory_order_relaxed);
   {
     std::lock_guard lock(impl_->mutex);
-    if (impl_->encoder) {
-      opus_encoder_ctl(impl_->encoder, OPUS_SET_BITRATE(static_cast<int>(audio_bps)));
-    }
+    // Audio bitrate: the capture thread applies adaptation_target_audio_bps before its next encode
+    // (calling opus_encoder_ctl here raced opus_encode on that thread — TSan).
     if (!decision.camera_allowed && impl_->camera_enabled.load(std::memory_order_relaxed)) {
       impl_->CloseCameraLocked();
     }
