@@ -7,6 +7,7 @@
 #include "feature/calls/CallMediaSeat.h"
 #include "domain/messaging/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallMediaConnectCoordinator.h"
 #include "feature/calls/PeerReachCoordinator.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 
@@ -118,17 +119,15 @@ public:
   void NotePeerIdRelayMapping(const std::string& peer_id, const std::string& relay_identity);
 
   /**
-   * Abort in-flight Connect (`AbortConnectSequence` + Detach). Prefer timeout_ms=0 on shutdown so
-   * the UI/shutdown strand does not sleep-spin; late Connect callbacks no-op on generation.
-   * Must run before destroying this bridge / CallMediaDirectService / mesh host.
+   * Abort in-flight Connect (`AbortConnectSequence` + connect Shutdown + Detach); late Connect
+   * callbacks no-op on sequence. Must run before destroying this bridge / transport / mesh host.
+   * The abort is synchronous; `timeout_ms` is accepted for existing callers and unused.
    * See THREADING.md Cancel / Abort contract (arm ⇒ complete on cancel).
    */
   void PrepareForTeardown(int timeout_ms = 0);
 
   /** True while an async Connect sequence is in flight (shutdown measurement). */
-  bool IsConnectWorkerInflight() const {
-    return connect_worker_inflight_.load(std::memory_order_acquire);
-  }
+  bool IsConnectWorkerInflight() const { return connect_.InFlight(); }
 
   /** True after PrepareForTeardown / StopMeshMedia — inbound hello wait must exit. */
   bool IsStopping() const { return stopping_.load(std::memory_order_acquire); }
@@ -164,24 +163,15 @@ public:
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
-  /** Link establishment for one Connect attempt (PeerReachCoordinator; call-agnostic). */
+  /** Link to reach for this session's Connect (call roster → mesh keys, offerer → Reach). */
   PeerReachRequest BuildReachRequest(const CallMediaDirectConnectParams& params);
-  /** Async dial/retry — does not park MeshControl for Connect timeout (ConnectAsync). */
-  void StartConnectSequence(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen);
-  void BeginConnectAttempt(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
-                           int attempt);
-  void ContinueConnectAttemptAfterReachable(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs,
-                                            uint64_t gen, int attempt);
-  void OnConnectAttemptFinished(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
-                                int attempt, Roe<void> connected);
-  void FinishConnectSequence(uint64_t gen, const std::string& call_id, Roe<void> connected, const char* role);
+  /** Call-side reactions to the connect sequence (media key resend, path label, commit / fail). */
+  CallMediaConnectHooks MakeConnectHooks(const std::string& call_id);
   /** Chrome ConnectFailed + Direct Idle; optionally StopMeshMedia (zombie TX / teardown). */
   void SurfaceConnectFailed(const std::string& call_id, const std::string& err, bool stop_media);
-  void CancelConnectTimers();
   /**
-   * Invalidate Connect epoch + cancel retry timers + clear connect_worker_inflight_.
-   * Cancel alone drops the callbacks that would have cleared the waiter — abort must complete it
-   * (THREADING.md Cancel / Abort contract).
+   * Bump the send generation (gates 1:1 TX) and abort the connect sequence (timers, pending
+   * reach, InFlight cleared — THREADING.md Cancel / Abort contract).
    */
   void AbortConnectSequence();
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
@@ -221,16 +211,12 @@ private:
   std::function<void()> seed_reserve_;
   /** Peer link establishment (reach loop); owns no call state. */
   PeerReachCoordinator reach_;
-  PeerReachId reach_id_ = 0;
+  /** Connect attempts (reach + bundle open, watchdog, retry); owns no call product state. */
+  CallMediaConnectCoordinator connect_;
   /** Link kind the last successful reach settled on (UI thread). */
   PeerLinkKind reach_kind_ = PeerLinkKind::Unknown;
-  /** Next reach must insist on a relayed link (TX-only escalate). */
+  /** Next connect sequence must insist on a relayed link (TX-only escalate). */
   bool force_circuit_ensure_ = false;
-  /** B39: next reach must not reuse a (possibly stale) connected link. Set by
-   *  OnConnectAttemptFinished after a dropped link. */
-  bool force_redial_ = false;
-  /** B39: true when the current attempt's reach reused an already-connected link. */
-  bool attempt_started_connected_ = false;
   bool session_offerer_ = false;
   int64_t direct_connected_at_ms_ = 0;
   bool tx_only_escalation_done_ = false;
@@ -243,19 +229,12 @@ private:
   std::string inbound_deferred_peer_id_;
   bool mesh_connect_failed_ = false;
   bool mesh_connect_missing_mic_ = false;
-  /** Connect sequence in flight (async ConnectAsync / reachability). */
-  std::atomic<bool> connect_worker_inflight_{false};
-  /** Bumped in StopMeshMedia so in-flight Connect workers abort instead of racing Detach/Stop. */
+  /** Bumped by AbortConnectSequence; the StartSfu send fn drops TX from an older generation. */
   std::atomic<uint64_t> connect_generation_{0};
   std::atomic<bool> stopping_{false};
   /** Cancelable inbound hello MediaKey wait (notify from OnMediaKeyReady / PrepareForTeardown). */
   std::mutex inbound_key_mu_;
   std::condition_variable inbound_key_cv_;
-  uint64_t connect_retry_timer_id_ = 0;
-  /** B42: per-attempt ConnectAsync watchdog id; cancelled on attempt completion / CancelConnectTimers. */
-  uint64_t connect_watchdog_timer_id_ = 0;
-  /** B42: attempt number the watchdog / late-completion guards compare against. */
-  int connect_attempt_current_ = 0;
   uint64_t direct_health_timer_id_ = 0;
   uint64_t reserve_renew_timer_id_ = 0;
   /** Inside the 15 s StartReserve lease so consecutive leases overlap. */
@@ -263,8 +242,6 @@ private:
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;
   std::unordered_set<std::string> media_attempted_calls_;
   int media_key_inbox_poll_rounds_ = 90;
-  /** Per-attempt ConnectAsync timeout (B42 test seam); production default kConnectAttemptTimeoutMs. */
-  int connect_attempt_timeout_ms_ = 15000;
   std::atomic<uint32_t> audio_seq_{0};
   /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */
   std::atomic<uint32_t> inbound_remote_stream_{0};

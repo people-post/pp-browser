@@ -31,6 +31,7 @@ Do **not** restate the full product decision table here — link DECISIONS. Prom
 | **CallController** | Rml clicks → `Apply(event)`; ring / in-call chrome via `apply_chrome_update` → ShellHost Remount / DirtyCallChrome |
 | **CallSessionManager** | Persist session/invite/roster; encode/send controls; notify lifecycle |
 | **CallMediaBridge** | Media-key defer, channel connect/retry; report `MediaDeferred` / `DirectConnected` / `ConnectFailed` |
+| **CallMediaConnectCoordinator** | Connect sequence: per attempt reach a link then open the call-media bundle; watchdog (B42), 5 retries, fresh-link feedback (B39) |
 | **PeerReachCoordinator** | Call-agnostic link establishment to one peer (dial → circuit → punch, seed park); `Reach` / `Await` modes |
 | **ICallMediaTransport** | 1:1 `/pp-browser/realtime/1.0.0` — Amp `CallMediaAmpTransport` / `CallMediaLegCoordinator` ([A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol) / D10) |
 | **ConversationsHub** | N025 listen + mDNS as **lifecycle-driven** commands (`WantEphemeralListen`), not tick side effects |
@@ -386,13 +387,13 @@ Session manager asks: “joined count is now N — what media action?”
 Responsibilities:
 
 - `StartMediaAsOfferer` / `Answerer` + `Schedule*`
-- Per Connect attempt, asks the owned [`PeerReachCoordinator`](../../src/feature/calls/PeerReachCoordinator.h) for a link, then opens the call-media bundle (hello/ack, AEAD Opus)
-- Connect-fail / Retry for the 1:1 bundle; feeds link feedback back as reach options (`exclude_direct` after TX-only, `fresh_link` after a stale link — B39)
+- Builds the connect request (bundle params + link request) and hands it to the owned [`CallMediaConnectCoordinator`](../../src/feature/calls/CallMediaConnectCoordinator.h), which per attempt asks [`PeerReachCoordinator`](../../src/feature/calls/PeerReachCoordinator.h) for a link and opens the bundle on it (hello/ack, AEAD Opus)
+- Call-side hooks only: offerer media-key resend before each attempt, path label, commit Connected / surface ConnectFailed when the sequence finishes; `exclude_direct` after TX-only
 - `ReleaseDirectTransport` on soft-migrate (keep engine capture for SFU)
 
 Does not decide SFU. Topology calls `StartSfu` / attach via session or engine APIs.
 
-**Link vs call boundary.** `PeerReachCoordinator` takes mesh dial keys (PeerId first, aliases after) and a mode, and returns a Connected link kind (`Direct` / `Punched` / `Relayed`). It knows no call id, media key, roster identity or SFU state. The bridge maps call knowledge onto it: account → PeerId resolution, offerer → `Reach`, answerer → `Await` (invite/accept is the agreement that the peer reaches; the coordinator does not negotiate roles). All reach state lives on the Coordinator strand; the bridge's attempt state is UI-thread only.
+**Link / channel / call layers.** `CallMediaConnectCoordinator` knows the bundle protocol (params, ConnectAsync, MediaReady) and retry policy but not the call product (no engine, seat, planner, SFU); a give-up is posted and dropped if Abort / Start ran since. `PeerReachCoordinator` takes mesh dial keys (PeerId first, aliases after) and a mode, and returns a Connected link kind (`Direct` / `Punched` / `Relayed`). It knows no call id, media key, roster identity or SFU state. The bridge maps call knowledge onto it: account → PeerId resolution, offerer → `Reach`, answerer → `Await` (invite/accept is the agreement that the peer reaches; the coordinator does not negotiate roles). All reach state lives on the Coordinator strand; the bridge's attempt state is UI-thread only.
 
 ### 3. `CallSessionManager` (shrunk)
 Keeps thin `ApplyInboundControl` switch → `CallSessionWorkflow::HandleInbound*`. Store mutations and invite/leave arms live on the Workflow (V044).
