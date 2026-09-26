@@ -17,7 +17,9 @@ feature/calls                                             feature/broadcast
         │              attach(hop, credentials, stream plan) → quote / AcceptAndAttach → reader;
         │              reattach-on-loss; UI-thread state; generation; hooks
         │                         │
-        └──────────► PeerReachCoordinator  (domain/mesh) — reach any node: peer or hop
+        │                         └──► service reach: ICircuitHopReach::TryEnsureHopReachable (domain/mesh)
+        │                                media_relay dialable via protocol-keyed circuit hop (L008)
+        └──────────► PeerReachCoordinator  (domain/mesh) — link reach: Connected PeerLink to a peer
                                   │
                       Amp links / circuit / punch
 

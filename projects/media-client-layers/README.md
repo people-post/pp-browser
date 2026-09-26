@@ -30,5 +30,5 @@ Split the **client side** of real-time media into shared, feature-neutral layers
 |------|---------|
 | [DESIGN.md](DESIGN.md) | Layers, what is shared vs separate, neutrality test, data plane |
 | [PHASES.md](PHASES.md) | l0–l6 checklist (one PR each) |
-| [DECISIONS.md](DECISIONS.md) | L001–L007 |
+| [DECISIONS.md](DECISIONS.md) | L001–L008 |
 | [CURRENT_STATE.md](CURRENT_STATE.md) | Where the work is today |

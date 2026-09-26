@@ -8,11 +8,11 @@
 | Phase | State |
 |-------|-------|
 | l0 — 1:1 split | Done: `PeerReachCoordinator`, `CallMediaConnectCoordinator` (both directions), bridge = call policy; stop / retry on UI; glare antisymmetric; SFU attach completion on UI; hard-lab COLD phases |
-| l1 — reach in `domain/mesh` | Move done: `domain/mesh/reachability/{MeshReachPorts.h, PeerReachCoordinator, AmpCircuitHopReach}`, neutral names. Hop reach not yet routed through `PeerReachCoordinator` |
+| l1 — reach in `domain/mesh` | Done: `domain/mesh/reachability/{MeshReachPorts.h, PeerReachCoordinator, AmpCircuitHopReach}`, neutral names. Hop reach stays a separate *service reach* ([L008](DECISIONS.md#l008--two-kinds-of-reach-link-reach-and-service-reach)) |
 
 ## Next
 
-**l1 (rest)** — route hop reach (topology, `CallMediaPlane` hop paths) through `PeerReachCoordinator` where behavior matches; record the differences.
+**l2** — `MediaRelayAttachCoordinator` in `domain/mesh`: extract quote → `AcceptAndAttach` → reader → subscribe + reattach-on-loss from `CallHopMigrateWorkflow` (uses service reach), neutral session id; group joiner switches to it.
 
 ## Open questions
 

@@ -66,3 +66,16 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 **Status:** Accepted
 **Decision:** l1 onward stack on `refactor/peer-reach-coordinator` (its PR is open) rather than waiting for merge.
 **Rationale:** l1 moves the classes that branch created; stacking avoids a rebase of moved files.
+
+---
+
+## L008 — Two kinds of reach: link reach and service reach
+
+**Date:** 2026-09-26
+**Status:** Accepted
+**Decision:** Keep two reach operations in `domain/mesh/reachability`, not one:
+- **Link reach** — `PeerReachCoordinator`: success = a Connected PeerLink to the peer (dial → seed park → circuit as a *nested session* → punch; Reach / Await). Used by 1:1 call media.
+- **Service reach** — `ICircuitHopReach::TryEnsureHopReachable` (`AmpCircuitHopReach`): success = the node's `media_relay` service is dialable — an endpoint, or a *protocol-keyed* circuit hop registered for `kMediaRelayProtocolId` (`register_endpoint`, not nested); punch first, then circuit. Used by relay attach (group joiner today, broadcast viewer / broadcaster later).
+**Rationale:** Found while doing l1: routing hops through `PeerReachCoordinator` would move `media_relay` from protocol-keyed circuit hops onto nested links — a transport change, not a refactor. Both are feature-neutral and now live side by side; l2's `MediaRelayAttachCoordinator` uses service reach.
+**Revisit:** if `media_relay` ever runs over nested links (e.g. with the k3 path set), link reach can subsume service reach.
+
