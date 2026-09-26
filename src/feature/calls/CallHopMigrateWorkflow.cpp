@@ -33,6 +33,22 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
+/**
+ * Sync (test / harness) wrappers park until the async flow settles. Completions that touch the
+ * engine / seat / planner are posted to UI, so a caller parked on the UI thread must keep running
+ * UI tasks or it would wait out its own deadline.
+ */
+void ParkUntilSettled(const std::function<bool()>& settled, std::chrono::steady_clock::time_point deadline) {
+  std::function<void()> pump;
+  if (AppRuntime::CurrentlyOnUI()) {
+    pump = []() {
+      AppRuntime::RunUITasks();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    };
+  }
+  AmpParkUntil(settled, deadline, pump);
+}
+
 void PostControlOrRun(std::function<void()> task) {
   if (!task) {
     return;
@@ -135,7 +151,7 @@ Roe<void> CallHopMigrateWorkflow::MaybeSoftMigrateToSfu(const std::string& call_
   MaybeSoftMigrateToSfuAsync(call_id, trigger, prefer_hop_peer_id, expected_gen,
                              [wait](Roe<void> value) { wait.Finish(std::move(value)); });
   const auto deadline = Clock::now() + std::chrono::milliseconds(60000);
-  AmpParkUntil([&] { return wait.IsSettled(); }, deadline, {});
+  ParkUntilSettled([&] { return wait.IsSettled(); }, deadline);
   return wait.Wait(std::chrono::milliseconds(1), Error("SoftMigrate timed out"));
 }
 
@@ -1000,9 +1016,13 @@ void CallHopMigrateWorkflow::AttachLocalToSfuAsync(const std::string& call_id,
 
   auto finish_complete = [this, call_id, attach, self_hop, gen_at_start, cancel_gen_at_start,
                           sfu_frames_ready, media_key, media_epoch, on_done](int64_t bps) mutable {
-    PostControlOrRun([this, call_id, attach = std::move(attach), self_hop, bps, gen_at_start,
-                      cancel_gen_at_start, sfu_frames_ready, media_key, media_epoch,
-                      on_done = std::move(on_done)]() mutable {
+    // UI thread: completion calls CallMediaEngine::StartSfu / ApplyAdaptation and mutates seat and
+    // topology planner state — all UI-owned (CALLS.md). On MeshControl it raced OnLocalAcceptJoined
+    // on UI (TSan: hop planner phase; heap corruption in CallTopologyControllerTest). The attach
+    // network work already ran; only the local commit hops.
+    AppRuntime::PostUI([this, call_id, attach = std::move(attach), self_hop, bps, gen_at_start,
+                        cancel_gen_at_start, sfu_frames_ready, media_key, media_epoch,
+                        on_done = std::move(on_done)]() mutable {
       std::lock_guard<std::mutex> attach_lock(inbound_gate_.mu);
       on_done(CompleteAttachLocalToSfu(call_id, std::move(attach), self_hop, bps, gen_at_start,
                                        cancel_gen_at_start, sfu_frames_ready, media_key, media_epoch));
@@ -1110,7 +1130,7 @@ Roe<void> CallHopMigrateWorkflow::AttachLocalToSfu(const std::string& call_id,
   SettledWait<void> wait;
   AttachLocalToSfuAsync(call_id, attach_in, [wait](Roe<void> value) { wait.Finish(std::move(value)); });
   const auto deadline = Clock::now() + std::chrono::milliseconds(30000);
-  AmpParkUntil([&] { return wait.IsSettled(); }, deadline, {});
+  ParkUntilSettled([&] { return wait.IsSettled(); }, deadline);
   return wait.Wait(std::chrono::milliseconds(1), Error("AttachLocalToSfu timed out"));
 }
 
@@ -1177,7 +1197,7 @@ Roe<void> CallHopMigrateWorkflow::ReattachGuestSfuTransport(const std::string& c
   ReattachGuestSfuTransportAsync(call_id, attach_in,
                                  [wait](Roe<void> value) { wait.Finish(std::move(value)); });
   const auto deadline = Clock::now() + std::chrono::milliseconds(30000);
-  AmpParkUntil([&] { return wait.IsSettled(); }, deadline, {});
+  ParkUntilSettled([&] { return wait.IsSettled(); }, deadline);
   return wait.Wait(std::chrono::milliseconds(1), Error("ReattachGuestSfuTransport timed out"));
 }
 

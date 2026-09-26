@@ -265,6 +265,9 @@ public:
   }
 
   Roe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
+    // Product relay Subscribe is thread-safe (coordinator mutex) and topology calls it from UI
+    // and MeshControl — the fake must be too (ASan double-free in the vector otherwise).
+    std::lock_guard lock(subscribe_mu);
     subscribed_streams.push_back(stream_id);
     subscribed_channels.push_back(channel_id);
     return {};
@@ -295,6 +298,7 @@ public:
   std::string last_quote_hop;
   std::string last_quote_call_id;
   bool local_hop_attached_ = false;
+  std::mutex subscribe_mu;
   std::vector<uint32_t> subscribed_streams;
   std::vector<uint16_t> subscribed_channels;
   std::function<void()> transport_lost_handler;
@@ -335,6 +339,11 @@ protected:
   void TearDown() override {
     if (topo_) {
       topo_->SetHopArmingPorts({});
+    }
+    // Stop capture before the topology goes: the engine's capture thread runs the StartSfu send
+    // fn, which captures the hop-migrate workflow (TSan: use-after-free in TearDown).
+    if (media_) {
+      media_->Stop();
     }
     // Idempotent: tests that Initialize AppRuntime join the pool before store_ reset (PR #216).
     AppRuntime::Shutdown();
