@@ -98,3 +98,13 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 **Decision:** l3 lands as l3a (session spec on the existing `CallMediaEngine`), l3b (`DeviceArbiter` with one **device thread** owning SDL open / close / reopen-on-loss; pipelines receive streams through leases) and l3c (pipeline instances / rename, only if l4 / l5 need it). The local video encoder is created with the camera, not the session.
 **Rationale:** The engine's capture thread both owns the devices (opens both, reopens on loss, under the engine mutex) and paces sends; playout mixes into the stream that thread opened. A spec is a small change on that model; leases are not — revoking or handing over a device from another thread would race the capture thread's reopen. Giving devices one owner thread is the fix that makes leases sound, and it is cheaper before a second consumer (viewer / broadcaster) exists than after. The user prefers the better fix over the safer one and accepts threading risk earlier (2026-09-26).
 **Consequence:** l3b is a threading change inside `domain/media`; calls keep behavior and are verified with the engine gtests, TSan media + call suites and hard lab.
+
+---
+
+## L011 — Speaker is shared, mic exclusive; one device thread either way
+
+**Date:** 2026-09-26
+**Status:** Accepted (refines L003's "exclusive policy for now")
+**Decision:** `MediaDeviceArbiter` policy per kind: **mic exclusive** (a second holder is refused with the holder's name and runs without a mic), **speaker shared** (the OS mixes playback streams). Every open / close / reopen, of any kind, runs on the arbiter's single device thread.
+**Rationale:** The ringtone plays over an active call when a second invite rings (`ring_.active` during `in_call_`); an exclusive speaker would silently drop that. The speaker conflict that existed was never sharing — it was an open racing another holder's close on different threads (ringtone `DestroyAudioStream` vs call-media `OpenAudioDeviceStream`, the Samsung Accept hang), patched with `WaitUntilPlaybackDeviceReleased`. Serializing device operations fixes that structurally, so sharing is safe; two captures of one mic, on the other hand, would double-send the user's voice.
+**Consequence:** Viewer + call can both play (not blocked, L003 goal); a second duplex session gets no mic until the first releases it. Policy is a `MediaDeviceSharePolicy` value — changeable without touching pipelines.

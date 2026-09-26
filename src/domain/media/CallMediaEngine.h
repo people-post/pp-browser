@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/media/CallMediaAdaptation.h"
+#include "domain/media/MediaDeviceArbiter.h"
 #include "common/media/CallMediaHealth.h"
 #include "common/Error.h"
 #include "common/Module.h"
@@ -32,7 +33,10 @@ public:
 
   using StateChangedFn = std::function<void(const std::string& state)>;
 
+  /** Audio devices from `MediaDeviceArbiter::Default()`. */
   CallMediaEngine();
+  /** Audio devices from `devices` (must outlive the engine). */
+  explicit CallMediaEngine(MediaDeviceArbiter& devices);
   ~CallMediaEngine() override;
 
   void SetOnStateChanged(StateChangedFn callback);
@@ -136,7 +140,9 @@ public:
   void RequestVideoKeyframe();
   /**
    * Test-only: StartSfu / SetCameraEnabled skip SDL mic/camera open (silence TX, no device prompts).
-   * Product must leave this false. Used by call compose fixtures (PR #216 follow-up).
+   * Audio leases come from a private device-less arbiter, so several engines in one test process
+   * never contend. Product must leave this false. Used by call compose fixtures (PR #216 follow-up).
+   * Call before Start.
    */
   void SetSkipDeviceOpenForTest(bool skip);
   /** Drain stream ids that need an IDR (decode fail / first gap). */

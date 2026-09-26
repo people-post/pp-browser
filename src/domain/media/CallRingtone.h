@@ -1,5 +1,7 @@
 #pragma once
 
+#include "domain/media/MediaDeviceArbiter.h"
+
 #include <atomic>
 #include <chrono>
 #include <mutex>
@@ -8,12 +10,17 @@
 
 namespace pbr {
 
-/** Loops assets/sounds/call_ring.wav on the default playback device while Start()'d. */
+/**
+ * Loops assets/sounds/call_ring.wav on a speaker lease while Start()'d. The speaker is shared
+ * (media-client-layers L011): ringing over an active call (second invite) mixes with call audio;
+ * the arbiter's device thread keeps this open / close from racing call-media's.
+ */
 class CallRingtone {
 public:
   static constexpr std::chrono::milliseconds kDefaultShutdownJoinBudget{500};
 
-  CallRingtone();
+  /** Speaker from `devices` (must outlive the ringtone). */
+  explicit CallRingtone(MediaDeviceArbiter& devices = MediaDeviceArbiter::Default());
   ~CallRingtone();
 
   CallRingtone(const CallRingtone&) = delete;
@@ -33,18 +40,12 @@ public:
    */
   bool StopAndJoin(std::chrono::milliseconds budget);
   bool IsPlaying() const { return playing_.load(); }
-  /**
-   * True while an SDL playback stream from Start() may still be open.
-   * IsPlaying() clears on Stop() before DestroyAudioStream — call-media must wait on this.
-   */
-  static bool PlaybackDeviceHeld();
-  /** Spin-wait (non-UI) until PlaybackDeviceHeld() is false or timeout. */
-  static void WaitUntilPlaybackDeviceReleased(int timeout_ms = 2000);
 
 private:
   void RequestStop(bool wait);
   void RunLoop();
 
+  MediaDeviceArbiter& devices_;
   std::mutex mutex_;
   std::atomic<bool> playing_{false};
   std::atomic<bool> stop_{false};

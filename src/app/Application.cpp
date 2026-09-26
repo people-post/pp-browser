@@ -9,6 +9,7 @@
 #include "foundation/error/AppError.h"
 #include "common/Error.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "domain/media/MediaDeviceArbiter.h"
 #include "domain/messaging/ChatPayloadValidator.h"
 #include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/ProductBranding.h"
@@ -114,6 +115,7 @@ namespace {
 /** Runtime teardown quiesce budgets (THREADING.md § Teardown quiesce). Quit must stay inside
  * AppRuntime::kShutdownDeadlineBudget (3 s watchdog); reset can wait for a slow relay call. */
 constexpr std::chrono::milliseconds kQuitQuiesceBudget{2000};
+constexpr std::chrono::milliseconds kQuitMediaDevicesBudget{1000};
 constexpr std::chrono::milliseconds kProfileResetQuiesceBudget{10000};
 
 InputCoordinator* g_input_coordinator = nullptr;
@@ -1577,6 +1579,13 @@ void Application::Shutdown() {
       harfbuzz_font_engine_.reset();
     }
     AppRuntime::SetUIWakeCallback(nullptr);
+    {
+      // Released call-media / ringtone leases close on the device thread — finish before SDL_Quit.
+      StartupPhase phase("Shutdown::MediaDevices");
+      if (!MediaDeviceArbiter::ShutdownDefault(kQuitMediaDevicesBudget)) {
+        log().warning << "Shutdown: media device closes still running — detached";
+      }
+    }
     {
       StartupPhase phase("Shutdown::Backend");
       Backend::Shutdown();

@@ -3,6 +3,8 @@ pp_browser_add_domain_library(pp_domain_media
     CallMediaAdaptation.cpp
     CallMediaEngine.cpp
     CallRingtone.cpp
+    MediaDeviceArbiter.cpp
+    SdlAudioDeviceBackend.cpp
     VideoCodecFactory.cpp
     VideoCodecUnavailable.cpp
     VideoYuv.cpp

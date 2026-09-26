@@ -4,7 +4,7 @@ Ordering and checkboxes only. **Status:** [CURRENT_STATE.md](CURRENT_STATE.md). 
 
 ```
 l0 (done) ── l1 (reach → domain/mesh, done) ── l2 (relay attach, done) ──┬── l4 (broadcast viewer) ── l5 (broadcaster) ── l6 (remove from calls)
-                                l3a (spec, done) ── l3b (device leases) ── l3c? ─┘
+                                l3a (spec, done) ── l3b (audio leases, done · camera l3b-2) ── l3c? ─┘
 later: viewer video · relay upstream via viewer client · relay keyframe cache
 ```
 
@@ -47,11 +47,15 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 - [x] Health snapshot reads engine-mutex fields under the lock; video target atomic (TSan, first engine-level tests)
 - [x] gtests `media_session_spec_test` (engine-level, no devices); full suite, TSan media + call suites, hard-lab `hard-w5` green
 
-### l3b — `DeviceArbiter` on a device owner thread
+### l3b — `MediaDeviceArbiter` on a device owner thread
 
-- [ ] `DeviceArbiter`: leases per kind (mic / camera / speaker); policy exclusive with a clear refusal reason; injectable, process default
-- [ ] One device thread owns SDL audio / camera open, close and reopen-on-loss; pipelines get streams through leases, never open devices (replaces the capture thread's device ownership)
-- [ ] Calls take duplex leases; behavior unchanged (gtests + hard lab + dogfood)
+- [x] `MediaDeviceArbiter` (`domain/media/MediaDeviceArbiter.*`): per-kind `AudioDeviceLease`s; policy per kind — mic exclusive (refusal names the holder), speaker shared ([L011](DECISIONS.md#l011--speaker-is-shared-mic-exclusive-one-device-thread-either-way)); injectable (`CallMediaEngine(MediaDeviceArbiter&)`, `CallRingtone(MediaDeviceArbiter&)`), process `Default()`
+- [x] One device thread performs every audio open / close / reopen (`IAudioDeviceBackend`: SDL, null); holders do I/O through the lease, so an endpoint is never closed under a reader / writer; releases never block the holder
+- [x] Engine takes the leases its spec asks for (duplex: mic + speaker; playback-only: speaker) and reopens them in place; ringtone holds a speaker lease — `CallRingtone::WaitUntilPlaybackDeviceReleased` and its global holder count are gone
+- [x] Quit: `MediaDeviceArbiter::ShutdownDefault` after the runtime joins, before `SDL_Quit`
+- [x] gtests `media_device_arbiter_test` (fake backend: exclusivity, shared speaker, single device thread, no overlapping OS calls, FIFO close-before-open, I/O during reopen, engine leases per spec); full suite, TSan / ASan media, TSan call suites, hard-lab `hard-w5` green
+- [ ] Camera lease (l3b-2): `SDL_OpenCamera` still runs under the engine mutex on the caller's thread
+- [ ] Dogfood: Android speaker toggle / SoftMigrate reopen, macOS mic prompt, ring over an active call; Android leave — `CallAudioSession::Deactivate` can now run just before the device thread closes AudioRecord (closes are async)
 
 ### l3c — Pipeline instances (only if l4 / l5 need it)
 

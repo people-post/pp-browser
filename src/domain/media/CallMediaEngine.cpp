@@ -2,10 +2,9 @@
 
 #include "domain/media/CallAudioSession.h"
 #include "domain/media/CallMediaPlayout.h"
-#include "domain/media/CallRingtone.h"
 #include "domain/media/CameraCaptureOrientation.h"
 #include "domain/media/IVideoCodec.h"
-#include "domain/media/SdlAudioBootstrap.h"
+#include "domain/media/MediaDeviceArbiter.h"
 #include "domain/media/VideoYuv.h"
 #include "common/Utilities.h"
 
@@ -190,10 +189,16 @@ struct CallMediaEngine::Impl {
   bool capture_available = false;
 
   OpusEncoder* encoder = nullptr;
-  SDL_AudioStream* capture_stream = nullptr;
-  SDL_AudioStream* playback_stream = nullptr;
-  SDL_AudioDeviceID capture_device = 0;
-  SDL_AudioDeviceID playback_device = 0;
+  /** Where audio devices come from: `own_devices` (constructor) or `test_devices` (skip-open). */
+  MediaDeviceArbiter* devices = nullptr;
+  MediaDeviceArbiter* own_devices = nullptr;
+  std::unique_ptr<MediaDeviceArbiter> test_devices;
+  /**
+   * Held while the session runs. Acquired / reopened by the capture thread (the only writer while it
+   * runs, under `mutex`); the playout thread writes the speaker under `mutex`.
+   */
+  std::unique_ptr<AudioDeviceLease> mic_lease;
+  std::unique_ptr<AudioDeviceLease> speaker_lease;
 
   struct RemoteAudioTrack {
     OpusDecoder* decoder = nullptr;
@@ -396,20 +401,11 @@ struct CallMediaEngine::Impl {
     audio_tracks.clear();
   }
 
-  /** Close SDL streams/devices only — keep Opus, tracks, and VoIP session active. */
+  /** Release device leases only — keep Opus, tracks, and VoIP session active. Closes run on the
+   *  arbiter's device thread; this never blocks on the OS. */
   void CloseAudioDevicesLocked() {
-    // SDL_OpenAudioDeviceStream binds device+stream; DestroyAudioStream closes the device.
-    // Do not SDL_CloseAudioDevice afterward (double-free / tcache abort on Linux).
-    if (capture_stream) {
-      SDL_DestroyAudioStream(capture_stream);
-      capture_stream = nullptr;
-    }
-    if (playback_stream) {
-      SDL_DestroyAudioStream(playback_stream);
-      playback_stream = nullptr;
-    }
-    capture_device = 0;
-    playback_device = 0;
+    mic_lease.reset();
+    speaker_lease.reset();
     capture_available = false;
   }
 
@@ -538,16 +534,14 @@ struct CallMediaEngine::Impl {
             }
             pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(ticks, 1)));
           }
-          SDL_AudioStream* out = playback_stream;
+          AudioDeviceLease* out = speaker_lease.get();
           if (out && any) {
             SmoothLevel(remote_output_level, FramePeakLevel(mix.data(), kFrameSamples));
             remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
-            (void)SDL_PutAudioStreamData(out, mix.data(),
-                                         kFrameSamples * static_cast<int>(sizeof(int16_t)));
+            (void)out->Write(mix.data(), kFrameSamples * static_cast<int>(sizeof(int16_t)));
           } else if (out && !audio_tracks.empty()) {
-            // Silent frame keeps SDL clock alive when all streams priming.
-            (void)SDL_PutAudioStreamData(out, mix.data(),
-                                         kFrameSamples * static_cast<int>(sizeof(int16_t)));
+            // Silent frame keeps the device clock alive when all streams priming.
+            (void)out->Write(mix.data(), kFrameSamples * static_cast<int>(sizeof(int16_t)));
           }
         }
         const double drop_p =
@@ -561,13 +555,6 @@ struct CallMediaEngine::Impl {
         }
       }
     });
-  }
-
-  Roe<void> EnsureAudioSubsystem() {
-    if (!EnsureSdlAudioSubsystem()) {
-      return Error(std::string("SDL_InitSubSystem(AUDIO) failed: ") + SDL_GetError());
-    }
-    return {};
   }
 
   Roe<void> EnsureCameraSubsystem() {
@@ -609,130 +596,74 @@ struct CallMediaEngine::Impl {
     return raw;
   }
 
-  /**
-   * Open SDL capture/playback. May block for a long time on OS mic permission
-   * (macOS TCC). Call only from the capture worker — never from UI, relay IO,
-   * or the mesh host thread (that freezes accept + peer signaling).
-   */
-  /** Open DEFAULT_RECORDING; retries briefly — OEM speaker route (Moto) races AAudio open. */
-  bool TryOpenCaptureStream(const SDL_AudioSpec& want, SDL_AudioStream** out_stream,
-                            SDL_AudioDeviceID* out_dev) {
-    *out_stream = nullptr;
-    *out_dev = 0;
-    const int kAttempts = CallAudioSession::CaptureOpenAttemptCount();
-    for (int attempt = 0; attempt < kAttempts; ++attempt) {
-      const int delay_ms = CallAudioSession::CaptureOpenRetryDelayMs(attempt);
-      if (delay_ms > 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-      }
-      if (!capture_running.load(std::memory_order_relaxed)) {
-        return false;
-      }
-      SDL_AudioStream* stream =
-          SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_RECORDING, &want, nullptr, nullptr);
-      if (!stream) {
-        SDL_Log("CallMediaEngine: capture open failed (attempt %d/%d): %s", attempt + 1, kAttempts,
-                SDL_GetError());
-        continue;
-      }
-      const SDL_AudioDeviceID dev = SDL_GetAudioStreamDevice(stream);
-      if (!SDL_ResumeAudioDevice(dev)) {
-        SDL_Log("CallMediaEngine: capture resume failed (attempt %d/%d): %s", attempt + 1, kAttempts,
-                SDL_GetError());
-        SDL_DestroyAudioStream(stream);
-        continue;
-      }
-      *out_stream = stream;
-      *out_dev = dev;
-      return true;
-    }
-    return false;
+  MediaDeviceArbiter& DeviceArbiter() {
+    return *devices;
   }
 
-  Roe<void> OpenAudioDevices() {
-    if (skip_device_open_for_test.load(std::memory_order_relaxed)) {
-      std::lock_guard lock(mutex);
-      CloseAudioDevicesLocked();
-      capture_available = false;
-      return {};
+  /** Capture thread only. Null when refused by policy (logged) — the session runs without it. */
+  std::unique_ptr<AudioDeviceLease> AcquireLease(MediaDeviceKind kind, const std::string& holder) {
+    AudioLeaseRequest request;
+    request.kind = kind;
+    request.holder = holder;
+    request.format = AudioDeviceFormat{kSampleRate, kChannels};
+    request.still_wanted = [this]() { return capture_running.load(std::memory_order_acquire); };
+    auto lease = DeviceArbiter().AcquireAudio(request);
+    if (!lease) {
+      SDL_Log("CallMediaEngine: %s refused: %s", MediaDeviceKindName(kind), lease.error().message.c_str());
+      return nullptr;
     }
-    if (auto ok = EnsureAudioSubsystem(); !ok) {
-      return ok.error();
-    }
+    return std::move(*lease);
+  }
 
-    // Accept stops ringtone async (UI must not join). Capture worker waits so we do not
-    // OpenAudioDeviceStream(DEFAULT_PLAYBACK) while ringtone is still DestroyAudioStream'ing.
-    CallRingtone::WaitUntilPlaybackDeviceReleased();
-    if (!capture_running.load(std::memory_order_acquire)) {
-      return Error("call media stopped");
-    }
-
+  /**
+   * Capture thread only: take the leases the session spec asks for (first open), or reopen held
+   * ones and retry missing ones (`reopen` — speaker route change, starved capture, SoftMigrate).
+   * Device open / close itself runs on the arbiter's device thread and may block on the OS mic
+   * permission prompt — never on UI, relay IO or the mesh host thread.
+   */
+  Roe<void> EnsureAudioLeases(bool reopen) {
     SessionSpec want_spec;
+    std::string holder;
+    std::unique_ptr<AudioDeviceLease> mic;
+    std::unique_ptr<AudioDeviceLease> speaker;
     {
       std::lock_guard lock(mutex);
       want_spec = spec;
+      holder = call_id;
+      mic = std::move(mic_lease);
+      speaker = std::move(speaker_lease);
+      capture_available = false;
     }
-    if (want_spec.capture) {
+    if (want_spec.capture && !skip_device_open_for_test.load(std::memory_order_relaxed)) {
       // VoIP audio session only when the mic is ours (a playback-only viewer is not a call).
+      // Re-asserted on reopen too: Android route changes can drop MODE_IN_COMMUNICATION.
       CallAudioSession::ApplyCaptureAudioHints();
       CallAudioSession::ActivateForVoipCall();
     }
-
-    SDL_AudioSpec want{};
-    want.freq = kSampleRate;
-    want.format = SDL_AUDIO_S16;
-    want.channels = static_cast<Uint8>(kChannels);
-
-    SDL_AudioStream* new_capture = nullptr;
-    SDL_AudioDeviceID new_capture_dev = 0;
-    const bool new_capture_ok = want_spec.capture && TryOpenCaptureStream(want, &new_capture, &new_capture_dev);
+    const auto ensure = [&](bool wanted, MediaDeviceKind kind, std::unique_ptr<AudioDeviceLease>& lease) {
+      if (!wanted || !capture_running.load(std::memory_order_acquire)) {
+        return;
+      }
+      if (lease) {
+        (void)lease->Reopen();
+      } else {
+        lease = AcquireLease(kind, holder);
+      }
+    };
+    ensure(want_spec.capture, MediaDeviceKind::Mic, mic);
+    ensure(want_spec.playback, MediaDeviceKind::Speaker, speaker);
     if (!capture_running.load(std::memory_order_acquire)) {
-      if (new_capture) {
-        SDL_DestroyAudioStream(new_capture);
-      }
-      return Error("call media stopped");
+      return Error("call media stopped");  // leases release on scope exit
     }
-
-    SDL_AudioStream* new_playback =
-        want_spec.playback ? SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr)
-                           : nullptr;
-    if (!capture_running.load(std::memory_order_acquire)) {
-      if (new_playback) {
-        SDL_DestroyAudioStream(new_playback);
-      }
-      if (new_capture) {
-        SDL_DestroyAudioStream(new_capture);
-      }
-      return Error("call media stopped");
-    }
-    SDL_AudioDeviceID new_playback_dev = 0;
-    if (!want_spec.playback) {
-      // Capture-only session: no speaker.
-    } else if (!new_playback) {
+    if (speaker && !speaker->HasDevice()) {
       // Headless CI / no default device: still run silence TX (same as no-capture path).
       SDL_Log("CallMediaEngine: no playback device — RX muted; capture/silence TX still active: %s",
-              SDL_GetError());
-    } else {
-      new_playback_dev = SDL_GetAudioStreamDevice(new_playback);
-      if (!SDL_ResumeAudioDevice(new_playback_dev)) {
-        SDL_DestroyAudioStream(new_playback);
-        if (new_capture) {
-          SDL_DestroyAudioStream(new_capture);
-        }
-        return Error(std::string("SDL playback resume failed: ") + SDL_GetError());
-      }
+              speaker->OpenError().c_str());
     }
-
-    {
-      std::lock_guard lock(mutex);
-      // Reopen path already closed; first open should be empty. Drop any stale handles.
-      CloseAudioDevicesLocked();
-      capture_stream = new_capture;
-      capture_device = new_capture_dev;
-      capture_available = new_capture_ok;
-      playback_stream = new_playback;
-      playback_device = new_playback_dev;
-    }
+    std::lock_guard lock(mutex);
+    mic_lease = std::move(mic);
+    speaker_lease = std::move(speaker);
+    capture_available = mic_lease && mic_lease->HasDevice();
     return {};
   }
 
@@ -743,8 +674,8 @@ struct CallMediaEngine::Impl {
     capture_thread = std::thread([this]() {
       // Device open (and OS mic prompts) stay on this worker so CallAccept /
       // AcceptInvite can finish signaling without freezing UI or libp2p.
-      if (auto audio = OpenAudioDevices(); !audio) {
-        SDL_Log("CallMediaEngine: OpenAudioDevices failed: %s", audio.error().message.c_str());
+      if (auto audio = EnsureAudioLeases(/*reopen=*/false); !audio) {
+        SDL_Log("CallMediaEngine: audio devices: %s", audio.error().message.c_str());
       } else if (!capture_available) {
         SDL_Log("CallMediaEngine: started without capture device — sending silence; playback still active");
       }
@@ -765,18 +696,10 @@ struct CallMediaEngine::Impl {
       while (capture_running.load()) {
         if (audio_reopen_requested.exchange(false, std::memory_order_acq_rel)) {
           // Android speakerphone / SoftMigrate can leave AudioRecord feeding zeros until reopen.
+          // Android settle (Moto safety ramp) is the backend's ReopenSettle, on the device thread.
           pending.clear();
-          {
-            std::lock_guard lock(mutex);
-            CloseAudioDevicesLocked();
-          }
-          const int settle_ms = CallAudioSession::CaptureReopenSettleDelayMs();
-          if (settle_ms > 0) {
-            // Android: let OEM speaker route settle (Moto MotSpeakerHelper safety ramp).
-            std::this_thread::sleep_for(std::chrono::milliseconds(settle_ms));
-          }
           SDL_Log("CallMediaEngine: reopening audio devices (speaker route / SoftMigrate)");
-          if (auto audio = OpenAudioDevices(); !audio) {
+          if (auto audio = EnsureAudioLeases(/*reopen=*/true); !audio) {
             SDL_Log("CallMediaEngine: audio reopen failed: %s", audio.error().message.c_str());
           } else if (!capture_available) {
             SDL_Log("CallMediaEngine: audio reopen — no capture device; sending silence");
@@ -805,9 +728,9 @@ struct CallMediaEngine::Impl {
           continue;
         }
         bool paced_silence_frame = false;
-        if (capture_stream) {
+        if (capture_available) {
           int16_t chunk[kFrameSamples];
-          const int got = SDL_GetAudioStreamData(capture_stream, chunk, static_cast<int>(sizeof(chunk)));
+          const int got = mic_lease->Read(chunk, static_cast<int>(sizeof(chunk)));
           if (got > 0) {
             const size_t samples = static_cast<size_t>(got) / sizeof(int16_t);
             pending.insert(pending.end(), chunk, chunk + samples);
@@ -1175,8 +1098,12 @@ struct CallMediaEngine::Impl {
   std::string last_camera_warn;
 };
 
-CallMediaEngine::CallMediaEngine() : impl_(std::make_unique<Impl>()) {
+CallMediaEngine::CallMediaEngine() : CallMediaEngine(MediaDeviceArbiter::Default()) {}
+
+CallMediaEngine::CallMediaEngine(MediaDeviceArbiter& devices) : impl_(std::make_unique<Impl>()) {
   redirectLogger("CallMediaEngine");
+  impl_->own_devices = &devices;
+  impl_->devices = &devices;
 }
 
 CallMediaEngine::~CallMediaEngine() {
@@ -1190,6 +1117,11 @@ void CallMediaEngine::SetOnStateChanged(StateChangedFn callback) {
 
 void CallMediaEngine::SetSkipDeviceOpenForTest(bool skip) {
   impl_->skip_device_open_for_test.store(skip, std::memory_order_relaxed);
+  std::lock_guard lock(impl_->mutex);
+  if (skip && !impl_->test_devices) {
+    impl_->test_devices = std::make_unique<MediaDeviceArbiter>(CreateNullAudioDeviceBackend());
+  }
+  impl_->devices = skip ? impl_->test_devices.get() : impl_->own_devices;
 }
 
 Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) {

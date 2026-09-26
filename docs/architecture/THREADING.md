@@ -47,7 +47,7 @@ flowchart TB
 | Own a thread when… | Share `WorkerPool` when… |
 |--------------------|--------------------------|
 | Role is long-lived, fixed cardinality, abort/join lifecycle of its own | Work is event-fan-out, sync I/O, or must compete under Critical/Normal/Background |
-| Examples: Amp MeshPump, MeshControlPool, CallMediaEngine, CallRingtone, LAN mDNS, Linux notifier | Examples: libcurl PollInbox, LLM/tools, Argon2 unlock, SQLite writes, attachment drain queue, icon HTTP |
+| Examples: Amp MeshPump, MeshControlPool, CallMediaEngine, CallRingtone, MediaDeviceArbiter device thread, LAN mDNS, Linux notifier | Examples: libcurl PollInbox, LLM/tools, Argon2 unlock, SQLite writes, attachment drain queue, icon HTTP |
 
 Contain unbounded item fan-out with **internal queues** on the shared pool (e.g. `AttachmentFetchWorkflow::DrainQueue`), not one thread per item.
 
@@ -216,6 +216,7 @@ RequestExit → HideWindow (<100ms close feel)
 - Window hide: immediate on `Backend::RequestExit` / start of `Application::Shutdown`
 - `CallMediaBridge::PrepareForTeardown(0)`: abort + generation bump only (no sleep-spin)
 - `CallRingtone::StopAndJoin(≤500ms)`, `CallMediaEngine::Stop` capture/playout/video ≤500ms
+- `MediaDeviceArbiter::ShutdownDefault(≤1s)`: runs queued device closes, then joins the device thread (before `SDL_Quit`)
 - `MeshControlPool::Shutdown` / `CoordinatorThread::Shutdown` / `WorkerPool::Shutdown`: join ≤500ms; on timeout detach and leak until process exit
 - Full graceful exit target: ~3s wall clock; `AppRuntime` watchdog calls `std::_Exit(0)` at deadline as **last resort** if joins hang
 
@@ -261,6 +262,7 @@ RequestStop(gen) → Drain(deadline) → Join(deadline) → destroy
 | LAN mDNS | stop advertise / join watcher before mesh destroy |
 | `ILocalNotifier` | `Shutdown` before UI mailbox teardown |
 | `CallRingtone` | `StopAndJoin(budget)` before `SDL_Quit` |
+| `MediaDeviceArbiter` (default) | `ShutdownDefault(budget)` after the runtime joins, before `SDL_Quit` — released leases close on its device thread |
 
 Sync façades reject new work when `AppRuntime::IsShuttingDown()` (debug log + `Error("shutdown in progress")`):
 `CallStack::TryEnsureCircuitHopReachable`, `CallStack::TryEnsurePeerReachable`,
@@ -316,7 +318,8 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 |------|----------|-------|
 | Sync L4 test wrappers | AmpCircuitHopReach / AmpMediaRelayClient / SoftMigrate sync façades | Product paths Async; sync wrappers for tests (empty-pump park); gated when `IsShuttingDown` |
 | Detached MeshControl / WorkerPool / coordinator on join timeout | MeshHost::StopOwnedThreads / ThreadRuntime::Shutdown | Loud log + `unique_ptr::release`; process must exit soon (watchdog ≤3s) |
-| Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses joinable `joiner_`; budgeted `StopAndJoin` before `SDL_Quit` |
+| Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses joinable `joiner_`; budgeted `StopAndJoin` before `SDL_Quit`; speaker via a shared `MediaDeviceArbiter` lease |
+| Audio device open / close / reopen | `src/domain/media/MediaDeviceArbiter.*` | One device thread for every SDL audio open, close and reopen (no open races another holder's close); holders do I/O through `AudioDeviceLease`; `Acquire` / `Reopen` block the caller — never the UI thread |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
 

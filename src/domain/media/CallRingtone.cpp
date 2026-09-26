@@ -1,5 +1,4 @@
 #include "domain/media/CallRingtone.h"
-#include "domain/media/SdlAudioBootstrap.h"
 
 #include "foundation/platform/IAssetLocator.h"
 
@@ -14,8 +13,6 @@
 
 namespace pbr {
 namespace {
-
-std::atomic<int> g_ringtone_playback_device_holders{0};
 
 bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
   const std::string path = IAssetLocator::Instance().Resolve("sounds/call_ring.wav");
@@ -66,22 +63,10 @@ bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
 
 } // namespace
 
-CallRingtone::CallRingtone() = default;
+CallRingtone::CallRingtone(MediaDeviceArbiter& devices) : devices_(devices) {}
 
 CallRingtone::~CallRingtone() {
   StopAndJoin();
-}
-
-bool CallRingtone::PlaybackDeviceHeld() {
-  return g_ringtone_playback_device_holders.load(std::memory_order_acquire) > 0;
-}
-
-void CallRingtone::WaitUntilPlaybackDeviceReleased(const int timeout_ms) {
-  const auto deadline =
-      std::chrono::steady_clock::now() + std::chrono::milliseconds(std::max(0, timeout_ms));
-  while (PlaybackDeviceHeld() && std::chrono::steady_clock::now() < deadline) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(5));
-  }
 }
 
 void CallRingtone::Start() {
@@ -211,41 +196,31 @@ bool CallRingtone::StopAndJoin(std::chrono::milliseconds budget) {
 }
 
 void CallRingtone::RunLoop() {
-  if (!EnsureSdlAudioSubsystem()) {
-    SDL_Log("CallRingtone: SDL_InitSubSystem(AUDIO) failed: %s", SDL_GetError());
+  AudioLeaseRequest request;
+  request.kind = MediaDeviceKind::Speaker;
+  request.holder = "ringtone";
+  request.format = AudioDeviceFormat{wav_freq_, wav_channels_};
+  request.still_wanted = [this]() { return !stop_.load(); };
+  auto lease = devices_.AcquireAudio(request);
+  if (!lease || !(*lease)->HasDevice()) {
+    SDL_Log("CallRingtone: no speaker: %s", lease ? (*lease)->OpenError().c_str() : lease.error().message.c_str());
     playing_ = false;
     return;
   }
-  SDL_AudioSpec want{};
-  want.freq = wav_freq_;
-  want.format = SDL_AUDIO_S16;
-  want.channels = static_cast<Uint8>(wav_channels_);
-  SDL_Log("CallRingtone: opening playback driver=%s", SDL_GetCurrentAudioDriver());
-  SDL_AudioStream* stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr);
-  if (!stream) {
-    SDL_Log("CallRingtone: playback open failed: %s", SDL_GetError());
-    playing_ = false;
-    return;
-  }
-  g_ringtone_playback_device_holders.fetch_add(1, std::memory_order_acq_rel);
-  const SDL_AudioDeviceID device = SDL_GetAudioStreamDevice(stream);
-  (void)SDL_ResumeAudioDevice(device);
-  SDL_Log("CallRingtone: playing loop freq=%d ch=%d bytes=%zu", wav_freq_, wav_channels_,
-          wav_pcm_.size());
+  AudioDeviceLease& speaker = **lease;
+  SDL_Log("CallRingtone: playing loop freq=%d ch=%d bytes=%zu", wav_freq_, wav_channels_, wav_pcm_.size());
 
+  const int low_water = wav_freq_ * static_cast<int>(sizeof(int16_t)) / 2;
   while (!stop_.load()) {
-    const int queued = SDL_GetAudioStreamQueued(stream);
-    if (queued < want.freq * static_cast<int>(sizeof(int16_t)) / 2) {
-      (void)SDL_PutAudioStreamData(stream, wav_pcm_.data(), static_cast<int>(wav_pcm_.size()));
+    if (speaker.Queued() < low_water) {
+      (void)speaker.Write(wav_pcm_.data(), static_cast<int>(wav_pcm_.size()));
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(40));
   }
 
-  SDL_ClearAudioStream(stream);
-  // Destroying a stream from SDL_OpenAudioDeviceStream also closes the device — do not
-  // SDL_CloseAudioDevice(device) afterward (double-close can hang quit on Android).
-  SDL_DestroyAudioStream(stream);
-  g_ringtone_playback_device_holders.fetch_sub(1, std::memory_order_acq_rel);
+  speaker.Clear();
+  // Releasing the lease queues the close on the arbiter's device thread — never blocks here.
+  lease->reset();
   playing_ = false;
 }
 
