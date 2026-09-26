@@ -715,6 +715,7 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
   ClearMeshConnectFailed();
   if (!offerer) {
     pending_answerer_call_id_.clear();
+    key_wait_gen_.fetch_add(1, std::memory_order_acq_rel);
     pending_answerer_peer_.clear();
   }
 
@@ -943,16 +944,23 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
       }
       // Accept-time SyncInbox often races the offerer's MediaKey send — keep polling.
       // SyncInbox coalesces via poll_again_; do not assume each Request starts HTTP.
-      AppRuntime::PostWorkerBackground([this, call_id]() {
+      // The worker must not read pending_answerer_call_id_ (UI-owned string): it watches the
+      // key-wait generation instead, bumped whenever the pending answerer changes (TSan).
+      const uint64_t key_wait_gen = key_wait_gen_.fetch_add(1, std::memory_order_acq_rel) + 1;
+      AppRuntime::PostWorkerBackground([this, call_id, key_wait_gen]() {
+        const auto superseded = [this, key_wait_gen]() {
+          return stopping_.load(std::memory_order_acquire) ||
+                 key_wait_gen_.load(std::memory_order_acquire) != key_wait_gen;
+        };
         const int rounds = media_key_inbox_poll_rounds_;
         for (int i = 0; i < rounds; ++i) {
-          if (stopping_.load(std::memory_order_acquire) || pending_answerer_call_id_ != call_id) {
+          if (superseded()) {
             return;
           }
           host_.P2pRequestInboxSync();
           // Chunked sleep so PrepareForTeardown / Leave can abort without a 1s hang.
           for (int slice = 0; slice < 20; ++slice) {
-            if (stopping_.load(std::memory_order_acquire) || pending_answerer_call_id_ != call_id) {
+            if (superseded()) {
               return;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -969,6 +977,7 @@ void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
             return; // key arrived, Leave, or superseding Accept
           }
           pending_answerer_call_id_.clear();
+          key_wait_gen_.fetch_add(1, std::memory_order_acq_rel);
           pending_answerer_peer_.clear();
           const std::string err = Tr("call.error.media_key_timeout");
           log().warning << "Deferred MediaKey wait exhausted call_id=" << call_id
@@ -1028,6 +1037,7 @@ void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
     }
     log().info << "CallMediaKey ready — starting deferred answerer media call_id=" << call_id;
     pending_answerer_call_id_.clear();
+    key_wait_gen_.fetch_add(1, std::memory_order_acq_rel);
     pending_answerer_peer_.clear();
     Apply(CallDirectPlannerEvent::KeyReady, call_id, peer);
     if (arming_.on_media_key_ready) {
@@ -1073,6 +1083,7 @@ void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
   const std::string peer = media_peer_identity_;
   if (pending_answerer_call_id_ == call_id) {
     pending_answerer_call_id_.clear();
+    key_wait_gen_.fetch_add(1, std::memory_order_acq_rel);
     pending_answerer_peer_.clear();
   }
   reach_.ReleasePeer(peer);
@@ -1176,6 +1187,7 @@ void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
   const std::string peer = media_peer_identity_;
   const std::string call_id = media_call_id_;
   pending_answerer_call_id_.clear();
+  key_wait_gen_.fetch_add(1, std::memory_order_acq_rel);
   pending_answerer_peer_.clear();
   reach_.ReleasePeer(peer);
   direct_.Detach();

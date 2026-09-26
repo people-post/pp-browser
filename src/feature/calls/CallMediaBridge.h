@@ -243,6 +243,8 @@ private:
   /** Bumped by AbortConnectSequence; the StartSfu send fn drops TX from an older generation. */
   std::atomic<uint64_t> connect_generation_{0};
   std::atomic<bool> stopping_{false};
+  /** Bumped when the pending (key-deferred) answerer changes; the key-poll worker watches it. */
+  std::atomic<uint64_t> key_wait_gen_{0};
   /** Cleared in the destructor; guards stops posted from other threads. */
   std::shared_ptr<std::atomic<bool>> alive_;
   uint64_t direct_health_timer_id_ = 0;

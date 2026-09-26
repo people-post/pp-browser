@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <atomic>
 #include <thread>
@@ -218,8 +219,12 @@ public:
   void TryEnsureCallMediaReachableAsync(const std::string& peer_key,
                                         std::function<void(Roe<void>)> on_done,
                                         bool /*allow_circuit*/ = true) override {
+    // Runs on the Coordinator (PeerReachCoordinator) while the test thread reads the fields.
     ++call_media_ensure_calls;
-    last_peer = peer_key;
+    {
+      std::lock_guard lock(mu);
+      last_peer = peer_key;
+    }
     if (dial) {
       dial->connected[peer_key] = true;
       dial->circuit_hops[peer_key] = true;
@@ -230,8 +235,13 @@ public:
   }
 
   FakeDialRegistry* dial = nullptr;
-  int call_media_ensure_calls = 0;
+  std::atomic<int> call_media_ensure_calls{0};
+  std::mutex mu;
   std::string last_peer;
+  std::string LastPeer() {
+    std::lock_guard lock(mu);
+    return last_peer;
+  }
   bool call_media_result = true;
   std::string call_media_error = "circuit hop reach failed";
 };
@@ -832,7 +842,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, EnsureReachResolvesAccountToMeshPeerId)
   }
 
   ASSERT_GE(circuit_->call_media_ensure_calls, 1);
-  EXPECT_EQ(circuit_->last_peer, mesh_peer)
+  EXPECT_EQ(circuit_->LastPeer(), mesh_peer)
       << "TryEnsureCallMediaReachable must use MeshPeerId, not account:";
   bridge_->PrepareForTeardown(0);
 }
