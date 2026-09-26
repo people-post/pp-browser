@@ -5,6 +5,7 @@ include(PpBrowserFeature)
 add_subdirectory(settings)
 add_subdirectory(ai)
 add_subdirectory(calls)
+add_subdirectory(broadcast)
 add_subdirectory(conversations)
 
 set(PP_FEATURE_MODULE_LIBS
@@ -13,6 +14,7 @@ set(PP_FEATURE_MODULE_LIBS
   pp_feature_ai_bindings
   pp_feature_ai
   pp_feature_calls
+  pp_feature_broadcast
   pp_feature_conversations
 )
 

@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <map>
 #include <mutex>
 #include <sstream>
 #include <unordered_map>
@@ -98,6 +99,8 @@ struct AmpMediaRelayCoordinator::Impl {
     bool reader_started = false;
     std::unordered_set<uint64_t> subscriptions;
     std::function<void()> transport_lost_handler;
+    std::map<uint64_t, std::function<void()>> transport_lost_observers;
+    uint64_t next_observer_token = 1;
   };
 
   struct PendingQuote {
@@ -451,6 +454,7 @@ struct AmpMediaRelayCoordinator::Impl {
 
   void HandleClientTransportLost(const char* reason) {
     std::function<void()> handler;
+    std::vector<std::function<void()>> observers;
     {
       std::lock_guard lock(mu);
       if (!client_.channel) {
@@ -461,10 +465,17 @@ struct AmpMediaRelayCoordinator::Impl {
       client_.reader_started = false;
       // Keep the handler armed across reattach cycles (do not move it away).
       handler = client_.transport_lost_handler;
+      for (const auto& [token, observer] : client_.transport_lost_observers) {
+        (void)token;
+        observers.push_back(observer);
+      }
     }
     (void)reason;
     if (handler) {
       handler();
+    }
+    for (const auto& observer : observers) {
+      observer();
     }
   }
 
@@ -1279,6 +1290,18 @@ void AmpMediaRelayCoordinator::StartClientFrameReader() {
 void AmpMediaRelayCoordinator::SetClientTransportLostHandler(std::function<void()> handler) {
   std::lock_guard lock(impl_->mu);
   impl_->client_.transport_lost_handler = std::move(handler);
+}
+
+uint64_t AmpMediaRelayCoordinator::AddClientTransportLostObserver(std::function<void()> observer) {
+  std::lock_guard lock(impl_->mu);
+  const uint64_t token = impl_->client_.next_observer_token++;
+  impl_->client_.transport_lost_observers.emplace(token, std::move(observer));
+  return token;
+}
+
+void AmpMediaRelayCoordinator::RemoveClientTransportLostObserver(uint64_t token) {
+  std::lock_guard lock(impl_->mu);
+  impl_->client_.transport_lost_observers.erase(token);
 }
 
 Roe<MediaRelayAttachResult> AmpMediaRelayCoordinator::AttachAsLocalHop(

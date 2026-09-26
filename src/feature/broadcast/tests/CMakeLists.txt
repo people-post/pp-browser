@@ -1,0 +1,4 @@
+pp_browser_add_feature_folder_tests(
+  pp_feature_broadcast
+  pp_browser_feature_broadcast_test
+  LINK_LIBS pp_foundation_crypto)

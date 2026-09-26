@@ -10,13 +10,14 @@
 | l0 — 1:1 split | Done: `PeerReachCoordinator`, `CallMediaConnectCoordinator` (both directions), bridge = call policy; stop / retry on UI; glare antisymmetric; SFU attach completion on UI; hard-lab COLD phases |
 | l1 — reach in `domain/mesh` | Done: `domain/mesh/reachability/{MeshReachPorts.h, PeerReachCoordinator, AmpCircuitHopReach}`, neutral names. Hop reach stays a separate *service reach* ([L008](DECISIONS.md#l008--two-kinds-of-reach-link-reach-and-service-reach)) |
 | l2 — relay attach | Done: `domain/mesh/l4/media_relay/{IMediaRelayClient.h, AmpMediaRelayClient, MediaRelayAttach}`; group attach + guest reattach use `AttachToMediaRelayAsync` ([L009](DECISIONS.md#l009--relay-attach-is-a-stateless-capability-recovery-stays-with-each-feature)); wire `call_id` unchanged |
+| l4b — `feature/broadcast` | Done: `BroadcastHub` + `BroadcastViewerWorkflow` on ports (fakes in gtests); relay loss observers; sibling include ban in CI |
 | l4a — frame crypto + ladder | Done: neutral `MediaRelayFrameCrypto`; `BroadcastViewerLadder`; broadcast stream id / frame context ([L013](DECISIONS.md#l013--viewer-shape-ticket-from-the-publisher-client-side-ladder-direct-attach-to-hops-without-admission)) |
 | l3b — device arbiter | Done (audio + camera): `MediaDeviceArbiter` device thread + `AudioDeviceLease` (mic exclusive, speaker shared — [L011](DECISIONS.md#l011--speaker-is-shared-mic-exclusive-one-device-thread-either-way)); engine + ringtone hold leases; camera async on the video thread ([L012](DECISIONS.md#l012--camera-requests-are-asynchronous-the-video-thread-owns-camera-and-encoder)); quit drains closes before `SDL_Quit` |
 | l3a — session spec | Done: `CallMediaEngine::SessionSpec` + `Start(session_id, spec, send)` (`StartSfu` = duplex); playback-only never opens the mic or sends; capture-only never opens playback; encoder created with the camera; `media_session_spec_test` ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-owner-thread)) |
 
 ## Next
 
-**l4b** — `feature/broadcast`: `BroadcastHub` + `BroadcastViewerWorkflow` on ports (fakes in gtests), then **l4c** product wiring. Before a release: dogfood the device arbiter (PHASES l3b). Separate threading item: `CallSessionWorkflow` / `CallMediaBridge` port rebinding (all remaining TSan reports).
+**l4c** — product wiring: split the broadcast RPC client out of `AmpBroadcastTransport`; build `BroadcastHub` next to the call stack from neutral mesh objects (relay client, dial registry, circuit reach, a hub-owned `PeerReachCoordinator` for the publisher); facade `WatchLiveAnnounce` / `StopWatching`; a call taking media stops the watch; compose test on the mesh harness. Before a release: dogfood the device arbiter (PHASES l3b). Separate threading item: `CallSessionWorkflow` / `CallMediaBridge` port rebinding (all remaining TSan reports).
 
 ## Open questions
 

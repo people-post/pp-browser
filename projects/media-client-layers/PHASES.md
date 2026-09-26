@@ -73,11 +73,12 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 - [x] `BroadcastMediaFrameContext`, `BroadcastPublisherStreamId` (`domain/messaging/BroadcastMedia.h`)
 - [x] `BroadcastViewerLadder` (`domain/messaging`): client side of B007 — admit / redirect (budget, path stamp) / refuse / no-admission-service / attach-failed; gtests
 
-### l4b — `feature/broadcast` viewer workflow + hub
+### l4b — `feature/broadcast` viewer workflow + hub (done)
 
-- [ ] `feature/broadcast` library + `BroadcastHub`; own watch state (not `CallSessionStore`), no `CallLifecycle`
-- [ ] `BroadcastViewerWorkflow` (UI thread): reach publisher → ticket → verify / extract key → ladder → receive-only attach via l2 → subscribe publisher stream → playback-only engine (speaker lease); re-admit on transport loss (bounded); stop
-- [ ] gtests with fake ports (ladder paths, key / frame path into the engine, loss, stop, relay client busy)
+- [x] `feature/broadcast` library (`pp_feature_broadcast`) + `BroadcastHub` (owns a playback engine + the viewer); own watch state, no `CallSessionStore` / `CallLifecycle`; `check_feature_includes.sh` bans calls ↔ broadcast includes
+- [x] `BroadcastViewerWorkflow` (UI thread, `DeferredSelf` generations): reach publisher → ticket → verify / extract key → `BroadcastViewerLadder` → receive-only attach via `AttachToMediaRelayAsync` (paid quotes declined) → subscribe the publisher stream (audio) → playback-only engine session (speaker lease); re-admit on relay loss (backoff; fails after 3 consecutive); Stop detaches, stops playback, drops late completions — a late successful attach after Stop is detached
+- [x] Relay transport-loss **observers** (`Add/RemoveClientTransportLostObserver`) next to the calls' handler slot, so both features hear losses without stealing each other's handler
+- [x] gtests (fake ports, real ML-DSA tickets, real playback engine on a device-less arbiter): admit / redirect / no-admission / ticket hop / attach failure / refusal / ticket problems / relay busy / loss + give-up / stop / late attach / paid quote / hub; TSan + ASan clean
 
 ### l4c — Product wiring
 
