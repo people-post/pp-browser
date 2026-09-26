@@ -80,7 +80,7 @@ public:
     }
   }
   void StartClientFrameReader() override { ++reader_starts; }
-  uint64_t AddClientTransportLostObserver(std::function<void()> observer) override {
+  uint64_t AddClientTransportLostObserver(std::function<void(MediaRelayClientLoss)> observer) override {
     observers[next_token] = std::move(observer);
     return next_token++;
   }
@@ -101,11 +101,11 @@ public:
   bool IsAttached() const override { return attached; }
   bool IsLocalHopAttached() const override { return false; }
 
-  void Lose() {
-    attached = false;
-    for (auto& [token, observer] : std::map<uint64_t, std::function<void()>>(observers)) {
+  void Lose(MediaRelayClientLoss loss = MediaRelayClientLoss::TransportLost) {
+    attached = loss == MediaRelayClientLoss::Replaced;  // replaced: someone else holds it now
+    for (auto& [token, observer] : std::map<uint64_t, std::function<void(MediaRelayClientLoss)>>(observers)) {
       (void)token;
-      observer();
+      observer(loss);
     }
   }
 
@@ -120,7 +120,7 @@ public:
   std::unordered_map<std::string, bool> failing_hops;
   std::function<void(MediaDataFrame)> sink;
   std::vector<std::pair<uint32_t, uint16_t>> subscriptions;
-  std::map<uint64_t, std::function<void()>> observers;
+  std::map<uint64_t, std::function<void(MediaRelayClientLoss)>> observers;
   uint64_t next_token = 1;
   int reader_starts = 0;
   int detaches = 0;
@@ -396,6 +396,21 @@ TEST_F(BroadcastViewerWorkflowTest, RelayLossReadmitsAndGivesUpAfterConsecutiveF
   const auto& status = workflow_->CurrentStatus();
   EXPECT_EQ(status.phase, Phase::Failed);
   EXPECT_NE(status.error.find("no relay admitted"), std::string::npos) << status.error;
+}
+
+// A call attaching takes the single relay client session: the viewer stops with a clear reason
+// instead of listening to silence.
+TEST_F(BroadcastViewerWorkflowTest, ACallTakingTheRelayStopsTheViewerClearly) {
+  ASSERT_TRUE(workflow_->Watch(Target({"h1"})));
+  Drain();
+  ASSERT_EQ(workflow_->CurrentStatus().phase, Phase::Listening);
+  const int detaches = relay_.detaches;
+  relay_.Lose(MediaRelayClientLoss::Replaced);
+  Drain();
+  EXPECT_EQ(workflow_->CurrentStatus().phase, Phase::Failed);
+  EXPECT_EQ(workflow_->CurrentStatus().error, "media relay client in use by a call");
+  EXPECT_EQ(relay_.detaches, detaches) << "never detaches the call's session";
+  EXPECT_FALSE(engine_.IsActive());
 }
 
 TEST_F(BroadcastViewerWorkflowTest, StopDetachesStopsPlaybackAndDropsLateCompletions) {

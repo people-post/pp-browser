@@ -411,10 +411,11 @@ void BroadcastViewerWorkflow::StartListening(const std::string& hop) {
   }
   if (lost_observer_ == 0) {
     lost_observer_ = relay->AddClientTransportLostObserver(
-        [post_ui = ports_.post_ui, token = deferred_.token(), snap = deferred_.Snapshot(), this]() {
-          post_ui([token, snap, this]() {
+        [post_ui = ports_.post_ui, token = deferred_.token(), snap = deferred_.Snapshot(),
+         this](MediaRelayClientLoss loss) {
+          post_ui([token, snap, this, loss]() {
             if (DeferredSelf::Alive(token, snap)) {
-              OnTransportLost();
+              OnSessionEnded(loss);
             }
           });
         });
@@ -426,13 +427,16 @@ void BroadcastViewerWorkflow::StartListening(const std::string& hop) {
 
 // --- recovery -------------------------------------------------------------------------------------
 
-void BroadcastViewerWorkflow::OnTransportLost() {
+void BroadcastViewerWorkflow::OnSessionEnded(MediaRelayClientLoss loss) {
   if (status_.phase != Phase::Listening || !attached_) {
     return;
   }
-  if (ports_.relay.relay->IsAttached()) {
-    return;  // a live session again — not ours that died
-  }
+  // Our observer is removed before our own Detach, so any end here is not ours. Transport loss →
+  // re-admit; replaced / detached by a call → re-admission finds the client busy and fails clearly.
+  ViewerLog().info << "relay session ended (" << (loss == MediaRelayClientLoss::TransportLost ? "lost"
+                                                  : loss == MediaRelayClientLoss::Replaced    ? "replaced"
+                                                                                              : "detached")
+                   << ") program=" << status_.target.program_id;
   Recover();
 }
 

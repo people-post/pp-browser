@@ -118,7 +118,7 @@ private:
   void Attach(const std::string& hop);
   void OnAttached(const std::string& hop, Roe<MediaRelayAttached> attached);
   void StartListening(const std::string& hop);
-  void OnTransportLost();
+  void OnSessionEnded(MediaRelayClientLoss loss);
   void Recover();
   BroadcastViewerLadder MakeLadder() const;
 

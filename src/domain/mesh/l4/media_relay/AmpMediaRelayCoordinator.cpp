@@ -98,10 +98,50 @@ struct AmpMediaRelayCoordinator::Impl {
     FrameHandler on_frame;
     bool reader_started = false;
     std::unordered_set<uint64_t> subscriptions;
-    std::function<void()> transport_lost_handler;
-    std::map<uint64_t, std::function<void()>> transport_lost_observers;
-    uint64_t next_observer_token = 1;
   };
+  /**
+   * Registrations, not session state: they outlive every attach / detach of `client_` (the calls'
+   * handler is installed once at mesh wiring — resetting it with the session disabled guest
+   * reattach-on-loss after the first attach).
+   */
+  std::function<void()> client_lost_handler_;
+  std::map<uint64_t, std::function<void(MediaRelayClientLoss)>> client_lost_observers_;
+  uint64_t next_observer_token_ = 1;
+
+  /** Session-end notices waiting for the next io tick (guarded by `mu`). */
+  std::vector<std::function<void()>> pending_client_notices_;
+
+  /**
+   * Caller holds `mu`. Only queues: posting to the runtime here would take the runtime lock under
+   * `mu` (the io tick takes them in the other order). Delivered by DeliverClientNotices.
+   */
+  void NotifyClientObserversLocked(MediaRelayClientLoss loss) {
+    if (client_lost_observers_.empty()) {
+      return;
+    }
+    std::vector<std::function<void(MediaRelayClientLoss)>> observers;
+    for (const auto& [token, observer] : client_lost_observers_) {
+      (void)token;
+      observers.push_back(observer);
+    }
+    pending_client_notices_.push_back([observers = std::move(observers), loss]() {
+      for (const auto& observer : observers) {
+        observer(loss);
+      }
+    });
+  }
+
+  /** Io tick, without `mu`: run queued session-end notices. */
+  void DeliverClientNotices() {
+    std::vector<std::function<void()>> notices;
+    {
+      std::lock_guard lock(mu);
+      notices.swap(pending_client_notices_);
+    }
+    for (const auto& notice : notices) {
+      notice();
+    }
+  }
 
   struct PendingQuote {
     MediaRelayQuote quote;
@@ -179,6 +219,7 @@ struct AmpMediaRelayCoordinator::Impl {
   }
 
   void TickDeadlines() {
+    DeliverClientNotices();
     const auto now = Clock::now();
     std::vector<MediaRelaySessionId> timed_out;
     std::vector<MediaRelaySessionId> link_lost;
@@ -454,7 +495,6 @@ struct AmpMediaRelayCoordinator::Impl {
 
   void HandleClientTransportLost(const char* reason) {
     std::function<void()> handler;
-    std::vector<std::function<void()>> observers;
     {
       std::lock_guard lock(mu);
       if (!client_.channel) {
@@ -464,18 +504,12 @@ struct AmpMediaRelayCoordinator::Impl {
       client_.subscriptions.clear();
       client_.reader_started = false;
       // Keep the handler armed across reattach cycles (do not move it away).
-      handler = client_.transport_lost_handler;
-      for (const auto& [token, observer] : client_.transport_lost_observers) {
-        (void)token;
-        observers.push_back(observer);
-      }
+      handler = client_lost_handler_;
+      NotifyClientObserversLocked(MediaRelayClientLoss::TransportLost);
     }
     (void)reason;
     if (handler) {
       handler();
-    }
-    for (const auto& observer : observers) {
-      observer();
     }
   }
 
@@ -526,7 +560,11 @@ struct AmpMediaRelayCoordinator::Impl {
     const uint64_t id = session.id.value;
     sessions.erase(id);
 
+    const bool replaced = static_cast<bool>(client_.channel);
     DetachClientLocked();
+    if (replaced) {
+      NotifyClientObserversLocked(MediaRelayClientLoss::Replaced);
+    }
     client_.channel = std::move(channel);
     client_.hop_peer_key = hop;
     client_.call_id = call_id;
@@ -1055,7 +1093,10 @@ struct AmpMediaRelayCoordinator::Impl {
                     }
                     RejectHost(*channel, *host_sm, "unsupported op", MediaRelayAttachEvent::OpUnsupported);
                     return false;
-                  });
+                  },
+        // The handler (owned by the channel) captures this holder, which owns the channel: drop the
+        // holder's reference when the channel ends, or every served session leaks (LeakSanitizer).
+        [channel_holder](const char* /*reason*/) { channel_holder->reset(); });
   }
 };
 
@@ -1289,19 +1330,19 @@ void AmpMediaRelayCoordinator::StartClientFrameReader() {
 
 void AmpMediaRelayCoordinator::SetClientTransportLostHandler(std::function<void()> handler) {
   std::lock_guard lock(impl_->mu);
-  impl_->client_.transport_lost_handler = std::move(handler);
+  impl_->client_lost_handler_ = std::move(handler);
 }
 
-uint64_t AmpMediaRelayCoordinator::AddClientTransportLostObserver(std::function<void()> observer) {
+uint64_t AmpMediaRelayCoordinator::AddClientTransportLostObserver(std::function<void(MediaRelayClientLoss)> observer) {
   std::lock_guard lock(impl_->mu);
-  const uint64_t token = impl_->client_.next_observer_token++;
-  impl_->client_.transport_lost_observers.emplace(token, std::move(observer));
+  const uint64_t token = impl_->next_observer_token_++;
+  impl_->client_lost_observers_.emplace(token, std::move(observer));
   return token;
 }
 
 void AmpMediaRelayCoordinator::RemoveClientTransportLostObserver(uint64_t token) {
   std::lock_guard lock(impl_->mu);
-  impl_->client_.transport_lost_observers.erase(token);
+  impl_->client_lost_observers_.erase(token);
 }
 
 Roe<MediaRelayAttachResult> AmpMediaRelayCoordinator::AttachAsLocalHop(
@@ -1405,9 +1446,24 @@ Roe<void> AmpMediaRelayCoordinator::SendFrame(const MediaDataFrame& frame) {
 }
 
 void AmpMediaRelayCoordinator::Detach() {
-  // Mirror MediaRelayService::Detach — sync under lock; no deferred raw-this PostIo.
-  std::lock_guard lock(impl_->mu);
-  impl_->DetachClientLocked();
+  // Client state is cleared synchronously under `mu` (no deferred raw-this PostIo), but the channel
+  // closes after `mu` is released: closing takes the mesh runtime lock, and the io tick
+  // (TickDeadlines) holds that lock while it takes `mu` — closing under `mu` was a lock-order
+  // inversion (UI Detach racing a pump tick could deadlock; TSan).
+  std::shared_ptr<pp::amp::ChannelSession> closing;
+  std::string hop;
+  {
+    std::lock_guard lock(impl_->mu);
+    closing = std::move(impl_->client_.channel);
+    hop = impl_->client_.hop_peer_key;
+    impl_->DetachClientLocked();
+    if (closing) {
+      impl_->NotifyClientObserversLocked(MediaRelayClientLoss::Detached);
+    }
+  }
+  if (closing) {
+    CloseQuietSlot(closing, impl_->ResolveLink(hop));
+  }
 }
 
 bool AmpMediaRelayCoordinator::IsAttached() const {
