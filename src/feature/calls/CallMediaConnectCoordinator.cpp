@@ -2,6 +2,7 @@
 
 #include "foundation/runtime/AppRuntime.h"
 
+#include <algorithm>
 #include <chrono>
 #include <utility>
 #include "common/PbrCompat.h"
@@ -14,6 +15,10 @@ constexpr int kConnectAttempts = 5;
 constexpr int kConnectAttemptTimeoutMs = 15000;
 /** Drain abandoned stream callbacks before the next attempt. */
 constexpr int kRetryDelayMs = 1500;
+/** Inbound hello waits this long for the epoch key (offerer dials before the relay delivers it). */
+constexpr int kInboundKeyWaitMs = 8000;
+/** Re-ask for the key this often while waiting. */
+constexpr int kInboundKeyPollMs = 250;
 
 /** Run `fn` on UI: inline when already there, else posted. */
 void OnUi(std::function<void()> fn) {
@@ -29,13 +34,20 @@ void OnUi(std::function<void()> fn) {
 CallMediaConnectCoordinator::CallMediaConnectCoordinator(ICallMediaTransport& transport,
                                                          PeerReachCoordinator& reach)
     : transport_(transport), reach_(reach), alive_(std::make_shared<std::atomic<bool>>(true)),
-      attempt_timeout_ms_(kConnectAttemptTimeoutMs) {
+      inbound_key_wait_ms_(kInboundKeyWaitMs), attempt_timeout_ms_(kConnectAttemptTimeoutMs) {
   redirectLogger("CallMediaConnect");
 }
 
 CallMediaConnectCoordinator::~CallMediaConnectCoordinator() {
   alive_->store(false, std::memory_order_release);
+  {
+    std::lock_guard lock(inbound_mu_);
+    shut_down_.store(true, std::memory_order_release);
+  }
+  inbound_cv_.notify_all();
   Abort();
+  // Do not ClearInboundHandler here: a replacement owner (CallMediaPlane::BindBridge builds the
+  // new bridge before destroying the old one) has already installed its own handler.
 }
 
 void CallMediaConnectCoordinator::SetAttemptTimeoutMsForTest(const int timeout_ms) {
@@ -76,8 +88,104 @@ void CallMediaConnectCoordinator::Abort() {
 }
 
 void CallMediaConnectCoordinator::Shutdown() {
-  shut_down_.store(true, std::memory_order_release);
+  {
+    std::lock_guard lock(inbound_mu_);
+    shut_down_.store(true, std::memory_order_release);
+  }
+  inbound_cv_.notify_all();
   Abort();
+  // Drop the raw-`this` handler so late hellos cannot reach a destroyed owner.
+  if (inbound_installed_) {
+    transport_.ClearInboundHandler();
+    inbound_installed_ = false;
+  }
+}
+
+void CallMediaConnectCoordinator::SetInboundKeyWaitMsForTest(const int wait_ms) {
+  inbound_key_wait_ms_.store(wait_ms > 0 ? wait_ms : kInboundKeyWaitMs, std::memory_order_release);
+}
+
+void CallMediaConnectCoordinator::SetInboundPorts(CallMediaInboundPorts ports) {
+  inbound_ports_ = std::move(ports);
+  inbound_installed_ = true;
+  transport_.SetInboundHandler(
+      [this, alive = alive_](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+        if (alive->load(std::memory_order_acquire)) {
+          HandleInboundHello(params, cbs);
+        }
+      });
+}
+
+void CallMediaConnectCoordinator::NotifyKeyAvailable() {
+  {
+    std::lock_guard lock(inbound_mu_);
+    ++key_notices_;
+  }
+  inbound_cv_.notify_all();
+}
+
+void CallMediaConnectCoordinator::HandleInboundHello(CallMediaDirectConnectParams& params,
+                                                     CallMediaDirectCallbacks& cbs) {
+  log().info << "Inbound hello call_id=" << params.call_id << " epoch=" << params.media_epoch
+             << " peer=" << (params.peer_key.empty() ? "(empty)" : params.peer_key);
+  const CallMediaInboundPorts& ports = inbound_ports_;
+  if (!ports.session_open || !ports.session_open(params.call_id)) {
+    log().warning << "Inbound rejected: no open session call_id=" << params.call_id;
+    return;
+  }
+  if (!WaitForInboundKey(params)) {
+    return;
+  }
+  if (params.media_key.empty()) {
+    // Leaving the key empty makes the transport NACK the hello; the offerer retries.
+    log().info << "Inbound rejected: media key not ready call_id=" << params.call_id;
+    return;
+  }
+  CallMediaInboundHello hello;
+  hello.call_id = params.call_id;
+  hello.media_epoch = params.media_epoch;
+  hello.peer_id = params.peer_key;
+  if (ports.on_accepted) {
+    cbs = ports.on_accepted(hello);
+  }
+}
+
+bool CallMediaConnectCoordinator::WaitForInboundKey(CallMediaDirectConnectParams& params) {
+  const CallMediaInboundPorts& ports = inbound_ports_;
+  const auto key_ready = [&ports, &params]() -> bool {
+    if (!ports.load_key) {
+      return false;
+    }
+    if (auto key = ports.load_key(params.call_id, params.media_epoch)) {
+      params.media_key = std::move(*key);
+      return true;
+    }
+    return false;
+  };
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::milliseconds(inbound_key_wait_ms_.load(std::memory_order_acquire));
+  std::unique_lock lock(inbound_mu_);
+  while (!shut_down_.load(std::memory_order_acquire)) {
+    if (!ports.session_open(params.call_id)) {
+      return false;  // ended while we waited
+    }
+    if (key_ready()) {
+      return true;
+    }
+    if (std::chrono::steady_clock::now() >= deadline) {
+      return true;  // no key: caller NACKs
+    }
+    if (ports.request_key) {
+      ports.request_key(params.call_id);
+    }
+    const auto slice = std::min(deadline, std::chrono::steady_clock::now() +
+                                              std::chrono::milliseconds(kInboundKeyPollMs));
+    const uint64_t seen = key_notices_;
+    inbound_cv_.wait_until(lock, slice, [this, seen]() {
+      return shut_down_.load(std::memory_order_acquire) || key_notices_ != seen;
+    });
+  }
+  return false;
 }
 
 void CallMediaConnectCoordinator::Start(CallMediaConnectRequest request, CallMediaConnectHooks hooks) {

@@ -68,8 +68,28 @@ class FakeTransport final : public ICallMediaTransport {
 public:
   void Start() override {}
   void Stop() override {}
-  void SetInboundHandler(std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)>) override {}
-  void ClearInboundHandler() override {}
+  void SetInboundHandler(
+      std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler) override {
+    std::lock_guard lock(inbound_mu);
+    inbound = std::move(handler);
+  }
+  void ClearInboundHandler() override {
+    std::lock_guard lock(inbound_mu);
+    inbound = {};
+  }
+  /** Deliver a hello the way the transport's worker hop does. */
+  bool DeliverHello(CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler;
+    {
+      std::lock_guard lock(inbound_mu);
+      handler = inbound;
+    }
+    if (!handler) {
+      return false;
+    }
+    handler(params, cbs);
+    return true;
+  }
   bool IsActive() const override { return active; }
   CallMediaDirectConnectParams ActiveParams() const override { return active_params; }
   CallMediaSessionPhase Phase() const override {
@@ -111,6 +131,8 @@ public:
   int hang_first_n = 0;
   std::string fail_message = "amp call-media: hello rejected";
   std::function<void(Roe<void>)> pending;
+  std::mutex inbound_mu;
+  std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> inbound;
   /** Runs on the UI thread right after a failed completion was delivered (attempt number). */
   std::function<void(int attempt)> after_fail;
 };
@@ -282,6 +304,147 @@ TEST_F(CallMediaConnectCoordinatorTest, ShutdownRejectsStart) {
   EXPECT_EQ(failure, "shutdown in progress");
   EXPECT_FALSE(connect_->InFlight());
   EXPECT_EQ(transport_->connect_calls, 0);
+}
+
+// --- Inbound ---------------------------------------------------------------------------
+
+/** Ports backed by test state; counters are atomic (worker hop). */
+struct InboundFixture {
+  std::atomic<bool> session_open{true};
+  std::atomic<bool> key_stored{false};
+  std::atomic<int> key_requests{0};
+  std::atomic<int> accepted{0};
+  std::mutex mu;
+  std::string accepted_peer;
+
+  CallMediaInboundPorts Ports() {
+    CallMediaInboundPorts ports;
+    ports.session_open = [this](const std::string&) { return session_open.load(); };
+    ports.load_key = [this](const std::string&, uint32_t) -> std::optional<ByteVector> {
+      if (key_stored.load()) {
+        return ByteVector(32, 0x22);
+      }
+      return std::nullopt;
+    };
+    ports.request_key = [this](const std::string&) { key_requests.fetch_add(1); };
+    ports.on_accepted = [this](const CallMediaInboundHello& hello) {
+      {
+        std::lock_guard lock(mu);
+        accepted_peer = hello.peer_id;
+      }
+      accepted.fetch_add(1);
+      CallMediaDirectCallbacks cbs;
+      cbs.on_connected = []() {};
+      return cbs;
+    };
+    return ports;
+  }
+};
+
+CallMediaDirectConnectParams InboundParams() {
+  CallMediaDirectConnectParams p;
+  p.call_id = "call:inbound";
+  p.media_epoch = 1;
+  p.peer_key = kPeer;
+  p.offerer = true;
+  return p;
+}
+
+TEST_F(CallMediaConnectCoordinatorTest, InboundRejectedWithoutOpenSession) {
+  InboundFixture fx;
+  fx.session_open = false;
+  fx.key_stored = true;
+  connect_->SetInboundPorts(fx.Ports());
+  auto params = InboundParams();
+  CallMediaDirectCallbacks cbs;
+  ASSERT_TRUE(transport_->DeliverHello(params, cbs));
+  EXPECT_TRUE(params.media_key.empty()) << "empty key → transport NACKs";
+  EXPECT_FALSE(cbs.on_connected);
+  EXPECT_EQ(fx.accepted.load(), 0);
+}
+
+TEST_F(CallMediaConnectCoordinatorTest, InboundAcceptedWhenKeyStored) {
+  InboundFixture fx;
+  fx.key_stored = true;
+  connect_->SetInboundPorts(fx.Ports());
+  auto params = InboundParams();
+  CallMediaDirectCallbacks cbs;
+  ASSERT_TRUE(transport_->DeliverHello(params, cbs));
+  EXPECT_EQ(params.media_key.size(), 32u);
+  EXPECT_TRUE(cbs.on_connected);
+  EXPECT_EQ(fx.accepted.load(), 1);
+  std::lock_guard lock(fx.mu);
+  EXPECT_EQ(fx.accepted_peer, kPeer) << "owner gets the dialer's mesh PeerId";
+}
+
+// The offerer often dials before the relay delivers the key: the hello waits, asking for it.
+TEST_F(CallMediaConnectCoordinatorTest, InboundWaitsForKeyAndWakesOnNotify) {
+  InboundFixture fx;
+  connect_->SetInboundKeyWaitMsForTest(10000);
+  connect_->SetInboundPorts(fx.Ports());
+  auto params = InboundParams();
+  CallMediaDirectCallbacks cbs;
+  std::atomic<bool> done{false};
+  std::thread worker([&]() {
+    transport_->DeliverHello(params, cbs);
+    done.store(true);
+  });
+  ASSERT_TRUE(PumpUntil([&] { return fx.key_requests.load() >= 1; }, std::chrono::seconds(2)));
+  EXPECT_FALSE(done.load());
+  fx.key_stored = true;
+  const auto notified = std::chrono::steady_clock::now();
+  connect_->NotifyKeyAvailable();
+  worker.join();
+  EXPECT_LT(std::chrono::steady_clock::now() - notified, std::chrono::milliseconds(1000));
+  EXPECT_EQ(params.media_key.size(), 32u);
+  EXPECT_EQ(fx.accepted.load(), 1);
+}
+
+TEST_F(CallMediaConnectCoordinatorTest, InboundKeyTimeoutRejects) {
+  InboundFixture fx;
+  connect_->SetInboundKeyWaitMsForTest(100);
+  connect_->SetInboundPorts(fx.Ports());
+  auto params = InboundParams();
+  CallMediaDirectCallbacks cbs;
+  ASSERT_TRUE(transport_->DeliverHello(params, cbs));
+  EXPECT_TRUE(params.media_key.empty());
+  EXPECT_EQ(fx.accepted.load(), 0);
+  EXPECT_GE(fx.key_requests.load(), 1) << "asks for the key while waiting";
+}
+
+// THREADING.md: teardown releases a hello blocked on the key and drops the raw-this handler.
+TEST_F(CallMediaConnectCoordinatorTest, ShutdownReleasesWaitingHelloAndDropsHandler) {
+  InboundFixture fx;
+  connect_->SetInboundKeyWaitMsForTest(10000);
+  connect_->SetInboundPorts(fx.Ports());
+  auto params = InboundParams();
+  CallMediaDirectCallbacks cbs;
+  std::thread worker([&]() { transport_->DeliverHello(params, cbs); });
+  ASSERT_TRUE(PumpUntil([&] { return fx.key_requests.load() >= 1; }, std::chrono::seconds(2)));
+  const auto stopped = std::chrono::steady_clock::now();
+  connect_->Shutdown();
+  worker.join();
+  EXPECT_LT(std::chrono::steady_clock::now() - stopped, std::chrono::milliseconds(1000));
+  EXPECT_EQ(fx.accepted.load(), 0);
+  auto again = InboundParams();
+  CallMediaDirectCallbacks again_cbs;
+  EXPECT_FALSE(transport_->DeliverHello(again, again_cbs)) << "handler cleared";
+}
+
+// CallMediaPlane::BindBridge builds the replacement before destroying the old owner.
+TEST_F(CallMediaConnectCoordinatorTest, DestroyingOldOwnerKeepsReplacementHandler) {
+  InboundFixture old_fx;
+  InboundFixture new_fx;
+  new_fx.key_stored = true;
+  connect_->SetInboundPorts(old_fx.Ports());
+  auto replacement = std::make_unique<CallMediaConnectCoordinator>(*transport_, *reach_);
+  replacement->SetInboundPorts(new_fx.Ports());
+  connect_ = std::move(replacement);  // destroys the old owner
+  auto params = InboundParams();
+  CallMediaDirectCallbacks cbs;
+  ASSERT_TRUE(transport_->DeliverHello(params, cbs));
+  EXPECT_EQ(new_fx.accepted.load(), 1);
+  EXPECT_EQ(old_fx.accepted.load(), 0);
 }
 
 } // namespace

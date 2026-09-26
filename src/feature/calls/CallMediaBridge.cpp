@@ -24,7 +24,6 @@ namespace {
 constexpr int64_t kMeshConnectTimeoutMs = 75000;
 /** Cover long PollInbox HTTP + offerer MediaKey send/resend window. */
 constexpr int kMediaKeyInboxPollRounds = 90;
-constexpr int kInboundMediaKeyWaitMs = 8000;
 /** Rate-limit PeerId→relay unknown drops (PreferLocal / non-contact dogfood). */
 std::atomic<uint32_t> g_inbound_unmapped_audio_drops{0};
 
@@ -39,145 +38,134 @@ CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions
       media_key_inbox_poll_rounds_(kMediaKeyInboxPollRounds) {
   redirectLogger("CallMediaBridge");
 
-  direct_.SetInboundHandler([this](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
-    log().info << "Inbound call-media hello call_id=" << params.call_id
-                  << " epoch=" << params.media_epoch
-                  << " peer=" << (params.peer_key.empty() ? "(empty)" : params.peer_key);
-    auto session = sessions_.LoadSession(params.call_id);
-    if (!session || !session->has_value()) {
-      log().warning << "Inbound call-media rejected: no session call_id=" << params.call_id;
-      return;
+  connect_.SetInboundPorts(MakeInboundPorts());
+}
+
+CallMediaInboundPorts CallMediaBridge::MakeInboundPorts() {
+  // Worker hop (transport inbound handler): stores are thread-safe; no bridge UI state here.
+  CallMediaInboundPorts ports;
+  ports.session_open = [this](const std::string& call_id) {
+    auto session = sessions_.LoadSession(call_id);
+    return session && session->has_value() && (*session)->state != CallSessionState::Ended;
+  };
+  ports.load_key = [this](const std::string& call_id, const uint32_t epoch) -> std::optional<ByteVector> {
+    if (auto key = media_keys_.LoadEpochKey(call_id, epoch); key && key->has_value()) {
+      return **key;
     }
-    // Offerer often dials before relay delivers CallMediaKey — wait briefly while inbox sync runs.
-    // Cancelable wait (V033): wake on key / teardown; no bare sleep_for on the worker hop.
-    {
-      std::unique_lock lock(inbound_key_mu_);
-      const auto deadline =
-          std::chrono::steady_clock::now() + std::chrono::milliseconds(kInboundMediaKeyWaitMs);
-      while (!stopping_.load(std::memory_order_acquire)) {
-        auto session_now = sessions_.LoadSession(params.call_id);
-        if (!session_now || !session_now->has_value() ||
-            (*session_now)->state == CallSessionState::Ended) {
-          return;
-        }
-        if (auto key = media_keys_.LoadEpochKey(params.call_id, params.media_epoch);
-            key && key->has_value()) {
-          params.media_key = **key;
-          break;
-        }
-        if (std::chrono::steady_clock::now() >= deadline) {
-          break;
-        }
-        host_.P2pRequestInboxSync();
-        const auto slice_deadline =
-            std::min(deadline, std::chrono::steady_clock::now() + std::chrono::milliseconds(250));
-        inbound_key_cv_.wait_until(lock, slice_deadline, [this, &params]() {
-          if (stopping_.load(std::memory_order_acquire)) {
-            return true;
-          }
-          auto key = media_keys_.LoadEpochKey(params.call_id, params.media_epoch);
-          return static_cast<bool>(key && key->has_value());
-        });
+    return std::nullopt;
+  };
+  // Offerer often dials before the relay delivers CallMediaKey — keep inbox sync running.
+  ports.request_key = [this](const std::string& /*call_id*/) { host_.P2pRequestInboxSync(); };
+  ports.on_accepted = [this](const CallMediaInboundHello& hello) {
+    // Identity binding reads / writes bridge state — UI thread. Posted ahead of any media or
+    // connected callback of this bundle (FIFO), so frames never see a stale stream id.
+    AppRuntime::PostUI([this, call_id = hello.call_id, peer_id = hello.peer_id]() {
+      BindInboundPeer(call_id, peer_id);
+    });
+    return MakeBundleCallbacks(hello.call_id, /*fixed_stream=*/0, "Inbound call-media");
+  };
+  return ports;
+}
+
+void CallMediaBridge::BindInboundPeer(const std::string& call_id, const std::string& inbound_peer_id) {
+  // Prefer call-roster Account ID for PublisherStreamIdForIdentity. The hello's peer is the mesh
+  // PeerId; hashing that yields a different stream_id than SoftMigrate (account:…). Never use
+  // P2pPeerIdentityForCall as the mapping — with N≥2 remotes it returns an arbitrary peer
+  // (dogfood: Moto PeerId → wrong person stream).
+  std::string identity = inbound_peer_id;
+  if (inbound_peer_id.rfind("account:", 0) != 0) {
+    if (auto mapped = host_.RelayIdentityForMeshPeerId(call_id, inbound_peer_id);
+        mapped && mapped->has_value() && !mapped->value().empty()) {
+      identity = mapped->value();
+    } else if (!media_peer_identity_.empty() && media_peer_identity_.rfind("account:", 0) == 0) {
+      // Last resort for 1:1 before contacts hydrate — only when dialed peer is the sole remote.
+      if (auto sole = host_.P2pPeerIdentityForCall(call_id);
+          sole && sole->has_value() && sole->value() == media_peer_identity_) {
+        identity = media_peer_identity_;
       }
+    } else if (!pending_answerer_peer_.empty() && pending_answerer_peer_.rfind("account:", 0) == 0) {
+      identity = pending_answerer_peer_;
     }
-    if (stopping_.load(std::memory_order_acquire)) {
-      return;
-    }
-    if (params.media_key.empty()) {
-      log().info << "Inbound call-media hello before media key call_id=" << params.call_id;
-    }
-    // Prefer call-roster Account ID for PublisherStreamIdForIdentity. Inbound hello's
-    // peer_key is the mesh PeerId (from remotePeerId); hashing that yields a different
-    // stream_id than SoftMigrate (account:…). Never use P2pPeerIdentityForCall here — with
-    // N≥2 remotes it returns an arbitrary peer (dogfood: Moto PeerId → wrong person stream).
-    const std::string inbound_peer_id = params.peer_key;
-    if (inbound_peer_id.rfind("account:", 0) != 0) {
-      if (auto mapped = host_.RelayIdentityForMeshPeerId(params.call_id, inbound_peer_id);
-          mapped && mapped->has_value() && !mapped->value().empty()) {
-        params.peer_key = mapped->value();
-      } else if (!media_peer_identity_.empty() && media_peer_identity_.rfind("account:", 0) == 0) {
-        // Last resort for 1:1 before contacts hydrate — only when dialed peer is the sole remote.
-        if (auto sole = host_.P2pPeerIdentityForCall(params.call_id);
-            sole && sole->has_value() && sole->value() == media_peer_identity_) {
-          params.peer_key = media_peer_identity_;
-        }
-      } else if (!pending_answerer_peer_.empty() && pending_answerer_peer_.rfind("account:", 0) == 0) {
-        params.peer_key = pending_answerer_peer_;
-      }
-    }
-    if (!params.peer_key.empty() && params.peer_key.rfind("account:", 0) == 0) {
-      media_peer_identity_ = params.peer_key;
-      inbound_remote_stream_.store(PublisherStreamIdForIdentity(params.peer_key),
-                                   std::memory_order_release);
-    } else {
-      // Do not hash PeerId into a mixer track — SoftMigrate uses Account stream ids. Defer until
-      // BeginSession / CallAccept teaches PeerId→Account (moto contact often lacks peer_id).
-      inbound_remote_stream_.store(0, std::memory_order_release);
-    }
-    if (params.peer_key.empty() || params.peer_key.rfind("account:", 0) != 0) {
-      log().warning << "Inbound call-media stream identity not account: peer_key="
-                    << (params.peer_key.empty() ? "(empty)" : params.peer_key)
-                    << " inbound_peer_id=" << (inbound_peer_id.empty() ? "(empty)" : inbound_peer_id)
-                    << " — deferring on_audio stream_id until Account identity known";
-    } else if (!inbound_peer_id.empty() && inbound_peer_id != params.peer_key) {
+  }
+  if (!identity.empty() && identity.rfind("account:", 0) == 0) {
+    media_peer_identity_ = identity;
+    inbound_remote_stream_.store(PublisherStreamIdForIdentity(identity), std::memory_order_release);
+    if (!inbound_peer_id.empty() && inbound_peer_id != identity) {
       log().info << "Inbound call-media mapped PeerId→account stream identity peer_id=" << inbound_peer_id
-                 << " account=" << params.peer_key;
+                 << " account=" << identity;
     }
-    const std::string call_id = params.call_id;
-    inbound_deferred_peer_id_ =
-        (inbound_peer_id.rfind("account:", 0) == 0) ? std::string{} : inbound_peer_id;
-    cbs.on_connected = [this, call_id]() {
-      AppRuntime::PostUI([this, call_id]() {
-        log().info << "Inbound call-media connected call_id=" << call_id;
-        CommitDirectConnected(call_id);
-      });
-    };
-    cbs.on_media = [this, call_id](uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload) {
-      DeliverInboundDirectMedia(call_id, channel, seq, mark, payload);
-    };
-    cbs.on_failed = [this, call_id](const std::string& reason) {
-      AppRuntime::PostUI([this, call_id, reason]() {
-        if (media_.ActiveCallId() != call_id) {
-          return;
-        }
-        // SoftMigrate StartSfu swaps send to media_relay but leaves the 1:1 stream until
-        // ReleaseDirectTransport; peer teardown must not flip ConnectFailed over live SFU.
-        // IsSfuMode() is also true for 1:1 libp2p capture — require media_relay attach.
-        if (host_.P2pIsSfuAttached() && media_.IsConnected()) {
-          log().info << "Ignoring inbound call-media fail after SoftMigrate/SFU call_id=" << call_id
-                     << " reason=" << reason;
-          direct_.Detach();
-          ClearMeshConnectFailed();
-          if (arming_.on_connected) {
-            arming_.on_connected(call_id);
-          }
-          host_.P2pNotifyRingChanged();
-          return;
-        }
-        // PreferLocal ReleaseDirect closes 1:1 while capture stays up; CallSfuAttach may still
-        // be in flight (dogfood: Moto ConnectFailed when attach lagged ReleaseDirect).
-        const bool soft_direct_close =
-            reason.find("read_eof") != std::string::npos ||
-            reason.find("stream closed") != std::string::npos;
-        if (host_.P2pIsAwaitingSfuRecovery() || host_.P2pExpectGroupSfuMigration(call_id) ||
-            (soft_direct_close && media_.IsActive() && media_.IsConnected())) {
-          log().info << "Ignoring inbound call-media fail while awaiting SFU attach call_id="
-                     << call_id << " reason=" << reason;
-          host_.P2pNoteExpectSfuAttach(call_id);
-          direct_.Detach();
-          ClearMeshConnectFailed();
-          host_.P2pRequestInboxSync();
-          if (arming_.on_connected) {
-            arming_.on_connected(call_id);
-          }
-          host_.P2pNotifyRingChanged();
-          return;
-        }
-        log().warning << "Inbound call-media failed call_id=" << call_id << " reason=" << reason;
-        SurfaceConnectFailed(call_id, reason, /*stop_media=*/true);
-      });
-    };
-  });
+  } else {
+    // Do not hash PeerId into a mixer track — SoftMigrate uses Account stream ids. Defer until
+    // BeginSession / CallAccept teaches PeerId→Account (moto contact often lacks peer_id).
+    inbound_remote_stream_.store(0, std::memory_order_release);
+    log().warning << "Inbound call-media stream identity not account: peer_id="
+                  << (inbound_peer_id.empty() ? "(empty)" : inbound_peer_id)
+                  << " — deferring on_audio stream_id until Account identity known";
+  }
+  inbound_deferred_peer_id_ = (inbound_peer_id.rfind("account:", 0) == 0) ? std::string{} : inbound_peer_id;
+}
+
+CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string& call_id,
+                                                              const uint32_t fixed_stream,
+                                                              const char* label) {
+  CallMediaDirectCallbacks cbs;
+  cbs.on_connected = [this, call_id, label]() {
+    AppRuntime::PostUI([this, call_id, label]() {
+      log().info << label << " connected call_id=" << call_id;
+      CommitDirectConnected(call_id);
+    });
+  };
+  cbs.on_media = [this, call_id, fixed_stream](uint8_t channel, uint32_t seq, uint8_t mark,
+                                               const std::vector<uint8_t>& payload) {
+    DeliverDirectMedia(call_id, fixed_stream, channel, seq, mark, payload);
+  };
+  cbs.on_failed = [this, call_id](const std::string& reason) {
+    AppRuntime::PostUI([this, call_id, reason]() { OnBundleFailed(call_id, reason); });
+  };
+  return cbs;
+}
+
+void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::string& reason) {
+  if (media_.ActiveCallId() != call_id) {
+    return;
+  }
+  // Ignore a late fail when another bundle already carries media.
+  if (DirectMediaReady() && media_.IsConnected()) {
+    return;
+  }
+  // SoftMigrate StartSfu swaps send to media_relay but leaves the 1:1 stream until
+  // ReleaseDirectTransport; peer teardown must not flip ConnectFailed over live SFU.
+  // IsSfuMode() is also true for 1:1 capture — require media_relay attach.
+  if (host_.P2pIsSfuAttached() && media_.IsConnected()) {
+    log().info << "Ignoring call-media fail after SoftMigrate/SFU call_id=" << call_id << " reason=" << reason;
+    direct_.Detach();
+    ClearMeshConnectFailed();
+    if (arming_.on_connected) {
+      arming_.on_connected(call_id);
+    }
+    host_.P2pNotifyRingChanged();
+    return;
+  }
+  // PreferLocal ReleaseDirect closes 1:1 while capture stays up; CallSfuAttach may still be in
+  // flight (dogfood: Moto ConnectFailed when attach lagged ReleaseDirect).
+  const bool soft_direct_close =
+      reason.find("read_eof") != std::string::npos || reason.find("stream closed") != std::string::npos;
+  if (host_.P2pIsAwaitingSfuRecovery() || host_.P2pExpectGroupSfuMigration(call_id) ||
+      (soft_direct_close && media_.IsActive() && media_.IsConnected())) {
+    log().info << "Ignoring call-media fail while awaiting SFU attach call_id=" << call_id
+               << " reason=" << reason;
+    host_.P2pNoteExpectSfuAttach(call_id);
+    direct_.Detach();
+    ClearMeshConnectFailed();
+    host_.P2pRequestInboxSync();
+    if (arming_.on_connected) {
+      arming_.on_connected(call_id);
+    }
+    host_.P2pNotifyRingChanged();
+    return;
+  }
+  log().warning << "Call-media failed call_id=" << call_id << " reason=" << reason;
+  SurfaceConnectFailed(call_id, reason, /*stop_media=*/true);
 }
 
 void CallMediaBridge::SetReachDeps(IDialRegistry* dial, ICircuitHopReach* circuit_reach) {
@@ -424,16 +412,19 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
   host_.P2pNotifyRingChanged();
 }
 
-void CallMediaBridge::DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel, uint32_t seq,
-                                                      uint8_t mark, const std::vector<uint8_t>& payload) {
-  AppRuntime::PostUI([this, call_id, channel, seq, mark, payload]() {
+void CallMediaBridge::DeliverDirectMedia(const std::string& call_id, const uint32_t fixed_stream,
+                                         uint8_t channel, uint32_t seq, uint8_t mark,
+                                         const std::vector<uint8_t>& payload) {
+  AppRuntime::PostUI([this, call_id, fixed_stream, channel, seq, mark, payload]() {
     if (!media_.IsActive() || media_.ActiveCallId() != call_id) {
       return;
     }
     if (host_.P2pIsSfuAttached()) {
       return;
     }
-    uint32_t remote_stream = inbound_remote_stream_.load(std::memory_order_acquire);
+    // Outbound bundles know the dialed identity; inbound ones use the bound (or deferred) stream.
+    uint32_t remote_stream =
+        fixed_stream != 0 ? fixed_stream : inbound_remote_stream_.load(std::memory_order_acquire);
     if (remote_stream == 0) {
       std::string account = media_peer_identity_;
       const std::string deferred = inbound_deferred_peer_id_;
@@ -773,8 +764,6 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
     host_.P2pNotifyRingChanged();
   });
 
-  const std::string captured_call_id = call_id;
-  const std::string captured_peer = peer_identity;
   const uint64_t send_gen = connect_generation_.load(std::memory_order_acquire);
   CallMediaSeat::Token seat_token;
   if (seat_.IsBound()) {
@@ -860,76 +849,8 @@ Roe<void> CallMediaBridge::BeginSession(const std::string& call_id, const std::s
     }
   }
 
-  CallMediaDirectCallbacks cbs;
-  cbs.on_connected = [this]() {
-    AppRuntime::PostUI([this]() {
-      log().info << "Call-media connected call_id=" << media_call_id_;
-      CommitDirectConnected(media_call_id_);
-    });
-  };
-  cbs.on_media = [this, captured_call_id, remote_stream = PublisherStreamIdForIdentity(captured_peer)](
-                     uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload) {
-    AppRuntime::PostUI([this, captured_call_id, remote_stream, channel, seq, mark, payload]() {
-      if (!media_.IsActive() || media_.ActiveCallId() != captured_call_id) {
-        return;
-      }
-      if (host_.P2pIsSfuAttached()) {
-        return;
-      }
-      CallMediaEngine::SfuPacket pkt;
-      pkt.stream_id = remote_stream;
-      pkt.channel_id = channel;
-      pkt.seq = seq;
-      pkt.mark = mark;
-      pkt.payload = payload;
-      media_.OnSfuPacket(pkt);
-    });
-  };
-  cbs.on_failed = [this, captured_call_id](const std::string& reason) {
-    AppRuntime::PostUI([this, captured_call_id, reason]() {
-      if (media_.ActiveCallId() != captured_call_id) {
-        return;
-      }
-      // Ignore late fail if the other direction already connected.
-      if (DirectMediaReady() && media_.IsConnected()) {
-        return;
-      }
-      // SoftMigrate → media_relay: 1:1 stream reset is expected; keep InCall on SFU.
-      // IsSfuMode() is also true for 1:1 libp2p capture — require media_relay attach.
-      if (host_.P2pIsSfuAttached() && media_.IsConnected()) {
-        log().info << "Ignoring call-media fail after SoftMigrate/SFU call_id=" << captured_call_id
-                   << " reason=" << reason;
-        direct_.Detach();
-        ClearMeshConnectFailed();
-        if (arming_.on_connected) {
-          arming_.on_connected(captured_call_id);
-        }
-        host_.P2pNotifyRingChanged();
-        return;
-      }
-      // PreferLocal ReleaseDirect closes 1:1 while capture stays up; CallSfuAttach may still
-      // be in flight (dogfood: Moto ConnectFailed when attach lagged ReleaseDirect).
-      const bool soft_direct_close =
-          reason.find("read_eof") != std::string::npos ||
-          reason.find("stream closed") != std::string::npos;
-      if (host_.P2pIsAwaitingSfuRecovery() || host_.P2pExpectGroupSfuMigration(captured_call_id) ||
-          (soft_direct_close && media_.IsActive() && media_.IsConnected())) {
-        log().info << "Ignoring call-media fail while awaiting SFU attach call_id=" << captured_call_id
-                   << " reason=" << reason;
-        host_.P2pNoteExpectSfuAttach(captured_call_id);
-        direct_.Detach();
-        ClearMeshConnectFailed();
-        host_.P2pRequestInboxSync();
-        if (arming_.on_connected) {
-          arming_.on_connected(captured_call_id);
-        }
-        host_.P2pNotifyRingChanged();
-        return;
-      }
-      log().warning << "Call-media failed call_id=" << captured_call_id << " reason=" << reason;
-      SurfaceConnectFailed(captured_call_id, reason, /*stop_media=*/true);
-    });
-  };
+  CallMediaDirectCallbacks cbs =
+      MakeBundleCallbacks(call_id, PublisherStreamIdForIdentity(peer_identity), "Call-media");
 
   // V049 / B31: both roles dial immediately (simultaneous open). CallMediaDirect claims one
   // stream and elects under A026; inbound still wins if it lands first (keep_inbound).
@@ -1108,7 +1029,7 @@ void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
     return;
   }
   // Wake inbound hello key-wait (if any) before hopping to UI for deferred answerer start.
-  inbound_key_cv_.notify_all();
+  connect_.NotifyKeyAvailable();
   // Hop to UI — inbound CallMediaKey is processed on Browser IO (inside PollInbox).
   AppRuntime::PostUI([this, call_id]() {
     std::string peer = pending_answerer_peer_;
@@ -1266,12 +1187,13 @@ void CallMediaBridge::NotePeerIdRelayMapping(const std::string& peer_id,
 
 void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
   stopping_.store(true, std::memory_order_release);
-  inbound_key_cv_.notify_all();
   if (circuit_reach_) {
     circuit_reach_->AbortPending();
   }
   Apply(CallDirectPlannerEvent::Stop, media_call_id_, media_peer_identity_);
   AbortConnectSequence();
+  // Also releases waiting inbound hellos and drops the inbound handler before Detach, so late
+  // streams cannot reach the bridge.
   connect_.Shutdown();
   CancelDirectHealthTimer();
   CancelReserveRenewal();
@@ -1279,8 +1201,6 @@ void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
   const std::string call_id = media_call_id_;
   pending_answerer_call_id_.clear();
   pending_answerer_peer_.clear();
-  // Drop raw `this` inbound handler before Detach so late streams cannot UAF the bridge.
-  direct_.ClearInboundHandler();
   if (dial_ && !peer.empty()) {
     dial_->AbortInflightDial(peer);
     dial_->ClearCallMediaCircuitHop(peer);

@@ -420,6 +420,47 @@ TEST_F(CallMediaBridgeAnswererStartTest, PathKindFollowsBoundLinkNotReachLoop) {
   EXPECT_NE(bridge_->MediaPathKind(), "circuit") << "stale bound kind must not label an idle transport";
 }
 
+// An inbound hello arrives on the transport's worker hop with the dialer's mesh PeerId. The
+// bridge maps it to the roster identity on the UI thread (it used to write bridge state from the
+// worker), and the transport still gets the key + callbacks to accept.
+TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloBindsPeerIdentityOnUiThread) {
+  const std::string call_id = "call:inbound-bind";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  // MediaPathKind reports "circuit" once the bound identity has a circuit hop — observable binding.
+  dial_->circuit_hops["account:peer"] = true;
+  ASSERT_TRUE(transport_->inbound);
+  EXPECT_NE(bridge_->MediaPathKind(), "circuit");
+
+  CallMediaDirectConnectParams params;
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.peer_key = "12D3KooWInboundDialer";
+  CallMediaDirectCallbacks cbs;
+  transport_->inbound(params, cbs);
+
+  EXPECT_EQ(params.media_key, TestMediaKey()) << "accepted with the stored epoch key";
+  EXPECT_EQ(params.peer_key, "12D3KooWInboundDialer") << "bridge no longer rewrites the transport's peer";
+  EXPECT_TRUE(cbs.on_connected);
+  EXPECT_TRUE(cbs.on_media);
+  EXPECT_TRUE(cbs.on_failed);
+  EXPECT_NE(bridge_->MediaPathKind(), "circuit") << "binding must wait for the UI thread";
+  AppRuntime::RunUITasks();
+  EXPECT_EQ(bridge_->MediaPathKind(), "circuit") << "PeerId mapped to account:peer on UI";
+}
+
+TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloWithoutSessionIsRejected) {
+  CallMediaDirectConnectParams params;
+  params.call_id = "call:no-such-session";
+  params.media_epoch = 1;
+  params.peer_key = "12D3KooWInboundDialer";
+  CallMediaDirectCallbacks cbs;
+  ASSERT_TRUE(transport_->inbound);
+  transport_->inbound(params, cbs);
+  EXPECT_TRUE(params.media_key.empty());
+  EXPECT_FALSE(cbs.on_connected);
+}
+
 // k2: relay reservations are a 15 s lease — renew while the media session lives, stop on Stop.
 TEST_F(CallMediaBridgeAnswererStartTest, ReservationRenewedWhileSessionLiveStopsOnStop) {
   std::atomic<int> reserves{0};

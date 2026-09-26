@@ -129,7 +129,7 @@ public:
   /** True while an async Connect sequence is in flight (shutdown measurement). */
   bool IsConnectWorkerInflight() const { return connect_.InFlight(); }
 
-  /** True after PrepareForTeardown / StopMeshMedia — inbound hello wait must exit. */
+  /** True after PrepareForTeardown. */
   bool IsStopping() const { return stopping_.load(std::memory_order_acquire); }
 
   void NoteMediaAttempted(const std::string& call_id);
@@ -177,8 +177,17 @@ private:
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
   /** Direct stream up: mark media connected when capture is live, always advance lifecycle/chrome. */
   void CommitDirectConnected(const std::string& call_id);
-  void DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel, uint32_t seq, uint8_t mark,
-                                 const std::vector<uint8_t>& payload);
+  /** Inbound bundles: accept policy + key lookup on the worker hop (connect coordinator). */
+  CallMediaInboundPorts MakeInboundPorts();
+  /** UI: map an accepted inbound bundle's mesh PeerId to the roster identity / mixer stream. */
+  void BindInboundPeer(const std::string& call_id, const std::string& inbound_peer_id);
+  /** Callbacks for one bundle (either direction). fixed_stream 0 = inbound identity binding. */
+  CallMediaDirectCallbacks MakeBundleCallbacks(const std::string& call_id, uint32_t fixed_stream,
+                                               const char* label);
+  /** UI: a bundle closed / failed — ignore during SoftMigrate / SFU attach, else ConnectFailed. */
+  void OnBundleFailed(const std::string& call_id, const std::string& reason);
+  void DeliverDirectMedia(const std::string& call_id, uint32_t fixed_stream, uint8_t channel, uint32_t seq,
+                          uint8_t mark, const std::vector<uint8_t>& payload);
   void ReleaseDirectTransportBody();
   /** NAT dogfood: dialable "direct" with TX-only → force circuit ensure + re-dial. */
   void MaybeEscalateTxOnlyDirect();
@@ -232,9 +241,6 @@ private:
   /** Bumped by AbortConnectSequence; the StartSfu send fn drops TX from an older generation. */
   std::atomic<uint64_t> connect_generation_{0};
   std::atomic<bool> stopping_{false};
-  /** Cancelable inbound hello MediaKey wait (notify from OnMediaKeyReady / PrepareForTeardown). */
-  std::mutex inbound_key_mu_;
-  std::condition_variable inbound_key_cv_;
   uint64_t direct_health_timer_id_ = 0;
   uint64_t reserve_renew_timer_id_ = 0;
   /** Inside the 15 s StartReserve lease so consecutive leases overlap. */
