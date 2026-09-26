@@ -244,7 +244,7 @@ Rewrite-debt tracking: [PHASES rd](PHASES.md#rd--amp-call-media-rewrite-debt-v03
 
 | Item | Status |
 |------|--------|
-| **Async `Connect(cb)` API** | **Landed:** `ICallMediaTransport::ConnectAsync` + `CallMediaBridge` grace/retry via coordinator timers; peer-reach `EnsurePeerReachableAsync` / `TryEnsureCallMediaReachableAsync`. Sync `Connect()` remains for tests/harnesses. |
+| **Async `Connect(cb)` API** | **Landed:** `ICallMediaTransport::ConnectAsync` + `CallMediaBridge` grace/retry via coordinator timers; peer-reach `PeerReachCoordinator::Ensure` / `TryEnsureCallMediaReachableAsync`. Sync `Connect()` remains for tests/harnesses. |
 | **Inbound handler must not stall Normal** | **Landed:** Handler already on a worker hop; Bridge inbound MediaKey fill uses a cancelable `condition_variable` (notify on `OnMediaKeyReady` / `PrepareForTeardown`) instead of `sleep_for`. Contract documented on `ICallMediaTransport::SetInboundHandler`. |
 | **`AsyncWriteStreamJson` cancel check** | Writes complete or fail via stream `reset()` on Detach/timeout; no separate cancel predicate. Enough for hello; add if write-queue stalls appear without reset. |
 | **Sync L4 RPC wrappers** | Product SoftMigrate/attach/reattach, circuit hop reach, and CallStack punch use Async. Sync façades remain for tests/harnesses (empty-pump park). |

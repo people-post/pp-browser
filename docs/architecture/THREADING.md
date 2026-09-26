@@ -286,7 +286,7 @@ Invalidate (bump gen / cancel flag)
 | Path | Contract |
 |------|----------|
 | Product quit / UI | `PrepareForTeardown(0)` = Abort only (no sleep-spin) — [Shutdown order](#shutdown-order-product) |
-| `CallMediaBridge` Connect | `AbortConnectSequence()` bumps gen, cancels grace/retry timers, **clears** `connect_worker_inflight_` |
+| `CallMediaBridge` Connect | `AbortConnectSequence()` bumps gen, cancels grace/retry timers, cancels the pending `PeerReachCoordinator` reach (completes inline), **clears** `connect_worker_inflight_` |
 | Cross-planner SoftMigrate | Lifecycle `media_cancel_gen`; late Direct/Hop work no-ops — [CALLS.md](CALLS.md) / V037 |
 | Amp circuit / punch | `AbortPending` + Alive checks — [OWNERSHIP.md](OWNERSHIP.md) |
 

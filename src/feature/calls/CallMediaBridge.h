@@ -7,6 +7,7 @@
 #include "feature/calls/CallMediaSeat.h"
 #include "domain/messaging/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/PeerReachCoordinator.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 
 #include "common/Module.h"
@@ -91,7 +92,7 @@ public:
    * Set 0 so KeyTimeout → ConnectFailed is reachable without a long sleep.
    */
   void SetMediaKeyInboxPollRoundsForTest(int rounds);
-  /** Shrink EnsurePeerReachable deadline for gtests (0 = production default). */
+  /** Shrink the peer-reach direct-dial budget for gtests (0 = production default). */
   void SetDialWaitBudgetMsForTest(int budget_ms);
   void SetReserveRenewIntervalMsForTest(int interval_ms) { reserve_renew_interval_ms_ = interval_ms; }
   /** Shrink per-attempt ConnectAsync timeout (and watchdog margin) for gtests (0 = production default). */
@@ -143,9 +144,9 @@ public:
   void SetSeedReserve(std::function<void()> reserve);
   /**
    * Await at least one bootstrap/directory seed Connected before circuit/punch
-   * (CallMediaPlane::EnsureBootstrapSeedParkedAsync).
+   * (CallMediaPlane::EnsureBootstrapSeedParkedAsync). Forwarded to PeerReachCoordinator.
    */
-  void SetSeedParkAwait(std::function<void(std::function<void(bool parked)>, int timeout_ms)> park);
+  void SetSeedParkAwait(PeerReachCoordinator::SeedParkAwait park);
 
   void SetDirectArmingPorts(CallDirectArmingPorts ports);
   /** V036 exclusive media epoch — Stack installs; Bridge must not hold CallMediaSeat*. */
@@ -163,9 +164,8 @@ public:
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
-  /** Circuit/punch reach without parking MeshControl (TryEnsureCallMediaReachableAsync). */
-  void EnsurePeerReachableAsync(const std::string& peer_identity, uint64_t connect_gen,
-                                std::function<void(Roe<void>)> on_done);
+  /** Link establishment for one Connect attempt (PeerReachCoordinator; call-agnostic). */
+  PeerReachRequest BuildReachRequest(const CallMediaDirectConnectParams& params);
   /** Async dial/retry — does not park MeshControl for Connect timeout (ConnectAsync). */
   void StartConnectSequence(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen);
   void BeginConnectAttempt(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
@@ -219,15 +219,17 @@ private:
   CallDirectSeatPorts seat_;
   std::function<void()> seed_warm_;
   std::function<void()> seed_reserve_;
-  std::function<void(std::function<void(bool parked)>, int timeout_ms)> seed_park_await_;
-  /** direct | punched | circuit — set by EnsurePeerReachableAsync. */
-  std::string media_path_kind_;
-  /** When true, EnsurePeerReachableAsync must try circuit even if already dialable. */
+  /** Peer link establishment (reach loop); owns no call state. */
+  PeerReachCoordinator reach_;
+  PeerReachId reach_id_ = 0;
+  /** Link kind the last successful reach settled on (UI thread). */
+  PeerLinkKind reach_kind_ = PeerLinkKind::Unknown;
+  /** Next reach must insist on a relayed link (TX-only escalate). */
   bool force_circuit_ensure_ = false;
-  /** B39: force EnsurePeerReachableAsync to redial even when dial_->IsConnected reports a
-   *  (possibly stale) connected link. Set by OnConnectAttemptFinished after a dropped link. */
+  /** B39: next reach must not reuse a (possibly stale) connected link. Set by
+   *  OnConnectAttemptFinished after a dropped link. */
   bool force_redial_ = false;
-  /** B39: true when the current attempt's Ensure short-circuited on an already-connected link. */
+  /** B39: true when the current attempt's reach reused an already-connected link. */
   bool attempt_started_connected_ = false;
   bool session_offerer_ = false;
   int64_t direct_connected_at_ms_ = 0;
@@ -261,7 +263,6 @@ private:
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;
   std::unordered_set<std::string> media_attempted_calls_;
   int media_key_inbox_poll_rounds_ = 90;
-  int64_t dial_wait_budget_ms_ = 12000;
   /** Per-attempt ConnectAsync timeout (B42 test seam); production default kConnectAttemptTimeoutMs. */
   int connect_attempt_timeout_ms_ = 15000;
   std::atomic<uint32_t> audio_seq_{0};
