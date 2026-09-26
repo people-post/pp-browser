@@ -180,7 +180,7 @@ stateDiagram-v2
   HelloInbound --> Adopting: HelloOk
   HelloInbound --> Idle: HelloFail
   HelloInbound --> Idle: DetachRequested
-  Note right of HelloOutbound: InboundStream while HelloOutbound\n= glare reject only if local PeerId > remote
+  Note right of HelloOutbound: InboundStream while HelloOutbound\n= glare reject only if local wins (offerer beats answerer; same role → PeerId)
   Adopting --> MediaReady: DuplexStarted
   Adopting --> Failed: AdoptLost
   MediaReady --> Detaching: DetachRequested
@@ -194,7 +194,7 @@ stateDiagram-v2
 | Situation | Guard / transition |
 |-----------|-------------------|
 | Inbound while `MediaReady` / `Adopting` / `Detaching` | Reject: close stream; log ignore |
-| Inbound while `HelloOutbound` or `Dialing` (offerer fallback) | **Glare loser:** close inbound; keep outbound |
+| Inbound while `HelloOutbound` or `Dialing` (offerer fallback) | **Glare:** the winner (`LocalWinsCallMediaGlareForRoles` — offerer beats answerer, same role → PeerId) closes the inbound and keeps its outbound; the loser yields. Antisymmetric — see [CALLS.md](../../docs/architecture/CALLS.md) |
 | Inbound while `Idle` | → `HelloInbound` |
 | Second `ConnectRequested` while not Idle | Abort prior waiter or reject — pick one in s1; lean **Detach then Connect** |
 | SoftMigrate `ReleaseDirect` | `DetachRequested` from MediaReady; must **not** surface as `ConnectFailed` to lifecycle when SFU path active (bridge policy; SM only reports transport down) |

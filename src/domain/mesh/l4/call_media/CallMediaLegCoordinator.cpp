@@ -17,6 +17,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -112,6 +113,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     std::string call_id;
     CallMediaBundlePhase phase = CallMediaBundlePhase::Idle;
     bool offerer = false;
+    /** Role from the remote's hello (glare); unset until one arrives. */
+    std::optional<bool> remote_offerer;
     bool local_cancel = false;
     bool finished = true;
     bool control_ready = false;
@@ -190,29 +193,31 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }, std::move(task));
   }
 
-  bool LocalWinsForLink(const pp::amp::PeerLink& link) const {
-    if (!runtime) {
-      return true;
-    }
+  /** Remote PeerId for the glare tiebreak (dialed alias link first, then the given link). */
+  std::string RemotePeerIdForGlare(const pp::amp::PeerLink& link) const {
     std::string remote = link.RemotePeerId();
-    // Inbound links often have an empty RemotePeerId until handshake/rekey. Prefer the
-    // dialed alias link (same peer_key after rekey, or StartLeg peer_key) so glare stays
-    // antisymmetric — empty remote previously made *both* sides RejectGlare.
     if (remote.empty() && !link.PeerKey().empty()) {
       if (const auto* known = runtime->Links().FindLink(link.PeerKey())) {
         remote = known->RemotePeerId();
       }
     }
-    return LocalWinsCallMediaGlare(runtime->Links().LocalPeerId(), remote);
+    return remote;
   }
 
+  /**
+   * Antisymmetric glare winner for this bundle: offerer beats answerer; equal roles fall back to
+   * the PeerId order. The remote role comes from its hello; until one arrived, assume the
+   * complementary role (a normal call).
+   */
   bool LocalWinsForBundle(const Bundle& bundle, const pp::amp::PeerLink& fallback_link) const {
+    const pp::amp::PeerLink* link = &fallback_link;
     if (!bundle.params.peer_key.empty()) {
       if (const auto* dial = runtime->Links().FindLink(bundle.params.peer_key)) {
-        return LocalWinsForLink(*dial);
+        link = dial;
       }
     }
-    return LocalWinsForLink(fallback_link);
+    return LocalWinsCallMediaGlareForRoles(bundle.offerer, bundle.remote_offerer.value_or(!bundle.offerer),
+                                           runtime->Links().LocalPeerId(), RemotePeerIdForGlare(*link));
   }
 
   pp::amp::PeerLink* ResolveLink(const Bundle& bundle) const {
@@ -743,6 +748,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         return;
       }
 
+      // Record the dialer's role before deciding glare (antisymmetric winner needs both roles).
+      target->remote_offerer = hello.getString("role").value_or("") == "offerer";
       CallMediaInboundHelloContext ctx;
       ctx.phase = target->phase;
       ctx.has_outbound_control = static_cast<bool>(target->outbound_control);
@@ -832,7 +839,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         if (!resolved) {
           return;
         }
-        if (bundle->offerer && LocalWinsForBundle(*bundle, *resolved) && bundle->outbound_control) {
+        if (LocalWinsForBundle(*bundle, *resolved) && bundle->outbound_control) {
           DropRole(*bundle, CallMediaChannelRole::InboundControl);
           bundle->phase = CallMediaBundlePhase::OutboundHello;
           return;
