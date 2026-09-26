@@ -118,3 +118,17 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 **Decision:** `CallMediaEngine::SetCameraEnabled(true)` validates, records the request and the display rotation (read on the caller's UI thread), and returns. The engine's video thread takes a `CameraDeviceLease` (exclusive; opened on the `MediaDeviceArbiter` device thread), creates and configures the local encoder, applies bitrate before each encode, and releases both when the request is withdrawn. A failed open clears the request and is reported once through `TakeCameraFailure`, which the UI polls (same idiom as `TakePendingVideoRefreshStreamIds`) to show the error and withdraw video from the roster.
 **Rationale:** The camera used to open synchronously on the UI thread under the engine mutex; routing that through the device thread would make the UI wait behind a mic permission prompt. The video thread already exists per session, so owning the lease there removes cross-thread encoder use (`SetTargetBitrate` from `ApplyAdaptation` raced `Encode`) and the join-under-mutex in the old `CloseCameraLocked` (the video thread takes the mutex to read the send callback). Display rotation is split from transform resolution because iOS reads UIKit (main thread only) and the device thread must never wait on main (UI `Stop` joins the capture thread, which can wait on the device thread).
 **Consequence:** `IsCameraEnabled` means "requested", not "frames flowing"; peers may briefly see video advertised before a failed open withdraws it.
+
+---
+
+## L013 — Viewer shape: ticket from the publisher, client-side ladder, direct attach to hops without admission
+
+**Date:** 2026-09-26
+**Status:** Accepted (answers CURRENT_STATE's "viewer ticket" question)
+**Decision:**
+- **Ticket** is fetched 1:1 from the publisher (`ticket_request` over the broadcast RPC; link reach to the publisher). It cannot ride the announce: tickets are bound to one viewer PeerId, tips go to every follower.
+- **Admission** is the viewer side of B007 (`BroadcastViewerLadder`, pure): ask the tip hop, then L1 hints; Admit → attach; Redirect → hints first, bounded by the redirect budget, path stamp as loop guard; Refuse / attach failure → next candidate. A hop whose admission RPC cannot run (no broadcast RPC server — every relay before B1, pp-node included) is attached directly as a single-hop relay: admission manages capacity, and frames are end-to-end encrypted (B003), so skipping it exposes nothing.
+- **Stream id** = `PublisherStreamIdForIdentity(publisher PeerId)` (`BroadcastPublisherStreamId`) — the tip carries the PeerId, not the Account id calls hash. l5's broadcaster publishes on it.
+- **Frames** use `SealMediaRelayFrame` / `OpenMediaRelayFrame` (neutral, `domain/mesh/l4/media_relay`) with context `broadcast-media|<program_id>|<join_handle>`; calls use the same framing under `call-media-sfu|<call_id>` (bytes unchanged).
+- **Relay client**: `AmpMediaRelayCoordinator` holds one client session per mesh host, shared with calls. The viewer refuses with a clear reason while a call holds it; per-holder client sessions are a Later item (running both is not needed now — not blocked by design).
+**Consequence:** l4 is testable end-to-end only against the test harness until l5 mints tickets (`PutLiveProgramKey`); the hard-lab phase moves to l5, where a real publisher exists.

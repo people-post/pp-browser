@@ -1,4 +1,5 @@
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
+#include "domain/mesh/l4/media_relay/MediaRelayFrameCrypto.h"
 
 #include "foundation/crypto/MessageCipher.h"
 #include "foundation/crypto/CryptoConstants.h"
@@ -14,63 +15,26 @@ constexpr size_t kCallMediaV2HeaderBytes = 1 + 4 + 1 + 1; // + channel
 namespace {
 
 uint32_t ReadSeq(const std::vector<uint8_t>& body) {
-  return (static_cast<uint32_t>(body[1]) << 24) | (static_cast<uint32_t>(body[2]) << 16) |
-         (static_cast<uint32_t>(body[3]) << 8) | static_cast<uint32_t>(body[4]);
+  return ReadMediaFrameSeq(body);
 }
 
 Roe<std::vector<uint8_t>> EncryptBody(const ByteVector& media_key, const std::string& aad_str, uint32_t seq,
                                       uint8_t mark, uint8_t channel, const std::vector<uint8_t>& payload) {
-  if (media_key.empty()) {
-    return Error("call media key required");
-  }
-  const ByteVector aad(aad_str.begin(), aad_str.end());
-  const ByteVector plain(payload.begin(), payload.end());
-  auto nonce = MessageCipher::GenerateNonce();
-  if (!nonce) {
-    return nonce.error();
-  }
-  auto encrypted = MessageCipher::Encrypt(media_key, plain, aad, *nonce);
-  if (!encrypted) {
-    return encrypted.error();
-  }
-  std::vector<uint8_t> body(kCallMediaV2HeaderBytes + encrypted->nonce.size() + encrypted->ciphertext.size());
-  size_t i = 0;
-  body[i++] = kCallMediaFrameVersionV2;
-  body[i++] = static_cast<uint8_t>((seq >> 24) & 0xff);
-  body[i++] = static_cast<uint8_t>((seq >> 16) & 0xff);
-  body[i++] = static_cast<uint8_t>((seq >> 8) & 0xff);
-  body[i++] = static_cast<uint8_t>(seq & 0xff);
-  body[i++] = mark;
-  body[i++] = channel;
-  std::memcpy(body.data() + i, encrypted->nonce.data(), encrypted->nonce.size());
-  i += encrypted->nonce.size();
-  std::memcpy(body.data() + i, encrypted->ciphertext.data(), encrypted->ciphertext.size());
-  return body;
+  return SealMediaFrameV2Body(media_key, aad_str, seq, mark, channel, payload);
 }
 
 Roe<CallMediaDecodedFrame> DecryptBody(const ByteVector& media_key, const std::string& aad_str,
                                        uint8_t channel, uint32_t seq, uint8_t mark, size_t header_bytes,
                                        const std::vector<uint8_t>& body) {
-  if (media_key.empty()) {
-    return Error("call media key required");
-  }
-  if (body.size() < header_bytes + kAeadNonceSize) {
-    return Error("call media frame truncated");
-  }
-  const ByteVector aad(aad_str.begin(), aad_str.end());
-  EncryptedBlob blob;
-  blob.nonce.assign(body.begin() + static_cast<std::ptrdiff_t>(header_bytes),
-                    body.begin() + static_cast<std::ptrdiff_t>(header_bytes + kAeadNonceSize));
-  blob.ciphertext.assign(body.begin() + static_cast<std::ptrdiff_t>(header_bytes + kAeadNonceSize), body.end());
-  auto decrypted = MessageCipher::Decrypt(media_key, blob, aad);
-  if (!decrypted) {
-    return decrypted.error();
+  auto opened = OpenMediaFrameBody(media_key, aad_str, channel, seq, mark, header_bytes, body);
+  if (!opened) {
+    return opened.error();
   }
   CallMediaDecodedFrame out;
-  out.channel = channel;
-  out.seq = seq;
-  out.mark = mark;
-  out.payload.assign(decrypted->begin(), decrypted->end());
+  out.channel = opened->channel;
+  out.seq = opened->seq;
+  out.mark = opened->mark;
+  out.payload = std::move(opened->payload);
   return out;
 }
 

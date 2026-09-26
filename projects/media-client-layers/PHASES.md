@@ -65,21 +65,33 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 
 **Exit:** a capture-only or playback-only session can run without starting the other half. **Met by l3a** (l3b / l3c are about sharing devices between sessions).
 
-## l4 — feature/broadcast: viewer (audio)
+## l4 — feature/broadcast: viewer (audio) — [L013](DECISIONS.md#l013--viewer-shape-ticket-from-the-publisher-client-side-ladder-direct-attach-to-hops-without-admission)
 
-- [ ] `feature/broadcast` + `BroadcastHub`; own program / subscription state (not `CallSessionStore`), no `CallLifecycle`
-- [ ] `BroadcastViewerWorkflow`: ticket → `RequestViewerAttach` admit-or-redirect (bounded) → receive-only attach via l2 → re-admit on loss
-- [ ] Broadcast client RPC moves out of `AmpBroadcastTransport` (client vs relay-side split)
-- [ ] Own frame AEAD label; playback-only engine session; speaker lease
-- [ ] Hard-lab phase: publisher + relay + viewer (audio flows; redirect case)
+### l4a — Neutral frame crypto + viewer ladder (done)
 
-**Exit:** a viewer watches (listens) without any call object.
+- [x] `MediaRelayFrameCrypto` (`domain/mesh/l4/media_relay`): seal / open with a feature-owned AAD context; call SFU framing delegates (bytes unchanged — cross-open test)
+- [x] `BroadcastMediaFrameContext`, `BroadcastPublisherStreamId` (`domain/messaging/BroadcastMedia.h`)
+- [x] `BroadcastViewerLadder` (`domain/messaging`): client side of B007 — admit / redirect (budget, path stamp) / refuse / no-admission-service / attach-failed; gtests
+
+### l4b — `feature/broadcast` viewer workflow + hub
+
+- [ ] `feature/broadcast` library + `BroadcastHub`; own watch state (not `CallSessionStore`), no `CallLifecycle`
+- [ ] `BroadcastViewerWorkflow` (UI thread): reach publisher → ticket → verify / extract key → ladder → receive-only attach via l2 → subscribe publisher stream → playback-only engine (speaker lease); re-admit on transport loss (bounded); stop
+- [ ] gtests with fake ports (ladder paths, key / frame path into the engine, loss, stop, relay client busy)
+
+### l4c — Product wiring
+
+- [ ] Broadcast client RPC moves out of `AmpBroadcastTransport` (client vs server split)
+- [ ] Hub built next to the call stack from neutral mesh objects (relay client, dial registry, circuit reach); facade entry `WatchLiveAnnounce` / `StopWatching`
+- [ ] Compose test on the mesh harness: publisher-side ticket server + viewer workflow
+
+**Exit:** a viewer listens without any call object. Hard-lab (publisher + relay + viewer, redirect case) moves to l5 (needs a real publisher).
 
 ## l5 — Broadcaster
 
 - [ ] `BroadcasterWorkflow`: capture-only session (mic lease; camera optional input) → publish to first relay via l2
 - [ ] Live key / ticket minting wired to the program (`LiveProgramKey`)
-- [ ] Hard-lab: broadcaster → relay → ≥2 viewers
+- [ ] Hard-lab: broadcaster → relay → ≥2 viewers (from l4: redirect case)
 
 ## l6 — Remove broadcast from calls
 
@@ -91,4 +103,4 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 - [ ] Viewer video (channel 1 decode path; subscribe plan adds channel)
 - [ ] Tree relay upstream leg uses the viewer client ([L005](DECISIONS.md#l005--a-tree-relay-pulls-upstream-with-the-viewer-client)) — with peer-scoped-broadcast B1
 - [ ] Relay per-program keyframe cache (relay side)
-- [ ] Allow call + broadcast at once (arbiter policy change + playback mix)
+- [ ] Allow call + broadcast at once: per-holder `media_relay` client sessions (the coordinator holds one today), arbiter mic policy
