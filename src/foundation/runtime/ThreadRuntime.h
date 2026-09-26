@@ -3,6 +3,7 @@
 #include "common/Module.h"
 #include "common/WorkerPool.h"
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include "common/PbrCompat.h"
@@ -47,7 +48,8 @@ public:
   void ResumeWorkers();
 
 private:
-  bool running_ = false;
+  /** Read from any thread (IsRunning via AppRuntime scheduling); written by Start / Shutdown. */
+  std::atomic<bool> running_{false};
   std::unique_ptr<WorkerPool> worker_pool_;
   std::unique_ptr<CoordinatorThread> coordinator_;
 };
