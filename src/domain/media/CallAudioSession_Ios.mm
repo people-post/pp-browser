@@ -37,6 +37,15 @@ void ApplyRoute(bool speaker_on) {
   (void)error;
 }
 
+/**
+ * VideoChat is Apple's speaker-optimised voice mode (full call-volume range on the
+ * loudspeaker); VoiceChat is tuned for the earpiece and is very quiet when routed to the
+ * loudspeaker. Pick the mode that matches where audio is actually going.
+ */
+NSString* ModeForRoute(bool speaker_on) {
+  return speaker_on ? AVAudioSessionModeVideoChat : AVAudioSessionModeVoiceChat;
+}
+
 } // namespace
 
 void ActivateForVoipCall() {
@@ -48,7 +57,7 @@ void ActivateForVoipCall() {
     options |= AVAudioSessionCategoryOptionDefaultToSpeaker;
   }
   [session setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:options error:&error];
-  [session setMode:AVAudioSessionModeVoiceChat error:&error];
+  [session setMode:ModeForRoute(g_speakerphone.load()) error:&error];
   [session setActive:YES error:&error];
   g_session_active.store(true);
   ApplyRoute(g_speakerphone.load());
@@ -87,7 +96,7 @@ void SetSpeakerphoneOn(bool on) {
     options |= AVAudioSessionCategoryOptionDefaultToSpeaker;
   }
   [session setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:options error:&error];
-  [session setMode:AVAudioSessionModeVoiceChat error:&error];
+  [session setMode:ModeForRoute(on) error:&error];
   ApplyRoute(on);
   LogRoute("SetSpeakerphoneOn");
   (void)error;
