@@ -783,6 +783,10 @@ struct CallMediaEngine::Impl {
       }
     }
 
+    // SDL's coreaudio backend rewrites the AVAudioSession category/options with ModeDefault and
+    // DefaultToSpeaker when it opens devices (B36). Re-apply our VoiceChat mode + earpiece route.
+    CallAudioSession::ActivateForVoipCall();
+
     {
       std::lock_guard lock(mutex);
       // Reopen path already closed; first open should be empty. Drop any stale handles.

@@ -74,6 +74,7 @@ void SetSpeakerphoneOn(bool on) {
     options |= AVAudioSessionCategoryOptionDefaultToSpeaker;
   }
   [session setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:options error:&error];
+  [session setMode:AVAudioSessionModeVoiceChat error:&error];
   ApplyRoute(on);
   (void)error;
 }
