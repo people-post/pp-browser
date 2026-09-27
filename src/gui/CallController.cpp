@@ -399,9 +399,9 @@ void CallController::StopRingback(CallUiBackend* backend) {
   // The ringback worker itself owns activate/release of the audio session (see
   // CallRingtone::RunLoop) — a fast cancel could otherwise race a Deactivate() here
   // against the worker's own ActivateForVoipCall() and leave the phone in VoIP mode.
-  // The engine owns the session once media is active — only tell the worker to
-  // release it when the call ended without being answered.
-  const bool release = backend && backend->Available() && !backend->Media().IsActive();
+  // The engine owns the session once media is active — release unless the call engine
+  // is actually active and owns it (a null/unavailable backend means nobody else does).
+  const bool release = !(backend && backend->Available() && backend->Media().IsActive());
   ringback_.SetReleaseSessionOnStop(release);
   ringback_.Stop();
 }
