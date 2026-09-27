@@ -34,6 +34,13 @@ constexpr int kSampleRate = 48000;
 constexpr int kChannels = 1;
 constexpr int kFrameMs = 20;
 constexpr int kFrameSamples = kSampleRate * kFrameMs / 1000;
+/** Bytes of one 20 ms mono s16 frame in the SDL playback stream. */
+constexpr int kFrameBytes = kFrameSamples * static_cast<int>(sizeof(int16_t));
+/** Keep ~60 ms queued in the device (spec §1); above ~120 ms skip a slot to shed latency. */
+constexpr int kPlayoutTargetQueuedBytes = 3 * kFrameBytes;
+constexpr int kPlayoutHighWaterBytes = 6 * kFrameBytes;
+/** Never produce more than this many slots per 20 ms wake-up (startup / after a stall). */
+constexpr int kPlayoutMaxSlotsPerTick = 3;
 constexpr int kDefaultVideoWidth = 640;
 constexpr int kDefaultVideoHeight = 360;
 constexpr int kVideoFps = 20;
@@ -545,31 +552,51 @@ struct CallMediaEngine::Impl {
       std::vector<int16_t> mix(static_cast<size_t>(kFrameSamples), 0);
       while (playout_running.load(std::memory_order_relaxed)) {
         const auto t0 = std::chrono::steady_clock::now();
-        std::fill(mix.begin(), mix.end(), int16_t{0});
-        bool any = false;
         double pressure = 0.0;
-        uint64_t ticks = 0;
         {
           std::lock_guard lock(mutex);
-          ticks = playout_ticks.fetch_add(1, std::memory_order_relaxed) + 1;
-          for (auto& [id, track] : audio_tracks) {
-            (void)id;
-            if (!track) {
-              continue;
-            }
-            PopAndDecodeTrackLocked(*track, mix, any);
-            pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(ticks, 1)));
-          }
           SDL_AudioStream* out = playback_stream;
-          if (out && any) {
-            SmoothLevel(remote_output_level, FramePeakLevel(mix.data(), kFrameSamples));
-            remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
-            (void)SDL_PutAudioStreamData(out, mix.data(),
-                                         kFrameSamples * static_cast<int>(sizeof(int16_t)));
-          } else if (out && !audio_tracks.empty()) {
-            // Silent frame keeps SDL clock alive when all streams priming.
-            (void)SDL_PutAudioStreamData(out, mix.data(),
-                                         kFrameSamples * static_cast<int>(sizeof(int16_t)));
+          int slots = 1;
+          if (out) {
+            const int queued = SDL_GetAudioStreamQueued(out);
+            if (queued < 0 || queued > kPlayoutHighWaterBytes) {
+              slots = 0; // device is ahead (or errored): let it drain this tick
+            } else {
+              const int deficit = kPlayoutTargetQueuedBytes - queued;
+              slots = deficit <= 0 ? 0 : std::min(kPlayoutMaxSlotsPerTick,
+                                                  (deficit + kFrameBytes - 1) / kFrameBytes);
+            }
+          }
+          for (int s = 0; s < slots; ++s) {
+            std::fill(mix.begin(), mix.end(), int16_t{0});
+            bool any = false;
+            const uint64_t ticks = playout_ticks.fetch_add(1, std::memory_order_relaxed) + 1;
+            for (auto& [id, track] : audio_tracks) {
+              (void)id;
+              if (!track) {
+                continue;
+              }
+              PopAndDecodeTrackLocked(*track, mix, any);
+              pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(ticks, 1)));
+            }
+            if (out && any) {
+              SmoothLevel(remote_output_level, FramePeakLevel(mix.data(), kFrameSamples));
+              remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+              (void)SDL_PutAudioStreamData(out, mix.data(), kFrameBytes);
+            } else if (out && !audio_tracks.empty()) {
+              // Silent frame keeps the device clock fed while all streams are priming.
+              (void)SDL_PutAudioStreamData(out, mix.data(), kFrameBytes);
+            }
+          }
+          if (slots == 0) {
+            // Still report pressure from buffer fill when we skipped (no pops this tick).
+            for (auto& [id, track] : audio_tracks) {
+              (void)id;
+              if (track) {
+                pressure = std::max(pressure, track->jitter.Pressure(
+                                                  std::max<uint64_t>(playout_ticks.load(), 1)));
+              }
+            }
           }
         }
         const double drop_p =
