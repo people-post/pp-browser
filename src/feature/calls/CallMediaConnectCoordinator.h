@@ -8,6 +8,8 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <chrono>
+#include <vector>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -69,12 +71,13 @@ struct CallMediaInboundPorts {
  * planner or SFU).
  *
  * Inbound: owns the transport's inbound handler. A hello is accepted once its epoch key is
- * available — the offerer often dials before the relay delivers the key, so the handler waits
- * (cancelable, bounded) on the worker hop, asking for the key meanwhile (V033: no bare sleep).
+ * available — the offerer often dials before the relay delivers the key, so the hello is parked
+ * on the calls owner (bounded, asking for the key meanwhile) and answered when the key lands, the
+ * session ends, the deadline passes or the coordinator shuts down. No thread waits.
  *
- * Threading: API and sequence state on the calls owner (CallsThread); timers hop from the
- * Coordinator to the owner.
- * `InFlight()` and `NotifyKeyAvailable()` are safe from any thread.
+ * Threading: API, sequence state and parked hellos on the calls owner (CallsThread); timers hop
+ * from the Coordinator to the owner. `InFlight()` and `NotifyKeyAvailable()` are safe from any
+ * thread.
  */
 class CallMediaConnectCoordinator : public Module {
 public:
@@ -118,9 +121,21 @@ private:
   void CancelTimers();
   const char* Role() const;
   void CheckUiThread(const char* what) const;
-  void HandleInboundHello(CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs);
-  /** Fills params.media_key if it arrives in time. False → reject (session gone / shut down). */
-  bool WaitForInboundKey(CallMediaDirectConnectParams& params);
+  /** A hello parked until its key lands (or the session ends / the deadline passes). */
+  struct PendingHello {
+    CallMediaDirectConnectParams params;
+    CallMediaInboundAnswer answer;
+    std::chrono::steady_clock::time_point deadline;
+  };
+  void HandleInboundHello(CallMediaDirectConnectParams params, CallMediaInboundAnswer answer);
+  /** Fills params.media_key when the epoch key is stored. */
+  bool TryLoadInboundKey(CallMediaDirectConnectParams& params) const;
+  void AcceptInboundHello(CallMediaDirectConnectParams params, const CallMediaInboundAnswer& answer);
+  /** Answer each parked hello that can be answered now; `ask_again` re-requests missing keys. */
+  void RecheckPendingHellos(bool ask_again);
+  void ArmKeyPoll();
+  /** NACK every parked hello (shutdown / destruction). */
+  void RejectPendingHellos(const char* why);
 
   ICallMediaTransport& transport_;
   PeerReachCoordinator& reach_;
@@ -129,14 +144,12 @@ private:
   std::atomic<bool> shut_down_{false};
   std::shared_ptr<std::atomic<bool>> alive_;
 
-  // Inbound (transport worker hop). Ports are set once before traffic.
+  // Inbound (calls owner). Ports are set once before traffic.
   CallMediaInboundPorts inbound_ports_;
   bool inbound_installed_ = false;
-  std::mutex inbound_mu_;
-  std::condition_variable inbound_cv_;
-  /** Bumped by NotifyKeyAvailable (under inbound_mu_) so a waiting hello re-checks at once. */
-  uint64_t key_notices_ = 0;
-  std::atomic<int> inbound_key_wait_ms_;
+  std::vector<PendingHello> pending_hellos_;
+  uint64_t key_poll_timer_id_ = 0;
+  int inbound_key_wait_ms_;
 
   // Calls owner.
   CallMediaConnectRequest request_;

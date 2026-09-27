@@ -123,7 +123,7 @@ public:
   void EjectParticipantAfterMigrateFailure(const std::string& call_id, const std::string& identity,
                                            const std::string& reason);
 
-  /** SoftMigrate without parking MeshControl on quote/attach (product MeshControl paths). */
+  /** SoftMigrate with quote / attach as completions (no thread parks on them). */
   void MaybeSoftMigrateToSfuAsync(const std::string& call_id, SoftMigrateTrigger trigger,
                                   const std::string& prefer_hop_peer_id, uint64_t expected_gen,
                                   std::function<void(Roe<void>)> on_done);

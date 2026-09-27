@@ -93,14 +93,6 @@ bool IsRemoteTerminalReason(const char* reason) {
   return reason && (std::strcmp(reason, "peer_close") == 0 || std::strcmp(reason, "peer_reset") == 0);
 }
 
-void RunWorker(const CallMediaLegCoordinator::WorkerPost& post_worker, std::function<void()> task) {
-  if (post_worker) {
-    post_worker(std::move(task));
-  } else {
-    task();
-  }
-}
-
 bool IsPendingCallId(const std::string& call_id) {
   return call_id.rfind("__pending_", 0) == 0;
 }
@@ -140,7 +132,6 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   };
 
   pp::amp::MeshRuntime* runtime = nullptr;
-  WorkerPost post_worker;
   mutable std::mutex mu;
   /**
    * User callbacks (on_connected / on_failed / on_finished) captured while `mu` is held.
@@ -823,11 +814,11 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
 
     const std::string peer_key = link->PeerKey();
-    RunWorker(post_worker, [this, self = shared_from_this(), channel_session, params, handler = std::move(handler),
-                            peer_key, call_id = hello_call_id]() mutable {
-      CallMediaDirectConnectParams answer_params = params;
-      CallMediaDirectCallbacks answer_cbs;
-      handler(answer_params, answer_cbs);
+    // The handler answers asynchronously (the calls owner waits for the media key without a
+    // thread). Asked after the mux stack unwinds; the answer comes back onto IO.
+    auto answer = [this, self = shared_from_this(), channel_session, peer_key,
+                   call_id = hello_call_id](CallMediaDirectConnectParams answer_params,
+                                            CallMediaDirectCallbacks answer_cbs) mutable {
       PostIo([this, self, channel_session, answer_params = std::move(answer_params),
               answer_cbs = std::move(answer_cbs), peer_key, call_id]() mutable {
         CallbackLock lock(*this);
@@ -867,6 +858,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         bundle->control_ready = true;
         TryEnterMediaReady(*bundle);
       });
+    };
+    PostIo([self = shared_from_this(), params, handler = std::move(handler), answer = std::move(answer)]() mutable {
+      handler(params, std::move(answer));
     });
   }
 
@@ -1151,10 +1145,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   }
 };
 
-CallMediaLegCoordinator::CallMediaLegCoordinator(pp::amp::MeshRuntime& runtime, WorkerPost post_worker)
+CallMediaLegCoordinator::CallMediaLegCoordinator(pp::amp::MeshRuntime& runtime)
     : impl_(std::make_shared<Impl>()), runtime_(runtime) {
   impl_->runtime = &runtime_;
-  impl_->post_worker = std::move(post_worker);
 }
 
 CallMediaLegCoordinator::~CallMediaLegCoordinator() {
@@ -1215,7 +1208,7 @@ void CallMediaLegCoordinator::Stop() {
   ClearInboundHandler();
   // Poison already-queued PostIo(self) work before dropping runtime.
   impl_->io_deferred.Invalidate();
-  // Drop runtime before callers destroy MeshRuntime / harness (detached WorkerPost may resume).
+  // Drop runtime before callers destroy MeshRuntime / harness (posted answers may still land).
   impl_->runtime = nullptr;
 }
 

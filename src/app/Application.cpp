@@ -490,24 +490,32 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return UnpublishCasForSettings(secrets_->ProfileDataDir(), secrets_->ProfileId(), public_content_id_hex);
   };
 
-  settings_commands.fetch_cas_public_tip = [this](const std::string& tip,
-                                                  const std::string& peer_relay_user_id) -> Roe<void> {
+  settings_commands.fetch_cas_public_tip = [this](const std::string& tip, const std::string& peer_relay_user_id,
+                                                  std::function<void(Roe<void>)> on_done) {
     if (!secrets_ || !secrets_->IsInitialized()) {
-      return Error("Profile secrets are not ready");
+      on_done(Error("Profile secrets are not ready"));
+      return;
     }
     if (!messaging_ || !messaging_->IsInitialized()) {
-      return Error("Messaging is not ready");
+      on_done(Error("Messaging is not ready"));
+      return;
     }
     auto* blob = messaging_->MeshMessaging().PeerBlobClient();
     if (blob == nullptr) {
-      return Error("Peer blob client is not available");
+      on_done(Error("Peer blob client is not available"));
+      return;
     }
     auto local = messaging_->Identity().Get();
     if (!local) {
-      return local.error();
+      on_done(local.error());
+      return;
     }
-    return FetchCasPublicTipForSettings(secrets_->ProfileDataDir(), secrets_->ProfileId(), *blob,
-                                        local->relay_user_id, tip, peer_relay_user_id);
+    // The fetch rides the mesh (never parks UI); its answer comes back to UI.
+    FetchCasPublicTipForSettingsAsync(secrets_->ProfileDataDir(), secrets_->ProfileId(), *blob,
+                                      local->relay_user_id, tip, peer_relay_user_id,
+                                      [on_done = std::move(on_done)](Roe<void> fetched) {
+                                        AppRuntime::PostUI([on_done, fetched]() { on_done(fetched); });
+                                      });
   };
   settings_commands.register_identity = [this, &facade](const RegisterIdentityArgs& args) {
     auto result = facade.RegisterIdentity(args.nickname);
@@ -1541,7 +1549,7 @@ void Application::Shutdown() {
 
     // RequestShutdown first so an in-flight EnsureMessagingReady does not finish StartMesh during
     // join. It already AbortCallMediaForShutdown (PrepareForTeardown is non-blocking). Then
-    // StopMesh via ShutdownMessaging joins MeshControlPool + MeshPump while AppRuntime is up.
+    // StopMesh via ShutdownMessaging joins MeshPump while AppRuntime is up.
     if (messaging_) {
       StartupPhase phase("Shutdown::RequestShutdown");
       messaging_->RequestShutdown();

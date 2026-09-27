@@ -13,7 +13,6 @@
 #include "domain/people/PeerDisplayLabel.h"
 #include "foundation/platform/PlatformUserHints.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "domain/mesh/host/MeshControlDispatch.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"

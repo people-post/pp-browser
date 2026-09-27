@@ -63,6 +63,28 @@ struct CallMediaDirectCallbacks {
   std::function<void(const std::string& error)> on_failed;
 };
 
+/** Answer to an inbound hello — any thread, at most once. An empty `media_key` NACKs the hello. */
+using CallMediaInboundAnswer = std::function<void(CallMediaDirectConnectParams, CallMediaDirectCallbacks)>;
+/**
+ * Inbound hello handler (V033): called on the transport's IO hop with the hello's params; returns
+ * at once and answers when it knows (e.g. once the media key is stored). A hello never answered is
+ * left to Detach / ClearInboundHandler / the leg timeout.
+ */
+using CallMediaInboundHandler =
+    std::function<void(CallMediaDirectConnectParams params, CallMediaInboundAnswer answer)>;
+
+/** For handlers that decide on the spot (fakes, tools): run `decide`, then answer inline. */
+inline CallMediaInboundHandler AnswerInline(
+    std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> decide) {
+  return [decide = std::move(decide)](CallMediaDirectConnectParams params, CallMediaInboundAnswer answer) {
+    CallMediaDirectCallbacks callbacks;
+    if (decide) {
+      decide(params, callbacks);
+    }
+    answer(std::move(params), std::move(callbacks));
+  };
+}
+
 /** Kind of mesh link the active call-media channels are bound on (path label truth). */
 enum class CallMediaLinkKind {
   Unknown,
@@ -84,16 +106,11 @@ public:
   virtual void Stop() = 0;
 
   /**
-   * Install the product callback for inbound call-media hello.
-   *
-   * **Contract (V033 / SESSION_MACHINES):** the handler runs on a worker hop and must not
-   * stall the pool with bare `sleep_for` / blocking I/O. Prefer a cancelable wait
-   * (condition_variable + teardown/key notify) or return promptly without a media key
-   * (transport will NACK the hello). Detach / ClearInboundHandler / Connect timeout still
-   * `reset()` the stream independently of this callback.
+   * Install the product callback for inbound call-media hello (`CallMediaInboundHandler`: returns
+   * at once, answers later — nothing waits on a thread). Detach / ClearInboundHandler / Connect
+   * timeout still `reset()` the stream independently of this callback.
    */
-  virtual void SetInboundHandler(
-      std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler) = 0;
+  virtual void SetInboundHandler(CallMediaInboundHandler handler) = 0;
   virtual void ClearInboundHandler() = 0;
 
   virtual bool IsActive() const = 0;

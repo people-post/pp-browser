@@ -2,8 +2,6 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 
-#include "domain/mesh/host/MeshControlDispatch.h"
-#include "domain/mesh/host/MeshControlPool.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/CallTypes.h"
@@ -22,6 +20,8 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include "feature/conversations/tests/call_media_inbound_fake.h"
+
 #include <gtest/gtest.h>
 #include <optional>
 #include <memory>
@@ -80,11 +80,8 @@ class FakeCallMediaTransport final : public ICallMediaTransport {
 public:
   void Start() override { started = true; }
   void Stop() override { started = false; }
-  void SetInboundHandler(
-      std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler) override {
-    inbound = std::move(handler);
-  }
-  void ClearInboundHandler() override { inbound = {}; }
+  void SetInboundHandler(CallMediaInboundHandler handler) override { inbound.Set(std::move(handler)); }
+  void ClearInboundHandler() override { inbound.Clear(); }
   bool IsActive() const override { return active; }
   CallMediaDirectConnectParams ActiveParams() const override { return active_params; }
   CallMediaSessionPhase Phase() const override {
@@ -127,7 +124,7 @@ public:
   int detach_calls = 0;
   CallMediaDirectConnectParams last_params;
   CallMediaDirectConnectParams active_params;
-  std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> inbound;
+  test::InboundHelloFake inbound;
 };
 
 void DrainUntil(const std::function<bool()>& done, int max_ms = 4000) {
@@ -159,8 +156,6 @@ protected:
     EnsureSodiumInit();
     AppRuntime::Initialize(ManualOwnerRuntimeConfig());
     AppRuntime::InitializeUI();
-    mesh_control_ = std::make_unique<MeshControlPool>(1);
-    MeshControlDispatch::Install(mesh_control_.get());
 
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_call_stack_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
@@ -246,11 +241,6 @@ protected:
     stack_.reset();
     transport_.reset();
     dial_.reset();
-    MeshControlDispatch::Uninstall();
-    if (mesh_control_) {
-      mesh_control_->Shutdown();
-    }
-    mesh_control_.reset();
     AppRuntime::ShutdownUI();
     // Join the pool before resetting stores a worker may still touch (PR #216 follow-up).
     AppRuntime::Shutdown();
@@ -294,7 +284,6 @@ protected:
   }
 
   std::filesystem::path data_dir_;
-  std::unique_ptr<MeshControlPool> mesh_control_;
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;

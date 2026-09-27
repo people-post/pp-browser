@@ -41,7 +41,6 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "domain/mesh/host/MeshControlDispatch.h"
 #include "foundation/platform/NetworkConnectivity.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/data/PlatformDefaults.h"
@@ -463,7 +462,8 @@ void ConversationsHub::SyncLanMdnsAdvertisement() {
 
 
 void ConversationsHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer) {
-  MeshControlDispatch::Post([this, peer]() {
+  // Discovery thread → the hub's thread (contacts, endpoints and the mDNS id set are ours).
+  AppRuntime::PostUI([this, peer]() {
     if (peer.peer_id_base58.empty()) {
       return;
     }
@@ -1355,7 +1355,7 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
     amp_post_after = std::move(chat->io.post_after);
   }
   if (amp_pump && !amp_worker) {
-    amp_worker = [](std::function<void()> task) { MeshControlDispatch::Post(std::move(task)); };
+    amp_worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
   }
   if (!amp_links) {
     log().warning << "AttachAmpMessagingStack: Amp chat deps unavailable";
@@ -2614,7 +2614,7 @@ void ConversationsHub::Shutdown() {
       secrets_->UnregisterDekConsumer(call_stack_->MediaKeys());
     }
   }
-  // Stop mesh (joins MeshControlPool + MeshPump) before dropping session façade.
+  // Stop mesh (joins MeshPump) before dropping session façade.
   StopMesh();
   // Drop the call session manager before P2P — CSM holds a MeshDeliveryOrchestrator& reference.
   call_stack_->ResetSessions();

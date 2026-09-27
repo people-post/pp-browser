@@ -2,8 +2,6 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallUiBackend.h"
 
-#include "domain/mesh/host/MeshControlDispatch.h"
-#include "domain/mesh/host/MeshControlPool.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/messaging/CallTypes.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
@@ -21,6 +19,8 @@
 #include <deque>
 #include <filesystem>
 #include <functional>
+#include "feature/conversations/tests/call_media_inbound_fake.h"
+
 #include <gtest/gtest.h>
 #include <optional>
 #include <memory>
@@ -71,11 +71,8 @@ class FakeCallMediaTransport final : public ICallMediaTransport {
 public:
   void Start() override { started = true; }
   void Stop() override { started = false; }
-  void SetInboundHandler(
-      std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler) override {
-    inbound = std::move(handler);
-  }
-  void ClearInboundHandler() override { inbound = {}; }
+  void SetInboundHandler(CallMediaInboundHandler handler) override { inbound.Set(std::move(handler)); }
+  void ClearInboundHandler() override { inbound.Clear(); }
   bool IsActive() const override { return active; }
   CallMediaDirectConnectParams ActiveParams() const override { return active_params; }
   CallMediaSessionPhase Phase() const override {
@@ -93,12 +90,7 @@ public:
     active_params = params;
     if (peer_inbound) {
       // Simulate reverse-dial landing on the peer's CallMediaBridge inbound handler.
-      CallMediaDirectConnectParams inbound_params = params;
-      CallMediaDirectCallbacks inbound_cbs;
-      peer_inbound(inbound_params, inbound_cbs);
-      if (inbound_cbs.on_connected) {
-        inbound_cbs.on_connected();
-      }
+      peer_inbound(params);
     }
     if (callbacks.on_connected) {
       callbacks.on_connected();
@@ -127,9 +119,10 @@ public:
   int detach_calls = 0;
   CallMediaDirectConnectParams last_params;
   CallMediaDirectConnectParams active_params;
-  std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> inbound;
+  test::InboundHelloFake inbound;
   /** When set, ConnectAsync also drives the peer stack's inbound handler (dual-stack wire). */
-  std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> peer_inbound;
+  /** Reverse dial: deliver a hello to the peer; its answer connects the peer's side. */
+  std::function<void(CallMediaDirectConnectParams)> peer_inbound;
 };
 
 void DrainUntil(const std::function<bool()>& done, int max_ms = 6000) {
@@ -178,8 +171,6 @@ protected:
     EnsureSodiumInit();
     AppRuntime::Initialize(ManualOwnerRuntimeConfig());
     AppRuntime::InitializeUI();
-    mesh_control_ = std::make_unique<MeshControlPool>(1);
-    MeshControlDispatch::Install(mesh_control_.get());
 
     BuildSide(offer_, "offer", 0xa0, &answer_inbox_);
     BuildSide(answer_, "answer", 0xb0, &offer_inbox_);
@@ -193,16 +184,20 @@ protected:
         "/ip4/127.0.0.1/udp/47100/adp/1.0.0/p2p/12D3KooWOffer";
 
     // Answerer reverse-dial arms offerer inbound (product: stream lands on offerer before dial).
-    answer_.transport->peer_inbound =
-        [this](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
-          if (!offer_.transport || !offer_.transport->inbound) {
-            return;
-          }
-          // Leg coordinator marks the accepting transport active before invoking the handler.
-          offer_.transport->active = true;
-          offer_.transport->active_params = params;
-          offer_.transport->inbound(params, cbs);
-        };
+    answer_.transport->peer_inbound = [this](CallMediaDirectConnectParams params) {
+      if (!offer_.transport || !offer_.transport->inbound.Installed()) {
+        return;
+      }
+      // Leg coordinator marks the accepting transport active before invoking the handler.
+      offer_.transport->active = true;
+      offer_.transport->active_params = params;
+      offer_.transport->inbound.DeliverThen(std::move(params),
+                                            [](CallMediaDirectConnectParams, CallMediaDirectCallbacks cbs) {
+                                              if (cbs.on_connected) {
+                                                cbs.on_connected();
+                                              }
+                                            });
+    };
   }
 
   void TearDown() override {
@@ -210,11 +205,6 @@ protected:
     // alone does not wait for every pool thread (PR #216 follow-up).
     SoftStopSide(offer_);
     SoftStopSide(answer_);
-    MeshControlDispatch::Uninstall();
-    if (mesh_control_) {
-      mesh_control_->Shutdown();
-    }
-    mesh_control_.reset();
     AppRuntime::ShutdownUI();
     AppRuntime::Shutdown();
     DestroySide(offer_);
@@ -428,7 +418,6 @@ protected:
     return call_id;
   }
 
-  std::unique_ptr<MeshControlPool> mesh_control_;
   StackSide offer_;
   StackSide answer_;
   std::deque<ThreadMessage> offer_inbox_;

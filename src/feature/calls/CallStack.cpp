@@ -8,7 +8,6 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "domain/mesh/host/MeshControlDispatch.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/mesh/reachability/Reachability.h"
 #include "domain/mesh/reachability/AmpPunchCoordinator.h"
@@ -364,13 +363,12 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
   }
   call_sessions_->AbandonOrphanedCallsAfterRestart();
   call_sessions_->SetOnRingChangedMesh([this]() { SyncHubEphemeralListen(); });
-  call_sessions_->SetPrefetchPeerReachability([this](const std::string& identity) {
-    // Warm only; must not run RequestBridge on Critical ahead of AcceptInvite.
-    MeshControlDispatch::Post([this, identity]() {
-      if (deps_.prefetch_peer_reachability) {
-        deps_.prefetch_peer_reachability(identity);
-      }
-    });
+  call_sessions_->SetPrefetchPeerReachability([prefetch = deps_.prefetch_peer_reachability](const std::string& identity) {
+    // Warm only (async association / DHT lookup) — on the hub's thread, which owns what it reads.
+    // Captures the hub's port, not this stack: a teardown may race the post.
+    if (prefetch) {
+      AppRuntime::PostUI([prefetch, identity]() { prefetch(identity); });
+    }
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
   call_sessions_->SetLocalMeshPeerIdProvider([this]() -> std::string {

@@ -15,6 +15,8 @@
 
 #include <chrono>
 #include <filesystem>
+#include "feature/conversations/tests/call_media_inbound_fake.h"
+
 #include <gtest/gtest.h>
 #include <memory>
 #include <mutex>
@@ -250,11 +252,8 @@ class FakeCallMediaTransport final : public ICallMediaTransport {
 public:
   void Start() override { started = true; }
   void Stop() override { started = false; }
-  void SetInboundHandler(
-      std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler) override {
-    inbound = std::move(handler);
-  }
-  void ClearInboundHandler() override { inbound = {}; }
+  void SetInboundHandler(CallMediaInboundHandler handler) override { inbound.Set(std::move(handler)); }
+  void ClearInboundHandler() override { inbound.Clear(); }
   bool IsActive() const override { return active || half_open; }
   CallMediaDirectConnectParams ActiveParams() const override { return active_params; }
   CallMediaSessionPhase Phase() const override {
@@ -319,7 +318,7 @@ public:
       "amp link: transport failed [adp: adp udp: sendto dst=192.168.0.103:54410 errno=64]";
   CallMediaDirectConnectParams last_params;
   CallMediaDirectConnectParams active_params;
-  std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> inbound;
+  test::InboundHelloFake inbound;
 };
 
 class CallMediaBridgeAnswererStartTest : public ::testing::Test {
@@ -434,32 +433,36 @@ TEST_F(CallMediaBridgeAnswererStartTest, PathKindFollowsBoundLinkNotReachLoop) {
   EXPECT_NE(bridge_->MediaPathKind(), "circuit") << "stale bound kind must not label an idle transport";
 }
 
-// An inbound hello arrives on the transport's worker hop with the dialer's mesh PeerId. The
-// bridge maps it to the roster identity on the calls owner (it used to write bridge state from the
-// worker), and the transport still gets the key + callbacks to accept.
+// An inbound hello arrives on the transport's IO hop with the dialer's mesh PeerId. Nothing is
+// decided there: the calls owner answers (key + callbacks) and maps the PeerId to the roster
+// identity — bridge state is never written off the owner.
 TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloBindsPeerIdentityOnCallsOwner) {
   const std::string call_id = "call:inbound-bind";
   SeedActiveCall(call_id);
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
   // MediaPathKind reports "circuit" once the bound identity has a circuit hop — observable binding.
   dial_->circuit_hops["account:peer"] = true;
-  ASSERT_TRUE(transport_->inbound);
+  ASSERT_TRUE(transport_->inbound.Installed());
   EXPECT_NE(bridge_->MediaPathKind(), "circuit");
 
   CallMediaDirectConnectParams params;
   params.call_id = call_id;
   params.media_epoch = 1;
   params.peer_key = "12D3KooWInboundDialer";
-  CallMediaDirectCallbacks cbs;
-  transport_->inbound(params, cbs);
+  auto answer = transport_->inbound.Deliver(params);
+  ASSERT_TRUE(answer);
+  EXPECT_FALSE(test::InboundHelloFake::Answered(answer)) << "answered on the calls owner, not the IO hop";
+  EXPECT_NE(bridge_->MediaPathKind(), "circuit") << "binding waits for the calls owner";
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_TRUE(test::InboundHelloFake::Answered(answer));
+  params = answer->params;
+  CallMediaDirectCallbacks cbs = answer->cbs;
 
   EXPECT_EQ(params.media_key, TestMediaKey()) << "accepted with the stored epoch key";
   EXPECT_EQ(params.peer_key, "12D3KooWInboundDialer") << "bridge no longer rewrites the transport's peer";
   EXPECT_TRUE(cbs.on_connected);
   EXPECT_TRUE(cbs.on_media);
   EXPECT_TRUE(cbs.on_failed);
-  EXPECT_NE(bridge_->MediaPathKind(), "circuit") << "binding must wait for the calls owner";
-  AppRuntime::RunUIAndOwnerTasks();
   EXPECT_EQ(bridge_->MediaPathKind(), "circuit") << "PeerId mapped to account:peer on the calls owner";
 }
 
@@ -469,8 +472,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloWithoutSessionIsRejected) {
   params.media_epoch = 1;
   params.peer_key = "12D3KooWInboundDialer";
   CallMediaDirectCallbacks cbs;
-  ASSERT_TRUE(transport_->inbound);
-  transport_->inbound(params, cbs);
+  ASSERT_TRUE(transport_->inbound.DeliverAndWait(params, cbs)) << "answered (NACK)";
   EXPECT_TRUE(params.media_key.empty());
   EXPECT_FALSE(cbs.on_connected);
 }

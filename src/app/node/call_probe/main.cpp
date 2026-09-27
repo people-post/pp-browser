@@ -859,7 +859,7 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   int audio_in_session = 0;
   std::atomic<bool> detach_after_audio{false};
 
-  media->SetInboundHandler([&](pbr::CallMediaDirectConnectParams& params, pbr::CallMediaDirectCallbacks& cbs) {
+  media->SetInboundHandler(pbr::AnswerInline([&](pbr::CallMediaDirectConnectParams& params, pbr::CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
@@ -876,7 +876,7 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
         detach_after_audio.store(true, std::memory_order_release);
       }
     };
-  });
+  }));
 
   if (!ready_file.empty()) {
     FILE* f = std::fopen(ready_file.c_str(), "w");

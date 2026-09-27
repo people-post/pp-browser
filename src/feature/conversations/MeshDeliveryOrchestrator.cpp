@@ -51,7 +51,6 @@
 #include "domain/people/ContactIdentity.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "domain/mesh/host/MeshControlDispatch.h"
 #include "common/Logger.h"
 #include "foundation/platform/os/OsTime.h"
 
@@ -2292,7 +2291,7 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, st
 
   auto worker = std::move(amp_worker_post);
   if (!worker) {
-    worker = [](std::function<void()> task) { MeshControlDispatch::Post(std::move(task)); };
+    worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
   }
 
   auto blob = std::make_unique<AmpChatBlobTransport>(*amp_links_, amp_io_pump, store_, identity_, worker, amp_post_io,

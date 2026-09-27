@@ -41,8 +41,8 @@ t2b — the rest of the call stack onto the owner, one commit per step so every 
 
 ## t3 — Connectivity owner
 
-- [ ] `MeshMediaPlane`, `PeerReachCoordinator`, `ReachabilityEngine` on the owner; candidate policy computed there (not on IO)
-- [ ] Sync waits (`AwaitCircuitReady`, sync `TryEnsure*`) → completions; MeshControl retired
+- [x] t3-1: MeshControl retired. A census found three real waits on it — the seed's dial-back target walk (`AmpParkUntil`, up to 8 s per target), the inbound call-media hello waiting for its key (`cv.wait_until`, 8 s) and UPnP discovery (~2 s) — plus eight CPU / disk jobs that only used it to leave the IO strand. Now: the dial-back walk is IO-strand completions; the inbound hello is asynchronous end to end (`CallMediaInboundHandler`: the leg coordinator asks on IO, the calls owner parks the hello and answers when the key lands / the deadline passes / shutdown); L4 inbound work and the reachability probe (UPnP) run on AppRuntime workers (`MeshHost::MakeL4WorkerPost`: workers under MeshPump, inline for manual-drive harnesses); relay attach continues on a worker; the mDNS peer hook and the calls' peer-reach prefetch post to the hub's thread (UI) — the prefetch no longer captures the call stack. The Settings CAS tip fetch no longer parks UI (async blob fetch, cache on a worker, answer on UI). `MeshHost::StopAmp` stops L4 with MeshPump still driving, joins it, then frees L4 (TSan: MeshPump ticked the DHT while it was being freed). TSan: call / broadcast / chat / mesh suites clean (the 3 prefetch reports gone); hard-w5 green
+- [ ] t3-2: Connectivity owner — `MeshMediaPlane`, `PeerReachCoordinator`, `ReachabilityEngine` on it; candidate policy computed there (not on IO); the calls owner's `CallStackDeps` providers read a connectivity snapshot
 
 ## t4 — UI snapshots
 

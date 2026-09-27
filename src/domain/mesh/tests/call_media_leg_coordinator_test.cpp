@@ -50,7 +50,6 @@ class CallMediaLegCoordinatorTest : public ::testing::Test {
 protected:
   void SetUp() override {
     ASSERT_GE(sodium_init(), 0);
-    stall_release_ = std::make_shared<std::atomic<bool>>(false);
 
     auto created = pbr::test::AmpMeshHarness::Create();
     ASSERT_TRUE(static_cast<bool>(created));
@@ -66,18 +65,13 @@ protected:
   }
 
   void TearDown() override {
-    if (stall_release_) {
-      stall_release_->store(true, std::memory_order_release);
-    }
     a_call_->Stop();
     b_call_->Stop();
     a_call_.reset();
     b_call_.reset();
     harness_.reset();
-    stall_release_.reset();
   }
 
-  std::shared_ptr<std::atomic<bool>> stall_release_;
   std::unique_ptr<pbr::test::AmpMeshHarness> harness_;
   std::unique_ptr<CallMediaLegCoordinator> a_call_;
   std::unique_ptr<CallMediaLegCoordinator> b_call_;
@@ -93,7 +87,7 @@ TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedAudioRoundTrip) {
   bool got_audio = false;
   std::vector<uint8_t> received;
 
-  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
@@ -109,7 +103,7 @@ TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedAudioRoundTrip) {
       got_audio = true;
       cv.notify_one();
     };
-  });
+  }));
 
   CallMediaDirectConnectParams params;
   params.peer_key = "b";
@@ -172,13 +166,13 @@ TEST_F(CallMediaLegCoordinatorTest, DestroyAfterStopKeepsReplacementHandler) {
   const std::string call_id = "call-replaced-owner";
   ByteVector media_key(32, 0x24);
   std::atomic<bool> answerer_connected{false};
-  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
     params.offerer = false;
     cbs.on_connected = [&] { answerer_connected.store(true, std::memory_order_release); };
-  });
+  }));
 
   CallMediaDirectConnectParams params;
   params.peer_key = "b";
@@ -200,7 +194,7 @@ TEST_F(CallMediaLegCoordinatorTest, CallbacksMayReenterCoordinator) {
 
   std::atomic<bool> b_connected{false};
   std::atomic<bool> b_active_in_cb{false};
-  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
@@ -209,7 +203,7 @@ TEST_F(CallMediaLegCoordinatorTest, CallbacksMayReenterCoordinator) {
       b_active_in_cb.store(b_call_->IsActive(), std::memory_order_release);
       b_connected.store(true, std::memory_order_release);
     };
-  });
+  }));
 
   CallMediaDirectConnectParams params;
   params.peer_key = "b";
@@ -265,7 +259,7 @@ TEST_F(CallMediaLegCoordinatorTest, AliasRebindKeepsLegAlive) {
   std::atomic<bool> b_connected{false};
   std::atomic<bool> b_failed{false};
   std::atomic<int> b_audio{0};
-  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
@@ -273,7 +267,7 @@ TEST_F(CallMediaLegCoordinatorTest, AliasRebindKeepsLegAlive) {
     cbs.on_connected = [&] { b_connected.store(true, std::memory_order_release); };
     cbs.on_failed = [&](const std::string&) { b_failed.store(true, std::memory_order_release); };
     cbs.on_audio = [&](const std::vector<uint8_t>&) { b_audio.fetch_add(1, std::memory_order_acq_rel); };
-  });
+  }));
 
   CallMediaDirectConnectParams params;
   params.peer_key = "b";
@@ -327,14 +321,14 @@ TEST_F(CallMediaLegCoordinatorTest, AudioSurvivesSingleDatagramLoss) {
   ByteVector media_key(32, 0x55);
   std::atomic<bool> b_connected{false};
   std::atomic<int> b_audio{0};
-  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
     params.offerer = false;
     cbs.on_connected = [&] { b_connected.store(true, std::memory_order_release); };
     cbs.on_audio = [&](const std::vector<uint8_t>&) { b_audio.fetch_add(1, std::memory_order_acq_rel); };
-  });
+  }));
   CallMediaDirectConnectParams params;
   params.peer_key = "b";
   params.call_id = call_id;
@@ -371,7 +365,7 @@ TEST_F(CallMediaLegCoordinatorTest, OnMediaCarriesSeqAndMark) {
   std::atomic<bool> b_connected{false};
   std::mutex mu;
   std::vector<std::pair<uint32_t, uint8_t>> seen;
-  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
@@ -383,7 +377,7 @@ TEST_F(CallMediaLegCoordinatorTest, OnMediaCarriesSeqAndMark) {
         seen.emplace_back(seq, mark);
       }
     };
-  });
+  }));
   CallMediaDirectConnectParams params;
   params.peer_key = "b";
   params.call_id = call_id;
@@ -416,12 +410,12 @@ TEST_F(CallMediaLegCoordinatorTest, OnMediaCarriesSeqAndMark) {
 TEST_F(CallMediaLegCoordinatorTest, RedialAfterPeerSilentlyDroppedLink) {
   ByteVector media_key(32, 0x77);
   std::atomic<int> b_connected{0};
-  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.media_epoch = 1;
     params.offerer = false;
     cbs.on_connected = [&] { b_connected.fetch_add(1, std::memory_order_acq_rel); };
-  });
+  }));
   auto start = [&](const std::string& call_id, LegCompletion& done) {
     CallMediaDirectConnectParams params;
     params.peer_key = "b";
@@ -474,26 +468,16 @@ TEST_F(CallMediaLegCoordinatorTest, RedialAfterPeerSilentlyDroppedLink) {
 }
 
 TEST_F(CallMediaLegCoordinatorTest, DetachUnblocksConnectWait) {
-  b_call_->Stop();
-  b_call_ = std::make_unique<CallMediaLegCoordinator>(
-      *harness_->runtime_b, [](std::function<void()> fn) { std::thread(std::move(fn)).detach(); });
-  b_call_->Start();
-
+  // B holds its answer (a key that never lands in time): A's Detach must still finish the leg.
   const std::string call_id = "call-amp-detach-wait";
   ByteVector media_key(32, 0x11);
   std::atomic<bool> b_stalled{false};
-  auto release_b = stall_release_;
-  ASSERT_TRUE(release_b);
+  auto held_answer = std::make_shared<CallMediaInboundAnswer>();
 
-  b_call_->SetInboundHandler([release_b, &media_key, &call_id, &b_stalled](CallMediaDirectConnectParams& params,
-                                                                             CallMediaDirectCallbacks&) {
-    params.media_key = media_key;
-    params.call_id = call_id;
-    params.media_epoch = 1;
+  b_call_->SetInboundHandler([held_answer, &b_stalled](CallMediaDirectConnectParams /*params*/,
+                                                       CallMediaInboundAnswer answer) {
+    *held_answer = std::move(answer);  // not answered while the test runs
     b_stalled.store(true, std::memory_order_release);
-    while (!release_b->load(std::memory_order_acquire)) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
   });
 
   CallMediaDirectConnectParams params;
@@ -543,7 +527,7 @@ TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedVideoRoundTripOver16KiB) {
   std::vector<uint8_t> received;
   uint8_t received_ch = 255;
 
-  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
@@ -560,7 +544,7 @@ TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedVideoRoundTripOver16KiB) {
       got_video = true;
       cv.notify_one();
     };
-  });
+  }));
 
   CallMediaDirectConnectParams params;
   params.peer_key = "b";
@@ -602,11 +586,11 @@ TEST_F(CallMediaLegCoordinatorTest, FailAfterDetachDoesNotCallOnFailed) {
   ByteVector media_key(32, 0x33);
   std::atomic<int> local_failed{0};
 
-  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
-  });
+  }));
 
   CallMediaDirectConnectParams params;
   params.peer_key = "b";
@@ -698,7 +682,7 @@ TEST_F(CallMediaLegCoordinatorTest, ConnectDetachKCycleNoHang) {
     bool connected = false;
     bool got_audio = false;
 
-    b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
       params.media_key = media_key;
       params.call_id = call_id;
       params.media_epoch = 1;
@@ -713,7 +697,7 @@ TEST_F(CallMediaLegCoordinatorTest, ConnectDetachKCycleNoHang) {
         got_audio = true;
         cv.notify_one();
       };
-    });
+    }));
 
     CallMediaDirectConnectParams params;
     params.peer_key = "b";
@@ -759,7 +743,7 @@ TEST_F(CallMediaLegCoordinatorTest, DualDialExactlyOneAdoptEachSide) {
   std::vector<uint8_t> a_received;
   std::vector<uint8_t> b_received;
 
-  a_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  a_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
@@ -769,8 +753,8 @@ TEST_F(CallMediaLegCoordinatorTest, DualDialExactlyOneAdoptEachSide) {
       a_received = opus;
       a_got_audio = true;
     };
-  });
-  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  }));
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
@@ -780,7 +764,7 @@ TEST_F(CallMediaLegCoordinatorTest, DualDialExactlyOneAdoptEachSide) {
       b_received = opus;
       b_got_audio = true;
     };
-  });
+  }));
 
   // Warm a single underlay (A→B), then alias it on B as "a". Mesh election ([A026]) keeps
   // one Connected PeerLink per PeerId; dual call-media opens share that mux (channel glare).
@@ -871,7 +855,7 @@ TEST_F(CallMediaLegCoordinatorTest, YieldedOutboundFailureKeepsInboundMediaReady
   bool b_got_audio = false;
   std::vector<uint8_t> b_received;
 
-  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
@@ -881,7 +865,7 @@ TEST_F(CallMediaLegCoordinatorTest, YieldedOutboundFailureKeepsInboundMediaReady
       b_received = opus;
       b_got_audio = true;
     };
-  });
+  }));
 
   std::atomic<bool> a_assoc{false};
   harness_->mgr_a().EnsureAssociation("b", [&](pp::amp::PeerLinkManager::LinkRoe r) {
@@ -1069,7 +1053,7 @@ TEST(CallMediaLegTripleTest, SecondInboundRejectedThenEndAndAccept) {
   int b_connected = 0;
   int b_audio = 0;
 
-  b_call.SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  b_call.SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.offerer = false;
     cbs.on_connected = [&] {
@@ -1082,7 +1066,7 @@ TEST(CallMediaLegTripleTest, SecondInboundRejectedThenEndAndAccept) {
       ++b_audio;
       cv.notify_all();
     };
-  });
+  }));
 
   CallMediaDirectConnectParams ab;
   ab.peer_key = "b";

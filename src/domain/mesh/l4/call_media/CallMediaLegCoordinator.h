@@ -20,11 +20,10 @@ namespace pbr {
  */
 class CallMediaLegCoordinator {
 public:
-  using WorkerPost = std::function<void(std::function<void()>)>;
   using LegFinished = std::function<void(Roe<void> result)>;
-  using InboundHandler = std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)>;
+  using InboundHandler = CallMediaInboundHandler;
 
-  CallMediaLegCoordinator(pp::amp::MeshRuntime& runtime, WorkerPost post_worker = {});
+  explicit CallMediaLegCoordinator(pp::amp::MeshRuntime& runtime);
   ~CallMediaLegCoordinator();
 
   CallMediaLegCoordinator(const CallMediaLegCoordinator&) = delete;
@@ -33,7 +32,7 @@ public:
   void Start();
   void Stop();
 
-  /** See ICallMediaTransport::SetInboundHandler — no bare sleeps on the handler hop. */
+  /** See ICallMediaTransport::SetInboundHandler — called on IO, answers on any thread. */
   void SetInboundHandler(InboundHandler handler);
   void ClearInboundHandler();
 

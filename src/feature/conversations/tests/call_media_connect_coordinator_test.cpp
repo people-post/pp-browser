@@ -6,6 +6,8 @@
 
 #include <chrono>
 #include <functional>
+#include "feature/conversations/tests/call_media_inbound_fake.h"
+
 #include <gtest/gtest.h>
 #include <memory>
 #include <mutex>
@@ -68,27 +70,11 @@ class FakeTransport final : public ICallMediaTransport {
 public:
   void Start() override {}
   void Stop() override {}
-  void SetInboundHandler(
-      std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler) override {
-    std::lock_guard lock(inbound_mu);
-    inbound = std::move(handler);
-  }
-  void ClearInboundHandler() override {
-    std::lock_guard lock(inbound_mu);
-    inbound = {};
-  }
-  /** Deliver a hello the way the transport's worker hop does. */
+  void SetInboundHandler(CallMediaInboundHandler handler) override { inbound.Set(std::move(handler)); }
+  void ClearInboundHandler() override { inbound.Clear(); }
+  /** Deliver a hello the way the transport's IO hop does and wait for the owner's answer. */
   bool DeliverHello(CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
-    std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler;
-    {
-      std::lock_guard lock(inbound_mu);
-      handler = inbound;
-    }
-    if (!handler) {
-      return false;
-    }
-    handler(params, cbs);
-    return true;
+    return inbound.DeliverAndWait(params, cbs);
   }
   bool IsActive() const override { return active; }
   CallMediaDirectConnectParams ActiveParams() const override { return active_params; }
@@ -131,8 +117,7 @@ public:
   int hang_first_n = 0;
   std::string fail_message = "amp call-media: hello rejected";
   std::function<void(Roe<void>)> pending;
-  std::mutex inbound_mu;
-  std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> inbound;
+  test::InboundHelloFake inbound;
   /** Runs on the UI thread right after a failed completion was delivered (attempt number). */
   std::function<void(int attempt)> after_fail;
 };
@@ -308,7 +293,7 @@ TEST_F(CallMediaConnectCoordinatorTest, ShutdownRejectsStart) {
 
 // --- Inbound ---------------------------------------------------------------------------
 
-/** Ports backed by test state; counters are atomic (worker hop). */
+/** Ports backed by test state (read on the calls owner). */
 struct InboundFixture {
   std::atomic<bool> session_open{true};
   std::atomic<bool> key_stored{false};
@@ -377,26 +362,21 @@ TEST_F(CallMediaConnectCoordinatorTest, InboundAcceptedWhenKeyStored) {
   EXPECT_EQ(fx.accepted_peer, kPeer) << "owner gets the dialer's mesh PeerId";
 }
 
-// The offerer often dials before the relay delivers the key: the hello waits, asking for it.
+// The offerer often dials before the relay delivers the key: the hello is parked (no thread
+// waits), asking for the key, and answered as soon as it lands.
 TEST_F(CallMediaConnectCoordinatorTest, InboundWaitsForKeyAndWakesOnNotify) {
   InboundFixture fx;
   connect_->SetInboundKeyWaitMsForTest(10000);
   connect_->SetInboundPorts(fx.Ports());
-  auto params = InboundParams();
-  CallMediaDirectCallbacks cbs;
-  std::atomic<bool> done{false};
-  std::thread worker([&]() {
-    transport_->DeliverHello(params, cbs);
-    done.store(true);
-  });
+  auto answer = transport_->inbound.Deliver(InboundParams());
+  ASSERT_TRUE(answer);
   ASSERT_TRUE(PumpUntil([&] { return fx.key_requests.load() >= 1; }, std::chrono::seconds(2)));
-  EXPECT_FALSE(done.load());
+  EXPECT_FALSE(test::InboundHelloFake::Answered(answer)) << "parked until the key lands";
   fx.key_stored = true;
-  const auto notified = std::chrono::steady_clock::now();
   connect_->NotifyKeyAvailable();
-  worker.join();
-  EXPECT_LT(std::chrono::steady_clock::now() - notified, std::chrono::milliseconds(1000));
-  EXPECT_EQ(params.media_key.size(), 32u);
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_TRUE(test::InboundHelloFake::Answered(answer)) << "the notify answers at once, not at the next poll";
+  EXPECT_EQ(answer->params.media_key.size(), 32u);
   EXPECT_EQ(fx.accepted.load(), 1);
 }
 
@@ -412,19 +392,17 @@ TEST_F(CallMediaConnectCoordinatorTest, InboundKeyTimeoutRejects) {
   EXPECT_GE(fx.key_requests.load(), 1) << "asks for the key while waiting";
 }
 
-// THREADING.md: teardown releases a hello blocked on the key and drops the raw-this handler.
+// THREADING.md: teardown answers (NACKs) a hello parked on the key and drops the raw-this handler.
 TEST_F(CallMediaConnectCoordinatorTest, ShutdownReleasesWaitingHelloAndDropsHandler) {
   InboundFixture fx;
   connect_->SetInboundKeyWaitMsForTest(10000);
   connect_->SetInboundPorts(fx.Ports());
-  auto params = InboundParams();
-  CallMediaDirectCallbacks cbs;
-  std::thread worker([&]() { transport_->DeliverHello(params, cbs); });
+  auto answer = transport_->inbound.Deliver(InboundParams());
+  ASSERT_TRUE(answer);
   ASSERT_TRUE(PumpUntil([&] { return fx.key_requests.load() >= 1; }, std::chrono::seconds(2)));
-  const auto stopped = std::chrono::steady_clock::now();
   connect_->Shutdown();
-  worker.join();
-  EXPECT_LT(std::chrono::steady_clock::now() - stopped, std::chrono::milliseconds(1000));
+  ASSERT_TRUE(test::InboundHelloFake::Answered(answer)) << "answered by Shutdown itself";
+  EXPECT_TRUE(answer->params.media_key.empty()) << "NACK";
   EXPECT_EQ(fx.accepted.load(), 0);
   auto again = InboundParams();
   CallMediaDirectCallbacks again_cbs;

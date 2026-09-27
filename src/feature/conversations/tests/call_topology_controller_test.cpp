@@ -10,8 +10,6 @@
 #include "domain/messaging/CallHopAttachLogic.h"
 #include "domain/messaging/SoftMigrateLogic.h"
 #include "domain/messaging/SqliteThreadStore.h"
-#include "domain/mesh/host/MeshControlDispatch.h"
-#include "domain/mesh/host/MeshControlPool.h"
 #include "domain/people/ContactsStore.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/SettledWait.h"
@@ -271,8 +269,8 @@ public:
   }
 
   Roe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
-    // Product relay Subscribe is thread-safe (coordinator mutex) and topology calls it from UI
-    // and MeshControl — the fake must be too (ASan double-free in the vector otherwise).
+    // Product relay Subscribe is thread-safe (coordinator mutex) and is called from the calls owner
+    // and relay paths — the fake must be too (ASan double-free in the vector otherwise).
     std::lock_guard lock(subscribe_mu);
     subscribed_streams.push_back(stream_id);
     subscribed_channels.push_back(channel_id);
@@ -1111,8 +1109,6 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachDeferredWhileSoftMigrateInFli
   AppRuntime::Initialize(ManualOwnerRuntimeConfig());
   AppRuntime::InitializeUI();
   AppRuntime::PauseWorkers();
-  MeshControlPool control(1);
-  MeshControlDispatch::Install(&control);
 
   const std::string call_id = "call:defer-inbound";
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
@@ -1147,8 +1143,6 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachDeferredWhileSoftMigrateInFli
   EXPECT_GE(relay_->attach_calls, 1);
   EXPECT_EQ(relay_->detach_calls, 0);
 
-  MeshControlDispatch::Uninstall();
-  control.Shutdown();
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();
 }
@@ -1159,8 +1153,6 @@ TEST_F(CallTopologyControllerTest, LocalAcceptKeepsInFlightInboundAttach) {
   AppRuntime::Initialize(ManualOwnerRuntimeConfig());
   AppRuntime::InitializeUI();
   AppRuntime::PauseWorkers();
-  MeshControlPool control(1);
-  MeshControlDispatch::Install(&control);
 
   const std::string call_id = "call:accept-keeps-attach";
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
@@ -1195,8 +1187,6 @@ TEST_F(CallTopologyControllerTest, LocalAcceptKeepsInFlightInboundAttach) {
   EXPECT_GE(relay_->attach_calls, 1);
   EXPECT_EQ(relay_->detach_calls, 0);
 
-  MeshControlDispatch::Uninstall();
-  control.Shutdown();
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();
 }

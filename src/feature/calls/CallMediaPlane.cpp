@@ -1,6 +1,5 @@
 #include "feature/calls/CallMediaPlane.h"
 
-#include "domain/mesh/host/MeshControlDispatch.h"
 #include "foundation/data/MeshRole.h"
 
 #include <functional>
@@ -36,11 +35,7 @@ void CallMediaPlane::OnMeshStarted() {
     return;
   }
   auto pump = [m]() { m->Tick(); };
-  CallMediaAmpTransport::WorkerPost worker = [](std::function<void()> task) {
-    MeshControlDispatch::Post(std::move(task));
-  };
-  call_media_amp_ =
-      std::make_unique<CallMediaAmpTransport>(m->Amp()->Runtime(), std::move(pump), std::move(worker));
+  call_media_amp_ = std::make_unique<CallMediaAmpTransport>(m->Amp()->Runtime(), std::move(pump));
   call_media_amp_->Start();
   log().info << "call-media transport=amp";
 }
