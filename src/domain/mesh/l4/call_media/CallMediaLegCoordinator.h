@@ -75,6 +75,12 @@ public:
    */
   void MigrateLeg(CallMediaLegId id, pp::amp::LinkHandle link, LegFinished done);
   CallMediaPathState PathState(CallMediaLegId id) const;
+  /**
+   * Default on: when a relayed call's peer becomes reachable over a Connected direct link (a punch
+   * landed, or the peer dialed), the driver migrates the call there (`MigrateLeg`), retrying after
+   * a 10 s backoff. Off for tests that drive `MigrateLeg` themselves.
+   */
+  void SetAutoMigrateToDirect(bool enable);
   /** Test: behave like a peer from before k3 (never answers `migrate`). */
   void SetIgnoreMigrateForTest(bool ignore);
   void SetMigrateTimeoutForTest(std::chrono::milliseconds timeout);

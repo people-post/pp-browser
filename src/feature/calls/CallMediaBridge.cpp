@@ -129,6 +129,23 @@ CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string&
   cbs.on_failed = [this, call_id](const std::string& reason) {
     CallsThread::Post([this, call_id, reason]() { OnBundleFailed(call_id, reason); });
   };
+  // k3: the transport moved the call to another path; the path label (UI snapshot) follows.
+  cbs.on_path_changed = [this, call_id](CallMediaLinkKind kind) {
+    CallsThread::Post([this, call_id, kind]() {
+      log().info << "call-media path migrated call_id=" << call_id
+                 << " path=" << (kind == CallMediaLinkKind::Relayed ? "circuit" : "direct");
+      if (kind == CallMediaLinkKind::Direct) {
+        CancelDirectUpgrade();
+        // Off the relay onto a link the upgrade punch (or the peer's punch) opened.
+        if (reach_kind_ == PeerLinkKind::Relayed || reach_kind_ == PeerLinkKind::Unknown) {
+          reach_kind_ = PeerLinkKind::Punched;
+        }
+      } else {
+        reach_kind_ = PeerLinkKind::Relayed;
+      }
+      Apply(CallDirectPlannerEvent::PathMigrated, call_id);
+    });
+  };
   return cbs;
 }
 
@@ -202,7 +219,10 @@ std::string CallMediaBridge::MediaPathKind() const {
   if (direct_.IsActive() && direct_.ActiveLinkKind() == CallMediaLinkKind::Relayed) {
     return "circuit";
   }
-  if (reach_.HasRelayHop(media_peer_identity_)) {
+  // A direct bound link wins over a relay hop still registered for the peer: after a k3
+  // migration the relay stays the call's fallback, not its path.
+  const bool bound_direct = direct_.IsActive() && direct_.ActiveLinkKind() == CallMediaLinkKind::Direct;
+  if (!bound_direct && reach_.HasRelayHop(media_peer_identity_)) {
     return "circuit";
   }
   switch (reach_kind_) {
@@ -329,6 +349,7 @@ void CallMediaBridge::Apply(CallDirectPlannerEvent ev, const std::string& call_i
   case CallDirectPlannerEvent::KeyReady:
   case CallDirectPlannerEvent::ReleaseTransport:
   case CallDirectPlannerEvent::Stop:
+  case CallDirectPlannerEvent::PathMigrated:
     break;
   }
 }
@@ -381,6 +402,70 @@ void CallMediaBridge::OnReserveRenewFire() {
   }
 }
 
+// --- k3: a relayed call keeps trying for a direct path; the transport moves onto it by itself ------
+
+void CallMediaBridge::ArmDirectUpgrade(const std::string& call_id) {
+  // The migration driver (offerer) punches; the answerer's transport follows the migrate.
+  if (!session_offerer_ || call_id.empty() || MediaPathKind() != "circuit" || upgrade_call_id_ == call_id) {
+    return;
+  }
+  CancelDirectUpgrade();
+  upgrade_call_id_ = call_id;
+  upgrade_attempt_ = 0;
+  ScheduleDirectUpgrade();
+}
+
+void CallMediaBridge::ScheduleDirectUpgrade() {
+  static constexpr int kDelaysMs[] = {3000, 20000, 60000};
+  if (upgrade_attempt_ >= static_cast<int>(std::size(kDelaysMs))) {
+    log().info << "direct upgrade: giving up call_id=" << upgrade_call_id_ << " (stays on the relay)";
+    return;
+  }
+  const int delay_ms = upgrade_delay_ms_for_test_ > 0 ? upgrade_delay_ms_for_test_ : kDelaysMs[upgrade_attempt_];
+  upgrade_timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(
+      std::chrono::milliseconds(delay_ms), [this, alive = alive_]() {
+        CallsThread::Post([this, alive]() {
+          if (alive->load(std::memory_order_acquire)) {
+            OnDirectUpgradeFire();
+          }
+        });
+      });
+}
+
+void CallMediaBridge::CancelDirectUpgrade() {
+  if (upgrade_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(upgrade_timer_id_);
+    upgrade_timer_id_ = 0;
+  }
+  upgrade_call_id_.clear();
+}
+
+void CallMediaBridge::OnDirectUpgradeFire() {
+  upgrade_timer_id_ = 0;
+  const std::string call_id = upgrade_call_id_;
+  if (stopping_.load(std::memory_order_acquire) || call_id.empty() || call_id != media_call_id_ ||
+      direct_planner_phase_ != CallDirectPlannerPhase::Live || MediaPathKind() != "circuit") {
+    CancelDirectUpgrade();
+    return;
+  }
+  ++upgrade_attempt_;
+  const std::string peer_id = ReachPeerIdFor(direct_.ActiveParams().peer_key);
+  log().info << "direct upgrade attempt=" << upgrade_attempt_ << " call_id=" << call_id << " peer=" << peer_id;
+  reach_.UpgradeToDirect(peer_id, [this, alive = alive_, call_id](Roe<void> result) {
+    CallsThread::Post([this, alive, call_id, result = std::move(result)]() {
+      if (!alive->load(std::memory_order_acquire) || upgrade_call_id_ != call_id) {
+        return;
+      }
+      if (result) {
+        log().info << "direct upgrade: direct link up call_id=" << call_id << " (the call moves onto it)";
+        return;  // PathMigrated cancels the schedule; a failed migration retries from the transport
+      }
+      log().info << "direct upgrade miss call_id=" << call_id << " err=" << result.error().message;
+      ScheduleDirectUpgrade();
+    });
+  });
+}
+
 void CallMediaBridge::OnDirectHealthTimerFire() {
   if (direct_planner_phase_ == CallDirectPlannerPhase::Idle ||
       direct_planner_phase_ == CallDirectPlannerPhase::KeyWait ||
@@ -419,6 +504,7 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
   if (arming_.on_connected) {
     arming_.on_connected(call_id);
   }
+  ArmDirectUpgrade(call_id);
   host_.P2pNotifyRingChanged();
 }
 
@@ -651,20 +737,23 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
   host_.P2pNotifyRingChanged();
 }
 
-PeerReachRequest CallMediaBridge::BuildReachRequest(const CallMediaDirectConnectParams& params) {
-  PeerReachRequest request;
+std::string CallMediaBridge::ReachPeerIdFor(const std::string& key) {
   // Circuit / punch / OpenChannel keys are Amp PeerIds. Invite/Accept may pass account: —
-  // resolve here (call roster knowledge); keep the account as an alias the mesh may know too
-  // (hard-lab / dogfood NAT: "endpoint not registered").
-  std::string reach_key = params.peer_key;
-  if (params.peer_key.rfind("account:", 0) == 0) {
-    if (auto mapped = host_.MeshPeerIdForAccount(params.peer_key);
-        mapped && mapped->has_value() && !mapped->value().empty()) {
-      reach_key = mapped->value();
-      log().info << "CallMedia reach account→PeerId account=" << params.peer_key
-                 << " peer_id=" << reach_key;
+  // resolve here (call roster knowledge).
+  if (key.rfind("account:", 0) == 0) {
+    if (auto mapped = host_.MeshPeerIdForAccount(key); mapped && mapped->has_value() && !mapped->value().empty()) {
+      log().info << "CallMedia reach account→PeerId account=" << key << " peer_id=" << mapped->value();
+      return mapped->value();
     }
   }
+  return key;
+}
+
+PeerReachRequest CallMediaBridge::BuildReachRequest(const CallMediaDirectConnectParams& params) {
+  PeerReachRequest request;
+  // Keep the account as an alias the mesh may know too (hard-lab / dogfood NAT: "endpoint not
+  // registered").
+  const std::string reach_key = ReachPeerIdFor(params.peer_key);
   request.keys.push_back(reach_key);
   if (reach_key != params.peer_key) {
     request.keys.push_back(params.peer_key);
@@ -1116,6 +1205,7 @@ void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
   AbortConnectSequence();
   CancelDirectHealthTimer();
   CancelReserveRenewal();
+  CancelDirectUpgrade();
   const std::string peer = media_peer_identity_;
   if (pending_answerer_call_id_ == call_id) {
     pending_answerer_call_id_.clear();
@@ -1220,6 +1310,7 @@ void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
   connect_.Shutdown();
   CancelDirectHealthTimer();
   CancelReserveRenewal();
+  CancelDirectUpgrade();
   const std::string peer = media_peer_identity_;
   const std::string call_id = media_call_id_;
   pending_answerer_call_id_.clear();

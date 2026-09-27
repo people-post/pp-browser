@@ -97,6 +97,8 @@ public:
   /** Shrink the peer-reach direct-dial budget for gtests (0 = production default). */
   void SetDialWaitBudgetMsForTest(int budget_ms);
   void SetReserveRenewIntervalMsForTest(int interval_ms) { reserve_renew_interval_ms_ = interval_ms; }
+  /** Every direct-upgrade attempt after this delay (0 = production 3 s / 20 s / 60 s). */
+  void SetDirectUpgradeDelayMsForTest(int delay_ms) { upgrade_delay_ms_for_test_ = delay_ms; }
   /** Shrink per-attempt ConnectAsync timeout (and watchdog margin) for gtests (0 = production default). */
   void SetConnectAttemptTimeoutMsForTest(int timeout_ms);
 
@@ -229,6 +231,13 @@ private:
   void ArmReserveRenewal();
   void CancelReserveRenewal();
   void OnReserveRenewFire();
+  /** k3: while Live on a relayed path, punch for a direct link a few times (offerer drives). */
+  void ArmDirectUpgrade(const std::string& call_id);
+  void ScheduleDirectUpgrade();
+  void CancelDirectUpgrade();
+  void OnDirectUpgradeFire();
+  /** Amp PeerId for a call roster key (account: → PeerId); unchanged otherwise. */
+  std::string ReachPeerIdFor(const std::string& key);
   void OnDirectHealthTimerFire();
 
   CallMediaHost& host_;
@@ -269,6 +278,10 @@ private:
   std::shared_ptr<std::atomic<bool>> alive_;
   uint64_t direct_health_timer_id_ = 0;
   uint64_t reserve_renew_timer_id_ = 0;
+  uint64_t upgrade_timer_id_ = 0;
+  std::string upgrade_call_id_;
+  int upgrade_attempt_ = 0;
+  int upgrade_delay_ms_for_test_ = 0;
   /** Inside the 15 s StartReserve lease so consecutive leases overlap. */
   int reserve_renew_interval_ms_ = 10000;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;

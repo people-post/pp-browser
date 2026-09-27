@@ -66,20 +66,20 @@ Slices (2026-09-27 survey of `CallMediaLegCoordinator` — one `Bundle` pins one
 - [x] **k3-0** A second hello for a live call is refused on its own channel — it used to evict the live inbound control first (the Close reached the peer and failed the call), so a migrate hello to today's code would have killed it (`SecondHelloForALiveCallLeavesTheCallAlone`)
 - [x] **k3-1** Bundle → `Path{LinkHandle, mux, kind, gen, control ×2, media}` (`active` only for now); a bound path resolves its link by handle, not the alias / PeerId (A024 links coexist); per-path `DropPathRole` / `PathOwnsRole` / `PathLinkMissing` / `MuxAliveForPath`; no behaviour change
 - [x] **k3-2** `CallMediaLegCoordinator::MigrateLeg(leg, LinkHandle)`: `migrate` / `migrate_ack` / `path_release` / `path_release_ack` on a control channel opened on the chosen link's own mux; the responder adopts the candidate as standby; each side switches TX when its end of the new media channel is bound; old path released after RX on the new one (1–5 s); 5 s migrate timeout (older peers ignore `migrate`); glare winner (offerer) drives; per-channel seq de-dupe (`CallMediaSeqWindow`); `on_path_changed` callback. Wire: [AMP-CHANNEL.md § Path migration](../../docs/contracts/AMP-CHANNEL.md). Nothing calls it in the product yet (k3-3)
-- [ ] **k3-3** Planner events `PathCandidate` / `PathMigrated` / `PathLost`; candidate producer from link events (Connectivity owner); `TryUpgradeToDirectAsync` migrate-first; enable `CallSurvivesRelaySilenceWithDirectPath`
+- [x] **k3-3** Product wiring. The transport moves a relayed call onto a Connected direct link to the same peer by itself (driver side, IO tick, 10 s backoff — `SetAutoMigrateToDirect`); the offerer, Live on a relayed path, punches for one via the circuit's relay as introducer at +3 / +20 / +60 s (`CallMediaBridge::ArmDirectUpgrade` → `PeerReachCoordinator::UpgradeToDirect` → `TryUpgradeToDirectAsync`, now punch-only: the circuit is never demoted — the migration releases the call's relayed path; blocking `TryUpgradeToDirect` removed). Planner `PathMigrated` (Live stays Live) replaces the repeated-`ConnectSucceeded` keep; path label follows the bound link (punched after an upgrade). `CallSurvivesRelaySilenceWithDirectPath` enabled (k0's red test). Hard-w5 green; the lab NATs never punch, so the upgrade misses there — a punchable relayed call is k7
 - [ ] **k3-4** TX-only escalation make-before-break (no Detach + BeginSession — also keeps `audio_seq_`)
 
 Checklist:
 
-- [ ] Bundle `PathSet` (active / standby / retiring) replacing single `bound_mux`; `ResolveLink` / `PeerLinkMissing` per path
-- [ ] Hello `type:"migrate"` + `path_gen`; `DecideCallMediaInboundHello` accepts for MediaReady same call/epoch
-- [ ] Second media/control channel roles; RX on any path (seq de-dupe); TX switch
-- [ ] `path_release` / ack on control channel; old-path closes after release are not failures
-- [ ] Direct planner events `PathCandidate` / `PathMigrated` / `PathLost`; replace `ConnectSucceeded`-while-Live "keep"
-- [ ] Rewrite `TryUpgradeToDirectAsync`: migrate first, demote/standby after release (both roles)
-- [ ] Interop: old peer does not answer migrate → call continues on current path. **Note:** today's `HandleControlJson` silently ignores unknown hello `type`s — old peers will not reject, so the initiator needs a migrate timeout
+- [x] Bundle path set (active / standby / retiring) replacing single `bound_mux`; link resolution / loss per path (k3-1, k3-2)
+- [x] `migrate` (its own control type on a new channel, not a second `hello`) + `path_gen`; accepted for a MediaReady call with the same epoch and the next `path_gen` (k3-2)
+- [x] Second media/control channels per path; RX on any path (seq de-dupe); TX switch (k3-2)
+- [x] `path_release` / ack on control channel; old-path closes after release are not failures (k3-2)
+- [x] Planner `PathMigrated`; `ConnectSucceeded`-while-Live no longer carries path changes (k3-3). A candidate needs no planner event — the transport takes it when the link appears; `PathLost` is k4
+- [x] `TryUpgradeToDirectAsync` punch-only, migration moves the call; the relay is left as it is (standby policy is k4 / k6) (k3-3)
+- [x] Interop: an older peer ignores `migrate` → 5 s timeout, call continues on its path (k3-2)
 - [ ] Trust an existing Connected link for a call only if its remote endpoint is in the call's current candidate set (invite/accept addrs); otherwise dial (#215 B39 suggestion b)
-- [ ] Loopback gtests: relay → punched with continuous seq; release ack; interop
+- [x] Loopback gtests: relay → direct with every seq once and in order; release; interop; lost candidate; driver-only; automatic move then relay silence (k3-2, k3-3)
 
 **Exit:** dogfood relay → punched upgrade moves media; relay becomes standby.
 

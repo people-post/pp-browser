@@ -27,6 +27,8 @@ enum class CallDirectPlannerEvent : uint8_t {
   CircuitEscalated,
   ReleaseTransport,
   Stop,
+  /** k3: the live call's media moved to another path (make-before-break); the phase is kept. */
+  PathMigrated,
 };
 
 enum class CallDirectPlannerDecision : uint8_t {
@@ -90,6 +92,8 @@ inline const char* CallDirectPlannerEventName(CallDirectPlannerEvent ev) {
     return "ReleaseTransport";
   case CallDirectPlannerEvent::Stop:
     return "Stop";
+  case CallDirectPlannerEvent::PathMigrated:
+    return "PathMigrated";
   }
   return "?";
 }
@@ -111,6 +115,14 @@ inline CallDirectPlannerPhaseOutcome DecideCallDirectPlannerPhase(CallDirectPlan
   }
 
   switch (ev) {
+  case CallDirectPlannerEvent::PathMigrated:
+    // Only a call with media has a path to move; the phase stays (Live stays Live).
+    out.decision = (phase == CallDirectPlannerPhase::Live || phase == CallDirectPlannerPhase::DegradedTxOnly)
+                       ? CallDirectPlannerDecision::Keep
+                       : CallDirectPlannerDecision::Ignore;
+    out.next = phase;
+    return out;
+
   case CallDirectPlannerEvent::Stop:
     if (phase == CallDirectPlannerPhase::Idle) {
       out.decision = CallDirectPlannerDecision::Keep;

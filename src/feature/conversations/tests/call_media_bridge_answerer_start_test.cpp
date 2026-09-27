@@ -246,6 +246,24 @@ public:
   }
   bool call_media_result = true;
   std::string call_media_error = "circuit hop reach failed";
+
+  void TryUpgradeToDirectAsync(const std::string& peer_key, std::function<void(Roe<void>)> on_done) override {
+    {
+      std::lock_guard lock(mu);
+      last_upgrade_peer = peer_key;
+    }
+    ++upgrade_calls;
+    if (on_done) {
+      on_done(upgrade_result.load() ? Roe<void>() : Error("upgrade punch failed"));
+    }
+  }
+  std::string LastUpgradePeer() {
+    std::lock_guard lock(mu);
+    return last_upgrade_peer;
+  }
+  std::atomic<int> upgrade_calls{0};
+  std::atomic<bool> upgrade_result{false};
+  std::string last_upgrade_peer;
 };
 
 class FakeCallMediaTransport final : public ICallMediaTransport {
@@ -284,6 +302,7 @@ public:
     }
     active = true;
     active_params = params;
+    last_callbacks = callbacks;
     if (callbacks.on_connected) {
       callbacks.on_connected();
     }
@@ -308,6 +327,7 @@ public:
   bool started = false;
   bool active = false;
   CallMediaLinkKind link_kind = CallMediaLinkKind::Unknown;
+  CallMediaDirectCallbacks last_callbacks;
   int connect_async_calls = 0;
   int detach_calls = 0;
   int fail_first_n_connects = 0;
@@ -856,6 +876,42 @@ TEST_F(CallMediaBridgeAnswererStartTest, FailedAttemptsKeepTheCallWhenThePeersHe
   EXPECT_NE(lifecycle_->Phase(), CallPhase::ConnectFailed);
   EXPECT_FALSE(bridge_->IsMeshConnectFailed());
   EXPECT_TRUE(media_->IsActive()) << "the recovered path keeps the call's media";
+  bridge_->PrepareForTeardown(0);
+}
+
+// k3: an offerer Live on a relayed path keeps punching for a direct link (retrying a miss); once
+// the transport reports the call moved to a direct path, the attempts stop.
+TEST_F(CallMediaBridgeAnswererStartTest, RelayedOffererPunchesForADirectPathUntilItMoves) {
+  const std::string call_id = "call:upgrade";
+  const std::string mesh_peer = "12D3KooWUpgradeTarget";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = mesh_peer;
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  bridge_->SetDirectUpgradeDelayMsForTest(20);
+
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  for (int i = 0; i < 400 && circuit_->upgrade_calls.load() < 2; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_GE(circuit_->upgrade_calls.load(), 2) << "a miss is retried";
+  EXPECT_EQ(circuit_->LastUpgradePeer(), mesh_peer) << "punch targets the mesh PeerId, not account:";
+
+  // The transport moved the call onto a direct path: no more attempts.
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  ASSERT_TRUE(transport_->last_callbacks.on_path_changed);
+  transport_->last_callbacks.on_path_changed(CallMediaLinkKind::Direct);
+  AppRuntime::RunUIAndOwnerTasks();
+  const int calls = circuit_->upgrade_calls.load();
+  for (int i = 0; i < 20; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(circuit_->upgrade_calls.load(), calls);
+  EXPECT_EQ(bridge_->MediaPathKind(), "punched") << "the label follows the path the call moved to";
   bridge_->PrepareForTeardown(0);
 }
 

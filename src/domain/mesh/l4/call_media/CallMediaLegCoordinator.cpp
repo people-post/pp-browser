@@ -66,6 +66,8 @@ constexpr auto kMigrateTimeout = std::chrono::seconds(5);
 constexpr auto kRetireAfterSwitch = std::chrono::seconds(1);
 /** ... or after this long regardless (a muted / silent peer). */
 constexpr auto kRetireAtMost = std::chrono::seconds(5);
+/** k3: between automatic attempts to move a relayed call onto a direct link. */
+constexpr auto kAutoMigrateBackoff = std::chrono::seconds(10);
 /** k3: a retiring path whose release was never acknowledged is dropped after this. */
 constexpr auto kRetireAbandon = std::chrono::seconds(10);
 
@@ -201,6 +203,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     bool rx_since_switch = false;
     bool release_sent = false;
     Clock::time_point release_sent_at{};
+    /** Earliest next automatic relayed → direct attempt (backoff after one). */
+    Clock::time_point next_auto_migrate{};
     /** Transport-side seq de-dupe per media channel: overlapping paths can deliver a frame twice. */
     std::unordered_map<uint8_t, CallMediaSeqWindow> rx_seq;
   };
@@ -236,6 +240,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   InboundHandler inbound;
   /** k3 test seams: a peer from before migration (ignores `migrate`), and a short migrate timeout. */
   std::atomic<bool> ignore_migrate_for_test{false};
+  /** k3: the driver moves a relayed call onto a direct link to the same peer as soon as one is up. */
+  std::atomic<bool> auto_migrate_to_direct{true};
   std::chrono::milliseconds migrate_timeout = std::chrono::duration_cast<std::chrono::milliseconds>(kMigrateTimeout);
   std::atomic<bool> stopped{false};
   std::atomic<bool> started{false};
@@ -891,6 +897,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   /** Initiator: open a candidate path for `leg_id` on `target` (a Connected link to the peer). */
   void BeginMigration(const CallMediaLegId leg_id, const pp::amp::LinkHandle target, LegFinished done) {
     CallbackLock lock(*this);
+    BeginMigrationLocked(leg_id, target, std::move(done));
+  }
+
+  void BeginMigrationLocked(const CallMediaLegId leg_id, const pp::amp::LinkHandle target, LegFinished done) {
     const auto fail = [&](const std::string& why) {
       if (done) {
         pending_user_cbs.push_back([done = std::move(done), why]() { done(Error("call-media migrate: " + why)); });
@@ -1082,8 +1092,30 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
   }
 
+  /**
+   * k3: a relayed call whose peer is now reachable over a direct link (a punch landed, or it
+   * dialed us) moves there — the driver starts it; the other side only answers.
+   */
+  void MaybeAutoMigrate(Bundle& bundle, const Clock::time_point now) {
+    if (!auto_migrate_to_direct.load(std::memory_order_relaxed) || bundle.active.kind != CallMediaLinkKind::Relayed ||
+        bundle.migration || bundle.standby || bundle.retiring || now < bundle.next_auto_migrate ||
+        bundle.remote_peer_id.empty()) {
+      return;
+    }
+    pp::amp::PeerLink* direct = runtime->Links().FindLinkByPeerId(bundle.remote_peer_id);
+    if (!direct || direct->IsCarrierBacked() || direct->Phase() != pp::amp::PeerLinkPhase::Connected ||
+        direct->Mux() == bundle.active.mux || !LocalWinsForBundle(bundle, *direct)) {
+      return;
+    }
+    bundle.next_auto_migrate = now + kAutoMigrateBackoff;
+    CallMediaLegLog().info << "CallMediaLeg direct link up for relayed call_id=" << bundle.call_id
+                           << " — migrating";
+    BeginMigrationLocked(bundle.leg_id, direct->Handle(), {});
+  }
+
   /** IO tick: candidate channel opens, migrate timeout, old-path release. Under `mu`. */
   void TickPaths(Bundle& bundle, const Clock::time_point now) {
+    MaybeAutoMigrate(bundle, now);
     if (bundle.migration) {
       auto& m = *bundle.migration;
       pp::amp::PeerLink* link = bundle.standby ? ResolvePathLink(bundle, *bundle.standby) : nullptr;
@@ -1833,6 +1865,10 @@ void CallMediaLegCoordinator::MigrateLeg(const CallMediaLegId id, const pp::amp:
 
 void CallMediaLegCoordinator::SetIgnoreMigrateForTest(const bool ignore) {
   impl_->ignore_migrate_for_test.store(ignore, std::memory_order_relaxed);
+}
+
+void CallMediaLegCoordinator::SetAutoMigrateToDirect(const bool enable) {
+  impl_->auto_migrate_to_direct.store(enable, std::memory_order_relaxed);
 }
 
 void CallMediaLegCoordinator::SetMigrateTimeoutForTest(const std::chrono::milliseconds timeout) {
