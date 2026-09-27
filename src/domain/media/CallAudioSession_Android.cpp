@@ -123,6 +123,10 @@ void SetSpeakerphoneOn(bool on) {
   }
 }
 
+bool SpeakerToggleNeedsDeviceReopen() {
+  return true;
+}
+
 int CaptureOpenAttemptCount() {
   return 4;
 }

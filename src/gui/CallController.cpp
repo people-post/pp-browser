@@ -1078,8 +1078,11 @@ void CallController::ToggleSpeaker() {
   const bool before = CallAudioSession::IsSpeakerphoneOn();
   CallAudioSession::SetSpeakerphoneOn(!before);
   // Speaker = route only (not mute). Android AudioRecord often goes silent until SDL reopen.
-  backend->Media().RequestAudioDeviceReopen();
-  log().info << "ToggleSpeaker speaker_on=" << (!before ? 1 : 0) << " (reopen capture)";
+  const bool reopen = CallAudioSession::SpeakerToggleNeedsDeviceReopen();
+  if (reopen) {
+    backend->Media().RequestAudioDeviceReopen();
+  }
+  log().info << "ToggleSpeaker speaker_on=" << (!before ? 1 : 0) << " reopen=" << (reopen ? 1 : 0);
   RefreshPendingRing();
 }
 

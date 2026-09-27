@@ -102,6 +102,10 @@ void SetSpeakerphoneOn(bool on) {
   (void)error;
 }
 
+bool SpeakerToggleNeedsDeviceReopen() {
+  return false;
+}
+
 int CaptureOpenAttemptCount() {
   return 1;
 }
