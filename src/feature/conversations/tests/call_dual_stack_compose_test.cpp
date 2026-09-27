@@ -188,6 +188,8 @@ protected:
       if (!offer_.transport || !offer_.transport->inbound.Installed()) {
         return;
       }
+      // As on the wire: the offerer's inbound hello names the dialer (the answerer), not itself.
+      params.peer_key = answer_.local_identity;
       // Leg coordinator marks the accepting transport active before invoking the handler.
       offer_.transport->active = true;
       offer_.transport->active_params = params;
@@ -320,6 +322,10 @@ protected:
       while (!offer_inbox_.empty()) {
         ThreadMessage msg = offer_inbox_.front();
         offer_inbox_.pop_front();
+        if (hold_accepts_to_offer_ && msg.payload_json.find("call_accept") != std::string::npos) {
+          held_to_offer_.push_back(std::move(msg));  // a relay that has not delivered it yet
+          continue;
+        }
         ASSERT_TRUE(offer_.inbound.apply_inbound_control(msg, answer_.local_identity, std::nullopt,
                                                          std::nullopt));
         moved = true;
@@ -422,6 +428,9 @@ protected:
   StackSide answer_;
   std::deque<ThreadMessage> offer_inbox_;
   std::deque<ThreadMessage> answer_inbox_;
+  /** B30: hold CallAccepts on their way to the offerer (late relay). */
+  bool hold_accepts_to_offer_ = false;
+  std::deque<ThreadMessage> held_to_offer_;
 };
 
 TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
@@ -437,6 +446,50 @@ TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
   const std::string call_id = RunOfferAnswerInCallLeave(thread.id);
   ASSERT_FALSE(call_id.empty());
   EXPECT_GE(answer_.transport->connect_async_calls, 1);
+}
+
+// B30 (call-path-resilience k4): the relay delivers CallAccept late (CN cellular: 11–58 s) while the
+// answerer's call-media hello — keyed from the invite — reaches the offerer directly. The hello
+// stands in for the accept; the real one arriving later changes nothing.
+TEST_F(CallDualStackComposeTest, AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsLate) {
+  Thread thread;
+  thread.id = "thread-dual-late-accept";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+
+  auto started = StartCallNow(*offer_.ui, thread.id, false, {answer_.local_identity});
+  ASSERT_TRUE(started) << started.error().message;
+  const std::string call_id = started->call_id;
+  auto key = offer_.stack->MediaKeys()->LoadEpochKey(call_id, 1);
+  ASSERT_TRUE(key && key->has_value());
+  ASSERT_TRUE(answer_.stack->MediaKeys()->PutEpochKey(call_id, 1, **key));
+  PumpWire();
+  ASSERT_TRUE(answer_.ui->TopPendingInvite() && answer_.ui->TopPendingInvite()->has_value());
+
+  hold_accepts_to_offer_ = true;
+  answer_.ui->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  answer_.ui->Apply(CallLifecycleEvent::AcceptClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return offer_.stack->MediaEngine() && offer_.stack->MediaEngine()->IsActive() &&
+           offer_.ui->Phase() == CallPhase::InCall && answer_.ui->Phase() == CallPhase::InCall;
+  });
+  ASSERT_FALSE(held_to_offer_.empty()) << "the accept never reached the offerer";
+  EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall) << "the answerer's hello stood in for the accept";
+  EXPECT_TRUE(offer_.stack->MediaEngine()->IsActive());
+
+  // The relay finally delivers the accept: idempotent.
+  hold_accepts_to_offer_ = false;
+  for (auto& msg : held_to_offer_) {
+    offer_inbox_.push_back(std::move(msg));
+  }
+  held_to_offer_.clear();
+  PumpWire();
+  EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall);
+  EXPECT_TRUE(offer_.stack->MediaEngine()->IsActive());
+  FinishAnswerLeaveExpectBothIdle(call_id);
 }
 
 TEST_F(CallDualStackComposeTest, OfferLeaveClearsAnswererIdle) {

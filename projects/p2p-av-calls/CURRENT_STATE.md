@@ -11,7 +11,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | Area | State |
 |------|-------|
 | Project docs | a3 done; **a4 thin**; **V026** libp2p-only media |
-| ADRs | V001–**V038** |
+| ADRs | V001–**V049** |
 | **V035 SoftMigrate scope** | PreferLocal only for **LAN-confirmed Link**; Site/Wide → org seed; ignore stale CallSfuAttach/HopRefuse/**CallAccept** when another call is bound |
 | **V036 MediaSeat** | **Phase 3 landed** — `CallDirectPath` / `CallHopPath` token façades; CSM signaling-only for duplex start/stop; Phase 1–2 bind/Live/attach flight retained — [DECISIONS V036](DECISIONS.md#v036--mediaseat--exclusive-media-epoch) |
 | **V037 State+Status FSM** | `CallPhase` + `CallMediaStatus`; one planner armed per pair; `media_cancel_gen`; gates on ScheduleStart / CallSfuAttach / CompleteAttach — [DECISIONS V037](DECISIONS.md#v037--calllifecycle-state--status-one-planner-armed) |

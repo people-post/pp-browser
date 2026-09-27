@@ -195,6 +195,12 @@ private:
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
   /** Direct stream up: mark media connected when capture is live, always advance lifecycle/chrome. */
   void CommitDirectConnected(const std::string& call_id);
+  /**
+   * B44: a connect attempt failed — but the peer's own redial may already have restored direct
+   * media, or be mid-handshake. Commit if MediaReady; give an inbound handshake in progress one
+   * short grace; only then surface the failure.
+   */
+  void FailUnlessDirectRecovered(const std::string& call_id, const std::string& err, bool grace_used = false);
   /** Inbound bundles: accept policy + key lookup on the worker hop (connect coordinator). */
   CallMediaInboundPorts MakeInboundPorts();
   /** UI: map an accepted inbound bundle's mesh PeerId to the roster identity / mixer stream. */

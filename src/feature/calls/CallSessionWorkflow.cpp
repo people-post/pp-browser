@@ -1202,10 +1202,53 @@ Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_jso
   }
   const std::string identity = accept->identity.empty() ? sender_identity : accept->identity;
   log().info << "Inbound CallAccept call_id=" << accept->call_id << " from=" << identity;
+  return ApplyRemoteAccept(*accept, identity, local_identity, /*implicit=*/false);
+}
+
+Roe<void> CallSessionWorkflow::ApplyImplicitAccept(const std::string& call_id, const std::string& identity,
+                                                   const std::string& peer_id, const std::string& local_identity) {
+  // B30: the relay can deliver CallAccept tens of seconds late (CN cellular) while the answerer's
+  // call-media hello — keyed from the invite — already reached us. Only for a 1:1 call we started
+  // whose one remote is still invited: then the hello is the answerer accepting.
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
+    return {};
+  }
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!participants || participants->size() != 2) {
+    return {};
+  }
+  bool local_joined = false;
+  bool peer_pending = false;
+  for (const CallParticipant& p : *participants) {
+    if (p.identity == local_identity) {
+      local_joined = p.state == CallParticipantState::Joined;
+    } else if (p.identity == identity) {
+      peer_pending = p.state == CallParticipantState::Invited || p.state == CallParticipantState::Ringing;
+    }
+  }
+  if (!local_joined || !peer_pending) {
+    return {};
+  }
+  log().info << "Implicit CallAccept (inbound call-media hello before the relay's Accept) call_id=" << call_id
+             << " from=" << identity;
+  CallAcceptDetail accept;
+  accept.call_id = call_id;
+  accept.identity = identity;
+  accept.libp2p_peer_id = peer_id;
+  return ApplyRemoteAccept(accept, identity, local_identity, /*implicit=*/true);
+}
+
+Roe<void> CallSessionWorkflow::ApplyRemoteAccept(const CallAcceptDetail& accept_detail, const std::string& identity,
+                                                 const std::string& local_identity, const bool implicit) {
+  const CallAcceptDetail* accept = &accept_detail;
   if (!accept->libp2p_peer_id.empty()) {
     host_.reach.note_mesh_peer_id_for_relay(identity, accept->libp2p_peer_id);
   }
-  if (host_.reach.note_caps_for_identity) host_.reach.note_caps_for_identity(identity, accept->caps, accept->listen_multiaddrs);
+  // An implicit accept carries no caps / listen addrs: keep what the invite path learned.
+  if (!implicit && host_.reach.note_caps_for_identity) {
+    host_.reach.note_caps_for_identity(identity, accept->caps, accept->listen_multiaddrs);
+  }
   CallParticipant participant;
   participant.call_id = accept->call_id;
   participant.identity = identity;

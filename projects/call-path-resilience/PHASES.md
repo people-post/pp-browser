@@ -50,12 +50,12 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 
 - [x] Relay links holding a circuit reservation are hot (`CircuitTunnelCoordinator` counts Reserved tunnels per relay; `ClearWarm` when the last one ends)
 - [x] Product keepalive cadences from `AmpLinkConfig.h` (hot 10 s, warm 25 s — K008); tests share the product link config
-- [ ] Call path set links (media link, relay outer links of a relayed path) `MarkHot` while Live; `ClearWarm` at hangup
+- [ ] Call path set links (media link, relay outer links of a relayed path) `MarkHot` while Live; `ClearWarm` at hangup — **deferred to k3** (2026-09-27): a link carrying media is kept alive by the media; hot only matters for idle standby paths, which k3 creates. Needs a tier arbiter first — tiers are per key and not refcounted, so a call's `ClearWarm` would strip chat's warm / a reservation's hot
 - [ ] Call-scoped keepalive (K008): standby / relay outer links 10–15 s — Amp per-link interval override; device battery measurement picks the value
 - [x] Renew circuit reservations every 10 s (15 s lease) from `BeginSession` until `StopMeshMedia` / teardown (`CallMediaBridge::ArmReserveRenewal`)
-- [ ] Stop the post-Live Ensure/punch loop from running unowned — it becomes the k3 candidate producer
-- [ ] Answerer's first dial waits ~12 s for `await_circuit_ready` / seed park (PR #223 call #5) — dial immediately, park in parallel
-- [ ] Chat `WarmPeerByKey` ordering fixed via k1 (or reorder locally if k1 lags)
+- [x] ~~Stop the post-Live Ensure/punch loop~~ — obsolete: reach is one-shot, owned by `CallMediaConnectCoordinator` and finished at MediaReady. The k3 candidate producer is new work (on the Connectivity owner)
+- [x] Answerer's ~12 s wait (PR #223 call #5): the seed park before CallAccept only settled early when **all** seeds were Connected, so one unreachable seed cost the full 12 s deadline. Now ≥1 Connected arms a 2 s grace for the rest (`DecideSeedParkStep`, `CircuitRendezvousCoordinator`); CallAccept stays behind the park (the answerer must be ServeDial-reachable before the offerer dials)
+- [x] Chat `WarmPeerByKey` ordering fixed via k1 (amp `pending_keepalive_tiers_`)
 
 **Exit:** dogfood trace no longer loses the relay path while the call is live (even without migration).
 
@@ -67,7 +67,7 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 - [ ] `path_release` / ack on control channel; old-path closes after release are not failures
 - [ ] Direct planner events `PathCandidate` / `PathMigrated` / `PathLost`; replace `ConnectSucceeded`-while-Live "keep"
 - [ ] Rewrite `TryUpgradeToDirectAsync`: migrate first, demote/standby after release (both roles)
-- [ ] Interop: old peer rejects migrate → call continues on current path
+- [ ] Interop: old peer does not answer migrate → call continues on current path. **Note:** today's `HandleControlJson` silently ignores unknown hello `type`s — old peers will not reject, so the initiator needs a migrate timeout
 - [ ] Trust an existing Connected link for a call only if its remote endpoint is in the call's current candidate set (invite/accept addrs); otherwise dial (#215 B39 suggestion b)
 - [ ] Loopback gtests: relay → punched with continuous seq; release ack; interop
 
@@ -79,9 +79,9 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 - [ ] 1.5 s silence on active → switch to standby (K008)
 - [ ] No standby → `Reconnecting` call status, relay re-anchor, 30 s window (K008); UI subtitle (i18n EN + zh-Hans)
 - [ ] `peer link lost` no longer tears down while the path set / window allows
-- [ ] TX-only escalate limited to initial connect
-- [ ] **B44:** offerer TX-only escalation first `DropLink` + redials direct; an escalation failure must not `SurfaceConnectFailed` once `direct_.IsActive()` again (PR #223 call #5)
-- [ ] **B30 mitigation:** offerer treats an inbound call-media Hello carrying the call's media key as an implicit Accept (direct media was up 17 s before the relay Accept arrived — PR #223 call #7)
+- [x] TX-only escalate limited to initial connect — already so: `ShouldEscalateTxOnlyDirect` needs cumulative RX = 0 and fires once per call
+- [x] **B44:** a failed connect / escalation no longer tears down a recovered direct path — `CallMediaBridge::FailUnlessDirectRecovered` commits if MediaReady and gives a peer hello mid-handshake a 3 s grace before failing (test `FailedAttemptsKeepTheCallWhenThePeersHelloCompletes`). Escalation is still break-before-make (Detach, then circuit) — k3 makes it make-before-break
+- [x] **B30 mitigation:** the offerer treats the answerer's accepted call-media hello (keyed from the invite) as an implicit Accept for a 1:1 call it started whose remote is still invited (`CallSessionWorkflow::ApplyImplicitAccept`, via `CallMediaHost::P2pNoteInboundHello`); the real Accept arriving later is idempotent (test `AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsLate`)
 - [ ] Close p2p-av-calls a5 "Reconnect after brief network loss" (cross-link)
 
 **Exit:** killing the active path mid-call → ≤ 2 s gap with standby; recover within window without.
@@ -92,7 +92,7 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 - [ ] Android `registerDefaultNetworkCallback`; iOS/macOS `NWPathMonitor`; Windows `NotifyIpInterfaceChange` + cost; Linux netlink (fallback poll)
 - [ ] Reaction: suspect + keepalive burst + fast evict; reachability re-probe + advertise refresh
 - [ ] Active call hook → k4 re-anchor
-- [ ] Always bind mesh socket dual-stack `[::]` (K010); audit IPv4-only assumptions first
+- [x] Always bind mesh socket dual-stack `[::]` (K010), IPv4 only without OS IPv6 support. Audit: advertise / probe targets come from interfaces, not the bind family; wildcard `::` handled like `0.0.0.0`; pp-cpp-amp maps IPv4 peers both ways. Hard-w5 relays now listen on `[::]` with IPv4-NAT'd peers
 - [ ] `check_platform_ifdefs.sh` clean; platform code per PLATFORM_CODE.md
 
 **Exit:** Wi-Fi ↔ cellular / sleep-wake mid-call recovers without user action.
@@ -113,7 +113,7 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 - [x] Hard-lab CGNAT long-hold stall repro: `pp-call-probe --rx-stall-ms/--watch-ms`, `PP_HARD_NAT_STACK_HOLD_MS` / `_RX_STALL_MS` / `_NETEM_A|B`
 - [ ] Hard-lab wave: punch-then-relay-drop, NAT rebind mid-call, short NAT timeout, network flip; netem profiles in CI (1 %/2 % loss must keep 60 s both ways)
 - [ ] Promote: CALLS.md (path set, migration, reconnect), WIRE_SCHEMAS (hello migrate, caps.mobility, control ops), MESH.md (link events, hygiene), amp docs/KEEPALIVE.md
-- [ ] Fix doc drift found in survey: calls CURRENT_STATE "V001–V038", CALLS.md "through V038", H009 "plan only" header
+- [x] Fix doc drift found in survey: calls CURRENT_STATE "V001–V038", CALLS.md "through V038", H009 "plan only" header (+ media-hop-reachability DESIGN status rows)
 
 ## Later horizons
 

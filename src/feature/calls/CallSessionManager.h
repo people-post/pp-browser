@@ -292,6 +292,8 @@ private:
   void P2pClearAwaitingSfuRecovery() override;
   void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) override;
   void P2pRequestInboxSync() override;
+  void P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
+                           const std::string& peer_id) override;
 
   Roe<std::string> LocalRelayIdentity() const;
   /** Mint/find e2e_public control DM before SoftMigrate / MediaKey fan-out (catalog warm). */

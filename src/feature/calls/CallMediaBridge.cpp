@@ -21,6 +21,9 @@
 namespace pbr {
 namespace {
 
+/** B44: how long a failed attempt waits for the peer's in-progress inbound hello to finish. */
+constexpr std::chrono::milliseconds kInboundRecoveryGrace{3000};
+
 /** Answerer waits for offerer dial; offerer retries can take ~60s — keep chrome aligned. */
 constexpr int64_t kMeshConnectTimeoutMs = 75000;
 /** Cover long PollInbox HTTP + offerer MediaKey send/resend window. */
@@ -96,6 +99,8 @@ void CallMediaBridge::BindInboundPeer(const std::string& call_id, const std::str
       log().info << "Inbound call-media mapped PeerId→account stream identity peer_id=" << inbound_peer_id
                  << " account=" << identity;
     }
+    // B30: the hello may be the first sign the answerer accepted (the relay's Accept can lag).
+    host_.P2pNoteInboundHello(call_id, identity, inbound_peer_id);
   } else {
     // Do not hash PeerId into a mixer track — SoftMigrate uses Account stream ids. Defer until
     // BeginSession / CallAccept teaches PeerId→Account (moto contact often lacks peer_id).
@@ -577,7 +582,7 @@ void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const
                << " call_id=" << call_id;
     if (auto started = BeginSession(call_id, peer, session_offerer_); !started) {
       log().warning << "TX-only escalate BeginSession failed: " << started.error().message;
-      SurfaceConnectFailed(call_id, started.error().message, /*stop_media=*/true);
+      FailUnlessDirectRecovered(call_id, started.error().message);
     }
   });
 }
@@ -589,6 +594,37 @@ bool CallMediaBridge::ShouldUseMeshForPeer(const std::string& /*peer_identity*/)
 void CallMediaBridge::AbortConnectSequence() {
   connect_generation_.fetch_add(1, std::memory_order_acq_rel);
   connect_.Abort();
+}
+
+void CallMediaBridge::FailUnlessDirectRecovered(const std::string& call_id, const std::string& err,
+                                                const bool grace_used) {
+  if (stopping_.load()) {
+    return;
+  }
+  if (grace_used && media_call_id_ != call_id) {
+    return;  // the session moved on during the grace (stopped / another call)
+  }
+  if (DirectMediaReady()) {
+    log().info << "connect attempt failed but direct media is up (peer redial) — keep call_id=" << call_id
+               << " err=" << err;
+    CommitDirectConnected(call_id);
+    return;
+  }
+  const CallMediaSessionPhase phase = direct_.Phase();
+  const bool inbound_in_progress =
+      phase == CallMediaSessionPhase::HelloInbound || phase == CallMediaSessionPhase::Adopting;
+  if (inbound_in_progress && !grace_used) {
+    log().info << "connect attempt failed while the peer's hello is in progress — grace call_id=" << call_id;
+    (void)AppRuntime::ScheduleCoordinatorOneShot(kInboundRecoveryGrace, [this, alive = alive_, call_id, err]() {
+      CallsThread::Post([this, alive, call_id, err]() {
+        if (alive->load(std::memory_order_acquire)) {
+          FailUnlessDirectRecovered(call_id, err, /*grace_used=*/true);
+        }
+      });
+    });
+    return;
+  }
+  SurfaceConnectFailed(call_id, err, /*stop_media=*/true);
 }
 
 void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std::string& err,
@@ -660,7 +696,7 @@ CallMediaConnectHooks CallMediaBridge::MakeConnectHooks(const std::string& call_
       return;
     }
     if (!result) {
-      SurfaceConnectFailed(call_id, result.error().message, /*stop_media=*/true);
+      FailUnlessDirectRecovered(call_id, result.error().message);
     }
   };
   return hooks;

@@ -1607,6 +1607,17 @@ void CallSessionManager::P2pResendMediaKey(const std::string& call_id, const std
                 << " epoch=" << epoch;
 }
 
+void CallSessionManager::P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
+                                             const std::string& peer_id) {
+  auto local = LocalRelayIdentity();
+  if (!local) {
+    return;
+  }
+  if (auto applied = workflow_.ApplyImplicitAccept(call_id, identity, peer_id, *local); !applied) {
+    log().warning << "implicit accept failed call_id=" << call_id << " err=" << applied.error().message;
+  }
+}
+
 void CallSessionManager::P2pRequestInboxSync() {
   if (delivery_.sync_inbox_from_wake) {
     delivery_.sync_inbox_from_wake(true);

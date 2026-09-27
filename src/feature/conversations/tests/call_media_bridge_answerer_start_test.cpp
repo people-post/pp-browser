@@ -824,6 +824,41 @@ TEST_F(CallMediaBridgeAnswererStartTest, CircuitHopMissStopsMediaOnConnectFailed
   bridge_->PrepareForTeardown(0);
 }
 
+// B44 (call-path-resilience k4): our attempts give up while the peer's own redial is mid-handshake.
+// The failure waits a short grace; the peer's hello completing in it keeps the call instead of
+// tearing down the path that just came back.
+TEST_F(CallMediaBridgeAnswererStartTest, FailedAttemptsKeepTheCallWhenThePeersHelloCompletes) {
+  const std::string call_id = "call:b44-recover";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  dial_->connected["account:peer"] = true;
+  transport_->fail_first_n_connects = 100;
+  transport_->half_open = true;  // the peer's inbound hello is in progress the whole time
+
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  const auto pump_until = [&](const std::function<bool()>& done, int rounds) {
+    for (int i = 0; i < rounds && !done(); ++i) {
+      AppRuntime::RunUIAndOwnerTasks();
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return done();
+  };
+  ASSERT_TRUE(pump_until([&] { return !bridge_->IsConnectWorkerInflight() && transport_->connect_async_calls >= 5; },
+                         1500))
+      << "attempts=" << transport_->connect_async_calls;
+  EXPECT_NE(lifecycle_->Phase(), CallPhase::ConnectFailed) << "failure held for the in-progress hello";
+
+  transport_->half_open = false;
+  transport_->active = true;  // the peer's hello completed: direct media is up
+  pump_until([&] { return bridge_->DirectPlannerPhase() == CallDirectPlannerPhase::Live; }, 600);
+  EXPECT_NE(lifecycle_->Phase(), CallPhase::ConnectFailed);
+  EXPECT_FALSE(bridge_->IsMeshConnectFailed());
+  EXPECT_TRUE(media_->IsActive()) << "the recovered path keeps the call's media";
+  bridge_->PrepareForTeardown(0);
+}
+
 TEST_F(CallMediaBridgeAnswererStartTest, EnsureReachResolvesAccountToMeshPeerId) {
   // Hard-lab / dogfood: BeginSession peer is account:; circuit StartBridge needs Amp PeerId.
   const std::string call_id = "call:account-to-peerid";

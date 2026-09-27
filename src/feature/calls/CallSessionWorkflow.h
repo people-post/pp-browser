@@ -172,6 +172,13 @@ public:
                                 std::optional<int64_t> relay_server_time_ms, const std::string& local_identity);
   Roe<void> HandleInboundAccept(const std::string& detail_json, const std::string& sender_identity,
                                 const std::string& local_identity);
+  /**
+   * B30: the answerer's call-media hello reached us before its CallAccept (late relay). For a 1:1
+   * call we started whose remote is still invited, treat it as the accept (idempotent with the
+   * real one, which may still arrive). No-op otherwise.
+   */
+  Roe<void> ApplyImplicitAccept(const std::string& call_id, const std::string& identity, const std::string& peer_id,
+                                const std::string& local_identity);
   Roe<void> HandleInboundDecline(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundLeave(const std::string& detail_json, const std::string& sender_identity,
                                const std::string& local_identity);
@@ -184,6 +191,9 @@ public:
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
 
 private:
+  /** Remote accepted (CallAccept, or implicitly by its media hello): join, key, media kickoff. */
+  Roe<void> ApplyRemoteAccept(const CallAcceptDetail& accept, const std::string& identity,
+                              const std::string& local_identity, bool implicit);
   Roe<void> ContinueAcceptAfterPark(const std::string& call_id, InitiationChargeDecision charge_decision,
                                     const std::string& local_identity);
   IThreadStore& store_;

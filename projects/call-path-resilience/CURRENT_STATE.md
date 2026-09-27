@@ -1,6 +1,8 @@
 # Call path resilience — current state
 
-**Last updated:** 2026-09-25 (one-way stall fix; k1 small hygiene; probe runs product threading → direct-chat ack, lock-order, idempotent Stop fixes)
+**Last updated:** 2026-09-27 (resumed after thread-ownership: B30, B44, seed-park grace, dual-stack bind, flake closed, doc drift)
+
+> **Code moved since 2026-09-25.** Calls run on the media-sessions owner (`CallsThread`), reach / rendezvous / mesh media plane / reachability on the Connectivity owner, MeshControl is gone (mesh waits are completions), the inbound call-media hello is asynchronous, and pp-cpp-amp is pinned at **v2.3.2**. Mentions of MeshControl, "UI thread" bridge state, or amp v2.2.x below are history. Product hot keepalive is **10 s** (K008 amendment), not 2 s.
 
 ## Landed
 
@@ -17,7 +19,18 @@
 | **PR #223 (B39–B43)** merged | Cross-network reconnect fixes (dogfood 21:33–21:47: 3/4 calls connected, was 0/2): B40 live-session-only accept addrs + no link-local/loopback advertised; B41 self excluded from rendezvous; B42 watchdog fails one attempt (V049 re-dial runs); B43 coordinator lost wake-up; B39 bridge drops a stale "connected" link after a failed attempt and forces a redial — now via amp `RequestDropLink` (reason `requested`, amp `cfaddc2`) instead of `FindLink` + `Connection::Close` (pp-cpp-amp **v2.2.1**, pinned). |
 | Dogfood tooling | `{data_dir}/logs/pp-browser.log`, `crash_pending.txt` `image_base=`, `scripts/dev/pp_dogfood.sh` ([CONFIGURATION.md § Log file](../../docs/ops/CONFIGURATION.md)) |
 
-## Still open
+## Landed 2026-09-27
+
+| Item | State |
+|------|-------|
+| **B30** implicit Accept | Offerer treats the answerer's accepted call-media hello as the accept (1:1, remote still invited); the late relay Accept is idempotent |
+| **B44** | A failed connect / escalation commits a recovered direct path, and gives a peer hello mid-handshake a 3 s grace, instead of `SurfaceConnectFailed` |
+| **Answerer 12 s wait** | Seed park settles 2 s after the first Connected seed (was: the full 12 s whenever one seed was unreachable) |
+| **K010** dual-stack | Mesh socket always `[::]` (IPv4 fallback only without OS IPv6) |
+| `CallUiBackendStackTest` parallel flake | Gone — 0 / 60 with 12 concurrent copies (was 12 / 12); fixed by thread-ownership's port snapshots |
+| Doc drift (k7) | V049 range, H009 status, media-hop-reachability status rows |
+
+## Still open (as of 2026-09-24/25 — see the note above)
 
 - **One-way audio stall on relayed calls — root-caused and fixed (needs pp-node on relays):** the hop bound the dialer's circuit channel Control (Reliable, strict in-order) and never switched it to the carrier policy; the dialer sends best-effort, so the first lost / reordered frame wedged dialer→target for the rest of the call (dogfood 16:17). Reproduced in hard lab CGNAT (`delay 80ms loss 1%` on the caller) and loopback (`RelayedCallDisturbanceTest.CallerUplinkLossDoesNotWedgeCallerToCallee`); fixed in `CircuitTunnelCoordinator` (hop side). Lab after fix: 60 s both ways under 1 % and 2 % loss.
 - **Half-open call-media bundle taken as connected** (lab, 1 % loss + glare): InCall with no media, no retry — fixed (only MediaReady counts; `HalfOpenBundleIsNotAConnection`).
@@ -43,9 +56,11 @@ From PR #223 / #215 (dogfood 2026-09-24 evening, phone CN cellular ↔ Mac Wi‑
 
 ## Next agent — start here
 
-1. Rerun the cross-network dogfood with `scripts/dev/pp_dogfood.sh -- --debug` on both ends plus relay logs — `MeshLink` lines show which link died and why.
-2. k0 exit still needs the dogfood answer (the 10 s trigger). Code-wise, next is **k2** (call links hot + reservation refresh) and **k1** (amp hygiene, incl. snapshot fields) in parallel.
-3. **k2** mitigation (hot call links + reserve refresh) can start in parallel — smallest change likely to stop the relay path dying mid-call.
+1. **k1 (pp-cpp-amp):** carrier-closed Connected links linger in Backoff (real bug: `PeerLink.cpp` carrier close → Backoff; `Tick` only evicts Connected); inbound handshake error not dropped; `MaybeLearnPath` before replay check; `LinkTable::Insert` orphans + drop-by-key; EHOSTDOWN / ENETUNREACH; snapshot fields (Punched vs Direct, remote, last-rx age); per-link keepalive interval; nested Reliable over best-effort carrier (A024). All in the sibling repo — release + pin.
+2. **k3** path set / make-before-break migration — the core of the project; nothing landed. Note: old peers ignore unknown hello types (need a migrate timeout); `TryUpgradeToDirectAsync` has no caller.
+3. **k4** heartbeat / RX-stall failover / Reconnecting + 30 s window / `peer link lost` no longer terminal — needs k3's path set.
+4. **k5** NetworkMonitor on four platforms; **k6** mobility; **k7** hard-lab wave.
+5. Dogfood (k0 exit): rerun cross-network with `scripts/dev/pp_dogfood.sh -- --debug` on both ends plus relay logs.
 
 ## Agent traps
 

@@ -7,7 +7,7 @@
 **Mature code map** — planes, layer ownership, topology rules, session façade vs `CallTopologyController` / `CallMediaBridge`.
 
 **Open delivery work:** [`projects/p2p-av-calls/`](../../projects/p2p-av-calls/).  
-**Product ADRs:** [DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) (through **V038** — N=2 circuit for NAT; SoftMigrate N≥3 only).  
+**Product ADRs:** [DECISIONS.md](../../projects/p2p-av-calls/DECISIONS.md) (through **V049** — V038 N=2 circuit for NAT, SoftMigrate N≥3 only; V049 simultaneous dial on Accept).  
 **Host receive / QoS matrix:** [HOST_RECEIVE_POLICY.md](../../projects/p2p-av-calls/HOST_RECEIVE_POLICY.md) (V032 + V034 video frames / hop audio-priority drop).  
 **Transport session machines:** [SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) (V033 s2a) · [MEDIA_RELAY_ATTACH.md](../../projects/p2p-mesh/MEDIA_RELAY_ATTACH.md) (N026 s3a+s3b) — circuit compose loopbacks green.  
 **Rewrite debt:** [PHASES rd](../../projects/p2p-av-calls/PHASES.md#rd--amp-call-media-rewrite-debt-v038) — D0–D4 automated gates (gtest / compose / `B-CALL-*` / `B-HARD-CALL`); OEM dogfood optional — [CURRENT_STATE](../../projects/p2p-av-calls/CURRENT_STATE.md#rd-automated-exit-v038--prefer-over-device-dogfood).  
