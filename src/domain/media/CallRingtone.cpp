@@ -164,6 +164,10 @@ void CallRingtone::RequestStop(const bool wait) {
   }
 }
 
+void CallRingtone::SetReleaseSessionOnStop(const bool release) {
+  release_session_on_stop_.store(release, std::memory_order_relaxed);
+}
+
 void CallRingtone::Stop() {
   RequestStop(/*wait=*/false);
 }
@@ -236,10 +240,16 @@ void CallRingtone::RunLoop() {
   g_ringtone_playback_device_holders.fetch_add(1, std::memory_order_acq_rel);
   const SDL_AudioDeviceID device = SDL_GetAudioStreamDevice(stream);
   (void)SDL_ResumeAudioDevice(device);
-  if (tone_ == Tone::OutgoingRingback) {
+  // Only this worker activates/releases the session for OutgoingRingback (never the UI
+  // thread) so a fast cancel can never activate after the controller already decided to
+  // release it. Skip the activate entirely if a stop already landed while we were still
+  // opening the device — otherwise we'd activate a session nobody will release.
+  bool activated = false;
+  if (tone_ == Tone::OutgoingRingback && !stop_.load()) {
     // SDL rewrites the AVAudioSession when it opens a device, so activate the VoIP
     // session after opening the stream (routes phones to the earpiece).
     CallAudioSession::ActivateForVoipCall();
+    activated = true;
   }
   SDL_Log("CallRingtone: playing loop freq=%d ch=%d bytes=%zu", wav_freq_, wav_channels_,
           wav_pcm_.size());
@@ -256,6 +266,12 @@ void CallRingtone::RunLoop() {
   // Destroying a stream from SDL_OpenAudioDeviceStream also closes the device — do not
   // SDL_CloseAudioDevice(device) afterward (double-close can hang quit on Android).
   SDL_DestroyAudioStream(stream);
+  if (activated && release_session_on_stop_.load(std::memory_order_relaxed)) {
+    // Release before dropping our holder count so CallMediaEngine::OpenAudioDevices —
+    // which waits for holders == 0 before ActivateForVoipCall()'ing its own session —
+    // never observes the device free while our session is still active.
+    CallAudioSession::Deactivate();
+  }
   g_ringtone_playback_device_holders.fetch_sub(1, std::memory_order_acq_rel);
   playing_ = false;
 }
