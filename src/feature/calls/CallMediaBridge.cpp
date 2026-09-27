@@ -730,7 +730,7 @@ void CallMediaBridge::ResetDirectSessionState(const std::string& call_id, const 
   if (media_call_id_ != call_id) {
     tx_only_escalation_done_ = false;
   }
-  media_attempted_calls_.insert(call_id);
+  media_attempted_calls_.Insert(call_id);
   media_call_id_ = call_id;
   media_peer_identity_ = peer_identity;
   session_offerer_ = offerer;
@@ -860,7 +860,7 @@ Roe<void> CallMediaBridge::StartMediaAsAnswerer(const std::string& call_id,
 void CallMediaBridge::ScheduleStartMediaAsOfferer(const std::string& call_id,
                                                         const std::string& peer_identity) {
   // Mark before UI hop so CallController orphan auto-Leave cannot race CallAccept→Active.
-  media_attempted_calls_.insert(call_id);
+  media_attempted_calls_.Insert(call_id);
   CallsThread::Post([this, call_id, peer_identity]() {
     Apply(CallDirectPlannerEvent::ScheduleOfferer, call_id, peer_identity);
     if (direct_planner_phase_ != CallDirectPlannerPhase::Arming &&
@@ -895,7 +895,7 @@ void CallMediaBridge::ScheduleStartMediaAsOfferer(const std::string& call_id,
 
 void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
                                                          const std::string& peer_identity) {
-  media_attempted_calls_.insert(call_id);
+  media_attempted_calls_.Insert(call_id);
   // Prefer inline when already on the calls owner (AcceptSucceeded Kick); otherwise ahead of queued work.
   if (CallsThread::IsCurrent()) {
     RunAnswererStart(call_id, peer_identity);
@@ -957,7 +957,7 @@ void CallMediaBridge::DeferAnswererUntilMediaKey(const std::string& call_id, con
   log().info << "Defer answerer media until CallMediaKey call_id=" << call_id << " reason=" << reason;
   pending_answerer_call_id_ = call_id;
   pending_answerer_peer_ = peer_identity;
-  media_attempted_calls_.insert(call_id);
+  media_attempted_calls_.Insert(call_id);
   if (arming_.on_media_deferred) {
     arming_.on_media_deferred(call_id);
   }
@@ -1095,7 +1095,7 @@ void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
   direct_connected_at_ms_ = 0;
   tx_only_escalation_done_ = false;
   ClearMeshConnectFailed();
-  media_attempted_calls_.erase(call_id);
+  media_attempted_calls_.Erase(call_id);
   media_.SetOnStateChanged({});
 
   // Always stop leftover media_relay even when ActiveCallId drifted or is empty
@@ -1239,11 +1239,11 @@ Roe<void> CallMediaBridge::RetryMeshMedia(const std::string& call_id) {
 }
 
 void CallMediaBridge::NoteMediaAttempted(const std::string& call_id) {
-  media_attempted_calls_.insert(call_id);
+  media_attempted_calls_.Insert(call_id);
 }
 
 bool CallMediaBridge::MediaAttempted(const std::string& call_id) const {
-  return media_attempted_calls_.count(call_id) > 0;
+  return media_attempted_calls_.Contains(call_id);
 }
 
 } // namespace pbr

@@ -200,6 +200,7 @@ public:
   Roe<std::vector<PendingCallInvite>> ListPendingInvites();
   Roe<std::optional<CallSession>> ActiveLocalCall() const;
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
+  Roe<std::optional<PendingCallInvite>> PeekTopPendingInvite() const { return workflow_.PeekTopPendingInvite(); }
 
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
@@ -222,6 +223,10 @@ public:
   void PollP2pConnectHealth();
 
   std::optional<std::string> TakeLastMediaError();
+  /** Non-mutating read (UI snapshot); the GUI takes it through the owner. */
+  std::optional<std::string> PeekLastMediaError() const { return last_media_error_; }
+  /** Clear only if still `seen` (the GUI showed it; a newer error stays). */
+  void ClearLastMediaErrorIf(const std::string& seen);
   /** Latest hop/setup progress line for in-call chrome (empty when idle/connected). */
   std::string PeekMediaActivity() const;
   void ClearMediaActivity();
@@ -243,7 +248,8 @@ public:
   bool IsSfuAttached() const;
 
   Roe<void> SetLocalAudioMuted(bool muted);
-  Roe<void> SetLocalVideoEnabled(bool enabled);
+  /** `display_rotation_degrees` read on UI by the caller (L012). */
+  Roe<void> SetLocalVideoEnabled(bool enabled, int display_rotation_degrees);
   /** Ask publisher for an IDR (empty identity = local encoder). */
   Roe<void> RequestVideoRefresh(const std::string& call_id, const std::string& publisher_identity);
 

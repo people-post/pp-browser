@@ -46,7 +46,10 @@ Unchanged: **worker pool** (all blocking work), **real-time media threads** (cap
 
 Owner-thread code is tested in Manual mode by default: deterministic, drained by the test (`RunOwnerTasks` / `DrainUntil` helpers that pump every manual owner). Dedicated mode is covered by the runtime's own tests, TSan runs and the hard lab.
 
+### GUI boundary (t2b)
+
+`CallUiBackend` is the only way the GUI touches calls: **intents** post to the calls owner (results on UI through `on_done`); **owner state** comes from `CallUiState`, which each `CallStack` publishes after every owner task (`CallsThread` after-task hooks) — a reader sees state as of the owner's last completed step, never mid-step; **durable state** (invites, sessions, participants) reads the stores; `Media()` is the engine, which synchronizes itself. GUI callbacks (chrome refresh, ring changed) always run on UI.
+
 ## Open questions
 
-- `CallUiBackend` synchronous queries (`ActiveLocalCall`, `TopPendingInvite`, …) become snapshot reads in t4 — shape of the published call snapshot.
 - Messaging (delivery, sync) is out of scope; it may get its own owner later.

@@ -757,11 +757,15 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::string& peer_account, i
   if (auto thr = EnsureOriginThread(thread_id, peer_account); !thr) {
     return thr.error();
   }
-  auto started = ui_->StartCall(thread_id, false, {peer_account});
-  if (!started) {
-    return started.error();
+  std::optional<Roe<CallSession>> started;
+  ui_->StartCall(thread_id, false, {peer_account}, [&started](Roe<CallSession> result) { started = std::move(result); });
+  if (!PumpUntil([&started]() { return started.has_value(); }, 10000)) {
+    return Error("product-stack StartCall timed out");
   }
-  const std::string call_id = started->call_id;
+  if (!*started) {
+    return started->error();
+  }
+  const std::string call_id = (*started)->call_id;
   std::cout << "ok  product-stack StartCall call_id=" << call_id << " peer=" << peer_account << "\n";
 
   const bool reached = PumpUntil(

@@ -121,6 +121,11 @@ public:
    * true from the request until it is turned off or the open fails (then TakeCameraFailure says why).
    */
   Roe<void> SetCameraEnabled(bool enabled);
+  /**
+   * Same, with the display rotation read by the caller on UI (`CameraDisplayRotationDegrees`) — for
+   * callers off the UI thread (the calls owner); iOS reads orientation from UIKit, main thread only.
+   */
+  Roe<void> SetCameraEnabled(bool enabled, int display_rotation_degrees);
   bool IsCameraEnabled() const;
   /** Why the last camera request did not open, once (UI poll, like TakePendingVideoRefreshStreamIds). */
   std::optional<std::string> TakeCameraFailure();

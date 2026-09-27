@@ -412,7 +412,7 @@ Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
   return {};
 }
 
-Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled) {
+Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int display_rotation_degrees) {
   auto local = LocalRelayIdentity();
   if (!local) {
     return local.error();
@@ -429,11 +429,11 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled) {
   }
   topology_.RefreshAdaptation(call_id, enabled);
   if (enabled) {
-    if (auto cam = media_.SetCameraEnabled(true); !cam) {
+    if (auto cam = media_.SetCameraEnabled(true, display_rotation_degrees); !cam) {
       return cam.error();
     }
   } else {
-    (void)media_.SetCameraEnabled(false);
+    (void)media_.SetCameraEnabled(false, 0);
   }
   auto participant = sessions_.FindParticipant(call_id, *local);
   if (participant && participant->has_value()) {
@@ -472,6 +472,12 @@ Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id,
     return encoded.error();
   }
   return SendCallDirectMessage(publisher_identity, CallControlType::CallVideoRefresh, *encoded, "");
+}
+
+void CallSessionManager::ClearLastMediaErrorIf(const std::string& seen) {
+  if (last_media_error_ && *last_media_error_ == seen) {
+    last_media_error_.reset();
+  }
 }
 
 std::optional<std::string> CallSessionManager::TakeLastMediaError() {

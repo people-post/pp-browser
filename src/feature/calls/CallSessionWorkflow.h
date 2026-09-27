@@ -164,6 +164,8 @@ public:
 
   Roe<std::optional<CallSession>> ActiveLocalCall() const;
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
+  /** No sweep, no writes (UI reads): expired invites are skipped instead. */
+  Roe<std::optional<PendingCallInvite>> PeekTopPendingInvite() const;
 
   Roe<void> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
                                 const ThreadMessage& message, std::optional<int64_t> relay_created_at_ms,

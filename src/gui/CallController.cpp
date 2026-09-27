@@ -560,7 +560,7 @@ void CallController::RefreshPendingRing() {
       if ((*active)->state == CallSessionState::Active && !backend->Media().IsActive() &&
           !backend->MediaAttemptedThisProcess((*active)->call_id) && !backend->IsAwaitingSfuRecovery()) {
         // True orphan after force-quit / process restart.
-        (void)backend->LeaveCall((*active)->call_id);
+        backend->LeaveCall((*active)->call_id);
       }
       active_call_id_.clear();
       ClearInCall();
@@ -834,13 +834,15 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
     UserFeedback::Fail(Tr("call.error.select_person"));
     return false;
   }
-  auto started = backend->StartCall(thread_id, video_allowed, invitee_identities);
-  if (!started) {
-    UserFeedback::Fail(PaymentErrorUserMessage(started.error().message));
-    return false;
-  }
-  active_call_id_ = started->call_id;
-  RefreshPendingRing();
+  // Requested: the calls owner starts it and reports back on UI (failure shown there).
+  backend->StartCall(thread_id, video_allowed, invitee_identities, WhileAlive([this](Roe<CallSession> started) {
+    if (!started) {
+      UserFeedback::Fail(PaymentErrorUserMessage(started.error().message));
+      return;
+    }
+    active_call_id_ = started->call_id;
+    RefreshPendingRing();
+  }));
   return true;
 }
 
@@ -879,20 +881,17 @@ void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>
     UserFeedback::Fail(Tr("call.error.no_active"));
     return;
   }
-  int invited = 0;
   for (const std::string& identity : invitee_identities) {
     if (identity.empty()) {
       continue;
     }
-    if (auto ok = backend->InviteParticipant(active_call_id_, identity); ok) {
-      ++invited;
-    } else {
-      UserFeedback::Fail(ok.error().message);
-      break;
-    }
-  }
-  if (invited > 0) {
-    RefreshPendingRing();
+    backend->InviteParticipant(active_call_id_, identity, WhileAlive([this](Roe<void> ok) {
+      if (!ok) {
+        UserFeedback::Fail(ok.error().message);
+        return;
+      }
+      RefreshPendingRing();
+    }));
   }
 }
 
@@ -1035,10 +1034,12 @@ void CallController::ToggleMute() {
     return;
   }
   const bool before = backend->Media().IsMuted();
-  if (auto muted = backend->SetLocalAudioMuted(!before); !muted) {
-    UserFeedback::Fail(muted.error().message);
-  }
-  RefreshPendingRing();
+  backend->SetLocalAudioMuted(!before, WhileAlive([this](Roe<void> muted) {
+    if (!muted) {
+      UserFeedback::Fail(muted.error().message);
+    }
+    RefreshPendingRing();
+  }));
 }
 
 void CallController::ToggleCamera() {
@@ -1060,10 +1061,12 @@ void CallController::ToggleCamera() {
       return;
     }
   }
-  if (auto cam = backend->SetLocalVideoEnabled(next); !cam) {
-    UserFeedback::Fail(cam.error().message);
-  }
-  RefreshPendingRing();
+  backend->SetLocalVideoEnabled(next, WhileAlive([this](Roe<void> cam) {
+    if (!cam) {
+      UserFeedback::Fail(cam.error().message);
+    }
+    RefreshPendingRing();
+  }));
 }
 
 void CallController::ToggleSpeaker() {
@@ -1094,7 +1097,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     // flag the roster already advertised.
     UserFeedback::Fail(*failure);
     if (auto* failed_backend = Backend(); failed_backend && failed_backend->Available()) {
-      (void)failed_backend->SetLocalVideoEnabled(false);
+      failed_backend->SetLocalVideoEnabled(false);
     }
   }
   in_call.camera_on = media.IsCameraEnabled();
@@ -1200,7 +1203,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
         if (row_stream != stream) {
           continue;
         }
-        (void)backend->RequestVideoRefresh(active_call_id_, row.identity.c_str());
+        backend->RequestVideoRefresh(active_call_id_, row.identity.c_str());
         break;
       }
     }
@@ -1212,10 +1215,10 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
           if (row.is_local || !row.video_enabled || row.has_remote_video) {
             continue;
           }
-          (void)backend->RequestVideoRefresh(active_call_id_, row.identity.c_str());
+          backend->RequestVideoRefresh(active_call_id_, row.identity.c_str());
         }
       } else if (auto peer = backend->PeerIdentityForCall(active_call_id_); peer && peer->has_value()) {
-        (void)backend->RequestVideoRefresh(active_call_id_, **peer);
+        backend->RequestVideoRefresh(active_call_id_, **peer);
       }
     }
   }

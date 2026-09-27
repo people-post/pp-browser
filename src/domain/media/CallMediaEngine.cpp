@@ -1303,7 +1303,10 @@ void CallMediaEngine::RequestAudioDeviceReopen() {
 
 Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled) {
   // Read on the caller's (UI) thread: iOS orientation is UIKit; the open itself runs elsewhere.
-  const int display_rotation = enabled ? CameraDisplayRotationDegrees() : 0;
+  return SetCameraEnabled(enabled, enabled ? CameraDisplayRotationDegrees() : 0);
+}
+
+Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled, const int display_rotation) {
   std::lock_guard lock(impl_->mutex);
   if (!impl_->active) {
     return Error("Call media not active");

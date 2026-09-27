@@ -9,6 +9,7 @@
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
 
+#include <memory>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -119,6 +120,17 @@ private:
   /** Presenter-owned call chrome; pushed to ShellHost via apply_snapshot. */
   CallRingState ring_;
   CallInProgressState in_call_;
+  /** Call intents report on UI later (calls owner); results for a destroyed controller are dropped. */
+  std::shared_ptr<int> alive_ = std::make_shared<int>(0);
+  /** Run `fn` only while this controller lives (captured into async call-intent results). */
+  template <typename Fn>
+  auto WhileAlive(Fn fn) {
+    return [weak = std::weak_ptr<int>(alive_), fn = std::move(fn)](auto&&... args) {
+      if (weak.lock()) {
+        fn(std::forward<decltype(args)>(args)...);
+      }
+    };
+  }
 };
 
 } // namespace pbr

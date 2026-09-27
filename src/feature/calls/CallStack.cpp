@@ -27,10 +27,41 @@ namespace pbr {
 CallStack::CallStack() {
   redirectLogger("CallStack");
   media_plane_ = std::make_unique<CallMediaPlane>();
+  publish_hook_ = CallsThread::AddAfterTaskHook([this]() { PublishUiState(); });
 }
 
 CallStack::~CallStack() {
   Shutdown();
+  CallsThread::RemoveAfterTaskHook(publish_hook_);
+}
+
+void CallStack::PublishUiState() {
+  CallUiState state;
+  if (call_lifecycle_) {
+    state.phase = call_lifecycle_->Phase();
+    state.media_status = call_lifecycle_->Status();
+    state.active_call_id = call_lifecycle_->ActiveCallId();
+    state.accepting_call_id = call_lifecycle_->AcceptingCallId();
+    state.last_ring_call_id = call_lifecycle_->LastRingCallId();
+    state.last_error = call_lifecycle_->LastError();
+  }
+  if (call_sessions_) {
+    state.awaiting_sfu_recovery = call_sessions_->IsAwaitingSfuRecovery();
+    state.soft_migrate_in_flight = call_sessions_->IsSoftMigrateInFlight();
+    state.sfu_attach_wait_active = call_sessions_->IsSfuAttachWaitActive();
+    state.p2p_connect_failed = call_sessions_->IsP2pConnectFailed();
+    state.p2p_connect_missing_mic = call_sessions_->P2pConnectMissingMic();
+    state.media_activity = call_sessions_->PeekMediaActivity();
+    state.last_media_error = call_sessions_->PeekLastMediaError();
+    state.hop_health = call_sessions_->HopHealth();
+    state.media_path_kind = call_sessions_->MediaPathKind();
+  }
+  if (call_media_seat_) {
+    state.seat_bound_call_id = call_media_seat_->BoundCallId();
+    state.seat_state = call_media_seat_->State();
+    state.seat_live = call_media_seat_->IsLive(state.seat_bound_call_id);
+  }
+  ui_state_.Set(std::move(state));
 }
 
 const AppConfig& CallStack::config() const {
@@ -144,6 +175,7 @@ void CallStack::BindMediaProducts() {
   if (CallMediaBridge* bridge = media_plane_->Bridge()) {
     bridge->SetSeatPorts(MakeDirectSeatPorts());
   }
+  PublishUiState();
 }
 
 CallLifecycleSignalingPorts CallStack::MakeLifecycleSignalingPorts() {
@@ -553,6 +585,7 @@ void CallStack::ResetSessions() {
     call_lifecycle_->ClearBinding();  // its ports point at the sessions being dropped
   }
   call_sessions_.reset();
+  PublishUiState();
 }
 
 void CallStack::Shutdown() {

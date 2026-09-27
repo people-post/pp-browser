@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <functional>
 #include <gtest/gtest.h>
+#include <optional>
 #include <memory>
 #include <string>
 #include <thread>
@@ -139,6 +140,17 @@ void DrainUntil(const std::function<bool()>& done, int max_ms = 4000) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   AppRuntime::RunUIAndOwnerTasks();
+}
+
+/** CallUiBackend::StartCall is an intent: run the calls owner until it reports. */
+Roe<CallSession> StartCallNow(CallUiBackend& ui, const std::string& thread_id, bool video,
+                              const std::vector<std::string>& invitees) {
+  std::optional<Roe<CallSession>> started;
+  ui.StartCall(thread_id, video, invitees, [&started](Roe<CallSession> result) { started = std::move(result); });
+  for (int i = 0; i < 1000 && !started; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+  }
+  return started ? *started : Roe<CallSession>(Error("StartCall did not report"));
 }
 
 class CallUiBackendStackTest : public ::testing::Test {
@@ -322,7 +334,9 @@ TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
   ui_->SetOnChromeRefresh([this]() { chrome_refreshes_.fetch_add(1); });
   ui_->SetOnRingChanged([this]() { ring_changes_.fetch_add(1); });
 
+  // Intents run on the calls owner; the GUI reads the snapshot it publishes after each step.
   ui_->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  AppRuntime::RunUIAndOwnerTasks();
   EXPECT_EQ(ui_->Phase(), CallPhase::Ringing);
   EXPECT_EQ(ui_->LastRingCallId(), call_id);
   EXPECT_TRUE(stack_->WantEphemeralListen());
@@ -334,8 +348,7 @@ TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
   EXPECT_EQ((*pending)->call_id, call_id);
 
   ui_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
-  EXPECT_EQ(ui_->Phase(), CallPhase::Accepting);
-  EXPECT_TRUE(ui_->ShouldSuppressRing(call_id));
+  EXPECT_EQ(ui_->Phase(), CallPhase::Ringing) << "posted, not applied: the snapshot changes only after the owner's step";
 
   DrainUntil([&]() {
     return ui_->Phase() == CallPhase::JoinedLocal || ui_->Phase() == CallPhase::MediaPending ||
@@ -358,12 +371,13 @@ TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
   EXPECT_EQ(**peer, "account:peer");
 
   ui_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  AppRuntime::RunUIAndOwnerTasks();
   EXPECT_EQ(ui_->Phase(), CallPhase::Idle);
   DrainUntil([&]() {
     auto after = ui_->ActiveLocalCall();
     return after && !after->has_value();
   });
-  // LeaveClicked posts LeaveCall on Critical — flush before the body's locals go away.
+  // Leave runs on the calls owner — flush before the body's locals go away.
   EXPECT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000)));
   EXPECT_FALSE(stack_->HasActiveLocalCall());
   EXPECT_GE(ring_changes_.load(), 1);
@@ -438,7 +452,7 @@ TEST_F(CallUiBackendStackTest, StartCallAndLeaveViaBackend) {
   thread.updated_at = util::NowUnixMs();
   ASSERT_TRUE(store_->UpsertThread(thread));
 
-  auto started = ui_->StartCall(thread.id, false, {"account:peer"});
+  auto started = StartCallNow(*ui_, thread.id, false, {"account:peer"});
   ASSERT_TRUE(started) << started.error().message;
   EXPECT_EQ(ui_->Phase(), CallPhase::OutboundCalling);
   EXPECT_TRUE(stack_->WantEphemeralListen());
@@ -447,7 +461,7 @@ TEST_F(CallUiBackendStackTest, StartCallAndLeaveViaBackend) {
   ASSERT_TRUE(active && active->has_value());
   EXPECT_EQ((*active)->call_id, started->call_id);
 
-  ASSERT_TRUE(ui_->LeaveCall(started->call_id));
+  ui_->LeaveCall(started->call_id);
   ui_->Apply(CallLifecycleEvent::LeaveClicked, started->call_id);
   DrainUntil([&]() {
     auto after = ui_->ActiveLocalCall();

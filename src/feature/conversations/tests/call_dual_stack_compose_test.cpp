@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <functional>
 #include <gtest/gtest.h>
+#include <optional>
 #include <memory>
 #include <string>
 #include <thread>
@@ -141,6 +142,17 @@ void DrainUntil(const std::function<bool()>& done, int max_ms = 6000) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   AppRuntime::RunUIAndOwnerTasks();
+}
+
+/** CallUiBackend::StartCall is an intent: run the calls owner until it reports. */
+Roe<CallSession> StartCallNow(CallUiBackend& ui, const std::string& thread_id, bool video,
+                              const std::vector<std::string>& invitees) {
+  std::optional<Roe<CallSession>> started;
+  ui.StartCall(thread_id, video, invitees, [&started](Roe<CallSession> result) { started = std::move(result); });
+  for (int i = 0; i < 1000 && !started; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+  }
+  return started ? *started : Roe<CallSession>(Error("StartCall did not report"));
 }
 
 struct StackSide {
@@ -331,7 +343,7 @@ protected:
 
   /** Offer StartCall → Answer Accept → both InCall. Leaves call active. */
   std::string RunOfferAnswerToInCall(const std::string& thread_id) {
-    auto started = offer_.ui->StartCall(thread_id, false, {answer_.local_identity});
+    auto started = StartCallNow(*offer_.ui, thread_id, false, {answer_.local_identity});
     EXPECT_TRUE(started) << (started ? "" : started.error().message);
     if (!started) {
       return {};
@@ -488,7 +500,7 @@ TEST_F(CallDualStackComposeTest, OfferInviteAnswerDeclineClearsOfferer) {
   thread.updated_at = util::NowUnixMs();
   ASSERT_TRUE(offer_.store->UpsertThread(thread));
 
-  auto started = offer_.ui->StartCall(thread.id, false, {answer_.local_identity});
+  auto started = StartCallNow(*offer_.ui, thread.id, false, {answer_.local_identity});
   ASSERT_TRUE(started) << started.error().message;
   const std::string call_id = started->call_id;
   EXPECT_EQ(offer_.ui->Phase(), CallPhase::OutboundCalling);
@@ -529,7 +541,7 @@ TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   EXPECT_EQ((*active_a)->call_id, call_a);
 
   // Second outbound invite while still InCall on A.
-  auto started_b = offer_.ui->StartCall(thread.id, false, {answer_.local_identity});
+  auto started_b = StartCallNow(*offer_.ui, thread.id, false, {answer_.local_identity});
   ASSERT_TRUE(started_b) << started_b.error().message;
   const std::string call_b = started_b->call_id;
   EXPECT_NE(call_a, call_b);

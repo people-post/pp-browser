@@ -16,6 +16,9 @@
 #include "feature/calls/CallLifecycle.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallSessionManager.h"
+#include "feature/calls/CallUiState.h"
+#include "feature/calls/CallsThread.h"
+#include "feature/calls/SharedPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallControlInboundPorts.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
@@ -104,6 +107,11 @@ public:
   /** Final teardown: reset media engine / key store / session store. */
   void Shutdown();
 
+  /** GUI view of the call stack, published by the calls owner after each step (t2b). */
+  std::shared_ptr<const CallUiState> UiState() const { return ui_state_.Get(); }
+  /** Build and publish the UI snapshot (on the calls owner: after-task hook, bind points). */
+  void PublishUiState();
+
   CallSessionManager* Calls();
   CallLifecycle* Lifecycle();
   CallMediaKeyStore* MediaKeys() { return call_media_keys_.get(); }
@@ -150,6 +158,8 @@ private:
   std::unique_ptr<CallSessionManager> call_sessions_;
   std::unique_ptr<CallLifecycle> call_lifecycle_;
   std::unique_ptr<CallMediaPlane> media_plane_;
+  SharedPorts<CallUiState> ui_state_;
+  CallsThread::HookId publish_hook_ = 0;
 };
 
 } // namespace pbr

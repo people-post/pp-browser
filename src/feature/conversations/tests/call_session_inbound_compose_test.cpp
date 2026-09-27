@@ -1559,10 +1559,10 @@ TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
   EXPECT_FALSE(media_->IsMuted());
 
   // Camera may fail headless — gate must still accept video_allowed before device open.
-  auto enable = csm_->SetLocalVideoEnabled(true);
+  auto enable = csm_->SetLocalVideoEnabled(true, 0);
   if (enable) {
     EXPECT_TRUE(media_->IsCameraEnabled());
-    ASSERT_TRUE(csm_->SetLocalVideoEnabled(false));
+    ASSERT_TRUE(csm_->SetLocalVideoEnabled(false, 0));
   } else {
     EXPECT_FALSE(enable.error().message.empty());
   }
@@ -1572,7 +1572,7 @@ TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
   ASSERT_TRUE(voice_only && voice_only->has_value());
   (*voice_only)->video_allowed = false;
   ASSERT_TRUE(sessions_->UpsertSession(**voice_only));
-  auto denied = csm_->SetLocalVideoEnabled(true);
+  auto denied = csm_->SetLocalVideoEnabled(true, 0);
   EXPECT_FALSE(denied);
   EXPECT_NE(denied.error().message.find("Video is not allowed"), std::string::npos);
 

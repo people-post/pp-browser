@@ -266,7 +266,24 @@ private:
   /** Inside the 15 s StartReserve lease so consecutive leases overlap. */
   int reserve_renew_interval_ms_ = 10000;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;
-  std::unordered_set<std::string> media_attempted_calls_;
+  /** Written on the calls owner, read by the GUI (MediaAttemptedThisProcess) — guarded. */
+  struct AttemptedCalls {
+    void Insert(const std::string& id) {
+      std::lock_guard lock(mu);
+      ids.insert(id);
+    }
+    void Erase(const std::string& id) {
+      std::lock_guard lock(mu);
+      ids.erase(id);
+    }
+    bool Contains(const std::string& id) const {
+      std::lock_guard lock(mu);
+      return ids.count(id) > 0;
+    }
+    mutable std::mutex mu;
+    std::unordered_set<std::string> ids;
+  };
+  AttemptedCalls media_attempted_calls_;
   int media_key_inbox_poll_rounds_ = 90;
   std::atomic<uint32_t> audio_seq_{0};
   /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */

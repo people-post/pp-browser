@@ -72,6 +72,13 @@ Roe<std::optional<PendingCallInvite>> CallSessionWorkflow::TopPendingInvite() {
   }
   // Match CSM ListPendingInvites / StartCall gate — expire before reading "top".
   SweepExpiredInvites();
+  return PeekTopPendingInvite();
+}
+
+Roe<std::optional<PendingCallInvite>> CallSessionWorkflow::PeekTopPendingInvite() const {
+  if (!host_.IsBound()) {
+    return Error("Call session workflow host ports not bound");
+  }
   auto local = host_.wire.local_relay_identity();
   if (!local) {
     return local.error();
@@ -80,9 +87,11 @@ Roe<std::optional<PendingCallInvite>> CallSessionWorkflow::TopPendingInvite() {
   if (!pending) {
     return pending.error();
   }
+  // Read-only (callable off the owner): expired rows are skipped here, swept on the owner.
+  const int64_t now = util::NowUnixMs();
   std::vector<PendingCallInvite> open;
   for (const PendingCallInvite& invite : *pending) {
-    if (invite.status == "pending") {
+    if (invite.status == "pending" && !CallSessionLogic::IsInviteExpired(invite, now)) {
       open.push_back(invite);
     }
   }
