@@ -231,11 +231,6 @@ public:
                                   const std::string& prefer_hop_peer_id, uint64_t expected_gen,
                                   std::function<void(Roe<void>)> on_done);
 
-  Roe<void> CompleteAttachLocalToSfu(const std::string& call_id, CallSfuAttachDetail attach, bool self_hop,
-                                     int64_t a_up_bps, uint64_t gen_at_start, uint64_t cancel_gen_at_start,
-                                     const std::shared_ptr<std::atomic<bool>>& sfu_frames_ready,
-                                     const std::vector<uint8_t>& media_key, uint32_t media_epoch);
-
   void AttachLocalToSfuAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
                              std::function<void(Roe<void>)> on_done);
 
@@ -247,6 +242,7 @@ public:
 
 private:
   struct HopPick;
+  struct HopAttach;
 
   bool IsMigrateGenerationCurrent(uint64_t gen) const;
   bool IsLiveOnHopFor(const std::string& call_id) const;
@@ -272,6 +268,27 @@ private:
   void RecordPickedHop(HopPick& pick, const std::string& hop_peer_id);
   void FanOutPickedHop(const std::string& call_id, const CallSfuAttachDetail& attach,
                        const std::string& local_identity);
+
+  // Hop attach steps (AttachLocalToSfuAsync → claim → key → local hop / relay → CompleteHopAttach on UI).
+  /** True = this attempt owns the attach; false = coalesced into another (done, not an error). */
+  Roe<bool> ClaimHopAttachFlight(const std::string& call_id, const CallSfuAttachDetail& attach);
+  std::function<void(Roe<void>)> ReleaseHopAttachFlightOnError(const std::string& call_id, const std::string& hop,
+                                                               std::function<void(Roe<void>)> on_done);
+  Roe<void> LoadHopMediaKey(HopAttach& at) const;
+  std::function<void(MediaDataFrame)> MakeHopFrameSink(const HopAttach& at);
+  void AttachAsLocalHop(HopAttach at, std::function<void(Roe<void>)> on_done);
+  void AttachThroughRelay(HopAttach at, std::function<void(Roe<void>)> on_done);
+  /** UI thread: commit an attached hop (StartSfu, state, chrome) unless the call moved on. */
+  Roe<void> CompleteHopAttach(const HopAttach& at, int64_t a_up_bps);
+  void ApplyQuoteAdaptation(int64_t a_up_bps);
+  Roe<void> CheckHopAttachStillWanted(const HopAttach& at);
+  bool OwnsHopAttachFlight(const HopAttach& at) const;
+  /** Detach the relay session and report the attach as aborted. */
+  Roe<void> AbortHopAttach();
+  CallMediaEngine::SfuSendFn MakeHopSendFn(const HopAttach& at);
+  Roe<void> StartHopMedia(const HopAttach& at);
+  void MarkHopAttachLive(const HopAttach& at, bool fresh_start);
+  void ReleaseDirectAfterHopAttach(const HopAttach& at);
   /** media_relay attach mechanism (domain/mesh MediaRelayAttach) over this workflow's relay deps. */
   MediaRelayAttachPorts RelayAttachPorts() const;
   /** Call policy for a relay attach: session id / auth = call id; quote sized by roster + video. */
