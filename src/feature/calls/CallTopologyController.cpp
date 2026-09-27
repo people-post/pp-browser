@@ -94,14 +94,46 @@ void CallTopologyController::SetHostPorts(HostPorts ports) {
   host_ = std::move(ports);
 }
 
+CallTopologyController::~CallTopologyController() {
+  // No RemoveClientTransportLostObserver here: the relay may already be gone (CallStack::Shutdown
+  // clears the media plane first; mesh stop unwatches through SetMediaRelayDeps({})). Invalidating
+  // drops notices still queued for us.
+  relay_loss_self_.Invalidate();
+}
+
 void CallTopologyController::SetMediaRelayDeps(MediaRelayDeps deps) {
+  UnwatchRelayLoss();
   relay_deps_ = std::move(deps);
   hop_migrate_.SetMediaRelayDeps(&relay_deps_);
-  if (relay_deps_.relay) {
-    relay_deps_.relay->SetClientTransportLostHandler([this]() {
-      AppRuntime::PostUI([this]() { OnGuestSfuTransportLost(); });
-    });
+  WatchRelayLoss();
+}
+
+void CallTopologyController::WatchRelayLoss() {
+  if (!relay_deps_.relay) {
+    return;
   }
+  relay_loss_observer_ = relay_deps_.relay->AddClientTransportLostObserver(
+      [token = relay_loss_self_.token(), snap = relay_loss_self_.Snapshot(), this](MediaRelayClientLoss loss) {
+        // Only a dead transport means reattach: our own hop migrations and leaves replace / detach
+        // the session too. (Another feature taking the client is the call + broadcast case — see
+        // media-client-layers PHASES "Allow call + broadcast at once".)
+        if (loss != MediaRelayClientLoss::TransportLost) {
+          return;
+        }
+        AppRuntime::PostUI([token, snap, this]() {
+          if (DeferredSelf::Alive(token, snap)) {
+            OnGuestSfuTransportLost();
+          }
+        });
+      });
+}
+
+void CallTopologyController::UnwatchRelayLoss() {
+  if (relay_deps_.relay && relay_loss_observer_ != 0) {
+    relay_deps_.relay->RemoveClientTransportLostObserver(relay_loss_observer_);
+  }
+  relay_loss_observer_ = 0;
+  relay_loss_self_.Invalidate();
 }
 
 void CallTopologyController::SetMediaKeyStore(CallMediaKeyStore* keys) {

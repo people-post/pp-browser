@@ -14,6 +14,7 @@
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallHopMigrateWorkflow.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -85,8 +86,12 @@ public:
   using MediaRelayDeps = CallTopologyMediaRelayDeps;
 
   CallTopologyController(CallSessionStore& sessions, ContactsStore& contacts, CallMediaEngine& media);
+  ~CallTopologyController() override;
+  CallTopologyController(const CallTopologyController&) = delete;
+  CallTopologyController& operator=(const CallTopologyController&) = delete;
 
   void SetHostPorts(HostPorts ports);
+  /** Swapping deps moves the relay session-end observer to the new relay (empty = unwatch). */
   void SetMediaRelayDeps(MediaRelayDeps deps);
   /** Required for SFU E2E AEAD (V032). */
   void SetMediaKeyStore(CallMediaKeyStore* keys);
@@ -248,6 +253,13 @@ private:
   CallTopologySeatPorts seat_;
   CallHopArmingPorts arming_;
   MediaRelayDeps relay_deps_;
+  // Relay session-end observer on relay_deps_.relay; the token drops notices queued before an
+  // unwatch or our destruction.
+  DeferredSelf relay_loss_self_;
+  uint64_t relay_loss_observer_ = 0;
+
+  void WatchRelayLoss();
+  void UnwatchRelayLoss();
 };
 
 } // namespace pbr

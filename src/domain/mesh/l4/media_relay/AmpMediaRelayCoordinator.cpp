@@ -100,11 +100,10 @@ struct AmpMediaRelayCoordinator::Impl {
     std::unordered_set<uint64_t> subscriptions;
   };
   /**
-   * Registrations, not session state: they outlive every attach / detach of `client_` (the calls'
-   * handler is installed once at mesh wiring — resetting it with the session disabled guest
-   * reattach-on-loss after the first attach).
+   * Registrations, not session state: they outlive every attach / detach of `client_` (features
+   * register once at wiring — dropping them with the session disabled reattach-on-loss after the
+   * first attach).
    */
-  std::function<void()> client_lost_handler_;
   std::map<uint64_t, std::function<void(MediaRelayClientLoss)>> client_lost_observers_;
   uint64_t next_observer_token_ = 1;
 
@@ -494,23 +493,15 @@ struct AmpMediaRelayCoordinator::Impl {
   }
 
   void HandleClientTransportLost(const char* reason) {
-    std::function<void()> handler;
-    {
-      std::lock_guard lock(mu);
-      if (!client_.channel) {
-        return;
-      }
-      CloseQuietSlot(client_.channel, ResolveLink(client_.hop_peer_key));
-      client_.subscriptions.clear();
-      client_.reader_started = false;
-      // Keep the handler armed across reattach cycles (do not move it away).
-      handler = client_lost_handler_;
-      NotifyClientObserversLocked(MediaRelayClientLoss::TransportLost);
+    std::lock_guard lock(mu);
+    if (!client_.channel) {
+      return;
     }
+    CloseQuietSlot(client_.channel, ResolveLink(client_.hop_peer_key));
+    client_.subscriptions.clear();
+    client_.reader_started = false;
+    NotifyClientObserversLocked(MediaRelayClientLoss::TransportLost);
     (void)reason;
-    if (handler) {
-      handler();
-    }
   }
 
   void RebindHostParticipantHandlers(const std::shared_ptr<AmpHostSession>& session,
@@ -1335,11 +1326,6 @@ bool AmpMediaRelayCoordinator::IsSessionActive(const MediaRelaySessionId id) con
 void AmpMediaRelayCoordinator::StartClientFrameReader() {
   std::lock_guard lock(impl_->mu);
   impl_->client_.reader_started = true;
-}
-
-void AmpMediaRelayCoordinator::SetClientTransportLostHandler(std::function<void()> handler) {
-  std::lock_guard lock(impl_->mu);
-  impl_->client_lost_handler_ = std::move(handler);
 }
 
 uint64_t AmpMediaRelayCoordinator::AddClientTransportLostObserver(std::function<void(MediaRelayClientLoss)> observer) {

@@ -121,6 +121,15 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 
 **Exit (l6):** calls hold no broadcast code; `check_feature_includes.sh` bans the edge both ways. **Met.**
 
+## l7 — Call-side cleanup (after the split)
+
+Leftovers in `CallMediaBridge` / `CallTopologyController` / `CallHopMigrateWorkflow` found once broadcast was out.
+
+- [x] Calls watch relay session ends through their own `AddClientTransportLostObserver` (reattach on `TransportLost` only), moved on every `SetMediaRelayDeps` and dropped by a `DeferredSelf` token at destruction. The call-owned `SetClientTransportLostHandler` slot is gone from `IMediaRelayClient` / `AmpMediaRelayClient` / `AmpMediaRelayCoordinator` (it was a raw `this` never unregistered, and a call concept in a shared interface)
+- [ ] Shrink the long flows (repo rule ~80–100 lines): `MaybeSoftMigrateToSfuAsync` (~410), `CompleteAttachLocalToSfu` (~270), `AttachLocalToSfuAsync` (~210), `OnInboundSfuAttach` (~190), `CallMediaBridge::BeginSession` (~170), `OnLocalAcceptJoined` (~140) — most of the attach length is repeated "still current?" checks (seat token, armed hop, cancel gen, migrate gen) that one named check can carry
+- [ ] Blocking `AttachLocalToSfu` (parks up to 30 s) has only test callers — move it to a test helper; production keeps the async form
+- [ ] LeakSanitizer: 14 `CallTopologyControllerTest` cases leak `MaybeSoftMigrateToSfuAsync` closures / `SettledWait` state left pending at teardown (seen 2026-09-26, identical before l7) — with the split above
+
 ## Later
 
 - [ ] Neutral mesh media plane: move the media_relay client, dial registry, circuit reach, punch and seed parking out of `CallMediaPlane` into `domain/mesh`, owned outside calls and lent to both features ([L014](DECISIONS.md#l014--broadcast-borrows-the-call-planes-mesh-objects-until-a-neutral-mesh-media-plane-exists) exit)
@@ -130,4 +139,4 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 - [ ] Viewer video (channel 1 decode path; subscribe plan adds channel)
 - [ ] Tree relay upstream leg uses the viewer client ([L005](DECISIONS.md#l005--a-tree-relay-pulls-upstream-with-the-viewer-client)) — with peer-scoped-broadcast B1
 - [ ] Relay per-program keyframe cache (relay side)
-- [ ] Allow call + broadcast at once: per-holder `media_relay` client sessions (the coordinator holds one today), arbiter mic policy
+- [ ] Allow call + broadcast at once: per-holder `media_relay` client sessions (the coordinator holds one today), arbiter mic policy. Until then calls ignore `Replaced` / `Detached` (their own migrations and leaves cause those too), so a call does not notice another feature taking the client

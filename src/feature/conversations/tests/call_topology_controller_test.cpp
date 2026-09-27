@@ -18,6 +18,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <gtest/gtest.h>
 #include <mutex>
 #include <thread>
@@ -240,13 +241,16 @@ public:
 
   void StartClientFrameReader() override { ++reader_starts; }
 
-  void SetClientTransportLostHandler(std::function<void()> handler) override {
-    transport_lost_handler = std::move(handler);
+  uint64_t AddClientTransportLostObserver(std::function<void(MediaRelayClientLoss)> observer) override {
+    session_end_observers[next_observer_token] = std::move(observer);
+    return next_observer_token++;
   }
+  void RemoveClientTransportLostObserver(uint64_t token) override { session_end_observers.erase(token); }
 
-  void FireTransportLost() {
-    if (transport_lost_handler) {
-      transport_lost_handler();
+  void FireSessionEnd(MediaRelayClientLoss loss = MediaRelayClientLoss::TransportLost) {
+    for (const auto& [token, observer] : session_end_observers) {
+      (void)token;
+      observer(loss);
     }
   }
 
@@ -301,7 +305,8 @@ public:
   std::mutex subscribe_mu;
   std::vector<uint32_t> subscribed_streams;
   std::vector<uint16_t> subscribed_channels;
-  std::function<void()> transport_lost_handler;
+  std::map<uint64_t, std::function<void(MediaRelayClientLoss)>> session_end_observers;
+  uint64_t next_observer_token = 1;
   std::function<void()> before_accept_done;
 
 private:
@@ -1224,7 +1229,7 @@ TEST_F(CallTopologyControllerTest, GuestReattachOnTransportLost) {
   deps.dial = dial_.get();
   deps.prefer_local_as_hop = false;
   topo_->SetMediaRelayDeps(std::move(deps));
-  ASSERT_TRUE(relay_->transport_lost_handler) << "SetMediaRelayDeps must arm transport-lost handler";
+  ASSERT_EQ(relay_->session_end_observers.size(), 1u) << "SetMediaRelayDeps must watch relay session ends";
 
   CallSfuAttachDetail attach;
   attach.call_id = call_id;
@@ -1237,7 +1242,7 @@ TEST_F(CallTopologyControllerTest, GuestReattachOnTransportLost) {
   EXPECT_GE(attaches_after_first, 1);
   EXPECT_GE(relay_->reader_starts, 1);
 
-  relay_->FireTransportLost();
+  relay_->FireSessionEnd();
   AppRuntime::RunUITasks();
 
   bool reattached = false;
@@ -1254,6 +1259,71 @@ TEST_F(CallTopologyControllerTest, GuestReattachOnTransportLost) {
   EXPECT_GT(relay_->quote_calls, quotes_after_first);
   EXPECT_GT(relay_->reader_starts, 1);
   EXPECT_TRUE(topo_->IsSfuAttached());
+
+  AppRuntime::Shutdown();
+  AppRuntime::ShutdownUI();
+}
+
+// Our own hop migrations and leaves replace / detach the relay session too: only a dead transport
+// may trigger the guest reattach.
+TEST_F(CallTopologyControllerTest, RelaySessionReplacedOrDetachedDoesNotReattach) {
+  AppRuntime::Initialize();
+  AppRuntime::InitializeUI();
+
+  const std::string call_id = "call:guest-replaced";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:B";
+  relay_->started = true;
+  relay_->local_peer_id = "12D3KooWLocalGuest";
+
+  const std::string hop = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  dial_->endpoints[hop] = "/ip4/1.2.3.4/tcp/443/p2p/" + hop;
+
+  CallTopologyController::MediaRelayDeps deps;
+  deps.relay = relay_.get();
+  deps.dial = dial_.get();
+  deps.prefer_local_as_hop = false;
+  topo_->SetMediaRelayDeps(std::move(deps));
+
+  CallSfuAttachDetail attach;
+  attach.call_id = call_id;
+  attach.hop_peer_id = hop;
+  attach.hop_multiaddr = dial_->endpoints[hop];
+  ASSERT_TRUE(topo_->AttachLocalToSfu(call_id, attach));
+  const int attaches = relay_->attach_calls;
+
+  relay_->FireSessionEnd(MediaRelayClientLoss::Replaced);
+  relay_->FireSessionEnd(MediaRelayClientLoss::Detached);
+  for (int i = 0; i < 20; ++i) {
+    AppRuntime::RunUITasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  EXPECT_EQ(relay_->attach_calls, attaches);
+
+  AppRuntime::Shutdown();
+  AppRuntime::ShutdownUI();
+}
+
+// The observer follows the deps: swapping or clearing them unwatches the old relay (mesh stop
+// clears them before the relay goes), and a notice queued for a destroyed topology is dropped.
+TEST_F(CallTopologyControllerTest, RelaySessionObserverFollowsDepsAndLifetime) {
+  AppRuntime::Initialize();
+  AppRuntime::InitializeUI();
+
+  CallTopologyController::MediaRelayDeps deps;
+  deps.relay = relay_.get();
+  topo_->SetMediaRelayDeps(deps);
+  topo_->SetMediaRelayDeps(deps);
+  EXPECT_EQ(relay_->session_end_observers.size(), 1u) << "re-set must not stack observers";
+  topo_->SetMediaRelayDeps({});
+  EXPECT_TRUE(relay_->session_end_observers.empty());
+
+  topo_->SetMediaRelayDeps(deps);
+  ASSERT_EQ(relay_->session_end_observers.size(), 1u);
+  topo_->SetHopArmingPorts({});
+  topo_.reset();
+  relay_->FireSessionEnd();  // left registered: the relay may already be gone at our destruction
+  AppRuntime::RunUITasks();   // ASan: must not reach the destroyed topology
 
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();
