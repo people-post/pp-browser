@@ -9,6 +9,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
@@ -54,14 +55,18 @@ struct BroadcasterPorts {
   std::function<void(const std::string& program_id, const std::string& join_handle, BroadcastProgramKey key)>
       put_program_key;
   std::function<void(const std::string& program_id, const std::string& join_handle)> clear_program_key;
-  /** Sign + publish a tip (local feed; push to followers where wired). */
-  std::function<Roe<void>(const BroadcastTipDraft& draft)> announce;
+  /**
+   * Sign + publish a tip (local feed; push to followers where wired). Asynchronous: the feed
+   * belongs to another owner; `on_done` may run on any thread (the workflow hops back itself).
+   */
+  std::function<void(const BroadcastTipDraft& draft, std::function<void(Roe<void>)> on_done)> announce;
   MediaRelayAttachPorts relay;
   std::function<std::string(const std::string& hop_peer_id)> hop_multiaddr;
   /** Capture-only session (mic lease). */
   CallMediaEngine* engine = nullptr;
-  std::function<void(std::function<void()>)> post_ui;
-  std::function<void(std::chrono::milliseconds, std::function<void()>)> post_ui_after;
+  /** Onto the thread that owns the workflow (the media-sessions owner in the product). */
+  std::function<void(std::function<void()>)> post_owner;
+  std::function<void(std::chrono::milliseconds, std::function<void()>)> post_owner_after;
 };
 
 /**
@@ -71,8 +76,9 @@ struct BroadcasterPorts {
  * Live tip. On relay loss it re-attaches (same hop first, then the others; re-announces when the
  * hop changes). End announces Ended, clears the key, detaches and stops capture. No call objects.
  *
- * Threading: public methods and state on the UI thread; completions posted to UI and dropped once
- * End / a newer GoLive invalidated them. Frames are sealed and sent on the engine's capture thread.
+ * Threading: public methods and state on the owner (`post_owner`: the media-sessions owner);
+ * completions are posted there and dropped once End / a newer GoLive invalidated them. Frames are
+ * sealed and sent on the engine's capture thread.
  */
 class BroadcasterWorkflow {
 public:
@@ -101,6 +107,8 @@ public:
   void End();
   /** Status with the live frame counter. */
   Status CurrentStatus() const;
+  /** Frames sent this show; readable from any thread for the workflow's lifetime. */
+  std::shared_ptr<const std::atomic<uint64_t>> FramesSentCounter() const { return frames_sent_; }
   void SetOnStatusChanged(std::function<void()> callback) { on_status_changed_ = std::move(callback); }
 
   static const char* PhaseName(Phase phase);
@@ -114,13 +122,14 @@ private:
   void AttachNext(const std::string& why);
   void OnAttached(const std::string& hop, Roe<MediaRelayAttached> attached);
   void StartPublishing(const std::string& hop);
-  Roe<void> Announce(PeerAnnounceState state);
+  void Announce(PeerAnnounceState state, std::function<void(Roe<void>)> on_done);
   void OnSessionEnded(MediaRelayClientLoss loss);
 
   BroadcasterPorts ports_;
   Status status_;
   std::function<void()> on_status_changed_;
   DeferredSelf deferred_;
+  std::shared_ptr<std::atomic<uint64_t>> frames_sent_ = std::make_shared<std::atomic<uint64_t>>(0);
 
   // Per show (reset by Teardown).
   std::string self_peer_id_;

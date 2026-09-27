@@ -164,8 +164,19 @@ public:
    * without AppRuntime). For code migrating onto owners; prefer PostTo once the owner is certain.
    */
   static void PostToOwnerOrRun(OwnerThreadId owner, std::function<void()> task);
-  /** True inside the owner's tasks (Manual mode: while the driving thread drains it). */
+  /**
+   * True inside the owner's tasks (Manual mode: while the driving thread drains it), and while a
+   * RunAndWait caller stands in for the owner.
+   */
   static bool CurrentlyOn(OwnerThreadId owner);
+  /**
+   * Run `task` on the owner and wait for it — for a component's lifecycle edges (build, rewire,
+   * teardown) driven from another owner. Inline when already on the owner; when there is no owner
+   * or the teardown gate drops the post, inline with the caller standing in for the owner
+   * (`CurrentlyOn` is true for the task's duration). Manual mode drains the owner on the caller.
+   * The owner must never wait on the caller (owners never block), so this cannot deadlock.
+   */
+  static void RunAndWait(OwnerThreadId owner, const std::function<void()>& task);
   /** Coordinator timer that posts `task` onto the owner. Cancel with CancelCoordinatorTimer. */
   static uint64_t ScheduleOn(OwnerThreadId owner, std::chrono::milliseconds delay, std::function<void()> task);
   /** Manual mode: run the owner's queue until empty (tests / harnesses). Returns tasks run. */

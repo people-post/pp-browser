@@ -23,16 +23,16 @@ constexpr int64_t kAudioDownBps = 64000;
 constexpr std::chrono::milliseconds kRecoveryBackoff{500};
 
 /**
- * Wrap a UI-thread handler for a completion that may arrive on any thread: hop to UI, then run
+ * Wrap an owner handler for a completion that may arrive on any thread: hop to the owner, then run
  * only while `deferred`'s generation is unchanged (no Stop / newer Watch since).
  */
 template <typename T>
-std::function<void(T)> OnUi(const std::function<void(std::function<void()>)>& post_ui, const DeferredSelf& deferred,
+std::function<void(T)> OnOwner(const std::function<void(std::function<void()>)>& post_owner, const DeferredSelf& deferred,
                             std::function<void(T)> handler) {
-  return [post_ui, token = deferred.token(), snap = deferred.Snapshot(),
+  return [post_owner, token = deferred.token(), snap = deferred.Snapshot(),
           handler = std::move(handler)](T value) {
     auto held = std::make_shared<T>(std::move(value));
-    post_ui([token, snap, handler, held]() {
+    post_owner([token, snap, handler, held]() {
       if (DeferredSelf::Alive(token, snap)) {
         handler(std::move(*held));
       }
@@ -125,7 +125,7 @@ BroadcastViewerWorkflow::~BroadcastViewerWorkflow() {
 }
 
 void BroadcastViewerWorkflow::PostUi(std::function<void()> task) {
-  deferred_.Post(ports_.post_ui, std::move(task));
+  deferred_.Post(ports_.post_owner, std::move(task));
 }
 
 void BroadcastViewerWorkflow::SetPhase(Phase phase, std::string hop) {
@@ -142,7 +142,7 @@ Roe<void> BroadcastViewerWorkflow::Watch(BroadcastWatchTarget target) {
   if (target.publisher_peer_id.empty() || target.program_id.empty() || target.join_handle.empty()) {
     return Error("watch target needs publisher, program and join handle");
   }
-  if (!ports_.engine || !ports_.relay.relay || !ports_.relay.dial || !ports_.request_ticket || !ports_.post_ui) {
+  if (!ports_.engine || !ports_.relay.relay || !ports_.relay.dial || !ports_.request_ticket || !ports_.post_owner) {
     return Error("broadcast viewing unavailable (media relay / engine not wired)");
   }
   deferred_.Invalidate();
@@ -207,15 +207,15 @@ void BroadcastViewerWorkflow::FetchTicket() {
     req.join_handle = status_.target.join_handle;
     req.viewer_peer_id = ports_.local_peer_id ? ports_.local_peer_id() : std::string();
     ports_.request_ticket(publisher, req,
-                          OnUi<Roe<BroadcastTicketResponse>>(
-                              ports_.post_ui, deferred_,
+                          OnOwner<Roe<BroadcastTicketResponse>>(
+                              ports_.post_owner, deferred_,
                               [this](Roe<BroadcastTicketResponse> response) { OnTicket(std::move(response)); }));
   };
   if (!ports_.reach_peer) {
     request();
     return;
   }
-  ports_.reach_peer(publisher, OnUi<Roe<void>>(ports_.post_ui, deferred_, [this, request](Roe<void> reached) {
+  ports_.reach_peer(publisher, OnOwner<Roe<void>>(ports_.post_owner, deferred_, [this, request](Roe<void> reached) {
                       if (!reached) {
                         Fail("publisher unreachable: " + reached.error().message);
                         return;
@@ -303,8 +303,8 @@ void BroadcastViewerWorkflow::AskAdmission(const std::string& hop) {
   request.redirect_budget = ladder_->RedirectBudget();
   request.path_stamp = ladder_->PathStamp();
   ports_.request_admission(hop, request,
-                           OnUi<Roe<BroadcastViewerAttachResult>>(
-                               ports_.post_ui, deferred_, [this, hop](Roe<BroadcastViewerAttachResult> result) {
+                           OnOwner<Roe<BroadcastViewerAttachResult>>(
+                               ports_.post_owner, deferred_, [this, hop](Roe<BroadcastViewerAttachResult> result) {
                                  OnAdmission(hop, std::move(result));
                                }));
 }
@@ -369,20 +369,20 @@ void BroadcastViewerWorkflow::Attach(const std::string& hop) {
   };
   hooks.on_frame = [sink = sink_](MediaDataFrame frame) { sink->OnFrame(frame); };
 
-  auto on_ui = OnUi<Roe<MediaRelayAttached>>(ports_.post_ui, deferred_, [this, hop](Roe<MediaRelayAttached> attached) {
+  auto on_owner = OnOwner<Roe<MediaRelayAttached>>(ports_.post_owner, deferred_, [this, hop](Roe<MediaRelayAttached> attached) {
     OnAttached(hop, std::move(attached));
   });
-  // A Stop while AcceptAndAttach is on the wire drops `on_ui`; the relay may still attach — detach
+  // A Stop while AcceptAndAttach is on the wire drops `on_owner`; the relay may still attach — detach
   // it then so the client session does not leak. (A call attaching in that same window would be
   // detached too; l4c stops watching before a call takes media.)
   AttachToMediaRelayAsync(ports_.relay, std::move(request), std::move(hooks),
-                          [relay, on_ui, token = deferred_.token(), snap = deferred_.Snapshot()](
+                          [relay, on_owner, token = deferred_.token(), snap = deferred_.Snapshot()](
                               Roe<MediaRelayAttached> attached) {
                             if (attached && !DeferredSelf::Alive(token, snap)) {
                               relay->Detach();
                               return;
                             }
-                            on_ui(std::move(attached));
+                            on_owner(std::move(attached));
                           });
 }
 
@@ -411,9 +411,9 @@ void BroadcastViewerWorkflow::StartListening(const std::string& hop) {
   }
   if (lost_observer_ == 0) {
     lost_observer_ = relay->AddClientTransportLostObserver(
-        [post_ui = ports_.post_ui, token = deferred_.token(), snap = deferred_.Snapshot(),
+        [post_owner = ports_.post_owner, token = deferred_.token(), snap = deferred_.Snapshot(),
          this](MediaRelayClientLoss loss) {
-          post_ui([token, snap, this, loss]() {
+          post_owner([token, snap, this, loss]() {
             if (DeferredSelf::Alive(token, snap)) {
               OnSessionEnded(loss);
             }
@@ -457,8 +457,8 @@ void BroadcastViewerWorkflow::Recover() {
     RunLadder(ladder_->Start());
   };
   const auto backoff = kRecoveryBackoff * consecutive_losses_;
-  if (ports_.post_ui_after) {
-    ports_.post_ui_after(backoff, deferred_.Bind(readmit));
+  if (ports_.post_owner_after) {
+    ports_.post_owner_after(backoff, deferred_.Bind(readmit));
   } else {
     PostUi(readmit);
   }

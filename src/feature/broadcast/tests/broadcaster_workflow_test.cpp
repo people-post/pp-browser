@@ -46,18 +46,15 @@ protected:
     p.clear_program_key = [this](const std::string& program, const std::string& join) {
       cleared_.push_back(program + "|" + join);
     };
-    p.announce = [this](const BroadcastTipDraft& draft) -> Roe<void> {
+    p.announce = [this](const BroadcastTipDraft& draft, std::function<void(Roe<void>)> on_done) {
       tips_.push_back(draft);
-      if (announce_fails_) {
-        return Error("peer-announce not ready");
-      }
-      return {};
+      on_done(announce_fails_ ? Roe<void>(Error("peer-announce not ready")) : Roe<void>());
     };
     p.relay.relay = &relay_;
     p.relay.dial = &dial_;
     p.engine = &engine_;
-    p.post_ui = [this](std::function<void()> task) { ui_.push_back(std::move(task)); };
-    p.post_ui_after = [this](std::chrono::milliseconds, std::function<void()> task) { ui_.push_back(std::move(task)); };
+    p.post_owner = [this](std::function<void()> task) { ui_.push_back(std::move(task)); };
+    p.post_owner_after = [this](std::chrono::milliseconds, std::function<void()> task) { ui_.push_back(std::move(task)); };
     return p;
   }
 

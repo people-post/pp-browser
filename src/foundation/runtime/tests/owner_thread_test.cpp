@@ -178,6 +178,63 @@ TEST_F(OwnerThreadTest, PostsBeforeInitializeOrAfterShutdownAreDropped) {
   AppRuntime::Initialize();
 }
 
+// RunAndWait (t2b): a component's lifecycle edge driven from another thread runs on the owner and
+// the caller waits; if the gate drops the post, the caller stands in for the owner.
+TEST_F(OwnerThreadTest, RunAndWaitRunsOnTheDedicatedOwnerAndWaits) {
+  Start(OwnerThreadMode::Dedicated);
+  std::atomic<bool> first{false};
+  AppRuntime::PostTo(OwnerThreadId::MediaSessions, [&] {
+    std::this_thread::sleep_for(20ms);
+    first = true;
+  });
+  bool on_owner = false;
+  bool after_first = false;
+  AppRuntime::RunAndWait(OwnerThreadId::MediaSessions, [&] {
+    on_owner = AppRuntime::CurrentlyOn(OwnerThreadId::MediaSessions);
+    after_first = first.load();
+  });
+  EXPECT_TRUE(on_owner);
+  EXPECT_TRUE(after_first) << "queued behind earlier owner work";
+  EXPECT_FALSE(AppRuntime::CurrentlyOn(OwnerThreadId::MediaSessions));
+}
+
+TEST_F(OwnerThreadTest, RunAndWaitDrainsAManualOwner) {
+  Start(OwnerThreadMode::Manual);
+  bool ran = false;
+  AppRuntime::RunAndWait(OwnerThreadId::Connectivity, [&] {
+    ran = AppRuntime::CurrentlyOn(OwnerThreadId::Connectivity);
+  });
+  EXPECT_TRUE(ran);
+}
+
+TEST_F(OwnerThreadTest, RunAndWaitStandsInForTheOwnerWhenThePostIsDropped) {
+  Start(OwnerThreadMode::Dedicated);
+  ASSERT_TRUE(AppRuntime::QuiesceForTeardown(1s));
+  int runs = 0;
+  bool stand_in = false;
+  AppRuntime::RunAndWait(OwnerThreadId::MediaSessions, [&] {
+    ++runs;
+    stand_in = AppRuntime::CurrentlyOn(OwnerThreadId::MediaSessions);
+    PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  });
+  EXPECT_EQ(runs, 1);
+  EXPECT_TRUE(stand_in);
+  EXPECT_FALSE(AppRuntime::CurrentlyOn(OwnerThreadId::MediaSessions)) << "only for the task's duration";
+  AppRuntime::ReopenAfterTeardown();
+  EXPECT_TRUE(AppRuntime::DrainWorkersThenUI(1s));
+  EXPECT_EQ(runs, 1);
+}
+
+TEST_F(OwnerThreadTest, RunAndWaitWithoutAnOwnerRunsInline) {
+  Start(OwnerThreadMode::Manual);
+  AppRuntime::Shutdown();
+  bool stand_in = false;
+  AppRuntime::RunAndWait(OwnerThreadId::MediaSessions,
+                         [&] { stand_in = AppRuntime::CurrentlyOn(OwnerThreadId::MediaSessions); });
+  EXPECT_TRUE(stand_in);
+  AppRuntime::Initialize();
+}
+
 #ifndef NDEBUG
 TEST_F(OwnerThreadTest, AffinityAssertAbortsOffTheOwner) {
   GTEST_FLAG_SET(death_test_style, "threadsafe");

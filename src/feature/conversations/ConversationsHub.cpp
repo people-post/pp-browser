@@ -590,7 +590,8 @@ void ConversationsHub::ApplyMeshAdmissionPolicies() {
 
 
 void ConversationsHub::ResetBroadcast() {
-  broadcast_.reset();
+  broadcast_deferred_.Invalidate();  // announces still queued for UI drop
+  broadcast_.reset();  // its workflows end on the media-sessions owner (the destructor waits)
 }
 
 void ConversationsHub::RebuildBroadcast() {
@@ -637,6 +638,10 @@ void ConversationsHub::RebuildBroadcast() {
       return published.error();
     }
     return {};
+  };
+  // The broadcaster runs on the media-sessions owner; mesh messaging (the announce feed) is ours.
+  deps.post_announce = [this](std::function<void()> task) {
+    AppRuntime::PostUI(broadcast_deferred_.Bind(std::move(task)));
   };
   broadcast_ = BroadcastHub::ForMesh(std::move(deps), MediaDeviceArbiter::Default());
   if (!broadcast_) {

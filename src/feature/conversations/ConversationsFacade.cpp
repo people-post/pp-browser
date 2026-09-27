@@ -642,21 +642,28 @@ Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std:
 
 // --- Live broadcast viewer ---------------------------------------------------
 
-Roe<void> ConversationsFacade::WatchLiveAnnounce(const PeerAnnounceTip& tip) {
+void ConversationsFacade::WatchLiveAnnounce(const PeerAnnounceTip& tip, std::function<void(Roe<void>)> on_done) {
   auto* broadcast = hub_.Broadcast();
   if (!broadcast) {
-    return Error("Live broadcasts unavailable (mesh / media relay not ready)");
+    if (on_done) {
+      on_done(Error("Live broadcasts unavailable (mesh / media relay not ready)"));
+    }
+    return;
   }
-  return broadcast->WatchLive(tip);
+  broadcast->WatchLive(tip, std::move(on_done));
 }
 
-Roe<void> ConversationsFacade::WatchStoredLiveAnnounce(const std::string& peer_id, const std::string& topic_id,
-                                                       const std::string& program_id) {
+void ConversationsFacade::WatchStoredLiveAnnounce(const std::string& peer_id, const std::string& topic_id,
+                                                  const std::string& program_id,
+                                                  std::function<void(Roe<void>)> on_done) {
   auto tip = hub_.MeshMessaging().LatestAnnounceTip(peer_id, topic_id, program_id);
   if (!tip) {
-    return Error("No stored announce for that program");
+    if (on_done) {
+      on_done(Error("No stored announce for that program"));
+    }
+    return;
   }
-  return WatchLiveAnnounce(*tip);
+  WatchLiveAnnounce(*tip, std::move(on_done));
 }
 
 void ConversationsFacade::StopWatchingBroadcast() {
@@ -673,13 +680,16 @@ std::optional<BroadcastViewerWorkflow::Status> ConversationsFacade::BroadcastWat
   return broadcast->Viewer();
 }
 
-Roe<void> ConversationsFacade::GoLive(const std::string& topic_id, const std::string& program_id,
-                                      std::vector<std::string> hops) {
+void ConversationsFacade::GoLive(const std::string& topic_id, const std::string& program_id,
+                                 std::vector<std::string> hops, std::function<void(Roe<void>)> on_done) {
   auto* broadcast = hub_.Broadcast();
   if (!broadcast) {
-    return Error("Live broadcasts unavailable (mesh / media relay not ready)");
+    if (on_done) {
+      on_done(Error("Live broadcasts unavailable (mesh / media relay not ready)"));
+    }
+    return;
   }
-  return broadcast->GoLive(BroadcastLiveRequest{topic_id, program_id, std::move(hops)});
+  broadcast->GoLive(BroadcastLiveRequest{topic_id, program_id, std::move(hops)}, std::move(on_done));
 }
 
 void ConversationsFacade::EndLive() {

@@ -554,8 +554,11 @@ int RunBroadcaster(const std::string& listen_ma, const std::string& advertise_ho
   }
   own_key = *pk;
   auto* hub = h.Broadcast();
-  if (auto live = hub->GoLive({"pp-hard-bcast", program_id, {*hop_id}}); !live) {
-    std::cerr << "error: go-live: " << live.error().message << "\n";
+  std::optional<pbr::Roe<void>> live;
+  hub->GoLive({"pp-hard-bcast", program_id, {*hop_id}}, [&live](pbr::Roe<void> result) { live = std::move(result); });
+  h.PumpUntil([&] { return live.has_value(); }, 5000);
+  if (!live || !*live) {
+    std::cerr << "error: go-live: " << (live ? live->error().message : std::string("no answer")) << "\n";
     return 1;
   }
   using Phase = pbr::BroadcasterWorkflow::Phase;
@@ -643,8 +646,11 @@ int RunViewer(const std::string& listen_ma, const std::string& advertise_host, c
   }
   auto& h = **harness;
   auto* hub = h.Broadcast();
-  if (auto watch = hub->WatchLive(tip); !watch) {
-    std::cerr << "error: watch: " << watch.error().message << "\n";
+  std::optional<pbr::Roe<void>> watch;
+  hub->WatchLive(tip, [&watch](pbr::Roe<void> result) { watch = std::move(result); });
+  h.PumpUntil([&] { return watch.has_value(); }, 5000);
+  if (!watch || !*watch) {
+    std::cerr << "error: watch: " << (watch ? watch->error().message : std::string("no answer")) << "\n";
     return 1;
   }
   using Phase = pbr::BroadcastViewerWorkflow::Phase;

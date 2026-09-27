@@ -237,17 +237,21 @@ public:
    */
 
   // --- Live broadcast viewer (feature/broadcast — not a call; media-client-layers L013) ---
-  /** Listen to the live program a signed tip announces (replaces any current watch). UI thread. */
-  Roe<void> WatchLiveAnnounce(const PeerAnnounceTip& tip);
+  /**
+   * Listen to the live program a signed tip announces (replaces any current watch). UI thread;
+   * the broadcast owner answers through `on_done`, on UI.
+   */
+  void WatchLiveAnnounce(const PeerAnnounceTip& tip, std::function<void(Roe<void>)> on_done);
   /** Same, from the latest stored tip of that program. */
-  Roe<void> WatchStoredLiveAnnounce(const std::string& peer_id, const std::string& topic_id,
-                                    const std::string& program_id);
+  void WatchStoredLiveAnnounce(const std::string& peer_id, const std::string& topic_id,
+                               const std::string& program_id, std::function<void(Roe<void>)> on_done);
   void StopWatchingBroadcast();
   /** Current watch (phase, hop, error); nullopt while broadcast viewing is unavailable. */
   std::optional<BroadcastViewerWorkflow::Status> BroadcastWatchStatus();
 
-  /** Publish a program live through `hops` (media_relay nodes, preference order). UI thread. */
-  Roe<void> GoLive(const std::string& topic_id, const std::string& program_id, std::vector<std::string> hops);
+  /** Publish a program live through `hops` (media_relay nodes, preference order). UI thread; `on_done` on UI. */
+  void GoLive(const std::string& topic_id, const std::string& program_id, std::vector<std::string> hops,
+              std::function<void(Roe<void>)> on_done);
   void EndLive();
   /** Current show (phase, join handle, hop, frames sent); nullopt while broadcasting is unavailable. */
   std::optional<BroadcasterWorkflow::Status> BroadcastLiveStatus();

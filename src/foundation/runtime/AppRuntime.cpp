@@ -131,6 +131,55 @@ struct PendingPost {
   }
 };
 
+/** RunAndWait: set while the caller runs an owner's task in its stead. */
+thread_local std::array<int, kOwnerThreadCount> t_stand_in{};
+
+void RunStandingIn(const OwnerThreadId owner, const std::function<void()>& task) {
+  const size_t i = static_cast<size_t>(owner);
+  ++t_stand_in[i];
+  struct Leave {
+    size_t i;
+    ~Leave() { --t_stand_in[i]; }
+  } leave{i};
+  task();
+}
+
+/** Settles a RunAndWait: explicitly after the task ran, or when a dropped post destroys it. */
+struct RunAndWaitState {
+  std::mutex mu;
+  std::condition_variable cv;
+  bool settled = false;
+  bool ran = false;
+
+  void Settle(bool did_run) {
+    {
+      std::lock_guard lock(mu);
+      if (settled) {
+        return;
+      }
+      settled = true;
+      ran = did_run;
+    }
+    cv.notify_all();
+  }
+  bool IsSettled() {
+    std::lock_guard lock(mu);
+    return settled;
+  }
+  bool Ran() {
+    std::lock_guard lock(mu);
+    return settled && ran;
+  }
+};
+
+struct DropSettle {
+  explicit DropSettle(std::shared_ptr<RunAndWaitState> s) : state(std::move(s)) {}
+  DropSettle(const DropSettle&) = delete;
+  DropSettle& operator=(const DropSettle&) = delete;
+  ~DropSettle() { state->Settle(false); }
+  std::shared_ptr<RunAndWaitState> state;
+};
+
 /** Wrap `task` for the gate; empty result = drop the post. */
 std::function<void()> GateTask(std::function<void()> task, const GateKind kind) {
   uint64_t epoch = 0;
@@ -595,8 +644,46 @@ bool AppRuntime::HasOwner(const OwnerThreadId owner) {
 }
 
 bool AppRuntime::CurrentlyOn(const OwnerThreadId owner) {
+  if (t_stand_in[static_cast<size_t>(owner)] > 0) {
+    return true;
+  }
   auto target = OwnerFor(owner);
   return target && target->IsCurrent();
+}
+
+void AppRuntime::RunAndWait(const OwnerThreadId owner, const std::function<void()>& task) {
+  if (!task) {
+    return;
+  }
+  if (CurrentlyOn(owner)) {
+    task();
+    return;
+  }
+  auto target = OwnerFor(owner);
+  if (!target) {
+    RunStandingIn(owner, task);
+    return;
+  }
+  auto state = std::make_shared<RunAndWaitState>();
+  auto drop = std::make_shared<DropSettle>(state);
+  PostTo(owner, [&task, state, drop]() {
+    task();
+    state->Settle(true);
+  });
+  drop.reset();  // only the posted task (if queued) keeps it: dropping the task settles the wait
+  if (target->Mode() == OwnerThreadMode::Manual) {
+    // No thread: drain the owner on the caller up to (and past) our task.
+    while (!state->IsSettled() && RunOwnerTasks(owner) > 0) {
+    }
+  } else {
+    std::unique_lock lock(state->mu);
+    while (!state->cv.wait_for(lock, std::chrono::seconds(5), [&]() { return state->settled; })) {
+      logger().warning << "RunAndWait: " << target->Name() << " busy for >5s";
+    }
+  }
+  if (!state->Ran()) {
+    RunStandingIn(owner, task);  // dropped (teardown gate / owner stopping): nobody else runs its state
+  }
 }
 
 uint64_t AppRuntime::ScheduleOn(const OwnerThreadId owner, const std::chrono::milliseconds delay,
@@ -647,7 +734,7 @@ bool AppRuntime::OwnerThreadsManual() {
 
 void AppRuntime::AssertOn(const OwnerThreadId owner, const char* where) {
   auto target = OwnerFor(owner);
-  if (!target || target->IsCurrent()) {
+  if (!target || CurrentlyOn(owner)) {
     return;
   }
   logger().error << "owner-thread affinity violated: " << (where ? where : "?") << " must run on "

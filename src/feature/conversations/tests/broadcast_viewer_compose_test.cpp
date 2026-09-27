@@ -158,8 +158,8 @@ protected:
     p.relay.relay = viewer_relay_.get();
     p.relay.dial = &dial_;
     p.engine = engine_.get();
-    p.post_ui = [this](std::function<void()> task) { ui_.push_back(std::move(task)); };
-    p.post_ui_after = [this](std::chrono::milliseconds, std::function<void()> task) { ui_.push_back(std::move(task)); };
+    p.post_owner = [this](std::function<void()> task) { ui_.push_back(std::move(task)); };
+    p.post_owner_after = [this](std::chrono::milliseconds, std::function<void()> task) { ui_.push_back(std::move(task)); };
     p.now_ms = []() {
       return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
           .count();
@@ -313,14 +313,14 @@ TEST_F(BroadcastViewerComposeTest, BroadcasterToRelayToViewerEndToEnd) {
   bp.clear_program_key = [this](const std::string& program, const std::string& join) {
     server_->ClearLiveProgramKey(program, join);
   };
-  bp.announce = [&tips](const BroadcastTipDraft& draft) -> Roe<void> {
+  bp.announce = [&tips](const BroadcastTipDraft& draft, std::function<void(Roe<void>)> on_done) {
     tips.push_back(draft);
-    return {};
+    on_done({});
   };
   bp.relay.relay = publisher_client.get();
   bp.relay.dial = &dial_;
   bp.engine = &capture;
-  bp.post_ui = [this](std::function<void()> task) { ui_.push_back(std::move(task)); };
+  bp.post_owner = [this](std::function<void()> task) { ui_.push_back(std::move(task)); };
   auto broadcaster = std::make_unique<BroadcasterWorkflow>(bp);
 
   ASSERT_TRUE(broadcaster->GoLive({"topic", "show-e2e", {hop_}}));

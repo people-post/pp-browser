@@ -8,6 +8,8 @@
 #include "foundation/crypto/MlDsa.h"
 #include "feature/broadcast/tests/broadcast_test_fakes.h"
 
+#include "foundation/runtime/AppRuntime.h"
+
 #include <gtest/gtest.h>
 #include <opus.h>
 
@@ -95,8 +97,8 @@ protected:
     p.relay.relay = &relay_;
     p.relay.dial = &dial_;
     p.engine = &engine_;
-    p.post_ui = [this](std::function<void()> task) { ui_.push_back(std::move(task)); };
-    p.post_ui_after = [this](std::chrono::milliseconds, std::function<void()> task) { ui_.push_back(std::move(task)); };
+    p.post_owner = [this](std::function<void()> task) { ui_.push_back(std::move(task)); };
+    p.post_owner_after = [this](std::chrono::milliseconds, std::function<void()> task) { ui_.push_back(std::move(task)); };
     p.now_ms = []() { return kNow; };
     return p;
   }
@@ -362,7 +364,10 @@ TEST_F(BroadcastViewerWorkflowTest, HubWatchesALiveTipAndStopsOnDestruction) {
     BroadcastHub hub(Ports(), devices_);
     int changes = 0;
     hub.SetOnChanged([&changes]() { ++changes; });
-    ASSERT_TRUE(hub.WatchLive(tip));
+    // No runtime here: the hub runs its steps inline and answers at once.
+    std::optional<Roe<void>> watched;
+    hub.WatchLive(tip, [&watched](Roe<void> result) { watched = std::move(result); });
+    ASSERT_TRUE(watched && *watched);
     Drain();
     EXPECT_TRUE(hub.IsWatching());
     EXPECT_EQ(hub.Viewer().phase, Phase::Listening);
@@ -372,11 +377,50 @@ TEST_F(BroadcastViewerWorkflowTest, HubWatchesALiveTipAndStopsOnDestruction) {
     }
     EXPECT_EQ(devices_.Holders(MediaDeviceKind::Speaker), std::vector<std::string>{kJoin});
     tip.state = PeerAnnounceState::Ended;
-    EXPECT_FALSE(hub.WatchLive(tip)) << "an ended program is not watchable";
+    std::optional<Roe<void>> refused;
+    hub.WatchLive(tip, [&refused](Roe<void> result) { refused = std::move(result); });
+    ASSERT_TRUE(refused);
+    EXPECT_FALSE(*refused) << "an ended program is not watchable";
     EXPECT_TRUE(hub.IsWatching()) << "a refused tip leaves the current watch alone";
   }
   EXPECT_FALSE(relay_.attached);
   EXPECT_TRUE(devices_.Holders(MediaDeviceKind::Speaker).empty());
+}
+
+// thread-ownership t2b-4: hub steps run on the media-sessions owner; the GUI reads a snapshot and
+// hears results on UI; the workflows end on the owner when the hub goes.
+TEST_F(BroadcastViewerWorkflowTest, HubStepsRunOnTheMediaSessionsOwner) {
+  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::InitializeUI();
+  admission_.emplace("hop", Admit("hop"));
+  PeerAnnounceTip tip;
+  tip.peer_id = kPublisher;
+  tip.program_id = kProgram;
+  tip.join_handle = kJoin;
+  tip.state = PeerAnnounceState::Live;
+  tip.hop_peer_id = "hop";
+  {
+    BroadcastHub hub(Ports(), devices_);
+    std::optional<Roe<void>> watched;
+    bool answered_on_ui = false;
+    hub.WatchLive(tip, [&](Roe<void> result) {
+      watched = std::move(result);
+      answered_on_ui = AppRuntime::CurrentlyOnUI();
+    });
+    EXPECT_FALSE(watched) << "the intent waits for the owner";
+    EXPECT_EQ(hub.Viewer().phase, Phase::Idle) << "the snapshot is the owner's last step";
+    AppRuntime::RunUIAndOwnerTasks();
+    ASSERT_TRUE(watched && *watched);
+    EXPECT_TRUE(answered_on_ui);
+    EXPECT_NE(hub.Viewer().phase, Phase::Idle) << "published after the owner's step";
+    Drain();
+    AppRuntime::RunUIAndOwnerTasks();
+    EXPECT_EQ(hub.Viewer().phase, Phase::Listening);
+    EXPECT_TRUE(relay_.attached);
+  }
+  EXPECT_FALSE(relay_.attached) << "the watch ended on the owner before the hub went";
+  AppRuntime::ShutdownUI();
+  AppRuntime::Shutdown();
 }
 
 TEST(BroadcastWatchTargetTest, OnlyLiveProgramTipsAreWatchable) {

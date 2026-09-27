@@ -916,6 +916,8 @@ Roe<void> ProductStackHarness::EnableBroadcast(
               << std::endl;
     return {};
   };
+  // Like the product hub: the announce runs on the harness's (UI) thread, which reads last_tip_.
+  deps.post_announce = [](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); };
   broadcast_devices_ = std::make_unique<MediaDeviceArbiter>(CreateNullMediaDeviceBackend());
   broadcast_ = BroadcastHub::ForMesh(std::move(deps), *broadcast_devices_);
   if (!broadcast_) {

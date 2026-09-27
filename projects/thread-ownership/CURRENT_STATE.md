@@ -7,14 +7,14 @@
 
 | Phase | State |
 |-------|-------|
-| t2b — calls on the owner | t2b-1 `CallsThread`; t2b-2 GUI boundary (intents post, `CallUiState` snapshot); t2b-3 flipped to the media-sessions owner, hub lifecycle edges via `RunAndWait`. TSan 10 → 3 in the call suites; hard-w5 green |
+| t2b — media sessions on the owner | t2b-1 `CallsThread`; t2b-2 GUI boundary (intents post, `CallUiState` snapshot); t2b-3 calls flipped to the media-sessions owner, hub lifecycle edges via `RunAndWait`; t2b-4 broadcast on the same owner (`BroadcastUiState`, async announce). TSan 10 → 3 in the call suites, 0 in broadcast; hard-w5 green |
 | t2a step B — entry points | Done: accept parks asynchronously; Accept / Decline / Leave, inbound control, roster fan-out, hop-migrate steps on the media-sessions owner; call tests in Manual mode; hard-w5 green |
 | t2a step A — ports | Done: ports bound once, swapped as snapshots; TSan 1,347 → 24 → 10 in the call suites |
 | t1 — primitive | Done: owner threads in `AppRuntime` (Dedicated / Manual), affinity assert, naming hook, gate fix, THREADING.md rules. Nothing runs on them yet |
 
 ## Next
 
-**t2b-4** — broadcast hub on the media-sessions owner (workflows' `post_ui` ports, facade intents, GUI snapshot). Then **t3** (connectivity owner; MeshControl peer-reach prefetch moves there).
+**t3** — connectivity owner: `MeshMediaPlane`, `PeerReachCoordinator`, `ReachabilityEngine` onto it; the MeshControl peer-reach prefetch moves there; the calls owner's `CallStackDeps` providers read a connectivity snapshot instead of the hub's `mesh()`.
 
 ## Known (motivating)
 

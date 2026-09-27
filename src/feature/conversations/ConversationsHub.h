@@ -21,6 +21,7 @@
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/InitiationBillingStore.h"
 #include "feature/broadcast/BroadcastHub.h"
+#include "foundation/runtime/DeferredSelf.h"
 #include "domain/mesh/media_plane/MeshMediaPlane.h"
 #include "feature/calls/CallStack.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
@@ -414,6 +415,8 @@ private:
   // Borrows mesh links, mesh_media_'s relay objects and mesh_messaging_ — declared after them so
   // it is destroyed first (also reset explicitly in StopMesh / before relay rewires).
   std::unique_ptr<BroadcastHub> broadcast_;
+  /** Guards announces posted to UI for the current broadcast hub (invalidated on reset). */
+  DeferredSelf broadcast_deferred_;
   std::function<void()> on_broadcast_changed_;
   std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
   std::string mesh_last_error_;

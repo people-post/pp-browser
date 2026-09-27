@@ -35,7 +35,7 @@ Roe<BroadcastWatchTarget> BroadcastWatchTargetFromTip(const PeerAnnounceTip& tip
 /**
  * What the viewer needs from the process, in its own words. Wired by the app from neutral mesh
  * objects and the broadcast RPC client; faked in gtests. Async completions may arrive on any
- * thread — the workflow hops to UI through `post_ui`.
+ * thread — the workflow hops to its owner through `post_owner`.
  */
 struct BroadcastViewerPorts {
   /** Mesh PeerId tickets bind to. */
@@ -55,10 +55,11 @@ struct BroadcastViewerPorts {
   MediaRelayAttachPorts relay;
   /** Dial hint for a hop (may return empty). */
   std::function<std::string(const std::string& hop_peer_id)> hop_multiaddr;
-  /** Playback-only session target (UI thread for Start / Stop; OnSfuPacket any thread). */
+  /** Playback-only session target (owner for Start / Stop; OnSfuPacket any thread). */
   CallMediaEngine* engine = nullptr;
-  std::function<void(std::function<void()>)> post_ui;
-  std::function<void(std::chrono::milliseconds, std::function<void()>)> post_ui_after;
+  /** Onto the thread that owns the workflow (the media-sessions owner in the product). */
+  std::function<void(std::function<void()>)> post_owner;
+  std::function<void(std::chrono::milliseconds, std::function<void()>)> post_owner_after;
   std::function<int64_t()> now_ms;
 };
 
@@ -68,9 +69,9 @@ struct BroadcastViewerPorts {
  * publisher stream → playback-only engine session. Re-admits from the ladder on relay loss
  * (bounded, backed off). No call objects, no ringing.
  *
- * Threading: every public method and all state on the UI thread; completions are posted to UI
- * and dropped once Stop / a newer Watch invalidated them. Frames are opened on the mesh IO thread
- * and handed to the engine (thread-safe).
+ * Threading: every public method and all state on the owner (`post_owner`: the media-sessions
+ * owner); completions are posted there and dropped once Stop / a newer Watch invalidated them.
+ * Frames are opened on the mesh IO thread and handed to the engine (thread-safe).
  */
 class BroadcastViewerWorkflow {
 public:
@@ -97,7 +98,7 @@ public:
   Roe<void> Watch(BroadcastWatchTarget target);
   void Stop();
   const Status& CurrentStatus() const { return status_; }
-  /** UI thread, after every phase change. */
+  /** On the owner, after every phase change. */
   void SetOnStatusChanged(std::function<void()> callback) { on_status_changed_ = std::move(callback); }
 
   static const char* PhaseName(Phase phase);
