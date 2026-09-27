@@ -27,3 +27,14 @@
 **Rationale:** The owner may only do non-blocking work, and the only real blocking in the call flows was the park wait; the send path was already asynchronous.
 **Consequence:** UI-owned call pieces (lifecycle, bridge, seat, topology completions) still share state with the owner until t2b.
 
+
+## T004 — Waits between owners go downward only; mesh waits are completions
+
+**Date:** 2026-09-27
+**Status:** Accepted (t2b-3, t3-1, t3-2)
+**Decision:**
+- **Hierarchy:** UI → Media sessions → Connectivity → Mesh I/O. A component's lifecycle edge (build, rewire, reset, teardown) may `AppRuntime::RunAndWait` on an owner **below** its caller: the hub (UI) on the calls owner (`CallsThread::RunAndWait`) or on connectivity (`MeshMediaPlane` edges); the calls owner on connectivity (plane hooks). Upward is always a post (results, notices, hub callbacks). Nothing below waits on anything above, so a wait cannot close a cycle.
+- **Steady-state traffic never waits:** intents, notices and completions are posts; `RunAndWait` is for the edges where the caller must know the owner's objects are rebound or gone before it continues (L015 sequencing, destruction).
+- **No thread waits on the mesh.** Dials, associations, probes, key arrivals and blob fetches are completions (`EnsureAssociation` callbacks, `PostAfter` deadlines, parked continuations on the owner). MeshControl is retired (t3-1); `AmpParkUntil` remains only where the waiter is the sole Amp driver (manual-drive test harnesses).
+- **Dropped posts:** when the teardown gate drops a `RunAndWait` post, the caller runs the step itself and counts as the owner (`CurrentlyOn`) for its duration.
+**Rationale:** Owners stay responsive (no blocking) while the few ordering-critical edges keep synchronous semantics; a fixed direction makes deadlock structurally impossible rather than something each call site must argue.

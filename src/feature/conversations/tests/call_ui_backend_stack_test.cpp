@@ -391,7 +391,7 @@ TEST_F(CallUiBackendStackTest, InviteAcceptMediaPathThroughBackend) {
   EXPECT_TRUE(stack_->MediaEngine()->IsActive()) << "phase=" << CallPhaseName(ui_->Phase())
                                                  << " err=" << ui_->LastError();
   EXPECT_EQ(stack_->MediaEngine()->ActiveCallId(), call_id);
-  // Peer reach settles on the Coordinator, so the dial follows StartSfu asynchronously.
+  // Peer reach settles on the Connectivity owner, so the dial follows StartSfu asynchronously.
   DrainUntil([&]() { return transport_->connect_async_calls >= 1 || ui_->Phase() == CallPhase::ConnectFailed; });
   EXPECT_GE(transport_->connect_async_calls, 1) << "phase=" << CallPhaseName(ui_->Phase())
                                                 << " err=" << ui_->LastError();

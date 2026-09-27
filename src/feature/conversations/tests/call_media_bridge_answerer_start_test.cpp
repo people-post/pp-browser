@@ -221,7 +221,7 @@ public:
   void TryEnsurePeerReachableAsync(const std::string& peer_key,
                                         std::function<void(Roe<void>)> on_done,
                                         bool /*allow_circuit*/ = true) override {
-    // Runs on the Coordinator (PeerReachCoordinator) while the test thread reads the fields.
+    // Runs on the Connectivity owner (PeerReachCoordinator) while the test thread reads the fields.
     ++call_media_ensure_calls;
     {
       std::lock_guard lock(mu);

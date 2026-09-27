@@ -172,20 +172,25 @@ void CallStack::BindMeshMediaHooks() {
   if (!shared) {
     return;
   }
+  // The plane runs these on the connectivity owner / Amp IO: hop to the calls owner.
   // H011: the rendezvous R1 our circuit reach chose is announced to the call peer.
   shared->SetOnRelayChosen([this](const std::string& circuit_r1) {
-    if (call_sessions_) {
-      call_sessions_->AnnounceCircuitR1(circuit_r1);
-    }
+    CallsThread::Post([this, circuit_r1]() {
+      if (call_sessions_) {
+        call_sessions_->AnnounceCircuitR1(circuit_r1);
+      }
+    });
   });
   // H012: when Amp introducers are exhausted, exchange punch candidates over call-control.
   shared->SetSignalingPunch([this](const std::string& target_peer_id, const std::vector<std::string>& my_addrs,
                                    std::function<void(Roe<void>)> on_done) {
-    if (!call_sessions_) {
-      on_done(Error("Calls unavailable"));
-      return;
-    }
-    call_sessions_->RequestSignalingPunch(target_peer_id, my_addrs, std::move(on_done));
+    CallsThread::Post([this, target_peer_id, my_addrs, on_done = std::move(on_done)]() mutable {
+      if (!call_sessions_) {
+        on_done(Error("Calls unavailable"));
+        return;
+      }
+      call_sessions_->RequestSignalingPunch(target_peer_id, my_addrs, std::move(on_done));
+    });
   });
 }
 

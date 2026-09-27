@@ -1,4 +1,5 @@
 #include "feature/calls/CallMediaPlane.h"
+#include "feature/calls/CallsThread.h"
 
 #include "foundation/data/MeshRole.h"
 
@@ -82,7 +83,7 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
   deps.peer_has_media_relay = deps_.peer_has_media_relay;
   deps.list_media_relay_peers = deps_.list_media_relay_peers;
   MeshMediaPlane* mesh_media = mesh_media_;
-  deps.resolve_remote_listen_by_peer = [mesh_media]() { return mesh_media->PeerListenBook(); };
+  deps.resolve_remote_listen_by_peer = [mesh_media]() { return *mesh_media->PeerListenBook(); };
   deps.peer_lan_confirmed = [mesh_media](const std::string& peer_id) { return mesh_media->PeerLanConfirmed(peer_id); };
   if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos ||
       deps.local_listen_multiaddr.find("/ip6/::/") != std::string::npos) {
@@ -183,10 +184,17 @@ void CallMediaPlane::RegisterCallPeerListenMultiaddrs(const std::string& identit
   if (!mesh_media_) {
     return;
   }
-  const std::string peer_id = mesh_media_->RegisterPeerListenMultiaddrs(identity, multiaddrs);
-  if (!peer_id.empty() && identity.rfind("account:", 0) == 0 && deps_.note_mesh_peer_id_for_relay) {
-    deps_.note_mesh_peer_id_for_relay(identity, peer_id);
+  if (identity.rfind("account:", 0) != 0 || !deps_.note_mesh_peer_id_for_relay) {
+    mesh_media_->RegisterPeerListenMultiaddrs(identity, multiaddrs);
+    return;
   }
+  // Registered on the connectivity owner; the account → PeerId note is call state (calls owner).
+  mesh_media_->RegisterPeerListenMultiaddrs(
+      identity, multiaddrs, [identity, note = deps_.note_mesh_peer_id_for_relay](const std::string& peer_id) {
+        if (!peer_id.empty()) {
+          CallsThread::Post([identity, note, peer_id]() { note(identity, peer_id); });
+        }
+      });
 }
 
 } // namespace pbr

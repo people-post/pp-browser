@@ -7,6 +7,7 @@
 
 | Phase | State |
 |-------|-------|
+| t3-2a — connectivity owner: reach + mesh media plane | `PeerReachCoordinator` on it; `MeshMediaPlane` edges `RunAndWait`, listen book snapshot, relay-chosen / punch hooks hop owner to owner; T004 (waits downward only). TSan clean; hard-w5 green |
 | t3-1 — MeshControl retired | Mesh waits are completions (dial-back walk, inbound call-media key, CAS tip fetch); L4 inbound work on workers; mesh stop joins MeshPump before freeing L4. TSan clean in call / broadcast / chat / mesh suites; hard-w5 green |
 | t2b — media sessions on the owner | t2b-1 `CallsThread`; t2b-2 GUI boundary (intents post, `CallUiState` snapshot); t2b-3 calls flipped to the media-sessions owner, hub lifecycle edges via `RunAndWait`; t2b-4 broadcast on the same owner (`BroadcastUiState`, async announce). TSan 10 → 3 in the call suites, 0 in broadcast; hard-w5 green |
 | t2a step B — entry points | Done: accept parks asynchronously; Accept / Decline / Leave, inbound control, roster fan-out, hop-migrate steps on the media-sessions owner; call tests in Manual mode; hard-w5 green |
@@ -15,7 +16,7 @@
 
 ## Next
 
-**t3-2** — connectivity owner: `MeshMediaPlane`, `PeerReachCoordinator` (off the Coordinator strand), `ReachabilityEngine` onto it; the calls owner's `CallStackDeps` providers read a connectivity snapshot instead of the hub's `mesh()`.
+**t3-2b** — candidate policy computed on connectivity (snapshot for the IO side). Then **t3-2c** — `ReachabilityEngine` on connectivity; `CallStackDeps` providers read a connectivity snapshot.
 
 ## Known (motivating)
 
