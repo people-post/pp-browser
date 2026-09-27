@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <thread>
 #include <utility>
@@ -18,6 +19,7 @@ namespace pbr {
 namespace {
 
 std::atomic<int> g_ringtone_playback_device_holders{0};
+std::function<void()> g_before_open_hook_for_testing;
 
 bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
   const std::string path = IAssetLocator::Instance().Resolve("sounds/call_ring.wav");
@@ -78,6 +80,14 @@ bool CallRingtone::PlaybackDeviceHeld() {
   return g_ringtone_playback_device_holders.load(std::memory_order_acquire) > 0;
 }
 
+void CallRingtone::SetBeforeOpenHookForTesting(std::function<void()> hook) {
+  g_before_open_hook_for_testing = std::move(hook);
+}
+
+int CallRingtone::PlaybackDeviceHoldersForTesting() {
+  return g_ringtone_playback_device_holders.load(std::memory_order_acquire);
+}
+
 void CallRingtone::WaitUntilPlaybackDeviceReleased(const int timeout_ms) {
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::milliseconds(std::max(0, timeout_ms));
@@ -110,26 +120,32 @@ void CallRingtone::Start() {
       return;
     }
   }
-  // Mint a fresh release flag + completion signal for this generation — never reused
-  // across Start() calls — and hand the new worker the PREVIOUS generation's completion
-  // signal (null on the first Start()) so it can wait for that worker to fully release
-  // the session before touching it itself. See RunLoop / SetReleaseSessionOnStop docs.
+  // Mint a fresh stop flag + release flag + completion signal for this generation —
+  // never reused across Start() calls — and hand the new worker the PREVIOUS generation's
+  // completion signal (null on the first Start()) so it can wait for that worker to fully
+  // release the session before touching it itself. The previous generation's own stop
+  // flag was already set by RequestStop above and is never reset, so it cannot be revived
+  // by this Start(). See RunLoop / SetReleaseSessionOnStop docs.
   const std::shared_ptr<std::atomic<bool>> previous_done = current_done_;
+  current_stop_ = std::make_shared<std::atomic<bool>>(false);
   current_release_ = std::make_shared<std::atomic<bool>>(true);
   current_done_ = std::make_shared<std::atomic<bool>>(false);
-  stop_ = false;
   playing_ = true;
-  thread_ = std::thread(
-      [this, previous_done, release = current_release_, done = current_done_]() {
-        RunLoop(previous_done, release, done);
-      });
+  thread_ = std::thread([this, previous_done, stop = current_stop_,
+                         release = current_release_, done = current_done_]() {
+    RunLoop(previous_done, stop, release, done);
+  });
 }
 
 void CallRingtone::RequestStop(const bool wait) {
-  stop_ = true;
   std::thread finishing;
   {
     std::lock_guard lock(mutex_);
+    // Only the CURRENT generation needs signalling: every older one had its own flag set
+    // when it was superseded (Start() always goes through here first).
+    if (current_stop_) {
+      current_stop_->store(true);
+    }
     playing_ = false;
     if (thread_.joinable()) {
       finishing = std::move(thread_);
@@ -241,6 +257,7 @@ bool CallRingtone::StopAndJoin(std::chrono::milliseconds budget) {
 }
 
 void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done,
+                           std::shared_ptr<std::atomic<bool>> stop,
                            std::shared_ptr<std::atomic<bool>> release_on_stop,
                            std::shared_ptr<std::atomic<bool>> done) {
   // Cross-generation ordering rules for OutgoingRingback (a fast cancel-then-redial can
@@ -255,6 +272,21 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done,
   //  3. `done` is set as literally the last step on every exit path (including early
   //     failures), so whichever generation starts next — if any — has something to wait
   //     on and is never blocked by one that ran but never played.
+  //  4. `stop` belongs to this generation alone (minted fresh in Start(), set by
+  //     RequestStop while we are current, never reset). A later Start() therefore cannot
+  //     un-stop us: if we were stopped while still inside SDL_OpenAudioDeviceStream, we
+  //     skip the activate and the refill loop no matter how many redials happened since.
+  //  5. `playing_` is shared across generations and owned by the UI side (Start sets it,
+  //     RequestStop clears it). A worker only clears it on an early failure, and only
+  //     while it is still the current (un-stopped) generation — checked under mutex_,
+  //     the same lock RequestStop/Start use — so an old worker exiting can never make
+  //     IsPlaying() report false for a newer generation that is still playing.
+  const auto clear_playing_if_current = [this, &stop]() {
+    std::lock_guard lock(mutex_);
+    if (!stop->load()) {
+      playing_ = false;
+    }
+  };
   const auto signal_done = [&done]() {
     if (done) {
       done->store(true, std::memory_order_release);
@@ -263,7 +295,7 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done,
 
   if (!EnsureSdlAudioSubsystem()) {
     SDL_Log("CallRingtone: SDL_InitSubSystem(AUDIO) failed: %s", SDL_GetError());
-    playing_ = false;
+    clear_playing_if_current();
     signal_done();
     return;
   }
@@ -272,10 +304,13 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done,
   want.format = SDL_AUDIO_S16;
   want.channels = static_cast<Uint8>(wav_channels_);
   SDL_Log("CallRingtone: opening playback driver=%s", SDL_GetCurrentAudioDriver());
+  if (g_before_open_hook_for_testing) {
+    g_before_open_hook_for_testing();
+  }
   SDL_AudioStream* stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr);
   if (!stream) {
     SDL_Log("CallRingtone: playback open failed: %s", SDL_GetError());
-    playing_ = false;
+    clear_playing_if_current();
     signal_done();
     return;
   }
@@ -299,7 +334,7 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done,
                 "2000ms — activating anyway");
       }
     }
-    if (!stop_.load()) {
+    if (!stop->load()) {
       // SDL rewrites the AVAudioSession when it opens a device, so activate the VoIP
       // session after opening the stream (routes phones to the earpiece).
       CallAudioSession::ActivateForVoipCall();
@@ -309,7 +344,7 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done,
   SDL_Log("CallRingtone: playing loop freq=%d ch=%d bytes=%zu", wav_freq_, wav_channels_,
           wav_pcm_.size());
 
-  while (!stop_.load()) {
+  while (!stop->load()) {
     const int queued = SDL_GetAudioStreamQueued(stream);
     if (queued < want.freq * static_cast<int>(sizeof(int16_t)) / 2) {
       (void)SDL_PutAudioStreamData(stream, wav_pcm_.data(), static_cast<int>(wav_pcm_.size()));
@@ -328,7 +363,8 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done,
     CallAudioSession::Deactivate();
   }
   g_ringtone_playback_device_holders.fetch_sub(1, std::memory_order_acq_rel);
-  playing_ = false;
+  // No playing_ write here: the loop only exits once `stop` is set, and RequestStop
+  // already cleared playing_ at that moment (rule 5).
   signal_done();
 }
 
