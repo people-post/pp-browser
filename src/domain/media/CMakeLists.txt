@@ -72,6 +72,11 @@ else()
   endif()
 endif()
 
+option(PP_BROWSER_CALL_DENOISE "Run the capture-side noise suppressor in calls" ON)
+if(PP_BROWSER_CALL_DENOISE)
+  target_compile_definitions(pp_domain_media PRIVATE PP_BROWSER_CALL_DENOISE=1)
+endif()
+
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)
 endif()

@@ -5,6 +5,7 @@
 #include "domain/media/CallRingtone.h"
 #include "domain/media/CameraCaptureOrientation.h"
 #include "domain/media/IVideoCodec.h"
+#include "domain/media/NoiseSuppressor.h"
 #include "domain/media/SdlAudioBootstrap.h"
 #include "domain/media/VideoYuv.h"
 #include "common/Utilities.h"
@@ -200,6 +201,10 @@ struct CallMediaEngine::Impl {
   std::atomic<uint64_t> fec_frames_total{0};
 
   bool capture_available = false;
+#ifdef PP_BROWSER_CALL_DENOISE
+  NoiseSuppressor denoise;
+  int64_t last_denoise_log_ms = 0;
+#endif
 
   OpusEncoder* encoder = nullptr;
   SDL_AudioStream* capture_stream = nullptr;
@@ -796,6 +801,9 @@ struct CallMediaEngine::Impl {
       capture_available = new_capture_ok;
       playback_stream = new_playback;
       playback_device = new_playback_dev;
+#ifdef PP_BROWSER_CALL_DENOISE
+      denoise.Reset();
+#endif
     }
     return {};
   }
@@ -900,6 +908,14 @@ struct CallMediaEngine::Impl {
               std::fill(pcm.begin(), pcm.end(), int16_t{0});
               SmoothLevel(local_input_level, 0.f);
             } else {
+#ifdef PP_BROWSER_CALL_DENOISE
+              denoise.Process(pcm.data(), pcm.size());
+              const int64_t now_ms = util::NowUnixMs();
+              if (now_ms - last_denoise_log_ms >= 5000) {
+                last_denoise_log_ms = now_ms;
+                SDL_Log("CallMediaEngine: noise_floor_dbfs=%.1f", denoise.last_noise_floor_dbfs());
+              }
+#endif
               SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
             }
           }
