@@ -89,6 +89,17 @@ CallMediaSessionPhase CallMediaAmpTransport::Phase() const {
   return coordinator_.Phase();
 }
 
+void CallMediaAmpTransport::MigrateTo(const CallMediaLinkKind kind, std::function<void(Roe<void>)> done) {
+  const CallMediaLegId leg = ActiveLegId();
+  if (!leg) {
+    if (done) {
+      done(Error("call-media migrate: no active leg"));
+    }
+    return;
+  }
+  coordinator_.MigrateLegToKind(leg, kind, std::move(done));
+}
+
 CallMediaLinkKind CallMediaAmpTransport::ActiveLinkKind() const {
   return coordinator_.ActiveLinkKind();
 }

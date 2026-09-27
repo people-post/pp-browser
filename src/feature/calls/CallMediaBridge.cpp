@@ -349,7 +349,12 @@ void CallMediaBridge::Apply(CallDirectPlannerEvent ev, const std::string& call_i
   case CallDirectPlannerEvent::KeyReady:
   case CallDirectPlannerEvent::ReleaseTransport:
   case CallDirectPlannerEvent::Stop:
+    break;
   case CallDirectPlannerEvent::PathMigrated:
+    // A TX-only call that moved (k3-4) is connected again on its new path: chrome follows.
+    if (out.decision == CallDirectPlannerDecision::Transition && arming_.on_connected) {
+      arming_.on_connected(call_id);
+    }
     break;
   }
 }
@@ -464,6 +469,13 @@ void CallMediaBridge::OnDirectUpgradeFire() {
       ScheduleDirectUpgrade();
     });
   });
+}
+
+void CallMediaBridge::CancelEscalateReach() {
+  if (escalate_reach_id_ != 0) {
+    reach_.Cancel(escalate_reach_id_);
+    escalate_reach_id_ = 0;
+  }
 }
 
 void CallMediaBridge::OnDirectHealthTimerFire() {
@@ -648,6 +660,54 @@ void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
 }
 
 void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const std::string& peer) {
+  // k3-4 make-before-break: the call keeps running on its path while a circuit to the peer is
+  // built, then moves onto it. Only if that fails does the old break-before-make restart run.
+  const std::string peer_id = ReachPeerIdFor(direct_.ActiveParams().peer_key);
+  if (peer_id.empty() || !reach_.HasCircuitReach()) {
+    EscalateBreakBeforeMake(call_id, peer);
+    return;
+  }
+  PeerReachRequest request;
+  request.keys.push_back(peer_id);
+  request.mode = session_offerer_ ? PeerReachMode::Reach : PeerReachMode::Await;
+  request.exclude_direct = true;
+  log().info << "TX-only escalate: building a circuit under the live call call_id=" << call_id << " peer=" << peer_id;
+  escalate_reach_id_ = reach_.Ensure(std::move(request), [this, alive = alive_, call_id, peer](Roe<PeerReachResult> reached) {
+    CallsThread::Post([this, alive, call_id, peer, reached = std::move(reached)]() {
+      if (!alive->load(std::memory_order_acquire)) {
+        return;
+      }
+      escalate_reach_id_ = 0;
+      if (stopping_.load() || media_.ActiveCallId() != call_id ||
+          direct_planner_phase_ != CallDirectPlannerPhase::DegradedTxOnly) {
+        return;
+      }
+      if (!reached) {
+        log().warning << "TX-only escalate: circuit failed (" << reached.error().message << ") — restarting via circuit";
+        EscalateBreakBeforeMake(call_id, peer);
+        return;
+      }
+      direct_.MigrateTo(CallMediaLinkKind::Relayed, [this, alive, call_id, peer](Roe<void> moved) {
+        CallsThread::Post([this, alive, call_id, peer, moved = std::move(moved)]() {
+          if (!alive->load(std::memory_order_acquire) || stopping_.load() || media_.ActiveCallId() != call_id) {
+            return;
+          }
+          if (moved) {
+            log().info << "TX-only escalate: call moved onto the circuit call_id=" << call_id;
+            return;  // on_path_changed → PathMigrated brings the planner back to Live
+          }
+          if (direct_planner_phase_ == CallDirectPlannerPhase::DegradedTxOnly) {
+            log().warning << "TX-only escalate: migration failed (" << moved.error().message
+                          << ") — restarting via circuit";
+            EscalateBreakBeforeMake(call_id, peer);
+          }
+        });
+      });
+    });
+  });
+}
+
+void CallMediaBridge::EscalateBreakBeforeMake(const std::string& call_id, const std::string& peer) {
   Apply(CallDirectPlannerEvent::CircuitEscalated, call_id, peer);
   if (seat_.IsBound()) {
     seat_.note_connecting(call_id);
@@ -1206,6 +1266,7 @@ void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
   CancelDirectHealthTimer();
   CancelReserveRenewal();
   CancelDirectUpgrade();
+  CancelEscalateReach();
   const std::string peer = media_peer_identity_;
   if (pending_answerer_call_id_ == call_id) {
     pending_answerer_call_id_.clear();
@@ -1311,6 +1372,7 @@ void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
   CancelDirectHealthTimer();
   CancelReserveRenewal();
   CancelDirectUpgrade();
+  CancelEscalateReach();
   const std::string peer = media_peer_identity_;
   const std::string call_id = media_call_id_;
   pending_answerer_call_id_.clear();

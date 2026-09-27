@@ -1,4 +1,5 @@
 #include "feature/calls/CallMediaBridge.h"
+#include "feature/calls/CallsThread.h"
 #include "feature/calls/CallLifecycle.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "domain/messaging/CallLifecycleTypes.h"
@@ -281,6 +282,20 @@ public:
     return half_open ? CallMediaSessionPhase::HelloInbound : CallMediaSessionPhase::Idle;
   }
   CallMediaLinkKind ActiveLinkKind() const override { return link_kind; }
+  void MigrateTo(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override {
+    ++migrate_calls;
+    if (!migrate_ok) {
+      done(Error("call-media migrate: peer refused (busy)"));
+      return;
+    }
+    link_kind = kind;
+    if (last_callbacks.on_path_changed) {
+      last_callbacks.on_path_changed(kind);
+    }
+    done(Roe<void>());
+  }
+  std::atomic<int> migrate_calls{0};
+  bool migrate_ok = true;
   void Detach() override {
     active = false;
     ++detach_calls;
@@ -912,6 +927,71 @@ TEST_F(CallMediaBridgeAnswererStartTest, RelayedOffererPunchesForADirectPathUnti
   }
   EXPECT_EQ(circuit_->upgrade_calls.load(), calls);
   EXPECT_EQ(bridge_->MediaPathKind(), "punched") << "the label follows the path the call moved to";
+  bridge_->PrepareForTeardown(0);
+}
+
+// k3-4: a TX-only call keeps running while a circuit is built under it, then moves onto it — no
+// Detach, no new session (the audio seq keeps counting), and it is connected again afterwards.
+TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallMovesOntoACircuitWithoutRestarting) {
+  const std::string call_id = "call:tx-only";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWTxOnlyPeer";
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_EQ(transport_->connect_async_calls, 1);
+  const int detaches = transport_->detach_calls;
+  const int ensures = circuit_->call_media_ensure_calls.load();
+
+  CallsThread::RunAndWait([&] { bridge_->EscalateTxOnlyForTest(call_id); });
+  for (int i = 0; i < 400 && transport_->migrate_calls.load() == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUIAndOwnerTasks();
+  (void)ensures;  // reach settles on the circuit hop this fixture's first connect left, or builds one
+  EXPECT_EQ(transport_->migrate_calls.load(), 1);
+  EXPECT_EQ(transport_->detach_calls, detaches) << "the running call is not torn down";
+  EXPECT_EQ(transport_->connect_async_calls, 1) << "no new session";
+  EXPECT_EQ(bridge_->MediaPathKind(), "circuit");
+  EXPECT_TRUE(media_->IsActive());
+  EXPECT_EQ(lifecycle_->Status(), CallMediaStatus::DirectLive) << "connected again on the circuit";
+  bridge_->PrepareForTeardown(0);
+}
+
+// k3-4 fallback: a TX-only call that cannot move (the peer refused) restarts via the circuit as before.
+TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallThatCannotMoveRestartsViaCircuit) {
+  const std::string call_id = "call:tx-only-fallback";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWTxOnlyPeer";
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  transport_->migrate_ok = false;
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUIAndOwnerTasks();
+  const int detaches = transport_->detach_calls;
+
+  CallsThread::RunAndWait([&] { bridge_->EscalateTxOnlyForTest(call_id); });
+  for (int i = 0; i < 400 && transport_->connect_async_calls < 2; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(transport_->migrate_calls.load(), 1);
+  EXPECT_GT(transport_->detach_calls, detaches) << "break-before-make fallback";
+  EXPECT_GE(transport_->connect_async_calls, 2) << "a new session via the circuit";
   bridge_->PrepareForTeardown(0);
 }
 

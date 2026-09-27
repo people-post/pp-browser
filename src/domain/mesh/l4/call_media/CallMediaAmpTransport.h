@@ -36,6 +36,7 @@ public:
   CallMediaDirectConnectParams ActiveParams() const override;
   CallMediaSessionPhase Phase() const override;
   CallMediaLinkKind ActiveLinkKind() const override;
+  void MigrateTo(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override;
   void Detach() override;
 
   void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,

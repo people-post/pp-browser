@@ -178,12 +178,12 @@ A second `hello` for a call that is already live is refused (`hello_ack` `"error
 
 ### Path migration (make-before-break — call-path-resilience k3)
 
-A live call can move to another Connected link to the same peer (e.g. a punched direct link while it runs on a relay carrier). Only the **glare winner** drives. Frames are link-portable (the AEAD AAD carries no path term), so no re-key.
+A live call can move to another Connected link to the same peer (e.g. a punched direct link while it runs on a relay carrier, or onto a relay carrier when the direct path stops delivering). Either end may start one; when both do at once the **glare winner**'s goes ahead and the other end yields (abandons its own, answers the winner's). A `migrate` arriving while this end already accepted one, or is still releasing an old path, is refused `busy`. Frames are link-portable (the AEAD AAD carries no path term), so no re-key.
 
 | Step | Channel | Message |
 |------|---------|---------|
 | 1 | new outbound control on the candidate link | `{"v":1,"type":"migrate","call_id":…,"media_epoch":…,"path_gen":n+1}` |
-| 2 | same | `{"v":1,"type":"migrate_ack","ok":true,"path_gen":n+1}` — or `ok:false`, `error` ∈ `no live call` / `media_epoch` / `busy` / `path_gen` / `same path` / `not the driver` / `link gone` |
+| 2 | same | `{"v":1,"type":"migrate_ack","ok":true,"path_gen":n+1}` — or `ok:false`, `error` ∈ `no live call` / `media_epoch` / `busy` / `path_gen` / `same path` / `link gone` |
 | 3 | new media channel on the candidate link (driver opens it) | — each side switches TX to the new path when its end of this channel is bound; RX accepts every path of the call (seq de-dupe per media channel) |
 | 4 | new control (driver → peer) | `{"v":1,"type":"path_release","path_gen":n}` once media arrived on the new path and ≥ 1 s passed (≤ 5 s) |
 | 5 | same | `{"v":1,"type":"path_release_ack","path_gen":n}` — both close the old path's channels; closes on a released / retiring path are never failures |

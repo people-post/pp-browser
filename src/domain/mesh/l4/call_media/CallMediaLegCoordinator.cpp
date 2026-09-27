@@ -203,6 +203,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     bool rx_since_switch = false;
     bool release_sent = false;
     Clock::time_point release_sent_at{};
+    /** The direct link this call left for the relay; never auto-migrated back onto. */
+    pp::amp::LinkHandle left_direct{};
     /** Earliest next automatic relayed → direct attempt (backoff after one). */
     Clock::time_point next_auto_migrate{};
     /** Transport-side seq de-dupe per media channel: overlapping paths can deliver a frame twice. */
@@ -921,9 +923,6 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     if (link->Mux() == bundle->active.mux) {
       return fail("already on that link");
     }
-    if (!LocalWinsForBundle(*bundle, *link)) {
-      return fail("not the migration driver");
-    }
     auto channel = link->Mux()->OpenOutbound(kCallMediaDirectProtocolId, pp::amp::CallMediaControlChannelPolicy());
     if (!channel) {
       return fail(channel.error().message);
@@ -970,6 +969,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     bundle.retiring = std::move(bundle.active);
     bundle.active = std::move(*bundle.standby);
     bundle.standby.reset();
+    if (bundle.active.kind == CallMediaLinkKind::Relayed && bundle.retiring->kind == CallMediaLinkKind::Direct) {
+      bundle.left_direct = bundle.retiring->link;
+    }
     bundle.drove_switch = drove;
     bundle.switched_at = Clock::now();
     bundle.rx_since_switch = false;
@@ -1008,7 +1010,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     if (epoch != target->params.media_epoch) {
       return reject("media_epoch");
     }
-    if (target->standby || target->retiring || target->migration) {
+    if (target->retiring || (target->migration && !target->migration->initiator)) {
       return reject("busy");
     }
     if (gen != target->active.gen + 1) {
@@ -1021,8 +1023,12 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     if (link->Mux() == target->active.mux) {
       return reject("same path");
     }
-    if (LocalWinsForBundle(*target, *link)) {
-      return reject("not the driver");
+    if (target->migration && target->migration->initiator) {
+      // Both ends started a migration at once: the glare winner's goes ahead (offerer, then PeerId).
+      if (LocalWinsForBundle(*target, *link)) {
+        return reject("busy");
+      }
+      AbandonMigration(*target, "yielded to the peer's migration");
     }
     Path candidate = std::move(holder->active);
     holder->active = Path{};
@@ -1092,9 +1098,33 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
   }
 
+  /** Initiator: migrate to the peer's Connected link of `kind` (direct ADP / relay carrier). */
+  void BeginMigrationToKind(const CallMediaLegId leg_id, const CallMediaLinkKind kind, LegFinished done) {
+    CallbackLock lock(*this);
+    Bundle* bundle = FindByLegId(leg_id);
+    pp::amp::PeerLink* link =
+        bundle && !bundle->remote_peer_id.empty()
+            ? runtime->Links().FindConnectedLinkByPeerId(bundle->remote_peer_id,
+                                                         kind == CallMediaLinkKind::Relayed
+                                                             ? pp::amp::TransportClass::Carrier
+                                                             : pp::amp::TransportClass::Adp)
+            : nullptr;
+    if (!link) {
+      if (done) {
+        pending_user_cbs.push_back([done = std::move(done), kind]() {
+          done(Error(std::string("call-media migrate: no connected ") +
+                     (kind == CallMediaLinkKind::Relayed ? "relayed" : "direct") + " link to the peer"));
+        });
+      }
+      return;
+    }
+    BeginMigrationLocked(leg_id, link->Handle(), std::move(done));
+  }
+
   /**
    * k3: a relayed call whose peer is now reachable over a direct link (a punch landed, or it
-   * dialed us) moves there — the driver starts it; the other side only answers.
+   * dialed us) moves there — the driver starts it; the other side only answers. Never back onto
+   * the direct link the call left for the relay (it had stopped delivering: TX-only escalation).
    */
   void MaybeAutoMigrate(Bundle& bundle, const Clock::time_point now) {
     if (!auto_migrate_to_direct.load(std::memory_order_relaxed) || bundle.active.kind != CallMediaLinkKind::Relayed ||
@@ -1102,9 +1132,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         bundle.remote_peer_id.empty()) {
       return;
     }
-    pp::amp::PeerLink* direct = runtime->Links().FindLinkByPeerId(bundle.remote_peer_id);
-    if (!direct || direct->IsCarrierBacked() || direct->Phase() != pp::amp::PeerLinkPhase::Connected ||
-        direct->Mux() == bundle.active.mux || !LocalWinsForBundle(bundle, *direct)) {
+    pp::amp::PeerLink* direct =
+        runtime->Links().FindConnectedLinkByPeerId(bundle.remote_peer_id, pp::amp::TransportClass::Adp);
+    if (!direct || direct->Mux() == bundle.active.mux || direct->Handle() == bundle.left_direct ||
+        !LocalWinsForBundle(bundle, *direct)) {
       return;
     }
     bundle.next_auto_migrate = now + kAutoMigrateBackoff;
@@ -1865,6 +1896,14 @@ void CallMediaLegCoordinator::MigrateLeg(const CallMediaLegId id, const pp::amp:
 
 void CallMediaLegCoordinator::SetIgnoreMigrateForTest(const bool ignore) {
   impl_->ignore_migrate_for_test.store(ignore, std::memory_order_relaxed);
+}
+
+void CallMediaLegCoordinator::MigrateLegToKind(const CallMediaLegId id, const CallMediaLinkKind kind,
+                                               LegFinished done) {
+  impl_->PostIo([impl = impl_, id, kind, done = std::move(done)]() mutable {
+    impl->BeginMigrationToKind(id, kind, std::move(done));
+  });
+  runtime_.Pump();
 }
 
 void CallMediaLegCoordinator::SetAutoMigrateToDirect(const bool enable) {

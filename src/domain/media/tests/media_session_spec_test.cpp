@@ -96,6 +96,16 @@ TEST_F(MediaSessionSpecTest, StartSfuIsDuplex) {
   EXPECT_EQ(engine_.HealthSnapshot().stream_count, 1u);
 }
 
+// A muted call (or one without a mic) keeps sending frames of silence: the peer's "no media" check
+// (TX-only escalation) counts frames, not audio level, so it never mistakes a muted user for a
+// broken path.
+TEST_F(MediaSessionSpecTest, MutedCallStillSendsFrames) {
+  ASSERT_TRUE(engine_.StartSfu("call:muted", CountingSend()));
+  engine_.SetMuted(true);
+  const int before = sent_.load();
+  EXPECT_TRUE(WaitFor([&] { return sent_.load() >= before + 3; }, std::chrono::seconds(2)));
+}
+
 TEST_F(MediaSessionSpecTest, InvalidSpecsAreRefused) {
   EXPECT_FALSE(engine_.Start("s", Spec{false, false}, CountingSend())) << "needs a half";
   EXPECT_FALSE(engine_.Start("s", Spec::CaptureOnly(), {})) << "capturing needs a send fn";

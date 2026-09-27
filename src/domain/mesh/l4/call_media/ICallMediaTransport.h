@@ -120,6 +120,17 @@ public:
   virtual CallMediaSessionPhase Phase() const = 0;
   /** Link kind carrying the primary bundle's channels; Unknown until bound. */
   virtual CallMediaLinkKind ActiveLinkKind() const { return CallMediaLinkKind::Unknown; }
+  /**
+   * k3 make-before-break: move the active call onto the peer's Connected link of `kind` while it
+   * keeps running. `done` (on the transport's IO strand) is OK once media flows there; an error
+   * leaves the call on its current path. Transports without path migration refuse.
+   */
+  virtual void MigrateTo(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) {
+    (void)kind;
+    if (done) {
+      done(Error("call-media path migration not supported"));
+    }
+  }
   virtual void Detach() = 0;
 
   /**

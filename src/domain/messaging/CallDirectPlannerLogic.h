@@ -116,11 +116,18 @@ inline CallDirectPlannerPhaseOutcome DecideCallDirectPlannerPhase(CallDirectPlan
 
   switch (ev) {
   case CallDirectPlannerEvent::PathMigrated:
-    // Only a call with media has a path to move; the phase stays (Live stays Live).
-    out.decision = (phase == CallDirectPlannerPhase::Live || phase == CallDirectPlannerPhase::DegradedTxOnly)
-                       ? CallDirectPlannerDecision::Keep
-                       : CallDirectPlannerDecision::Ignore;
-    out.next = phase;
+    // Only a call with media has a path to move. Live stays Live; a TX-only call that moved
+    // (make-before-break escalation, k3-4) is Live again on its new path.
+    if (phase == CallDirectPlannerPhase::Live) {
+      out.decision = CallDirectPlannerDecision::Keep;
+      out.next = phase;
+    } else if (phase == CallDirectPlannerPhase::DegradedTxOnly) {
+      out.decision = CallDirectPlannerDecision::Transition;
+      out.next = CallDirectPlannerPhase::Live;
+    } else {
+      out.decision = CallDirectPlannerDecision::Ignore;
+      out.next = phase;
+    }
     return out;
 
   case CallDirectPlannerEvent::Stop:

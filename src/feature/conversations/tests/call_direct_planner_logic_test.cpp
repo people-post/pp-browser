@@ -5,14 +5,16 @@
 namespace pbr {
 namespace {
 
-// k3: a path migration keeps a live call live; nothing else has a path to move.
+// k3: a path migration keeps a live call live and brings a TX-only one back (k3-4); nothing else
+// has a path to move.
 TEST(CallDirectPlannerLogicTest, PathMigratedKeepsALiveCallAndIsIgnoredOtherwise) {
   CallDirectPlannerApplyContext ctx;
-  for (const auto phase : {CallDirectPlannerPhase::Live, CallDirectPlannerPhase::DegradedTxOnly}) {
-    auto out = DecideCallDirectPlannerPhase(phase, CallDirectPlannerEvent::PathMigrated, ctx);
-    EXPECT_EQ(out.decision, CallDirectPlannerDecision::Keep);
-    EXPECT_EQ(out.next, phase);
-  }
+  auto live = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Live, CallDirectPlannerEvent::PathMigrated, ctx);
+  EXPECT_EQ(live.decision, CallDirectPlannerDecision::Keep);
+  auto degraded =
+      DecideCallDirectPlannerPhase(CallDirectPlannerPhase::DegradedTxOnly, CallDirectPlannerEvent::PathMigrated, ctx);
+  EXPECT_EQ(degraded.decision, CallDirectPlannerDecision::Transition);
+  EXPECT_EQ(degraded.next, CallDirectPlannerPhase::Live);
   for (const auto phase : {CallDirectPlannerPhase::Idle, CallDirectPlannerPhase::Arming,
                            CallDirectPlannerPhase::KeyWait, CallDirectPlannerPhase::Connecting,
                            CallDirectPlannerPhase::Stopping}) {

@@ -68,12 +68,14 @@ public:
 
   /**
    * k3 make-before-break: move leg `id`'s media to `link` (a Connected link to the same peer —
-   * e.g. a punched direct link while the call runs on a relay). Only the glare winner drives
-   * (offerer, then PeerId order). `done` gets OK once media flows on the new path (the old one is
-   * then released), or why the call stayed where it was: peer refused / older peer (timeout),
-   * candidate lost. Runs on IO; `done` on the IO strand.
+   * e.g. a punched direct link while the call runs on a relay). Either side may start one; if both
+   * do at once the glare winner's goes ahead (offerer, then PeerId order). `done` gets OK once media
+   * flows on the new path (the old one is then released), or why the call stayed where it was:
+   * peer refused / yielded / older peer (timeout), candidate lost. Runs on IO; `done` on the IO strand.
    */
   void MigrateLeg(CallMediaLegId id, pp::amp::LinkHandle link, LegFinished done);
+  /** MigrateLeg onto the peer's Connected link of `kind` (direct ADP or relay carrier). */
+  void MigrateLegToKind(CallMediaLegId id, CallMediaLinkKind kind, LegFinished done);
   CallMediaPathState PathState(CallMediaLegId id) const;
   /**
    * Default on: when a relayed call's peer becomes reachable over a Connected direct link (a punch

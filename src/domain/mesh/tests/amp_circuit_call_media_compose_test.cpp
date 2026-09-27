@@ -715,27 +715,102 @@ TEST_F(CallPathMigrationTest, OlderPeerLeavesTheCallOnItsPath) {
   EXPECT_FALSE(b_failed_.load());
 }
 
-// Only the glare winner (offerer) drives a migration; the other side is refused at once.
-TEST_F(CallPathMigrationTest, OnlyTheDriverMigrates) {
+// k3-4: either end may migrate (the answerer can be the one that notices the path is bad).
+TEST_F(CallPathMigrationTest, TheAnswererMayMigrateToo) {
   LiveRelayedCallWithDirectLink();
-  auto* b_direct = harness_->mgr_b().FindLinkByPeerId(harness_->peer_id_a);
-  ASSERT_NE(b_direct, nullptr);
-  pp::amp::LinkHandle b_candidate{};
-  // B's end of the direct link (not the nested one).
-  ASSERT_FALSE(b_direct->IsCarrierBacked());
-  b_candidate = b_direct->Handle();
   std::atomic<bool> done{false};
-  Roe<void> result = Roe<void>();
-  b_call_->MigrateLeg(b_call_->PrimaryLegId(), b_candidate, [&](Roe<void> r) {
+  Roe<void> result = Error("pending");
+  b_call_->MigrateLegToKind(b_call_->PrimaryLegId(), CallMediaLinkKind::Direct, [&](Roe<void> r) {
     result = std::move(r);
     done = true;
   });
-  harness_->PumpUntil([&] { return done.load(); }, 500);
+  for (int i = 0; i < 400 && !(done.load() && a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct); ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
   ASSERT_TRUE(done.load());
-  ASSERT_FALSE(result);
-  EXPECT_NE(result.error().message.find("not the migration driver"), std::string::npos) << result.error().message;
+  ASSERT_TRUE(result) << result.error().message;
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
+  EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
+}
+
+// Both ends start a migration at once: the glare winner's (the offerer's) goes ahead; the other
+// yields and answers it. The call moves exactly once.
+TEST_F(CallPathMigrationTest, SimultaneousMigrationsTheOffererWins) {
+  LiveRelayedCallWithDirectLink();
+  std::atomic<int> finished{0};
+  Roe<void> a_result = Error("pending");
+  Roe<void> b_result = Roe<void>();
+  a_call_->MigrateLeg(leg_, direct_link_, [&](Roe<void> r) {
+    a_result = std::move(r);
+    ++finished;
+  });
+  b_call_->MigrateLegToKind(b_call_->PrimaryLegId(), CallMediaLinkKind::Direct, [&](Roe<void> r) {
+    b_result = std::move(r);
+    ++finished;
+  });
+  for (int i = 0; i < 400 && finished.load() < 2; ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  ASSERT_EQ(finished.load(), 2);
+  EXPECT_TRUE(a_result) << a_result.error().message;
+  EXPECT_FALSE(b_result) << "the answerer's own attempt yields";
+  harness_->PumpUntil([&] { return b_call_->ActiveLinkKind() == CallMediaLinkKind::Direct; }, 500);
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
+  EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
+  EXPECT_EQ(a_call_->PathState(leg_).active_gen, 1u) << "moved exactly once";
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
+}
+
+// k3-4 TX-only escalation, make-before-break: a call on a direct link moves onto the relay by
+// transport class; automatic migration never takes it back onto the link it left.
+TEST_F(CallPathMigrationTest, MovedToTheRelayItStaysOffTheLinkItLeft) {
+  LiveRelayedCallWithDirectLink();
+  std::atomic<bool> to_direct{false};
+  a_call_->MigrateLeg(leg_, direct_link_, [&](Roe<void> r) { to_direct = static_cast<bool>(r); });
+  for (int i = 0; i < 400 && !(to_direct.load() && b_call_->ActiveLinkKind() == CallMediaLinkKind::Direct); ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  ASSERT_TRUE(to_direct.load());
+  ASSERT_TRUE(PumpRealUntil(
+      [&] {
+        SendNext();
+        return !a_call_->PathState(leg_).retiring && !b_call_->PathState(b_call_->PrimaryLegId()).retiring;
+      },
+      std::chrono::seconds(4)));
+
+  // The direct path stops delivering to B (TX-only) — B moves the call back onto the relay.
+  a_call_->SetAutoMigrateToDirect(true);
+  b_call_->SetAutoMigrateToDirect(true);
+  std::atomic<bool> to_relay{false};
+  Roe<void> result = Error("pending");
+  b_call_->MigrateLegToKind(b_call_->PrimaryLegId(), CallMediaLinkKind::Relayed, [&](Roe<void> r) {
+    result = std::move(r);
+    to_relay = true;
+  });
+  for (int i = 0; i < 400 && !(to_relay.load() && a_call_->ActiveLinkKind() == CallMediaLinkKind::Relayed); ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  ASSERT_TRUE(to_relay.load());
+  ASSERT_TRUE(result) << result.error().message;
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
   EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
-  EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).standby);
+  // The direct link is still Connected, but it is the one the call left: no bounce back.
+  EXPECT_FALSE(PumpRealUntil(
+      [&] {
+        SendNext();
+        return a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct ||
+               b_call_->ActiveLinkKind() == CallMediaLinkKind::Direct;
+      },
+      std::chrono::milliseconds(1500)));
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
 }
 
 TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedEncryptedVideoOver16KiB) {
