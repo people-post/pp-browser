@@ -1,4 +1,6 @@
 #include "domain/media/CallRingtone.h"
+#include "domain/media/CallAudioSession.h"
+#include "domain/media/Ringback.h"
 #include "domain/media/SdlAudioBootstrap.h"
 
 #include "foundation/platform/IAssetLocator.h"
@@ -66,7 +68,7 @@ bool LoadRingWav(std::vector<unsigned char>& pcm, int& freq, int& channels) {
 
 } // namespace
 
-CallRingtone::CallRingtone() = default;
+CallRingtone::CallRingtone(Tone tone) : tone_(tone) {}
 
 CallRingtone::~CallRingtone() {
   StopAndJoin();
@@ -100,7 +102,11 @@ void CallRingtone::Start() {
     return;
   }
   if (wav_pcm_.empty()) {
-    if (!LoadRingWav(wav_pcm_, wav_freq_, wav_channels_)) {
+    if (tone_ == Tone::OutgoingRingback) {
+      const std::vector<int16_t> pcm = MakeRingbackCycle(wav_freq_);
+      const auto* bytes = reinterpret_cast<const unsigned char*>(pcm.data());
+      wav_pcm_.assign(bytes, bytes + pcm.size() * sizeof(int16_t));
+    } else if (!LoadRingWav(wav_pcm_, wav_freq_, wav_channels_)) {
       return;
     }
   }
@@ -230,6 +236,11 @@ void CallRingtone::RunLoop() {
   g_ringtone_playback_device_holders.fetch_add(1, std::memory_order_acq_rel);
   const SDL_AudioDeviceID device = SDL_GetAudioStreamDevice(stream);
   (void)SDL_ResumeAudioDevice(device);
+  if (tone_ == Tone::OutgoingRingback) {
+    // SDL rewrites the AVAudioSession when it opens a device, so activate the VoIP
+    // session after opening the stream (routes phones to the earpiece).
+    CallAudioSession::ActivateForVoipCall();
+  }
   SDL_Log("CallRingtone: playing loop freq=%d ch=%d bytes=%zu", wav_freq_, wav_channels_,
           wav_pcm_.size());
 

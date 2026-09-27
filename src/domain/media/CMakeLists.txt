@@ -4,6 +4,7 @@ pp_browser_add_domain_library(pp_domain_media
     CallMediaEngine.cpp
     CallRingtone.cpp
     NoiseSuppressor.cpp
+    Ringback.cpp
     VideoCodecFactory.cpp
     VideoCodecUnavailable.cpp
     VideoYuv.cpp

@@ -260,6 +260,9 @@ void CallController::PrepareForShutdown() {
   if (!ringtone_.StopAndJoin(CallRingtone::kDefaultShutdownJoinBudget)) {
     log().warning << "PrepareForShutdown: ringtone join budget exceeded — detached";
   }
+  if (!ringback_.StopAndJoin(CallRingtone::kDefaultShutdownJoinBudget)) {
+    log().warning << "PrepareForShutdown: ringback join budget exceeded — detached";
+  }
 }
 
 void CallController::ClearInCall() {
@@ -373,6 +376,23 @@ void CallController::SyncRingtone() {
     ringtone_.Start();
   } else if (!should_ring && ringtone_.IsPlaying()) {
     ringtone_.Stop();
+  }
+
+  // Caller-side ringback: only while the callee has not answered (OutboundCalling) and
+  // no incoming ring is showing and media has not started yet.
+  auto* backend = Backend();
+  const bool should_ringback = !should_ring && backend && backend->Available() &&
+                                backend->Phase() == CallPhase::OutboundCalling &&
+                                !backend->Media().IsActive();
+  if (should_ringback && !ringback_.IsPlaying()) {
+    ringback_.Start();
+  } else if (!should_ringback && ringback_.IsPlaying()) {
+    ringback_.Stop();
+    // The engine owns the audio session once media is active — only release it here
+    // when the call ended without being answered.
+    if (!backend || !backend->Available() || !backend->Media().IsActive()) {
+      CallAudioSession::Deactivate();
+    }
   }
 }
 
@@ -990,6 +1010,7 @@ void CallController::LeaveActive() {
     // Stale End button after Idle — force-clear chrome so Samsung does not look hung.
     ClearInCall();
     ClearRing();
+    ringback_.Stop();
     SyncShellState();
     return;
   }
@@ -1001,6 +1022,7 @@ void CallController::LeaveActive() {
   active_call_id_.clear();
   ClearInCall();
   ClearRing();
+  ringback_.Stop();
   SyncShellState();
   if (backend && backend->Available()) {
     backend->Apply(CallLifecycleEvent::LeaveClicked, call_id);

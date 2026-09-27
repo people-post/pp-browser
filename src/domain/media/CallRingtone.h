@@ -8,12 +8,20 @@
 
 namespace pbr {
 
-/** Loops assets/sounds/call_ring.wav on the default playback device while Start()'d. */
+/**
+ * Loops a tone on the default playback device while Start()'d.
+ * Tone::IncomingRing loops assets/sounds/call_ring.wav (unchanged behavior).
+ * Tone::OutgoingRingback synthesizes the caller ringback (450 Hz 1.0 s on /
+ * 4.0 s off) and, on phones, routes it to the earpiece via
+ * CallAudioSession::ActivateForVoipCall() like an in-call session.
+ */
 class CallRingtone {
 public:
   static constexpr std::chrono::milliseconds kDefaultShutdownJoinBudget{500};
 
-  CallRingtone();
+  enum class Tone { IncomingRing, OutgoingRingback };
+
+  explicit CallRingtone(Tone tone = Tone::IncomingRing);
   ~CallRingtone();
 
   CallRingtone(const CallRingtone&) = delete;
@@ -51,6 +59,7 @@ private:
   std::thread thread_;
   /** Joins prior playback workers after async Stop/Start so Accept never blocks on SDL close. */
   std::thread joiner_;
+  Tone tone_ = Tone::IncomingRing;
   std::vector<unsigned char> wav_pcm_;
   int wav_freq_ = 24000;
   int wav_channels_ = 1;

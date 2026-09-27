@@ -112,6 +112,7 @@ private:
   /** Call id the current chrome_mode_ was chosen for (reset defaults on switch). */
   std::string chrome_mode_call_id_;
   CallRingtone ringtone_;
+  CallRingtone ringback_{CallRingtone::Tone::OutgoingRingback};
   CallFunctionalPorts call_ports_;
   PeoplePickerNotifyPorts people_picker_notify_;
   ShellCallChromePorts shell_call_chrome_;
