@@ -5,6 +5,7 @@
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -12,6 +13,16 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+/** A call's paths (call-path-resilience k3): the one media flows on, and a migration's others. */
+struct CallMediaPathState {
+  CallMediaLinkKind active_kind = CallMediaLinkKind::Unknown;
+  uint32_t active_gen = 0;
+  /** A candidate path is being brought up. */
+  bool standby = false;
+  /** The previous path is draining after a switch. */
+  bool retiring = false;
+};
 
 /**
  * Non-blocking `/pp-browser/realtime/1.0.0` over AMP channel bundles on MeshRuntime.
@@ -54,6 +65,19 @@ public:
   /** Transitional: maps active bundle phase → CallMediaSessionPhase for existing tests. */
   CallMediaSessionPhase Phase() const;
   CallMediaBundlePhase BundlePhase(CallMediaLegId id) const;
+
+  /**
+   * k3 make-before-break: move leg `id`'s media to `link` (a Connected link to the same peer —
+   * e.g. a punched direct link while the call runs on a relay). Only the glare winner drives
+   * (offerer, then PeerId order). `done` gets OK once media flows on the new path (the old one is
+   * then released), or why the call stayed where it was: peer refused / older peer (timeout),
+   * candidate lost. Runs on IO; `done` on the IO strand.
+   */
+  void MigrateLeg(CallMediaLegId id, pp::amp::LinkHandle link, LegFinished done);
+  CallMediaPathState PathState(CallMediaLegId id) const;
+  /** Test: behave like a peer from before k3 (never answers `migrate`). */
+  void SetIgnoreMigrateForTest(bool ignore);
+  void SetMigrateTimeoutForTest(std::chrono::milliseconds timeout);
 
   Roe<void> SendMedia(CallMediaLegId id, uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq,
                       uint8_t mark = 0);

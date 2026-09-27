@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -479,6 +480,236 @@ TEST_F(AmpCircuitCallMediaComposeTest, DISABLED_CallSurvivesRelaySilenceWithDire
   harness_->PumpUntil([&] { return received == opus; }, 2500);
   EXPECT_EQ(received, opus) << "audio must keep flowing on the direct path";
   EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
+}
+
+// k3-2 make-before-break: a call on the relay moves to a direct link while audio keeps flowing —
+// every frame arrives once, in order — then the relay path is released and the relay can go
+// silent without touching the call.
+class CallPathMigrationTest : public AmpCircuitCallMediaComposeTest {
+protected:
+  /** Relayed call A (offerer) → B, plus a coexisting direct A↔B link. */
+  void LiveRelayedCallWithDirectLink() {
+    auto nested = EstablishNestedCallMediaPath();
+    ASSERT_TRUE(nested) << nested.error().message;
+    b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+      params.media_key = key_;
+      params.call_id = call_id_;
+      params.media_epoch = 1;
+      params.offerer = false;
+      cbs.on_connected = [&] { b_connected_ = true; };
+      cbs.on_media = [&](uint8_t channel, uint32_t seq, uint8_t, const std::vector<uint8_t>&) {
+        if (channel == 0) {
+          std::lock_guard lock(mu_);
+          b_seqs_.push_back(seq);
+        }
+      };
+      cbs.on_path_changed = [&](CallMediaLinkKind kind) { b_path_ = kind; };
+      cbs.on_failed = [&](const std::string&) { b_failed_ = true; };
+    }));
+    CallMediaDirectConnectParams params;
+    params.peer_key = harness_->peer_id_b;
+    params.call_id = call_id_;
+    params.media_epoch = 1;
+    params.media_key = key_;
+    params.offerer = true;
+    CallMediaDirectCallbacks cbs;
+    cbs.on_connected = [&] { a_connected_ = true; };
+    cbs.on_path_changed = [&](CallMediaLinkKind kind) { a_path_ = kind; };
+    cbs.on_failed = [&](const std::string&) { a_failed_ = true; };
+    LegCompletion leg_done;
+    leg_ = a_call_->StartLeg(params, std::move(cbs), leg_done.Fn(), 8000);
+    ASSERT_TRUE(leg_);
+    leg_done.PumpUntilDone(*harness_);
+    ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
+    harness_->PumpUntil([&] { return b_connected_.load() && a_connected_.load(); }, 2500);
+    ASSERT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+
+    ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint("b-direct", harness_->ma_b)));
+    Wait<void> direct_wait;
+    harness_->mgr_a().EnsureAssociation("b-direct", direct_wait.LinkFn());
+    direct_wait.PumpUntilDone(*harness_);
+    ASSERT_TRUE(direct_wait.result) << direct_wait.result.error().message;
+    auto* direct = harness_->mgr_a().FindLink("b-direct");
+    ASSERT_NE(direct, nullptr);
+    ASSERT_FALSE(direct->IsCarrierBacked());
+    direct_link_ = direct->Handle();
+  }
+
+  /** One audio frame each way, as a live call sends. */
+  void SendNext() {
+    ASSERT_TRUE(static_cast<bool>(a_call_->SendAudio(leg_, {0x11, 0x22}, ++seq_, 0)));
+    (void)b_call_->SendAudio(b_call_->PrimaryLegId(), {0x33}, seq_, 0);
+  }
+
+  /** Pump (with real time passing — retire timers run on the steady clock) until `done`. */
+  bool PumpRealUntil(const std::function<bool()>& done, std::chrono::milliseconds budget) {
+    const auto until = std::chrono::steady_clock::now() + budget;
+    while (!done() && std::chrono::steady_clock::now() < until) {
+      harness_->PumpAll();
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return done();
+  }
+
+  const std::string call_id_ = "call-k3-migrate";
+  ByteVector key_ = ByteVector(32, 0x33);
+  CallMediaLegId leg_{};
+  pp::amp::LinkHandle direct_link_{};
+  uint32_t seq_ = 0;
+  std::mutex mu_;
+  std::vector<uint32_t> b_seqs_;
+  std::atomic<bool> a_connected_{false};
+  std::atomic<bool> b_connected_{false};
+  std::atomic<bool> a_failed_{false};
+  std::atomic<bool> b_failed_{false};
+  std::atomic<CallMediaLinkKind> a_path_{CallMediaLinkKind::Unknown};
+  std::atomic<CallMediaLinkKind> b_path_{CallMediaLinkKind::Unknown};
+};
+
+TEST_F(CallPathMigrationTest, RelayedCallMovesToDirectWithoutLosingAFrame) {
+  LiveRelayedCallWithDirectLink();
+  for (int i = 0; i < 5; ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+
+  std::atomic<bool> migrated{false};
+  Roe<void> result = Error("pending");
+  a_call_->MigrateLeg(leg_, direct_link_, [&](Roe<void> r) {
+    result = std::move(r);
+    migrated = true;
+  });
+  // Audio keeps flowing through the whole switch.
+  for (int i = 0; i < 400 && !(migrated.load() && b_path_.load() == CallMediaLinkKind::Direct); ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  ASSERT_TRUE(migrated.load());
+  ASSERT_TRUE(result) << result.error().message;
+  for (int i = 0; i < 20; ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() >= seq_; }, 2000);
+
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
+  EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
+  EXPECT_EQ(a_path_.load(), CallMediaLinkKind::Direct);
+  EXPECT_EQ(b_path_.load(), CallMediaLinkKind::Direct);
+  EXPECT_EQ(a_call_->PathState(leg_).active_gen, 1u);
+  {
+    std::lock_guard lock(mu_);
+    std::vector<uint32_t> expected(seq_);
+    for (uint32_t i = 0; i < seq_; ++i) {
+      expected[i] = i + 1;
+    }
+    EXPECT_EQ(b_seqs_, expected) << "every frame once, in order, across the switch";
+  }
+
+  // The relay path is released on both ends (after media arrived on the new path).
+  EXPECT_TRUE(PumpRealUntil(
+      [&] {
+        SendNext();
+        return !a_call_->PathState(leg_).retiring && !b_call_->PathState(b_call_->PrimaryLegId()).retiring;
+      },
+      std::chrono::seconds(4)))
+      << "old path released";
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
+
+  // The relay can now go silent: the call does not depend on it any more.
+  harness_->io_r->SetDropRate(1.0);
+  for (int i = 0; i < 40; ++i) {
+    harness_->clock->Advance(250);
+    SendNext();
+    harness_->PumpAll();
+  }
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
+  SendNext();
+  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() > before; }, 2000);
+  std::lock_guard lock(mu_);
+  EXPECT_GT(b_seqs_.size(), before) << "audio flows on the direct path";
+}
+
+// A candidate that goes away mid-migration is abandoned: the call stays on its path, unharmed.
+TEST_F(CallPathMigrationTest, LostCandidateLeavesTheCallOnItsPath) {
+  LiveRelayedCallWithDirectLink();
+  std::atomic<bool> done{false};
+  Roe<void> result = Roe<void>();
+  a_call_->MigrateLeg(leg_, direct_link_, [&](Roe<void> r) {
+    result = std::move(r);
+    done = true;
+  });
+  ASSERT_GT(harness_->mgr_a().RequestDropLink("b-direct"), 0u);
+  for (int i = 0; i < 400 && !done.load(); ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  ASSERT_TRUE(done.load());
+  EXPECT_FALSE(result) << "the migration did not complete";
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_FALSE(a_call_->PathState(leg_).standby);
+  harness_->PumpUntil([&] { return !b_call_->PathState(b_call_->PrimaryLegId()).standby; }, 500);
+  EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).standby) << "the peer dropped its half too";
+  const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
+  SendNext();
+  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() > before; }, 2000);
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
+}
+
+// A peer from before k3 never answers `migrate`: the driver gives up at its timeout and the call
+// stays on its path, unharmed.
+TEST_F(CallPathMigrationTest, OlderPeerLeavesTheCallOnItsPath) {
+  LiveRelayedCallWithDirectLink();
+  b_call_->SetIgnoreMigrateForTest(true);
+  a_call_->SetMigrateTimeoutForTest(std::chrono::milliseconds(200));
+  std::atomic<bool> done{false};
+  Roe<void> result = Roe<void>();
+  a_call_->MigrateLeg(leg_, direct_link_, [&](Roe<void> r) {
+    result = std::move(r);
+    done = true;
+  });
+  EXPECT_TRUE(PumpRealUntil(
+      [&] {
+        SendNext();
+        return done.load();
+      },
+      std::chrono::seconds(3)));
+  ASSERT_FALSE(result);
+  EXPECT_NE(result.error().message.find("timed out"), std::string::npos) << result.error().message;
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
+}
+
+// Only the glare winner (offerer) drives a migration; the other side is refused at once.
+TEST_F(CallPathMigrationTest, OnlyTheDriverMigrates) {
+  LiveRelayedCallWithDirectLink();
+  auto* b_direct = harness_->mgr_b().FindLinkByPeerId(harness_->peer_id_a);
+  ASSERT_NE(b_direct, nullptr);
+  pp::amp::LinkHandle b_candidate{};
+  // B's end of the direct link (not the nested one).
+  ASSERT_FALSE(b_direct->IsCarrierBacked());
+  b_candidate = b_direct->Handle();
+  std::atomic<bool> done{false};
+  Roe<void> result = Roe<void>();
+  b_call_->MigrateLeg(b_call_->PrimaryLegId(), b_candidate, [&](Roe<void> r) {
+    result = std::move(r);
+    done = true;
+  });
+  harness_->PumpUntil([&] { return done.load(); }, 500);
+  ASSERT_TRUE(done.load());
+  ASSERT_FALSE(result);
+  EXPECT_NE(result.error().message.find("not the migration driver"), std::string::npos) << result.error().message;
+  EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+  EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).standby);
 }
 
 TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedEncryptedVideoOver16KiB) {

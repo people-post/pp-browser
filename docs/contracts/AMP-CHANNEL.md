@@ -170,9 +170,25 @@ One call attempt = **`call_id`-keyed control + media channel pair** on an existi
 | Outbound / inbound control | Reliable `RealtimeControl` | JSON hello / hello_ack (provisional dual-dial may have both briefly) |
 | Media | BestEffort `Realtime` | length-prefixed AEAD frames (same crypto as libp2p path) |
 
-**Glare (dual offerer dial):** when both peers negotiate the same `call_id`, the **higher base58 PeerId** keeps outbound control; the lower PeerId abandons outbound (`CloseQuiet`) and adopts inbound. Rejected inbound receives `hello_ack` with `"error":"glare"`. Close of a non-winning inbound during `OutboundHello` must not tear down the winning outbound — see [A021](../../projects/adp/DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime).
+**Glare (dual offerer dial):** when both peers negotiate the same `call_id`, the **glare winner** keeps outbound control — the offerer beats the answerer; equal roles fall back to the **higher base58 PeerId** (`LocalWinsCallMediaGlareForRoles`). The loser abandons outbound (`CloseQuiet`) and adopts inbound. Rejected inbound receives `hello_ack` with `"error":"glare"`. Close of a non-winning inbound during `OutboundHello` must not tear down the winning outbound — see [A021](../../projects/adp/DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime).
 
 Admit rules are pure (`CallMediaBundleLogic`); L4 runs on **`MeshRuntime`** io thread.
+
+A second `hello` for a call that is already live is refused (`hello_ack` `"error":"busy"`) on its **own** channel; the live bundle's channels are never touched.
+
+### Path migration (make-before-break — call-path-resilience k3)
+
+A live call can move to another Connected link to the same peer (e.g. a punched direct link while it runs on a relay carrier). Only the **glare winner** drives. Frames are link-portable (the AEAD AAD carries no path term), so no re-key.
+
+| Step | Channel | Message |
+|------|---------|---------|
+| 1 | new outbound control on the candidate link | `{"v":1,"type":"migrate","call_id":…,"media_epoch":…,"path_gen":n+1}` |
+| 2 | same | `{"v":1,"type":"migrate_ack","ok":true,"path_gen":n+1}` — or `ok:false`, `error` ∈ `no live call` / `media_epoch` / `busy` / `path_gen` / `same path` / `not the driver` / `link gone` |
+| 3 | new media channel on the candidate link (driver opens it) | — each side switches TX to the new path when its end of this channel is bound; RX accepts every path of the call (seq de-dupe per media channel) |
+| 4 | new control (driver → peer) | `{"v":1,"type":"path_release","path_gen":n}` once media arrived on the new path and ≥ 1 s passed (≤ 5 s) |
+| 5 | same | `{"v":1,"type":"path_release_ack","path_gen":n}` — both close the old path's channels; closes on a released / retiring path are never failures |
+
+The call stays on its path when the candidate fails before step 3: `migrate_ack` refusal, the candidate link or channel lost, or **no answer in 5 s** — a peer from before k3 ignores the unknown `type`. `path_gen` counts paths within the call (0 = the one it started on).
 
 ## Circuit tunnel (v1)
 

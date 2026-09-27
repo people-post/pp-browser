@@ -54,6 +54,15 @@ struct CallMediaDirectConnectParams {
   bool offerer = true;
 };
 
+/** Kind of mesh link the active call-media channels are bound on (path label truth). */
+enum class CallMediaLinkKind {
+  Unknown,
+  /** ADP association (dialed or punched). */
+  Direct,
+  /** Nested link over a relay circuit carrier. */
+  Relayed,
+};
+
 struct CallMediaDirectCallbacks {
   std::function<void()> on_connected;
   std::function<void(const std::vector<uint8_t>& opus_payload)> on_audio;
@@ -61,6 +70,8 @@ struct CallMediaDirectCallbacks {
   /** seq/mark come from the wire frame; the playout jitter buffer orders and de-dupes on seq (B20). */
   std::function<void(uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload)> on_media;
   std::function<void(const std::string& error)> on_failed;
+  /** k3: media moved to another path of the call (make-before-break migration); `kind` is the new path's. */
+  std::function<void(CallMediaLinkKind kind)> on_path_changed;
 };
 
 /** Answer to an inbound hello — any thread, at most once. An empty `media_key` NACKs the hello. */
@@ -84,15 +95,6 @@ inline CallMediaInboundHandler AnswerInline(
     answer(std::move(params), std::move(callbacks));
   };
 }
-
-/** Kind of mesh link the active call-media channels are bound on (path label truth). */
-enum class CallMediaLinkKind {
-  Unknown,
-  /** ADP association (dialed or punched). */
-  Direct,
-  /** Nested link over a relay circuit carrier. */
-  Relayed,
-};
 
 /**
  * Single product entry for 1:1 call-media transport ([A020]).

@@ -2,6 +2,7 @@
 
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 
+#include <bitset>
 #include <cstdint>
 
 namespace pbr {
@@ -98,5 +99,23 @@ CallMediaSessionPhase CallMediaBundlePhaseToSessionPhase(CallMediaBundlePhase ph
 CallMediaLegPhase CallMediaBundlePhaseToLegPhase(CallMediaBundlePhase phase);
 
 bool CallMediaBundlePhaseIsActive(CallMediaBundlePhase phase);
+
+/**
+ * Receive-side seq de-dupe for one media channel (call-path-resilience k3): while two paths
+ * overlap a frame can arrive on both. Remembers the last kWindow seqs below the highest seen. A
+ * seq more than kWindow behind the highest is a sender restart (the bridge resets its seq on a
+ * new session), accepted and re-anchored.
+ */
+class CallMediaSeqWindow {
+public:
+  static constexpr uint32_t kWindow = 1024;
+  /** True the first time `seq` is seen (deliver), false for a duplicate. */
+  bool Accept(uint32_t seq);
+
+private:
+  bool have_ = false;
+  uint32_t highest_ = 0;
+  std::bitset<kWindow> seen_;  // bit i = highest_ - i
+};
 
 } // namespace pbr
