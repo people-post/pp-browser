@@ -559,8 +559,10 @@ struct CallMediaEngine::Impl {
           int slots = 1;
           if (out) {
             const int queued = SDL_GetAudioStreamQueued(out);
-            if (queued < 0 || queued > kPlayoutHighWaterBytes) {
-              slots = 0; // device is ahead (or errored): let it drain this tick
+            if (queued < 0) {
+              slots = 1; // errored device: keep the old one-frame-per-tick cadence so buffers keep draining
+            } else if (queued > kPlayoutHighWaterBytes) {
+              slots = 0; // device is ahead: let it drain this tick
             } else {
               const int deficit = kPlayoutTargetQueuedBytes - queued;
               slots = deficit <= 0 ? 0 : std::min(kPlayoutMaxSlotsPerTick,
