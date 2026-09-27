@@ -102,8 +102,11 @@ public:
     std::function<void(const std::string& identity)> prefetch_reach;
     /** Kick mesh circuit park (composition projects MeshMediaPlane::ReserveOnBootstrapSeeds). */
     std::function<void()> ensure_circuit_ready;
-    /** Block until circuit-ready (Accept gate). Returns true if ready. */
-    std::function<bool(int timeout_ms)> await_circuit_ready;
+    /**
+     * Await circuit-ready (Accept gate): `done(ready)` runs on the calls owner once parked or at the
+     * timeout. Never blocks the caller.
+     */
+    std::function<void(int timeout_ms, std::function<void(bool ready)> done)> park_circuit;
     std::function<void(const std::string& relay, const std::string& peer_id)> note_mesh_peer_id_for_relay;
     std::function<Roe<ByteVector>(const std::string& peer)> resolve_peer_session_key;
     std::function<Roe<void>(const std::string& call_id, const std::string& peer, uint32_t epoch,
@@ -137,8 +140,12 @@ public:
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity);
-  Roe<void> AcceptInvite(const std::string& call_id,
-                         InitiationChargeDecision charge_decision = InitiationChargeDecision::Waive);
+  /**
+   * Accept a pending invite: checks → circuit park (async) → CallAccept + Joined + media arm.
+   * `on_done` runs once, on the calls owner (inline when there is no park port).
+   */
+  void AcceptInviteAsync(const std::string& call_id, InitiationChargeDecision charge_decision,
+                         std::function<void(Roe<void>)> on_done);
   Roe<void> DeclineInvite(const std::string& call_id);
   Roe<void> LeaveCall(const std::string& call_id);
   Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
@@ -175,6 +182,8 @@ public:
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
 
 private:
+  Roe<void> ContinueAcceptAfterPark(const std::string& call_id, InitiationChargeDecision charge_decision,
+                                    const std::string& local_identity);
   IThreadStore& store_;
   IdentityStore& identity_;
   CallSessionStore& sessions_;

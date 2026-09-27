@@ -555,6 +555,12 @@ void AppRuntime::PostCoordinatorBackground(std::function<void()> task) {
   PostCoordinator(CoordinatorPriority::Background, std::move(task));
 }
 
+void AppRuntime::PostToOwnerOrRun(const OwnerThreadId owner, std::function<void()> task) {
+  if (task) {
+    PostToOrRun(owner, std::move(task));
+  }
+}
+
 void AppRuntime::PostTo(const OwnerThreadId owner, std::function<void()> task) {
   if (!task) {
     return;
@@ -602,6 +608,17 @@ size_t AppRuntime::RunAllOwnerTasks() {
       return total;
     }
     total += ran;
+  }
+}
+
+void AppRuntime::RunUIAndOwnerTasks() {
+  for (int round = 0; round < 10000; ++round) {
+    const size_t owner_ran = RunAllOwnerTasks();
+    const bool ui_pending = HasPendingUITasks();
+    RunUITasks();
+    if (owner_ran == 0 && !ui_pending) {
+      return;
+    }
   }
 }
 

@@ -18,7 +18,8 @@ namespace pbr {
  * Lifecycle must not hold CallSessionManager* — workers copy these functions.
  */
 struct CallLifecycleSignalingPorts {
-  std::function<Roe<void>(const std::string& call_id)> accept_invite;
+  /** Async: `done` runs once, on the calls owner. */
+  std::function<void(const std::string& call_id, std::function<void(Roe<void>)> done)> accept_invite;
   std::function<Roe<void>(const std::string& call_id)> decline_invite;
   std::function<Roe<void>(const std::string& call_id)> leave_call;
   std::function<Roe<void>(const std::string& call_id)> retry_p2p_media;
@@ -94,6 +95,9 @@ private:
   void UpdateListenDesire();
   void NotifyChrome();
   void PostAcceptInvite(const std::string& call_id);
+  void OnAcceptResult(const std::string& call_id, const Roe<void>& accepted);
+  /** Run `work` on the calls owner, then `reply` on UI (dropped after ClearBinding). */
+  void PostOnOwnerAndReply(std::function<Roe<void>()> work, std::function<void(Roe<void>)> reply);
   void PostDeclineInvite(const std::string& call_id);
   void PostLeaveCall(const std::string& call_id);
   void PostRetryMedia(const std::string& call_id);

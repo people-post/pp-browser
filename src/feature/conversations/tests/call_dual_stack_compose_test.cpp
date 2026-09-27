@@ -134,13 +134,13 @@ public:
 void DrainUntil(const std::function<bool()>& done, int max_ms = 6000) {
   const int slices = std::max(1, max_ms / 10);
   for (int i = 0; i < slices; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (done()) {
       return;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
 }
 
 struct StackSide {
@@ -164,7 +164,7 @@ class CallDualStackComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
     EnsureSodiumInit();
-    AppRuntime::Initialize();
+    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
     AppRuntime::InitializeUI();
     mesh_control_ = std::make_unique<MeshControlPool>(1);
     MeshControlDispatch::Install(mesh_control_.get());
@@ -322,7 +322,7 @@ protected:
                                                          std::nullopt));
         moved = true;
       }
-      AppRuntime::RunUITasks();
+      AppRuntime::RunUIAndOwnerTasks();
       if (!moved) {
         break;
       }

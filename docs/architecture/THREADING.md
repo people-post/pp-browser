@@ -200,7 +200,7 @@ Target model ([projects/thread-ownership](../../projects/thread-ownership/DESIGN
 4. **Data plane bypasses owners.** Capture → Amp send and Amp receive → playout stay direct (IO lock); only control goes through owners.
 5. **Destroy on the owner.** `DeferredSelf` covers queued callbacks.
 
-`AppRuntime` hosts the owners next to the UI mailbox, behind the teardown gate (T002). `AppRuntimeConfig::owner_threads`: **Dedicated** (product; own OS thread, named through `AppRuntimeConfig::name_thread`) or **Manual** (tests / harnesses: no thread — `RunOwnerTasks` / `RunAllOwnerTasks` drain on the calling thread, which is then `CurrentlyOn` the owner; `DrainWorkersThenUI` and `QuiesceForTeardown` pump manual owners). Code moves onto owners phase by phase (see the project's CURRENT_STATE); until a class has moved, its old thread rules above still apply.
+`AppRuntime` hosts the owners next to the UI mailbox, behind the teardown gate (T002). `AppRuntimeConfig::owner_threads`: **Dedicated** (product; own OS thread, named through `AppRuntimeConfig::name_thread`) or **Manual** (tests / harnesses: no thread — `RunOwnerTasks` / `RunAllOwnerTasks` drain on the calling thread, which is then `CurrentlyOn` the owner; `DrainWorkersThenUI` and `QuiesceForTeardown` pump manual owners). Code moves onto owners phase by phase (see the project's CURRENT_STATE); until a class has moved, its old thread rules above still apply. Moved so far: call entry points — inbound call control, lifecycle Accept / Decline / Leave, roster fan-out, hop-migrate flow steps — run on **Media sessions** (T003); a call-control send prepares on the sender and enqueues (Amp on Mesh I/O, relay fallback on a worker), never waiting for delivery.
 
 ## Design principles
 

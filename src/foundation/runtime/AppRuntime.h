@@ -26,6 +26,13 @@ struct AppRuntimeConfig {
   std::function<void(const std::string& name)> name_thread;
 };
 
+/** Runtime config for tests: owner threads in Manual mode (drained by the test). */
+inline AppRuntimeConfig ManualOwnerRuntimeConfig() {
+  AppRuntimeConfig config;
+  config.owner_threads = OwnerThreadMode::Manual;
+  return config;
+}
+
 /**
  * Process-wide application runtime: worker pool, coordinator, UI mailbox.
  * Initialize from the composition root (Application ctor, pp-node bootstrap).
@@ -148,6 +155,11 @@ public:
   // --- Owner threads (projects/thread-ownership T001 / T002) --------------------------------
   /** Post onto an owner (teardown-gated like every mailbox); dropped when the runtime is down. */
   static void PostTo(OwnerThreadId owner, std::function<void()> task);
+  /**
+   * Post onto the owner, or run inline when no owner exists (runtime not initialized — unit tests
+   * without AppRuntime). For code migrating onto owners; prefer PostTo once the owner is certain.
+   */
+  static void PostToOwnerOrRun(OwnerThreadId owner, std::function<void()> task);
   /** True inside the owner's tasks (Manual mode: while the driving thread drains it). */
   static bool CurrentlyOn(OwnerThreadId owner);
   /** Coordinator timer that posts `task` onto the owner. Cancel with CancelCoordinatorTimer. */
@@ -157,6 +169,11 @@ public:
   /** Manual mode: drain every owner until all are empty. */
   static size_t RunAllOwnerTasks();
   static bool OwnerThreadsManual();
+  /**
+   * Tests / harnesses on the UI thread: drain the UI mailbox and every Manual owner until both are
+   * quiet (owner work posts UI replies and UI posts owner work).
+   */
+  static void RunUIAndOwnerTasks();
   /** Debug builds: abort with `where` when called off `owner` while owners run. Use PBR_ASSERT_ON_OWNER. */
   static void AssertOn(OwnerThreadId owner, const char* where);
 

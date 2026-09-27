@@ -164,7 +164,7 @@ public:
   };
 
   /**
-   * Written from the UI thread and from MeshControl (attach completion / inbound attach), so the
+   * Written from the UI thread and from the calls owner (attach completion / inbound attach), so the
    * sets are guarded by `mu` and the stream id is atomic. Do relay I/O outside `mu`.
    */
   struct PublisherStreams {

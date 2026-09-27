@@ -28,6 +28,7 @@
 #include <filesystem>
 #include <functional>
 #include <atomic>
+#include <optional>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
@@ -171,13 +172,13 @@ public:
 void DrainUntil(const std::function<bool()>& done, int max_ms = 4000) {
   const int slices = std::max(1, max_ms / 10);
   for (int i = 0; i < slices; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (done()) {
       return;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
 }
 
 CallDirectArmingPorts TestDirectArmingPorts(CallLifecycle* lifecycle) {
@@ -400,7 +401,7 @@ class CallSessionInboundComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
     EnsureSodiumInit();
-    AppRuntime::Initialize();
+    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
     AppRuntime::InitializeUI();
 
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_csm_" + util::GenerateUuid());
@@ -456,11 +457,12 @@ protected:
     csm_->SetTopologyHopArmingPorts(TestHopArmingPorts(lifecycle_.get()));
     csm_->SetLifecyclePorts(TestSessionLifecyclePorts(lifecycle_.get()));
     CallLifecycleSignalingPorts ports;
-    ports.accept_invite = [this](const std::string& call_id) -> Roe<void> {
+    ports.accept_invite = [this](const std::string& call_id, std::function<void(Roe<void>)> done) {
       if (!csm_) {
-        return Error("Calls unavailable");
+        done(Error("Calls unavailable"));
+        return;
       }
-      return csm_->AcceptInvite(call_id);
+      csm_->AcceptInviteAsync(call_id, std::move(done));
     };
     ports.decline_invite = [this](const std::string& call_id) -> Roe<void> {
       if (!csm_) {
@@ -708,6 +710,40 @@ TEST_F(CallSessionInboundComposeTest, DeclineClearsPendingInvite) {
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
   EXPECT_GE(sent_control_messages_, 1);
+}
+
+// thread-ownership t2a: Accept waits for the circuit park without blocking the calls owner — other
+// owner work (here: a ring notice and inbound control) runs while the park is outstanding, and
+// nothing is committed (no CallAccept, not Joined) until the park answers.
+TEST_F(CallSessionInboundComposeTest, AcceptAwaitsCircuitParkWithoutBlockingTheOwner) {
+  const std::string call_id = "call:park";
+  auto msg = MakeInviteMessage(call_id);
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  std::function<void(bool)> park_done;
+  csm_->SetParkCircuit([&](int /*timeout_ms*/, std::function<void(bool)> done) { park_done = std::move(done); });
+  std::optional<Roe<void>> accepted;
+  csm_->AcceptInviteAsync(call_id, [&](Roe<void> result) { accepted = std::move(result); });
+  ASSERT_TRUE(park_done) << "accept asked for the circuit park";
+  EXPECT_FALSE(accepted.has_value()) << "accept must not finish before the park";
+  auto self = sessions_->FindParticipant(call_id, local_identity_);
+  EXPECT_FALSE(self && self->has_value() && (*self)->state == CallParticipantState::Joined);
+
+  bool owner_free = false;
+  AppRuntime::PostToOwnerOrRun(OwnerThreadId::MediaSessions, [&]() { owner_free = true; });
+  AppRuntime::RunAllOwnerTasks();
+  EXPECT_TRUE(owner_free) << "the calls owner kept serving while accept awaited the park";
+
+  park_done(true);
+  AppRuntime::RunAllOwnerTasks();
+  ASSERT_TRUE(accepted.has_value());
+  EXPECT_TRUE(*accepted) << accepted->error().message;
+  self = sessions_->FindParticipant(call_id, local_identity_);
+  ASSERT_TRUE(self && self->has_value());
+  EXPECT_EQ((*self)->state, CallParticipantState::Joined);
+  EXPECT_GE(sent_control_messages_, 1) << "CallAccept sent after the park";
 }
 
 TEST_F(CallSessionInboundComposeTest, InviteAcceptLeaveProductCompose) {

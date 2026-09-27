@@ -110,8 +110,9 @@ public:
   using EnsureCircuitReadyFn = std::function<void()>;
   void SetEnsureCircuitReady(EnsureCircuitReadyFn callback);
   /** AcceptInvite may await circuit-ready before CallAccept. */
-  using AwaitCircuitReadyFn = std::function<bool(int timeout_ms)>;
-  void SetAwaitCircuitReady(AwaitCircuitReadyFn callback);
+  /** Async circuit park for the Accept gate; the composition posts `done` onto the calls owner. */
+  using ParkCircuitFn = std::function<void(int timeout_ms, std::function<void(bool ready)> done)>;
+  void SetParkCircuit(ParkCircuitFn park);
   /** H011 L3.1c: inbound call_circuit_r1 → answerer PreferLateReserve. */
   using PreferLateReserveFn = std::function<void(const std::string& relay_peer_id)>;
   void SetPreferLateReserve(PreferLateReserveFn callback);
@@ -186,7 +187,8 @@ public:
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
 
-  Roe<void> AcceptInvite(const std::string& call_id,
+  /** Accept (async: waits for the circuit park without blocking); `on_done` on the calls owner. */
+  void AcceptInviteAsync(const std::string& call_id, std::function<void(Roe<void>)> on_done,
                          InitiationChargeDecision charge_decision = InitiationChargeDecision::Waive);
   Roe<void> DeclineInvite(const std::string& call_id);
   Roe<void> LeaveCall(const std::string& call_id);
@@ -352,7 +354,7 @@ private:
   RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;
   EnsureCircuitReadyFn ensure_circuit_ready_;
-  AwaitCircuitReadyFn await_circuit_ready_;
+  ParkCircuitFn park_circuit_;
   PreferLateReserveFn prefer_late_reserve_;
   /** R1 chosen before Invite — flushed once StartCall creates an active session. */
   std::string pending_circuit_r1_announce_;

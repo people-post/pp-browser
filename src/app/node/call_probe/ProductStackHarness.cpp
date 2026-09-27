@@ -401,10 +401,9 @@ void ProductStackHarness::LearnAccountPeerId(const std::string& account_id,
 
 Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account,
                                                const ThreadMessage& msg) {
-  struct CountOnExit {
-    std::atomic<int>& n;
-    ~CountOnExit() { n.fetch_add(1, std::memory_order_release); }
-  } count{control_sends_};
+  // Same contract as the product's SendUserMessage: prepare, enqueue, return — delivery completes
+  // later (Amp on Mesh I/O). A blocking send here parked the calls owner on the peer's ack; after
+  // hangup the peer was gone, quiesce ran out and teardown freed the stack under it (hard-w5).
   Object body;
   body.set("thread_id", msg.thread_id);
   body.set("text", msg.text);
@@ -421,16 +420,23 @@ Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account,
       Base64Encode(ByteVector(reinterpret_cast<const uint8_t*>(json.data()),
                               reinterpret_cast<const uint8_t*>(json.data()) + json.size()));
   if (!signal_dir_.empty()) {
-    return WriteSignal(peer_account, env);
-  }
-  if (!chat_) {
-    return Error("chat transport not started");
+    auto written = WriteSignal(peer_account, env);
+    control_sends_.fetch_add(1, std::memory_order_release);
+    return written;
   }
   const std::string dial_key = AmpDialKeyForAccount(peer_account);
-  if (dial_key.empty()) {
-    return Error("missing amp dial key for call-control");
+  if (!chat_ || dial_key.empty()) {
+    control_sends_.fetch_add(1, std::memory_order_release);
+    return Error(!chat_ ? "chat transport not started" : "missing amp dial key for call-control");
   }
-  return chat_->SendEnvelope(dial_key, env);
+  chat_->SendEnvelopeAsync(dial_key, env, [sends = &control_sends_, id = msg.id](Roe<void> sent) {
+    if (!sent) {
+      std::cerr << "warning: call-control send failed message_id=" << id << " err=" << sent.error().message
+                << std::endl;
+    }
+    sends->fetch_add(1, std::memory_order_release);
+  });
+  return {};
 }
 
 void ProductStackHarness::SetSignalDir(std::filesystem::path dir) {

@@ -132,20 +132,20 @@ public:
 void DrainUntil(const std::function<bool()>& done, int max_ms = 4000) {
   const int slices = std::max(1, max_ms / 10);
   for (int i = 0; i < slices; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (done()) {
       return;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
 }
 
 class CallUiBackendStackTest : public ::testing::Test {
 protected:
   void SetUp() override {
     EnsureSodiumInit();
-    AppRuntime::Initialize();
+    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
     AppRuntime::InitializeUI();
     mesh_control_ = std::make_unique<MeshControlPool>(1);
     MeshControlDispatch::Install(mesh_control_.get());
@@ -276,7 +276,9 @@ protected:
     if (!inbound_.apply_inbound_control) {
       return Error("inbound not bound");
     }
-    return inbound_.apply_inbound_control(*msg, "account:peer", std::nullopt, std::nullopt);
+    auto applied = inbound_.apply_inbound_control(*msg, "account:peer", std::nullopt, std::nullopt);
+    AppRuntime::RunAllOwnerTasks();  // call control is applied on the calls owner (Manual in tests)
+    return applied;
   }
 
   std::filesystem::path data_dir_;

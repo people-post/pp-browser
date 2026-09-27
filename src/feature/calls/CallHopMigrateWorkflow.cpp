@@ -10,7 +10,6 @@
 #include "domain/messaging/InitiationPricing.h"
 #include "domain/mesh/l4/media_relay/MediaRelayAttach.h"
 #include "domain/messaging/SoftMigrateLogic.h"
-#include "domain/mesh/host/MeshControlDispatch.h"
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "foundation/i18n/LocalizationService.h"
@@ -30,14 +29,10 @@
 namespace pbr {
 namespace {
 
-void PostControlOrRun(std::function<void()> task) {
-  if (!task) {
-    return;
-  }
-  if (MeshControlDispatch::IsInstalled()) {
-    MeshControlDispatch::Post(std::move(task));
-  } else {
-    task();
+/** Next step of a migrate / attach flow, on the calls owner (was MeshControl before thread-ownership t2a). */
+void PostOnCallsOwner(std::function<void()> task) {
+  if (task) {
+    AppRuntime::PostToOwnerOrRun(OwnerThreadId::MediaSessions, std::move(task));
   }
 }
 
@@ -152,7 +147,7 @@ void CallHopMigrateWorkflow::MaybeSoftMigrateToSfuAsync(const std::string& call_
   if (!PassSoftMigrateArmingGate(call_id, trigger, prefer_hop_peer_id, on_done)) {
     return;
   }
-  PostControlOrRun([this, call_id, trigger, prefer_hop_peer_id, expected_gen,
+  PostOnCallsOwner([this, call_id, trigger, prefer_hop_peer_id, expected_gen,
                     on_done = std::move(on_done)]() mutable {
     RunSoftMigrate(call_id, trigger, prefer_hop_peer_id, expected_gen, std::move(on_done));
   });
@@ -444,7 +439,7 @@ void CallHopMigrateWorkflow::TryPickHop(std::shared_ptr<HopPick> pick, size_t in
   }
   if (!self_hop && relay_deps_->circuit_reach && relay_deps_->dial && !relay_deps_->dial->IsDialable(hop.peer_id)) {
     relay_deps_->circuit_reach->TryEnsureHopReachableAsync(hop.peer_id, [this, pick, index](Roe<void>) {
-      PostControlOrRun([this, pick, index]() { AttachPickedHop(pick, index); });
+      PostOnCallsOwner([this, pick, index]() { AttachPickedHop(pick, index); });
     });
     return;
   }
@@ -525,7 +520,7 @@ void CallHopMigrateWorkflow::OnPickedHopAttached(const std::shared_ptr<HopPick>&
     }
     pick->failures.push_back(detail);
     log().warning << "SoftMigrate hop failed: " << detail;
-    PostControlOrRun([this, pick, index]() { TryPickHop(pick, index + 1); });
+    PostOnCallsOwner([this, pick, index]() { TryPickHop(pick, index + 1); });
     return;
   }
   RecordPickedHop(*pick, attach.hop_peer_id);
@@ -1131,7 +1126,7 @@ void CallHopMigrateWorkflow::ReattachGuestSfuTransportAsync(const std::string& c
   if (!on_done) {
     return;
   }
-  PostControlOrRun([this, call_id, attach_in, on_done = std::move(on_done)]() mutable {
+  PostOnCallsOwner([this, call_id, attach_in, on_done = std::move(on_done)]() mutable {
     StartGuestReattach(call_id, attach_in, std::move(on_done));
   });
 }
@@ -1180,7 +1175,7 @@ void CallHopMigrateWorkflow::StartGuestReattach(const std::string& call_id, cons
           on_done(attached.error());
           return;
         }
-        PostControlOrRun([this, at = std::move(at), bps = attached->a_up_bps, on_done = std::move(on_done)]() {
+        PostOnCallsOwner([this, at = std::move(at), bps = attached->a_up_bps, on_done = std::move(on_done)]() {
           on_done(CompleteGuestReattach(at, bps));
         });
       });

@@ -330,37 +330,57 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
   auto accept = signaling->accept_invite;
   const auto guard = deferred_.token();
   const uint64_t epoch = deferred_.Snapshot();
-  AppRuntime::ResumeBackgroundWork();
-  // Never Browser IO — AcceptInvite was starved behind PollInbox on Samsung (queued, no IO enter).
-  // Same escape hatch as offerer Connect worker / call-control MediaKey send.
-  AppRuntime::PostWorkerCritical([this, accept = std::move(accept), call_id, guard, epoch]() {
+  AppRuntime::ResumeBackgroundWork();  // relay-fallback sends run on workers
+  // Accept runs on the calls owner (thread-ownership t2a) — never behind PollInbox, never blocking:
+  // it awaits the circuit park asynchronously and reports once.
+  AppRuntime::PostToOwnerOrRun(OwnerThreadId::MediaSessions, [this, accept = std::move(accept), call_id, guard, epoch]() {
     if (!DeferredSelf::Alive(guard, epoch)) {
       return;
     }
-    log().info << "AcceptInvite worker enter call_id=" << call_id;
-    Roe<void> accepted = Error("Calls unavailable");
-    if (accept) {
-      accepted = accept(call_id);
+    log().info << "AcceptInvite owner enter call_id=" << call_id;
+    auto reply = [this, call_id, guard, epoch](Roe<void> accepted) {
+      AppRuntime::PostUI([this, call_id, accepted = std::move(accepted), guard, epoch]() {
+        if (DeferredSelf::Alive(guard, epoch)) {
+          OnAcceptResult(call_id, accepted);
+        }
+      });
+    };
+    if (!accept) {
+      reply(Error("Calls unavailable"));
+      return;
     }
-    AppRuntime::PostUI([this, call_id, accepted = std::move(accepted), guard, epoch]() mutable {
-      if (!DeferredSelf::Alive(guard, epoch)) {
-        return;
+    accept(call_id, std::move(reply));
+  });
+}
+
+void CallLifecycle::OnAcceptResult(const std::string& call_id, const Roe<void>& accepted) {
+  // B-CONFLICT: Accept B while AcceptInvite(A) still runs — drop A's late UI result so it
+  // cannot JoinedLocal/RemoteEnded-clobber B (or Idle after LeaveCallIfActiveExcept).
+  if (accepting_call_id_ != call_id && call_id_ != call_id) {
+    log().info << "AcceptInvite result ignored stale call_id=" << call_id << " active=" << call_id_
+               << " accepting=" << accepting_call_id_;
+    return;
+  }
+  if (!accepted) {
+    log().warning << "AcceptInvite failed call_id=" << call_id << " err=" << accepted.error().message;
+    last_error_ = accepted.error().message;
+    Apply(CallLifecycleEvent::AcceptFailed, call_id);
+    return;
+  }
+  log().info << "AcceptInvite ok call_id=" << call_id;
+  Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+}
+
+void CallLifecycle::PostOnOwnerAndReply(std::function<Roe<void>()> work, std::function<void(Roe<void>)> reply) {
+  const auto guard = deferred_.token();
+  const uint64_t epoch = deferred_.Snapshot();
+  AppRuntime::PostToOwnerOrRun(OwnerThreadId::MediaSessions, [work = std::move(work), reply = std::move(reply), guard,
+                                                              epoch]() {
+    Roe<void> result = work();
+    AppRuntime::PostUI([reply, result = std::move(result), guard, epoch]() {
+      if (DeferredSelf::Alive(guard, epoch)) {
+        reply(result);
       }
-      // B-CONFLICT: Accept B while AcceptInvite(A) still runs — drop A's late UI result so it
-      // cannot JoinedLocal/RemoteEnded-clobber B (or Idle after LeaveCallIfActiveExcept).
-      if (accepting_call_id_ != call_id && call_id_ != call_id) {
-        log().info << "AcceptInvite result ignored stale call_id=" << call_id
-                   << " active=" << call_id_ << " accepting=" << accepting_call_id_;
-        return;
-      }
-      if (!accepted) {
-        log().warning << "AcceptInvite failed call_id=" << call_id << " err=" << accepted.error().message;
-        last_error_ = accepted.error().message;
-        Apply(CallLifecycleEvent::AcceptFailed, call_id);
-        return;
-      }
-      log().info << "AcceptInvite ok call_id=" << call_id;
-      Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
     });
   });
 }
@@ -368,23 +388,13 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
 void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
   const auto signaling = ports_.Get();
   auto decline = signaling->decline_invite;
-  const auto guard = deferred_.token();
-  const uint64_t epoch = deferred_.Snapshot();
-  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
-      WorkerLane::Normal,
+  PostOnOwnerAndReply(
       [decline = std::move(decline), call_id]() -> Roe<void> {
-        if (!decline) {
-          return Error("Calls unavailable");
-        }
-        return decline(call_id);
+        return decline ? decline(call_id) : Roe<void>(Error("Calls unavailable"));
       },
-      [this, call_id, guard, epoch](Roe<void> declined) {
-        if (!DeferredSelf::Alive(guard, epoch)) {
-          return;
-        }
+      [this, call_id](Roe<void> declined) {
         if (!declined) {
-          log().warning << "DeclineInvite failed call_id=" << call_id
-                        << " err=" << declined.error().message;
+          log().warning << "DeclineInvite failed call_id=" << call_id << " err=" << declined.error().message;
         }
         Apply(CallLifecycleEvent::DeclineDone, call_id);
       });
@@ -393,22 +403,13 @@ void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
 void CallLifecycle::PostLeaveCall(const std::string& call_id) {
   const auto signaling = ports_.Get();
   auto leave = signaling->leave_call;
-  const auto guard = deferred_.token();
-  const uint64_t epoch = deferred_.Snapshot();
-  // Critical: must not sit behind Normal work while Connect (also Critical) still dials —
-  // StopMeshMedia aborts Connect via connect_generation_.
-  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
-      WorkerLane::Critical,
+  // On the calls owner, which never blocks — Leave cannot sit behind a dialing Connect (bridge) or
+  // an Accept waiting for its circuit park.
+  PostOnOwnerAndReply(
       [leave = std::move(leave), call_id]() -> Roe<void> {
-        if (!leave) {
-          return Error("Calls unavailable");
-        }
-        return leave(call_id);
+        return leave ? leave(call_id) : Roe<void>(Error("Calls unavailable"));
       },
-      [this, call_id, guard, epoch](Roe<void> left) {
-        if (!DeferredSelf::Alive(guard, epoch)) {
-          return;
-        }
+      [this, call_id](Roe<void> left) {
         if (!left) {
           log().warning << "LeaveCall failed call_id=" << call_id << " err=" << left.error().message;
         }

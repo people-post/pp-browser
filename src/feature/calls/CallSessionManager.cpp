@@ -218,8 +218,12 @@ void CallSessionManager::BindWorkflowHostPorts() {
       ensure_circuit_ready_();
     }
   };
-  ports.reach.await_circuit_ready = [this](int timeout_ms) {
-    return await_circuit_ready_ ? await_circuit_ready_(timeout_ms) : false;
+  ports.reach.park_circuit = [this](int timeout_ms, std::function<void(bool)> done) {
+    if (park_circuit_) {
+      park_circuit_(timeout_ms, std::move(done));
+    } else {
+      done(false);
+    }
   };
   ports.reach.note_mesh_peer_id_for_relay = [this](const std::string& relay, const std::string& peer_id) {
     NoteMeshPeerIdForRelay(relay, peer_id);
@@ -491,8 +495,8 @@ void CallSessionManager::SetEnsureCircuitReady(EnsureCircuitReadyFn callback) {
   ensure_circuit_ready_ = std::move(callback);
 }
 
-void CallSessionManager::SetAwaitCircuitReady(AwaitCircuitReadyFn callback) {
-  await_circuit_ready_ = std::move(callback);
+void CallSessionManager::SetParkCircuit(ParkCircuitFn park) {
+  park_circuit_ = std::move(park);
 }
 
 void CallSessionManager::SetPreferLateReserve(PreferLateReserveFn callback) {
@@ -989,9 +993,9 @@ void CallSessionManager::SetPendingAcceptChargeDecision(const InitiationChargeDe
 }
 
 
-Roe<void> CallSessionManager::AcceptInvite(const std::string& call_id,
+void CallSessionManager::AcceptInviteAsync(const std::string& call_id, std::function<void(Roe<void>)> on_done,
                                            InitiationChargeDecision charge_decision) {
-  return workflow_.AcceptInvite(call_id, charge_decision);
+  workflow_.AcceptInviteAsync(call_id, charge_decision, std::move(on_done));
 }
 
 

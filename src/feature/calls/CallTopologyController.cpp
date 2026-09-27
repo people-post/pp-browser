@@ -905,7 +905,7 @@ void CallTopologyController::SyncSfuSubscriptions(const std::string& call_id) {
   if (!relay_deps_.relay || !sfu_.attached || !media_.IsSfuMode() || media_.ActiveCallId() != call_id) {
     return;
   }
-  // Runs on UI and on MeshControl (attach completion): update the stream sets under the lock,
+  // Runs on UI and on the calls owner (attach completion): update the stream sets under the lock,
   // subscribe after releasing it (relay I/O takes the relay's own lock).
   std::vector<uint32_t> to_subscribe;
   {

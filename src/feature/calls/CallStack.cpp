@@ -147,11 +147,12 @@ void CallStack::BindMediaProducts() {
 
 CallLifecycleSignalingPorts CallStack::MakeLifecycleSignalingPorts() {
   CallLifecycleSignalingPorts ports;
-  ports.accept_invite = [this](const std::string& call_id) -> Roe<void> {
+  ports.accept_invite = [this](const std::string& call_id, std::function<void(Roe<void>)> done) {
     if (!call_sessions_) {
-      return Error("Calls unavailable");
+      done(Error("Calls unavailable"));
+      return;
     }
-    return call_sessions_->AcceptInvite(call_id);
+    call_sessions_->AcceptInviteAsync(call_id, std::move(done));
   };
   ports.decline_invite = [this](const std::string& call_id) -> Roe<void> {
     if (!call_sessions_) {
@@ -237,14 +238,24 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
   }
   if (deps_.bind_call_control) {
     CallControlInboundPorts inbound;
+    // Receive threads hand call control to the calls owner (thread-ownership t2a, T003): fire and
+    // forget with a copy — ApplyInboundControl only reads the message; failures are logged there.
     inbound.apply_inbound_control = [this](ThreadMessage& message, const std::string& sender_identity,
                                            std::optional<int64_t> relay_created_at_ms,
                                            std::optional<int64_t> relay_server_time_ms) -> Roe<void> {
-      if (!call_sessions_) {
-        return {};
-      }
-      return call_sessions_->ApplyInboundControl(message, sender_identity, relay_created_at_ms,
-                                                 relay_server_time_ms);
+      AppRuntime::PostToOwnerOrRun(OwnerThreadId::MediaSessions, [this, message, sender_identity, relay_created_at_ms,
+                                                                  relay_server_time_ms]() mutable {
+        if (!call_sessions_) {
+          return;
+        }
+        if (auto applied = call_sessions_->ApplyInboundControl(message, sender_identity, relay_created_at_ms,
+                                                               relay_server_time_ms);
+            !applied) {
+          log().warning << "inbound call control failed message_id=" << message.id
+                        << " err=" << applied.error().message;
+        }
+      });
+      return {};
     };
     inbound.has_active_local_call = [this]() { return HasActiveLocalCall(); };
     inbound.active_call_origin_thread_id = [this]() -> std::optional<std::string> {
@@ -309,9 +320,16 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
       shared->Rendezvous().ReserveOnBootstrapSeeds();
     }
   });
-  call_sessions_->SetAwaitCircuitReady([this](int timeout_ms) {
-    MeshMediaPlane* shared = mesh_media();
-    return shared ? shared->Rendezvous().AwaitCircuitReady(timeout_ms) : false;
+  // Park completes on the Amp IO thread (or at a coordinator deadline): back onto the calls owner.
+  call_sessions_->SetParkCircuit([this](int timeout_ms, std::function<void(bool)> done) {
+    auto on_owner = [done = std::move(done)](bool ready) {
+      AppRuntime::PostToOwnerOrRun(OwnerThreadId::MediaSessions, [done, ready]() { done(ready); });
+    };
+    if (MeshMediaPlane* shared = mesh_media()) {
+      shared->Rendezvous().EnsureBootstrapSeedParkedAsync(std::move(on_owner), timeout_ms);
+    } else {
+      on_owner(false);
+    }
   });
   call_sessions_->SetPreferLateReserve([this](const std::string& relay_peer_id) {
     if (MeshMediaPlane* shared = mesh_media()) {
