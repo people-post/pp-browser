@@ -431,6 +431,16 @@ protected:
     }
     return false;
   }
+  /**
+   * The arbiter lists a holder as soon as the hold is granted — before the device opens and the
+   * engine installs the lease — so tests about the engine wait on what the engine reports.
+   */
+  static bool WaitUntil(const std::function<bool()>& done) {
+    for (int i = 0; i < 400 && !done(); ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return done();
+  }
   static CallMediaEngine::SfuSendFn NoopSend() {
     return [](const CallMediaEngine::SfuPacket&) {};
   }
@@ -443,7 +453,7 @@ TEST_F(EngineDeviceLeaseTest, DuplexHoldsMicAndSpeakerUnderTheSessionId) {
   ASSERT_TRUE(WaitHolders(MediaDeviceKind::Mic, 1));
   ASSERT_TRUE(WaitHolders(MediaDeviceKind::Speaker, 1));
   EXPECT_EQ(arbiter_->Holders(MediaDeviceKind::Mic).front(), "call:1");
-  EXPECT_TRUE(engine.HasLocalCapture());
+  EXPECT_TRUE(WaitUntil([&] { return engine.HasLocalCapture(); }));
   engine.Stop();
   EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Mic).empty());
   EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Speaker).empty());
@@ -456,8 +466,7 @@ TEST_F(EngineDeviceLeaseTest, DuplexCallUsesTheVoiceProcessingUnit) {
   auto engine_owned = MakeEngine();
   CallMediaEngine& engine = *engine_owned;
   ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
-  ASSERT_TRUE(WaitHolders(MediaDeviceKind::Mic, 1));
-  EXPECT_TRUE(engine.HasLocalCapture());
+  ASSERT_TRUE(WaitUntil([&] { return engine.HasLocalCapture(); }));
   EXPECT_EQ(engine.HealthSnapshot().audio_io, "vpio");
   EXPECT_EQ(engine.HealthSnapshot().io_underruns, 7u);
   const auto events = log_.Events();
@@ -473,7 +482,7 @@ TEST_F(EngineDeviceLeaseTest, DefaultDeviceChangeReacquiresTheVoicePair) {
   auto engine_owned = MakeEngine();
   CallMediaEngine& engine = *engine_owned;
   ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
-  ASSERT_TRUE(WaitHolders(MediaDeviceKind::Mic, 1));
+  ASSERT_TRUE(WaitUntil([&] { return engine.HealthSnapshot().audio_io == "vpio"; }));
   auto unit = backend_->LastUnit();
   ASSERT_NE(unit, nullptr);
   unit->device_changed = true;
@@ -486,7 +495,7 @@ TEST_F(EngineDeviceLeaseTest, DefaultDeviceChangeReacquiresTheVoicePair) {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   EXPECT_EQ(opens(), 2);
-  EXPECT_EQ(engine.HealthSnapshot().audio_io, "vpio");
+  EXPECT_TRUE(WaitUntil([&] { return engine.HealthSnapshot().audio_io == "vpio"; }));
   engine.Stop();
   Settle();
   const auto events = log_.Events();
@@ -498,8 +507,7 @@ TEST_F(EngineDeviceLeaseTest, DuplexCallFallsBackToSeparateLeasesWithoutVoicePro
   auto engine_owned = MakeEngine();
   CallMediaEngine& engine = *engine_owned;
   ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
-  ASSERT_TRUE(WaitHolders(MediaDeviceKind::Mic, 1));
-  EXPECT_EQ(engine.HealthSnapshot().audio_io, "sdl");
+  EXPECT_TRUE(WaitUntil([&] { return engine.HealthSnapshot().audio_io == "sdl"; }));
   engine.Stop();
 }
 
