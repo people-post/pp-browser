@@ -104,7 +104,12 @@ struct TeardownGate {
   int64_t running = 0;
 };
 
-TeardownGate g_gate;
+/**
+ * Never destroyed: the runners / owner mailboxes above are destroyed after it at exit (reverse
+ * declaration order), and each unrun task still queued there settles its PendingPost — which locks
+ * this gate. A destroyed mutex aborts on macOS ("mutex lock failed: Invalid argument").
+ */
+TeardownGate& g_gate = *new TeardownGate();
 /** Nesting depth of gated tasks on this thread: continuations are allowed while draining. */
 thread_local int t_gated_depth = 0;
 
