@@ -270,8 +270,10 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done,
   //     never shared/reused, so SetReleaseSessionOnStop() can only ever reach the
   //     generation it was called for.
   //  3. `done` is set as literally the last step on every exit path (including early
-  //     failures), so whichever generation starts next — if any — has something to wait
-  //     on and is never blocked by one that ran but never played.
+  //     failures), and only after a bounded (2000ms) wait for `previous_done` — so `done`
+  //     transitively means "every earlier generation has finished too". A generation that
+  //     fails early (or stops before activating) therefore never lets a later one activate
+  //     ahead of a still-tearing-down older one whose late Deactivate() would kill it.
   //  4. `stop` belongs to this generation alone (minted fresh in Start(), set by
   //     RequestStop while we are current, never reset). A later Start() therefore cannot
   //     un-stop us: if we were stopped while still inside SDL_OpenAudioDeviceStream, we
@@ -287,7 +289,23 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done,
       playing_ = false;
     }
   };
-  const auto signal_done = [&done]() {
+  // Bounded wait (2000ms, 5ms poll; worker thread only) for the previous generation's
+  // `done`. With `honor_stop`, also gives up as soon as this generation is stopped (rule
+  // 1's pre-activate wait); rule 3's wait before `done` is unconditional.
+  const auto wait_for_previous = [&previous_done, &stop](const bool honor_stop) {
+    if (!previous_done) {
+      return;
+    }
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+    while (!previous_done->load(std::memory_order_acquire) && !(honor_stop && stop->load()) &&
+           std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+  };
+  const auto signal_done = [this, &done, &wait_for_previous]() {
+    if (tone_ == Tone::OutgoingRingback) {
+      wait_for_previous(/*honor_stop=*/false);
+    }
     if (done) {
       done->store(true, std::memory_order_release);
     }
@@ -324,12 +342,8 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done,
   bool activated = false;
   if (tone_ == Tone::OutgoingRingback) {
     if (previous_done) {
-      const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
-      while (!previous_done->load(std::memory_order_acquire) &&
-             std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-      }
-      if (!previous_done->load(std::memory_order_acquire)) {
+      wait_for_previous(/*honor_stop=*/true);
+      if (!previous_done->load(std::memory_order_acquire) && !stop->load()) {
         SDL_Log("CallRingtone: previous ringback generation did not signal done within "
                 "2000ms — activating anyway");
       }

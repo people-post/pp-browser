@@ -68,7 +68,10 @@ public:
   /** Spin-wait (non-UI) until PlaybackDeviceHeld() is false or timeout. */
   static void WaitUntilPlaybackDeviceReleased(int timeout_ms = 2000);
 
-  /** Test-only: called on the worker right before SDL_OpenAudioDeviceStream (null = none). */
+  /**
+   * Test-only: called on the worker right before SDL_OpenAudioDeviceStream (null = none).
+   * Not synchronized — set/clear it only while no CallRingtone worker is running.
+   */
   static void SetBeforeOpenHookForTesting(std::function<void()> hook);
   /** Test-only: number of workers currently holding an open playback stream. */
   static int PlaybackDeviceHoldersForTesting();
