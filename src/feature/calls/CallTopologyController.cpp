@@ -141,12 +141,12 @@ void CallTopologyController::SetMediaKeyStore(CallMediaKeyStore* keys) {
 
 void CallTopologyController::SetSeatPorts(CallTopologySeatPorts ports) {
   hop_migrate_.SetSeatPorts(MakeMigrateSeatPorts(ports));
-  seat_ = std::move(ports);
+  seat_.Set(std::move(ports));
 }
 
 void CallTopologyController::SetHopArmingPorts(CallHopArmingPorts ports) {
   hop_migrate_.SetArmingPorts(MakeMigrateArmingPorts(ports));
-  arming_ = std::move(ports);
+  arming_.Set(std::move(ports));
 }
 
 CallHopMigrateArmingPorts CallTopologyController::MakeMigrateArmingPorts(
@@ -362,8 +362,9 @@ void CallTopologyController::OnAttachWaitTimerFire(const std::string& call_id) {
 
 CallHopPlannerApplyContext CallTopologyController::BuildHopPlannerContext(
     const std::string& call_id, size_t effective_n, bool has_sfu_hint) const {
+  const auto arming_ports = arming_.Get();
   CallHopPlannerApplyContext ctx;
-  ctx.allows_hop_path = !arming_.IsBound() || arming_.hop_ops_allowed();
+  ctx.allows_hop_path = !arming_ports->IsBound() || arming_ports->hop_ops_allowed();
   ctx.should_arm_hop = ShouldArmHopPlanner(effective_n);
   ctx.has_sfu_hint = has_sfu_hint;
   ctx.soft_migrate_in_flight = flight_.in_flight;
@@ -385,8 +386,9 @@ void CallTopologyController::SetHopPlannerPhase(const CallHopPlannerPhase next,
 
 void CallTopologyController::ReportHopProgress(const CallHopPlannerPhase phase,
                                                const std::string& call_id) {
-  if (arming_.report_progress) {
-    arming_.report_progress(phase, call_id);
+  const auto arming_ports = arming_.Get();
+  if (arming_ports->report_progress) {
+    arming_ports->report_progress(phase, call_id);
   }
 }
 
@@ -435,12 +437,13 @@ void CallTopologyController::ClearAwaitingSfuRecovery() {
 }
 
 void CallTopologyController::OnMediaStopped(const std::string& call_id) {
+  const auto seat_ports = seat_.Get();
   // Invalidate in-flight SoftMigrate / AttachLocalToSfu so they cannot StartSfu after Leave
   // (Linux quit dogfood: double-free from SDL reopen during teardown).
   Apply(CallHopPlannerEvent::Stop, call_id);
   flight_.migrate_generation.fetch_add(1, std::memory_order_acq_rel);
-  if (seat_.IsBound()) {
-    seat_.cancel_attach_for_call(call_id);
+  if (seat_ports->IsBound()) {
+    seat_ports->cancel_attach_for_call(call_id);
   }
   if (sfu_.attached && relay_deps_.relay) {
     relay_deps_.relay->Detach();
@@ -680,6 +683,7 @@ bool CallTopologyController::LanReachabilityConfirmedForCall(
 }
 
 bool CallTopologyController::IsActiveCallForTopology(const std::string& call_id) const {
+  const auto seat_ports = seat_.Get();
   if (call_id.empty()) {
     return false;
   }
@@ -693,11 +697,11 @@ bool CallTopologyController::IsActiveCallForTopology(const std::string& call_id)
   }
 
   // V036: seat bind is the media-active answer — never veto via leftover engine ActiveCallId.
-  if (seat_.IsBound()) {
-    if (seat_.is_bound(call_id)) {
+  if (seat_ports->IsBound()) {
+    if (seat_ports->is_bound(call_id)) {
       return true;
     }
-    const std::string bound = seat_.bound_call_id();
+    const std::string bound = seat_ports->bound_call_id();
     if (!bound.empty()) {
       return false;
     }
@@ -1382,6 +1386,7 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
 
 bool CallTopologyController::ExpectsInboundSfuAttach(const std::string& call_id,
                                                      const CallSfuAttachDetail& attach) const {
+  const auto arming_ports = arming_.Get();
   if (!IsActiveCallForTopology(call_id)) {
     log().info << "OnInboundSfuAttach ignored (not active call) call_id=" << call_id
                << " media_active=" << media_.ActiveCallId();
@@ -1394,7 +1399,7 @@ bool CallTopologyController::ExpectsInboundSfuAttach(const std::string& call_id,
   if (auto joined = sessions_.CountJoined(call_id)) {
     n_joined = *joined;
   }
-  const bool status_allows_hop = !arming_.IsBound() || arming_.hop_ops_allowed();
+  const bool status_allows_hop = !arming_ports->IsBound() || arming_ports->hop_ops_allowed();
   const bool expect_group_attach =
       status_allows_hop &&
       (CallMediaTopology::ShouldUseMediaRelay(n_joined) || attach_wait_.call_id == call_id ||
@@ -1402,7 +1407,7 @@ bool CallTopologyController::ExpectsInboundSfuAttach(const std::string& call_id,
   if (!expect_group_attach) {
     log().info << "OnInboundSfuAttach ignored (1:1 / hop not armed) call_id=" << call_id << " n_joined=" << n_joined
                << " hop=" << attach.hop_peer_id << " arming="
-               << (arming_.IsBound() && arming_.arming_debug_name ? arming_.arming_debug_name() : "null");
+               << (arming_ports->IsBound() && arming_ports->arming_debug_name ? arming_ports->arming_debug_name() : "null");
   }
   return expect_group_attach;
 }
@@ -1414,6 +1419,7 @@ void CallTopologyController::DeferInboundSfuAttach(const std::string& call_id, c
 
 bool CallTopologyController::SettleInboundSfuAttachWithoutDial(const std::string& call_id,
                                                                const CallSfuAttachDetail& attach) {
+  const auto seat_ports = seat_.Get();
   if (sfu_.attached && media_.ActiveCallId() == call_id &&
       (media_.IsSfuMode() || flight_.attached_hop_peer_id == attach.hop_peer_id)) {
     // Already attached (duplicate fan-out / late roster / peer publisher announce).
@@ -1426,8 +1432,8 @@ bool CallTopologyController::SettleInboundSfuAttachWithoutDial(const std::string
   }
   // An attach already dialing (seat flight, or attaching_hop even if flight_.in_flight briefly
   // cleared): same hop coalesces; a different hop waits — never a parallel Detach.
-  const bool seat_in_flight = seat_.IsBound() && seat_.has_attach_in_flight();
-  const std::string in_flight_hop = seat_in_flight ? seat_.attaching_hop() : flight_.attaching_hop_peer_id;
+  const bool seat_in_flight = seat_ports->IsBound() && seat_ports->has_attach_in_flight();
+  const std::string in_flight_hop = seat_in_flight ? seat_ports->attaching_hop() : flight_.attaching_hop_peer_id;
   if (seat_in_flight || !in_flight_hop.empty()) {
     if (in_flight_hop == attach.hop_peer_id) {
       log().info << "OnInboundSfuAttach coalesce (attaching same hop) call_id=" << call_id
@@ -1479,9 +1485,10 @@ bool CallTopologyController::RefusePrivateHopMultiaddr(const std::string& call_i
 }
 
 void CallTopologyController::StartInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach) {
+  const auto seat_ports = seat_.Get();
   BeginSfuAttachWait(call_id);
-  if (seat_.IsBound()) {
-    seat_.note_connecting(call_id);
+  if (seat_ports->IsBound()) {
+    seat_ports->note_connecting(call_id);
   }
   host_.SetMediaActivity(Tr("call.status.connecting_media_relay"));
   host_.NotifyRingChanged();

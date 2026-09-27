@@ -16,6 +16,7 @@
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallSessionWorkflow.h"
+#include "feature/calls/SharedPorts.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -343,9 +344,10 @@ private:
   CallMediaEngine& media_;
   CallTopologyController topology_;
   CallSessionWorkflow workflow_;
-  CallDirectMediaPorts direct_media_;
-  CallSessionLifecyclePorts lifecycle_ports_;
-  CallMediaSeatPorts media_seat_ports_;
+  // Swapped at mesh start / stop and lifecycle bind; read as one snapshot per operation.
+  SharedPorts<CallDirectMediaPorts> direct_media_;
+  SharedPorts<CallSessionLifecyclePorts> lifecycle_ports_;
+  SharedPorts<CallMediaSeatPorts> media_seat_ports_;
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;

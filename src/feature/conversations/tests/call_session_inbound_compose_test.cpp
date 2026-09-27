@@ -27,6 +27,7 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <atomic>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
@@ -1377,6 +1378,36 @@ TEST_F(CallSessionInboundComposeTest, RetryP2pMediaAfterConnectFailed) {
     auto session = sessions_->LoadSession(call_id);
     return session && session->has_value() && (*session)->state == CallSessionState::Ended;
   });
+}
+
+// thread-ownership t2a: mesh start / stop swap the session manager's ports while other threads use
+// them. Each use takes one snapshot, so a check and the call it guards never straddle a swap — the
+// old rebind-in-place could call an empty port (bad_function_call) or destroy a running one (TSan).
+TEST_F(CallSessionInboundComposeTest, PortSwapsDuringUseNeverCallAnEmptyPort) {
+  CallDirectMediaPorts ports;
+  std::atomic<int> polls{0};
+  ports.media_path_kind = []() { return std::string("direct"); };
+  ports.is_connect_failed = []() { return false; };
+  ports.connect_missing_mic = []() { return false; };
+  ports.poll_connect_health = [&polls]() { polls.fetch_add(1); };
+  ports.media_attempted = [](const std::string&) { return false; };
+  std::atomic<bool> stop{false};
+  std::thread swapper([&]() {
+    for (int i = 0; !stop.load(); ++i) {
+      csm_->SetDirectMediaPorts(i % 2 == 0 ? ports : CallDirectMediaPorts{});
+    }
+  });
+  for (int i = 0; i < 20000; ++i) {
+    const std::string kind = csm_->MediaPathKind();
+    EXPECT_TRUE(kind.empty() || kind == "direct");
+    (void)csm_->IsP2pConnectFailed();
+    (void)csm_->P2pConnectMissingMic();
+    (void)csm_->MediaAttemptedThisProcess("call:swap");
+    csm_->PollP2pConnectHealth();
+  }
+  stop.store(true);
+  swapper.join();
+  csm_->SetDirectMediaPorts({});
 }
 
 TEST_F(CallSessionInboundComposeTest, StartCallOutboundCreatesSessionAndInvite) {

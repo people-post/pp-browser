@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/Error.h"
+#include "feature/calls/SharedPorts.h"
 #include "common/Module.h"
 #include "domain/messaging/CallLifecycleTypes.h"
 #include "foundation/runtime/DeferredSelf.h"
@@ -97,7 +98,7 @@ private:
   void PostLeaveCall(const std::string& call_id);
   void PostRetryMedia(const std::string& call_id);
 
-  CallLifecycleSignalingPorts ports_;
+  SharedPorts<CallLifecycleSignalingPorts> ports_;
   CallPhase phase_ = CallPhase::Idle;
   CallMediaStatus status_ = CallMediaStatus::None;
   uint64_t media_cancel_gen_ = 0;

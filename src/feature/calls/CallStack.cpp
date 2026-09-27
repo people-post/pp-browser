@@ -138,13 +138,8 @@ void CallStack::BindMediaProducts() {
     call_sessions_->SetTopologySeatPorts(MakeTopologySeatPorts());
     call_sessions_->SetMediaSeatPorts(call_sessions_->MakeSeatPorts(call_media_seat_.get()));
   }
-  if (call_lifecycle_) {
-    call_sessions_->SetTopologyHopArmingPorts(MakeHopArmingPorts());
-    call_sessions_->SetLifecyclePorts(MakeSessionLifecyclePorts());
-    if (CallMediaBridge* bridge = media_plane_->Bridge()) {
-      bridge->SetDirectArmingPorts(MakeDirectArmingPorts());
-    }
-  }
+  // Lifecycle ↔ sessions / bridge ports (mesh stop cleared them): one bind point with BuildSessions.
+  EnsureCallLifecycleBound();
   if (CallMediaBridge* bridge = media_plane_->Bridge()) {
     bridge->SetSeatPorts(MakeDirectSeatPorts());
   }
@@ -266,7 +261,6 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
   }
   call_sessions_->AbandonOrphanedCallsAfterRestart();
   call_sessions_->SetOnRingChangedMesh([this]() {
-    EnsureCallLifecycleBound();
     // Invite ingest runs on IO — never Sync N025 on the IO thread itself.
     if (AppRuntime::CurrentlyOnUI()) {
       if (deps_.sync_mobile_ephemeral_listen) {
@@ -495,7 +489,11 @@ CallSessionManager* CallStack::Calls() {
 }
 
 CallLifecycle* CallStack::Lifecycle() {
-  EnsureCallLifecycleBound();
+  // Accessor only: ports are bound at BuildSessions / BindMediaProducts (the stack's bind points),
+  // never on access — rebinding here on every UI call raced workers invoking the old ports.
+  if (!call_lifecycle_) {
+    call_lifecycle_ = std::make_unique<CallLifecycle>();
+  }
   return call_lifecycle_.get();
 }
 
@@ -531,6 +529,9 @@ void CallStack::SetEphemeralListenDesire(bool /*want*/) {
 void CallStack::ResetSessions() {
   if (deps_.bind_call_control) {
     deps_.bind_call_control({});
+  }
+  if (call_lifecycle_) {
+    call_lifecycle_->ClearBinding();  // its ports point at the sessions being dropped
   }
   call_sessions_.reset();
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/media/CallMediaEngine.h"
+#include "feature/calls/SharedPorts.h"
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/CallHopPlan.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
@@ -304,8 +305,8 @@ private:
   CallMediaKeyStore* media_keys_ = nullptr;
   CallTopologyMediaRelayDeps* relay_deps_ = nullptr;
   CallHopMigrateHostPorts host_;
-  CallHopMigrateArmingPorts arming_;
-  CallHopMigrateSeatPorts seat_;
+  SharedPorts<CallHopMigrateArmingPorts> arming_;
+  SharedPorts<CallHopMigrateSeatPorts> seat_;
   TopologyOps ops_;
   SoftMigrateFlight flight_;
   AttachWait attach_wait_;

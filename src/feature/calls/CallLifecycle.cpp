@@ -113,7 +113,7 @@ const char* CallLifecycleEventName(const CallLifecycleEvent ev) {
 }
 
 void CallLifecycle::BindSignalingPorts(CallLifecycleSignalingPorts ports) {
-  ports_ = std::move(ports);
+  ports_.Set(std::move(ports));
   // Logger::redirectTo is idempotent when already bound to the same name.
   redirectLogger("CallLifecycle");
 }
@@ -121,7 +121,7 @@ void CallLifecycle::BindSignalingPorts(CallLifecycleSignalingPorts ports) {
 void CallLifecycle::ClearBinding() {
   // Invalidate in-flight Accept/Decline/Leave UI replies before clearing ports.
   deferred_.Invalidate();
-  ports_ = {};
+  ports_.Set({});
   phase_ = CallPhase::Idle;
   status_ = CallMediaStatus::None;
   media_cancel_gen_ = 0;
@@ -326,7 +326,8 @@ void CallLifecycle::NotifyChrome() {
 }
 
 void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
-  auto accept = ports_.accept_invite;
+  const auto signaling = ports_.Get();
+  auto accept = signaling->accept_invite;
   const auto guard = deferred_.token();
   const uint64_t epoch = deferred_.Snapshot();
   AppRuntime::ResumeBackgroundWork();
@@ -365,7 +366,8 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
 }
 
 void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
-  auto decline = ports_.decline_invite;
+  const auto signaling = ports_.Get();
+  auto decline = signaling->decline_invite;
   const auto guard = deferred_.token();
   const uint64_t epoch = deferred_.Snapshot();
   AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
@@ -389,7 +391,8 @@ void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
 }
 
 void CallLifecycle::PostLeaveCall(const std::string& call_id) {
-  auto leave = ports_.leave_call;
+  const auto signaling = ports_.Get();
+  auto leave = signaling->leave_call;
   const auto guard = deferred_.token();
   const uint64_t epoch = deferred_.Snapshot();
   // Critical: must not sit behind Normal work while Connect (also Critical) still dials —
@@ -414,7 +417,8 @@ void CallLifecycle::PostLeaveCall(const std::string& call_id) {
 }
 
 void CallLifecycle::PostRetryMedia(const std::string& call_id) {
-  auto retry = ports_.retry_p2p_media;
+  const auto signaling = ports_.Get();
+  auto retry = signaling->retry_p2p_media;
   const auto guard = deferred_.token();
   const uint64_t epoch = deferred_.Snapshot();
   // Re-arm Direct before RetryP2pMedia → BeginSession (Failed Status blocks AllowsDirectPath).
@@ -438,6 +442,7 @@ void CallLifecycle::PostRetryMedia(const std::string& call_id) {
 }
 
 void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_id_arg) {
+  const auto signaling = ports_.Get();
   CallLifecycleTransitionContext ctx;
   ctx.phase = phase_;
   ctx.status = status_;
@@ -445,7 +450,7 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
   ctx.accepting_call_id = accepting_call_id_;
   ctx.last_ring_call_id = last_ring_call_id_;
   ctx.event_call_id = call_id_arg;
-  ctx.sessions_bound = ports_.IsBound();
+  ctx.sessions_bound = signaling->IsBound();
   ctx.allows_direct_path = AllowsDirectPath();
 
   const CallLifecycleTransitionOutcome out = DecideCallLifecycleTransition(ev, ctx);
@@ -503,8 +508,8 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
 
   if (HasAction(actions, CallLifecycleAction::KickAnswererDirectMedia)) {
     const std::string kick_id = call_id_.empty() ? out.call_id : call_id_;
-    auto kick = ports_.kick_answerer_direct_media;
-    auto media_active = ports_.media_active_for_call;
+    auto kick = signaling->kick_answerer_direct_media;
+    auto media_active = signaling->media_active_for_call;
     if (kick && AllowsDirectPath()) {
       log().info << "AcceptSucceeded KickAnswererDirectMedia StartSfu arm call_id=" << kick_id
                  << " status=" << CallMediaStatusName(status_);
@@ -515,7 +520,8 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
         if (!DeferredSelf::Alive(guard, epoch)) {
           return;
         }
-        if (!ports_.IsBound() || call_id_ != kick_id || !AllowsDirectPath()) {
+        const auto signaling = ports_.Get();
+        if (!signaling->IsBound() || call_id_ != kick_id || !AllowsDirectPath()) {
           return;
         }
         if (media_active && media_active(kick_id)) {
@@ -529,7 +535,7 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
       });
     } else {
       log().info << "AcceptSucceeded skip KickAnswerer StartSfu call_id=" << kick_id
-                 << " ports=" << (ports_.IsBound() ? 1 : 0)
+                 << " ports=" << (signaling->IsBound() ? 1 : 0)
                  << " status=" << CallMediaStatusName(status_);
     }
   }

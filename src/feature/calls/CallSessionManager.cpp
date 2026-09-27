@@ -131,8 +131,9 @@ void CallSessionManager::BindWorkflowHostPorts() {
     ScheduleStartDirectMedia(call_id, peer, offerer);
   };
   ports.duplex.on_media_key_ready = [this](const std::string& call_id) {
-    if (direct_media_.on_media_key_ready) {
-      direct_media_.on_media_key_ready(call_id);
+    const auto direct_media = direct_media_.Get();
+    if (direct_media->on_media_key_ready) {
+      direct_media->on_media_key_ready(call_id);
     }
   };
   ports.duplex.media_is_active = [this]() { return media_.IsActive(); };
@@ -171,28 +172,34 @@ void CallSessionManager::BindWorkflowHostPorts() {
     }
   };
   ports.chrome.note_direct_connecting = [this](const std::string& call_id) {
-    if (lifecycle_ports_.set_direct_connecting) {
-      lifecycle_ports_.set_direct_connecting(call_id);
+    const auto lifecycle = lifecycle_ports_.Get();
+    if (lifecycle->set_direct_connecting) {
+      lifecycle->set_direct_connecting(call_id);
     }
   };
   ports.chrome.note_outbound_started = [this](const std::string& call_id) {
-    if (lifecycle_ports_.apply_outbound_started) {
-      lifecycle_ports_.apply_outbound_started(call_id);
+    const auto lifecycle = lifecycle_ports_.Get();
+    if (lifecycle->apply_outbound_started) {
+      lifecycle->apply_outbound_started(call_id);
     }
   };
   ports.chrome.accepting_call_id = [this]() {
-    return lifecycle_ports_.accepting_call_id ? lifecycle_ports_.accepting_call_id() : std::string{};
+    const auto lifecycle = lifecycle_ports_.Get();
+    return lifecycle->accepting_call_id ? lifecycle->accepting_call_id() : std::string{};
   };
   ports.chrome.active_call_id = [this]() {
-    return lifecycle_ports_.active_call_id ? lifecycle_ports_.active_call_id() : std::string{};
+    const auto lifecycle = lifecycle_ports_.Get();
+    return lifecycle->active_call_id ? lifecycle->active_call_id() : std::string{};
   };
   ports.chrome.apply_remote_ended = [this](const std::string& call_id) {
-    if (lifecycle_ports_.apply_remote_ended) {
-      lifecycle_ports_.apply_remote_ended(call_id);
+    const auto lifecycle = lifecycle_ports_.Get();
+    if (lifecycle->apply_remote_ended) {
+      lifecycle->apply_remote_ended(call_id);
     }
   };
   ports.chrome.is_outbound_calling = [this]() {
-    return lifecycle_ports_.is_outbound_calling && lifecycle_ports_.is_outbound_calling();
+    const auto lifecycle = lifecycle_ports_.Get();
+    return lifecycle->is_outbound_calling && lifecycle->is_outbound_calling();
   };
   ports.reach.register_peer_listen = [this](const std::string& identity, const std::vector<std::string>& mas) {
     if (register_peer_listen_multiaddrs_) {
@@ -242,14 +249,14 @@ void CallSessionManager::SetMediaRelayDeps(MediaRelayDeps deps) {
   topology_.SetMediaRelayDeps(std::move(deps));
 }
 
+// Port setters swap a snapshot; the workflow / topology host ports (bound once in the ctor) read the
+// current snapshot per call — never rebuilt under a running caller (thread-ownership t2a).
 void CallSessionManager::SetDirectMediaPorts(CallDirectMediaPorts ports) {
-  direct_media_ = std::move(ports);
-  BindWorkflowHostPorts();
+  direct_media_.Set(std::move(ports));
 }
 
 void CallSessionManager::SetLifecyclePorts(CallSessionLifecyclePorts ports) {
-  lifecycle_ports_ = std::move(ports);
-  BindWorkflowHostPorts();
+  lifecycle_ports_.Set(std::move(ports));
 }
 
 void CallSessionManager::SetTopologyHopArmingPorts(CallHopArmingPorts ports) {
@@ -257,8 +264,7 @@ void CallSessionManager::SetTopologyHopArmingPorts(CallHopArmingPorts ports) {
 }
 
 void CallSessionManager::SetMediaSeatPorts(CallMediaSeatPorts ports) {
-  media_seat_ports_ = std::move(ports);
-  BindWorkflowHostPorts();
+  media_seat_ports_.Set(std::move(ports));
 }
 
 void CallSessionManager::SetTopologySeatPorts(CallTopologySeatPorts ports) {
@@ -291,17 +297,19 @@ void CallSessionManager::TopologyOnMediaStoppedForSeat(const std::string& call_i
 
 void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity,
                                                   bool offerer) {
+  const auto lifecycle = lifecycle_ports_.Get();
+  const auto direct_media = direct_media_.Get();
   const bool allows =
-      !lifecycle_ports_.allows_direct_path || lifecycle_ports_.allows_direct_path();
+      !lifecycle->allows_direct_path || lifecycle->allows_direct_path();
   if (!allows) {
     log().info << "ScheduleStartDirectMedia skipped (Status disallows Bridge) call_id=" << call_id
                << " status="
-               << (lifecycle_ports_.status_name ? lifecycle_ports_.status_name() : "?")
+               << (lifecycle->status_name ? lifecycle->status_name() : "?")
                << " armed="
-               << (lifecycle_ports_.armed_planner_name ? lifecycle_ports_.armed_planner_name() : "?");
+               << (lifecycle->armed_planner_name ? lifecycle->armed_planner_name() : "?");
     return;
   }
-  if (!direct_media_.schedule_start) {
+  if (!direct_media->schedule_start) {
     log().error << "ScheduleStartDirectMedia: mesh media bridge not configured call_id=" << call_id;
     last_media_error_ = "Call media unavailable";
     NotifyRingChanged();
@@ -310,10 +318,11 @@ void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, co
   // V036 Phase 3: CSM is signaling-only for duplex start — Direct path façade owns Acquire+Schedule.
   log().info << "ScheduleStartDirectMedia libp2p role=" << (offerer ? "offerer" : "answerer")
                 << " call_id=" << call_id << " peer=" << peer_identity;
-  direct_media_.schedule_start(call_id, peer_identity, offerer);
+  direct_media->schedule_start(call_id, peer_identity, offerer);
 }
 
 void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_id) {
+  const auto lifecycle = lifecycle_ports_.Get();
   if (call_id.empty()) {
     log().info << "KickAnswererDirectMediaIfArmed skip (empty call_id)";
     return;
@@ -327,7 +336,7 @@ void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_
   }
   CallAnswererKickDecisionInput in;
   in.allows_direct_path =
-      !lifecycle_ports_.allows_direct_path || lifecycle_ports_.allows_direct_path();
+      !lifecycle->allows_direct_path || lifecycle->allows_direct_path();
   // IsActive alone — do not require tx/connected (capture lags StartSfu; dogfood e157 thrash).
   in.media_already_active_same_call = media_.IsActive() && media_.ActiveCallId() == call_id;
   in.peer_nonempty = !peer.empty();
@@ -335,7 +344,7 @@ void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_
     if (!in.allows_direct_path) {
       log().info << "KickAnswererDirectMediaIfArmed skip (Status disallows Bridge) call_id=" << call_id
                  << " status="
-                 << (lifecycle_ports_.status_name ? lifecycle_ports_.status_name() : "?");
+                 << (lifecycle->status_name ? lifecycle->status_name() : "?");
     } else if (in.media_already_active_same_call) {
       log().info << "KickAnswererDirectMediaIfArmed skip (media already active) call_id=" << call_id;
     } else {
@@ -357,10 +366,11 @@ CallHopHealth CallSessionManager::HopHealth() const {
 }
 
 std::string CallSessionManager::MediaPathKind() const {
-  if (!direct_media_.media_path_kind) {
+  const auto direct_media = direct_media_.Get();
+  if (!direct_media->media_path_kind) {
     return {};
   }
-  return direct_media_.media_path_kind();
+  return direct_media->media_path_kind();
 }
 
 bool CallSessionManager::IsSfuAttached() const {
@@ -642,12 +652,13 @@ void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool 
 
 void CallSessionManager::NoteMeshPeerIdForRelay(const std::string& relay_identity,
                                                   const std::string& peer_id) {
+  const auto direct_media = direct_media_.Get();
   if (relay_identity.empty() || peer_id.empty() || !IsAccountIdentityValue(relay_identity)) {
     return;
   }
   peer_id_to_relay_[peer_id] = relay_identity;
-  if (direct_media_.note_peer_id_relay_mapping) {
-    direct_media_.note_peer_id_relay_mapping(peer_id, relay_identity);
+  if (direct_media->note_peer_id_relay_mapping) {
+    direct_media->note_peer_id_relay_mapping(peer_id, relay_identity);
   }
   auto found = contacts_.FindByIdentity(relay_identity, ContactIdKind::Account);
   if (!found || !found->has_value()) {
@@ -936,15 +947,17 @@ void CallSessionManager::StopCallMedia(const std::string& call_id) {
 }
 
 void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
+  const auto seat_ports = media_seat_ports_.Get();
+  const auto direct_media = direct_media_.Get();
   // V036 Phase 3: CSM signaling-only for duplex stop — seat.Release owns Detach-then-Stop.
-  if (media_seat_ports_.release) {
-    media_seat_ports_.release(call_id);
+  if (seat_ports->release) {
+    seat_ports->release(call_id);
     return;
   }
   // Tests / incomplete wiring without a seat.
   topology_.OnMediaStopped(call_id);
-  if (direct_media_.stop_mesh_media) {
-    direct_media_.stop_mesh_media(call_id);
+  if (direct_media->stop_mesh_media) {
+    direct_media->stop_mesh_media(call_id);
   }
 }
 
@@ -1110,23 +1123,27 @@ bool CallSessionManager::IsSfuAttachWaitActive() const {
 }
 
 bool CallSessionManager::IsP2pConnectFailed() const {
-  return direct_media_.is_connect_failed && direct_media_.is_connect_failed();
+  const auto direct_media = direct_media_.Get();
+  return direct_media->is_connect_failed && direct_media->is_connect_failed();
 }
 
 bool CallSessionManager::P2pConnectMissingMic() const {
-  return direct_media_.connect_missing_mic && direct_media_.connect_missing_mic();
+  const auto direct_media = direct_media_.Get();
+  return direct_media->connect_missing_mic && direct_media->connect_missing_mic();
 }
 
 void CallSessionManager::PollP2pConnectHealth() {
-  if (direct_media_.poll_connect_health) {
-    direct_media_.poll_connect_health();
+  const auto direct_media = direct_media_.Get();
+  if (direct_media->poll_connect_health) {
+    direct_media->poll_connect_health();
   }
 }
 
 Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
-  if (direct_media_.media_attempted && direct_media_.retry_mesh_media &&
-      direct_media_.media_attempted(call_id)) {
-    return direct_media_.retry_mesh_media(call_id);
+  const auto direct_media = direct_media_.Get();
+  if (direct_media->media_attempted && direct_media->retry_mesh_media &&
+      direct_media->media_attempted(call_id)) {
+    return direct_media->retry_mesh_media(call_id);
   }
   return Error("Call media retry unavailable");
 }
@@ -1146,7 +1163,8 @@ void CallSessionManager::AbandonOrphanedCallsAfterRestart() {
 
 
 bool CallSessionManager::MediaAttemptedThisProcess(const std::string& call_id) const {
-  return direct_media_.media_attempted && direct_media_.media_attempted(call_id);
+  const auto direct_media = direct_media_.Get();
+  return direct_media->media_attempted && direct_media->media_attempted(call_id);
 }
 
 void CallSessionManager::ClearMediaCallbacks() {
@@ -1429,15 +1447,17 @@ void CallSessionManager::ClearMediaActivity() {
 }
 
 void CallSessionManager::TopologyNoteMediaAttempted(const std::string& call_id) {
-  if (direct_media_.note_media_attempted) {
-    direct_media_.note_media_attempted(call_id);
+  const auto direct_media = direct_media_.Get();
+  if (direct_media->note_media_attempted) {
+    direct_media->note_media_attempted(call_id);
   }
 }
 
 void CallSessionManager::TopologyBindMediaCallId(const std::string& call_id) {
+  const auto seat_ports = media_seat_ports_.Get();
   // Hop path bind — CallHopPath façade (Acquire under seat) via ports.
-  if (media_seat_ports_.bind_hop_for_attach) {
-    media_seat_ports_.bind_hop_for_attach(call_id);
+  if (seat_ports->bind_hop_for_attach) {
+    seat_ports->bind_hop_for_attach(call_id);
   }
 }
 
@@ -1445,9 +1465,10 @@ void CallSessionManager::TopologyClearMediaPeerIdentity() {
 }
 
 void CallSessionManager::TopologyReleaseDirectMedia() {
+  const auto direct_media = direct_media_.Get();
   // SoftMigrate path replace: Direct path ReleaseTransport under current seat token.
-  if (direct_media_.release_direct_transport) {
-    direct_media_.release_direct_transport();
+  if (direct_media->release_direct_transport) {
+    direct_media->release_direct_transport();
   }
 }
 

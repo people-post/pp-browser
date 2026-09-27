@@ -97,11 +97,11 @@ void CallHopMigrateWorkflow::SetHostPorts(CallHopMigrateHostPorts ports) {
 }
 
 void CallHopMigrateWorkflow::SetArmingPorts(CallHopMigrateArmingPorts ports) {
-  arming_ = std::move(ports);
+  arming_.Set(std::move(ports));
 }
 
 void CallHopMigrateWorkflow::SetSeatPorts(CallHopMigrateSeatPorts ports) {
-  seat_ = std::move(ports);
+  seat_.Set(std::move(ports));
 }
 
 void CallHopMigrateWorkflow::SetTopologyOps(TopologyOps ops) {
@@ -161,10 +161,11 @@ void CallHopMigrateWorkflow::MaybeSoftMigrateToSfuAsync(const std::string& call_
 bool CallHopMigrateWorkflow::PassSoftMigrateArmingGate(const std::string& call_id, SoftMigrateTrigger trigger,
                                                        const std::string& prefer_hop_peer_id,
                                                        const std::function<void(Roe<void>)>& on_done) {
+  const auto arming_ports = arming_.Get();
   // V037/V048: SoftMigrate from Direct* enters Migrating only when N≥3 (or IceRecover / prefer).
   // Relay-cap nudge used expected_gen=0 and promoted 1:1 DirectConnecting → Migrating PreferLocal
   // while the peer stayed on circuit — dogfood "Connecting group media…" vs Connecting.
-  if (!arming_.IsBound()) {
+  if (!arming_ports->IsBound()) {
     return true;
   }
   size_t n_joined = 0;
@@ -173,9 +174,9 @@ bool CallHopMigrateWorkflow::PassSoftMigrateArmingGate(const std::string& call_i
   }
   const bool n_requires_hop = CallMediaTopology::ShouldUseMediaRelay(n_joined);
   const bool ice_or_prefer = trigger == SoftMigrateTrigger::IceRecover || !prefer_hop_peer_id.empty();
-  const bool may_arm = arming_.soft_migrate_may_arm && arming_.soft_migrate_may_arm();
-  const bool hop_armed = arming_.migrate_ops_allowed && arming_.migrate_ops_allowed();
-  const char* arming_name = arming_.arming_debug_name ? arming_.arming_debug_name() : "?";
+  const bool may_arm = arming_ports->soft_migrate_may_arm && arming_ports->soft_migrate_may_arm();
+  const bool hop_armed = arming_ports->migrate_ops_allowed && arming_ports->migrate_ops_allowed();
+  const char* arming_name = arming_ports->arming_debug_name ? arming_ports->arming_debug_name() : "?";
   if (!n_requires_hop && !ice_or_prefer && may_arm) {
     log().info << "MaybeSoftMigrateToSfuAsync skipped (1:1 stay Direct) call_id=" << call_id
                << " n_joined=" << n_joined << " arming=" << arming_name
@@ -185,8 +186,8 @@ bool CallHopMigrateWorkflow::PassSoftMigrateArmingGate(const std::string& call_i
   }
   if (may_arm) {
     ops_.apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);
-    if (arming_.report_progress) {
-      arming_.report_progress(CallHopPlannerPhase::Migrating, call_id);
+    if (arming_ports->report_progress) {
+      arming_ports->report_progress(CallHopPlannerPhase::Migrating, call_id);
     }
     return true;
   }
@@ -467,6 +468,7 @@ void CallHopMigrateWorkflow::FailHopPick(HopPick& pick) {
 }
 
 void CallHopMigrateWorkflow::AttachPickedHop(std::shared_ptr<HopPick> pick, size_t index) {
+  const auto seat_ports = seat_.Get();
   const MeshHopCandidate& hop = pick->ranked[index];
   const bool self_hop = !pick->local_peer_id.empty() && hop.peer_id == pick->local_peer_id;
   if (!self_hop && (!relay_deps_->dial || !relay_deps_->dial->IsDialable(hop.peer_id))) {
@@ -486,15 +488,15 @@ void CallHopMigrateWorkflow::AttachPickedHop(std::shared_ptr<HopPick> pick, size
              << " ma=" << (hop_ma.empty() ? "(circuit)" : hop_ma);
   // Seat BeginAttach runs inside AttachLocalToSfuAsync (single owner). If another hop is
   // already attaching, skip this candidate so SoftMigrate does not stall on coalesce no-op.
-  if (seat_.IsBound() && seat_.has_attach_in_flight() && seat_.attaching_hop() != hop.peer_id) {
+  if (seat_ports->IsBound() && seat_ports->has_attach_in_flight() && seat_ports->attaching_hop() != hop.peer_id) {
     log().info << "SoftMigrate defer hop (seat attach in flight) call_id=" << pick->call_id
-               << " hop=" << hop.peer_id << " in_flight=" << seat_.attaching_hop();
+               << " hop=" << hop.peer_id << " in_flight=" << seat_ports->attaching_hop();
     TryPickHop(std::move(pick), index + 1);
     return;
   }
   flight_.attaching_hop_peer_id = hop.peer_id;
-  if (seat_.IsBound()) {
-    seat_.note_connecting(pick->call_id);
+  if (seat_ports->IsBound()) {
+    seat_ports->note_connecting(pick->call_id);
   }
   host_.SetMediaActivity(Tr("call.status.connecting_media_relay"));
   host_.NotifyRingChanged();
@@ -614,6 +616,7 @@ struct CallHopMigrateWorkflow::HopAttach {
 void CallHopMigrateWorkflow::AttachLocalToSfuAsync(const std::string& call_id,
                                                    const CallSfuAttachDetail& attach_in,
                                                    std::function<void(Roe<void>)> on_done) {
+  const auto arming_ports = arming_.Get();
   if (!on_done) {
     return;
   }
@@ -621,7 +624,7 @@ void CallHopMigrateWorkflow::AttachLocalToSfuAsync(const std::string& call_id,
   at.call_id = call_id;
   at.attach = attach_in;
   at.gen_at_start = flight_.migrate_generation.load(std::memory_order_acquire);
-  at.cancel_gen_at_start = arming_.IsBound() && arming_.media_cancel_gen ? arming_.media_cancel_gen() : 0;
+  at.cancel_gen_at_start = arming_ports->IsBound() && arming_ports->media_cancel_gen ? arming_ports->media_cancel_gen() : 0;
   if (!relay_deps_ || !relay_deps_->relay || !relay_deps_->dial) {
     on_done(Error("media_relay not available"));
     return;
@@ -664,14 +667,15 @@ void CallHopMigrateWorkflow::AttachLocalToSfuAsync(const std::string& call_id,
 }
 
 Roe<bool> CallHopMigrateWorkflow::ClaimHopAttachFlight(const std::string& call_id, const CallSfuAttachDetail& attach) {
+  const auto seat_ports = seat_.Get();
   // SoftMigrate sets attaching_hop / seat BeginAttach before calling us — same hop means we
   // own this attempt. A different in-flight hop must not start a parallel AcceptAndAttach.
-  if (seat_.IsBound()) {
+  if (seat_ports->IsBound()) {
     CallMediaSeat::AttachTicket ticket;
-    switch (seat_.begin_attach(call_id, attach.hop_peer_id, &ticket)) {
+    switch (seat_ports->begin_attach(call_id, attach.hop_peer_id, &ticket)) {
       case CallMediaSeat::AttachBeginResult::DeferredOtherHop:
         log().info << "AttachLocalToSfu coalesce (other hop in flight) call_id=" << call_id
-                   << " in_flight_hop=" << seat_.attaching_hop() << " requested=" << attach.hop_peer_id;
+                   << " in_flight_hop=" << seat_ports->attaching_hop() << " requested=" << attach.hop_peer_id;
         inbound_gate_.pending_attach = attach;
         inbound_gate_.pending_call_id = call_id;
         ops_.note_remote_publisher_from_attach(attach);
@@ -700,8 +704,8 @@ Roe<bool> CallHopMigrateWorkflow::ClaimHopAttachFlight(const std::string& call_i
     return false;
   }
   flight_.attaching_hop_peer_id = attach.hop_peer_id;
-  if (seat_.IsBound()) {
-    seat_.note_connecting(call_id);
+  if (seat_ports->IsBound()) {
+    seat_ports->note_connecting(call_id);
   }
   return true;
 }
@@ -710,12 +714,13 @@ std::function<void(Roe<void>)> CallHopMigrateWorkflow::ReleaseHopAttachFlightOnE
     const std::string& call_id, const std::string& hop, std::function<void(Roe<void>)> on_done) {
   // Any failure clears the attach flight so SoftMigrate / inbound can retry.
   return [this, call_id, hop, on_done = std::move(on_done)](Roe<void> r) {
+    const auto seat_ports = seat_.Get();
     if (!r) {
       if (flight_.attaching_hop_peer_id == hop) {
         flight_.attaching_hop_peer_id.clear();
       }
-      if (seat_.IsBound()) {
-        seat_.end_attach_if_matching(call_id, hop);
+      if (seat_ports->IsBound()) {
+        seat_ports->end_attach_if_matching(call_id, hop);
       }
     }
     on_done(std::move(r));
@@ -896,22 +901,24 @@ Roe<void> CallHopMigrateWorkflow::AbortHopAttach() {
 }
 
 Roe<void> CallHopMigrateWorkflow::CheckHopAttachStillWanted(const HopAttach& at) {
+  const auto seat_ports = seat_.Get();
+  const auto arming_ports = arming_.Get();
   const std::string& call_id = at.call_id;
-  if (seat_.IsBound() && !seat_.allows_path_op(seat_.acquire(call_id))) {
+  if (seat_ports->IsBound() && !seat_ports->allows_path_op(seat_ports->acquire(call_id))) {
     log().info << "AttachLocalToSfu aborted (seat token rejected) call_id=" << call_id;
     relay_deps_->relay->Detach();
     return Error("media seat token rejected for hop path");
   }
   // V048: hop arming is authority — never StartSfu when Direct*; cancel gen must still match
   // Deciding/Leave bumps.
-  if (arming_.IsBound() && arming_.migrate_ops_allowed && !arming_.migrate_ops_allowed()) {
+  if (arming_ports->IsBound() && arming_ports->migrate_ops_allowed && !arming_ports->migrate_ops_allowed()) {
     log().info << "AttachLocalToSfu aborted (hop not armed) call_id=" << call_id
-               << " arming=" << (arming_.arming_debug_name ? arming_.arming_debug_name() : "?");
+               << " arming=" << (arming_ports->arming_debug_name ? arming_ports->arming_debug_name() : "?");
     return AbortHopAttach();
   }
-  if (arming_.IsBound() && arming_.media_cancel_gen && arming_.media_cancel_gen() != at.cancel_gen_at_start) {
+  if (arming_ports->IsBound() && arming_ports->media_cancel_gen && arming_ports->media_cancel_gen() != at.cancel_gen_at_start) {
     log().info << "AttachLocalToSfu aborted (media_cancel_gen moved) call_id=" << call_id
-               << " want=" << at.cancel_gen_at_start << " have=" << arming_.media_cancel_gen();
+               << " want=" << at.cancel_gen_at_start << " have=" << arming_ports->media_cancel_gen();
     return AbortHopAttach();
   }
   // After AcceptAndAttach succeeded, finish StartSfu whenever this call is still the active
@@ -963,6 +970,7 @@ CallMediaEngine::SfuSendFn CallHopMigrateWorkflow::MakeHopSendFn(const HopAttach
 }
 
 Roe<void> CallHopMigrateWorkflow::StartHopMedia(const HopAttach& at) {
+  const auto seat_ports = seat_.Get();
   const std::string& call_id = at.call_id;
   if (!at.self_hop) {
     relay_deps_->relay->StartClientFrameReader();
@@ -974,11 +982,11 @@ Roe<void> CallHopMigrateWorkflow::StartHopMedia(const HopAttach& at) {
     return started.error();
   }
   const char* abort_reason = nullptr;
-  if (seat_.IsBound()) {
-    seat_.note_start(call_id);
-    seat_.note_path(CallMediaSeat::PathKind::Hop);
+  if (seat_ports->IsBound()) {
+    seat_ports->note_start(call_id);
+    seat_ports->note_path(CallMediaSeat::PathKind::Hop);
     // NoteStart bumps epoch — AllowsPathOp (call_id bind) still holds; MatchesToken would not.
-    if (!seat_.is_bound(call_id)) {
+    if (!seat_ports->is_bound(call_id)) {
       abort_reason = "seat unbound";
     }
   }
@@ -998,6 +1006,8 @@ Roe<void> CallHopMigrateWorkflow::StartHopMedia(const HopAttach& at) {
 }
 
 void CallHopMigrateWorkflow::MarkHopAttachLive(const HopAttach& at, bool fresh_start) {
+  const auto seat_ports = seat_.Get();
+  const auto arming_ports = arming_.Get();
   const std::string& call_id = at.call_id;
   at.frames_ready->store(true, std::memory_order_release);
   sfu_.attached = true;
@@ -1019,13 +1029,13 @@ void CallHopMigrateWorkflow::MarkHopAttachLive(const HopAttach& at, bool fresh_s
   ops_.clear_sfu_attach_wait();
   ops_.refresh_adaptation(call_id);
   // V036 Phase 2: NoteLive before ReleaseDirect so chrome Connected is not ReleaseDirect alone.
-  if (seat_.IsBound()) {
-    seat_.note_live(call_id);
-    seat_.end_attach_if_matching(call_id, at.attach.hop_peer_id);
+  if (seat_ports->IsBound()) {
+    seat_ports->note_live(call_id);
+    seat_ports->end_attach_if_matching(call_id, at.attach.hop_peer_id);
   }
   ops_.apply(CallHopPlannerEvent::AttachSucceeded, call_id);
-  if (arming_.report_progress) {
-    arming_.report_progress(CallHopPlannerPhase::Live, call_id);
+  if (arming_ports->report_progress) {
+    arming_ports->report_progress(CallHopPlannerPhase::Live, call_id);
   }
 }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/media/CallMediaEngine.h"
+#include "feature/calls/SharedPorts.h"
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/CallHopPlan.h"
 #include "domain/messaging/CallSessionStore.h"
@@ -267,8 +268,8 @@ private:
   ContactsStore& contacts_;
   CallMediaEngine& media_;
   CallMediaKeyStore* media_keys_ = nullptr;
-  CallTopologySeatPorts seat_;
-  CallHopArmingPorts arming_;
+  SharedPorts<CallTopologySeatPorts> seat_;
+  SharedPorts<CallHopArmingPorts> arming_;
   MediaRelayDeps relay_deps_;
   // Relay session-end observer on relay_deps_.relay; the token drops notices queued before an
   // unwatch or our destruction.
