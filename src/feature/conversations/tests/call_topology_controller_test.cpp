@@ -520,6 +520,33 @@ TEST_F(CallTopologyControllerTest, MidCallInitiatorPicksAndQuotes) {
   }
 }
 
+// The hop pick used to hold itself (a shared std::function capturing its own shared_ptr): every
+// SoftMigrate leaked its ranked hops, session copy and completion. Whatever the completion holds
+// must be released once the flow settles — after a failed pick walks every hop, and after success.
+TEST_F(CallTopologyControllerTest, SoftMigrateReleasesItsHopPickWhenSettled) {
+  const std::string call_id = "call:pick-release";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:A";
+  relay_->started = false;
+
+  for (const bool quote_ok : {false, true}) {
+    relay_->quote_ok = quote_ok;
+    relay_->quote_error = "refused";
+    auto held = std::make_shared<int>(0);
+    const std::weak_ptr<int> watch = held;
+    (void)AwaitFlow(
+        [&](std::function<void(Roe<void>)> done) {
+          topo_->MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::JoinedCountObserved, {}, 0,
+                                            [done = std::move(done), held = std::move(held)](Roe<void> v) {
+                                              done(std::move(v));
+                                            });
+        },
+        std::chrono::milliseconds(60000));
+    EXPECT_TRUE(watch.expired()) << "hop pick still alive after settling (quote_ok=" << quote_ok << ")";
+  }
+  EXPECT_GE(relay_->quote_calls, 2);
+}
+
 TEST_F(CallTopologyControllerTest, PickFailsSurfacesStreamOpenError) {
   const std::string call_id = "call:fail";
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);

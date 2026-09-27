@@ -10,7 +10,7 @@
 | l0 — 1:1 split | Done: `PeerReachCoordinator`, `CallMediaConnectCoordinator` (both directions), bridge = call policy; stop / retry on UI; glare antisymmetric; SFU attach completion on UI; hard-lab COLD phases |
 | l1 — reach in `domain/mesh` | Done: `domain/mesh/reachability/{MeshReachPorts.h, PeerReachCoordinator, AmpCircuitHopReach}`, neutral names. Hop reach stays a separate *service reach* ([L008](DECISIONS.md#l008--two-kinds-of-reach-link-reach-and-service-reach)) |
 | l2 — relay attach | Done: `domain/mesh/l4/media_relay/{IMediaRelayClient.h, AmpMediaRelayClient, MediaRelayAttach}`; group attach + guest reattach use `AttachToMediaRelayAsync` ([L009](DECISIONS.md#l009--relay-attach-is-a-stateless-capability-recovery-stays-with-each-feature)); wire `call_id` unchanged |
-| l7 — call-side cleanup | In progress: calls on relay session-end observers, handler slot removed. Next: split the long attach / migrate flows, test-only blocking attach |
+| l7 — call-side cleanup | In progress: calls on relay session-end observers (handler slot removed); blocking wrappers gone; SoftMigrate split (fixes a per-migrate leak). Next: the attach flows, `OnInboundSfuAttach`, bridge `BeginSession` |
 | l6 — broadcast out of calls | Done: call-side arm / accept path, `BroadcastSessionCoordinator`, `AnnounceLiveJoin`, SoftMigrate broadcast skip removed; legacy `Broadcast` rows refused by `AcceptInvite` |
 | l5c — hard lab | Done: **B-HARD-BCAST-NAT** broadcaster → pp-node relay → 2 viewers under dual SNAT (hard-w5 `all`, 3/3) |
 | l5b — broadcaster wiring | Done: hub owns the broadcaster; facade `GoLive` / `EndLive`; broadcaster → relay → viewer compose test green (TSan / ASan clean); pp-cpp-amp v2.3.2 pinned |
@@ -25,7 +25,7 @@
 
 **l7** — call-side cleanup ([PHASES](PHASES.md#l7--call-side-cleanup-after-the-split)). Also open: watch / go-live UI entry; neutral mesh media plane (L014 exit); announce push to followers (Spine D); admission-serving relays (B1). Before a release: dogfood the device arbiter (PHASES l3b).
 
-Known, not from this work (seen 2026-09-26): `--suite node` / `call-hop` fail on this lab machine — pp-node's advertised listen switches to the seed-observed `172.126.x` address, unreachable from the host (same with or without the Amp change); `COLD-DIRTY` nested-circuit dial timeout still intermittent (1 of 3 hard-w5 runs); `AmpCircuitCallMediaComposeTest` leaks a `CallMediaLegCoordinator::Impl` under LeakSanitizer (identical on Amp v2.3.0 and v2.3.2); 14 `CallTopologyControllerTest` cases leak soft-migrate closures under LeakSanitizer (l7); the TSan build fails to compile `http_client_test` / `llm_client_test` (`atomic_thread_fence` with `-fsanitize=thread`, GCC 14) — build test targets individually.
+Known, not from this work (seen 2026-09-26): `--suite node` / `call-hop` fail on this lab machine — pp-node's advertised listen switches to the seed-observed `172.126.x` address, unreachable from the host (same with or without the Amp change); `COLD-DIRTY` nested-circuit dial timeout still intermittent (1 of 3 hard-w5 runs); `AmpCircuitCallMediaComposeTest` leaks a `CallMediaLegCoordinator::Impl` under LeakSanitizer (identical on Amp v2.3.0 and v2.3.2); TSan reports SQLite WAL shared-memory races in `CallSessionInboundComposeTest` / `CallUiBackendStackTest` (14 cases, identical before l7; no suppressions file yet); the TSan build fails to compile `http_client_test` / `llm_client_test` (`atomic_thread_fence` with `-fsanitize=thread`, GCC 14) — build test targets individually.
 
 ## Open questions
 

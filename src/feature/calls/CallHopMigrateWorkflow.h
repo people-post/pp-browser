@@ -246,7 +246,32 @@ public:
   static constexpr int kMaxGuestSfuReattachAttempts = 3;
 
 private:
+  struct HopPick;
+
   bool IsMigrateGenerationCurrent(uint64_t gen) const;
+  bool IsLiveOnHopFor(const std::string& call_id) const;
+
+  // SoftMigrate steps (MaybeSoftMigrateToSfuAsync → gate → control thread → pick hops in order).
+  /** False when the arming state settles the request here (`on_done` already called). */
+  bool PassSoftMigrateArmingGate(const std::string& call_id, SoftMigrateTrigger trigger,
+                                 const std::string& prefer_hop_peer_id, const std::function<void(Roe<void>)>& on_done);
+  void RunSoftMigrate(const std::string& call_id, SoftMigrateTrigger trigger, const std::string& prefer_hop_peer_id,
+                      uint64_t expected_gen, std::function<void(Roe<void>)> on_done);
+  SoftMigrateAction DecideFirstSoftMigrate(const HopPick& pick, SoftMigrateTrigger trigger,
+                                           const std::vector<CallParticipant>& participants);
+  bool PreferLocalHopAllowed(const std::string& call_id, const std::string& local_identity) const;
+  bool HasDurableMediaRelayHop() const;
+  /** Re-pick while attached: true when settled on the current hop, false after detaching to re-pick. */
+  bool SettleRepickOnCurrentHop(HopPick& pick, const std::string& prefer_hop_peer_id);
+  std::vector<MeshHopCandidate> RankHopsForSoftMigrate(HopPick& pick, const std::string& prefer_hop_peer_id);
+  void TryPickHop(std::shared_ptr<HopPick> pick, size_t index);
+  void FailHopPick(HopPick& pick);
+  void AttachPickedHop(std::shared_ptr<HopPick> pick, size_t index);
+  void OnPickedHopAttached(const std::shared_ptr<HopPick>& pick, size_t index, bool self_hop,
+                           const CallSfuAttachDetail& attach, Roe<void> attached);
+  void RecordPickedHop(HopPick& pick, const std::string& hop_peer_id);
+  void FanOutPickedHop(const std::string& call_id, const CallSfuAttachDetail& attach,
+                       const std::string& local_identity);
   /** media_relay attach mechanism (domain/mesh MediaRelayAttach) over this workflow's relay deps. */
   MediaRelayAttachPorts RelayAttachPorts() const;
   /** Call policy for a relay attach: session id / auth = call id; quote sized by roster + video. */
