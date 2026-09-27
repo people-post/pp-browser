@@ -38,12 +38,12 @@ void ApplyRoute(bool speaker_on) {
 }
 
 /**
- * VideoChat is Apple's speaker-optimised voice mode (full call-volume range on the
- * loudspeaker); VoiceChat is tuned for the earpiece and is very quiet when routed to the
- * loudspeaker. Pick the mode that matches where audio is actually going.
+ * Loudspeaker uses the default mode: on device (2026-09-27) both voice modes (VoiceChat and
+ * VideoChat) left the loudspeaker very quiet at max volume, while SDL's former ModeDefault was
+ * loud. The earpiece keeps VoiceChat (call-volume scale, earpiece tuning).
  */
 NSString* ModeForRoute(bool speaker_on) {
-  return speaker_on ? AVAudioSessionModeVideoChat : AVAudioSessionModeVoiceChat;
+  return speaker_on ? AVAudioSessionModeDefault : AVAudioSessionModeVoiceChat;
 }
 
 } // namespace
