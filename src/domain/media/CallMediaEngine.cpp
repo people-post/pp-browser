@@ -621,12 +621,18 @@ struct CallMediaEngine::Impl {
           if (have_out) {
             const int queued = vpio_out ? static_cast<int>(vpio.QueuedPlayoutBytes())
                                         : SDL_GetAudioStreamQueued(out);
+            // VPIO pulls in device-sized chunks (seen: 4096 frames = 85 ms on a MacBook). Keep one
+            // chunk plus a frame queued, or every callback underruns.
+            const int target = vpio_out ? std::max(kPlayoutTargetQueuedBytes,
+                                                   static_cast<int>(vpio.RenderChunkBytes()) + kFrameBytes)
+                                        : kPlayoutTargetQueuedBytes;
+            const int high_water = target + (kPlayoutHighWaterBytes - kPlayoutTargetQueuedBytes);
             if (queued < 0) {
               slots = 1; // errored device: keep the old one-frame-per-tick cadence so buffers keep draining
-            } else if (queued > kPlayoutHighWaterBytes) {
+            } else if (queued > high_water) {
               slots = 0; // device is ahead: let it drain this tick
             } else {
-              const int deficit = kPlayoutTargetQueuedBytes - queued;
+              const int deficit = target - queued;
               slots = deficit <= 0 ? 0 : std::min(kPlayoutMaxSlotsPerTick,
                                                   (deficit + kFrameBytes - 1) / kFrameBytes);
             }

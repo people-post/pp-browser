@@ -18,6 +18,8 @@ namespace {
 constexpr double kSampleRate = 48000.0;
 constexpr size_t kRingSamples = 48000 / 5;  // 200 ms each way
 constexpr UInt32 kMaxFramesPerSlice = 4096;
+/** Ask for a 10 ms hardware IO buffer; VPIO on macOS otherwise ran 4096-frame (85 ms) cycles. */
+constexpr UInt32 kPreferredIoFrames = 480;
 constexpr AudioUnitElement kOutputBus = 0;  // speaker
 constexpr AudioUnitElement kInputBus = 1;   // mic
 
@@ -67,9 +69,41 @@ void QueryDefaultDevices(AudioDeviceID* in, AudioDeviceID* out) {
   size = sizeof(AudioDeviceID);
   AudioObjectGetPropertyData(kAudioObjectSystemObject, &kDefaultOutputAddr, 0, nullptr, &size, out);
 }
+
+// Best effort: ask the unit (AUHAL forwards it to the device), then the device itself, for a small
+// IO buffer. Returns the buffer size in effect afterwards (0 if it cannot be read).
+UInt32 RequestIoBufferFrames(AudioUnit unit, UInt32 frames) {
+  UInt32 want = frames;
+  (void)AudioUnitSetProperty(unit, kAudioDevicePropertyBufferFrameSize, kAudioUnitScope_Global, 0, &want,
+                             sizeof(want));
+  UInt32 now = 0;
+  UInt32 size = sizeof(now);
+  if (AudioUnitGetProperty(unit, kAudioDevicePropertyBufferFrameSize, kAudioUnitScope_Global, 0, &now, &size) ==
+          noErr &&
+      now <= frames * 2) {
+    return now;
+  }
+  AudioDeviceID device = kAudioObjectUnknown;
+  size = sizeof(device);
+  if (AudioUnitGetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &device,
+                           &size) != noErr ||
+      device == kAudioObjectUnknown) {
+    return now;
+  }
+  const AudioObjectPropertyAddress addr = {kAudioDevicePropertyBufferFrameSize, kAudioObjectPropertyScopeGlobal,
+                                           kAudioObjectPropertyElementMain};
+  want = frames;
+  (void)AudioObjectSetPropertyData(device, &addr, 0, nullptr, sizeof(want), &want);
+  size = sizeof(now);
+  if (AudioObjectGetPropertyData(device, &addr, 0, nullptr, &size, &now) != noErr) {
+    now = 0;
+  }
+  return now;
+}
 #endif
 
 }  // namespace
+
 
 struct VoiceProcessingIo::Impl {
   AudioUnit unit = nullptr;
@@ -80,6 +114,9 @@ struct VoiceProcessingIo::Impl {
   // Diagnostics (single writer: the callback that owns them; TakeDiag resets — races are benign).
   std::atomic<uint64_t> render_calls{0};
   std::atomic<uint32_t> render_frames_max{0};
+  /** Largest render request since Open() (not reset by TakeDiag) — the engine sizes playout to it. */
+  std::atomic<uint32_t> render_chunk_max{0};
+  std::atomic<uint32_t> io_buffer_frames{0};
   std::atomic<size_t> render_ring_min{SIZE_MAX};
   std::atomic<uint64_t> input_calls{0};
   std::atomic<uint32_t> input_frames_max{0};
@@ -136,6 +173,9 @@ struct VoiceProcessingIo::Impl {
     self->render_calls.fetch_add(1, std::memory_order_relaxed);
     if (frames > self->render_frames_max.load(std::memory_order_relaxed)) {
       self->render_frames_max.store(frames, std::memory_order_relaxed);
+    }
+    if (frames > self->render_chunk_max.load(std::memory_order_relaxed)) {
+      self->render_chunk_max.store(frames, std::memory_order_relaxed);
     }
     const size_t avail = self->playout.Size();
     if (avail < self->render_ring_min.load(std::memory_order_relaxed)) {
@@ -276,6 +316,9 @@ bool VoiceProcessingIo::Open(std::string* reason) {
   if (st != noErr) {
     return fail(Failed("AudioUnitInitialize", st));  // e.g. -10875 on mismatched in/out devices
   }
+#if TARGET_OS_OSX
+  impl_->io_buffer_frames.store(RequestIoBufferFrames(unit, kPreferredIoFrames), std::memory_order_relaxed);
+#endif
 
   // The unit may silently substitute its own format (e.g. multi-channel); we only handle mono s16.
   AudioStreamBasicDescription got{};
@@ -301,6 +344,7 @@ bool VoiceProcessingIo::Open(std::string* reason) {
   impl_->playout.Reset();
   impl_->playout_underruns.store(0, std::memory_order_relaxed);
   impl_->playout_started.store(false, std::memory_order_relaxed);
+  impl_->render_chunk_max.store(0, std::memory_order_relaxed);
 
   st = AudioOutputUnitStart(unit);
   if (st != noErr) {
@@ -361,6 +405,10 @@ bool VoiceProcessingIo::TakeDeviceChanged() {
 #endif
 }
 
+size_t VoiceProcessingIo::RenderChunkBytes() const {
+  return impl_->render_chunk_max.load(std::memory_order_relaxed) * sizeof(int16_t);
+}
+
 uint64_t VoiceProcessingIo::PlayoutUnderruns() const {
   return impl_->playout_underruns.load(std::memory_order_relaxed);
 }
@@ -368,7 +416,8 @@ uint64_t VoiceProcessingIo::PlayoutUnderruns() const {
 std::string VoiceProcessingIo::TakeDiag() {
   Impl& d = *impl_;
   const size_t ring_min = d.render_ring_min.exchange(SIZE_MAX, std::memory_order_relaxed);
-  return "render_calls=" + std::to_string(d.render_calls.exchange(0, std::memory_order_relaxed)) +
+  return "io_buffer_frames=" + std::to_string(d.io_buffer_frames.load(std::memory_order_relaxed)) +
+         " render_calls=" + std::to_string(d.render_calls.exchange(0, std::memory_order_relaxed)) +
          " render_frames_max=" + std::to_string(d.render_frames_max.exchange(0, std::memory_order_relaxed)) +
          " render_ring_min=" + (ring_min == SIZE_MAX ? std::string("-") : std::to_string(ring_min)) +
          " input_calls=" + std::to_string(d.input_calls.exchange(0, std::memory_order_relaxed)) +
