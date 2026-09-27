@@ -345,8 +345,18 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
   WireMediaRelayDeps();
 }
 
+void CallStack::UnbindRelayDependents() {
+  // Parent-only destroy: the plane is about to replace or drop its media_relay client, dial
+  // registry and circuit reach. The topology holds them raw and watches the client's session ends
+  // — unhook it first (it unregisters from the still-live client), rebind after.
+  if (call_sessions_) {
+    call_sessions_->SetMediaRelayDeps({});
+  }
+}
+
 void CallStack::OnMeshServicesStarted() {
   SyncMediaPlaneDeps();
+  UnbindRelayDependents();
   if (media_plane_) {
     media_plane_->OnMeshStarted();
   }
@@ -385,6 +395,7 @@ bool CallStack::WantEphemeralListen() const {
 
 void CallStack::WireMediaRelayDeps() {
   SyncMediaPlaneDeps();
+  UnbindRelayDependents();
   if (media_plane_) {
     media_plane_->Wire();
   }
@@ -570,6 +581,7 @@ void CallStack::SetEphemeralListenDesire(bool /*want*/) {
 }
 
 void CallStack::ResetRelayClients() {
+  UnbindRelayDependents();
   if (media_plane_) {
     media_plane_->ResetRelayClients();
   }
@@ -593,6 +605,7 @@ void CallStack::Shutdown() {
   if (!AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000))) {
     log().warning << "CallStack::Shutdown: DrainWorkersThenUI budget exceeded";
   }
+  UnbindRelayDependents();
   if (media_plane_) {
     media_plane_->Clear();
   }

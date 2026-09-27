@@ -144,6 +144,8 @@ private:
   void SyncMediaPlaneDeps();
   /** After plane Wire: BindBridge + CSM SetMediaRelayDeps / SetDirectMediaPorts. */
   void BindMediaProducts();
+  /** Before the plane replaces / drops its relay client: detach the topology from it. */
+  void UnbindRelayDependents();
   void BindSeatTeardown();
   CallLifecycleSignalingPorts MakeLifecycleSignalingPorts();
   CallHopArmingPorts MakeHopArmingPorts() const;
