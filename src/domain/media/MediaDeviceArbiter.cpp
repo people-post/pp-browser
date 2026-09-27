@@ -203,6 +203,8 @@ struct LeaseSlot {
 struct AudioDeviceLease::State : LeaseSlot<IAudioEndpoint> {
   AudioDeviceFormat format;
   std::function<bool()> still_wanted;
+  /** Half of a voice-processing unit: never reopened alone. */
+  bool voice_duplex = false;
 
   /** Device thread only (or inline after Shutdown). */
   void OpenOnDevice(IMediaDeviceBackend& backend) {
@@ -263,7 +265,24 @@ void AudioDeviceLease::Clear() {
   }
 }
 
+bool AudioDeviceLease::IsVoiceDuplex() const {
+  return state_->voice_duplex;
+}
+
+bool AudioDeviceLease::WithVoiceProcessing(const std::function<void(IVoiceProcessing&)>& fn) {
+  std::lock_guard lock(state_->io_mu);
+  IVoiceProcessing* vp = state_->endpoint ? state_->endpoint->VoiceProcessing() : nullptr;
+  if (!vp) {
+    return false;
+  }
+  fn(*vp);
+  return true;
+}
+
 Roe<void> AudioDeviceLease::Reopen() {
+  if (state_->voice_duplex) {
+    return Error("voice duplex half: release the pair and acquire it again");
+  }
   auto core = state_->core.lock();
   if (!core) {
     return Error("media device arbiter gone");
@@ -350,6 +369,55 @@ Roe<std::unique_ptr<AudioDeviceLease>> MediaDeviceArbiter::AcquireAudio(const Au
   auto core = core_;
   core_->RunOnDevice([state, core]() { state->OpenOnDevice(*core->backend); });
   return std::unique_ptr<AudioDeviceLease>(new AudioDeviceLease(std::move(state)));
+}
+
+Roe<MediaDeviceArbiter::VoiceDuplexLeases> MediaDeviceArbiter::AcquireVoiceDuplex(const AudioLeaseRequest& request) {
+  auto mic_held = core_->Hold(MediaDeviceKind::Mic, request.holder);
+  if (!mic_held) {
+    ArbiterLog().info << "refused voice duplex to " << request.holder << ": " << mic_held.error().message;
+    return mic_held.error();
+  }
+  auto speaker_held = core_->Hold(MediaDeviceKind::Speaker, request.holder);
+  if (!speaker_held) {
+    core_->Unhold(*mic_held);
+    ArbiterLog().info << "refused voice duplex to " << request.holder << ": " << speaker_held.error().message;
+    return speaker_held.error();
+  }
+  const auto make_state = [&](MediaDeviceKind kind, uint64_t id) {
+    auto state = std::make_shared<AudioDeviceLease::State>();
+    state->core = core_;
+    state->kind = kind;
+    state->holder = request.holder;
+    state->format = request.format;
+    state->still_wanted = request.still_wanted;
+    state->id = id;
+    state->voice_duplex = true;
+    return state;
+  };
+  auto mic = make_state(MediaDeviceKind::Mic, *mic_held);
+  auto speaker = make_state(MediaDeviceKind::Speaker, *speaker_held);
+  std::string error;
+  bool opened = false;
+  auto core = core_;
+  const AudioDeviceFormat format = request.format;
+  core_->RunOnDevice([&, core]() {
+    VoiceDuplexEndpoints pair = core->backend->OpenVoiceDuplex(format, &error);
+    if (pair.mic && pair.speaker) {
+      mic->Install(std::move(pair.mic), {});
+      speaker->Install(std::move(pair.speaker), {});
+      opened = true;
+    }
+    // A half-open pair closes here, on the device thread.
+  });
+  if (!opened) {
+    core_->Unhold(*mic_held);
+    core_->Unhold(*speaker_held);
+    return Error(error.empty() ? std::string("voice duplex unavailable") : error);
+  }
+  VoiceDuplexLeases leases;
+  leases.mic = std::unique_ptr<AudioDeviceLease>(new AudioDeviceLease(std::move(mic)));
+  leases.speaker = std::unique_ptr<AudioDeviceLease>(new AudioDeviceLease(std::move(speaker)));
+  return leases;
 }
 
 Roe<std::unique_ptr<CameraDeviceLease>> MediaDeviceArbiter::AcquireCamera(const CameraLeaseRequest& request) {

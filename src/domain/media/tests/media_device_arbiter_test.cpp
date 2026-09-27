@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstring>
@@ -72,6 +73,47 @@ private:
   std::chrono::steady_clock::time_point last_read_{};
 };
 
+/** A fake voice-processing unit shared by its two halves; logs its close once both are gone. */
+class FakeVoiceUnit final : public IVoiceProcessing {
+public:
+  explicit FakeVoiceUnit(DeviceLog& log) : log_(log) {}
+  ~FakeVoiceUnit() override {
+    log_.Enter("close duplex");
+    log_.Leave();
+  }
+  size_t RenderChunkBytes() const override { return 4096 * sizeof(int16_t); }
+  uint64_t PlayoutUnderruns() const override { return 7; }
+  std::string TakeDiag() override { return {}; }
+  bool TakeDeviceChanged() override { return device_changed.exchange(false); }
+  std::atomic<bool> device_changed{false};
+
+private:
+  DeviceLog& log_;
+};
+
+class FakeVoiceHalf final : public IAudioEndpoint {
+public:
+  explicit FakeVoiceHalf(std::shared_ptr<FakeVoiceUnit> unit) : unit_(std::move(unit)) {}
+  /** Paced like a device: one 20 ms chunk per period. */
+  int Read(void* dst, int bytes) override {
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last_read_ < std::chrono::milliseconds(20)) {
+      return 0;
+    }
+    last_read_ = now;
+    std::memset(dst, 0, static_cast<size_t>(bytes));
+    return bytes;
+  }
+  bool Write(const void*, int) override { return true; }
+  int Queued() const override { return 0; }
+  void Clear() override {}
+  IVoiceProcessing* VoiceProcessing() override { return unit_.get(); }
+
+private:
+  std::shared_ptr<FakeVoiceUnit> unit_;
+  std::chrono::steady_clock::time_point last_read_{};
+};
+
 /** 64×36 RGBA frames, one per 30 ms. */
 class FakeCamera final : public ICameraEndpoint {
 public:
@@ -130,8 +172,33 @@ public:
   }
   std::atomic<bool> present{true};
 
+  VoiceDuplexEndpoints OpenVoiceDuplex(const AudioDeviceFormat& /*format*/, std::string* error) override {
+    if (!duplex) {
+      *error = "unsupported";
+      return {};
+    }
+    log_.Enter("open duplex");
+    log_.Leave();
+    auto unit = std::make_shared<FakeVoiceUnit>(log_);
+    {
+      std::lock_guard lock(unit_mu_);
+      last_unit_ = unit;
+    }
+    VoiceDuplexEndpoints pair;
+    pair.mic = std::make_unique<FakeVoiceHalf>(unit);
+    pair.speaker = std::make_unique<FakeVoiceHalf>(unit);
+    return pair;
+  }
+  std::atomic<bool> duplex{false};
+  std::shared_ptr<FakeVoiceUnit> LastUnit() {
+    std::lock_guard lock(unit_mu_);
+    return last_unit_.lock();
+  }
+
 private:
   DeviceLog& log_;
+  std::mutex unit_mu_;
+  std::weak_ptr<FakeVoiceUnit> last_unit_;
 };
 
 AudioLeaseRequest Request(MediaDeviceKind kind, const std::string& holder) {
@@ -307,6 +374,44 @@ TEST_F(MediaDeviceArbiterTest, MissingCameraIsRefusedAndFreesTheSlot) {
   EXPECT_TRUE(arbiter_->AcquireCamera(request));
 }
 
+// --- voice duplex: mic + speaker from one voice-processing unit --------------------------------
+
+TEST_F(MediaDeviceArbiterTest, VoiceDuplexHoldsBothKindsAndClosesOnceBothHalvesGo) {
+  backend_->duplex = true;
+  auto pair = arbiter_->AcquireVoiceDuplex(Request(MediaDeviceKind::Mic, "call:1"));
+  ASSERT_TRUE(pair) << pair.error().message;
+  EXPECT_EQ(arbiter_->Holders(MediaDeviceKind::Mic), std::vector<std::string>{"call:1"});
+  EXPECT_EQ(arbiter_->Holders(MediaDeviceKind::Speaker), std::vector<std::string>{"call:1"});
+  EXPECT_TRUE(pair->mic->IsVoiceDuplex());
+  EXPECT_TRUE(pair->speaker->WithVoiceProcessing([](IVoiceProcessing&) {}));
+  EXPECT_FALSE(pair->mic->Reopen()) << "one half cannot reopen a shared unit";
+  EXPECT_FALSE(arbiter_->AcquireAudio(Request(MediaDeviceKind::Mic, "call:2"))) << "the mic stays exclusive";
+  pair->mic.reset();
+  pair->speaker.reset();
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Mic).empty());
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Speaker).empty());
+  Settle();
+  EXPECT_EQ(log_.Events(), (std::vector<std::string>{"open duplex", "close duplex"}));
+}
+
+TEST_F(MediaDeviceArbiterTest, UnsupportedVoiceDuplexHoldsNothing) {
+  auto pair = arbiter_->AcquireVoiceDuplex(Request(MediaDeviceKind::Mic, "call:1"));
+  ASSERT_FALSE(pair);
+  EXPECT_EQ(pair.error().message, "unsupported");
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Mic).empty());
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Speaker).empty());
+}
+
+TEST_F(MediaDeviceArbiterTest, VoiceDuplexIsRefusedWhileTheMicIsHeld) {
+  backend_->duplex = true;
+  auto mic = arbiter_->AcquireAudio(Request(MediaDeviceKind::Mic, "call:1"));
+  ASSERT_TRUE(mic);
+  auto pair = arbiter_->AcquireVoiceDuplex(Request(MediaDeviceKind::Mic, "call:2"));
+  ASSERT_FALSE(pair);
+  EXPECT_EQ(pair.error().message, "mic held by call:1");
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Speaker).empty()) << "no speaker hold left behind";
+}
+
 // --- engine takes the leases its session spec asks for -----------------------------------------
 
 class EngineDeviceLeaseTest : public MediaDeviceArbiterTest {
@@ -342,6 +447,60 @@ TEST_F(EngineDeviceLeaseTest, DuplexHoldsMicAndSpeakerUnderTheSessionId) {
   engine.Stop();
   EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Mic).empty());
   EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Speaker).empty());
+}
+
+// Echo cancellation: a duplex call takes mic + speaker from the voice-processing unit when the
+// backend has one (macOS VPIO), and reports it in media health.
+TEST_F(EngineDeviceLeaseTest, DuplexCallUsesTheVoiceProcessingUnit) {
+  backend_->duplex = true;
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
+  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(WaitHolders(MediaDeviceKind::Mic, 1));
+  EXPECT_TRUE(engine.HasLocalCapture());
+  EXPECT_EQ(engine.HealthSnapshot().audio_io, "vpio");
+  EXPECT_EQ(engine.HealthSnapshot().io_underruns, 7u);
+  const auto events = log_.Events();
+  EXPECT_EQ(std::count(events.begin(), events.end(), "open duplex"), 1);
+  EXPECT_EQ(std::count(events.begin(), events.end(), "open mic"), 0);
+  engine.Stop();
+  EXPECT_TRUE(arbiter_->Holders(MediaDeviceKind::Mic).empty());
+}
+
+// A default-device change re-acquires the whole pair (a half never reopens alone).
+TEST_F(EngineDeviceLeaseTest, DefaultDeviceChangeReacquiresTheVoicePair) {
+  backend_->duplex = true;
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
+  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(WaitHolders(MediaDeviceKind::Mic, 1));
+  auto unit = backend_->LastUnit();
+  ASSERT_NE(unit, nullptr);
+  unit->device_changed = true;
+  unit.reset();
+  const auto opens = [&]() {
+    const auto events = log_.Events();
+    return std::count(events.begin(), events.end(), "open duplex");
+  };
+  for (int i = 0; i < 400 && opens() < 2; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  EXPECT_EQ(opens(), 2);
+  EXPECT_EQ(engine.HealthSnapshot().audio_io, "vpio");
+  engine.Stop();
+  Settle();
+  const auto events = log_.Events();
+  EXPECT_EQ(std::count(events.begin(), events.end(), "close duplex"), 2);
+}
+
+// Without a voice-processing unit (other platforms), a call falls back to separate SDL leases.
+TEST_F(EngineDeviceLeaseTest, DuplexCallFallsBackToSeparateLeasesWithoutVoiceProcessing) {
+  auto engine_owned = MakeEngine();
+  CallMediaEngine& engine = *engine_owned;
+  ASSERT_TRUE(engine.StartSfu("call:1", NoopSend()));
+  ASSERT_TRUE(WaitHolders(MediaDeviceKind::Mic, 1));
+  EXPECT_EQ(engine.HealthSnapshot().audio_io, "sdl");
+  engine.Stop();
 }
 
 TEST_F(EngineDeviceLeaseTest, PlaybackOnlyNeverTakesTheMic) {

@@ -4,6 +4,7 @@
 #include "common/Error.h"
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -25,6 +26,23 @@ struct AudioDeviceFormat {
   int channels = 1;
 };
 
+/**
+ * OS voice processing on a duplex mic + speaker pair (Apple VPIO: echo cancellation, noise
+ * suppression, AGC). Diagnostics and route changes for the pipeline holding the pair.
+ */
+class IVoiceProcessing {
+public:
+  virtual ~IVoiceProcessing() = default;
+  /** Largest render request from the device, in bytes; playout keeps more than this queued. */
+  virtual size_t RenderChunkBytes() const = 0;
+  /** Playout underruns since the pair opened. */
+  virtual uint64_t PlayoutUnderruns() const = 0;
+  /** Diagnostic counters since the last call (callback sizes, ring water marks); resets them. */
+  virtual std::string TakeDiag() = 0;
+  /** The default device pair changed since the last call: re-acquire the pair. */
+  virtual bool TakeDeviceChanged() = 0;
+};
+
 /** One opened OS audio endpoint. Read / Write / Queued / Clear may run on any thread. */
 class IAudioEndpoint {
 public:
@@ -35,6 +53,14 @@ public:
   virtual bool Write(const void* src, int bytes) = 0;
   virtual int Queued() const = 0;
   virtual void Clear() = 0;
+  /** Set when this endpoint is one half of a voice-processing duplex (OpenVoiceDuplex). */
+  virtual IVoiceProcessing* VoiceProcessing() { return nullptr; }
+};
+
+/** Both halves of one voice-processing unit; the unit closes when both are destroyed. */
+struct VoiceDuplexEndpoints {
+  std::unique_ptr<IAudioEndpoint> mic;
+  std::unique_ptr<IAudioEndpoint> speaker;
 };
 
 /** What a camera holder asks for. */
@@ -78,6 +104,17 @@ public:
       *error = "no camera backend";
     }
     return nullptr;
+  }
+  /**
+   * Mic + speaker through one OS voice-processing unit (echo cancellation needs the unit's own
+   * playback as its reference). Both null with `error` set when unsupported or the open failed —
+   * the caller then takes separate leases.
+   */
+  virtual VoiceDuplexEndpoints OpenVoiceDuplex(const AudioDeviceFormat& /*format*/, std::string* error) {
+    if (error) {
+      *error = "unsupported";
+    }
+    return {};
   }
   /** Pause between closing and reopening `kind` (Android OEM route settle). */
   virtual std::chrono::milliseconds ReopenSettle(MediaDeviceKind /*kind*/) const { return {}; }
@@ -124,9 +161,14 @@ public:
 
   /**
    * Close, settle, reopen on the device thread; blocks the caller until done. Never call on the UI
-   * thread. The lease is kept when the reopen finds no device (HasDevice() false).
+   * thread. The lease is kept when the reopen finds no device (HasDevice() false). A voice-duplex
+   * half refuses (its unit serves both halves): release the pair and acquire it again.
    */
   Roe<void> Reopen();
+  /** Half of a voice-processing duplex (AcquireVoiceDuplex). */
+  bool IsVoiceDuplex() const;
+  /** Run `fn` on the endpoint's voice processing, if any, under the I/O lock; false when none. */
+  bool WithVoiceProcessing(const std::function<void(IVoiceProcessing&)>& fn);
 
   struct State;
 
@@ -194,6 +236,17 @@ public:
    * permission can block for seconds). Refused only by policy ("mic held by <holder>").
    */
   Roe<std::unique_ptr<AudioDeviceLease>> AcquireAudio(const AudioLeaseRequest& request);
+
+  struct VoiceDuplexLeases {
+    std::unique_ptr<AudioDeviceLease> mic;
+    std::unique_ptr<AudioDeviceLease> speaker;
+  };
+  /**
+   * Blocking like AcquireAudio: mic + speaker from one voice-processing unit (`request.kind` is
+   * ignored). Refused by policy (mic held), or when the backend has no such unit / it failed to
+   * open (the error says why) — then take separate AcquireAudio leases.
+   */
+  Roe<VoiceDuplexLeases> AcquireVoiceDuplex(const AudioLeaseRequest& request);
   /** Blocking like AcquireAudio. Refused by policy ("camera held by …") or when no camera opens. */
   Roe<std::unique_ptr<CameraDeviceLease>> AcquireCamera(const CameraLeaseRequest& request);
 

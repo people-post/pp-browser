@@ -171,6 +171,16 @@ TEST(CallMediaHealthTest, LogLineHasMediaHealthPrefix) {
   EXPECT_NE(line.find("call=abc"), std::string::npos);
 }
 
+TEST(CallMediaHealthTest, LogLineCarriesFecCounter) {
+  CallMediaHealthView v;
+  v.engine.plc_frames = 4;
+  v.engine.fec_frames = 7;
+  const std::string line = FormatMediaHealthLogLine(v, /*now_ms=*/1000, "call:x");
+  EXPECT_NE(line.find(" plc=4 fec=7 audio_io=none io_underrun=0 "), std::string::npos) << line;
+  EXPECT_NE(line.find(" audio_io="), std::string::npos) << line;
+  EXPECT_NE(line.find(" io_underrun="), std::string::npos) << line;
+}
+
 TEST(CallMediaHealthTest, LogLineIncludesHopPeers) {
   auto in = BaseHealthyInput();
   CallHopPeerHealth peer;

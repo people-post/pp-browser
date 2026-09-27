@@ -3,12 +3,14 @@
 #include "domain/media/MediaDeviceArbiter.h"
 #include "domain/media/SdlAudioBootstrap.h"
 #include "domain/media/VideoYuv.h"
+#include "domain/media/VoiceProcessingIo.h"
 
 #include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <memory>
 #include <thread>
 
 namespace pbr {
@@ -29,6 +31,58 @@ public:
 
 private:
   SDL_AudioStream* stream_;
+};
+
+/** One OS voice-processing unit shared by its mic and speaker halves; closes with the last half. */
+class VoiceUnit final : public IVoiceProcessing {
+public:
+  ~VoiceUnit() override {
+    const auto t0 = std::chrono::steady_clock::now();
+    io.Close();  // AudioOutputUnitStop waits for its callbacks
+    SDL_Log("MediaDeviceArbiter: vpio close_ms=%lld",
+            static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                       std::chrono::steady_clock::now() - t0)
+                                       .count()));
+  }
+  size_t RenderChunkBytes() const override { return io.RenderChunkBytes(); }
+  uint64_t PlayoutUnderruns() const override { return io.PlayoutUnderruns(); }
+  std::string TakeDiag() override { return io.TakeDiag(); }
+  bool TakeDeviceChanged() override { return io.TakeDeviceChanged(); }
+
+  // Const-callable on the unit: the halves' queries are const on IAudioEndpoint.
+  mutable VoiceProcessingIo io;
+};
+
+class VoiceMicEndpoint final : public IAudioEndpoint {
+public:
+  explicit VoiceMicEndpoint(std::shared_ptr<VoiceUnit> unit) : unit_(std::move(unit)) {}
+  int Read(void* dst, int bytes) override {
+    const size_t samples = unit_->io.ReadCapture(static_cast<int16_t*>(dst), static_cast<size_t>(bytes) / sizeof(int16_t));
+    return static_cast<int>(samples * sizeof(int16_t));
+  }
+  bool Write(const void*, int) override { return false; }
+  int Queued() const override { return 0; }
+  void Clear() override {}
+  IVoiceProcessing* VoiceProcessing() override { return unit_.get(); }
+
+private:
+  std::shared_ptr<VoiceUnit> unit_;
+};
+
+class VoiceSpeakerEndpoint final : public IAudioEndpoint {
+public:
+  explicit VoiceSpeakerEndpoint(std::shared_ptr<VoiceUnit> unit) : unit_(std::move(unit)) {}
+  int Read(void*, int) override { return 0; }
+  bool Write(const void* src, int bytes) override {
+    const size_t samples = static_cast<size_t>(bytes) / sizeof(int16_t);
+    return unit_->io.WritePlayout(static_cast<const int16_t*>(src), samples) == samples;
+  }
+  int Queued() const override { return static_cast<int>(unit_->io.QueuedPlayoutBytes()); }
+  void Clear() override {}
+  IVoiceProcessing* VoiceProcessing() override { return unit_.get(); }
+
+private:
+  std::shared_ptr<VoiceUnit> unit_;
 };
 
 SDL_AudioSpec ToSdlSpec(const AudioDeviceFormat& format) {
@@ -253,6 +307,34 @@ public:
       return fail(std::string("SDL_OpenCamera failed: ") + SDL_GetError());
     }
     return std::make_unique<SdlCameraEndpoint>(camera, geometry);
+  }
+
+  VoiceDuplexEndpoints OpenVoiceDuplex(const AudioDeviceFormat& format, std::string* error) override {
+    // VoiceProcessingIo is Apple VPIO on macOS; elsewhere a stub whose Open() fails "unsupported".
+    if (format.freq != 48000 || format.channels != 1) {
+      *error = "voice processing runs 48 kHz mono only";
+      return {};
+    }
+    auto unit = std::make_shared<VoiceUnit>();
+    const auto t0 = std::chrono::steady_clock::now();
+    std::string reason;
+    const bool ok = unit->io.Open(&reason);
+    const auto open_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+    if (!ok) {
+      if (reason != "unsupported") {
+        SDL_Log("MediaDeviceArbiter: vpio open failed (%s) open_ms=%lld", reason.c_str(), static_cast<long long>(open_ms));
+      }
+      *error = reason.empty() ? std::string("vpio open failed") : reason;
+      unit->io.Close();
+      return {};
+    }
+    SDL_Log("MediaDeviceArbiter: vpio open (voice processing: echo cancellation on) open_ms=%lld",
+            static_cast<long long>(open_ms));
+    VoiceDuplexEndpoints pair;
+    pair.mic = std::make_unique<VoiceMicEndpoint>(unit);
+    pair.speaker = std::make_unique<VoiceSpeakerEndpoint>(unit);
+    return pair;
   }
 
   std::chrono::milliseconds ReopenSettle(MediaDeviceKind kind) const override {

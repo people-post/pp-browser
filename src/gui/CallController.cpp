@@ -260,6 +260,9 @@ void CallController::PrepareForShutdown() {
   if (!ringtone_.StopAndJoin(CallRingtone::kDefaultShutdownJoinBudget)) {
     log().warning << "PrepareForShutdown: ringtone join budget exceeded — detached";
   }
+  if (!ringback_.StopAndJoin(CallRingtone::kDefaultShutdownJoinBudget)) {
+    log().warning << "PrepareForShutdown: ringback join budget exceeded — detached";
+  }
 }
 
 void CallController::ClearInCall() {
@@ -374,6 +377,33 @@ void CallController::SyncRingtone() {
   } else if (!should_ring && ringtone_.IsPlaying()) {
     ringtone_.Stop();
   }
+
+  // Caller-side ringback: only while the callee has not answered (OutboundCalling) and
+  // no incoming ring is showing and media has not started yet.
+  auto* backend = Backend();
+  const bool should_ringback = !should_ring && backend && backend->Available() &&
+                                backend->Phase() == CallPhase::OutboundCalling &&
+                                !backend->Media().IsActive();
+  if (should_ringback && !ringback_.IsPlaying()) {
+    ringback_.Start();
+  } else if (!should_ringback && ringback_.IsPlaying()) {
+    StopRingback(backend);
+  }
+}
+
+void CallController::StopRingback(CallUiBackend* backend) {
+  const bool ringback_was_playing = ringback_.IsPlaying();
+  if (!ringback_was_playing) {
+    return;
+  }
+  // The ringback worker itself owns activate/release of the audio session (see
+  // CallRingtone::RunLoop) — a fast cancel could otherwise race a Deactivate() here
+  // against the worker's own ActivateForVoipCall() and leave the phone in VoIP mode.
+  // The engine owns the session once media is active — release unless the call engine
+  // is actually active and owns it (a null/unavailable backend means nobody else does).
+  const bool release = !(backend && backend->Available() && backend->Media().IsActive());
+  ringback_.SetReleaseSessionOnStop(release);
+  ringback_.Stop();
 }
 
 std::string CallController::DisplayNameForIdentity(const std::string& identity) const {
@@ -989,6 +1019,7 @@ void CallController::LeaveActive() {
     // Stale End button after Idle — force-clear chrome so Samsung does not look hung.
     ClearInCall();
     ClearRing();
+    StopRingback(backend);
     SyncShellState();
     return;
   }
@@ -1000,6 +1031,7 @@ void CallController::LeaveActive() {
   active_call_id_.clear();
   ClearInCall();
   ClearRing();
+  StopRingback(backend);
   SyncShellState();
   if (backend && backend->Available()) {
     backend->Apply(CallLifecycleEvent::LeaveClicked, call_id);
@@ -1081,8 +1113,11 @@ void CallController::ToggleSpeaker() {
   const bool before = CallAudioSession::IsSpeakerphoneOn();
   CallAudioSession::SetSpeakerphoneOn(!before);
   // Speaker = route only (not mute). Android AudioRecord often goes silent until SDL reopen.
-  backend->Media().RequestAudioDeviceReopen();
-  log().info << "ToggleSpeaker speaker_on=" << (!before ? 1 : 0) << " (reopen capture)";
+  const bool reopen = CallAudioSession::SpeakerToggleNeedsDeviceReopen();
+  if (reopen) {
+    backend->Media().RequestAudioDeviceReopen();
+  }
+  log().info << "ToggleSpeaker speaker_on=" << (!before ? 1 : 0) << " reopen=" << (reopen ? 1 : 0);
   RefreshPendingRing();
 }
 

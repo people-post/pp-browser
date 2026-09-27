@@ -84,6 +84,13 @@ private:
   void ApplyAudioLevels(CallMediaEngine& media);
   void RefreshCallLevels();
   void SyncRingtone();
+  /**
+   * Stop ringback_ if playing and, unless media is already active (the engine then owns
+   * the session), release the phone audio session. Shared by SyncRingtone's own
+   * playing->stopped transition and LeaveActive's immediate stop, so a hang-up during
+   * ringback never Deactivates twice.
+   */
+  void StopRingback(CallUiBackend* backend);
   void ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* backend, bool media_reconnect);
   CallMediaHealthView BuildMediaHealthView(CallMediaEngine& media, CallUiBackend* backend,
                                            bool media_reconnect) const;
@@ -113,6 +120,7 @@ private:
   /** Call id the current chrome_mode_ was chosen for (reset defaults on switch). */
   std::string chrome_mode_call_id_;
   CallRingtone ringtone_;
+  CallRingtone ringback_{CallRingtone::Tone::OutgoingRingback};
   CallFunctionalPorts call_ports_;
   PeoplePickerNotifyPorts people_picker_notify_;
   ShellCallChromePorts shell_call_chrome_;

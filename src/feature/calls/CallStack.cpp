@@ -589,6 +589,7 @@ CallLifecycle* CallStack::Lifecycle() {
 }
 
 void CallStack::EnsureCallLifecycleBound() {
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   if (!call_sessions_) {
     if (call_lifecycle_) {
       call_lifecycle_->ClearBinding();
@@ -598,6 +599,7 @@ void CallStack::EnsureCallLifecycleBound() {
   if (!call_lifecycle_) {
     call_lifecycle_ = std::make_unique<CallLifecycle>();
   }
+  lifecycle_port_binds_.fetch_add(1, std::memory_order_relaxed);
   call_lifecycle_->BindSignalingPorts(MakeLifecycleSignalingPorts());
   call_lifecycle_->SetOnListenDesireChanged([this](bool want) { SetEphemeralListenDesire(want); });
   call_sessions_->SetTopologyHopArmingPorts(MakeHopArmingPorts());

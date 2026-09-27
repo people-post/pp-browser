@@ -24,6 +24,7 @@
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/host/MeshHost.h"
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <string>
@@ -133,7 +134,15 @@ public:
   void AbortCallMediaForShutdown();
   /** True while CallMediaBridge Connect sequence is in flight (cheap for shutdown marks). */
   bool IsConnectWorkerInflight() const;
+  /**
+   * Bind lifecycle-derived port sets (lifecycle signaling, CSM hop/lifecycle, bridge arming/seat).
+   * Calls owner only, at the bind points (BuildSessions / BindMediaProducts) — never per ring change
+   * or per Lifecycle() query: the targets call these ports on the owner, so re-binding elsewhere
+   * would swap a std::function while it runs (B49).
+   */
   void EnsureCallLifecycleBound();
+  /** Test-only: times EnsureCallLifecycleBound bound the port sets. */
+  int LifecyclePortBindsForTest() const { return lifecycle_port_binds_.load(std::memory_order_relaxed); }
   void SetEphemeralListenDesire(bool want);
   /** N025 desire: CallLifecycle::WantEphemeralListen only. */
   bool WantEphemeralListen() const;
@@ -192,6 +201,7 @@ private:
   std::unique_ptr<CallMediaPlane> media_plane_;
   SharedPorts<CallUiState> ui_state_;
   CallsThread::HookId publish_hook_ = 0;
+  std::atomic<int> lifecycle_port_binds_{0};
 };
 
 } // namespace pbr

@@ -17,6 +17,8 @@ void Deactivate();
 bool SupportsSpeakerToggle();
 bool IsSpeakerphoneOn();
 void SetSpeakerphoneOn(bool on);
+/** True when a speaker-route change needs the SDL devices closed and reopened (Android AudioRecord goes silent otherwise). */
+bool SpeakerToggleNeedsDeviceReopen();
 
 /** SDL capture-open attempts (Android OEM AAudio races; 1 elsewhere). */
 int CaptureOpenAttemptCount();

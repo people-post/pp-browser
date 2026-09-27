@@ -2,14 +2,20 @@
 
 #include "domain/media/CallAudioSession.h"
 #include "domain/media/CallMediaPlayout.h"
+#include "domain/media/CallRingtone.h"
 #include "domain/media/CameraCaptureOrientation.h"
 #include "domain/media/IVideoCodec.h"
 #include "domain/media/MediaDeviceArbiter.h"
+#include "domain/media/NoiseSuppressor.h"
 #include "domain/media/VideoYuv.h"
 #include "common/Utilities.h"
 
 #include <SDL3/SDL.h>
 #include <opus.h>
+
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -34,6 +40,13 @@ constexpr int kSampleRate = 48000;
 constexpr int kChannels = 1;
 constexpr int kFrameMs = 20;
 constexpr int kFrameSamples = kSampleRate * kFrameMs / 1000;
+/** Bytes of one 20 ms mono s16 frame on the speaker. */
+constexpr int kFrameBytes = kFrameSamples * static_cast<int>(sizeof(int16_t));
+/** Keep ~60 ms queued in the device (spec §1); above ~120 ms skip a slot to shed latency. */
+constexpr int kPlayoutTargetQueuedBytes = 3 * kFrameBytes;
+constexpr int kPlayoutHighWaterBytes = 6 * kFrameBytes;
+/** Never produce more than this many slots per 20 ms wake-up (startup / after a stall). */
+constexpr int kPlayoutMaxSlotsPerTick = 3;
 constexpr int kDefaultVideoWidth = 640;
 constexpr int kDefaultVideoHeight = 360;
 constexpr int kVideoFps = 20;
@@ -95,8 +108,13 @@ struct CallMediaEngine::Impl {
   std::atomic<int64_t> last_rx_video_ms{0};
   std::atomic<uint64_t> playout_underruns_total{0};
   std::atomic<uint64_t> plc_frames_total{0};
+  std::atomic<uint64_t> fec_frames_total{0};
 
   bool capture_available = false;
+#ifdef PP_BROWSER_CALL_DENOISE
+  NoiseSuppressor denoise;
+  int64_t last_denoise_log_ms = 0;
+#endif
 
   OpusEncoder* encoder = nullptr;
   /** Where audio devices come from: `own_devices` (constructor) or `test_devices` (skip-open). */
@@ -109,6 +127,11 @@ struct CallMediaEngine::Impl {
    */
   std::unique_ptr<AudioDeviceLease> mic_lease;
   std::unique_ptr<AudioDeviceLease> speaker_lease;
+  /** Set for the rest of this call once voice-processing capture has starved 3 times in a row (I3):
+   *  the next opens skip the voice duplex until the next StartCaptureLoop(). */
+  std::atomic<bool> vpio_disabled_for_call{false};
+  /** Voice-processing playout underruns of pairs already released this call; under `mutex`. */
+  uint64_t vpio_underruns_closed = 0;
 
   struct RemoteAudioTrack {
     OpusDecoder* decoder = nullptr;
@@ -310,9 +333,19 @@ struct CallMediaEngine::Impl {
   /** Release device leases only — keep Opus, tracks, and VoIP session active. Closes run on the
    *  arbiter's device thread; this never blocks on the OS. */
   void CloseAudioDevicesLocked() {
+    vpio_underruns_closed += VoiceUnderruns(speaker_lease.get());
     mic_lease.reset();
     speaker_lease.reset();
     capture_available = false;
+  }
+
+  /** Playout underruns of the voice-processing unit behind `lease` (0 when none). */
+  static uint64_t VoiceUnderruns(AudioDeviceLease* lease) {
+    uint64_t underruns = 0;
+    if (lease) {
+      (void)lease->WithVoiceProcessing([&](IVoiceProcessing& vp) { underruns = vp.PlayoutUnderruns(); });
+    }
+    return underruns;
   }
 
   void TearDownAudioLocked() {
@@ -343,6 +376,8 @@ struct CallMediaEngine::Impl {
     tx_audio_frames.store(0, std::memory_order_relaxed);
     playout_underruns_total.store(0, std::memory_order_relaxed);
     plc_frames_total.store(0, std::memory_order_relaxed);
+    fec_frames_total.store(0, std::memory_order_relaxed);
+    vpio_underruns_closed = 0;
     last_rx_audio_ms.store(0, std::memory_order_relaxed);
     last_tx_audio_ms.store(0, std::memory_order_relaxed);
     CallAudioSession::Deactivate();
@@ -401,53 +436,143 @@ struct CallMediaEngine::Impl {
     waiter.detach();
   }
 
+  /** One playout slot for one track: decode Packet / FEC-on-Gap / PLC-on-Empty into `mix`. */
+  void PopAndDecodeTrackLocked(RemoteAudioTrack& track, std::vector<int16_t>& mix, bool& any) {
+    if (!track.decoder) {
+      return;
+    }
+    const uint64_t underruns_before = track.jitter.underruns();
+    AudioPlayoutPop pop = track.jitter.PopForPlayout();
+    std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples), 0);
+    const auto plc = [&]() {
+      const int n = opus_decode(track.decoder, nullptr, 0, pcm.data(), kFrameSamples, 0);
+      if (n > 0) {
+        plc_frames_total.fetch_add(1, std::memory_order_relaxed);
+      }
+      return n;
+    };
+    int decoded = 0;
+    switch (pop.kind) {
+    case AudioPlayoutPop::Kind::Packet:
+      decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
+                            kFrameSamples, 0);
+      break;
+    case AudioPlayoutPop::Kind::Gap:
+      // The next packet's in-band FEC (LBRR) only covers the frame right before it; earlier
+      // missing frames of a wider hole are PLC. PLC also if the FEC decode fails.
+      if (pop.fec_usable) {
+        decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
+                              kFrameSamples, 1);
+      }
+      if (decoded > 0) {
+        // libopus returns >0 both for a real FEC frame and for a PLC-like frame it synthesises
+        // when the packet carried no FEC data — counting both as fec= is accepted (diagnostic).
+        fec_frames_total.fetch_add(1, std::memory_order_relaxed);
+      } else {
+        decoded = plc();
+      }
+      break;
+    case AudioPlayoutPop::Kind::Empty:
+      // Priming (buffer hasn't reached target depth yet) also returns Empty but is not a real
+      // underrun — only count/PLC it when this pop actually incremented the cumulative counter.
+      if (track.jitter.underruns() > underruns_before) {
+        playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
+        decoded = plc();
+      }
+      break;
+    }
+    if (decoded <= 0) {
+      return;
+    }
+    pcm.resize(static_cast<size_t>(decoded));
+    SmoothLevel(track.peak_level, FramePeakLevel(pcm.data(), decoded));
+    MixPcmSat(mix, pcm);
+    any = true;
+  }
+
+  /**
+   * Playout slots this tick, clocked from the speaker's queue (B37): keep ~60 ms queued — a voice-
+   * processing unit pulls device-sized chunks, so one chunk plus a frame there — and shed a slot
+   * above the high-water mark. Under `mutex`.
+   */
+  int PlayoutSlotsLocked(AudioDeviceLease& out) {
+    size_t render_chunk = 0;
+    const bool voice = out.WithVoiceProcessing([&](IVoiceProcessing& vp) { render_chunk = vp.RenderChunkBytes(); });
+    const int queued = out.Queued();
+    const int target =
+        voice ? std::max(kPlayoutTargetQueuedBytes, static_cast<int>(render_chunk) + kFrameBytes) : kPlayoutTargetQueuedBytes;
+    const int high_water = target + (kPlayoutHighWaterBytes - kPlayoutTargetQueuedBytes);
+    if (queued < 0) {
+      return 1;  // errored device: keep one frame per tick so buffers keep draining
+    }
+    if (queued > high_water) {
+      return 0;  // device is ahead: let it drain this tick
+    }
+    const int deficit = target - queued;
+    return deficit <= 0 ? 0 : std::min(kPlayoutMaxSlotsPerTick, (deficit + kFrameBytes - 1) / kFrameBytes);
+  }
+
   void StartPlayoutLoop() {
     playout_running = true;
     playout_thread = std::thread([this]() {
       std::vector<int16_t> mix(static_cast<size_t>(kFrameSamples), 0);
+      // Diagnostics: longest gap between playout wake-ups, logged with voice-processing stats.
+      auto last_tick = std::chrono::steady_clock::now();
+      auto last_diag = last_tick;
+      int64_t tick_gap_max_ms = 0;
       while (playout_running.load(std::memory_order_relaxed)) {
         const auto t0 = std::chrono::steady_clock::now();
-        std::fill(mix.begin(), mix.end(), int16_t{0});
-        bool any = false;
+        tick_gap_max_ms = std::max<int64_t>(
+            tick_gap_max_ms, std::chrono::duration_cast<std::chrono::milliseconds>(t0 - last_tick).count());
+        last_tick = t0;
         double pressure = 0.0;
-        uint64_t ticks = 0;
         {
           std::lock_guard lock(mutex);
-          ticks = playout_ticks.fetch_add(1, std::memory_order_relaxed) + 1;
-          for (auto& [id, track] : audio_tracks) {
-            (void)id;
-            if (!track) {
-              continue;
+          AudioDeviceLease* out = speaker_lease && speaker_lease->HasDevice() ? speaker_lease.get() : nullptr;
+          if (t0 - last_diag >= std::chrono::seconds(2)) {
+            last_diag = t0;
+            if (out) {
+              const int queued = out->Queued();
+              (void)out->WithVoiceProcessing([&](IVoiceProcessing& vp) {
+                SDL_Log("CallMediaEngine: vpio_diag tick_gap_max_ms=%lld queued_bytes=%d %s",
+                        static_cast<long long>(tick_gap_max_ms), queued, vp.TakeDiag().c_str());
+              });
             }
-            auto frame = track->jitter.PopForPlayout(true);
-            if (frame) {
-              MixPcmSat(mix, frame->pcm);
-              any = true;
-            } else {
-              playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
-              // PLC: opus_decode with null packet into a temp buffer, then mix.
-              if (track->decoder) {
-                std::vector<int16_t> plc(static_cast<size_t>(kFrameSamples), 0);
-                const int decoded =
-                    opus_decode(track->decoder, nullptr, 0, plc.data(), kFrameSamples, 0);
-                if (decoded > 0) {
-                  plc.resize(static_cast<size_t>(decoded));
-                  MixPcmSat(mix, plc);
-                  any = true;
-                  plc_frames_total.fetch_add(1, std::memory_order_relaxed);
-                }
+            tick_gap_max_ms = 0;
+          }
+          int slots = out ? PlayoutSlotsLocked(*out) : 1;
+          if (audio_tracks.empty()) {
+            slots = 0;  // nothing to pop or put; don't inflate playout_ticks (Pressure window)
+          }
+          for (int s = 0; s < slots; ++s) {
+            std::fill(mix.begin(), mix.end(), int16_t{0});
+            bool any = false;
+            const uint64_t ticks = playout_ticks.fetch_add(1, std::memory_order_relaxed) + 1;
+            for (auto& [id, track] : audio_tracks) {
+              (void)id;
+              if (!track) {
+                continue;
+              }
+              PopAndDecodeTrackLocked(*track, mix, any);
+              pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(ticks, 1)));
+            }
+            if (out && any) {
+              SmoothLevel(remote_output_level, FramePeakLevel(mix.data(), kFrameSamples));
+              remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+              (void)out->Write(mix.data(), kFrameBytes);
+            } else if (out) {
+              // Silent frame keeps the device clock fed while all streams are priming.
+              (void)out->Write(mix.data(), kFrameBytes);
+            }
+          }
+          if (slots == 0) {
+            // Still report pressure from buffer fill when we skipped (no pops this tick).
+            for (auto& [id, track] : audio_tracks) {
+              (void)id;
+              if (track) {
+                pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(playout_ticks.load(), 1)));
               }
             }
-            pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(ticks, 1)));
-          }
-          AudioDeviceLease* out = speaker_lease.get();
-          if (out && any) {
-            SmoothLevel(remote_output_level, FramePeakLevel(mix.data(), kFrameSamples));
-            remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
-            (void)out->Write(mix.data(), kFrameSamples * static_cast<int>(sizeof(int16_t)));
-          } else if (out && !audio_tracks.empty()) {
-            // Silent frame keeps the device clock alive when all streams priming.
-            (void)out->Write(mix.data(), kFrameSamples * static_cast<int>(sizeof(int16_t)));
           }
         }
         const double drop_p =
@@ -483,6 +608,13 @@ struct CallMediaEngine::Impl {
     }
     const int64_t bps = adaptation_target_audio_bps.load(std::memory_order_relaxed);
     opus_encoder_ctl(encoder, OPUS_SET_BITRATE(static_cast<int>(bps > 0 ? bps : 24000)));
+    opus_encoder_ctl(encoder, OPUS_SET_INBAND_FEC(1));
+    opus_encoder_ctl(encoder, OPUS_SET_PACKET_LOSS_PERC(10));
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+    opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(5));
+#else
+    opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(8));
+#endif
     return {};
   }
 
@@ -536,22 +668,35 @@ struct CallMediaEngine::Impl {
       std::lock_guard lock(mutex);
       want_spec = spec;
       holder = call_id;
+      // A voice-processing pair is one unit: re-acquired whole on reopen (never Reopen'd per half).
+      if (reopen && ((mic_lease && mic_lease->IsVoiceDuplex()) || (speaker_lease && speaker_lease->IsVoiceDuplex()))) {
+        CloseAudioDevicesLocked();
+      }
       mic = std::move(mic_lease);
       speaker = std::move(speaker_lease);
       capture_available = false;
     }
-    if (want_spec.capture && !skip_device_open_for_test.load(std::memory_order_relaxed)) {
+    const bool voip = want_spec.capture && !skip_device_open_for_test.load(std::memory_order_relaxed);
+    if (voip) {
       // VoIP audio session only when the mic is ours (a playback-only viewer is not a call).
       // Re-asserted on reopen too: Android route changes can drop MODE_IN_COMMUNICATION.
+      // A caller ringback that activated the session may still release it: let it finish first.
+      CallRingtone::WaitUntilRingbackSessionReleased();
+      if (!capture_running.load(std::memory_order_acquire)) {
+        return Error("call media stopped");
+      }
       CallAudioSession::ApplyCaptureAudioHints();
       CallAudioSession::ActivateForVoipCall();
     }
+    TryAcquireVoiceDuplex(want_spec, holder, mic, speaker);
     const auto ensure = [&](bool wanted, MediaDeviceKind kind, std::unique_ptr<AudioDeviceLease>& lease) {
       if (!wanted || !capture_running.load(std::memory_order_acquire)) {
         return;
       }
       if (lease) {
-        (void)lease->Reopen();
+        if (!lease->IsVoiceDuplex()) {
+          (void)lease->Reopen();
+        }
       } else {
         lease = AcquireLease(kind, holder);
       }
@@ -560,6 +705,12 @@ struct CallMediaEngine::Impl {
     ensure(want_spec.playback, MediaDeviceKind::Speaker, speaker);
     if (!capture_running.load(std::memory_order_acquire)) {
       return Error("call media stopped");  // leases release on scope exit
+    }
+    const bool voice = mic && mic->IsVoiceDuplex();
+    if (voip && !voice) {
+      // SDL's coreaudio backend rewrites the AVAudioSession category/options with ModeDefault and
+      // DefaultToSpeaker when it opens devices (B36). Re-apply our VoiceChat mode + earpiece route.
+      CallAudioSession::ActivateForVoipCall();
     }
     if (speaker && !speaker->HasDevice()) {
       // Headless CI / no default device: still run silence TX (same as no-capture path).
@@ -570,13 +721,46 @@ struct CallMediaEngine::Impl {
     mic_lease = std::move(mic);
     speaker_lease = std::move(speaker);
     capture_available = mic_lease && mic_lease->HasDevice();
+#ifdef PP_BROWSER_CALL_DENOISE
+    denoise.Reset();
+#endif
     return {};
+  }
+
+  /**
+   * Duplex calls take mic + speaker from one OS voice-processing unit (echo cancellation) when the
+   * backend has one (macOS VPIO; the other platforms' backends say "unsupported"); otherwise — or
+   * once disabled for this call — separate leases follow.
+   */
+  void TryAcquireVoiceDuplex(const SessionSpec& want_spec, const std::string& holder,
+                             std::unique_ptr<AudioDeviceLease>& mic, std::unique_ptr<AudioDeviceLease>& speaker) {
+    if (!want_spec.capture || !want_spec.playback || mic || speaker ||
+        skip_device_open_for_test.load(std::memory_order_relaxed) || !capture_running.load(std::memory_order_acquire)) {
+      return;
+    }
+    if (vpio_disabled_for_call.load(std::memory_order_acquire)) {
+      SDL_Log("CallMediaEngine: audio_io=sdl reason=vpio disabled for call (capture starved)");
+      return;
+    }
+    AudioLeaseRequest request;
+    request.holder = holder;
+    request.format = AudioDeviceFormat{kSampleRate, kChannels};
+    request.still_wanted = [this]() { return capture_running.load(std::memory_order_acquire); };
+    auto pair = DeviceArbiter().AcquireVoiceDuplex(request);
+    if (!pair) {
+      SDL_Log("CallMediaEngine: audio_io=sdl reason=%s", pair.error().message.c_str());
+      return;
+    }
+    SDL_Log("CallMediaEngine: audio_io=vpio (voice processing: echo cancellation on)");
+    mic = std::move(pair->mic);
+    speaker = std::move(pair->speaker);
   }
 
   void StartCaptureLoop() {
     // Precondition: capture_thread not joinable (JoinCaptureThread outside media mutex).
     capture_running = true;
     audio_reopen_requested.store(false, std::memory_order_relaxed);
+    vpio_disabled_for_call.store(false, std::memory_order_relaxed);
     capture_thread = std::thread([this]() {
       // Device open (and OS mic prompts) stay on this worker so CallAccept /
       // AcceptInvite can finish signaling without freezing UI or libp2p.
@@ -599,6 +783,9 @@ struct CallMediaEngine::Impl {
       OpusEncoder* bitrate_enc = nullptr;
       int64_t applied_audio_bps = 0;
       int64_t last_capture_starve_reopen_ms = 0;
+      // I3: consecutive starvation-triggered reopens while on voice processing; 3 in a row falls
+      // back to SDL for the rest of this call. Capture-thread-local.
+      int vpio_starve_reopens = 0;
       while (capture_running.load()) {
         if (audio_reopen_requested.exchange(false, std::memory_order_acq_rel)) {
           // Android speakerphone / SoftMigrate can leave AudioRecord feeding zeros until reopen.
@@ -611,6 +798,15 @@ struct CallMediaEngine::Impl {
             SDL_Log("CallMediaEngine: audio reopen — no capture device; sending silence");
           }
           last_capture_pcm_ms = util::NowUnixMs();
+        }
+        // The capture thread is mic_lease's only writer while it runs: read it without `mutex`.
+        bool device_changed = false;
+        const bool vpio_on = capture_available && mic_lease &&
+                             mic_lease->WithVoiceProcessing([&](IVoiceProcessing& vp) { device_changed = vp.TakeDeviceChanged(); });
+        if (device_changed) {
+          SDL_Log("CallMediaEngine: default audio device changed — reopening voice processing");
+          audio_reopen_requested.store(true, std::memory_order_release);
+          continue;
         }
         std::shared_ptr<SfuSendFn> send_fn;
         OpusEncoder* enc = nullptr;
@@ -641,6 +837,9 @@ struct CallMediaEngine::Impl {
             const size_t samples = static_cast<size_t>(got) / sizeof(int16_t);
             pending.insert(pending.end(), chunk, chunk + samples);
             last_capture_pcm_ms = util::NowUnixMs();
+            if (vpio_on) {
+              vpio_starve_reopens = 0;
+            }
           }
           if (pending.size() < static_cast<size_t>(kFrameSamples)) {
             const int64_t now = util::NowUnixMs();
@@ -656,6 +855,12 @@ struct CallMediaEngine::Impl {
                 SDL_Log("CallMediaEngine: capture starved %lldms — requesting reopen",
                         static_cast<long long>(now - last_capture_pcm_ms));
                 audio_reopen_requested.store(true, std::memory_order_release);
+                // I3: persistent voice-processing capture starvation (not just a starved SDL
+                // device) falls back to SDL for the rest of this call after 3 reopens in a row.
+                if (vpio_on && ++vpio_starve_reopens >= 3) {
+                  vpio_disabled_for_call.store(true, std::memory_order_release);
+                  SDL_Log("CallMediaEngine: vpio capture starved 3x — using SDL for this call");
+                }
               }
               std::fill(pcm.begin(), pcm.end(), int16_t{0});
               paced_silence_frame = true;
@@ -679,6 +884,16 @@ struct CallMediaEngine::Impl {
               std::fill(pcm.begin(), pcm.end(), int16_t{0});
               SmoothLevel(local_input_level, 0.f);
             } else {
+#ifdef PP_BROWSER_CALL_DENOISE
+              if (!vpio_on) {  // voice processing suppresses noise itself
+                denoise.Process(pcm.data(), pcm.size());
+                const int64_t now_ms = util::NowUnixMs();
+                if (now_ms - last_denoise_log_ms >= 5000) {
+                  last_denoise_log_ms = now_ms;
+                  SDL_Log("CallMediaEngine: noise_floor_dbfs=%.1f", denoise.last_noise_floor_dbfs());
+                }
+              }
+#endif
               SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
             }
           }
@@ -906,22 +1121,15 @@ struct CallMediaEngine::Impl {
     if (!track || !track->decoder) {
       return;
     }
-    std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples));
-    const int decoded = opus_decode(track->decoder, reinterpret_cast<const unsigned char*>(data),
-                                    static_cast<int>(size), pcm.data(), kFrameSamples, 0);
-    if (decoded <= 0) {
-      return;
-    }
-    pcm.resize(static_cast<size_t>(decoded));
+    // Decoded at playout (packet-level jitter buffer: FEC on a gap needs the next packet).
     const int64_t recv_ms = util::NowUnixMs();
-    SmoothLevel(track->peak_level, FramePeakLevel(pcm.data(), decoded));
     ++track->rx_frames;
     track->last_rx_ms = recv_ms;
-    PlayoutPcmFrame frame;
-    frame.seq = seq;
-    frame.recv_ms = recv_ms;
-    frame.pcm = std::move(pcm);
-    track->jitter.Push(std::move(frame));
+    AudioPacket packet;
+    packet.seq = seq;
+    packet.recv_ms = recv_ms;
+    packet.payload.assign(reinterpret_cast<const uint8_t*>(data), reinterpret_cast<const uint8_t*>(data) + size);
+    track->jitter.Push(std::move(packet));
     rx_audio_frames.fetch_add(1, std::memory_order_relaxed);
     last_rx_audio_ms.store(recv_ms, std::memory_order_relaxed);
   }
@@ -1204,6 +1412,7 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   h.outbound_drops = impl_->outbound_drops.load(std::memory_order_relaxed);
   h.playout_underruns = impl_->playout_underruns_total.load(std::memory_order_relaxed);
   h.plc_frames = impl_->plc_frames_total.load(std::memory_order_relaxed);
+  h.fec_frames = impl_->fec_frames_total.load(std::memory_order_relaxed);
   h.rx_audio_frames = impl_->rx_audio_frames.load(std::memory_order_relaxed);
   h.tx_audio_frames = impl_->tx_audio_frames.load(std::memory_order_relaxed);
   h.last_rx_audio_ms = impl_->last_rx_audio_ms.load(std::memory_order_relaxed);
@@ -1216,6 +1425,11 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   h.remote_level = impl_->remote_output_level.load(std::memory_order_relaxed);
   {
     std::lock_guard lock(impl_->mutex);
+    AudioDeviceLease* speaker = impl_->speaker_lease.get();
+    const bool voice = speaker && speaker->IsVoiceDuplex();
+    const bool any_device = (impl_->mic_lease && impl_->mic_lease->HasDevice()) || (speaker && speaker->HasDevice());
+    h.audio_io = voice ? "vpio" : (any_device ? "sdl" : "none");
+    h.io_underruns = impl_->vpio_underruns_closed + Impl::VoiceUnderruns(speaker);
     h.stream_count = impl_->audio_tracks.size();
     h.sfu_mode = impl_->sfu_mode;
     h.capture_available = impl_->capture_available;
