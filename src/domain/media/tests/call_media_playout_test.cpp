@@ -308,16 +308,34 @@ TEST(AudioJitterBufferTest, SmallHoleAfterUnderrunIsConcealed) {
 
 TEST(AudioJitterBufferTest, HoleInDeepBufferIsSkipped) {
   AudioJitterBuffer buf;
-  for (uint32_t s : {1u, 2u, 4u, 5u, 6u}) {
+  for (uint32_t s : {1u, 2u, 4u, 5u, 6u, 7u}) {
     buf.Push(Pkt(s));
   }
   EXPECT_EQ(buf.PopForPlayout().seq, 1u);
   EXPECT_EQ(buf.PopForPlayout().seq, 2u);
-  // 3 missing but 3 packets are already buffered: skip rather than add a frame of latency.
+  // 3 missing but 4 packets are already buffered: skip rather than add a frame of latency.
   const auto p = buf.PopForPlayout();
   EXPECT_EQ(p.kind, Kind::Packet);
   EXPECT_EQ(p.seq, 4u);
   EXPECT_EQ(buf.gaps(), 0u);
+}
+
+TEST(AudioJitterBufferTest, SingleLossInNormalBufferIsConcealed) {
+  AudioJitterBuffer buf;
+  for (uint32_t s : {1u, 2u, 4u, 5u}) {
+    buf.Push(Pkt(s));
+  }
+  EXPECT_EQ(buf.PopForPlayout().seq, 1u);
+  EXPECT_EQ(buf.PopForPlayout().seq, 2u);
+  // 3 missing but only 2 packets are buffered: conceal rather than skip.
+  const auto gap = buf.PopForPlayout();
+  ASSERT_EQ(gap.kind, Kind::Gap);
+  EXPECT_EQ(gap.seq, 3u);
+  EXPECT_TRUE(gap.fec_usable);
+  const auto p = buf.PopForPlayout();
+  EXPECT_EQ(p.kind, Kind::Packet);
+  EXPECT_EQ(p.seq, 4u);
+  EXPECT_EQ(buf.gaps(), 1u);
 }
 
 TEST(MixPcmSatTest, Saturates) {

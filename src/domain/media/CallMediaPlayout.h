@@ -81,9 +81,10 @@ public:
   /**
    * One 20 ms playout slot. Before the target depth was reached once → Empty (no underrun).
    * Then: queue empty → Empty + underrun; next expected packet → Packet. A hole before the front
-   * is skipped (front played as Packet) when the buffer already holds >= target frames or the
-   * hole is wider than the target; otherwise each missing seq is a Gap slot (front stays queued,
-   * its bytes returned; `fec_usable` only for the seq right before it, which its LBRR covers).
+   * is skipped (front played as Packet) when the buffer already holds more than target frames or
+   * the hole is wider than the target; otherwise each missing seq is a Gap slot (front stays
+   * queued, its bytes returned; `fec_usable` only for the seq right before it, which its LBRR
+   * covers).
    */
   AudioPlayoutPop PopForPlayout() {
     AudioPlayoutPop out;
@@ -101,7 +102,7 @@ public:
     }
     AudioPacket& front = queue_.front();
     if (front.seq > next_seq_ &&
-        (queue_.size() >= kTargetFrames || front.seq - next_seq_ > kTargetFrames)) {
+        (queue_.size() > kTargetFrames || front.seq - next_seq_ > kTargetFrames)) {
       next_seq_ = front.seq; // enough audio buffered, or hole too wide to conceal usefully
     }
     if (front.seq == next_seq_) {
