@@ -130,14 +130,20 @@ Leftovers in `CallMediaBridge` / `CallTopologyController` / `CallHopMigrateWorkf
 - [x] Topology handlers split: `OnInboundSfuAttach` (expect → settle without dial → start → current / superseded finish), `OnLocalAcceptJoined` (invite hint / group without hint / stay direct), `OnRemoteAcceptJoined`, `OnInboundSfuAttachFailed` (hop-hint re-pick); `ClaimMigrateFlight` / `ReleaseMigrateFlight` replace the copied generation bump and flight resets
 - [x] Bridge split: `BeginSession` (reset → stop prior → seed park → engine → direct connect), `ScheduleStartMediaAsAnswerer` (UI start, media-key wait, worker poll, timeout); guest reattach reuses the `HopAttach` pieces
 - [x] Found by the hard lab on the way: the media plane replaced its relay client under the topology (mesh start / rewire / reset); with the session-end observer the topology then unregistered from a destroyed client (SIGSEGV, B-HARD-CALL-NAT-STACK). `CallStack::UnbindRelayDependents` clears the topology's relay deps first; `ProductStackHarnessTest` (loopback product stack) guards it. hard-w5 `all` green after l7
-- [ ] `CallMediaPlane::ReserveOnBootstrapSeedsOnIo` (~160) / `EnsureBootstrapSeedParkedAsync` (~100) — with the neutral mesh media plane (seed parking moves to `domain/mesh`)
+- [x] `CallMediaPlane::ReserveOnBootstrapSeedsOnIo` (~160) / `EnsureBootstrapSeedParkedAsync` (~100) — split as they moved to `MeshMediaPlane` (l8)
 - [ ] TSan: `CallSessionManager::BindWorkflowHostPorts` rewrites the workflow's port `std::function`s on UI (`SetDirectMediaPorts` / `SetLifecyclePorts`, e.g. mesh stop) while call workers (`HandleInboundAccept`, `AcceptInvite`) call them — ~1.3k reports across `CallSessionInboundComposeTest` / `CallUiBackendStackTest`, identical before l6. Needs ports that are bound once (or swapped atomically) — calls threading work
 - [x] Blocking wrappers (`MaybeSoftMigrateToSfu` / `AttachLocalToSfu` / `ReattachGuestSfuTransport`, parking up to 60 s) removed from the workflow and topology — tests drive the async forms through a fixture `AwaitFlow`; dead topology forwarders (`ReattachGuestSfuTransport*`, `CompleteAttachLocalToSfu`) removed
 - [x] `MaybeSoftMigrateToSfuAsync` split into named steps (arming gate → decide / re-pick → rank → `TryPickHop` / `AttachPickedHop`); the hop pick is a `HopPick` passed by `shared_ptr`. It used to be a `shared_ptr<function>` capturing itself — every SoftMigrate leaked its pick (the 14 LeakSanitizer failures in `CallTopologyControllerTest`); `SoftMigrateReleasesItsHopPickWhenSettled` guards it
 
+## l8 — Neutral mesh media plane ([L015](DECISIONS.md#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast))
+
+- [x] `domain/mesh/media_plane/MeshMediaPlane`: media_relay client, dial registry + listen book, circuit reach + punch, rendezvous parking; hop candidates by port (`feature/conversations/MeshMediaPlaneWiring` over `MeshHopPolicy`); calls' R1 announce / signaling punch are hooks. `CallMediaPlane` keeps the call_media transport, bridge and topology relay deps
+- [x] `ConversationsHub` / `ProductStackHarness` own it; `CallStack` borrows it (`CallStackDeps::mesh_media`, `DetachMeshMedia` / `RebindMeshMedia`); broadcast takes `RelayAttachPorts` from it; the owner runs the mesh-start, capability-refresh and stop sequences; `SharedRelayAttachPorts` / `CallStack::StopMesh` / the stack's reach wrappers removed; L014 superseded. l8a and l8b landed together (calls cannot include the conversations wiring)
+- [x] Parking flows split while moving; the cold-reserve walk no longer holds itself (`shared_ptr<function>` self-capture leaked every reserve pass), a pending park still answers `false` at its deadline after mesh stop
+- [x] `MeshMediaPlaneTest` (listen book, no-mesh wiring); `ProductStackHarnessTest` drives the owner's rewire sequence
+
 ## Later
 
-- [ ] Neutral mesh media plane: move the media_relay client, dial registry, circuit reach, punch and seed parking out of `CallMediaPlane` into `domain/mesh`, owned outside calls and lent to both features ([L014](DECISIONS.md#l014--broadcast-borrows-the-call-planes-mesh-objects-until-a-neutral-mesh-media-plane-exists) exit)
 - [x] pp-cpp-amp v2.3.0: refuse channel opens for protocols without a handler (opt-in; `MeshHost` enables it) — admission to a plain relay fails at once. The 1.5 s admission timeout stays as the backstop for relays on older Amp
 - [ ] `AmpChatBlobTransport` inbound handler has the same session-holder cycle the broadcast server had (not fixed here — out of scope)
 

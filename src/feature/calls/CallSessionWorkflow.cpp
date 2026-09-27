@@ -1161,7 +1161,7 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
   }
   if (host_.reach.note_caps_for_identity) host_.reach.note_caps_for_identity(pending.inviter_identity, invite->caps, invite->listen_multiaddrs);
   if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(pending.inviter_identity);
-  // Answerer: kick circuit readiness on ring (park owned by CallMediaPlane).
+  // Answerer: kick circuit readiness on ring (park owned by the shared MeshMediaPlane).
   if (host_.reach.ensure_circuit_ready) {
     host_.reach.ensure_circuit_ready();
   }

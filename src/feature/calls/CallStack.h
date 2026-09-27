@@ -33,7 +33,7 @@ namespace pbr {
  * Call media / session / lifecycle stack (Wave 3 / V040).
  *
  * Phase assembler: profile stores, CSM, Lifecycle, MediaSeat, and `CallMediaPlane`
- * (Amp transport + dial/relay/hop + bridge). Hub owns `unique_ptr<CallStack>`, forwards
+ * (call_media transport + bridge) over the hub's borrowed `MeshMediaPlane` (L015). Hub owns `unique_ptr<CallStack>`, forwards
  * `Calls()`/`Lifecycle()`, injects mesh/config/mDNS glue through CallStackDeps.
  *
  * CallUiBackend binds a CallStack& directly (not the Hub) for call APIs.
@@ -64,6 +64,13 @@ struct CallStackDeps {
   std::function<void(const std::string& identity)> prefetch_peer_reachability;
   std::function<void()> sync_mobile_ephemeral_listen;
   std::function<void(const std::string& peer_id)> note_lan_mdns_peer_id;
+
+  /**
+   * Neutral mesh media (relay client, dial, reach, parking) — owned by the product hub, outlives
+   * the stack (L015). The owner calls `DetachMeshMedia` before replacing its objects and
+   * `RebindMeshMedia` after.
+   */
+  MeshMediaPlane* mesh_media = nullptr;
 };
 
 class CallStack : public Module {
@@ -75,28 +82,23 @@ public:
   Roe<void> InitializeStores(const std::string& profile_db_path, const std::string& profile_id);
   /** Phase A: build CSM against current p2p, wire providers, bind lifecycle + media plane. */
   void BuildSessions(const CallStackDeps& deps);
-  /** Phase B (mesh up): start Amp call-media transport + Wire media plane. */
+  /** Phase B (mesh up, mesh media wired by the owner): start Amp call-media transport + bind. */
   void OnMeshServicesStarted();
   /**
    * Test-only: bind CallMediaBridge without Amp mesh.
-   * `transport` / `dial` are non-owning; call after BuildSessions. Re-runs Wire.
+   * `transport` / `dial` / `circuit_reach` are non-owning; call after BuildSessions.
    */
-  /** Neutral mesh objects lent to broadcast — see CallMediaPlane::SharedRelayAttachPorts. */
-  MediaRelayAttachPorts SharedRelayAttachPorts() const;
   void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial);
   void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
                          ICircuitHopReach* circuit_reach);
   /** Teardown before mesh Stop: clear bindings, PrepareForTeardown; abort circuit via callback. */
   void PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit);
-  /** Teardown after mesh Stop: reset media plane mesh objects. */
+  /** Teardown after mesh Stop: drop the bridge and the call-media transport. */
   void FinishMeshStop();
-  /**
-   * The one call-side mesh stop order (hub and pp-call-probe): PrepareForMeshStop bracketed by
-   * circuit aborts → `detach_transports` (Amp transports holding PeerLinks&) → `mesh.Stop()`
-   * (joins MeshControl + MeshPump) → FinishMeshStop. Bridge + dial registry stay alive until
-   * the mesh has joined. Caller frees `mesh` afterwards.
-   */
-  void StopMesh(MeshHost& mesh, const std::function<void()>& detach_transports);
+  /** Before the owner replaces / drops mesh media objects: topology + bridge let go of them. */
+  void DetachMeshMedia();
+  /** After the owner rewired mesh media: rebind bridge + topology to the new objects. */
+  void RebindMeshMedia();
   /** Reset call session manager + lifecycle (Hub teardown ordering before p2p reset). */
   void ResetSessions();
   /** Final teardown: reset media engine / key store / session store. */
@@ -112,40 +114,25 @@ public:
   void AbortCallMediaForShutdown();
   /** True while CallMediaBridge Connect sequence is in flight (cheap for shutdown marks). */
   bool IsConnectWorkerInflight() const;
-  void WireMediaRelayDeps();
   void EnsureCallLifecycleBound();
   void SetEphemeralListenDesire(bool want);
   /** N025 desire: CallLifecycle::WantEphemeralListen only. */
   bool WantEphemeralListen() const;
   bool HasActiveLocalCall();
-  /** Force relay client + dial registry rebuild on capability change (RefreshMeshCapabilities). */
-  void ResetRelayClients();
 
   std::vector<std::string> LocalCallListenMultiaddrs() const;
   void RegisterCallPeerListenMultiaddrs(const std::string& identity,
                                         const std::vector<std::string>& multiaddrs);
-  Roe<void> TryEnsureCircuitHopReachable(const std::string& hop_peer_id);
-  Roe<void> TryEnsurePeerReachable(const std::string& peer_key);
-  void TryEnsurePeerReachableAsync(const std::string& peer_key,
-                                        std::function<void(Roe<void>)> on_done);
-  /** L3.25c: upgrade call-media / hop from circuit R1 to direct via ACP. */
-  Roe<void> TryUpgradeCallMediaToDirect(const std::string& peer_key);
-  /**
-   * Register bootstrap ADP endpoints and EnsureAssociation (async, fire-and-forget).
-   * Call before punch/circuit so org seed holds Sessions for double-NAT splice.
-   */
-  void WarmBootstrapSeedSessions();
-  /** Answerer/offerer: StartReserve on dialable bootstrap seeds after warm. */
-  void ReserveOnBootstrapSeeds();
 
 private:
   MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
   const AppConfig& config() const;
   void SyncMediaPlaneDeps();
-  /** After plane Wire: BindBridge + CSM SetMediaRelayDeps / SetDirectMediaPorts. */
+  /** BindBridge + CSM SetMediaRelayDeps / SetDirectMediaPorts. */
   void BindMediaProducts();
-  /** Before the plane replaces / drops its relay client: detach the topology from it. */
-  void UnbindRelayDependents();
+  /** Calls' hooks on the shared mesh media (announce chosen R1, signaling punch). */
+  void BindMeshMediaHooks();
+  MeshMediaPlane* mesh_media() const { return deps_.mesh_media; }
   void BindSeatTeardown();
   CallLifecycleSignalingPorts MakeLifecycleSignalingPorts();
   CallHopArmingPorts MakeHopArmingPorts() const;

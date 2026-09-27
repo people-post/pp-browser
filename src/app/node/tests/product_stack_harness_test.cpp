@@ -49,8 +49,8 @@ LoopbackStack MakeLoopbackStack() {
 
 // Hard lab B-HARD-CALL-NAT-STACK (2026-09-27): the media plane replaced its media_relay client on
 // mesh start while the call topology still held the old one, and the topology then unregistered
-// its session-end observer from the destroyed client (SIGSEGV before warm-hop). Mesh start, every
-// relay rewire and teardown must detach the topology from a client before the plane drops it.
+// its session-end observer from the destroyed client (SIGSEGV before warm-hop). The owner's mesh
+// start, capability-refresh rewires and teardown must detach dependents before replacing objects.
 TEST(ProductStackHarnessTest, MeshStartRelayRewiresAndTeardownKeepTopologyOffDroppedRelayClients) {
   ASSERT_GE(sodium_init(), 0);
   auto loopback = MakeLoopbackStack();
@@ -58,9 +58,8 @@ TEST(ProductStackHarnessTest, MeshStartRelayRewiresAndTeardownKeepTopologyOffDro
   auto harness = pbr::call_probe::ProductStackHarness::Create(std::move(loopback.stack), loopback.clock,
                                                               loopback.listen_ma, /*hop_ma=*/"");
   ASSERT_TRUE(harness) << harness.error().message;
-  (*harness)->Stack().WireMediaRelayDeps();
-  (*harness)->Stack().ResetRelayClients();
-  (*harness)->Stack().WireMediaRelayDeps();
+  (*harness)->RefreshMeshMedia();
+  (*harness)->RefreshMeshMedia();
   harness->reset();
 }
 

@@ -9,6 +9,7 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "feature/calls/CallControlInboundPorts.h"
+#include "domain/mesh/media_plane/MeshMediaPlane.h"
 #include "feature/calls/CallStack.h"
 #include "feature/calls/CallUiBackend.h"
 #include "feature/broadcast/BroadcastHub.h"
@@ -44,6 +45,9 @@ public:
   MeshHost& Host() { return *host_; }
   CallUiBackend& Ui() { return *ui_; }
   CallStack& Stack() { return *stack_; }
+  MeshMediaPlane& MeshMedia() { return *mesh_media_; }
+  /** Capability-refresh rewire, same sequence as ConversationsHub (L015): detach → reset → wire → rebind. */
+  void RefreshMeshMedia();
   const std::string& LocalAccountId() const { return local_account_; }
   const std::string& LocalPeerId() const { return local_peer_id_; }
   const std::string& AdvertiseMa() const { return advertise_ma_; }
@@ -127,6 +131,8 @@ private:
   std::unique_ptr<IdentityStore> identity_;
   std::unique_ptr<SqlitePskSessionStore> psk_;
   AppConfig app_config_;
+  // Outlives the call stack and broadcast (they borrow its objects).
+  std::unique_ptr<MeshMediaPlane> mesh_media_;
   std::unique_ptr<CallStack> stack_;
   std::unique_ptr<CallUiBackend> ui_;
   CallControlInboundPorts inbound_;

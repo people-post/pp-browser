@@ -21,6 +21,7 @@
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/InitiationBillingStore.h"
 #include "feature/broadcast/BroadcastHub.h"
+#include "domain/mesh/media_plane/MeshMediaPlane.h"
 #include "feature/calls/CallStack.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
 #include "domain/messaging/AttachmentSuppressionStore.h"
@@ -402,12 +403,15 @@ private:
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;
 
+  // --- Neutral mesh media (L015) — lent to the call stack and broadcast; outlives both ---
+  std::unique_ptr<MeshMediaPlane> mesh_media_;
+
   // --- CallStack (app-only) ------------------------------------------------
   std::unique_ptr<CallStack> call_stack_;
 
   // --- MeshHost (shared with pp-node) + app mesh glue ----------------------
   std::unique_ptr<MeshHost> mesh_;
-  // Borrows mesh links, the call plane's relay objects and mesh_messaging_ — declared after them so
+  // Borrows mesh links, mesh_media_'s relay objects and mesh_messaging_ — declared after them so
   // it is destroyed first (also reset explicitly in StopMesh / before relay rewires).
   std::unique_ptr<BroadcastHub> broadcast_;
   std::function<void()> on_broadcast_changed_;

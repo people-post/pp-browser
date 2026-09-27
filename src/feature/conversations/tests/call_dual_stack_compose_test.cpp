@@ -149,6 +149,7 @@ struct StackSide {
   std::unique_ptr<ContactsStore> contacts;
   std::unique_ptr<IdentityStore> identity;
   std::unique_ptr<SqlitePskSessionStore> psk;
+  std::unique_ptr<MeshMediaPlane> mesh_media = std::make_unique<MeshMediaPlane>();  // outlives stack
   std::unique_ptr<CallStack> stack;
   std::unique_ptr<CallUiBackend> ui;
   std::unique_ptr<FakeCallMediaTransport> transport;
@@ -265,6 +266,7 @@ protected:
     deps.sync_mobile_ephemeral_listen = []() {};
     deps.bind_call_control = [&side](CallControlInboundPorts ports) { side.inbound = std::move(ports); };
 
+    deps.mesh_media = side.mesh_media.get();
     side.stack->BuildSessions(deps);
     ASSERT_TRUE(side.ui->Available());
     ASSERT_TRUE(side.inbound.apply_inbound_control);

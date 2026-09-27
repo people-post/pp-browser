@@ -207,6 +207,7 @@ protected:
       inbound_bound_ = static_cast<bool>(inbound_.apply_inbound_control);
     };
 
+    deps.mesh_media = &mesh_media_;
     stack_->BuildSessions(deps);
     ASSERT_TRUE(ui_->Available());
     ASSERT_TRUE(inbound_bound_);
@@ -284,6 +285,7 @@ protected:
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
   std::unique_ptr<SqlitePskSessionStore> psk_;
+  MeshMediaPlane mesh_media_;  // outlives stack_ (declared first)
   std::unique_ptr<CallStack> stack_;
   std::unique_ptr<CallUiBackend> ui_;
   std::unique_ptr<FakeCallMediaTransport> transport_;

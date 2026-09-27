@@ -1,4 +1,5 @@
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/conversations/MeshMediaPlaneWiring.h"
 #include "domain/messaging/PaymentPromiseLifecycle.h"
 #include "domain/messaging/PaymentPromiseAvoid.h"
 #include "domain/messaging/PaymentPromiseWireCodec.h"
@@ -114,6 +115,7 @@ ConversationsHub::ConversationsHub() {
   redirectLogger("ConversationsHub");
   // Always own an (empty) CallStack so CallUiBackend can bind CallStackRef() at construction,
   // even before Initialize builds the call session/media objects.
+  mesh_media_ = std::make_unique<MeshMediaPlane>();
   call_stack_ = std::make_unique<CallStack>();
 }
 
@@ -171,6 +173,17 @@ CallStackDeps ConversationsHub::MakeCallStackDeps() {
   deps.note_lan_mdns_peer_id = [this](const std::string& peer_id) {
     lan_mdns_contact_peer_ids_.insert(peer_id);
   };
+  MeshMediaPlaneWiringInputs media;
+  media.mesh = deps.mesh;
+  media.contacts = deps.contacts;
+  media.config = deps.config;
+  media.list_directory_nodes = deps.list_directory_nodes;
+  media.list_dht_nodes = deps.list_dht_nodes;
+  media.seed_dial_ok = deps.seed_dial_ok;
+  media.note_lan_peer_id = deps.note_lan_mdns_peer_id;
+  media.register_direct_endpoint = deps.delivery.register_peer_direct_endpoint;
+  mesh_media_->SetDeps(MakeMeshMediaPlaneDeps(std::move(media)));
+  deps.mesh_media = mesh_media_.get();
   return deps;
 }
 
@@ -384,6 +397,8 @@ void ConversationsHub::StartMeshServices() {
   }
 
   ApplyMeshAdmissionPolicies();
+  call_stack_->DetachMeshMedia();
+  mesh_media_->Wire();
   call_stack_->OnMeshServicesStarted();
   RebuildBroadcast();
   PublishNodeAdvertisedAddrs();
@@ -590,7 +605,7 @@ void ConversationsHub::RebuildBroadcast() {
   BroadcastMeshDeps deps;
   deps.links = &chat->links;
   deps.io = chat->io;
-  deps.relay = call_stack_->SharedRelayAttachPorts();
+  deps.relay = mesh_media_->RelayAttachPorts();
   deps.publisher_key = [messaging = mesh_messaging_.get()](const std::string& peer_id) {
     return messaging->ResolveAnnouncePublisherKey(peer_id);
   };
@@ -656,15 +671,24 @@ void ConversationsHub::StopMesh() {
       mesh_messaging_->DetachAmpTransports();
     }
   };
-  if (!mesh_) {
-    call_stack_->PrepareForMeshStop({});
-    detach_transports();
-    call_stack_->FinishMeshStop();
-    return;
+  // Order: mesh media async ops dropped → call-media teardown bracketed by circuit aborts (calls
+  // let go of the mesh media objects) → relay client closed → Amp transports detached →
+  // MeshHost::Stop (media_relay, circuit, dial-back, runtime; joins workers) → call-media freed →
+  // dial registry / circuit reach freed.
+  MeshHost* mesh = mesh_.get();
+  mesh_media_->InvalidateAsyncOps();
+  call_stack_->PrepareForMeshStop([mesh]() {
+    if (mesh) {
+      mesh->AbortInflightCircuitRequests();
+    }
+  });
+  mesh_media_->ResetRelayClient();
+  detach_transports();
+  if (mesh) {
+    mesh->Stop();
   }
-  // Order (CallStack::StopMesh): call-media teardown bracketed by circuit aborts → detach →
-  // MeshHost::Stop (media_relay, circuit, dial-back, runtime; joins workers) → FinishMeshStop.
-  call_stack_->StopMesh(*mesh_, detach_transports);
+  call_stack_->FinishMeshStop();
+  mesh_media_->ResetAfterMeshStop();
   mesh_.reset();
 }
 
@@ -2316,8 +2340,10 @@ void ConversationsHub::RefreshMeshCapabilities() {
     mesh_->AmpCircuitTunnel()->SetServeInbound(role == MeshRole::Node &&
                                                config_.mesh.capabilities.circuit_relay);
   }
-  ResetBroadcast();  // borrows the relay client ResetRelayClients / WireMediaRelayDeps replace
-  call_stack_->ResetRelayClients();
+  // Rewire sequence (L015): dependents let go of the mesh media objects → reset → rewire → rebind.
+  ResetBroadcast();
+  call_stack_->DetachMeshMedia();
+  mesh_media_->ResetRelayClients();
   if (mesh_->AmpMediaRelayCoord()) {
     mesh_->AmpMediaRelayCoord()->SetServeInbound(role == MeshRole::Node &&
                                                  config_.mesh.capabilities.media_relay);
@@ -2325,7 +2351,8 @@ void ConversationsHub::RefreshMeshCapabilities() {
   ConfigureAmpDhtProtocol();
   ConfigureAmpDirectoryProtocol();
   ApplyMeshAdmissionPolicies();
-  call_stack_->WireMediaRelayDeps();
+  mesh_media_->Wire();
+  call_stack_->RebindMeshMedia();
   RebuildBroadcast();
   SyncMobileEphemeralListen();
 }
@@ -2597,6 +2624,7 @@ void ConversationsHub::Shutdown() {
   kem_resolver_.reset();
   // Reset media engine / key store / session store after DEK unregister above.
   call_stack_->Shutdown();
+  mesh_media_->Clear();
   psk_store_.reset();
   inbox_.reset();
   peer_labels_.reset();

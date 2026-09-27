@@ -1,4 +1,5 @@
 #include "app/node/call_probe/ProductStackHarness.h"
+#include "feature/conversations/MeshMediaPlaneWiring.h"
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
@@ -140,6 +141,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma) {
     app_config_.mesh.bootstrap_peers = {hop_ma};
   }
 
+  mesh_media_ = std::make_unique<MeshMediaPlane>();
   stack_ = std::make_unique<CallStack>();
   if (auto stores = stack_->InitializeStores(store_->ProfileDbPath(), "call-probe"); !stores) {
     return stores.error();
@@ -209,13 +211,23 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma) {
     return msg;
   };
   deps.bind_call_control = [this](CallControlInboundPorts ports) { inbound_ = std::move(ports); };
+  MeshMediaPlaneWiringInputs media;
+  media.mesh = deps.mesh;
+  media.contacts = deps.contacts;
+  media.config = deps.config;
+  media.list_directory_nodes = deps.list_directory_nodes;
+  media.list_dht_nodes = deps.list_dht_nodes;
+  media.seed_dial_ok = deps.seed_dial_ok;
+  media.register_direct_endpoint = deps.delivery.register_peer_direct_endpoint;
+  mesh_media_->SetDeps(MakeMeshMediaPlaneDeps(std::move(media)));
+  deps.mesh_media = mesh_media_.get();
 
   stack_->BuildSessions(deps);
   if (!ui_->Available()) {
     return Error("CallUiBackend unavailable after BuildSessions");
   }
   // Invite listen_multiaddrs are peer-private under dual-SNAT; filter before dial-book write
-  // so CallMediaPlane does not RegisterEndpoint undialable RFC1918 (HL004).
+  // so the mesh media plane does not RegisterEndpoint undialable RFC1918 (HL004).
   if (stack_->Calls()) {
     stack_->Calls()->SetRegisterPeerListenMultiaddrs(
         [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
@@ -233,6 +245,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma) {
           }
         });
   }
+  stack_->DetachMeshMedia();
+  mesh_media_->Wire();
   stack_->OnMeshServicesStarted();
 
   auto chat_deps = host_->ChatDeps();
@@ -286,13 +300,21 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
   return {};
 }
 
+void ProductStackHarness::RefreshMeshMedia() {
+  broadcast_.reset();  // borrows the relay objects the rewire replaces
+  stack_->DetachMeshMedia();
+  mesh_media_->ResetRelayClients();
+  mesh_media_->Wire();
+  stack_->RebindMeshMedia();
+}
+
 Roe<void> ProductStackHarness::EnsurePeerCircuitPath(const std::string& peer_id) {
   if (!stack_ || peer_id.empty()) {
     return Error("circuit path: missing stack/peer");
   }
   // Async + PumpUntil: the completion lands on the UI mailbox.
   std::optional<Roe<void>> result;
-  stack_->TryEnsurePeerReachableAsync(peer_id, [&](Roe<void> value) { result = std::move(value); });
+  mesh_media_->TryEnsurePeerReachableAsync(peer_id, [&](Roe<void> value) { result = std::move(value); });
   if (!PumpUntil([&] { return result.has_value(); }, 30000)) {
     return Error("call-media circuit reach timed out");
   }
@@ -859,7 +881,7 @@ Roe<void> ProductStackHarness::EnableBroadcast(
   BroadcastMeshDeps deps;
   deps.links = &chat->links;
   deps.io = chat->io;
-  deps.relay = stack_->SharedRelayAttachPorts();
+  deps.relay = mesh_media_->RelayAttachPorts();
   deps.publisher_key = std::move(publisher_key);
   deps.put_program_key = [this](const std::string& program_id, const std::string& join_handle,
                                 BroadcastProgramKey key) {
@@ -889,7 +911,7 @@ Roe<void> ProductStackHarness::EnableBroadcast(
 }
 
 void ProductStackHarness::ShutdownImpl() {
-  // Broadcast borrows the call plane's relay objects and this host's links: it goes first.
+  // Broadcast borrows the mesh media plane's relay objects and this host's links: it goes first.
   if (broadcast_) {
     ShutdownStep("broadcast");
     broadcast_.reset();
@@ -900,7 +922,7 @@ void ProductStackHarness::ShutdownImpl() {
   }
   broadcast_devices_.reset();
   // Product quit order (THREADING.md § Shutdown order): abort call media → quiesce runtime →
-  // CallStack::StopMesh (joins MeshPump) → join runtime → free. Freeing the call stack while the
+  // mesh stop (joins MeshPump) → join runtime → free. Freeing the call stack while the
   // mesh / workers still ran segfaulted in hard-w5 (2026-09-25).
   if (ui_ && stack_ && stack_->HasActiveLocalCall()) {
     if (auto active = ui_->ActiveLocalCall(); active && active->has_value()) {
@@ -917,8 +939,16 @@ void ProductStackHarness::ShutdownImpl() {
   }
   ShutdownStep("stop-mesh");
   if (stack_ && host_) {
-    // Detach = destroy (product DetachAmpTransports): nothing may outlive the Amp stack.
-    stack_->StopMesh(*host_, [this]() { chat_.reset(); });
+    // Same order as ConversationsHub::StopMesh (L015). Detach = destroy (product
+    // DetachAmpTransports): nothing may outlive the Amp stack.
+    MeshHost* host = host_.get();
+    mesh_media_->InvalidateAsyncOps();
+    stack_->PrepareForMeshStop([host]() { host->AbortInflightCircuitRequests(); });
+    mesh_media_->ResetRelayClient();
+    chat_.reset();
+    host_->Stop();
+    stack_->FinishMeshStop();
+    mesh_media_->ResetAfterMeshStop();
   } else if (host_) {
     host_->Stop();
   }
@@ -928,11 +958,15 @@ void ProductStackHarness::ShutdownImpl() {
     ShutdownStep("call-stack-shutdown");
     stack_->Shutdown();
   }
+  if (mesh_media_) {
+    mesh_media_->Clear();
+  }
   ShutdownStep("runtime");
   AppRuntime::Shutdown();
   ShutdownStep("free");
   ui_.reset();
   stack_.reset();
+  mesh_media_.reset();
   if (psk_) {
     psk_->ClearDek();
   }

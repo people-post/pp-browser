@@ -36,23 +36,16 @@ const AppConfig& CallStack::config() const {
   return deps_.config();
 }
 
-MediaRelayAttachPorts CallStack::SharedRelayAttachPorts() const {
-  return media_plane_ ? media_plane_->SharedRelayAttachPorts() : MediaRelayAttachPorts{};
-}
-
 void CallStack::SyncMediaPlaneDeps() {
   if (!media_plane_) {
     return;
   }
   CallMediaPlaneDeps plane_deps;
-  plane_deps.contacts = deps_.contacts;
   plane_deps.mesh = deps_.mesh;
   plane_deps.config = deps_.config;
   plane_deps.list_directory_nodes = deps_.list_directory_nodes;
   plane_deps.list_dht_nodes = deps_.list_dht_nodes;
   plane_deps.seed_dial_ok = deps_.seed_dial_ok;
-  plane_deps.note_lan_mdns_peer_id = deps_.note_lan_mdns_peer_id;
-  plane_deps.register_peer_direct_endpoint = deps_.delivery.register_peer_direct_endpoint;
   plane_deps.local_listen_multiaddrs = [this]() { return LocalCallListenMultiaddrs(); };
   plane_deps.peer_has_media_relay = [this](const std::string& peer_id) {
     if (call_sessions_ && call_sessions_->PeerHasMediaRelayCap(peer_id)) {
@@ -85,23 +78,45 @@ void CallStack::SyncMediaPlaneDeps() {
       call_sessions_->NoteMeshPeerIdForRelay(account, peer_id);
     }
   };
-  plane_deps.announce_circuit_r1 = [this](const std::string& circuit_r1) {
+  media_plane_->SetDeps(std::move(plane_deps));
+  media_plane_->SetMeshMedia(mesh_media());
+  BindMeshMediaHooks();
+}
+
+void CallStack::BindMeshMediaHooks() {
+  MeshMediaPlane* shared = mesh_media();
+  if (!shared) {
+    return;
+  }
+  // H011: the rendezvous R1 our circuit reach chose is announced to the call peer.
+  shared->SetOnRelayChosen([this](const std::string& circuit_r1) {
     if (call_sessions_) {
       call_sessions_->AnnounceCircuitR1(circuit_r1);
     }
-  };
-  plane_deps.request_signaling_punch =
-      [this](const std::string& target_peer_id, const std::vector<std::string>& my_addrs,
-             std::function<void(Roe<void>)> on_done) {
-        if (!call_sessions_) {
-          if (on_done) {
-            on_done(Error("Calls unavailable"));
-          }
-          return;
-        }
-        call_sessions_->RequestSignalingPunch(target_peer_id, my_addrs, std::move(on_done));
-      };
-  media_plane_->SetDeps(std::move(plane_deps));
+  });
+  // H012: when Amp introducers are exhausted, exchange punch candidates over call-control.
+  shared->SetSignalingPunch([this](const std::string& target_peer_id, const std::vector<std::string>& my_addrs,
+                                   std::function<void(Roe<void>)> on_done) {
+    if (!call_sessions_) {
+      on_done(Error("Calls unavailable"));
+      return;
+    }
+    call_sessions_->RequestSignalingPunch(target_peer_id, my_addrs, std::move(on_done));
+  });
+}
+
+void CallStack::DetachMeshMedia() {
+  if (call_sessions_) {
+    call_sessions_->SetMediaRelayDeps({});
+  }
+  if (media_plane_) {
+    media_plane_->DetachFromMeshMedia();
+  }
+}
+
+void CallStack::RebindMeshMedia() {
+  SyncMediaPlaneDeps();
+  BindMediaProducts();
 }
 
 void CallStack::BindMediaProducts() {
@@ -294,17 +309,19 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
       [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
         RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
       });
+  // Connectivity: park on org hops so this peer is ServeDial-reachable (shared mesh media).
   call_sessions_->SetEnsureCircuitReady([this]() {
-    if (media_plane_) {
-      media_plane_->EnsureCircuitReady();
+    if (MeshMediaPlane* shared = mesh_media()) {
+      shared->ReserveOnBootstrapSeeds();
     }
   });
   call_sessions_->SetAwaitCircuitReady([this](int timeout_ms) {
-    return media_plane_ ? media_plane_->AwaitCircuitReady(timeout_ms) : false;
+    MeshMediaPlane* shared = mesh_media();
+    return shared ? shared->AwaitCircuitReady(timeout_ms) : false;
   });
   call_sessions_->SetPreferLateReserve([this](const std::string& relay_peer_id) {
-    if (media_plane_) {
-      media_plane_->PreferLateReserve(relay_peer_id);
+    if (MeshMediaPlane* shared = mesh_media()) {
+      shared->PreferLateReserve(relay_peer_id);
     }
   });
   call_sessions_->SetLocalPunchAddrsProvider([this]() -> std::vector<std::string> {
@@ -342,21 +359,11 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
             window_ms);
       });
   EnsureCallLifecycleBound();
-  WireMediaRelayDeps();
-}
-
-void CallStack::UnbindRelayDependents() {
-  // Parent-only destroy: the plane is about to replace or drop its media_relay client, dial
-  // registry and circuit reach. The topology holds them raw and watches the client's session ends
-  // — unhook it first (it unregisters from the still-live client), rebind after.
-  if (call_sessions_) {
-    call_sessions_->SetMediaRelayDeps({});
-  }
+  RebindMeshMedia();
 }
 
 void CallStack::OnMeshServicesStarted() {
   SyncMediaPlaneDeps();
-  UnbindRelayDependents();
   if (media_plane_) {
     media_plane_->OnMeshStarted();
   }
@@ -370,8 +377,12 @@ void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry*
 void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
                                   ICircuitHopReach* circuit_reach) {
   SyncMediaPlaneDeps();
+  DetachMeshMedia();
   if (media_plane_) {
-    media_plane_->BindTestMediaPath(transport, dial, circuit_reach);
+    media_plane_->BindTestMediaPath(transport);
+  }
+  if (MeshMediaPlane* shared = mesh_media()) {
+    shared->BindTestPath(dial, circuit_reach);
   }
   BindMediaProducts();
 }
@@ -393,15 +404,6 @@ bool CallStack::WantEphemeralListen() const {
   return call_lifecycle_ && call_lifecycle_->WantEphemeralListen();
 }
 
-void CallStack::WireMediaRelayDeps() {
-  SyncMediaPlaneDeps();
-  UnbindRelayDependents();
-  if (media_plane_) {
-    media_plane_->Wire();
-  }
-  BindMediaProducts();
-}
-
 void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit) {
   if (call_lifecycle_) {
     call_lifecycle_->ClearBinding();
@@ -412,8 +414,8 @@ void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_c
     call_sessions_->SetMediaSeatPorts({});
     call_sessions_->SetTopologyHopArmingPorts({});
     call_sessions_->SetTopologySeatPorts({});
-    call_sessions_->SetMediaRelayDeps({});
   }
+  DetachMeshMedia();
   if (media_plane_) {
     if (CallMediaBridge* bridge = media_plane_->Bridge()) {
       bridge->SetDirectArmingPorts({});
@@ -430,15 +432,6 @@ void CallStack::FinishMeshStop() {
   if (media_plane_) {
     media_plane_->FinishMeshStop();
   }
-}
-
-void CallStack::StopMesh(MeshHost& mesh, const std::function<void()>& detach_transports) {
-  PrepareForMeshStop([&mesh]() { mesh.AbortInflightCircuitRequests(); });
-  if (detach_transports) {
-    detach_transports();
-  }
-  mesh.Stop();
-  FinishMeshStop();
 }
 
 void CallStack::AbortCallMediaForShutdown() {
@@ -497,51 +490,6 @@ void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
   }
 }
 
-Roe<void> CallStack::TryEnsureCircuitHopReachable(const std::string& hop_peer_id) {
-  if (!media_plane_) {
-    return Error("Amp circuit reach required");
-  }
-  return media_plane_->TryEnsureCircuitHopReachable(hop_peer_id);
-}
-
-Roe<void> CallStack::TryEnsurePeerReachable(const std::string& peer_key) {
-  if (!media_plane_) {
-    return Error("Amp circuit reach required");
-  }
-  return media_plane_->TryEnsurePeerReachable(peer_key);
-}
-
-void CallStack::TryEnsurePeerReachableAsync(const std::string& peer_key,
-                                                 std::function<void(Roe<void>)> on_done) {
-  if (!on_done) {
-    return;
-  }
-  if (!media_plane_) {
-    on_done(Error("Amp circuit reach required"));
-    return;
-  }
-  media_plane_->TryEnsurePeerReachableAsync(peer_key, std::move(on_done));
-}
-
-Roe<void> CallStack::TryUpgradeCallMediaToDirect(const std::string& peer_key) {
-  if (!media_plane_) {
-    return Error("amp circuit reach required");
-  }
-  return media_plane_->TryUpgradeCallMediaToDirect(peer_key);
-}
-
-void CallStack::WarmBootstrapSeedSessions() {
-  if (media_plane_) {
-    media_plane_->WarmBootstrapSeedSessions();
-  }
-}
-
-void CallStack::ReserveOnBootstrapSeeds() {
-  if (media_plane_) {
-    media_plane_->ReserveOnBootstrapSeeds();
-  }
-}
-
 CallSessionManager* CallStack::Calls() {
   return call_sessions_.get();
 }
@@ -580,13 +528,6 @@ void CallStack::SetEphemeralListenDesire(bool /*want*/) {
   }
 }
 
-void CallStack::ResetRelayClients() {
-  UnbindRelayDependents();
-  if (media_plane_) {
-    media_plane_->ResetRelayClients();
-  }
-}
-
 void CallStack::ResetSessions() {
   if (deps_.bind_call_control) {
     deps_.bind_call_control({});
@@ -605,7 +546,11 @@ void CallStack::Shutdown() {
   if (!AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000))) {
     log().warning << "CallStack::Shutdown: DrainWorkersThenUI budget exceeded";
   }
-  UnbindRelayDependents();
+  DetachMeshMedia();
+  if (MeshMediaPlane* shared = mesh_media()) {
+    shared->SetOnRelayChosen({});
+    shared->SetSignalingPunch({});
+  }
   if (media_plane_) {
     media_plane_->Clear();
   }

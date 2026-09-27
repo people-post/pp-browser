@@ -146,7 +146,7 @@ public:
   void SetSeedReserve(std::function<void()> reserve);
   /**
    * Await at least one bootstrap/directory seed Connected before circuit/punch
-   * (CallMediaPlane::EnsureBootstrapSeedParkedAsync). Forwarded to PeerReachCoordinator.
+   * (MeshMediaPlane::EnsureBootstrapSeedParkedAsync). Forwarded to PeerReachCoordinator.
    */
   void SetSeedParkAwait(PeerReachCoordinator::SeedParkAwait park);
 

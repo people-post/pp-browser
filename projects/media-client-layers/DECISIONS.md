@@ -138,7 +138,22 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 ## L014 — Broadcast borrows the call plane's mesh objects until a neutral mesh media plane exists
 
 **Date:** 2026-09-26
-**Status:** Accepted (interim; exit = PHASES "Neutral mesh media plane")
+**Status:** Superseded by [L015](#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast) (l8)
 **Decision:** The media_relay client, dial registry and circuit/service reach are owned by `CallMediaPlane` (feature/calls) and re-created on mesh (re)start and relay rewires. `ConversationsHub` — which owns both stacks — lends them to broadcast through `CallStack::SharedRelayAttachPorts()` and owns the `BroadcastHub` lifetime around them: built after mesh services start, **dropped before** `ResetRelayClients` / `WireMediaRelayDeps` / `StopMesh`, rebuilt after. Broadcast never includes calls (CI include ban).
 **Rationale:** Extracting those objects (plus punch and seed parking, 1.3k lines of `CallMediaPlane`) into `domain/mesh` is the right shape but a refactor of its own; borrowing through a neutral struct with explicit teardown ordering gets a working viewer now without dangling pointers. A rewire stops an active watch (rare: mesh restart / capability change).
 **Consequence:** Only one media_relay client session exists per mesh host (L013), so a call attaching replaces the viewer's session — observers carry `Replaced`, and the viewer fails with a clear reason.
+
+---
+
+## L015 — A neutral `MeshMediaPlane` in `domain/mesh`, owned by the product hub, lent to calls and broadcast
+
+**Date:** 2026-09-27
+**Status:** Accepted (l8)
+**Decision:**
+- **What moves.** The media_relay client, dial registry + peer listen book, circuit/service reach (with cold / upgrade punch) and rendezvous parking (warm, reserve, late reserve, park-await, re-park listener) leave `CallMediaPlane` for `domain/mesh/media_plane/MeshMediaPlane`. `CallMediaPlane` keeps call policy only: the call_media Amp transport, `CallMediaBridge`, and the topology's relay deps (`BuildMediaRelayDeps`) built from the neutral objects.
+- **Candidates are injected.** `domain/mesh` has no edge to `domain/people`, so hop candidates (rendezvous surface, bootstrap seeds, punch introducers) come through ports filled by the feature that wires the plane, from pure `MeshHopPolicy` helpers.
+- **Call concepts become neutral ports.** "Announce the chosen R1" is an on-relay-chosen hook; "signaling punch over call-control" is a last-resort punch port; the account → PeerId note is the caller's (calls wraps `RegisterPeerListenMultiaddrs`).
+- **Ownership.** l8a: `CallMediaPlane` owns it (extraction only). l8b: `ConversationsHub` (and `ProductStackHarness`) owns it, lends it to `CallStack` and hands broadcast its `MediaRelayAttachPorts` directly; `CallStack::SharedRelayAttachPorts` goes. The owner sequences every rewire: detach dependents (call topology relay deps, broadcast hub) → rewire / reset the plane → rebind.
+**Rationale:** Broadcast borrowing call objects (L014) made the call stack the lifetime authority for a feature that is not a call, and any call-side rewire silently invalidated broadcast. One neutral owner with one rewire sequence removes both the borrow and the class of bug the hard lab found in l7 (a dependent holding a replaced client).
+**Consequence:** One media_relay client session per mesh host remains (L013); per-holder sessions stay a Later item and now have a natural home.
+

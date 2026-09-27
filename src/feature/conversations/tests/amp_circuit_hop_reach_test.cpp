@@ -377,7 +377,7 @@ TEST_F(AmpCircuitHopReachTest, PrivateHopMaDoesNotPoisonPublicPreferred) {
   EXPECT_FALSE(CircuitHopDialBookAllowsRegister(private_hop_ma));
   EXPECT_TRUE(CircuitHopDialBookAllowsRegister(public_ma));
 
-  // Same gate CallMediaPlane::CollectDialableCircuitRelayIds uses.
+  // Same gate MeshMediaPlane::CollectDialableCircuitRelayIds uses.
   if (IsAdpMultiaddr(private_hop_ma) && CircuitHopDialBookAllowsRegister(private_hop_ma)) {
     (void)harness_->mgr_a().RegisterEndpoint(harness_->peer_id_r, private_hop_ma);
   }

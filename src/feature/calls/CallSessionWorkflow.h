@@ -100,7 +100,7 @@ public:
                        const std::vector<std::string>& listen)>
         note_caps_for_identity;
     std::function<void(const std::string& identity)> prefetch_reach;
-    /** Kick mesh circuit park (composition projects CallMediaPlane::EnsureCircuitReady). */
+    /** Kick mesh circuit park (composition projects MeshMediaPlane::ReserveOnBootstrapSeeds). */
     std::function<void()> ensure_circuit_ready;
     /** Block until circuit-ready (Accept gate). Returns true if ready. */
     std::function<bool(int timeout_ms)> await_circuit_ready;

@@ -6,10 +6,7 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/mesh/reachability/AmpCircuitHopReach.h"
-#include "domain/mesh/l4/media_relay/AmpMediaRelayClient.h"
-#include "domain/mesh/l4/media_relay/MediaRelayAttach.h"
+#include "domain/mesh/media_plane/MeshMediaPlane.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
@@ -18,46 +15,32 @@
 #include "domain/mesh/l4/call_media/CallMediaAmpTransport.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/host/MeshHost.h"
-#include "amp/link/PeerLinkManager.h"
 #include "common/directory/MeshHopTypes.h"
 
-#include "foundation/runtime/DeferredSelf.h"
 
 #include <chrono>
 #include <functional>
 #include <memory>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-/** Peer listen multiaddrs + LAN-confirmed PeerIds for PreferLocal / SoftMigrate (V035). */
-struct CallDialBook {
-  std::unordered_map<std::string, std::vector<std::string>> peer_listen_mas;
-  std::unordered_set<std::string> lan_confirmed_peers;
-};
-
 /**
- * Mesh-media plane under CallStack (V040): Amp transport, dial registry, media_relay client,
- * circuit hop reach, CallMediaBridge ownership, and dial book.
+ * Call media plane under CallStack (V040): the call_media Amp transport, CallMediaBridge ownership
+ * and the topology's relay deps. The neutral mesh media objects (media_relay client, dial registry,
+ * circuit reach, rendezvous parking) are borrowed from the product hub's `MeshMediaPlane` (L015).
  *
  * Does **not** hold standing pointers to CallStack siblings (CSM / stores / seat / lifecycle).
- * Stack passes those only into `BindBridge` and fills deps callbacks. Keep `Wire` shallow
- * (AGENTS.md function-complexity convention).
+ * Stack passes those only into `BindBridge` and fills deps callbacks.
  */
 struct CallMediaPlaneDeps {
-  ContactsStore* contacts = nullptr;
   std::function<MeshHost*()> mesh;
   std::function<const AppConfig&()> config;
   std::function<std::vector<MeshDirectoryNode>()> list_directory_nodes;
   std::function<std::vector<MeshDirectoryNode>()> list_dht_nodes;
   std::function<bool()> seed_dial_ok;
-  std::function<void(const std::string& peer_id)> note_lan_mdns_peer_id;
-  std::function<void(const std::string& identity, const std::string& multiaddr)>
-      register_peer_direct_endpoint;
   /** Stack computes advertise set (role + ephemeral desire + MeshHost). */
   std::function<std::vector<std::string>()> local_listen_multiaddrs;
   /** SoftMigrate relay-cap queries — filled from CallSessionManager by CallStack. */
@@ -66,18 +49,6 @@ struct CallMediaPlaneDeps {
   /** Dial-book account: ↔ PeerId learning (CallSessionManager::NoteMeshPeerIdForRelay). */
   std::function<void(const std::string& account_identity, const std::string& peer_id)>
       note_mesh_peer_id_for_relay;
-  /**
-   * H011 L3.1c: after dialer StartBridge ack, announce chosen R1 PeerId to the call peer.
-   * Filled by CallStack → CallSessionManager::AnnounceCircuitR1.
-   */
-  std::function<void(const std::string& circuit_r1_peer_id)> announce_circuit_r1;
-  /**
-   * H012 / B29: when Amp introducers are exhausted, exchange punch candidates over call-control.
-   * Args: target mesh peer id, local candidate addrs, completion.
-   */
-  std::function<void(const std::string& target_peer_id, const std::vector<std::string>& my_addrs,
-                     std::function<void(Roe<void>)> on_done)>
-      request_signaling_punch;
 };
 
 /** Args for one bridge bind; not retained on the plane after BindBridge returns. */
@@ -96,35 +67,25 @@ public:
   ~CallMediaPlane() override;
 
   void SetDeps(CallMediaPlaneDeps deps);
+  /** Borrowed neutral mesh media (outlives the plane; null = none). */
+  void SetMeshMedia(MeshMediaPlane* mesh_media) { mesh_media_ = mesh_media; }
 
-  /** Phase B: create/start Amp call-media transport + Wire. */
+  /** Mesh up: create / start the Amp call-media transport. */
   void OnMeshStarted();
-  /** Mesh clients only (relay / dial / hop). Stack follows with BindBridge + CSM install. */
-  void Wire();
-  /**
-   * The neutral mesh objects this plane wires (media_relay client, dial registry, service reach),
-   * lent to other features (broadcast). Valid until the next WireMediaRelayDeps / ResetRelayClients
-   * / mesh stop — borrowers must be torn down before those (ConversationsHub does).
-   */
-  MediaRelayAttachPorts SharedRelayAttachPorts() const;
-  void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial);
-  /**
-   * Test / hard-lab product-stack: Amp transport + dial + optional circuit reach without MeshHost.
-   * When `circuit_reach` is non-null it is used for Bridge Ensure (not owned; must outlive Wire).
-   */
-  void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
-                         ICircuitHopReach* circuit_reach);
+  /** Test / harness: use this transport instead of Amp call-media (not owned). */
+  void BindTestMediaPath(ICallMediaTransport* transport);
   /**
    * Construct or refresh CallMediaBridge from stack-owned ingredients.
    * Rebuilds when `sessions_key` changes; otherwise updates reach deps + seat/lifecycle.
    */
   void BindBridge(const CallMediaBridgeBindArgs& args);
   CallTopologyController::MediaRelayDeps BuildMediaRelayDeps() const;
+  /** Before the mesh media objects are replaced / dropped: the bridge lets go of dial + reach. */
+  void DetachFromMeshMedia();
 
-  /** Media half of mesh stop (bridge PrepareForTeardown + transport stop + relay reset). */
+  /** Media half of mesh stop (bridge PrepareForTeardown + transport stop), bracketed by aborts. */
   void PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit);
   void FinishMeshStop();
-  void ResetRelayClients();
   /** Group SFU: close media_relay before LeaveCall joins capture. */
   void DetachRelayClient();
   /** Bridge PrepareForTeardown(0) + transport Detach (after LeaveCall). */
@@ -136,110 +97,21 @@ public:
   CallMediaBridge* Bridge() { return call_media_bridge_.get(); }
   void StopMeshMedia(const std::string& call_id);
 
+  /** Register a call peer's listen addrs in the mesh listen book; learns account ↔ PeerId. */
   void RegisterCallPeerListenMultiaddrs(const std::string& identity,
                                         const std::vector<std::string>& multiaddrs);
-  Roe<void> TryEnsureCircuitHopReachable(const std::string& hop_peer_id);
-  Roe<void> TryEnsurePeerReachable(const std::string& peer_key);
-  /** Prefer over sync when the waiter can Drive (AttachAmpStack harness PumpUntil). */
-  void TryEnsurePeerReachableAsync(const std::string& peer_key,
-                                        std::function<void(Roe<void>)> on_done);
-  Roe<void> TryUpgradeCallMediaToDirect(const std::string& peer_key);
-  void WarmBootstrapSeedSessions();
-  void ReserveOnBootstrapSeeds();
-  /** Connectivity: kick warm/reserve so this peer is ServeDial-reachable via org hops. */
-  void EnsureCircuitReady() { ReserveOnBootstrapSeeds(); }
-  /**
-   * H011 L3.1c: StartReserve a specific R1 PeerId (late park after dialer chose / announce).
-   * No-op when peer empty or circuit tunnel not started.
-   */
-  void PreferLateReserve(const std::string& relay_peer_id);
-  /**
-   * Kick warm+reserve and invoke on_done(true) once any bootstrap/directory seed is Connected,
-   * or on_done(false) at timeout (H010: answerer must be parkable before offerer StartBridge).
-   */
-  void EnsureBootstrapSeedParkedAsync(std::function<void(bool parked)> on_done, int timeout_ms = 12000);
-  /**
-   * Block until circuit-ready (any bootstrap seed Connected) or timeout.
-   * Safe on AcceptInvite worker — MeshPump / coordinator drive progress.
-   */
-  bool AwaitCircuitReady(int timeout_ms = 12000);
 
 private:
-  using IoPump = std::function<void()>;
-  using IoPost = std::function<void(std::function<void()>)>;
-  using IoAfter = std::function<void(std::chrono::milliseconds, std::function<void()>)>;
-
   MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
   const AppConfig& config() const;
   ICallMediaTransport* Transport();
-  IDialRegistry* ActiveDial() const;
-  ICircuitHopReach* ActiveCircuitReach() const;
-
-  /** True when Amp media_relay coordinator is started. */
-  bool WireMediaRelayClient(MeshHost* m, const IoPump& io_pump, const IoPost& post_io,
-                            const IoAfter& post_after);
-  void WireDialRegistry(MeshHost* m, bool use_amp_relay, const IoPost& post_io);
-  void WireCircuitHopReach(MeshHost* m, bool use_amp_relay, const IoPump& io_pump,
-                           const IoPost& post_io, const IoAfter& post_after);
-
-  void TryColdPunchAsync(MeshHost* m, IChatPeerLinks* punch_links, const std::string& target_peer_id,
-                         std::function<void(Roe<void>)> on_done);
-  void TryUpgradePunchAsync(MeshHost* m, const std::string& introducer_peer_key,
-                            const std::string& target_peer_id,
-                            std::function<void(Roe<void>)> on_done);
-
-  void MergeDialBookListenAddrs(const std::string& identity, const std::vector<std::string>& ranked);
-  static std::string PeerIdFromListenMultiaddr(const std::string& ma);
-
-  std::vector<std::string> CollectDialableCircuitRelayIds(const std::string& exclude_peer_id) const;
-  /**
-   * H011 shared rendezvous surface: same BuildCircuitHopList as dialer StartBridge collect.
-   * `exclude_peer_id` drops the call target. Does not filter dialability (reserve registers MAs).
-   */
-  std::vector<MeshHopCandidate> BuildCircuitRendezvousCandidates(
-      const std::string& exclude_peer_id = {}) const;
-  bool PeerLanConfirmed(const std::string& peer_id) const;
-
-  void WarmBootstrapSeedSessionsOnIo();
-  /** H011: StartReserve over shared rendezvous surface (not seeds-only). */
-  void ReserveOnBootstrapSeedsOnIo();
-  void PreferLateReserveOnIo(const std::string& relay_peer_id);
-  /**
-   * B27: when a rendezvous seed reconnects after path change, re-StartReserve so ServeDial
-   * can find the answerer under PeerId (stale op=reserve dies with the old ADP link).
-   */
-  void InstallRendezvousReparkListener();
-  void RemoveRendezvousReparkListener();
-  void OnRendezvousSeedReconnected(const std::string& peer_id);
-  bool AnyBootstrapSeedConnectedOnIo() const;
-  /** True when every EffectiveBootstrapSeedPeerId is Connected (empty set → false). */
-  bool AllBootstrapSeedsConnectedOnIo() const;
-  std::vector<std::string> EffectiveBootstrapSeedPeerIds() const;
-
-  /** Bump so inflight StartReserve / park / announce cbs no-op after mesh stop (AbortInflight Finish race). */
-  void InvalidateAsyncOps();
 
   CallMediaPlaneDeps deps_;
-  CallDialBook dial_book_;
-
+  MeshMediaPlane* mesh_media_ = nullptr;
   std::unique_ptr<CallMediaBridge> call_media_bridge_;
   const void* media_bridge_bound_sessions_key_ = nullptr;
-  std::unique_ptr<IMediaRelayClient> media_relay_client_;
-  std::unique_ptr<PeerSessionDialRegistry> dial_registry_;
-  std::unique_ptr<ICircuitHopReach> circuit_hop_reach_;
-  /** H011 L3.1b/c: last chosen / announced R1 PeerId for park sticky + late-reserve. */
-  std::string chosen_circuit_r1_;
-  /** B27: PeerConnected → re-StartReserve for rendezvous surface peers. */
-  pp::amp::PeerLinkManager::PeerConnectedListenerId repark_listener_id_ = 0;
-  /**
-   * DeferredSelf ticket for async IO callbacks that capture `this` (StartReserve Finish, park assoc).
-   * AbortInflight may still PostIo on_finished — Invalidate before teardown so those cbs skip `this`.
-   */
-  DeferredSelf deferred_;
   std::unique_ptr<CallMediaAmpTransport> call_media_amp_;
   ICallMediaTransport* test_media_transport_ = nullptr;
-  IDialRegistry* test_dial_ = nullptr;
-  ICircuitHopReach* test_circuit_reach_ = nullptr;
 };
 
 } // namespace pbr
