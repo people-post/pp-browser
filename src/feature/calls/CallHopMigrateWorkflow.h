@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/media/CallMediaEngine.h"
+#include "feature/calls/SharedPorts.h"
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/CallHopPlan.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
@@ -10,6 +11,7 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "feature/calls/CallMediaSeat.h"
+#include "domain/mesh/l4/media_relay/MediaRelayAttach.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 
 #include "common/Error.h"
@@ -146,8 +148,8 @@ public:
     uint64_t timer_id = 0;
   };
 
+  /** Deferred inbound CallSfuAttach + last failure. Calls owner only (hop migrate and topology). */
   struct InboundAttachGate {
-    std::mutex mu;
     std::optional<CallSfuAttachDetail> pending_attach;
     std::string pending_call_id;
     std::string last_fail_call_id;
@@ -161,8 +163,13 @@ public:
     bool reattach_in_flight = false;
   };
 
+  /**
+   * Written on the calls owner and read off it (relay subscription paths), so the sets are
+   * guarded by `mu` and the stream id is atomic. Do relay I/O outside `mu`.
+   */
   struct PublisherStreams {
-    uint32_t local_stream_id = 0;
+    std::atomic<uint32_t> local_stream_id{0};
+    std::mutex mu;
     std::unordered_set<uint32_t> remote_stream_ids;
     std::unordered_set<uint32_t> video_refresh_sent;
   };
@@ -221,39 +228,85 @@ public:
   SfuSurface& Sfu() { return sfu_; }
   const SfuSurface& Sfu() const { return sfu_; }
 
-  Roe<void> MaybeSoftMigrateToSfu(const std::string& call_id, SoftMigrateTrigger trigger,
-                                  const std::string& prefer_hop_peer_id = {},
-                                  uint64_t expected_gen = 0);
   void MaybeSoftMigrateToSfuAsync(const std::string& call_id, SoftMigrateTrigger trigger,
                                   const std::string& prefer_hop_peer_id, uint64_t expected_gen,
                                   std::function<void(Roe<void>)> on_done);
 
-  Roe<void> CompleteAttachLocalToSfu(const std::string& call_id, CallSfuAttachDetail attach, bool self_hop,
-                                     int64_t a_up_bps, uint64_t gen_at_start, uint64_t cancel_gen_at_start,
-                                     const std::shared_ptr<std::atomic<bool>>& sfu_frames_ready,
-                                     const std::vector<uint8_t>& media_key, uint32_t media_epoch);
-
-  Roe<void> AttachLocalToSfu(const std::string& call_id, const CallSfuAttachDetail& attach);
   void AttachLocalToSfuAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
                              std::function<void(Roe<void>)> on_done);
 
   void OnGuestSfuTransportLost();
-  Roe<void> ReattachGuestSfuTransport(const std::string& call_id, const CallSfuAttachDetail& attach);
   void ReattachGuestSfuTransportAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
                                       std::function<void(Roe<void>)> on_done);
 
   static constexpr int kMaxGuestSfuReattachAttempts = 3;
 
 private:
+  struct HopPick;
+  struct HopAttach;
+
   bool IsMigrateGenerationCurrent(uint64_t gen) const;
+  bool IsLiveOnHopFor(const std::string& call_id) const;
+
+  // SoftMigrate steps (MaybeSoftMigrateToSfuAsync → gate → control thread → pick hops in order).
+  /** False when the arming state settles the request here (`on_done` already called). */
+  bool PassSoftMigrateArmingGate(const std::string& call_id, SoftMigrateTrigger trigger,
+                                 const std::string& prefer_hop_peer_id, const std::function<void(Roe<void>)>& on_done);
+  void RunSoftMigrate(const std::string& call_id, SoftMigrateTrigger trigger, const std::string& prefer_hop_peer_id,
+                      uint64_t expected_gen, std::function<void(Roe<void>)> on_done);
+  SoftMigrateAction DecideFirstSoftMigrate(const HopPick& pick, SoftMigrateTrigger trigger,
+                                           const std::vector<CallParticipant>& participants);
+  bool PreferLocalHopAllowed(const std::string& call_id, const std::string& local_identity) const;
+  bool HasDurableMediaRelayHop() const;
+  /** Re-pick while attached: true when settled on the current hop, false after detaching to re-pick. */
+  bool SettleRepickOnCurrentHop(HopPick& pick, const std::string& prefer_hop_peer_id);
+  std::vector<MeshHopCandidate> RankHopsForSoftMigrate(HopPick& pick, const std::string& prefer_hop_peer_id);
+  void TryPickHop(std::shared_ptr<HopPick> pick, size_t index);
+  void FailHopPick(HopPick& pick);
+  void AttachPickedHop(std::shared_ptr<HopPick> pick, size_t index);
+  void OnPickedHopAttached(const std::shared_ptr<HopPick>& pick, size_t index, bool self_hop,
+                           const CallSfuAttachDetail& attach, Roe<void> attached);
+  void RecordPickedHop(HopPick& pick, const std::string& hop_peer_id);
+  void FanOutPickedHop(const std::string& call_id, const CallSfuAttachDetail& attach,
+                       const std::string& local_identity);
+
+  // Hop attach steps (AttachLocalToSfuAsync → claim → key → local hop / relay → CompleteHopAttach on the calls owner).
+  /** True = this attempt owns the attach; false = coalesced into another (done, not an error). */
+  Roe<bool> ClaimHopAttachFlight(const std::string& call_id, const CallSfuAttachDetail& attach);
+  std::function<void(Roe<void>)> ReleaseHopAttachFlightOnError(const std::string& call_id, const std::string& hop,
+                                                               std::function<void(Roe<void>)> on_done);
+  Roe<void> LoadHopMediaKey(HopAttach& at) const;
+  std::function<void(MediaDataFrame)> MakeHopFrameSink(const HopAttach& at);
+  void AttachAsLocalHop(HopAttach at, std::function<void(Roe<void>)> on_done);
+  void AttachThroughRelay(HopAttach at, std::function<void(Roe<void>)> on_done);
+  /** Calls owner: commit an attached hop (StartSfu, state, chrome) unless the call moved on. */
+  Roe<void> CompleteHopAttach(const HopAttach& at, int64_t a_up_bps);
+  void ApplyQuoteAdaptation(int64_t a_up_bps);
+  Roe<void> CheckHopAttachStillWanted(const HopAttach& at);
+  bool OwnsHopAttachFlight(const HopAttach& at) const;
+  /** Detach the relay session and report the attach as aborted. */
+  Roe<void> AbortHopAttach();
+  CallMediaEngine::SfuSendFn MakeHopSendFn(const HopAttach& at);
+  Roe<void> StartHopMedia(const HopAttach& at);
+  void MarkHopAttachLive(const HopAttach& at, bool fresh_start);
+  void ReleaseDirectAfterHopAttach(const HopAttach& at);
+  // Guest reattach after a lost relay transport (engine stays live).
+  void StartGuestReattach(const std::string& call_id, const CallSfuAttachDetail& attach_in,
+                          std::function<void(Roe<void>)> on_done);
+  Roe<void> CompleteGuestReattach(const HopAttach& at, int64_t a_up_bps);
+  /** media_relay attach mechanism (domain/mesh MediaRelayAttach) over this workflow's relay deps. */
+  MediaRelayAttachPorts RelayAttachPorts() const;
+  /** Call policy for a relay attach: session id / auth = call id; quote sized by roster + video. */
+  MediaRelayAttachRequest MakeRelayAttachRequest(const std::string& call_id, const CallSfuAttachDetail& attach) const;
+  static std::function<Roe<void>(const MediaRelayQuote&)> RelayQuotePricingGate();
 
   CallSessionStore& sessions_;
   CallMediaEngine& media_;
   CallMediaKeyStore* media_keys_ = nullptr;
   CallTopologyMediaRelayDeps* relay_deps_ = nullptr;
   CallHopMigrateHostPorts host_;
-  CallHopMigrateArmingPorts arming_;
-  CallHopMigrateSeatPorts seat_;
+  SharedPorts<CallHopMigrateArmingPorts> arming_;
+  SharedPorts<CallHopMigrateSeatPorts> seat_;
   TopologyOps ops_;
   SoftMigrateFlight flight_;
   AttachWait attach_wait_;

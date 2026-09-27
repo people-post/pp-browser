@@ -1,4 +1,5 @@
 #include "app/node/NodeBootstrap.h"
+#include "foundation/platform/os/OsThreadName.h"
 #include "app/node/NodeEnvOverlay.h"
 
 #include "foundation/crypto/CryptoUtil.h"
@@ -200,7 +201,9 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
     return loaded.error();
   }
 
-  AppRuntime::Initialize();
+  AppRuntimeConfig runtime;
+  runtime.name_thread = os::SetCurrentThreadName;
+  AppRuntime::Initialize(runtime);
 
   MeshHostConfig mesh_cfg;
   if (auto priv = identity->GetDeviceMlDsaPrivateKey()) {

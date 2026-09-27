@@ -1,4 +1,5 @@
 #include "feature/conversations/AmpBroadcastTransport.h"
+#include "feature/broadcast/AmpBroadcastRpcClient.h"
 
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/mesh/tests/support/mesh_test_harness.h"
@@ -48,6 +49,9 @@ protected:
                                                      harness_->MakePostIoA(), harness_->MakePostAfterA());
     b_svc_ = std::make_unique<AmpBroadcastTransport>(harness_->chat_b(), [this] { harness_->PumpBoth(); }, no_worker,
                                                      harness_->MakePostIoB(), harness_->MakePostAfterB());
+    // B asks (viewer / relay candidate); A serves (publisher / hop).
+    b_client_ = std::make_unique<AmpBroadcastRpcClient>(harness_->chat_b(), [this] { harness_->PumpBoth(); },
+                                                        harness_->MakePostIoB(), harness_->MakePostAfterB());
 
     auto resolve = [this](const std::string& peer_id) -> std::optional<ByteVector> {
       if (peer_id == "publisher-a") {
@@ -99,6 +103,7 @@ protected:
     if (b_svc_) {
       b_svc_->Stop();
     }
+    b_client_.reset();
     a_svc_.reset();
     b_svc_.reset();
     harness_.reset();
@@ -107,6 +112,7 @@ protected:
   std::unique_ptr<pbr::test::AmpMeshHarness> harness_;
   std::unique_ptr<AmpBroadcastTransport> a_svc_;
   std::unique_ptr<AmpBroadcastTransport> b_svc_;
+  std::unique_ptr<AmpBroadcastRpcClient> b_client_;
   ByteVector pk_a_;
   ByteVector pk_b_;
   ByteVector sk_a_;
@@ -118,7 +124,7 @@ TEST_F(AmpBroadcastTransportTest, RequestTicketRoundTripMintsSignedTicket) {
   req.join_handle = "live:show-1";
   req.viewer_peer_id = "viewer-1";
 
-  auto resp = b_svc_->RequestTicket("a", req);
+  auto resp = b_client_->RequestTicket("a", req);
   ASSERT_TRUE(resp) << resp.error().message;
   EXPECT_TRUE(resp->ok) << resp->error;
   ASSERT_TRUE(resp->ticket.has_value());
@@ -135,7 +141,7 @@ TEST_F(AmpBroadcastTransportTest, RequestViewerAttachAdmitsWithValidTicket) {
   treq.program_id = "show-1";
   treq.join_handle = "live:show-1";
   treq.viewer_peer_id = "viewer-1";
-  auto tresp = b_svc_->RequestTicket("a", treq);
+  auto tresp = b_client_->RequestTicket("a", treq);
   ASSERT_TRUE(tresp) << tresp.error().message;
   ASSERT_TRUE(tresp->ok) << tresp->error;
   ASSERT_TRUE(tresp->ticket.has_value());
@@ -148,7 +154,7 @@ TEST_F(AmpBroadcastTransportTest, RequestViewerAttachAdmitsWithValidTicket) {
   areq.join_handle = "live:show-1";
   areq.viewer_peer_id = "viewer-1";
   areq.ticket_json = *ticket_json;
-  auto aresp = b_svc_->RequestViewerAttach("a", areq);
+  auto aresp = b_client_->RequestViewerAttach("a", areq);
   ASSERT_TRUE(aresp) << aresp.error().message;
   EXPECT_EQ(aresp->action, BroadcastLadderViewerAction::Admit);
   EXPECT_EQ(aresp->admitted_hop_peer_id, "hop-a");
@@ -159,7 +165,7 @@ TEST_F(AmpBroadcastTransportTest, RequestRelaySlotWinDemotesViewerWhenFull) {
   req.program_id = "show-1";
   req.join_handle = "live:show-1";
   req.relay_peer_id = "relay-new";
-  auto resp = b_svc_->RequestRelaySlotWin("a", req);
+  auto resp = b_client_->RequestRelaySlotWin("a", req);
   ASSERT_TRUE(resp) << resp.error().message;
   EXPECT_EQ(resp->action, BroadcastLadderSlotWinAction::DemoteViewersAndAdmitRelay);
   ASSERT_FALSE(resp->demote_viewer_peer_ids.empty());

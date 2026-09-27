@@ -10,6 +10,8 @@
 #include "foundation/crypto/MlDsa.h"
 #include "foundation/identity/PeerIdUtil.h"
 
+#include "foundation/runtime/AppRuntime.h"
+
 #include <gtest/gtest.h>
 #include <sodium.h>
 
@@ -96,6 +98,8 @@ RelayEnvelope MakeEnvelope() {
 // timed out") after the probe moved off manual Tick (2026-09-25).
 TEST(AmpDirectChatMeshPumpTest, SyncSendFromNonDriveThreadIsAcked) {
   ASSERT_GE(sodium_init(), 0);
+  // Like the product: under MeshPump, L4 inbound handlers do their work on AppRuntime workers.
+  AppRuntime::Initialize();
   auto a = MakePumpedHost();
   ASSERT_TRUE(static_cast<bool>(a)) << a.error().message;
   auto b = MakePumpedHost();
@@ -133,6 +137,7 @@ TEST(AmpDirectChatMeshPumpTest, SyncSendFromNonDriveThreadIsAcked) {
   b_chat.reset();
   a->host->Stop();
   b->host->Stop();
+  AppRuntime::Shutdown();
 }
 
 } // namespace

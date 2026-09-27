@@ -200,4 +200,4 @@ Horizon **N-HARD-MULTI-HOP-MEDIA** remains **off** for group calls. For broadcas
 
 ## Implementation note (code split)
 
-Live-announce **arm/accept** lives in `feature/calls/BroadcastSessionCoordinator` (owned by `CallSessionManager::Broadcast()`). SoftMigrate early-skips Broadcast sessions; `AcceptInvite` refuses them so audience joins cannot fall onto the call SoftMigrate path.
+Viewer and broadcaster live in `feature/broadcast` (`BroadcastHub`, `BroadcastViewerWorkflow`, `BroadcasterWorkflow`), a sibling of calls — no call session, SoftMigrate or roster. `AcceptInvite` refuses legacy Broadcast rows from older builds.

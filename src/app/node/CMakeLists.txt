@@ -89,6 +89,26 @@ if(TARGET pp_feature_conversations OR TARGET pp_domain_messaging)
   endif()
   pp_browser_apply_warnings(pp-call-probe)
   install(TARGETS pp-call-probe RUNTIME DESTINATION bin)
+
+  if(PP_BROWSER_BUILD_TESTS AND TARGET pp_feature_calls AND TARGET pp_feature_conversations)
+    # Product stack over a real loopback Amp stack (the harness the hard lab drives).
+    add_executable(pp_browser_call_probe_test
+      tests/product_stack_harness_test.cpp
+      call_probe/ProductStackHarness.cpp
+    )
+    target_include_directories(pp_browser_call_probe_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+    target_link_libraries(pp_browser_call_probe_test PRIVATE
+      ${_pp_probe_libs}
+      pp_foundation_platform_core
+      pp_feature_calls
+      pp_feature_conversations
+      GTest::gtest
+      GTest::gtest_main
+    )
+    pp_browser_apply_warnings(pp_browser_call_probe_test)
+    include(PpBrowserTesting)
+    pp_browser_add_gtest(pp_browser_call_probe_test)
+  endif()
 endif()
 
 if(PP_BROWSER_BUILD_TESTS)

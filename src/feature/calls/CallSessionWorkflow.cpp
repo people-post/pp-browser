@@ -1,4 +1,5 @@
 #include "feature/calls/CallSessionWorkflow.h"
+#include "feature/calls/CallsThread.h"
 
 #include "domain/messaging/CallListenAddrsLogic.h"
 #include "domain/messaging/CallMediaPlannerSelectLogic.h"
@@ -71,6 +72,13 @@ Roe<std::optional<PendingCallInvite>> CallSessionWorkflow::TopPendingInvite() {
   }
   // Match CSM ListPendingInvites / StartCall gate — expire before reading "top".
   SweepExpiredInvites();
+  return PeekTopPendingInvite();
+}
+
+Roe<std::optional<PendingCallInvite>> CallSessionWorkflow::PeekTopPendingInvite() const {
+  if (!host_.IsBound()) {
+    return Error("Call session workflow host ports not bound");
+  }
   auto local = host_.wire.local_relay_identity();
   if (!local) {
     return local.error();
@@ -79,9 +87,11 @@ Roe<std::optional<PendingCallInvite>> CallSessionWorkflow::TopPendingInvite() {
   if (!pending) {
     return pending.error();
   }
+  // Read-only (callable off the owner): expired rows are skipped here, swept on the owner.
+  const int64_t now = util::NowUnixMs();
   std::vector<PendingCallInvite> open;
   for (const PendingCallInvite& invite : *pending) {
-    if (invite.status == "pending") {
+    if (invite.status == "pending" && !CallSessionLogic::IsInviteExpired(invite, now)) {
       open.push_back(invite);
     }
   }
@@ -397,8 +407,8 @@ void CallSessionWorkflow::SetPendingAcceptChargeDecision(const InitiationChargeD
   pending_accept_charge_set_ = true;
 }
 
-Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
-                                           InitiationChargeDecision charge_decision) {
+void CallSessionWorkflow::AcceptInviteAsync(const std::string& call_id, InitiationChargeDecision charge_decision,
+                                            std::function<void(Roe<void>)> on_done) {
   if (pending_accept_charge_set_) {
     charge_decision = pending_accept_charge_;
     pending_accept_charge_set_ = false;
@@ -409,19 +419,31 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
   auto local = host_.wire.local_relay_identity();
   if (!local) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << local.error().message;
-    return local.error();
+    on_done(local.error());
+    return;
   }
   SweepExpiredInvites();
   if (auto cleared = LeaveCallIfActiveExcept(call_id); !cleared) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << cleared.error().message;
-    return cleared.error();
+    on_done(cleared.error());
+    return;
   }
-  // Thin product gate: connectivity owns park; session only awaits ready before CallAccept.
-  if (host_.reach.await_circuit_ready) {
-    const bool ready = host_.reach.await_circuit_ready(12000);
-    log().info << "AcceptInvite await_circuit_ready call_id=" << call_id
-               << " ready=" << (ready ? 1 : 0);
+  // Thin product gate: connectivity owns the park; the session waits for it before CallAccept —
+  // asynchronously, so the calls owner keeps serving inbound control / Leave meanwhile.
+  if (!host_.reach.park_circuit) {
+    on_done(ContinueAcceptAfterPark(call_id, charge_decision, *local));
+    return;
   }
+  host_.reach.park_circuit(12000, deferred_.Bind([this, call_id, charge_decision, local = *local,
+                                                   on_done](bool ready) {
+    log().info << "AcceptInvite circuit park call_id=" << call_id << " ready=" << (ready ? 1 : 0);
+    on_done(ContinueAcceptAfterPark(call_id, charge_decision, local));
+  }));
+}
+
+Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_id,
+                                                      InitiationChargeDecision charge_decision,
+                                                      const std::string& local_identity) {
   // LeaveCallIfActiveExcept only sees Joined sessions. An Ended prior call can leave the
   // engine in sfu_mode (Stop gated on ActiveCallId match) — purge before WaitForAttach.
   // Never Release/Stop the call we are accepting (empty ActiveCallId used to target accept id
@@ -441,21 +463,22 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
       }
     }
   }
-  auto pending = sessions_.LoadPendingInvite(call_id, *local);
+  auto pending = sessions_.LoadPendingInvite(call_id, local_identity);
   if (!pending || !pending->has_value() || (*pending)->status != "pending") {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=Pending call invite not found";
     return Error("Pending call invite not found");
   }
   if (CallSessionLogic::IsInviteExpired(**pending, util::NowUnixMs())) {
-    (void)sessions_.UpdateInviteStatus(call_id, *local, "expired");
+    (void)sessions_.UpdateInviteStatus(call_id, local_identity, "expired");
     host_.wire.notify_ring_changed();
     log().warning << "AcceptInvite end call_id=" << call_id << " err=Call invite expired";
     return Error("Call invite expired");
   }
   if (IsBroadcastSession((*pending)->session_kind)) {
-    log().warning << "AcceptInvite end call_id=" << call_id
-                  << " err=broadcast sessions use AcceptLiveAnnounceJoin";
-    return Error("Broadcast sessions use AcceptLiveAnnounceJoin");
+    // Legacy rows only (pre-feature/broadcast builds): a live broadcast is watched from its
+    // announce through BroadcastHub, never accepted as a call.
+    log().warning << "AcceptInvite end call_id=" << call_id << " err=legacy broadcast row";
+    return Error("Live broadcasts are watched from the announce, not accepted as calls");
   }
 
   const std::string inviter = (*pending)->inviter_identity;
@@ -503,7 +526,7 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
   // local Joined or SoftMigrate half-started.
   CallAcceptDetail accept;
   accept.call_id = call_id;
-  accept.identity = *local;
+  accept.identity = local_identity;
   accept.video_enabled = false;
   // P001: recipient chooses waive (0) or take_all (rails checked above).
   if (initiation_billing_) {
@@ -545,7 +568,7 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
 
   CallParticipant self;
   self.call_id = call_id;
-  self.identity = *local;
+  self.identity = local_identity;
   self.state = CallParticipantState::Joined;
   self.media.video_enabled = false;
   self.joined_at = now;
@@ -553,7 +576,7 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << saved.error().message;
     return saved.error();
   }
-  (void)sessions_.UpdateInviteStatus(call_id, *local, "accepted");
+  (void)sessions_.UpdateInviteStatus(call_id, local_identity, "accepted");
 
   // B-CONFLICT: Accept B may have moved chrome / LeaveCall'd us while CallAccept was on the wire.
   // Do not ScheduleStart or report success for a superseded accept (stale AcceptSucceeded → Idle).
@@ -572,7 +595,7 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
     }
   }
 
-  // Runs on Accept worker thread (never Browser IO). Do not wait on ListenOn / PollInbox here.
+  // Runs on the calls owner (thread-ownership t2a). Do not wait on ListenOn / PollInbox here.
   // ScheduleStart* only posts StartSfu onto UI — never run the engine on this thread.
   // N→planner: Topology for N≥3 / hint; else Bridge Direct (CallMediaPlannerSelectLogic / V038).
   size_t n_joined = 0;
@@ -625,16 +648,18 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
     }
   }
 
-  // Pull CallMediaKey ASAP — do not wait for the next UI-tick poll (Accept worker path).
+  // Pull CallMediaKey ASAP — do not wait for the next UI-tick poll.
   if (host_.wire.sync_inbox_from_wake) {
     host_.wire.sync_inbox_from_wake();
   }
 
-  // Roster / prefetch after Accept returns — keep Accept worker snappy (no Accept hang UX).
+  // Roster / prefetch as the owner's next task, after Accept has reported (no Accept hang UX). Sends
+  // only prepare + enqueue (Amp on Mesh I/O, relay fallback on a worker).
   const std::string accept_call_id = call_id;
   const std::string accept_inviter = inviter;
-  const std::string accept_local = *local;
-  AppRuntime::PostWorkerNormal(deferred_.Bind([this, accept_call_id, accept_inviter, accept_local]() {
+  const std::string accept_local = local_identity;
+  CallsThread::Post(deferred_.Bind([this, accept_call_id, accept_inviter,
+                                                                            accept_local]() {
     if (!host_.IsBound()) {
       return;
     }
@@ -1160,7 +1185,7 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
   }
   if (host_.reach.note_caps_for_identity) host_.reach.note_caps_for_identity(pending.inviter_identity, invite->caps, invite->listen_multiaddrs);
   if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(pending.inviter_identity);
-  // Answerer: kick circuit readiness on ring (park owned by CallMediaPlane).
+  // Answerer: kick circuit readiness on ring (park owned by the shared MeshMediaPlane).
   if (host_.reach.ensure_circuit_ready) {
     host_.reach.ensure_circuit_ready();
   }
@@ -1177,10 +1202,53 @@ Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_jso
   }
   const std::string identity = accept->identity.empty() ? sender_identity : accept->identity;
   log().info << "Inbound CallAccept call_id=" << accept->call_id << " from=" << identity;
+  return ApplyRemoteAccept(*accept, identity, local_identity, /*implicit=*/false);
+}
+
+Roe<void> CallSessionWorkflow::ApplyImplicitAccept(const std::string& call_id, const std::string& identity,
+                                                   const std::string& peer_id, const std::string& local_identity) {
+  // B30: the relay can deliver CallAccept tens of seconds late (CN cellular) while the answerer's
+  // call-media hello — keyed from the invite — already reached us. Only for a 1:1 call we started
+  // whose one remote is still invited: then the hello is the answerer accepting.
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
+    return {};
+  }
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!participants || participants->size() != 2) {
+    return {};
+  }
+  bool local_joined = false;
+  bool peer_pending = false;
+  for (const CallParticipant& p : *participants) {
+    if (p.identity == local_identity) {
+      local_joined = p.state == CallParticipantState::Joined;
+    } else if (p.identity == identity) {
+      peer_pending = p.state == CallParticipantState::Invited || p.state == CallParticipantState::Ringing;
+    }
+  }
+  if (!local_joined || !peer_pending) {
+    return {};
+  }
+  log().info << "Implicit CallAccept (inbound call-media hello before the relay's Accept) call_id=" << call_id
+             << " from=" << identity;
+  CallAcceptDetail accept;
+  accept.call_id = call_id;
+  accept.identity = identity;
+  accept.libp2p_peer_id = peer_id;
+  return ApplyRemoteAccept(accept, identity, local_identity, /*implicit=*/true);
+}
+
+Roe<void> CallSessionWorkflow::ApplyRemoteAccept(const CallAcceptDetail& accept_detail, const std::string& identity,
+                                                 const std::string& local_identity, const bool implicit) {
+  const CallAcceptDetail* accept = &accept_detail;
   if (!accept->libp2p_peer_id.empty()) {
     host_.reach.note_mesh_peer_id_for_relay(identity, accept->libp2p_peer_id);
   }
-  if (host_.reach.note_caps_for_identity) host_.reach.note_caps_for_identity(identity, accept->caps, accept->listen_multiaddrs);
+  // An implicit accept carries no caps / listen addrs: keep what the invite path learned.
+  if (!implicit && host_.reach.note_caps_for_identity) {
+    host_.reach.note_caps_for_identity(identity, accept->caps, accept->listen_multiaddrs);
+  }
   CallParticipant participant;
   participant.call_id = accept->call_id;
   participant.identity = identity;
@@ -1238,7 +1306,8 @@ Roe<void> CallSessionWorkflow::HandleInboundAccept(const std::string& detail_jso
     // DeferredSelf: CSM teardown must not race store_ while this worker still runs (PR #216).
     const std::string accept_call_id = accept->call_id;
     const std::string accept_peer = identity;
-    AppRuntime::PostWorkerNormal(deferred_.Bind([this, accept_call_id, accept_peer, local = local_identity]() {
+    CallsThread::Post(deferred_.Bind([this, accept_call_id, accept_peer,
+                                                                              local = local_identity]() {
       if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(accept_peer);
       if (auto roster = host_.wire.build_roster_detail(accept_call_id); roster) {
         if (auto roster_json = CallControlCodec::EncodeRoster(*roster); roster_json) {

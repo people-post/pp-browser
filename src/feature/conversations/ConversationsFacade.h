@@ -22,7 +22,6 @@
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
-#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/CallTypes.h"
 #include "domain/messaging/PeerAnnounceTypes.h"
 #include "feature/conversations/PeerDisplayResolver.h"
@@ -237,22 +236,25 @@ public:
    * (e.g. ConfigApplyBridge Apply slices). Prefer facade methods otherwise.
    */
 
-  // --- Peer-scoped live announce (Spine C) ----------------------------------
-  Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip);
-  Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromStoredAnnounce(const std::string& peer_id,
-                                                          const std::string& topic_id,
-                                                          const std::string& program_id);
+  // --- Live broadcast viewer (feature/broadcast — not a call; media-client-layers L013) ---
   /**
-   * Plan from tip then arm pending invite via Calls(). No SoftMigrate/media.
+   * Listen to the live program a signed tip announces (replaces any current watch). UI thread;
+   * the broadcast owner answers through `on_done`, on UI.
    */
-  Roe<PendingCallInvite> ArmLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip);
-  Roe<PendingCallInvite> ArmLiveJoinFromStoredAnnounce(const std::string& peer_id,
-                                                       const std::string& topic_id,
-                                                       const std::string& program_id);
-  /** Accept an armed live-announce invite (no SoftMigrate / 1:1 media). */
-  Roe<void> AcceptLiveAnnounceJoin(const std::string& call_id);
-  /** Plan+arm from tip then accept (defers media when hop_peer_id absent). */
-  Roe<PendingCallInvite> JoinLiveAnnounceFromTip(const PeerAnnounceTip& tip);
+  void WatchLiveAnnounce(const PeerAnnounceTip& tip, std::function<void(Roe<void>)> on_done);
+  /** Same, from the latest stored tip of that program. */
+  void WatchStoredLiveAnnounce(const std::string& peer_id, const std::string& topic_id,
+                               const std::string& program_id, std::function<void(Roe<void>)> on_done);
+  void StopWatchingBroadcast();
+  /** Current watch (phase, hop, error); nullopt while broadcast viewing is unavailable. */
+  std::optional<BroadcastViewerWorkflow::Status> BroadcastWatchStatus();
+
+  /** Publish a program live through `hops` (media_relay nodes, preference order). UI thread; `on_done` on UI. */
+  void GoLive(const std::string& topic_id, const std::string& program_id, std::vector<std::string> hops,
+              std::function<void(Roe<void>)> on_done);
+  void EndLive();
+  /** Current show (phase, join handle, hop, frames sent); nullopt while broadcasting is unavailable. */
+  std::optional<BroadcasterWorkflow::Status> BroadcastLiveStatus();
 
   ConversationsHub& Hub() { return hub_; }
 

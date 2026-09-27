@@ -5,6 +5,7 @@
 #include "feature/settings/SettingsPortsViews.h"
 #include "foundation/crypto/CryptoTypes.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -25,8 +26,14 @@ Roe<void> ShareCasPubliclyForSettings(const std::string& profile_dir, const std:
 Roe<void> UnpublishCasForSettings(const std::string& profile_dir, const std::string& profile_id,
                                   const std::string& public_content_id_hex);
 
-Roe<void> FetchCasPublicTipForSettings(const std::string& profile_dir, const std::string& profile_id,
+/**
+ * Fetch a peer's public CAS tip and cache it. Never waits on the mesh: the blob fetch completes
+ * asynchronously, the cache write runs on a worker, and `on_done` runs once (on that worker, or
+ * inline for an immediate refusal) — callers hop to their own thread.
+ */
+void FetchCasPublicTipForSettingsAsync(const std::string& profile_dir, const std::string& profile_id,
                                        IChatBlobPeerClient& blob, const std::string& local_relay_user_id,
-                                       const std::string& tip, const std::string& peer_relay_user_id);
+                                       const std::string& tip, const std::string& peer_relay_user_id,
+                                       std::function<void(Roe<void>)> on_done);
 
 } // namespace pbr

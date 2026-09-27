@@ -5,6 +5,7 @@
 #include "domain/messaging/CasLibrary.h"
 #include "domain/net/OrgBackendClients.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "foundation/runtime/AppRuntime.h"
 
 namespace pbr {
 
@@ -53,18 +54,22 @@ Roe<void> UnpublishCasForSettings(const std::string& profile_dir, const std::str
   return UnpublishCasPublic(profile_dir, profile_id, *id);
 }
 
-Roe<void> FetchCasPublicTipForSettings(const std::string& profile_dir, const std::string& profile_id,
+void FetchCasPublicTipForSettingsAsync(const std::string& profile_dir, const std::string& profile_id,
                                        IChatBlobPeerClient& blob, const std::string& local_relay_user_id,
-                                       const std::string& tip, const std::string& peer_relay_user_id) {
+                                       const std::string& tip, const std::string& peer_relay_user_id,
+                                       std::function<void(Roe<void>)> on_done) {
   if (!blob.IsPeerReachable(peer_relay_user_id)) {
-    return Error("Peer is not reachable for CAS tip fetch");
+    on_done(Error("Peer is not reachable for CAS tip fetch"));
+    return;
   }
   auto content_id = ParseCasPublicTip(tip);
   if (!content_id) {
-    return content_id.error();
+    on_done(content_id.error());
+    return;
   }
   if (local_relay_user_id.empty()) {
-    return Error("Local relay identity missing");
+    on_done(Error("Local relay identity missing"));
+    return;
   }
   ChatBlobRequest request;
   request.op = ChatBlobOp::FetchPublic;
@@ -74,12 +79,18 @@ Roe<void> FetchCasPublicTipForSettings(const std::string& profile_dir, const std
   request.peer_identity_value = peer_relay_user_id;
   request.content_hash_hex = BytesToHex(*content_id);
   request.channel = ThreadChannel::E2e;
-  auto bytes = blob.FetchChatBlob(request);
-  if (!bytes) {
-    return bytes.error();
-  }
-  return CacheFetchedPublicCas(profile_dir, profile_id, *content_id,
-                               ByteVector(bytes->begin(), bytes->end()));
+  blob.FetchChatBlobAsync(request, [profile_dir, profile_id, content_id = *content_id,
+                                    on_done = std::move(on_done)](Roe<std::vector<uint8_t>> bytes) {
+    if (!bytes) {
+      on_done(bytes.error());
+      return;
+    }
+    // The fetch completes on the mesh IO strand: the cache write (disk) goes to a worker.
+    AppRuntime::PostWorkerNormal([profile_dir, profile_id, content_id, on_done,
+                                  bytes = std::move(*bytes)]() {
+      on_done(CacheFetchedPublicCas(profile_dir, profile_id, content_id, ByteVector(bytes.begin(), bytes.end())));
+    });
+  });
 }
 
 } // namespace pbr

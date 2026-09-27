@@ -1091,7 +1091,7 @@ ScheduleStart / Retry / MediaAttempted / connect-fail health / NotePeerIdRelayMa
 
 ### Pattern
 
-Mirror `BroadcastSessionCoordinator`: Workflow holds store refs; side effects via **`HostPorts`** filled by CSM (`BindWorkflowHostPorts`). Hub façade methods on CSM remain thin delegates.
+Mirror `BroadcastSessionCoordinator` (since removed — media-client-layers l6): Workflow holds store refs; side effects via **`HostPorts`** filled by CSM (`BindWorkflowHostPorts`). Hub façade methods on CSM remain thin delegates.
 
 ### Owns on Workflow
 

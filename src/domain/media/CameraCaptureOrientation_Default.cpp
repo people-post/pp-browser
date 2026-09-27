@@ -10,7 +10,11 @@
 
 namespace pbr {
 
-CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID /*camera_id*/) {
+int CameraDisplayRotationDegrees() {
+  return 0;
+}
+
+CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID /*camera_id*/, int /*display_rotation_deg*/) {
   CameraCaptureTransform t;
   if (Platform::IsMobile()) {
     t.encode_width = 360;

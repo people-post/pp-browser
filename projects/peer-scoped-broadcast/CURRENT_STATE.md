@@ -1,16 +1,16 @@
 # Peer-scoped broadcast — current state
 
-**As of:** 2026-09-06
-**Branch:** `cursor/live-broadcast-media-tree-668c`
+**As of:** 2026-09-26
+**Branch:** `refactor/peer-reach-coordinator` (media-client-layers)
 
 | Spine | Status |
 |-------|--------|
 | A — calls hop trustworthy | Prerequisite (owned by p2p-av-calls / p2p-mesh); not changed here |
 | **B — signed tips without mesh** | **Exit met** — tips + Amp 1:1 + IdentityStore resolve + DM reply |
-| **C — tip + live** | **In progress** — plan + arm + accept (SFU via hop_peer_id; no SoftMigrate/1:1) |
+| **C — tip + live** | **In progress** — viewer moved to `feature/broadcast` (2026-09-26, [B008](DECISIONS.md), [media-client-layers l4](../media-client-layers/PHASES.md)): tip → ticket → ladder → receive-only attach → playback; broadcaster `GoLive` / `EndLive` (media-client-layers l5); the call-side arm/accept path was removed in l6. No UI entry yet |
 | D — announce helpers | Not started |
 | E — CAS replay | Not started |
-| **F — media tree** | **B0/B1 + Amp handlers** — codecs + `AmpBroadcastTransport`; `BroadcastSessionCoordinator` split; SoftMigrate skip |
+| **F — media tree** | **B0/B1 + Amp handlers** — codecs + `AmpBroadcastTransport`; viewer / broadcaster in `feature/broadcast` |
 
 ## Spine B landed
 
@@ -38,9 +38,8 @@
 | Piece | Path |
 |-------|------|
 | Join ticket types + mint/verify/JSON | `BroadcastJoinTicket.*` |
-| Apply → `CallMediaKeyStore::PutEpochKey` | `ApplyBroadcastJoinTicket` |
-| Live-join plan carries `media_epoch` / `media_key_id` | `AnnounceLiveJoinPlan` + handoff |
-| Tests | `broadcast_join_ticket_test.cpp` (5 cases) |
+| Extract media key (memory only; no `CallMediaKeyStore`) | `ExtractBroadcastMediaKey` |
+| Tests | `broadcast_join_ticket_test.cpp` |
 | Recursive ladder discovery (spec) | [MEDIA_TREE.md § B007](MEDIA_TREE.md#recursive-ladder-discovery-b007), [DECISIONS B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-redirect) |
 
 **B003 locked:** encrypt-once AEAD mandatory; every hop must forward opaque blobs (no cleartext escape).  
@@ -48,33 +47,30 @@
 
 | Ladder admit/redirect + slot-win (pure) | `BroadcastLadderLogic.*` + `broadcast_ladder_logic_test.cpp` |
 | Tip L1 hints | `PeerAnnounceTip::l1_hop_peer_ids` (codec omit-empty) |
-| Arm path ticket apply | `ArmJoinFromLiveAnnounce(..., ArmLiveAnnounceJoinOpts)` → `ApplyBroadcastJoinTicket` |
 
 | Broadcast RPC codec | `BroadcastRpcCodec.*` — ticket_request/response, viewer_attach(_result), relay_slot_win(_result); `/pp-browser/rpc/broadcast/1.0.0` |
-| Session shape | `CallSessionKind::Broadcast` on session/pending; SoftMigrate `is_broadcast` → NoOp |
+| Session shape | None — watching is not a call session. `CallSessionKind::Broadcast` is a legacy parsed value only; `AcceptInvite` refuses it |
 
 | Amp broadcast RPC | `feature/conversations/AmpBroadcastTransport.*` — ticket mint, viewer_attach, relay_slot_win over `/pp-browser/rpc/broadcast/1.0.0` |
 | Mesh advertise + wire | `MeshHost` advertises broadcast protocol; `MeshDeliveryOrchestrator` starts service + device key resolvers |
 | Tests | `amp_broadcast_service_test.cpp` (ticket / admit / slot-win round-trips) |
 
-| Broadcast join coordinator | `feature/calls/BroadcastSessionCoordinator.*` — Arm/Accept live-announce extracted from `CallSessionManager`; UI/facade via `Broadcast()`; SoftMigrate topology early-skip; `AcceptInvite` refuses Broadcast |
+| Viewer / broadcaster | `feature/broadcast/` — `BroadcastHub` (owned by `ConversationsHub`), `BroadcastViewerWorkflow`, `BroadcasterWorkflow`; facade `WatchLiveAnnounce` / `GoLive` / `EndLive` ([media-client-layers](../media-client-layers/CURRENT_STATE.md)) |
 
-**Still out of scope for this slice:** tip→ticket auto-mint from live program UI, live redirect/slot-win media fan-out runtime, SoftMigrate for announce (explicitly skipped).
+**Still out of scope for this slice:** watch / go-live UI, live redirect/slot-win media fan-out runtime.
 
 ## Spine C started (slice 0)
 
 | Piece | Path |
 |-------|------|
-| Live-join plan from tip (`call_id` = `join_handle`) | `AnnounceLiveJoin.*`; `MeshDeliveryOrchestrator::PlanLiveJoinFromAnnounceTip` / `PlanLiveJoinFromStoredAnnounce` |
-| Arm pending invite + ringing session from plan | `BuildAnnounceLiveJoinHandoff` in `AnnounceLiveJoin.*`; `BroadcastSessionCoordinator::ArmJoinFromLiveAnnounce` via `CallSessionManager::Broadcast()` (no SoftMigrate/media) |
-| UI / facade tip→arm entry points | `CallUiBackend` / `ConversationsFacade` → `Broadcast().ArmJoinFromLiveAnnounce` |
-| Optional tip `hop_peer_id` → session `sfu_hint` | `PeerAnnounceTypes` / codec / publisher; plan + handoff carry through |
-| Accept without SoftMigrate / 1:1 media | `CallTopologyController::OnAnnounceViewerJoined`; `BroadcastSessionCoordinator::AcceptLiveAnnounceJoin`; facade `JoinLiveAnnounceFromTip` |
-| Tests | `AnnounceLiveJoinTest` in `peer_announce_test.cpp` |
+| Tip → watch target (Live program, publisher / program / join handle) | `BroadcastWatchTargetFromTip` in `feature/broadcast/BroadcastViewerWorkflow.*` |
+| Optional tip `hop_peer_id` / `l1_hop_peer_ids` → ladder hops | `PeerAnnounceTypes` / codec / publisher; viewer ladder |
+| Watch entry | facade `WatchLiveAnnounce` → `BroadcastHub::WatchLive` (the call-shaped arm/accept path was removed in media-client-layers l6) |
+| Tests | `broadcast_viewer_workflow_test.cpp`, `broadcast_viewer_compose_test.cpp` |
 
 **Domain wire landed (bare minimum, schema v1 additive):** tip `kind` / `viewer_peer_id` / `viewer_msg_id`; `AnnounceOverlayReply` + rate helpers; `AnnounceNotificationInbox`; feed isolates `live_chat` from program `Latest()`; Mesh `ReplyToAnnounceOverlay` / `PublishLiveChatFromOverlay`; Amp `SetOnTipIngested` → inbox upsert.
 
-**Still out of scope:** SoftMigrate for announce viewers, Notifications/banner **UI chrome**, join button chrome, epidemic `help_announce`. Media attaches only when `hop_peer_id`/`sfu_hint` is present.
+**Still out of scope:** Notifications/banner **UI chrome**, join button chrome, epidemic `help_announce`. Media attaches only when the tip or ticket names a hop.
 
 **Product UX:** Discovery ≠ call ring; Notifications + optional live banner (domain inbox ready; UI later); Watch reuses join API without ringtone; Private vs On-screen replies (publisher-signed overlay tips + rate limit / block). See [DESIGN.md](DESIGN.md#product-pickup-ux--not-call-ringing).
 

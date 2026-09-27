@@ -228,9 +228,9 @@ flowchart TB
 
 ## Threading
 
-**Canonical doc:** [THREADING.md](THREADING.md) — hybrid ownership: coordinator + Amp MeshPump + MeshControlPool + general worker pool.
+**Canonical doc:** [THREADING.md](THREADING.md) — hybrid ownership: coordinator + Amp MeshPump + owner threads + general worker pool.
 
-UI on main thread; blocking HTTP/LLM on **worker pool** via `AppRuntime::PostWorker`; **coordinator** owns timer-driven policy (~1s hub / relay wake). Amp UDP drain and dial/`IoPumpUntil` waits are **MeshHost-owned** (MeshPump + MeshControlPool). Call media runs its own loops.
+UI on main thread; blocking HTTP/LLM on **worker pool** via `AppRuntime::PostWorker`; **coordinator** owns timer-driven policy (~1s hub / relay wake). Amp UDP drain is **MeshHost-owned** (MeshPump); mesh waits are completions, and L4 inbound CPU / disk work runs on the worker pool. Call media runs its own loops.
 
 ```mermaid
 flowchart TB
@@ -260,10 +260,8 @@ flowchart TB
 
   subgraph mesh_host["MeshHost-owned"]
     Pump["MeshPumpThread<br/><small>Drive ~5ms</small>"]
-    Ctrl["MeshControlPool 1–2<br/><small>Connect / IoPumpUntil</small>"]
     Amp["AmpStack / MeshRuntime"]
     Pump --> Amp
-    Ctrl -->|"Tick while waiting"| Amp
   end
 
   subgraph media_stack["Call media"]
@@ -286,9 +284,9 @@ flowchart TB
 | **Coordinator** | `CoordinatorThread` | `foundation/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
 | **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `foundation/runtime/` | HTTP, LLM/tools, relay sync/send |
 | **Amp MeshPump** | `MeshHost` | `domain/mesh/host/` | `MeshRuntime::Drive` ~5ms (no libp2p `io_context`) |
-| **Mesh control** | `MeshHost` (`MeshControlPool`) | `domain/mesh/host/` | Connect / `IoPumpUntil` waits |
 | **Media capture / video** | `CallMediaEngine` | `domain/media/` | Dedicated capture + video encode loops |
-| **Ringtone** | `CallRingtone` | `domain/media/` | Playback loop thread |
+| **Media devices** | `MediaDeviceArbiter` | `domain/media/` | Device thread: every audio / camera open / close / reopen; per-kind leases (mic + camera exclusive, speaker shared) |
+| **Ringtone** | `CallRingtone` | `domain/media/` | Playback loop thread (speaker lease) |
 | **Notification watch** | `ILocalNotifier` (Linux) | `foundation/platform/desktop/` | D-Bus watcher; joined in `Shutdown` |
 
 ### Cross-thread rules of thumb
@@ -296,7 +294,7 @@ flowchart TB
 - **UI** owns RmlUi and controller mutations. `AppRuntime::PostUI` from pool/coordinator.
 - **Worker pool** runs blocking HTTP, LLM, relay orchestration. `PostTaskAndReply` is pool → UI.
 - **Coordinator** runs fast policy only; posts blocking steps to pool (not Amp UDP).
-- **MeshHost** owns Amp pump + mesh-control waiters; `PostControl` for dial/`IoPumpUntil`.
+- **MeshHost** owns the Amp pump; L4 inbound work goes to the worker pool (`MakeL4WorkerPost`); nothing waits on the mesh on a thread.
 - **Pause/resume:** `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` pauses coordinator + general pool only (mesh/media follow their own lifetime).
 
 Full model: [THREADING.md](THREADING.md).

@@ -8,7 +8,6 @@
 #include "domain/messaging/CallLifecycleTypes.h"
 
 #include "domain/media/CallMediaEngine.h"
-#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "domain/messaging/CallSessionStore.h"
@@ -28,6 +27,10 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <atomic>
+#include <optional>
+#include "feature/conversations/tests/call_media_inbound_fake.h"
+
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
@@ -108,7 +111,7 @@ public:
   }
   void ClearDialBackoff(const std::string& /*peer_key*/) override {}
   void AbortInflightDial(const std::string& /*peer_key*/) override {}
-  void ClearCallMediaCircuitHop(const std::string& /*peer_key*/) override {}
+  void ClearPeerCircuitHop(const std::string& /*peer_key*/) override {}
 
   std::unordered_map<std::string, std::string> endpoints;
   std::unordered_map<std::string, bool> force_dialable;
@@ -118,11 +121,8 @@ class FakeCallMediaTransport final : public ICallMediaTransport {
 public:
   void Start() override { started = true; }
   void Stop() override { started = false; }
-  void SetInboundHandler(
-      std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler) override {
-    inbound = std::move(handler);
-  }
-  void ClearInboundHandler() override { inbound = {}; }
+  void SetInboundHandler(CallMediaInboundHandler handler) override { inbound.Set(std::move(handler)); }
+  void ClearInboundHandler() override { inbound.Clear(); }
   bool IsActive() const override { return active; }
   CallMediaDirectConnectParams ActiveParams() const override { return active_params; }
   CallMediaSessionPhase Phase() const override {
@@ -165,19 +165,19 @@ public:
   int detach_calls = 0;
   CallMediaDirectConnectParams last_params;
   CallMediaDirectConnectParams active_params;
-  std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> inbound;
+  test::InboundHelloFake inbound;
 };
 
 void DrainUntil(const std::function<bool()>& done, int max_ms = 4000) {
   const int slices = std::max(1, max_ms / 10);
   for (int i = 0; i < slices; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (done()) {
       return;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
 }
 
 CallDirectArmingPorts TestDirectArmingPorts(CallLifecycle* lifecycle) {
@@ -400,7 +400,7 @@ class CallSessionInboundComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
     EnsureSodiumInit();
-    AppRuntime::Initialize();
+    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
     AppRuntime::InitializeUI();
 
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_csm_" + util::GenerateUuid());
@@ -456,11 +456,12 @@ protected:
     csm_->SetTopologyHopArmingPorts(TestHopArmingPorts(lifecycle_.get()));
     csm_->SetLifecyclePorts(TestSessionLifecyclePorts(lifecycle_.get()));
     CallLifecycleSignalingPorts ports;
-    ports.accept_invite = [this](const std::string& call_id) -> Roe<void> {
+    ports.accept_invite = [this](const std::string& call_id, std::function<void(Roe<void>)> done) {
       if (!csm_) {
-        return Error("Calls unavailable");
+        done(Error("Calls unavailable"));
+        return;
       }
-      return csm_->AcceptInvite(call_id);
+      csm_->AcceptInviteAsync(call_id, std::move(done));
     };
     ports.decline_invite = [this](const std::string& call_id) -> Roe<void> {
       if (!csm_) {
@@ -657,7 +658,7 @@ protected:
   std::unique_ptr<CallSessionManager> csm_;
   std::string local_identity_;
   int sent_control_messages_ = 0;
-  int inbox_syncs_ = 0;
+  std::atomic<int> inbox_syncs_{0};  // bumped from the deferred-key poll on workers
   std::string last_sent_payload_;
 };
 
@@ -708,6 +709,40 @@ TEST_F(CallSessionInboundComposeTest, DeclineClearsPendingInvite) {
   ASSERT_TRUE(pending);
   EXPECT_FALSE(pending->has_value());
   EXPECT_GE(sent_control_messages_, 1);
+}
+
+// thread-ownership t2a: Accept waits for the circuit park without blocking the calls owner — other
+// owner work (here: a ring notice and inbound control) runs while the park is outstanding, and
+// nothing is committed (no CallAccept, not Joined) until the park answers.
+TEST_F(CallSessionInboundComposeTest, AcceptAwaitsCircuitParkWithoutBlockingTheOwner) {
+  const std::string call_id = "call:park";
+  auto msg = MakeInviteMessage(call_id);
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  std::function<void(bool)> park_done;
+  csm_->SetParkCircuit([&](int /*timeout_ms*/, std::function<void(bool)> done) { park_done = std::move(done); });
+  std::optional<Roe<void>> accepted;
+  csm_->AcceptInviteAsync(call_id, [&](Roe<void> result) { accepted = std::move(result); });
+  ASSERT_TRUE(park_done) << "accept asked for the circuit park";
+  EXPECT_FALSE(accepted.has_value()) << "accept must not finish before the park";
+  auto self = sessions_->FindParticipant(call_id, local_identity_);
+  EXPECT_FALSE(self && self->has_value() && (*self)->state == CallParticipantState::Joined);
+
+  bool owner_free = false;
+  AppRuntime::PostToOwnerOrRun(OwnerThreadId::MediaSessions, [&]() { owner_free = true; });
+  AppRuntime::RunAllOwnerTasks();
+  EXPECT_TRUE(owner_free) << "the calls owner kept serving while accept awaited the park";
+
+  park_done(true);
+  AppRuntime::RunAllOwnerTasks();
+  ASSERT_TRUE(accepted.has_value());
+  EXPECT_TRUE(*accepted) << accepted->error().message;
+  self = sessions_->FindParticipant(call_id, local_identity_);
+  ASSERT_TRUE(self && self->has_value());
+  EXPECT_EQ((*self)->state, CallParticipantState::Joined);
+  EXPECT_GE(sent_control_messages_, 1) << "CallAccept sent after the park";
 }
 
 TEST_F(CallSessionInboundComposeTest, InviteAcceptLeaveProductCompose) {
@@ -1380,39 +1415,34 @@ TEST_F(CallSessionInboundComposeTest, RetryP2pMediaAfterConnectFailed) {
   });
 }
 
-TEST_F(CallSessionInboundComposeTest, BroadcastArmAndAcceptLiveAnnounceJoin) {
-  AnnounceLiveJoinPlan plan;
-  plan.call_id = "call:broadcast-1";
-  plan.publisher_peer_id = "12D3KooWPublisher";
-  plan.topic_id = "topic:live";
-  plan.program_id = "prog:1";
-  plan.hop_peer_id = "12D3KooWHop";
-  plan.media_epoch = 1;
-
-  auto armed = csm_->ArmJoinFromLiveAnnounce(plan);
-  ASSERT_TRUE(armed) << armed.error().message;
-  EXPECT_EQ(armed->call_id, plan.call_id);
-  EXPECT_EQ(armed->status, "pending");
-
-  auto pending = csm_->TopPendingInvite();
-  ASSERT_TRUE(pending && pending->has_value());
-  EXPECT_EQ((*pending)->call_id, plan.call_id);
-
-  auto session = sessions_->LoadSession(plan.call_id);
-  ASSERT_TRUE(session && session->has_value());
-  EXPECT_TRUE(IsBroadcastSession((*session)->session_kind));
-
-  // Regular AcceptInvite must refuse broadcast sessions.
-  auto wrong = csm_->AcceptInvite(plan.call_id);
-  EXPECT_FALSE(wrong);
-
-  ASSERT_TRUE(csm_->AcceptLiveAnnounceJoin(plan.call_id)) << "accept live announce";
-  auto self = sessions_->FindParticipant(plan.call_id, local_identity_);
-  ASSERT_TRUE(self && self->has_value());
-  EXPECT_EQ((*self)->state, CallParticipantState::Joined);
-  auto after = sessions_->LoadSession(plan.call_id);
-  ASSERT_TRUE(after && after->has_value());
-  EXPECT_EQ((*after)->state, CallSessionState::Active);
+// thread-ownership t2a: mesh start / stop swap the session manager's ports while other threads use
+// them. Each use takes one snapshot, so a check and the call it guards never straddle a swap — the
+// old rebind-in-place could call an empty port (bad_function_call) or destroy a running one (TSan).
+TEST_F(CallSessionInboundComposeTest, PortSwapsDuringUseNeverCallAnEmptyPort) {
+  CallDirectMediaPorts ports;
+  std::atomic<int> polls{0};
+  ports.media_path_kind = []() { return std::string("direct"); };
+  ports.is_connect_failed = []() { return false; };
+  ports.connect_missing_mic = []() { return false; };
+  ports.poll_connect_health = [&polls]() { polls.fetch_add(1); };
+  ports.media_attempted = [](const std::string&) { return false; };
+  std::atomic<bool> stop{false};
+  std::thread swapper([&]() {
+    for (int i = 0; !stop.load(); ++i) {
+      csm_->SetDirectMediaPorts(i % 2 == 0 ? ports : CallDirectMediaPorts{});
+    }
+  });
+  for (int i = 0; i < 20000; ++i) {
+    const std::string kind = csm_->MediaPathKind();
+    EXPECT_TRUE(kind.empty() || kind == "direct");
+    (void)csm_->IsP2pConnectFailed();
+    (void)csm_->P2pConnectMissingMic();
+    (void)csm_->MediaAttemptedThisProcess("call:swap");
+    csm_->PollP2pConnectHealth();
+  }
+  stop.store(true);
+  swapper.join();
+  csm_->SetDirectMediaPorts({});
 }
 
 TEST_F(CallSessionInboundComposeTest, StartCallOutboundCreatesSessionAndInvite) {
@@ -1528,10 +1558,10 @@ TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
   EXPECT_FALSE(media_->IsMuted());
 
   // Camera may fail headless — gate must still accept video_allowed before device open.
-  auto enable = csm_->SetLocalVideoEnabled(true);
+  auto enable = csm_->SetLocalVideoEnabled(true, 0);
   if (enable) {
     EXPECT_TRUE(media_->IsCameraEnabled());
-    ASSERT_TRUE(csm_->SetLocalVideoEnabled(false));
+    ASSERT_TRUE(csm_->SetLocalVideoEnabled(false, 0));
   } else {
     EXPECT_FALSE(enable.error().message.empty());
   }
@@ -1541,7 +1571,7 @@ TEST_F(CallSessionInboundComposeTest, MuteAndVideoControlsOnActiveMedia) {
   ASSERT_TRUE(voice_only && voice_only->has_value());
   (*voice_only)->video_allowed = false;
   ASSERT_TRUE(sessions_->UpsertSession(**voice_only));
-  auto denied = csm_->SetLocalVideoEnabled(true);
+  auto denied = csm_->SetLocalVideoEnabled(true, 0);
   EXPECT_FALSE(denied);
   EXPECT_NE(denied.error().message.find("Video is not allowed"), std::string::npos);
 

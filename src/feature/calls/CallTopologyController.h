@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/media/CallMediaEngine.h"
+#include "feature/calls/SharedPorts.h"
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/CallHopPlan.h"
 #include "domain/messaging/CallSessionStore.h"
@@ -14,6 +15,7 @@
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallHopMigrateWorkflow.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -85,8 +87,12 @@ public:
   using MediaRelayDeps = CallTopologyMediaRelayDeps;
 
   CallTopologyController(CallSessionStore& sessions, ContactsStore& contacts, CallMediaEngine& media);
+  ~CallTopologyController() override;
+  CallTopologyController(const CallTopologyController&) = delete;
+  CallTopologyController& operator=(const CallTopologyController&) = delete;
 
   void SetHostPorts(HostPorts ports);
+  /** Swapping deps moves the relay session-end observer to the new relay (empty = unwatch). */
   void SetMediaRelayDeps(MediaRelayDeps deps);
   /** Required for SFU E2E AEAD (V032). */
   void SetMediaKeyStore(CallMediaKeyStore* keys);
@@ -117,14 +123,10 @@ public:
   void EjectParticipantAfterMigrateFailure(const std::string& call_id, const std::string& identity,
                                            const std::string& reason);
 
-  Roe<void> MaybeSoftMigrateToSfu(const std::string& call_id, SoftMigrateTrigger trigger,
-                                  const std::string& prefer_hop_peer_id = {},
-                                  uint64_t expected_gen = 0);
-  /** SoftMigrate without parking MeshControl on quote/attach (product MeshControl paths). */
+  /** SoftMigrate with quote / attach as completions (no thread parks on them). */
   void MaybeSoftMigrateToSfuAsync(const std::string& call_id, SoftMigrateTrigger trigger,
                                   const std::string& prefer_hop_peer_id, uint64_t expected_gen,
                                   std::function<void(Roe<void>)> on_done);
-  Roe<void> AttachLocalToSfu(const std::string& call_id, const CallSfuAttachDetail& attach);
   void AttachLocalToSfuAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
                              std::function<void(Roe<void>)> on_done);
 
@@ -137,12 +139,6 @@ public:
    */
   bool OnLocalAcceptJoined(const std::string& call_id, size_t n_joined,
                            const std::optional<std::string>& sfu_hint);
-
-  /**
-   * Spine C announce viewer: attach via sfu_hint when present (no SoftMigrate / N≥3 gate).
-   * Returns true if an SFU attach was scheduled.
-   */
-  bool OnAnnounceViewerJoined(const std::string& call_id, const std::optional<std::string>& sfu_hint);
 
   /**
    * After inbound CallAccept raised joined count: soft-migrate or clear SFU wait.
@@ -200,7 +196,7 @@ private:
   void FanOutSfuAttachForHop(const std::string& call_id, const std::string& hop_peer_id,
                              const std::string& local_identity);
   void FlushPendingHopPrefer(const std::string& call_id);
-  /** Apply deferred CallSfuAttach after SoftMigrate finishes (must run on UI). */
+  /** Apply deferred CallSfuAttach after SoftMigrate finishes (calls owner). */
   void FlushPendingInboundSfuAttach();
   void SubscribePublisherStream(uint32_t stream_id);
   void SetHopPlannerPhase(CallHopPlannerPhase next, CallHopPlannerEvent ev, const std::string& call_id);
@@ -221,15 +217,36 @@ private:
    * UI-thread entry; work runs on a worker.
    */
   void OnGuestSfuTransportLost();
-  /** Quote + AcceptAndAttach + reader + subscribe; keeps existing StartSfu send path. */
-  Roe<void> ReattachGuestSfuTransport(const std::string& call_id, const CallSfuAttachDetail& attach);
-  void ReattachGuestSfuTransportAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
-                                      std::function<void(Roe<void>)> on_done);
-  /** StartSfu + fan-out bookkeeping after media-relay attach (or local hop) succeeds. */
-  Roe<void> CompleteAttachLocalToSfu(const std::string& call_id, CallSfuAttachDetail attach, bool self_hop,
-                                     int64_t a_up_bps, uint64_t gen_at_start, uint64_t cancel_gen_at_start,
-                                     const std::shared_ptr<std::atomic<bool>>& sfu_frames_ready,
-                                     const std::vector<uint8_t>& media_key, uint32_t media_epoch);
+  /** Bump the migrate generation and own the flight for `call_id`; returns the new generation. */
+  uint64_t ClaimMigrateFlight(const std::string& call_id);
+  void ReleaseMigrateFlight();
+  bool MigrateFlightBusyFor(const std::string& call_id) const;
+  // Local accept steps (OnLocalAcceptJoined → invite hint / group without hint / stay direct).
+  void AttachFromInviteHint(const std::string& call_id, const std::string& hop_peer_id);
+  void FinishInviteHintAttach(const std::string& call_id, uint64_t gen, const Roe<void>& ok);
+  void JoinGroupWithoutHint(const std::string& call_id, size_t n_joined);
+  void FinishJoinSoftMigrate(const std::string& call_id, uint64_t gen, const Roe<void>& mig, bool attached_when_done);
+  void StayDirectAfterAccept(const std::string& call_id, size_t n_joined);
+  // Remote accept steps.
+  void RefanOutLocalHopForJoiner(const std::string& call_id, const std::string& joiner_identity);
+  void FinishRemoteAcceptMigrate(const std::string& call_id, const std::string& joiner_identity, uint64_t gen,
+                                 const Roe<void>& mig);
+  // Hop hint (guest could not reach our hop) steps.
+  bool IsStickyInitiator(const std::string& call_id, const std::string& local_identity) const;
+  bool HopHintMayLeavePreferLocal(const std::string& prefer_hop_peer_id) const;
+  bool IsOnOrHintedHop(const std::string& call_id, const std::string& hop_peer_id) const;
+  void StartHopHintRepick(const std::string& call_id, const std::string& prefer, const std::string& guest);
+  void FinishHopHintRepick(const std::string& call_id, const std::string& guest, uint64_t gen, const Roe<void>& mig);
+  // Inbound CallSfuAttach steps (OnInboundSfuAttach → expect → settle without dial → start → finish on the calls owner).
+  bool ExpectsInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach) const;
+  void DeferInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach);
+  /** True when the attach is settled without dialing (already attached, coalesced, deferred, refused). */
+  bool SettleInboundSfuAttachWithoutDial(const std::string& call_id, const CallSfuAttachDetail& attach);
+  bool RefusePrivateHopMultiaddr(const std::string& call_id, const CallSfuAttachDetail& attach);
+  void StartInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach);
+  void FinishInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach, uint64_t gen,
+                              const Roe<void>& ok);
+  void FinishSupersededInboundSfuAttach(const std::string& call_id, uint64_t gen, const Roe<void>& ok);
 
   using SoftMigrateFlight = CallHopMigrateWorkflow::SoftMigrateFlight;
   using AttachWait = CallHopMigrateWorkflow::AttachWait;
@@ -251,9 +268,16 @@ private:
   ContactsStore& contacts_;
   CallMediaEngine& media_;
   CallMediaKeyStore* media_keys_ = nullptr;
-  CallTopologySeatPorts seat_;
-  CallHopArmingPorts arming_;
+  SharedPorts<CallTopologySeatPorts> seat_;
+  SharedPorts<CallHopArmingPorts> arming_;
   MediaRelayDeps relay_deps_;
+  // Relay session-end observer on relay_deps_.relay; the token drops notices queued before an
+  // unwatch or our destruction.
+  DeferredSelf relay_loss_self_;
+  uint64_t relay_loss_observer_ = 0;
+
+  void WatchRelayLoss();
+  void UnwatchRelayLoss();
 };
 
 } // namespace pbr

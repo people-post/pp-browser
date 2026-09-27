@@ -16,6 +16,18 @@ namespace {
 std::atomic<bool> g_speakerphone{false};
 std::atomic<bool> g_session_active{false};
 
+/** Diagnostic: what iOS actually ended up with (category / mode / options / output port). */
+void LogRoute(const char* where) {
+  AVAudioSession* session = [AVAudioSession sharedInstance];
+  NSString* out = @"-";
+  if (session.currentRoute.outputs.count > 0) {
+    out = session.currentRoute.outputs.firstObject.portType;
+  }
+  NSLog(@"CallAudioSession %s: speaker_flag=%d category=%@ mode=%@ options=0x%lx output=%@", where,
+        g_speakerphone.load() ? 1 : 0, session.category, session.mode,
+        static_cast<unsigned long>(session.categoryOptions), out);
+}
+
 void ApplyRoute(bool speaker_on) {
   AVAudioSession* session = [AVAudioSession sharedInstance];
   NSError* error = nil;
@@ -23,6 +35,15 @@ void ApplyRoute(bool speaker_on) {
       speaker_on ? AVAudioSessionPortOverrideSpeaker : AVAudioSessionPortOverrideNone;
   [session overrideOutputAudioPort:port error:&error];
   (void)error;
+}
+
+/**
+ * Loudspeaker uses the default mode: on device (2026-09-27) both voice modes (VoiceChat and
+ * VideoChat) left the loudspeaker very quiet at max volume, while SDL's former ModeDefault was
+ * loud. The earpiece keeps VoiceChat (call-volume scale, earpiece tuning).
+ */
+NSString* ModeForRoute(bool speaker_on) {
+  return speaker_on ? AVAudioSessionModeDefault : AVAudioSessionModeVoiceChat;
 }
 
 } // namespace
@@ -36,10 +57,11 @@ void ActivateForVoipCall() {
     options |= AVAudioSessionCategoryOptionDefaultToSpeaker;
   }
   [session setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:options error:&error];
-  [session setMode:AVAudioSessionModeVoiceChat error:&error];
+  [session setMode:ModeForRoute(g_speakerphone.load()) error:&error];
   [session setActive:YES error:&error];
   g_session_active.store(true);
   ApplyRoute(g_speakerphone.load());
+  LogRoute("ActivateForVoipCall");
   (void)error;
 }
 
@@ -74,8 +96,18 @@ void SetSpeakerphoneOn(bool on) {
     options |= AVAudioSessionCategoryOptionDefaultToSpeaker;
   }
   [session setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:options error:&error];
+  [session setMode:ModeForRoute(on) error:&error];
   ApplyRoute(on);
+  LogRoute("SetSpeakerphoneOn");
   (void)error;
+}
+
+bool SpeakerToggleNeedsDeviceReopen() {
+  return false;
+}
+
+int OpusEncoderComplexity() {
+  return 5;
 }
 
 int CaptureOpenAttemptCount() {

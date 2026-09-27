@@ -47,6 +47,12 @@ public:
   virtual void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) = 0;
   /** Answerer MediaPending — force relay inbox poll for CallMediaKey. */
   virtual void P2pRequestInboxSync() = 0;
+  /**
+   * An inbound call-media hello for `call_id` was accepted from `identity` (roster account) /
+   * `peer_id` (mesh). B30: may stand in for a CallAccept the relay has not delivered yet.
+   */
+  virtual void P2pNoteInboundHello(const std::string& /*call_id*/, const std::string& /*identity*/,
+                                   const std::string& /*peer_id*/) {}
 };
 
 } // namespace pbr

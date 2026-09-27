@@ -22,21 +22,19 @@ How pp-browser schedules work across threads: fixed roles, coordinator mailbox, 
 
 ## Architecture
 
-Fixed **roles** with a **coordinator mailbox**, **MeshHost-owned Amp pump**, **mesh-control waiter pool**, and **bounded general worker pool**.
+Fixed **roles** with a **coordinator mailbox**, **MeshHost-owned Amp pump**, **owner threads**, and a **bounded general worker pool**. Nothing parks a thread waiting on the mesh: every mesh wait is a completion (the mesh-control waiter pool was retired in thread-ownership t3-1).
 
 ```mermaid
 flowchart TB
   UI["1 · UI thread<br/>SDL · RmlUi · controllers"]
   Pump["2 · Amp MeshPump<br/>MeshHost-owned · Drive ~5ms"]
   Coord["3 · Coordinator<br/>mailbox · timer wheel · policy"]
-  Ctrl["4 · MeshControlPool 1–2<br/>MeshHost-owned · wait / Post only"]
   Pool["5 · Worker pool 2–4<br/>Critical · Normal · Background"]
   Plat["6 · Platform I/O optional<br/>Linux D-Bus notifier"]
   Media["Call media / ringtone<br/>per active call"]
 
   UI -->|"user intents"| Coord
   Coord -->|"blocking HTTP / LLM"| Pool
-  Ctrl -->|"Post / wait (no Tick)"| Pump
   Pool -->|"UI deltas"| UI
   Media -.->|"encode / capture"| UI
   Plat -->|"notification actions"| UI
@@ -47,7 +45,7 @@ flowchart TB
 | Own a thread when… | Share `WorkerPool` when… |
 |--------------------|--------------------------|
 | Role is long-lived, fixed cardinality, abort/join lifecycle of its own | Work is event-fan-out, sync I/O, or must compete under Critical/Normal/Background |
-| Examples: Amp MeshPump, MeshControlPool, CallMediaEngine, CallRingtone, LAN mDNS, Linux notifier | Examples: libcurl PollInbox, LLM/tools, Argon2 unlock, SQLite writes, attachment drain queue, icon HTTP |
+| Examples: Amp MeshPump, owner threads, CallMediaEngine, CallRingtone, MediaDeviceArbiter device thread, LAN mDNS, Linux notifier | Examples: libcurl PollInbox, LLM/tools, Argon2 unlock, SQLite writes, attachment drain queue, icon HTTP |
 
 Contain unbounded item fan-out with **internal queues** on the shared pool (e.g. `AttachmentFetchWorkflow::DrainQueue`), not one thread per item.
 
@@ -58,17 +56,19 @@ Contain unbounded item fan-out with **internal queues** on the shared pool (e.g.
 | **1** | **UI thread** | `Application` main loop | No | SDL events, RmlUi, controllers; drain UI mailbox via `RunUITasks()` |
 | **2** | **Amp MeshPump** | `MeshHost` (`MeshPumpThread`) | No — short `Drive` | `MeshRuntime::Drive()` ~5ms; Amp has no async reactor / no libp2p `io_context` |
 | **3** | **Coordinator** | `CoordinatorThread` | No — dispatcher only | Priority mailbox; timer wheel; relay poll + hub policy (~1s); posts blocking work to pool |
-| **4** | **Mesh control** | `MeshHost` (`MeshControlPool`, default 1) | Yes — remaining sync L4 parks | Reachability probe / punch / chat waits; product parks sleep while MeshPump Drives (no Tick from control) |
-| **5** | **Worker pool** | `WorkerPool` (2–4 threads) | Yes — only here for product HTTP/LLM/disk | libcurl HTTP, UPnP, Argon2, SQLite writes, LLM HTTP, attachment drain |
+| ~~4~~ | ~~Mesh control~~ | retired (thread-ownership t3-1) | — | Mesh waits are completions; L4 inbound CPU / disk work runs on the worker pool (`MeshHost::MakeL4WorkerPost`) |
+| **5** | **Worker pool** | `WorkerPool` (2–4 threads) | Yes — only here for product HTTP/LLM/disk | libcurl HTTP, UPnP, Argon2, SQLite writes, LLM HTTP, attachment drain, L4 inbound handlers (chat / history / blob / announce / broadcast / DHT / directory) under MeshPump |
 | **6** | **Platform I/O** | `ILocalNotifier` impls | Platform-specific | Linux: D-Bus watch thread. Android: JNI → coordinator wake |
+| **7** | **Media sessions** (owner) | `AppRuntime` (`OwnerThread`, `pp-media-sess`) | No | Calls + broadcast control state — see [§ Owner threads](#owner-threads) |
+| **8** | **Connectivity** (owner) | `AppRuntime` (`OwnerThread`, `pp-connectivity`) | No | `PeerReachCoordinator` steps, `MeshMediaPlane` (edges, listen book, candidate policy, local view, relay-chosen notices), `ReachabilityEngine` probe steps |
 
 **Call media** stays outside the general pool: dedicated capture / video / playout / ringtone threads per active call.
 
-**Headless node** (`app/node/`): no UI thread; coordinator + MeshHost pump/control + pool.
+**Headless node** (`app/node/`): no UI thread; coordinator + MeshHost pump + pool.
 
 ### Steady-state thread budget (typical desktop, messaging on, no call)
 
-~**main + coordinator + MeshPump + MeshControl (1) + WorkerPool (2–4) + optional LAN mDNS + optional Linux D-Bus notifier** (+ SDL audio internals).
+~**main + coordinator + MeshPump + owner threads (2) + WorkerPool (2–4) + optional LAN mDNS + optional Linux D-Bus notifier** (+ SDL audio internals).
 
 During an active call, add SDL capture/video/ringtone threads.
 
@@ -78,7 +78,7 @@ See [RUNTIME_COMPOSITION.md § Threading](RUNTIME_COMPOSITION.md#threading) for 
 
 ## Scheduling API
 
-Composition root: `AppRuntime::Initialize()` / `Shutdown()` (from `Application` or `pp-node`). Mesh pump and mesh-control are started/stopped with `MeshHost::Start` / `Stop`.
+Composition root: `AppRuntime::Initialize()` / `Shutdown()` (from `Application` or `pp-node`). The mesh pump is started/stopped with `MeshHost::Start` / `Stop`.
 
 | API | Runs on |
 |-----|---------|
@@ -88,8 +88,9 @@ Composition root: `AppRuntime::Initialize()` / `Shutdown()` (from `Application` 
 | `AppRuntime::ScheduleCoordinatorRepeating` / `OneShot` | Coordinator timer wheel |
 | `AppRuntime::PostWorkerNormal` / `Critical` / `Background` | Worker pool lanes |
 | `AppRuntime::PostWorkerAndReplyOnUI` | Pool → UI |
-| `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` | Coordinator + **general** pool only (not MeshPump / MeshControl / media) |
-| `MeshHost::PostControl` | MeshControlPool (Connect / `IoPumpUntil` waits) |
+| `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` | Coordinator + **general** pool only (not MeshPump / owners / media) |
+| `MeshHost::MakeL4WorkerPost(lane)` | L4 inbound work: worker pool under MeshPump, inline on the driver for manual-drive harnesses |
+| `AppRuntime::PostTo(OwnerThreadId, …)` / `ScheduleOn` | Owner thread (Media sessions / Connectivity); `CurrentlyOn` / `PBR_ASSERT_ON_OWNER` for affinity |
 
 ### Worker pool priorities
 
@@ -118,8 +119,8 @@ Push wake (`PushWakeJni` → `RequestWakeSync`) posts an immediate **Critical** 
 - **Worker pool** runs sync libcurl (30s timeout), LLM/tools, relay orchestration.
 - **Coordinator** runs fast policy only; must not block — enqueue to pool.
 - **Amp MeshPump** runs short `Drive` only; must not run curl / Argon2 / long DB.
-- **MeshControlPool** may block on dial / `IoPumpUntil` while calling `MeshHost::Tick` (mutex-serialized with the pump).
-- **Pause/resume:** `AppLifecycle` uses `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` on background/foreground. Mesh pump/control follow mesh lifetime (stop with `MeshHost::Stop`), same idea as media.
+- **No mesh waits on threads:** a dial / association / probe / key arrival is a completion (callback, `PostAfter` deadline). `AmpParkUntil` survives only in manual-drive test harnesses, where the waiter is the sole Amp driver.
+- **Pause/resume:** `AppLifecycle` uses `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` on background/foreground. The mesh pump follows mesh lifetime (stop with `MeshHost::Stop`), same idea as media.
 
 ### UI delivery pipeline
 
@@ -152,11 +153,11 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 | Amp deadlines / sync windows | `MeshRuntime::PostAfter` (Amp clock) |
 | Periodic sync / hub policy | Coordinator timers |
 | libcurl, UPnP, Argon2, long DB | Worker pool |
-| Amp control waits (sleep until settled) | MeshControlPool — **must not Tick/Drive** |
+| Waiting on the mesh | Nowhere — completions (`EnsureAssociation` callback, `PostAfter` deadline) |
 | Mic/camera encode | Call media threads |
 | Linux D-Bus | Notifier watch thread → UI activation handler |
 
-**Hard rule:** only worker-pool and mesh-control threads may block on network or disk for longer than a few milliseconds. Amp data-plane progress is **exclusive** `MeshRuntime::Drive` on MeshPump (or the harness). Nested `Pump`/`Tick`/`Drive` is refused.
+**Hard rule:** only worker-pool threads may block on network or disk for longer than a few milliseconds, and never on the mesh. Amp data-plane progress is **exclusive** `MeshRuntime::Drive` on MeshPump (or the harness). Nested `Pump`/`Tick`/`Drive` is refused.
 
 **Exclusive Amp Drive (hard):** Exactly one driver calls `Drive`/`Tick`/`Pump` per `MeshRuntime`. Product: `MeshPumpThread`. Tests: harness loop (`AttachAmpStack` default `AttachDrive::Manual`, VirtualClock); wall-clock harnesses such as pp-call-probe pass `AttachDrive::MeshPump` and run the product threading — a main-thread driver deadlocked whenever main waited on work that needed mesh progress. L4 services (punch, hop, broadcast, messaging, dial-back, DHT) are state machines on that thread via `PostToIo` / `PostDeferred` / `PostAfter` — they never call Tick to “unstick” a wait. Product `MakeL4IoPump()` is empty (MeshPump owns Drive). AttachAmpStack harnesses may use `MakeL4IoPump`→`Tick` only from sync `AmpParkUntil` on the harness thread (sole driver) — never from mux/`PostToIo`. Frame handlers may only parse + Post; Abort/Close/complete go on `PostDeferred` after mux stack unwinds. **Lock order: Amp strand → L4 owner mutex.** IO callbacks already hold the strand when they take an L4 coordinator's `mu`; an off-IO entry point that mutates under `mu` and calls back into Amp (`Links()`, session close) must enter via `MeshRuntime::WithIoLock` first (`CircuitTunnelCoordinator` / `AmpMediaRelayCoordinator::AbortInflight`, `CallMediaLegCoordinator::Stop`) — `mu` → strand deadlocked against MeshPump (quit / Leave hang, 2026-09-25). Read-only accessors may take `mu` alone (leaf). **Inbound request answered from a worker:** bind with `InboundReplyPolicy(policy)` (no `read_once`), return `true`, and reply through `InboundReply` ([`l4/shared/InboundReply.h`](../../src/domain/mesh/l4/shared/InboundReply.h)) — `ChannelSession` is IO-affine, and returning `false` / `read_once` closes the channel before the worker replies (every Amp direct-chat ack was lost under MeshPump until 2026-09-25; sends fell back to the relay after 4 s). See [ADR_LINK_PLANE](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md).
 
@@ -164,13 +165,13 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 
 **Punch / ACP:** Mux frame handlers only `PostToIo`. Sync-window burst via `MeshRuntime::BurstDial` (Amp-clock `PostAfter`, poll on `PostToIo`, Abort/`on_done` on `PostDeferred`). Sync `TryColdPunch` may `AmpParkUntil` only when the waiter **is** the sole Amp driver (test harness PumpAll); punch SM never invokes `IoPump`.
 
-**Dial-back:** Constructed on `MeshRuntime&`; probe deadlines via `PostAfter`. Sync `Probe` may `AmpParkUntil` with empty product IoPump.
+**Dial-back:** Constructed on `MeshRuntime&`; probe deadlines via `PostAfter`. The seed's side walks the requested targets as IO-strand completions (association or `PostAfter` deadline per target). Sync client `Probe` (`AmpParkUntil`) is for manual-drive harnesses.
 
 **DHT / directory:** Constructed on `MeshRuntime&`. DHT has no IoPump (async-only). Directory sync `ListMeshNodes` uses `AmpParkUntil`. Chat/media settle timers prefer `MeshRuntime::PostAfter` via `AmpScheduleUntilSettled` (+ `MeshIoContext.post_after`).
 
 **Windows SEH (punch):** Nested `Drive`/`Pump` under mux or `DrainPostedIo` (legacy sync `BurstDialCandidates` + `IoPump`) caused `0xc0000005` on MSVC. Product path uses `MeshRuntime::BurstDial` (Amp-clock `PostAfter`, Abort/`on_done` on `PostDeferred`); mux handlers only `PostToIo`. `AmpScheduleUntilSettled` must not `AmpParkUntil`+`IoPump` from channel callbacks.
 
-**Peer honesty (Amp / peer streams):** do not park the **general** `WorkerPool` on peer-facing waits. Prefer async IO + local deadline + hard cancel. Call-media hello/ack is async+deadline; blocking bridge `Connect()` and remaining wait facades run on **MeshControlPool** as an interim until async `Connect(cb)` / A022-style callbacks. Details: [SESSION_MACHINES.md — Peer honesty rule](../../projects/p2p-av-calls/SESSION_MACHINES.md#peer-honesty-rule-stream-waits).
+**Peer honesty (Amp / peer streams):** do not park the **general** `WorkerPool` on peer-facing waits. Prefer async IO + local deadline + hard cancel. Call-media hello/ack is async+deadline; an inbound hello waiting for its media key is parked on the calls owner (`CallMediaConnectCoordinator`, answered when the key lands / the deadline passes / shutdown — `CallMediaInboundHandler`), not a blocked thread. Details: [SESSION_MACHINES.md — Peer honesty rule](../../projects/p2p-av-calls/SESSION_MACHINES.md#peer-honesty-rule-stream-waits).
 
 ### Amp / mesh executors
 
@@ -180,12 +181,23 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 | **IO work lane** | `MeshRuntime::PostToIo` | PeerLink mutations, SM steps, dial start |
 | **Deferred teardown** | `MeshRuntime::PostDeferred` | Abort, Close, DropLink, L4 `on_done` |
 | **Timers** | `MeshRuntime::PostAfter` | punch window, channel-open deadlines |
-| **Control** | `MeshControlPool` | sleep-until-settled facades (no Tick) |
 | **Compute / HTTP** | App `WorkerPool` | Brief HTTP, LLM, Argon2, SQLite |
 
 Shared Amp helpers live under `pp-cpp-amp` + `domain/mesh/`. Frame size caps: `pp::amp::AmpChannelLimits`.
 
 ---
+
+### Owner threads
+
+Target model ([projects/thread-ownership](../../projects/thread-ownership/DESIGN.md), T001): every piece of mutable product state has **one owner** — Mesh I/O (Amp drive + L4 protocol engines), Connectivity, Media sessions, or UI. Rules:
+
+1. **One owner per object.** Public methods assert they run on it (`PBR_ASSERT_ON_OWNER`, debug builds abort with the call site) or post to it.
+2. **Messages between owners.** Posted closures carry values; shared views are immutable snapshots (`shared_ptr<const T>`). Ports are bound once, on the owner, and invoked there — never rebound from another thread.
+3. **Owners never block.** Blocking work goes to the worker pool; the result is posted back.
+4. **Data plane bypasses owners.** Capture → Amp send and Amp receive → playout stay direct (IO lock); only control goes through owners.
+5. **Destroy on the owner.** `DeferredSelf` covers queued callbacks.
+
+`AppRuntime` hosts the owners next to the UI mailbox, behind the teardown gate (T002). `AppRuntimeConfig::owner_threads`: **Dedicated** (product; own OS thread, named through `AppRuntimeConfig::name_thread`) or **Manual** (tests / harnesses: no thread — `RunOwnerTasks` / `RunAllOwnerTasks` drain on the calling thread, which is then `CurrentlyOn` the owner; `DrainWorkersThenUI` and `QuiesceForTeardown` pump manual owners). What runs where: **call state runs on Media sessions** (`CallsThread`, the one place that names the calls owner). Entry points (inbound call control, lifecycle Accept / Decline / Leave, roster fan-out, hop-migrate steps; T003), bridge / seat / topology / connect-coordinator steps and their timer hops all post there. The GUI posts intents and reads `CallUiState`, published after every owner task. The hub's lifecycle edges (build / reset / mesh start and stop / shutdown) use `CallsThread::RunAndWait`: the hub waits on the owner, which never waits on UI; a post the teardown gate drops runs inline, the caller standing in for the owner. A call-control send prepares on the sender and enqueues (Amp on Mesh I/O, relay fallback on a worker), never waiting for delivery. **Broadcast shares the owner**: `BroadcastHub` intents (watch / go live / stop / end) post there with results on UI, the GUI reads `BroadcastUiState` (published after every step; the frame counter is read live), the hub is torn down on the owner (`AppRuntime::RunAndWait`), and the broadcaster's announce runs on the product hub's thread, which owns the announce feed. `AppRuntime::RunAndWait(owner, task)` is the generic form `CallsThread::RunAndWait` builds on. **Connectivity** hosts `PeerReachCoordinator` (steps and timers; was the Coordinator strand) and `MeshMediaPlane` (lifecycle edges wait there, listen registrations post there, the listen book is a snapshot, relay-chosen notices hop IO → connectivity → calls owner). Candidate policy (rendezvous surface, seeds, punch introducers) is evaluated there and read on the Amp IO strand only as a `MeshHopPolicy` snapshot — IO never runs product policy. Media consumers on other owners read this node's mesh from `MeshLocalView` (published while wired), never the `MeshHost` itself, and the mesh config from the hub's published `MeshConfig` snapshot, never its live `AppConfig`. Owner-internal steps carry `PBR_ASSERT_ON_OWNER` (debug). `ReachabilityEngine` runs its probe steps there (UPnP discovery on a worker; `on_updated` consumers hop to IO / UI). **Waits go downward only** (T004): UI → Media sessions → Connectivity → Mesh I/O; a component edge may `RunAndWait` on an owner below its caller, never above — upward is always a post.
 
 ## Design principles
 
@@ -196,7 +208,7 @@ Shared Amp helpers live under `pp-cpp-amp` + `domain/mesh/`. Frame size caps: `p
 5. **UI is pull** — workers/coordinator push UI deltas; UI never waits on network.
 6. **UI mailbox liveness** — power-save is an optimization; it must not defer `RunUITasks` / Present until user input.
 7. **Media is special** — do not run Opus/H264 in the general pool.
-8. **Join on shutdown** — abort inflight → join MeshControl → join MeshPump → join general pool / coordinator. `AppRuntime::Shutdown` clears `ThreadRuntime::running_` then joins **before** uninstalling `WorkerDispatch`. In-flight `PostWorker` no-ops once `!IsRunning()` (and the pool no-ops once `stopped_`), so nested posts during join neither assert nor race onto another live worker. `ConversationsHub::RequestShutdown` must run **before** that join so unlock → `EnsureMessagingReady` discards mesh bring-up instead of finishing Amp during join (StopMesh after a dead pool segfaulted).
+8. **Join on shutdown** — abort inflight → stop L4 (MeshPump still drives their posted completions) → join MeshPump → free L4 → join general pool / coordinator. `AppRuntime::Shutdown` clears `ThreadRuntime::running_` then joins **before** uninstalling `WorkerDispatch`. In-flight `PostWorker` no-ops once `!IsRunning()` (and the pool no-ops once `stopped_`), so nested posts during join neither assert nor race onto another live worker. `ConversationsHub::RequestShutdown` must run **before** that join so unlock → `EnsureMessagingReady` discards mesh bring-up instead of finishing Amp during join (StopMesh after a dead pool segfaulted).
 
 ---
 
@@ -207,7 +219,7 @@ RequestExit → HideWindow (<100ms close feel)
 → AppRuntime::BeginShutdown (gen + 3s deadline + watchdog)
 → RequestShutdown → AbortCallMediaForShutdown (PrepareForTeardown non-blocking)
 → AppRuntime::QuiesceForTeardown(≤2s) — see Teardown quiesce
-→ MeshHost::Stop (abort L4 → MeshControlPool::Shutdown(≤500ms) → join MeshPump)
+→ MeshHost::Stop (abort + stop L4 → join MeshPump → free L4 / Amp)
 → AppRuntime::Shutdown (coordinator ≤500ms + WorkerPool ≤500ms; detach+leak on timeout)
 → destroy hub / secrets / RmlUi / Backend::Shutdown
 ```
@@ -216,14 +228,15 @@ RequestExit → HideWindow (<100ms close feel)
 - Window hide: immediate on `Backend::RequestExit` / start of `Application::Shutdown`
 - `CallMediaBridge::PrepareForTeardown(0)`: abort + generation bump only (no sleep-spin)
 - `CallRingtone::StopAndJoin(≤500ms)`, `CallMediaEngine::Stop` capture/playout/video ≤500ms
-- `MeshControlPool::Shutdown` / `CoordinatorThread::Shutdown` / `WorkerPool::Shutdown`: join ≤500ms; on timeout detach and leak until process exit
+- `MediaDeviceArbiter::ShutdownDefault(≤1s)`: runs queued device closes, then joins the device thread (before `SDL_Quit`)
+- `CoordinatorThread::Shutdown` / `WorkerPool::Shutdown`: join ≤500ms; on timeout detach and leak until process exit
 - Full graceful exit target: ~3s wall clock; `AppRuntime` watchdog calls `std::_Exit(0)` at deadline as **last resort** if joins hang
 
 ### Teardown quiesce
 
 Owners post raw `this` onto the worker pool, coordinator and UI mailbox, but teardown frees them (hub, call stack, caches, …) **before** `AppRuntime::Shutdown` joins those threads — and profile reset never joins at all. One gate in `AppRuntime` covers every mailbox (dogfood 2026-09-24 SIGSEGV; audit of ~15 owners):
 
-| State | Posts (`PostWorker*` / `PostCoordinator*` / `PostUI*`) | Timers | Entered by |
+| State | Posts (`PostWorker*` / `PostCoordinator*` / `PostUI*` / `PostTo`) | Timers | Entered by |
 |-------|------------------------------------------------------|--------|------------|
 | **Open** | run | fire | start, `ReopenAfterTeardown` |
 | **Draining** | queued ones still run; posts from **inside** a running task (continuations, e.g. `call_leave` send) accepted; posts from outside (mesh threads, fresh work) dropped | dropped | `QuiesceForTeardown(budget)` |
@@ -233,7 +246,8 @@ Owners post raw `this` onto the worker pool, coordinator and UI mailbox, but tea
 - Quit (`Application::Shutdown`): 2 s budget (inside the 3 s watchdog). On false: `ConversationsHub::FlushForExit` and leak messaging until exit.
 - Profile reset: 10 s budget, then `ShutdownMessaging` and `ReopenAfterTeardown` before re-initializing. On false: reopen, `CancelShutdownRequest`, report "try again" — nothing freed.
 - `ReopenAfterTeardown` bumps an epoch: posts and one-shot timers from before the quiesce stay dead; repeating timers resume (GUI timers must survive a reset — owners cancel their own).
-- `DrainWorkersThenUI` is a no-op once quiesced (the quiesce already drained).
+- `DrainWorkersThenUI` is a no-op once quiesced (the quiesce already drained). Otherwise it sits behind Critical → Normal → each owner thread → UI.
+- A post a mailbox drops unrun (stopped pool / owner) settles its gate count on destruction, so it cannot stall a later quiesce.
 - Per-owner guards remain only for owners that die **mid-life** on their own strand (`DeferredSelf`, [OWNERSHIP.md](OWNERSHIP.md)); do not add per-owner gates for teardown.
 
 Timeline marks (grep `[startup]`): `shutdown_begin`, `shutdown_window_hidden`,
@@ -256,16 +270,17 @@ RequestStop(gen) → Drain(deadline) → Join(deadline) → destroy
 | Owner | Notes |
 |-------|--------|
 | `CallStack` / `CallMediaBridge` | bump connect generation; `AbortConnectSequence` / `PrepareForTeardown(0)`; media engine budgeted joins |
-| `ConversationsHub` / `MeshHost` | `RequestShutdown` / `shutdown_requested_`; MeshControl ≤500ms then MeshPump |
+| `ConversationsHub` / `MeshHost` | `RequestShutdown` / `shutdown_requested_`; stop L4, then join MeshPump |
 | `AppRuntime` / `ThreadRuntime` | `BeginShutdown` then budgeted coordinator + WorkerPool |
 | LAN mDNS | stop advertise / join watcher before mesh destroy |
 | `ILocalNotifier` | `Shutdown` before UI mailbox teardown |
 | `CallRingtone` | `StopAndJoin(budget)` before `SDL_Quit` |
+| `MediaDeviceArbiter` (default) | `ShutdownDefault(budget)` after the runtime joins, before `SDL_Quit` — released leases close on its device thread |
 
 Sync façades reject new work when `AppRuntime::IsShuttingDown()` (debug log + `Error("shutdown in progress")`):
-`CallStack::TryEnsureCircuitHopReachable`, `CallStack::TryEnsureCallMediaReachable`,
+`CallStack::TryEnsureCircuitHopReachable`, `CallStack::TryEnsurePeerReachable`,
 `CallTopologyController::MaybeSoftMigrateToSfu` (+ Async),
-`AmpCircuitHopReach::TryEnsureHopReachable` / `TryEnsureCallMediaReachable`,
+`AmpCircuitHopReach::TryEnsureHopReachable` / `TryEnsurePeerReachable`,
 `CallMediaBridge::StartConnectSequence`, hub `StartMesh` / `EnsureMessagingReady`.
 
 Parent-only destroy: children request stop; only the owner joins and drops (`OWNERSHIP.md`).
@@ -286,7 +301,8 @@ Invalidate (bump gen / cancel flag)
 | Path | Contract |
 |------|----------|
 | Product quit / UI | `PrepareForTeardown(0)` = Abort only (no sleep-spin) — [Shutdown order](#shutdown-order-product) |
-| `CallMediaBridge` Connect | `AbortConnectSequence()` bumps gen, cancels grace/retry timers, **clears** `connect_worker_inflight_` |
+| `CallMediaBridge` stop / retry | UI-only state. `StopMeshMedia` off UI → whole body `PostUIFront`, skipped if `MediaSessionGeneration` advanced (a newer `StartSfu`); alive token guards a destroyed bridge. Retry runs on UI (not a worker) — `RetryMeshMedia` refuses off UI |
+| `CallMediaBridge` Connect | `AbortConnectSequence()` bumps the send gen and calls `CallMediaConnectCoordinator::Abort()`: cancels watchdog / retry timers and the pending `PeerReachCoordinator` reach (completes inline), **clears** `InFlight`; completes no hook |
 | Cross-planner SoftMigrate | Lifecycle `media_cancel_gen`; late Direct/Hop work no-ops — [CALLS.md](CALLS.md) / V037 |
 | Amp circuit / punch | `AbortPending` + Alive checks — [OWNERSHIP.md](OWNERSHIP.md) |
 
@@ -314,8 +330,9 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 | Item | Location | Notes |
 |------|----------|-------|
 | Sync L4 test wrappers | AmpCircuitHopReach / AmpMediaRelayClient / SoftMigrate sync façades | Product paths Async; sync wrappers for tests (empty-pump park); gated when `IsShuttingDown` |
-| Detached MeshControl / WorkerPool / coordinator on join timeout | MeshHost::StopOwnedThreads / ThreadRuntime::Shutdown | Loud log + `unique_ptr::release`; process must exit soon (watchdog ≤3s) |
-| Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses joinable `joiner_`; budgeted `StopAndJoin` before `SDL_Quit` |
+| Detached WorkerPool / coordinator on join timeout | ThreadRuntime::Shutdown | Loud log + `unique_ptr::release`; process must exit soon (watchdog ≤3s) |
+| Call ringtone playback | `src/domain/media/CallRingtone.cpp` | Async `Stop` uses joinable `joiner_`; budgeted `StopAndJoin` before `SDL_Quit`; speaker via a shared `MediaDeviceArbiter` lease |
+| Media device open / close / reopen | `src/domain/media/MediaDeviceArbiter.*` | One device thread for every SDL audio and camera open, close and reopen (no open races another holder's close); holders do I/O through `AudioDeviceLease` / `CameraDeviceLease`; `Acquire*` / `Reopen` block the caller — never the UI thread. Camera: `SetCameraEnabled` (UI) only records the request + display rotation; the engine's video thread takes the lease, owns the local encoder, and reports a failed open through `TakeCameraFailure` (polled by `CallController`) |
 | Linux notifier → coordinator | `LocalNotifier_Linux.cpp` | Activations post to UI today; coordinator mailbox optional |
 | SQLite + mutex | thread stores | No dedicated DB thread — safe if conventions hold |
 
@@ -336,6 +353,13 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 
 | Date | Change |
 |------|--------|
+| 2026-09-27 | **UI snapshots / config** (thread-ownership t4): owners read a published `MeshConfig`; affinity asserts on owner-internal steps |
+| 2026-09-27 | **Connectivity owner, cont.** (thread-ownership t3-2b/c): `MeshHopPolicy` evaluated on connectivity; `ReachabilityEngine` steps there; call providers read `MeshLocalView` |
+| 2026-09-27 | **Connectivity owner** (thread-ownership t3-2a): `PeerReachCoordinator` + `MeshMediaPlane` on `pp-connectivity`; T004 downward-only waits |
+| 2026-09-27 | **MeshControl retired** (thread-ownership t3-1): dial-back server walk, inbound call-media key wait and CAS tip fetch are completions; L4 inbound work on the worker pool; `MeshHost::StopAmp` joins MeshPump before freeing L4 |
+| 2026-09-27 | **Broadcast on Media sessions** (thread-ownership t2b-4): hub intents post, `BroadcastUiState` snapshot, async announce onto the hub's thread; `AppRuntime::RunAndWait` |
+| 2026-09-27 | **Calls on Media sessions** (thread-ownership t2b): `CallsThread` → `pp-media-sess`; GUI intents post, `CallUiState` snapshot; hub lifecycle edges via `CallsThread::RunAndWait` |
+| 2026-09-27 | **Owner threads** (thread-ownership t1): `AppRuntime::PostTo` / `CurrentlyOn` / `ScheduleOn` / `RunOwnerTasks`, Dedicated / Manual modes, `PBR_ASSERT_ON_OWNER`, gate settles dropped posts. Mesh stop order is owned by the hub around `MeshMediaPlane` (media-client-layers L015), not `CallStack::StopMesh` |
 | 2026-09-25 | **InboundReply:** worker-answered L4 requests (direct chat, history, blob, broadcast, announce, DHT, directory, dial-back) reply on the IO lane with the channel held open — acks were dropped under MeshPump |
 | 2026-09-25 | **Idempotent Stop** for Amp L4 transports; `CallStack::StopMesh` single stop order; `MeshHost::AttachAmpStack(…, AttachDrive::MeshPump)` for wall-clock harnesses (pp-call-probe runs the product threading) |
 | 2026-09-24 | **Teardown quiesce:** `AppRuntime` gate (Open → Draining → Closed, epoch reopen) over workers / coordinator / UI; quit and profile reset quiesce before freeing messaging; hub `shutdown_requested_` cleared on re-Initialize |

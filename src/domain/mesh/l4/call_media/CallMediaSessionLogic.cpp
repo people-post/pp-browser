@@ -149,4 +149,12 @@ bool LocalWinsCallMediaGlare(const std::string& local_peer_id, const std::string
   return local_peer_id > remote_peer_id;
 }
 
+bool LocalWinsCallMediaGlareForRoles(const bool local_offerer, const bool remote_offerer,
+                                     const std::string& local_peer_id, const std::string& remote_peer_id) {
+  if (local_offerer != remote_offerer) {
+    return local_offerer;
+  }
+  return LocalWinsCallMediaGlare(local_peer_id, remote_peer_id);
+}
+
 } // namespace pbr

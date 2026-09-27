@@ -5,7 +5,8 @@
 #include "domain/media/CallRingtone.h"
 #include "domain/media/CameraCaptureOrientation.h"
 #include "domain/media/IVideoCodec.h"
-#include "domain/media/SdlAudioBootstrap.h"
+#include "domain/media/MediaDeviceArbiter.h"
+#include "domain/media/NoiseSuppressor.h"
 #include "domain/media/VideoYuv.h"
 #include "common/Utilities.h"
 
@@ -24,6 +25,7 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -34,104 +36,18 @@ constexpr int kSampleRate = 48000;
 constexpr int kChannels = 1;
 constexpr int kFrameMs = 20;
 constexpr int kFrameSamples = kSampleRate * kFrameMs / 1000;
-constexpr int kDefaultVideoWidth = 640;
-constexpr int kDefaultVideoHeight = 360;
+/** Bytes of one 20 ms mono s16 frame on the speaker. */
+constexpr int kFrameBytes = kFrameSamples * static_cast<int>(sizeof(int16_t));
+/** Keep ~60 ms queued in the device (spec §1); above ~120 ms skip a slot to shed latency. */
+constexpr int kPlayoutTargetQueuedBytes = 3 * kFrameBytes;
+constexpr int kPlayoutHighWaterBytes = 6 * kFrameBytes;
+/** Never produce more than this many slots per 20 ms wake-up (startup / after a stall). */
+constexpr int kPlayoutMaxSlotsPerTick = 3;
 constexpr int kVideoFps = 20;
 /** Soft stall: keep last frame; UI may show Reconnecting… */
 constexpr int64_t kRemoteVideoStallSoftMs = 2000;
 /** Hard stall: drop last frame so the tile does not freeze forever. */
 constexpr int64_t kRemoteVideoStallHardMs = 5000;
-
-/** Windows MF often returns NV12/YUY2 (sometimes bottom-up / negative pitch). Android usually
- *  converts cleanly via SDL; desktop needs pitch-safe + YUV fallbacks or preview stays empty. */
-bool ConvertCameraSurfaceToRgba(SDL_Surface* surface, VideoFrameRgba& out) {
-  if (!surface || !surface->pixels || surface->w < 2 || surface->h < 2) {
-    return false;
-  }
-
-  SDL_Surface* owned = nullptr;
-  SDL_Surface* src = surface;
-
-  // Normalize negative pitch (MF bottom-up) into a positive-pitch duplicate. SDL YUV converters
-  // treat pitch as Uint32 and mis-locate the UV plane when pitch is negative.
-  if (surface->pitch < 0) {
-    const int abs_pitch = -surface->pitch;
-    owned = SDL_CreateSurface(surface->w, surface->h, surface->format);
-    if (!owned || !owned->pixels) {
-      if (owned) {
-        SDL_DestroySurface(owned);
-      }
-      return false;
-    }
-    const auto* src_bottom = static_cast<const uint8_t*>(surface->pixels);
-    auto* dst_base = static_cast<uint8_t*>(owned->pixels);
-    if (SDL_ISPIXELFORMAT_FOURCC(surface->format)) {
-      // Contiguous planar: Y rows are bottom-up; UV plane follows the Y plane in memory.
-      const uint8_t* y_top = src_bottom + surface->pitch * (surface->h - 1);
-      for (int y = 0; y < surface->h; ++y) {
-        std::memcpy(dst_base + static_cast<size_t>(y) * static_cast<size_t>(owned->pitch),
-                    y_top + static_cast<size_t>(y) * static_cast<size_t>(abs_pitch),
-                    static_cast<size_t>(std::min(abs_pitch, owned->pitch)));
-      }
-      const size_t y_bytes = static_cast<size_t>(abs_pitch) * static_cast<size_t>(surface->h);
-      const uint8_t* uv_src = y_top + y_bytes;
-      uint8_t* uv_dst = dst_base + static_cast<size_t>(owned->pitch) * static_cast<size_t>(surface->h);
-      const int uv_rows = (surface->format == SDL_PIXELFORMAT_NV12 ||
-                           surface->format == SDL_PIXELFORMAT_NV21)
-                              ? (surface->h + 1) / 2
-                              : surface->h / 2;
-      for (int y = 0; y < uv_rows; ++y) {
-        std::memcpy(uv_dst + static_cast<size_t>(y) * static_cast<size_t>(owned->pitch),
-                    uv_src + static_cast<size_t>(y) * static_cast<size_t>(abs_pitch),
-                    static_cast<size_t>(std::min(abs_pitch, owned->pitch)));
-      }
-    } else {
-      // Packed RGB/YUV: pixels points at the last row; rebuild top-down.
-      const uint8_t* top = src_bottom + surface->pitch * (surface->h - 1);
-      const int row_bytes = std::min(abs_pitch, owned->pitch);
-      for (int y = 0; y < surface->h; ++y) {
-        std::memcpy(dst_base + static_cast<size_t>(y) * static_cast<size_t>(owned->pitch),
-                    top + static_cast<size_t>(y) * static_cast<size_t>(abs_pitch),
-                    static_cast<size_t>(row_bytes));
-      }
-    }
-    SDL_SetSurfaceColorspace(owned, SDL_GetSurfaceColorspace(surface));
-    src = owned;
-  }
-
-  bool ok = false;
-  SDL_Surface* converted =
-      SDL_ConvertSurfaceAndColorspace(src, SDL_PIXELFORMAT_RGBA32, nullptr, SDL_COLORSPACE_SRGB, 0);
-  if (converted && converted->pixels) {
-    ok = CopyRgbToRgba(static_cast<const uint8_t*>(converted->pixels), converted->w, converted->h,
-                       converted->pitch, true, out);
-    SDL_DestroySurface(converted);
-  }
-
-  if (!ok) {
-    const int pitch = src->pitch > 0 ? src->pitch : -src->pitch;
-    if (src->format == SDL_PIXELFORMAT_NV12) {
-      ok = Nv12ToRgba(static_cast<const uint8_t*>(src->pixels), src->w, src->h, pitch, out);
-    } else if (src->format == SDL_PIXELFORMAT_YUY2) {
-      ok = Yuy2ToRgba(static_cast<const uint8_t*>(src->pixels), src->w, src->h, pitch, out);
-    } else if (src->format == SDL_PIXELFORMAT_RGB24 || src->format == SDL_PIXELFORMAT_RGBA32 ||
-               src->format == SDL_PIXELFORMAT_XRGB8888 || src->format == SDL_PIXELFORMAT_ARGB8888 ||
-               src->format == SDL_PIXELFORMAT_XBGR8888 || src->format == SDL_PIXELFORMAT_ABGR8888) {
-      // Packed RGB with known channel layouts — try SDL again already failed; treat as byte RGB.
-      const bool has_alpha = SDL_BYTESPERPIXEL(src->format) >= 4;
-      ok = CopyRgbToRgba(static_cast<const uint8_t*>(src->pixels), src->w, src->h, pitch, has_alpha,
-                         out);
-    }
-  }
-
-  if (owned) {
-    SDL_DestroySurface(owned);
-  }
-  if (ok) {
-    ForceOpaqueAlphaInPlace(out.rgba);
-  }
-  return ok;
-}
 
 } // namespace
 
@@ -172,7 +88,7 @@ struct CallMediaEngine::Impl {
   std::atomic<uint32_t> sfu_video_seq{0};
   std::atomic<bool> video_need_keyframe{false};
   std::atomic<bool> adaptation_camera_allowed{true};
-  int64_t adaptation_target_video_bps = 0;
+  std::atomic<int64_t> adaptation_target_video_bps{0};
   std::atomic<int64_t> adaptation_target_audio_bps{CallMediaAdaptation::kComfortAudioBps};
   std::atomic<double> path_pressure{0.0};
   std::atomic<uint64_t> outbound_drops{0};
@@ -186,14 +102,30 @@ struct CallMediaEngine::Impl {
   std::atomic<int64_t> last_rx_video_ms{0};
   std::atomic<uint64_t> playout_underruns_total{0};
   std::atomic<uint64_t> plc_frames_total{0};
+  std::atomic<uint64_t> fec_frames_total{0};
 
   bool capture_available = false;
+#ifdef PP_BROWSER_CALL_DENOISE
+  NoiseSuppressor denoise;
+  int64_t last_denoise_log_ms = 0;
+#endif
 
   OpusEncoder* encoder = nullptr;
-  SDL_AudioStream* capture_stream = nullptr;
-  SDL_AudioStream* playback_stream = nullptr;
-  SDL_AudioDeviceID capture_device = 0;
-  SDL_AudioDeviceID playback_device = 0;
+  /** Where audio devices come from: `own_devices` (constructor) or `test_devices` (skip-open). */
+  MediaDeviceArbiter* devices = nullptr;
+  MediaDeviceArbiter* own_devices = nullptr;
+  std::unique_ptr<MediaDeviceArbiter> test_devices;
+  /**
+   * Held while the session runs. Acquired / reopened by the capture thread (the only writer while it
+   * runs, under `mutex`); the playout thread writes the speaker under `mutex`.
+   */
+  std::unique_ptr<AudioDeviceLease> mic_lease;
+  std::unique_ptr<AudioDeviceLease> speaker_lease;
+  /** Set for the rest of this call once voice-processing capture has starved 3 times in a row (I3):
+   *  the next opens skip the voice duplex until the next StartCaptureLoop(). */
+  std::atomic<bool> vpio_disabled_for_call{false};
+  /** Voice-processing playout underruns of pairs already released this call; under `mutex`. */
+  uint64_t vpio_underruns_closed = 0;
 
   struct RemoteAudioTrack {
     OpusDecoder* decoder = nullptr;
@@ -214,19 +146,24 @@ struct CallMediaEngine::Impl {
   std::mutex sfu_rx_log_mu;
   std::unordered_set<uint32_t> sfu_rx_logged_streams;
 
+  /** Local encoder: created, configured, fed and bitrate-adjusted by the video thread only
+   *  (reset by TearDown after that thread joined). */
   std::unique_ptr<IVideoCodec> video_codec;
+  /** Local encoder + remote decoders come from here (platform HW; tests inject a stub). */
+  std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
   std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> remote_decoders;
   static constexpr size_t kMaxRemoteVideoDecoders = 4;
-  SDL_Camera* camera = nullptr;
-  SDL_CameraID camera_id = 0;
-  /** Clockwise degrees to apply to sensor buffers before encode. */
-  int camera_rotate_cw = 0;
-  int encode_width = kDefaultVideoWidth;
-  int encode_height = kDefaultVideoHeight;
+  /** Display rotation read on the SetCameraEnabled caller's (UI) thread for the next camera open. */
+  std::atomic<int> camera_display_rotation{0};
+  /** Why the last requested camera did not open; taken by the UI (TakeCameraFailure). */
+  std::mutex camera_failure_mu;
+  std::string camera_failure;
 
   std::thread capture_thread;
   std::thread video_thread;
   std::thread playout_thread;
+  /** Halves of the running session; written under `mutex` in Start, read by the device thread. */
+  SessionSpec spec = SessionSpec::Duplex();
   std::atomic<bool> capture_running{false};
   std::atomic<bool> video_running{false};
   std::atomic<bool> playout_running{false};
@@ -366,49 +303,43 @@ struct CallMediaEngine::Impl {
     last_remote_video_ms.store(0, std::memory_order_relaxed);
   }
 
-  void CloseCameraLocked() {
-    video_running = false;
-    if (video_thread.joinable()) {
-      video_thread.join();
-    }
-    if (camera) {
-      SDL_CloseCamera(camera);
-      camera = nullptr;
-      camera_id = 0;
-    }
-    camera_rotate_cw = 0;
-    encode_width = kDefaultVideoWidth;
-    encode_height = kDefaultVideoHeight;
+  /** Ask the video thread to release the camera (it resets the encoder and clears the preview).
+   *  Never joins: the video thread takes `mutex` to read the send callback. */
+  void RequestCameraOffLocked() {
     camera_enabled.store(false, std::memory_order_relaxed);
-    if (video_codec) {
-      video_codec->ResetEncoder();
-    }
-    {
-      std::lock_guard lock(video_frame_mutex);
-      local_video_frame = {};
-      local_video_frame.seq = ++local_video_seq;
-    }
+  }
+
+  void ClearLocalPreview() {
+    std::lock_guard lock(video_frame_mutex);
+    local_video_frame = {};
+    local_video_frame.seq = ++local_video_seq;
+  }
+
+  void NoteCameraFailure(const std::string& error) {
+    std::lock_guard lock(camera_failure_mu);
+    camera_failure = error;
   }
 
   void ClearAudioTracksLocked() {
     audio_tracks.clear();
   }
 
-  /** Close SDL streams/devices only — keep Opus, tracks, and VoIP session active. */
+  /** Release device leases only — keep Opus, tracks, and VoIP session active. Closes run on the
+   *  arbiter's device thread; this never blocks on the OS. */
   void CloseAudioDevicesLocked() {
-    // SDL_OpenAudioDeviceStream binds device+stream; DestroyAudioStream closes the device.
-    // Do not SDL_CloseAudioDevice afterward (double-free / tcache abort on Linux).
-    if (capture_stream) {
-      SDL_DestroyAudioStream(capture_stream);
-      capture_stream = nullptr;
-    }
-    if (playback_stream) {
-      SDL_DestroyAudioStream(playback_stream);
-      playback_stream = nullptr;
-    }
-    capture_device = 0;
-    playback_device = 0;
+    vpio_underruns_closed += VoiceUnderruns(speaker_lease.get());
+    mic_lease.reset();
+    speaker_lease.reset();
     capture_available = false;
+  }
+
+  /** Playout underruns of the voice-processing unit behind `lease` (0 when none). */
+  static uint64_t VoiceUnderruns(AudioDeviceLease* lease) {
+    uint64_t underruns = 0;
+    if (lease) {
+      (void)lease->WithVoiceProcessing([&](IVoiceProcessing& vp) { underruns = vp.PlayoutUnderruns(); });
+    }
+    return underruns;
   }
 
   void TearDownAudioLocked() {
@@ -417,7 +348,7 @@ struct CallMediaEngine::Impl {
     capture_running = false;
     playout_running = false;
     audio_reopen_requested.store(false, std::memory_order_relaxed);
-    CloseCameraLocked();
+    RequestCameraOffLocked();
     CloseAudioDevicesLocked();
     if (encoder) {
       opus_encoder_destroy(encoder);
@@ -439,6 +370,8 @@ struct CallMediaEngine::Impl {
     tx_audio_frames.store(0, std::memory_order_relaxed);
     playout_underruns_total.store(0, std::memory_order_relaxed);
     plc_frames_total.store(0, std::memory_order_relaxed);
+    fec_frames_total.store(0, std::memory_order_relaxed);
+    vpio_underruns_closed = 0;
     last_rx_audio_ms.store(0, std::memory_order_relaxed);
     last_tx_audio_ms.store(0, std::memory_order_relaxed);
     CallAudioSession::Deactivate();
@@ -497,55 +430,143 @@ struct CallMediaEngine::Impl {
     waiter.detach();
   }
 
+  /** One playout slot for one track: decode Packet / FEC-on-Gap / PLC-on-Empty into `mix`. */
+  void PopAndDecodeTrackLocked(RemoteAudioTrack& track, std::vector<int16_t>& mix, bool& any) {
+    if (!track.decoder) {
+      return;
+    }
+    const uint64_t underruns_before = track.jitter.underruns();
+    AudioPlayoutPop pop = track.jitter.PopForPlayout();
+    std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples), 0);
+    const auto plc = [&]() {
+      const int n = opus_decode(track.decoder, nullptr, 0, pcm.data(), kFrameSamples, 0);
+      if (n > 0) {
+        plc_frames_total.fetch_add(1, std::memory_order_relaxed);
+      }
+      return n;
+    };
+    int decoded = 0;
+    switch (pop.kind) {
+    case AudioPlayoutPop::Kind::Packet:
+      decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
+                            kFrameSamples, 0);
+      break;
+    case AudioPlayoutPop::Kind::Gap:
+      // The next packet's in-band FEC (LBRR) only covers the frame right before it; earlier
+      // missing frames of a wider hole are PLC. PLC also if the FEC decode fails.
+      if (pop.fec_usable) {
+        decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
+                              kFrameSamples, 1);
+      }
+      if (decoded > 0) {
+        // libopus returns >0 both for a real FEC frame and for a PLC-like frame it synthesises
+        // when the packet carried no FEC data — counting both as fec= is accepted (diagnostic).
+        fec_frames_total.fetch_add(1, std::memory_order_relaxed);
+      } else {
+        decoded = plc();
+      }
+      break;
+    case AudioPlayoutPop::Kind::Empty:
+      // Priming (buffer hasn't reached target depth yet) also returns Empty but is not a real
+      // underrun — only count/PLC it when this pop actually incremented the cumulative counter.
+      if (track.jitter.underruns() > underruns_before) {
+        playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
+        decoded = plc();
+      }
+      break;
+    }
+    if (decoded <= 0) {
+      return;
+    }
+    pcm.resize(static_cast<size_t>(decoded));
+    SmoothLevel(track.peak_level, FramePeakLevel(pcm.data(), decoded));
+    MixPcmSat(mix, pcm);
+    any = true;
+  }
+
+  /**
+   * Playout slots this tick, clocked from the speaker's queue (B37): keep ~60 ms queued — a voice-
+   * processing unit pulls device-sized chunks, so one chunk plus a frame there — and shed a slot
+   * above the high-water mark. Under `mutex`.
+   */
+  int PlayoutSlotsLocked(AudioDeviceLease& out) {
+    size_t render_chunk = 0;
+    const bool voice = out.WithVoiceProcessing([&](IVoiceProcessing& vp) { render_chunk = vp.RenderChunkBytes(); });
+    const int queued = out.Queued();
+    const int target =
+        voice ? std::max(kPlayoutTargetQueuedBytes, static_cast<int>(render_chunk) + kFrameBytes) : kPlayoutTargetQueuedBytes;
+    const int high_water = target + (kPlayoutHighWaterBytes - kPlayoutTargetQueuedBytes);
+    if (queued < 0) {
+      return 1;  // errored device: keep one frame per tick so buffers keep draining
+    }
+    if (queued > high_water) {
+      return 0;  // device is ahead: let it drain this tick
+    }
+    const int deficit = target - queued;
+    return deficit <= 0 ? 0 : std::min(kPlayoutMaxSlotsPerTick, (deficit + kFrameBytes - 1) / kFrameBytes);
+  }
+
   void StartPlayoutLoop() {
     playout_running = true;
     playout_thread = std::thread([this]() {
       std::vector<int16_t> mix(static_cast<size_t>(kFrameSamples), 0);
+      // Diagnostics: longest gap between playout wake-ups, logged with voice-processing stats.
+      auto last_tick = std::chrono::steady_clock::now();
+      auto last_diag = last_tick;
+      int64_t tick_gap_max_ms = 0;
       while (playout_running.load(std::memory_order_relaxed)) {
         const auto t0 = std::chrono::steady_clock::now();
-        std::fill(mix.begin(), mix.end(), int16_t{0});
-        bool any = false;
+        tick_gap_max_ms = std::max<int64_t>(
+            tick_gap_max_ms, std::chrono::duration_cast<std::chrono::milliseconds>(t0 - last_tick).count());
+        last_tick = t0;
         double pressure = 0.0;
-        uint64_t ticks = 0;
         {
           std::lock_guard lock(mutex);
-          ticks = playout_ticks.fetch_add(1, std::memory_order_relaxed) + 1;
-          for (auto& [id, track] : audio_tracks) {
-            (void)id;
-            if (!track) {
-              continue;
+          AudioDeviceLease* out = speaker_lease && speaker_lease->HasDevice() ? speaker_lease.get() : nullptr;
+          if (t0 - last_diag >= std::chrono::seconds(2)) {
+            last_diag = t0;
+            if (out) {
+              const int queued = out->Queued();
+              (void)out->WithVoiceProcessing([&](IVoiceProcessing& vp) {
+                SDL_Log("CallMediaEngine: vpio_diag tick_gap_max_ms=%lld queued_bytes=%d %s",
+                        static_cast<long long>(tick_gap_max_ms), queued, vp.TakeDiag().c_str());
+              });
             }
-            auto frame = track->jitter.PopForPlayout(true);
-            if (frame) {
-              MixPcmSat(mix, frame->pcm);
-              any = true;
-            } else {
-              playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
-              // PLC: opus_decode with null packet into a temp buffer, then mix.
-              if (track->decoder) {
-                std::vector<int16_t> plc(static_cast<size_t>(kFrameSamples), 0);
-                const int decoded =
-                    opus_decode(track->decoder, nullptr, 0, plc.data(), kFrameSamples, 0);
-                if (decoded > 0) {
-                  plc.resize(static_cast<size_t>(decoded));
-                  MixPcmSat(mix, plc);
-                  any = true;
-                  plc_frames_total.fetch_add(1, std::memory_order_relaxed);
-                }
+            tick_gap_max_ms = 0;
+          }
+          int slots = out ? PlayoutSlotsLocked(*out) : 1;
+          if (audio_tracks.empty()) {
+            slots = 0;  // nothing to pop or put; don't inflate playout_ticks (Pressure window)
+          }
+          for (int s = 0; s < slots; ++s) {
+            std::fill(mix.begin(), mix.end(), int16_t{0});
+            bool any = false;
+            const uint64_t ticks = playout_ticks.fetch_add(1, std::memory_order_relaxed) + 1;
+            for (auto& [id, track] : audio_tracks) {
+              (void)id;
+              if (!track) {
+                continue;
+              }
+              PopAndDecodeTrackLocked(*track, mix, any);
+              pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(ticks, 1)));
+            }
+            if (out && any) {
+              SmoothLevel(remote_output_level, FramePeakLevel(mix.data(), kFrameSamples));
+              remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
+              (void)out->Write(mix.data(), kFrameBytes);
+            } else if (out) {
+              // Silent frame keeps the device clock fed while all streams are priming.
+              (void)out->Write(mix.data(), kFrameBytes);
+            }
+          }
+          if (slots == 0) {
+            // Still report pressure from buffer fill when we skipped (no pops this tick).
+            for (auto& [id, track] : audio_tracks) {
+              (void)id;
+              if (track) {
+                pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(playout_ticks.load(), 1)));
               }
             }
-            pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(ticks, 1)));
-          }
-          SDL_AudioStream* out = playback_stream;
-          if (out && any) {
-            SmoothLevel(remote_output_level, FramePeakLevel(mix.data(), kFrameSamples));
-            remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
-            (void)SDL_PutAudioStreamData(out, mix.data(),
-                                         kFrameSamples * static_cast<int>(sizeof(int16_t)));
-          } else if (out && !audio_tracks.empty()) {
-            // Silent frame keeps SDL clock alive when all streams priming.
-            (void)SDL_PutAudioStreamData(out, mix.data(),
-                                         kFrameSamples * static_cast<int>(sizeof(int16_t)));
           }
         }
         const double drop_p =
@@ -559,13 +580,6 @@ struct CallMediaEngine::Impl {
         }
       }
     });
-  }
-
-  Roe<void> EnsureAudioSubsystem() {
-    if (!EnsureSdlAudioSubsystem()) {
-      return Error(std::string("SDL_InitSubSystem(AUDIO) failed: ") + SDL_GetError());
-    }
-    return {};
   }
 
   Roe<void> EnsureCameraSubsystem() {
@@ -588,6 +602,9 @@ struct CallMediaEngine::Impl {
     }
     const int64_t bps = adaptation_target_audio_bps.load(std::memory_order_relaxed);
     opus_encoder_ctl(encoder, OPUS_SET_BITRATE(static_cast<int>(bps > 0 ? bps : 24000)));
+    opus_encoder_ctl(encoder, OPUS_SET_INBAND_FEC(1));
+    opus_encoder_ctl(encoder, OPUS_SET_PACKET_LOSS_PERC(10));
+    opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(CallAudioSession::OpusEncoderComplexity()));
     return {};
   }
 
@@ -607,130 +624,138 @@ struct CallMediaEngine::Impl {
     return raw;
   }
 
-  /**
-   * Open SDL capture/playback. May block for a long time on OS mic permission
-   * (macOS TCC). Call only from the capture worker — never from UI, relay IO,
-   * or the mesh host thread (that freezes accept + peer signaling).
-   */
-  /** Open DEFAULT_RECORDING; retries briefly — OEM speaker route (Moto) races AAudio open. */
-  bool TryOpenCaptureStream(const SDL_AudioSpec& want, SDL_AudioStream** out_stream,
-                            SDL_AudioDeviceID* out_dev) {
-    *out_stream = nullptr;
-    *out_dev = 0;
-    const int kAttempts = CallAudioSession::CaptureOpenAttemptCount();
-    for (int attempt = 0; attempt < kAttempts; ++attempt) {
-      const int delay_ms = CallAudioSession::CaptureOpenRetryDelayMs(attempt);
-      if (delay_ms > 0) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-      }
-      if (!capture_running.load(std::memory_order_relaxed)) {
-        return false;
-      }
-      SDL_AudioStream* stream =
-          SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_RECORDING, &want, nullptr, nullptr);
-      if (!stream) {
-        SDL_Log("CallMediaEngine: capture open failed (attempt %d/%d): %s", attempt + 1, kAttempts,
-                SDL_GetError());
-        continue;
-      }
-      const SDL_AudioDeviceID dev = SDL_GetAudioStreamDevice(stream);
-      if (!SDL_ResumeAudioDevice(dev)) {
-        SDL_Log("CallMediaEngine: capture resume failed (attempt %d/%d): %s", attempt + 1, kAttempts,
-                SDL_GetError());
-        SDL_DestroyAudioStream(stream);
-        continue;
-      }
-      *out_stream = stream;
-      *out_dev = dev;
-      return true;
-    }
-    return false;
+  MediaDeviceArbiter& DeviceArbiter() {
+    return *devices;
   }
 
-  Roe<void> OpenAudioDevices() {
-    if (skip_device_open_for_test.load(std::memory_order_relaxed)) {
-      std::lock_guard lock(mutex);
-      CloseAudioDevicesLocked();
-      capture_available = false;
-      return {};
+  /** Capture thread only. Null when refused by policy (logged) — the session runs without it. */
+  std::unique_ptr<AudioDeviceLease> AcquireLease(MediaDeviceKind kind, const std::string& holder) {
+    AudioLeaseRequest request;
+    request.kind = kind;
+    request.holder = holder;
+    request.format = AudioDeviceFormat{kSampleRate, kChannels};
+    request.still_wanted = [this]() { return capture_running.load(std::memory_order_acquire); };
+    auto lease = DeviceArbiter().AcquireAudio(request);
+    if (!lease) {
+      SDL_Log("CallMediaEngine: %s refused: %s", MediaDeviceKindName(kind), lease.error().message.c_str());
+      return nullptr;
     }
-    if (auto ok = EnsureAudioSubsystem(); !ok) {
-      return ok.error();
-    }
+    return std::move(*lease);
+  }
 
-    // Accept stops ringtone async (UI must not join). Capture worker waits so we do not
-    // OpenAudioDeviceStream(DEFAULT_PLAYBACK) while ringtone is still DestroyAudioStream'ing.
-    CallRingtone::WaitUntilPlaybackDeviceReleased();
-    if (!capture_running.load(std::memory_order_acquire)) {
-      return Error("call media stopped");
-    }
-
-    CallAudioSession::ApplyCaptureAudioHints();
-    CallAudioSession::ActivateForVoipCall();
-
-    SDL_AudioSpec want{};
-    want.freq = kSampleRate;
-    want.format = SDL_AUDIO_S16;
-    want.channels = static_cast<Uint8>(kChannels);
-
-    SDL_AudioStream* new_capture = nullptr;
-    SDL_AudioDeviceID new_capture_dev = 0;
-    const bool new_capture_ok = TryOpenCaptureStream(want, &new_capture, &new_capture_dev);
-    if (!capture_running.load(std::memory_order_acquire)) {
-      if (new_capture) {
-        SDL_DestroyAudioStream(new_capture);
-      }
-      return Error("call media stopped");
-    }
-
-    SDL_AudioStream* new_playback = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, nullptr, nullptr);
-    if (!capture_running.load(std::memory_order_acquire)) {
-      if (new_playback) {
-        SDL_DestroyAudioStream(new_playback);
-      }
-      if (new_capture) {
-        SDL_DestroyAudioStream(new_capture);
-      }
-      return Error("call media stopped");
-    }
-    SDL_AudioDeviceID new_playback_dev = 0;
-    if (!new_playback) {
-      // Headless CI / no default device: still run silence TX (same as no-capture path).
-      SDL_Log("CallMediaEngine: no playback device — RX muted; capture/silence TX still active: %s",
-              SDL_GetError());
-    } else {
-      new_playback_dev = SDL_GetAudioStreamDevice(new_playback);
-      if (!SDL_ResumeAudioDevice(new_playback_dev)) {
-        SDL_DestroyAudioStream(new_playback);
-        if (new_capture) {
-          SDL_DestroyAudioStream(new_capture);
-        }
-        return Error(std::string("SDL playback resume failed: ") + SDL_GetError());
-      }
-    }
-
+  /**
+   * Capture thread only: take the leases the session spec asks for (first open), or reopen held
+   * ones and retry missing ones (`reopen` — speaker route change, starved capture, SoftMigrate).
+   * Device open / close itself runs on the arbiter's device thread and may block on the OS mic
+   * permission prompt — never on UI, relay IO or the mesh host thread.
+   */
+  Roe<void> EnsureAudioLeases(bool reopen) {
+    SessionSpec want_spec;
+    std::string holder;
+    std::unique_ptr<AudioDeviceLease> mic;
+    std::unique_ptr<AudioDeviceLease> speaker;
     {
       std::lock_guard lock(mutex);
-      // Reopen path already closed; first open should be empty. Drop any stale handles.
-      CloseAudioDevicesLocked();
-      capture_stream = new_capture;
-      capture_device = new_capture_dev;
-      capture_available = new_capture_ok;
-      playback_stream = new_playback;
-      playback_device = new_playback_dev;
+      want_spec = spec;
+      holder = call_id;
+      // A voice-processing pair is one unit: re-acquired whole on reopen (never Reopen'd per half).
+      if (reopen && ((mic_lease && mic_lease->IsVoiceDuplex()) || (speaker_lease && speaker_lease->IsVoiceDuplex()))) {
+        CloseAudioDevicesLocked();
+      }
+      mic = std::move(mic_lease);
+      speaker = std::move(speaker_lease);
+      capture_available = false;
     }
+    const bool voip = want_spec.capture && !skip_device_open_for_test.load(std::memory_order_relaxed);
+    if (voip) {
+      // VoIP audio session only when the mic is ours (a playback-only viewer is not a call).
+      // Re-asserted on reopen too: Android route changes can drop MODE_IN_COMMUNICATION.
+      // A caller ringback that activated the session may still release it: let it finish first.
+      CallRingtone::WaitUntilRingbackSessionReleased();
+      if (!capture_running.load(std::memory_order_acquire)) {
+        return Error("call media stopped");
+      }
+      CallAudioSession::ApplyCaptureAudioHints();
+      CallAudioSession::ActivateForVoipCall();
+    }
+    TryAcquireVoiceDuplex(want_spec, holder, mic, speaker);
+    const auto ensure = [&](bool wanted, MediaDeviceKind kind, std::unique_ptr<AudioDeviceLease>& lease) {
+      if (!wanted || !capture_running.load(std::memory_order_acquire)) {
+        return;
+      }
+      if (lease) {
+        if (!lease->IsVoiceDuplex()) {
+          (void)lease->Reopen();
+        }
+      } else {
+        lease = AcquireLease(kind, holder);
+      }
+    };
+    ensure(want_spec.capture, MediaDeviceKind::Mic, mic);
+    ensure(want_spec.playback, MediaDeviceKind::Speaker, speaker);
+    if (!capture_running.load(std::memory_order_acquire)) {
+      return Error("call media stopped");  // leases release on scope exit
+    }
+    const bool voice = mic && mic->IsVoiceDuplex();
+    if (voip && !voice) {
+      // SDL's coreaudio backend rewrites the AVAudioSession category/options with ModeDefault and
+      // DefaultToSpeaker when it opens devices (B36). Re-apply our VoiceChat mode + earpiece route.
+      CallAudioSession::ActivateForVoipCall();
+    }
+    if (speaker && !speaker->HasDevice()) {
+      // Headless CI / no default device: still run silence TX (same as no-capture path).
+      SDL_Log("CallMediaEngine: no playback device — RX muted; capture/silence TX still active: %s",
+              speaker->OpenError().c_str());
+    }
+    std::lock_guard lock(mutex);
+    mic_lease = std::move(mic);
+    speaker_lease = std::move(speaker);
+    capture_available = mic_lease && mic_lease->HasDevice();
+#ifdef PP_BROWSER_CALL_DENOISE
+    denoise.Reset();
+#endif
     return {};
+  }
+
+  /**
+   * Duplex calls take mic + speaker from one OS voice-processing unit (echo cancellation) when the
+   * backend has one (macOS VPIO; the other platforms' backends say "unsupported"); otherwise — or
+   * once disabled for this call — separate leases follow.
+   */
+  void TryAcquireVoiceDuplex(const SessionSpec& want_spec, const std::string& holder,
+                             std::unique_ptr<AudioDeviceLease>& mic, std::unique_ptr<AudioDeviceLease>& speaker) {
+    if (!want_spec.capture || !want_spec.playback || mic || speaker ||
+        skip_device_open_for_test.load(std::memory_order_relaxed) || !capture_running.load(std::memory_order_acquire)) {
+      return;
+    }
+    if (vpio_disabled_for_call.load(std::memory_order_acquire)) {
+      SDL_Log("CallMediaEngine: audio_io=sdl reason=vpio disabled for call (capture starved)");
+      return;
+    }
+    AudioLeaseRequest request;
+    request.holder = holder;
+    request.format = AudioDeviceFormat{kSampleRate, kChannels};
+    request.still_wanted = [this]() { return capture_running.load(std::memory_order_acquire); };
+    auto pair = DeviceArbiter().AcquireVoiceDuplex(request);
+    if (!pair) {
+      SDL_Log("CallMediaEngine: audio_io=sdl reason=%s", pair.error().message.c_str());
+      return;
+    }
+    SDL_Log("CallMediaEngine: audio_io=vpio (voice processing: echo cancellation on)");
+    mic = std::move(pair->mic);
+    speaker = std::move(pair->speaker);
   }
 
   void StartCaptureLoop() {
     // Precondition: capture_thread not joinable (JoinCaptureThread outside media mutex).
     capture_running = true;
     audio_reopen_requested.store(false, std::memory_order_relaxed);
+    vpio_disabled_for_call.store(false, std::memory_order_relaxed);
     capture_thread = std::thread([this]() {
       // Device open (and OS mic prompts) stay on this worker so CallAccept /
       // AcceptInvite can finish signaling without freezing UI or libp2p.
-      if (auto audio = OpenAudioDevices(); !audio) {
-        SDL_Log("CallMediaEngine: OpenAudioDevices failed: %s", audio.error().message.c_str());
+      if (auto audio = EnsureAudioLeases(/*reopen=*/false); !audio) {
+        SDL_Log("CallMediaEngine: audio devices: %s", audio.error().message.c_str());
       } else if (!capture_available) {
         SDL_Log("CallMediaEngine: started without capture device — sending silence; playback still active");
       }
@@ -743,47 +768,68 @@ struct CallMediaEngine::Impl {
       pending.reserve(static_cast<size_t>(kFrameSamples) * 2);
       std::vector<unsigned char> opus_buf(4000);
       int64_t last_capture_pcm_ms = util::NowUnixMs();
+      // Opus encoders are not thread-safe: bitrate changes (ApplyAdaptation, any thread) are
+      // applied here, on the thread that encodes, right before the next frame.
+      OpusEncoder* bitrate_enc = nullptr;
+      int64_t applied_audio_bps = 0;
       int64_t last_capture_starve_reopen_ms = 0;
+      // I3: consecutive starvation-triggered reopens while on voice processing; 3 in a row falls
+      // back to SDL for the rest of this call. Capture-thread-local.
+      int vpio_starve_reopens = 0;
       while (capture_running.load()) {
         if (audio_reopen_requested.exchange(false, std::memory_order_acq_rel)) {
           // Android speakerphone / SoftMigrate can leave AudioRecord feeding zeros until reopen.
+          // Android settle (Moto safety ramp) is the backend's ReopenSettle, on the device thread.
           pending.clear();
-          {
-            std::lock_guard lock(mutex);
-            CloseAudioDevicesLocked();
-          }
-          const int settle_ms = CallAudioSession::CaptureReopenSettleDelayMs();
-          if (settle_ms > 0) {
-            // Android: let OEM speaker route settle (Moto MotSpeakerHelper safety ramp).
-            std::this_thread::sleep_for(std::chrono::milliseconds(settle_ms));
-          }
           SDL_Log("CallMediaEngine: reopening audio devices (speaker route / SoftMigrate)");
-          if (auto audio = OpenAudioDevices(); !audio) {
+          if (auto audio = EnsureAudioLeases(/*reopen=*/true); !audio) {
             SDL_Log("CallMediaEngine: audio reopen failed: %s", audio.error().message.c_str());
           } else if (!capture_available) {
             SDL_Log("CallMediaEngine: audio reopen — no capture device; sending silence");
           }
           last_capture_pcm_ms = util::NowUnixMs();
         }
+        // The capture thread is mic_lease's only writer while it runs: read it without `mutex`.
+        bool device_changed = false;
+        const bool vpio_on = capture_available && mic_lease &&
+                             mic_lease->WithVoiceProcessing([&](IVoiceProcessing& vp) { device_changed = vp.TakeDeviceChanged(); });
+        if (device_changed) {
+          SDL_Log("CallMediaEngine: default audio device changed — reopening voice processing");
+          audio_reopen_requested.store(true, std::memory_order_release);
+          continue;
+        }
         std::shared_ptr<SfuSendFn> send_fn;
         OpusEncoder* enc = nullptr;
         bool can_send = false;
+        bool capturing = true;
         {
           std::lock_guard lock(mutex);
+          capturing = spec.capture;
           enc = encoder;
-          can_send = sfu_mode && static_cast<bool>(sfu_send) && enc;
+          can_send = capturing && sfu_mode && static_cast<bool>(sfu_send) && enc;
           if (can_send) {
             send_fn = sfu_send;
           }
         }
+        if (!capturing) {
+          // Playback-only: this thread only owns the devices (open / reopen) — nothing to encode.
+          if (util::NowUnixMs() - remote_level_ms.load(std::memory_order_relaxed) > 40) {
+            SmoothLevel(remote_output_level, 0.f);
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(kFrameMs));
+          continue;
+        }
         bool paced_silence_frame = false;
-        if (capture_stream) {
+        if (capture_available) {
           int16_t chunk[kFrameSamples];
-          const int got = SDL_GetAudioStreamData(capture_stream, chunk, static_cast<int>(sizeof(chunk)));
+          const int got = mic_lease->Read(chunk, static_cast<int>(sizeof(chunk)));
           if (got > 0) {
             const size_t samples = static_cast<size_t>(got) / sizeof(int16_t);
             pending.insert(pending.end(), chunk, chunk + samples);
             last_capture_pcm_ms = util::NowUnixMs();
+            if (vpio_on) {
+              vpio_starve_reopens = 0;
+            }
           }
           if (pending.size() < static_cast<size_t>(kFrameSamples)) {
             const int64_t now = util::NowUnixMs();
@@ -799,6 +845,12 @@ struct CallMediaEngine::Impl {
                 SDL_Log("CallMediaEngine: capture starved %lldms — requesting reopen",
                         static_cast<long long>(now - last_capture_pcm_ms));
                 audio_reopen_requested.store(true, std::memory_order_release);
+                // I3: persistent voice-processing capture starvation (not just a starved SDL
+                // device) falls back to SDL for the rest of this call after 3 reopens in a row.
+                if (vpio_on && ++vpio_starve_reopens >= 3) {
+                  vpio_disabled_for_call.store(true, std::memory_order_release);
+                  SDL_Log("CallMediaEngine: vpio capture starved 3x — using SDL for this call");
+                }
               }
               std::fill(pcm.begin(), pcm.end(), int16_t{0});
               paced_silence_frame = true;
@@ -822,6 +874,16 @@ struct CallMediaEngine::Impl {
               std::fill(pcm.begin(), pcm.end(), int16_t{0});
               SmoothLevel(local_input_level, 0.f);
             } else {
+#ifdef PP_BROWSER_CALL_DENOISE
+              if (!vpio_on) {  // voice processing suppresses noise itself
+                denoise.Process(pcm.data(), pcm.size());
+                const int64_t now_ms = util::NowUnixMs();
+                if (now_ms - last_denoise_log_ms >= 5000) {
+                  last_denoise_log_ms = now_ms;
+                  SDL_Log("CallMediaEngine: noise_floor_dbfs=%.1f", denoise.last_noise_floor_dbfs());
+                }
+              }
+#endif
               SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
             }
           }
@@ -846,6 +908,12 @@ struct CallMediaEngine::Impl {
         }
         if (!can_send || !enc) {
           continue;
+        }
+        if (const int64_t want_bps = adaptation_target_audio_bps.load(std::memory_order_relaxed);
+            want_bps > 0 && (enc != bitrate_enc || want_bps != applied_audio_bps)) {
+          opus_encoder_ctl(enc, OPUS_SET_BITRATE(static_cast<int>(want_bps)));
+          bitrate_enc = enc;
+          applied_audio_bps = want_bps;
         }
         const int encoded =
             opus_encode(enc, pcm.data(), kFrameSamples, opus_buf.data(), static_cast<int>(opus_buf.size()));
@@ -875,104 +943,164 @@ struct CallMediaEngine::Impl {
 
   void StartVideoLoop() {
     video_running = true;
-    video_thread = std::thread([this]() {
-      const auto frame_period = std::chrono::milliseconds(1000 / kVideoFps);
-      bool need_keyframe = true;
-      bool logged_convert_fail = false;
-      while (video_running.load()) {
-        if (video_need_keyframe.exchange(false, std::memory_order_acq_rel)) {
+    video_thread = std::thread([this]() { RunVideoLoop(); });
+  }
+
+  void JoinVideoThread() {
+    video_running = false;
+    JoinThreadBudgeted(video_thread, std::chrono::milliseconds::max(), "video");
+  }
+
+  /**
+   * Video thread only: take the camera lease (open runs on the device thread). A failed open drops
+   * the request and records why; a request withdrawn while opening releases the lease again.
+   */
+  std::unique_ptr<CameraDeviceLease> OpenCameraLease() {
+    CameraLeaseRequest request;
+    {
+      std::lock_guard lock(mutex);
+      request.holder = call_id;
+    }
+    request.format.display_rotation_deg = camera_display_rotation.load(std::memory_order_relaxed);
+    request.format.fps = kVideoFps;
+    auto lease = DeviceArbiter().AcquireCamera(request);
+    if (!lease) {
+      camera_enabled.store(false, std::memory_order_relaxed);
+      NoteCameraFailure(lease.error().message);
+      SDL_Log("CallMediaEngine: camera: %s", lease.error().message.c_str());
+      return nullptr;
+    }
+    if (!camera_enabled.load(std::memory_order_relaxed)) {
+      return nullptr;
+    }
+    return std::move(*lease);
+  }
+
+  /** Video thread only. */
+  void ConfigureLocalEncoder(const CameraGeometry& geometry) {
+    // Created with the camera, not the session: playback-only and audio-only sessions never open a
+    // hardware encoder (media-client-layers l3a).
+    if (!video_codec) {
+      video_codec = make_video_codec();
+    }
+    if (!video_codec) {
+      return;
+    }
+    if (auto cfg = video_codec->ConfigureEncoder(geometry.encode_width, geometry.encode_height, kVideoFps); !cfg) {
+      SDL_Log("CallMediaEngine: video encode unavailable: %s — local preview may still work; voice continues",
+              cfg.error().message.c_str());
+    }
+  }
+
+  /** Video thread only: bitrate changes (ApplyAdaptation, any thread) land right before an encode. */
+  void ApplyVideoBitrate(int64_t& applied_bps) {
+    const int64_t want = adaptation_target_video_bps.load(std::memory_order_relaxed);
+    if (video_codec && want > 0 && want != applied_bps) {
+      video_codec->SetTargetBitrate(want);
+      applied_bps = want;
+    }
+  }
+
+  static VideoFrameRgba OrientFrame(VideoFrameRgba frame, int rotate_cw) {
+    VideoFrameRgba rotated;
+    if (rotate_cw == 90 && RotateRgba90Cw(frame, rotated)) {
+      return rotated;
+    }
+    if (rotate_cw == 270 && RotateRgba90Ccw(frame, rotated)) {
+      return rotated;
+    }
+    VideoFrameRgba twice;
+    if (rotate_cw == 180 && RotateRgba90Cw(frame, rotated) && RotateRgba90Cw(rotated, twice)) {
+      return twice;
+    }
+    return frame;
+  }
+
+  /** Video thread only: orient + crop → preview; encode → send on channel 1. */
+  void EncodeAndSend(VideoFrameRgba captured, const CameraGeometry& geometry, bool& need_keyframe) {
+    const VideoFrameRgba oriented = OrientFrame(std::move(captured), geometry.rotate_cw);
+    VideoFrameRgba fitted;
+    VideoFrameI420 i420;
+    if (!ScaleCenterCropRgba(oriented, geometry.encode_width, geometry.encode_height, fitted) ||
+        !RgbaToI420(fitted.rgba.data(), fitted.width, fitted.height, fitted.width * 4, true, i420)) {
+      return;
+    }
+    PublishLocalPreview(fitted);
+    if (!video_codec || !video_codec->HasEncoder()) {
+      return;
+    }
+    auto encoded = video_codec->Encode(i420, need_keyframe);
+    if (!encoded || encoded->annex_b.empty()) {
+      return;
+    }
+    need_keyframe = false;
+    std::shared_ptr<SfuSendFn> send_fn;
+    {
+      std::lock_guard lock(mutex);
+      if (sfu_mode && sfu_send) {
+        send_fn = sfu_send;
+      }
+    }
+    if (!send_fn) {
+      return;
+    }
+    SfuPacket pkt;
+    pkt.channel_id = 1;
+    pkt.seq = sfu_video_seq.fetch_add(1) + 1;
+    pkt.mark = encoded->keyframe ? 1 : 0;
+    pkt.payload = std::move(encoded->annex_b);
+    try {
+      std::lock_guard send_lock(sfu_send_call_mu);
+      (*send_fn)(pkt);
+      tx_video_frames.fetch_add(1, std::memory_order_relaxed);
+    } catch (...) {
+    }
+  }
+
+  /** The camera lease lives on this thread: open when wanted, release when not, frames in between. */
+  void RunVideoLoop() {
+    const auto frame_period = std::chrono::milliseconds(1000 / kVideoFps);
+    std::unique_ptr<CameraDeviceLease> camera;
+    CameraGeometry geometry;
+    bool need_keyframe = true;
+    int64_t applied_bps = 0;
+    while (video_running.load()) {
+      if (video_need_keyframe.exchange(false, std::memory_order_acq_rel)) {
+        need_keyframe = true;
+      }
+      const bool wanted = camera_enabled.load(std::memory_order_relaxed);
+      if (wanted && !camera) {
+        camera = OpenCameraLease();
+        if (camera) {
+          geometry = camera->Geometry();
+          ConfigureLocalEncoder(geometry);
+          applied_bps = 0;
           need_keyframe = true;
         }
-        const auto t0 = std::chrono::steady_clock::now();
-        if (!camera || !camera_enabled.load(std::memory_order_relaxed)) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(20));
-          continue;
+      } else if (!wanted && camera) {
+        camera.reset();
+        if (video_codec) {
+          video_codec->ResetEncoder();
         }
-        Uint64 timestamp_ns = 0;
-        SDL_Surface* surface = SDL_AcquireCameraFrame(camera, &timestamp_ns);
-        if (!surface) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(5));
-          continue;
-        }
-
-        VideoFrameI420 i420;
-        VideoFrameRgba captured;
-        if (ConvertCameraSurfaceToRgba(surface, captured)) {
-          VideoFrameRgba oriented = std::move(captured);
-          if (camera_rotate_cw == 90) {
-            VideoFrameRgba rotated;
-            if (RotateRgba90Cw(oriented, rotated)) {
-              oriented = std::move(rotated);
-            }
-          } else if (camera_rotate_cw == 270) {
-            VideoFrameRgba rotated;
-            if (RotateRgba90Ccw(oriented, rotated)) {
-              oriented = std::move(rotated);
-            }
-          } else if (camera_rotate_cw == 180) {
-            VideoFrameRgba once;
-            VideoFrameRgba twice;
-            if (RotateRgba90Cw(oriented, once) && RotateRgba90Cw(once, twice)) {
-              oriented = std::move(twice);
-            }
-          }
-
-          VideoFrameRgba fitted;
-          if (ScaleCenterCropRgba(oriented, encode_width, encode_height, fitted) &&
-              RgbaToI420(fitted.rgba.data(), fitted.width, fitted.height, fitted.width * 4, true,
-                         i420)) {
-            VideoFrameRgba preview = fitted;
-            PremultiplyRgbaInPlace(preview.rgba);
-            {
-              std::lock_guard lock(video_frame_mutex);
-              local_video_frame.width = preview.width;
-              local_video_frame.height = preview.height;
-              local_video_frame.rgba = std::move(preview.rgba);
-              local_video_frame.seq = ++local_video_seq;
-            }
-            if (video_codec && video_codec->HasEncoder()) {
-              auto encoded = video_codec->Encode(i420, need_keyframe);
-              if (encoded && !encoded->annex_b.empty()) {
-                need_keyframe = false;
-                std::shared_ptr<SfuSendFn> send_fn;
-                {
-                  std::lock_guard lock(mutex);
-                  if (sfu_mode && sfu_send) {
-                    send_fn = sfu_send;
-                  }
-                }
-                if (send_fn) {
-                  SfuPacket pkt;
-                  pkt.channel_id = 1;
-                  pkt.seq = sfu_video_seq.fetch_add(1) + 1;
-                  pkt.mark = encoded->keyframe ? 1 : 0;
-                  pkt.payload = encoded->annex_b;
-                  try {
-                    std::lock_guard send_lock(sfu_send_call_mu);
-                    (*send_fn)(pkt);
-                    tx_video_frames.fetch_add(1, std::memory_order_relaxed);
-                  } catch (...) {
-                  }
-                }
-              }
-            }
-          }
-        } else if (!logged_convert_fail) {
-          logged_convert_fail = true;
-          // Use SDL_Log — CallMediaEngine logger isn't safe from this worker without more wiring.
-          SDL_Log("CallMediaEngine: camera frame convert failed (format=%s pitch=%d %dx%d): %s",
-                  SDL_GetPixelFormatName(surface->format), surface->pitch, surface->w, surface->h,
-                  SDL_GetError());
-        }
-
-        SDL_ReleaseCameraFrame(camera, surface);
-
-        const auto elapsed = std::chrono::steady_clock::now() - t0;
-        if (elapsed < frame_period) {
-          std::this_thread::sleep_for(frame_period - elapsed);
-        }
+        ClearLocalPreview();
       }
-    });
+      if (!camera) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        continue;
+      }
+      const auto t0 = std::chrono::steady_clock::now();
+      ApplyVideoBitrate(applied_bps);
+      auto frame = camera->NextFrame();
+      if (!frame) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        continue;
+      }
+      EncodeAndSend(std::move(*frame), geometry, need_keyframe);
+      const auto elapsed = std::chrono::steady_clock::now() - t0;
+      if (elapsed < frame_period) {
+        std::this_thread::sleep_for(frame_period - elapsed);
+      }
+    }
   }
 
   void OnRemoteOpusFrame(uint32_t stream_id, uint32_t seq, const std::byte* data, size_t size) {
@@ -983,22 +1111,15 @@ struct CallMediaEngine::Impl {
     if (!track || !track->decoder) {
       return;
     }
-    std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples));
-    const int decoded = opus_decode(track->decoder, reinterpret_cast<const unsigned char*>(data),
-                                    static_cast<int>(size), pcm.data(), kFrameSamples, 0);
-    if (decoded <= 0) {
-      return;
-    }
-    pcm.resize(static_cast<size_t>(decoded));
+    // Decoded at playout (packet-level jitter buffer: FEC on a gap needs the next packet).
     const int64_t recv_ms = util::NowUnixMs();
-    SmoothLevel(track->peak_level, FramePeakLevel(pcm.data(), decoded));
     ++track->rx_frames;
     track->last_rx_ms = recv_ms;
-    PlayoutPcmFrame frame;
-    frame.seq = seq;
-    frame.recv_ms = recv_ms;
-    frame.pcm = std::move(pcm);
-    track->jitter.Push(std::move(frame));
+    AudioPacket packet;
+    packet.seq = seq;
+    packet.recv_ms = recv_ms;
+    packet.payload.assign(reinterpret_cast<const uint8_t*>(data), reinterpret_cast<const uint8_t*>(data) + size);
+    track->jitter.Push(std::move(packet));
     rx_audio_frames.fetch_add(1, std::memory_order_relaxed);
     last_rx_audio_ms.store(recv_ms, std::memory_order_relaxed);
   }
@@ -1015,7 +1136,7 @@ struct CallMediaEngine::Impl {
         if (remote_decoders.size() >= kMaxRemoteVideoDecoders) {
           return;
         }
-        auto created = CreatePlatformVideoCodec();
+        auto created = make_video_codec();
         if (!created) {
           return;
         }
@@ -1050,96 +1171,14 @@ struct CallMediaEngine::Impl {
     PublishRemoteFrame(stream_id, std::move(*decoded));
   }
 
-  Roe<void> EnableCameraLocked() {
-    if (skip_device_open_for_test.load(std::memory_order_relaxed)) {
-      camera_enabled.store(false, std::memory_order_relaxed);
-      return Error("camera skipped (test)");
-    }
-    if (camera_enabled.load(std::memory_order_relaxed) && camera) {
-      return {};
-    }
-    if (auto ok = EnsureCameraSubsystem(); !ok) {
-      return ok.error();
-    }
-    if (!video_codec) {
-      video_codec = CreatePlatformVideoCodec();
-    }
-
-    int count = 0;
-    SDL_CameraID* cameras = SDL_GetCameras(&count);
-    if (!cameras || count <= 0) {
-      if (cameras) {
-        SDL_free(cameras);
-      }
-      return Error(std::string("No camera: ") + SDL_GetError());
-    }
-
-    SDL_CameraID chosen = cameras[0];
-    for (int i = 0; i < count; ++i) {
-      const SDL_CameraPosition pos = SDL_GetCameraPosition(cameras[i]);
-      if (pos == SDL_CAMERA_POSITION_FRONT_FACING) {
-        chosen = cameras[i];
-        break;
-      }
-    }
-    SDL_free(cameras);
-
-    const CameraCaptureTransform xform = ResolveCameraCaptureTransform(chosen);
-    encode_width = xform.encode_width;
-    encode_height = xform.encode_height;
-    camera_rotate_cw = xform.rotate_cw;
-
-    std::string encode_warn;
-    if (video_codec) {
-      if (auto cfg = video_codec->ConfigureEncoder(encode_width, encode_height, kVideoFps); !cfg) {
-        encode_warn = cfg.error().message;
-      }
-    }
-
-    SDL_CameraSpec want{};
-    // Prefer a convertible packed/YUV format. UNKNOWN picks the driver's first enum
-    // entry (often MJPG/NV12 on Windows); conversion is handled in the capture loop.
-    want.format = SDL_PIXELFORMAT_UNKNOWN;
-    // Prefer landscape sensor buffers; rotate/crop into encode_* below.
-    want.width = std::max(encode_width, encode_height);
-    want.height = std::min(encode_width, encode_height);
-    want.framerate_numerator = kVideoFps;
-    want.framerate_denominator = 1;
-    camera = SDL_OpenCamera(chosen, &want);
-    if (!camera) {
-      // Fall back: ask SDL to deliver RGBA so the driver converts when possible.
-      want.format = SDL_PIXELFORMAT_RGBA32;
-      camera = SDL_OpenCamera(chosen, &want);
-    }
-    if (!camera) {
-      camera = SDL_OpenCamera(chosen, nullptr);
-    }
-    if (!camera) {
-      encode_width = kDefaultVideoWidth;
-      encode_height = kDefaultVideoHeight;
-      camera_rotate_cw = 0;
-      return Error(std::string("SDL_OpenCamera failed: ") + SDL_GetError());
-    }
-    camera_id = chosen;
-    camera_enabled.store(true, std::memory_order_relaxed);
-    if (!video_running.load()) {
-      StartVideoLoop();
-    }
-    if (!encode_warn.empty()) {
-      // Preview-only path; caller (CallMediaEngine) logs.
-      last_camera_warn = encode_warn;
-    } else {
-      last_camera_warn.clear();
-    }
-    return {};
-  }
-
-  std::string last_camera_warn;
 };
 
-CallMediaEngine::CallMediaEngine() : impl_(std::make_unique<Impl>()) {
+CallMediaEngine::CallMediaEngine() : CallMediaEngine(MediaDeviceArbiter::Default()) {}
+
+CallMediaEngine::CallMediaEngine(MediaDeviceArbiter& devices) : impl_(std::make_unique<Impl>()) {
   redirectLogger("CallMediaEngine");
-  impl_->video_codec = CreatePlatformVideoCodec();
+  impl_->own_devices = &devices;
+  impl_->devices = &devices;
 }
 
 CallMediaEngine::~CallMediaEngine() {
@@ -1151,11 +1190,30 @@ void CallMediaEngine::SetOnStateChanged(StateChangedFn callback) {
   impl_->on_state_changed = std::move(callback);
 }
 
+void CallMediaEngine::SetVideoCodecFactoryForTest(std::function<std::unique_ptr<IVideoCodec>()> make) {
+  std::lock_guard lock(impl_->mutex);
+  impl_->make_video_codec = std::move(make);
+}
+
 void CallMediaEngine::SetSkipDeviceOpenForTest(bool skip) {
   impl_->skip_device_open_for_test.store(skip, std::memory_order_relaxed);
+  std::lock_guard lock(impl_->mutex);
+  if (skip && !impl_->test_devices) {
+    impl_->test_devices = std::make_unique<MediaDeviceArbiter>(CreateNullMediaDeviceBackend());
+  }
+  impl_->devices = skip ? impl_->test_devices.get() : impl_->own_devices;
 }
 
 Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) {
+  return Start(call_id, SessionSpec::Duplex(), std::move(send));
+}
+
+CallMediaEngine::SessionSpec CallMediaEngine::ActiveSpec() const {
+  std::lock_guard lock(impl_->mutex);
+  return impl_->spec;
+}
+
+Roe<void> CallMediaEngine::Start(const std::string& call_id, const SessionSpec spec, SfuSendFn send) {
   StateChangedFn state_cb;
   std::shared_ptr<SfuSendFn> abandoned_send;
   bool need_rebuild = false;
@@ -1166,13 +1224,16 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     if (call_id.empty()) {
       return Error("call_id required");
     }
-    if (!*next_send) {
+    if (!spec.capture && !spec.playback) {
+      return Error("media session needs capture or playback");
+    }
+    if (spec.capture && !*next_send) {
       return Error("SFU send callback required");
     }
     // Invalidate any in-flight StopMeshMedia posted for a prior call_id / leftover purge.
     impl_->session_generation.fetch_add(1, std::memory_order_acq_rel);
     if (impl_->active) {
-      if (impl_->call_id == call_id && impl_->sfu_mode) {
+      if (impl_->call_id == call_id && impl_->sfu_mode && impl_->spec == spec) {
         // SoftMigrate from libp2p→media_relay: swap callback; capture may still hold old shared_ptr.
         abandoned_send = std::move(impl_->sfu_send);
         impl_->sfu_send = std::move(next_send);
@@ -1218,20 +1279,19 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     impl_->playout_running = false;
     impl_->JoinCaptureThread();
     impl_->JoinPlayoutThread();
+    impl_->JoinVideoThread();  // outside `mutex`: the video thread takes it to read the send callback
     std::lock_guard lock(impl_->mutex);
     impl_->TearDownAudioLocked();
   }
   {
     std::lock_guard lock(impl_->mutex);
-    if (!impl_->video_codec) {
-      impl_->video_codec = CreatePlatformVideoCodec();
-    }
     if (auto codecs = impl_->EnsureOpusCodecs(); !codecs) {
       impl_->TearDownAudioLocked();
       return codecs.error();
     }
     impl_->sfu_mode = true;
-    impl_->sfu_send = std::move(next_send);
+    impl_->spec = spec;
+    impl_->sfu_send = spec.capture ? std::move(next_send) : nullptr;
     impl_->sfu_audio_seq.store(0);
     impl_->sfu_video_seq.store(0);
     impl_->call_id = call_id;
@@ -1252,8 +1312,8 @@ Roe<void> CallMediaEngine::StartSfu(const std::string& call_id, SfuSendFn send) 
     impl_->last_remote_video_ms.store(0, std::memory_order_relaxed);
     impl_->ever_had_remote_video.store(false, std::memory_order_relaxed);
     impl_->ApplyStateLocked("connected");
-    impl_->StartCaptureLoop();
-    if (!impl_->playout_thread.joinable()) {
+    impl_->StartCaptureLoop();  // device owner for both halves; encodes only when capturing
+    if (spec.playback && !impl_->playout_thread.joinable()) {
       impl_->StartPlayoutLoop();
     }
     state_cb = impl_->on_state_changed;
@@ -1268,7 +1328,7 @@ void CallMediaEngine::OnSfuPacket(const SfuPacket& packet) {
   // Must hold mutex: SoftMigrate StartSfu TearDownAudioLocked destroys opus/SDL while the
   // media_relay client reader can already deliver frames (guest attach dogfood crash).
   std::lock_guard lock(impl_->mutex);
-  if (!impl_->active || !impl_->sfu_mode || packet.payload.empty()) {
+  if (!impl_->active || !impl_->sfu_mode || !impl_->spec.playback || packet.payload.empty()) {
     return;
   }
   // PublisherStreamIdForIdentity("") == 1. Never a real media_relay publisher — only the
@@ -1306,26 +1366,21 @@ void CallMediaEngine::ClearRemoteAudioTracks() {
 }
 
 bool CallMediaEngine::IsSfuMode() const {
+  std::lock_guard lock(impl_->mutex);
   return impl_->sfu_mode;
 }
 
 void CallMediaEngine::ApplyAdaptation(const CallAdaptationDecision& decision) {
   impl_->adaptation_camera_allowed.store(decision.camera_allowed, std::memory_order_relaxed);
-  impl_->adaptation_target_video_bps = decision.target_video_lo_bps;
+  impl_->adaptation_target_video_bps.store(decision.target_video_lo_bps, std::memory_order_relaxed);
   const int64_t audio_bps =
       decision.target_audio_bps > 0 ? decision.target_audio_bps : CallMediaAdaptation::kComfortAudioBps;
   impl_->adaptation_target_audio_bps.store(audio_bps, std::memory_order_relaxed);
-  {
+  // Bitrates are applied by the threads that encode, right before their next frame (encoders are
+  // not thread-safe — calling opus_encoder_ctl here raced opus_encode, TSan).
+  if (!decision.camera_allowed) {
     std::lock_guard lock(impl_->mutex);
-    if (impl_->encoder) {
-      opus_encoder_ctl(impl_->encoder, OPUS_SET_BITRATE(static_cast<int>(audio_bps)));
-    }
-    if (!decision.camera_allowed && impl_->camera_enabled.load(std::memory_order_relaxed)) {
-      impl_->CloseCameraLocked();
-    }
-    if (impl_->video_codec && decision.target_video_lo_bps > 0) {
-      impl_->video_codec->SetTargetBitrate(decision.target_video_lo_bps);
-    }
+    impl_->RequestCameraOffLocked();
   }
 }
 
@@ -1341,14 +1396,13 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   CallMediaEngineHealth h;
   h.active = impl_->active.load(std::memory_order_relaxed);
   h.connected = impl_->connected.load(std::memory_order_relaxed);
-  h.sfu_mode = impl_->sfu_mode;
   h.muted = impl_->muted.load(std::memory_order_relaxed);
-  h.capture_available = impl_->capture_available;
   h.path_pressure = impl_->path_pressure.load(std::memory_order_relaxed);
   h.opus_target_bps = impl_->adaptation_target_audio_bps.load(std::memory_order_relaxed);
   h.outbound_drops = impl_->outbound_drops.load(std::memory_order_relaxed);
   h.playout_underruns = impl_->playout_underruns_total.load(std::memory_order_relaxed);
   h.plc_frames = impl_->plc_frames_total.load(std::memory_order_relaxed);
+  h.fec_frames = impl_->fec_frames_total.load(std::memory_order_relaxed);
   h.rx_audio_frames = impl_->rx_audio_frames.load(std::memory_order_relaxed);
   h.tx_audio_frames = impl_->tx_audio_frames.load(std::memory_order_relaxed);
   h.last_rx_audio_ms = impl_->last_rx_audio_ms.load(std::memory_order_relaxed);
@@ -1356,13 +1410,19 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   h.rx_video_frames = impl_->rx_video_frames.load(std::memory_order_relaxed);
   h.tx_video_frames = impl_->tx_video_frames.load(std::memory_order_relaxed);
   h.last_rx_video_ms = impl_->last_rx_video_ms.load(std::memory_order_relaxed);
-  h.video_target_bps = impl_->adaptation_target_video_bps;
+  h.video_target_bps = impl_->adaptation_target_video_bps.load(std::memory_order_relaxed);
   h.local_level = impl_->local_input_level.load(std::memory_order_relaxed);
   h.remote_level = impl_->remote_output_level.load(std::memory_order_relaxed);
   {
     std::lock_guard lock(impl_->mutex);
+    AudioDeviceLease* speaker = impl_->speaker_lease.get();
+    const bool voice = speaker && speaker->IsVoiceDuplex();
+    const bool any_device = (impl_->mic_lease && impl_->mic_lease->HasDevice()) || (speaker && speaker->HasDevice());
+    h.audio_io = voice ? "vpio" : (any_device ? "sdl" : "none");
+    h.io_underruns = impl_->vpio_underruns_closed + Impl::VoiceUnderruns(speaker);
     h.stream_count = impl_->audio_tracks.size();
     h.sfu_mode = impl_->sfu_mode;
+    h.capture_available = impl_->capture_available;
     h.streams.reserve(impl_->audio_tracks.size());
     for (const auto& [id, track] : impl_->audio_tracks) {
       if (!track) {
@@ -1413,14 +1473,12 @@ void CallMediaEngine::Stop() {
   // when no device is present.
   impl_->JoinCaptureThread();
   impl_->JoinPlayoutThread();
-  {
-    impl_->video_running = false;
-    impl_->JoinThreadBudgeted(impl_->video_thread, std::chrono::milliseconds::max(), "video");
-  }
+  impl_->JoinVideoThread();
   {
     std::lock_guard lock(impl_->mutex);
     impl_->TearDownAudioLocked();
     impl_->call_id.clear();
+    impl_->spec = SessionSpec::Duplex();
     impl_->ApplyStateLocked("closed");
     state_cb = impl_->on_state_changed;
   }
@@ -1448,26 +1506,44 @@ void CallMediaEngine::RequestAudioDeviceReopen() {
 }
 
 Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled) {
+  // Read on the caller's (UI) thread: iOS orientation is UIKit; the open itself runs elsewhere.
+  return SetCameraEnabled(enabled, enabled ? CameraDisplayRotationDegrees() : 0);
+}
+
+Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled, const int display_rotation) {
   std::lock_guard lock(impl_->mutex);
   if (!impl_->active) {
     return Error("Call media not active");
   }
   if (!enabled) {
-    impl_->CloseCameraLocked();
+    impl_->RequestCameraOffLocked();
     return {};
+  }
+  if (!impl_->spec.capture) {
+    return Error("camera needs a capturing session");
   }
   if (!impl_->adaptation_camera_allowed.load(std::memory_order_relaxed)) {
     return Error("Camera blocked by adaptation (uplink/path)");
   }
-  auto opened = impl_->EnableCameraLocked();
-  if (!opened) {
-    return opened.error();
+  if (impl_->skip_device_open_for_test.load(std::memory_order_relaxed)) {
+    return Error("camera skipped (test)");
   }
-  if (!impl_->last_camera_warn.empty()) {
-    log().warning << "Video encode unavailable: " << impl_->last_camera_warn
-                  << " — local preview may still work; voice continues";
+  // Async: the video thread takes the camera lease (opened on the media device thread). A failed
+  // open flips IsCameraEnabled back to false and is reported through TakeCameraFailure.
+  impl_->camera_display_rotation.store(display_rotation, std::memory_order_relaxed);
+  impl_->camera_enabled.store(true, std::memory_order_relaxed);
+  if (!impl_->video_thread.joinable()) {
+    impl_->StartVideoLoop();
   }
   return {};
+}
+
+std::optional<std::string> CallMediaEngine::TakeCameraFailure() {
+  std::lock_guard lock(impl_->camera_failure_mu);
+  if (impl_->camera_failure.empty()) {
+    return std::nullopt;
+  }
+  return std::exchange(impl_->camera_failure, std::string());
 }
 
 bool CallMediaEngine::IsCameraEnabled() const {
@@ -1544,7 +1620,8 @@ void CallMediaEngine::RefreshRemoteVideoHealth() {
 }
 
 bool CallMediaEngine::VideoEncoderAvailable() const {
-  return impl_->video_codec && impl_->video_codec->EncoderSupported();
+  // Host capability, not session state: the local encoder only exists while the camera is on.
+  return PlatformVideoEncoderSupported();
 }
 
 bool CallMediaEngine::CameraPathAllowsVideo() const {

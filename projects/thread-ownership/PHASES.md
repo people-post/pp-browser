@@ -1,0 +1,54 @@
+# Thread ownership — phases
+
+## t1 — Primitive + rules
+
+- [x] `OwnerThread` (Dedicated / Manual) + `AppRuntime::PostTo` / `CurrentlyOn` / `ScheduleOn` / `RunOwnerTasks` / `RunAllOwnerTasks`; gate-wrapped; `DrainWorkersThenUI` sits behind owner queues, `QuiesceForTeardown` pumps Manual owners
+- [x] `PBR_ASSERT_ON_OWNER(id)` debug affinity check
+- [x] Thread naming via `AppRuntimeConfig::name_thread` (platform `os::SetCurrentThreadName`); `Application` + pp-node pass it
+- [x] Teardown gate settles posts a mailbox drops unrun (a later quiesce used to wait out its budget)
+- [x] Runtime tests `OwnerThreadTest` (both modes, cross-owner chains, timers, quiesce, dropped posts, affinity death test); TSan / ASan clean
+- [x] THREADING.md: roles 7–8, § Owner threads, scheduling API, gate notes
+
+## t2 — Media sessions owner
+
+t2a (step A, done): ports bound once, swapped as snapshots.
+
+- [x] `SharedPorts<T>` (mutex-guarded `shared_ptr<const T>`): session manager direct-media / lifecycle / seat ports, lifecycle signaling ports, topology + hop-migrate arming / seat ports. Each use takes one snapshot; setters no longer rebuild the workflow host ports (bound once in the ctor)
+- [x] `CallStack::Lifecycle()` is an accessor and the ring callback no longer rebinds; binding happens at `BuildSessions` / `BindMediaProducts` (after mesh start) / cleared at mesh stop and `ResetSessions`
+- [x] `PortSwapsDuringUseNeverCallAnEmptyPort` (old code segfaults); TSan reports in the call compose / backend suites 1,347 → 24 — the rest are cross-owner reads (workflow reading lifecycle state on UI; lifecycle `ClearBinding` from the mesh-restart worker) that only a shared owner fixes
+
+t2a (step B, done): off-UI call entry points on the media-sessions owner ([T003](DECISIONS.md)).
+
+- [x] Accept: `AcceptInviteAsync` — checks → async circuit park (`EnsureBootstrapSeedParkedAsync`, completion posted to the owner) → CallAccept + Joined + media arm; blocking `AwaitCircuitReady` removed
+- [x] Lifecycle Accept / Decline / Leave, inbound call control, roster fan-out and hop-migrate flow steps post onto the owner (`PostToOwnerOrRun`)
+- [x] Call test fixtures in Manual mode; `AcceptAwaitsCircuitParkWithoutBlockingTheOwner`
+- [x] pp-call-probe's `send_user_message` is async like the product's (its blocking send parked the owner on a gone peer's ack → teardown UAF in hard-w5 STACK)
+- [x] TSan 24 → 10 in the call suites (left: `CallStack` teardown vs the MeshControl peer-reach prefetch — t3); hard-w5 `all` green
+
+t2b — the rest of the call stack onto the owner, one commit per step so every step builds and passes:
+
+- [x] t2b-1: `CallsThread` — the one place that says which thread owns call state. Every internal "continue on the owner" hop (bridge, connect coordinator, seat, topology, hop migrate, lifecycle steps, and the t2a entry points) goes through it; GUI / hub notifications post to UI explicitly (`NotifyChrome`, the GUI ring callback wrapped by `CallUiBackend`, mobile listen sync). Still UI-backed: behaviour-neutral, and until the flip all call state is on one thread
+- [x] t2b-2: `CallUiBackend` — intents post to the calls owner (results with `on_done` on UI: StartCall, InviteParticipant, mute, camera); owner state is read from `CallUiState`, published by each call stack after every owner task (`CallsThread` after-task hooks) and at bind points; durable state reads the stores (`PeekTopPendingInvite` filters expired rows instead of sweeping); the camera's display rotation is read on UI and passed along (L012); the bridge's attempted-calls set is guarded. `CallController` adapted (weak lifetime token for late results)
+- [x] t2b-3: `CallsThread` flipped to the media-sessions owner (UI only while the runtime has no owner). The hub's lifecycle edges (`InitializeStores`, `BuildSessions`, mesh start / stop, `Detach` / `RebindMeshMedia`, `ResetSessions`, `AbortCallMediaForShutdown`, `Shutdown`, and hub / probe wiring through `CallStack::RunOnOwner`) run there via `CallsThread::RunAndWait` — the caller waits; inline when already on the owner, without an owner, or when the teardown gate drops the post (the caller then stands in for the owner). `Shutdown` drains workers from the caller between its two owner steps. Hub reads (`WantEphemeralListen`, `HasActiveLocalCall`, `IsConnectWorkerInflight`, `CallUiBackend::Available` / `SessionsIdentity`) come from `CallUiState`; the listen desire publishes before the hub's N025 sync is posted to UI. `CallLifecycle` is created with the stack (no lazy create from UI). The two SoftMigrate / publisher re-fan-out timers hop to the owner. Found on the way: the engine outlived the bridge with its send / state callbacks still pointing into it — `CallStack` stops the engine before clearing the plane, the bridge clears its state callback. TSan 10 → 3 in the call suites (left: the MeshControl peer-reach prefetch — t3); hard-w5 green
+- [x] t2b-4: broadcast on the owner. `BroadcastHub` intents post there (WatchLive / GoLive answer through `on_done` on UI; facade and pp-call-probe adapted); the GUI reads `BroadcastUiState`, published after every hub step and status change, with the broadcaster's frame counter read live; the hub's destructor ends the workflows on the owner (`AppRuntime::RunAndWait` — the generic form, `CallsThread::RunAndWait` now builds on it, and `CurrentlyOn` / `PBR_ASSERT_ON_OWNER` accept a stand-in caller). Workflow ports `post_ui` → `post_owner`. The broadcaster's announce is asynchronous and runs on the product hub's thread (mesh messaging owns the announce feed; guarded by a `DeferredSelf` the hub invalidates on reset). TSan: no reports in the broadcast suites; call suites unchanged at 3 (t3); hard-w5 green (incl. B-HARD-BCAST-NAT)
+
+
+- [x] Call entry points onto the owner: inbound control, UI intents (`CallUiBackend` → post), lifecycle, worker results posted back; Accept / Leave / Decline split into owner steps + worker I/O (t2a, t2b-2)
+- [x] Ports bound once on the owner; `CallStack::Lifecycle()` / ring-changed stop rebinding; drop the rebind race (t2a step A, t2b-3)
+- [x] Topology / bridge / hop migrate `PostUI` hops → owner (t2b-1 / t2b-3)
+- [x] Broadcast hub on the owner (t2b-4)
+- [ ] Affinity asserts on the moved classes
+
+## t3 — Connectivity owner
+
+- [x] t3-1: MeshControl retired. A census found three real waits on it — the seed's dial-back target walk (`AmpParkUntil`, up to 8 s per target), the inbound call-media hello waiting for its key (`cv.wait_until`, 8 s) and UPnP discovery (~2 s) — plus eight CPU / disk jobs that only used it to leave the IO strand. Now: the dial-back walk is IO-strand completions; the inbound hello is asynchronous end to end (`CallMediaInboundHandler`: the leg coordinator asks on IO, the calls owner parks the hello and answers when the key lands / the deadline passes / shutdown); L4 inbound work and the reachability probe (UPnP) run on AppRuntime workers (`MeshHost::MakeL4WorkerPost`: workers under MeshPump, inline for manual-drive harnesses); relay attach continues on a worker; the mDNS peer hook and the calls' peer-reach prefetch post to the hub's thread (UI) — the prefetch no longer captures the call stack. The Settings CAS tip fetch no longer parks UI (async blob fetch, cache on a worker, answer on UI). `MeshHost::StopAmp` stops L4 with MeshPump still driving, joins it, then frees L4 (TSan: MeshPump ticked the DHT while it was being freed). TSan: call / broadcast / chat / mesh suites clean (the 3 prefetch reports gone); hard-w5 green
+- [x] t3-2a: Connectivity owner hosts reach and the mesh media plane. `PeerReachCoordinator` steps and timers run on it (were the Coordinator strand). `MeshMediaPlane` lives there: lifecycle edges `RunAndWait` from UI / the calls owner (T004: downward only), listen registrations post there (`on_registered` with the PeerId; the calls owner gets its note by post) and the listen book is a published snapshot; circuit reach's relay-chosen notice hops IO → connectivity, and the calls' hooks (announce R1, signaling punch) hop on to the calls owner. The rendezvous sticky R1 is written on the IO strand where the park surface reads it. TSan clean (call / broadcast / chat / mesh suites); hard-w5 green
+- [x] t3-2b: candidate policy (rendezvous surface, bootstrap seeds, punch introducers) is evaluated on connectivity — at `Wire`, every 5 s, and on `RefreshHopPolicy` (the hub's directory update, the probe's contact upsert) — and published as a `MeshHopPolicy` snapshot; the IO side (rendezvous, punch walk) reads only the snapshot (it used to run the hub's providers — contacts SQLite, directory / DHT merges — on the Amp IO strand). TSan clean; hard-w5 green
+- [x] t3-2c: `ReachabilityEngine` on connectivity — probe steps, result and `on_updated` there; UPnP discovery a worker step; seed dial / dial-back completions hop IO → owner; retired engines drop late steps (alive token cleared on the owner; `MeshHost::Stop` retires the probe before tearing Amp down). `on_updated` consumers hop: MeshHost's advertise refresh to Amp IO, the hub's work to UI. The calls owner's providers (local PeerId, caps, listen / advertise addrs, punch candidates) read the plane's `MeshLocalView` (published on the owner while wired, cleared at `InvalidateAsyncOps`), and the H012 signaling punch burst is a plane action on the owner — call flows no longer read the MeshHost the hub may be tearing down. TSan: whole mesh binary and the call / broadcast / chat suites clean; ASan and hard-w5 green
+
+## t4 — UI snapshots
+
+- [x] Published call / broadcast snapshots; `CallUiBackend` queries read them (shipped in t2b-2 / t2b-4)
+- [x] Mesh config snapshot: the hub (and pp-call-probe) publish `config_.mesh` as an immutable `MeshConfig` on every write; `CallStackDeps` / `CallMediaPlaneDeps` / mesh media policy take `mesh_config()` instead of a live `const AppConfig&`
+- [x] Remaining UI-side reads of owner state: none beyond durable-store reads (active call, joined participants) and the broadcast facade's snapshot / intents. The plane's LAN-peer note posts to the hub's thread
+- [x] Affinity asserts (`PBR_ASSERT_ON_OWNER`, debug) on the owner-internal steps: reach steps, plane policy / listen registration, reachability probe steps (Connectivity); call stack edge bodies, inbound hello handling (Media sessions). Public methods stay unasserted — tests drive them from the test thread

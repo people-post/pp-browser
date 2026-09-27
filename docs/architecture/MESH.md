@@ -45,7 +45,10 @@ flowchart TB
 domain/mesh/
   host/           MeshHost, MeshIdentityConfig, MeshPorts (IChatPeerLinks)
   identity/       PeerId derivation (ML-DSA → base58)
-  reachability/   Reachability, NAT, LAN mDNS, dial-back
+  reachability/   Reachability, NAT, LAN mDNS, dial-back; link / service reach, punch step
+                  (PunchIntroducerWalk), circuit rendezvous (CircuitRendezvousCoordinator)
+  media_plane/    MeshMediaPlane — owns the shared media_relay client, dial registry + listen
+                  book and circuit reach (with its punch / rendezvous pieces); lent to calls and broadcast
   l4/
     shared/       ProductChannelPolicies
     circuit/      CircuitTunnelCoordinator, AmpCircuitHopRegistry
@@ -63,6 +66,7 @@ Feature code accesses mesh only through **`MeshHost` narrow ports**:
 | Chat / dial | `MeshHost::ChatDeps()` → `IChatPeerLinks&` | Amp chat, history, blob, warm/dial |
 | Circuit | `MeshHost::CircuitDeps()` | Circuit bridge, hop reach |
 | Call-media transport | `CallMediaAmpTransport` via `CallStack` | Wire transport in mesh; `CallMediaBridge` in feature |
+| Media relay / dial / reach / parking | `MeshMediaPlane` (owned by `ConversationsHub`) | Borrowed by `CallStack` (`CallStackDeps::mesh_media`) and broadcast (`RelayAttachPorts`); hop candidates injected by `MakeMeshMediaPlaneDeps` ([L015](../../projects/media-client-layers/DECISIONS.md#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast)) |
 
 Feature must **not** `#include "amp/link/*"` in headers. Implementation `.cpp` files may include `amp/link/PeerLink.h` only where channel session binding requires it; new code should prefer `IChatPeerLinks`.
 

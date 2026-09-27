@@ -107,7 +107,7 @@ Idle background reachability still uses **outbound dial + circuit** (and later p
 
 ## H009 — Amp Coordinated Punch (ACP)
 
-**Status:** Accepted (plan only — **not implemented**)  
+**Status:** Accepted — implemented (L3.25a–c, [HOLE_PUNCH.md](HOLE_PUNCH.md)); the upgrade-from-circuit helper (`TryUpgradeToDirectAsync`) has no product caller — it is break-before-make and is replaced by call-path-resilience k3 migration  
 **Date:** 2026-09-04  
 **Decision:** Ship hole punching as **Amp Coordinated Punch**: an introducer that already has authenticated Sessions to both peers exchanges **observed Amp UDP endpoints** and a sync window; both sides simultaneous-dial; first authenticated PeerLink wins under **A026**, with **A027** parent-only teardown for the loser. Prefer seed / Reachable contact / current circuit R1 as introducer (v1). Optional **upgrade-from-circuit** promotes a direct PeerLink then demotes the tunnel.
 

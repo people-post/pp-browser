@@ -2,7 +2,7 @@
 
 **Status:** Active (project ADRs). Promote wire outcomes to `docs/contracts/` when shipped.  
 **Design:** [DESIGN.md](DESIGN.md) · **Media scale:** [MEDIA_TREE.md](MEDIA_TREE.md) · **Program:** [PROGRAM.md](PROGRAM.md)  
-**ADRs:** B001–B007
+**ADRs:** B001–B008
 
 ---
 
@@ -80,3 +80,11 @@
 **Rationale:** Matches contact/`help_media` mental model; keeps announce tips small; scales placement without a central leaf directory; demotion turns new relay capacity into immediate seed/first-tier relief.  
 **Alternatives:** Coordinator assigns primary+alternate leaves on every ticket (rejected as default — control-plane hotspot, weak PreferLocal); pure viewer-chosen open leaf ads (rejected in v1 — herd/stale/abuse); SoftMigrate mass roster (rejected — [B001](#b001--broadcast-is-not-a-large-group-call)).  
 **Spec detail:** [MEDIA_TREE.md § Recursive ladder discovery](MEDIA_TREE.md#recursive-ladder-discovery-b007).
+
+---
+
+## B008 — Broadcast client code leaves the call stack
+
+**Date:** 2026-09-26
+**Decision:** The broadcaster and viewer become a sibling feature (`feature/broadcast`) sharing only feature-neutral layers with calls (reach, `media_relay` attach, capture / playback pipelines, device leases). The viewer path stops riding the group-joiner topology path; `BroadcastSessionCoordinator` and the call-side broadcast hooks are removed once the viewer workflow lands.
+**Rationale / plan:** [media-client-layers L001–L007](../media-client-layers/DECISIONS.md); phases l1–l6 in [media-client-layers PHASES](../media-client-layers/PHASES.md).

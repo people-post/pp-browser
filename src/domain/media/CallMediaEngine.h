@@ -1,6 +1,8 @@
 #pragma once
 
 #include "domain/media/CallMediaAdaptation.h"
+#include "domain/media/IVideoCodec.h"
+#include "domain/media/MediaDeviceArbiter.h"
 #include "common/media/CallMediaHealth.h"
 #include "common/Error.h"
 #include "common/Module.h"
@@ -10,6 +12,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -32,7 +35,10 @@ public:
 
   using StateChangedFn = std::function<void(const std::string& state)>;
 
+  /** Audio devices from `MediaDeviceArbiter::Default()`. */
   CallMediaEngine();
+  /** Audio devices from `devices` (must outlive the engine). */
+  explicit CallMediaEngine(MediaDeviceArbiter& devices);
   ~CallMediaEngine() override;
 
   void SetOnStateChanged(StateChangedFn callback);
@@ -52,10 +58,34 @@ public:
   using SfuSendFn = std::function<void(const SfuPacket&)>;
 
   /**
+   * Which halves of a media session run (media-client-layers L003/L004). Calls are duplex; a
+   * broadcaster is capture-only (mic → encode → send); a viewer is playback-only (receive →
+   * decode → mix → speaker). Channels stay generic (0 = Opus, 1 = H264).
+   */
+  struct SessionSpec {
+    bool capture = true;
+    bool playback = true;
+
+    static SessionSpec Duplex() { return {true, true}; }
+    static SessionSpec CaptureOnly() { return {true, false}; }
+    static SessionSpec PlaybackOnly() { return {false, true}; }
+    bool operator==(const SessionSpec& o) const { return capture == o.capture && playback == o.playback; }
+  };
+
+  /**
    * Start capture + duplex send for Amp 1:1 call-media **or** media_relay hop (V038).
    * Name is historical — not “join SFU” alone; Bridge and Topology both call this.
    */
   Roe<void> StartSfu(const std::string& call_id, SfuSendFn send);
+  /**
+   * Start a media session with only the halves `spec` asks for. `send` is required when
+   * capturing and ignored otherwise. Capture-only never opens the speaker or decodes inbound
+   * packets; playback-only never opens the mic, activates the VoIP audio session or sends.
+   * `StartSfu` = `Start(call_id, SessionSpec::Duplex(), send)`.
+   */
+  Roe<void> Start(const std::string& session_id, SessionSpec spec, SfuSendFn send);
+  /** Halves of the active session (Duplex when idle). */
+  SessionSpec ActiveSpec() const;
   /** Inbound SFU payload (already demuxed to local subscribe; plaintext Opus). */
   void OnSfuPacket(const SfuPacket& packet);
   /**
@@ -85,9 +115,20 @@ public:
   /** Snapshot for chrome / logs (V032 instrumentation). */
   CallMediaEngineHealth HealthSnapshot() const;
 
-  /** Open/close SDL camera + encode. Best-effort: fails without killing voice (V019). */
+  /**
+   * Request the camera on / off (best-effort: never kills voice, V019). Call on the UI thread (reads display rotation). Enabling is
+   * asynchronous: the video thread opens the camera on the media device thread; IsCameraEnabled is
+   * true from the request until it is turned off or the open fails (then TakeCameraFailure says why).
+   */
   Roe<void> SetCameraEnabled(bool enabled);
+  /**
+   * Same, with the display rotation read by the caller on UI (`CameraDisplayRotationDegrees`) — for
+   * callers off the UI thread (the calls owner); iOS reads orientation from UIKit, main thread only.
+   */
+  Roe<void> SetCameraEnabled(bool enabled, int display_rotation_degrees);
   bool IsCameraEnabled() const;
+  /** Why the last camera request did not open, once (UI poll, like TakePendingVideoRefreshStreamIds). */
+  std::optional<std::string> TakeCameraFailure();
   /**
    * True when a fresh remote decoded frame is available (not stalled / cleared).
    * Call RefreshRemoteVideoHealth() from the UI tick before reading.
@@ -112,9 +153,13 @@ public:
   void RequestVideoKeyframe();
   /**
    * Test-only: StartSfu / SetCameraEnabled skip SDL mic/camera open (silence TX, no device prompts).
-   * Product must leave this false. Used by call compose fixtures (PR #216 follow-up).
+   * Audio leases come from a private device-less arbiter, so several engines in one test process
+   * never contend. Product must leave this false. Used by call compose fixtures (PR #216 follow-up).
+   * Call before Start.
    */
   void SetSkipDeviceOpenForTest(bool skip);
+  /** Test-only: codecs for the local encoder / remote decoders (default: platform HW). Before Start. */
+  void SetVideoCodecFactoryForTest(std::function<std::unique_ptr<IVideoCodec>()> make);
   /** Drain stream ids that need an IDR (decode fail / first gap). */
   std::vector<uint32_t> TakePendingVideoRefreshStreamIds();
 

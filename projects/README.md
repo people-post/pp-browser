@@ -56,6 +56,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [p2p-av-calls](p2p-av-calls/) | Voice-first call media on mesh |
 | [call-path-resilience](call-path-resilience/) | Calls survive link / network changes; mobility-aware path policy |
 | [peer-scoped-broadcast](peer-scoped-broadcast/) | Peer announce feeds + live broadcast (media tree scale = Spine F) |
+| [media-client-layers](media-client-layers/) | Neutral reach / relay-attach / pipeline / device layers; broadcast as a sibling feature of calls |
 | [media-hop-reachability](media-hop-reachability/) | Circuit hop dial / SoftMigrate consume |
 | [hard-lab](hard-lab/) | Docker/netns forced-hop + impairment/discovery scenarios (Wave 1–3 partial scaffold) |
 | [network-status-chrome](network-status-chrome/) | Desktop status bar cluster + popover |
@@ -72,6 +73,7 @@ Delivery ended; use **docs/** for normative refs. Folders kept for ADR / history
 
 | Project | Stable refs |
 |---------|-------------|
+| [thread-ownership](thread-ownership/) | [THREADING.md § Owner threads](../docs/architecture/THREADING.md#owner-threads), [CALLS.md](../docs/architecture/CALLS.md) |
 | [liquid-glass](liquid-glass/) | [UI_DESIGN_SYSTEM — Floating Chrome](../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials), [WINDOW_SHELL](../docs/ui/WINDOW_SHELL.md) |
 | [libp2p-pq-transport](libp2p-pq-transport/) | [AT_REST_ENCRYPTION](../docs/contracts/AT_REST_ENCRYPTION.md), [DATA_LAYOUT](../docs/contracts/DATA_LAYOUT.md), [LIBP2P_UPSTREAM](../docs/architecture/LIBP2P_UPSTREAM.md) |
 | [at-rest-crypto](at-rest-crypto/) | [AT_REST_ENCRYPTION](../docs/contracts/AT_REST_ENCRYPTION.md), [DATA_LAYOUT](../docs/contracts/DATA_LAYOUT.md) |

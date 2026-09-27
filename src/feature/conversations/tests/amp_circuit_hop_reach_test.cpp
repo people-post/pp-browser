@@ -1,4 +1,4 @@
-#include "feature/calls/AmpCircuitHopReach.h"
+#include "domain/mesh/reachability/AmpCircuitHopReach.h"
 
 #include "common/directory/MeshHopDial.h"
 #include "domain/mesh/host/MeshPorts.h"
@@ -236,7 +236,7 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSkipsEnsureAssociationAndPreferred
       AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
-  reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
@@ -327,7 +327,7 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialB
       AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
-  reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(backoff_links.IsConnected(harness_->peer_id_b));
@@ -354,7 +354,7 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureAcceptsHopPeerIdRelayKey) {
       PostAfterA());
 
   Wait<void> ensure_wait;
-  reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
@@ -377,7 +377,7 @@ TEST_F(AmpCircuitHopReachTest, PrivateHopMaDoesNotPoisonPublicPreferred) {
   EXPECT_FALSE(CircuitHopDialBookAllowsRegister(private_hop_ma));
   EXPECT_TRUE(CircuitHopDialBookAllowsRegister(public_ma));
 
-  // Same gate CallMediaPlane::CollectDialableCircuitRelayIds uses.
+  // Same gate CircuitRendezvousCoordinator::DialableRelayIds uses.
   if (IsAdpMultiaddr(private_hop_ma) && CircuitHopDialBookAllowsRegister(private_hop_ma)) {
     (void)harness_->mgr_a().RegisterEndpoint(harness_->peer_id_r, private_hop_ma);
   }
@@ -402,7 +402,7 @@ TEST_F(AmpCircuitHopReachTest, PrivateHopMaDoesNotPoisonPublicPreferred) {
       AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
-  reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
@@ -441,7 +441,7 @@ TEST_F(AmpCircuitHopReachTest, SkipsWildcardPreferredRelayThenUsesDialable) {
       AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
-  reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
@@ -465,7 +465,7 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureRunsCircuitBeforePunch) {
       AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
 
   Wait<void> ensure_wait;
-  reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
   ensure_wait.PumpUntilDone(*harness_);
   ASSERT_TRUE(ensure_wait.result) << ensure_wait.result.error().message;
   EXPECT_TRUE(recording_->IsConnected(harness_->peer_id_b));
@@ -496,7 +496,7 @@ TEST_F(AmpCircuitHopReachTest, AbortPendingSkipsPunchFallback) {
   // can win the race before any PostToIo turn.
 
   Wait<void> ensure_wait;
-  reach.TryEnsureCallMediaReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, ensure_wait.Fn());
   // Empty relay list fails circuit synchronously, then starts punch (held). Abort before punch
   // completion — finish must report aborted and must not treat punch as success.
   ASSERT_TRUE(punch_started->load(std::memory_order_acquire));

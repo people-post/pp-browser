@@ -30,6 +30,8 @@ A call has one **session** (call id, media key, epoch, sequence space) and, unde
 
 Survey of pp-browser + pp-cpp-amp at `af5c8af60` / amp `v2.1.9`. File refs are for orientation; headers on disk win.
 
+> **Corrections (2026-09-27 resurvey):** there is no post-Live Ensure/punch loop any more (reach is one-shot, owned by `CallMediaConnectCoordinator`); chat `MarkWarm` before the link exists is remembered (k1); reservations are renewed during a call (`CallMediaBridge::ArmReserveRenewal`) and reserve / park live in `CircuitRendezvousCoordinator`; reserved relays and media-relay hops are hot (the media link is not); the answerer's wait before CallAccept is the seed park (`park_circuit`), asynchronous since thread-ownership; `TryUpgradeToDirectAsync` has no caller; the gaps table below is otherwise still accurate for k3–k6.
+
 ### Dogfood trace (answerer)
 
 | T (s) | Event |

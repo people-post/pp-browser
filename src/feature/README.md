@@ -31,7 +31,7 @@ If you are unsure, ask: *"Could this exist without Rml?"* Yes → feature/domain
 
 ## Module map
 
-Three top-level folders (+ calls band). Two sub-trees under `ai/`.
+Top-level folders (+ calls band). Two sub-trees under `ai/`.
 
 ```
 src/feature/
@@ -40,6 +40,7 @@ src/feature/
 │   ├── tools/
 │   └── bindings/
 ├── calls/            Call session (`pp_feature_calls`)
+├── broadcast/        Live broadcast viewer (`pp_feature_broadcast`) — sibling of calls, shared layers only
 └── conversations/    Conversations hub + delivery; ConversationsFacade
 ```
 

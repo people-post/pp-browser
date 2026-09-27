@@ -881,7 +881,34 @@ bool FillMappedImage(VAImage& image, void* ptr, const VideoFrameI420& frame) {
   return false;
 }
 
-bool UploadI420ToSurface(VADisplay dpy, VASurfaceID surface, const VideoFrameI420& frame) {
+/** `frame` grown to `width`×`height` (≥ frame size) by replicating its last column / row. */
+VideoFrameI420 PadI420(const VideoFrameI420& frame, int width, int height) {
+  VideoFrameI420 out;
+  out.width = width;
+  out.height = height;
+  const auto pad_plane = [](const std::vector<uint8_t>& src, int sw, int sh, int dw, int dh) {
+    std::vector<uint8_t> dst(static_cast<size_t>(dw) * static_cast<size_t>(dh));
+    for (int row = 0; row < dh; ++row) {
+      const uint8_t* in = src.data() + static_cast<size_t>(std::min(row, sh - 1)) * static_cast<size_t>(sw);
+      uint8_t* line = dst.data() + static_cast<size_t>(row) * static_cast<size_t>(dw);
+      std::memcpy(line, in, static_cast<size_t>(sw));
+      std::memset(line + sw, in[sw - 1], static_cast<size_t>(dw - sw));
+    }
+    return dst;
+  };
+  out.y = pad_plane(frame.y, frame.width, frame.height, width, height);
+  out.u = pad_plane(frame.u, frame.width / 2, frame.height / 2, width / 2, height / 2);
+  out.v = pad_plane(frame.v, frame.width / 2, frame.height / 2, width / 2, height / 2);
+  return out;
+}
+
+/**
+ * `surface` is `surface_w`×`surface_h` (16-aligned); `frame` may be smaller (cropped in the SPS).
+ * The vaPutImage fallback stages at the surface size: radeonsi reads the whole surface extent from
+ * the image, so a frame-sized image overflowed (heap-buffer-overflow in vaPutImage, ASan).
+ */
+bool UploadI420ToSurface(VADisplay dpy, VASurfaceID surface, const VideoFrameI420& frame, int surface_w,
+                         int surface_h) {
   // Prefer derive (zero-copy). Some drivers (e.g. radeonsi encode surfaces) reject it —
   // fall back to vaCreateImage + vaPutImage with NV12.
   VAImage image{};
@@ -899,19 +926,22 @@ bool UploadI420ToSurface(VADisplay dpy, VASurfaceID surface, const VideoFrameI42
     vaDestroyImage(dpy, image.image_id);
   }
 
+  const bool padded = surface_w != frame.width || surface_h != frame.height;
+  const VideoFrameI420 staged_storage = padded ? PadI420(frame, surface_w, surface_h) : VideoFrameI420{};
+  const VideoFrameI420& staged = padded ? staged_storage : frame;
   VAImageFormat fmt{};
   fmt.fourcc = VA_FOURCC_NV12;
   fmt.byte_order = VA_LSB_FIRST;
   fmt.bits_per_pixel = 12;
-  if (vaCreateImage(dpy, &fmt, frame.width, frame.height, &image) != VA_STATUS_SUCCESS) {
+  if (vaCreateImage(dpy, &fmt, staged.width, staged.height, &image) != VA_STATUS_SUCCESS) {
     fmt.fourcc = VA_FOURCC_I420;
-    if (vaCreateImage(dpy, &fmt, frame.width, frame.height, &image) != VA_STATUS_SUCCESS) {
+    if (vaCreateImage(dpy, &fmt, staged.width, staged.height, &image) != VA_STATUS_SUCCESS) {
       return false;
     }
   }
   void* ptr = nullptr;
   if (vaMapBuffer(dpy, image.buf, &ptr) != VA_STATUS_SUCCESS || !ptr ||
-      !FillMappedImage(image, ptr, frame)) {
+      !FillMappedImage(image, ptr, staged)) {
     if (ptr) {
       vaUnmapBuffer(dpy, image.buf);
     }
@@ -919,8 +949,8 @@ bool UploadI420ToSurface(VADisplay dpy, VASurfaceID surface, const VideoFrameI42
     return false;
   }
   vaUnmapBuffer(dpy, image.buf);
-  const VAStatus put = vaPutImage(dpy, surface, image.image_id, 0, 0, frame.width, frame.height, 0, 0,
-                                  frame.width, frame.height);
+  const VAStatus put = vaPutImage(dpy, surface, image.image_id, 0, 0, staged.width, staged.height, 0, 0,
+                                  staged.width, staged.height);
   vaDestroyImage(dpy, image.image_id);
   return put == VA_STATUS_SUCCESS;
 }
@@ -1169,7 +1199,7 @@ Roe<EncodedAccessUnit> VaapiVideoCodec::Encode(const VideoFrameI420& frame, bool
   if (frame.width != enc_width_ || frame.height != enc_height_) {
     return Error("encoder frame size does not match ConfigureEncoder size");
   }
-  if (!UploadI420ToSurface(display_.display, enc_input_, frame)) {
+  if (!UploadI420ToSurface(display_.display, enc_input_, frame, enc_aligned_w_, enc_aligned_h_)) {
     return Error("failed to upload frame to VA surface");
   }
 

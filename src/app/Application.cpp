@@ -1,4 +1,5 @@
 #include "app/Application.h"
+#include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
 
 #include "foundation/crypto/ProfileSecretsEngine.h"
@@ -9,6 +10,7 @@
 #include "foundation/error/AppError.h"
 #include "common/Error.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "domain/media/MediaDeviceArbiter.h"
 #include "domain/messaging/ChatPayloadValidator.h"
 #include "common/chat/MessagingLimits.h"
 #include "foundation/runtime/ProductBranding.h"
@@ -114,6 +116,7 @@ namespace {
 /** Runtime teardown quiesce budgets (THREADING.md § Teardown quiesce). Quit must stay inside
  * AppRuntime::kShutdownDeadlineBudget (3 s watchdog); reset can wait for a slow relay call. */
 constexpr std::chrono::milliseconds kQuitQuiesceBudget{2000};
+constexpr std::chrono::milliseconds kQuitMediaDevicesBudget{1000};
 constexpr std::chrono::milliseconds kProfileResetQuiesceBudget{10000};
 
 InputCoordinator* g_input_coordinator = nullptr;
@@ -196,7 +199,9 @@ void ApplyUiDocumentLanguage(ui::Context* context) {
 
 Application::Application() {
   redirectLogger("Application");
-  AppRuntime::Initialize();
+  AppRuntimeConfig runtime;
+  runtime.name_thread = os::SetCurrentThreadName;
+  AppRuntime::Initialize(runtime);
   secrets_ = std::make_unique<ProfileSecretsEngine>();
   messaging_ = std::make_unique<ConversationsHub>();
   messaging_->BindSessionStore(store_);
@@ -485,24 +490,32 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     return UnpublishCasForSettings(secrets_->ProfileDataDir(), secrets_->ProfileId(), public_content_id_hex);
   };
 
-  settings_commands.fetch_cas_public_tip = [this](const std::string& tip,
-                                                  const std::string& peer_relay_user_id) -> Roe<void> {
+  settings_commands.fetch_cas_public_tip = [this](const std::string& tip, const std::string& peer_relay_user_id,
+                                                  std::function<void(Roe<void>)> on_done) {
     if (!secrets_ || !secrets_->IsInitialized()) {
-      return Error("Profile secrets are not ready");
+      on_done(Error("Profile secrets are not ready"));
+      return;
     }
     if (!messaging_ || !messaging_->IsInitialized()) {
-      return Error("Messaging is not ready");
+      on_done(Error("Messaging is not ready"));
+      return;
     }
     auto* blob = messaging_->MeshMessaging().PeerBlobClient();
     if (blob == nullptr) {
-      return Error("Peer blob client is not available");
+      on_done(Error("Peer blob client is not available"));
+      return;
     }
     auto local = messaging_->Identity().Get();
     if (!local) {
-      return local.error();
+      on_done(local.error());
+      return;
     }
-    return FetchCasPublicTipForSettings(secrets_->ProfileDataDir(), secrets_->ProfileId(), *blob,
-                                        local->relay_user_id, tip, peer_relay_user_id);
+    // The fetch rides the mesh (never parks UI); its answer comes back to UI.
+    FetchCasPublicTipForSettingsAsync(secrets_->ProfileDataDir(), secrets_->ProfileId(), *blob,
+                                      local->relay_user_id, tip, peer_relay_user_id,
+                                      [on_done = std::move(on_done)](Roe<void> fetched) {
+                                        AppRuntime::PostUI([on_done, fetched]() { on_done(fetched); });
+                                      });
   };
   settings_commands.register_identity = [this, &facade](const RegisterIdentityArgs& args) {
     auto result = facade.RegisterIdentity(args.nickname);
@@ -1536,7 +1549,7 @@ void Application::Shutdown() {
 
     // RequestShutdown first so an in-flight EnsureMessagingReady does not finish StartMesh during
     // join. It already AbortCallMediaForShutdown (PrepareForTeardown is non-blocking). Then
-    // StopMesh via ShutdownMessaging joins MeshControlPool + MeshPump while AppRuntime is up.
+    // StopMesh via ShutdownMessaging joins MeshPump while AppRuntime is up.
     if (messaging_) {
       StartupPhase phase("Shutdown::RequestShutdown");
       messaging_->RequestShutdown();
@@ -1577,6 +1590,13 @@ void Application::Shutdown() {
       harfbuzz_font_engine_.reset();
     }
     AppRuntime::SetUIWakeCallback(nullptr);
+    {
+      // Released call-media / ringtone leases close on the device thread — finish before SDL_Quit.
+      StartupPhase phase("Shutdown::MediaDevices");
+      if (!MediaDeviceArbiter::ShutdownDefault(kQuitMediaDevicesBudget)) {
+        log().warning << "Shutdown: media device closes still running — detached";
+      }
+    }
     {
       StartupPhase phase("Shutdown::Backend");
       Backend::Shutdown();

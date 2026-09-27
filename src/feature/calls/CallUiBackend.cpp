@@ -1,8 +1,11 @@
 #include "feature/calls/CallUiBackend.h"
 
 #include "domain/media/CallMediaEngine.h"
+#include "domain/media/CameraCaptureOrientation.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallStack.h"
+#include "feature/calls/CallsThread.h"
+#include "foundation/runtime/AppRuntime.h"
 
 #include <stdexcept>
 #include "common/PbrCompat.h"
@@ -10,13 +13,21 @@
 namespace pbr {
 namespace {
 
-const std::string& EmptyString() {
-  static const std::string kEmpty;
-  return kEmpty;
-}
-
 Error UnavailableError() {
   return Error("Call backend unavailable");
+}
+
+std::function<void()> OnUi(std::function<void()> callback) {
+  return [callback = std::move(callback)]() {
+    if (!callback) {
+      return;
+    }
+    if (AppRuntime::CurrentlyOnUI()) {
+      callback();
+    } else {
+      AppRuntime::PostUI(callback);
+    }
+  };
 }
 
 } // namespace
@@ -24,60 +35,171 @@ Error UnavailableError() {
 CallUiBackend::CallUiBackend(CallStack& stack) : stack_(stack) {}
 
 bool CallUiBackend::Available() const {
-  return stack_.Calls() != nullptr && stack_.Lifecycle() != nullptr;
+  return State()->available;
 }
 
 const void* CallUiBackend::SessionsIdentity() const {
-  return stack_.Calls();
+  return State()->sessions_identity;
 }
 
 void CallUiBackend::SetOnRingChanged(std::function<void()> callback) {
-  if (auto* calls = stack_.Calls()) {
-    calls->SetOnRingChanged(std::move(callback));
-  }
+  // GUI boundary: rings come from the calls owner (and receive paths); the GUI hears them on UI.
+  stack_.RunOnOwner([ring = OnUi(std::move(callback))](CallSessionManager& calls) { calls.SetOnRingChanged(ring); });
 }
 
 void CallUiBackend::SetOnChromeRefresh(std::function<void()> callback) {
-  if (auto* life = stack_.Lifecycle()) {
-    life->SetOnChromeRefresh(std::move(callback));
-  }
+  CallsThread::RunAndWait([this, &callback]() {
+    if (auto* life = stack_.Lifecycle()) {
+      life->SetOnChromeRefresh(std::move(callback));  // CallLifecycle::NotifyChrome delivers on UI
+    }
+  });
 }
 
+std::shared_ptr<const CallUiState> CallUiBackend::State() const {
+  return stack_.UiState();
+}
+
+void CallUiBackend::OnOwner(std::function<void(CallSessionManager&)> op) {
+  CallsThread::Post([this, op = std::move(op)]() {
+    if (auto* calls = stack_.Calls()) {
+      op(*calls);
+    }
+  });
+}
+
+template <typename R>
+std::function<void(R)> CallUiBackend::ReplyOnUi(std::function<void(R)> on_done) {
+  return [on_done = std::move(on_done)](R result) {
+    if (!on_done) {
+      return;
+    }
+    AppRuntime::PostUI([on_done, result = std::move(result)]() { on_done(result); });
+  };
+}
+
+// --- intents -------------------------------------------------------------------------------------
+
 void CallUiBackend::SweepExpiredInvites() {
-  if (auto* calls = stack_.Calls()) {
-    calls->SweepExpiredInvites();
-  }
+  OnOwner([](CallSessionManager& calls) { calls.SweepExpiredInvites(); });
 }
 
 void CallUiBackend::PollP2pConnectHealth() {
-  if (auto* calls = stack_.Calls()) {
-    calls->PollP2pConnectHealth();
-  }
-}
-
-std::optional<std::string> CallUiBackend::TakeLastMediaError() {
-  if (auto* calls = stack_.Calls()) {
-    return calls->TakeLastMediaError();
-  }
-  return std::nullopt;
-}
-
-std::string CallUiBackend::PeekMediaActivity() const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->PeekMediaActivity();
-  }
-  return {};
+  OnOwner([](CallSessionManager& calls) { calls.PollP2pConnectHealth(); });
 }
 
 void CallUiBackend::ClearMediaActivity() {
-  if (auto* calls = stack_.Calls()) {
-    calls->ClearMediaActivity();
-  }
+  OnOwner([](CallSessionManager& calls) { calls.ClearMediaActivity(); });
 }
+
+void CallUiBackend::Apply(CallLifecycleEvent ev, const std::string& call_id) {
+  CallsThread::Post([this, ev, call_id]() {
+    if (auto* life = stack_.Lifecycle()) {
+      life->Apply(ev, call_id);
+    }
+  });
+}
+
+void CallUiBackend::NoteRingCallId(const std::string& call_id) {
+  CallsThread::Post([this, call_id]() {
+    if (auto* life = stack_.Lifecycle()) {
+      life->NoteRingCallId(call_id);
+    }
+  });
+}
+
+void CallUiBackend::ClearLastError() {
+  CallsThread::Post([this]() {
+    if (auto* life = stack_.Lifecycle()) {
+      life->ClearLastError();
+    }
+  });
+}
+
+void CallUiBackend::LeaveCall(const std::string& call_id) {
+  OnOwner([call_id](CallSessionManager& calls) { (void)calls.LeaveCall(call_id); });
+}
+
+void CallUiBackend::StopCallMedia(const std::string& call_id) {
+  OnOwner([call_id](CallSessionManager& calls) { calls.StopCallMedia(call_id); });
+}
+
+void CallUiBackend::RequestVideoRefresh(const std::string& call_id, const std::string& publisher_identity) {
+  OnOwner([call_id, publisher_identity](CallSessionManager& calls) {
+    (void)calls.RequestVideoRefresh(call_id, publisher_identity);
+  });
+}
+
+void CallUiBackend::SetPendingAcceptChargeDecision(const InitiationChargeDecision decision) {
+  OnOwner([decision](CallSessionManager& calls) { calls.SetPendingAcceptChargeDecision(decision); });
+}
+
+std::optional<std::string> CallUiBackend::TakeLastMediaError() {
+  const auto state = State();
+  if (!state->last_media_error) {
+    taken_media_error_.reset();
+    return std::nullopt;
+  }
+  if (taken_media_error_ == state->last_media_error) {
+    return std::nullopt;  // shown already; the owner's clear has not published yet
+  }
+  taken_media_error_ = state->last_media_error;
+  OnOwner([seen = *state->last_media_error](CallSessionManager& calls) { calls.ClearLastMediaErrorIf(seen); });
+  return taken_media_error_;
+}
+
+void CallUiBackend::StartCall(const std::string& origin_thread_id, const bool video_allowed,
+                              const std::vector<std::string>& invitee_identities,
+                              std::function<void(Roe<CallSession>)> on_done) {
+  auto reply = ReplyOnUi<Roe<CallSession>>(std::move(on_done));
+  CallsThread::Post([this, origin_thread_id, video_allowed, invitee_identities, reply]() {
+    auto* calls = stack_.Calls();
+    if (!calls) {
+      reply(UnavailableError());
+      return;
+    }
+    auto started = calls->StartCall(origin_thread_id, video_allowed, invitee_identities);
+    if (started) {
+      if (auto* life = stack_.Lifecycle()) {
+        // Idempotent if the workflow already noted it via lifecycle ports (preferred, pre-Invite).
+        life->Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
+      }
+    }
+    reply(std::move(started));
+  });
+}
+
+void CallUiBackend::InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
+                                      std::function<void(Roe<void>)> on_done) {
+  auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
+  CallsThread::Post([this, call_id, invitee_identity, reply]() {
+    auto* calls = stack_.Calls();
+    reply(calls ? calls->InviteParticipant(call_id, invitee_identity) : Roe<void>(UnavailableError()));
+  });
+}
+
+void CallUiBackend::SetLocalAudioMuted(bool muted, std::function<void(Roe<void>)> on_done) {
+  auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
+  CallsThread::Post([this, muted, reply]() {
+    auto* calls = stack_.Calls();
+    reply(calls ? calls->SetLocalAudioMuted(muted) : Roe<void>(UnavailableError()));
+  });
+}
+
+void CallUiBackend::SetLocalVideoEnabled(bool enabled, std::function<void(Roe<void>)> on_done) {
+  // L012: the display rotation comes from UIKit on iOS — read it here, on UI, not on the owner.
+  const int rotation = enabled ? CameraDisplayRotationDegrees() : 0;
+  auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
+  CallsThread::Post([this, enabled, rotation, reply]() {
+    auto* calls = stack_.Calls();
+    reply(calls ? calls->SetLocalVideoEnabled(enabled, rotation) : Roe<void>(UnavailableError()));
+  });
+}
+
+// --- durable state -------------------------------------------------------------------------------
 
 Roe<std::optional<PendingCallInvite>> CallUiBackend::TopPendingInvite() {
   if (auto* calls = stack_.Calls()) {
-    return calls->TopPendingInvite();
+    return calls->PeekTopPendingInvite();
   }
   return UnavailableError();
 }
@@ -117,39 +239,11 @@ Roe<std::vector<CallParticipant>> CallUiBackend::ListJoinedParticipants(const st
   return UnavailableError();
 }
 
-bool CallUiBackend::IsAwaitingSfuRecovery() const {
+int64_t CallUiBackend::InitiationOfferMinorForPeer(const std::string& peer_identity) const {
   if (auto* calls = stack_.Calls()) {
-    return calls->IsAwaitingSfuRecovery();
+    return calls->InitiationOfferMinorForPeer(peer_identity);
   }
-  return false;
-}
-
-bool CallUiBackend::IsSoftMigrateInFlight() const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->IsSoftMigrateInFlight();
-  }
-  return false;
-}
-
-bool CallUiBackend::IsSfuAttachWaitActive() const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->IsSfuAttachWaitActive();
-  }
-  return false;
-}
-
-bool CallUiBackend::IsP2pConnectFailed() const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->IsP2pConnectFailed();
-  }
-  return false;
-}
-
-bool CallUiBackend::P2pConnectMissingMic() const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->P2pConnectMissingMic();
-  }
-  return false;
+  return 0;
 }
 
 bool CallUiBackend::MediaAttemptedThisProcess(const std::string& call_id) const {
@@ -159,195 +253,12 @@ bool CallUiBackend::MediaAttemptedThisProcess(const std::string& call_id) const 
   return false;
 }
 
-Roe<void> CallUiBackend::LeaveCall(const std::string& call_id) {
-  if (auto* calls = stack_.Calls()) {
-    return calls->LeaveCall(call_id);
-  }
-  return UnavailableError();
-}
-
-Roe<CallSession> CallUiBackend::StartCall(const std::string& origin_thread_id, const bool video_allowed,
-                                          const std::vector<std::string>& invitee_identities) {
-  if (auto* calls = stack_.Calls()) {
-    auto started = calls->StartCall(origin_thread_id, video_allowed, invitee_identities);
-    if (started) {
-      // Idempotent if workflow already noted via lifecycle ports (preferred, pre-Invite).
-      Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
-    }
-    return started;
-  }
-  return UnavailableError();
-}
-
-Roe<PendingCallInvite> CallUiBackend::ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan,
-                                                             const ArmLiveAnnounceJoinOpts& opts) {
-  if (auto* calls = stack_.Calls()) {
-    return calls->Broadcast().ArmJoinFromLiveAnnounce(plan, opts);
-  }
-  return UnavailableError();
-}
-
-Roe<void> CallUiBackend::AcceptLiveAnnounceJoin(const std::string& call_id) {
-  if (auto* calls = stack_.Calls()) {
-    return calls->Broadcast().AcceptLiveAnnounceJoin(call_id);
-  }
-  return UnavailableError();
-}
-
-
-Roe<void> CallUiBackend::InviteParticipant(const std::string& call_id,
-                                           const std::string& invitee_identity) {
-  if (auto* calls = stack_.Calls()) {
-    return calls->InviteParticipant(call_id, invitee_identity);
-  }
-  return UnavailableError();
-}
-
-void CallUiBackend::StopCallMedia(const std::string& call_id) {
-  if (auto* calls = stack_.Calls()) {
-    calls->StopCallMedia(call_id);
-  }
-}
-
-Roe<void> CallUiBackend::SetLocalAudioMuted(bool muted) {
-  if (auto* calls = stack_.Calls()) {
-    return calls->SetLocalAudioMuted(muted);
-  }
-  return UnavailableError();
-}
-
-Roe<void> CallUiBackend::SetLocalVideoEnabled(bool enabled) {
-  if (auto* calls = stack_.Calls()) {
-    return calls->SetLocalVideoEnabled(enabled);
-  }
-  return UnavailableError();
-}
-
-Roe<void> CallUiBackend::RequestVideoRefresh(const std::string& call_id,
-                                            const std::string& publisher_identity) {
-  if (auto* calls = stack_.Calls()) {
-    return calls->RequestVideoRefresh(call_id, publisher_identity);
-  }
-  return UnavailableError();
-}
-
 CallMediaEngine& CallUiBackend::Media() {
   auto* calls = stack_.Calls();
   if (!calls) {
     throw std::runtime_error("CallUiBackend::Media unavailable");
   }
   return calls->Media();
-}
-
-CallHopHealth CallUiBackend::HopHealth() const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->HopHealth();
-  }
-  return {};
-}
-
-std::string CallUiBackend::MediaPathKind() const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->MediaPathKind();
-  }
-  return {};
-}
-
-CallMediaSeat::MediaState CallUiBackend::SeatMediaState(const std::string& call_id) const {
-  if (auto* seat = stack_.MediaSeat()) {
-    if (call_id.empty() || !seat->IsBound(call_id)) {
-      return CallMediaSeat::MediaState::Idle;
-    }
-    return seat->State();
-  }
-  return CallMediaSeat::MediaState::Idle;
-}
-
-bool CallUiBackend::SeatMediaLive(const std::string& call_id) const {
-  if (auto* seat = stack_.MediaSeat()) {
-    return seat->IsLive(call_id);
-  }
-  return false;
-}
-
-bool CallUiBackend::MediaChromeLive() const {
-  if (auto* life = stack_.Lifecycle()) {
-    return life->MediaChromeLive();
-  }
-  return false;
-}
-
-CallMediaStatus CallUiBackend::MediaStatus() const {
-  if (auto* life = stack_.Lifecycle()) {
-    return life->Status();
-  }
-  return CallMediaStatus::None;
-}
-
-const std::string& CallUiBackend::LastError() const {
-  if (auto* life = stack_.Lifecycle()) {
-    return life->LastError();
-  }
-  return EmptyString();
-}
-
-void CallUiBackend::ClearLastError() {
-  if (auto* life = stack_.Lifecycle()) {
-    life->ClearLastError();
-  }
-}
-
-bool CallUiBackend::ShouldSuppressRing(const std::string& call_id) const {
-  if (auto* life = stack_.Lifecycle()) {
-    return life->ShouldSuppressRing(call_id);
-  }
-  return false;
-}
-
-CallPhase CallUiBackend::Phase() const {
-  if (auto* life = stack_.Lifecycle()) {
-    return life->Phase();
-  }
-  return CallPhase::Idle;
-}
-
-void CallUiBackend::Apply(CallLifecycleEvent ev, const std::string& call_id) {
-  if (auto* life = stack_.Lifecycle()) {
-    life->Apply(ev, call_id);
-  }
-}
-
-void CallUiBackend::NoteRingCallId(const std::string& call_id) {
-  if (auto* life = stack_.Lifecycle()) {
-    life->NoteRingCallId(call_id);
-  }
-}
-
-const std::string& CallUiBackend::LastRingCallId() const {
-  if (auto* life = stack_.Lifecycle()) {
-    return life->LastRingCallId();
-  }
-  return EmptyString();
-}
-
-const std::string& CallUiBackend::ActiveCallId() const {
-  if (auto* life = stack_.Lifecycle()) {
-    return life->ActiveCallId();
-  }
-  return EmptyString();
-}
-
-int64_t CallUiBackend::InitiationOfferMinorForPeer(const std::string& peer_identity) const {
-  if (auto* calls = stack_.Calls()) {
-    return calls->InitiationOfferMinorForPeer(peer_identity);
-  }
-  return 0;
-}
-
-void CallUiBackend::SetPendingAcceptChargeDecision(const InitiationChargeDecision decision) {
-  if (auto* calls = stack_.Calls()) {
-    calls->SetPendingAcceptChargeDecision(decision);
-  }
 }
 
 } // namespace pbr

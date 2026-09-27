@@ -10,14 +10,15 @@
 #include "domain/messaging/CallHopAttachLogic.h"
 #include "domain/messaging/SoftMigrateLogic.h"
 #include "domain/messaging/SqliteThreadStore.h"
-#include "domain/mesh/host/MeshControlDispatch.h"
-#include "domain/mesh/host/MeshControlPool.h"
 #include "domain/people/ContactsStore.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "common/SettledWait.h"
 #include "common/Utilities.h"
+#include "domain/mesh/shared/AmpParkUntil.h"
 
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <gtest/gtest.h>
 #include <mutex>
 #include <thread>
@@ -186,7 +187,7 @@ public:
 
   void ClearDialBackoff(const std::string& /*peer_key*/) override {}
   void AbortInflightDial(const std::string& /*peer_key*/) override {}
-  void ClearCallMediaCircuitHop(const std::string& /*peer_key*/) override {}
+  void ClearPeerCircuitHop(const std::string& /*peer_key*/) override {}
 
   std::unordered_map<std::string, std::string> endpoints;
   std::unordered_map<std::string, bool> force_dialable;
@@ -205,7 +206,7 @@ public:
                                     int /*timeout_ms*/) override {
     ++quote_calls;
     last_quote_hop = hop_peer_key;
-    last_quote_call_id = request.call_id;
+    last_quote_call_id = request.session_id;
     if (!quote_ok) {
       return Error(quote_error);
     }
@@ -240,13 +241,16 @@ public:
 
   void StartClientFrameReader() override { ++reader_starts; }
 
-  void SetClientTransportLostHandler(std::function<void()> handler) override {
-    transport_lost_handler = std::move(handler);
+  uint64_t AddClientTransportLostObserver(std::function<void(MediaRelayClientLoss)> observer) override {
+    session_end_observers[next_observer_token] = std::move(observer);
+    return next_observer_token++;
   }
+  void RemoveClientTransportLostObserver(uint64_t token) override { session_end_observers.erase(token); }
 
-  void FireTransportLost() {
-    if (transport_lost_handler) {
-      transport_lost_handler();
+  void FireSessionEnd(MediaRelayClientLoss loss = MediaRelayClientLoss::TransportLost) {
+    for (const auto& [token, observer] : session_end_observers) {
+      (void)token;
+      observer(loss);
     }
   }
 
@@ -265,6 +269,9 @@ public:
   }
 
   Roe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
+    // Product relay Subscribe is thread-safe (coordinator mutex) and is called from the calls owner
+    // and relay paths — the fake must be too (ASan double-free in the vector otherwise).
+    std::lock_guard lock(subscribe_mu);
     subscribed_streams.push_back(stream_id);
     subscribed_channels.push_back(channel_id);
     return {};
@@ -295,9 +302,11 @@ public:
   std::string last_quote_hop;
   std::string last_quote_call_id;
   bool local_hop_attached_ = false;
+  std::mutex subscribe_mu;
   std::vector<uint32_t> subscribed_streams;
   std::vector<uint16_t> subscribed_channels;
-  std::function<void()> transport_lost_handler;
+  std::map<uint64_t, std::function<void(MediaRelayClientLoss)>> session_end_observers;
+  uint64_t next_observer_token = 1;
   std::function<void()> before_accept_done;
 
 private:
@@ -336,6 +345,11 @@ protected:
     if (topo_) {
       topo_->SetHopArmingPorts({});
     }
+    // Stop capture before the topology goes: the engine's capture thread runs the StartSfu send
+    // fn, which captures the hop-migrate workflow (TSan: use-after-free in TearDown).
+    if (media_) {
+      media_->Stop();
+    }
     // Idempotent: tests that Initialize AppRuntime join the pool before store_ reset (PR #216).
     AppRuntime::Shutdown();
     AppRuntime::ShutdownUI();
@@ -346,6 +360,40 @@ protected:
     sessions_.reset();
     store_.reset();
     std::filesystem::remove_all(data_dir_);
+  }
+
+  /**
+   * Run an async topology flow to completion. Completions are posted to the UI thread, so a test
+   * parked on UI keeps running UI tasks while it waits.
+   */
+  static Roe<void> AwaitFlow(const std::function<void(std::function<void(Roe<void>)>)>& start,
+                             std::chrono::milliseconds budget) {
+    SettledWait<void> wait;
+    start([wait](Roe<void> value) { wait.Finish(std::move(value)); });
+    std::function<void()> pump;
+    if (AppRuntime::CurrentlyOnUI()) {
+      pump = []() {
+        AppRuntime::RunUIAndOwnerTasks();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      };
+    }
+    AmpParkUntil([&] { return wait.IsSettled(); }, std::chrono::steady_clock::now() + budget, pump);
+    return wait.Wait(std::chrono::milliseconds(1), Error("topology flow timed out"));
+  }
+
+  Roe<void> SoftMigrate(const std::string& call_id, SoftMigrateTrigger trigger,
+                        const std::string& prefer_hop_peer_id = {}, uint64_t expected_gen = 0) {
+    return AwaitFlow(
+        [&](std::function<void(Roe<void>)> done) {
+          topo_->MaybeSoftMigrateToSfuAsync(call_id, trigger, prefer_hop_peer_id, expected_gen, std::move(done));
+        },
+        std::chrono::milliseconds(60000));
+  }
+
+  Roe<void> AttachToHop(const std::string& call_id, const CallSfuAttachDetail& attach) {
+    return AwaitFlow(
+        [&](std::function<void(Roe<void>)> done) { topo_->AttachLocalToSfuAsync(call_id, attach, std::move(done)); },
+        std::chrono::milliseconds(30000));
   }
 
   void SeedJoinedCall(const std::string& call_id, const std::vector<std::string>& identities,
@@ -430,7 +478,7 @@ TEST_F(CallTopologyControllerTest, LocalJoinedWithoutHintDoesNotQuote) {
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
   host_->local_identity = "account:C";
 
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::LocalJoinedWithoutHint);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::LocalJoinedWithoutHint);
   ASSERT_TRUE(ok);
   EXPECT_EQ(relay_->quote_calls, 0);
   EXPECT_TRUE(host_->fanouts.empty());
@@ -441,7 +489,7 @@ TEST_F(CallTopologyControllerTest, MidCallNonInitiatorDoesNotQuote) {
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
   host_->local_identity = "account:B";
 
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::RemoteAcceptObserved);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::RemoteAcceptObserved);
   ASSERT_TRUE(ok);
   EXPECT_EQ(relay_->quote_calls, 0);
   EXPECT_TRUE(host_->fanouts.empty());
@@ -455,7 +503,7 @@ TEST_F(CallTopologyControllerTest, MidCallInitiatorPicksAndQuotes) {
   // Exercise remote hop path (PreferLocal would short-circuit to AttachAsLocalHop).
   relay_->started = false;
 
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
   EXPECT_GE(relay_->quote_calls, 1);
   EXPECT_EQ(relay_->last_quote_call_id, call_id);
   if (ok) {
@@ -470,6 +518,33 @@ TEST_F(CallTopologyControllerTest, MidCallInitiatorPicksAndQuotes) {
   }
 }
 
+// The hop pick used to hold itself (a shared std::function capturing its own shared_ptr): every
+// SoftMigrate leaked its ranked hops, session copy and completion. Whatever the completion holds
+// must be released once the flow settles — after a failed pick walks every hop, and after success.
+TEST_F(CallTopologyControllerTest, SoftMigrateReleasesItsHopPickWhenSettled) {
+  const std::string call_id = "call:pick-release";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:A";
+  relay_->started = false;
+
+  for (const bool quote_ok : {false, true}) {
+    relay_->quote_ok = quote_ok;
+    relay_->quote_error = "refused";
+    auto held = std::make_shared<int>(0);
+    const std::weak_ptr<int> watch = held;
+    (void)AwaitFlow(
+        [&](std::function<void(Roe<void>)> done) {
+          topo_->MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::JoinedCountObserved, {}, 0,
+                                            [done = std::move(done), held = std::move(held)](Roe<void> v) {
+                                              done(std::move(v));
+                                            });
+        },
+        std::chrono::milliseconds(60000));
+    EXPECT_TRUE(watch.expired()) << "hop pick still alive after settling (quote_ok=" << quote_ok << ")";
+  }
+  EXPECT_GE(relay_->quote_calls, 2);
+}
+
 TEST_F(CallTopologyControllerTest, PickFailsSurfacesStreamOpenError) {
   const std::string call_id = "call:fail";
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
@@ -478,7 +553,7 @@ TEST_F(CallTopologyControllerTest, PickFailsSurfacesStreamOpenError) {
   relay_->quote_ok = false;
   relay_->quote_error = "media-relay stream open failed: protocol not supported";
 
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::RemoteAcceptObserved);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::RemoteAcceptObserved);
   ASSERT_FALSE(ok);
   // SoftMigrate returns user-facing copy; technical hop detail stays in logs.
   EXPECT_FALSE(ok.error().message.empty());
@@ -492,7 +567,7 @@ TEST_F(CallTopologyControllerTest, PaidQuoteBlockedWithoutPaymentRails) {
   relay_->started = false;
   relay_->quote_rate = 1.25;
 
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
   ASSERT_FALSE(ok);
   EXPECT_GE(relay_->quote_calls, 1);
   EXPECT_EQ(relay_->attach_calls, 0);
@@ -531,7 +606,7 @@ TEST_F(CallTopologyControllerTest, PreferLocalOwnerHopOverInCallContact) {
   WireLinkScopeRemotes(deps, "account:A", {"account:A", "account:B", "account:C"});
   topo_->SetMediaRelayDeps(std::move(deps));
 
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
   ASSERT_TRUE(ok) << ok.error().message;
   EXPECT_EQ(relay_->local_hop_calls, 1);
   EXPECT_EQ(relay_->quote_calls, 0);
@@ -562,7 +637,7 @@ TEST_F(CallTopologyControllerTest, EphemeralStartedDoesNotPreferLocalWithoutFlag
   topo_->SetMediaRelayDeps(std::move(deps));
   dial_->force_dialable["12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"] = true;
 
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
   EXPECT_EQ(relay_->local_hop_calls, 0);
   if (ok) {
     ASSERT_FALSE(host_->fanouts.empty());
@@ -586,7 +661,7 @@ TEST_F(CallTopologyControllerTest, AttachSelfHopUsesLocalPublisher) {
   attach.call_id = "call:self";
   attach.hop_peer_id = relay_->local_peer_id;
   attach.hop_multiaddr = "/ip4/127.0.0.1/tcp/1/p2p/" + relay_->local_peer_id;
-  auto ok = topo_->AttachLocalToSfu(attach.call_id, attach);
+  auto ok = AttachToHop(attach.call_id, attach);
   ASSERT_TRUE(ok) << ok.error().message;
   EXPECT_EQ(relay_->local_hop_calls, 1);
   EXPECT_EQ(relay_->quote_calls, 0);
@@ -599,7 +674,7 @@ TEST_F(CallTopologyControllerTest, IceRecoverNonCoordinatorDoesNotQuote) {
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
   host_->local_identity = "account:B"; // coordinator is account:A
 
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::IceRecover);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::IceRecover);
   ASSERT_TRUE(ok);
   EXPECT_EQ(relay_->quote_calls, 0);
 }
@@ -622,7 +697,7 @@ TEST_F(CallTopologyControllerTest, HopHintPreferLocalFallsBackToSharedPublicHop)
   topo_->SetMediaRelayDeps(std::move(deps));
   dial_->force_dialable[seed] = true;
 
-  ASSERT_TRUE(topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved));
+  ASSERT_TRUE(SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved));
   EXPECT_EQ(relay_->local_hop_calls, 1);
   EXPECT_TRUE(relay_->IsLocalHopAttached());
   const int detaches_after_migrate = relay_->detach_calls;
@@ -635,7 +710,7 @@ TEST_F(CallTopologyControllerTest, HopHintPreferLocalFallsBackToSharedPublicHop)
   fail.error = "quote timed out";
   fail.preferred_hop_peer_ids = {seed};
   topo_->OnInboundSfuAttachFailed(fail);
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
 
   EXPECT_GT(relay_->detach_calls, detaches_after_migrate) << "must leave PreferLocal for shared seed";
   EXPECT_GT(relay_->quote_calls, quotes_after_migrate);
@@ -667,7 +742,7 @@ TEST_F(CallTopologyControllerTest, HopHintRefusesWhenGuestPrefsMissOwnerDialable
   topo_->SetMediaRelayDeps(std::move(deps));
   dial_->force_dialable["12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"] = true;
 
-  ASSERT_TRUE(topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved));
+  ASSERT_TRUE(SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved));
   EXPECT_TRUE(relay_->IsLocalHopAttached());
   const int detaches_after_migrate = relay_->detach_calls;
 
@@ -678,7 +753,7 @@ TEST_F(CallTopologyControllerTest, HopHintRefusesWhenGuestPrefsMissOwnerDialable
   fail.error = "quote timed out";
   fail.preferred_hop_peer_ids = {"12D3KooWOnlyOnGuest"};
   topo_->OnInboundSfuAttachFailed(fail);
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
 
   EXPECT_EQ(relay_->detach_calls, detaches_after_migrate) << "must not Detach PreferLocal";
   EXPECT_TRUE(relay_->IsLocalHopAttached());
@@ -709,7 +784,7 @@ TEST_F(CallTopologyControllerTest, PreferLocalNodePicksEvenWhenNotInitiator) {
   WireLinkScopeRemotes(deps, "account:A", {"account:B", "account:A", "account:C"});
   topo_->SetMediaRelayDeps(std::move(deps));
 
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::RemoteAcceptObserved);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::RemoteAcceptObserved);
   ASSERT_TRUE(ok) << ok.error().message;
   EXPECT_EQ(relay_->local_hop_calls, 1);
   ASSERT_FALSE(host_->fanouts.empty());
@@ -735,7 +810,7 @@ TEST_F(CallTopologyControllerTest, PhoneDefersPickHopWhenDurableMediaRelayListed
   topo_->SetMediaRelayDeps(std::move(deps));
   dial_->force_dialable["12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"] = true;
 
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
   ASSERT_TRUE(ok);
   EXPECT_EQ(relay_->quote_calls, 0);
   EXPECT_EQ(relay_->local_hop_calls, 0);
@@ -756,13 +831,13 @@ TEST_F(CallTopologyControllerTest, SoftMigrateRepickKeepsPreferLocalWhenPreferSe
   WireLinkScopeRemotes(deps, "account:A", {"account:A", "account:B", "account:C"});
   topo_->SetMediaRelayDeps(std::move(deps));
 
-  ASSERT_TRUE(topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved));
+  ASSERT_TRUE(SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved));
   const int detaches = relay_->detach_calls;
   const int local_hops = relay_->local_hop_calls;
   const size_t fanouts = host_->fanouts.size();
 
   // Same hop → re-fan-out only (V035 FSM); no Detach.
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::IceRecover, relay_->local_peer_id);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::IceRecover, relay_->local_peer_id);
   ASSERT_TRUE(ok) << ok.error().message;
   EXPECT_EQ(relay_->detach_calls, detaches);
   EXPECT_EQ(relay_->local_hop_calls, local_hops);
@@ -787,12 +862,12 @@ TEST_F(CallTopologyControllerTest, SoftMigrateRepickLeavesPreferLocalForSharedPu
   topo_->SetMediaRelayDeps(std::move(deps));
   dial_->force_dialable[seed] = true;
 
-  ASSERT_TRUE(topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved));
+  ASSERT_TRUE(SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved));
   EXPECT_EQ(relay_->local_hop_calls, 1);
   const int detaches = relay_->detach_calls;
   const int quotes = relay_->quote_calls;
 
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::IceRecover, seed);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::IceRecover, seed);
   ASSERT_TRUE(ok) << ok.error().message;
   EXPECT_GT(relay_->detach_calls, detaches);
   EXPECT_GT(relay_->quote_calls, quotes);
@@ -802,7 +877,7 @@ TEST_F(CallTopologyControllerTest, SoftMigrateRepickLeavesPreferLocalForSharedPu
   // Second SoftMigrate same hop → no Detach (Connecting storm).
   const int detaches_after = relay_->detach_calls;
   const int quotes_after = relay_->quote_calls;
-  auto again = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::IceRecover, seed);
+  auto again = SoftMigrate(call_id, SoftMigrateTrigger::IceRecover, seed);
   ASSERT_TRUE(again) << again.error().message;
   EXPECT_EQ(relay_->detach_calls, detaches_after);
   EXPECT_EQ(relay_->quote_calls, quotes_after);
@@ -829,7 +904,7 @@ TEST_F(CallTopologyControllerTest, WideScopePicksOrgSeedNotPreferLocal) {
   topo_->SetMediaRelayDeps(std::move(deps));
   dial_->force_dialable[seed] = true;
 
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
   ASSERT_TRUE(ok) << ok.error().message;
   EXPECT_EQ(relay_->local_hop_calls, 0) << "Wide must not PreferLocal with private advertise MA";
   EXPECT_GE(relay_->quote_calls, 1);
@@ -858,7 +933,7 @@ TEST_F(CallTopologyControllerTest, WideMissingRemotesPicksSeed) {
   topo_->SetMediaRelayDeps(std::move(deps));
   dial_->force_dialable[seed] = true;
 
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
   ASSERT_TRUE(ok) << ok.error().message;
   EXPECT_EQ(relay_->local_hop_calls, 0);
   EXPECT_EQ(relay_->last_quote_hop, seed);
@@ -886,7 +961,7 @@ TEST_F(CallTopologyControllerTest, LinkWithoutLanConfirmedPicksSeed) {
   topo_->SetMediaRelayDeps(std::move(deps));
   dial_->force_dialable[seed] = true;
 
-  auto ok = topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved);
+  auto ok = SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved);
   ASSERT_TRUE(ok) << ok.error().message;
   EXPECT_EQ(relay_->local_hop_calls, 0);
   EXPECT_EQ(relay_->last_quote_hop, seed);
@@ -982,7 +1057,7 @@ TEST_F(CallTopologyControllerTest, HopHintAfterAttachedSeedRefanoutsOnly) {
   topo_->SetMediaRelayDeps(std::move(deps));
   dial_->force_dialable[seed] = true;
 
-  ASSERT_TRUE(topo_->MaybeSoftMigrateToSfu(call_id, SoftMigrateTrigger::JoinedCountObserved));
+  ASSERT_TRUE(SoftMigrate(call_id, SoftMigrateTrigger::JoinedCountObserved));
   EXPECT_EQ(relay_->last_quote_hop, seed);
   const int detaches = relay_->detach_calls;
   const size_t fanouts = host_->fanouts.size();
@@ -994,7 +1069,7 @@ TEST_F(CallTopologyControllerTest, HopHintAfterAttachedSeedRefanoutsOnly) {
   fail.error = "private hop unreachable";
   fail.preferred_hop_peer_ids = {seed};
   topo_->OnInboundSfuAttachFailed(fail);
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
 
   EXPECT_EQ(relay_->detach_calls, detaches) << "already on seed — re-fan-out only";
   EXPECT_GT(host_->fanouts.size(), fanouts);
@@ -1031,11 +1106,9 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachSkipsPrivateHopOffLan) {
 TEST_F(CallTopologyControllerTest, InboundSfuAttachDeferredWhileSoftMigrateInFlight) {
   // Moto dogfood: SoftMigrate WaitForAttach in flight + inbound CallSfuAttach must not bump
   // migrate_generation_ (Detach mid-AcceptAndAttach → asio UAF).
-  AppRuntime::Initialize();
+  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
   AppRuntime::InitializeUI();
   AppRuntime::PauseWorkers();
-  MeshControlPool control(1);
-  MeshControlDispatch::Install(&control);
 
   const std::string call_id = "call:defer-inbound";
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
@@ -1058,20 +1131,18 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachDeferredWhileSoftMigrateInFli
   AppRuntime::ResumeWorkers();
   bool attached = false;
   for (int i = 0; i < 200; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (topo_->IsSfuAttached()) {
       attached = true;
       break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
   EXPECT_TRUE(attached) << "FlushPendingInboundSfuAttach should attach after SoftMigrate";
   EXPECT_GE(relay_->attach_calls, 1);
   EXPECT_EQ(relay_->detach_calls, 0);
 
-  MeshControlDispatch::Uninstall();
-  control.Shutdown();
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();
 }
@@ -1079,11 +1150,9 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachDeferredWhileSoftMigrateInFli
 TEST_F(CallTopologyControllerTest, LocalAcceptKeepsInFlightInboundAttach) {
   // Dogfood: CallSfuAttach AcceptAndAttach ok then OnLocalAcceptJoined bumped migrate gen →
   // aborted before StartSfu; caller Connected, guest stuck Connecting (streams=0).
-  AppRuntime::Initialize();
+  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
   AppRuntime::InitializeUI();
   AppRuntime::PauseWorkers();
-  MeshControlPool control(1);
-  MeshControlDispatch::Install(&control);
 
   const std::string call_id = "call:accept-keeps-attach";
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
@@ -1106,20 +1175,18 @@ TEST_F(CallTopologyControllerTest, LocalAcceptKeepsInFlightInboundAttach) {
   AppRuntime::ResumeWorkers();
   bool attached = false;
   for (int i = 0; i < 200; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (topo_->IsSfuAttached()) {
       attached = true;
       break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
   EXPECT_TRUE(attached) << "inbound attach must reach StartSfu after LocalAccept";
   EXPECT_GE(relay_->attach_calls, 1);
   EXPECT_EQ(relay_->detach_calls, 0);
 
-  MeshControlDispatch::Uninstall();
-  control.Shutdown();
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();
 }
@@ -1150,7 +1217,7 @@ TEST_F(CallTopologyControllerTest, StartSfuDespiteMigrateGenStampede) {
     topo_->BeginSfuAttachWait(call_id);
   };
 
-  ASSERT_TRUE(topo_->AttachLocalToSfu(call_id, attach)) << "must StartSfu while call still active";
+  ASSERT_TRUE(AttachToHop(call_id, attach)) << "must StartSfu while call still active";
   EXPECT_TRUE(topo_->IsSfuAttached());
   EXPECT_GE(relay_->attach_calls, 1);
 }
@@ -1175,7 +1242,7 @@ TEST_F(CallTopologyControllerTest, InboundAnnounceSubscribesWithoutRosterPeer) {
   self.hop_peer_id = relay_->local_peer_id;
   self.hop_multiaddr = "/ip4/10.0.0.1/tcp/1/p2p/" + relay_->local_peer_id;
   self.publisher_stream_id = PublisherStreamIdForIdentity("account:A");
-  ASSERT_TRUE(topo_->AttachLocalToSfu(call_id, self)) << "self hop attach";
+  ASSERT_TRUE(AttachToHop(call_id, self)) << "self hop attach";
   ASSERT_TRUE(topo_->IsSfuAttached());
 
   const uint32_t moto_stream = PublisherStreamIdForIdentity("account:xaug44GAhFLCTTHR");
@@ -1198,7 +1265,7 @@ TEST_F(CallTopologyControllerTest, InboundAnnounceSubscribesWithoutRosterPeer) {
 
 TEST_F(CallTopologyControllerTest, GuestReattachOnTransportLost) {
   // Moto dogfood: mid-call hop CleanupParticipant left TX zombie / RX frozen with no recovery.
-  AppRuntime::Initialize();
+  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
   AppRuntime::InitializeUI();
 
   const std::string call_id = "call:guest-reattach";
@@ -1215,36 +1282,101 @@ TEST_F(CallTopologyControllerTest, GuestReattachOnTransportLost) {
   deps.dial = dial_.get();
   deps.prefer_local_as_hop = false;
   topo_->SetMediaRelayDeps(std::move(deps));
-  ASSERT_TRUE(relay_->transport_lost_handler) << "SetMediaRelayDeps must arm transport-lost handler";
+  ASSERT_EQ(relay_->session_end_observers.size(), 1u) << "SetMediaRelayDeps must watch relay session ends";
 
   CallSfuAttachDetail attach;
   attach.call_id = call_id;
   attach.hop_peer_id = hop;
   attach.hop_multiaddr = dial_->endpoints[hop];
-  ASSERT_TRUE(topo_->AttachLocalToSfu(call_id, attach));
+  ASSERT_TRUE(AttachToHop(call_id, attach));
   ASSERT_TRUE(topo_->IsSfuAttached());
   const int attaches_after_first = relay_->attach_calls;
   const int quotes_after_first = relay_->quote_calls;
   EXPECT_GE(attaches_after_first, 1);
   EXPECT_GE(relay_->reader_starts, 1);
 
-  relay_->FireTransportLost();
-  AppRuntime::RunUITasks();
+  relay_->FireSessionEnd();
+  AppRuntime::RunUIAndOwnerTasks();
 
   bool reattached = false;
   for (int i = 0; i < 200; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (relay_->attach_calls > attaches_after_first) {
       reattached = true;
       break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
   EXPECT_TRUE(reattached) << "guest duplex loss must re-AcceptAndAttach";
   EXPECT_GT(relay_->quote_calls, quotes_after_first);
   EXPECT_GT(relay_->reader_starts, 1);
   EXPECT_TRUE(topo_->IsSfuAttached());
+
+  AppRuntime::Shutdown();
+  AppRuntime::ShutdownUI();
+}
+
+// Our own hop migrations and leaves replace / detach the relay session too: only a dead transport
+// may trigger the guest reattach.
+TEST_F(CallTopologyControllerTest, RelaySessionReplacedOrDetachedDoesNotReattach) {
+  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::InitializeUI();
+
+  const std::string call_id = "call:guest-replaced";
+  SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
+  host_->local_identity = "account:B";
+  relay_->started = true;
+  relay_->local_peer_id = "12D3KooWLocalGuest";
+
+  const std::string hop = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  dial_->endpoints[hop] = "/ip4/1.2.3.4/tcp/443/p2p/" + hop;
+
+  CallTopologyController::MediaRelayDeps deps;
+  deps.relay = relay_.get();
+  deps.dial = dial_.get();
+  deps.prefer_local_as_hop = false;
+  topo_->SetMediaRelayDeps(std::move(deps));
+
+  CallSfuAttachDetail attach;
+  attach.call_id = call_id;
+  attach.hop_peer_id = hop;
+  attach.hop_multiaddr = dial_->endpoints[hop];
+  ASSERT_TRUE(AttachToHop(call_id, attach));
+  const int attaches = relay_->attach_calls;
+
+  relay_->FireSessionEnd(MediaRelayClientLoss::Replaced);
+  relay_->FireSessionEnd(MediaRelayClientLoss::Detached);
+  for (int i = 0; i < 20; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  EXPECT_EQ(relay_->attach_calls, attaches);
+
+  AppRuntime::Shutdown();
+  AppRuntime::ShutdownUI();
+}
+
+// The observer follows the deps: swapping or clearing them unwatches the old relay (mesh stop
+// clears them before the relay goes), and a notice queued for a destroyed topology is dropped.
+TEST_F(CallTopologyControllerTest, RelaySessionObserverFollowsDepsAndLifetime) {
+  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::InitializeUI();
+
+  CallTopologyController::MediaRelayDeps deps;
+  deps.relay = relay_.get();
+  topo_->SetMediaRelayDeps(deps);
+  topo_->SetMediaRelayDeps(deps);
+  EXPECT_EQ(relay_->session_end_observers.size(), 1u) << "re-set must not stack observers";
+  topo_->SetMediaRelayDeps({});
+  EXPECT_TRUE(relay_->session_end_observers.empty());
+
+  topo_->SetMediaRelayDeps(deps);
+  ASSERT_EQ(relay_->session_end_observers.size(), 1u);
+  topo_->SetHopArmingPorts({});
+  topo_.reset();
+  relay_->FireSessionEnd();  // left registered: the relay may already be gone at our destruction
+  AppRuntime::RunUIAndOwnerTasks();   // ASan: must not reach the destroyed topology
 
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();
@@ -1255,7 +1387,7 @@ TEST_F(CallTopologyControllerTest, DuplicateInboundSfuAttachDoesNotReAcceptAndAt
   // AcceptAndAttach/StartSfu repeated ~every 8s (CallSfuAttach fan-out / publisher announce).
   // Once live on a hop, duplicate inbound attach must no-op (no second AcceptAndAttach) and
   // clear media activity so chrome can leave Connecting.
-  AppRuntime::Initialize();
+  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
   AppRuntime::InitializeUI();
 
   const std::string call_id = "call:dup-inbound-attach";
@@ -1282,14 +1414,14 @@ TEST_F(CallTopologyControllerTest, DuplicateInboundSfuAttachDoesNotReAcceptAndAt
   ASSERT_TRUE(topo_->OnInboundSfuAttach(call_id, attach));
   bool attached = false;
   for (int i = 0; i < 200; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (topo_->IsSfuAttached()) {
       attached = true;
       break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
   ASSERT_TRUE(attached);
   const int attaches_after_first = relay_->attach_calls;
   ASSERT_GE(attaches_after_first, 1);
@@ -1297,14 +1429,14 @@ TEST_F(CallTopologyControllerTest, DuplicateInboundSfuAttachDoesNotReAcceptAndAt
 
   // Publisher announce / SoftMigrate re-fan-out of the same hop.
   ASSERT_TRUE(topo_->OnInboundSfuAttach(call_id, attach));
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
   EXPECT_EQ(relay_->attach_calls, attaches_after_first)
       << "duplicate CallSfuAttach must not AcceptAndAttach again";
   EXPECT_TRUE(topo_->IsSfuAttached());
   EXPECT_TRUE(host_->media_activity.empty()) << "must clear Connecting chrome once duplex is live";
 
   // Explicit AttachLocalToSfu of same hop must also no-op.
-  ASSERT_TRUE(topo_->AttachLocalToSfu(call_id, attach));
+  ASSERT_TRUE(AttachToHop(call_id, attach));
   EXPECT_EQ(relay_->attach_calls, attaches_after_first);
 
   AppRuntime::Shutdown();
@@ -1314,7 +1446,7 @@ TEST_F(CallTopologyControllerTest, DuplicateInboundSfuAttachDoesNotReAcceptAndAt
 TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInboundAttach) {
   // Dogfood cbe535: End left CallMediaEngine on call:old. With V036 MediaSeat, End/Leave must
   // Release the seat; leftover engine ActiveCallId must not veto call:new attach.
-  AppRuntime::Initialize();
+  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
   AppRuntime::InitializeUI();
 
   CallMediaSeat seat;
@@ -1345,14 +1477,14 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
   ASSERT_TRUE(topo_->OnInboundSfuAttach(old_id, old_attach));
   bool attached = false;
   for (int i = 0; i < 200; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (topo_->IsSfuAttached() && media_->ActiveCallId() == old_id) {
       attached = true;
       break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
   ASSERT_TRUE(attached) << "prime leftover SFU on call:old";
   EXPECT_TRUE(seat.IsBound(old_id));
   const int attaches_old = relay_->attach_calls;
@@ -1375,14 +1507,14 @@ TEST_F(CallTopologyControllerTest, LeftoverMediaCallIdDoesNotBlockNewCallInbound
 
   bool new_attached = false;
   for (int i = 0; i < 200; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (media_->ActiveCallId() == new_id) {
       new_attached = true;
       break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
   EXPECT_TRUE(new_attached) << "CallSfuAttach for call:new must not be vetoed by leftover media";
   EXPECT_GT(relay_->attach_calls, attaches_old);
   EXPECT_TRUE(seat.IsBound(new_id));

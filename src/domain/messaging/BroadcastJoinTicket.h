@@ -89,10 +89,4 @@ Roe<BroadcastMediaKey> ExtractBroadcastMediaKey(const BroadcastJoinTicket& ticke
                                                 int64_t now_ms, std::string_view expected_viewer_peer_id,
                                                 const ByteVector* viewer_pairwise_session_key = nullptr);
 
-/** Verify, extract, and PutEpochKey into the local vault-backed store. */
-Roe<BroadcastMediaKey> ApplyBroadcastJoinTicket(CallMediaKeyStore& store, const BroadcastJoinTicket& ticket,
-                                                const ByteVector& publisher_mldsa_public_key, int64_t now_ms,
-                                                std::string_view expected_viewer_peer_id,
-                                                const ByteVector* viewer_pairwise_session_key = nullptr);
-
 } // namespace pbr

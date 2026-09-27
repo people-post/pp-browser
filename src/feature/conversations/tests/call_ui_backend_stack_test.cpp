@@ -2,8 +2,6 @@
 #include "feature/calls/CallUiBackend.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 
-#include "domain/mesh/host/MeshControlDispatch.h"
-#include "domain/mesh/host/MeshControlPool.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/CallTypes.h"
@@ -18,10 +16,14 @@
 #include "common/Utilities.h"
 #include "common/thread/ThreadRecordTypes.h"
 
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include "feature/conversations/tests/call_media_inbound_fake.h"
+
 #include <gtest/gtest.h>
+#include <optional>
 #include <memory>
 #include <string>
 #include <thread>
@@ -68,7 +70,7 @@ public:
   }
   void ClearDialBackoff(const std::string& /*peer_key*/) override {}
   void AbortInflightDial(const std::string& /*peer_key*/) override {}
-  void ClearCallMediaCircuitHop(const std::string& /*peer_key*/) override {}
+  void ClearPeerCircuitHop(const std::string& /*peer_key*/) override {}
 
   std::unordered_map<std::string, std::string> endpoints;
   std::unordered_map<std::string, bool> connected;
@@ -78,11 +80,8 @@ class FakeCallMediaTransport final : public ICallMediaTransport {
 public:
   void Start() override { started = true; }
   void Stop() override { started = false; }
-  void SetInboundHandler(
-      std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler) override {
-    inbound = std::move(handler);
-  }
-  void ClearInboundHandler() override { inbound = {}; }
+  void SetInboundHandler(CallMediaInboundHandler handler) override { inbound.Set(std::move(handler)); }
+  void ClearInboundHandler() override { inbound.Clear(); }
   bool IsActive() const override { return active; }
   CallMediaDirectConnectParams ActiveParams() const override { return active_params; }
   CallMediaSessionPhase Phase() const override {
@@ -125,29 +124,38 @@ public:
   int detach_calls = 0;
   CallMediaDirectConnectParams last_params;
   CallMediaDirectConnectParams active_params;
-  std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> inbound;
+  test::InboundHelloFake inbound;
 };
 
 void DrainUntil(const std::function<bool()>& done, int max_ms = 4000) {
   const int slices = std::max(1, max_ms / 10);
   for (int i = 0; i < slices; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (done()) {
       return;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
+}
+
+/** CallUiBackend::StartCall is an intent: run the calls owner until it reports. */
+Roe<CallSession> StartCallNow(CallUiBackend& ui, const std::string& thread_id, bool video,
+                              const std::vector<std::string>& invitees) {
+  std::optional<Roe<CallSession>> started;
+  ui.StartCall(thread_id, video, invitees, [&started](Roe<CallSession> result) { started = std::move(result); });
+  for (int i = 0; i < 1000 && !started; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+  }
+  return started ? *started : Roe<CallSession>(Error("StartCall did not report"));
 }
 
 class CallUiBackendStackTest : public ::testing::Test {
 protected:
   void SetUp() override {
     EnsureSodiumInit();
-    AppRuntime::Initialize();
+    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
     AppRuntime::InitializeUI();
-    mesh_control_ = std::make_unique<MeshControlPool>(1);
-    MeshControlDispatch::Install(mesh_control_.get());
 
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_call_stack_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
@@ -194,7 +202,7 @@ protected:
       return msg;
     };
     deps.delivery.sync_inbox_from_wake = [this](bool /*force*/) { ++inbox_syncs_; };
-    deps.config = [this]() -> const AppConfig& { return app_config_; };
+    deps.mesh_config = [this]() { return std::make_shared<const MeshConfig>(app_config_.mesh); };
     deps.mesh = []() -> MeshHost* { return nullptr; };
     deps.list_directory_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
     deps.list_dht_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
@@ -206,6 +214,7 @@ protected:
       inbound_bound_ = static_cast<bool>(inbound_.apply_inbound_control);
     };
 
+    deps.mesh_media = &mesh_media_;
     stack_->BuildSessions(deps);
     ASSERT_TRUE(ui_->Available());
     ASSERT_TRUE(inbound_bound_);
@@ -232,11 +241,6 @@ protected:
     stack_.reset();
     transport_.reset();
     dial_.reset();
-    MeshControlDispatch::Uninstall();
-    if (mesh_control_) {
-      mesh_control_->Shutdown();
-    }
-    mesh_control_.reset();
     AppRuntime::ShutdownUI();
     // Join the pool before resetting stores a worker may still touch (PR #216 follow-up).
     AppRuntime::Shutdown();
@@ -274,15 +278,17 @@ protected:
     if (!inbound_.apply_inbound_control) {
       return Error("inbound not bound");
     }
-    return inbound_.apply_inbound_control(*msg, "account:peer", std::nullopt, std::nullopt);
+    auto applied = inbound_.apply_inbound_control(*msg, "account:peer", std::nullopt, std::nullopt);
+    AppRuntime::RunUIAndOwnerTasks();  // call control is applied on the calls owner (drained by the test)
+    return applied;
   }
 
   std::filesystem::path data_dir_;
-  std::unique_ptr<MeshControlPool> mesh_control_;
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
   std::unique_ptr<IdentityStore> identity_;
   std::unique_ptr<SqlitePskSessionStore> psk_;
+  MeshMediaPlane mesh_media_;  // outlives stack_ (declared first)
   std::unique_ptr<CallStack> stack_;
   std::unique_ptr<CallUiBackend> ui_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
@@ -295,6 +301,10 @@ protected:
   int sent_control_ = 0;
   int inbox_syncs_ = 0;
   int listen_desires_ = 0;
+  /** Ring-changed may fire on IO/worker threads (LeaveCall runs on Critical) — fixture-owned, atomic. */
+  std::atomic<int> ring_changes_{0};
+  // Fixture-owned: chrome refreshes posted after the test body still fire during TearDown's drain.
+  std::atomic<int> chrome_refreshes_{0};
 };
 
 TEST_F(CallUiBackendStackTest, AvailableAndSessionsIdentityStable) {
@@ -310,16 +320,16 @@ TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
   ASSERT_TRUE(IngestInvite(call_id));
   ASSERT_TRUE(stack_->MediaKeys()->PutEpochKey(call_id, 1, TestMediaKey()));
 
-  int chrome = 0;
-  int ring = 0;
-  ui_->SetOnChromeRefresh([&]() { ++chrome; });
-  ui_->SetOnRingChanged([&]() { ++ring; });
+  ui_->SetOnChromeRefresh([this]() { chrome_refreshes_.fetch_add(1); });
+  ui_->SetOnRingChanged([this]() { ring_changes_.fetch_add(1); });
 
+  // Intents run on the calls owner; the GUI reads the snapshot it publishes after each step.
   ui_->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  AppRuntime::RunUIAndOwnerTasks();
   EXPECT_EQ(ui_->Phase(), CallPhase::Ringing);
   EXPECT_EQ(ui_->LastRingCallId(), call_id);
   EXPECT_TRUE(stack_->WantEphemeralListen());
-  EXPECT_GE(chrome, 1);
+  EXPECT_GE(chrome_refreshes_.load(), 1);
   EXPECT_GE(listen_desires_, 1);
 
   auto pending = ui_->TopPendingInvite();
@@ -327,8 +337,7 @@ TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
   EXPECT_EQ((*pending)->call_id, call_id);
 
   ui_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
-  EXPECT_EQ(ui_->Phase(), CallPhase::Accepting);
-  EXPECT_TRUE(ui_->ShouldSuppressRing(call_id));
+  EXPECT_EQ(ui_->Phase(), CallPhase::Ringing) << "posted, not applied: the snapshot changes only after the owner's step";
 
   DrainUntil([&]() {
     return ui_->Phase() == CallPhase::JoinedLocal || ui_->Phase() == CallPhase::MediaPending ||
@@ -351,13 +360,16 @@ TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
   EXPECT_EQ(**peer, "account:peer");
 
   ui_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  AppRuntime::RunUIAndOwnerTasks();
   EXPECT_EQ(ui_->Phase(), CallPhase::Idle);
   DrainUntil([&]() {
     auto after = ui_->ActiveLocalCall();
     return after && !after->has_value();
   });
+  // Leave runs on the calls owner — flush before the body's locals go away.
+  EXPECT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000)));
   EXPECT_FALSE(stack_->HasActiveLocalCall());
-  EXPECT_GE(ring, 1);
+  EXPECT_GE(ring_changes_.load(), 1);
 }
 
 TEST_F(CallUiBackendStackTest, InviteAcceptMediaPathThroughBackend) {
@@ -379,7 +391,10 @@ TEST_F(CallUiBackendStackTest, InviteAcceptMediaPathThroughBackend) {
   EXPECT_TRUE(stack_->MediaEngine()->IsActive()) << "phase=" << CallPhaseName(ui_->Phase())
                                                  << " err=" << ui_->LastError();
   EXPECT_EQ(stack_->MediaEngine()->ActiveCallId(), call_id);
-  EXPECT_GE(transport_->connect_async_calls, 1);
+  // Peer reach settles on the Connectivity owner, so the dial follows StartSfu asynchronously.
+  DrainUntil([&]() { return transport_->connect_async_calls >= 1 || ui_->Phase() == CallPhase::ConnectFailed; });
+  EXPECT_GE(transport_->connect_async_calls, 1) << "phase=" << CallPhaseName(ui_->Phase())
+                                                << " err=" << ui_->LastError();
   EXPECT_TRUE(transport_->active);
 
   DrainUntil([&]() {
@@ -426,7 +441,7 @@ TEST_F(CallUiBackendStackTest, StartCallAndLeaveViaBackend) {
   thread.updated_at = util::NowUnixMs();
   ASSERT_TRUE(store_->UpsertThread(thread));
 
-  auto started = ui_->StartCall(thread.id, false, {"account:peer"});
+  auto started = StartCallNow(*ui_, thread.id, false, {"account:peer"});
   ASSERT_TRUE(started) << started.error().message;
   EXPECT_EQ(ui_->Phase(), CallPhase::OutboundCalling);
   EXPECT_TRUE(stack_->WantEphemeralListen());
@@ -435,7 +450,7 @@ TEST_F(CallUiBackendStackTest, StartCallAndLeaveViaBackend) {
   ASSERT_TRUE(active && active->has_value());
   EXPECT_EQ((*active)->call_id, started->call_id);
 
-  ASSERT_TRUE(ui_->LeaveCall(started->call_id));
+  ui_->LeaveCall(started->call_id);
   ui_->Apply(CallLifecycleEvent::LeaveClicked, started->call_id);
   DrainUntil([&]() {
     auto after = ui_->ActiveLocalCall();
@@ -446,24 +461,29 @@ TEST_F(CallUiBackendStackTest, StartCallAndLeaveViaBackend) {
   EXPECT_EQ(ui_->Phase(), CallPhase::Idle);
 }
 
-TEST_F(CallUiBackendStackTest, BroadcastArmAcceptViaBackend) {
-  AnnounceLiveJoinPlan plan;
-  plan.call_id = "call:ui-bcast";
-  plan.publisher_peer_id = "12D3KooWPublisher";
-  plan.topic_id = "topic:1";
-  plan.program_id = "prog:1";
+TEST_F(CallUiBackendStackTest, RingChangesDoNotRebindLifecyclePorts) {
+  // B49: port sets used to be re-bound on every ring change (relay-receive thread) and every
+  // Lifecycle() query while the bridge / CSM called them → SIGABRT in std::function::operator=.
+  // Binding happens only at the owner's bind points (BuildSessions / BindMediaProducts).
+  const int binds = stack_->LifecyclePortBindsForTest();
+  EXPECT_GT(binds, 0);
+  for (int i = 0; i < 5; ++i) {
+    ASSERT_NE(stack_->Lifecycle(), nullptr);
+  }
+  const int desires_before = listen_desires_;
+  ASSERT_TRUE(IngestInvite("call:b49-a"));
+  ASSERT_TRUE(IngestInvite("call:b49-b"));
+  DrainUntil([&]() { return listen_desires_ > desires_before; });
+  EXPECT_GT(listen_desires_, desires_before) << "ring-change path did not run";
+  EXPECT_EQ(stack_->LifecyclePortBindsForTest(), binds);
 
-  auto armed = ui_->ArmJoinFromLiveAnnounce(plan);
-  ASSERT_TRUE(armed) << armed.error().message;
-  auto pending = ui_->TopPendingInvite();
-  ASSERT_TRUE(pending && pending->has_value());
-  EXPECT_EQ((*pending)->call_id, plan.call_id);
-
-  ASSERT_TRUE(ui_->AcceptLiveAnnounceJoin(plan.call_id));
-  auto active = ui_->ActiveLocalCall();
-  ASSERT_TRUE(active && active->has_value());
-  EXPECT_EQ((*active)->call_id, plan.call_id);
-  EXPECT_TRUE(IsBroadcastSession(active.value()->session_kind));
+  // Genuine teardown / recreate re-binds.
+  stack_->PrepareForMeshStop({});
+  stack_->FinishMeshStop();
+  stack_->BindTestMediaPath(transport_.get(), dial_.get());
+  ASSERT_NE(stack_->Lifecycle(), nullptr);
+  EXPECT_GT(stack_->LifecyclePortBindsForTest(), binds);
+  EXPECT_TRUE(ui_->Available());
 }
 
 TEST_F(CallUiBackendStackTest, UnavailableAfterResetSessions) {

@@ -252,24 +252,4 @@ Roe<BroadcastMediaKey> ExtractBroadcastMediaKey(const BroadcastJoinTicket& ticke
   return key;
 }
 
-Roe<BroadcastMediaKey> ApplyBroadcastJoinTicket(CallMediaKeyStore& store, const BroadcastJoinTicket& ticket,
-                                                const ByteVector& publisher_mldsa_public_key,
-                                                const int64_t now_ms,
-                                                const std::string_view expected_viewer_peer_id,
-                                                const ByteVector* viewer_pairwise_session_key) {
-  auto key = ExtractBroadcastMediaKey(ticket, publisher_mldsa_public_key, now_ms, expected_viewer_peer_id,
-                                      viewer_pairwise_session_key);
-  if (!key) {
-    return key.error();
-  }
-  auto put = store.PutEpochKey(key->call_id, key->media_epoch, key->key_bytes);
-  if (!put) {
-    return put.error();
-  }
-  if (!put->empty()) {
-    key->media_key_id = *put;
-  }
-  return key;
-}
-
 } // namespace pbr

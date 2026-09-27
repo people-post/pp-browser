@@ -640,61 +640,70 @@ Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std:
 }
 
 
-// --- Peer-scoped live announce (Spine C) ------------------------------------
+// --- Live broadcast viewer ---------------------------------------------------
 
-Roe<AnnounceLiveJoinPlan> ConversationsFacade::PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip) {
-  return hub_.MeshMessaging().PlanLiveJoinFromAnnounceTip(tip);
+void ConversationsFacade::WatchLiveAnnounce(const PeerAnnounceTip& tip, std::function<void(Roe<void>)> on_done) {
+  auto* broadcast = hub_.Broadcast();
+  if (!broadcast) {
+    if (on_done) {
+      on_done(Error("Live broadcasts unavailable (mesh / media relay not ready)"));
+    }
+    return;
+  }
+  broadcast->WatchLive(tip, std::move(on_done));
 }
 
-Roe<AnnounceLiveJoinPlan> ConversationsFacade::PlanLiveJoinFromStoredAnnounce(const std::string& peer_id,
-                                                                              const std::string& topic_id,
-                                                                              const std::string& program_id) {
-  return hub_.MeshMessaging().PlanLiveJoinFromStoredAnnounce(peer_id, topic_id, program_id);
+void ConversationsFacade::WatchStoredLiveAnnounce(const std::string& peer_id, const std::string& topic_id,
+                                                  const std::string& program_id,
+                                                  std::function<void(Roe<void>)> on_done) {
+  auto tip = hub_.MeshMessaging().LatestAnnounceTip(peer_id, topic_id, program_id);
+  if (!tip) {
+    if (on_done) {
+      on_done(Error("No stored announce for that program"));
+    }
+    return;
+  }
+  WatchLiveAnnounce(*tip, std::move(on_done));
 }
 
-Roe<PendingCallInvite> ConversationsFacade::ArmLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip) {
-  auto plan = PlanLiveJoinFromAnnounceTip(tip);
-  if (!plan) {
-    return plan.error();
+void ConversationsFacade::StopWatchingBroadcast() {
+  if (auto* broadcast = hub_.Broadcast()) {
+    broadcast->StopWatching();
   }
-  auto* calls = hub_.Calls();
-  if (!calls) {
-    return Error("Call session manager unavailable");
-  }
-  return calls->Broadcast().ArmJoinFromLiveAnnounce(*plan);
 }
 
-Roe<PendingCallInvite> ConversationsFacade::ArmLiveJoinFromStoredAnnounce(const std::string& peer_id,
-                                                                          const std::string& topic_id,
-                                                                          const std::string& program_id) {
-  auto plan = PlanLiveJoinFromStoredAnnounce(peer_id, topic_id, program_id);
-  if (!plan) {
-    return plan.error();
+std::optional<BroadcastViewerWorkflow::Status> ConversationsFacade::BroadcastWatchStatus() {
+  auto* broadcast = hub_.Broadcast();
+  if (!broadcast) {
+    return std::nullopt;
   }
-  auto* calls = hub_.Calls();
-  if (!calls) {
-    return Error("Call session manager unavailable");
-  }
-  return calls->Broadcast().ArmJoinFromLiveAnnounce(*plan);
+  return broadcast->Viewer();
 }
 
-Roe<void> ConversationsFacade::AcceptLiveAnnounceJoin(const std::string& call_id) {
-  auto* calls = hub_.Calls();
-  if (!calls) {
-    return Error("Call session manager unavailable");
+void ConversationsFacade::GoLive(const std::string& topic_id, const std::string& program_id,
+                                 std::vector<std::string> hops, std::function<void(Roe<void>)> on_done) {
+  auto* broadcast = hub_.Broadcast();
+  if (!broadcast) {
+    if (on_done) {
+      on_done(Error("Live broadcasts unavailable (mesh / media relay not ready)"));
+    }
+    return;
   }
-  return calls->Broadcast().AcceptLiveAnnounceJoin(call_id);
+  broadcast->GoLive(BroadcastLiveRequest{topic_id, program_id, std::move(hops)}, std::move(on_done));
 }
 
-Roe<PendingCallInvite> ConversationsFacade::JoinLiveAnnounceFromTip(const PeerAnnounceTip& tip) {
-  auto armed = ArmLiveJoinFromAnnounceTip(tip);
-  if (!armed) {
-    return armed.error();
+void ConversationsFacade::EndLive() {
+  if (auto* broadcast = hub_.Broadcast()) {
+    broadcast->EndLive();
   }
-  if (auto accepted = AcceptLiveAnnounceJoin(armed->call_id); !accepted) {
-    return accepted.error();
+}
+
+std::optional<BroadcasterWorkflow::Status> ConversationsFacade::BroadcastLiveStatus() {
+  auto* broadcast = hub_.Broadcast();
+  if (!broadcast) {
+    return std::nullopt;
   }
-  return armed;
+  return broadcast->Live();
 }
 
 } // namespace pbr

@@ -3,7 +3,6 @@
 #include "foundation/crypto/IPskSessionStore.h"
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallControlCodec.h"
-#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "foundation/data/PricingTypes.h"
@@ -15,9 +14,9 @@
 #include "feature/calls/CallDeliveryPorts.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
-#include "feature/calls/BroadcastSessionCoordinator.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallSessionWorkflow.h"
+#include "feature/calls/SharedPorts.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -107,12 +106,13 @@ public:
   void SetOnRingChangedMesh(RingChangedFn callback);
   using PrefetchPeerReachFn = std::function<void(const std::string& identity)>;
   void SetPrefetchPeerReachability(PrefetchPeerReachFn callback);
-  /** Mesh circuit readiness (park/reserve) — composition projects CallMediaPlane. */
+  /** Mesh circuit readiness (park/reserve) — composition projects the shared MeshMediaPlane. */
   using EnsureCircuitReadyFn = std::function<void()>;
   void SetEnsureCircuitReady(EnsureCircuitReadyFn callback);
   /** AcceptInvite may await circuit-ready before CallAccept. */
-  using AwaitCircuitReadyFn = std::function<bool(int timeout_ms)>;
-  void SetAwaitCircuitReady(AwaitCircuitReadyFn callback);
+  /** Async circuit park for the Accept gate; the composition posts `done` onto the calls owner. */
+  using ParkCircuitFn = std::function<void(int timeout_ms, std::function<void(bool ready)> done)>;
+  void SetParkCircuit(ParkCircuitFn park);
   /** H011 L3.1c: inbound call_circuit_r1 → answerer PreferLateReserve. */
   using PreferLateReserveFn = std::function<void(const std::string& relay_peer_id)>;
   void SetPreferLateReserve(PreferLateReserveFn callback);
@@ -187,30 +187,12 @@ public:
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
 
-  Roe<void> AcceptInvite(const std::string& call_id,
+  /** Accept (async: waits for the circuit park without blocking); `on_done` on the calls owner. */
+  void AcceptInviteAsync(const std::string& call_id, std::function<void(Roe<void>)> on_done,
                          InitiationChargeDecision charge_decision = InitiationChargeDecision::Waive);
-  /**
-   * Spine C (slice 1): arm a pending invite + ringing session from a live-join plan
-   * Thin delegate to BroadcastSessionCoordinator (no SoftMigrate / media).
-   */
-
-  /** Broadcast live-announce arm/accept (Spine C) — prefer over SoftMigrate call paths. */
-  BroadcastSessionCoordinator& Broadcast() { return broadcast_; }
-  const BroadcastSessionCoordinator& Broadcast() const { return broadcast_; }
-
-  Roe<PendingCallInvite> ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan,
-                                                 const ArmLiveAnnounceJoinOpts& opts = {});
-
-  /**
-   * Spine C: accept an armed live-announce invite without SoftMigrate or 1:1 media.
-   * Attaches SFU when session/pending carries sfu_hint (tip.hop_peer_id); otherwise
-   * marks joined and defers media.
-   */
-  Roe<void> AcceptLiveAnnounceJoin(const std::string& call_id);
-
   Roe<void> DeclineInvite(const std::string& call_id);
   Roe<void> LeaveCall(const std::string& call_id);
-  /** Detach SFU + stop SDL. UI thread only — call before LeaveCall worker / app quit. */
+  /** Detach SFU + stop capture. Calls owner only — call before LeaveCall worker / app quit. */
   void StopCallMedia(const std::string& call_id);
 
   Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity);
@@ -218,6 +200,7 @@ public:
   Roe<std::vector<PendingCallInvite>> ListPendingInvites();
   Roe<std::optional<CallSession>> ActiveLocalCall() const;
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
+  Roe<std::optional<PendingCallInvite>> PeekTopPendingInvite() const { return workflow_.PeekTopPendingInvite(); }
 
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
@@ -240,6 +223,10 @@ public:
   void PollP2pConnectHealth();
 
   std::optional<std::string> TakeLastMediaError();
+  /** Non-mutating read (UI snapshot); the GUI takes it through the owner. */
+  std::optional<std::string> PeekLastMediaError() const { return last_media_error_; }
+  /** Clear only if still `seen` (the GUI showed it; a newer error stays). */
+  void ClearLastMediaErrorIf(const std::string& seen);
   /** Latest hop/setup progress line for in-call chrome (empty when idle/connected). */
   std::string PeekMediaActivity() const;
   void ClearMediaActivity();
@@ -261,7 +248,8 @@ public:
   bool IsSfuAttached() const;
 
   Roe<void> SetLocalAudioMuted(bool muted);
-  Roe<void> SetLocalVideoEnabled(bool enabled);
+  /** `display_rotation_degrees` read on UI by the caller (L012). */
+  Roe<void> SetLocalVideoEnabled(bool enabled, int display_rotation_degrees);
   /** Ask publisher for an IDR (empty identity = local encoder). */
   Roe<void> RequestVideoRefresh(const std::string& call_id, const std::string& publisher_identity);
 
@@ -304,6 +292,8 @@ private:
   void P2pClearAwaitingSfuRecovery() override;
   void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) override;
   void P2pRequestInboxSync() override;
+  void P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
+                           const std::string& peer_id) override;
 
   Roe<std::string> LocalRelayIdentity() const;
   /** Mint/find e2e_public control DM before SoftMigrate / MediaKey fan-out (catalog warm). */
@@ -327,7 +317,6 @@ private:
   Roe<void> SendMediaKeyToPeer(const std::string& call_id, const std::string& peer_identity,
                                uint32_t media_epoch, const std::string& media_key_id, const ByteVector& key_bytes);
   void StopMediaIfCall(const std::string& call_id);
-  Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
   void BindWorkflowHostPorts();
   /** Flush deferred inbox/TailSync when no ActiveLocalCall remains. */
@@ -364,16 +353,16 @@ private:
   IPskSessionStore& psk_store_;
   CallMediaEngine& media_;
   CallTopologyController topology_;
-  BroadcastSessionCoordinator broadcast_;
   CallSessionWorkflow workflow_;
-  CallDirectMediaPorts direct_media_;
-  CallSessionLifecyclePorts lifecycle_ports_;
-  CallMediaSeatPorts media_seat_ports_;
+  // Swapped at mesh start / stop and lifecycle bind; read as one snapshot per operation.
+  SharedPorts<CallDirectMediaPorts> direct_media_;
+  SharedPorts<CallSessionLifecyclePorts> lifecycle_ports_;
+  SharedPorts<CallMediaSeatPorts> media_seat_ports_;
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;
   PrefetchPeerReachFn prefetch_reach_;
   EnsureCircuitReadyFn ensure_circuit_ready_;
-  AwaitCircuitReadyFn await_circuit_ready_;
+  ParkCircuitFn park_circuit_;
   PreferLateReserveFn prefer_late_reserve_;
   /** R1 chosen before Invite — flushed once StartCall creates an active session. */
   std::string pending_circuit_r1_announce_;

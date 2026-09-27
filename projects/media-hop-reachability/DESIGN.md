@@ -174,8 +174,8 @@ Full protocol and session model: [MULTI_HOP_CIRCUIT.md](MULTI_HOP_CIRCUIT.md). B
 | Peer address book (L1) | Shipped | Amp-era book / upsert on bootstrap/connect |
 | Advertised listen set (L2) | Shipped | ch0 + dial-back / UPnP-derived addrs |
 | Circuit PeerId dial (L3) | Shipped | Single-hop; H010 StartBridge budget |
-| Circuit R1 rendezvous (L3.1) | Spec | H011 — shared surface + dialer-authoritative pick |
-| Amp Coordinated Punch (L3.25) | Planned | H009, [HOLE_PUNCH.md](HOLE_PUNCH.md) |
+| Circuit R1 rendezvous (L3.1) | Shipped | H011 — shared surface + dialer-authoritative pick (`CircuitRendezvousCoordinator`) |
+| Amp Coordinated Punch (L3.25) | Shipped (a–c) | H009, [HOLE_PUNCH.md](HOLE_PUNCH.md) (`PunchIntroducerWalk`); upgrade-from-circuit unused — call-path-resilience k3 |
 | Multi-hop circuit (L3.5) | Planned | H008, N024 — parallel to punch |
 | SoftMigrate consume only (L4) | In progress | Drop reliance on empty contact ma as only signal |
 | Directory / DHT dial assist (L5) | Planned | Still closed-set for media hops |

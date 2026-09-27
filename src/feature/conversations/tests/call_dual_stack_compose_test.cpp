@@ -2,8 +2,6 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallUiBackend.h"
 
-#include "domain/mesh/host/MeshControlDispatch.h"
-#include "domain/mesh/host/MeshControlPool.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/messaging/CallTypes.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
@@ -21,7 +19,10 @@
 #include <deque>
 #include <filesystem>
 #include <functional>
+#include "feature/conversations/tests/call_media_inbound_fake.h"
+
 #include <gtest/gtest.h>
+#include <optional>
 #include <memory>
 #include <string>
 #include <thread>
@@ -60,7 +61,7 @@ public:
   }
   void ClearDialBackoff(const std::string& /*peer_key*/) override {}
   void AbortInflightDial(const std::string& /*peer_key*/) override {}
-  void ClearCallMediaCircuitHop(const std::string& /*peer_key*/) override {}
+  void ClearPeerCircuitHop(const std::string& /*peer_key*/) override {}
 
   std::unordered_map<std::string, std::string> endpoints;
   std::unordered_map<std::string, bool> connected;
@@ -70,11 +71,8 @@ class FakeCallMediaTransport final : public ICallMediaTransport {
 public:
   void Start() override { started = true; }
   void Stop() override { started = false; }
-  void SetInboundHandler(
-      std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler) override {
-    inbound = std::move(handler);
-  }
-  void ClearInboundHandler() override { inbound = {}; }
+  void SetInboundHandler(CallMediaInboundHandler handler) override { inbound.Set(std::move(handler)); }
+  void ClearInboundHandler() override { inbound.Clear(); }
   bool IsActive() const override { return active; }
   CallMediaDirectConnectParams ActiveParams() const override { return active_params; }
   CallMediaSessionPhase Phase() const override {
@@ -92,12 +90,7 @@ public:
     active_params = params;
     if (peer_inbound) {
       // Simulate reverse-dial landing on the peer's CallMediaBridge inbound handler.
-      CallMediaDirectConnectParams inbound_params = params;
-      CallMediaDirectCallbacks inbound_cbs;
-      peer_inbound(inbound_params, inbound_cbs);
-      if (inbound_cbs.on_connected) {
-        inbound_cbs.on_connected();
-      }
+      peer_inbound(params);
     }
     if (callbacks.on_connected) {
       callbacks.on_connected();
@@ -126,21 +119,33 @@ public:
   int detach_calls = 0;
   CallMediaDirectConnectParams last_params;
   CallMediaDirectConnectParams active_params;
-  std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> inbound;
+  test::InboundHelloFake inbound;
   /** When set, ConnectAsync also drives the peer stack's inbound handler (dual-stack wire). */
-  std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> peer_inbound;
+  /** Reverse dial: deliver a hello to the peer; its answer connects the peer's side. */
+  std::function<void(CallMediaDirectConnectParams)> peer_inbound;
 };
 
 void DrainUntil(const std::function<bool()>& done, int max_ms = 6000) {
   const int slices = std::max(1, max_ms / 10);
   for (int i = 0; i < slices; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (done()) {
       return;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
+}
+
+/** CallUiBackend::StartCall is an intent: run the calls owner until it reports. */
+Roe<CallSession> StartCallNow(CallUiBackend& ui, const std::string& thread_id, bool video,
+                              const std::vector<std::string>& invitees) {
+  std::optional<Roe<CallSession>> started;
+  ui.StartCall(thread_id, video, invitees, [&started](Roe<CallSession> result) { started = std::move(result); });
+  for (int i = 0; i < 1000 && !started; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+  }
+  return started ? *started : Roe<CallSession>(Error("StartCall did not report"));
 }
 
 struct StackSide {
@@ -149,6 +154,7 @@ struct StackSide {
   std::unique_ptr<ContactsStore> contacts;
   std::unique_ptr<IdentityStore> identity;
   std::unique_ptr<SqlitePskSessionStore> psk;
+  std::unique_ptr<MeshMediaPlane> mesh_media = std::make_unique<MeshMediaPlane>();  // outlives stack
   std::unique_ptr<CallStack> stack;
   std::unique_ptr<CallUiBackend> ui;
   std::unique_ptr<FakeCallMediaTransport> transport;
@@ -163,10 +169,8 @@ class CallDualStackComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
     EnsureSodiumInit();
-    AppRuntime::Initialize();
+    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
     AppRuntime::InitializeUI();
-    mesh_control_ = std::make_unique<MeshControlPool>(1);
-    MeshControlDispatch::Install(mesh_control_.get());
 
     BuildSide(offer_, "offer", 0xa0, &answer_inbox_);
     BuildSide(answer_, "answer", 0xb0, &offer_inbox_);
@@ -180,16 +184,22 @@ protected:
         "/ip4/127.0.0.1/udp/47100/adp/1.0.0/p2p/12D3KooWOffer";
 
     // Answerer reverse-dial arms offerer inbound (product: stream lands on offerer before dial).
-    answer_.transport->peer_inbound =
-        [this](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
-          if (!offer_.transport || !offer_.transport->inbound) {
-            return;
-          }
-          // Leg coordinator marks the accepting transport active before invoking the handler.
-          offer_.transport->active = true;
-          offer_.transport->active_params = params;
-          offer_.transport->inbound(params, cbs);
-        };
+    answer_.transport->peer_inbound = [this](CallMediaDirectConnectParams params) {
+      if (!offer_.transport || !offer_.transport->inbound.Installed()) {
+        return;
+      }
+      // As on the wire: the offerer's inbound hello names the dialer (the answerer), not itself.
+      params.peer_key = answer_.local_identity;
+      // Leg coordinator marks the accepting transport active before invoking the handler.
+      offer_.transport->active = true;
+      offer_.transport->active_params = params;
+      offer_.transport->inbound.DeliverThen(std::move(params),
+                                            [](CallMediaDirectConnectParams, CallMediaDirectCallbacks cbs) {
+                                              if (cbs.on_connected) {
+                                                cbs.on_connected();
+                                              }
+                                            });
+    };
   }
 
   void TearDown() override {
@@ -197,11 +207,6 @@ protected:
     // alone does not wait for every pool thread (PR #216 follow-up).
     SoftStopSide(offer_);
     SoftStopSide(answer_);
-    MeshControlDispatch::Uninstall();
-    if (mesh_control_) {
-      mesh_control_->Shutdown();
-    }
-    mesh_control_.reset();
     AppRuntime::ShutdownUI();
     AppRuntime::Shutdown();
     DestroySide(offer_);
@@ -256,7 +261,7 @@ protected:
       return msg;
     };
     deps.delivery.sync_inbox_from_wake = [](bool) {};
-    deps.config = [&side]() -> const AppConfig& { return side.app_config; };
+    deps.mesh_config = [&side]() { return std::make_shared<const MeshConfig>(side.app_config.mesh); };
     deps.mesh = []() -> MeshHost* { return nullptr; };
     deps.list_directory_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
     deps.list_dht_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
@@ -265,6 +270,7 @@ protected:
     deps.sync_mobile_ephemeral_listen = []() {};
     deps.bind_call_control = [&side](CallControlInboundPorts ports) { side.inbound = std::move(ports); };
 
+    deps.mesh_media = side.mesh_media.get();
     side.stack->BuildSessions(deps);
     ASSERT_TRUE(side.ui->Available());
     ASSERT_TRUE(side.inbound.apply_inbound_control);
@@ -316,11 +322,15 @@ protected:
       while (!offer_inbox_.empty()) {
         ThreadMessage msg = offer_inbox_.front();
         offer_inbox_.pop_front();
+        if (hold_accepts_to_offer_ && msg.payload_json.find("call_accept") != std::string::npos) {
+          held_to_offer_.push_back(std::move(msg));  // a relay that has not delivered it yet
+          continue;
+        }
         ASSERT_TRUE(offer_.inbound.apply_inbound_control(msg, answer_.local_identity, std::nullopt,
                                                          std::nullopt));
         moved = true;
       }
-      AppRuntime::RunUITasks();
+      AppRuntime::RunUIAndOwnerTasks();
       if (!moved) {
         break;
       }
@@ -329,7 +339,7 @@ protected:
 
   /** Offer StartCall → Answer Accept → both InCall. Leaves call active. */
   std::string RunOfferAnswerToInCall(const std::string& thread_id) {
-    auto started = offer_.ui->StartCall(thread_id, false, {answer_.local_identity});
+    auto started = StartCallNow(*offer_.ui, thread_id, false, {answer_.local_identity});
     EXPECT_TRUE(started) << (started ? "" : started.error().message);
     if (!started) {
       return {};
@@ -414,11 +424,13 @@ protected:
     return call_id;
   }
 
-  std::unique_ptr<MeshControlPool> mesh_control_;
   StackSide offer_;
   StackSide answer_;
   std::deque<ThreadMessage> offer_inbox_;
   std::deque<ThreadMessage> answer_inbox_;
+  /** B30: hold CallAccepts on their way to the offerer (late relay). */
+  bool hold_accepts_to_offer_ = false;
+  std::deque<ThreadMessage> held_to_offer_;
 };
 
 TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
@@ -434,6 +446,50 @@ TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
   const std::string call_id = RunOfferAnswerInCallLeave(thread.id);
   ASSERT_FALSE(call_id.empty());
   EXPECT_GE(answer_.transport->connect_async_calls, 1);
+}
+
+// B30 (call-path-resilience k4): the relay delivers CallAccept late (CN cellular: 11–58 s) while the
+// answerer's call-media hello — keyed from the invite — reaches the offerer directly. The hello
+// stands in for the accept; the real one arriving later changes nothing.
+TEST_F(CallDualStackComposeTest, AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsLate) {
+  Thread thread;
+  thread.id = "thread-dual-late-accept";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+
+  auto started = StartCallNow(*offer_.ui, thread.id, false, {answer_.local_identity});
+  ASSERT_TRUE(started) << started.error().message;
+  const std::string call_id = started->call_id;
+  auto key = offer_.stack->MediaKeys()->LoadEpochKey(call_id, 1);
+  ASSERT_TRUE(key && key->has_value());
+  ASSERT_TRUE(answer_.stack->MediaKeys()->PutEpochKey(call_id, 1, **key));
+  PumpWire();
+  ASSERT_TRUE(answer_.ui->TopPendingInvite() && answer_.ui->TopPendingInvite()->has_value());
+
+  hold_accepts_to_offer_ = true;
+  answer_.ui->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  answer_.ui->Apply(CallLifecycleEvent::AcceptClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return offer_.stack->MediaEngine() && offer_.stack->MediaEngine()->IsActive() &&
+           offer_.ui->Phase() == CallPhase::InCall && answer_.ui->Phase() == CallPhase::InCall;
+  });
+  ASSERT_FALSE(held_to_offer_.empty()) << "the accept never reached the offerer";
+  EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall) << "the answerer's hello stood in for the accept";
+  EXPECT_TRUE(offer_.stack->MediaEngine()->IsActive());
+
+  // The relay finally delivers the accept: idempotent.
+  hold_accepts_to_offer_ = false;
+  for (auto& msg : held_to_offer_) {
+    offer_inbox_.push_back(std::move(msg));
+  }
+  held_to_offer_.clear();
+  PumpWire();
+  EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall);
+  EXPECT_TRUE(offer_.stack->MediaEngine()->IsActive());
+  FinishAnswerLeaveExpectBothIdle(call_id);
 }
 
 TEST_F(CallDualStackComposeTest, OfferLeaveClearsAnswererIdle) {
@@ -486,7 +542,7 @@ TEST_F(CallDualStackComposeTest, OfferInviteAnswerDeclineClearsOfferer) {
   thread.updated_at = util::NowUnixMs();
   ASSERT_TRUE(offer_.store->UpsertThread(thread));
 
-  auto started = offer_.ui->StartCall(thread.id, false, {answer_.local_identity});
+  auto started = StartCallNow(*offer_.ui, thread.id, false, {answer_.local_identity});
   ASSERT_TRUE(started) << started.error().message;
   const std::string call_id = started->call_id;
   EXPECT_EQ(offer_.ui->Phase(), CallPhase::OutboundCalling);
@@ -527,7 +583,7 @@ TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   EXPECT_EQ((*active_a)->call_id, call_a);
 
   // Second outbound invite while still InCall on A.
-  auto started_b = offer_.ui->StartCall(thread.id, false, {answer_.local_identity});
+  auto started_b = StartCallNow(*offer_.ui, thread.id, false, {answer_.local_identity});
   ASSERT_TRUE(started_b) << started_b.error().message;
   const std::string call_b = started_b->call_id;
   EXPECT_NE(call_a, call_b);

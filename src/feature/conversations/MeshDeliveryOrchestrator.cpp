@@ -9,7 +9,6 @@
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
 #include "domain/messaging/AnnounceOverlayReply.h"
-#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
@@ -52,7 +51,6 @@
 #include "domain/people/ContactIdentity.h"
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/AppRuntime.h"
-#include "domain/mesh/host/MeshControlDispatch.h"
 #include "common/Logger.h"
 #include "foundation/platform/os/OsTime.h"
 
@@ -319,24 +317,52 @@ Roe<PeerAnnounceTipAck> MeshDeliveryOrchestrator::PublishLiveChatFromOverlay(
   return peer_announce_->PushTip(peer_key, *tip);
 }
 
-Roe<AnnounceLiveJoinPlan> MeshDeliveryOrchestrator::PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip) const {
-  return PlanAnnounceLiveJoin(tip);
+Roe<void> MeshDeliveryOrchestrator::PutLiveProgramKey(const std::string& program_id, const std::string& join_handle,
+                                                       AmpBroadcastTransport::LiveProgramKey key) {
+  if (!broadcast_) {
+    return Error("broadcast service not running (Amp mesh down)");
+  }
+  broadcast_->PutLiveProgramKey(program_id, join_handle, std::move(key));
+  return {};
 }
 
-Roe<AnnounceLiveJoinPlan> MeshDeliveryOrchestrator::PlanLiveJoinFromStoredAnnounce(const std::string& peer_id,
-                                                                              const std::string& topic_id,
-                                                                              const std::string& program_id) const {
+void MeshDeliveryOrchestrator::ClearLiveProgramKey(const std::string& program_id, const std::string& join_handle) {
+  if (broadcast_) {
+    broadcast_->ClearLiveProgramKey(program_id, join_handle);
+  }
+}
+
+Roe<PeerAnnounceTip> MeshDeliveryOrchestrator::PublishAnnounceTip(const PeerAnnouncePublisher::Draft& draft) {
+  if (!peer_announce_publisher_) {
+    return Error("peer-announce publisher unavailable (device identity missing)");
+  }
+  const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+  return peer_announce_publisher_->Publish(draft, now_ms);
+}
+
+std::optional<PeerAnnounceTip> MeshDeliveryOrchestrator::LatestAnnounceTip(const std::string& peer_id,
+                                                                          const std::string& topic_id,
+                                                                          const std::string& program_id) const {
   if (!peer_announce_feed_) {
-    return Error("peer-announce feed unavailable");
+    return std::nullopt;
   }
-  auto tip = peer_announce_feed_->Latest(peer_id, topic_id, program_id);
-  if (!tip) {
-    return Error("No stored announce tip for live join");
-  }
-  return PlanAnnounceLiveJoin(*tip);
+  return peer_announce_feed_->Latest(peer_id, topic_id, program_id);
 }
 
-
+std::optional<std::vector<uint8_t>> MeshDeliveryOrchestrator::ResolveAnnouncePublisherKey(
+    const std::string& peer_id) const {
+    std::string local_peer_id;
+    std::vector<uint8_t> local_pk;
+    if (auto local_identity = identity_.Get()) {
+      local_peer_id = local_identity->peer_id;
+    }
+    if (auto pk = identity_.GetDeviceMlDsaPublicKey()) {
+      local_pk = *pk;
+    }
+  return ResolvePeerAnnouncePublisherKey(peer_id, local_peer_id, local_pk, signing_key_store_);
+}
 
 void MeshDeliveryOrchestrator::RegisterPeerKemKey(const std::string& peer_identity_kind,
                                            const std::string& peer_identity_value,
@@ -2265,7 +2291,7 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, st
 
   auto worker = std::move(amp_worker_post);
   if (!worker) {
-    worker = [](std::function<void()> task) { MeshControlDispatch::Post(std::move(task)); };
+    worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
   }
 
   auto blob = std::make_unique<AmpChatBlobTransport>(*amp_links_, amp_io_pump, store_, identity_, worker, amp_post_io,
@@ -2285,17 +2311,8 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, st
   peer_announce_ = std::make_unique<AmpPeerAnnounceTransport>(*amp_links_, *peer_announce_feed_, amp_io_pump, worker,
                                                            AmpPeerAnnounceTransport::ResolvePublisherKey{},
                                                            amp_post_io, amp_post_after);
-  peer_announce_->SetPublisherKeyResolver([this](const std::string& tip_peer_id) -> std::optional<std::vector<uint8_t>> {
-    std::string local_peer_id;
-    std::vector<uint8_t> local_pk;
-    if (auto local_identity = identity_.Get()) {
-      local_peer_id = local_identity->peer_id;
-    }
-    if (auto pk = identity_.GetDeviceMlDsaPublicKey()) {
-      local_pk = *pk;
-    }
-    return ResolvePeerAnnouncePublisherKey(tip_peer_id, local_peer_id, local_pk, signing_key_store_);
-  });
+  peer_announce_->SetPublisherKeyResolver(
+      [this](const std::string& tip_peer_id) { return ResolveAnnouncePublisherKey(tip_peer_id); });
   peer_announce_->SetOnTipIngested([this](const PeerAnnounceTip& tip) {
     const int64_t now_ms = tip.created_at_ms > 0 ? tip.created_at_ms : 0;
     announce_notifications_.UpsertFromTip(tip, now_ms);
@@ -2312,17 +2329,8 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, st
   }
   peer_announce_->Start();
   broadcast_ = std::make_unique<AmpBroadcastTransport>(*amp_links_, amp_io_pump, worker, amp_post_io, amp_post_after);
-  broadcast_->SetPublisherKeyResolver([this](const std::string& peer_id) -> std::optional<std::vector<uint8_t>> {
-    std::string local_peer_id;
-    std::vector<uint8_t> local_pk;
-    if (auto local_identity = identity_.Get()) {
-      local_peer_id = local_identity->peer_id;
-    }
-    if (auto pk = identity_.GetDeviceMlDsaPublicKey()) {
-      local_pk = *pk;
-    }
-    return ResolvePeerAnnouncePublisherKey(peer_id, local_peer_id, local_pk, signing_key_store_);
-  });
+  broadcast_->SetPublisherKeyResolver(
+      [this](const std::string& peer_id) { return ResolveAnnouncePublisherKey(peer_id); });
   broadcast_->SetPublisherSecretResolver([this]() -> std::optional<std::vector<uint8_t>> {
     if (auto sk = identity_.GetDeviceMlDsaPrivateKey()) {
       return *sk;

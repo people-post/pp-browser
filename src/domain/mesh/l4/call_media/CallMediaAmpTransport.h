@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include "common/PbrCompat.h"
 
@@ -18,9 +19,8 @@ namespace pbr {
 class CallMediaAmpTransport : public ICallMediaTransport {
 public:
   using IoPump = std::function<void()>;
-  using WorkerPost = CallMediaLegCoordinator::WorkerPost;
 
-  CallMediaAmpTransport(pp::amp::MeshRuntime& runtime, IoPump io_pump, WorkerPost post_worker = {});
+  CallMediaAmpTransport(pp::amp::MeshRuntime& runtime, IoPump io_pump);
   ~CallMediaAmpTransport() override;
 
   CallMediaAmpTransport(const CallMediaAmpTransport&) = delete;
@@ -29,8 +29,7 @@ public:
   void Start() override;
   void Stop() override;
 
-  void SetInboundHandler(
-      std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler) override;
+  void SetInboundHandler(CallMediaInboundHandler handler) override;
   void ClearInboundHandler() override;
 
   bool IsActive() const override;
@@ -60,6 +59,8 @@ private:
   CallMediaLegId active_leg_{};
   CallMediaDirectConnectParams active_params_;
   std::atomic<bool> started_{false};
+  /** Answers may arrive after this transport is gone (they are posted); they skip its state then. */
+  std::shared_ptr<std::atomic<bool>> alive_ = std::make_shared<std::atomic<bool>>(true);
 };
 
 } // namespace pbr

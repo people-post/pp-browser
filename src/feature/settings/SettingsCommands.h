@@ -41,7 +41,10 @@ struct SettingsCommands {
   std::function<Roe<void>(const std::string& private_content_id_hex)> share_cas_publicly;
   std::function<Roe<void>(const std::string& public_content_id_hex)> unpublish_cas;
   /** P4: fetch public tip from peer_relay_user_id into public Cache. */
-  std::function<Roe<void>(const std::string& tip, const std::string& peer_relay_user_id)> fetch_cas_public_tip;
+  /** Asynchronous (a mesh fetch): `on_done` runs on UI. */
+  std::function<void(const std::string& tip, const std::string& peer_relay_user_id,
+                     std::function<void(Roe<void>)> on_done)>
+      fetch_cas_public_tip;
   std::function<Roe<void>(const RegisterIdentityArgs& args)> register_identity;
   std::function<Roe<void>()> rotate_brief_llm_key;
   std::function<Roe<void>(int older_than_days)> clear_undelivered_older_than;

@@ -6,9 +6,11 @@
 #include "common/SequencedTaskRunner.h"
 #include "common/PbrCompat.h"
 
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstdlib>
+#include <memory>
 #include <mutex>
 #include <thread>
 
@@ -31,6 +33,48 @@ logging::Logger* g_log = nullptr;
 // Sequenced "UI"/main mailbox — process runtime (not RmlUi). Used by GUI frame drain
 // and by headless/domain reply paths (e.g. MeshDirectoryCache → PostUI).
 std::unique_ptr<SequencedTaskRunner> g_ui_runner;
+
+/** Owner threads, created by Initialize and stopped (joined) by Shutdown. */
+std::mutex g_owners_mu;
+std::array<std::shared_ptr<OwnerThread>, kOwnerThreadCount> g_owners;
+OwnerThreadMode g_owner_mode = OwnerThreadMode::Dedicated;
+
+std::shared_ptr<OwnerThread> OwnerFor(const OwnerThreadId id) {
+  std::lock_guard lock(g_owners_mu);
+  return g_owners[static_cast<size_t>(id)];
+}
+
+void StartOwnerThreads(const AppRuntimeConfig& config) {
+  std::lock_guard lock(g_owners_mu);
+  g_owner_mode = config.owner_threads;
+  for (size_t i = 0; i < kOwnerThreadCount; ++i) {
+    g_owners[i] = std::make_shared<OwnerThread>(OwnerThreadName(static_cast<OwnerThreadId>(i)), config.owner_threads,
+                                                config.name_thread);
+    g_owners[i]->Start();
+  }
+}
+
+/** Post onto the owner when it exists, else run inline (drain chains must not dead-end). */
+void PostToOrRun(OwnerThreadId id, std::function<void()> task) {
+  if (OwnerFor(id)) {
+    AppRuntime::PostTo(id, std::move(task));
+  } else {
+    task();
+  }
+}
+
+void StopOwnerThreads() {
+  std::array<std::shared_ptr<OwnerThread>, kOwnerThreadCount> owners;
+  {
+    std::lock_guard lock(g_owners_mu);
+    owners.swap(g_owners);
+  }
+  for (auto& owner : owners) {
+    if (owner) {
+      owner->Stop();
+    }
+  }
+}
 std::function<void()> g_ui_wake_callback;
 
 void EnsureUIMailbox() {
@@ -60,13 +104,91 @@ struct TeardownGate {
   int64_t running = 0;
 };
 
-TeardownGate g_gate;
+/**
+ * Never destroyed: the runners / owner mailboxes above are destroyed after it at exit (reverse
+ * declaration order), and each unrun task still queued there settles its PendingPost — which locks
+ * this gate. A destroyed mutex aborts on macOS ("mutex lock failed: Invalid argument").
+ */
+TeardownGate& g_gate = *new TeardownGate();
 /** Nesting depth of gated tasks on this thread: continuations are allowed while draining. */
 thread_local int t_gated_depth = 0;
+
+/**
+ * An accepted post counted in `g_gate.pending`. Settled when the task runs (or is skipped at run
+ * time); a mailbox that drops the task unrun (stopped pool / owner thread) settles it on
+ * destruction — otherwise a later quiesce waited out its whole budget for a task that never came.
+ */
+struct PendingPost {
+  bool settled = false;
+  void Settle() {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    --g_gate.pending;
+  }
+  ~PendingPost() {
+    if (!settled) {
+      std::lock_guard lock(g_gate.mu);
+      Settle();
+      g_gate.cv.notify_all();
+    }
+  }
+};
+
+/** RunAndWait: set while the caller runs an owner's task in its stead. */
+thread_local std::array<int, kOwnerThreadCount> t_stand_in{};
+
+void RunStandingIn(const OwnerThreadId owner, const std::function<void()>& task) {
+  const size_t i = static_cast<size_t>(owner);
+  ++t_stand_in[i];
+  struct Leave {
+    size_t i;
+    ~Leave() { --t_stand_in[i]; }
+  } leave{i};
+  task();
+}
+
+/** Settles a RunAndWait: explicitly after the task ran, or when a dropped post destroys it. */
+struct RunAndWaitState {
+  std::mutex mu;
+  std::condition_variable cv;
+  bool settled = false;
+  bool ran = false;
+
+  void Settle(bool did_run) {
+    {
+      std::lock_guard lock(mu);
+      if (settled) {
+        return;
+      }
+      settled = true;
+      ran = did_run;
+    }
+    cv.notify_all();
+  }
+  bool IsSettled() {
+    std::lock_guard lock(mu);
+    return settled;
+  }
+  bool Ran() {
+    std::lock_guard lock(mu);
+    return settled && ran;
+  }
+};
+
+struct DropSettle {
+  explicit DropSettle(std::shared_ptr<RunAndWaitState> s) : state(std::move(s)) {}
+  DropSettle(const DropSettle&) = delete;
+  DropSettle& operator=(const DropSettle&) = delete;
+  ~DropSettle() { state->Settle(false); }
+  std::shared_ptr<RunAndWaitState> state;
+};
 
 /** Wrap `task` for the gate; empty result = drop the post. */
 std::function<void()> GateTask(std::function<void()> task, const GateKind kind) {
   uint64_t epoch = 0;
+  std::shared_ptr<PendingPost> pending;
   {
     std::lock_guard lock(g_gate.mu);
     if (kind == GateKind::Posted) {
@@ -75,16 +197,17 @@ std::function<void()> GateTask(std::function<void()> task, const GateKind kind) 
         return {};
       }
       ++g_gate.pending;
+      pending = std::make_shared<PendingPost>();
     }
     epoch = g_gate.epoch;
   }
-  return [task = std::move(task), epoch, kind]() {
+  return [task = std::move(task), epoch, kind, pending]() {
     {
       std::lock_guard lock(g_gate.mu);
       bool run = false;
       switch (kind) {
       case GateKind::Posted:
-        --g_gate.pending;
+        pending->Settle();
         run = g_gate.state != TeardownState::Closed && g_gate.epoch == epoch;
         break;
       case GateKind::OneShotTimer:
@@ -159,6 +282,7 @@ void AppRuntime::Initialize(const AppRuntimeConfig& config) {
   if (!g_testing_worker_override) {
     WorkerDispatch::Install(&g_thread_runtime->Workers());
   }
+  StartOwnerThreads(config);
 }
 
 void AppRuntime::BeginShutdown() {
@@ -227,15 +351,21 @@ bool AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds budget) {
   }
   ResumeBackgroundWork();
   std::atomic<bool> done{false};
-  // Critical first so we sit behind LeaveCall (Critical); then Normal behind DeclineInvite.
+  // Critical first so we sit behind LeaveCall (Critical); then Normal behind DeclineInvite; then
+  // each owner thread, so work they queued (and posted back) has run too.
   PostWorker(WorkerLane::Critical, [&done]() {
     PostWorker(WorkerLane::Normal, [&done]() {
-      PostUI([&done]() { done.store(true, std::memory_order_release); });
+      PostToOrRun(OwnerThreadId::MediaSessions, [&done]() {
+        PostToOrRun(OwnerThreadId::Connectivity, [&done]() {
+          PostUI([&done]() { done.store(true, std::memory_order_release); });
+        });
+      });
     });
   });
   const auto deadline = std::chrono::steady_clock::now() + budget;
   while (!done.load(std::memory_order_acquire)) {
     RunUITasks();
+    RunAllOwnerTasks();
     if (std::chrono::steady_clock::now() >= deadline) {
       RunUITasks();
       return false;
@@ -267,6 +397,7 @@ bool AppRuntime::QuiesceForTeardown(const std::chrono::milliseconds budget) {
     if (pump_ui) {
       RunUITasks();
     }
+    RunAllOwnerTasks();  // Manual owners have no thread of their own (no-op when Dedicated)
     std::unique_lock lock(g_gate.mu);
     pending = g_gate.pending;
     running = g_gate.running;
@@ -311,6 +442,8 @@ void AppRuntime::Shutdown() {
   if (!IsRunning()) {
     return;
   }
+  // Owners first: their in-flight task may post to workers, which are still up.
+  StopOwnerThreads();
   // Join while WorkerDispatch still points at the pool. In-flight work (e.g. unlock →
   // EnsureMessagingReady → MeshDirectoryCache::RequestRefresh) may PostWorker; the pool
   // no-ops once stopped_. Uninstalling first asserted in WorkerDispatch::Post.
@@ -474,6 +607,144 @@ void AppRuntime::PostCoordinatorNormal(std::function<void()> task) {
 
 void AppRuntime::PostCoordinatorBackground(std::function<void()> task) {
   PostCoordinator(CoordinatorPriority::Background, std::move(task));
+}
+
+void AppRuntime::PostToOwnerOrRun(const OwnerThreadId owner, std::function<void()> task) {
+  if (task) {
+    PostToOrRun(owner, std::move(task));
+  }
+}
+
+void AppRuntime::PostTo(const OwnerThreadId owner, std::function<void()> task) {
+  if (!task) {
+    return;
+  }
+  auto target = OwnerFor(owner);
+  if (!target) {
+    return;
+  }
+  auto gated = GateTask(std::move(task), GateKind::Posted);
+  if (!gated) {
+    return;
+  }
+  (void)target->Post(std::move(gated));  // a stopped owner destroys it unrun (gate settles)
+}
+
+void AppRuntime::PostToFront(const OwnerThreadId owner, std::function<void()> task) {
+  if (!task) {
+    return;
+  }
+  auto target = OwnerFor(owner);
+  if (!target) {
+    return;
+  }
+  auto gated = GateTask(std::move(task), GateKind::Posted);
+  if (gated) {
+    (void)target->PostFront(std::move(gated));
+  }
+}
+
+bool AppRuntime::HasOwner(const OwnerThreadId owner) {
+  return OwnerFor(owner) != nullptr;
+}
+
+bool AppRuntime::CurrentlyOn(const OwnerThreadId owner) {
+  if (t_stand_in[static_cast<size_t>(owner)] > 0) {
+    return true;
+  }
+  auto target = OwnerFor(owner);
+  return target && target->IsCurrent();
+}
+
+void AppRuntime::RunAndWait(const OwnerThreadId owner, const std::function<void()>& task) {
+  if (!task) {
+    return;
+  }
+  if (CurrentlyOn(owner)) {
+    task();
+    return;
+  }
+  auto target = OwnerFor(owner);
+  if (!target) {
+    RunStandingIn(owner, task);
+    return;
+  }
+  auto state = std::make_shared<RunAndWaitState>();
+  auto drop = std::make_shared<DropSettle>(state);
+  PostTo(owner, [&task, state, drop]() {
+    task();
+    state->Settle(true);
+  });
+  drop.reset();  // only the posted task (if queued) keeps it: dropping the task settles the wait
+  if (target->Mode() == OwnerThreadMode::Manual) {
+    // No thread: drain the owner on the caller up to (and past) our task.
+    while (!state->IsSettled() && RunOwnerTasks(owner) > 0) {
+    }
+  } else {
+    std::unique_lock lock(state->mu);
+    while (!state->cv.wait_for(lock, std::chrono::seconds(5), [&]() { return state->settled; })) {
+      logger().warning << "RunAndWait: " << target->Name() << " busy for >5s";
+    }
+  }
+  if (!state->Ran()) {
+    RunStandingIn(owner, task);  // dropped (teardown gate / owner stopping): nobody else runs its state
+  }
+}
+
+uint64_t AppRuntime::ScheduleOn(const OwnerThreadId owner, const std::chrono::milliseconds delay,
+                                std::function<void()> task) {
+  if (!task) {
+    return 0;
+  }
+  return ScheduleCoordinatorOneShot(delay, [owner, task = std::move(task)]() { PostTo(owner, task); });
+}
+
+size_t AppRuntime::RunOwnerTasks(const OwnerThreadId owner) {
+  auto target = OwnerFor(owner);
+  if (!target || target->Mode() != OwnerThreadMode::Manual) {
+    return 0;
+  }
+  return target->RunPending();
+}
+
+size_t AppRuntime::RunAllOwnerTasks() {
+  size_t total = 0;
+  for (;;) {
+    size_t ran = 0;
+    for (size_t i = 0; i < kOwnerThreadCount; ++i) {
+      ran += RunOwnerTasks(static_cast<OwnerThreadId>(i));
+    }
+    if (ran == 0) {
+      return total;
+    }
+    total += ran;
+  }
+}
+
+void AppRuntime::RunUIAndOwnerTasks() {
+  for (int round = 0; round < 10000; ++round) {
+    const size_t owner_ran = RunAllOwnerTasks();
+    const bool ui_pending = HasPendingUITasks();
+    RunUITasks();
+    if (owner_ran == 0 && !ui_pending) {
+      return;
+    }
+  }
+}
+
+bool AppRuntime::OwnerThreadsManual() {
+  std::lock_guard lock(g_owners_mu);
+  return g_owner_mode == OwnerThreadMode::Manual;
+}
+
+void AppRuntime::AssertOn(const OwnerThreadId owner, const char* where) {
+  auto target = OwnerFor(owner);
+  if (!target || CurrentlyOn(owner)) {
+    return;
+  }
+  logger().error << "owner-thread affinity violated: " << (where ? where : "?") << " must run on "
+                 << target->Name();
+  std::abort();
 }
 
 uint64_t AppRuntime::ScheduleCoordinatorRepeating(std::chrono::milliseconds interval,
