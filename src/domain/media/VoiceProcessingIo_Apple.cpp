@@ -56,6 +56,17 @@ constexpr AudioObjectPropertyAddress kDefaultInputAddr = {
     kAudioHardwarePropertyDefaultInputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
 constexpr AudioObjectPropertyAddress kDefaultOutputAddr = {
     kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain};
+
+// Non-allocating; a fixed-size property read. Safe on the capture thread (TakeDeviceChanged)
+// and inside Open()/its failure path — never called from the AudioUnit render callbacks.
+void QueryDefaultDevices(AudioDeviceID* in, AudioDeviceID* out) {
+  *in = kAudioObjectUnknown;
+  *out = kAudioObjectUnknown;
+  UInt32 size = sizeof(AudioDeviceID);
+  AudioObjectGetPropertyData(kAudioObjectSystemObject, &kDefaultInputAddr, 0, nullptr, &size, in);
+  size = sizeof(AudioDeviceID);
+  AudioObjectGetPropertyData(kAudioObjectSystemObject, &kDefaultOutputAddr, 0, nullptr, &size, out);
+}
 #endif
 
 }  // namespace
@@ -67,8 +78,21 @@ struct VoiceProcessingIo::Impl {
   std::vector<int16_t> input_scratch = std::vector<int16_t>(kMaxFramesPerSlice);
   std::atomic<uint64_t> playout_underruns{0};
   std::atomic<bool> device_changed{false};
+  /** Set once WritePlayout() has delivered real samples since the last Open(); OnRender only
+   *  counts an underrun after that (silence before the engine starts writing isn't one). */
+  std::atomic<bool> playout_started{false};
   bool listening_input = false;
   bool listening_output = false;
+  /** Listeners are registered once, on the object's first Open() attempt (success or
+   *  failure), and removed only in the destructor — see I3 in the final-review notes. */
+  bool listener_registration_attempted = false;
+#if TARGET_OS_OSX
+  /** Default in/out device recorded at the end of every Open() attempt; TakeDeviceChanged()
+   *  compares against these so a notification caused by Open() itself (or a route flap right
+   *  after Start) does not look like a real device change. */
+  AudioDeviceID baseline_input = kAudioObjectUnknown;
+  AudioDeviceID baseline_output = kAudioObjectUnknown;
+#endif
 
   // Real-time thread: no locks, no allocation, no logging.
   static OSStatus OnInput(void* ref, AudioUnitRenderActionFlags* flags, const AudioTimeStamp* ts, UInt32 bus,
@@ -97,7 +121,9 @@ struct VoiceProcessingIo::Impl {
     const size_t got = self->playout.Read(dst, want);
     if (got < want) {
       std::memset(dst + got, 0, (want - got) * sizeof(int16_t));
-      self->playout_underruns.fetch_add(1, std::memory_order_relaxed);
+      if (self->playout_started.load(std::memory_order_acquire)) {
+        self->playout_underruns.fetch_add(1, std::memory_order_relaxed);
+      }
       if (got == 0) {
         *flags |= kAudioUnitRenderAction_OutputIsSilence;
       }
@@ -117,14 +143,53 @@ VoiceProcessingIo::VoiceProcessingIo() : impl_(std::make_unique<Impl>()) {}
 
 VoiceProcessingIo::~VoiceProcessingIo() {
   Close();
+#if TARGET_OS_OSX
+  // Listeners are registered once (first Open() attempt) and live for the object's lifetime
+  // (I3): remove them here, not in Close(), so a later SDL-fallback call still notices a real
+  // default-device change and retries VPIO.
+  if (impl_->listening_input) {
+    AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &kDefaultInputAddr, &Impl::OnDefaultDeviceChanged,
+                                      impl_.get());
+    impl_->listening_input = false;
+  }
+  if (impl_->listening_output) {
+    AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &kDefaultOutputAddr, &Impl::OnDefaultDeviceChanged,
+                                      impl_.get());
+    impl_->listening_output = false;
+  }
+#endif
 }
 
 bool VoiceProcessingIo::Open(std::string* reason) {
   Close();
+  // Clear before recording a fresh baseline below (I1/I3): a stale flag from before this
+  // attempt must not immediately look like a "device changed since Open()".
+  impl_->device_changed.store(false, std::memory_order_relaxed);
+
+#if TARGET_OS_OSX
+  if (!impl_->listener_registration_attempted) {
+    impl_->listener_registration_attempted = true;
+    if (AudioObjectAddPropertyListener(kAudioObjectSystemObject, &kDefaultInputAddr, &Impl::OnDefaultDeviceChanged,
+                                       impl_.get()) == noErr) {
+      impl_->listening_input = true;
+    }
+    if (AudioObjectAddPropertyListener(kAudioObjectSystemObject, &kDefaultOutputAddr, &Impl::OnDefaultDeviceChanged,
+                                       impl_.get()) == noErr) {
+      impl_->listening_output = true;
+    }
+  }
+#endif
+
   auto fail = [&](std::string why) {
     if (reason) {
       *reason = std::move(why);
     }
+#if TARGET_OS_OSX
+    // Record the baseline even on failure (I1): otherwise a notification fired by this failed
+    // attempt (or by whatever caused it to fail) would look like a device change on the very
+    // next TakeDeviceChanged(), while we are actually sitting on SDL.
+    QueryDefaultDevices(&impl_->baseline_input, &impl_->baseline_output);
+#endif
     Close();
     return false;
   };
@@ -193,12 +258,18 @@ bool VoiceProcessingIo::Open(std::string* reason) {
   AudioStreamBasicDescription got{};
   UInt32 size = sizeof(got);
   st = AudioUnitGetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, kInputBus, &got, &size);
-  if (st != noErr || !IsMonoS16(got)) {
+  if (st != noErr) {
+    return fail(Failed("get capture format", st));
+  }
+  if (!IsMonoS16(got)) {
     return fail("capture format mismatch " + FormatText(got));
   }
   size = sizeof(got);
   st = AudioUnitGetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, kOutputBus, &got, &size);
-  if (st != noErr || !IsMonoS16(got)) {
+  if (st != noErr) {
+    return fail(Failed("get playback format", st));
+  }
+  if (!IsMonoS16(got)) {
     return fail("playback format mismatch " + FormatText(got));
   }
 
@@ -206,39 +277,21 @@ bool VoiceProcessingIo::Open(std::string* reason) {
   impl_->capture.Reset();
   impl_->playout.Reset();
   impl_->playout_underruns.store(0, std::memory_order_relaxed);
-  impl_->device_changed.store(false, std::memory_order_relaxed);
-
-#if TARGET_OS_OSX
-  if (AudioObjectAddPropertyListener(kAudioObjectSystemObject, &kDefaultInputAddr, &Impl::OnDefaultDeviceChanged,
-                                     impl_.get()) == noErr) {
-    impl_->listening_input = true;
-  }
-  if (AudioObjectAddPropertyListener(kAudioObjectSystemObject, &kDefaultOutputAddr, &Impl::OnDefaultDeviceChanged,
-                                     impl_.get()) == noErr) {
-    impl_->listening_output = true;
-  }
-#endif
+  impl_->playout_started.store(false, std::memory_order_relaxed);
 
   st = AudioOutputUnitStart(unit);
   if (st != noErr) {
     return fail(Failed("AudioOutputUnitStart", st));
   }
+#if TARGET_OS_OSX
+  // Baseline for TakeDeviceChanged (I1): a notification fired by Start itself (or an
+  // AirPods A2DP→HFP flip right after) must not look like a device change on the next check.
+  QueryDefaultDevices(&impl_->baseline_input, &impl_->baseline_output);
+#endif
   return true;
 }
 
 void VoiceProcessingIo::Close() {
-#if TARGET_OS_OSX
-  if (impl_->listening_input) {
-    AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &kDefaultInputAddr, &Impl::OnDefaultDeviceChanged,
-                                      impl_.get());
-    impl_->listening_input = false;
-  }
-  if (impl_->listening_output) {
-    AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &kDefaultOutputAddr, &Impl::OnDefaultDeviceChanged,
-                                      impl_.get());
-    impl_->listening_output = false;
-  }
-#endif
   if (impl_->unit) {
     AudioOutputUnitStop(impl_->unit);  // returns after in-flight callbacks finish
     AudioUnitUninitialize(impl_->unit);
@@ -256,7 +309,13 @@ size_t VoiceProcessingIo::ReadCapture(int16_t* out, size_t max_samples) {
 }
 
 size_t VoiceProcessingIo::WritePlayout(const int16_t* pcm, size_t samples) {
-  return impl_->unit ? impl_->playout.Write(pcm, samples) : 0;
+  if (!impl_->unit) {
+    return 0;
+  }
+  if (samples > 0) {
+    impl_->playout_started.store(true, std::memory_order_release);
+  }
+  return impl_->playout.Write(pcm, samples);
 }
 
 size_t VoiceProcessingIo::QueuedPlayoutBytes() const {
@@ -264,7 +323,19 @@ size_t VoiceProcessingIo::QueuedPlayoutBytes() const {
 }
 
 bool VoiceProcessingIo::TakeDeviceChanged() {
-  return impl_->device_changed.exchange(false, std::memory_order_acq_rel);
+  if (!impl_->device_changed.exchange(false, std::memory_order_acq_rel)) {
+    return false;
+  }
+#if TARGET_OS_OSX
+  // A notification does not by itself mean the pair we're bound to changed (I1): confirm
+  // against the baseline recorded at the last Open() attempt before triggering a reopen.
+  AudioDeviceID in = kAudioObjectUnknown;
+  AudioDeviceID out = kAudioObjectUnknown;
+  QueryDefaultDevices(&in, &out);
+  return in != impl_->baseline_input || out != impl_->baseline_output;
+#else
+  return true;
+#endif
 }
 
 uint64_t VoiceProcessingIo::PlayoutUnderruns() const {
