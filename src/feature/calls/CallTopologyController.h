@@ -216,6 +216,26 @@ private:
    * UI-thread entry; work runs on a worker.
    */
   void OnGuestSfuTransportLost();
+  /** Bump the migrate generation and own the flight for `call_id`; returns the new generation. */
+  uint64_t ClaimMigrateFlight(const std::string& call_id);
+  void ReleaseMigrateFlight();
+  bool MigrateFlightBusyFor(const std::string& call_id) const;
+  // Local accept steps (OnLocalAcceptJoined → invite hint / group without hint / stay direct).
+  void AttachFromInviteHint(const std::string& call_id, const std::string& hop_peer_id);
+  void FinishInviteHintAttach(const std::string& call_id, uint64_t gen, const Roe<void>& ok);
+  void JoinGroupWithoutHint(const std::string& call_id, size_t n_joined);
+  void FinishJoinSoftMigrate(const std::string& call_id, uint64_t gen, const Roe<void>& mig, bool attached_when_done);
+  void StayDirectAfterAccept(const std::string& call_id, size_t n_joined);
+  // Remote accept steps.
+  void RefanOutLocalHopForJoiner(const std::string& call_id, const std::string& joiner_identity);
+  void FinishRemoteAcceptMigrate(const std::string& call_id, const std::string& joiner_identity, uint64_t gen,
+                                 const Roe<void>& mig);
+  // Hop hint (guest could not reach our hop) steps.
+  bool IsStickyInitiator(const std::string& call_id, const std::string& local_identity) const;
+  bool HopHintMayLeavePreferLocal(const std::string& prefer_hop_peer_id) const;
+  bool IsOnOrHintedHop(const std::string& call_id, const std::string& hop_peer_id) const;
+  void StartHopHintRepick(const std::string& call_id, const std::string& prefer, const std::string& guest);
+  void FinishHopHintRepick(const std::string& call_id, const std::string& guest, uint64_t gen, const Roe<void>& mig);
   // Inbound CallSfuAttach steps (OnInboundSfuAttach → expect → settle without dial → start → finish on UI).
   bool ExpectsInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach) const;
   void DeferInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach);
