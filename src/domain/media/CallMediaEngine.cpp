@@ -13,10 +13,6 @@
 #include <SDL3/SDL.h>
 #include <opus.h>
 
-#if defined(__APPLE__)
-#include <TargetConditionals.h>
-#endif
-
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -610,11 +606,7 @@ struct CallMediaEngine::Impl {
     opus_encoder_ctl(encoder, OPUS_SET_BITRATE(static_cast<int>(bps > 0 ? bps : 24000)));
     opus_encoder_ctl(encoder, OPUS_SET_INBAND_FEC(1));
     opus_encoder_ctl(encoder, OPUS_SET_PACKET_LOSS_PERC(10));
-#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
-    opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(5));
-#else
-    opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(8));
-#endif
+    opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(CallAudioSession::OpusEncoderComplexity()));
     return {};
   }
 

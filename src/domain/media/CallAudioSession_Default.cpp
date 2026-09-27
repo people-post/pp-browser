@@ -20,6 +20,10 @@ bool SpeakerToggleNeedsDeviceReopen() {
   return false;
 }
 
+int OpusEncoderComplexity() {
+  return 8;
+}
+
 int CaptureOpenAttemptCount() {
   return 1;
 }
