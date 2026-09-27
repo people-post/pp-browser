@@ -1,4 +1,5 @@
 #include "feature/calls/CallHopMigrateWorkflow.h"
+#include "feature/calls/CallsThread.h"
 
 #include "feature/calls/CallMediaSeat.h"
 
@@ -32,7 +33,7 @@ namespace {
 /** Next step of a migrate / attach flow, on the calls owner (was MeshControl before thread-ownership t2a). */
 void PostOnCallsOwner(std::function<void()> task) {
   if (task) {
-    AppRuntime::PostToOwnerOrRun(OwnerThreadId::MediaSessions, std::move(task));
+    CallsThread::Post(std::move(task));
   }
 }
 
@@ -813,7 +814,7 @@ void CallHopMigrateWorkflow::AttachThroughRelay(HopAttach at, std::function<void
         // topology planner state — all UI-owned (CALLS.md). On MeshControl it raced OnLocalAcceptJoined
         // on UI (TSan: hop planner phase; heap corruption in CallTopologyControllerTest). The attach
         // network work already ran; only the local commit hops.
-        AppRuntime::PostUI([this, at = std::move(at), bps = attached->a_up_bps, on_done = std::move(on_done)]() {
+        CallsThread::Post([this, at = std::move(at), bps = attached->a_up_bps, on_done = std::move(on_done)]() {
           std::lock_guard<std::mutex> attach_lock(inbound_gate_.mu);
           on_done(CompleteHopAttach(at, bps));
         });
@@ -1057,7 +1058,7 @@ void CallHopMigrateWorkflow::ReleaseDirectAfterHopAttach(const HopAttach& at) {
     host_.ClearMediaActivity();
   };
   const uint64_t timer = AppRuntime::ScheduleCoordinatorOneShot(
-      std::chrono::milliseconds(3500), [do_release]() { AppRuntime::PostUI(do_release); });
+      std::chrono::milliseconds(3500), [do_release]() { CallsThread::Post(do_release); });
   if (timer == 0) {
     do_release();
   }
@@ -1096,10 +1097,10 @@ void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
 
   ReattachGuestSfuTransportAsync(call_id, attach, [this, call_id, gen, attempt](Roe<void> ok) {
     if (!IsMigrateGenerationCurrent(gen)) {
-      AppRuntime::PostUI([this]() { guest_.reattach_in_flight = false; });
+      CallsThread::Post([this]() { guest_.reattach_in_flight = false; });
       return;
     }
-    AppRuntime::PostUI([this, call_id, ok, gen, attempt]() {
+    CallsThread::Post([this, call_id, ok, gen, attempt]() {
       guest_.reattach_in_flight = false;
       if (!IsMigrateGenerationCurrent(gen)) {
         return;
@@ -1114,7 +1115,7 @@ void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
                     << " err=" << ok.error().message << " call_id=" << call_id;
       const int backoff_ms = 400 * attempt;
       (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(backoff_ms), [this]() {
-        AppRuntime::PostUI([this]() { OnGuestSfuTransportLost(); });
+        CallsThread::Post([this]() { OnGuestSfuTransportLost(); });
       });
     });
   });

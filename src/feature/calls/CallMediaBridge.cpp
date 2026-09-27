@@ -1,4 +1,5 @@
 #include "feature/calls/CallMediaBridge.h"
+#include "feature/calls/CallsThread.h"
 #include "domain/messaging/CallTxOnlyEscalateLogic.h"
 
 #include "foundation/i18n/LocalizationService.h"
@@ -60,7 +61,7 @@ CallMediaInboundPorts CallMediaBridge::MakeInboundPorts() {
   ports.on_accepted = [this](const CallMediaInboundHello& hello) {
     // Identity binding reads / writes bridge state — UI thread. Posted ahead of any media or
     // connected callback of this bundle (FIFO), so frames never see a stale stream id.
-    AppRuntime::PostUI([this, call_id = hello.call_id, peer_id = hello.peer_id]() {
+    CallsThread::Post([this, call_id = hello.call_id, peer_id = hello.peer_id]() {
       BindInboundPeer(call_id, peer_id);
     });
     return MakeBundleCallbacks(hello.call_id, /*fixed_stream=*/0, "Inbound call-media");
@@ -111,7 +112,7 @@ CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string&
                                                               const char* label) {
   CallMediaDirectCallbacks cbs;
   cbs.on_connected = [this, call_id, label]() {
-    AppRuntime::PostUI([this, call_id, label]() {
+    CallsThread::Post([this, call_id, label]() {
       log().info << label << " connected call_id=" << call_id;
       CommitDirectConnected(call_id);
     });
@@ -121,7 +122,7 @@ CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string&
     DeliverDirectMedia(call_id, fixed_stream, channel, seq, mark, payload);
   };
   cbs.on_failed = [this, call_id](const std::string& reason) {
-    AppRuntime::PostUI([this, call_id, reason]() { OnBundleFailed(call_id, reason); });
+    CallsThread::Post([this, call_id, reason]() { OnBundleFailed(call_id, reason); });
   };
   return cbs;
 }
@@ -338,7 +339,7 @@ void CallMediaBridge::ArmDirectHealthTimer() {
   // ~1s tick while Connecting/Live/Degraded — primary connect health / TX-only path (no UI poll).
   direct_health_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(
       std::chrono::milliseconds(1000), [this]() {
-        AppRuntime::PostUI([this]() { OnDirectHealthTimerFire(); });
+        CallsThread::Post([this]() { OnDirectHealthTimerFire(); });
       });
 }
 
@@ -359,7 +360,7 @@ void CallMediaBridge::ArmReserveRenewal() {
   // one lease overlapping the next, so the relay link also stays hot throughout.
   reserve_renew_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(
       std::chrono::milliseconds(reserve_renew_interval_ms_), [this]() {
-        AppRuntime::PostUI([this]() { OnReserveRenewFire(); });
+        CallsThread::Post([this]() { OnReserveRenewFire(); });
       });
 }
 
@@ -418,7 +419,7 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
 void CallMediaBridge::DeliverDirectMedia(const std::string& call_id, const uint32_t fixed_stream,
                                          uint8_t channel, uint32_t seq, uint8_t mark,
                                          const std::vector<uint8_t>& payload) {
-  AppRuntime::PostUI([this, call_id, fixed_stream, channel, seq, mark, payload]() {
+  CallsThread::Post([this, call_id, fixed_stream, channel, seq, mark, payload]() {
     if (!media_.IsActive() || media_.ActiveCallId() != call_id) {
       return;
     }
@@ -567,7 +568,7 @@ void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const
   AbortConnectSequence();
   force_circuit_ensure_ = true;  // consumed by the next reach (BuildReachRequest)
   direct_.Detach();
-  AppRuntime::PostUI([this, call_id, peer]() {
+  CallsThread::Post([this, call_id, peer]() {
     if (stopping_.load() || media_.ActiveCallId() != call_id) {
       return;
     }
@@ -860,7 +861,7 @@ void CallMediaBridge::ScheduleStartMediaAsOfferer(const std::string& call_id,
                                                         const std::string& peer_identity) {
   // Mark before UI hop so CallController orphan auto-Leave cannot race CallAccept→Active.
   media_attempted_calls_.insert(call_id);
-  AppRuntime::PostUI([this, call_id, peer_identity]() {
+  CallsThread::Post([this, call_id, peer_identity]() {
     Apply(CallDirectPlannerEvent::ScheduleOfferer, call_id, peer_identity);
     if (direct_planner_phase_ != CallDirectPlannerPhase::Arming &&
         direct_planner_phase_ != CallDirectPlannerPhase::Connecting &&
@@ -895,18 +896,18 @@ void CallMediaBridge::ScheduleStartMediaAsOfferer(const std::string& call_id,
 void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
                                                          const std::string& peer_identity) {
   media_attempted_calls_.insert(call_id);
-  // Prefer inline when already on UI (AcceptSucceeded Kick). Worker Accept → PostUIFront.
-  if (AppRuntime::CurrentlyOnUI()) {
+  // Prefer inline when already on the calls owner (AcceptSucceeded Kick); otherwise ahead of queued work.
+  if (CallsThread::IsCurrent()) {
     RunAnswererStart(call_id, peer_identity);
     return;
   }
-  log().info << "ScheduleStartMediaAsAnswerer queued (PostUIFront) call_id=" << call_id;
-  AppRuntime::PostUIFront([this, call_id, peer_identity]() { RunAnswererStart(call_id, peer_identity); });
+  log().info << "ScheduleStartMediaAsAnswerer queued (calls owner, front) call_id=" << call_id;
+  CallsThread::PostFront([this, call_id, peer_identity]() { RunAnswererStart(call_id, peer_identity); });
 }
 
 void CallMediaBridge::RunAnswererStart(const std::string& call_id, const std::string& peer_identity) {
   log().info << "ScheduleStartMediaAsAnswerer UI enter call_id=" << call_id << " peer=" << peer_identity
-             << " on_ui=" << (AppRuntime::CurrentlyOnUI() ? 1 : 0);
+             << " on_owner=" << (CallsThread::IsCurrent() ? 1 : 0);
   // Re-arm Direct before Apply so product AllowsDirectPath for Schedule.
   if (arming_.IsBound() && arming_.direct_ops_allowed && !arming_.direct_ops_allowed()) {
     log().info << "ScheduleStartMediaAsAnswerer request_direct_arming call_id=" << call_id
@@ -992,7 +993,7 @@ void CallMediaBridge::PollForDeferredMediaKey(const std::string& call_id, uint64
     }
   }
   // Surface failure — do not leave chrome stuck in MediaPending forever.
-  AppRuntime::PostUI([this, call_id]() { OnDeferredMediaKeyTimeout(call_id); });
+  CallsThread::Post([this, call_id]() { OnDeferredMediaKeyTimeout(call_id); });
 }
 
 void CallMediaBridge::OnDeferredMediaKeyTimeout(const std::string& call_id) {
@@ -1019,7 +1020,7 @@ void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
   // Wake inbound hello key-wait (if any) before hopping to UI for deferred answerer start.
   connect_.NotifyKeyAvailable();
   // Hop to UI — inbound CallMediaKey is processed on Browser IO (inside PollInbox).
-  AppRuntime::PostUI([this, call_id]() {
+  CallsThread::Post([this, call_id]() {
     std::string peer = pending_answerer_peer_;
     const bool pending = (pending_answerer_call_id_ == call_id);
     if (!pending) {
@@ -1048,7 +1049,7 @@ void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
 }
 
 void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
-  if (AppRuntime::CurrentlyOnUI()) {
+  if (CallsThread::IsCurrent()) {
     StopMeshMediaOnUi(call_id);
     return;
   }
@@ -1058,7 +1059,7 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
   // on the next call). A StartSfu that lands first (AcceptInvite SoftMigrate / CallSfuAttach /
   // a new call) makes this stop stale — it must not tear down the newer session.
   const uint64_t session_gen = media_.MediaSessionGeneration();
-  AppRuntime::PostUIFront([this, alive = alive_, call_id, session_gen]() {
+  CallsThread::PostFront([this, alive = alive_, call_id, session_gen]() {
     if (!alive->load(std::memory_order_acquire)) {
       return;
     }
@@ -1194,10 +1195,10 @@ void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
   ClearMeshConnectFailed();
 
   if (!call_id.empty() && media_.IsActive() && media_.ActiveCallId() == call_id) {
-    if (AppRuntime::CurrentlyOnUI()) {
+    if (CallsThread::IsCurrent()) {
       media_.Stop();
     } else {
-      AppRuntime::PostUI([this, call_id]() {
+      CallsThread::Post([this, call_id]() {
         if (media_.IsActive() && media_.ActiveCallId() == call_id) {
           media_.Stop();
         }
@@ -1211,7 +1212,7 @@ Roe<void> CallMediaBridge::RetryMeshMedia(const std::string& call_id) {
     return Error("call_id required");
   }
   // Restarts the engine and the connect sequence — UI-only. Refuse rather than race.
-  if (!AppRuntime::CurrentlyOnUI()) {
+  if (!CallsThread::IsCurrent()) {
     log().error << "RetryMeshMedia called off the UI thread call_id=" << call_id;
     return Error("call media retry must run on the UI thread");
   }

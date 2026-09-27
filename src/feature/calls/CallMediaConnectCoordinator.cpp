@@ -1,4 +1,5 @@
 #include "feature/calls/CallMediaConnectCoordinator.h"
+#include "feature/calls/CallsThread.h"
 
 #include "foundation/runtime/AppRuntime.h"
 
@@ -22,11 +23,11 @@ constexpr int kInboundKeyPollMs = 250;
 
 /** Run `fn` on UI: inline when already there, else posted. */
 void OnUi(std::function<void()> fn) {
-  if (AppRuntime::CurrentlyOnUI()) {
+  if (CallsThread::IsCurrent()) {
     fn();
     return;
   }
-  AppRuntime::PostUI(std::move(fn));
+  CallsThread::Post(std::move(fn));
 }
 
 } // namespace
@@ -34,7 +35,7 @@ void OnUi(std::function<void()> fn) {
 void CallMediaConnectCoordinator::CheckUiThread(const char* what) const {
   // Sequence state is UI-thread only (no lock). A caller on another thread is a bug — make it
   // visible in dogfood logs rather than a silent race.
-  if (!AppRuntime::CurrentlyOnUI()) {
+  if (!CallsThread::IsCurrent()) {
     log().error << what << " called off the UI thread — sequence state is UI-only";
   }
 }
@@ -311,7 +312,7 @@ void CallMediaConnectCoordinator::ArmWatchdog(const uint64_t seq, const int atte
         if (!alive->load(std::memory_order_acquire) || !Current(seq) || !InFlight()) {
           return;
         }
-        AppRuntime::PostUI([this, alive, seq, attempt]() {
+        CallsThread::Post([this, alive, seq, attempt]() {
           if (!alive->load(std::memory_order_acquire) || !Current(seq) || !InFlight() ||
               attempt_current_ != attempt) {
             return;
@@ -362,7 +363,7 @@ void CallMediaConnectCoordinator::OnAttemptFinished(const uint64_t seq, const in
   }
   retry_timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(
       std::chrono::milliseconds(kRetryDelayMs), [this, alive = alive_, seq, attempt]() {
-        AppRuntime::PostUI([this, alive, seq, attempt]() {
+        CallsThread::Post([this, alive, seq, attempt]() {
           if (!alive->load(std::memory_order_acquire) || !Current(seq)) {
             return;
           }
@@ -384,7 +385,7 @@ void CallMediaConnectCoordinator::Finish(const uint64_t seq, Roe<void> result) {
   }
   // Posted, not inline: the handler may restart or stop the call. Skipped if Abort / Start ran
   // since — a stale give-up must not tear down a newer session.
-  AppRuntime::PostUI([this, alive = alive_, seq, done = hooks_.on_finished, result = std::move(result)]() mutable {
+  CallsThread::Post([this, alive = alive_, seq, done = hooks_.on_finished, result = std::move(result)]() mutable {
     if (!alive->load(std::memory_order_acquire) || !Current(seq) || !done) {
       return;
     }

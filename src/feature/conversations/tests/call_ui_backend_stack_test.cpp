@@ -277,7 +277,7 @@ protected:
       return Error("inbound not bound");
     }
     auto applied = inbound_.apply_inbound_control(*msg, "account:peer", std::nullopt, std::nullopt);
-    AppRuntime::RunAllOwnerTasks();  // call control is applied on the calls owner (Manual in tests)
+    AppRuntime::RunUIAndOwnerTasks();  // call control is applied on the calls owner (drained by the test)
     return applied;
   }
 

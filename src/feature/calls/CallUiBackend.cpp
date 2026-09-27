@@ -1,4 +1,5 @@
 #include "feature/calls/CallUiBackend.h"
+#include "foundation/runtime/AppRuntime.h"
 
 #include "domain/media/CallMediaEngine.h"
 #include "feature/calls/CallSessionManager.h"
@@ -33,7 +34,17 @@ const void* CallUiBackend::SessionsIdentity() const {
 
 void CallUiBackend::SetOnRingChanged(std::function<void()> callback) {
   if (auto* calls = stack_.Calls()) {
-    calls->SetOnRingChanged(std::move(callback));
+    // GUI boundary: rings come from the calls owner (and receive paths); the GUI hears them on UI.
+    calls->SetOnRingChanged([callback = std::move(callback)]() {
+      if (!callback) {
+        return;
+      }
+      if (AppRuntime::CurrentlyOnUI()) {
+        callback();
+      } else {
+        AppRuntime::PostUI(callback);
+      }
+    });
   }
 }
 

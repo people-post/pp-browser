@@ -1,4 +1,5 @@
 #include "feature/calls/CallLifecycle.h"
+#include "feature/calls/CallsThread.h"
 
 #include "domain/messaging/CallLifecycleTransitionLogic.h"
 #include "foundation/runtime/AppRuntime.h"
@@ -306,6 +307,7 @@ void CallLifecycle::UpdateListenDesire() {
 }
 
 void CallLifecycle::NotifyChrome() {
+  // GUI boundary: the chrome callback runs on UI whichever thread owns the lifecycle.
   if (!on_chrome_refresh_) {
     return;
   }
@@ -315,12 +317,9 @@ void CallLifecycle::NotifyChrome() {
   }
   const auto guard = deferred_.token();
   const uint64_t epoch = deferred_.Snapshot();
-  AppRuntime::PostUI([this, guard, epoch]() {
-    if (!DeferredSelf::Alive(guard, epoch)) {
-      return;
-    }
-    if (on_chrome_refresh_) {
-      on_chrome_refresh_();
+  AppRuntime::PostUI([refresh = on_chrome_refresh_, guard, epoch]() {
+    if (DeferredSelf::Alive(guard, epoch)) {
+      refresh();
     }
   });
 }
@@ -333,13 +332,13 @@ void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
   AppRuntime::ResumeBackgroundWork();  // relay-fallback sends run on workers
   // Accept runs on the calls owner (thread-ownership t2a) — never behind PollInbox, never blocking:
   // it awaits the circuit park asynchronously and reports once.
-  AppRuntime::PostToOwnerOrRun(OwnerThreadId::MediaSessions, [this, accept = std::move(accept), call_id, guard, epoch]() {
+  CallsThread::Post([this, accept = std::move(accept), call_id, guard, epoch]() {
     if (!DeferredSelf::Alive(guard, epoch)) {
       return;
     }
     log().info << "AcceptInvite owner enter call_id=" << call_id;
     auto reply = [this, call_id, guard, epoch](Roe<void> accepted) {
-      AppRuntime::PostUI([this, call_id, accepted = std::move(accepted), guard, epoch]() {
+      CallsThread::Post([this, call_id, accepted = std::move(accepted), guard, epoch]() {
         if (DeferredSelf::Alive(guard, epoch)) {
           OnAcceptResult(call_id, accepted);
         }
@@ -374,10 +373,10 @@ void CallLifecycle::OnAcceptResult(const std::string& call_id, const Roe<void>& 
 void CallLifecycle::PostOnOwnerAndReply(std::function<Roe<void>()> work, std::function<void(Roe<void>)> reply) {
   const auto guard = deferred_.token();
   const uint64_t epoch = deferred_.Snapshot();
-  AppRuntime::PostToOwnerOrRun(OwnerThreadId::MediaSessions, [work = std::move(work), reply = std::move(reply), guard,
+  CallsThread::Post([work = std::move(work), reply = std::move(reply), guard,
                                                               epoch]() {
     Roe<void> result = work();
-    AppRuntime::PostUI([reply, result = std::move(result), guard, epoch]() {
+    CallsThread::Post([reply, result = std::move(result), guard, epoch]() {
       if (DeferredSelf::Alive(guard, epoch)) {
         reply(result);
       }
@@ -427,7 +426,7 @@ void CallLifecycle::PostRetryMedia(const std::string& call_id) {
   // UI thread, not a worker: retry restarts the engine (StartSfu / Stop — SDL capture) and the
   // bridge's connect sequence, which are UI-only like every other media start. Posted, not inline,
   // so the retry never re-enters Apply.
-  AppRuntime::PostUI([this, retry = std::move(retry), call_id, guard, epoch]() {
+  CallsThread::Post([this, retry = std::move(retry), call_id, guard, epoch]() {
     if (!DeferredSelf::Alive(guard, epoch)) {
       return;
     }
@@ -517,7 +516,7 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
       kick(kick_id);
       const auto guard = deferred_.token();
       const uint64_t epoch = deferred_.Snapshot();
-      AppRuntime::PostUI([this, kick_id, kick, media_active, guard, epoch]() {
+      CallsThread::Post([this, kick_id, kick, media_active, guard, epoch]() {
         if (!DeferredSelf::Alive(guard, epoch)) {
           return;
         }
@@ -542,10 +541,10 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
   }
 
   if (HasAction(actions, CallLifecycleAction::DeferChrome)) {
-    if (AppRuntime::CurrentlyOnUI()) {
+    if (CallsThread::IsCurrent()) {
       const auto guard = deferred_.token();
       const uint64_t epoch = deferred_.Snapshot();
-      AppRuntime::PostUI([this, guard, epoch]() {
+      CallsThread::Post([this, guard, epoch]() {
         if (!DeferredSelf::Alive(guard, epoch)) {
           return;
         }

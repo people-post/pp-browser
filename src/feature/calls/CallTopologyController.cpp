@@ -1,4 +1,5 @@
 #include "feature/calls/CallTopologyController.h"
+#include "feature/calls/CallsThread.h"
 #include "domain/messaging/CallMediaPlannerSelectLogic.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
 
@@ -118,7 +119,7 @@ void CallTopologyController::WatchRelayLoss() {
         if (loss != MediaRelayClientLoss::TransportLost) {
           return;
         }
-        AppRuntime::PostUI([token, snap, this]() {
+        CallsThread::Post([token, snap, this]() {
           if (DeferredSelf::Alive(token, snap)) {
             OnGuestSfuTransportLost();
           }
@@ -343,7 +344,7 @@ void CallTopologyController::ArmAttachWaitTimer(const std::string& call_id, int6
   attach_wait_.timer_id = AppRuntime::ScheduleCoordinatorOneShot(
       std::chrono::milliseconds(delay), [this, captured]() {
         attach_wait_.timer_id = 0;
-        AppRuntime::PostUI([this, captured]() { OnAttachWaitTimerFire(captured); });
+        CallsThread::Post([this, captured]() { OnAttachWaitTimerFire(captured); });
       });
 }
 
@@ -785,7 +786,7 @@ void CallTopologyController::FlushPendingHopPrefer(const std::string& call_id) {
   flight_.call_id = call_id;
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::IceRecover, prefer, gen,
                              [this, call_id, gen](Roe<void> /*mig*/) {
-    AppRuntime::PostUI([this, call_id, gen]() {
+    CallsThread::Post([this, call_id, gen]() {
       if (flight_.flight_gen != gen && !IsMigrateGenerationCurrent(gen)) {
         return;
       }
@@ -983,7 +984,7 @@ void CallTopologyController::TryRecoverViaSfu(const std::string& call_id) {
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::IceRecover, {}, gen,
                              [this, call_id, gen](Roe<void> migrated) {
     const bool attached = sfu_.attached && media_.IsSfuMode();
-    AppRuntime::PostUI([this, call_id, migrated, attached, gen]() {
+    CallsThread::Post([this, call_id, migrated, attached, gen]() {
       if (!IsMigrateGenerationCurrent(gen)) {
         return;
       }
@@ -1063,7 +1064,7 @@ void CallTopologyController::AttachFromInviteHint(const std::string& call_id, co
   }
   const uint64_t gen = ClaimMigrateFlight(call_id);
   AttachLocalToSfuAsync(call_id, attach, [this, call_id, gen](Roe<void> ok) {
-    AppRuntime::PostUI([this, call_id, ok, gen]() { FinishInviteHintAttach(call_id, gen, ok); });
+    CallsThread::Post([this, call_id, ok, gen]() { FinishInviteHintAttach(call_id, gen, ok); });
   });
 }
 
@@ -1124,7 +1125,7 @@ void CallTopologyController::JoinGroupWithoutHint(const std::string& call_id, si
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::LocalJoinedWithoutHint, {}, gen,
                              [this, call_id, gen](Roe<void> mig) {
                                const bool attached = sfu_.attached;
-                               AppRuntime::PostUI([this, call_id, mig, attached, gen]() {
+                               CallsThread::Post([this, call_id, mig, attached, gen]() {
                                  FinishJoinSoftMigrate(call_id, gen, mig, attached);
                                });
                              });
@@ -1213,7 +1214,7 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
   const uint64_t gen = ClaimMigrateFlight(call_id);
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::RemoteAcceptObserved, {}, gen,
                              [this, call_id, joiner_identity, gen](Roe<void> mig) {
-                               AppRuntime::PostUI([this, call_id, joiner_identity, mig, gen]() {
+                               CallsThread::Post([this, call_id, joiner_identity, mig, gen]() {
                                  FinishRemoteAcceptMigrate(call_id, joiner_identity, gen, mig);
                                });
                              });
@@ -1296,7 +1297,7 @@ void CallTopologyController::OnPeerMediaRelayCapLearned(const std::string& call_
         if (!mig) {
           log().warning << "SoftMigrate (relay-cap nudge) failed: " << mig.error().message;
         }
-        AppRuntime::PostUI([this]() { host_.NotifyRingChanged(); });
+        CallsThread::Post([this]() { host_.NotifyRingChanged(); });
       });
 }
 
@@ -1337,7 +1338,7 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
   const uint64_t gen = ClaimMigrateFlight(call_id);
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::JoinedCountObserved, {}, gen,
                              [this, call_id, gen](Roe<void> mig) {
-    AppRuntime::PostUI([this, call_id, mig, gen]() {
+    CallsThread::Post([this, call_id, mig, gen]() {
       if (!IsMigrateGenerationCurrent(gen)) {
         return;
       }
@@ -1500,7 +1501,7 @@ void CallTopologyController::StartInboundSfuAttach(const std::string& call_id, c
                  << " have=" << flight_.migrate_generation.load(std::memory_order_acquire)
                  << " attached=" << (sfu_.attached ? 1 : 0) << " ok=" << (ok ? 1 : 0);
     }
-    AppRuntime::PostUI([this, call_id, attach, gen, superseded, ok]() {
+    CallsThread::Post([this, call_id, attach, gen, superseded, ok]() {
       if (superseded) {
         FinishSupersededInboundSfuAttach(call_id, gen, ok);
       } else {
@@ -1654,7 +1655,7 @@ void CallTopologyController::RefuseGuestNoSharedHop(const std::string& call_id,
                                                     const std::string& guest_identity) {
   // Call-control arrives on Browser IO (PollInbox); eject/UI must not run there — SoftMigrate
   // dogfood: malloc corruption / abort when refusing Samsung mid PreferLocal.
-  AppRuntime::PostUI([this, call_id, guest_identity]() {
+  CallsThread::Post([this, call_id, guest_identity]() {
     const std::string message = Tr("call.error.hop_unreachable_guest");
     CallHopRefuseDetail refuse;
     refuse.call_id = call_id;
@@ -1772,7 +1773,7 @@ void CallTopologyController::StartHopHintRepick(const std::string& call_id, cons
   flight_.call_id = call_id;
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::IceRecover, prefer, gen,
                              [this, call_id, guest, gen](Roe<void> mig) {
-                               AppRuntime::PostUI([this, call_id, mig, guest, gen]() {
+                               CallsThread::Post([this, call_id, mig, guest, gen]() {
                                  FinishHopHintRepick(call_id, guest, gen, mig);
                                });
                              });

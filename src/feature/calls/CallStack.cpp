@@ -1,4 +1,5 @@
 #include "feature/calls/CallStack.h"
+#include "feature/calls/CallsThread.h"
 
 #include "foundation/data/MeshRole.h"
 #include "domain/mesh/host/MeshPorts.h"
@@ -243,7 +244,7 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
     inbound.apply_inbound_control = [this](ThreadMessage& message, const std::string& sender_identity,
                                            std::optional<int64_t> relay_created_at_ms,
                                            std::optional<int64_t> relay_server_time_ms) -> Roe<void> {
-      AppRuntime::PostToOwnerOrRun(OwnerThreadId::MediaSessions, [this, message, sender_identity, relay_created_at_ms,
+      CallsThread::Post([this, message, sender_identity, relay_created_at_ms,
                                                                   relay_server_time_ms]() mutable {
         if (!call_sessions_) {
           return;
@@ -323,7 +324,7 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
   // Park completes on the Amp IO thread (or at a coordinator deadline): back onto the calls owner.
   call_sessions_->SetParkCircuit([this](int timeout_ms, std::function<void(bool)> done) {
     auto on_owner = [done = std::move(done)](bool ready) {
-      AppRuntime::PostToOwnerOrRun(OwnerThreadId::MediaSessions, [done, ready]() { done(ready); });
+      CallsThread::Post([done, ready]() { done(ready); });
     };
     if (MeshMediaPlane* shared = mesh_media()) {
       shared->Rendezvous().EnsureBootstrapSeedParkedAsync(std::move(on_owner), timeout_ms);

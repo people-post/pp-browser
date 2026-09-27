@@ -25,6 +25,12 @@ t2a (step B, done): off-UI call entry points on the media-sessions owner ([T003]
 - [x] pp-call-probe's `send_user_message` is async like the product's (its blocking send parked the owner on a gone peer's ack → teardown UAF in hard-w5 STACK)
 - [x] TSan 24 → 10 in the call suites (left: `CallStack` teardown vs the MeshControl peer-reach prefetch — t3); hard-w5 `all` green
 
+t2b — the rest of the call stack onto the owner, in three commits so every step builds and passes:
+
+- [x] t2b-1: `CallsThread` — the one place that says which thread owns call state. Every internal "continue on the owner" hop (bridge, connect coordinator, seat, topology, hop migrate, lifecycle steps, and the t2a entry points) goes through it; GUI / hub notifications post to UI explicitly (`NotifyChrome`, the GUI ring callback wrapped by `CallUiBackend`, mobile listen sync). Still UI-backed: behaviour-neutral, and until the flip all call state is on one thread
+- [ ] t2b-2: `CallUiBackend` — intents post to the owner, queries read a snapshot the owner publishes
+- [ ] t2b-3: flip `CallsThread` to the media-sessions owner; camera display rotation read on UI and handed over (L012); broadcast hub on the owner; TSan + hard lab
+
 
 - [ ] Call entry points onto the owner: inbound control, UI intents (`CallUiBackend` → post), lifecycle, worker results posted back; Accept / Leave / Decline split into owner steps + worker I/O
 - [ ] Ports bound once on the owner; `CallStack::Lifecycle()` / ring-changed stop rebinding; drop the rebind race (TSan test: inbound accept vs mesh stop)
