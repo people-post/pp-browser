@@ -166,6 +166,20 @@ public:
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
+  // Answerer start steps (UI; the key poll runs on a worker).
+  void RunAnswererStart(const std::string& call_id, const std::string& peer_identity);
+  void DeferAnswererUntilMediaKey(const std::string& call_id, const std::string& peer_identity,
+                                  const std::string& reason);
+  void PollForDeferredMediaKey(const std::string& call_id, uint64_t key_wait_gen);
+  void OnDeferredMediaKeyTimeout(const std::string& call_id);
+  // BeginSession steps.
+  void ResetDirectSessionState(const std::string& call_id, const std::string& peer_identity, bool offerer);
+  /** Stop the prior engine session / connect; true when an inbound direct stream is kept. */
+  bool StopPriorDirectAttempt(bool offerer);
+  void ParkOnBootstrapSeed();
+  Roe<void> StartDirectEngine(const std::string& call_id);
+  void StartDirectConnect(const std::string& call_id, const std::string& peer_identity, bool offerer,
+                          uint32_t media_epoch, const ByteVector& media_key);
   void StopMeshMediaOnUi(const std::string& call_id);
   /** Link to reach for this session's Connect (call roster → mesh keys, offerer → Reach). */
   PeerReachRequest BuildReachRequest(const CallMediaDirectConnectParams& params);
