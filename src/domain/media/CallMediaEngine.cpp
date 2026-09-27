@@ -523,6 +523,13 @@ struct CallMediaEngine::Impl {
     const uint64_t underruns_before = track.jitter.underruns();
     AudioPlayoutPop pop = track.jitter.PopForPlayout();
     std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples), 0);
+    const auto plc = [&]() {
+      const int n = opus_decode(track.decoder, nullptr, 0, pcm.data(), kFrameSamples, 0);
+      if (n > 0) {
+        plc_frames_total.fetch_add(1, std::memory_order_relaxed);
+      }
+      return n;
+    };
     int decoded = 0;
     switch (pop.kind) {
     case AudioPlayoutPop::Kind::Packet:
@@ -530,18 +537,18 @@ struct CallMediaEngine::Impl {
                             pcm.data(), kFrameSamples, 0);
       break;
     case AudioPlayoutPop::Kind::Gap:
-      // Recover the missing frame from the next packet's in-band FEC; PLC if it has none.
-      decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()),
-                            pcm.data(), kFrameSamples, 1);
+      // The next packet's in-band FEC (LBRR) only covers the frame right before it; earlier
+      // missing frames of a wider hole are PLC. PLC also if the FEC decode fails.
+      if (pop.fec_usable) {
+        decoded = opus_decode(track.decoder, pop.payload.data(),
+                              static_cast<int>(pop.payload.size()), pcm.data(), kFrameSamples, 1);
+      }
       if (decoded > 0) {
         // libopus returns >0 both for a real FEC frame and for a PLC-like frame it synthesises
         // when the packet carried no FEC data — counting both as fec= is accepted (diagnostic).
         fec_frames_total.fetch_add(1, std::memory_order_relaxed);
       } else {
-        decoded = opus_decode(track.decoder, nullptr, 0, pcm.data(), kFrameSamples, 0);
-        if (decoded > 0) {
-          plc_frames_total.fetch_add(1, std::memory_order_relaxed);
-        }
+        decoded = plc();
       }
       break;
     case AudioPlayoutPop::Kind::Empty:
@@ -549,10 +556,7 @@ struct CallMediaEngine::Impl {
       // underrun — only count/PLC it when this pop actually incremented the cumulative counter.
       if (track.jitter.underruns() > underruns_before) {
         playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
-        decoded = opus_decode(track.decoder, nullptr, 0, pcm.data(), kFrameSamples, 0);
-        if (decoded > 0) {
-          plc_frames_total.fetch_add(1, std::memory_order_relaxed);
-        }
+        decoded = plc();
       }
       break;
     }
@@ -587,6 +591,9 @@ struct CallMediaEngine::Impl {
               slots = deficit <= 0 ? 0 : std::min(kPlayoutMaxSlotsPerTick,
                                                   (deficit + kFrameBytes - 1) / kFrameBytes);
             }
+          }
+          if (audio_tracks.empty()) {
+            slots = 0; // nothing to pop or put; don't inflate playout_ticks (Pressure window)
           }
           for (int s = 0; s < slots; ++s) {
             std::fill(mix.begin(), mix.end(), int16_t{0});

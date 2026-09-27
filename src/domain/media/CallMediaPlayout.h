@@ -23,6 +23,8 @@ struct AudioPlayoutPop {
   uint32_t seq = 0;
   /** Packet: its bytes. Gap: the NEXT queued packet's bytes (Opus in-band FEC source). */
   std::vector<uint8_t> payload;
+  /** Gap only: `payload` is the packet right after the missing seq, so its LBRR covers it. */
+  bool fec_usable = false;
 };
 
 /**
@@ -37,16 +39,21 @@ public:
   static constexpr int kMaxDelayMs = 200;
   static constexpr size_t kTargetFrames = static_cast<size_t>(kTargetDelayMs / kFrameMs);
   static constexpr size_t kMaxFrames = static_cast<size_t>(kMaxDelayMs / kFrameMs);
-  /** A jump this large ahead of the expected seq is a sender restart, not loss. */
+  /** A seq this far behind the expected one is a sender restart (seq reset), not a late packet. */
   static constexpr uint32_t kResyncJump = 50;
+  /** Surplus depth held for a whole window (500 ms) is trimmed back to the target. */
+  static constexpr uint32_t kDrainWindowPops = 25;
 
   void Push(AudioPacket packet) {
     if (packet.payload.empty()) {
       return;
     }
     if (primed_ && packet.seq < next_seq_) {
-      ++drops_late_;
-      return;
+      if (packet.seq + kResyncJump >= next_seq_) {
+        ++drops_late_;
+        return;
+      }
+      Reset(); // sender restarted its seq (re-StartSfu / BeginSession): re-prime on the new stream
     }
     auto it = queue_.begin();
     while (it != queue_.end() && it->seq < packet.seq) {
@@ -56,9 +63,12 @@ public:
       return; // duplicate
     }
     queue_.insert(it, std::move(packet));
-    while (queue_.size() > kMaxFrames) {
-      queue_.pop_front();
-      ++drops_overflow_;
+    if (queue_.size() > kMaxFrames) {
+      while (queue_.size() > kMaxFrames) {
+        queue_.pop_front();
+        ++drops_overflow_;
+      }
+      SkipDroppedSeqs();
     }
   }
 
@@ -70,8 +80,10 @@ public:
 
   /**
    * One 20 ms playout slot. Before the target depth was reached once → Empty (no underrun).
-   * Then: next expected packet → Packet; queue non-empty but front is ahead → Gap (with the
-   * front's bytes for FEC, front stays queued); queue empty → Empty + underrun.
+   * Then: queue empty → Empty + underrun; next expected packet → Packet. A hole before the front
+   * is skipped (front played as Packet) when the buffer already holds >= target frames or the
+   * hole is wider than the target; otherwise each missing seq is a Gap slot (front stays queued,
+   * its bytes returned; `fec_usable` only for the seq right before it, which its LBRR covers).
    */
   AudioPlayoutPop PopForPlayout() {
     AudioPlayoutPop out;
@@ -82,13 +94,15 @@ public:
       primed_ = true;
       next_seq_ = queue_.front().seq;
     }
+    DrainSurplus();
     if (queue_.empty()) {
       ++underruns_;
       return out;
     }
     AudioPacket& front = queue_.front();
-    if (front.seq > next_seq_ + kResyncJump) {
-      next_seq_ = front.seq; // sender restart (SoftMigrate / re-StartSfu)
+    if (front.seq > next_seq_ &&
+        (queue_.size() >= kTargetFrames || front.seq - next_seq_ > kTargetFrames)) {
+      next_seq_ = front.seq; // enough audio buffered, or hole too wide to conceal usefully
     }
     if (front.seq == next_seq_) {
       out.kind = AudioPlayoutPop::Kind::Packet;
@@ -98,10 +112,11 @@ public:
       ++next_seq_;
       return out;
     }
-    // front.seq > next_seq_: one missing slot.
+    // Small hole in a shallow buffer: conceal one missing seq.
     out.kind = AudioPlayoutPop::Kind::Gap;
     out.seq = next_seq_;
     out.payload = front.payload;
+    out.fec_usable = front.seq == next_seq_ + 1;
     ++gaps_;
     ++next_seq_;
     return out;
@@ -111,6 +126,8 @@ public:
     queue_.clear();
     primed_ = false;
     next_seq_ = 0;
+    window_pops_ = 0;
+    window_min_depth_ = kMaxFrames;
   }
 
   /** 0 = healthy, 1 = severe (underruns dominate). Unchanged from the PCM buffer. */
@@ -124,6 +141,34 @@ public:
   }
 
 private:
+  /** After we dropped from the front, seqs older than it can never play: don't Gap for them. */
+  void SkipDroppedSeqs() {
+    if (primed_ && !queue_.empty()) {
+      next_seq_ = std::max(next_seq_, queue_.front().seq);
+    }
+  }
+
+  /**
+   * Underruns add a frame of latency each (time passes, nothing is consumed) and a burst or a
+   * device pause can fill the queue; if the depth never fell below target + 1 over a whole
+   * window, that surplus absorbed no jitter — drop it (oldest first) back to the target.
+   */
+  void DrainSurplus() {
+    window_min_depth_ = std::min(window_min_depth_, queue_.size());
+    if (++window_pops_ < kDrainWindowPops) {
+      return;
+    }
+    if (window_min_depth_ > kTargetFrames + 1) {
+      for (size_t n = window_min_depth_ - kTargetFrames; n > 0; --n) {
+        queue_.pop_front();
+        ++drops_overflow_;
+      }
+      SkipDroppedSeqs();
+    }
+    window_pops_ = 0;
+    window_min_depth_ = kMaxFrames;
+  }
+
   std::deque<AudioPacket> queue_;
   bool primed_ = false;
   uint32_t next_seq_ = 0;
@@ -131,6 +176,8 @@ private:
   uint64_t drops_late_ = 0;
   uint64_t underruns_ = 0;
   uint64_t gaps_ = 0;
+  uint32_t window_pops_ = 0;
+  size_t window_min_depth_ = kMaxFrames;
 };
 
 /** Saturating mix of mono s16 frames into `out` (size = samples). */

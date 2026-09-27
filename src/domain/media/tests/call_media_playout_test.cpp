@@ -67,6 +67,7 @@ TEST(AudioJitterBufferTest, GapReturnsNextPacketForFec) {
   auto gap = buf.PopForPlayout();
   ASSERT_EQ(gap.kind, AudioPlayoutPop::Kind::Gap);
   EXPECT_EQ(gap.seq, 3u);
+  EXPECT_TRUE(gap.fec_usable); // packet 4's LBRR covers frame 3
   ASSERT_FALSE(gap.payload.empty());
   EXPECT_EQ(gap.payload[0], 44); // next packet's bytes, packet 4 stays queued
   EXPECT_EQ(buf.gaps(), 1u);
@@ -123,6 +124,199 @@ TEST(AudioJitterBufferTest, ResyncsOnLargeSeqJump) {
   auto p = buf.PopForPlayout();
   EXPECT_EQ(p.kind, AudioPlayoutPop::Kind::Packet);
   EXPECT_EQ(p.seq, 1000u);
+  EXPECT_EQ(buf.gaps(), 0u);
+}
+
+using Kind = AudioPlayoutPop::Kind;
+constexpr size_t kTarget = AudioJitterBuffer::kTargetFrames;
+
+// Steady 1 push / 1 pop per slot until `slots` pops have happened; returns the next seq.
+uint32_t RunSteady(AudioJitterBuffer& buf, uint32_t seq, int slots) {
+  for (int i = 0; i < slots; ++i) {
+    buf.Push(Pkt(seq++));
+    (void)buf.PopForPlayout();
+  }
+  return seq;
+}
+
+TEST(AudioJitterBufferTest, PrimedOverflowResumesOnRealPackets) {
+  AudioJitterBuffer buf;
+  uint32_t seq = RunSteady(buf, 1, 20);
+  // Device pause: packets keep arriving but nothing is popped.
+  for (size_t i = 0; i < AudioJitterBuffer::kMaxFrames + 5; ++i) {
+    buf.Push(Pkt(seq++));
+  }
+  EXPECT_EQ(buf.size(), AudioJitterBuffer::kMaxFrames);
+  // Every pop after the pause is a real packet (no Gap for the overflow-dropped seqs), and the
+  // surplus depth is drained within one full drain window (≤ 2 windows: the pause can land
+  // mid-window, whose minimum still includes pre-pause depth).
+  const int budget = static_cast<int>(2 * AudioJitterBuffer::kDrainWindowPops);
+  for (int i = 0; i < budget + 50; ++i) {
+    buf.Push(Pkt(seq++));
+    const auto p = buf.PopForPlayout();
+    ASSERT_EQ(p.kind, Kind::Packet) << "pop " << i;
+    if (i >= budget) {
+      EXPECT_LE(buf.size(), kTarget + 1) << "pop " << i;
+    }
+  }
+  EXPECT_EQ(buf.gaps(), 0u);
+}
+
+void OutageRecovers(uint32_t lost) {
+  SCOPED_TRACE(lost);
+  AudioJitterBuffer buf;
+  uint32_t seq = RunSteady(buf, 1, 100);
+  const uint64_t gaps_before = buf.gaps();
+  // `lost` consecutive packets never arrive; playout keeps ticking.
+  for (uint32_t i = 0; i < lost; ++i) {
+    ++seq;
+    (void)buf.PopForPlayout();
+  }
+  int first_packet_slot = -1;
+  std::vector<Kind> kinds;
+  for (int slot = 0; slot < 300; ++slot) {
+    buf.Push(Pkt(seq++));
+    const auto p = buf.PopForPlayout();
+    kinds.push_back(p.kind);
+    if (p.kind == Kind::Packet && first_packet_slot < 0) {
+      first_packet_slot = slot;
+    }
+  }
+  ASSERT_GE(first_packet_slot, 0);
+  EXPECT_LE(first_packet_slot, static_cast<int>(kTarget + 1));
+  EXPECT_LE(buf.gaps() - gaps_before, kTarget);
+  for (size_t i = kinds.size() - 50; i < kinds.size(); ++i) {
+    EXPECT_EQ(kinds[i], Kind::Packet) << "slot " << i;
+  }
+  EXPECT_LE(buf.size(), kTarget + 1);
+}
+
+TEST(AudioJitterBufferTest, OutageOfManyPacketsRecoversQuickly) {
+  OutageRecovers(12);
+  OutageRecovers(25);
+}
+
+TEST(AudioJitterBufferTest, DelayedBurstRecovers) {
+  AudioJitterBuffer buf;
+  uint32_t seq = RunSteady(buf, 1, 100);
+  std::vector<AudioPacket> held;
+  const uint64_t underruns_before = buf.underruns();
+  for (int i = 0; i < 20; ++i) {
+    held.push_back(Pkt(seq++)); // delayed in the network
+    (void)buf.PopForPlayout();  // plays what was buffered, then underruns
+  }
+  EXPECT_GE(buf.underruns() - underruns_before, 20u - kTarget);
+  for (auto& p : held) {
+    buf.Push(std::move(p));
+  }
+  std::vector<Kind> kinds;
+  for (int slot = 0; slot < 200; ++slot) {
+    buf.Push(Pkt(seq++));
+    kinds.push_back(buf.PopForPlayout().kind);
+  }
+  EXPECT_LE(buf.size(), kTarget + 1);
+  for (size_t i = kinds.size() - 50; i < kinds.size(); ++i) {
+    EXPECT_EQ(kinds[i], Kind::Packet) << "slot " << i;
+  }
+}
+
+TEST(AudioJitterBufferTest, SlightlyFastSenderNeverLatchesGaps) {
+  AudioJitterBuffer buf;
+  uint32_t seq = 1;
+  for (int slot = 0; slot < 5000; ++slot) {
+    buf.Push(Pkt(seq++));
+    if (slot % 200 == 199) {
+      buf.Push(Pkt(seq++));
+    }
+    const auto p = buf.PopForPlayout();
+    if (slot >= static_cast<int>(kTarget)) {
+      ASSERT_EQ(p.kind, Kind::Packet) << "slot " << slot;
+    }
+    ASSERT_LE(buf.size(), AudioJitterBuffer::kMaxFrames);
+  }
+  EXPECT_EQ(buf.gaps(), 0u);
+}
+
+TEST(AudioJitterBufferTest, BackwardSeqRestartReprimes) {
+  AudioJitterBuffer buf;
+  (void)RunSteady(buf, 1, 1000);
+  const uint64_t late_before = buf.drops_late();
+  // Peer re-StartSfu / BeginSession: seq restarts at 1 on the same track.
+  uint32_t seq = 1;
+  for (size_t i = 0; i < kTarget - 1; ++i) {
+    buf.Push(Pkt(seq++));
+    EXPECT_EQ(buf.PopForPlayout().kind, Kind::Empty); // re-priming
+  }
+  for (uint32_t expect = 1; expect <= 100; ++expect) {
+    buf.Push(Pkt(seq++));
+    const auto p = buf.PopForPlayout();
+    ASSERT_EQ(p.kind, Kind::Packet);
+    EXPECT_EQ(p.seq, expect);
+  }
+  EXPECT_EQ(buf.drops_late(), late_before);
+}
+
+TEST(AudioJitterBufferTest, SmallBackwardStepIsStillLate) {
+  AudioJitterBuffer buf;
+  (void)RunSteady(buf, 1, 100);
+  buf.Push(Pkt(90)); // reordered straggler, not a restart
+  EXPECT_EQ(buf.drops_late(), 1u);
+}
+
+TEST(AudioJitterBufferTest, GapFecUsableOnlyForImmediatelyPrecedingFrame) {
+  AudioJitterBuffer buf;
+  buf.Push(Pkt(1));
+  buf.Push(Pkt(2));
+  buf.Push(Pkt(5, 55));
+  auto a = buf.PopForPlayout();
+  EXPECT_EQ(a.kind, Kind::Packet);
+  EXPECT_EQ(a.seq, 1u);
+  auto b = buf.PopForPlayout();
+  EXPECT_EQ(b.kind, Kind::Packet);
+  EXPECT_EQ(b.seq, 2u);
+  auto g3 = buf.PopForPlayout();
+  ASSERT_EQ(g3.kind, Kind::Gap);
+  EXPECT_EQ(g3.seq, 3u);
+  EXPECT_FALSE(g3.fec_usable); // packet 5's LBRR covers frame 4, not 3
+  auto g4 = buf.PopForPlayout();
+  ASSERT_EQ(g4.kind, Kind::Gap);
+  EXPECT_EQ(g4.seq, 4u);
+  EXPECT_TRUE(g4.fec_usable);
+  ASSERT_FALSE(g4.payload.empty());
+  EXPECT_EQ(g4.payload[0], 55);
+  auto p5 = buf.PopForPlayout();
+  EXPECT_EQ(p5.kind, Kind::Packet);
+  EXPECT_EQ(p5.seq, 5u);
+}
+
+TEST(AudioJitterBufferTest, SmallHoleAfterUnderrunIsConcealed) {
+  AudioJitterBuffer buf;
+  for (uint32_t s = 1; s <= kTarget; ++s) {
+    buf.Push(Pkt(s));
+  }
+  for (size_t i = 0; i < kTarget; ++i) {
+    (void)buf.PopForPlayout();
+  }
+  EXPECT_EQ(buf.PopForPlayout().kind, Kind::Empty); // underrun, queue empty
+  buf.Push(Pkt(kTarget + 2));                        // kTarget + 1 lost, lands in an empty queue
+  const auto gap = buf.PopForPlayout();
+  ASSERT_EQ(gap.kind, Kind::Gap);
+  EXPECT_EQ(gap.seq, kTarget + 1);
+  EXPECT_TRUE(gap.fec_usable);
+  EXPECT_EQ(buf.PopForPlayout().seq, kTarget + 2);
+}
+
+TEST(AudioJitterBufferTest, HoleInDeepBufferIsSkipped) {
+  AudioJitterBuffer buf;
+  for (uint32_t s : {1u, 2u, 4u, 5u, 6u}) {
+    buf.Push(Pkt(s));
+  }
+  EXPECT_EQ(buf.PopForPlayout().seq, 1u);
+  EXPECT_EQ(buf.PopForPlayout().seq, 2u);
+  // 3 missing but 3 packets are already buffered: skip rather than add a frame of latency.
+  const auto p = buf.PopForPlayout();
+  EXPECT_EQ(p.kind, Kind::Packet);
+  EXPECT_EQ(p.seq, 4u);
   EXPECT_EQ(buf.gaps(), 0u);
 }
 
