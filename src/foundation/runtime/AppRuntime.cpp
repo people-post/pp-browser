@@ -576,6 +576,24 @@ void AppRuntime::PostTo(const OwnerThreadId owner, std::function<void()> task) {
   (void)target->Post(std::move(gated));  // a stopped owner destroys it unrun (gate settles)
 }
 
+void AppRuntime::PostToFront(const OwnerThreadId owner, std::function<void()> task) {
+  if (!task) {
+    return;
+  }
+  auto target = OwnerFor(owner);
+  if (!target) {
+    return;
+  }
+  auto gated = GateTask(std::move(task), GateKind::Posted);
+  if (gated) {
+    (void)target->PostFront(std::move(gated));
+  }
+}
+
+bool AppRuntime::HasOwner(const OwnerThreadId owner) {
+  return OwnerFor(owner) != nullptr;
+}
+
 bool AppRuntime::CurrentlyOn(const OwnerThreadId owner) {
   auto target = OwnerFor(owner);
   return target && target->IsCurrent();

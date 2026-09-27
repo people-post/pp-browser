@@ -59,7 +59,7 @@ CallMediaInboundPorts CallMediaBridge::MakeInboundPorts() {
   // Offerer often dials before the relay delivers CallMediaKey — keep inbox sync running.
   ports.request_key = [this](const std::string& /*call_id*/) { host_.P2pRequestInboxSync(); };
   ports.on_accepted = [this](const CallMediaInboundHello& hello) {
-    // Identity binding reads / writes bridge state — UI thread. Posted ahead of any media or
+    // Identity binding reads / writes bridge state — calls owner. Posted ahead of any media or
     // connected callback of this bundle (FIFO), so frames never see a stale stream id.
     CallsThread::Post([this, call_id = hello.call_id, peer_id = hello.peer_id]() {
       BindInboundPeer(call_id, peer_id);
@@ -172,6 +172,7 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
 
 CallMediaBridge::~CallMediaBridge() {
   alive_->store(false, std::memory_order_release);
+  media_.SetOnStateChanged({});  // installed by StartDirectEngine; the engine outlives the bridge
 }
 
 void CallMediaBridge::SetReachDeps(IDialRegistry* dial, ICircuitHopReach* circuit_reach) {
@@ -1211,10 +1212,10 @@ Roe<void> CallMediaBridge::RetryMeshMedia(const std::string& call_id) {
   if (call_id.empty()) {
     return Error("call_id required");
   }
-  // Restarts the engine and the connect sequence — UI-only. Refuse rather than race.
+  // Restarts the engine and the connect sequence — calls owner only. Refuse rather than race.
   if (!CallsThread::IsCurrent()) {
-    log().error << "RetryMeshMedia called off the UI thread call_id=" << call_id;
-    return Error("call media retry must run on the UI thread");
+    log().error << "RetryMeshMedia called off the calls owner call_id=" << call_id;
+    return Error("call media retry must run on the calls owner");
   }
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {

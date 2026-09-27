@@ -423,8 +423,8 @@ void CallLifecycle::PostRetryMedia(const std::string& call_id) {
   const uint64_t epoch = deferred_.Snapshot();
   // Re-arm Direct before RetryP2pMedia → BeginSession (Failed Status blocks AllowsDirectPath).
   SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
-  // UI thread, not a worker: retry restarts the engine (StartSfu / Stop — SDL capture) and the
-  // bridge's connect sequence, which are UI-only like every other media start. Posted, not inline,
+  // Calls owner, not a worker: retry restarts the engine (StartSfu / Stop — capture threads) and
+  // the bridge's connect sequence, owner-only like every other media start. Posted, not inline,
   // so the retry never re-enters Apply.
   CallsThread::Post([this, retry = std::move(retry), call_id, guard, epoch]() {
     if (!DeferredSelf::Alive(guard, epoch)) {

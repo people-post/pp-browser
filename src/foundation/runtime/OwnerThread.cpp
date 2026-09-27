@@ -82,6 +82,21 @@ bool OwnerThread::Post(std::function<void()> task) {
   return true;
 }
 
+bool OwnerThread::PostFront(std::function<void()> task) {
+  if (!task) {
+    return false;
+  }
+  {
+    std::lock_guard lock(mu_);
+    if (stopped_) {
+      return false;
+    }
+    tasks_.push_front(std::move(task));
+  }
+  cv_.notify_one();
+  return true;
+}
+
 bool OwnerThread::IsCurrent() const {
   return t_current_owner == this;
 }

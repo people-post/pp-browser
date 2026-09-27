@@ -27,12 +27,61 @@ namespace pbr {
 CallStack::CallStack() {
   redirectLogger("CallStack");
   media_plane_ = std::make_unique<CallMediaPlane>();
+  call_lifecycle_ = std::make_unique<CallLifecycle>();
   publish_hook_ = CallsThread::AddAfterTaskHook([this]() { PublishUiState(); });
 }
 
 CallStack::~CallStack() {
   Shutdown();
-  CallsThread::RemoveAfterTaskHook(publish_hook_);
+  // On the owner: hooks run only there, so none is mid-flight on this stack once this returns.
+  CallsThread::RunAndWait([this]() { CallsThread::RemoveAfterTaskHook(publish_hook_); });
+}
+
+// --- hub-facing lifecycle edges: run on the calls owner, the caller waits (t2b-3) ---------------
+
+void CallStack::BuildSessions(const CallStackDeps& deps) {
+  CallsThread::RunAndWait([&]() { BuildSessionsOnOwner(deps); });
+}
+
+void CallStack::OnMeshServicesStarted() {
+  CallsThread::RunAndWait([this]() { OnMeshServicesStartedOnOwner(); });
+}
+
+void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit) {
+  CallsThread::RunAndWait([&]() { PrepareForMeshStopOnOwner(abort_inflight_circuit); });
+}
+
+void CallStack::FinishMeshStop() {
+  CallsThread::RunAndWait([this]() { FinishMeshStopOnOwner(); });
+}
+
+void CallStack::DetachMeshMedia() {
+  CallsThread::RunAndWait([this]() { DetachMeshMediaOnOwner(); });
+}
+
+void CallStack::RebindMeshMedia() {
+  CallsThread::RunAndWait([this]() { RebindMeshMediaOnOwner(); });
+}
+
+void CallStack::ResetSessions() {
+  CallsThread::RunAndWait([this]() { ResetSessionsOnOwner(); });
+}
+
+void CallStack::AbortCallMediaForShutdown() {
+  CallsThread::RunAndWait([this]() { AbortCallMediaForShutdownOnOwner(); });
+}
+
+void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
+                                                 const std::vector<std::string>& multiaddrs) {
+  CallsThread::RunAndWait([&]() { RegisterCallPeerListenMultiaddrsOnOwner(identity, multiaddrs); });
+}
+
+void CallStack::RunOnOwner(const std::function<void(CallSessionManager&)>& op) {
+  CallsThread::RunAndWait([&]() {
+    if (call_sessions_) {
+      op(*call_sessions_);
+    }
+  });
 }
 
 void CallStack::PublishUiState() {
@@ -61,6 +110,10 @@ void CallStack::PublishUiState() {
     state.seat_state = call_media_seat_->State();
     state.seat_live = call_media_seat_->IsLive(state.seat_bound_call_id);
   }
+  state.want_ephemeral_listen = call_lifecycle_ && call_lifecycle_->WantEphemeralListen();
+  state.connect_in_flight = media_plane_ && media_plane_->IsConnectWorkerInflight();
+  state.sessions_identity = call_sessions_.get();
+  state.available = call_sessions_ != nullptr && call_lifecycle_ != nullptr;
   ui_state_.Set(std::move(state));
 }
 
@@ -137,7 +190,7 @@ void CallStack::BindMeshMediaHooks() {
   });
 }
 
-void CallStack::DetachMeshMedia() {
+void CallStack::DetachMeshMediaOnOwner() {
   if (call_sessions_) {
     call_sessions_->SetMediaRelayDeps({});
   }
@@ -146,7 +199,7 @@ void CallStack::DetachMeshMedia() {
   }
 }
 
-void CallStack::RebindMeshMedia() {
+void CallStack::RebindMeshMediaOnOwner() {
   SyncMediaPlaneDeps();
   BindMediaProducts();
 }
@@ -249,6 +302,12 @@ void CallStack::BindSeatTeardown() {
 }
 
 Roe<void> CallStack::InitializeStores(const std::string& profile_db_path, const std::string& profile_id) {
+  Roe<void> result;
+  CallsThread::RunAndWait([&]() { result = InitializeStoresOnOwner(profile_db_path, profile_id); });
+  return result;
+}
+
+Roe<void> CallStack::InitializeStoresOnOwner(const std::string& profile_db_path, const std::string& profile_id) {
   call_session_store_ = std::make_unique<CallSessionStore>(profile_db_path);
   call_media_keys_ = std::make_unique<CallMediaKeyStore>(profile_db_path, profile_id);
   call_media_engine_ = std::make_unique<CallMediaEngine>();
@@ -259,7 +318,7 @@ Roe<void> CallStack::InitializeStores(const std::string& profile_db_path, const 
   return {};
 }
 
-void CallStack::BuildSessions(const CallStackDeps& deps) {
+void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
   deps_ = deps;
   call_sessions_ = std::make_unique<CallSessionManager>(*deps_.store, *deps_.contacts, *deps_.identity,
                                                         *call_session_store_, *call_media_keys_, deps_.delivery,
@@ -304,20 +363,7 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
     deps_.bind_call_control(std::move(inbound));
   }
   call_sessions_->AbandonOrphanedCallsAfterRestart();
-  call_sessions_->SetOnRingChangedMesh([this]() {
-    // Invite ingest runs on IO — never Sync N025 on the IO thread itself.
-    if (AppRuntime::CurrentlyOnUI()) {
-      if (deps_.sync_mobile_ephemeral_listen) {
-        deps_.sync_mobile_ephemeral_listen();
-      }
-    } else {
-      AppRuntime::PostUI([this]() {
-        if (deps_.sync_mobile_ephemeral_listen) {
-          deps_.sync_mobile_ephemeral_listen();
-        }
-      });
-    }
-  });
+  call_sessions_->SetOnRingChangedMesh([this]() { SyncHubEphemeralListen(); });
   call_sessions_->SetPrefetchPeerReachability([this](const std::string& identity) {
     // Warm only; must not run RequestBridge on Critical ahead of AcceptInvite.
     MeshControlDispatch::Post([this, identity]() {
@@ -407,7 +453,7 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
   RebindMeshMedia();
 }
 
-void CallStack::OnMeshServicesStarted() {
+void CallStack::OnMeshServicesStartedOnOwner() {
   SyncMediaPlaneDeps();
   if (media_plane_) {
     media_plane_->OnMeshStarted();
@@ -421,6 +467,11 @@ void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry*
 
 void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
                                   ICircuitHopReach* circuit_reach) {
+  CallsThread::RunAndWait([&]() { BindTestMediaPathOnOwner(transport, dial, circuit_reach); });
+}
+
+void CallStack::BindTestMediaPathOnOwner(ICallMediaTransport* transport, IDialRegistry* dial,
+                                         ICircuitHopReach* circuit_reach) {
   SyncMediaPlaneDeps();
   DetachMeshMedia();
   if (media_plane_) {
@@ -433,7 +484,8 @@ void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry*
 }
 
 bool CallStack::HasActiveLocalCall() {
-  if (call_lifecycle_ && call_lifecycle_->WantEphemeralListen()) {
+  // Any thread (hub, receive paths, shutdown marks): the owner's snapshot, then the durable store.
+  if (UiState()->want_ephemeral_listen) {
     return true;
   }
   if (!call_sessions_) {
@@ -446,10 +498,13 @@ bool CallStack::HasActiveLocalCall() {
 }
 
 bool CallStack::WantEphemeralListen() const {
-  return call_lifecycle_ && call_lifecycle_->WantEphemeralListen();
+  if (CallsThread::IsCurrent()) {
+    return call_lifecycle_ && call_lifecycle_->WantEphemeralListen();
+  }
+  return UiState()->want_ephemeral_listen;
 }
 
-void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit) {
+void CallStack::PrepareForMeshStopOnOwner(const std::function<void()>& abort_inflight_circuit) {
   if (call_lifecycle_) {
     call_lifecycle_->ClearBinding();
   }
@@ -473,13 +528,13 @@ void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_c
   }
 }
 
-void CallStack::FinishMeshStop() {
+void CallStack::FinishMeshStopOnOwner() {
   if (media_plane_) {
     media_plane_->FinishMeshStop();
   }
 }
 
-void CallStack::AbortCallMediaForShutdown() {
+void CallStack::AbortCallMediaForShutdownOnOwner() {
   // Unblock Connect workers stuck in circuit RequestBridge (~8–10s) BEFORE waiting/joining.
   if (MeshHost* m = mesh()) {
     m->AbortInflightCircuitRequests();
@@ -502,7 +557,7 @@ void CallStack::AbortCallMediaForShutdown() {
 }
 
 bool CallStack::IsConnectWorkerInflight() const {
-  return media_plane_ && media_plane_->IsConnectWorkerInflight();
+  return UiState()->connect_in_flight;
 }
 
 std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
@@ -528,7 +583,7 @@ std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
   return RankAmpDialMultiaddrs(std::move(addrs));
 }
 
-void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
+void CallStack::RegisterCallPeerListenMultiaddrsOnOwner(const std::string& identity,
                                                  const std::vector<std::string>& multiaddrs) {
   if (media_plane_) {
     media_plane_->RegisterCallPeerListenMultiaddrs(identity, multiaddrs);
@@ -540,11 +595,8 @@ CallSessionManager* CallStack::Calls() {
 }
 
 CallLifecycle* CallStack::Lifecycle() {
-  // Accessor only: ports are bound at BuildSessions / BindMediaProducts (the stack's bind points),
-  // never on access — rebinding here on every UI call raced workers invoking the old ports.
-  if (!call_lifecycle_) {
-    call_lifecycle_ = std::make_unique<CallLifecycle>();
-  }
+  // Accessor only: created with the stack, bound at BuildSessions / BindMediaProducts (the owner's
+  // bind points) — never created or rebound on access from another thread.
   return call_lifecycle_.get();
 }
 
@@ -572,12 +624,26 @@ void CallStack::EnsureCallLifecycleBound() {
 
 void CallStack::SetEphemeralListenDesire(bool /*want*/) {
   // Desire already stored on CallLifecycle; this only wakes Hub N025 listen execution.
-  if (deps_.sync_mobile_ephemeral_listen) {
-    deps_.sync_mobile_ephemeral_listen();
-  }
+  SyncHubEphemeralListen();
 }
 
-void CallStack::ResetSessions() {
+void CallStack::SyncHubEphemeralListen() {
+  if (!deps_.sync_mobile_ephemeral_listen) {
+    return;
+  }
+  // The hub reads WantEphemeralListen from the snapshot: publish before it looks.
+  if (CallsThread::IsCurrent()) {
+    PublishUiState();
+  }
+  if (AppRuntime::CurrentlyOnUI()) {
+    deps_.sync_mobile_ephemeral_listen();
+    return;
+  }
+  // Owner / receive threads: the hub (N025 listen) runs on UI.
+  AppRuntime::PostUI([sync = deps_.sync_mobile_ephemeral_listen]() { sync(); });
+}
+
+void CallStack::ResetSessionsOnOwner() {
   if (deps_.bind_call_control) {
     deps_.bind_call_control({});
   }
@@ -589,20 +655,31 @@ void CallStack::ResetSessions() {
 }
 
 void CallStack::Shutdown() {
-  if (call_sessions_) {
-    call_sessions_->ClearMediaCallbacks();
-  }
-  if (call_lifecycle_) {
-    call_lifecycle_->ClearBinding();
-  }
-  // LeaveCall / DeclineInvite workers must finish while sessions_ / seat still live.
+  CallsThread::RunAndWait([this]() {
+    if (call_sessions_) {
+      call_sessions_->ClearMediaCallbacks();
+    }
+    if (call_lifecycle_) {
+      call_lifecycle_->ClearBinding();
+    }
+  });
+  // LeaveCall / DeclineInvite workers must finish while sessions_ / seat still live. From the
+  // caller, not the owner: the drain pumps UI and the owners.
   if (!AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000))) {
     log().warning << "CallStack::Shutdown: DrainWorkersThenUI budget exceeded";
   }
+  CallsThread::RunAndWait([this]() { ReleaseOnOwner(); });
+}
+
+void CallStack::ReleaseOnOwner() {
   DetachMeshMedia();
   if (MeshMediaPlane* shared = mesh_media()) {
     shared->SetOnRelayChosen({});
     shared->SetSignalingPunch({});
+  }
+  // Capture / receive threads call into the bridge (send callback): stop them before it goes.
+  if (call_media_engine_ && (call_media_engine_->IsActive() || call_media_engine_->IsSfuMode())) {
+    call_media_engine_->Stop();
   }
   if (media_plane_) {
     media_plane_->Clear();
@@ -616,6 +693,7 @@ void CallStack::Shutdown() {
   call_media_engine_.reset();
   call_media_keys_.reset();
   call_session_store_.reset();
+  PublishUiState();
 }
 
 

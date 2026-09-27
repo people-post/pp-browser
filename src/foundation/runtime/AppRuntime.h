@@ -155,6 +155,10 @@ public:
   // --- Owner threads (projects/thread-ownership T001 / T002) --------------------------------
   /** Post onto an owner (teardown-gated like every mailbox); dropped when the runtime is down. */
   static void PostTo(OwnerThreadId owner, std::function<void()> task);
+  /** Ahead of the owner's queued tasks. */
+  static void PostToFront(OwnerThreadId owner, std::function<void()> task);
+  /** The owner exists (runtime initialized and not shut down). */
+  static bool HasOwner(OwnerThreadId owner);
   /**
    * Post onto the owner, or run inline when no owner exists (runtime not initialized — unit tests
    * without AppRuntime). For code migrating onto owners; prefer PostTo once the owner is certain.

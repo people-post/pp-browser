@@ -164,8 +164,8 @@ public:
   };
 
   /**
-   * Written from the UI thread and from the calls owner (attach completion / inbound attach), so the
-   * sets are guarded by `mu` and the stream id is atomic. Do relay I/O outside `mu`.
+   * Written on the calls owner and read off it (relay subscription paths), so the sets are
+   * guarded by `mu` and the stream id is atomic. Do relay I/O outside `mu`.
    */
   struct PublisherStreams {
     std::atomic<uint32_t> local_stream_id{0};
@@ -270,7 +270,7 @@ private:
   void FanOutPickedHop(const std::string& call_id, const CallSfuAttachDetail& attach,
                        const std::string& local_identity);
 
-  // Hop attach steps (AttachLocalToSfuAsync → claim → key → local hop / relay → CompleteHopAttach on UI).
+  // Hop attach steps (AttachLocalToSfuAsync → claim → key → local hop / relay → CompleteHopAttach on the calls owner).
   /** True = this attempt owns the attach; false = coalesced into another (done, not an error). */
   Roe<bool> ClaimHopAttachFlight(const std::string& call_id, const CallSfuAttachDetail& attach);
   std::function<void(Roe<void>)> ReleaseHopAttachFlightOnError(const std::string& call_id, const std::string& hop,
@@ -279,7 +279,7 @@ private:
   std::function<void(MediaDataFrame)> MakeHopFrameSink(const HopAttach& at);
   void AttachAsLocalHop(HopAttach at, std::function<void(Roe<void>)> on_done);
   void AttachThroughRelay(HopAttach at, std::function<void(Roe<void>)> on_done);
-  /** UI thread: commit an attached hop (StartSfu, state, chrome) unless the call moved on. */
+  /** Calls owner: commit an attached hop (StartSfu, state, chrome) unless the call moved on. */
   Roe<void> CompleteHopAttach(const HopAttach& at, int64_t a_up_bps);
   void ApplyQuoteAdaptation(int64_t a_up_bps);
   Roe<void> CheckHopAttachStillWanted(const HopAttach& at);

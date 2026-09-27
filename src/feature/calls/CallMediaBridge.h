@@ -111,7 +111,7 @@ public:
   /**
    * Engine Stop — **seat teardown hook only** when MediaSeat is wired (V036).
    * CallSessionManager Leave/Accept must use seat.Release, not this.
-   * Any thread: off the UI thread the whole stop is posted to the front of the UI queue and
+   * Any thread: off the calls owner the whole stop is posted to the front of its queue and
    * skipped if a newer media session (StartSfu) started in the meantime.
    */
   void StopMeshMedia(const std::string& call_id);
@@ -159,7 +159,7 @@ public:
   /** True when 1:1 call-media stream is up (not merely CallMediaEngine StartSfu). */
   bool HasActiveDirectStream() const;
 
-  /** V039 Direct planner Apply — product callbacks on UI. */
+  /** V039 Direct planner Apply — product callbacks on the calls owner. */
   void Apply(CallDirectPlannerEvent ev, const std::string& call_id = {},
              const std::string& peer_identity = {});
   CallDirectPlannerPhase DirectPlannerPhase() const { return direct_planner_phase_; }
@@ -238,7 +238,7 @@ private:
   PeerReachCoordinator reach_;
   /** Connect attempts (reach + bundle open, watchdog, retry); owns no call product state. */
   CallMediaConnectCoordinator connect_;
-  /** Link kind the last successful reach settled on (UI thread). */
+  /** Link kind the last successful reach settled on (calls owner). */
   PeerLinkKind reach_kind_ = PeerLinkKind::Unknown;
   /** Next connect sequence must insist on a relayed link (TX-only escalate). */
   bool force_circuit_ensure_ = false;

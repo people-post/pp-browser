@@ -549,11 +549,14 @@ void CallHopMigrateWorkflow::FanOutPickedHop(const std::string& call_id, const C
   (void)host_.fan_out_joined(call_id, CallControlType::CallSfuAttach, *encoded, "Call SFU attach", local_identity);
   AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(2000), [this, call_id, encoded = *encoded,
                                                                             local_identity]() {
-    if (!sfu_.attached || media_.ActiveCallId() != call_id) {
-      return;
-    }
-    log().info << "SoftMigrate re-fan-out CallSfuAttach call_id=" << call_id;
-    (void)host_.fan_out_joined(call_id, CallControlType::CallSfuAttach, encoded, "Call SFU attach", local_identity);
+    CallsThread::Post([this, call_id, encoded, local_identity]() {
+      if (!sfu_.attached || media_.ActiveCallId() != call_id) {
+        return;
+      }
+      log().info << "SoftMigrate re-fan-out CallSfuAttach call_id=" << call_id;
+      (void)host_.fan_out_joined(call_id, CallControlType::CallSfuAttach, encoded, "Call SFU attach",
+                                 local_identity);
+    });
   });
 }
 
@@ -810,9 +813,9 @@ void CallHopMigrateWorkflow::AttachThroughRelay(HopAttach at, std::function<void
           on_done(attached.error());
           return;
         }
-        // UI thread: completion calls CallMediaEngine::StartSfu / ApplyAdaptation and mutates seat and
-        // topology planner state — all UI-owned (CALLS.md). On MeshControl it raced OnLocalAcceptJoined
-        // on UI (TSan: hop planner phase; heap corruption in CallTopologyControllerTest). The attach
+        // Calls owner: completion calls CallMediaEngine::StartSfu / ApplyAdaptation and mutates seat and
+        // topology planner state — all owner state (CALLS.md). On MeshControl it raced OnLocalAcceptJoined
+        // (TSan: hop planner phase; heap corruption in CallTopologyControllerTest). The attach
         // network work already ran; only the local commit hops.
         CallsThread::Post([this, at = std::move(at), bps = attached->a_up_bps, on_done = std::move(on_done)]() {
           std::lock_guard<std::mutex> attach_lock(inbound_gate_.mu);

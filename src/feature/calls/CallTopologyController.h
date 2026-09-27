@@ -196,7 +196,7 @@ private:
   void FanOutSfuAttachForHop(const std::string& call_id, const std::string& hop_peer_id,
                              const std::string& local_identity);
   void FlushPendingHopPrefer(const std::string& call_id);
-  /** Apply deferred CallSfuAttach after SoftMigrate finishes (must run on UI). */
+  /** Apply deferred CallSfuAttach after SoftMigrate finishes (calls owner). */
   void FlushPendingInboundSfuAttach();
   void SubscribePublisherStream(uint32_t stream_id);
   void SetHopPlannerPhase(CallHopPlannerPhase next, CallHopPlannerEvent ev, const std::string& call_id);
@@ -237,7 +237,7 @@ private:
   bool IsOnOrHintedHop(const std::string& call_id, const std::string& hop_peer_id) const;
   void StartHopHintRepick(const std::string& call_id, const std::string& prefer, const std::string& guest);
   void FinishHopHintRepick(const std::string& call_id, const std::string& guest, uint64_t gen, const Roe<void>& mig);
-  // Inbound CallSfuAttach steps (OnInboundSfuAttach → expect → settle without dial → start → finish on UI).
+  // Inbound CallSfuAttach steps (OnInboundSfuAttach → expect → settle without dial → start → finish on the calls owner).
   bool ExpectsInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach) const;
   void DeferInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach);
   /** True when the attach is settled without dialing (already attached, coalesced, deferred, refused). */

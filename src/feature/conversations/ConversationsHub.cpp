@@ -1219,9 +1219,9 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
   call_stack_->BuildSessions(MakeCallStackDeps());
-  if (auto* calls = call_stack_->Calls()) {
-    calls->SetInitiationBillingStore(initiation_billing_.get());
-  }
+  call_stack_->RunOnOwner([billing = initiation_billing_.get()](CallSessionManager& calls) {
+    calls.SetInitiationBillingStore(billing);
+  });
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, mesh_messaging_.get());
 
@@ -1305,9 +1305,9 @@ Roe<void> ConversationsHub::BuildLocalMessagingStack() {
   inbox_->SetGroupMembership(group_membership_.get());
   mesh_messaging_->SetGroupMembership(group_membership_.get());
   call_stack_->BuildSessions(MakeCallStackDeps());
-  if (auto* calls = call_stack_->Calls()) {
-    calls->SetInitiationBillingStore(initiation_billing_.get());
-  }
+  call_stack_->RunOnOwner([billing = initiation_billing_.get()](CallSessionManager& calls) {
+    calls.SetInitiationBillingStore(billing);
+  });
   actions_ = std::make_unique<ContactActionDispatcher>(*inbox_, *contacts_, *identity_, *store_,
                                                        group_membership_.get(), registration_, mesh_messaging_.get());
   if (auto prefs = UserPreferences::LoadProfile(data_dir_); prefs) {
@@ -1364,9 +1364,9 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
   WireAttachmentDownloads();
   // Rebind call-control inbound now that Amp direct-chat transports exist.
   call_stack_->BuildSessions(MakeCallStackDeps());
-  if (auto* calls = call_stack_->Calls()) {
-    calls->SetInitiationBillingStore(initiation_billing_.get());
-  }
+  call_stack_->RunOnOwner([billing = initiation_billing_.get()](CallSessionManager& calls) {
+    calls.SetInitiationBillingStore(billing);
+  });
   RegisterContactEndpoints();
   if (mesh_directory_cache_) {
     RegisterMeshDirectoryEndpoints();
@@ -2573,9 +2573,7 @@ void ConversationsHub::Shutdown() {
   if (inbox_) {
     inbox_->SetGroupMembership(nullptr);
   }
-  if (auto* calls = call_stack_->Calls()) {
-    calls->ClearMediaCallbacks();
-  }
+  call_stack_->RunOnOwner([](CallSessionManager& calls) { calls.ClearMediaCallbacks(); });
 
   router_.reset();
   store_->Flush();

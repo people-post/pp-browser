@@ -72,7 +72,8 @@ struct CallMediaInboundPorts {
  * available — the offerer often dials before the relay delivers the key, so the handler waits
  * (cancelable, bounded) on the worker hop, asking for the key meanwhile (V033: no bare sleep).
  *
- * Threading: API and sequence state on the UI thread; timers hop from the Coordinator to UI.
+ * Threading: API and sequence state on the calls owner (CallsThread); timers hop from the
+ * Coordinator to the owner.
  * `InFlight()` and `NotifyKeyAvailable()` are safe from any thread.
  */
 class CallMediaConnectCoordinator : public Module {
@@ -137,7 +138,7 @@ private:
   uint64_t key_notices_ = 0;
   std::atomic<int> inbound_key_wait_ms_;
 
-  // UI thread.
+  // Calls owner.
   CallMediaConnectRequest request_;
   CallMediaConnectHooks hooks_;
   PeerReachId reach_id_ = 0;

@@ -38,6 +38,12 @@ struct CallUiState {
   CallMediaSeat::MediaState seat_state = CallMediaSeat::MediaState::Idle;
   bool seat_live = false;
 
+  // Stack-level (hub / app reads from UI).
+  bool available = false;              // sessions + lifecycle exist
+  const void* sessions_identity = nullptr;  // changes when the session manager is rebuilt
+  bool want_ephemeral_listen = false;  // N025 mobile listen desire
+  bool connect_in_flight = false;      // call-media Connect sequence running
+
   bool MediaChromeLive() const {
     return phase == CallPhase::InCall &&
            (media_status == CallMediaStatus::DirectLive || media_status == CallMediaStatus::HopLive);

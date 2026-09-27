@@ -35,24 +35,24 @@ std::function<void()> OnUi(std::function<void()> callback) {
 CallUiBackend::CallUiBackend(CallStack& stack) : stack_(stack) {}
 
 bool CallUiBackend::Available() const {
-  return stack_.Calls() != nullptr && stack_.Lifecycle() != nullptr;
+  return State()->available;
 }
 
 const void* CallUiBackend::SessionsIdentity() const {
-  return stack_.Calls();
+  return State()->sessions_identity;
 }
 
 void CallUiBackend::SetOnRingChanged(std::function<void()> callback) {
-  if (auto* calls = stack_.Calls()) {
-    // GUI boundary: rings come from the calls owner (and receive paths); the GUI hears them on UI.
-    calls->SetOnRingChanged(OnUi(std::move(callback)));
-  }
+  // GUI boundary: rings come from the calls owner (and receive paths); the GUI hears them on UI.
+  stack_.RunOnOwner([ring = OnUi(std::move(callback))](CallSessionManager& calls) { calls.SetOnRingChanged(ring); });
 }
 
 void CallUiBackend::SetOnChromeRefresh(std::function<void()> callback) {
-  if (auto* life = stack_.Lifecycle()) {
-    life->SetOnChromeRefresh(std::move(callback));  // CallLifecycle::NotifyChrome delivers on UI
-  }
+  CallsThread::RunAndWait([this, &callback]() {
+    if (auto* life = stack_.Lifecycle()) {
+      life->SetOnChromeRefresh(std::move(callback));  // CallLifecycle::NotifyChrome delivers on UI
+    }
+  });
 }
 
 std::shared_ptr<const CallUiState> CallUiBackend::State() const {

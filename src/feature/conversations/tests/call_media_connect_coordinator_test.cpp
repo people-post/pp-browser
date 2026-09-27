@@ -140,7 +140,7 @@ public:
 class CallMediaConnectCoordinatorTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    AppRuntime::Initialize();
+    AppRuntime::Initialize(ManualOwnerRuntimeConfig());
     AppRuntime::InitializeUI();
     dial_ = std::make_unique<FakeDialRegistry>();
     circuit_ = std::make_unique<FakeCircuitReach>(*dial_);
@@ -184,17 +184,17 @@ protected:
     return h;
   }
 
-  /** Pump UI until `done` or the budget runs out. */
+  /** Pump UI and the calls owner until `done` or the budget runs out. */
   static bool PumpUntil(const std::function<bool()>& done, std::chrono::milliseconds budget) {
     const auto until = std::chrono::steady_clock::now() + budget;
     while (std::chrono::steady_clock::now() < until) {
-      AppRuntime::RunUITasks();
+      AppRuntime::RunUIAndOwnerTasks();
       if (done()) {
         return true;
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     return done();
   }
 

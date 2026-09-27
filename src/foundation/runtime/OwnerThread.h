@@ -42,6 +42,8 @@ public:
   void Stop();
   /** False once stopped (the task is destroyed unrun). */
   bool Post(std::function<void()> task);
+  /** Ahead of queued tasks (still after the running one). */
+  bool PostFront(std::function<void()> task);
   bool IsCurrent() const;
   /** Manual mode: run queued tasks (including ones they post) until empty; returns how many ran. */
   size_t RunPending();

@@ -659,7 +659,7 @@ protected:
   std::unique_ptr<CallSessionManager> csm_;
   std::string local_identity_;
   int sent_control_messages_ = 0;
-  int inbox_syncs_ = 0;
+  std::atomic<int> inbox_syncs_{0};  // bumped from the deferred-key poll on workers
   std::string last_sent_payload_;
 };
 

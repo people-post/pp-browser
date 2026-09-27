@@ -112,11 +112,21 @@ public:
   /** Build and publish the UI snapshot (on the calls owner: after-task hook, bind points). */
   void PublishUiState();
 
+  /**
+   * Owner objects. Other threads may hold these pointers only between the owner's bind edges (the
+   * hub's UI thread: those edges wait on the owner) and only for durable-store reads.
+   */
   CallSessionManager* Calls();
   CallLifecycle* Lifecycle();
   CallMediaKeyStore* MediaKeys() { return call_media_keys_.get(); }
   CallMediaEngine* MediaEngine() { return call_media_engine_.get(); }
   CallMediaSeat* MediaSeat() { return call_media_seat_.get(); }
+
+  /**
+   * Run `op` on the calls owner and wait (hub wiring that must touch the session manager, e.g.
+   * billing store, media callbacks). No-op without sessions.
+   */
+  void RunOnOwner(const std::function<void(CallSessionManager&)>& op);
 
   /** Abort in-flight call-media Connect before joining the worker pool (app shutdown). */
   void AbortCallMediaForShutdown();
@@ -133,6 +143,24 @@ public:
                                         const std::vector<std::string>& multiaddrs);
 
 private:
+  // Bodies of the hub-facing edges above; the public methods run them on the calls owner.
+  Roe<void> InitializeStoresOnOwner(const std::string& profile_db_path, const std::string& profile_id);
+  void BuildSessionsOnOwner(const CallStackDeps& deps);
+  void OnMeshServicesStartedOnOwner();
+  void BindTestMediaPathOnOwner(ICallMediaTransport* transport, IDialRegistry* dial,
+                                ICircuitHopReach* circuit_reach);
+  void PrepareForMeshStopOnOwner(const std::function<void()>& abort_inflight_circuit);
+  void FinishMeshStopOnOwner();
+  void DetachMeshMediaOnOwner();
+  void RebindMeshMediaOnOwner();
+  void ResetSessionsOnOwner();
+  void AbortCallMediaForShutdownOnOwner();
+  void RegisterCallPeerListenMultiaddrsOnOwner(const std::string& identity,
+                                               const std::vector<std::string>& multiaddrs);
+  void ReleaseOnOwner();
+  /** Wake the hub's N025 listen sync (on UI) after publishing the listen desire. */
+  void SyncHubEphemeralListen();
+
   MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
   const AppConfig& config() const;
   void SyncMediaPlaneDeps();

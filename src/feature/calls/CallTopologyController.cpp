@@ -893,12 +893,14 @@ void CallTopologyController::AnnounceLocalPublisher(const std::string& call_id,
   const std::string local_copy = *local;
   AppRuntime::ScheduleCoordinatorOneShot(
       std::chrono::milliseconds(2000), [this, call_id, encoded_copy, local_copy]() {
-        if (!sfu_.attached || media_.ActiveCallId() != call_id) {
-          return;
-        }
-        log().info << "AnnounceLocalPublisher re-fan-out call_id=" << call_id;
-        (void)host_.fan_out_joined(call_id, CallControlType::CallSfuAttach, encoded_copy,
-                                           "Call SFU attach", local_copy);
+        CallsThread::Post([this, call_id, encoded_copy, local_copy]() {
+          if (!sfu_.attached || media_.ActiveCallId() != call_id) {
+            return;
+          }
+          log().info << "AnnounceLocalPublisher re-fan-out call_id=" << call_id;
+          (void)host_.fan_out_joined(call_id, CallControlType::CallSfuAttach, encoded_copy,
+                                     "Call SFU attach", local_copy);
+        });
       });
 }
 
@@ -906,7 +908,7 @@ void CallTopologyController::SyncSfuSubscriptions(const std::string& call_id) {
   if (!relay_deps_.relay || !sfu_.attached || !media_.IsSfuMode() || media_.ActiveCallId() != call_id) {
     return;
   }
-  // Runs on UI and on the calls owner (attach completion): update the stream sets under the lock,
+  // Runs on the calls owner: update the stream sets under the lock (read off the owner),
   // subscribe after releasing it (relay I/O takes the relay's own lock).
   std::vector<uint32_t> to_subscribe;
   {

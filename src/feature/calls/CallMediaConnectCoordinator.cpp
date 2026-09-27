@@ -21,8 +21,8 @@ constexpr int kInboundKeyWaitMs = 8000;
 /** Re-ask for the key this often while waiting. */
 constexpr int kInboundKeyPollMs = 250;
 
-/** Run `fn` on UI: inline when already there, else posted. */
-void OnUi(std::function<void()> fn) {
+/** Run `fn` on the calls owner: inline when already there, else posted. */
+void OnOwner(std::function<void()> fn) {
   if (CallsThread::IsCurrent()) {
     fn();
     return;
@@ -33,10 +33,10 @@ void OnUi(std::function<void()> fn) {
 } // namespace
 
 void CallMediaConnectCoordinator::CheckUiThread(const char* what) const {
-  // Sequence state is UI-thread only (no lock). A caller on another thread is a bug — make it
+  // Sequence state is calls-owner only (no lock). A caller on another thread is a bug — make it
   // visible in dogfood logs rather than a silent race.
   if (!CallsThread::IsCurrent()) {
-    log().error << what << " called off the UI thread — sequence state is UI-only";
+    log().error << what << " called off the calls owner — sequence state is owner-only";
   }
 }
 
@@ -237,8 +237,8 @@ void CallMediaConnectCoordinator::BeginAttempt(const uint64_t seq, const int att
   reach.fresh_link = std::exchange(fresh_link_next_, false);
   attempt_reused_link_ = false;
   reach_id_ = reach_.Ensure(std::move(reach), [this, alive = alive_, seq, attempt](Roe<PeerReachResult> reached) {
-    // UI — the Coordinator can lag Pause/Resume.
-    OnUi([this, alive, seq, attempt, reached = std::move(reached)]() mutable {
+    // Calls owner — the Coordinator can lag Pause/Resume.
+    OnOwner([this, alive, seq, attempt, reached = std::move(reached)]() mutable {
       if (alive->load(std::memory_order_acquire) && Current(seq)) {
         reach_id_ = 0;
         OnLinkReady(seq, attempt, std::move(reached));
@@ -287,8 +287,8 @@ void CallMediaConnectCoordinator::OpenBundle(const uint64_t seq, const int attem
   transport_.ConnectAsync(
       request_.params, request_.callbacks,
       [this, alive = alive_, seq, attempt](Roe<void> connected) {
-        // UI — not the Coordinator (Pause / backlog can drop the timeout → stuck Connecting).
-        OnUi([this, alive, seq, attempt, connected = std::move(connected)]() mutable {
+        // Calls owner — not the Coordinator (Pause / backlog can drop the timeout → stuck Connecting).
+        OnOwner([this, alive, seq, attempt, connected = std::move(connected)]() mutable {
           if (!alive->load(std::memory_order_acquire)) {
             return;
           }
