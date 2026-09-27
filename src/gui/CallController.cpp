@@ -387,12 +387,20 @@ void CallController::SyncRingtone() {
   if (should_ringback && !ringback_.IsPlaying()) {
     ringback_.Start();
   } else if (!should_ringback && ringback_.IsPlaying()) {
-    ringback_.Stop();
-    // The engine owns the audio session once media is active — only release it here
-    // when the call ended without being answered.
-    if (!backend || !backend->Available() || !backend->Media().IsActive()) {
-      CallAudioSession::Deactivate();
-    }
+    StopRingback(backend);
+  }
+}
+
+void CallController::StopRingback(CallUiBackend* backend) {
+  const bool ringback_was_playing = ringback_.IsPlaying();
+  if (!ringback_was_playing) {
+    return;
+  }
+  ringback_.Stop();
+  // The engine owns the audio session once media is active — only release it here
+  // when the call ended without being answered.
+  if (!backend || !backend->Available() || !backend->Media().IsActive()) {
+    CallAudioSession::Deactivate();
   }
 }
 
@@ -1010,7 +1018,7 @@ void CallController::LeaveActive() {
     // Stale End button after Idle — force-clear chrome so Samsung does not look hung.
     ClearInCall();
     ClearRing();
-    ringback_.Stop();
+    StopRingback(backend);
     SyncShellState();
     return;
   }
@@ -1022,7 +1030,7 @@ void CallController::LeaveActive() {
   active_call_id_.clear();
   ClearInCall();
   ClearRing();
-  ringback_.Stop();
+  StopRingback(backend);
   SyncShellState();
   if (backend && backend->Available()) {
     backend->Apply(CallLifecycleEvent::LeaveClicked, call_id);

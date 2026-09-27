@@ -83,6 +83,13 @@ private:
   void ApplyAudioLevels(CallMediaEngine& media);
   void RefreshCallLevels();
   void SyncRingtone();
+  /**
+   * Stop ringback_ if playing and, unless media is already active (the engine then owns
+   * the session), release the phone audio session. Shared by SyncRingtone's own
+   * playing->stopped transition and LeaveActive's immediate stop, so a hang-up during
+   * ringback never Deactivates twice.
+   */
+  void StopRingback(CallUiBackend* backend);
   void ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* backend, bool media_reconnect);
   CallMediaHealthView BuildMediaHealthView(CallMediaEngine& media, CallUiBackend* backend,
                                            bool media_reconnect) const;
