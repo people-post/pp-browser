@@ -51,6 +51,10 @@ public:
   virtual Roe<void> ConfigureEncoder(int width, int height, int fps) = 0;
   virtual Roe<void> ConfigureDecoder() = 0;
 
+  /**
+   * `annex_b` may be empty while the encoder is still buffering input (Windows Media Foundation's
+   * software H264 holds its first frames); that is not an error — callers skip the send.
+   */
   virtual Roe<EncodedAccessUnit> Encode(const VideoFrameI420& frame, bool force_keyframe) = 0;
   /** Input: Annex-B access unit (possibly multiple NALs). */
   virtual Roe<VideoFrameRgba> Decode(const uint8_t* annex_b, size_t size) = 0;

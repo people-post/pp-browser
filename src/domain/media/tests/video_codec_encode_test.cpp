@@ -31,11 +31,15 @@ TEST(VideoCodecEncodeTest, NonAlignedFramesEncodeWithinBounds) {
       GTEST_SKIP() << "encoder configure failed: " << configured.error().message;
     }
     const VideoFrameI420 frame = GreyFrame(w, h);
-    for (int i = 0; i < 3; ++i) {
+    // Every encode stays in bounds and succeeds; output may lag input while the encoder buffers
+    // (Windows MF soft H264), so require bytes within a short run, not from every call.
+    bool produced = false;
+    for (int i = 0; i < 30; ++i) {
       auto encoded = codec->Encode(frame, i == 0);
       ASSERT_TRUE(encoded) << w << "x" << h << ": " << encoded.error().message;
-      EXPECT_FALSE(encoded->annex_b.empty());
+      produced |= !encoded->annex_b.empty();
     }
+    EXPECT_TRUE(produced) << w << "x" << h << ": no access unit after 30 frames";
     codec->ResetEncoder();
   }
 }
