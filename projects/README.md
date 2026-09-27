@@ -57,6 +57,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [call-path-resilience](call-path-resilience/) | Calls survive link / network changes; mobility-aware path policy |
 | [peer-scoped-broadcast](peer-scoped-broadcast/) | Peer announce feeds + live broadcast (media tree scale = Spine F) |
 | [media-client-layers](media-client-layers/) | Neutral reach / relay-attach / pipeline / device layers; broadcast as a sibling feature of calls |
+| [thread-ownership](thread-ownership/) | One owner thread per state: Mesh I/O, Connectivity, Media sessions, UI — started from the call port-rebind race |
 | [media-hop-reachability](media-hop-reachability/) | Circuit hop dial / SoftMigrate consume |
 | [hard-lab](hard-lab/) | Docker/netns forced-hop + impairment/discovery scenarios (Wave 1–3 partial scaffold) |
 | [network-status-chrome](network-status-chrome/) | Desktop status bar cluster + popover |

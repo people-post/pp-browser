@@ -50,11 +50,20 @@ TEST(AppRuntimeWorkerTest, PostWorkerCriticalJumpsQueue) {
     order.push_back("normal");
   });
 
-  pbr::AppRuntime::PostWorkerCritical([&]() { order.push_back("critical"); });
+  pbr::AppRuntime::PostWorkerCritical([&]() {
+    std::lock_guard lock(mu);
+    order.push_back("critical");
+  });
 
-  WaitUntil([&]() { return order.size() == 1; }, std::chrono::milliseconds(2000));
-  ASSERT_EQ(order.size(), 1u);
-  EXPECT_EQ(order.front(), "critical");
+  WaitUntil([&]() {
+    std::lock_guard lock(mu);
+    return order.size() == 1;
+  }, std::chrono::milliseconds(2000));
+  {
+    std::lock_guard lock(mu);
+    ASSERT_EQ(order.size(), 1u);
+    EXPECT_EQ(order.front(), "critical");
+  }
 
   {
     std::lock_guard lock(mu);
@@ -62,9 +71,15 @@ TEST(AppRuntimeWorkerTest, PostWorkerCriticalJumpsQueue) {
   }
   cv.notify_all();
 
-  WaitUntil([&]() { return order.size() == 2; }, std::chrono::milliseconds(2000));
-  EXPECT_EQ(order[0], "critical");
-  EXPECT_EQ(order[1], "normal");
+  WaitUntil([&]() {
+    std::lock_guard lock(mu);
+    return order.size() == 2;
+  }, std::chrono::milliseconds(2000));
+  {
+    std::lock_guard lock(mu);
+    EXPECT_EQ(order[0], "critical");
+    EXPECT_EQ(order[1], "normal");
+  }
 
   pbr::AppRuntime::Shutdown();
 }

@@ -1,4 +1,5 @@
 #include "app/Application.h"
+#include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
 
 #include "foundation/crypto/ProfileSecretsEngine.h"
@@ -198,7 +199,9 @@ void ApplyUiDocumentLanguage(ui::Context* context) {
 
 Application::Application() {
   redirectLogger("Application");
-  AppRuntime::Initialize();
+  AppRuntimeConfig runtime;
+  runtime.name_thread = os::SetCurrentThreadName;
+  AppRuntime::Initialize(runtime);
   secrets_ = std::make_unique<ProfileSecretsEngine>();
   messaging_ = std::make_unique<ConversationsHub>();
   messaging_->BindSessionStore(store_);

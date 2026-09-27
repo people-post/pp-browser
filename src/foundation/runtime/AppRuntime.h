@@ -1,6 +1,7 @@
 #pragma once
 
 #include "foundation/runtime/CoordinatorThread.h"
+#include "foundation/runtime/OwnerThread.h"
 #include "foundation/runtime/WorkerDispatch.h"
 #include "common/Logger.h"
 #include "common/WorkerPool.h"
@@ -10,6 +11,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -18,6 +20,10 @@ class ThreadRuntime;
 
 struct AppRuntimeConfig {
   size_t worker_pool_threads = WorkerPool::kDefaultThreadCount;
+  /** Owner threads (projects/thread-ownership): Dedicated in the product, Manual in tests. */
+  OwnerThreadMode owner_threads = OwnerThreadMode::Dedicated;
+  /** Names the calling OS thread (composition root passes platform `os::SetCurrentThreadName`). */
+  std::function<void(const std::string& name)> name_thread;
 };
 
 /**
@@ -139,8 +145,30 @@ public:
   static void CancelCoordinatorTimer(uint64_t timer_id);
 
   /** Override worker dispatch for unit tests (does not start a full runtime). */
+  // --- Owner threads (projects/thread-ownership T001 / T002) --------------------------------
+  /** Post onto an owner (teardown-gated like every mailbox); dropped when the runtime is down. */
+  static void PostTo(OwnerThreadId owner, std::function<void()> task);
+  /** True inside the owner's tasks (Manual mode: while the driving thread drains it). */
+  static bool CurrentlyOn(OwnerThreadId owner);
+  /** Coordinator timer that posts `task` onto the owner. Cancel with CancelCoordinatorTimer. */
+  static uint64_t ScheduleOn(OwnerThreadId owner, std::chrono::milliseconds delay, std::function<void()> task);
+  /** Manual mode: run the owner's queue until empty (tests / harnesses). Returns tasks run. */
+  static size_t RunOwnerTasks(OwnerThreadId owner);
+  /** Manual mode: drain every owner until all are empty. */
+  static size_t RunAllOwnerTasks();
+  static bool OwnerThreadsManual();
+  /** Debug builds: abort with `where` when called off `owner` while owners run. Use PBR_ASSERT_ON_OWNER. */
+  static void AssertOn(OwnerThreadId owner, const char* where);
+
   static void InstallWorkerPoolForTesting(WorkerPool* pool);
   static void ClearWorkerPoolForTesting();
 };
 
 } // namespace pbr
+
+#ifdef NDEBUG
+#define PBR_ASSERT_ON_OWNER(owner) ((void)0)
+#else
+/** Owner-thread affinity check (projects/thread-ownership rule 1); no-op in release builds. */
+#define PBR_ASSERT_ON_OWNER(owner) ::pbr::AppRuntime::AssertOn((owner), __func__)
+#endif
