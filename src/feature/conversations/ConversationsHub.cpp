@@ -337,16 +337,20 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
     mesh_cfg.try_upnp_first = !upnp_auto_tried_;
     upnp_auto_tried_ = true;
   }
+  // Runs on the Connectivity owner (ReachabilityEngine): the hub's work is ours — hop to UI.
   mesh_cfg.on_reachability_updated = [this]() {
-    if (shutdown_requested_.load(std::memory_order_acquire)) {
-      return;
-    }
-    ApplyMeshAdmissionPolicies();
-    PublishNodeAdvertisedAddrs();
-    RegisterContactEndpoints();
-    if (on_reachability_updated_) {
-      on_reachability_updated_();
-    }
+    AppRuntime::PostUI([this]() {
+      if (shutdown_requested_.load(std::memory_order_acquire)) {
+        return;
+      }
+      ApplyMeshAdmissionPolicies();
+      PublishNodeAdvertisedAddrs();
+      RegisterContactEndpoints();
+      mesh_media_->RefreshHopPolicy();  // advertised addrs follow the probe (media consumers' view)
+      if (on_reachability_updated_) {
+        on_reachability_updated_();
+      }
+    });
   };
   mesh_cfg.mesh_enabled = product_mesh_cfg.mesh_enabled && mesh_cfg.host.device_ml_dsa_private_key &&
                           mesh_cfg.host.device_ml_dsa_public_key;

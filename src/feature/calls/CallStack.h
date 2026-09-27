@@ -139,6 +139,8 @@ public:
   bool HasActiveLocalCall();
 
   std::vector<std::string> LocalCallListenMultiaddrs() const;
+  /** This node's mesh as the connectivity owner last published it (empty without mesh media). */
+  std::shared_ptr<const MeshLocalView> LocalMeshView() const;
   void RegisterCallPeerListenMultiaddrs(const std::string& identity,
                                         const std::vector<std::string>& multiaddrs);
 

@@ -376,20 +376,17 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
     }
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
-  call_sessions_->SetLocalMeshPeerIdProvider([this]() -> std::string {
-    if (MeshHost* m = mesh(); m && m->Amp()) {
-      return m->Amp()->LocalPeerId();
-    }
-    return {};
-  });
+  // Providers read the connectivity owner's published view of this node's mesh (never the
+  // MeshHost the hub may be tearing down under a running call flow).
+  call_sessions_->SetLocalMeshPeerIdProvider([this]() -> std::string { return LocalMeshView()->local_peer_id; });
   call_sessions_->SetLocalPeerCapsProvider([this]() {
     CallPeerCaps caps;
     caps.v = kCallPeerCapsVersion;
     caps.present = true;
     // Durable Node host only — never advertise media_relay for ephemeral listen-only (V030).
+    const auto view = LocalMeshView();
     caps.media_relay = ResolveMeshRole(config().mesh) == MeshRole::Node &&
-                       config().mesh.capabilities.media_relay && mesh() && mesh()->Amp() &&
-                       mesh()->AmpMediaRelayCoord() && mesh()->AmpMediaRelayCoord()->IsStarted();
+                       config().mesh.capabilities.media_relay && view->amp_up && view->media_relay_started;
     return caps;
   });
   call_sessions_->SetRegisterPeerListenMultiaddrs(
@@ -418,39 +415,18 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
       shared->Rendezvous().PreferLateReserve(relay_peer_id);
     }
   });
-  call_sessions_->SetLocalPunchAddrsProvider([this]() -> std::vector<std::string> {
-    if (MeshHost* m = mesh(); m && m->AmpPunch()) {
-      return m->AmpPunch()->LocalCandidateAddrs();
-    }
-    return {};
-  });
+  call_sessions_->SetLocalPunchAddrsProvider(
+      [this]() -> std::vector<std::string> { return LocalMeshView()->punch_candidate_addrs; });
   call_sessions_->SetSignalingPunchBurst(
-      [this](const std::vector<std::string>& peer_addrs, int window_ms,
-             std::function<void(Roe<void>)> on_done) {
-        MeshHost* m = mesh();
-        AmpPunchCoordinator* punch = m ? m->AmpPunch() : nullptr;
-        if (!punch || !punch->IsStarted()) {
+      [this](const std::vector<std::string>& peer_addrs, int window_ms, std::function<void(Roe<void>)> on_done) {
+        MeshMediaPlane* shared = mesh_media();
+        if (!shared) {
           if (on_done) {
             on_done(Error("amp punch unavailable"));
           }
           return;
         }
-        punch->TrySignalingPunchBurstAsync(
-            peer_addrs,
-            [on_done = std::move(on_done)](AmpPunchCoordinator::PunchRoe punched) {
-              if (!on_done) {
-                return;
-              }
-              if (punched && punched->ok) {
-                on_done({});
-                return;
-              }
-              const std::string err =
-                  !punched ? punched.error().message
-                           : (punched->error.empty() ? std::string("punch burst failed") : punched->error);
-              on_done(Error(err));
-            },
-            window_ms);
+        shared->SignalingPunchBurstAsync(peer_addrs, window_ms, std::move(on_done));
       });
   EnsureCallLifecycleBound();
   RebindMeshMedia();
@@ -563,9 +539,14 @@ bool CallStack::IsConnectWorkerInflight() const {
   return UiState()->connect_in_flight;
 }
 
+std::shared_ptr<const MeshLocalView> CallStack::LocalMeshView() const {
+  MeshMediaPlane* shared = mesh_media();
+  return shared ? shared->LocalView() : std::make_shared<const MeshLocalView>();
+}
+
 std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
-  MeshHost* m = mesh();
-  const bool amp_up = m && m->Amp() && !m->AmpListenMultiaddr().empty();
+  const auto view = LocalMeshView();
+  const bool amp_up = view->amp_up && !view->amp_listen_multiaddr.empty();
   if (!amp_up) {
     return {};
   }
@@ -576,9 +557,9 @@ std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
     return {};
   }
 
-  std::vector<std::string> addrs = m->AdvertisedListenMultiaddrs();
-  if (addrs.empty() && !m->AmpListenMultiaddr().empty()) {
-    addrs.push_back(m->AmpListenMultiaddr());
+  std::vector<std::string> addrs = view->advertised_listen_multiaddrs;
+  if (addrs.empty()) {
+    addrs.push_back(view->amp_listen_multiaddr);
   }
   // B40: a peer dialed our 169.254.x link-local address first. Never advertise addresses the
   // peer cannot dial (link-local, wildcard, loopback) in call signaling.

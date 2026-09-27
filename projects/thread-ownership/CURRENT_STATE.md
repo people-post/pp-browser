@@ -7,6 +7,7 @@
 
 | Phase | State |
 |-------|-------|
+| t3-2c — reachability + local view on connectivity | `ReachabilityEngine` steps on the owner (UPnP on a worker); call providers read `MeshLocalView`; punch burst via the plane. TSan clean (whole mesh binary); ASan + hard-w5 green |
 | t3-2b — candidate policy on connectivity | `MeshHopPolicy` snapshot evaluated on the owner (Wire / 5 s / `RefreshHopPolicy`); the IO side reads only the snapshot. TSan clean; hard-w5 green |
 | t3-2a — connectivity owner: reach + mesh media plane | `PeerReachCoordinator` on it; `MeshMediaPlane` edges `RunAndWait`, listen book snapshot, relay-chosen / punch hooks hop owner to owner; T004 (waits downward only). TSan clean; hard-w5 green |
 | t3-1 — MeshControl retired | Mesh waits are completions (dial-back walk, inbound call-media key, CAS tip fetch); L4 inbound work on workers; mesh stop joins MeshPump before freeing L4. TSan clean in call / broadcast / chat / mesh suites; hard-w5 green |
@@ -17,13 +18,13 @@
 
 ## Next
 
-**t3-2c** — `ReachabilityEngine` on connectivity; `CallStackDeps` providers read a connectivity snapshot.
+**t4** — UI snapshots: the hub's `config()` read by owners (published config snapshot); remaining UI-side reads of owner state; affinity asserts on the moved classes.
 
 ## Known (motivating)
 
 - ~~TSan: `BindWorkflowHostPorts` rewrote workflow ports under running callers~~ (t2a step A). ~~Remaining 3: `CallStack` teardown vs the MeshControl peer-reach prefetch~~ (t3-1: the prefetch posts the hub's port to UI).
 - Call-side mesh media callbacks (`note_lan_mdns_peer_id` → hub set) still run on whichever thread the mesh media plane calls from — t3 with the plane.
 - The candidate-policy providers (and `CallStackDeps`) read the hub's `config()` — an `AppConfig` the hub replaces on UI (capability refresh). Needs a published config snapshot (t4, UI snapshots).
-- The calls owner reads hub state through `CallStackDeps` (`mesh()`, `config()`, directory / DHT snapshots) while the hub swaps `mesh_` on UI. Mesh stop clears the call ports first (`PrepareForMeshStop` waits on the owner), but provider lambdas (local peer id / caps / listen addrs) still reach `mesh()` — t3 gives them a connectivity snapshot.
+- ~~The calls owner's providers reached the hub's `mesh()` during call flows~~ (t3-2c: `MeshLocalView`). Bind-time reads of `mesh()` remain at the owner edges (the hub waits there).
 - `InboundAttachGate::mu` taken by hop migrate, not by the topology writing the same fields.
 - Sanitizers flag `AppRuntimeWorkerTest.ShutdownBudgetReturnsWhileWorkerBlocked` by design (it leaves a blocked worker detached past process exit); unchanged by t1.
