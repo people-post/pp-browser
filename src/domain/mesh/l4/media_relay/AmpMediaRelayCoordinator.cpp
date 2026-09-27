@@ -558,12 +558,21 @@ struct AmpMediaRelayCoordinator::Impl {
     const std::string call_id = session.call_id;
     FrameHandler on_frame = std::move(session.on_frame);
     const uint64_t id = session.id.value;
+    const bool circuit_backed = session.circuit_backed;
     sessions.erase(id);
 
     const bool replaced = static_cast<bool>(client_.channel);
     DetachClientLocked();
     if (replaced) {
       NotifyClientObserversLocked(MediaRelayClientLoss::Replaced);
+    }
+    // A client media session keeps its hop link hot (K008 "relay outer links"): one-way media
+    // (a publisher only sends, a viewer only receives) gives one end no RX, and a cold link is
+    // evicted after 5 s of silence. Hot keepalives carry an echo. Never cleared on detach — the
+    // same node is often our circuit relay, whose reservation needs the hot tier too. Marked on the
+    // io tick, without `mu` (the link strand calls into us holding its own lock).
+    if (!circuit_backed && runtime) {
+      pending_client_notices_.push_back([rt = runtime, hop]() { rt->Links().MarkHot(hop); });
     }
     client_.channel = std::move(channel);
     client_.hop_peer_key = hop;
@@ -1397,24 +1406,31 @@ Roe<MediaRelayAttachResult> AmpMediaRelayCoordinator::AttachAsLocalHop(
 
 Roe<void> AmpMediaRelayCoordinator::Subscribe(const uint32_t stream_id, const uint16_t channel_id) {
   const uint64_t key = SubKey(stream_id, channel_id);
-  std::lock_guard lock(impl_->mu);
-  if (impl_->local_hop_part_) {
-    impl_->local_hop_part_->subscriptions.insert(key);
-    return {};
+  std::shared_ptr<pp::amp::ChannelSession> channel;
+  {
+    std::lock_guard lock(impl_->mu);
+    if (impl_->local_hop_part_) {
+      impl_->local_hop_part_->subscriptions.insert(key);
+      return {};
+    }
+    if (impl_->client_.subscriptions.count(key) != 0) {
+      return {};
+    }
+    if (!impl_->client_.channel) {
+      return Error("not attached");
+    }
+    impl_->client_.subscriptions.insert(key);
+    channel = impl_->client_.channel;
   }
-  if (impl_->client_.subscriptions.count(key) != 0) {
-    return {};
-  }
-  if (!impl_->client_.channel) {
-    return Error("not attached");
-  }
-  impl_->client_.subscriptions.insert(key);
   Object sub;
   sub.set("v", int64_t{1});
   sub.set("op", "subscribe");
   sub.setJsonUInt("stream_id", stream_id);
   sub.setJsonUInt("channel_id", channel_id);
-  if (!impl_->client_.channel->EnqueueOutbound(JsonToBody(DumpJson(sub)))) {
+  // Written outside `mu`, under the io lock (see SendFrame).
+  const bool sent = runtime_.WithIoLock([&]() { return channel->EnqueueOutbound(JsonToBody(DumpJson(sub))); });
+  if (!sent) {
+    std::lock_guard lock(impl_->mu);
     impl_->client_.subscriptions.erase(key);
     return Error("not attached");
   }
@@ -1424,6 +1440,7 @@ Roe<void> AmpMediaRelayCoordinator::Subscribe(const uint32_t stream_id, const ui
 Roe<void> AmpMediaRelayCoordinator::SendFrame(const MediaDataFrame& frame) {
   const std::vector<uint8_t> body = EncodeMediaDataFrame(frame);
   std::shared_ptr<AmpMediaRelayCoordinator::Impl::AmpHostSession> session;
+  std::shared_ptr<pp::amp::ChannelSession> channel;
   std::string from_peer;
   {
     std::lock_guard lock(impl_->mu);
@@ -1431,13 +1448,21 @@ Roe<void> AmpMediaRelayCoordinator::SendFrame(const MediaDataFrame& frame) {
       session = impl_->local_hop_session_;
       from_peer = impl_->local_hop_peer_id_;
     } else if (impl_->client_.channel) {
-      if (!impl_->client_.channel->EnqueueOutbound(body)) {
-        return Error("not attached");
-      }
-      return {};
+      channel = impl_->client_.channel;
     } else {
       return Error("not attached");
     }
+  }
+  if (channel) {
+    // The channel session is io-affine: senders (the engine's capture thread) enqueue under the
+    // runtime io lock, or they race the mesh pump on the same mux (failed writes, SIGSEGV). And not
+    // under `mu`: a failed write fails the channel synchronously, and its closed callback
+    // (HandleClientTransportLost) takes `mu` — enqueueing under it deadlocked the sending thread
+    // and then the mesh pump. Order: io lock → mu, as the io tick.
+    if (!runtime_.WithIoLock([&]() { return channel->EnqueueOutbound(body); })) {
+      return Error("not attached");
+    }
+    return {};
   }
   if (session) {
     impl_->Fanout(session, from_peer, frame, body);
@@ -1462,7 +1487,7 @@ void AmpMediaRelayCoordinator::Detach() {
     }
   }
   if (closing) {
-    CloseQuietSlot(closing, impl_->ResolveLink(hop));
+    runtime_.WithIoLock([&]() { CloseQuietSlot(closing, impl_->ResolveLink(hop)); });
   }
 }
 
