@@ -1122,105 +1122,79 @@ void CallHopMigrateWorkflow::ReattachGuestSfuTransportAsync(const std::string& c
     return;
   }
   PostControlOrRun([this, call_id, attach_in, on_done = std::move(on_done)]() mutable {
-    const uint64_t gen_at_start = flight_.migrate_generation.load(std::memory_order_acquire);
-    if (!relay_deps_ || !relay_deps_->relay || !relay_deps_->dial) {
-      on_done(Error("media_relay not available"));
-      return;
-    }
-    if (!sfu_.attached || !media_.IsSfuMode() || media_.ActiveCallId() != call_id) {
-      on_done(Error("sfu not active"));
-      return;
-    }
-    CallSfuAttachDetail attach = attach_in;
-    if (attach.hop_peer_id.empty()) {
-      on_done(Error("missing hop_peer_id"));
-      return;
-    }
-    if (auto local_pid = relay_deps_->relay->LocalPeerIdBase58();
-        local_pid && *local_pid == attach.hop_peer_id) {
-      on_done(Error("guest reattach is remote-hop only"));
-      return;
-    }
+    StartGuestReattach(call_id, attach_in, std::move(on_done));
+  });
+}
 
-    log().info << "ReattachGuestSfuTransport begin call_id=" << call_id << " hop=" << attach.hop_peer_id;
-
-    const std::string captured_call = call_id;
-    uint32_t media_epoch = 1;
-    ByteVector media_key;
-    if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
-      media_epoch = session->value().media_epoch;
-    }
-    if (media_keys_) {
-      if (auto key = media_keys_->LoadEpochKey(call_id, media_epoch); key && key->has_value()) {
-        media_key = **key;
-      }
-      if (media_key.empty()) {
-        on_done(Error("call media key required for SFU"));
-        return;
-      }
-    }
-
-    auto on_sfu_frame = [this, captured_call, media_epoch, media_key](MediaDataFrame frame) {
-      CallMediaEngine::SfuPacket pkt;
-      pkt.stream_id = frame.stream_id;
-      pkt.channel_id = frame.channel_id;
-      pkt.seq = frame.seq;
-      pkt.mark = frame.mark;
-      if (!media_key.empty()) {
-        auto plain = DecryptCallMediaSfuFrame(media_key, captured_call, media_epoch, frame.stream_id,
-                                              static_cast<uint8_t>(frame.channel_id), frame.payload);
-        if (!plain) {
+void CallHopMigrateWorkflow::StartGuestReattach(const std::string& call_id, const CallSfuAttachDetail& attach_in,
+                                                std::function<void(Roe<void>)> on_done) {
+  HopAttach at;
+  at.call_id = call_id;
+  at.attach = attach_in;
+  at.gen_at_start = flight_.migrate_generation.load(std::memory_order_acquire);
+  if (!relay_deps_ || !relay_deps_->relay || !relay_deps_->dial) {
+    on_done(Error("media_relay not available"));
+    return;
+  }
+  if (!IsLiveOnHopFor(call_id)) {
+    on_done(Error("sfu not active"));
+    return;
+  }
+  if (at.attach.hop_peer_id.empty()) {
+    on_done(Error("missing hop_peer_id"));
+    return;
+  }
+  if (auto local_pid = relay_deps_->relay->LocalPeerIdBase58(); local_pid && *local_pid == at.attach.hop_peer_id) {
+    on_done(Error("guest reattach is remote-hop only"));
+    return;
+  }
+  if (auto keyed = LoadHopMediaKey(at); !keyed) {
+    on_done(keyed.error());
+    return;
+  }
+  // The engine is already live: frames flow as soon as the relay session is back.
+  at.frames_ready->store(true, std::memory_order_release);
+  log().info << "ReattachGuestSfuTransport begin call_id=" << call_id << " hop=" << at.attach.hop_peer_id;
+  if (at.attach.hop_multiaddr.empty()) {
+    at.attach.hop_multiaddr = ops_.resolve_hop_multiaddr(at.attach.hop_peer_id);
+  }
+  MediaRelayAttachHooks hooks;
+  hooks.accept_quote = RelayQuotePricingGate();
+  hooks.still_wanted = [this, gen = at.gen_at_start]() { return IsMigrateGenerationCurrent(gen); };
+  hooks.on_frame = MakeHopFrameSink(at);
+  const MediaRelayAttachRequest request = MakeRelayAttachRequest(call_id, at.attach);
+  AttachToMediaRelayAsync(
+      RelayAttachPorts(), request, std::move(hooks),
+      [this, at = std::move(at), on_done = std::move(on_done)](Roe<MediaRelayAttached> attached) mutable {
+        if (!attached) {
+          on_done(attached.error());
           return;
         }
-        pkt.payload = std::move(plain->payload);
-      } else {
-        pkt.payload = std::move(frame.payload);
-      }
-      media_.OnSfuPacket(pkt);
-    };
-
-    if (attach.hop_multiaddr.empty()) {
-      attach.hop_multiaddr = ops_.resolve_hop_multiaddr(attach.hop_peer_id);
-    }
-    MediaRelayAttachHooks hooks;
-    hooks.accept_quote = RelayQuotePricingGate();
-    hooks.still_wanted = [this, gen_at_start]() { return IsMigrateGenerationCurrent(gen_at_start); };
-    hooks.on_frame = std::move(on_sfu_frame);
-    MediaRelayAttachRequest request = MakeRelayAttachRequest(call_id, attach);
-    AttachToMediaRelayAsync(
-        RelayAttachPorts(), std::move(request), std::move(hooks),
-        [this, call_id, attach = std::move(attach), gen_at_start,
-         on_done](Roe<MediaRelayAttached> attached) mutable {
-          if (!attached) {
-            on_done(attached.error());
-            return;
-          }
-          const int64_t quote_a_up = attached->a_up_bps;
-          PostControlOrRun([this, call_id, attach = std::move(attach), gen_at_start, quote_a_up,
-                            on_done = std::move(on_done)]() mutable {
-            std::lock_guard<std::mutex> attach_lock(inbound_gate_.mu);
-            if (!IsMigrateGenerationCurrent(gen_at_start)) {
-              relay_deps_->relay->Detach();
-              on_done(Error("reattach aborted"));
-              return;
-            }
-            if (publishers_.local_stream_id == 0) {
-              publishers_.local_stream_id = ops_.publisher_stream_id_for_local();
-            }
-            relay_deps_->relay->StartClientFrameReader();
-            sfu_.last_quote_a_up_bps = quote_a_up;
-            guest_.active_attach = attach;
-            guest_.active_call_id = call_id;
-            ops_.note_remote_publisher_from_attach(attach);
-            ops_.sync_sfu_subscriptions(call_id);
-            ops_.announce_local_publisher(call_id, attach);
-            ops_.refresh_adaptation(call_id);
-            log().info << "ReattachGuestSfuTransport done call_id=" << call_id
-                       << " hop=" << attach.hop_peer_id;
-            on_done(Roe<void>());
-          });
+        PostControlOrRun([this, at = std::move(at), bps = attached->a_up_bps, on_done = std::move(on_done)]() {
+          on_done(CompleteGuestReattach(at, bps));
         });
-  });
+      });
+}
+
+Roe<void> CallHopMigrateWorkflow::CompleteGuestReattach(const HopAttach& at, int64_t a_up_bps) {
+  std::lock_guard<std::mutex> attach_lock(inbound_gate_.mu);
+  if (!IsMigrateGenerationCurrent(at.gen_at_start)) {
+    relay_deps_->relay->Detach();
+    return Error("reattach aborted");
+  }
+  if (publishers_.local_stream_id == 0) {
+    publishers_.local_stream_id = ops_.publisher_stream_id_for_local();
+  }
+  relay_deps_->relay->StartClientFrameReader();
+  sfu_.last_quote_a_up_bps = a_up_bps;
+  guest_.active_attach = at.attach;
+  guest_.active_call_id = at.call_id;
+  ops_.note_remote_publisher_from_attach(at.attach);
+  ops_.sync_sfu_subscriptions(at.call_id);
+  ops_.announce_local_publisher(at.call_id, at.attach);
+  ops_.refresh_adaptation(at.call_id);
+  log().info << "ReattachGuestSfuTransport done call_id=" << at.call_id << " hop=" << at.attach.hop_peer_id;
+  return {};
 }
 
 

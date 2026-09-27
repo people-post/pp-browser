@@ -289,6 +289,10 @@ private:
   Roe<void> StartHopMedia(const HopAttach& at);
   void MarkHopAttachLive(const HopAttach& at, bool fresh_start);
   void ReleaseDirectAfterHopAttach(const HopAttach& at);
+  // Guest reattach after a lost relay transport (engine stays live).
+  void StartGuestReattach(const std::string& call_id, const CallSfuAttachDetail& attach_in,
+                          std::function<void(Roe<void>)> on_done);
+  Roe<void> CompleteGuestReattach(const HopAttach& at, int64_t a_up_bps);
   /** media_relay attach mechanism (domain/mesh MediaRelayAttach) over this workflow's relay deps. */
   MediaRelayAttachPorts RelayAttachPorts() const;
   /** Call policy for a relay attach: session id / auth = call id; quote sized by roster + video. */
