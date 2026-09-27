@@ -16,6 +16,18 @@ namespace {
 std::atomic<bool> g_speakerphone{false};
 std::atomic<bool> g_session_active{false};
 
+/** Diagnostic: what iOS actually ended up with (category / mode / options / output port). */
+void LogRoute(const char* where) {
+  AVAudioSession* session = [AVAudioSession sharedInstance];
+  NSString* out = @"-";
+  if (session.currentRoute.outputs.count > 0) {
+    out = session.currentRoute.outputs.firstObject.portType;
+  }
+  NSLog(@"CallAudioSession %s: speaker_flag=%d category=%@ mode=%@ options=0x%lx output=%@", where,
+        g_speakerphone.load() ? 1 : 0, session.category, session.mode,
+        static_cast<unsigned long>(session.categoryOptions), out);
+}
+
 void ApplyRoute(bool speaker_on) {
   AVAudioSession* session = [AVAudioSession sharedInstance];
   NSError* error = nil;
@@ -40,6 +52,7 @@ void ActivateForVoipCall() {
   [session setActive:YES error:&error];
   g_session_active.store(true);
   ApplyRoute(g_speakerphone.load());
+  LogRoute("ActivateForVoipCall");
   (void)error;
 }
 
@@ -76,6 +89,7 @@ void SetSpeakerphoneOn(bool on) {
   [session setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:options error:&error];
   [session setMode:AVAudioSessionModeVoiceChat error:&error];
   ApplyRoute(on);
+  LogRoute("SetSpeakerphoneOn");
   (void)error;
 }
 
