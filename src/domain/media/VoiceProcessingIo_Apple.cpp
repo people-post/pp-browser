@@ -67,7 +67,8 @@ struct VoiceProcessingIo::Impl {
   std::vector<int16_t> input_scratch = std::vector<int16_t>(kMaxFramesPerSlice);
   std::atomic<uint64_t> playout_underruns{0};
   std::atomic<bool> device_changed{false};
-  bool listening = false;
+  bool listening_input = false;
+  bool listening_output = false;
 
   // Real-time thread: no locks, no allocation, no logging.
   static OSStatus OnInput(void* ref, AudioUnitRenderActionFlags* flags, const AudioTimeStamp* ts, UInt32 bus,
@@ -209,10 +210,12 @@ bool VoiceProcessingIo::Open(std::string* reason) {
 
 #if TARGET_OS_OSX
   if (AudioObjectAddPropertyListener(kAudioObjectSystemObject, &kDefaultInputAddr, &Impl::OnDefaultDeviceChanged,
-                                     impl_.get()) == noErr &&
-      AudioObjectAddPropertyListener(kAudioObjectSystemObject, &kDefaultOutputAddr, &Impl::OnDefaultDeviceChanged,
                                      impl_.get()) == noErr) {
-    impl_->listening = true;
+    impl_->listening_input = true;
+  }
+  if (AudioObjectAddPropertyListener(kAudioObjectSystemObject, &kDefaultOutputAddr, &Impl::OnDefaultDeviceChanged,
+                                     impl_.get()) == noErr) {
+    impl_->listening_output = true;
   }
 #endif
 
@@ -225,12 +228,15 @@ bool VoiceProcessingIo::Open(std::string* reason) {
 
 void VoiceProcessingIo::Close() {
 #if TARGET_OS_OSX
-  if (impl_->listening) {
+  if (impl_->listening_input) {
     AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &kDefaultInputAddr, &Impl::OnDefaultDeviceChanged,
                                       impl_.get());
+    impl_->listening_input = false;
+  }
+  if (impl_->listening_output) {
     AudioObjectRemovePropertyListener(kAudioObjectSystemObject, &kDefaultOutputAddr, &Impl::OnDefaultDeviceChanged,
                                       impl_.get());
-    impl_->listening = false;
+    impl_->listening_output = false;
   }
 #endif
   if (impl_->unit) {
