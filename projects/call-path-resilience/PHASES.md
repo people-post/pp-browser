@@ -24,7 +24,7 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 
 ## k1 — Amp link hygiene (M2)
 
-- [x] Snapshot fields — `LinkPathKind` (Direct / Punched / Carrier), live remote endpoint, last-rx age; `LinkEvent::path_kind`; `MeshLink` log prints `path=` (amp `k1-link-hygiene`)
+- [x] Snapshot fields — `LinkPathKind` (Direct / Punched / Carrier), live remote endpoint, last-rx age; `LinkEvent::path_kind`; `MeshLink` log prints `path=` (amp v2.4.0)
 
 - [x] Drop a carrier-backed link on carrier close in any phase but Handshaking / Dialing (no Backoff linger)
 - [x] Drop inbound link on handshake error (`HandshakeFailed`)
@@ -42,7 +42,7 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 - [x] Inbound adopt keeps an ephemeral `amp:burst:N:` dial alias on the carrier link (amp `c36bf10`)
 - [x] Reach loop labels a carrier-only link "punched"/"direct" — `IDialRegistry::IsConnectedDirect`
 - [x] Close an ADP association at once when the socket reports EHOSTDOWN / ENETUNREACH for its peer (`kDatagramSendUnreachable` → `TransportFailed`) (#215 B39 suggestion a)
-- [ ] pp-cpp-amp release + pin — the items above are on local amp branch `k1-link-hygiene`; pp-browser's `MeshLinkEventLog` `path=` needs that release to build against the pinned tag
+- [x] pp-cpp-amp release + pin (**v2.4.0**)
 
 **Exit:** no link lingers in Backoff; dead warm/hot links evicted within 3 × interval.
 

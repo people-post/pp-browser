@@ -1,8 +1,8 @@
 # Call path resilience — current state
 
-**Last updated:** 2026-09-27 (resumed after thread-ownership: B30, B44, seed-park grace, dual-stack bind, flake closed, doc drift; k1 Amp hygiene on amp branch `k1-link-hygiene`)
+**Last updated:** 2026-09-27 (resumed after thread-ownership: B30, B44, seed-park grace, dual-stack bind, flake closed, doc drift; k1 Amp hygiene in pp-cpp-amp v2.4.0)
 
-> **Code moved since 2026-09-25.** Calls run on the media-sessions owner (`CallsThread`), reach / rendezvous / mesh media plane / reachability on the Connectivity owner, MeshControl is gone (mesh waits are completions), the inbound call-media hello is asynchronous, and pp-cpp-amp is pinned at **v2.3.2**. Mentions of MeshControl, "UI thread" bridge state, or amp v2.2.x below are history. Product hot keepalive is **10 s** (K008 amendment), not 2 s.
+> **Code moved since 2026-09-25.** Calls run on the media-sessions owner (`CallsThread`), reach / rendezvous / mesh media plane / reachability on the Connectivity owner, MeshControl is gone (mesh waits are completions), the inbound call-media hello is asynchronous, and pp-cpp-amp is pinned at **v2.4.0**. Mentions of MeshControl, "UI thread" bridge state, or amp v2.2.x below are history. Product hot keepalive is **10 s** (K008 amendment), not 2 s.
 
 ## Landed
 
@@ -29,7 +29,7 @@
 | **K010** dual-stack | Mesh socket always `[::]` (IPv4 fallback only without OS IPv6) |
 | `CallUiBackendStackTest` parallel flake | Gone — 0 / 60 with 12 concurrent copies (was 12 / 12); fixed by thread-ownership's port snapshots |
 | Doc drift (k7) | V049 range, H009 status, media-hop-reachability status rows |
-| **k1 Amp hygiene** (pp-cpp-amp branch `k1-link-hygiene`, **not yet released / pinned**) | Carrier-closed and failed-inbound links dropped; only fresh packets move the path or prove liveness; drops by `LinkHandle` (A024 key sharing); nested and ADP establishes never wait on each other; OS-unreachable sends drop the link at once; `idle_ttl` removed; snapshots / events carry `LinkPathKind`, remote, RX age ([ADR_LINK_PLANE §10](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md)). pp-browser full suite, TSan (mesh + calls) and hard-w5 green against it. `MeshLinkEventLog` prints `path=direct|punched|carrier` — needs the release + pin to build in CI |
+| **k1 Amp hygiene** (pp-cpp-amp **v2.4.0**, pinned) | Carrier-closed and failed-inbound links dropped; only fresh packets move the path or prove liveness; drops by `LinkHandle` (A024 key sharing); nested and ADP establishes never wait on each other; OS-unreachable sends drop the link at once; `idle_ttl` removed; snapshots / events carry `LinkPathKind`, remote, RX age ([ADR_LINK_PLANE §10](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md)). pp-browser full suite, TSan (mesh + calls) and hard-w5 green against it. `MeshLinkEventLog` prints `path=direct|punched|carrier` |
 
 ## Still open (as of 2026-09-24/25 — see the note above)
 
@@ -57,7 +57,7 @@ From PR #223 / #215 (dogfood 2026-09-24 evening, phone CN cellular ↔ Mac Wi‑
 
 ## Next agent — start here
 
-1. **k1 (pp-cpp-amp):** release branch `k1-link-hygiene` and pin it in `cmake/PpCppAmp.cmake` (pp-browser's `MeshLinkEventLog` needs it). Still open: per-link keepalive interval; nested Reliable over best-effort carrier (A024 dual outer lanes).
+1. **k1 (pp-cpp-amp):** still open: per-link keepalive interval; nested Reliable over best-effort carrier (A024 dual outer lanes).
 2. **k3** path set / make-before-break migration — the core of the project; nothing landed. Note: old peers ignore unknown hello types (need a migrate timeout); `TryUpgradeToDirectAsync` has no caller.
 3. **k4** heartbeat / RX-stall failover / Reconnecting + 30 s window / `peer link lost` no longer terminal — needs k3's path set.
 4. **k5** NetworkMonitor on four platforms; **k6** mobility; **k7** hard-lab wave.
