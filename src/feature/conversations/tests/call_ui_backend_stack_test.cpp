@@ -298,6 +298,8 @@ protected:
   int listen_desires_ = 0;
   /** Ring-changed may fire on IO/worker threads (LeaveCall runs on Critical) — fixture-owned, atomic. */
   std::atomic<int> ring_changes_{0};
+  // Fixture-owned: chrome refreshes posted after the test body still fire during TearDown's drain.
+  std::atomic<int> chrome_refreshes_{0};
 };
 
 TEST_F(CallUiBackendStackTest, AvailableAndSessionsIdentityStable) {
@@ -313,15 +315,14 @@ TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
   ASSERT_TRUE(IngestInvite(call_id));
   ASSERT_TRUE(stack_->MediaKeys()->PutEpochKey(call_id, 1, TestMediaKey()));
 
-  int chrome = 0;
-  ui_->SetOnChromeRefresh([&]() { ++chrome; });
+  ui_->SetOnChromeRefresh([this]() { chrome_refreshes_.fetch_add(1); });
   ui_->SetOnRingChanged([this]() { ring_changes_.fetch_add(1); });
 
   ui_->Apply(CallLifecycleEvent::InviteSeen, call_id);
   EXPECT_EQ(ui_->Phase(), CallPhase::Ringing);
   EXPECT_EQ(ui_->LastRingCallId(), call_id);
   EXPECT_TRUE(stack_->WantEphemeralListen());
-  EXPECT_GE(chrome, 1);
+  EXPECT_GE(chrome_refreshes_.load(), 1);
   EXPECT_GE(listen_desires_, 1);
 
   auto pending = ui_->TopPendingInvite();
