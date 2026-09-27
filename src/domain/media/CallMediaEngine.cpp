@@ -6,6 +6,7 @@
 #include "domain/media/CameraCaptureOrientation.h"
 #include "domain/media/IVideoCodec.h"
 #include "domain/media/NoiseSuppressor.h"
+#include "domain/media/VoiceProcessingIo.h"
 #include "domain/media/SdlAudioBootstrap.h"
 #include "domain/media/VideoYuv.h"
 #include "common/Utilities.h"
@@ -211,6 +212,10 @@ struct CallMediaEngine::Impl {
   SDL_AudioStream* playback_stream = nullptr;
   SDL_AudioDeviceID capture_device = 0;
   SDL_AudioDeviceID playback_device = 0;
+  /** Apple VPIO (echo cancellation) replaces both SDL streams while open. Open/Close and capture
+   *  reads on the capture thread; playout writes under `mutex` only while using_vpio is true. */
+  VoiceProcessingIo vpio;
+  std::atomic<bool> using_vpio{false};
 
   struct RemoteAudioTrack {
     OpusDecoder* decoder = nullptr;
@@ -413,6 +418,9 @@ struct CallMediaEngine::Impl {
 
   /** Close SDL streams/devices only — keep Opus, tracks, and VoIP session active. */
   void CloseAudioDevicesLocked() {
+    if (using_vpio.exchange(false, std::memory_order_acq_rel)) {
+      vpio.Close();  // AudioOutputUnitStop waits for callbacks; they never take `mutex`
+    }
     // SDL_OpenAudioDeviceStream binds device+stream; DestroyAudioStream closes the device.
     // Do not SDL_CloseAudioDevice afterward (double-free / tcache abort on Linux).
     if (capture_stream) {
@@ -579,9 +587,12 @@ struct CallMediaEngine::Impl {
         {
           std::lock_guard lock(mutex);
           SDL_AudioStream* out = playback_stream;
+          const bool vpio_out = using_vpio.load(std::memory_order_acquire);
+          const bool have_out = out || vpio_out;
           int slots = 1;
-          if (out) {
-            const int queued = SDL_GetAudioStreamQueued(out);
+          if (have_out) {
+            const int queued = vpio_out ? static_cast<int>(vpio.QueuedPlayoutBytes())
+                                        : SDL_GetAudioStreamQueued(out);
             if (queued < 0) {
               slots = 1; // errored device: keep the old one-frame-per-tick cadence so buffers keep draining
             } else if (queued > kPlayoutHighWaterBytes) {
@@ -595,6 +606,13 @@ struct CallMediaEngine::Impl {
           if (audio_tracks.empty()) {
             slots = 0; // nothing to pop or put; don't inflate playout_ticks (Pressure window)
           }
+          auto put_frame = [&](const int16_t* pcm) {
+            if (vpio_out) {
+              (void)vpio.WritePlayout(pcm, kFrameSamples);
+            } else {
+              (void)SDL_PutAudioStreamData(out, pcm, kFrameBytes);
+            }
+          };
           for (int s = 0; s < slots; ++s) {
             std::fill(mix.begin(), mix.end(), int16_t{0});
             bool any = false;
@@ -607,13 +625,13 @@ struct CallMediaEngine::Impl {
               PopAndDecodeTrackLocked(*track, mix, any);
               pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(ticks, 1)));
             }
-            if (out && any) {
+            if (have_out && any) {
               SmoothLevel(remote_output_level, FramePeakLevel(mix.data(), kFrameSamples));
               remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
-              (void)SDL_PutAudioStreamData(out, mix.data(), kFrameBytes);
-            } else if (out && !audio_tracks.empty()) {
+              put_frame(mix.data());
+            } else if (have_out && !audio_tracks.empty()) {
               // Silent frame keeps the device clock fed while all streams are priming.
-              (void)SDL_PutAudioStreamData(out, mix.data(), kFrameBytes);
+              put_frame(mix.data());
             }
           }
           if (slots == 0) {
@@ -754,6 +772,25 @@ struct CallMediaEngine::Impl {
     CallAudioSession::ApplyCaptureAudioHints();
     CallAudioSession::ActivateForVoipCall();
 
+#ifdef PP_BROWSER_CALL_VPIO
+    {
+      std::string reason;
+      if (vpio.Open(&reason)) {
+        if (!capture_running.load(std::memory_order_acquire)) {
+          vpio.Close();
+          return Error("call media stopped");
+        }
+        std::lock_guard lock(mutex);
+        CloseAudioDevicesLocked();
+        using_vpio.store(true, std::memory_order_release);
+        capture_available = true;
+        SDL_Log("CallMediaEngine: audio_io=vpio (voice processing: echo cancellation on)");
+        return {};
+      }
+      SDL_Log("CallMediaEngine: audio_io=sdl reason=%s", reason.c_str());
+    }
+#endif
+
     SDL_AudioSpec want{};
     want.freq = kSampleRate;
     want.format = SDL_AUDIO_S16;
@@ -858,6 +895,12 @@ struct CallMediaEngine::Impl {
           }
           last_capture_pcm_ms = util::NowUnixMs();
         }
+        const bool vpio_on = using_vpio.load(std::memory_order_acquire);
+        if (vpio_on && vpio.TakeDeviceChanged()) {
+          SDL_Log("CallMediaEngine: default audio device changed — reopening voice processing");
+          audio_reopen_requested.store(true, std::memory_order_release);
+          continue;
+        }
         std::shared_ptr<SfuSendFn> send_fn;
         OpusEncoder* enc = nullptr;
         bool can_send = false;
@@ -870,9 +913,11 @@ struct CallMediaEngine::Impl {
           }
         }
         bool paced_silence_frame = false;
-        if (capture_stream) {
+        if (capture_stream || vpio_on) {
           int16_t chunk[kFrameSamples];
-          const int got = SDL_GetAudioStreamData(capture_stream, chunk, static_cast<int>(sizeof(chunk)));
+          const int got = vpio_on
+              ? static_cast<int>(vpio.ReadCapture(chunk, kFrameSamples) * sizeof(int16_t))
+              : SDL_GetAudioStreamData(capture_stream, chunk, static_cast<int>(sizeof(chunk)));
           if (got > 0) {
             const size_t samples = static_cast<size_t>(got) / sizeof(int16_t);
             pending.insert(pending.end(), chunk, chunk + samples);
@@ -916,11 +961,13 @@ struct CallMediaEngine::Impl {
               SmoothLevel(local_input_level, 0.f);
             } else {
 #ifdef PP_BROWSER_CALL_DENOISE
-              denoise.Process(pcm.data(), pcm.size());
-              const int64_t now_ms = util::NowUnixMs();
-              if (now_ms - last_denoise_log_ms >= 5000) {
-                last_denoise_log_ms = now_ms;
-                SDL_Log("CallMediaEngine: noise_floor_dbfs=%.1f", denoise.last_noise_floor_dbfs());
+              if (!vpio_on) {
+                denoise.Process(pcm.data(), pcm.size());
+                const int64_t now_ms = util::NowUnixMs();
+                if (now_ms - last_denoise_log_ms >= 5000) {
+                  last_denoise_log_ms = now_ms;
+                  SDL_Log("CallMediaEngine: noise_floor_dbfs=%.1f", denoise.last_noise_floor_dbfs());
+                }
               }
 #endif
               SmoothLevel(local_input_level, FramePeakLevel(pcm.data(), kFrameSamples));
@@ -1456,6 +1503,10 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   h.remote_level = impl_->remote_output_level.load(std::memory_order_relaxed);
   {
     std::lock_guard lock(impl_->mutex);
+    h.audio_io = impl_->using_vpio.load(std::memory_order_relaxed) ? "vpio"
+                 : (impl_->capture_stream || impl_->playback_stream) ? "sdl"
+                                                                     : "none";
+    h.io_underruns = impl_->vpio.PlayoutUnderruns();
     h.stream_count = impl_->audio_tracks.size();
     h.sfu_mode = impl_->sfu_mode;
     h.streams.reserve(impl_->audio_tracks.size());
