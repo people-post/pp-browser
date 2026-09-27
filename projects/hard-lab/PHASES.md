@@ -45,6 +45,7 @@ Depends on [media-hop-reachability L3.5](../media-hop-reachability/PHASES.md#l35
 
 - [ ] Explicit product policy for hairpin fallback (**N-HARD-HAIRPIN**)
 - [x] **N-HARD-CGNAT-ISH** SNAT lab + **B-HARD-CALL-NAT** Phase-1 (`--via-hop --peer-id-only`)
+- [x] **B-HARD-BCAST-NAT** Phase-8: broadcaster → hop `media_relay` → 2 viewers (product `BroadcastHub`, `pp-call-probe --role broadcaster|viewer`)
 - [x] **B-HARD-CALL-NAT-PRODUCT** Phase-2 (`--reach product` punch→circuit) — retired 2026-09-26, superseded by COLD / COLD-AWAIT on the product reach
 - [ ] Optional **N-HARD-UPNP** / **N-HARD-V6** / **N-HARD-PATH-MIGRATE**
 - [ ] Hole punch remains non-goal until stack ships it

@@ -2,6 +2,7 @@
 
 #include "amp/L1/Clock.h"
 #include "amp/link/AmpStack.h"
+#include "domain/media/MediaDeviceArbiter.h"
 #include "domain/mesh/host/MeshHost.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/messaging/SqliteThreadStore.h"
@@ -10,6 +11,8 @@
 #include "feature/calls/CallControlInboundPorts.h"
 #include "feature/calls/CallStack.h"
 #include "feature/calls/CallUiBackend.h"
+#include "feature/broadcast/BroadcastHub.h"
+#include "feature/conversations/AmpBroadcastTransport.h"
 #include "feature/conversations/AmpDirectChatTransport.h"
 #include "foundation/data/Config.h"
 
@@ -88,6 +91,15 @@ public:
 
   void Shutdown();
 
+  /**
+   * Live broadcast (media-client-layers l5c): the product BroadcastHub on this host's mesh + call
+   * plane, the serving ticket side on its chat links (signed with the device ML-DSA key), a
+   * headless device arbiter. Announced tips are kept for the probe to hand over (Spine D stand-in).
+   */
+  Roe<void> EnableBroadcast(std::function<std::optional<ByteVector>(const std::string& peer_id)> publisher_key);
+  BroadcastHub* Broadcast() { return broadcast_.get(); }
+  Roe<ByteVector> DevicePublicKey() const;
+  std::optional<BroadcastTipDraft> LastAnnouncedTip() const { return last_tip_; }
   /** Fail the hold when rx audio frames stop increasing for `ms` after media started (0 = off). */
   void SetRxStallMs(int ms) { rx_stall_ms_ = ms; }
   /** Answerer: judge stalls only for this long after the first rx frame (0 = whole hold). */
@@ -119,6 +131,10 @@ private:
   std::unique_ptr<CallUiBackend> ui_;
   CallControlInboundPorts inbound_;
   std::unique_ptr<AmpDirectChatTransport> chat_;
+  std::unique_ptr<MediaDeviceArbiter> broadcast_devices_;
+  std::unique_ptr<AmpBroadcastTransport> broadcast_server_;
+  std::unique_ptr<BroadcastHub> broadcast_;
+  std::optional<BroadcastTipDraft> last_tip_;
   /** Call-control sends attempted — LeaveAndFlush waits on it (Leave fanout runs after Idle). */
   std::atomic<int> control_sends_{0};
   std::atomic<const char*> shutdown_step_{""};

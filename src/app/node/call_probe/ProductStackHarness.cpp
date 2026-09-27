@@ -833,7 +833,72 @@ void ProductStackHarness::DisarmTeardownWatchdog() {
   }
 }
 
+Roe<ByteVector> ProductStackHarness::DevicePublicKey() const {
+  if (!identity_) {
+    return Error("identity store not ready");
+  }
+  return identity_->GetDeviceMlDsaPublicKey();
+}
+
+Roe<void> ProductStackHarness::EnableBroadcast(
+    std::function<std::optional<ByteVector>(const std::string& peer_id)> publisher_key) {
+  auto chat = host_ ? host_->ChatDeps() : std::nullopt;
+  if (!chat || !stack_) {
+    return Error("broadcast needs the mesh host and call plane");
+  }
+  // Same serving wiring as MeshDeliveryOrchestrator::AttachAmpTransports.
+  broadcast_server_ = std::make_unique<AmpBroadcastTransport>(chat->links, chat->io.io_pump, chat->io.post_worker,
+                                                              chat->io.post_io, chat->io.post_after);
+  broadcast_server_->SetPublisherKeyResolver(publisher_key);
+  broadcast_server_->SetPublisherSecretResolver([this]() -> std::optional<ByteVector> {
+    auto sk = identity_->GetDeviceMlDsaPrivateKey();
+    return sk ? std::optional<ByteVector>(*sk) : std::nullopt;
+  });
+  broadcast_server_->Start();
+
+  BroadcastMeshDeps deps;
+  deps.links = &chat->links;
+  deps.io = chat->io;
+  deps.relay = stack_->SharedRelayAttachPorts();
+  deps.publisher_key = std::move(publisher_key);
+  deps.put_program_key = [this](const std::string& program_id, const std::string& join_handle,
+                                BroadcastProgramKey key) {
+    AmpBroadcastTransport::LiveProgramKey live;
+    live.publisher_peer_id = key.publisher_peer_id;
+    live.media_key_bytes = std::move(key.media_key);
+    live.media_epoch = key.media_epoch;
+    live.hop_peer_id = key.hop_peer_id;
+    broadcast_server_->PutLiveProgramKey(program_id, join_handle, std::move(live));
+  };
+  deps.clear_program_key = [this](const std::string& program_id, const std::string& join_handle) {
+    broadcast_server_->ClearLiveProgramKey(program_id, join_handle);
+  };
+  deps.announce = [this](const BroadcastTipDraft& draft) -> Roe<void> {
+    last_tip_ = draft;
+    std::cout << "broadcast announce state=" << (draft.state == PeerAnnounceState::Live ? "live" : "ended")
+              << " program=" << draft.program_id << " join=" << draft.join_handle << " hop=" << draft.hop_peer_id
+              << std::endl;
+    return {};
+  };
+  broadcast_devices_ = std::make_unique<MediaDeviceArbiter>(CreateNullMediaDeviceBackend());
+  broadcast_ = BroadcastHub::ForMesh(std::move(deps), *broadcast_devices_);
+  if (!broadcast_) {
+    return Error("broadcast hub unavailable (media_relay not wired)");
+  }
+  return {};
+}
+
 void ProductStackHarness::ShutdownImpl() {
+  // Broadcast borrows the call plane's relay objects and this host's links: it goes first.
+  if (broadcast_) {
+    ShutdownStep("broadcast");
+    broadcast_.reset();
+  }
+  if (broadcast_server_) {
+    broadcast_server_->Stop();
+    broadcast_server_.reset();
+  }
+  broadcast_devices_.reset();
   // Product quit order (THREADING.md § Shutdown order): abort call media → quiesce runtime →
   // CallStack::StopMesh (joins MeshPump) → join runtime → free. Freeing the call stack while the
   // mesh / workers still ran segfaulted in hard-w5 (2026-09-25).

@@ -106,9 +106,12 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 - [x] Compose test `BroadcasterToRelayToViewerEndToEnd`: real broadcaster (capture engine, real ticket server) → relay → real viewer from the announced tip; after End a late viewer is refused a ticket
 - [x] Found + fixed on the way: relay client send deadlock + off-io race + one-way session eviction (own commit); pp-cpp-amp v2.3.1 (dropped link closes its channel sessions — use-after-free) and v2.3.2 (thread-safe test network / clock)
 
-### l5c — Hard lab
+### l5c — Hard lab (done)
 
-- [ ] Hard-lab: broadcaster → pp-node relay → ≥2 viewers (redirect case once a relay serves admission — B1)
+- [x] **B-HARD-BCAST-NAT** (`--suite hard-w5 --phase broadcast`, in `all`): `pp-call-probe --role broadcaster` (peer-a, behind SNAT) goes live through the pp-node hop; two `--role viewer` probes (peer-b, behind the other SNAT) get the tip from `/share`, a ticket from the publisher over a relay circuit, a prompt admission refusal from the hop (pp-cpp-amp v2.3.0) and ≥100 decoded frames each — product `BroadcastHub` on `ProductStackHarness`
+- [ ] Redirect case: needs a relay that serves admission (peer-scoped-broadcast B1); viewers behind separate NATs (a third lab peer)
+
+**Exit (l5):** a broadcaster publishes and viewers listen end to end — compose-tested and hard-lab green. **Met.**
 
 ## l6 — Remove broadcast from calls
 

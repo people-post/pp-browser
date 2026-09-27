@@ -1,4 +1,5 @@
 #include "app/node/call_probe/ProductStackHarness.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "amp/L1/Clock.h"
 #include "amp/L1/OsUdpDatagramIo.h"
 #include "amp/L1/Types.h"
@@ -28,6 +29,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -75,7 +77,15 @@ void PrintUsage(const char* argv0) {
       << "  --force-dial-fail  With --dirty-book: one EnsureAssociation miss first (dial backoff armed).\n"
       << "  --rx-stall-ms N  With --product-stack: log rx/tx per second and fail if rx frames stay\n"
       << "                  flat for N ms mid-call (answerer then holds until the offerer leaves).\n"
-      << "  --watch-ms N     Answerer: judge rx stalls only for N ms after the first frame.\n";
+      << "  --watch-ms N     Answerer: judge rx stalls only for N ms after the first frame.\n"
+      << "\n"
+      << "Live broadcast (B-HARD-BCAST-NAT, product BroadcastHub):\n"
+      << "  " << argv0 << " --role broadcaster --listen <adp-ma> --warm-hop <hop-ma> --ready-file PATH\n"
+      << "                 [--program ID] [--hold-seconds N] [--min-rx-frames N (= min frames sent)]\n"
+      << "                 Goes live through the hop; PATH gets the Live tip + publisher key.\n"
+      << "  " << argv0 << " --role viewer --listen <adp-ma> --warm-hop <hop-ma> --announce-file PATH\n"
+      << "                 [--timeout-ms N] [--min-rx-frames N] [--ready-file PATH]\n"
+      << "                 Ticket from the publisher, attach, pass on N decoded audio frames.\n";
 }
 
 std::optional<std::string> PeerIdFromMultiaddr(const std::string& ma) {
@@ -469,6 +479,204 @@ int RunProductStackAnswerer(const std::string& listen_ma, const std::string& rea
   const int rc = (*harness)->RunAnswererHold(hold_seconds, min_rx_frames);
   (*harness)->Shutdown();
   std::cout << "pp-call-probe answerer exit product-stack rc=" << rc << "\n";
+  return rc;
+}
+
+// --- Live broadcast (media-client-layers l5c, hard-lab B-HARD-BCAST-NAT) ----------------------
+
+/** Product stack on a fresh Amp peer, hop warmed, broadcast hub enabled. */
+pbr::Roe<std::unique_ptr<pbr::call_probe::ProductStackHarness>> MakeBroadcastHarness(
+    const std::string& listen_ma, const std::string& advertise_host, const std::string& warm_hop_ma,
+    std::function<std::optional<pbr::ByteVector>(const std::string&)> publisher_key) {
+  auto bind_ep = ParseListenEndpoint(listen_ma);
+  if (!bind_ep) {
+    return pbr::Error("--listen must be an Amp ADP multiaddr");
+  }
+  auto peer = MakeAmpPeer(*bind_ep, true);
+  if (!peer) {
+    return pbr::Error("amp start: " + peer.error().message);
+  }
+  std::string advertise = (*peer)->listen_ma;
+  advertise = advertise_host.empty() ? RewriteWildcardListenHost(std::move(advertise))
+                                     : RewriteListenHost(std::move(advertise), advertise_host);
+  (*peer)->Links().SetLocalListenMultiaddrs({advertise});
+  auto clock = (*peer)->clock;
+  auto harness = pbr::call_probe::ProductStackHarness::Create(std::move((*peer)->stack), std::move(clock),
+                                                              advertise, warm_hop_ma);
+  if (!harness) {
+    return pbr::Error("product-stack harness: " + harness.error().message);
+  }
+  if (auto warm = WarmHopAssociationViaHost(**harness, warm_hop_ma); !warm) {
+    return pbr::Error("warm-hop: " + warm.error().message);
+  }
+  std::cout << "ok  warm-hop associated hop=" << warm_hop_ma << "\n";
+  if (auto enabled = (*harness)->EnableBroadcast(std::move(publisher_key)); !enabled) {
+    return enabled.error();
+  }
+  return std::move(*harness);
+}
+
+/** Ready file for viewers: the Live tip + the publisher's ML-DSA key (announce stand-in). */
+bool WriteBroadcastAnnounce(const std::string& path, const pbr::call_probe::ProductStackHarness& harness,
+                            const pbr::BroadcastTipDraft& tip, const pbr::ByteVector& public_key) {
+  const std::string tmp = path + ".tmp";
+  FILE* f = std::fopen(tmp.c_str(), "w");
+  if (!f) {
+    return false;
+  }
+  std::fprintf(f, "%s\n%s\n%s\n%s\n%s\n%s\n", harness.LocalPeerId().c_str(), tip.topic_id.c_str(),
+               tip.program_id.c_str(), tip.join_handle.c_str(), tip.hop_peer_id.c_str(),
+               pbr::BytesToHex(public_key).c_str());
+  std::fclose(f);
+  return std::rename(tmp.c_str(), path.c_str()) == 0;
+}
+
+int RunBroadcaster(const std::string& listen_ma, const std::string& advertise_host, const std::string& warm_hop_ma,
+                   const std::string& program_id, const std::string& announce_file, int hold_seconds,
+                   int min_tx_frames) {
+  if (sodium_init() < 0 || warm_hop_ma.empty() || announce_file.empty()) {
+    std::cerr << "error: broadcaster needs --warm-hop and --ready-file\n";
+    return 2;
+  }
+  std::optional<pbr::ByteVector> own_key;
+  auto harness = MakeBroadcastHarness(listen_ma, advertise_host, warm_hop_ma,
+                                      [&own_key](const std::string&) { return own_key; });
+  if (!harness) {
+    std::cerr << "error: broadcaster: " << harness.error().message << "\n";
+    return 1;
+  }
+  auto& h = **harness;
+  auto pk = h.DevicePublicKey();
+  auto hop_id = PeerIdFromMultiaddr(warm_hop_ma);
+  if (!pk || !hop_id) {
+    std::cerr << "error: broadcaster: device key / hop peer id unavailable\n";
+    return 1;
+  }
+  own_key = *pk;
+  auto* hub = h.Broadcast();
+  if (auto live = hub->GoLive({"pp-hard-bcast", program_id, {*hop_id}}); !live) {
+    std::cerr << "error: go-live: " << live.error().message << "\n";
+    return 1;
+  }
+  using Phase = pbr::BroadcasterWorkflow::Phase;
+  h.PumpUntil([&] { return hub->Live().phase == Phase::Live || hub->Live().phase == Phase::Failed; }, 30000);
+  if (hub->Live().phase != Phase::Live || !h.LastAnnouncedTip()) {
+    std::cerr << "error: broadcaster not live: " << hub->Live().error << "\n";
+    return 1;
+  }
+  if (!WriteBroadcastAnnounce(announce_file, h, *h.LastAnnouncedTip(), *pk)) {
+    std::cerr << "error: cannot write " << announce_file << "\n";
+    return 1;
+  }
+  std::cout << "pp-call-probe broadcaster live program=" << program_id << " join=" << hub->Live().join_handle
+            << " hop=" << hub->Live().hop << std::endl;
+  const auto start = std::chrono::steady_clock::now();
+  for (int t = 1; t <= hold_seconds; ++t) {
+    h.PumpUntil([] { return false; }, 1000);
+    const auto status = hub->Live();
+    std::cout << "flow broadcaster t=" << t << "s tx=" << status.frames_sent << " phase=" << pbr::BroadcasterWorkflow::PhaseName(status.phase)
+              << " reattaches=" << status.reattaches << std::endl;
+    if (status.phase == Phase::Failed) {
+      std::cerr << "error: broadcast failed: " << status.error << "\n";
+      h.Shutdown();
+      return 1;
+    }
+  }
+  (void)start;
+  const uint64_t sent = hub->Live().frames_sent;
+  hub->EndLive();
+  h.Shutdown();
+  const int rc = sent >= static_cast<uint64_t>(min_tx_frames) ? 0 : 1;
+  std::cout << "pp-call-probe broadcaster exit rc=" << rc << " tx=" << sent << std::endl;
+  return rc;
+}
+
+/** Read the broadcaster's announce file (waits for it) into a Live tip + publisher key. */
+bool ReadBroadcastAnnounce(const std::string& path, int timeout_ms, pbr::PeerAnnounceTip& tip,
+                           pbr::ByteVector& publisher_key) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+  while (std::chrono::steady_clock::now() < deadline) {
+    std::ifstream in(path);
+    std::string lines[6];
+    int n = 0;
+    while (n < 6 && std::getline(in, lines[n])) {
+      ++n;
+    }
+    if (n == 6) {
+      tip.peer_id = lines[0];
+      tip.topic_id = lines[1];
+      tip.program_id = lines[2];
+      tip.join_handle = lines[3];
+      tip.hop_peer_id = lines[4];
+      tip.state = pbr::PeerAnnounceState::Live;
+      auto key = pbr::HexToBytes(lines[5]);
+      if (key) {
+        publisher_key = *key;
+        return true;
+      }
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+  return false;
+}
+
+int RunViewer(const std::string& listen_ma, const std::string& advertise_host, const std::string& warm_hop_ma,
+              const std::string& announce_file, int timeout_ms, int min_rx_frames, const std::string& ready_file) {
+  if (sodium_init() < 0 || warm_hop_ma.empty() || announce_file.empty()) {
+    std::cerr << "error: viewer needs --warm-hop and --announce-file\n";
+    return 2;
+  }
+  pbr::PeerAnnounceTip tip;
+  pbr::ByteVector publisher_key;
+  if (!ReadBroadcastAnnounce(announce_file, timeout_ms, tip, publisher_key)) {
+    std::cerr << "error: no broadcast announce at " << announce_file << "\n";
+    return 1;
+  }
+  auto harness = MakeBroadcastHarness(listen_ma, advertise_host, warm_hop_ma,
+                                      [&tip, &publisher_key](const std::string& peer) -> std::optional<pbr::ByteVector> {
+                                        return peer == tip.peer_id ? std::optional<pbr::ByteVector>(publisher_key)
+                                                                   : std::nullopt;
+                                      });
+  if (!harness) {
+    std::cerr << "error: viewer: " << harness.error().message << "\n";
+    return 1;
+  }
+  auto& h = **harness;
+  auto* hub = h.Broadcast();
+  if (auto watch = hub->WatchLive(tip); !watch) {
+    std::cerr << "error: watch: " << watch.error().message << "\n";
+    return 1;
+  }
+  using Phase = pbr::BroadcastViewerWorkflow::Phase;
+  h.PumpUntil([&] { return hub->Viewer().phase == Phase::Listening || hub->Viewer().phase == Phase::Failed; },
+              timeout_ms);
+  if (hub->Viewer().phase != Phase::Listening) {
+    std::cerr << "error: viewer not listening (phase=" << pbr::BroadcastViewerWorkflow::PhaseName(hub->Viewer().phase)
+              << "): " << hub->Viewer().error << "\n";
+    h.Shutdown();
+    return 1;
+  }
+  std::cout << "pp-call-probe viewer listening hop=" << hub->Viewer().hop << std::endl;
+  if (!ready_file.empty()) {
+    if (FILE* f = std::fopen(ready_file.c_str(), "w")) {
+      std::fprintf(f, "listening\n");
+      std::fclose(f);
+    }
+  }
+  uint64_t rx = 0;
+  for (int t = 1; t <= std::max(1, timeout_ms / 1000); ++t) {
+    h.PumpUntil([] { return false; }, 1000);
+    rx = hub->Media().HealthSnapshot().rx_audio_frames;
+    std::cout << "flow viewer t=" << t << "s rx=" << rx << " phase=" << pbr::BroadcastViewerWorkflow::PhaseName(hub->Viewer().phase)
+              << std::endl;
+    if (rx >= static_cast<uint64_t>(min_rx_frames)) {
+      break;
+    }
+  }
+  hub->StopWatching();
+  h.Shutdown();
+  const int rc = rx >= static_cast<uint64_t>(min_rx_frames) ? 0 : 1;
+  std::cout << "pp-call-probe viewer exit rc=" << rc << " rx=" << rx << std::endl;
   return rc;
 }
 
@@ -964,6 +1172,8 @@ int main(int argc, char** argv) {
   std::string peer_account;
   std::string signal_dir;
   int min_rx_frames = 0;
+  std::string program_id = "pp-hard-bcast";
+  std::string announce_file;
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
@@ -1026,6 +1236,10 @@ int main(int argc, char** argv) {
       force_dial_fail = true;
     } else if (std::strcmp(argv[i], "--product-stack") == 0) {
       product_stack = true;
+    } else if (std::strcmp(argv[i], "--program") == 0 && i + 1 < argc) {
+      program_id = argv[++i];
+    } else if (std::strcmp(argv[i], "--announce-file") == 0 && i + 1 < argc) {
+      announce_file = argv[++i];
     } else if (std::strcmp(argv[i], "--reach") == 0) {
       // Retired: the probe's reach copies were replaced by the product PeerReachCoordinator,
       // driven from cold by --product-stack --signal-dir (hard-lab COLD phases).
@@ -1063,6 +1277,13 @@ int main(int argc, char** argv) {
   if (force_dial_fail && !dirty_book) {
     std::cerr << "error: --force-dial-fail needs --dirty-book (a dialable private MA to miss)\n";
     return 2;
+  }
+  if (role == "broadcaster") {
+    return RunBroadcaster(listen_ma, advertise_host, warm_hop_ma, program_id, ready_file, hold_seconds,
+                          min_rx_frames);
+  }
+  if (role == "viewer") {
+    return RunViewer(listen_ma, advertise_host, warm_hop_ma, announce_file, timeout_ms, min_rx_frames, ready_file);
   }
   if (role == "answerer") {
     return RunAnswerer(listen_ma, call_id, ready_file, hold_seconds, advertise_host, no_auto_detach,

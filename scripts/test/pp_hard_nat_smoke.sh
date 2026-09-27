@@ -33,7 +33,7 @@ CALL_BIN_NAME="pp-call-probe"
 SKIP_UP=0
 CYCLES="${PP_CALL_PROBE_CYCLES:-1}"
 CALL_EXPECT="${PP_HARD_NAT_CALL_EXPECT:-success}"
-# circuit | stack | cold | cold-dirty | cold-await | all
+# circuit | stack | cold | cold-dirty | cold-await | broadcast | all
 PHASE="${PP_HARD_NAT_PHASE:-all}"
 # Stack phase long-hold knobs (one-way stall repro, dogfood 2026-09-24 16:17):
 #   PP_HARD_NAT_STACK_HOLD_MS  offerer hold after media (default 3000)
@@ -57,8 +57,8 @@ while [[ $# -gt 0 ]]; do
 Usage: $(basename "$0") [--status-url URL] [--cycles K] [--phase PHASE]
                         [--expect-call success|fail] [--skip-up]
 
-  PHASE: circuit|stack|cold|cold-dirty|cold-await|all
-    all    = circuit + stack + cold + cold-dirty + cold-await (default)
+  PHASE: circuit|stack|cold|cold-dirty|cold-await|broadcast|all
+    all    = circuit + stack + cold + cold-dirty + cold-await + broadcast (default)
   --expect-call fail  pass only if the call fails (reproduce dogfood)
 EOF
       exit 0
@@ -72,10 +72,10 @@ case "${CALL_EXPECT}" in
   *) pp_hard_die "--expect-call must be success|fail (got ${CALL_EXPECT})" ;;
 esac
 case "${PHASE}" in
-  circuit|stack|cold|cold-dirty|cold-await|all) ;;
+  circuit|stack|cold|cold-dirty|cold-await|broadcast|all) ;;
   product|dirty|both)
     pp_hard_die "--phase ${PHASE} was retired (probe-local reach copies); use cold / cold-dirty / cold-await" ;;
-  *) pp_hard_die "--phase must be circuit|stack|cold|cold-dirty|cold-await|all (got ${PHASE})" ;;
+  *) pp_hard_die "--phase must be circuit|stack|cold|cold-dirty|cold-await|broadcast|all (got ${PHASE})" ;;
 esac
 
 if [[ ! -x "${PP_HARD_PROBE_DIR}/${CALL_BIN_NAME}" ]]; then
@@ -281,6 +281,74 @@ run_nat_call() {
   return 0
 }
 
+# B-HARD-BCAST-NAT (media-client-layers l5c): product BroadcastHub on both ends. The broadcaster
+# (peer-a, behind gw-a) goes live through the hop's media_relay; two viewers (peer-b, behind gw-b)
+# fetch tickets from the NATed publisher (circuit via the hop), attach receive-only and must decode
+# BCAST_MIN_RX audio frames each. The Live tip rides /share (announce push is Spine D).
+BCAST_MIN_RX="${PP_HARD_NAT_BCAST_MIN_RX:-100}"
+run_nat_broadcast() {
+  local label="B-HARD-BCAST-NAT"
+  local ready="bcast.ready"
+  pp_hard_kill_peer_probes
+  echo "=== ${label} broadcaster on peer-a, 2 viewers on peer-b (min rx ${BCAST_MIN_RX}) ==="
+  rm -f "${PP_HARD_CGNAT_SHARE_DIR}/${ready}"
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" rm -f "/share/${ready}"
+  pp_hard_link_clear_container "${PP_HARD_CGNAT_PEER_A}"
+  pp_hard_link_clear_container "${PP_HARD_CGNAT_PEER_B}"
+
+  local bc_log="${LOG_DIR}/bcast.broadcaster.log"
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" /probes/${CALL_BIN_NAME} --role broadcaster \
+    --listen "${PP_HARD_NAT_BCAST_LISTEN:-/ip4/0.0.0.0/udp/47180/adp/1.0.0}" --advertise-host "${PEER_A_IP}" \
+    --warm-hop "${HOP_MA_PUBLIC}" --ready-file "/share/${ready}" --hold-seconds 90 --min-rx-frames 100 \
+    > >(tee "${bc_log}") 2>&1 &
+  local bc_pid=$!
+  cleanup_bc() {
+    kill "${bc_pid}" 2>/dev/null || true
+    wait "${bc_pid}" 2>/dev/null || true
+  }
+  trap cleanup_bc EXIT
+
+  local _
+  for _ in $(seq 1 300); do
+    [[ -s "${PP_HARD_CGNAT_SHARE_DIR}/${ready}" ]] && break
+    sleep 0.1
+  done
+  [[ -s "${PP_HARD_CGNAT_SHARE_DIR}/${ready}" ]] || pp_hard_die "${label}: broadcaster never went live"
+  echo "${label} live: $(sed -n '4p' "${PP_HARD_CGNAT_SHARE_DIR}/${ready}") via hop=${HOP_MA_PUBLIC}"
+
+  local v pids=() logs=()
+  for v in 1 2; do
+    local v_log="${LOG_DIR}/bcast.viewer${v}.log"
+    logs+=("${v_log}")
+    pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" /probes/${CALL_BIN_NAME} --role viewer \
+      --listen "/ip4/0.0.0.0/udp/$((47182 + 2 * v))/adp/1.0.0" --advertise-host "${PEER_B_IP}" \
+      --warm-hop "${HOP_MA_PUBLIC}" --announce-file "/share/${ready}" --timeout-ms 45000 \
+      --min-rx-frames "${BCAST_MIN_RX}" > >(tee "${v_log}") 2>&1 &
+    pids+=($!)
+  done
+  local rc=0 i
+  for i in 0 1; do
+    set +e
+    wait "${pids[$i]}"
+    local v_rc=$?
+    set -e
+    echo "viewer$((i + 1))_rc=${v_rc} rx=$(max_rx "${logs[$i]}")"
+    [[ "${v_rc}" -eq 0 ]] || rc=1
+  done
+  if grep -qE "broadcast failed|^error" "${bc_log}"; then
+    echo "error: ${label}: broadcaster reported a failure" >&2
+    rc=1
+  fi
+  cleanup_bc
+  trap - EXIT
+  if [[ "${rc}" -ne 0 ]]; then
+    echo "error: ${label} broadcast failed under dual-NAT" >&2
+    return 1
+  fi
+  echo "ok  dual-NAT broadcast: publisher → hop media_relay → 2 viewers (ticket via circuit)"
+  echo "${label} smoke PASSED"
+}
+
 run_phase() {
   local want="$1"
   [[ "${PHASE}" == "all" || "${PHASE}" == "${want}" ]]
@@ -309,6 +377,10 @@ fi
 if run_phase cold-await; then
   run_nat_call "B-HARD-CALL-NAT-COLD-AWAIT" "pp-hard-call-nat-cold-await" "call-nat-cold-await.ready" \
     "${PP_HARD_NAT_COLD_AWAIT_LISTEN:-/ip4/0.0.0.0/udp/47172/adp/1.0.0}" cold-await
+fi
+
+if run_phase broadcast; then
+  run_nat_broadcast
 fi
 
 echo "N-HARD-CGNAT-ISH + NAT call phase=${PHASE} PASSED"
