@@ -127,7 +127,7 @@ Leftovers in `CallMediaBridge` / `CallTopologyController` / `CallHopMigrateWorkf
 
 - [x] Calls watch relay session ends through their own `AddClientTransportLostObserver` (reattach on `TransportLost` only), moved on every `SetMediaRelayDeps` and dropped by a `DeferredSelf` token at destruction. The call-owned `SetClientTransportLostHandler` slot is gone from `IMediaRelayClient` / `AmpMediaRelayClient` / `AmpMediaRelayCoordinator` (it was a raw `this` never unregistered, and a call concept in a shared interface)
 - [ ] Shrink the long flows (repo rule ~80–100 lines): `MaybeSoftMigrateToSfuAsync` (~410), `CompleteAttachLocalToSfu` (~270), `AttachLocalToSfuAsync` (~210), `OnInboundSfuAttach` (~190), `CallMediaBridge::BeginSession` (~170), `OnLocalAcceptJoined` (~140) — most of the attach length is repeated "still current?" checks (seat token, armed hop, cancel gen, migrate gen) that one named check can carry
-- [ ] Blocking `AttachLocalToSfu` (parks up to 30 s) has only test callers — move it to a test helper; production keeps the async form
+- [x] Blocking wrappers (`MaybeSoftMigrateToSfu` / `AttachLocalToSfu` / `ReattachGuestSfuTransport`, parking up to 60 s) removed from the workflow and topology — tests drive the async forms through a fixture `AwaitFlow`; dead topology forwarders (`ReattachGuestSfuTransport*`, `CompleteAttachLocalToSfu`) removed
 - [ ] LeakSanitizer: 14 `CallTopologyControllerTest` cases leak `MaybeSoftMigrateToSfuAsync` closures / `SettledWait` state left pending at teardown (seen 2026-09-26, identical before l7) — with the split above
 
 ## Later

@@ -13,8 +13,6 @@
 #include "foundation/platform/PlatformUserHints.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "domain/mesh/host/MeshControlDispatch.h"
-#include "domain/mesh/shared/AmpParkUntil.h"
-#include "common/SettledWait.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
@@ -949,13 +947,6 @@ void CallTopologyController::SyncSfuSubscriptions(const std::string& call_id) {
              << " announced=" << announced;
 }
 
-Roe<void> CallTopologyController::MaybeSoftMigrateToSfu(const std::string& call_id,
-                                                        SoftMigrateTrigger trigger,
-                                                        const std::string& prefer_hop_peer_id,
-                                                        uint64_t expected_gen) {
-  return hop_migrate_.MaybeSoftMigrateToSfu(call_id, trigger, prefer_hop_peer_id, expected_gen);
-}
-
 void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_id,
                                                          SoftMigrateTrigger trigger,
                                                          const std::string& prefer_hop_peer_id,
@@ -965,40 +956,14 @@ void CallTopologyController::MaybeSoftMigrateToSfuAsync(const std::string& call_
                                           std::move(on_done));
 }
 
-Roe<void> CallTopologyController::CompleteAttachLocalToSfu(
-    const std::string& call_id, CallSfuAttachDetail attach, const bool self_hop, const int64_t a_up_bps,
-    const uint64_t gen_at_start, const uint64_t cancel_gen_at_start,
-    const std::shared_ptr<std::atomic<bool>>& sfu_frames_ready,
-    const std::vector<uint8_t>& media_key, const uint32_t media_epoch) {
-  return hop_migrate_.CompleteAttachLocalToSfu(call_id, std::move(attach), self_hop, a_up_bps,
-                                               gen_at_start, cancel_gen_at_start, sfu_frames_ready,
-                                               media_key, media_epoch);
-}
-
 void CallTopologyController::AttachLocalToSfuAsync(const std::string& call_id,
                                                    const CallSfuAttachDetail& attach,
                                                    std::function<void(Roe<void>)> on_done) {
   hop_migrate_.AttachLocalToSfuAsync(call_id, attach, std::move(on_done));
 }
 
-Roe<void> CallTopologyController::AttachLocalToSfu(const std::string& call_id,
-                                                   const CallSfuAttachDetail& attach) {
-  return hop_migrate_.AttachLocalToSfu(call_id, attach);
-}
-
 void CallTopologyController::OnGuestSfuTransportLost() {
   hop_migrate_.OnGuestSfuTransportLost();
-}
-
-Roe<void> CallTopologyController::ReattachGuestSfuTransport(const std::string& call_id,
-                                                            const CallSfuAttachDetail& attach) {
-  return hop_migrate_.ReattachGuestSfuTransport(call_id, attach);
-}
-
-void CallTopologyController::ReattachGuestSfuTransportAsync(const std::string& call_id,
-                                                            const CallSfuAttachDetail& attach,
-                                                            std::function<void(Roe<void>)> on_done) {
-  hop_migrate_.ReattachGuestSfuTransportAsync(call_id, attach, std::move(on_done));
 }
 
 void CallTopologyController::TryRecoverViaSfu(const std::string& call_id) {

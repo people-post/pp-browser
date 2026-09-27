@@ -227,9 +227,6 @@ public:
   SfuSurface& Sfu() { return sfu_; }
   const SfuSurface& Sfu() const { return sfu_; }
 
-  Roe<void> MaybeSoftMigrateToSfu(const std::string& call_id, SoftMigrateTrigger trigger,
-                                  const std::string& prefer_hop_peer_id = {},
-                                  uint64_t expected_gen = 0);
   void MaybeSoftMigrateToSfuAsync(const std::string& call_id, SoftMigrateTrigger trigger,
                                   const std::string& prefer_hop_peer_id, uint64_t expected_gen,
                                   std::function<void(Roe<void>)> on_done);
@@ -239,12 +236,10 @@ public:
                                      const std::shared_ptr<std::atomic<bool>>& sfu_frames_ready,
                                      const std::vector<uint8_t>& media_key, uint32_t media_epoch);
 
-  Roe<void> AttachLocalToSfu(const std::string& call_id, const CallSfuAttachDetail& attach);
   void AttachLocalToSfuAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
                              std::function<void(Roe<void>)> on_done);
 
   void OnGuestSfuTransportLost();
-  Roe<void> ReattachGuestSfuTransport(const std::string& call_id, const CallSfuAttachDetail& attach);
   void ReattachGuestSfuTransportAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
                                       std::function<void(Roe<void>)> on_done);
 

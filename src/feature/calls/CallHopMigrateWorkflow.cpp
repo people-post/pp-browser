@@ -12,13 +12,11 @@
 #include "domain/messaging/SoftMigrateLogic.h"
 #include "domain/mesh/host/MeshControlDispatch.h"
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
-#include "domain/mesh/shared/AmpParkUntil.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/PlatformUserHints.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/runtime/ProductBranding.h"
-#include "common/SettledWait.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
@@ -31,24 +29,6 @@
 
 namespace pbr {
 namespace {
-
-using Clock = std::chrono::steady_clock;
-
-/**
- * Sync (test / harness) wrappers park until the async flow settles. Completions that touch the
- * engine / seat / planner are posted to UI, so a caller parked on the UI thread must keep running
- * UI tasks or it would wait out its own deadline.
- */
-void ParkUntilSettled(const std::function<bool()>& settled, std::chrono::steady_clock::time_point deadline) {
-  std::function<void()> pump;
-  if (AppRuntime::CurrentlyOnUI()) {
-    pump = []() {
-      AppRuntime::RunUITasks();
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    };
-  }
-  AmpParkUntil(settled, deadline, pump);
-}
 
 void PostControlOrRun(std::function<void()> task) {
   if (!task) {
@@ -138,22 +118,6 @@ void CallHopMigrateWorkflow::SetMediaKeyStore(CallMediaKeyStore* keys) {
 
 bool CallHopMigrateWorkflow::IsMigrateGenerationCurrent(uint64_t gen) const {
   return gen == 0 || gen == flight_.migrate_generation.load(std::memory_order_acquire);
-}
-
-Roe<void> CallHopMigrateWorkflow::MaybeSoftMigrateToSfu(const std::string& call_id,
-                                                        SoftMigrateTrigger trigger,
-                                                        const std::string& prefer_hop_peer_id,
-                                                        uint64_t expected_gen) {
-  if (AppRuntime::IsShuttingDown()) {
-    log().debug << "MaybeSoftMigrateToSfu rejected: shutting down call_id=" << call_id;
-    return Error("shutdown in progress");
-  }
-  SettledWait<void> wait;
-  MaybeSoftMigrateToSfuAsync(call_id, trigger, prefer_hop_peer_id, expected_gen,
-                             [wait](Roe<void> value) { wait.Finish(std::move(value)); });
-  const auto deadline = Clock::now() + std::chrono::milliseconds(60000);
-  ParkUntilSettled([&] { return wait.IsSettled(); }, deadline);
-  return wait.Wait(std::chrono::milliseconds(1), Error("SoftMigrate timed out"));
 }
 
 void CallHopMigrateWorkflow::MaybeSoftMigrateToSfuAsync(const std::string& call_id,
@@ -1093,15 +1057,6 @@ void CallHopMigrateWorkflow::AttachLocalToSfuAsync(const std::string& call_id,
       });
 }
 
-Roe<void> CallHopMigrateWorkflow::AttachLocalToSfu(const std::string& call_id,
-                                                   const CallSfuAttachDetail& attach_in) {
-  SettledWait<void> wait;
-  AttachLocalToSfuAsync(call_id, attach_in, [wait](Roe<void> value) { wait.Finish(std::move(value)); });
-  const auto deadline = Clock::now() + std::chrono::milliseconds(30000);
-  ParkUntilSettled([&] { return wait.IsSettled(); }, deadline);
-  return wait.Wait(std::chrono::milliseconds(1), Error("AttachLocalToSfu timed out"));
-}
-
 void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
   if (!sfu_.attached || flight_.in_flight || guest_.reattach_in_flight) {
     return;
@@ -1157,16 +1112,6 @@ void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
       });
     });
   });
-}
-
-Roe<void> CallHopMigrateWorkflow::ReattachGuestSfuTransport(const std::string& call_id,
-                                                            const CallSfuAttachDetail& attach_in) {
-  SettledWait<void> wait;
-  ReattachGuestSfuTransportAsync(call_id, attach_in,
-                                 [wait](Roe<void> value) { wait.Finish(std::move(value)); });
-  const auto deadline = Clock::now() + std::chrono::milliseconds(30000);
-  ParkUntilSettled([&] { return wait.IsSettled(); }, deadline);
-  return wait.Wait(std::chrono::milliseconds(1), Error("ReattachGuestSfuTransport timed out"));
 }
 
 void CallHopMigrateWorkflow::ReattachGuestSfuTransportAsync(const std::string& call_id,
