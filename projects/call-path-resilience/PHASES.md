@@ -24,25 +24,25 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 
 ## k1 — Amp link hygiene (M2)
 
-- [ ] Snapshot fields — transport kind (Direct / Punched / Carrier), remote endpoint, last-rx age (moved from k0; ship with this amp release)
+- [x] Snapshot fields — `LinkPathKind` (Direct / Punched / Carrier), live remote endpoint, last-rx age; `LinkEvent::path_kind`; `MeshLink` log prints `path=` (amp `k1-link-hygiene`)
 
-- [ ] Drop Connected carrier link on carrier close (no Backoff linger)
-- [ ] Drop inbound link on handshake error
+- [x] Drop a carrier-backed link on carrier close in any phase but Handshaking / Dialing (no Backoff linger)
+- [x] Drop inbound link on handshake error (`HandshakeFailed`)
 - [x] Warm/hot dead-peer detection: keepalive echo + eviction past the cadence window (reason `connection-dead`; amp keepalive v2) — a separate `Suspect` event deferred until a consumer needs it
 - [x] Liveness vs tier mismatch fixed: keepalive carries cadence, window = max(5 s, 5/2 × cadence) (amp docs/KEEPALIVE.md v2); product hot relaxed 2 s → 10 s, warm 60 s → 25 s
 - [x] `MarkWarm` / `MarkHot` before link exists is remembered and applied on establish (amp `pending_keepalive_tiers_`)
 - [x] Warm/hot links keep a cadence in both directions (inbound too); cold peers honour the announced cadence
-- [ ] `MaybeLearnPath` after replay check (+ gtest: replayed packet from new address does not move the path)
-- [ ] `LinkTable::Insert` on occupied key: no orphan in `by_id_`; `ScheduleDropLink` by LinkId (not key) so a replacement link is never dropped
-- [ ] `idle_ttl`: implement or delete
+- [x] `MaybeLearnPath` / liveness only for a fresh packet (replay window for data, newest wire timestamp for control) — gtest `ReplayedPacketFromANewAddressDoesNotMoveThePath`
+- [x] Drops target a link by `LinkHandle`, never "whatever holds the key"; ADP and nested links may share a key (A024) and neither waits on the other's handshake (hard-lab COLD regression found and fixed on the way: `NestedEstablishDoesNotWaitOnAnAdpDialUnderTheSameKey`)
+- [x] `idle_ttl`: deleted (unused)
 - [x] `RequestDropLink(dial key | PeerId)` for stale links the product detects (B39, PR #223; reason `requested`)
 - [x] Hop applies the carrier policy to the dialer's leg of a call-media bridge (one-way stall root cause, 2026-09-24)
 - [ ] Reliable delivery for nested Reliable-class channels over a best-effort carrier (A024 dual outer lanes, or nested retransmit): call control / chat / hello fail under reordering + loss (lab `delay 120ms 30ms`)
 - [x] Inbound link dial key renders the assoc id as broken hex (`inbound:=:>7=;…`) — fix the nibble encoding (amp `c36bf10`)
 - [x] Inbound adopt keeps an ephemeral `amp:burst:N:` dial alias on the carrier link (amp `c36bf10`)
 - [x] Reach loop labels a carrier-only link "punched"/"direct" — `IDialRegistry::IsConnectedDirect`
-- [ ] Close an ADP association at once when the socket reports EHOSTDOWN / ENETUNREACH for its peer, instead of waiting for the liveness window (#215 B39 suggestion a)
-- [ ] pp-cpp-amp release + pin
+- [x] Close an ADP association at once when the socket reports EHOSTDOWN / ENETUNREACH for its peer (`kDatagramSendUnreachable` → `TransportFailed`) (#215 B39 suggestion a)
+- [ ] pp-cpp-amp release + pin — the items above are on local amp branch `k1-link-hygiene`; pp-browser's `MeshLinkEventLog` `path=` needs that release to build against the pinned tag
 
 **Exit:** no link lingers in Backoff; dead warm/hot links evicted within 3 × interval.
 
