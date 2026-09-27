@@ -7,7 +7,7 @@
 
 | Phase | State |
 |-------|-------|
-| t4 — UI snapshots / config / asserts | Mesh config published as a snapshot for owners; UI reads only snapshots, intents and durable stores; LAN-peer note posts to UI; affinity asserts on owner-internal steps. TSan clean; hard-w5 green |
+| t4 — UI snapshots / config / asserts (+ close-out: redundant attach-gate lock removed) | Mesh config published as a snapshot for owners; UI reads only snapshots, intents and durable stores; LAN-peer note posts to UI; affinity asserts on owner-internal steps. TSan clean; hard-w5 green |
 | t3-2c — reachability + local view on connectivity | `ReachabilityEngine` steps on the owner (UPnP on a worker); call providers read `MeshLocalView`; punch burst via the plane. TSan clean (whole mesh binary); ASan + hard-w5 green |
 | t3-2b — candidate policy on connectivity | `MeshHopPolicy` snapshot evaluated on the owner (Wire / 5 s / `RefreshHopPolicy`); the IO side reads only the snapshot. TSan clean; hard-w5 green |
 | t3-2a — connectivity owner: reach + mesh media plane | `PeerReachCoordinator` on it; `MeshMediaPlane` edges `RunAndWait`, listen book snapshot, relay-chosen / punch hooks hop owner to owner; T004 (waits downward only). TSan clean; hard-w5 green |
@@ -19,7 +19,7 @@
 
 ## Next
 
-All planned phases landed (t1–t4). Remaining: the items under Known; promote the settled rules (THREADING.md already carries them) and archive the project once the branch merges.
+**Done.** All phases landed (t1–t4); rules promoted to [THREADING.md § Owner threads](../../docs/architecture/THREADING.md#owner-threads); decisions frozen (outcomes superseded by the stable doc); project archived in [projects/README.md](../README.md).
 
 ## Known (motivating)
 
@@ -27,5 +27,5 @@ All planned phases landed (t1–t4). Remaining: the items under Known; promote t
 - ~~`note_lan_mdns_peer_id` → hub set from the plane's thread~~ (t4: posts to UI).
 - ~~Owners read the hub's live `config()`~~ (t4: `MeshConfig` snapshot).
 - ~~The calls owner's providers reached the hub's `mesh()` during call flows~~ (t3-2c: `MeshLocalView`). Bind-time reads of `mesh()` remain at the owner edges (the hub waits there).
-- `InboundAttachGate::mu` taken by hop migrate, not by the topology writing the same fields — moot since t2b-3 (every user runs on the calls owner); the lock is now redundant and can go with an owner assert.
+- ~~`InboundAttachGate::mu` taken by hop migrate, not by the topology writing the same fields~~ — removed: every user runs on the calls owner (posted completions assert it).
 - Sanitizers flag `AppRuntimeWorkerTest.ShutdownBudgetReturnsWhileWorkerBlocked` by design (it leaves a blocked worker detached past process exit); unchanged by t1.

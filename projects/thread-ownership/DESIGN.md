@@ -1,5 +1,7 @@
 # Thread ownership — design
 
+> Historical: the starting picture and target model. Delivered — see [THREADING.md § Owner threads](../../docs/architecture/THREADING.md#owner-threads) for how the system is now (MeshControl below no longer exists; reach runs on Connectivity).
+
 ## Today (2026-09-27)
 
 | Thread | Runs | Problem |

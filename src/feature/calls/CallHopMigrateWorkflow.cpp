@@ -785,7 +785,6 @@ void CallHopMigrateWorkflow::AttachAsLocalHop(HopAttach at, std::function<void(R
     return;
   }
   log().info << "AttachLocalToSfu as local media_relay hop call_id=" << at.call_id;
-  std::lock_guard<std::mutex> attach_lock(inbound_gate_.mu);
   auto attached = relay_deps_->relay->AttachAsLocalHop(at.call_id, MakeHopFrameSink(at));
   if (!attached || !attached->ok) {
     on_done(Error(attached ? attached->error : attached.error().message));
@@ -818,7 +817,7 @@ void CallHopMigrateWorkflow::AttachThroughRelay(HopAttach at, std::function<void
         // (TSan: hop planner phase; heap corruption in CallTopologyControllerTest). The attach
         // network work already ran; only the local commit hops.
         CallsThread::Post([this, at = std::move(at), bps = attached->a_up_bps, on_done = std::move(on_done)]() {
-          std::lock_guard<std::mutex> attach_lock(inbound_gate_.mu);
+          PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
           on_done(CompleteHopAttach(at, bps));
         });
       });
@@ -1186,7 +1185,7 @@ void CallHopMigrateWorkflow::StartGuestReattach(const std::string& call_id, cons
 }
 
 Roe<void> CallHopMigrateWorkflow::CompleteGuestReattach(const HopAttach& at, int64_t a_up_bps) {
-  std::lock_guard<std::mutex> attach_lock(inbound_gate_.mu);
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   if (!IsMigrateGenerationCurrent(at.gen_at_start)) {
     relay_deps_->relay->Detach();
     return Error("reattach aborted");

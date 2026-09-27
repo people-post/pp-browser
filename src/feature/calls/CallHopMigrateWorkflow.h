@@ -148,8 +148,8 @@ public:
     uint64_t timer_id = 0;
   };
 
+  /** Deferred inbound CallSfuAttach + last failure. Calls owner only (hop migrate and topology). */
   struct InboundAttachGate {
-    std::mutex mu;
     std::optional<CallSfuAttachDetail> pending_attach;
     std::string pending_call_id;
     std::string last_fail_call_id;
