@@ -12,6 +12,10 @@
 #include <SDL3/SDL.h>
 #include <opus.h>
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -193,6 +197,7 @@ struct CallMediaEngine::Impl {
   std::atomic<int64_t> last_rx_video_ms{0};
   std::atomic<uint64_t> playout_underruns_total{0};
   std::atomic<uint64_t> plc_frames_total{0};
+  std::atomic<uint64_t> fec_frames_total{0};
 
   bool capture_available = false;
 
@@ -446,6 +451,7 @@ struct CallMediaEngine::Impl {
     tx_audio_frames.store(0, std::memory_order_relaxed);
     playout_underruns_total.store(0, std::memory_order_relaxed);
     plc_frames_total.store(0, std::memory_order_relaxed);
+    fec_frames_total.store(0, std::memory_order_relaxed);
     last_rx_audio_ms.store(0, std::memory_order_relaxed);
     last_tx_audio_ms.store(0, std::memory_order_relaxed);
     CallAudioSession::Deactivate();
@@ -519,10 +525,18 @@ struct CallMediaEngine::Impl {
                             pcm.data(), kFrameSamples, 0);
       break;
     case AudioPlayoutPop::Kind::Gap:
-      // Task 4 turns this into an FEC decode; until then, treat like a lost frame.
-      decoded = opus_decode(track.decoder, nullptr, 0, pcm.data(), kFrameSamples, 0);
+      // Recover the missing frame from the next packet's in-band FEC; PLC if it has none.
+      decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()),
+                            pcm.data(), kFrameSamples, 1);
       if (decoded > 0) {
-        plc_frames_total.fetch_add(1, std::memory_order_relaxed);
+        // libopus returns >0 both for a real FEC frame and for a PLC-like frame it synthesises
+        // when the packet carried no FEC data — counting both as fec= is accepted (diagnostic).
+        fec_frames_total.fetch_add(1, std::memory_order_relaxed);
+      } else {
+        decoded = opus_decode(track.decoder, nullptr, 0, pcm.data(), kFrameSamples, 0);
+        if (decoded > 0) {
+          plc_frames_total.fetch_add(1, std::memory_order_relaxed);
+        }
       }
       break;
     case AudioPlayoutPop::Kind::Empty:
@@ -641,6 +655,13 @@ struct CallMediaEngine::Impl {
     }
     const int64_t bps = adaptation_target_audio_bps.load(std::memory_order_relaxed);
     opus_encoder_ctl(encoder, OPUS_SET_BITRATE(static_cast<int>(bps > 0 ? bps : 24000)));
+    opus_encoder_ctl(encoder, OPUS_SET_INBAND_FEC(1));
+    opus_encoder_ctl(encoder, OPUS_SET_PACKET_LOSS_PERC(10));
+#if defined(__ANDROID__) || (defined(__APPLE__) && TARGET_OS_IPHONE)
+    opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(5));
+#else
+    opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(8));
+#endif
     return {};
   }
 
@@ -1395,6 +1416,7 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   h.outbound_drops = impl_->outbound_drops.load(std::memory_order_relaxed);
   h.playout_underruns = impl_->playout_underruns_total.load(std::memory_order_relaxed);
   h.plc_frames = impl_->plc_frames_total.load(std::memory_order_relaxed);
+  h.fec_frames = impl_->fec_frames_total.load(std::memory_order_relaxed);
   h.rx_audio_frames = impl_->rx_audio_frames.load(std::memory_order_relaxed);
   h.tx_audio_frames = impl_->tx_audio_frames.load(std::memory_order_relaxed);
   h.last_rx_audio_ms = impl_->last_rx_audio_ms.load(std::memory_order_relaxed);

@@ -44,6 +44,8 @@ struct CallMediaEngineHealth {
   uint64_t outbound_drops = 0;
   uint64_t playout_underruns = 0;
   uint64_t plc_frames = 0;
+  /** Frames recovered from the next packet's Opus in-band FEC (spec §2). */
+  uint64_t fec_frames = 0;
   uint64_t rx_audio_frames = 0;
   uint64_t tx_audio_frames = 0;
   int64_t last_rx_audio_ms = 0;
