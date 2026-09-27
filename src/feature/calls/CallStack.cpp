@@ -119,15 +119,26 @@ void CallStack::BindMediaProducts() {
     call_sessions_->SetTopologySeatPorts(MakeTopologySeatPorts());
     call_sessions_->SetMediaSeatPorts(call_sessions_->MakeSeatPorts(call_media_seat_.get()));
   }
-  if (call_lifecycle_) {
+  // B49: skip instances that already hold these ports (e.g. RefreshMeshCapabilities re-Wire
+  // keeps the same bridge); a new bridge / CSM is bound here before anything can call it.
+  CallMediaBridge* bridge = media_plane_->Bridge();
+  std::lock_guard<std::mutex> lock(lifecycle_bind_mu_);
+  if (call_lifecycle_ && bound_sessions_ != call_sessions_.get()) {
     call_sessions_->SetTopologyHopArmingPorts(MakeHopArmingPorts());
     call_sessions_->SetLifecyclePorts(MakeSessionLifecyclePorts());
-    if (CallMediaBridge* bridge = media_plane_->Bridge()) {
+    bound_sessions_ = call_sessions_.get();
+    ++lifecycle_port_binds_;
+  }
+  if (!bridge) {
+    bound_bridge_ = nullptr;
+  } else if (bound_bridge_ != bridge) {
+    if (call_lifecycle_) {
       bridge->SetDirectArmingPorts(MakeDirectArmingPorts());
     }
-  }
-  if (CallMediaBridge* bridge = media_plane_->Bridge()) {
     bridge->SetSeatPorts(MakeDirectSeatPorts());
+    // Without a lifecycle the arming ports are still empty — leave it for EnsureCallLifecycleBound.
+    bound_bridge_ = call_lifecycle_ ? bridge : nullptr;
+    ++lifecycle_port_binds_;
   }
 }
 
@@ -205,6 +216,10 @@ Roe<void> CallStack::InitializeStores(const std::string& profile_db_path, const 
   call_media_keys_ = std::make_unique<CallMediaKeyStore>(profile_db_path, profile_id);
   call_media_engine_ = std::make_unique<CallMediaEngine>();
   call_media_seat_ = std::make_unique<CallMediaSeat>();
+  {
+    std::lock_guard<std::mutex> lock(lifecycle_bind_mu_);
+    bound_bridge_ = nullptr;  // bridge seat ports capture the seat just replaced
+  }
   if (!media_plane_) {
     media_plane_ = std::make_unique<CallMediaPlane>();
   }
@@ -213,6 +228,10 @@ Roe<void> CallStack::InitializeStores(const std::string& profile_db_path, const 
 
 void CallStack::BuildSessions(const CallStackDeps& deps) {
   deps_ = deps;
+  {
+    std::lock_guard<std::mutex> lock(lifecycle_bind_mu_);
+    bound_sessions_ = nullptr;
+  }
   call_sessions_ = std::make_unique<CallSessionManager>(*deps_.store, *deps_.contacts, *deps_.identity,
                                                         *call_session_store_, *call_media_keys_, deps_.delivery,
                                                         *deps_.psk, *call_media_engine_);
@@ -388,22 +407,32 @@ void CallStack::WireMediaRelayDeps() {
 }
 
 void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit) {
-  if (call_lifecycle_) {
-    call_lifecycle_->ClearBinding();
-  }
-  if (call_sessions_) {
-    call_sessions_->SetDirectMediaPorts({});
-    call_sessions_->SetLifecyclePorts({});
-    call_sessions_->SetMediaSeatPorts({});
-    call_sessions_->SetTopologyHopArmingPorts({});
-    call_sessions_->SetTopologySeatPorts({});
-    call_sessions_->SetMediaRelayDeps({});
+  {
+    // B49: clear under the bind lock so a concurrent EnsureCallLifecycleBound cannot leave a
+    // tracker saying "bound" for ports cleared here; the next call binds again.
+    std::lock_guard<std::mutex> lock(lifecycle_bind_mu_);
+    bound_lifecycle_ = nullptr;
+    bound_sessions_ = nullptr;
+    bound_bridge_ = nullptr;
+    if (call_lifecycle_) {
+      call_lifecycle_->ClearBinding();
+    }
+    if (call_sessions_) {
+      call_sessions_->SetDirectMediaPorts({});
+      call_sessions_->SetLifecyclePorts({});
+      call_sessions_->SetMediaSeatPorts({});
+      call_sessions_->SetTopologyHopArmingPorts({});
+      call_sessions_->SetTopologySeatPorts({});
+      call_sessions_->SetMediaRelayDeps({});
+    }
+    if (media_plane_) {
+      if (CallMediaBridge* bridge = media_plane_->Bridge()) {
+        bridge->SetDirectArmingPorts({});
+        bridge->SetSeatPorts({});
+      }
+    }
   }
   if (media_plane_) {
-    if (CallMediaBridge* bridge = media_plane_->Bridge()) {
-      bridge->SetDirectArmingPorts({});
-      bridge->SetSeatPorts({});
-    }
     media_plane_->PrepareForMeshStop(abort_inflight_circuit);
   } else if (abort_inflight_circuit) {
     abort_inflight_circuit();
@@ -412,6 +441,10 @@ void CallStack::PrepareForMeshStop(const std::function<void()>& abort_inflight_c
 }
 
 void CallStack::FinishMeshStop() {
+  {
+    std::lock_guard<std::mutex> lock(lifecycle_bind_mu_);
+    bound_bridge_ = nullptr;  // bridge destroyed; a new one may reuse the address
+  }
   if (media_plane_) {
     media_plane_->FinishMeshStop();
   }
@@ -537,24 +570,42 @@ CallLifecycle* CallStack::Lifecycle() {
 }
 
 void CallStack::EnsureCallLifecycleBound() {
+  // B49: runs on every ring change (relay-receive thread) and every Lifecycle() query (UI).
+  // The targets read these std::function ports without a lock from UI / worker threads, so
+  // re-assigning them each time raced live calls (SIGABRT in operator=(nullptr)). Bind once per
+  // instance; the trackers are reset wherever the ports are cleared or the instance is replaced.
+  std::lock_guard<std::mutex> lock(lifecycle_bind_mu_);
   if (!call_sessions_) {
     if (call_lifecycle_) {
       call_lifecycle_->ClearBinding();
     }
+    bound_lifecycle_ = nullptr;
+    bound_sessions_ = nullptr;
     return;
   }
   if (!call_lifecycle_) {
     call_lifecycle_ = std::make_unique<CallLifecycle>();
   }
-  call_lifecycle_->BindSignalingPorts(MakeLifecycleSignalingPorts());
-  call_lifecycle_->SetOnListenDesireChanged([this](bool want) { SetEphemeralListenDesire(want); });
-  call_sessions_->SetTopologyHopArmingPorts(MakeHopArmingPorts());
-  call_sessions_->SetLifecyclePorts(MakeSessionLifecyclePorts());
-  if (media_plane_) {
-    if (CallMediaBridge* bridge = media_plane_->Bridge()) {
-      bridge->SetDirectArmingPorts(MakeDirectArmingPorts());
-      bridge->SetSeatPorts(MakeDirectSeatPorts());
-    }
+  if (bound_lifecycle_ != call_lifecycle_.get()) {
+    call_lifecycle_->BindSignalingPorts(MakeLifecycleSignalingPorts());
+    call_lifecycle_->SetOnListenDesireChanged([this](bool want) { SetEphemeralListenDesire(want); });
+    bound_lifecycle_ = call_lifecycle_.get();
+    ++lifecycle_port_binds_;
+  }
+  if (bound_sessions_ != call_sessions_.get()) {
+    call_sessions_->SetTopologyHopArmingPorts(MakeHopArmingPorts());
+    call_sessions_->SetLifecyclePorts(MakeSessionLifecyclePorts());
+    bound_sessions_ = call_sessions_.get();
+    ++lifecycle_port_binds_;
+  }
+  CallMediaBridge* bridge = media_plane_ ? media_plane_->Bridge() : nullptr;
+  if (!bridge) {
+    bound_bridge_ = nullptr;
+  } else if (bound_bridge_ != bridge) {
+    bridge->SetDirectArmingPorts(MakeDirectArmingPorts());
+    bridge->SetSeatPorts(MakeDirectSeatPorts());
+    bound_bridge_ = bridge;
+    ++lifecycle_port_binds_;
   }
 }
 
@@ -575,10 +626,20 @@ void CallStack::ResetSessions() {
   if (deps_.bind_call_control) {
     deps_.bind_call_control({});
   }
+  {
+    std::lock_guard<std::mutex> lock(lifecycle_bind_mu_);
+    bound_sessions_ = nullptr;
+  }
   call_sessions_.reset();
 }
 
 void CallStack::Shutdown() {
+  {
+    std::lock_guard<std::mutex> lock(lifecycle_bind_mu_);
+    bound_lifecycle_ = nullptr;
+    bound_sessions_ = nullptr;
+    bound_bridge_ = nullptr;
+  }
   if (call_sessions_) {
     call_sessions_->ClearMediaCallbacks();
   }
@@ -594,6 +655,13 @@ void CallStack::Shutdown() {
   }
   call_lifecycle_.reset();
   call_sessions_.reset();
+  {
+    // A Lifecycle() during the drain above may have re-bound; the instances are gone now.
+    std::lock_guard<std::mutex> lock(lifecycle_bind_mu_);
+    bound_lifecycle_ = nullptr;
+    bound_sessions_ = nullptr;
+    bound_bridge_ = nullptr;
+  }
   if (call_media_seat_) {
     call_media_seat_->SetTeardownHooks({}, {});
   }

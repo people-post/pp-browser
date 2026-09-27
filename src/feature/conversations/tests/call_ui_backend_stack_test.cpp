@@ -466,6 +466,35 @@ TEST_F(CallUiBackendStackTest, BroadcastArmAcceptViaBackend) {
   EXPECT_TRUE(IsBroadcastSession(active.value()->session_kind));
 }
 
+TEST_F(CallUiBackendStackTest, RingChangesDoNotRebindLifecyclePorts) {
+  // B49: EnsureCallLifecycleBound ran on every ring change (relay-receive thread) and every
+  // Lifecycle() query and re-assigned the bridge / CSM / lifecycle std::function ports while
+  // other threads called them → SIGABRT in std::function::operator=. Bind once per instance.
+  const int binds = stack_->LifecyclePortBindsForTest();
+  EXPECT_GT(binds, 0);
+  for (int i = 0; i < 5; ++i) {
+    ASSERT_NE(stack_->Lifecycle(), nullptr);
+    stack_->EnsureCallLifecycleBound();
+  }
+  const int desires_before = listen_desires_;
+  ASSERT_TRUE(IngestInvite("call:b49-a"));
+  ASSERT_TRUE(IngestInvite("call:b49-b"));
+  DrainUntil([&]() { return listen_desires_ > desires_before; });
+  EXPECT_GT(listen_desires_, desires_before) << "ring-change path did not run";
+  EXPECT_EQ(stack_->LifecyclePortBindsForTest(), binds);
+
+  // Genuine teardown / recreate still re-binds, once.
+  stack_->PrepareForMeshStop({});
+  stack_->FinishMeshStop();
+  stack_->BindTestMediaPath(transport_.get(), dial_.get());
+  ASSERT_NE(stack_->Lifecycle(), nullptr);
+  const int rebound = stack_->LifecyclePortBindsForTest();
+  EXPECT_GT(rebound, binds);
+  stack_->EnsureCallLifecycleBound();
+  EXPECT_EQ(stack_->LifecyclePortBindsForTest(), rebound);
+  EXPECT_TRUE(ui_->Available());
+}
+
 TEST_F(CallUiBackendStackTest, UnavailableAfterResetSessions) {
   EXPECT_TRUE(ui_->Available());
   stack_->ResetSessions();

@@ -23,6 +23,7 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -111,7 +112,15 @@ public:
   /** True while CallMediaBridge Connect sequence is in flight (cheap for shutdown marks). */
   bool IsConnectWorkerInflight() const;
   void WireMediaRelayDeps();
+  /**
+   * Bind lifecycle-derived port sets (lifecycle signaling, CSM hop/lifecycle, bridge
+   * arming/seat) once per target instance. Called on every ring change (relay thread) and every
+   * Lifecycle() query; re-binding an already-bound instance is skipped because the targets read
+   * those std::functions without a lock (B49).
+   */
   void EnsureCallLifecycleBound();
+  /** Test-only: number of port sets actually (re)bound by EnsureCallLifecycleBound/BindMediaProducts. */
+  int LifecyclePortBindsForTest() const { return lifecycle_port_binds_; }
   void SetEphemeralListenDesire(bool want);
   /** N025 desire: CallLifecycle::WantEphemeralListen only. */
   bool WantEphemeralListen() const;
@@ -159,6 +168,17 @@ private:
   std::unique_ptr<CallSessionManager> call_sessions_;
   std::unique_ptr<CallLifecycle> call_lifecycle_;
   std::unique_ptr<CallMediaPlane> media_plane_;
+
+  /**
+   * B49: which instances currently hold ports from EnsureCallLifecycleBound / BindMediaProducts.
+   * Reset on every path that clears or destroys them (PrepareForMeshStop, FinishMeshStop,
+   * ResetSessions, BuildSessions, Shutdown). Guarded by lifecycle_bind_mu_.
+   */
+  std::mutex lifecycle_bind_mu_;
+  CallLifecycle* bound_lifecycle_ = nullptr;
+  CallSessionManager* bound_sessions_ = nullptr;
+  CallMediaBridge* bound_bridge_ = nullptr;
+  int lifecycle_port_binds_ = 0;
 };
 
 } // namespace pbr
