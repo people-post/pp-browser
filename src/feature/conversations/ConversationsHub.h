@@ -51,6 +51,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -317,6 +318,8 @@ private:
   void WireRelayAuthSigner();
   Roe<void> StartMesh(const AppConfig& config);
   void StopMesh();
+  void PublishMeshConfig();
+  std::shared_ptr<const MeshConfig> MeshConfigSnapshot() const;
   /** App-only mesh glue (LAN mDNS / policies) after MeshHost start. */
   void StartMeshServices();
   /** Drop the broadcast hub (stops a watch) — before anything rewires the plane it borrows from. */
@@ -359,7 +362,10 @@ private:
 
   std::string data_dir_;
   std::string profile_id_;
-  AppConfig config_;
+  AppConfig config_;  // UI (the hub's thread)
+  /** `config_.mesh` as owners read it (call stack, mesh media policy): republished on every write. */
+  mutable std::mutex mesh_config_mu_;
+  std::shared_ptr<const MeshConfig> mesh_config_snapshot_ = std::make_shared<const MeshConfig>();
   AgentInboundPorts agent_inbound_;
   SessionStore* session_store_ = nullptr;
   ProfileSecretsEngine* secrets_ = nullptr;

@@ -54,7 +54,8 @@ struct CallStackDeps {
   /** Current MeshHost (null before StartMesh, reset on stop). */
   std::function<MeshHost*()> mesh;
   /** Live AppConfig (libp2p role / caps / bootstrap / listen multiaddr). */
-  std::function<const AppConfig&()> config;
+  /** The hub's mesh config as last published (immutable snapshot — read from any owner). */
+  std::function<std::shared_ptr<const MeshConfig>()> mesh_config;
 
   /** Cached mesh_node rows from Brief directory (n-dir). */
   std::function<std::vector<MeshDirectoryNode>()> list_directory_nodes;
@@ -164,7 +165,8 @@ private:
   void SyncHubEphemeralListen();
 
   MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
-  const AppConfig& config() const;
+  /** Mesh config snapshot (defaults when none is wired). */
+  std::shared_ptr<const MeshConfig> mesh_config() const;
   void SyncMediaPlaneDeps();
   /** BindBridge + CSM SetMediaRelayDeps / SetDirectMediaPorts. */
   void BindMediaProducts();

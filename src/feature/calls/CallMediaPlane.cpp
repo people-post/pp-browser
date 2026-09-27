@@ -17,8 +17,9 @@ CallMediaPlane::~CallMediaPlane() {
   Clear();
 }
 
-const AppConfig& CallMediaPlane::config() const {
-  return deps_.config();
+std::shared_ptr<const MeshConfig> CallMediaPlane::mesh_config() const {
+  auto cfg = deps_.mesh_config ? deps_.mesh_config() : nullptr;
+  return cfg ? cfg : std::make_shared<const MeshConfig>();
 }
 
 void CallMediaPlane::SetDeps(CallMediaPlaneDeps deps) {
@@ -62,7 +63,8 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
   deps.relay = mesh_media_->RelayClient();
   deps.dial = mesh_media_->Dial();
   deps.circuit_reach = mesh_media_->CircuitReach();
-  MeshConfig mesh_cfg = config().mesh;
+  const auto snapshot = mesh_config();
+  MeshConfig mesh_cfg = *snapshot;
   NormalizeMeshConfig(mesh_cfg);
   deps.bootstrap_peers = mesh_cfg.bootstrap_peers;
   deps.prefer_contacts = mesh_cfg.prefer_contacts_for_routing;
@@ -70,7 +72,7 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
   deps.list_dht_nodes = deps_.list_dht_nodes;
   deps.seed_dial_ok = deps_.seed_dial_ok;
   deps.prefer_local_as_hop =
-      ResolveMeshRole(config().mesh) == MeshRole::Node && mesh_cfg.capabilities.media_relay && use_amp_relay;
+      ResolveMeshRole(*snapshot) == MeshRole::Node && mesh_cfg.capabilities.media_relay && use_amp_relay;
   const std::vector<std::string> advertised =
       deps_.local_listen_multiaddrs ? deps_.local_listen_multiaddrs() : std::vector<std::string>{};
   if (!advertised.empty()) {

@@ -149,7 +149,7 @@ CallStackDeps ConversationsHub::MakeCallStackDeps() {
     };
   }
   deps.mesh = [this]() { return mesh_.get(); };
-  deps.config = [this]() -> const AppConfig& { return config_; };
+  deps.mesh_config = [this]() { return MeshConfigSnapshot(); };
   deps.list_directory_nodes = [this]() {
     return mesh_directory_cache_ ? mesh_directory_cache_->Snapshot() : std::vector<MeshDirectoryNode>{};
   };
@@ -169,13 +169,14 @@ CallStackDeps ConversationsHub::MakeCallStackDeps() {
     PrefetchPeerReachability(identity);
   };
   deps.sync_mobile_ephemeral_listen = [this]() { SyncMobileEphemeralListen(); };
+  // Called by the mesh media plane on the Connectivity owner: the id set is the hub's (UI).
   deps.note_lan_mdns_peer_id = [this](const std::string& peer_id) {
-    lan_mdns_contact_peer_ids_.insert(peer_id);
+    AppRuntime::PostUI([this, peer_id]() { lan_mdns_contact_peer_ids_.insert(peer_id); });
   };
   MeshMediaPlaneWiringInputs media;
   media.mesh = deps.mesh;
   media.contacts = deps.contacts;
-  media.config = deps.config;
+  media.mesh_config = deps.mesh_config;
   media.list_directory_nodes = deps.list_directory_nodes;
   media.list_dht_nodes = deps.list_dht_nodes;
   media.seed_dial_ok = deps.seed_dial_ok;
@@ -663,6 +664,17 @@ void ConversationsHub::SetOnBroadcastChanged(std::function<void()> callback) {
   on_broadcast_changed_ = std::move(callback);
 }
 
+void ConversationsHub::PublishMeshConfig() {
+  auto snapshot = std::make_shared<const MeshConfig>(config_.mesh);
+  std::lock_guard lock(mesh_config_mu_);
+  mesh_config_snapshot_ = std::move(snapshot);
+}
+
+std::shared_ptr<const MeshConfig> ConversationsHub::MeshConfigSnapshot() const {
+  std::lock_guard lock(mesh_config_mu_);
+  return mesh_config_snapshot_;
+}
+
 void ConversationsHub::StopMesh() {
   ResetBroadcast();
   mobile_ephemeral_start_inflight_ = false;
@@ -1085,6 +1097,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   shutdown_requested_.store(false, std::memory_order_release);
 
   config_ = config;
+  PublishMeshConfig();
   data_dir_ = profile_data_dir;
   std::error_code ec;
   std::filesystem::create_directories(data_dir_, ec);
@@ -1499,6 +1512,7 @@ Roe<void> ConversationsHub::Reinitialize(const AppConfig& config, const std::str
   }
 
   config_ = config;
+  PublishMeshConfig();
   UpdateOrgBackendClients(config);
   if (mesh_messaging_) {
     mesh_messaging_->SetRelayClient(relay_);
@@ -2343,6 +2357,7 @@ void ConversationsHub::RefreshMeshCapabilities() {
   }
   if (session_store_ && session_store_->IsInitialized()) {
     config_.mesh = session_store_->Snapshot().config.mesh;
+    PublishMeshConfig();
   }
   const MeshRole role = ResolveMeshRole(config_.mesh);
   // Amp L4 inbound hosting is gated via SetServeInbound (no TCP CircuitRelay/MediaRelay).
@@ -2394,6 +2409,7 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
   config_.mesh.capabilities.media_relay = next.media_relay;
   config_.mesh.capabilities.dht = next.dht;
   config_.mesh.prefer_contacts_for_routing = next.prefer_contacts_for_routing;
+  PublishMeshConfig();
 
   if (service_urls_changed) {
     UpdateOrgBackendClients(config_);

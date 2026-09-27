@@ -259,7 +259,7 @@ protected:
       return msg;
     };
     deps.delivery.sync_inbox_from_wake = [](bool) {};
-    deps.config = [&side]() -> const AppConfig& { return side.app_config; };
+    deps.mesh_config = [&side]() { return std::make_shared<const MeshConfig>(side.app_config.mesh); };
     deps.mesh = []() -> MeshHost* { return nullptr; };
     deps.list_directory_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
     deps.list_dht_nodes = []() { return std::vector<MeshDirectoryNode>{}; };

@@ -157,7 +157,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma) {
   deps.contacts = contacts_.get();
   deps.identity = identity_.get();
   deps.psk = psk_.get();
-  deps.config = [this]() -> const AppConfig& { return app_config_; };
+  // Set before the stack starts and never changed afterwards: one snapshot serves every owner.
+  deps.mesh_config = [cfg = std::make_shared<const MeshConfig>(app_config_.mesh)]() { return cfg; };
   deps.mesh = [this]() -> MeshHost* { return host_.get(); };
   deps.list_directory_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
   deps.list_dht_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
@@ -214,7 +215,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma) {
   MeshMediaPlaneWiringInputs media;
   media.mesh = deps.mesh;
   media.contacts = deps.contacts;
-  media.config = deps.config;
+  media.mesh_config = deps.mesh_config;
   media.list_directory_nodes = deps.list_directory_nodes;
   media.list_dht_nodes = deps.list_dht_nodes;
   media.seed_dial_ok = deps.seed_dial_ok;

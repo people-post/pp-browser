@@ -16,7 +16,8 @@ namespace pbr {
 struct MeshMediaPlaneWiringInputs {
   std::function<MeshHost*()> mesh;
   ContactsStore* contacts = nullptr;
-  std::function<const AppConfig&()> config;
+  /** Published snapshot: the providers run on the Connectivity owner. */
+  std::function<std::shared_ptr<const MeshConfig>()> mesh_config;
   std::function<std::vector<MeshDirectoryNode>()> list_directory_nodes;
   std::function<std::vector<MeshDirectoryNode>()> list_dht_nodes;
   /** Reachability seed probe — when false, the rendezvous surface skips org seeds. */

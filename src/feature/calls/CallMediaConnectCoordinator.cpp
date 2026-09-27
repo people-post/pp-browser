@@ -135,6 +135,7 @@ void CallMediaConnectCoordinator::NotifyKeyAvailable() {
 
 void CallMediaConnectCoordinator::HandleInboundHello(CallMediaDirectConnectParams params,
                                                      CallMediaInboundAnswer answer) {
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   log().info << "Inbound hello call_id=" << params.call_id << " epoch=" << params.media_epoch
              << " peer=" << (params.peer_key.empty() ? "(empty)" : params.peer_key);
   const CallMediaInboundPorts& ports = inbound_ports_;
@@ -181,6 +182,7 @@ void CallMediaConnectCoordinator::AcceptInboundHello(CallMediaDirectConnectParam
 }
 
 void CallMediaConnectCoordinator::RecheckPendingHellos(const bool ask_again) {
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   const auto now = std::chrono::steady_clock::now();
   std::vector<PendingHello> still;
   auto parked = std::move(pending_hellos_);

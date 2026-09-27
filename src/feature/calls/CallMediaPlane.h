@@ -37,7 +37,7 @@ namespace pbr {
  */
 struct CallMediaPlaneDeps {
   std::function<MeshHost*()> mesh;
-  std::function<const AppConfig&()> config;
+  std::function<std::shared_ptr<const MeshConfig>()> mesh_config;
   std::function<std::vector<MeshDirectoryNode>()> list_directory_nodes;
   std::function<std::vector<MeshDirectoryNode>()> list_dht_nodes;
   std::function<bool()> seed_dial_ok;
@@ -103,7 +103,8 @@ public:
 
 private:
   MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
-  const AppConfig& config() const;
+  /** Mesh config snapshot (defaults when none is wired). */
+  std::shared_ptr<const MeshConfig> mesh_config() const;
   ICallMediaTransport* Transport();
 
   CallMediaPlaneDeps deps_;

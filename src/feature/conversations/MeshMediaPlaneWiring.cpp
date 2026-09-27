@@ -30,6 +30,15 @@ std::vector<std::string> PeerIds(const std::vector<MeshHopCandidate>& hops) {
 
 } // namespace
 
+namespace {
+
+MeshConfig MeshConfigOf(const MeshMediaPlaneWiringInputs& in) {
+  auto cfg = in.mesh_config ? in.mesh_config() : nullptr;
+  return cfg ? *cfg : MeshConfig{};
+}
+
+} // namespace
+
 MeshMediaPlaneDeps MakeMeshMediaPlaneDeps(MeshMediaPlaneWiringInputs in) {
   auto inputs = std::make_shared<MeshMediaPlaneWiringInputs>(std::move(in));
   const auto directory = [inputs]() {
@@ -40,7 +49,7 @@ MeshMediaPlaneDeps MakeMeshMediaPlaneDeps(MeshMediaPlaneWiringInputs in) {
   deps.note_lan_peer_id = inputs->note_lan_peer_id;
   deps.register_direct_endpoint = inputs->register_direct_endpoint;
   deps.rendezvous_candidates = [inputs, directory]() {
-    MeshConfig mesh_cfg = inputs->config().mesh;
+    MeshConfig mesh_cfg = MeshConfigOf(*inputs);
     NormalizeMeshConfig(mesh_cfg);
     const auto directory_nodes = directory();
     const auto dht_nodes = inputs->list_dht_nodes ? inputs->list_dht_nodes() : std::vector<MeshDirectoryNode>{};
@@ -50,10 +59,10 @@ MeshMediaPlaneDeps MakeMeshMediaPlaneDeps(MeshMediaPlaneWiringInputs in) {
                                mesh_cfg.prefer_contacts_for_routing, include_seeds);
   };
   deps.bootstrap_seeds = [inputs, directory]() {
-    return CollectSeedHopCandidates(ResolveEffectiveBootstrapPeers(inputs->config().mesh, directory()));
+    return CollectSeedHopCandidates(ResolveEffectiveBootstrapPeers(MeshConfigOf(*inputs), directory()));
   };
   deps.punch_introducers = [inputs]() {
-    MeshConfig mesh_cfg = inputs->config().mesh;
+    MeshConfig mesh_cfg = MeshConfigOf(*inputs);
     NormalizeMeshConfig(mesh_cfg);
     MeshPunchIntroducers out;
     out.contact_peer_ids = PeerIds(CollectContactHopCandidates(ListContacts(inputs->contacts)));

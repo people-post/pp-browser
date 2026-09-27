@@ -48,4 +48,7 @@ t2b — the rest of the call stack onto the owner, one commit per step so every 
 
 ## t4 — UI snapshots
 
-- [ ] Published call / broadcast snapshots; `CallUiBackend` queries read them
+- [x] Published call / broadcast snapshots; `CallUiBackend` queries read them (shipped in t2b-2 / t2b-4)
+- [x] Mesh config snapshot: the hub (and pp-call-probe) publish `config_.mesh` as an immutable `MeshConfig` on every write; `CallStackDeps` / `CallMediaPlaneDeps` / mesh media policy take `mesh_config()` instead of a live `const AppConfig&`
+- [x] Remaining UI-side reads of owner state: none beyond durable-store reads (active call, joined participants) and the broadcast facade's snapshot / intents. The plane's LAN-peer note posts to the hub's thread
+- [x] Affinity asserts (`PBR_ASSERT_ON_OWNER`, debug) on the owner-internal steps: reach steps, plane policy / listen registration, reachability probe steps (Connectivity); call stack edge bodies, inbound hello handling (Media sessions). Public methods stay unasserted — tests drive them from the test thread

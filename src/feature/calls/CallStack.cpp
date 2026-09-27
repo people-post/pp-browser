@@ -116,8 +116,9 @@ void CallStack::PublishUiState() {
   ui_state_.Set(std::move(state));
 }
 
-const AppConfig& CallStack::config() const {
-  return deps_.config();
+std::shared_ptr<const MeshConfig> CallStack::mesh_config() const {
+  auto cfg = deps_.mesh_config ? deps_.mesh_config() : nullptr;
+  return cfg ? cfg : std::make_shared<const MeshConfig>();
 }
 
 void CallStack::SyncMediaPlaneDeps() {
@@ -126,7 +127,7 @@ void CallStack::SyncMediaPlaneDeps() {
   }
   CallMediaPlaneDeps plane_deps;
   plane_deps.mesh = deps_.mesh;
-  plane_deps.config = deps_.config;
+  plane_deps.mesh_config = deps_.mesh_config;
   plane_deps.list_directory_nodes = deps_.list_directory_nodes;
   plane_deps.list_dht_nodes = deps_.list_dht_nodes;
   plane_deps.seed_dial_ok = deps_.seed_dial_ok;
@@ -323,6 +324,7 @@ Roe<void> CallStack::InitializeStoresOnOwner(const std::string& profile_db_path,
 }
 
 void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   deps_ = deps;
   call_sessions_ = std::make_unique<CallSessionManager>(*deps_.store, *deps_.contacts, *deps_.identity,
                                                         *call_session_store_, *call_media_keys_, deps_.delivery,
@@ -385,8 +387,9 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
     caps.present = true;
     // Durable Node host only — never advertise media_relay for ephemeral listen-only (V030).
     const auto view = LocalMeshView();
-    caps.media_relay = ResolveMeshRole(config().mesh) == MeshRole::Node &&
-                       config().mesh.capabilities.media_relay && view->amp_up && view->media_relay_started;
+    const auto cfg = mesh_config();
+    caps.media_relay = ResolveMeshRole(*cfg) == MeshRole::Node && cfg->capabilities.media_relay && view->amp_up &&
+                       view->media_relay_started;
     return caps;
   });
   call_sessions_->SetRegisterPeerListenMultiaddrs(
@@ -484,6 +487,7 @@ bool CallStack::WantEphemeralListen() const {
 }
 
 void CallStack::PrepareForMeshStopOnOwner(const std::function<void()>& abort_inflight_circuit) {
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   if (call_lifecycle_) {
     call_lifecycle_->ClearBinding();
   }
@@ -552,7 +556,7 @@ std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
   }
 
   const bool listening =
-      ResolveMeshRole(config().mesh) == MeshRole::Node || amp_up || WantEphemeralListen();
+      ResolveMeshRole(*mesh_config()) == MeshRole::Node || amp_up || WantEphemeralListen();
   if (!listening) {
     return {};
   }
@@ -628,6 +632,7 @@ void CallStack::SyncHubEphemeralListen() {
 }
 
 void CallStack::ResetSessionsOnOwner() {
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   if (deps_.bind_call_control) {
     deps_.bind_call_control({});
   }
@@ -656,6 +661,7 @@ void CallStack::Shutdown() {
 }
 
 void CallStack::ReleaseOnOwner() {
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   DetachMeshMedia();
   if (MeshMediaPlane* shared = mesh_media()) {
     shared->SetOnRelayChosen({});
