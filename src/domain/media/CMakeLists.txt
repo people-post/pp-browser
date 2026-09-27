@@ -20,7 +20,8 @@ if(WIN32)
     VideoCodec_Win32.cpp
     CallAudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
-    SdlAudioBootstrap_Default.cpp)
+    SdlAudioBootstrap_Default.cpp
+    VoiceProcessingIo_Stub.cpp)
   target_link_libraries(pp_domain_media PRIVATE mfplat mf mfuuid)
 elseif(APPLE)
   target_sources(pp_domain_media PRIVATE VideoCodec_Darwin.cpp)
@@ -33,27 +34,32 @@ elseif(APPLE)
     target_sources(pp_domain_media PRIVATE
       CallAudioSession_Ios.mm
       CameraCaptureOrientation_Ios.mm
-      SdlAudioBootstrap_Default.cpp)
+      SdlAudioBootstrap_Default.cpp
+      VoiceProcessingIo_Stub.cpp)
     target_link_libraries(pp_domain_media PRIVATE "-framework AVFoundation" "-framework UIKit")
   else()
     target_sources(pp_domain_media PRIVATE
       CallAudioSession_Default.cpp
       CameraCaptureOrientation_Default.cpp
-      SdlAudioBootstrap_Default.cpp)
+      SdlAudioBootstrap_Default.cpp
+      VoiceProcessingIo_Apple.cpp)
+    target_link_libraries(pp_domain_media PRIVATE "-framework AudioToolbox" "-framework CoreAudio")
   endif()
 elseif(ANDROID)
   target_sources(pp_domain_media PRIVATE
     VideoCodec_Android.cpp
     CallAudioSession_Android.cpp
     CameraCaptureOrientation_Android.cpp
-    SdlAudioBootstrap_Default.cpp)
+    SdlAudioBootstrap_Default.cpp
+    VoiceProcessingIo_Stub.cpp)
   target_link_libraries(pp_domain_media PRIVATE mediandk camera2ndk)
 else()
   target_sources(pp_domain_media PRIVATE
     VideoCodec_Linux.cpp
     CallAudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
-    SdlAudioBootstrap_Linux.cpp)
+    SdlAudioBootstrap_Linux.cpp
+    VoiceProcessingIo_Stub.cpp)
   # Linux VA-API (libva + DRM render node) — soft dep; stub builds without it.
   find_package(PkgConfig QUIET)
   if(PkgConfig_FOUND)
@@ -76,6 +82,11 @@ endif()
 option(PP_BROWSER_CALL_DENOISE "Run the capture-side noise suppressor in calls" ON)
 if(PP_BROWSER_CALL_DENOISE)
   target_compile_definitions(pp_domain_media PRIVATE PP_BROWSER_CALL_DENOISE=1)
+endif()
+
+option(PP_BROWSER_CALL_VPIO "Use the OS voice-processing unit (echo cancellation) for call audio where supported" ON)
+if(PP_BROWSER_CALL_VPIO AND APPLE AND NOT PP_BROWSER_IS_IOS)
+  target_compile_definitions(pp_domain_media PRIVATE PP_BROWSER_CALL_VPIO=1)
 endif()
 
 if(PP_BROWSER_BUILD_TESTS)
