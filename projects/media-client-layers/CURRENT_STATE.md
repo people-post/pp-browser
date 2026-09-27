@@ -10,6 +10,7 @@
 | l0 — 1:1 split | Done: `PeerReachCoordinator`, `CallMediaConnectCoordinator` (both directions), bridge = call policy; stop / retry on UI; glare antisymmetric; SFU attach completion on UI; hard-lab COLD phases |
 | l1 — reach in `domain/mesh` | Done: `domain/mesh/reachability/{MeshReachPorts.h, PeerReachCoordinator, AmpCircuitHopReach}`, neutral names. Hop reach stays a separate *service reach* ([L008](DECISIONS.md#l008--two-kinds-of-reach-link-reach-and-service-reach)) |
 | l2 — relay attach | Done: `domain/mesh/l4/media_relay/{IMediaRelayClient.h, AmpMediaRelayClient, MediaRelayAttach}`; group attach + guest reattach use `AttachToMediaRelayAsync` ([L009](DECISIONS.md#l009--relay-attach-is-a-stateless-capability-recovery-stays-with-each-feature)); wire `call_id` unchanged |
+| l6 — broadcast out of calls | Done: call-side arm / accept path, `BroadcastSessionCoordinator`, `AnnounceLiveJoin`, SoftMigrate broadcast skip removed; legacy `Broadcast` rows refused by `AcceptInvite` |
 | l5c — hard lab | Done: **B-HARD-BCAST-NAT** broadcaster → pp-node relay → 2 viewers under dual SNAT (hard-w5 `all`, 3/3) |
 | l5b — broadcaster wiring | Done: hub owns the broadcaster; facade `GoLive` / `EndLive`; broadcaster → relay → viewer compose test green (TSan / ASan clean); pp-cpp-amp v2.3.2 pinned |
 | l5a — broadcaster workflow | Done: `BroadcasterWorkflow` (go live → key to ticket server → relay attach → capture-only sealed frames → Live tip; re-attach / re-announce; End) on ports, gtests |
@@ -21,7 +22,7 @@
 
 ## Next
 
-**l6** — remove broadcast from calls (`BroadcastSessionCoordinator`, `OnAnnounceViewerJoined`, `ArmJoinFromLiveAnnounce` / `AcceptLiveAnnounceJoin`, `CallSessionKind::Broadcast` rows, SoftMigrate `is_broadcast` skip). Open alongside: watch / go-live UI entry; neutral mesh media plane (L014 exit); announce push to followers (Spine D); admission-serving relays (B1). Before a release: dogfood the device arbiter (PHASES l3b).
+All planned phases (l0–l6) are done. Open: watch / go-live UI entry; neutral mesh media plane (L014 exit); announce push to followers (Spine D); admission-serving relays (B1). Before a release: dogfood the device arbiter (PHASES l3b).
 
 Known, not from this work (seen 2026-09-26): `--suite node` / `call-hop` fail on this lab machine — pp-node's advertised listen switches to the seed-observed `172.126.x` address, unreachable from the host (same with or without the Amp change); `COLD-DIRTY` nested-circuit dial timeout still intermittent (1 of 3 hard-w5 runs); `AmpCircuitCallMediaComposeTest` leaks a `CallMediaLegCoordinator::Impl` under LeakSanitizer (identical on Amp v2.3.0 and v2.3.2).
 

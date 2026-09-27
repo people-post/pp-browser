@@ -8,7 +8,6 @@
 #include "domain/messaging/CallLifecycleTypes.h"
 
 #include "domain/media/CallMediaEngine.h"
-#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "domain/messaging/CallSessionStore.h"
@@ -1378,41 +1377,6 @@ TEST_F(CallSessionInboundComposeTest, RetryP2pMediaAfterConnectFailed) {
     auto session = sessions_->LoadSession(call_id);
     return session && session->has_value() && (*session)->state == CallSessionState::Ended;
   });
-}
-
-TEST_F(CallSessionInboundComposeTest, BroadcastArmAndAcceptLiveAnnounceJoin) {
-  AnnounceLiveJoinPlan plan;
-  plan.call_id = "call:broadcast-1";
-  plan.publisher_peer_id = "12D3KooWPublisher";
-  plan.topic_id = "topic:live";
-  plan.program_id = "prog:1";
-  plan.hop_peer_id = "12D3KooWHop";
-  plan.media_epoch = 1;
-
-  auto armed = csm_->ArmJoinFromLiveAnnounce(plan);
-  ASSERT_TRUE(armed) << armed.error().message;
-  EXPECT_EQ(armed->call_id, plan.call_id);
-  EXPECT_EQ(armed->status, "pending");
-
-  auto pending = csm_->TopPendingInvite();
-  ASSERT_TRUE(pending && pending->has_value());
-  EXPECT_EQ((*pending)->call_id, plan.call_id);
-
-  auto session = sessions_->LoadSession(plan.call_id);
-  ASSERT_TRUE(session && session->has_value());
-  EXPECT_TRUE(IsBroadcastSession((*session)->session_kind));
-
-  // Regular AcceptInvite must refuse broadcast sessions.
-  auto wrong = csm_->AcceptInvite(plan.call_id);
-  EXPECT_FALSE(wrong);
-
-  ASSERT_TRUE(csm_->AcceptLiveAnnounceJoin(plan.call_id)) << "accept live announce";
-  auto self = sessions_->FindParticipant(plan.call_id, local_identity_);
-  ASSERT_TRUE(self && self->has_value());
-  EXPECT_EQ((*self)->state, CallParticipantState::Joined);
-  auto after = sessions_->LoadSession(plan.call_id);
-  ASSERT_TRUE(after && after->has_value());
-  EXPECT_EQ((*after)->state, CallSessionState::Active);
 }
 
 TEST_F(CallSessionInboundComposeTest, StartCallOutboundCreatesSessionAndInvite) {

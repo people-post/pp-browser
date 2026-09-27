@@ -453,26 +453,6 @@ TEST_F(CallUiBackendStackTest, StartCallAndLeaveViaBackend) {
   EXPECT_EQ(ui_->Phase(), CallPhase::Idle);
 }
 
-TEST_F(CallUiBackendStackTest, BroadcastArmAcceptViaBackend) {
-  AnnounceLiveJoinPlan plan;
-  plan.call_id = "call:ui-bcast";
-  plan.publisher_peer_id = "12D3KooWPublisher";
-  plan.topic_id = "topic:1";
-  plan.program_id = "prog:1";
-
-  auto armed = ui_->ArmJoinFromLiveAnnounce(plan);
-  ASSERT_TRUE(armed) << armed.error().message;
-  auto pending = ui_->TopPendingInvite();
-  ASSERT_TRUE(pending && pending->has_value());
-  EXPECT_EQ((*pending)->call_id, plan.call_id);
-
-  ASSERT_TRUE(ui_->AcceptLiveAnnounceJoin(plan.call_id));
-  auto active = ui_->ActiveLocalCall();
-  ASSERT_TRUE(active && active->has_value());
-  EXPECT_EQ((*active)->call_id, plan.call_id);
-  EXPECT_TRUE(IsBroadcastSession(active.value()->session_kind));
-}
-
 TEST_F(CallUiBackendStackTest, UnavailableAfterResetSessions) {
   EXPECT_TRUE(ui_->Available());
   stack_->ResetSessions();

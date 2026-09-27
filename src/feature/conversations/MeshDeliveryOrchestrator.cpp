@@ -9,7 +9,6 @@
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
 #include "domain/messaging/AnnounceOverlayReply.h"
-#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
@@ -365,25 +364,6 @@ std::optional<std::vector<uint8_t>> MeshDeliveryOrchestrator::ResolveAnnouncePub
     }
   return ResolvePeerAnnouncePublisherKey(peer_id, local_peer_id, local_pk, signing_key_store_);
 }
-
-Roe<AnnounceLiveJoinPlan> MeshDeliveryOrchestrator::PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip) const {
-  return PlanAnnounceLiveJoin(tip);
-}
-
-Roe<AnnounceLiveJoinPlan> MeshDeliveryOrchestrator::PlanLiveJoinFromStoredAnnounce(const std::string& peer_id,
-                                                                              const std::string& topic_id,
-                                                                              const std::string& program_id) const {
-  if (!peer_announce_feed_) {
-    return Error("peer-announce feed unavailable");
-  }
-  auto tip = peer_announce_feed_->Latest(peer_id, topic_id, program_id);
-  if (!tip) {
-    return Error("No stored announce tip for live join");
-  }
-  return PlanAnnounceLiveJoin(*tip);
-}
-
-
 
 void MeshDeliveryOrchestrator::RegisterPeerKemKey(const std::string& peer_identity_kind,
                                            const std::string& peer_identity_value,

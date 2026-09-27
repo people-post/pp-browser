@@ -2,7 +2,6 @@
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/AnnounceOverlayReply.h"
 #include "domain/messaging/AnnounceNotificationInbox.h"
-#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "domain/messaging/PeerAnnounceRpcCodec.h"
@@ -267,83 +266,6 @@ TEST(AnnounceDmReplyTest, RejectsEmptyPeerId) {
 }
 
 
-TEST(AnnounceLiveJoinTest, PlansCallIdFromLiveJoinHandle) {
-  auto tip = SampleTip("topic-live");
-  tip.state = PeerAnnounceState::Live;
-  tip.join_handle = "session-abc";
-  tip.seq = 3;
-  tip.epoch = 2;
-
-  ASSERT_TRUE(TipIsLiveJoinable(tip));
-  auto plan = PlanAnnounceLiveJoin(tip);
-  ASSERT_TRUE(plan) << plan.error().message;
-  EXPECT_EQ(plan->call_id, "session-abc");
-  EXPECT_EQ(plan->publisher_peer_id, tip.peer_id);
-  EXPECT_EQ(plan->topic_id, tip.topic_id);
-  EXPECT_EQ(plan->program_id, tip.program_id);
-  EXPECT_EQ(plan->seq, 3u);
-  EXPECT_EQ(plan->epoch, 2u);
-}
-
-TEST(AnnounceLiveJoinTest, RejectsScheduledEndedOrMissingHandle) {
-  auto tip = SampleTip("topic-live");
-  tip.state = PeerAnnounceState::Scheduled;
-  EXPECT_FALSE(TipIsLiveJoinable(tip));
-  EXPECT_FALSE(PlanAnnounceLiveJoin(tip));
-
-  tip.state = PeerAnnounceState::Ended;
-  tip.join_handle = "session-abc";
-  EXPECT_FALSE(TipIsLiveJoinable(tip));
-  EXPECT_FALSE(PlanAnnounceLiveJoin(tip));
-
-  tip.state = PeerAnnounceState::Live;
-  tip.join_handle.clear();
-  EXPECT_FALSE(TipIsLiveJoinable(tip));
-  EXPECT_FALSE(PlanAnnounceLiveJoin(tip));
-}
-
-TEST(AnnounceLiveJoinTest, RejectsEmptyPublisherPeerId) {
-  PeerAnnounceTip tip;
-  tip.state = PeerAnnounceState::Live;
-  tip.join_handle = "session-abc";
-  EXPECT_FALSE(TipIsLiveJoinable(tip));
-  EXPECT_FALSE(PlanAnnounceLiveJoin(tip));
-}
-
-
-TEST(AnnounceLiveJoinHandoffTest, BuildsPendingInviteAndRingingSession) {
-  AnnounceLiveJoinPlan plan;
-  plan.call_id = "session-abc";
-  plan.publisher_peer_id = "12D3KooWPublisher";
-  plan.topic_id = "topic-1";
-  plan.program_id = "show-1";
-  plan.seq = 4;
-  plan.epoch = 1;
-
-  auto handoff = BuildAnnounceLiveJoinHandoff(plan, "account:bob", "account:alice", 1'700'000'000'000, true);
-  ASSERT_TRUE(handoff) << handoff.error().message;
-  EXPECT_EQ(handoff->pending.call_id, "session-abc");
-  EXPECT_EQ(handoff->pending.inviter_identity, "account:alice");
-  EXPECT_EQ(handoff->pending.invitee_identity, "account:bob");
-  EXPECT_EQ(handoff->pending.media_mode, CallMediaMode::Video);
-  EXPECT_TRUE(handoff->pending.video_allowed);
-  EXPECT_EQ(handoff->pending.status, "pending");
-  ASSERT_TRUE(handoff->pending.expires_at.has_value());
-  EXPECT_EQ(*handoff->pending.expires_at, 1'700'000'000'000 + kDefaultCallInviteTtlMs);
-  EXPECT_EQ(handoff->session.call_id, "session-abc");
-  EXPECT_EQ(handoff->session.state, CallSessionState::Ringing);
-  EXPECT_EQ(handoff->session.media_mode, CallMediaMode::Video);
-}
-
-TEST(AnnounceLiveJoinHandoffTest, RejectsMissingIdentities) {
-  AnnounceLiveJoinPlan plan;
-  plan.call_id = "session-abc";
-  plan.publisher_peer_id = "12D3KooWPublisher";
-  EXPECT_FALSE(BuildAnnounceLiveJoinHandoff(plan, "", "account:alice", 1, true));
-  EXPECT_FALSE(BuildAnnounceLiveJoinHandoff(plan, "account:bob", "", 1, true));
-  plan.call_id.clear();
-  EXPECT_FALSE(BuildAnnounceLiveJoinHandoff(plan, "account:bob", "account:alice", 1, true));
-}
 
 
 TEST(PeerAnnounceHopPeerIdTest, JsonAndSignRoundTripWithHop) {
@@ -368,25 +290,6 @@ TEST(PeerAnnounceHopPeerIdTest, EmptyHopKeepsLegacyCanonical) {
   tip.hop_peer_id.clear();
   const std::string with_empty = PeerAnnounceCanonicalSignBytes(tip);
   EXPECT_EQ(with_empty.find("hop_peer_id="), std::string::npos);
-}
-
-TEST(AnnounceLiveJoinTest, CopiesHopPeerIdIntoPlanAndHandoffSfuHint) {
-  auto tip = SampleTip("topic-hop");
-  tip.state = PeerAnnounceState::Live;
-  tip.join_handle = "session-live-1";
-  tip.hop_peer_id = "12D3KooWMediaHop";
-  auto plan = PlanAnnounceLiveJoin(tip);
-  ASSERT_TRUE(plan) << plan.error().message;
-  EXPECT_EQ(plan->hop_peer_id, "12D3KooWMediaHop");
-
-  auto handoff = BuildAnnounceLiveJoinHandoff(*plan, "account:bob", "account:alice", 1'700'000'000'000, true);
-  ASSERT_TRUE(handoff) << handoff.error().message;
-  ASSERT_TRUE(handoff->pending.sfu_hint.has_value());
-  EXPECT_EQ(*handoff->pending.sfu_hint, "12D3KooWMediaHop");
-  ASSERT_TRUE(handoff->session.sfu_hint.has_value());
-  EXPECT_EQ(*handoff->session.sfu_hint, "12D3KooWMediaHop");
-  EXPECT_EQ(handoff->session.session_kind, CallSessionKind::Broadcast);
-  EXPECT_EQ(handoff->pending.session_kind, CallSessionKind::Broadcast);
 }
 
 TEST(PeerAnnounceKindTest, LiveChatJsonAndSignRoundTripAdditive) {
@@ -452,16 +355,6 @@ TEST(PeerAnnounceFeedKindTest, LiveChatDoesNotClobberProgramLatest) {
   EXPECT_TRUE(TipIsProgramKind(*latest));
   EXPECT_EQ(latest->join_handle, "session-1");
   EXPECT_EQ(feed.ListLiveChat(program.peer_id, *topic, program.program_id).size(), 1u);
-}
-
-TEST(AnnounceLiveJoinTest, RejectsLiveChatKind) {
-  auto tip = SampleTip("topic");
-  tip.state = PeerAnnounceState::Live;
-  tip.join_handle = "session";
-  tip.kind = kPeerAnnounceKindLiveChat;
-  tip.viewer_msg_id = "m1";
-  EXPECT_FALSE(TipIsLiveJoinable(tip));
-  EXPECT_FALSE(PlanAnnounceLiveJoin(tip));
 }
 
 TEST(AnnounceOverlayReplyTest, PlansEncodesAndBuildsLiveChatDraft) {
@@ -540,18 +433,6 @@ TEST(PeerAnnounceL1HopPeerIdsTest, JsonAndSignRoundTripAdditive) {
   tip.hop_peer_id.clear();
   const std::string canonical = PeerAnnounceCanonicalSignBytes(tip);
   EXPECT_EQ(canonical.find("l1_hop_peer_ids="), std::string::npos);
-}
-
-TEST(AnnounceLiveJoinTest, FallsBackHopPeerIdFromL1Hints) {
-  auto tip = SampleTip("topic-l1");
-  tip.state = PeerAnnounceState::Live;
-  tip.join_handle = "session-live-l1";
-  tip.hop_peer_id.clear();
-  tip.l1_hop_peer_ids = {"12D3KooWL1a", "12D3KooWL1b"};
-  auto plan = PlanAnnounceLiveJoin(tip);
-  ASSERT_TRUE(plan) << plan.error().message;
-  EXPECT_EQ(plan->hop_peer_id, "12D3KooWL1a");
-  ASSERT_EQ(plan->l1_hop_peer_ids.size(), 2u);
 }
 
 } // namespace pbr

@@ -453,9 +453,10 @@ Roe<void> CallSessionWorkflow::AcceptInvite(const std::string& call_id,
     return Error("Call invite expired");
   }
   if (IsBroadcastSession((*pending)->session_kind)) {
-    log().warning << "AcceptInvite end call_id=" << call_id
-                  << " err=broadcast sessions use AcceptLiveAnnounceJoin";
-    return Error("Broadcast sessions use AcceptLiveAnnounceJoin");
+    // Legacy rows only (pre-feature/broadcast builds): a live broadcast is watched from its
+    // announce through BroadcastHub, never accepted as a call.
+    log().warning << "AcceptInvite end call_id=" << call_id << " err=legacy broadcast row";
+    return Error("Live broadcasts are watched from the announce, not accepted as calls");
   }
 
   const std::string inviter = (*pending)->inviter_identity;

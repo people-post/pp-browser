@@ -3,7 +3,6 @@
 #include "foundation/crypto/IPskSessionStore.h"
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallControlCodec.h"
-#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "foundation/data/PricingTypes.h"
@@ -15,7 +14,6 @@
 #include "feature/calls/CallDeliveryPorts.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
-#include "feature/calls/BroadcastSessionCoordinator.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallSessionWorkflow.h"
 
@@ -189,25 +187,6 @@ public:
 
   Roe<void> AcceptInvite(const std::string& call_id,
                          InitiationChargeDecision charge_decision = InitiationChargeDecision::Waive);
-  /**
-   * Spine C (slice 1): arm a pending invite + ringing session from a live-join plan
-   * Thin delegate to BroadcastSessionCoordinator (no SoftMigrate / media).
-   */
-
-  /** Broadcast live-announce arm/accept (Spine C) — prefer over SoftMigrate call paths. */
-  BroadcastSessionCoordinator& Broadcast() { return broadcast_; }
-  const BroadcastSessionCoordinator& Broadcast() const { return broadcast_; }
-
-  Roe<PendingCallInvite> ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan,
-                                                 const ArmLiveAnnounceJoinOpts& opts = {});
-
-  /**
-   * Spine C: accept an armed live-announce invite without SoftMigrate or 1:1 media.
-   * Attaches SFU when session/pending carries sfu_hint (tip.hop_peer_id); otherwise
-   * marks joined and defers media.
-   */
-  Roe<void> AcceptLiveAnnounceJoin(const std::string& call_id);
-
   Roe<void> DeclineInvite(const std::string& call_id);
   Roe<void> LeaveCall(const std::string& call_id);
   /** Detach SFU + stop SDL. UI thread only — call before LeaveCall worker / app quit. */
@@ -327,7 +306,6 @@ private:
   Roe<void> SendMediaKeyToPeer(const std::string& call_id, const std::string& peer_identity,
                                uint32_t media_epoch, const std::string& media_key_id, const ByteVector& key_bytes);
   void StopMediaIfCall(const std::string& call_id);
-  Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
   void BindWorkflowHostPorts();
   /** Flush deferred inbox/TailSync when no ActiveLocalCall remains. */
@@ -364,7 +342,6 @@ private:
   IPskSessionStore& psk_store_;
   CallMediaEngine& media_;
   CallTopologyController topology_;
-  BroadcastSessionCoordinator broadcast_;
   CallSessionWorkflow workflow_;
   CallDirectMediaPorts direct_media_;
   CallSessionLifecyclePorts lifecycle_ports_;

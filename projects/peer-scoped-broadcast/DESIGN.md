@@ -182,12 +182,12 @@ Subscribed tip arrives
   → upsert Notifications item (by publisher + topic + epoch/seq)
   → if live + not dismissed → show/update banner (heartbeat refreshes same card)
 User taps Watch
-  → JoinLiveAnnounceFromTip / AcceptLiveAnnounceJoin (media handoff; no ring UI)
+  → WatchLiveAnnounce → BroadcastHub viewer (ticket → relay → playback; no ring UI)
 User taps Reply
   → Private DM  or  On-screen overlay intent (publisher policy)
 ```
 
-**Spine C media handoff** (`ArmJoinFromLiveAnnounce`, pending invite shapes) may reuse call **session** types for SFU attach. That is an implementation convenience — **do not** present announce join as incoming-call chrome (`NotifyRingChanged`, ringtone, bilateral `CallAccept`). Prefer a tip list + banner that calls the same accept path.
+Watching uses no call **session** types ([B008](DECISIONS.md); the earlier call-shaped handoff was removed in media-client-layers l6) — **do not** present announce join as incoming-call chrome (`NotifyRingChanged`, ringtone, bilateral `CallAccept`). A tip list + banner calls `WatchLiveAnnounce`.
 
 Tips stay on the announce feed (in-memory today); they are **not** chat rows in `SqliteThreadStore` unless a later durable-feed spine deliberately stores history. OS push, if any, should use a quiet notify type — not `call_wake`.
 

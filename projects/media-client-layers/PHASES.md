@@ -113,10 +113,13 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 
 **Exit (l5):** a broadcaster publishes and viewers listen end to end — compose-tested and hard-lab green. **Met.**
 
-## l6 — Remove broadcast from calls
+## l6 — Remove broadcast from calls (done)
 
-- [ ] Delete `BroadcastSessionCoordinator`, `CallTopologyController::OnAnnounceViewerJoined`, `ArmJoinFromLiveAnnounce` / `AcceptLiveAnnounceJoin`, `CallSessionKind::Broadcast` records in `CallSessionStore`, SoftMigrate `is_broadcast` skip
-- [ ] peer-scoped-broadcast PHASES / CURRENT_STATE point at `feature/broadcast`
+- [x] Deleted `BroadcastSessionCoordinator`, `CallTopologyController::OnAnnounceViewerJoined`, `ArmJoinFromLiveAnnounce` / `AcceptLiveAnnounceJoin` (CSM, `CallUiBackend`), the facade / orchestrator `Plan*` / `Arm*` / `JoinLiveAnnounceFromTip` entry points, `AnnounceLiveJoin.*` and `ApplyBroadcastJoinTicket`; SoftMigrate has no `is_broadcast` input. The only watch entry is `WatchLiveAnnounce` → `BroadcastHub`
+- [x] `CallSessionKind::Broadcast` stays a parsed legacy value only: nothing creates it, and `AcceptInvite` refuses such rows (older builds may have persisted them)
+- [x] peer-scoped-broadcast CURRENT_STATE / PHASES point at `feature/broadcast`
+
+**Exit (l6):** calls hold no broadcast code; `check_feature_includes.sh` bans the edge both ways. **Met.**
 
 ## Later
 

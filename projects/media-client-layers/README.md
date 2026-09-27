@@ -12,7 +12,7 @@ Split the **client side** of real-time media into shared, feature-neutral layers
 ## Why
 
 - 1:1 was split this way first (`PeerReachCoordinator` → `CallMediaConnectCoordinator` → `CallMediaBridge`, branch `refactor/peer-reach-coordinator`). The same mechanisms (reach a hop, attach a `media_relay` session, reattach on loss) are duplicated or tangled inside `CallTopologyController` / `CallHopMigrateWorkflow`.
-- Broadcast is **not a call** ([B001](../peer-scoped-broadcast/DECISIONS.md#b001--broadcast-is-not-a-large-group-call)) but its viewer path currently rides the group-call path: `AcceptLiveAnnounceJoin` → `CallTopologyController::OnAnnounceViewerJoined` → group `AttachLocalToSfuAsync`, sharing SoftMigrate flight state, attaching as a **publisher**, and never using the ticket / admit-or-redirect client RPC (`AmpBroadcastTransport::RequestTicket` / `RequestViewerAttach` have no product caller).
+- Broadcast is **not a call** ([B001](../peer-scoped-broadcast/DECISIONS.md#b001--broadcast-is-not-a-large-group-call)) but its viewer path rode the group-call path until l6 removed it: `AcceptLiveAnnounceJoin` → `CallTopologyController::OnAnnounceViewerJoined` → group `AttachLocalToSfuAsync`, sharing SoftMigrate flight state, attaching as a **publisher**, and never using the ticket / admit-or-redirect client RPC (`AmpBroadcastTransport::RequestTicket` / `RequestViewerAttach` had no product caller).
 - No broadcast UI is wired yet, so separating now is cheap; after UI lands on the call-shaped path it is not.
 
 ## Scope
