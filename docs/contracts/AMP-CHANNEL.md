@@ -190,6 +190,13 @@ A live call can move to another Connected link to the same peer (e.g. a punched 
 
 The call stays on its path when the candidate fails before step 3: `migrate_ack` refusal, the candidate link or channel lost, or **no answer in 5 s** — a peer from before k3 ignores the unknown `type`. `path_gen` counts paths within the call (0 = the one it started on).
 
+### Path liveness and failover (call-path-resilience k4)
+
+- **Heartbeat** on each path's control channel (either direction): `{"v":1,"type":"hb","active":true}` every 500 ms on the sender's active path, `{"v":1,"type":"hb"}` every 10 s on its standby. Anything received on a path (heartbeat, control, media) proves it alive. Older peers ignore the type.
+- **Standby:** a released path (step 5) stays bound as the call's warm **standby** instead of closing — one per call, a relayed one preferred.
+- **Failover** (no handshake — the standby's channels are bound and RX takes every path): TX moves to the standby when the active path's link is lost, or when it has been silent **1.5 s** while the peer is known to heartbeat (a muted mic still heartbeats and sends silence frames). A standby silent 25 s is not taken. After a failover, silence alone does not switch again for 3 s.
+- **Follow:** an `active:true` heartbeat arriving on this end's standby means the peer moved there — this end switches too.
+
 ## Circuit tunnel (v1)
 
 Relay hosts `/pp-browser/circuit/1.0.0`. After a JSON bridge handshake, the relay **splices opaque L4 DATA bodies** between the client circuit channel and a channel opened to the target on `target_protocol` (parity with today’s `StreamBridge`). Each hop still has its own AMP Session (A↔R, R↔B); the relay does not terminate an A↔B Session. Nested end-to-end Session through the tunnel ([A019] blind L2 ciphertext) remains a future refinement.

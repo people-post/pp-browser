@@ -18,7 +18,9 @@ namespace pbr {
 struct CallMediaPathState {
   CallMediaLinkKind active_kind = CallMediaLinkKind::Unknown;
   uint32_t active_gen = 0;
-  /** A candidate path is being brought up. */
+  /** A candidate path is being brought up (migration in flight). */
+  bool candidate = false;
+  /** k4: a warm fallback path the call can fail over to. */
   bool standby = false;
   /** The previous path is draining after a switch. */
   bool retiring = false;
@@ -86,6 +88,8 @@ public:
   /** Test: behave like a peer from before k3 (never answers `migrate`). */
   void SetIgnoreMigrateForTest(bool ignore);
   void SetMigrateTimeoutForTest(std::chrono::milliseconds timeout);
+  /** Test: send nothing (media, heartbeats) on paths of `kind` — the path goes quiet, its link stays up. */
+  void SetSilencedPathKindForTest(CallMediaLinkKind kind);
 
   Roe<void> SendMedia(CallMediaLegId id, uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq,
                       uint8_t mark = 0);

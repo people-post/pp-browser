@@ -659,6 +659,92 @@ TEST_F(CallPathMigrationTest, RelayedCallMovesToDirectWithoutLosingAFrame) {
   EXPECT_GT(b_seqs_.size(), before) << "audio flows on the direct path";
 }
 
+/**
+ * k4 fixture: a call moved relayed → direct, with the relay kept as both ends' standby.
+ * Returns once the release has turned the relay path into standby on both sides.
+ */
+#define ASSERT_ON_DIRECT_WITH_RELAY_STANDBY()                                                            \
+  do {                                                                                                   \
+    LiveRelayedCallWithDirectLink();                                                                     \
+    std::atomic<bool> moved{false};                                                                      \
+    a_call_->MigrateLeg(leg_, direct_link_, [&](Roe<void> r) { moved = static_cast<bool>(r); });         \
+    ASSERT_TRUE(PumpRealUntil(                                                                           \
+        [&] {                                                                                            \
+          SendNext();                                                                                    \
+          return moved.load() && a_call_->PathState(leg_).standby &&                                     \
+                 b_call_->PathState(b_call_->PrimaryLegId()).standby;                                    \
+        },                                                                                               \
+        std::chrono::seconds(4)));                                                                       \
+    ASSERT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);                                     \
+    ASSERT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);                                     \
+  } while (0)
+
+// k4: the direct link dies mid-call; both ends switch to the warm relay standby at once and the call
+// carries on — no teardown, no failure.
+TEST_F(CallPathMigrationTest, LostDirectLinkFailsOverToTheRelayStandby) {
+  ASSERT_ON_DIRECT_WITH_RELAY_STANDBY();
+  ASSERT_GT(harness_->mgr_a().RequestDropLink("b-direct"), 0u);
+  for (int i = 0; i < 400 && (a_call_->ActiveLinkKind() != CallMediaLinkKind::Relayed ||
+                              b_call_->ActiveLinkKind() != CallMediaLinkKind::Relayed);
+       ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+  EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+  EXPECT_EQ(a_path_.load(), CallMediaLinkKind::Relayed);
+  EXPECT_EQ(b_path_.load(), CallMediaLinkKind::Relayed);
+  const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
+  for (int i = 0; i < 10; ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() >= before + 10; }, 2000);
+  {
+    std::lock_guard lock(mu_);
+    EXPECT_GE(b_seqs_.size(), before + 10) << "every frame after the switch arrives";
+  }
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
+}
+
+// k4: the direct path goes quiet while its link stays up (one end's traffic stops getting through):
+// after 1.5 s without heartbeat or media both ends move to the relay standby.
+TEST_F(CallPathMigrationTest, SilentDirectPathFailsOverToTheRelayStandby) {
+  ASSERT_ON_DIRECT_WITH_RELAY_STANDBY();
+  b_call_->SetSilencedPathKindForTest(CallMediaLinkKind::Direct);
+  EXPECT_TRUE(PumpRealUntil(
+      [&] {
+        SendNext();
+        return a_call_->ActiveLinkKind() == CallMediaLinkKind::Relayed &&
+               b_call_->ActiveLinkKind() == CallMediaLinkKind::Relayed;
+      },
+      std::chrono::seconds(5)))
+      << "both ends fail over";
+  b_call_->SetSilencedPathKindForTest(CallMediaLinkKind::Unknown);
+  const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
+  SendNext();
+  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() > before; }, 2000);
+  std::lock_guard lock(mu_);
+  EXPECT_GT(b_seqs_.size(), before);
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
+}
+
+// k4: a muted peer still heartbeats and sends silence frames — a quiet mic never trips failover.
+TEST_F(CallPathMigrationTest, QuietButAliveDirectPathStays) {
+  ASSERT_ON_DIRECT_WITH_RELAY_STANDBY();
+  EXPECT_FALSE(PumpRealUntil(
+      [&] {
+        SendNext();  // "muted": frames of silence still flow
+        return a_call_->ActiveLinkKind() != CallMediaLinkKind::Direct ||
+               b_call_->ActiveLinkKind() != CallMediaLinkKind::Direct;
+      },
+      std::chrono::milliseconds(2500)));
+}
+
 // A candidate that goes away mid-migration is abandoned: the call stays on its path, unharmed.
 TEST_F(CallPathMigrationTest, LostCandidateLeavesTheCallOnItsPath) {
   LiveRelayedCallWithDirectLink();
@@ -678,9 +764,9 @@ TEST_F(CallPathMigrationTest, LostCandidateLeavesTheCallOnItsPath) {
   EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
   EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
-  EXPECT_FALSE(a_call_->PathState(leg_).standby);
-  harness_->PumpUntil([&] { return !b_call_->PathState(b_call_->PrimaryLegId()).standby; }, 500);
-  EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).standby) << "the peer dropped its half too";
+  EXPECT_FALSE(a_call_->PathState(leg_).candidate);
+  harness_->PumpUntil([&] { return !b_call_->PathState(b_call_->PrimaryLegId()).candidate; }, 500);
+  EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).candidate) << "the peer dropped its half too";
   const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
   SendNext();
   harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() > before; }, 2000);

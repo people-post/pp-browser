@@ -3,6 +3,7 @@
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 
 #include <bitset>
+#include <climits>
 #include <cstdint>
 
 namespace pbr {
@@ -99,6 +100,34 @@ CallMediaSessionPhase CallMediaBundlePhaseToSessionPhase(CallMediaBundlePhase ph
 CallMediaLegPhase CallMediaBundlePhaseToLegPhase(CallMediaBundlePhase phase);
 
 bool CallMediaBundlePhaseIsActive(CallMediaBundlePhase phase);
+
+/** k4 (K008): heartbeat cadence per path role, and when a silent path counts as dead. */
+inline constexpr int64_t kCallMediaActiveHeartbeatMs = 500;
+inline constexpr int64_t kCallMediaStandbyHeartbeatMs = 10000;
+inline constexpr int64_t kCallMediaActiveSilenceFailoverMs = 1500;
+inline constexpr int64_t kCallMediaStandbyStaleMs = 25000;
+/** After a failover, silence alone does not switch again for this long (the peer is still moving). */
+inline constexpr int64_t kCallMediaFailoverHoldDownMs = 3000;
+
+struct CallMediaFailoverInput {
+  bool active_link_lost = false;
+  /** Since anything (heartbeat, control, media) arrived on the active path. */
+  int64_t active_silence_ms = 0;
+  /** The peer sends heartbeats (seen at least one this call): silence then means a dead path. */
+  bool peer_heartbeats = false;
+  bool have_standby = false;
+  bool standby_link_alive = false;
+  int64_t standby_silence_ms = 0;
+  /** Since this end last failed over (large when never). */
+  int64_t since_failover_ms = INT64_MAX;
+};
+
+/**
+ * k4 failover: switch TX to the standby path when the active one is lost, or silent 1.5 s while the
+ * peer is known to heartbeat (a muted mic still heartbeats and sends silence frames — only a dead
+ * path goes quiet). Never onto a standby that is itself gone or stale.
+ */
+bool ShouldFailOverToStandby(const CallMediaFailoverInput& in);
 
 /**
  * Receive-side seq de-dupe for one media channel (call-path-resilience k3): while two paths

@@ -85,8 +85,16 @@ Checklist:
 
 ## k4 — Media-liveness failover + reconnect (M5)
 
-- [ ] Control-channel heartbeat (~500 ms) per path
-- [ ] 1.5 s silence on active → switch to standby (K008)
+Slices:
+
+- [x] **k4-1** Per-path heartbeat (`hb`, 500 ms active / 10 s standby) and liveness (any RX on a path); a released path becomes the call's warm standby (K002 — relayed preferred) instead of closing
+- [x] **k4-2** Failover without handshake: active link lost, or 1.5 s silent from a heartbeating peer (never a quiet mic), → TX onto a live standby; the peer follows an `active` heartbeat seen on its standby; 3 s hold-down on silence failover (`ShouldFailOverToStandby`)
+- [ ] **k4-3** Empty path set → `Reconnecting` + re-anchor (offerer reaches, migrates onto the new link; answerer accepts onto its dead path), 30 s window; `peer link lost` no longer an instant teardown; UI subtitle (EN + zh-Hans)
+
+Checklist:
+
+- [x] Control-channel heartbeat (~500 ms) per path (k4-1)
+- [x] 1.5 s silence on active → switch to standby (K008) (k4-2)
 - [ ] No standby → `Reconnecting` call status, relay re-anchor, 30 s window (K008); UI subtitle (i18n EN + zh-Hans)
 - [ ] `peer link lost` no longer tears down while the path set / window allows
 - [x] TX-only escalate limited to initial connect — already so: `ShouldEscalateTxOnlyDirect` needs cumulative RX = 0 and fires once per call

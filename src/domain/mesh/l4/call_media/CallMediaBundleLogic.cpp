@@ -110,6 +110,20 @@ bool CallMediaBundlePhaseIsActive(const CallMediaBundlePhase phase) {
   return phase != CallMediaBundlePhase::Idle && phase != CallMediaBundlePhase::Closing;
 }
 
+bool ShouldFailOverToStandby(const CallMediaFailoverInput& in) {
+  if (!in.have_standby || !in.standby_link_alive) {
+    return false;
+  }
+  if (in.peer_heartbeats && in.standby_silence_ms >= kCallMediaStandbyStaleMs) {
+    return false;
+  }
+  if (in.active_link_lost) {
+    return true;
+  }
+  return in.peer_heartbeats && in.active_silence_ms >= kCallMediaActiveSilenceFailoverMs &&
+         in.since_failover_ms >= kCallMediaFailoverHoldDownMs;
+}
+
 bool CallMediaSeqWindow::Accept(const uint32_t seq) {
   const auto anchor = [&]() {
     have_ = true;
