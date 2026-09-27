@@ -1197,6 +1197,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
       RegisterMeshDirectoryEndpoints();
       ConfigureAmpDhtProtocol();
       ConfigureAmpDirectoryProtocol();
+      mesh_media_->RefreshHopPolicy();  // directory nodes are rendezvous / seed candidates
     });
     mesh_directory_cache_->RequestRefresh();
   }

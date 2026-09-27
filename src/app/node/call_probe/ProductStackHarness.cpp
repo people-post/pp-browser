@@ -284,6 +284,9 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
   if (auto up = contacts_->Upsert(contact); !up) {
     return up.error();
   }
+  if (mesh_media_) {
+    mesh_media_->RefreshHopPolicy();  // contacts are rendezvous / punch-introducer candidates
+  }
   if (stack_) {
     stack_->RunOnOwner([account_id, peer_id](CallSessionManager& calls) {
       calls.NoteMeshPeerIdForRelay(account_id, peer_id);

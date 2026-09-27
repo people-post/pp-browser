@@ -7,6 +7,7 @@
 
 | Phase | State |
 |-------|-------|
+| t3-2b — candidate policy on connectivity | `MeshHopPolicy` snapshot evaluated on the owner (Wire / 5 s / `RefreshHopPolicy`); the IO side reads only the snapshot. TSan clean; hard-w5 green |
 | t3-2a — connectivity owner: reach + mesh media plane | `PeerReachCoordinator` on it; `MeshMediaPlane` edges `RunAndWait`, listen book snapshot, relay-chosen / punch hooks hop owner to owner; T004 (waits downward only). TSan clean; hard-w5 green |
 | t3-1 — MeshControl retired | Mesh waits are completions (dial-back walk, inbound call-media key, CAS tip fetch); L4 inbound work on workers; mesh stop joins MeshPump before freeing L4. TSan clean in call / broadcast / chat / mesh suites; hard-w5 green |
 | t2b — media sessions on the owner | t2b-1 `CallsThread`; t2b-2 GUI boundary (intents post, `CallUiState` snapshot); t2b-3 calls flipped to the media-sessions owner, hub lifecycle edges via `RunAndWait`; t2b-4 broadcast on the same owner (`BroadcastUiState`, async announce). TSan 10 → 3 in the call suites, 0 in broadcast; hard-w5 green |
@@ -16,12 +17,13 @@
 
 ## Next
 
-**t3-2b** — candidate policy computed on connectivity (snapshot for the IO side). Then **t3-2c** — `ReachabilityEngine` on connectivity; `CallStackDeps` providers read a connectivity snapshot.
+**t3-2c** — `ReachabilityEngine` on connectivity; `CallStackDeps` providers read a connectivity snapshot.
 
 ## Known (motivating)
 
 - ~~TSan: `BindWorkflowHostPorts` rewrote workflow ports under running callers~~ (t2a step A). ~~Remaining 3: `CallStack` teardown vs the MeshControl peer-reach prefetch~~ (t3-1: the prefetch posts the hub's port to UI).
 - Call-side mesh media callbacks (`note_lan_mdns_peer_id` → hub set) still run on whichever thread the mesh media plane calls from — t3 with the plane.
+- The candidate-policy providers (and `CallStackDeps`) read the hub's `config()` — an `AppConfig` the hub replaces on UI (capability refresh). Needs a published config snapshot (t4, UI snapshots).
 - The calls owner reads hub state through `CallStackDeps` (`mesh()`, `config()`, directory / DHT snapshots) while the hub swaps `mesh_` on UI. Mesh stop clears the call ports first (`PrepareForMeshStop` waits on the owner), but provider lambdas (local peer id / caps / listen addrs) still reach `mesh()` — t3 gives them a connectivity snapshot.
 - `InboundAttachGate::mu` taken by hop migrate, not by the topology writing the same fields.
 - Sanitizers flag `AppRuntimeWorkerTest.ShutdownBudgetReturnsWhileWorkerBlocked` by design (it leaves a blocked worker detached past process exit); unchanged by t1.
