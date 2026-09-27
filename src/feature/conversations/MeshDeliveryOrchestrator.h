@@ -27,7 +27,6 @@
 #include "feature/conversations/AmpBroadcastTransport.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
-#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/AnnounceNotificationInbox.h"
 #include "domain/messaging/AnnounceOverlayReply.h"
 #include "domain/messaging/PeerAnnounceRpcCodec.h"
@@ -198,11 +197,17 @@ public:
    * Spine C (slice 0): plan a live join from a tip (call_id = join_handle).
    * Does not SoftMigrate or attach media yet.
    */
-  Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip) const;
-  /** Look up latest tip in the local feed then plan a live join. */
-  Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromStoredAnnounce(const std::string& peer_id,
-                                                           const std::string& topic_id,
-                                                           const std::string& program_id) const;
+  /** Broadcaster (l5): the serving ticket side mints viewer tickets for this live program. */
+  Roe<void> PutLiveProgramKey(const std::string& program_id, const std::string& join_handle,
+                              AmpBroadcastTransport::LiveProgramKey key);
+  void ClearLiveProgramKey(const std::string& program_id, const std::string& join_handle);
+  /** Sign and record a program tip in the local announce feed (followers pull / get pushed). */
+  Roe<PeerAnnounceTip> PublishAnnounceTip(const PeerAnnouncePublisher::Draft& draft);
+  /** Latest stored signed tip for a program (announce feed). */
+  std::optional<PeerAnnounceTip> LatestAnnounceTip(const std::string& peer_id, const std::string& topic_id,
+                                                   const std::string& program_id) const;
+  /** A publisher's ML-DSA public key for verifying its tips / tickets (self, pinned, or learned). */
+  std::optional<std::vector<uint8_t>> ResolveAnnouncePublisherKey(const std::string& peer_id) const;
 
 
   void MaybeTailSync(const std::string& thread_id);

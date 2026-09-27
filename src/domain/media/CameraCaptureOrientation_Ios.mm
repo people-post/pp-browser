@@ -11,9 +11,8 @@
 #include <SDL3/SDL.h>
 
 namespace pbr {
-namespace {
 
-int InterfaceOrientationDegrees() {
+int CameraDisplayRotationDegrees() {
   UIInterfaceOrientation io = UIInterfaceOrientationUnknown;
   if (@available(iOS 13.0, *)) {
     for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
@@ -48,6 +47,8 @@ int InterfaceOrientationDegrees() {
   }
 }
 
+namespace {
+
 int Normalize90(int deg) {
   deg %= 360;
   if (deg < 0) {
@@ -59,7 +60,7 @@ int Normalize90(int deg) {
 
 } // namespace
 
-CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id) {
+CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id, int display_rotation_deg) {
   CameraCaptureTransform t;
   t.encode_width = 360;
   t.encode_height = 640;
@@ -70,7 +71,7 @@ CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id) {
   const SDL_CameraPosition pos = SDL_GetCameraPosition(camera_id);
   const bool front = (pos != SDL_CAMERA_POSITION_BACK_FACING);
   const int sensor_deg = front ? 270 : 90;
-  const int display_deg = Normalize90(InterfaceOrientationDegrees());
+  const int display_deg = Normalize90(display_rotation_deg);
 
   int rotate_cw = 0;
   if (front) {

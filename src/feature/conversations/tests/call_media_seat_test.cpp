@@ -11,7 +11,7 @@ namespace pbr {
 namespace {
 
 TEST(CallMediaSeatTest, AcquireReleasesPriorBind) {
-  AppRuntime::Initialize();
+  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
   AppRuntime::InitializeUI();
 
   CallMediaSeat seat;
@@ -29,7 +29,7 @@ TEST(CallMediaSeatTest, AcquireReleasesPriorBind) {
   EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Connecting);
 
   auto b = seat.Acquire("call:b");
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
   EXPECT_EQ(b.call_id, "call:b");
   EXPECT_TRUE(seat.IsBound("call:b"));
   EXPECT_FALSE(seat.IsBound("call:a"));
@@ -44,7 +44,7 @@ TEST(CallMediaSeatTest, AcquireReleasesPriorBind) {
 
 TEST(CallMediaSeatTest, StaleReleaseNoOpAfterNoteStart) {
   // Dogfood b60d82: Accept leftover Stop must not kill new StartSfu.
-  AppRuntime::Initialize();
+  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
   AppRuntime::InitializeUI();
 
   CallMediaSeat seat;
@@ -56,9 +56,14 @@ TEST(CallMediaSeatTest, StaleReleaseNoOpAfterNoteStart) {
     ++engine_stops;
   });
 
-  seat.Acquire("call:old");
-  const uint64_t epoch_before_release = seat.Epoch();
-  seat.Release("call:old");
+  uint64_t epoch_before_release = 0;
+  // Seat ops run on the calls owner (Release there stops inline).
+  AppRuntime::PostTo(OwnerThreadId::MediaSessions, [&]() {
+    seat.Acquire("call:old");
+    epoch_before_release = seat.Epoch();
+    seat.Release("call:old");
+  });
+  AppRuntime::RunUIAndOwnerTasks();
   // Simulate Accept scheduling Stop, then new call StartSfu + NoteStart before Stop runs.
   seat.Acquire("call:new");
   seat.NoteStart("call:new");
@@ -67,7 +72,7 @@ TEST(CallMediaSeatTest, StaleReleaseNoOpAfterNoteStart) {
   EXPECT_EQ(seat.State(), CallMediaSeat::MediaState::Connecting);
   EXPECT_FALSE(seat.IsLive("call:new"));
 
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
   // Force prior Acquire teardown may have stopped old; the Release stop for old must no-op
   // after NoteStart (epoch advanced). Net: at most the force stop from Acquire(new), not a
   // second kill of call:new's session.
@@ -80,7 +85,7 @@ TEST(CallMediaSeatTest, StaleReleaseNoOpAfterNoteStart) {
   stale.epoch = epoch_before_release;
   const int stops_before = engine_stops;
   seat.Release(stale);
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
   EXPECT_EQ(engine_stops, stops_before);
   EXPECT_TRUE(seat.IsBound("call:new"));
 

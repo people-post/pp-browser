@@ -46,7 +46,7 @@ public:
   /** Topology OnMediaStopped (Detach + clear attach state). */
   using TopologyStoppedFn = std::function<void(const std::string& call_id)>;
   /**
-   * Engine Stop on UI (bridge StopMeshMedia body).
+   * Engine Stop on the calls owner (bridge StopMeshMedia body).
    * When force=false: no-op if Epoch() != epoch_at_post (NoteStart / Acquire advanced).
    * When force=true: always stop (Acquire releasing a prior bind).
    */

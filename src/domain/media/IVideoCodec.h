@@ -65,4 +65,7 @@ public:
 /** OS-selected HW codec, or unavailable stub when no backend builds. */
 std::unique_ptr<IVideoCodec> CreatePlatformVideoCodec();
 
+/** Whether this host can encode (probed once per process with a throwaway codec; any thread). */
+bool PlatformVideoEncoderSupported();
+
 } // namespace pbr

@@ -11,16 +11,14 @@ Delivery order for live **media capacity** (Spine F). Do not start B1 until Spin
 
 Prerequisite for tree work; may land as C ribs.
 
-- [x] Session flag / shape distinct from group SoftMigrate — `CallSessionKind::Broadcast` + SoftMigrate `is_broadcast` NoOp
-- [x] SoftMigrate topology early-skip + `AcceptInvite` refuse for Broadcast sessions
-- [x] Broadcast arm/accept extracted from call SoftMigrate stack — `BroadcastSessionCoordinator` (CSM / UI / facade delegate)
-- [x] Stable session media key helpers (no rotate-on-viewer-leave) — `BroadcastJoinTicket` mint/apply
-- [x] Join ticket (publisher-signed) delivers key / grant — domain mint/verify/apply + unit tests
-- [x] Tip → ticket RPC codec (`ticket_request`/`ticket_response`) + arm apply
+- [x] Viewing is not a call session — superseded: the call-shaped arm/accept path (`CallSessionKind::Broadcast`, SoftMigrate skip, `BroadcastSessionCoordinator`) was removed in [media-client-layers l6](../media-client-layers/PHASES.md#l6--remove-broadcast-from-calls-done); the viewer is `feature/broadcast` ([B008](DECISIONS.md)). `AcceptInvite` still refuses legacy Broadcast rows
+- [x] Stable session media key helpers (no rotate-on-viewer-leave) — `BroadcastJoinTicket` mint / `ExtractBroadcastMediaKey`
+- [x] Join ticket (publisher-signed) delivers key / grant — domain mint/verify/extract + unit tests
+- [x] Tip → ticket RPC codec (`ticket_request`/`ticket_response`)
 - [x] Amp ticket mint handler (`AmpBroadcastTransport::RequestTicket` / inbound)
-- [x] Tip → ticket → attach to one `media_relay` (contact/seed / PreferLocal) — `ArmJoinFromLiveAnnounce` applies ticket into CallMediaKeyStore (attach still needs hop)
+- [x] Tip → ticket → attach to one `media_relay` — `BroadcastViewerWorkflow` (ticket from the publisher → ladder → receive-only attach → playback; key stays in memory)
 - [x] Encrypt-once AEAD mandatory; hops must copy opaque ciphertext (B003 locked)
-- [ ] Loopback / lab: publisher + hop + ≥2 viewers
+- [x] Loopback / lab: publisher + hop + ≥2 viewers — compose `BroadcasterToRelayToViewerEndToEnd`; hard lab **B-HARD-BCAST-NAT**
 
 **Exit:** Watchable live from tip without treating audience as call roster.
 

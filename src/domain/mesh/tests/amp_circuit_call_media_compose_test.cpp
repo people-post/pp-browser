@@ -188,7 +188,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedHelloAndEncryptedAudioRoundT
   bool got_audio = false;
   std::vector<uint8_t> received;
 
-  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
@@ -204,7 +204,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedHelloAndEncryptedAudioRoundT
       got_audio = true;
       cv.notify_one();
     };
-  });
+  }));
 
   CallMediaDirectConnectParams params;
   params.peer_key = harness_->peer_id_b;
@@ -260,14 +260,14 @@ protected:
       ADD_FAILURE() << nested.error().message;
       return false;
     }
-    b_call_->SetInboundHandler([this](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    b_call_->SetInboundHandler(AnswerInline([this](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
       params.media_key = ByteVector(32, 0x42);
       params.call_id = "call-renew-probe";
       params.media_epoch = 1;
       params.offerer = false;
       cbs.on_connected = [this] { answerer_connected_ = true; };
       cbs.on_audio = [this](const std::vector<uint8_t>& opus) { received_ = opus; };
-    });
+    }));
     CallMediaDirectConnectParams params;
     params.peer_key = harness_->peer_id_b;
     params.call_id = "call-renew-probe";
@@ -431,14 +431,14 @@ TEST_F(AmpCircuitCallMediaComposeTest, DISABLED_CallSurvivesRelaySilenceWithDire
   ByteVector media_key(32, 0x42);
   bool answerer_connected = false;
   std::vector<uint8_t> received;
-  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
     params.offerer = false;
     cbs.on_connected = [&] { answerer_connected = true; };
     cbs.on_audio = [&](const std::vector<uint8_t>& opus) { received = opus; };
-  });
+  }));
 
   CallMediaDirectConnectParams params;
   params.peer_key = harness_->peer_id_b;
@@ -494,7 +494,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedEncryptedVideoOver16KiB) {
   std::vector<uint8_t> received;
   uint8_t received_ch = 255;
 
-  b_call_->SetInboundHandler([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
     params.media_key = media_key;
     params.call_id = call_id;
     params.media_epoch = 1;
@@ -509,7 +509,7 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedEncryptedVideoOver16KiB) {
       received = payload;
       got_video = true;
     };
-  });
+  }));
 
   CallMediaDirectConnectParams params;
   params.peer_key = harness_->peer_id_b;

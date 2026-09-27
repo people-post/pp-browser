@@ -260,6 +260,9 @@ void CallController::PrepareForShutdown() {
   if (!ringtone_.StopAndJoin(CallRingtone::kDefaultShutdownJoinBudget)) {
     log().warning << "PrepareForShutdown: ringtone join budget exceeded — detached";
   }
+  if (!ringback_.StopAndJoin(CallRingtone::kDefaultShutdownJoinBudget)) {
+    log().warning << "PrepareForShutdown: ringback join budget exceeded — detached";
+  }
 }
 
 void CallController::ClearInCall() {
@@ -374,6 +377,33 @@ void CallController::SyncRingtone() {
   } else if (!should_ring && ringtone_.IsPlaying()) {
     ringtone_.Stop();
   }
+
+  // Caller-side ringback: only while the callee has not answered (OutboundCalling) and
+  // no incoming ring is showing and media has not started yet.
+  auto* backend = Backend();
+  const bool should_ringback = !should_ring && backend && backend->Available() &&
+                                backend->Phase() == CallPhase::OutboundCalling &&
+                                !backend->Media().IsActive();
+  if (should_ringback && !ringback_.IsPlaying()) {
+    ringback_.Start();
+  } else if (!should_ringback && ringback_.IsPlaying()) {
+    StopRingback(backend);
+  }
+}
+
+void CallController::StopRingback(CallUiBackend* backend) {
+  const bool ringback_was_playing = ringback_.IsPlaying();
+  if (!ringback_was_playing) {
+    return;
+  }
+  // The ringback worker itself owns activate/release of the audio session (see
+  // CallRingtone::RunLoop) — a fast cancel could otherwise race a Deactivate() here
+  // against the worker's own ActivateForVoipCall() and leave the phone in VoIP mode.
+  // The engine owns the session once media is active — release unless the call engine
+  // is actually active and owns it (a null/unavailable backend means nobody else does).
+  const bool release = !(backend && backend->Available() && backend->Media().IsActive());
+  ringback_.SetReleaseSessionOnStop(release);
+  ringback_.Stop();
 }
 
 std::string CallController::DisplayNameForIdentity(const std::string& identity) const {
@@ -560,7 +590,7 @@ void CallController::RefreshPendingRing() {
       if ((*active)->state == CallSessionState::Active && !backend->Media().IsActive() &&
           !backend->MediaAttemptedThisProcess((*active)->call_id) && !backend->IsAwaitingSfuRecovery()) {
         // True orphan after force-quit / process restart.
-        (void)backend->LeaveCall((*active)->call_id);
+        backend->LeaveCall((*active)->call_id);
       }
       active_call_id_.clear();
       ClearInCall();
@@ -834,13 +864,15 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
     UserFeedback::Fail(Tr("call.error.select_person"));
     return false;
   }
-  auto started = backend->StartCall(thread_id, video_allowed, invitee_identities);
-  if (!started) {
-    UserFeedback::Fail(PaymentErrorUserMessage(started.error().message));
-    return false;
-  }
-  active_call_id_ = started->call_id;
-  RefreshPendingRing();
+  // Requested: the calls owner starts it and reports back on UI (failure shown there).
+  backend->StartCall(thread_id, video_allowed, invitee_identities, WhileAlive([this](Roe<CallSession> started) {
+    if (!started) {
+      UserFeedback::Fail(PaymentErrorUserMessage(started.error().message));
+      return;
+    }
+    active_call_id_ = started->call_id;
+    RefreshPendingRing();
+  }));
   return true;
 }
 
@@ -879,20 +911,17 @@ void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>
     UserFeedback::Fail(Tr("call.error.no_active"));
     return;
   }
-  int invited = 0;
   for (const std::string& identity : invitee_identities) {
     if (identity.empty()) {
       continue;
     }
-    if (auto ok = backend->InviteParticipant(active_call_id_, identity); ok) {
-      ++invited;
-    } else {
-      UserFeedback::Fail(ok.error().message);
-      break;
-    }
-  }
-  if (invited > 0) {
-    RefreshPendingRing();
+    backend->InviteParticipant(active_call_id_, identity, WhileAlive([this](Roe<void> ok) {
+      if (!ok) {
+        UserFeedback::Fail(ok.error().message);
+        return;
+      }
+      RefreshPendingRing();
+    }));
   }
 }
 
@@ -990,6 +1019,7 @@ void CallController::LeaveActive() {
     // Stale End button after Idle — force-clear chrome so Samsung does not look hung.
     ClearInCall();
     ClearRing();
+    StopRingback(backend);
     SyncShellState();
     return;
   }
@@ -1001,6 +1031,7 @@ void CallController::LeaveActive() {
   active_call_id_.clear();
   ClearInCall();
   ClearRing();
+  StopRingback(backend);
   SyncShellState();
   if (backend && backend->Available()) {
     backend->Apply(CallLifecycleEvent::LeaveClicked, call_id);
@@ -1035,10 +1066,12 @@ void CallController::ToggleMute() {
     return;
   }
   const bool before = backend->Media().IsMuted();
-  if (auto muted = backend->SetLocalAudioMuted(!before); !muted) {
-    UserFeedback::Fail(muted.error().message);
-  }
-  RefreshPendingRing();
+  backend->SetLocalAudioMuted(!before, WhileAlive([this](Roe<void> muted) {
+    if (!muted) {
+      UserFeedback::Fail(muted.error().message);
+    }
+    RefreshPendingRing();
+  }));
 }
 
 void CallController::ToggleCamera() {
@@ -1060,10 +1093,12 @@ void CallController::ToggleCamera() {
       return;
     }
   }
-  if (auto cam = backend->SetLocalVideoEnabled(next); !cam) {
-    UserFeedback::Fail(cam.error().message);
-  }
-  RefreshPendingRing();
+  backend->SetLocalVideoEnabled(next, WhileAlive([this](Roe<void> cam) {
+    if (!cam) {
+      UserFeedback::Fail(cam.error().message);
+    }
+    RefreshPendingRing();
+  }));
 }
 
 void CallController::ToggleSpeaker() {
@@ -1078,8 +1113,11 @@ void CallController::ToggleSpeaker() {
   const bool before = CallAudioSession::IsSpeakerphoneOn();
   CallAudioSession::SetSpeakerphoneOn(!before);
   // Speaker = route only (not mute). Android AudioRecord often goes silent until SDL reopen.
-  backend->Media().RequestAudioDeviceReopen();
-  log().info << "ToggleSpeaker speaker_on=" << (!before ? 1 : 0) << " (reopen capture)";
+  const bool reopen = CallAudioSession::SpeakerToggleNeedsDeviceReopen();
+  if (reopen) {
+    backend->Media().RequestAudioDeviceReopen();
+  }
+  log().info << "ToggleSpeaker speaker_on=" << (!before ? 1 : 0) << " reopen=" << (reopen ? 1 : 0);
   RefreshPendingRing();
 }
 
@@ -1089,6 +1127,14 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   auto& in_call = in_call_;
   const bool muted = media.IsMuted();
   in_call.muted = muted;
+  if (auto failure = media.TakeCameraFailure()) {
+    // Camera opens asynchronously (media device thread): report the miss and withdraw the video
+    // flag the roster already advertised.
+    UserFeedback::Fail(*failure);
+    if (auto* failed_backend = Backend(); failed_backend && failed_backend->Available()) {
+      failed_backend->SetLocalVideoEnabled(false);
+    }
+  }
   in_call.camera_on = media.IsCameraEnabled();
   in_call.show_speaker = CallAudioSession::SupportsSpeakerToggle();
   in_call.speaker_on = CallAudioSession::IsSpeakerphoneOn();
@@ -1192,7 +1238,7 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
         if (row_stream != stream) {
           continue;
         }
-        (void)backend->RequestVideoRefresh(active_call_id_, row.identity.c_str());
+        backend->RequestVideoRefresh(active_call_id_, row.identity.c_str());
         break;
       }
     }
@@ -1204,10 +1250,10 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
           if (row.is_local || !row.video_enabled || row.has_remote_video) {
             continue;
           }
-          (void)backend->RequestVideoRefresh(active_call_id_, row.identity.c_str());
+          backend->RequestVideoRefresh(active_call_id_, row.identity.c_str());
         }
       } else if (auto peer = backend->PeerIdentityForCall(active_call_id_); peer && peer->has_value()) {
-        (void)backend->RequestVideoRefresh(active_call_id_, **peer);
+        backend->RequestVideoRefresh(active_call_id_, **peer);
       }
     }
   }

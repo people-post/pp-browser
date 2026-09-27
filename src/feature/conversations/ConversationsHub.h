@@ -20,6 +20,9 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/InitiationBillingStore.h"
+#include "feature/broadcast/BroadcastHub.h"
+#include "foundation/runtime/DeferredSelf.h"
+#include "domain/mesh/media_plane/MeshMediaPlane.h"
 #include "feature/calls/CallStack.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
 #include "domain/messaging/AttachmentSuppressionStore.h"
@@ -48,6 +51,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_set>
@@ -180,6 +184,13 @@ public:
   const CallStack& CallStackRef() const { return *call_stack_; }
   CallSessionManager* Calls();
   CallLifecycle* Lifecycle();
+  /**
+   * Live broadcast viewer (sibling of calls, media-client-layers L013). Null while the mesh is down;
+   * rebuilt — and any watch stopped — whenever the media_relay plane is rewired. UI thread.
+   */
+  BroadcastHub* Broadcast() { return broadcast_.get(); }
+  /** Fires (UI thread) on every viewer status change, across hub rebuilds. */
+  void SetOnBroadcastChanged(std::function<void()> callback);
   MessageRouter& Router();
   ContactActionDispatcher& Actions();
   bool HasRouter() const { return router_ != nullptr; }
@@ -307,8 +318,14 @@ private:
   void WireRelayAuthSigner();
   Roe<void> StartMesh(const AppConfig& config);
   void StopMesh();
+  void PublishMeshConfig();
+  std::shared_ptr<const MeshConfig> MeshConfigSnapshot() const;
   /** App-only mesh glue (LAN mDNS / policies) after MeshHost start. */
   void StartMeshServices();
+  /** Drop the broadcast hub (stops a watch) — before anything rewires the plane it borrows from. */
+  void ResetBroadcast();
+  /** Build the broadcast hub from the current mesh + call plane objects (no-op while mesh is down). */
+  void RebuildBroadcast();
   /** Undo BuildMessagingStack / StartMesh without a full hub Shutdown (shutdown race). */
   void DiscardMessagingBringUp();
   void ApplyMeshAdmissionPolicies();
@@ -345,7 +362,10 @@ private:
 
   std::string data_dir_;
   std::string profile_id_;
-  AppConfig config_;
+  AppConfig config_;  // UI (the hub's thread)
+  /** `config_.mesh` as owners read it (call stack, mesh media policy): republished on every write. */
+  mutable std::mutex mesh_config_mu_;
+  std::shared_ptr<const MeshConfig> mesh_config_snapshot_ = std::make_shared<const MeshConfig>();
   AgentInboundPorts agent_inbound_;
   SessionStore* session_store_ = nullptr;
   ProfileSecretsEngine* secrets_ = nullptr;
@@ -390,11 +410,20 @@ private:
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;
 
+  // --- Neutral mesh media (L015) — lent to the call stack and broadcast; outlives both ---
+  std::unique_ptr<MeshMediaPlane> mesh_media_;
+
   // --- CallStack (app-only) ------------------------------------------------
   std::unique_ptr<CallStack> call_stack_;
 
   // --- MeshHost (shared with pp-node) + app mesh glue ----------------------
   std::unique_ptr<MeshHost> mesh_;
+  // Borrows mesh links, mesh_media_'s relay objects and mesh_messaging_ — declared after them so
+  // it is destroyed first (also reset explicitly in StopMesh / before relay rewires).
+  std::unique_ptr<BroadcastHub> broadcast_;
+  /** Guards announces posted to UI for the current broadcast hub (invalidated on reset). */
+  DeferredSelf broadcast_deferred_;
+  std::function<void()> on_broadcast_changed_;
   std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
   std::string mesh_last_error_;
   bool upnp_auto_tried_ = false;

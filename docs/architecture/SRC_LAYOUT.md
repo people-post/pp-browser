@@ -171,6 +171,7 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 | `feature/settings/` | Settings apply logic (no conversations/gui deps) |
 | `feature/conversations/` | Conversations hub + delivery |
 | `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
+| `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer workflow; never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
 
 Feature module libraries stay acyclic. Conversations invoke AI through `AgentInboundPorts` (app-filled); `pp_feature_conversations` does not link `pp_feature_ai`. Calls invoke delivery through `CallDeliveryPorts` (hub-filled); `pp_feature_calls` does not include conversations:

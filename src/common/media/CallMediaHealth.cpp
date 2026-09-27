@@ -175,7 +175,7 @@ std::string FormatCallDetailsText(const CallMediaHealthView& v, int64_t now_ms, 
         << " rx_video=" << v.engine.rx_video_frames << " tx_video=" << v.engine.tx_video_frames
         << "\n";
     out << "underrun=" << v.engine.playout_underruns << " plc=" << v.engine.plc_frames
-        << " tx_drops=" << v.engine.outbound_drops << "\n";
+        << " fec=" << v.engine.fec_frames << " tx_drops=" << v.engine.outbound_drops << "\n";
     out << "hop_drops rate=" << v.hop.drops_rate << " queue=" << v.hop.drops_queue
         << " ceiling=" << v.hop.drops_ceiling << " total=" << v.hop.drops_total << "\n";
   }
@@ -195,7 +195,9 @@ std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_m
       << " tx_frames=" << v.engine.tx_audio_frames << " rx_video=" << v.engine.rx_video_frames
       << " tx_video=" << v.engine.tx_video_frames << " video_bps=" << v.engine.video_target_bps
       << " underrun=" << v.engine.playout_underruns
-      << " plc=" << v.engine.plc_frames << " pressure=" << v.engine.path_pressure
+      << " plc=" << v.engine.plc_frames << " fec=" << v.engine.fec_frames
+      << " audio_io=" << v.engine.audio_io << " io_underrun=" << v.engine.io_underruns
+      << " pressure=" << v.engine.path_pressure
       << " hop_pressure=" << v.hop.path_pressure << " opus_bps=" << v.engine.opus_target_bps
       << " tx_drops=" << v.engine.outbound_drops << " hop_drops_rate=" << v.hop.drops_rate
       << " hop_drops_queue=" << v.hop.drops_queue << " hop_drops_ceiling=" << v.hop.drops_ceiling

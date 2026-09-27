@@ -1,4 +1,5 @@
 #include "app/node/call_probe/ProductStackHarness.h"
+#include "feature/conversations/MeshMediaPlaneWiring.h"
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
@@ -19,11 +20,16 @@
 #include "domain/mesh/reachability/Reachability.h"
 #include "common/thread/ThreadRecordTypes.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <optional>
+#include <sstream>
 #include <thread>
+#include <vector>
 
 namespace pbr {
 namespace call_probe {
@@ -135,6 +141,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma) {
     app_config_.mesh.bootstrap_peers = {hop_ma};
   }
 
+  mesh_media_ = std::make_unique<MeshMediaPlane>();
   stack_ = std::make_unique<CallStack>();
   if (auto stores = stack_->InitializeStores(store_->ProfileDbPath(), "call-probe"); !stores) {
     return stores.error();
@@ -150,7 +157,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma) {
   deps.contacts = contacts_.get();
   deps.identity = identity_.get();
   deps.psk = psk_.get();
-  deps.config = [this]() -> const AppConfig& { return app_config_; };
+  // Set before the stack starts and never changed afterwards: one snapshot serves every owner.
+  deps.mesh_config = [cfg = std::make_shared<const MeshConfig>(app_config_.mesh)]() { return cfg; };
   deps.mesh = [this]() -> MeshHost* { return host_.get(); };
   deps.list_directory_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
   deps.list_dht_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
@@ -204,15 +212,25 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma) {
     return msg;
   };
   deps.bind_call_control = [this](CallControlInboundPorts ports) { inbound_ = std::move(ports); };
+  MeshMediaPlaneWiringInputs media;
+  media.mesh = deps.mesh;
+  media.contacts = deps.contacts;
+  media.mesh_config = deps.mesh_config;
+  media.list_directory_nodes = deps.list_directory_nodes;
+  media.list_dht_nodes = deps.list_dht_nodes;
+  media.seed_dial_ok = deps.seed_dial_ok;
+  media.register_direct_endpoint = deps.delivery.register_peer_direct_endpoint;
+  mesh_media_->SetDeps(MakeMeshMediaPlaneDeps(std::move(media)));
+  deps.mesh_media = mesh_media_.get();
 
   stack_->BuildSessions(deps);
   if (!ui_->Available()) {
     return Error("CallUiBackend unavailable after BuildSessions");
   }
   // Invite listen_multiaddrs are peer-private under dual-SNAT; filter before dial-book write
-  // so CallMediaPlane does not RegisterEndpoint undialable RFC1918 (HL004).
-  if (stack_->Calls()) {
-    stack_->Calls()->SetRegisterPeerListenMultiaddrs(
+  // so the mesh media plane does not RegisterEndpoint undialable RFC1918 (HL004).
+  stack_->RunOnOwner([this](CallSessionManager& calls) {
+    calls.SetRegisterPeerListenMultiaddrs(
         [this](const std::string& identity, const std::vector<std::string>& multiaddrs) {
           std::vector<std::string> dialable;
           dialable.reserve(multiaddrs.size());
@@ -227,7 +245,9 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma) {
             stack_->RegisterCallPeerListenMultiaddrs(identity, dialable);
           }
         });
-  }
+  });
+  stack_->DetachMeshMedia();
+  mesh_media_->Wire();
   stack_->OnMeshServicesStarted();
 
   auto chat_deps = host_->ChatDeps();
@@ -265,8 +285,13 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
   if (auto up = contacts_->Upsert(contact); !up) {
     return up.error();
   }
-  if (stack_ && stack_->Calls()) {
-    stack_->Calls()->NoteMeshPeerIdForRelay(account_id, peer_id);
+  if (mesh_media_) {
+    mesh_media_->RefreshHopPolicy();  // contacts are rendezvous / punch-introducer candidates
+  }
+  if (stack_) {
+    stack_->RunOnOwner([account_id, peer_id](CallSessionManager& calls) {
+      calls.NoteMeshPeerIdForRelay(account_id, peer_id);
+    });
   }
   LearnAccountPeerId(account_id, peer_id);
   // Dual-SNAT: do not RegisterEndpoint private advertise MAs — that poisons dial book and
@@ -281,13 +306,21 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
   return {};
 }
 
+void ProductStackHarness::RefreshMeshMedia() {
+  broadcast_.reset();  // borrows the relay objects the rewire replaces
+  stack_->DetachMeshMedia();
+  mesh_media_->ResetRelayClients();
+  mesh_media_->Wire();
+  stack_->RebindMeshMedia();
+}
+
 Roe<void> ProductStackHarness::EnsurePeerCircuitPath(const std::string& peer_id) {
   if (!stack_ || peer_id.empty()) {
     return Error("circuit path: missing stack/peer");
   }
   // Async + PumpUntil: the completion lands on the UI mailbox.
   std::optional<Roe<void>> result;
-  stack_->TryEnsureCallMediaReachableAsync(peer_id, [&](Roe<void> value) { result = std::move(value); });
+  mesh_media_->TryEnsurePeerReachableAsync(peer_id, [&](Roe<void> value) { result = std::move(value); });
   if (!PumpUntil([&] { return result.has_value(); }, 30000)) {
     return Error("call-media circuit reach timed out");
   }
@@ -321,6 +354,9 @@ Roe<void> ProductStackHarness::EnsureOriginThread(const std::string& thread_id,
 void ProductStackHarness::Pump() {
   // UI mailbox only — the mesh runs on MeshHost's MeshPump.
   AppRuntime::RunUITasks();
+  if (!signal_dir_.empty()) {
+    PollSignalInbox();
+  }
 }
 
 bool ProductStackHarness::PumpUntil(const std::function<bool()>& done, int timeout_ms) {
@@ -364,24 +400,18 @@ void ProductStackHarness::LearnAccountPeerId(const std::string& account_id,
     return;
   }
   account_to_peer_id_[account_id] = peer_id;
-  if (stack_ && stack_->Calls()) {
-    stack_->Calls()->NoteMeshPeerIdForRelay(account_id, peer_id);
+  if (stack_) {
+    stack_->RunOnOwner([account_id, peer_id](CallSessionManager& calls) {
+      calls.NoteMeshPeerIdForRelay(account_id, peer_id);
+    });
   }
 }
 
 Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account,
                                                const ThreadMessage& msg) {
-  struct CountOnExit {
-    std::atomic<int>& n;
-    ~CountOnExit() { n.fetch_add(1, std::memory_order_release); }
-  } count{control_sends_};
-  if (!chat_) {
-    return Error("chat transport not started");
-  }
-  const std::string dial_key = AmpDialKeyForAccount(peer_account);
-  if (dial_key.empty()) {
-    return Error("missing amp dial key for call-control");
-  }
+  // Same contract as the product's SendUserMessage: prepare, enqueue, return — delivery completes
+  // later (Amp on Mesh I/O). A blocking send here parked the calls owner on the peer's ack; after
+  // hangup the peer was gone, quiesce ran out and teardown freed the stack under it (hard-w5).
   Object body;
   body.set("thread_id", msg.thread_id);
   body.set("text", msg.text);
@@ -397,7 +427,136 @@ Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account,
   env.body.e2e.payload_b64 =
       Base64Encode(ByteVector(reinterpret_cast<const uint8_t*>(json.data()),
                               reinterpret_cast<const uint8_t*>(json.data()) + json.size()));
-  return chat_->SendEnvelope(dial_key, env);
+  if (!signal_dir_.empty()) {
+    auto written = WriteSignal(peer_account, env);
+    control_sends_.fetch_add(1, std::memory_order_release);
+    return written;
+  }
+  const std::string dial_key = AmpDialKeyForAccount(peer_account);
+  if (!chat_ || dial_key.empty()) {
+    control_sends_.fetch_add(1, std::memory_order_release);
+    return Error(!chat_ ? "chat transport not started" : "missing amp dial key for call-control");
+  }
+  chat_->SendEnvelopeAsync(dial_key, env, [sends = &control_sends_, id = msg.id](Roe<void> sent) {
+    if (!sent) {
+      std::cerr << "warning: call-control send failed message_id=" << id << " err=" << sent.error().message
+                << std::endl;
+    }
+    sends->fetch_add(1, std::memory_order_release);
+  });
+  return {};
+}
+
+void ProductStackHarness::SetSignalDir(std::filesystem::path dir) {
+  signal_dir_ = std::move(dir);
+  std::error_code ec;
+  std::filesystem::create_directories(SignalInbox(local_account_), ec);
+  std::cout << "ok  product-stack signaling via dir=" << signal_dir_.string() << " (no Amp chat path)\n";
+}
+
+std::filesystem::path ProductStackHarness::SignalInbox(const std::string& account) const {
+  std::string name = account;
+  std::replace_if(
+      name.begin(), name.end(), [](char c) { return !std::isalnum(static_cast<unsigned char>(c)) && c != '-'; },
+      '_');
+  return signal_dir_ / ("inbox-" + name);
+}
+
+Roe<void> ProductStackHarness::WriteSignal(const std::string& peer_account, const RelayEnvelope& env) {
+  const std::filesystem::path inbox = SignalInbox(peer_account);
+  std::error_code ec;
+  std::filesystem::create_directories(inbox, ec);
+  Object file;
+  file.set("message_id", env.message_id);
+  file.set("sender_relay_id", env.sender_relay_id);
+  file.set("sender_contact_id", env.sender_contact_id);
+  file.set("timestamp", static_cast<int64_t>(env.timestamp));
+  file.set("payload_b64", env.body.e2e.payload_b64);
+  std::ostringstream name;
+  name << std::setw(16) << std::setfill('0') << util::NowUnixMs() << "-" << std::setw(6) << ++signal_seq_ << "-"
+       << local_peer_id_.substr(0, 8);
+  const std::filesystem::path tmp = inbox / (name.str() + ".tmp");
+  {
+    std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+    out << DumpJson(file);
+    if (!out) {
+      return Error("signal write failed: " + tmp.string());
+    }
+  }
+  // Rename is atomic on one filesystem: the reader never sees a partial file.
+  std::filesystem::rename(tmp, inbox / (name.str() + ".json"), ec);
+  if (ec) {
+    return Error("signal rename failed: " + ec.message());
+  }
+  return {};
+}
+
+void ProductStackHarness::PollSignalInbox() {
+  const auto now = std::chrono::steady_clock::now();
+  if (now < next_signal_poll_) {
+    return;
+  }
+  next_signal_poll_ = now + std::chrono::milliseconds(100);
+  std::error_code ec;
+  std::vector<std::filesystem::path> files;
+  for (const auto& entry : std::filesystem::directory_iterator(SignalInbox(local_account_), ec)) {
+    if (entry.path().extension() == ".json") {
+      files.push_back(entry.path());
+    }
+  }
+  std::sort(files.begin(), files.end());
+  for (const auto& path : files) {
+    std::ifstream in(path, std::ios::binary);
+    std::stringstream buf;
+    buf << in.rdbuf();
+    in.close();
+    std::filesystem::remove(path, ec);
+    auto obj = TryParseObject(buf.str());
+    if (!obj) {
+      continue;
+    }
+    RelayEnvelope env;
+    env.message_id = obj->getString("message_id").value_or("");
+    env.sender_relay_id = obj->getString("sender_relay_id").value_or("");
+    env.sender_contact_id = obj->getString("sender_contact_id").value_or("");
+    env.timestamp = static_cast<int64_t>(obj->getNonNegInt("timestamp").value_or(0));
+    env.body.e2e.payload_b64 = obj->getString("payload_b64").value_or("");
+    // Relay inbox ingestion runs off the UI thread in the product — do the same.
+    AppRuntime::PostWorkerBackground([this, env = std::move(env)]() mutable { OnChatInbound(std::move(env)); });
+  }
+}
+
+void ProductStackHarness::ForceDialMiss(const std::string& peer_id) {
+  if (!host_ || !host_->Amp()) {
+    return;
+  }
+  auto done = std::make_shared<std::atomic<bool>>(false);
+  auto ok = std::make_shared<std::atomic<bool>>(false);
+  host_->Amp()->Links().EnsureAssociation(peer_id, [done, ok](pp::amp::PeerLinkManager::LinkRoe r) {
+    ok->store(static_cast<bool>(r), std::memory_order_release);
+    done->store(true, std::memory_order_release);
+  });
+  // Short: a long private dial under dual-SNAT can outlive the hop mapping (~5 s LooksAlive).
+  const bool finished = PumpUntil([&] { return done->load(std::memory_order_acquire); }, 3500);
+  if (!finished) {
+    host_->Amp()->Links().AbortInflightDial(peer_id);
+  }
+  std::cout << "ok  product-stack force-dial-fail peer=" << peer_id
+            << (finished ? (ok->load() ? " (unexpectedly ok)" : " (miss; backoff left armed)")
+                         : " (timed out; aborted)")
+            << "\n";
+}
+
+Roe<void> ProductStackHarness::RegisterPeerPrivateEndpoint(const std::string& peer_id,
+                                                           const std::string& multiaddr) {
+  if (!host_ || !host_->Amp()) {
+    return Error("mesh amp down");
+  }
+  if (auto reg = host_->Amp()->Links().RegisterEndpoint(peer_id, multiaddr); !reg) {
+    return reg.error();
+  }
+  std::cout << "ok  product-stack dirty-book registered peer=" << peer_id << " ma=" << multiaddr << "\n";
+  return {};
 }
 
 void ProductStackHarness::OnChatInbound(RelayEnvelope env) {
@@ -539,7 +698,8 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
         const std::string inviter = (*pending)->inviter_identity;
         // Reverse Accept rides Amp chat: ensure nested path to inviter PeerId (map from invite).
         const std::string inviter_peer = AmpDialKeyForAccount(inviter);
-        if (!inviter_peer.empty() && inviter_peer != inviter) {
+        // Signal-dir: Accept goes back through the inbox — media must reach the peer from cold.
+        if (!UsesSignalDir() && !inviter_peer.empty() && inviter_peer != inviter) {
           if (!(host_ && host_->Amp() && host_->Amp()->Links().IsConnected(inviter_peer))) {
             if (auto path = EnsurePeerCircuitPath(inviter_peer); !path) {
               std::cerr << "warning: product-stack answerer circuit path: " << path.error().message
@@ -605,11 +765,15 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::string& peer_account, i
   if (auto thr = EnsureOriginThread(thread_id, peer_account); !thr) {
     return thr.error();
   }
-  auto started = ui_->StartCall(thread_id, false, {peer_account});
-  if (!started) {
-    return started.error();
+  std::optional<Roe<CallSession>> started;
+  ui_->StartCall(thread_id, false, {peer_account}, [&started](Roe<CallSession> result) { started = std::move(result); });
+  if (!PumpUntil([&started]() { return started.has_value(); }, 10000)) {
+    return Error("product-stack StartCall timed out");
   }
-  const std::string call_id = started->call_id;
+  if (!*started) {
+    return started->error();
+  }
+  const std::string call_id = (*started)->call_id;
   std::cout << "ok  product-stack StartCall call_id=" << call_id << " peer=" << peer_account << "\n";
 
   const bool reached = PumpUntil(
@@ -709,9 +873,76 @@ void ProductStackHarness::DisarmTeardownWatchdog() {
   }
 }
 
+Roe<ByteVector> ProductStackHarness::DevicePublicKey() const {
+  if (!identity_) {
+    return Error("identity store not ready");
+  }
+  return identity_->GetDeviceMlDsaPublicKey();
+}
+
+Roe<void> ProductStackHarness::EnableBroadcast(
+    std::function<std::optional<ByteVector>(const std::string& peer_id)> publisher_key) {
+  auto chat = host_ ? host_->ChatDeps() : std::nullopt;
+  if (!chat || !stack_) {
+    return Error("broadcast needs the mesh host and call plane");
+  }
+  // Same serving wiring as MeshDeliveryOrchestrator::AttachAmpTransports.
+  broadcast_server_ = std::make_unique<AmpBroadcastTransport>(chat->links, chat->io.io_pump, chat->io.post_worker,
+                                                              chat->io.post_io, chat->io.post_after);
+  broadcast_server_->SetPublisherKeyResolver(publisher_key);
+  broadcast_server_->SetPublisherSecretResolver([this]() -> std::optional<ByteVector> {
+    auto sk = identity_->GetDeviceMlDsaPrivateKey();
+    return sk ? std::optional<ByteVector>(*sk) : std::nullopt;
+  });
+  broadcast_server_->Start();
+
+  BroadcastMeshDeps deps;
+  deps.links = &chat->links;
+  deps.io = chat->io;
+  deps.relay = mesh_media_->RelayAttachPorts();
+  deps.publisher_key = std::move(publisher_key);
+  deps.put_program_key = [this](const std::string& program_id, const std::string& join_handle,
+                                BroadcastProgramKey key) {
+    AmpBroadcastTransport::LiveProgramKey live;
+    live.publisher_peer_id = key.publisher_peer_id;
+    live.media_key_bytes = std::move(key.media_key);
+    live.media_epoch = key.media_epoch;
+    live.hop_peer_id = key.hop_peer_id;
+    broadcast_server_->PutLiveProgramKey(program_id, join_handle, std::move(live));
+  };
+  deps.clear_program_key = [this](const std::string& program_id, const std::string& join_handle) {
+    broadcast_server_->ClearLiveProgramKey(program_id, join_handle);
+  };
+  deps.announce = [this](const BroadcastTipDraft& draft) -> Roe<void> {
+    last_tip_ = draft;
+    std::cout << "broadcast announce state=" << (draft.state == PeerAnnounceState::Live ? "live" : "ended")
+              << " program=" << draft.program_id << " join=" << draft.join_handle << " hop=" << draft.hop_peer_id
+              << std::endl;
+    return {};
+  };
+  // Like the product hub: the announce runs on the harness's (UI) thread, which reads last_tip_.
+  deps.post_announce = [](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); };
+  broadcast_devices_ = std::make_unique<MediaDeviceArbiter>(CreateNullMediaDeviceBackend());
+  broadcast_ = BroadcastHub::ForMesh(std::move(deps), *broadcast_devices_);
+  if (!broadcast_) {
+    return Error("broadcast hub unavailable (media_relay not wired)");
+  }
+  return {};
+}
+
 void ProductStackHarness::ShutdownImpl() {
+  // Broadcast borrows the mesh media plane's relay objects and this host's links: it goes first.
+  if (broadcast_) {
+    ShutdownStep("broadcast");
+    broadcast_.reset();
+  }
+  if (broadcast_server_) {
+    broadcast_server_->Stop();
+    broadcast_server_.reset();
+  }
+  broadcast_devices_.reset();
   // Product quit order (THREADING.md § Shutdown order): abort call media → quiesce runtime →
-  // CallStack::StopMesh (joins MeshPump) → join runtime → free. Freeing the call stack while the
+  // mesh stop (joins MeshPump) → join runtime → free. Freeing the call stack while the
   // mesh / workers still ran segfaulted in hard-w5 (2026-09-25).
   if (ui_ && stack_ && stack_->HasActiveLocalCall()) {
     if (auto active = ui_->ActiveLocalCall(); active && active->has_value()) {
@@ -728,8 +959,16 @@ void ProductStackHarness::ShutdownImpl() {
   }
   ShutdownStep("stop-mesh");
   if (stack_ && host_) {
-    // Detach = destroy (product DetachAmpTransports): nothing may outlive the Amp stack.
-    stack_->StopMesh(*host_, [this]() { chat_.reset(); });
+    // Same order as ConversationsHub::StopMesh (L015). Detach = destroy (product
+    // DetachAmpTransports): nothing may outlive the Amp stack.
+    MeshHost* host = host_.get();
+    mesh_media_->InvalidateAsyncOps();
+    stack_->PrepareForMeshStop([host]() { host->AbortInflightCircuitRequests(); });
+    mesh_media_->ResetRelayClient();
+    chat_.reset();
+    host_->Stop();
+    stack_->FinishMeshStop();
+    mesh_media_->ResetAfterMeshStop();
   } else if (host_) {
     host_->Stop();
   }
@@ -739,11 +978,15 @@ void ProductStackHarness::ShutdownImpl() {
     ShutdownStep("call-stack-shutdown");
     stack_->Shutdown();
   }
+  if (mesh_media_) {
+    mesh_media_->Clear();
+  }
   ShutdownStep("runtime");
   AppRuntime::Shutdown();
   ShutdownStep("free");
   ui_.reset();
   stack_.reset();
+  mesh_media_.reset();
   if (psk_) {
     psk_->ClearDek();
   }

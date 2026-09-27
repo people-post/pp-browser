@@ -14,11 +14,17 @@ struct CameraCaptureTransform {
 };
 
 /**
- * Resolve capture transform for an SDL camera id.
+ * Current display / interface rotation, clockwise degrees (0/90/180/270). Call on the UI thread
+ * (iOS reads UIKit); pass the result to ResolveCameraCaptureTransform on any thread.
+ */
+int CameraDisplayRotationDegrees();
+
+/**
+ * Resolve capture transform for an SDL camera id. Any thread (the media device thread opens cameras).
  * Android: ACAMERA_SENSOR_ORIENTATION + display rotation (CameraX compensation).
  * iOS: conventional sensor angles + interface/display orientation.
  * Desktop: identity + landscape encode.
  */
-CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id);
+CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id, int display_rotation_deg);
 
 } // namespace pbr

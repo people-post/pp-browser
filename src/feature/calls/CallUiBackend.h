@@ -2,13 +2,14 @@
 
 #include "foundation/data/PricingTypes.h"
 #include "common/media/CallMediaHealth.h"
-#include "domain/messaging/AnnounceLiveJoin.h"
 #include "domain/messaging/CallTypes.h"
 #include "common/Error.h"
 #include "feature/calls/CallLifecycle.h"
 #include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallUiState.h"
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -17,94 +18,100 @@
 namespace pbr {
 
 class CallMediaEngine;
+class CallSessionManager;
 class CallStack;
 
 /**
- * Sealed UI-facing façade over the CallStack session + lifecycle.
- * Queries stack.Calls()/Lifecycle() per call so stack rebuilds stay transparent.
- * Application owns the instance (bound to ConversationsHub::CallStackRef());
- * CallController binds via CallFunctionalPorts.
+ * Sealed UI-facing façade over the call stack (projects/thread-ownership t2b). Call state is owned
+ * by the calls owner (`CallsThread`), never read or written from UI directly:
+ * - **intents** post to the owner; ones with a result deliver it on UI through `on_done`;
+ * - **owner state** (phase, status, flags, seat, hop health, …) reads the snapshot the owner
+ *   publishes after each step (`CallStack::UiState`);
+ * - **durable state** (invites, sessions, participants) reads the stores directly (read-only);
+ * - `Media()` is the engine, which synchronizes itself (levels, video, health for the GUI).
+ * Queries go through stack.Calls() per call so stack rebuilds stay transparent. Application owns
+ * the instance (bound to ConversationsHub::CallStackRef()); CallController binds via
+ * CallFunctionalPorts. UI thread.
  */
 class CallUiBackend {
 public:
   explicit CallUiBackend(CallStack& stack);
 
   bool Available() const;
-  /** Stable identity for rebind detection (CallSessionManager* as opaque). */
+  /** Stable pointer identity of the current CallSessionManager (stack rebuild detection). */
   const void* SessionsIdentity() const;
 
+  /** GUI callbacks — always invoked on UI. */
   void SetOnRingChanged(std::function<void()> callback);
   void SetOnChromeRefresh(std::function<void()> callback);
 
+  // --- Intents (posted to the calls owner) -----------------------------------------------------
   void SweepExpiredInvites();
-  /** Chrome heal when media already reports failed (not a UI-tick poll). */
   void PollP2pConnectHealth();
-
-  std::optional<std::string> TakeLastMediaError();
-  std::string PeekMediaActivity() const;
   void ClearMediaActivity();
+  void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
+  void NoteRingCallId(const std::string& call_id);
+  void ClearLastError();
+  void LeaveCall(const std::string& call_id);
+  void StopCallMedia(const std::string& call_id);
+  void RequestVideoRefresh(const std::string& call_id, const std::string& publisher_identity);
+  /** Set before AcceptClicked — consumed by AcceptInvite. */
+  void SetPendingAcceptChargeDecision(InitiationChargeDecision decision);
+  /** The pending media error, once per error (the owner clears it). */
+  std::optional<std::string> TakeLastMediaError();
 
+  // --- Intents with a result (`on_done` on UI) ---------------------------------------------------
+  void StartCall(const std::string& origin_thread_id, bool video_allowed,
+                 const std::vector<std::string>& invitee_identities, std::function<void(Roe<CallSession>)> on_done);
+  void InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
+                         std::function<void(Roe<void>)> on_done);
+  void SetLocalAudioMuted(bool muted, std::function<void(Roe<void>)> on_done = {});
+  /** Reads the display rotation here, on UI (L012), and hands it to the owner. */
+  void SetLocalVideoEnabled(bool enabled, std::function<void(Roe<void>)> on_done = {});
+
+  // --- Durable state (stores, read-only) ---------------------------------------------------------
   Roe<std::optional<PendingCallInvite>> TopPendingInvite();
   Roe<std::optional<CallSession>> ActiveLocalCall();
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
-
-  bool IsAwaitingSfuRecovery() const;
-  bool IsSoftMigrateInFlight() const;
-  bool IsSfuAttachWaitActive() const;
-  bool IsP2pConnectFailed() const;
-  bool P2pConnectMissingMic() const;
-  bool MediaAttemptedThisProcess(const std::string& call_id) const;
-
-  Roe<void> LeaveCall(const std::string& call_id);
-  Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
-                             const std::vector<std::string>& invitee_identities);
-  /**
-   * Spine C: arm pending invite + ringing session from a live-join plan.
-   * Does not SoftMigrate or attach media — AcceptInvite remains the next step.
-   */
-  Roe<PendingCallInvite> ArmJoinFromLiveAnnounce(const AnnounceLiveJoinPlan& plan,
-                                                 const ArmLiveAnnounceJoinOpts& opts = {});
-  /** Spine C: accept armed live-announce invite (no SoftMigrate / 1:1 media). */
-  Roe<void> AcceptLiveAnnounceJoin(const std::string& call_id);
-
-  Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity);
-  void StopCallMedia(const std::string& call_id);
-
-  Roe<void> SetLocalAudioMuted(bool muted);
-  Roe<void> SetLocalVideoEnabled(bool enabled);
-  Roe<void> RequestVideoRefresh(const std::string& call_id, const std::string& publisher_identity);
-
-  /** Requires Available(); CallController still needs tiles/levels via CallMediaEngine. */
-  CallMediaEngine& Media();
-  CallHopHealth HopHealth() const;
-  std::string MediaPathKind() const;
-  /** V036 Phase 2 dual-FSM: chrome Connected only when SeatMediaLive. */
-  CallMediaSeat::MediaState SeatMediaState(const std::string& call_id) const;
-  bool SeatMediaLive(const std::string& call_id) const;
-  /** V037: InCall + DirectLive|HopLive. */
-  bool MediaChromeLive() const;
-  CallMediaStatus MediaStatus() const;
-
-  // Lifecycle
-  const std::string& LastError() const;
-  void ClearLastError();
-  bool ShouldSuppressRing(const std::string& call_id) const;
-  CallPhase Phase() const;
-  void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
-  void NoteRingCallId(const std::string& call_id);
-  const std::string& LastRingCallId() const;
-  const std::string& ActiveCallId() const;
-
   /** P001 initiation offer stored for inbound inviter (0 if none). */
   int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
-  /** Set before AcceptClicked — consumed by AcceptInvite. */
-  void SetPendingAcceptChargeDecision(InitiationChargeDecision decision);
+  bool MediaAttemptedThisProcess(const std::string& call_id) const;
+
+  // --- Owner state (published snapshot) ----------------------------------------------------------
+  /** The whole snapshot, for readers that want one consistent view. */
+  std::shared_ptr<const CallUiState> State() const;
+  bool IsAwaitingSfuRecovery() const { return State()->awaiting_sfu_recovery; }
+  bool IsSoftMigrateInFlight() const { return State()->soft_migrate_in_flight; }
+  bool IsSfuAttachWaitActive() const { return State()->sfu_attach_wait_active; }
+  bool IsP2pConnectFailed() const { return State()->p2p_connect_failed; }
+  bool P2pConnectMissingMic() const { return State()->p2p_connect_missing_mic; }
+  std::string PeekMediaActivity() const { return State()->media_activity; }
+  CallHopHealth HopHealth() const { return State()->hop_health; }
+  std::string MediaPathKind() const { return State()->media_path_kind; }
+  CallMediaSeat::MediaState SeatMediaState(const std::string& call_id) const { return State()->SeatStateFor(call_id); }
+  bool SeatMediaLive(const std::string& call_id) const { return State()->SeatLiveFor(call_id); }
+  bool MediaChromeLive() const { return State()->MediaChromeLive(); }
+  CallMediaStatus MediaStatus() const { return State()->media_status; }
+  std::string LastError() const { return State()->last_error; }
+  bool ShouldSuppressRing(const std::string& call_id) const { return State()->ShouldSuppressRing(call_id); }
+  CallPhase Phase() const { return State()->phase; }
+  std::string LastRingCallId() const { return State()->last_ring_call_id; }
+  std::string ActiveCallId() const { return State()->active_call_id; }
+
+  CallMediaEngine& Media();
 
 private:
+  /** Run `op` on the calls owner with the current session manager (skipped when there is none). */
+  void OnOwner(std::function<void(CallSessionManager&)> op);
+  template <typename R>
+  static std::function<void(R)> ReplyOnUi(std::function<void(R)> on_done);
+
   CallStack& stack_;
+  /** Last media error handed to the GUI (shown once until the owner clears it). */
+  std::optional<std::string> taken_media_error_;
 };
 
 } // namespace pbr

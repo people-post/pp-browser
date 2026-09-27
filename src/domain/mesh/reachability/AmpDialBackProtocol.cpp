@@ -27,14 +27,6 @@ std::vector<uint8_t> JsonToBody(const std::string& json_utf8) {
   return std::vector<uint8_t>(json_utf8.begin(), json_utf8.end());
 }
 
-void RunWorker(const AmpDialBackProtocol::WorkerPost& post_worker, std::function<void()> task) {
-  if (post_worker) {
-    post_worker(std::move(task));
-  } else {
-    task();
-  }
-}
-
 std::chrono::milliseconds RemainingTimeout(const Clock::time_point deadline) {
   const auto now = Clock::now();
   if (now >= deadline) {
@@ -43,16 +35,27 @@ std::chrono::milliseconds RemainingTimeout(const Clock::time_point deadline) {
   return std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
 }
 
-DialBackProbeResult DialAmpTargets(pp::amp::PeerLinkManager& links, AmpDialBackProtocol::IoPump io_pump,
-                                   const std::vector<std::string>& targets, int timeout_ms) {
-  DialBackProbeResult out;
-  if (targets.empty()) {
-    out.error = "no target_multiaddrs";
-    return out;
-  }
-  const int timeout = timeout_ms > 0 ? timeout_ms : 8000;
-  for (size_t i = 0; i < targets.size(); ++i) {
-    const std::string& ma = targets[i];
+/** One inbound probe's walk over its targets (IO strand only). */
+struct DialTargetsWalk {
+  pp::amp::MeshRuntime* runtime = nullptr;
+  std::vector<std::string> targets;
+  size_t next = 0;
+  std::chrono::milliseconds timeout{8000};
+  DialBackProbeResult result;
+  std::function<void(DialBackProbeResult)> done;
+};
+
+/**
+ * Dial the next usable target: association or its deadline, whichever settles first, then the next
+ * target — the first association that lands answers the probe. Callbacks on the IO strand; nothing
+ * waits on a thread.
+ */
+void DialNextTarget(std::shared_ptr<DialTargetsWalk> walk) {
+  DialBackProbeResult& out = walk->result;
+  pp::amp::PeerLinkManager& links = walk->runtime->Links();
+  while (walk->next < walk->targets.size()) {
+    const size_t i = walk->next++;
+    const std::string ma = walk->targets[i];
     if (ma.empty()) {
       continue;
     }
@@ -67,28 +70,44 @@ DialBackProbeResult DialAmpTargets(pp::amp::PeerLinkManager& links, AmpDialBackP
       out.dialed = ma;
       continue;
     }
-
-    SettledWait<void> wait;
-    links.EnsureAssociation(key, [wait](pp::amp::PeerLinkManager::LinkRoe result) {
-      if (result) {
-        wait.Finish(Roe<void>());
-      } else {
-        wait.Finish(Roe<void>(Error(AmpDialBackProtocol::WrapLinkFailure(result.error()).message)));
+    auto settled = std::make_shared<bool>(false);  // IO strand only
+    auto finish = [walk, settled, ma](Roe<void> dialed) {
+      if (std::exchange(*settled, true)) {
+        return;
       }
+      walk->result.dialed = ma;
+      if (dialed) {
+        walk->result.ok = true;
+        walk->result.error.clear();
+        walk->done(std::move(walk->result));
+        return;
+      }
+      walk->result.error = dialed.error().message;
+      DialNextTarget(walk);
+    };
+    links.EnsureAssociation(key, [finish](pp::amp::PeerLinkManager::LinkRoe linked) {
+      finish(linked ? Roe<void>() : Roe<void>(Error(AmpDialBackProtocol::WrapLinkFailure(linked.error()).message)));
     });
-    const auto deadline = Clock::now() + std::chrono::milliseconds(timeout);
-    AmpParkUntil([&] { return wait.IsSettled(); }, deadline, io_pump);
-    auto dialed = wait.Wait(std::chrono::milliseconds(1), Error("dial-back timed out"));
-    if (dialed) {
-      out.ok = true;
-      out.dialed = ma;
-      out.error.clear();
-      return out;
-    }
-    out.error = dialed.error().message;
-    out.dialed = ma;
+    walk->runtime->PostAfter(walk->timeout, [finish]() { finish(Error("dial-back timed out")); });
+    return;
   }
-  return out;
+  walk->done(std::move(out));
+}
+
+/** IO strand: dial `targets` in order; `done` runs once, on IO. */
+void DialAmpTargetsAsync(pp::amp::MeshRuntime& runtime, std::vector<std::string> targets, const int timeout_ms,
+                         std::function<void(DialBackProbeResult)> done) {
+  auto walk = std::make_shared<DialTargetsWalk>();
+  walk->runtime = &runtime;
+  walk->targets = std::move(targets);
+  walk->timeout = std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 8000);
+  walk->done = std::move(done);
+  if (walk->targets.empty()) {
+    walk->result.error = "no target_multiaddrs";
+    walk->done(std::move(walk->result));
+    return;
+  }
+  DialNextTarget(std::move(walk));
 }
 
 } // namespace
@@ -122,14 +141,12 @@ AmpDialBackProtocol::Failure AmpDialBackProtocol::WrapLinkFailure(const pp::amp:
 
 struct AmpDialBackProtocol::Impl {
   pp::amp::MeshRuntime* runtime = nullptr;
-  IoPump io_pump;
-  WorkerPost post_worker;
   std::atomic<bool> stopped{false};
   /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
   DeferredSelf deferred;
 
   pp::amp::PeerLinkManager& Links() { return runtime->Links(); }
-  /** IO lane for InboundReply (MeshHost::Stop joins MeshControl before freeing the runtime). */
+  /** IO lane for InboundReply. */
   InboundReply::IoPost IoPost() {
     return [rt = runtime](std::function<void()> task) { rt->PostToIo(std::move(task)); };
   }
@@ -162,45 +179,52 @@ struct AmpDialBackProtocol::Impl {
     return {};
   }
 
+  static void SendProbeResult(const std::shared_ptr<InboundReply>& reply, const DialBackProbeResult& result) {
+    Object response;
+    response.set("v", int64_t{1});
+    response.set("ok", result.ok);
+    response.set("dialed", result.dialed);
+    response.set("observed", result.observed);
+    response.set("error", result.error);
+    reply->Send(JsonToBody(DumpJson(response)));
+  }
+
+  /** Frame handler (IO): parse, then walk the targets from a fresh IO task (mux stack unwound). */
   void ServeProbe(std::shared_ptr<InboundReply> reply, std::string observed, std::vector<uint8_t> body) {
-    RunWorker(post_worker, [this, reply, observed = std::move(observed), body = std::move(body)]() mutable {
+    DialBackProbeResult result;
+    result.observed = std::move(observed);
+    const std::string json_utf8(body.begin(), body.end());
+    auto root = TryParseObject(json_utf8);
+    if (!root) {
+      result.error = "invalid dial-back json";
+      SendProbeResult(reply, result);
+      return;
+    }
+    if (root->getString("op").value_or("") != "probe") {
+      result.error = "unsupported op";
+      SendProbeResult(reply, result);
+      return;
+    }
+    std::vector<std::string> targets;
+    if (const Array* addrs = root->getArray("target_multiaddrs")) {
+      for (const auto& item : addrs->elements) {
+        if (auto s = asString(item)) {
+          targets.push_back(*s);
+        }
+      }
+    }
+    const int timeout_ms = static_cast<int>(root->getNonNegInt("timeout_ms").value_or(8000));
+    runtime->PostToIo(deferred.Bind([this, reply, observed = result.observed, targets = std::move(targets),
+                                     timeout_ms]() mutable {
       if (stopped.load(std::memory_order_acquire) || !runtime) {
         return;
       }
-      DialBackProbeResult result;
-      result.observed = std::move(observed);
-      const std::string json_utf8(body.begin(), body.end());
-      auto root = TryParseObject(json_utf8);
-      if (!root) {
-        result.error = "invalid dial-back json";
-      } else {
-        const std::string op = root->getString("op").value_or("");
-        if (op != "probe") {
-          result.error = "unsupported op";
-        } else {
-          std::vector<std::string> targets;
-          if (const Array* addrs = root->getArray("target_multiaddrs")) {
-            for (const auto& item : addrs->elements) {
-              if (auto s = asString(item)) {
-                targets.push_back(*s);
-              }
-            }
-          }
-          const int timeout_ms = static_cast<int>(root->getNonNegInt("timeout_ms").value_or(8000));
-          auto dialed = DialAmpTargets(Links(), io_pump, targets, timeout_ms);
-          result.ok = dialed.ok;
-          result.dialed = std::move(dialed.dialed);
-          result.error = std::move(dialed.error);
-        }
-      }
-      Object response;
-      response.set("v", int64_t{1});
-      response.set("ok", result.ok);
-      response.set("dialed", result.dialed);
-      response.set("observed", result.observed);
-      response.set("error", result.error);
-      reply->Send(JsonToBody(DumpJson(response)));
-    });
+      DialAmpTargetsAsync(*runtime, std::move(targets), timeout_ms,
+                          [reply, observed](DialBackProbeResult dialed) {
+                            dialed.observed = observed;
+                            SendProbeResult(reply, dialed);
+                          });
+    }));
   }
 
   void HandleInboundOnLink(pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
@@ -224,12 +248,9 @@ struct AmpDialBackProtocol::Impl {
   }
 };
 
-AmpDialBackProtocol::AmpDialBackProtocol(pp::amp::MeshRuntime& runtime, IoPump io_pump, WorkerPost post_worker)
-    : impl_(std::make_unique<Impl>()), runtime_(runtime), io_pump_(std::move(io_pump)),
-      post_worker_(std::move(post_worker)) {
+AmpDialBackProtocol::AmpDialBackProtocol(pp::amp::MeshRuntime& runtime, IoPump io_pump)
+    : impl_(std::make_unique<Impl>()), runtime_(runtime), io_pump_(std::move(io_pump)) {
   impl_->runtime = &runtime_;
-  impl_->io_pump = io_pump_;
-  impl_->post_worker = post_worker_;
 }
 
 AmpDialBackProtocol::~AmpDialBackProtocol() { Stop(); }

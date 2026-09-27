@@ -2,18 +2,23 @@
 
 #include "amp/L1/Clock.h"
 #include "amp/link/AmpStack.h"
+#include "domain/media/MediaDeviceArbiter.h"
 #include "domain/mesh/host/MeshHost.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "feature/calls/CallControlInboundPorts.h"
+#include "domain/mesh/media_plane/MeshMediaPlane.h"
 #include "feature/calls/CallStack.h"
 #include "feature/calls/CallUiBackend.h"
+#include "feature/broadcast/BroadcastHub.h"
+#include "feature/conversations/AmpBroadcastTransport.h"
 #include "feature/conversations/AmpDirectChatTransport.h"
 #include "foundation/data/Config.h"
 
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -40,6 +45,9 @@ public:
   MeshHost& Host() { return *host_; }
   CallUiBackend& Ui() { return *ui_; }
   CallStack& Stack() { return *stack_; }
+  MeshMediaPlane& MeshMedia() { return *mesh_media_; }
+  /** Capability-refresh rewire, same sequence as ConversationsHub (L015): detach → reset → wire → rebind. */
+  void RefreshMeshMedia();
   const std::string& LocalAccountId() const { return local_account_; }
   const std::string& LocalPeerId() const { return local_peer_id_; }
   const std::string& AdvertiseMa() const { return advertise_ma_; }
@@ -49,6 +57,21 @@ public:
   Roe<void> EnsureOriginThread(const std::string& thread_id, const std::string& peer_account);
   /** Dual-SNAT: nested circuit to peer so Amp chat call-control can deliver before StartCall. */
   Roe<void> EnsurePeerCircuitPath(const std::string& peer_id);
+
+  /**
+   * Deliver call control through files under `dir` (a relay-inbox stand-in on the lab's shared
+   * mount) instead of Amp chat. No peer link is built for signaling, so call media must reach
+   * the peer from cold — the product shape (signaling via relay, media via mesh).
+   */
+  void SetSignalDir(std::filesystem::path dir);
+  bool UsesSignalDir() const { return !signal_dir_.empty(); }
+  /** Dirty dial book: register the peer's private advertise MA as dialable (dogfood / H010). */
+  Roe<void> RegisterPeerPrivateEndpoint(const std::string& peer_id, const std::string& multiaddr);
+  /**
+   * Dirty dial book, worse: one EnsureAssociation to the (private, undialable) peer MA so the
+   * link is left in dial backoff — the product reach must heal it. Backoff is NOT cleared here.
+   */
+  void ForceDialMiss(const std::string& peer_id);
 
   /** Run the UI mailbox (main thread = UI). The mesh runs on MeshHost's MeshPump. */
   void Pump();
@@ -72,6 +95,15 @@ public:
 
   void Shutdown();
 
+  /**
+   * Live broadcast (media-client-layers l5c): the product BroadcastHub on this host's mesh + call
+   * plane, the serving ticket side on its chat links (signed with the device ML-DSA key), a
+   * headless device arbiter. Announced tips are kept for the probe to hand over (Spine D stand-in).
+   */
+  Roe<void> EnableBroadcast(std::function<std::optional<ByteVector>(const std::string& peer_id)> publisher_key);
+  BroadcastHub* Broadcast() { return broadcast_.get(); }
+  Roe<ByteVector> DevicePublicKey() const;
+  std::optional<BroadcastTipDraft> LastAnnouncedTip() const { return last_tip_; }
   /** Fail the hold when rx audio frames stop increasing for `ms` after media started (0 = off). */
   void SetRxStallMs(int ms) { rx_stall_ms_ = ms; }
   /** Answerer: judge stalls only for this long after the first rx frame (0 = whole hold). */
@@ -81,6 +113,10 @@ private:
   ProductStackHarness() = default;
   Roe<void> InitStoresAndStack(const std::string& hop_ma);
   Roe<void> SendCallControl(const std::string& peer_account, const ThreadMessage& msg);
+  Roe<void> WriteSignal(const std::string& peer_account, const RelayEnvelope& env);
+  /** UI pump: hand files in our signal inbox to OnChatInbound on a worker (like relay IO). */
+  void PollSignalInbox();
+  std::filesystem::path SignalInbox(const std::string& account) const;
   void OnChatInbound(RelayEnvelope env);
   std::string AmpDialKeyForAccount(const std::string& account_id) const;
   void LearnAccountPeerId(const std::string& account_id, const std::string& peer_id);
@@ -95,10 +131,16 @@ private:
   std::unique_ptr<IdentityStore> identity_;
   std::unique_ptr<SqlitePskSessionStore> psk_;
   AppConfig app_config_;
+  // Outlives the call stack and broadcast (they borrow its objects).
+  std::unique_ptr<MeshMediaPlane> mesh_media_;
   std::unique_ptr<CallStack> stack_;
   std::unique_ptr<CallUiBackend> ui_;
   CallControlInboundPorts inbound_;
   std::unique_ptr<AmpDirectChatTransport> chat_;
+  std::unique_ptr<MediaDeviceArbiter> broadcast_devices_;
+  std::unique_ptr<AmpBroadcastTransport> broadcast_server_;
+  std::unique_ptr<BroadcastHub> broadcast_;
+  std::optional<BroadcastTipDraft> last_tip_;
   /** Call-control sends attempted — LeaveAndFlush waits on it (Leave fanout runs after Idle). */
   std::atomic<int> control_sends_{0};
   std::atomic<const char*> shutdown_step_{""};
@@ -112,6 +154,9 @@ private:
   std::unordered_map<std::string, std::string> account_to_peer_id_;
   int rx_stall_ms_ = 0;
   int rx_watch_ms_ = 0;
+  std::filesystem::path signal_dir_;
+  std::chrono::steady_clock::time_point next_signal_poll_{};
+  uint64_t signal_seq_ = 0;
 };
 
 } // namespace call_probe

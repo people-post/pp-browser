@@ -227,7 +227,7 @@ TEST_F(CallLifecycleTest, LeaveClickedWithoutCallIdIgnored) {
 }
 
 TEST_F(CallLifecycleTest, RetryClickedRearmsDirectConnectingStatus) {
-  AppRuntime::Initialize();
+  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
   AppRuntime::InitializeUI();
 
   life_.Apply(CallLifecycleEvent::OutboundStarted, "call:1");
@@ -243,13 +243,13 @@ TEST_F(CallLifecycleTest, RetryClickedRearmsDirectConnectingStatus) {
   EXPECT_EQ(life_.Status(), CallMediaStatus::DirectConnecting);
 
   for (int i = 0; i < 200; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (life_.Phase() == CallPhase::ConnectFailed && life_.Status() == CallMediaStatus::Failed) {
       break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
   EXPECT_EQ(life_.Phase(), CallPhase::ConnectFailed);
 
   AppRuntime::ShutdownUI();
@@ -277,7 +277,7 @@ TEST_F(CallLifecycleTest, ListenDesireCallbackFiresOnPhaseEnterExit) {
 }
 
 TEST_F(CallLifecycleTest, AcceptClickedSuppressesRingUntilAcceptFails) {
-  AppRuntime::Initialize();
+  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
   AppRuntime::InitializeUI();
 
   life_.Apply(CallLifecycleEvent::InviteSeen, "call:1");
@@ -291,14 +291,14 @@ TEST_F(CallLifecycleTest, AcceptClickedSuppressesRingUntilAcceptFails) {
   // Unbound sessions → AcceptInvite fails → AcceptFailed → Ringing.
   bool back_to_ringing = false;
   for (int i = 0; i < 200; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (life_.Phase() == CallPhase::Ringing && life_.AcceptingCallId().empty()) {
       back_to_ringing = true;
       break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
   EXPECT_TRUE(back_to_ringing);
   EXPECT_FALSE(life_.ShouldSuppressRing("call:1"));
   EXPECT_FALSE(life_.LastError().empty());
@@ -308,7 +308,7 @@ TEST_F(CallLifecycleTest, AcceptClickedSuppressesRingUntilAcceptFails) {
 }
 
 TEST_F(CallLifecycleTest, AcceptClickedDedupesInFlight) {
-  AppRuntime::Initialize();
+  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
   AppRuntime::InitializeUI();
 
   life_.Apply(CallLifecycleEvent::InviteSeen, "call:1");
@@ -320,13 +320,13 @@ TEST_F(CallLifecycleTest, AcceptClickedDedupesInFlight) {
   EXPECT_EQ(life_.AcceptingCallId(), "call:1");
 
   for (int i = 0; i < 200; ++i) {
-    AppRuntime::RunUITasks();
+    AppRuntime::RunUIAndOwnerTasks();
     if (life_.AcceptingCallId().empty()) {
       break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
-  AppRuntime::RunUITasks();
+  AppRuntime::RunUIAndOwnerTasks();
 
   AppRuntime::Shutdown();
   AppRuntime::ShutdownUI();

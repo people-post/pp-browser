@@ -13,17 +13,14 @@ CallMediaInboundHelloDecision DecideCallMediaInboundHello(const CallMediaInbound
   case CallMediaBundlePhase::Closing:
     return CallMediaInboundHelloDecision::RejectBusy;
   case CallMediaBundlePhase::OutboundHello:
-    if (ctx.offerer && ctx.local_wins_glare) {
+    // Simultaneous open: exactly one side must win. local_wins_glare is role-aware and
+    // antisymmetric (LocalWinsCallMediaGlareForRoles). The old rule let an answerer always yield
+    // and an offerer with the lower PeerId yield too — both yielded, both bundles closed.
+    if (ctx.local_wins_glare) {
       return CallMediaInboundHelloDecision::RejectGlare;
     }
     // Loser (or outbound not bound yet): accept inbound and drop any provisional outbound.
-    if (ctx.offerer && !ctx.local_wins_glare) {
-      return CallMediaInboundHelloDecision::AcceptAndYield;
-    }
-    if (ctx.has_outbound_control) {
-      return CallMediaInboundHelloDecision::AcceptAndYield;
-    }
-    return CallMediaInboundHelloDecision::Accept;
+    return CallMediaInboundHelloDecision::AcceptAndYield;
   case CallMediaBundlePhase::Idle:
     return CallMediaInboundHelloDecision::Accept;
   }

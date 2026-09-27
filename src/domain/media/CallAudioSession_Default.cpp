@@ -16,6 +16,10 @@ bool IsSpeakerphoneOn() {
 
 void SetSpeakerphoneOn(bool /*on*/) {}
 
+bool SpeakerToggleNeedsDeviceReopen() {
+  return false;
+}
+
 int CaptureOpenAttemptCount() {
   return 1;
 }

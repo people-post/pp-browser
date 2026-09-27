@@ -53,9 +53,10 @@ pp_browser_add_domain_library(pp_domain_messaging
     PeerAnnounceKeyResolve.cpp
     AnnounceOverlayReply.cpp
     AnnounceNotificationInbox.cpp
-    AnnounceLiveJoin.cpp
     BroadcastJoinTicket.cpp
     BroadcastLadderLogic.cpp
+    BroadcastMedia.cpp
+    BroadcastViewerLadder.cpp
     BroadcastRpcCodec.cpp
     InitiationPricing.cpp
     PskRotateCodec.cpp

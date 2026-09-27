@@ -11,7 +11,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <future>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -20,17 +19,11 @@
 #include <vector>
 
 #include "common/PbrCompat.h"
-#include "domain/mesh/shared/AmpParkUntil.h"
 #include "foundation/runtime/DeferredSelf.h"
 
 namespace pbr {
 namespace {
 
-using Clock = std::chrono::steady_clock;
-
-int64_t SteadyDeadlineMs(const Clock::time_point deadline) {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(deadline.time_since_epoch()).count();
-}
 
 std::vector<uint8_t> JsonToBody(const std::string& json_utf8) {
   return std::vector<uint8_t>(json_utf8.begin(), json_utf8.end());
@@ -277,11 +270,15 @@ struct AmpBroadcastTransport::Impl {
     if (stopped.load(std::memory_order_acquire) || !links || remote_peer_id.empty()) {
       return;
     }
+    // The frame handler lives in the session and captures this holder: the holder must drop its
+    // reference once used (first frame → `reply` owns the session) or when the channel closes, or
+    // session → handler → holder → session leaks every served request (LeakSanitizer).
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     auto policy = InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy());
     *session_holder = links->BindChannel(
-        remote_peer_id, channel_id, policy, [this, session_holder](Roe<std::vector<uint8_t>> frame) {
-      auto session = *session_holder;
+        remote_peer_id, channel_id, policy,
+        [this, session_holder](Roe<std::vector<uint8_t>> frame) {
+      auto session = std::exchange(*session_holder, nullptr);
       if (!session || !frame || stopped.load(std::memory_order_acquire)) {
         return false;
       }
@@ -309,7 +306,8 @@ struct AmpBroadcastTransport::Impl {
         reply->Send(JsonToBody(*response_json));
       });
       return true;
-    });
+    },
+        [session_holder](const char* /*reason*/) { session_holder->reset(); });
   }
 
 };
@@ -400,224 +398,5 @@ bool AmpBroadcastTransport::IsPeerReachable(const std::string& peer_identity_val
   return links_.GetLinkSnapshot(peer_identity_value).has_endpoint || links_.IsConnected(peer_identity_value);
 }
 
-
-template <typename ResponseT>
-void AmpBroadcastTransport::RoundTripAsync(const std::string& peer_key, const std::string& request_json,
-                                           const char* expect_label,
-                                           std::function<bool(const BroadcastRpcMessage&)> is_response,
-                                           std::function<ResponseT(BroadcastRpcMessage&&)> take_response,
-                                           std::function<void(Roe<ResponseT>)> on_done) {
-  auto settled = std::make_shared<std::atomic<bool>>(false);
-  auto finish_once = std::make_shared<std::function<void(Roe<ResponseT>)>>();
-  *finish_once = [on_done = std::move(on_done), settled](Roe<ResponseT> value) {
-    if (settled->exchange(true, std::memory_order_acq_rel)) {
-      return;
-    }
-    if (on_done) {
-      on_done(std::move(value));
-    }
-  };
-
-  if (!started_) {
-    (*finish_once)(Error("amp broadcast service not started"));
-    return;
-  }
-  if (!IsPeerReachable(peer_key)) {
-    (*finish_once)(Error("Peer-direct endpoint not registered")
-                       .WithUser("No usable peer address — add a dialable multiaddr on the contact."));
-    return;
-  }
-
-  constexpr auto kSendTimeout = std::chrono::milliseconds(4000);
-  const auto deadline = Clock::now() + kSendTimeout;
-  auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
-
-  auto finish = [finish_once, session_holder](Roe<ResponseT> value) {
-    if (*session_holder) {
-      (*session_holder)->Close();
-    }
-    (*finish_once)(std::move(value));
-  };
-
-  links_.OpenChannel(peer_key, kRpcBroadcastProtocolId, pp::amp::ControlJsonChannelPolicy(),
-                     [this, peer_key, request_json, expect_label, finish, settled, session_holder,
-                      deadline, is_response = std::move(is_response),
-                      take_response = std::move(take_response)](IChatPeerLinks::ChannelRoe channel) mutable {
-                       if (!channel) {
-                         finish(Error(channel.error().message));
-                         return;
-                       }
-                       if (impl_->stopped.load(std::memory_order_acquire)) {
-                         finish(Error("amp broadcast service stopped"));
-                         return;
-                       }
-                       const uint32_t channel_id = *channel;
-                       links_.WhenChannelOpen(
-                           peer_key, channel_id, SteadyDeadlineMs(deadline),
-                           [this, peer_key, channel_id, request_json, expect_label, finish, settled, session_holder,
-                            deadline, is_response = std::move(is_response),
-                            take_response = std::move(take_response)](bool open) mutable {
-                             if (impl_->stopped.load(std::memory_order_acquire)) {
-                               finish(Error("amp broadcast service stopped"));
-                               return;
-                             }
-                             if (!open) {
-                               finish(Error("amp broadcast: channel open failed")
-                                          .WithUser("Broadcast control request didn't confirm."));
-                               return;
-                             }
-
-                             *session_holder = links_.BindChannel(
-                                 peer_key, channel_id, pp::amp::ControlJsonChannelPolicy(),
-                                 [finish, expect_label, is_response = std::move(is_response),
-                                  take_response = std::move(take_response)](Roe<std::vector<uint8_t>> frame) {
-                                   if (!frame) {
-                                     finish(Error("Failed to read broadcast response")
-                                                .WithUser("Broadcast control request didn't confirm."));
-                                     return false;
-                                   }
-                                   const std::string json(frame->begin(), frame->end());
-                                   auto decoded = DecodeBroadcastRpcJson(json);
-                                   if (!decoded) {
-                                     finish(decoded.error());
-                                     return false;
-                                   }
-                                   if (!is_response(*decoded)) {
-                                     finish(Error(std::string("broadcast response was not ") + expect_label));
-                                     return false;
-                                   }
-                                   finish(take_response(std::move(*decoded)));
-                                   return false;
-                                 });
-                             if (!*session_holder) {
-                               finish(Error("amp broadcast: channel open failed")
-                                          .WithUser("Broadcast control request didn't confirm."));
-                               return;
-                             }
-
-                             if (!(*session_holder)->EnqueueOutbound(JsonToBody(request_json))) {
-                               finish(Error("Failed to send broadcast request")
-                                          .WithUser("Broadcast control request didn't confirm."));
-                               return;
-                             }
-
-                             AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
-                               finish(Error("amp broadcast send timed out")
-                                          .WithUser("Broadcast control timed out."));
-                             },
-                                                    post_after_);
-                           });
-                     });
-}
-
-template <typename ResponseT>
-Roe<ResponseT> AmpBroadcastTransport::RoundTrip(const std::string& peer_key, const std::string& request_json,
-                                              const char* expect_label,
-                                              std::function<bool(const BroadcastRpcMessage&)> is_response,
-                                              std::function<ResponseT(BroadcastRpcMessage&&)> take_response) {
-  auto result_promise = std::make_shared<std::promise<Roe<ResponseT>>>();
-  auto result_future = result_promise->get_future();
-  constexpr auto kSendTimeout = std::chrono::milliseconds(4000);
-  const auto deadline = Clock::now() + kSendTimeout;
-  RoundTripAsync<ResponseT>(peer_key, request_json, expect_label, std::move(is_response), std::move(take_response),
-                            [result_promise](Roe<ResponseT> value) {
-                              try {
-                                result_promise->set_value(std::move(value));
-                              } catch (const std::future_error&) {
-                              }
-                            });
-  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
-               deadline, io_pump_);
-  if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-    return Error("amp broadcast send timed out").WithUser("Broadcast control timed out.");
-  }
-  return result_future.get();
-}
-
-
-void AmpBroadcastTransport::RequestTicketAsync(const std::string& peer_key, const BroadcastTicketRequest& req,
-                                               std::function<void(Roe<BroadcastTicketResponse>)> on_done) {
-  auto json = EncodeBroadcastTicketRequest(req);
-  if (!json) {
-    if (on_done) {
-      on_done(json.error());
-    }
-    return;
-  }
-  RoundTripAsync<BroadcastTicketResponse>(
-      peer_key, *json, "ticket_response",
-      [](const BroadcastRpcMessage& msg) { return std::holds_alternative<BroadcastTicketResponse>(msg); },
-      [](BroadcastRpcMessage&& msg) { return std::get<BroadcastTicketResponse>(std::move(msg)); }, std::move(on_done));
-}
-
-void AmpBroadcastTransport::RequestViewerAttachAsync(const std::string& peer_key,
-                                                     const BroadcastViewerAttachRequest& req,
-                                                     std::function<void(Roe<BroadcastViewerAttachResult>)> on_done) {
-  auto json = EncodeBroadcastViewerAttachRequest(req);
-  if (!json) {
-    if (on_done) {
-      on_done(json.error());
-    }
-    return;
-  }
-  RoundTripAsync<BroadcastViewerAttachResult>(
-      peer_key, *json, "viewer_attach_result",
-      [](const BroadcastRpcMessage& msg) { return std::holds_alternative<BroadcastViewerAttachResult>(msg); },
-      [](BroadcastRpcMessage&& msg) { return std::get<BroadcastViewerAttachResult>(std::move(msg)); },
-      std::move(on_done));
-}
-
-void AmpBroadcastTransport::RequestRelaySlotWinAsync(const std::string& peer_key,
-                                                     const BroadcastRelaySlotWinRequest& req,
-                                                     std::function<void(Roe<BroadcastRelaySlotWinResult>)> on_done) {
-  auto json = EncodeBroadcastRelaySlotWinRequest(req);
-  if (!json) {
-    if (on_done) {
-      on_done(json.error());
-    }
-    return;
-  }
-  RoundTripAsync<BroadcastRelaySlotWinResult>(
-      peer_key, *json, "relay_slot_win_result",
-      [](const BroadcastRpcMessage& msg) { return std::holds_alternative<BroadcastRelaySlotWinResult>(msg); },
-      [](BroadcastRpcMessage&& msg) { return std::get<BroadcastRelaySlotWinResult>(std::move(msg)); },
-      std::move(on_done));
-}
-
-Roe<BroadcastTicketResponse> AmpBroadcastTransport::RequestTicket(const std::string& peer_key,
-                                                                const BroadcastTicketRequest& req) {
-  auto json = EncodeBroadcastTicketRequest(req);
-  if (!json) {
-    return json.error();
-  }
-  return RoundTrip<BroadcastTicketResponse>(
-      peer_key, *json, "ticket_response",
-      [](const BroadcastRpcMessage& msg) { return std::holds_alternative<BroadcastTicketResponse>(msg); },
-      [](BroadcastRpcMessage&& msg) { return std::get<BroadcastTicketResponse>(std::move(msg)); });
-}
-
-Roe<BroadcastViewerAttachResult> AmpBroadcastTransport::RequestViewerAttach(
-    const std::string& peer_key, const BroadcastViewerAttachRequest& req) {
-  auto json = EncodeBroadcastViewerAttachRequest(req);
-  if (!json) {
-    return json.error();
-  }
-  return RoundTrip<BroadcastViewerAttachResult>(
-      peer_key, *json, "viewer_attach_result",
-      [](const BroadcastRpcMessage& msg) { return std::holds_alternative<BroadcastViewerAttachResult>(msg); },
-      [](BroadcastRpcMessage&& msg) { return std::get<BroadcastViewerAttachResult>(std::move(msg)); });
-}
-
-Roe<BroadcastRelaySlotWinResult> AmpBroadcastTransport::RequestRelaySlotWin(
-    const std::string& peer_key, const BroadcastRelaySlotWinRequest& req) {
-  auto json = EncodeBroadcastRelaySlotWinRequest(req);
-  if (!json) {
-    return json.error();
-  }
-  return RoundTrip<BroadcastRelaySlotWinResult>(
-      peer_key, *json, "relay_slot_win_result",
-      [](const BroadcastRpcMessage& msg) { return std::holds_alternative<BroadcastRelaySlotWinResult>(msg); },
-      [](BroadcastRpcMessage&& msg) { return std::get<BroadcastRelaySlotWinResult>(std::move(msg)); });
-}
 
 } // namespace pbr

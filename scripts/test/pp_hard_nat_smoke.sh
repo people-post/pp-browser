@@ -3,9 +3,19 @@
 #
 # N-HARD-CGNAT-ISH     — topology asserts (A↛B, hop↛peer-private, peers→hop via SNAT)
 # B-HARD-CALL-NAT      — Phase-1: forced nested circuit (--via-hop --peer-id-only)
-# B-HARD-CALL-NAT-PRODUCT — Phase-2: product punch→circuit (--reach product --via-hop seed)
-# B-HARD-CALL-NAT-DIRTY   — Phase-3: dirty-book Bridge Ensure (--reach bridge --force-dial-fail)
+# (Phase-2 PRODUCT / Phase-3 DIRTY retired: they ran probe-local copies of the reach logic;
+#  COLD / COLD-DIRTY / COLD-AWAIT drive the product PeerReachCoordinator instead.)
 # B-HARD-CALL-NAT-STACK   — Phase-4: Invite/Accept control + dirty-book media (--product-stack)
+# B-HARD-CALL-NAT-COLD    — Phase-5: product stack, signaling via /share (relay-inbox stand-in),
+#                           so media reach starts with NO peer link: offerer PeerReachCoordinator
+#                           Reach (seed park → circuit), answerer Await (punch, wait for circuit)
+# B-HARD-CALL-NAT-COLD-DIRTY — Phase-6: as COLD with the answerer's private MA in the offerer's
+#                           dial book and one forced dial miss (backoff left armed) — H010: park
+#                           before the private dial, then skip it; the product heals the backoff
+# B-HARD-CALL-NAT-COLD-AWAIT — Phase-7: as COLD with the offerer's uplink delayed, so the
+#                           answerer's media starts before the offerer's circuit lands and its
+#                           Await reach runs cold (dogfood: answerer waiting on the caller)
+# Cold phases also require >= COLD_MIN_RX audio frames received on BOTH sides.
 #
 # Reproduce gate (applies to the selected call phase):
 #   PP_HARD_NAT_CALL_EXPECT=success  (default) — call must pass
@@ -23,7 +33,7 @@ CALL_BIN_NAME="pp-call-probe"
 SKIP_UP=0
 CYCLES="${PP_CALL_PROBE_CYCLES:-1}"
 CALL_EXPECT="${PP_HARD_NAT_CALL_EXPECT:-success}"
-# circuit | product | dirty | stack | both | all
+# circuit | stack | cold | cold-dirty | cold-await | broadcast | all
 PHASE="${PP_HARD_NAT_PHASE:-all}"
 # Stack phase long-hold knobs (one-way stall repro, dogfood 2026-09-24 16:17):
 #   PP_HARD_NAT_STACK_HOLD_MS  offerer hold after media (default 3000)
@@ -47,9 +57,8 @@ while [[ $# -gt 0 ]]; do
 Usage: $(basename "$0") [--status-url URL] [--cycles K] [--phase PHASE]
                         [--expect-call success|fail] [--skip-up]
 
-  PHASE: circuit|product|dirty|stack|both|all
-    both   = circuit + product (legacy)
-    all    = circuit + product + dirty + stack (HL004 default)
+  PHASE: circuit|stack|cold|cold-dirty|cold-await|broadcast|all
+    all    = circuit + stack + cold + cold-dirty + cold-await + broadcast (default)
   --expect-call fail  pass only if the call fails (reproduce dogfood)
 EOF
       exit 0
@@ -63,8 +72,10 @@ case "${CALL_EXPECT}" in
   *) pp_hard_die "--expect-call must be success|fail (got ${CALL_EXPECT})" ;;
 esac
 case "${PHASE}" in
-  circuit|product|dirty|stack|both|all) ;;
-  *) pp_hard_die "--phase must be circuit|product|dirty|stack|both|all (got ${PHASE})" ;;
+  circuit|stack|cold|cold-dirty|cold-await|broadcast|all) ;;
+  product|dirty|both)
+    pp_hard_die "--phase ${PHASE} was retired (probe-local reach copies); use cold / cold-dirty / cold-await" ;;
+  *) pp_hard_die "--phase must be circuit|stack|cold|cold-dirty|cold-await|broadcast|all (got ${PHASE})" ;;
 esac
 
 if [[ ! -x "${PP_HARD_PROBE_DIR}/${CALL_BIN_NAME}" ]]; then
@@ -79,8 +90,59 @@ pp_hard_kill_peer_probes() {
   pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" sh -c 'for p in $(pidof pp-call-probe 2>/dev/null); do kill -9 "$p" 2>/dev/null || true; done' || true
 }
 
+LOG_DIR="$(mktemp -d)"
+
+# Cold phases: hold / stall / audio gates (override via env).
+COLD_HOLD_MS="${PP_HARD_NAT_COLD_HOLD_MS:-8000}"
+COLD_RX_STALL_MS="${PP_HARD_NAT_COLD_RX_STALL_MS:-3000}"
+COLD_MIN_RX="${PP_HARD_NAT_COLD_MIN_RX:-100}"
+# Offerer uplink delay for cold-await: its circuit must land after the answerer's media start.
+COLD_AWAIT_NETEM="${PP_HARD_NAT_COLD_AWAIT_NETEM:-delay 250ms}"
+
+# Highest "flow <role> ... rx=N" in a probe log (0 when none).
+max_rx() {
+  local n
+  n="$(grep -oE '^flow [a-z]+ t=[0-9.]+s rx=[0-9]+' "$1" | sed 's/.*rx=//' | sort -n | tail -1 || true)"
+  echo "${n:-0}"
+}
+
+# Cold phases must prove the product reach ran from scratch — not the reuse shortcut — and
+# that audio flowed both ways.
+# assert_cold_reach <label> <mode> <offerer_log> <answerer_log>
+assert_cold_reach() {
+  local label="$1" mode="$2" off_log="$3" ans_log="$4"
+  local settle='\[PeerReach\] (peer reachable|peer connected|EnsureAssociation ok)'
+  grep -q '\[PeerReach\] reach start .*mode=reach' "${off_log}" ||
+    pp_hard_die "${label}: offerer PeerReachCoordinator never started a cold reach (reuse shortcut?)"
+  case "${mode}" in
+    cold-dirty)
+      grep -q 'force-dial-fail peer=.*backoff left armed\|force-dial-fail peer=.*aborted' "${off_log}" ||
+        pp_hard_die "${label}: forced dial miss did not happen (dirty book not poisoned)"
+      grep -q '\[PeerReach\] skip EnsureAssociation private Preferred' "${off_log}" ||
+        pp_hard_die "${label}: dirty book did not drive the H010 skip-private-Preferred branch" ;;
+    cold-await)
+      grep -q '\[PeerReach\] reach start .*mode=await' "${ans_log}" ||
+        pp_hard_die "${label}: answerer reused a link — its Await reach never ran cold (raise the delay?)" ;;
+  esac
+  echo "ok  cold reach offerer: $(grep -E "${settle}" "${off_log}" | head -1 | sed 's/.*\[PeerReach\] //' || true)"
+  # Outside cold-await the answerer may legitimately need no reach: it reuses the offerer's link,
+  # or joins the offerer's bundle that is already live. The audio gate below proves it connected.
+  local ans_path
+  ans_path="$(grep -E "${settle}" "${ans_log}" | head -1 | sed 's/.*\[PeerReach\] //' || true)"
+  if [[ -z "${ans_path}" ]] && grep -q 'Media started with existing inbound stream' "${ans_log}"; then
+    ans_path="joined the offerer's live inbound bundle (no reach needed)"
+  fi
+  echo "ok  cold reach answerer: ${ans_path:-(none)}"
+  local off_rx ans_rx
+  off_rx="$(max_rx "${off_log}")"
+  ans_rx="$(max_rx "${ans_log}")"
+  [[ "${off_rx}" -ge "${COLD_MIN_RX}" ]] || pp_hard_die "${label}: offerer rx=${off_rx} < ${COLD_MIN_RX} frames"
+  [[ "${ans_rx}" -ge "${COLD_MIN_RX}" ]] || pp_hard_die "${label}: answerer rx=${ans_rx} < ${COLD_MIN_RX} frames"
+  echo "ok  cold audio both ways offerer_rx=${off_rx} answerer_rx=${ans_rx}"
+}
+
 # run_nat_call <label> <call_id> <ready_name> <listen_ma> <mode>
-# mode: circuit | product | dirty | stack
+# mode: circuit | stack | cold | cold-dirty | cold-await
 run_nat_call() {
   local label="$1"
   local call_id="$2"
@@ -99,18 +161,35 @@ run_nat_call() {
     --advertise-host "${PEER_B_IP}" --ready-file "/share/${ready_name}"
     --hold-seconds "${hold}" --call-id "${call_id}"
     --warm-hop "${HOP_MA_PUBLIC}" --min-rx-frames "${CYCLES}")
-  if [[ "${mode}" == "stack" ]]; then
-    local watch_ms=$((STACK_HOLD_MS > 4000 ? STACK_HOLD_MS - 3000 : 0))
-    ans_args+=(--product-stack --rx-stall-ms "${RX_STALL_MS}" --watch-ms "${watch_ms}")
+  local product_stack=0
+  [[ "${mode}" == "stack" || "${mode}" == cold* ]] && product_stack=1
+  local signal_dir="/share/sig-${call_id}"
+  local hold_ms="${STACK_HOLD_MS}" stall_ms="${RX_STALL_MS}"
+  if [[ "${mode}" == cold* ]]; then
+    hold_ms="${COLD_HOLD_MS}"
+    stall_ms="${COLD_RX_STALL_MS}"
   fi
+  if [[ "${product_stack}" -eq 1 ]]; then
+    local watch_ms=$((hold_ms > 4000 ? hold_ms - 3000 : 0))
+    ans_args+=(--product-stack --rx-stall-ms "${stall_ms}" --watch-ms "${watch_ms}")
+  fi
+  if [[ "${mode}" == cold* ]]; then
+    pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" rm -rf "${signal_dir}"
+    ans_args+=(--signal-dir "${signal_dir}")
+  fi
+  local ans_log="${LOG_DIR}/${call_id}.answerer.log"
+  local off_log="${LOG_DIR}/${call_id}.offerer.log"
   pp_hard_link_clear_container "${PP_HARD_CGNAT_PEER_A}"
   pp_hard_link_clear_container "${PP_HARD_CGNAT_PEER_B}"
+  local netem_a="${NETEM_A}"
+  [[ "${mode}" == "cold-await" && -z "${netem_a}" ]] && netem_a="${COLD_AWAIT_NETEM}"
   # shellcheck disable=SC2086
-  [[ -n "${NETEM_A}" ]] && pp_hard_qdisc_replace "${PP_HARD_CGNAT_PEER_A}" netem ${NETEM_A}
+  [[ -n "${netem_a}" ]] && pp_hard_qdisc_replace "${PP_HARD_CGNAT_PEER_A}" netem ${netem_a}
   # shellcheck disable=SC2086
   [[ -n "${NETEM_B}" ]] && pp_hard_qdisc_replace "${PP_HARD_CGNAT_PEER_B}" netem ${NETEM_B}
 
-  pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" "${ans_args[@]}" &
+  # tee keeps the console output; $! stays the docker exec pid (its exit code is the answerer's).
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" "${ans_args[@]}" > >(tee "${ans_log}") 2>&1 &
   local ans_pid=$!
   cleanup_ans() {
     kill "${ans_pid}" 2>/dev/null || true
@@ -132,7 +211,7 @@ run_nat_call() {
   local peer
   peer="$(head -n1 "${PP_HARD_CGNAT_SHARE_DIR}/${ready_name}" | tr -d '\n')"
   local peer_account=""
-  if [[ "${mode}" == "stack" ]]; then
+  if [[ "${product_stack}" -eq 1 ]]; then
     peer_account="$(sed -n '2p' "${PP_HARD_CGNAT_SHARE_DIR}/${ready_name}" | tr -d '\n')"
     [[ -n "${peer_account}" ]] || pp_hard_die "answerer ready-file missing account line (product-stack)"
   fi
@@ -142,15 +221,17 @@ run_nat_call() {
     --via-hop "${HOP_MA_PUBLIC}"
     --cycles "${CYCLES}" --call-id "${call_id}" --timeout-ms 25000)
   case "${mode}" in
-    product) off_args+=(--reach product) ;;
-    dirty) off_args+=(--reach bridge --force-dial-fail) ;;
     stack) off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms "${STACK_HOLD_MS}"
              --rx-stall-ms "${RX_STALL_MS}" --timeout-ms 45000) ;;
+    cold|cold-dirty|cold-await)
+      off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms "${hold_ms}"
+                 --rx-stall-ms "${stall_ms}" --timeout-ms 60000 --signal-dir "${signal_dir}")
+      [[ "${mode}" == "cold-dirty" ]] && off_args+=(--dirty-book --force-dial-fail) ;;
     *) off_args+=(--peer-id-only) ;;
   esac
 
   set +e
-  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" "${off_args[@]}"
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" "${off_args[@]}" > >(tee "${off_log}") 2>&1
   local off_rc=$?
   set -e
 
@@ -191,24 +272,86 @@ run_nat_call() {
     return 1
   fi
 
+  if [[ "${mode}" == cold* ]]; then
+    sleep 0.5  # let the tee'd answerer log flush
+    assert_cold_reach "${label}" "${mode}" "${off_log}" "${ans_log}"
+  fi
   echo "ok  dual-NAT ${mode} call Invite→RX→Leave"
   echo "${label} smoke PASSED"
   return 0
 }
 
+# B-HARD-BCAST-NAT (media-client-layers l5c): product BroadcastHub on both ends. The broadcaster
+# (peer-a, behind gw-a) goes live through the hop's media_relay; two viewers (peer-b, behind gw-b)
+# fetch tickets from the NATed publisher (circuit via the hop), attach receive-only and must decode
+# BCAST_MIN_RX audio frames each. The Live tip rides /share (announce push is Spine D).
+BCAST_MIN_RX="${PP_HARD_NAT_BCAST_MIN_RX:-100}"
+run_nat_broadcast() {
+  local label="B-HARD-BCAST-NAT"
+  local ready="bcast.ready"
+  pp_hard_kill_peer_probes
+  echo "=== ${label} broadcaster on peer-a, 2 viewers on peer-b (min rx ${BCAST_MIN_RX}) ==="
+  rm -f "${PP_HARD_CGNAT_SHARE_DIR}/${ready}"
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" rm -f "/share/${ready}"
+  pp_hard_link_clear_container "${PP_HARD_CGNAT_PEER_A}"
+  pp_hard_link_clear_container "${PP_HARD_CGNAT_PEER_B}"
+
+  local bc_log="${LOG_DIR}/bcast.broadcaster.log"
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" /probes/${CALL_BIN_NAME} --role broadcaster \
+    --listen "${PP_HARD_NAT_BCAST_LISTEN:-/ip4/0.0.0.0/udp/47180/adp/1.0.0}" --advertise-host "${PEER_A_IP}" \
+    --warm-hop "${HOP_MA_PUBLIC}" --ready-file "/share/${ready}" --hold-seconds 90 --min-rx-frames 100 \
+    > >(tee "${bc_log}") 2>&1 &
+  local bc_pid=$!
+  cleanup_bc() {
+    kill "${bc_pid}" 2>/dev/null || true
+    wait "${bc_pid}" 2>/dev/null || true
+  }
+  trap cleanup_bc EXIT
+
+  local _
+  for _ in $(seq 1 300); do
+    [[ -s "${PP_HARD_CGNAT_SHARE_DIR}/${ready}" ]] && break
+    sleep 0.1
+  done
+  [[ -s "${PP_HARD_CGNAT_SHARE_DIR}/${ready}" ]] || pp_hard_die "${label}: broadcaster never went live"
+  echo "${label} live: $(sed -n '4p' "${PP_HARD_CGNAT_SHARE_DIR}/${ready}") via hop=${HOP_MA_PUBLIC}"
+
+  local v pids=() logs=()
+  for v in 1 2; do
+    local v_log="${LOG_DIR}/bcast.viewer${v}.log"
+    logs+=("${v_log}")
+    pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" /probes/${CALL_BIN_NAME} --role viewer \
+      --listen "/ip4/0.0.0.0/udp/$((47182 + 2 * v))/adp/1.0.0" --advertise-host "${PEER_B_IP}" \
+      --warm-hop "${HOP_MA_PUBLIC}" --announce-file "/share/${ready}" --timeout-ms 45000 \
+      --min-rx-frames "${BCAST_MIN_RX}" > >(tee "${v_log}") 2>&1 &
+    pids+=($!)
+  done
+  local rc=0 i
+  for i in 0 1; do
+    set +e
+    wait "${pids[$i]}"
+    local v_rc=$?
+    set -e
+    echo "viewer$((i + 1))_rc=${v_rc} rx=$(max_rx "${logs[$i]}")"
+    [[ "${v_rc}" -eq 0 ]] || rc=1
+  done
+  if grep -qE "broadcast failed|^error" "${bc_log}"; then
+    echo "error: ${label}: broadcaster reported a failure" >&2
+    rc=1
+  fi
+  cleanup_bc
+  trap - EXIT
+  if [[ "${rc}" -ne 0 ]]; then
+    echo "error: ${label} broadcast failed under dual-NAT" >&2
+    return 1
+  fi
+  echo "ok  dual-NAT broadcast: publisher → hop media_relay → 2 viewers (ticket via circuit)"
+  echo "${label} smoke PASSED"
+}
+
 run_phase() {
   local want="$1"
-  case "${PHASE}" in
-    all) return 0 ;;
-    both)
-      if [[ "${want}" == "circuit" || "${want}" == "product" ]]; then
-        return 0
-      fi
-      return 1
-      ;;
-    "${want}") return 0 ;;
-    *) return 1 ;;
-  esac
+  [[ "${PHASE}" == "all" || "${PHASE}" == "${want}" ]]
 }
 
 if run_phase circuit; then
@@ -216,19 +359,28 @@ if run_phase circuit; then
     "${PP_HARD_NAT_CALL_LISTEN:-/ip4/0.0.0.0/udp/47160/adp/1.0.0}" circuit
 fi
 
-if run_phase product; then
-  run_nat_call "B-HARD-CALL-NAT-PRODUCT" "pp-hard-call-nat-product" "call-nat-product.ready" \
-    "${PP_HARD_NAT_PRODUCT_LISTEN:-/ip4/0.0.0.0/udp/47162/adp/1.0.0}" product
-fi
-
-if run_phase dirty; then
-  run_nat_call "B-HARD-CALL-NAT-DIRTY" "pp-hard-call-nat-dirty" "call-nat-dirty.ready" \
-    "${PP_HARD_NAT_DIRTY_LISTEN:-/ip4/0.0.0.0/udp/47164/adp/1.0.0}" dirty
-fi
-
 if run_phase stack; then
   run_nat_call "B-HARD-CALL-NAT-STACK" "pp-hard-call-nat-stack" "call-nat-stack.ready" \
     "${PP_HARD_NAT_STACK_LISTEN:-/ip4/0.0.0.0/udp/47166/adp/1.0.0}" stack
+fi
+
+if run_phase cold; then
+  run_nat_call "B-HARD-CALL-NAT-COLD" "pp-hard-call-nat-cold" "call-nat-cold.ready" \
+    "${PP_HARD_NAT_COLD_LISTEN:-/ip4/0.0.0.0/udp/47168/adp/1.0.0}" cold
+fi
+
+if run_phase cold-dirty; then
+  run_nat_call "B-HARD-CALL-NAT-COLD-DIRTY" "pp-hard-call-nat-cold-dirty" "call-nat-cold-dirty.ready" \
+    "${PP_HARD_NAT_COLD_DIRTY_LISTEN:-/ip4/0.0.0.0/udp/47170/adp/1.0.0}" cold-dirty
+fi
+
+if run_phase cold-await; then
+  run_nat_call "B-HARD-CALL-NAT-COLD-AWAIT" "pp-hard-call-nat-cold-await" "call-nat-cold-await.ready" \
+    "${PP_HARD_NAT_COLD_AWAIT_LISTEN:-/ip4/0.0.0.0/udp/47172/adp/1.0.0}" cold-await
+fi
+
+if run_phase broadcast; then
+  run_nat_broadcast
 fi
 
 echo "N-HARD-CGNAT-ISH + NAT call phase=${PHASE} PASSED"

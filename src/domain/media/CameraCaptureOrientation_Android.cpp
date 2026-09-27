@@ -12,9 +12,8 @@
 #include <cstdint>
 
 namespace pbr {
-namespace {
 
-int DisplayRotationDegrees() {
+int CameraDisplayRotationDegrees() {
   // Prefer JNI Surface.ROTATION_* — matches CameraX getRotationCompensation.
   JNIEnv* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
   jobject activity = static_cast<jobject>(SDL_GetAndroidActivity());
@@ -87,6 +86,8 @@ int DisplayRotationDegrees() {
   return degrees;
 }
 
+namespace {
+
 bool QuerySensorOrientation(uint8_t want_facing, int32_t* out_sensor_deg) {
   if (!out_sensor_deg) {
     return false;
@@ -141,7 +142,7 @@ int Normalize90(int deg) {
 
 } // namespace
 
-CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id) {
+CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id, int display_rotation_deg) {
   CameraCaptureTransform t;
   t.encode_width = 360;
   t.encode_height = 640;
@@ -155,7 +156,7 @@ CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id) {
   (void)QuerySensorOrientation(want_facing, &sensor_deg);
   sensor_deg = Normalize90(sensor_deg);
 
-  const int display_deg = Normalize90(DisplayRotationDegrees());
+  const int display_deg = Normalize90(display_rotation_deg);
 
   // CameraX / Camera2 rotation compensation for upright buffers.
   int rotate_cw = 0;

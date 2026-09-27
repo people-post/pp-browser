@@ -123,6 +123,10 @@ void SetSpeakerphoneOn(bool on) {
   }
 }
 
+bool SpeakerToggleNeedsDeviceReopen() {
+  return true;
+}
+
 int CaptureOpenAttemptCount() {
   return 4;
 }
@@ -140,18 +144,21 @@ int CaptureReopenSettleDelayMs() {
 }
 
 void ApplyCaptureAudioHints() {
-  // Phones: VoIP usage so MODE_IN_COMMUNICATION doesn't duck MEDIA (see SDL_aaudio patch).
-  // Speaker-only tablets: leave default MEDIA — paired with MODE_NORMAL in MainActivity
-  // (API < 28 cannot set AAUDIO_USAGE_VOICE_COMMUNICATION; IN_COMMUNICATION+MEDIA is whisper-quiet).
+  // Stock SDL 3.4.16 (B35): "Communications" role → AAUDIO_USAGE_VOICE_COMMUNICATION; input
+  // preset 7 = VOICE_COMMUNICATION engages the OEM AEC/NS. Speaker-only tablets keep MEDIA
+  // usage (paired with MODE_NORMAL in MainActivity; IN_COMMUNICATION+MEDIA is whisper-quiet).
   if (SupportsSpeakerToggle()) {
-    SDL_SetHint("SDL_ANDROID_AAUDIO_VOICE_COMMUNICATION", "1");
+    SDL_SetHint(SDL_HINT_AUDIO_DEVICE_STREAM_ROLE, "Communications");
+    SDL_SetHint(SDL_HINT_ANDROID_AAUDIO_INPUT_PRESET, "7");
   } else {
-    SDL_SetHint("SDL_ANDROID_AAUDIO_VOICE_COMMUNICATION", "0");
+    SDL_SetHint(SDL_HINT_AUDIO_DEVICE_STREAM_ROLE, "");
+    SDL_SetHint(SDL_HINT_ANDROID_AAUDIO_INPUT_PRESET, "");
   }
 }
 
 void ClearCaptureAudioHints() {
-  SDL_SetHint("SDL_ANDROID_AAUDIO_VOICE_COMMUNICATION", "0");
+  SDL_SetHint(SDL_HINT_AUDIO_DEVICE_STREAM_ROLE, "");
+  SDL_SetHint(SDL_HINT_ANDROID_AAUDIO_INPUT_PRESET, "");
 }
 
 } // namespace CallAudioSession

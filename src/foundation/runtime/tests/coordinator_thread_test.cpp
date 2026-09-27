@@ -43,11 +43,20 @@ TEST(CoordinatorThreadTest, CriticalRunsBeforeNormal) {
     order.push_back("normal");
   });
 
-  coordinator.Post(CoordinatorPriority::Critical, [&]() { order.push_back("critical"); });
+  coordinator.Post(CoordinatorPriority::Critical, [&]() {
+    std::lock_guard lock(mu);
+    order.push_back("critical");
+  });
 
-  WaitUntil([&]() { return order.size() == 1; }, std::chrono::milliseconds(2000));
-  ASSERT_EQ(order.size(), 1u);
-  EXPECT_EQ(order.front(), "critical");
+  WaitUntil([&]() {
+    std::lock_guard lock(mu);
+    return order.size() == 1;
+  }, std::chrono::milliseconds(2000));
+  {
+    std::lock_guard lock(mu);
+    ASSERT_EQ(order.size(), 1u);
+    EXPECT_EQ(order.front(), "critical");
+  }
 
   {
     std::lock_guard lock(mu);
@@ -55,9 +64,15 @@ TEST(CoordinatorThreadTest, CriticalRunsBeforeNormal) {
   }
   cv.notify_all();
 
-  WaitUntil([&]() { return order.size() == 2; }, std::chrono::milliseconds(2000));
-  EXPECT_EQ(order[0], "critical");
-  EXPECT_EQ(order[1], "normal");
+  WaitUntil([&]() {
+    std::lock_guard lock(mu);
+    return order.size() == 2;
+  }, std::chrono::milliseconds(2000));
+  {
+    std::lock_guard lock(mu);
+    EXPECT_EQ(order[0], "critical");
+    EXPECT_EQ(order[1], "normal");
+  }
 
   coordinator.Shutdown();
 }
@@ -106,6 +121,28 @@ TEST(CoordinatorThreadTest, CancelTimerPreventsFire) {
   coordinator.Post(CoordinatorPriority::Normal, [&]() { probe.store(true); });
   WaitUntil([&]() { return probe.load(); }, std::chrono::milliseconds(2000));
   EXPECT_EQ(count.load(), 0);
+
+  coordinator.Shutdown();
+}
+
+// A timer armed while the thread sleeps toward a later deadline must wake it — not fire at the
+// later deadline (connect retry 1.5 s fired at the cancelled 16 s watchdog's deadline).
+TEST(CoordinatorThreadTest, EarlierTimerWakesWaitOnLaterDeadline) {
+  CoordinatorThread coordinator;
+  coordinator.Start();
+
+  coordinator.ScheduleOneShot(std::chrono::seconds(30), []() {});
+  // Drain a probe so the thread is now waiting on the 30 s deadline.
+  std::atomic<bool> probe{false};
+  coordinator.Post(CoordinatorPriority::Normal, [&]() { probe.store(true); });
+  WaitUntil([&]() { return probe.load(); }, std::chrono::milliseconds(2000));
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+  std::atomic<bool> fired{false};
+  const auto armed = std::chrono::steady_clock::now();
+  coordinator.ScheduleOneShot(std::chrono::milliseconds(20), [&]() { fired.store(true); });
+  WaitUntil([&]() { return fired.load(); }, std::chrono::milliseconds(2000));
+  EXPECT_LT(std::chrono::steady_clock::now() - armed, std::chrono::milliseconds(1000));
 
   coordinator.Shutdown();
 }

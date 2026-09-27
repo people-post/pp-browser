@@ -7,6 +7,8 @@
 #include "feature/calls/CallMediaSeat.h"
 #include "domain/messaging/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallMediaConnectCoordinator.h"
+#include "domain/mesh/reachability/PeerReachCoordinator.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 
 #include "common/Module.h"
@@ -67,6 +69,7 @@ public:
   CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions, CallMediaKeyStore& media_keys,
                         CallMediaEngine& media, ICallMediaTransport& direct, IDialRegistry* dial,
                         ICircuitHopReach* circuit_reach);
+  ~CallMediaBridge();
 
   bool IsMeshConnectFailed() const;
   bool MeshConnectMissingMic() const;
@@ -91,7 +94,7 @@ public:
    * Set 0 so KeyTimeout → ConnectFailed is reachable without a long sleep.
    */
   void SetMediaKeyInboxPollRoundsForTest(int rounds);
-  /** Shrink EnsurePeerReachable deadline for gtests (0 = production default). */
+  /** Shrink the peer-reach direct-dial budget for gtests (0 = production default). */
   void SetDialWaitBudgetMsForTest(int budget_ms);
   void SetReserveRenewIntervalMsForTest(int interval_ms) { reserve_renew_interval_ms_ = interval_ms; }
   /** Shrink per-attempt ConnectAsync timeout (and watchdog margin) for gtests (0 = production default). */
@@ -108,6 +111,8 @@ public:
   /**
    * Engine Stop — **seat teardown hook only** when MediaSeat is wired (V036).
    * CallSessionManager Leave/Accept must use seat.Release, not this.
+   * Any thread: off the calls owner the whole stop is posted to the front of its queue and
+   * skipped if a newer media session (StartSfu) started in the meantime.
    */
   void StopMeshMedia(const std::string& call_id);
   /**
@@ -117,19 +122,17 @@ public:
   void NotePeerIdRelayMapping(const std::string& peer_id, const std::string& relay_identity);
 
   /**
-   * Abort in-flight Connect (`AbortConnectSequence` + Detach). Prefer timeout_ms=0 on shutdown so
-   * the UI/shutdown strand does not sleep-spin; late Connect callbacks no-op on generation.
-   * Must run before destroying this bridge / CallMediaDirectService / mesh host.
+   * Abort in-flight Connect (`AbortConnectSequence` + connect Shutdown + Detach); late Connect
+   * callbacks no-op on sequence. Must run before destroying this bridge / transport / mesh host.
+   * The abort is synchronous; `timeout_ms` is accepted for existing callers and unused.
    * See THREADING.md Cancel / Abort contract (arm ⇒ complete on cancel).
    */
   void PrepareForTeardown(int timeout_ms = 0);
 
   /** True while an async Connect sequence is in flight (shutdown measurement). */
-  bool IsConnectWorkerInflight() const {
-    return connect_worker_inflight_.load(std::memory_order_acquire);
-  }
+  bool IsConnectWorkerInflight() const { return connect_.InFlight(); }
 
-  /** True after PrepareForTeardown / StopMeshMedia — inbound hello wait must exit. */
+  /** True after PrepareForTeardown. */
   bool IsStopping() const { return stopping_.load(std::memory_order_acquire); }
 
   void NoteMediaAttempted(const std::string& call_id);
@@ -143,9 +146,9 @@ public:
   void SetSeedReserve(std::function<void()> reserve);
   /**
    * Await at least one bootstrap/directory seed Connected before circuit/punch
-   * (CallMediaPlane::EnsureBootstrapSeedParkedAsync).
+   * (MeshMediaPlane::EnsureBootstrapSeedParkedAsync). Forwarded to PeerReachCoordinator.
    */
-  void SetSeedParkAwait(std::function<void(std::function<void(bool parked)>, int timeout_ms)> park);
+  void SetSeedParkAwait(PeerReachCoordinator::SeedParkAwait park);
 
   void SetDirectArmingPorts(CallDirectArmingPorts ports);
   /** V036 exclusive media epoch — Stack installs; Bridge must not hold CallMediaSeat*. */
@@ -156,39 +159,59 @@ public:
   /** True when 1:1 call-media stream is up (not merely CallMediaEngine StartSfu). */
   bool HasActiveDirectStream() const;
 
-  /** V039 Direct planner Apply — product callbacks on UI. */
+  /** V039 Direct planner Apply — product callbacks on the calls owner. */
   void Apply(CallDirectPlannerEvent ev, const std::string& call_id = {},
              const std::string& peer_identity = {});
   CallDirectPlannerPhase DirectPlannerPhase() const { return direct_planner_phase_; }
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
-  /** Circuit/punch reach without parking MeshControl (TryEnsureCallMediaReachableAsync). */
-  void EnsurePeerReachableAsync(const std::string& peer_identity, uint64_t connect_gen,
-                                std::function<void(Roe<void>)> on_done);
-  /** Async dial/retry — does not park MeshControl for Connect timeout (ConnectAsync). */
-  void StartConnectSequence(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen);
-  void BeginConnectAttempt(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
-                           int attempt);
-  void ContinueConnectAttemptAfterReachable(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs,
-                                            uint64_t gen, int attempt);
-  void OnConnectAttemptFinished(CallMediaDirectConnectParams params, CallMediaDirectCallbacks cbs, uint64_t gen,
-                                int attempt, Roe<void> connected);
-  void FinishConnectSequence(uint64_t gen, const std::string& call_id, Roe<void> connected, const char* role);
+  // Answerer start steps (UI; the key poll runs on a worker).
+  void RunAnswererStart(const std::string& call_id, const std::string& peer_identity);
+  void DeferAnswererUntilMediaKey(const std::string& call_id, const std::string& peer_identity,
+                                  const std::string& reason);
+  void PollForDeferredMediaKey(const std::string& call_id, uint64_t key_wait_gen);
+  void OnDeferredMediaKeyTimeout(const std::string& call_id);
+  // BeginSession steps.
+  void ResetDirectSessionState(const std::string& call_id, const std::string& peer_identity, bool offerer);
+  /** Stop the prior engine session / connect; true when an inbound direct stream is kept. */
+  bool StopPriorDirectAttempt(bool offerer);
+  void ParkOnBootstrapSeed();
+  Roe<void> StartDirectEngine(const std::string& call_id);
+  void StartDirectConnect(const std::string& call_id, const std::string& peer_identity, bool offerer,
+                          uint32_t media_epoch, const ByteVector& media_key);
+  void StopMeshMediaOnUi(const std::string& call_id);
+  /** Link to reach for this session's Connect (call roster → mesh keys, offerer → Reach). */
+  PeerReachRequest BuildReachRequest(const CallMediaDirectConnectParams& params);
+  /** Call-side reactions to the connect sequence (media key resend, path label, commit / fail). */
+  CallMediaConnectHooks MakeConnectHooks(const std::string& call_id);
   /** Chrome ConnectFailed + Direct Idle; optionally StopMeshMedia (zombie TX / teardown). */
   void SurfaceConnectFailed(const std::string& call_id, const std::string& err, bool stop_media);
-  void CancelConnectTimers();
   /**
-   * Invalidate Connect epoch + cancel retry timers + clear connect_worker_inflight_.
-   * Cancel alone drops the callbacks that would have cleared the waiter — abort must complete it
-   * (THREADING.md Cancel / Abort contract).
+   * Bump the send generation (gates 1:1 TX) and abort the connect sequence (timers, pending
+   * reach, InFlight cleared — THREADING.md Cancel / Abort contract).
    */
   void AbortConnectSequence();
   Roe<ByteVector> LoadActiveMediaKey(const std::string& call_id) const;
   /** Direct stream up: mark media connected when capture is live, always advance lifecycle/chrome. */
   void CommitDirectConnected(const std::string& call_id);
-  void DeliverInboundDirectMedia(const std::string& call_id, uint8_t channel, uint32_t seq, uint8_t mark,
-                                 const std::vector<uint8_t>& payload);
+  /**
+   * B44: a connect attempt failed — but the peer's own redial may already have restored direct
+   * media, or be mid-handshake. Commit if MediaReady; give an inbound handshake in progress one
+   * short grace; only then surface the failure.
+   */
+  void FailUnlessDirectRecovered(const std::string& call_id, const std::string& err, bool grace_used = false);
+  /** Inbound bundles: accept policy + key lookup on the worker hop (connect coordinator). */
+  CallMediaInboundPorts MakeInboundPorts();
+  /** UI: map an accepted inbound bundle's mesh PeerId to the roster identity / mixer stream. */
+  void BindInboundPeer(const std::string& call_id, const std::string& inbound_peer_id);
+  /** Callbacks for one bundle (either direction). fixed_stream 0 = inbound identity binding. */
+  CallMediaDirectCallbacks MakeBundleCallbacks(const std::string& call_id, uint32_t fixed_stream,
+                                               const char* label);
+  /** UI: a bundle closed / failed — ignore during SoftMigrate / SFU attach, else ConnectFailed. */
+  void OnBundleFailed(const std::string& call_id, const std::string& reason);
+  void DeliverDirectMedia(const std::string& call_id, uint32_t fixed_stream, uint8_t channel, uint32_t seq,
+                          uint8_t mark, const std::vector<uint8_t>& payload);
   void ReleaseDirectTransportBody();
   /** NAT dogfood: dialable "direct" with TX-only → force circuit ensure + re-dial. */
   void MaybeEscalateTxOnlyDirect();
@@ -213,22 +236,18 @@ private:
   CallMediaKeyStore& media_keys_;
   CallMediaEngine& media_;
   ICallMediaTransport& direct_;
-  IDialRegistry* dial_ = nullptr;
-  ICircuitHopReach* circuit_reach_ = nullptr;
   CallDirectArmingPorts arming_;
   CallDirectSeatPorts seat_;
   std::function<void()> seed_warm_;
   std::function<void()> seed_reserve_;
-  std::function<void(std::function<void(bool parked)>, int timeout_ms)> seed_park_await_;
-  /** direct | punched | circuit — set by EnsurePeerReachableAsync. */
-  std::string media_path_kind_;
-  /** When true, EnsurePeerReachableAsync must try circuit even if already dialable. */
+  /** Peer link establishment (reach loop); owns no call state. */
+  PeerReachCoordinator reach_;
+  /** Connect attempts (reach + bundle open, watchdog, retry); owns no call product state. */
+  CallMediaConnectCoordinator connect_;
+  /** Link kind the last successful reach settled on (calls owner). */
+  PeerLinkKind reach_kind_ = PeerLinkKind::Unknown;
+  /** Next connect sequence must insist on a relayed link (TX-only escalate). */
   bool force_circuit_ensure_ = false;
-  /** B39: force EnsurePeerReachableAsync to redial even when dial_->IsConnected reports a
-   *  (possibly stale) connected link. Set by OnConnectAttemptFinished after a dropped link. */
-  bool force_redial_ = false;
-  /** B39: true when the current attempt's Ensure short-circuited on an already-connected link. */
-  bool attempt_started_connected_ = false;
   bool session_offerer_ = false;
   int64_t direct_connected_at_ms_ = 0;
   bool tx_only_escalation_done_ = false;
@@ -241,29 +260,37 @@ private:
   std::string inbound_deferred_peer_id_;
   bool mesh_connect_failed_ = false;
   bool mesh_connect_missing_mic_ = false;
-  /** Connect sequence in flight (async ConnectAsync / reachability). */
-  std::atomic<bool> connect_worker_inflight_{false};
-  /** Bumped in StopMeshMedia so in-flight Connect workers abort instead of racing Detach/Stop. */
+  /** Bumped by AbortConnectSequence; the StartSfu send fn drops TX from an older generation. */
   std::atomic<uint64_t> connect_generation_{0};
   std::atomic<bool> stopping_{false};
-  /** Cancelable inbound hello MediaKey wait (notify from OnMediaKeyReady / PrepareForTeardown). */
-  std::mutex inbound_key_mu_;
-  std::condition_variable inbound_key_cv_;
-  uint64_t connect_retry_timer_id_ = 0;
-  /** B42: per-attempt ConnectAsync watchdog id; cancelled on attempt completion / CancelConnectTimers. */
-  uint64_t connect_watchdog_timer_id_ = 0;
-  /** B42: attempt number the watchdog / late-completion guards compare against. */
-  int connect_attempt_current_ = 0;
+  /** Bumped when the pending (key-deferred) answerer changes; the key-poll worker watches it. */
+  std::atomic<uint64_t> key_wait_gen_{0};
+  /** Cleared in the destructor; guards stops posted from other threads. */
+  std::shared_ptr<std::atomic<bool>> alive_;
   uint64_t direct_health_timer_id_ = 0;
   uint64_t reserve_renew_timer_id_ = 0;
   /** Inside the 15 s StartReserve lease so consecutive leases overlap. */
   int reserve_renew_interval_ms_ = 10000;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;
-  std::unordered_set<std::string> media_attempted_calls_;
+  /** Written on the calls owner, read by the GUI (MediaAttemptedThisProcess) — guarded. */
+  struct AttemptedCalls {
+    void Insert(const std::string& id) {
+      std::lock_guard lock(mu);
+      ids.insert(id);
+    }
+    void Erase(const std::string& id) {
+      std::lock_guard lock(mu);
+      ids.erase(id);
+    }
+    bool Contains(const std::string& id) const {
+      std::lock_guard lock(mu);
+      return ids.count(id) > 0;
+    }
+    mutable std::mutex mu;
+    std::unordered_set<std::string> ids;
+  };
+  AttemptedCalls media_attempted_calls_;
   int media_key_inbox_poll_rounds_ = 90;
-  int64_t dial_wait_budget_ms_ = 12000;
-  /** Per-attempt ConnectAsync timeout (B42 test seam); production default kConnectAttemptTimeoutMs. */
-  int connect_attempt_timeout_ms_ = 15000;
   std::atomic<uint32_t> audio_seq_{0};
   /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */
   std::atomic<uint32_t> inbound_remote_stream_{0};

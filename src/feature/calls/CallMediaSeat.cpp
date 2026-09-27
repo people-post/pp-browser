@@ -1,4 +1,5 @@
 #include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallsThread.h"
 
 #include "foundation/runtime/AppRuntime.h"
 
@@ -363,18 +364,18 @@ void CallMediaSeat::InvokeTeardown(const std::string& call_id, uint64_t epoch_at
   auto run = [stop = std::move(stop), call_id, epoch_at_post, force]() {
     stop(call_id, epoch_at_post, force);
   };
-  if (force || AppRuntime::CurrentlyOnUI()) {
+  if (force || CallsThread::IsCurrent()) {
     // Force (Acquire prior) and UI-thread Release run Stop inline so StartSfu cannot race.
-    if (AppRuntime::CurrentlyOnUI()) {
+    if (CallsThread::IsCurrent()) {
       run();
     } else if (force) {
       // Ordered: front of UI queue before any scheduled StartSfu for the new call.
-      AppRuntime::PostUIFront(std::move(run));
+      CallsThread::PostFront(std::move(run));
     } else {
-      AppRuntime::PostUIFront(std::move(run));
+      CallsThread::PostFront(std::move(run));
     }
   } else {
-    AppRuntime::PostUIFront(std::move(run));
+    CallsThread::PostFront(std::move(run));
   }
 }
 

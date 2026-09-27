@@ -25,6 +25,10 @@ inline constexpr int64_t kCallInviteWireSkewSlackMs = 120'000;
 enum class CallMediaMode : uint8_t { Voice = 0, Video = 1 };
 
 /** Group SoftMigrate vs subscribe-only live broadcast (B001 / B0). */
+/**
+ * Persisted session kind. `Broadcast` is read-only legacy (rows written before broadcast became its
+ * own feature, media-client-layers l6): decoded so old stores load, never created, never accepted.
+ */
 enum class CallSessionKind : uint8_t { Group = 0, Broadcast = 1 };
 
 enum class CallSessionState : uint8_t { Ringing = 0, Active = 1, Ended = 2 };

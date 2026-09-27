@@ -12,10 +12,11 @@ using Clock = std::chrono::steady_clock;
 
 } // namespace
 
-CallMediaAmpTransport::CallMediaAmpTransport(pp::amp::MeshRuntime& runtime, IoPump io_pump, WorkerPost post_worker)
-    : coordinator_(runtime, std::move(post_worker)), io_pump_(std::move(io_pump)) {}
+CallMediaAmpTransport::CallMediaAmpTransport(pp::amp::MeshRuntime& runtime, IoPump io_pump)
+    : coordinator_(runtime), io_pump_(std::move(io_pump)) {}
 
 CallMediaAmpTransport::~CallMediaAmpTransport() {
+  alive_->store(false, std::memory_order_release);
   Stop();
 }
 
@@ -36,24 +37,26 @@ void CallMediaAmpTransport::Stop() {
   active_params_ = {};
 }
 
-void CallMediaAmpTransport::SetInboundHandler(
-    std::function<void(CallMediaDirectConnectParams&, CallMediaDirectCallbacks&)> handler) {
-  coordinator_.SetInboundHandler(
-      [this, handler = std::move(handler)](CallMediaDirectConnectParams& params,
-                                           CallMediaDirectCallbacks& cbs) {
-        {
-          std::lock_guard lock(mu_);
-          active_params_ = params;
-        }
-        if (handler) {
-          handler(params, cbs);
-        }
-        {
-          std::lock_guard lock(mu_);
-          active_params_ = params;
-          // Leg id is assigned after the inbound handler returns; refresh via PrimaryLegId().
-        }
-      });
+void CallMediaAmpTransport::SetInboundHandler(CallMediaInboundHandler handler) {
+  coordinator_.SetInboundHandler([this, alive = alive_, handler = std::move(handler)](
+                                     CallMediaDirectConnectParams params, CallMediaInboundAnswer answer) {
+    {
+      std::lock_guard lock(mu_);
+      active_params_ = params;
+    }
+    if (!handler) {
+      answer(std::move(params), {});  // no key: NACK
+      return;
+    }
+    handler(std::move(params), [this, alive, answer = std::move(answer)](CallMediaDirectConnectParams answered,
+                                                                         CallMediaDirectCallbacks cbs) {
+      if (alive->load(std::memory_order_acquire)) {
+        std::lock_guard lock(mu_);
+        active_params_ = answered;  // leg id is assigned after the answer; refresh via PrimaryLegId()
+      }
+      answer(std::move(answered), std::move(cbs));
+    });
+  });
 }
 
 void CallMediaAmpTransport::ClearInboundHandler() {

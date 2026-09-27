@@ -9,6 +9,7 @@
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
 #include "gui/shell/ShellCallChromePorts.h"
 
+#include <memory>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -83,6 +84,13 @@ private:
   void ApplyAudioLevels(CallMediaEngine& media);
   void RefreshCallLevels();
   void SyncRingtone();
+  /**
+   * Stop ringback_ if playing and, unless media is already active (the engine then owns
+   * the session), release the phone audio session. Shared by SyncRingtone's own
+   * playing->stopped transition and LeaveActive's immediate stop, so a hang-up during
+   * ringback never Deactivates twice.
+   */
+  void StopRingback(CallUiBackend* backend);
   void ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* backend, bool media_reconnect);
   CallMediaHealthView BuildMediaHealthView(CallMediaEngine& media, CallUiBackend* backend,
                                            bool media_reconnect) const;
@@ -112,6 +120,7 @@ private:
   /** Call id the current chrome_mode_ was chosen for (reset defaults on switch). */
   std::string chrome_mode_call_id_;
   CallRingtone ringtone_;
+  CallRingtone ringback_{CallRingtone::Tone::OutgoingRingback};
   CallFunctionalPorts call_ports_;
   PeoplePickerNotifyPorts people_picker_notify_;
   ShellCallChromePorts shell_call_chrome_;
@@ -119,6 +128,17 @@ private:
   /** Presenter-owned call chrome; pushed to ShellHost via apply_snapshot. */
   CallRingState ring_;
   CallInProgressState in_call_;
+  /** Call intents report on UI later (calls owner); results for a destroyed controller are dropped. */
+  std::shared_ptr<int> alive_ = std::make_shared<int>(0);
+  /** Run `fn` only while this controller lives (captured into async call-intent results). */
+  template <typename Fn>
+  auto WhileAlive(Fn fn) {
+    return [weak = std::weak_ptr<int>(alive_), fn = std::move(fn)](auto&&... args) {
+      if (weak.lock()) {
+        fn(std::forward<decltype(args)>(args)...);
+      }
+    };
+  }
 };
 
 } // namespace pbr

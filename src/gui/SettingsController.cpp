@@ -2593,15 +2593,18 @@ void SettingsController::PerformFetchCasTip(const std::string& tip, const std::s
     ReportFailure(AppError::Storage(Err::Storage::Unavailable, "CAS tip fetch is not available"));
     return;
   }
-  if (auto fetched = commands_.fetch_cas_public_tip(tip, peer_relay_user_id); !fetched) {
-    ReportFailure(fetched.error());
-    return;
-  }
-  RefreshCasLibrary();
-  PushCasLibraryBindings();
-  DataModelHost::Instance().Dirty("settings", "cas_library_rows");
-  DataModelHost::Instance().Dirty("settings", "cas_library_empty_label");
-  UserFeedback::Ok(Tr("settings.storage.library.fetch_tip_done"));
+  // Answered on UI once the mesh fetch lands (the singleton outlives the request).
+  commands_.fetch_cas_public_tip(tip, peer_relay_user_id, [this](Roe<void> fetched) {
+    if (!fetched) {
+      ReportFailure(fetched.error());
+      return;
+    }
+    RefreshCasLibrary();
+    PushCasLibraryBindings();
+    DataModelHost::Instance().Dirty("settings", "cas_library_rows");
+    DataModelHost::Instance().Dirty("settings", "cas_library_empty_label");
+    UserFeedback::Ok(Tr("settings.storage.library.fetch_tip_done"));
+  });
 }
 
 } // namespace pbr

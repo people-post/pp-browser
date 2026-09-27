@@ -1,4 +1,5 @@
 #include "feature/calls/CallLifecycle.h"
+#include "feature/calls/CallsThread.h"
 
 #include "domain/messaging/CallLifecycleTransitionLogic.h"
 #include "foundation/runtime/AppRuntime.h"
@@ -113,7 +114,7 @@ const char* CallLifecycleEventName(const CallLifecycleEvent ev) {
 }
 
 void CallLifecycle::BindSignalingPorts(CallLifecycleSignalingPorts ports) {
-  ports_ = std::move(ports);
+  ports_.Set(std::move(ports));
   // Logger::redirectTo is idempotent when already bound to the same name.
   redirectLogger("CallLifecycle");
 }
@@ -121,7 +122,7 @@ void CallLifecycle::BindSignalingPorts(CallLifecycleSignalingPorts ports) {
 void CallLifecycle::ClearBinding() {
   // Invalidate in-flight Accept/Decline/Leave UI replies before clearing ports.
   deferred_.Invalidate();
-  ports_ = {};
+  ports_.Set({});
   phase_ = CallPhase::Idle;
   status_ = CallMediaStatus::None;
   media_cancel_gen_ = 0;
@@ -306,6 +307,7 @@ void CallLifecycle::UpdateListenDesire() {
 }
 
 void CallLifecycle::NotifyChrome() {
+  // GUI boundary: the chrome callback runs on UI whichever thread owns the lifecycle.
   if (!on_chrome_refresh_) {
     return;
   }
@@ -315,97 +317,98 @@ void CallLifecycle::NotifyChrome() {
   }
   const auto guard = deferred_.token();
   const uint64_t epoch = deferred_.Snapshot();
-  AppRuntime::PostUI([this, guard, epoch]() {
-    if (!DeferredSelf::Alive(guard, epoch)) {
-      return;
-    }
-    if (on_chrome_refresh_) {
-      on_chrome_refresh_();
+  AppRuntime::PostUI([refresh = on_chrome_refresh_, guard, epoch]() {
+    if (DeferredSelf::Alive(guard, epoch)) {
+      refresh();
     }
   });
 }
 
 void CallLifecycle::PostAcceptInvite(const std::string& call_id) {
-  auto accept = ports_.accept_invite;
+  const auto signaling = ports_.Get();
+  auto accept = signaling->accept_invite;
   const auto guard = deferred_.token();
   const uint64_t epoch = deferred_.Snapshot();
-  AppRuntime::ResumeBackgroundWork();
-  // Never Browser IO — AcceptInvite was starved behind PollInbox on Samsung (queued, no IO enter).
-  // Same escape hatch as offerer Connect worker / call-control MediaKey send.
-  AppRuntime::PostWorkerCritical([this, accept = std::move(accept), call_id, guard, epoch]() {
+  AppRuntime::ResumeBackgroundWork();  // relay-fallback sends run on workers
+  // Accept runs on the calls owner (thread-ownership t2a) — never behind PollInbox, never blocking:
+  // it awaits the circuit park asynchronously and reports once.
+  CallsThread::Post([this, accept = std::move(accept), call_id, guard, epoch]() {
     if (!DeferredSelf::Alive(guard, epoch)) {
       return;
     }
-    log().info << "AcceptInvite worker enter call_id=" << call_id;
-    Roe<void> accepted = Error("Calls unavailable");
-    if (accept) {
-      accepted = accept(call_id);
+    log().info << "AcceptInvite owner enter call_id=" << call_id;
+    auto reply = [this, call_id, guard, epoch](Roe<void> accepted) {
+      CallsThread::Post([this, call_id, accepted = std::move(accepted), guard, epoch]() {
+        if (DeferredSelf::Alive(guard, epoch)) {
+          OnAcceptResult(call_id, accepted);
+        }
+      });
+    };
+    if (!accept) {
+      reply(Error("Calls unavailable"));
+      return;
     }
-    AppRuntime::PostUI([this, call_id, accepted = std::move(accepted), guard, epoch]() mutable {
-      if (!DeferredSelf::Alive(guard, epoch)) {
-        return;
+    accept(call_id, std::move(reply));
+  });
+}
+
+void CallLifecycle::OnAcceptResult(const std::string& call_id, const Roe<void>& accepted) {
+  // B-CONFLICT: Accept B while AcceptInvite(A) still runs — drop A's late UI result so it
+  // cannot JoinedLocal/RemoteEnded-clobber B (or Idle after LeaveCallIfActiveExcept).
+  if (accepting_call_id_ != call_id && call_id_ != call_id) {
+    log().info << "AcceptInvite result ignored stale call_id=" << call_id << " active=" << call_id_
+               << " accepting=" << accepting_call_id_;
+    return;
+  }
+  if (!accepted) {
+    log().warning << "AcceptInvite failed call_id=" << call_id << " err=" << accepted.error().message;
+    last_error_ = accepted.error().message;
+    Apply(CallLifecycleEvent::AcceptFailed, call_id);
+    return;
+  }
+  log().info << "AcceptInvite ok call_id=" << call_id;
+  Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+}
+
+void CallLifecycle::PostOnOwnerAndReply(std::function<Roe<void>()> work, std::function<void(Roe<void>)> reply) {
+  const auto guard = deferred_.token();
+  const uint64_t epoch = deferred_.Snapshot();
+  CallsThread::Post([work = std::move(work), reply = std::move(reply), guard,
+                                                              epoch]() {
+    Roe<void> result = work();
+    CallsThread::Post([reply, result = std::move(result), guard, epoch]() {
+      if (DeferredSelf::Alive(guard, epoch)) {
+        reply(result);
       }
-      // B-CONFLICT: Accept B while AcceptInvite(A) still runs — drop A's late UI result so it
-      // cannot JoinedLocal/RemoteEnded-clobber B (or Idle after LeaveCallIfActiveExcept).
-      if (accepting_call_id_ != call_id && call_id_ != call_id) {
-        log().info << "AcceptInvite result ignored stale call_id=" << call_id
-                   << " active=" << call_id_ << " accepting=" << accepting_call_id_;
-        return;
-      }
-      if (!accepted) {
-        log().warning << "AcceptInvite failed call_id=" << call_id << " err=" << accepted.error().message;
-        last_error_ = accepted.error().message;
-        Apply(CallLifecycleEvent::AcceptFailed, call_id);
-        return;
-      }
-      log().info << "AcceptInvite ok call_id=" << call_id;
-      Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
     });
   });
 }
 
 void CallLifecycle::PostDeclineInvite(const std::string& call_id) {
-  auto decline = ports_.decline_invite;
-  const auto guard = deferred_.token();
-  const uint64_t epoch = deferred_.Snapshot();
-  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
-      WorkerLane::Normal,
+  const auto signaling = ports_.Get();
+  auto decline = signaling->decline_invite;
+  PostOnOwnerAndReply(
       [decline = std::move(decline), call_id]() -> Roe<void> {
-        if (!decline) {
-          return Error("Calls unavailable");
-        }
-        return decline(call_id);
+        return decline ? decline(call_id) : Roe<void>(Error("Calls unavailable"));
       },
-      [this, call_id, guard, epoch](Roe<void> declined) {
-        if (!DeferredSelf::Alive(guard, epoch)) {
-          return;
-        }
+      [this, call_id](Roe<void> declined) {
         if (!declined) {
-          log().warning << "DeclineInvite failed call_id=" << call_id
-                        << " err=" << declined.error().message;
+          log().warning << "DeclineInvite failed call_id=" << call_id << " err=" << declined.error().message;
         }
         Apply(CallLifecycleEvent::DeclineDone, call_id);
       });
 }
 
 void CallLifecycle::PostLeaveCall(const std::string& call_id) {
-  auto leave = ports_.leave_call;
-  const auto guard = deferred_.token();
-  const uint64_t epoch = deferred_.Snapshot();
-  // Critical: must not sit behind Normal work while Connect (also Critical) still dials —
-  // StopMeshMedia aborts Connect via connect_generation_.
-  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
-      WorkerLane::Critical,
+  const auto signaling = ports_.Get();
+  auto leave = signaling->leave_call;
+  // On the calls owner, which never blocks — Leave cannot sit behind a dialing Connect (bridge) or
+  // an Accept waiting for its circuit park.
+  PostOnOwnerAndReply(
       [leave = std::move(leave), call_id]() -> Roe<void> {
-        if (!leave) {
-          return Error("Calls unavailable");
-        }
-        return leave(call_id);
+        return leave ? leave(call_id) : Roe<void>(Error("Calls unavailable"));
       },
-      [this, call_id, guard, epoch](Roe<void> left) {
-        if (!DeferredSelf::Alive(guard, epoch)) {
-          return;
-        }
+      [this, call_id](Roe<void> left) {
         if (!left) {
           log().warning << "LeaveCall failed call_id=" << call_id << " err=" << left.error().message;
         }
@@ -414,35 +417,32 @@ void CallLifecycle::PostLeaveCall(const std::string& call_id) {
 }
 
 void CallLifecycle::PostRetryMedia(const std::string& call_id) {
-  auto retry = ports_.retry_p2p_media;
+  const auto signaling = ports_.Get();
+  auto retry = signaling->retry_p2p_media;
   const auto guard = deferred_.token();
   const uint64_t epoch = deferred_.Snapshot();
   // Re-arm Direct before RetryP2pMedia → BeginSession (Failed Status blocks AllowsDirectPath).
   SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
-  AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(
-      WorkerLane::Normal,
-      [retry = std::move(retry), call_id]() -> Roe<void> {
-        if (!retry) {
-          return Error("Calls unavailable");
-        }
-        return retry(call_id);
-      },
-      [this, call_id, guard, epoch](Roe<void> retried) {
-        if (!DeferredSelf::Alive(guard, epoch)) {
-          return;
-        }
-        if (!retried) {
-          log().warning << "RetryP2pMedia failed call_id=" << call_id
-                        << " err=" << retried.error().message;
-          Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
-          return;
-        }
-        SetPhase(CallPhase::MediaConnecting, call_id, CallLifecycleEvent::RetryClicked);
-        NotifyChrome();
-      });
+  // Calls owner, not a worker: retry restarts the engine (StartSfu / Stop — capture threads) and
+  // the bridge's connect sequence, owner-only like every other media start. Posted, not inline,
+  // so the retry never re-enters Apply.
+  CallsThread::Post([this, retry = std::move(retry), call_id, guard, epoch]() {
+    if (!DeferredSelf::Alive(guard, epoch)) {
+      return;
+    }
+    const Roe<void> retried = retry ? retry(call_id) : Roe<void>(Error("Calls unavailable"));
+    if (!retried) {
+      log().warning << "RetryP2pMedia failed call_id=" << call_id << " err=" << retried.error().message;
+      Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+      return;
+    }
+    SetPhase(CallPhase::MediaConnecting, call_id, CallLifecycleEvent::RetryClicked);
+    NotifyChrome();
+  });
 }
 
 void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_id_arg) {
+  const auto signaling = ports_.Get();
   CallLifecycleTransitionContext ctx;
   ctx.phase = phase_;
   ctx.status = status_;
@@ -450,7 +450,7 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
   ctx.accepting_call_id = accepting_call_id_;
   ctx.last_ring_call_id = last_ring_call_id_;
   ctx.event_call_id = call_id_arg;
-  ctx.sessions_bound = ports_.IsBound();
+  ctx.sessions_bound = signaling->IsBound();
   ctx.allows_direct_path = AllowsDirectPath();
 
   const CallLifecycleTransitionOutcome out = DecideCallLifecycleTransition(ev, ctx);
@@ -508,19 +508,20 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
 
   if (HasAction(actions, CallLifecycleAction::KickAnswererDirectMedia)) {
     const std::string kick_id = call_id_.empty() ? out.call_id : call_id_;
-    auto kick = ports_.kick_answerer_direct_media;
-    auto media_active = ports_.media_active_for_call;
+    auto kick = signaling->kick_answerer_direct_media;
+    auto media_active = signaling->media_active_for_call;
     if (kick && AllowsDirectPath()) {
       log().info << "AcceptSucceeded KickAnswererDirectMedia StartSfu arm call_id=" << kick_id
                  << " status=" << CallMediaStatusName(status_);
       kick(kick_id);
       const auto guard = deferred_.token();
       const uint64_t epoch = deferred_.Snapshot();
-      AppRuntime::PostUI([this, kick_id, kick, media_active, guard, epoch]() {
+      CallsThread::Post([this, kick_id, kick, media_active, guard, epoch]() {
         if (!DeferredSelf::Alive(guard, epoch)) {
           return;
         }
-        if (!ports_.IsBound() || call_id_ != kick_id || !AllowsDirectPath()) {
+        const auto signaling = ports_.Get();
+        if (!signaling->IsBound() || call_id_ != kick_id || !AllowsDirectPath()) {
           return;
         }
         if (media_active && media_active(kick_id)) {
@@ -534,16 +535,16 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
       });
     } else {
       log().info << "AcceptSucceeded skip KickAnswerer StartSfu call_id=" << kick_id
-                 << " ports=" << (ports_.IsBound() ? 1 : 0)
+                 << " ports=" << (signaling->IsBound() ? 1 : 0)
                  << " status=" << CallMediaStatusName(status_);
     }
   }
 
   if (HasAction(actions, CallLifecycleAction::DeferChrome)) {
-    if (AppRuntime::CurrentlyOnUI()) {
+    if (CallsThread::IsCurrent()) {
       const auto guard = deferred_.token();
       const uint64_t epoch = deferred_.Snapshot();
-      AppRuntime::PostUI([this, guard, epoch]() {
+      CallsThread::Post([this, guard, epoch]() {
         if (!DeferredSelf::Alive(guard, epoch)) {
           return;
         }
