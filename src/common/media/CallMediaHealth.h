@@ -48,7 +48,7 @@ struct CallMediaEngineHealth {
   uint64_t fec_frames = 0;
   /** Call audio device path: "vpio" (OS voice processing / AEC), "sdl", or "none". */
   std::string audio_io = "none";
-  /** VPIO render callbacks padded with zeros (0 on SDL). */
+  /** VPIO render callbacks padded with zeros, per call, after playout started (0 on SDL). */
   uint64_t io_underruns = 0;
   uint64_t rx_audio_frames = 0;
   uint64_t tx_audio_frames = 0;

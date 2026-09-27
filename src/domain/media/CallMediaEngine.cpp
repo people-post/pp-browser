@@ -216,6 +216,12 @@ struct CallMediaEngine::Impl {
    *  reads on the capture thread; playout writes under `mutex` only while using_vpio is true. */
   VoiceProcessingIo vpio;
   std::atomic<bool> using_vpio{false};
+  /** Set for the rest of this call once VPIO capture has starved 3 times in a row (I3); skips
+   *  the VPIO attempt in OpenAudioDevices() until the next StartCaptureLoop(). */
+  std::atomic<bool> vpio_disabled_for_call{false};
+  /** VPIO PlayoutUnderruns() accumulated across closes this call (the counter itself resets on
+   *  the next Open()); guarded by `mutex` like the other per-call counters below. */
+  uint64_t vpio_underruns_closed = 0;
 
   struct RemoteAudioTrack {
     OpusDecoder* decoder = nullptr;
@@ -419,7 +425,12 @@ struct CallMediaEngine::Impl {
   /** Close SDL streams/devices only — keep Opus, tracks, and VoIP session active. */
   void CloseAudioDevicesLocked() {
     if (using_vpio.exchange(false, std::memory_order_acq_rel)) {
+      vpio_underruns_closed += vpio.PlayoutUnderruns();
+      const auto t0 = std::chrono::steady_clock::now();
       vpio.Close();  // AudioOutputUnitStop waits for callbacks; they never take `mutex`
+      const auto close_ms =
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+      SDL_Log("CallMediaEngine: vpio close_ms=%lld", static_cast<long long>(close_ms));
     }
     // SDL_OpenAudioDeviceStream binds device+stream; DestroyAudioStream closes the device.
     // Do not SDL_CloseAudioDevice afterward (double-free / tcache abort on Linux).
@@ -465,6 +476,7 @@ struct CallMediaEngine::Impl {
     playout_underruns_total.store(0, std::memory_order_relaxed);
     plc_frames_total.store(0, std::memory_order_relaxed);
     fec_frames_total.store(0, std::memory_order_relaxed);
+    vpio_underruns_closed = 0;
     last_rx_audio_ms.store(0, std::memory_order_relaxed);
     last_tx_audio_ms.store(0, std::memory_order_relaxed);
     CallAudioSession::Deactivate();
@@ -773,9 +785,15 @@ struct CallMediaEngine::Impl {
     CallAudioSession::ActivateForVoipCall();
 
 #ifdef PP_BROWSER_CALL_VPIO
-    {
+    if (vpio_disabled_for_call.load(std::memory_order_acquire)) {
+      SDL_Log("CallMediaEngine: audio_io=sdl reason=vpio disabled for call (capture starved)");
+    } else {
       std::string reason;
-      if (vpio.Open(&reason)) {
+      const auto vpio_t0 = std::chrono::steady_clock::now();
+      const bool vpio_ok = vpio.Open(&reason);
+      const auto vpio_open_ms =
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - vpio_t0).count();
+      if (vpio_ok) {
         if (!capture_running.load(std::memory_order_acquire)) {
           vpio.Close();
           return Error("call media stopped");
@@ -784,10 +802,12 @@ struct CallMediaEngine::Impl {
         CloseAudioDevicesLocked();
         using_vpio.store(true, std::memory_order_release);
         capture_available = true;
-        SDL_Log("CallMediaEngine: audio_io=vpio (voice processing: echo cancellation on)");
+        SDL_Log("CallMediaEngine: audio_io=vpio (voice processing: echo cancellation on) open_ms=%lld",
+                static_cast<long long>(vpio_open_ms));
         return {};
       }
-      SDL_Log("CallMediaEngine: audio_io=sdl reason=%s", reason.c_str());
+      SDL_Log("CallMediaEngine: audio_io=sdl reason=%s open_ms=%lld", reason.c_str(),
+              static_cast<long long>(vpio_open_ms));
     }
 #endif
 
@@ -856,6 +876,7 @@ struct CallMediaEngine::Impl {
     // Precondition: capture_thread not joinable (JoinCaptureThread outside media mutex).
     capture_running = true;
     audio_reopen_requested.store(false, std::memory_order_relaxed);
+    vpio_disabled_for_call.store(false, std::memory_order_relaxed);
     capture_thread = std::thread([this]() {
       // Device open (and OS mic prompts) stay on this worker so CallAccept /
       // AcceptInvite can finish signaling without freezing UI or libp2p.
@@ -874,6 +895,9 @@ struct CallMediaEngine::Impl {
       std::vector<unsigned char> opus_buf(4000);
       int64_t last_capture_pcm_ms = util::NowUnixMs();
       int64_t last_capture_starve_reopen_ms = 0;
+      // I3: consecutive starvation-triggered reopens while on VPIO; 3 in a row falls back to
+      // SDL for the rest of this call. Capture-thread-local — never touched elsewhere.
+      int vpio_starve_reopens = 0;
       while (capture_running.load()) {
         if (audio_reopen_requested.exchange(false, std::memory_order_acq_rel)) {
           // Android speakerphone / SoftMigrate can leave AudioRecord feeding zeros until reopen.
@@ -895,12 +919,14 @@ struct CallMediaEngine::Impl {
           }
           last_capture_pcm_ms = util::NowUnixMs();
         }
-        const bool vpio_on = using_vpio.load(std::memory_order_acquire);
-        if (vpio_on && vpio.TakeDeviceChanged()) {
+        // I3: check regardless of vpio_on (the stub always returns false) so a real default-
+        // device change noticed while on SDL still triggers a reopen — which tries VPIO first.
+        if (vpio.TakeDeviceChanged()) {
           SDL_Log("CallMediaEngine: default audio device changed — reopening voice processing");
           audio_reopen_requested.store(true, std::memory_order_release);
           continue;
         }
+        const bool vpio_on = using_vpio.load(std::memory_order_acquire);
         std::shared_ptr<SfuSendFn> send_fn;
         OpusEncoder* enc = nullptr;
         bool can_send = false;
@@ -922,6 +948,9 @@ struct CallMediaEngine::Impl {
             const size_t samples = static_cast<size_t>(got) / sizeof(int16_t);
             pending.insert(pending.end(), chunk, chunk + samples);
             last_capture_pcm_ms = util::NowUnixMs();
+            if (vpio_on) {
+              vpio_starve_reopens = 0;
+            }
           }
           if (pending.size() < static_cast<size_t>(kFrameSamples)) {
             const int64_t now = util::NowUnixMs();
@@ -937,6 +966,12 @@ struct CallMediaEngine::Impl {
                 SDL_Log("CallMediaEngine: capture starved %lldms — requesting reopen",
                         static_cast<long long>(now - last_capture_pcm_ms));
                 audio_reopen_requested.store(true, std::memory_order_release);
+                // I3: persistent VPIO capture starvation (not just a starved SDL device) falls
+                // back to SDL for the rest of this call after 3 reopen attempts in a row.
+                if (vpio_on && ++vpio_starve_reopens >= 3) {
+                  vpio_disabled_for_call.store(true, std::memory_order_release);
+                  SDL_Log("CallMediaEngine: vpio capture starved 3x — using SDL for this call");
+                }
               }
               std::fill(pcm.begin(), pcm.end(), int16_t{0});
               paced_silence_frame = true;
@@ -1503,10 +1538,11 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
   h.remote_level = impl_->remote_output_level.load(std::memory_order_relaxed);
   {
     std::lock_guard lock(impl_->mutex);
-    h.audio_io = impl_->using_vpio.load(std::memory_order_relaxed) ? "vpio"
+    const bool using_vpio_now = impl_->using_vpio.load(std::memory_order_relaxed);
+    h.audio_io = using_vpio_now                                      ? "vpio"
                  : (impl_->capture_stream || impl_->playback_stream) ? "sdl"
-                                                                     : "none";
-    h.io_underruns = impl_->vpio.PlayoutUnderruns();
+                                                                      : "none";
+    h.io_underruns = impl_->vpio_underruns_closed + (using_vpio_now ? impl_->vpio.PlayoutUnderruns() : 0);
     h.stream_count = impl_->audio_tracks.size();
     h.sfu_mode = impl_->sfu_mode;
     h.streams.reserve(impl_->audio_tracks.size());
