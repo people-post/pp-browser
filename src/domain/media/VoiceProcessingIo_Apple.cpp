@@ -399,7 +399,14 @@ bool VoiceProcessingIo::TakeDeviceChanged() {
   AudioDeviceID in = kAudioObjectUnknown;
   AudioDeviceID out = kAudioObjectUnknown;
   QueryDefaultDevices(&in, &out);
-  return in != impl_->baseline_input || out != impl_->baseline_output;
+  if (in == impl_->baseline_input && out == impl_->baseline_output) {
+    return false;
+  }
+  // Adopt the new pair now: when the engine reopens on SDL without calling Open() (VPIO disabled
+  // for the call) a stale baseline would report every later notification as a change.
+  impl_->baseline_input = in;
+  impl_->baseline_output = out;
+  return true;
 #else
   return true;
 #endif
