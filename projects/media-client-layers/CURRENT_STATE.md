@@ -18,7 +18,7 @@
 
 ## Next
 
-**l5** — broadcaster: `BroadcasterWorkflow` (capture-only session, mic lease, publish to the first relay via l2 on `BroadcastPublisherStreamId`), live key / ticket minting wired to the program (`PutLiveProgramKey`), hard-lab broadcaster → relay → viewers (with the redirect case from l4). Open alongside: a watch UI entry (no gui caller yet); pp-cpp-amp prompt refusal of unhandled protocols (ask before changing that repo); neutral mesh media plane (L014 exit). Before a release: dogfood the device arbiter (PHASES l3b).
+**l5** — broadcaster: `BroadcasterWorkflow` (capture-only session, mic lease, publish to the first relay via l2 on `BroadcastPublisherStreamId`), live key / ticket minting wired to the program (`PutLiveProgramKey`), hard-lab broadcaster → relay → viewers (with the redirect case from l4). Open alongside: a watch UI entry (no gui caller yet); neutral mesh media plane (L014 exit). Before a release: dogfood the device arbiter (PHASES l3b).
 
 ## Open questions
 

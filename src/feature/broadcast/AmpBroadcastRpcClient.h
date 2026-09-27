@@ -30,9 +30,9 @@ public:
 
   static constexpr std::chrono::milliseconds kDefaultTimeout{4000};
   /**
-   * Admission asks hops that may not serve the protocol at all (plain relays): Amp acks a channel
-   * open for any protocol and the request is then dropped, so only the timeout ends it — keep it
-   * short. (A prompt rejection needs pp-cpp-amp to refuse unhandled protocols.)
+   * Admission asks hops that may not serve the protocol at all (plain relays). Hosts on
+   * pp-cpp-amp ≥ v2.3.0 refuse such opens at once (MeshHost enables SetRefuseUnhandledOpens);
+   * relays on older Amp still ack and drop the request, so this short timeout remains the backstop.
    */
   static constexpr std::chrono::milliseconds kAdmissionTimeout{1500};
 

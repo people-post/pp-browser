@@ -105,7 +105,7 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 ## Later
 
 - [ ] Neutral mesh media plane: move the media_relay client, dial registry, circuit reach, punch and seed parking out of `CallMediaPlane` into `domain/mesh`, owned outside calls and lent to both features ([L014](DECISIONS.md#l014--broadcast-borrows-the-call-planes-mesh-objects-until-a-neutral-mesh-media-plane-exists) exit)
-- [ ] pp-cpp-amp: refuse channel opens for protocols without a handler (prompt error instead of a silent drop → admission timeout); then drop the 1.5 s admission timeout
+- [x] pp-cpp-amp v2.3.0: refuse channel opens for protocols without a handler (opt-in; `MeshHost` enables it) — admission to a plain relay fails at once. The 1.5 s admission timeout stays as the backstop for relays on older Amp
 - [ ] `AmpChatBlobTransport` inbound handler has the same session-holder cycle the broadcast server had (not fixed here — out of scope)
 
 - [ ] Viewer video (channel 1 decode path; subscribe plan adds channel)
