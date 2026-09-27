@@ -77,6 +77,13 @@ struct VoiceProcessingIo::Impl {
   AudioSpscRing playout{kRingSamples};
   std::vector<int16_t> input_scratch = std::vector<int16_t>(kMaxFramesPerSlice);
   std::atomic<uint64_t> playout_underruns{0};
+  // Diagnostics (single writer: the callback that owns them; TakeDiag resets — races are benign).
+  std::atomic<uint64_t> render_calls{0};
+  std::atomic<uint32_t> render_frames_max{0};
+  std::atomic<size_t> render_ring_min{SIZE_MAX};
+  std::atomic<uint64_t> input_calls{0};
+  std::atomic<uint32_t> input_frames_max{0};
+  std::atomic<size_t> capture_ring_max{0};
   std::atomic<bool> device_changed{false};
   /** Set once WritePlayout() has delivered real samples since the last Open(); OnRender only
    *  counts an underrun after that (silence before the engine starts writing isn't one). */
@@ -110,6 +117,14 @@ struct VoiceProcessingIo::Impl {
     if (st == noErr) {
       self->capture.Write(self->input_scratch.data(), list.mBuffers[0].mDataByteSize / sizeof(int16_t));
     }
+    self->input_calls.fetch_add(1, std::memory_order_relaxed);
+    if (frames > self->input_frames_max.load(std::memory_order_relaxed)) {
+      self->input_frames_max.store(frames, std::memory_order_relaxed);
+    }
+    const size_t cap = self->capture.Size();
+    if (cap > self->capture_ring_max.load(std::memory_order_relaxed)) {
+      self->capture_ring_max.store(cap, std::memory_order_relaxed);
+    }
     return st;
   }
 
@@ -118,6 +133,14 @@ struct VoiceProcessingIo::Impl {
     auto* self = static_cast<Impl*>(ref);
     auto* dst = static_cast<int16_t*>(io->mBuffers[0].mData);
     const size_t want = std::min<size_t>(frames, io->mBuffers[0].mDataByteSize / sizeof(int16_t));
+    self->render_calls.fetch_add(1, std::memory_order_relaxed);
+    if (frames > self->render_frames_max.load(std::memory_order_relaxed)) {
+      self->render_frames_max.store(frames, std::memory_order_relaxed);
+    }
+    const size_t avail = self->playout.Size();
+    if (avail < self->render_ring_min.load(std::memory_order_relaxed)) {
+      self->render_ring_min.store(avail, std::memory_order_relaxed);
+    }
     const size_t got = self->playout.Read(dst, want);
     if (got < want) {
       std::memset(dst + got, 0, (want - got) * sizeof(int16_t));
@@ -340,6 +363,17 @@ bool VoiceProcessingIo::TakeDeviceChanged() {
 
 uint64_t VoiceProcessingIo::PlayoutUnderruns() const {
   return impl_->playout_underruns.load(std::memory_order_relaxed);
+}
+
+std::string VoiceProcessingIo::TakeDiag() {
+  Impl& d = *impl_;
+  const size_t ring_min = d.render_ring_min.exchange(SIZE_MAX, std::memory_order_relaxed);
+  return "render_calls=" + std::to_string(d.render_calls.exchange(0, std::memory_order_relaxed)) +
+         " render_frames_max=" + std::to_string(d.render_frames_max.exchange(0, std::memory_order_relaxed)) +
+         " render_ring_min=" + (ring_min == SIZE_MAX ? std::string("-") : std::to_string(ring_min)) +
+         " input_calls=" + std::to_string(d.input_calls.exchange(0, std::memory_order_relaxed)) +
+         " input_frames_max=" + std::to_string(d.input_frames_max.exchange(0, std::memory_order_relaxed)) +
+         " capture_ring_max=" + std::to_string(d.capture_ring_max.exchange(0, std::memory_order_relaxed));
 }
 
 }  // namespace pbr

@@ -593,8 +593,24 @@ struct CallMediaEngine::Impl {
     playout_running = true;
     playout_thread = std::thread([this]() {
       std::vector<int16_t> mix(static_cast<size_t>(kFrameSamples), 0);
+      // Diagnostics: longest gap between playout wake-ups, logged with VPIO callback stats.
+      auto last_tick = std::chrono::steady_clock::now();
+      auto last_diag = last_tick;
+      int64_t tick_gap_max_ms = 0;
       while (playout_running.load(std::memory_order_relaxed)) {
         const auto t0 = std::chrono::steady_clock::now();
+        tick_gap_max_ms = std::max<int64_t>(
+            tick_gap_max_ms, std::chrono::duration_cast<std::chrono::milliseconds>(t0 - last_tick).count());
+        last_tick = t0;
+        if (t0 - last_diag >= std::chrono::seconds(2)) {
+          last_diag = t0;
+          std::lock_guard lock(mutex);  // vpio Open/Close swap using_vpio under the same lock
+          if (using_vpio.load(std::memory_order_acquire)) {
+            SDL_Log("CallMediaEngine: vpio_diag tick_gap_max_ms=%lld queued_bytes=%zu %s",
+                    static_cast<long long>(tick_gap_max_ms), vpio.QueuedPlayoutBytes(), vpio.TakeDiag().c_str());
+          }
+          tick_gap_max_ms = 0;
+        }
         double pressure = 0.0;
         {
           std::lock_guard lock(mutex);

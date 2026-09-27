@@ -20,5 +20,6 @@ size_t VoiceProcessingIo::WritePlayout(const int16_t*, size_t) { return 0; }
 size_t VoiceProcessingIo::QueuedPlayoutBytes() const { return 0; }
 bool VoiceProcessingIo::TakeDeviceChanged() { return false; }
 uint64_t VoiceProcessingIo::PlayoutUnderruns() const { return 0; }
+std::string VoiceProcessingIo::TakeDiag() { return {}; }
 
 }  // namespace pbr

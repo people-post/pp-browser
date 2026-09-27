@@ -31,6 +31,8 @@ public:
   size_t QueuedPlayoutBytes() const;
   bool TakeDeviceChanged();
   uint64_t PlayoutUnderruns() const;
+  /** Diagnostic counters since the last call (callback sizes, ring low/high water); resets them. */
+  std::string TakeDiag();
 
 private:
   struct Impl;
