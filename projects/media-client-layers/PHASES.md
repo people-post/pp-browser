@@ -93,9 +93,21 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 
 ## l5 — Broadcaster
 
-- [ ] `BroadcasterWorkflow`: capture-only session (mic lease; camera optional input) → publish to first relay via l2
-- [ ] Live key / ticket minting wired to the program (`LiveProgramKey`)
-- [ ] Hard-lab: broadcaster → relay → ≥2 viewers (from l4: redirect case)
+### l5a — `BroadcasterWorkflow` (done)
+
+- [x] Go live: fresh 32-byte key + join handle per show (B004) → program key to the ticket server (port) → attach to the first reachable relay via `AttachToMediaRelayAsync` (publish-only quote, paid declined) → capture-only engine (mic lease) whose frames are sealed under `broadcast-media|program|join` and sent on `BroadcastPublisherStreamId(self)` → Live tip (hop + L1 hints)
+- [x] Relay loss: re-attach same hop first (tip stays valid), else the next hop + re-announce + re-point tickets; fails after 3 consecutive losses. End: Ended tip, key cleared, detach, capture stopped; a late attach after End is detached; never announces a show no relay accepted
+- [x] gtests (fake relay, real capture engine on a device-less arbiter; frames opened with the viewer's label)
+
+### l5b — Product wiring
+
+- [ ] `BroadcastHub` owns the broadcaster (capture engine) next to the viewer; ports: `AmpBroadcastTransport::PutLiveProgramKey` / `ClearLiveProgramKey`, `PeerAnnouncePublisher::Publish` (local feed; push to followers where Spine D lands), random key / join handle
+- [ ] Facade `GoLive` / `EndLive` / `BroadcastLiveStatus`
+- [ ] Compose test: real broadcaster → relay → real viewer (no hand-published frames)
+
+### l5c — Hard lab
+
+- [ ] Hard-lab: broadcaster → pp-node relay → ≥2 viewers (redirect case once a relay serves admission — B1)
 
 ## l6 — Remove broadcast from calls
 

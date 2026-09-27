@@ -5,6 +5,7 @@ pp_browser_add_feature_library(pp_feature_broadcast
   SOURCES
     AmpBroadcastRpcClient.cpp
     BroadcastHub.cpp
+    BroadcasterWorkflow.cpp
     BroadcastViewerWorkflow.cpp
   PUBLIC_LIBS
     pp_amp_link

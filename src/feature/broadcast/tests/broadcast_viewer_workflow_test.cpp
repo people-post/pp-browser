@@ -6,6 +6,7 @@
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/messaging/BroadcastMedia.h"
 #include "foundation/crypto/MlDsa.h"
+#include "feature/broadcast/tests/broadcast_test_fakes.h"
 
 #include <gtest/gtest.h>
 #include <opus.h>
@@ -21,6 +22,10 @@
 namespace pbr {
 namespace {
 
+using test::FakeDial;
+using test::FakeRelay;
+using test::OpusFrame;
+
 using Phase = BroadcastViewerWorkflow::Phase;
 
 constexpr const char* kPublisher = "12D3KooWPublisher";
@@ -28,113 +33,6 @@ constexpr const char* kViewer = "12D3KooWViewer";
 constexpr const char* kProgram = "show-1";
 constexpr const char* kJoin = "live:show-1";
 constexpr int64_t kNow = 1'900'000'000'000;
-
-class FakeDial final : public IDialRegistry {
-public:
-  Roe<void> RegisterEndpoint(const std::string& /*peer_key*/, const std::string& /*multiaddr*/) override { return {}; }
-  bool IsDialable(const std::string& /*peer_key*/) const override { return true; }
-  std::optional<std::string> PreferredMultiaddr(const std::string& /*peer_key*/) const override { return std::nullopt; }
-  void ClearDialBackoff(const std::string& /*peer_key*/) override {}
-  void AbortInflightDial(const std::string& /*peer_key*/) override {}
-  void ClearPeerCircuitHop(const std::string& /*peer_key*/) override {}
-};
-
-class FakeRelay final : public IMediaRelayClient {
-public:
-  Roe<std::string> LocalPeerIdBase58() const override { return std::string(kViewer); }
-  bool IsStarted() const override { return true; }
-  Roe<MediaRelayQuote> RequestQuote(const std::string& /*hop*/, const MediaRelayQuoteRequest& request,
-                                    int /*timeout_ms*/) override {
-    last_quote = request;
-    MediaRelayQuote q;
-    q.ok = true;
-    q.quote_id = "q";
-    q.rate = rate;
-    return q;
-  }
-  Roe<MediaRelayAttachResult> AcceptAndAttach(const std::string&, const std::string&, const std::string&,
-                                              const std::string&, std::function<void(MediaDataFrame)>,
-                                              int) override {
-    return Error("sync unused");
-  }
-  void AcceptAndAttachAsync(const std::string& hop, const std::string& /*quote_id*/, const std::string& session_id,
-                            const std::string& /*auth*/, std::function<void(MediaDataFrame)> on_frame,
-                            std::function<void(Roe<MediaRelayAttachResult>)> on_done, int /*timeout_ms*/) override {
-    attach_hops.push_back(hop);
-    last_session = session_id;
-    auto complete = [this, hop, on_frame = std::move(on_frame), on_done = std::move(on_done)]() mutable {
-      MediaRelayAttachResult r;
-      r.ok = failing_hops.count(hop) == 0;
-      r.error = r.ok ? "" : "hop refused attach";
-      if (r.ok) {
-        attached = true;
-        attached_hop = hop;
-        sink = std::move(on_frame);
-      }
-      on_done(r);
-    };
-    if (hold_attach) {
-      held = std::move(complete);
-    } else {
-      complete();
-    }
-  }
-  void StartClientFrameReader() override { ++reader_starts; }
-  uint64_t AddClientTransportLostObserver(std::function<void(MediaRelayClientLoss)> observer) override {
-    observers[next_token] = std::move(observer);
-    return next_token++;
-  }
-  void RemoveClientTransportLostObserver(uint64_t token) override { observers.erase(token); }
-  Roe<MediaRelayAttachResult> AttachAsLocalHop(const std::string&, std::function<void(MediaDataFrame)>) override {
-    return Error("unused");
-  }
-  Roe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
-    subscriptions.emplace_back(stream_id, channel_id);
-    return {};
-  }
-  Roe<void> SendFrame(const MediaDataFrame&) override { return Error("receive-only viewer must not send"); }
-  void Detach() override {
-    ++detaches;
-    attached = false;
-    sink = nullptr;
-  }
-  bool IsAttached() const override { return attached; }
-  bool IsLocalHopAttached() const override { return false; }
-
-  void Lose(MediaRelayClientLoss loss = MediaRelayClientLoss::TransportLost) {
-    attached = loss == MediaRelayClientLoss::Replaced;  // replaced: someone else holds it now
-    for (auto& [token, observer] : std::map<uint64_t, std::function<void(MediaRelayClientLoss)>>(observers)) {
-      (void)token;
-      observer(loss);
-    }
-  }
-
-  double rate = 0.0;
-  bool attached = false;
-  bool hold_attach = false;
-  std::function<void()> held;
-  std::string attached_hop;
-  std::string last_session;
-  MediaRelayQuoteRequest last_quote;
-  std::vector<std::string> attach_hops;
-  std::unordered_map<std::string, bool> failing_hops;
-  std::function<void(MediaDataFrame)> sink;
-  std::vector<std::pair<uint32_t, uint16_t>> subscriptions;
-  std::map<uint64_t, std::function<void(MediaRelayClientLoss)>> observers;
-  uint64_t next_token = 1;
-  int reader_starts = 0;
-  int detaches = 0;
-};
-
-std::vector<uint8_t> OpusFrame() {
-  int err = 0;
-  OpusEncoder* enc = opus_encoder_create(48000, 1, OPUS_APPLICATION_VOIP, &err);
-  std::vector<int16_t> pcm(960, 0);
-  std::vector<unsigned char> out(4000);
-  const int n = opus_encode(enc, pcm.data(), 960, out.data(), static_cast<int>(out.size()));
-  opus_encoder_destroy(enc);
-  return {out.begin(), out.begin() + std::max(n, 0)};
-}
 
 class BroadcastViewerWorkflowTest : public ::testing::Test {
 protected:
@@ -288,6 +186,8 @@ TEST_F(BroadcastViewerWorkflowTest, AdmittedViewerListensReceiveOnlyOnThePublish
   relay_.sink(SealedFrame(context_, 1));
   relay_.sink(SealedFrame(context_, 2));
   EXPECT_GE(engine_.HealthSnapshot().rx_audio_frames, 2u);
+  std::this_thread::sleep_for(std::chrono::milliseconds(60));
+  EXPECT_TRUE(relay_.SentFrames().empty()) << "a viewer never publishes";
 }
 
 TEST_F(BroadcastViewerWorkflowTest, FramesUnderAnotherLabelOrStreamNeverReachTheEngine) {
