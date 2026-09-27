@@ -23,30 +23,107 @@ TEST(ByteRateLimiterTest, EnforcesRate) {
   EXPECT_TRUE(lim.TryConsume(50, 1000)); // +1000ms → +1000 bytes tokens, capped at burst 100
 }
 
-TEST(AudioJitterBufferTest, PrimesThenPops) {
+AudioPacket Pkt(uint32_t seq, uint8_t fill = 1) {
+  AudioPacket p;
+  p.seq = seq;
+  p.payload.assign(8, fill);
+  return p;
+}
+
+TEST(AudioJitterBufferTest, PrimesThenPopsInOrder) {
   AudioJitterBuffer buf;
-  EXPECT_FALSE(buf.PopForPlayout(false).has_value());
+  EXPECT_EQ(buf.PopForPlayout().kind, AudioPlayoutPop::Kind::Empty);
+  EXPECT_EQ(buf.underruns(), 0u); // not primed yet → not an underrun
   for (uint32_t i = 1; i <= AudioJitterBuffer::kTargetFrames; ++i) {
-    PlayoutPcmFrame f;
-    f.seq = i;
-    f.pcm.assign(10, static_cast<int16_t>(i));
-    buf.Push(std::move(f));
+    buf.Push(Pkt(i, static_cast<uint8_t>(i)));
   }
-  auto first = buf.PopForPlayout(false);
-  ASSERT_TRUE(first.has_value());
-  EXPECT_EQ(first->seq, 1u);
+  auto a = buf.PopForPlayout();
+  ASSERT_EQ(a.kind, AudioPlayoutPop::Kind::Packet);
+  EXPECT_EQ(a.seq, 1u);
+  EXPECT_EQ(a.payload[0], 1);
+  auto b = buf.PopForPlayout();
+  EXPECT_EQ(b.seq, 2u);
+}
+
+TEST(AudioJitterBufferTest, ReordersBySeqAndDropsDuplicates) {
+  AudioJitterBuffer buf;
+  buf.Push(Pkt(3));
+  buf.Push(Pkt(1));
+  buf.Push(Pkt(2));
+  buf.Push(Pkt(2)); // duplicate
+  EXPECT_EQ(buf.size(), 3u);
+  EXPECT_EQ(buf.PopForPlayout().seq, 1u);
+  EXPECT_EQ(buf.PopForPlayout().seq, 2u);
+  EXPECT_EQ(buf.PopForPlayout().seq, 3u);
+}
+
+TEST(AudioJitterBufferTest, GapReturnsNextPacketForFec) {
+  AudioJitterBuffer buf;
+  buf.Push(Pkt(1));
+  buf.Push(Pkt(2));
+  buf.Push(Pkt(4, 44)); // seq 3 missing
+  EXPECT_EQ(buf.PopForPlayout().seq, 1u);
+  EXPECT_EQ(buf.PopForPlayout().seq, 2u);
+  auto gap = buf.PopForPlayout();
+  ASSERT_EQ(gap.kind, AudioPlayoutPop::Kind::Gap);
+  EXPECT_EQ(gap.seq, 3u);
+  ASSERT_FALSE(gap.payload.empty());
+  EXPECT_EQ(gap.payload[0], 44); // next packet's bytes, packet 4 stays queued
+  EXPECT_EQ(buf.gaps(), 1u);
+  auto four = buf.PopForPlayout();
+  EXPECT_EQ(four.kind, AudioPlayoutPop::Kind::Packet);
+  EXPECT_EQ(four.seq, 4u);
+}
+
+TEST(AudioJitterBufferTest, EmptyAfterPrimedCountsUnderrun) {
+  AudioJitterBuffer buf;
+  for (uint32_t i = 1; i <= AudioJitterBuffer::kTargetFrames; ++i) {
+    buf.Push(Pkt(i));
+  }
+  for (uint32_t i = 1; i <= AudioJitterBuffer::kTargetFrames; ++i) {
+    (void)buf.PopForPlayout();
+  }
+  EXPECT_EQ(buf.PopForPlayout().kind, AudioPlayoutPop::Kind::Empty);
+  EXPECT_EQ(buf.underruns(), 1u);
+}
+
+TEST(AudioJitterBufferTest, DropsLatePacket) {
+  AudioJitterBuffer buf;
+  buf.Push(Pkt(1));
+  buf.Push(Pkt(2));
+  buf.Push(Pkt(4));
+  (void)buf.PopForPlayout(); // 1
+  (void)buf.PopForPlayout(); // 2
+  (void)buf.PopForPlayout(); // gap for 3
+  buf.Push(Pkt(3));          // arrives after its slot was already played
+  EXPECT_EQ(buf.drops_late(), 1u);
+  EXPECT_EQ(buf.PopForPlayout().seq, 4u);
 }
 
 TEST(AudioJitterBufferTest, DropsOverflowOldest) {
   AudioJitterBuffer buf;
   for (uint32_t i = 1; i <= AudioJitterBuffer::kMaxFrames + 3; ++i) {
-    PlayoutPcmFrame f;
-    f.seq = i;
-    f.pcm.assign(4, 1);
-    buf.Push(std::move(f));
+    buf.Push(Pkt(i));
   }
   EXPECT_EQ(buf.size(), AudioJitterBuffer::kMaxFrames);
-  EXPECT_GT(buf.drops_overflow(), 0u);
+  EXPECT_EQ(buf.drops_overflow(), 3u);
+  EXPECT_EQ(buf.PopForPlayout().seq, 4u); // oldest three dropped, playout resumes at 4
+}
+
+TEST(AudioJitterBufferTest, ResyncsOnLargeSeqJump) {
+  AudioJitterBuffer buf;
+  for (uint32_t i = 1; i <= AudioJitterBuffer::kTargetFrames; ++i) {
+    buf.Push(Pkt(i));
+  }
+  for (uint32_t i = 1; i <= AudioJitterBuffer::kTargetFrames; ++i) {
+    (void)buf.PopForPlayout();
+  }
+  // Sender restarted (SoftMigrate): seq jumps far ahead. Must not emit 1000 gaps.
+  buf.Push(Pkt(1000));
+  auto p = buf.PopForPlayout();
+  EXPECT_EQ(p.kind, AudioPlayoutPop::Kind::Packet);
+  EXPECT_EQ(p.seq, 1000u);
+  EXPECT_EQ(buf.gaps(), 0u);
 }
 
 TEST(MixPcmSatTest, Saturates) {

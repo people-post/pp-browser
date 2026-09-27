@@ -4,21 +4,31 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
-#include <optional>
 #include <vector>
 
 namespace pbr {
 
-/** One decoded PCM frame (mono s16) for jitter / mix (V032). */
-struct PlayoutPcmFrame {
+/** One received Opus packet (channel 0) for the jitter buffer. */
+struct AudioPacket {
   uint32_t seq = 0;
   int64_t recv_ms = 0;
-  std::vector<int16_t> pcm;
+  std::vector<uint8_t> payload;
+};
+
+/** Result of one playout pop. */
+struct AudioPlayoutPop {
+  enum class Kind { Empty, Packet, Gap };
+  Kind kind = Kind::Empty;
+  /** Packet: this packet's seq. Gap: the missing seq. */
+  uint32_t seq = 0;
+  /** Packet: its bytes. Gap: the NEXT queued packet's bytes (Opus in-band FEC source). */
+  std::vector<uint8_t> payload;
 };
 
 /**
- * Per-publisher audio jitter buffer (receiver only; hop stays blind).
- * Target delay 60 ms / max 200 ms at 20 ms frames → 3 / 10 frames.
+ * Per-publisher packet jitter buffer (receiver only; hop stays blind).
+ * Target delay 60 ms / max 200 ms at 20 ms frames → 3 / 10 packets. Packets are decoded at
+ * pop time so a missing seq can be recovered from the next packet's FEC data (spec §1/§2).
  */
 class AudioJitterBuffer {
 public:
@@ -27,20 +37,25 @@ public:
   static constexpr int kMaxDelayMs = 200;
   static constexpr size_t kTargetFrames = static_cast<size_t>(kTargetDelayMs / kFrameMs);
   static constexpr size_t kMaxFrames = static_cast<size_t>(kMaxDelayMs / kFrameMs);
+  /** A jump this large ahead of the expected seq is a sender restart, not loss. */
+  static constexpr uint32_t kResyncJump = 50;
 
-  void Push(PlayoutPcmFrame frame) {
-    if (frame.pcm.empty()) {
+  void Push(AudioPacket packet) {
+    if (packet.payload.empty()) {
       return;
     }
-    // Ordered insert by seq (small queues).
+    if (primed_ && packet.seq < next_seq_) {
+      ++drops_late_;
+      return;
+    }
     auto it = queue_.begin();
-    while (it != queue_.end() && it->seq < frame.seq) {
+    while (it != queue_.end() && it->seq < packet.seq) {
       ++it;
     }
-    if (it != queue_.end() && it->seq == frame.seq) {
+    if (it != queue_.end() && it->seq == packet.seq) {
       return; // duplicate
     }
-    queue_.insert(it, std::move(frame));
+    queue_.insert(it, std::move(packet));
     while (queue_.size() > kMaxFrames) {
       queue_.pop_front();
       ++drops_overflow_;
@@ -49,38 +64,56 @@ public:
 
   size_t size() const { return queue_.size(); }
   uint64_t drops_overflow() const { return drops_overflow_; }
+  uint64_t drops_late() const { return drops_late_; }
   uint64_t underruns() const { return underruns_; }
-  uint64_t plc_frames() const { return plc_frames_; }
+  uint64_t gaps() const { return gaps_; }
 
   /**
-   * Pop one frame for playout. Returns nullopt + increments underrun when empty
-   * (caller may synthesize PLC silence). Prefers waiting until target depth once.
+   * One 20 ms playout slot. Before the target depth was reached once → Empty (no underrun).
+   * Then: next expected packet → Packet; queue non-empty but front is ahead → Gap (with the
+   * front's bytes for FEC, front stays queued); queue empty → Empty + underrun.
    */
-  std::optional<PlayoutPcmFrame> PopForPlayout(bool allow_underrun_plc) {
+  AudioPlayoutPop PopForPlayout() {
+    AudioPlayoutPop out;
     if (!primed_) {
       if (queue_.size() < kTargetFrames) {
-        return std::nullopt;
+        return out;
       }
       primed_ = true;
+      next_seq_ = queue_.front().seq;
     }
     if (queue_.empty()) {
       ++underruns_;
-      if (allow_underrun_plc) {
-        ++plc_frames_;
-      }
-      return std::nullopt;
+      return out;
     }
-    PlayoutPcmFrame out = std::move(queue_.front());
-    queue_.pop_front();
+    AudioPacket& front = queue_.front();
+    if (front.seq > next_seq_ + kResyncJump) {
+      next_seq_ = front.seq; // sender restart (SoftMigrate / re-StartSfu)
+    }
+    if (front.seq == next_seq_) {
+      out.kind = AudioPlayoutPop::Kind::Packet;
+      out.seq = front.seq;
+      out.payload = std::move(front.payload);
+      queue_.pop_front();
+      ++next_seq_;
+      return out;
+    }
+    // front.seq > next_seq_: one missing slot.
+    out.kind = AudioPlayoutPop::Kind::Gap;
+    out.seq = next_seq_;
+    out.payload = front.payload;
+    ++gaps_;
+    ++next_seq_;
     return out;
   }
 
   void Reset() {
     queue_.clear();
     primed_ = false;
+    next_seq_ = 0;
   }
 
-  /** 0 = healthy, 1 = severe (underruns dominate). */
+  /** 0 = healthy, 1 = severe (underruns dominate). Unchanged from the PCM buffer. */
   double Pressure(uint64_t window_pops) const {
     if (window_pops == 0) {
       return queue_.size() >= kMaxFrames ? 1.0 : 0.0;
@@ -91,11 +124,13 @@ public:
   }
 
 private:
-  std::deque<PlayoutPcmFrame> queue_;
+  std::deque<AudioPacket> queue_;
   bool primed_ = false;
+  uint32_t next_seq_ = 0;
   uint64_t drops_overflow_ = 0;
+  uint64_t drops_late_ = 0;
   uint64_t underruns_ = 0;
-  uint64_t plc_frames_ = 0;
+  uint64_t gaps_ = 0;
 };
 
 /** Saturating mix of mono s16 frames into `out` (size = samples). */

@@ -497,6 +497,48 @@ struct CallMediaEngine::Impl {
     waiter.detach();
   }
 
+  /** One playout slot for one track: decode Packet / FEC-on-Gap / PLC-on-Empty into `mix`. */
+  void PopAndDecodeTrackLocked(RemoteAudioTrack& track, std::vector<int16_t>& mix, bool& any) {
+    if (!track.decoder) {
+      return;
+    }
+    const uint64_t underruns_before = track.jitter.underruns();
+    AudioPlayoutPop pop = track.jitter.PopForPlayout();
+    std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples), 0);
+    int decoded = 0;
+    switch (pop.kind) {
+    case AudioPlayoutPop::Kind::Packet:
+      decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()),
+                            pcm.data(), kFrameSamples, 0);
+      break;
+    case AudioPlayoutPop::Kind::Gap:
+      // Task 4 turns this into an FEC decode; until then, treat like a lost frame.
+      decoded = opus_decode(track.decoder, nullptr, 0, pcm.data(), kFrameSamples, 0);
+      if (decoded > 0) {
+        plc_frames_total.fetch_add(1, std::memory_order_relaxed);
+      }
+      break;
+    case AudioPlayoutPop::Kind::Empty:
+      // Priming (buffer hasn't reached target depth yet) also returns Empty but is not a real
+      // underrun — only count/PLC it when this pop actually incremented the cumulative counter.
+      if (track.jitter.underruns() > underruns_before) {
+        playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
+        decoded = opus_decode(track.decoder, nullptr, 0, pcm.data(), kFrameSamples, 0);
+        if (decoded > 0) {
+          plc_frames_total.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
+      break;
+    }
+    if (decoded <= 0) {
+      return;
+    }
+    pcm.resize(static_cast<size_t>(decoded));
+    SmoothLevel(track.peak_level, FramePeakLevel(pcm.data(), decoded));
+    MixPcmSat(mix, pcm);
+    any = true;
+  }
+
   void StartPlayoutLoop() {
     playout_running = true;
     playout_thread = std::thread([this]() {
@@ -515,25 +557,7 @@ struct CallMediaEngine::Impl {
             if (!track) {
               continue;
             }
-            auto frame = track->jitter.PopForPlayout(true);
-            if (frame) {
-              MixPcmSat(mix, frame->pcm);
-              any = true;
-            } else {
-              playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
-              // PLC: opus_decode with null packet into a temp buffer, then mix.
-              if (track->decoder) {
-                std::vector<int16_t> plc(static_cast<size_t>(kFrameSamples), 0);
-                const int decoded =
-                    opus_decode(track->decoder, nullptr, 0, plc.data(), kFrameSamples, 0);
-                if (decoded > 0) {
-                  plc.resize(static_cast<size_t>(decoded));
-                  MixPcmSat(mix, plc);
-                  any = true;
-                  plc_frames_total.fetch_add(1, std::memory_order_relaxed);
-                }
-              }
-            }
+            PopAndDecodeTrackLocked(*track, mix, any);
             pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(ticks, 1)));
           }
           SDL_AudioStream* out = playback_stream;
@@ -983,22 +1007,15 @@ struct CallMediaEngine::Impl {
     if (!track || !track->decoder) {
       return;
     }
-    std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples));
-    const int decoded = opus_decode(track->decoder, reinterpret_cast<const unsigned char*>(data),
-                                    static_cast<int>(size), pcm.data(), kFrameSamples, 0);
-    if (decoded <= 0) {
-      return;
-    }
-    pcm.resize(static_cast<size_t>(decoded));
     const int64_t recv_ms = util::NowUnixMs();
-    SmoothLevel(track->peak_level, FramePeakLevel(pcm.data(), decoded));
     ++track->rx_frames;
     track->last_rx_ms = recv_ms;
-    PlayoutPcmFrame frame;
-    frame.seq = seq;
-    frame.recv_ms = recv_ms;
-    frame.pcm = std::move(pcm);
-    track->jitter.Push(std::move(frame));
+    AudioPacket packet;
+    packet.seq = seq;
+    packet.recv_ms = recv_ms;
+    packet.payload.assign(reinterpret_cast<const uint8_t*>(data),
+                          reinterpret_cast<const uint8_t*>(data) + size);
+    track->jitter.Push(std::move(packet));
     rx_audio_frames.fetch_add(1, std::memory_order_relaxed);
     last_rx_audio_ms.store(recv_ms, std::memory_order_relaxed);
   }
