@@ -1,4 +1,5 @@
 #include "domain/mesh/l4/call_media/CallMediaLegCoordinator.h"
+#include "domain/mesh/l4/shared/ProductChannelPolicies.h"
 #include "domain/mesh/tests/support/mesh_harness_support.h"
 #include "domain/mesh/tests/support/mesh_test_harness.h"
 #include "crypto/MlDsa.h"
@@ -11,6 +12,8 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -316,6 +319,86 @@ TEST_F(CallMediaLegCoordinatorTest, AliasRebindKeepsLegAlive) {
 
 // B19: audio rides ADP best-effort (no retransmit). One lost datagram used to pin the receiver's
 // replay window; once the sender was a window ahead every later frame was rejected — one-way audio.
+// k3-0: a second hello for a live call (a migrate hello to a peer without migration, or a stray
+// retry) is refused on its own channel — it used to evict the live inbound control channel first,
+// whose Close reached the peer and failed the call.
+TEST_F(CallMediaLegCoordinatorTest, SecondHelloForALiveCallLeavesTheCallAlone) {
+  const std::string call_id = "call-amp-second-hello";
+  ByteVector media_key(32, 0x5a);
+  std::atomic<bool> b_connected{false};
+  std::atomic<int> b_failed{0};
+  std::atomic<int> b_audio{0};
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.call_id = call_id;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] { b_connected.store(true, std::memory_order_release); };
+    cbs.on_failed = [&](const std::string&) { b_failed.fetch_add(1); };
+    cbs.on_audio = [&](const std::vector<uint8_t>&) { b_audio.fetch_add(1); };
+  }));
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+  std::atomic<int> a_failed{0};
+  CallMediaDirectCallbacks cbs;
+  cbs.on_failed = [&](const std::string&) { a_failed.fetch_add(1); };
+  LegCompletion leg_done;
+  const CallMediaLegId leg_id = a_call_->StartLeg(params, std::move(cbs), leg_done.Fn(), 5000);
+  ASSERT_TRUE(leg_id);
+  leg_done.PumpUntilDone(*harness_);
+  ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
+  harness_->PumpUntil([&] { return b_connected.load(std::memory_order_acquire); });
+  ASSERT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+
+  // A raw second control channel carrying a hello for the same call.
+  std::optional<uint32_t> extra;
+  harness_->mgr_a().OpenChannel("b", kCallMediaDirectProtocolId, pp::amp::CallMediaControlChannelPolicy(),
+                                [&](pp::amp::PeerLinkManager::ChannelRoe ch) {
+                                  if (ch.isOk()) {
+                                    extra = ch.value();
+                                  }
+                                });
+  harness_->PumpUntil([&] {
+    auto* link = harness_->mgr_a().FindLink("b");
+    return extra.has_value() && link && link->Mux() && link->Mux()->State(*extra) == pp::amp::ChannelState::Open;
+  });
+  ASSERT_TRUE(extra.has_value());
+  std::mutex mu;
+  std::string reply;
+  auto session = harness_->mgr_a().BindChannel("b", *extra, pp::amp::CallMediaControlChannelPolicy(),
+                                               [&](Roe<std::vector<uint8_t>> body) {
+                                                 if (body) {
+                                                   std::lock_guard lock(mu);
+                                                   reply.assign(body->begin(), body->end());
+                                                 }
+                                                 return true;
+                                               });
+  ASSERT_NE(session, nullptr);
+  const std::string hello =
+      R"({"v":1,"type":"hello","call_id":")" + call_id + R"(","media_epoch":1,"role":"offerer"})";
+  ASSERT_TRUE(session->EnqueueOutbound(std::vector<uint8_t>(hello.begin(), hello.end())));
+  harness_->PumpUntil([&] { std::lock_guard lock(mu); return !reply.empty(); });
+  {
+    std::lock_guard lock(mu);
+    EXPECT_NE(reply.find(R"("ok":false)"), std::string::npos) << reply;
+  }
+  for (int i = 0; i < 20; ++i) {
+    harness_->PumpBoth();
+  }
+
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady) << "the live call survived";
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_EQ(a_failed.load(), 0);
+  EXPECT_EQ(b_failed.load(), 0);
+  ASSERT_TRUE(static_cast<bool>(a_call_->SendAudio(leg_id, {1, 2, 3}, 1, 0)));
+  harness_->PumpUntil([&] { return b_audio.load() > 0; });
+  EXPECT_GT(b_audio.load(), 0) << "and media still flows on its channels";
+}
+
 TEST_F(CallMediaLegCoordinatorTest, AudioSurvivesSingleDatagramLoss) {
   const std::string call_id = "call-amp-loss";
   ByteVector media_key(32, 0x55);

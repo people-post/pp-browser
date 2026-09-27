@@ -716,6 +716,32 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       }
 
       Bundle* target = FindByCallId(hello_call_id);
+      if (IsPendingCallId(holder->call_id) && target && target != holder) {
+        // A hello on a new channel for a call that already has a bundle: decide against that
+        // bundle BEFORE touching it. A rejected hello (e.g. a second hello for a live call) must
+        // answer and close only its own channel — evicting the live inbound control first sent
+        // the peer a Close and failed the call.
+        const auto saved_remote_offerer = target->remote_offerer;
+        target->remote_offerer = hello.getString("role").value_or("") == "offerer";
+        CallMediaInboundHelloContext pre;
+        pre.phase = target->phase;
+        pre.has_outbound_control = static_cast<bool>(target->outbound_control);
+        pre.offerer = target->offerer;
+        pre.local_wins_glare = LocalWinsForBundle(*target, *link);
+        pre.other_bundle_busy = OtherBundleBusy(hello_call_id);
+        const auto pre_decision = DecideCallMediaInboundHello(pre);
+        if (pre_decision == CallMediaInboundHelloDecision::RejectBusy ||
+            pre_decision == CallMediaInboundHelloDecision::RejectGlare) {
+          target->remote_offerer = saved_remote_offerer;
+          const char* reason = pre_decision == CallMediaInboundHelloDecision::RejectBusy ? "busy" : "glare";
+          CallMediaLegLog().info << "CallMediaLeg inbound hello reject call_id=" << hello_call_id
+                                 << " peer=" << link->PeerKey() << " reason=" << reason
+                                 << " (existing bundle kept)";
+          (void)channel_session->EnqueueOutbound(Utf8Body(BuildHelloAckJson(false, reason)));
+          EraseBundle(holder->call_id);  // the placeholder and its new channel only
+          return;
+        }
+      }
       if (IsPendingCallId(holder->call_id)) {
         if (target && target != holder) {
           DropRole(*target, CallMediaChannelRole::InboundControl);

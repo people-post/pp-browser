@@ -61,6 +61,16 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 
 ## k3 — Make-before-break migration (M4)
 
+Slices (2026-09-27 survey of `CallMediaLegCoordinator` — one `Bundle` pins one `bound_mux` + three channel slots):
+
+- [x] **k3-0** A second hello for a live call is refused on its own channel — it used to evict the live inbound control first (the Close reached the peer and failed the call), so a migrate hello to today's code would have killed it (`SecondHelloForALiveCallLeavesTheCallAlone`)
+- [ ] **k3-1** Bundle → `Path{LinkHandle, mux, kind, path_gen, control, media}` records (active only); per-path `ResolveLink` / `PeerLinkMissing` / `OwnsRole` / close handling; no behaviour change
+- [ ] **k3-2** Control protocol: `migrate` (path_gen) / `migrate_ok` / `path_release` / ack; open the candidate on a chosen link (`OpenChannelOnLink`, bypassing adopt / MediaReady short-circuit); responder accepts as standby; TX switch; quiet retire; migrate timeout for old peers; transport-side seq de-dupe (video has none downstream)
+- [ ] **k3-3** Planner events `PathCandidate` / `PathMigrated` / `PathLost`; candidate producer from link events (Connectivity owner); `TryUpgradeToDirectAsync` migrate-first; enable `CallSurvivesRelaySilenceWithDirectPath`
+- [ ] **k3-4** TX-only escalation make-before-break (no Detach + BeginSession — also keeps `audio_seq_`)
+
+Checklist:
+
 - [ ] Bundle `PathSet` (active / standby / retiring) replacing single `bound_mux`; `ResolveLink` / `PeerLinkMissing` per path
 - [ ] Hello `type:"migrate"` + `path_gen`; `DecideCallMediaInboundHello` accepts for MediaReady same call/epoch
 - [ ] Second media/control channel roles; RX on any path (seq de-dupe); TX switch
