@@ -1,8 +1,8 @@
 # Call path resilience — current state
 
-**Last updated:** 2026-09-27 (resumed after thread-ownership: B30, B44, seed-park grace, dual-stack bind, flake closed, doc drift; k1 Amp hygiene in pp-cpp-amp v2.4.0)
+**Last updated:** 2026-09-27 (resumed after thread-ownership: B30, B44, seed-park grace, dual-stack bind, flake closed, doc drift; k1 Amp hygiene in pp-cpp-amp v2.4.0, nested reliable lane in v2.5.0)
 
-> **Code moved since 2026-09-25.** Calls run on the media-sessions owner (`CallsThread`), reach / rendezvous / mesh media plane / reachability on the Connectivity owner, MeshControl is gone (mesh waits are completions), the inbound call-media hello is asynchronous, and pp-cpp-amp is pinned at **v2.4.0**. Mentions of MeshControl, "UI thread" bridge state, or amp v2.2.x below are history. Product hot keepalive is **10 s** (K008 amendment), not 2 s.
+> **Code moved since 2026-09-25.** Calls run on the media-sessions owner (`CallsThread`), reach / rendezvous / mesh media plane / reachability on the Connectivity owner, MeshControl is gone (mesh waits are completions), the inbound call-media hello is asynchronous, and pp-cpp-amp is pinned at **v2.5.0**. Mentions of MeshControl, "UI thread" bridge state, or amp v2.2.x below are history. Product hot keepalive is **10 s** (K008 amendment), not 2 s.
 
 ## Landed
 
@@ -30,12 +30,13 @@
 | `CallUiBackendStackTest` parallel flake | Gone — 0 / 60 with 12 concurrent copies (was 12 / 12); fixed by thread-ownership's port snapshots |
 | Doc drift (k7) | V049 range, H009 status, media-hop-reachability status rows |
 | **k1 Amp hygiene** (pp-cpp-amp **v2.4.0**, pinned) | Carrier-closed and failed-inbound links dropped; only fresh packets move the path or prove liveness; drops by `LinkHandle` (A024 key sharing); nested and ADP establishes never wait on each other; OS-unreachable sends drop the link at once; `idle_ttl` removed; snapshots / events carry `LinkPathKind`, remote, RX age ([ADR_LINK_PLANE §10](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md)). pp-browser full suite, TSan (mesh + calls) and hard-w5 green against it. `MeshLinkEventLog` prints `path=direct|punched|carrier` |
+| **k1 nested reliable lane** (pp-cpp-amp **v2.5.0**, pinned) | Reliable-class frames on a nested (relay-carrier) link are sequenced end to end, acked, resent and released in order (`CarrierLane`, [ADR_LINK_PLANE §11](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md)); a dead end-to-end path drops the nested link. Probe-negotiated — older peers and relays unchanged. Amp gtest: 20 % loss + reordering both ways delivers every message in order (red before). Lab `delay 120ms 30ms` stack / cold pass — but also passed on v2.4.0 in a single cycle, so the lab does not discriminate yet (k7 netem wave) |
 
 ## Still open (as of 2026-09-24/25 — see the note above)
 
 - **One-way audio stall on relayed calls — root-caused and fixed (needs pp-node on relays):** the hop bound the dialer's circuit channel Control (Reliable, strict in-order) and never switched it to the carrier policy; the dialer sends best-effort, so the first lost / reordered frame wedged dialer→target for the rest of the call (dogfood 16:17). Reproduced in hard lab CGNAT (`delay 80ms loss 1%` on the caller) and loopback (`RelayedCallDisturbanceTest.CallerUplinkLossDoesNotWedgeCallerToCallee`); fixed in `CircuitTunnelCoordinator` (hop side). Lab after fix: 60 s both ways under 1 % and 2 % loss.
 - **Half-open call-media bundle taken as connected** (lab, 1 % loss + glare): InCall with no media, no retry — fixed (only MediaReady counts; `HalfOpenBundleIsNotAConnection`).
-- **Nested Reliable channels over a best-effort carrier** (call control, Amp chat, call-media hello over a relay): no end-to-end retransmission — lab `delay 120ms 30ms` (heavy reordering) fails call signaling (`amp direct chat send timed out`). A024 "dual outer lanes" follow-on; see k1.
+- ~~**Nested Reliable channels over a best-effort carrier**~~ (call control, Amp chat, call-media hello over a relay): no end-to-end retransmission — fixed by the amp v2.5.0 reliable lane (k1).
 - ~~`call_leave` lost at hangup in the lab~~ — probe race, not product: `LeaveCall` sends after the UI is Idle and the probe shut chat down first; the answerer (short mode) also hung up on its first RX frame, which the lost leave had masked. Probe now flushes the leave and the answerer waits for the offerer; the smoke gives the answerer 10 s to exit on its own (143 now means "never saw the leave").
 - **Caller probe hang / crash after Leave — fixed structurally (2026-09-25).** The probe drove Amp from its main (UI) thread, so any main-thread wait on mesh progress deadlocked, and it tore down in its own order. Now the probe runs the product threading and teardown, which exposed four product bugs, all fixed:
   - **Amp direct chat never acked under MeshPump (product).** Inbound request handlers returned `false` / used `read_once`, closing the channel before the MeshControl worker replied; every direct-chat send timed out after 4 s and fell back to the relay (likely a large part of **B30** signaling latency). All eight worker-answered L4 handlers now reply via `InboundReply` (`l4/shared/InboundReply.h`); dial-back also reads the observed endpoint on IO. Test: `AmpDirectChatMeshPumpTest`.
@@ -57,7 +58,7 @@ From PR #223 / #215 (dogfood 2026-09-24 evening, phone CN cellular ↔ Mac Wi‑
 
 ## Next agent — start here
 
-1. **k1 (pp-cpp-amp):** still open: per-link keepalive interval; nested Reliable over best-effort carrier (A024 dual outer lanes).
+1. **k1 done.** The per-link keepalive interval is k2's call-scoped keepalive item (needs the product to pick the value first).
 2. **k3** path set / make-before-break migration — the core of the project; nothing landed. Note: old peers ignore unknown hello types (need a migrate timeout); `TryUpgradeToDirectAsync` has no caller.
 3. **k4** heartbeat / RX-stall failover / Reconnecting + 30 s window / `peer link lost` no longer terminal — needs k3's path set.
 4. **k5** NetworkMonitor on four platforms; **k6** mobility; **k7** hard-lab wave.

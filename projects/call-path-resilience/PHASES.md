@@ -37,12 +37,12 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 - [x] `idle_ttl`: deleted (unused)
 - [x] `RequestDropLink(dial key | PeerId)` for stale links the product detects (B39, PR #223; reason `requested`)
 - [x] Hop applies the carrier policy to the dialer's leg of a call-media bridge (one-way stall root cause, 2026-09-24)
-- [ ] Reliable delivery for nested Reliable-class channels over a best-effort carrier (A024 dual outer lanes, or nested retransmit): call control / chat / hello fail under reordering + loss (lab `delay 120ms 30ms`)
+- [x] Reliable delivery for nested Reliable-class channels over a best-effort carrier: end-to-end retransmit chosen over dual outer lanes (no relay change) — amp `CarrierLane` (ADR_LINK_PLANE §11, v2.5.0): sequenced Reliable-class frames, cumulative + selective acks, adaptive RTO, in-order release; a frame unacked after 10 sends drops the nested link (`connection-dead`); probe-negotiated, older peers unchanged
 - [x] Inbound link dial key renders the assoc id as broken hex (`inbound:=:>7=;…`) — fix the nibble encoding (amp `c36bf10`)
 - [x] Inbound adopt keeps an ephemeral `amp:burst:N:` dial alias on the carrier link (amp `c36bf10`)
 - [x] Reach loop labels a carrier-only link "punched"/"direct" — `IDialRegistry::IsConnectedDirect`
 - [x] Close an ADP association at once when the socket reports EHOSTDOWN / ENETUNREACH for its peer (`kDatagramSendUnreachable` → `TransportFailed`) (#215 B39 suggestion a)
-- [x] pp-cpp-amp release + pin (**v2.4.0**)
+- [x] pp-cpp-amp release + pin (**v2.4.0** hygiene, **v2.5.0** reliable lane)
 
 **Exit:** no link lingers in Backoff; dead warm/hot links evicted within 3 × interval.
 

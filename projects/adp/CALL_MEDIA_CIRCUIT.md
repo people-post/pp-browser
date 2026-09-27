@@ -42,7 +42,7 @@ A ══MSH════════════════ B  (inner Session ov
 
 ### QoS on the carrier
 
-v1 uses a **BestEffort** outer splice so large media FRAG bursts are not capped by ADP `reliable_window`. Inner mux still uses Reliable control + BestEffort media. Dual outer lanes remain a follow-on.
+v1 uses a **BestEffort** outer splice so large media FRAG bursts are not capped by ADP `reliable_window`. Inner mux still uses Reliable control + BestEffort media. Since pp-cpp-amp v2.5.0 the nested link retransmits its Reliable-class frames end to end (`CarrierLane`, ADR_LINK_PLANE §11) instead of dual outer lanes — relays unchanged.
 
 ## SoftMigrate / D9 step 6 dependency
 
