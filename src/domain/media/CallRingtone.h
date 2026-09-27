@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -16,7 +17,10 @@ namespace pbr {
  * CallAudioSession::ActivateForVoipCall() like an in-call session. For this tone the
  * worker thread itself owns activate/release of the audio session (see RunLoop and
  * SetReleaseSessionOnStop) so a caller-side Stop() can never race a late activate that
- * lands after the UI already decided to release the session.
+ * lands after the UI already decided to release the session. Each Start() also hands its
+ * worker a fresh, per-generation release flag and a "previous worker done" signal, so a
+ * fast cancel-then-redial (Start() launching a new worker before the old one has finished
+ * tearing down) can never cross-wire generations — see RunLoop for the ordering rules.
  */
 class CallRingtone {
 public:
@@ -45,11 +49,13 @@ public:
   bool StopAndJoin(std::chrono::milliseconds budget);
   bool IsPlaying() const { return playing_.load(); }
   /**
-   * Tone::OutgoingRingback only: whether the worker should release the phone audio
-   * session (CallAudioSession::Deactivate()) when it stops, having activated it. Call
-   * before Stop() — false when media is taking over the session (engine owns it from
-   * here), true (the default) to release it. The worker reads this once, at its own
-   * exit, so the decision made here can never race the worker's own activate.
+   * Tone::OutgoingRingback only: whether the CURRENT (most recently Start()'d) worker
+   * should release the phone audio session (CallAudioSession::Deactivate()) when it
+   * stops, having activated it. Call before Stop() for that same worker — false when
+   * media is taking over the session (engine owns it from here), true (the default) to
+   * release it. Writes to a flag private to that worker's generation (see Start()), so a
+   * still-tearing-down older worker can never pick up a decision meant for the current
+   * one.
    */
   void SetReleaseSessionOnStop(bool release);
   /**
@@ -62,7 +68,15 @@ public:
 
 private:
   void RequestStop(bool wait);
-  void RunLoop();
+  /**
+   * `previous_done`: the prior generation's completion signal (null if this is the
+   * first Start()). `release_on_stop`: this generation's own release flag (see
+   * SetReleaseSessionOnStop). `done`: this generation's own completion signal, set as
+   * the last step before returning, for whichever later generation waits on it next.
+   */
+  void RunLoop(std::shared_ptr<std::atomic<bool>> previous_done,
+               std::shared_ptr<std::atomic<bool>> release_on_stop,
+               std::shared_ptr<std::atomic<bool>> done);
 
   std::mutex mutex_;
   std::atomic<bool> playing_{false};
@@ -71,8 +85,14 @@ private:
   /** Joins prior playback workers after async Stop/Start so Accept never blocks on SDL close. */
   std::thread joiner_;
   Tone tone_ = Tone::IncomingRing;
-  /** OutgoingRingback only; read by RunLoop at its own exit. See SetReleaseSessionOnStop. */
-  std::atomic<bool> release_session_on_stop_{true};
+  /**
+   * OutgoingRingback only, guarded by mutex_: the release flag and completion signal
+   * for the CURRENT (most recently Start()'d) generation. SetReleaseSessionOnStop writes
+   * through current_release_; the next Start() reads current_done_ as that generation's
+   * `previous_done` before replacing both with fresh ones for the new generation.
+   */
+  std::shared_ptr<std::atomic<bool>> current_release_;
+  std::shared_ptr<std::atomic<bool>> current_done_;
   std::vector<unsigned char> wav_pcm_;
   int wav_freq_ = 24000;
   int wav_channels_ = 1;

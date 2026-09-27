@@ -110,9 +110,19 @@ void CallRingtone::Start() {
       return;
     }
   }
+  // Mint a fresh release flag + completion signal for this generation — never reused
+  // across Start() calls — and hand the new worker the PREVIOUS generation's completion
+  // signal (null on the first Start()) so it can wait for that worker to fully release
+  // the session before touching it itself. See RunLoop / SetReleaseSessionOnStop docs.
+  const std::shared_ptr<std::atomic<bool>> previous_done = current_done_;
+  current_release_ = std::make_shared<std::atomic<bool>>(true);
+  current_done_ = std::make_shared<std::atomic<bool>>(false);
   stop_ = false;
   playing_ = true;
-  thread_ = std::thread([this]() { RunLoop(); });
+  thread_ = std::thread(
+      [this, previous_done, release = current_release_, done = current_done_]() {
+        RunLoop(previous_done, release, done);
+      });
 }
 
 void CallRingtone::RequestStop(const bool wait) {
@@ -165,7 +175,17 @@ void CallRingtone::RequestStop(const bool wait) {
 }
 
 void CallRingtone::SetReleaseSessionOnStop(const bool release) {
-  release_session_on_stop_.store(release, std::memory_order_relaxed);
+  // Writes through current_release_ (the CURRENT generation's own flag) — never a
+  // member shared across generations — so a still-tearing-down older worker can never
+  // pick up a decision meant for the generation this call is actually about.
+  std::shared_ptr<std::atomic<bool>> flag;
+  {
+    std::lock_guard lock(mutex_);
+    flag = current_release_;
+  }
+  if (flag) {
+    flag->store(release, std::memory_order_relaxed);
+  }
 }
 
 void CallRingtone::Stop() {
@@ -220,10 +240,31 @@ bool CallRingtone::StopAndJoin(std::chrono::milliseconds budget) {
   return false;
 }
 
-void CallRingtone::RunLoop() {
+void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done,
+                           std::shared_ptr<std::atomic<bool>> release_on_stop,
+                           std::shared_ptr<std::atomic<bool>> done) {
+  // Cross-generation ordering rules for OutgoingRingback (a fast cancel-then-redial can
+  // launch this worker before the PREVIOUS one has finished tearing down; the audio
+  // session must never see two generations' activate/release calls interleave):
+  //  1. Before activating, wait (bounded, 2000ms) for `previous_done` — set by the prior
+  //     worker as its very last step, after its own Deactivate()/holder decrement — so
+  //     we can never activate before an old worker's late release kills our session.
+  //  2. `release_on_stop` belongs to this generation alone (minted fresh in Start()),
+  //     never shared/reused, so SetReleaseSessionOnStop() can only ever reach the
+  //     generation it was called for.
+  //  3. `done` is set as literally the last step on every exit path (including early
+  //     failures), so whichever generation starts next — if any — has something to wait
+  //     on and is never blocked by one that ran but never played.
+  const auto signal_done = [&done]() {
+    if (done) {
+      done->store(true, std::memory_order_release);
+    }
+  };
+
   if (!EnsureSdlAudioSubsystem()) {
     SDL_Log("CallRingtone: SDL_InitSubSystem(AUDIO) failed: %s", SDL_GetError());
     playing_ = false;
+    signal_done();
     return;
   }
   SDL_AudioSpec want{};
@@ -235,6 +276,7 @@ void CallRingtone::RunLoop() {
   if (!stream) {
     SDL_Log("CallRingtone: playback open failed: %s", SDL_GetError());
     playing_ = false;
+    signal_done();
     return;
   }
   g_ringtone_playback_device_holders.fetch_add(1, std::memory_order_acq_rel);
@@ -245,11 +287,24 @@ void CallRingtone::RunLoop() {
   // release it. Skip the activate entirely if a stop already landed while we were still
   // opening the device — otherwise we'd activate a session nobody will release.
   bool activated = false;
-  if (tone_ == Tone::OutgoingRingback && !stop_.load()) {
-    // SDL rewrites the AVAudioSession when it opens a device, so activate the VoIP
-    // session after opening the stream (routes phones to the earpiece).
-    CallAudioSession::ActivateForVoipCall();
-    activated = true;
+  if (tone_ == Tone::OutgoingRingback) {
+    if (previous_done) {
+      const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+      while (!previous_done->load(std::memory_order_acquire) &&
+             std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+      if (!previous_done->load(std::memory_order_acquire)) {
+        SDL_Log("CallRingtone: previous ringback generation did not signal done within "
+                "2000ms — activating anyway");
+      }
+    }
+    if (!stop_.load()) {
+      // SDL rewrites the AVAudioSession when it opens a device, so activate the VoIP
+      // session after opening the stream (routes phones to the earpiece).
+      CallAudioSession::ActivateForVoipCall();
+      activated = true;
+    }
   }
   SDL_Log("CallRingtone: playing loop freq=%d ch=%d bytes=%zu", wav_freq_, wav_channels_,
           wav_pcm_.size());
@@ -266,7 +321,7 @@ void CallRingtone::RunLoop() {
   // Destroying a stream from SDL_OpenAudioDeviceStream also closes the device — do not
   // SDL_CloseAudioDevice(device) afterward (double-close can hang quit on Android).
   SDL_DestroyAudioStream(stream);
-  if (activated && release_session_on_stop_.load(std::memory_order_relaxed)) {
+  if (activated && release_on_stop && release_on_stop->load(std::memory_order_relaxed)) {
     // Release before dropping our holder count so CallMediaEngine::OpenAudioDevices —
     // which waits for holders == 0 before ActivateForVoipCall()'ing its own session —
     // never observes the device free while our session is still active.
@@ -274,6 +329,7 @@ void CallRingtone::RunLoop() {
   }
   g_ringtone_playback_device_holders.fetch_sub(1, std::memory_order_acq_rel);
   playing_ = false;
+  signal_done();
 }
 
 } // namespace pbr
