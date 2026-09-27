@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -23,5 +24,10 @@ inline std::string BroadcastMediaFrameContext(const std::string& program_id, con
 inline uint32_t BroadcastPublisherStreamId(const std::string& publisher_peer_id) {
   return PublisherStreamIdForIdentity(publisher_peer_id);
 }
+
+/** A fresh 32-byte show key (B004: one stable key per show, new on every go-live). */
+std::vector<uint8_t> NewBroadcastMediaKey();
+/** A fresh opaque join handle for one show of `program_id` (`live:<program>:<random hex>`). */
+std::string NewBroadcastJoinHandle(const std::string& program_id);
 
 } // namespace pbr

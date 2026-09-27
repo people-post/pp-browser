@@ -6,6 +6,7 @@
 
 #include "feature/broadcast/AmpBroadcastRpcClient.h"
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
+#include "feature/broadcast/BroadcasterWorkflow.h"
 #include "feature/conversations/AmpBroadcastTransport.h"
 
 #include "domain/media/CallMediaEngine.h"
@@ -26,6 +27,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace pbr {
@@ -285,6 +287,83 @@ TEST_F(BroadcastViewerComposeTest, AdmittingHopAdmitsThenTheViewerListens) {
       << "phase=" << BroadcastViewerWorkflow::PhaseName(workflow_->CurrentStatus().phase) << " "
       << workflow_->CurrentStatus().error << " (admitted without waiting out the admission timeout)";
   hop_admission_->Stop();
+}
+
+// l5: nothing hand-published — B's BroadcasterWorkflow goes live through R (real key to its ticket
+// server, capture engine sealing silence frames), A watches from the tip B announced.
+TEST_F(BroadcastViewerComposeTest, BroadcasterToRelayToViewerEndToEnd) {
+  std::vector<BroadcastTipDraft> tips;
+  auto publisher_client = std::make_unique<AmpMediaRelayClient>(*publisher_relay_, [this]() { h_->PumpAll(); },
+                                                                publisher_, PostIo(*h_->runtime_b),
+                                                                PostAfter(*h_->runtime_b));
+  CallMediaEngine capture(devices_);
+  capture.SetVideoCodecFactoryForTest([]() { return MakeUnavailableVideoCodec("test"); });
+  BroadcasterPorts bp;
+  bp.local_peer_id = [this]() { return publisher_; };
+  bp.new_media_key = []() { return NewBroadcastMediaKey(); };
+  bp.new_join_handle = [](const std::string& program) { return NewBroadcastJoinHandle(program); };
+  bp.put_program_key = [this](const std::string& program, const std::string& join, BroadcastProgramKey key) {
+    AmpBroadcastTransport::LiveProgramKey live;
+    live.publisher_peer_id = key.publisher_peer_id;
+    live.media_key_bytes = key.media_key;
+    live.media_epoch = key.media_epoch;
+    live.hop_peer_id = key.hop_peer_id;
+    server_->PutLiveProgramKey(program, join, live);
+  };
+  bp.clear_program_key = [this](const std::string& program, const std::string& join) {
+    server_->ClearLiveProgramKey(program, join);
+  };
+  bp.announce = [&tips](const BroadcastTipDraft& draft) -> Roe<void> {
+    tips.push_back(draft);
+    return {};
+  };
+  bp.relay.relay = publisher_client.get();
+  bp.relay.dial = &dial_;
+  bp.engine = &capture;
+  bp.post_ui = [this](std::function<void()> task) { ui_.push_back(std::move(task)); };
+  auto broadcaster = std::make_unique<BroadcasterWorkflow>(bp);
+
+  ASSERT_TRUE(broadcaster->GoLive({"topic", "show-e2e", {hop_}}));
+  ASSERT_TRUE(RunUntil([&] { return broadcaster->CurrentStatus().phase == BroadcasterWorkflow::Phase::Live; }))
+      << BroadcasterWorkflow::PhaseName(broadcaster->CurrentStatus().phase) << " " << broadcaster->CurrentStatus().error;
+  ASSERT_EQ(tips.size(), 1u);
+  const BroadcastTipDraft live = tips.front();
+
+  PeerAnnounceTip tip;
+  tip.peer_id = publisher_;
+  tip.topic_id = live.topic_id;
+  tip.program_id = live.program_id;
+  tip.join_handle = live.join_handle;
+  tip.state = PeerAnnounceState::Live;
+  tip.hop_peer_id = live.hop_peer_id;
+  auto target = BroadcastWatchTargetFromTip(tip);
+  ASSERT_TRUE(target);
+  ASSERT_TRUE(workflow_->Watch(*target));
+  ASSERT_TRUE(RunUntil([&] {
+    const auto phase = workflow_->CurrentStatus().phase;
+    return phase == BroadcastViewerWorkflow::Phase::Listening || phase == BroadcastViewerWorkflow::Phase::Failed;
+  }));
+  ASSERT_EQ(workflow_->CurrentStatus().phase, BroadcastViewerWorkflow::Phase::Listening)
+      << workflow_->CurrentStatus().error;
+  // Capture runs on real time (20 ms frames): pace the pump instead of spinning virtual time.
+  ASSERT_TRUE(RunUntil(
+      [&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return engine_->HealthSnapshot().rx_audio_frames >= 5;
+      },
+      5000))
+      << "sent=" << broadcaster->CurrentStatus().frames_sent << " rx=" << engine_->HealthSnapshot().rx_audio_frames;
+
+  broadcaster->End();
+  ASSERT_EQ(tips.back().state, PeerAnnounceState::Ended);
+  // The show's key is gone: a late viewer is refused a ticket.
+  workflow_->Stop();
+  ASSERT_TRUE(workflow_->Watch(*target));
+  ASSERT_TRUE(RunUntil([&] { return workflow_->CurrentStatus().phase == BroadcastViewerWorkflow::Phase::Failed; }));
+  EXPECT_NE(workflow_->CurrentStatus().error.find("ticket"), std::string::npos) << workflow_->CurrentStatus().error;
+  broadcaster.reset();
+  capture.Stop();
+  publisher_client.reset();
 }
 
 TEST_F(BroadcastViewerComposeTest, UnknownProgramFailsAtTheTicket) {

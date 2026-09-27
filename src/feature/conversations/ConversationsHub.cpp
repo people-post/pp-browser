@@ -594,6 +594,35 @@ void ConversationsHub::RebuildBroadcast() {
   deps.publisher_key = [messaging = mesh_messaging_.get()](const std::string& peer_id) {
     return messaging->ResolveAnnouncePublisherKey(peer_id);
   };
+  deps.put_program_key = [this, messaging = mesh_messaging_.get()](const std::string& program_id,
+                                                             const std::string& join_handle, BroadcastProgramKey key) {
+    AmpBroadcastTransport::LiveProgramKey live;
+    live.publisher_peer_id = key.publisher_peer_id;
+    live.media_key_bytes = std::move(key.media_key);
+    live.media_epoch = key.media_epoch;
+    live.hop_peer_id = key.hop_peer_id;
+    if (auto put = messaging->PutLiveProgramKey(program_id, join_handle, std::move(live)); !put) {
+      log().warning << "broadcast ticket key not registered: " << put.error().message;
+    }
+  };
+  deps.clear_program_key = [messaging = mesh_messaging_.get()](const std::string& program_id,
+                                                               const std::string& join_handle) {
+    messaging->ClearLiveProgramKey(program_id, join_handle);
+  };
+  deps.announce = [messaging = mesh_messaging_.get()](const BroadcastTipDraft& tip) -> Roe<void> {
+    PeerAnnouncePublisher::Draft draft;
+    draft.topic_id = tip.topic_id;
+    draft.program_id = tip.program_id;
+    draft.state = tip.state;
+    draft.join_handle = tip.join_handle;
+    draft.hop_peer_id = tip.hop_peer_id;
+    draft.l1_hop_peer_ids = tip.l1_hop_peer_ids;
+    auto published = messaging->PublishAnnounceTip(draft);
+    if (!published) {
+      return published.error();
+    }
+    return {};
+  };
   broadcast_ = BroadcastHub::ForMesh(std::move(deps), MediaDeviceArbiter::Default());
   if (!broadcast_) {
     log().info << "broadcast viewer unavailable (media_relay not wired)";

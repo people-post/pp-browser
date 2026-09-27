@@ -730,4 +730,27 @@ std::optional<BroadcastViewerWorkflow::Status> ConversationsFacade::BroadcastWat
   return broadcast->Viewer();
 }
 
+Roe<void> ConversationsFacade::GoLive(const std::string& topic_id, const std::string& program_id,
+                                      std::vector<std::string> hops) {
+  auto* broadcast = hub_.Broadcast();
+  if (!broadcast) {
+    return Error("Live broadcasts unavailable (mesh / media relay not ready)");
+  }
+  return broadcast->GoLive(BroadcastLiveRequest{topic_id, program_id, std::move(hops)});
+}
+
+void ConversationsFacade::EndLive() {
+  if (auto* broadcast = hub_.Broadcast()) {
+    broadcast->EndLive();
+  }
+}
+
+std::optional<BroadcasterWorkflow::Status> ConversationsFacade::BroadcastLiveStatus() {
+  auto* broadcast = hub_.Broadcast();
+  if (!broadcast) {
+    return std::nullopt;
+  }
+  return broadcast->Live();
+}
+
 } // namespace pbr

@@ -264,6 +264,12 @@ public:
   /** Current watch (phase, hop, error); nullopt while broadcast viewing is unavailable. */
   std::optional<BroadcastViewerWorkflow::Status> BroadcastWatchStatus();
 
+  /** Publish a program live through `hops` (media_relay nodes, preference order). UI thread. */
+  Roe<void> GoLive(const std::string& topic_id, const std::string& program_id, std::vector<std::string> hops);
+  void EndLive();
+  /** Current show (phase, join handle, hop, frames sent); nullopt while broadcasting is unavailable. */
+  std::optional<BroadcasterWorkflow::Status> BroadcastLiveStatus();
+
   ConversationsHub& Hub() { return hub_; }
 
 private:

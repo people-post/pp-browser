@@ -80,5 +80,15 @@ TEST(BroadcastMediaTest, StreamIdComesFromThePublisherPeerIdAndContextIsBroadcas
   EXPECT_EQ(BroadcastMediaFrameContext("show", "live:1"), "broadcast-media|show|live:1");
 }
 
+TEST(BroadcastMediaTest, EveryShowGetsAFreshKeyAndJoinHandle) {
+  const auto a = NewBroadcastMediaKey();
+  const auto b = NewBroadcastMediaKey();
+  EXPECT_EQ(a.size(), 32u);
+  EXPECT_NE(a, b);
+  const auto j1 = NewBroadcastJoinHandle("show");
+  EXPECT_EQ(j1.rfind("live:show:", 0), 0u) << j1;
+  EXPECT_NE(j1, NewBroadcastJoinHandle("show"));
+}
+
 } // namespace
 } // namespace pbr

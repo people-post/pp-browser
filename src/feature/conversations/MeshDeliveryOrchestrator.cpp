@@ -319,6 +319,31 @@ Roe<PeerAnnounceTipAck> MeshDeliveryOrchestrator::PublishLiveChatFromOverlay(
   return peer_announce_->PushTip(peer_key, *tip);
 }
 
+Roe<void> MeshDeliveryOrchestrator::PutLiveProgramKey(const std::string& program_id, const std::string& join_handle,
+                                                       AmpBroadcastTransport::LiveProgramKey key) {
+  if (!broadcast_) {
+    return Error("broadcast service not running (Amp mesh down)");
+  }
+  broadcast_->PutLiveProgramKey(program_id, join_handle, std::move(key));
+  return {};
+}
+
+void MeshDeliveryOrchestrator::ClearLiveProgramKey(const std::string& program_id, const std::string& join_handle) {
+  if (broadcast_) {
+    broadcast_->ClearLiveProgramKey(program_id, join_handle);
+  }
+}
+
+Roe<PeerAnnounceTip> MeshDeliveryOrchestrator::PublishAnnounceTip(const PeerAnnouncePublisher::Draft& draft) {
+  if (!peer_announce_publisher_) {
+    return Error("peer-announce publisher unavailable (device identity missing)");
+  }
+  const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+  return peer_announce_publisher_->Publish(draft, now_ms);
+}
+
 std::optional<PeerAnnounceTip> MeshDeliveryOrchestrator::LatestAnnounceTip(const std::string& peer_id,
                                                                           const std::string& topic_id,
                                                                           const std::string& program_id) const {

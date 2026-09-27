@@ -199,6 +199,12 @@ public:
    * Does not SoftMigrate or attach media yet.
    */
   Roe<AnnounceLiveJoinPlan> PlanLiveJoinFromAnnounceTip(const PeerAnnounceTip& tip) const;
+  /** Broadcaster (l5): the serving ticket side mints viewer tickets for this live program. */
+  Roe<void> PutLiveProgramKey(const std::string& program_id, const std::string& join_handle,
+                              AmpBroadcastTransport::LiveProgramKey key);
+  void ClearLiveProgramKey(const std::string& program_id, const std::string& join_handle);
+  /** Sign and record a program tip in the local announce feed (followers pull / get pushed). */
+  Roe<PeerAnnounceTip> PublishAnnounceTip(const PeerAnnouncePublisher::Draft& draft);
   /** Latest stored signed tip for a program (announce feed). */
   std::optional<PeerAnnounceTip> LatestAnnounceTip(const std::string& peer_id, const std::string& topic_id,
                                                    const std::string& program_id) const;

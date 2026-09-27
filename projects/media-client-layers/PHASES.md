@@ -99,11 +99,12 @@ Split in three ([L010](DECISIONS.md#l010--l3-splits-spec-first-then-a-device-own
 - [x] Relay loss: re-attach same hop first (tip stays valid), else the next hop + re-announce + re-point tickets; fails after 3 consecutive losses. End: Ended tip, key cleared, detach, capture stopped; a late attach after End is detached; never announces a show no relay accepted
 - [x] gtests (fake relay, real capture engine on a device-less arbiter; frames opened with the viewer's label)
 
-### l5b — Product wiring
+### l5b — Product wiring (done)
 
-- [ ] `BroadcastHub` owns the broadcaster (capture engine) next to the viewer; ports: `AmpBroadcastTransport::PutLiveProgramKey` / `ClearLiveProgramKey`, `PeerAnnouncePublisher::Publish` (local feed; push to followers where Spine D lands), random key / join handle
-- [ ] Facade `GoLive` / `EndLive` / `BroadcastLiveStatus`
-- [ ] Compose test: real broadcaster → relay → real viewer (no hand-published frames)
+- [x] `BroadcastHub` owns the broadcaster (own capture engine) next to the viewer; `ForMesh` ports: `MeshDeliveryOrchestrator::PutLiveProgramKey` / `ClearLiveProgramKey` (serving `AmpBroadcastTransport`), `PublishAnnounceTip` (`PeerAnnouncePublisher`, local feed — pushing to followers is Spine D), `NewBroadcastMediaKey` / `NewBroadcastJoinHandle`
+- [x] Facade `GoLive` / `EndLive` / `BroadcastLiveStatus`
+- [x] Compose test `BroadcasterToRelayToViewerEndToEnd`: real broadcaster (capture engine, real ticket server) → relay → real viewer from the announced tip; after End a late viewer is refused a ticket
+- [x] Found + fixed on the way: relay client send deadlock + off-io race + one-way session eviction (own commit); pp-cpp-amp v2.3.1 (dropped link closes its channel sessions — use-after-free) and v2.3.2 (thread-safe test network / clock)
 
 ### l5c — Hard lab
 

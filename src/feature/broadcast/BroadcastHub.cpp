@@ -3,6 +3,7 @@
 #include "feature/broadcast/AmpBroadcastRpcClient.h"
 
 #include "domain/mesh/reachability/PeerReachCoordinator.h"
+#include "domain/messaging/BroadcastMedia.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include <chrono>
@@ -10,10 +11,12 @@
 
 namespace pbr {
 
-BroadcastHub::BroadcastHub(BroadcastViewerPorts ports, MediaDeviceArbiter& devices)
-    : engine_(std::make_unique<CallMediaEngine>(devices)) {
-  ports.engine = engine_.get();
-  viewer_ = std::make_unique<BroadcastViewerWorkflow>(std::move(ports));
+BroadcastHub::BroadcastHub(BroadcastViewerPorts viewer, MediaDeviceArbiter& devices, BroadcasterPorts broadcaster)
+    : engine_(std::make_unique<CallMediaEngine>(devices)), capture_engine_(std::make_unique<CallMediaEngine>(devices)) {
+  viewer.engine = engine_.get();
+  viewer_ = std::make_unique<BroadcastViewerWorkflow>(std::move(viewer));
+  broadcaster.engine = capture_engine_.get();
+  broadcaster_ = std::make_unique<BroadcasterWorkflow>(std::move(broadcaster));
 }
 
 std::unique_ptr<BroadcastHub> BroadcastHub::ForMesh(BroadcastMeshDeps deps, MediaDeviceArbiter& devices) {
@@ -52,14 +55,28 @@ std::unique_ptr<BroadcastHub> BroadcastHub::ForMesh(BroadcastMeshDeps deps, Medi
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
         .count();
   };
-  auto hub = std::make_unique<BroadcastHub>(std::move(ports), devices);
+
+  BroadcasterPorts publish;
+  publish.local_peer_id = ports.local_peer_id;
+  publish.new_media_key = []() { return NewBroadcastMediaKey(); };
+  publish.new_join_handle = [](const std::string& program_id) { return NewBroadcastJoinHandle(program_id); };
+  publish.put_program_key = std::move(deps.put_program_key);
+  publish.clear_program_key = std::move(deps.clear_program_key);
+  publish.announce = std::move(deps.announce);
+  publish.relay = ports.relay;
+  publish.hop_multiaddr = ports.hop_multiaddr;
+  publish.post_ui = ports.post_ui;
+  publish.post_ui_after = ports.post_ui_after;
+
+  auto hub = std::make_unique<BroadcastHub>(std::move(ports), devices, std::move(publish));
   hub->rpc_ = std::move(rpc);
   hub->reach_ = std::move(reach);
   return hub;
 }
 
 BroadcastHub::~BroadcastHub() {
-  viewer_.reset();  // stops the watch (and the engine session) before the engine goes
+  broadcaster_.reset();  // ends the show (Ended tip, key cleared) before its engine goes
+  viewer_.reset();       // stops the watch (and the engine session) before the engine goes
   if (reach_) {
     reach_->CancelAll();
   }
@@ -85,8 +102,22 @@ bool BroadcastHub::IsWatching() const {
   return phase != BroadcastViewerWorkflow::Phase::Idle && phase != BroadcastViewerWorkflow::Phase::Failed;
 }
 
+Roe<void> BroadcastHub::GoLive(BroadcastLiveRequest request) {
+  return broadcaster_->GoLive(std::move(request));
+}
+
+void BroadcastHub::EndLive() {
+  broadcaster_->End();
+}
+
+bool BroadcastHub::IsLive() const {
+  const auto phase = broadcaster_->CurrentStatus().phase;
+  return phase != BroadcasterWorkflow::Phase::Idle && phase != BroadcasterWorkflow::Phase::Failed;
+}
+
 void BroadcastHub::SetOnChanged(std::function<void()> callback) {
-  viewer_->SetOnStatusChanged(std::move(callback));
+  viewer_->SetOnStatusChanged(callback);
+  broadcaster_->SetOnStatusChanged(std::move(callback));
 }
 
 } // namespace pbr
