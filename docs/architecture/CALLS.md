@@ -469,7 +469,7 @@ Landed (behavior-preserving + who-picks fix):
 |------|------|
 | `src/feature/calls/CallStack.*` | Phase assembler — stores / CSM / Lifecycle / Seat + owns `CallMediaPlane` |
 | `src/feature/calls/CallMediaPlane.*` | Call media plane — call_media Amp transport, bridge, topology relay deps (borrows `MeshMediaPlane`) |
-| `src/domain/mesh/media_plane/MeshMediaPlane.*` | Shared mesh media — media_relay client, dial registry + listen book, circuit reach + punch, rendezvous parking (hub-owned, L015) |
+| `src/domain/mesh/media_plane/MeshMediaPlane.*` | Shared mesh media owner — media_relay client, dial registry + listen book, circuit reach built from `PunchIntroducerWalk` + `CircuitRendezvousCoordinator` (reachability) (hub-owned, L015) |
 | `src/feature/calls/CallLifecycle.*` | 1:1 phase machine — embeds `CallLifecycleSignalingPorts` (V041) |
 | `src/feature/calls/CallSessionManager.h` | Port structs for CSM: `CallDirectMediaPorts` / `CallSessionLifecyclePorts` / `CallMediaSeatPorts` (V042/V043); `MakeSeatPorts` private on CSM |
 | `src/feature/calls/CallSessionWorkflow.*` | Durable session/roster workflow (V044/V045) — HostPorts clustered wire/duplex/hop/chrome/reach (V048) |

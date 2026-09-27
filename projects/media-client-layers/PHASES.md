@@ -141,6 +141,8 @@ Leftovers in `CallMediaBridge` / `CallTopologyController` / `CallHopMigrateWorkf
 - [x] `ConversationsHub` / `ProductStackHarness` own it; `CallStack` borrows it (`CallStackDeps::mesh_media`, `DetachMeshMedia` / `RebindMeshMedia`); broadcast takes `RelayAttachPorts` from it; the owner runs the mesh-start, capability-refresh and stop sequences; `SharedRelayAttachPorts` / `CallStack::StopMesh` / the stack's reach wrappers removed; L014 superseded. l8a and l8b landed together (calls cannot include the conversations wiring)
 - [x] Parking flows split while moving; the cold-reserve walk no longer holds itself (`shared_ptr<function>` self-capture leaked every reserve pass), a pending park still answers `false` at its deadline after mesh stop
 - [x] `MeshMediaPlaneTest` (listen book, no-mesh wiring); `ProductStackHarnessTest` drives the owner's rewire sequence
+- [x] Reach mechanics out of the plane into `domain/mesh/reachability`: `PunchIntroducerWalk` (the punch step reach calls — introducer walk, B29 next-introducer, H012 signaling fallback, upgrade punch) and `CircuitRendezvousCoordinator` (one relay surface: `DialableRelayIds` for circuit reach, warm / reserve / late reserve / park-await / re-park for inbound). `MeshMediaPlane` is composition + lifecycle only (`Rendezvous()` accessor)
+- [ ] LeakSanitizer in untouched Amp code, seen once the punch / circuit suites ran under ASan: `AmpPunchCoordinator` (`RunIntroducerConnect` / `TryUpgradePunch` closures — `AmpPunchCoordinatorTest` ×6, `AmpPunchCircuitUpgradeTest`), circuit bridge (`AmpCircuitHopReachTest` ×7), `CallMediaLegCoordinator` (known). Likely the same self-owning-closure pattern fixed in l7 / l8
 
 ## Later
 

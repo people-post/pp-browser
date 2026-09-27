@@ -115,11 +115,11 @@ void CallMediaPlane::BindBridge(const CallMediaBridgeBindArgs& args) {
   } else {
     call_media_bridge_->SetReachDeps(dial, reach);
   }
-  MeshMediaPlane* mesh_media = mesh_media_;
-  call_media_bridge_->SetSeedWarm([mesh_media]() { mesh_media->WarmBootstrapSeedSessions(); });
-  call_media_bridge_->SetSeedReserve([mesh_media]() { mesh_media->ReserveOnBootstrapSeeds(); });
-  call_media_bridge_->SetSeedParkAwait([mesh_media](std::function<void(bool)> done, int timeout_ms) {
-    mesh_media->EnsureBootstrapSeedParkedAsync(std::move(done), timeout_ms);
+  CircuitRendezvousCoordinator* rendezvous = &mesh_media_->Rendezvous();
+  call_media_bridge_->SetSeedWarm([rendezvous]() { rendezvous->WarmBootstrapSeedSessions(); });
+  call_media_bridge_->SetSeedReserve([rendezvous]() { rendezvous->ReserveOnBootstrapSeeds(); });
+  call_media_bridge_->SetSeedParkAwait([rendezvous](std::function<void(bool)> done, int timeout_ms) {
+    rendezvous->EnsureBootstrapSeedParkedAsync(std::move(done), timeout_ms);
   });
 }
 

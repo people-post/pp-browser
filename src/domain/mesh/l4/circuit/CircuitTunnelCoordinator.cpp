@@ -1104,9 +1104,9 @@ bool CircuitTunnelCoordinator::ServeInbound() const {
 
 void CircuitTunnelCoordinator::AbortInflight() {
   // Sync under lock — never PostIo(raw Impl*) that can outlive Stop/TearDown.
-  // Null Finish cbs: MeshMediaPlane / AmpCircuitHopReach may already be destroyed
+  // Null Finish cbs: CircuitRendezvousCoordinator / AmpCircuitHopReach may already be destroyed
   // (hard-w5 offerer SIGSEGV after Leave). Reach uses AbortPending gen; reserve
-  // cbs use MeshMediaPlane DeferredSelf.
+  // cbs use CircuitRendezvousCoordinator DeferredSelf.
   // Lock order is strand → mu (IO callbacks hold the strand). Off-IO callers (quit / Leave on
   // the UI thread) take the strand first: mu → ClearWarm (strand) deadlocked against MeshPump's
   // TickDeadlines (strand → mu) — pp-call-probe teardown hang, 2026-09-25.

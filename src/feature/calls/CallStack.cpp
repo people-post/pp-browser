@@ -312,16 +312,16 @@ void CallStack::BuildSessions(const CallStackDeps& deps) {
   // Connectivity: park on org hops so this peer is ServeDial-reachable (shared mesh media).
   call_sessions_->SetEnsureCircuitReady([this]() {
     if (MeshMediaPlane* shared = mesh_media()) {
-      shared->ReserveOnBootstrapSeeds();
+      shared->Rendezvous().ReserveOnBootstrapSeeds();
     }
   });
   call_sessions_->SetAwaitCircuitReady([this](int timeout_ms) {
     MeshMediaPlane* shared = mesh_media();
-    return shared ? shared->AwaitCircuitReady(timeout_ms) : false;
+    return shared ? shared->Rendezvous().AwaitCircuitReady(timeout_ms) : false;
   });
   call_sessions_->SetPreferLateReserve([this](const std::string& relay_peer_id) {
     if (MeshMediaPlane* shared = mesh_media()) {
-      shared->PreferLateReserve(relay_peer_id);
+      shared->Rendezvous().PreferLateReserve(relay_peer_id);
     }
   });
   call_sessions_->SetLocalPunchAddrsProvider([this]() -> std::vector<std::string> {

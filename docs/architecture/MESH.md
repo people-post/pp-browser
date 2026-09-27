@@ -45,9 +45,10 @@ flowchart TB
 domain/mesh/
   host/           MeshHost, MeshIdentityConfig, MeshPorts (IChatPeerLinks)
   identity/       PeerId derivation (ML-DSA → base58)
-  reachability/   Reachability, NAT, LAN mDNS, dial-back
-  media_plane/    MeshMediaPlane — shared media_relay client, dial registry + listen book,
-                  circuit reach + punch, rendezvous parking (lent to calls and broadcast)
+  reachability/   Reachability, NAT, LAN mDNS, dial-back; link / service reach, punch step
+                  (PunchIntroducerWalk), circuit rendezvous (CircuitRendezvousCoordinator)
+  media_plane/    MeshMediaPlane — owns the shared media_relay client, dial registry + listen
+                  book and circuit reach (with its punch / rendezvous pieces); lent to calls and broadcast
   l4/
     shared/       ProductChannelPolicies
     circuit/      CircuitTunnelCoordinator, AmpCircuitHopRegistry
