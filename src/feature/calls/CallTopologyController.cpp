@@ -1357,10 +1357,26 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
   log().info << "OnInboundSfuAttach call_id=" << call_id << " hop=" << attach.hop_peer_id
              << " ma=" << (attach.hop_multiaddr.empty() ? "(empty)" : attach.hop_multiaddr)
              << " sfu=" << (sfu_.attached ? 1 : 0) << " inflight=" << (flight_.in_flight ? 1 : 0);
+  if (!ExpectsInboundSfuAttach(call_id, attach)) {
+    return {};
+  }
+  Apply(CallHopPlannerEvent::SfuAttachInbound, call_id);
+  if (sfu_.hop_planner_phase == CallHopPlannerPhase::Attaching) {
+    ReportHopProgress(CallHopPlannerPhase::Attaching, call_id);
+  }
+  if (SettleInboundSfuAttachWithoutDial(call_id, attach)) {
+    return {};
+  }
+  StartInboundSfuAttach(call_id, attach);
+  return {};
+}
+
+bool CallTopologyController::ExpectsInboundSfuAttach(const std::string& call_id,
+                                                     const CallSfuAttachDetail& attach) const {
   if (!IsActiveCallForTopology(call_id)) {
     log().info << "OnInboundSfuAttach ignored (not active call) call_id=" << call_id
                << " media_active=" << media_.ActiveCallId();
-    return {};
+    return false;
   }
   // 1:1 must stay on call-media duplex. Owner SoftMigrate / inflated roster can still fan
   // CallSfuAttach; accepting it races ScheduleStartDirectMedia (intermittent hop sound → "direct").
@@ -1375,17 +1391,20 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
       (CallMediaTopology::ShouldUseMediaRelay(n_joined) || attach_wait_.call_id == call_id ||
        (flight_.in_flight && flight_.call_id == call_id) || sfu_.attached);
   if (!expect_group_attach) {
-    log().info << "OnInboundSfuAttach ignored (1:1 / hop not armed) call_id=" << call_id
-               << " n_joined=" << n_joined << " hop=" << attach.hop_peer_id
-               << " arming="
-               << (arming_.IsBound() && arming_.arming_debug_name ? arming_.arming_debug_name()
-                                                                  : "null");
-    return {};
+    log().info << "OnInboundSfuAttach ignored (1:1 / hop not armed) call_id=" << call_id << " n_joined=" << n_joined
+               << " hop=" << attach.hop_peer_id << " arming="
+               << (arming_.IsBound() && arming_.arming_debug_name ? arming_.arming_debug_name() : "null");
   }
-  Apply(CallHopPlannerEvent::SfuAttachInbound, call_id);
-  if (sfu_.hop_planner_phase == CallHopPlannerPhase::Attaching) {
-    ReportHopProgress(CallHopPlannerPhase::Attaching, call_id);
-  }
+  return expect_group_attach;
+}
+
+void CallTopologyController::DeferInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach) {
+  inbound_gate_.pending_attach = attach;
+  inbound_gate_.pending_call_id = call_id;
+}
+
+bool CallTopologyController::SettleInboundSfuAttachWithoutDial(const std::string& call_id,
+                                                               const CallSfuAttachDetail& attach) {
   if (sfu_.attached && media_.ActiveCallId() == call_id &&
       (media_.IsSfuMode() || flight_.attached_hop_peer_id == attach.hop_peer_id)) {
     // Already attached (duplicate fan-out / late roster / peer publisher announce).
@@ -1394,36 +1413,23 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
     ClearSfuAttachWait();
     host_.ClearMediaActivity();
     host_.NotifyRingChanged();
-    return {};
+    return true;
   }
-  // Same hop already dialing — coalesce even if flight_.in_flight briefly cleared.
-  if (seat_.IsBound() && seat_.has_attach_in_flight()) {
-    if (seat_.attaching_hop() == attach.hop_peer_id) {
-      log().info << "OnInboundSfuAttach coalesce (seat attaching same hop) call_id=" << call_id
-                 << " hop=" << attach.hop_peer_id;
-    } else {
-      inbound_gate_.pending_attach = attach;
-      inbound_gate_.pending_call_id = call_id;
-      log().info << "OnInboundSfuAttach deferred (seat attach in flight) call_id=" << call_id
-                 << " in_flight_hop=" << seat_.attaching_hop()
-                 << " requested=" << attach.hop_peer_id;
-    }
-    BeginSfuAttachWait(call_id);
-    return {};
-  }
-  if (!flight_.attaching_hop_peer_id.empty()) {
-    if (flight_.attaching_hop_peer_id == attach.hop_peer_id) {
+  // An attach already dialing (seat flight, or attaching_hop even if flight_.in_flight briefly
+  // cleared): same hop coalesces; a different hop waits — never a parallel Detach.
+  const bool seat_in_flight = seat_.IsBound() && seat_.has_attach_in_flight();
+  const std::string in_flight_hop = seat_in_flight ? seat_.attaching_hop() : flight_.attaching_hop_peer_id;
+  if (seat_in_flight || !in_flight_hop.empty()) {
+    if (in_flight_hop == attach.hop_peer_id) {
       log().info << "OnInboundSfuAttach coalesce (attaching same hop) call_id=" << call_id
                  << " hop=" << attach.hop_peer_id;
     } else {
-      // Different hop while AcceptAndAttach in flight — defer; do not parallel Detach.
-      inbound_gate_.pending_attach = attach;
-      inbound_gate_.pending_call_id = call_id;
+      DeferInboundSfuAttach(call_id, attach);
       log().info << "OnInboundSfuAttach deferred (attach in flight) call_id=" << call_id
-                 << " in_flight_hop=" << flight_.attaching_hop_peer_id << " requested=" << attach.hop_peer_id;
+                 << " in_flight_hop=" << in_flight_hop << " requested=" << attach.hop_peer_id;
     }
     BeginSfuAttachWait(call_id);
-    return {};
+    return true;
   }
   // SoftMigrate PickHop may be mid-AcceptAndAttach. Bumping gen Detach's that stream and races
   // libp2p asio (Moto SIGSEGV on pp-worker). Defer until SoftMigrate clears in-flight.
@@ -1431,37 +1437,39 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
     if (!flight_.call_id.empty() && call_id != flight_.call_id) {
       log().info << "OnInboundSfuAttach ignored (SoftMigrate in flight for other call)"
                  << " pending_call=" << flight_.call_id << " call_id=" << call_id;
-      return {};
+      return true;
     }
-    inbound_gate_.pending_attach = attach;
-    inbound_gate_.pending_call_id = call_id;
+    DeferInboundSfuAttach(call_id, attach);
     log().info << "OnInboundSfuAttach deferred (SoftMigrate in flight) call_id=" << call_id;
     BeginSfuAttachWait(call_id);
     host_.SetMediaActivity(Tr("call.status.connecting_media_relay"));
     host_.NotifyRingChanged();
-    return {};
+    return true;
   }
+  return RefusePrivateHopMultiaddr(call_id, attach);
+}
 
+bool CallTopologyController::RefusePrivateHopMultiaddr(const std::string& call_id, const CallSfuAttachDetail& attach) {
   // Cross-net: PreferLocal often fans a private LAN MA. Fail fast and ask owner to re-pick a
   // shared public hop instead of waiting for media-relay timeout.
-  if (!attach.hop_multiaddr.empty() && MultiaddrHasPrivateIpv4Host(attach.hop_multiaddr)) {
-    const auto local_mas = ResolveLocalAdvertiseMas();
-    const bool may_dial = GuestMayDialPrivateHopMa(attach.hop_multiaddr, local_mas);
-    const bool lan_hop =
-        relay_deps_.peer_lan_confirmed && relay_deps_.peer_lan_confirmed(attach.hop_peer_id);
-    if (!may_dial || !lan_hop) {
-      log().warning << "OnInboundSfuAttach skip private hop MA hop=" << attach.hop_peer_id
-                    << " ma=" << attach.hop_multiaddr << " may_dial=" << (may_dial ? 1 : 0)
-                    << " lan_hop=" << (lan_hop ? 1 : 0);
-      BeginSfuAttachWait(call_id);
-      host_.SetMediaActivity(Tr("call.status.looking_for_another_path"));
-      host_.NotifyRingChanged();
-      ReportSfuAttachFailedToInitiator(call_id, attach.hop_peer_id,
-                                       "hop multiaddr not reachable (private)");
-      return {};
-    }
+  if (attach.hop_multiaddr.empty() || !MultiaddrHasPrivateIpv4Host(attach.hop_multiaddr)) {
+    return false;
   }
+  const bool may_dial = GuestMayDialPrivateHopMa(attach.hop_multiaddr, ResolveLocalAdvertiseMas());
+  const bool lan_hop = relay_deps_.peer_lan_confirmed && relay_deps_.peer_lan_confirmed(attach.hop_peer_id);
+  if (may_dial && lan_hop) {
+    return false;
+  }
+  log().warning << "OnInboundSfuAttach skip private hop MA hop=" << attach.hop_peer_id << " ma=" << attach.hop_multiaddr
+                << " may_dial=" << (may_dial ? 1 : 0) << " lan_hop=" << (lan_hop ? 1 : 0);
+  BeginSfuAttachWait(call_id);
+  host_.SetMediaActivity(Tr("call.status.looking_for_another_path"));
+  host_.NotifyRingChanged();
+  ReportSfuAttachFailedToInitiator(call_id, attach.hop_peer_id, "hop multiaddr not reachable (private)");
+  return true;
+}
 
+void CallTopologyController::StartInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach) {
   BeginSfuAttachWait(call_id);
   if (seat_.IsBound()) {
     seat_.note_connecting(call_id);
@@ -1473,72 +1481,76 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
   flight_.in_flight = true;
   flight_.call_id = call_id;
   AttachLocalToSfuAsync(call_id, attach, [this, call_id, attach, gen](Roe<void> ok) {
-    if (!IsMigrateGenerationCurrent(gen)) {
+    const bool superseded = !IsMigrateGenerationCurrent(gen);
+    if (superseded) {
       log().info << "OnInboundSfuAttach worker gen moved want=" << gen
                  << " have=" << flight_.migrate_generation.load(std::memory_order_acquire)
                  << " attached=" << (sfu_.attached ? 1 : 0) << " ok=" << (ok ? 1 : 0);
-      AppRuntime::PostUI([this, gen, call_id, attach, ok]() {
-        const bool duplex =
-            sfu_.attached && media_.IsSfuMode() && media_.ActiveCallId() == call_id;
-        // Attach finished successfully (StartSfu may still be settling on another worker).
-        // Never ReportSfuAttachFailed here — that makes the owner RefuseGuest → CallHopRefuse →
-        // LeaveCall mid-call (dogfood: Connected then aborted).
-        if (ok || duplex) {
-          if (flight_.flight_gen == gen || duplex) {
-            flight_.in_flight = false;
-            flight_.call_id.clear();
-          }
-          if (duplex) {
-            inbound_gate_.pending_attach.reset();
-            inbound_gate_.pending_call_id.clear();
-            ClearSfuAttachWait();
-            SyncSfuSubscriptions(call_id);
-            host_.ClearMediaActivity();
-          } else if (flight_.flight_gen == gen) {
-            FlushPendingInboundSfuAttach();
-          }
-          host_.NotifyRingChanged();
-          return;
-        }
-        if (flight_.flight_gen == gen) {
-          flight_.in_flight = false;
-          flight_.call_id.clear();
-          FlushPendingInboundSfuAttach();
-        }
-        // True failure under a superseded gen — wait for a fresh fan-out, do not refuse.
-        BeginSfuAttachWait(call_id);
-        host_.NotifyRingChanged();
-      });
-      return;
     }
-    AppRuntime::PostUI([this, call_id, attach, ok, gen]() {
-      if (!IsMigrateGenerationCurrent(gen)) {
-        return;
+    AppRuntime::PostUI([this, call_id, attach, gen, superseded, ok]() {
+      if (superseded) {
+        FinishSupersededInboundSfuAttach(call_id, gen, ok);
+      } else {
+        FinishInboundSfuAttach(call_id, attach, gen, ok);
       }
-      flight_.in_flight = false;
-      flight_.call_id.clear();
-      if (!ok) {
-        if (sfu_.attached && media_.IsSfuMode()) {
-          SyncSfuSubscriptions(call_id);
-          host_.NotifyRingChanged();
-          return;
-        }
-        host_.SetLastMediaError(ok.error().message);
-        log().warning << "AttachLocalToSfu (inbound) failed: " << ok.error().message;
-        // V029: ask owner to re-pick or refuse — keep attach-wait for a re-fan-out.
-        ReportSfuAttachFailedToInitiator(call_id, attach.hop_peer_id, ok.error().message);
-        BeginSfuAttachWait(call_id);
-        host_.NotifyRingChanged();
-        return;
-      }
-      inbound_gate_.pending_attach.reset();
-      inbound_gate_.pending_call_id.clear();
-      SyncSfuSubscriptions(call_id);
-      host_.ClearMediaActivity();
-      host_.NotifyRingChanged();
     });
   });
-  return {};
+}
+
+void CallTopologyController::FinishInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach,
+                                                    uint64_t gen, const Roe<void>& ok) {
+  if (!IsMigrateGenerationCurrent(gen)) {
+    return;
+  }
+  flight_.in_flight = false;
+  flight_.call_id.clear();
+  if (ok) {
+    inbound_gate_.pending_attach.reset();
+    inbound_gate_.pending_call_id.clear();
+    SyncSfuSubscriptions(call_id);
+    host_.ClearMediaActivity();
+    host_.NotifyRingChanged();
+    return;
+  }
+  if (sfu_.attached && media_.IsSfuMode()) {
+    SyncSfuSubscriptions(call_id);
+    host_.NotifyRingChanged();
+    return;
+  }
+  host_.SetLastMediaError(ok.error().message);
+  log().warning << "AttachLocalToSfu (inbound) failed: " << ok.error().message;
+  // V029: ask owner to re-pick or refuse — keep attach-wait for a re-fan-out.
+  ReportSfuAttachFailedToInitiator(call_id, attach.hop_peer_id, ok.error().message);
+  BeginSfuAttachWait(call_id);
+  host_.NotifyRingChanged();
+}
+
+void CallTopologyController::FinishSupersededInboundSfuAttach(const std::string& call_id, uint64_t gen,
+                                                              const Roe<void>& ok) {
+  const bool duplex = sfu_.attached && media_.IsSfuMode() && media_.ActiveCallId() == call_id;
+  const bool owns_flight = flight_.flight_gen == gen;
+  if (owns_flight || duplex) {
+    flight_.in_flight = false;
+    flight_.call_id.clear();
+  }
+  if (duplex) {
+    // Attach finished (StartSfu may still be settling on another worker).
+    inbound_gate_.pending_attach.reset();
+    inbound_gate_.pending_call_id.clear();
+    ClearSfuAttachWait();
+    SyncSfuSubscriptions(call_id);
+    host_.ClearMediaActivity();
+  } else {
+    if (owns_flight) {
+      FlushPendingInboundSfuAttach();
+    }
+    // Never ReportSfuAttachFailed under a superseded gen — that makes the owner RefuseGuest →
+    // CallHopRefuse → LeaveCall mid-call (dogfood: Connected then aborted). Wait for a fresh fan-out.
+    if (!ok) {
+      BeginSfuAttachWait(call_id);
+    }
+  }
+  host_.NotifyRingChanged();
 }
 
 void CallTopologyController::FlushPendingInboundSfuAttach() {

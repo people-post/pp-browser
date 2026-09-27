@@ -216,6 +216,16 @@ private:
    * UI-thread entry; work runs on a worker.
    */
   void OnGuestSfuTransportLost();
+  // Inbound CallSfuAttach steps (OnInboundSfuAttach → expect → settle without dial → start → finish on UI).
+  bool ExpectsInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach) const;
+  void DeferInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach);
+  /** True when the attach is settled without dialing (already attached, coalesced, deferred, refused). */
+  bool SettleInboundSfuAttachWithoutDial(const std::string& call_id, const CallSfuAttachDetail& attach);
+  bool RefusePrivateHopMultiaddr(const std::string& call_id, const CallSfuAttachDetail& attach);
+  void StartInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach);
+  void FinishInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach, uint64_t gen,
+                              const Roe<void>& ok);
+  void FinishSupersededInboundSfuAttach(const std::string& call_id, uint64_t gen, const Roe<void>& ok);
 
   using SoftMigrateFlight = CallHopMigrateWorkflow::SoftMigrateFlight;
   using AttachWait = CallHopMigrateWorkflow::AttachWait;
