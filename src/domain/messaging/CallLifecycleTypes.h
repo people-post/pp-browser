@@ -32,6 +32,8 @@ enum class CallMediaStatus {
   Migrating,
   DegradedTxOnly,
   Failed,
+  /** k4: the call lost its path and waits (≤ 30 s) for a new one — UI "Reconnecting…", timer runs on. */
+  Reconnecting,
 };
 
 enum class CallArmedPlanner {

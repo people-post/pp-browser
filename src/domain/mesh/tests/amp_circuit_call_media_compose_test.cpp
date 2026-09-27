@@ -563,7 +563,10 @@ protected:
 
   /** One audio frame each way, as a live call sends. */
   void SendNext() {
-    ASSERT_TRUE(static_cast<bool>(a_call_->SendAudio(leg_, {0x11, 0x22}, ++seq_, 0)));
+    const auto sent = a_call_->SendAudio(leg_, {0x11, 0x22}, ++seq_, 0);
+    if (!a_call_->PathState(leg_).reconnecting) {  // no path to send on while reconnecting
+      ASSERT_TRUE(static_cast<bool>(sent)) << sent.error().message;
+    }
     (void)b_call_->SendAudio(b_call_->PrimaryLegId(), {0x33}, seq_, 0);
   }
 
@@ -743,6 +746,96 @@ TEST_F(CallPathMigrationTest, QuietButAliveDirectPathStays) {
                b_call_->ActiveLinkKind() != CallMediaLinkKind::Direct;
       },
       std::chrono::milliseconds(2500)));
+}
+
+// k4-3: the call's only path (the relay) dies and there is no standby. Both ends keep the call
+// (reconnecting, no failure) until the offerer migrates it onto a direct link.
+TEST_F(CallPathMigrationTest, CallWithNoPathLeftReconnectsOntoANewLink) {
+  LiveRelayedCallWithDirectLink();
+  harness_->io_r->SetDropRate(1.0);
+  for (int i = 0; i < 60 && !(a_call_->PathState(leg_).reconnecting &&
+                              b_call_->PathState(b_call_->PrimaryLegId()).reconnecting);
+       ++i) {
+    harness_->clock->Advance(250);
+    harness_->PumpAll();
+  }
+  ASSERT_TRUE(a_call_->PathState(leg_).reconnecting) << "the relay is gone: no path left";
+  ASSERT_TRUE(b_call_->PathState(b_call_->PrimaryLegId()).reconnecting);
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady) << "kept for the reconnect window";
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
+
+  std::atomic<bool> done{false};
+  Roe<void> result = Error("pending");
+  a_call_->MigrateLegToKind(leg_, CallMediaLinkKind::Direct, [&](Roe<void> r) {
+    result = std::move(r);
+    done = true;
+  });
+  for (int i = 0; i < 400 && !(done.load() && !b_call_->PathState(b_call_->PrimaryLegId()).reconnecting); ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  ASSERT_TRUE(done.load());
+  ASSERT_TRUE(result) << result.error().message;
+  EXPECT_FALSE(a_call_->PathState(leg_).reconnecting);
+  EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).reconnecting);
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
+  EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
+  const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
+  SendNext();
+  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() > before; }, 2000);
+  std::lock_guard lock(mu_);
+  EXPECT_GT(b_seqs_.size(), before) << "media flows again";
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
+}
+
+// k4-3: a peer from before k4 tears its leg down when the path dies and redials with a fresh hello
+// for the same call. The reconnecting end takes it instead of refusing it as busy.
+TEST_F(CallPathMigrationTest, FreshHelloFromARedialingPeerReplacesAReconnectingCall) {
+  LiveRelayedCallWithDirectLink();
+  harness_->io_r->SetDropRate(1.0);
+  for (int i = 0; i < 60 && !b_call_->PathState(b_call_->PrimaryLegId()).reconnecting; ++i) {
+    harness_->clock->Advance(250);
+    harness_->PumpAll();
+  }
+  ASSERT_TRUE(b_call_->PathState(b_call_->PrimaryLegId()).reconnecting);
+  // The "older" offerer: tear down, then connect again over the direct link.
+  a_call_->DetachLeg(leg_);
+  harness_->PumpAll();
+  b_connected_ = false;
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b-direct";
+  params.call_id = call_id_;
+  params.media_epoch = 1;
+  params.media_key = key_;
+  params.offerer = true;
+  LegCompletion redial;
+  leg_ = a_call_->StartLeg(params, {}, redial.Fn(), 8000);
+  ASSERT_TRUE(leg_);
+  redial.PumpUntilDone(*harness_);
+  ASSERT_TRUE(redial.result) << redial.result.error().message;
+  harness_->PumpUntil([&] { return b_connected_.load(); }, 2000);
+  EXPECT_TRUE(b_connected_.load()) << "the redial was answered";
+  EXPECT_EQ(b_call_->Phase(), CallMediaSessionPhase::MediaReady);
+  EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).reconnecting);
+  EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
+  EXPECT_FALSE(b_failed_.load());
+}
+
+// k4-3: no new path within the reconnect window → the call fails (as a lost link did at once before).
+TEST_F(CallPathMigrationTest, NoNewPathWithinTheWindowFailsTheCall) {
+  LiveRelayedCallWithDirectLink();
+  a_call_->SetReconnectWindowForTest(std::chrono::milliseconds(300));
+  b_call_->SetReconnectWindowForTest(std::chrono::milliseconds(300));
+  harness_->io_r->SetDropRate(1.0);
+  for (int i = 0; i < 60 && !a_call_->PathState(leg_).reconnecting; ++i) {
+    harness_->clock->Advance(250);
+    harness_->PumpAll();
+  }
+  ASSERT_TRUE(a_call_->PathState(leg_).reconnecting);
+  EXPECT_TRUE(PumpRealUntil([&] { return a_failed_.load() && b_failed_.load(); }, std::chrono::seconds(3)));
+  EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
 }
 
 // A candidate that goes away mid-migration is abandoned: the call stays on its path, unharmed.

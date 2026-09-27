@@ -129,6 +129,10 @@ CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string&
   cbs.on_failed = [this, call_id](const std::string& reason) {
     CallsThread::Post([this, call_id, reason]() { OnBundleFailed(call_id, reason); });
   };
+  // k4: the call lost its last path — reconnect window (the offerer re-anchors).
+  cbs.on_path_lost = [this, call_id]() {
+    CallsThread::Post([this, call_id]() { Apply(CallDirectPlannerEvent::PathLost, call_id, media_peer_identity_); });
+  };
   // k3: the transport moved the call to another path; the path label (UI snapshot) follows.
   cbs.on_path_changed = [this, call_id](CallMediaLinkKind kind) {
     CallsThread::Post([this, call_id, kind]() {
@@ -351,9 +355,26 @@ void CallMediaBridge::Apply(CallDirectPlannerEvent ev, const std::string& call_i
   case CallDirectPlannerEvent::Stop:
     break;
   case CallDirectPlannerEvent::PathMigrated:
-    // A TX-only call that moved (k3-4) is connected again on its new path: chrome follows.
-    if (out.decision == CallDirectPlannerDecision::Transition && arming_.on_connected) {
-      arming_.on_connected(call_id);
+    // A TX-only call that moved (k3-4), or a reconnected one (k4), is connected again on its new
+    // path: chrome follows.
+    if (out.decision == CallDirectPlannerDecision::Transition) {
+      CancelReanchor();
+      if (arming_.on_connected) {
+        arming_.on_connected(call_id);
+      }
+    }
+    break;
+  case CallDirectPlannerEvent::PathLost:
+    if (out.decision == CallDirectPlannerDecision::Transition) {
+      if (arming_.report_progress) {
+        arming_.report_progress(CallDirectPlannerPhase::Reconnecting, call_id);
+      }
+      host_.P2pNotifyRingChanged();
+      // The offerer reaches the peer again and moves the call onto that link; the answerer's
+      // transport accepts the migrate (invite / accept is the agreement, as for the first connect).
+      if (session_offerer_) {
+        ScheduleReanchor(call_id, std::chrono::milliseconds(0));
+      }
     }
     break;
   }
@@ -469,6 +490,81 @@ void CallMediaBridge::OnDirectUpgradeFire() {
       ScheduleDirectUpgrade();
     });
   });
+}
+
+// --- k4: re-anchor a call that lost its last path ----------------------------------------------
+
+void CallMediaBridge::ScheduleReanchor(const std::string& call_id, const std::chrono::milliseconds delay) {
+  CancelReanchor();
+  reanchor_call_id_ = call_id;
+  reanchor_timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(delay, [this, alive = alive_, call_id]() {
+    CallsThread::Post([this, alive, call_id]() {
+      if (alive->load(std::memory_order_acquire) && reanchor_call_id_ == call_id) {
+        reanchor_timer_id_ = 0;
+        Reanchor(call_id);
+      }
+    });
+  });
+}
+
+void CallMediaBridge::CancelReanchor() {
+  if (reanchor_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(reanchor_timer_id_);
+    reanchor_timer_id_ = 0;
+  }
+  if (reanchor_reach_id_ != 0) {
+    reach_.Cancel(reanchor_reach_id_);
+    reanchor_reach_id_ = 0;
+  }
+  reanchor_call_id_.clear();
+}
+
+void CallMediaBridge::Reanchor(const std::string& call_id) {
+  if (stopping_.load() || media_.ActiveCallId() != call_id ||
+      direct_planner_phase_ != CallDirectPlannerPhase::Reconnecting) {
+    return;
+  }
+  const std::string peer_id = ReachPeerIdFor(direct_.ActiveParams().peer_key);
+  PeerReachRequest request;
+  request.keys.push_back(peer_id);
+  request.mode = PeerReachMode::Reach;
+  log().info << "reconnect: reaching the peer again call_id=" << call_id << " peer=" << peer_id;
+  const auto retry = [this, call_id]() {
+    if (direct_planner_phase_ == CallDirectPlannerPhase::Reconnecting && reanchor_call_id_ == call_id) {
+      ScheduleReanchor(call_id, std::chrono::milliseconds(reanchor_retry_ms_));
+    }
+  };
+  reanchor_reach_id_ =
+      reach_.Ensure(std::move(request), [this, alive = alive_, call_id, retry](Roe<PeerReachResult> reached) {
+        CallsThread::Post([this, alive, call_id, retry, reached = std::move(reached)]() mutable {
+          if (!alive->load(std::memory_order_acquire) || reanchor_call_id_ != call_id) {
+            return;
+          }
+          reanchor_reach_id_ = 0;
+          if (direct_planner_phase_ != CallDirectPlannerPhase::Reconnecting) {
+            return;
+          }
+          if (!reached) {
+            log().info << "reconnect: peer not reached yet (" << reached.error().message << ")";
+            retry();
+            return;
+          }
+          const CallMediaLinkKind kind =
+              reached->kind == PeerLinkKind::Relayed ? CallMediaLinkKind::Relayed : CallMediaLinkKind::Direct;
+          direct_.MigrateTo(kind, [this, alive, call_id, retry](Roe<void> moved) {
+            CallsThread::Post([this, alive, call_id, retry, moved = std::move(moved)]() {
+              if (!alive->load(std::memory_order_acquire) || reanchor_call_id_ != call_id) {
+                return;
+              }
+              if (!moved) {
+                log().info << "reconnect: migrate failed (" << moved.error().message << ")";
+                retry();
+              }
+              // OK: on_path_changed → PathMigrated → Live.
+            });
+          });
+        });
+      });
 }
 
 void CallMediaBridge::CancelEscalateReach() {
@@ -1267,6 +1363,7 @@ void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
   CancelReserveRenewal();
   CancelDirectUpgrade();
   CancelEscalateReach();
+  CancelReanchor();
   const std::string peer = media_peer_identity_;
   if (pending_answerer_call_id_ == call_id) {
     pending_answerer_call_id_.clear();
@@ -1373,6 +1470,7 @@ void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
   CancelReserveRenewal();
   CancelDirectUpgrade();
   CancelEscalateReach();
+  CancelReanchor();
   const std::string peer = media_peer_identity_;
   const std::string call_id = media_call_id_;
   pending_answerer_call_id_.clear();

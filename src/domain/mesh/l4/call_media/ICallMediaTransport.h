@@ -72,6 +72,12 @@ struct CallMediaDirectCallbacks {
   std::function<void(const std::string& error)> on_failed;
   /** k3: media moved to another path of the call (make-before-break migration); `kind` is the new path's. */
   std::function<void(CallMediaLinkKind kind)> on_path_changed;
+  /**
+   * k4: the call lost its last path (link gone, no standby). It is kept for a reconnect window: a
+   * migration onto a new link brings it back (`on_path_changed`); the window running out fails it
+   * (`on_failed`).
+   */
+  std::function<void()> on_path_lost;
 };
 
 /** Answer to an inbound hello — any thread, at most once. An empty `media_key` NACKs the hello. */

@@ -72,6 +72,10 @@ CallDirectArmingPorts TestDirectArmingPorts(CallLifecycle* lifecycle) {
       lifecycle->SetMediaStatus(CallMediaStatus::DegradedTxOnly, call_id);
       return;
     }
+    if (phase == CallDirectPlannerPhase::Reconnecting) {  // as CallStack::MakeDirectArmingPorts
+      lifecycle->SetMediaStatus(CallMediaStatus::Reconnecting, call_id);
+      return;
+    }
     lifecycle->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
   };
   ports.on_connected = [lifecycle](const std::string& call_id) {
@@ -284,7 +288,7 @@ public:
   CallMediaLinkKind ActiveLinkKind() const override { return link_kind; }
   void MigrateTo(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override {
     ++migrate_calls;
-    if (!migrate_ok) {
+    if (!migrate_ok || (fail_first_n_migrates > 0 && fail_first_n_migrates-- > 0)) {
       done(Error("call-media migrate: peer refused (busy)"));
       return;
     }
@@ -296,6 +300,7 @@ public:
   }
   std::atomic<int> migrate_calls{0};
   bool migrate_ok = true;
+  int fail_first_n_migrates = 0;
   void Detach() override {
     active = false;
     ++detach_calls;
@@ -992,6 +997,46 @@ TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallThatCannotMoveRestartsViaCirc
   EXPECT_EQ(transport_->migrate_calls.load(), 1);
   EXPECT_GT(transport_->detach_calls, detaches) << "break-before-make fallback";
   EXPECT_GE(transport_->connect_async_calls, 2) << "a new session via the circuit";
+  bridge_->PrepareForTeardown(0);
+}
+
+// k4: the transport lost the call's last path. The call is Reconnecting (not failed); the offerer
+// reaches the peer again and moves the call onto that link — retrying a failed move — and the call
+// is connected again.
+TEST_F(CallMediaBridgeAnswererStartTest, LostPathReconnectsOntoTheReachedLink) {
+  const std::string call_id = "call:reconnect";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWReconnectPeer";
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  transport_->fail_first_n_migrates = 1;
+  bridge_->SetReanchorRetryMsForTest(20);
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_EQ(lifecycle_->Status(), CallMediaStatus::DirectLive);
+  const int detaches = transport_->detach_calls;
+
+  ASSERT_TRUE(transport_->last_callbacks.on_path_lost);
+  transport_->last_callbacks.on_path_lost();
+  bool saw_reconnecting = false;
+  for (int i = 0; i < 400 && transport_->migrate_calls.load() < 2; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    saw_reconnecting |= lifecycle_->Status() == CallMediaStatus::Reconnecting;
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_TRUE(saw_reconnecting) << "the call shows Reconnecting, not failed";
+  EXPECT_EQ(transport_->migrate_calls.load(), 2) << "a failed move is retried";
+  EXPECT_EQ(lifecycle_->Status(), CallMediaStatus::DirectLive) << "connected again";
+  EXPECT_EQ(lifecycle_->Phase(), CallPhase::InCall);
+  EXPECT_EQ(transport_->detach_calls, detaches) << "the call was never torn down";
+  EXPECT_TRUE(media_->IsActive());
   bridge_->PrepareForTeardown(0);
 }
 

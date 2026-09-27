@@ -196,6 +196,7 @@ The call stays on its path when the candidate fails before step 3: `migrate_ack`
 - **Standby:** a released path (step 5) stays bound as the call's warm **standby** instead of closing — one per call, a relayed one preferred.
 - **Failover** (no handshake — the standby's channels are bound and RX takes every path): TX moves to the standby when the active path's link is lost, or when it has been silent **1.5 s** while the peer is known to heartbeat (a muted mic still heartbeats and sends silence frames). A standby silent 25 s is not taken. After a failover, silence alone does not switch again for 3 s.
 - **Follow:** an `active:true` heartbeat arriving on this end's standby means the peer moved there — this end switches too.
+- **No path left** (active link lost, no standby): the call is kept — MediaReady on a dead path — for a **30 s reconnect window**. A `migrate` onto any new link to the peer (the offerer reaches it again) brings it back; the window running out fails the call. A fresh `hello` for the same call (a peer from before k4 re-dialing) replaces the reconnecting bundle.
 
 ## Circuit tunnel (v1)
 

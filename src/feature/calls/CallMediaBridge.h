@@ -97,6 +97,8 @@ public:
   /** Shrink the peer-reach direct-dial budget for gtests (0 = production default). */
   void SetDialWaitBudgetMsForTest(int budget_ms);
   void SetReserveRenewIntervalMsForTest(int interval_ms) { reserve_renew_interval_ms_ = interval_ms; }
+  /** Retry delay between re-anchor attempts while reconnecting (production 2 s). */
+  void SetReanchorRetryMsForTest(int delay_ms) { reanchor_retry_ms_ = delay_ms; }
   /** Test: the TX-only grace expired now (skips the 15 s / 80-frame gate). */
   void EscalateTxOnlyForTest(const std::string& call_id) {
     tx_only_escalation_done_ = true;
@@ -244,6 +246,10 @@ private:
   /** k3-4: TX-only restart (Detach + BeginSession via circuit) — the fallback when the call cannot move. */
   void EscalateBreakBeforeMake(const std::string& call_id, const std::string& peer);
   void CancelEscalateReach();
+  /** k4: the offerer reaches the peer again and migrates the call onto that link (retries). */
+  void ScheduleReanchor(const std::string& call_id, std::chrono::milliseconds delay);
+  void Reanchor(const std::string& call_id);
+  void CancelReanchor();
   /** Amp PeerId for a call roster key (account: → PeerId); unchanged otherwise. */
   std::string ReachPeerIdFor(const std::string& key);
   void OnDirectHealthTimerFire();
@@ -292,6 +298,10 @@ private:
   int upgrade_delay_ms_for_test_ = 0;
   /** k3-4: circuit being built under a TX-only call (0 = none). */
   PeerReachId escalate_reach_id_ = 0;
+  std::string reanchor_call_id_;
+  uint64_t reanchor_timer_id_ = 0;
+  PeerReachId reanchor_reach_id_ = 0;
+  int reanchor_retry_ms_ = 2000;
   /** Inside the 15 s StartReserve lease so consecutive leases overlap. */
   int reserve_renew_interval_ms_ = 10000;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;

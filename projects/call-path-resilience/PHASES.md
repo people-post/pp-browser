@@ -89,18 +89,18 @@ Slices:
 
 - [x] **k4-1** Per-path heartbeat (`hb`, 500 ms active / 10 s standby) and liveness (any RX on a path); a released path becomes the call's warm standby (K002 — relayed preferred) instead of closing
 - [x] **k4-2** Failover without handshake: active link lost, or 1.5 s silent from a heartbeating peer (never a quiet mic), → TX onto a live standby; the peer follows an `active` heartbeat seen on its standby; 3 s hold-down on silence failover (`ShouldFailOverToStandby`)
-- [ ] **k4-3** Empty path set → `Reconnecting` + re-anchor (offerer reaches, migrates onto the new link; answerer accepts onto its dead path), 30 s window; `peer link lost` no longer an instant teardown; UI subtitle (EN + zh-Hans)
+- [x] **k4-3** Empty path set → the transport keeps the call (dead active path, `on_path_lost`) for a 30 s window; planner `Reconnecting`, lifecycle status `Reconnecting`, UI "Reconnecting…" beside the running timer (existing EN / zh-Hans string). The offerer re-anchors (reach, then `MigrateTo` the reached link's kind, 2 s retries); the answerer accepts that migrate onto its dead path. A fresh hello (a pre-k4 peer re-dialing) replaces a reconnecting call. Window expiry fails the call
 
 Checklist:
 
 - [x] Control-channel heartbeat (~500 ms) per path (k4-1)
 - [x] 1.5 s silence on active → switch to standby (K008) (k4-2)
-- [ ] No standby → `Reconnecting` call status, relay re-anchor, 30 s window (K008); UI subtitle (i18n EN + zh-Hans)
-- [ ] `peer link lost` no longer tears down while the path set / window allows
+- [x] No standby → `Reconnecting` call status, re-anchor, 30 s window (K008); UI subtitle (i18n EN + zh-Hans) (k4-3)
+- [x] `peer link lost` no longer tears down while the path set / window allows (k4-2 failover, k4-3 window)
 - [x] TX-only escalate limited to initial connect — already so: `ShouldEscalateTxOnlyDirect` needs cumulative RX = 0 and fires once per call
 - [x] **B44:** a failed connect / escalation no longer tears down a recovered direct path — `CallMediaBridge::FailUnlessDirectRecovered` commits if MediaReady and gives a peer hello mid-handshake a 3 s grace before failing (test `FailedAttemptsKeepTheCallWhenThePeersHelloCompletes`). Escalation is still break-before-make (Detach, then circuit) — k3 makes it make-before-break
 - [x] **B30 mitigation:** the offerer treats the answerer's accepted call-media hello (keyed from the invite) as an implicit Accept for a 1:1 call it started whose remote is still invited (`CallSessionWorkflow::ApplyImplicitAccept`, via `CallMediaHost::P2pNoteInboundHello`); the real Accept arriving later is idempotent (test `AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsLate`)
-- [ ] Close p2p-av-calls a5 "Reconnect after brief network loss" (cross-link)
+- [x] Close p2p-av-calls a5 "Reconnect after brief network loss" (cross-link; 1:1 only)
 
 **Exit:** killing the active path mid-call → ≤ 2 s gap with standby; recover within window without.
 

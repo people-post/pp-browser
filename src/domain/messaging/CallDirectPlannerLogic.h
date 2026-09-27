@@ -14,6 +14,8 @@ enum class CallDirectPlannerPhase : uint8_t {
   Live,
   DegradedTxOnly,
   Stopping,
+  /** k4: the call lost its last path; the transport waits for a new one (reconnect window). */
+  Reconnecting,
 };
 
 enum class CallDirectPlannerEvent : uint8_t {
@@ -29,6 +31,8 @@ enum class CallDirectPlannerEvent : uint8_t {
   Stop,
   /** k3: the live call's media moved to another path (make-before-break); the phase is kept. */
   PathMigrated,
+  /** k4: the call lost its last path (no standby) — reconnect window. */
+  PathLost,
 };
 
 enum class CallDirectPlannerDecision : uint8_t {
@@ -66,6 +70,8 @@ inline const char* CallDirectPlannerPhaseName(CallDirectPlannerPhase p) {
     return "DegradedTxOnly";
   case CallDirectPlannerPhase::Stopping:
     return "Stopping";
+  case CallDirectPlannerPhase::Reconnecting:
+    return "Reconnecting";
   }
   return "?";
 }
@@ -94,6 +100,8 @@ inline const char* CallDirectPlannerEventName(CallDirectPlannerEvent ev) {
     return "Stop";
   case CallDirectPlannerEvent::PathMigrated:
     return "PathMigrated";
+  case CallDirectPlannerEvent::PathLost:
+    return "PathLost";
   }
   return "?";
 }
@@ -121,9 +129,19 @@ inline CallDirectPlannerPhaseOutcome DecideCallDirectPlannerPhase(CallDirectPlan
     if (phase == CallDirectPlannerPhase::Live) {
       out.decision = CallDirectPlannerDecision::Keep;
       out.next = phase;
-    } else if (phase == CallDirectPlannerPhase::DegradedTxOnly) {
+    } else if (phase == CallDirectPlannerPhase::DegradedTxOnly || phase == CallDirectPlannerPhase::Reconnecting) {
       out.decision = CallDirectPlannerDecision::Transition;
       out.next = CallDirectPlannerPhase::Live;
+    } else {
+      out.decision = CallDirectPlannerDecision::Ignore;
+      out.next = phase;
+    }
+    return out;
+
+  case CallDirectPlannerEvent::PathLost:
+    if (phase == CallDirectPlannerPhase::Live || phase == CallDirectPlannerPhase::DegradedTxOnly) {
+      out.decision = CallDirectPlannerDecision::Transition;
+      out.next = CallDirectPlannerPhase::Reconnecting;
     } else {
       out.decision = CallDirectPlannerDecision::Ignore;
       out.next = phase;
@@ -198,7 +216,8 @@ inline CallDirectPlannerPhaseOutcome DecideCallDirectPlannerPhase(CallDirectPlan
 
   case CallDirectPlannerEvent::ConnectSucceeded:
     if (phase != CallDirectPlannerPhase::Connecting && phase != CallDirectPlannerPhase::Arming &&
-        phase != CallDirectPlannerPhase::DegradedTxOnly && phase != CallDirectPlannerPhase::Live) {
+        phase != CallDirectPlannerPhase::DegradedTxOnly && phase != CallDirectPlannerPhase::Live &&
+        phase != CallDirectPlannerPhase::Reconnecting) {
       out.decision = CallDirectPlannerDecision::Ignore;
       return out;
     }

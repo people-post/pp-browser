@@ -68,6 +68,8 @@ constexpr auto kRetireAfterSwitch = std::chrono::seconds(1);
 constexpr auto kRetireAtMost = std::chrono::seconds(5);
 /** k3: between automatic attempts to move a relayed call onto a direct link. */
 constexpr auto kAutoMigrateBackoff = std::chrono::seconds(10);
+/** k4 (K008): a call without any path waits this long for a new one before it fails. */
+constexpr auto kReconnectWindow = std::chrono::seconds(30);
 /** k3: a retiring path whose release was never acknowledged is dropped after this. */
 constexpr auto kRetireAbandon = std::chrono::seconds(10);
 
@@ -201,6 +203,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     /** k4: the peer sends heartbeats (seen one this call) — only then does silence mean a dead path. */
     bool peer_heartbeats = false;
     Clock::time_point failed_over_at{};
+    /** k4: set while the call has no path (lost the last one); a migration clears it. */
+    Clock::time_point reconnect_deadline{};
+    bool Reconnecting() const { return reconnect_deadline.time_since_epoch().count() != 0; }
 
     struct Migration {
       /** This side drives it (glare winner): opens the channels, sends migrate / path_release. */
@@ -259,6 +264,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   std::atomic<bool> ignore_migrate_for_test{false};
   /** k4 test seam: this side sends nothing (media, heartbeats) on paths of this kind — a path gone quiet. */
   std::atomic<CallMediaLinkKind> silenced_kind_for_test{CallMediaLinkKind::Unknown};
+  std::chrono::milliseconds reconnect_window = std::chrono::duration_cast<std::chrono::milliseconds>(kReconnectWindow);
   /** k3: the driver moves a relayed call onto a direct link to the same peer as soon as one is up. */
   std::atomic<bool> auto_migrate_to_direct{true};
   std::chrono::milliseconds migrate_timeout = std::chrono::duration_cast<std::chrono::milliseconds>(kMigrateTimeout);
@@ -614,6 +620,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     const auto now = Clock::now();
     std::vector<std::string> timed_out;
     std::vector<std::string> link_lost;
+    std::vector<std::string> reconnect_expired;
     {
       CallbackLock lock(*this);
       for (auto& [call_id, bundle] : bundles) {
@@ -623,9 +630,16 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         if (bundle->phase == CallMediaBundlePhase::Idle || bundle->phase == CallMediaBundlePhase::Closing) {
           continue;
         }
-        // k3/k4 paths first: a lost active link fails over to the standby before it counts as lost.
+        // k3/k4 paths first: a lost active link fails over to the standby, or waits for a new
+        // path (reconnect window), before it counts as lost.
         if (bundle->phase == CallMediaBundlePhase::MediaReady) {
           TickPaths(*bundle, now);
+          if (bundle->Reconnecting()) {
+            if (now >= bundle->reconnect_deadline) {
+              reconnect_expired.push_back(call_id);
+            }
+            continue;
+          }
         }
         // PeerLink drop leaves ChannelSession mux_ dangling — tear down before L4 touches it.
         // Do not treat Handshaking as lost (FindLink still present until DropLink).
@@ -649,6 +663,18 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
         if (now >= bundle->deadline && bundle->phase != CallMediaBundlePhase::MediaReady) {
           timed_out.push_back(call_id);
         }
+      }
+    }
+    for (const auto& call_id : reconnect_expired) {
+      CallbackLock lock(*this);
+      if (auto* bundle = FindByCallId(call_id); bundle && bundle->Reconnecting()) {
+        const std::string why = "amp call-media: no path within the reconnect window";
+        CallMediaLegLog().warning << "CallMediaLeg reconnect window expired call_id=" << call_id;
+        // A MediaReady leg has finished, so TearDownBundle reports nothing: report the loss here.
+        if (bundle->callbacks.on_failed) {
+          pending_user_cbs.push_back([on_failed = bundle->callbacks.on_failed, why]() { on_failed(why); });
+        }
+        TearDownBundle(*bundle, /*finish_with_abort=*/false, /*notify_failed=*/true, why);
       }
     }
     for (const auto& call_id : link_lost) {
@@ -714,6 +740,11 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     if (path == &bundle->active && bundle->phase == CallMediaBundlePhase::MediaReady && !bundle->local_cancel &&
         !IsRemoteTerminalReason(reason) && bundle->standby && !PathLinkMissing(*bundle, *bundle->standby)) {
       FailOverToStandby(*bundle, std::string("active path closed (") + (reason ? reason : "") + ")");
+      return;
+    }
+    if (path == &bundle->active && bundle->phase == CallMediaBundlePhase::MediaReady && !bundle->local_cancel &&
+        !IsRemoteTerminalReason(reason)) {
+      EnterPathLost(*bundle, std::string("active path closed (") + (reason ? reason : "") + ")");
       return;
     }
     CallMediaChannelCloseContext ctx;
@@ -1040,6 +1071,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     bundle.active = std::move(*bundle.candidate);
     bundle.candidate.reset();
     bundle.active.last_rx = Clock::now();
+    if (bundle.Reconnecting()) {
+      CallMediaLegLog().info << "CallMediaLeg reconnected call_id=" << bundle.call_id;
+      bundle.reconnect_deadline = {};
+    }
     if (bundle.active.kind == CallMediaLinkKind::Relayed && bundle.retiring->kind == CallMediaLinkKind::Direct) {
       bundle.left_direct = bundle.retiring->link;
     }
@@ -1214,6 +1249,26 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
   }
 
+  /**
+   * k4: the call lost its last path. It stays MediaReady on a dead active path for the reconnect
+   * window; a migration onto a new link (the offerer re-anchors, the answerer accepts) recovers it.
+   */
+  void EnterPathLost(Bundle& bundle, const std::string& why) {
+    if (bundle.Reconnecting()) {
+      return;
+    }
+    Path lost;
+    lost.gen = bundle.active.gen;  // the next path is gen + 1
+    DropPath(bundle, bundle.active);
+    bundle.active = std::move(lost);
+    bundle.reconnect_deadline = Clock::now() + reconnect_window;
+    CallMediaLegLog().warning << "CallMediaLeg path lost call_id=" << bundle.call_id << " reason=" << why
+                              << " — reconnecting (window " << reconnect_window.count() << "ms)";
+    if (bundle.callbacks.on_path_lost) {
+      pending_user_cbs.push_back(bundle.callbacks.on_path_lost);
+    }
+  }
+
   /** k4 heartbeat on a path's control channel (either direction), at most every `every`. */
   void MaybeHeartbeat(Path& path, const Clock::time_point now, const std::chrono::milliseconds every,
                       const bool active) {
@@ -1298,6 +1353,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       }
       if (ShouldFailOverToStandby(in)) {
         FailOverToStandby(bundle, in.active_link_lost ? "active link lost" : "active path silent");
+      } else if (in.active_link_lost && !bundle.Reconnecting()) {
+        EnterPathLost(bundle, "active link lost, no standby");
       }
     }
     MaybeHeartbeat(bundle.active, now, std::chrono::milliseconds(kCallMediaActiveHeartbeatMs), true);
@@ -1379,6 +1436,13 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       }
 
       Bundle* target = FindByCallId(hello_call_id);
+      if (IsPendingCallId(holder->call_id) && target && target != holder && target->Reconnecting()) {
+        // k4: a peer that lost the path the old way (tear down, redial) sends a fresh hello: take it
+        // instead of waiting out the window for a migration it will never send.
+        CallMediaLegLog().info << "CallMediaLeg fresh hello replaces reconnecting call_id=" << hello_call_id;
+        EraseBundle(hello_call_id);
+        target = nullptr;
+      }
       if (IsPendingCallId(holder->call_id) && target && target != holder) {
         // A hello on a new channel for a call that already has a bundle: decide against that
         // bundle BEFORE touching it. A rejected hello (e.g. a second hello for a live call) must
@@ -2072,6 +2136,11 @@ void CallMediaLegCoordinator::SetSilencedPathKindForTest(const CallMediaLinkKind
   impl_->silenced_kind_for_test.store(kind, std::memory_order_relaxed);
 }
 
+void CallMediaLegCoordinator::SetReconnectWindowForTest(const std::chrono::milliseconds window) {
+  Impl::CallbackLock lock(*impl_);
+  impl_->reconnect_window = window;
+}
+
 void CallMediaLegCoordinator::SetMigrateTimeoutForTest(const std::chrono::milliseconds timeout) {
   Impl::CallbackLock lock(*impl_);
   impl_->migrate_timeout = timeout;
@@ -2085,6 +2154,7 @@ CallMediaPathState CallMediaLegCoordinator::PathState(const CallMediaLegId id) c
     state.active_gen = bundle->active.gen;
     state.candidate = bundle->candidate.has_value();
     state.standby = bundle->standby.has_value();
+    state.reconnecting = bundle->Reconnecting();
     state.retiring = bundle->retiring.has_value();
   }
   return state;

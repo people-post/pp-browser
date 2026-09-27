@@ -758,6 +758,9 @@ CallDirectArmingPorts CallStack::MakeDirectArmingPorts() const {
     case CallDirectPlannerPhase::DegradedTxOnly:
       mapped = CallMediaStatus::DegradedTxOnly;
       break;
+    case CallDirectPlannerPhase::Reconnecting:
+      mapped = CallMediaStatus::Reconnecting;
+      break;
     case CallDirectPlannerPhase::Idle:
     case CallDirectPlannerPhase::Stopping:
       return;

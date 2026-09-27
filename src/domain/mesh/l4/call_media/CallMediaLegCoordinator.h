@@ -22,6 +22,8 @@ struct CallMediaPathState {
   bool candidate = false;
   /** k4: a warm fallback path the call can fail over to. */
   bool standby = false;
+  /** k4: the call lost its last path and waits (reconnect window) for a new one. */
+  bool reconnecting = false;
   /** The previous path is draining after a switch. */
   bool retiring = false;
 };
@@ -90,6 +92,7 @@ public:
   void SetMigrateTimeoutForTest(std::chrono::milliseconds timeout);
   /** Test: send nothing (media, heartbeats) on paths of `kind` — the path goes quiet, its link stays up. */
   void SetSilencedPathKindForTest(CallMediaLinkKind kind);
+  void SetReconnectWindowForTest(std::chrono::milliseconds window);
 
   Roe<void> SendMedia(CallMediaLegId id, uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq,
                       uint8_t mark = 0);

@@ -5,6 +5,29 @@
 namespace pbr {
 namespace {
 
+// k4: a call that lost its last path is Reconnecting; a new path (migration) or a fresh connect
+// brings it back to Live.
+TEST(CallDirectPlannerLogicTest, PathLostReconnectsAndANewPathRecovers) {
+  CallDirectPlannerApplyContext ctx;
+  ctx.allows_direct_path = true;
+  for (const auto phase : {CallDirectPlannerPhase::Live, CallDirectPlannerPhase::DegradedTxOnly}) {
+    auto lost = DecideCallDirectPlannerPhase(phase, CallDirectPlannerEvent::PathLost, ctx);
+    EXPECT_EQ(lost.decision, CallDirectPlannerDecision::Transition);
+    EXPECT_EQ(lost.next, CallDirectPlannerPhase::Reconnecting);
+  }
+  EXPECT_EQ(DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Connecting, CallDirectPlannerEvent::PathLost, ctx)
+                .decision,
+            CallDirectPlannerDecision::Ignore);
+  for (const auto ev : {CallDirectPlannerEvent::PathMigrated, CallDirectPlannerEvent::ConnectSucceeded}) {
+    auto back = DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Reconnecting, ev, ctx);
+    EXPECT_EQ(back.decision, CallDirectPlannerDecision::Transition);
+    EXPECT_EQ(back.next, CallDirectPlannerPhase::Live);
+  }
+  auto failed =
+      DecideCallDirectPlannerPhase(CallDirectPlannerPhase::Reconnecting, CallDirectPlannerEvent::ConnectFailed, ctx);
+  EXPECT_EQ(failed.next, CallDirectPlannerPhase::Idle);
+}
+
 // k3: a path migration keeps a live call live and brings a TX-only one back (k3-4); nothing else
 // has a path to move.
 TEST(CallDirectPlannerLogicTest, PathMigratedKeepsALiveCallAndIsIgnoredOtherwise) {
