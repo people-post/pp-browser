@@ -43,8 +43,6 @@ constexpr int kPlayoutTargetQueuedBytes = 3 * kFrameBytes;
 constexpr int kPlayoutHighWaterBytes = 6 * kFrameBytes;
 /** Never produce more than this many slots per 20 ms wake-up (startup / after a stall). */
 constexpr int kPlayoutMaxSlotsPerTick = 3;
-constexpr int kDefaultVideoWidth = 640;
-constexpr int kDefaultVideoHeight = 360;
 constexpr int kVideoFps = 20;
 /** Soft stall: keep last frame; UI may show Reconnecting… */
 constexpr int64_t kRemoteVideoStallSoftMs = 2000;
