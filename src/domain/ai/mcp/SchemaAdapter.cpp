@@ -40,14 +40,21 @@ Roe<Value> SchemaAdapter::ToolResultToRows(const Object& tool_result) {
 
 std::string SchemaAdapter::RiskClass(const McpTool& tool) {
   const auto name = tool.name;
+  // Name-based destructive detection is a floor, not a ceiling: a server cannot claim
+  // read-only-ness away from an obviously destructive-sounding tool.
   if (name.find("delete") != std::string::npos || name.find("remove") != std::string::npos) {
     return "destructive";
   }
-  if (name.find("create") != std::string::npos || name.find("update") != std::string::npos ||
-      name.find("write") != std::string::npos) {
-    return "write";
+  if (tool.annotations.destructive_hint.value_or(false)) {
+    return "destructive";
   }
-  return "read";
+  // MCP annotations are untrusted hints, but the only safe default is to require confirmation:
+  // only an explicit readOnlyHint=true downgrades a tool to "read"; an unannotated tool (or one
+  // that explicitly sets readOnlyHint=false) is always treated as "write".
+  if (tool.annotations.read_only_hint.value_or(false)) {
+    return "read";
+  }
+  return "write";
 }
 
 } // namespace pbr

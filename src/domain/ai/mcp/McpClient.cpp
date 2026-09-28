@@ -245,6 +245,10 @@ Roe<std::vector<McpTool>> McpClient::ListTools() {
       if (const Object* schema = tool->getObject("inputSchema")) {
         entry.input_schema = *schema;
       }
+      if (const Object* annotations = tool->getObject("annotations")) {
+        entry.annotations.read_only_hint = annotations->getIf<bool>("readOnlyHint");
+        entry.annotations.destructive_hint = annotations->getIf<bool>("destructiveHint");
+      }
       tools.push_back(std::move(entry));
     }
   }
