@@ -277,7 +277,7 @@ One rule set for 3+ invitees — [V050](DECISIONS.md#v050--group-call-topology-1
 - [x] gt2 — Initiator leaves with ≥2 remaining: call stays on the hop; earliest-joined remaining owns re-picks (`InitiatorLeaveKeepsTheRestOnTheHop`; `SelectCallInitiator` order-independent tie-break)
 - [x] gt3 — `planned_hop` picked at StartCall from the invite list (no attach) and carried in `CallInvite`; SoftMigrate at the third join uses it (`ThirdJoinMigratesOntoThePlannedHop`; session columns `planned_hop` / `planned_hop_ma`)
 - [x] gt2b — Owner agreement under clock skew: every side holds identical `joined_at` for each participant — invitees seed stamps from the invite (inviter's clock) and never stamp themselves; the inviter's CallRoster brings their stamp (`InviteesNeverStampJoinsFromTheirOwnClock`)
-- [ ] gt4 — Accept reports planned-hop reachability + reachable relays; one adjustment at the third join from the intersection, else refuse the joiner
+- [x] gt4 — Accept reports planned-hop reachability + reachable hops (invitee quotes the planned hop and two others while ringing); at the third join `DecideGroupHopAtJoin` keeps the plan, makes the one adjustment (replaces the session's planned hop), or refuses the joiner and keeps the call as is; `DecideSoftMigrate` never picks at <3 joined, whatever queued it (`OneAdjustmentWhenTheJoinerCannotReachThePlannedHop`, `NoSharedHopRefusesTheJoinerAndKeepsTheCall`)
 - [ ] gt5 — Later joins re-pick only when the hop is full or unreachable for the newcomer (distinct wire reasons; one attempt per join)
 - [ ] gt6 — Hard lab: second hop for gt4/gt5 under NAT (B-HARD-GROUP-CALL-NAT variants)
 

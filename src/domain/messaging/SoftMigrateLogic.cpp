@@ -37,6 +37,11 @@ SoftMigrateAction DecideSoftMigrate(const SoftMigrateDecisionInput& in) {
 
   case SoftMigrateTrigger::RemoteAcceptObserved:
   case SoftMigrateTrigger::JoinedCountObserved:
+    // V038/V050: a group forms at 3 joined — re-checked when the decision runs, since the join
+    // that triggered it may have been refused or left meanwhile (never SoftMigrate a 1:1).
+    if (in.joined_identities.size() < 3) {
+      return SoftMigrateAction::NoOp;
+    }
     if (!in.sfu_hint_empty) {
       return SoftMigrateAction::WaitForAttach;
     }

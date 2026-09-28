@@ -207,6 +207,16 @@ struct CallInviteDetail {
   std::string currency = "pp_credit";
 };
 
+/**
+ * V050 gt4: what an invitee found while ringing, carried in CallAccept (additive; old peers send
+ * none). `planned_hop_ok` unset = unknown (no plan, or the probe had not finished).
+ */
+struct CallHopReport {
+  std::optional<bool> planned_hop_ok;
+  /** Hops (PeerIds) this invitee reached (media_relay quote ok) — the planned one included when ok. */
+  std::vector<std::string> reachable_hops;
+};
+
 struct CallAcceptDetail {
   std::string call_id;
   std::string identity;
@@ -225,6 +235,8 @@ struct CallAcceptDetail {
   std::string charge_decision = "waive";
   /** Echo of offer amount being waived or taken. */
   int64_t offer_amount_minor = 0;
+  /** V050 gt4: planned-hop reachability + reachable hops. */
+  CallHopReport hop_report;
 };
 
 struct CallDeclineDetail {

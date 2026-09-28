@@ -84,6 +84,13 @@ public:
     std::function<std::optional<CallPlannedHop>(const std::vector<std::string>& invitees,
                                                 const std::string& local_identity)>
         plan_hop_for_invitees;
+    /** V050 gt4 invitee: probe the planned hop (+ a few others) while ringing. */
+    std::function<void(const std::string& call_id)> probe_invite_hops;
+    /** V050 gt4 invitee: the report our CallAccept carries. */
+    std::function<CallHopReport(const std::string& call_id)> hop_report_for_accept;
+    /** V050 gt4 initiator: a joiner's CallAccept report (before the join decision). */
+    std::function<void(const std::string& call_id, const std::string& identity, const CallHopReport& report)>
+        note_accept_hop_report;
   };
 
   /** Session chrome / arming observations (projected from Lifecycle by CSM). */

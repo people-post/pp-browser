@@ -613,6 +613,9 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
     accept.caps = host_.reach.local_peer_caps();
     accept.caps.present = true;
   }
+  if (host_.hop.hop_report_for_accept) {
+    accept.hop_report = host_.hop.hop_report_for_accept(call_id);
+  }
   auto detail = CallControlCodec::EncodeAccept(accept);
   if (!detail) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << detail.error().message;
@@ -1182,6 +1185,9 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
   session.sfu_hint = invite->sfu_hint;
   session.planned_hop = invite->planned_hop;
   (void)sessions_.UpsertSession(session);
+  if (session.planned_hop && host_.hop.probe_invite_hops) {
+    host_.hop.probe_invite_hops(session.call_id);  // V050 gt4: check the planned hop while ringing
+  }
 
   // Media key embedded in invite (preferred); CallMediaKey message remains a backup.
   if (!invite->wrapped_key_b64.empty()) {
@@ -1369,6 +1375,9 @@ Roe<void> CallSessionWorkflow::ApplyRemoteAccept(const CallAcceptDetail& accept_
     }
     auto joined_after = sessions_.CountJoined(accept->call_id);
     const size_t n_joined = joined_after ? *joined_after : 0;
+    if (!implicit && host_.hop.note_accept_hop_report) {
+      host_.hop.note_accept_hop_report(accept->call_id, identity, accept->hop_report);
+    }
     if (!host_.hop.on_remote_accept_joined(accept->call_id, n_joined, identity)) {
       if (host_.chrome.note_direct_connecting) {
         host_.chrome.note_direct_connecting(accept->call_id);

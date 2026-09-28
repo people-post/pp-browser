@@ -151,6 +151,9 @@ public:
   Roe<MediaRelayQuote> RequestQuote(const std::string& hop_peer_key, const MediaRelayQuoteRequest& /*request*/,
                                     int /*timeout_ms*/) override {
     std::lock_guard lock(mu_);
+    if (unreachable_.count(hop_peer_key) > 0) {
+      return Error("hop unreachable from " + local_peer_id_);
+    }
     ++quote_calls_;
     quoted_hops_.push_back(hop_peer_key);
     MediaRelayQuote q;
@@ -165,6 +168,12 @@ public:
                                               const std::string& session_id, const std::string& /*auth_stub*/,
                                               std::function<void(MediaDataFrame)> on_frame,
                                               int /*timeout_ms*/) override {
+    {
+      std::lock_guard lock(mu_);
+      if (unreachable_.count(hop_peer_key) > 0) {
+        return Error("hop unreachable from " + local_peer_id_);
+      }
+    }
     hop_.Attach(this, hop_peer_key, session_id, std::move(on_frame));
     MediaRelayAttachResult r;
     r.ok = true;
@@ -187,6 +196,12 @@ public:
   bool IsAttached() const override { return hop_.IsAttached(this); }
   bool IsLocalHopAttached() const override { return false; }
 
+  /** This participant cannot reach `hop_peer_id` (quote and attach fail) — e.g. behind a filter. */
+  void MakeUnreachable(const std::string& hop_peer_id) {
+    std::lock_guard lock(mu_);
+    unreachable_.insert(hop_peer_id);
+  }
+
   int QuoteCalls() const {
     std::lock_guard lock(mu_);
     return quote_calls_;
@@ -202,6 +217,7 @@ private:
   mutable std::mutex mu_;
   int quote_calls_ = 0;
   std::vector<std::string> quoted_hops_;
+  std::set<std::string> unreachable_;
 };
 
 class CallGroupStackComposeTest : public ::testing::Test {
@@ -357,13 +373,21 @@ protected:
     return engine ? engine->HealthSnapshot().rx_audio_frames : 0;
   }
 
-  bool OnHopFor(size_t i, const std::string& call_id) const {
-    return hop_.InSession(relays_[i].get(), kHopPeerId, call_id);
+  bool OnHopFor(size_t i, const std::string& call_id, const std::string& hop = kHopPeerId) const {
+    return hop_.InSession(relays_[i].get(), hop, call_id);
   }
 
-  bool GroupLive(const std::string& call_id) const {
+  /** Every participant knows both hops (the planned one ranks first). */
+  void OfferBothHops() {
+    for (StackSide& side : sides_) {
+      side.app_config.mesh.bootstrap_peers = {kHopMultiaddr, kOtherHopMultiaddr};
+      side.stack->RebindMeshMedia();
+    }
+  }
+
+  bool GroupLive(const std::string& call_id, const std::string& hop = kHopPeerId) const {
     for (size_t i = 0; i < kSides; ++i) {
-      if (sides_[i].ui->Phase() != CallPhase::InCall || !OnHopFor(i, call_id)) {
+      if (sides_[i].ui->Phase() != CallPhase::InCall || !OnHopFor(i, call_id, hop)) {
         return false;
       }
       for (size_t j = 0; j < kSides; ++j) {
@@ -661,6 +685,62 @@ TEST_F(CallGroupStackComposeTest, ThirdJoinMigratesOntoThePlannedHop) {
   EXPECT_TRUE(GroupLive(call_id)) << "group did not go live on the planned hop:" << Describe(call_id);
   for (size_t i = 0; i < kSides; ++i) {
     EXPECT_FALSE(hop_.InSession(relays_[i].get(), kOtherHopPeerId, call_id)) << "side " << i << " on the unplanned hop";
+  }
+}
+
+// V050 gt4: C cannot reach the planned hop; its CallAccept says so and lists the hops it did reach.
+// At the third join the initiator makes the one adjustment to the hop everyone reached.
+TEST_F(CallGroupStackComposeTest, OneAdjustmentWhenTheJoinerCannotReachThePlannedHop) {
+  OfferBothHops();
+  relays_[kC]->MakeUnreachable(kHopPeerId);
+  const std::string call_id = StartGroupCall();
+  ASSERT_FALSE(call_id.empty());
+  ASSERT_TRUE(PlannedHopSeenBy(kA, call_id));
+  EXPECT_EQ(PlannedHopSeenBy(kA, call_id)->peer_id, kHopPeerId);
+
+  AcceptInvite(kB, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return DirectPairLive(kA, kB);
+  });
+  ASSERT_TRUE(DirectPairLive(kA, kB)) << Describe(call_id);
+  AcceptInvite(kC, call_id);
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return GroupLive(call_id, kOtherHopPeerId);
+      },
+      20000);
+  EXPECT_TRUE(GroupLive(call_id, kOtherHopPeerId)) << "group did not form on the reachable hop:" << Describe(call_id);
+  for (size_t i = 0; i < kSides; ++i) {
+    EXPECT_FALSE(OnHopFor(i, call_id)) << "side " << i << " on the hop C cannot reach";
+  }
+}
+
+// V050 gt4: C reaches no hop the others can use — keep the plan, refuse C; A↔B stay direct.
+TEST_F(CallGroupStackComposeTest, NoSharedHopRefusesTheJoinerAndKeepsTheCall) {
+  OfferBothHops();
+  relays_[kC]->MakeUnreachable(kHopPeerId);
+  relays_[kC]->MakeUnreachable(kOtherHopPeerId);
+  const std::string call_id = StartGroupCall();
+  ASSERT_FALSE(call_id.empty());
+  AcceptInvite(kB, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return DirectPairLive(kA, kB);
+  });
+  ASSERT_TRUE(DirectPairLive(kA, kB)) << Describe(call_id);
+  AcceptInvite(kC, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kC].ui->Phase() == CallPhase::Idle && !sides_[kC].stack->HasActiveLocalCall();
+  });
+  EXPECT_EQ(sides_[kC].ui->Phase(), CallPhase::Idle) << "C must be refused";
+  // A little longer: nothing may start migrating A↔B afterwards.
+  DrainUntil([&]() { PumpWire(); return false; }, 1500);
+  EXPECT_TRUE(DirectPairLive(kA, kB)) << "A↔B must stay on their direct call:" << Describe(call_id);
+  for (size_t i = 0; i < kSides; ++i) {
+    EXPECT_FALSE(relays_[i]->IsAttached()) << "side " << i << " attached to a hop";
   }
 }
 

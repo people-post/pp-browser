@@ -144,5 +144,67 @@ TEST(CallHopPlanTest, LocalAdvertiseHasPublicTreatsGlobalIpv6) {
                                           "/ip6/fe80::1/udp/19001/adp/1.0.0/p2p/local", true));
 }
 
+// --- V050 gt4: the hop a group forms on at the third join ---------------------------------------
+
+CallHopReport Report(std::optional<bool> planned_ok, std::vector<std::string> reachable) {
+  CallHopReport r;
+  r.planned_hop_ok = planned_ok;
+  r.reachable_hops = std::move(reachable);
+  return r;
+}
+
+TEST(GroupHopAtJoinTest, KeepsThePlannedHopUnlessSomeoneCannotReachIt) {
+  GroupHopJoinInput in;
+  in.planned_hop = "P";
+  in.ranked_hops = {"X", "P", "Y"};
+  in.reports["b"] = Report(true, {"P", "X"});
+  in.reports["c"] = Report(std::nullopt, {});  // old peer / probe not finished
+  const auto out = DecideGroupHopAtJoin(in);
+  EXPECT_EQ(out.action, GroupHopAtJoin::UsePlanned);
+  EXPECT_EQ(out.hop, "P");
+}
+
+TEST(GroupHopAtJoinTest, OneAdjustmentToTheFirstRankedHopEveryReporterReached) {
+  GroupHopJoinInput in;
+  in.planned_hop = "P";
+  in.ranked_hops = {"P", "X", "Y"};
+  in.reports["b"] = Report(true, {"P", "Y", "X"});
+  in.reports["c"] = Report(false, {"Y"});  // cannot reach P; reached only Y
+  const auto out = DecideGroupHopAtJoin(in);
+  EXPECT_EQ(out.action, GroupHopAtJoin::UseAlternative);
+  EXPECT_EQ(out.hop, "Y") << "X is ranked higher but C never reached it";
+}
+
+TEST(GroupHopAtJoinTest, ReportersWithoutAListDoNotConstrainTheAlternative) {
+  GroupHopJoinInput in;
+  in.planned_hop = "P";
+  in.ranked_hops = {"X"};
+  in.reports["b"] = Report(std::nullopt, {});
+  in.reports["c"] = Report(false, {"X"});
+  const auto out = DecideGroupHopAtJoin(in);
+  EXPECT_EQ(out.action, GroupHopAtJoin::UseAlternative);
+  EXPECT_EQ(out.hop, "X");
+}
+
+TEST(GroupHopAtJoinTest, NoSharedHopRefusesTheJoiner) {
+  GroupHopJoinInput in;
+  in.planned_hop = "P";
+  in.ranked_hops = {"P", "X"};
+  in.reports["b"] = Report(true, {"P"});
+  in.reports["c"] = Report(false, {"X"});
+  EXPECT_EQ(DecideGroupHopAtJoin(in).action, GroupHopAtJoin::RefuseJoiner);
+
+  in.reports["c"] = Report(false, {});  // reached nothing
+  EXPECT_EQ(DecideGroupHopAtJoin(in).action, GroupHopAtJoin::RefuseJoiner);
+}
+
+TEST(GroupHopAtJoinTest, NoPlanMeansTheUsualPick) {
+  GroupHopJoinInput in;
+  in.reports["c"] = Report(false, {});
+  const auto out = DecideGroupHopAtJoin(in);
+  EXPECT_EQ(out.action, GroupHopAtJoin::UsePlanned);
+  EXPECT_TRUE(out.hop.empty());
+}
+
 } // namespace
 } // namespace pbr

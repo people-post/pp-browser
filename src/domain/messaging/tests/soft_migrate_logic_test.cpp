@@ -31,6 +31,20 @@ TEST(SoftMigrateLogicTest, SelectCallInitiatorIsIndependentOfRowOrder) {
   EXPECT_EQ(SelectCallInitiator(mixed), "account:C") << "a stamped peer outranks an unstamped one";
 }
 
+// V038/V050: the join that triggered a SoftMigrate may be refused before the decision runs — a
+// call back at 2 joined is a 1:1 and never picks a hop, whatever queued the migrate.
+TEST(SoftMigrateLogicTest, NeverPicksAHopForTwoJoined) {
+  SoftMigrateDecisionInput in;
+  in.local_identity = "account:A";
+  in.initiator_identity = "account:A";
+  in.joined_identities = {"account:A", "account:B"};
+  in.sfu_hint_empty = true;
+  for (SoftMigrateTrigger trigger : {SoftMigrateTrigger::JoinedCountObserved, SoftMigrateTrigger::RemoteAcceptObserved}) {
+    in.trigger = trigger;
+    EXPECT_EQ(DecideSoftMigrate(in), SoftMigrateAction::NoOp) << static_cast<int>(trigger);
+  }
+}
+
 TEST(SoftMigrateLogicTest, MidCallNonInitiatorInviterWaits) {
   // A is sticky initiator; B invites C and receives CallAccept — must not pick (V021/V022).
   SoftMigrateDecisionInput in;

@@ -318,6 +318,26 @@ TEST(CallControlCodecTest, InvitePlannedHopRoundTrip) {
   EXPECT_FALSE(plain->planned_hop);
 }
 
+// V050 gt4: the accept's hop report is additive — absent stays unknown (old peers).
+TEST(CallControlCodecTest, AcceptHopReportRoundTrip) {
+  CallAcceptDetail accept;
+  accept.call_id = "call:group";
+  accept.identity = "account:c";
+  accept.hop_report.planned_hop_ok = false;
+  accept.hop_report.reachable_hops = {"12D3KooWOther"};
+  auto decoded = CallControlCodec::DecodeAccept(*CallControlCodec::EncodeAccept(accept));
+  ASSERT_TRUE(decoded);
+  ASSERT_TRUE(decoded->hop_report.planned_hop_ok);
+  EXPECT_FALSE(*decoded->hop_report.planned_hop_ok);
+  EXPECT_EQ(decoded->hop_report.reachable_hops, std::vector<std::string>{"12D3KooWOther"});
+
+  accept.hop_report = {};
+  auto plain = CallControlCodec::DecodeAccept(*CallControlCodec::EncodeAccept(accept));
+  ASSERT_TRUE(plain);
+  EXPECT_FALSE(plain->hop_report.planned_hop_ok);
+  EXPECT_TRUE(plain->hop_report.reachable_hops.empty());
+}
+
 TEST(CallControlCodecTest, VideoRefreshRoundTrip) {
   CallVideoRefreshDetail detail;
   detail.call_id = "call:vid";

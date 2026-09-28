@@ -27,6 +27,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -119,6 +120,16 @@ public:
    */
   std::optional<CallPlannedHop> PlanHopForInvitees(const std::vector<std::string>& invitees,
                                                    const std::string& local_identity) const;
+  /**
+   * V050 gt4 (invitee, ringing): quote the planned hop and up to two other ranked hops; the results
+   * feed `HopReportForAccept`. A private planned-hop MA off our LAN counts as unreachable (the same
+   * rule a guest applies to CallSfuAttach). No-op without a planned hop.
+   */
+  void ProbeInviteHops(const std::string& call_id);
+  /** V050 gt4: planned-hop reachability + reached hops for our CallAccept (unknown while pending). */
+  CallHopReport HopReportForAccept(const std::string& call_id) const;
+  /** V050 gt4 (initiator): what a joiner reported in its CallAccept. */
+  void NoteAcceptHopReport(const std::string& call_id, const std::string& identity, const CallHopReport& report);
 
   void BeginSfuAttachWait(const std::string& call_id);
   void ClearSfuAttachWait();
@@ -286,6 +297,20 @@ private:
   // unwatch or our destruction.
   DeferredSelf relay_loss_self_;
   uint64_t relay_loss_observer_ = 0;
+
+  // --- V050 gt4 hop reports (calls owner) ---
+  /** Invitee: hop PeerId → quote ok (nullopt while in flight), per call. */
+  std::unordered_map<std::string, std::map<std::string, std::optional<bool>>> hop_probes_;
+  std::unordered_map<std::string, std::string> probe_planned_hop_;
+  /** Initiator: joiner identity → its accept report, per call. */
+  std::unordered_map<std::string, std::map<std::string, CallHopReport>> accept_hop_reports_;
+  DeferredSelf probe_self_;
+  void QuoteProbeHop(const std::string& call_id, const std::string& hop_peer_id, const std::string& hop_multiaddr);
+  /**
+   * V050: at the first group migrate — keep the planned hop, make the one adjustment (replaces the
+   * session's planned hop), or refuse the joiner. False = joiner refused (no migration now).
+   */
+  bool ResolveGroupHopForJoin(const std::string& call_id, const std::string& joiner_identity);
 
   void WatchRelayLoss();
   void UnwatchRelayLoss();

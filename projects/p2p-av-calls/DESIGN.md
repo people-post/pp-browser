@@ -74,6 +74,7 @@ Opaque: `call:<uuid>` (creator-generated).
 | `media_key_id` | opaque id for current epoch material |
 | `sfu_hint` | optional multiaddr / peer id of chosen SFU |
 | `planned_hop` | optional PeerId (+ `planned_hop_ma` multiaddr) of the hop planned at StartCall from the invite list ([V050](DECISIONS.md#v050--group-call-topology-11-first-planned-hop-monotonic)); not attached until the third join — distinct from `sfu_hint` (the hop in use) |
+| `planned_hop_ok` / `reachable_hops` | on `call_accept` (additive, V050 gt4): whether the invitee reached the planned hop while ringing (media_relay quote; a private hop MA off its LAN counts as unreachable) and the hops it reached (the planned hop plus up to two others); absent = unknown |
 
 ### `CallParticipant`
 
@@ -144,7 +145,7 @@ Delivered as E2E **direct** `ChatPayload` **system** messages (V012) to each tar
 | Type | Direction | Purpose |
 |------|-----------|---------|
 | `call_invite` | initiator → invitee | `call_id`, origin hint, media_mode, expires_at, sfu_hint?, planned_hop? / planned_hop_ma?, participants (full invite list, V050) |
-| `call_accept` / `call_join` | invitee → participants | capabilities; ack for key distribution |
+| `call_accept` / `call_join` | invitee → participants | capabilities; ack for key distribution; planned_hop_ok? + reachable_hops? (V050) |
 | `call_decline` | invitee → initiator | |
 | `call_leave` | leaver → remaining | triggers key rotate |
 | `call_roster` | coordinator → all | participant snapshot + `media_epoch` |

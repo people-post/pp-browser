@@ -1,7 +1,9 @@
 #pragma once
 
 #include "common/directory/MeshHopTypes.h"
+#include "domain/messaging/CallTypes.h"
 
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -58,5 +60,34 @@ bool LocalAdvertiseHasPublicIpv4(const std::vector<std::string>& local_mas);
  */
 bool GuestMayDialPrivateHopMa(const std::string& hop_multiaddr,
                               const std::vector<std::string>& local_mas);
+
+/** V050 gt4: the hop a group forms on when the third participant joins. */
+enum class GroupHopAtJoin {
+  /** Nobody reported the planned hop unreachable (or there is no plan): migrate onto it. */
+  UsePlanned = 0,
+  /** Someone cannot reach the planned hop; `hop` is reachable by everyone who reported — the one adjustment. */
+  UseAlternative = 1,
+  /** No hop every reporter reaches: keep the planned hop and refuse the joiner (no migration now). */
+  RefuseJoiner = 2,
+};
+
+struct GroupHopJoinInput {
+  std::string planned_hop;
+  /** The initiator's hop ranking (best first) — alternatives are tried in this order. */
+  std::vector<std::string> ranked_hops;
+  /** Accept reports of the joined remotes, the joiner included (identity → report). */
+  std::map<std::string, CallHopReport> reports;
+};
+
+struct GroupHopJoinDecision {
+  GroupHopAtJoin action = GroupHopAtJoin::UsePlanned;
+  std::string hop;
+};
+
+/**
+ * Pure (V050): keep the planned hop unless a report says it is unreachable; then the first ranked
+ * hop every reporter with a list reached (reporters without a list do not constrain); none → refuse.
+ */
+GroupHopJoinDecision DecideGroupHopAtJoin(const GroupHopJoinInput& in);
 
 } // namespace pbr

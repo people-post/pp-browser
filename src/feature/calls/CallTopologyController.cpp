@@ -15,6 +15,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"
+#include "common/directory/MeshHopDial.h"
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
 
 #include <algorithm>
@@ -97,6 +98,7 @@ CallTopologyController::~CallTopologyController() {
   // clears the media plane first; mesh stop unwatches through SetMediaRelayDeps({})). Invalidating
   // drops notices still queued for us.
   relay_loss_self_.Invalidate();
+  probe_self_.Invalidate();
 }
 
 void CallTopologyController::SetMediaRelayDeps(MediaRelayDeps deps) {
@@ -668,6 +670,141 @@ std::optional<CallPlannedHop> CallTopologyController::PlanHopForInvitees(const s
   return std::nullopt;
 }
 
+void CallTopologyController::ProbeInviteHops(const std::string& call_id) {
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value() || !(*session)->planned_hop || !relay_deps_.relay) {
+    return;
+  }
+  constexpr size_t kOtherHops = 2;
+  const CallPlannedHop planned = *(*session)->planned_hop;
+  if (hop_probes_.size() > 4) {
+    hop_probes_.clear();  // one ringing call at a time in practice; keep the map bounded
+    probe_planned_hop_.clear();
+  }
+  hop_probes_[call_id].clear();
+  probe_planned_hop_[call_id] = planned.peer_id;
+  const bool private_off_lan =
+      !planned.multiaddr.empty() && MultiaddrHasPrivateIpv4Host(planned.multiaddr) &&
+      !(GuestMayDialPrivateHopMa(planned.multiaddr, ResolveLocalAdvertiseMas()) && relay_deps_.peer_lan_confirmed &&
+        relay_deps_.peer_lan_confirmed(planned.peer_id));
+  if (private_off_lan) {
+    hop_probes_[call_id][planned.peer_id] = false;
+  } else {
+    QuoteProbeHop(call_id, planned.peer_id, planned.multiaddr);
+  }
+  std::string local_peer_id;
+  if (auto pid = relay_deps_.relay->LocalPeerIdBase58()) {
+    local_peer_id = *pid;
+  }
+  size_t others = 0;
+  for (const MeshHopCandidate& hop : RankedMediaHopCandidates()) {
+    if (others >= kOtherHops) {
+      break;
+    }
+    if (hop.peer_id.empty() || hop.peer_id == planned.peer_id || hop.peer_id == local_peer_id || !hop.dialable) {
+      continue;
+    }
+    QuoteProbeHop(call_id, hop.peer_id, hop.multiaddr);
+    ++others;
+  }
+}
+
+void CallTopologyController::QuoteProbeHop(const std::string& call_id, const std::string& hop_peer_id,
+                                           const std::string& hop_multiaddr) {
+  hop_probes_[call_id][hop_peer_id] = std::nullopt;
+  if (relay_deps_.dial && !hop_multiaddr.empty()) {
+    (void)relay_deps_.dial->RegisterEndpoint(hop_peer_id, hop_multiaddr);
+  }
+  MediaRelayQuoteRequest request;
+  request.session_id = call_id;
+  request.participants = 3;  // a group is what this hop would serve
+  auto done = [this, token = probe_self_.token(), snap = probe_self_.Snapshot(), call_id,
+               hop_peer_id](Roe<MediaRelayQuote> quote) {
+    const bool ok = quote && quote->ok;
+    CallsThread::Post([this, token, snap, call_id, hop_peer_id, ok]() {
+      if (!DeferredSelf::Alive(token, snap)) {
+        return;
+      }
+      auto it = hop_probes_.find(call_id);
+      if (it != hop_probes_.end()) {
+        it->second[hop_peer_id] = ok;
+        log().info << "hop probe call_id=" << call_id << " hop=" << hop_peer_id << " ok=" << (ok ? 1 : 0);
+      }
+    });
+  };
+  relay_deps_.relay->RequestQuoteAsync(hop_peer_id, request, std::move(done), 5000);
+}
+
+CallHopReport CallTopologyController::HopReportForAccept(const std::string& call_id) const {
+  CallHopReport report;
+  auto probes = hop_probes_.find(call_id);
+  auto planned = probe_planned_hop_.find(call_id);
+  if (probes == hop_probes_.end() || planned == probe_planned_hop_.end()) {
+    return report;
+  }
+  for (const auto& [hop, ok] : probes->second) {
+    if (ok && *ok) {
+      report.reachable_hops.push_back(hop);
+    }
+    if (hop == planned->second) {
+      report.planned_hop_ok = ok;  // nullopt while the quote is still in flight
+    }
+  }
+  return report;
+}
+
+void CallTopologyController::NoteAcceptHopReport(const std::string& call_id, const std::string& identity,
+                                                 const CallHopReport& report) {
+  if (call_id.empty() || identity.empty()) {
+    return;
+  }
+  if (accept_hop_reports_.size() > 4 && accept_hop_reports_.count(call_id) == 0) {
+    accept_hop_reports_.clear();
+  }
+  accept_hop_reports_[call_id][identity] = report;
+}
+
+bool CallTopologyController::ResolveGroupHopForJoin(const std::string& call_id,
+                                                    const std::string& joiner_identity) {
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value() || !(*session)->planned_hop) {
+    return true;
+  }
+  GroupHopJoinInput in;
+  in.planned_hop = (*session)->planned_hop->peer_id;
+  for (const MeshHopCandidate& hop : RankedMediaHopCandidates()) {
+    in.ranked_hops.push_back(hop.peer_id);
+  }
+  if (auto reports = accept_hop_reports_.find(call_id); reports != accept_hop_reports_.end()) {
+    auto local = host_.local_relay_identity();
+    for (const std::string& identity : JoinedRemoteIdentities(call_id, local ? *local : std::string())) {
+      if (auto it = reports->second.find(identity); it != reports->second.end()) {
+        in.reports[identity] = it->second;
+      }
+    }
+  }
+  const GroupHopJoinDecision decision = DecideGroupHopAtJoin(in);
+  switch (decision.action) {
+  case GroupHopAtJoin::UsePlanned:
+    return true;
+  case GroupHopAtJoin::UseAlternative: {
+    // The one adjustment replaces the plan (not a re-pick): SoftMigrate ranks the planned hop first.
+    log().info << "group hop adjustment call_id=" << call_id << " planned=" << in.planned_hop << " → " << decision.hop
+               << " (a participant cannot reach the planned hop)";
+    CallSession adjusted = **session;
+    adjusted.planned_hop = CallPlannedHop{decision.hop, ResolveHopMultiaddr(decision.hop)};
+    (void)sessions_.UpsertSession(adjusted);
+    return true;
+  }
+  case GroupHopAtJoin::RefuseJoiner:
+    log().warning << "group hop: no hop every participant reaches — refuse joiner=" << joiner_identity
+                  << " call_id=" << call_id << " planned=" << in.planned_hop;
+    RefuseGuestNoSharedHop(call_id, joiner_identity);
+    return false;
+  }
+  return true;
+}
+
 bool CallTopologyController::LanReachabilityConfirmedForCall(
     const std::string& call_id, const std::string& local_identity) const {
   return LanReachabilityConfirmedForPeers(JoinedRemoteIdentities(call_id, local_identity));
@@ -1225,6 +1362,11 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
     ClearSfuAttachWait();
     host_.NotifyRingChanged();
     return true;
+  }
+  // V050: the first migrate goes to the planned hop — or the one adjustment, or the joiner is refused
+  // and the call stays as it is.
+  if (!flight_.in_flight && !ResolveGroupHopForJoin(call_id, joiner_identity)) {
+    return true;  // joiner refused; nothing to schedule for it
   }
   BeginSfuAttachWait(call_id);
   host_.SetMediaActivity(Tr("call.status.setting_up_group"));
