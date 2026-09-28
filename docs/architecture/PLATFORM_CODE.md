@@ -45,6 +45,7 @@ Hard rules:
 | `foundation/platform/PlatformLogDefaults.*` | Startup root log level + emit floor defaults per platform |
 | `foundation/platform/PlatformStartupHints.*` | User-facing init failure hints (legacy English string_view) |
 | `foundation/platform/PlatformUserHints.*` | Catalog keys for OS tips (Local Network, firewall, mic); UI resolves with `Tr()` |
+| `foundation/platform/NetworkMonitor.*` + `NetworkMonitor_{Linux,Darwin,Win32,Android}` | OS network-change events (portable core de-duplicates; `NetworkMonitorBackend.h` private); Android side `PpNetworkMonitor.java` |
 | `domain/media/VideoCodec_*.cpp` | Platform HW H264 (`IVideoCodec` / `CreateOsVideoCodec`) |
 | `domain/media/CallAudioSession_*.{cpp,mm}` | VoIP audio session + capture-open policy |
 | `domain/media/SdlAudioBootstrap_*.cpp` | SDL audio-driver preference (Linux ALSA hint) |

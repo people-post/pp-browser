@@ -11,6 +11,7 @@
 #include "feature/calls/CallControlInboundPorts.h"
 #include "domain/mesh/media_plane/MeshMediaPlane.h"
 #include "feature/calls/CallStack.h"
+#include "foundation/platform/NetworkMonitor.h"
 #include "feature/calls/CallUiBackend.h"
 #include "feature/broadcast/BroadcastHub.h"
 #include "feature/conversations/AmpBroadcastTransport.h"
@@ -134,6 +135,8 @@ private:
   // Outlives the call stack and broadcast (they borrow its objects).
   std::unique_ptr<MeshMediaPlane> mesh_media_;
   std::unique_ptr<CallStack> stack_;
+  /** k5: the container's network changes reach the mesh and calls as in the product hub. */
+  std::unique_ptr<NetworkMonitor> network_monitor_;
   std::unique_ptr<CallUiBackend> ui_;
   CallControlInboundPorts inbound_;
   std::unique_ptr<AmpDirectChatTransport> chat_;

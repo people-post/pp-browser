@@ -5,6 +5,7 @@
 #include "amp/link/AdpMultiaddr.h"
 #include "domain/mesh/reachability/PunchBurst.h"
 #include "domain/mesh/reachability/PunchLogic.h"
+#include "common/Logger.h"
 #include "common/SettledWait.h"
 #include "common/ValueJson.h"
 #include "foundation/runtime/DeferredSelf.h"
@@ -16,6 +17,11 @@
 
 namespace pbr {
 namespace {
+
+logging::Logger& AmpPunchLog() {
+  static logging::Logger log = logging::getLogger("AmpPunch");
+  return log;
+}
 
 using Clock = std::chrono::steady_clock;
 
@@ -178,6 +184,7 @@ struct AmpPunchCoordinator::Impl {
 
   void FailSession(const std::shared_ptr<pp::amp::ChannelSession>& session, const std::string& epoch_id,
                    const std::string& error) {
+    AmpPunchLog().warning << "punch introduce failed epoch=" << epoch_id << " error=" << error;
     PunchResult result;
     result.epoch_id = epoch_id;
     result.ok = false;
@@ -190,18 +197,38 @@ struct AmpPunchCoordinator::Impl {
     });
   }
 
+  /** The endpoint our ADP link to `peer_id` sees — the peer's NAT mapping toward us. */
+  std::optional<std::string> ObservedAddrFor(const std::string& peer_id) {
+    if (peer_id.empty()) {
+      return std::nullopt;
+    }
+    auto* link = Links().FindConnectedLinkByPeerId(peer_id, pp::amp::TransportClass::Adp);
+    const auto* conn = link ? link->ConnectionOrNull() : nullptr;
+    if (!conn) {
+      return std::nullopt;
+    }
+    auto ma = pp::amp::FormatAdpMultiaddr(conn->PeerEndpoint(), peer_id);
+    return ma ? std::optional<std::string>(*ma) : std::nullopt;
+  }
+
   void SendSyncPair(const std::shared_ptr<pp::amp::ChannelSession>& initiator_session,
                     const std::shared_ptr<pp::amp::ChannelSession>& target_session,
-                    const std::string& epoch_id, int window_ms, const PunchConnectRequest& req,
-                    const PunchCandidates& candidates) {
+                    const std::string& initiator_peer_id, const std::string& epoch_id, int window_ms,
+                    const PunchConnectRequest& req, const PunchCandidates& candidates) {
+    // Each side bursts to the other's self-reported candidates led by what we observe for it.
     PunchSync sync_to_initiator;
     sync_to_initiator.epoch_id = epoch_id;
-    sync_to_initiator.peer_addrs = SanitizePunchAddrs(candidates.addrs);
+    sync_to_initiator.peer_addrs = WithObservedPunchAddr(ObservedAddrFor(req.target_peer_id), candidates.addrs);
     sync_to_initiator.window_ms = window_ms;
 
     PunchSync sync_to_target;
     sync_to_target.epoch_id = epoch_id;
-    sync_to_target.peer_addrs = SanitizePunchAddrs(req.addrs);
+    sync_to_target.peer_addrs = WithObservedPunchAddr(ObservedAddrFor(initiator_peer_id), req.addrs);
+    AmpPunchLog().info << "punch introduce epoch=" << epoch_id << " initiator_addrs="
+                       << (sync_to_target.peer_addrs.empty() ? std::string("-") : sync_to_target.peer_addrs.front())
+                       << " (" << sync_to_target.peer_addrs.size() << ") target_addrs="
+                       << (sync_to_initiator.peer_addrs.empty() ? std::string("-") : sync_to_initiator.peer_addrs.front())
+                       << " (" << sync_to_initiator.peer_addrs.size() << ")";
     sync_to_target.window_ms = window_ms;
 
     if (!initiator_session->EnqueueOutbound(JsonToBody(EncodePunchSync(sync_to_initiator)))) {
@@ -239,13 +266,13 @@ struct AmpPunchCoordinator::Impl {
     auto target_session = std::make_shared<pp::amp::ChannelSession>();
     auto target_settled = std::make_shared<std::atomic<bool>>(false);
     auto finish_candidates =
-        [this, target_settled, target_session, initiator_session, epoch_id, window_ms,
+        [this, target_settled, target_session, initiator_session, initiator_peer_id, epoch_id, window_ms,
          req](CodedRoe<PunchCandidates, Err> value) {
           if (target_settled->exchange(true, std::memory_order_acq_rel)) {
             return;
           }
           // Stay on strand: candidate frames may arrive under mux — continue via PostStrand.
-          PostStrand([this, target_session, initiator_session, epoch_id, window_ms, req,
+          PostStrand([this, target_session, initiator_session, initiator_peer_id, epoch_id, window_ms, req,
                       value = std::move(value)]() mutable {
             if (stopped.load(std::memory_order_acquire) || !runtime) {
               target_session->Close();
@@ -261,7 +288,7 @@ struct AmpPunchCoordinator::Impl {
               FailSession(initiator_session, epoch_id, "punch: target returned no candidates");
               return;
             }
-            SendSyncPair(initiator_session, target_session, epoch_id, window_ms, req, *value);
+            SendSyncPair(initiator_session, target_session, initiator_peer_id, epoch_id, window_ms, req, *value);
           });
         };
 

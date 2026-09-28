@@ -46,6 +46,7 @@ void WritePeerCaps(Object& json, const CallPeerCaps& caps) {
   Object caps_obj;
   caps_obj.set("v", static_cast<int64_t>(caps.v > 0 ? caps.v : kCallPeerCapsVersion));
   caps_obj.set("media_relay", caps.media_relay);
+  caps_obj.set("mobility", std::string(MobilityClassWire(caps.mobility)));
   json.set("caps", ObjectValue(std::move(caps_obj)));
 }
 
@@ -63,6 +64,7 @@ CallPeerCaps ReadPeerCaps(const Object& json) {
     return caps;
   }
   caps.media_relay = obj->getIf<bool>("media_relay").value_or(false);
+  caps.mobility = ParseMobilityClass(obj->getString("mobility").value_or(""));
   return caps;
 }
 
@@ -531,6 +533,29 @@ Roe<CallCircuitR1Detail> CallControlCodec::DecodeCircuitR1(const std::string& de
   return detail;
 }
 
+Roe<std::string> CallControlCodec::EncodeCapsUpdate(const CallCapsUpdateDetail& detail) {
+  Object json;
+  json.set("call_id", detail.call_id);
+  json.set("identity", detail.identity);
+  CallPeerCaps caps = detail.caps;
+  caps.present = true;
+  WritePeerCaps(json, caps);
+  return DumpJson(json);
+}
+
+Roe<CallCapsUpdateDetail> CallControlCodec::DecodeCapsUpdate(const std::string& detail_json) {
+  auto json = TryParseObject(detail_json);
+  auto call_id = json ? json->getString("call_id") : std::nullopt;
+  if (!json || !call_id || call_id->empty() || !json->getObject("caps")) {
+    return Error("Invalid call_caps_update detail");
+  }
+  CallCapsUpdateDetail detail;
+  detail.call_id = *call_id;
+  detail.identity = json->getString("identity").value_or("");
+  detail.caps = ReadPeerCaps(*json);
+  return detail;
+}
+
 Roe<std::string> CallControlCodec::EncodePunch(const CallPunchDetail& detail) {
   Object json;
   json.set("call_id", detail.call_id);
@@ -613,6 +638,7 @@ bool CallControlCodec::IsPlumbingCallControl(const CallControlType type) {
   case CallControlType::CallCircuitR1:
   case CallControlType::CallPunchOffer:
   case CallControlType::CallPunchAnswer:
+  case CallControlType::CallCapsUpdate:
     return true;
   default:
     return false;

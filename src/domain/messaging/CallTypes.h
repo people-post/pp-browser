@@ -1,5 +1,7 @@
 #pragma once
 
+#include "domain/messaging/CallMobility.h"
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -75,6 +77,11 @@ enum class CallControlType {
    */
   CallPunchOffer,
   CallPunchAnswer,
+  /**
+   * call-path-resilience K005: mid-call caps change (mobility class flipped). Additive — old peers
+   * ignore it and keep the caps from invite / accept.
+   */
+  CallCapsUpdate,
 };
 
 struct CallParticipantMedia {
@@ -143,6 +150,8 @@ struct CallPeerCaps {
   int v = kCallPeerCapsVersion;
   /** Durable media_relay host (Node + capability + started) — not ephemeral listen-only. */
   bool media_relay = false;
+  /** K005: optional `mobility` — no `v` bump; missing / unrecognized reads as Unknown. */
+  MobilityClass mobility = MobilityClass::Unknown;
   /** True when the `caps` object was present on wire. */
   bool present = false;
 };
@@ -305,6 +314,13 @@ struct CallCircuitR1Detail {
 /**
  * H012: punch candidate exchange over call-control (same collect as H009, no Amp introducer Session).
  */
+/** K005: the sender's caps changed during the call (its mobility class flipped). */
+struct CallCapsUpdateDetail {
+  std::string call_id;
+  std::string identity;
+  CallPeerCaps caps;
+};
+
 struct CallPunchDetail {
   std::string call_id;
   std::string epoch_id;

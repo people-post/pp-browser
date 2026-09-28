@@ -10,6 +10,7 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "feature/calls/CallDeliveryPorts.h"
+#include "domain/messaging/CallPathPolicy.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaPlane.h"
 #include "feature/calls/CallMediaSeat.h"
@@ -24,6 +25,7 @@
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/host/MeshHost.h"
 
+#include <unordered_map>
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -100,6 +102,19 @@ public:
   void PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit);
   /** Teardown after mesh Stop: drop the bridge and the call-media transport. */
   void FinishMeshStop();
+  /**
+   * k5 / k6 (any thread): the device's attachment. Feeds the mobility class (`changed` = a network
+   * change, counted as churn); `moved` = the mesh moved (re-validate paths: re-anchor / re-punch).
+   */
+  void OnLocalNetwork(const MobilityAttachment& attachment, bool changed, bool moved);
+  /** k6 (any thread): our observed public address moved without a local change (NAT rebind). */
+  void OnObservedAddressChanged();
+  /** k6: re-read the mobility override (config `mesh.mobility` / `--mobility=`) — any thread. */
+  void ReloadMobilityOverride();
+  /** k6: this endpoint's mobility class as advertised in caps (any thread). */
+  MobilityClass LocalMobility() const { return local_mobility_published_.load(std::memory_order_acquire); }
+  /** k6: the path policy of a call (calls owner). */
+  CallPathPolicy PathPolicyFor(const std::string& call_id) const;
   /** Before the owner replaces / drops mesh media objects: topology + bridge let go of them. */
   void DetachMeshMedia();
   /** After the owner rewired mesh media: rebind bridge + topology to the new objects. */
@@ -199,6 +214,21 @@ private:
   std::unique_ptr<CallSessionManager> call_sessions_;
   std::unique_ptr<CallLifecycle> call_lifecycle_;
   std::unique_ptr<CallMediaPlane> media_plane_;
+  // --- k6 mobility (calls owner; the class is also published for caps on any thread) -------------
+  MobilityClassifier local_mobility_;
+  std::atomic<MobilityClass> local_mobility_published_{MobilityClass::Unknown};
+  /** The remote's class per call, from invite / accept / caps_update. */
+  std::unordered_map<std::string, MobilityClass> remote_mobility_;
+  void ApplyMobilityOverrideOnOwner();
+  /** Re-evaluate; on a flip tell the peer (caps_update) and re-plan the live call. */
+  void ReevaluateLocalMobilityOnOwner();
+  void NoteRemoteMobilityOnOwner(const std::string& call_id, MobilityClass mobility);
+  void NotifyPathPolicyChangedOnOwner(const std::string& call_id);
+  /** A churn-driven Mobile relaxes with time alone: re-evaluate when the classifier says it could. */
+  void ScheduleMobilityReevaluationOnOwner();
+  void CancelMobilityReevaluationOnOwner();
+  uint64_t mobility_timer_id_ = 0;
+  std::shared_ptr<std::atomic<bool>> mobility_alive_ = std::make_shared<std::atomic<bool>>(true);
   SharedPorts<CallUiState> ui_state_;
   CallsThread::HookId publish_hook_ = 0;
   std::atomic<int> lifecycle_port_binds_{0};

@@ -41,6 +41,7 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "feature/calls/LocalNetworkReaction.h"
 #include "foundation/platform/NetworkConnectivity.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/data/PlatformDefaults.h"
@@ -348,6 +349,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
       PublishNodeAdvertisedAddrs();
       RegisterContactEndpoints();
       mesh_media_->RefreshHopPolicy();  // advertised addrs follow the probe (media consumers' view)
+      NoteObservedAddress();
       if (on_reachability_updated_) {
         on_reachability_updated_();
       }
@@ -407,6 +409,45 @@ void ConversationsHub::StartMeshServices() {
   RebuildBroadcast();
   PublishNodeAdvertisedAddrs();
   SyncLanMdnsAdvertisement();
+  StartNetworkMonitor();
+}
+
+void ConversationsHub::NoteObservedAddress() {
+  if (!mesh_) {
+    return;
+  }
+  const std::string observed = mesh_->Reachability().Snapshot().signals.dial_back_observed;
+  if (observed.empty()) {
+    return;
+  }
+  // Our public mapping moved (a NAT rebind, or a network change's re-probe): mobility churn (k6).
+  if (!last_observed_addr_.empty() && observed != last_observed_addr_ && call_stack_) {
+    call_stack_->OnObservedAddressChanged();
+  }
+  last_observed_addr_ = observed;
+}
+
+void ConversationsHub::StartNetworkMonitor() {
+  if (network_monitor_) {
+    return;
+  }
+  network_monitor_ = std::make_unique<NetworkMonitor>();
+  // Backend thread → straight to the mesh / calls entry points (both any-thread). StopMesh stops the
+  // monitor before it tears the mesh down, so mesh_ outlives every callback.
+  if (!network_monitor_->Start([this](const NetworkChange& change) { OnLocalNetworkChanged(change); })) {
+    log().info << "network monitor unavailable on this platform";
+  }
+}
+
+void ConversationsHub::StopNetworkMonitor() {
+  if (network_monitor_) {
+    network_monitor_->Stop();
+    network_monitor_.reset();
+  }
+}
+
+void ConversationsHub::OnLocalNetworkChanged(const NetworkChange& change) {
+  ReactToNetworkChange(change, mesh_.get(), call_stack_.get());
 }
 
 void ConversationsHub::PublishNodeAdvertisedAddrs() {
@@ -676,6 +717,7 @@ std::shared_ptr<const MeshConfig> ConversationsHub::MeshConfigSnapshot() const {
 }
 
 void ConversationsHub::StopMesh() {
+  StopNetworkMonitor();
   ResetBroadcast();
   mobile_ephemeral_start_inflight_ = false;
   mobile_ephemeral_start_inflight_at_ms_ = 0;

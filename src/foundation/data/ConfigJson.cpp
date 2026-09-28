@@ -451,6 +451,7 @@ Object MeshConfigToObject(const MeshConfig& config) {
   object.set("prefer_contacts_for_routing", config.prefer_contacts_for_routing);
   object.set("mesh_enabled", config.mesh_enabled);
   object.set("amp_udp_port", static_cast<int64_t>(config.amp_udp_port));
+  object.set("mobility", config.mobility);
   object.set("capabilities", MeshCapabilitiesToObject(config.capabilities));
   object.set("dht", MeshDhtConfigToObject(config.dht));
   object.set("pricing", MeshPricingToObject(config.pricing));
@@ -489,6 +490,9 @@ void MeshConfigFromObject(const Object& object, MeshConfig& config) {
   }
   if (auto amp_udp_port = object.getNonNegInt("amp_udp_port")) {
     config.amp_udp_port = static_cast<int>(*amp_udp_port);
+  }
+  if (auto mobility = object.getString("mobility")) {
+    config.mobility = *mobility;
   }
   if (const Object* capabilities = object.getObject("capabilities")) {
     MeshCapabilitiesFromObject(*capabilities, config.capabilities);
