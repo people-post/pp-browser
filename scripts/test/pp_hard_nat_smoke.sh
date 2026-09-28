@@ -25,11 +25,12 @@
 #                           associations; the dual-dial election may drop the one the call bound
 #                           first — the call must move to the winner without ever showing
 #                           Reconnecting, and never fall back to the relay
-# B-HARD-CALL-NAT-FLIP    — Phase-11 (k5): cone NAT; the call starts direct (call-start punch),
-#                           then peer-a moves to another private address mid-call (a phone changing
-#                           network: new NAT mapping, the direct path dies). Its NetworkMonitor sees
-#                           the change, Amp drops the dead link at once (network-changed) and the
-#                           call reconnects onto a new path without failing
+# B-HARD-CALL-NAT-FLIP    — Phase-11 (k5/k6): cone NAT; the call starts direct (call-start punch)
+#                           and keeps a relayed standby (K003); then peer-a moves to another private
+#                           address mid-call (a phone changing network: new NAT mapping, the direct
+#                           path dies). Its NetworkMonitor sees the change, Amp drops the dead link
+#                           (network-changed) and the call fails over onto the standby — never
+#                           Reconnecting
 # B-HARD-CALL-NAT-MOBILE  — Phase-12 (k6): cone NAT (a punch would land), the offerer pinned
 #                           `--mobility mobile`: the pair anchors on the relay — the answerer awaits
 #                           the circuit without punching (it learned the class from the invite's
@@ -191,7 +192,10 @@ upgrade_choreo() {
   pp_hard_cgnat_block_p2p off
   wait_log "${off_log}" 'call-media path migrated .* path=direct' 45 || { echo "no-upgrade" >>"${marks}"; return; }
   echo "upgraded" >>"${marks}"
-  sleep 3
+  # Settled on direct: the relay path released to standby. (A punched link can lose the dual-dial
+  # election right after the switch; the call then goes back to the relay and re-migrates later.)
+  wait_log "${off_log}" 'path released to standby .* path=relayed' 30 || { echo "no-standby" >>"${marks}"; return; }
+  sleep 1
   pp_hard_cgnat_block_p2p on
   echo "blackholed" >>"${marks}"
 }
@@ -207,7 +211,13 @@ flip_choreo() {
     sleep 0.1
   done
   [[ "$(max_rx "${off_log}")" -ge 100 ]] || { echo "no-audio" >>"${marks}"; return; }
-  sleep 2
+  # k6: the call keeps a relayed standby next to its direct path — flip once it is up.
+  for _ in $(seq 1 150); do
+    grep -q 'relay standby up' "${off_log}" && break
+    sleep 0.1
+  done
+  grep -q 'relay standby up' "${off_log}" && echo "standby" >>"${marks}"
+  sleep 1
   local line
   line="$(wc -l <"${off_log}")"
   pp_hard_cgnat_flip_peer_a_addr away
@@ -233,11 +243,18 @@ assert_flip() {
   grep -qE '\[NetworkChange\] network change gen=[0-9]+ .*attachment_changed=1' <<<"${after}" ||
     pp_hard_die "${label}: the offerer's NetworkMonitor never reported the address change"
   echo "ok  flip: NetworkMonitor saw the move ($(grep -oE 'network change gen=[0-9]+ online=[^ ]+' <<<"${after}" | head -1))"
-  grep -q 'reason=network-changed' <<<"${after}" ||
-    pp_hard_die "${label}: no link was dropped as network-changed (Amp probing did not run)"
-  echo "ok  flip: dead link dropped by the network-change probe"
+  # The dead direct link goes either way: the network-change probe (2 s), or at once when a send in
+  # the address gap fails at the OS (unreachable).
+  grep -qE 'MeshLink\] link dropped .*path=punched.*reason=(network-changed|transport-failed)' <<<"${after}" ||
+    pp_hard_die "${label}: the dead direct link was not dropped (network-change probe / unreachable send)"
+  echo "ok  flip: dead link dropped ($(grep -oE 'path=punched.*reason=(network-changed|transport-failed)' <<<"${after}" | head -1 | sed 's/.*reason=//'))"
   grep -qx 'not-recovered' "${marks}" && pp_hard_die "${label}: the call never moved to a new path after the flip"
-  echo "ok  flip: call on a new path $(sed -n 's/^recovered //p' "${marks}") s after the flip"
+  grep -qx 'standby' "${marks}" || pp_hard_die "${label}: no relay standby came up before the flip (K003)"
+  grep -q 'CallMediaLeg failover .* to=relayed' <<<"${after}" ||
+    pp_hard_die "${label}: the call did not fail over onto its relay standby"
+  ! grep -qE '\[CallLifecycle\] status=[A-Za-z]+->Reconnecting' <<<"${after}" ||
+    pp_hard_die "${label}: the call showed Reconnecting although it had a standby"
+  echo "ok  flip: failover onto the relay standby $(sed -n 's/^recovered //p' "${marks}") s after the flip, never Reconnecting"
 }
 
 # assert_mobile <label> <offerer_log> <answerer_log>
@@ -266,6 +283,7 @@ assert_upgrade() {
   grep -q 'CallMediaLeg migrate switched .* path=direct' "${ans_log}" ||
     pp_hard_die "${label}: the answerer never switched onto the direct path"
   echo "ok  upgrade: relayed → direct (make-before-break) on both sides"
+  grep -qx no-standby "${marks}" && pp_hard_die "${label}: the call never settled on direct with the relay as standby"
   grep -qx blackholed "${marks}" || pp_hard_die "${label}: the direct path was never blackholed"
   grep -qE 'CallMediaLeg failover .* to=relayed' "${off_log}" "${ans_log}" ||
     pp_hard_die "${label}: no failover onto the relayed standby after the direct path died"

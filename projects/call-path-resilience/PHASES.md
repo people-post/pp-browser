@@ -118,12 +118,14 @@ Checklist:
 
 ## k6 — Mobility class + pair policy (M6)
 
-- [ ] `domain/` `MobilityClassifier` (signals, hysteresis) — pure logic + gtests
-- [ ] `caps.mobility` in invite/accept (no `v` bump) + `caps_update`; codec gtests
-- [ ] `CallPathPolicy` pair table → punch / relay role (anchor vs standby) / standby priority; consumed by k2/k3/k4
-- [ ] Relay: standby reservations best-effort with priority + refusal (K003); per-account standby cap; free standby, bill relayed bytes after failover (K009)
-- [ ] Override: config key + `--mobility=`; docs/ops/CONFIGURATION.md
+- [x] **k6-1** `domain/messaging` `MobilityClassifier` (cellular / metered → mobile; 3 changes in 10 min → mobile; 5 min calm → stationary; churn signals within 30 s count once; offline keeps the class) + `DecideCallPathPolicy` — pure logic + gtests
+- [x] **k6-2** `caps.mobility` in invite / accept (no `v` bump) + `call_caps_update`; codec gtests; per-call remote class
+- [x] **k6-3** Local class in `CallStack` (NetworkMonitor baseline + changes, observed-address churn from the hub's reachability probes); flip mid-call → `call_caps_update` + re-plan. Override: `mesh.mobility` + `--mobility=` (app and `pp-call-probe`); docs/ops/CONFIGURATION.md
+- [x] **k6-4** Policy consumed ([K013](DECISIONS.md)): mobile pair → no call-start punch (`PeerReachRequest::allow_punch`), no upgrade, relay anchor; stationary / unknown → relay **standby added** to direct calls (`path_add`, `ICallMediaTransport::AddStandby`). Found and fixed: `exclude_direct` reach settled on the direct link; Amp nested establish skipped the nested link beside an ADP one (pp-cpp-amp **v2.7.1**)
+- [x] **k6-5** Relay: standby circuits admitted by `standby_priority` (50 / 80 / 100 % of capacity) + per-dialer-PeerId cap; refusal is best-effort-safe. Billing: circuits are unmetered — nothing to bill yet (K009 holds); standby circuits marked for metering
+- [x] Lab: hard-w5 Phase-11 FLIP now fails over onto the standby (1.5 s, never Reconnecting); Phase-12 MOBILE (override flips behaviour on one machine). UPGRADE found: a new path dying before the old one's release (fall back onto the retiring path; clear the auto-migrate backoff on a lost candidate / fall-back) and an inbound-placeholder use-after-free — fixed with loopback regressions
 - [ ] (Later) user "Connection preference" setting
+- [ ] (Later) opportunistic upgrade for a mobile pair when both ends are unmetered and not cellular — needs metered state on the wire (K013)
 
 **Exit:** both ends compute the same policy; override flips behaviour on one machine.
 

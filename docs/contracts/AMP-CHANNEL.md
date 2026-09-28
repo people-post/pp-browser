@@ -188,7 +188,7 @@ A live call can move to another Connected link to the same peer (e.g. a punched 
 | 4 | new control (driver → peer) | `{"v":1,"type":"path_release","path_gen":n}` once media arrived on the new path and ≥ 1 s passed (≤ 5 s) |
 | 5 | same | `{"v":1,"type":"path_release_ack","path_gen":n}` — both close the old path's channels; closes on a released / retiring path are never failures |
 
-The call stays on its path when the candidate fails before step 3: `migrate_ack` refusal, the candidate link or channel lost, or **no answer in 5 s** — a peer from before k3 ignores the unknown `type`. `path_gen` counts paths within the call (0 = the one it started on).
+The call stays on its path when the candidate fails before step 3: `migrate_ack` refusal, the candidate link or channel lost, or **no answer in 5 s** — a peer from before k3 ignores the unknown `type`. If the new path dies **after** step 3 but before step 5 (a punched link lost to the dual-dial election a moment after the switch), both ends go back onto the retiring path — it is still bound and alive — and report the change like any failover. A lost candidate link, or such a fall-back, lets the driver's automatic relayed → direct move try another direct link at once (the lost one cannot be retried; an unused cold link lives only ~5 s). `path_gen` counts paths within the call (0 = the one it started on).
 
 ### Path liveness and failover (call-path-resilience k4)
 
@@ -198,6 +198,7 @@ The call stays on its path when the candidate fails before step 3: `migrate_ack`
 - **Follow:** an `active:true` heartbeat arriving on this end's standby means the peer moved there — this end switches too.
 - **No path left** (active link lost, no standby): the call is kept — MediaReady on a dead path — for a **30 s reconnect window**. A `migrate` onto any new link to the peer (the offerer reaches it again) brings it back; the window running out fails the call. A fresh `hello` for the same call (a peer from before k4 re-dialing) replaces the reconnecting bundle.
 - **Quiet rebind** (k7): when the path is lost while the peer is still Connected on another link (typically a simultaneous punch: both ends' associations came up and the dual-dial election dropped the one the call had bound), the glare winner migrates onto that link at once and the loss is not reported. The product hears of it (`on_path_lost` → `Reconnecting…`) only if the call is still without a path **1 s** later. The lost path leaves nothing behind: no retiring or standby entry.
+- **Standby add** (k6, K003): `{"v":1,"type":"path_add","call_id","media_epoch","path_gen"}` runs the migration handshake (`migrate_ack`, media channel) but the new path becomes the call's **standby** — TX stays on the active path, nothing is released. Refused (`migrate_ack` `ok:false`, `standby present`) when the call has a standby already; a peer without k6 ignores the unknown type, the add times out (5 s) and the call is unchanged. The offerer adds a relayed standby to a call Live on a direct / punched path (5 / 20 / 60 s attempts).
 - **Roles:** the glare winner is the offerer. A bundle created from the peer's `hello` takes the complementary role, and a local leg that joins it (the offerer's media started after the answerer's hello arrived) sets its own role, so exactly one end drives.
 
 ## Circuit tunnel (v1)
@@ -218,6 +219,8 @@ Relay hosts `/pp-browser/circuit/1.0.0`. After a JSON bridge handshake, the rela
 ```
 
 `target_multiaddr` and/or `target_peer_id` required. `target_protocol` defaults to the circuit protocol id when omitted.
+
+Optional `"standby_priority": "low" | "medium" | "high"` marks a call's **standby** circuit (call-path-resilience K003); omitted for a primary circuit. A relay admits standby circuits against its standby capacity (default 64, `CircuitTunnelCoordinator::SetStandbyLimits`) — `low` below 50 %, `medium` below 80 %, `high` up to 100 % — and at most 4 per dialer PeerId; otherwise it answers `{"ok":false,"error":"relay busy: standby refused"}`. Primary circuits are never refused for standby load. An unknown value reads as `low`; relays without it ignore the field. Standby circuits are marked so relay metering (none yet) can leave them free until a failover (K009).
 
 ### Reserve request (answerer park; double-NAT)
 
