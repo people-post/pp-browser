@@ -76,7 +76,7 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[
 
 - [ ] Load-test; raise effective cap toward **16** or keep **8** with product copy
 - [ ] Full **video_lo + video_hi** — **deferred** until libp2p video (V026 voice-first)
-- [ ] Reconnect / “reconnecting…” after brief network loss
+- [x] Reconnect / “reconnecting…” after brief network loss — 1:1 direct / relayed calls: [call-path-resilience k4](../call-path-resilience/PHASES.md#k4--media-liveness-failover--reconnect-m5) (standby failover; no path → Reconnecting, 30 s window, offerer re-anchors). Group SFU calls: not covered
 - [x] 1:1 connect timeout + Retry (legacy PC path)
 - [ ] Missed/declined history hints optional
 - [ ] Document desktop dead-process ring limitation

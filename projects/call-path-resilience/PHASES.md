@@ -61,58 +61,82 @@ k1 and k2 can run in parallel after k0. k5 is independent platform work and can 
 
 ## k3 — Make-before-break migration (M4)
 
-- [ ] Bundle `PathSet` (active / standby / retiring) replacing single `bound_mux`; `ResolveLink` / `PeerLinkMissing` per path
-- [ ] Hello `type:"migrate"` + `path_gen`; `DecideCallMediaInboundHello` accepts for MediaReady same call/epoch
-- [ ] Second media/control channel roles; RX on any path (seq de-dupe); TX switch
-- [ ] `path_release` / ack on control channel; old-path closes after release are not failures
-- [ ] Direct planner events `PathCandidate` / `PathMigrated` / `PathLost`; replace `ConnectSucceeded`-while-Live "keep"
-- [ ] Rewrite `TryUpgradeToDirectAsync`: migrate first, demote/standby after release (both roles)
-- [ ] Interop: old peer does not answer migrate → call continues on current path. **Note:** today's `HandleControlJson` silently ignores unknown hello `type`s — old peers will not reject, so the initiator needs a migrate timeout
+Slices (2026-09-27 survey of `CallMediaLegCoordinator` — one `Bundle` pins one `bound_mux` + three channel slots):
+
+- [x] **k3-0** A second hello for a live call is refused on its own channel — it used to evict the live inbound control first (the Close reached the peer and failed the call), so a migrate hello to today's code would have killed it (`SecondHelloForALiveCallLeavesTheCallAlone`)
+- [x] **k3-1** Bundle → `Path{LinkHandle, mux, kind, gen, control ×2, media}` (`active` only for now); a bound path resolves its link by handle, not the alias / PeerId (A024 links coexist); per-path `DropPathRole` / `PathOwnsRole` / `PathLinkMissing` / `MuxAliveForPath`; no behaviour change
+- [x] **k3-2** `CallMediaLegCoordinator::MigrateLeg(leg, LinkHandle)`: `migrate` / `migrate_ack` / `path_release` / `path_release_ack` on a control channel opened on the chosen link's own mux; the responder adopts the candidate as standby; each side switches TX when its end of the new media channel is bound; old path released after RX on the new one (1–5 s); 5 s migrate timeout (older peers ignore `migrate`); glare winner (offerer) drives; per-channel seq de-dupe (`CallMediaSeqWindow`); `on_path_changed` callback. Wire: [AMP-CHANNEL.md § Path migration](../../docs/contracts/AMP-CHANNEL.md). Nothing calls it in the product yet (k3-3)
+- [x] **k3-3** Product wiring. The transport moves a relayed call onto a Connected direct link to the same peer by itself (driver side, IO tick, 10 s backoff — `SetAutoMigrateToDirect`); the offerer, Live on a relayed path, punches for one via the circuit's relay as introducer at +3 / +20 / +60 s (`CallMediaBridge::ArmDirectUpgrade` → `PeerReachCoordinator::UpgradeToDirect` → `TryUpgradeToDirectAsync`, now punch-only: the circuit is never demoted — the migration releases the call's relayed path; blocking `TryUpgradeToDirect` removed). Planner `PathMigrated` (Live stays Live) replaces the repeated-`ConnectSucceeded` keep; path label follows the bound link (punched after an upgrade). `CallSurvivesRelaySilenceWithDirectPath` enabled (k0's red test). Hard-w5 green; the lab NATs never punch, so the upgrade misses there — a punchable relayed call is k7
+- [x] **k3-4** TX-only escalation make-before-break: the bridge builds a circuit under the live call (reach, `exclude_direct`) and moves it there (`ICallMediaTransport::MigrateTo(Relayed)`); only a failure falls back to Detach + BeginSession. Planner `PathMigrated` takes DegradedTxOnly back to Live (chrome `DirectConnected`). Either end may migrate — simultaneous attempts: the glare winner's goes ahead, the other yields. A call moved onto the relay is never auto-migrated back onto the direct link it left. "No media" stays **no frames**, not no audio: a muted / micless peer still sends silence frames (`MutedCallStillSendsFrames`). Amp v2.6.0 `FindConnectedLinkByPeerId(peer, transport)`
+
+Checklist:
+
+- [x] Bundle path set (active / standby / retiring) replacing single `bound_mux`; link resolution / loss per path (k3-1, k3-2)
+- [x] `migrate` (its own control type on a new channel, not a second `hello`) + `path_gen`; accepted for a MediaReady call with the same epoch and the next `path_gen` (k3-2)
+- [x] Second media/control channels per path; RX on any path (seq de-dupe); TX switch (k3-2)
+- [x] `path_release` / ack on control channel; old-path closes after release are not failures (k3-2)
+- [x] Planner `PathMigrated`; `ConnectSucceeded`-while-Live no longer carries path changes (k3-3). A candidate needs no planner event — the transport takes it when the link appears; `PathLost` is k4
+- [x] `TryUpgradeToDirectAsync` punch-only, migration moves the call; the relay is left as it is (standby policy is k4 / k6) (k3-3)
+- [x] Interop: an older peer ignores `migrate` → 5 s timeout, call continues on its path (k3-2)
 - [ ] Trust an existing Connected link for a call only if its remote endpoint is in the call's current candidate set (invite/accept addrs); otherwise dial (#215 B39 suggestion b)
-- [ ] Loopback gtests: relay → punched with continuous seq; release ack; interop
+- [x] Loopback gtests: relay → direct with every seq once and in order; release; interop; lost candidate; driver-only; automatic move then relay silence (k3-2, k3-3)
 
 **Exit:** dogfood relay → punched upgrade moves media; relay becomes standby.
 
 ## k4 — Media-liveness failover + reconnect (M5)
 
-- [ ] Control-channel heartbeat (~500 ms) per path
-- [ ] 1.5 s silence on active → switch to standby (K008)
-- [ ] No standby → `Reconnecting` call status, relay re-anchor, 30 s window (K008); UI subtitle (i18n EN + zh-Hans)
-- [ ] `peer link lost` no longer tears down while the path set / window allows
+Slices:
+
+- [x] **k4-1** Per-path heartbeat (`hb`, 500 ms active / 10 s standby) and liveness (any RX on a path); a released path becomes the call's warm standby (K002 — relayed preferred) instead of closing
+- [x] **k4-2** Failover without handshake: active link lost, or 1.5 s silent from a heartbeating peer (never a quiet mic), → TX onto a live standby; the peer follows an `active` heartbeat seen on its standby; 3 s hold-down on silence failover (`ShouldFailOverToStandby`)
+- [x] **k4-3** Empty path set → the transport keeps the call (dead active path, `on_path_lost`) for a 30 s window; planner `Reconnecting`, lifecycle status `Reconnecting`, UI "Reconnecting…" beside the running timer (existing EN / zh-Hans string). The offerer re-anchors (reach, then `MigrateTo` the reached link's kind, 2 s retries); the answerer accepts that migrate onto its dead path. A fresh hello (a pre-k4 peer re-dialing) replaces a reconnecting call. Window expiry fails the call
+
+Checklist:
+
+- [x] Control-channel heartbeat (~500 ms) per path (k4-1)
+- [x] 1.5 s silence on active → switch to standby (K008) (k4-2)
+- [x] No standby → `Reconnecting` call status, re-anchor, 30 s window (K008); UI subtitle (i18n EN + zh-Hans) (k4-3)
+- [x] `peer link lost` no longer tears down while the path set / window allows (k4-2 failover, k4-3 window)
 - [x] TX-only escalate limited to initial connect — already so: `ShouldEscalateTxOnlyDirect` needs cumulative RX = 0 and fires once per call
 - [x] **B44:** a failed connect / escalation no longer tears down a recovered direct path — `CallMediaBridge::FailUnlessDirectRecovered` commits if MediaReady and gives a peer hello mid-handshake a 3 s grace before failing (test `FailedAttemptsKeepTheCallWhenThePeersHelloCompletes`). Escalation is still break-before-make (Detach, then circuit) — k3 makes it make-before-break
 - [x] **B30 mitigation:** the offerer treats the answerer's accepted call-media hello (keyed from the invite) as an implicit Accept for a 1:1 call it started whose remote is still invited (`CallSessionWorkflow::ApplyImplicitAccept`, via `CallMediaHost::P2pNoteInboundHello`); the real Accept arriving later is idempotent (test `AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsLate`)
-- [ ] Close p2p-av-calls a5 "Reconnect after brief network loss" (cross-link)
+- [x] Close p2p-av-calls a5 "Reconnect after brief network loss" (cross-link; 1:1 only)
 
 **Exit:** killing the active path mid-call → ≤ 2 s gap with standby; recover within window without.
 
 ## k5 — Network monitor (M7)
 
-- [ ] `foundation/platform/NetworkMonitor` event API (transport, metered/expensive, change generation)
-- [ ] Android `registerDefaultNetworkCallback`; iOS/macOS `NWPathMonitor`; Windows `NotifyIpInterfaceChange` + cost; Linux netlink (fallback poll)
-- [ ] Reaction: suspect + keepalive burst + fast evict; reachability re-probe + advertise refresh
-- [ ] Active call hook → k4 re-anchor
+- [x] **k5-1** pp-cpp-amp **v2.7.0**: `MeshRuntime::NotifyNetworkChanged` — every Connected ADP link suspect + probed (echo-requesting keepalive at its cadence; from the new address it moves the peer's path), re-probed every 500 ms, dropped after 2 s without authenticated RX (`network-changed`); dial backoffs cleared
+- [x] **k5-2** `foundation/platform/NetworkMonitor` (online, transport, expensive, default-route fingerprint, generation; baseline + material changes only). Backends: Linux rtnetlink (2 s poll fallback), macOS / iOS `NWPathMonitor`, Windows `NotifyIpInterfaceChange` / `NotifyUnicastIpAddressChange` / `NotifyRouteChange2` + `GetNetworkConnectivityHint`, Android `registerDefaultNetworkCallback` (`PpNetworkMonitor.java`). Linux verified live in a network namespace; the others compile in CI only — needs a device check
+- [x] **k5-3** Reaction ([K012](DECISIONS.md)): `ReactToNetworkChange` → `MeshHost::OnLocalNetworkChanged` (Amp probe + reachability re-probe → advertised / punch addrs) and `CallMediaBridge::OnLocalNetworkChanged` (reconnecting → re-anchor after the links settle; relayed → upgrade punches start over). Offline and cost-only changes do nothing. Owned by `ConversationsHub` (app) and `ProductStackHarness` (probe)
+- [x] **k5-4** hard-w5 Phase-11 FLIP: peer-a changes address mid-call → dead link dropped `network-changed` → call on a circuit 2.3 s after the flip (6 / 6 runs)
 - [x] Always bind mesh socket dual-stack `[::]` (K010), IPv4 only without OS IPv6 support. Audit: advertise / probe targets come from interfaces, not the bind family; wildcard `::` handled like `0.0.0.0`; pp-cpp-amp maps IPv4 peers both ways. Hard-w5 relays now listen on `[::]` with IPv4-NAT'd peers
-- [ ] `check_platform_ifdefs.sh` clean; platform code per PLATFORM_CODE.md
+- [x] `check_platform_ifdefs.sh` clean; platform code per PLATFORM_CODE.md
+- [ ] Device dogfood: Wi-Fi ↔ cellular and sleep / wake mid-call on Android, iOS, macOS, Windows
 
 **Exit:** Wi-Fi ↔ cellular / sleep-wake mid-call recovers without user action.
 
 ## k6 — Mobility class + pair policy (M6)
 
-- [ ] `domain/` `MobilityClassifier` (signals, hysteresis) — pure logic + gtests
-- [ ] `caps.mobility` in invite/accept (no `v` bump) + `caps_update`; codec gtests
-- [ ] `CallPathPolicy` pair table → punch / relay role (anchor vs standby) / standby priority; consumed by k2/k3/k4
-- [ ] Relay: standby reservations best-effort with priority + refusal (K003); per-account standby cap; free standby, bill relayed bytes after failover (K009)
-- [ ] Override: config key + `--mobility=`; docs/ops/CONFIGURATION.md
+- [x] **k6-1** `domain/messaging` `MobilityClassifier` (cellular / metered → mobile; 3 changes in 10 min → mobile; 5 min calm → stationary; churn signals within 30 s count once; offline keeps the class) + `DecideCallPathPolicy` — pure logic + gtests
+- [x] **k6-2** `caps.mobility` in invite / accept (no `v` bump) + `call_caps_update`; codec gtests; per-call remote class
+- [x] **k6-3** Local class in `CallStack` (NetworkMonitor baseline + changes, observed-address churn from the hub's reachability probes); flip mid-call → `call_caps_update` + re-plan. Override: `mesh.mobility` + `--mobility=` (app and `pp-call-probe`); docs/ops/CONFIGURATION.md
+- [x] **k6-4** Policy consumed ([K013](DECISIONS.md)): mobile pair → no call-start punch (`PeerReachRequest::allow_punch`), no upgrade, relay anchor; stationary / unknown → relay **standby added** to direct calls (`path_add`, `ICallMediaTransport::AddStandby`). Found and fixed: `exclude_direct` reach settled on the direct link; Amp nested establish skipped the nested link beside an ADP one (pp-cpp-amp **v2.7.1**)
+- [x] **k6-5** Relay: standby circuits admitted by `standby_priority` (50 / 80 / 100 % of capacity) + per-dialer-PeerId cap; refusal is best-effort-safe. Billing: circuits are unmetered — nothing to bill yet (K009 holds); standby circuits marked for metering
+- [x] Lab: hard-w5 Phase-11 FLIP now fails over onto the standby (1.5 s, never Reconnecting); Phase-12 MOBILE (override flips behaviour on one machine). UPGRADE found: a new path dying before the old one's release (fall back onto the retiring path; clear the auto-migrate backoff on a lost candidate / fall-back) and an inbound-placeholder use-after-free — fixed with loopback regressions
 - [ ] (Later) user "Connection preference" setting
+- [ ] (Later) opportunistic upgrade for a mobile pair when both ends are unmetered and not cellular — needs metered state on the wire (K013)
 
 **Exit:** both ends compute the same policy; override flips behaviour on one machine.
 
 ## k7 — Tests, hard lab, promotion (continuous)
 
 - [x] Hard-lab CGNAT long-hold stall repro: `pp-call-probe --rx-stall-ms/--watch-ms`, `PP_HARD_NAT_STACK_HOLD_MS` / `_RX_STALL_MS` / `_NETEM_A|B`
-- [ ] Hard-lab wave: punch-then-relay-drop, NAT rebind mid-call, short NAT timeout, network flip; netem profiles in CI (1 %/2 % loss must keep 60 s both ways)
-- [ ] Promote: CALLS.md (path set, migration, reconnect), WIRE_SCHEMAS (hello migrate, caps.mobility, control ops), MESH.md (link events, hygiene), amp docs/KEEPALIVE.md
+- [x] **k7-1** Punchable lab NAT ([HL005](../hard-lab/DECISIONS.md)): gateways firewall WAN input (accepting it made MASQUERADE remap our own port whenever the peer's punch packet arrived first — every lab punch failed) and run an explicit mapping, symmetric (default) or cone; runtime toggles for mode and a gateway↔gateway blackhole. The introducer leads each side's punch candidates with the endpoint it observes for the peer (NAT-mapped) — the lab peers self-report only private addresses
+- [x] **k7-2** hard-w5 Phase-9 UPGRADE: relayed start → the +20 s upgrade punch moves the live call to direct on both ends → direct blackholed → failover to the relayed standby, audio stall-gated throughout. Phase-10 PUNCH: call-start punch on cone NAT, media on the punched link, never `Reconnecting`
+- [x] **k7-3** Bugs the lab found, each with a loopback regression ([K011](DECISIONS.md)): quiet rebind when the path is lost while the peer is Connected on another link (dual-dial election after a simultaneous punch); a hello-born bundle's role (the offerer joining the answerer's early hello kept "answerer" → nobody drove); the reconnect placeholder kept as a channel-less standby; channel-close handling on the sender's thread (lock-order inversion with the IO pump, TSan)
+- [ ] Hard-lab wave remainder: NAT rebind mid-call, short NAT timeout, network flip (k5/k6); netem profiles in CI (1 %/2 % loss must keep 60 s both ways)
+- [x] Promote: CALLS.md § Call media paths, MESH.md § Link events and hygiene, AMP-CHANNEL.md (quiet rebind, roles). The migration / heartbeat wire lives in AMP-CHANNEL.md (not WIRE_SCHEMAS — chat payloads only); `caps.mobility` waits for k6; amp KEEPALIVE.md is already v2
 - [x] Fix doc drift found in survey: calls CURRENT_STATE "V001–V038", CALLS.md "through V038", H009 "plan only" header (+ media-hop-reachability DESIGN status rows)
 
 ## Later horizons

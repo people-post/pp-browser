@@ -110,4 +110,51 @@ bool CallMediaBundlePhaseIsActive(const CallMediaBundlePhase phase) {
   return phase != CallMediaBundlePhase::Idle && phase != CallMediaBundlePhase::Closing;
 }
 
+bool ShouldFailOverToStandby(const CallMediaFailoverInput& in) {
+  if (!in.have_standby || !in.standby_link_alive) {
+    return false;
+  }
+  if (in.peer_heartbeats && in.standby_silence_ms >= kCallMediaStandbyStaleMs) {
+    return false;
+  }
+  if (in.active_link_lost) {
+    return true;
+  }
+  return in.peer_heartbeats && in.active_silence_ms >= kCallMediaActiveSilenceFailoverMs &&
+         in.since_failover_ms >= kCallMediaFailoverHoldDownMs;
+}
+
+bool CallMediaSeqWindow::Accept(const uint32_t seq) {
+  const auto anchor = [&]() {
+    have_ = true;
+    highest_ = seq;
+    seen_.reset();
+    seen_.set(0);
+    return true;
+  };
+  if (!have_) {
+    return anchor();
+  }
+  if (seq > highest_) {
+    const uint32_t shift = seq - highest_;
+    if (shift >= kWindow) {
+      seen_.reset();
+    } else {
+      seen_ <<= shift;
+    }
+    seen_.set(0);
+    highest_ = seq;
+    return true;
+  }
+  const uint32_t behind = highest_ - seq;
+  if (behind >= kWindow) {
+    return anchor();  // far behind: the sender restarted its seq
+  }
+  if (seen_.test(behind)) {
+    return false;
+  }
+  seen_.set(behind);
+  return true;
+}
+
 } // namespace pbr

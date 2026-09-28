@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/messaging/CallPathPolicy.h"
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
@@ -97,6 +98,33 @@ public:
   /** Shrink the peer-reach direct-dial budget for gtests (0 = production default). */
   void SetDialWaitBudgetMsForTest(int budget_ms);
   void SetReserveRenewIntervalMsForTest(int interval_ms) { reserve_renew_interval_ms_ = interval_ms; }
+  /** Retry delay between re-anchor attempts while reconnecting (production 2 s). */
+  void SetReanchorRetryMsForTest(int delay_ms) { reanchor_retry_ms_ = delay_ms; }
+  /** Test: the TX-only grace expired now (skips the 15 s / 80-frame gate). */
+  void EscalateTxOnlyForTest(const std::string& call_id) {
+    tx_only_escalation_done_ = true;
+    Apply(CallDirectPlannerEvent::TxOnlyGraceExpired, call_id, media_peer_identity_);
+  }
+  /**
+   * k5: the device's network changed (calls owner). Links are being re-validated — Amp evicts the
+   * dead ones within ~2 s — so once that settles a reconnecting call re-anchors at once, and a
+   * relayed call starts its direct-upgrade punches over (the new network may be punchable).
+   */
+  void OnLocalNetworkChanged();
+  /**
+   * k6: the call's pair path policy (both mobility classes). Unset → the default policy
+   * (Stationary pair: punch, upgrade, relay standby).
+   */
+  using PathPolicyProvider = std::function<CallPathPolicy(const std::string& call_id)>;
+  void SetPathPolicyProvider(PathPolicyProvider provider) { path_policy_ = std::move(provider); }
+  /** k6: a mobility class of the call flipped (calls owner): upgrade punches follow the new policy. */
+  void OnPathPolicyChanged(const std::string& call_id);
+  /** Wait after a network change before re-anchoring (production 2.5 s). */
+  void SetNetworkSettleMsForTest(int delay_ms) { network_settle_ms_ = delay_ms; }
+  /** Every relay-standby attempt after this delay (0 = production 5 s / 20 s / 60 s). */
+  void SetRelayStandbyDelayMsForTest(int delay_ms) { standby_delay_ms_for_test_ = delay_ms; }
+  /** Every direct-upgrade attempt after this delay (0 = production 3 s / 20 s / 60 s). */
+  void SetDirectUpgradeDelayMsForTest(int delay_ms) { upgrade_delay_ms_for_test_ = delay_ms; }
   /** Shrink per-attempt ConnectAsync timeout (and watchdog margin) for gtests (0 = production default). */
   void SetConnectAttemptTimeoutMsForTest(int timeout_ms);
 
@@ -229,6 +257,34 @@ private:
   void ArmReserveRenewal();
   void CancelReserveRenewal();
   void OnReserveRenewFire();
+  /** k3: while Live on a relayed path, punch for a direct link a few times (offerer drives). */
+  void ArmDirectUpgrade(const std::string& call_id);
+  void ScheduleDirectUpgrade();
+  void CancelDirectUpgrade();
+  void OnDirectUpgradeFire();
+  /**
+   * k6 (K003): a call Live on a direct / punched path keeps a relayed standby (offerer drives, when
+   * the pair policy wants one): a circuit under the call, added with `path_add`. Best-effort — the
+   * relay may refuse; retried a few times.
+   */
+  void ArmRelayStandby(const std::string& call_id);
+  void ScheduleRelayStandby();
+  void CancelRelayStandby();
+  void OnRelayStandbyFire();
+  /** k3-4: TX-only restart (Detach + BeginSession via circuit) — the fallback when the call cannot move. */
+  void EscalateBreakBeforeMake(const std::string& call_id, const std::string& peer);
+  void CancelEscalateReach();
+  /** k4: the offerer reaches the peer again and migrates the call onto that link (retries). */
+  void ScheduleReanchor(const std::string& call_id, std::chrono::milliseconds delay);
+  void Reanchor(const std::string& call_id);
+  void CancelReanchor();
+  /** k6: the transport's own relayed → direct move follows the pair policy (anchor = stay). */
+  void ApplyPathPolicyToTransport(const std::string& call_id);
+  CallPathPolicy PathPolicyFor(const std::string& call_id) const {
+    return path_policy_ ? path_policy_(call_id) : CallPathPolicy{};
+  }
+  /** Amp PeerId for a call roster key (account: → PeerId); unchanged otherwise. */
+  std::string ReachPeerIdFor(const std::string& key);
   void OnDirectHealthTimerFire();
 
   CallMediaHost& host_;
@@ -269,6 +325,24 @@ private:
   std::shared_ptr<std::atomic<bool>> alive_;
   uint64_t direct_health_timer_id_ = 0;
   uint64_t reserve_renew_timer_id_ = 0;
+  uint64_t upgrade_timer_id_ = 0;
+  std::string standby_call_id_;
+  int standby_attempt_ = 0;
+  uint64_t standby_timer_id_ = 0;
+  PeerReachId standby_reach_id_ = 0;
+  int standby_delay_ms_for_test_ = 0;
+  std::string upgrade_call_id_;
+  int upgrade_attempt_ = 0;
+  int upgrade_delay_ms_for_test_ = 0;
+  /** k3-4: circuit being built under a TX-only call (0 = none). */
+  PeerReachId escalate_reach_id_ = 0;
+  std::string reanchor_call_id_;
+  uint64_t reanchor_timer_id_ = 0;
+  PeerReachId reanchor_reach_id_ = 0;
+  int reanchor_retry_ms_ = 2000;
+  /** Past Amp's network-change grace (2 s): the links left are the ones that answered. */
+  int network_settle_ms_ = 2500;
+  PathPolicyProvider path_policy_;
   /** Inside the 15 s StartReserve lease so consecutive leases overlap. */
   int reserve_renew_interval_ms_ = 10000;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;

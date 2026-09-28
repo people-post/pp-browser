@@ -1,8 +1,8 @@
 # Call path resilience — current state
 
-**Last updated:** 2026-09-27 (resumed after thread-ownership: B30, B44, seed-park grace, dual-stack bind, flake closed, doc drift; k1 Amp hygiene in pp-cpp-amp v2.4.0, nested reliable lane in v2.5.0)
+**Last updated:** 2026-09-28 (k6: mobility + pair policy + relay standby; k5: network monitor + Amp network-change probing + lab FLIP; k7: punchable lab NAT, upgrade / failover / punch lab phases, quiet rebind; earlier: B30, B44, seed-park grace, dual-stack bind, k1 Amp hygiene v2.4.0, nested reliable lane v2.5.0, k3, k4)
 
-> **Code moved since 2026-09-25.** Calls run on the media-sessions owner (`CallsThread`), reach / rendezvous / mesh media plane / reachability on the Connectivity owner, MeshControl is gone (mesh waits are completions), the inbound call-media hello is asynchronous, and pp-cpp-amp is pinned at **v2.5.0**. Mentions of MeshControl, "UI thread" bridge state, or amp v2.2.x below are history. Product hot keepalive is **10 s** (K008 amendment), not 2 s.
+> **Code moved since 2026-09-25.** Calls run on the media-sessions owner (`CallsThread`), reach / rendezvous / mesh media plane / reachability on the Connectivity owner, MeshControl is gone (mesh waits are completions), the inbound call-media hello is asynchronous, and pp-cpp-amp is pinned at **v2.6.0**. Mentions of MeshControl, "UI thread" bridge state, or amp v2.2.x below are history. Product hot keepalive is **10 s** (K008 amendment), not 2 s.
 
 ## Landed
 
@@ -30,7 +30,40 @@
 | `CallUiBackendStackTest` parallel flake | Gone — 0 / 60 with 12 concurrent copies (was 12 / 12); fixed by thread-ownership's port snapshots |
 | Doc drift (k7) | V049 range, H009 status, media-hop-reachability status rows |
 | **k1 Amp hygiene** (pp-cpp-amp **v2.4.0**, pinned) | Carrier-closed and failed-inbound links dropped; only fresh packets move the path or prove liveness; drops by `LinkHandle` (A024 key sharing); nested and ADP establishes never wait on each other; OS-unreachable sends drop the link at once; `idle_ttl` removed; snapshots / events carry `LinkPathKind`, remote, RX age ([ADR_LINK_PLANE §10](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md)). pp-browser full suite, TSan (mesh + calls) and hard-w5 green against it. `MeshLinkEventLog` prints `path=direct|punched|carrier` |
+| **k3 make-before-break migration** (k3-0 … k3-4) | A live call moves between links to one peer without dropping: `migrate` / `migrate_ack` / `path_release` on the new link, TX switch, old path released after RX on the new one ([AMP-CHANNEL.md § Path migration](../../docs/contracts/AMP-CHANNEL.md)). The transport takes a direct link for a relayed call by itself; the offerer punches for one (+3 / +20 / +60 s). A second hello no longer kills a live call. A TX-only call (no frames arriving — not no audio) moves onto a circuit under it instead of restarting; either end may migrate (glare: offerer wins). Open: B39 b |
+| **k4 failover + reconnect** (k4-1 … k4-3) | Per-path heartbeat (500 ms active / 10 s standby); a released path stays as warm standby; active link lost or 1.5 s silent (from a heartbeating peer — never a muted mic) → TX onto the standby, the peer follows. No path left → `Reconnecting…` for 30 s while the offerer re-anchors and migrates the call onto the new link; then it fails ([AMP-CHANNEL.md § Path liveness and failover](../../docs/contracts/AMP-CHANNEL.md)). Standby is only what a migration left behind — no proactive relay standby yet (K003, k6) |
 | **k1 nested reliable lane** (pp-cpp-amp **v2.5.0**, pinned) | Reliable-class frames on a nested (relay-carrier) link are sequenced end to end, acked, resent and released in order (`CarrierLane`, [ADR_LINK_PLANE §11](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md)); a dead end-to-end path drops the nested link. Probe-negotiated — older peers and relays unchanged. Amp gtest: 20 % loss + reordering both ways delivers every message in order (red before). Lab `delay 120ms 30ms` stack / cold pass — but also passed on v2.4.0 in a single cycle, so the lab does not discriminate yet (k7 netem wave) |
+
+## Landed 2026-09-28 (k7)
+
+| Item | State |
+|------|-------|
+| **Lab NAT was un-punchable by accident** | The CGNAT gateways accepted unsolicited WAN input, so a peer's early punch packet became a conntrack flow and MASQUERADE remapped our own outbound port — every lab punch failed. Gateways now drop it (as routers do) and run an explicit mapping: symmetric (default; phases 1–8 stay relay-shaped) or cone ([HL005](../hard-lab/DECISIONS.md)) |
+| **Introducer observed endpoints** | The relay introducing a punch leads each side's candidates with the endpoint it sees for the peer; self-reported candidates were private-only in the lab (and behind any NAT without a learned public address) |
+| **hard-w5 Phase-9 UPGRADE / Phase-10 PUNCH** | Relayed → direct by the +20 s upgrade punch on both ends → direct blackholed → failover to the relayed standby; call-start punch with media on the punched link and no `Reconnecting`. Full hard-w5 green; PUNCH 14/14 in a loop |
+| **Quiet rebind (K011)** | A lost path while the peer is Connected on another link (dual-dial election after a simultaneous punch) → the offerer migrates at once; `Reconnecting…` only if not landed in 1 s |
+| **Hello-born bundle role** | The offerer joining a bundle the answerer's early hello created kept "answerer"; with the PeerId against it nobody drove (lab: 2 / 11 PUNCH runs showed `Reconnecting`) |
+| **Reconnect placeholder** | Was retired into a channel-less "standby" a later failover could switch onto — now dropped |
+| **Channel close off the IO strand** | A media send hitting a dead channel ran close handling on the sender's thread: coordinator `mu` → link manager lock, the reverse of the IO pump (TSan). Close handling is posted to IO |
+
+## Landed 2026-09-28 (k5)
+
+| Item | State |
+|------|-------|
+| **Amp network change** (pp-cpp-amp **v2.7.0**, pinned) | `NotifyNetworkChanged`: every direct link probed at once, silent ones dropped after 2 s (`network-changed`) instead of their liveness window (up to 50 s hot); dial backoffs cleared |
+| **NetworkMonitor** | `foundation/platform`: Linux rtnetlink, Darwin `NWPathMonitor`, Windows IP helper + cost hint, Android default-network callback. Only Linux is exercised here (live check in a network namespace); the others build in CI — **device check pending** |
+| **Reaction** ([K012](DECISIONS.md)) | Mesh: probe links + re-probe reachability (advertised / punch addrs). Calls: reconnecting → re-anchor after 2.5 s; relayed → upgrade punches start over. Offline → nothing |
+| **Lab FLIP** | peer-a changes address mid-call: new path 2.3 s after the flip, 6 / 6 |
+
+## Landed 2026-09-28 (k6)
+
+| Item | State |
+|------|-------|
+| **Mobility class** | `MobilityClassifier` in `CallStack` from the NetworkMonitor (cellular / metered / churn) and observed-address churn; `caps.mobility` on invite / accept, `call_caps_update` on a flip; override `mesh.mobility` / `--mobility=` |
+| **Pair policy** ([K013](DECISIONS.md)) | Mobile pair: no call-start punch, no upgrade, relay anchor (lab Phase-12 MOBILE). Stationary / unknown: punch, upgrade, relay standby |
+| **Relay standby (K003)** | A direct / punched call gets a relayed standby (`path_add`) from its offerer; lab FLIP now fails over in 1.5 s, never Reconnecting |
+| **Relay admission** | `standby_priority` on bridge requests; relays refuse the least needed standby first, per-dialer cap 4 |
+| **Fixes found on the way** | `exclude_direct` reach settled on the direct link (TX-only escalation shared it); Amp nested establish skipped the nested link beside an ADP one — pp-cpp-amp **v2.7.1**, pinned; a path dying before the previous one's release now falls back onto it (and the winning direct link is taken at once); inbound-placeholder use-after-free (keys collided across links) |
 
 ## Still open (as of 2026-09-24/25 — see the note above)
 
@@ -58,11 +91,11 @@ From PR #223 / #215 (dogfood 2026-09-24 evening, phone CN cellular ↔ Mac Wi‑
 
 ## Next agent — start here
 
-1. **k1 done.** The per-link keepalive interval is k2's call-scoped keepalive item (needs the product to pick the value first).
-2. **k3** path set / make-before-break migration — the core of the project; nothing landed. Note: old peers ignore unknown hello types (need a migrate timeout); `TryUpgradeToDirectAsync` has no caller.
-3. **k4** heartbeat / RX-stall failover / Reconnecting + 30 s window / `peer link lost` no longer terminal — needs k3's path set.
-4. **k5** NetworkMonitor on four platforms; **k6** mobility; **k7** hard-lab wave.
-5. Dogfood (k0 exit): rerun cross-network with `scripts/dev/pp_dogfood.sh -- --debug` on both ends plus relay logs.
+1. **k1, k3, k4 done; k7 largely done** (lab wave remainder below). Path set, migration, failover, reconnect and quiet rebind are summarized in [CALLS.md § Call media paths](../../docs/architecture/CALLS.md#call-media-paths-11--call-path-resilience); wire in [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md).
+2. **k2** remainder: the call-scoped per-link keepalive interval (the product picks the value first).
+3. **k5, k6 done** except device checks (Wi-Fi ↔ cellular / sleep-wake on each platform; mobility classes on real phones). Later: opportunistic upgrade for unmetered mobile pairs (K013), user "Connection preference". Lab: short NAT timeout still open.
+4. Open: B39 suggestion b; netem profiles in CI.
+5. Dogfood (k0 exit): rerun cross-network with `scripts/dev/pp_dogfood.sh -- --debug` on both ends plus relay logs — the punch now has lab coverage, the real NATs are the next check.
 
 ## Agent traps
 

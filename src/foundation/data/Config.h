@@ -168,6 +168,11 @@ struct MeshConfig {
   bool mesh_enabled = true;
   /** ADP UDP listen port for AmpStack; 0 = ephemeral. */
   int amp_udp_port = 0;
+  /**
+   * Call path mobility class (call-path-resilience K004): "auto" (classify from the network) or a
+   * pinned "stationary" / "mobile" for dogfood and the hard lab. `--mobility=` overrides it.
+   */
+  std::string mobility = "auto";
   MeshCapabilities capabilities;
   MeshDhtConfig dht;
   MeshPricingConfig pricing;

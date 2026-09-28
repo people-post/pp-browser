@@ -1,3 +1,4 @@
+#include "domain/messaging/CallMobility.h"
 #include "app/node/call_probe/ProductStackHarness.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "amp/L1/Clock.h"
@@ -1236,6 +1237,8 @@ int main(int argc, char** argv) {
       min_rx_frames = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--peer-id-only") == 0) {
       peer_id_only = true;
+    } else if (std::strcmp(argv[i], "--mobility") == 0 && i + 1 < argc) {
+      pbr::SetMobilityCliOverride(argv[++i]);  // k6: pin the call path mobility class
     } else if (std::strcmp(argv[i], "--dirty-book") == 0) {
       dirty_book = true;
     } else if (std::strcmp(argv[i], "--force-dial-fail") == 0) {

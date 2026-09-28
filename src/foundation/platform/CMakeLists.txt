@@ -34,6 +34,7 @@ set(_pp_platform_gui_sources
   MobileWindowSizing.cpp
   NativeFileDialog.cpp
   NetworkConnectivity.cpp
+  NetworkMonitor.cpp
   PlatformEarlyInit.cpp
   ProfileIconImagePrep.cpp
   VideoPosterExtractor_Common.cpp
@@ -78,6 +79,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   )
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Win32.cpp
+    NetworkMonitor_Win32.cpp
     VideoPosterExtractor_Win32.cpp
   )
 elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
@@ -89,6 +91,7 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Darwin.mm
     desktop/WindowChrome_Darwin.mm
+    NetworkMonitor_Darwin.mm
   )
   if(NOT PP_BROWSER_IS_IOS)
     list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm)
@@ -105,6 +108,9 @@ else()
     desktop/LocalNotifier_Linux.cpp
     VideoPosterExtractor_Default.cpp
   )
+  if(NOT PP_BROWSER_IS_ANDROID)
+    list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp)
+  endif()
 endif()
 
 # Headless-safe platform surface (paths, assets, env credentials, OS file/time/process).
@@ -219,7 +225,7 @@ endif()
 
 # Android: ApplyPlatformCurlSsl sets CURLOPT_CAPATH via curl.
 if(PP_BROWSER_IS_ANDROID)
-  target_sources(pp_foundation_platform PRIVATE NetworkConnectivity_Android.cpp)
+  target_sources(pp_foundation_platform PRIVATE NetworkConnectivity_Android.cpp NetworkMonitor_Android.cpp)
   target_link_libraries(pp_foundation_platform PUBLIC CURL::libcurl)
 endif()
 
@@ -242,7 +248,12 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
 endif()
 
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
-  target_link_libraries(pp_foundation_platform PRIVATE mfplat mfreadwrite mfuuid)
+  target_link_libraries(pp_foundation_platform PRIVATE mfplat mfreadwrite mfuuid iphlpapi ws2_32)
+endif()
+
+# NetworkMonitor_Darwin: NWPathMonitor (macOS and iOS).
+if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
+  target_link_libraries(pp_foundation_platform PUBLIC "-framework Network")
 endif()
 
 # Desktop Linux: Freedesktop Notifications via libdbus-1; X11 raise uses libX11.

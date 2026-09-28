@@ -211,6 +211,11 @@ void CallSessionManager::BindWorkflowHostPorts() {
                                         const std::vector<std::string>& listen) {
     NoteCapsForIdentity(*this, contacts_, identity, caps, listen);
   };
+  ports.reach.note_call_peer_caps = [this](const std::string& call_id, const CallPeerCaps& caps) {
+    if (call_peer_caps_sink_) {
+      call_peer_caps_sink_(call_id, caps);
+    }
+  };
   ports.reach.prefetch_reach = [this](const std::string& identity) {
     PrefetchReachForIdentity(prefetch_reach_, identity);
   };
@@ -637,6 +642,52 @@ void CallSessionManager::SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsF
 
 void CallSessionManager::SetLocalPeerCapsProvider(LocalPeerCapsFn callback) {
   local_peer_caps_ = std::move(callback);
+}
+
+void CallSessionManager::SetCallPeerCapsSink(CallPeerCapsSink sink) { call_peer_caps_sink_ = std::move(sink); }
+
+void CallSessionManager::AnnounceCapsUpdate() {
+  auto active = ActiveLocalCall();
+  if (!active || !active->has_value() || !local_peer_caps_) {
+    return;
+  }
+  const std::string call_id = (*active)->call_id;
+  auto peer = P2pPeerIdentityForCall(call_id);
+  if (!peer || !peer->has_value() || (*peer)->empty()) {
+    return;
+  }
+  CallCapsUpdateDetail detail;
+  detail.call_id = call_id;
+  if (auto local = P2pLocalIdentity()) {
+    detail.identity = *local;
+  }
+  detail.caps = local_peer_caps_();
+  auto encoded = CallControlCodec::EncodeCapsUpdate(detail);
+  if (!encoded) {
+    return;
+  }
+  if (auto sent = SendCallDirectMessage(**peer, CallControlType::CallCapsUpdate, *encoded, ""); !sent) {
+    log().warning << "caps update send failed call_id=" << call_id << " err=" << sent.error().message;
+    return;
+  }
+  log().info << "caps update sent call_id=" << call_id << " mobility=" << MobilityClassWire(detail.caps.mobility);
+}
+
+Roe<void> CallSessionManager::HandleInboundCapsUpdate(const std::string& detail_json) {
+  auto decoded = CallControlCodec::DecodeCapsUpdate(detail_json);
+  if (!decoded) {
+    return decoded.error();
+  }
+  auto active = ActiveLocalCall();
+  if (!active || !active->has_value() || (*active)->call_id != decoded->call_id) {
+    return {};  // not our live call: nothing to re-plan
+  }
+  log().info << "caps update inbound call_id=" << decoded->call_id
+             << " mobility=" << MobilityClassWire(decoded->caps.mobility);
+  if (call_peer_caps_sink_) {
+    call_peer_caps_sink_(decoded->call_id, decoded->caps);
+  }
+  return {};
 }
 
 void CallSessionManager::SetLocalMeshPeerIdProvider(LocalMeshPeerIdFn callback) {
@@ -1401,6 +1452,8 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     return HandleInboundVideoRefresh(detail_json, sender_identity);
   case CallControlType::CallCircuitR1:
     return HandleInboundCircuitR1(detail_json);
+  case CallControlType::CallCapsUpdate:
+    return HandleInboundCapsUpdate(detail_json);
   case CallControlType::CallPunchOffer:
     return HandleInboundPunchOffer(detail_json, sender_identity);
   case CallControlType::CallPunchAnswer:

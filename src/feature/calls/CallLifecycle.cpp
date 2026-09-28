@@ -57,6 +57,8 @@ const char* CallMediaStatusName(const CallMediaStatus status) {
     return "DegradedTxOnly";
   case CallMediaStatus::Failed:
     return "Failed";
+  case CallMediaStatus::Reconnecting:
+    return "Reconnecting";
   }
   return "Unknown";
 }
@@ -151,6 +153,7 @@ CallArmedPlanner CallLifecycle::ArmedPlanner() const {
   case CallMediaStatus::DirectConnecting:
   case CallMediaStatus::DirectLive:
   case CallMediaStatus::DegradedTxOnly:
+  case CallMediaStatus::Reconnecting:
     return CallArmedPlanner::Bridge;
   case CallMediaStatus::HopWaiting:
   case CallMediaStatus::HopAttaching:
@@ -166,7 +169,7 @@ CallArmedPlanner CallLifecycle::ArmedPlanner() const {
 bool CallLifecycle::AllowsDirectPath() const {
   return status_ == CallMediaStatus::DirectConnecting ||
          status_ == CallMediaStatus::DegradedTxOnly ||
-         status_ == CallMediaStatus::DirectLive;
+         status_ == CallMediaStatus::DirectLive || status_ == CallMediaStatus::Reconnecting;
 }
 
 bool CallLifecycle::AllowsHopPath() const {
@@ -272,7 +275,7 @@ void CallLifecycle::SetPhase(const CallPhase next, const std::string& call_id,
     status_ = CallMediaStatus::Failed;
   } else if (next == CallPhase::InCall &&
              (status_ == CallMediaStatus::None || status_ == CallMediaStatus::Deciding ||
-              status_ == CallMediaStatus::DirectConnecting ||
+              status_ == CallMediaStatus::DirectConnecting || status_ == CallMediaStatus::Reconnecting ||
               status_ == CallMediaStatus::HopAttaching || status_ == CallMediaStatus::HopWaiting)) {
     // Legacy DirectConnected without prior SetMediaStatus — assume direct Live.
     if (status_ != CallMediaStatus::HopAttaching && status_ != CallMediaStatus::HopWaiting &&

@@ -74,6 +74,7 @@ public:
   }
 
   bool IsConnected(const std::string& peer_key) const override { return inner_.IsConnected(peer_key); }
+  bool IsConnectedRelayed(const std::string& peer_id) const override { return inner_.IsConnectedRelayed(peer_id); }
 
   void MarkWarm(const std::string& peer_key) override { inner_.MarkWarm(peer_key); }
 
@@ -298,6 +299,7 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialB
       return inner_.SnapshotByPeerId(peer_id);
     }
     bool IsConnected(const std::string& peer_key) const override { return inner_.IsConnected(peer_key); }
+  bool IsConnectedRelayed(const std::string& peer_id) const override { return inner_.IsConnectedRelayed(peer_id); }
     bool IsReachable(const std::string& peer_id) const override { return inner_.IsReachable(peer_id); }
     void MarkWarm(const std::string& peer_key) override { inner_.MarkWarm(peer_key); }
     void WhenChannelOpen(const std::string& peer_key, uint32_t channel_id, int64_t deadline_ms,
@@ -333,6 +335,40 @@ TEST_F(AmpCircuitHopReachTest, CallMediaEnsureSucceedsDespiteDialablePeerInDialB
   EXPECT_TRUE(backoff_links.IsConnected(harness_->peer_id_b));
   EXPECT_EQ(backoff_links.ensure_backoff_calls, 0)
       << "call-media Ensure must not ADP-dial a dialable-but-backoff peer (prefer circuit)";
+}
+
+// k6: a call on a direct link wants a relay beside it (standby / TX-only escalation). The plain
+// reach is satisfied by the direct link; the relayed reach builds the nested circuit anyway.
+TEST_F(AmpCircuitHopReachTest, RelayedReachBuildsACircuitBesideADirectLink) {
+  WarmAnswererAndOfferer("relay");
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint("b-direct", harness_->ma_b)));
+  Wait<void> direct;
+  harness_->mgr_a().EnsureAssociation("b-direct", direct.LinkFn());
+  direct.PumpUntilDone(*harness_);
+  ASSERT_TRUE(direct.result) << direct.result.error().message;
+  ASSERT_TRUE(recording_->IsConnected(harness_->peer_id_b));
+  ASSERT_FALSE(recording_->IsConnectedRelayed(harness_->peer_id_b));
+
+  AmpCircuitHopReach reach(
+      *circuit_a_, *hops_, *recording_, [this] { harness_->PumpAll(); },
+      [](const std::string&) { return std::vector<std::string>{"relay"}; },
+      [](const std::string&, std::function<void(Roe<void>)> on_done) { on_done(Error("no punch here")); },
+      AmpCircuitHopReach::TryPunchViaIntroducerAsync{}, PostIoA(), PostAfterA());
+
+  recording_->nested_over_carrier_calls = 0;
+  Wait<void> plain;
+  reach.TryEnsurePeerReachableAsync(harness_->peer_id_b, plain.Fn());
+  plain.PumpUntilDone(*harness_);
+  ASSERT_TRUE(plain.result);
+  EXPECT_EQ(recording_->nested_over_carrier_calls, 0) << "the direct link satisfies a plain reach";
+
+  Wait<void> relayed;
+  reach.TryEnsureRelayedAsync(harness_->peer_id_b, relayed.Fn());
+  relayed.PumpUntilDone(*harness_);
+  ASSERT_TRUE(relayed.result) << relayed.result.error().message;
+  EXPECT_GE(recording_->nested_over_carrier_calls, 1);
+  EXPECT_TRUE(recording_->IsConnectedRelayed(harness_->peer_id_b)) << "a relay carrier beside the direct link";
+  EXPECT_TRUE(harness_->mgr_a().FindLink("b-direct") != nullptr) << "the direct link is untouched";
 }
 
 TEST_F(AmpCircuitHopReachTest, CallMediaEnsureAcceptsHopPeerIdRelayKey) {
