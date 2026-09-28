@@ -44,6 +44,9 @@ Roe<void> WriteBytes(const std::string& path, const char* data, size_t size) {
       return Error("Failed to write temp file: " + tmp_path.string());
     }
   }
+  // Profile data (config/preferences can hold secrets, e.g. LLM api_key) should not be
+  // group/world-readable. Restrict before the rename makes it visible at final_path.
+  os::SetOwnerOnlyPermissions(tmp_path);
 
   if (auto synced = os::FsyncFile(tmp_path); !synced) {
     std::error_code remove_ec;
