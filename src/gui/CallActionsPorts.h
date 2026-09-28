@@ -15,6 +15,8 @@ struct CallActionsPorts {
   // Chat
   std::function<bool(const std::string& thread_id, bool video_allowed)> start_call;
   std::function<void()> refresh_pending_ring;
+  /** Platform can encode/send video for a call (gates the "Video call" menu item). */
+  std::function<bool()> video_call_available;
 
   // PeoplePicker
   std::function<void(const std::vector<std::string>& identities)> invite_identities;
@@ -24,6 +26,7 @@ struct CallActionsPorts {
 
   // Shell
   std::function<void()> accept_incoming;
+  std::function<void()> accept_incoming_voice_only;
   std::function<void()> accept_incoming_with_charge;
   std::function<void()> decline_incoming;
   std::function<void()> leave_active;

@@ -841,6 +841,7 @@ void Application::WireCalls() {
       return call_->StartCall(thread_id, video_allowed);
     };
     call_actions.refresh_pending_ring = [this]() { call_->RefreshPendingRing(); };
+    call_actions.video_call_available = [this]() { return call_->VideoCallAvailable(); };
     call_actions.invite_identities = [this](const std::vector<std::string>& identities) {
       call_->InviteIdentitiesToActiveCall(identities);
     };
@@ -850,6 +851,7 @@ void Application::WireCalls() {
           return call_->StartCallWithInvitees(thread_id, video_allowed, identities);
         };
     call_actions.accept_incoming = [this]() { call_->AcceptIncoming(); };
+    call_actions.accept_incoming_voice_only = [this]() { call_->AcceptIncomingVoiceOnly(); };
     call_actions.accept_incoming_with_charge = [this]() { call_->AcceptIncomingWithCharge(); };
     call_actions.decline_incoming = [this]() { call_->DeclineIncoming(); };
     call_actions.leave_active = [this]() { call_->LeaveActive(); };
