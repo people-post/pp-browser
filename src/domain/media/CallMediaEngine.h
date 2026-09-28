@@ -126,6 +126,11 @@ public:
    * callers off the UI thread (the calls owner); iOS reads orientation from UIKit, main thread only.
    */
   Roe<void> SetCameraEnabled(bool enabled, int display_rotation_degrees);
+  /**
+   * The display turned while the camera is on (read on UI via `CameraDisplayRotationDegrees`): later
+   * frames rotate to match without reopening the camera or reconfiguring the encoder. Any thread.
+   */
+  void UpdateCameraDisplayRotation(int display_rotation_deg);
   bool IsCameraEnabled() const;
   /** Why the last camera request did not open, once (UI poll, like TakePendingVideoRefreshStreamIds). */
   std::optional<std::string> TakeCameraFailure();

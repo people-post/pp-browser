@@ -38,7 +38,7 @@ elseif(APPLE)
       CameraCaptureOrientation_Ios.mm
       SdlAudioBootstrap_Default.cpp
       VoiceProcessingIo_Apple.cpp)
-    target_link_libraries(pp_domain_media PRIVATE "-framework AVFoundation" "-framework UIKit" "-framework AudioToolbox")
+    target_link_libraries(pp_domain_media PRIVATE "-framework AVFoundation" "-framework UIKit" "-framework AudioToolbox" "-framework CoreMotion")
   else()
     target_sources(pp_domain_media PRIVATE
       CallAudioSession_Default.cpp

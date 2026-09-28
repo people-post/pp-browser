@@ -270,43 +270,60 @@ public:
       }
       return fail(std::string("No camera: ") + SDL_GetError());
     }
-    SDL_CameraID chosen = cameras[0];
+    // Front-facing first, then the rest in SDL order. If one won't open, try the next: on a Mac the
+    // list can include an iPhone's Continuity Camera (Bluetooth on), which reports front-facing and
+    // fails with "Cannot lockForConfiguration" while that iPhone uses its own camera — e.g. when the
+    // Mac calls that same phone (device test 2026-09-28).
+    std::vector<SDL_CameraID> candidates;
     for (int i = 0; i < count; ++i) {
       if (SDL_GetCameraPosition(cameras[i]) == SDL_CAMERA_POSITION_FRONT_FACING) {
-        chosen = cameras[i];
-        break;
+        candidates.push_back(cameras[i]);
+      }
+    }
+    for (int i = 0; i < count; ++i) {
+      if (SDL_GetCameraPosition(cameras[i]) != SDL_CAMERA_POSITION_FRONT_FACING) {
+        candidates.push_back(cameras[i]);
       }
     }
     SDL_free(cameras);
 
-    const CameraCaptureTransform xform = ResolveCameraCaptureTransform(chosen, format.display_rotation_deg);
-    CameraGeometry geometry;
-    geometry.rotate_cw = xform.rotate_cw;
-    geometry.encode_width = xform.encode_width;
-    geometry.encode_height = xform.encode_height;
+    std::string last_error;
+    for (const SDL_CameraID id : candidates) {
+      const char* name = SDL_GetCameraName(id);
+      const CameraCaptureTransform xform = ResolveCameraCaptureTransform(id, format.display_rotation_deg);
+      CameraGeometry geometry;
+      geometry.rotate_cw = xform.rotate_cw;
+      geometry.encode_width = xform.encode_width;
+      geometry.encode_height = xform.encode_height;
+      geometry.front_facing = xform.front_facing;
 
-    SDL_CameraSpec want{};
-    // Prefer a convertible packed/YUV format. UNKNOWN picks the driver's first enum entry (often
-    // MJPG/NV12 on Windows); conversion happens per frame. Landscape sensor buffers; the holder
-    // rotates / crops into the encode size.
-    want.format = SDL_PIXELFORMAT_UNKNOWN;
-    want.width = std::max(geometry.encode_width, geometry.encode_height);
-    want.height = std::min(geometry.encode_width, geometry.encode_height);
-    want.framerate_numerator = format.fps;
-    want.framerate_denominator = 1;
-    SDL_Camera* camera = SDL_OpenCamera(chosen, &want);
-    if (!camera) {
-      // Fall back: ask SDL to deliver RGBA so the driver converts when possible.
-      want.format = SDL_PIXELFORMAT_RGBA32;
-      camera = SDL_OpenCamera(chosen, &want);
+      SDL_CameraSpec want{};
+      // Prefer a convertible packed/YUV format. UNKNOWN picks the driver's first enum entry (often
+      // MJPG/NV12 on Windows); conversion happens per frame. Landscape sensor buffers; the holder
+      // rotates / crops into the encode size.
+      want.format = SDL_PIXELFORMAT_UNKNOWN;
+      want.width = std::max(geometry.encode_width, geometry.encode_height);
+      want.height = std::min(geometry.encode_width, geometry.encode_height);
+      want.framerate_numerator = format.fps;
+      want.framerate_denominator = 1;
+      SDL_Camera* camera = SDL_OpenCamera(id, &want);
+      if (!camera) {
+        // Fall back: ask SDL to deliver RGBA so the driver converts when possible.
+        want.format = SDL_PIXELFORMAT_RGBA32;
+        camera = SDL_OpenCamera(id, &want);
+      }
+      if (!camera) {
+        camera = SDL_OpenCamera(id, nullptr);
+      }
+      if (camera) {
+        SDL_Log("MediaDeviceArbiter: camera opened \"%s\"", name ? name : "?");
+        return std::make_unique<SdlCameraEndpoint>(camera, geometry);
+      }
+      last_error = SDL_GetError();
+      SDL_Log("MediaDeviceArbiter: camera \"%s\" failed: %s — trying the next one", name ? name : "?",
+              last_error.c_str());
     }
-    if (!camera) {
-      camera = SDL_OpenCamera(chosen, nullptr);
-    }
-    if (!camera) {
-      return fail(std::string("SDL_OpenCamera failed: ") + SDL_GetError());
-    }
-    return std::make_unique<SdlCameraEndpoint>(camera, geometry);
+    return fail(std::string("SDL_OpenCamera failed: ") + last_error);
   }
 
   VoiceDuplexEndpoints OpenVoiceDuplex(const AudioDeviceFormat& format, std::string* error) override {

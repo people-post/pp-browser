@@ -6,86 +6,86 @@
 
 #if defined(__APPLE__) && TARGET_OS_IPHONE
 
+#import <CoreMotion/CoreMotion.h>
 #import <UIKit/UIKit.h>
+
+#include <cmath>
 
 #include <SDL3/SDL.h>
 
 namespace pbr {
 
 int CameraDisplayRotationDegrees() {
-  UIInterfaceOrientation io = UIInterfaceOrientationUnknown;
-  if (@available(iOS 13.0, *)) {
-    for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
-      if (![scene isKindOfClass:[UIWindowScene class]]) {
-        continue;
-      }
-      UIWindowScene* window_scene = (UIWindowScene*)scene;
-      if (window_scene.activationState == UISceneActivationStateForegroundActive ||
-          window_scene.activationState == UISceneActivationStateForegroundInactive) {
-        io = window_scene.interfaceOrientation;
-        break;
-      }
+  // The app is portrait-locked and the sensor turns with the phone, so we need the phone's
+  // PHYSICAL orientation. UIDevice.orientation stays Portrait while the user's Control Center
+  // "Portrait Orientation Lock" is on (device test 2026-09-28: the peer always saw the picture
+  // turned with the phone), so read gravity from CoreMotion instead — like FaceTime.
+  // Degrees are CW display rotation, matching IosCameraRotateCw's table: portrait 0, home side
+  // right (UIDeviceOrientationLandscapeLeft) 90, upside down 180, home side left 270.
+  // UI thread only (called from the call UI tick while the camera is on).
+  static CMMotionManager* motion = nil;
+  static int last_valid_deg = 0;
+  if (motion == nil) {
+    motion = [[CMMotionManager alloc] init];
+    motion.deviceMotionUpdateInterval = 0.2;
+    if (motion.deviceMotionAvailable) {
+      [motion startDeviceMotionUpdates];
     }
   }
-  if (io == UIInterfaceOrientationUnknown) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    io = UIApplication.sharedApplication.statusBarOrientation;
-#pragma clang diagnostic pop
+  CMDeviceMotion* dm = motion.deviceMotion;
+  if (dm == nil) {
+    return last_valid_deg;  // not started yet / unavailable (simulator)
   }
-
-  switch (io) {
-  case UIInterfaceOrientationLandscapeRight:
-    return 90;
-  case UIInterfaceOrientationPortraitUpsideDown:
-    return 180;
-  case UIInterfaceOrientationLandscapeLeft:
-    return 270;
-  case UIInterfaceOrientationPortrait:
-  default:
-    return 0;
+  const double gx = dm.gravity.x;
+  const double gy = dm.gravity.y;
+  const double gz = dm.gravity.z;
+  // Flat on a table (gravity mostly through the screen): keep the last upright orientation.
+  // Hysteresis: the new axis must clearly dominate so ~45° doesn't flicker.
+  constexpr double kFlat = 0.8;
+  constexpr double kMargin = 0.2;
+  int deg = last_valid_deg;
+  if (std::fabs(gz) < kFlat) {
+    if (std::fabs(gy) > std::fabs(gx) + kMargin) {
+      deg = gy < 0 ? 0 : 180;
+    } else if (std::fabs(gx) > std::fabs(gy) + kMargin) {
+      deg = gx < 0 ? 90 : 270;
+    }
   }
+  if (deg != last_valid_deg) {
+    NSLog(@"CameraOrientation: physical rotation %d -> %d (gravity x=%.2f y=%.2f z=%.2f)", last_valid_deg, deg,
+          gx, gy, gz);
+    last_valid_deg = deg;
+  }
+  return last_valid_deg;
 }
-
-namespace {
-
-int Normalize90(int deg) {
-  deg %= 360;
-  if (deg < 0) {
-    deg += 360;
-  }
-  const int snapped = ((deg + 45) / 90) * 90;
-  return snapped % 360;
-}
-
-} // namespace
 
 CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id, int display_rotation_deg) {
   CameraCaptureTransform t;
   t.encode_width = 360;
   t.encode_height = 640;
 
-  // AVFoundation does not expose Android-style SENSOR_ORIENTATION. Built-in iPhone
-  // cameras use the same conventional angles; SDL CoreMedia leaves connection
-  // videoOrientation unset, so buffers need the same compensation as Android.
+  // AVFoundation does not expose Android-style SENSOR_ORIENTATION and SDL CoreMedia leaves the
+  // connection's videoOrientation unset, so we rotate buffers ourselves. Unlike Android (front
+  // sensor 270°), both iPhone cameras need 90° CW in portrait — using 270° for the front camera
+  // turned every iPhone selfie stream upside down (B51).
   const SDL_CameraPosition pos = SDL_GetCameraPosition(camera_id);
   const bool front = (pos != SDL_CAMERA_POSITION_BACK_FACING);
-  const int sensor_deg = front ? 270 : 90;
-  const int display_deg = Normalize90(display_rotation_deg);
-
-  int rotate_cw = 0;
-  if (front) {
-    rotate_cw = (sensor_deg + display_deg) % 360;
-  } else {
-    rotate_cw = (sensor_deg - display_deg + 360) % 360;
-  }
-  t.rotate_cw = Normalize90(rotate_cw);
+  t.front_facing = front;
+  t.rotate_cw = IosCameraRotateCw(front, display_rotation_deg);
 
   if (t.rotate_cw == 0 || t.rotate_cw == 180) {
     t.encode_width = 640;
     t.encode_height = 360;
   }
   return t;
+}
+
+int CameraFrameRotateCw(const CameraCaptureTransform& opened, int current_display_rotation_deg) {
+  return IosCameraRotateCw(opened.front_facing, current_display_rotation_deg);
+}
+
+int CameraPreviewRotateCw(const CameraCaptureTransform& opened) {
+  return IosCameraRotateCw(opened.front_facing, 0);  // the UI never rotates: portrait is screen-up
 }
 
 } // namespace pbr
