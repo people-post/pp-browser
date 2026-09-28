@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -43,6 +44,11 @@ public:
   static constexpr uint32_t kResyncJump = 50;
   /** Surplus depth held for a whole window (500 ms) is trimmed back to the target. */
   static constexpr uint32_t kDrainWindowPops = 25;
+  /** This many late packets in a row with a restarted stream's low seqs (< kResyncJump) is a
+   *  sender restart even when the backward step is small (early in a call next_seq_ < kResyncJump,
+   *  so the jump test alone would drop ~1 s of the new stream). Late stragglers with higher seqs —
+   *  e.g. a reorder burst from path migration mid-call — are never a restart. */
+  static constexpr uint32_t kRestartLateRun = 3;
 
   void Push(AudioPacket packet) {
     if (packet.payload.empty()) {
@@ -50,11 +56,15 @@ public:
     }
     if (primed_ && packet.seq < next_seq_) {
       if (packet.seq + kResyncJump >= next_seq_) {
-        ++drops_late_;
-        return;
+        late_run_ = packet.seq < kResyncJump ? late_run_ + 1 : 0;
+        if (late_run_ < kRestartLateRun) {
+          ++drops_late_;
+          return;
+        }
       }
       Reset(); // sender restarted its seq (re-StartSfu / BeginSession): re-prime on the new stream
     }
+    late_run_ = 0;
     auto it = queue_.begin();
     while (it != queue_.end() && it->seq < packet.seq) {
       ++it;
@@ -127,6 +137,7 @@ public:
     queue_.clear();
     primed_ = false;
     next_seq_ = 0;
+    late_run_ = 0;
     window_pops_ = 0;
     window_min_depth_ = kMaxFrames;
   }
@@ -173,6 +184,7 @@ private:
   std::deque<AudioPacket> queue_;
   bool primed_ = false;
   uint32_t next_seq_ = 0;
+  uint32_t late_run_ = 0;
   uint64_t drops_overflow_ = 0;
   uint64_t drops_late_ = 0;
   uint64_t underruns_ = 0;
@@ -187,6 +199,22 @@ inline void MixPcmSat(std::vector<int16_t>& out, const std::vector<int16_t>& in)
   for (size_t i = 0; i < n; ++i) {
     const int sum = static_cast<int>(out[i]) + static_cast<int>(in[i]);
     out[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, sum)));
+  }
+}
+
+/**
+ * Playout gain with a soft knee: linear up to 70 % of full scale, then tanh-compressed so a
+ * boosted peak approaches but never clips full scale (no hard-clip distortion).
+ */
+inline void ApplySoftGain(std::vector<int16_t>& pcm, float gain) {
+  constexpr float kKnee = 0.7f;
+  for (auto& s : pcm) {
+    float y = static_cast<float>(s) / 32768.f * gain;
+    const float a = std::fabs(y);
+    if (a > kKnee) {
+      y = std::copysign(kKnee + (1.f - kKnee) * std::tanh((a - kKnee) / (1.f - kKnee)), y);
+    }
+    s = static_cast<int16_t>(std::lrint(std::clamp(y * 32768.f, -32768.f, 32767.f)));
   }
 }
 

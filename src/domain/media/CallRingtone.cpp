@@ -290,6 +290,9 @@ void CallRingtone::RunLoop(std::shared_ptr<std::atomic<bool>> previous_done, std
   request.holder = tone_ == Tone::OutgoingRingback ? "ringback" : "ringtone";
   request.format = AudioDeviceFormat{wav_freq_, wav_channels_};
   request.still_wanted = [stop]() { return !stop->load(); };
+  // The speaker opens before (ringback) or without (ringtone) ActivateForVoipCall: keep a previous
+  // call's delayed Deactivate retry from stopping this tone's I/O.
+  CallAudioSession::CancelPendingDeactivate();
   auto lease = devices_.AcquireAudio(request);
   if (!lease || !(*lease)->HasDevice()) {
     SDL_Log("CallRingtone: no speaker: %s", lease ? (*lease)->OpenError().c_str() : lease.error().message.c_str());
