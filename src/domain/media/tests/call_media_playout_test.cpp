@@ -256,6 +256,23 @@ TEST(AudioJitterBufferTest, BackwardSeqRestartReprimes) {
   EXPECT_EQ(buf.drops_late(), late_before);
 }
 
+TEST(AudioJitterBufferTest, EarlyBackwardRestartReprimesQuickly) {
+  AudioJitterBuffer buf;
+  (void)RunSteady(buf, 1, 30); // restart within the first kResyncJump packets of the call
+  const uint64_t late_before = buf.drops_late();
+  uint32_t seq = 1;
+  int pops_until_audio = 0;
+  for (; pops_until_audio < 20; ++pops_until_audio) {
+    buf.Push(Pkt(seq++));
+    const auto p = buf.PopForPlayout();
+    if (p.kind == Kind::Packet && p.seq < 20) { // a packet of the restarted stream, not a leftover
+      break;
+    }
+  }
+  EXPECT_LE(pops_until_audio, 6); // ~120 ms of re-priming, not ~600 ms of dropped "late" packets
+  EXPECT_LE(buf.drops_late() - late_before, 2u);
+}
+
 TEST(AudioJitterBufferTest, SmallBackwardStepIsStillLate) {
   AudioJitterBuffer buf;
   (void)RunSteady(buf, 1, 100);

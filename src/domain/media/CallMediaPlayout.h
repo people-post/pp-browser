@@ -43,18 +43,22 @@ public:
   static constexpr uint32_t kResyncJump = 50;
   /** Surplus depth held for a whole window (500 ms) is trimmed back to the target. */
   static constexpr uint32_t kDrainWindowPops = 25;
+  /** This many late packets in a row is a sender restart even when the jump is small (early in
+   *  a call next_seq_ < kResyncJump, so the jump test alone would drop ~1 s of the new stream). */
+  static constexpr uint32_t kRestartLateRun = 3;
 
   void Push(AudioPacket packet) {
     if (packet.payload.empty()) {
       return;
     }
     if (primed_ && packet.seq < next_seq_) {
-      if (packet.seq + kResyncJump >= next_seq_) {
+      if (packet.seq + kResyncJump >= next_seq_ && ++late_run_ < kRestartLateRun) {
         ++drops_late_;
         return;
       }
       Reset(); // sender restarted its seq (re-StartSfu / BeginSession): re-prime on the new stream
     }
+    late_run_ = 0;
     auto it = queue_.begin();
     while (it != queue_.end() && it->seq < packet.seq) {
       ++it;
@@ -127,6 +131,7 @@ public:
     queue_.clear();
     primed_ = false;
     next_seq_ = 0;
+    late_run_ = 0;
     window_pops_ = 0;
     window_min_depth_ = kMaxFrames;
   }
@@ -173,6 +178,7 @@ private:
   std::deque<AudioPacket> queue_;
   bool primed_ = false;
   uint32_t next_seq_ = 0;
+  uint32_t late_run_ = 0;
   uint64_t drops_overflow_ = 0;
   uint64_t drops_late_ = 0;
   uint64_t underruns_ = 0;
