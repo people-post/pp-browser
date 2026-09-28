@@ -205,9 +205,11 @@ pp_hard_ensure_up() {
 # --- Wave 5 CGNAT-ish (dual SNAT) ---------------------------------------------
 # Separate compose family: packaging/pp-node/docker-compose.hard-lab-cgnat.yml
 # Fixed addressing (see compose):
-#   public 10.117.0.0/24  hop=.2  gw-a=.10  gw-b=.11
+#   public 198.18.117.0/24  hop=.2  gw-a=.10  gw-b=.11  gw-c=.12  (RFC 2544, not RFC1918: product
+#          treats RFC1918 as LAN — a hop there is "private" to the peers)
 #   priv-a 10.117.1.0/24  gw=.1   peer-a=.10
 #   priv-b 10.117.2.0/24  gw=.1   peer-b=.10
+#   priv-c 10.117.3.0/24  gw=.1   peer-c=.10  (group-call phase; idle otherwise)
 
 PP_HARD_CGNAT_COMPOSE_FILE="${PP_HARD_CGNAT_COMPOSE_FILE:-${ROOT}/packaging/pp-node/docker-compose.hard-lab-cgnat.yml}"
 PP_HARD_CGNAT_COMPOSE_PROJECT="${PP_HARD_CGNAT_COMPOSE_PROJECT:-pp-hard-lab-cgnat}"
@@ -216,20 +218,26 @@ PP_HARD_CGNAT_SHARE_DIR="${PP_HARD_CGNAT_SHARE_DIR:-/tmp/pp-hard-lab-cgnat-share
 PP_HARD_CGNAT_HOP="${PP_HARD_CGNAT_HOP:-pp-hard-lab-cgnat-hop}"
 PP_HARD_CGNAT_PEER_A="${PP_HARD_CGNAT_PEER_A:-pp-hard-lab-cgnat-peer-a}"
 PP_HARD_CGNAT_PEER_B="${PP_HARD_CGNAT_PEER_B:-pp-hard-lab-cgnat-peer-b}"
+PP_HARD_CGNAT_PEER_C="${PP_HARD_CGNAT_PEER_C:-pp-hard-lab-cgnat-peer-c}"
 PP_HARD_CGNAT_GW_A="${PP_HARD_CGNAT_GW_A:-pp-hard-lab-cgnat-gw-a}"
 PP_HARD_CGNAT_GW_B="${PP_HARD_CGNAT_GW_B:-pp-hard-lab-cgnat-gw-b}"
+PP_HARD_CGNAT_GW_C="${PP_HARD_CGNAT_GW_C:-pp-hard-lab-cgnat-gw-c}"
 PP_HARD_CGNAT_NET_PUBLIC="${PP_HARD_CGNAT_NET_PUBLIC:-pp-hard-lab-cgnat-net-public}"
 PP_HARD_CGNAT_NET_PRIV_A="${PP_HARD_CGNAT_NET_PRIV_A:-pp-hard-lab-cgnat-net-priv-a}"
 PP_HARD_CGNAT_NET_PRIV_B="${PP_HARD_CGNAT_NET_PRIV_B:-pp-hard-lab-cgnat-net-priv-b}"
-PP_HARD_CGNAT_HOP_IP="${PP_HARD_CGNAT_HOP_IP:-10.117.0.2}"
+PP_HARD_CGNAT_NET_PRIV_C="${PP_HARD_CGNAT_NET_PRIV_C:-pp-hard-lab-cgnat-net-priv-c}"
+PP_HARD_CGNAT_HOP_IP="${PP_HARD_CGNAT_HOP_IP:-198.18.117.2}"
 PP_HARD_CGNAT_PEER_A_IP="${PP_HARD_CGNAT_PEER_A_IP:-10.117.1.10}"
 PP_HARD_CGNAT_PEER_B_IP="${PP_HARD_CGNAT_PEER_B_IP:-10.117.2.10}"
 PP_HARD_CGNAT_GW_A_PRIV_IP="${PP_HARD_CGNAT_GW_A_PRIV_IP:-10.117.1.254}"
 PP_HARD_CGNAT_GW_B_PRIV_IP="${PP_HARD_CGNAT_GW_B_PRIV_IP:-10.117.2.254}"
-PP_HARD_CGNAT_GW_A_PUB_IP="${PP_HARD_CGNAT_GW_A_PUB_IP:-10.117.0.10}"
-PP_HARD_CGNAT_GW_B_PUB_IP="${PP_HARD_CGNAT_GW_B_PUB_IP:-10.117.0.11}"
+PP_HARD_CGNAT_GW_C_PRIV_IP="${PP_HARD_CGNAT_GW_C_PRIV_IP:-10.117.3.254}"
+PP_HARD_CGNAT_GW_A_PUB_IP="${PP_HARD_CGNAT_GW_A_PUB_IP:-198.18.117.10}"
+PP_HARD_CGNAT_GW_B_PUB_IP="${PP_HARD_CGNAT_GW_B_PUB_IP:-198.18.117.11}"
+PP_HARD_CGNAT_GW_C_PUB_IP="${PP_HARD_CGNAT_GW_C_PUB_IP:-198.18.117.12}"
 PP_HARD_CGNAT_PRIV_A_CIDR="${PP_HARD_CGNAT_PRIV_A_CIDR:-10.117.1.0/24}"
 PP_HARD_CGNAT_PRIV_B_CIDR="${PP_HARD_CGNAT_PRIV_B_CIDR:-10.117.2.0/24}"
+PP_HARD_CGNAT_PRIV_C_CIDR="${PP_HARD_CGNAT_PRIV_C_CIDR:-10.117.3.0/24}"
 
 pp_hard_cgnat_compose() {
   pp_hard_need_cmd docker
@@ -251,6 +259,8 @@ pp_hard_cgnat_fix_peer_routes() {
     "ip route del default 2>/dev/null || true; ip route replace default via ${PP_HARD_CGNAT_GW_A_PRIV_IP}"
   pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" sh -c \
     "ip route del default 2>/dev/null || true; ip route replace default via ${PP_HARD_CGNAT_GW_B_PRIV_IP}"
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_C}" sh -c \
+    "ip route del default 2>/dev/null || true; ip route replace default via ${PP_HARD_CGNAT_GW_C_PRIV_IP}"
   echo "ok  peer default routes via SNAT gateways"
 }
 
@@ -279,6 +289,9 @@ pp_hard_cgnat_set_nat() {
   pp_hard_cgnat_gw_sh "${PP_HARD_CGNAT_GW_B}" "${PP_HARD_CGNAT_GW_B_PUB_IP}" \
     "iptables -t nat -F POSTROUTING && iptables -t nat -A POSTROUTING -s ${PP_HARD_CGNAT_PRIV_B_CIDR} -o \$pub -j MASQUERADE ${extra}" ||
     pp_hard_die "gw-b: set nat ${mode} failed"
+  pp_hard_cgnat_gw_sh "${PP_HARD_CGNAT_GW_C}" "${PP_HARD_CGNAT_GW_C_PUB_IP}" \
+    "iptables -t nat -F POSTROUTING && iptables -t nat -A POSTROUTING -s ${PP_HARD_CGNAT_PRIV_C_CIDR} -o \$pub -j MASQUERADE ${extra}" ||
+    pp_hard_die "gw-c: set nat ${mode} failed"
   echo "  gateways nat=${mode}"
 }
 
@@ -329,8 +342,9 @@ pp_hard_cgnat_resolve_topology() {
   HOP_IP_PUBLIC="$(pp_hard_container_ip_on_net "${PP_HARD_CGNAT_HOP}" "${PP_HARD_CGNAT_NET_PUBLIC}")"
   PEER_A_IP="$(pp_hard_container_ip_on_net "${PP_HARD_CGNAT_PEER_A}" "${PP_HARD_CGNAT_NET_PRIV_A}")"
   PEER_B_IP="$(pp_hard_container_ip_on_net "${PP_HARD_CGNAT_PEER_B}" "${PP_HARD_CGNAT_NET_PRIV_B}")"
+  PEER_C_IP="$(pp_hard_container_ip_on_net "${PP_HARD_CGNAT_PEER_C}" "${PP_HARD_CGNAT_NET_PRIV_C}")"
   [[ -n "${HOP_IP_PUBLIC}" ]] || pp_hard_die "cgnat hop missing public IP"
-  [[ -n "${PEER_A_IP}" && -n "${PEER_B_IP}" ]] || pp_hard_die "cgnat peers missing private IPs"
+  [[ -n "${PEER_A_IP}" && -n "${PEER_B_IP}" && -n "${PEER_C_IP}" ]] || pp_hard_die "cgnat peers missing private IPs"
   # Temporarily point status URL at cgnat hop for peer_id fetch.
   local saved_status="${PP_HARD_STATUS_URL}"
   PP_HARD_STATUS_URL="${PP_HARD_CGNAT_STATUS_URL}"
@@ -346,7 +360,13 @@ pp_hard_cgnat_assert_nat_shape() {
   if pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" ping -c1 -W1 "${PEER_B_IP}" >/dev/null 2>&1; then
     pp_hard_die "peer-a unexpectedly reached peer-b private ${PEER_B_IP}"
   fi
-  echo "ok  direct A→B private blocked"
+  if pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" ping -c1 -W1 "${PEER_C_IP}" >/dev/null 2>&1; then
+    pp_hard_die "peer-a unexpectedly reached peer-c private ${PEER_C_IP}"
+  fi
+  if pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" ping -c1 -W1 "${PEER_C_IP}" >/dev/null 2>&1; then
+    pp_hard_die "peer-b unexpectedly reached peer-c private ${PEER_C_IP}"
+  fi
+  echo "ok  direct A→B, A→C, B→C private blocked"
 
   # Hop cannot ping peer private IPs (not on priv nets / no route).
   if pp_hard_exec "${PP_HARD_CGNAT_HOP}" ping -c1 -W1 "${PEER_A_IP}" >/dev/null 2>&1; then
@@ -355,6 +375,9 @@ pp_hard_cgnat_assert_nat_shape() {
   if pp_hard_exec "${PP_HARD_CGNAT_HOP}" ping -c1 -W1 "${PEER_B_IP}" >/dev/null 2>&1; then
     pp_hard_die "hop unexpectedly reached peer-b private ${PEER_B_IP}"
   fi
+  if pp_hard_exec "${PP_HARD_CGNAT_HOP}" ping -c1 -W1 "${PEER_C_IP}" >/dev/null 2>&1; then
+    pp_hard_die "hop unexpectedly reached peer-c private ${PEER_C_IP}"
+  fi
   echo "ok  hop↛peer private (no inbound without mapping)"
 
   # Peers can reach hop public IP via SNAT gateways.
@@ -362,7 +385,9 @@ pp_hard_cgnat_assert_nat_shape() {
     || pp_hard_die "peer-a cannot ping hop public ${HOP_IP_PUBLIC} via SNAT"
   pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" ping -c1 -W2 "${HOP_IP_PUBLIC}" >/dev/null \
     || pp_hard_die "peer-b cannot ping hop public ${HOP_IP_PUBLIC} via SNAT"
-  echo "ok  A→hop and B→hop via SNAT"
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_C}" ping -c1 -W2 "${HOP_IP_PUBLIC}" >/dev/null \
+    || pp_hard_die "peer-c cannot ping hop public ${HOP_IP_PUBLIC} via SNAT"
+  echo "ok  A→hop, B→hop and C→hop via SNAT"
 }
 
 pp_hard_cgnat_ensure_up() {
@@ -398,6 +423,6 @@ pp_hard_cgnat_ensure_up() {
   fi
   pp_hard_cgnat_resolve_topology
   echo "cgnat hop peer_id=${HOP_PEER_ID} public=${HOP_IP_PUBLIC}"
-  echo "cgnat peer-a=${PEER_A_IP} peer-b=${PEER_B_IP}"
+  echo "cgnat peer-a=${PEER_A_IP} peer-b=${PEER_B_IP} peer-c=${PEER_C_IP}"
   echo "cgnat hop_ma=${HOP_MA_PUBLIC}"
 }

@@ -23,6 +23,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <deque>
+#include <map>
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
@@ -358,6 +360,23 @@ Roe<void> ProductStackHarness::EnsureOriginThread(const std::string& thread_id,
   return {};
 }
 
+Roe<void> ProductStackHarness::EnsureGroupOriginThread(const std::string& thread_id,
+                                                       const std::vector<std::string>& peer_accounts) {
+  Thread thread;
+  thread.id = thread_id;
+  thread.kind = ThreadKind::Group;
+  thread.channel = ThreadChannel::E2ePublic;
+  thread.title = "group call";
+  thread.updated_at = util::NowUnixMs();
+  thread.participant_contact_ids = {local_account_};
+  thread.participant_contact_ids.insert(thread.participant_contact_ids.end(), peer_accounts.begin(),
+                                        peer_accounts.end());
+  if (auto up = store_->UpsertThread(thread); !up) {
+    return up.error();
+  }
+  return {};
+}
+
 void ProductStackHarness::Pump() {
   // UI mailbox only — the mesh runs on MeshHost's MeshPump.
   AppRuntime::RunUITasks();
@@ -673,7 +692,122 @@ private:
   uint64_t last_rx_ = 0;
 };
 
+/**
+ * Group calls: per-publisher RX over a sliding window. Met once `streams` remote streams each
+ * decoded `frames` audio frames within `window_ms` — windowed, so a 1:1 stream left over from
+ * before SoftMigrate stops counting once it goes quiet.
+ */
+class PublisherRxGate {
+public:
+  PublisherRxGate(const char* role, int streams, int frames, int window_ms)
+      : role_(role), streams_(streams), frames_(static_cast<uint64_t>(std::max(frames, 1))),
+        window_(std::chrono::milliseconds(std::max(window_ms, 500))) {}
+
+  bool Enabled() const { return streams_ > 0; }
+  bool Met() const { return met_; }
+  std::chrono::steady_clock::time_point MetAt() const { return met_at_; }
+  const std::string& Last() const { return last_; }
+
+  void Tick(const std::vector<CallMediaStreamHealth>& streams) {
+    const auto now = std::chrono::steady_clock::now();
+    if (!Enabled() || met_ || now < next_sample_) {
+      return;
+    }
+    next_sample_ = now + std::chrono::milliseconds(250);
+    Sample sample{now, {}};
+    for (const CallMediaStreamHealth& s : streams) {
+      sample.rx[s.stream_id] = s.rx_frames;
+    }
+    samples_.push_back(std::move(sample));
+    while (samples_.size() > 1 && now - samples_.front().at > window_) {
+      samples_.pop_front();
+    }
+    const Sample& oldest = samples_.front();
+    if (now - oldest.at < window_ - std::chrono::milliseconds(300)) {
+      return;  // window not covered yet
+    }
+    std::ostringstream desc;
+    int live = 0;
+    for (const auto& [id, rx] : samples_.back().rx) {
+      const auto base = oldest.rx.find(id);
+      const uint64_t delta = rx - (base == oldest.rx.end() ? 0 : std::min(base->second, rx));
+      desc << (desc.tellp() > 0 ? "," : "") << id << ":" << delta;
+      if (delta >= frames_) {
+        ++live;
+      }
+    }
+    last_ = "streams=" + desc.str();
+    if (live >= streams_) {
+      met_ = true;
+      met_at_ = now;
+      std::cout << "ok  publisher rx gate " << role_ << " live=" << live << " (need " << streams_ << " x "
+                << frames_ << " frames/" << window_.count() << "ms) " << last_ << "\n"
+                << std::flush;
+    }
+  }
+
+private:
+  struct Sample {
+    std::chrono::steady_clock::time_point at;
+    std::map<uint32_t, uint64_t> rx;
+  };
+
+  const char* role_;
+  int streams_;
+  uint64_t frames_;
+  std::chrono::milliseconds window_;
+  std::deque<Sample> samples_;
+  std::chrono::steady_clock::time_point next_sample_{};
+  bool met_ = false;
+  std::chrono::steady_clock::time_point met_at_{};
+  std::string last_ = "streams=(none)";
+};
+
 } // namespace
+
+std::vector<CallMediaStreamHealth> ProductStackHarness::RxStreams() const {
+  if (!stack_ || !stack_->MediaEngine()) {
+    return {};
+  }
+  return stack_->MediaEngine()->HealthSnapshot().streams;
+}
+
+std::optional<std::string> ProductStackHarness::MaybeAcceptPendingInvite(
+    std::optional<std::chrono::steady_clock::time_point>& first_seen) {
+  auto pending = ui_->TopPendingInvite();
+  if (!pending || !pending->has_value()) {
+    return std::nullopt;
+  }
+  const auto now = std::chrono::steady_clock::now();
+  if (!first_seen) {
+    first_seen = now;
+    if (accept_delay_ms_ > 0) {
+      std::cout << "ok  product-stack invite seen; AcceptClicked in " << accept_delay_ms_ << " ms\n";
+    }
+  }
+  if (now - *first_seen < std::chrono::milliseconds(accept_delay_ms_)) {
+    return std::nullopt;
+  }
+  const std::string call_id = (*pending)->call_id;
+  const std::string inviter = (*pending)->inviter_identity;
+  // Reverse Accept rides Amp chat: ensure nested path to inviter PeerId (map from invite).
+  const std::string inviter_peer = AmpDialKeyForAccount(inviter);
+  // Signal-dir: Accept goes back through the inbox — media must reach the peer from cold.
+  if (!UsesSignalDir() && !inviter_peer.empty() && inviter_peer != inviter) {
+    if (!(host_ && host_->Amp() && host_->Amp()->Links().IsConnected(inviter_peer))) {
+      if (auto path = EnsurePeerCircuitPath(inviter_peer); !path) {
+        std::cerr << "warning: product-stack answerer circuit path: " << path.error().message << "\n";
+      }
+    }
+  }
+  ui_->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  ui_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
+  std::cout << "ok  product-stack AcceptClicked call_id=" << call_id << "\n";
+  // Offerer arms wait-inbound only after CallAccept. If we Pump UI StartSfu first, inbound
+  // hello lands on a pending bundle (offerer=0) and the PeerLink is torn down (HL004 race).
+  std::this_thread::sleep_for(std::chrono::milliseconds(150));
+  return call_id;
+}
 
 uint64_t ProductStackHarness::TxAudioFrames() const {
   if (!stack_ || !stack_->MediaEngine()) {
@@ -690,37 +824,30 @@ uint64_t ProductStackHarness::RxAudioFrames() const {
 }
 
 int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
-  bool accepted = false;
   std::string call_id;
+  std::optional<std::chrono::steady_clock::time_point> invite_seen;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(hold_seconds);
   bool min_rx_met = false;
   bool was_in_call = false;
   MediaFlowMonitor flow("answerer", rx_stall_ms_, rx_watch_ms_);
+  PublisherRxGate gate("answerer", gate_streams_, gate_frames_, gate_window_ms_);
+  auto gates_ok = [&]() {
+    if (min_rx_frames > 0 && !min_rx_met) {
+      std::cerr << "error: answerer rx frames=" << RxAudioFrames() << " < min-rx-frames=" << min_rx_frames << "\n";
+      return false;
+    }
+    if (gate.Enabled() && !gate.Met()) {
+      std::cerr << "error: answerer publisher rx gate not met (need " << gate_streams_ << " streams) last "
+                << gate.Last() << "\n";
+      return false;
+    }
+    return true;
+  };
   while (std::chrono::steady_clock::now() < deadline) {
     Pump();
-    if (!accepted) {
-      auto pending = ui_->TopPendingInvite();
-      if (pending && pending->has_value()) {
-        call_id = (*pending)->call_id;
-        const std::string inviter = (*pending)->inviter_identity;
-        // Reverse Accept rides Amp chat: ensure nested path to inviter PeerId (map from invite).
-        const std::string inviter_peer = AmpDialKeyForAccount(inviter);
-        // Signal-dir: Accept goes back through the inbox — media must reach the peer from cold.
-        if (!UsesSignalDir() && !inviter_peer.empty() && inviter_peer != inviter) {
-          if (!(host_ && host_->Amp() && host_->Amp()->Links().IsConnected(inviter_peer))) {
-            if (auto path = EnsurePeerCircuitPath(inviter_peer); !path) {
-              std::cerr << "warning: product-stack answerer circuit path: " << path.error().message
-                        << "\n";
-            }
-          }
-        }
-        ui_->Apply(CallLifecycleEvent::InviteSeen, call_id);
-        ui_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
-        accepted = true;
-        std::cout << "ok  product-stack AcceptClicked call_id=" << call_id << "\n";
-        // Offerer arms wait-inbound only after CallAccept. If we Pump UI StartSfu first, inbound
-        // hello lands on a pending bundle (offerer=0) and the PeerLink is torn down (HL004 race).
-        std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    if (call_id.empty()) {
+      if (auto accepted = MaybeAcceptPendingInvite(invite_seen)) {
+        call_id = *accepted;
       }
     }
     if (min_rx_frames > 0 && static_cast<int>(RxAudioFrames()) >= min_rx_frames) {
@@ -730,7 +857,7 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
       std::cerr << "error: product-stack answerer ConnectFailed err=" << ui_->LastError() << "\n";
       return 1;
     }
-    if (accepted) {
+    if (!call_id.empty()) {
       // Stay until the offerer leaves: hanging up on first RX ended the offerer's call before its
       // own media phase once call_leave was actually delivered.
       if (rx_stall_ms_ > 0) {
@@ -739,41 +866,49 @@ int ProductStackHarness::RunAnswererHold(int hold_seconds, int min_rx_frames) {
           return 1;
         }
       }
+      gate.Tick(RxStreams());
+      if (gate.Met() && leave_after_gate_ms_ > 0 &&
+          std::chrono::steady_clock::now() - gate.MetAt() >= std::chrono::milliseconds(leave_after_gate_ms_)) {
+        const uint64_t rx_before_leave = RxAudioFrames();  // the engine stops on Leave
+        LeaveAndFlush(call_id);
+        std::cout << "ok  product-stack answerer left the live call rx_frames=" << rx_before_leave << "\n";
+        return gates_ok() ? 0 : 1;
+      }
       if (ui_->Phase() == CallPhase::InCall) {
         was_in_call = true;
       } else if (was_in_call && ui_->Phase() == CallPhase::Idle) {
         std::cout << "ok  product-stack answerer: offerer left rx_frames=" << RxAudioFrames() << "\n";
-        return min_rx_met || min_rx_frames <= 0 ? 0 : 1;
+        return gates_ok() ? 0 : 1;
       }
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
 
-  if (!accepted) {
+  if (call_id.empty()) {
     std::cerr << "error: product-stack answerer never saw invite\n";
     return 1;
   }
-  if (min_rx_frames > 0 && !min_rx_met) {
-    std::cerr << "error: answerer rx frames=" << RxAudioFrames() << " < min-rx-frames=" << min_rx_frames
-              << "\n";
+  if (!gates_ok()) {
     return 1;
   }
-
-  if (!call_id.empty()) {
-    LeaveAndFlush(call_id);
-  }
+  LeaveAndFlush(call_id);
   std::cout << "ok  product-stack answerer leave rx_frames=" << RxAudioFrames() << "\n";
   return 0;
 }
 
-Roe<void> ProductStackHarness::RunOffererCall(const std::string& peer_account, int hold_ms,
+Roe<void> ProductStackHarness::RunOffererCall(const std::vector<std::string>& peer_accounts, int hold_ms,
                                               int timeout_ms) {
-  const std::string thread_id = "thread-probe-out";
-  if (auto thr = EnsureOriginThread(thread_id, peer_account); !thr) {
+  if (peer_accounts.empty()) {
+    return Error("product-stack offerer: no invitee");
+  }
+  const std::string thread_id = peer_accounts.size() > 1 ? "thread-probe-group" : "thread-probe-out";
+  auto thr = peer_accounts.size() > 1 ? EnsureGroupOriginThread(thread_id, peer_accounts)
+                                      : EnsureOriginThread(thread_id, peer_accounts.front());
+  if (!thr) {
     return thr.error();
   }
   std::optional<Roe<CallSession>> started;
-  ui_->StartCall(thread_id, false, {peer_account}, [&started](Roe<CallSession> result) { started = std::move(result); });
+  ui_->StartCall(thread_id, false, peer_accounts, [&started](Roe<CallSession> result) { started = std::move(result); });
   if (!PumpUntil([&started]() { return started.has_value(); }, 10000)) {
     return Error("product-stack StartCall timed out");
   }
@@ -781,7 +916,7 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::string& peer_account, i
     return started->error();
   }
   const std::string call_id = (*started)->call_id;
-  std::cout << "ok  product-stack StartCall call_id=" << call_id << " peer=" << peer_account << "\n";
+  std::cout << "ok  product-stack StartCall call_id=" << call_id << " invitees=" << peer_accounts.size() << "\n";
 
   const bool reached = PumpUntil(
       [this]() {
@@ -801,6 +936,7 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::string& peer_account, i
 
   const auto hold_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(hold_ms);
   MediaFlowMonitor flow("offerer", rx_stall_ms_);
+  PublisherRxGate gate("offerer", gate_streams_, gate_frames_, gate_window_ms_);
   while (std::chrono::steady_clock::now() < hold_deadline) {
     Pump();
     if (ui_->Phase() == CallPhase::ConnectFailed) {
@@ -809,7 +945,13 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::string& peer_account, i
     if (auto stall = flow.Tick(RxAudioFrames(), TxAudioFrames())) {
       return Error(*stall);
     }
+    gate.Tick(RxStreams());
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  if (gate.Enabled() && !gate.Met()) {
+    LeaveAndFlush(call_id);
+    return Error("publisher rx gate not met (need " + std::to_string(gate_streams_) + " streams) last " +
+                 gate.Last());
   }
 
   LeaveAndFlush(call_id);

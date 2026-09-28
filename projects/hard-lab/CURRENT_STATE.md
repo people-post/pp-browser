@@ -11,7 +11,9 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 | Area | State |
 |------|-------|
 | HL004 E2E closeness | Accepted — CallStack+Amp on netns (not GUI); dirty-book first-class |
-| `--suite hard-w5` default `--phase all` | circuit + **stack** + **cold** + **cold-dirty** + **cold-await** + **broadcast** (product / dirty retired) |
+| `--suite hard-w5` default `--phase all` | circuit + **stack** + **cold** + **cold-dirty** + **cold-await** + upgrade + punch + flip + mobile + **group** + **broadcast** (product / dirty retired) |
+| **B-HARD-GROUP-CALL-NAT** (`--phase group`) | Three product stacks behind three symmetric NATs (`peer-c` / `gw-c`); A invites B+C over `/share`, C joins 8 s later → initiator SoftMigrates onto the hop's `media_relay`; per-publisher RX gate on every side, guest leave keeps A↔B audio; 7/7 green 2026-09-28. In-process twin **B-GROUP-CALL** (`call_group_stack_compose_test`) |
+| CGNAT public net 198.18.117.0/24 ([HL006](DECISIONS.md)) | Was 10.117.0.0/24 — RFC1918, so the product saw the hop as private and group guests refused its `CallSfuAttach`; all 12 hard-w5 phases green after the move |
 | **B-HARD-BCAST-NAT** (`--phase broadcast`) | Broadcaster → hop `media_relay` → 2 viewers under dual SNAT, product `BroadcastHub`; ticket via circuit to the NATed publisher; 3/3 green 2026-09-26 |
 | B-HARD-CALL-NAT-COLD / -DIRTY / -AWAIT | Product stack with `--signal-dir` (call control via `/share` files, no Amp-chat pre-path) — media reach starts cold. Gates: offerer `PeerReachCoordinator` cold `mode=reach`; dirty adds H010 skip-private; await (offerer uplink delay) adds answerer cold `mode=await`; ≥ 100 rx frames on both sides. Closes the gap where Phase-4 only hit the reuse shortcut (its Amp-chat signaling pre-builds the circuit) |
 | B-HARD-CALL-NAT-DIRTY | **Retired** — superseded by COLD-DIRTY (product reach + forced dial miss, no probe re-warm); see HL004 update |
@@ -34,7 +36,6 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 | N-HARD-DIR / DHT / N-ADMIT-HARD | Blocked on product hooks |
 | Wave 4+ multi-hop | Blocked on L3.5 |
 | GUI / phones | Manual dogfood only |
-| SFU `media_relay` on hard topo | Broadcast covers one-way fan-out (B-HARD-BCAST-NAT). Group calls: product logic guarded in-process (**B-GROUP-CALL**, `call_group_stack_compose_test`); the NAT phase (`B-HARD-GROUP-CALL-NAT`: third gateway + peer-c, `--signal-dir` for 3 probes, per-sender RX gates) is not built |
 
 ## Next
 
