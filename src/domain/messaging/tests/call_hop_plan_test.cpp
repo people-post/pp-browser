@@ -146,10 +146,12 @@ TEST(CallHopPlanTest, LocalAdvertiseHasPublicTreatsGlobalIpv6) {
 
 // --- V050 gt4: the hop a group forms on at the third join ---------------------------------------
 
-CallHopReport Report(std::optional<bool> planned_ok, std::vector<std::string> reachable) {
+CallHopReport Report(std::optional<bool> planned_ok, std::vector<std::string> reachable,
+                     std::vector<std::string> unreachable = {}) {
   CallHopReport r;
   r.planned_hop_ok = planned_ok;
   r.reachable_hops = std::move(reachable);
+  r.unreachable_hops = std::move(unreachable);
   return r;
 }
 
@@ -190,12 +192,26 @@ TEST(GroupHopAtJoinTest, NoSharedHopRefusesTheJoiner) {
   GroupHopJoinInput in;
   in.planned_hop = "P";
   in.ranked_hops = {"P", "X"};
-  in.reports["b"] = Report(true, {"P"});
-  in.reports["c"] = Report(false, {"X"});
+  in.reports["b"] = Report(true, {"P"}, {"X"});  // b tried X and failed
+  in.reports["c"] = Report(false, {"X"}, {"P"});
   EXPECT_EQ(DecideGroupHopAtJoin(in).action, GroupHopAtJoin::RefuseJoiner);
 
-  in.reports["c"] = Report(false, {});  // reached nothing
+  in.reports["b"] = Report(true, {"P"});
+  in.reports["c"] = Report(false, {}, {"P"});  // c reached nothing: no evidence for any alternative
   EXPECT_EQ(DecideGroupHopAtJoin(in).action, GroupHopAtJoin::RefuseJoiner);
+}
+
+// An invitee may accept before its probes finish: a hop it has not reported either way is
+// unknown and must not rule the alternative out (hard lab: B accepted at once, C 8 s later).
+TEST(GroupHopAtJoinTest, AHopStillBeingProbedExcludesNothing) {
+  GroupHopJoinInput in;
+  in.planned_hop = "P";
+  in.ranked_hops = {"P", "X"};
+  in.reports["b"] = Report(true, {"P"});           // X still probing when b accepted
+  in.reports["c"] = Report(false, {"X"}, {"P"});  // c cannot reach P, reached X
+  const auto out = DecideGroupHopAtJoin(in);
+  EXPECT_EQ(out.action, GroupHopAtJoin::UseAlternative);
+  EXPECT_EQ(out.hop, "X");
 }
 
 TEST(GroupHopAtJoinTest, NoPlanMeansTheUsualPick) {

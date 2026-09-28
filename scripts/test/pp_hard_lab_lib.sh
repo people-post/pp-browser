@@ -216,6 +216,8 @@ PP_HARD_CGNAT_COMPOSE_PROJECT="${PP_HARD_CGNAT_COMPOSE_PROJECT:-pp-hard-lab-cgna
 PP_HARD_CGNAT_STATUS_URL="${PP_HARD_CGNAT_STATUS_URL:-http://127.0.0.1:18628}"
 PP_HARD_CGNAT_SHARE_DIR="${PP_HARD_CGNAT_SHARE_DIR:-/tmp/pp-hard-lab-cgnat-share}"
 PP_HARD_CGNAT_HOP="${PP_HARD_CGNAT_HOP:-pp-hard-lab-cgnat-hop}"
+PP_HARD_CGNAT_HOP2="${PP_HARD_CGNAT_HOP2:-pp-hard-lab-cgnat-hop2}"
+PP_HARD_CGNAT_HOP2_STATUS_URL="${PP_HARD_CGNAT_HOP2_STATUS_URL:-http://127.0.0.1:18629}"
 PP_HARD_CGNAT_PEER_A="${PP_HARD_CGNAT_PEER_A:-pp-hard-lab-cgnat-peer-a}"
 PP_HARD_CGNAT_PEER_B="${PP_HARD_CGNAT_PEER_B:-pp-hard-lab-cgnat-peer-b}"
 PP_HARD_CGNAT_PEER_C="${PP_HARD_CGNAT_PEER_C:-pp-hard-lab-cgnat-peer-c}"
@@ -351,6 +353,40 @@ pp_hard_cgnat_resolve_topology() {
   HOP_PEER_ID="$(pp_hard_hop_peer_id)"
   PP_HARD_STATUS_URL="${saved_status}"
   HOP_MA_PUBLIC="$(pp_hard_hop_ma_for_ip "${HOP_IP_PUBLIC}" "${HOP_PEER_ID}")"
+  # Second hop (group phases, V050 gt6).
+  HOP2_IP_PUBLIC="$(pp_hard_container_ip_on_net "${PP_HARD_CGNAT_HOP2}" "${PP_HARD_CGNAT_NET_PUBLIC}")"
+  [[ -n "${HOP2_IP_PUBLIC}" ]] || pp_hard_die "cgnat hop2 missing public IP"
+  PP_HARD_STATUS_URL="${PP_HARD_CGNAT_HOP2_STATUS_URL}"
+  HOP2_PEER_ID="$(pp_hard_hop_peer_id)"
+  PP_HARD_STATUS_URL="${saved_status}"
+  HOP2_MA_PUBLIC="$(pp_hard_hop_ma_for_ip "${HOP2_IP_PUBLIC}" "${HOP2_PEER_ID}")"
+}
+
+# Drop one probe's traffic to one hop at the probe's gateway (before SNAT, so the private source
+# address + the probe's listen port identify it): that probe cannot reach the hop, its neighbours
+# behind the same gateway still can.
+# pp_hard_cgnat_block_probe_to <gw_container> <gw_public_ip> <peer_ip> <probe_udp_port> <hop_ip> on|off
+pp_hard_cgnat_block_probe_to() {
+  local gw="$1" gw_pub="$2" peer_ip="$3" port="$4" hop_ip="$5" state="$6"
+  local rule="FORWARD -s ${peer_ip} -p udp --sport ${port} -d ${hop_ip} -j DROP"
+  pp_hard_cgnat_gw_sh "${gw}" "${gw_pub}" "while iptables -D ${rule} 2>/dev/null; do :; done" ||
+    pp_hard_die "${gw}: unblock probe ${peer_ip}:${port} → ${hop_ip} failed"
+  if [[ "${state}" == "on" ]]; then
+    pp_hard_cgnat_gw_sh "${gw}" "${gw_pub}" "iptables -I ${rule/FORWARD/FORWARD 1}" ||
+      pp_hard_die "${gw}: block probe ${peer_ip}:${port} → ${hop_ip} failed"
+  fi
+  echo "  probe ${peer_ip}:${port} → hop ${hop_ip} blocked=${state}"
+}
+
+# Remove every per-probe hop block on all gateways (a run that died mid-phase may leave some).
+pp_hard_cgnat_clear_probe_blocks() {
+  local gw
+  for gw in "${PP_HARD_CGNAT_GW_A}:${PP_HARD_CGNAT_GW_A_PUB_IP}" "${PP_HARD_CGNAT_GW_B}:${PP_HARD_CGNAT_GW_B_PUB_IP}" \
+            "${PP_HARD_CGNAT_GW_C}:${PP_HARD_CGNAT_GW_C_PUB_IP}"; do
+    pp_hard_cgnat_gw_sh "${gw%%:*}" "${gw##*:}" \
+      "iptables -S FORWARD | grep -- '--sport .* -j DROP' | sed 's/^-A/-D/' | while read -r r; do iptables \$r; done" ||
+      pp_hard_die "${gw%%:*}: clearing probe blocks failed"
+  done
 }
 
 pp_hard_cgnat_assert_nat_shape() {
@@ -418,6 +454,7 @@ pp_hard_cgnat_ensure_up() {
   # Phases that change the gateways restore them; a run that died mid-phase may not have.
   pp_hard_cgnat_set_nat symmetric
   pp_hard_cgnat_block_p2p off
+  pp_hard_cgnat_clear_probe_blocks
   if pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" sh -c "ip -o addr | grep -q ' ${PP_HARD_CGNAT_PEER_A_ALT_IP}/'"; then
     pp_hard_cgnat_flip_peer_a_addr back
   fi
@@ -425,4 +462,5 @@ pp_hard_cgnat_ensure_up() {
   echo "cgnat hop peer_id=${HOP_PEER_ID} public=${HOP_IP_PUBLIC}"
   echo "cgnat peer-a=${PEER_A_IP} peer-b=${PEER_B_IP} peer-c=${PEER_C_IP}"
   echo "cgnat hop_ma=${HOP_MA_PUBLIC}"
+  echo "cgnat hop2_ma=${HOP2_MA_PUBLIC}"
 }

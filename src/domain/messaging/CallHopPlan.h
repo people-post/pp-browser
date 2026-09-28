@@ -85,14 +85,16 @@ struct GroupHopJoinDecision {
 };
 
 /**
- * V050: every reporter that constrains (lists hops, or refused the planned one) reached `hop`.
- * Reporters with no list and no refusal (old peers, unfinished probes) do not constrain.
+ * V050: `hop` is usable for everyone who reported: nobody reported it unreachable, and whoever
+ * reported the planned hop unreachable (the participant the change is for) positively reached it.
+ * A hop still being probed is unknown — it excludes nothing (an invitee may accept before its
+ * probes finish).
  */
-bool HopReachedByAllReporters(const std::string& hop, const std::map<std::string, CallHopReport>& reports);
+bool HopUsableForAllReporters(const std::string& hop, const std::map<std::string, CallHopReport>& reports);
 
 /**
  * Pure (V050): keep the planned hop unless a report says it is unreachable; then the first ranked
- * hop every reporter with a list reached (reporters without a list do not constrain); none → refuse.
+ * hop usable for every reporter (`HopUsableForAllReporters`); none → refuse the joiner.
  */
 GroupHopJoinDecision DecideGroupHopAtJoin(const GroupHopJoinInput& in);
 

@@ -212,6 +212,7 @@ Roe<std::string> CallControlCodec::EncodeAccept(const CallAcceptDetail& detail) 
     json.set("planned_hop_ok", *detail.hop_report.planned_hop_ok);
   }
   WriteStringArray(json, "reachable_hops", detail.hop_report.reachable_hops);
+  WriteStringArray(json, "unreachable_hops", detail.hop_report.unreachable_hops);
   return DumpJson(json);
 }
 
@@ -233,6 +234,7 @@ Roe<CallAcceptDetail> CallControlCodec::DecodeAccept(const std::string& detail_j
   detail.offer_amount_minor = json->getIf<int64_t>("offer_amount_minor").value_or(0);
   detail.hop_report.planned_hop_ok = json->getIf<bool>("planned_hop_ok");
   detail.hop_report.reachable_hops = ReadStringArray(*json, "reachable_hops");
+  detail.hop_report.unreachable_hops = ReadStringArray(*json, "unreachable_hops");
   return detail;
 }
 

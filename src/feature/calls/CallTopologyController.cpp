@@ -16,6 +16,7 @@
 #include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"
 #include "common/directory/MeshHopDial.h"
+#include "domain/mesh/l4/media_relay/MediaRelayAttach.h"
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
 
 #include <algorithm>
@@ -712,27 +713,31 @@ void CallTopologyController::ProbeInviteHops(const std::string& call_id) {
 void CallTopologyController::QuoteProbeHop(const std::string& call_id, const std::string& hop_peer_id,
                                            const std::string& hop_multiaddr) {
   hop_probes_[call_id][hop_peer_id] = std::nullopt;
-  if (relay_deps_.dial && !hop_multiaddr.empty()) {
-    (void)relay_deps_.dial->RegisterEndpoint(hop_peer_id, hop_multiaddr);
-  }
-  MediaRelayQuoteRequest request;
+  MediaRelayAttachRequest request;
+  request.hop_peer_id = hop_peer_id;
+  request.hop_multiaddr = hop_multiaddr;
   request.session_id = call_id;
-  request.participants = 3;  // a group is what this hop would serve
+  request.quote.session_id = call_id;
+  request.quote.participants = 3;  // a group is what this hop would serve
   auto done = [this, token = probe_self_.token(), snap = probe_self_.Snapshot(), call_id,
                hop_peer_id](Roe<MediaRelayQuote> quote) {
     const bool ok = quote && quote->ok;
-    CallsThread::Post([this, token, snap, call_id, hop_peer_id, ok]() {
+    const std::string error = ok ? std::string() : (quote ? quote->error : quote.error().message);
+    CallsThread::Post([this, token, snap, call_id, hop_peer_id, ok, error]() {
       if (!DeferredSelf::Alive(token, snap)) {
         return;
       }
       auto it = hop_probes_.find(call_id);
       if (it != hop_probes_.end()) {
         it->second[hop_peer_id] = ok;
-        log().info << "hop probe call_id=" << call_id << " hop=" << hop_peer_id << " ok=" << (ok ? 1 : 0);
+        log().info << "hop probe call_id=" << call_id << " hop=" << hop_peer_id << " ok=" << (ok ? 1 : 0)
+                   << (ok ? "" : " err=" + error);
       }
     });
   };
-  relay_deps_.relay->RequestQuoteAsync(hop_peer_id, request, std::move(done), 5000);
+  // Same reach steps as a real attach (register, circuit when not dialable), then quote only.
+  QuoteMediaRelayAsync(MediaRelayAttachPorts{relay_deps_.relay, relay_deps_.dial, relay_deps_.circuit_reach},
+                       std::move(request), std::move(done));
 }
 
 CallHopReport CallTopologyController::HopReportForAccept(const std::string& call_id) const {
@@ -743,8 +748,8 @@ CallHopReport CallTopologyController::HopReportForAccept(const std::string& call
     return report;
   }
   for (const auto& [hop, ok] : probes->second) {
-    if (ok && *ok) {
-      report.reachable_hops.push_back(hop);
+    if (ok) {
+      (*ok ? report.reachable_hops : report.unreachable_hops).push_back(hop);
     }
     if (hop == planned->second) {
       report.planned_hop_ok = ok;  // nullopt while the quote is still in flight
@@ -798,14 +803,15 @@ bool CallTopologyController::ResolveGroupHopForJoin(const std::string& call_id,
   }
   case GroupHopAtJoin::RefuseJoiner:
     log().warning << "group hop: no hop every participant reaches — refuse joiner=" << joiner_identity
-                  << " call_id=" << call_id << " planned=" << in.planned_hop;
+                  << " call_id=" << call_id << " planned=" << in.planned_hop << " ranked=" << in.ranked_hops.size()
+                  << " reports=" << in.reports.size();
     RefuseGuestNoSharedHop(call_id, joiner_identity);
     return false;
   }
   return true;
 }
 
-std::vector<std::string> CallTopologyController::HopsMembersReached(const std::string& call_id,
+std::vector<std::string> CallTopologyController::HopsUsableForMembers(const std::string& call_id,
                                                                   const std::string& guest,
                                                                   const std::vector<std::string>& hops) const {
   auto reports = accept_hop_reports_.find(call_id);
@@ -824,10 +830,10 @@ std::vector<std::string> CallTopologyController::HopsMembersReached(const std::s
   }
   std::vector<std::string> out;
   for (const std::string& hop : hops) {
-    if (HopReachedByAllReporters(hop, members)) {
+    if (HopUsableForAllReporters(hop, members)) {
       out.push_back(hop);
     } else {
-      log().info << "hop hint: " << hop << " skipped — not every member reached it call_id=" << call_id;
+      log().info << "hop hint: " << hop << " skipped — a member reported it unreachable call_id=" << call_id;
     }
   }
   return out;
@@ -1525,6 +1531,16 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
   if (!first_attach) {
     return;
   }
+  // V050: with a planned hop the initiator invited everyone itself, so it forms the group from the
+  // joiner's CallAccept — which carries the hop report. A CallRoster that shows the join first (the
+  // joiner sends one after accepting; transports reorder) must not migrate without that report.
+  if (session && session->has_value() && (*session)->planned_hop) {
+    if (auto local = host_.local_relay_identity(); local && IsStickyInitiator(call_id, *local)) {
+      log().info << "OnJoinedCountObserved: wait for the joiner's CallAccept (planned hop) n=" << n_joined
+                 << " call_id=" << call_id;
+      return;
+    }
+  }
 
   host_.note_media_attempted(call_id);
   BeginSfuAttachWait(call_id);
@@ -1914,7 +1930,7 @@ void CallTopologyController::OnInboundSfuAttachFailed(const CallSfuAttachFailedD
   }
   // V050: everyone moves, so the new hop must be one the other members reached too (their accept
   // reports; members without a report do not constrain).
-  const std::vector<std::string> guest_prefs = HopsMembersReached(detail.call_id, guest, detail.preferred_hop_peer_ids);
+  const std::vector<std::string> guest_prefs = HopsUsableForMembers(detail.call_id, guest, detail.preferred_hop_peer_ids);
   const auto decision = DecideHopHintOwnerAction(guest_prefs, DialableHopPeerIds(), detail.failed_hop_peer_id);
   if (decision.action == HopHintOwnerAction::RefuseGuest || guest.empty()) {
     log().warning << "Hop hint refuse guest=" << guest << " failed_hop=" << detail.failed_hop_peer_id;

@@ -70,7 +70,7 @@ std::optional<std::string> PeerIdFromMa(const std::string& ma) {
 
 Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
     std::unique_ptr<pp::amp::AmpStack> stack, std::shared_ptr<pp::adp::Clock> clock,
-    std::string advertise_ma, const std::string& hop_ma) {
+    std::string advertise_ma, const std::string& hop_ma, std::vector<std::string> extra_hops) {
   if (!stack) {
     return Error("null AmpStack");
   }
@@ -98,7 +98,7 @@ Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
     punch->SetLocalCandidateAddrs({harness->advertise_ma_});
   }
 
-  if (auto init = harness->InitStoresAndStack(hop_ma); !init) {
+  if (auto init = harness->InitStoresAndStack(hop_ma, extra_hops); !init) {
     harness->Shutdown();
     return init.error();
   }
@@ -109,7 +109,8 @@ ProductStackHarness::~ProductStackHarness() {
   Shutdown();
 }
 
-Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma) {
+Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
+                                                  const std::vector<std::string>& extra_hops) {
   data_dir_ = std::filesystem::temp_directory_path() / ("pp_call_probe_stack_" + util::GenerateUuid());
   std::error_code ec;
   std::filesystem::remove_all(data_dir_, ec);
@@ -142,6 +143,12 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma) {
   NormalizeMeshConfig(app_config_.mesh);
   if (!hop_ma.empty()) {
     app_config_.mesh.bootstrap_peers = {hop_ma};
+  }
+  // Further hops this probe knows (group phases, V050 gt6) — after the warm hop, in order.
+  for (const std::string& ma : extra_hops) {
+    if (!ma.empty() && ma != hop_ma) {
+      app_config_.mesh.bootstrap_peers.push_back(ma);
+    }
   }
 
   mesh_media_ = std::make_unique<MeshMediaPlane>();
@@ -937,6 +944,8 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::vector<std::string>& pe
   const auto hold_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(hold_ms);
   MediaFlowMonitor flow("offerer", rx_stall_ms_);
   PublisherRxGate gate("offerer", gate_streams_, gate_frames_, gate_window_ms_);
+  const auto media_at = std::chrono::steady_clock::now();
+  bool invited_later = false;
   while (std::chrono::steady_clock::now() < hold_deadline) {
     Pump();
     if (ui_->Phase() == CallPhase::ConnectFailed) {
@@ -946,6 +955,11 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::vector<std::string>& pe
       return Error(*stall);
     }
     gate.Tick(RxStreams());
+    MaybeInviteLater(call_id, media_at, invited_later);
+    if (gate.Met() && leave_after_gate_ms_ > 0 &&
+        std::chrono::steady_clock::now() - gate.MetAt() >= std::chrono::milliseconds(leave_after_gate_ms_)) {
+      break;  // heard everyone; leave while the others stay (initiator leave)
+    }
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
   if (gate.Enabled() && !gate.Met()) {
@@ -957,6 +971,22 @@ Roe<void> ProductStackHarness::RunOffererCall(const std::vector<std::string>& pe
   LeaveAndFlush(call_id);
   std::cout << "ok  product-stack LeaveClicked Idle\n";
   return {};
+}
+
+void ProductStackHarness::MaybeInviteLater(const std::string& call_id,
+                                           std::chrono::steady_clock::time_point media_at, bool& sent) {
+  if (sent || invite_later_account_.empty() ||
+      std::chrono::steady_clock::now() - media_at < std::chrono::milliseconds(invite_later_ms_)) {
+    return;
+  }
+  sent = true;
+  ui_->InviteParticipant(call_id, invite_later_account_, [account = invite_later_account_](Roe<void> invited) {
+    if (invited) {
+      std::cout << "ok  product-stack invited later account=" << account << "\n";
+    } else {
+      std::cerr << "error: product-stack later invite failed: " << invited.error().message << "\n";
+    }
+  });
 }
 
 void ProductStackHarness::LeaveAndFlush(const std::string& call_id) {

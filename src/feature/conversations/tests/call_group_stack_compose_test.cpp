@@ -9,6 +9,7 @@
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/SoftMigrateLogic.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <deque>
 #include <map>
@@ -51,6 +52,10 @@ public:
   void Attach(const FakeHopClient* client, const std::string& hop_peer_id, const std::string& session_id,
               std::function<void(MediaDataFrame)> on_frame) {
     std::unique_lock lock(mu_);
+    {
+      std::lock_guard stats(stats_mu_);
+      attached_ever_[client].insert(hop_peer_id);
+    }
     Member& m = members_[client];
     m = Member{};
     m.hop_peer_id = hop_peer_id;
@@ -113,6 +118,13 @@ public:
     return it != members_.end() && it->second.hop_peer_id == hop_peer_id && it->second.session_id == session_id;
   }
 
+  /** True once the client ever attached to `hop_peer_id` (any session). */
+  bool EverAttached(const FakeHopClient* client, const std::string& hop_peer_id) const {
+    std::lock_guard stats(stats_mu_);
+    const auto it = attached_ever_.find(client);
+    return it != attached_ever_.end() && it->second.count(hop_peer_id) > 0;
+  }
+
   /** Stream ids this client has published through the hop. */
   std::set<uint32_t> PublishedStreams(const FakeHopClient* client) const {
     std::lock_guard stats(stats_mu_);
@@ -137,6 +149,7 @@ private:
   std::map<const FakeHopClient*, Member> members_;
   mutable std::mutex stats_mu_;
   std::map<const FakeHopClient*, std::set<uint32_t>> published_;
+  std::map<const FakeHopClient*, std::set<std::string>> attached_ever_;
 };
 
 /** A participant's media_relay client, attached to the shared FakeMediaRelayHop. */
@@ -734,7 +747,44 @@ TEST_F(CallGroupStackComposeTest, OneAdjustmentWhenTheJoinerCannotReachThePlanne
       20000);
   EXPECT_TRUE(GroupLive(call_id, kOtherHopPeerId)) << "group did not form on the reachable hop:" << Describe(call_id);
   for (size_t i : members_) {
-    EXPECT_FALSE(OnHopFor(i, call_id)) << "side " << i << " on the hop C cannot reach";
+    EXPECT_FALSE(hop_.EverAttached(relays_[i].get(), kHopPeerId)) << "side " << i << " attached to the planned hop";
+  }
+}
+
+// V050: the joiner sends a CallRoster after accepting and transports reorder — the initiator must
+// still decide from C's CallAccept (its hop report), not migrate onto the planned hop on the roster
+// (hard lab: the roster won the race and the group formed on a hop C could not reach).
+TEST_F(CallGroupStackComposeTest, RosterBeforeTheAcceptStillMakesTheAdjustment) {
+  OfferBothHops();
+  relays_[kC]->MakeUnreachable(kHopPeerId);
+  const std::string call_id = StartGroupCall();
+  ASSERT_FALSE(call_id.empty());
+  AcceptInvite(kB, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return DirectPairLive(kA, kB);
+  });
+  ASSERT_TRUE(DirectPairLive(kA, kB)) << Describe(call_id);
+  AcceptInvite(kC, call_id);
+  for (int k = 0; k < 40; ++k) {
+    AppRuntime::RunUIAndOwnerTasks();  // C accepts and queues its CallAccept + CallRoster for A
+  }
+  {
+    std::lock_guard lock(wire_mu_);
+    auto is_accept = [](const Envelope& e) { return e.msg.payload_json.find("call_accept") != std::string::npos; };
+    std::stable_partition(inboxes_[kA].begin(), inboxes_[kA].end(), [&](const Envelope& e) { return !is_accept(e); });
+    ASSERT_TRUE(!inboxes_[kA].empty() && is_accept(inboxes_[kA].back())) << "C's CallAccept should be queued for A";
+  }
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return GroupLive(call_id, kOtherHopPeerId);
+      },
+      20000);
+  EXPECT_TRUE(GroupLive(call_id, kOtherHopPeerId)) << Describe(call_id);
+  for (size_t i : members_) {
+    EXPECT_FALSE(hop_.EverAttached(relays_[i].get(), kHopPeerId))
+        << "side " << i << " attached to the planned hop — the roster migrated before C's report";
   }
 }
 

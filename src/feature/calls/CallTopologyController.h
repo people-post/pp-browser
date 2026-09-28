@@ -318,8 +318,8 @@ private:
    * session's planned hop), or refuse the joiner. False = joiner refused (no migration now).
    */
   bool ResolveGroupHopForJoin(const std::string& call_id, const std::string& joiner_identity);
-  /** V050: the hops (in order) every joined member other than `guest` reached, per their reports. */
-  std::vector<std::string> HopsMembersReached(const std::string& call_id, const std::string& guest,
+  /** V050: the hops (in order) usable for every joined member other than `guest`, per their reports. */
+  std::vector<std::string> HopsUsableForMembers(const std::string& call_id, const std::string& guest,
                                               const std::vector<std::string>& hops) const;
   /** V050: per call, guest → the hop the group moved to for it (one change per joiner). */
   std::unordered_map<std::string, std::map<std::string, std::string>> hop_hint_repicked_;

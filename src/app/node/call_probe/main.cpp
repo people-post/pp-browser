@@ -54,6 +54,11 @@ int g_stream_window_ms = 3000;
 /** --accept-delay-ms / --leave-after-gate-ms (product-stack answerer, group calls). */
 int g_accept_delay_ms = 0;
 int g_leave_after_gate_ms = 0;
+/** --extra-hop (product-stack, repeatable): more hops this probe knows, after the warm / via hop. */
+std::vector<std::string> g_extra_hops;
+/** --invite-later <peer-ma>,<account> + --invite-later-ms (product-stack offerer, V050 gt5). */
+std::string g_invite_later;
+int g_invite_later_ms = 15000;
 
 /** Group-call knobs shared by both product-stack roles. */
 void ApplyGroupCallKnobs(pbr::call_probe::ProductStackHarness& harness) {
@@ -116,7 +121,10 @@ void PrintUsage(const char* argv0) {
       << "  --min-rx-streams N  Pass only once N remote publishers each decoded --stream-rx-frames F\n"
       << "                  (default 50) audio frames within one --stream-window-ms W (default 3000).\n"
       << "  --accept-delay-ms N  Answerer: AcceptClicked N ms after the invite shows.\n"
-      << "  --leave-after-gate-ms N  Answerer: Leave N ms after the publisher gate is met.\n"
+      << "  --leave-after-gate-ms N  Leave N ms after the publisher gate is met (either role).\n"
+      << "  --extra-hop MA    Another hop this probe knows (repeatable), ranked after the warm/via hop.\n"
+      << "  --invite-later MA,ACCOUNT  Offerer: invite this peer into the live call after\n"
+      << "                  --invite-later-ms N (default 15000) of media.\n"
       << "\n"
       << "Live broadcast (B-HARD-BCAST-NAT, product BroadcastHub):\n"
       << "  " << argv0 << " --role broadcaster --listen <adp-ma> --warm-hop <hop-ma> --ready-file PATH\n"
@@ -482,7 +490,7 @@ int RunProductStackAnswerer(const std::string& listen_ma, const std::string& rea
   auto clock = (*peer)->clock;
   auto stack = std::move((*peer)->stack);
   auto harness = pbr::call_probe::ProductStackHarness::Create(std::move(stack), std::move(clock),
-                                                              advertise, warm_hop_ma);
+                                                              advertise, warm_hop_ma, g_extra_hops);
   if (!harness) {
     std::cerr << "error: product-stack harness: " << harness.error().message << "\n";
     return 1;
@@ -771,7 +779,7 @@ int RunProductStackOfferer(const std::string& peer_ma_list, const std::string& p
   auto clock = (*offerer)->clock;
   auto stack = std::move((*offerer)->stack);
   auto harness = pbr::call_probe::ProductStackHarness::Create(std::move(stack), std::move(clock),
-                                                              advertise, hop_ma);
+                                                              advertise, hop_ma, g_extra_hops);
   if (!harness) {
     std::cerr << "error: product-stack harness: " << harness.error().message << "\n";
     return 1;
@@ -810,6 +818,21 @@ int RunProductStackOfferer(const std::string& peer_ma_list, const std::string& p
     return 1;
   }
 
+  if (!g_invite_later.empty()) {
+    const std::vector<std::string> later = SplitCommaList(g_invite_later);
+    auto later_peer = later.size() == 2 ? PeerIdFromMultiaddr(later[0]) : std::nullopt;
+    if (!later_peer) {
+      std::cerr << "error: --invite-later needs <peer-ma-with-p2p>,<account>\n";
+      (*harness)->Shutdown();
+      return 2;
+    }
+    if (auto up = (*harness)->UpsertPeerContact(later[1], *later_peer, RewriteWildcardListenHost(later[0])); !up) {
+      std::cerr << "error: upsert later peer contact: " << up.error().message << "\n";
+      (*harness)->Shutdown();
+      return 1;
+    }
+    (*harness)->SetInviteLater(later[1], g_invite_later_ms);
+  }
   const int hold = hold_ms > 0 ? hold_ms : 2000;
   (*harness)->SetRxStallMs(g_rx_stall_ms);
   ApplyGroupCallKnobs(**harness);
@@ -1268,6 +1291,12 @@ int main(int argc, char** argv) {
       g_accept_delay_ms = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--leave-after-gate-ms") == 0 && i + 1 < argc) {
       g_leave_after_gate_ms = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--extra-hop") == 0 && i + 1 < argc) {
+      g_extra_hops.push_back(argv[++i]);
+    } else if (std::strcmp(argv[i], "--invite-later") == 0 && i + 1 < argc) {
+      g_invite_later = argv[++i];
+    } else if (std::strcmp(argv[i], "--invite-later-ms") == 0 && i + 1 < argc) {
+      g_invite_later_ms = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--via-hop") == 0 && i + 1 < argc) {
       hop_ma = argv[++i];
     } else if (std::strcmp(argv[i], "--advertise-host") == 0 && i + 1 < argc) {

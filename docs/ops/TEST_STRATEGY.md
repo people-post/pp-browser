@@ -246,9 +246,10 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | B-HARD-CALL-NAT | **Scaffold** | Phase-1: answerer `--warm-hop --min-rx-frames`; offerer `--via-hop --peer-id-only`. Status port **18628**. |
 | B-HARD-CALL-NAT-PRODUCT / -DIRTY | **Retired** | Probe-local reach copies (`--reach product|bridge`, removed) — replaced by the COLD phases on the product `PeerReachCoordinator`. |
 | B-HARD-CALL-NAT-STACK | **Green target** | Phase-4: `--product-stack` CallUiBackend StartCall/Accept/Leave + real Amp CallStack Wire (no BindTestMediaPath mocks). |
+| B-HARD-GROUP-ADJUST-NAT / -MOVE-NAT | **Green** | Phases 14–15 (V050 gt4/gt5): second hop `hop2` + per-probe gateway blocks. ADJUST: C cannot reach the planned hop → group forms on hop2 (one adjustment). MOVE: D invited mid-call cannot reach hop1 → owner moves A, B, C, D to hop2 once; 4-way per-publisher RX. |
 | B-HARD-GROUP-CALL-NAT | **Green** | Phase-13: 3 product stacks behind 3 symmetric NATs (`peer-c` / `gw-c`); A invites B+C, 2→3 SoftMigrate onto the hop's `media_relay`; probe-enforced per-publisher RX (`--min-rx-streams 2`), guest C leaves, A↔B keep audio. Needs the non-RFC1918 public net (HL006). |
 | B-HARD-CALL-NAT-COLD / -COLD-DIRTY / -COLD-AWAIT | **Green** | Phases 5–7: product stack with `--signal-dir` (call control via `/share`, no pre-built peer link) — cold `PeerReachCoordinator` reach; dirty book + forced dial miss; offerer uplink delay for a cold answerer Await. ≥ 100 rx frames both sides. [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md) |
-| hard-w5 default phase | **all** | `circuit+stack+cold+cold-dirty+cold-await+upgrade+punch+flip+mobile+group+broadcast` |
+| hard-w5 default phase | **all** | `circuit+stack+cold+cold-dirty+cold-await+upgrade+punch+flip+mobile+group+group-adjust+group-move+broadcast` |
 | N-HARD-* (other) / N-ADMIT-HARD | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) |
 
 **Routing mode map** (direct / punch / circuit hop / SFU `media_relay` / ConnectFailed teardown → tier): [HARD_LAB.md § Routing mode coverage](../../packaging/pp-node/HARD_LAB.md#routing-mode-coverage-success-oracles).

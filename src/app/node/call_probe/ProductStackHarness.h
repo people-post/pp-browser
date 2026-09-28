@@ -41,7 +41,8 @@ public:
   static Roe<std::unique_ptr<ProductStackHarness>> Create(std::unique_ptr<pp::amp::AmpStack> stack,
                                                           std::shared_ptr<pp::adp::Clock> clock,
                                                           std::string advertise_ma,
-                                                          const std::string& hop_ma);
+                                                          const std::string& hop_ma,
+                                                          std::vector<std::string> extra_hops = {});
 
   ~ProductStackHarness();
 
@@ -125,12 +126,17 @@ public:
   }
   /** Answerer: AcceptClicked this long after the invite shows (orders joins: N=2, then N=3). */
   void SetAcceptDelayMs(int ms) { accept_delay_ms_ = ms; }
-  /** Answerer: Leave this long after the publisher gate is met (a guest leaving a live group). */
+  /** Leave this long after the publisher gate is met (a guest leaving a live group; the offerer too). */
   void SetLeaveAfterGateMs(int ms) { leave_after_gate_ms_ = ms; }
+  /** Offerer: invite `account` into the live call `ms` after media started (V050 gt5 later join). */
+  void SetInviteLater(std::string account, int ms) {
+    invite_later_account_ = std::move(account);
+    invite_later_ms_ = ms;
+  }
 
 private:
   ProductStackHarness() = default;
-  Roe<void> InitStoresAndStack(const std::string& hop_ma);
+  Roe<void> InitStoresAndStack(const std::string& hop_ma, const std::vector<std::string>& extra_hops);
   Roe<void> SendCallControl(const std::string& peer_account, const ThreadMessage& msg);
   Roe<void> WriteSignal(const std::string& peer_account, const RelayEnvelope& env);
   /** UI pump: hand files in our signal inbox to OnChatInbound on a worker (like relay IO). */
@@ -184,6 +190,10 @@ private:
   int gate_window_ms_ = 3000;
   int accept_delay_ms_ = 0;
   int leave_after_gate_ms_ = 0;
+  std::string invite_later_account_;
+  int invite_later_ms_ = 0;
+  /** Offerer hold: send the later invite once its time came (no-op otherwise). */
+  void MaybeInviteLater(const std::string& call_id, std::chrono::steady_clock::time_point media_at, bool& sent);
   std::filesystem::path signal_dir_;
   std::chrono::steady_clock::time_point next_signal_poll_{};
   uint64_t signal_seq_ = 0;

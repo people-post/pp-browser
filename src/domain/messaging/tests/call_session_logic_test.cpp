@@ -325,11 +325,13 @@ TEST(CallControlCodecTest, AcceptHopReportRoundTrip) {
   accept.identity = "account:c";
   accept.hop_report.planned_hop_ok = false;
   accept.hop_report.reachable_hops = {"12D3KooWOther"};
+  accept.hop_report.unreachable_hops = {"12D3KooWPlanned"};
   auto decoded = CallControlCodec::DecodeAccept(*CallControlCodec::EncodeAccept(accept));
   ASSERT_TRUE(decoded);
   ASSERT_TRUE(decoded->hop_report.planned_hop_ok);
   EXPECT_FALSE(*decoded->hop_report.planned_hop_ok);
   EXPECT_EQ(decoded->hop_report.reachable_hops, std::vector<std::string>{"12D3KooWOther"});
+  EXPECT_EQ(decoded->hop_report.unreachable_hops, std::vector<std::string>{"12D3KooWPlanned"});
 
   accept.hop_report = {};
   auto plain = CallControlCodec::DecodeAccept(*CallControlCodec::EncodeAccept(accept));

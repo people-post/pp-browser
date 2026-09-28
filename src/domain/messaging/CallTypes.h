@@ -215,6 +215,8 @@ struct CallHopReport {
   std::optional<bool> planned_hop_ok;
   /** Hops (PeerIds) this invitee reached (media_relay quote ok) — the planned one included when ok. */
   std::vector<std::string> reachable_hops;
+  /** Hops it tried and could not reach. A hop still being probed is in neither list (unknown). */
+  std::vector<std::string> unreachable_hops;
 };
 
 struct CallAcceptDetail {

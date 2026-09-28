@@ -41,6 +41,30 @@ services:
     ports:
       - "${PP_HARD_CGNAT_STATUS_HOST_PORT:-18628}:18518"
 
+  # Second public hop (V050 gt6): planned-hop adjustment / later-join moves need two hops. Peers
+  # know it through --extra-hop; per-probe gateway filters make one of them unreachable.
+  hop2:
+    image: pp-node:local
+    container_name: pp-hard-lab-cgnat-hop2
+    restart: unless-stopped
+    environment:
+      PP_BROWSER_PIN: ${PP_BROWSER_PIN:-local-test-pin}
+      PP_NODE_AMP_UDP_PORT: ${PP_NODE_AMP_UDP_PORT:-18517}
+      PP_NODE_DATA_DIR: /var/lib/pp-node
+      PP_NODE_STATUS_ADDR: ${PP_NODE_STATUS_ADDR:-0.0.0.0:18518}
+      PP_NODE_CAP_CIRCUIT_RELAY: ${PP_NODE_CAP_CIRCUIT_RELAY:-1}
+      PP_NODE_CAP_MEDIA_RELAY: ${PP_NODE_CAP_MEDIA_RELAY:-1}
+    volumes:
+      - pp-hard-lab-cgnat-hop2-data:/var/lib/pp-node
+    networks:
+      net_public:
+        ipv4_address: 198.18.117.3
+      net_ops:
+    ports:
+      - "${PP_HARD_CGNAT_HOP2_STATUS_HOST_PORT:-18629}:18518"
+    depends_on:
+      - hop
+
   gw-a:
     build:
       context: .
@@ -184,3 +208,4 @@ networks:
 
 volumes:
   pp-hard-lab-cgnat-hop-data:
+  pp-hard-lab-cgnat-hop2-data:

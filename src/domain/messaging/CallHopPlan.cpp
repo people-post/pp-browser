@@ -179,13 +179,17 @@ std::vector<MeshHopCandidate> SelectCallMediaHop(std::vector<MeshHopCandidate> r
   return public_org;
 }
 
-bool HopReachedByAllReporters(const std::string& hop, const std::map<std::string, CallHopReport>& reports) {
+bool HopUsableForAllReporters(const std::string& hop, const std::map<std::string, CallHopReport>& reports) {
+  auto listed = [&hop](const std::vector<std::string>& hops) {
+    return std::find(hops.begin(), hops.end(), hop) != hops.end();
+  };
   for (const auto& [identity, report] : reports) {
     (void)identity;
-    const bool constrains =
-        !report.reachable_hops.empty() || (report.planned_hop_ok.has_value() && !*report.planned_hop_ok);
-    if (constrains &&
-        std::find(report.reachable_hops.begin(), report.reachable_hops.end(), hop) == report.reachable_hops.end()) {
+    if (listed(report.unreachable_hops)) {
+      return false;
+    }
+    const bool refused_plan = report.planned_hop_ok.has_value() && !*report.planned_hop_ok;
+    if (refused_plan && !listed(report.reachable_hops)) {
       return false;
     }
   }
@@ -205,7 +209,7 @@ GroupHopJoinDecision DecideGroupHopAtJoin(const GroupHopJoinInput& in) {
     return out;
   }
   for (const std::string& hop : in.ranked_hops) {
-    if (!hop.empty() && hop != in.planned_hop && HopReachedByAllReporters(hop, in.reports)) {
+    if (!hop.empty() && hop != in.planned_hop && HopUsableForAllReporters(hop, in.reports)) {
       out.action = GroupHopAtJoin::UseAlternative;
       out.hop = hop;
       return out;
