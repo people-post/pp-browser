@@ -1468,8 +1468,15 @@ Roe<void> CallSessionWorkflow::HandleInboundRoster(const std::string& detail_jso
     (*session)->media_epoch = roster->media_epoch;
     (void)sessions_.UpsertSession(**session);
   }
+  auto local = host_.wire.local_relay_identity ? host_.wire.local_relay_identity() : Roe<std::string>(std::string());
   for (const CallRosterEntry& entry : roster->participants) {
     if (entry.identity.empty()) {
+      continue;
+    }
+    // Our own entry is the sender's (possibly stale, relay-delayed) view of us; only we know our
+    // camera/mic, so never let a peer roster overwrite our own row (a callee's accept-time roster
+    // arriving late turned the caller's just-enabled camera "off" for both sides).
+    if (local && !local->empty() && entry.identity == *local) {
       continue;
     }
     // Do not resurrect Left/Declined peers from a stale roster fan-out (blocks re-invite).

@@ -1022,6 +1022,48 @@ TEST_F(CallSessionInboundComposeTest, CallerNarrowsOnVoiceOnlyAccept) {
   EXPECT_FALSE(**video_allowed);
 }
 
+// A roster from the peer is built from ITS view of the call and can arrive late over the relay
+// (device test 2026-09-28: the callee's accept-time roster, listing both cameras off, reached the
+// caller 2 s after the caller's camera auto-enabled). Our own entry in it is stale by definition —
+// only we know our camera/mic — so it must never overwrite our own participant row.
+TEST_F(CallSessionInboundComposeTest, PeerRosterNeverOverwritesOwnMediaState) {
+  const std::string call_id = "call:roster-self";
+  SeedOffererRingingCall(call_id, /*video_allowed=*/true);
+  auto self_row = sessions_->FindParticipant(call_id, local_identity_);
+  ASSERT_TRUE(self_row && self_row->has_value());
+  CallParticipant self = **self_row;
+  self.media.video_enabled = true;
+  self.media.audio_muted = false;
+  ASSERT_TRUE(sessions_->UpsertParticipant(self));
+
+  CallRosterDetail roster;
+  roster.call_id = call_id;
+  CallRosterEntry stale_self;
+  stale_self.identity = local_identity_;
+  stale_self.state = CallParticipantState::Joined;
+  stale_self.video_enabled = false;
+  stale_self.audio_muted = true;
+  CallRosterEntry peer;
+  peer.identity = "account:peer";
+  peer.state = CallParticipantState::Joined;
+  peer.video_enabled = true;
+  roster.participants = {stale_self, peer};
+  auto detail = CallControlCodec::EncodeRoster(roster);
+  ASSERT_TRUE(detail);
+  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallRoster, "Call roster", *detail,
+                                                  "account:peer");
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+
+  auto after = sessions_->FindParticipant(call_id, local_identity_);
+  ASSERT_TRUE(after && after->has_value());
+  EXPECT_TRUE((*after)->media.video_enabled) << "own camera state came from a stale peer roster";
+  EXPECT_FALSE((*after)->media.audio_muted) << "own mute state came from a stale peer roster";
+  auto peer_row = sessions_->FindParticipant(call_id, "account:peer");
+  ASSERT_TRUE(peer_row && peer_row->has_value());
+  EXPECT_TRUE((*peer_row)->media.video_enabled) << "the peer's own entry still applies";
+}
+
 // A replayed Accept without the field (relay retransmit) must never re-widen an already-narrowed
 // call; a fresh call whose Accept never carries the field stays at the caller's original choice.
 TEST_F(CallSessionInboundComposeTest, CallerIgnoresMissingFieldAndNeverRewidens) {
