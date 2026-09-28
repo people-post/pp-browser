@@ -6,14 +6,19 @@
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/AdpMultiaddr.h"
 #include "common/SettledWait.h"
+#include "common/Utilities.h"
 #include "common/ValueJson.h"
 #include "domain/mesh/shared/AmpChannelOpen.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
 #include "foundation/runtime/DeferredSelf.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <mutex>
+#include <optional>
+#include <set>
 #include <thread>
 #include "common/PbrCompat.h"
 
@@ -35,6 +40,11 @@ std::chrono::milliseconds RemainingTimeout(const Clock::time_point deadline) {
   return std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
 }
 
+/** Any peer can ask us to dial `target_multiaddrs` — bound the blast radius. */
+constexpr size_t kMaxDialBackTargets = 4;
+constexpr int kMaxDialBackTimeoutMs = 15000;
+constexpr int kMinDialBackTimeoutMs = 1000;
+
 /** One inbound probe's walk over its targets (IO strand only). */
 struct DialTargetsWalk {
   pp::amp::MeshRuntime* runtime = nullptr;
@@ -43,7 +53,24 @@ struct DialTargetsWalk {
   std::chrono::milliseconds timeout{8000};
   DialBackProbeResult result;
   std::function<void(DialBackProbeResult)> done;
+  /** Unique per inbound probe so concurrent probes never fight over the same RegisterEndpoint key. */
+  std::string probe_id;
+  /**
+   * The requester's own authenticated reflexive endpoint (from the link, not attacker-suppliable).
+   * Empty only when the link exposes no usable endpoint; in that case targets cannot be checked
+   * and are rejected — dial-back must not become an open "dial anywhere for anyone" relay.
+   */
+  std::optional<pp::adp::IpEndpoint> observed_host;
 };
+
+/** True when two endpoints are the same host (port/scope ignored — NAT commonly rewrites the port). */
+bool SameHost(const pp::adp::IpEndpoint& a, const pp::adp::IpEndpoint& b) {
+  if (a.family != b.family) {
+    return false;
+  }
+  const size_t n = a.family == pp::adp::IpEndpoint::Family::V4 ? 4 : 16;
+  return std::memcmp(a.addr.data(), b.addr.data(), n) == 0;
+}
 
 /**
  * Dial the next usable target: association or its deadline, whichever settles first, then the next
@@ -59,12 +86,20 @@ void DialNextTarget(std::shared_ptr<DialTargetsWalk> walk) {
     if (ma.empty()) {
       continue;
     }
-    if (!pp::amp::ParseAdpMultiaddr(ma)) {
+    auto parsed_target = pp::amp::ParseAdpMultiaddr(ma);
+    if (!parsed_target) {
       out.error = "target is not an ADP multiaddr";
       out.dialed = ma;
       continue;
     }
-    const std::string key = "dialback:probe:" + std::to_string(i);
+    // Only ever dial back to the requester's own observed host: otherwise any peer could turn
+    // this node into an open probe/relay against arbitrary third-party addresses.
+    if (!walk->observed_host || !SameHost(parsed_target->endpoint, *walk->observed_host)) {
+      out.error = "target is not the requester's observed host";
+      out.dialed = ma;
+      continue;
+    }
+    const std::string key = "dialback:probe:" + walk->probe_id + ":" + std::to_string(i);
     if (auto registered = links.RegisterEndpoint(key, ma); !registered) {
       out.error = registered.error().message;
       out.dialed = ma;
@@ -94,13 +129,17 @@ void DialNextTarget(std::shared_ptr<DialTargetsWalk> walk) {
   walk->done(std::move(out));
 }
 
-/** IO strand: dial `targets` in order; `done` runs once, on IO. */
+/** IO strand: dial `targets` (already capped/host-filtered by the caller) in order; `done` runs once, on IO. */
 void DialAmpTargetsAsync(pp::amp::MeshRuntime& runtime, std::vector<std::string> targets, const int timeout_ms,
+                         std::string probe_id, std::optional<pp::adp::IpEndpoint> observed_host,
                          std::function<void(DialBackProbeResult)> done) {
   auto walk = std::make_shared<DialTargetsWalk>();
   walk->runtime = &runtime;
   walk->targets = std::move(targets);
-  walk->timeout = std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 8000);
+  const int clamped_timeout = std::clamp(timeout_ms > 0 ? timeout_ms : 8000, kMinDialBackTimeoutMs, kMaxDialBackTimeoutMs);
+  walk->timeout = std::chrono::milliseconds(clamped_timeout);
+  walk->probe_id = std::move(probe_id);
+  walk->observed_host = observed_host;
   walk->done = std::move(done);
   if (walk->targets.empty()) {
     walk->result.error = "no target_multiaddrs";
@@ -161,23 +200,35 @@ struct AmpDialBackProtocol::Impl {
   }
 
   /**
-   * B26: the seed's view of the client's Amp UDP endpoint on this association. Dialing the
-   * client's LAN advertise addrs often fails cross-NAT; the observed reflexive address is what
-   * peers need to dial. IO strand only (link state is IO-affine).
+   * B26: the seed's view of the client's Amp UDP endpoint on this association — comes from the
+   * authenticated connection, not anything the peer put in the request, so it also doubles as
+   * the only host `target_multiaddrs` are allowed to name (see SameHost). IO strand only (link
+   * state is IO-affine).
    */
-  std::string ObservedMultiaddrOnIo(const std::string& remote_peer_id) {
+  std::optional<pp::adp::IpEndpoint> ObservedEndpointOnIo(const std::string& remote_peer_id) {
     if (auto* link = Links().FindLink(remote_peer_id)) {
       if (auto* conn = link->ConnectionOrNull()) {
         const auto ep = conn->PeerEndpoint();
         if (ep.port != 0) {
-          if (auto ma = pp::amp::FormatAdpMultiaddr(ep, remote_peer_id)) {
-            return *ma;
-          }
+          return ep;
         }
+      }
+    }
+    return std::nullopt;
+  }
+
+  std::string ObservedMultiaddrOnIo(const std::string& remote_peer_id) {
+    if (auto ep = ObservedEndpointOnIo(remote_peer_id)) {
+      if (auto ma = pp::amp::FormatAdpMultiaddr(*ep, remote_peer_id)) {
+        return *ma;
       }
     }
     return {};
   }
+
+  /** Coarse per-peer throttle: reject a probe while the same peer's previous one is still running. */
+  std::mutex inflight_mutex;
+  std::set<std::string> inflight_probe_peers;
 
   static void SendProbeResult(const std::shared_ptr<InboundReply>& reply, const DialBackProbeResult& result) {
     Object response;
@@ -189,10 +240,22 @@ struct AmpDialBackProtocol::Impl {
     reply->Send(JsonToBody(DumpJson(response)));
   }
 
+  /** True if `remote_peer_id` had no probe already in flight (and it is now marked in-flight). */
+  bool TryMarkProbeInflight(const std::string& remote_peer_id) {
+    std::lock_guard lock(inflight_mutex);
+    return inflight_probe_peers.insert(remote_peer_id).second;
+  }
+
+  void ClearProbeInflight(const std::string& remote_peer_id) {
+    std::lock_guard lock(inflight_mutex);
+    inflight_probe_peers.erase(remote_peer_id);
+  }
+
   /** Frame handler (IO): parse, then walk the targets from a fresh IO task (mux stack unwound). */
-  void ServeProbe(std::shared_ptr<InboundReply> reply, std::string observed, std::vector<uint8_t> body) {
+  void ServeProbe(std::shared_ptr<InboundReply> reply, const std::string& remote_peer_id,
+                  std::vector<uint8_t> body) {
     DialBackProbeResult result;
-    result.observed = std::move(observed);
+    result.observed = ObservedMultiaddrOnIo(remote_peer_id);
     const std::string json_utf8(body.begin(), body.end());
     auto root = TryParseObject(json_utf8);
     if (!root) {
@@ -205,24 +268,38 @@ struct AmpDialBackProtocol::Impl {
       SendProbeResult(reply, result);
       return;
     }
+    // One in-flight probe per requesting peer: a peer that wants to flood dial attempts has to
+    // do it serially (each probe already carries its own target-count/timeout caps).
+    if (!TryMarkProbeInflight(remote_peer_id)) {
+      result.error = "dial-back probe already in flight for this peer";
+      SendProbeResult(reply, result);
+      return;
+    }
     std::vector<std::string> targets;
     if (const Array* addrs = root->getArray("target_multiaddrs")) {
       for (const auto& item : addrs->elements) {
+        if (targets.size() >= kMaxDialBackTargets) {
+          break;
+        }
         if (auto s = asString(item)) {
           targets.push_back(*s);
         }
       }
     }
     const int timeout_ms = static_cast<int>(root->getNonNegInt("timeout_ms").value_or(8000));
+    const std::string probe_id = util::GenerateUuid();
     runtime->PostToIo(deferred.Bind([this, reply, observed = result.observed, targets = std::move(targets),
-                                     timeout_ms]() mutable {
+                                     timeout_ms, probe_id, remote_peer_id]() mutable {
       if (stopped.load(std::memory_order_acquire) || !runtime) {
+        ClearProbeInflight(remote_peer_id);
         return;
       }
-      DialAmpTargetsAsync(*runtime, std::move(targets), timeout_ms,
-                          [reply, observed](DialBackProbeResult dialed) {
+      auto observed_host = ObservedEndpointOnIo(remote_peer_id);
+      DialAmpTargetsAsync(*runtime, std::move(targets), timeout_ms, probe_id, observed_host,
+                          [this, reply, observed, remote_peer_id](DialBackProbeResult dialed) {
                             dialed.observed = observed;
                             SendProbeResult(reply, dialed);
+                            ClearProbeInflight(remote_peer_id);
                           });
     }));
   }
@@ -241,8 +318,7 @@ struct AmpDialBackProtocol::Impl {
             return false;
           }
           // Keep the channel open for the worker's reply (InboundReply.h); `reply` closes it.
-          ServeProbe(MakeInboundReply(session, IoPost()), ObservedMultiaddrOnIo(remote_peer_id),
-                     std::move(*frame));
+          ServeProbe(MakeInboundReply(session, IoPost()), remote_peer_id, std::move(*frame));
           return true;
         });
   }
