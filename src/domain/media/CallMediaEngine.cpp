@@ -1049,6 +1049,16 @@ struct CallMediaEngine::Impl {
                                         .encode_height = geometry.encode_height,
                                         .front_facing = geometry.front_facing};
     const int rotate_cw = CameraFrameRotateCw(opened, camera_display_rotation.load(std::memory_order_relaxed));
+    // The local preview is drawn on this device's screen, which turns with the phone: keep it
+    // upright relative to the screen (only differs from the sent frame when the phone is turned).
+    const int preview_rotate_cw = CameraPreviewRotateCw(opened);
+    if (preview_rotate_cw != rotate_cw) {
+      VideoFrameRgba preview_fitted;
+      if (ScaleCenterCropRgba(OrientFrame(captured, preview_rotate_cw), geometry.encode_width,
+                              geometry.encode_height, preview_fitted)) {
+        PublishLocalPreview(preview_fitted);
+      }
+    }
     const VideoFrameRgba oriented = OrientFrame(std::move(captured), rotate_cw);
     VideoFrameRgba fitted;
     VideoFrameI420 i420;
@@ -1056,7 +1066,9 @@ struct CallMediaEngine::Impl {
         !RgbaToI420(fitted.rgba.data(), fitted.width, fitted.height, fitted.width * 4, true, i420)) {
       return;
     }
-    PublishLocalPreview(fitted);
+    if (preview_rotate_cw == rotate_cw) {
+      PublishLocalPreview(fitted);
+    }
     if (!video_codec || !video_codec->HasEncoder()) {
       return;
     }

@@ -84,6 +84,10 @@ int CameraFrameRotateCw(const CameraCaptureTransform& opened, int current_displa
   return IosCameraRotateCw(opened.front_facing, current_display_rotation_deg);
 }
 
+int CameraPreviewRotateCw(const CameraCaptureTransform& opened) {
+  return IosCameraRotateCw(opened.front_facing, 0);  // the UI never rotates: portrait is screen-up
+}
+
 } // namespace pbr
 
 #endif // TARGET_OS_IPHONE

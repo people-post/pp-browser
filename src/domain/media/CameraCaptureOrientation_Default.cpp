@@ -27,6 +27,10 @@ int CameraFrameRotateCw(const CameraCaptureTransform& opened, int /*current_disp
   return opened.rotate_cw;
 }
 
+int CameraPreviewRotateCw(const CameraCaptureTransform& opened) {
+  return opened.rotate_cw;
+}
+
 } // namespace pbr
 
 #endif

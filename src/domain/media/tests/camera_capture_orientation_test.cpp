@@ -40,5 +40,13 @@ TEST(CameraFrameRotateCwTest, DefaultKeepsOpenedRotation) {
   EXPECT_EQ(CameraFrameRotateCw(opened, 90), 0);
 }
 
+TEST(CameraPreviewRotateCwTest, DefaultPreviewMatchesTheSentFrame) {
+  CameraCaptureTransform opened;
+  opened.rotate_cw = 90;
+  EXPECT_EQ(CameraPreviewRotateCw(opened), 90);
+  opened.rotate_cw = 0;
+  EXPECT_EQ(CameraPreviewRotateCw(opened), 0);
+}
+
 }  // namespace
 }  // namespace pbr
