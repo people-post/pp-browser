@@ -45,4 +45,20 @@ TEST_F(HttpClientTest, AbortsReadWhenResponseExceedsLimit) {
   EXPECT_NE(response.error().message.find("configured limit of 5 bytes"), std::string::npos);
 }
 
+TEST_F(HttpClientTest, RestrictToPublicHttpsRejectsPlainHttpLoopback) {
+  // Attachment/profile-icon URLs are peer-controlled; restrict_to_public_https must refuse
+  // both the non-https scheme and the loopback destination the local test server binds to.
+  const auto response =
+      pbr::HttpClient::Get(WriteResponse(1), {}, pbr::kMaxHttpClientBodyBytes, pbr::HttpTimeout{},
+                           /*restrict_to_public_https=*/true);
+  ASSERT_FALSE(response);
+}
+
+TEST_F(HttpClientTest, DefaultCallsStillAllowPlainHttpLoopback) {
+  // Sanity: the opt-in guard must not change behavior for callers that don't ask for it
+  // (e.g. org backend / relay clients that may legitimately use local dev endpoints).
+  const auto response = pbr::HttpClient::Get(WriteResponse(3));
+  ASSERT_TRUE(response) << response.error().message;
+}
+
 } // namespace

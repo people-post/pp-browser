@@ -19,7 +19,9 @@ Roe<std::vector<uint8_t>> FetchAttachmentCiphertextFromCdn(const ChatAttachmentF
   if (fields.url.empty()) {
     return Error("Attachment URL is required");
   }
-  const auto response = HttpClient::Get(fields.url);
+  // fields.url is peer-controlled (sender's attachment URL): restrict to https + public hosts.
+  const auto response =
+      HttpClient::Get(fields.url, {}, kMaxHttpClientBodyBytes, HttpTimeout{}, /*restrict_to_public_https=*/true);
   if (!response) {
     return response.error();
   }

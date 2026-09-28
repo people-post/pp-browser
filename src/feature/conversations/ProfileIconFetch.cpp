@@ -44,7 +44,9 @@ Roe<void> FetchProfileIcon(const std::string& profile_dir, const std::string& ca
   if (cache_key.empty()) {
     return Error("Profile icon cache key is required");
   }
-  const auto response = HttpClient::Get(icon.url);
+  // icon.url is peer-controlled (contact's profile icon URL): restrict to https + public hosts.
+  const auto response =
+      HttpClient::Get(icon.url, {}, kMaxHttpClientBodyBytes, HttpTimeout{}, /*restrict_to_public_https=*/true);
   if (!response) {
     return response.error();
   }

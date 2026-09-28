@@ -19,18 +19,25 @@ struct HttpTimeout {
 
 class HttpClient {
 public:
-  /** Pass std::nullopt only when a caller deliberately requires an unbounded response. */
+  /**
+   * Pass std::nullopt only when a caller deliberately requires an unbounded response.
+   *
+   * `restrict_to_public_https`: for URLs sourced from a remote peer (attachment/profile-icon
+   * fetch) rather than our own backend config — forces https (initial request and redirects)
+   * and rejects any resolved address that is not a public-routable host (loopback/private/
+   * link-local/CGNAT/multicast), checked after DNS resolution to also cover DNS rebinding.
+   */
   static Roe<HttpResponse> Get(const std::string& url, const std::map<std::string, std::string>& headers = {},
                                std::optional<size_t> max_response_bytes = kMaxHttpClientBodyBytes,
-                               HttpTimeout timeout = {});
+                               HttpTimeout timeout = {}, bool restrict_to_public_https = false);
   static Roe<HttpResponse> Post(const std::string& url, const std::string& body,
                                 const std::map<std::string, std::string>& headers = {},
                                 std::optional<size_t> max_response_bytes = kMaxHttpClientBodyBytes,
-                                HttpTimeout timeout = {});
+                                HttpTimeout timeout = {}, bool restrict_to_public_https = false);
   static Roe<HttpResponse> Put(const std::string& url, const std::string& body,
                                const std::map<std::string, std::string>& headers = {},
                                std::optional<size_t> max_response_bytes = kMaxHttpClientBodyBytes,
-                               HttpTimeout timeout = {});
+                               HttpTimeout timeout = {}, bool restrict_to_public_https = false);
 };
 
 } // namespace pbr

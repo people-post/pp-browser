@@ -5,8 +5,18 @@
 
 #include "common/PbrCompat.h"
 
+#if defined(_WIN32)
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#endif
+
 #include <curl/curl.h>
 
+#include <cstring>
 #include <limits>
 #include <optional>
 
@@ -35,15 +45,96 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, ResponseBuffer* 
   return total;
 }
 
+/** RFC 1918 / loopback / link-local / CGNAT / multicast / reserved — not a public Internet host. */
+bool IsPublicIPv4(const uint32_t host_order_addr) {
+  const uint32_t a = host_order_addr;
+  if ((a & 0xFF000000u) == 0x00000000u) return false;              // 0.0.0.0/8
+  if ((a & 0xFF000000u) == 0x0A000000u) return false;              // 10.0.0.0/8
+  if ((a & 0xFF000000u) == 0x7F000000u) return false;              // 127.0.0.0/8 loopback
+  if ((a & 0xFFC00000u) == 0x64400000u) return false;              // 100.64.0.0/10 CGNAT
+  if ((a & 0xFFFF0000u) == 0xA9FE0000u) return false;              // 169.254.0.0/16 link-local
+  if ((a & 0xFFF00000u) == 0xAC100000u) return false;              // 172.16.0.0/12
+  if ((a & 0xFFFF0000u) == 0xC0A80000u) return false;              // 192.168.0.0/16
+  if ((a & 0xFFFFFF00u) == 0xC0000000u) return false;              // 192.0.0.0/24 IETF
+  if ((a & 0xFFFFFF00u) == 0xC0000200u) return false;              // 192.0.2.0/24 TEST-NET-1
+  if ((a & 0xFFFE0000u) == 0xC6120000u) return false;              // 198.18.0.0/15 benchmark
+  if ((a & 0xFFFFFF00u) == 0xC6336400u) return false;              // 198.51.100.0/24 TEST-NET-2
+  if ((a & 0xFFFFFF00u) == 0xCB007100u) return false;              // 203.0.113.0/24 TEST-NET-3
+  if ((a & 0xF0000000u) == 0xE0000000u) return false;              // 224.0.0.0/4 multicast
+  if ((a & 0xF0000000u) == 0xF0000000u) return false;              // 240.0.0.0/4 reserved + broadcast
+  return true;
+}
+
+/** ::1, ::, fe80::/10, fc00::/7 (ULA), ff00::/8 multicast, and IPv4-mapped private/loopback. */
+bool IsPublicIPv6(const in6_addr& addr) {
+  static constexpr uint8_t kV4Mapped[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF};
+  if (std::memcmp(addr.s6_addr, kV4Mapped, sizeof(kV4Mapped)) == 0) {
+    uint32_t v4 = 0;
+    std::memcpy(&v4, addr.s6_addr + 12, 4);
+    return IsPublicIPv4(ntohl(v4));
+  }
+  bool all_zero = true;
+  for (const uint8_t byte : addr.s6_addr) {
+    if (byte != 0) {
+      all_zero = false;
+      break;
+    }
+  }
+  if (all_zero) return false;                                     // :: unspecified
+  if (addr.s6_addr[0] == 0 && std::memcmp(addr.s6_addr, kV4Mapped, 15) == 0 && addr.s6_addr[15] == 1) {
+    return false;                                                  // ::1 loopback
+  }
+  if ((addr.s6_addr[0] & 0xFE) == 0xFC) return false;               // fc00::/7 unique local
+  if (addr.s6_addr[0] == 0xFE && (addr.s6_addr[1] & 0xC0) == 0x80) return false; // fe80::/10 link-local
+  if (addr.s6_addr[0] == 0xFF) return false;                        // ff00::/8 multicast
+  return true;
+}
+
+/**
+ * Post-DNS-resolution SSRF guard for URLs sourced from a remote peer (attachment/profile-icon
+ * fetch): checking the hostname string is not enough (DNS rebinding), so this replaces curl's own
+ * socket() and rejects any resolved address that is not a public-routable host.
+ */
+curl_socket_t OpenPublicOnlySocket(void* /*clientp*/, curlsocktype purpose, struct curl_sockaddr* address) {
+  if (purpose != CURLSOCKTYPE_IPCXN || address == nullptr) {
+    return CURL_SOCKET_BAD;
+  }
+  bool allowed = false;
+  if (address->family == AF_INET) {
+    const auto* sin = reinterpret_cast<const sockaddr_in*>(&address->addr);
+    allowed = IsPublicIPv4(ntohl(sin->sin_addr.s_addr));
+  } else if (address->family == AF_INET6) {
+    const auto* sin6 = reinterpret_cast<const sockaddr_in6*>(&address->addr);
+    allowed = IsPublicIPv6(sin6->sin6_addr);
+  }
+  if (!allowed) {
+    return CURL_SOCKET_BAD;
+  }
+#if defined(_WIN32)
+  const curl_socket_t sock = socket(address->family, address->socktype, address->protocol);
+  return sock == INVALID_SOCKET ? CURL_SOCKET_BAD : sock;
+#else
+  const curl_socket_t sock = socket(address->family, address->socktype, address->protocol);
+  return sock < 0 ? CURL_SOCKET_BAD : sock;
+#endif
+}
+
 Roe<HttpResponse> Perform(const std::string& url, const char* method, const std::string& body,
                           const std::map<std::string, std::string>& headers,
-                          std::optional<size_t> max_response_bytes, HttpTimeout timeout) {
+                          std::optional<size_t> max_response_bytes, HttpTimeout timeout,
+                          bool restrict_to_public_https) {
   CURL* curl = curl_easy_init();
   if (!curl) {
     return AppError::Internal("Failed to init curl");
   }
 
   ApplyCurlSslDefaults(curl);
+
+  if (restrict_to_public_https) {
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+    curl_easy_setopt(curl, CURLOPT_OPENSOCKETFUNCTION, OpenPublicOnlySocket);
+  }
 
   ResponseBuffer response_body{.max_bytes = max_response_bytes};
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -98,20 +189,23 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
 } // namespace
 
 Roe<HttpResponse> HttpClient::Get(const std::string& url, const std::map<std::string, std::string>& headers,
-                                  std::optional<size_t> max_response_bytes, HttpTimeout timeout) {
-  return Perform(url, "GET", {}, headers, max_response_bytes, timeout);
+                                  std::optional<size_t> max_response_bytes, HttpTimeout timeout,
+                                  bool restrict_to_public_https) {
+  return Perform(url, "GET", {}, headers, max_response_bytes, timeout, restrict_to_public_https);
 }
 
 Roe<HttpResponse> HttpClient::Post(const std::string& url, const std::string& body,
                                    const std::map<std::string, std::string>& headers,
-                                   std::optional<size_t> max_response_bytes, HttpTimeout timeout) {
-  return Perform(url, "POST", body, headers, max_response_bytes, timeout);
+                                   std::optional<size_t> max_response_bytes, HttpTimeout timeout,
+                                   bool restrict_to_public_https) {
+  return Perform(url, "POST", body, headers, max_response_bytes, timeout, restrict_to_public_https);
 }
 
 Roe<HttpResponse> HttpClient::Put(const std::string& url, const std::string& body,
                                   const std::map<std::string, std::string>& headers,
-                                  std::optional<size_t> max_response_bytes, HttpTimeout timeout) {
-  return Perform(url, "PUT", body, headers, max_response_bytes, timeout);
+                                  std::optional<size_t> max_response_bytes, HttpTimeout timeout,
+                                  bool restrict_to_public_https) {
+  return Perform(url, "PUT", body, headers, max_response_bytes, timeout, restrict_to_public_https);
 }
 
 } // namespace pbr
