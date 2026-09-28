@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -193,6 +194,22 @@ inline void MixPcmSat(std::vector<int16_t>& out, const std::vector<int16_t>& in)
   for (size_t i = 0; i < n; ++i) {
     const int sum = static_cast<int>(out[i]) + static_cast<int>(in[i]);
     out[i] = static_cast<int16_t>(std::max(-32768, std::min(32767, sum)));
+  }
+}
+
+/**
+ * Playout gain with a soft knee: linear up to 70 % of full scale, then tanh-compressed so a
+ * boosted peak approaches but never clips full scale (no hard-clip distortion).
+ */
+inline void ApplySoftGain(std::vector<int16_t>& pcm, float gain) {
+  constexpr float kKnee = 0.7f;
+  for (auto& s : pcm) {
+    float y = static_cast<float>(s) / 32768.f * gain;
+    const float a = std::fabs(y);
+    if (a > kKnee) {
+      y = std::copysign(kKnee + (1.f - kKnee) * std::tanh((a - kKnee) / (1.f - kKnee)), y);
+    }
+    s = static_cast<int16_t>(std::lrint(std::clamp(y * 32768.f, -32768.f, 32767.f)));
   }
 }
 

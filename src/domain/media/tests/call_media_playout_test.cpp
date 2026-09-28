@@ -376,5 +376,39 @@ TEST(CallMediaAdaptationTest, PressureLowersAudioBps) {
   EXPECT_GE(d.target_audio_bps, CallMediaAdaptation::kMinAudioBps);
 }
 
+
+TEST(ApplySoftGainTest, QuietSamplesGetFullGain) {
+  std::vector<int16_t> pcm = {1000, -1000, 0, 5000};
+  ApplySoftGain(pcm, 2.0f);
+  EXPECT_NEAR(pcm[0], 2000, 2);
+  EXPECT_NEAR(pcm[1], -2000, 2);
+  EXPECT_EQ(pcm[2], 0);
+  EXPECT_NEAR(pcm[3], 10000, 2);
+}
+
+TEST(ApplySoftGainTest, LoudSamplesNeverClipAndStayMonotonic) {
+  std::vector<int16_t> pcm;
+  for (int v = 0; v <= 32767; v += 64) {
+    pcm.push_back(static_cast<int16_t>(v));
+  }
+  pcm.push_back(32767);
+  ApplySoftGain(pcm, 2.0f);
+  for (size_t i = 1; i < pcm.size(); ++i) {
+    EXPECT_GE(pcm[i], pcm[i - 1]) << "at " << i;
+  }
+  EXPECT_LE(pcm.back(), 32767);
+  EXPECT_GT(pcm.back(), 29000);  // a boosted full-scale peak lands near, not past, full scale
+}
+
+TEST(ApplySoftGainTest, SymmetricForNegativeSamples) {
+  std::vector<int16_t> pos = {3000, 20000, 32767};
+  std::vector<int16_t> neg = {-3000, -20000, -32767};
+  ApplySoftGain(pos, 2.0f);
+  ApplySoftGain(neg, 2.0f);
+  for (size_t i = 0; i < pos.size(); ++i) {
+    EXPECT_NEAR(pos[i], -neg[i], 1);
+  }
+}
+
 } // namespace
 } // namespace pbr

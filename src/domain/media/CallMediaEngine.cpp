@@ -40,6 +40,9 @@ constexpr int kFrameSamples = kSampleRate * kFrameMs / 1000;
 constexpr int kFrameBytes = kFrameSamples * static_cast<int>(sizeof(int16_t));
 /** Keep ~60 ms queued in the device (spec §1); above ~120 ms skip a slot to shed latency. */
 constexpr int kPlayoutTargetQueuedBytes = 3 * kFrameBytes;
+/** +6 dB on the voice-processing (VPIO) path: the OS attenuates call output there by design and
+ *  the Mac speaker was noticeably quieter than other apps. Soft-kneed, so peaks don't clip. */
+constexpr float kVoicePlayoutGain = 2.0f;
 constexpr int kPlayoutHighWaterBytes = 6 * kFrameBytes;
 /** Never produce more than this many slots per 20 ms wake-up (startup / after a stall). */
 constexpr int kPlayoutMaxSlotsPerTick = 3;
@@ -535,6 +538,7 @@ struct CallMediaEngine::Impl {
             tick_gap_max_ms = 0;
           }
           int slots = out ? PlayoutSlotsLocked(*out) : 1;
+          const bool voice_out = out && out->WithVoiceProcessing([](IVoiceProcessing&) {});
           if (audio_tracks.empty()) {
             slots = 0;  // nothing to pop or put; don't inflate playout_ticks (Pressure window)
           }
@@ -551,6 +555,9 @@ struct CallMediaEngine::Impl {
               pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(ticks, 1)));
             }
             if (out && any) {
+              if (voice_out) {
+                ApplySoftGain(mix, kVoicePlayoutGain);
+              }
               SmoothLevel(remote_output_level, FramePeakLevel(mix.data(), kFrameSamples));
               remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
               (void)out->Write(mix.data(), kFrameBytes);
