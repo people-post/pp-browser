@@ -424,6 +424,16 @@ TEST(AudioArrivalJitterTest, ResetForgetsHistory) {
   EXPECT_EQ(j.TargetFrames(), 3u);
 }
 
+TEST(AudioArrivalJitterTest, HugeLatenessUsesOverflowBucket) {
+  AudioArrivalJitter j;
+  // Prime with 300 steady packets to establish baseline.
+  FeedArrivals(j, 1, 1000, 300, [](int) { return 0; });
+  // Every 10th packet arrives 2000 ms late; enough to exceed kMaxTargetFrames in raw form.
+  FeedArrivals(j, 301, 1000 + 300 * 20, 100, [](int i) { return (i % 10 == 0) ? 2000 : 0; });
+  // Overflow bucket clamp ensures target is clamped to kMaxTargetFrames (20), no crash.
+  EXPECT_EQ(j.TargetFrames(), AudioArrivalJitter::kMaxTargetFrames);
+}
+
 TEST(MixPcmSatTest, Saturates) {
   std::vector<int16_t> out = {30000, -30000};
   std::vector<int16_t> in = {10000, -10000};
