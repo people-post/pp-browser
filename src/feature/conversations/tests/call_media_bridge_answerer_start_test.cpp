@@ -188,6 +188,10 @@ public:
   }
   void ClearPeerCircuitHop(const std::string& /*peer_key*/) override {}
 
+  /** A circuit hop to the peer is its relay carrier link (beside any direct one). */
+  bool IsConnectedRelayed(const std::string& peer_key) const override {
+    return IsConnected(peer_key) && (carrier_only.count(peer_key) > 0 || HasPeerCircuitHop(peer_key));
+  }
   bool HasPeerCircuitHop(const std::string& peer_key) const override {
     return circuit_hops.count(peer_key) > 0 && circuit_hops.at(peer_key);
   }
@@ -298,6 +302,19 @@ public:
     }
     done(Roe<void>());
   }
+  CallMediaLinkKind StandbyLinkKind() const override { return standby_kind.load(); }
+  void AddStandby(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override {
+    ++add_standby_calls;
+    if (!standby_ok) {
+      done(Error("call-media standby: peer refused"));
+      return;
+    }
+    standby_kind = kind;
+    done(Roe<void>());
+  }
+  std::atomic<int> add_standby_calls{0};
+  std::atomic<CallMediaLinkKind> standby_kind{CallMediaLinkKind::Unknown};
+  bool standby_ok = true;
   std::atomic<int> migrate_calls{0};
   bool migrate_ok = true;
   int fail_first_n_migrates = 0;
@@ -1164,6 +1181,42 @@ TEST_F(CallMediaBridgeAnswererStartTest, MobilePairAnswererDoesNotPunch) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   EXPECT_EQ(circuit_->call_media_ensure_calls.load(), 0) << "no punch toward the peer";
+  bridge_->PrepareForTeardown(0);
+}
+
+// k6 (K003): an offerer Live on a direct path builds a circuit under the call and adds it as the
+// relayed standby — retrying a refusal — then stops.
+TEST_F(CallMediaBridgeAnswererStartTest, DirectCallGetsARelayedStandby) {
+  const std::string call_id = "call:standby";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWStandbyPeer";
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  transport_->active = true;  // the call is bound on a direct link
+  transport_->standby_ok = false;  // the first add is refused (the relay was full)
+  bridge_->SetRelayStandbyDelayMsForTest(20);
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  for (int i = 0; i < 400 && transport_->add_standby_calls.load() < 1; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_GE(transport_->add_standby_calls.load(), 1);
+  transport_->standby_ok = true;
+  for (int i = 0; i < 400 && transport_->standby_kind.load() != CallMediaLinkKind::Relayed; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(transport_->standby_kind.load(), CallMediaLinkKind::Relayed) << "retried after the refusal";
+  EXPECT_GE(circuit_->call_media_ensure_calls.load(), 1) << "a circuit was built under the call";
+  const int adds = transport_->add_standby_calls.load();
+  for (int i = 0; i < 20; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(transport_->add_standby_calls.load(), adds) << "done once it is up";
+  EXPECT_EQ(transport_->link_kind, CallMediaLinkKind::Direct) << "the call stayed on its path";
   bridge_->PrepareForTeardown(0);
 }
 

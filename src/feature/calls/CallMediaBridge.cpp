@@ -140,6 +140,7 @@ CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string&
                  << " path=" << (kind == CallMediaLinkKind::Relayed ? "circuit" : "direct");
       if (kind == CallMediaLinkKind::Direct) {
         CancelDirectUpgrade();
+        ArmRelayStandby(call_id);  // after a failover onto a direct standby, keep a relay behind it
         // Off the relay onto a link the upgrade punch (or the peer's punch) opened.
         if (reach_kind_ == PeerLinkKind::Relayed || reach_kind_ == PeerLinkKind::Unknown) {
           reach_kind_ = PeerLinkKind::Punched;
@@ -496,6 +497,111 @@ void CallMediaBridge::OnDirectUpgradeFire() {
   });
 }
 
+// --- k6: a direct call keeps a relayed standby (K003) -----------------------------------------------
+
+void CallMediaBridge::ArmRelayStandby(const std::string& call_id) {
+  if (!session_offerer_ || call_id.empty() || MediaPathKind() == "circuit" || standby_call_id_ == call_id ||
+      !reach_.HasCircuitReach()) {
+    return;
+  }
+  if (!PathPolicyFor(call_id).want_relay_standby) {
+    return;
+  }
+  CancelRelayStandby();
+  standby_call_id_ = call_id;
+  standby_attempt_ = 0;
+  ScheduleRelayStandby();
+}
+
+void CallMediaBridge::ScheduleRelayStandby() {
+  static constexpr int kDelaysMs[] = {5000, 20000, 60000};
+  if (standby_attempt_ >= static_cast<int>(std::size(kDelaysMs))) {
+    log().info << "relay standby: giving up call_id=" << standby_call_id_ << " (a lost path re-anchors)";
+    return;
+  }
+  const int delay_ms = standby_delay_ms_for_test_ > 0 ? standby_delay_ms_for_test_ : kDelaysMs[standby_attempt_];
+  standby_timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(
+      std::chrono::milliseconds(delay_ms), [this, alive = alive_]() {
+        CallsThread::Post([this, alive]() {
+          if (alive->load(std::memory_order_acquire)) {
+            OnRelayStandbyFire();
+          }
+        });
+      });
+}
+
+void CallMediaBridge::CancelRelayStandby() {
+  if (standby_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(standby_timer_id_);
+    standby_timer_id_ = 0;
+  }
+  if (standby_reach_id_ != 0) {
+    reach_.Cancel(standby_reach_id_);
+    standby_reach_id_ = 0;
+  }
+  standby_call_id_.clear();
+}
+
+void CallMediaBridge::OnRelayStandbyFire() {
+  standby_timer_id_ = 0;
+  const std::string call_id = standby_call_id_;
+  const bool still_wanted = !stopping_.load(std::memory_order_acquire) && !call_id.empty() &&
+                            call_id == media_call_id_ && direct_planner_phase_ == CallDirectPlannerPhase::Live &&
+                            MediaPathKind() != "circuit" && PathPolicyFor(call_id).want_relay_standby;
+  if (!still_wanted || direct_.StandbyLinkKind() == CallMediaLinkKind::Relayed) {
+    CancelRelayStandby();
+    return;
+  }
+  ++standby_attempt_;
+  std::string peer_id = ReachPeerIdFor(direct_.ActiveParams().peer_key);
+  if (peer_id.empty()) {
+    peer_id = ReachPeerIdFor(media_peer_identity_);
+  }
+  PeerReachRequest request;
+  request.keys.push_back(peer_id);
+  request.mode = PeerReachMode::Reach;
+  request.exclude_direct = true;  // a circuit, beside the direct link the call is on
+  const CallStandbyPriority priority = StandbyPriorityFor(PathPolicyFor(call_id), MediaPathKind() == "punched");
+  request.circuit_standby_priority = priority == CallStandbyPriority::High     ? CircuitStandbyPriority::High
+                                     : priority == CallStandbyPriority::Medium ? CircuitStandbyPriority::Medium
+                                                                               : CircuitStandbyPriority::Low;
+  log().info << "relay standby attempt=" << standby_attempt_ << " call_id=" << call_id << " peer=" << peer_id
+             << " priority=" << CallStandbyPriorityName(priority);
+  const auto retry = [this, call_id]() {
+    if (standby_call_id_ == call_id) {
+      ScheduleRelayStandby();
+    }
+  };
+  standby_reach_id_ =
+      reach_.Ensure(std::move(request), [this, alive = alive_, call_id, retry](Roe<PeerReachResult> reached) {
+        CallsThread::Post([this, alive, call_id, retry, reached = std::move(reached)]() {
+          if (!alive->load(std::memory_order_acquire) || standby_call_id_ != call_id) {
+            return;
+          }
+          standby_reach_id_ = 0;
+          if (!reached) {
+            log().info << "relay standby: no circuit (" << reached.error().message << ")";
+            retry();
+            return;
+          }
+          direct_.AddStandby(CallMediaLinkKind::Relayed, [this, alive, call_id, retry](Roe<void> added) {
+            CallsThread::Post([this, alive, call_id, retry, added = std::move(added)]() {
+              if (!alive->load(std::memory_order_acquire) || standby_call_id_ != call_id) {
+                return;
+              }
+              if (!added) {
+                log().info << "relay standby: not added (" << added.error().message << ")";
+                retry();
+                return;
+              }
+              log().info << "relay standby up call_id=" << call_id;
+              standby_call_id_.clear();
+            });
+          });
+        });
+      });
+}
+
 // --- k6: the pair's path policy changed (a mobility class flipped mid-call) ----------------------
 
 void CallMediaBridge::OnPathPolicyChanged(const std::string& call_id) {
@@ -509,6 +615,9 @@ void CallMediaBridge::OnPathPolicyChanged(const std::string& call_id) {
     CancelDirectUpgrade();
   } else if (direct_planner_phase_ == CallDirectPlannerPhase::Live) {
     ArmDirectUpgrade(call_id);
+  }
+  if (direct_planner_phase_ == CallDirectPlannerPhase::Live) {
+    ArmRelayStandby(call_id);
   }
 }
 
@@ -655,6 +764,7 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
     arming_.on_connected(call_id);
   }
   ArmDirectUpgrade(call_id);
+  ArmRelayStandby(call_id);
   host_.P2pNotifyRingChanged();
 }
 
@@ -1405,6 +1515,7 @@ void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
   CancelDirectHealthTimer();
   CancelReserveRenewal();
   CancelDirectUpgrade();
+  CancelRelayStandby();
   CancelEscalateReach();
   CancelReanchor();
   const std::string peer = media_peer_identity_;
@@ -1512,6 +1623,7 @@ void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
   CancelDirectHealthTimer();
   CancelReserveRenewal();
   CancelDirectUpgrade();
+  CancelRelayStandby();
   CancelEscalateReach();
   CancelReanchor();
   const std::string peer = media_peer_identity_;

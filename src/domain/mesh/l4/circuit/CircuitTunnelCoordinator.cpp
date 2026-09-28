@@ -118,6 +118,24 @@ struct CircuitTunnelCoordinator::Impl {
   };
 
   std::unordered_map<uint64_t, std::unique_ptr<Tunnel>> tunnels;
+  size_t max_standby = kCircuitDefaultMaxStandby;
+  size_t max_standby_per_dialer = kCircuitDefaultMaxStandbyPerDialer;
+
+  /** Live standby circuits this relay serves (K003), relay-wide and from `dialer`. Under `mu`. */
+  void CountStandbyLocked(const std::string& dialer, CircuitAdmitContext& admit) const {
+    admit.max_standby = max_standby;
+    admit.max_standby_per_dialer = max_standby_per_dialer;
+    for (const auto& [_, tunnel] : tunnels) {
+      if (!tunnel || tunnel->finished || tunnel->role != CircuitTunnelRole::RelayServe ||
+          tunnel->target.standby_priority == CircuitStandbyPriority::None) {
+        continue;
+      }
+      ++admit.standby_total;
+      if (tunnel->dialer_peer_id == dialer) {
+        ++admit.standby_from_dialer;
+      }
+    }
+  }
   /** Relay: PeerId → parked inbound circuit channel from answerer (op=reserve). */
   std::unordered_map<std::string, Reservation> reservations;
   /**
@@ -603,6 +621,9 @@ struct CircuitTunnelCoordinator::Impl {
         request.set("target_multiaddr", tunnel.target.target_multiaddr);
       }
       request.set("target_protocol", tunnel.target.target_protocol);
+      if (const char* standby = CircuitStandbyPriorityWire(tunnel.target.standby_priority)) {
+        request.set("standby_priority", std::string(standby));
+      }
     }
     const std::string request_json = DumpJson(request);
 
@@ -941,10 +962,13 @@ struct CircuitTunnelCoordinator::Impl {
                    admit.stopping = stopped.load(std::memory_order_acquire);
                    admit.dialer_peer_id = remote;
                    admit.op = op;
+                   admit.standby_priority =
+                       ParseCircuitStandbyPriority(root.getString("standby_priority").value_or(""));
                    {
                      std::lock_guard lock(mu);
                      admit.serve_scope_mask = admission.serve_scope_mask;
                      admit.contact_peer_ids = admission.contact_peer_ids;
+                     CountStandbyLocked(remote, admit);
                    }
                    const auto decision = DecideCircuitAdmit(admit);
                    auto refuse = [&](const std::string& message) {
@@ -955,6 +979,13 @@ struct CircuitTunnelCoordinator::Impl {
                      near_session->EnqueueOutbound(JsonToBody(DumpJson(err)));
                      near_session->Close();
                    };
+                   if (decision == CircuitAdmitDecision::RefuseStandbyFull) {
+                     CircuitTunnelLog().info << "circuit standby refused dialer=" << remote << " priority="
+                                             << CircuitStandbyPriorityWire(admit.standby_priority)
+                                             << " standby=" << admit.standby_total;
+                     refuse("relay busy: standby refused");
+                     return;
+                   }
                    if (decision != CircuitAdmitDecision::Allow) {
                      refuse(decision == CircuitAdmitDecision::RefuseStranger
                                 ? "relay scope: stranger refused"
@@ -1006,6 +1037,7 @@ struct CircuitTunnelCoordinator::Impl {
                      tunnel->target.target_peer_id = root.getString("target_peer_id").value_or("");
                      tunnel->target.target_multiaddr = root.getString("target_multiaddr").value_or("");
                      tunnel->target.target_protocol = root.getString("target_protocol").value_or("");
+                     tunnel->target.standby_priority = admit.standby_priority;
                      if (tunnel->target.target_protocol.empty()) {
                        tunnel->target.target_protocol = kCircuitRelayProtocolId;
                      }
@@ -1092,6 +1124,16 @@ bool CircuitTunnelCoordinator::IsStarted() const {
 void CircuitTunnelCoordinator::SetAdmissionPolicy(CircuitRelayAdmissionPolicy policy) {
   std::lock_guard lock(impl_->mu);
   impl_->admission = std::move(policy);
+}
+
+void CircuitTunnelCoordinator::SetStandbyLimits(const size_t max_standby, const size_t max_per_dialer) {
+  std::lock_guard lock(impl_->mu);
+  if (max_standby > 0) {
+    impl_->max_standby = max_standby;
+  }
+  if (max_per_dialer > 0) {
+    impl_->max_standby_per_dialer = max_per_dialer;
+  }
 }
 
 void CircuitTunnelCoordinator::SetServeInbound(const bool serve) {

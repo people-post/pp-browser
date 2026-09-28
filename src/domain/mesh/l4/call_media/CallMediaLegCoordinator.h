@@ -22,6 +22,7 @@ struct CallMediaPathState {
   bool candidate = false;
   /** k4: a warm fallback path the call can fail over to. */
   bool standby = false;
+  CallMediaLinkKind standby_kind = CallMediaLinkKind::Unknown;
   /** k4: the call lost its last path and waits (reconnect window) for a new one. */
   bool reconnecting = false;
   /** The previous path is draining after a switch. */
@@ -80,6 +81,12 @@ public:
   void MigrateLeg(CallMediaLegId id, pp::amp::LinkHandle link, LegFinished done);
   /** MigrateLeg onto the peer's Connected link of `kind` (direct ADP or relay carrier). */
   void MigrateLegToKind(CallMediaLegId id, CallMediaLinkKind kind, LegFinished done);
+  /**
+   * k6 (K003): bring the peer's Connected link of `kind` up as the call's warm standby — the same
+   * handshake as a migration (`path_add`), but TX stays on the active path. Refused when the call
+   * already has a standby; a peer without k6 rejects it. `done` on the IO strand.
+   */
+  void AddStandbyLegOfKind(CallMediaLegId id, CallMediaLinkKind kind, LegFinished done);
   CallMediaPathState PathState(CallMediaLegId id) const;
   /**
    * Default on: when a relayed call's peer becomes reachable over a Connected direct link (a punch

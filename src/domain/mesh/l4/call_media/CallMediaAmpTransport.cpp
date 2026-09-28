@@ -100,6 +100,22 @@ void CallMediaAmpTransport::MigrateTo(const CallMediaLinkKind kind, std::functio
   coordinator_.MigrateLegToKind(leg, kind, std::move(done));
 }
 
+CallMediaLinkKind CallMediaAmpTransport::StandbyLinkKind() const {
+  const CallMediaLegId leg = ActiveLegId();
+  return leg ? coordinator_.PathState(leg).standby_kind : CallMediaLinkKind::Unknown;
+}
+
+void CallMediaAmpTransport::AddStandby(const CallMediaLinkKind kind, std::function<void(Roe<void>)> done) {
+  const CallMediaLegId leg = ActiveLegId();
+  if (!leg) {
+    if (done) {
+      done(Error("call-media standby: no active leg"));
+    }
+    return;
+  }
+  coordinator_.AddStandbyLegOfKind(leg, kind, std::move(done));
+}
+
 CallMediaLinkKind CallMediaAmpTransport::ActiveLinkKind() const {
   return coordinator_.ActiveLinkKind();
 }

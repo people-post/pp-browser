@@ -173,6 +173,30 @@ protected:
   std::unique_ptr<CallMediaLegCoordinator> b_call_;
 };
 
+// K003 end to end: the bridge request carries `standby_priority`; the relay refuses a standby
+// circuit once its (priority-scaled) capacity is used, while higher priorities still get in.
+TEST_F(AmpCircuitCallMediaComposeTest, RelayRefusesStandbyCircuitsLowestPriorityFirst) {
+  circuit_r_->SetStandbyLimits(/*max_standby=*/2, /*max_per_dialer=*/4);  // Low: < 1, High: < 2
+  const auto bridge = [&](CircuitStandbyPriority priority) {
+    CircuitBridgeTarget target;
+    target.target_peer_id = harness_->peer_id_b;
+    target.target_multiaddr = harness_->ma_b;
+    target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
+    target.standby_priority = priority;
+    Wait<CircuitTunnelBridgeResult> wait;
+    EXPECT_TRUE(circuit_a_->StartBridge("relay", target, {}, {}, wait.Fn(), 8000));
+    wait.PumpUntilDone(*harness_);
+    if (!wait.result) {
+      return std::string("error: ") + wait.result.error().message;
+    }
+    return wait.result->ok ? std::string("ok") : wait.result->error;
+  };
+  EXPECT_EQ(bridge(CircuitStandbyPriority::Low), "ok");
+  EXPECT_NE(bridge(CircuitStandbyPriority::Low).find("standby refused"), std::string::npos) << "Low: half full";
+  EXPECT_EQ(bridge(CircuitStandbyPriority::High), "ok") << "High still fits";
+  EXPECT_EQ(bridge(CircuitStandbyPriority::None), "ok") << "a primary circuit is never refused for standby load";
+}
+
 TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedHelloAndEncryptedAudioRoundTrip) {
   ASSERT_FALSE(harness_->mgr_a().GetLinkSnapshot(harness_->peer_id_b).has_endpoint);
   ASSERT_FALSE(harness_->mgr_a().IsConnected(harness_->peer_id_b));
@@ -897,6 +921,190 @@ TEST_F(CallPathMigrationTest, LostLinkWithAnotherLinkToThePeerRebindsQuietly) {
     std::lock_guard lock(mu_);
     EXPECT_GT(b_seqs_.size(), before) << "media flows on the direct link";
   }
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
+}
+
+// k6 (K003): a second path joins the call as its warm standby — `path_add`, same handshake as a
+// migration — while TX stays where it is. Losing the active path then fails over onto it.
+TEST_F(CallPathMigrationTest, AddedStandbyKeepsTheCallWhereItIsAndTakesOverOnLoss) {
+  LiveRelayedCallWithDirectLink();
+  std::atomic<bool> done{false};
+  Roe<void> result = Error("pending");
+  a_call_->AddStandbyLegOfKind(leg_, CallMediaLinkKind::Direct, [&](Roe<void> r) {
+    result = std::move(r);
+    done = true;
+  });
+  for (int i = 0; i < 400 && !(done.load() && b_call_->PathState(b_call_->PrimaryLegId()).standby); ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  ASSERT_TRUE(done.load());
+  ASSERT_TRUE(result) << result.error().message;
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed) << "TX did not move";
+  EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+  EXPECT_EQ(a_call_->PathState(leg_).standby_kind, CallMediaLinkKind::Direct);
+  EXPECT_EQ(b_call_->PathState(b_call_->PrimaryLegId()).standby_kind, CallMediaLinkKind::Direct);
+  EXPECT_EQ(a_path_.load(), CallMediaLinkKind::Unknown) << "no path change reported";
+  {
+    std::lock_guard lock(mu_);
+    std::vector<uint32_t> expected(seq_);
+    for (uint32_t i = 0; i < seq_; ++i) {
+      expected[i] = i + 1;
+    }
+    harness_->PumpUntil([&] { return b_seqs_.size() >= seq_; }, 2000);
+    EXPECT_EQ(b_seqs_, expected) << "every frame once, in order";
+  }
+
+  std::atomic<bool> second{false};
+  Roe<void> second_result = Roe<void>();
+  a_call_->AddStandbyLegOfKind(leg_, CallMediaLinkKind::Direct, [&](Roe<void> r) {
+    second_result = std::move(r);
+    second = true;
+  });
+  harness_->PumpUntil([&] { return second.load(); }, 500);
+  EXPECT_FALSE(second_result) << "one standby per call";
+
+  // The relay dies: both ends take the standby.
+  harness_->io_r->SetDropRate(1.0);
+  for (int i = 0; i < 60 && !(a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct &&
+                              b_call_->ActiveLinkKind() == CallMediaLinkKind::Direct);
+       ++i) {
+    harness_->clock->Advance(250);
+    SendNext();
+    harness_->PumpAll();
+  }
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
+  EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
+  EXPECT_EQ(a_lost_.load(), 0) << "a failover, not a reconnect";
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
+}
+
+// A peer from before k6 does not know `path_add`: the add times out and the call is unharmed.
+TEST_F(CallPathMigrationTest, OlderPeerLeavesTheCallWithoutAStandby) {
+  LiveRelayedCallWithDirectLink();
+  a_call_->SetMigrateTimeoutForTest(std::chrono::milliseconds(300));
+  b_call_->SetIgnoreMigrateForTest(true);
+  std::atomic<bool> done{false};
+  Roe<void> result = Roe<void>();
+  a_call_->AddStandbyLegOfKind(leg_, CallMediaLinkKind::Direct, [&](Roe<void> r) {
+    result = std::move(r);
+    done = true;
+  });
+  EXPECT_TRUE(PumpRealUntil([&] { SendNext(); return done.load(); }, std::chrono::seconds(3)));
+  EXPECT_FALSE(result);
+  EXPECT_FALSE(a_call_->PathState(leg_).standby);
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
+}
+
+// The link a call just moved onto dies while the path it left is still retiring (lab: the upgrade's
+// punched link lost the dual-dial election 25 ms after the switch). Both ends go back onto the
+// retiring path — it used to be ignored: the call went Reconnecting and every re-anchor was refused
+// as "migration in progress" until the retiring path timed out.
+TEST_F(CallPathMigrationTest, NewPathDyingBeforeTheReleaseFallsBackToThePathItLeft) {
+  LiveRelayedCallWithDirectLink();
+  std::atomic<bool> moved{false};
+  a_call_->MigrateLeg(leg_, direct_link_, [&](Roe<void> r) { moved = static_cast<bool>(r); });
+  for (int i = 0; i < 400 && !(moved.load() && b_call_->ActiveLinkKind() == CallMediaLinkKind::Direct); ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  ASSERT_TRUE(moved.load());
+  ASSERT_TRUE(a_call_->PathState(leg_).retiring) << "the relay path is still draining";
+
+  ASSERT_GT(harness_->mgr_a().RequestDropLink("b-direct"), 0u);
+  for (int i = 0; i < 400 && !(a_call_->ActiveLinkKind() == CallMediaLinkKind::Relayed &&
+                               b_call_->ActiveLinkKind() == CallMediaLinkKind::Relayed);
+       ++i) {
+    SendNext();
+    harness_->PumpAll();
+  }
+  EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+  EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+  EXPECT_FALSE(a_call_->PathState(leg_).reconnecting);
+  EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).reconnecting);
+  EXPECT_EQ(a_path_.load(), CallMediaLinkKind::Relayed);
+  const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
+  SendNext();
+  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() > before; }, 2000);
+  {
+    std::lock_guard lock(mu_);
+    EXPECT_GT(b_seqs_.size(), before) << "media flows on the relay again";
+  }
+  PumpRealUntil([&] { SendNext(); return false; }, std::chrono::milliseconds(kCallMediaQuietRebindGraceMs + 300));
+  EXPECT_EQ(a_lost_.load(), 0);
+  EXPECT_EQ(b_lost_.load(), 0);
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
+}
+
+// ...and when another direct link to the peer is up (the dual-dial winner), the driver moves onto
+// it right away — not after the auto-migrate backoff, by which time an unused cold link is dead.
+TEST_F(CallPathMigrationTest, AfterFallingBackTheCallTakesTheSurvivingDirectLinkAtOnce) {
+  LiveRelayedCallWithDirectLink();
+  a_call_->SetAutoMigrateToDirect(true);  // the transport's own move arms its 10 s backoff
+  EXPECT_TRUE(PumpRealUntil(
+      [&] {
+        SendNext();
+        return a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct &&
+               b_call_->ActiveLinkKind() == CallMediaLinkKind::Direct;
+      },
+      std::chrono::seconds(3)));
+  ASSERT_TRUE(a_call_->PathState(leg_).retiring) << "the relay path is still draining";
+  // The link the call moved onto dies (it lost the dual-dial election): back onto the relay.
+  ASSERT_GT(harness_->mgr_a().RequestDropLink("b-direct"), 0u);
+  EXPECT_TRUE(PumpRealUntil(
+      [&] {
+        SendNext();
+        return a_call_->ActiveLinkKind() == CallMediaLinkKind::Relayed;
+      },
+      std::chrono::seconds(2)));
+  // The election's winner: another direct link to the peer.
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint("b-direct-2", harness_->ma_b)));
+  Wait<void> second;
+  harness_->mgr_a().EnsureAssociation("b-direct-2", second.LinkFn());
+  second.PumpUntilDone(*harness_);
+  ASSERT_TRUE(second.result) << second.result.error().message;
+  EXPECT_TRUE(PumpRealUntil(
+      [&] {
+        SendNext();
+        return a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct &&
+               b_call_->ActiveLinkKind() == CallMediaLinkKind::Direct;
+      },
+      std::chrono::seconds(3)))
+      << "on the surviving direct link well inside the 10 s backoff";
+  EXPECT_EQ(a_lost_.load(), 0);
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
+}
+
+// The candidate link is lost mid-migration (the election dropped it): the driver may take the
+// winning direct link at once instead of waiting out the auto-migrate backoff.
+TEST_F(CallPathMigrationTest, LostCandidateLinkDoesNotHoldBackTheNextDirectLink) {
+  LiveRelayedCallWithDirectLink();
+  b_call_->SetIgnoreMigrateForTest(true);  // keep the first migration in flight
+  a_call_->SetAutoMigrateToDirect(true);
+  EXPECT_TRUE(PumpRealUntil([&] { SendNext(); return a_call_->PathState(leg_).candidate; }, std::chrono::seconds(2)));
+  ASSERT_GT(harness_->mgr_a().RequestDropLink("b-direct"), 0u);
+  EXPECT_TRUE(PumpRealUntil([&] { SendNext(); return !a_call_->PathState(leg_).candidate; }, std::chrono::seconds(2)))
+      << "abandoned: candidate link lost";
+  b_call_->SetIgnoreMigrateForTest(false);
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint("b-direct-2", harness_->ma_b)));
+  Wait<void> second;
+  harness_->mgr_a().EnsureAssociation("b-direct-2", second.LinkFn());
+  second.PumpUntilDone(*harness_);
+  ASSERT_TRUE(second.result) << second.result.error().message;
+  EXPECT_TRUE(PumpRealUntil(
+      [&] {
+        SendNext();
+        return a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct &&
+               b_call_->ActiveLinkKind() == CallMediaLinkKind::Direct;
+      },
+      std::chrono::seconds(3)))
+      << "well inside the 10 s backoff";
   EXPECT_FALSE(a_failed_.load());
   EXPECT_FALSE(b_failed_.load());
 }

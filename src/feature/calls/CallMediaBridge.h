@@ -121,6 +121,8 @@ public:
   void OnPathPolicyChanged(const std::string& call_id);
   /** Wait after a network change before re-anchoring (production 2.5 s). */
   void SetNetworkSettleMsForTest(int delay_ms) { network_settle_ms_ = delay_ms; }
+  /** Every relay-standby attempt after this delay (0 = production 5 s / 20 s / 60 s). */
+  void SetRelayStandbyDelayMsForTest(int delay_ms) { standby_delay_ms_for_test_ = delay_ms; }
   /** Every direct-upgrade attempt after this delay (0 = production 3 s / 20 s / 60 s). */
   void SetDirectUpgradeDelayMsForTest(int delay_ms) { upgrade_delay_ms_for_test_ = delay_ms; }
   /** Shrink per-attempt ConnectAsync timeout (and watchdog margin) for gtests (0 = production default). */
@@ -260,6 +262,15 @@ private:
   void ScheduleDirectUpgrade();
   void CancelDirectUpgrade();
   void OnDirectUpgradeFire();
+  /**
+   * k6 (K003): a call Live on a direct / punched path keeps a relayed standby (offerer drives, when
+   * the pair policy wants one): a circuit under the call, added with `path_add`. Best-effort — the
+   * relay may refuse; retried a few times.
+   */
+  void ArmRelayStandby(const std::string& call_id);
+  void ScheduleRelayStandby();
+  void CancelRelayStandby();
+  void OnRelayStandbyFire();
   /** k3-4: TX-only restart (Detach + BeginSession via circuit) — the fallback when the call cannot move. */
   void EscalateBreakBeforeMake(const std::string& call_id, const std::string& peer);
   void CancelEscalateReach();
@@ -313,6 +324,11 @@ private:
   uint64_t direct_health_timer_id_ = 0;
   uint64_t reserve_renew_timer_id_ = 0;
   uint64_t upgrade_timer_id_ = 0;
+  std::string standby_call_id_;
+  int standby_attempt_ = 0;
+  uint64_t standby_timer_id_ = 0;
+  PeerReachId standby_reach_id_ = 0;
+  int standby_delay_ms_for_test_ = 0;
   std::string upgrade_call_id_;
   int upgrade_attempt_ = 0;
   int upgrade_delay_ms_for_test_ = 0;

@@ -137,6 +137,18 @@ public:
       done(Error("call-media path migration not supported"));
     }
   }
+  /** k6: link kind of the call's warm standby path; Unknown when it has none. */
+  virtual CallMediaLinkKind StandbyLinkKind() const { return CallMediaLinkKind::Unknown; }
+  /**
+   * k6 (K003): bring the peer's Connected link of `kind` up as the call's standby; the call stays on
+   * its path. Best-effort: a peer without it refuses (the call is unharmed). `done` on the IO strand.
+   */
+  virtual void AddStandby(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) {
+    (void)kind;
+    if (done) {
+      done(Error("call-media standby not supported"));
+    }
+  }
   virtual void Detach() = 0;
 
   /**
