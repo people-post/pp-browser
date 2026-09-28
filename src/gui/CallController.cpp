@@ -4,6 +4,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/media/CallAudioSession.h"
 #include "domain/media/CallMediaEngine.h"
+#include "domain/media/CameraCaptureOrientation.h"
 #include "common/media/CallMediaHealth.h"
 #include "domain/messaging/CallTypes.h"
 #include "domain/messaging/CallHopAttachLogic.h"
@@ -1143,6 +1144,16 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     }
   }
   in_call.camera_on = media.IsCameraEnabled();
+  if (in_call.camera_on) {
+    // iOS: video follows the phone's physical orientation (UIKit read, so here on UI).
+    const int rotation = CameraDisplayRotationDegrees();
+    if (rotation != pushed_camera_rotation_) {
+      media.UpdateCameraDisplayRotation(rotation);
+      pushed_camera_rotation_ = rotation;
+    }
+  } else {
+    pushed_camera_rotation_ = -1;
+  }
   in_call.show_speaker = CallAudioSession::SupportsSpeakerToggle();
   in_call.speaker_on = CallAudioSession::IsSpeakerphoneOn();
   auto* backend = Backend();

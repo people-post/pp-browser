@@ -149,6 +149,7 @@ CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id, int
 
   const SDL_CameraPosition pos = SDL_GetCameraPosition(camera_id);
   const bool front = (pos != SDL_CAMERA_POSITION_BACK_FACING);
+  t.front_facing = front;
   const uint8_t want_facing =
       front ? ACAMERA_LENS_FACING_FRONT : ACAMERA_LENS_FACING_BACK;
 
@@ -173,6 +174,10 @@ CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id, int
     t.encode_height = 360;
   }
   return t;
+}
+
+int CameraFrameRotateCw(const CameraCaptureTransform& opened, int /*current_display_rotation_deg*/) {
+  return opened.rotate_cw;
 }
 
 } // namespace pbr

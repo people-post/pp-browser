@@ -156,7 +156,10 @@ struct CallMediaEngine::Impl {
   std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
   std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> remote_decoders;
   static constexpr size_t kMaxRemoteVideoDecoders = 4;
-  /** Display rotation read on the SetCameraEnabled caller's (UI) thread for the next camera open. */
+  /**
+   * Display rotation read on the UI thread: at SetCameraEnabled (for the open) and live via
+   * UpdateCameraDisplayRotation (per-frame rotation).
+   */
   std::atomic<int> camera_display_rotation{0};
   /** Why the last requested camera did not open; taken by the UI (TakeCameraFailure). */
   std::mutex camera_failure_mu;
@@ -1039,7 +1042,14 @@ struct CallMediaEngine::Impl {
 
   /** Video thread only: orient + crop → preview; encode → send on channel 1. */
   void EncodeAndSend(VideoFrameRgba captured, const CameraGeometry& geometry, bool& need_keyframe) {
-    const VideoFrameRgba oriented = OrientFrame(std::move(captured), geometry.rotate_cw);
+    // Rotation follows the display turning mid-call (iOS: the phone's physical orientation); the
+    // encode size stays the one chosen at open — ScaleCenterCropRgba cover-crops the rest.
+    const CameraCaptureTransform opened{.rotate_cw = geometry.rotate_cw,
+                                        .encode_width = geometry.encode_width,
+                                        .encode_height = geometry.encode_height,
+                                        .front_facing = geometry.front_facing};
+    const int rotate_cw = CameraFrameRotateCw(opened, camera_display_rotation.load(std::memory_order_relaxed));
+    const VideoFrameRgba oriented = OrientFrame(std::move(captured), rotate_cw);
     VideoFrameRgba fitted;
     VideoFrameI420 i420;
     if (!ScaleCenterCropRgba(oriented, geometry.encode_width, geometry.encode_height, fitted) ||
@@ -1568,6 +1578,10 @@ Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled, const int display_rota
     impl_->StartVideoLoop();
   }
   return {};
+}
+
+void CallMediaEngine::UpdateCameraDisplayRotation(const int display_rotation_deg) {
+  impl_->camera_display_rotation.store(display_rotation_deg, std::memory_order_relaxed);
 }
 
 std::optional<std::string> CallMediaEngine::TakeCameraFailure() {

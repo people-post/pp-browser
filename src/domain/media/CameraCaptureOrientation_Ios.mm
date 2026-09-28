@@ -13,38 +13,34 @@
 namespace pbr {
 
 int CameraDisplayRotationDegrees() {
-  UIInterfaceOrientation io = UIInterfaceOrientationUnknown;
-  if (@available(iOS 13.0, *)) {
-    for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
-      if (![scene isKindOfClass:[UIWindowScene class]]) {
-        continue;
-      }
-      UIWindowScene* window_scene = (UIWindowScene*)scene;
-      if (window_scene.activationState == UISceneActivationStateForegroundActive ||
-          window_scene.activationState == UISceneActivationStateForegroundInactive) {
-        io = window_scene.interfaceOrientation;
-        break;
-      }
-    }
+  // The app is portrait-locked, so the interface orientation never changes; the sensor turns with
+  // the phone, so use its PHYSICAL orientation (UI thread: UIDevice is main-thread API).
+  // UIDeviceOrientationLandscapeLeft (home side right) == UIInterfaceOrientationLandscapeRight →
+  // 90° CW, the same numbers as IosCameraRotateCw's table.
+  static bool generating = false;
+  static int last_valid_deg = 0;
+  UIDevice* device = UIDevice.currentDevice;
+  if (!generating) {
+    [device beginGeneratingDeviceOrientationNotifications];
+    generating = true;
   }
-  if (io == UIInterfaceOrientationUnknown) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-    io = UIApplication.sharedApplication.statusBarOrientation;
-#pragma clang diagnostic pop
+  switch (device.orientation) {
+  case UIDeviceOrientationPortrait:
+    last_valid_deg = 0;
+    break;
+  case UIDeviceOrientationLandscapeLeft:
+    last_valid_deg = 90;
+    break;
+  case UIDeviceOrientationPortraitUpsideDown:
+    last_valid_deg = 180;
+    break;
+  case UIDeviceOrientationLandscapeRight:
+    last_valid_deg = 270;
+    break;
+  default: // FaceUp / FaceDown / Unknown: keep the last upright orientation
+    break;
   }
-
-  switch (io) {
-  case UIInterfaceOrientationLandscapeRight:
-    return 90;
-  case UIInterfaceOrientationPortraitUpsideDown:
-    return 180;
-  case UIInterfaceOrientationLandscapeLeft:
-    return 270;
-  case UIInterfaceOrientationPortrait:
-  default:
-    return 0;
-  }
+  return last_valid_deg;
 }
 
 CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id, int display_rotation_deg) {
@@ -58,6 +54,7 @@ CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id, int
   // turned every iPhone selfie stream upside down (B51).
   const SDL_CameraPosition pos = SDL_GetCameraPosition(camera_id);
   const bool front = (pos != SDL_CAMERA_POSITION_BACK_FACING);
+  t.front_facing = front;
   t.rotate_cw = IosCameraRotateCw(front, display_rotation_deg);
 
   if (t.rotate_cw == 0 || t.rotate_cw == 180) {
@@ -65,6 +62,10 @@ CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id, int
     t.encode_height = 360;
   }
   return t;
+}
+
+int CameraFrameRotateCw(const CameraCaptureTransform& opened, int current_display_rotation_deg) {
+  return IosCameraRotateCw(opened.front_facing, current_display_rotation_deg);
 }
 
 } // namespace pbr

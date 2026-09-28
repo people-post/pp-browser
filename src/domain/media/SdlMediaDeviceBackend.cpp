@@ -284,6 +284,7 @@ public:
     geometry.rotate_cw = xform.rotate_cw;
     geometry.encode_width = xform.encode_width;
     geometry.encode_height = xform.encode_height;
+    geometry.front_facing = xform.front_facing;
 
     SDL_CameraSpec want{};
     // Prefer a convertible packed/YUV format. UNKNOWN picks the driver's first enum entry (often

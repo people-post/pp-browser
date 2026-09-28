@@ -23,6 +23,10 @@ CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID /*camera_id*/,
   return t;
 }
 
+int CameraFrameRotateCw(const CameraCaptureTransform& opened, int /*current_display_rotation_deg*/) {
+  return opened.rotate_cw;
+}
+
 } // namespace pbr
 
 #endif

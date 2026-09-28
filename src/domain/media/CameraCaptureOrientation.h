@@ -11,11 +11,14 @@ struct CameraCaptureTransform {
   /** Even encode size after rotation (cover-crop target). */
   int encode_width = 640;
   int encode_height = 360;
+  /** Opened camera faces the user (iOS: rotation follows the display the other way than the back camera). */
+  bool front_facing = false;
 };
 
 /**
- * Current display / interface rotation, clockwise degrees (0/90/180/270). Call on the UI thread
- * (iOS reads UIKit); pass the result to ResolveCameraCaptureTransform on any thread.
+ * Current display rotation, clockwise degrees (0/90/180/270). Call on the UI thread (iOS reads
+ * UIKit: the phone's physical orientation, so a portrait-locked UI still sends upright video); pass
+ * the result to ResolveCameraCaptureTransform / CameraFrameRotateCw on any thread.
  */
 int CameraDisplayRotationDegrees();
 
@@ -26,6 +29,13 @@ int CameraDisplayRotationDegrees();
  * Desktop: identity + landscape encode.
  */
 CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id, int display_rotation_deg);
+
+/**
+ * Per-frame clockwise rotation for a camera opened with `opened`, given the current display
+ * rotation (may differ from the one at open). iOS: follows the phone's orientation live; Android /
+ * desktop: `opened.rotate_cw` (fixed at open). Any thread.
+ */
+int CameraFrameRotateCw(const CameraCaptureTransform& opened, int current_display_rotation_deg);
 
 /**
  * iOS: clockwise degrees to make a CoreMedia camera buffer upright, from camera facing and the

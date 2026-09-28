@@ -28,5 +28,17 @@ TEST(IosCameraRotateCwTest, SnapsAndWrapsDisplayRotation) {
   EXPECT_EQ(IosCameraRotateCw(false, 88), 0);  // snaps to 90
 }
 
+// Desktop (Default) build: the frame rotation stays the one resolved at open, whatever the display.
+TEST(CameraFrameRotateCwTest, DefaultKeepsOpenedRotation) {
+  CameraCaptureTransform opened;
+  opened.rotate_cw = 180;
+  opened.front_facing = true;
+  EXPECT_EQ(CameraFrameRotateCw(opened, 0), 180);
+  EXPECT_EQ(CameraFrameRotateCw(opened, 90), 180);
+  EXPECT_EQ(CameraFrameRotateCw(opened, 270), 180);
+  opened.rotate_cw = 0;
+  EXPECT_EQ(CameraFrameRotateCw(opened, 90), 0);
+}
+
 }  // namespace
 }  // namespace pbr

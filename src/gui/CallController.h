@@ -110,6 +110,8 @@ private:
   int64_t last_pulse_toggle_ms_ = 0;
   int64_t last_media_health_log_ms_ = 0;
   int last_warned_quality_ = -1;
+  /** Display rotation last pushed to the engine while the camera is on (-1: none). */
+  int pushed_camera_rotation_ = -1;
   int64_t last_video_refresh_ms_ = 0;
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeLayer synced_chrome_;
