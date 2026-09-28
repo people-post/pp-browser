@@ -57,6 +57,8 @@ public:
   void RequestVideoRefresh(const std::string& call_id, const std::string& publisher_identity);
   /** Set before AcceptClicked — consumed by AcceptInvite. */
   void SetPendingAcceptChargeDecision(InitiationChargeDecision decision);
+  /** Set before AcceptClicked — consumed (and reset to false) by AcceptInvite. */
+  void SetPendingAcceptVoiceOnly(bool voice_only);
   /** The pending media error, once per error (the owner clears it). */
   std::optional<std::string> TakeLastMediaError();
 

@@ -212,6 +212,9 @@ struct CallAcceptDetail {
   std::string charge_decision = "waive";
   /** Echo of offer amount being waived or taken. */
   int64_t offer_amount_minor = 0;
+  /** Callee's answer mode: absent = unchanged (old peers, video answer); false = answered as voice
+   *  only — a 1:1 caller narrows the call to voice. Never true on the wire. */
+  std::optional<bool> video_allowed;
 };
 
 struct CallDeclineDetail {

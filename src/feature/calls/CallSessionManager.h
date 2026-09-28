@@ -186,6 +186,8 @@ public:
   int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
   /** Set before AcceptClicked — consumed by AcceptInvite. */
   void SetPendingAcceptChargeDecision(InitiationChargeDecision decision);
+  /** Set before AcceptClicked — consumed (and reset to false) by AcceptInvite. */
+  void SetPendingAcceptVoiceOnly(bool voice_only);
   /** Expose private CallMediaHost base for bridge construction (MSVC-safe). */
   CallMediaHost& AsMediaHost() { return *this; }
 

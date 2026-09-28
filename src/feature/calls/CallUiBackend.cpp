@@ -133,6 +133,10 @@ void CallUiBackend::SetPendingAcceptChargeDecision(const InitiationChargeDecisio
   OnOwner([decision](CallSessionManager& calls) { calls.SetPendingAcceptChargeDecision(decision); });
 }
 
+void CallUiBackend::SetPendingAcceptVoiceOnly(const bool voice_only) {
+  OnOwner([voice_only](CallSessionManager& calls) { calls.SetPendingAcceptVoiceOnly(voice_only); });
+}
+
 std::optional<std::string> CallUiBackend::TakeLastMediaError() {
   const auto state = State();
   if (!state->last_media_error) {
