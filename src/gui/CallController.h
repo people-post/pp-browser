@@ -49,7 +49,7 @@ public:
   /** Start with explicit invitee relay identities (group / picker flow). */
   bool StartCallWithInvitees(const std::string& thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
-  void OpenGroupCallPicker(const std::string& thread_id);
+  void OpenGroupCallPicker(const std::string& thread_id, bool video_allowed);
   void OpenMidCallInvitePicker();
   void InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities);
   /** Host can encode/send video at all (gates the chat call-type menu's "Video call" item). */

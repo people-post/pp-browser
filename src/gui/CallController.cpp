@@ -851,7 +851,7 @@ bool CallController::StartCallDirect(const std::string& thread_id, const bool vi
     return false;
   }
   if ((*thread)->kind == ThreadKind::Group) {
-    OpenGroupCallPicker(thread_id);
+    OpenGroupCallPicker(thread_id, video_allowed);
     return true;
   }
   if ((*thread)->kind != ThreadKind::Direct) {
@@ -889,9 +889,9 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
   return true;
 }
 
-void CallController::OpenGroupCallPicker(const std::string& thread_id) {
+void CallController::OpenGroupCallPicker(const std::string& thread_id, const bool video_allowed) {
   if (people_picker_notify_.open_for_group_call) {
-    people_picker_notify_.open_for_group_call(thread_id);
+    people_picker_notify_.open_for_group_call(thread_id, video_allowed);
   }
 }
 

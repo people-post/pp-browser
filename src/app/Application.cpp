@@ -1071,8 +1071,8 @@ bool Application::MountPresenters(ui::Context* context) {
   chat_->BindEmojiPickerNotify(std::move(emoji_notify));
 
   PeoplePickerNotifyPorts call_people_picker_notify;
-  call_people_picker_notify.open_for_group_call = [this](const std::string& thread_id) {
-    people_picker_->OpenForGroupCall(thread_id);
+  call_people_picker_notify.open_for_group_call = [this](const std::string& thread_id, bool video_allowed) {
+    people_picker_->OpenForGroupCall(thread_id, video_allowed);
   };
   call_people_picker_notify.open_for_call_add_guest = [this](const std::string& call_id) {
     people_picker_->OpenForCallAddGuest(call_id);
