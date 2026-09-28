@@ -355,6 +355,75 @@ TEST(AudioJitterBufferTest, SingleLossInNormalBufferIsConcealed) {
   EXPECT_EQ(buf.gaps(), 1u);
 }
 
+// Helper: feed `n` packets starting at `seq`, first arrival at `t0`, one every 20 ms plus `extra(i)` delay.
+template <class Extra>
+uint32_t FeedArrivals(AudioArrivalJitter& j, uint32_t seq, int64_t t0, int n, Extra extra) {
+  for (int i = 0; i < n; ++i) {
+    j.OnArrival(seq, t0 + static_cast<int64_t>(i) * 20 + extra(i));
+    ++seq;
+  }
+  return seq;
+}
+
+// Every 100 packets (2 s) the network stalls 300 ms, then the backlog arrives at once.
+int64_t StallExtra(int i) {
+  const int phase = i % 100;
+  return phase < 15 ? (15 - phase) * 20 : 0;  // packets 0..14 of each cycle arrive together at +300 ms
+}
+
+TEST(AudioArrivalJitterTest, WarmUpStartsAtMinimum) {
+  AudioArrivalJitter j;
+  EXPECT_EQ(j.TargetFrames(), 3u);
+  FeedArrivals(j, 1, 1000, 5, [](int) { return 0; });
+  EXPECT_EQ(j.TargetFrames(), 3u);
+}
+
+TEST(AudioArrivalJitterTest, SteadyNetworkStaysAtSixtyMs) {
+  AudioArrivalJitter j;
+  FeedArrivals(j, 1, 1000, 500, [](int i) { return (i % 3) * 2; });  // ±few ms of noise
+  EXPECT_EQ(j.TargetFrames(), 3u);
+}
+
+TEST(AudioArrivalJitterTest, PeriodicStallsRaiseTarget) {
+  AudioArrivalJitter j;
+  FeedArrivals(j, 1, 1000, 1000, StallExtra);  // 20 s
+  EXPECT_GE(j.TargetFrames(), 14u);           // >= 280 ms (99th pct of 15 staggered late packets per 100)
+  EXPECT_LE(j.TargetFrames(), 20u);           // <= 400 ms
+}
+
+TEST(AudioArrivalJitterTest, TargetDecaysAfterNetworkCalms) {
+  AudioArrivalJitter j;
+  uint32_t seq = FeedArrivals(j, 1, 1000, 1000, StallExtra);
+  FeedArrivals(j, seq, 1000 + 1000 * 20, 1000, [](int) { return 0; });  // 20 s calm
+  EXPECT_LE(j.TargetFrames(), 5u);  // <= 100 ms
+}
+
+TEST(AudioArrivalJitterTest, SingleLatePacketDoesNotRaiseTarget) {
+  AudioArrivalJitter j;
+  FeedArrivals(j, 1, 1000, 500, [](int i) { return i == 250 ? 400 : 0; });
+  EXPECT_EQ(j.TargetFrames(), 3u);
+}
+
+TEST(AudioArrivalJitterTest, LargeSeqValuesStayStable) {
+  AudioArrivalJitter j;
+  FeedArrivals(j, 0xFFFFFF00u, 5'000'000'000LL, 200, [](int) { return 0; });
+  EXPECT_EQ(j.TargetFrames(), 3u);
+}
+
+TEST(AudioArrivalJitterTest, ReceiverClockStepRecovers) {
+  AudioArrivalJitter j;
+  uint32_t seq = FeedArrivals(j, 1, 100'000, 300, [](int) { return 0; });
+  seq = FeedArrivals(j, seq, 50'000, 1500, [](int) { return 0; });  // clock stepped back 50 s, then steady 30 s
+  EXPECT_LE(j.TargetFrames(), 5u);
+}
+
+TEST(AudioArrivalJitterTest, ResetForgetsHistory) {
+  AudioArrivalJitter j;
+  FeedArrivals(j, 1, 1000, 1000, StallExtra);
+  j.Reset();
+  EXPECT_EQ(j.TargetFrames(), 3u);
+}
+
 TEST(MixPcmSatTest, Saturates) {
   std::vector<int16_t> out = {30000, -30000};
   std::vector<int16_t> in = {10000, -10000};

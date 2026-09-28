@@ -1,13 +1,77 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <utility>
 #include <vector>
 
 namespace pbr {
+
+/**
+ * Arrival-jitter estimator for one publisher (adaptive jitter target, DEV/PLAN-adaptive-jitter.md §1).
+ * Lateness = relative delay (recv_ms − seq·20) above its 5 s sliding minimum, bucketed per 20 ms in a
+ * forgetting histogram (~10 s memory). Target = 99th-percentile bucket + 1 frame, clamped 3..20.
+ * Rises as soon as late packets arrive; decays as old samples fade.
+ */
+class AudioArrivalJitter {
+public:
+  static constexpr int kFrameMs = 20;
+  static constexpr size_t kMinTargetFrames = 3;
+  static constexpr size_t kMaxTargetFrames = 20;
+  static constexpr size_t kBaselinePackets = 250;
+  static constexpr double kForget = 0.998;
+  static constexpr double kQuantile = 0.99;
+
+  void OnArrival(uint32_t seq, int64_t recv_ms) {
+    const int64_t d = recv_ms - static_cast<int64_t>(seq) * kFrameMs;
+    const uint64_t idx = arrivals_++;
+    while (!mins_.empty() && mins_.back().second >= d) {
+      mins_.pop_back();
+    }
+    mins_.emplace_back(idx, d);
+    while (mins_.front().first + kBaselinePackets <= idx) {
+      mins_.pop_front();
+    }
+    const int64_t late_ms = d - mins_.front().second;
+    const size_t bucket = std::min<size_t>(static_cast<size_t>(late_ms / kFrameMs), kMaxTargetFrames);
+    for (double& p : hist_) {
+      p *= kForget;
+    }
+    hist_[bucket] += 1.0 - kForget;
+    mass_ = mass_ * kForget + (1.0 - kForget);
+  }
+
+  size_t TargetFrames() const {
+    if (mass_ <= 0.0) {
+      return kMinTargetFrames;
+    }
+    double acc = 0.0;
+    for (size_t k = 0; k < hist_.size(); ++k) {
+      acc += hist_[k];
+      if (acc >= kQuantile * mass_) {
+        return std::clamp(k + 1, kMinTargetFrames, kMaxTargetFrames);
+      }
+    }
+    return kMaxTargetFrames;
+  }
+
+  void Reset() {
+    hist_.fill(0.0);
+    mass_ = 0.0;
+    arrivals_ = 0;
+    mins_.clear();
+  }
+
+private:
+  std::array<double, kMaxTargetFrames + 1> hist_{};
+  double mass_ = 0.0;
+  uint64_t arrivals_ = 0;
+  std::deque<std::pair<uint64_t, int64_t>> mins_;  // (arrival index, d) — monotonic sliding minimum
+};
 
 /** One received Opus packet (channel 0) for the jitter buffer. */
 struct AudioPacket {
