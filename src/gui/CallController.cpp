@@ -1180,7 +1180,10 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
       in_call.video_allowed = true;
       in_call.show_camera = media.VideoEncoderAvailable() && media.CameraPathAllowsVideo();
       camera_sync_off_done_ = false;
-    } else if (!camera_sync_off_done_ && media.IsCameraEnabled()) {
+    } else if (!camera_sync_off_done_ && media.IsCameraEnabled() && allowed && allowed->has_value() &&
+               !**allowed) {
+      // M4: only narrow (turn camera off) when VideoAllowedForCall explicitly returned false — a
+      // read error or unknown value keeps show_camera hidden above but must not touch the camera.
       // V035: a voice-only Accept (ours or the peer's) narrowed video_allowed to false after the
       // local camera was already on (e.g. caller turned it on before the callee answered voice-only)
       // — turn it off through the normal path, once.
