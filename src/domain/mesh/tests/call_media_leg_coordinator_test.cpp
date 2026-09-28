@@ -357,7 +357,7 @@ TEST_F(CallMediaLegCoordinatorTest, SecondHelloForALiveCallLeavesTheCallAlone) {
   // A raw second control channel carrying a hello for the same call.
   std::optional<uint32_t> extra;
   harness_->mgr_a().OpenChannel("b", kCallMediaDirectProtocolId, pp::amp::CallMediaControlChannelPolicy(),
-                                [&](pp::amp::PeerLinkManager::ChannelRoe ch) {
+                                [&](const pp::amp::PeerLinkManager::ChannelRoe& ch) {
                                   if (ch.isOk()) {
                                     extra = ch.value();
                                   }
