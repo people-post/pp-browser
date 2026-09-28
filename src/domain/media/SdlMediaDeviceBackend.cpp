@@ -310,7 +310,7 @@ public:
   }
 
   VoiceDuplexEndpoints OpenVoiceDuplex(const AudioDeviceFormat& format, std::string* error) override {
-    // VoiceProcessingIo is Apple VPIO on macOS; elsewhere a stub whose Open() fails "unsupported".
+    // VoiceProcessingIo is Apple VPIO on macOS and iOS; elsewhere a stub whose Open() fails "unsupported".
     if (format.freq != 48000 || format.channels != 1) {
       *error = "voice processing runs 48 kHz mono only";
       return {};

@@ -726,7 +726,7 @@ struct CallMediaEngine::Impl {
 
   /**
    * Duplex calls take mic + speaker from one OS voice-processing unit (echo cancellation) when the
-   * backend has one (macOS VPIO; the other platforms' backends say "unsupported"); otherwise — or
+   * backend has one (Apple VPIO on macOS / iOS; other platforms say "unsupported"); otherwise — or
    * once disabled for this call — separate leases follow.
    */
   void TryAcquireVoiceDuplex(const SessionSpec& want_spec, const std::string& holder,
