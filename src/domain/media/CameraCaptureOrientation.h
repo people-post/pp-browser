@@ -27,4 +27,20 @@ int CameraDisplayRotationDegrees();
  */
 CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id, int display_rotation_deg);
 
+/**
+ * iOS: clockwise degrees to make a CoreMedia camera buffer upright, from camera facing and the
+ * interface rotation (CW degrees). Both built-in iPhone cameras need 90° CW in portrait (matches
+ * SDL CoreMedia's SDL_PROP_SURFACE_ROTATION_FLOAT and WebRTC); the front camera turns with the
+ * display, the back camera against it. Pure — unit-tested on every platform.
+ */
+inline int IosCameraRotateCw(bool front_facing, int display_rotation_deg) {
+  int deg = display_rotation_deg % 360;
+  if (deg < 0) {
+    deg += 360;
+  }
+  const int display = (((deg + 45) / 90) * 90) % 360;
+  constexpr int kPortraitSensorDeg = 90;
+  return front_facing ? (kPortraitSensorDeg + display) % 360 : (kPortraitSensorDeg - display + 360) % 360;
+}
+
 } // namespace pbr

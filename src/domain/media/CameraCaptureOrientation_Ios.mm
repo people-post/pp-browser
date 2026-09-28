@@ -47,39 +47,18 @@ int CameraDisplayRotationDegrees() {
   }
 }
 
-namespace {
-
-int Normalize90(int deg) {
-  deg %= 360;
-  if (deg < 0) {
-    deg += 360;
-  }
-  const int snapped = ((deg + 45) / 90) * 90;
-  return snapped % 360;
-}
-
-} // namespace
-
 CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID camera_id, int display_rotation_deg) {
   CameraCaptureTransform t;
   t.encode_width = 360;
   t.encode_height = 640;
 
-  // AVFoundation does not expose Android-style SENSOR_ORIENTATION. Built-in iPhone
-  // cameras use the same conventional angles; SDL CoreMedia leaves connection
-  // videoOrientation unset, so buffers need the same compensation as Android.
+  // AVFoundation does not expose Android-style SENSOR_ORIENTATION and SDL CoreMedia leaves the
+  // connection's videoOrientation unset, so we rotate buffers ourselves. Unlike Android (front
+  // sensor 270°), both iPhone cameras need 90° CW in portrait — using 270° for the front camera
+  // turned every iPhone selfie stream upside down (B51).
   const SDL_CameraPosition pos = SDL_GetCameraPosition(camera_id);
   const bool front = (pos != SDL_CAMERA_POSITION_BACK_FACING);
-  const int sensor_deg = front ? 270 : 90;
-  const int display_deg = Normalize90(display_rotation_deg);
-
-  int rotate_cw = 0;
-  if (front) {
-    rotate_cw = (sensor_deg + display_deg) % 360;
-  } else {
-    rotate_cw = (sensor_deg - display_deg + 360) % 360;
-  }
-  t.rotate_cw = Normalize90(rotate_cw);
+  t.rotate_cw = IosCameraRotateCw(front, display_rotation_deg);
 
   if (t.rotate_cw == 0 || t.rotate_cw == 180) {
     t.encode_width = 640;
