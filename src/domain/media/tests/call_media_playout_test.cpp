@@ -273,6 +273,23 @@ TEST(AudioJitterBufferTest, EarlyBackwardRestartReprimesQuickly) {
   EXPECT_LE(buf.drops_late() - late_before, 2u);
 }
 
+TEST(AudioJitterBufferTest, MidCallStragglerBurstIsNotARestart) {
+  AudioJitterBuffer buf;
+  uint32_t seq = RunSteady(buf, 1, 200); // well past kResyncJump
+  const size_t depth = buf.size();
+  // Path migration: a burst of reordered stragglers from the old path, all already played.
+  for (uint32_t s = seq - 8; s < seq - 3; ++s) {
+    buf.Push(Pkt(s));
+  }
+  EXPECT_EQ(buf.drops_late(), 5u);
+  EXPECT_EQ(buf.size(), depth); // queued good frames kept, no re-prime
+  buf.Push(Pkt(seq));
+  const auto p = buf.PopForPlayout();
+  ASSERT_EQ(p.kind, Kind::Packet); // still playing, not re-priming
+  EXPECT_LT(p.seq, seq);           // the next queued frame, not a stale straggler
+  EXPECT_GE(p.seq, seq - 3);
+}
+
 TEST(AudioJitterBufferTest, SmallBackwardStepIsStillLate) {
   AudioJitterBuffer buf;
   (void)RunSteady(buf, 1, 100);
@@ -396,7 +413,7 @@ TEST(ApplySoftGainTest, LoudSamplesNeverClipAndStayMonotonic) {
   for (size_t i = 1; i < pcm.size(); ++i) {
     EXPECT_GE(pcm[i], pcm[i - 1]) << "at " << i;
   }
-  EXPECT_LE(pcm.back(), 32767);
+  EXPECT_LT(pcm.back(), 32767);  // soft knee approaches but never reaches full scale (a clamp would)
   EXPECT_GT(pcm.back(), 29000);  // a boosted full-scale peak lands near, not past, full scale
 }
 
