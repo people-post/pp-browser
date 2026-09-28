@@ -152,6 +152,13 @@ void FetchAndDecryptAttachmentAsync(const ChatAttachmentFields& fields, const At
     auto plaintext = AttachmentContentCipher::Decrypt(fields.content_key, fields.blob_nonce, cipher_bytes,
                                                       fields.content_hash);
     if (!plaintext) {
+      // Whatever we just fed to Decrypt was bad — most likely a poisoned/corrupt pending push
+      // (see ChatBlobResponder::ServePush). Drop it so the next attempt re-fetches instead of
+      // repeating the same failing decrypt forever.
+      if (!context.profile_data_dir.empty() && !context.thread_id.empty() &&
+          fields.content_hash.size() == kAttachmentContentHashSize) {
+        RemovePendingAttachmentCiphertext(context.profile_data_dir, context.thread_id, fields.content_hash);
+      }
       if (on_done) {
         on_done(plaintext.error());
       }

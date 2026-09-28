@@ -112,6 +112,12 @@ public:
     return request;
   }
 
+  ChatBlobRequest MakePushRequest(const ChatAttachmentFields& fields) {
+    ChatBlobRequest request = MakeFetchRequest(fields);
+    request.op = ChatBlobOp::Push;
+    return request;
+  }
+
   std::filesystem::path data_dir;
   SqliteThreadStore store;
   IdentityStore identity;
@@ -154,4 +160,29 @@ TEST(ChatBlobResponderTest, ServeFetchReturnsCiphertextForCachedPlaintext) {
       AttachmentContentCipher::Decrypt(fields.content_key, fields.blob_nonce, cipher_bytes, fields.content_hash);
   ASSERT_TRUE(static_cast<bool>(decrypted));
   EXPECT_EQ(*decrypted, harness.plain);
+}
+
+TEST(ChatBlobResponderTest, ServePushRejectsHashNotInThreadHistory) {
+  // A push must be for a hash the thread already expects (an attachment already referenced in
+  // history) — otherwise an authorized requester for this thread could plant arbitrary
+  // ciphertext under a hash of its own choosing.
+  ChatBlobResponderHarness harness("push-reject");
+  const auto fields = harness.MakeAttachmentFields();
+  // Deliberately do NOT seed the attachment message: content_hash is unknown to the thread.
+  const ByteVector ciphertext{'c', 'i', 'p', 'h', 'e', 'r'};
+
+  auto result = ChatBlobResponder::ServePush(harness.store, harness.MakePushRequest(fields), harness.local_relay_id,
+                                             harness.profile_data_dir, ciphertext);
+  EXPECT_FALSE(static_cast<bool>(result));
+}
+
+TEST(ChatBlobResponderTest, ServePushAcceptsHashInThreadHistory) {
+  ChatBlobResponderHarness harness("push-accept");
+  const auto fields = harness.MakeAttachmentFields();
+  harness.SeedAttachmentMessage(fields);
+  const ByteVector ciphertext{'c', 'i', 'p', 'h', 'e', 'r'};
+
+  auto result = ChatBlobResponder::ServePush(harness.store, harness.MakePushRequest(fields), harness.local_relay_id,
+                                             harness.profile_data_dir, ciphertext);
+  EXPECT_TRUE(static_cast<bool>(result)) << result.error().message;
 }
