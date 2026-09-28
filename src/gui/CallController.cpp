@@ -72,10 +72,13 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_eyebrow = ring.eyebrow.c_str(),
       .ring_conflict_hint = ring.conflict_hint.c_str(),
       .ring_accept_label = ring.accept_label.c_str(),
+      .ring_voice_answer_label = ring.voice_answer_label.c_str(),
       .ring_decline_label = ring.decline_label.c_str(),
       .ring_pricing_label = ring.pricing_label.c_str(),
       .ring_accept_charge_label = ring.accept_charge_label.c_str(),
       .ring_accept_charge_hint = ring.accept_charge_hint.c_str(),
+      .ring_accept_short = ring.accept_short.c_str(),
+      .ring_voice_short = ring.voice_short.c_str(),
       .in_call_title = in_call.title.c_str(),
       .in_call_mic_level = in_call.mic_level,
       .in_call_peer_level = in_call.peer_level,
@@ -276,6 +279,11 @@ void CallController::ClearInCall() {
   chrome_mode_call_id_.clear();
   last_media_health_log_ms_ = 0;
   audio_fault_since_ms_ = 0;
+  camera_sync_off_done_ = false;
+  // Not auto_camera_pending_ / auto_camera_call_id_: the callee's accept is async, and Tick runs
+  // this for the "no active local call yet" frames between the Accept click and the session going
+  // Active — clearing here dropped the callee's auto camera intermittently (device test
+  // 2026-09-28). The intent is keyed by call_id, so a stale one can never fire for another call.
   in_call_ = {};
   CallVideoTileRenderer::Instance().Clear();
 }
@@ -537,7 +545,8 @@ void CallController::RefreshPendingRing() {
       ring_.call_id = (*top)->call_id;
       ring_.caller_label = caller_label;
       ring_.video_allowed = (*top)->video_allowed;
-      ring_.media_label = (*top)->video_allowed ? Tr("call.ring.incoming_video_allowed").c_str()
+      // M6: headline just says what kind of call this is; the voice-answer button covers the choice.
+      ring_.media_label = (*top)->video_allowed ? Tr("call.ring.incoming_video").c_str()
                                                 : Tr("call.ring.incoming_voice").c_str();
       if (!was_active) {
         log().warning
@@ -547,6 +556,11 @@ void CallController::RefreshPendingRing() {
       ring_.conflict_hint = copy.hint;
       ring_.accept_label = copy.accept_label;
       ring_.decline_label = copy.decline_label;
+      // V035: video ring offers a voice-answer alternative; the primary button reads
+      // "Video answer" so it's clear Accept keeps the camera option (conflict wording unchanged).
+      if (ring_.video_allowed && !has_conflict) {
+        ring_.accept_label = Tr("call.ring.accept_video").c_str();
+      }
 
       // P001: show waive / take-all when inviter offered a positive initiation amount.
       const int64_t offer_minor = backend->InitiationOfferMinorForPeer((*top)->inviter_identity);
@@ -570,6 +584,31 @@ void CallController::RefreshPendingRing() {
         ring_.pricing_label.clear();
         ring_.accept_charge_label.clear();
         ring_.accept_charge_hint.clear();
+      }
+
+      // I2/M3: voice-answer button label — conflict wording wins over pricing when both apply.
+      if (has_conflict) {
+        ring_.voice_answer_label = Tr("call.ring.end_and_accept_voice").c_str();
+      } else if (ring_.show_pricing) {
+        ring_.voice_answer_label = Tr("call.ring.voice_answer_free").c_str();
+      } else {
+        ring_.voice_answer_label = Tr("call.ring.accept_voice").c_str();
+      }
+
+      // Short labels for the round icon buttons (WeChat-style ring redesign) — same
+      // conflict-wins-over-pricing precedence as the long labels above.
+      if (has_conflict) {
+        ring_.accept_short = Tr("call.ring.short.end_and_accept").c_str();
+        ring_.voice_short = Tr("call.ring.short.end_and_accept_voice").c_str();
+      } else if (ring_.show_pricing) {
+        ring_.accept_short = Tr("call.ring.short.accept_free").c_str();
+        ring_.voice_short = Tr("call.ring.short.voice_answer_free").c_str();
+      } else if (ring_.video_allowed) {
+        ring_.accept_short = Tr("call.ring.short.video").c_str();
+        ring_.voice_short = Tr("call.ring.short.voice").c_str();
+      } else {
+        ring_.accept_short = Tr("call.ring.short.accept").c_str();
+        ring_.voice_short = Tr("call.ring.short.voice").c_str();
       }
 
       if (pending_call_wake_notify_) {
@@ -797,6 +836,30 @@ void CallController::RefreshPendingRing() {
              {{"count", std::to_string(joined_count)}, {"elapsed", std::string(in_call.elapsed.c_str())}})
               .c_str();
     }
+    // 2026-09-28 product decision: video calls start with the local camera on (supersedes V009's
+    // "join with camera off" default). auto_camera_pending_ is set once by the caller
+    // (StartCallWithInvitees) or the callee's non-voice-only accept (AcceptIncomingImpl /
+    // AcceptIncomingWithCharge); act on it here, exactly once, only after media_connected is the
+    // same "connected" signal the UI above uses to show elapsed/"Connected" — never before the
+    // callee has answered.
+    if (auto_camera_pending_ && auto_camera_call_id_ == active_call_id_ && media_connected) {
+      if (auto allowed = backend->VideoAllowedForCall(active_call_id_);
+          allowed && allowed->has_value() && **allowed) {
+        auto_camera_pending_ = false;
+        if (!backend->Media().IsCameraEnabled()) {
+          log().info << "auto camera on call_id=" << active_call_id_;
+          backend->SetLocalVideoEnabled(true, WhileAlive([this, call_id = active_call_id_](Roe<void> cam) {
+            if (!cam) {
+              log().warning << "auto camera on failed call_id=" << call_id << ": " << cam.error().message;
+            }
+          }));
+        }
+      } else if (allowed && allowed->has_value() && !**allowed) {
+        // Narrowed to voice-only before we got here — drop the intent; the camera-off sync in
+        // ApplyAudioLevels below already owns turning the camera off for this case.
+        auto_camera_pending_ = false;
+      }
+    }
     ApplyAudioLevels(backend->Media());
     {
       static std::string last_sub_log;
@@ -848,7 +911,7 @@ bool CallController::StartCallDirect(const std::string& thread_id, const bool vi
     return false;
   }
   if ((*thread)->kind == ThreadKind::Group) {
-    OpenGroupCallPicker(thread_id);
+    OpenGroupCallPicker(thread_id, video_allowed);
     return true;
   }
   if ((*thread)->kind != ThreadKind::Direct) {
@@ -875,20 +938,27 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
     return false;
   }
   // Requested: the calls owner starts it and reports back on UI (failure shown there).
-  backend->StartCall(thread_id, video_allowed, invitee_identities, WhileAlive([this](Roe<CallSession> started) {
+  backend->StartCall(thread_id, video_allowed, invitee_identities,
+                      WhileAlive([this, video_allowed](Roe<CallSession> started) {
     if (!started) {
       UserFeedback::Fail(PaymentErrorUserMessage(started.error().message));
       return;
     }
     active_call_id_ = started->call_id;
+    if (video_allowed) {
+      // 2026-09-28: caller picked "Video call" — turn the camera on automatically once the call
+      // connects (supersedes V009's old "join video calls with camera off" default).
+      auto_camera_pending_ = true;
+      auto_camera_call_id_ = started->call_id;
+    }
     RefreshPendingRing();
   }));
   return true;
 }
 
-void CallController::OpenGroupCallPicker(const std::string& thread_id) {
+void CallController::OpenGroupCallPicker(const std::string& thread_id, const bool video_allowed) {
   if (people_picker_notify_.open_for_group_call) {
-    people_picker_notify_.open_for_group_call(thread_id);
+    people_picker_notify_.open_for_group_call(thread_id, video_allowed);
   }
 }
 
@@ -935,7 +1005,24 @@ void CallController::InviteIdentitiesToActiveCall(const std::vector<std::string>
   }
 }
 
+bool CallController::VideoCallAvailable() {
+  BindToMessaging();
+  auto* backend = Backend();
+  if (!backend || !backend->Available()) {
+    return false;
+  }
+  return backend->Media().VideoEncoderAvailable();
+}
+
 void CallController::AcceptIncoming() {
+  AcceptIncomingImpl(false);
+}
+
+void CallController::AcceptIncomingVoiceOnly() {
+  AcceptIncomingImpl(true);
+}
+
+void CallController::AcceptIncomingImpl(const bool voice_only) {
   BindToMessaging();
   auto* backend = Backend();
   if (!backend || !backend->Available()) {
@@ -956,13 +1043,24 @@ void CallController::AcceptIncoming() {
     return;
   }
   backend->SetPendingAcceptChargeDecision(InitiationChargeDecision::Waive);
+  backend->SetPendingAcceptVoiceOnly(voice_only);
+  if (!voice_only && ring_.video_allowed) {
+    // 2026-09-28: callee answered a video call with "Video" (not narrowed to voice) — turn the
+    // camera on automatically once the call connects, same as the caller.
+    auto_camera_pending_ = true;
+    auto_camera_call_id_ = call_id;
+  } else if (auto_camera_call_id_ == call_id) {
+    // Answered voice-only — never auto-enable the camera for this call.
+    auto_camera_pending_ = false;
+  }
   // Dismiss ring on the click frame (CALLS.md Accept → Accepting dismisses chrome). Leaving the
   // dialog up until AcceptInvite finishes made Accept look hung.
   ringtone_.Stop();
   ClearRing();
   SyncShellState();
   log().warning
-      << "AcceptIncoming → lifecycle AcceptClicked call_id=" << call_id << " charge=waive";
+      << "AcceptIncoming → lifecycle AcceptClicked call_id=" << call_id << " charge=waive"
+      << (voice_only ? " voice_only=1" : "");
   backend->Apply(CallLifecycleEvent::AcceptClicked, call_id);
 }
 
@@ -991,6 +1089,13 @@ void CallController::AcceptIncomingWithCharge() {
     return;
   }
   backend->SetPendingAcceptChargeDecision(InitiationChargeDecision::TakeAll);
+  backend->SetPendingAcceptVoiceOnly(false);
+  if (ring_.video_allowed) {
+    // 2026-09-28: charge-accept of a video call is still a "Video" accept — auto camera-on once
+    // connected, same as AcceptIncomingImpl's non-voice-only path.
+    auto_camera_pending_ = true;
+    auto_camera_call_id_ = call_id;
+  }
   ringtone_.Stop();
   ClearRing();
   SyncShellState();
@@ -1156,6 +1261,21 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
         allowed && allowed->has_value() && **allowed) {
       in_call.video_allowed = true;
       in_call.show_camera = media.VideoEncoderAvailable() && media.CameraPathAllowsVideo();
+      camera_sync_off_done_ = false;
+    } else if (!camera_sync_off_done_ && media.IsCameraEnabled() && allowed && allowed->has_value() &&
+               !**allowed) {
+      // M4: only narrow (turn camera off) when VideoAllowedForCall explicitly returned false — a
+      // read error or unknown value keeps show_camera hidden above but must not touch the camera.
+      // V035: a voice-only Accept (ours or the peer's) narrowed video_allowed to false after the
+      // local camera was already on (e.g. caller turned it on before the callee answered voice-only)
+      // — turn it off through the normal path, once.
+      camera_sync_off_done_ = true;
+      log().info << "ApplyAudioLevels camera off (video_allowed=false) call_id=" << active_call_id_;
+      backend->SetLocalVideoEnabled(false, WhileAlive([](Roe<void> cam) {
+        if (!cam) {
+          UserFeedback::Fail(cam.error().message);
+        }
+      }));
     }
   }
 

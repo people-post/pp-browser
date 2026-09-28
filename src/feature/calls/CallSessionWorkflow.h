@@ -159,6 +159,8 @@ public:
 
   int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
   void SetPendingAcceptChargeDecision(InitiationChargeDecision decision);
+  /** Set before AcceptClicked — consumed (and reset to false) by AcceptInvite. */
+  void SetPendingAcceptVoiceOnly(bool voice_only);
 
   /** Peer remembered for Lifecycle KickAnswerer after Accept (peek; cleared on Leave). */
   void ClearPendingAnswererKick();
@@ -197,7 +199,7 @@ private:
   Roe<void> ApplyRemoteAccept(const CallAcceptDetail& accept, const std::string& identity,
                               const std::string& local_identity, bool implicit);
   Roe<void> ContinueAcceptAfterPark(const std::string& call_id, InitiationChargeDecision charge_decision,
-                                    const std::string& local_identity);
+                                    bool voice_only_accept, const std::string& local_identity);
   IThreadStore& store_;
   IdentityStore& identity_;
   CallSessionStore& sessions_;
@@ -207,6 +209,7 @@ private:
   InitiationBillingStore* initiation_billing_ = nullptr;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;
+  bool pending_accept_voice_only_ = false;
   std::string pending_answerer_kick_call_id_;
   std::string pending_answerer_kick_peer_;
 };

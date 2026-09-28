@@ -14,6 +14,7 @@
 #include "domain/messaging/CallTypes.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "common/thread/ThreadRecordTypes.h"
+#include "common/ValueJson.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
@@ -167,6 +168,17 @@ public:
   CallMediaDirectConnectParams active_params;
   test::InboundHelloFake inbound;
 };
+
+/** Unwrap a sent CallAccept's control-message payload_json ({"control_type":..,"detail":..}) and
+ *  decode its detail — mirrors CallSessionManager::SendCallDirectMessage's wire wrapping. */
+Roe<CallAcceptDetail> DecodeSentAccept(const std::string& payload_json) {
+  auto payload = TryParseObject(payload_json);
+  auto detail_json = payload ? payload->getString("detail") : std::nullopt;
+  if (!detail_json) {
+    return Error("sent payload missing detail");
+  }
+  return CallControlCodec::DecodeAccept(*detail_json);
+}
 
 void DrainUntil(const std::function<bool()>& done, int max_ms = 4000) {
   const int slices = std::max(1, max_ms / 10);
@@ -560,13 +572,14 @@ protected:
   }
 
   Roe<ThreadMessage> MakeInviteMessage(const std::string& call_id,
-                                       std::optional<int64_t> expires_at = std::nullopt) {
+                                       std::optional<int64_t> expires_at = std::nullopt,
+                                       std::optional<bool> video_allowed = std::nullopt) {
     CallInviteDetail invite;
     invite.call_id = call_id;
     invite.inviter_identity = "account:peer";
     invite.invitee_identity = local_identity_;
     invite.media_mode = CallMediaMode::Voice;
-    invite.video_allowed = false;
+    invite.video_allowed = video_allowed.value_or(false);
     invite.origin_thread_id = "thread:origin";
     invite.media_epoch = 1;
     invite.media_key_id = "mk:1";
@@ -618,11 +631,12 @@ protected:
     });
   }
 
-  void SeedOffererRingingCall(const std::string& call_id) {
+  void SeedOffererRingingCall(const std::string& call_id, bool video_allowed = false) {
     CallSession session;
     session.call_id = call_id;
     session.origin_thread_id = "thread:out";
     session.media_mode = CallMediaMode::Voice;
+    session.video_allowed = video_allowed;
     session.state = CallSessionState::Ringing;
     session.created_at = util::NowUnixMs();
     session.media_epoch = 1;
@@ -912,6 +926,239 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
   auto peer = sessions_->FindParticipant(call_id, "account:peer");
   ASSERT_TRUE(peer && peer->has_value());
   EXPECT_EQ((*peer)->state, CallParticipantState::Joined);
+}
+
+// video-voice-choice: callee answers an incoming video invite as voice-only. AcceptInvite must
+// narrow its own session and send Accept.video_allowed=false.
+TEST_F(CallSessionInboundComposeTest, VoiceOnlyAnswerNarrowsCalleeSessionAndSendsFalse) {
+  const std::string call_id = "call:voice-only-narrow";
+  auto msg = MakeInviteMessage(call_id, std::nullopt, /*video_allowed=*/true);
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  csm_->SetPendingAcceptVoiceOnly(true);
+  std::optional<Roe<void>> accepted;
+  csm_->AcceptInviteAsync(call_id, [&](Roe<void> result) { accepted = std::move(result); });
+  ASSERT_TRUE(accepted.has_value());
+  EXPECT_TRUE(*accepted) << accepted->error().message;
+
+  auto session = sessions_->LoadSession(call_id);
+  ASSERT_TRUE(session && session->has_value());
+  EXPECT_FALSE((*session)->video_allowed);
+
+  auto sent = DecodeSentAccept(last_sent_payload_);
+  ASSERT_TRUE(sent);
+  ASSERT_TRUE(sent->video_allowed.has_value());
+  EXPECT_FALSE(*sent->video_allowed);
+}
+
+// A voice-only accept on a call that was already voice-only writes nothing extra on the wire.
+TEST_F(CallSessionInboundComposeTest, VoiceOnlyAnswerOnVoiceCallWritesNothing) {
+  const std::string call_id = "call:voice-only-noop";
+  auto msg = MakeInviteMessage(call_id);  // voice invite (video_allowed=false)
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  csm_->SetPendingAcceptVoiceOnly(true);
+  std::optional<Roe<void>> accepted;
+  csm_->AcceptInviteAsync(call_id, [&](Roe<void> result) { accepted = std::move(result); });
+  ASSERT_TRUE(accepted.has_value());
+  EXPECT_TRUE(*accepted) << accepted->error().message;
+
+  auto sent = DecodeSentAccept(last_sent_payload_);
+  ASSERT_TRUE(sent);
+  EXPECT_FALSE(sent->video_allowed.has_value());
+
+  auto session = sessions_->LoadSession(call_id);
+  ASSERT_TRUE(session && session->has_value());
+  EXPECT_FALSE((*session)->video_allowed);
+}
+
+// A normal (video) accept on a video invite leaves the field unset and keeps video_allowed=true.
+TEST_F(CallSessionInboundComposeTest, VideoAnswerLeavesFieldUnset) {
+  const std::string call_id = "call:video-answer-normal";
+  auto msg = MakeInviteMessage(call_id, std::nullopt, /*video_allowed=*/true);
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  std::optional<Roe<void>> accepted;
+  csm_->AcceptInviteAsync(call_id, [&](Roe<void> result) { accepted = std::move(result); });
+  ASSERT_TRUE(accepted.has_value());
+  EXPECT_TRUE(*accepted) << accepted->error().message;
+
+  auto sent = DecodeSentAccept(last_sent_payload_);
+  ASSERT_TRUE(sent);
+  EXPECT_FALSE(sent->video_allowed.has_value());
+
+  auto session = sessions_->LoadSession(call_id);
+  ASSERT_TRUE(session && session->has_value());
+  EXPECT_TRUE((*session)->video_allowed);
+}
+
+// Caller side: a 1:1 outgoing video call whose remote answers voice-only narrows the caller's
+// session too (VideoAllowedForCall flips false).
+TEST_F(CallSessionInboundComposeTest, CallerNarrowsOnVoiceOnlyAccept) {
+  const std::string call_id = "call:caller-narrow";
+  SeedOffererRingingCall(call_id, /*video_allowed=*/true);
+
+  CallAcceptDetail accept;
+  accept.call_id = call_id;
+  accept.identity = "account:peer";
+  accept.listen_multiaddrs = {"/ip4/10.0.0.2/tcp/4001/p2p/12D3KooWPeer"};
+  accept.libp2p_peer_id = "12D3KooWPeer";
+  accept.video_allowed = false;
+  auto detail = CallControlCodec::EncodeAccept(accept);
+  ASSERT_TRUE(detail);
+  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallAccept, "Accepted", *detail,
+                                                  "account:peer");
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+
+  auto video_allowed = csm_->VideoAllowedForCall(call_id);
+  ASSERT_TRUE(video_allowed && video_allowed->has_value());
+  EXPECT_FALSE(**video_allowed);
+}
+
+// A roster from the peer is built from ITS view of the call and can arrive late over the relay
+// (device test 2026-09-28: the callee's accept-time roster, listing both cameras off, reached the
+// caller 2 s after the caller's camera auto-enabled). Our own entry in it is stale by definition —
+// only we know our camera/mic — so it must never overwrite our own participant row.
+TEST_F(CallSessionInboundComposeTest, PeerRosterNeverOverwritesOwnMediaState) {
+  const std::string call_id = "call:roster-self";
+  SeedOffererRingingCall(call_id, /*video_allowed=*/true);
+  auto self_row = sessions_->FindParticipant(call_id, local_identity_);
+  ASSERT_TRUE(self_row && self_row->has_value());
+  CallParticipant self = **self_row;
+  self.media.video_enabled = true;
+  self.media.audio_muted = false;
+  ASSERT_TRUE(sessions_->UpsertParticipant(self));
+
+  CallRosterDetail roster;
+  roster.call_id = call_id;
+  CallRosterEntry stale_self;
+  stale_self.identity = local_identity_;
+  stale_self.state = CallParticipantState::Joined;
+  stale_self.video_enabled = false;
+  stale_self.audio_muted = true;
+  CallRosterEntry peer;
+  peer.identity = "account:peer";
+  peer.state = CallParticipantState::Joined;
+  peer.video_enabled = true;
+  roster.participants = {stale_self, peer};
+  auto detail = CallControlCodec::EncodeRoster(roster);
+  ASSERT_TRUE(detail);
+  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallRoster, "Call roster", *detail,
+                                                  "account:peer");
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+
+  auto after = sessions_->FindParticipant(call_id, local_identity_);
+  ASSERT_TRUE(after && after->has_value());
+  EXPECT_TRUE((*after)->media.video_enabled) << "own camera state came from a stale peer roster";
+  EXPECT_FALSE((*after)->media.audio_muted) << "own mute state came from a stale peer roster";
+  auto peer_row = sessions_->FindParticipant(call_id, "account:peer");
+  ASSERT_TRUE(peer_row && peer_row->has_value());
+  EXPECT_TRUE((*peer_row)->media.video_enabled) << "the peer's own entry still applies";
+}
+
+// A replayed Accept without the field (relay retransmit) must never re-widen an already-narrowed
+// call; a fresh call whose Accept never carries the field stays at the caller's original choice.
+TEST_F(CallSessionInboundComposeTest, CallerIgnoresMissingFieldAndNeverRewidens) {
+  const std::string call_id = "call:caller-replay";
+  SeedOffererRingingCall(call_id, /*video_allowed=*/true);
+
+  CallAcceptDetail narrow_accept;
+  narrow_accept.call_id = call_id;
+  narrow_accept.identity = "account:peer";
+  narrow_accept.video_allowed = false;
+  auto narrow_detail = CallControlCodec::EncodeAccept(narrow_accept);
+  ASSERT_TRUE(narrow_detail);
+  auto narrow_msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallAccept, "Accepted",
+                                                          *narrow_detail, "account:peer");
+  ASSERT_TRUE(narrow_msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*narrow_msg, "account:peer"));
+  auto after_narrow = csm_->VideoAllowedForCall(call_id);
+  ASSERT_TRUE(after_narrow && after_narrow->has_value());
+  ASSERT_FALSE(**after_narrow);
+
+  CallAcceptDetail replay_accept;  // relay replay of the same Accept, missing the field this time
+  replay_accept.call_id = call_id;
+  replay_accept.identity = "account:peer";
+  auto replay_detail = CallControlCodec::EncodeAccept(replay_accept);
+  ASSERT_TRUE(replay_detail);
+  auto replay_msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallAccept, "Accepted",
+                                                          *replay_detail, "account:peer");
+  ASSERT_TRUE(replay_msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*replay_msg, "account:peer"));
+  auto after_replay = csm_->VideoAllowedForCall(call_id);
+  ASSERT_TRUE(after_replay && after_replay->has_value());
+  EXPECT_FALSE(**after_replay) << "a replayed Accept without video_allowed must not re-widen the call";
+
+  const std::string call_id2 = "call:caller-fresh";
+  SeedOffererRingingCall(call_id2, /*video_allowed=*/true);
+  CallAcceptDetail plain_accept;
+  plain_accept.call_id = call_id2;
+  plain_accept.identity = "account:peer";
+  auto plain_detail = CallControlCodec::EncodeAccept(plain_accept);
+  ASSERT_TRUE(plain_detail);
+  auto plain_msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallAccept, "Accepted",
+                                                        *plain_detail, "account:peer");
+  ASSERT_TRUE(plain_msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*plain_msg, "account:peer"));
+  auto fresh_video_allowed = csm_->VideoAllowedForCall(call_id2);
+  ASSERT_TRUE(fresh_video_allowed && fresh_video_allowed->has_value());
+  EXPECT_TRUE(**fresh_video_allowed);
+}
+
+// A group call (≥2 invitees): a voice-only Accept from one invitee must only affect that
+// participant, never the call-wide video_allowed the caller set.
+TEST_F(CallSessionInboundComposeTest, GroupVoiceAnswerDoesNotNarrowCaller) {
+  const std::string call_id = "call:group-voice-answer";
+  CallSession session;
+  session.call_id = call_id;
+  session.origin_thread_id = "thread:out";
+  session.media_mode = CallMediaMode::Voice;
+  session.video_allowed = true;
+  session.state = CallSessionState::Ringing;
+  session.created_at = util::NowUnixMs();
+  session.media_epoch = 1;
+  session.media_key_id = "mk:1";
+  ASSERT_TRUE(sessions_->UpsertSession(session));
+  CallParticipant self;
+  self.call_id = call_id;
+  self.identity = local_identity_;
+  self.state = CallParticipantState::Joined;
+  self.joined_at = session.created_at;
+  ASSERT_TRUE(sessions_->UpsertParticipant(self));
+  CallParticipant peer1;
+  peer1.call_id = call_id;
+  peer1.identity = "account:peer1";
+  peer1.state = CallParticipantState::Ringing;
+  ASSERT_TRUE(sessions_->UpsertParticipant(peer1));
+  CallParticipant peer2;
+  peer2.call_id = call_id;
+  peer2.identity = "account:peer2";
+  peer2.state = CallParticipantState::Ringing;
+  ASSERT_TRUE(sessions_->UpsertParticipant(peer2));
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+
+  CallAcceptDetail accept;
+  accept.call_id = call_id;
+  accept.identity = "account:peer1";
+  accept.video_allowed = false;
+  auto detail = CallControlCodec::EncodeAccept(accept);
+  ASSERT_TRUE(detail);
+  auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallAccept, "Accepted", *detail,
+                                                  "account:peer1");
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer1"));
+
+  auto video_allowed = csm_->VideoAllowedForCall(call_id);
+  ASSERT_TRUE(video_allowed && video_allowed->has_value());
+  EXPECT_TRUE(**video_allowed) << "voice-only Accept from one of >=2 invitees must not narrow the whole call";
 }
 
 TEST_F(CallSessionInboundComposeTest, InboundMediaKeyUnwrapsAndKicksAnswerer) {

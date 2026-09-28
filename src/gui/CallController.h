@@ -49,10 +49,14 @@ public:
   /** Start with explicit invitee relay identities (group / picker flow). */
   bool StartCallWithInvitees(const std::string& thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
-  void OpenGroupCallPicker(const std::string& thread_id);
+  void OpenGroupCallPicker(const std::string& thread_id, bool video_allowed);
   void OpenMidCallInvitePicker();
   void InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities);
+  /** Host can encode/send video at all (gates the chat call-type menu's "Video call" item). */
+  bool VideoCallAvailable();
   void AcceptIncoming();
+  /** Callee narrows this call to voice-only before accepting (video ring only). */
+  void AcceptIncomingVoiceOnly();
   /** Take-all when offer > 0; no-op toast when rails unavailable. */
   void AcceptIncomingWithCharge();
   void DeclineIncoming();
@@ -75,6 +79,8 @@ public:
 
 private:
   bool StartCallDirect(const std::string& thread_id, bool video_allowed);
+  /** Shared AcceptIncoming/AcceptIncomingVoiceOnly body (charge decision is always Waive here). */
+  void AcceptIncomingImpl(bool voice_only);
   void SyncShellState();
   void ClearRing();
   void ClearInCall();
@@ -114,6 +120,17 @@ private:
   /** Call already told about an audio fault — at most one such toast per call. */
   std::string audio_fault_warned_call_id_;
   int64_t last_video_refresh_ms_ = 0;
+  /** One-shot guard: camera already turned off because video_allowed narrowed mid-call. */
+  bool camera_sync_off_done_ = false;
+  /**
+   * 2026-09-28: video calls start with the local camera on (supersedes V009's old "join with
+   * camera off" default) — set once by the caller (video StartCall) or the callee (non-voice-only
+   * accept of a video call); consumed (camera enabled, flag cleared) on the first Tick where the
+   * call is connected. Cleared on voice-only accept and on ClearInCall.
+   */
+  bool auto_camera_pending_ = false;
+  /** Call id auto_camera_pending_ applies to. */
+  std::string auto_camera_call_id_;
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeLayer synced_chrome_;
   CallChromeMode chrome_mode_ = CallChromeMode::Expanded;

@@ -841,6 +841,7 @@ void Application::WireCalls() {
       return call_->StartCall(thread_id, video_allowed);
     };
     call_actions.refresh_pending_ring = [this]() { call_->RefreshPendingRing(); };
+    call_actions.video_call_available = [this]() { return call_->VideoCallAvailable(); };
     call_actions.invite_identities = [this](const std::vector<std::string>& identities) {
       call_->InviteIdentitiesToActiveCall(identities);
     };
@@ -850,6 +851,7 @@ void Application::WireCalls() {
           return call_->StartCallWithInvitees(thread_id, video_allowed, identities);
         };
     call_actions.accept_incoming = [this]() { call_->AcceptIncoming(); };
+    call_actions.accept_incoming_voice_only = [this]() { call_->AcceptIncomingVoiceOnly(); };
     call_actions.accept_incoming_with_charge = [this]() { call_->AcceptIncomingWithCharge(); };
     call_actions.decline_incoming = [this]() { call_->DeclineIncoming(); };
     call_actions.leave_active = [this]() { call_->LeaveActive(); };
@@ -1069,8 +1071,8 @@ bool Application::MountPresenters(ui::Context* context) {
   chat_->BindEmojiPickerNotify(std::move(emoji_notify));
 
   PeoplePickerNotifyPorts call_people_picker_notify;
-  call_people_picker_notify.open_for_group_call = [this](const std::string& thread_id) {
-    people_picker_->OpenForGroupCall(thread_id);
+  call_people_picker_notify.open_for_group_call = [this](const std::string& thread_id, bool video_allowed) {
+    people_picker_->OpenForGroupCall(thread_id, video_allowed);
   };
   call_people_picker_notify.open_for_call_add_guest = [this](const std::string& call_id) {
     people_picker_->OpenForCallAddGuest(call_id);

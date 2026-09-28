@@ -199,6 +199,9 @@ Roe<std::string> CallControlCodec::EncodeAccept(const CallAcceptDetail& detail) 
     json.set("charge_decision", detail.charge_decision.empty() ? "waive" : detail.charge_decision);
     json.set("offer_amount_minor", detail.offer_amount_minor);
   }
+  if (detail.video_allowed.has_value()) {
+    json.set("video_allowed", *detail.video_allowed);
+  }
   return DumpJson(json);
 }
 
@@ -218,6 +221,9 @@ Roe<CallAcceptDetail> CallControlCodec::DecodeAccept(const std::string& detail_j
   detail.caps = ReadPeerCaps(*json);
   detail.charge_decision = json->getString("charge_decision").value_or("waive");
   detail.offer_amount_minor = json->getIf<int64_t>("offer_amount_minor").value_or(0);
+  if (auto v = json->getIf<bool>("video_allowed")) {
+    detail.video_allowed = *v;
+  }
   return detail;
 }
 

@@ -1051,6 +1051,11 @@ void CallSessionManager::SetPendingAcceptChargeDecision(const InitiationChargeDe
 }
 
 
+void CallSessionManager::SetPendingAcceptVoiceOnly(const bool voice_only) {
+  workflow_.SetPendingAcceptVoiceOnly(voice_only);
+}
+
+
 void CallSessionManager::AcceptInviteAsync(const std::string& call_id, std::function<void(Roe<void>)> on_done,
                                            InitiationChargeDecision charge_decision) {
   workflow_.AcceptInviteAsync(call_id, charge_decision, std::move(on_done));
