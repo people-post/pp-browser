@@ -185,7 +185,7 @@ Orthogonal to Wave topology. **Reach modes** (how A gets a PeerLink to B) ≠ **
 | **Direct** | PeerLink Connected on usable MA; `path=direct` | loopback / LAN smoke | optional sanity |
 | **Punch** | ACP sync → upsert → Connected (`path=punched` or promote direct) | L3.25 punch compose / gtest (dual-dial + window expiry) | Phase-2 product: punch miss OK if circuit wins; **no CGNAT punch claim** |
 | **Circuit hop** | Nested Session over circuit carrier; `path=circuit` | `amp_circuit_*` compose | **Primary** B-HARD-CALL-NAT / DIRTY / PRODUCT |
-| **SFU `media_relay`** | N≥3 SoftMigrate attach (blind hop) | SoftMigrate / media_relay loopback | Wave 1 B-HARD-CALL when N≥3 harness exists |
+| **SFU `media_relay`** | N≥3 SoftMigrate attach (blind hop) | `call_group_stack_compose_test` (**B-GROUP-CALL**: 3 CallStacks, 2→3 SoftMigrate, per-publisher RX) + media_relay loopback | `B-HARD-GROUP-CALL-NAT` (planned: 3 NATed product-stack probes via hop `media_relay`) |
 | **ConnectFailed teardown** | Chrome fail + engine stop; clean Abort/shutdown | **gtest** (`call_media_bridge_answerer_start_test`) | not a hard-lab purpose |
 
 Hard-lab stays **success-first** (dirty book → circuit → duplex). Failure handling promotes downward to gtest ([TESTING.md](../../docs/architecture/TESTING.md)).

@@ -1,6 +1,6 @@
 # Hard lab — current state
 
-**Last updated:** 2026-09-26
+**Last updated:** 2026-09-28
 
 ## Direction
 
@@ -34,7 +34,7 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 | N-HARD-DIR / DHT / N-ADMIT-HARD | Blocked on product hooks |
 | Wave 4+ multi-hop | Blocked on L3.5 |
 | GUI / phones | Manual dogfood only |
-| SFU `media_relay` on hard topo | Broadcast covers one-way fan-out (B-HARD-BCAST-NAT); group calls (N≥3) still need a harness |
+| SFU `media_relay` on hard topo | Broadcast covers one-way fan-out (B-HARD-BCAST-NAT). Group calls: product logic guarded in-process (**B-GROUP-CALL**, `call_group_stack_compose_test`); the NAT phase (`B-HARD-GROUP-CALL-NAT`: third gateway + peer-c, `--signal-dir` for 3 probes, per-sender RX gates) is not built |
 
 ## Next
 

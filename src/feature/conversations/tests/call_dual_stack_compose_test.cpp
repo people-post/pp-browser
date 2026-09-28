@@ -1,169 +1,17 @@
-#include "feature/calls/CallStack.h"
-#include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/CallUiBackend.h"
+#include "feature/conversations/tests/call_stack_compose_support.h"
 
-#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
-#include "domain/messaging/CallTypes.h"
-#include "domain/messaging/SqlitePskSessionStore.h"
-#include "domain/messaging/SqliteThreadStore.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
-#include "foundation/crypto/CryptoConstants.h"
-#include "foundation/crypto/CryptoUtil.h"
-#include "foundation/data/Config.h"
-#include "foundation/runtime/AppRuntime.h"
-#include "common/Utilities.h"
-#include "common/thread/ThreadRecordTypes.h"
-
-#include <chrono>
 #include <deque>
-#include <filesystem>
-#include <functional>
-#include "feature/conversations/tests/call_media_inbound_fake.h"
-
-#include <gtest/gtest.h>
-#include <optional>
-#include <memory>
 #include <string>
-#include <thread>
-#include <unordered_map>
-#include <vector>
 
 namespace pbr {
 namespace {
 
-ByteVector TestDek(uint8_t seed) {
-  ByteVector dek(kDataEncryptionKeySize);
-  for (size_t i = 0; i < dek.size(); ++i) {
-    dek[i] = static_cast<uint8_t>(seed + i);
-  }
-  return dek;
-}
-
-class FakeDialRegistry final : public IDialRegistry {
-public:
-  Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) override {
-    endpoints[peer_key] = multiaddr;
-    return {};
-  }
-  bool IsDialable(const std::string& peer_key) const override {
-    return endpoints.count(peer_key) > 0 || connected.count(peer_key) > 0;
-  }
-  bool IsConnected(const std::string& peer_key) const override {
-    return connected.count(peer_key) > 0;
-  }
-  std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const override {
-    const auto it = endpoints.find(peer_key);
-    if (it != endpoints.end()) {
-      return it->second;
-    }
-    return std::nullopt;
-  }
-  void ClearDialBackoff(const std::string& /*peer_key*/) override {}
-  void AbortInflightDial(const std::string& /*peer_key*/) override {}
-  void ClearPeerCircuitHop(const std::string& /*peer_key*/) override {}
-
-  std::unordered_map<std::string, std::string> endpoints;
-  std::unordered_map<std::string, bool> connected;
-};
-
-class FakeCallMediaTransport final : public ICallMediaTransport {
-public:
-  void Start() override { started = true; }
-  void Stop() override { started = false; }
-  void SetInboundHandler(CallMediaInboundHandler handler) override { inbound.Set(std::move(handler)); }
-  void ClearInboundHandler() override { inbound.Clear(); }
-  bool IsActive() const override { return active; }
-  CallMediaDirectConnectParams ActiveParams() const override { return active_params; }
-  CallMediaSessionPhase Phase() const override {
-    return active ? CallMediaSessionPhase::MediaReady : CallMediaSessionPhase::Idle;
-  }
-  void Detach() override {
-    active = false;
-    ++detach_calls;
-  }
-  void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    std::function<void(Roe<void>)> on_done, int /*timeout_ms*/) override {
-    ++connect_async_calls;
-    last_params = params;
-    active = true;
-    active_params = params;
-    if (peer_inbound) {
-      // Simulate reverse-dial landing on the peer's CallMediaBridge inbound handler.
-      peer_inbound(params);
-    }
-    if (callbacks.on_connected) {
-      callbacks.on_connected();
-    }
-    if (on_done) {
-      on_done({});
-    }
-  }
-  Roe<void> Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    int timeout_ms) override {
-    Roe<void> out;
-    ConnectAsync(params, std::move(callbacks), [&](Roe<void> r) { out = std::move(r); }, timeout_ms);
-    return out;
-  }
-  Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override {
-    return {};
-  }
-  Roe<void> SendMedia(uint8_t /*channel*/, const std::vector<uint8_t>& /*payload*/, uint32_t /*seq*/,
-                      uint8_t /*mark*/) override {
-    return {};
-  }
-
-  bool started = false;
-  bool active = false;
-  int connect_async_calls = 0;
-  int detach_calls = 0;
-  CallMediaDirectConnectParams last_params;
-  CallMediaDirectConnectParams active_params;
-  test::InboundHelloFake inbound;
-  /** When set, ConnectAsync also drives the peer stack's inbound handler (dual-stack wire). */
-  /** Reverse dial: deliver a hello to the peer; its answer connects the peer's side. */
-  std::function<void(CallMediaDirectConnectParams)> peer_inbound;
-};
-
-void DrainUntil(const std::function<bool()>& done, int max_ms = 6000) {
-  const int slices = std::max(1, max_ms / 10);
-  for (int i = 0; i < slices; ++i) {
-    AppRuntime::RunUIAndOwnerTasks();
-    if (done()) {
-      return;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  AppRuntime::RunUIAndOwnerTasks();
-}
-
-/** CallUiBackend::StartCall is an intent: run the calls owner until it reports. */
-Roe<CallSession> StartCallNow(CallUiBackend& ui, const std::string& thread_id, bool video,
-                              const std::vector<std::string>& invitees) {
-  std::optional<Roe<CallSession>> started;
-  ui.StartCall(thread_id, video, invitees, [&started](Roe<CallSession> result) { started = std::move(result); });
-  for (int i = 0; i < 1000 && !started; ++i) {
-    AppRuntime::RunUIAndOwnerTasks();
-  }
-  return started ? *started : Roe<CallSession>(Error("StartCall did not report"));
-}
-
-struct StackSide {
-  std::filesystem::path data_dir;
-  std::unique_ptr<SqliteThreadStore> store;
-  std::unique_ptr<ContactsStore> contacts;
-  std::unique_ptr<IdentityStore> identity;
-  std::unique_ptr<SqlitePskSessionStore> psk;
-  std::unique_ptr<MeshMediaPlane> mesh_media = std::make_unique<MeshMediaPlane>();  // outlives stack
-  std::unique_ptr<CallStack> stack;
-  std::unique_ptr<CallUiBackend> ui;
-  std::unique_ptr<FakeCallMediaTransport> transport;
-  std::unique_ptr<FakeDialRegistry> dial;
-  CallControlInboundPorts inbound;
-  AppConfig app_config;
-  std::string local_identity;
-  std::deque<ThreadMessage>* outbox = nullptr;
-};
+using test::BuildStackSide;
+using test::DestroyStackSide;
+using test::DrainUntil;
+using test::SoftStopStackSide;
+using test::StackSide;
+using test::StartCallNow;
 
 class CallDualStackComposeTest : public ::testing::Test {
 protected:
@@ -172,8 +20,10 @@ protected:
     AppRuntime::Initialize(ManualOwnerRuntimeConfig());
     AppRuntime::InitializeUI();
 
-    BuildSide(offer_, "offer", 0xa0, &answer_inbox_);
-    BuildSide(answer_, "answer", 0xb0, &offer_inbox_);
+    offer_.on_send = [this](const ThreadMessage& msg) { answer_inbox_.push_back(msg); };
+    answer_.on_send = [this](const ThreadMessage& msg) { offer_inbox_.push_back(msg); };
+    BuildStackSide(offer_, "offer", 0xa0);
+    BuildStackSide(answer_, "answer", 0xb0);
 
     // Each side treats the other as already connected for EnsurePeerReachable.
     offer_.dial->connected[answer_.local_identity] = true;
@@ -205,107 +55,12 @@ protected:
   void TearDown() override {
     // Soft-stop stacks first, then join AppRuntime before destroying stores — DrainWorkersThenUI
     // alone does not wait for every pool thread (PR #216 follow-up).
-    SoftStopSide(offer_);
-    SoftStopSide(answer_);
+    SoftStopStackSide(offer_);
+    SoftStopStackSide(answer_);
     AppRuntime::ShutdownUI();
     AppRuntime::Shutdown();
-    DestroySide(offer_);
-    DestroySide(answer_);
-  }
-
-  void BuildSide(StackSide& side, const char* tag, uint8_t dek_seed,
-                 std::deque<ThreadMessage>* outbox) {
-    side.data_dir =
-        std::filesystem::temp_directory_path() / ("pp_dual_" + std::string(tag) + "_" + util::GenerateUuid());
-    std::filesystem::remove_all(side.data_dir);
-    std::filesystem::create_directories(side.data_dir);
-
-    side.store = std::make_unique<SqliteThreadStore>(side.data_dir.string());
-    ASSERT_TRUE(side.store->ListThreads());
-    ASSERT_TRUE(side.store->SetDek(TestDek(dek_seed)));
-    side.contacts = std::make_unique<ContactsStore>(side.data_dir.string());
-    side.identity = std::make_unique<IdentityStore>(side.data_dir.string(), tag);
-    ASSERT_TRUE(side.identity->SetDek(TestDek(dek_seed)));
-    auto loaded = side.identity->LoadOrCreate();
-    ASSERT_TRUE(loaded) << loaded.error().message;
-    side.local_identity = loaded->account_id;
-    ASSERT_FALSE(side.local_identity.empty());
-
-    side.psk = std::make_unique<SqlitePskSessionStore>(side.store->ProfileDbPath(), tag);
-    ASSERT_TRUE(side.psk->SetDek(TestDek(dek_seed)));
-
-    side.app_config = AppConfig{};
-    side.outbox = outbox;
-    side.stack = std::make_unique<CallStack>();
-    ASSERT_TRUE(side.stack->InitializeStores(side.store->ProfileDbPath(), tag));
-    ASSERT_TRUE(side.stack->MediaKeys()->SetDek(TestDek(dek_seed)));
-    side.ui = std::make_unique<CallUiBackend>(*side.stack);
-
-    CallStackDeps deps;
-    deps.store = side.store.get();
-    deps.contacts = side.contacts.get();
-    deps.identity = side.identity.get();
-    deps.psk = side.psk.get();
-    deps.delivery.send_user_message = [&side](const std::string& thread_id, const std::string& text,
-                                              const SendRelayOptions& options) -> Roe<ThreadMessage> {
-      ThreadMessage msg;
-      msg.id = util::GenerateUuid();
-      msg.thread_id = thread_id;
-      msg.text = text;
-      msg.content_type = options.content_type.value_or(ChatContentType::System);
-      msg.payload_json = options.payload_json.value_or("");
-      msg.timestamp = util::NowUnixMs();
-      if (side.outbox) {
-        side.outbox->push_back(msg);
-      }
-      return msg;
-    };
-    deps.delivery.sync_inbox_from_wake = [](bool) {};
-    deps.mesh_config = [&side]() { return std::make_shared<const MeshConfig>(side.app_config.mesh); };
-    deps.mesh = []() -> MeshHost* { return nullptr; };
-    deps.list_directory_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
-    deps.list_dht_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
-    deps.seed_dial_ok = []() { return false; };
-    deps.prefetch_peer_reachability = [](const std::string&) {};
-    deps.sync_mobile_ephemeral_listen = []() {};
-    deps.bind_call_control = [&side](CallControlInboundPorts ports) { side.inbound = std::move(ports); };
-
-    deps.mesh_media = side.mesh_media.get();
-    side.stack->BuildSessions(deps);
-    ASSERT_TRUE(side.ui->Available());
-    ASSERT_TRUE(side.inbound.apply_inbound_control);
-    if (CallMediaEngine* media = side.stack->MediaEngine()) {
-      media->SetSkipDeviceOpenForTest(true);
-    }
-
-    side.transport = std::make_unique<FakeCallMediaTransport>();
-    side.dial = std::make_unique<FakeDialRegistry>();
-    side.stack->BindTestMediaPath(side.transport.get(), side.dial.get());
-  }
-
-  void SoftStopSide(StackSide& side) {
-    side.ui.reset();
-    if (side.stack) {
-      side.stack->AbortCallMediaForShutdown();
-      side.stack->Shutdown();
-    }
-    side.stack.reset();
-    side.transport.reset();
-    side.dial.reset();
-  }
-
-  void DestroySide(StackSide& side) {
-    if (side.psk) {
-      side.psk->ClearDek();
-    }
-    side.psk.reset();
-    side.identity.reset();
-    side.contacts.reset();
-    side.store.reset();
-    if (!side.data_dir.empty()) {
-      std::filesystem::remove_all(side.data_dir);
-      side.data_dir.clear();
-    }
+    DestroyStackSide(offer_);
+    DestroyStackSide(answer_);
   }
 
   /** Deliver queued call-control between the two stacks; drain UI between hops. */
