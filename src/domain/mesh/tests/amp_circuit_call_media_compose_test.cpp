@@ -1,6 +1,8 @@
 #include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
 #include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
+#include "domain/mesh/l4/call_media/CallMediaBundleLogic.h"
 #include "domain/mesh/l4/call_media/CallMediaLegCoordinator.h"
+#include "domain/mesh/l4/call_media/CallMediaSessionLogic.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 #include "amp/link/Types.h"
 #include "domain/mesh/tests/support/mesh_triple_harness.h"
@@ -510,8 +512,8 @@ TEST_F(AmpCircuitCallMediaComposeTest, CallSurvivesRelaySilenceWithDirectPath) {
 // silent without touching the call.
 class CallPathMigrationTest : public AmpCircuitCallMediaComposeTest {
 protected:
-  /** Relayed call A (offerer) → B, plus a coexisting direct A↔B link. */
-  void LiveRelayedCallWithDirectLink() {
+  /** Relayed call A (offerer) → B, plus (unless `with_direct` is false) a coexisting direct A↔B link. */
+  void LiveRelayedCallWithDirectLink(const bool with_direct = true) {
     // These tests drive MigrateLeg themselves (the automatic move has its own test).
     a_call_->SetAutoMigrateToDirect(false);
     b_call_->SetAutoMigrateToDirect(false);
@@ -530,6 +532,7 @@ protected:
         }
       };
       cbs.on_path_changed = [&](CallMediaLinkKind kind) { b_path_ = kind; };
+      cbs.on_path_lost = [&] { ++b_lost_; };
       cbs.on_failed = [&](const std::string&) { b_failed_ = true; };
     }));
     CallMediaDirectConnectParams params;
@@ -541,6 +544,7 @@ protected:
     CallMediaDirectCallbacks cbs;
     cbs.on_connected = [&] { a_connected_ = true; };
     cbs.on_path_changed = [&](CallMediaLinkKind kind) { a_path_ = kind; };
+    cbs.on_path_lost = [&] { ++a_lost_; };
     cbs.on_failed = [&](const std::string&) { a_failed_ = true; };
     LegCompletion leg_done;
     leg_ = a_call_->StartLeg(params, std::move(cbs), leg_done.Fn(), 8000);
@@ -549,7 +553,13 @@ protected:
     ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
     harness_->PumpUntil([&] { return b_connected_.load() && a_connected_.load(); }, 2500);
     ASSERT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+    if (with_direct) {
+      ConnectDirectLink();
+    }
+  }
 
+  /** Bring up the direct A↔B link ("b-direct" on A). */
+  void ConnectDirectLink() {
     ASSERT_TRUE(static_cast<bool>(harness_->mgr_a().RegisterEndpoint("b-direct", harness_->ma_b)));
     Wait<void> direct_wait;
     harness_->mgr_a().EnsureAssociation("b-direct", direct_wait.LinkFn());
@@ -593,6 +603,8 @@ protected:
   std::atomic<bool> b_failed_{false};
   std::atomic<CallMediaLinkKind> a_path_{CallMediaLinkKind::Unknown};
   std::atomic<CallMediaLinkKind> b_path_{CallMediaLinkKind::Unknown};
+  std::atomic<int> a_lost_{0};
+  std::atomic<int> b_lost_{0};
 };
 
 TEST_F(CallPathMigrationTest, RelayedCallMovesToDirectWithoutLosingAFrame) {
@@ -748,10 +760,10 @@ TEST_F(CallPathMigrationTest, QuietButAliveDirectPathStays) {
       std::chrono::milliseconds(2500)));
 }
 
-// k4-3: the call's only path (the relay) dies and there is no standby. Both ends keep the call
-// (reconnecting, no failure) until the offerer migrates it onto a direct link.
+// k4-3: the call's only path (the relay) dies and the peer has no other link. Both ends keep the
+// call (reconnecting, no failure) and say so, until the offerer migrates it onto a new direct link.
 TEST_F(CallPathMigrationTest, CallWithNoPathLeftReconnectsOntoANewLink) {
-  LiveRelayedCallWithDirectLink();
+  LiveRelayedCallWithDirectLink(/*with_direct=*/false);
   harness_->io_r->SetDropRate(1.0);
   for (int i = 0; i < 60 && !(a_call_->PathState(leg_).reconnecting &&
                               b_call_->PathState(b_call_->PrimaryLegId()).reconnecting);
@@ -764,7 +776,11 @@ TEST_F(CallPathMigrationTest, CallWithNoPathLeftReconnectsOntoANewLink) {
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::MediaReady) << "kept for the reconnect window";
   EXPECT_FALSE(a_failed_.load());
   EXPECT_FALSE(b_failed_.load());
+  harness_->PumpUntil([&] { return a_lost_.load() > 0 && b_lost_.load() > 0; }, 1000);
+  EXPECT_EQ(a_lost_.load(), 1) << "no other link: the loss is reported at once";
+  EXPECT_EQ(b_lost_.load(), 1);
 
+  ConnectDirectLink();
   std::atomic<bool> done{false};
   Roe<void> result = Error("pending");
   a_call_->MigrateLegToKind(leg_, CallMediaLinkKind::Direct, [&](Roe<void> r) {
@@ -781,6 +797,11 @@ TEST_F(CallPathMigrationTest, CallWithNoPathLeftReconnectsOntoANewLink) {
   EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).reconnecting);
   EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
   EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Direct);
+  // The lost path left nothing behind: no retiring leftover, and no channel-less "standby" a later
+  // failover could switch onto.
+  (void)PumpRealUntil([&] { SendNext(); return false; }, std::chrono::milliseconds(1500));  // past the release
+  EXPECT_FALSE(a_call_->PathState(leg_).standby);
+  EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).standby);
   const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
   SendNext();
   harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() > before; }, 2000);
@@ -793,7 +814,7 @@ TEST_F(CallPathMigrationTest, CallWithNoPathLeftReconnectsOntoANewLink) {
 // k4-3: a peer from before k4 tears its leg down when the path dies and redials with a fresh hello
 // for the same call. The reconnecting end takes it instead of refusing it as busy.
 TEST_F(CallPathMigrationTest, FreshHelloFromARedialingPeerReplacesAReconnectingCall) {
-  LiveRelayedCallWithDirectLink();
+  LiveRelayedCallWithDirectLink(/*with_direct=*/false);
   harness_->io_r->SetDropRate(1.0);
   for (int i = 0; i < 60 && !b_call_->PathState(b_call_->PrimaryLegId()).reconnecting; ++i) {
     harness_->clock->Advance(250);
@@ -803,6 +824,7 @@ TEST_F(CallPathMigrationTest, FreshHelloFromARedialingPeerReplacesAReconnectingC
   // The "older" offerer: tear down, then connect again over the direct link.
   a_call_->DetachLeg(leg_);
   harness_->PumpAll();
+  ConnectDirectLink();
   b_connected_ = false;
   CallMediaDirectConnectParams params;
   params.peer_key = "b-direct";
@@ -825,7 +847,7 @@ TEST_F(CallPathMigrationTest, FreshHelloFromARedialingPeerReplacesAReconnectingC
 
 // k4-3: no new path within the reconnect window → the call fails (as a lost link did at once before).
 TEST_F(CallPathMigrationTest, NoNewPathWithinTheWindowFailsTheCall) {
-  LiveRelayedCallWithDirectLink();
+  LiveRelayedCallWithDirectLink(/*with_direct=*/false);
   a_call_->SetReconnectWindowForTest(std::chrono::milliseconds(300));
   b_call_->SetReconnectWindowForTest(std::chrono::milliseconds(300));
   harness_->io_r->SetDropRate(1.0);
@@ -836,6 +858,47 @@ TEST_F(CallPathMigrationTest, NoNewPathWithinTheWindowFailsTheCall) {
   ASSERT_TRUE(a_call_->PathState(leg_).reconnecting);
   EXPECT_TRUE(PumpRealUntil([&] { return a_failed_.load() && b_failed_.load(); }, std::chrono::seconds(3)));
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
+}
+
+// k7: the call's link dies while the peer is still connected on another one — the shape of a
+// simultaneous punch whose dual-dial election drops the link the call had bound. The offerer moves
+// the call there at once and neither end reports a loss ("Reconnecting…" never shows).
+TEST_F(CallPathMigrationTest, LostLinkWithAnotherLinkToThePeerRebindsQuietly) {
+  LiveRelayedCallWithDirectLink();
+  harness_->io_r->SetDropRate(1.0);
+  for (int i = 0; i < 60 && !(a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct &&
+                              b_call_->ActiveLinkKind() == CallMediaLinkKind::Direct);
+       ++i) {
+    harness_->clock->Advance(250);
+    SendNext();
+    harness_->PumpAll();
+  }
+  EXPECT_TRUE(PumpRealUntil(
+      [&] {
+        SendNext();
+        return a_call_->ActiveLinkKind() == CallMediaLinkKind::Direct &&
+               b_call_->ActiveLinkKind() == CallMediaLinkKind::Direct &&
+               !a_call_->PathState(leg_).reconnecting && !b_call_->PathState(b_call_->PrimaryLegId()).reconnecting;
+      },
+      std::chrono::seconds(3)))
+      << "both ends on the surviving direct link";
+  // Past the grace: a landed rebind never reports the loss.
+  PumpRealUntil([&] { SendNext(); return false; }, std::chrono::milliseconds(kCallMediaQuietRebindGraceMs + 300));
+  EXPECT_EQ(a_lost_.load(), 0);
+  EXPECT_EQ(b_lost_.load(), 0);
+  EXPECT_FALSE(a_call_->PathState(leg_).standby) << "the dead relay leaves no standby behind";
+  EXPECT_FALSE(b_call_->PathState(b_call_->PrimaryLegId()).standby);
+  EXPECT_EQ(a_path_.load(), CallMediaLinkKind::Direct);
+  EXPECT_EQ(b_path_.load(), CallMediaLinkKind::Direct);
+  const size_t before = [&] { std::lock_guard lock(mu_); return b_seqs_.size(); }();
+  SendNext();
+  harness_->PumpUntil([&] { std::lock_guard lock(mu_); return b_seqs_.size() > before; }, 2000);
+  {
+    std::lock_guard lock(mu_);
+    EXPECT_GT(b_seqs_.size(), before) << "media flows on the direct link";
+  }
+  EXPECT_FALSE(a_failed_.load());
+  EXPECT_FALSE(b_failed_.load());
 }
 
 // A candidate that goes away mid-migration is abandoned: the call stays on its path, unharmed.
@@ -943,6 +1006,73 @@ TEST_F(CallPathMigrationTest, SimultaneousMigrationsTheOffererWins) {
   EXPECT_EQ(a_call_->PathState(leg_).active_gen, 1u) << "moved exactly once";
   EXPECT_FALSE(a_failed_.load());
   EXPECT_FALSE(b_failed_.load());
+}
+
+// k7: the answerer's hello can reach the offerer before the offerer's own media starts (a punched
+// link lands first); the offerer's media then joins the bundle that hello created. It still holds
+// the offerer role — the glare winner that drives migrations and quiet rebinds — whatever the
+// PeerId order. (It used to keep the default "answerer": with the PeerId against it, nobody drove.)
+TEST_F(CallPathMigrationTest, OffererThatJoinedTheAnswerersHelloStillWinsGlare) {
+  a_call_->SetAutoMigrateToDirect(false);
+  b_call_->SetAutoMigrateToDirect(false);
+  auto nested = EstablishNestedCallMediaPath();
+  ASSERT_TRUE(nested) << nested.error().message;
+  // Make the joining offerer the PeerId loser: only its role can make it win.
+  const bool b_offers = !LocalWinsCallMediaGlare(harness_->peer_id_b, harness_->peer_id_a);
+  CallMediaLegCoordinator& offerer = b_offers ? *b_call_ : *a_call_;
+  CallMediaLegCoordinator& answerer = b_offers ? *a_call_ : *b_call_;
+  std::atomic<bool> hello_in{false};
+  offerer.SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+    params.media_key = key_;
+    params.call_id = call_id_;
+    params.media_epoch = 1;
+    hello_in = true;
+  }));
+  CallMediaDirectConnectParams ans;
+  ans.peer_key = b_offers ? harness_->peer_id_b : harness_->peer_id_a;
+  ans.call_id = call_id_;
+  ans.media_epoch = 1;
+  ans.media_key = key_;
+  ans.offerer = false;
+  LegCompletion ans_done;
+  const CallMediaLegId ans_leg = answerer.StartLeg(ans, {}, ans_done.Fn(), 8000);
+  ASSERT_TRUE(ans_leg);
+  harness_->PumpUntil([&] { return hello_in.load(); }, 2500);
+  ASSERT_TRUE(hello_in.load()) << "the answerer's hello reached the offerer";
+
+  CallMediaDirectConnectParams off = ans;
+  off.peer_key = b_offers ? harness_->peer_id_a : harness_->peer_id_b;
+  off.offerer = true;
+  LegCompletion off_done;
+  const CallMediaLegId off_leg = offerer.StartLeg(off, {}, off_done.Fn(), 8000);
+  ASSERT_TRUE(off_leg);
+  off_done.PumpUntilDone(*harness_);
+  ans_done.PumpUntilDone(*harness_);
+  ASSERT_TRUE(off_done.result) << off_done.result.error().message;
+  ASSERT_TRUE(ans_done.result) << ans_done.result.error().message;
+  ConnectDirectLink();
+
+  // Both ends start a migration at once: the offerer's goes ahead, the answerer's yields.
+  std::atomic<int> finished{0};
+  Roe<void> off_result = Error("pending");
+  Roe<void> ans_result = Roe<void>();
+  offerer.MigrateLegToKind(off_leg, CallMediaLinkKind::Direct, [&](Roe<void> r) {
+    off_result = std::move(r);
+    ++finished;
+  });
+  answerer.MigrateLegToKind(ans_leg, CallMediaLinkKind::Direct, [&](Roe<void> r) {
+    ans_result = std::move(r);
+    ++finished;
+  });
+  for (int i = 0; i < 400 && finished.load() < 2; ++i) {
+    harness_->PumpAll();
+  }
+  ASSERT_EQ(finished.load(), 2);
+  EXPECT_TRUE(off_result) << "the offerer drives: " << off_result.error().message;
+  EXPECT_FALSE(ans_result) << "the answerer's own attempt yields";
+  harness_->PumpUntil([&] { return answerer.ActiveLinkKind() == CallMediaLinkKind::Direct; }, 500);
+  EXPECT_EQ(offerer.ActiveLinkKind(), CallMediaLinkKind::Direct);
+  EXPECT_EQ(answerer.ActiveLinkKind(), CallMediaLinkKind::Direct);
 }
 
 // k3-4 TX-only escalation, make-before-break: a call on a direct link moves onto the relay by

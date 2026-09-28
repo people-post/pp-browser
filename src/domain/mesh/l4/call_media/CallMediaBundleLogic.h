@@ -106,6 +106,11 @@ inline constexpr int64_t kCallMediaActiveHeartbeatMs = 500;
 inline constexpr int64_t kCallMediaStandbyHeartbeatMs = 10000;
 inline constexpr int64_t kCallMediaActiveSilenceFailoverMs = 1500;
 inline constexpr int64_t kCallMediaStandbyStaleMs = 25000;
+/**
+ * k7: a call that lost its path while the peer is still connected on another link moves there
+ * quietly; the loss is reported (`on_path_lost`, "Reconnecting…") only if that has not landed by then.
+ */
+inline constexpr int64_t kCallMediaQuietRebindGraceMs = 1000;
 /** After a failover, silence alone does not switch again for this long (the peer is still moving). */
 inline constexpr int64_t kCallMediaFailoverHoldDownMs = 3000;
 
