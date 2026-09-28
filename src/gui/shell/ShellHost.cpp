@@ -163,6 +163,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_ring_eyebrow", &host.state_.call_ring.eyebrow);
     ctor.Bind("call_ring_conflict_hint", &host.state_.call_ring.conflict_hint);
     ctor.Bind("call_ring_accept_label", &host.state_.call_ring.accept_label);
+    ctor.Bind("call_ring_video_allowed", &host.state_.call_ring.video_allowed);
     ctor.Bind("call_ring_decline_label", &host.state_.call_ring.decline_label);
     ctor.Bind("call_ring_show_pricing", &host.state_.call_ring.show_pricing);
     ctor.Bind("call_ring_pricing_label", &host.state_.call_ring.pricing_label);
@@ -303,6 +304,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("pin_gate_identity_new", &ShellHost::PinGateIdentityNewCallback);
     ctor.BindEventCallback("pin_gate_identity_link", &ShellHost::PinGateIdentityLinkCallback);
     ctor.BindEventCallback("call_accept", &ShellHost::CallAcceptCallback);
+    ctor.BindEventCallback("call_accept_voice", &ShellHost::CallAcceptVoiceCallback);
     ctor.BindEventCallback("call_accept_charge", &ShellHost::CallAcceptChargeCallback);
     ctor.BindEventCallback("call_decline", &ShellHost::CallDeclineCallback);
     ctor.BindEventCallback("call_leave", &ShellHost::CallLeaveCallback);
@@ -879,6 +881,7 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_ring_eyebrow");
   DataModelHost::Instance().Dirty("window", "call_ring_conflict_hint");
   DataModelHost::Instance().Dirty("window", "call_ring_accept_label");
+  DataModelHost::Instance().Dirty("window", "call_ring_video_allowed");
   DataModelHost::Instance().Dirty("window", "call_ring_decline_label");
   DataModelHost::Instance().Dirty("window", "call_ring_show_pricing");
   DataModelHost::Instance().Dirty("window", "call_ring_pricing_label");
@@ -1917,6 +1920,9 @@ std::string ShellHost::SerializeCallRing() const {
   out << "<div class=\"shell-dialog-actions row\">";
   out << "<button class=\"btn btn-secondary\" data-event-click=\"call_decline()\" "
          "data-rml=\"call_ring_decline_label\"></button>";
+  out << "<button class=\"btn btn-secondary\" data-if=\"call_ring_video_allowed\" "
+         "data-event-click=\"call_accept_voice()\">"
+      << Tr("call.ring.accept_voice") << "</button>";
   out << "<button class=\"btn btn-primary shell-call-accept\" "
          "data-class-shell-call-accept--pulse=\"call_ring_pulse\" "
          "data-event-click=\"call_accept()\" data-rml=\"call_ring_accept_label\"></button>";
@@ -2876,6 +2882,14 @@ void ShellHost::CallAcceptCallback(ui::DataModelHandle /*model*/, ui::Event& /*e
   Instance().log().warning << "call_accept click";
   if (Instance().call_actions_.accept_incoming) {
     Instance().call_actions_.accept_incoming();
+  }
+}
+
+void ShellHost::CallAcceptVoiceCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                        const ui::VariantList& /*args*/) {
+  Instance().log().warning << "call_accept_voice click";
+  if (Instance().call_actions_.accept_incoming_voice_only) {
+    Instance().call_actions_.accept_incoming_voice_only();
   }
 }
 

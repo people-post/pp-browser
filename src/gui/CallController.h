@@ -52,7 +52,11 @@ public:
   void OpenGroupCallPicker(const std::string& thread_id);
   void OpenMidCallInvitePicker();
   void InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities);
+  /** Host can encode/send video at all (gates the chat call-type menu's "Video call" item). */
+  bool VideoCallAvailable();
   void AcceptIncoming();
+  /** Callee narrows this call to voice-only before accepting (video ring only). */
+  void AcceptIncomingVoiceOnly();
   /** Take-all when offer > 0; no-op toast when rails unavailable. */
   void AcceptIncomingWithCharge();
   void DeclineIncoming();
@@ -75,6 +79,8 @@ public:
 
 private:
   bool StartCallDirect(const std::string& thread_id, bool video_allowed);
+  /** Shared AcceptIncoming/AcceptIncomingVoiceOnly body (charge decision is always Waive here). */
+  void AcceptIncomingImpl(bool voice_only);
   void SyncShellState();
   void ClearRing();
   void ClearInCall();
@@ -111,6 +117,8 @@ private:
   int64_t last_media_health_log_ms_ = 0;
   int last_warned_quality_ = -1;
   int64_t last_video_refresh_ms_ = 0;
+  /** One-shot guard: camera already turned off because video_allowed narrowed mid-call. */
+  bool camera_sync_off_done_ = false;
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeLayer synced_chrome_;
   CallChromeMode chrome_mode_ = CallChromeMode::Expanded;
