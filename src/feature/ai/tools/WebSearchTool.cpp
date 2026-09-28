@@ -19,8 +19,14 @@ namespace pbr {
 
 namespace {
 
+/** Search results / fetched pages are untrusted and unbounded in principle; cap the read. */
+constexpr size_t kMaxWebSearchResponseBytes = 8u * 1024u * 1024u;
+
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, std::string* out) {
   const size_t total = size * nmemb;
+  if (total > kMaxWebSearchResponseBytes || out->size() > kMaxWebSearchResponseBytes - total) {
+    return 0; // Aborts the transfer; curl_easy_perform returns CURLE_WRITE_ERROR.
+  }
   out->append(static_cast<char*>(contents), total);
   return total;
 }
@@ -139,6 +145,9 @@ Roe<std::string> HttpGet(const std::string& url, const std::vector<std::string>&
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  // Fetched URLs/redirects come from search results (untrusted): never let a redirect hop to
+  // a non-http(s) scheme.
+  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
 
   const CURLcode code = curl_easy_perform(curl);
   curl_slist_free_all(headers);
@@ -175,6 +184,9 @@ Roe<std::string> HttpPost(const std::string& url, const std::string& body,
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  // Fetched URLs/redirects come from search results (untrusted): never let a redirect hop to
+  // a non-http(s) scheme.
+  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
 
   const CURLcode code = curl_easy_perform(curl);
   curl_slist_free_all(headers);
