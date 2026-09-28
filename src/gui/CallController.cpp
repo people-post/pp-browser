@@ -277,8 +277,10 @@ void CallController::ClearInCall() {
   last_media_health_log_ms_ = 0;
   last_warned_quality_ = -1;
   camera_sync_off_done_ = false;
-  auto_camera_pending_ = false;
-  auto_camera_call_id_.clear();
+  // Not auto_camera_pending_ / auto_camera_call_id_: the callee's accept is async, and Tick runs
+  // this for the "no active local call yet" frames between the Accept click and the session going
+  // Active — clearing here dropped the callee's auto camera intermittently (device test
+  // 2026-09-28). The intent is keyed by call_id, so a stale one can never fire for another call.
   in_call_ = {};
   CallVideoTileRenderer::Instance().Clear();
 }
