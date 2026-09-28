@@ -345,7 +345,6 @@
     "call.start.video": "Video call",
     "call.ring.incoming_voice": "Incoming voice call",
     "call.ring.incoming_video": "Incoming video call",
-    "call.ring.incoming_video_allowed": "Incoming call · video allowed",
     "call.ring.eyebrow": "Incoming call",
     "call.ring.accept": "Accept",
     "call.ring.accept_video": "Video answer",

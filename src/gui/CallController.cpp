@@ -535,7 +535,8 @@ void CallController::RefreshPendingRing() {
       ring_.call_id = (*top)->call_id;
       ring_.caller_label = caller_label;
       ring_.video_allowed = (*top)->video_allowed;
-      ring_.media_label = (*top)->video_allowed ? Tr("call.ring.incoming_video_allowed").c_str()
+      // M6: headline just says what kind of call this is; the voice-answer button covers the choice.
+      ring_.media_label = (*top)->video_allowed ? Tr("call.ring.incoming_video").c_str()
                                                 : Tr("call.ring.incoming_voice").c_str();
       if (!was_active) {
         log().warning

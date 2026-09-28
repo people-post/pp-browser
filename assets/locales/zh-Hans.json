@@ -345,7 +345,6 @@
     "call.start.video": "视频通话",
     "call.ring.incoming_voice": "来电语音通话",
     "call.ring.incoming_video": "来电视频通话",
-    "call.ring.incoming_video_allowed": "来电 · 允许视频",
     "call.ring.eyebrow": "来电",
     "call.ring.accept": "接听",
     "call.ring.accept_video": "视频接听",
