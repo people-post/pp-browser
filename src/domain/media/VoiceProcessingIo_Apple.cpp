@@ -18,8 +18,11 @@ namespace {
 constexpr double kSampleRate = 48000.0;
 constexpr size_t kRingSamples = 48000 / 5;  // 200 ms each way
 constexpr UInt32 kMaxFramesPerSlice = 4096;
-/** Ask for a 10 ms hardware IO buffer; VPIO on macOS otherwise ran 4096-frame (85 ms) cycles. */
+#if TARGET_OS_OSX
+/** Ask for a 10 ms hardware IO buffer; VPIO on macOS otherwise ran 4096-frame (85 ms) cycles.
+ *  (iOS sets the IO buffer on AVAudioSession instead.) */
 constexpr UInt32 kPreferredIoFrames = 480;
+#endif
 constexpr AudioUnitElement kOutputBus = 0;  // speaker
 constexpr AudioUnitElement kInputBus = 1;   // mic
 

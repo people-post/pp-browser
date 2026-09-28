@@ -15,6 +15,10 @@ namespace {
 /** Default earpiece; user opts into speakerphone. Reset each call on Deactivate. */
 std::atomic<bool> g_speakerphone{false};
 std::atomic<bool> g_session_active{false};
+/** Bumped by every ActivateForVoipCall; a delayed Deactivate retry gives up once it changed. */
+std::atomic<uint64_t> g_session_gen{0};
+constexpr int kDeactivateRetries = 5;
+constexpr int64_t kDeactivateRetryNs = 150 * NSEC_PER_MSEC;
 
 /** Diagnostic: what iOS actually ended up with (category / mode / options / output port). */
 void LogRoute(const char* where) {
@@ -38,12 +42,35 @@ void ApplyRoute(bool speaker_on) {
 }
 
 /**
- * Loudspeaker uses the default mode: on device (2026-09-27) both voice modes (VoiceChat and
- * VideoChat) left the loudspeaker very quiet at max volume, while SDL's former ModeDefault was
- * loud. The earpiece keeps VoiceChat (call-volume scale, earpiece tuning).
+ * VoiceChat on both routes: the voice-processing unit (echo cancellation) is only tuned for
+ * VoiceChat/VideoChat. The loudspeaker is still reached via DefaultToSpeaker + port override; its
+ * volume is made up by the engine's gain on the voice-processing path.
  */
-NSString* ModeForRoute(bool speaker_on) {
-  return speaker_on ? AVAudioSessionModeDefault : AVAudioSessionModeVoiceChat;
+NSString* ModeForRoute(bool /*speaker_on*/) {
+  return AVAudioSessionModeVoiceChat;
+}
+
+/**
+ * Device closes are queued on the media device thread, so setActive:NO can land while the
+ * voice-processing unit is still running and fail with IsBusy. Retry a few times, unless a newer
+ * call (or ringback) activated the session meanwhile — then that one owns it.
+ */
+void DeactivateAttempt(uint64_t gen, int attempts_left) {
+  if (g_session_gen.load() != gen || g_session_active.load()) {
+    return;
+  }
+  AVAudioSession* session = [AVAudioSession sharedInstance];
+  NSError* error = nil;
+  if ([session setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:&error]) {
+    return;
+  }
+  if (error.code == AVAudioSessionErrorCodeIsBusy && attempts_left > 0) {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, kDeactivateRetryNs),
+                   dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0),
+                   ^{ DeactivateAttempt(gen, attempts_left - 1); });
+    return;
+  }
+  NSLog(@"CallAudioSession Deactivate: setActive:NO failed: %@", error);
 }
 
 } // namespace
@@ -58,6 +85,10 @@ void ActivateForVoipCall() {
   }
   [session setCategory:AVAudioSessionCategoryPlayAndRecord withOptions:options error:&error];
   [session setMode:ModeForRoute(g_speakerphone.load()) error:&error];
+  // 48 kHz / 20 ms like the engine: fewer resampling steps and smaller voice-processing chunks.
+  [session setPreferredSampleRate:48000 error:&error];
+  [session setPreferredIOBufferDuration:0.02 error:&error];
+  g_session_gen.fetch_add(1);
   [session setActive:YES error:&error];
   g_session_active.store(true);
   ApplyRoute(g_speakerphone.load());
@@ -71,8 +102,8 @@ void Deactivate() {
   AVAudioSession* session = [AVAudioSession sharedInstance];
   NSError* error = nil;
   [session overrideOutputAudioPort:AVAudioSessionPortOverrideNone error:&error];
-  [session setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:&error];
   (void)error;
+  DeactivateAttempt(g_session_gen.load(), kDeactivateRetries);
 }
 
 bool SupportsSpeakerToggle() {
