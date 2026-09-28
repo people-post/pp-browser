@@ -43,6 +43,18 @@ bool EqualsIgnoreCase(std::string_view a, std::string_view b) {
   return true;
 }
 
+/** Constant-time (for equal-length inputs) — avoids leaking the token via a timing side channel. */
+bool ConstantTimeEquals(std::string_view a, std::string_view b) {
+  if (a.size() != b.size()) {
+    return false;
+  }
+  unsigned char diff = 0;
+  for (size_t i = 0; i < a.size(); ++i) {
+    diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+  }
+  return diff == 0;
+}
+
 bool AuthOk(const StatusHttpAuthConfig& auth, std::string_view authorization) {
   if (auth.bearer_token.empty()) {
     return true;
@@ -52,7 +64,7 @@ bool AuthOk(const StatusHttpAuthConfig& auth, std::string_view authorization) {
       !EqualsIgnoreCase(authorization.substr(0, prefix.size()), prefix)) {
     return false;
   }
-  return authorization.substr(prefix.size()) == auth.bearer_token;
+  return ConstantTimeEquals(authorization.substr(prefix.size()), auth.bearer_token);
 }
 
 StatusHttpResponse JsonResponse(int code, const Object& body) {
