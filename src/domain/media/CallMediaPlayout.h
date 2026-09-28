@@ -112,8 +112,10 @@ public:
   static constexpr uint32_t kResyncJump = 50;
   /** Surplus depth held for a whole window (500 ms) is trimmed back to the target. */
   static constexpr uint32_t kDrainWindowPops = 25;
-  /** This many late packets in a row is a sender restart even when the jump is small (early in
-   *  a call next_seq_ < kResyncJump, so the jump test alone would drop ~1 s of the new stream). */
+  /** This many late packets in a row with a restarted stream's low seqs (< kResyncJump) is a
+   *  sender restart even when the backward step is small (early in a call next_seq_ < kResyncJump,
+   *  so the jump test alone would drop ~1 s of the new stream). Late stragglers with higher seqs —
+   *  e.g. a reorder burst from path migration mid-call — are never a restart. */
   static constexpr uint32_t kRestartLateRun = 3;
 
   void Push(AudioPacket packet) {
@@ -121,10 +123,13 @@ public:
       return;
     }
     if (primed_ && packet.seq < next_seq_) {
-      if (packet.seq + kResyncJump >= next_seq_ && ++late_run_ < kRestartLateRun) {
-        arrival_.OnArrival(packet.seq, packet.recv_ms);
-        ++drops_late_;
-        return;
+      if (packet.seq + kResyncJump >= next_seq_) {
+        late_run_ = packet.seq < kResyncJump ? late_run_ + 1 : 0;
+        if (late_run_ < kRestartLateRun) {
+          arrival_.OnArrival(packet.seq, packet.recv_ms);
+          ++drops_late_;
+          return;
+        }
       }
       Reset(); // sender restarted its seq (re-StartSfu / BeginSession): re-prime on the new stream
     }
