@@ -48,8 +48,11 @@ struct SoftMigrateJoinedPeer {
 };
 
 /**
- * Sticky call initiator = earliest joined_at among Joined peers (V021/V022 payer).
- * Ties / missing stamps: first identity in list order among candidates without stamps.
+ * Sticky call initiator = earliest joined_at among Joined peers (V021/V022 payer). After the
+ * initiator leaves, the same rule names the next owner of re-picks (V050) — every participant must
+ * compute the same answer from its own rows, so the order never depends on row order: stamped
+ * before unstamped, then earliest stamp, then smallest identity. Stamps converge on the roster
+ * sender's clock (CallRoster overwrites joined_at for Joined rows).
  */
 std::string SelectCallInitiator(const std::vector<SoftMigrateJoinedPeer>& joined);
 

@@ -268,6 +268,21 @@ Apply the repo-wide [composition vocabulary](../../docs/architecture/COMPOSITION
 **Non-goals:** Ownership-tree change (Topology under Lifecycle); moving SoftMigrate races into Lifecycle; rewriting every non-calls debt site in this phase.  
 **Exit:** topology unit + inbound/dual-stack compose gtests green; Topology/Workflow headers free of `CallLifecycleTypes` Status writers.
 
+## gt — Group call topology (V050)
+
+One rule set for 3+ invitees — [V050](DECISIONS.md#v050--group-call-topology-11-first-planned-hop-monotonic). Each step lands with a Tier B case in `call_group_stack_compose_test` (B-GROUP-CALL).
+
+- [x] gt0 — ADR + CALLS.md topology rules + pricing P004 (deferred paid-hop handover)
+- [x] gt1 — Invites carry the full roster **and** planners arm on joined count (ship together); regression: first acceptor's path independent of invite order (`EveryInviteeSeesTheWholeInviteList`, `SecondInviteeAcceptingFirstGetsTheDirectPath`, `SimultaneousAcceptsConvergeOnTheHop`)
+- [x] gt2 — Initiator leaves with ≥2 remaining: call stays on the hop; earliest-joined remaining owns re-picks (`InitiatorLeaveKeepsTheRestOnTheHop`; `SelectCallInitiator` order-independent tie-break)
+- [ ] gt3 — `planned_hop` picked at StartCall from the invite list (no attach) and carried in `CallInvite`; SoftMigrate at the third join uses it
+- [ ] gt4 — Accept reports planned-hop reachability + reachable relays; one adjustment at the third join from the intersection, else refuse the joiner
+- [ ] gt5 — Later joins re-pick only when the hop is full or unreachable for the newcomer (distinct wire reasons; one attempt per join)
+- [ ] gt6 — Hard lab: second hop for gt4/gt5 under NAT (B-HARD-GROUP-CALL-NAT variants)
+
+**Non-goals:** re-evaluating on leave; multi-SFU; paid-hop ownership handover (pricing P004).  
+**Exit:** gt1–gt5 gtests green; B-HARD-GROUP-CALL-NAT green.
+
 ## Later horizons
 
 - [ ] `video_hi` / simulcast

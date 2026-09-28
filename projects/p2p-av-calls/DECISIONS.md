@@ -884,7 +884,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 |----------|------------|------------------|
 | **2** | Prefer **direct** Amp call-media (`/pp-browser/realtime/1.0.0`) | **publish → punch → circuit-carried nested Session** (A024); never auto SoftMigrate / `media_relay` attach for NAT alone |
 | **≥3** | SoftMigrate → blind **`media_relay`** star (V021) | Circuit may still be used underneath to *reach* the hop PeerId |
-| **N drops to 2** | **Stay on SFU** until hangup (v1) | Avoid P2P↔SFU flip-flop (V021) |
+| **N drops to 2** | **Stay on SFU** until hangup (v1) | Avoid P2P↔SFU flip-flop (V021); monotonic group rules in [V050](#v050--group-call-topology-11-first-planned-hop-monotonic) |
 
 ### Normative rules
 
@@ -1223,3 +1223,28 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 
 ---
 
+---
+
+## V050 — Group call topology: 1:1 first, planned hop, monotonic
+
+**Date:** 2026-09-28  
+**Status:** Accepted — phase [gt](PHASES.md#gt--group-call-topology-v050)  
+**Decision:** One small rule set for calls with 3+ invitees. Topology only moves **up** (direct → hop, or hop → a hop that can serve a newcomer); it is never re-evaluated because someone left.
+
+| When | Rule |
+|------|------|
+| `StartCall` (≥2 invitees) | The initiator picks a **planned hop** from the **invite list** (everyone it hopes will join, not only acceptors) with the usual policy — unknown / non-LAN invitees → Wide → public org seed. The planned hop rides each `CallInvite` as `planned_hop` (**not** `sfu_hint`, which keeps meaning "the call is already on this hop"). Nobody attaches yet. |
+| Ringing | Invitees may probe the planned hop; `CallAccept` reports whether it is reachable plus the relays the invitee can reach. |
+| First accept (2 joined) | **Direct 1:1** between initiator and acceptor (V038). Media planners arm on **joined** count on every side — ringing / invited rows never arm the hop planner. |
+| Third join (≥3 joined) | SoftMigrate onto the planned hop — or, if an accept reported it unreachable, **one** adjustment to a relay every joined participant reported reachable. No such relay → keep the planned hop and refuse the joiner (`CallHopRefuse`). |
+| Later joins | Re-pick **only** when the current hop is **insufficient** for the newcomer: the hop is **full** (quote / attach refused for capacity) or the newcomer **cannot reach** it. Everyone moves (no second relay for one guest — multi-SFU is a non-goal). One attempt per join; failure → keep the hop, refuse the joiner. |
+| Anyone leaves | No re-evaluation. N dropping to 2 stays on the hop until hangup (V038 row "N drops to 2"). Recovery from a hop **failure** (guest re-attach, re-pick) is not re-evaluation and stays. |
+| Initiator leaves | The earliest-joined remaining participant becomes the hop owner for re-picks (`SoftMigrateLogic` initiator = earliest `joined_at` among Joined). Paid-hop ownership handover (confirmation dialog, prepaid window, renewal) is deferred to pricing [P004](../pricing/DECISIONS.md#p004--paid-hop-ownership-handover-deferred). |
+
+**Invariants:** invites carry the full roster (every invitee, not a snapshot taken mid-loop) **and** planners arm on joined count — the two ship together. The first acceptor's path used to depend on invite order (it took the 1:1 path only because its invite omitted later invitees); fixing the roster alone would make it wait for a hop while the initiator dials it directly.
+
+**Rationale:** Monotonic topology removes P2P↔SFU flip-flop and leave-driven races (V021). Deciding the planned hop from the invite list makes the pick independent of accept order and lets invitees check it before media depends on it; picking but not attaching avoids paying for a hop while phones ring. 1:1-first keeps the cheap direct path when only one invitee answers (V038: no hop-routed 1:1 for NAT).
+
+**Alternatives rejected:** Go to the hop before any accept (a declined group becomes a hop-routed 1:1 for the whole call); pick only at the third join (accept-order dependent, no pre-check); re-evaluate on leave (flip-flop, more races); a second relay for an unreachable guest (multi-SFU non-goal).
+
+**Cross-link:** [V021](#v021--blind-media-forwarder-11-p2p-soft-migrate-to-group-sfu) · [V022](#v022--media-relay-bandwidth--quote-no-surprise-payer-bills) · [V035](#v035--scope-aware-softmigrate-hop-pick) · [V038](#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3); tests `call_group_stack_compose_test` (B-GROUP-CALL), hard-lab B-HARD-GROUP-CALL-NAT.

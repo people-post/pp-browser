@@ -193,6 +193,13 @@ public:
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
 
 private:
+  /**
+   * `co_invitees`: everyone StartCall is inviting now. Their rows are written only after each
+   * invite is on the wire (V045), so the roster snapshot lists them as Invited explicitly — every
+   * invitee sees the whole invite list (V050), not the part sent before it.
+   */
+  Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
+                              const std::vector<std::string>& co_invitees);
   /** Remote accepted (CallAccept, or implicitly by its media hello): join, key, media kickoff. */
   Roe<void> ApplyRemoteAccept(const CallAcceptDetail& accept, const std::string& identity,
                               const std::string& local_identity, bool implicit);

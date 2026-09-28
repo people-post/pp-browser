@@ -10,6 +10,8 @@
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 
+#include <algorithm>
+
 namespace pbr {
 
 CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
@@ -230,7 +232,7 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
                       << " err=" << warmed.error().message;
       }
     }
-    if (auto invited = InviteParticipant(call_id, invitee); !invited) {
+    if (auto invited = InviteParticipant(call_id, invitee, invitee_identities); !invited) {
       return invited.error();
     }
   }
@@ -248,6 +250,33 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
 }
 
 Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, const std::string& invitee_identity) {
+  return InviteParticipant(call_id, invitee_identity, {});
+}
+
+namespace {
+
+/** Roster entries for invitees the store has no row for yet (V050 full invite roster). */
+void AppendInvitedCoInvitees(std::vector<CallRosterEntry>& participants, const std::vector<std::string>& co_invitees,
+                             const std::string& local_identity) {
+  for (const std::string& identity : co_invitees) {
+    if (identity.empty() || identity == local_identity) {
+      continue;
+    }
+    const bool listed = std::any_of(participants.begin(), participants.end(),
+                                    [&identity](const CallRosterEntry& e) { return e.identity == identity; });
+    if (!listed) {
+      CallRosterEntry entry;
+      entry.identity = identity;
+      entry.state = CallParticipantState::Invited;
+      participants.push_back(std::move(entry));
+    }
+  }
+}
+
+} // namespace
+
+Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
+                                                 const std::vector<std::string>& co_invitees) {
   auto local = host_.wire.local_relay_identity();
   if (!local) {
     return local.error();
@@ -305,6 +334,7 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
       invite.participants = std::move(roster->participants);
     }
   }
+  AppendInvitedCoInvitees(invite.participants, co_invitees, *local);
   if (host_.reach.prefetch_reach) {
     host_.reach.prefetch_reach(invitee_identity);
   }
@@ -602,11 +632,7 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
   if (auto joined_after = sessions_.CountJoined(call_id)) {
     n_joined = *joined_after;
   }
-  size_t n_active = n_joined;
-  if (auto all = sessions_.ListParticipants(call_id); all) {
-    n_active = CountMediaPlannerActiveParticipants(*all);
-  }
-  const size_t planner_n = EffectiveMediaPlannerN(n_joined, n_active);
+  const size_t planner_n = n_joined;  // V050: joined only — ringing invitees never arm the hop
   const bool topology_took_media =
       host_.hop.on_local_accept_joined && host_.hop.on_local_accept_joined(call_id, planner_n, row.sfu_hint);
   bool schedule_answerer_direct = false;

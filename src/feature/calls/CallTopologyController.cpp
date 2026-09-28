@@ -361,11 +361,11 @@ void CallTopologyController::OnAttachWaitTimerFire(const std::string& call_id) {
 }
 
 CallHopPlannerApplyContext CallTopologyController::BuildHopPlannerContext(
-    const std::string& call_id, size_t effective_n, bool has_sfu_hint) const {
+    const std::string& call_id, size_t joined_count, bool has_sfu_hint) const {
   const auto arming_ports = arming_.Get();
   CallHopPlannerApplyContext ctx;
   ctx.allows_hop_path = !arming_ports->IsBound() || arming_ports->hop_ops_allowed();
-  ctx.should_arm_hop = ShouldArmHopPlanner(effective_n);
+  ctx.should_arm_hop = ShouldArmHopPlanner(joined_count);
   ctx.has_sfu_hint = has_sfu_hint;
   ctx.soft_migrate_in_flight = flight_.in_flight;
   ctx.sfu_attached = sfu_.attached && media_.IsSfuMode() &&
@@ -399,12 +399,6 @@ void CallTopologyController::Apply(CallHopPlannerEvent ev, const std::string& ca
       n_joined = *j;
     }
   }
-  size_t n_active = n_joined;
-  if (!call_id.empty()) {
-    if (auto all = sessions_.ListParticipants(call_id); all) {
-      n_active = CountMediaPlannerActiveParticipants(*all);
-    }
-  }
   bool has_hint = false;
   if (!call_id.empty()) {
     if (auto session = sessions_.LoadSession(call_id);
@@ -413,7 +407,7 @@ void CallTopologyController::Apply(CallHopPlannerEvent ev, const std::string& ca
     }
   }
   const CallHopPlannerApplyContext ctx =
-      BuildHopPlannerContext(call_id, EffectiveMediaPlannerN(n_joined, n_active), has_hint);
+      BuildHopPlannerContext(call_id, n_joined, has_hint);
   const CallHopPlannerPhaseOutcome out = DecideCallHopPlannerPhase(sfu_.hop_planner_phase, ev, ctx);
   if (out.decision == CallHopPlannerDecision::Ignore) {
     log().info << "planner=Hop ignore event=" << CallHopPlannerEventName(ev)
@@ -1276,19 +1270,15 @@ void CallTopologyController::OnPeerMediaRelayCapLearned(const std::string& call_
   if (auto joined = sessions_.CountJoined(call_id)) {
     n_joined = *joined;
   }
-  size_t n_active = n_joined;
-  if (auto all = sessions_.ListParticipants(call_id); all) {
-    n_active = CountMediaPlannerActiveParticipants(*all);
-  }
   CallRelayCapNudgeInput in;
   in.media_relay_newly_true = true;
-  in.effective_n = EffectiveMediaPlannerN(n_joined, n_active);
+  in.joined_count = n_joined;
   in.sfu_attach_wait_active = IsSfuAttachWaitActive();
   in.sfu_attached = IsSfuAttached();
   in.already_on_sfu_for_call = IsOnSfuForCall(call_id);
   if (!ShouldNudgeSoftMigrateOnRelayCap(in)) {
     log().info << "SoftMigrate relay-cap nudge skipped (1:1 stay Direct) call_id=" << call_id
-               << " n=" << in.effective_n << " peer=" << peer_id;
+               << " n=" << in.joined_count << " peer=" << peer_id;
     return;
   }
   Apply(CallHopPlannerEvent::SoftMigrateRequested, call_id);

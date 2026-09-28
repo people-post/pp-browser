@@ -5,24 +5,22 @@
 namespace pbr {
 
 std::string SelectCallInitiator(const std::vector<SoftMigrateJoinedPeer>& joined) {
-  std::string best;
-  int64_t best_at = 0;
-  bool have_stamp = false;
-  for (const SoftMigrateJoinedPeer& p : joined) {
-    if (p.identity.empty()) {
-      continue;
+  const SoftMigrateJoinedPeer* best = nullptr;
+  auto earlier = [](const SoftMigrateJoinedPeer& a, const SoftMigrateJoinedPeer& b) {
+    if (a.joined_at.has_value() != b.joined_at.has_value()) {
+      return a.joined_at.has_value();
     }
-    if (p.joined_at) {
-      if (!have_stamp || *p.joined_at < best_at) {
-        best_at = *p.joined_at;
-        best = p.identity;
-        have_stamp = true;
-      }
-    } else if (!have_stamp && best.empty()) {
-      best = p.identity;
+    if (a.joined_at && *a.joined_at != *b.joined_at) {
+      return *a.joined_at < *b.joined_at;
+    }
+    return a.identity < b.identity;
+  };
+  for (const SoftMigrateJoinedPeer& p : joined) {
+    if (!p.identity.empty() && (!best || earlier(p, *best))) {
+      best = &p;
     }
   }
-  return best;
+  return best ? best->identity : std::string();
 }
 
 SoftMigrateAction DecideSoftMigrate(const SoftMigrateDecisionInput& in) {

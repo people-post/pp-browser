@@ -1691,11 +1691,6 @@ bool CallSessionManager::P2pExpectGroupSfuMigration(const std::string& call_id) 
   if (auto n = sessions_.CountJoined(call_id)) {
     in.joined_count = *n;
   }
-  if (auto all = sessions_.ListParticipants(call_id); all) {
-    in.active_roster_count = CountMediaPlannerActiveParticipants(*all);
-  } else {
-    in.active_roster_count = in.joined_count;
-  }
   if (auto session = sessions_.LoadSession(call_id);
       session && *session && (*session)->sfu_hint && !(*session)->sfu_hint->empty()) {
     in.has_sfu_hint = true;

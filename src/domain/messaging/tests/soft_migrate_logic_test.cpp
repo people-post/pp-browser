@@ -14,6 +14,23 @@ TEST(SoftMigrateLogicTest, SelectCallInitiatorEarliestJoinedAt) {
   EXPECT_EQ(SelectCallInitiator(peers), "account:A");
 }
 
+// V050: after the initiator leaves, every participant must name the same next owner from its own
+// rows — equal stamps or missing stamps must not fall back to row order.
+TEST(SoftMigrateLogicTest, SelectCallInitiatorIsIndependentOfRowOrder) {
+  const std::vector<SoftMigrateJoinedPeer> tie_a = {{"account:C", 2000}, {"account:B", 2000}};
+  const std::vector<SoftMigrateJoinedPeer> tie_b = {{"account:B", 2000}, {"account:C", 2000}};
+  EXPECT_EQ(SelectCallInitiator(tie_a), "account:B");
+  EXPECT_EQ(SelectCallInitiator(tie_b), "account:B");
+
+  const std::vector<SoftMigrateJoinedPeer> unstamped_a = {{"account:C", std::nullopt}, {"account:B", std::nullopt}};
+  const std::vector<SoftMigrateJoinedPeer> unstamped_b = {{"account:B", std::nullopt}, {"account:C", std::nullopt}};
+  EXPECT_EQ(SelectCallInitiator(unstamped_a), "account:B");
+  EXPECT_EQ(SelectCallInitiator(unstamped_b), "account:B");
+
+  const std::vector<SoftMigrateJoinedPeer> mixed = {{"account:A", std::nullopt}, {"account:C", 3000}};
+  EXPECT_EQ(SelectCallInitiator(mixed), "account:C") << "a stamped peer outranks an unstamped one";
+}
+
 TEST(SoftMigrateLogicTest, MidCallNonInitiatorInviterWaits) {
   // A is sticky initiator; B invites C and receives CallAccept — must not pick (V021/V022).
   SoftMigrateDecisionInput in;

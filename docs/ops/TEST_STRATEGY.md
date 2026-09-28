@@ -162,7 +162,7 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 | CallStack + CallUiBackend façade | `call_ui_backend_stack_test` — InitializeStores→BuildSessions + `BindTestMediaPath` → Available/InviteSeen→Accept→Leave, **Invite→InCall media path**, Decline, StartCall, Broadcast arm/accept, ResetSessions unavailable |
 | Group CallStack product wire (N=3) | `call_group_stack_compose_test` — three CallStacks, A invites B+C: direct 1:1 at N=2 → SoftMigrate at N=3 onto one media_relay hop (in-process blind forwarder: subscribed streams only, never back to the sender); every side InCall/HopLive and decodes **each other publisher**; guest Leave keeps the remaining pair's audio; initiator Leave Idles all (**B-GROUP-CALL**) |
 | Dual CallStack product wire | `call_dual_stack_compose_test` — Offer↔Answer Invite/Accept/InCall/Leave (**either side Leave Idles peer**); **Answer Decline → offerer Idle**; **K-cycle**; **Accept second invite ends prior** (B-CONFLICT) |
-| N→planner select (Direct vs Hop) | `call_media_planner_select_logic_test` — Effective N; relay-cap SoftMigrate nudge gates |
+| N→planner select (Direct vs Hop) | `call_media_planner_select_logic_test` — joined N arms Hop (V050: ringing never counts); relay-cap SoftMigrate nudge gates |
 | Direct / Hop planner tables (V039) | `call_direct_planner_logic_test`, `call_hop_planner_logic_test` |
 
 Run (from a configured desktop build tree):

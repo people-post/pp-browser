@@ -201,7 +201,7 @@ private:
   void SubscribePublisherStream(uint32_t stream_id);
   void SetHopPlannerPhase(CallHopPlannerPhase next, CallHopPlannerEvent ev, const std::string& call_id);
   void ReportHopProgress(CallHopPlannerPhase phase, const std::string& call_id);
-  CallHopPlannerApplyContext BuildHopPlannerContext(const std::string& call_id, size_t effective_n,
+  CallHopPlannerApplyContext BuildHopPlannerContext(const std::string& call_id, size_t joined_count,
                                                     bool has_sfu_hint) const;
   void ArmAttachWaitTimer(const std::string& call_id, int64_t deadline_ms);
   void CancelAttachWaitTimer();

@@ -6,6 +6,8 @@
 #include "feature/conversations/tests/call_stack_compose_support.h"
 
 #include "domain/mesh/l4/media_relay/IMediaRelayClient.h"
+#include "domain/messaging/CallSessionStore.h"
+#include "domain/messaging/SoftMigrateLogic.h"
 
 #include <cstdint>
 #include <deque>
@@ -386,11 +388,8 @@ protected:
     return out;
   }
 
-  /**
-   * A invites B and C from a group thread; B accepts (N=2 while C rings), then C (N=3). Returns
-   * the call id once every side is InCall on the hop and decodes both other publishers.
-   */
-  std::string RunGroupCallToHopLive() {
+  /** A starts a call from a group thread inviting B and C; returns the call id (media key shared). */
+  std::string StartGroupCall() {
     Thread thread;
     // Windows: thread id is a directory name under threads/ — no ':'.
     thread.id = "thread-group-call";
@@ -408,13 +407,39 @@ protected:
     const std::string call_id = started->call_id;
     ShareMediaKey(call_id);
     PumpWire();
+    return call_id;
+  }
 
-    AcceptInvite(kB, call_id);
-    DrainUntil([&]() {
-      PumpWire();
-      return sides_[kB].stack->HasActiveLocalCall();
-    });
-    AcceptInvite(kC, call_id);
+  /** Joined + direct media on both ends, and neither is on the hop (V050: 1:1 first). */
+  bool DirectPairLive(size_t x, size_t y) const {
+    for (size_t i : {x, y}) {
+      const CallMediaEngine* engine = sides_[i].stack->MediaEngine();
+      if (sides_[i].ui->Phase() != CallPhase::InCall || !engine || !engine->IsActive() || relays_[i]->IsAttached()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * `first` accepts (N=2 → direct 1:1 with A), then `second` (N=3 → SoftMigrate onto the hop).
+   * With `together`, both accept before any call-control moves (simultaneous accepts).
+   * Returns the call id once every side is InCall on the hop and decodes both other publishers.
+   */
+  std::string RunGroupCallToHopLive(size_t first = kB, size_t second = kC, bool together = false) {
+    const std::string call_id = StartGroupCall();
+    if (call_id.empty()) {
+      return {};
+    }
+    AcceptInvite(first, call_id);
+    if (!together) {
+      DrainUntil([&]() {
+        PumpWire();
+        return DirectPairLive(kA, first);
+      });
+      EXPECT_TRUE(DirectPairLive(kA, first)) << "first accept must be a direct 1:1 (V050):" << Describe(call_id);
+    }
+    AcceptInvite(second, call_id);
     DrainUntil(
         [&]() {
           PumpWire();
@@ -423,6 +448,22 @@ protected:
         20000);
     EXPECT_TRUE(GroupLive(call_id)) << "group call never went live on the hop:" << Describe(call_id);
     return call_id;
+  }
+
+  /** Hop owner (re-picks) as side `i` computes it from its own rows (V050: earliest joined). */
+  std::string OwnerSeenBy(size_t i, const std::string& call_id) const {
+    CallSessionStore sessions(sides_[i].store->ProfileDbPath());
+    auto rows = sessions.ListParticipants(call_id);
+    if (!rows) {
+      return {};
+    }
+    std::vector<SoftMigrateJoinedPeer> joined;
+    for (const CallParticipant& p : *rows) {
+      if (p.state == CallParticipantState::Joined) {
+        joined.push_back({p.identity, p.joined_at});
+      }
+    }
+    return SelectCallInitiator(joined);
   }
 
   struct Envelope {
@@ -457,6 +498,79 @@ TEST_F(CallGroupStackComposeTest, ThreeWayCallSoftMigratesOntoOneHop) {
   // V021/V022: the initiator (earliest joined, session payer) quotes the hop it picked.
   ASSERT_GE(relays_[kA]->QuoteCalls(), 1);
   EXPECT_EQ(relays_[kA]->QuotedHops().front(), kHopPeerId);
+}
+
+// V050: every invitee's CallInvite carries the whole invite list, not the part StartCall had sent
+// before it — the first invitee must know about the second.
+TEST_F(CallGroupStackComposeTest, EveryInviteeSeesTheWholeInviteList) {
+  const std::string call_id = StartGroupCall();
+  ASSERT_FALSE(call_id.empty());
+  for (size_t i : {kB, kC}) {
+    CallSessionStore sessions(sides_[i].store->ProfileDbPath());  // read-only view of the stack's rows
+    auto rows = sessions.ListParticipants(call_id);
+    ASSERT_TRUE(rows) << rows.error().message;
+    std::set<std::string> ids;
+    for (const CallParticipant& p : *rows) {
+      ids.insert(p.identity);
+    }
+    for (size_t j = 0; j < kSides; ++j) {
+      EXPECT_EQ(ids.count(sides_[j].local_identity), 1u) << "side " << i << " roster misses side " << j;
+    }
+  }
+}
+
+// V050: planners arm on joined count, so whichever invitee accepts first gets the direct 1:1 —
+// the path no longer depends on invite order (C was invited second).
+TEST_F(CallGroupStackComposeTest, SecondInviteeAcceptingFirstGetsTheDirectPath) {
+  const std::string call_id = RunGroupCallToHopLive(kC, kB);
+  ASSERT_FALSE(call_id.empty());
+  for (size_t i = 0; i < kSides; ++i) {
+    EXPECT_TRUE(OnHopFor(i, call_id)) << "side " << i;
+  }
+}
+
+// Both invitees accept before any call-control moves: each counts 2 joined from its own view, the
+// initiator sees 3 — roster + CallSfuAttach must still bring everyone onto the one hop.
+TEST_F(CallGroupStackComposeTest, SimultaneousAcceptsConvergeOnTheHop) {
+  const std::string call_id = RunGroupCallToHopLive(kB, kC, /*together=*/true);
+  ASSERT_FALSE(call_id.empty());
+  for (size_t i = 0; i < kSides; ++i) {
+    EXPECT_EQ(sides_[i].ui->Phase(), CallPhase::InCall) << "side " << i;
+    EXPECT_TRUE(OnHopFor(i, call_id)) << "side " << i;
+  }
+}
+
+// V050: the initiator leaving is not a re-evaluation either — the other two stay on the hop and keep
+// hearing each other, and both name the same next owner of re-picks (earliest joined: B).
+TEST_F(CallGroupStackComposeTest, InitiatorLeaveKeepsTheRestOnTheHop) {
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  EXPECT_EQ(OwnerSeenBy(kB, call_id), sides_[kA].local_identity);
+
+  sides_[kA].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kA].ui->Phase() == CallPhase::Idle && !relays_[kA]->IsAttached() &&
+           OwnerSeenBy(kB, call_id) == sides_[kB].local_identity &&
+           OwnerSeenBy(kC, call_id) == sides_[kB].local_identity;
+  });
+  EXPECT_EQ(sides_[kA].ui->Phase(), CallPhase::Idle);
+  EXPECT_FALSE(relays_[kA]->IsAttached()) << "the leaving initiator must detach from the hop";
+  EXPECT_EQ(OwnerSeenBy(kB, call_id), sides_[kB].local_identity) << "B must see itself as the next owner";
+  EXPECT_EQ(OwnerSeenBy(kC, call_id), sides_[kB].local_identity) << "C must agree B is the next owner";
+
+  const uint64_t b_before = RxFrom(kB, kC);
+  const uint64_t c_before = RxFrom(kC, kB);
+  DrainUntil([&]() {
+    PumpWire();
+    return RxFrom(kB, kC) >= b_before + kMinRxFrames && RxFrom(kC, kB) >= c_before + kMinRxFrames;
+  });
+  for (size_t i : {kB, kC}) {
+    EXPECT_EQ(sides_[i].ui->Phase(), CallPhase::InCall) << "side " << i;
+    EXPECT_TRUE(OnHopFor(i, call_id)) << "side " << i << " left the hop after the initiator left";
+  }
+  EXPECT_GE(RxFrom(kB, kC), b_before + kMinRxFrames) << "B stopped hearing C:" << Describe(call_id);
+  EXPECT_GE(RxFrom(kC, kB), c_before + kMinRxFrames) << "C stopped hearing B:" << Describe(call_id);
 }
 
 // A guest leaving a live group call ends only their media: the other two stay InCall and keep
