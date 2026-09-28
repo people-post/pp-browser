@@ -87,6 +87,37 @@ TEST(MobilityClassifierTest, ChurnSignalsCloseTogetherCountOnce) {
   EXPECT_EQ(d.Evaluate(t0 + minutes(2)), MobilityClass::Stationary) << "two moves, four signals";
 }
 
+// PR #228 review: a churn-driven Mobile relaxes with time alone — the classifier says when to
+// re-evaluate, and at that time Evaluate returns Stationary without any new event.
+TEST(MobilityClassifierTest, ChurnDrivenMobileNamesWhenItCanRelax) {
+  const auto t0 = Clock::now();
+  MobilityClassifier c;
+  c.OnAttachment(Wifi(), false, t0);
+  for (int i = 1; i <= 3; ++i) {
+    c.OnAttachment(Wifi(), true, t0 + minutes(i));
+  }
+  ASSERT_EQ(c.Evaluate(t0 + minutes(3)), MobilityClass::Mobile);
+  auto now = t0 + minutes(3);
+  auto next = c.NextReevaluationAt(now);
+  ASSERT_TRUE(next.has_value());
+  EXPECT_EQ(*next, t0 + minutes(8)) << "5 min after the last change";
+  // No events: evaluate at each named time (always ahead of the last) until it settles.
+  for (int hops = 0; hops < 5 && next; ++hops) {
+    ASSERT_GT(*next, now) << "never a time already past (the timer would spin)";
+    now = *next;
+    c.Evaluate(now);
+    next = c.NextReevaluationAt(now);
+  }
+  EXPECT_EQ(c.Class(), MobilityClass::Stationary);
+  EXPECT_LE(now, t0 + minutes(12) + seconds(1)) << "calm and the window drained";
+  EXPECT_FALSE(c.NextReevaluationAt(now).has_value()) << "stationary: nothing pending";
+
+  MobilityClassifier cell;
+  cell.OnAttachment(Cellular(), false, t0);
+  ASSERT_EQ(cell.Evaluate(t0), MobilityClass::Mobile);
+  EXPECT_FALSE(cell.NextReevaluationAt(t0).has_value()) << "cellular: only a network change relaxes it";
+}
+
 TEST(MobilityClassifierTest, OfflineKeepsTheClass) {
   const auto t0 = Clock::now();
   MobilityClassifier c;

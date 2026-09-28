@@ -1,5 +1,6 @@
 #include "domain/messaging/CallMobility.h"
 
+#include <algorithm>
 #include <mutex>
 
 namespace pbr {
@@ -73,6 +74,22 @@ void MobilityClassifier::OnAttachment(const MobilityAttachment& attachment, cons
 void MobilityClassifier::OnObservedAddressChanged(const Clock::time_point now) { NoteChurn(now); }
 
 void MobilityClassifier::SetOverride(std::optional<MobilityClass> pinned) { override_ = pinned; }
+
+std::optional<MobilityClassifier::Clock::time_point> MobilityClassifier::NextReevaluationAt(
+    const Clock::time_point now) const {
+  if (override_ || class_ != MobilityClass::Mobile || churn_.empty() || !attachment_ ||
+      attachment_->cellular || attachment_->expensive) {
+    return std::nullopt;  // pinned, not Mobile, or Mobile for a reason only an event changes
+  }
+  // The oldest change leaving the window is always ahead (Evaluate dropped the expired ones);
+  // the calm point may already have passed while too many changes are still in the window.
+  auto next = churn_.front() + kMobilityChurnWindow + std::chrono::milliseconds(1);
+  const auto calm_at = churn_.back() + kMobilityCalmBeforeStationary;
+  if (calm_at > now) {
+    next = std::min(next, calm_at);
+  }
+  return next;
+}
 
 void MobilityClassifier::NoteChurn(const Clock::time_point now) {
   if (!churn_.empty() && now - churn_.back() < kMobilityChurnDedupe) {

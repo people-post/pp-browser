@@ -602,6 +602,10 @@ void CallMediaBridge::OnRelayStandbyFire() {
       });
 }
 
+void CallMediaBridge::ApplyPathPolicyToTransport(const std::string& call_id) {
+  direct_.SetAutoMigrateToDirect(PathPolicyFor(call_id).upgrade_to_direct);
+}
+
 // --- k6: the pair's path policy changed (a mobility class flipped mid-call) ----------------------
 
 void CallMediaBridge::OnPathPolicyChanged(const std::string& call_id) {
@@ -611,6 +615,7 @@ void CallMediaBridge::OnPathPolicyChanged(const std::string& call_id) {
   const CallPathPolicy policy = PathPolicyFor(call_id);
   log().info << "path policy call_id=" << call_id << " upgrade=" << (policy.upgrade_to_direct ? 1 : 0)
              << " relay=" << CallRelayRoleName(policy.relay_role);
+  ApplyPathPolicyToTransport(call_id);
   if (!policy.upgrade_to_direct) {
     CancelDirectUpgrade();
   } else if (direct_planner_phase_ == CallDirectPlannerPhase::Live) {
@@ -763,6 +768,7 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
   if (arming_.on_connected) {
     arming_.on_connected(call_id);
   }
+  ApplyPathPolicyToTransport(call_id);
   ArmDirectUpgrade(call_id);
   ArmRelayStandby(call_id);
   host_.P2pNotifyRingChanged();
@@ -1275,6 +1281,7 @@ void CallMediaBridge::StartDirectConnect(const std::string& call_id, const std::
   }
   // V049 / B31: both roles dial immediately (simultaneous open). CallMediaDirect claims one
   // stream and elects under A026; inbound still wins if it lands first (keep_inbound).
+  ApplyPathPolicyToTransport(call_id);
   CallMediaConnectRequest request;
   request.reach = BuildReachRequest(params);
   request.params = std::move(params);

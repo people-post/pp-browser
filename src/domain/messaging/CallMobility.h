@@ -66,6 +66,11 @@ public:
   /** Re-evaluates (hysteresis decays with time); returns the class. */
   MobilityClass Evaluate(Clock::time_point now);
   MobilityClass Class() const { return class_; }
+  /**
+   * When `Evaluate` could next answer differently with no new event: a churn-driven Mobile relaxes
+   * once the calm period passes or churn leaves the window. nullopt when only an event can change it.
+   */
+  std::optional<Clock::time_point> NextReevaluationAt(Clock::time_point now) const;
 
 private:
   void NoteChurn(Clock::time_point now);

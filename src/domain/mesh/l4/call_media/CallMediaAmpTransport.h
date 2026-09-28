@@ -38,6 +38,7 @@ public:
   CallMediaLinkKind ActiveLinkKind() const override;
   void MigrateTo(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override;
   CallMediaLinkKind StandbyLinkKind() const override;
+  void SetAutoMigrateToDirect(bool allow) override;
   void AddStandby(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override;
   void Detach() override;
 

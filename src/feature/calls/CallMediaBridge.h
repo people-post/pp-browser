@@ -278,6 +278,8 @@ private:
   void ScheduleReanchor(const std::string& call_id, std::chrono::milliseconds delay);
   void Reanchor(const std::string& call_id);
   void CancelReanchor();
+  /** k6: the transport's own relayed → direct move follows the pair policy (anchor = stay). */
+  void ApplyPathPolicyToTransport(const std::string& call_id);
   CallPathPolicy PathPolicyFor(const std::string& call_id) const {
     return path_policy_ ? path_policy_(call_id) : CallPathPolicy{};
   }

@@ -100,6 +100,8 @@ void CallMediaAmpTransport::MigrateTo(const CallMediaLinkKind kind, std::functio
   coordinator_.MigrateLegToKind(leg, kind, std::move(done));
 }
 
+void CallMediaAmpTransport::SetAutoMigrateToDirect(const bool allow) { coordinator_.SetAutoMigrateToDirect(allow); }
+
 CallMediaLinkKind CallMediaAmpTransport::StandbyLinkKind() const {
   const CallMediaLegId leg = ActiveLegId();
   return leg ? coordinator_.PathState(leg).standby_kind : CallMediaLinkKind::Unknown;

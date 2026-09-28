@@ -31,6 +31,7 @@ CallStack::CallStack() {
 }
 
 CallStack::~CallStack() {
+  mobility_alive_->store(false, std::memory_order_release);
   Shutdown();
   // On the owner: hooks run only there, so none is mid-flight on this stack once this returns.
   CallsThread::RunAndWait([this]() { CallsThread::RemoveAfterTaskHook(publish_hook_); });
@@ -91,6 +92,7 @@ void CallStack::ReevaluateLocalMobilityOnOwner() {
   const MobilityClass before = local_mobility_published_.load(std::memory_order_acquire);
   const MobilityClass now = local_mobility_.Evaluate(MobilityClassifier::Clock::now());
   local_mobility_published_.store(now, std::memory_order_release);
+  ScheduleMobilityReevaluationOnOwner();
   if (now == before) {
     return;
   }
@@ -102,6 +104,32 @@ void CallStack::ReevaluateLocalMobilityOnOwner() {
   if (active && active->has_value()) {
     call_sessions_->AnnounceCapsUpdate();
     NotifyPathPolicyChangedOnOwner((*active)->call_id);
+  }
+}
+
+void CallStack::ScheduleMobilityReevaluationOnOwner() {
+  CancelMobilityReevaluationOnOwner();
+  const auto at = local_mobility_.NextReevaluationAt(MobilityClassifier::Clock::now());
+  if (!at) {
+    return;
+  }
+  const auto delay = std::max(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                  *at - MobilityClassifier::Clock::now()),
+                              std::chrono::milliseconds(1));
+  mobility_timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(delay, [this, alive = mobility_alive_]() {
+    CallsThread::Post([this, alive]() {
+      if (alive->load(std::memory_order_acquire)) {
+        mobility_timer_id_ = 0;
+        ReevaluateLocalMobilityOnOwner();
+      }
+    });
+  });
+}
+
+void CallStack::CancelMobilityReevaluationOnOwner() {
+  if (mobility_timer_id_ != 0) {
+    AppRuntime::CancelCoordinatorTimer(mobility_timer_id_);
+    mobility_timer_id_ = 0;
   }
 }
 
@@ -753,6 +781,7 @@ void CallStack::Shutdown() {
 
 void CallStack::ReleaseOnOwner() {
   PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  CancelMobilityReevaluationOnOwner();
   DetachMeshMedia();
   if (MeshMediaPlane* shared = mesh_media()) {
     shared->SetOnRelayChosen({});

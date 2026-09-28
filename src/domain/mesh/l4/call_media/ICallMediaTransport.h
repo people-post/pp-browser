@@ -137,6 +137,11 @@ public:
       done(Error("call-media path migration not supported"));
     }
   }
+  /**
+   * k6: whether the transport may move a relayed call onto a direct link to the peer by itself
+   * (the pair policy — a mobile pair anchors on the relay). Default: transports without it ignore.
+   */
+  virtual void SetAutoMigrateToDirect(bool allow) { (void)allow; }
   /** k6: link kind of the call's warm standby path; Unknown when it has none. */
   virtual CallMediaLinkKind StandbyLinkKind() const { return CallMediaLinkKind::Unknown; }
   /**

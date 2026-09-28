@@ -303,6 +303,8 @@ public:
     done(Roe<void>());
   }
   CallMediaLinkKind StandbyLinkKind() const override { return standby_kind.load(); }
+  void SetAutoMigrateToDirect(bool allow) override { auto_migrate_to_direct = allow; }
+  std::atomic<bool> auto_migrate_to_direct{true};
   void AddStandby(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override {
     ++add_standby_calls;
     if (!standby_ok) {
@@ -1151,6 +1153,8 @@ TEST_F(CallMediaBridgeAnswererStartTest, MobilePairStaysOnTheRelayUntilThePolicy
   }
   ASSERT_EQ(bridge_->DirectPlannerPhase(), CallDirectPlannerPhase::Live);
   EXPECT_EQ(circuit_->upgrade_calls.load(), 0) << "the relay is the anchor";
+  EXPECT_FALSE(transport_->auto_migrate_to_direct.load())
+      << "nor may the transport move the call onto a direct link that happens to be up";
 
   remote = MobilityClass::Stationary;  // the peer's caps_update
   CallsThread::RunAndWait([&] { bridge_->OnPathPolicyChanged(call_id); });
@@ -1159,6 +1163,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, MobilePairStaysOnTheRelayUntilThePolicy
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   EXPECT_GE(circuit_->upgrade_calls.load(), 1) << "both stationary: punch for a direct path";
+  EXPECT_TRUE(transport_->auto_migrate_to_direct.load());
   bridge_->PrepareForTeardown(0);
 }
 

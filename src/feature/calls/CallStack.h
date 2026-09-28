@@ -224,6 +224,11 @@ private:
   void ReevaluateLocalMobilityOnOwner();
   void NoteRemoteMobilityOnOwner(const std::string& call_id, MobilityClass mobility);
   void NotifyPathPolicyChangedOnOwner(const std::string& call_id);
+  /** A churn-driven Mobile relaxes with time alone: re-evaluate when the classifier says it could. */
+  void ScheduleMobilityReevaluationOnOwner();
+  void CancelMobilityReevaluationOnOwner();
+  uint64_t mobility_timer_id_ = 0;
+  std::shared_ptr<std::atomic<bool>> mobility_alive_ = std::make_shared<std::atomic<bool>>(true);
   SharedPorts<CallUiState> ui_state_;
   CallsThread::HookId publish_hook_ = 0;
   std::atomic<int> lifecycle_port_binds_{0};
