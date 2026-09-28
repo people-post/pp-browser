@@ -501,6 +501,15 @@ TEST(AudioJitterBufferTest, HardCapIsFortyFrames) {
   EXPECT_EQ(buf.speech_drops(), 20u);
 }
 
+TEST(AudioJitterBufferTest, PressureStillSignalsAtTwoHundredMs) {
+  AudioJitterBuffer buf;
+  for (uint32_t s = 1; s <= 10; ++s) buf.Push(Pkt(s));
+  EXPECT_GE(buf.Pressure(0), 1.0);
+  AudioJitterBuffer buf2;
+  for (uint32_t s = 1; s <= 8; ++s) buf2.Push(Pkt(s));
+  EXPECT_EQ(buf2.Pressure(0), 0.0);
+}
+
 TEST(MixPcmSatTest, Saturates) {
   std::vector<int16_t> out = {30000, -30000};
   std::vector<int16_t> in = {10000, -10000};

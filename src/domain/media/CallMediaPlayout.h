@@ -107,6 +107,7 @@ public:
   static constexpr size_t kMaxFrames = 40;
   /** Surplus above target this size is treated as speech content (unknown), not pure jitter slack. */
   static constexpr size_t kSpeechTrimSurplus = 5;
+  static constexpr size_t kPressureFullFrames = 10; // the pre-adaptive 200 ms cap: congestion signal for bitrate adaptation
   /** A seq this far behind the expected one is a sender restart (seq reset), not a late packet. */
   static constexpr uint32_t kResyncJump = 50;
   /** Surplus depth held for a whole window (500 ms) is trimmed back to the target. */
@@ -219,10 +220,10 @@ public:
   /** 0 = healthy, 1 = severe (underruns dominate). Unchanged from the PCM buffer. */
   double Pressure(uint64_t window_pops) const {
     if (window_pops == 0) {
-      return queue_.size() >= kMaxFrames ? 1.0 : 0.0;
+      return queue_.size() >= kPressureFullFrames ? 1.0 : 0.0;
     }
     const double u = static_cast<double>(underruns_) / static_cast<double>(window_pops);
-    const double fill = static_cast<double>(queue_.size()) / static_cast<double>(kMaxFrames);
+    const double fill = static_cast<double>(queue_.size()) / static_cast<double>(kPressureFullFrames);
     return std::min(1.0, std::max(u * 2.0, fill > 0.9 ? fill : 0.0));
   }
 
