@@ -33,6 +33,9 @@ using test::StartCallNow;
 // Not a built-in or retired org seed (NormalizeMeshConfig would swap those for the defaults).
 constexpr char kHopPeerId[] = "12D3KooWGroupCallComposeMediaRelayHop";
 constexpr char kHopMultiaddr[] = "/ip4/1.2.3.4/udp/443/adp/1.0.0/p2p/12D3KooWGroupCallComposeMediaRelayHop";
+// A second reachable hop (gt3): ranks first on A after StartCall; the planned hop must still win.
+constexpr char kOtherHopPeerId[] = "12D3KooWGroupCallComposeOtherHop";
+constexpr char kOtherHopMultiaddr[] = "/ip4/1.2.3.5/udp/443/adp/1.0.0/p2p/12D3KooWGroupCallComposeOtherHop";
 /** Audio frames (20 ms) each side must decode from each other publisher. */
 constexpr uint64_t kMinRxFrames = 25;
 
@@ -450,6 +453,12 @@ protected:
     return call_id;
   }
 
+  std::optional<CallPlannedHop> PlannedHopSeenBy(size_t i, const std::string& call_id) const {
+    CallSessionStore sessions(sides_[i].store->ProfileDbPath());
+    auto session = sessions.LoadSession(call_id);
+    return session && session->has_value() ? (*session)->planned_hop : std::nullopt;
+  }
+
   /** Hop owner (re-picks) as side `i` computes it from its own rows (V050: earliest joined). */
   std::string OwnerSeenBy(size_t i, const std::string& call_id) const {
     CallSessionStore sessions(sides_[i].store->ProfileDbPath());
@@ -571,6 +580,41 @@ TEST_F(CallGroupStackComposeTest, InitiatorLeaveKeepsTheRestOnTheHop) {
   }
   EXPECT_GE(RxFrom(kB, kC), b_before + kMinRxFrames) << "B stopped hearing C:" << Describe(call_id);
   EXPECT_GE(RxFrom(kC, kB), c_before + kMinRxFrames) << "C stopped hearing B:" << Describe(call_id);
+}
+
+// V050 gt3: the initiator plans the hop from the invite list at StartCall — every invitee holds it
+// before anyone accepts, nobody attaches during the 1:1 phase, and the third join migrates onto
+// the planned hop even when another hop ranks first by then.
+TEST_F(CallGroupStackComposeTest, ThirdJoinMigratesOntoThePlannedHop) {
+  const std::string call_id = StartGroupCall();
+  ASSERT_FALSE(call_id.empty());
+  for (size_t i = 0; i < kSides; ++i) {
+    auto planned = PlannedHopSeenBy(i, call_id);
+    ASSERT_TRUE(planned) << "side " << i << " has no planned hop";
+    EXPECT_EQ(planned->peer_id, kHopPeerId) << "side " << i;
+    EXPECT_FALSE(relays_[i]->IsAttached()) << "side " << i << " attached before anyone accepted";
+  }
+  // The listing changes before the group forms: a new hop now ranks first on the initiator.
+  sides_[kA].app_config.mesh.bootstrap_peers = {kOtherHopMultiaddr, kHopMultiaddr};
+  sides_[kA].stack->RebindMeshMedia();
+
+  AcceptInvite(kB, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return DirectPairLive(kA, kB);
+  });
+  ASSERT_TRUE(DirectPairLive(kA, kB)) << "first accept must be a direct 1:1:" << Describe(call_id);
+  AcceptInvite(kC, call_id);
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return GroupLive(call_id);
+      },
+      20000);
+  EXPECT_TRUE(GroupLive(call_id)) << "group did not go live on the planned hop:" << Describe(call_id);
+  for (size_t i = 0; i < kSides; ++i) {
+    EXPECT_FALSE(hop_.InSession(relays_[i].get(), kOtherHopPeerId, call_id)) << "side " << i << " on the unplanned hop";
+  }
 }
 
 // A guest leaving a live group call ends only their media: the other two stay InCall and keep

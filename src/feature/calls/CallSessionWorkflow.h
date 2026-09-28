@@ -80,6 +80,10 @@ public:
     std::function<void(const CallHopRefuseDetail&)> on_inbound_hop_refuse;
     std::function<bool(const std::string& call_id)> is_on_sfu_for_call;
     std::function<bool()> has_media_relay_hop_candidates;
+    /** V050: hop planned from the invite list at StartCall (no attach); nullopt = none. */
+    std::function<std::optional<CallPlannedHop>(const std::vector<std::string>& invitees,
+                                                const std::string& local_identity)>
+        plan_hop_for_invitees;
   };
 
   /** Session chrome / arming observations (projected from Lifecycle by CSM). */

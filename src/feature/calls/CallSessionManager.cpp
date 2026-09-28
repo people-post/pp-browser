@@ -152,6 +152,9 @@ void CallSessionManager::BindWorkflowHostPorts() {
   ports.hop.on_joined_count_observed = [this](const std::string& call_id, size_t n) {
     topology_.OnJoinedCountObserved(call_id, n);
   };
+  ports.hop.plan_hop_for_invitees = [this](const std::vector<std::string>& invitees, const std::string& local) {
+    return topology_.PlanHopForInvitees(invitees, local);
+  };
   ports.hop.clear_sfu_attach_wait = [this]() { topology_.ClearSfuAttachWait(); };
   ports.hop.on_inbound_sfu_attach = [this](const std::string& call_id, const CallSfuAttachDetail& d) {
     return topology_.OnInboundSfuAttach(call_id, d);

@@ -416,7 +416,23 @@ std::vector<MeshHopCandidate> CallHopMigrateWorkflow::RankHopsForSoftMigrate(Hop
              << " prefer_local=" << (prefer_local_flag ? 1 : 0)
              << " first=" << (ranked.empty() ? "" : ranked.front().peer_id) << " call_id=" << pick.call_id;
   if (!prefer_hop_peer_id.empty()) {
-    ranked = PreferNamedHopFirst(std::move(ranked), prefer_hop_peer_id);
+    return PreferNamedHopFirst(std::move(ranked), prefer_hop_peer_id);
+  }
+  // V050: the hop planned from the invite list at StartCall goes first — invitees were told about
+  // it, so it stays a candidate even if the listing changed since.
+  if (pick.session && pick.session->planned_hop && !pick.session->planned_hop->peer_id.empty()) {
+    const CallPlannedHop& planned = *pick.session->planned_hop;
+    const bool listed = std::any_of(ranked.begin(), ranked.end(),
+                                    [&](const MeshHopCandidate& c) { return c.peer_id == planned.peer_id; });
+    if (!listed && !planned.multiaddr.empty()) {
+      MeshHopCandidate hop;
+      hop.peer_id = planned.peer_id;
+      hop.multiaddr = planned.multiaddr;
+      hop.dialable = true;
+      ranked.insert(ranked.begin(), std::move(hop));
+    }
+    ranked = PreferNamedHopFirst(std::move(ranked), planned.peer_id);
+    log().info << "SoftMigrate planned hop first=" << planned.peer_id << " call_id=" << pick.call_id;
   }
   return ranked;
 }

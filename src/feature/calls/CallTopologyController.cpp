@@ -605,56 +605,87 @@ std::vector<std::string> CallTopologyController::ResolveLocalAdvertiseMas() cons
   return {};
 }
 
-CallHopScope CallTopologyController::InferScopeForCall(const std::string& call_id,
-                                                       const std::string& local_identity) const {
-  const std::vector<std::string> local_mas = ResolveLocalAdvertiseMas();
-
-  std::unordered_map<std::string, std::vector<std::string>> remotes;
-  if (relay_deps_.resolve_remote_listen_by_peer) {
-    remotes = relay_deps_.resolve_remote_listen_by_peer();
-  }
-  // Restrict to joined remotes; missing entry → empty vector → Wide.
+std::vector<std::string> CallTopologyController::JoinedRemoteIdentities(const std::string& call_id,
+                                                                     const std::string& local_identity) const {
+  std::vector<std::string> out;
   if (auto participants = sessions_.ListParticipants(call_id)) {
-    std::unordered_map<std::string, std::vector<std::string>> joined_remotes;
     for (const CallParticipant& p : *participants) {
-      if (p.state != CallParticipantState::Joined || p.identity.empty() ||
-          p.identity == local_identity) {
-        continue;
-      }
-      auto it = remotes.find(p.identity);
-      if (it != remotes.end()) {
-        joined_remotes[p.identity] = it->second;
-      } else {
-        joined_remotes[p.identity] = {};
+      if (p.state == CallParticipantState::Joined && !p.identity.empty() && p.identity != local_identity) {
+        out.push_back(p.identity);
       }
     }
-    remotes = std::move(joined_remotes);
   }
-  return InferCallHopScope(local_mas, remotes);
+  return out;
+}
+
+CallHopScope CallTopologyController::InferScopeForPeers(const std::vector<std::string>& remote_identities) const {
+  std::unordered_map<std::string, std::vector<std::string>> known;
+  if (relay_deps_.resolve_remote_listen_by_peer) {
+    known = relay_deps_.resolve_remote_listen_by_peer();
+  }
+  // Missing entry → empty vector → Wide.
+  std::unordered_map<std::string, std::vector<std::string>> remotes;
+  for (const std::string& identity : remote_identities) {
+    auto it = known.find(identity);
+    remotes[identity] = it != known.end() ? it->second : std::vector<std::string>{};
+  }
+  return InferCallHopScope(ResolveLocalAdvertiseMas(), remotes);
+}
+
+CallHopScope CallTopologyController::InferScopeForCall(const std::string& call_id,
+                                                       const std::string& local_identity) const {
+  return InferScopeForPeers(JoinedRemoteIdentities(call_id, local_identity));
+}
+
+std::optional<CallPlannedHop> CallTopologyController::PlanHopForInvitees(const std::vector<std::string>& invitees,
+                                                                         const std::string& local_identity) const {
+  if (!relay_deps_.relay) {
+    return std::nullopt;
+  }
+  std::vector<std::string> remotes;
+  for (const std::string& identity : invitees) {
+    if (!identity.empty() && identity != local_identity) {
+      remotes.push_back(identity);
+    }
+  }
+  std::string local_peer_id;
+  if (auto pid = relay_deps_.relay->LocalPeerIdBase58()) {
+    local_peer_id = *pid;
+  }
+  const std::string local_ma = ResolveLocalAdvertiseMa(local_peer_id);
+  const CallHopScope scope = InferScopeForPeers(remotes);
+  const bool lan_ok = LanReachabilityConfirmedForPeers(remotes);
+  const bool prefer_local = relay_deps_.prefer_local_as_hop && relay_deps_.relay->IsStarted() && !local_peer_id.empty();
+  const auto ranked = SelectCallMediaHop(RankedMediaHopCandidates(), scope, local_peer_id, prefer_local, local_ma, lan_ok);
+  for (const MeshHopCandidate& hop : ranked) {
+    if (!hop.peer_id.empty()) {
+      CallPlannedHop planned{hop.peer_id, hop.multiaddr.empty() ? ResolveHopMultiaddr(hop.peer_id) : hop.multiaddr};
+      log().info << "planned hop=" << planned.peer_id << " scope=" << static_cast<int>(scope)
+                 << " invitees=" << remotes.size();
+      return planned;
+    }
+  }
+  return std::nullopt;
 }
 
 bool CallTopologyController::LanReachabilityConfirmedForCall(
     const std::string& call_id, const std::string& local_identity) const {
+  return LanReachabilityConfirmedForPeers(JoinedRemoteIdentities(call_id, local_identity));
+}
+
+bool CallTopologyController::LanReachabilityConfirmedForPeers(const std::vector<std::string>& remote_identities) const {
   if (!relay_deps_.peer_lan_confirmed) {
-    return false;
-  }
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
     return false;
   }
   std::unordered_map<std::string, std::vector<std::string>> remotes;
   if (relay_deps_.resolve_remote_listen_by_peer) {
     remotes = relay_deps_.resolve_remote_listen_by_peer();
   }
-  for (const CallParticipant& p : *participants) {
-    if (p.state != CallParticipantState::Joined || p.identity.empty() ||
-        p.identity == local_identity) {
-      continue;
-    }
-    if (relay_deps_.peer_lan_confirmed(p.identity)) {
+  for (const std::string& identity : remote_identities) {
+    if (relay_deps_.peer_lan_confirmed(identity)) {
       return true;
     }
-    auto it = remotes.find(p.identity);
+    auto it = remotes.find(identity);
     if (it == remotes.end()) {
       continue;
     }

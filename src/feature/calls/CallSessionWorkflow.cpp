@@ -122,6 +122,39 @@ Roe<void> CallSessionWorkflow::LeaveCallIfActiveExcept(const std::string& keep_c
   return {};
 }
 
+namespace {
+
+size_t CountDistinctInvitees(const std::vector<std::string>& invitees, const std::string& local_identity) {
+  std::vector<std::string> seen;
+  for (const std::string& identity : invitees) {
+    if (!identity.empty() && identity != local_identity &&
+        std::find(seen.begin(), seen.end(), identity) == seen.end()) {
+      seen.push_back(identity);
+    }
+  }
+  return seen.size();
+}
+
+/** Roster entries for invitees the store has no row for yet (V050 full invite roster). */
+void AppendInvitedCoInvitees(std::vector<CallRosterEntry>& participants, const std::vector<std::string>& co_invitees,
+                             const std::string& local_identity) {
+  for (const std::string& identity : co_invitees) {
+    if (identity.empty() || identity == local_identity) {
+      continue;
+    }
+    const bool listed = std::any_of(participants.begin(), participants.end(),
+                                    [&identity](const CallRosterEntry& e) { return e.identity == identity; });
+    if (!listed) {
+      CallRosterEntry entry;
+      entry.identity = identity;
+      entry.state = CallParticipantState::Invited;
+      participants.push_back(std::move(entry));
+    }
+  }
+}
+
+} // namespace
+
 Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread_id, const bool video_allowed,
                                                const std::vector<std::string>& invitee_identities) {
   if (invitee_identities.empty()) {
@@ -221,6 +254,16 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
     return hist.error();
   }
 
+  // V050: plan the group hop from everyone invited (not attached until the third join).
+  if (CountDistinctInvitees(invitee_identities, *local) >= 2 && host_.hop.plan_hop_for_invitees) {
+    if (auto planned = host_.hop.plan_hop_for_invitees(invitee_identities, *local)) {
+      session.planned_hop = std::move(planned);
+      if (auto saved = sessions_.UpsertSession(session); !saved) {
+        return saved.error();
+      }
+    }
+  }
+
   for (const std::string& invitee : invitee_identities) {
     if (invitee.empty() || invitee == *local) {
       continue;
@@ -253,27 +296,6 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   return InviteParticipant(call_id, invitee_identity, {});
 }
 
-namespace {
-
-/** Roster entries for invitees the store has no row for yet (V050 full invite roster). */
-void AppendInvitedCoInvitees(std::vector<CallRosterEntry>& participants, const std::vector<std::string>& co_invitees,
-                             const std::string& local_identity) {
-  for (const std::string& identity : co_invitees) {
-    if (identity.empty() || identity == local_identity) {
-      continue;
-    }
-    const bool listed = std::any_of(participants.begin(), participants.end(),
-                                    [&identity](const CallRosterEntry& e) { return e.identity == identity; });
-    if (!listed) {
-      CallRosterEntry entry;
-      entry.identity = identity;
-      entry.state = CallParticipantState::Invited;
-      participants.push_back(std::move(entry));
-    }
-  }
-}
-
-} // namespace
 
 Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
                                                  const std::vector<std::string>& co_invitees) {
@@ -328,6 +350,7 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   invite.origin_thread_id = (*session)->origin_thread_id;
   invite.origin_group_id = (*session)->origin_group_id;
   invite.sfu_hint = (*session)->sfu_hint;
+  invite.planned_hop = (*session)->planned_hop;
   invite.expires_at = pending.expires_at;
   if (host_.wire.build_roster_detail) {
     if (auto roster = host_.wire.build_roster_detail(call_id); roster) {
@@ -1142,6 +1165,7 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
   session.media_epoch = invite->media_epoch > 0 ? invite->media_epoch : 1;
   session.media_key_id = invite->media_key_id;
   session.sfu_hint = invite->sfu_hint;
+  session.planned_hop = invite->planned_hop;
   (void)sessions_.UpsertSession(session);
 
   // Media key embedded in invite (preferred); CallMediaKey message remains a backup.

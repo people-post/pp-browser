@@ -121,6 +121,12 @@ Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) 
   if (detail.sfu_hint) {
     json.set("sfu_hint", *detail.sfu_hint);
   }
+  if (detail.planned_hop && !detail.planned_hop->peer_id.empty()) {
+    json.set("planned_hop", detail.planned_hop->peer_id);
+    if (!detail.planned_hop->multiaddr.empty()) {
+      json.set("planned_hop_ma", detail.planned_hop->multiaddr);
+    }
+  }
   if (detail.expires_at) {
     json.set("expires_at", *detail.expires_at);
   }
@@ -165,6 +171,9 @@ Roe<CallInviteDetail> CallControlCodec::DecodeInvite(const std::string& detail_j
   detail.origin_thread_id = json->getString("origin_thread_id");
   detail.origin_group_id = json->getString("origin_group_id");
   detail.sfu_hint = json->getString("sfu_hint");
+  if (auto planned = json->getString("planned_hop"); planned && !planned->empty()) {
+    detail.planned_hop = CallPlannedHop{*planned, json->getString("planned_hop_ma").value_or("")};
+  }
   detail.expires_at = json->getIf<int64_t>("expires_at");
   ReadParticipants(*json, detail.participants);
   detail.media_epoch = static_cast<uint32_t>(json->getNonNegInt("media_epoch").value_or(1));

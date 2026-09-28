@@ -112,6 +112,13 @@ public:
   std::vector<MeshHopCandidate> RankedMediaHopCandidates() const;
   /** Resolve dialable multiaddr for a hop PeerId (contacts ∪ seeds ∪ L1 address book). */
   std::string ResolveHopMultiaddr(const std::string& hop_peer_id) const;
+  /**
+   * V050: the hop to plan for everyone the initiator invites (joined or not) — same ranking as
+   * SoftMigrate PickHop with the scope inferred from the invitees (unknown → Wide → org seed). No
+   * quote, no attach. nullopt when no candidate.
+   */
+  std::optional<CallPlannedHop> PlanHopForInvitees(const std::vector<std::string>& invitees,
+                                                   const std::string& local_identity) const;
 
   void BeginSfuAttachWait(const std::string& call_id);
   void ClearSfuAttachWait();
@@ -192,6 +199,10 @@ private:
   CallHopScope InferScopeForCall(const std::string& call_id, const std::string& local_identity) const;
   bool LanReachabilityConfirmedForCall(const std::string& call_id,
                                        const std::string& local_identity) const;
+  /** Joined remotes of the call (local excluded) — the peers SoftMigrate scope / LAN checks cover. */
+  std::vector<std::string> JoinedRemoteIdentities(const std::string& call_id, const std::string& local_identity) const;
+  CallHopScope InferScopeForPeers(const std::vector<std::string>& remote_identities) const;
+  bool LanReachabilityConfirmedForPeers(const std::vector<std::string>& remote_identities) const;
   bool IsActiveCallForTopology(const std::string& call_id) const;
   void FanOutSfuAttachForHop(const std::string& call_id, const std::string& hop_peer_id,
                              const std::string& local_identity);

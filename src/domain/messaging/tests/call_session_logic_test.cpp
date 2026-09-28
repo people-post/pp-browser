@@ -295,6 +295,29 @@ TEST(CallControlCodecTest, InviteOfferAmountRoundTrip) {
   EXPECT_EQ(decoded_accept->offer_amount_minor, 25);
 }
 
+// V050: planned_hop is additive — round-trips with its multiaddr, absent stays absent (old peers),
+// and never aliases sfu_hint (the hop the call is on).
+TEST(CallControlCodecTest, InvitePlannedHopRoundTrip) {
+  CallInviteDetail invite;
+  invite.call_id = "call:group";
+  invite.inviter_identity = "account:a";
+  invite.invitee_identity = "account:b";
+  invite.planned_hop = CallPlannedHop{"12D3KooWHop", "/ip4/198.18.117.2/udp/443/adp/1.0.0/p2p/12D3KooWHop"};
+  auto encoded = CallControlCodec::EncodeInvite(invite);
+  ASSERT_TRUE(encoded);
+  auto decoded = CallControlCodec::DecodeInvite(*encoded);
+  ASSERT_TRUE(decoded);
+  ASSERT_TRUE(decoded->planned_hop);
+  EXPECT_EQ(decoded->planned_hop->peer_id, "12D3KooWHop");
+  EXPECT_EQ(decoded->planned_hop->multiaddr, "/ip4/198.18.117.2/udp/443/adp/1.0.0/p2p/12D3KooWHop");
+  EXPECT_FALSE(decoded->sfu_hint);
+
+  invite.planned_hop.reset();
+  auto plain = CallControlCodec::DecodeInvite(*CallControlCodec::EncodeInvite(invite));
+  ASSERT_TRUE(plain);
+  EXPECT_FALSE(plain->planned_hop);
+}
+
 TEST(CallControlCodecTest, VideoRefreshRoundTrip) {
   CallVideoRefreshDetail detail;
   detail.call_id = "call:vid";

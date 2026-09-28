@@ -89,6 +89,15 @@ struct CallParticipantMedia {
   bool video_enabled = false;
 };
 
+/**
+ * V050 planned hop: the media_relay the initiator picked at StartCall from the invite list. Not
+ * attached until the third join; carried in CallInvite so invitees can check it while ringing.
+ */
+struct CallPlannedHop {
+  std::string peer_id;
+  std::string multiaddr;
+};
+
 struct CallSession {
   std::string call_id;
   std::optional<std::string> origin_thread_id;
@@ -103,6 +112,8 @@ struct CallSession {
   std::string media_key_id;
   std::optional<std::string> sfu_hint;
   CallSessionKind session_kind = CallSessionKind::Group;
+  /** V050: hop planned from the invite list (not the hop the call is on — that is `sfu_hint`). */
+  std::optional<CallPlannedHop> planned_hop;
 };
 
 struct CallParticipant {
@@ -165,8 +176,10 @@ struct CallInviteDetail {
   std::optional<std::string> origin_thread_id;
   std::optional<std::string> origin_group_id;
   std::optional<std::string> sfu_hint;
+  /** V050: planned hop (additive; old peers ignore). Distinct from `sfu_hint` = the hop in use. */
+  std::optional<CallPlannedHop> planned_hop;
   std::optional<int64_t> expires_at;
-  /** Full call roster snapshot at invite time (joined + ringing + this invitee). */
+  /** Full call roster at invite time: joined + ringing + every co-invitee (V050) + this invitee. */
   std::vector<CallRosterEntry> participants;
   /** Optional epoch-1 media key (same fields as CallMediaKey) so Accept need not wait on a second inbox row. */
   uint32_t media_epoch = 1;
