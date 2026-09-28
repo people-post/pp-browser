@@ -195,6 +195,12 @@ bool ParseSpsDimensions(const uint8_t* sps_nal, size_t sps_size, int& width, int
     (void)br.ReadSe();
     (void)br.ReadSe();
     const uint32_t n = br.ReadUe();
+    // num_ref_frames_in_pic_order_cnt_cycle is a peer-controlled ue(v) (up to ~4 billion); the
+    // spec caps it at 255, and the bitstream cannot possibly contain that many entries anyway —
+    // bound it so a hostile SPS can't force a multi-billion-iteration loop.
+    if (n > 255) {
+      return false;
+    }
     for (uint32_t i = 0; i < n; ++i) {
       (void)br.ReadSe();
     }
@@ -222,18 +228,32 @@ bool ParseSpsDimensions(const uint8_t* sps_nal, size_t sps_size, int& width, int
   if (!br.Ok()) {
     return false;
   }
-  const int width_mbs = pic_width_in_mbs_minus1 + 1;
-  const int height_mbs = (pic_height_in_map_units_minus1 + 1) * (2 - frame_mbs_only_flag);
-  width = width_mbs * 16;
-  height = height_mbs * 16;
-  if (frame_cropping_flag) {
-    const int crop_unit_x = (chroma_format_idc == 1 || chroma_format_idc == 2) ? 2 : 1;
-    const int crop_unit_y =
-        (chroma_format_idc == 1) ? (2 * (2 - frame_mbs_only_flag)) : (2 - frame_mbs_only_flag);
-    width -= (crop_left + crop_right) * crop_unit_x;
-    height -= (crop_top + crop_bottom) * crop_unit_y;
+  // pic_width_in_mbs_minus1 / pic_height_in_map_units_minus1 / crop_* are peer-controlled ue(v)
+  // values (up to ~4 billion each); do the whole computation in int64_t and bound the result to
+  // a generous real-world resolution ceiling, so a hostile SPS can't overflow the `int` math
+  // below into a bogus (or negative-then-cast-huge) width/height.
+  constexpr int64_t kMaxReasonableDimension = 16384;
+  const int64_t width_mbs = static_cast<int64_t>(pic_width_in_mbs_minus1) + 1;
+  const int64_t height_mbs =
+      (static_cast<int64_t>(pic_height_in_map_units_minus1) + 1) * (2 - frame_mbs_only_flag);
+  int64_t wide = width_mbs * 16;
+  int64_t tall = height_mbs * 16;
+  if (wide <= 0 || tall <= 0 || wide > kMaxReasonableDimension || tall > kMaxReasonableDimension) {
+    return false;
   }
-  return width > 0 && height > 0;
+  if (frame_cropping_flag) {
+    const int64_t crop_unit_x = (chroma_format_idc == 1 || chroma_format_idc == 2) ? 2 : 1;
+    const int64_t crop_unit_y =
+        (chroma_format_idc == 1) ? (2 * (2 - frame_mbs_only_flag)) : (2 - frame_mbs_only_flag);
+    wide -= (static_cast<int64_t>(crop_left) + crop_right) * crop_unit_x;
+    tall -= (static_cast<int64_t>(crop_top) + crop_bottom) * crop_unit_y;
+  }
+  if (wide <= 0 || tall <= 0 || wide > kMaxReasonableDimension || tall > kMaxReasonableDimension) {
+    return false;
+  }
+  width = static_cast<int>(wide);
+  height = static_cast<int>(tall);
+  return true;
 }
 
 std::vector<uint8_t> ToAnnexB(const uint8_t* data, size_t size) {
