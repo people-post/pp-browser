@@ -179,6 +179,8 @@ struct CallRingState {
   ui::String eyebrow;
   ui::String conflict_hint;
   ui::String accept_label;
+  /** I2/M3: label for the video-ring "voice answer" button (free / end-and-accept wording). */
+  ui::String voice_answer_label;
   ui::String decline_label;
   ui::String pricing_label;
   ui::String accept_charge_label;

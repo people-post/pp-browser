@@ -69,6 +69,7 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_eyebrow = ring.eyebrow.c_str(),
       .ring_conflict_hint = ring.conflict_hint.c_str(),
       .ring_accept_label = ring.accept_label.c_str(),
+      .ring_voice_answer_label = ring.voice_answer_label.c_str(),
       .ring_decline_label = ring.decline_label.c_str(),
       .ring_pricing_label = ring.pricing_label.c_str(),
       .ring_accept_charge_label = ring.accept_charge_label.c_str(),
@@ -574,6 +575,15 @@ void CallController::RefreshPendingRing() {
         ring_.pricing_label.clear();
         ring_.accept_charge_label.clear();
         ring_.accept_charge_hint.clear();
+      }
+
+      // I2/M3: voice-answer button label — conflict wording wins over pricing when both apply.
+      if (has_conflict) {
+        ring_.voice_answer_label = Tr("call.ring.end_and_accept_voice").c_str();
+      } else if (ring_.show_pricing) {
+        ring_.voice_answer_label = Tr("call.ring.voice_answer_free").c_str();
+      } else {
+        ring_.voice_answer_label = Tr("call.ring.accept_voice").c_str();
       }
 
       if (pending_call_wake_notify_) {

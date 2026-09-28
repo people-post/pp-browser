@@ -356,6 +356,8 @@
     "call.ring.already_calling": "You're already calling",
     "call.ring.end_and_accept": "End & Accept",
     "call.ring.end_and_accept_free": "End & accept free",
+    "call.ring.voice_answer_free": "Voice answer (free)",
+    "call.ring.end_and_accept_voice": "End & voice answer",
     "call.ring.ignore": "Ignore",
     "call.ring.callback_hint": "{caller} is calling you back. Answering ends your outgoing call.",
     "call.ring.conflict_hint": "Answering will end your current call with {peer}.",

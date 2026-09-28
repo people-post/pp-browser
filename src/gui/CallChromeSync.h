@@ -28,6 +28,7 @@ struct CallChromeLayer {
   std::string ring_eyebrow;
   std::string ring_conflict_hint;
   std::string ring_accept_label;
+  std::string ring_voice_answer_label;
   std::string ring_decline_label;
   std::string ring_pricing_label;
   std::string ring_accept_charge_label;

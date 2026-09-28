@@ -163,6 +163,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_ring_eyebrow", &host.state_.call_ring.eyebrow);
     ctor.Bind("call_ring_conflict_hint", &host.state_.call_ring.conflict_hint);
     ctor.Bind("call_ring_accept_label", &host.state_.call_ring.accept_label);
+    ctor.Bind("call_ring_voice_answer_label", &host.state_.call_ring.voice_answer_label);
     ctor.Bind("call_ring_video_allowed", &host.state_.call_ring.video_allowed);
     ctor.Bind("call_ring_decline_label", &host.state_.call_ring.decline_label);
     ctor.Bind("call_ring_show_pricing", &host.state_.call_ring.show_pricing);
@@ -881,6 +882,7 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_ring_eyebrow");
   DataModelHost::Instance().Dirty("window", "call_ring_conflict_hint");
   DataModelHost::Instance().Dirty("window", "call_ring_accept_label");
+  DataModelHost::Instance().Dirty("window", "call_ring_voice_answer_label");
   DataModelHost::Instance().Dirty("window", "call_ring_video_allowed");
   DataModelHost::Instance().Dirty("window", "call_ring_decline_label");
   DataModelHost::Instance().Dirty("window", "call_ring_show_pricing");
@@ -1921,8 +1923,7 @@ std::string ShellHost::SerializeCallRing() const {
   out << "<button class=\"btn btn-secondary\" data-event-click=\"call_decline()\" "
          "data-rml=\"call_ring_decline_label\"></button>";
   out << "<button class=\"btn btn-secondary\" data-if=\"call_ring_video_allowed\" "
-         "data-event-click=\"call_accept_voice()\">"
-      << Tr("call.ring.accept_voice") << "</button>";
+         "data-event-click=\"call_accept_voice()\" data-rml=\"call_ring_voice_answer_label\"></button>";
   out << "<button class=\"btn btn-primary shell-call-accept\" "
          "data-class-shell-call-accept--pulse=\"call_ring_pulse\" "
          "data-event-click=\"call_accept()\" data-rml=\"call_ring_accept_label\"></button>";

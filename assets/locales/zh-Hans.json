@@ -356,6 +356,8 @@
     "call.ring.already_calling": "你正在通话中",
     "call.ring.end_and_accept": "结束并接听",
     "call.ring.end_and_accept_free": "结束并免费接听",
+    "call.ring.voice_answer_free": "免费语音接听",
+    "call.ring.end_and_accept_voice": "结束并语音接听",
     "call.ring.ignore": "忽略",
     "call.ring.callback_hint": "{caller} 正在回拨。接听将结束你的去电。",
     "call.ring.conflict_hint": "接听将结束你与 {peer} 的当前通话。",

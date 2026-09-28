@@ -97,6 +97,7 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                               synced.ring_eyebrow != next.ring_eyebrow ||
                               synced.ring_conflict_hint != next.ring_conflict_hint ||
                               synced.ring_accept_label != next.ring_accept_label ||
+                              synced.ring_voice_answer_label != next.ring_voice_answer_label ||
                               synced.ring_decline_label != next.ring_decline_label ||
                               synced.ring_pricing_label != next.ring_pricing_label ||
                               synced.ring_accept_charge_label != next.ring_accept_charge_label ||
