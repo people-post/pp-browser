@@ -89,6 +89,35 @@ CallMediaSessionPhase CallMediaAmpTransport::Phase() const {
   return coordinator_.Phase();
 }
 
+void CallMediaAmpTransport::MigrateTo(const CallMediaLinkKind kind, std::function<void(Roe<void>)> done) {
+  const CallMediaLegId leg = ActiveLegId();
+  if (!leg) {
+    if (done) {
+      done(Error("call-media migrate: no active leg"));
+    }
+    return;
+  }
+  coordinator_.MigrateLegToKind(leg, kind, std::move(done));
+}
+
+void CallMediaAmpTransport::SetAutoMigrateToDirect(const bool allow) { coordinator_.SetAutoMigrateToDirect(allow); }
+
+CallMediaLinkKind CallMediaAmpTransport::StandbyLinkKind() const {
+  const CallMediaLegId leg = ActiveLegId();
+  return leg ? coordinator_.PathState(leg).standby_kind : CallMediaLinkKind::Unknown;
+}
+
+void CallMediaAmpTransport::AddStandby(const CallMediaLinkKind kind, std::function<void(Roe<void>)> done) {
+  const CallMediaLegId leg = ActiveLegId();
+  if (!leg) {
+    if (done) {
+      done(Error("call-media standby: no active leg"));
+    }
+    return;
+  }
+  coordinator_.AddStandbyLegOfKind(leg, kind, std::move(done));
+}
+
 CallMediaLinkKind CallMediaAmpTransport::ActiveLinkKind() const {
   return coordinator_.ActiveLinkKind();
 }

@@ -117,3 +117,37 @@ Without a standby, primary-path loss goes to k4 re-anchor (`Reconnecting…`, re
 **Rationale:** The startup choice breaks a device that starts on an IPv4-only network and moves to IPv6-only cellular (NAT64); a dual-stack socket handles both families, so the choice never needs revisiting after a network change.  
 **Alternatives rejected:** Endpoint IO swap + rebind on family change (new Amp API for a case dual-stack removes).  
 **Still open:** Verify no code path depends on the IPv4-only bind (advertised addrs, dial-back observed parsing) before switching.
+
+---
+
+## K011 — A lost path with another live link to the peer rebinds quietly
+
+**Date:** 2026-09-28  
+**Status:** Accepted (k7)  
+**Decision:** When a call's active path is lost with no standby but the peer is still Connected on another link, the glare winner (offerer) migrates the call there immediately; `on_path_lost` (planner Reconnecting, UI `Reconnecting…`) is held for **1 s** and raised only if the call still has no path. The lost path's placeholder is dropped on the reconnect switch — never kept as retiring or standby. A bundle created from the peer's hello takes the complementary role; a local leg joining it stamps its own role.  
+**Rationale:** Hard lab (cone NAT, k7 `punch` phase): a simultaneous punch brings up two associations and Amp's dual-dial election drops one after both were published Connected; the call had often bound the loser. k4 recovered in ~20 ms, but through `Reconnecting…` — a visible flap on a healthy call. In 2 of 11 lab runs the recovery waited the full second because neither end drove: the offerer, having joined the bundle the answerer's early hello created, still held that bundle's default answerer role. The placeholder, unbound, resolved by alias to the new link and passed for a live channel-less standby a later failover would have switched onto.  
+**Alternatives rejected:** Make only one end dial in a punch burst (Amp) — loses the case where only one direction gets through (symmetric NAT on one side). Debounce `Reconnecting…` in the UI only — the transport would still wait for the bridge's re-anchor instead of using the link it already has.
+
+---
+
+## K012 — Network changes: re-validate links, never probe into no route
+
+**Date:** 2026-09-28  
+**Status:** Accepted (k5)  
+**Decision:** A platform `NetworkMonitor` (one backend per OS) reports material changes — online, transport, cost, or the fingerprint of the default-route interfaces and their addresses. The mesh owner fans them out: online on a new attachment (or back online) → Amp probes every direct link and drops the silent ones after 2 s (pp-cpp-amp v2.7.0), dial backoffs cleared, reachability re-probed 2.5 s later; calls re-anchor once links settle and a relayed call's upgrade punches start over. Going offline does nothing; a cost / label-only change does nothing yet (k6 consumes it).  
+**Rationale:** Links outlived the network they were built on for their liveness window — up to 50 s for a hot link — while calls waited on them. Probing from the new address costs one packet per link, moves the peer's path when the peer can still reach us (the relay link survives a NAT rebind), and turns a dead path into an ordinary drop the k4 machinery already handles. Probing while offline would make every send fail and drop every link at once, destroying links a short outage (elevator, tunnel) would not have killed. The fingerprint covers default-route interfaces only, so local container bridges and VPN-less side interfaces do not look like network changes.  
+**Alternatives rejected:** Rebind the mesh socket on change (not needed: dual-stack `[::]`, K010). Tear links down proactively on every change (kills links that would have moved). Poll-only detection (slow, battery) except as the Linux fallback.
+
+---
+
+## K013 — Pair policy from the two classes only; relay standby by `path_add`; relay-side standby admission
+
+**Date:** 2026-09-28  
+**Status:** Accepted (k6)  
+**Decision:**
+- The pair policy is a function of the two mobility classes only (`DecideCallPathPolicy`), so both ends compute the same one from `caps.mobility`. Any Mobile end → no call-start punch (the answerer awaits the offerer's circuit), no upgrade punches, the relay is the **anchor**. Stationary / Unknown pairs punch and upgrade with the relay as **standby**; standby priority low (direct), medium (punched), high (any Unknown or Mobile). The design table's "opportunistic upgrade for a Mobile pair when both are unmetered and not cellular" is **deferred** — metered state is not on the wire, and a one-sided decision would break the symmetry.
+- A call Live on a direct / punched path gets a relayed standby from its offerer: a circuit under the call (`PeerReachRequest::exclude_direct` — now truly relay-only: a direct link neither short-circuits nor settles it) added with a new call-media hello type **`path_add`** (the k3 migration handshake; the path becomes the standby, TX does not move). Peers without k6 ignore it; the add times out and the call is unchanged.
+- Relays admit standby circuits by the bridge request's optional `standby_priority` against a standby capacity (default 64): low below 50 %, medium below 80 %, high up to 100 %; at most 4 per dialer PeerId (K009's per-account cap, device-scoped — a relay sees PeerIds, not accounts). Primary circuits are never refused for standby load. Circuits are not metered today, so K009's "free standby, bill after failover" needs no billing change yet; standby circuits are marked for when metering lands.  
+**Rationale:** Hard lab: a flip under a direct call with a relay standby fails over in 1.5 s with no `Reconnecting…` (2.3 s through re-anchor without one). The UPGRADE phase then caught the path a call just moved onto dying before the old one was released (the upgrade's punched link losing the dual-dial election) — the retiring path was ignored and every re-anchor refused; the call now falls back onto it and takes the election's winner at once (5 of 10 lab runs hit it, all recovered) — and a use-after-free in inbound placeholders keyed by channel id. The standby add surfaced two latent bugs the TX-only escalation shared: the reach coordinator settled `exclude_direct` on the direct link, and Amp's nested establish reported OK for a key connected over ADP without building the nested link (pp-cpp-amp v2.7.1).  
+**Alternatives rejected:** `migrate` with a `standby` flag (a peer from before k6 would switch onto the relay instead of refusing); relay-side eviction of low-priority standbys when full (disturbs live calls' fallbacks for a new one — refusal keeps it simple); an account id on the bridge request (leaks identity to relays).
+

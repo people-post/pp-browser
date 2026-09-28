@@ -647,6 +647,7 @@ std::string InboxController::BuildCallHistoryRml(const ThreadMessage& message,
   case CallControlType::CallCircuitR1:
   case CallControlType::CallPunchOffer:
   case CallControlType::CallPunchAnswer:
+  case CallControlType::CallCapsUpdate:
     return {};
   }
 

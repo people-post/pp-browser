@@ -199,6 +199,10 @@ protected:
       msg.payload_json = options.payload_json.value_or("");
       msg.timestamp = util::NowUnixMs();
       ++sent_control_;
+      {
+        std::lock_guard lock(sent_mu_);
+        sent_payloads_.push_back(msg.payload_json);
+      }
       return msg;
     };
     deps.delivery.sync_inbox_from_wake = [this](bool /*force*/) { ++inbox_syncs_; };
@@ -255,8 +259,11 @@ protected:
     std::filesystem::remove_all(data_dir_, ec);
   }
 
-  Roe<void> IngestInvite(const std::string& call_id) {
+  Roe<void> IngestInvite(const std::string& call_id, std::optional<CallPeerCaps> caps = std::nullopt) {
     CallInviteDetail invite;
+    if (caps) {
+      invite.caps = *caps;
+    }
     invite.call_id = call_id;
     invite.inviter_identity = "account:peer";
     invite.invitee_identity = local_identity_;
@@ -299,6 +306,8 @@ protected:
   const void* sessions_identity_ = nullptr;
   std::string local_identity_;
   int sent_control_ = 0;
+  std::mutex sent_mu_;
+  std::vector<std::string> sent_payloads_;
   int inbox_syncs_ = 0;
   int listen_desires_ = 0;
   /** Ring-changed may fire on IO/worker threads (LeaveCall runs on Critical) — fixture-owned, atomic. */
@@ -370,6 +379,71 @@ TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
   EXPECT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000)));
   EXPECT_FALSE(stack_->HasActiveLocalCall());
   EXPECT_GE(ring_changes_.load(), 1);
+}
+
+// k6 exit: a pinned class (config) rides this end's accept caps, and this end's policy for the call
+// combines it with the caps the invite carried.
+TEST_F(CallUiBackendStackTest, PinnedMobilityRidesTheAcceptAndSetsThePolicy) {
+  app_config_.mesh.mobility = "mobile";
+  stack_->ReloadMobilityOverride();
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_EQ(stack_->LocalMobility(), MobilityClass::Mobile);
+
+  const std::string call_id = "call:mobility";
+  CallPeerCaps remote;
+  remote.present = true;
+  remote.mobility = MobilityClass::Stationary;
+  ASSERT_TRUE(IngestInvite(call_id, remote));
+  ASSERT_TRUE(stack_->MediaKeys()->PutEpochKey(call_id, 1, TestMediaKey()));
+  ui_->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  ui_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
+  DrainUntil([&]() {
+    std::lock_guard lock(sent_mu_);
+    for (const auto& payload : sent_payloads_) {
+      if (payload.find("call_accept") != std::string::npos) {
+        return true;
+      }
+    }
+    return false;
+  });
+  bool accept_says_mobile = false;
+  {
+    std::lock_guard lock(sent_mu_);
+    for (const auto& payload : sent_payloads_) {
+      accept_says_mobile |= payload.find("call_accept") != std::string::npos &&
+                            payload.find("mobility") != std::string::npos && payload.find("mobile") != std::string::npos;
+    }
+  }
+  EXPECT_TRUE(accept_says_mobile) << "the accept advertises caps.mobility";
+
+  const CallPathPolicy policy = stack_->PathPolicyFor(call_id);
+  EXPECT_EQ(policy.relay_role, CallRelayRole::Anchor) << "mobile here + stationary there";
+  EXPECT_FALSE(policy.upgrade_to_direct);
+  EXPECT_EQ(policy.relay_role, DecideCallPathPolicy(MobilityClass::Stationary, MobilityClass::Mobile).relay_role)
+      << "the other end computes the same";
+
+  app_config_.mesh.mobility = "auto";
+  stack_->ReloadMobilityOverride();
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_EQ(stack_->LocalMobility(), MobilityClass::Unknown) << "auto, no network seen in the test";
+  ui_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  EXPECT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000)));
+}
+
+// k6: the invite's caps.mobility is recorded for the call — a mobile inviter anchors this end's
+// policy on the relay although this end is unclassified.
+TEST_F(CallUiBackendStackTest, InviteMobilitySetsTheCallsPolicy) {
+  const std::string call_id = "call:remote-mobile";
+  CallPeerCaps remote;
+  remote.present = true;
+  remote.mobility = MobilityClass::Mobile;
+  ASSERT_TRUE(IngestInvite(call_id, remote));
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_EQ(stack_->LocalMobility(), MobilityClass::Unknown);
+  const CallPathPolicy policy = stack_->PathPolicyFor(call_id);
+  EXPECT_EQ(policy.relay_role, CallRelayRole::Anchor);
+  EXPECT_FALSE(policy.punch_at_start);
+  EXPECT_EQ(stack_->PathPolicyFor("call:other").relay_role, CallRelayRole::Standby) << "per call";
 }
 
 TEST_F(CallUiBackendStackTest, InviteAcceptMediaPathThroughBackend) {

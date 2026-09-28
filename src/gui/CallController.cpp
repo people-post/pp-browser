@@ -730,6 +730,13 @@ void CallController::RefreshPendingRing() {
       } else if (activity == Tr("call.status.looking_for_another_path")) {
         in_call.status_hint = Tr("call.hint.looking_for_another_path").c_str();
       }
+    } else if (backend->MediaStatus() == CallMediaStatus::Reconnecting) {
+      // k4: the call lost its path and waits for a new one; the call timer keeps running.
+      in_call.elapsed = FormatElapsed(backend->Media().ConnectedAtMs());
+      const std::string reconnecting = Tr("call.status.reconnecting");
+      in_call.subtitle =
+          in_call.elapsed.empty() ? reconnecting.c_str() : (std::string(in_call.elapsed.c_str()) + " · " + reconnecting).c_str();
+      in_call.status_hint = {};
     } else if (backend->MediaStatus() == CallMediaStatus::DegradedTxOnly) {
       in_call.elapsed = {};
       in_call.subtitle = Tr("call.quality.hint.sending_only").c_str();
@@ -1349,7 +1356,8 @@ void CallController::ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* bac
       view.asymmetry == CallAudioAsymmetry::ReceivingOnly ||
       (backend && backend->Available() &&
        backend->MediaStatus() == CallMediaStatus::DegradedTxOnly);
-  if (media_broken) {
+  // Reconnecting says it all: no path means no audio either way.
+  if (media_broken && !(backend && backend->Available() && backend->MediaStatus() == CallMediaStatus::Reconnecting)) {
     if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
       in_call.subtitle = Tr(hint_key).c_str();
     } else if (const char* label_key = CallPathQualityLabelKey(view.quality); label_key &&

@@ -20,6 +20,8 @@ pp_browser_add_domain_library(pp_domain_messaging
     CallTypes.cpp
     SoftMigrateLogic.cpp
     CallHopPlan.cpp
+    CallMobility.cpp
+    CallPathPolicy.cpp
     CallHopAttachLogic.cpp
     PairwiseFanoutLogic.cpp
     CallThreadPresenceLogic.cpp
