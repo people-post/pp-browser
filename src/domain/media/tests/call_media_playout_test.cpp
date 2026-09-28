@@ -434,6 +434,73 @@ TEST(AudioArrivalJitterTest, HugeLatenessUsesOverflowBucket) {
   EXPECT_EQ(j.TargetFrames(), AudioArrivalJitter::kMaxTargetFrames);
 }
 
+// Push with realistic recv_ms so the estimator sees the network.
+AudioPacket PktAt(uint32_t seq, int64_t recv_ms, uint8_t fill = 1) {
+  AudioPacket p = Pkt(seq, fill);
+  p.recv_ms = recv_ms;
+  return p;
+}
+
+TEST(AudioJitterBufferTest, StallsRaiseTargetAndStopUnderruns) {
+  AudioJitterBuffer buf;
+  uint32_t seq = 1;
+  uint64_t underruns_first_half = 0;
+  for (int i = 0; i < 2000; ++i) {  // 40 s of 20 ms slots; StallExtra from Task 1 shapes arrivals
+    const int64_t now = 1000 + static_cast<int64_t>(i) * 20;
+    // deliver every packet whose (nominal + stall extra) arrival time has passed
+    while (1000 + static_cast<int64_t>(seq - 1) * 20 + StallExtra(static_cast<int>(seq - 1)) <= now) {
+      buf.Push(PktAt(seq, now));
+      ++seq;
+    }
+    (void)buf.PopForPlayout();
+    if (i == 999) underruns_first_half = buf.underruns();
+  }
+  EXPECT_GE(buf.TargetFrames(), 14u);
+  // adapted: the last 20 s (10 stalls) underrun at most ~1 slot per stall (a fixed 60 ms target underruns ~12 per stall)
+  EXPECT_LE(buf.underruns() - underruns_first_half, 10u);
+}
+
+TEST(AudioJitterBufferTest, RestartResetsJitterTarget) {
+  AudioJitterBuffer buf;
+  uint32_t seq = 1;
+  for (int i = 0; i < 1000; ++i, ++seq) buf.Push(PktAt(seq, 1000 + i * 20 + StallExtra(i))), (void)buf.PopForPlayout();
+  ASSERT_GE(buf.TargetFrames(), 14u);
+  // Sender restart: large backward jump → Reset()
+  for (uint32_t s = 1; s <= 5; ++s) buf.Push(PktAt(s, 100'000 + s * 20));
+  EXPECT_EQ(buf.TargetFrames(), 3u);
+}
+
+TEST(AudioJitterBufferTest, OverTargetAndSilenceDropCounter) {
+  AudioJitterBuffer buf;
+  for (uint32_t s = 1; s <= 3; ++s) buf.Push(Pkt(s));
+  EXPECT_FALSE(buf.OverTarget());   // 3 <= 3 + 1
+  buf.Push(Pkt(4));
+  buf.Push(Pkt(5));
+  EXPECT_TRUE(buf.OverTarget());    // 5 > 4
+  buf.NoteSilenceDrop();
+  EXPECT_EQ(buf.silence_drops(), 1u);
+  EXPECT_EQ(buf.speech_drops(), 0u);
+}
+
+TEST(AudioJitterBufferTest, SustainedSurplusIsTrimmedAsSpeech) {
+  AudioJitterBuffer buf;
+  uint32_t seq = 1;
+  for (int i = 0; i < 12; ++i) buf.Push(Pkt(seq++));  // 12 queued, target 3 → surplus 9 > 5
+  for (int i = 0; i < 30; ++i) {                       // steady 1-in-1-out for > one 25-pop window
+    buf.Push(Pkt(seq++));
+    (void)buf.PopForPlayout();
+  }
+  EXPECT_GT(buf.speech_drops(), 0u);
+  EXPECT_LE(buf.size(), buf.TargetFrames() + 2);
+}
+
+TEST(AudioJitterBufferTest, HardCapIsFortyFrames) {
+  AudioJitterBuffer buf;
+  for (uint32_t s = 1; s <= 60; ++s) buf.Push(Pkt(s));
+  EXPECT_LE(buf.size(), 40u);
+  EXPECT_EQ(buf.speech_drops(), 20u);
+}
+
 TEST(MixPcmSatTest, Saturates) {
   std::vector<int16_t> out = {30000, -30000};
   std::vector<int16_t> in = {10000, -10000};

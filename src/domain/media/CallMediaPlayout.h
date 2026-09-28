@@ -94,16 +94,19 @@ struct AudioPlayoutPop {
 
 /**
  * Per-publisher packet jitter buffer (receiver only; hop stays blind).
- * Target delay 60 ms / max 200 ms at 20 ms frames → 3 / 10 packets. Packets are decoded at
- * pop time so a missing seq can be recovered from the next packet's FEC data (spec §1/§2).
+ * Target delay adapts to arrival jitter (AudioArrivalJitter: 60–400 ms) / max 800 ms at 20 ms
+ * frames → 3..20 / 40 packets. Packets are decoded at pop time so a missing seq can be recovered
+ * from the next packet's FEC data (spec §1/§2).
  */
 class AudioJitterBuffer {
 public:
   static constexpr int kFrameMs = 20;
   static constexpr int kTargetDelayMs = 60;
-  static constexpr int kMaxDelayMs = 200;
-  static constexpr size_t kTargetFrames = static_cast<size_t>(kTargetDelayMs / kFrameMs);
-  static constexpr size_t kMaxFrames = static_cast<size_t>(kMaxDelayMs / kFrameMs);
+  static constexpr int kMaxDelayMs = 800;
+  static constexpr size_t kTargetFrames = AudioArrivalJitter::kMinTargetFrames; // kept: minimum/steady target
+  static constexpr size_t kMaxFrames = 40;
+  /** Surplus above target this size is treated as speech content (unknown), not pure jitter slack. */
+  static constexpr size_t kSpeechTrimSurplus = 5;
   /** A seq this far behind the expected one is a sender restart (seq reset), not a late packet. */
   static constexpr uint32_t kResyncJump = 50;
   /** Surplus depth held for a whole window (500 ms) is trimmed back to the target. */
@@ -118,12 +121,14 @@ public:
     }
     if (primed_ && packet.seq < next_seq_) {
       if (packet.seq + kResyncJump >= next_seq_ && ++late_run_ < kRestartLateRun) {
+        arrival_.OnArrival(packet.seq, packet.recv_ms);
         ++drops_late_;
         return;
       }
       Reset(); // sender restarted its seq (re-StartSfu / BeginSession): re-prime on the new stream
     }
     late_run_ = 0;
+    arrival_.OnArrival(packet.seq, packet.recv_ms);
     auto it = queue_.begin();
     while (it != queue_.end() && it->seq < packet.seq) {
       ++it;
@@ -146,6 +151,15 @@ public:
   uint64_t drops_late() const { return drops_late_; }
   uint64_t underruns() const { return underruns_; }
   uint64_t gaps() const { return gaps_; }
+  /** Adaptive target from the arrival-jitter estimator (AudioArrivalJitter), 3..20 frames. */
+  size_t TargetFrames() const { return arrival_.TargetFrames(); }
+  /** True once the buffer holds more than one frame of slack above target. */
+  bool OverTarget() const { return queue_.size() > TargetFrames() + 1; }
+  /** Engine dropped a decoded silent frame to catch up (known-silence, not counted as speech). */
+  void NoteSilenceDrop() { ++drops_silence_; }
+  uint64_t silence_drops() const { return drops_silence_; }
+  /** Overflow + trim drops: content unknown, so counted as speech. */
+  uint64_t speech_drops() const { return drops_overflow_; }
 
   /**
    * One 20 ms playout slot. Before the target depth was reached once → Empty (no underrun).
@@ -158,7 +172,7 @@ public:
   AudioPlayoutPop PopForPlayout() {
     AudioPlayoutPop out;
     if (!primed_) {
-      if (queue_.size() < kTargetFrames) {
+      if (queue_.size() < TargetFrames()) {
         return out;
       }
       primed_ = true;
@@ -171,7 +185,7 @@ public:
     }
     AudioPacket& front = queue_.front();
     if (front.seq > next_seq_ &&
-        (queue_.size() > kTargetFrames || front.seq - next_seq_ > kTargetFrames)) {
+        (queue_.size() > TargetFrames() || front.seq - next_seq_ > TargetFrames())) {
       next_seq_ = front.seq; // enough audio buffered, or hole too wide to conceal usefully
     }
     if (front.seq == next_seq_) {
@@ -199,6 +213,7 @@ public:
     late_run_ = 0;
     window_pops_ = 0;
     window_min_depth_ = kMaxFrames;
+    arrival_.Reset();
   }
 
   /** 0 = healthy, 1 = severe (underruns dominate). Unchanged from the PCM buffer. */
@@ -221,16 +236,17 @@ private:
 
   /**
    * Underruns add a frame of latency each (time passes, nothing is consumed) and a burst or a
-   * device pause can fill the queue; if the depth never fell below target + 1 over a whole
-   * window, that surplus absorbed no jitter — drop it (oldest first) back to the target.
+   * device pause can fill the queue; if the depth never fell below target + kSpeechTrimSurplus
+   * over a whole window, that surplus absorbed no jitter — drop it (oldest first) back to the
+   * target.
    */
   void DrainSurplus() {
     window_min_depth_ = std::min(window_min_depth_, queue_.size());
     if (++window_pops_ < kDrainWindowPops) {
       return;
     }
-    if (window_min_depth_ > kTargetFrames + 1) {
-      for (size_t n = window_min_depth_ - kTargetFrames; n > 0; --n) {
+    if (window_min_depth_ > TargetFrames() + kSpeechTrimSurplus) {
+      for (size_t n = window_min_depth_ - (TargetFrames() + 1); n > 0; --n) {
         queue_.pop_front();
         ++drops_overflow_;
       }
@@ -240,12 +256,14 @@ private:
     window_min_depth_ = kMaxFrames;
   }
 
+  AudioArrivalJitter arrival_;
   std::deque<AudioPacket> queue_;
   bool primed_ = false;
   uint32_t next_seq_ = 0;
   uint32_t late_run_ = 0;
   uint64_t drops_overflow_ = 0;
   uint64_t drops_late_ = 0;
+  uint64_t drops_silence_ = 0;
   uint64_t underruns_ = 0;
   uint64_t gaps_ = 0;
   uint32_t window_pops_ = 0;
