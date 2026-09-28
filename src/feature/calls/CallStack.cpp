@@ -54,6 +54,16 @@ void CallStack::FinishMeshStop() {
   CallsThread::RunAndWait([this]() { FinishMeshStopOnOwner(); });
 }
 
+void CallStack::OnLocalNetworkChanged() {
+  CallsThread::Post([this]() {
+    if (media_plane_) {
+      if (CallMediaBridge* bridge = media_plane_->Bridge()) {
+        bridge->OnLocalNetworkChanged();
+      }
+    }
+  });
+}
+
 void CallStack::DetachMeshMedia() {
   CallsThread::RunAndWait([this]() { DetachMeshMediaOnOwner(); });
 }

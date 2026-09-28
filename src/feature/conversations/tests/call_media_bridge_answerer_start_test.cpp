@@ -1040,6 +1040,78 @@ TEST_F(CallMediaBridgeAnswererStartTest, LostPathReconnectsOntoTheReachedLink) {
   bridge_->PrepareForTeardown(0);
 }
 
+// k5: a relayed call that used up its direct-upgrade attempts on one network starts them over when
+// the device moves to another (the new NAT may be punchable).
+TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeRestartsTheDirectUpgrade) {
+  const std::string call_id = "call:upgrade-netchange";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWUpgradeNetChange";
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  bridge_->SetDirectUpgradeDelayMsForTest(20);
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  for (int i = 0; i < 400 && circuit_->upgrade_calls.load() < 3; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_EQ(circuit_->upgrade_calls.load(), 3);
+  for (int i = 0; i < 20; ++i) {  // the schedule is used up: no fourth attempt
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_EQ(circuit_->upgrade_calls.load(), 3);
+
+  CallsThread::RunAndWait([&] { bridge_->OnLocalNetworkChanged(); });
+  for (int i = 0; i < 400 && circuit_->upgrade_calls.load() < 4; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_GE(circuit_->upgrade_calls.load(), 4) << "punching again on the new network";
+  bridge_->PrepareForTeardown(0);
+}
+
+// k5: a reconnecting call waiting out its re-anchor backoff tries again as soon as the new
+// network's links have settled.
+TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeReanchorsAReconnectingCallAtOnce) {
+  const std::string call_id = "call:reconnect-netchange";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWReconnectNetChange";
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  transport_->fail_first_n_migrates = 1;
+  bridge_->SetReanchorRetryMsForTest(60'000);  // the retry would come far too late
+  bridge_->SetNetworkSettleMsForTest(20);
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  AppRuntime::RunUIAndOwnerTasks();
+  ASSERT_EQ(lifecycle_->Status(), CallMediaStatus::DirectLive);
+
+  ASSERT_TRUE(transport_->last_callbacks.on_path_lost);
+  transport_->last_callbacks.on_path_lost();
+  for (int i = 0; i < 400 && transport_->migrate_calls.load() < 1; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_EQ(transport_->migrate_calls.load(), 1) << "the first re-anchor failed; the next is a minute away";
+  ASSERT_EQ(lifecycle_->Status(), CallMediaStatus::Reconnecting);
+
+  CallsThread::RunAndWait([&] { bridge_->OnLocalNetworkChanged(); });
+  for (int i = 0; i < 200 && lifecycle_->Status() != CallMediaStatus::DirectLive; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(transport_->migrate_calls.load(), 2);
+  EXPECT_EQ(lifecycle_->Status(), CallMediaStatus::DirectLive) << "reconnected on the new network";
+  bridge_->PrepareForTeardown(0);
+}
+
 TEST_F(CallMediaBridgeAnswererStartTest, EnsureReachResolvesAccountToMeshPeerId) {
   // Hard-lab / dogfood: BeginSession peer is account:; circuit StartBridge needs Amp PeerId.
   const std::string call_id = "call:account-to-peerid";

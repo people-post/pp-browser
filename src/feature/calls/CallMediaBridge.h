@@ -104,6 +104,14 @@ public:
     tx_only_escalation_done_ = true;
     Apply(CallDirectPlannerEvent::TxOnlyGraceExpired, call_id, media_peer_identity_);
   }
+  /**
+   * k5: the device's network changed (calls owner). Links are being re-validated — Amp evicts the
+   * dead ones within ~2 s — so once that settles a reconnecting call re-anchors at once, and a
+   * relayed call starts its direct-upgrade punches over (the new network may be punchable).
+   */
+  void OnLocalNetworkChanged();
+  /** Wait after a network change before re-anchoring (production 2.5 s). */
+  void SetNetworkSettleMsForTest(int delay_ms) { network_settle_ms_ = delay_ms; }
   /** Every direct-upgrade attempt after this delay (0 = production 3 s / 20 s / 60 s). */
   void SetDirectUpgradeDelayMsForTest(int delay_ms) { upgrade_delay_ms_for_test_ = delay_ms; }
   /** Shrink per-attempt ConnectAsync timeout (and watchdog margin) for gtests (0 = production default). */
@@ -302,6 +310,8 @@ private:
   uint64_t reanchor_timer_id_ = 0;
   PeerReachId reanchor_reach_id_ = 0;
   int reanchor_retry_ms_ = 2000;
+  /** Past Amp's network-change grace (2 s): the links left are the ones that answered. */
+  int network_settle_ms_ = 2500;
   /** Inside the 15 s StartReserve lease so consecutive leases overlap. */
   int reserve_renew_interval_ms_ = 10000;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;

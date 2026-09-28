@@ -492,6 +492,28 @@ void CallMediaBridge::OnDirectUpgradeFire() {
   });
 }
 
+// --- k5: the device's network changed -----------------------------------------------------------
+
+void CallMediaBridge::OnLocalNetworkChanged() {
+  const std::string call_id = media_call_id_;
+  if (stopping_.load(std::memory_order_acquire) || call_id.empty()) {
+    return;
+  }
+  if (direct_planner_phase_ == CallDirectPlannerPhase::Reconnecting) {
+    // The retry backoff may be long; the new network is the best chance of reaching the peer.
+    log().info << "network changed: re-anchoring after the links settle call_id=" << call_id;
+    ScheduleReanchor(call_id, std::chrono::milliseconds(network_settle_ms_));
+    return;
+  }
+  if (direct_planner_phase_ == CallDirectPlannerPhase::Live && MediaPathKind() == "circuit" && session_offerer_) {
+    log().info << "network changed: direct upgrade starts over call_id=" << call_id;
+    CancelDirectUpgrade();
+    ArmDirectUpgrade(call_id);
+  }
+  // Live on a direct path: nothing to do here — if it died with the old network, Amp evicts its
+  // link and the transport fails over to the standby or reports the path lost.
+}
+
 // --- k4: re-anchor a call that lost its last path ----------------------------------------------
 
 void CallMediaBridge::ScheduleReanchor(const std::string& call_id, const std::chrono::milliseconds delay) {

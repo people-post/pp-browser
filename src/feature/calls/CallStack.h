@@ -100,6 +100,8 @@ public:
   void PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit);
   /** Teardown after mesh Stop: drop the bridge and the call-media transport. */
   void FinishMeshStop();
+  /** k5: the device's network changed (any thread) — calls react on their owner. */
+  void OnLocalNetworkChanged();
   /** Before the owner replaces / drops mesh media objects: topology + bridge let go of them. */
   void DetachMeshMedia();
   /** After the owner rewired mesh media: rebind bridge + topology to the new objects. */

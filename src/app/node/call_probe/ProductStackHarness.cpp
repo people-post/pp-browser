@@ -1,4 +1,5 @@
 #include "app/node/call_probe/ProductStackHarness.h"
+#include "feature/calls/LocalNetworkReaction.h"
 #include "feature/conversations/MeshMediaPlaneWiring.h"
 
 #include "common/Utilities.h"
@@ -249,6 +250,12 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma) {
   stack_->DetachMeshMedia();
   mesh_media_->Wire();
   stack_->OnMeshServicesStarted();
+  network_monitor_ = std::make_unique<NetworkMonitor>();
+  if (!network_monitor_->Start([this](const NetworkChange& change) {
+        ReactToNetworkChange(change, host_.get(), stack_.get());
+      })) {
+    std::cerr << "warning: product-stack network monitor unavailable" << std::endl;
+  }
 
   auto chat_deps = host_->ChatDeps();
   if (!chat_deps) {
@@ -931,6 +938,10 @@ Roe<void> ProductStackHarness::EnableBroadcast(
 }
 
 void ProductStackHarness::ShutdownImpl() {
+  if (network_monitor_) {
+    network_monitor_->Stop();  // before anything it reaches goes away
+    network_monitor_.reset();
+  }
   // Broadcast borrows the mesh media plane's relay objects and this host's links: it goes first.
   if (broadcast_) {
     ShutdownStep("broadcast");
