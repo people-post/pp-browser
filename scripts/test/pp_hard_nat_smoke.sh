@@ -15,7 +15,20 @@
 # B-HARD-CALL-NAT-COLD-AWAIT — Phase-7: as COLD with the offerer's uplink delayed, so the
 #                           answerer's media starts before the offerer's circuit lands and its
 #                           Await reach runs cold (dogfood: answerer waiting on the caller)
+# B-HARD-CALL-NAT-UPGRADE — Phase-9 (call-path-resilience k7): gateways switched to cone NAT and
+#                           the gateway↔gateway path blocked, so the call starts relayed; the path
+#                           opens, the offerer's direct-upgrade punch moves the live call onto it
+#                           (make-before-break); then the direct path is blackholed mid-call and
+#                           the call must fail over to its warm relayed standby with audio flowing
+# B-HARD-CALL-NAT-PUNCH   — Phase-10 (k7): cone NAT, nothing blocked: the call-start punch lands and
+#                           media rides the punched link. Both ends dialing produces two
+#                           associations; the dual-dial election may drop the one the call bound
+#                           first — the call must move to the winner without ever showing
+#                           Reconnecting, and never fall back to the relay
 # Cold phases also require >= COLD_MIN_RX audio frames received on BOTH sides.
+#
+# NAT: gateways default to symmetric mapping (punching can never land, so the phases above stay
+# relay-shaped); the upgrade phase flips them to cone and back (hard-gw-entrypoint.sh).
 #
 # Reproduce gate (applies to the selected call phase):
 #   PP_HARD_NAT_CALL_EXPECT=success  (default) — call must pass
@@ -33,7 +46,7 @@ CALL_BIN_NAME="pp-call-probe"
 SKIP_UP=0
 CYCLES="${PP_CALL_PROBE_CYCLES:-1}"
 CALL_EXPECT="${PP_HARD_NAT_CALL_EXPECT:-success}"
-# circuit | stack | cold | cold-dirty | cold-await | broadcast | all
+# circuit | stack | cold | cold-dirty | cold-await | upgrade | broadcast | all
 PHASE="${PP_HARD_NAT_PHASE:-all}"
 # Stack phase long-hold knobs (one-way stall repro, dogfood 2026-09-24 16:17):
 #   PP_HARD_NAT_STACK_HOLD_MS  offerer hold after media (default 3000)
@@ -57,8 +70,8 @@ while [[ $# -gt 0 ]]; do
 Usage: $(basename "$0") [--status-url URL] [--cycles K] [--phase PHASE]
                         [--expect-call success|fail] [--skip-up]
 
-  PHASE: circuit|stack|cold|cold-dirty|cold-await|broadcast|all
-    all    = circuit + stack + cold + cold-dirty + cold-await + broadcast (default)
+  PHASE: circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|broadcast|all
+    all    = circuit + stack + cold + cold-dirty + cold-await + upgrade + punch + broadcast (default)
   --expect-call fail  pass only if the call fails (reproduce dogfood)
 EOF
       exit 0
@@ -72,10 +85,10 @@ case "${CALL_EXPECT}" in
   *) pp_hard_die "--expect-call must be success|fail (got ${CALL_EXPECT})" ;;
 esac
 case "${PHASE}" in
-  circuit|stack|cold|cold-dirty|cold-await|broadcast|all) ;;
+  circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|broadcast|all) ;;
   product|dirty|both)
     pp_hard_die "--phase ${PHASE} was retired (probe-local reach copies); use cold / cold-dirty / cold-await" ;;
-  *) pp_hard_die "--phase must be circuit|stack|cold|cold-dirty|cold-await|broadcast|all (got ${PHASE})" ;;
+  *) pp_hard_die "--phase must be circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|broadcast|all (got ${PHASE})" ;;
 esac
 
 if [[ ! -x "${PP_HARD_PROBE_DIR}/${CALL_BIN_NAME}" ]]; then
@@ -98,6 +111,8 @@ COLD_RX_STALL_MS="${PP_HARD_NAT_COLD_RX_STALL_MS:-3000}"
 COLD_MIN_RX="${PP_HARD_NAT_COLD_MIN_RX:-100}"
 # Offerer uplink delay for cold-await: its circuit must land after the answerer's media start.
 COLD_AWAIT_NETEM="${PP_HARD_NAT_COLD_AWAIT_NETEM:-delay 250ms}"
+# Upgrade phase: long enough for the +20 s upgrade attempt, the blackhole and the failover.
+UPGRADE_HOLD_MS="${PP_HARD_NAT_UPGRADE_HOLD_MS:-45000}"
 
 # Highest "flow <role> ... rx=N" in a probe log (0 when none).
 max_rx() {
@@ -141,8 +156,69 @@ assert_cold_reach() {
   echo "ok  cold audio both ways offerer_rx=${off_rx} answerer_rx=${ans_rx}"
 }
 
+# wait_log <file> <ere> <seconds> — 0 once a line matches, 1 on timeout.
+wait_log() {
+  local file="$1" ere="$2" secs="$3" _
+  for _ in $(seq 1 $((secs * 10))); do
+    grep -qE "${ere}" "${file}" 2>/dev/null && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+# Upgrade-phase choreography, run beside the offerer: open the blocked path once the first
+# upgrade attempt missed on it, wait for the call to move onto the direct link, then blackhole it.
+# Progress lands in <marks>; the asserts read it after the call.
+# upgrade_choreo <offerer_log> <answerer_log> <marks>
+upgrade_choreo() {
+  local off_log="$1" ans_log="$2" marks="$3"
+  wait_log "${off_log}" '\[CallMediaBridge\] direct upgrade miss' 30 || { echo "no-first-miss" >>"${marks}"; return; }
+  echo "first-miss" >>"${marks}"
+  pp_hard_cgnat_block_p2p off
+  wait_log "${off_log}" 'call-media path migrated .* path=direct' 45 || { echo "no-upgrade" >>"${marks}"; return; }
+  echo "upgraded" >>"${marks}"
+  sleep 3
+  pp_hard_cgnat_block_p2p on
+  echo "blackholed" >>"${marks}"
+}
+
+# assert_upgrade <label> <offerer_log> <answerer_log> <marks>
+assert_upgrade() {
+  local label="$1" off_log="$2" ans_log="$3" marks="$4"
+  grep -qx first-miss "${marks}" || pp_hard_die "${label}: the first upgrade attempt never ran on the blocked path"
+  grep -qx upgraded "${marks}" || pp_hard_die "${label}: the call never moved onto the direct path once it opened"
+  grep -q 'CallMediaLeg migrate switched .* path=direct' "${ans_log}" ||
+    pp_hard_die "${label}: the answerer never switched onto the direct path"
+  echo "ok  upgrade: relayed → direct (make-before-break) on both sides"
+  grep -qx blackholed "${marks}" || pp_hard_die "${label}: the direct path was never blackholed"
+  grep -qE 'CallMediaLeg failover .* to=relayed' "${off_log}" "${ans_log}" ||
+    pp_hard_die "${label}: no failover onto the relayed standby after the direct path died"
+  echo "ok  failover: direct blackholed → warm relayed standby ($(grep -hoE 'CallMediaLeg failover .* to=[a-z]+' "${off_log}" "${ans_log}" | head -1 | sed 's/.*reason=//'))"
+}
+
+# assert_punch <label> <offerer_log> <answerer_log>
+assert_punch() {
+  local label="$1" off_log="$2" ans_log="$3"
+  grep -qE '\[PeerReach\] (peer reachable via circuit/punch .*path=punched|peer connected .*path=direct)' \
+    "${off_log}" "${ans_log}" || pp_hard_die "${label}: the call-start punch never connected the peers"
+  echo "ok  punch: peers connected over a punched link"
+  ! grep -qE 'call-media path migrated .* path=circuit' "${off_log}" "${ans_log}" ||
+    pp_hard_die "${label}: media fell back onto the relay"
+  ! grep -qE '\[CallLifecycle\] status=[A-Za-z]+->Reconnecting' "${off_log}" "${ans_log}" ||
+    pp_hard_die "${label}: the call showed Reconnecting (a dual-dial drop must rebind quietly)"
+  local rebinds
+  rebinds="$(cat "${off_log}" "${ans_log}" | grep -c 'CallMediaLeg reconnected .*(quiet rebind)' || true)"
+  echo "ok  punch: media on the punched link, never Reconnecting (quiet rebinds=${rebinds})"
+  local off_rx ans_rx
+  off_rx="$(max_rx "${off_log}")"
+  ans_rx="$(max_rx "${ans_log}")"
+  [[ "${off_rx}" -ge "${COLD_MIN_RX}" && "${ans_rx}" -ge "${COLD_MIN_RX}" ]] ||
+    pp_hard_die "${label}: audio short offerer_rx=${off_rx} answerer_rx=${ans_rx} (< ${COLD_MIN_RX})"
+  echo "ok  punch audio both ways offerer_rx=${off_rx} answerer_rx=${ans_rx}"
+}
+
 # run_nat_call <label> <call_id> <ready_name> <listen_ma> <mode>
-# mode: circuit | stack | cold | cold-dirty | cold-await
+# mode: circuit | stack | cold | cold-dirty | cold-await | cold-upgrade | cold-punch
 run_nat_call() {
   local label="$1"
   local call_id="$2"
@@ -169,6 +245,7 @@ run_nat_call() {
     hold_ms="${COLD_HOLD_MS}"
     stall_ms="${COLD_RX_STALL_MS}"
   fi
+  [[ "${mode}" == "cold-upgrade" ]] && hold_ms="${UPGRADE_HOLD_MS}"
   if [[ "${product_stack}" -eq 1 ]]; then
     local watch_ms=$((hold_ms > 4000 ? hold_ms - 3000 : 0))
     ans_args+=(--product-stack --rx-stall-ms "${stall_ms}" --watch-ms "${watch_ms}")
@@ -223,17 +300,28 @@ run_nat_call() {
   case "${mode}" in
     stack) off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms "${STACK_HOLD_MS}"
              --rx-stall-ms "${RX_STALL_MS}" --timeout-ms 45000) ;;
-    cold|cold-dirty|cold-await)
+    cold|cold-dirty|cold-await|cold-upgrade|cold-punch)
       off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms "${hold_ms}"
-                 --rx-stall-ms "${stall_ms}" --timeout-ms 60000 --signal-dir "${signal_dir}")
+                 --rx-stall-ms "${stall_ms}" --timeout-ms $((hold_ms + 60000)) --signal-dir "${signal_dir}")
       [[ "${mode}" == "cold-dirty" ]] && off_args+=(--dirty-book --force-dial-fail) ;;
     *) off_args+=(--peer-id-only) ;;
   esac
+
+  local marks="${LOG_DIR}/${call_id}.marks" choreo_pid=""
+  if [[ "${mode}" == "cold-upgrade" ]]; then
+    : >"${marks}"
+    upgrade_choreo "${off_log}" "${ans_log}" "${marks}" &
+    choreo_pid=$!
+  fi
 
   set +e
   pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" "${off_args[@]}" > >(tee "${off_log}") 2>&1
   local off_rc=$?
   set -e
+  if [[ -n "${choreo_pid}" ]]; then
+    kill "${choreo_pid}" 2>/dev/null || true
+    wait "${choreo_pid}" 2>/dev/null || true
+  fi
 
   # Give the answerer a moment to see call_leave and exit 0 on its own (143 = it never did).
   local grace
@@ -272,10 +360,14 @@ run_nat_call() {
     return 1
   fi
 
-  if [[ "${mode}" == cold* ]]; then
+  if [[ "${mode}" == "cold-punch" ]]; then
+    sleep 0.5
+    assert_punch "${label}" "${off_log}" "${ans_log}"
+  elif [[ "${mode}" == cold* ]]; then
     sleep 0.5  # let the tee'd answerer log flush
     assert_cold_reach "${label}" "${mode}" "${off_log}" "${ans_log}"
   fi
+  [[ "${mode}" == "cold-upgrade" ]] && assert_upgrade "${label}" "${off_log}" "${ans_log}" "${marks}"
   echo "ok  dual-NAT ${mode} call Invite→RX→Leave"
   echo "${label} smoke PASSED"
   return 0
@@ -377,6 +469,31 @@ fi
 if run_phase cold-await; then
   run_nat_call "B-HARD-CALL-NAT-COLD-AWAIT" "pp-hard-call-nat-cold-await" "call-nat-cold-await.ready" \
     "${PP_HARD_NAT_COLD_AWAIT_LISTEN:-/ip4/0.0.0.0/udp/47172/adp/1.0.0}" cold-await
+fi
+
+if run_phase upgrade; then
+  pp_hard_cgnat_set_nat cone
+  pp_hard_cgnat_block_p2p on
+  set +e
+  run_nat_call "B-HARD-CALL-NAT-UPGRADE" "pp-hard-call-nat-upgrade" "call-nat-upgrade.ready" \
+    "${PP_HARD_NAT_UPGRADE_LISTEN:-/ip4/0.0.0.0/udp/47174/adp/1.0.0}" cold-upgrade
+  upgrade_rc=$?
+  set -e
+  pp_hard_cgnat_block_p2p off
+  pp_hard_cgnat_set_nat symmetric
+  [[ "${upgrade_rc}" -eq 0 ]] || exit "${upgrade_rc}"
+fi
+
+if run_phase punch; then
+  pp_hard_cgnat_set_nat cone
+  pp_hard_cgnat_block_p2p off
+  set +e
+  run_nat_call "B-HARD-CALL-NAT-PUNCH" "pp-hard-call-nat-punch" "call-nat-punch.ready" \
+    "${PP_HARD_NAT_PUNCH_LISTEN:-/ip4/0.0.0.0/udp/47176/adp/1.0.0}" cold-punch
+  punch_rc=$?
+  set -e
+  pp_hard_cgnat_set_nat symmetric
+  [[ "${punch_rc}" -eq 0 ]] || exit "${punch_rc}"
 fi
 
 if run_phase broadcast; then

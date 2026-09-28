@@ -129,8 +129,11 @@ Checklist:
 ## k7 — Tests, hard lab, promotion (continuous)
 
 - [x] Hard-lab CGNAT long-hold stall repro: `pp-call-probe --rx-stall-ms/--watch-ms`, `PP_HARD_NAT_STACK_HOLD_MS` / `_RX_STALL_MS` / `_NETEM_A|B`
-- [ ] Hard-lab wave: punch-then-relay-drop, NAT rebind mid-call, short NAT timeout, network flip; netem profiles in CI (1 %/2 % loss must keep 60 s both ways)
-- [ ] Promote: CALLS.md (path set, migration, reconnect), WIRE_SCHEMAS (hello migrate, caps.mobility, control ops), MESH.md (link events, hygiene), amp docs/KEEPALIVE.md
+- [x] **k7-1** Punchable lab NAT ([HL005](../hard-lab/DECISIONS.md)): gateways firewall WAN input (accepting it made MASQUERADE remap our own port whenever the peer's punch packet arrived first — every lab punch failed) and run an explicit mapping, symmetric (default) or cone; runtime toggles for mode and a gateway↔gateway blackhole. The introducer leads each side's punch candidates with the endpoint it observes for the peer (NAT-mapped) — the lab peers self-report only private addresses
+- [x] **k7-2** hard-w5 Phase-9 UPGRADE: relayed start → the +20 s upgrade punch moves the live call to direct on both ends → direct blackholed → failover to the relayed standby, audio stall-gated throughout. Phase-10 PUNCH: call-start punch on cone NAT, media on the punched link, never `Reconnecting`
+- [x] **k7-3** Bugs the lab found, each with a loopback regression ([K011](DECISIONS.md)): quiet rebind when the path is lost while the peer is Connected on another link (dual-dial election after a simultaneous punch); a hello-born bundle's role (the offerer joining the answerer's early hello kept "answerer" → nobody drove); the reconnect placeholder kept as a channel-less standby; channel-close handling on the sender's thread (lock-order inversion with the IO pump, TSan)
+- [ ] Hard-lab wave remainder: NAT rebind mid-call, short NAT timeout, network flip (k5/k6); netem profiles in CI (1 %/2 % loss must keep 60 s both ways)
+- [x] Promote: CALLS.md § Call media paths, MESH.md § Link events and hygiene, AMP-CHANNEL.md (quiet rebind, roles). The migration / heartbeat wire lives in AMP-CHANNEL.md (not WIRE_SCHEMAS — chat payloads only); `caps.mobility` waits for k6; amp KEEPALIVE.md is already v2
 - [x] Fix doc drift found in survey: calls CURRENT_STATE "V001–V038", CALLS.md "through V038", H009 "plan only" header (+ media-hop-reachability DESIGN status rows)
 
 ## Later horizons

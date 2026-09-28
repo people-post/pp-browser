@@ -1,6 +1,6 @@
 # Call path resilience — current state
 
-**Last updated:** 2026-09-27 (resumed after thread-ownership: B30, B44, seed-park grace, dual-stack bind, flake closed, doc drift; k1 Amp hygiene in pp-cpp-amp v2.4.0, nested reliable lane in v2.5.0)
+**Last updated:** 2026-09-28 (k7: punchable lab NAT, upgrade / failover / punch lab phases, quiet rebind; earlier: B30, B44, seed-park grace, dual-stack bind, k1 Amp hygiene v2.4.0, nested reliable lane v2.5.0, k3, k4)
 
 > **Code moved since 2026-09-25.** Calls run on the media-sessions owner (`CallsThread`), reach / rendezvous / mesh media plane / reachability on the Connectivity owner, MeshControl is gone (mesh waits are completions), the inbound call-media hello is asynchronous, and pp-cpp-amp is pinned at **v2.6.0**. Mentions of MeshControl, "UI thread" bridge state, or amp v2.2.x below are history. Product hot keepalive is **10 s** (K008 amendment), not 2 s.
 
@@ -34,6 +34,18 @@
 | **k4 failover + reconnect** (k4-1 … k4-3) | Per-path heartbeat (500 ms active / 10 s standby); a released path stays as warm standby; active link lost or 1.5 s silent (from a heartbeating peer — never a muted mic) → TX onto the standby, the peer follows. No path left → `Reconnecting…` for 30 s while the offerer re-anchors and migrates the call onto the new link; then it fails ([AMP-CHANNEL.md § Path liveness and failover](../../docs/contracts/AMP-CHANNEL.md)). Standby is only what a migration left behind — no proactive relay standby yet (K003, k6) |
 | **k1 nested reliable lane** (pp-cpp-amp **v2.5.0**, pinned) | Reliable-class frames on a nested (relay-carrier) link are sequenced end to end, acked, resent and released in order (`CarrierLane`, [ADR_LINK_PLANE §11](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md)); a dead end-to-end path drops the nested link. Probe-negotiated — older peers and relays unchanged. Amp gtest: 20 % loss + reordering both ways delivers every message in order (red before). Lab `delay 120ms 30ms` stack / cold pass — but also passed on v2.4.0 in a single cycle, so the lab does not discriminate yet (k7 netem wave) |
 
+## Landed 2026-09-28 (k7)
+
+| Item | State |
+|------|-------|
+| **Lab NAT was un-punchable by accident** | The CGNAT gateways accepted unsolicited WAN input, so a peer's early punch packet became a conntrack flow and MASQUERADE remapped our own outbound port — every lab punch failed. Gateways now drop it (as routers do) and run an explicit mapping: symmetric (default; phases 1–8 stay relay-shaped) or cone ([HL005](../hard-lab/DECISIONS.md)) |
+| **Introducer observed endpoints** | The relay introducing a punch leads each side's candidates with the endpoint it sees for the peer; self-reported candidates were private-only in the lab (and behind any NAT without a learned public address) |
+| **hard-w5 Phase-9 UPGRADE / Phase-10 PUNCH** | Relayed → direct by the +20 s upgrade punch on both ends → direct blackholed → failover to the relayed standby; call-start punch with media on the punched link and no `Reconnecting`. Full hard-w5 green; PUNCH 14/14 in a loop |
+| **Quiet rebind (K011)** | A lost path while the peer is Connected on another link (dual-dial election after a simultaneous punch) → the offerer migrates at once; `Reconnecting…` only if not landed in 1 s |
+| **Hello-born bundle role** | The offerer joining a bundle the answerer's early hello created kept "answerer"; with the PeerId against it nobody drove (lab: 2 / 11 PUNCH runs showed `Reconnecting`) |
+| **Reconnect placeholder** | Was retired into a channel-less "standby" a later failover could switch onto — now dropped |
+| **Channel close off the IO strand** | A media send hitting a dead channel ran close handling on the sender's thread: coordinator `mu` → link manager lock, the reverse of the IO pump (TSan). Close handling is posted to IO |
+
 ## Still open (as of 2026-09-24/25 — see the note above)
 
 - **One-way audio stall on relayed calls — root-caused and fixed (needs pp-node on relays):** the hop bound the dialer's circuit channel Control (Reliable, strict in-order) and never switched it to the carrier policy; the dialer sends best-effort, so the first lost / reordered frame wedged dialer→target for the rest of the call (dogfood 16:17). Reproduced in hard lab CGNAT (`delay 80ms loss 1%` on the caller) and loopback (`RelayedCallDisturbanceTest.CallerUplinkLossDoesNotWedgeCallerToCallee`); fixed in `CircuitTunnelCoordinator` (hop side). Lab after fix: 60 s both ways under 1 % and 2 % loss.
@@ -60,11 +72,11 @@ From PR #223 / #215 (dogfood 2026-09-24 evening, phone CN cellular ↔ Mac Wi‑
 
 ## Next agent — start here
 
-1. **k1 done.** The per-link keepalive interval is k2's call-scoped keepalive item (needs the product to pick the value first).
-2. **k3** path set / make-before-break migration — the core of the project; nothing landed. Note: old peers ignore unknown hello types (need a migrate timeout); `TryUpgradeToDirectAsync` has no caller.
-3. **k4** heartbeat / RX-stall failover / Reconnecting + 30 s window / `peer link lost` no longer terminal — needs k3's path set.
-4. **k5** NetworkMonitor on four platforms; **k6** mobility; **k7** hard-lab wave.
-5. Dogfood (k0 exit): rerun cross-network with `scripts/dev/pp_dogfood.sh -- --debug` on both ends plus relay logs.
+1. **k1, k3, k4 done; k7 largely done** (lab wave remainder below). Path set, migration, failover, reconnect and quiet rebind are summarized in [CALLS.md § Call media paths](../../docs/architecture/CALLS.md#call-media-paths-11--call-path-resilience); wire in [AMP-CHANNEL.md](../../docs/contracts/AMP-CHANNEL.md).
+2. **k2** remainder: the call-scoped per-link keepalive interval (the product picks the value first).
+3. **k5** NetworkMonitor on four platforms → **k6** mobility policy (proactive relay standby K003, `caps.mobility`). The lab items NAT rebind mid-call / short NAT timeout / network flip wait on them.
+4. Open: B39 suggestion b; netem profiles in CI.
+5. Dogfood (k0 exit): rerun cross-network with `scripts/dev/pp_dogfood.sh -- --debug` on both ends plus relay logs — the punch now has lab coverage, the real NATs are the next check.
 
 ## Agent traps
 

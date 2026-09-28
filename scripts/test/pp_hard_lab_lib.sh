@@ -226,6 +226,10 @@ PP_HARD_CGNAT_PEER_A_IP="${PP_HARD_CGNAT_PEER_A_IP:-10.117.1.10}"
 PP_HARD_CGNAT_PEER_B_IP="${PP_HARD_CGNAT_PEER_B_IP:-10.117.2.10}"
 PP_HARD_CGNAT_GW_A_PRIV_IP="${PP_HARD_CGNAT_GW_A_PRIV_IP:-10.117.1.254}"
 PP_HARD_CGNAT_GW_B_PRIV_IP="${PP_HARD_CGNAT_GW_B_PRIV_IP:-10.117.2.254}"
+PP_HARD_CGNAT_GW_A_PUB_IP="${PP_HARD_CGNAT_GW_A_PUB_IP:-10.117.0.10}"
+PP_HARD_CGNAT_GW_B_PUB_IP="${PP_HARD_CGNAT_GW_B_PUB_IP:-10.117.0.11}"
+PP_HARD_CGNAT_PRIV_A_CIDR="${PP_HARD_CGNAT_PRIV_A_CIDR:-10.117.1.0/24}"
+PP_HARD_CGNAT_PRIV_B_CIDR="${PP_HARD_CGNAT_PRIV_B_CIDR:-10.117.2.0/24}"
 
 pp_hard_cgnat_compose() {
   pp_hard_need_cmd docker
@@ -248,6 +252,58 @@ pp_hard_cgnat_fix_peer_routes() {
   pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" sh -c \
     "ip route del default 2>/dev/null || true; ip route replace default via ${PP_HARD_CGNAT_GW_B_PRIV_IP}"
   echo "ok  peer default routes via SNAT gateways"
+}
+
+# Run `iptables ...` in a gateway with $pub bound to its public interface.
+# pp_hard_cgnat_gw_sh <gw_container> <gw_public_ip> <script>
+pp_hard_cgnat_gw_sh() {
+  local gw="$1" pub_ip="$2" script="$3"
+  pp_hard_exec "${gw}" sh -c \
+    "pub=\$(ip -o -4 addr show | awk '\$4 ~ /^${pub_ip//./\\.}\\// {print \$2; exit}'); [ -n \"\$pub\" ] || exit 3; ${script}"
+}
+
+# NAT mapping of both gateways (hard-gw-entrypoint.sh PP_HARD_GW_NAT). New flows only: mappings
+# already in conntrack keep their port.
+#   symmetric — a fresh public port per destination (hole punching cannot land)
+#   cone      — port-preserving, endpoint-independent mapping (punchable)
+pp_hard_cgnat_set_nat() {
+  local mode="$1" extra=""
+  case "${mode}" in
+    symmetric) extra="--random-fully" ;;
+    cone) ;;
+    *) pp_hard_die "pp_hard_cgnat_set_nat: mode must be symmetric|cone (got ${mode})" ;;
+  esac
+  pp_hard_cgnat_gw_sh "${PP_HARD_CGNAT_GW_A}" "${PP_HARD_CGNAT_GW_A_PUB_IP}" \
+    "iptables -t nat -F POSTROUTING && iptables -t nat -A POSTROUTING -s ${PP_HARD_CGNAT_PRIV_A_CIDR} -o \$pub -j MASQUERADE ${extra}" ||
+    pp_hard_die "gw-a: set nat ${mode} failed"
+  pp_hard_cgnat_gw_sh "${PP_HARD_CGNAT_GW_B}" "${PP_HARD_CGNAT_GW_B_PUB_IP}" \
+    "iptables -t nat -F POSTROUTING && iptables -t nat -A POSTROUTING -s ${PP_HARD_CGNAT_PRIV_B_CIDR} -o \$pub -j MASQUERADE ${extra}" ||
+    pp_hard_die "gw-b: set nat ${mode} failed"
+  echo "  gateways nat=${mode}"
+}
+
+# Blackhole (on) or restore (off) the public path between the two gateways — every peer-to-peer
+# packet, established flows included; the hop stays reachable, so relayed paths survive.
+pp_hard_cgnat_block_p2p() {
+  local state="$1"
+  local a_rule="FORWARD -o \$pub -d ${PP_HARD_CGNAT_GW_B_PUB_IP} -j DROP"
+  local b_rule="FORWARD -o \$pub -d ${PP_HARD_CGNAT_GW_A_PUB_IP} -j DROP"
+  # Delete every copy first so on/off are idempotent.
+  pp_hard_cgnat_gw_sh "${PP_HARD_CGNAT_GW_A}" "${PP_HARD_CGNAT_GW_A_PUB_IP}" \
+    "while iptables -D ${a_rule} 2>/dev/null; do :; done" || pp_hard_die "gw-a: p2p unblock failed"
+  pp_hard_cgnat_gw_sh "${PP_HARD_CGNAT_GW_B}" "${PP_HARD_CGNAT_GW_B_PUB_IP}" \
+    "while iptables -D ${b_rule} 2>/dev/null; do :; done" || pp_hard_die "gw-b: p2p unblock failed"
+  case "${state}" in
+    off) ;;
+    on)
+      pp_hard_cgnat_gw_sh "${PP_HARD_CGNAT_GW_A}" "${PP_HARD_CGNAT_GW_A_PUB_IP}" "iptables -I ${a_rule/FORWARD/FORWARD 1}" ||
+        pp_hard_die "gw-a: p2p block failed"
+      pp_hard_cgnat_gw_sh "${PP_HARD_CGNAT_GW_B}" "${PP_HARD_CGNAT_GW_B_PUB_IP}" "iptables -I ${b_rule/FORWARD/FORWARD 1}" ||
+        pp_hard_die "gw-b: p2p block failed"
+      ;;
+    *) pp_hard_die "pp_hard_cgnat_block_p2p: state must be on|off (got ${state})" ;;
+  esac
+  echo "  gateway↔gateway path blocked=${state}"
 }
 
 pp_hard_cgnat_resolve_topology() {
@@ -315,6 +371,9 @@ pp_hard_cgnat_ensure_up() {
   pp_hard_cgnat_fix_peer_routes
   # Give gw entrypoints a moment to install iptables.
   sleep 1
+  # Phases that change the gateways restore them; a run that died mid-phase may not have.
+  pp_hard_cgnat_set_nat symmetric
+  pp_hard_cgnat_block_p2p off
   pp_hard_cgnat_resolve_topology
   echo "cgnat hop peer_id=${HOP_PEER_ID} public=${HOP_IP_PUBLIC}"
   echo "cgnat peer-a=${PEER_A_IP} peer-b=${PEER_B_IP}"

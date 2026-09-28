@@ -155,7 +155,7 @@ Order: 6 → 7 → 8 → 9. Admission (#10) may parallel 6–7. Extends today’
 | 18 | **N-HARD-V6** | IPv6-only island ↔ dual-stack hop | Only if v6 listen is product-real |
 | 19 | **N-HARD-PATH-MIGRATE** | Change egress mid-call | Survive or clean renegotiate; Tier A/B own wire semantics |
 
-**Hole punch:** stack ACP is in-process (L3.25 gtests). Hard-lab **must not** treat Wave 5 CGNAT-ish or Phase-2 product as punch coverage — punch miss → circuit is success. Measured punch NAT shapes remain Wave 7 **N-HARD-HOLEPUNCH**.
+**Hole punch:** the gateways run an explicit NAT mapping ([HL005](../../projects/hard-lab/DECISIONS.md)): **symmetric** by default (`MASQUERADE --random-fully` — punching can never land, so phases 1–8 stay relay-shaped and a punch miss → circuit is success there) or **cone** (port-preserving, punchable) for the punch phases 9–10. Both drop unsolicited WAN input at the gateway itself, as real routers do; accepting it made MASQUERADE remap our own outbound port whenever the peer's first punch packet arrived early, so every punch failed for a reason no real NAT has. Other measured NAT shapes (port-restricted with random ports, hairpin, CGNAT pools) remain Wave 7 **N-HARD-HOLEPUNCH**.
 
 
 **Landed (scaffold):** `docker-compose.hard-lab-cgnat.yml` + `Dockerfile.hard-gw` + `pp_hard_nat_smoke.sh` / `--suite hard-w5`.
@@ -167,9 +167,12 @@ Dual SNAT gateways; hop on public net only; `--min-rx-frames` duplex gate.
 - Phase-6 **B-HARD-CALL-NAT-COLD-DIRTY**: as COLD plus offerer `--dirty-book --force-dial-fail` (answerer's private MA registered, then one EnsureAssociation miss that leaves dial backoff armed — the product must heal it; nothing re-warms the hop). Gates add the forced miss and the H010 branch: `skip EnsureAssociation private Preferred (seed parked)`.
 - Phase-7 **B-HARD-CALL-NAT-COLD-AWAIT**: as COLD with offerer uplink `PP_HARD_NAT_COLD_AWAIT_NETEM` (default `delay 250ms`) so the answerer's media starts before the offerer's circuit lands. Gate adds answerer `reach start … mode=await` (punch-only, waits for the offerer's circuit).
 - Phase-8 **B-HARD-BCAST-NAT** (live broadcast, [media-client-layers l5c](../../projects/media-client-layers/PHASES.md)): `pp-call-probe --role broadcaster` on peer-a goes live through the hop's `media_relay` with the product `BroadcastHub` (capture-only engine, real ticket server); two `--role viewer` probes on peer-b take the Live tip from `/share/bcast.ready` (announce push is Spine D), fetch a ticket from the NATed publisher (circuit via the hop), ask the hop for admission (pp-node refuses the unserved RPC at once — pp-cpp-amp ≥ v2.3.0 — so they attach directly) and attach receive-only. Gate: each viewer decodes ≥ `PP_HARD_NAT_BCAST_MIN_RX` (100) audio frames; the broadcaster never fails. Both viewers share peer-b's NAT; the redirect ladder needs an admission-serving relay (B1).
+- Phase-9 **B-HARD-CALL-NAT-UPGRADE** ([call-path-resilience](../../projects/call-path-resilience/PHASES.md) k7): gateways **cone** and the gateway↔gateway path blackholed, so the COLD call starts relayed. A choreographer beside the offerer opens the path after the first direct-upgrade attempt misses on it; the +20 s attempt must punch and move the live call onto the direct link on **both** ends (make-before-break, the relay kept as warm standby); 3 s later the direct path is blackholed again and the call must **fail over to the relayed standby** — audio gated by the 3 s RX-stall check throughout (`PP_HARD_NAT_UPGRADE_HOLD_MS`, default 45 s).
+- Phase-10 **B-HARD-CALL-NAT-PUNCH** (k7): gateways **cone**, nothing blocked. The call-start punch lands and media rides the punched link. Both ends dial in a punch, so two associations come up and the dual-dial election may drop the one the call bound first: the call must move to the winner without ever showing `Reconnecting` (quiet rebind, [K011](../../projects/call-path-resilience/DECISIONS.md)) and never fall back to the relay. Audio ≥ `PP_HARD_NAT_COLD_MIN_RX` both ways.
 - In COLD / COLD-DIRTY the answerer legitimately needs no reach of its own (it reuses the offerer's circuit or joins the offerer's live bundle); the audio gate proves it connected.
+- Runtime knobs (`pp_hard_lab_lib.sh`): `pp_hard_cgnat_set_nat symmetric|cone`, `pp_hard_cgnat_block_p2p on|off`; `pp_hard_cgnat_ensure_up` restores symmetric + unblocked, so a run that died mid-phase cannot leak cone into the next.
 
-Default `--phase all` (circuit+stack+cold+cold-dirty+cold-await); `product` / `dirty` / `both` now fail with a pointer to the COLD phases. Reproduce mode: `PP_HARD_NAT_CALL_EXPECT=fail`.
+Default `--phase all` (circuit+stack+cold+cold-dirty+cold-await+upgrade+punch+broadcast); `product` / `dirty` / `both` now fail with a pointer to the COLD phases. Reproduce mode: `PP_HARD_NAT_CALL_EXPECT=fail`.
 
 ### Routing mode coverage (success oracles)
 
@@ -205,7 +208,7 @@ Phones / real ISP NAT = **manual dogfood**, not automated Wave 6.
 |---|----|---------|
 | 25 | **N-HARD-LEDGER-DIR** | On-chain name → PeerId is product path |
 | 26 | **N-HARD-PAID-BROKER** | Quote/settle/SLA must be lab-visible |
-| 27 | **N-HARD-HOLEPUNCH** | Stack ships hole punch |
+| 27 | **N-HARD-HOLEPUNCH** | Stack ships hole punch — **started:** cone-NAT UPGRADE / PUNCH phases in Wave 5 ([HL005](../../projects/hard-lab/DECISIONS.md)); other NAT shapes still open |
 | 28 | **N-HARD-MULTI-HOP-MEDIA** | Group calls: still **non-goal**. Broadcast: after peer-scoped-broadcast Spine F / B1 ([MEDIA_TREE.md](../../projects/peer-scoped-broadcast/MEDIA_TREE.md)) |
 | 29 | Real multi-operator WAN | Never the only gate |
 

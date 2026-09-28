@@ -197,6 +197,8 @@ The call stays on its path when the candidate fails before step 3: `migrate_ack`
 - **Failover** (no handshake — the standby's channels are bound and RX takes every path): TX moves to the standby when the active path's link is lost, or when it has been silent **1.5 s** while the peer is known to heartbeat (a muted mic still heartbeats and sends silence frames). A standby silent 25 s is not taken. After a failover, silence alone does not switch again for 3 s.
 - **Follow:** an `active:true` heartbeat arriving on this end's standby means the peer moved there — this end switches too.
 - **No path left** (active link lost, no standby): the call is kept — MediaReady on a dead path — for a **30 s reconnect window**. A `migrate` onto any new link to the peer (the offerer reaches it again) brings it back; the window running out fails the call. A fresh `hello` for the same call (a peer from before k4 re-dialing) replaces the reconnecting bundle.
+- **Quiet rebind** (k7): when the path is lost while the peer is still Connected on another link (typically a simultaneous punch: both ends' associations came up and the dual-dial election dropped the one the call had bound), the glare winner migrates onto that link at once and the loss is not reported. The product hears of it (`on_path_lost` → `Reconnecting…`) only if the call is still without a path **1 s** later. The lost path leaves nothing behind: no retiring or standby entry.
+- **Roles:** the glare winner is the offerer. A bundle created from the peer's `hello` takes the complementary role, and a local leg that joins it (the offerer's media started after the answerer's hello arrived) sets its own role, so exactly one end drives.
 
 ## Circuit tunnel (v1)
 

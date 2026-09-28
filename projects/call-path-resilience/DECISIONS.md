@@ -117,3 +117,13 @@ Without a standby, primary-path loss goes to k4 re-anchor (`Reconnecting…`, re
 **Rationale:** The startup choice breaks a device that starts on an IPv4-only network and moves to IPv6-only cellular (NAT64); a dual-stack socket handles both families, so the choice never needs revisiting after a network change.  
 **Alternatives rejected:** Endpoint IO swap + rebind on family change (new Amp API for a case dual-stack removes).  
 **Still open:** Verify no code path depends on the IPv4-only bind (advertised addrs, dial-back observed parsing) before switching.
+
+---
+
+## K011 — A lost path with another live link to the peer rebinds quietly
+
+**Date:** 2026-09-28  
+**Status:** Accepted (k7)  
+**Decision:** When a call's active path is lost with no standby but the peer is still Connected on another link, the glare winner (offerer) migrates the call there immediately; `on_path_lost` (planner Reconnecting, UI `Reconnecting…`) is held for **1 s** and raised only if the call still has no path. The lost path's placeholder is dropped on the reconnect switch — never kept as retiring or standby. A bundle created from the peer's hello takes the complementary role; a local leg joining it stamps its own role.  
+**Rationale:** Hard lab (cone NAT, k7 `punch` phase): a simultaneous punch brings up two associations and Amp's dual-dial election drops one after both were published Connected; the call had often bound the loser. k4 recovered in ~20 ms, but through `Reconnecting…` — a visible flap on a healthy call. In 2 of 11 lab runs the recovery waited the full second because neither end drove: the offerer, having joined the bundle the answerer's early hello created, still held that bundle's default answerer role. The placeholder, unbound, resolved by alias to the new link and passed for a live channel-less standby a later failover would have switched onto.  
+**Alternatives rejected:** Make only one end dial in a punch burst (Amp) — loses the case where only one direction gets through (symmetric NAT on one side). Debounce `Reconnecting…` in the UI only — the transport would still wait for the bridge's re-anchor instead of using the link it already has.
