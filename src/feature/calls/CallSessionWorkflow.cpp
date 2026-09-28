@@ -124,6 +124,21 @@ Roe<void> CallSessionWorkflow::LeaveCallIfActiveExcept(const std::string& keep_c
 
 namespace {
 
+/** Join stamp the roster carries for `identity` (the sender's clock), if any. */
+std::optional<int64_t> RosterJoinStamp(const std::vector<CallRosterEntry>& participants, const std::string& identity) {
+  for (const CallRosterEntry& entry : participants) {
+    if (entry.identity == identity && entry.joined_at) {
+      return entry.joined_at;
+    }
+  }
+  return std::nullopt;
+}
+
+/** Old peers send no stamps: this device's receipt time (still earlier than later acceptors). */
+int64_t LocalJoinStampFallback(const CallSession& session) {
+  return session.created_at > 0 ? session.created_at : 1;
+}
+
 size_t CountDistinctInvitees(const std::vector<std::string>& invitees, const std::string& local_identity) {
   std::vector<std::string> seen;
   for (const std::string& identity : invitees) {
@@ -612,7 +627,6 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
     (void)initiation_billing_->MarkOpen(inviter);
   }
 
-  const int64_t now = util::NowUnixMs();
   row.state = CallSessionLogic::TransitionOnRemoteJoined(row.state);
   if (auto saved = sessions_.UpsertSession(row); !saved) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << saved.error().message;
@@ -624,7 +638,8 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
   self.identity = local_identity;
   self.state = CallParticipantState::Joined;
   self.media.video_enabled = false;
-  self.joined_at = now;
+  // V050 gt2b: no stamp from this device's clock — the inviter stamps our join when it processes the
+  // CallAccept and its CallRoster brings the stamp back (the store keeps the earliest).
   if (auto saved = sessions_.UpsertParticipant(self); !saved) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << saved.error().message;
     return saved.error();
@@ -1210,8 +1225,9 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
         row.state = CallParticipantState::Joined;
       }
       if (row.state == CallParticipantState::Joined) {
-        // Prefer earlier stamp than late acceptors so soft-migrate initiator detection works.
-        row.joined_at = session.created_at > 0 ? session.created_at : 1;
+        // V050 gt2b: the inviter's stamp (one clock for everyone) — this device's receipt time only
+        // for peers that send none; it still precedes later acceptors (initiator detection).
+        row.joined_at = entry.joined_at ? entry.joined_at : std::optional<int64_t>(LocalJoinStampFallback(session));
       }
       (void)sessions_.UpsertParticipant(row);
     }
@@ -1220,7 +1236,8 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
   inviter.call_id = invite->call_id;
   inviter.identity = pending.inviter_identity;
   inviter.state = CallParticipantState::Joined;
-  inviter.joined_at = session.created_at > 0 ? session.created_at : 1;
+  inviter.joined_at = RosterJoinStamp(invite->participants, pending.inviter_identity)
+                          .value_or(LocalJoinStampFallback(session));
   (void)sessions_.UpsertParticipant(inviter);
   CallParticipant self;
   self.call_id = invite->call_id;

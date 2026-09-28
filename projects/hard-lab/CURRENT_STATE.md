@@ -33,6 +33,7 @@ Forced-hop / discovery / impairment lab. **Wave 1–3 (partial) scaffold complet
 | Area | State |
 |------|-------|
 | Nested-circuit dial timeout after a forced dial miss | Seen once in COLD-DIRTY (`EnsureViaCircuit nested miss … dial timeout`, 2026-09-26); not reproduced in 25 runs since. Suspect: the aborted dial's link entry under the target PeerId (Amp k1 "LinkTable::Insert on an occupied dial key"). Watch nightly |
+| FLIP: no relay standby after a start-up upgrade | Seen once in 7 FLIP runs (2026-09-28): the answerer's hello landed over the circuit first, so the call went Live **relayed** (`ArmRelayStandby` skips relayed paths), then the +3 s direct upgrade moved it onto the punched link — and nothing re-arms the relay standby after an upgrade (only after a failover), so the flip had no standby (`no relay standby came up before the flip (K003)`). Product race in call-path-resilience k3/K003, not the lab; promote to a Bridge gtest when fixed |
 | N-HARD-DIR / DHT / N-ADMIT-HARD | Blocked on product hooks |
 | Wave 4+ multi-hop | Blocked on L3.5 |
 | GUI / phones | Manual dogfood only |

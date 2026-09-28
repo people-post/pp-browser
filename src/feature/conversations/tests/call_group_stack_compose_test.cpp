@@ -549,6 +549,53 @@ TEST_F(CallGroupStackComposeTest, SimultaneousAcceptsConvergeOnTheHop) {
   }
 }
 
+// V050 gt2b: every side names the next owner from its own rows, so every side must hold the same
+// joined_at for each participant. Stamps come from one clock — the initiator's (StartCall, accept
+// processing) — and reach invitees through the invite / roster. An invitee never stamps anyone from
+// its own clock: with the store keeping the earliest stamp, a device whose clock runs behind would
+// keep its own reading and disagree with the others on the owner.
+TEST_F(CallGroupStackComposeTest, InviteesNeverStampJoinsFromTheirOwnClock) {
+  auto stamp = [&](size_t viewer, size_t subject, const std::string& call_id) -> std::optional<int64_t> {
+    CallSessionStore sessions(sides_[viewer].store->ProfileDbPath());
+    auto row = sessions.FindParticipant(call_id, sides_[subject].local_identity);
+    return row && row->has_value() ? (*row)->joined_at : std::nullopt;
+  };
+  const std::string call_id = StartGroupCall();
+  ASSERT_FALSE(call_id.empty());
+  const auto a_own = stamp(kA, kA, call_id);
+  ASSERT_TRUE(a_own);
+  for (size_t i : {kB, kC}) {
+    EXPECT_EQ(stamp(i, kA, call_id), a_own) << "side " << i << " stamped the inviter from its own clock";
+  }
+
+  AcceptInvite(kB, call_id);
+  for (int k = 0; k < 20; ++k) {
+    AppRuntime::RunUIAndOwnerTasks();  // B's accept runs locally; nothing reaches A yet
+  }
+  EXPECT_FALSE(stamp(kB, kB, call_id)) << "B stamped its own join from its own clock";
+
+  DrainUntil([&]() {
+    PumpWire();
+    return DirectPairLive(kA, kB);
+  });
+  AcceptInvite(kC, call_id);
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return GroupLive(call_id);
+      },
+      20000);
+  ASSERT_TRUE(GroupLive(call_id)) << Describe(call_id);
+  for (size_t subject = 0; subject < kSides; ++subject) {
+    const auto want = stamp(kA, subject, call_id);
+    ASSERT_TRUE(want) << "initiator has no stamp for side " << subject;
+    for (size_t viewer : {kB, kC}) {
+      EXPECT_EQ(stamp(viewer, subject, call_id), want)
+          << "side " << viewer << " holds a different joined_at for side " << subject;
+    }
+  }
+}
+
 // V050: the initiator leaving is not a re-evaluation either — the other two stay on the hop and keep
 // hearing each other, and both name the same next owner of re-picks (earliest joined: B).
 TEST_F(CallGroupStackComposeTest, InitiatorLeaveKeepsTheRestOnTheHop) {
