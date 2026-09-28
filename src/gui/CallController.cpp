@@ -74,6 +74,8 @@ CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgres
       .ring_pricing_label = ring.pricing_label.c_str(),
       .ring_accept_charge_label = ring.accept_charge_label.c_str(),
       .ring_accept_charge_hint = ring.accept_charge_hint.c_str(),
+      .ring_accept_short = ring.accept_short.c_str(),
+      .ring_voice_short = ring.voice_short.c_str(),
       .in_call_title = in_call.title.c_str(),
       .in_call_mic_level = in_call.mic_level,
       .in_call_peer_level = in_call.peer_level,
@@ -584,6 +586,22 @@ void CallController::RefreshPendingRing() {
         ring_.voice_answer_label = Tr("call.ring.voice_answer_free").c_str();
       } else {
         ring_.voice_answer_label = Tr("call.ring.accept_voice").c_str();
+      }
+
+      // Short labels for the round icon buttons (WeChat-style ring redesign) — same
+      // conflict-wins-over-pricing precedence as the long labels above.
+      if (has_conflict) {
+        ring_.accept_short = Tr("call.ring.short.end_and_accept").c_str();
+        ring_.voice_short = Tr("call.ring.short.end_and_accept_voice").c_str();
+      } else if (ring_.show_pricing) {
+        ring_.accept_short = Tr("call.ring.short.accept_free").c_str();
+        ring_.voice_short = Tr("call.ring.short.voice_answer_free").c_str();
+      } else if (ring_.video_allowed) {
+        ring_.accept_short = Tr("call.ring.short.video").c_str();
+        ring_.voice_short = Tr("call.ring.short.voice").c_str();
+      } else {
+        ring_.accept_short = Tr("call.ring.short.accept").c_str();
+        ring_.voice_short = Tr("call.ring.short.voice").c_str();
       }
 
       if (pending_call_wake_notify_) {

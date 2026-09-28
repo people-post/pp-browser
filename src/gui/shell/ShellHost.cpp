@@ -171,6 +171,8 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_ring_accept_charge_label", &host.state_.call_ring.accept_charge_label);
     ctor.Bind("call_ring_accept_charge_enabled", &host.state_.call_ring.accept_charge_enabled);
     ctor.Bind("call_ring_accept_charge_hint", &host.state_.call_ring.accept_charge_hint);
+    ctor.Bind("call_ring_accept_short", &host.state_.call_ring.accept_short);
+    ctor.Bind("call_ring_voice_short", &host.state_.call_ring.voice_short);
     ctor.Bind("call_in_progress_active", &host.state_.call_in_progress.active);
     ctor.Bind("call_in_progress_title", &host.state_.call_in_progress.title);
     ctor.Bind("call_in_progress_subtitle", &host.state_.call_in_progress.subtitle);
@@ -890,6 +892,8 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_label");
   DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_enabled");
   DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_hint");
+  DataModelHost::Instance().Dirty("window", "call_ring_accept_short");
+  DataModelHost::Instance().Dirty("window", "call_ring_voice_short");
   DataModelHost::Instance().Dirty("window", "call_in_progress_active");
   DataModelHost::Instance().Dirty("window", "call_in_progress_title");
   DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle");
@@ -1919,14 +1923,32 @@ std::string ShellHost::SerializeCallRing() const {
   out << "<p class=\"text shell-dialog-message\" data-if=\"call_ring_conflict\" data-rml=\"call_ring_conflict_hint\"></p>";
   out << "<p class=\"text-sm shell-dialog-message\" data-if=\"call_ring_show_pricing\" "
          "data-rml=\"call_ring_pricing_label\"></p>";
-  out << "<div class=\"shell-dialog-actions row\">";
-  out << "<button class=\"btn btn-secondary\" data-event-click=\"call_decline()\" "
-         "data-rml=\"call_ring_decline_label\"></button>";
-  out << "<button class=\"btn btn-secondary\" data-if=\"call_ring_video_allowed\" "
-         "data-event-click=\"call_accept_voice()\" data-rml=\"call_ring_voice_answer_label\"></button>";
-  out << "<button class=\"btn btn-primary shell-call-accept\" "
-         "data-class-shell-call-accept--pulse=\"call_ring_pulse\" "
-         "data-event-click=\"call_accept()\" data-rml=\"call_ring_accept_label\"></button>";
+  // WeChat-style round icon buttons with a short label underneath; long labels above
+  // (call_ring_decline_label / accept_label / voice_answer_label) stay bound for a11y.
+  out << "<div class=\"shell-call-ring-actions row\">";
+  out << "<div class=\"shell-call-ring-action\">";
+  out << "<button class=\"shell-call-ring-action-circle shell-call-ring-decline\" type=\"button\" "
+         "data-event-click=\"call_decline()\">";
+  out << "<svg src=\"../icons/phone-hangup.svg\" width=\"26\" height=\"26\" crop-to-content=\"true\"></svg>";
+  out << "</button>";
+  out << "<p class=\"text-xs shell-call-ring-action-label\">" << Tr("call.ring.short.decline") << "</p>";
+  out << "</div>";
+  out << "<div class=\"shell-call-ring-action\" data-if=\"call_ring_video_allowed\">";
+  out << "<button class=\"shell-call-ring-action-circle shell-call-ring-voice\" type=\"button\" "
+         "data-event-click=\"call_accept_voice()\">";
+  out << "<svg src=\"../icons/phone.svg\" width=\"26\" height=\"26\" crop-to-content=\"true\"></svg>";
+  out << "</button>";
+  out << "<p class=\"text-xs shell-call-ring-action-label\" data-rml=\"call_ring_voice_short\"></p>";
+  out << "</div>";
+  out << "<div class=\"shell-call-ring-action\">";
+  out << "<button class=\"shell-call-ring-action-circle shell-call-accept\" "
+         "data-class-shell-call-accept--pulse=\"call_ring_pulse\" type=\"button\" "
+         "data-event-click=\"call_accept()\">";
+  out << "<svg width=\"26\" height=\"26\" crop-to-content=\"true\" "
+         "data-attr-src=\"call_ring_video_allowed ? '../icons/video.svg' : '../icons/phone.svg'\"></svg>";
+  out << "</button>";
+  out << "<p class=\"text-xs shell-call-ring-action-label\" data-rml=\"call_ring_accept_short\"></p>";
+  out << "</div>";
   out << "</div>";
   out << "<div class=\"shell-dialog-actions column\" data-if=\"call_ring_show_pricing\">";
   out << "<button class=\"btn btn-secondary\" type=\"button\" "

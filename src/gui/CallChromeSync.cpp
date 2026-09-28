@@ -101,7 +101,9 @@ CallChromeUpdate ClassifyCallChromeUpdate(const CallChromeLayer& synced, const C
                               synced.ring_decline_label != next.ring_decline_label ||
                               synced.ring_pricing_label != next.ring_pricing_label ||
                               synced.ring_accept_charge_label != next.ring_accept_charge_label ||
-                              synced.ring_accept_charge_hint != next.ring_accept_charge_hint;
+                              synced.ring_accept_charge_hint != next.ring_accept_charge_hint ||
+                              synced.ring_accept_short != next.ring_accept_short ||
+                              synced.ring_voice_short != next.ring_voice_short;
   if (labels_changed) {
     return CallChromeUpdate::DirtyOnly;
   }

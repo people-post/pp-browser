@@ -945,9 +945,37 @@ select selectbox option:hover {
   border-color: #818cf8;
 }
 
+.shell-call-ring-action-label {
+  color: #d1d5db;
+}
+
+.shell-call-ring-decline {
+  background-color: #dc2626;
+}
+
+.shell-call-ring-decline svg {
+  image-color: #ffffff;
+}
+
+.shell-call-ring-voice {
+  background-color: #374151;
+}
+
+.shell-call-ring-voice svg {
+  image-color: #f9fafb;
+}
+
+.shell-call-accept {
+  background-color: #16a34a;
+}
+
+.shell-call-accept svg {
+  image-color: #ffffff;
+}
+
 .shell-call-accept--pulse {
-  background-color: #818cf8;
-  box-shadow: 0 0 0 4dp #6366f144, 0 4dp 14dp #6366f166;
+  background-color: #22c55e;
+  box-shadow: 0 0 0 4dp #22c55e33, 0 4dp 14dp #16a34a66;
 }
 
 .chat-empty {

@@ -185,6 +185,10 @@ struct CallRingState {
   ui::String pricing_label;
   ui::String accept_charge_label;
   ui::String accept_charge_hint;
+  /** Short label under the round accept/video circle button (WeChat-style ring redesign). */
+  ui::String accept_short;
+  /** Short label under the round voice-answer circle button. */
+  ui::String voice_short;
 };
 
 /** One row in the in-call participant roster strip. */
