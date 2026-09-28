@@ -160,5 +160,30 @@ TEST_F(AttachmentCacheAtRestTest, LargeVideoPosterUsesSoftPlaceholderWithoutView
   EXPECT_TRUE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "video/mp4", "clip.mp4").empty());
 }
 
+TEST_F(AttachmentCacheAtRestTest, ExtensionIgnoresPeerSuppliedFilename) {
+  // A malicious peer can send any filename; the on-disk extension must come only from the
+  // mime whitelist, never from that filename (otherwise "image/png" + "x.exe" would save an
+  // .exe that an image-mime open path runs without confirmation).
+  EXPECT_EQ(AttachmentExtensionFromMime("image/png", "x.exe"), "png");
+  EXPECT_EQ(AttachmentExtensionFromMime("video/mp4", "clip.bat"), "mp4");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/octet-stream", "x.exe"), "");
+}
+
+TEST_F(AttachmentCacheAtRestTest, ContentMatchesMimeFlagsLyingMime) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x77);
+
+  // Plain text bytes saved under a video/mp4 mime: the sender lied to reach the
+  // no-confirm-on-open path for images/videos.
+  ASSERT_TRUE(SaveAttachmentPlaintext(profile_dir_, thread_id_, *hash, "video/mp4", plain_, "clip.mp4", dek,
+                                      profile_id_));
+  auto view = EnsureAttachmentViewPath(profile_dir_, thread_id_, *hash, "video/mp4", "clip.mp4", dek, profile_id_);
+  ASSERT_TRUE(view) << view.error().message;
+
+  EXPECT_FALSE(AttachmentContentMatchesMime(*view, "video/mp4"));
+  EXPECT_TRUE(AttachmentContentMatchesMime(*view, "text/plain"));
+}
+
 } // namespace
 } // namespace pbr

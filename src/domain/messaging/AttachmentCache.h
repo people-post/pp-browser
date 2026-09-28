@@ -26,6 +26,15 @@ bool IsAttachmentVideoMime(const std::string& mime);
 bool AttachmentOpenNeedsConfirm(const std::string& mime);
 
 /**
+ * Best-effort magic-byte sniff for the mimes AttachmentExtensionFromMime knows about
+ * (png/jpeg/gif/webp/mp4/webm/pdf). Returns true (nothing to flag) when the mime has no
+ * checkable signature, the file is missing/too short, or the signature matches; false when
+ * the declared mime and the file's actual content clearly disagree (sender lied about mime
+ * to bypass the open-without-confirm path for images/videos).
+ */
+bool AttachmentContentMatchesMime(const std::string& path, const std::string& mime);
+
+/**
  * Presentation gate for private video: above this size, skip session `blobs_view`
  * materialization until explicit open (CAS ingest unchanged). Matches Soft auto-download
  * ceiling (4 MiB). Unknown size (`byte_length == 0`) stays permissive.

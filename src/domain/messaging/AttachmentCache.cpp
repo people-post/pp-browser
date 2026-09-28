@@ -150,13 +150,11 @@ std::string AttachmentHashHex(const std::vector<uint8_t>& content_hash) {
 
 
 
-std::string AttachmentExtensionFromMime(const std::string& mime, const std::string& filename) {
-  if (!filename.empty()) {
-    const std::string ext = std::filesystem::path(filename).extension().string();
-    if (!ext.empty() && ext.size() <= 8) {
-      return ext.size() > 1 && ext[0] == '.' ? ext.substr(1) : ext;
-    }
-  }
+std::string AttachmentExtensionFromMime(const std::string& mime, const std::string& /*filename*/) {
+  // The on-disk extension is derived only from a fixed mime whitelist, never from the
+  // peer-supplied filename: an attacker could otherwise pair an auto-opened mime (image/
+  // video, see AttachmentOpenNeedsConfirm) with an executable filename extension and have
+  // it run on open (Windows extension-based handler dispatch).
   if (mime == "image/png") {
     return "png";
   }
@@ -194,6 +192,47 @@ bool IsAttachmentVideoMime(const std::string& mime) {
 
 bool AttachmentOpenNeedsConfirm(const std::string& mime) {
   return !IsAttachmentImageMime(mime) && !IsAttachmentVideoMime(mime);
+}
+
+bool AttachmentContentMatchesMime(const std::string& path, const std::string& mime) {
+  static constexpr size_t kSniffLen = 16;
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    return true; // Can't read it; nothing to flag here (open will fail on its own).
+  }
+  unsigned char buf[kSniffLen] = {};
+  in.read(reinterpret_cast<char*>(buf), static_cast<std::streamsize>(kSniffLen));
+  const auto got = static_cast<size_t>(in.gcount());
+
+  const auto has_prefix = [&](std::initializer_list<unsigned char> bytes) {
+    if (got < bytes.size()) {
+      return false;
+    }
+    return std::equal(bytes.begin(), bytes.end(), buf);
+  };
+
+  if (mime == "image/png") {
+    return has_prefix({0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A});
+  }
+  if (mime == "image/jpeg" || mime == "image/jpg") {
+    return has_prefix({0xFF, 0xD8, 0xFF});
+  }
+  if (mime == "image/gif") {
+    return has_prefix({'G', 'I', 'F', '8', '7', 'a'}) || has_prefix({'G', 'I', 'F', '8', '9', 'a'});
+  }
+  if (mime == "image/webp") {
+    return got >= 12 && std::memcmp(buf, "RIFF", 4) == 0 && std::memcmp(buf + 8, "WEBP", 4) == 0;
+  }
+  if (mime == "video/mp4") {
+    return got >= 8 && std::memcmp(buf + 4, "ftyp", 4) == 0;
+  }
+  if (mime == "video/webm") {
+    return has_prefix({0x1A, 0x45, 0xDF, 0xA3});
+  }
+  if (mime == "application/pdf") {
+    return has_prefix({'%', 'P', 'D', 'F', '-'});
+  }
+  return true; // No known signature for this mime (e.g. text/plain); nothing to check.
 }
 
 bool AttachmentAllowsInlinePrivateView(const std::string& mime, const uint64_t byte_length) {
