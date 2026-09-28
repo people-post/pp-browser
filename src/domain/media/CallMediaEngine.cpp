@@ -433,13 +433,16 @@ struct CallMediaEngine::Impl {
     waiter.detach();
   }
 
-  /** One playout slot for one track: decode Packet / FEC-on-Gap / PLC-on-Empty into `mix`. */
+  /**
+   * One playout slot for one track: decode Packet / FEC-on-Gap / PLC-on-Empty into `mix`. When the
+   * buffer is over its adaptive target, a first-pass decoded Packet that turns out to be silence is
+   * dropped and a second frame is popped/decoded to catch up by one slot without an audible gap
+   * (adaptive jitter §2).
+   */
   void PopAndDecodeTrackLocked(RemoteAudioTrack& track, std::vector<int16_t>& mix, bool& any) {
     if (!track.decoder) {
       return;
     }
-    const uint64_t underruns_before = track.jitter.underruns();
-    AudioPlayoutPop pop = track.jitter.PopForPlayout();
     std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples), 0);
     const auto plc = [&]() {
       const int n = opus_decode(track.decoder, nullptr, 0, pcm.data(), kFrameSamples, 0);
@@ -449,32 +452,43 @@ struct CallMediaEngine::Impl {
       return n;
     };
     int decoded = 0;
-    switch (pop.kind) {
-    case AudioPlayoutPop::Kind::Packet:
-      decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
-                            kFrameSamples, 0);
-      break;
-    case AudioPlayoutPop::Kind::Gap:
-      // The next packet's in-band FEC (LBRR) only covers the frame right before it; earlier
-      // missing frames of a wider hole are PLC. PLC also if the FEC decode fails.
-      if (pop.fec_usable) {
+    for (int pass = 0; pass < 2; ++pass) {
+      const uint64_t underruns_before = track.jitter.underruns();
+      AudioPlayoutPop pop = track.jitter.PopForPlayout();
+      decoded = 0;
+      switch (pop.kind) {
+      case AudioPlayoutPop::Kind::Packet:
         decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
-                              kFrameSamples, 1);
+                              kFrameSamples, 0);
+        break;
+      case AudioPlayoutPop::Kind::Gap:
+        // The next packet's in-band FEC (LBRR) only covers the frame right before it; earlier
+        // missing frames of a wider hole are PLC. PLC also if the FEC decode fails.
+        if (pop.fec_usable) {
+          decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
+                                kFrameSamples, 1);
+        }
+        if (decoded > 0) {
+          // libopus returns >0 both for a real FEC frame and for a PLC-like frame it synthesises
+          // when the packet carried no FEC data — counting both as fec= is accepted (diagnostic).
+          fec_frames_total.fetch_add(1, std::memory_order_relaxed);
+        } else {
+          decoded = plc();
+        }
+        break;
+      case AudioPlayoutPop::Kind::Empty:
+        // Priming (buffer hasn't reached target depth yet) also returns Empty but is not a real
+        // underrun — only count/PLC it when this pop actually incremented the cumulative counter.
+        if (track.jitter.underruns() > underruns_before) {
+          playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
+          decoded = plc();
+        }
+        break;
       }
-      if (decoded > 0) {
-        // libopus returns >0 both for a real FEC frame and for a PLC-like frame it synthesises
-        // when the packet carried no FEC data — counting both as fec= is accepted (diagnostic).
-        fec_frames_total.fetch_add(1, std::memory_order_relaxed);
-      } else {
-        decoded = plc();
-      }
-      break;
-    case AudioPlayoutPop::Kind::Empty:
-      // Priming (buffer hasn't reached target depth yet) also returns Empty but is not a real
-      // underrun — only count/PLC it when this pop actually incremented the cumulative counter.
-      if (track.jitter.underruns() > underruns_before) {
-        playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
-        decoded = plc();
+      if (pass == 0 && pop.kind == AudioPlayoutPop::Kind::Packet && decoded > 0 && track.jitter.OverTarget() &&
+          IsCatchUpSilence(pcm, static_cast<size_t>(decoded))) {
+        track.jitter.NoteSilenceDrop();
+        continue; // catch up: pop and decode the next frame instead of playing this silent one
       }
       break;
     }
@@ -1441,6 +1455,10 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
       s.last_rx_ms = track->last_rx_ms;
       s.peak_level = track->peak_level;
       h.streams.push_back(s);
+      h.jitter_target_ms = std::max(h.jitter_target_ms,
+                                     static_cast<int64_t>(track->jitter.TargetFrames()) * AudioJitterBuffer::kFrameMs);
+      h.jitter_silence_drops += track->jitter.silence_drops();
+      h.jitter_speech_drops += track->jitter.speech_drops();
     }
   }
   return h;

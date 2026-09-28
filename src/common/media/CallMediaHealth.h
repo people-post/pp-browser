@@ -50,6 +50,10 @@ struct CallMediaEngineHealth {
   std::string audio_io = "none";
   /** VPIO render callbacks padded with zeros, per call, after playout started (0 on SDL). */
   uint64_t io_underruns = 0;
+  /** Adaptive jitter target (max over remote streams), and catch-up drops summed over streams. */
+  int64_t jitter_target_ms = 0;
+  uint64_t jitter_silence_drops = 0;
+  uint64_t jitter_speech_drops = 0;
   uint64_t rx_audio_frames = 0;
   uint64_t tx_audio_frames = 0;
   int64_t last_rx_audio_ms = 0;

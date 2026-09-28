@@ -276,6 +276,18 @@ private:
   size_t window_min_depth_ = kMaxFrames;
 };
 
+/** Peak below 1 % of full scale (≈ −40 dBFS): safe to skip when catching up (adaptive jitter §2). */
+constexpr int kCatchUpSilencePeak = 328;  // 0.01 × 32768
+inline bool IsCatchUpSilence(const std::vector<int16_t>& pcm, size_t samples) {
+  const size_t n = std::min(samples, pcm.size());
+  for (size_t i = 0; i < n; ++i) {
+    if (pcm[i] >= kCatchUpSilencePeak || pcm[i] <= -kCatchUpSilencePeak) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** Saturating mix of mono s16 frames into `out` (size = samples). */
 inline void MixPcmSat(std::vector<int16_t>& out, const std::vector<int16_t>& in) {
   const size_t n = std::min(out.size(), in.size());

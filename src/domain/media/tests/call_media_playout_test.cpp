@@ -499,6 +499,27 @@ TEST(AudioJitterBufferTest, OverTargetAndSilenceDropCounter) {
   EXPECT_EQ(buf.speech_drops(), 0u);
 }
 
+TEST(CatchUpSilenceTest, QuietFrameIsSilence) {
+  std::vector<int16_t> pcm(960, 0);
+  pcm[10] = 200;  // ~ -44 dBFS peak
+  EXPECT_TRUE(IsCatchUpSilence(pcm, pcm.size()));
+}
+
+TEST(CatchUpSilenceTest, LoudFrameIsNotCatchUpSilence) {
+  std::vector<int16_t> pcm(960, 0);
+  pcm[500] = 1000;  // ~ -30 dBFS peak
+  EXPECT_FALSE(IsCatchUpSilence(pcm, pcm.size()));
+  pcm[500] = 0;
+  pcm[600] = -1000;
+  EXPECT_FALSE(IsCatchUpSilence(pcm, pcm.size()));
+}
+
+TEST(CatchUpSilenceTest, OnlyFirstSamplesCount) {
+  std::vector<int16_t> pcm(960, 0);
+  pcm[900] = 20000;
+  EXPECT_TRUE(IsCatchUpSilence(pcm, 480));  // only the decoded part is inspected
+}
+
 TEST(AudioJitterBufferTest, SustainedSurplusIsTrimmedAsSpeech) {
   AudioJitterBuffer buf;
   uint32_t seq = 1;
