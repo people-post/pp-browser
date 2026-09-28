@@ -1134,11 +1134,16 @@ struct CallMediaEngine::Impl {
     }
     // Decoded at playout (packet-level jitter buffer: FEC on a gap needs the next packet).
     const int64_t recv_ms = util::NowUnixMs();
+    // Monotonic clock for the jitter estimator (AudioPacket.recv_ms): a wall-clock (NTP) step
+    // would otherwise look like packet lateness (M6). rx_age / health still compare wall clock.
+    const int64_t recv_mono_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::steady_clock::now().time_since_epoch())
+                                      .count();
     ++track->rx_frames;
     track->last_rx_ms = recv_ms;
     AudioPacket packet;
     packet.seq = seq;
-    packet.recv_ms = recv_ms;
+    packet.recv_ms = recv_mono_ms;
     packet.payload.assign(reinterpret_cast<const uint8_t*>(data), reinterpret_cast<const uint8_t*>(data) + size);
     track->jitter.Push(std::move(packet));
     rx_audio_frames.fetch_add(1, std::memory_order_relaxed);
@@ -1457,6 +1462,8 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
       h.streams.push_back(s);
       h.jitter_target_ms = std::max(h.jitter_target_ms,
                                      static_cast<int64_t>(track->jitter.TargetFrames()) * AudioJitterBuffer::kFrameMs);
+      h.jitter_depth_ms = std::max(h.jitter_depth_ms,
+                                    static_cast<int64_t>(track->jitter.size()) * AudioJitterBuffer::kFrameMs);
       h.jitter_silence_drops += track->jitter.silence_drops();
       h.jitter_speech_drops += track->jitter.speech_drops();
     }

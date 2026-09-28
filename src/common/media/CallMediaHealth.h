@@ -52,6 +52,8 @@ struct CallMediaEngineHealth {
   uint64_t io_underruns = 0;
   /** Adaptive jitter target (max over remote streams), and catch-up drops summed over streams. */
   int64_t jitter_target_ms = 0;
+  /** Actual jitter buffer depth (max over remote streams) — how full it is against the target. */
+  int64_t jitter_depth_ms = 0;
   uint64_t jitter_silence_drops = 0;
   uint64_t jitter_speech_drops = 0;
   uint64_t rx_audio_frames = 0;

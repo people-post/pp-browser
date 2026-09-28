@@ -487,6 +487,36 @@ TEST(AudioJitterBufferTest, RestartResetsJitterTarget) {
   EXPECT_EQ(buf.TargetFrames(), 3u);
 }
 
+// M3: priming must not wait for the adaptive target — a single early outlier (tiny sample count,
+// so it dominates the histogram) must not delay first audio to 400 ms.
+TEST(AudioJitterBufferTest, PrimesAtSixtyMsEvenAfterEarlyOutlier) {
+  AudioJitterBuffer buf;
+  buf.Push(PktAt(1, 1000));
+  buf.Push(PktAt(2, 1020));
+  buf.Push(PktAt(3, 1540)); // 500 ms late outlier: skews the (tiny-sample) adaptive target way up
+  ASSERT_GE(buf.TargetFrames(), 10u); // sanity: the outlier really did skew the adaptive target
+  auto p = buf.PopForPlayout();
+  EXPECT_EQ(p.kind, Kind::Packet); // primes at kTargetFrames (3), not the skewed adaptive target
+  EXPECT_EQ(p.seq, 1u);
+  buf.Push(PktAt(4, 1560));
+  buf.Push(PktAt(5, 1580));
+  buf.Push(PktAt(6, 1600));
+  EXPECT_EQ(buf.PopForPlayout().seq, 2u);
+}
+
+// M4: a duplicate packet is a retransmit/dup delivery, not a late arrival — it must not feed the
+// jitter estimator.
+TEST(AudioJitterBufferTest, DuplicatesDoNotRaiseTarget) {
+  AudioJitterBuffer buf;
+  for (uint32_t s = 1; s <= 300; ++s) {
+    const int64_t recv = 1000 + static_cast<int64_t>(s - 1) * 20;
+    buf.Push(PktAt(s, recv));
+    buf.Push(PktAt(s, recv + 300)); // duplicate seq, arrives 300 ms "later" — not lateness
+    (void)buf.PopForPlayout();
+  }
+  EXPECT_EQ(buf.TargetFrames(), 3u);
+}
+
 TEST(AudioJitterBufferTest, OverTargetAndSilenceDropCounter) {
   AudioJitterBuffer buf;
   for (uint32_t s = 1; s <= 3; ++s) buf.Push(Pkt(s));
@@ -546,6 +576,27 @@ TEST(AudioJitterBufferTest, PressureStillSignalsAtTwoHundredMs) {
   AudioJitterBuffer buf2;
   for (uint32_t s = 1; s <= 8; ++s) buf2.Push(Pkt(s));
   EXPECT_EQ(buf2.Pressure(0), 0.0);
+}
+
+// I1: once the adaptive target rises, the fixed 10-frame reference pins Pressure() near 1.0 just
+// from silence-catch-up holding depth at target+1 — Pressure must be target-relative instead.
+TEST(AudioJitterBufferTest, PressureStaysLowAtElevatedTargetWhenHeldNearTarget) {
+  AudioJitterBuffer buf;
+  uint32_t seq = 1;
+  for (int i = 0; i < 2000; ++i) { // same stall pattern as StallsRaiseTargetAndStopUnderruns
+    const int64_t now = 1000 + static_cast<int64_t>(i) * 20;
+    while (1000 + static_cast<int64_t>(seq - 1) * 20 + StallExtra(static_cast<int>(seq - 1)) <= now) {
+      buf.Push(PktAt(seq, now));
+      ++seq;
+    }
+    (void)buf.PopForPlayout();
+  }
+  ASSERT_GE(buf.TargetFrames(), 14u);
+  while (buf.size() > buf.TargetFrames() + 1) { // hold near target, as silence catch-up would
+    (void)buf.PopForPlayout();
+  }
+  ASSERT_LE(buf.size(), buf.TargetFrames() + 1);
+  EXPECT_LT(buf.Pressure(0), 0.75);
 }
 
 TEST(MixPcmSatTest, Saturates) {

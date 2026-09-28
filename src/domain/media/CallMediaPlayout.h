@@ -76,6 +76,8 @@ private:
 /** One received Opus packet (channel 0) for the jitter buffer. */
 struct AudioPacket {
   uint32_t seq = 0;
+  /** Monotonic (steady_clock) receive time in ms — not wall clock, so an NTP step can't look
+   *  like packet lateness to the arrival-jitter estimator (M6). */
   int64_t recv_ms = 0;
   std::vector<uint8_t> payload;
 };
@@ -110,7 +112,9 @@ public:
   static constexpr size_t kPressureFullFrames = 10; // the pre-adaptive 200 ms cap: congestion signal for bitrate adaptation
   /** A seq this far behind the expected one is a sender restart (seq reset), not a late packet. */
   static constexpr uint32_t kResyncJump = 50;
-  /** Surplus depth held for a whole window (500 ms) is trimmed back to the target. */
+  /** Surplus depth held for a whole window (nominally 500 ms; a pop is a pop, so silence
+   *  catch-up's extra pops per slot advance the window too — it can complete sooner) is trimmed
+   *  back to the target. */
   static constexpr uint32_t kDrainWindowPops = 25;
   /** This many late packets in a row with a restarted stream's low seqs (< kResyncJump) is a
    *  sender restart even when the backward step is small (early in a call next_seq_ < kResyncJump,
@@ -134,14 +138,14 @@ public:
       Reset(); // sender restarted its seq (re-StartSfu / BeginSession): re-prime on the new stream
     }
     late_run_ = 0;
-    arrival_.OnArrival(packet.seq, packet.recv_ms);
     auto it = queue_.begin();
     while (it != queue_.end() && it->seq < packet.seq) {
       ++it;
     }
     if (it != queue_.end() && it->seq == packet.seq) {
-      return; // duplicate
+      return; // duplicate — not lateness, don't feed the estimator (M4)
     }
+    arrival_.OnArrival(packet.seq, packet.recv_ms);
     queue_.insert(it, std::move(packet));
     if (queue_.size() > kMaxFrames) {
       while (queue_.size() > kMaxFrames) {
@@ -178,7 +182,10 @@ public:
   AudioPlayoutPop PopForPlayout() {
     AudioPlayoutPop out;
     if (!primed_) {
-      if (queue_.size() < TargetFrames()) {
+      // Prime at the minimum target (60 ms), not the adaptive one: a single early outlier can
+      // otherwise skew TargetFrames() (tiny sample count) and delay first audio for no reason
+      // (M3). The adaptive target keeps governing hole-skip, OverTarget and trim below.
+      if (queue_.size() < kTargetFrames) {
         return out;
       }
       primed_ = true;
@@ -222,13 +229,19 @@ public:
     arrival_.Reset();
   }
 
-  /** 0 = healthy, 1 = severe (underruns dominate). Unchanged from the PCM buffer. */
+  /**
+   * 0 = healthy, 1 = severe (underruns dominate). The "full" reference tracks the adaptive target
+   * so a buffer sitting at its own target+1 (e.g. held there by silence catch-up) doesn't read as
+   * congested; at the minimum target (3) this is the original fixed 10-frame / 200 ms reference
+   * (I1).
+   */
   double Pressure(uint64_t window_pops) const {
+    const size_t full = TargetFrames() + (kPressureFullFrames - kTargetFrames);
     if (window_pops == 0) {
-      return queue_.size() >= kPressureFullFrames ? 1.0 : 0.0;
+      return queue_.size() >= full ? 1.0 : 0.0;
     }
     const double u = static_cast<double>(underruns_) / static_cast<double>(window_pops);
-    const double fill = static_cast<double>(queue_.size()) / static_cast<double>(kPressureFullFrames);
+    const double fill = static_cast<double>(queue_.size()) / static_cast<double>(full);
     return std::min(1.0, std::max(u * 2.0, fill > 0.9 ? fill : 0.0));
   }
 

@@ -197,7 +197,8 @@ std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_m
       << " underrun=" << v.engine.playout_underruns
       << " plc=" << v.engine.plc_frames << " fec=" << v.engine.fec_frames
       << " audio_io=" << v.engine.audio_io << " io_underrun=" << v.engine.io_underruns
-      << " jb_target_ms=" << v.engine.jitter_target_ms << " jb_silence_drops=" << v.engine.jitter_silence_drops
+      << " jb_target_ms=" << v.engine.jitter_target_ms << " jb_depth_ms=" << v.engine.jitter_depth_ms
+      << " jb_silence_drops=" << v.engine.jitter_silence_drops
       << " jb_speech_drops=" << v.engine.jitter_speech_drops
       << " pressure=" << v.engine.path_pressure
       << " hop_pressure=" << v.hop.path_pressure << " opus_bps=" << v.engine.opus_target_bps
