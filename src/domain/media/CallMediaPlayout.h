@@ -1,17 +1,83 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <utility>
 #include <vector>
 
 namespace pbr {
 
+/**
+ * Arrival-jitter estimator for one publisher (adaptive jitter target, DEV/PLAN-adaptive-jitter.md §1).
+ * Lateness = relative delay (recv_ms − seq·20) above its 5 s sliding minimum, bucketed per 20 ms in a
+ * forgetting histogram (~10 s memory). Target = 99th-percentile bucket + 1 frame, clamped 3..20.
+ * Rises as soon as late packets arrive; decays as old samples fade.
+ */
+class AudioArrivalJitter {
+public:
+  static constexpr int kFrameMs = 20;
+  static constexpr size_t kMinTargetFrames = 3;
+  static constexpr size_t kMaxTargetFrames = 20;
+  static constexpr size_t kBaselinePackets = 250;
+  static constexpr double kForget = 0.998;
+  static constexpr double kQuantile = 0.99;
+
+  void OnArrival(uint32_t seq, int64_t recv_ms) {
+    const int64_t d = recv_ms - static_cast<int64_t>(seq) * kFrameMs;
+    const uint64_t idx = arrivals_++;
+    while (!mins_.empty() && mins_.back().second >= d) {
+      mins_.pop_back();
+    }
+    mins_.emplace_back(idx, d);
+    while (mins_.front().first + kBaselinePackets <= idx) {
+      mins_.pop_front();
+    }
+    const int64_t late_ms = d - mins_.front().second;
+    const size_t bucket = std::min<size_t>(static_cast<size_t>(late_ms / kFrameMs), kMaxTargetFrames);
+    for (double& p : hist_) {
+      p *= kForget;
+    }
+    hist_[bucket] += 1.0 - kForget;
+    mass_ = mass_ * kForget + (1.0 - kForget);
+  }
+
+  size_t TargetFrames() const {
+    if (mass_ <= 0.0) {
+      return kMinTargetFrames;
+    }
+    double acc = 0.0;
+    for (size_t k = 0; k < hist_.size(); ++k) {
+      acc += hist_[k];
+      if (acc >= kQuantile * mass_) {
+        return std::clamp(k + 1, kMinTargetFrames, kMaxTargetFrames);
+      }
+    }
+    return kMaxTargetFrames;
+  }
+
+  void Reset() {
+    hist_.fill(0.0);
+    mass_ = 0.0;
+    arrivals_ = 0;
+    mins_.clear();
+  }
+
+private:
+  std::array<double, kMaxTargetFrames + 1> hist_{};
+  double mass_ = 0.0;
+  uint64_t arrivals_ = 0;
+  std::deque<std::pair<uint64_t, int64_t>> mins_;  // (arrival index, d) — monotonic sliding minimum
+};
+
 /** One received Opus packet (channel 0) for the jitter buffer. */
 struct AudioPacket {
   uint32_t seq = 0;
+  /** Monotonic (steady_clock) receive time in ms — not wall clock, so an NTP step can't look
+   *  like packet lateness to the arrival-jitter estimator (M6). */
   int64_t recv_ms = 0;
   std::vector<uint8_t> payload;
 };
@@ -30,19 +96,25 @@ struct AudioPlayoutPop {
 
 /**
  * Per-publisher packet jitter buffer (receiver only; hop stays blind).
- * Target delay 60 ms / max 200 ms at 20 ms frames → 3 / 10 packets. Packets are decoded at
- * pop time so a missing seq can be recovered from the next packet's FEC data (spec §1/§2).
+ * Target delay adapts to arrival jitter (AudioArrivalJitter: 60–400 ms) / max 800 ms at 20 ms
+ * frames → 3..20 / 40 packets. Packets are decoded at pop time so a missing seq can be recovered
+ * from the next packet's FEC data (spec §1/§2).
  */
 class AudioJitterBuffer {
 public:
   static constexpr int kFrameMs = 20;
   static constexpr int kTargetDelayMs = 60;
-  static constexpr int kMaxDelayMs = 200;
-  static constexpr size_t kTargetFrames = static_cast<size_t>(kTargetDelayMs / kFrameMs);
-  static constexpr size_t kMaxFrames = static_cast<size_t>(kMaxDelayMs / kFrameMs);
+  static constexpr int kMaxDelayMs = 800;
+  static constexpr size_t kTargetFrames = AudioArrivalJitter::kMinTargetFrames; // kept: minimum/steady target
+  static constexpr size_t kMaxFrames = 40;
+  /** Surplus above target this size is treated as speech content (unknown), not pure jitter slack. */
+  static constexpr size_t kSpeechTrimSurplus = 5;
+  static constexpr size_t kPressureFullFrames = 10; // the pre-adaptive 200 ms cap: congestion signal for bitrate adaptation
   /** A seq this far behind the expected one is a sender restart (seq reset), not a late packet. */
   static constexpr uint32_t kResyncJump = 50;
-  /** Surplus depth held for a whole window (500 ms) is trimmed back to the target. */
+  /** Surplus depth held for a whole window (nominally 500 ms; a pop is a pop, so silence
+   *  catch-up's extra pops per slot advance the window too — it can complete sooner) is trimmed
+   *  back to the target. */
   static constexpr uint32_t kDrainWindowPops = 25;
   /** This many late packets in a row with a restarted stream's low seqs (< kResyncJump) is a
    *  sender restart even when the backward step is small (early in a call next_seq_ < kResyncJump,
@@ -58,6 +130,7 @@ public:
       if (packet.seq + kResyncJump >= next_seq_) {
         late_run_ = packet.seq < kResyncJump ? late_run_ + 1 : 0;
         if (late_run_ < kRestartLateRun) {
+          arrival_.OnArrival(packet.seq, packet.recv_ms);
           ++drops_late_;
           return;
         }
@@ -70,8 +143,9 @@ public:
       ++it;
     }
     if (it != queue_.end() && it->seq == packet.seq) {
-      return; // duplicate
+      return; // duplicate — not lateness, don't feed the estimator (M4)
     }
+    arrival_.OnArrival(packet.seq, packet.recv_ms);
     queue_.insert(it, std::move(packet));
     if (queue_.size() > kMaxFrames) {
       while (queue_.size() > kMaxFrames) {
@@ -87,6 +161,15 @@ public:
   uint64_t drops_late() const { return drops_late_; }
   uint64_t underruns() const { return underruns_; }
   uint64_t gaps() const { return gaps_; }
+  /** Adaptive target from the arrival-jitter estimator (AudioArrivalJitter), 3..20 frames. */
+  size_t TargetFrames() const { return arrival_.TargetFrames(); }
+  /** True once the buffer holds more than one frame of slack above target. */
+  bool OverTarget() const { return queue_.size() > TargetFrames() + 1; }
+  /** Engine dropped a decoded silent frame to catch up (known-silence, not counted as speech). */
+  void NoteSilenceDrop() { ++drops_silence_; }
+  uint64_t silence_drops() const { return drops_silence_; }
+  /** Overflow + trim drops: content unknown, so counted as speech. */
+  uint64_t speech_drops() const { return drops_overflow_; }
 
   /**
    * One 20 ms playout slot. Before the target depth was reached once → Empty (no underrun).
@@ -99,6 +182,9 @@ public:
   AudioPlayoutPop PopForPlayout() {
     AudioPlayoutPop out;
     if (!primed_) {
+      // Prime at the minimum target (60 ms), not the adaptive one: a single early outlier can
+      // otherwise skew TargetFrames() (tiny sample count) and delay first audio for no reason
+      // (M3). The adaptive target keeps governing hole-skip, OverTarget and trim below.
       if (queue_.size() < kTargetFrames) {
         return out;
       }
@@ -112,7 +198,7 @@ public:
     }
     AudioPacket& front = queue_.front();
     if (front.seq > next_seq_ &&
-        (queue_.size() > kTargetFrames || front.seq - next_seq_ > kTargetFrames)) {
+        (queue_.size() > TargetFrames() || front.seq - next_seq_ > TargetFrames())) {
       next_seq_ = front.seq; // enough audio buffered, or hole too wide to conceal usefully
     }
     if (front.seq == next_seq_) {
@@ -140,15 +226,22 @@ public:
     late_run_ = 0;
     window_pops_ = 0;
     window_min_depth_ = kMaxFrames;
+    arrival_.Reset();
   }
 
-  /** 0 = healthy, 1 = severe (underruns dominate). Unchanged from the PCM buffer. */
+  /**
+   * 0 = healthy, 1 = severe (underruns dominate). The "full" reference tracks the adaptive target
+   * so a buffer sitting at its own target+1 (e.g. held there by silence catch-up) doesn't read as
+   * congested; at the minimum target (3) this is the original fixed 10-frame / 200 ms reference
+   * (I1).
+   */
   double Pressure(uint64_t window_pops) const {
+    const size_t full = TargetFrames() + (kPressureFullFrames - kTargetFrames);
     if (window_pops == 0) {
-      return queue_.size() >= kMaxFrames ? 1.0 : 0.0;
+      return queue_.size() >= full ? 1.0 : 0.0;
     }
     const double u = static_cast<double>(underruns_) / static_cast<double>(window_pops);
-    const double fill = static_cast<double>(queue_.size()) / static_cast<double>(kMaxFrames);
+    const double fill = static_cast<double>(queue_.size()) / static_cast<double>(full);
     return std::min(1.0, std::max(u * 2.0, fill > 0.9 ? fill : 0.0));
   }
 
@@ -162,16 +255,17 @@ private:
 
   /**
    * Underruns add a frame of latency each (time passes, nothing is consumed) and a burst or a
-   * device pause can fill the queue; if the depth never fell below target + 1 over a whole
-   * window, that surplus absorbed no jitter — drop it (oldest first) back to the target.
+   * device pause can fill the queue; if the depth never fell below target + kSpeechTrimSurplus
+   * over a whole window, that surplus absorbed no jitter — drop it (oldest first) back to the
+   * target.
    */
   void DrainSurplus() {
     window_min_depth_ = std::min(window_min_depth_, queue_.size());
     if (++window_pops_ < kDrainWindowPops) {
       return;
     }
-    if (window_min_depth_ > kTargetFrames + 1) {
-      for (size_t n = window_min_depth_ - kTargetFrames; n > 0; --n) {
+    if (window_min_depth_ > TargetFrames() + kSpeechTrimSurplus) {
+      for (size_t n = window_min_depth_ - (TargetFrames() + 1); n > 0; --n) {
         queue_.pop_front();
         ++drops_overflow_;
       }
@@ -181,17 +275,31 @@ private:
     window_min_depth_ = kMaxFrames;
   }
 
+  AudioArrivalJitter arrival_;
   std::deque<AudioPacket> queue_;
   bool primed_ = false;
   uint32_t next_seq_ = 0;
   uint32_t late_run_ = 0;
   uint64_t drops_overflow_ = 0;
   uint64_t drops_late_ = 0;
+  uint64_t drops_silence_ = 0;
   uint64_t underruns_ = 0;
   uint64_t gaps_ = 0;
   uint32_t window_pops_ = 0;
   size_t window_min_depth_ = kMaxFrames;
 };
+
+/** Peak below 1 % of full scale (≈ −40 dBFS): safe to skip when catching up (adaptive jitter §2). */
+constexpr int kCatchUpSilencePeak = 328;  // 0.01 × 32768
+inline bool IsCatchUpSilence(const std::vector<int16_t>& pcm, size_t samples) {
+  const size_t n = std::min(samples, pcm.size());
+  for (size_t i = 0; i < n; ++i) {
+    if (pcm[i] >= kCatchUpSilencePeak || pcm[i] <= -kCatchUpSilencePeak) {
+      return false;
+    }
+  }
+  return true;
+}
 
 /** Saturating mix of mono s16 frames into `out` (size = samples). */
 inline void MixPcmSat(std::vector<int16_t>& out, const std::vector<int16_t>& in) {

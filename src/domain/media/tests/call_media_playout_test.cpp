@@ -372,6 +372,233 @@ TEST(AudioJitterBufferTest, SingleLossInNormalBufferIsConcealed) {
   EXPECT_EQ(buf.gaps(), 1u);
 }
 
+// Helper: feed `n` packets starting at `seq`, first arrival at `t0`, one every 20 ms plus `extra(i)` delay.
+template <class Extra>
+uint32_t FeedArrivals(AudioArrivalJitter& j, uint32_t seq, int64_t t0, int n, Extra extra) {
+  for (int i = 0; i < n; ++i) {
+    j.OnArrival(seq, t0 + static_cast<int64_t>(i) * 20 + extra(i));
+    ++seq;
+  }
+  return seq;
+}
+
+// Every 100 packets (2 s) the network stalls 300 ms, then the backlog arrives at once.
+int64_t StallExtra(int i) {
+  const int phase = i % 100;
+  return phase < 15 ? (15 - phase) * 20 : 0;  // packets 0..14 of each cycle arrive together at +300 ms
+}
+
+TEST(AudioArrivalJitterTest, WarmUpStartsAtMinimum) {
+  AudioArrivalJitter j;
+  EXPECT_EQ(j.TargetFrames(), 3u);
+  FeedArrivals(j, 1, 1000, 5, [](int) { return 0; });
+  EXPECT_EQ(j.TargetFrames(), 3u);
+}
+
+TEST(AudioArrivalJitterTest, SteadyNetworkStaysAtSixtyMs) {
+  AudioArrivalJitter j;
+  FeedArrivals(j, 1, 1000, 500, [](int i) { return (i % 3) * 2; });  // ±few ms of noise
+  EXPECT_EQ(j.TargetFrames(), 3u);
+}
+
+TEST(AudioArrivalJitterTest, PeriodicStallsRaiseTarget) {
+  AudioArrivalJitter j;
+  FeedArrivals(j, 1, 1000, 1000, StallExtra);  // 20 s
+  EXPECT_GE(j.TargetFrames(), 14u);           // >= 280 ms (99th pct of 15 staggered late packets per 100)
+  EXPECT_LE(j.TargetFrames(), 20u);           // <= 400 ms
+}
+
+TEST(AudioArrivalJitterTest, TargetDecaysAfterNetworkCalms) {
+  AudioArrivalJitter j;
+  uint32_t seq = FeedArrivals(j, 1, 1000, 1000, StallExtra);
+  FeedArrivals(j, seq, 1000 + 1000 * 20, 1500, [](int) { return 0; });  // 30 s calm
+  EXPECT_LE(j.TargetFrames(), 5u);  // <= 100 ms
+}
+
+TEST(AudioArrivalJitterTest, SingleLatePacketDoesNotRaiseTarget) {
+  AudioArrivalJitter j;
+  FeedArrivals(j, 1, 1000, 500, [](int i) { return i == 250 ? 400 : 0; });
+  EXPECT_EQ(j.TargetFrames(), 3u);
+}
+
+TEST(AudioArrivalJitterTest, LargeSeqValuesStayStable) {
+  AudioArrivalJitter j;
+  FeedArrivals(j, 0xFFFFFF00u, 5'000'000'000LL, 200, [](int) { return 0; });
+  EXPECT_EQ(j.TargetFrames(), 3u);
+}
+
+TEST(AudioArrivalJitterTest, ReceiverClockStepRecovers) {
+  AudioArrivalJitter j;
+  uint32_t seq = FeedArrivals(j, 1, 100'000, 300, [](int) { return 0; });
+  seq = FeedArrivals(j, seq, 50'000, 1500, [](int) { return 0; });  // clock stepped back 50 s, then steady 30 s
+  EXPECT_LE(j.TargetFrames(), 5u);
+}
+
+TEST(AudioArrivalJitterTest, ResetForgetsHistory) {
+  AudioArrivalJitter j;
+  FeedArrivals(j, 1, 1000, 1000, StallExtra);
+  j.Reset();
+  EXPECT_EQ(j.TargetFrames(), 3u);
+}
+
+TEST(AudioArrivalJitterTest, HugeLatenessUsesOverflowBucket) {
+  AudioArrivalJitter j;
+  // Prime with 300 steady packets to establish baseline.
+  FeedArrivals(j, 1, 1000, 300, [](int) { return 0; });
+  // Every 10th packet arrives 2000 ms late; enough to exceed kMaxTargetFrames in raw form.
+  FeedArrivals(j, 301, 1000 + 300 * 20, 100, [](int i) { return (i % 10 == 0) ? 2000 : 0; });
+  // Overflow bucket clamp ensures target is clamped to kMaxTargetFrames (20), no crash.
+  EXPECT_EQ(j.TargetFrames(), AudioArrivalJitter::kMaxTargetFrames);
+}
+
+// Push with realistic recv_ms so the estimator sees the network.
+AudioPacket PktAt(uint32_t seq, int64_t recv_ms, uint8_t fill = 1) {
+  AudioPacket p = Pkt(seq, fill);
+  p.recv_ms = recv_ms;
+  return p;
+}
+
+TEST(AudioJitterBufferTest, StallsRaiseTargetAndStopUnderruns) {
+  AudioJitterBuffer buf;
+  uint32_t seq = 1;
+  uint64_t underruns_first_half = 0;
+  for (int i = 0; i < 2000; ++i) {  // 40 s of 20 ms slots; StallExtra from Task 1 shapes arrivals
+    const int64_t now = 1000 + static_cast<int64_t>(i) * 20;
+    // deliver every packet whose (nominal + stall extra) arrival time has passed
+    while (1000 + static_cast<int64_t>(seq - 1) * 20 + StallExtra(static_cast<int>(seq - 1)) <= now) {
+      buf.Push(PktAt(seq, now));
+      ++seq;
+    }
+    (void)buf.PopForPlayout();
+    if (i == 999) underruns_first_half = buf.underruns();
+  }
+  EXPECT_GE(buf.TargetFrames(), 14u);
+  // adapted: the last 20 s (10 stalls) underrun at most ~1 slot per stall (a fixed 60 ms target underruns ~12 per stall)
+  EXPECT_LE(buf.underruns() - underruns_first_half, 10u);
+}
+
+TEST(AudioJitterBufferTest, RestartResetsJitterTarget) {
+  AudioJitterBuffer buf;
+  uint32_t seq = 1;
+  for (int i = 0; i < 1000; ++i, ++seq) buf.Push(PktAt(seq, 1000 + i * 20 + StallExtra(i))), (void)buf.PopForPlayout();
+  ASSERT_GE(buf.TargetFrames(), 14u);
+  // Sender restart: large backward jump → Reset()
+  for (uint32_t s = 1; s <= 5; ++s) buf.Push(PktAt(s, 100'000 + s * 20));
+  EXPECT_EQ(buf.TargetFrames(), 3u);
+}
+
+// M3: priming must not wait for the adaptive target — a single early outlier (tiny sample count,
+// so it dominates the histogram) must not delay first audio to 400 ms.
+TEST(AudioJitterBufferTest, PrimesAtSixtyMsEvenAfterEarlyOutlier) {
+  AudioJitterBuffer buf;
+  buf.Push(PktAt(1, 1000));
+  buf.Push(PktAt(2, 1020));
+  buf.Push(PktAt(3, 1540)); // 500 ms late outlier: skews the (tiny-sample) adaptive target way up
+  ASSERT_GE(buf.TargetFrames(), 10u); // sanity: the outlier really did skew the adaptive target
+  auto p = buf.PopForPlayout();
+  EXPECT_EQ(p.kind, Kind::Packet); // primes at kTargetFrames (3), not the skewed adaptive target
+  EXPECT_EQ(p.seq, 1u);
+  buf.Push(PktAt(4, 1560));
+  buf.Push(PktAt(5, 1580));
+  buf.Push(PktAt(6, 1600));
+  EXPECT_EQ(buf.PopForPlayout().seq, 2u);
+}
+
+// M4: a duplicate packet is a retransmit/dup delivery, not a late arrival — it must not feed the
+// jitter estimator.
+TEST(AudioJitterBufferTest, DuplicatesDoNotRaiseTarget) {
+  AudioJitterBuffer buf;
+  for (uint32_t s = 1; s <= 300; ++s) {
+    const int64_t recv = 1000 + static_cast<int64_t>(s - 1) * 20;
+    buf.Push(PktAt(s, recv));
+    buf.Push(PktAt(s, recv + 300)); // duplicate seq, arrives 300 ms "later" — not lateness
+    (void)buf.PopForPlayout();
+  }
+  EXPECT_EQ(buf.TargetFrames(), 3u);
+}
+
+TEST(AudioJitterBufferTest, OverTargetAndSilenceDropCounter) {
+  AudioJitterBuffer buf;
+  for (uint32_t s = 1; s <= 3; ++s) buf.Push(Pkt(s));
+  EXPECT_FALSE(buf.OverTarget());   // 3 <= 3 + 1
+  buf.Push(Pkt(4));
+  buf.Push(Pkt(5));
+  EXPECT_TRUE(buf.OverTarget());    // 5 > 4
+  buf.NoteSilenceDrop();
+  EXPECT_EQ(buf.silence_drops(), 1u);
+  EXPECT_EQ(buf.speech_drops(), 0u);
+}
+
+TEST(CatchUpSilenceTest, QuietFrameIsSilence) {
+  std::vector<int16_t> pcm(960, 0);
+  pcm[10] = 200;  // ~ -44 dBFS peak
+  EXPECT_TRUE(IsCatchUpSilence(pcm, pcm.size()));
+}
+
+TEST(CatchUpSilenceTest, LoudFrameIsNotCatchUpSilence) {
+  std::vector<int16_t> pcm(960, 0);
+  pcm[500] = 1000;  // ~ -30 dBFS peak
+  EXPECT_FALSE(IsCatchUpSilence(pcm, pcm.size()));
+  pcm[500] = 0;
+  pcm[600] = -1000;
+  EXPECT_FALSE(IsCatchUpSilence(pcm, pcm.size()));
+}
+
+TEST(CatchUpSilenceTest, OnlyFirstSamplesCount) {
+  std::vector<int16_t> pcm(960, 0);
+  pcm[900] = 20000;
+  EXPECT_TRUE(IsCatchUpSilence(pcm, 480));  // only the decoded part is inspected
+}
+
+TEST(AudioJitterBufferTest, SustainedSurplusIsTrimmedAsSpeech) {
+  AudioJitterBuffer buf;
+  uint32_t seq = 1;
+  for (int i = 0; i < 12; ++i) buf.Push(Pkt(seq++));  // 12 queued, target 3 → surplus 9 > 5
+  for (int i = 0; i < 30; ++i) {                       // steady 1-in-1-out for > one 25-pop window
+    buf.Push(Pkt(seq++));
+    (void)buf.PopForPlayout();
+  }
+  EXPECT_GT(buf.speech_drops(), 0u);
+  EXPECT_LE(buf.size(), buf.TargetFrames() + 2);
+}
+
+TEST(AudioJitterBufferTest, HardCapIsFortyFrames) {
+  AudioJitterBuffer buf;
+  for (uint32_t s = 1; s <= 60; ++s) buf.Push(Pkt(s));
+  EXPECT_LE(buf.size(), 40u);
+  EXPECT_EQ(buf.speech_drops(), 20u);
+}
+
+TEST(AudioJitterBufferTest, PressureStillSignalsAtTwoHundredMs) {
+  AudioJitterBuffer buf;
+  for (uint32_t s = 1; s <= 10; ++s) buf.Push(Pkt(s));
+  EXPECT_GE(buf.Pressure(0), 1.0);
+  AudioJitterBuffer buf2;
+  for (uint32_t s = 1; s <= 8; ++s) buf2.Push(Pkt(s));
+  EXPECT_EQ(buf2.Pressure(0), 0.0);
+}
+
+// I1: once the adaptive target rises, the fixed 10-frame reference pins Pressure() near 1.0 just
+// from silence-catch-up holding depth at target+1 — Pressure must be target-relative instead.
+TEST(AudioJitterBufferTest, PressureStaysLowAtElevatedTargetWhenHeldNearTarget) {
+  AudioJitterBuffer buf;
+  uint32_t seq = 1;
+  for (int i = 0; i < 2000; ++i) { // same stall pattern as StallsRaiseTargetAndStopUnderruns
+    const int64_t now = 1000 + static_cast<int64_t>(i) * 20;
+    while (1000 + static_cast<int64_t>(seq - 1) * 20 + StallExtra(static_cast<int>(seq - 1)) <= now) {
+      buf.Push(PktAt(seq, now));
+      ++seq;
+    }
+    (void)buf.PopForPlayout();
+  }
+  ASSERT_GE(buf.TargetFrames(), 14u);
+  while (buf.size() > buf.TargetFrames() + 1) { // hold near target, as silence catch-up would
+    (void)buf.PopForPlayout();
+  }
+  ASSERT_LE(buf.size(), buf.TargetFrames() + 1);
+  EXPECT_LT(buf.Pressure(0), 0.75);
+}
+
 TEST(MixPcmSatTest, Saturates) {
   std::vector<int16_t> out = {30000, -30000};
   std::vector<int16_t> in = {10000, -10000};
