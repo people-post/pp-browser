@@ -688,7 +688,10 @@ TEST_F(CallMediaBridgeAnswererStartTest, MissingKeyWaitExhaustionConnectFailed) 
 
   bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
   AppRuntime::RunUIAndOwnerTasks();
-  EXPECT_EQ(lifecycle_->Phase(), CallPhase::MediaPending);
+  // Deferred first (MediaPending). With 0 poll rounds the exhaustion can land in the same drain,
+  // so the call may already be past it — the end state below is the oracle.
+  EXPECT_TRUE(lifecycle_->Phase() == CallPhase::MediaPending || lifecycle_->Phase() == CallPhase::ConnectFailed)
+      << "got phase=" << CallPhaseName(lifecycle_->Phase());
 
   for (int i = 0; i < 500; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
