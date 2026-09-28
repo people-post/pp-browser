@@ -119,6 +119,15 @@ private:
   int64_t last_video_refresh_ms_ = 0;
   /** One-shot guard: camera already turned off because video_allowed narrowed mid-call. */
   bool camera_sync_off_done_ = false;
+  /**
+   * 2026-09-28: video calls start with the local camera on (supersedes V009's old "join with
+   * camera off" default) — set once by the caller (video StartCall) or the callee (non-voice-only
+   * accept of a video call); consumed (camera enabled, flag cleared) on the first Tick where the
+   * call is connected. Cleared on voice-only accept and on ClearInCall.
+   */
+  bool auto_camera_pending_ = false;
+  /** Call id auto_camera_pending_ applies to. */
+  std::string auto_camera_call_id_;
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeLayer synced_chrome_;
   CallChromeMode chrome_mode_ = CallChromeMode::Expanded;

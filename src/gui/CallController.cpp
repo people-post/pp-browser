@@ -277,6 +277,8 @@ void CallController::ClearInCall() {
   last_media_health_log_ms_ = 0;
   last_warned_quality_ = -1;
   camera_sync_off_done_ = false;
+  auto_camera_pending_ = false;
+  auto_camera_call_id_.clear();
   in_call_ = {};
   CallVideoTileRenderer::Instance().Clear();
 }
@@ -829,6 +831,30 @@ void CallController::RefreshPendingRing() {
              {{"count", std::to_string(joined_count)}, {"elapsed", std::string(in_call.elapsed.c_str())}})
               .c_str();
     }
+    // 2026-09-28 product decision: video calls start with the local camera on (supersedes V009's
+    // "join with camera off" default). auto_camera_pending_ is set once by the caller
+    // (StartCallWithInvitees) or the callee's non-voice-only accept (AcceptIncomingImpl /
+    // AcceptIncomingWithCharge); act on it here, exactly once, only after media_connected is the
+    // same "connected" signal the UI above uses to show elapsed/"Connected" — never before the
+    // callee has answered.
+    if (auto_camera_pending_ && auto_camera_call_id_ == active_call_id_ && media_connected) {
+      if (auto allowed = backend->VideoAllowedForCall(active_call_id_);
+          allowed && allowed->has_value() && **allowed) {
+        auto_camera_pending_ = false;
+        if (!backend->Media().IsCameraEnabled()) {
+          log().info << "auto camera on call_id=" << active_call_id_;
+          backend->SetLocalVideoEnabled(true, WhileAlive([this, call_id = active_call_id_](Roe<void> cam) {
+            if (!cam) {
+              log().warning << "auto camera on failed call_id=" << call_id << ": " << cam.error().message;
+            }
+          }));
+        }
+      } else if (allowed && allowed->has_value() && !**allowed) {
+        // Narrowed to voice-only before we got here — drop the intent; the camera-off sync in
+        // ApplyAudioLevels below already owns turning the camera off for this case.
+        auto_camera_pending_ = false;
+      }
+    }
     ApplyAudioLevels(backend->Media());
     {
       static std::string last_sub_log;
@@ -907,12 +933,19 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
     return false;
   }
   // Requested: the calls owner starts it and reports back on UI (failure shown there).
-  backend->StartCall(thread_id, video_allowed, invitee_identities, WhileAlive([this](Roe<CallSession> started) {
+  backend->StartCall(thread_id, video_allowed, invitee_identities,
+                      WhileAlive([this, video_allowed](Roe<CallSession> started) {
     if (!started) {
       UserFeedback::Fail(PaymentErrorUserMessage(started.error().message));
       return;
     }
     active_call_id_ = started->call_id;
+    if (video_allowed) {
+      // 2026-09-28: caller picked "Video call" — turn the camera on automatically once the call
+      // connects (supersedes V009's old "join video calls with camera off" default).
+      auto_camera_pending_ = true;
+      auto_camera_call_id_ = started->call_id;
+    }
     RefreshPendingRing();
   }));
   return true;
@@ -1006,6 +1039,15 @@ void CallController::AcceptIncomingImpl(const bool voice_only) {
   }
   backend->SetPendingAcceptChargeDecision(InitiationChargeDecision::Waive);
   backend->SetPendingAcceptVoiceOnly(voice_only);
+  if (!voice_only && ring_.video_allowed) {
+    // 2026-09-28: callee answered a video call with "Video" (not narrowed to voice) — turn the
+    // camera on automatically once the call connects, same as the caller.
+    auto_camera_pending_ = true;
+    auto_camera_call_id_ = call_id;
+  } else if (auto_camera_call_id_ == call_id) {
+    // Answered voice-only — never auto-enable the camera for this call.
+    auto_camera_pending_ = false;
+  }
   // Dismiss ring on the click frame (CALLS.md Accept → Accepting dismisses chrome). Leaving the
   // dialog up until AcceptInvite finishes made Accept look hung.
   ringtone_.Stop();
@@ -1043,6 +1085,12 @@ void CallController::AcceptIncomingWithCharge() {
   }
   backend->SetPendingAcceptChargeDecision(InitiationChargeDecision::TakeAll);
   backend->SetPendingAcceptVoiceOnly(false);
+  if (ring_.video_allowed) {
+    // 2026-09-28: charge-accept of a video call is still a "Video" accept — auto camera-on once
+    // connected, same as AcceptIncomingImpl's non-voice-only path.
+    auto_camera_pending_ = true;
+    auto_camera_call_id_ = call_id;
+  }
   ringtone_.Stop();
   ClearRing();
   SyncShellState();
