@@ -30,6 +30,10 @@
 #                           network: new NAT mapping, the direct path dies). Its NetworkMonitor sees
 #                           the change, Amp drops the dead link at once (network-changed) and the
 #                           call reconnects onto a new path without failing
+# B-HARD-CALL-NAT-MOBILE  — Phase-12 (k6): cone NAT (a punch would land), the offerer pinned
+#                           `--mobility mobile`: the pair anchors on the relay — the answerer awaits
+#                           the circuit without punching (it learned the class from the invite's
+#                           caps), the offerer never punches for an upgrade, media stays relayed
 # Cold phases also require >= COLD_MIN_RX audio frames received on BOTH sides.
 #
 # NAT: gateways default to symmetric mapping (punching can never land, so the phases above stay
@@ -75,8 +79,8 @@ while [[ $# -gt 0 ]]; do
 Usage: $(basename "$0") [--status-url URL] [--cycles K] [--phase PHASE]
                         [--expect-call success|fail] [--skip-up]
 
-  PHASE: circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|broadcast|all
-    all    = circuit + stack + cold + cold-dirty + cold-await + upgrade + punch + flip + broadcast (default)
+  PHASE: circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|mobile|broadcast|all
+    all    = circuit + stack + cold + cold-dirty + cold-await + upgrade + punch + flip + mobile + broadcast (default)
   --expect-call fail  pass only if the call fails (reproduce dogfood)
 EOF
       exit 0
@@ -90,10 +94,10 @@ case "${CALL_EXPECT}" in
   *) pp_hard_die "--expect-call must be success|fail (got ${CALL_EXPECT})" ;;
 esac
 case "${PHASE}" in
-  circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|broadcast|all) ;;
+  circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|mobile|broadcast|all) ;;
   product|dirty|both)
     pp_hard_die "--phase ${PHASE} was retired (probe-local reach copies); use cold / cold-dirty / cold-await" ;;
-  *) pp_hard_die "--phase must be circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|broadcast|all (got ${PHASE})" ;;
+  *) pp_hard_die "--phase must be circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|mobile|broadcast|all (got ${PHASE})" ;;
 esac
 
 if [[ ! -x "${PP_HARD_PROBE_DIR}/${CALL_BIN_NAME}" ]]; then
@@ -121,6 +125,8 @@ UPGRADE_HOLD_MS="${PP_HARD_NAT_UPGRADE_HOLD_MS:-45000}"
 # Flip phase: hold past the flip + reconnect; the RX-stall gate is the recovery budget.
 FLIP_HOLD_MS="${PP_HARD_NAT_FLIP_HOLD_MS:-35000}"
 FLIP_RX_STALL_MS="${PP_HARD_NAT_FLIP_RX_STALL_MS:-12000}"
+# Mobile phase: past the +3 s and +20 s upgrade slots a stationary pair would use.
+MOBILE_HOLD_MS="${PP_HARD_NAT_MOBILE_HOLD_MS:-25000}"
 
 # Highest "flow <role> ... rx=N" in a probe log (0 when none).
 max_rx() {
@@ -234,6 +240,24 @@ assert_flip() {
   echo "ok  flip: call on a new path $(sed -n 's/^recovered //p' "${marks}") s after the flip"
 }
 
+# assert_mobile <label> <offerer_log> <answerer_log>
+assert_mobile() {
+  local label="$1" off_log="$2" ans_log="$3"
+  grep -q 'mobility pinned to mobile' "${off_log}" || pp_hard_die "${label}: --mobility mobile not applied"
+  grep -q 'await without punch (path policy)' "${ans_log}" ||
+    pp_hard_die "${label}: the answerer punched (it did not learn the offerer's class from the invite)"
+  ! grep -q 'direct upgrade attempt' "${off_log}" || pp_hard_die "${label}: the offerer punched for an upgrade"
+  ! grep -qE 'call-media path migrated .* path=direct' "${off_log}" "${ans_log}" ||
+    pp_hard_die "${label}: media moved onto a direct path"
+  echo "ok  mobile: relay anchor — no call-start punch, no upgrade, media stayed relayed"
+  local off_rx ans_rx
+  off_rx="$(max_rx "${off_log}")"
+  ans_rx="$(max_rx "${ans_log}")"
+  [[ "${off_rx}" -ge "${COLD_MIN_RX}" && "${ans_rx}" -ge "${COLD_MIN_RX}" ]] ||
+    pp_hard_die "${label}: audio short offerer_rx=${off_rx} answerer_rx=${ans_rx}"
+  echo "ok  mobile audio both ways offerer_rx=${off_rx} answerer_rx=${ans_rx}"
+}
+
 # assert_upgrade <label> <offerer_log> <answerer_log> <marks>
 assert_upgrade() {
   local label="$1" off_log="$2" ans_log="$3" marks="$4"
@@ -302,6 +326,7 @@ run_nat_call() {
     hold_ms="${FLIP_HOLD_MS}"
     stall_ms="${FLIP_RX_STALL_MS}"
   fi
+  [[ "${mode}" == "cold-mobile" ]] && hold_ms="${MOBILE_HOLD_MS}"
   if [[ "${product_stack}" -eq 1 ]]; then
     local watch_ms=$((hold_ms > 4000 ? hold_ms - 3000 : 0))
     ans_args+=(--product-stack --rx-stall-ms "${stall_ms}" --watch-ms "${watch_ms}")
@@ -356,10 +381,11 @@ run_nat_call() {
   case "${mode}" in
     stack) off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms "${STACK_HOLD_MS}"
              --rx-stall-ms "${RX_STALL_MS}" --timeout-ms 45000) ;;
-    cold|cold-dirty|cold-await|cold-upgrade|cold-punch|cold-flip)
+    cold|cold-dirty|cold-await|cold-upgrade|cold-punch|cold-flip|cold-mobile)
       off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms "${hold_ms}"
                  --rx-stall-ms "${stall_ms}" --timeout-ms $((hold_ms + 60000)) --signal-dir "${signal_dir}")
-      [[ "${mode}" == "cold-dirty" ]] && off_args+=(--dirty-book --force-dial-fail) ;;
+      [[ "${mode}" == "cold-dirty" ]] && off_args+=(--dirty-book --force-dial-fail)
+      [[ "${mode}" == "cold-mobile" ]] && off_args+=(--mobility mobile) ;;
     *) off_args+=(--peer-id-only) ;;
   esac
 
@@ -423,6 +449,9 @@ run_nat_call() {
   if [[ "${mode}" == "cold-punch" ]]; then
     sleep 0.5
     assert_punch "${label}" "${off_log}" "${ans_log}"
+  elif [[ "${mode}" == "cold-mobile" ]]; then
+    sleep 0.5
+    assert_mobile "${label}" "${off_log}" "${ans_log}"
   elif [[ "${mode}" == "cold-flip" ]]; then
     sleep 0.5
     assert_flip "${label}" "${off_log}" "${marks}"
@@ -576,6 +605,18 @@ if run_phase flip; then
   pp_hard_cgnat_flip_peer_a_addr back
   pp_hard_cgnat_set_nat symmetric
   [[ "${flip_rc}" -eq 0 ]] || exit "${flip_rc}"
+fi
+
+if run_phase mobile; then
+  pp_hard_cgnat_set_nat cone
+  pp_hard_cgnat_block_p2p off
+  set +e
+  run_nat_call "B-HARD-CALL-NAT-MOBILE" "pp-hard-call-nat-mobile" "call-nat-mobile.ready" \
+    "${PP_HARD_NAT_MOBILE_LISTEN:-/ip4/0.0.0.0/udp/47190/adp/1.0.0}" cold-mobile
+  mobile_rc=$?
+  set -e
+  pp_hard_cgnat_set_nat symmetric
+  [[ "${mobile_rc}" -eq 0 ]] || exit "${mobile_rc}"
 fi
 
 if run_phase broadcast; then
