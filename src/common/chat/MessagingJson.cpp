@@ -5,6 +5,7 @@
 #include "common/ValueJson.h"
 #include "crypto/SodiumUtil.h"
 
+#include <cctype>
 #include <map>
 #include <sstream>
 #include <vector>
@@ -13,6 +14,24 @@
 namespace pbr {
 
 namespace {
+
+// message_id ends up in generated RML (data-event-click="open_attachment('<id>')") and as a
+// SQLite primary key, so an inbound envelope with a hostile id (quotes, HTML, huge length) is
+// rejected outright rather than sanitized downstream. Locally generated ids are 32 lowercase
+// hex chars (util::GenerateUuid) optionally prefixed by a short ASCII tag (e.g. "call-"); allow
+// hex/UUID-with-dashes and a modest length so legitimate formats keep working.
+bool IsSafeMessageId(const std::string& id) {
+  if (id.empty() || id.size() > 96) {
+    return false;
+  }
+  for (const unsigned char ch : id) {
+    const bool ok = std::isalnum(ch) || ch == '-' || ch == '_';
+    if (!ok) {
+      return false;
+    }
+  }
+  return true;
+}
 
 Value ChatActionsToJson(const std::vector<TranscriptChatAction>& actions) {
   std::vector<Value> out;
@@ -367,6 +386,9 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   auto message_id = json.getString("message_id");
   if (!message_id) {
     return Error("Missing message_id");
+  }
+  if (!IsSafeMessageId(*message_id)) {
+    return Error("Unsafe message_id");
   }
   auto sender_relay_id = json.getString("sender_relay_id");
   if (!sender_relay_id) {

@@ -62,6 +62,27 @@ TEST(P2pRelayWireTest, RelayEnvelopeRoundTripAndPayloadCodec) {
   EXPECT_EQ(*decoded, "hello relay");
 }
 
+TEST(P2pRelayWireTest, RejectsUnsafeMessageId) {
+  using namespace pbr;
+
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = R"(x');evil('&quot; onmouseover=&quot;alert(1))";
+  envelope.sender_relay_id = "relay:alice123";
+  envelope.sender_contact_id = "relay:alice123";
+  envelope.route.kind = "direct";
+  envelope.route.channel = ThreadChannel::E2e;
+  envelope.body.e2e.payload_b64 = "ignored";
+  envelope.sender_seq = 1;
+  envelope.session_epoch = 1;
+  envelope.timestamp = 1719662400123;
+  envelope.signature = "sig";
+
+  // message_id ends up unescaped in generated RML (open_attachment('<id>')); an id carrying
+  // quotes/HTML must be rejected at parse time rather than relying on downstream escaping.
+  EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(RelayEnvelopeToJson(envelope))));
+}
+
 TEST(P2pRelayWireTest, RelayWireRecordRoundTrip) {
   using namespace pbr;
 

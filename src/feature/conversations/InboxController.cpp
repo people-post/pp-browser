@@ -674,7 +674,7 @@ std::string InboxController::BuildSystemRml(const ThreadMessage& message) const 
     html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(message.text) + "</p>";
     html += HydrateChatActions("", message.chat_actions);
     html += "</div>";
-    if (html.find("__ENTRY__") != std::string::npos) {
+    if (!message.chat_actions.empty() && html.find("__ENTRY__") != std::string::npos) {
       return InjectEntryPlaceholders(html, message.id);
     }
     return html;
@@ -691,7 +691,7 @@ std::string InboxController::BuildSystemRml(const ThreadMessage& message) const 
     html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(body) + "</p>";
     html += HydrateChatActions("", message.chat_actions);
     html += "</div>";
-    if (html.find("__ENTRY__") != std::string::npos) {
+    if (!message.chat_actions.empty() && html.find("__ENTRY__") != std::string::npos) {
       return InjectEntryPlaceholders(html, message.id);
     }
     return html;
@@ -742,14 +742,38 @@ std::string InboxController::BuildAttachmentRml(const ThreadMessage& message) co
   const std::string label = fields && !fields->filename.empty()
                                 ? fields->filename
                                 : (message.text.empty() ? "Attachment" : message.text);
+  // Backslash-escape for the invoker's single-quoted string literal, then HTML-attribute-
+  // escape the result: the value sits inside a double-quoted RML attribute
+  // (data-event-click="fn('...')") that the DOM parser HTML-decodes before the invoker ever
+  // sees it, so a raw '"' in the id would close that attribute early regardless of the JS-side
+  // escaping (message_id is peer-controlled on inbound messages).
   auto escape_js_arg = [](const std::string& value) {
     std::string out;
     out.reserve(value.size());
     for (const char ch : value) {
-      if (ch == '\\' || ch == '\'') {
-        out.push_back('\\');
+      switch (ch) {
+      case '\\':
+        out += "\\\\";
+        break;
+      case '\'':
+        out += "\\'";
+        break;
+      case '"':
+        out += "&quot;";
+        break;
+      case '<':
+        out += "&lt;";
+        break;
+      case '>':
+        out += "&gt;";
+        break;
+      case '&':
+        out += "&amp;";
+        break;
+      default:
+        out.push_back(ch);
+        break;
       }
-      out.push_back(ch);
     }
     return out;
   };
@@ -883,7 +907,9 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + paragraph +
                      StructuredTextParser::EscapeText(message.text) + "</p></div>";
   body = HydrateChatActions(body, message.chat_actions);
-  if (body.find("__ENTRY__") != std::string::npos) {
+  // __ENTRY__ is only ever introduced by HydrateChatActions' own template above; never treat a
+  // literal "__ENTRY__" typed into message.text (peer-controlled) as a placeholder to fill in.
+  if (!message.chat_actions.empty() && body.find("__ENTRY__") != std::string::npos) {
     return InjectEntryPlaceholders(body, message.id);
   }
   return body;
