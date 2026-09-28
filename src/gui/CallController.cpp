@@ -47,6 +47,9 @@ CallController::CallController() {
 
 namespace {
 
+/** An audio fault (no audio from the peer / our mic not sending) must last this long to toast. */
+constexpr int64_t kAudioFaultToastMs = 10'000;
+
 CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgressState& in_call) {
   return {
       .ring_active = ring.active,
@@ -272,7 +275,7 @@ void CallController::ClearInCall() {
   minimized_corner_ = 0;
   chrome_mode_call_id_.clear();
   last_media_health_log_ms_ = 0;
-  last_warned_quality_ = -1;
+  audio_fault_since_ms_ = 0;
   in_call_ = {};
   CallVideoTileRenderer::Instance().Clear();
 }
@@ -1404,18 +1407,26 @@ void CallController::ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* bac
     log().info << FormatMediaHealthLogLine(view, now_ms, active_call_id_);
   }
 
-  const int q = static_cast<int>(view.quality);
-  if (q != last_warned_quality_ &&
-      (view.quality == CallPathQuality::NoAudio || view.quality == CallPathQuality::Poor ||
-       view.asymmetry != CallAudioAsymmetry::None)) {
-    last_warned_quality_ = q;
-    if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
-      UserFeedback::Fail(Tr(hint_key));
-    } else if (const char* label_key = CallPathQualityLabelKey(view.quality); label_key && label_key[0]) {
-      UserFeedback::Fail(Tr(label_key));
+  // Toast only real, lasting audio faults (Kenneth 2026-09-28: the old toasts fired on every dip —
+  // "Poor" on a jitter spike, "can't hear the other side" in the second before the first audio
+  // arrived). Network quality stays visible in the signal bars; an audio fault must persist for
+  // kAudioFaultToastMs and is toasted at most once per call.
+  const bool audio_fault =
+      view.quality == CallPathQuality::NoAudio || view.asymmetry != CallAudioAsymmetry::None;
+  if (!audio_fault) {
+    audio_fault_since_ms_ = 0;
+  } else {
+    if (audio_fault_since_ms_ == 0) {
+      audio_fault_since_ms_ = now_ms;
     }
-  } else if (view.quality <= CallPathQuality::Good && view.asymmetry == CallAudioAsymmetry::None) {
-    last_warned_quality_ = q;
+    if (now_ms - audio_fault_since_ms_ >= kAudioFaultToastMs && audio_fault_warned_call_id_ != active_call_id_) {
+      audio_fault_warned_call_id_ = active_call_id_;
+      if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
+        UserFeedback::Fail(Tr(hint_key));
+      } else if (const char* label_key = CallPathQualityLabelKey(view.quality); label_key && label_key[0]) {
+        UserFeedback::Fail(Tr(label_key));
+      }
+    }
   }
 }
 

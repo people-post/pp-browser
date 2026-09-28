@@ -109,7 +109,10 @@ private:
   int64_t ring_started_ms_ = 0;
   int64_t last_pulse_toggle_ms_ = 0;
   int64_t last_media_health_log_ms_ = 0;
-  int last_warned_quality_ = -1;
+  /** When the current audio fault (can't hear the peer / mic not sending) began; 0 = none. */
+  int64_t audio_fault_since_ms_ = 0;
+  /** Call already told about an audio fault — at most one such toast per call. */
+  std::string audio_fault_warned_call_id_;
   int64_t last_video_refresh_ms_ = 0;
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeLayer synced_chrome_;
