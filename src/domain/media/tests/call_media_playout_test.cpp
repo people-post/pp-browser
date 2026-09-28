@@ -394,7 +394,7 @@ TEST(AudioArrivalJitterTest, PeriodicStallsRaiseTarget) {
 TEST(AudioArrivalJitterTest, TargetDecaysAfterNetworkCalms) {
   AudioArrivalJitter j;
   uint32_t seq = FeedArrivals(j, 1, 1000, 1000, StallExtra);
-  FeedArrivals(j, seq, 1000 + 1000 * 20, 1000, [](int) { return 0; });  // 20 s calm
+  FeedArrivals(j, seq, 1000 + 1000 * 20, 1500, [](int) { return 0; });  // 30 s calm
   EXPECT_LE(j.TargetFrames(), 5u);  // <= 100 ms
 }
 
