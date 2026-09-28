@@ -805,6 +805,34 @@ bool CallTopologyController::ResolveGroupHopForJoin(const std::string& call_id,
   return true;
 }
 
+std::vector<std::string> CallTopologyController::HopsMembersReached(const std::string& call_id,
+                                                                  const std::string& guest,
+                                                                  const std::vector<std::string>& hops) const {
+  auto reports = accept_hop_reports_.find(call_id);
+  if (reports == accept_hop_reports_.end()) {
+    return hops;
+  }
+  auto local = host_.local_relay_identity();
+  std::map<std::string, CallHopReport> members;
+  for (const std::string& identity : JoinedRemoteIdentities(call_id, local ? *local : std::string())) {
+    if (identity == guest) {
+      continue;
+    }
+    if (auto it = reports->second.find(identity); it != reports->second.end()) {
+      members[identity] = it->second;
+    }
+  }
+  std::vector<std::string> out;
+  for (const std::string& hop : hops) {
+    if (HopReachedByAllReporters(hop, members)) {
+      out.push_back(hop);
+    } else {
+      log().info << "hop hint: " << hop << " skipped — not every member reached it call_id=" << call_id;
+    }
+  }
+  return out;
+}
+
 bool CallTopologyController::LanReachabilityConfirmedForCall(
     const std::string& call_id, const std::string& local_identity) const {
   return LanReachabilityConfirmedForPeers(JoinedRemoteIdentities(call_id, local_identity));
@@ -1244,8 +1272,13 @@ void CallTopologyController::FinishInviteHintAttach(const std::string& call_id, 
     }
     log().warning << "AttachLocalToSfu (invite hint) failed: " << ok.error().message;
     host_.SetLastMediaError(ok.error().message);
-    ClearSfuAttachWait();
-    (void)host_.leave_call(call_id);
+    // V050: a joiner the group's hop cannot serve asks the owner (one hop change per joiner, or a
+    // refusal) — ReportSfuAttachFailedToInitiator leaves when we are the owner ourselves.
+    std::string hop;
+    if (auto session = sessions_.LoadSession(call_id); session && session->has_value() && (*session)->sfu_hint) {
+      hop = *(*session)->sfu_hint;
+    }
+    ReportSfuAttachFailedToInitiator(call_id, hop, ok.error().message);
   } else {
     inbound_gate_.pending_attach.reset();
     inbound_gate_.pending_call_id.clear();
@@ -1531,7 +1564,7 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
 }
 
 Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
-                                                     const CallSfuAttachDetail& attach) {
+                                                     const CallSfuAttachDetail& attach, const std::string& sender) {
   log().info << "OnInboundSfuAttach call_id=" << call_id << " hop=" << attach.hop_peer_id
              << " ma=" << (attach.hop_multiaddr.empty() ? "(empty)" : attach.hop_multiaddr)
              << " sfu=" << (sfu_.attached ? 1 : 0) << " inflight=" << (flight_.in_flight ? 1 : 0);
@@ -1542,11 +1575,33 @@ Roe<void> CallTopologyController::OnInboundSfuAttach(const std::string& call_id,
   if (sfu_.hop_planner_phase == CallHopPlannerPhase::Attaching) {
     ReportHopProgress(CallHopPlannerPhase::Attaching, call_id);
   }
-  if (SettleInboundSfuAttachWithoutDial(call_id, attach)) {
+  if (!LeaveHopForOwnerMove(call_id, attach, sender) && SettleInboundSfuAttachWithoutDial(call_id, attach)) {
     return {};
   }
   StartInboundSfuAttach(call_id, attach);
   return {};
+}
+
+bool CallTopologyController::LeaveHopForOwnerMove(const std::string& call_id, const CallSfuAttachDetail& attach,
+                                                  const std::string& sender) {
+  if (!sfu_.attached || attach.hop_peer_id.empty() || flight_.attached_hop_peer_id.empty() ||
+      flight_.attached_hop_peer_id == attach.hop_peer_id || sender.empty() || !IsStickyInitiator(call_id, sender)) {
+    return false;
+  }
+  log().info << "OnInboundSfuAttach owner moved the group " << flight_.attached_hop_peer_id << " → "
+             << attach.hop_peer_id << " call_id=" << call_id;
+  if (relay_deps_.relay) {
+    relay_deps_.relay->Detach();
+  }
+  sfu_.attached = false;
+  flight_.attached_hop_peer_id.clear();
+  flight_.attaching_hop_peer_id.clear();
+  if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+    CallSession moved = **session;
+    moved.sfu_hint.reset();
+    (void)sessions_.UpsertSession(moved);
+  }
+  return true;
 }
 
 bool CallTopologyController::ExpectsInboundSfuAttach(const std::string& call_id,
@@ -1848,8 +1903,19 @@ void CallTopologyController::OnInboundSfuAttachFailed(const CallSfuAttachFailedD
     return; // only sticky initiator handles hop hints
   }
   const std::string& guest = detail.identity;
-  const auto decision = DecideHopHintOwnerAction(detail.preferred_hop_peer_ids, DialableHopPeerIds(),
-                                                 detail.failed_hop_peer_id);
+  // V050: one hop change per joiner — failing again on the hop the group already moved to for this
+  // guest keeps that hop and refuses (other attach failures keep today's recovery).
+  if (auto moved = hop_hint_repicked_[detail.call_id].find(guest);
+      !guest.empty() && moved != hop_hint_repicked_[detail.call_id].end() && moved->second == detail.failed_hop_peer_id) {
+    log().warning << "Hop hint refuse guest=" << guest << " (the group already moved to " << moved->second
+                  << " for this joiner)";
+    RefuseGuestNoSharedHop(detail.call_id, guest);
+    return;
+  }
+  // V050: everyone moves, so the new hop must be one the other members reached too (their accept
+  // reports; members without a report do not constrain).
+  const std::vector<std::string> guest_prefs = HopsMembersReached(detail.call_id, guest, detail.preferred_hop_peer_ids);
+  const auto decision = DecideHopHintOwnerAction(guest_prefs, DialableHopPeerIds(), detail.failed_hop_peer_id);
   if (decision.action == HopHintOwnerAction::RefuseGuest || guest.empty()) {
     log().warning << "Hop hint refuse guest=" << guest << " failed_hop=" << detail.failed_hop_peer_id;
     if (!guest.empty()) {
@@ -1877,6 +1943,9 @@ void CallTopologyController::OnInboundSfuAttachFailed(const CallSfuAttachFailedD
     flight_.pending_hop_prefer = prefer;
     log().info << "Hop hint coalesced prefer=" << flight_.pending_hop_prefer << " guest=" << guest;
     return;
+  }
+  if (!guest.empty()) {
+    hop_hint_repicked_[detail.call_id][guest] = prefer;
   }
   StartHopHintRepick(detail.call_id, prefer, guest);
 }

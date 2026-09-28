@@ -75,7 +75,9 @@ public:
         on_remote_accept_joined;
     std::function<void(const std::string& call_id, size_t n_joined)> on_joined_count_observed;
     std::function<void()> clear_sfu_attach_wait;
-    std::function<Roe<void>(const std::string& call_id, const CallSfuAttachDetail&)> on_inbound_sfu_attach;
+    /** `sender`: who fanned it out — a hop change is followed only from the hop owner (V050). */
+    std::function<Roe<void>(const std::string& call_id, const CallSfuAttachDetail&, const std::string& sender)>
+        on_inbound_sfu_attach;
     std::function<void(const CallSfuAttachFailedDetail&)> on_inbound_sfu_attach_failed;
     std::function<void(const CallHopRefuseDetail&)> on_inbound_hop_refuse;
     std::function<bool(const std::string& call_id)> is_on_sfu_for_call;
@@ -197,7 +199,7 @@ public:
                                const std::string& local_identity);
   Roe<void> HandleInboundRoster(const std::string& detail_json);
   Roe<void> HandleInboundMediaKey(const std::string& detail_json, const std::string& sender_identity);
-  Roe<void> HandleInboundSfuAttach(const std::string& detail_json);
+  Roe<void> HandleInboundSfuAttach(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);

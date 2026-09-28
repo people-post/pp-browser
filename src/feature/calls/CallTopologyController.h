@@ -176,7 +176,12 @@ public:
    */
   void OnPeerMediaRelayCapLearned(const std::string& call_id, const std::string& peer_id);
 
-  Roe<void> OnInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach);
+  /**
+   * `sender` fanned the attach out. Attached to another hop, a guest follows only the hop owner's
+   * attach (V050: the owner moved the group); others' attaches there are publisher announces.
+   */
+  Roe<void> OnInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach,
+                               const std::string& sender = {});
   /** Guest attach failed with hop preferences (V029) — initiator only. */
   void OnInboundSfuAttachFailed(const CallSfuAttachFailedDetail& detail);
   /** Owner refused guest after empty hop intersection (V029). */
@@ -255,6 +260,8 @@ private:
                                  const Roe<void>& mig);
   // Hop hint (guest could not reach our hop) steps.
   bool IsStickyInitiator(const std::string& call_id, const std::string& local_identity) const;
+  /** V050: attached to another hop and the owner fanned out a new one — let go of ours. True = detached. */
+  bool LeaveHopForOwnerMove(const std::string& call_id, const CallSfuAttachDetail& attach, const std::string& sender);
   bool HopHintMayLeavePreferLocal(const std::string& prefer_hop_peer_id) const;
   bool IsOnOrHintedHop(const std::string& call_id, const std::string& hop_peer_id) const;
   void StartHopHintRepick(const std::string& call_id, const std::string& prefer, const std::string& guest);
@@ -311,6 +318,11 @@ private:
    * session's planned hop), or refuse the joiner. False = joiner refused (no migration now).
    */
   bool ResolveGroupHopForJoin(const std::string& call_id, const std::string& joiner_identity);
+  /** V050: the hops (in order) every joined member other than `guest` reached, per their reports. */
+  std::vector<std::string> HopsMembersReached(const std::string& call_id, const std::string& guest,
+                                              const std::vector<std::string>& hops) const;
+  /** V050: per call, guest → the hop the group moved to for it (one change per joiner). */
+  std::unordered_map<std::string, std::map<std::string, std::string>> hop_hint_repicked_;
 
   void WatchRelayLoss();
   void UnwatchRelayLoss();

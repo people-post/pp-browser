@@ -1600,12 +1600,13 @@ Roe<void> CallSessionWorkflow::HandleInboundMediaKey(const std::string& detail_j
   return {};
 }
 
-Roe<void> CallSessionWorkflow::HandleInboundSfuAttach(const std::string& detail_json) {
+Roe<void> CallSessionWorkflow::HandleInboundSfuAttach(const std::string& detail_json,
+                                                     const std::string& sender_identity) {
   auto attach = CallControlCodec::DecodeSfuAttach(detail_json);
   if (!attach) {
     return attach.error();
   }
-  (void)host_.hop.on_inbound_sfu_attach(attach->call_id, *attach);
+  (void)host_.hop.on_inbound_sfu_attach(attach->call_id, *attach, sender_identity);
   host_.wire.notify_ring_changed();
   return {};
 }

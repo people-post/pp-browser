@@ -164,8 +164,9 @@ void CallSessionManager::BindWorkflowHostPorts() {
     topology_.NoteAcceptHopReport(call_id, identity, report);
   };
   ports.hop.clear_sfu_attach_wait = [this]() { topology_.ClearSfuAttachWait(); };
-  ports.hop.on_inbound_sfu_attach = [this](const std::string& call_id, const CallSfuAttachDetail& d) {
-    return topology_.OnInboundSfuAttach(call_id, d);
+  ports.hop.on_inbound_sfu_attach = [this](const std::string& call_id, const CallSfuAttachDetail& d,
+                                           const std::string& sender) {
+    return topology_.OnInboundSfuAttach(call_id, d, sender);
   };
   ports.hop.on_inbound_sfu_attach_failed = [this](const CallSfuAttachFailedDetail& d) {
     topology_.OnInboundSfuAttachFailed(d);
@@ -1286,8 +1287,9 @@ Roe<void> CallSessionManager::HandleInboundMediaKey(const std::string& detail_js
 }
 
 
-Roe<void> CallSessionManager::HandleInboundSfuAttach(const std::string& detail_json) {
-  return workflow_.HandleInboundSfuAttach(detail_json);
+Roe<void> CallSessionManager::HandleInboundSfuAttach(const std::string& detail_json,
+                                                    const std::string& sender_identity) {
+  return workflow_.HandleInboundSfuAttach(detail_json, sender_identity);
 }
 
 
@@ -1454,7 +1456,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     log().debug << "Ignoring legacy call_sdp/call_ice from " << sender_identity;
     return {};
   case CallControlType::CallSfuAttach:
-    return HandleInboundSfuAttach(detail_json);
+    return HandleInboundSfuAttach(detail_json, sender_identity);
   case CallControlType::CallSfuAttachFailed:
     return HandleInboundSfuAttachFailed(detail_json, sender_identity);
   case CallControlType::CallHopRefuse:

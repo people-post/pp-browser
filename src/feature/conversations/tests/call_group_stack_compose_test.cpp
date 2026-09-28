@@ -225,14 +225,15 @@ protected:
   static constexpr size_t kA = 0;  // initiator (sticky hop picker)
   static constexpr size_t kB = 1;
   static constexpr size_t kC = 2;
-  static constexpr size_t kSides = 3;
+  static constexpr size_t kD = 3;  // joins a live group mid-call (gt5); idle otherwise
+  static constexpr size_t kSides = 4;
 
   void SetUp() override {
     EnsureSodiumInit();
     AppRuntime::Initialize(ManualOwnerRuntimeConfig());
     AppRuntime::InitializeUI();
 
-    const char* tags[kSides] = {"group_a", "group_b", "group_c"};
+    const char* tags[kSides] = {"group_a", "group_b", "group_c", "group_d"};
     for (size_t i = 0; i < kSides; ++i) {
       relays_[i] = std::make_unique<FakeHopClient>(hop_, MeshPeerIdOf(i));
       // The hop is an org seed every participant knows (Wide scope → seed pick, V035).
@@ -386,11 +387,11 @@ protected:
   }
 
   bool GroupLive(const std::string& call_id, const std::string& hop = kHopPeerId) const {
-    for (size_t i = 0; i < kSides; ++i) {
+    for (size_t i : members_) {
       if (sides_[i].ui->Phase() != CallPhase::InCall || !OnHopFor(i, call_id, hop)) {
         return false;
       }
-      for (size_t j = 0; j < kSides; ++j) {
+      for (size_t j : members_) {
         if (j != i && RxFrom(i, j) < kMinRxFrames) {
           return false;
         }
@@ -401,12 +402,12 @@ protected:
 
   std::string Describe(const std::string& call_id) const {
     std::string out;
-    for (size_t i = 0; i < kSides; ++i) {
+    for (size_t i : members_) {
       out += "\n  side " + std::string(1, static_cast<char>('A' + i)) +
              ": phase=" + std::to_string(static_cast<int>(sides_[i].ui->Phase())) +
              " on_hop=" + (OnHopFor(i, call_id) ? "1" : "0") + " quotes=" + std::to_string(relays_[i]->QuoteCalls()) +
              " rx_audio=" + std::to_string(RxAudioFrames(i));
-      for (size_t j = 0; j < kSides; ++j) {
+      for (size_t j : members_) {
         if (j != i) {
           out += " rx_from_" + std::string(1, static_cast<char>('A' + j)) + "=" + std::to_string(RxFrom(i, j));
         }
@@ -483,6 +484,24 @@ protected:
     return session && session->has_value() ? (*session)->planned_hop : std::nullopt;
   }
 
+  /** A invites D into the live group; D accepts. D joins `members_`. */
+  void InviteAndAcceptD(const std::string& call_id) {
+    std::optional<Roe<void>> invited;
+    sides_[kA].ui->InviteParticipant(call_id, sides_[kD].local_identity,
+                                     [&invited](Roe<void> result) { invited = std::move(result); });
+    DrainUntil([&]() {
+      PumpWire();
+      return invited.has_value();
+    });
+    ASSERT_TRUE(invited && *invited) << (invited ? invited->error().message : "InviteParticipant did not report");
+    auto key = sides_[kA].stack->MediaKeys()->LoadEpochKey(call_id, 1);
+    ASSERT_TRUE(key && key->has_value());
+    ASSERT_TRUE(sides_[kD].stack->MediaKeys()->PutEpochKey(call_id, 1, **key));
+    PumpWire();
+    AcceptInvite(kD, call_id);
+    members_.push_back(kD);
+  }
+
   /** Hop owner (re-picks) as side `i` computes it from its own rows (V050: earliest joined). */
   std::string OwnerSeenBy(size_t i, const std::string& call_id) const {
     CallSessionStore sessions(sides_[i].store->ProfileDbPath());
@@ -506,6 +525,8 @@ protected:
 
   FakeMediaRelayHop hop_;  // outlives the stacks (their relay clients point at it)
   std::unique_ptr<FakeHopClient> relays_[kSides];
+  /** The call's participants (GroupLive / per-member asserts); D is added by the mid-call tests. */
+  std::vector<size_t> members_ = {kA, kB, kC};
   StackSide sides_[kSides];
   std::mutex wire_mu_;
   std::deque<Envelope> inboxes_[kSides];
@@ -517,12 +538,12 @@ TEST_F(CallGroupStackComposeTest, ThreeWayCallSoftMigratesOntoOneHop) {
   const std::string call_id = RunGroupCallToHopLive();
   ASSERT_FALSE(call_id.empty());
 
-  for (size_t i = 0; i < kSides; ++i) {
+  for (size_t i : members_) {
     EXPECT_EQ(sides_[i].ui->Phase(), CallPhase::InCall) << "side " << i;
     EXPECT_TRUE(OnHopFor(i, call_id)) << "side " << i << " not attached to the hop for the call";
     EXPECT_EQ(hop_.PublishedStreams(relays_[i].get()).size(), 1u)
         << "side " << i << " must publish one audio stream through the hop";
-    for (size_t j = 0; j < kSides; ++j) {
+    for (size_t j : members_) {
       if (j != i) {
         EXPECT_GE(RxFrom(i, j), kMinRxFrames) << "side " << i << " does not hear side " << j;
       }
@@ -546,7 +567,7 @@ TEST_F(CallGroupStackComposeTest, EveryInviteeSeesTheWholeInviteList) {
     for (const CallParticipant& p : *rows) {
       ids.insert(p.identity);
     }
-    for (size_t j = 0; j < kSides; ++j) {
+    for (size_t j : members_) {
       EXPECT_EQ(ids.count(sides_[j].local_identity), 1u) << "side " << i << " roster misses side " << j;
     }
   }
@@ -557,7 +578,7 @@ TEST_F(CallGroupStackComposeTest, EveryInviteeSeesTheWholeInviteList) {
 TEST_F(CallGroupStackComposeTest, SecondInviteeAcceptingFirstGetsTheDirectPath) {
   const std::string call_id = RunGroupCallToHopLive(kC, kB);
   ASSERT_FALSE(call_id.empty());
-  for (size_t i = 0; i < kSides; ++i) {
+  for (size_t i : members_) {
     EXPECT_TRUE(OnHopFor(i, call_id)) << "side " << i;
   }
 }
@@ -567,7 +588,7 @@ TEST_F(CallGroupStackComposeTest, SecondInviteeAcceptingFirstGetsTheDirectPath) 
 TEST_F(CallGroupStackComposeTest, SimultaneousAcceptsConvergeOnTheHop) {
   const std::string call_id = RunGroupCallToHopLive(kB, kC, /*together=*/true);
   ASSERT_FALSE(call_id.empty());
-  for (size_t i = 0; i < kSides; ++i) {
+  for (size_t i : members_) {
     EXPECT_EQ(sides_[i].ui->Phase(), CallPhase::InCall) << "side " << i;
     EXPECT_TRUE(OnHopFor(i, call_id)) << "side " << i;
   }
@@ -610,7 +631,7 @@ TEST_F(CallGroupStackComposeTest, InviteesNeverStampJoinsFromTheirOwnClock) {
       },
       20000);
   ASSERT_TRUE(GroupLive(call_id)) << Describe(call_id);
-  for (size_t subject = 0; subject < kSides; ++subject) {
+  for (size_t subject : members_) {
     const auto want = stamp(kA, subject, call_id);
     ASSERT_TRUE(want) << "initiator has no stamp for side " << subject;
     for (size_t viewer : {kB, kC}) {
@@ -659,7 +680,7 @@ TEST_F(CallGroupStackComposeTest, InitiatorLeaveKeepsTheRestOnTheHop) {
 TEST_F(CallGroupStackComposeTest, ThirdJoinMigratesOntoThePlannedHop) {
   const std::string call_id = StartGroupCall();
   ASSERT_FALSE(call_id.empty());
-  for (size_t i = 0; i < kSides; ++i) {
+  for (size_t i : members_) {
     auto planned = PlannedHopSeenBy(i, call_id);
     ASSERT_TRUE(planned) << "side " << i << " has no planned hop";
     EXPECT_EQ(planned->peer_id, kHopPeerId) << "side " << i;
@@ -683,7 +704,7 @@ TEST_F(CallGroupStackComposeTest, ThirdJoinMigratesOntoThePlannedHop) {
       },
       20000);
   EXPECT_TRUE(GroupLive(call_id)) << "group did not go live on the planned hop:" << Describe(call_id);
-  for (size_t i = 0; i < kSides; ++i) {
+  for (size_t i : members_) {
     EXPECT_FALSE(hop_.InSession(relays_[i].get(), kOtherHopPeerId, call_id)) << "side " << i << " on the unplanned hop";
   }
 }
@@ -712,7 +733,7 @@ TEST_F(CallGroupStackComposeTest, OneAdjustmentWhenTheJoinerCannotReachThePlanne
       },
       20000);
   EXPECT_TRUE(GroupLive(call_id, kOtherHopPeerId)) << "group did not form on the reachable hop:" << Describe(call_id);
-  for (size_t i = 0; i < kSides; ++i) {
+  for (size_t i : members_) {
     EXPECT_FALSE(OnHopFor(i, call_id)) << "side " << i << " on the hop C cannot reach";
   }
 }
@@ -739,9 +760,66 @@ TEST_F(CallGroupStackComposeTest, NoSharedHopRefusesTheJoinerAndKeepsTheCall) {
   // A little longer: nothing may start migrating A↔B afterwards.
   DrainUntil([&]() { PumpWire(); return false; }, 1500);
   EXPECT_TRUE(DirectPairLive(kA, kB)) << "A↔B must stay on their direct call:" << Describe(call_id);
-  for (size_t i = 0; i < kSides; ++i) {
+  for (size_t i : members_) {
     EXPECT_FALSE(relays_[i]->IsAttached()) << "side " << i << " attached to a hop";
   }
+}
+
+// V050 gt5: D joins a live group whose hop it cannot reach; the others reached another hop while
+// ringing — the whole group moves there once, and everyone (D included) hears everyone.
+TEST_F(CallGroupStackComposeTest, LaterJoinerThatCannotReachTheHopMovesTheGroupOnce) {
+  OfferBothHops();
+  relays_[kD]->MakeUnreachable(kHopPeerId);
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  InviteAndAcceptD(call_id);
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return GroupLive(call_id, kOtherHopPeerId);
+      },
+      20000);
+  EXPECT_TRUE(GroupLive(call_id, kOtherHopPeerId)) << "the group did not move for D:" << Describe(call_id);
+}
+
+// V050 gt5: D cannot reach the hop, and B never reached the alternative — moving would strand B, so
+// D is refused and the group stays where it is.
+TEST_F(CallGroupStackComposeTest, LaterJoinerRefusedWhenNoHopServesEveryone) {
+  OfferBothHops();
+  relays_[kB]->MakeUnreachable(kOtherHopPeerId);
+  relays_[kD]->MakeUnreachable(kHopPeerId);
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  InviteAndAcceptD(call_id);
+  members_ = {kA, kB, kC};  // D is expected to be refused
+  DrainUntil([&]() {
+    PumpWire();
+    return sides_[kD].ui->Phase() == CallPhase::Idle && !sides_[kD].stack->HasActiveLocalCall();
+  });
+  EXPECT_EQ(sides_[kD].ui->Phase(), CallPhase::Idle) << "D must be refused";
+  DrainUntil([&]() { PumpWire(); return false; }, 1500);
+  EXPECT_TRUE(GroupLive(call_id)) << "A, B, C must stay on their hop:" << Describe(call_id);
+  EXPECT_FALSE(relays_[kD]->IsAttached());
+}
+
+// V050 gt5: one hop change per joiner — D fails on the hop the group moved to for it: refuse D,
+// keep that hop (no second move).
+TEST_F(CallGroupStackComposeTest, NoSecondHopChangeForTheSameJoiner) {
+  OfferBothHops();
+  relays_[kD]->MakeUnreachable(kHopPeerId);
+  relays_[kD]->MakeUnreachable(kOtherHopPeerId);  // D still lists Other as dialable
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  InviteAndAcceptD(call_id);
+  members_ = {kA, kB, kC};
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return sides_[kD].ui->Phase() == CallPhase::Idle && GroupLive(call_id, kOtherHopPeerId);
+      },
+      20000);
+  EXPECT_EQ(sides_[kD].ui->Phase(), CallPhase::Idle) << "D must be refused after the one change";
+  EXPECT_TRUE(GroupLive(call_id, kOtherHopPeerId)) << "the group keeps the hop it moved to:" << Describe(call_id);
 }
 
 // A guest leaving a live group call ends only their media: the other two stay InCall and keep
@@ -774,7 +852,7 @@ TEST_F(CallGroupStackComposeTest, GuestLeaveKeepsRemainingPairThenInitiatorLeave
   sides_[kA].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
   DrainUntil([&]() {
     PumpWire();
-    for (size_t i = 0; i < kSides; ++i) {
+    for (size_t i : members_) {
       if (sides_[i].ui->Phase() != CallPhase::Idle || sides_[i].stack->HasActiveLocalCall() ||
           relays_[i]->IsAttached()) {
         return false;
@@ -782,7 +860,7 @@ TEST_F(CallGroupStackComposeTest, GuestLeaveKeepsRemainingPairThenInitiatorLeave
     }
     return true;
   });
-  for (size_t i = 0; i < kSides; ++i) {
+  for (size_t i : members_) {
     EXPECT_EQ(sides_[i].ui->Phase(), CallPhase::Idle) << "side " << i;
     EXPECT_FALSE(sides_[i].stack->HasActiveLocalCall()) << "side " << i;
     EXPECT_FALSE(relays_[i]->IsAttached()) << "side " << i << " still attached to the hop";

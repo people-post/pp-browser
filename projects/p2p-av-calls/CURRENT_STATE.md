@@ -38,7 +38,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **1:1 vs stale CallSfuAttach** | Accept→P2P bumps migrate gen + clears SoftMigrate; inbound `CallSfuAttach` ignored unless N≥3 / WaitForAttach / SoftMigrate; stale CompleteAttach without flight ownership aborts StartSfu (dogfood: brief hop audio → chrome “direct”) |
 | **V034 libp2p video_lo** | H264 on same 1:1 duplex + SFU ch1; v2 frames; shared call media key (one encrypt / hop fan-out); hop never sheds audio for video; Immersive per-peer tiles |
 | Video on libp2p | **In progress (lv)** — LAN 1:1 Camera on is the first dogfood bar |
-| **V050 group topology** | **In progress (gt)** — gt0–gt4 landed: full invite roster + joined-count arming; initiator leave keeps the rest on the hop with one agreed next owner (single-clock stamps); `planned_hop` from the invite list; Accept reports planned-hop reachability and the one adjustment / joiner refusal at the third join. Next: later-join re-pick when the hop is full or unreachable (gt5) — [PHASES gt](PHASES.md#gt--group-call-topology-v050) |
+| **V050 group topology** | **gt0–gt5 landed** — full invite roster + joined-count arming; initiator leave keeps the rest on the hop with one agreed next owner; `planned_hop` from the invite list; Accept reachability report with the one adjustment / joiner refusal at the third join; later joiners move the whole group only to a hop every member reached, once per joiner, guests following the owner. Left: second lab hop for NAT-level gt4/gt5 (gt6) — [PHASES gt](PHASES.md#gt--group-call-topology-v050) |
 
 ## a4 thin in code (still relevant under V026)
 

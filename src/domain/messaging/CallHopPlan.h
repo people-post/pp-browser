@@ -85,6 +85,12 @@ struct GroupHopJoinDecision {
 };
 
 /**
+ * V050: every reporter that constrains (lists hops, or refused the planned one) reached `hop`.
+ * Reporters with no list and no refusal (old peers, unfinished probes) do not constrain.
+ */
+bool HopReachedByAllReporters(const std::string& hop, const std::map<std::string, CallHopReport>& reports);
+
+/**
  * Pure (V050): keep the planned hop unless a report says it is unreachable; then the first ranked
  * hop every reporter with a list reached (reporters without a list do not constrain); none → refuse.
  */
