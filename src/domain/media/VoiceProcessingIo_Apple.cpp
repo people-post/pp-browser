@@ -6,10 +6,14 @@
 #include <TargetConditionals.h>
 #if TARGET_OS_OSX
 #include <CoreAudio/CoreAudio.h>
+#else
+#include "domain/media/CallAudioSession.h"
 #endif
 
 #include <atomic>
+#include <chrono>
 #include <cstring>
+#include <thread>
 #include <vector>
 
 namespace pbr {
@@ -264,6 +268,12 @@ bool VoiceProcessingIo::Open(std::string* reason) {
   desc.componentType = kAudioUnitType_Output;
   desc.componentSubType = kAudioUnitSubType_VoiceProcessingIO;
   desc.componentManufacturer = kAudioUnitManufacturer_Apple;
+#if !TARGET_OS_OSX
+  // Re-assert the call session here, on the device thread, right before the unit is built: a
+  // ringback / ringtone SDL stream closed just ahead of us in the device queue rewrites the
+  // AVAudioSession on close (B36), and VPIO then failed AudioOutputUnitStart with 'what'.
+  CallAudioSession::ActivateForVoipCall();
+#endif
   AudioComponent comp = AudioComponentFindNext(nullptr, &desc);
   if (!comp) {
     return fail("VoiceProcessingIO component not found");
@@ -360,6 +370,12 @@ bool VoiceProcessingIo::Open(std::string* reason) {
   impl_->render_chunk_max.store(0, std::memory_order_relaxed);
 
   st = AudioOutputUnitStart(unit);
+  if (st != noErr) {
+    // One retry: a session/route change settling right now (e.g. the previous stream's close) is
+    // the usual cause of a transient start failure.
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    st = AudioOutputUnitStart(unit);
+  }
   if (st != noErr) {
     return fail(Failed("AudioOutputUnitStart", st));
   }
