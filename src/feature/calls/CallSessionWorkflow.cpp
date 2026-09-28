@@ -1184,6 +1184,9 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
     host_.reach.note_mesh_peer_id_for_relay(pending.inviter_identity, invite->libp2p_peer_id);
   }
   if (host_.reach.note_caps_for_identity) host_.reach.note_caps_for_identity(pending.inviter_identity, invite->caps, invite->listen_multiaddrs);
+  if (host_.reach.note_call_peer_caps && invite->caps.present) {
+    host_.reach.note_call_peer_caps(invite->call_id, invite->caps);
+  }
   if (host_.reach.prefetch_reach) host_.reach.prefetch_reach(pending.inviter_identity);
   // Answerer: kick circuit readiness on ring (park owned by the shared MeshMediaPlane).
   if (host_.reach.ensure_circuit_ready) {
@@ -1248,6 +1251,9 @@ Roe<void> CallSessionWorkflow::ApplyRemoteAccept(const CallAcceptDetail& accept_
   // An implicit accept carries no caps / listen addrs: keep what the invite path learned.
   if (!implicit && host_.reach.note_caps_for_identity) {
     host_.reach.note_caps_for_identity(identity, accept->caps, accept->listen_multiaddrs);
+  }
+  if (!implicit && host_.reach.note_call_peer_caps && accept->caps.present) {
+    host_.reach.note_call_peer_caps(accept->call_id, accept->caps);
   }
   CallParticipant participant;
   participant.call_id = accept->call_id;

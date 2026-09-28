@@ -145,6 +145,63 @@ TEST(CallControlCodecTest, SdpDetailRoundTrip) {
   EXPECT_FALSE(CallControlCodec::DecodeSdp(R"({"call_id":"call:abc"})"));
 }
 
+// K005: mobility rides caps without a `v` bump; old caps (no key) and newer values read Unknown.
+TEST(CallControlCodecTest, CapsMobilityRoundTripsWithoutAVersionBump) {
+  CallInviteDetail invite;
+  invite.call_id = "call:mob";
+  invite.inviter_identity = "account:alice";
+  invite.invitee_identity = "account:bob";
+  invite.caps.present = true;
+  invite.caps.mobility = MobilityClass::Mobile;
+  auto encoded = CallControlCodec::EncodeInvite(invite);
+  ASSERT_TRUE(encoded);
+  EXPECT_NE(encoded->find("\"mobility\":\"mobile\""), std::string::npos);
+  EXPECT_NE(encoded->find("\"v\":1"), std::string::npos) << "no caps.v bump (old peers zero caps on a newer v)";
+  auto decoded = CallControlCodec::DecodeInvite(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->caps.mobility, MobilityClass::Mobile);
+
+  CallAcceptDetail accept;
+  accept.call_id = "call:mob";
+  accept.identity = "account:bob";
+  accept.caps.present = true;
+  accept.caps.mobility = MobilityClass::Stationary;
+  auto accept_json = CallControlCodec::EncodeAccept(accept);
+  ASSERT_TRUE(accept_json);
+  auto accept_back = CallControlCodec::DecodeAccept(*accept_json);
+  ASSERT_TRUE(accept_back);
+  EXPECT_EQ(accept_back->caps.mobility, MobilityClass::Stationary);
+
+  auto old_caps = CallControlCodec::DecodeInvite(
+      R"({"call_id":"call:o","inviter_identity":"a","invitee_identity":"b","media_mode":"voice","caps":{"v":1,"media_relay":true}})");
+  ASSERT_TRUE(old_caps);
+  EXPECT_TRUE(old_caps->caps.media_relay);
+  EXPECT_EQ(old_caps->caps.mobility, MobilityClass::Unknown) << "a peer from before k6";
+  auto newer_value = CallControlCodec::DecodeInvite(
+      R"({"call_id":"call:n","inviter_identity":"a","invitee_identity":"b","media_mode":"voice","caps":{"v":1,"mobility":"orbital"}})");
+  ASSERT_TRUE(newer_value);
+  EXPECT_EQ(newer_value->caps.mobility, MobilityClass::Unknown);
+}
+
+TEST(CallControlCodecTest, CapsUpdateRoundTrip) {
+  CallCapsUpdateDetail update;
+  update.call_id = "call:upd";
+  update.identity = "account:alice";
+  update.caps.mobility = MobilityClass::Mobile;
+  auto encoded = CallControlCodec::EncodeCapsUpdate(update);
+  ASSERT_TRUE(encoded);
+  auto decoded = CallControlCodec::DecodeCapsUpdate(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->call_id, "call:upd");
+  EXPECT_EQ(decoded->identity, "account:alice");
+  EXPECT_TRUE(decoded->caps.present);
+  EXPECT_EQ(decoded->caps.mobility, MobilityClass::Mobile);
+  EXPECT_FALSE(CallControlCodec::DecodeCapsUpdate(R"({"call_id":"call:x"})")) << "caps required";
+  EXPECT_EQ(CallControlTypeFromWire(CallControlTypeToWire(CallControlType::CallCapsUpdate)),
+            CallControlType::CallCapsUpdate);
+  EXPECT_TRUE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallCapsUpdate));
+}
+
 TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
   CallInviteDetail invite;
   invite.call_id = "call:abc";

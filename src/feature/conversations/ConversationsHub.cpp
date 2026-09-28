@@ -349,6 +349,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
       PublishNodeAdvertisedAddrs();
       RegisterContactEndpoints();
       mesh_media_->RefreshHopPolicy();  // advertised addrs follow the probe (media consumers' view)
+      NoteObservedAddress();
       if (on_reachability_updated_) {
         on_reachability_updated_();
       }
@@ -409,6 +410,21 @@ void ConversationsHub::StartMeshServices() {
   PublishNodeAdvertisedAddrs();
   SyncLanMdnsAdvertisement();
   StartNetworkMonitor();
+}
+
+void ConversationsHub::NoteObservedAddress() {
+  if (!mesh_) {
+    return;
+  }
+  const std::string observed = mesh_->Reachability().Snapshot().signals.dial_back_observed;
+  if (observed.empty()) {
+    return;
+  }
+  // Our public mapping moved (a NAT rebind, or a network change's re-probe): mobility churn (k6).
+  if (!last_observed_addr_.empty() && observed != last_observed_addr_ && call_stack_) {
+    call_stack_->OnObservedAddressChanged();
+  }
+  last_observed_addr_ = observed;
 }
 
 void ConversationsHub::StartNetworkMonitor() {

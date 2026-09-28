@@ -22,7 +22,24 @@ LocalNetworkChange ToLocalNetworkChange(const NetworkChange& change) {
   return local;
 }
 
+MobilityAttachment ToMobilityAttachment(const NetworkState& state) {
+  MobilityAttachment attachment;
+  attachment.online = state.online;
+  attachment.cellular = state.transport == NetworkTransport::Cellular;
+  attachment.expensive = state.expensive;
+  return attachment;
+}
+
 void ReactToNetworkChange(const NetworkChange& change, MeshHost* mesh, CallStack* calls) {
+  if (change.generation == 0) {
+    NetworkChangeLog().info << "network baseline online=" << (change.current.online ? 1 : 0)
+                            << " transport=" << static_cast<int>(change.current.transport)
+                            << " expensive=" << (change.current.expensive ? 1 : 0);
+    if (calls) {
+      calls->OnLocalNetwork(ToMobilityAttachment(change.current), /*changed=*/false, /*moved=*/false);
+    }
+    return;
+  }
   const LocalNetworkChange local = ToLocalNetworkChange(change);
   NetworkChangeLog().info << "network change gen=" << change.generation << " online=" << (local.was_online ? 1 : 0)
                           << "->" << (local.online ? 1 : 0) << " transport=" << static_cast<int>(change.previous.transport)
@@ -32,8 +49,9 @@ void ReactToNetworkChange(const NetworkChange& change, MeshHost* mesh, CallStack
   if (mesh) {
     mesh->OnLocalNetworkChanged(local);
   }
-  if (calls && DecideLocalNetworkReaction(local).probe_links) {
-    calls->OnLocalNetworkChanged();
+  if (calls) {
+    calls->OnLocalNetwork(ToMobilityAttachment(change.current), /*changed=*/local.attachment_changed,
+                          /*moved=*/DecideLocalNetworkReaction(local).probe_links);
   }
 }
 

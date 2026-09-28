@@ -58,6 +58,8 @@ public:
 
   static Roe<std::string> EncodeCircuitR1(const CallCircuitR1Detail& detail);
   static Roe<CallCircuitR1Detail> DecodeCircuitR1(const std::string& detail_json);
+  static Roe<std::string> EncodeCapsUpdate(const CallCapsUpdateDetail& detail);
+  static Roe<CallCapsUpdateDetail> DecodeCapsUpdate(const std::string& detail_json);
 
   static Roe<std::string> EncodePunch(const CallPunchDetail& detail);
   static Roe<CallPunchDetail> DecodePunch(const std::string& detail_json);

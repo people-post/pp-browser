@@ -54,14 +54,84 @@ void CallStack::FinishMeshStop() {
   CallsThread::RunAndWait([this]() { FinishMeshStopOnOwner(); });
 }
 
-void CallStack::OnLocalNetworkChanged() {
-  CallsThread::Post([this]() {
-    if (media_plane_) {
+void CallStack::OnLocalNetwork(const MobilityAttachment& attachment, const bool changed, const bool moved) {
+  CallsThread::Post([this, attachment, changed, moved]() {
+    local_mobility_.OnAttachment(attachment, changed, MobilityClassifier::Clock::now());
+    ReevaluateLocalMobilityOnOwner();
+    if (moved && media_plane_) {
       if (CallMediaBridge* bridge = media_plane_->Bridge()) {
         bridge->OnLocalNetworkChanged();
       }
     }
   });
+}
+
+void CallStack::OnObservedAddressChanged() {
+  CallsThread::Post([this]() {
+    local_mobility_.OnObservedAddressChanged(MobilityClassifier::Clock::now());
+    ReevaluateLocalMobilityOnOwner();
+  });
+}
+
+void CallStack::ReloadMobilityOverride() {
+  CallsThread::Post([this]() { ApplyMobilityOverrideOnOwner(); });
+}
+
+void CallStack::ApplyMobilityOverrideOnOwner() {
+  const auto cfg = mesh_config();
+  const auto pinned = ResolveMobilityOverride(cfg ? cfg->mobility : std::string("auto"));
+  local_mobility_.SetOverride(pinned);
+  if (pinned) {
+    log().info << "mobility pinned to " << MobilityClassWire(*pinned);
+  }
+  ReevaluateLocalMobilityOnOwner();
+}
+
+void CallStack::ReevaluateLocalMobilityOnOwner() {
+  const MobilityClass before = local_mobility_published_.load(std::memory_order_acquire);
+  const MobilityClass now = local_mobility_.Evaluate(MobilityClassifier::Clock::now());
+  local_mobility_published_.store(now, std::memory_order_release);
+  if (now == before) {
+    return;
+  }
+  log().info << "mobility " << MobilityClassWire(before) << " -> " << MobilityClassWire(now);
+  if (!call_sessions_) {
+    return;
+  }
+  auto active = call_sessions_->ActiveLocalCall();
+  if (active && active->has_value()) {
+    call_sessions_->AnnounceCapsUpdate();
+    NotifyPathPolicyChangedOnOwner((*active)->call_id);
+  }
+}
+
+void CallStack::NoteRemoteMobilityOnOwner(const std::string& call_id, const MobilityClass mobility) {
+  if (call_id.empty()) {
+    return;
+  }
+  if (remote_mobility_.size() > 32 && !remote_mobility_.contains(call_id)) {
+    remote_mobility_.clear();  // one live call at a time; old entries are history
+  }
+  auto [it, inserted] = remote_mobility_.try_emplace(call_id, mobility);
+  if (!inserted && it->second == mobility) {
+    return;
+  }
+  it->second = mobility;
+  NotifyPathPolicyChangedOnOwner(call_id);
+}
+
+void CallStack::NotifyPathPolicyChangedOnOwner(const std::string& call_id) {
+  if (media_plane_) {
+    if (CallMediaBridge* bridge = media_plane_->Bridge()) {
+      bridge->OnPathPolicyChanged(call_id);
+    }
+  }
+}
+
+CallPathPolicy CallStack::PathPolicyFor(const std::string& call_id) const {
+  const auto it = remote_mobility_.find(call_id);
+  return DecideCallPathPolicy(local_mobility_.Class(),
+                              it == remote_mobility_.end() ? MobilityClass::Unknown : it->second);
 }
 
 void CallStack::DetachMeshMedia() {
@@ -217,6 +287,7 @@ void CallStack::DetachMeshMediaOnOwner() {
 void CallStack::RebindMeshMediaOnOwner() {
   SyncMediaPlaneDeps();
   BindMediaProducts();
+  ApplyMobilityOverrideOnOwner();
 }
 
 void CallStack::BindMediaProducts() {
@@ -231,6 +302,9 @@ void CallStack::BindMediaProducts() {
   args.media_engine = call_media_engine_.get();
   args.sessions_key = call_sessions_.get();
   media_plane_->BindBridge(args);
+  if (CallMediaBridge* bridge = media_plane_->Bridge()) {
+    bridge->SetPathPolicyProvider([this](const std::string& call_id) { return PathPolicyFor(call_id); });
+  }
   call_sessions_->SetMediaRelayDeps(media_plane_->BuildMediaRelayDeps());
   call_sessions_->SetDirectMediaPorts(
       MakeDirectMediaPorts());
@@ -391,10 +465,14 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
   // Providers read the connectivity owner's published view of this node's mesh (never the
   // MeshHost the hub may be tearing down under a running call flow).
   call_sessions_->SetLocalMeshPeerIdProvider([this]() -> std::string { return LocalMeshView()->local_peer_id; });
+  call_sessions_->SetCallPeerCapsSink([this](const std::string& call_id, const CallPeerCaps& caps) {
+    NoteRemoteMobilityOnOwner(call_id, caps.mobility);
+  });
   call_sessions_->SetLocalPeerCapsProvider([this]() {
     CallPeerCaps caps;
     caps.v = kCallPeerCapsVersion;
     caps.present = true;
+    caps.mobility = LocalMobility();
     // Durable Node host only — never advertise media_relay for ephemeral listen-only (V030).
     const auto view = LocalMeshView();
     const auto cfg = mesh_config();
@@ -451,6 +529,7 @@ void CallStack::OnMeshServicesStartedOnOwner() {
     media_plane_->OnMeshStarted();
   }
   BindMediaProducts();
+  ApplyMobilityOverrideOnOwner();
 }
 
 void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial) {

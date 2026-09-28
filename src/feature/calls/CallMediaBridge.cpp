@@ -435,6 +435,10 @@ void CallMediaBridge::ArmDirectUpgrade(const std::string& call_id) {
   if (!session_offerer_ || call_id.empty() || MediaPathKind() != "circuit" || upgrade_call_id_ == call_id) {
     return;
   }
+  if (!PathPolicyFor(call_id).upgrade_to_direct) {
+    log().info << "direct upgrade: not for this pair (a mobile end anchors on the relay) call_id=" << call_id;
+    return;
+  }
   CancelDirectUpgrade();
   upgrade_call_id_ = call_id;
   upgrade_attempt_ = 0;
@@ -490,6 +494,22 @@ void CallMediaBridge::OnDirectUpgradeFire() {
       ScheduleDirectUpgrade();
     });
   });
+}
+
+// --- k6: the pair's path policy changed (a mobility class flipped mid-call) ----------------------
+
+void CallMediaBridge::OnPathPolicyChanged(const std::string& call_id) {
+  if (stopping_.load(std::memory_order_acquire) || call_id.empty() || call_id != media_call_id_) {
+    return;
+  }
+  const CallPathPolicy policy = PathPolicyFor(call_id);
+  log().info << "path policy call_id=" << call_id << " upgrade=" << (policy.upgrade_to_direct ? 1 : 0)
+             << " relay=" << CallRelayRoleName(policy.relay_role);
+  if (!policy.upgrade_to_direct) {
+    CancelDirectUpgrade();
+  } else if (direct_planner_phase_ == CallDirectPlannerPhase::Live) {
+    ArmDirectUpgrade(call_id);
+  }
 }
 
 // --- k5: the device's network changed -----------------------------------------------------------
@@ -939,6 +959,7 @@ PeerReachRequest CallMediaBridge::BuildReachRequest(const CallMediaDirectConnect
   // The offerer reaches; the answerer awaits the offerer's link (invite/accept is the agreement).
   request.mode = params.offerer ? PeerReachMode::Reach : PeerReachMode::Await;
   request.exclude_direct = std::exchange(force_circuit_ensure_, false);
+  request.allow_punch = PathPolicyFor(params.call_id).punch_at_start;
   return request;
 }
 

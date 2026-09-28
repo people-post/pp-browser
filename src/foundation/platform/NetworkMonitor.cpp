@@ -157,15 +157,15 @@ void NetworkMonitor::OnState(const NetworkState& state) {
     if (!have_baseline_) {
       have_baseline_ = true;
       state_ = state;
+      change.current = state;  // generation 0: the baseline
+    } else if (state == state_) {
       return;
+    } else {
+      change.generation = ++generation_;
+      change.previous = state_;
+      change.current = state;
+      state_ = state;
     }
-    if (state == state_) {
-      return;
-    }
-    change.generation = ++generation_;
-    change.previous = state_;
-    change.current = state;
-    state_ = state;
   }
   if (listener_) {
     listener_(change);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/messaging/CallPathPolicy.h"
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
@@ -110,6 +111,14 @@ public:
    * relayed call starts its direct-upgrade punches over (the new network may be punchable).
    */
   void OnLocalNetworkChanged();
+  /**
+   * k6: the call's pair path policy (both mobility classes). Unset → the default policy
+   * (Stationary pair: punch, upgrade, relay standby).
+   */
+  using PathPolicyProvider = std::function<CallPathPolicy(const std::string& call_id)>;
+  void SetPathPolicyProvider(PathPolicyProvider provider) { path_policy_ = std::move(provider); }
+  /** k6: a mobility class of the call flipped (calls owner): upgrade punches follow the new policy. */
+  void OnPathPolicyChanged(const std::string& call_id);
   /** Wait after a network change before re-anchoring (production 2.5 s). */
   void SetNetworkSettleMsForTest(int delay_ms) { network_settle_ms_ = delay_ms; }
   /** Every direct-upgrade attempt after this delay (0 = production 3 s / 20 s / 60 s). */
@@ -258,6 +267,9 @@ private:
   void ScheduleReanchor(const std::string& call_id, std::chrono::milliseconds delay);
   void Reanchor(const std::string& call_id);
   void CancelReanchor();
+  CallPathPolicy PathPolicyFor(const std::string& call_id) const {
+    return path_policy_ ? path_policy_(call_id) : CallPathPolicy{};
+  }
   /** Amp PeerId for a call roster key (account: → PeerId); unchanged otherwise. */
   std::string ReachPeerIdFor(const std::string& key);
   void OnDirectHealthTimerFire();
@@ -312,6 +324,7 @@ private:
   int reanchor_retry_ms_ = 2000;
   /** Past Amp's network-change grace (2 s): the links left are the ones that answered. */
   int network_settle_ms_ = 2500;
+  PathPolicyProvider path_policy_;
   /** Inside the 15 s StartReserve lease so consecutive leases overlap. */
   int reserve_renew_interval_ms_ = 10000;
   CallDirectPlannerPhase direct_planner_phase_ = CallDirectPlannerPhase::Idle;

@@ -365,6 +365,8 @@ private:
   /** k5: OS network monitor lives with the mesh services (started / stopped with them). */
   void StartNetworkMonitor();
   void StopNetworkMonitor();
+  /** k6: a reachability probe finished — a moved observed address is mobility churn. UI thread. */
+  void NoteObservedAddress();
   void PublishMobileCallScopedAddrs();
   void PrefetchPeerReachability(const std::string& identity);
   void StartCoordinatorTimers();
@@ -436,6 +438,8 @@ private:
   std::function<void()> on_broadcast_changed_;
   std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
   std::unique_ptr<NetworkMonitor> network_monitor_;
+  /** Last seed-observed public address (k6 churn). UI thread. */
+  std::string last_observed_addr_;
   std::string mesh_last_error_;
   bool upnp_auto_tried_ = false;
   bool reachability_banner_shown_ = false;

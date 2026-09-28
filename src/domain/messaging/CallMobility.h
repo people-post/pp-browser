@@ -24,6 +24,17 @@ const char* MobilityClassWire(MobilityClass mobility);
 /** Unrecognized / missing → Unknown. */
 MobilityClass ParseMobilityClass(std::string_view wire);
 
+/**
+ * Pinned class from config / CLI: "stationary" | "mobile" | "unknown"; "auto", empty or anything
+ * else → nullopt (classify automatically).
+ */
+std::optional<MobilityClass> ParseMobilityOverride(std::string_view value);
+/** Process-wide `--mobility=` (dogfood / hard lab); wins over config when set. */
+void SetMobilityCliOverride(std::string value);
+std::string MobilityCliOverride();
+/** CLI when given, else the config value. */
+std::optional<MobilityClass> ResolveMobilityOverride(const std::string& config_value);
+
 /** The primary signals of the current attachment (from the platform network monitor). */
 struct MobilityAttachment {
   bool online = false;
@@ -69,5 +80,7 @@ private:
 inline constexpr std::chrono::minutes kMobilityChurnWindow{10};
 inline constexpr size_t kMobilityChurnToMobile = 3;
 inline constexpr std::chrono::minutes kMobilityCalmBeforeStationary{5};
+/** Churn signals this close together are one event (a change and its re-probed address). */
+inline constexpr std::chrono::seconds kMobilityChurnDedupe{30};
 
 } // namespace pbr

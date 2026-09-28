@@ -1112,6 +1112,61 @@ TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeReanchorsAReconnectingCall
   bridge_->PrepareForTeardown(0);
 }
 
+// k6: a pair with a mobile end anchors on the relay — a relayed offerer never punches for an
+// upgrade; when the class flips back (both stationary), the upgrade punches start.
+TEST_F(CallMediaBridgeAnswererStartTest, MobilePairStaysOnTheRelayUntilThePolicyAllowsAnUpgrade) {
+  const std::string call_id = "call:mobile-anchor";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWMobileAnchor";
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  bridge_->SetDirectUpgradeDelayMsForTest(20);
+  std::atomic<MobilityClass> remote{MobilityClass::Mobile};
+  bridge_->SetPathPolicyProvider([&](const std::string&) {
+    return DecideCallPathPolicy(MobilityClass::Stationary, remote.load());
+  });
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  for (int i = 0; i < 40; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_EQ(bridge_->DirectPlannerPhase(), CallDirectPlannerPhase::Live);
+  EXPECT_EQ(circuit_->upgrade_calls.load(), 0) << "the relay is the anchor";
+
+  remote = MobilityClass::Stationary;  // the peer's caps_update
+  CallsThread::RunAndWait([&] { bridge_->OnPathPolicyChanged(call_id); });
+  for (int i = 0; i < 200 && circuit_->upgrade_calls.load() == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_GE(circuit_->upgrade_calls.load(), 1) << "both stationary: punch for a direct path";
+  bridge_->PrepareForTeardown(0);
+}
+
+// k6: the answerer of a mobile pair waits for the offerer's circuit instead of punching.
+TEST_F(CallMediaBridgeAnswererStartTest, MobilePairAnswererDoesNotPunch) {
+  const std::string call_id = "call:mobile-await";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWMobileAwait";
+  dial_->endpoints.clear();
+  dial_->connected.clear();
+  dial_->force_dialable.clear();
+  bridge_->SetPathPolicyProvider(
+      [](const std::string&) { return DecideCallPathPolicy(MobilityClass::Mobile, MobilityClass::Stationary); });
+  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  for (int i = 0; i < 100; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_EQ(circuit_->call_media_ensure_calls.load(), 0) << "no punch toward the peer";
+  bridge_->PrepareForTeardown(0);
+}
+
 TEST_F(CallMediaBridgeAnswererStartTest, EnsureReachResolvesAccountToMeshPeerId) {
   // Hard-lab / dogfood: BeginSession peer is account:; circuit StartBridge needs Amp PeerId.
   const std::string call_id = "call:account-to-peerid";

@@ -1,5 +1,7 @@
 #include "domain/messaging/CallMobility.h"
 
+#include <mutex>
+
 namespace pbr {
 
 const char* MobilityClassWire(const MobilityClass mobility) {
@@ -24,6 +26,42 @@ MobilityClass ParseMobilityClass(const std::string_view wire) {
   return MobilityClass::Unknown;
 }
 
+std::optional<MobilityClass> ParseMobilityOverride(const std::string_view value) {
+  if (value == "stationary" || value == "mobile" || value == "unknown") {
+    return ParseMobilityClass(value);
+  }
+  return std::nullopt;
+}
+
+namespace {
+
+std::mutex& CliMutex() {
+  static std::mutex mu;
+  return mu;
+}
+
+std::string& CliValue() {
+  static std::string value;
+  return value;
+}
+
+} // namespace
+
+void SetMobilityCliOverride(std::string value) {
+  std::lock_guard lock(CliMutex());
+  CliValue() = std::move(value);
+}
+
+std::string MobilityCliOverride() {
+  std::lock_guard lock(CliMutex());
+  return CliValue();
+}
+
+std::optional<MobilityClass> ResolveMobilityOverride(const std::string& config_value) {
+  const std::string cli = MobilityCliOverride();
+  return ParseMobilityOverride(cli.empty() ? config_value : cli);
+}
+
 void MobilityClassifier::OnAttachment(const MobilityAttachment& attachment, const bool changed,
                                       const Clock::time_point now) {
   attachment_ = attachment;
@@ -37,6 +75,9 @@ void MobilityClassifier::OnObservedAddressChanged(const Clock::time_point now) {
 void MobilityClassifier::SetOverride(std::optional<MobilityClass> pinned) { override_ = pinned; }
 
 void MobilityClassifier::NoteChurn(const Clock::time_point now) {
+  if (!churn_.empty() && now - churn_.back() < kMobilityChurnDedupe) {
+    return;  // one move: the network change and the new observed address it brings
+  }
   churn_.push_back(now);
   DropOldChurn(now);
 }

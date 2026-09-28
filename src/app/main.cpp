@@ -4,6 +4,7 @@
 #include "common/Logger.h"
 #include "common/StartupTiming.h"
 #include "common/media/CallMediaHealth.h"
+#include "domain/messaging/CallMobility.h"
 #include "foundation/data/AppPaths.h"
 #include "foundation/diagnostics/CrashDump.h"
 #include "foundation/diagnostics/LogFile.h"
@@ -75,6 +76,11 @@ int main(int argc, char** argv) {
       ++i;
     } else if (std::strcmp(argv[i], "--no-log-file") == 0) {
       log_file_enabled = false;
+    } else if (std::strcmp(argv[i], "--mobility") == 0 && i + 1 < argc) {
+      pbr::SetMobilityCliOverride(argv[i + 1]);  // call path mobility class (dogfood / lab)
+      ++i;
+    } else if (std::strncmp(argv[i], "--mobility=", 11) == 0) {
+      pbr::SetMobilityCliOverride(argv[i] + 11);
     }
   }
 

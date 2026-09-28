@@ -27,7 +27,10 @@ struct NetworkState {
   bool operator==(const NetworkState&) const = default;
 };
 
-/** A material change of the network state; `generation` counts them from 1. */
+/**
+ * A reported network state. `generation` 0 is the baseline (the state at start: `previous` is
+ * empty — not a change); material changes count from 1.
+ */
 struct NetworkChange {
   uint64_t generation = 0;
   NetworkState previous;
@@ -42,8 +45,8 @@ class INetworkMonitorBackend;
  * OS network-change events. Backends: Linux netlink, Darwin `NWPathMonitor`, Windows IP helper
  * notifications, Android `ConnectivityManager` default-network callback.
  *
- * The first state a backend reports is the baseline (not an event); afterwards only material
- * changes — `NetworkState` differs from the last one reported — reach the listener. The listener runs
+ * The first state a backend reports reaches the listener as the baseline (generation 0); afterwards
+ * only material changes — `NetworkState` differs from the last one reported. The listener runs
  * on a backend thread: post to the owner before touching state, and never call `Stop` from it.
  */
 class NetworkMonitor {

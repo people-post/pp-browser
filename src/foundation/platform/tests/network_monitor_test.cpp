@@ -29,11 +29,14 @@ protected:
   std::vector<NetworkChange> changes_;
 };
 
-// The first state is the baseline, not a change.
+// The first state is the baseline: reported as generation 0 (consumers classify from it), not a change.
 TEST_F(NetworkMonitorTest, FirstStateIsTheBaseline) {
   StartCollecting();
   monitor_.OnState(Wifi("wlan0/192.168.1.5"));
-  EXPECT_TRUE(changes_.empty());
+  ASSERT_EQ(changes_.size(), 1u);
+  EXPECT_EQ(changes_[0].generation, 0u);
+  EXPECT_EQ(changes_[0].current, Wifi("wlan0/192.168.1.5"));
+  EXPECT_EQ(changes_[0].previous, NetworkState{});
   EXPECT_EQ(monitor_.Current(), Wifi("wlan0/192.168.1.5"));
   EXPECT_EQ(monitor_.Generation(), 0u);
 }
@@ -50,12 +53,12 @@ TEST_F(NetworkMonitorTest, MaterialChangesAreReportedWithGenerations) {
   monitor_.OnState(cell);
   monitor_.OnState(Wifi("wlan0/192.168.1.9"));  // back on Wi-Fi, new address
 
-  ASSERT_EQ(changes_.size(), 2u);
-  EXPECT_EQ(changes_[0].generation, 1u);
-  EXPECT_EQ(changes_[0].previous, Wifi("wlan0/192.168.1.5"));
-  EXPECT_EQ(changes_[0].current, cell);
-  EXPECT_EQ(changes_[1].generation, 2u);
-  EXPECT_EQ(changes_[1].current.fingerprint, "wlan0/192.168.1.9");
+  ASSERT_EQ(changes_.size(), 3u) << "baseline + two changes";
+  EXPECT_EQ(changes_[1].generation, 1u);
+  EXPECT_EQ(changes_[1].previous, Wifi("wlan0/192.168.1.5"));
+  EXPECT_EQ(changes_[1].current, cell);
+  EXPECT_EQ(changes_[2].generation, 2u);
+  EXPECT_EQ(changes_[2].current.fingerprint, "wlan0/192.168.1.9");
   EXPECT_EQ(monitor_.Generation(), 2u);
 }
 
@@ -65,7 +68,7 @@ TEST_F(NetworkMonitorTest, RepeatedStatesAreNotChanges) {
   for (int i = 0; i < 5; ++i) {
     monitor_.OnState(Wifi("wlan0/192.168.1.5"));
   }
-  EXPECT_TRUE(changes_.empty());
+  EXPECT_EQ(changes_.size(), 1u) << "the baseline only";
 }
 
 TEST_F(NetworkMonitorTest, NothingIsReportedAfterStop) {
@@ -73,7 +76,7 @@ TEST_F(NetworkMonitorTest, NothingIsReportedAfterStop) {
   monitor_.OnState(Wifi("a"));
   monitor_.Stop();
   monitor_.OnState(Wifi("b"));
-  EXPECT_TRUE(changes_.empty());
+  EXPECT_EQ(changes_.size(), 1u) << "the baseline only";
   monitor_.Stop();  // idempotent
 }
 

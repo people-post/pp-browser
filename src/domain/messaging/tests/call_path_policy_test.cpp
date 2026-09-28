@@ -68,6 +68,25 @@ TEST(MobilityClassifierTest, ChurnLeavesTheWindow) {
   EXPECT_EQ(c.Evaluate(t0 + minutes(14)), MobilityClass::Stationary) << "window drained, calm";
 }
 
+// A network change and the new observed address its re-probe reports are one event.
+TEST(MobilityClassifierTest, ChurnSignalsCloseTogetherCountOnce) {
+  const auto t0 = Clock::now();
+  MobilityClassifier c;
+  c.OnAttachment(Wifi(), false, t0);
+  for (int i = 1; i <= 3; ++i) {
+    c.OnAttachment(Wifi(), true, t0 + minutes(i));
+    c.OnObservedAddressChanged(t0 + minutes(i) + seconds(3));
+  }
+  EXPECT_EQ(c.Evaluate(t0 + minutes(3)), MobilityClass::Mobile) << "three moves";
+  MobilityClassifier d;
+  d.OnAttachment(Wifi(), false, t0);
+  d.OnAttachment(Wifi(), true, t0 + minutes(1));
+  d.OnObservedAddressChanged(t0 + minutes(1) + seconds(3));
+  d.OnAttachment(Wifi(), true, t0 + minutes(2));
+  d.OnObservedAddressChanged(t0 + minutes(2) + seconds(3));
+  EXPECT_EQ(d.Evaluate(t0 + minutes(2)), MobilityClass::Stationary) << "two moves, four signals";
+}
+
 TEST(MobilityClassifierTest, OfflineKeepsTheClass) {
   const auto t0 = Clock::now();
   MobilityClassifier c;
