@@ -306,6 +306,25 @@ pp_hard_cgnat_block_p2p() {
   echo "  gateway↔gateway path blocked=${state}"
 }
 
+# Move peer-a to another private address (as a phone moving between networks would get a new
+# one): new source address → new NAT mapping at gw-a. `back` restores the original address.
+# Old address first: deleting a primary address also deletes the secondaries of its subnet.
+# pp_hard_cgnat_flip_peer_a_addr away|back
+PP_HARD_CGNAT_PEER_A_ALT_IP="${PP_HARD_CGNAT_PEER_A_ALT_IP:-10.117.1.11}"
+pp_hard_cgnat_flip_peer_a_addr() {
+  local dir="$1" ifc from to
+  ifc="$(pp_hard_peer_iface "${PP_HARD_CGNAT_PEER_A}")"
+  case "${dir}" in
+    away) from="${PP_HARD_CGNAT_PEER_A_IP}"; to="${PP_HARD_CGNAT_PEER_A_ALT_IP}" ;;
+    back) from="${PP_HARD_CGNAT_PEER_A_ALT_IP}"; to="${PP_HARD_CGNAT_PEER_A_IP}" ;;
+    *) pp_hard_die "pp_hard_cgnat_flip_peer_a_addr: away|back (got ${dir})" ;;
+  esac
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" sh -c \
+    "ip addr del ${from}/24 dev ${ifc} 2>/dev/null; ip addr add ${to}/24 dev ${ifc} 2>/dev/null; ip route replace default via ${PP_HARD_CGNAT_GW_A_PRIV_IP} src ${to}" ||
+    pp_hard_die "peer-a address flip ${dir} failed"
+  echo "  peer-a address ${from} → ${to}"
+}
+
 pp_hard_cgnat_resolve_topology() {
   HOP_IP_PUBLIC="$(pp_hard_container_ip_on_net "${PP_HARD_CGNAT_HOP}" "${PP_HARD_CGNAT_NET_PUBLIC}")"
   PEER_A_IP="$(pp_hard_container_ip_on_net "${PP_HARD_CGNAT_PEER_A}" "${PP_HARD_CGNAT_NET_PRIV_A}")"
@@ -374,6 +393,9 @@ pp_hard_cgnat_ensure_up() {
   # Phases that change the gateways restore them; a run that died mid-phase may not have.
   pp_hard_cgnat_set_nat symmetric
   pp_hard_cgnat_block_p2p off
+  if pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" sh -c "ip -o addr | grep -q ' ${PP_HARD_CGNAT_PEER_A_ALT_IP}/'"; then
+    pp_hard_cgnat_flip_peer_a_addr back
+  fi
   pp_hard_cgnat_resolve_topology
   echo "cgnat hop peer_id=${HOP_PEER_ID} public=${HOP_IP_PUBLIC}"
   echo "cgnat peer-a=${PEER_A_IP} peer-b=${PEER_B_IP}"

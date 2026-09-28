@@ -34,6 +34,8 @@ The **vendored** fork under [`src/lib/libp2p/`](../../src/lib/libp2p/) is still 
 - Routing and transmission (L3 channels, FRAG/QoS, budgets)
 - Price incentives (quotes, ceilings, volunteer → paid regulation)
 
+**Network changes** (Wi-Fi ↔ cellular, new address, back online): the platform `NetworkMonitor` feeds the mesh, which re-validates every direct link within 2 s and re-learns its addresses; calls re-anchor — [MESH.md § Local network change](MESH.md#local-network-change-call-path-resilience-k5).
+
 **Hop reachability** continues in-mesh ([media-hop-reachability](../../projects/media-hop-reachability/)), including planned **Amp Coordinated Punch** ([HOLE_PUNCH.md](../../projects/media-hop-reachability/HOLE_PUNCH.md)). SoftMigrate must not grow a parallel NAT toolkit.
 
 **Ownership planes:** Profile (app/node-local secrets + identity) → **MeshHost** (Amp composition root) → **ConversationsHub** / ConversationsCore + **CallStack** (app-only) → **ConversationsFacade** / CallUiBackend (UI).

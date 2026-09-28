@@ -106,12 +106,13 @@ Checklist:
 
 ## k5 — Network monitor (M7)
 
-- [ ] `foundation/platform/NetworkMonitor` event API (transport, metered/expensive, change generation)
-- [ ] Android `registerDefaultNetworkCallback`; iOS/macOS `NWPathMonitor`; Windows `NotifyIpInterfaceChange` + cost; Linux netlink (fallback poll)
-- [ ] Reaction: suspect + keepalive burst + fast evict; reachability re-probe + advertise refresh
-- [ ] Active call hook → k4 re-anchor
+- [x] **k5-1** pp-cpp-amp **v2.7.0**: `MeshRuntime::NotifyNetworkChanged` — every Connected ADP link suspect + probed (echo-requesting keepalive at its cadence; from the new address it moves the peer's path), re-probed every 500 ms, dropped after 2 s without authenticated RX (`network-changed`); dial backoffs cleared
+- [x] **k5-2** `foundation/platform/NetworkMonitor` (online, transport, expensive, default-route fingerprint, generation; baseline + material changes only). Backends: Linux rtnetlink (2 s poll fallback), macOS / iOS `NWPathMonitor`, Windows `NotifyIpInterfaceChange` / `NotifyUnicastIpAddressChange` / `NotifyRouteChange2` + `GetNetworkConnectivityHint`, Android `registerDefaultNetworkCallback` (`PpNetworkMonitor.java`). Linux verified live in a network namespace; the others compile in CI only — needs a device check
+- [x] **k5-3** Reaction ([K012](DECISIONS.md)): `ReactToNetworkChange` → `MeshHost::OnLocalNetworkChanged` (Amp probe + reachability re-probe → advertised / punch addrs) and `CallMediaBridge::OnLocalNetworkChanged` (reconnecting → re-anchor after the links settle; relayed → upgrade punches start over). Offline and cost-only changes do nothing. Owned by `ConversationsHub` (app) and `ProductStackHarness` (probe)
+- [x] **k5-4** hard-w5 Phase-11 FLIP: peer-a changes address mid-call → dead link dropped `network-changed` → call on a circuit 2.3 s after the flip (6 / 6 runs)
 - [x] Always bind mesh socket dual-stack `[::]` (K010), IPv4 only without OS IPv6 support. Audit: advertise / probe targets come from interfaces, not the bind family; wildcard `::` handled like `0.0.0.0`; pp-cpp-amp maps IPv4 peers both ways. Hard-w5 relays now listen on `[::]` with IPv4-NAT'd peers
-- [ ] `check_platform_ifdefs.sh` clean; platform code per PLATFORM_CODE.md
+- [x] `check_platform_ifdefs.sh` clean; platform code per PLATFORM_CODE.md
+- [ ] Device dogfood: Wi-Fi ↔ cellular and sleep / wake mid-call on Android, iOS, macOS, Windows
 
 **Exit:** Wi-Fi ↔ cellular / sleep-wake mid-call recovers without user action.
 

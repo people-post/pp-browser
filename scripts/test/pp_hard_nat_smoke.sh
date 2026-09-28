@@ -25,6 +25,11 @@
 #                           associations; the dual-dial election may drop the one the call bound
 #                           first — the call must move to the winner without ever showing
 #                           Reconnecting, and never fall back to the relay
+# B-HARD-CALL-NAT-FLIP    — Phase-11 (k5): cone NAT; the call starts direct (call-start punch),
+#                           then peer-a moves to another private address mid-call (a phone changing
+#                           network: new NAT mapping, the direct path dies). Its NetworkMonitor sees
+#                           the change, Amp drops the dead link at once (network-changed) and the
+#                           call reconnects onto a new path without failing
 # Cold phases also require >= COLD_MIN_RX audio frames received on BOTH sides.
 #
 # NAT: gateways default to symmetric mapping (punching can never land, so the phases above stay
@@ -70,8 +75,8 @@ while [[ $# -gt 0 ]]; do
 Usage: $(basename "$0") [--status-url URL] [--cycles K] [--phase PHASE]
                         [--expect-call success|fail] [--skip-up]
 
-  PHASE: circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|broadcast|all
-    all    = circuit + stack + cold + cold-dirty + cold-await + upgrade + punch + broadcast (default)
+  PHASE: circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|broadcast|all
+    all    = circuit + stack + cold + cold-dirty + cold-await + upgrade + punch + flip + broadcast (default)
   --expect-call fail  pass only if the call fails (reproduce dogfood)
 EOF
       exit 0
@@ -85,10 +90,10 @@ case "${CALL_EXPECT}" in
   *) pp_hard_die "--expect-call must be success|fail (got ${CALL_EXPECT})" ;;
 esac
 case "${PHASE}" in
-  circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|broadcast|all) ;;
+  circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|broadcast|all) ;;
   product|dirty|both)
     pp_hard_die "--phase ${PHASE} was retired (probe-local reach copies); use cold / cold-dirty / cold-await" ;;
-  *) pp_hard_die "--phase must be circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|broadcast|all (got ${PHASE})" ;;
+  *) pp_hard_die "--phase must be circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|broadcast|all (got ${PHASE})" ;;
 esac
 
 if [[ ! -x "${PP_HARD_PROBE_DIR}/${CALL_BIN_NAME}" ]]; then
@@ -113,6 +118,9 @@ COLD_MIN_RX="${PP_HARD_NAT_COLD_MIN_RX:-100}"
 COLD_AWAIT_NETEM="${PP_HARD_NAT_COLD_AWAIT_NETEM:-delay 250ms}"
 # Upgrade phase: long enough for the +20 s upgrade attempt, the blackhole and the failover.
 UPGRADE_HOLD_MS="${PP_HARD_NAT_UPGRADE_HOLD_MS:-45000}"
+# Flip phase: hold past the flip + reconnect; the RX-stall gate is the recovery budget.
+FLIP_HOLD_MS="${PP_HARD_NAT_FLIP_HOLD_MS:-35000}"
+FLIP_RX_STALL_MS="${PP_HARD_NAT_FLIP_RX_STALL_MS:-12000}"
 
 # Highest "flow <role> ... rx=N" in a probe log (0 when none).
 max_rx() {
@@ -182,6 +190,50 @@ upgrade_choreo() {
   echo "blackholed" >>"${marks}"
 }
 
+# Flip-phase choreography: once audio flows on the direct path, move peer-a to another address,
+# then wait for the call to land on a new path. <marks> gets "flipped <line>" (offerer log length
+# at the flip) and "recovered <seconds>".
+# flip_choreo <offerer_log> <marks>
+flip_choreo() {
+  local off_log="$1" marks="$2" _ start
+  for _ in $(seq 1 300); do
+    [[ "$(max_rx "${off_log}")" -ge 100 ]] && break
+    sleep 0.1
+  done
+  [[ "$(max_rx "${off_log}")" -ge 100 ]] || { echo "no-audio" >>"${marks}"; return; }
+  sleep 2
+  local line
+  line="$(wc -l <"${off_log}")"
+  pp_hard_cgnat_flip_peer_a_addr away
+  start="$(date +%s.%N)"
+  echo "flipped ${line}" >>"${marks}"
+  for _ in $(seq 1 300); do
+    if tail -n +"$((line + 1))" "${off_log}" | grep -qE 'CallMediaLeg reconnected|CallMediaLeg failover|call-media path migrated'; then
+      echo "recovered $(awk -v a="$(date +%s.%N)" -v b="${start}" 'BEGIN { printf "%.1f", a - b }')" >>"${marks}"
+      return
+    fi
+    sleep 0.1
+  done
+  echo "not-recovered" >>"${marks}"
+}
+
+# assert_flip <label> <offerer_log> <marks>
+assert_flip() {
+  local label="$1" off_log="$2" marks="$3" line
+  line="$(sed -n 's/^flipped //p' "${marks}")"
+  [[ -n "${line}" ]] || pp_hard_die "${label}: the call never had audio to flip under ($(cat "${marks}"))"
+  local after
+  after="$(tail -n +"$((line + 1))" "${off_log}")"
+  grep -qE '\[NetworkChange\] network change gen=[0-9]+ .*attachment_changed=1' <<<"${after}" ||
+    pp_hard_die "${label}: the offerer's NetworkMonitor never reported the address change"
+  echo "ok  flip: NetworkMonitor saw the move ($(grep -oE 'network change gen=[0-9]+ online=[^ ]+' <<<"${after}" | head -1))"
+  grep -q 'reason=network-changed' <<<"${after}" ||
+    pp_hard_die "${label}: no link was dropped as network-changed (Amp probing did not run)"
+  echo "ok  flip: dead link dropped by the network-change probe"
+  grep -qx 'not-recovered' "${marks}" && pp_hard_die "${label}: the call never moved to a new path after the flip"
+  echo "ok  flip: call on a new path $(sed -n 's/^recovered //p' "${marks}") s after the flip"
+}
+
 # assert_upgrade <label> <offerer_log> <answerer_log> <marks>
 assert_upgrade() {
   local label="$1" off_log="$2" ans_log="$3" marks="$4"
@@ -246,6 +298,10 @@ run_nat_call() {
     stall_ms="${COLD_RX_STALL_MS}"
   fi
   [[ "${mode}" == "cold-upgrade" ]] && hold_ms="${UPGRADE_HOLD_MS}"
+  if [[ "${mode}" == "cold-flip" ]]; then
+    hold_ms="${FLIP_HOLD_MS}"
+    stall_ms="${FLIP_RX_STALL_MS}"
+  fi
   if [[ "${product_stack}" -eq 1 ]]; then
     local watch_ms=$((hold_ms > 4000 ? hold_ms - 3000 : 0))
     ans_args+=(--product-stack --rx-stall-ms "${stall_ms}" --watch-ms "${watch_ms}")
@@ -300,7 +356,7 @@ run_nat_call() {
   case "${mode}" in
     stack) off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms "${STACK_HOLD_MS}"
              --rx-stall-ms "${RX_STALL_MS}" --timeout-ms 45000) ;;
-    cold|cold-dirty|cold-await|cold-upgrade|cold-punch)
+    cold|cold-dirty|cold-await|cold-upgrade|cold-punch|cold-flip)
       off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms "${hold_ms}"
                  --rx-stall-ms "${stall_ms}" --timeout-ms $((hold_ms + 60000)) --signal-dir "${signal_dir}")
       [[ "${mode}" == "cold-dirty" ]] && off_args+=(--dirty-book --force-dial-fail) ;;
@@ -311,6 +367,10 @@ run_nat_call() {
   if [[ "${mode}" == "cold-upgrade" ]]; then
     : >"${marks}"
     upgrade_choreo "${off_log}" "${ans_log}" "${marks}" &
+    choreo_pid=$!
+  elif [[ "${mode}" == "cold-flip" ]]; then
+    : >"${marks}"
+    flip_choreo "${off_log}" "${marks}" &
     choreo_pid=$!
   fi
 
@@ -363,6 +423,15 @@ run_nat_call() {
   if [[ "${mode}" == "cold-punch" ]]; then
     sleep 0.5
     assert_punch "${label}" "${off_log}" "${ans_log}"
+  elif [[ "${mode}" == "cold-flip" ]]; then
+    sleep 0.5
+    assert_flip "${label}" "${off_log}" "${marks}"
+    local off_rx ans_rx
+    off_rx="$(max_rx "${off_log}")"
+    ans_rx="$(max_rx "${ans_log}")"
+    [[ "${off_rx}" -ge "${COLD_MIN_RX}" && "${ans_rx}" -ge "${COLD_MIN_RX}" ]] ||
+      pp_hard_die "${label}: audio short offerer_rx=${off_rx} answerer_rx=${ans_rx}"
+    echo "ok  flip audio both ways offerer_rx=${off_rx} answerer_rx=${ans_rx}"
   elif [[ "${mode}" == cold* ]]; then
     sleep 0.5  # let the tee'd answerer log flush
     assert_cold_reach "${label}" "${mode}" "${off_log}" "${ans_log}"
@@ -494,6 +563,19 @@ if run_phase punch; then
   set -e
   pp_hard_cgnat_set_nat symmetric
   [[ "${punch_rc}" -eq 0 ]] || exit "${punch_rc}"
+fi
+
+if run_phase flip; then
+  pp_hard_cgnat_set_nat cone
+  pp_hard_cgnat_block_p2p off
+  set +e
+  run_nat_call "B-HARD-CALL-NAT-FLIP" "pp-hard-call-nat-flip" "call-nat-flip.ready" \
+    "${PP_HARD_NAT_FLIP_LISTEN:-/ip4/0.0.0.0/udp/47178/adp/1.0.0}" cold-flip
+  flip_rc=$?
+  set -e
+  pp_hard_cgnat_flip_peer_a_addr back
+  pp_hard_cgnat_set_nat symmetric
+  [[ "${flip_rc}" -eq 0 ]] || exit "${flip_rc}"
 fi
 
 if run_phase broadcast; then
