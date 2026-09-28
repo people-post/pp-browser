@@ -275,7 +275,17 @@ bool VoiceProcessingIo::Open(std::string* reason) {
   }
   AudioUnit unit = impl_->unit;
 
-  // Input and output IO are both enabled by default on VPIO; setting EnableIO fails (-10865).
+  // macOS: input and output IO are both enabled by default on VPIO; setting EnableIO fails (-10865).
+  // iOS: like RemoteIO, the input element is disabled by default — without this the unit opens but
+  // never calls the input callback (on device: capture starved on every open, then SDL fallback).
+#if !TARGET_OS_OSX
+  const UInt32 enable = 1;
+  st = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, kInputBus, &enable,
+                            sizeof(enable));
+  if (st != noErr) {
+    return fail(Failed("enable input", st));
+  }
+#endif
   const AudioStreamBasicDescription fmt = MonoS16();
   st = AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, kInputBus, &fmt,
                             sizeof(fmt));
