@@ -2130,7 +2130,7 @@ void CallMediaLegCoordinator::Stop() {
   // Tear down synchronously: a PostIo(raw Impl*) races if the caller destroys then Pumps
   // (macOS: "mutex lock failed: Invalid argument"). Strand before the coordinator lock — IO
   // callbacks hold the strand, so an off-IO Stop taking `mu` first can invert against MeshPump
-  // (see CircuitTunnelCoordinator::AbortInflight).
+  // (see CircuitClientCoordinator::AbortInflight).
   runtime_.WithIoLock([this]() {
     Impl::CallbackLock lock(*impl_);
     std::vector<std::string> ids;

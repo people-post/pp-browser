@@ -270,7 +270,7 @@ An Amp L4 protocol folder under `src/domain/mesh/l4/<protocol>/` keeps **shared 
 | `<protocol>/serve/` | The side that answers inbound requests (what a node hosts) | `<Protocol>Server` (+ its state machines) |
 | `<protocol>/client/` | The side that dials out and uses the service | `<Protocol>ClientCoordinator` (session state), `I<Protocol>Client` / `Amp<Protocol>Client` (port + adapter), client workflows |
 
-Say **serve / server** for the answering side — not "host" (MeshHost, host sessions and `host_*` flags already mean other things). A client may use a co-located server directly (e.g. the media_relay local hop); the server never reaches into the client. `media_relay` is the first protocol split this way; others follow one protocol per change.
+Say **serve / server** for the answering side — not "host" (MeshHost, host sessions and `host_*` flags already mean other things). A client may use a co-located server directly (e.g. the media_relay local hop); the server never reaches into the client. `media_relay` and `circuit` are split this way; the other protocols follow one per change.
 
 ### Free-function module names
 

@@ -10,9 +10,9 @@
 #include "amp/link/Types.h"
 #include "common/chat/RelayEnvelope.h"
 #include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
-#include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
+#include "domain/mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
 #include "domain/mesh/l4/call_media/CallMediaLegCoordinator.h"
-#include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/l4/circuit/client/CircuitClientCoordinator.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/host/MeshPorts.h"
 #include "domain/messaging/CallTypes.h"
@@ -370,7 +370,7 @@ bool SendProbeChat(pbr::AmpDirectChatTransport& chat, const std::string& peer_ke
   return true;
 }
 
-pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pbr::CircuitTunnelCoordinator& circuit,
+pbr::Roe<void> EstablishNestedViaHop(AmpPeer& peer, pbr::CircuitClientCoordinator& circuit,
                                      pbr::AmpCircuitHopRegistry& hops, const std::string& hop_key,
                                      const std::string& peer_id, const std::string& peer_ma) {
   pbr::CircuitBridgeTarget target;
@@ -916,9 +916,8 @@ int RunAnswerer(const std::string& listen_ma, const std::string& call_id, const 
   auto media = std::make_unique<pbr::CallMediaLegCoordinator>((*peer)->Runtime());
   media->Start();
 
-  auto circuit = std::make_unique<pbr::CircuitTunnelCoordinator>((*peer)->Runtime());
+  auto circuit = std::make_unique<pbr::CircuitClientCoordinator>((*peer)->Runtime());
   circuit->Start();
-  circuit->SetServeInbound(false);
 
   std::unique_ptr<pbr::IChatPeerLinks> chat_links;
   std::unique_ptr<pbr::AmpDirectChatTransport> chat;
@@ -1046,9 +1045,8 @@ int RunOfferer(const std::string& peer_ma, const std::string& call_id, int cycle
   }
 
   auto hops = std::make_unique<pbr::AmpCircuitHopRegistry>();
-  auto circuit = std::make_unique<pbr::CircuitTunnelCoordinator>((*offerer)->Runtime());
+  auto circuit = std::make_unique<pbr::CircuitClientCoordinator>((*offerer)->Runtime());
   circuit->Start();
-  circuit->SetServeInbound(false);
 
   auto media = std::make_unique<pbr::CallMediaLegCoordinator>((*offerer)->Runtime());
   media->Start();

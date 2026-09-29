@@ -8,7 +8,7 @@
 #include "amp/link/AmpStack.h"
 #include "amp/link/Types.h"
 #include "domain/mesh/l4/media_relay/client/MediaRelayClientCoordinator.h"
-#include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/l4/circuit/client/CircuitClientCoordinator.h"
 #include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
 #include "foundation/identity/PeerIdUtil.h"
 
@@ -392,9 +392,8 @@ int RunReserve(const std::string& hop_ma) {
     std::cerr << "error: register hop: " << reg.error().message << "\n";
     return 1;
   }
-  auto circuit = std::make_unique<pbr::CircuitTunnelCoordinator>((*client)->Runtime());
+  auto circuit = std::make_unique<pbr::CircuitClientCoordinator>((*client)->Runtime());
   circuit->Start();
-  circuit->SetServeInbound(false);
 
   const std::vector<AmpPeer*> pumps = {client->get()};
   std::cout << "pp-node reserve probe hop=" << hop_ma << "\n";
@@ -470,10 +469,9 @@ int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
   }
 
   auto media = std::make_unique<pbr::MediaRelayClientCoordinator>((*client)->Runtime());
-  auto circuit = std::make_unique<pbr::CircuitTunnelCoordinator>((*client)->Runtime());
+  auto circuit = std::make_unique<pbr::CircuitClientCoordinator>((*client)->Runtime());
   media->Start();
   circuit->Start();
-  circuit->SetServeInbound(false);
 
   const std::vector<AmpPeer*> pumps = {client->get(), target->get()};
 
@@ -867,9 +865,8 @@ int RunCircuitCapOnce(const std::string& hop_ma, const std::string& advertise_ho
     std::cerr << "error: circuit-cap client amp start: " << client.error().message << "\n";
     return 1;
   }
-  auto circuit = std::make_unique<pbr::CircuitTunnelCoordinator>((*client)->Runtime());
+  auto circuit = std::make_unique<pbr::CircuitClientCoordinator>((*client)->Runtime());
   circuit->Start();
-  circuit->SetServeInbound(false);
   if (auto reg = (*client)->Links().RegisterEndpoint("hop", hop_ma); !reg) {
     std::cerr << "error: register hop: " << reg.error().message << "\n";
     return 1;
@@ -1125,9 +1122,8 @@ int RunBridgeViaHop(const std::string& hop_ma, const std::string& target_file, c
     return 1;
   }
 
-  auto circuit = std::make_unique<pbr::CircuitTunnelCoordinator>((*client)->Runtime());
+  auto circuit = std::make_unique<pbr::CircuitClientCoordinator>((*client)->Runtime());
   circuit->Start();
-  circuit->SetServeInbound(false);
   const std::vector<AmpPeer*> pumps = {client->get()};
 
   std::cout << "pp-node bridge-via-hop hop=" << hop_ma << " target=" << target_peer

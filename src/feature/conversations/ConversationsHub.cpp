@@ -49,7 +49,8 @@
 #include "domain/mesh/l4/circuit/CircuitBridgeTarget.h"
 #include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
 #include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
-#include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/l4/circuit/client/CircuitClientCoordinator.h"
+#include "domain/mesh/l4/circuit/serve/CircuitRelayServer.h"
 #include "domain/mesh/reachability/LanMdnsDiscovery.h"
 #include "domain/mesh/reachability/AmpObservedAddrs.h"
 #include "common/SettledWait.h"
@@ -607,12 +608,12 @@ void ConversationsHub::ApplyMeshAdmissionPolicies() {
     serve_mask |= static_cast<RelayScopeMask>(RelayScope::Public);
   }
 
-  if (mesh_ && mesh_->AmpCircuitTunnel()) {
+  if (mesh_ && mesh_->AmpCircuitServer()) {
     CircuitRelayAdmissionPolicy policy;
     policy.prefer_contacts_only = limit_strangers;
     policy.serve_scope_mask = serve_mask;
     policy.contact_peer_ids = contact_ids;
-    mesh_->AmpCircuitTunnel()->SetAdmissionPolicy(std::move(policy));
+    mesh_->AmpCircuitServer()->SetAdmissionPolicy(std::move(policy));
   }
   if (mesh_ && mesh_->AmpMediaRelayServer()) {
     MediaRelayAdmissionPolicy policy;
@@ -2299,8 +2300,8 @@ void ConversationsHub::RefreshMeshCapabilities() {
   }
   const MeshRole role = ResolveMeshRole(config_.mesh);
   // Amp L4 inbound hosting is gated via SetServeInbound (no TCP CircuitRelay/MediaRelay).
-  if (mesh_->AmpCircuitTunnel()) {
-    mesh_->AmpCircuitTunnel()->SetServeInbound(role == MeshRole::Node &&
+  if (mesh_->AmpCircuitServer()) {
+    mesh_->AmpCircuitServer()->SetServeInbound(role == MeshRole::Node &&
                                                config_.mesh.capabilities.circuit_relay);
   }
   // Rewire sequence (L015): dependents let go of the mesh media objects → reset → rewire → rebind.
@@ -2413,7 +2414,7 @@ Roe<CircuitRelayBridgeResult> ConversationsHub::RequestCircuitBridgePreferred(co
   if (target_peer_id.empty() && target_multiaddr.empty()) {
     return Error("missing circuit bridge target");
   }
-  CircuitTunnelCoordinator* amp_circuit = mesh_ ? mesh_->AmpCircuitTunnel() : nullptr;
+  CircuitClientCoordinator* amp_circuit = mesh_ ? mesh_->AmpCircuitClient() : nullptr;
   if (!amp_circuit || !amp_circuit->IsStarted() || !mesh_ || !mesh_->Amp()) {
     return Error("Amp circuit-relay required");
   }

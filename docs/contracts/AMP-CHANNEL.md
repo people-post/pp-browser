@@ -220,7 +220,7 @@ Relay hosts `/pp-browser/circuit/1.0.0`. After a JSON bridge handshake, the rela
 
 `target_multiaddr` and/or `target_peer_id` required. `target_protocol` defaults to the circuit protocol id when omitted.
 
-Optional `"standby_priority": "low" | "medium" | "high"` marks a call's **standby** circuit (call-path-resilience K003); omitted for a primary circuit. A relay admits standby circuits against its standby capacity (default 64, `CircuitTunnelCoordinator::SetStandbyLimits`) — `low` below 50 %, `medium` below 80 %, `high` up to 100 % — and at most 4 per dialer PeerId; otherwise it answers `{"ok":false,"error":"relay busy: standby refused"}`. Primary circuits are never refused for standby load. An unknown value reads as `low`; relays without it ignore the field. Standby circuits are marked so relay metering (none yet) can leave them free until a failover (K009).
+Optional `"standby_priority": "low" | "medium" | "high"` marks a call's **standby** circuit (call-path-resilience K003); omitted for a primary circuit. A relay admits standby circuits against its standby capacity (default 64, `CircuitRelayServer::SetStandbyLimits`) — `low` below 50 %, `medium` below 80 %, `high` up to 100 % — and at most 4 per dialer PeerId; otherwise it answers `{"ok":false,"error":"relay busy: standby refused"}`. Primary circuits are never refused for standby load. An unknown value reads as `low`; relays without it ignore the field. Standby circuits are marked so relay metering (none yet) can leave them free until a failover (K009).
 
 ### Reserve request (answerer park; double-NAT)
 
@@ -230,7 +230,7 @@ Answerer opens a circuit channel and sends:
 { "v": 1, "op": "reserve", "timeout_ms": 30000 }
 ```
 
-Relay acks `{ "v": 1, "ok": true, "op": "reserve" }` and keeps the PeerLink so a later `bridge` to that PeerId can `EnsureAssociation` without dialing into the answerer’s NAT. Client API: `CircuitTunnelCoordinator::StartReserve`. TTL / `CancelTunnel` / channel close clears the park.
+Relay acks `{ "v": 1, "ok": true, "op": "reserve" }` and keeps the PeerLink so a later `bridge` to that PeerId can `EnsureAssociation` without dialing into the answerer’s NAT. Client API: `CircuitClientCoordinator::StartReserve`. TTL / `CancelTunnel` / channel close clears the park.
 
 ### Bridge result (second DATA, before splice)
 
@@ -242,7 +242,7 @@ or `{ "v": 1, "ok": false, "error": "..." }`. On success, further DATA bodies ar
 
 Channel policy: `CircuitTunnelChannelPolicy` (Reliable Control, not `read_once`). Admission uses the same contact/scope rules as libp2p circuit ([RELAY_SCOPE](../../projects/p2p-mesh/RELAY_SCOPE.md)).
 
-Runtime: **`CircuitTunnelCoordinator`** on `MeshRuntime` — non-blocking `StartBridge` + completion callback ([A022](../../projects/adp/DECISIONS.md#a022--circuit-tunnel--non-blocking-coordinator-on-meshruntime)). L4 must not nest `Pump` / `IoPumpUntil`.
+Runtime: **`CircuitClientCoordinator`** (dialer / answerer: `StartBridge`, `StartReserve`) and **`CircuitRelayServer`** (relay: `bridge` / `reserve` answers) on `MeshRuntime` — non-blocking `StartBridge` + completion callback ([A022](../../projects/adp/DECISIONS.md#a022--circuit-tunnel--non-blocking-coordinator-on-meshruntime)). L4 must not nest `Pump` / `IoPumpUntil`.
 
 ### Nested Session carrier ([A024](../../projects/adp/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session))
 

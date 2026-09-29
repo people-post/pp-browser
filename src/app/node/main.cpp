@@ -97,8 +97,8 @@ pbr::StatusHttpSnapshot MakeSnapshot(pbr::NodeBootstrapResult& boot) {
     if (boot.mesh->Amp()) {
       snap.peer_id = boot.mesh->Amp()->LocalPeerId();
     }
-    snap.circuit_relay = boot.mesh->AmpCircuitTunnel() && boot.mesh->AmpCircuitTunnel()->IsStarted() &&
-                         boot.mesh->AmpCircuitTunnel()->ServeInbound();
+    snap.circuit_relay = boot.mesh->AmpCircuitServer() && boot.mesh->AmpCircuitServer()->IsStarted() &&
+                         boot.mesh->AmpCircuitServer()->ServeInbound();
     snap.media_relay = boot.mesh->AmpMediaRelayServer() && boot.mesh->AmpMediaRelayServer()->IsStarted() &&
                        boot.mesh->AmpMediaRelayServer()->ServeInbound();
     snap.dht = boot.mesh->AmpDht() && boot.mesh->AmpDht()->IsStarted();

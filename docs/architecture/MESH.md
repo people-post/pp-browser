@@ -56,7 +56,8 @@ domain/mesh/
                   PunchIntroducerWalk, CircuitRendezvousCoordinator, MeshReachPorts
   l4/
     shared/       ProductChannelPolicies, L4ProtocolIds, MediaFrameBody (e2e frame bodies)
-    circuit/      CircuitTunnelCoordinator, AmpCircuitHopRegistry
+    circuit/      wire types + policies; serve/ CircuitRelayServer; client/ CircuitClientCoordinator,
+                  AmpCircuitHopRegistry
     media_relay/  wire types + decisions; serve/ MediaRelayServer; client/ MediaRelayClientCoordinator,
                   AmpMediaRelayClient, frame crypto (see SRC_LAYOUT § L4 protocols)
     call_media/   CallMediaLegCoordinator, ICallMediaTransport

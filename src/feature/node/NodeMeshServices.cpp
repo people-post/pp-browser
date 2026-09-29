@@ -147,7 +147,7 @@ MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, MeshHost& mesh, const
 void ApplyOrgSeedAdmission(MeshHost& mesh) {
   // Do not rely on an empty contact set to mean "serve everyone".
   const RelayScopeMask org_serve = kRelayScopeShortTerm | static_cast<RelayScopeMask>(RelayScope::Public);
-  if (auto* circuit = mesh.AmpCircuitTunnel()) {
+  if (auto* circuit = mesh.AmpCircuitServer()) {
     CircuitRelayAdmissionPolicy policy;
     policy.prefer_contacts_only = false;
     policy.serve_scope_mask = org_serve;
