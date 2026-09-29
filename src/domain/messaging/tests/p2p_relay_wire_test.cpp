@@ -83,6 +83,40 @@ TEST(P2pRelayWireTest, RejectsUnsafeMessageId) {
   EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(RelayEnvelopeToJson(envelope))));
 }
 
+TEST(P2pRelayWireTest, ChatHistoryResponseSkipsOneBadMessageInsteadOfFailingThePage) {
+  using namespace pbr;
+
+  RelayEnvelope good;
+  good.envelope_version = kRelayEnvelopeVersion;
+  good.message_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  good.sender_relay_id = "relay:alice123";
+  good.sender_contact_id = "relay:alice123";
+  good.route.kind = "direct";
+  good.route.channel = ThreadChannel::E2e;
+  good.body.e2e.payload_b64 = "ignored";
+  good.sender_seq = 1;
+  good.session_epoch = 1;
+  good.timestamp = 1719662400123;
+  good.signature = "sig";
+
+  Object bad = RelayEnvelopeToJson(good);
+  bad.set("message_id", R"(bad"id)");
+
+  Object response;
+  response.set("peer_identity_kind", "relay_user");
+  response.set("peer_identity_value", "relay:alice123");
+  response.set("has_more", false);
+  response.set("messages", makeArray(std::vector<Value>{
+                              std::make_shared<Object>(RelayEnvelopeToJson(good)),
+                              std::make_shared<Object>(bad),
+                          }));
+
+  auto parsed = ChatHistoryResponseFromJson(response);
+  ASSERT_TRUE(static_cast<bool>(parsed)) << parsed.error().message;
+  ASSERT_EQ(parsed->messages.size(), 1u);
+  EXPECT_EQ(parsed->messages[0].message_id, good.message_id);
+}
+
 TEST(P2pRelayWireTest, RelayWireRecordRoundTrip) {
   using namespace pbr;
 
