@@ -9,7 +9,7 @@
 #include "domain/messaging/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaConnectCoordinator.h"
-#include "domain/mesh/reachability/PeerReachCoordinator.h"
+#include "domain/mesh/reach/PeerReachCoordinator.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 
 #include "common/Module.h"

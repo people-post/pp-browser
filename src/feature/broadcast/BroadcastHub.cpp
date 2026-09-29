@@ -2,7 +2,7 @@
 
 #include "feature/broadcast/AmpBroadcastRpcClient.h"
 
-#include "domain/mesh/reachability/PeerReachCoordinator.h"
+#include "domain/mesh/reach/PeerReachCoordinator.h"
 #include "domain/messaging/BroadcastMedia.h"
 #include "foundation/runtime/AppRuntime.h"
 

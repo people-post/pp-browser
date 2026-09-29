@@ -1,5 +1,5 @@
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
-#include "domain/mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
+#include "domain/mesh/l4/shared/MediaFrameBody.h"
 
 #include "foundation/crypto/MessageCipher.h"
 #include "foundation/crypto/CryptoConstants.h"

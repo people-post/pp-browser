@@ -1,7 +1,7 @@
 #pragma once
 
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
-#include "domain/mesh/reachability/PeerReachCoordinator.h"
+#include "domain/mesh/reach/PeerReachCoordinator.h"
 
 #include "common/Module.h"
 

@@ -1,4 +1,4 @@
-#include "domain/mesh/reachability/AmpCircuitHopReach.h"
+#include "domain/mesh/reach/AmpCircuitHopReach.h"
 
 #include "common/directory/MeshHopDial.h"
 #include "domain/mesh/host/MeshPorts.h"

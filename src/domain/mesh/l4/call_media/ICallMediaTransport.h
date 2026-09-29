@@ -2,6 +2,7 @@
 
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/Error.h"
+#include "domain/mesh/l4/shared/L4ProtocolIds.h"
 
 #include <cstdint>
 #include <functional>
@@ -11,8 +12,6 @@
 
 namespace pbr {
 
-inline constexpr const char* kRealtimeProtocolId = "/pp-browser/realtime/1.0.0";
-inline constexpr const char* kCallMediaDirectProtocolId = kRealtimeProtocolId;
 
 /** Transport session phases for 1:1 call-media (V033). Product UX phases stay in CallLifecycle. */
 enum class CallMediaSessionPhase {

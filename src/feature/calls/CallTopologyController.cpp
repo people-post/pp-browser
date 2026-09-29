@@ -16,7 +16,7 @@
 #include "foundation/runtime/ProductBranding.h"
 #include "common/Utilities.h"
 #include "common/directory/MeshHopDial.h"
-#include "domain/mesh/l4/media_relay/client/MediaRelayAttach.h"
+#include "domain/mesh/media_plane/MediaRelayAttach.h"
 #include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
 
 #include <algorithm>
