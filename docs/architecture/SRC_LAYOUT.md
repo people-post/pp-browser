@@ -260,6 +260,18 @@ Examples: feature/app headers that hold `SessionStore*` should `#include "founda
 
 Still keep headers focused: avoid pulling unrelated heavy trees when a small `*Types.h` / ports header already exists (e.g. `SettingsCommands`, `ChatSessionPorts`).
 
+### L4 protocols: `serve/` and `client/`
+
+An Amp L4 protocol folder under `src/domain/mesh/l4/<protocol>/` keeps **shared wire types and pure decisions at its root** and splits the two ends of the protocol into sub-folders, so node-side code is easy to tell from the attaching side:
+
+| Folder | Holds | Naming |
+|--------|-------|--------|
+| `<protocol>/` | Wire types, frame codecs, pure decision logic both ends use | `<Protocol>Types.h`, `<Protocol>Logic.*` |
+| `<protocol>/serve/` | The side that answers inbound requests (what a node hosts) | `<Protocol>Server` (+ its state machines) |
+| `<protocol>/client/` | The side that dials out and uses the service | `<Protocol>ClientCoordinator` (session state), `I<Protocol>Client` / `Amp<Protocol>Client` (port + adapter), client workflows |
+
+Say **serve / server** for the answering side — not "host" (MeshHost, host sessions and `host_*` flags already mean other things). A client may use a co-located server directly (e.g. the media_relay local hop); the server never reaches into the client. `media_relay` is the first protocol split this way; others follow one protocol per change.
+
 ### Free-function module names
 
 Prefer a **topic / capability** filename (`AttachmentFetch`, `ShellLayout`, `ChatAttachmentPrepare`) over `*Util` / `*Helper` grab-bags. Keep `*Codec` / `*Json` / `*Cache` when that is the job. Rare `*Util` is OK for small pure shared bags (`CryptoUtil`). Place by layer ownership; merge only within one capability, never “one Utilities.cpp per folder.”

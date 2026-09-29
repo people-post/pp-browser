@@ -7,7 +7,7 @@
 #include "amp/link/AdpMultiaddr.h"
 #include "amp/link/AmpStack.h"
 #include "amp/link/Types.h"
-#include "domain/mesh/l4/media_relay/AmpMediaRelayCoordinator.h"
+#include "domain/mesh/l4/media_relay/client/MediaRelayClientCoordinator.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 #include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
 #include "foundation/identity/PeerIdUtil.h"
@@ -469,10 +469,9 @@ int RunL1(const std::string& hop_ma, const std::string& advertise_host) {
     return 1;
   }
 
-  auto media = std::make_unique<pbr::AmpMediaRelayCoordinator>((*client)->Runtime());
+  auto media = std::make_unique<pbr::MediaRelayClientCoordinator>((*client)->Runtime());
   auto circuit = std::make_unique<pbr::CircuitTunnelCoordinator>((*client)->Runtime());
   media->Start();
-  media->SetServeInbound(false);
   circuit->Start();
   circuit->SetServeInbound(false);
 
@@ -581,12 +580,10 @@ int RunMediaFanout(const std::string& hop_ma) {
     return 1;
   }
 
-  auto a_relay = std::make_unique<pbr::AmpMediaRelayCoordinator>((*a)->Runtime());
-  auto b_relay = std::make_unique<pbr::AmpMediaRelayCoordinator>((*b)->Runtime());
+  auto a_relay = std::make_unique<pbr::MediaRelayClientCoordinator>((*a)->Runtime());
+  auto b_relay = std::make_unique<pbr::MediaRelayClientCoordinator>((*b)->Runtime());
   a_relay->Start();
   b_relay->Start();
-  a_relay->SetServeInbound(false);
-  b_relay->SetServeInbound(false);
 
   const std::vector<AmpPeer*> pumps = {a->get(), b->get()};
   const std::string call_id = "pp-node-fanout";
@@ -693,7 +690,7 @@ int RunMediaFanout(const std::string& hop_ma) {
 
 struct CapClient {
   std::unique_ptr<AmpPeer> peer;
-  std::unique_ptr<pbr::AmpMediaRelayCoordinator> relay;
+  std::unique_ptr<pbr::MediaRelayClientCoordinator> relay;
 };
 
 struct MediaCapResult {
@@ -742,9 +739,8 @@ MediaCapResult RunMediaCapOnce(const std::string& hop_ma, int attachers) {
     }
     c->peer = std::move(*peer);
     pumps.push_back(c->peer.get());
-    c->relay = std::make_unique<pbr::AmpMediaRelayCoordinator>(c->peer->Runtime());
+    c->relay = std::make_unique<pbr::MediaRelayClientCoordinator>(c->peer->Runtime());
     c->relay->Start();
-    c->relay->SetServeInbound(false);
     if (auto reg = c->peer->Links().RegisterEndpoint("hop", hop_ma); !reg) {
       std::cerr << "error: client-" << i << " register hop: " << reg.error().message << "\n";
       result.hop_died = true;
@@ -1238,9 +1234,8 @@ int RunMediaRecv(const std::string& hop_ma, const std::string& call_id, const in
     std::cerr << "error: register hop: " << reg.error().message << "\n";
     return 1;
   }
-  auto relay = std::make_unique<pbr::AmpMediaRelayCoordinator>((*peer)->Runtime());
+  auto relay = std::make_unique<pbr::MediaRelayClientCoordinator>((*peer)->Runtime());
   relay->Start();
-  relay->SetServeInbound(false);
   const std::vector<AmpPeer*> pumps = {peer->get()};
 
   pbr::MediaRelayQuoteRequest qreq;
@@ -1317,9 +1312,8 @@ int RunMediaSend(const std::string& hop_ma, const std::string& call_id, const in
     std::cerr << "error: register hop: " << reg.error().message << "\n";
     return 1;
   }
-  auto relay = std::make_unique<pbr::AmpMediaRelayCoordinator>((*peer)->Runtime());
+  auto relay = std::make_unique<pbr::MediaRelayClientCoordinator>((*peer)->Runtime());
   relay->Start();
-  relay->SetServeInbound(false);
   const std::vector<AmpPeer*> pumps = {peer->get()};
 
   pbr::MediaRelayQuoteRequest qreq;

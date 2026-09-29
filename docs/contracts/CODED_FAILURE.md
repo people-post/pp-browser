@@ -141,7 +141,7 @@ carrier — not string copy alone.
 | DHT | `dht/AmpDhtProtocol.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `ChannelFailed`, `NotFound`, `Generic`, … | **done** — wraps `PeerLinkManager::Failure`; `FindPeer` returns `FindPeerRoe` |
 | Circuit tunnel | `l4/circuit/CircuitTunnelCoordinator.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `Rejected`, `Generic` | pending |
 | Call-media leg | `l4/call_media/CallMediaLegCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `Glare`, `Aborted`, `Generic` | pending |
-| Media relay | `l4/media_relay/AmpMediaRelayCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `QuoteRejected`, `Generic` | pending |
+| Media relay | `l4/media_relay/client/MediaRelayClientCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `QuoteRejected`, `Generic` | pending |
 
 **Note:** Dial-back / DHT currently own `PeerLinkManager&` directly (mesh-internal), so
 `WrapLinkFailure` takes `PeerLinkManager::Failure`. Feature-facing L4 that goes through

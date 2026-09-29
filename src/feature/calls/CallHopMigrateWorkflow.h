@@ -11,7 +11,7 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "feature/calls/CallMediaSeat.h"
-#include "domain/mesh/l4/media_relay/MediaRelayAttach.h"
+#include "domain/mesh/l4/media_relay/client/MediaRelayAttach.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "foundation/runtime/DeferredSelf.h"
 

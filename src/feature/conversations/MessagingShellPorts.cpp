@@ -3,7 +3,7 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
-#include "domain/mesh/l4/media_relay/AmpMediaRelayCoordinator.h"
+#include "domain/mesh/l4/media_relay/serve/MediaRelayServer.h"
 #include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
 #include "domain/mesh/host/MeshHost.h"
 #include "common/PbrCompat.h"
@@ -188,7 +188,7 @@ RelayRuntimeStats CollectRelayRuntimeStats(MeshHost* mesh) {
   if (CircuitTunnelCoordinator* amp_circuit = mesh->AmpCircuitTunnel()) {
     stats.circuit_serving = amp_circuit->IsStarted() && amp_circuit->ServeInbound();
   }
-  if (AmpMediaRelayCoordinator* amp_media = mesh->AmpMediaRelayCoord()) {
+  if (MediaRelayServer* amp_media = mesh->AmpMediaRelayServer()) {
     stats.media_serving = amp_media->IsStarted() && amp_media->ServeInbound();
   }
   return stats;

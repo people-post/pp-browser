@@ -143,6 +143,7 @@ Prefer a role suffix that matches the type’s job. Do **not** add a new `*Servi
 | Outbound I/O port | `*Client` | `IRelayClient`, blob/history clients |
 | Org HTTP client bag | `OrgBackendClients` | `domain/net` (`OrgBackendClients.h`, `CreateOrgBackendClients`) |
 | Mesh L4 protocol | `*Protocol` | `AmpDhtProtocol`, `AmpDirectoryProtocol`, `AmpDialBackProtocol` |
+| L4 protocol ends | `serve/*Server`, `client/*ClientCoordinator` | `MediaRelayServer`, `MediaRelayClientCoordinator` — [SRC_LAYOUT § L4 protocols](docs/architecture/SRC_LAYOUT.md#l4-protocols-serve-and-client) |
 | Reachability engine | `*Engine` | `ReachabilityEngine` |
 | Feature Amp adapter | `*Transport` | `AmpDirectChatTransport`, `AmpChatBlobTransport`, … |
 | Delivery plane | `*Orchestrator` | `MeshDeliveryOrchestrator` |

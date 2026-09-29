@@ -99,8 +99,8 @@ pbr::StatusHttpSnapshot MakeSnapshot(pbr::NodeBootstrapResult& boot) {
     }
     snap.circuit_relay = boot.mesh->AmpCircuitTunnel() && boot.mesh->AmpCircuitTunnel()->IsStarted() &&
                          boot.mesh->AmpCircuitTunnel()->ServeInbound();
-    snap.media_relay = boot.mesh->AmpMediaRelayCoord() && boot.mesh->AmpMediaRelayCoord()->IsStarted() &&
-                       boot.mesh->AmpMediaRelayCoord()->ServeInbound();
+    snap.media_relay = boot.mesh->AmpMediaRelayServer() && boot.mesh->AmpMediaRelayServer()->IsStarted() &&
+                       boot.mesh->AmpMediaRelayServer()->ServeInbound();
     snap.dht = boot.mesh->AmpDht() && boot.mesh->AmpDht()->IsStarted();
     snap.reachability_json = boot.mesh->Reachability().FormatOpsStatusJson();
     if (boot.mesh->AmpDht()) {

@@ -153,7 +153,7 @@ void ApplyOrgSeedAdmission(MeshHost& mesh) {
     policy.serve_scope_mask = org_serve;
     circuit->SetAdmissionPolicy(std::move(policy));
   }
-  if (auto* media = mesh.AmpMediaRelayCoord()) {
+  if (auto* media = mesh.AmpMediaRelayServer()) {
     MediaRelayAdmissionPolicy policy;
     policy.prefer_contacts_only = false;
     policy.serve_scope_mask = org_serve;

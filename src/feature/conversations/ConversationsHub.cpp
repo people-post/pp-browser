@@ -614,7 +614,7 @@ void ConversationsHub::ApplyMeshAdmissionPolicies() {
     policy.contact_peer_ids = contact_ids;
     mesh_->AmpCircuitTunnel()->SetAdmissionPolicy(std::move(policy));
   }
-  if (mesh_ && mesh_->AmpMediaRelayCoord()) {
+  if (mesh_ && mesh_->AmpMediaRelayServer()) {
     MediaRelayAdmissionPolicy policy;
     if (mobile_ephemeral) {
       policy.prefer_contacts_only = true;
@@ -625,7 +625,7 @@ void ConversationsHub::ApplyMeshAdmissionPolicies() {
       policy.serve_scope_mask = serve_mask;
       policy.contact_peer_ids = contact_ids;
     }
-    mesh_->AmpMediaRelayCoord()->SetAdmissionPolicy(std::move(policy));
+    mesh_->AmpMediaRelayServer()->SetAdmissionPolicy(std::move(policy));
   }
 }
 
@@ -2307,8 +2307,8 @@ void ConversationsHub::RefreshMeshCapabilities() {
   ResetBroadcast();
   call_stack_->DetachMeshMedia();
   mesh_media_->ResetRelayClients();
-  if (mesh_->AmpMediaRelayCoord()) {
-    mesh_->AmpMediaRelayCoord()->SetServeInbound(role == MeshRole::Node &&
+  if (mesh_->AmpMediaRelayServer()) {
+    mesh_->AmpMediaRelayServer()->SetServeInbound(role == MeshRole::Node &&
                                                  config_.mesh.capabilities.media_relay);
   }
   ConfigureAmpDhtProtocol();

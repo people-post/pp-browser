@@ -52,7 +52,8 @@ domain/mesh/
   l4/
     shared/       ProductChannelPolicies
     circuit/      CircuitTunnelCoordinator, AmpCircuitHopRegistry
-    media_relay/  AmpMediaRelayCoordinator, MediaRelay*
+    media_relay/  wire types + decisions; serve/ MediaRelayServer; client/ MediaRelayClientCoordinator,
+                  AmpMediaRelayClient, MediaRelayAttach (see SRC_LAYOUT § L4 protocols)
     call_media/   CallMediaLegCoordinator, ICallMediaTransport
   tests/
 ```
