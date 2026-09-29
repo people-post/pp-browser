@@ -67,6 +67,11 @@ const char* LiveCallEndReasonName(const LiveCallEndReason reason) {
   return "?";
 }
 
+bool LiveCall::EndedByPeer() const {
+  return state_ == LiveCallState::Ended && state_at_close_ != LiveCallState::Ringing &&
+         (end_reason_ == LiveCallEndReason::RemoteEnded || end_reason_ == LiveCallEndReason::DeclinedByPeer);
+}
+
 std::optional<std::string> LiveCall::SolePeer() const {
   if (peers_.size() != 1) {
     return std::nullopt;
@@ -105,6 +110,10 @@ std::vector<const LiveCall*> LiveCalls::Ringing() const {
     }
   }
   return out;
+}
+
+const LiveCall* LiveCalls::LastEnded() const {
+  return ended_order_.empty() ? nullptr : Find(ended_order_.back());
 }
 
 LiveCall& LiveCalls::AdmitPlaced(const std::string& call_id, const std::vector<std::string>& peers) {
@@ -197,6 +206,7 @@ void LiveCalls::Close(const std::string& call_id, const LiveCallEndReason reason
   }
   LiveCallLog().info << "close call_id=" << call_id << " instance=" << call->instance_
                      << " was=" << LiveCallStateName(call->state_) << " reason=" << LiveCallEndReasonName(reason);
+  call->state_at_close_ = call->state_;
   call->state_ = LiveCallState::Ended;
   call->end_reason_ = reason;
   ended_order_.push_back(call_id);

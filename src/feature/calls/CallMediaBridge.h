@@ -380,17 +380,21 @@ private:
   };
   AttemptedCalls media_attempted_calls_;
   /**
-   * A call whose connect failed but which is still open (failed ≠ closed): stopping its engine must
-   * not forget it — Retry and a resume over the peer's connection need its peer and role. Set by
+   * The call whose connect failed here while it stays open (failed ≠ closed). Its peer and role are
+   * the LiveCall's (P2pLiveCall); this only marks that our media gave up on it. Set by
    * SurfaceConnectFailed after the stop; cleared by any other stop (Leave) or a new session.
    */
   struct FailedOpenCall {
     std::string call_id;
-    std::string peer_identity;
-    bool offerer = false;
     /** PeerReconnected already raised: a second inbound bundle must not queue a second resume. */
     bool resume_requested = false;
   };
+  /** A 1:1 call's peer and this side's media role, from its LiveCall (placed → offerer). */
+  struct CallPeerRole {
+    std::string peer_identity;
+    bool offerer = false;
+  };
+  std::optional<CallPeerRole> PeerRoleFromLiveCall(const std::string& call_id) const;
   std::optional<FailedOpenCall> failed_open_;
   int media_key_inbox_poll_rounds_ = 90;
   std::atomic<uint32_t> audio_seq_{0};

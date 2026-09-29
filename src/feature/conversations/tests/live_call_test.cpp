@@ -83,5 +83,24 @@ TEST(LiveCallsTest, OldEndedCallsArePruned) {
   EXPECT_EQ(calls.Find("call:39")->EndReason(), LiveCallEndReason::LocalLeave);
 }
 
+// "The peer ended it" is news only for a call this side had: not a ring the caller withdrew.
+TEST(LiveCallsTest, EndedByPeerOnlyForACallThisSideHad) {
+  LiveCalls calls;
+  calls.AdmitInvited("call:ring", {"account:alice"});
+  calls.Close("call:ring", LiveCallEndReason::RemoteEnded);
+  EXPECT_FALSE(calls.Find("call:ring")->EndedByPeer()) << "withdrawn ring";
+  EXPECT_EQ(calls.Find("call:ring")->StateAtClose(), LiveCallState::Ringing);
+
+  calls.AdmitPlaced("call:placed", {"account:bob"});
+  calls.Close("call:placed", LiveCallEndReason::DeclinedByPeer);
+  EXPECT_TRUE(calls.Find("call:placed")->EndedByPeer());
+  EXPECT_EQ(calls.LastEnded()->Id(), "call:placed");
+
+  calls.AdmitPlaced("call:left", {"account:bob"});
+  calls.MarkJoined("call:left");
+  calls.Close("call:left", LiveCallEndReason::LocalLeave);
+  EXPECT_FALSE(calls.Find("call:left")->EndedByPeer());
+}
+
 } // namespace
 } // namespace pbr

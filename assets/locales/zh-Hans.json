@@ -321,6 +321,8 @@
     "call.status.couldnt_connect": "无法连接",
     "call.status.ended_by_peer": "{{name}} 结束了通话",
     "call.status.ended_by_peer_unknown": "对方结束了通话",
+    "call.status.declined_by_peer": "{{name}} 拒绝了通话",
+    "call.status.declined_by_peer_unknown": "对方拒绝了通话",
     "call.status.calling": "呼叫中…",
     "call.status.connecting": "连接中…",
     "call.placeholder.starting_video": "正在开启视频…",

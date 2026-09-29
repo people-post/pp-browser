@@ -157,11 +157,6 @@ CallLifecycleTransitionOutcome DecideCallLifecycleTransition(CallLifecycleEvent 
     }
     out.actions = CallLifecycleAction::ClearAccepting | CallLifecycleAction::SetPhase |
                   CallLifecycleAction::NotifyChrome;
-    // A call this side placed, joined or was failed in just vanished: say the other side ended it.
-    // A ring that ended (missed / withdrawn) is not news here.
-    if (ctx.phase != CallPhase::Idle && ctx.phase != CallPhase::Ringing) {
-      out.actions |= CallLifecycleAction::NoteRemoteEnded;
-    }
     out.next_phase = CallPhase::Idle;
     out.call_id.clear();
     return out;

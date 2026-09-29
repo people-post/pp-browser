@@ -496,9 +496,6 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
   if (HasAction(actions, CallLifecycleAction::NoteRing)) {
     NoteRingCallId(out.call_id);
   }
-  if (HasAction(actions, CallLifecycleAction::NoteRemoteEnded)) {
-    remote_ended_call_id_ = call_id_arg.empty() ? call_id_ : call_id_arg;
-  }
   if (HasAction(actions, CallLifecycleAction::SetAccepting)) {
     accepting_call_id_ = out.call_id;
     last_ring_call_id_ = out.call_id;

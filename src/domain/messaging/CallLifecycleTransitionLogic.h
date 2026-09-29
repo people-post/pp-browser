@@ -27,8 +27,6 @@ enum class CallLifecycleAction : uint16_t {
   LogKeepPhase = 1u << 13,
   /** Restart media keeping the peer's inbound stream (PeerReconnected). */
   PostResumeMedia = 1u << 14,
-  /** The peer ended a call this side was in (not a missed ring): tell the user once. */
-  NoteRemoteEnded = 1u << 15,
 };
 
 inline CallLifecycleAction operator|(CallLifecycleAction a, CallLifecycleAction b) {

@@ -81,8 +81,6 @@ public:
   const std::string& LastRingCallId() const { return last_ring_call_id_; }
   bool WantEphemeralListen() const { return want_ephemeral_listen_; }
   const std::string& LastError() const { return last_error_; }
-  /** The last call the peer ended while this side was in it (NoteRemoteEnded); shown once by the GUI. */
-  const std::string& RemoteEndedCallId() const { return remote_ended_call_id_; }
   void ClearLastError() { last_error_.clear(); }
 
   /** True while Accept is in flight for this invite — chrome must not re-show ring. */
@@ -124,7 +122,6 @@ private:
   std::string last_ring_call_id_;
   bool want_ephemeral_listen_ = false;
   std::string last_error_;
-  std::string remote_ended_call_id_;
 
   ChromeRefreshFn on_chrome_refresh_;
   ListenDesireFn on_listen_desire_;

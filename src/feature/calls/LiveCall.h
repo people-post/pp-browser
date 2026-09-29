@@ -69,6 +69,13 @@ public:
   LiveCallOrigin Origin() const { return origin_; }
   LiveCallState State() const { return state_; }
   LiveCallEndReason EndReason() const { return end_reason_; }
+  /** The state it was in when it closed (e.g. Ringing: a call this side never took). */
+  LiveCallState StateAtClose() const { return state_at_close_; }
+  /**
+   * The peer ended (or declined) a call this side had placed or was in — news for the user.
+   * Not a ring the caller withdrew or that expired.
+   */
+  bool EndedByPeer() const;
   bool IsOpen() const { return state_ != LiveCallState::Ended; }
   /** Remote roster identities in the call (account:…); a 1:1 call has one. */
   const std::vector<std::string>& Peers() const { return peers_; }
@@ -83,6 +90,7 @@ private:
   LiveCallOrigin origin_ = LiveCallOrigin::Placed;
   LiveCallState state_ = LiveCallState::Calling;
   LiveCallEndReason end_reason_ = LiveCallEndReason::None;
+  LiveCallState state_at_close_ = LiveCallState::Ended;
   std::vector<std::string> peers_;
   int64_t admitted_at_ms_ = 0;
 };
@@ -100,6 +108,8 @@ public:
   LiveCall* Active();
   const LiveCall* Active() const;
   std::vector<const LiveCall*> Ringing() const;
+  /** The most recently closed call, if any is still kept. */
+  const LiveCall* LastEnded() const;
 
   /** This side placed the call. */
   LiveCall& AdmitPlaced(const std::string& call_id, const std::vector<std::string>& peers);

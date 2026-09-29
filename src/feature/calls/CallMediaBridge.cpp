@@ -1052,7 +1052,6 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
   }
   // Stop late EnsureViaCircuit / StartBridge before chrome refresh (dogfood SIGSEGV after give-up).
   reach_.AbortCircuitAttempts();
-  const FailedOpenCall failed{call_id, media_peer_identity_, session_offerer_};
   if (stop_media && (media_.IsActive() || media_.IsSfuMode())) {
     // StopMeshMedia clears mesh_connect_failed_ and the attempted mark for Leave hygiene — the call
     // is still open, so both are re-asserted below.
@@ -1062,7 +1061,7 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
   }
   if (!call_id.empty()) {
     media_attempted_calls_.Insert(call_id);
-    failed_open_ = failed;
+    failed_open_ = FailedOpenCall{call_id};
   }
   if (seat_.note_failed) {
     seat_.note_failed(call_id);
@@ -1697,8 +1696,10 @@ Roe<void> CallMediaBridge::RetryMeshMedia(const std::string& call_id) {
     return Error("Call session not found");
   }
   std::string peer = media_peer_identity_;
-  if (peer.empty() && failed_open_ && failed_open_->call_id == call_id) {
-    peer = failed_open_->peer_identity;
+  if (peer.empty()) {
+    if (const auto call = PeerRoleFromLiveCall(call_id)) {
+      peer = call->peer_identity;
+    }
   }
   if (peer.empty()) {
     if (auto resolved = host_.P2pPeerIdentityForCall(call_id); resolved && resolved->has_value()) {
@@ -1743,22 +1744,28 @@ Roe<void> CallMediaBridge::ResumeMeshMediaFromInbound(const std::string& call_id
   if (!DirectMediaReady()) {
     return Error("peer stream gone before resume");
   }
-  const FailedOpenCall failed = *failed_open_;
-  std::string peer = failed.peer_identity;
-  if (peer.empty()) {
-    if (auto resolved = host_.P2pPeerIdentityForCall(call_id); resolved && resolved->has_value()) {
-      peer = **resolved;
-    }
-  }
-  if (peer.empty()) {
-    return Error("No peer for call resume");
+  const auto call = PeerRoleFromLiveCall(call_id);
+  if (!call) {
+    return Error("No live 1:1 call to resume");
   }
   log().info << "resume call media over the peer's stream call_id=" << call_id
-             << " role=" << (failed.offerer ? "offerer" : "answerer");
+             << " role=" << (call->offerer ? "offerer" : "answerer");
   ClearMeshConnectFailed();
-  ArmPlannerForRestart(call_id, peer, failed.offerer);
+  ArmPlannerForRestart(call_id, call->peer_identity, call->offerer);
   // BeginSession keeps the active inbound bundle (StopPriorDirectAttempt) and commits it.
-  return BeginSession(call_id, peer, failed.offerer);
+  return BeginSession(call_id, call->peer_identity, call->offerer);
+}
+
+std::optional<CallMediaBridge::CallPeerRole> CallMediaBridge::PeerRoleFromLiveCall(const std::string& call_id) const {
+  const LiveCall* call = host_.P2pLiveCall(call_id);
+  if (!call || !call->IsOpen()) {
+    return std::nullopt;
+  }
+  auto peer = call->SolePeer();
+  if (!peer) {
+    return std::nullopt;
+  }
+  return CallPeerRole{*peer, call->Origin() == LiveCallOrigin::Placed};
 }
 
 void CallMediaBridge::NoteMediaAttempted(const std::string& call_id) {

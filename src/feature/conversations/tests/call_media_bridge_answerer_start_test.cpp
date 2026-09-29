@@ -97,6 +97,8 @@ CallDirectArmingPorts TestDirectArmingPorts(CallLifecycle* lifecycle) {
 class FakeMediaHost final : public CallMediaHost {
 public:
   Roe<std::string> P2pLocalIdentity() const override { return std::string("account:local"); }
+  const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live.Find(call_id); }
+  LiveCalls live;
   Roe<void> P2pSendDirect(const std::string& /*peer*/, CallControlType /*type*/,
                           const std::string& /*detail*/, const std::string& /*display*/) override {
     return {};

@@ -200,9 +200,12 @@ void CallStack::PublishUiState() {
     state.accepting_call_id = call_lifecycle_->AcceptingCallId();
     state.last_ring_call_id = call_lifecycle_->LastRingCallId();
     state.last_error = call_lifecycle_->LastError();
-    state.remote_ended_call_id = call_lifecycle_->RemoteEndedCallId();
   }
   if (call_sessions_) {
+    if (const LiveCall* ended = call_sessions_->Live().LastEnded(); ended && ended->EndedByPeer()) {
+      state.remote_ended_call_id = ended->Id();
+      state.remote_ended_declined = ended->EndReason() == LiveCallEndReason::DeclinedByPeer;
+    }
     state.awaiting_sfu_recovery = call_sessions_->IsAwaitingSfuRecovery();
     state.soft_migrate_in_flight = call_sessions_->IsSoftMigrateInFlight();
     state.sfu_attach_wait_active = call_sessions_->IsSfuAttachWaitActive();

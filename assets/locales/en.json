@@ -321,6 +321,8 @@
     "call.status.couldnt_connect": "Couldn't connect",
     "call.status.ended_by_peer": "{{name}} ended the call",
     "call.status.ended_by_peer_unknown": "The other side ended the call",
+    "call.status.declined_by_peer": "{{name}} declined the call",
+    "call.status.declined_by_peer_unknown": "The other side declined the call",
     "call.status.calling": "Calling…",
     "call.status.connecting": "Connecting…",
     "call.placeholder.starting_video": "Starting video…",

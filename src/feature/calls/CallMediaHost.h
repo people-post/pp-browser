@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/messaging/CallControlCodec.h"
+#include "feature/calls/LiveCall.h"
 
 #include "common/Error.h"
 
@@ -20,6 +21,8 @@ public:
   virtual void P2pNotifyRingChanged() = 0;
   virtual void P2pSetLastMediaError(std::string message) = 0;
   virtual Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const = 0;
+  /** The call as it lives on this device (peers, who placed it, open or ended); null if unknown. */
+  virtual const LiveCall* P2pLiveCall(const std::string& call_id) const = 0;
   /**
    * Map inbound call-media mesh PeerId → call-roster `relay:` identity.
    * Do not use P2pPeerIdentityForCall for this — that returns an arbitrary remote and

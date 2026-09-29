@@ -62,8 +62,12 @@ public:
   void SetPendingAcceptVoiceOnly(bool voice_only);
   /** The pending media error, once per error (the owner clears it). */
   std::optional<std::string> TakeLastMediaError();
-  /** A call the peer ended while this side was in it — once per call. */
-  std::optional<std::string> TakeRemoteEndedCallId();
+  /** A call the peer ended or declined while this side had it — once per call. */
+  struct RemoteEnd {
+    std::string call_id;
+    bool declined = false;
+  };
+  std::optional<RemoteEnd> TakeRemoteEnd();
 
   // --- Intents with a result (`on_done` on UI) ---------------------------------------------------
   void StartCall(const std::string& origin_thread_id, bool video_allowed,

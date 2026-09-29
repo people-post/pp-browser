@@ -151,13 +151,13 @@ std::optional<std::string> CallUiBackend::TakeLastMediaError() {
   return taken_media_error_;
 }
 
-std::optional<std::string> CallUiBackend::TakeRemoteEndedCallId() {
-  const std::string ended = State()->remote_ended_call_id;
-  if (ended.empty() || ended == taken_remote_ended_) {
+std::optional<CallUiBackend::RemoteEnd> CallUiBackend::TakeRemoteEnd() {
+  const auto state = State();
+  if (state->remote_ended_call_id.empty() || state->remote_ended_call_id == taken_remote_ended_) {
     return std::nullopt;
   }
-  taken_remote_ended_ = ended;
-  return ended;
+  taken_remote_ended_ = state->remote_ended_call_id;
+  return RemoteEnd{state->remote_ended_call_id, state->remote_ended_declined};
 }
 
 void CallUiBackend::StartCall(const std::string& origin_thread_id, const bool video_allowed,
