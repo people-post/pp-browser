@@ -1,4 +1,5 @@
 #include "feature/calls/CallSessionManager.h"
+#include "feature/calls/CallControlClient.h"
 #include "feature/calls/CallsThread.h"
 #include "domain/messaging/CallListenAddrsLogic.h"
 #include "domain/messaging/CallAnswererKickLogic.h"
@@ -72,6 +73,14 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
     : store_(store), contacts_(contacts), identity_(identity), sessions_(sessions), media_keys_(media_keys),
       delivery_(std::move(delivery)), psk_store_(psk_store), media_(media),
       topology_(sessions, contacts, media),
+      control_(store, contacts, identity, sessions, psk_store, delivery_,
+               [this]() -> std::optional<std::string> {
+                 auto active = ActiveLocalCall();
+                 if (active && *active && (*active)->origin_thread_id) {
+                   return *(*active)->origin_thread_id;
+                 }
+                 return std::nullopt;
+               }),
       workflow_(store, identity, sessions, media_keys, live_calls_) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
@@ -239,7 +248,7 @@ void CallSessionManager::BindWorkflowHostPorts() {
   ports.reach.note_mesh_peer_id_for_relay = [this](const std::string& relay, const std::string& peer_id) {
     NoteMeshPeerIdForRelay(relay, peer_id);
   };
-  ports.reach.resolve_peer_session_key = [this](const std::string& peer) { return ResolvePeerSessionKey(peer); };
+  ports.reach.resolve_peer_session_key = [this](const std::string& peer) { return control_.ResolvePeerSessionKey(peer); };
   ports.reach.send_media_key = [this](const std::string& call_id, const std::string& peer, uint32_t epoch,
                                 const std::string& key_id, const ByteVector& key) {
     return SendMediaKeyToPeer(call_id, peer, epoch, key_id, key);
@@ -779,83 +788,21 @@ void CallSessionManager::NotifyRingChanged() {
 }
 
 Roe<std::string> CallSessionManager::LocalRelayIdentity() const {
-  auto identity = identity_.Get();
-  if (!identity || identity->account_id.empty()) {
-    return Error("Local account identity unavailable");
-  }
-  return identity->account_id;
+  return control_.LocalRelayIdentity();
 }
 
 Roe<std::string> CallSessionManager::EnsureCallControlThread(const std::string& peer_identity) {
-  std::optional<std::string> prefer;
-  if (auto active = ActiveLocalCall(); active && *active && (*active)->origin_thread_id) {
-    prefer = *(*active)->origin_thread_id;
-  }
-  std::string contact_id;
-  std::string dm_title = peer_identity;
-  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
-    if (*contact) {
-      contact_id = (*contact)->id;
-      dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
-      if (dm_title.empty()) {
-        dm_title = peer_identity;
-      }
-    }
-  }
-  return ResolveOrCreateE2ePublicDirectThread(store_, peer_identity, prefer, contact_id, dm_title);
+  return control_.EnsureCallControlThread(peer_identity);
 }
 
 Roe<void> CallSessionManager::SendCallDirectMessage(const std::string& peer_identity, const CallControlType type,
                                                     const std::string& detail_json, const std::string& display) {
-  auto thread_id = EnsureCallControlThread(peer_identity);
-  if (!thread_id) {
-    return thread_id.error();
-  }
-
-  SendRelayOptions opts;
-  opts.content_type = ChatContentType::System;
-  Object payload;
-  payload.set("control_type", CallControlTypeToWire(type));
-  payload.set("detail", detail_json);
-  opts.payload_json = DumpJson(payload);
-  opts.generation = "system";
-  opts.update_preview = false;
-  // Call-control must not sit behind PollInbox on Normal workers (MediaKey + Accept).
-  opts.critical_lane = true;
-  {
-    std::lock_guard<std::mutex> lock(pending_call_key_init_mutex_);
-    if (auto it = pending_call_key_init_.find(peer_identity); it != pending_call_key_init_.end()) {
-      opts.key_init_b64 = it->second;
-    }
-  }
-  if (!delivery_.send_user_message) {
-    return Error("Call delivery not bound");
-  }
-  auto sent = delivery_.send_user_message(*thread_id, display, opts);
-  if (!sent) {
-    return sent.error();
-  }
-  if (opts.key_init_b64) {
-    std::lock_guard<std::mutex> lock(pending_call_key_init_mutex_);
-    pending_call_key_init_.erase(peer_identity);
-  }
-  return {};
+  return control_.SendDirect(peer_identity, type, detail_json, display);
 }
 
 Roe<void> CallSessionManager::AppendOriginHistory(const std::string& thread_id, const CallControlType type,
                                                   const std::string& text, const std::string& detail_json) {
-  auto local = LocalRelayIdentity();
-  if (!local) {
-    return local.error();
-  }
-  auto message = CallControlCodec::BuildSystemMessage(thread_id, type, text, detail_json, *local);
-  if (!message) {
-    return message.error();
-  }
-  if (auto appended = store_.AppendMessage(*message); !appended) {
-    return appended.error();
-  }
-  return {};
+  return control_.AppendOriginHistory(thread_id, type, text, detail_json);
 }
 
 Roe<CallRosterDetail> CallSessionManager::BuildRosterDetail(const std::string& call_id) const {
@@ -885,118 +832,19 @@ Roe<CallRosterDetail> CallSessionManager::BuildRosterDetail(const std::string& c
 Roe<void> CallSessionManager::FanOutToJoined(const std::string& call_id, const CallControlType type,
                                              const std::string& detail_json, const std::string& display,
                                              const std::string& skip_identity) {
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return participants.error();
-  }
-  const auto targets = SelectCallFanoutIdentities(*participants, skip_identity, true, false);
-  // Best-effort: one peer failure must not block CallSfuAttach / roster to the rest.
-  const auto result = FanOutPairwise(targets, PairwiseFanoutMode::BestEffort,
-                                     [&](const std::string& identity) {
-                                       return SendCallDirectMessage(identity, type, detail_json, display);
-                                     });
-  for (size_t i = 0; i < result.failed_identities.size(); ++i) {
-    log().warning << "FanOutToJoined send failed peer=" << result.failed_identities[i] << " type="
-                  << CallControlTypeToWire(type) << " err="
-                  << (i < result.failure_messages.size() ? result.failure_messages[i] : std::string{});
-  }
-  if (result.succeeded > 0) {
-    log().info << "FanOutToJoined queued n=" << result.succeeded << " type=" << CallControlTypeToWire(type);
-  }
-  return {};
+  return control_.FanOutToJoined(call_id, type, detail_json, display, skip_identity);
 }
 
 Roe<void> CallSessionManager::FanOutToJoinedAndRinging(const std::string& call_id, const CallControlType type,
                                                        const std::string& detail_json, const std::string& display,
                                                        const std::string& skip_identity) {
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return participants.error();
-  }
-  const auto targets = SelectCallFanoutIdentities(*participants, skip_identity, true, true);
-  const auto result = FanOutPairwise(targets, PairwiseFanoutMode::BestEffort,
-                                     [&](const std::string& identity) {
-                                       return SendCallDirectMessage(identity, type, detail_json, display);
-                                     });
-  for (size_t i = 0; i < result.failed_identities.size(); ++i) {
-    log().warning << "FanOutToJoinedAndRinging send failed peer=" << result.failed_identities[i] << " type="
-                  << CallControlTypeToWire(type) << " err="
-                  << (i < result.failure_messages.size() ? result.failure_messages[i] : std::string{});
-  }
-  return {};
-}
-
-Roe<ByteVector> CallSessionManager::ResolvePeerSessionKey(const std::string& peer_identity) const {
-  ChatTargetKey target_key;
-  target_key.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
-  target_key.peer_identity_value = peer_identity;
-  target_key.channel = CryptoChannel::E2ePublic;
-
-  auto record = psk_store_.Load(target_key);
-  if (!record) {
-    return record.error();
-  }
-  if (!record->has_value()) {
-    if (delivery_.ensure_peer_session_key) {
-      auto ensured = delivery_.ensure_peer_session_key(peer_identity);
-      if (!ensured) {
-        return ensured.error();
-      }
-      if (ensured->first_message_key_init_b64 && !ensured->first_message_key_init_b64->empty()) {
-        std::lock_guard<std::mutex> lock(pending_call_key_init_mutex_);
-        pending_call_key_init_[peer_identity] = *ensured->first_message_key_init_b64;
-      }
-      return ensured->session_key;
-    }
-    return Error("No PSK session for peer");
-  }
-  const uint32_t active_epoch = (*record)->session_epoch;
-  auto master_psk_b64 = psk_store_.ResolveMasterPskForEpoch(target_key, active_epoch);
-  if (!master_psk_b64) {
-    return master_psk_b64.error();
-  }
-  if (!master_psk_b64->has_value()) {
-    if (delivery_.ensure_peer_session_key) {
-      auto ensured = delivery_.ensure_peer_session_key(peer_identity);
-      if (!ensured) {
-        return ensured.error();
-      }
-      if (ensured->first_message_key_init_b64 && !ensured->first_message_key_init_b64->empty()) {
-        std::lock_guard<std::mutex> lock(pending_call_key_init_mutex_);
-        pending_call_key_init_[peer_identity] = *ensured->first_message_key_init_b64;
-      }
-      return ensured->session_key;
-    }
-    return Error("No PSK for active session epoch");
-  }
-  auto master_psk = Base64Decode(**master_psk_b64);
-  if (!master_psk) {
-    return master_psk.error();
-  }
-  return SessionKeyDeriver::Derive(*master_psk, CryptoChannel::E2ePublic, active_epoch);
+  return control_.FanOutToJoinedAndRinging(call_id, type, detail_json, display, skip_identity);
 }
 
 Roe<void> CallSessionManager::SendMediaKeyToPeer(const std::string& call_id, const std::string& peer_identity,
                                                  const uint32_t media_epoch, const std::string& media_key_id,
                                                  const ByteVector& key_bytes) {
-  auto session_key = ResolvePeerSessionKey(peer_identity);
-  if (!session_key) {
-    return session_key.error();
-  }
-  auto wrapped = CallMediaKeyStore::WrapKeyB64(*session_key, key_bytes, call_id, media_epoch, media_key_id);
-  if (!wrapped) {
-    return wrapped.error();
-  }
-  CallMediaKeyDetail key_detail;
-  key_detail.call_id = call_id;
-  key_detail.media_epoch = media_epoch;
-  key_detail.media_key_id = media_key_id;
-  key_detail.wrapped_key_b64 = *wrapped;
-  auto key_json = CallControlCodec::EncodeMediaKey(key_detail);
-  if (!key_json) {
-    return key_json.error();
-  }
-  return SendCallDirectMessage(peer_identity, CallControlType::CallMediaKey, *key_json, "Call media key");
+  return control_.SendMediaKey(call_id, peer_identity, media_epoch, media_key_id, key_bytes);
 }
 
 void CallSessionManager::StopCallMedia(const std::string& call_id) {

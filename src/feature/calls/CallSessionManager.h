@@ -11,6 +11,7 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
+#include "feature/calls/CallControlClient.h"
 #include "feature/calls/CallDeliveryPorts.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
@@ -329,7 +330,6 @@ private:
   Roe<CallRosterDetail> BuildRosterDetail(const std::string& call_id) const;
   void NotifyRingChanged();
 
-  Roe<ByteVector> ResolvePeerSessionKey(const std::string& peer_identity) const;
   Roe<void> SendMediaKeyToPeer(const std::string& call_id, const std::string& peer_identity,
                                uint32_t media_epoch, const std::string& media_key_id, const ByteVector& key_bytes);
   void StopMediaIfCall(const std::string& call_id);
@@ -372,6 +372,8 @@ private:
   CallTopologyController topology_;
   /** Before workflow_: the workflow drives it. */
   LiveCalls live_calls_;
+  /** Outbound call-control I/O (after delivery_ / the stores it borrows). */
+  CallControlClient control_;
   CallSessionWorkflow workflow_;
   // Swapped at mesh start / stop and lifecycle bind; read as one snapshot per operation.
   SharedPorts<CallDirectMediaPorts> direct_media_;
@@ -403,12 +405,6 @@ private:
   std::unordered_map<std::string, bool> peer_media_relay_caps_;
   /** mesh PeerId → relay: identity learned from CallAccept/Invite listen multiaddrs / mDNS. */
   std::unordered_map<std::string, std::string> peer_id_to_relay_;
-  /**
-   * AutoKey key_init from ensure_peer_session_key — attached on the next SendCallDirectMessage
-   * for that peer; kept until send succeeds so retries still carry key_init.
-   */
-  mutable std::mutex pending_call_key_init_mutex_;
-  mutable std::unordered_map<std::string, std::string> pending_call_key_init_;
   std::optional<std::string> last_media_error_;
   std::string media_activity_;
 };
