@@ -1,6 +1,6 @@
 #include "domain/net/PublicOnlySocket.h"
 
-#include "domain/net/PublicAddress.h"
+#include "common/net/PublicAddress.h"
 
 #include <winsock2.h>
 #include <ws2tcpip.h>

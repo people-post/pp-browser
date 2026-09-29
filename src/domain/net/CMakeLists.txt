@@ -6,7 +6,6 @@ pp_browser_add_domain_library(pp_domain_net
     ClientCompat.cpp
     HttpBlobClient.cpp
     HttpClient.cpp
-    PublicAddress.cpp
     RelayApiSignPayload.cpp
     RelayBlobSignPayload.cpp
     RelayInboxCursor.cpp
