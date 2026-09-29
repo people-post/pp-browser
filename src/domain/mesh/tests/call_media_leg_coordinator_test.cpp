@@ -488,12 +488,11 @@ TEST_F(CallMediaLegCoordinatorTest, OnMediaCarriesSeqAndMark) {
   }
 }
 
-// B21: A evicts a Connected link (no auth RX for kAliveTimeoutMs) while B still sees it alive.
-// A's redial must not be rejected by B as a "duplicate" of the stale inbound link.
 // The capture thread sends while the mesh drops the link under the leg: dropping a link orphans
 // its channel sessions (clears their queues) on the io strand, so sends must enqueue under the
 // runtime io lock — unlocked, the two corrupted the session queue (hard-w5 cold-upgrade answerer
 // SIGSEGV, 2026-09-29). Crashes rarely in a plain build; ASan / TSan catch the race every time.
+// The test's own link mutation runs under the io lock too, as the mesh pump's would.
 TEST_F(CallMediaLegCoordinatorTest, SendsFromAnotherThreadSurviveTheLinkDropping) {
   ByteVector media_key(32, 0x5a);
   std::atomic<bool> b_connected{false};
@@ -527,26 +526,51 @@ TEST_F(CallMediaLegCoordinatorTest, SendsFromAnotherThreadSurviveTheLinkDropping
       }
     }
   });
-  for (int i = 0; i < 20; ++i) {
-    harness_->PumpBoth();
-  }
-  {
+  // Joins on every exit, including a failed ASSERT (a joinable std::thread would terminate).
+  struct StopCapture {
+    std::atomic<bool>& stop;
+    std::thread& thread;
+    ~StopCapture() {
+      stop.store(true, std::memory_order_release);
+      if (thread.joinable()) {
+        thread.join();
+      }
+    }
+  } stop_capture{stop, capture};
+  auto pump_until = [&](const std::function<bool()>& ready) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!ready() && std::chrono::steady_clock::now() < deadline) {
+      harness_->PumpBoth();
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return ready();
+  };
+
+  // The capture thread is really sending before the link goes.
+  ASSERT_TRUE(pump_until([&] { return sent.load(std::memory_order_relaxed) >= 20; }));
+  const bool closed = harness_->runtime_a->WithIoLock([&] {
     auto* link = harness_->mgr_a().FindLink("b");
-    ASSERT_NE(link, nullptr);
-    ASSERT_NE(link->ConnectionOrNull(), nullptr);
+    if (!link || !link->ConnectionOrNull()) {
+      return false;
+    }
     link->ConnectionOrNull()->Close();
-  }
-  for (int i = 0; i < 20; ++i) {
+    return true;
+  });
+  ASSERT_TRUE(closed) << "no live link to b";
+  // Keep sending while the pump drops the link (orphaning the leg's sessions) and the leg starts
+  // reconnecting — the window the lab crash sat in. Surviving it is the assertion.
+  const int sent_before_drop = sent.load(std::memory_order_relaxed);
+  for (int i = 0; i < 50; ++i) {
     harness_->PumpBoth();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
-  stop.store(true, std::memory_order_release);
-  capture.join();
-  EXPECT_GT(sent.load(), 0);
-  EXPECT_EQ(harness_->mgr_a().FindLink("b"), nullptr) << "the closed link should be gone";
+  EXPECT_GT(sent_before_drop, 0);
   a_call_->DetachLeg(leg);
   harness_->PumpBoth();
 }
 
+// B21: A evicts a Connected link (no auth RX for kAliveTimeoutMs) while B still sees it alive.
+// A's redial must not be rejected by B as a "duplicate" of the stale inbound link.
 TEST_F(CallMediaLegCoordinatorTest, RedialAfterPeerSilentlyDroppedLink) {
   ByteVector media_key(32, 0x77);
   std::atomic<int> b_connected{0};
