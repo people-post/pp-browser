@@ -490,6 +490,63 @@ TEST_F(CallMediaLegCoordinatorTest, OnMediaCarriesSeqAndMark) {
 
 // B21: A evicts a Connected link (no auth RX for kAliveTimeoutMs) while B still sees it alive.
 // A's redial must not be rejected by B as a "duplicate" of the stale inbound link.
+// The capture thread sends while the mesh drops the link under the leg: dropping a link orphans
+// its channel sessions (clears their queues) on the io strand, so sends must enqueue under the
+// runtime io lock — unlocked, the two corrupted the session queue (hard-w5 cold-upgrade answerer
+// SIGSEGV, 2026-09-29). Crashes rarely in a plain build; ASan / TSan catch the race every time.
+TEST_F(CallMediaLegCoordinatorTest, SendsFromAnotherThreadSurviveTheLinkDropping) {
+  ByteVector media_key(32, 0x5a);
+  std::atomic<bool> b_connected{false};
+  b_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks& cbs) {
+    params.media_key = media_key;
+    params.media_epoch = 1;
+    params.offerer = false;
+    cbs.on_connected = [&] { b_connected.store(true, std::memory_order_release); };
+  }));
+  CallMediaDirectConnectParams params;
+  params.peer_key = "b";
+  params.call_id = "call-amp-send-vs-drop";
+  params.media_epoch = 1;
+  params.media_key = media_key;
+  params.offerer = true;
+  LegCompletion done;
+  const CallMediaLegId leg = a_call_->StartLeg(params, {}, done.Fn(), 5000);
+  ASSERT_TRUE(leg);
+  done.PumpUntilDone(*harness_);
+  ASSERT_TRUE(done.result) << done.result.error().message;
+  harness_->PumpUntil([&] { return b_connected.load(std::memory_order_acquire); });
+
+  std::atomic<bool> stop{false};
+  std::atomic<int> sent{0};
+  std::thread capture([&] {
+    const std::vector<uint8_t> opus(160, 0x11);
+    uint32_t seq = 0;
+    while (!stop.load(std::memory_order_acquire)) {
+      if (a_call_->SendAudio(leg, opus, ++seq, 0)) {
+        sent.fetch_add(1, std::memory_order_relaxed);
+      }
+    }
+  });
+  for (int i = 0; i < 20; ++i) {
+    harness_->PumpBoth();
+  }
+  {
+    auto* link = harness_->mgr_a().FindLink("b");
+    ASSERT_NE(link, nullptr);
+    ASSERT_NE(link->ConnectionOrNull(), nullptr);
+    link->ConnectionOrNull()->Close();
+  }
+  for (int i = 0; i < 20; ++i) {
+    harness_->PumpBoth();
+  }
+  stop.store(true, std::memory_order_release);
+  capture.join();
+  EXPECT_GT(sent.load(), 0);
+  EXPECT_EQ(harness_->mgr_a().FindLink("b"), nullptr) << "the closed link should be gone";
+  a_call_->DetachLeg(leg);
+  harness_->PumpBoth();
+}
+
 TEST_F(CallMediaLegCoordinatorTest, RedialAfterPeerSilentlyDroppedLink) {
   ByteVector media_key(32, 0x77);
   std::atomic<int> b_connected{0};
