@@ -634,26 +634,6 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     return link;
   }
 
-  /**
-   * #235: the link a new leg opens its control channel on — the dial key's when Connected, else
-   * any Connected link to the peer (direct first, then the relay carrier). A pending redial under
-   * the key must not hide a live carrier. Null: nothing is up, so OpenChannel dials by key.
-   */
-  pp::amp::PeerLink* ConnectedLegLink(const std::string& peer_key) const {
-    auto& links = runtime->Links();
-    pp::amp::PeerLink* keyed = links.FindLink(peer_key);
-    if (keyed && keyed->Mux() && keyed->Phase() == pp::amp::PeerLinkPhase::Connected) {
-      return keyed;
-    }
-    for (const auto transport : {pp::amp::TransportClass::Adp, pp::amp::TransportClass::Carrier}) {
-      pp::amp::PeerLink* link = links.FindConnectedLinkByPeerId(peer_key, transport);
-      if (link && link->Mux()) {
-        return link;
-      }
-    }
-    return nullptr;
-  }
-
   void TickDeadlines() {
     const auto now = Clock::now();
     std::vector<std::string> timed_out;
@@ -1965,7 +1945,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
                                                                          pp::amp::PeerLinkManager::ChannelRoe channel) {
       OnOutboundControlOpened(open, retries, bound, std::move(channel));
     };
-    if (pp::amp::PeerLink* link = ConnectedLegLink(open.peer_key)) {
+    // Any Connected link to the peer (the relay carrier included) — a dial in flight under the key
+    // must not hide it (#235). The handle pins the wait to that link.
+    if (pp::amp::PeerLink* link = runtime->Links().ResolveConnectedLink(open.peer_key)) {
       const pp::amp::LinkHandle bound = link->Handle();
       if (retries > 0 || link->IsCarrierBacked()) {
         CallMediaLegLog().info << "CallMediaLeg OpenChannel on connected link call_id=" << open.call_id
@@ -2015,7 +1997,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       CallMediaLegLog().info << "CallMediaLeg OpenChannel ok call_id=" << open.call_id << " peer=" << open.peer_key
                              << " after_retries=" << retries;
     }
-    auto* link = bound.valid() ? LiveLink(bound) : runtime->Links().FindLink(open.peer_key);
+    auto* link = bound.valid() ? LiveLink(bound) : runtime->Links().ResolveConnectedLink(open.peer_key);
     if (!link) {
       CallMediaLegLog().info << "CallMediaLeg OpenChannel ok but link missing call_id=" << open.call_id
                              << " peer=" << open.peer_key;

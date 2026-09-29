@@ -197,7 +197,7 @@ A 1:1 call's media rides a **path**: control + media channels bound on one link 
 
 | Situation | Behaviour | Home |
 |-----------|-----------|------|
-| Leg start, the peer's dial key held by a dial still in flight | The first path opens on any Connected link to the peer (direct first, then the relay carrier); only with none up does it dial by key (#235) | `ConnectedLegLink` |
+| Leg start, the peer's dial key held by a dial still in flight | The first path opens on any Connected link to the peer (direct first, then the relay carrier); only with none up does it dial by key (#235) | `OpenOutboundControl` over Amp `ResolveConnectedLink` |
 | Relayed call, a direct link to the peer is Connected | The glare winner (offerer) migrates onto it (10 s backoff; never back onto the direct link the call left) | `MaybeAutoMigrate` |
 | Relayed call, Live | The offerer punches for a direct link at +3 / +20 / +60 s, the circuit's relay as introducer; a landed punch is picked up by the row above | `CallMediaBridge::ArmDirectUpgrade` → `PeerReachCoordinator::UpgradeToDirect` |
 | TX-only (no frames arriving — a muted mic still sends silence frames) | Migrate onto a circuit under the live call; break-before-make escalation only if that fails | `EscalateTxOnlyViaCircuit` / `EscalateBreakBeforeMake` |
