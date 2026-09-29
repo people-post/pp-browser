@@ -14,6 +14,7 @@
 #include <chrono>
 #include <cstring>
 #include <filesystem>
+#include <unordered_set>
 #include <fstream>
 #include "common/PbrCompat.h"
 
@@ -151,11 +152,40 @@ std::string AttachmentHashHex(const std::vector<uint8_t>& content_hash) {
 
 
 
-std::string AttachmentExtensionFromMime(const std::string& mime, const std::string& /*filename*/) {
-  // The on-disk extension is derived only from a fixed mime whitelist, never from the
-  // peer-supplied filename: an attacker could otherwise pair an auto-opened mime (image/
-  // video, see AttachmentOpenNeedsConfirm) with an executable filename extension and have
-  // it run on open (Windows extension-based handler dispatch).
+namespace {
+
+/**
+ * Filename extensions a non-image/video attachment may keep on disk. These open only after the
+ * confirm dialog; the OS still dispatches on the extension, so only inert document / archive /
+ * audio types are accepted — never an executable or script (exe, bat, cmd, com, scr, msi, ps1,
+ * vbs, js, jar, app, sh, desktop, lnk, html, svg …), which would run or render active content.
+ */
+bool IsInertAttachmentExtension(const std::string& ext) {
+  static const std::unordered_set<std::string> kInert = {
+      "pdf", "txt",  "md",  "csv", "rtf",  "doc", "docx", "xls",  "xlsx", "ppt", "pptx", "odt", "ods",
+      "odp", "epub", "zip", "7z",  "tar",  "gz",  "tgz",  "bz2",  "xz",   "rar", "mp3",  "m4a", "wav",
+      "ogg", "oga",  "opus", "flac", "aac", "heic", "heif", "avif", "bmp", "tif", "tiff", "mov", "mkv",
+  };
+  return kInert.count(ext) != 0;
+}
+
+std::string LowerFilenameExtension(const std::string& filename) {
+  std::string ext = std::filesystem::path(filename).extension().string();
+  if (ext.size() < 2 || ext.size() > 8 || ext[0] != '.') {
+    return {};
+  }
+  ext.erase(0, 1);
+  std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return ext;
+}
+
+} // namespace
+
+std::string AttachmentExtensionFromMime(const std::string& mime, const std::string& filename) {
+  // Known mimes map to a fixed extension. Beyond them the peer-supplied filename is trusted only
+  // for mimes that open after a confirm (AttachmentOpenNeedsConfirm) and only for an inert
+  // extension: an attacker could otherwise pair an auto-opened mime (image / video) or any mime
+  // with an executable extension and have it run on open (extension-based handler dispatch).
   if (mime == "image/png") {
     return "png";
   }
@@ -179,6 +209,12 @@ std::string AttachmentExtensionFromMime(const std::string& mime, const std::stri
   }
   if (mime == "text/plain") {
     return "txt";
+  }
+  if (AttachmentOpenNeedsConfirm(mime)) {
+    const std::string ext = LowerFilenameExtension(filename);
+    if (IsInertAttachmentExtension(ext)) {
+      return ext;
+    }
   }
   return {};
 }

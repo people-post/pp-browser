@@ -169,6 +169,23 @@ TEST_F(AttachmentCacheAtRestTest, ExtensionIgnoresPeerSuppliedFilename) {
   EXPECT_EQ(AttachmentExtensionFromMime("application/octet-stream", "x.exe"), "");
 }
 
+// Review (#238): mimes outside the fixed map (docx / zip / audio …) open through the OS after the
+// confirm dialog, which dispatches on the extension — so an inert filename extension is kept,
+// lower-cased; an executable or script one never is, and image / video mimes never take one.
+TEST_F(AttachmentCacheAtRestTest, ExtensionKeepsInertFilenameExtensionForConfirmedOpens) {
+  EXPECT_EQ(AttachmentExtensionFromMime("application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                        "Report.DOCX"),
+            "docx");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/zip", "photos.zip"), "zip");
+  EXPECT_EQ(AttachmentExtensionFromMime("audio/mpeg", "song.mp3"), "mp3");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/octet-stream", "setup.msi"), "");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/zip", "run.ps1"), "");
+  EXPECT_EQ(AttachmentExtensionFromMime("text/html", "page.html"), "");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/octet-stream", "noext"), "");
+  EXPECT_EQ(AttachmentExtensionFromMime("image/heic", "x.zip"), "") << "auto-opened mimes never take a filename ext";
+  EXPECT_EQ(AttachmentExtensionFromMime("application/pdf", "x.exe"), "pdf") << "mapped mimes ignore the filename";
+}
+
 TEST_F(AttachmentCacheAtRestTest, ContentMatchesMimeFlagsLyingMime) {
   auto hash = AttachmentContentHash(plain_);
   ASSERT_TRUE(hash);
