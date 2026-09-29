@@ -987,35 +987,30 @@ CallMediaEngine::SfuSendFn CallHopMigrateWorkflow::MakeHopSendFn(const HopAttach
 }
 
 Roe<void> CallHopMigrateWorkflow::StartHopMedia(const HopAttach& at) {
-  const auto seat_ports = seat_.Get();
   const std::string& call_id = at.call_id;
   if (!at.self_hop) {
     relay_deps_->relay->StartClientFrameReader();
     log().info << "AttachLocalToSfu StartClientFrameReader call_id=" << call_id;
   }
   log().info << "AttachLocalToSfu StartSfu call_id=" << call_id << " pub_stream=" << publishers_.local_stream_id.load();
-  if (auto started = media_.StartSfu(call_id, MakeHopSendFn(at)); !started) {
+  CallMediaCoordinator* call_media = host_.call_media ? host_.call_media(call_id) : nullptr;
+  if (!call_media) {
     relay_deps_->relay->Detach();
+    return Error("no live call for media " + call_id);
+  }
+  // Takes the seat's hold for this call, starts (or send-swaps) the engine, marks the seat on Hop.
+  if (auto started = call_media->StartEngine(CallMediaSeat::PathKind::Hop, MakeHopSendFn(at)); !started) {
+    log().info << "AttachLocalToSfu aborted at StartSfu (" << started.error().message << ") call_id=" << call_id;
+    relay_deps_->relay->Detach();
+    sfu_.attached = false;
     return started.error();
   }
-  const char* abort_reason = nullptr;
-  if (seat_ports->IsBound()) {
-    seat_ports->note_start(call_id);
-    seat_ports->note_path(CallMediaSeat::PathKind::Hop);
-    // NoteStart bumps epoch — AllowsPathOp (call_id bind) still holds; MatchesToken would not.
-    if (!seat_ports->is_bound(call_id)) {
-      abort_reason = "seat unbound";
-    }
-  }
-  if (!abort_reason && !ops_.is_active_call_for_topology(call_id)) {
-    abort_reason = "call inactive";
-  }
-  if (abort_reason) {
-    log().info << "AttachLocalToSfu aborted after StartSfu (" << abort_reason << ") call_id=" << call_id
+  if (!ops_.is_active_call_for_topology(call_id)) {
+    log().info << "AttachLocalToSfu aborted after StartSfu (call inactive) call_id=" << call_id
                << " gen_want=" << at.gen_at_start
                << " gen_have=" << flight_.migrate_generation.load(std::memory_order_acquire);
     relay_deps_->relay->Detach();
-    media_.Stop();
+    call_media->StopEngine("hop attach aborted: call inactive");
     sfu_.attached = false;
     return Error("attach aborted");
   }

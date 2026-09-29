@@ -98,6 +98,13 @@ class FakeMediaHost final : public CallMediaHost {
 public:
   Roe<std::string> P2pLocalIdentity() const override { return std::string("account:local"); }
   const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live.Find(call_id); }
+  /** Harness: every call the bridge drives is live here (the harness seeds store rows only). */
+  CallMediaCoordinator* P2pCallMedia(const std::string& call_id) override {
+    if (!live.Find(call_id)) {
+      live.AdmitPlaced(call_id, {"account:peer"});
+    }
+    return live.Media(call_id);
+  }
   LiveCalls live;
   Roe<void> P2pSendDirect(const std::string& /*peer*/, CallControlType /*type*/,
                           const std::string& /*detail*/, const std::string& /*display*/) override {
@@ -400,6 +407,7 @@ protected:
     media_ = std::make_unique<CallMediaEngine>();
     media_->SetSkipDeviceOpenForTest(true);
     host_ = std::make_unique<FakeMediaHost>();
+    host_->live.BindMediaResources(media_.get(), nullptr);
     dial_ = std::make_unique<FakeDialRegistry>();
     circuit_ = std::make_unique<FakeCircuitHopReach>();
     circuit_->dial = dial_.get();

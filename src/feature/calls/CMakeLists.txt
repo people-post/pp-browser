@@ -17,6 +17,7 @@ pp_browser_add_feature_library(pp_feature_calls
     CallTopologyController.cpp
     CallUiBackend.cpp
     LiveCall.cpp
+    CallMediaCoordinator.cpp
   PUBLIC_LIBS
     pp_foundation_crypto
     pp_domain_media

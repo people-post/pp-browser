@@ -1229,7 +1229,7 @@ bool CallMediaBridge::StopPriorDirectAttempt(bool offerer) {
   const bool keep_inbound = direct_.IsActive();
   const bool restarting = media_.IsActive() || connect_.InFlight();
   if (media_.IsActive()) {
-    media_.Stop();
+    StopEngineFor(media_.ActiveCallId(), "prior direct attempt");
   }
   if (!offerer && !keep_inbound) {
     direct_.Detach();
@@ -1262,10 +1262,11 @@ Roe<void> CallMediaBridge::StartDirectEngine(const std::string& call_id) {
     host_.P2pNotifyRingChanged();
   });
   const uint64_t send_gen = connect_generation_.load(std::memory_order_acquire);
-  if (seat_.IsBound() && !seat_.allows_path_op(seat_.acquire(call_id))) {
-    return Error("media seat token rejected for direct path");
+  CallMediaCoordinator* call_media = host_.P2pCallMedia(call_id);
+  if (!call_media) {
+    return Error("no live call for media " + call_id);
   }
-  auto started = media_.StartSfu(call_id, [this, send_gen](const CallMediaEngine::SfuPacket& pkt) {
+  auto started = call_media->StartEngine(CallMediaSeat::PathKind::Direct, [this, send_gen](const CallMediaEngine::SfuPacket& pkt) {
     if (pkt.channel_id > kCallMediaChannelVideoLo) {
       return;
     }
@@ -1279,13 +1280,9 @@ Roe<void> CallMediaBridge::StartDirectEngine(const std::string& call_id) {
   if (!started) {
     return started;
   }
-  if (seat_.IsBound()) {
-    seat_.note_start(call_id);
-    seat_.note_path(CallMediaSeat::PathKind::Direct);
-    // Duplex Live only after direct stream (CommitDirectConnected) — not StartSfu alone.
-    if (!DirectMediaReady()) {
-      seat_.note_connecting(call_id);
-    }
+  // Duplex Live only after direct stream (CommitDirectConnected) — not StartSfu alone.
+  if (seat_.IsBound() && !DirectMediaReady()) {
+    seat_.note_connecting(call_id);
   }
   // StartSfu marks connected immediately for SFU capture; 1:1 chrome waits on the direct stream.
   if (!DirectMediaReady()) {
@@ -1591,6 +1588,16 @@ void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
   } else {
     log().info << "StopMeshMedia stopping engine call_id=" << active << " leave=" << call_id;
   }
+  StopEngineFor(call_id.empty() ? active : call_id, "stop mesh media");
+}
+
+void CallMediaBridge::StopEngineFor(const std::string& call_id, const char* why) {
+  if (CallMediaCoordinator* call_media = call_id.empty() ? nullptr : host_.P2pCallMedia(call_id)) {
+    call_media->StopEngine(why);
+    return;
+  }
+  // Leftover media of a call not admitted here (e.g. from before a restart): still stop it.
+  log().info << "engine stop without a live call call_id=" << call_id << " (" << why << ")";
   media_.Stop();
 }
 
@@ -1722,7 +1729,7 @@ Roe<void> CallMediaBridge::RetryMeshMedia(const std::string& call_id) {
   ClearMeshConnectFailed();
   reach_.ForgetPath(peer);
   if (media_.IsActive() && media_.ActiveCallId() == call_id) {
-    media_.Stop();
+    StopEngineFor(call_id, "retry");
   }
   direct_.Detach();
   ArmPlannerForRestart(call_id, peer, true);

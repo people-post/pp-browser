@@ -213,6 +213,23 @@ void LiveCalls::Close(const std::string& call_id, const LiveCallEndReason reason
   PruneEnded();
 }
 
+void LiveCalls::BindMediaResources(CallMediaEngine* engine, CallMediaSeat* seat) {
+  engine_ = engine;
+  seat_ = seat;
+}
+
+CallMediaCoordinator* LiveCalls::Media(const std::string& call_id) {
+  LiveCall* call = Find(call_id);
+  if (!call) {
+    LiveCallLog().warning << "media for a call not admitted here call_id=" << call_id;
+    return nullptr;
+  }
+  if (!call->media_ && engine_) {
+    call->media_ = std::make_unique<CallMediaCoordinator>(call_id, *engine_, seat_);
+  }
+  return call->media_.get();
+}
+
 void LiveCalls::WarnIfSecondActive(const std::string& call_id) const {
   for (const auto& [id, call] : calls_) {
     if (id != call_id && IsActiveState(call.state_)) {

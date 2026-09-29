@@ -178,6 +178,10 @@ public:
   void SetTopologySeatPorts(CallTopologySeatPorts ports);
   /** Build CSM seat ports over owned topology_ (Stack / compose tests). */
   CallMediaSeatPorts MakeSeatPorts(CallMediaSeat* seat);
+  /** The seat the calls' media coordinators take (null: none bound — mesh stopped / harness). */
+  void SetCallMediaSeat(CallMediaSeat* seat) { live_calls_.BindMediaResources(&media_, seat); }
+  /** A call's media coordinator (LiveCall); null for a call not admitted here. Calls owner. */
+  CallMediaCoordinator* CallMedia(const std::string& call_id) { return live_calls_.Media(call_id); }
   /** Seat teardown hook: topology detach without re-entering seat.Release. */
   void TopologyOnMediaStoppedForSeat(const std::string& call_id);
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
@@ -202,6 +206,8 @@ public:
   Roe<void> LeaveCall(const std::string& call_id, LiveCallEndReason reason = LiveCallEndReason::LocalLeave);
   /** The calls live on this device (admission → close). Calls owner only. */
   const LiveCalls& Live() const { return live_calls_; }
+  /** Harnesses that seed store rows directly admit the call the way the workflow would. */
+  LiveCalls& LiveCallsForTest() { return live_calls_; }
   /** Detach SFU + stop capture. Calls owner only — call before LeaveCall worker / app quit. */
   void StopCallMedia(const std::string& call_id);
 
@@ -310,6 +316,7 @@ private:
   void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) override;
   void P2pRequestInboxSync() override;
   const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live_calls_.Find(call_id); }
+  CallMediaCoordinator* P2pCallMedia(const std::string& call_id) override { return live_calls_.Media(call_id); }
   void P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
                            const std::string& peer_id) override;
 

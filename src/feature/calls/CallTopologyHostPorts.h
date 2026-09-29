@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/messaging/CallControlCodec.h"
+#include "feature/calls/CallMediaCoordinator.h"
 
 #include "common/Error.h"
 
@@ -30,6 +31,8 @@ struct CallTopologyHostPorts {
   std::function<void()> clear_media_activity;
   std::function<void(const std::string& call_id)> note_media_attempted;
   std::function<void(const std::string& call_id)> bind_media_call_id;
+  /** The call's media coordinator (engine + seat use); null for a call not admitted here. */
+  std::function<CallMediaCoordinator*(const std::string& call_id)> call_media;
   std::function<void()> clear_media_peer_identity;
   /**
    * SoftMigrate to media_relay: drop 1:1 call-media stream without CallMediaEngine::Stop

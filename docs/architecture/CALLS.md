@@ -358,11 +358,14 @@ Hop planner façade (`Apply` / On*). SoftMigrate + attach completion live in val
 ### CallMediaSeat (V036)
 Process-wide exclusive bind `call_id` ↔ duplex. `Release` = topology Detach then engine Stop; `NoteStart` invalidates in-flight Release; SoftMigrate uses `NotePath(Hop)` without Release. Topology “active call” prefers `seat.IsBound`, not leftover engine `ActiveCallId`. **Phase 2:** `MediaState` (`Idle` / `Connecting` / `Live` / `Failed`) drives chrome Connected; `BeginAttach` serializes hop AcceptAndAttach. **Phase 3:** `CallDirectPath` / `CallHopPath` façades (Ops-only; Stack/CSM project Bridge + seat); path ops require `AllowsPathOp(token)`; CSM schedules Direct start / seat `Release` only (no parallel `StopMeshMedia` when seat wired).
 
+### LiveCall and CallMediaCoordinator
+`LiveCalls` (owned by `CallSessionManager`, driven by the workflow) holds one **`LiveCall`** per call on this device from admission to close: who placed it, its peers, call state (Calling / Ringing / Accepting / Joined / Ended) and the end reason, named where the call ended. Persisted facts stay in `CallSessionStore`. Each `LiveCall` owns a **`CallMediaCoordinator`** (created on first use): that call's use of the one engine and the seat. Both path drivers start and stop the engine through it — `StartEngine(path, send)` takes the seat, starts (or re-points) the engine and marks the seat on the path; the drivers reach it through `CallMediaHost::P2pCallMedia` (Bridge) and the topology host's `call_media` (hop workflow). It is growing into the call's media-mode owner (Direct ↔ Hop selection and hand-off).
+
 ### CallMediaEngine
 Single A/V device for the process (owned by the seat’s bound call):
 
-- **Direct 1:1:** `CallMediaBridge` drives `StartSfu` with a send fn wired to Amp call-media transport; inbound frames → `OnSfuPacket`.
-- **Group SFU:** encode → `SfuSendFn` / inbound `OnSfuPacket` via `media_relay`.
+- **Direct 1:1:** `CallMediaBridge` runs it (via the call's `CallMediaCoordinator`) with a send fn wired to Amp call-media transport; inbound frames → `OnSfuPacket`.
+- **Group SFU:** encode → `SfuSendFn` / inbound `OnSfuPacket` via `media_relay` (hop workflow, via the same coordinator).
 - Capture/playback and camera stay off the libp2p IO thread (mic TCC can block).
 
 ### CallController / shell

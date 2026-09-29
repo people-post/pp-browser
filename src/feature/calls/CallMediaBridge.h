@@ -300,6 +300,8 @@ private:
   }
   /** Amp PeerId for a call roster key (account: → PeerId); unchanged otherwise. */
   std::string ReachPeerIdFor(const std::string& key);
+  /** Stop the engine through `call_id`'s media coordinator (a leftover without one: directly). */
+  void StopEngineFor(const std::string& call_id, const char* why);
   /** The call peer's mesh PeerId for reach / circuit / upgrade (never a local dial alias). */
   std::string CallPeerMeshId();
   void OnDirectHealthTimerFire();

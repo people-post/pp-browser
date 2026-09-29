@@ -343,6 +343,7 @@ void CallStack::BindMediaProducts() {
   if (call_media_seat_) {
     call_sessions_->SetTopologySeatPorts(MakeTopologySeatPorts());
     call_sessions_->SetMediaSeatPorts(call_sessions_->MakeSeatPorts(call_media_seat_.get()));
+    call_sessions_->SetCallMediaSeat(call_media_seat_.get());
   }
   // Lifecycle ↔ sessions / bridge ports (mesh stop cleared them): one bind point with BuildSessions.
   EnsureCallLifecycleBound();
@@ -454,6 +455,7 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
   if (call_media_seat_) {
     call_sessions_->SetTopologySeatPorts(MakeTopologySeatPorts());
     call_sessions_->SetMediaSeatPorts(call_sessions_->MakeSeatPorts(call_media_seat_.get()));
+    call_sessions_->SetCallMediaSeat(call_media_seat_.get());
     BindSeatTeardown();
   }
   if (deps_.bind_call_control) {
@@ -627,6 +629,7 @@ void CallStack::PrepareForMeshStopOnOwner(const std::function<void()>& abort_inf
     call_sessions_->SetDirectMediaPorts({});
     call_sessions_->SetLifecyclePorts({});
     call_sessions_->SetMediaSeatPorts({});
+    call_sessions_->SetCallMediaSeat(nullptr);
     call_sessions_->SetTopologyHopArmingPorts({});
     call_sessions_->SetTopologySeatPorts({});
   }

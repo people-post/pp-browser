@@ -76,6 +76,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
       workflow_(store, identity, sessions, media_keys, live_calls_) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
+  live_calls_.BindMediaResources(&media_, nullptr);
   BindTopologyHostPorts();
   BindWorkflowHostPorts();
 }
@@ -84,6 +85,7 @@ void CallSessionManager::BindTopologyHostPorts() {
   CallTopologyController::HostPorts ports;
   ports.local_relay_identity = [this]() { return TopologyLocalIdentity(); };
   ports.leave_call = [this](const std::string& call_id) { return TopologyLeaveCall(call_id); };
+  ports.call_media = [this](const std::string& call_id) { return live_calls_.Media(call_id); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
                                 const std::string& display, const std::string& skip) {
     return TopologyFanOutToJoined(call_id, type, detail, display, skip);

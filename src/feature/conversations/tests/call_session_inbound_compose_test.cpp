@@ -654,6 +654,7 @@ protected:
     peer.state = CallParticipantState::Ringing;
     ASSERT_TRUE(sessions_->UpsertParticipant(peer));
     ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+    csm_->LiveCallsForTest().AdmitPlaced(call_id, {"account:peer"});  // as StartCall does
   }
 
   std::filesystem::path data_dir_;

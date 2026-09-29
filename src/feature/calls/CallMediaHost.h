@@ -23,6 +23,8 @@ public:
   virtual Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const = 0;
   /** The call as it lives on this device (peers, who placed it, open or ended); null if unknown. */
   virtual const LiveCall* P2pLiveCall(const std::string& call_id) const = 0;
+  /** The call's media coordinator (engine + seat use); null for a call not admitted here. */
+  virtual CallMediaCoordinator* P2pCallMedia(const std::string& call_id) = 0;
   /**
    * Map inbound call-media mesh PeerId → call-roster `relay:` identity.
    * Do not use P2pPeerIdentityForCall for this — that returns an arbitrary remote and

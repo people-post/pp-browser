@@ -1,7 +1,10 @@
 #pragma once
 
+#include "feature/calls/CallMediaCoordinator.h"
+
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -81,6 +84,8 @@ public:
   const std::vector<std::string>& Peers() const { return peers_; }
   std::optional<std::string> SolePeer() const;
   int64_t AdmittedAtMs() const { return admitted_at_ms_; }
+  /** This call's media (engine + seat use); null until the call first needs media. */
+  CallMediaCoordinator* Media() const { return media_.get(); }
 
 private:
   friend class LiveCalls;
@@ -93,6 +98,7 @@ private:
   LiveCallState state_at_close_ = LiveCallState::Ended;
   std::vector<std::string> peers_;
   int64_t admitted_at_ms_ = 0;
+  std::unique_ptr<CallMediaCoordinator> media_;
 };
 
 /**
@@ -126,6 +132,14 @@ public:
   /** Every end path. The first reason sticks; closing an unknown or ended call is a no-op. */
   void Close(const std::string& call_id, LiveCallEndReason reason);
 
+  /** The one media engine and the media seat every call's coordinator drives (seat may be null). */
+  void BindMediaResources(CallMediaEngine* engine, CallMediaSeat* seat);
+  /**
+   * The call's media coordinator, created on first use. Null for a call this device never admitted
+   * (or pruned), or before media resources are bound. An ended call keeps it for its stops.
+   */
+  CallMediaCoordinator* Media(const std::string& call_id);
+
 private:
   LiveCall& Admit(const std::string& call_id, LiveCallOrigin origin, LiveCallState state,
                   const std::vector<std::string>& peers);
@@ -134,6 +148,8 @@ private:
   void PruneEnded();
 
   std::map<std::string, LiveCall> calls_;
+  CallMediaEngine* engine_ = nullptr;
+  CallMediaSeat* seat_ = nullptr;
   std::vector<std::string> ended_order_;
   uint64_t next_instance_ = 1;
 };
