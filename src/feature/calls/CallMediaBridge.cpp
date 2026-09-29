@@ -557,7 +557,13 @@ void CallMediaBridge::OnRelayStandbyFire() {
   const bool still_wanted = !stopping_.load(std::memory_order_acquire) && !call_id.empty() &&
                             call_id == media_call_id_ && direct_planner_phase_ == CallDirectPlannerPhase::Live &&
                             MediaPathKind() != "circuit" && PathPolicyFor(call_id).want_relay_standby;
-  if (!still_wanted || direct_.StandbyLinkKind() == CallMediaLinkKind::Relayed) {
+  if (!still_wanted) {
+    CancelRelayStandby();
+    return;
+  }
+  if (direct_.StandbyLinkKind() == CallMediaLinkKind::Relayed) {
+    // The relayed path the call left for a direct one stayed as its standby: nothing to build.
+    log().info << "relay standby up call_id=" << call_id << " (kept from the relayed path)";
     CancelRelayStandby();
     return;
   }
