@@ -65,28 +65,50 @@ bool IsPublicIPv4(const uint32_t host_order_addr) {
   return true;
 }
 
-/** ::1, ::, fe80::/10, fc00::/7 (ULA), ff00::/8 multicast, and IPv4-mapped private/loopback. */
-bool IsPublicIPv6(const in6_addr& addr) {
-  static constexpr uint8_t kV4Mapped[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF};
-  if (std::memcmp(addr.s6_addr, kV4Mapped, sizeof(kV4Mapped)) == 0) {
-    uint32_t v4 = 0;
-    std::memcpy(&v4, addr.s6_addr + 12, 4);
-    return IsPublicIPv4(ntohl(v4));
-  }
-  bool all_zero = true;
-  for (const uint8_t byte : addr.s6_addr) {
-    if (byte != 0) {
-      all_zero = false;
-      break;
+bool AllZero(const uint8_t* bytes, const size_t n) {
+  for (size_t i = 0; i < n; ++i) {
+    if (bytes[i] != 0) {
+      return false;
     }
   }
-  if (all_zero) return false;                                     // :: unspecified
-  if (addr.s6_addr[0] == 0 && std::memcmp(addr.s6_addr, kV4Mapped, 15) == 0 && addr.s6_addr[15] == 1) {
-    return false;                                                  // ::1 loopback
+  return true;
+}
+
+uint32_t EmbeddedIPv4(const uint8_t* addr) {
+  uint32_t v4 = 0;
+  std::memcpy(&v4, addr, 4);
+  return ntohl(v4);
+}
+
+/**
+ * ::, ::1, fe80::/10, fec0::/10 (deprecated site-local), fc00::/7 (ULA), ff00::/8 multicast, and
+ * every IPv6 form that embeds an IPv4 address (::a.b.c.d, ::ffff:a.b.c.d, 64:ff9b::/96 NAT64,
+ * 2002::/16 6to4) classified by the embedded address.
+ */
+bool IsPublicIPv6(const in6_addr& addr) {
+  const uint8_t* b = addr.s6_addr;
+  if (IN6_IS_ADDR_LOOPBACK(&addr)) {
+    return false;
   }
-  if ((addr.s6_addr[0] & 0xFE) == 0xFC) return false;               // fc00::/7 unique local
-  if (addr.s6_addr[0] == 0xFE && (addr.s6_addr[1] & 0xC0) == 0x80) return false; // fe80::/10 link-local
-  if (addr.s6_addr[0] == 0xFF) return false;                        // ff00::/8 multicast
+  if (AllZero(b, 16)) {
+    return false; // :: unspecified
+  }
+  if (b[0] == 0x20 && b[1] == 0x02) {
+    return IsPublicIPv4(EmbeddedIPv4(b + 2)); // 2002::/16 6to4
+  }
+  if (b[0] == 0x00 && b[1] == 0x64 && b[2] == 0xFF && b[3] == 0x9B && AllZero(b + 4, 8)) {
+    return IsPublicIPv4(EmbeddedIPv4(b + 12)); // 64:ff9b::/96 NAT64
+  }
+  if (AllZero(b, 10) && b[10] == 0xFF && b[11] == 0xFF) {
+    return IsPublicIPv4(EmbeddedIPv4(b + 12)); // ::ffff:a.b.c.d IPv4-mapped
+  }
+  if (AllZero(b, 12)) {
+    return IsPublicIPv4(EmbeddedIPv4(b + 12)); // ::a.b.c.d IPv4-compatible (deprecated)
+  }
+  if ((b[0] & 0xFE) == 0xFC) return false;               // fc00::/7 unique local
+  if (b[0] == 0xFE && (b[1] & 0xC0) == 0x80) return false; // fe80::/10 link-local
+  if (b[0] == 0xFE && (b[1] & 0xC0) == 0xC0) return false; // fec0::/10 site-local (deprecated)
+  if (b[0] == 0xFF) return false;                          // ff00::/8 multicast
   return true;
 }
 
@@ -134,6 +156,11 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
     curl_easy_setopt(curl, CURLOPT_OPENSOCKETFUNCTION, OpenPublicOnlySocket);
+    // A proxy from the environment would connect to the proxy's address, not the target's, so
+    // OpenPublicOnlySocket would be checking the wrong host and a proxy could tunnel to an
+    // internal address anyway.
+    curl_easy_setopt(curl, CURLOPT_PROXY, "");
+    curl_easy_setopt(curl, CURLOPT_NOPROXY, "*");
   }
 
   ResponseBuffer response_body{.max_bytes = max_response_bytes};
