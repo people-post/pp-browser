@@ -269,4 +269,38 @@ inline CallDirectPlannerPhase DirectPlannerPhaseAfterArm(bool offerer, bool has_
   return CallDirectPlannerPhase::Connecting;
 }
 
+
+/**
+ * What is known when a call's connect sequence has given up (B44). A failed connection leaves the
+ * call open: the call shows Failed, and a later connection for it — the peer's retry, or ours —
+ * reconnects it (PeerReconnected). Only closing (either side) ends the call.
+ */
+struct CallConnectFailureFacts {
+  /** Direct media is up anyway (the peer's own redial / hello landed). */
+  bool direct_media_ready = false;
+  /** The peer's hello is mid-handshake on an inbound bundle. */
+  bool inbound_in_progress = false;
+  /** The one hello grace was already given. */
+  bool hello_grace_used = false;
+};
+
+enum class CallConnectFailureDecision {
+  /** Direct media is up: commit Connected. */
+  Commit,
+  /** Hold the failure one short grace for the peer's hello in progress. */
+  WaitForHello,
+  /** Show Failed; the call stays open (Retry / the peer's connection can still reconnect it). */
+  Fail,
+};
+
+inline CallConnectFailureDecision DecideConnectFailure(const CallConnectFailureFacts& f) {
+  if (f.direct_media_ready) {
+    return CallConnectFailureDecision::Commit;
+  }
+  if (f.inbound_in_progress && !f.hello_grace_used) {
+    return CallConnectFailureDecision::WaitForHello;
+  }
+  return CallConnectFailureDecision::Fail;
+}
+
 } // namespace pbr

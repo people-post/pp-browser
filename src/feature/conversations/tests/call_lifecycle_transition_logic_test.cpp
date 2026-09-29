@@ -162,5 +162,26 @@ TEST(CallLifecycleTransitionLogicTest, RetryOnlyFromConnectFailed) {
   EXPECT_TRUE(HasAction(out.actions, CallLifecycleAction::PostRetryMedia));
 }
 
+
+// Failed is not closed: the peer's connection for a failed call resumes media; a closed (Idle) or
+// live call, or another call's connection, does not.
+TEST(CallLifecycleTransitionLogicTest, PeerReconnectedResumesOnlyAFailedOpenCall) {
+  auto ctx = Ctx(CallPhase::ConnectFailed);
+  ctx.active_call_id = "call:1";
+  ctx.event_call_id = "call:1";
+  auto out = DecideCallLifecycleTransition(CallLifecycleEvent::PeerReconnected, ctx);
+  EXPECT_TRUE(HasAction(out.actions, CallLifecycleAction::PostResumeMedia));
+
+  ctx.event_call_id = "call:other";
+  out = DecideCallLifecycleTransition(CallLifecycleEvent::PeerReconnected, ctx);
+  EXPECT_TRUE(HasAction(out.actions, CallLifecycleAction::LogIgnored));
+
+  ctx.event_call_id = "call:1";
+  for (const auto phase : {CallPhase::Idle, CallPhase::InCall, CallPhase::MediaConnecting}) {
+    ctx.phase = phase;
+    out = DecideCallLifecycleTransition(CallLifecycleEvent::PeerReconnected, ctx);
+    EXPECT_FALSE(HasAction(out.actions, CallLifecycleAction::PostResumeMedia)) << CallPhaseName(phase);
+  }
+}
 } // namespace
 } // namespace pbr

@@ -104,6 +104,16 @@ CallLifecycleTransitionOutcome DecideCallLifecycleTransition(CallLifecycleEvent 
     out.actions = CallLifecycleAction::PostRetryMedia;
     return out;
 
+  // A failed connection leaves the call open: the peer's connection for it (its Retry) resumes
+  // media. Closed calls never get here as Failed (Leave / RemoteEnded → Idle).
+  case CallLifecycleEvent::PeerReconnected:
+    if (out.call_id.empty() || ctx.phase != CallPhase::ConnectFailed ||
+        (!ctx.active_call_id.empty() && out.call_id != ctx.active_call_id)) {
+      return ignore("PeerReconnected ignored (call not failed-open)");
+    }
+    out.actions = CallLifecycleAction::PostResumeMedia;
+    return out;
+
   case CallLifecycleEvent::AcceptSucceeded:
     if (!out.call_id.empty() && !ctx.active_call_id.empty() && out.call_id != ctx.active_call_id) {
       return ignore("AcceptSucceeded ignored stale call_id");

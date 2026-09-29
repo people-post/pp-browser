@@ -60,6 +60,8 @@ enum class CallLifecycleEvent {
   DirectConnected,
   ConnectFailedEvt,
   RemoteEnded,
+  /** The peer's connection for a failed, still-open call reached us (its retry): resume media. */
+  PeerReconnected,
 };
 
 const char* CallPhaseName(CallPhase phase);

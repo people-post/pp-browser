@@ -111,6 +111,8 @@ const char* CallLifecycleEventName(const CallLifecycleEvent ev) {
     return "ConnectFailed";
   case CallLifecycleEvent::RemoteEnded:
     return "RemoteEnded";
+  case CallLifecycleEvent::PeerReconnected:
+    return "PeerReconnected";
   }
   return "Unknown";
 }
@@ -420,26 +422,39 @@ void CallLifecycle::PostLeaveCall(const std::string& call_id) {
 }
 
 void CallLifecycle::PostRetryMedia(const std::string& call_id) {
-  const auto signaling = ports_.Get();
-  auto retry = signaling->retry_p2p_media;
+  PostRestartMedia(call_id, ports_.Get()->retry_p2p_media, CallLifecycleEvent::RetryClicked);
+}
+
+void CallLifecycle::PostResumeMedia(const std::string& call_id) {
+  PostRestartMedia(call_id, ports_.Get()->resume_p2p_media, CallLifecycleEvent::PeerReconnected);
+}
+
+void CallLifecycle::PostRestartMedia(const std::string& call_id,
+                                     std::function<Roe<void>(const std::string&)> restart,
+                                     const CallLifecycleEvent ev) {
   const auto guard = deferred_.token();
   const uint64_t epoch = deferred_.Snapshot();
-  // Re-arm Direct before RetryP2pMedia → BeginSession (Failed Status blocks AllowsDirectPath).
+  // Re-arm Direct before the restart → BeginSession (Failed Status blocks AllowsDirectPath).
   SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
-  // Calls owner, not a worker: retry restarts the engine (StartSfu / Stop — capture threads) and
+  // Calls owner, not a worker: the restart runs the engine (StartSfu / Stop — capture threads) and
   // the bridge's connect sequence, owner-only like every other media start. Posted, not inline,
-  // so the retry never re-enters Apply.
-  CallsThread::Post([this, retry = std::move(retry), call_id, guard, epoch]() {
+  // so it never re-enters Apply.
+  CallsThread::Post([this, restart = std::move(restart), call_id, guard, epoch, ev]() {
     if (!DeferredSelf::Alive(guard, epoch)) {
       return;
     }
-    const Roe<void> retried = retry ? retry(call_id) : Roe<void>(Error("Calls unavailable"));
-    if (!retried) {
-      log().warning << "RetryP2pMedia failed call_id=" << call_id << " err=" << retried.error().message;
+    const Roe<void> restarted = restart ? restart(call_id) : Roe<void>(Error("Calls unavailable"));
+    if (!restarted) {
+      log().warning << CallLifecycleEventName(ev) << " media restart failed call_id=" << call_id
+                    << " err=" << restarted.error().message;
       Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
       return;
     }
-    SetPhase(CallPhase::MediaConnecting, call_id, CallLifecycleEvent::RetryClicked);
+    // A resume over the peer's live stream commits Connected inside the restart — never move an
+    // InCall call back to Connecting.
+    if (phase_ == CallPhase::ConnectFailed) {
+      SetPhase(CallPhase::MediaConnecting, call_id, ev);
+    }
     NotifyChrome();
   });
 }
@@ -507,6 +522,9 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
   }
   if (HasAction(actions, CallLifecycleAction::PostRetryMedia)) {
     PostRetryMedia(out.call_id);
+  }
+  if (HasAction(actions, CallLifecycleAction::PostResumeMedia)) {
+    PostResumeMedia(out.call_id);
   }
 
   if (HasAction(actions, CallLifecycleAction::KickAnswererDirectMedia)) {

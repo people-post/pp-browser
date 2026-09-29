@@ -753,7 +753,13 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
   Apply(CallDirectPlannerEvent::ConnectSucceeded, call_id, media_peer_identity_);
   if (direct_planner_phase_ != CallDirectPlannerPhase::Live &&
       direct_planner_phase_ != CallDirectPlannerPhase::DegradedTxOnly) {
-    // Late Connect after Leave / wrong Status — do not advance chrome.
+    // Connected after this side's connect failed: the call may still be open (failed ≠ closed) —
+    // the lifecycle resumes media over this stream if so; after Leave it ignores it.
+    if (mesh_connect_failed_ && failed_open_ && failed_open_->call_id == call_id && DirectMediaReady() &&
+        arming_.on_peer_reconnected) {
+      log().info << "call-media connected after connect failed call_id=" << call_id << " — resume?";
+      arming_.on_peer_reconnected(call_id);
+    }
     return;
   }
   // Capture may lag the stream (inbound before BeginSession). Still advance phase so chrome
@@ -1010,16 +1016,19 @@ void CallMediaBridge::FailUnlessDirectRecovered(const std::string& call_id, cons
   if (grace_used && media_call_id_ != call_id) {
     return;  // the session moved on during the grace (stopped / another call)
   }
-  if (DirectMediaReady()) {
+  const CallMediaSessionPhase phase = direct_.Phase();
+  CallConnectFailureFacts facts;
+  facts.direct_media_ready = DirectMediaReady();
+  facts.inbound_in_progress =
+      phase == CallMediaSessionPhase::HelloInbound || phase == CallMediaSessionPhase::Adopting;
+  facts.hello_grace_used = grace_used;
+  switch (DecideConnectFailure(facts)) {
+  case CallConnectFailureDecision::Commit:
     log().info << "connect attempt failed but direct media is up (peer redial) — keep call_id=" << call_id
                << " err=" << err;
     CommitDirectConnected(call_id);
     return;
-  }
-  const CallMediaSessionPhase phase = direct_.Phase();
-  const bool inbound_in_progress =
-      phase == CallMediaSessionPhase::HelloInbound || phase == CallMediaSessionPhase::Adopting;
-  if (inbound_in_progress && !grace_used) {
+  case CallConnectFailureDecision::WaitForHello:
     log().info << "connect attempt failed while the peer's hello is in progress — grace call_id=" << call_id;
     (void)AppRuntime::ScheduleCoordinatorOneShot(kInboundRecoveryGrace, [this, alive = alive_, call_id, err]() {
       CallsThread::Post([this, alive, call_id, err]() {
@@ -1029,6 +1038,8 @@ void CallMediaBridge::FailUnlessDirectRecovered(const std::string& call_id, cons
       });
     });
     return;
+  case CallConnectFailureDecision::Fail:
+    break;
   }
   SurfaceConnectFailed(call_id, err, /*stop_media=*/true);
 }
@@ -1040,11 +1051,17 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
   }
   // Stop late EnsureViaCircuit / StartBridge before chrome refresh (dogfood SIGSEGV after give-up).
   reach_.AbortCircuitAttempts();
+  const FailedOpenCall failed{call_id, media_peer_identity_, session_offerer_};
   if (stop_media && (media_.IsActive() || media_.IsSfuMode())) {
-    // StopMeshMedia clears mesh_connect_failed_ for Leave hygiene — re-assert below.
+    // StopMeshMedia clears mesh_connect_failed_ and the attempted mark for Leave hygiene — the call
+    // is still open, so both are re-asserted below.
     StopMeshMedia(call_id);
   } else if (!media_peer_identity_.empty()) {
     reach_.AbandonDial(media_peer_identity_);
+  }
+  if (!call_id.empty()) {
+    media_attempted_calls_.Insert(call_id);
+    failed_open_ = failed;
   }
   if (seat_.note_failed) {
     seat_.note_failed(call_id);
@@ -1177,6 +1194,7 @@ void CallMediaBridge::ResetDirectSessionState(const std::string& call_id, const 
   if (media_call_id_ != call_id) {
     tx_only_escalation_done_ = false;
   }
+  failed_open_.reset();
   media_attempted_calls_.Insert(call_id);
   media_call_id_ = call_id;
   media_peer_identity_ = peer_identity;
@@ -1548,6 +1566,7 @@ void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
   tx_only_escalation_done_ = false;
   ClearMeshConnectFailed();
   media_attempted_calls_.Erase(call_id);
+  failed_open_.reset();
   media_.SetOnStateChanged({});
 
   // Always stop leftover media_relay even when ActiveCallId drifted or is empty
@@ -1677,6 +1696,9 @@ Roe<void> CallMediaBridge::RetryMeshMedia(const std::string& call_id) {
     return Error("Call session not found");
   }
   std::string peer = media_peer_identity_;
+  if (peer.empty() && failed_open_ && failed_open_->call_id == call_id) {
+    peer = failed_open_->peer_identity;
+  }
   if (peer.empty()) {
     if (auto resolved = host_.P2pPeerIdentityForCall(call_id); resolved && resolved->has_value()) {
       peer = **resolved;
@@ -1691,7 +1713,51 @@ Roe<void> CallMediaBridge::RetryMeshMedia(const std::string& call_id) {
     media_.Stop();
   }
   direct_.Detach();
+  ArmPlannerForRestart(call_id, peer, true);
   return BeginSession(call_id, peer, true);
+}
+
+void CallMediaBridge::ArmPlannerForRestart(const std::string& call_id, const std::string& peer_identity,
+                                           const bool offerer) {
+  Apply(offerer ? CallDirectPlannerEvent::ScheduleOfferer : CallDirectPlannerEvent::ScheduleAnswerer, call_id,
+        peer_identity);
+  Apply(CallDirectPlannerEvent::KeyReady, call_id, peer_identity);
+}
+
+Roe<void> CallMediaBridge::ResumeMeshMediaFromInbound(const std::string& call_id) {
+  if (call_id.empty()) {
+    return Error("call_id required");
+  }
+  if (!CallsThread::IsCurrent()) {
+    log().error << "ResumeMeshMediaFromInbound called off the calls owner call_id=" << call_id;
+    return Error("call media resume must run on the calls owner");
+  }
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
+    return Error("Call session not found");
+  }
+  if (!failed_open_ || failed_open_->call_id != call_id) {
+    return Error("call is not failed-open here");
+  }
+  if (!DirectMediaReady()) {
+    return Error("peer stream gone before resume");
+  }
+  const FailedOpenCall failed = *failed_open_;
+  std::string peer = failed.peer_identity;
+  if (peer.empty()) {
+    if (auto resolved = host_.P2pPeerIdentityForCall(call_id); resolved && resolved->has_value()) {
+      peer = **resolved;
+    }
+  }
+  if (peer.empty()) {
+    return Error("No peer for call resume");
+  }
+  log().info << "resume call media over the peer's stream call_id=" << call_id
+             << " role=" << (failed.offerer ? "offerer" : "answerer");
+  ClearMeshConnectFailed();
+  ArmPlannerForRestart(call_id, peer, failed.offerer);
+  // BeginSession keeps the active inbound bundle (StopPriorDirectAttempt) and commits it.
+  return BeginSession(call_id, peer, failed.offerer);
 }
 
 void CallMediaBridge::NoteMediaAttempted(const std::string& call_id) {

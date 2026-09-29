@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include "common/PbrCompat.h"
@@ -35,6 +36,8 @@ struct CallDirectArmingPorts {
   std::function<void(CallDirectPlannerPhase phase, const std::string& call_id)> report_progress;
   std::function<void(const std::string& call_id)> on_connected;
   std::function<void(const std::string& call_id)> on_connect_failed;
+  /** A connection for this call came up after it failed (the peer's retry); lifecycle decides. */
+  std::function<void(const std::string& call_id)> on_peer_reconnected;
   std::function<void(const std::string& call_id)> on_media_deferred;
   std::function<void(const std::string& call_id)> on_media_key_ready;
   std::function<const char*()> arming_debug_name;
@@ -81,6 +84,16 @@ public:
   bool ShouldUseMeshForPeer(const std::string& peer_identity) const;
 
   Roe<void> RetryMeshMedia(const std::string& call_id);
+  /**
+   * The call failed but is still open, and the peer's connection for it is up (its Retry): restart
+   * the engine as this side's role and commit over that stream (no Detach, no redial).
+   */
+  Roe<void> ResumeMeshMediaFromInbound(const std::string& call_id);
+  /**
+   * Retry / resume restart a call whose planner went Idle on failure: arm it again (Schedule →
+   * Arming, key already held → Connecting) so the restarted connect's ConnectSucceeded lands.
+   */
+  void ArmPlannerForRestart(const std::string& call_id, const std::string& peer_identity, bool offerer);
 
   Roe<void> StartMediaAsOfferer(const std::string& call_id, const std::string& peer_identity);
   Roe<void> StartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity);
@@ -226,9 +239,9 @@ private:
   /** Direct stream up: mark media connected when capture is live, always advance lifecycle/chrome. */
   void CommitDirectConnected(const std::string& call_id);
   /**
-   * B44: a connect attempt failed — but the peer's own redial may already have restored direct
-   * media, or be mid-handshake. Commit if MediaReady; give an inbound handshake in progress one
-   * short grace; only then surface the failure.
+   * The connect sequence gave up (DecideConnectFailure): commit if the peer's redial restored direct
+   * media, hold one short grace for its hello in progress (B44), else surface Failed — the call
+   * stays open, and a later connection for it reconnects it (PeerReconnected).
    */
   void FailUnlessDirectRecovered(const std::string& call_id, const std::string& err, bool grace_used = false);
   /** Inbound bundles: accept policy + key lookup on the worker hop (connect coordinator). */
@@ -366,6 +379,17 @@ private:
     std::unordered_set<std::string> ids;
   };
   AttemptedCalls media_attempted_calls_;
+  /**
+   * A call whose connect failed but which is still open (failed ≠ closed): stopping its engine must
+   * not forget it — Retry and a resume over the peer's connection need its peer and role. Set by
+   * SurfaceConnectFailed after the stop; cleared by any other stop (Leave) or a new session.
+   */
+  struct FailedOpenCall {
+    std::string call_id;
+    std::string peer_identity;
+    bool offerer = false;
+  };
+  std::optional<FailedOpenCall> failed_open_;
   int media_key_inbox_poll_rounds_ = 90;
   std::atomic<uint32_t> audio_seq_{0};
   /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */

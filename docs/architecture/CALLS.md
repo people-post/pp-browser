@@ -51,6 +51,8 @@ stateDiagram-v2
   MediaConnecting --> InCall: DirectConnected
   MediaConnecting --> ConnectFailed: ConnectFailed
   ConnectFailed --> MediaConnecting: Retry
+  ConnectFailed --> InCall: PeerReconnected
+  ConnectFailed --> Idle: LeaveOrRemoteEnd
   OutboundCalling --> MediaConnecting: peer media
   InCall --> Idle: LeaveOrRemoteEnd
 ```
@@ -128,7 +130,7 @@ Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Tw
 | Conflict (2nd invite) | Conflict copy; Accept leaves other local call first; single active call |
 | Leave / remote end | Idle; `StopCallMedia` (Detach SFU then SDL Stop) on UI; LeaveCall on Critical |
 | Answerer before key | `MediaDeferred` → `MediaPending` until `MediaKeyReady` |
-| Offerer dial fail | `ConnectFailed`; Retry re-enters `MediaConnecting` |
+| Connect fails (either role) | `ConnectFailed` — the call stays **open** (failed ≠ closed; no auto-close). Retry re-enters `MediaConnecting`; the peer's connection for the call (its Retry) arrives as `PeerReconnected` and resumes media over that stream (no redial). Only Leave / remote end closes it |
 | Listen fail / no bound port | Surface error; stay `MediaPending` / `ConnectFailed`; Retry re-arms listen |
 | Stack rebuild | Bridge recreate only when `CallSessionManager*` changes |
 
@@ -430,6 +432,7 @@ Responsibilities:
 - `StartMediaAsOfferer` / `Answerer` + `Schedule*`
 - Builds the connect request (bundle params + link request) and hands it to the owned [`CallMediaConnectCoordinator`](../../src/feature/calls/CallMediaConnectCoordinator.h), which per attempt asks [`PeerReachCoordinator`](../../src/domain/mesh/reach/PeerReachCoordinator.h) for a link and opens the bundle on it (hello/ack, AEAD Opus)
 - Call-side hooks only: offerer media-key resend before each attempt, path label, commit Connected / surface ConnectFailed when the sequence finishes; `exclude_direct` after TX-only
+- **Failure decision** (`DecideConnectFailure`, [`CallDirectPlannerLogic.h`](../../src/domain/messaging/CallDirectPlannerLogic.h)): when the sequence gives up — commit if direct media is already up, one short grace if the peer's hello is mid-handshake (B44), else `ConnectFailed`. Failed is not closed: the engine stops, but the bridge keeps the call's peer and role (`failed_open_`), so Retry works and a later connection for the call resumes it (`PeerReconnected` → `ResumeMeshMediaFromInbound`, which keeps the inbound bundle and re-arms the direct planner). Leave / remote end clears it
 - `ReleaseDirectTransport` on soft-migrate (keep engine capture for SFU)
 
 Does not decide SFU. Topology calls `StartSfu` / attach via session or engine APIs.
