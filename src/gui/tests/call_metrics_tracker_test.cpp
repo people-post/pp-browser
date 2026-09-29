@@ -54,6 +54,7 @@ std::string EndCall(Tracker& t, int64_t& now, const DeviceVitals& v = Vitals()) 
 TEST(CallMetricsLineTest, FormatsKeyValuesAndShortCallId) {
   const std::string line = MetricsLine("x.y").Add("a", "b").Add("n", int64_t{3}).Add("f", 2.25).Add("e", "").str();
   EXPECT_EQ(line, "event=x.y a=b n=3 f=2.2 e=-");  // one decimal; empty value never breaks the key=value form
+  EXPECT_EQ(MetricsLine("x").Add("reason", "Could not activate x=1").str(), "event=x reason=Could_not_activate_x_1");
   EXPECT_EQ(MetricsCallId(kCall), "01234567");
   EXPECT_EQ(MetricsCallId("abc"), "abc");
 }

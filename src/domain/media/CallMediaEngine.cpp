@@ -15,6 +15,8 @@
 #include <SDL3/SDL.h>
 #include <opus.h>
 
+#include <optional>
+
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -1123,24 +1125,28 @@ struct CallMediaEngine::Impl {
     bool need_keyframe = true;
     int64_t applied_bps = 0;
     // Camera start timing (video start took 4-6 s on device, 2026-09-29): request → lease (device
-    // thread queue + open) → first frame. 0 = nothing pending.
-    int64_t camera_requested_ms = 0;
+    // thread queue + open) → first frame. Steady clock: an NTP step must not skew it (cf. M6).
+    std::optional<std::chrono::steady_clock::time_point> camera_requested;
     int64_t camera_lease_ms = 0;
+    auto ms_since = [](std::chrono::steady_clock::time_point t) {
+      return static_cast<int64_t>(
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count());
+    };
     while (video_running.load()) {
       if (video_need_keyframe.exchange(false, std::memory_order_acq_rel)) {
         need_keyframe = true;
       }
       const bool wanted = camera_enabled.load(std::memory_order_relaxed);
       if (!wanted) {
-        camera_requested_ms = 0;
+        camera_requested.reset();
       }
       if (wanted && !camera) {
-        if (camera_requested_ms == 0) {
-          camera_requested_ms = util::NowUnixMs();
+        if (!camera_requested) {
+          camera_requested = std::chrono::steady_clock::now();
         }
         camera = OpenCameraLease();
         if (camera) {
-          camera_lease_ms = util::NowUnixMs() - camera_requested_ms;
+          camera_lease_ms = ms_since(*camera_requested);
           geometry = camera->Geometry();
           ConfigureLocalEncoder(geometry);
           applied_bps = 0;
@@ -1164,12 +1170,9 @@ struct CallMediaEngine::Impl {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
         continue;
       }
-      if (camera_requested_ms != 0) {
-        MetricsLine("camera.start")
-            .Add("lease_ms", camera_lease_ms)
-            .Add("first_frame_ms", util::NowUnixMs() - camera_requested_ms)
-            .Emit();
-        camera_requested_ms = 0;
+      if (camera_requested) {
+        MetricsLine("camera.start").Add("lease_ms", camera_lease_ms).Add("first_frame_ms", ms_since(*camera_requested)).Emit();
+        camera_requested.reset();
       }
       EncodeAndSend(std::move(*frame), geometry, need_keyframe);
       const auto elapsed = std::chrono::steady_clock::now() - t0;

@@ -31,8 +31,15 @@ class MetricsLine {
 public:
   explicit MetricsLine(std::string_view event) { out_ << "event=" << event; }
 
+  /** Whitespace and '=' in a value become '_' so every line stays parseable as k=v pairs. */
   MetricsLine& Add(std::string_view key, std::string_view value) {
-    out_ << ' ' << key << '=' << (value.empty() ? std::string_view("-") : value);
+    out_ << ' ' << key << '=';
+    if (value.empty()) {
+      out_ << '-';
+    }
+    for (const char c : value) {
+      out_ << ((c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '=') ? '_' : c);
+    }
     return *this;
   }
   MetricsLine& Add(std::string_view key, const char* value) { return Add(key, std::string_view(value ? value : "")); }
