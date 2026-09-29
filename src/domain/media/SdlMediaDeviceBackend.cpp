@@ -321,12 +321,23 @@ public:
         SDL_Log("MediaDeviceArbiter: camera opened \"%s\"", name ? name : "?");
         // Metrics channel (SDL_Log never reaches the phone's log file). No device name: a
         // Continuity Camera is named after its owner's iPhone.
+        // Pixel count per frame drives the video path's CPU cost: log what the camera delivers.
+        SDL_CameraSpec got{};
+        const bool have_spec = SDL_GetCameraFormat(camera, &got);
         MetricsLine("device.open")
             .Add("kind", "camera")
             .Add("front", SDL_GetCameraPosition(id) == SDL_CAMERA_POSITION_FRONT_FACING)
             .Add("open_ms", static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
                                                      std::chrono::steady_clock::now() - open_t0)
                                                      .count()))
+            .Add("cam_w", have_spec ? got.width : -1)
+            .Add("cam_h", have_spec ? got.height : -1)
+            .Add("cam_fps", have_spec && got.framerate_denominator > 0
+                                ? got.framerate_numerator / got.framerate_denominator
+                                : -1)
+            .Add("cam_format", have_spec ? SDL_GetPixelFormatName(got.format) : "?")
+            .Add("encode_w", geometry.encode_width)
+            .Add("encode_h", geometry.encode_height)
             .Emit();
         return std::make_unique<SdlCameraEndpoint>(camera, geometry);
       }
