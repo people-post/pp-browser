@@ -142,11 +142,6 @@ struct AmpMediaRelayCoordinator::Impl {
     }
   }
 
-  struct PendingQuote {
-    MediaRelayQuote quote;
-    std::string call_id;
-  };
-
   struct Session {
     MediaRelaySessionId id;
     MediaRelayBundleRole role = MediaRelayBundleRole::ClientQuote;
@@ -168,7 +163,8 @@ struct AmpMediaRelayCoordinator::Impl {
   };
 
   std::unordered_map<uint64_t, std::unique_ptr<Session>> sessions;
-  std::unordered_map<std::string, PendingQuote> quotes_by_id;
+  /** Quotes issued and not yet accepted — expire / capped (host). */
+  MediaRelayQuoteBook quotes;
   std::unordered_map<std::string, std::shared_ptr<AmpHostSession>> hosts_by_call;
   ClientState client_;
   std::shared_ptr<AmpHostParticipant> local_hop_part_;
@@ -224,6 +220,7 @@ struct AmpMediaRelayCoordinator::Impl {
     std::vector<MediaRelaySessionId> link_lost;
     {
       std::lock_guard lock(mu);
+      quotes.Expire(now);
       for (auto& [_, session] : sessions) {
         if (!session || session->phase == MediaRelayBundlePhase::Closing) {
           continue;
@@ -539,7 +536,7 @@ struct AmpMediaRelayCoordinator::Impl {
       host->participants.clear();
     }
     hosts_by_call.clear();
-    quotes_by_id.clear();
+    quotes.Clear();
   }
 
   /** Move channel to client_ then erase Session — never touch `session` after erase ([A027]). */
@@ -972,7 +969,10 @@ struct AmpMediaRelayCoordinator::Impl {
                       req.want_down_bps = root->getIf<int64_t>("want_down_bps").value_or(0);
                       host_sm->call_id = req.session_id;
                       auto q = BuildDefaultMediaRelayQuote(req);
-                      quotes_by_id[q.quote_id] = PendingQuote{q, req.session_id};
+                      if (!quotes.Add(q, req.session_id, Clock::now())) {
+                        RejectHost(*channel, *host_sm, "media-relay busy", MediaRelayAttachEvent::AdmitFail);
+                        return false;
+                      }
                       Object quote_resp;
                       quote_resp.set("v", int64_t{1});
                       quote_resp.set("ok", true);
@@ -998,22 +998,21 @@ struct AmpMediaRelayCoordinator::Impl {
                         return false;
                       }
                       const std::string quote_id = root->getString("quote_id").value_or("");
-                      auto it = quotes_by_id.find(quote_id);
-                      if (it == quotes_by_id.end()) {
+                      auto pending = quotes.Take(quote_id, Clock::now());
+                      if (!pending) {
                         RejectHost(*channel, *host_sm, "unknown quote", MediaRelayAttachEvent::AttachFail);
                         return false;
                       }
-                      admit.call_id = it->second.call_id;
+                      admit.call_id = pending->call_id;
                       admit.session_exists_for_call = hosts_by_call.contains(admit.call_id);
                       if (DecideMediaRelayOpAdmit(admit) != MediaRelayOpAdmitDecision::Allow) {
                         RejectHost(*channel, *host_sm, "prefer contacts: stranger refused",
                                    MediaRelayAttachEvent::AdmitFail);
                         return false;
                       }
-                      host_sm->call_id = it->second.call_id;
+                      host_sm->call_id = pending->call_id;
                       host_sm->accepted_quote_id = quote_id;
                       host_sm->session_token = MakeSessionToken();
-                      quotes_by_id.erase(it);
                       Object accept_resp;
                       accept_resp.set("v", int64_t{1});
                       accept_resp.set("ok", true);
