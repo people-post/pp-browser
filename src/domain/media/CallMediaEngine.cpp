@@ -1642,6 +1642,14 @@ bool CallMediaEngine::IsRemoteVideoStalling() const {
   return age >= kRemoteVideoStallSoftMs && age < kRemoteVideoStallHardMs;
 }
 
+bool CallMediaEngine::IsRemoteVideoLive(const int64_t within_ms) const {
+  if (!impl_->has_remote_video.load(std::memory_order_relaxed)) {
+    return false;
+  }
+  const int64_t last = impl_->last_remote_video_ms.load(std::memory_order_relaxed);
+  return last > 0 && util::NowUnixMs() - last < within_ms;
+}
+
 bool CallMediaEngine::EverHadRemoteVideo() const {
   return impl_->ever_had_remote_video.load(std::memory_order_relaxed);
 }

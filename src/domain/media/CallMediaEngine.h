@@ -141,6 +141,8 @@ public:
   bool HasRemoteVideo() const;
   /** Soft stall: frames aged past soft threshold but not yet cleared. */
   bool IsRemoteVideoStalling() const;
+  /** A remote frame arrived within the last within_ms (frames are still flowing). */
+  bool IsRemoteVideoLive(int64_t within_ms) const;
   /** True after at least one remote frame this media session (survives hard-stall clear). */
   bool EverHadRemoteVideo() const;
   /** Drop last remote frame (camera off, leave, hard stall, connection dead). */

@@ -169,5 +169,44 @@ TEST_F(MediaSessionSpecTest, EachCallDecodesPeerVideoWithAFreshDecoder) {
   EXPECT_EQ(configured->load(), 2) << "the next call must not reuse the last call's decoder";
 }
 
+/** Decode-only stub: every access unit decodes to a 2x2 frame. */
+class FrameDecoder final : public IVideoCodec {
+public:
+  std::string BackendName() const override { return "frame-decoder"; }
+  bool HasEncoder() const override { return false; }
+  bool HasDecoder() const override { return true; }
+  Roe<void> ConfigureEncoder(int, int, int) override { return Error("no encoder"); }
+  Roe<void> ConfigureDecoder() override { return {}; }
+  Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override { return Error("no encoder"); }
+  Roe<VideoFrameRgba> Decode(const uint8_t*, size_t) override {
+    VideoFrameRgba frame;
+    frame.width = 2;
+    frame.height = 2;
+    frame.rgba.assign(2 * 2 * 4, 0xff);
+    return frame;
+  }
+  void ResetEncoder() override {}
+  void ResetDecoder() override {}
+};
+
+// B58: the UI trusts arriving frames over a peer's roster "camera off"; frames stop → not live.
+TEST_F(MediaSessionSpecTest, RemoteVideoIsLiveOnlyWhileFramesArrive) {
+  engine_.SetVideoCodecFactoryForTest([] { return std::make_unique<FrameDecoder>(); });
+  ASSERT_TRUE(engine_.StartSfu("call:live", CountingSend()));
+  EXPECT_FALSE(engine_.IsRemoteVideoLive(500)) << "no frame yet";
+
+  CallMediaEngine::SfuPacket video;
+  video.stream_id = 7;
+  video.channel_id = 1;
+  video.payload = {0, 0, 0, 1, 0x65, 0x88};
+  engine_.OnSfuPacket(video);
+  EXPECT_TRUE(engine_.IsRemoteVideoLive(500));
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(60));
+  EXPECT_FALSE(engine_.IsRemoteVideoLive(50)) << "no frame within the window";
+  engine_.ClearRemoteVideo();
+  EXPECT_FALSE(engine_.IsRemoteVideoLive(500)) << "cleared (camera off / hard stall)";
+}
+
 } // namespace
 } // namespace pbr

@@ -48,6 +48,9 @@ CallController::CallController() {
 
 namespace {
 
+/** Remote frames this fresh mean the peer's camera is on, whatever its roster row says (B58). */
+constexpr int64_t kPeerVideoLiveMs = 500;
+
 CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgressState& in_call) {
   return {
       .ring_active = ring.active,
@@ -277,6 +280,7 @@ void CallController::ClearInCall() {
   chrome_mode_call_id_.clear();
   last_media_health_log_ms_ = 0;
   audio_fault_gate_.Reset();
+  peer_video_log_key_.clear();
   camera_sync_off_done_ = false;
   // Not auto_camera_pending_ / auto_camera_call_id_: the callee's accept is async, and Tick runs
   // this for the "no active local call yet" frames between the Accept click and the session going
@@ -1304,6 +1308,21 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
       peer_camera_on = **peer_video;
       have_peer_video_flag = true;
     }
+  }
+  // Frames beat the roster (B58, device test 2026-09-29): the phone decoded the Mac's video at
+  // 19 fps for a whole call and showed none of it, its roster row for the Mac still saying
+  // "camera off" (the camera-on roster lost or overtaken by a stale one). A camera that really
+  // turns off stops sending, so the "camera off" state still applies within kPeerVideoLiveMs.
+  const bool peer_frames_live = media.IsRemoteVideoLive(kPeerVideoLiveMs);
+  const char* roster_state = !have_peer_video_flag ? "none" : peer_camera_on ? "on" : "off";
+  const char* frames_state = peer_frames_live ? "live" : "idle";
+  if (std::string key = std::string(roster_state) + "/" + frames_state; key != peer_video_log_key_) {
+    log().info << "peer video call_id=" << active_call_id_ << " roster=" << roster_state
+               << " frames=" << frames_state;
+    peer_video_log_key_ = std::move(key);
+  }
+  if (have_peer_video_flag && !peer_camera_on && peer_frames_live) {
+    peer_camera_on = true;
   }
   if (have_peer_video_flag && !peer_camera_on) {
     media.ClearRemoteVideo();

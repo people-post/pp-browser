@@ -121,6 +121,8 @@ private:
   /** Display rotation last pushed to the engine while the camera is on (-1: none). */
   int pushed_camera_rotation_ = -1;
   int64_t last_video_refresh_ms_ = 0;
+  /** Peer camera state last logged ("roster/frames"), so the log shows each change once. */
+  std::string peer_video_log_key_;
   /** One-shot guard: camera already turned off because video_allowed narrowed mid-call. */
   bool camera_sync_off_done_ = false;
   /**
