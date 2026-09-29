@@ -486,7 +486,7 @@ void CallMediaBridge::OnDirectUpgradeFire() {
     return;
   }
   ++upgrade_attempt_;
-  const std::string peer_id = ReachPeerIdFor(direct_.ActiveParams().peer_key);
+  const std::string peer_id = CallPeerMeshId();
   log().info << "direct upgrade attempt=" << upgrade_attempt_ << " call_id=" << call_id << " peer=" << peer_id;
   reach_.UpgradeToDirect(peer_id, [this, alive = alive_, call_id](Roe<void> result) {
     CallsThread::Post([this, alive, call_id, result = std::move(result)]() {
@@ -559,10 +559,7 @@ void CallMediaBridge::OnRelayStandbyFire() {
     return;
   }
   ++standby_attempt_;
-  std::string peer_id = ReachPeerIdFor(direct_.ActiveParams().peer_key);
-  if (peer_id.empty()) {
-    peer_id = ReachPeerIdFor(media_peer_identity_);
-  }
+  const std::string peer_id = CallPeerMeshId();
   PeerReachRequest request;
   request.keys.push_back(peer_id);
   request.mode = PeerReachMode::Reach;
@@ -686,7 +683,7 @@ void CallMediaBridge::Reanchor(const std::string& call_id) {
       direct_planner_phase_ != CallDirectPlannerPhase::Reconnecting) {
     return;
   }
-  const std::string peer_id = ReachPeerIdFor(direct_.ActiveParams().peer_key);
+  const std::string peer_id = CallPeerMeshId();
   PeerReachRequest request;
   request.keys.push_back(peer_id);
   request.mode = PeerReachMode::Reach;
@@ -929,7 +926,7 @@ void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
 void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const std::string& peer) {
   // k3-4 make-before-break: the call keeps running on its path while a circuit to the peer is
   // built, then moves onto it. Only if that fails does the old break-before-make restart run.
-  const std::string peer_id = ReachPeerIdFor(direct_.ActiveParams().peer_key);
+  const std::string peer_id = CallPeerMeshId();
   if (peer_id.empty() || !reach_.HasCircuitReach()) {
     EscalateBreakBeforeMake(call_id, peer);
     return;
@@ -1072,6 +1069,19 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
   }
   mesh_connect_failed_ = true;
   host_.P2pNotifyRingChanged();
+}
+
+std::string CallMediaBridge::CallPeerMeshId() {
+  // The peer's authenticated PeerId on the call's link — not ActiveParams().peer_key, which after a
+  // path move is that link's dial key and can be a local alias (amp:burst:…): a relay cannot route
+  // to it (hard-lab flip: the relay standby never came up).
+  if (std::string peer_id = direct_.ActiveRemotePeerId(); !peer_id.empty()) {
+    return peer_id;
+  }
+  if (std::string peer_id = ReachPeerIdFor(media_peer_identity_); !peer_id.empty()) {
+    return peer_id;
+  }
+  return ReachPeerIdFor(direct_.ActiveParams().peer_key);
 }
 
 std::string CallMediaBridge::ReachPeerIdFor(const std::string& key) {

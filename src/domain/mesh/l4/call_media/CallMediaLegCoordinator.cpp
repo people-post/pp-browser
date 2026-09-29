@@ -2298,6 +2298,12 @@ CallMediaDirectConnectParams CallMediaLegCoordinator::ActiveParams() const {
   return bundle ? bundle->params : CallMediaDirectConnectParams{};
 }
 
+std::string CallMediaLegCoordinator::ActiveRemotePeerId() const {
+  Impl::CallbackLock lock(*impl_);
+  const auto* bundle = impl_->PrimaryBundle();
+  return bundle ? bundle->remote_peer_id : std::string{};
+}
+
 CallMediaLinkKind CallMediaLegCoordinator::ActiveLinkKind() const {
   Impl::CallbackLock lock(*impl_);
   const auto* bundle = impl_->PrimaryBundle();

@@ -285,6 +285,8 @@ public:
   void ClearInboundHandler() override { inbound.Clear(); }
   bool IsActive() const override { return active || half_open; }
   CallMediaDirectConnectParams ActiveParams() const override { return active_params; }
+  std::string ActiveRemotePeerId() const override { return remote_peer_id; }
+  std::string remote_peer_id;
   CallMediaSessionPhase Phase() const override {
     if (active) {
       return CallMediaSessionPhase::MediaReady;
@@ -925,6 +927,34 @@ TEST_F(CallMediaBridgeAnswererStartTest, FailedAttemptsKeepTheCallWhenThePeersHe
 
 // k3: an offerer Live on a relayed path keeps punching for a direct link (retrying a miss); once
 // the transport reports the call moved to a direct path, the attempts stop.
+// Hard-lab flip: after a path move the transport's peer_key is that link's dial key — a local
+// alias (amp:burst:…). Reach / circuit / upgrade must target the peer's authenticated PeerId.
+TEST_F(CallMediaBridgeAnswererStartTest, PathWorkTargetsThePeersPeerIdNotALinkAlias) {
+  const std::string call_id = "call:alias";
+  const std::string mesh_peer = "12D3KooWAliasTarget";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  transport_->link_kind = CallMediaLinkKind::Relayed;
+  bridge_->SetDirectUpgradeDelayMsForTest(20);
+
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  for (int i = 0; i < 100 && transport_->connect_async_calls == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  transport_->active_params.peer_key = "amp:burst:0:12D3KooWAlia";  // the link the call moved onto
+  transport_->remote_peer_id = mesh_peer;
+  for (int i = 0; i < 400 && circuit_->upgrade_calls.load() < 1; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_GE(circuit_->upgrade_calls.load(), 1);
+  EXPECT_EQ(circuit_->LastUpgradePeer(), mesh_peer) << "not the link's dial alias";
+  bridge_->PrepareForTeardown(0);
+}
+
 TEST_F(CallMediaBridgeAnswererStartTest, RelayedOffererPunchesForADirectPathUntilItMoves) {
   const std::string call_id = "call:upgrade";
   const std::string mesh_peer = "12D3KooWUpgradeTarget";

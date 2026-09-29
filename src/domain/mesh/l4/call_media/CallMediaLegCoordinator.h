@@ -66,6 +66,7 @@ public:
   CallMediaLegId PrimaryLegId() const;
   CallMediaDirectConnectParams ActiveParams() const;
   CallMediaLinkKind ActiveLinkKind() const;
+  std::string ActiveRemotePeerId() const;
   CallMediaLegPhase LegPhase(CallMediaLegId id) const;
   /** Transitional: maps active bundle phase → CallMediaSessionPhase for existing tests. */
   CallMediaSessionPhase Phase() const;

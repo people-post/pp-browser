@@ -126,6 +126,12 @@ public:
   /** Link kind carrying the primary bundle's channels; Unknown until bound. */
   virtual CallMediaLinkKind ActiveLinkKind() const { return CallMediaLinkKind::Unknown; }
   /**
+   * The primary bundle's peer as an authenticated mesh PeerId; empty until bound. Unlike
+   * ActiveParams().peer_key — the dial key of whatever link the call is on, which after a path
+   * move can be a local alias (amp:burst:…) no relay or dial can use.
+   */
+  virtual std::string ActiveRemotePeerId() const { return {}; }
+  /**
    * k3 make-before-break: move the active call onto the peer's Connected link of `kind` while it
    * keeps running. `done` (on the transport's IO strand) is OK once media flows there; an error
    * leaves the call on its current path. Transports without path migration refuse.

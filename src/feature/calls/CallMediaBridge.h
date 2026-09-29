@@ -300,6 +300,8 @@ private:
   }
   /** Amp PeerId for a call roster key (account: → PeerId); unchanged otherwise. */
   std::string ReachPeerIdFor(const std::string& key);
+  /** The call peer's mesh PeerId for reach / circuit / upgrade (never a local dial alias). */
+  std::string CallPeerMeshId();
   void OnDirectHealthTimerFire();
 
   CallMediaHost& host_;
