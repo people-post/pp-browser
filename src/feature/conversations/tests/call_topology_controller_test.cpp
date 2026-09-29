@@ -2,7 +2,6 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/LiveCall.h"
-#include "feature/calls/CallLifecycle.h"
 #include "domain/messaging/CallLifecycleTypes.h"
 
 #include "domain/media/CallMediaEngine.h"
@@ -30,41 +29,16 @@
 namespace pbr {
 namespace {
 
-CallHopArmingPorts TestHopArmingPorts(CallLifecycle* lifecycle) {
+/** The hop arming / progress ports as CallSessionManager binds them. */
+CallHopArmingPorts TestHopArmingPorts(LiveCalls* live) {
   CallHopArmingPorts ports;
-  if (!lifecycle) {
-    return ports;
-  }
-  ports.hop_ops_allowed = [lifecycle]() { return lifecycle->AllowsHopPath(); };
-  ports.soft_migrate_may_arm = [lifecycle]() {
-    const CallMediaStatus st = lifecycle->Status();
-    return st == CallMediaStatus::DirectLive || st == CallMediaStatus::DirectConnecting ||
-           st == CallMediaStatus::DegradedTxOnly || st == CallMediaStatus::Deciding ||
-           st == CallMediaStatus::None;
+  ports.hop_ops_allowed = [live]() { return live->AllowsHopPath(); };
+  ports.soft_migrate_may_arm = [live]() { return live->SoftMigrateMayArm(); };
+  ports.media_cancel_gen = [live]() { return live->MediaCancelGen(); };
+  ports.report_progress = [live](CallHopPlannerPhase phase, const std::string& call_id) {
+    live->ReportHopProgress(call_id, phase);
   };
-  ports.media_cancel_gen = [lifecycle]() { return lifecycle->MediaCancelGen(); };
-  ports.report_progress = [lifecycle](CallHopPlannerPhase phase, const std::string& call_id) {
-    CallMediaStatus mapped = CallMediaStatus::None;
-    switch (phase) {
-    case CallHopPlannerPhase::WaitingAttach:
-      mapped = CallMediaStatus::HopWaiting;
-      break;
-    case CallHopPlannerPhase::Attaching:
-      mapped = CallMediaStatus::HopAttaching;
-      break;
-    case CallHopPlannerPhase::Live:
-      mapped = CallMediaStatus::HopLive;
-      break;
-    case CallHopPlannerPhase::Migrating:
-      mapped = CallMediaStatus::Migrating;
-      break;
-    case CallHopPlannerPhase::Idle:
-    case CallHopPlannerPhase::Stopping:
-      return;
-    }
-    lifecycle->SetMediaStatus(mapped, call_id);
-  };
-  ports.arming_debug_name = [lifecycle]() { return CallMediaStatusName(lifecycle->Status()); };
+  ports.arming_debug_name = [live]() { return CallMediaStatusName(live->Status()); };
   return ports;
 }
 
@@ -376,7 +350,6 @@ protected:
     // Idempotent: tests that Initialize AppRuntime join the pool before store_ reset (PR #216).
     AppRuntime::Shutdown();
     AppRuntime::ShutdownUI();
-    lifecycle_.reset();
     topo_.reset();
     media_.reset();
     contacts_.reset();
@@ -467,7 +440,6 @@ protected:
   std::unique_ptr<FakeDialRegistry> dial_;
   std::unique_ptr<FakeMediaRelayClient> relay_;
   std::unique_ptr<CallTopologyController> topo_;
-  std::unique_ptr<CallLifecycle> lifecycle_;
 };
 
 TEST_F(CallTopologyControllerTest, InboundSfuAttachIgnoredWhenStatusDirectConnecting) {
@@ -475,12 +447,14 @@ TEST_F(CallTopologyControllerTest, InboundSfuAttachIgnoredWhenStatusDirectConnec
   const std::string call_id = "call:direct-blocks-hop";
   SeedJoinedCall(call_id, {"account:A", "account:B", "account:C"}, 1000);
   host_->local_identity = "account:B";
-  lifecycle_ = std::make_unique<CallLifecycle>();
-  lifecycle_->Apply(CallLifecycleEvent::AcceptSucceeded, call_id);
-  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
-  ASSERT_TRUE(lifecycle_->AllowsDirectPath());
-  ASSERT_FALSE(lifecycle_->AllowsHopPath());
-  topo_->SetHopArmingPorts(TestHopArmingPorts(lifecycle_.get()));
+  LiveCalls& live = host_->live;
+  live.AdmitInvited(call_id, {"account:A", "account:C"});
+  live.MarkAccepting(call_id);
+  live.MarkJoined(call_id);
+  live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
+  ASSERT_TRUE(live.AllowsDirectPath());
+  ASSERT_FALSE(live.AllowsHopPath());
+  topo_->SetHopArmingPorts(TestHopArmingPorts(&live));
 
   CallSfuAttachDetail attach;
   attach.call_id = call_id;

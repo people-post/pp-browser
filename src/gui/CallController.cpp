@@ -17,7 +17,7 @@
 #include "foundation/runtime/ProductBranding.h"
 #include "domain/ui/ShellTypes.h"
 #include "feature/calls/CallFunctionalPorts.h"
-#include "feature/calls/CallLifecycle.h"
+#include "domain/messaging/CallLifecycleTypes.h"
 #include "feature/calls/CallUiBackend.h"
 #include "gui/CallChromeSync.h"
 #include "gui/CallMetricsTracker.h"

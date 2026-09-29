@@ -260,7 +260,7 @@ Media-relay SoftMigrate continues to adopt one opaque channel (5c); nested Sessi
 |--------|------|
 | **ChannelSession** | L3 pipe — replaces `DuplexFrameSession` |
 | **PeerLinkManager** | peer link — replaces dial + warm in `PeerSessionManager` |
-| **Domain session** | CallLifecycle, thread store, relay participant |
+| **Domain session** | LiveCall, thread store, relay participant |
 
 ## Ownership hierarchy ([A027](../../projects/adp/DECISIONS.md#a027--parent-only-destroy-l3l4-ownership-hierarchy))
 

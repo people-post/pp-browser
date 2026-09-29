@@ -268,7 +268,7 @@ assert_flip() {
   grep -qx 'standby' "${marks}" || pp_hard_die "${label}: no relay standby came up before the flip (K003)"
   grep -q 'CallMediaLeg failover .* to=relayed' <<<"${after}" ||
     pp_hard_die "${label}: the call did not fail over onto its relay standby"
-  ! grep -qE '\[CallLifecycle\] status=[A-Za-z]+->Reconnecting' <<<"${after}" ||
+  ! grep -qE '\[LiveCall\] status=[A-Za-z]+->Reconnecting' <<<"${after}" ||
     pp_hard_die "${label}: the call showed Reconnecting although it had a standby"
   echo "ok  flip: failover onto the relay standby $(sed -n 's/^recovered //p' "${marks}") s after the flip, never Reconnecting"
 }
@@ -314,7 +314,7 @@ assert_punch() {
   echo "ok  punch: peers connected over a punched link"
   ! grep -qE 'call-media path migrated .* path=circuit' "${off_log}" "${ans_log}" ||
     pp_hard_die "${label}: media fell back onto the relay"
-  ! grep -qE '\[CallLifecycle\] status=[A-Za-z]+->Reconnecting' "${off_log}" "${ans_log}" ||
+  ! grep -qE '\[LiveCall\] status=[A-Za-z]+->Reconnecting' "${off_log}" "${ans_log}" ||
     pp_hard_die "${label}: the call showed Reconnecting (a dual-dial drop must rebind quietly)"
   local rebinds
   rebinds="$(cat "${off_log}" "${ans_log}" | grep -c 'CallMediaLeg reconnected .*(quiet rebind)' || true)"

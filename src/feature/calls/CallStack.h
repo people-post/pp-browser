@@ -14,9 +14,9 @@
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaPlane.h"
 #include "feature/calls/CallMediaSeat.h"
-#include "feature/calls/CallLifecycle.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallSessionManager.h"
+#include "foundation/runtime/DeferredSelf.h"
 #include "feature/calls/CallUiState.h"
 #include "feature/calls/CallsThread.h"
 #include "feature/calls/SharedPorts.h"
@@ -87,7 +87,7 @@ public:
 
   /** Phase A (profile init, no mesh): create call session store, media key store, media engine. */
   Roe<void> InitializeStores(const std::string& profile_db_path, const std::string& profile_id);
-  /** Phase A: build CSM against current p2p, wire providers, bind lifecycle + media plane. */
+  /** Phase A: build CSM against current p2p, wire providers, bind call state + media plane. */
   void BuildSessions(const CallStackDeps& deps);
   /** Phase B (mesh up, mesh media wired by the owner): start Amp call-media transport + bind. */
   void OnMeshServicesStarted();
@@ -122,7 +122,7 @@ public:
   void DetachMeshMedia();
   /** After the owner rewired mesh media: rebind bridge + topology to the new objects. */
   void RebindMeshMedia();
-  /** Reset call session manager + lifecycle (Hub teardown ordering before p2p reset). */
+  /** Reset the call session manager (Hub teardown ordering before p2p reset). */
   void ResetSessions();
   /** Final teardown: reset media engine / key store / session store. */
   void Shutdown();
@@ -137,7 +137,6 @@ public:
    * hub's UI thread: those edges wait on the owner) and only for durable-store reads.
    */
   CallSessionManager* Calls();
-  CallLifecycle* Lifecycle();
   CallMediaKeyStore* MediaKeys() { return call_media_keys_.get(); }
   CallMediaEngine* MediaEngine() { return call_media_engine_.get(); }
   CallMediaSeat* MediaSeat() { return call_media_seat_.get(); }
@@ -153,16 +152,16 @@ public:
   /** True while CallMediaBridge Connect sequence is in flight (cheap for shutdown marks). */
   bool IsConnectWorkerInflight() const;
   /**
-   * Bind lifecycle-derived port sets (lifecycle signaling, CSM hop/lifecycle, bridge arming/seat).
-   * Calls owner only, at the bind points (BuildSessions / BindMediaProducts) — never per ring change
-   * or per Lifecycle() query: the targets call these ports on the owner, so re-binding elsewhere
-   * would swap a std::function while it runs (B49).
+   * Bind the call-state port sets (CSM state-change hook, bridge arming / seat). Calls owner only, at
+   * the bind points (BuildSessions / BindMediaProducts) — never per ring change: the targets call
+   * these ports on the owner, so re-binding elsewhere would swap a std::function while it runs (B49).
    */
-  void EnsureCallLifecycleBound();
-  /** Test-only: times EnsureCallLifecycleBound bound the port sets. */
-  int LifecyclePortBindsForTest() const { return lifecycle_port_binds_.load(std::memory_order_relaxed); }
-  void SetEphemeralListenDesire(bool want);
-  /** N025 desire: CallLifecycle::WantEphemeralListen only. */
+  void BindCallState();
+  /** Test-only: times BindCallState bound the port sets. */
+  int CallStateBindsForTest() const { return call_state_binds_.load(std::memory_order_relaxed); }
+  /** The GUI's chrome refresh: runs on UI after anything that can change what the calls show. */
+  void SetOnChromeRefresh(std::function<void()> fn);
+  /** N025 desire: a call is shown (ringing, calling or in a call). */
   bool WantEphemeralListen() const;
   bool HasActiveLocalCall();
 
@@ -201,10 +200,8 @@ private:
   void BindMeshMediaHooks();
   MeshMediaPlane* mesh_media() const { return deps_.mesh_media; }
   void BindSeatTeardown();
-  CallLifecycleSignalingPorts MakeLifecycleSignalingPorts();
-  CallHopArmingPorts MakeHopArmingPorts() const;
-  CallDirectArmingPorts MakeDirectArmingPorts() const;
-  CallSessionLifecyclePorts MakeSessionLifecyclePorts() const;
+  /** What the calls show may have changed: refresh chrome, wake N025 listen when its desire flips. */
+  void OnCallStateChangedOnOwner();
   CallDirectMediaPorts MakeDirectMediaPorts() const;
   CallDirectSeatPorts MakeDirectSeatPorts() const;
   CallTopologySeatPorts MakeTopologySeatPorts() const;
@@ -215,7 +212,6 @@ private:
   std::unique_ptr<CallMediaEngine> call_media_engine_;
   std::unique_ptr<CallMediaSeat> call_media_seat_;
   std::unique_ptr<CallSessionManager> call_sessions_;
-  std::unique_ptr<CallLifecycle> call_lifecycle_;
   std::unique_ptr<CallMediaPlane> media_plane_;
   // --- k6 mobility (calls owner; the class is also published for caps on any thread) -------------
   MobilityClassifier local_mobility_;
@@ -234,7 +230,11 @@ private:
   std::shared_ptr<std::atomic<bool>> mobility_alive_ = std::make_shared<std::atomic<bool>>(true);
   SharedPorts<CallUiState> ui_state_;
   CallsThread::HookId publish_hook_ = 0;
-  std::atomic<int> lifecycle_port_binds_{0};
+  std::atomic<int> call_state_binds_{0};
+  std::function<void()> on_chrome_refresh_;
+  bool want_ephemeral_listen_ = false;
+  /** Chrome refreshes posted to UI drop once the stack is gone. */
+  DeferredSelf chrome_self_;
 };
 
 } // namespace pbr

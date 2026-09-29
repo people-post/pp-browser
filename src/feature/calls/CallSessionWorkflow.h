@@ -82,18 +82,7 @@ public:
         note_accept_hop_report;
   };
 
-  /** Session chrome / arming observations (projected from Lifecycle by CSM). */
-  struct ChromePorts {
-    std::function<void(const std::string& call_id)> note_direct_connecting;
-    /** Arm OutboundCalling/Deciding as soon as call_id exists — before Invite hits the wire. */
-    std::function<void(const std::string& call_id)> note_outbound_started;
-    std::function<std::string()> accepting_call_id;
-    std::function<std::string()> active_call_id;
-    std::function<void(const std::string& call_id)> apply_remote_ended;
-    std::function<bool()> is_outbound_calling;
-  };
-
-  /** Peer reach, caps, listen addrs, media-key send. */
+  /** Peer reach, caps, listen addrs. */
   struct ReachPorts {
     std::function<void(const std::string& identity, const std::vector<std::string>&)> register_peer_listen;
     std::function<void(const std::string& identity, const CallPeerCaps& caps,
@@ -119,7 +108,6 @@ public:
     WirePorts wire;
     DuplexPorts duplex;
     HopPathPorts hop;
-    ChromePorts chrome;
     ReachPorts reach;
 
     bool IsBound() const { return wire.IsBound(); }

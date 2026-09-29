@@ -2633,10 +2633,6 @@ CallSessionManager* ConversationsHub::Calls() {
   return call_stack_->Calls();
 }
 
-CallLifecycle* ConversationsHub::Lifecycle() {
-  return call_stack_->Lifecycle();
-}
-
 MessageRouter& ConversationsHub::Router() {
   return *router_;
 }

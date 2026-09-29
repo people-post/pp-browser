@@ -4,6 +4,7 @@
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
+#include "domain/messaging/CallLifecycleTypes.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "foundation/data/PricingTypes.h"
 #include "domain/messaging/InitiationBillingStore.h"
@@ -19,10 +20,12 @@
 #include "feature/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallReachSignals.h"
 #include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallSessionWorkflow.h"
 #include "feature/calls/SharedPorts.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -58,24 +61,6 @@ struct CallDirectMediaPorts {
 };
 
 /**
- * Lifecycle façade for CallSessionManager (V043).
- * CSM must not hold CallLifecycle* — ops copy these functions.
- */
-struct CallSessionLifecyclePorts {
-  std::function<bool()> allows_direct_path;
-  std::function<const char*()> status_name;
-  std::function<const char*()> armed_planner_name;
-  std::function<void(const std::string& call_id)> set_direct_connecting;
-  std::function<void(const std::string& call_id)> apply_outbound_started;
-  std::function<std::string()> accepting_call_id;
-  std::function<std::string()> active_call_id;
-  std::function<void(const std::string& call_id)> apply_remote_ended;
-  std::function<bool()> is_outbound_calling;
-
-  bool IsBound() const { return static_cast<bool>(allows_direct_path); }
-};
-
-/**
  * MediaSeat façade for CallSessionManager (V043).
  * CSM must not hold CallMediaSeat* — ops copy these functions.
  */
@@ -100,6 +85,7 @@ public:
   CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                      CallSessionStore& sessions, CallMediaKeyStore& media_keys, CallDeliveryPorts delivery,
                      IPskSessionStore& psk_store, CallMediaEngine& media);
+  ~CallSessionManager() override { intents_self_.Invalidate(); }
 
   void SetOnRingChanged(RingChangedFn callback);
   /** Second listener — mesh (N025 listen) must not overwrite UI chrome refresh. */
@@ -143,10 +129,8 @@ public:
   void SetMediaRelayDeps(MediaRelayDeps deps);
   /** Direct media ops (ScheduleStart / Retry / SoftMigrate release) — Stack installs from bridge. */
   void SetDirectMediaPorts(CallDirectMediaPorts ports);
-  /** Lifecycle ops (V043) — Stack installs; CSM must not hold CallLifecycle*. */
-  void SetLifecyclePorts(CallSessionLifecyclePorts ports);
-  /** Topology hop arming ports (V048) — Stack installs; Topology must not hold CallLifecycle*. */
-  void SetTopologyHopArmingPorts(CallHopArmingPorts ports);
+  /** The 1:1 path's arming / progress ports over the calls' media progress (the stack binds the bridge). */
+  CallDirectArmingPorts DirectArmingPorts();
   /** Seat ops (V043) — Stack installs; CSM must not hold CallMediaSeat*. */
   void SetMediaSeatPorts(CallMediaSeatPorts ports);
   /** Topology Seat ports (V046) — Stack installs; Topology must not hold CallMediaSeat*. */
@@ -181,6 +165,21 @@ public:
                          InitiationChargeDecision charge_decision = InitiationChargeDecision::Waive);
   Roe<void> DeclineInvite(const std::string& call_id);
   Roe<void> LeaveCall(const std::string& call_id, LiveCallEndReason reason = LiveCallEndReason::LocalLeave);
+  // --- What the user does, and what the device shows (V037) ------------------------------------
+  /**
+   * A UI click or a media event for `call_id` (empty: the ring for Accept / Decline, else the active
+   * call). Clicks run their session op; media events move the call's media progress. What the
+   * device shows is projected from the calls (LiveCalls::Phase / Status). Calls owner.
+   */
+  void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
+  /** Runs after anything that can change what the device shows (phase, Status, the shown call). */
+  void SetOnCallStateChanged(std::function<void()> fn) { on_call_state_changed_ = std::move(fn); }
+  /** The call whose accept is in flight (clicked, or being accepted); empty if none. */
+  std::string AcceptingCallId() const;
+  /** Why the last accept failed; empty when it did not. */
+  const std::string& LastError() const { return last_error_; }
+  void ClearLastError() { last_error_.clear(); }
+
   /** The calls live on this device (admission → close). Calls owner only. */
   const LiveCalls& Live() const { return live_calls_; }
   /** Harnesses that seed store rows directly admit the call the way the workflow would. */
@@ -299,6 +298,16 @@ private:
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
   void BindWorkflowHostPorts();
   void BindReachSignalPorts();
+  void NotifyCallStateChanged();
+  CallHopArmingPorts MakeHopArmingPorts();
+  void ClickAccept(const std::string& call_id);
+  void OnAcceptResult(const std::string& call_id, const Roe<void>& accepted);
+  /** Our accept landed: kick the answerer's 1:1 start (and once more if it did not take). */
+  void KickAnswererAfterAccept(const std::string& call_id);
+  void ClickDecline(const std::string& call_id);
+  void ClickLeave(const std::string& call_id);
+  /** A failed, open call: Retry (this side dials) or resume over the peer's reconnect. */
+  void RestartMedia(const std::string& call_id, bool resume);
   /** Flush deferred inbox/TailSync when no ActiveLocalCall remains. */
   void MaybeCatchUpAfterCall();
 
@@ -341,7 +350,6 @@ private:
   CallSessionWorkflow workflow_;
   // Swapped at mesh start / stop and lifecycle bind; read as one snapshot per operation.
   SharedPorts<CallDirectMediaPorts> direct_media_;
-  SharedPorts<CallSessionLifecyclePorts> lifecycle_ports_;
   SharedPorts<CallMediaSeatPorts> media_seat_ports_;
   RingChangedFn on_ring_changed_;
   RingChangedFn on_ring_changed_mesh_;
@@ -358,6 +366,13 @@ private:
   /** mesh PeerId ↔ account learned from CallAccept / Invite / mDNS, over the contacts. */
   PeerAccountBook peer_accounts_;
   std::optional<std::string> last_media_error_;
+  // --- UI intents (V037) ---
+  /** Accept clicked and not answered yet (covers the click before the call is marked accepting). */
+  std::string accept_in_flight_;
+  std::string last_error_;
+  std::function<void()> on_call_state_changed_;
+  /** Posted intent follow-ups (the answerer kick retry, media restarts) drop once we are gone. */
+  DeferredSelf intents_self_;
   std::string media_activity_;
 };
 

@@ -1267,3 +1267,20 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 **Rationale:** Matches the messengers users know (voice/video choice at both ends); a video call that starts with the camera off reads as broken. The narrowing field is additive and one-directional, so old peers keep today's behavior.
 
 **Cross-link:** [V009](#v009--any-group-member-may-start-camera-off-by-default-on-join) · [V035](#v035--scope-aware-softmigrate-hop-pick) (`video_allowed`); tests `CallerNarrowsOnVoiceOnlyAccept`, `VoiceAnswerNarrowingFollowsTheCallOrigin`, `AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsLate`.
+
+## V052 — The call phase is a projection of the calls; intents live on the session manager
+
+**Date:** 2026-09-29  
+**Status:** Accepted — outcomes in [CALLS.md § Call lifecycle](../../docs/architecture/CALLS.md#call-lifecycle); supersedes the `CallLifecycle` class of [V037](#v037--calllifecycle-state--status-one-planner-armed) / [V041](#v041--calllifecycle-signaling-ports--stack-composition-root) / [V043](#v043--callsessionlifecycleports--callmediaseatports) (their State + Status rules stand)  
+**Decision:** There is no separate phase machine. Each `LiveCall` carries its call state and its own media progress (Status, live since the last failure, waiting for the key); `LiveCall::Phase()` projects them to `CallPhase`, and the device shows the active call, else the ring. `CallSessionManager::Apply(event)` runs the user's clicks (accept / decline / leave / retry / resume, answerer kick) and moves the call's media progress on media events. CSM builds the path arming ports over `LiveCalls`; the stack publishes the projection, refreshes chrome and wakes N025 listen on changes.
+
+| Rule | Detail |
+|------|--------|
+| One source | Phase, Status, the gates and the ring come from the calls; nothing mirrors them |
+| Per call | A media event for a closed or unknown call changes nothing; the gates read the active call |
+| Cancel generation | Bumped on a new path decision (`Deciding`) and on a call closing |
+| Placed calls | `OutboundCalling` only until someone answers; then connecting / live like any joined call |
+
+**Rationale:** The lifecycle duplicated what the workflow already tracked on `LiveCall` (accepting, joined, ended) and kept a second, drifting copy of the active / accepting call ids, synced through two port sets. Projecting removes the drift and the ports.
+
+**Cross-link:** tests `CallLifecycleTest.*` (projection), `AcceptClickedDedupesWhileInFlight`, `ADuplicateResumeThatFailsLeavesTheResumedCallInCall`.

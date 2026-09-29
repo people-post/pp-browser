@@ -9,7 +9,7 @@
 #include "domain/messaging/CallTypes.h"
 #include "domain/people/ContactIdentity.h"
 #include "domain/people/ContactTypes.h"
-#include "feature/calls/CallLifecycle.h"
+#include "domain/messaging/CallLifecycleTypes.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/directory/DirectoryTypes.h"
 #include "foundation/crypto/CryptoConstants.h"

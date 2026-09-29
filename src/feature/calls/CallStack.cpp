@@ -25,12 +25,12 @@ namespace pbr {
 CallStack::CallStack() {
   redirectLogger("CallStack");
   media_plane_ = std::make_unique<CallMediaPlane>();
-  call_lifecycle_ = std::make_unique<CallLifecycle>();
   publish_hook_ = CallsThread::AddAfterTaskHook([this]() { PublishUiState(); });
 }
 
 CallStack::~CallStack() {
   mobility_alive_->store(false, std::memory_order_release);
+  chrome_self_.Invalidate();
   Shutdown();
   // On the owner: hooks run only there, so none is mid-flight on this stack once this returns.
   CallsThread::RunAndWait([this]() { CallsThread::RemoveAfterTaskHook(publish_hook_); });
@@ -192,15 +192,19 @@ void CallStack::RunOnOwner(const std::function<void(CallSessionManager&)>& op) {
 
 void CallStack::PublishUiState() {
   CallUiState state;
-  if (call_lifecycle_) {
-    state.phase = call_lifecycle_->Phase();
-    state.media_status = call_lifecycle_->Status();
-    state.active_call_id = call_lifecycle_->ActiveCallId();
-    state.accepting_call_id = call_lifecycle_->AcceptingCallId();
-    state.last_ring_call_id = call_lifecycle_->LastRingCallId();
-    state.last_error = call_lifecycle_->LastError();
-  }
   if (call_sessions_) {
+    // What the calls show (V037), projected from the calls this device has.
+    const LiveCalls& live = call_sessions_->Live();
+    state.phase = live.Phase();
+    state.media_status = live.Status();
+    if (const LiveCall* shown = live.Shown()) {
+      state.active_call_id = shown->Id();
+    }
+    state.accepting_call_id = call_sessions_->AcceptingCallId();
+    if (const LiveCall* ring = live.TheRing()) {
+      state.last_ring_call_id = ring->Id();
+    }
+    state.last_error = call_sessions_->LastError();
     if (const LiveCall* ended = call_sessions_->Live().LastEnded(); ended && ended->EndedByPeer()) {
       state.remote_ended_call_id = ended->Id();
       state.remote_ended_declined = ended->EndReason() == LiveCallEndReason::DeclinedByPeer;
@@ -220,10 +224,10 @@ void CallStack::PublishUiState() {
     state.seat_state = call_media_seat_->State();
     state.seat_live = call_media_seat_->IsLive(state.seat_bound_call_id);
   }
-  state.want_ephemeral_listen = call_lifecycle_ && call_lifecycle_->WantEphemeralListen();
+  state.want_ephemeral_listen = want_ephemeral_listen_;
   state.connect_in_flight = media_plane_ && media_plane_->IsConnectWorkerInflight();
   state.sessions_identity = call_sessions_.get();
-  state.available = call_sessions_ != nullptr && call_lifecycle_ != nullptr;
+  state.available = call_sessions_ != nullptr;
   ui_state_.Set(std::move(state));
 }
 
@@ -346,56 +350,11 @@ void CallStack::BindMediaProducts() {
     call_sessions_->SetCallMediaSeat(call_media_seat_.get());
   }
   // Lifecycle ↔ sessions / bridge ports (mesh stop cleared them): one bind point with BuildSessions.
-  EnsureCallLifecycleBound();
+  BindCallState();
   if (CallMediaBridge* bridge = media_plane_->Bridge()) {
     bridge->SetSeatPorts(MakeDirectSeatPorts());
   }
   PublishUiState();
-}
-
-CallLifecycleSignalingPorts CallStack::MakeLifecycleSignalingPorts() {
-  CallLifecycleSignalingPorts ports;
-  ports.accept_invite = [this](const std::string& call_id, std::function<void(Roe<void>)> done) {
-    if (!call_sessions_) {
-      done(Error("Calls unavailable"));
-      return;
-    }
-    call_sessions_->AcceptInviteAsync(call_id, std::move(done));
-  };
-  ports.decline_invite = [this](const std::string& call_id) -> Roe<void> {
-    if (!call_sessions_) {
-      return Error("Calls unavailable");
-    }
-    return call_sessions_->DeclineInvite(call_id);
-  };
-  ports.leave_call = [this](const std::string& call_id) -> Roe<void> {
-    if (!call_sessions_) {
-      return Error("Calls unavailable");
-    }
-    return call_sessions_->LeaveCall(call_id);
-  };
-  ports.retry_p2p_media = [this](const std::string& call_id) -> Roe<void> {
-    if (!call_sessions_) {
-      return Error("Calls unavailable");
-    }
-    return call_sessions_->RetryP2pMedia(call_id);
-  };
-  ports.resume_p2p_media = [this](const std::string& call_id) -> Roe<void> {
-    if (!call_sessions_) {
-      return Error("Calls unavailable");
-    }
-    return call_sessions_->ResumeP2pMedia(call_id);
-  };
-  ports.kick_answerer_direct_media = [this](const std::string& call_id) {
-    if (call_sessions_) {
-      call_sessions_->KickAnswererDirectMediaIfArmed(call_id);
-    }
-  };
-  ports.media_active_for_call = [this](const std::string& call_id) {
-    return call_sessions_ && call_sessions_->Media().IsActive() &&
-           call_sessions_->Media().ActiveCallId() == call_id;
-  };
-  return ports;
 }
 
 void CallStack::BindSeatTeardown() {
@@ -560,7 +519,7 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
     shared->SignalingPunchBurstAsync(peer_addrs, window_ms, std::move(on_done));
   };
   call_sessions_->ReachSignals().SetMeshPorts(std::move(reach));
-  EnsureCallLifecycleBound();
+  BindCallState();
   RebindMeshMedia();
 }
 
@@ -616,23 +575,18 @@ bool CallStack::HasActiveLocalCall() {
 
 bool CallStack::WantEphemeralListen() const {
   if (CallsThread::IsCurrent()) {
-    return call_lifecycle_ && call_lifecycle_->WantEphemeralListen();
+    return want_ephemeral_listen_;
   }
   return UiState()->want_ephemeral_listen;
 }
 
 void CallStack::PrepareForMeshStopOnOwner(const std::function<void()>& abort_inflight_circuit) {
   PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
-  if (call_lifecycle_) {
-    call_lifecycle_->ClearBinding();
-  }
   if (call_sessions_) {
     call_sessions_->SetDirectMediaPorts({});
     call_sessions_->SetDirectDriver(nullptr);
-    call_sessions_->SetLifecyclePorts({});
     call_sessions_->SetMediaSeatPorts({});
     call_sessions_->SetCallMediaSeat(nullptr);
-    call_sessions_->SetTopologyHopArmingPorts({});
     call_sessions_->SetTopologySeatPorts({});
   }
   DetachMeshMedia();
@@ -722,44 +676,39 @@ CallSessionManager* CallStack::Calls() {
   return call_sessions_.get();
 }
 
-CallLifecycle* CallStack::Lifecycle() {
-  // Accessor only: created with the stack, bound at BuildSessions / BindMediaProducts (the owner's
-  // bind points) — never created or rebound on access from another thread.
-  return call_lifecycle_.get();
-}
-
-void CallStack::EnsureCallLifecycleBound() {
+void CallStack::BindCallState() {
   PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   if (!call_sessions_) {
-    if (call_lifecycle_) {
-      call_lifecycle_->ClearBinding();
-    }
     return;
   }
-  if (!call_lifecycle_) {
-    call_lifecycle_ = std::make_unique<CallLifecycle>();
-  }
-  lifecycle_port_binds_.fetch_add(1, std::memory_order_relaxed);
-  call_lifecycle_->BindSignalingPorts(MakeLifecycleSignalingPorts());
-  call_lifecycle_->SetOnListenDesireChanged([this](bool want) { SetEphemeralListenDesire(want); });
-  // The ring is the LiveCall's (newest Ringing / Accepting) — calls owner, like the lifecycle.
-  call_lifecycle_->SetRingingCallSource([sessions = call_sessions_.get()]() -> std::string {
-    const LiveCall* ring = sessions ? sessions->Live().TheRing() : nullptr;
-    return ring ? ring->Id() : std::string{};
-  });
-  call_sessions_->SetTopologyHopArmingPorts(MakeHopArmingPorts());
-  call_sessions_->SetLifecyclePorts(MakeSessionLifecyclePorts());
+  call_state_binds_.fetch_add(1, std::memory_order_relaxed);
+  call_sessions_->SetOnCallStateChanged([this]() { OnCallStateChangedOnOwner(); });
   if (media_plane_) {
     if (CallMediaBridge* bridge = media_plane_->Bridge()) {
-      bridge->SetDirectArmingPorts(MakeDirectArmingPorts());
+      bridge->SetDirectArmingPorts(call_sessions_->DirectArmingPorts());
       bridge->SetSeatPorts(MakeDirectSeatPorts());
     }
   }
+  OnCallStateChangedOnOwner();
 }
 
-void CallStack::SetEphemeralListenDesire(bool /*want*/) {
-  // Desire already stored on CallLifecycle; this only wakes Hub N025 listen execution.
-  SyncHubEphemeralListen();
+void CallStack::SetOnChromeRefresh(std::function<void()> fn) {
+  CallsThread::RunAndWait([this, &fn]() { on_chrome_refresh_ = std::move(fn); });
+}
+
+void CallStack::OnCallStateChangedOnOwner() {
+  const bool want = call_sessions_ && call_sessions_->Live().Phase() != CallPhase::Idle;
+  if (want != want_ephemeral_listen_) {
+    want_ephemeral_listen_ = want;
+    log().info << "WantEphemeralListen=" << (want ? 1 : 0)
+               << " phase=" << CallPhaseName(call_sessions_ ? call_sessions_->Live().Phase() : CallPhase::Idle);
+    SyncHubEphemeralListen();
+  }
+  // GUI boundary: the chrome refresh runs on UI.
+  if (!on_chrome_refresh_) {
+    return;
+  }
+  AppRuntime::PostUI(chrome_self_.Bind([refresh = on_chrome_refresh_]() { refresh(); }));
 }
 
 void CallStack::SyncHubEphemeralListen() {
@@ -783,10 +732,8 @@ void CallStack::ResetSessionsOnOwner() {
   if (deps_.bind_call_control) {
     deps_.bind_call_control({});
   }
-  if (call_lifecycle_) {
-    call_lifecycle_->ClearBinding();  // its ports point at the sessions being dropped
-  }
   call_sessions_.reset();
+  OnCallStateChangedOnOwner();  // nothing is shown any more
   PublishUiState();
 }
 
@@ -794,9 +741,7 @@ void CallStack::Shutdown() {
   CallsThread::RunAndWait([this]() {
     if (call_sessions_) {
       call_sessions_->ClearMediaCallbacks();
-    }
-    if (call_lifecycle_) {
-      call_lifecycle_->ClearBinding();
+      call_sessions_->SetOnCallStateChanged({});
     }
   });
   // LeaveCall / DeclineInvite workers must finish while sessions_ / seat still live. From the
@@ -825,7 +770,6 @@ void CallStack::ReleaseOnOwner() {
   if (media_plane_) {
     media_plane_->Clear();
   }
-  call_lifecycle_.reset();
   call_sessions_.reset();
   if (call_media_seat_) {
     call_media_seat_->SetTeardownHooks({}, {});
@@ -837,80 +781,6 @@ void CallStack::ReleaseOnOwner() {
   PublishUiState();
 }
 
-
-CallHopArmingPorts CallStack::MakeHopArmingPorts() const {
-  CallHopArmingPorts ports;
-  CallLifecycle* lifecycle = call_lifecycle_.get();
-  if (!lifecycle) {
-    return ports;
-  }
-  ports.hop_ops_allowed = [lifecycle]() { return lifecycle->AllowsHopPath(); };
-  ports.soft_migrate_may_arm = [lifecycle]() { return lifecycle->SoftMigrateMayArm(); };
-  ports.media_cancel_gen = [lifecycle]() { return lifecycle->MediaCancelGen(); };
-  ports.report_progress = [lifecycle](CallHopPlannerPhase phase, const std::string& call_id) {
-    lifecycle->ReportHopProgress(phase, call_id);
-  };
-  ports.arming_debug_name = [lifecycle]() { return CallMediaStatusName(lifecycle->Status()); };
-  return ports;
-}
-
-CallDirectArmingPorts CallStack::MakeDirectArmingPorts() const {
-  CallDirectArmingPorts ports;
-  CallLifecycle* lifecycle = call_lifecycle_.get();
-  if (!lifecycle) {
-    return ports;
-  }
-  ports.direct_ops_allowed = [lifecycle]() { return lifecycle->AllowsDirectPath(); };
-  ports.request_direct_arming = [lifecycle](const std::string& call_id) { lifecycle->RequestDirectArming(call_id); };
-  ports.report_progress = [lifecycle](CallDirectPlannerPhase phase, const std::string& call_id) {
-    lifecycle->ReportDirectProgress(phase, call_id);
-  };
-  ports.on_connected = [lifecycle](const std::string& call_id) {
-    lifecycle->Apply(CallLifecycleEvent::DirectConnected, call_id);
-  };
-  ports.on_connect_failed = [lifecycle](const std::string& call_id) {
-    lifecycle->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
-  };
-  ports.on_peer_reconnected = [lifecycle](const std::string& call_id) {
-    lifecycle->Apply(CallLifecycleEvent::PeerReconnected, call_id);
-  };
-  ports.on_media_deferred = [lifecycle](const std::string& call_id) {
-    lifecycle->Apply(CallLifecycleEvent::MediaDeferred, call_id);
-  };
-  ports.on_media_key_ready = [lifecycle](const std::string& call_id) {
-    lifecycle->Apply(CallLifecycleEvent::MediaKeyReady, call_id);
-  };
-  ports.arming_debug_name = [lifecycle]() { return CallMediaStatusName(lifecycle->Status()); };
-  return ports;
-}
-
-CallSessionLifecyclePorts CallStack::MakeSessionLifecyclePorts() const {
-  CallSessionLifecyclePorts ports;
-  CallLifecycle* lifecycle = call_lifecycle_.get();
-  if (!lifecycle) {
-    return ports;
-  }
-  ports.allows_direct_path = [lifecycle]() { return lifecycle->AllowsDirectPath(); };
-  ports.status_name = [lifecycle]() { return CallMediaStatusName(lifecycle->Status()); };
-  ports.armed_planner_name = [lifecycle]() {
-    return CallArmedPlannerName(lifecycle->ArmedPlanner());
-  };
-  ports.set_direct_connecting = [lifecycle](const std::string& call_id) {
-    lifecycle->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
-  };
-  ports.apply_outbound_started = [lifecycle](const std::string& call_id) {
-    lifecycle->Apply(CallLifecycleEvent::OutboundStarted, call_id);
-  };
-  ports.accepting_call_id = [lifecycle]() { return lifecycle->AcceptingCallId(); };
-  ports.active_call_id = [lifecycle]() { return lifecycle->ActiveCallId(); };
-  ports.apply_remote_ended = [lifecycle](const std::string& call_id) {
-    lifecycle->Apply(CallLifecycleEvent::RemoteEnded, call_id);
-  };
-  ports.is_outbound_calling = [lifecycle]() {
-    return lifecycle->Phase() == CallPhase::OutboundCalling;
-  };
-  return ports;
-}
 
 CallDirectMediaPorts CallStack::MakeDirectMediaPorts() const {
   CallDirectMediaPorts ports;

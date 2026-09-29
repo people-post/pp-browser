@@ -10,7 +10,7 @@ namespace pbr {
 
 /**
  * Pure rules between the path planners and the call's media Status (V037 "State + Status"): what a
- * planner's progress shows as, and when a planner may arm. CallLifecycle applies them.
+ * planner's progress shows as, and when a planner may arm. LiveCalls applies them.
  */
 
 /** The media Status a group (hop) planner phase shows as; nullopt: no change (idle / stopping). */

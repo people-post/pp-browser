@@ -48,11 +48,7 @@ void CallUiBackend::SetOnRingChanged(std::function<void()> callback) {
 }
 
 void CallUiBackend::SetOnChromeRefresh(std::function<void()> callback) {
-  CallsThread::RunAndWait([this, &callback]() {
-    if (auto* life = stack_.Lifecycle()) {
-      life->SetOnChromeRefresh(std::move(callback));  // CallLifecycle::NotifyChrome delivers on UI
-    }
-  });
+  stack_.SetOnChromeRefresh(std::move(callback));  // delivered on UI after the calls change
 }
 
 std::shared_ptr<const CallUiState> CallUiBackend::State() const {
@@ -92,19 +88,11 @@ void CallUiBackend::ClearMediaActivity() {
 }
 
 void CallUiBackend::Apply(CallLifecycleEvent ev, const std::string& call_id) {
-  CallsThread::Post([this, ev, call_id]() {
-    if (auto* life = stack_.Lifecycle()) {
-      life->Apply(ev, call_id);
-    }
-  });
+  OnOwner([ev, call_id](CallSessionManager& calls) { calls.Apply(ev, call_id); });
 }
 
 void CallUiBackend::ClearLastError() {
-  CallsThread::Post([this]() {
-    if (auto* life = stack_.Lifecycle()) {
-      life->ClearLastError();
-    }
-  });
+  OnOwner([](CallSessionManager& calls) { calls.ClearLastError(); });
 }
 
 void CallUiBackend::LeaveCall(const std::string& call_id, const LiveCallEndReason reason) {

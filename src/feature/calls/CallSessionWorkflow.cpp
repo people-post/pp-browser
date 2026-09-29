@@ -248,9 +248,7 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
   }
 
   // Arm chrome before Invite / circuit warm so Accept cannot race past OutboundStarted.
-  if (host_.chrome.note_outbound_started) {
-    host_.chrome.note_outbound_started(call_id);
-  }
+  live_calls_.NoteOutboundStarted(call_id);
 
   // Offerer: kick circuit readiness early so StartBridge near-leg is warm by Accept.
   if (host_.reach.ensure_circuit_ready) {
@@ -621,13 +619,11 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
 
   // B-CONFLICT: Accept B may have moved chrome / LeaveCall'd us while CallAccept was on the wire.
   // Do not ScheduleStart or report success for a superseded accept (stale AcceptSucceeded → Idle).
-  if (host_.chrome.accepting_call_id && host_.chrome.active_call_id) {
-    const std::string accepting = host_.chrome.accepting_call_id();
-    const std::string active = host_.chrome.active_call_id();
-    if ((!accepting.empty() && accepting != call_id) ||
-        (accepting.empty() && !active.empty() && active != call_id)) {
+  {
+    const LiveCall* ours = live_calls_.Find(call_id);
+    if (!ours || !ours->IsOpen() || live_calls_.HasOtherActive(call_id)) {
       log().info << "AcceptInvite superseded after CallAccept call_id=" << call_id
-                 << " accepting=" << accepting << " active=" << active;
+                 << " accepting=" << live_calls_.AcceptingCallId();
       if (auto latest = sessions_.LoadSession(call_id);
           latest && latest->has_value() && (*latest)->state != CallSessionState::Ended) {
         (void)LeaveCall(call_id, LiveCallEndReason::Superseded);
@@ -654,9 +650,7 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
       row.sfu_hint.reset();
       (void)sessions_.UpsertSession(row);
     }
-    if (host_.chrome.note_direct_connecting) {
-      host_.chrome.note_direct_connecting(call_id);
-    }
+    live_calls_.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "ScheduleStartDirect");
     // Drop stale SoftMigrate chrome ("Connecting group media…") from a prior hop attempt.
     if (host_.wire.clear_media_activity) {
       host_.wire.clear_media_activity();
@@ -768,10 +762,11 @@ Roe<void> CallSessionWorkflow::DeclineInvite(const std::string& call_id) {
   auto session = sessions_.LoadSession(call_id);
   if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
     (void)EndCallLocal(**session, std::nullopt, LiveCallEndReason::Declined);
-  } else if (host_.chrome.active_call_id && host_.chrome.apply_remote_ended && host_.chrome.active_call_id() == call_id) {
-    host_.chrome.apply_remote_ended(call_id);
-  } else if (host_.wire.notify_ring_changed) {
-    host_.wire.notify_ring_changed();
+  } else {
+    live_calls_.Close(call_id, LiveCallEndReason::Declined);
+    if (host_.wire.notify_ring_changed) {
+      host_.wire.notify_ring_changed();
+    }
   }
   return {};
 }
@@ -840,13 +835,6 @@ Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::opt
     if (detail) {
       (void)host_.wire.append_origin_history(*session.origin_thread_id, CallControlType::CallEnded, "Call ended", *detail);
     }
-  }
-  // Product chrome: remote Leave/Ended (and any EndCallLocal for the bound call) must Idle
-  // lifecycle without a local LeaveClicked. Skip when lifecycle already moved to another call
-  // (e.g. Accept B → LeaveCallIfActiveExcept ends A while Accepting B).
-  if (host_.chrome.active_call_id && host_.chrome.apply_remote_ended &&
-      host_.chrome.active_call_id() == session.call_id) {
-    host_.chrome.apply_remote_ended(session.call_id);
   }
   if (host_.wire.notify_ring_changed) {
     host_.wire.notify_ring_changed();
@@ -956,22 +944,21 @@ void CallSessionWorkflow::SweepExpiredInvites() {
       auto session = sessions_.LoadSession(invite.call_id);
       if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
         (void)EndCallLocal(**session, std::nullopt, LiveCallEndReason::Expired);
-      } else if (host_.chrome.active_call_id && host_.chrome.apply_remote_ended &&
-                 host_.chrome.active_call_id() == invite.call_id) {
-        host_.chrome.apply_remote_ended(invite.call_id);
+      } else {
+        live_calls_.Close(invite.call_id, LiveCallEndReason::Expired);
       }
       changed = true;
     }
   }
 
   // CALLS outbound unanswered: clear sticky Calling bar without waiting on GUI LeaveClicked.
-  if (host_.chrome.is_outbound_calling && host_.chrome.is_outbound_calling() &&
-      !live_calls_.MediaRunning()) {
+  const LiveCall* calling = live_calls_.Active();
+  if (calling && calling->State() == LiveCallState::Calling && !live_calls_.MediaRunning()) {
     auto active = ActiveLocalCall();
     if (active && active->has_value() &&
         CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(true, false, (*active)->created_at, now)) {
       const std::string call_id = (*active)->call_id;
-      if (host_.chrome.active_call_id && host_.chrome.active_call_id() == call_id) {
+      if (calling->Id() == call_id) {
         log().warning << "outbound unanswered timeout call_id=" << call_id;
         if (auto left = LeaveCall(call_id, LiveCallEndReason::Unanswered); !left) {
           log().warning << "outbound unanswered LeaveCall failed call_id=" << call_id
@@ -1317,9 +1304,7 @@ Roe<void> CallSessionWorkflow::ApplyRemoteAccept(const CallAcceptDetail& accept_
     const bool stays_direct =
         !call_media || call_media->DecideOnRemoteAccept(n_joined, identity) == CallMediaPath::Direct;
     if (stays_direct) {
-      if (host_.chrome.note_direct_connecting) {
-        host_.chrome.note_direct_connecting(accept->call_id);
-      }
+      live_calls_.SetMediaStatus(accept->call_id, CallMediaStatus::DirectConnecting, "ScheduleStartDirect");
       host_.duplex.schedule_start_direct(accept->call_id, identity, true);
     }
     // Prefetch + roster fan-out after media kickoff — avoid starving MediaKey/Connect on IO.

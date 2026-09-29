@@ -13,7 +13,7 @@
 namespace pbr {
 
 
-/** Transport session phases for 1:1 call-media (V033). Product UX phases stay in CallLifecycle. */
+/** Transport session phases for 1:1 call-media (V033). Product UX phases are the calls' projection (LiveCall::Phase). */
 enum class CallMediaSessionPhase {
   Idle = 0,
   Dialing,

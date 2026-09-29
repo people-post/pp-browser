@@ -2,7 +2,7 @@
 
 /**
  * Call chrome State + media Status enums (V037).
- * Pure types — no Module / AppRuntime. CallLifecycle owns Apply side effects.
+ * Pure types. The State is projected from the call (LiveCall::Phase); the Status is the call's own.
  */
 
 namespace pbr {
@@ -43,6 +43,10 @@ enum class CallArmedPlanner {
   Topology,
 };
 
+/**
+ * What happens to the shown call (V037): the user's clicks, and the media path's events. The device
+ * shows a projection of its calls (LiveCalls) — these only drive the calls.
+ */
 enum class CallLifecycleEvent {
   InviteSeen = 0,
   InviteCleared,
@@ -51,15 +55,10 @@ enum class CallLifecycleEvent {
   DeclineClicked,
   LeaveClicked,
   RetryClicked,
-  AcceptSucceeded,
-  AcceptFailed,
-  DeclineDone,
-  LeaveDone,
   MediaDeferred,
   MediaKeyReady,
   DirectConnected,
   ConnectFailedEvt,
-  RemoteEnded,
   /** The peer's connection for a failed, still-open call reached us (its retry): resume media. */
   PeerReconnected,
 };

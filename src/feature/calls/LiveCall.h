@@ -1,8 +1,11 @@
 #pragma once
 
+#include "domain/messaging/CallLifecycleTypes.h"
+#include "domain/messaging/CallMediaStatusLogic.h"
 #include "feature/calls/CallMediaCoordinator.h"
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -56,6 +59,15 @@ enum class LiveCallEndReason {
   Orphaned,
 };
 
+/** How a call's media is doing (V037 Status) and what it has reached — per call. */
+struct LiveCallMediaProgress {
+  CallMediaStatus status = CallMediaStatus::None;
+  /** Media went live since the last failure: the call shows InCall. */
+  bool reached_live = false;
+  /** The answerer waits for the call's media key (MediaPending). */
+  bool key_pending = false;
+};
+
 const char* LiveCallStateName(LiveCallState state);
 const char* LiveCallEndReasonName(LiveCallEndReason reason);
 
@@ -86,6 +98,13 @@ public:
   int64_t AdmittedAtMs() const { return admitted_at_ms_; }
   /** This call's media (engine + seat use); null until the call first needs media. */
   CallMediaCoordinator* Media() const { return media_.get(); }
+  const LiveCallMediaProgress& MediaProgress() const { return progress_; }
+  /**
+   * What the call shows as (V037 State): Ringing / Accepting as its call state; a placed call nobody
+   * answered yet is OutboundCalling; once in the call its media decides — ConnectFailed, InCall (live
+   * since the last failure), MediaPending (key wait), MediaConnecting, else JoinedLocal. Ended: Idle.
+   */
+  CallPhase Phase() const;
 
 private:
   friend class LiveCalls;
@@ -99,6 +118,7 @@ private:
   std::vector<std::string> peers_;
   int64_t admitted_at_ms_ = 0;
   std::unique_ptr<CallMediaCoordinator> media_;
+  LiveCallMediaProgress progress_;
 };
 
 /**
@@ -118,6 +138,48 @@ public:
   const LiveCall* TheRing() const;
   /** The most recently closed call, if any is still kept. */
   const LiveCall* LastEnded() const;
+  /** The call this device shows: the active call, else the ring; null when idle. */
+  const LiveCall* Shown() const;
+  /** The call being accepted, if any. */
+  std::string AcceptingCallId() const;
+  /** True when a call other than `call_id` is active (Calling / Accepting / Joined). */
+  bool HasOtherActive(const std::string& call_id) const;
+
+  // --- What the device shows (V037 State + Status), projected from the calls ---------------------
+  /** The shown call's phase; Idle when none. */
+  CallPhase Phase() const;
+  /** A call's media Status (empty `call_id`: the active call); None when there is no such open call. */
+  CallMediaStatus Status(const std::string& call_id = {}) const;
+  /** The planner that Status arms. */
+  CallArmedPlanner ArmedPlanner(const std::string& call_id = {}) const;
+  /** The 1:1 path may start / run for the call. */
+  bool AllowsDirectPath(const std::string& call_id = {}) const;
+  /** The group path may attach / migrate / run for the call. */
+  bool AllowsHopPath(const std::string& call_id = {}) const;
+  /** A SoftMigrate may arm from the active call's Status. */
+  bool SoftMigrateMayArm() const;
+  /** Bumped when a call starts deciding its path or closes: late path work compares it and aborts. */
+  uint64_t MediaCancelGen() const { return media_cancel_gen_; }
+  /** Runs after anything that can change what the device shows (phase, Status, the shown call). */
+  void SetOnChanged(std::function<void()> fn) { on_changed_ = std::move(fn); }
+
+  // --- A call's media progress (empty `call_id`: the active call) -------------------------------
+  void SetMediaStatus(const std::string& call_id, CallMediaStatus status, const char* reason);
+  /** A path planner's progress, shown as the call's Status (CallMediaStatusLogic). */
+  void ReportDirectProgress(const std::string& call_id, CallDirectPlannerPhase phase);
+  void ReportHopProgress(const std::string& call_id, CallHopPlannerPhase phase);
+  /** The 1:1 planner asks to arm while the Status does not allow it yet (set-up phases only). */
+  void RequestDirectArming(const std::string& call_id);
+  /** Our placed call starts deciding its path (unless a path already runs). */
+  void NoteOutboundStarted(const std::string& call_id);
+  /** The answerer's media waits for the key. */
+  void NoteMediaDeferred(const std::string& call_id);
+  /** The key arrived: the media connects. */
+  void NoteMediaKeyReady(const std::string& call_id);
+  /** The media connected (1:1 connect, or a live hop). */
+  void NoteMediaConnected(const std::string& call_id);
+  /** No media path: the call stays open, failed (Retry / the peer's reconnect resumes it). */
+  void NoteMediaFailed(const std::string& call_id);
 
   /** This side placed the call. */
   LiveCall& AdmitPlaced(const std::string& call_id, const std::vector<std::string>& peers);
@@ -166,8 +228,14 @@ private:
   /** A second open non-ringing call means a path skipped the one-active-call rule (step 3 enforces it). */
   void WarnIfSecondActive(const std::string& call_id) const;
   void PruneEnded();
+  LiveCall* Resolve(const std::string& call_id);
+  const LiveCall* Resolve(const std::string& call_id) const;
+  void SetStatus(LiveCall& call, CallMediaStatus next, const char* reason);
+  void Changed() const;
 
   std::map<std::string, LiveCall> calls_;
+  uint64_t media_cancel_gen_ = 0;
+  std::function<void()> on_changed_;
   CallMediaResources resources_;
   std::vector<std::string> ended_order_;
   uint64_t next_instance_ = 1;

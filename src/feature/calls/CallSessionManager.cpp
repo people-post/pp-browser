@@ -91,6 +91,8 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
   });
   live_calls_.BindMediaResources(&media_, nullptr);
   live_calls_.BindHopDriver(&topology_);
+  live_calls_.SetOnChanged([this]() { NotifyCallStateChanged(); });
+  topology_.SetHopArmingPorts(MakeHopArmingPorts());
   BindTopologyHostPorts();
   BindWorkflowHostPorts();
   BindReachSignalPorts();
@@ -180,36 +182,6 @@ void CallSessionManager::BindWorkflowHostPorts() {
       delivery_.sync_inbox_from_wake(true);
     }
   };
-  ports.chrome.note_direct_connecting = [this](const std::string& call_id) {
-    const auto lifecycle = lifecycle_ports_.Get();
-    if (lifecycle->set_direct_connecting) {
-      lifecycle->set_direct_connecting(call_id);
-    }
-  };
-  ports.chrome.note_outbound_started = [this](const std::string& call_id) {
-    const auto lifecycle = lifecycle_ports_.Get();
-    if (lifecycle->apply_outbound_started) {
-      lifecycle->apply_outbound_started(call_id);
-    }
-  };
-  ports.chrome.accepting_call_id = [this]() {
-    const auto lifecycle = lifecycle_ports_.Get();
-    return lifecycle->accepting_call_id ? lifecycle->accepting_call_id() : std::string{};
-  };
-  ports.chrome.active_call_id = [this]() {
-    const auto lifecycle = lifecycle_ports_.Get();
-    return lifecycle->active_call_id ? lifecycle->active_call_id() : std::string{};
-  };
-  ports.chrome.apply_remote_ended = [this](const std::string& call_id) {
-    const auto lifecycle = lifecycle_ports_.Get();
-    if (lifecycle->apply_remote_ended) {
-      lifecycle->apply_remote_ended(call_id);
-    }
-  };
-  ports.chrome.is_outbound_calling = [this]() {
-    const auto lifecycle = lifecycle_ports_.Get();
-    return lifecycle->is_outbound_calling && lifecycle->is_outbound_calling();
-  };
   ports.reach.register_peer_listen = [this](const std::string& identity, const std::vector<std::string>& mas) {
     if (register_peer_listen_multiaddrs_) {
       register_peer_listen_multiaddrs_(identity, mas);
@@ -294,6 +266,190 @@ void CallSessionManager::BindReachSignalPorts() {
   reach_signals_.SetCallPorts(std::move(ports));
 }
 
+// --- UI intents (V037) ---------------------------------------------------------------------------
+
+void CallSessionManager::NotifyCallStateChanged() {
+  if (on_call_state_changed_) {
+    on_call_state_changed_();
+  }
+}
+
+std::string CallSessionManager::AcceptingCallId() const {
+  return !accept_in_flight_.empty() ? accept_in_flight_ : live_calls_.AcceptingCallId();
+}
+
+void CallSessionManager::Apply(const CallLifecycleEvent ev, const std::string& call_id) {
+  switch (ev) {
+  case CallLifecycleEvent::AcceptClicked:
+    ClickAccept(call_id);
+    return;
+  case CallLifecycleEvent::DeclineClicked:
+    ClickDecline(call_id);
+    return;
+  case CallLifecycleEvent::LeaveClicked:
+    ClickLeave(call_id);
+    return;
+  case CallLifecycleEvent::RetryClicked:
+    RestartMedia(call_id, false);
+    return;
+  case CallLifecycleEvent::PeerReconnected:
+    RestartMedia(call_id, true);
+    return;
+  case CallLifecycleEvent::OutboundStarted:
+    live_calls_.NoteOutboundStarted(call_id);
+    return;
+  case CallLifecycleEvent::MediaDeferred:
+    live_calls_.NoteMediaDeferred(call_id);
+    return;
+  case CallLifecycleEvent::MediaKeyReady:
+    live_calls_.NoteMediaKeyReady(call_id);
+    return;
+  case CallLifecycleEvent::DirectConnected:
+    live_calls_.NoteMediaConnected(call_id);
+    return;
+  case CallLifecycleEvent::ConnectFailedEvt:
+    live_calls_.NoteMediaFailed(call_id);
+    return;
+  case CallLifecycleEvent::InviteSeen:
+  case CallLifecycleEvent::InviteCleared:
+    // The ring is the LiveCall's: nothing to change, only to show.
+    NotifyCallStateChanged();
+    return;
+  }
+}
+
+void CallSessionManager::ClickAccept(const std::string& call_id_arg) {
+  std::string call_id = call_id_arg;
+  if (call_id.empty()) {
+    if (const LiveCall* ring = live_calls_.TheRing()) {
+      call_id = ring->Id();
+    }
+  }
+  if (call_id.empty()) {
+    log().info << "AcceptClicked ignored (no call_id)";
+    return;
+  }
+  if (AcceptingCallId() == call_id) {
+    log().info << "AcceptClicked already in flight call_id=" << call_id;
+    NotifyCallStateChanged();
+    return;
+  }
+  accept_in_flight_ = call_id;
+  NotifyCallStateChanged();
+  AppRuntime::ResumeBackgroundWork();  // relay-fallback sends run on workers
+  log().info << "AcceptInvite queued call_id=" << call_id;
+  AcceptInviteAsync(call_id, [this, call_id](Roe<void> accepted) { OnAcceptResult(call_id, accepted); });
+}
+
+void CallSessionManager::OnAcceptResult(const std::string& call_id, const Roe<void>& accepted) {
+  if (accept_in_flight_ == call_id) {
+    accept_in_flight_.clear();
+  }
+  if (!accepted) {
+    // The workflow put the call back to ringing (or it ended meanwhile).
+    log().warning << "AcceptInvite failed call_id=" << call_id << " err=" << accepted.error().message;
+    last_error_ = accepted.error().message;
+    NotifyCallStateChanged();
+    return;
+  }
+  const LiveCall* active = live_calls_.Active();
+  if (!active || active->Id() != call_id) {
+    // B-CONFLICT: another accept (or a leave) moved on while this one was on the wire.
+    log().info << "AcceptInvite result ignored stale call_id=" << call_id;
+    return;
+  }
+  log().info << "AcceptInvite ok call_id=" << call_id;
+  KickAnswererAfterAccept(call_id);
+  NotifyCallStateChanged();
+}
+
+void CallSessionManager::KickAnswererAfterAccept(const std::string& call_id) {
+  if (!live_calls_.AllowsDirectPath(call_id)) {
+    log().info << "AcceptSucceeded skip KickAnswerer StartSfu call_id=" << call_id
+               << " status=" << CallMediaStatusName(live_calls_.Status(call_id));
+    return;
+  }
+  log().info << "AcceptSucceeded KickAnswererDirectMedia StartSfu arm call_id=" << call_id;
+  KickAnswererDirectMediaIfArmed(call_id);
+  // Once more, posted: the first kick can land before the 1:1 start is armed.
+  CallsThread::Post(intents_self_.Bind([this, call_id]() {
+    const LiveCall* active = live_calls_.Active();
+    if (!active || active->Id() != call_id || !live_calls_.AllowsDirectPath(call_id)) {
+      return;
+    }
+    if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+      return;
+    }
+    log().info << "AcceptSucceeded retry KickAnswererDirectMedia StartSfu call_id=" << call_id;
+    KickAnswererDirectMediaIfArmed(call_id);
+  }));
+}
+
+void CallSessionManager::ClickDecline(const std::string& call_id_arg) {
+  std::string call_id = call_id_arg;
+  if (call_id.empty()) {
+    if (const LiveCall* ring = live_calls_.TheRing()) {
+      call_id = ring->Id();
+    }
+  }
+  if (call_id.empty()) {
+    log().info << "DeclineClicked ignored (no call_id)";
+    return;
+  }
+  if (auto declined = DeclineInvite(call_id); !declined) {
+    log().warning << "DeclineInvite failed call_id=" << call_id << " err=" << declined.error().message;
+    live_calls_.Close(call_id, LiveCallEndReason::Declined);  // the ring goes either way
+  }
+  NotifyCallStateChanged();
+}
+
+void CallSessionManager::ClickLeave(const std::string& call_id_arg) {
+  std::string call_id = call_id_arg;
+  if (call_id.empty()) {
+    if (const LiveCall* shown = live_calls_.Shown()) {
+      call_id = shown->Id();
+    }
+  }
+  if (call_id.empty()) {
+    log().info << "LeaveClicked ignored (no call_id)";
+    return;
+  }
+  if (auto left = LeaveCall(call_id); !left) {
+    log().warning << "LeaveCall failed call_id=" << call_id << " err=" << left.error().message;
+    live_calls_.Close(call_id, LiveCallEndReason::LocalLeave);  // the call leaves the screen either way
+  }
+  NotifyCallStateChanged();
+}
+
+void CallSessionManager::RestartMedia(const std::string& call_id_arg, const bool resume) {
+  const char* what = resume ? "PeerReconnected" : "RetryClicked";
+  const LiveCall* active = live_calls_.Active();
+  const std::string call_id = call_id_arg.empty() && active ? active->Id() : call_id_arg;
+  const LiveCall* call = live_calls_.Find(call_id);
+  // Only a failed, still-open call restarts; a resume only for the call this device is in.
+  if (!call || call->Phase() != CallPhase::ConnectFailed || (resume && (!active || active->Id() != call_id))) {
+    log().info << what << " ignored (call not failed-open) call_id=" << call_id;
+    return;
+  }
+  // Re-arm Direct before the restart → BeginSession (Failed blocks AllowsDirectPath).
+  live_calls_.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, what);
+  // Posted, on the calls owner: the restart runs the engine and the bridge's connect sequence.
+  CallsThread::Post(intents_self_.Bind([this, call_id, resume, what]() {
+    const Roe<void> restarted = resume ? ResumeP2pMedia(call_id) : RetryP2pMedia(call_id);
+    if (!restarted) {
+      log().warning << what << " media restart failed call_id=" << call_id << " err=" << restarted.error().message;
+      // Back to Failed only while the call is still open and not live again (a duplicate restart
+      // whose call already resumed must not knock it down — PR #239 review).
+      const LiveCall* again = live_calls_.Find(call_id);
+      if (again && again->IsOpen() && !again->MediaProgress().reached_live) {
+        live_calls_.NoteMediaFailed(call_id);
+      }
+      return;
+    }
+    NotifyCallStateChanged();
+  }));
+}
+
 void CallSessionManager::SetInitiationBillingStore(InitiationBillingStore* store) {
   billing_.SetStore(store);
 }
@@ -308,12 +464,32 @@ void CallSessionManager::SetDirectMediaPorts(CallDirectMediaPorts ports) {
   direct_media_.Set(std::move(ports));
 }
 
-void CallSessionManager::SetLifecyclePorts(CallSessionLifecyclePorts ports) {
-  lifecycle_ports_.Set(std::move(ports));
+CallHopArmingPorts CallSessionManager::MakeHopArmingPorts() {
+  CallHopArmingPorts ports;
+  ports.hop_ops_allowed = [this]() { return live_calls_.AllowsHopPath(); };
+  ports.soft_migrate_may_arm = [this]() { return live_calls_.SoftMigrateMayArm(); };
+  ports.media_cancel_gen = [this]() { return live_calls_.MediaCancelGen(); };
+  ports.report_progress = [this](CallHopPlannerPhase phase, const std::string& call_id) {
+    live_calls_.ReportHopProgress(call_id, phase);
+  };
+  ports.arming_debug_name = [this]() { return CallMediaStatusName(live_calls_.Status()); };
+  return ports;
 }
 
-void CallSessionManager::SetTopologyHopArmingPorts(CallHopArmingPorts ports) {
-  topology_.SetHopArmingPorts(std::move(ports));
+CallDirectArmingPorts CallSessionManager::DirectArmingPorts() {
+  CallDirectArmingPorts ports;
+  ports.direct_ops_allowed = [this]() { return live_calls_.AllowsDirectPath(); };
+  ports.request_direct_arming = [this](const std::string& call_id) { live_calls_.RequestDirectArming(call_id); };
+  ports.report_progress = [this](CallDirectPlannerPhase phase, const std::string& call_id) {
+    live_calls_.ReportDirectProgress(call_id, phase);
+  };
+  ports.on_connected = [this](const std::string& call_id) { live_calls_.NoteMediaConnected(call_id); };
+  ports.on_connect_failed = [this](const std::string& call_id) { live_calls_.NoteMediaFailed(call_id); };
+  ports.on_peer_reconnected = [this](const std::string& call_id) { RestartMedia(call_id, true); };
+  ports.on_media_deferred = [this](const std::string& call_id) { live_calls_.NoteMediaDeferred(call_id); };
+  ports.on_media_key_ready = [this](const std::string& call_id) { live_calls_.NoteMediaKeyReady(call_id); };
+  ports.arming_debug_name = [this]() { return CallMediaStatusName(live_calls_.Status()); };
+  return ports;
 }
 
 void CallSessionManager::SetMediaSeatPorts(CallMediaSeatPorts ports) {
@@ -339,15 +515,10 @@ void CallSessionManager::TopologyOnMediaStoppedForSeat(const std::string& call_i
 
 void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity,
                                                   bool offerer) {
-  const auto lifecycle = lifecycle_ports_.Get();
-  const bool allows =
-      !lifecycle->allows_direct_path || lifecycle->allows_direct_path();
-  if (!allows) {
+  if (!live_calls_.AllowsDirectPath(call_id)) {
     log().info << "ScheduleStartDirectMedia skipped (Status disallows Bridge) call_id=" << call_id
-               << " status="
-               << (lifecycle->status_name ? lifecycle->status_name() : "?")
-               << " armed="
-               << (lifecycle->armed_planner_name ? lifecycle->armed_planner_name() : "?");
+               << " status=" << CallMediaStatusName(live_calls_.Status(call_id))
+               << " armed=" << CallArmedPlannerName(live_calls_.ArmedPlanner(call_id));
     return;
   }
   // CSM is signaling-only for duplex start — the call's media coordinator takes the seat and has the
@@ -365,7 +536,6 @@ void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, co
 }
 
 void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_id) {
-  const auto lifecycle = lifecycle_ports_.Get();
   if (call_id.empty()) {
     log().info << "KickAnswererDirectMediaIfArmed skip (empty call_id)";
     return;
@@ -378,16 +548,14 @@ void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_
     }
   }
   CallAnswererKickDecisionInput in;
-  in.allows_direct_path =
-      !lifecycle->allows_direct_path || lifecycle->allows_direct_path();
+  in.allows_direct_path = live_calls_.AllowsDirectPath(call_id);
   // IsActive alone — do not require tx/connected (capture lags StartSfu; dogfood e157 thrash).
   in.media_already_active_same_call = media_.IsActive() && media_.ActiveCallId() == call_id;
   in.peer_nonempty = !peer.empty();
   if (!ShouldKickAnswererDirectMedia(in)) {
     if (!in.allows_direct_path) {
       log().info << "KickAnswererDirectMediaIfArmed skip (Status disallows Bridge) call_id=" << call_id
-                 << " status="
-                 << (lifecycle->status_name ? lifecycle->status_name() : "?");
+                 << " status=" << CallMediaStatusName(live_calls_.Status(call_id));
     } else if (in.media_already_active_same_call) {
       log().info << "KickAnswererDirectMediaIfArmed skip (media already active) call_id=" << call_id;
     } else {
