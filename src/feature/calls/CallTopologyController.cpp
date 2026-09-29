@@ -100,6 +100,7 @@ CallTopologyController::~CallTopologyController() {
   // drops notices still queued for us.
   relay_loss_self_.Invalidate();
   probe_self_.Invalidate();
+  timers_self_.Invalidate();
 }
 
 void CallTopologyController::SetMediaRelayDeps(MediaRelayDeps deps) {
@@ -344,9 +345,15 @@ void CallTopologyController::ArmAttachWaitTimer(const std::string& call_id, int6
   const int64_t delay = std::max<int64_t>(0, deadline_ms - util::NowUnixMs());
   const std::string captured = call_id;
   attach_wait_.timer_id = AppRuntime::ScheduleCoordinatorOneShot(
-      std::chrono::milliseconds(delay), [this, captured]() {
-        attach_wait_.timer_id = 0;
-        CallsThread::Post([this, captured]() { OnAttachWaitTimerFire(captured); });
+      std::chrono::milliseconds(delay),
+      [this, token = timers_self_.token(), snap = timers_self_.Snapshot(), captured]() {
+        CallsThread::Post([this, token, snap, captured]() {
+          if (!DeferredSelf::Alive(token, snap)) {
+            return;
+          }
+          attach_wait_.timer_id = 0;  // owner state: cleared here, not on the coordinator
+          OnAttachWaitTimerFire(captured);
+        });
       });
 }
 
@@ -1111,9 +1118,13 @@ void CallTopologyController::AnnounceLocalPublisher(const std::string& call_id,
   const std::string encoded_copy = *encoded;
   const std::string local_copy = *local;
   AppRuntime::ScheduleCoordinatorOneShot(
-      std::chrono::milliseconds(2000), [this, call_id, encoded_copy, local_copy]() {
-        CallsThread::Post([this, call_id, encoded_copy, local_copy]() {
-          if (!sfu_.attached || media_.ActiveCallId() != call_id) {
+      std::chrono::milliseconds(2000),
+      [this, token = timers_self_.token(), snap = timers_self_.Snapshot(), call_id, encoded_copy, local_copy,
+       hop = announce.hop_peer_id, stream = announce.publisher_stream_id]() {
+        CallsThread::Post([this, token, snap, call_id, encoded_copy, local_copy, hop, stream]() {
+          // V050: a later joiner's re-pick may have moved the group — never re-announce the old hop.
+          if (!DeferredSelf::Alive(token, snap) || !sfu_.attached || media_.ActiveCallId() != call_id ||
+              flight_.attached_hop_peer_id != hop || publishers_.local_stream_id != stream) {
             return;
           }
           log().info << "AnnounceLocalPublisher re-fan-out call_id=" << call_id;

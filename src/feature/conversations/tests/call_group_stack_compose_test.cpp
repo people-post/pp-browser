@@ -7,7 +7,9 @@
 
 #include "domain/mesh/l4/media_relay/IMediaRelayClient.h"
 #include "domain/messaging/CallSessionStore.h"
+#include "common/directory/DirectoryJson.h"
 #include "domain/messaging/SoftMigrateLogic.h"
+#include "foundation/crypto/CryptoUtil.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -270,6 +272,38 @@ protected:
       sides_[i].transport->peer_inbound = [this, i](CallMediaDirectConnectParams params) {
         DeliverDirectHello(i, std::move(params));
       };
+    }
+    SeedPairwisePsks();
+  }
+
+  /**
+   * Every pair shares a direct-chat PSK, as paired contacts do — so CallMediaKey travels the wire.
+   * An eject rotates the media key; without this only the out-of-band epoch-1 key ever arrived
+   * and members failed to re-attach after a rotation (CI: they ejected each other).
+   */
+  void SeedPairwisePsks() {
+    for (size_t i = 0; i < kSides; ++i) {
+      for (size_t j = i + 1; j < kSides; ++j) {
+        auto master = sides_[i].psk->GenerateMasterPsk();
+        ASSERT_TRUE(master) << master.error().message;
+        const std::string master_b64 = Base64Encode(*master);
+        for (auto [self, peer] : {std::pair{i, j}, std::pair{j, i}}) {
+          // The row belongs to the pair's direct thread (the call-control thread); the PSK save updates it.
+          DirectChatTarget target;
+          target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+          target.peer_identity_value = sides_[peer].local_identity;
+          target.channel = ThreadChannel::E2ePublic;
+          auto thread = sides_[self].store->FindOrCreateDirectThread(target, "", sides_[peer].local_identity);
+          ASSERT_TRUE(thread) << thread.error().message;
+          PskSessionRecord record;
+          record.key.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+          record.key.peer_identity_value = sides_[peer].local_identity;
+          record.key.channel = CryptoChannel::E2ePublic;
+          record.master_psk_b64 = master_b64;
+          auto saved = sides_[self].psk->Save(record);
+          ASSERT_TRUE(saved) << saved.error().message;
+        }
+      }
     }
   }
 
@@ -908,7 +942,22 @@ TEST_F(CallGroupStackComposeTest, NoSecondHopChangeForTheSameJoiner) {
       },
       20000);
   EXPECT_EQ(sides_[kD].ui->Phase(), CallPhase::Idle) << "D must be refused after the one change";
+  // Past the eject's key rotation and the delayed hop re-announces: the group stays on the hop it
+  // moved to (CI: slow runners saw members eject each other over the rotated key, and the owner's
+  // stale 2 s re-announce sent everyone back to the first hop).
+  DrainUntil([&]() { PumpWire(); return false; }, 1500);
   EXPECT_TRUE(GroupLive(call_id, kOtherHopPeerId)) << "the group keeps the hop it moved to:" << Describe(call_id);
+}
+
+// CI (macOS / Windows): the owner re-announces its hop 2 s after attaching; a stack stopped before
+// then must not be reached by that timer (use-after-free on slow teardowns).
+TEST_F(CallGroupStackComposeTest, StoppedStackDropsItsPendingHopReannounce) {
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+  for (StackSide& side : sides_) {
+    SoftStopStackSide(side);
+  }
+  DrainUntil([]() { return false; }, 2500);  // past every re-announce / settle timer
 }
 
 // A guest leaving a live group call ends only their media: the other two stay InCall and keep

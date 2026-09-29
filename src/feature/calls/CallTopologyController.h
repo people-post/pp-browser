@@ -312,6 +312,8 @@ private:
   /** Initiator: joiner identity → its accept report, per call. */
   std::unordered_map<std::string, std::map<std::string, CallHopReport>> accept_hop_reports_;
   DeferredSelf probe_self_;
+  /** Coordinator timers (attach-wait deadline, publisher re-announce) drop once we are gone. */
+  DeferredSelf timers_self_;
   void QuoteProbeHop(const std::string& call_id, const std::string& hop_peer_id, const std::string& hop_multiaddr);
   /**
    * V050: at the first group migrate — keep the planned hop, make the one adjustment (replaces the
