@@ -75,6 +75,8 @@ struct CameraGeometry {
   int rotate_cw = 0;
   int encode_width = 640;
   int encode_height = 360;
+  /** Lets the holder re-derive rotate_cw per frame as the display turns (CameraFrameRotateCw). */
+  bool front_facing = false;
 };
 
 /** One opened camera. NextFrame may run on any thread (one reader at a time). */

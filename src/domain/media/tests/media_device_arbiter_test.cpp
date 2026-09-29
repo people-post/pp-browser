@@ -550,6 +550,11 @@ TEST_F(EngineDeviceLeaseTest, CameraOpensOffTheCallerThreadAndPublishesAPreview)
   EXPECT_TRUE(engine.IsCameraEnabled()) << "requested = on until it fails or is turned off";
   ASSERT_TRUE(WaitHolders(MediaDeviceKind::Camera, 1));
   EXPECT_EQ(arbiter_->Holders(MediaDeviceKind::Camera).front(), "call:1");
+  // The holder is listed when the request is queued; the device thread records the rotation when
+  // it actually runs the (delayed) open — wait for that instead of racing it (flaked on CI).
+  for (int i = 0; i < 400 && backend_->last_display_rotation.load() == -1; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
   EXPECT_EQ(backend_->last_display_rotation.load(), 0) << "rotation read on the caller, passed along";
   CallMediaEngine::VideoTileFrame preview;
   bool have_preview = false;
