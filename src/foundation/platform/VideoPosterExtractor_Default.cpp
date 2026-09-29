@@ -55,12 +55,12 @@ Roe<std::vector<uint8_t>> TryFfmpegPoster(const std::string& video_path, const i
     return Error("Failed to fork ffmpeg for video poster");
   }
   if (pid == 0) {
-    // -protocol_whitelist file: video_path is a local plaintext path, but ffmpeg's input demuxer
-    // will otherwise happily follow an embedded/referenced URL (e.g. an HLS playlist pointing
-    // elsewhere) — pin it to local files only.
-    execlp("ffmpeg", "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "file", "-ss", "0",
-           "-i", video_path.c_str(), "-frames:v", "1", "-vf", scale.c_str(), "-q:v", "5", out_path.c_str(),
-           static_cast<char*>(nullptr));
+    // -protocol_whitelist file: pin the input to local files only (no embedded/referenced URL).
+    // -format_whitelist: only demux formats attachments actually use; blocks e.g. an
+    // image2/gif demuxer being picked for a file that only claims to be a video.
+    execlp("ffmpeg", "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "file",
+           "-format_whitelist", "mov,mp4,m4a,matroska,webm", "-ss", "0", "-i", video_path.c_str(), "-frames:v", "1",
+           "-vf", scale.c_str(), "-q:v", "5", out_path.c_str(), static_cast<char*>(nullptr));
     _exit(127);
   }
 
