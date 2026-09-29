@@ -522,6 +522,12 @@ bool VideoToolboxVideoCodec::EnsureDecompressionSession(const uint8_t* sps, size
   return true;
 }
 
+/** The decode session itself is gone (not just one bad frame): only a new session recovers. */
+bool IsDeadDecodeSession(const OSStatus status) {
+  return status == kVTInvalidSessionErr || status == kVTVideoDecoderMalfunctionErr ||
+         status == kVTVideoDecoderNotAvailableNowErr;
+}
+
 Roe<VideoFrameRgba> VideoToolboxVideoCodec::Decode(const uint8_t* annex_b, size_t size) {
   if (!decoder_configured_) {
     return Error("H264 decoder not configured");
@@ -608,17 +614,19 @@ Roe<VideoFrameRgba> VideoToolboxVideoCodec::Decode(const uint8_t* annex_b, size_
   status = VTDecompressionSessionDecodeFrame(decompression_session_, sample, 0, nullptr, &info_flags);
   CFRelease(sample);
 
-  // A session that fails outright is gone for good (iOS invalidates it while the app is in the
-  // background, or reclaims the hardware decoder). Drop it so the next keyframe builds a fresh one:
-  // the same SPS/PPS never rebuilt it, and every frame of every later call failed (device test
-  // 2026-09-29: the phone never showed the Mac's video again).
+  // A dead session stays dead (iOS invalidates it while the app is in the background, or reclaims
+  // the hardware decoder): drop it so the next keyframe builds a fresh one — the same SPS/PPS never
+  // rebuilt it, and every frame of every later call failed (device test 2026-09-29: the phone never
+  // showed the Mac's video again). A per-frame error (one damaged access unit) keeps the session.
   if (status != noErr) {
     pending_decode_pixel_buffer_ = nullptr;
-    ResetDecoder();
+    if (IsDeadDecodeSession(status)) {
+      ResetDecoder();
+    }
     return Error("VTDecompressionSessionDecodeFrame failed: " + std::to_string(status));
   }
   if (pending_decode_error_ || !pending_decode_pixel_buffer_) {
-    if (pending_decode_status_ == kVTInvalidSessionErr) {
+    if (IsDeadDecodeSession(pending_decode_status_)) {
       ResetDecoder();
     }
     return Error("H264 decode produced no frame for this access unit: " + std::to_string(pending_decode_status_));
