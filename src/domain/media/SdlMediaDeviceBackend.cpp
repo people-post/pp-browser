@@ -4,6 +4,7 @@
 #include "domain/media/SdlAudioBootstrap.h"
 #include "domain/media/VideoYuv.h"
 #include "domain/media/VoiceProcessingIo.h"
+#include "common/Metrics.h"
 
 #include <SDL3/SDL.h>
 
@@ -306,6 +307,7 @@ public:
       want.height = std::min(geometry.encode_width, geometry.encode_height);
       want.framerate_numerator = format.fps;
       want.framerate_denominator = 1;
+      const auto open_t0 = std::chrono::steady_clock::now();
       SDL_Camera* camera = SDL_OpenCamera(id, &want);
       if (!camera) {
         // Fall back: ask SDL to deliver RGBA so the driver converts when possible.
@@ -317,11 +319,40 @@ public:
       }
       if (camera) {
         SDL_Log("MediaDeviceArbiter: camera opened \"%s\"", name ? name : "?");
+        // Metrics channel (SDL_Log never reaches the phone's log file). No device name: a
+        // Continuity Camera is named after its owner's iPhone.
+        // Pixel count per frame drives the video path's CPU cost: log what the camera delivers.
+        SDL_CameraSpec got{};
+        const bool have_spec = SDL_GetCameraFormat(camera, &got);
+        MetricsLine("device.open")
+            .Add("kind", "camera")
+            .Add("result", "ok")
+            .Add("front", SDL_GetCameraPosition(id) == SDL_CAMERA_POSITION_FRONT_FACING)
+            .Add("open_ms", static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                     std::chrono::steady_clock::now() - open_t0)
+                                                     .count()))
+            .Add("cam_w", have_spec ? got.width : -1)
+            .Add("cam_h", have_spec ? got.height : -1)
+            .Add("cam_fps", have_spec && got.framerate_denominator > 0
+                                ? got.framerate_numerator / got.framerate_denominator
+                                : -1)
+            .Add("cam_format", have_spec ? SDL_GetPixelFormatName(got.format) : "?")
+            .Add("encode_w", geometry.encode_width)
+            .Add("encode_h", geometry.encode_height)
+            .Emit();
         return std::make_unique<SdlCameraEndpoint>(camera, geometry);
       }
       last_error = SDL_GetError();
       SDL_Log("MediaDeviceArbiter: camera \"%s\" failed: %s — trying the next one", name ? name : "?",
               last_error.c_str());
+      MetricsLine("device.open")
+          .Add("kind", "camera")
+          .Add("result", "failed")
+          .Add("front", SDL_GetCameraPosition(id) == SDL_CAMERA_POSITION_FRONT_FACING)
+          .Add("open_ms", static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                   std::chrono::steady_clock::now() - open_t0)
+                                                   .count()))
+          .Emit();
     }
     return fail(std::string("SDL_OpenCamera failed: ") + last_error);
   }
@@ -341,6 +372,13 @@ public:
     if (!ok) {
       if (reason != "unsupported") {
         SDL_Log("MediaDeviceArbiter: vpio open failed (%s) open_ms=%lld", reason.c_str(), static_cast<long long>(open_ms));
+        // Reason text is an OS status message, never a device or person name.
+        MetricsLine("device.open")
+            .Add("kind", "vpio")
+            .Add("result", "failed")
+            .Add("open_ms", static_cast<int64_t>(open_ms))
+            .Add("reason", reason)
+            .Emit();
       }
       *error = reason.empty() ? std::string("vpio open failed") : reason;
       unit->io.Close();
@@ -348,6 +386,7 @@ public:
     }
     SDL_Log("MediaDeviceArbiter: vpio open (voice processing: echo cancellation on) open_ms=%lld",
             static_cast<long long>(open_ms));
+    MetricsLine("device.open").Add("kind", "vpio").Add("result", "ok").Add("open_ms", static_cast<int64_t>(open_ms)).Emit();
     VoiceDuplexEndpoints pair;
     pair.mic = std::make_unique<VoiceMicEndpoint>(unit);
     pair.speaker = std::make_unique<VoiceSpeakerEndpoint>(unit);

@@ -5,6 +5,7 @@
 #include "domain/media/CallAudioSession.h"
 #include "domain/media/CallMediaEngine.h"
 #include "domain/media/CameraCaptureOrientation.h"
+#include "domain/media/DeviceVitals.h"
 #include "common/media/CallMediaHealth.h"
 #include "domain/messaging/CallTypes.h"
 #include "domain/messaging/CallHopAttachLogic.h"
@@ -19,6 +20,7 @@
 #include "feature/calls/CallLifecycle.h"
 #include "feature/calls/CallUiBackend.h"
 #include "gui/CallChromeSync.h"
+#include "gui/CallMetricsTracker.h"
 #include "domain/ui/CallConflictCopy.h"
 #include "domain/ui/PaymentFeedback.h"
 #include "gui/contacts/PeoplePickerNotifyPorts.h"
@@ -238,6 +240,34 @@ void CallController::Tick() {
   }
   RefreshCallLevels();
   SyncRingtone();
+  if (metrics_.Tracking()) {
+    auto* backend = Backend();
+    const bool call_live = ring_.active || !active_call_id_.empty() ||
+                           (backend && backend->Available() && backend->Phase() != CallPhase::Idle);
+    EmitMetrics(metrics_.Tick(call_live, now, Vitals(now)));
+  }
+  // UI-stuck probe only while a call is tracked (a thread posting a ping every 500 ms).
+  if (metrics_.Tracking() && !ui_probe_.Running()) {
+    ui_probe_.Start([](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); },
+                    [this](int64_t latency_ms) { EmitMetrics(metrics_.NoteUiLatency(latency_ms)); });
+  } else if (!metrics_.Tracking() && ui_probe_.Running()) {
+    ui_probe_.Stop();
+  }
+}
+
+const DeviceVitals& CallController::Vitals(const int64_t now_ms) {
+  // UIDevice / getrusage: every couple of seconds is plenty for power and thermal trends.
+  if (vitals_read_ms_ == 0 || now_ms - vitals_read_ms_ >= 2000) {
+    vitals_ = ReadDeviceVitals();
+    vitals_read_ms_ = now_ms;
+  }
+  return vitals_;
+}
+
+void CallController::EmitMetrics(const std::vector<std::string>& lines) {
+  for (const std::string& line : lines) {
+    MetricsLog().info << line;
+  }
 }
 
 void CallController::OnCallWake() {
@@ -265,6 +295,7 @@ void CallController::PrepareForShutdown() {
   ringing_call_id_.clear();
   ring_started_ms_ = 0;
   ring_ = {};
+  ui_probe_.Stop();
   // Budgeted join before SDL_Quit — do not hang product quit on SDL device close.
   if (!ringtone_.StopAndJoin(CallRingtone::kDefaultShutdownJoinBudget)) {
     log().warning << "PrepareForShutdown: ringtone join budget exceeded — detached";
@@ -561,6 +592,8 @@ void CallController::RefreshPendingRing() {
       if (!was_active) {
         log().warning
             << "RefreshPendingRing activate call_id=" << ringing_call_id_;
+        const int64_t now = util::NowUnixMs();
+        EmitMetrics(metrics_.NoteRing(ringing_call_id_, (*top)->video_allowed, now, Vitals(now)));
       }
       ring_.eyebrow = copy.eyebrow;
       ring_.conflict_hint = copy.hint;
@@ -963,6 +996,8 @@ bool CallController::StartCallWithInvitees(const std::string& thread_id, const b
       return;
     }
     active_call_id_ = started->call_id;
+    const int64_t now = util::NowUnixMs();
+    EmitMetrics(metrics_.NoteOutbound(started->call_id, video_allowed, now, Vitals(now)));
     if (video_allowed) {
       // 2026-09-28: caller picked "Video call" — turn the camera on automatically once the call
       // connects (supersedes V009's old "join video calls with camera off" default).
@@ -1062,6 +1097,7 @@ void CallController::AcceptIncomingImpl(const bool voice_only) {
   }
   backend->SetPendingAcceptChargeDecision(InitiationChargeDecision::Waive);
   backend->SetPendingAcceptVoiceOnly(voice_only);
+  metrics_.NoteAccept(call_id, voice_only, util::NowUnixMs());
   if (!voice_only && ring_.video_allowed) {
     // 2026-09-28: callee answered a video call with "Video" (not narrowed to voice) — turn the
     // camera on automatically once the call connects, same as the caller.
@@ -1107,6 +1143,7 @@ void CallController::AcceptIncomingWithCharge() {
     return;
   }
   backend->SetPendingAcceptChargeDecision(InitiationChargeDecision::TakeAll);
+  metrics_.NoteAccept(call_id, false, util::NowUnixMs());
   backend->SetPendingAcceptVoiceOnly(false);
   if (ring_.video_allowed) {
     // 2026-09-28: charge-accept of a video call is still a "Video" accept — auto camera-on once
@@ -1136,6 +1173,7 @@ void CallController::DeclineIncoming() {
   ringing_call_id_.clear();
   ClearRing();
   SyncShellState();
+  metrics_.NoteDecline(call_id);
   if (backend && backend->Available()) {
     backend->Apply(CallLifecycleEvent::DeclineClicked, call_id);
   }
@@ -1516,6 +1554,16 @@ void CallController::ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* bac
 
   const CallMediaHealthView view = BuildMediaHealthView(media, backend, media_reconnect);
   const int64_t now_ms = util::NowUnixMs();
+
+  if (metrics_.Tracking() && now_ms - last_metrics_media_ms_ >= 500) {
+    last_metrics_media_ms_ = now_ms;
+    CallMetricsTracker::MediaTick tick;
+    tick.connected = backend && backend->Available() && backend->MediaChromeLive();
+    tick.path = view.path_kind;
+    tick.quality = view.quality;
+    tick.health = media.HealthSnapshot();
+    EmitMetrics(metrics_.NoteMedia(active_call_id_, tick, now_ms, Vitals(now_ms)));
+  }
 
   in_call.quality_bars = view.quality_bars;
   in_call.quality_ok = view.quality <= CallPathQuality::Good;
