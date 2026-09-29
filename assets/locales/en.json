@@ -321,6 +321,7 @@
     "call.status.couldnt_connect": "Couldn't connect",
     "call.status.calling": "Calling…",
     "call.status.connecting": "Connecting…",
+    "call.placeholder.starting_video": "Starting video…",
     "call.status.reconnecting": "Reconnecting…",
     "call.status.connected": "Connected",
     "call.status.setting_up_group": "Setting up group call…",

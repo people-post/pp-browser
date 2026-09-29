@@ -50,6 +50,8 @@ namespace {
 
 /** Remote frames this fresh mean the peer's camera is on, whatever its roster row says (B58). */
 constexpr int64_t kPeerVideoLiveMs = 500;
+/** A video call shows "Starting video…" at most this long while it waits for the first frame. */
+constexpr int64_t kVideoStartMs = 10'000;
 
 CallChromeLayer CaptureCallChrome(const CallRingState& ring, const CallInProgressState& in_call) {
   return {
@@ -281,6 +283,7 @@ void CallController::ClearInCall() {
   last_media_health_log_ms_ = 0;
   audio_fault_gate_.Reset();
   peer_video_log_key_.clear();
+  video_start_since_ms_ = 0;
   camera_sync_off_done_ = false;
   // Not auto_camera_pending_ / auto_camera_call_id_: the callee's accept is async, and Tick runs
   // this for the "no active local call yet" frames between the Accept click and the session going
@@ -491,6 +494,11 @@ void CallController::RefreshPendingRing() {
                                                : Tr("call.title.voice").c_str();
         const std::string caller = DisplayNameForIdentity((*top)->inviter_identity);
         in_call_.peer_label = caller.empty() ? (*top)->inviter_identity.c_str() : caller.c_str();
+        // Answered with video: switch to the video stage right away (see kVideoStartMs).
+        const bool answered_video = auto_camera_pending_ && auto_camera_call_id_ == (*top)->call_id;
+        in_call_.stage_visible = answered_video;
+        in_call_.remote_video = false;
+        in_call_.remote_placeholder = answered_video ? Tr("call.placeholder.starting_video").c_str() : "";
       }
       SyncShellState();
       SyncRingtone();
@@ -1324,6 +1332,23 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   if (have_peer_video_flag && !peer_camera_on && peer_frames_live) {
     peer_camera_on = true;
   }
+  // Kenneth 2026-09-29: after Accept the phone showed the audio layout for 2–4 s while both cameras
+  // opened, so the tap looked like it had not registered. A video call shows the video stage from
+  // Accept (callee) or connect (caller — not while still ringing out), with "Starting video…" until
+  // the peer's first frame (not "Camera off": its roster says off until its camera opens), for at
+  // most kVideoStartMs after connect.
+  bool starting_video = false;
+  if (backend && backend->Available() && !active_call_id_.empty() && auto_camera_call_id_ == active_call_id_ &&
+      !media.EverHadRemoteVideo() && backend->Phase() != CallPhase::OutboundCalling) {
+    if (auto allowed = backend->VideoAllowedForCall(active_call_id_); allowed && allowed->has_value() && **allowed) {
+      const int64_t now = util::NowUnixMs();
+      const bool live = backend->MediaChromeLive();
+      if (live && video_start_since_ms_ == 0) {
+        video_start_since_ms_ = now;
+      }
+      starting_video = !live || now - video_start_since_ms_ < kVideoStartMs;
+    }
+  }
   if (have_peer_video_flag && !peer_camera_on) {
     media.ClearRemoteVideo();
   }
@@ -1425,9 +1450,11 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
   }
 
   in_call.stage_visible = in_call.camera_on || in_call.remote_video || in_call.local_preview ||
-                          (have_peer_video_flag && peer_camera_on) || media_reconnect;
+                          (have_peer_video_flag && peer_camera_on) || media_reconnect || starting_video;
   if (in_call.remote_video) {
     in_call.remote_placeholder = "";
+  } else if (starting_video) {
+    in_call.remote_placeholder = Tr("call.placeholder.starting_video").c_str();
   } else if (have_peer_video_flag && !peer_camera_on) {
     in_call.remote_placeholder = Tr("call.placeholder.camera_off").c_str();
   } else if (mesh_messaging_failed) {
