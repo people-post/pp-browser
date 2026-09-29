@@ -136,7 +136,10 @@ struct PendingCallInvite {
   std::optional<std::string> sfu_hint;
   std::optional<int64_t> expires_at;
   int64_t created_at = 0;
-  /** pending | accepted | declined | expired | missed */
+  /**
+   * pending | accepted | accepted_implicit | declined | expired | missed. `accepted_implicit`: the
+   * inviter took the answerer's call-media hello as its accept (B30) before the CallAccept arrived.
+   */
   std::string status = "pending";
   CallSessionKind session_kind = CallSessionKind::Group;
 };
@@ -237,6 +240,9 @@ struct CallAcceptDetail {
   std::string charge_decision = "waive";
   /** Echo of offer amount being waived or taken. */
   int64_t offer_amount_minor = 0;
+  /** Callee's answer mode: absent = unchanged (old peers, video answer); false = answered as voice
+   *  only — a 1:1 caller narrows the call to voice. Never true on the wire. */
+  std::optional<bool> video_allowed;
   /** V050 gt4: planned-hop reachability + reachable hops. */
   CallHopReport hop_report;
 };

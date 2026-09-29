@@ -475,6 +475,10 @@ void CallSessionWorkflow::SetPendingAcceptChargeDecision(const InitiationChargeD
   pending_accept_charge_set_ = true;
 }
 
+void CallSessionWorkflow::SetPendingAcceptVoiceOnly(const bool voice_only) {
+  pending_accept_voice_only_ = voice_only;
+}
+
 void CallSessionWorkflow::AcceptInviteAsync(const std::string& call_id, InitiationChargeDecision charge_decision,
                                             std::function<void(Roe<void>)> on_done) {
   if (pending_accept_charge_set_) {
@@ -482,6 +486,8 @@ void CallSessionWorkflow::AcceptInviteAsync(const std::string& call_id, Initiati
     pending_accept_charge_set_ = false;
     pending_accept_charge_ = InitiationChargeDecision::Waive;
   }
+  const bool voice_only_accept = pending_accept_voice_only_;
+  pending_accept_voice_only_ = false;
   log().info << "AcceptInvite start call_id=" << call_id
              << " charge=" << InitiationChargeDecisionToWire(charge_decision);
   auto local = host_.wire.local_relay_identity();
@@ -499,18 +505,19 @@ void CallSessionWorkflow::AcceptInviteAsync(const std::string& call_id, Initiati
   // Thin product gate: connectivity owns the park; the session waits for it before CallAccept —
   // asynchronously, so the calls owner keeps serving inbound control / Leave meanwhile.
   if (!host_.reach.park_circuit) {
-    on_done(ContinueAcceptAfterPark(call_id, charge_decision, *local));
+    on_done(ContinueAcceptAfterPark(call_id, charge_decision, voice_only_accept, *local));
     return;
   }
-  host_.reach.park_circuit(12000, deferred_.Bind([this, call_id, charge_decision, local = *local,
-                                                   on_done](bool ready) {
+  host_.reach.park_circuit(12000, deferred_.Bind([this, call_id, charge_decision, voice_only_accept,
+                                                   local = *local, on_done](bool ready) {
     log().info << "AcceptInvite circuit park call_id=" << call_id << " ready=" << (ready ? 1 : 0);
-    on_done(ContinueAcceptAfterPark(call_id, charge_decision, local));
+    on_done(ContinueAcceptAfterPark(call_id, charge_decision, voice_only_accept, local));
   }));
 }
 
 Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_id,
                                                       InitiationChargeDecision charge_decision,
+                                                      bool voice_only_accept,
                                                       const std::string& local_identity) {
   // LeaveCallIfActiveExcept only sees Joined sessions. An Ended prior call can leave the
   // engine in sfu_mode (Stop gated on ActiveCallId match) — purge before WaitForAttach.
@@ -575,6 +582,14 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
     row.sfu_hint = (*pending)->sfu_hint;
   }
 
+  // video-voice-choice: callee answered a video invite as voice-only — narrow this session and
+  // echo it on the wire so the caller (1:1) narrows too. Never widens (video_allowed already
+  // false is a no-op).
+  const bool narrow_to_voice = voice_only_accept && row.video_allowed;
+  if (narrow_to_voice) {
+    row.video_allowed = false;
+  }
+
   auto joined = sessions_.CountJoined(call_id);
   const size_t joined_count = joined ? *joined : 0;
   if (!CallSessionLogic::CanAcceptJoin(joined_count)) {
@@ -596,6 +611,9 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
   accept.call_id = call_id;
   accept.identity = local_identity;
   accept.video_enabled = false;
+  if (narrow_to_voice) {
+    accept.video_allowed = false;
+  }
   // P001: recipient chooses waive (0) or take_all (rails checked above).
   if (initiation_billing_) {
     accept.offer_amount_minor = offer_minor;
@@ -784,9 +802,10 @@ Roe<void> CallSessionWorkflow::DeclineInvite(const std::string& call_id) {
   (void)sessions_.UpsertParticipant(participant);
   (void)sessions_.UpdateInviteStatus(call_id, *local, "declined");
 
-  // Drop sticky Accept charge if Decline wins the race with a pre-set decision.
+  // Drop sticky Accept charge/voice-only if Decline wins the race with a pre-set decision.
   pending_accept_charge_set_ = false;
   pending_accept_charge_ = InitiationChargeDecision::Waive;
+  pending_accept_voice_only_ = false;
   if (pending_answerer_kick_call_id_ == call_id) {
     ClearPendingAnswererKick();
   }
@@ -1341,9 +1360,19 @@ Roe<void> CallSessionWorkflow::ApplyRemoteAccept(const CallAcceptDetail& accept_
   auto session = sessions_.LoadSession(accept->call_id);
   if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
     (*session)->state = CallSessionLogic::TransitionOnRemoteJoined((*session)->state);
+    // video-voice-choice: a 1:1 remote answered voice-only — narrow the caller's session too.
+    // Never widens (missing/true field leaves video_allowed untouched); group-thread calls are out
+    // of scope for call-wide narrowing (a per-invitee answer only). Keyed on the call's origin, not
+    // the live row count, so a mid-call guest cannot leave the two sides disagreeing.
+    if (accept->video_allowed && !*accept->video_allowed && (*session)->video_allowed &&
+        CallSessionLogic::VoiceAnswerNarrowsCall(**session)) {
+      (*session)->video_allowed = false;
+      log().info << "call accept voice-only → video disallowed call_id=" << accept->call_id;
+    }
     (void)sessions_.UpsertSession(**session);
   }
-  (void)sessions_.UpdateInviteStatus(accept->call_id, identity, "accepted");
+  // B30: an implicit accept is not the answer yet — its CallAccept (answer mode) is still on the way.
+  (void)sessions_.UpdateInviteStatus(accept->call_id, identity, implicit ? "accepted_implicit" : "accepted");
 
   if (session && session->has_value() && (*session)->state == CallSessionState::Ended) {
     log().info << "Inbound CallAccept ignored (ended session) call_id=" << accept->call_id
@@ -1515,8 +1544,25 @@ Roe<void> CallSessionWorkflow::HandleInboundRoster(const std::string& detail_jso
     (*session)->media_epoch = roster->media_epoch;
     (void)sessions_.UpsertSession(**session);
   }
+  auto local = host_.wire.local_relay_identity ? host_.wire.local_relay_identity() : Roe<std::string>(std::string());
   for (const CallRosterEntry& entry : roster->participants) {
     if (entry.identity.empty()) {
+      continue;
+    }
+    // Our own entry is the sender's (possibly stale, relay-delayed) view of us; only we know our
+    // camera/mic, so never let a peer roster overwrite our own state or media (a callee's
+    // accept-time roster arriving late turned the caller's just-enabled camera "off" for both
+    // sides). The join stamp is the exception: V050 stamps joins on the inviter's clock only and
+    // an invitee learns its own from the roster.
+    if (local && !local->empty() && entry.identity == *local) {
+      if (entry.joined_at) {
+        if (auto own = sessions_.FindParticipant(roster->call_id, entry.identity);
+            own && own->has_value() && (*own)->joined_at != entry.joined_at) {
+          CallParticipant stamped = **own;
+          stamped.joined_at = entry.joined_at;
+          (void)sessions_.UpsertParticipant(stamped);
+        }
+      }
       continue;
     }
     // Do not resurrect Left/Declined peers from a stale roster fan-out (blocks re-invite).

@@ -266,6 +266,31 @@ TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
   EXPECT_TRUE(decoded_video->video_allowed);
 }
 
+TEST(CallControlCodecTest, AcceptVoiceOnlyRoundTrips) {
+  CallAcceptDetail d;
+  d.call_id = "call:1";
+  d.identity = "account:a";
+  d.video_allowed = false;
+  auto json = CallControlCodec::EncodeAccept(d);
+  ASSERT_TRUE(json);
+  EXPECT_NE(json->find("\"video_allowed\":false"), std::string::npos);
+  auto back = CallControlCodec::DecodeAccept(*json);
+  ASSERT_TRUE(back);
+  ASSERT_TRUE(back->video_allowed.has_value());
+  EXPECT_FALSE(*back->video_allowed);
+}
+
+TEST(CallControlCodecTest, AcceptWithoutVideoAllowedDecodesAsUnset) {
+  CallAcceptDetail d;
+  d.call_id = "call:1";
+  auto json = CallControlCodec::EncodeAccept(d);
+  ASSERT_TRUE(json);
+  EXPECT_EQ(json->find("video_allowed"), std::string::npos);  // not written when unset
+  auto back = CallControlCodec::DecodeAccept(R"({"call_id":"call:1","identity":"x"})");  // old peer
+  ASSERT_TRUE(back);
+  EXPECT_FALSE(back->video_allowed.has_value());
+}
+
 TEST(CallControlCodecTest, InviteOfferAmountRoundTrip) {
   CallInviteDetail invite;
   invite.call_id = "call:pay";
@@ -402,6 +427,16 @@ TEST(CallControlCodecTest, PlumbingAndInboxChromeSuppress) {
   EXPECT_TRUE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallRoster));
   EXPECT_FALSE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallInvite));
   EXPECT_FALSE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallEnded));
+}
+
+TEST(CallSessionLogicTest, VoiceAnswerNarrowsOnlyDirectOriginCalls) {
+  CallSession direct;
+  EXPECT_TRUE(CallSessionLogic::VoiceAnswerNarrowsCall(direct));
+  CallSession group;
+  group.origin_group_id = "group-1";  // a group-thread call with one invitee still has 2 rows
+  EXPECT_FALSE(CallSessionLogic::VoiceAnswerNarrowsCall(group));
+  group.origin_group_id = "";
+  EXPECT_TRUE(CallSessionLogic::VoiceAnswerNarrowsCall(group));
 }
 
 TEST(CallSessionLogicTest, VideoAllowedFromInvite) {

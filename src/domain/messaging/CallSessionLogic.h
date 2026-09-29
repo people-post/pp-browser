@@ -50,6 +50,13 @@ public:
   static bool VideoAllowedFromInvite(const CallInviteDetail& invite);
 
   /**
+   * video-voice-choice: a voice-only answer narrows the whole call only for a call started from a
+   * direct thread (no origin group). Fixed at invite time on both sides — unlike the live participant
+   * count, a group-thread call with one invitee or a mid-call guest cannot flip it.
+   */
+  static bool VoiceAnswerNarrowsCall(const CallSession& session);
+
+  /**
    * Honor inbound `call_video_refresh` only for the active call, from a Joined
    * sender, when this device is the named publisher (empty identity = local).
    */

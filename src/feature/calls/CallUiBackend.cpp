@@ -133,6 +133,10 @@ void CallUiBackend::SetPendingAcceptChargeDecision(const InitiationChargeDecisio
   OnOwner([decision](CallSessionManager& calls) { calls.SetPendingAcceptChargeDecision(decision); });
 }
 
+void CallUiBackend::SetPendingAcceptVoiceOnly(const bool voice_only) {
+  OnOwner([voice_only](CallSessionManager& calls) { calls.SetPendingAcceptVoiceOnly(voice_only); });
+}
+
 std::optional<std::string> CallUiBackend::TakeLastMediaError() {
   const auto state = State();
   if (!state->last_media_error) {
@@ -228,6 +232,13 @@ Roe<std::optional<bool>> CallUiBackend::PeerVideoEnabledForCall(const std::strin
 Roe<std::optional<bool>> CallUiBackend::VideoAllowedForCall(const std::string& call_id) const {
   if (auto* calls = stack_.Calls()) {
     return calls->VideoAllowedForCall(call_id);
+  }
+  return UnavailableError();
+}
+
+Roe<bool> CallUiBackend::AwaitingExplicitAnswerForCall(const std::string& call_id) const {
+  if (auto* calls = stack_.Calls()) {
+    return calls->AwaitingExplicitAnswerForCall(call_id);
   }
   return UnavailableError();
 }

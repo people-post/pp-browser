@@ -208,6 +208,9 @@ Roe<std::string> CallControlCodec::EncodeAccept(const CallAcceptDetail& detail) 
     json.set("charge_decision", detail.charge_decision.empty() ? "waive" : detail.charge_decision);
     json.set("offer_amount_minor", detail.offer_amount_minor);
   }
+  if (detail.video_allowed.has_value()) {
+    json.set("video_allowed", *detail.video_allowed);
+  }
   if (detail.hop_report.planned_hop_ok) {
     json.set("planned_hop_ok", *detail.hop_report.planned_hop_ok);
   }
@@ -232,6 +235,9 @@ Roe<CallAcceptDetail> CallControlCodec::DecodeAccept(const std::string& detail_j
   detail.caps = ReadPeerCaps(*json);
   detail.charge_decision = json->getString("charge_decision").value_or("waive");
   detail.offer_amount_minor = json->getIf<int64_t>("offer_amount_minor").value_or(0);
+  if (auto v = json->getIf<bool>("video_allowed")) {
+    detail.video_allowed = *v;
+  }
   detail.hop_report.planned_hop_ok = json->getIf<bool>("planned_hop_ok");
   detail.hop_report.reachable_hops = ReadStringArray(*json, "reachable_hops");
   detail.hop_report.unreachable_hops = ReadStringArray(*json, "unreachable_hops");
