@@ -4,6 +4,7 @@
 #include "domain/media/CallMediaPlayout.h"
 #include "domain/media/CallRingtone.h"
 #include "domain/media/CameraCaptureOrientation.h"
+#include "domain/media/CaptureStarvePolicy.h"
 #include "domain/media/IVideoCodec.h"
 #include "domain/media/MediaDeviceArbiter.h"
 #include "domain/media/NoiseSuppressor.h"
@@ -804,6 +805,8 @@ struct CallMediaEngine::Impl {
       OpusEncoder* bitrate_enc = nullptr;
       int64_t applied_audio_bps = 0;
       int64_t last_capture_starve_reopen_ms = 0;
+      // When the audio devices were last (re)opened: voice processing gets a warm-up (B56).
+      int64_t capture_opened_ms = last_capture_pcm_ms;
       // I3: consecutive starvation-triggered reopens while on voice processing; 3 in a row falls
       // back to SDL for the rest of this call. Capture-thread-local.
       int vpio_starve_reopens = 0;
@@ -819,6 +822,7 @@ struct CallMediaEngine::Impl {
             SDL_Log("CallMediaEngine: audio reopen — no capture device; sending silence");
           }
           last_capture_pcm_ms = util::NowUnixMs();
+          capture_opened_ms = last_capture_pcm_ms;
         }
         // The capture thread is mic_lease's only writer while it runs: read it without `mutex`.
         bool device_changed = false;
@@ -858,27 +862,30 @@ struct CallMediaEngine::Impl {
             const size_t samples = static_cast<size_t>(got) / sizeof(int16_t);
             pending.insert(pending.end(), chunk, chunk + samples);
             last_capture_pcm_ms = util::NowUnixMs();
-            if (vpio_on) {
+            // Not on the first PCM after a reopen: a unit that starts and stalls again is still
+            // starving "in a row" — otherwise the SDL fallback below never triggered (B56).
+            if (vpio_on && CaptureStarvePolicy::HealthyAfterOpen(last_capture_pcm_ms - capture_opened_ms)) {
               vpio_starve_reopens = 0;
             }
           }
           if (pending.size() < static_cast<size_t>(kFrameSamples)) {
             const int64_t now = util::NowUnixMs();
             // Wedged capture (got<=0 after AAudio disconnect) used to spin without TX —
-            // peers saw "Your mic isn't sending". After ~500ms, encode silence and reopen.
-            constexpr int64_t kStarveMs = 500;
-            if (got <= 0 && (now - last_capture_pcm_ms) >= kStarveMs) {
+            // peers saw "Your mic isn't sending". After ~500ms, encode silence and reopen (voice
+            // processing: only once it had time to warm up — CaptureStarvePolicy).
+            if (got <= 0 && (now - last_capture_pcm_ms) >= CaptureStarvePolicy::kSilenceAfterMs) {
               if (!muted.load(std::memory_order_relaxed)) {
                 SmoothLevel(local_input_level, 0.f);
               }
-              if (now - last_capture_starve_reopen_ms > 2000) {
+              const int64_t reopen_after_ms = CaptureStarvePolicy::ReopenAfterMs(vpio_on, now - capture_opened_ms);
+              if (now - last_capture_pcm_ms >= reopen_after_ms && now - last_capture_starve_reopen_ms > 2000) {
                 last_capture_starve_reopen_ms = now;
                 SDL_Log("CallMediaEngine: capture starved %lldms — requesting reopen",
                         static_cast<long long>(now - last_capture_pcm_ms));
                 audio_reopen_requested.store(true, std::memory_order_release);
                 // I3: persistent voice-processing capture starvation (not just a starved SDL
                 // device) falls back to SDL for the rest of this call after 3 reopens in a row.
-                if (vpio_on && ++vpio_starve_reopens >= 3) {
+                if (vpio_on && ++vpio_starve_reopens >= CaptureStarvePolicy::kVoiceMaxReopens) {
                   vpio_disabled_for_call.store(true, std::memory_order_release);
                   SDL_Log("CallMediaEngine: vpio capture starved 3x — using SDL for this call");
                 }
