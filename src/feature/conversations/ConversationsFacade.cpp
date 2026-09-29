@@ -577,14 +577,9 @@ bool ConversationsFacade::AttachmentOpenNeedsConfirmForMessage(const std::string
       continue;
     }
     if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json)) {
-      if (AttachmentOpenNeedsConfirm(fields->mime)) {
-        return true;
-      }
-      // Image/video mimes skip confirm; make sure the sender didn't lie about the mime to
-      // reach that path with different content (see AttachmentContentMatchesMime).
       const std::string path = AttachmentLocalPath(hub_.ProfileDataDir(), thread_id, fields->content_hash,
                                                     fields->mime, fields->filename);
-      return !path.empty() && !AttachmentContentMatchesMime(path, fields->mime);
+      return !AttachmentSafeToAutoOpen(path, fields->mime);
     }
     return true;
   }

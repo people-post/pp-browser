@@ -35,6 +35,15 @@ bool AttachmentOpenNeedsConfirm(const std::string& mime);
 bool AttachmentContentMatchesMime(const std::string& path, const std::string& mime);
 
 /**
+ * True only when all of: mime is one of the image/video mimes AttachmentExtensionFromMime
+ * knows about, path's actual extension equals AttachmentExtensionFromMime(mime) exactly, and
+ * AttachmentContentMatchesMime confirms the file's content. Anything else (an unlisted mime
+ * such as image/svg+xml or video/quicktime, a mismatched extension, or mismatched content)
+ * is not safe to open without confirmation.
+ */
+bool AttachmentSafeToAutoOpen(const std::string& path, const std::string& mime);
+
+/**
  * Presentation gate for private video: above this size, skip session `blobs_view`
  * materialization until explicit open (CAS ingest unchanged). Matches Soft auto-download
  * ceiling (4 MiB). Unknown size (`byte_length == 0`) stays permissive.

@@ -162,27 +162,34 @@ TEST(ChatBlobResponderTest, ServeFetchReturnsCiphertextForCachedPlaintext) {
   EXPECT_EQ(*decrypted, harness.plain);
 }
 
-TEST(ChatBlobResponderTest, ServePushRejectsHashNotInThreadHistory) {
-  // A push must be for a hash the thread already expects (an attachment already referenced in
-  // history) — otherwise an authorized requester for this thread could plant arbitrary
-  // ciphertext under a hash of its own choosing.
-  ChatBlobResponderHarness harness("push-reject");
+TEST(ChatBlobResponderTest, ServePushAcceptsHashBeforeAttachmentMessageArrives) {
+  // Real wire order: the sender pushes the ciphertext first, then the attachment message
+  // itself follows separately. ServePush must not require the hash to already be in history.
+  ChatBlobResponderHarness harness("push-before-message");
   const auto fields = harness.MakeAttachmentFields();
-  // Deliberately do NOT seed the attachment message: content_hash is unknown to the thread.
   const ByteVector ciphertext{'c', 'i', 'p', 'h', 'e', 'r'};
 
   auto result = ChatBlobResponder::ServePush(harness.store, harness.MakePushRequest(fields), harness.local_relay_id,
                                              harness.profile_data_dir, ciphertext);
-  EXPECT_FALSE(static_cast<bool>(result));
+  ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
+
+  auto loaded = LoadPendingAttachmentCiphertext(harness.profile_data_dir, harness.thread.id, fields.content_hash);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  EXPECT_EQ(*loaded, ciphertext);
+
+  harness.SeedAttachmentMessage(fields);
 }
 
-TEST(ChatBlobResponderTest, ServePushAcceptsHashInThreadHistory) {
-  ChatBlobResponderHarness harness("push-accept");
-  const auto fields = harness.MakeAttachmentFields();
-  harness.SeedAttachmentMessage(fields);
+TEST(ChatBlobResponderTest, ServePushRejectsPastPerThreadPendingCap) {
+  ChatBlobResponderHarness harness("push-cap");
   const ByteVector ciphertext{'c', 'i', 'p', 'h', 'e', 'r'};
 
-  auto result = ChatBlobResponder::ServePush(harness.store, harness.MakePushRequest(fields), harness.local_relay_id,
-                                             harness.profile_data_dir, ciphertext);
-  EXPECT_TRUE(static_cast<bool>(result)) << result.error().message;
+  Roe<void> last_result;
+  for (int i = 0; i < 65; ++i) {
+    ChatAttachmentFields fields = harness.MakeAttachmentFields();
+    fields.content_hash.assign(kAttachmentContentHashSize, static_cast<uint8_t>(i));
+    last_result = ChatBlobResponder::ServePush(harness.store, harness.MakePushRequest(fields),
+                                               harness.local_relay_id, harness.profile_data_dir, ciphertext);
+  }
+  EXPECT_FALSE(static_cast<bool>(last_result));
 }

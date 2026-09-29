@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -211,6 +212,16 @@ bool AttachmentContentMatchesMime(const std::string& path, const std::string& mi
     return std::equal(bytes.begin(), bytes.end(), buf);
   };
 
+  // A Windows/DOS executable (MZ) or bare PE header never matches any attachment mime this
+  // function knows about, including one crafted to also satisfy a later signature check at a
+  // different offset (e.g. "MZ??ftyp..." would otherwise pass the video/mp4 check below).
+  if (got >= 2 && buf[0] == 'M' && buf[1] == 'Z') {
+    return false;
+  }
+  if (has_prefix({'P', 'E', 0x00, 0x00})) {
+    return false;
+  }
+
   if (mime == "image/png") {
     return has_prefix({0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A});
   }
@@ -224,7 +235,15 @@ bool AttachmentContentMatchesMime(const std::string& path, const std::string& mi
     return got >= 12 && std::memcmp(buf, "RIFF", 4) == 0 && std::memcmp(buf + 8, "WEBP", 4) == 0;
   }
   if (mime == "video/mp4") {
-    return got >= 8 && std::memcmp(buf + 4, "ftyp", 4) == 0;
+    if (got < 8 || std::memcmp(buf + 4, "ftyp", 4) != 0) {
+      return false;
+    }
+    // Box size sanity: big-endian u32 at offset 0. 1 means "read the 64-bit size that follows"
+    // (legitimate for a huge mp4); otherwise it must be at least the 8-byte box header itself
+    // and not implausibly large for what is nominally the first box of the file.
+    const uint32_t box_size = (static_cast<uint32_t>(buf[0]) << 24) | (static_cast<uint32_t>(buf[1]) << 16) |
+                              (static_cast<uint32_t>(buf[2]) << 8) | static_cast<uint32_t>(buf[3]);
+    return box_size == 1 || (box_size >= 8 && box_size <= 0x10000000u);
   }
   if (mime == "video/webm") {
     return has_prefix({0x1A, 0x45, 0xDF, 0xA3});
@@ -233,6 +252,24 @@ bool AttachmentContentMatchesMime(const std::string& path, const std::string& mi
     return has_prefix({'%', 'P', 'D', 'F', '-'});
   }
   return true; // No known signature for this mime (e.g. text/plain); nothing to check.
+}
+
+bool AttachmentSafeToAutoOpen(const std::string& path, const std::string& mime) {
+  if (path.empty() || (!IsAttachmentImageMime(mime) && !IsAttachmentVideoMime(mime))) {
+    return false;
+  }
+  const std::string expected_ext = AttachmentExtensionFromMime(mime);
+  if (expected_ext.empty()) {
+    return false; // Not one of the whitelisted mimes (e.g. image/svg+xml, video/quicktime).
+  }
+  std::string actual_ext = std::filesystem::path(path).extension().string();
+  if (!actual_ext.empty() && actual_ext[0] == '.') {
+    actual_ext = actual_ext.substr(1);
+  }
+  if (actual_ext != expected_ext) {
+    return false;
+  }
+  return AttachmentContentMatchesMime(path, mime);
 }
 
 bool AttachmentAllowsInlinePrivateView(const std::string& mime, const uint64_t byte_length) {
@@ -531,6 +568,52 @@ std::string AttachmentPendingCiphertextRoot(const std::string& profile_dir, cons
   return (std::filesystem::path(ThreadsRoot(profile_dir)) / thread_id / "blob_cipher").string();
 }
 
+namespace {
+/** A peer can push before the matching message arrives; bound the pending set instead. */
+constexpr size_t kMaxPendingBlobsPerThread = 64;
+constexpr std::chrono::hours kPendingBlobTtl{24};
+
+void PruneStalePendingCiphertext(const std::filesystem::path& root) {
+  std::error_code ec;
+  if (!std::filesystem::exists(root, ec) || ec) {
+    return;
+  }
+  const auto now = std::filesystem::file_time_type::clock::now();
+  for (const auto& entry : std::filesystem::directory_iterator(root, ec)) {
+    if (ec) {
+      break;
+    }
+    if (!entry.is_regular_file(ec) || ec) {
+      ec.clear();
+      continue;
+    }
+    const auto mtime = entry.last_write_time(ec);
+    if (ec) {
+      ec.clear();
+      continue;
+    }
+    if (now - mtime > kPendingBlobTtl) {
+      std::filesystem::remove(entry.path(), ec);
+    }
+  }
+}
+
+size_t CountRegularFiles(const std::filesystem::path& root) {
+  std::error_code ec;
+  size_t count = 0;
+  for (const auto& entry : std::filesystem::directory_iterator(root, ec)) {
+    if (ec) {
+      break;
+    }
+    if (entry.is_regular_file(ec) && !ec) {
+      ++count;
+    }
+    ec.clear();
+  }
+  return count;
+}
+} // namespace
+
 Roe<void> SavePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
                                           const std::vector<uint8_t>& content_hash,
                                           const std::vector<uint8_t>& ciphertext) {
@@ -547,6 +630,10 @@ Roe<void> SavePendingAttachmentCiphertext(const std::string& profile_dir, const 
     return Error("Failed to create pending attachment directory");
   }
   const auto path = root / AttachmentHashHex(content_hash);
+  PruneStalePendingCiphertext(root);
+  if (!std::filesystem::exists(path) && CountRegularFiles(root) >= kMaxPendingBlobsPerThread) {
+    return Error("Too many pending attachment blobs for this thread");
+  }
   std::ofstream output(path, std::ios::binary | std::ios::trunc);
   if (!output) {
     return Error("Failed to write pending attachment ciphertext");

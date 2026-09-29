@@ -158,13 +158,9 @@ Roe<void> ChatBlobResponder::ServePush(IThreadStore& store, const ChatBlobReques
     return Error("Invalid attachment content hash");
   }
 
-  // Only accept a push for a hash the thread is actually expecting (i.e. referenced by an
-  // attachment message already in history) — otherwise any peer AuthorizeRequest lets through
-  // for this thread could plant arbitrary ciphertext under a hash of its choosing.
-  if (auto fields = FindAttachmentFields(store, request.thread_id, *hash); !fields) {
-    return fields.error();
-  }
-
+  // Senders push before the attachment message itself arrives, so the hash cannot be required
+  // to already be in thread history. SavePendingAttachmentCiphertext bounds the pending set
+  // (count + TTL) per thread instead.
   return SavePendingAttachmentCiphertext(profile_data_dir, request.thread_id, *hash, ciphertext);
 }
 

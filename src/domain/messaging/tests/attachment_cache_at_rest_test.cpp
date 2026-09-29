@@ -185,5 +185,39 @@ TEST_F(AttachmentCacheAtRestTest, ContentMatchesMimeFlagsLyingMime) {
   EXPECT_TRUE(AttachmentContentMatchesMime(*view, "text/plain"));
 }
 
+TEST_F(AttachmentCacheAtRestTest, ContentMatchesMimeRejectsMzPolyglot) {
+  // "MZ" + "ftyp" at offset 4 would otherwise pass a naive video/mp4 signature check.
+  const ByteVector polyglot{'M', 'Z', 0x00, 0x00, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'};
+  auto hash = AttachmentContentHash(polyglot);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x88);
+
+  ASSERT_TRUE(
+      SaveAttachmentPlaintext(profile_dir_, thread_id_, *hash, "video/mp4", polyglot, "clip.mp4", dek, profile_id_));
+  auto view = EnsureAttachmentViewPath(profile_dir_, thread_id_, *hash, "video/mp4", "clip.mp4", dek, profile_id_);
+  ASSERT_TRUE(view) << view.error().message;
+
+  EXPECT_FALSE(AttachmentContentMatchesMime(*view, "video/mp4"));
+}
+
+TEST_F(AttachmentCacheAtRestTest, SafeToAutoOpenRequiresWhitelistedExtensionAndContent) {
+  const ByteVector png{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 'r', 'e', 's', 't'};
+  auto hash = AttachmentContentHash(png);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x99);
+
+  ASSERT_TRUE(SaveAttachmentPlaintext(profile_dir_, thread_id_, *hash, "image/png", png, "photo.png", dek, profile_id_));
+  auto view = EnsureAttachmentViewPath(profile_dir_, thread_id_, *hash, "image/png", "photo.png", dek, profile_id_);
+  ASSERT_TRUE(view) << view.error().message;
+
+  // Extension, mime and content all agree: safe.
+  EXPECT_TRUE(AttachmentSafeToAutoOpen(*view, "image/png"));
+  // Mime not in the extension whitelist (e.g. SVG): never safe, regardless of content.
+  EXPECT_FALSE(AttachmentSafeToAutoOpen(*view, "image/svg+xml"));
+  // Mismatched extension on disk vs. what the mime maps to: never safe.
+  EXPECT_FALSE(AttachmentSafeToAutoOpen(*view, "video/mp4"));
+  EXPECT_FALSE(AttachmentSafeToAutoOpen("", "image/png"));
+}
+
 } // namespace
 } // namespace pbr
