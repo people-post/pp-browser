@@ -45,10 +45,13 @@ flowchart TB
 domain/mesh/
   host/           MeshHost, MeshIdentityConfig, MeshPorts (IChatPeerLinks)
   shared/         AmpChannelOpen, AmpParkUntil (PeerId derivation: foundation/identity)
-  reachability/   Below MeshHost: Reachability(Engine), NAT, LAN mDNS, observed addrs, dial-back and
-                  punch protocols
-  dht/            AmpDhtProtocol, record store / codec, rate limiter
-  discovery/      AmpDirectoryProtocol, MeshDirectoryCache, NameDirectory
+  reachability/   Below MeshHost: Reachability(Engine), NAT, LAN mDNS, observed addrs;
+                  dial_back/ (serve/ DialBackServer, client/ DialBackClient);
+                  punch/ (AmpPunchCoordinator owns serve/ PunchServer — introducer + target — and
+                  client/ PunchClientCoordinator — initiator)
+  dht/            AmpDhtProtocol owns the record store, serve/ DhtServer, client/ DhtClient; codec, rate limiter
+  discovery/      AmpDirectoryProtocol (serve/ DirectoryServer, client/ DirectoryClient),
+                  MeshDirectoryCache, NameDirectory
   media_plane/    MeshMediaPlane — owns the shared media_relay client, dial registry + listen
                   book and circuit reach (with its punch / rendezvous pieces); lent to calls and broadcast.
                   MediaRelayAttach (reach the hop, then quote / attach)

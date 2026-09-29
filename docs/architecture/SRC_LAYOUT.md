@@ -262,15 +262,16 @@ Still keep headers focused: avoid pulling unrelated heavy trees when a small `*T
 
 ### L4 protocols: `serve/` and `client/`
 
-An Amp L4 protocol folder under `src/domain/mesh/l4/<protocol>/` keeps **shared wire types and pure decisions at its root** and splits the two ends of the protocol into sub-folders, so node-side code is easy to tell from the attaching side:
+An Amp L4 protocol folder in `src/domain/mesh/` (`l4/<protocol>/`, `dht/`, `discovery/`, `reachability/dial_back/`, `reachability/punch/`) keeps **shared wire types and pure decisions at its root** and splits the two ends of the protocol into sub-folders, so node-side code is easy to tell from the attaching side:
 
 | Folder | Holds | Naming |
 |--------|-------|--------|
 | `<protocol>/` | Wire types, frame codecs, pure decision logic both ends use | `<Protocol>Types.h`, `<Protocol>Logic.*` |
 | `<protocol>/serve/` | The side that answers inbound requests (what a node hosts) | `<Protocol>Server` (+ its state machines) |
-| `<protocol>/client/` | The side that dials out and uses the service | `<Protocol>ClientCoordinator` (session state), `I<Protocol>Client` / `Amp<Protocol>Client` (port + adapter), client workflows |
+| `<protocol>/client/` | The side that dials out and uses the service | `<Protocol>Client` (request / response), `<Protocol>ClientCoordinator` (session state), `I<Protocol>Client` / `Amp<Protocol>Client` (port + adapter) |
+| `<protocol>/Amp<Protocol>` | Only when both ends share state — DHT record store, directory config, punch candidate addresses: a thin owner that composes the server and client | `AmpDhtProtocol`, `AmpDirectoryProtocol`, `AmpPunchCoordinator` |
 
-Say **serve / server** for the answering side — not "host" (MeshHost, host sessions and `host_*` flags already mean other things). A client may use a co-located server directly (e.g. the media_relay local hop); the server never reaches into the client. `media_relay` and `circuit` are split this way; the other protocols follow one per change.
+Say **serve / server** for the answering side — not "host" (MeshHost, host sessions and `host_*` flags already mean other things). A client may use a co-located server directly (e.g. the media_relay local hop); the server never reaches into the client. Otherwise `MeshHost` owns the two ends directly (media_relay, circuit, dial-back). `call_media` is not split: both ends of a 1:1 media leg are peers running the same session.
 
 ### Free-function module names
 
