@@ -275,6 +275,7 @@ private:
   int decode_height_ = 0;
   bool decoder_configured_ = false;
   CVPixelBufferRef pending_decode_pixel_buffer_ = nullptr;
+  OSStatus pending_decode_status_ = noErr;
   bool pending_decode_error_ = false;
 };
 
@@ -602,16 +603,25 @@ Roe<VideoFrameRgba> VideoToolboxVideoCodec::Decode(const uint8_t* annex_b, size_
 
   pending_decode_pixel_buffer_ = nullptr;
   pending_decode_error_ = false;
+  pending_decode_status_ = noErr;
   VTDecodeInfoFlags info_flags = 0;
   status = VTDecompressionSessionDecodeFrame(decompression_session_, sample, 0, nullptr, &info_flags);
   CFRelease(sample);
 
+  // A session that fails outright is gone for good (iOS invalidates it while the app is in the
+  // background, or reclaims the hardware decoder). Drop it so the next keyframe builds a fresh one:
+  // the same SPS/PPS never rebuilt it, and every frame of every later call failed (device test
+  // 2026-09-29: the phone never showed the Mac's video again).
   if (status != noErr) {
     pending_decode_pixel_buffer_ = nullptr;
-    return Error("VTDecompressionSessionDecodeFrame failed");
+    ResetDecoder();
+    return Error("VTDecompressionSessionDecodeFrame failed: " + std::to_string(status));
   }
   if (pending_decode_error_ || !pending_decode_pixel_buffer_) {
-    return Error("H264 decode produced no frame for this access unit");
+    if (pending_decode_status_ == kVTInvalidSessionErr) {
+      ResetDecoder();
+    }
+    return Error("H264 decode produced no frame for this access unit: " + std::to_string(pending_decode_status_));
   }
 
   VideoFrameRgba result = ConvertBgraPixelBufferToRgba(pending_decode_pixel_buffer_);
@@ -679,6 +689,7 @@ void VideoToolboxVideoCodec::DecompressionOutputCallback(void* decompression_out
   }
   if (status != noErr || !image_buffer) {
     self->pending_decode_error_ = true;
+    self->pending_decode_status_ = status;
     return;
   }
   self->pending_decode_pixel_buffer_ = CVPixelBufferRetain(image_buffer);

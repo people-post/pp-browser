@@ -52,6 +52,12 @@ constexpr int64_t kRemoteVideoStallSoftMs = 2000;
 /** Hard stall: drop last frame so the tile does not freeze forever. */
 constexpr int64_t kRemoteVideoStallHardMs = 5000;
 
+/** For Impl, which is not the Module (same channel as CallMediaEngine::log()). */
+logging::Logger& EngineLog() {
+  static logging::Logger log = logging::getLogger("CallMediaEngine");
+  return log;
+}
+
 } // namespace
 
 struct CallMediaEngine::Impl {
@@ -155,6 +161,7 @@ struct CallMediaEngine::Impl {
   /** Local encoder + remote decoders come from here (platform HW; tests inject a stub). */
   std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
   std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> remote_decoders;
+  int video_decode_fail_logs = 0;
   static constexpr size_t kMaxRemoteVideoDecoders = 4;
   /**
    * Display rotation read on the UI thread: at SetCameraEnabled (for the open) and live via
@@ -1207,11 +1214,11 @@ struct CallMediaEngine::Impl {
     }
     auto decoded = decoder->Decode(reinterpret_cast<const uint8_t*>(data), size);
     if (!decoded) {
-      static int logged_decode = 0;
-      if (logged_decode < 5) {
-        ++logged_decode;
-        SDL_Log("CallMediaEngine: remote H264 decode failed: %s (size=%zu)",
-                decoded.error().message.c_str(), size);
+      // In the app log (SDL_Log never reaches the phone's log file), a few per call.
+      if (video_decode_fail_logs < 5) {
+        ++video_decode_fail_logs;
+        EngineLog().warning << "remote H264 decode failed stream=" << stream_id << " size=" << size << ": "
+                      << decoded.error().message << " call=" << call_id;
       }
       NoteVideoRefreshNeeded(stream_id);
       return;
@@ -1515,6 +1522,10 @@ void CallMediaEngine::Stop() {
     impl_->sfu_mode = false;
     impl_->capture_running = false;
     impl_->playout_running = false;
+    // Each call decodes with fresh decoders: one kept across calls also kept a broken session, and
+    // the cap of kMaxRemoteVideoDecoders counted every peer ever seen.
+    impl_->remote_decoders.clear();
+    impl_->video_decode_fail_logs = 0;
   }
   abandoned_send = nullptr;
   // Drain capture/video still inside (*sfu_send) after Detach unblocked BlockingWrite.
