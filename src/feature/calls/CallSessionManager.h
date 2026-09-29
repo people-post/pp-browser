@@ -13,6 +13,7 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallControlClient.h"
 #include "feature/calls/CallDeliveryPorts.h"
+#include "feature/calls/CallInitiationBilling.h"
 #include "feature/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
@@ -183,7 +184,7 @@ public:
   void TopologyOnMediaStoppedForSeat(const std::string& call_id);
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
   void SetInitiationBillingStore(InitiationBillingStore* store);
-  InitiationBillingStore* InitiationBilling() const { return workflow_.InitiationBilling(); }
+  InitiationBillingStore* InitiationBilling() const { return billing_.Store(); }
   /** Offer amount stored for inviter when inbound invite carried pricing. */
   int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
   /** Set before AcceptClicked — consumed by AcceptInvite. */
@@ -358,6 +359,8 @@ private:
   CallControlClient control_;
   /** The call's media keys between the peers (after control_, which carries them). */
   CallMediaKeyExchange key_exchange_;
+  /** P001 initiation pricing the workflow applies on invite / accept. */
+  CallInitiationBilling billing_;
   CallSessionWorkflow workflow_;
   // Swapped at mesh start / stop and lifecycle bind; read as one snapshot per operation.
   SharedPorts<CallDirectMediaPorts> direct_media_;

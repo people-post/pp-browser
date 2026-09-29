@@ -10,7 +10,6 @@
 #include "domain/messaging/CallSessionLogic.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/people/DirectChatTargetFromContact.h"
-#include "domain/messaging/InitiationPricing.h"
 #include "domain/messaging/PairwiseFanoutLogic.h"
 #include "domain/messaging/CallControlThreadLogic.h"
 #include "domain/messaging/PeerCapsLogic.h"
@@ -80,7 +79,8 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
                  }
                  return std::nullopt;
                }),
-      key_exchange_(sessions, media_keys, control_), workflow_(store, identity, sessions, key_exchange_, live_calls_) {
+      key_exchange_(sessions, media_keys, control_), billing_(identity),
+      workflow_(store, sessions, key_exchange_, billing_, live_calls_) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
   key_exchange_.SetOnKeyReady([this](const std::string& call_id) {
@@ -254,7 +254,7 @@ void CallSessionManager::BindWorkflowHostPorts() {
 }
 
 void CallSessionManager::SetInitiationBillingStore(InitiationBillingStore* store) {
-  workflow_.SetInitiationBillingStore(store);
+  billing_.SetStore(store);
 }
 
 void CallSessionManager::SetMediaRelayDeps(MediaRelayDeps deps) {
@@ -833,7 +833,7 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
 
 
 int64_t CallSessionManager::InitiationOfferMinorForPeer(const std::string& peer_identity) const {
-  return workflow_.InitiationOfferMinorForPeer(peer_identity);
+  return billing_.OfferFrom(peer_identity);
 }
 
 

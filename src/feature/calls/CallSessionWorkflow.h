@@ -2,15 +2,13 @@
 
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/CallTypes.h"
-#include "domain/messaging/InitiationBillingStore.h"
-#include "foundation/data/PricingTypes.h"
 #include "foundation/runtime/DeferredSelf.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "domain/messaging/CallSessionStore.h"
-#include "domain/people/IdentityStore.h"
+#include "feature/calls/CallInitiationBilling.h"
 #include "feature/calls/CallMediaKeyExchange.h"
 #include "feature/calls/LiveCall.h"
 
@@ -127,15 +125,13 @@ public:
     bool IsBound() const { return wire.IsBound(); }
   };
 
-  CallSessionWorkflow(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
-                      CallMediaKeyExchange& key_exchange, LiveCalls& live_calls);
+  CallSessionWorkflow(IThreadStore& store, CallSessionStore& sessions,
+                      CallMediaKeyExchange& key_exchange, CallInitiationBilling& billing, LiveCalls& live_calls);
   ~CallSessionWorkflow() override;
 
   void SetHostPorts(HostPorts ports);
   /** Bump DeferredSelf so queued Accept/roster PostWorkerNormal cbs no-op (CSM teardown). */
   void InvalidateDeferredOps();
-  void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
-  InitiationBillingStore* InitiationBilling() const { return initiation_billing_; }
 
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
@@ -156,7 +152,6 @@ public:
   void SweepExpiredInvites();
   void AbandonOrphanedCallsAfterRestart();
 
-  int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
   void SetPendingAcceptChargeDecision(InitiationChargeDecision decision);
   /** Set before AcceptClicked — consumed (and reset to false) by AcceptInvite. */
   void SetPendingAcceptVoiceOnly(bool voice_only);
@@ -206,15 +201,15 @@ private:
   Roe<void> ContinueAcceptAfterPark(const std::string& call_id, InitiationChargeDecision charge_decision,
                                     bool voice_only_accept, const std::string& local_identity);
   IThreadStore& store_;
-  IdentityStore& identity_;
   CallSessionStore& sessions_;
   /** The call's media keys between the peers (owned by CallSessionManager). */
   CallMediaKeyExchange& key_exchange_;
+  /** P001 initiation pricing on invite / accept (owned by CallSessionManager). */
+  CallInitiationBilling& billing_;
   /** The calls live on this device (owned by CallSessionManager); driven where the store rows change. */
   LiveCalls& live_calls_;
   HostPorts host_;
   DeferredSelf deferred_;
-  InitiationBillingStore* initiation_billing_ = nullptr;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;
   bool pending_accept_voice_only_ = false;

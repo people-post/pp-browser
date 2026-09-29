@@ -4,7 +4,6 @@
 #include "domain/messaging/CallListenAddrsLogic.h"
 #include "domain/messaging/CallMediaPlannerSelectLogic.h"
 #include "domain/messaging/CallSessionLogic.h"
-#include "domain/messaging/InitiationPricing.h"
 #include "domain/messaging/PeerCapsLogic.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
@@ -14,9 +13,11 @@
 
 namespace pbr {
 
-CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
-                                         CallMediaKeyExchange& key_exchange, LiveCalls& live_calls)
-    : store_(store), identity_(identity), sessions_(sessions), key_exchange_(key_exchange), live_calls_(live_calls) {
+CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, CallSessionStore& sessions,
+                                         CallMediaKeyExchange& key_exchange, CallInitiationBilling& billing,
+                                         LiveCalls& live_calls)
+    : store_(store), sessions_(sessions), key_exchange_(key_exchange), billing_(billing),
+      live_calls_(live_calls) {
   redirectLogger("CallSessionWorkflow");
 }
 
@@ -194,17 +195,8 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
     return Error("Calls require a direct or group thread");
   }
   // P001: block outbound dial when initiation offer > 0 and payment rails unavailable.
-  if (initiation_billing_) {
-    for (const std::string& invitee : invitee_identities) {
-      if (invitee.empty() || invitee == *local || initiation_billing_->IsOpen(invitee)) {
-        continue;
-      }
-      const InitiationPeerBilling billing = initiation_billing_->Get(invitee);
-      const int64_t offer = InitiationPricing::DefaultOfferForFloor(billing.floor_minor);
-      if (auto payable = InitiationPricing::CheckOutboundPayable(offer); !payable) {
-        return payable.error();
-      }
-    }
+  if (auto payable = billing_.CheckCanPlace(invitee_identities, *local); !payable) {
+    return payable.error();
   }
 
   // One active call: placing a call ends the one this device is in (as accepting another does) —
@@ -414,21 +406,8 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
     invite.caps = host_.reach.local_peer_caps();
     invite.caps.present = true;
   }
-  int64_t offer_to_mark = 0;
-  int64_t floor_for_mark = 0;
-  if (initiation_billing_ && !initiation_billing_->IsOpen(invitee_identity)) {
-    const InitiationPeerBilling billing = initiation_billing_->Get(invitee_identity);
-    const int64_t offer = InitiationPricing::DefaultOfferForFloor(billing.floor_minor);
-    if (auto payable = InitiationPricing::CheckOutboundPayable(offer); !payable) {
-      return payable.error();
-    }
-    invite.offer_amount_minor = offer;
-    invite.floor_minor = billing.floor_minor;
-    invite.currency = kPricingCurrencyId;
-    if (offer > 0) {
-      offer_to_mark = offer;
-      floor_for_mark = billing.floor_minor;
-    }
+  if (auto offered = billing_.FillInviteOffer(invitee_identity, invite); !offered) {
+    return offered.error();
   }
   auto detail = CallControlCodec::EncodeInvite(invite);
   if (!detail) {
@@ -451,21 +430,12 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   if (auto saved = sessions_.UpsertPendingInvite(pending); !saved) {
     return saved.error();
   }
-  if (initiation_billing_ && offer_to_mark > 0) {
-    (void)initiation_billing_->MarkOffered(invitee_identity, offer_to_mark, floor_for_mark);
-  }
+  billing_.NoteInviteSent(invitee_identity, invite);
   live_calls_.AddPeer(call_id, invitee_identity);
   log().info << "CallInvite sent call_id=" << call_id << " peer=" << invitee_identity
              << " media_key_embedded=" << (invite.wrapped_key_b64.empty() ? 0 : 1)
              << " listen_addrs=" << invite.listen_multiaddrs.size();
   return {};
-}
-
-int64_t CallSessionWorkflow::InitiationOfferMinorForPeer(const std::string& peer_identity) const {
-  if (!initiation_billing_ || peer_identity.empty()) {
-    return 0;
-  }
-  return initiation_billing_->Get(peer_identity).offer_minor;
 }
 
 void CallSessionWorkflow::SetPendingAcceptChargeDecision(const InitiationChargeDecision decision) {
@@ -547,13 +517,10 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
   }
 
   const std::string inviter = (*pending)->inviter_identity;
-  int64_t offer_minor = 0;
-  if (initiation_billing_) {
-    offer_minor = initiation_billing_->Get(inviter).offer_minor;
-  }
-  if (charge_decision == InitiationChargeDecision::TakeAll && offer_minor > 0 && !PaymentRailsAvailable()) {
+  const int64_t offer_minor = billing_.OfferFrom(inviter);
+  if (auto payable = CallInitiationBilling::CheckCanAccept(charge_decision, offer_minor); !payable) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=payment_unavailable take_all";
-    return Error("payment_unavailable: cannot collect charge yet");
+    return payable.error();
   }
 
   auto session = sessions_.LoadSession(call_id);
@@ -604,11 +571,7 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
   if (narrow_to_voice) {
     accept.video_allowed = false;
   }
-  // P001: recipient chooses waive (0) or take_all (rails checked above).
-  if (initiation_billing_) {
-    accept.offer_amount_minor = offer_minor;
-    accept.charge_decision = InitiationChargeDecisionToWire(charge_decision);
-  }
+  billing_.FillAccept(offer_minor, charge_decision, accept);
   if (host_.reach.local_listen_multiaddrs) {
     FillCallListenFields(host_.reach.local_listen_multiaddrs(), accept.libp2p_peer_id, accept.listen_multiaddrs);
   }
@@ -634,9 +597,7 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << sent.error().message;
     return sent.error();
   }
-  if (initiation_billing_) {
-    (void)initiation_billing_->MarkOpen(inviter);
-  }
+  billing_.NoteAccepted(inviter);
 
   row.state = CallSessionLogic::TransitionOnRemoteJoined(row.state);
   if (auto saved = sessions_.UpsertSession(row); !saved) {
@@ -1112,26 +1073,15 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
     return {};
   }
   // P001: when we charge (local floor > 0), auto-reject offers below floor.
-  if (initiation_billing_) {
-    int64_t local_floor = 0;
-    if (auto id = identity_.Get()) {
-      local_floor = id->initiation_floor;
+  if (!billing_.TakeInboundOffer(sender_identity, *invite)) {
+    CallDeclineDetail decline;
+    decline.call_id = invite->call_id;
+    decline.identity = local_identity;
+    if (auto encoded = CallControlCodec::EncodeDecline(decline)) {
+      (void)host_.wire.send_direct(sender_identity, CallControlType::CallDecline, *encoded,
+                                  "Call declined (offer too low)");
     }
-    if (local_floor > 0) {
-      if (auto ok = InitiationPricing::CheckOfferAgainstFloor(invite->offer_amount_minor, local_floor); !ok) {
-        log().info << "CallInvite rejected offer_too_low call_id=" << invite->call_id
-                   << " offer=" << invite->offer_amount_minor << " floor=" << local_floor;
-        CallDeclineDetail decline;
-        decline.call_id = invite->call_id;
-        decline.identity = local_identity;
-        if (auto encoded = CallControlCodec::EncodeDecline(decline)) {
-          (void)host_.wire.send_direct(sender_identity, CallControlType::CallDecline, *encoded,
-                                      "Call declined (offer too low)");
-        }
-        return {};
-      }
-      (void)initiation_billing_->MarkOffered(sender_identity, invite->offer_amount_minor, local_floor);
-    }
+    return {};
   }
   const int64_t now = util::NowUnixMs();
   if (CallSessionLogic::ShouldDropStaleInvite(*invite, now, relay_created_at_ms, relay_server_time_ms)) {
