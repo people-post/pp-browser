@@ -5,11 +5,12 @@
 namespace pbr {
 namespace {
 
-TEST(SchemaAdapterRiskTest, UnannotatedToolDefaultsToWrite) {
-  // An MCP server that omits `annotations` entirely must not be trusted as read-only.
+TEST(SchemaAdapterRiskTest, UnannotatedToolDefaultsToDestructive) {
+  // An MCP server that omits `annotations` entirely must not be trusted as read-only; the MCP
+  // spec's own default for destructiveHint (when readOnlyHint isn't true) is true.
   McpTool tool;
   tool.name = "search_docs";
-  EXPECT_EQ(SchemaAdapter::RiskClass(tool), "write");
+  EXPECT_EQ(SchemaAdapter::RiskClass(tool), "destructive");
 }
 
 TEST(SchemaAdapterRiskTest, ExplicitReadOnlyHintIsRead) {
@@ -19,10 +20,18 @@ TEST(SchemaAdapterRiskTest, ExplicitReadOnlyHintIsRead) {
   EXPECT_EQ(SchemaAdapter::RiskClass(tool), "read");
 }
 
-TEST(SchemaAdapterRiskTest, ReadOnlyHintFalseStaysWrite) {
+TEST(SchemaAdapterRiskTest, ReadOnlyHintFalseWithNoDestructiveHintIsDestructive) {
   McpTool tool;
   tool.name = "search_docs";
   tool.annotations.read_only_hint = false;
+  EXPECT_EQ(SchemaAdapter::RiskClass(tool), "destructive");
+}
+
+TEST(SchemaAdapterRiskTest, ReadOnlyHintFalseWithDestructiveHintFalseIsWrite) {
+  McpTool tool;
+  tool.name = "search_docs";
+  tool.annotations.read_only_hint = false;
+  tool.annotations.destructive_hint = false;
   EXPECT_EQ(SchemaAdapter::RiskClass(tool), "write");
 }
 

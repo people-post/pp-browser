@@ -45,14 +45,17 @@ std::string SchemaAdapter::RiskClass(const McpTool& tool) {
   if (name.find("delete") != std::string::npos || name.find("remove") != std::string::npos) {
     return "destructive";
   }
-  if (tool.annotations.destructive_hint.value_or(false)) {
+  // Explicit destructiveHint=true always wins, even over a (contradictory) readOnlyHint=true.
+  if (tool.annotations.destructive_hint.has_value() && *tool.annotations.destructive_hint) {
     return "destructive";
   }
-  // MCP annotations are untrusted hints, but the only safe default is to require confirmation:
-  // only an explicit readOnlyHint=true downgrades a tool to "read"; an unannotated tool (or one
-  // that explicitly sets readOnlyHint=false) is always treated as "write".
   if (tool.annotations.read_only_hint.value_or(false)) {
     return "read";
+  }
+  // Not read-only. Per the MCP annotations spec, destructiveHint defaults to true when
+  // omitted; only an explicit destructiveHint=false downgrades to "write".
+  if (tool.annotations.destructive_hint.value_or(true)) {
+    return "destructive";
   }
   return "write";
 }
