@@ -81,7 +81,7 @@ Does **not** open Amp sessions or relay channels.
 ./scripts/test/pp_node_relay_smoke.sh --l0-only
 ```
 
-`pp-node-probe` (under `src/app/node/probe/`), default `--mode l1`:
+`pp-node-probe` (under `src/app/node/tools/probe/`), default `--mode l1`:
 
 1. Builds hop multiaddr from `/status` (`0.0.0.0` → `127.0.0.1`)
 2. Starts ephemeral client + bridge-target hosts on loopback

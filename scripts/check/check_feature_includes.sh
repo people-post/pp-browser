@@ -52,7 +52,11 @@ check_absent "calls must not include gui/" \
 
 # Headless modules (pp-node links them without pp_base): no other feature module, no UI domains.
 check_absent "registration must not include other feature/ modules" \
-  '#include "feature/(ai|settings|calls|broadcast|conversations)/' src/feature/registration
+  '#include "feature/(ai|settings|calls|broadcast|conversations|node)/' src/feature/registration
+check_absent "node must not include other feature/ modules except registration" \
+  '#include "feature/(ai|settings|calls|broadcast|conversations)/' src/feature/node
+check_absent "node must not include domain/ui|media|messaging/" \
+  '#include "domain/(ui|media|messaging)/' src/feature/node
 check_absent "registration must not include domain/ui|media/" \
   '#include "domain/(ui|media)/' src/feature/registration
 

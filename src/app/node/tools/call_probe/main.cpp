@@ -1,5 +1,5 @@
 #include "domain/messaging/CallMobility.h"
-#include "app/node/call_probe/ProductStackHarness.h"
+#include "app/node/tools/call_probe/ProductStackHarness.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "amp/L1/Clock.h"
 #include "amp/L1/OsUdpDatagramIo.h"

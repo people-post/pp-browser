@@ -18,6 +18,7 @@ target_link_libraries(pp_base INTERFACE
 
 # Headless feature modules: built in every configuration (pp-node links them without pp_base).
 add_subdirectory(feature/registration)
+add_subdirectory(feature/node)
 
 if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(feature)

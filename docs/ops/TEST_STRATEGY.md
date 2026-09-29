@@ -228,7 +228,7 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | ID | Status | Primary evidence |
 |----|--------|------------------|
 | N-SMOKE | **Covered** | [`scripts/test/pp_node_image_smoke.sh`](../../scripts/test/pp_node_image_smoke.sh); release CI L0 |
-| N-REACH | **Covered** | [`pp-node-probe`](../../src/app/node/probe/main.cpp); [`scripts/test/pp_node_relay_smoke.sh`](../../scripts/test/pp_node_relay_smoke.sh) |
+| N-REACH | **Covered** | [`pp-node-probe`](../../src/app/node/tools/probe/main.cpp); [`scripts/test/pp_node_relay_smoke.sh`](../../scripts/test/pp_node_relay_smoke.sh) |
 | N-FANOUT | **Covered** (scaffold) | L2: `pp-node-probe --mode media-fanout` + [`scripts/test/pp_node_fanout_smoke.sh`](../../scripts/test/pp_node_fanout_smoke.sh); in-process: `media_relay_service_test` |
 | N-ADMIT | **Partial** | gtests (contacts-only / call-scoped); no deploy-profile stranger probe |
 | N-CAP-MEDIA | **Covered** (soft scaffold) | `pp-node-probe --mode media-cap` sweep (`--attachers 4,8,12,16` or `--sweep 4:16:4`) + p50/p95; [`scripts/test/pp_node_cap_smoke.sh`](../../scripts/test/pp_node_cap_smoke.sh); driver `--suite cap`. Soft SLO: 100% attach for N≤**N₀=8** (first curve: hop participant limit 8; N=12/16 degrade). Hop RSS/FD via `docker stats`. |

@@ -9,129 +9,15 @@
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/ProfileRegistry.h"
 #include "foundation/data/SchemaVersion.h"
-#include "domain/mesh/dht/DhtTypes.h"
-#include "domain/mesh/discovery/AmpDirectoryProtocol.h"
-#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
-#include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
-#include "domain/mesh/reachability/AmpObservedAddrs.h"
-#include "common/directory/RelayScope.h"
+#include "feature/node/NodeMeshServices.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 
-#include <algorithm>
 #include <cstdlib>
-#include <unordered_set>
 #include <utility>
 #include "common/PbrCompat.h"
 
 namespace pbr {
-namespace {
-
-void RegisterAmpBootstrapEndpoints(MeshHost& mesh, const std::vector<std::string>& bootstrap_peers) {
-  if (!mesh.Amp()) {
-    return;
-  }
-  for (const std::string& ma : bootstrap_peers) {
-    const std::string peer_id = PeerIdFromMultiaddr(ma);
-    if (peer_id.empty() || ma.empty()) {
-      continue;
-    }
-    (void)mesh.Amp()->Links().RegisterEndpoint(peer_id, ma);
-  }
-}
-
-std::vector<std::string> CollectBootstrapPeerKeys(const std::vector<std::string>& bootstrap_peers) {
-  std::vector<std::string> keys;
-  std::unordered_set<std::string> seen;
-  for (const std::string& ma : bootstrap_peers) {
-    const std::string peer_id = PeerIdFromMultiaddr(ma);
-    if (peer_id.empty() || !seen.insert(peer_id).second) {
-      continue;
-    }
-    keys.push_back(peer_id);
-  }
-  return keys;
-}
-
-void ConfigurePpNodeAmpDht(MeshHost& mesh, IdentityStore& identity, const AppConfig& config) {
-  if (!mesh.Amp() || !mesh.AmpDht()) {
-    return;
-  }
-  const bool participate = config.mesh.capabilities.dht;
-  RegisterAmpBootstrapEndpoints(mesh, config.mesh.bootstrap_peers);
-
-  AmpDhtProtocolConfig cfg;
-  cfg.local_peer_id = mesh.Amp()->LocalPeerId();
-  cfg.listen_multiaddrs = mesh.AdvertisedListenMultiaddrs();
-  if (cfg.listen_multiaddrs.empty() && IsUsableAdpListen(mesh.AmpListenMultiaddr())) {
-    cfg.listen_multiaddrs = {mesh.AmpListenMultiaddr()};
-  }
-  if (auto priv = identity.GetDeviceMlDsaPrivateKey()) {
-    cfg.device_signing_secret = *priv;
-  }
-  if (auto pub = identity.GetDeviceMlDsaPublicKey()) {
-    cfg.device_signing_public = *pub;
-  }
-  cfg.tunables = config.mesh.dht;
-  cfg.query_peer_keys = CollectBootstrapPeerKeys(config.mesh.bootstrap_peers);
-  cfg.participate = participate;
-  cfg.publish_circuit_relay = participate && config.mesh.capabilities.circuit_relay;
-  cfg.publish_media_relay = participate && config.mesh.capabilities.media_relay;
-  mesh.ConfigureAmpDht(std::move(cfg));
-  mesh.RefreshAmpDhtHosting(participate);
-}
-
-void ConfigurePpNodeAmpDirectory(MeshHost& mesh, IdentityStore& identity, const AppConfig& config) {
-  if (!mesh.Amp() || !mesh.AmpDirectory()) {
-    return;
-  }
-  RegisterAmpBootstrapEndpoints(mesh, config.mesh.bootstrap_peers);
-
-  AmpDirectoryProtocolConfig cfg;
-  cfg.local_peer_id = mesh.Amp()->LocalPeerId();
-  cfg.query_peer_keys = CollectBootstrapPeerKeys(config.mesh.bootstrap_peers);
-  mesh.ConfigureAmpDirectory(std::move(cfg));
-  mesh.RefreshAmpDirectoryHosting(true);
-
-  MeshNodeHit self;
-  self.entity_kind = "mesh_node";
-  if (auto loaded = identity.Get()) {
-    self.relay_user_id = loaded->relay_user_id.empty() ? loaded->peer_id : loaded->relay_user_id;
-    if (!loaded->account_id.empty()) {
-      self.account_id = loaded->account_id;
-    }
-    if (!loaded->nickname.empty()) {
-      self.nickname = loaded->nickname;
-    }
-  }
-  if (self.relay_user_id.empty()) {
-    self.relay_user_id = mesh.Amp()->LocalPeerId();
-  }
-  self.capabilities.circuit_relay = config.mesh.capabilities.circuit_relay;
-  self.capabilities.media_relay = config.mesh.capabilities.media_relay;
-  self.capabilities.dht = config.mesh.capabilities.dht;
-  self.capabilities.ledger_gateway = config.mesh.capabilities.ledger_gateway;
-  DirectoryEndpoint ep;
-  ep.peer_id = mesh.Amp()->LocalPeerId();
-  for (const std::string& ma : mesh.AdvertisedListenMultiaddrs()) {
-    if (!ma.empty()) {
-      ep.multiaddrs.push_back(ma);
-    }
-  }
-  if (ep.multiaddrs.empty() && IsUsableAdpListen(mesh.AmpListenMultiaddr())) {
-    ep.multiaddrs.push_back(mesh.AmpListenMultiaddr());
-  }
-  for (const std::string& ma : config.mesh.advertise_multiaddrs) {
-    if (!ma.empty() &&
-        std::find(ep.multiaddrs.begin(), ep.multiaddrs.end(), ma) == ep.multiaddrs.end()) {
-      ep.multiaddrs.push_back(ma);
-    }
-  }
-  self.endpoints.push_back(std::move(ep));
-  mesh.AmpDirectory()->SetNodesSnapshot({std::move(self)});
-}
-
-} // namespace
 
 Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   auto log = logging::getLogger("pp-node");
@@ -212,13 +98,8 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   if (auto pub = identity->GetDeviceMlDsaPublicKey()) {
     mesh_cfg.host.device_ml_dsa_public_key = *pub;
   }
-  // Org seed: circuit / media_relay host inbound when enabled (N018).
-  mesh_cfg.host_circuit_relay = config->mesh.capabilities.circuit_relay;
-  mesh_cfg.host_media_relay = config->mesh.capabilities.media_relay;
-  mesh_cfg.host_dht = config->mesh.capabilities.dht;
-  mesh_cfg.host_directory = true;
-  mesh_cfg.media_relay_budget = config->mesh.media_relay_budget;
-  mesh_cfg.media_relay_pricing = config->mesh.pricing.media_relay;
+  // Org seed: circuit / media_relay / DHT hosted per capability, directory always (N018).
+  ApplyNodeHosting(mesh_cfg, config->mesh, ResolveMeshRole(config->mesh) == MeshRole::Node);
   // pp-node drives reachability probes from its run loop (--status / periodic refresh).
   mesh_cfg.start_reachability_probe = false;
   mesh_cfg.mesh_enabled = config->mesh.mesh_enabled && mesh_cfg.host.device_ml_dsa_private_key &&
@@ -243,23 +124,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
       return Error(mesh->AmpLastError().empty() ? "amp stack failed" : mesh->AmpLastError());
     }
     log.info << "amp stack listen=" << mesh->AmpListenMultiaddr();
-    ConfigurePpNodeAmpDht(*mesh, *identity, *config);
-    ConfigurePpNodeAmpDirectory(*mesh, *identity, *config);
-    // Org seed: admit strangers for circuit + media (do not rely on empty contact set).
-    const RelayScopeMask org_serve = kRelayScopeShortTerm |
-                                     static_cast<RelayScopeMask>(RelayScope::Public);
-    if (auto* circuit = mesh->AmpCircuitTunnel()) {
-      CircuitRelayAdmissionPolicy policy;
-      policy.prefer_contacts_only = false;
-      policy.serve_scope_mask = org_serve;
-      circuit->SetAdmissionPolicy(std::move(policy));
-    }
-    if (auto* media = mesh->AmpMediaRelayCoord()) {
-      MediaRelayAdmissionPolicy policy;
-      policy.prefer_contacts_only = false;
-      policy.serve_scope_mask = org_serve;
-      media->SetAdmissionPolicy(std::move(policy));
-    }
+    StartOrgSeedServices(*mesh, *identity, config->mesh);
   } else {
     log.warning << "mesh disabled (mesh_enabled=false); peer mesh underlay off";
   }

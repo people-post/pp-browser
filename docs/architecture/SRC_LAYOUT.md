@@ -173,6 +173,10 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 | `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
 | `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer workflow; never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
+| `feature/registration/` | Registration finish / renew / nickname (`pp_feature_registration`) — **headless**, linked by pp-node |
+| `feature/node/` | Node-role mesh services (`pp_feature_node`): hosting from capabilities, DHT / directory config, self row, org-seed admission — **headless**, shared by pp-node and desktop `MeshRole::Node` |
+
+**Headless modules** (`registration`, `node`) use `pp_browser_add_headless_feature_library` (no `pp_base`) and build in `PP_BROWSER_HEADLESS` configures. pp-node's link closure is an allowlist ([BUILD.md § Headless mesh node](../ops/BUILD.md#headless-mesh-node-pp-node)). `src/app/node/` stays thin (main, bootstrap, env overlay, status HTTP); lab / smoke probes live in `src/app/node/tools/`.
 
 Feature module libraries stay acyclic. Conversations invoke AI through `AgentInboundPorts` (app-filled); `pp_feature_conversations` does not link `pp_feature_ai`. Calls invoke delivery through `CallDeliveryPorts` (hub-filled); `pp_feature_calls` does not include conversations:
 
@@ -181,6 +185,7 @@ settings
 ai/tools → ai/bindings → ai
 calls
 conversations → calls
+conversations → registration, node   (headless; they include no other feature module)
 ```
 
 ## GUI subfolders

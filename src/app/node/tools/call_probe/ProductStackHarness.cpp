@@ -1,4 +1,4 @@
-#include "app/node/call_probe/ProductStackHarness.h"
+#include "app/node/tools/call_probe/ProductStackHarness.h"
 #include "feature/calls/LocalNetworkReaction.h"
 #include "feature/conversations/MeshMediaPlaneWiring.h"
 
