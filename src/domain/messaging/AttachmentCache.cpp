@@ -605,14 +605,20 @@ std::string AttachmentPendingCiphertextRoot(const std::string& profile_dir, cons
 }
 
 namespace {
-/** A peer can push before the matching message arrives; bound the pending set instead. */
-constexpr size_t kMaxPendingBlobsPerThread = 64;
-constexpr std::chrono::hours kPendingBlobTtl{24};
+/**
+ * A peer can push before the matching message arrives, so orphan pushes are bounded instead:
+ * they expire and a thread holds only so many. Blobs the thread's messages reference are exempt.
+ */
+constexpr size_t kMaxOrphanPendingBlobsPerThread = 64;
+constexpr std::chrono::hours kOrphanPendingBlobTtl{24};
 
-void PruneStalePendingCiphertext(const std::filesystem::path& root) {
+/** Drop expired orphan blobs; returns how many orphans remain. */
+size_t PruneOrphanPendingCiphertext(const std::filesystem::path& root,
+                                    const std::unordered_set<std::string>& referenced_hex) {
   std::error_code ec;
+  size_t orphans = 0;
   if (!std::filesystem::exists(root, ec) || ec) {
-    return;
+    return orphans;
   }
   const auto now = std::filesystem::file_time_type::clock::now();
   for (const auto& entry : std::filesystem::directory_iterator(root, ec)) {
@@ -623,36 +629,30 @@ void PruneStalePendingCiphertext(const std::filesystem::path& root) {
       ec.clear();
       continue;
     }
+    if (referenced_hex.count(entry.path().filename().string()) != 0) {
+      continue;  // a real attachment, maybe left unopened: kept until it is opened
+    }
     const auto mtime = entry.last_write_time(ec);
     if (ec) {
       ec.clear();
+      ++orphans;
       continue;
     }
-    if (now - mtime > kPendingBlobTtl) {
+    if (now - mtime > kOrphanPendingBlobTtl) {
       std::filesystem::remove(entry.path(), ec);
+      ec.clear();
+      continue;
     }
+    ++orphans;
   }
-}
-
-size_t CountRegularFiles(const std::filesystem::path& root) {
-  std::error_code ec;
-  size_t count = 0;
-  for (const auto& entry : std::filesystem::directory_iterator(root, ec)) {
-    if (ec) {
-      break;
-    }
-    if (entry.is_regular_file(ec) && !ec) {
-      ++count;
-    }
-    ec.clear();
-  }
-  return count;
+  return orphans;
 }
 } // namespace
 
 Roe<void> SavePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
                                           const std::vector<uint8_t>& content_hash,
-                                          const std::vector<uint8_t>& ciphertext) {
+                                          const std::vector<uint8_t>& ciphertext,
+                                          const std::unordered_set<std::string>& referenced_hex) {
   if (profile_dir.empty() || thread_id.empty()) {
     return Error("Attachment cache profile directory and thread_id are required");
   }
@@ -665,9 +665,11 @@ Roe<void> SavePendingAttachmentCiphertext(const std::string& profile_dir, const 
   if (ec) {
     return Error("Failed to create pending attachment directory");
   }
-  const auto path = root / AttachmentHashHex(content_hash);
-  PruneStalePendingCiphertext(root);
-  if (!std::filesystem::exists(path) && CountRegularFiles(root) >= kMaxPendingBlobsPerThread) {
+  const std::string hex = AttachmentHashHex(content_hash);
+  const auto path = root / hex;
+  const size_t orphans = PruneOrphanPendingCiphertext(root, referenced_hex);
+  const bool referenced = referenced_hex.count(hex) != 0;
+  if (!referenced && !std::filesystem::exists(path) && orphans >= kMaxOrphanPendingBlobsPerThread) {
     return Error("Too many pending attachment blobs for this thread");
   }
   std::ofstream output(path, std::ios::binary | std::ios::trunc);

@@ -7,6 +7,8 @@
 #include <fstream>
 #include <gtest/gtest.h>
 
+#include <chrono>
+
 namespace pbr {
 namespace {
 
@@ -184,6 +186,49 @@ TEST_F(AttachmentCacheAtRestTest, ExtensionKeepsInertFilenameExtensionForConfirm
   EXPECT_EQ(AttachmentExtensionFromMime("application/octet-stream", "noext"), "");
   EXPECT_EQ(AttachmentExtensionFromMime("image/heic", "x.zip"), "") << "auto-opened mimes never take a filename ext";
   EXPECT_EQ(AttachmentExtensionFromMime("application/pdf", "x.exe"), "pdf") << "mapped mimes ignore the filename";
+}
+
+namespace {
+std::vector<uint8_t> PendingHash(const uint8_t seed) {
+  std::vector<uint8_t> hash(kAttachmentContentHashSize, 0);
+  hash[0] = seed;
+  hash[1] = static_cast<uint8_t>(seed >> 1);
+  return hash;
+}
+} // namespace
+
+// Review (#238): pushes with no matching message yet (orphans) are bounded — 64 per thread — but
+// blobs the thread's messages name are real attachments (maybe left unopened because auto-download
+// deferred them) and neither count nor get refused.
+TEST_F(AttachmentCacheAtRestTest, PendingCapBoundsOrphansOnly) {
+  const std::vector<uint8_t> blob{1, 2, 3};
+  for (int i = 0; i < 64; ++i) {
+    ASSERT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, PendingHash(static_cast<uint8_t>(i)), blob));
+  }
+  EXPECT_FALSE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, PendingHash(200), blob)) << "orphan cap";
+  const auto referenced = PendingHash(201);
+  EXPECT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, referenced, blob,
+                                              {AttachmentHashHex(referenced)}))
+      << "a referenced attachment is accepted past the orphan cap";
+}
+
+// Only orphans expire: an unopened referenced attachment outlives the 24 h orphan TTL.
+TEST_F(AttachmentCacheAtRestTest, PendingTtlPrunesOrphansNotReferencedBlobs) {
+  const std::vector<uint8_t> blob{1, 2, 3};
+  const auto orphan = PendingHash(1);
+  const auto kept = PendingHash(2);
+  ASSERT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, orphan, blob));
+  ASSERT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, kept, blob));
+  const auto root = std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir_, thread_id_));
+  const auto two_days_ago = std::filesystem::file_time_type::clock::now() - std::chrono::hours(48);
+  std::filesystem::last_write_time(root / AttachmentHashHex(orphan), two_days_ago);
+  std::filesystem::last_write_time(root / AttachmentHashHex(kept), two_days_ago);
+
+  // The next push prunes, with `kept` named by a thread message.
+  ASSERT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, PendingHash(3), blob,
+                                              {AttachmentHashHex(kept)}));
+  EXPECT_FALSE(AttachmentPendingCiphertextExists(profile_dir_, thread_id_, orphan)) << "expired orphan pruned";
+  EXPECT_TRUE(AttachmentPendingCiphertextExists(profile_dir_, thread_id_, kept)) << "referenced blob kept";
 }
 
 TEST_F(AttachmentCacheAtRestTest, ContentMatchesMimeFlagsLyingMime) {

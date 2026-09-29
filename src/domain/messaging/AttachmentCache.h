@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -122,9 +123,17 @@ Roe<void> WipeAllAttachmentViewCaches(const std::string& profile_dir);
 
 /** Pending peer-push ciphertext before envelope key arrives (a6). */
 std::string AttachmentPendingCiphertextRoot(const std::string& profile_dir, const std::string& thread_id);
+/**
+ * Store pushed ciphertext for `content_hash`. `referenced_hex` holds the (lower-case hex) hashes
+ * the thread's attachment messages name: those blobs are real attachments — possibly left
+ * unopened because auto-download deferred them — and are never pruned or counted. Only orphan
+ * pushes (no matching message yet) are bounded: they expire after 24 h and a thread holds at
+ * most 64 of them.
+ */
 Roe<void> SavePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
                                           const std::vector<uint8_t>& content_hash,
-                                          const std::vector<uint8_t>& ciphertext);
+                                          const std::vector<uint8_t>& ciphertext,
+                                          const std::unordered_set<std::string>& referenced_hex = {});
 bool AttachmentPendingCiphertextExists(const std::string& profile_dir, const std::string& thread_id,
                                        const std::vector<uint8_t>& content_hash);
 Roe<ByteVector> LoadPendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
