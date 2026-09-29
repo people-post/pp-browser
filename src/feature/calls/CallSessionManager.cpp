@@ -79,7 +79,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
                  }
                  return std::nullopt;
                }),
-      key_exchange_(sessions, media_keys, control_), billing_(identity),
+      key_exchange_(sessions, media_keys, control_), billing_(identity), reach_signals_(control_),
       workflow_(store, sessions, key_exchange_, billing_, live_calls_), peer_accounts_(contacts) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
@@ -93,6 +93,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
   live_calls_.BindHopDriver(&topology_);
   BindTopologyHostPorts();
   BindWorkflowHostPorts();
+  BindReachSignalPorts();
 }
 
 void CallSessionManager::BindTopologyHostPorts() {
@@ -251,6 +252,46 @@ void CallSessionManager::BindWorkflowHostPorts() {
     return local_mesh_peer_id_ ? local_mesh_peer_id_() : std::string{};
   };
   workflow_.SetHostPorts(std::move(ports));
+}
+
+void CallSessionManager::BindReachSignalPorts() {
+  CallReachSignals::CallPorts ports;
+  ports.active_call_id = [this]() -> std::optional<std::string> {
+    auto active = ActiveLocalCall();
+    if (!active || !active->has_value()) {
+      return std::nullopt;
+    }
+    return (*active)->call_id;
+  };
+  ports.call_peer = [this](const std::string& call_id) -> std::optional<std::string> {
+    auto peer = PeerIdentityForCall(call_id);
+    if (!peer || !peer->has_value()) {
+      return std::nullopt;
+    }
+    return **peer;
+  };
+  ports.local_identity = [this]() -> std::string {
+    auto local = P2pLocalIdentity();
+    return local ? *local : std::string{};
+  };
+  ports.local_caps = [this]() -> std::optional<CallPeerCaps> {
+    return local_peer_caps_ ? std::optional<CallPeerCaps>{local_peer_caps_()} : std::nullopt;
+  };
+  ports.local_listen_addrs = [this]() {
+    return local_listen_multiaddrs_ ? local_listen_multiaddrs_() : std::vector<std::string>{};
+  };
+  ports.local_peer_id = [this]() { return local_mesh_peer_id_ ? local_mesh_peer_id_() : std::string{}; };
+  ports.register_listen = [this](const std::string& key, const std::vector<std::string>& addrs) {
+    if (register_peer_listen_multiaddrs_) {
+      register_peer_listen_multiaddrs_(key, addrs);
+    }
+  };
+  ports.on_peer_caps = [this](const std::string& call_id, const CallPeerCaps& caps) {
+    if (call_peer_caps_sink_) {
+      call_peer_caps_sink_(call_id, caps);
+    }
+  };
+  reach_signals_.SetCallPorts(std::move(ports));
 }
 
 void CallSessionManager::SetInitiationBillingStore(InitiationBillingStore* store) {
@@ -502,131 +543,6 @@ void CallSessionManager::SetParkCircuit(ParkCircuitFn park) {
   park_circuit_ = std::move(park);
 }
 
-void CallSessionManager::SetPreferLateReserve(PreferLateReserveFn callback) {
-  prefer_late_reserve_ = std::move(callback);
-}
-
-void CallSessionManager::AnnounceCircuitR1(const std::string& circuit_r1_peer_id) {
-  if (circuit_r1_peer_id.empty()) {
-    return;
-  }
-  auto active = ActiveLocalCall();
-  if (!active || !active->has_value()) {
-    pending_circuit_r1_announce_ = circuit_r1_peer_id;
-    log().debug << "AnnounceCircuitR1 pending (no active call) r1=" << circuit_r1_peer_id;
-    return;
-  }
-  const std::string call_id = (*active)->call_id;
-  auto peer = P2pPeerIdentityForCall(call_id);
-  if (!peer || !peer->has_value() || (*peer)->empty()) {
-    pending_circuit_r1_announce_ = circuit_r1_peer_id;
-    log().debug << "AnnounceCircuitR1 pending (no peer) call_id=" << call_id
-                << " r1=" << circuit_r1_peer_id;
-    return;
-  }
-  CallCircuitR1Detail detail;
-  detail.call_id = call_id;
-  detail.circuit_r1 = circuit_r1_peer_id;
-  auto encoded = CallControlCodec::EncodeCircuitR1(detail);
-  if (!encoded) {
-    log().warning << "AnnounceCircuitR1 encode failed call_id=" << call_id
-                  << " err=" << encoded.error().message;
-    return;
-  }
-  if (auto sent = control_.SendDirect(**peer, CallControlType::CallCircuitR1, *encoded, ""); !sent) {
-    log().warning << "AnnounceCircuitR1 send failed call_id=" << call_id << " peer=" << **peer
-                  << " err=" << sent.error().message;
-    return;
-  }
-  pending_circuit_r1_announce_.clear();
-  log().info << "AnnounceCircuitR1 sent call_id=" << call_id << " peer=" << **peer
-             << " r1=" << circuit_r1_peer_id;
-}
-
-void CallSessionManager::FlushPendingCircuitR1Announce() {
-  if (pending_circuit_r1_announce_.empty()) {
-    return;
-  }
-  const std::string r1 = pending_circuit_r1_announce_;
-  AnnounceCircuitR1(r1);
-}
-
-void CallSessionManager::SetSignalingPunchBurst(SignalingPunchBurstFn callback) {
-  signaling_punch_burst_ = std::move(callback);
-}
-
-void CallSessionManager::SetLocalPunchAddrsProvider(LocalPunchAddrsFn callback) {
-  local_punch_addrs_ = std::move(callback);
-}
-
-void CallSessionManager::CompletePendingSignalingPunch(const std::string& epoch_id, Roe<void> result) {
-  if (!pending_signaling_punch_ || pending_signaling_punch_->epoch_id != epoch_id) {
-    return;
-  }
-  auto on_done = std::move(pending_signaling_punch_->on_done);
-  pending_signaling_punch_.reset();
-  if (on_done) {
-    on_done(std::move(result));
-  }
-}
-
-void CallSessionManager::RequestSignalingPunch(const std::string& target_peer_id,
-                                               const std::vector<std::string>& my_addrs,
-                                               std::function<void(Roe<void>)> on_done) {
-  if (!on_done) {
-    return;
-  }
-  if (my_addrs.empty()) {
-    on_done(Error("signaling punch: no local candidates"));
-    return;
-  }
-  auto active = ActiveLocalCall();
-  if (!active || !active->has_value()) {
-    on_done(Error("signaling punch: no active call"));
-    return;
-  }
-  const std::string call_id = (*active)->call_id;
-  auto peer = P2pPeerIdentityForCall(call_id);
-  if (!peer || !peer->has_value() || (*peer)->empty()) {
-    on_done(Error("signaling punch: no call peer"));
-    return;
-  }
-  if (pending_signaling_punch_) {
-    CompletePendingSignalingPunch(pending_signaling_punch_->epoch_id,
-                                  Error("signaling punch: superseded"));
-  }
-  CallPunchDetail detail;
-  detail.call_id = call_id;
-  detail.epoch_id = util::GenerateUuid();
-  detail.window_ms = 2000;
-  detail.addrs = my_addrs;
-  if (local_mesh_peer_id_) {
-    detail.peer_id = local_mesh_peer_id_();
-  }
-  if (detail.peer_id.empty()) {
-    detail.peer_id = target_peer_id;
-  }
-  auto encoded = CallControlCodec::EncodePunch(detail);
-  if (!encoded) {
-    on_done(encoded.error());
-    return;
-  }
-  PendingSignalingPunch pending;
-  pending.epoch_id = detail.epoch_id;
-  pending.call_id = call_id;
-  pending.peer_identity = **peer;
-  pending.on_done = std::move(on_done);
-  pending_signaling_punch_ = std::move(pending);
-  if (auto sent =
-          control_.SendDirect(**peer, CallControlType::CallPunchOffer, *encoded, "");
-      !sent) {
-    CompletePendingSignalingPunch(detail.epoch_id, sent.error());
-    return;
-  }
-  log().info << "CallPunchOffer sent call_id=" << call_id << " peer=" << **peer
-             << " epoch=" << detail.epoch_id << " addrs=" << detail.addrs.size();
-}
-
 void CallSessionManager::SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback) {
   local_listen_multiaddrs_ = std::move(callback);
 }
@@ -636,50 +552,6 @@ void CallSessionManager::SetLocalPeerCapsProvider(LocalPeerCapsFn callback) {
 }
 
 void CallSessionManager::SetCallPeerCapsSink(CallPeerCapsSink sink) { call_peer_caps_sink_ = std::move(sink); }
-
-void CallSessionManager::AnnounceCapsUpdate() {
-  auto active = ActiveLocalCall();
-  if (!active || !active->has_value() || !local_peer_caps_) {
-    return;
-  }
-  const std::string call_id = (*active)->call_id;
-  auto peer = P2pPeerIdentityForCall(call_id);
-  if (!peer || !peer->has_value() || (*peer)->empty()) {
-    return;
-  }
-  CallCapsUpdateDetail detail;
-  detail.call_id = call_id;
-  if (auto local = P2pLocalIdentity()) {
-    detail.identity = *local;
-  }
-  detail.caps = local_peer_caps_();
-  auto encoded = CallControlCodec::EncodeCapsUpdate(detail);
-  if (!encoded) {
-    return;
-  }
-  if (auto sent = control_.SendDirect(**peer, CallControlType::CallCapsUpdate, *encoded, ""); !sent) {
-    log().warning << "caps update send failed call_id=" << call_id << " err=" << sent.error().message;
-    return;
-  }
-  log().info << "caps update sent call_id=" << call_id << " mobility=" << MobilityClassWire(detail.caps.mobility);
-}
-
-Roe<void> CallSessionManager::HandleInboundCapsUpdate(const std::string& detail_json) {
-  auto decoded = CallControlCodec::DecodeCapsUpdate(detail_json);
-  if (!decoded) {
-    return decoded.error();
-  }
-  auto active = ActiveLocalCall();
-  if (!active || !active->has_value() || (*active)->call_id != decoded->call_id) {
-    return {};  // not our live call: nothing to re-plan
-  }
-  log().info << "caps update inbound call_id=" << decoded->call_id
-             << " mobility=" << MobilityClassWire(decoded->caps.mobility);
-  if (call_peer_caps_sink_) {
-    call_peer_caps_sink_(decoded->call_id, decoded->caps);
-  }
-  return {};
-}
 
 void CallSessionManager::SetLocalMeshPeerIdProvider(LocalMeshPeerIdFn callback) {
   local_mesh_peer_id_ = std::move(callback);
@@ -772,7 +644,7 @@ Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_
   auto started = workflow_.StartCall(origin_thread_id, video_allowed, invitee_identities);
   if (started) {
     // Circuit path often chooses R1 before Invite (product-stack / hard-w5); flush wire announce.
-    FlushPendingCircuitR1Announce();
+    reach_signals_.FlushCircuitR1();
   }
   return started;
 }
@@ -1058,110 +930,6 @@ Roe<void> CallSessionManager::HandleInboundVideoRefresh(const std::string& detai
   return workflow_.HandleInboundVideoRefresh(detail_json, sender_identity);
 }
 
-Roe<void> CallSessionManager::HandleInboundCircuitR1(const std::string& detail_json) {
-  auto decoded = CallControlCodec::DecodeCircuitR1(detail_json);
-  if (!decoded) {
-    return decoded.error();
-  }
-  auto active = ActiveLocalCall();
-  if (!active || !active->has_value() || (*active)->call_id != decoded->call_id) {
-    log().info << "CallCircuitR1 ignored; no matching active call call_id=" << decoded->call_id
-               << " r1=" << decoded->circuit_r1;
-    return {};
-  }
-  log().info << "CallCircuitR1 inbound call_id=" << decoded->call_id << " r1=" << decoded->circuit_r1;
-  if (prefer_late_reserve_) {
-    prefer_late_reserve_(decoded->circuit_r1);
-  }
-  return {};
-}
-
-Roe<void> CallSessionManager::HandleInboundPunchOffer(const std::string& detail_json,
-                                                      const std::string& sender_identity) {
-  auto decoded = CallControlCodec::DecodePunch(detail_json);
-  if (!decoded) {
-    return decoded.error();
-  }
-  auto active = ActiveLocalCall();
-  if (!active || !active->has_value() || (*active)->call_id != decoded->call_id) {
-    log().info << "CallPunchOffer ignored; no matching active call call_id=" << decoded->call_id;
-    return {};
-  }
-  if (!signaling_punch_burst_) {
-    return Error("signaling punch burst unavailable");
-  }
-  std::vector<std::string> my_addrs =
-      local_punch_addrs_ ? local_punch_addrs_() : std::vector<std::string>{};
-  if (my_addrs.empty() && local_listen_multiaddrs_) {
-    my_addrs = local_listen_multiaddrs_();
-  }
-  if (my_addrs.empty()) {
-    return Error("signaling punch: no local candidates for answer");
-  }
-  if (register_peer_listen_multiaddrs_) {
-    const std::string key =
-        !decoded->peer_id.empty() ? decoded->peer_id : sender_identity;
-    register_peer_listen_multiaddrs_(key, decoded->addrs);
-  }
-  CallPunchDetail answer;
-  answer.call_id = decoded->call_id;
-  answer.epoch_id = decoded->epoch_id;
-  answer.window_ms = decoded->window_ms > 0 ? decoded->window_ms : 2000;
-  answer.addrs = std::move(my_addrs);
-  if (local_mesh_peer_id_) {
-    answer.peer_id = local_mesh_peer_id_();
-  }
-  auto encoded = CallControlCodec::EncodePunch(answer);
-  if (!encoded) {
-    return encoded.error();
-  }
-  auto peer = P2pPeerIdentityForCall(decoded->call_id);
-  if (!peer || !peer->has_value() || (*peer)->empty()) {
-    return Error("signaling punch answer: no call peer");
-  }
-  if (auto sent =
-          control_.SendDirect(**peer, CallControlType::CallPunchAnswer, *encoded, "");
-      !sent) {
-    return sent.error();
-  }
-  log().info << "CallPunchAnswer sent call_id=" << decoded->call_id << " epoch=" << decoded->epoch_id
-             << " peer_addrs=" << decoded->addrs.size();
-  const int window = answer.window_ms;
-  signaling_punch_burst_(decoded->addrs, window, [this, epoch = decoded->epoch_id](Roe<void> r) {
-    if (!r) {
-      log().warning << "CallPunchOffer local burst failed epoch=" << epoch
-                    << " err=" << r.error().message;
-    } else {
-      log().info << "CallPunchOffer local burst ok epoch=" << epoch;
-    }
-  });
-  return {};
-}
-
-Roe<void> CallSessionManager::HandleInboundPunchAnswer(const std::string& detail_json) {
-  auto decoded = CallControlCodec::DecodePunch(detail_json);
-  if (!decoded) {
-    return decoded.error();
-  }
-  if (!pending_signaling_punch_ || pending_signaling_punch_->epoch_id != decoded->epoch_id) {
-    log().info << "CallPunchAnswer ignored; no pending epoch=" << decoded->epoch_id;
-    return {};
-  }
-  if (!signaling_punch_burst_) {
-    CompletePendingSignalingPunch(decoded->epoch_id, Error("signaling punch burst unavailable"));
-    return Error("signaling punch burst unavailable");
-  }
-  if (register_peer_listen_multiaddrs_ && !decoded->peer_id.empty()) {
-    register_peer_listen_multiaddrs_(decoded->peer_id, decoded->addrs);
-  }
-  const int window = decoded->window_ms > 0 ? decoded->window_ms : 2000;
-  const std::string epoch = decoded->epoch_id;
-  signaling_punch_burst_(decoded->addrs, window, [this, epoch](Roe<void> r) {
-    CompletePendingSignalingPunch(epoch, std::move(r));
-  });
-  return {};
-}
-
 Roe<void> CallSessionManager::HandleInboundEnded(const std::string& detail_json,
                                                  const std::string& local_identity) {
   return workflow_.HandleInboundEnded(detail_json, local_identity);
@@ -1213,13 +981,13 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   case CallControlType::CallVideoRefresh:
     return HandleInboundVideoRefresh(detail_json, sender_identity);
   case CallControlType::CallCircuitR1:
-    return HandleInboundCircuitR1(detail_json);
+    return reach_signals_.HandleInboundCircuitR1(detail_json);
   case CallControlType::CallCapsUpdate:
-    return HandleInboundCapsUpdate(detail_json);
+    return reach_signals_.HandleInboundCapsUpdate(detail_json);
   case CallControlType::CallPunchOffer:
-    return HandleInboundPunchOffer(detail_json, sender_identity);
+    return reach_signals_.HandleInboundPunchOffer(detail_json, sender_identity);
   case CallControlType::CallPunchAnswer:
-    return HandleInboundPunchAnswer(detail_json);
+    return reach_signals_.HandleInboundPunchAnswer(detail_json);
   case CallControlType::CallEnded:
     return HandleInboundEnded(detail_json, *local);
   case CallControlType::CallStarted:

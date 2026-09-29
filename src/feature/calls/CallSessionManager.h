@@ -17,6 +17,7 @@
 #include "domain/people/PeerAccountBook.h"
 #include "feature/calls/CallInitiationBilling.h"
 #include "feature/calls/CallMediaKeyExchange.h"
+#include "feature/calls/CallReachSignals.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallTopologyController.h"
@@ -112,30 +113,8 @@ public:
   /** Async circuit park for the Accept gate; the composition posts `done` onto the calls owner. */
   using ParkCircuitFn = std::function<void(int timeout_ms, std::function<void(bool ready)> done)>;
   void SetParkCircuit(ParkCircuitFn park);
-  /** H011 L3.1c: inbound call_circuit_r1 → answerer PreferLateReserve. */
-  using PreferLateReserveFn = std::function<void(const std::string& relay_peer_id)>;
-  void SetPreferLateReserve(PreferLateReserveFn callback);
-  /**
-   * H011 L3.1c: dialer announces chosen R1 to the active call peer (best-effort).
-   * When no active call yet (circuit path before Invite), stashes for FlushPendingCircuitR1Announce.
-   */
-  void AnnounceCircuitR1(const std::string& circuit_r1_peer_id);
-  /** Send stashed R1 after Invite creates an active call (hard-w5 pre-Invite EnsureViaCircuit). */
-  void FlushPendingCircuitR1Announce();
-  /**
-   * H012: send call_punch_offer over call-control and burst on answer (Amp introducer miss).
-   * `target_peer_id` is mesh PeerId; dial identity resolved from active call peer.
-   */
-  void RequestSignalingPunch(const std::string& target_peer_id, const std::vector<std::string>& my_addrs,
-                             std::function<void(Roe<void>)> on_done);
-  /** BurstDial peer candidates after call_punch_* exchange (Stack → AmpPunchCoordinator). */
-  using SignalingPunchBurstFn =
-      std::function<void(const std::vector<std::string>& peer_addrs, int window_ms,
-                         std::function<void(Roe<void>)> on_done)>;
-  void SetSignalingPunchBurst(SignalingPunchBurstFn callback);
-  /** Local Amp punch candidates for call_punch_answer. */
-  using LocalPunchAddrsFn = std::function<std::vector<std::string>()>;
-  void SetLocalPunchAddrsProvider(LocalPunchAddrsFn callback);
+  /** The mesh's reach signals (H011 R1, H012 punch, K005 caps) carried to the active call's peer. */
+  CallReachSignals& ReachSignals() { return reach_signals_; }
   /** Local `/ip4/…/tcp/…/p2p/…` listen set for call-control dial bootstrap. */
   using LocalListenMultiaddrsFn = std::function<std::vector<std::string>()>;
   void SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback);
@@ -145,8 +124,6 @@ public:
   /** The remote's caps for a call — from invite / accept, then `call_caps_update` (K005). */
   using CallPeerCapsSink = std::function<void(const std::string& call_id, const CallPeerCaps& caps)>;
   void SetCallPeerCapsSink(CallPeerCapsSink sink);
-  /** Our caps changed mid-call (mobility flipped): tell the active call's peer (K005). */
-  void AnnounceCapsUpdate();
   /** Local mesh PeerId (base58) for invite/accept — PeerId→relay without contacts. */
   using LocalMeshPeerIdFn = std::function<std::string()>;
   void SetLocalMeshPeerIdProvider(LocalMeshPeerIdFn callback);
@@ -321,6 +298,7 @@ private:
   void StopMediaIfCall(const std::string& call_id);
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
   void BindWorkflowHostPorts();
+  void BindReachSignalPorts();
   /** Flush deferred inbox/TailSync when no ActiveLocalCall remains. */
   void MaybeCatchUpAfterCall();
 
@@ -338,13 +316,8 @@ private:
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
-  Roe<void> HandleInboundCircuitR1(const std::string& detail_json);
-  Roe<void> HandleInboundCapsUpdate(const std::string& detail_json);
-  Roe<void> HandleInboundPunchOffer(const std::string& detail_json, const std::string& sender_identity);
-  Roe<void> HandleInboundPunchAnswer(const std::string& detail_json);
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
 
-  void CompletePendingSignalingPunch(const std::string& epoch_id, Roe<void> result);
 
   IThreadStore& store_;
   ContactsStore& contacts_;
@@ -363,6 +336,8 @@ private:
   CallMediaKeyExchange key_exchange_;
   /** P001 initiation pricing the workflow applies on invite / accept. */
   CallInitiationBilling billing_;
+  /** Reach signals over call-control (after control_, their carrier). */
+  CallReachSignals reach_signals_;
   CallSessionWorkflow workflow_;
   // Swapped at mesh start / stop and lifecycle bind; read as one snapshot per operation.
   SharedPorts<CallDirectMediaPorts> direct_media_;
@@ -373,18 +348,6 @@ private:
   PrefetchPeerReachFn prefetch_reach_;
   EnsureCircuitReadyFn ensure_circuit_ready_;
   ParkCircuitFn park_circuit_;
-  PreferLateReserveFn prefer_late_reserve_;
-  /** R1 chosen before Invite — flushed once StartCall creates an active session. */
-  std::string pending_circuit_r1_announce_;
-  SignalingPunchBurstFn signaling_punch_burst_;
-  LocalPunchAddrsFn local_punch_addrs_;
-  struct PendingSignalingPunch {
-    std::string epoch_id;
-    std::string call_id;
-    std::string peer_identity;
-    std::function<void(Roe<void>)> on_done;
-  };
-  std::optional<PendingSignalingPunch> pending_signaling_punch_;
   LocalListenMultiaddrsFn local_listen_multiaddrs_;
   LocalPeerCapsFn local_peer_caps_;
   CallPeerCapsSink call_peer_caps_sink_;

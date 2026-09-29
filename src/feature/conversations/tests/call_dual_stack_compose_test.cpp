@@ -217,6 +217,53 @@ TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
   ExpectLive(offer_, call_id, LiveCallState::Ended, LiveCallEndReason::RemoteEnded, "offer");
 }
 
+// H012 / H011 over call-control: a signaled punch runs offer → answer → both bursts, and our R1
+// reaches the peer's late reserve.
+TEST_F(CallDualStackComposeTest, ReachSignalsTravelOverCallControl) {
+  Thread thread;
+  thread.id = "thread-dual-reach";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+  const std::string call_id = RunOfferAnswerToInCall(thread.id);
+  ASSERT_FALSE(call_id.empty());
+
+  struct MeshFake {
+    std::vector<std::string> candidates;
+    std::vector<std::vector<std::string>> bursts;
+    std::vector<std::string> preferred;
+  };
+  MeshFake offer_mesh{{"/ip4/1.1.1.1/udp/1"}, {}, {}};
+  MeshFake answer_mesh{{"/ip4/2.2.2.2/udp/2"}, {}, {}};
+  for (auto [side, mesh] : {std::pair{&offer_, &offer_mesh}, std::pair{&answer_, &answer_mesh}}) {
+    CallReachSignals::MeshPorts ports;
+    ports.local_punch_addrs = [mesh]() { return mesh->candidates; };
+    ports.punch_burst = [mesh](const std::vector<std::string>& addrs, int, SignalingPunchExchange::DoneFn done) {
+      mesh->bursts.push_back(addrs);
+      done(Roe<void>{});
+    };
+    ports.prefer_late_reserve = [mesh](const std::string& r1) { mesh->preferred.push_back(r1); };
+    side->stack->Calls()->ReachSignals().SetMeshPorts(std::move(ports));
+  }
+
+  std::optional<bool> punched;
+  offer_.stack->Calls()->ReachSignals().RequestSignalingPunch("12D3KooWAnswer", offer_mesh.candidates,
+                                                              [&](Roe<void> r) { punched = static_cast<bool>(r); });
+  PumpWire();
+  ASSERT_EQ(answer_mesh.bursts.size(), 1u) << "the answer side bursts at the offer's candidates";
+  EXPECT_EQ(answer_mesh.bursts[0], offer_mesh.candidates);
+  ASSERT_EQ(offer_mesh.bursts.size(), 1u) << "the offer side bursts at the answer's candidates";
+  EXPECT_EQ(offer_mesh.bursts[0], answer_mesh.candidates);
+  ASSERT_TRUE(punched);
+  EXPECT_TRUE(*punched);
+
+  offer_.stack->Calls()->ReachSignals().AnnounceCircuitR1("12D3KooWR1");
+  PumpWire();
+  EXPECT_EQ(answer_mesh.preferred, std::vector<std::string>{"12D3KooWR1"});
+  FinishAnswerLeaveExpectBothIdle(call_id);
+}
+
 // B30 (call-path-resilience k4): the relay delivers CallAccept late (CN cellular: 11–58 s) while the
 // answerer's call-media hello — keyed from the invite — reaches the offerer directly. The hello
 // stands in for the accept; the real one arriving later changes nothing.

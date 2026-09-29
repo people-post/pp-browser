@@ -20,6 +20,7 @@ pp_browser_add_feature_library(pp_feature_calls
     CallControlClient.cpp
     CallMediaKeyExchange.cpp
     CallInitiationBilling.cpp
+    CallReachSignals.cpp
   PUBLIC_LIBS
     pp_foundation_crypto
     pp_domain_media

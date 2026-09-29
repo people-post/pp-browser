@@ -101,7 +101,7 @@ void CallStack::ReevaluateLocalMobilityOnOwner() {
   }
   auto active = call_sessions_->ActiveLocalCall();
   if (active && active->has_value()) {
-    call_sessions_->AnnounceCapsUpdate();
+    call_sessions_->ReachSignals().AnnounceCapsUpdate();
     NotifyPathPolicyChangedOnOwner((*active)->call_id);
   }
 }
@@ -289,7 +289,7 @@ void CallStack::BindMeshMediaHooks() {
   shared->SetOnRelayChosen([this](const std::string& circuit_r1) {
     CallsThread::Post([this, circuit_r1]() {
       if (call_sessions_) {
-        call_sessions_->AnnounceCircuitR1(circuit_r1);
+        call_sessions_->ReachSignals().AnnounceCircuitR1(circuit_r1);
       }
     });
   });
@@ -301,7 +301,7 @@ void CallStack::BindMeshMediaHooks() {
         on_done(Error("Calls unavailable"));
         return;
       }
-      call_sessions_->RequestSignalingPunch(target_peer_id, my_addrs, std::move(on_done));
+      call_sessions_->ReachSignals().RequestSignalingPunch(target_peer_id, my_addrs, std::move(on_done));
     });
   });
 }
@@ -541,24 +541,25 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
       on_owner(false);
     }
   });
-  call_sessions_->SetPreferLateReserve([this](const std::string& relay_peer_id) {
+  CallReachSignals::MeshPorts reach;
+  reach.prefer_late_reserve = [this](const std::string& relay_peer_id) {
     if (MeshMediaPlane* shared = mesh_media()) {
       shared->Rendezvous().PreferLateReserve(relay_peer_id);
     }
-  });
-  call_sessions_->SetLocalPunchAddrsProvider(
-      [this]() -> std::vector<std::string> { return LocalMeshView()->punch_candidate_addrs; });
-  call_sessions_->SetSignalingPunchBurst(
-      [this](const std::vector<std::string>& peer_addrs, int window_ms, std::function<void(Roe<void>)> on_done) {
-        MeshMediaPlane* shared = mesh_media();
-        if (!shared) {
-          if (on_done) {
-            on_done(Error("amp punch unavailable"));
-          }
-          return;
-        }
-        shared->SignalingPunchBurstAsync(peer_addrs, window_ms, std::move(on_done));
-      });
+  };
+  reach.local_punch_addrs = [this]() -> std::vector<std::string> { return LocalMeshView()->punch_candidate_addrs; };
+  reach.punch_burst = [this](const std::vector<std::string>& peer_addrs, int window_ms,
+                             std::function<void(Roe<void>)> on_done) {
+    MeshMediaPlane* shared = mesh_media();
+    if (!shared) {
+      if (on_done) {
+        on_done(Error("amp punch unavailable"));
+      }
+      return;
+    }
+    shared->SignalingPunchBurstAsync(peer_addrs, window_ms, std::move(on_done));
+  };
+  call_sessions_->ReachSignals().SetMeshPorts(std::move(reach));
   EnsureCallLifecycleBound();
   RebindMeshMedia();
 }
