@@ -63,6 +63,17 @@ protected:
     DestroyStackSide(answer_);
   }
 
+  static const LiveCall* Live(StackSide& side, const std::string& call_id) {
+    return side.stack->Calls() ? side.stack->Calls()->Live().Find(call_id) : nullptr;
+  }
+  static void ExpectLive(StackSide& side, const std::string& call_id, const LiveCallState state,
+                         const LiveCallEndReason reason, const char* who) {
+    const LiveCall* call = Live(side, call_id);
+    ASSERT_NE(call, nullptr) << who;
+    EXPECT_EQ(call->State(), state) << who << " state=" << LiveCallStateName(call->State());
+    EXPECT_EQ(call->EndReason(), reason) << who << " reason=" << LiveCallEndReasonName(call->EndReason());
+  }
+
   /** Deliver queued call-control between the two stacks; drain UI between hops. */
   void PumpWire(int rounds = 8) {
     for (int r = 0; r < rounds; ++r) {
@@ -201,6 +212,9 @@ TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
   const std::string call_id = RunOfferAnswerInCallLeave(thread.id);
   ASSERT_FALSE(call_id.empty());
   EXPECT_GE(answer_.transport->connect_async_calls, 1);
+  // Each side's LiveCall ended for its own reason: the answerer left, the offerer was left.
+  ExpectLive(answer_, call_id, LiveCallState::Ended, LiveCallEndReason::LocalLeave, "answer");
+  ExpectLive(offer_, call_id, LiveCallState::Ended, LiveCallEndReason::RemoteEnded, "offer");
 }
 
 // B30 (call-path-resilience k4): the relay delivers CallAccept late (CN cellular: 11–58 s) while the
@@ -284,6 +298,9 @@ TEST_F(CallDualStackComposeTest, RetryFromOneSideReconnectsAFailedOpenCallOnBoth
       30000);
   ASSERT_EQ(offer_.ui->Phase(), CallPhase::ConnectFailed);
   ASSERT_EQ(answer_.ui->Phase(), CallPhase::ConnectFailed);
+  // Failed is not closed: both LiveCalls are still Joined.
+  ExpectLive(offer_, call_id, LiveCallState::Joined, LiveCallEndReason::None, "offer failed");
+  ExpectLive(answer_, call_id, LiveCallState::Joined, LiveCallEndReason::None, "answer failed");
   const int offer_dials = offer_.transport->connect_async_calls;
 
   answer_.transport->fail_connects = false;
@@ -377,6 +394,8 @@ TEST_F(CallDualStackComposeTest, OfferInviteAnswerDeclineClearsOfferer) {
       << "offerer must Idle on remote Decline without local LeaveClicked";
   EXPECT_FALSE(offer_.stack->HasActiveLocalCall());
   EXPECT_FALSE(answer_.stack->HasActiveLocalCall());
+  ExpectLive(answer_, call_id, LiveCallState::Ended, LiveCallEndReason::Declined, "answer");
+  ExpectLive(offer_, call_id, LiveCallState::Ended, LiveCallEndReason::DeclinedByPeer, "offer");
 }
 
 TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
@@ -439,6 +458,10 @@ TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   ASSERT_TRUE(answer_sessions);
   // ActiveLocalCall is only the joined call — A must not be the active one.
   EXPECT_EQ((*active_b)->call_id, call_b);
+  // Accepting B ended A on the answerer for that reason; the offerer saw A ended by the peer.
+  ExpectLive(answer_, call_a, LiveCallState::Ended, LiveCallEndReason::Superseded, "answer A");
+  ExpectLive(answer_, call_b, LiveCallState::Joined, LiveCallEndReason::None, "answer B");
+  ExpectLive(offer_, call_b, LiveCallState::Joined, LiveCallEndReason::None, "offer B");
 
   FinishAnswerLeaveExpectBothIdle(call_b);
 }

@@ -685,7 +685,7 @@ void CallController::RefreshPendingRing() {
       if ((*active)->state == CallSessionState::Active && !backend->Media().IsActive() &&
           !backend->MediaAttemptedThisProcess((*active)->call_id) && !backend->IsAwaitingSfuRecovery()) {
         // True orphan after force-quit / process restart.
-        backend->LeaveCall((*active)->call_id);
+        backend->LeaveCall((*active)->call_id, LiveCallEndReason::Orphaned);
       }
       active_call_id_.clear();
       ClearInCall();

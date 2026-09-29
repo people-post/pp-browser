@@ -12,6 +12,7 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/people/IdentityStore.h"
+#include "feature/calls/LiveCall.h"
 
 #include <functional>
 #include <optional>
@@ -143,7 +144,7 @@ public:
   };
 
   CallSessionWorkflow(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
-                      CallMediaKeyStore& media_keys);
+                      CallMediaKeyStore& media_keys, LiveCalls& live_calls);
   ~CallSessionWorkflow() override;
 
   void SetHostPorts(HostPorts ports);
@@ -162,9 +163,10 @@ public:
   void AcceptInviteAsync(const std::string& call_id, InitiationChargeDecision charge_decision,
                          std::function<void(Roe<void>)> on_done);
   Roe<void> DeclineInvite(const std::string& call_id);
-  Roe<void> LeaveCall(const std::string& call_id);
+  Roe<void> LeaveCall(const std::string& call_id, LiveCallEndReason reason = LiveCallEndReason::LocalLeave);
   Roe<void> LeaveCallIfActiveExcept(const std::string& keep_call_id);
-  Roe<void> EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms);
+  /** Every end of a call on this device funnels here; `reason` is what ended it (LiveCall). */
+  Roe<void> EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms, LiveCallEndReason reason);
   Roe<void> MaybeRotateMediaKey(const std::string& call_id, const std::string& leaver_identity);
 
   void SweepExpiredInvites();
@@ -224,6 +226,8 @@ private:
   IdentityStore& identity_;
   CallSessionStore& sessions_;
   CallMediaKeyStore& media_keys_;
+  /** The calls live on this device (owned by CallSessionManager); driven where the store rows change. */
+  LiveCalls& live_calls_;
   HostPorts host_;
   DeferredSelf deferred_;
   InitiationBillingStore* initiation_billing_ = nullptr;

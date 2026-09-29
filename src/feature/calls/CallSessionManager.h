@@ -199,7 +199,9 @@ public:
   void AcceptInviteAsync(const std::string& call_id, std::function<void(Roe<void>)> on_done,
                          InitiationChargeDecision charge_decision = InitiationChargeDecision::Waive);
   Roe<void> DeclineInvite(const std::string& call_id);
-  Roe<void> LeaveCall(const std::string& call_id);
+  Roe<void> LeaveCall(const std::string& call_id, LiveCallEndReason reason = LiveCallEndReason::LocalLeave);
+  /** The calls live on this device (admission → close). Calls owner only. */
+  const LiveCalls& Live() const { return live_calls_; }
   /** Detach SFU + stop capture. Calls owner only — call before LeaveCall worker / app quit. */
   void StopCallMedia(const std::string& call_id);
 
@@ -324,7 +326,7 @@ private:
                                      const std::string& detail_json, const std::string& display,
                                      const std::string& skip_identity);
   Roe<void> MaybeRotateMediaKey(const std::string& call_id, const std::string& leaver_identity);
-  Roe<void> EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms);
+  Roe<void> EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms, LiveCallEndReason reason);
   Roe<CallRosterDetail> BuildRosterDetail(const std::string& call_id) const;
   void NotifyRingChanged();
 
@@ -369,6 +371,8 @@ private:
   IPskSessionStore& psk_store_;
   CallMediaEngine& media_;
   CallTopologyController topology_;
+  /** Before workflow_: the workflow drives it. */
+  LiveCalls live_calls_;
   CallSessionWorkflow workflow_;
   // Swapped at mesh start / stop and lifecycle bind; read as one snapshot per operation.
   SharedPorts<CallDirectMediaPorts> direct_media_;

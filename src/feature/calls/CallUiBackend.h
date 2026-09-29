@@ -7,6 +7,7 @@
 #include "feature/calls/CallLifecycle.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallUiState.h"
+#include "feature/calls/LiveCall.h"
 
 #include <functional>
 #include <memory>
@@ -52,7 +53,7 @@ public:
   void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
   void NoteRingCallId(const std::string& call_id);
   void ClearLastError();
-  void LeaveCall(const std::string& call_id);
+  void LeaveCall(const std::string& call_id, LiveCallEndReason reason = LiveCallEndReason::LocalLeave);
   void StopCallMedia(const std::string& call_id);
   void RequestVideoRefresh(const std::string& call_id, const std::string& publisher_identity);
   /** Set before AcceptClicked — consumed by AcceptInvite. */

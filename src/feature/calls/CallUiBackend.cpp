@@ -115,8 +115,8 @@ void CallUiBackend::ClearLastError() {
   });
 }
 
-void CallUiBackend::LeaveCall(const std::string& call_id) {
-  OnOwner([call_id](CallSessionManager& calls) { (void)calls.LeaveCall(call_id); });
+void CallUiBackend::LeaveCall(const std::string& call_id, const LiveCallEndReason reason) {
+  OnOwner([call_id, reason](CallSessionManager& calls) { (void)calls.LeaveCall(call_id, reason); });
 }
 
 void CallUiBackend::StopCallMedia(const std::string& call_id) {

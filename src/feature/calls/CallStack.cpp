@@ -660,7 +660,7 @@ void CallStack::AbortCallMediaForShutdownOnOwner() {
   if (call_sessions_) {
     if (auto active = call_sessions_->ActiveLocalCall(); active && active->has_value()) {
       log().info << "AbortCallMediaForShutdown LeaveCall call_id=" << (*active)->call_id;
-      (void)call_sessions_->LeaveCall((*active)->call_id);
+      (void)call_sessions_->LeaveCall((*active)->call_id, LiveCallEndReason::Shutdown);
     }
   }
   if (media_plane_) {

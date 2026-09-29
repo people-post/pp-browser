@@ -73,7 +73,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
     : store_(store), contacts_(contacts), identity_(identity), sessions_(sessions), media_keys_(media_keys),
       delivery_(std::move(delivery)), psk_store_(psk_store), media_(media),
       topology_(sessions, contacts, media),
-      workflow_(store, identity, sessions, media_keys) {
+      workflow_(store, identity, sessions, media_keys, live_calls_) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
   BindTopologyHostPorts();
@@ -1087,15 +1087,16 @@ Roe<void> CallSessionManager::MaybeRotateMediaKey(const std::string& call_id, co
 }
 
 
-Roe<void> CallSessionManager::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms) {
-  auto result = workflow_.EndCallLocal(session, duration_ms);
+Roe<void> CallSessionManager::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms,
+                                           const LiveCallEndReason reason) {
+  auto result = workflow_.EndCallLocal(session, duration_ms, reason);
   MaybeCatchUpAfterCall();
   return result;
 }
 
 
-Roe<void> CallSessionManager::LeaveCall(const std::string& call_id) {
-  auto result = workflow_.LeaveCall(call_id);
+Roe<void> CallSessionManager::LeaveCall(const std::string& call_id, const LiveCallEndReason reason) {
+  auto result = workflow_.LeaveCall(call_id, reason);
   MaybeCatchUpAfterCall();
   return result;
 }
@@ -1512,7 +1513,8 @@ Roe<std::string> CallSessionManager::TopologyLocalIdentity() const {
 }
 
 Roe<void> CallSessionManager::TopologyLeaveCall(const std::string& call_id) {
-  return LeaveCall(call_id);
+  // Topology leaves when the group media path cannot be kept (attach-wait timeout, failed migrate).
+  return LeaveCall(call_id, LiveCallEndReason::MediaUnavailable);
 }
 
 Roe<void> CallSessionManager::TopologyFanOutToJoined(const std::string& call_id, CallControlType type,
