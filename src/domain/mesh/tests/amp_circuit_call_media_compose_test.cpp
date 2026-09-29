@@ -1,9 +1,10 @@
 #include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
-#include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
+#include "domain/mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
 #include "domain/mesh/l4/call_media/CallMediaBundleLogic.h"
 #include "domain/mesh/l4/call_media/CallMediaLegCoordinator.h"
 #include "domain/mesh/l4/call_media/CallMediaSessionLogic.h"
-#include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/l4/circuit/client/CircuitClientCoordinator.h"
+#include "domain/mesh/l4/circuit/serve/CircuitRelayServer.h"
 #include "amp/link/Types.h"
 #include "domain/mesh/tests/support/mesh_triple_harness.h"
 
@@ -61,15 +62,14 @@ protected:
     harness_->mgr_b().EnableNestedCarrierAccept(true);
 
     hops_ = std::make_unique<AmpCircuitHopRegistry>();
-    circuit_r_ = std::make_unique<CircuitTunnelCoordinator>(*harness_->runtime_r);
-    circuit_a_ = std::make_unique<CircuitTunnelCoordinator>(*harness_->runtime_a);
+    circuit_r_ = std::make_unique<CircuitRelayServer>(*harness_->runtime_r);
+    circuit_a_ = std::make_unique<CircuitClientCoordinator>(*harness_->runtime_a);
     a_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_a);
     b_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b);
 
     circuit_r_->Start();
     circuit_r_->SetServeInbound(true);
     circuit_a_->Start();
-    circuit_a_->SetServeInbound(false);
     a_call_->Start();
     b_call_->Start();
   }
@@ -167,8 +167,8 @@ protected:
 
   std::unique_ptr<pbr::test::AmpMeshTripleHarness> harness_;
   std::unique_ptr<AmpCircuitHopRegistry> hops_;
-  std::unique_ptr<CircuitTunnelCoordinator> circuit_r_;
-  std::unique_ptr<CircuitTunnelCoordinator> circuit_a_;
+  std::unique_ptr<CircuitRelayServer> circuit_r_;
+  std::unique_ptr<CircuitClientCoordinator> circuit_a_;
   std::unique_ptr<CallMediaLegCoordinator> a_call_;
   std::unique_ptr<CallMediaLegCoordinator> b_call_;
 };
@@ -340,9 +340,8 @@ TEST_F(RelayedCallDisturbanceTest, CallerReserveOnCarryingRelayKeepsAudio) {
 // Dogfood timeline: both ends parked on R before the call; B runs the product circuit coordinator
 // (not serving); A renews on R and (B41 gap) on B every 10 s while earlier leases expire.
 TEST_F(RelayedCallDisturbanceTest, RenewalsOverTimeKeepAudioBothWays) {
-  CircuitTunnelCoordinator circuit_b(*harness_->runtime_b);
+  CircuitClientCoordinator circuit_b(*harness_->runtime_b);
   circuit_b.Start();
-  circuit_b.SetServeInbound(false);
   {
     Wait<CircuitTunnelBridgeResult> wb;
     (void)circuit_b.StartReserve("relay", wb.Fn(), 15000);
@@ -376,10 +375,9 @@ TEST_F(RelayedCallDisturbanceTest, RenewalsOverTimeKeepAudioBothWays) {
 // Same, with real-time lease expiry (coordinator deadlines use steady_clock): 300 ms leases renewed
 // every 200 ms, so superseded reservations expire and tear down on client and relay mid-call.
 TEST_F(RelayedCallDisturbanceTest, LeaseExpiryDuringCallKeepsAudio) {
-  CircuitTunnelCoordinator circuit_b(*harness_->runtime_b);
+  CircuitClientCoordinator circuit_b(*harness_->runtime_b);
   circuit_b.Start();
-  circuit_b.SetServeInbound(false);
-  auto reserve = [&](CircuitTunnelCoordinator& c, const std::string& key) {
+  auto reserve = [&](CircuitClientCoordinator& c, const std::string& key) {
     Wait<CircuitTunnelBridgeResult> w;
     (void)c.StartReserve(key, w.Fn(), 300);
     w.PumpUntilDone(*harness_, 1500);

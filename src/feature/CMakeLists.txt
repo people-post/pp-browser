@@ -2,6 +2,7 @@ include(PpBrowserFeature)
 
 # Acyclic module order: each library links only lower layers.
 # Presenters live in src/gui/ (F008); feature stays Rml-free at the module edge.
+# Headless modules (registration, node) are added from src/CMakeLists.txt so headless builds get them.
 add_subdirectory(settings)
 add_subdirectory(ai)
 add_subdirectory(calls)
@@ -9,6 +10,8 @@ add_subdirectory(broadcast)
 add_subdirectory(conversations)
 
 set(PP_FEATURE_MODULE_LIBS
+  pp_feature_registration
+  pp_feature_node
   pp_feature_settings
   pp_feature_ai_tools
   pp_feature_ai_bindings

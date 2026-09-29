@@ -96,7 +96,7 @@ Grandchild detail is carried in the **message chain**, not in composed integer c
 | Boundary kind | Example | Wrap behaviour |
 |---------------|---------|----------------|
 | **Adapter port** (same semantics, feature isolation) | `AmpChatPeerLinks` : `PeerLinkManager` → `IChatPeerLinks` | **Identity map** — same `Err` values and `message`; no extra `AppendFrom`. |
-| **Owning layer** (new module owns the operation) | `CircuitTunnelCoordinator` after `OpenChannel` fails | **`WrapLinkFailure`** — map to coordinator `Err` + `AppendFrom`. |
+| **Owning layer** (new module owns the operation) | `CircuitClientCoordinator` after `OpenChannel` fails | **`WrapLinkFailure`** — map to coordinator `Err` + `AppendFrom`. |
 
 Feature code must not `#include "amp/link/*"` for errors; use `IChatPeerLinks::Failure` or
 higher.
@@ -137,11 +137,11 @@ carrier — not string copy alone.
 
 | Module | Primary files | Suggested `Err` themes | Status |
 |--------|---------------|------------------------|--------|
-| Dial-back | `reachability/AmpDialBackProtocol.{h,cpp}` | `NotStarted`, `EndpointNotRegistered`, `LinkFailed`, `Timeout`, `ChannelFailed`, `ProtocolError`, `Generic` | **done** — wraps `PeerLinkManager::Failure` |
-| DHT | `dht/AmpDhtProtocol.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `ChannelFailed`, `NotFound`, `Generic`, … | **done** — wraps `PeerLinkManager::Failure`; `FindPeer` returns `FindPeerRoe` |
-| Circuit tunnel | `l4/circuit/CircuitTunnelCoordinator.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `Rejected`, `Generic` | pending |
+| Dial-back | `reachability/dial_back/` (`DialBackTypes`, `client/DialBackClient`, `serve/DialBackServer`) | `NotStarted`, `EndpointNotRegistered`, `LinkFailed`, `Timeout`, `ChannelFailed`, `ProtocolError`, `Generic` | **done** — wraps `PeerLinkManager::Failure` |
+| DHT | `dht/client/DhtClient.{h,cpp}` (via `AmpDhtProtocol`) | `NotStarted`, `LinkFailed`, `Timeout`, `ChannelFailed`, `NotFound`, `Generic`, … | **done** — wraps `PeerLinkManager::Failure`; `FindPeer` returns `FindPeerRoe` |
+| Circuit tunnel | `l4/circuit/client/CircuitClientCoordinator.{h,cpp}`, `serve/CircuitRelayServer.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `Rejected`, `Generic` | pending |
 | Call-media leg | `l4/call_media/CallMediaLegCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `Glare`, `Aborted`, `Generic` | pending |
-| Media relay | `l4/media_relay/AmpMediaRelayCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `QuoteRejected`, `Generic` | pending |
+| Media relay | `l4/media_relay/client/MediaRelayClientCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `QuoteRejected`, `Generic` | pending |
 
 **Note:** Dial-back / DHT currently own `PeerLinkManager&` directly (mesh-internal), so
 `WrapLinkFailure` takes `PeerLinkManager::Failure`. Feature-facing L4 that goes through

@@ -5,7 +5,7 @@
 
 #include "feature/conversations/tests/call_stack_compose_support.h"
 
-#include "domain/mesh/l4/media_relay/IMediaRelayClient.h"
+#include "domain/mesh/l4/media_relay/client/IMediaRelayClient.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "common/directory/DirectoryJson.h"
 #include "domain/messaging/SoftMigrateLogic.h"

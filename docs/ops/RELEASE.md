@@ -178,6 +178,7 @@ PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/platform/pp_node_package_lin
 ### Node (`pp-node/v*`)
 
 - [ ] Changes merged to **`main`**
+- [ ] Node-relevant change since the last tag: `./scripts/dev/pp_node_closure.sh --build <dir>` (build-derived: closure files changed since the newest `pp-node/v*` tag + sibling pin bumps; info only)
 - [ ] Local L0 (and L1/L2 N-FANOUT if probe built) green — [IMAGE_SMOKE.md](../../packaging/pp-node/IMAGE_SMOKE.md)
 - [ ] GHCR package visibility set if public pulls are required
 - [ ] Protocol/compat note if this release breaks older apps

@@ -10,7 +10,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/mesh/reachability/Reachability.h"
-#include "domain/mesh/reachability/AmpPunchCoordinator.h"
+#include "domain/mesh/reachability/punch/AmpPunchCoordinator.h"
 #include "domain/mesh/reachability/AmpObservedAddrs.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaPaths.h"

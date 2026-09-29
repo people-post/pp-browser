@@ -2130,7 +2130,7 @@ void CallMediaLegCoordinator::Stop() {
   // Tear down synchronously: a PostIo(raw Impl*) races if the caller destroys then Pumps
   // (macOS: "mutex lock failed: Invalid argument"). Strand before the coordinator lock — IO
   // callbacks hold the strand, so an off-IO Stop taking `mu` first can invert against MeshPump
-  // (see CircuitTunnelCoordinator::AbortInflight).
+  // (see CircuitClientCoordinator::AbortInflight).
   runtime_.WithIoLock([this]() {
     Impl::CallbackLock lock(*impl_);
     std::vector<std::string> ids;
@@ -2368,7 +2368,12 @@ Roe<void> CallMediaLegCoordinator::SendMedia(const CallMediaLegId id, const uint
     return encrypted.error();
   }
   auto framed = EncodeLengthPrefixedFrame(*encrypted);
-  if (!session->EnqueueOutbound(std::move(framed))) {
+  // The channel session is io-affine: the capture thread enqueues under the runtime io lock, or it
+  // races the mesh pump on the same session — a link drop orphaning the session cleared its queue
+  // mid-push (hard-w5 cold-upgrade answerer SIGSEGV, 2026-09-29). Not under the callback lock: a
+  // failed write fails the channel synchronously and its closed callback takes that lock
+  // (io lock → callback lock, as the io tick). Same rule as MediaRelayClientCoordinator::SendFrame.
+  if (!runtime_.WithIoLock([&]() { return session->EnqueueOutbound(std::move(framed)); })) {
     return Error("amp call-media: send queue full");
   }
   return Roe<void>();

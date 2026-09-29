@@ -12,9 +12,10 @@
 #include "domain/media/CallMediaEngine.h"
 #include "domain/media/MediaDeviceArbiter.h"
 #include "domain/media/VideoCodecUnavailable.h"
-#include "domain/mesh/l4/media_relay/AmpMediaRelayClient.h"
-#include "domain/mesh/l4/media_relay/AmpMediaRelayCoordinator.h"
-#include "domain/mesh/l4/media_relay/MediaRelayFrameCrypto.h"
+#include "domain/mesh/l4/media_relay/client/AmpMediaRelayClient.h"
+#include "domain/mesh/l4/media_relay/client/MediaRelayClientCoordinator.h"
+#include "domain/mesh/l4/media_relay/serve/MediaRelayServer.h"
+#include "domain/mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
 #include "domain/mesh/tests/support/mesh_triple_harness.h"
 #include "domain/messaging/BroadcastMedia.h"
 #include "foundation/crypto/MlDsa.h"
@@ -93,9 +94,9 @@ protected:
     server_->PutLiveProgramKey(kProgram, kJoin, live);
     server_->Start();
 
-    hop_relay_ = std::make_unique<AmpMediaRelayCoordinator>(*h_->runtime_r);
-    publisher_relay_ = std::make_unique<AmpMediaRelayCoordinator>(*h_->runtime_b);
-    viewer_relay_coord_ = std::make_unique<AmpMediaRelayCoordinator>(*h_->runtime_a);
+    hop_relay_ = std::make_unique<MediaRelayServer>(*h_->runtime_r);
+    publisher_relay_ = std::make_unique<MediaRelayClientCoordinator>(*h_->runtime_b);
+    viewer_relay_coord_ = std::make_unique<MediaRelayClientCoordinator>(*h_->runtime_a);
     hop_relay_->Start();
     publisher_relay_->Start();
     viewer_relay_coord_->Start();
@@ -115,10 +116,13 @@ protected:
     }
     rpc_.reset();
     viewer_relay_.reset();
-    for (auto* coord : {viewer_relay_coord_.get(), publisher_relay_.get(), hop_relay_.get()}) {
+    for (auto* coord : {viewer_relay_coord_.get(), publisher_relay_.get()}) {
       if (coord) {
         coord->Stop();
       }
+    }
+    if (hop_relay_) {
+      hop_relay_->Stop();
     }
     viewer_relay_coord_.reset();
     publisher_relay_.reset();
@@ -223,9 +227,9 @@ protected:
   std::unique_ptr<AmpBroadcastTransport> server_;
   std::unique_ptr<IChatPeerLinks> hop_links_;
   std::unique_ptr<AmpBroadcastTransport> hop_admission_;
-  std::unique_ptr<AmpMediaRelayCoordinator> hop_relay_;
-  std::unique_ptr<AmpMediaRelayCoordinator> publisher_relay_;
-  std::unique_ptr<AmpMediaRelayCoordinator> viewer_relay_coord_;
+  std::unique_ptr<MediaRelayServer> hop_relay_;
+  std::unique_ptr<MediaRelayClientCoordinator> publisher_relay_;
+  std::unique_ptr<MediaRelayClientCoordinator> viewer_relay_coord_;
   std::unique_ptr<AmpMediaRelayClient> viewer_relay_;
   std::unique_ptr<AmpBroadcastRpcClient> rpc_;
   AlwaysDialable dial_;

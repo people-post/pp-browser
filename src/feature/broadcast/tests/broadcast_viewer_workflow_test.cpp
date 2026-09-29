@@ -2,7 +2,7 @@
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
 
 #include "domain/media/VideoCodecUnavailable.h"
-#include "domain/mesh/l4/media_relay/MediaRelayFrameCrypto.h"
+#include "domain/mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/messaging/BroadcastMedia.h"
 #include "foundation/crypto/MlDsa.h"
