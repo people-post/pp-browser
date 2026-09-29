@@ -35,6 +35,7 @@ Top-level folders (+ calls band). Two sub-trees under `ai/`.
 
 ```
 src/feature/
+├── registration/     Registration finish / renew / nickname (`pp_feature_registration`, headless — pp-node links it)
 ├── settings/         Config apply logic, section handlers + SettingsTools
 ├── ai/               Agent session, turn pipeline, tools, bindings
 │   ├── tools/
@@ -81,22 +82,24 @@ Includes use the repo root: `#include "feature/conversations/ConversationsHub.h"
 app → gui → feature → domain → foundation → common
 ```
 
-Feature modules always link `pp_base` and `pp_common` (via `pp_browser_add_feature_library` in [`cmake/PpBrowserFeature.cmake`](../../cmake/PpBrowserFeature.cmake)). Production code has no upward `#include` edges: `foundation/`/`domain/` do not include `feature/`, `feature/` does not include `gui/` or `app/`, and `gui/` does not include `app/`. Domain peers must not gain new edges to each other — peel those via `common` ports and feature wiring ([SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md)).
+Feature modules link `pp_base` and `pp_common` (via `pp_browser_add_feature_library` in [`cmake/PpBrowserFeature.cmake`](../../cmake/PpBrowserFeature.cmake)). **Headless** modules shared with pp-node (`registration`) use `pp_browser_add_headless_feature_library` instead: they link only the domain peers they name, never `pp_base`, and are built in `PP_BROWSER_HEADLESS` configures too. Production code has no upward `#include` edges: `foundation/`/`domain/` do not include `feature/`, `feature/` does not include `gui/` or `app/`, and `gui/` does not include `app/`. Domain peers must not gain new edges to each other — peel those via `common` ports and feature wiring ([SRC_LAYOUT.md](../../docs/architecture/SRC_LAYOUT.md)).
 
 ### Intra-feature direction
 
 ```
+registration            (headless; no feature/* includes)
 settings
 ai/tools → ai/bindings → ai
 calls
 conversations → calls   (delivery / inbound ports; no reverse include)
+conversations → registration
 ```
 
 Conversations invoke AI through `AgentInboundPorts` (app-filled). Calls invoke delivery through `CallDeliveryPorts` (hub-filled). Conversations receive call-control via `CallControlInboundPorts`.
 
 ### Guards
 
-- [`scripts/check/check_feature_includes.sh`](../../scripts/check/check_feature_includes.sh) — bans `feature → gui/app`, `conversations → feature/ai`, `calls → conversations`, retired paths
+- [`scripts/check/check_feature_includes.sh`](../../scripts/check/check_feature_includes.sh) — bans `feature → gui/app`, `conversations → feature/ai`, `calls → conversations`, headless modules → other `feature/*`, retired paths
 - [`scripts/check/check_gui_includes.sh`](../../scripts/check/check_gui_includes.sh) — bans `gui → app`
 
 ---

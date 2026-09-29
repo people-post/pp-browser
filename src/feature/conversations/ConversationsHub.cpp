@@ -33,7 +33,7 @@
 #include "domain/net/HttpClient.h"
 #include "feature/conversations/ProfileIconClient.h"
 #include "feature/conversations/ProfileIconFetch.h"
-#include "feature/conversations/RegistrationClient.h"
+#include "feature/registration/RegistrationClient.h"
 #include "domain/people/ProfileIconCache.h"
 #include "foundation/platform/ProfileIconImagePrep.h"
 #include "domain/people/ContactIdentity.h"

@@ -34,7 +34,7 @@
 #include "domain/messaging/GroupTypes.h"
 #include "domain/people/PeerDisplayLabel.h"
 #include "domain/people/ContactJson.h"
-#include "feature/conversations/RegistrationClient.h"
+#include "feature/registration/RegistrationClient.h"
 #include "domain/messaging/AtAiParser.h"
 #include "domain/messaging/CallThreadPresenceLogic.h"
 #include "domain/messaging/ChatPayloadCodec.h"

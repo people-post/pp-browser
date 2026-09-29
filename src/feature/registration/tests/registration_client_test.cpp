@@ -1,4 +1,4 @@
-#include "feature/conversations/RegistrationClient.h"
+#include "feature/registration/RegistrationClient.h"
 #include "common/directory/IdentityTypes.h"
 #include "common/Utilities.h"
 

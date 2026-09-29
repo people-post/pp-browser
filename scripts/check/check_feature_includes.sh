@@ -50,6 +50,12 @@ check_absent "calls must not include feature/ai/" \
 check_absent "calls must not include gui/" \
   '#include "gui/' src/feature/calls
 
+# Headless modules (pp-node links them without pp_base): no other feature module, no UI domains.
+check_absent "registration must not include other feature/ modules" \
+  '#include "feature/(ai|settings|calls|broadcast|conversations)/' src/feature/registration
+check_absent "registration must not include domain/ui|media/" \
+  '#include "domain/(ui|media)/' src/feature/registration
+
 # Broadcast is a sibling of calls (media-client-layers L001 / B008): shared layers only.
 check_absent "broadcast must not include calls/" \
   '#include "feature/calls/' src/feature/broadcast
