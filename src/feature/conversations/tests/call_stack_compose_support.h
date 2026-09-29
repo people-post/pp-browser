@@ -90,6 +90,12 @@ public:
                     std::function<void(Roe<void>)> on_done, int /*timeout_ms*/) override {
     ++connect_async_calls;
     last_params = params;
+    if (fail_connects) {
+      if (on_done) {
+        on_done(Error("fake call-media connect failed"));
+      }
+      return;
+    }
     active = true;
     active_params = params;
     if (peer_inbound) {
@@ -119,6 +125,8 @@ public:
 
   bool started = false;
   bool active = false;
+  /** Every outbound connect fails (no link to the peer); inbound hellos still land. */
+  bool fail_connects = false;
   int connect_async_calls = 0;
   int detach_calls = 0;
   CallMediaDirectConnectParams last_params;

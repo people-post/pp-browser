@@ -255,6 +255,51 @@ TEST_F(CallDualStackComposeTest, AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsL
   FinishAnswerLeaveExpectBothIdle(call_id);
 }
 
+// Failed is not closed: both sides' connects fail and both show ConnectFailed, the call still open.
+// The answerer's Retry dials the offerer, whose failed-but-open call accepts that connection and
+// resumes media over it — both sides InCall, with no redial on the offerer.
+TEST_F(CallDualStackComposeTest, RetryFromOneSideReconnectsAFailedOpenCallOnBoth) {
+  Thread thread;
+  thread.id = "thread-dual-fail-retry";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+  offer_.transport->fail_connects = true;
+  answer_.transport->fail_connects = true;
+  auto started = StartCallNow(*offer_.ui, thread.id, false, {answer_.local_identity});
+  ASSERT_TRUE(started) << started.error().message;
+  const std::string call_id = started->call_id;
+  auto key = offer_.stack->MediaKeys()->LoadEpochKey(call_id, 1);
+  ASSERT_TRUE(key && key->has_value());
+  ASSERT_TRUE(answer_.stack->MediaKeys()->PutEpochKey(call_id, 1, **key));
+  PumpWire();
+  answer_.ui->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  answer_.ui->Apply(CallLifecycleEvent::AcceptClicked, call_id);
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return offer_.ui->Phase() == CallPhase::ConnectFailed && answer_.ui->Phase() == CallPhase::ConnectFailed;
+      },
+      30000);
+  ASSERT_EQ(offer_.ui->Phase(), CallPhase::ConnectFailed);
+  ASSERT_EQ(answer_.ui->Phase(), CallPhase::ConnectFailed);
+  const int offer_dials = offer_.transport->connect_async_calls;
+
+  answer_.transport->fail_connects = false;
+  answer_.ui->Apply(CallLifecycleEvent::RetryClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return offer_.ui->Phase() == CallPhase::InCall && answer_.ui->Phase() == CallPhase::InCall;
+  });
+  EXPECT_EQ(answer_.ui->Phase(), CallPhase::InCall);
+  EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall) << "the offerer's failed call accepted the peer's retry";
+  EXPECT_TRUE(offer_.stack->MediaEngine() && offer_.stack->MediaEngine()->IsActive());
+  EXPECT_EQ(offer_.transport->connect_async_calls, offer_dials) << "resumed over the inbound stream, no redial";
+  FinishAnswerLeaveExpectBothIdle(call_id);
+  EXPECT_EQ(offer_.ui->TakeRemoteEndedCallId(), std::optional<std::string>(call_id));
+}
+
 TEST_F(CallDualStackComposeTest, OfferLeaveClearsAnswererIdle) {
   // CALLS remote end (symmetric): offerer Leave → answerer Idle without answer LeaveClicked.
   Thread thread;
@@ -267,6 +312,10 @@ TEST_F(CallDualStackComposeTest, OfferLeaveClearsAnswererIdle) {
   const std::string call_id = RunOfferAnswerToInCall(thread.id);
   ASSERT_FALSE(call_id.empty());
   FinishOfferLeaveExpectBothIdle(call_id);
+  // The answerer is told why its call vanished — once; the side that left is not.
+  EXPECT_EQ(answer_.ui->TakeRemoteEndedCallId(), std::optional<std::string>(call_id));
+  EXPECT_EQ(answer_.ui->TakeRemoteEndedCallId(), std::nullopt) << "once per call";
+  EXPECT_EQ(offer_.ui->TakeRemoteEndedCallId(), std::nullopt) << "the leaver ended it itself";
 }
 
 TEST_F(CallDualStackComposeTest, OfferAnswerKCycleTeardown) {

@@ -1241,6 +1241,14 @@ Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
   return Error("Call media retry unavailable");
 }
 
+Roe<void> CallSessionManager::ResumeP2pMedia(const std::string& call_id) {
+  const auto direct_media = direct_media_.Get();
+  if (direct_media->resume_mesh_media) {
+    return direct_media->resume_mesh_media(call_id);
+  }
+  return Error("Call media resume unavailable");
+}
+
 Roe<std::optional<CallSession>> CallSessionManager::SessionForCall(const std::string& call_id) const {
   return sessions_.LoadSession(call_id);
 }

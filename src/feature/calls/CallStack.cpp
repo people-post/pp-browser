@@ -200,6 +200,7 @@ void CallStack::PublishUiState() {
     state.accepting_call_id = call_lifecycle_->AcceptingCallId();
     state.last_ring_call_id = call_lifecycle_->LastRingCallId();
     state.last_error = call_lifecycle_->LastError();
+    state.remote_ended_call_id = call_lifecycle_->RemoteEndedCallId();
   }
   if (call_sessions_) {
     state.awaiting_sfu_recovery = call_sessions_->IsAwaitingSfuRecovery();
@@ -374,6 +375,12 @@ CallLifecycleSignalingPorts CallStack::MakeLifecycleSignalingPorts() {
       return Error("Calls unavailable");
     }
     return call_sessions_->RetryP2pMedia(call_id);
+  };
+  ports.resume_p2p_media = [this](const std::string& call_id) -> Roe<void> {
+    if (!call_sessions_) {
+      return Error("Calls unavailable");
+    }
+    return call_sessions_->ResumeP2pMedia(call_id);
   };
   ports.kick_answerer_direct_media = [this](const std::string& call_id) {
     if (call_sessions_) {
@@ -896,6 +903,9 @@ CallDirectArmingPorts CallStack::MakeDirectArmingPorts() const {
   ports.on_connect_failed = [lifecycle](const std::string& call_id) {
     lifecycle->Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
   };
+  ports.on_peer_reconnected = [lifecycle](const std::string& call_id) {
+    lifecycle->Apply(CallLifecycleEvent::PeerReconnected, call_id);
+  };
   ports.on_media_deferred = [lifecycle](const std::string& call_id) {
     lifecycle->Apply(CallLifecycleEvent::MediaDeferred, call_id);
   };
@@ -978,6 +988,9 @@ CallDirectMediaPorts CallStack::MakeDirectMediaPorts() const {
   ports.poll_connect_health = [bridge]() { bridge->PollMeshConnectHealth(); };
   ports.retry_mesh_media = [bridge](const std::string& call_id) {
     return bridge->RetryMeshMedia(call_id);
+  };
+  ports.resume_mesh_media = [bridge](const std::string& call_id) {
+    return bridge->ResumeMeshMediaFromInbound(call_id);
   };
   ports.media_attempted = [bridge](const std::string& call_id) {
     return bridge->MediaAttempted(call_id);

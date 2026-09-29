@@ -23,6 +23,8 @@ struct CallLifecycleSignalingPorts {
   std::function<Roe<void>(const std::string& call_id)> decline_invite;
   std::function<Roe<void>(const std::string& call_id)> leave_call;
   std::function<Roe<void>(const std::string& call_id)> retry_p2p_media;
+  /** Restart media for a failed, open call, keeping the peer's inbound stream (PeerReconnected). */
+  std::function<Roe<void>(const std::string& call_id)> resume_p2p_media;
   std::function<void(const std::string& call_id)> kick_answerer_direct_media;
   /** True when call media engine is active for this call_id. */
   std::function<bool(const std::string& call_id)> media_active_for_call;
@@ -79,6 +81,8 @@ public:
   const std::string& LastRingCallId() const { return last_ring_call_id_; }
   bool WantEphemeralListen() const { return want_ephemeral_listen_; }
   const std::string& LastError() const { return last_error_; }
+  /** The last call the peer ended while this side was in it (NoteRemoteEnded); shown once by the GUI. */
+  const std::string& RemoteEndedCallId() const { return remote_ended_call_id_; }
   void ClearLastError() { last_error_.clear(); }
 
   /** True while Accept is in flight for this invite — chrome must not re-show ring. */
@@ -101,6 +105,10 @@ private:
   void PostDeclineInvite(const std::string& call_id);
   void PostLeaveCall(const std::string& call_id);
   void PostRetryMedia(const std::string& call_id);
+  void PostResumeMedia(const std::string& call_id);
+  /** Re-arm Direct and run `restart` (retry / resume) on the calls owner; MediaConnecting or Failed. */
+  void PostRestartMedia(const std::string& call_id, std::function<Roe<void>(const std::string&)> restart,
+                        CallLifecycleEvent ev);
 
   SharedPorts<CallLifecycleSignalingPorts> ports_;
   CallPhase phase_ = CallPhase::Idle;
@@ -116,6 +124,7 @@ private:
   std::string last_ring_call_id_;
   bool want_ephemeral_listen_ = false;
   std::string last_error_;
+  std::string remote_ended_call_id_;
 
   ChromeRefreshFn on_chrome_refresh_;
   ListenDesireFn on_listen_desire_;

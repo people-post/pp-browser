@@ -151,6 +151,15 @@ std::optional<std::string> CallUiBackend::TakeLastMediaError() {
   return taken_media_error_;
 }
 
+std::optional<std::string> CallUiBackend::TakeRemoteEndedCallId() {
+  const std::string ended = State()->remote_ended_call_id;
+  if (ended.empty() || ended == taken_remote_ended_) {
+    return std::nullopt;
+  }
+  taken_remote_ended_ = ended;
+  return ended;
+}
+
 void CallUiBackend::StartCall(const std::string& origin_thread_id, const bool video_allowed,
                               const std::vector<std::string>& invitee_identities,
                               std::function<void(Roe<CallSession>)> on_done) {

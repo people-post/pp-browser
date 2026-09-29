@@ -319,6 +319,8 @@
     "chat.device_lock.subtitle_locked_out": "加密 · 在另一台设备上继续",
     "chat.device_lock.locked_out_body": "此聊天在另一台设备上继续。你仍可在此阅读旧消息。",
     "call.status.couldnt_connect": "无法连接",
+    "call.status.ended_by_peer": "{{name}} 结束了通话",
+    "call.status.ended_by_peer_unknown": "对方结束了通话",
     "call.status.calling": "呼叫中…",
     "call.status.connecting": "连接中…",
     "call.placeholder.starting_video": "正在开启视频…",

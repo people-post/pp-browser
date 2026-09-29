@@ -276,6 +276,45 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedHelloAndEncryptedAudioRoundT
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
 }
 
+// #235 (callee side): B's own dial to A's dead address holds A's dial key when A's relay carrier
+// arrives, so the accepted carrier is not aliased under it. B's call leg opens on that carrier
+// instead of waiting on the dead dial until the call times out.
+TEST_F(AmpCircuitCallMediaComposeTest, LegOpensOnTheCarrierWhileADeadDialHoldsTheKey) {
+  const std::string dead = "/ip4/192.0.2.1/udp/1/adp/1.0.0/p2p/" + harness_->peer_id_a;
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_b().RegisterEndpoint(harness_->peer_id_a, dead)));
+  harness_->mgr_b().EnsureAssociation(harness_->peer_id_a, [](pp::amp::PeerLinkManager::LinkRoe) {});
+  harness_->PumpAll();
+
+  auto nested = EstablishNestedCallMediaPath();
+  ASSERT_TRUE(nested) << nested.error().message;
+  auto* keyed = harness_->mgr_b().FindLink(harness_->peer_id_a);
+  ASSERT_TRUE(keyed && !keyed->IsCarrierBacked() && keyed->Phase() != pp::amp::PeerLinkPhase::Connected)
+      << "the dead dial still holds the key";
+  ASSERT_NE(harness_->mgr_b().FindConnectedLinkByPeerId(harness_->peer_id_a, pp::amp::TransportClass::Carrier),
+            nullptr);
+
+  const ByteVector media_key(32, 0x42);
+  a_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+    params.media_key = media_key;
+    params.call_id = "call-235";
+    params.offerer = true;
+  }));
+  CallMediaDirectConnectParams params;
+  params.peer_key = harness_->peer_id_a;
+  params.call_id = "call-235";
+  params.media_key = media_key;
+  params.offerer = false;
+  LegCompletion leg_done;
+  const CallMediaLegId leg_id = b_call_->StartLeg(params, {}, leg_done.Fn(), 8000);
+  ASSERT_TRUE(leg_id);
+  // Far fewer rounds than the dead dial's give-up: only the carrier can settle this.
+  harness_->PumpUntil([&] { return leg_done.finished.load(std::memory_order_acquire); }, 600);
+  ASSERT_TRUE(leg_done.finished.load(std::memory_order_acquire)) << "the leg waited on the dead dial";
+  ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
+  EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+  b_call_->DetachLeg(leg_id);
+}
+
 // A live relayed call must keep caller→callee audio through the disturbances a real call sees:
 // reservation renewals (k2), reserves aimed at the callee, lease expiry, burst loss on the relay hop.
 // Dogfood 2026-09-24 16:17 lost that direction mid-call; these ruled out each local cause.
