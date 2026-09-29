@@ -465,6 +465,8 @@ void CallTopologyController::OnMediaStopped(const std::string& call_id) {
   guest_.reattach_attempts = 0;
   guest_.reattach_in_flight = false;
   host_.ClearMediaActivity();
+  hop_hint_repicked_.erase(call_id);
+  group_hop_resolved_.erase(call_id);
   if (attach_wait_.call_id == call_id) {
     ClearSfuAttachWait();
   }
@@ -621,6 +623,19 @@ std::vector<std::string> CallTopologyController::JoinedRemoteIdentities(const st
   return out;
 }
 
+bool CallTopologyController::AwaitsOwnInviteeAccept(const std::string& call_id,
+                                                    const std::string& local_identity) const {
+  for (const std::string& identity : JoinedRemoteIdentities(call_id, local_identity)) {
+    auto invite = sessions_.LoadPendingInvite(call_id, identity);
+    // Inbound CallAccept marks the row "accepted" before OnRemoteAcceptJoined runs.
+    if (invite && invite->has_value() && (*invite)->inviter_identity == local_identity &&
+        (*invite)->status == "pending") {
+      return true;
+    }
+  }
+  return false;
+}
+
 CallHopScope CallTopologyController::InferScopeForPeers(const std::vector<std::string>& remote_identities) const {
   std::unordered_map<std::string, std::vector<std::string>> known;
   if (relay_deps_.resolve_remote_listen_by_peer) {
@@ -736,8 +751,7 @@ void CallTopologyController::QuoteProbeHop(const std::string& call_id, const std
     });
   };
   // Same reach steps as a real attach (register, circuit when not dialable), then quote only.
-  QuoteMediaRelayAsync(MediaRelayAttachPorts{relay_deps_.relay, relay_deps_.dial, relay_deps_.circuit_reach},
-                       std::move(request), std::move(done));
+  QuoteMediaRelayAsync(relay_deps_.AttachPorts(), std::move(request), std::move(done));
 }
 
 CallHopReport CallTopologyController::HopReportForAccept(const std::string& call_id) const {
@@ -771,9 +785,15 @@ void CallTopologyController::NoteAcceptHopReport(const std::string& call_id, con
 
 bool CallTopologyController::ResolveGroupHopForJoin(const std::string& call_id,
                                                     const std::string& joiner_identity) {
+  if (group_hop_resolved_.count(call_id) != 0) {
+    return true;  // V050: one resolution (and at most one adjustment) per call
+  }
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value() || !(*session)->planned_hop) {
     return true;
+  }
+  if (group_hop_resolved_.size() > 4) {
+    group_hop_resolved_.clear();  // bounded like the report maps
   }
   GroupHopJoinInput in;
   in.planned_hop = (*session)->planned_hop->peer_id;
@@ -789,6 +809,10 @@ bool CallTopologyController::ResolveGroupHopForJoin(const std::string& call_id,
     }
   }
   const GroupHopJoinDecision decision = DecideGroupHopAtJoin(in);
+  if (decision.action != GroupHopAtJoin::RefuseJoiner) {
+    // The group's hop is settled; later joins go through the attach-failure repick instead.
+    group_hop_resolved_.insert(call_id);
+  }
   switch (decision.action) {
   case GroupHopAtJoin::UsePlanned:
     return true;
@@ -1531,11 +1555,13 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
   if (!first_attach) {
     return;
   }
-  // V050: with a planned hop the initiator invited everyone itself, so it forms the group from the
-  // joiner's CallAccept — which carries the hop report. A CallRoster that shows the join first (the
-  // joiner sends one after accepting; transports reorder) must not migrate without that report.
+  // V050: with a planned hop the initiator forms the group from the joiner's CallAccept — it carries
+  // the hop report. A CallRoster that shows the join first (transports reorder) must not migrate
+  // without that report — but only a joiner this device invited sends its Accept here; one another
+  // member added accepts to that member, so its roster is all this device will see.
   if (session && session->has_value() && (*session)->planned_hop) {
-    if (auto local = host_.local_relay_identity(); local && IsStickyInitiator(call_id, *local)) {
+    if (auto local = host_.local_relay_identity();
+        local && IsStickyInitiator(call_id, *local) && AwaitsOwnInviteeAccept(call_id, *local)) {
       log().info << "OnJoinedCountObserved: wait for the joiner's CallAccept (planned hop) n=" << n_joined
                  << " call_id=" << call_id;
       return;
@@ -1921,12 +1947,14 @@ void CallTopologyController::OnInboundSfuAttachFailed(const CallSfuAttachFailedD
   const std::string& guest = detail.identity;
   // V050: one hop change per joiner — failing again on the hop the group already moved to for this
   // guest keeps that hop and refuses (other attach failures keep today's recovery).
-  if (auto moved = hop_hint_repicked_[detail.call_id].find(guest);
-      !guest.empty() && moved != hop_hint_repicked_[detail.call_id].end() && moved->second == detail.failed_hop_peer_id) {
-    log().warning << "Hop hint refuse guest=" << guest << " (the group already moved to " << moved->second
-                  << " for this joiner)";
-    RefuseGuestNoSharedHop(detail.call_id, guest);
-    return;
+  if (auto repicked = hop_hint_repicked_.find(detail.call_id); !guest.empty() && repicked != hop_hint_repicked_.end()) {
+    if (auto moved = repicked->second.find(guest);
+        moved != repicked->second.end() && moved->second == detail.failed_hop_peer_id) {
+      log().warning << "Hop hint refuse guest=" << guest << " (the group already moved to " << moved->second
+                    << " for this joiner)";
+      RefuseGuestNoSharedHop(detail.call_id, guest);
+      return;
+    }
   }
   // V050: everyone moves, so the new hop must be one the other members reached too (their accept
   // reports; members without a report do not constrain).
@@ -1961,6 +1989,9 @@ void CallTopologyController::OnInboundSfuAttachFailed(const CallSfuAttachFailedD
     return;
   }
   if (!guest.empty()) {
+    if (hop_hint_repicked_.size() > 4 && hop_hint_repicked_.count(detail.call_id) == 0) {
+      hop_hint_repicked_.clear();  // bounded like the report maps; OnMediaStopped erases per call
+    }
     hop_hint_repicked_[detail.call_id][guest] = prefer;
   }
   StartHopHintRepick(detail.call_id, prefer, guest);

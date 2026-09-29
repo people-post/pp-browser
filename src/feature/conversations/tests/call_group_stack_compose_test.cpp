@@ -788,6 +788,45 @@ TEST_F(CallGroupStackComposeTest, RosterBeforeTheAcceptStillMakesTheAdjustment) 
   }
 }
 
+// PR #233 review: only the inviter hears a CallAccept. C declines and B (not the initiator) adds D —
+// D's accept reaches B alone, so A must form the group from the CallRoster, not wait for an accept
+// that never comes.
+TEST_F(CallGroupStackComposeTest, GuestAddedByANonInitiatorFormsTheGroupFromTheRoster) {
+  const std::string call_id = StartGroupCall();
+  ASSERT_FALSE(call_id.empty());
+  ASSERT_TRUE(PlannedHopSeenBy(kA, call_id));
+  sides_[kC].ui->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  sides_[kC].ui->Apply(CallLifecycleEvent::DeclineClicked, call_id);
+  AcceptInvite(kB, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return DirectPairLive(kA, kB);
+  });
+  ASSERT_TRUE(DirectPairLive(kA, kB)) << Describe(call_id);
+
+  std::optional<Roe<void>> invited;
+  sides_[kB].ui->InviteParticipant(call_id, sides_[kD].local_identity,
+                                   [&invited](Roe<void> result) { invited = std::move(result); });
+  DrainUntil([&]() {
+    PumpWire();
+    return invited.has_value();
+  });
+  ASSERT_TRUE(invited && *invited) << (invited ? invited->error().message : "InviteParticipant did not report");
+  auto key = sides_[kA].stack->MediaKeys()->LoadEpochKey(call_id, 1);
+  ASSERT_TRUE(key && key->has_value());
+  ASSERT_TRUE(sides_[kD].stack->MediaKeys()->PutEpochKey(call_id, 1, **key));
+  PumpWire();
+  AcceptInvite(kD, call_id);
+  members_ = {kA, kB, kD};
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return GroupLive(call_id);
+      },
+      20000);
+  EXPECT_TRUE(GroupLive(call_id)) << "A waited for an accept that only B receives:" << Describe(call_id);
+}
+
 // V050 gt4: C reaches no hop the others can use — keep the plan, refuse C; A↔B stay direct.
 TEST_F(CallGroupStackComposeTest, NoSharedHopRefusesTheJoinerAndKeepsTheCall) {
   OfferBothHops();

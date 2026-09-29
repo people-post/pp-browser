@@ -577,13 +577,7 @@ void CallHopMigrateWorkflow::FanOutPickedHop(const std::string& call_id, const C
 }
 
 MediaRelayAttachPorts CallHopMigrateWorkflow::RelayAttachPorts() const {
-  MediaRelayAttachPorts ports;
-  if (relay_deps_) {
-    ports.relay = relay_deps_->relay;
-    ports.dial = relay_deps_->dial;
-    ports.service_reach = relay_deps_->circuit_reach;
-  }
-  return ports;
+  return relay_deps_ ? relay_deps_->AttachPorts() : MediaRelayAttachPorts{};
 }
 
 MediaRelayAttachRequest CallHopMigrateWorkflow::MakeRelayAttachRequest(const std::string& call_id,

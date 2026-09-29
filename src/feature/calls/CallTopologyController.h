@@ -323,6 +323,10 @@ private:
                                               const std::vector<std::string>& hops) const;
   /** V050: per call, guest → the hop the group moved to for it (one change per joiner). */
   std::unordered_map<std::string, std::map<std::string, std::string>> hop_hint_repicked_;
+  /** V050: calls whose first group hop is settled (planned kept or the one adjustment made). */
+  std::unordered_set<std::string> group_hop_resolved_;
+  /** V050: a joined remote this device invited whose CallAccept has not arrived yet. */
+  bool AwaitsOwnInviteeAccept(const std::string& call_id, const std::string& local_identity) const;
 
   void WatchRelayLoss();
   void UnwatchRelayLoss();
