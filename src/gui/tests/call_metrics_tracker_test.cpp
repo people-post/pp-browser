@@ -149,20 +149,16 @@ TEST(CallMetricsTrackerTest, CallerTimesConnectFromPlacingTheCall) {
   EXPECT_FALSE(Has(setup[0], "answer_ms=0"));
 }
 
-TEST(CallMetricsTrackerTest, LongFrameGapDuringACallIsAStallButSuspensionIsNot) {
+TEST(CallMetricsTrackerTest, UiThreadStuckDuringACallIsAStallButSuspensionIsNot) {
   Tracker t;
-  int64_t now = 1000;
-  t.Tick(false, now, Vitals());
-  t.NoteOutbound(kCall, false, now, Vitals());
-  now += 2500;
-  auto lines = t.Tick(true, now, Vitals());
+  EXPECT_TRUE(t.NoteUiLatency(5000).empty()) << "no call: nothing to attribute it to";
+  t.NoteOutbound(kCall, false, 1000, Vitals());
+  EXPECT_TRUE(t.NoteUiLatency(40).empty()) << "a normal frame";
+  auto lines = t.NoteUiLatency(2500);
   ASSERT_EQ(lines.size(), 1u);
   EXPECT_TRUE(Has(lines[0], "event=ui.stall")) << lines[0];
-  EXPECT_TRUE(Has(lines[0], "gap_ms=2500")) << lines[0];
-  now += 120'000;  // app suspended in the background
-  EXPECT_TRUE(t.Tick(true, now, Vitals()).empty());
-  now += 16;
-  EXPECT_TRUE(t.Tick(true, now, Vitals()).empty());
+  EXPECT_TRUE(Has(lines[0], "stuck_ms=2500")) << lines[0];
+  EXPECT_TRUE(t.NoteUiLatency(120'000).empty()) << "the app was suspended";
 }
 
 TEST(CallMetricsTrackerTest, ANewCallFinishesThePreviousOne) {

@@ -17,7 +17,7 @@ namespace pbr {
  * lines to emit:
  *   call.setup   once, when media connects or when the call ends without connecting
  *   call.summary once, when a connected call ends
- *   ui.stall     a UI frame gap over kStallMs during a call
+ *   ui.stall     the UI thread stuck over kStallMs during a call (UiLatencyProbe)
  *   device.thermal a thermal state change during a call
  * Pure (no clocks, no devices, no logging) so it is unit-tested. UI thread only.
  */
@@ -25,9 +25,9 @@ class CallMetricsTracker {
 public:
   /** The call counts as over once neither active nor ringing for this long (accept gaps). */
   static constexpr int64_t kEndGraceMs = 3000;
-  /** A UI frame gap this long during a call is a stall (overload; watchdog kills start ~10 s). */
+  /** The UI thread this late on a posted task is a stall (overload; iOS watchdog kills ~10 s+). */
   static constexpr int64_t kStallMs = 1000;
-  /** Longer gaps are the app being suspended, not a stall. */
+  /** Longer is the app being suspended, not a stall. */
   static constexpr int64_t kStallMaxMs = 60'000;
 
   struct MediaTick {
@@ -123,22 +123,27 @@ public:
     return out;
   }
 
+  /** How late the UI thread ran a probe task (UiLatencyProbe). Returns ui.stall when long. */
+  std::vector<std::string> NoteUiLatency(int64_t latency_ms) {
+    std::vector<std::string> out;
+    if (call_.id.empty() || latency_ms < kStallMs || latency_ms >= kStallMaxMs) {
+      return out;
+    }
+    ++call_.stalls;
+    call_.stall_max_ms = std::max(call_.stall_max_ms, latency_ms);
+    out.push_back(
+        MetricsLine("ui.stall").Add("call", MetricsCallId(call_.id)).Add("stuck_ms", latency_ms).str());
+    return out;
+  }
+
   /**
    * Every UI frame. call_live: a call is still under way (lifecycle not Idle, or the UI shows one).
-   * Returns ui.stall for a long frame gap during a call, and the final line once no call has been
-   * live for kEndGraceMs.
+   * Returns the final line once no call has been live for kEndGraceMs.
    */
   std::vector<std::string> Tick(bool call_live, int64_t now_ms, const DeviceVitals& vitals) {
     std::vector<std::string> out;
-    const int64_t gap = last_frame_ms_ ? now_ms - last_frame_ms_ : 0;
-    last_frame_ms_ = now_ms;
     if (call_.id.empty()) {
       return out;
-    }
-    if (gap >= kStallMs && gap < kStallMaxMs) {
-      ++call_.stalls;
-      call_.stall_max_ms = std::max(call_.stall_max_ms, gap);
-      out.push_back(MetricsLine("ui.stall").Add("call", MetricsCallId(call_.id)).Add("gap_ms", gap).str());
     }
     if (call_live) {
       call_.last_seen_ms = now_ms;
@@ -301,7 +306,6 @@ private:
   }
 
   Call call_;
-  int64_t last_frame_ms_ = 0;
 };
 
 } // namespace pbr

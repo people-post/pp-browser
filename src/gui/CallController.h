@@ -2,6 +2,7 @@
 
 #include "gui/CallAudioFaultToastGate.h"
 #include "gui/CallMetricsTracker.h"
+#include "gui/UiLatencyProbe.h"
 #include "common/media/CallMediaHealth.h"
 #include "domain/media/CallRingtone.h"
 #include "domain/ui/ShellTypes.h"
@@ -127,6 +128,7 @@ private:
   int64_t last_video_refresh_ms_ = 0;
   /** Operational metrics for the current call (Metrics channel; no identities). */
   CallMetricsTracker metrics_;
+  UiLatencyProbe ui_probe_;
   int64_t last_metrics_media_ms_ = 0;
   DeviceVitals vitals_;
   int64_t vitals_read_ms_ = 0;

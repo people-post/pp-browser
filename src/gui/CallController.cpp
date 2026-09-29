@@ -246,6 +246,13 @@ void CallController::Tick() {
                            (backend && backend->Available() && backend->Phase() != CallPhase::Idle);
     EmitMetrics(metrics_.Tick(call_live, now, Vitals(now)));
   }
+  // UI-stuck probe only while a call is tracked (a thread posting a ping every 500 ms).
+  if (metrics_.Tracking() && !ui_probe_.Running()) {
+    ui_probe_.Start([](std::function<void()> task) { AppRuntime::PostUI(std::move(task)); },
+                    [this](int64_t latency_ms) { EmitMetrics(metrics_.NoteUiLatency(latency_ms)); });
+  } else if (!metrics_.Tracking() && ui_probe_.Running()) {
+    ui_probe_.Stop();
+  }
 }
 
 const DeviceVitals& CallController::Vitals(const int64_t now_ms) {
@@ -288,6 +295,7 @@ void CallController::PrepareForShutdown() {
   ringing_call_id_.clear();
   ring_started_ms_ = 0;
   ring_ = {};
+  ui_probe_.Stop();
   // Budgeted join before SDL_Quit — do not hang product quit on SDL device close.
   if (!ringtone_.StopAndJoin(CallRingtone::kDefaultShutdownJoinBudget)) {
     log().warning << "PrepareForShutdown: ringtone join budget exceeded — detached";
