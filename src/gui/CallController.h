@@ -1,5 +1,6 @@
 #pragma once
 
+#include "gui/CallAudioFaultToastGate.h"
 #include "common/media/CallMediaHealth.h"
 #include "domain/media/CallRingtone.h"
 #include "domain/ui/ShellTypes.h"
@@ -115,7 +116,8 @@ private:
   int64_t ring_started_ms_ = 0;
   int64_t last_pulse_toggle_ms_ = 0;
   int64_t last_media_health_log_ms_ = 0;
-  int last_warned_quality_ = -1;
+  /** Lasting audio faults toast once per call (see CallAudioFaultToastGate). */
+  CallAudioFaultToastGate audio_fault_gate_;
   /** Display rotation last pushed to the engine while the camera is on (-1: none). */
   int pushed_camera_rotation_ = -1;
   int64_t last_video_refresh_ms_ = 0;
