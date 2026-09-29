@@ -137,7 +137,7 @@ carrier — not string copy alone.
 
 | Module | Primary files | Suggested `Err` themes | Status |
 |--------|---------------|------------------------|--------|
-| Dial-back | `reachability/AmpDialBackProtocol.{h,cpp}` | `NotStarted`, `EndpointNotRegistered`, `LinkFailed`, `Timeout`, `ChannelFailed`, `ProtocolError`, `Generic` | **done** — wraps `PeerLinkManager::Failure` |
+| Dial-back | `reachability/dial_back/` (`DialBackTypes`, `client/DialBackClient`, `serve/DialBackServer`) | `NotStarted`, `EndpointNotRegistered`, `LinkFailed`, `Timeout`, `ChannelFailed`, `ProtocolError`, `Generic` | **done** — wraps `PeerLinkManager::Failure` |
 | DHT | `dht/AmpDhtProtocol.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `ChannelFailed`, `NotFound`, `Generic`, … | **done** — wraps `PeerLinkManager::Failure`; `FindPeer` returns `FindPeerRoe` |
 | Circuit tunnel | `l4/circuit/client/CircuitClientCoordinator.{h,cpp}`, `serve/CircuitRelayServer.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `Rejected`, `Generic` | pending |
 | Call-media leg | `l4/call_media/CallMediaLegCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `Glare`, `Aborted`, `Generic` | pending |

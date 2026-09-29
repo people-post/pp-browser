@@ -96,7 +96,7 @@ When a parent must post work that captures raw `this` / `Impl*` onto IO (or anot
 | Owner | Notes |
 |-------|--------|
 | Amp L4 coordinators (`CircuitRelayServer` / `CircuitClientCoordinator`, `MediaRelayServer` / `MediaRelayClientCoordinator`, `CallMediaLegCoordinator`) | `PostIo` → `deferred`; circuit/media-relay also `lifetime` for ticks/handlers; call-media uses `weak_ptr` for ticks |
-| Amp protocols (`AmpPunchCoordinator`, `AmpDialBackProtocol`, `AmpDhtProtocol`, `AmpDirectoryProtocol`) | Protocol-handler `Bind`; Invalidate on Stop |
+| Amp protocols (`AmpPunchCoordinator`, `DialBackServer`, `AmpDhtProtocol`, `AmpDirectoryProtocol`) | Protocol-handler `Bind`; Invalidate on Stop |
 | Conversation Amp transports (`AmpDirectChatTransport`, `AmpBroadcastTransport`, `AmpChatHistoryTransport`, `AmpPeerAnnounceTransport`, `AmpChatBlobTransport`) | Protocol-handler `Bind`; Invalidate on Stop |
 | `MeshMediaPlane` / `CircuitRendezvousCoordinator` | OnRelayChosen (plane); reserve / park / repark cbs (rendezvous); `InvalidateAsyncOps` → `Invalidate` at mesh stop and Clear (a pending park still answers `false` at its deadline) |
 | `AmpCircuitHopReach` | AbortPending Invalidates; EnsureViaCircuit / punch cbs check Alive |
