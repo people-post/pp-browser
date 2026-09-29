@@ -53,8 +53,13 @@ struct DialTargetsWalk {
   std::chrono::milliseconds timeout{8000};
   DialBackProbeResult result;
   std::function<void(DialBackProbeResult)> done;
-  /** Unique per inbound probe so concurrent probes never fight over the same RegisterEndpoint key. */
-  std::string probe_id;
+  /**
+   * The requesting peer, used to build a small, reused set of RegisterEndpoint keys (one per
+   * target slot) instead of a fresh key per probe, which would grow PeerLinkManager's endpoint
+   * table forever. Only one probe is in flight per remote_peer_id at a time (see
+   * TryMarkProbeInflight), so key reuse across a peer's successive probes is safe.
+   */
+  std::string remote_peer_id;
   /**
    * The requester's own authenticated reflexive endpoint (from the link, not attacker-suppliable).
    * Empty only when the link exposes no usable endpoint; in that case targets cannot be checked
@@ -62,6 +67,27 @@ struct DialTargetsWalk {
    */
   std::optional<pp::adp::IpEndpoint> observed_host;
 };
+
+/**
+ * Per-peer in-flight probe tracking, held via shared_ptr and independent of Impl's lifetime: a
+ * queued IO callback keeps this alive and can always clear its own entry, even if Impl itself
+ * was freed (deferred.Bind made the rest of the callback a no-op) before the callback ran.
+ */
+struct InflightProbes {
+  std::mutex mutex;
+  std::set<std::string> peers;
+};
+
+/** True if `remote_peer_id` had no probe already in flight (and it is now marked in-flight). */
+bool TryMarkProbeInflight(InflightProbes& state, const std::string& remote_peer_id) {
+  std::lock_guard lock(state.mutex);
+  return state.peers.insert(remote_peer_id).second;
+}
+
+void ClearProbeInflight(InflightProbes& state, const std::string& remote_peer_id) {
+  std::lock_guard lock(state.mutex);
+  state.peers.erase(remote_peer_id);
+}
 
 /** True when two endpoints are the same host (port/scope ignored — NAT commonly rewrites the port). */
 bool SameHost(const pp::adp::IpEndpoint& a, const pp::adp::IpEndpoint& b) {
@@ -99,7 +125,7 @@ void DialNextTarget(std::shared_ptr<DialTargetsWalk> walk) {
       out.dialed = ma;
       continue;
     }
-    const std::string key = "dialback:probe:" + walk->probe_id + ":" + std::to_string(i);
+    const std::string key = "dialback:probe:" + walk->remote_peer_id + ":" + std::to_string(i);
     if (auto registered = links.RegisterEndpoint(key, ma); !registered) {
       out.error = registered.error().message;
       out.dialed = ma;
@@ -131,14 +157,14 @@ void DialNextTarget(std::shared_ptr<DialTargetsWalk> walk) {
 
 /** IO strand: dial `targets` (already capped/host-filtered by the caller) in order; `done` runs once, on IO. */
 void DialAmpTargetsAsync(pp::amp::MeshRuntime& runtime, std::vector<std::string> targets, const int timeout_ms,
-                         std::string probe_id, std::optional<pp::adp::IpEndpoint> observed_host,
+                         std::string remote_peer_id, std::optional<pp::adp::IpEndpoint> observed_host,
                          std::function<void(DialBackProbeResult)> done) {
   auto walk = std::make_shared<DialTargetsWalk>();
   walk->runtime = &runtime;
   walk->targets = std::move(targets);
   const int clamped_timeout = std::clamp(timeout_ms > 0 ? timeout_ms : 8000, kMinDialBackTimeoutMs, kMaxDialBackTimeoutMs);
   walk->timeout = std::chrono::milliseconds(clamped_timeout);
-  walk->probe_id = std::move(probe_id);
+  walk->remote_peer_id = std::move(remote_peer_id);
   walk->observed_host = observed_host;
   walk->done = std::move(done);
   if (walk->targets.empty()) {
@@ -227,8 +253,7 @@ struct AmpDialBackProtocol::Impl {
   }
 
   /** Coarse per-peer throttle: reject a probe while the same peer's previous one is still running. */
-  std::mutex inflight_mutex;
-  std::set<std::string> inflight_probe_peers;
+  std::shared_ptr<InflightProbes> inflight = std::make_shared<InflightProbes>();
 
   static void SendProbeResult(const std::shared_ptr<InboundReply>& reply, const DialBackProbeResult& result) {
     Object response;
@@ -238,17 +263,6 @@ struct AmpDialBackProtocol::Impl {
     response.set("observed", result.observed);
     response.set("error", result.error);
     reply->Send(JsonToBody(DumpJson(response)));
-  }
-
-  /** True if `remote_peer_id` had no probe already in flight (and it is now marked in-flight). */
-  bool TryMarkProbeInflight(const std::string& remote_peer_id) {
-    std::lock_guard lock(inflight_mutex);
-    return inflight_probe_peers.insert(remote_peer_id).second;
-  }
-
-  void ClearProbeInflight(const std::string& remote_peer_id) {
-    std::lock_guard lock(inflight_mutex);
-    inflight_probe_peers.erase(remote_peer_id);
   }
 
   /** Frame handler (IO): parse, then walk the targets from a fresh IO task (mux stack unwound). */
@@ -270,38 +284,51 @@ struct AmpDialBackProtocol::Impl {
     }
     // One in-flight probe per requesting peer: a peer that wants to flood dial attempts has to
     // do it serially (each probe already carries its own target-count/timeout caps).
-    if (!TryMarkProbeInflight(remote_peer_id)) {
+    if (!TryMarkProbeInflight(*inflight, remote_peer_id)) {
       result.error = "dial-back probe already in flight for this peer";
       SendProbeResult(reply, result);
       return;
     }
+    auto observed_host = ObservedEndpointOnIo(remote_peer_id);
+    // Filter to the requester's own observed host first, then cap the count: capping before
+    // filtering could let a requester pad the request with kMaxDialBackTargets non-matching
+    // decoys ahead of its one real (matching) target and have that legitimate target dropped.
     std::vector<std::string> targets;
     if (const Array* addrs = root->getArray("target_multiaddrs")) {
       for (const auto& item : addrs->elements) {
         if (targets.size() >= kMaxDialBackTargets) {
           break;
         }
-        if (auto s = asString(item)) {
-          targets.push_back(*s);
+        auto s = asString(item);
+        if (!s) {
+          continue;
         }
+        auto parsed_target = pp::amp::ParseAdpMultiaddr(*s);
+        if (!parsed_target || !observed_host || !SameHost(parsed_target->endpoint, *observed_host)) {
+          continue;
+        }
+        targets.push_back(*s);
       }
     }
     const int timeout_ms = static_cast<int>(root->getNonNegInt("timeout_ms").value_or(8000));
-    const std::string probe_id = util::GenerateUuid();
-    runtime->PostToIo(deferred.Bind([this, reply, observed = result.observed, targets = std::move(targets),
-                                     timeout_ms, probe_id, remote_peer_id]() mutable {
-      if (stopped.load(std::memory_order_acquire) || !runtime) {
-        ClearProbeInflight(remote_peer_id);
+    // `inflight` is captured by shared_ptr (not through `this`), so its entry can always be
+    // cleared below even on the path where `this` (Impl) is no longer safe to touch — a plain
+    // deferred.Bind would silently no-op the whole callback on that path and leak the entry.
+    const DeferredSelf::Token life_token = deferred.token();
+    const uint64_t life_snap = deferred.Snapshot();
+    runtime->PostToIo([this, reply, observed = result.observed, targets = std::move(targets), timeout_ms,
+                       remote_peer_id, observed_host, life_token, life_snap, inflight = inflight]() mutable {
+      if (!DeferredSelf::Alive(life_token, life_snap) || stopped.load(std::memory_order_acquire) || !runtime) {
+        ClearProbeInflight(*inflight, remote_peer_id);
         return;
       }
-      auto observed_host = ObservedEndpointOnIo(remote_peer_id);
-      DialAmpTargetsAsync(*runtime, std::move(targets), timeout_ms, probe_id, observed_host,
-                          [this, reply, observed, remote_peer_id](DialBackProbeResult dialed) {
+      DialAmpTargetsAsync(*runtime, std::move(targets), timeout_ms, remote_peer_id, observed_host,
+                          [reply, observed, remote_peer_id, inflight](DialBackProbeResult dialed) {
+                            ClearProbeInflight(*inflight, remote_peer_id);
                             dialed.observed = observed;
                             SendProbeResult(reply, dialed);
-                            ClearProbeInflight(remote_peer_id);
                           });
-    }));
+    });
   }
 
   void HandleInboundOnLink(pp::amp::LinkHandle /*handle*/, const std::string& remote_peer_id,
