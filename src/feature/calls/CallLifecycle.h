@@ -1,5 +1,7 @@
 #pragma once
 
+#include "domain/messaging/CallMediaStatusLogic.h"
+
 #include "common/Error.h"
 #include "feature/calls/SharedPorts.h"
 #include "common/Module.h"
@@ -73,6 +75,13 @@ public:
    * Live statuses also advance phase to InCall.
    */
   void SetMediaStatus(CallMediaStatus status, const std::string& call_id = {});
+  /** A path planner's progress, shown as the call's media Status (CallMediaStatusLogic). */
+  void ReportDirectProgress(CallDirectPlannerPhase phase, const std::string& call_id);
+  void ReportHopProgress(CallHopPlannerPhase phase, const std::string& call_id);
+  /** The group path may arm a SoftMigrate from the current Status. */
+  bool SoftMigrateMayArm() const;
+  /** The 1:1 planner asks to arm while Status does not allow it yet (set-up phases only). */
+  void RequestDirectArming(const std::string& call_id);
   /** Bump cancel gen so late hop/direct workers abort StartSfu. */
   uint64_t BumpMediaCancelGen();
 
@@ -98,7 +107,7 @@ private:
   void NotifyChrome();
   void PostAcceptInvite(const std::string& call_id);
   void OnAcceptResult(const std::string& call_id, const Roe<void>& accepted);
-  /** Run `work` on the calls owner, then `reply` on UI (dropped after ClearBinding). */
+  /** Run `work` on the calls owner, then `reply` on the calls owner too (dropped after ClearBinding). */
   void PostOnOwnerAndReply(std::function<Roe<void>()> work, std::function<void(Roe<void>)> reply);
   void PostDeclineInvite(const std::string& call_id);
   void PostLeaveCall(const std::string& call_id);

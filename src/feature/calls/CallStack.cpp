@@ -839,33 +839,10 @@ CallHopArmingPorts CallStack::MakeHopArmingPorts() const {
     return ports;
   }
   ports.hop_ops_allowed = [lifecycle]() { return lifecycle->AllowsHopPath(); };
-  ports.soft_migrate_may_arm = [lifecycle]() {
-    const CallMediaStatus st = lifecycle->Status();
-    return st == CallMediaStatus::DirectLive || st == CallMediaStatus::DirectConnecting ||
-           st == CallMediaStatus::DegradedTxOnly || st == CallMediaStatus::Deciding ||
-           st == CallMediaStatus::None;
-  };
+  ports.soft_migrate_may_arm = [lifecycle]() { return lifecycle->SoftMigrateMayArm(); };
   ports.media_cancel_gen = [lifecycle]() { return lifecycle->MediaCancelGen(); };
   ports.report_progress = [lifecycle](CallHopPlannerPhase phase, const std::string& call_id) {
-    CallMediaStatus mapped = CallMediaStatus::None;
-    switch (phase) {
-    case CallHopPlannerPhase::WaitingAttach:
-      mapped = CallMediaStatus::HopWaiting;
-      break;
-    case CallHopPlannerPhase::Attaching:
-      mapped = CallMediaStatus::HopAttaching;
-      break;
-    case CallHopPlannerPhase::Live:
-      mapped = CallMediaStatus::HopLive;
-      break;
-    case CallHopPlannerPhase::Migrating:
-      mapped = CallMediaStatus::Migrating;
-      break;
-    case CallHopPlannerPhase::Idle:
-    case CallHopPlannerPhase::Stopping:
-      return;
-    }
-    lifecycle->SetMediaStatus(mapped, call_id);
+    lifecycle->ReportHopProgress(phase, call_id);
   };
   ports.arming_debug_name = [lifecycle]() { return CallMediaStatusName(lifecycle->Status()); };
   return ports;
@@ -878,37 +855,9 @@ CallDirectArmingPorts CallStack::MakeDirectArmingPorts() const {
     return ports;
   }
   ports.direct_ops_allowed = [lifecycle]() { return lifecycle->AllowsDirectPath(); };
-  ports.request_direct_arming = [lifecycle](const std::string& call_id) {
-    if (lifecycle->AllowsDirectPath()) {
-      return;
-    }
-    const CallPhase phase = lifecycle->Phase();
-    if (phase == CallPhase::Accepting || phase == CallPhase::JoinedLocal ||
-        phase == CallPhase::MediaPending || phase == CallPhase::MediaConnecting) {
-      lifecycle->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
-    }
-  };
+  ports.request_direct_arming = [lifecycle](const std::string& call_id) { lifecycle->RequestDirectArming(call_id); };
   ports.report_progress = [lifecycle](CallDirectPlannerPhase phase, const std::string& call_id) {
-    CallMediaStatus mapped = CallMediaStatus::None;
-    switch (phase) {
-    case CallDirectPlannerPhase::Arming:
-    case CallDirectPlannerPhase::Connecting:
-    case CallDirectPlannerPhase::KeyWait:
-      mapped = CallMediaStatus::DirectConnecting;
-      break;
-    case CallDirectPlannerPhase::Live:
-      return;
-    case CallDirectPlannerPhase::DegradedTxOnly:
-      mapped = CallMediaStatus::DegradedTxOnly;
-      break;
-    case CallDirectPlannerPhase::Reconnecting:
-      mapped = CallMediaStatus::Reconnecting;
-      break;
-    case CallDirectPlannerPhase::Idle:
-    case CallDirectPlannerPhase::Stopping:
-      return;
-    }
-    lifecycle->SetMediaStatus(mapped, call_id);
+    lifecycle->ReportDirectProgress(phase, call_id);
   };
   ports.on_connected = [lifecycle](const std::string& call_id) {
     lifecycle->Apply(CallLifecycleEvent::DirectConnected, call_id);

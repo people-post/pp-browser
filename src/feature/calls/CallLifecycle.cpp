@@ -421,6 +421,28 @@ void CallLifecycle::PostLeaveCall(const std::string& call_id) {
       });
 }
 
+void CallLifecycle::ReportDirectProgress(const CallDirectPlannerPhase phase, const std::string& call_id) {
+  if (const auto status = MediaStatusForDirectProgress(phase)) {
+    SetMediaStatus(*status, call_id);
+  }
+}
+
+void CallLifecycle::ReportHopProgress(const CallHopPlannerPhase phase, const std::string& call_id) {
+  if (const auto status = MediaStatusForHopProgress(phase)) {
+    SetMediaStatus(*status, call_id);
+  }
+}
+
+bool CallLifecycle::SoftMigrateMayArm() const {
+  return pbr::SoftMigrateMayArm(status_);
+}
+
+void CallLifecycle::RequestDirectArming(const std::string& call_id) {
+  if (!AllowsDirectPath() && ShouldHonorDirectArmingRequest(phase_)) {
+    SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  }
+}
+
 void CallLifecycle::PostRetryMedia(const std::string& call_id) {
   PostRestartMedia(call_id, ports_.Get()->retry_p2p_media, CallLifecycleEvent::RetryClicked);
 }
