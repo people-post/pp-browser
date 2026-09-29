@@ -207,6 +207,12 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
     }
   }
 
+  // One active call: placing a call ends the one this device is in (as accepting another does) —
+  // after every check that can refuse the new call, so a refused start leaves the current one alone.
+  if (auto cleared = LeaveCallIfActiveExcept({}); !cleared) {
+    return cleared.error();
+  }
+
   auto key = media_keys_.GenerateEpochKey();
   if (!key) {
     return key.error();

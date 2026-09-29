@@ -468,8 +468,10 @@ TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   ASSERT_TRUE(answer_sessions);
   // ActiveLocalCall is only the joined call — A must not be the active one.
   EXPECT_EQ((*active_b)->call_id, call_b);
-  // Accepting B ended A on the answerer for that reason; the offerer saw A ended by the peer.
-  ExpectLive(answer_, call_a, LiveCallState::Ended, LiveCallEndReason::Superseded, "answer A");
+  // One active call: placing B ended A on the offerer (Superseded); its Leave reached the answerer
+  // before B's invite, so there A was ended by the peer.
+  ExpectLive(offer_, call_a, LiveCallState::Ended, LiveCallEndReason::Superseded, "offer A");
+  ExpectLive(answer_, call_a, LiveCallState::Ended, LiveCallEndReason::RemoteEnded, "answer A");
   ExpectLive(answer_, call_b, LiveCallState::Joined, LiveCallEndReason::None, "answer B");
   ExpectLive(offer_, call_b, LiveCallState::Joined, LiveCallEndReason::None, "offer B");
 
