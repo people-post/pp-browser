@@ -630,6 +630,9 @@ TEST_F(EngineDeviceLeaseTest, ReopenKeepsLeasesAndReplacesEndpoints) {
     }
     return n;
   };
+  // The arbiter lists a holder when the hold is granted, before the device opens: count only once
+  // the first mic + speaker opens are in, or a late first open is miscounted as a reopen (CI flake).
+  ASSERT_TRUE(WaitUntil([&] { return opens_before() >= 2; }));
   const int before = opens_before();
   engine.RequestAudioDeviceReopen();
   for (int i = 0; i < 400 && opens_before() < before + 2; ++i) {
