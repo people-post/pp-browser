@@ -4,6 +4,7 @@
 #include "domain/media/CallMediaPlayout.h"
 #include "domain/media/CallRingtone.h"
 #include "domain/media/CameraCaptureOrientation.h"
+#include "domain/media/CaptureStarvePolicy.h"
 #include "domain/media/IVideoCodec.h"
 #include "domain/media/MediaDeviceArbiter.h"
 #include "domain/media/NoiseSuppressor.h"
@@ -51,6 +52,12 @@ constexpr int kVideoFps = 20;
 constexpr int64_t kRemoteVideoStallSoftMs = 2000;
 /** Hard stall: drop last frame so the tile does not freeze forever. */
 constexpr int64_t kRemoteVideoStallHardMs = 5000;
+
+/** For Impl, which is not the Module (same channel as CallMediaEngine::log()). */
+logging::Logger& EngineLog() {
+  static logging::Logger log = logging::getLogger("CallMediaEngine");
+  return log;
+}
 
 } // namespace
 
@@ -155,6 +162,7 @@ struct CallMediaEngine::Impl {
   /** Local encoder + remote decoders come from here (platform HW; tests inject a stub). */
   std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
   std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> remote_decoders;
+  int video_decode_fail_logs = 0;
   static constexpr size_t kMaxRemoteVideoDecoders = 4;
   /**
    * Display rotation read on the UI thread: at SetCameraEnabled (for the open) and live via
@@ -797,6 +805,8 @@ struct CallMediaEngine::Impl {
       OpusEncoder* bitrate_enc = nullptr;
       int64_t applied_audio_bps = 0;
       int64_t last_capture_starve_reopen_ms = 0;
+      // When the audio devices were last (re)opened: voice processing gets a warm-up (B56).
+      int64_t capture_opened_ms = last_capture_pcm_ms;
       // I3: consecutive starvation-triggered reopens while on voice processing; 3 in a row falls
       // back to SDL for the rest of this call. Capture-thread-local.
       int vpio_starve_reopens = 0;
@@ -812,6 +822,7 @@ struct CallMediaEngine::Impl {
             SDL_Log("CallMediaEngine: audio reopen — no capture device; sending silence");
           }
           last_capture_pcm_ms = util::NowUnixMs();
+          capture_opened_ms = last_capture_pcm_ms;
         }
         // The capture thread is mic_lease's only writer while it runs: read it without `mutex`.
         bool device_changed = false;
@@ -851,27 +862,30 @@ struct CallMediaEngine::Impl {
             const size_t samples = static_cast<size_t>(got) / sizeof(int16_t);
             pending.insert(pending.end(), chunk, chunk + samples);
             last_capture_pcm_ms = util::NowUnixMs();
-            if (vpio_on) {
+            // Not on the first PCM after a reopen: a unit that starts and stalls again is still
+            // starving "in a row" — otherwise the SDL fallback below never triggered (B56).
+            if (vpio_on && CaptureStarvePolicy::HealthyAfterOpen(last_capture_pcm_ms - capture_opened_ms)) {
               vpio_starve_reopens = 0;
             }
           }
           if (pending.size() < static_cast<size_t>(kFrameSamples)) {
             const int64_t now = util::NowUnixMs();
             // Wedged capture (got<=0 after AAudio disconnect) used to spin without TX —
-            // peers saw "Your mic isn't sending". After ~500ms, encode silence and reopen.
-            constexpr int64_t kStarveMs = 500;
-            if (got <= 0 && (now - last_capture_pcm_ms) >= kStarveMs) {
+            // peers saw "Your mic isn't sending". After ~500ms, encode silence and reopen (voice
+            // processing: only once it had time to warm up — CaptureStarvePolicy).
+            if (got <= 0 && (now - last_capture_pcm_ms) >= CaptureStarvePolicy::kSilenceAfterMs) {
               if (!muted.load(std::memory_order_relaxed)) {
                 SmoothLevel(local_input_level, 0.f);
               }
-              if (now - last_capture_starve_reopen_ms > 2000) {
+              const int64_t reopen_after_ms = CaptureStarvePolicy::ReopenAfterMs(vpio_on, now - capture_opened_ms);
+              if (now - last_capture_pcm_ms >= reopen_after_ms && now - last_capture_starve_reopen_ms > 2000) {
                 last_capture_starve_reopen_ms = now;
                 SDL_Log("CallMediaEngine: capture starved %lldms — requesting reopen",
                         static_cast<long long>(now - last_capture_pcm_ms));
                 audio_reopen_requested.store(true, std::memory_order_release);
                 // I3: persistent voice-processing capture starvation (not just a starved SDL
                 // device) falls back to SDL for the rest of this call after 3 reopens in a row.
-                if (vpio_on && ++vpio_starve_reopens >= 3) {
+                if (vpio_on && ++vpio_starve_reopens >= CaptureStarvePolicy::kVoiceMaxReopens) {
                   vpio_disabled_for_call.store(true, std::memory_order_release);
                   SDL_Log("CallMediaEngine: vpio capture starved 3x — using SDL for this call");
                 }
@@ -1207,11 +1221,11 @@ struct CallMediaEngine::Impl {
     }
     auto decoded = decoder->Decode(reinterpret_cast<const uint8_t*>(data), size);
     if (!decoded) {
-      static int logged_decode = 0;
-      if (logged_decode < 5) {
-        ++logged_decode;
-        SDL_Log("CallMediaEngine: remote H264 decode failed: %s (size=%zu)",
-                decoded.error().message.c_str(), size);
+      // In the app log (SDL_Log never reaches the phone's log file), a few per call.
+      if (video_decode_fail_logs < 5) {
+        ++video_decode_fail_logs;
+        EngineLog().warning << "remote H264 decode failed stream=" << stream_id << " size=" << size << ": "
+                      << decoded.error().message << " call=" << call_id;
       }
       NoteVideoRefreshNeeded(stream_id);
       return;
@@ -1515,6 +1529,10 @@ void CallMediaEngine::Stop() {
     impl_->sfu_mode = false;
     impl_->capture_running = false;
     impl_->playout_running = false;
+    // Each call decodes with fresh decoders: one kept across calls also kept a broken session, and
+    // the cap of kMaxRemoteVideoDecoders counted every peer ever seen.
+    impl_->remote_decoders.clear();
+    impl_->video_decode_fail_logs = 0;
   }
   abandoned_send = nullptr;
   // Drain capture/video still inside (*sfu_send) after Detach unblocked BlockingWrite.
@@ -1622,6 +1640,14 @@ bool CallMediaEngine::IsRemoteVideoStalling() const {
   }
   const int64_t age = util::NowUnixMs() - last;
   return age >= kRemoteVideoStallSoftMs && age < kRemoteVideoStallHardMs;
+}
+
+bool CallMediaEngine::IsRemoteVideoLive(const int64_t within_ms) const {
+  if (!impl_->has_remote_video.load(std::memory_order_relaxed)) {
+    return false;
+  }
+  const int64_t last = impl_->last_remote_video_ms.load(std::memory_order_relaxed);
+  return last > 0 && util::NowUnixMs() - last < within_ms;
 }
 
 bool CallMediaEngine::EverHadRemoteVideo() const {

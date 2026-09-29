@@ -321,6 +321,7 @@
     "call.status.couldnt_connect": "无法连接",
     "call.status.calling": "呼叫中…",
     "call.status.connecting": "连接中…",
+    "call.placeholder.starting_video": "正在开启视频…",
     "call.status.reconnecting": "重新连接中…",
     "call.status.connected": "已连接",
     "call.status.setting_up_group": "正在设置群组通话…",
