@@ -721,6 +721,49 @@ TEST_F(CallGroupStackComposeTest, InitiatorLeaveKeepsTheRestOnTheHop) {
   EXPECT_GE(RxFrom(kC, kB), c_before + kMinRxFrames) << "C stopped hearing B:" << Describe(call_id);
 }
 
+// The invite carries the media key wrapped for each invitee: no out-of-band share needed.
+TEST_F(CallGroupStackComposeTest, InviteCarriesTheMediaKeyToEveryInvitee) {
+  Thread thread;
+  thread.id = "thread-group-call";
+  thread.kind = ThreadKind::Group;
+  thread.title = "Group";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(sides_[kA].store->UpsertThread(thread));
+  auto started =
+      StartCallNow(*sides_[kA].ui, thread.id, false, {sides_[kB].local_identity, sides_[kC].local_identity});
+  ASSERT_TRUE(started) << started.error().message;
+  const std::string call_id = started->call_id;
+  PumpWire();
+
+  auto key = sides_[kA].stack->MediaKeys()->LoadEpochKey(call_id, 1);
+  ASSERT_TRUE(key && key->has_value());
+  for (size_t i : {kB, kC}) {
+    auto held = sides_[i].stack->MediaKeys()->LoadEpochKey(call_id, 1);
+    ASSERT_TRUE(held && held->has_value()) << "side " << i << " never got the invite's key";
+    EXPECT_EQ(**held, **key) << "side " << i;
+  }
+}
+
+// A member leaving rotates the key; the rest take the next epoch's key from CallMediaKey.
+TEST_F(CallGroupStackComposeTest, LeaveRotatesTheMediaKeyForTheRest) {
+  const std::string call_id = RunGroupCallToHopLive();
+  ASSERT_FALSE(call_id.empty());
+
+  sides_[kA].ui->Apply(CallLifecycleEvent::LeaveClicked, call_id);
+  auto epoch2 = [&](size_t i) { return sides_[i].stack->MediaKeys()->LoadEpochKey(call_id, 2); };
+  DrainUntil([&]() {
+    PumpWire();
+    auto b = epoch2(kB);
+    auto c = epoch2(kC);
+    return b && b->has_value() && c && c->has_value();
+  });
+  auto b = epoch2(kB);
+  auto c = epoch2(kC);
+  ASSERT_TRUE(b && b->has_value()) << "B has no epoch-2 key:" << Describe(call_id);
+  ASSERT_TRUE(c && c->has_value()) << "C has no epoch-2 key:" << Describe(call_id);
+  EXPECT_EQ(**b, **c) << "B and C must share the rotated key";
+}
+
 // V050 gt3: the initiator plans the hop from the invite list at StartCall — every invitee holds it
 // before anyone accepts, nobody attaches during the 1:1 phase, and the third join migrates onto
 // the planned hop even when another hop ranks first by then.

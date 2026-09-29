@@ -18,6 +18,7 @@ pp_browser_add_feature_library(pp_feature_calls
     LiveCall.cpp
     CallMediaCoordinator.cpp
     CallControlClient.cpp
+    CallMediaKeyExchange.cpp
   PUBLIC_LIBS
     pp_foundation_crypto
     pp_domain_media

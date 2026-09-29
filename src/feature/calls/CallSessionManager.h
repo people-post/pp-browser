@@ -13,6 +13,7 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallControlClient.h"
 #include "feature/calls/CallDeliveryPorts.h"
+#include "feature/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallTopologyController.h"
@@ -330,7 +331,6 @@ private:
   Roe<void> HandleInboundLeave(const std::string& detail_json, const std::string& sender_identity,
                                const std::string& local_identity);
   Roe<void> HandleInboundRoster(const std::string& detail_json);
-  Roe<void> HandleInboundMediaKey(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundSfuAttach(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
@@ -356,6 +356,8 @@ private:
   LiveCalls live_calls_;
   /** Outbound call-control I/O (after delivery_ / the stores it borrows). */
   CallControlClient control_;
+  /** The call's media keys between the peers (after control_, which carries them). */
+  CallMediaKeyExchange key_exchange_;
   CallSessionWorkflow workflow_;
   // Swapped at mesh start / stop and lifecycle bind; read as one snapshot per operation.
   SharedPorts<CallDirectMediaPorts> direct_media_;

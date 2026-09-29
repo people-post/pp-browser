@@ -9,9 +9,9 @@
 #include "common/Module.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadRecordTypes.h"
-#include "domain/messaging/CallMediaKeyStore.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/people/IdentityStore.h"
+#include "feature/calls/CallMediaKeyExchange.h"
 #include "feature/calls/LiveCall.h"
 
 #include <functional>
@@ -54,11 +54,10 @@ public:
     bool IsBound() const { return static_cast<bool>(local_relay_identity); }
   };
 
-  /** Duplex start/stop + engine queries the session workflow needs. */
+  /** The 1:1 start the session workflow schedules. */
   struct DuplexPorts {
     std::function<void(const std::string& call_id, const std::string& peer, bool offerer)>
         schedule_start_direct;
-    std::function<void(const std::string& call_id)> on_media_key_ready;
   };
 
   /** Hop-path / SFU attach outcomes observed by durable session. */
@@ -113,10 +112,6 @@ public:
      */
     std::function<void(int timeout_ms, std::function<void(bool ready)> done)> park_circuit;
     std::function<void(const std::string& relay, const std::string& peer_id)> note_mesh_peer_id_for_relay;
-    std::function<Roe<ByteVector>(const std::string& peer)> resolve_peer_session_key;
-    std::function<Roe<void>(const std::string& call_id, const std::string& peer, uint32_t epoch,
-                            const std::string& key_id, const ByteVector& key)>
-        send_media_key;
     std::function<std::vector<std::string>()> local_listen_multiaddrs;
     std::function<CallPeerCaps()> local_peer_caps;
     std::function<std::string()> local_mesh_peer_id;
@@ -133,7 +128,7 @@ public:
   };
 
   CallSessionWorkflow(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
-                      CallMediaKeyStore& media_keys, LiveCalls& live_calls);
+                      CallMediaKeyExchange& key_exchange, LiveCalls& live_calls);
   ~CallSessionWorkflow() override;
 
   void SetHostPorts(HostPorts ports);
@@ -191,7 +186,6 @@ public:
   Roe<void> HandleInboundLeave(const std::string& detail_json, const std::string& sender_identity,
                                const std::string& local_identity);
   Roe<void> HandleInboundRoster(const std::string& detail_json);
-  Roe<void> HandleInboundMediaKey(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundSfuAttach(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
@@ -214,7 +208,8 @@ private:
   IThreadStore& store_;
   IdentityStore& identity_;
   CallSessionStore& sessions_;
-  CallMediaKeyStore& media_keys_;
+  /** The call's media keys between the peers (owned by CallSessionManager). */
+  CallMediaKeyExchange& key_exchange_;
   /** The calls live on this device (owned by CallSessionManager); driven where the store rows change. */
   LiveCalls& live_calls_;
   HostPorts host_;

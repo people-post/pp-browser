@@ -6,7 +6,6 @@
 #include "domain/messaging/CallMediaPlannerSelectLogic.h"
 
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/SessionKeyDeriver.h"
 #include "domain/media/CallMediaAdaptation.h"
 #include "domain/messaging/CallSessionLogic.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
@@ -81,9 +80,15 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
                  }
                  return std::nullopt;
                }),
-      workflow_(store, identity, sessions, media_keys, live_calls_) {
+      key_exchange_(sessions, media_keys, control_), workflow_(store, identity, sessions, key_exchange_, live_calls_) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
+  key_exchange_.SetOnKeyReady([this](const std::string& call_id) {
+    const auto direct_media = direct_media_.Get();
+    if (direct_media->on_media_key_ready) {
+      direct_media->on_media_key_ready(call_id);
+    }
+  });
   live_calls_.BindMediaResources(&media_, nullptr);
   live_calls_.BindHopDriver(&topology_);
   BindTopologyHostPorts();
@@ -138,12 +143,6 @@ void CallSessionManager::BindWorkflowHostPorts() {
   ports.wire.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
   ports.duplex.schedule_start_direct = [this](const std::string& call_id, const std::string& peer, bool offerer) {
     ScheduleStartDirectMedia(call_id, peer, offerer);
-  };
-  ports.duplex.on_media_key_ready = [this](const std::string& call_id) {
-    const auto direct_media = direct_media_.Get();
-    if (direct_media->on_media_key_ready) {
-      direct_media->on_media_key_ready(call_id);
-    }
   };
   ports.hop.on_joined_count_observed = [this](const std::string& call_id, size_t n) {
     topology_.OnJoinedCountObserved(call_id, n);
@@ -241,11 +240,6 @@ void CallSessionManager::BindWorkflowHostPorts() {
   };
   ports.reach.note_mesh_peer_id_for_relay = [this](const std::string& relay, const std::string& peer_id) {
     NoteMeshPeerIdForRelay(relay, peer_id);
-  };
-  ports.reach.resolve_peer_session_key = [this](const std::string& peer) { return control_.ResolvePeerSessionKey(peer); };
-  ports.reach.send_media_key = [this](const std::string& call_id, const std::string& peer, uint32_t epoch,
-                                const std::string& key_id, const ByteVector& key) {
-    return control_.SendMediaKey(call_id, peer, epoch, key_id, key);
   };
   ports.reach.local_listen_multiaddrs = [this]() -> std::vector<std::string> {
     return local_listen_multiaddrs_ ? local_listen_multiaddrs_() : std::vector<std::string>{};
@@ -1091,12 +1085,6 @@ Roe<void> CallSessionManager::HandleInboundRoster(const std::string& detail_json
 }
 
 
-Roe<void> CallSessionManager::HandleInboundMediaKey(const std::string& detail_json,
-                                                    const std::string& sender_identity) {
-  return workflow_.HandleInboundMediaKey(detail_json, sender_identity);
-}
-
-
 Roe<void> CallSessionManager::HandleInboundSfuAttach(const std::string& detail_json,
                                                     const std::string& sender_identity) {
   return workflow_.HandleInboundSfuAttach(detail_json, sender_identity);
@@ -1260,7 +1248,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   case CallControlType::CallRoster:
     return HandleInboundRoster(detail_json);
   case CallControlType::CallMediaKey:
-    return HandleInboundMediaKey(detail_json, sender_identity);
+    return key_exchange_.HandleInbound(detail_json, sender_identity);
   case CallControlType::CallSdp:
   case CallControlType::CallIce:
     log().debug << "Ignoring legacy call_sdp/call_ice from " << sender_identity;
@@ -1454,18 +1442,7 @@ void CallSessionManager::P2pResendMediaKey(const std::string& call_id, const std
   if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
     return;
   }
-  const uint32_t epoch = (*session)->media_epoch;
-  auto key_bytes = media_keys_.LoadEpochKey(call_id, epoch);
-  if (!key_bytes || !key_bytes->has_value()) {
-    log().warning << "P2pResendMediaKey missing key call_id=" << call_id << " epoch=" << epoch;
-    return;
-  }
-  if (auto sent = control_.SendMediaKey(call_id, peer_identity, epoch, (*session)->media_key_id, **key_bytes); !sent) {
-    log().warning << "P2pResendMediaKey send failed call_id=" << call_id << " err=" << sent.error().message;
-    return;
-  }
-  log().info << "P2pResendMediaKey sent call_id=" << call_id << " peer=" << peer_identity
-                << " epoch=" << epoch;
+  (void)key_exchange_.SendCurrent(call_id, peer_identity);
 }
 
 void CallSessionManager::P2pNoteInboundHello(const std::string& call_id, const std::string& identity,

@@ -15,8 +15,8 @@
 namespace pbr {
 
 CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
-                                         CallMediaKeyStore& media_keys, LiveCalls& live_calls)
-    : store_(store), identity_(identity), sessions_(sessions), media_keys_(media_keys), live_calls_(live_calls) {
+                                         CallMediaKeyExchange& key_exchange, LiveCalls& live_calls)
+    : store_(store), identity_(identity), sessions_(sessions), key_exchange_(key_exchange), live_calls_(live_calls) {
   redirectLogger("CallSessionWorkflow");
 }
 
@@ -213,14 +213,10 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
     return cleared.error();
   }
 
-  auto key = media_keys_.GenerateEpochKey();
-  if (!key) {
-    return key.error();
-  }
   const std::string call_id = GenerateCallId();
-  auto media_key_id = media_keys_.PutEpochKey(call_id, 1, *key);
-  if (!media_key_id) {
-    return media_key_id.error();
+  auto media_key = key_exchange_.Mint(call_id, 1);
+  if (!media_key) {
+    return media_key.error();
   }
 
   const int64_t now = util::NowUnixMs();
@@ -234,8 +230,8 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
   session.video_allowed = video_allowed;
   session.state = CallSessionState::Ringing;
   session.created_at = now;
-  session.media_epoch = 1;
-  session.media_key_id = *media_key_id;
+  session.media_epoch = media_key->epoch;
+  session.media_key_id = media_key->key_id;
   if (auto saved = sessions_.UpsertSession(session); !saved) {
     return saved.error();
   }
@@ -402,22 +398,8 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   // call-control side effects (BenignDuplicate / classifier), so Accept never sees the key.
   invite.media_epoch = (*session)->media_epoch;
   invite.media_key_id = (*session)->media_key_id;
-  if (auto key_bytes = media_keys_.LoadEpochKey(call_id, (*session)->media_epoch);
-      key_bytes && key_bytes->has_value()) {
-    if (host_.reach.resolve_peer_session_key) {
-      if (auto session_key = host_.reach.resolve_peer_session_key(invitee_identity)) {
-        if (auto wrapped = CallMediaKeyStore::WrapKeyB64(*session_key, **key_bytes, call_id, invite.media_epoch,
-                                                         invite.media_key_id)) {
-          invite.wrapped_key_b64 = *wrapped;
-        } else {
-          log().warning << "CallInvite media key wrap failed call_id=" << call_id
-                        << " err=" << wrapped.error().message;
-        }
-      } else {
-        log().warning << "CallInvite media key skip; no peer session key peer=" << invitee_identity
-                      << " err=" << session_key.error().message;
-      }
-    }
+  if (auto key = key_exchange_.Current(call_id); key) {
+    invite.wrapped_key_b64 = key_exchange_.WrapForPeer(call_id, *key, invitee_identity);
   }
   if (host_.reach.local_listen_multiaddrs) {
     FillCallListenFields(host_.reach.local_listen_multiaddrs(), invite.libp2p_peer_id, invite.listen_multiaddrs);
@@ -856,30 +838,16 @@ Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, c
     return {};
   }
 
-  auto session = sessions_.LoadSession(call_id);
-  if (!session || !session->has_value()) {
-    return Error("Call session not found");
-  }
-  auto key = media_keys_.GenerateEpochKey();
+  auto key = key_exchange_.Rotate(call_id);
   if (!key) {
     return key.error();
-  }
-  const uint32_t new_epoch = (*session)->media_epoch + 1;
-  auto media_key_id = media_keys_.PutEpochKey(call_id, new_epoch, *key);
-  if (!media_key_id) {
-    return media_key_id.error();
-  }
-  (*session)->media_epoch = new_epoch;
-  (*session)->media_key_id = *media_key_id;
-  if (auto saved = sessions_.UpsertSession(**session); !saved) {
-    return saved.error();
   }
 
   auto roster = host_.wire.build_roster_detail(call_id);
   if (!roster) {
     return roster.error();
   }
-  roster->media_epoch = new_epoch;
+  roster->media_epoch = key->epoch;
   auto roster_json = CallControlCodec::EncodeRoster(*roster);
   if (!roster_json) {
     return roster_json.error();
@@ -888,7 +856,7 @@ Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, c
     if (peer == *local) {
       continue;
     }
-    (void)host_.reach.send_media_key(call_id, peer, new_epoch, *media_key_id, *key);
+    (void)key_exchange_.Send(call_id, peer, *key);
     (void)host_.wire.send_direct(peer, CallControlType::CallRoster, *roster_json, "Call roster");
   }
   return {};
@@ -1216,27 +1184,8 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
   }
 
   // Media key embedded in invite (preferred); CallMediaKey message remains a backup.
-  if (!invite->wrapped_key_b64.empty()) {
-    if (auto session_key = host_.reach.resolve_peer_session_key(sender_identity)) {
-      auto unwrapped = CallMediaKeyStore::UnwrapKeyB64(*session_key, invite->wrapped_key_b64, invite->call_id,
-                                                       session.media_epoch, invite->media_key_id);
-      if (unwrapped) {
-        if (auto put = media_keys_.PutEpochKey(invite->call_id, session.media_epoch, *unwrapped); put) {
-          log().info << "CallInvite embedded media key stored call_id=" << invite->call_id
-                        << " epoch=" << session.media_epoch;
-          if (host_.duplex.on_media_key_ready) {
-            host_.duplex.on_media_key_ready(invite->call_id);
-          }
-        } else {
-          log().warning << "CallInvite media key store failed: " << put.error().message;
-        }
-      } else {
-        log().warning << "CallInvite media key unwrap failed: " << unwrapped.error().message;
-      }
-    } else {
-      log().warning << "CallInvite media key missing peer session key from=" << sender_identity;
-    }
-  }
+  (void)key_exchange_.TakeWrapped(invite->call_id, session.media_epoch, invite->media_key_id, invite->wrapped_key_b64,
+                                sender_identity, "CallInvite");
 
   // Seed full roster from invite when present; fall back to inviter+self.
   if (!invite->participants.empty()) {
@@ -1408,21 +1357,7 @@ Roe<void> CallSessionWorkflow::ApplyRemoteAccept(const CallAcceptDetail& accept_
   }
 
   if (session && session->has_value()) {
-    const uint32_t epoch = (*session)->media_epoch;
-    auto key_bytes = media_keys_.LoadEpochKey(accept->call_id, epoch);
-    if (key_bytes && key_bytes->has_value()) {
-      if (auto keyed = host_.reach.send_media_key(accept->call_id, identity, epoch, (*session)->media_key_id, **key_bytes);
-          !keyed) {
-        log().warning << "CallMediaKey send failed call_id=" << accept->call_id
-                      << " peer=" << identity << " err=" << keyed.error().message;
-      } else {
-        log().info << "CallMediaKey sent call_id=" << accept->call_id << " peer=" << identity
-                      << " epoch=" << epoch;
-      }
-    } else {
-      log().warning << "CallMediaKey missing locally on CallAccept call_id=" << accept->call_id
-                    << " epoch=" << epoch;
-    }
+    (void)key_exchange_.SendCurrent(accept->call_id, identity);
     auto joined_after = sessions_.CountJoined(accept->call_id);
     const size_t n_joined = joined_after ? *joined_after : 0;
     if (!implicit && host_.hop.note_accept_hop_report) {
@@ -1629,46 +1564,6 @@ Roe<void> CallSessionWorkflow::HandleInboundRoster(const std::string& detail_jso
     host_.hop.on_joined_count_observed(roster->call_id, *joined);
   }
   host_.wire.notify_ring_changed();
-  return {};
-}
-
-Roe<void> CallSessionWorkflow::HandleInboundMediaKey(const std::string& detail_json,
-                                                    const std::string& sender_identity) {
-  auto key = CallControlCodec::DecodeMediaKey(detail_json);
-  if (!key) {
-    return key.error();
-  }
-  log().info << "Inbound CallMediaKey call_id=" << key->call_id << " epoch=" << key->media_epoch
-                << " from=" << sender_identity;
-  auto session = sessions_.LoadSession(key->call_id);
-  if (session && session->has_value()) {
-    (*session)->media_epoch = key->media_epoch;
-    (*session)->media_key_id = key->media_key_id;
-    (void)sessions_.UpsertSession(**session);
-  }
-  bool stored = false;
-  if (!key->wrapped_key_b64.empty()) {
-    auto session_key = host_.reach.resolve_peer_session_key(sender_identity);
-    if (session_key) {
-      auto unwrapped = CallMediaKeyStore::UnwrapKeyB64(*session_key, key->wrapped_key_b64, key->call_id,
-                                                        key->media_epoch, key->media_key_id);
-      if (unwrapped) {
-        if (auto put = media_keys_.PutEpochKey(key->call_id, key->media_epoch, *unwrapped); put) {
-          stored = true;
-        } else {
-          log().warning << "CallMediaKey store failed: " << put.error().message;
-        }
-      } else {
-        log().warning << "CallMediaKey unwrap failed: " << unwrapped.error().message;
-      }
-    } else {
-      log().warning << "CallMediaKey missing peer session key from=" << sender_identity;
-    }
-  }
-  // Mesh answerer Start waits for epoch key (V015); kick deferred BeginSession.
-  if (stored && host_.duplex.on_media_key_ready) {
-    host_.duplex.on_media_key_ready(key->call_id);
-  }
   return {};
 }
 

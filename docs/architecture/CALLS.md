@@ -321,6 +321,7 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
 | Direct planner Apply (V039) | `feature/calls` | **`CallMediaBridge`** + **`CallDirectPlannerLogic`** (`domain/messaging`) | Schedule/Key/Connect/TX-only/Release; health timer |
 | Hop planner Apply (V039) | `feature/calls` | **`CallTopologyController`** + **`CallHopPlannerLogic`** (`domain/messaging`) | SoftMigrate/attach-wait/inbound SFU; attach-wait timer |
 | Media keys wrap/unwrap | `feature/messaging` | `CallMediaKeyStore` | Unchanged |
+| Media keys between peers | `feature/calls` | **`CallMediaKeyExchange`** (owned by `CallSessionManager`) | Mint (new call / rotation), wrap into the invite, send `CallMediaKey` (accept, resend, rotation), take a peer's wrapped key → "key ready" (V015 answerer start); the workflow decides when |
 | Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync`, `ShellCallChromeGesture`, `ShellHost::ApplyCallChromeUpdate` | Layer identity / control *presence* / **mode** (Expanded/Immersive/Minimized — V031) / status kind → remount; mute/speaker/camera icons → DirtyCallChrome (`data-attr-src` + `data-class-*--on`); meters/pulse/quality chip → DirtyCallChrome; mobile speaker via `CallAudioSession` |
 | Call media health | `domain/media` + `feature/ui` | `CallMediaHealth`, `CallMediaEngine::HealthSnapshot`, hop `HealthSnapshot`, `CallController::ApplyMediaHealth` / `ShowCallDetails` | Tier A quality bars always; Call details for everyone; debug subtitle + rich diagnostics behind profile `call_diagnostics` or `--debug`; `media_health` INFO ~2s |
 | Blind SFU protocol | `base/p2p` | `MediaRelayService` | Unchanged |
@@ -536,6 +537,7 @@ Landed (behavior-preserving + who-picks fix):
 | `src/domain/mesh/reach/MeshReachPorts.h` | `IDialRegistry` + `PeerSessionDialRegistry`, `ICircuitHopReach` (link / service reach — [media-client-layers L008](../../projects/media-client-layers/DECISIONS.md)) |
 | `src/domain/mesh/l4/media_relay/client/IMediaRelayClient.h`, `MediaRelayAttach.*` | `media_relay` client surface; `AttachToMediaRelayAsync` = service reach → quote → quote gate → AcceptAndAttach, shared by the group joiner and (later) broadcast |
 | `src/domain/messaging/CallMediaKeyStore.*` | Epoch key wrap |
+| `src/feature/calls/CallMediaKeyExchange.*` | Epoch keys between the peers (mint, wrap, send, take in) |
 | `src/gui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |
 | `src/domain/media/CallMediaEngine.*` | Opus/H264/SDL capture; libp2p/SFU packet transport |
 | `src/domain/media/CallMediaAdaptation.*` | V024 + `CallMediaTopology` |
