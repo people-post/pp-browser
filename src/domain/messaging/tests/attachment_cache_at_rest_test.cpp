@@ -7,6 +7,8 @@
 #include <fstream>
 #include <gtest/gtest.h>
 
+#include <chrono>
+
 namespace pbr {
 namespace {
 
@@ -158,6 +160,125 @@ TEST_F(AttachmentCacheAtRestTest, LargeVideoPosterUsesSoftPlaceholderWithoutView
   ASSERT_TRUE(poster) << poster.error().message;
   EXPECT_TRUE(AttachmentPosterExists(profile_dir_, thread_id_, *hash));
   EXPECT_TRUE(AttachmentLocalPath(profile_dir_, thread_id_, *hash, "video/mp4", "clip.mp4").empty());
+}
+
+TEST_F(AttachmentCacheAtRestTest, ExtensionIgnoresPeerSuppliedFilename) {
+  // A malicious peer can send any filename; the on-disk extension must come only from the
+  // mime whitelist, never from that filename (otherwise "image/png" + "x.exe" would save an
+  // .exe that an image-mime open path runs without confirmation).
+  EXPECT_EQ(AttachmentExtensionFromMime("image/png", "x.exe"), "png");
+  EXPECT_EQ(AttachmentExtensionFromMime("video/mp4", "clip.bat"), "mp4");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/octet-stream", "x.exe"), "");
+}
+
+// Review (#238): mimes outside the fixed map (docx / zip / audio …) open through the OS after the
+// confirm dialog, which dispatches on the extension — so an inert filename extension is kept,
+// lower-cased; an executable or script one never is, and image / video mimes never take one.
+TEST_F(AttachmentCacheAtRestTest, ExtensionKeepsInertFilenameExtensionForConfirmedOpens) {
+  EXPECT_EQ(AttachmentExtensionFromMime("application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                        "Report.DOCX"),
+            "docx");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/zip", "photos.zip"), "zip");
+  EXPECT_EQ(AttachmentExtensionFromMime("audio/mpeg", "song.mp3"), "mp3");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/octet-stream", "setup.msi"), "");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/zip", "run.ps1"), "");
+  EXPECT_EQ(AttachmentExtensionFromMime("text/html", "page.html"), "");
+  EXPECT_EQ(AttachmentExtensionFromMime("application/octet-stream", "noext"), "");
+  EXPECT_EQ(AttachmentExtensionFromMime("image/heic", "x.zip"), "") << "auto-opened mimes never take a filename ext";
+  EXPECT_EQ(AttachmentExtensionFromMime("application/pdf", "x.exe"), "pdf") << "mapped mimes ignore the filename";
+}
+
+namespace {
+std::vector<uint8_t> PendingHash(const uint8_t seed) {
+  std::vector<uint8_t> hash(kAttachmentContentHashSize, 0);
+  hash[0] = seed;
+  hash[1] = static_cast<uint8_t>(seed >> 1);
+  return hash;
+}
+} // namespace
+
+// Review (#238): pushes with no matching message yet (orphans) are bounded — 64 per thread — but
+// blobs the thread's messages name are real attachments (maybe left unopened because auto-download
+// deferred them) and neither count nor get refused.
+TEST_F(AttachmentCacheAtRestTest, PendingCapBoundsOrphansOnly) {
+  const std::vector<uint8_t> blob{1, 2, 3};
+  for (int i = 0; i < 64; ++i) {
+    ASSERT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, PendingHash(static_cast<uint8_t>(i)), blob));
+  }
+  EXPECT_FALSE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, PendingHash(200), blob)) << "orphan cap";
+  const auto referenced = PendingHash(201);
+  EXPECT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, referenced, blob,
+                                              {AttachmentHashHex(referenced)}))
+      << "a referenced attachment is accepted past the orphan cap";
+}
+
+// Only orphans expire: an unopened referenced attachment outlives the 24 h orphan TTL.
+TEST_F(AttachmentCacheAtRestTest, PendingTtlPrunesOrphansNotReferencedBlobs) {
+  const std::vector<uint8_t> blob{1, 2, 3};
+  const auto orphan = PendingHash(1);
+  const auto kept = PendingHash(2);
+  ASSERT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, orphan, blob));
+  ASSERT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, kept, blob));
+  const auto root = std::filesystem::path(AttachmentPendingCiphertextRoot(profile_dir_, thread_id_));
+  const auto two_days_ago = std::filesystem::file_time_type::clock::now() - std::chrono::hours(48);
+  std::filesystem::last_write_time(root / AttachmentHashHex(orphan), two_days_ago);
+  std::filesystem::last_write_time(root / AttachmentHashHex(kept), two_days_ago);
+
+  // The next push prunes, with `kept` named by a thread message.
+  ASSERT_TRUE(SavePendingAttachmentCiphertext(profile_dir_, thread_id_, PendingHash(3), blob,
+                                              {AttachmentHashHex(kept)}));
+  EXPECT_FALSE(AttachmentPendingCiphertextExists(profile_dir_, thread_id_, orphan)) << "expired orphan pruned";
+  EXPECT_TRUE(AttachmentPendingCiphertextExists(profile_dir_, thread_id_, kept)) << "referenced blob kept";
+}
+
+TEST_F(AttachmentCacheAtRestTest, ContentMatchesMimeFlagsLyingMime) {
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x77);
+
+  // Plain text bytes saved under a video/mp4 mime: the sender lied to reach the
+  // no-confirm-on-open path for images/videos.
+  ASSERT_TRUE(SaveAttachmentPlaintext(profile_dir_, thread_id_, *hash, "video/mp4", plain_, "clip.mp4", dek,
+                                      profile_id_));
+  auto view = EnsureAttachmentViewPath(profile_dir_, thread_id_, *hash, "video/mp4", "clip.mp4", dek, profile_id_);
+  ASSERT_TRUE(view) << view.error().message;
+
+  EXPECT_FALSE(AttachmentContentMatchesMime(*view, "video/mp4"));
+  EXPECT_TRUE(AttachmentContentMatchesMime(*view, "text/plain"));
+}
+
+TEST_F(AttachmentCacheAtRestTest, ContentMatchesMimeRejectsMzPolyglot) {
+  // "MZ" + "ftyp" at offset 4 would otherwise pass a naive video/mp4 signature check.
+  const ByteVector polyglot{'M', 'Z', 0x00, 0x00, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'};
+  auto hash = AttachmentContentHash(polyglot);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x88);
+
+  ASSERT_TRUE(
+      SaveAttachmentPlaintext(profile_dir_, thread_id_, *hash, "video/mp4", polyglot, "clip.mp4", dek, profile_id_));
+  auto view = EnsureAttachmentViewPath(profile_dir_, thread_id_, *hash, "video/mp4", "clip.mp4", dek, profile_id_);
+  ASSERT_TRUE(view) << view.error().message;
+
+  EXPECT_FALSE(AttachmentContentMatchesMime(*view, "video/mp4"));
+}
+
+TEST_F(AttachmentCacheAtRestTest, SafeToAutoOpenRequiresWhitelistedExtensionAndContent) {
+  const ByteVector png{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 'r', 'e', 's', 't'};
+  auto hash = AttachmentContentHash(png);
+  ASSERT_TRUE(hash);
+  const auto dek = MakeDek(0x99);
+
+  ASSERT_TRUE(SaveAttachmentPlaintext(profile_dir_, thread_id_, *hash, "image/png", png, "photo.png", dek, profile_id_));
+  auto view = EnsureAttachmentViewPath(profile_dir_, thread_id_, *hash, "image/png", "photo.png", dek, profile_id_);
+  ASSERT_TRUE(view) << view.error().message;
+
+  // Extension, mime and content all agree: safe.
+  EXPECT_TRUE(AttachmentSafeToAutoOpen(*view, "image/png"));
+  // Mime not in the extension whitelist (e.g. SVG): never safe, regardless of content.
+  EXPECT_FALSE(AttachmentSafeToAutoOpen(*view, "image/svg+xml"));
+  // Mismatched extension on disk vs. what the mime maps to: never safe.
+  EXPECT_FALSE(AttachmentSafeToAutoOpen(*view, "video/mp4"));
+  EXPECT_FALSE(AttachmentSafeToAutoOpen("", "image/png"));
 }
 
 } // namespace

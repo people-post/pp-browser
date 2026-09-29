@@ -7,6 +7,7 @@
 #include "domain/messaging/CasLibrary.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "common/chat/MessagingLimits.h"
+#include <unordered_set>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -62,6 +63,25 @@ Roe<ChatAttachmentFields> FindAttachmentFields(IThreadStore& store, const std::s
     }
   }
   return Error("Attachment not found in thread history");
+}
+
+/** Hex content hashes of every attachment message in the thread (pending blobs they name are kept). */
+std::unordered_set<std::string> ReferencedAttachmentHashes(IThreadStore& store, const std::string& thread_id) {
+  std::unordered_set<std::string> hashes;
+  auto page = store.GetMessagesPage(thread_id, std::nullopt, 10000);
+  if (!page) {
+    return hashes;
+  }
+  for (const ThreadMessage& message : *page) {
+    if (message.content_type != ChatContentType::Attachment) {
+      continue;
+    }
+    auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
+    if (fields && fields->content_hash.size() == kAttachmentContentHashSize) {
+      hashes.insert(AttachmentHashHex(fields->content_hash));
+    }
+  }
+  return hashes;
 }
 
 } // namespace
@@ -158,7 +178,12 @@ Roe<void> ChatBlobResponder::ServePush(IThreadStore& store, const ChatBlobReques
     return Error("Invalid attachment content hash");
   }
 
-  return SavePendingAttachmentCiphertext(profile_data_dir, request.thread_id, *hash, ciphertext);
+  // Senders push before the attachment message itself arrives, so the hash cannot be required
+  // to already be in thread history. SavePendingAttachmentCiphertext bounds orphan pushes (count
+  // + TTL) per thread instead; blobs the thread's messages already name are exempt (they may sit
+  // unopened for longer when auto-download deferred them).
+  return SavePendingAttachmentCiphertext(profile_data_dir, request.thread_id, *hash, ciphertext,
+                                         ReferencedAttachmentHashes(store, request.thread_id));
 }
 
 } // namespace pbr

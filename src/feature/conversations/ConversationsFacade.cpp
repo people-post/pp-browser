@@ -577,7 +577,9 @@ bool ConversationsFacade::AttachmentOpenNeedsConfirmForMessage(const std::string
       continue;
     }
     if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json)) {
-      return AttachmentOpenNeedsConfirm(fields->mime);
+      const std::string path = AttachmentLocalPath(hub_.ProfileDataDir(), thread_id, fields->content_hash,
+                                                    fields->mime, fields->filename);
+      return !AttachmentSafeToAutoOpen(path, fields->mime);
     }
     return true;
   }

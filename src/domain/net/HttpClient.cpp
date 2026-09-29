@@ -5,6 +5,8 @@
 
 #include "common/PbrCompat.h"
 
+#include "domain/net/PublicOnlySocket.h"
+
 #include <curl/curl.h>
 
 #include <limits>
@@ -37,13 +39,25 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, ResponseBuffer* 
 
 Roe<HttpResponse> Perform(const std::string& url, const char* method, const std::string& body,
                           const std::map<std::string, std::string>& headers,
-                          std::optional<size_t> max_response_bytes, HttpTimeout timeout) {
+                          std::optional<size_t> max_response_bytes, HttpTimeout timeout,
+                          bool restrict_to_public_https) {
   CURL* curl = curl_easy_init();
   if (!curl) {
     return AppError::Internal("Failed to init curl");
   }
 
   ApplyCurlSslDefaults(curl);
+
+  if (restrict_to_public_https) {
+    curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
+    curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
+    curl_easy_setopt(curl, CURLOPT_OPENSOCKETFUNCTION, OpenPublicOnlySocket);
+    // A proxy from the environment would connect to the proxy's address, not the target's, so
+    // OpenPublicOnlySocket would be checking the wrong host and a proxy could tunnel to an
+    // internal address anyway.
+    curl_easy_setopt(curl, CURLOPT_PROXY, "");
+    curl_easy_setopt(curl, CURLOPT_NOPROXY, "*");
+  }
 
   ResponseBuffer response_body{.max_bytes = max_response_bytes};
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
@@ -98,20 +112,23 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
 } // namespace
 
 Roe<HttpResponse> HttpClient::Get(const std::string& url, const std::map<std::string, std::string>& headers,
-                                  std::optional<size_t> max_response_bytes, HttpTimeout timeout) {
-  return Perform(url, "GET", {}, headers, max_response_bytes, timeout);
+                                  std::optional<size_t> max_response_bytes, HttpTimeout timeout,
+                                  bool restrict_to_public_https) {
+  return Perform(url, "GET", {}, headers, max_response_bytes, timeout, restrict_to_public_https);
 }
 
 Roe<HttpResponse> HttpClient::Post(const std::string& url, const std::string& body,
                                    const std::map<std::string, std::string>& headers,
-                                   std::optional<size_t> max_response_bytes, HttpTimeout timeout) {
-  return Perform(url, "POST", body, headers, max_response_bytes, timeout);
+                                   std::optional<size_t> max_response_bytes, HttpTimeout timeout,
+                                   bool restrict_to_public_https) {
+  return Perform(url, "POST", body, headers, max_response_bytes, timeout, restrict_to_public_https);
 }
 
 Roe<HttpResponse> HttpClient::Put(const std::string& url, const std::string& body,
                                   const std::map<std::string, std::string>& headers,
-                                  std::optional<size_t> max_response_bytes, HttpTimeout timeout) {
-  return Perform(url, "PUT", body, headers, max_response_bytes, timeout);
+                                  std::optional<size_t> max_response_bytes, HttpTimeout timeout,
+                                  bool restrict_to_public_https) {
+  return Perform(url, "PUT", body, headers, max_response_bytes, timeout, restrict_to_public_https);
 }
 
 } // namespace pbr

@@ -5,6 +5,10 @@
 #include <gtest/gtest.h>
 #include <string>
 
+#if !defined(_WIN32)
+#include <sys/stat.h>
+#endif
+
 namespace {
 
 using namespace pbr;
@@ -59,5 +63,18 @@ TEST_F(AtomicFileWriteTest, FailedRenameLeavesPriorIntact) {
   std::string body((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   EXPECT_EQ(body, "prior");
 }
+
+#if !defined(_WIN32)
+TEST_F(AtomicFileWriteTest, WritesOwnerOnlyPermissions) {
+  // Profile data (config/preferences can hold secrets, e.g. LLM api_key) must never be
+  // group/world-readable, including at the moment the file is first created.
+  const auto path = (dir_ / "secret.json").string();
+  ASSERT_TRUE(AtomicFileWrite::Write(path, std::string("{\"api_key\":\"x\"}")));
+
+  struct stat st{};
+  ASSERT_EQ(::stat(path.c_str(), &st), 0);
+  EXPECT_EQ(st.st_mode & 0777, static_cast<mode_t>(0600));
+}
+#endif
 
 } // namespace

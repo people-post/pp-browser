@@ -30,6 +30,17 @@ std::string StructuredTextParser::EscapeText(const std::string& text) {
     case '"':
       out += "&quot;";
       break;
+    case '{':
+      // `{{expr}}` is the RML data-binding syntax (see RML_PROFILE.md); peer/user text that
+      // happens to contain literal braces must not be reinterpreted as a live binding
+      // expression once it lands in an RML document via data-rml. Entity-escaping survives
+      // HTML parsing (renders back to a literal brace) but is not literal `{{` for the
+      // template substitution pass that runs over the raw markup.
+      out += "&#123;";
+      break;
+    case '}':
+      out += "&#125;";
+      break;
     default:
       out += c;
       break;

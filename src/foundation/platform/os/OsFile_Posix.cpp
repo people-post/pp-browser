@@ -48,6 +48,12 @@ Roe<void> AtomicRename(const std::filesystem::path& tmp_path, const std::filesys
   return {};
 }
 
+void SetOwnerOnlyPermissions(const std::filesystem::path& path) {
+  std::error_code ec;
+  std::filesystem::permissions(path, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+                               std::filesystem::perm_options::replace, ec);
+}
+
 } // namespace pbr::os
 
 #endif
