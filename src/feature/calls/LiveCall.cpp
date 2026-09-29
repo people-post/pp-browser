@@ -214,8 +214,8 @@ void LiveCalls::Close(const std::string& call_id, const LiveCallEndReason reason
 }
 
 void LiveCalls::BindMediaResources(CallMediaEngine* engine, CallMediaSeat* seat) {
-  engine_ = engine;
-  seat_ = seat;
+  resources_.engine = engine;
+  resources_.seat = seat;
 }
 
 CallMediaCoordinator* LiveCalls::Media(const std::string& call_id) {
@@ -224,8 +224,8 @@ CallMediaCoordinator* LiveCalls::Media(const std::string& call_id) {
     LiveCallLog().warning << "media for a call not admitted here call_id=" << call_id;
     return nullptr;
   }
-  if (!call->media_ && engine_) {
-    call->media_ = std::make_unique<CallMediaCoordinator>(call_id, *engine_, seat_);
+  if (!call->media_ && resources_.engine) {
+    call->media_ = std::make_unique<CallMediaCoordinator>(call_id, resources_);
   }
   return call->media_.get();
 }

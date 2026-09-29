@@ -46,11 +46,9 @@ struct CallHopMigrateHostPorts {
   std::function<void(std::string message)> set_media_activity;
   std::function<void()> clear_media_activity;
   std::function<void(const std::string& call_id)> note_media_attempted;
-  std::function<void(const std::string& call_id)> bind_media_call_id;
   /** The call's media coordinator: the hop path starts / stops the engine through it. */
   std::function<CallMediaCoordinator*(const std::string& call_id)> call_media;
   std::function<void()> clear_media_peer_identity;
-  std::function<void()> release_direct_media;
   std::function<void()> request_inbox_sync;
 
   bool IsBound() const { return static_cast<bool>(local_relay_identity); }
@@ -68,11 +66,6 @@ struct CallHopMigrateHostPorts {
   void ClearMediaPeerIdentity() const {
     if (clear_media_peer_identity) {
       clear_media_peer_identity();
-    }
-  }
-  void ReleaseDirectMedia() const {
-    if (release_direct_media) {
-      release_direct_media();
     }
   }
   void RequestInboxSync() const {
@@ -295,6 +288,7 @@ private:
   Roe<void> StartHopMedia(const HopAttach& at);
   void MarkHopAttachLive(const HopAttach& at, bool fresh_start);
   void ReleaseDirectAfterHopAttach(const HopAttach& at);
+  void ReleaseDirectFor(const std::string& call_id);
   // Guest reattach after a lost relay transport (engine stays live).
   void StartGuestReattach(const std::string& call_id, const CallSfuAttachDetail& attach_in,
                           std::function<void(Roe<void>)> on_done);

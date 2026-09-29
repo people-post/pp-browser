@@ -1,6 +1,5 @@
 #include "feature/calls/CallLifecycle.h"
 #include "feature/calls/CallMediaBridge.h"
-#include "feature/calls/CallMediaPaths.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallTopologyController.h"
@@ -302,30 +301,6 @@ CallDirectMediaPorts TestDirectMediaPorts(CallMediaBridge* bridge, CallMediaSeat
   if (!bridge) {
     return ports;
   }
-  auto make_path = [bridge, seat]() {
-    CallDirectPath::Ops ops;
-    ops.schedule_start = [bridge](const std::string& cid, const std::string& p, bool off) {
-      if (off) {
-        bridge->ScheduleStartMediaAsOfferer(cid, p);
-      } else {
-        bridge->ScheduleStartMediaAsAnswerer(cid, p);
-      }
-    };
-    ops.release_transport = [bridge](const CallMediaSeat::Token& token) {
-      bridge->ReleaseDirectTransport(token);
-    };
-    if (seat) {
-      ops.acquire = [seat](const std::string& cid) { return seat->Acquire(cid); };
-      ops.allows_path_op = [seat](const CallMediaSeat::Token& token) {
-        return seat->AllowsPathOp(token);
-      };
-      ops.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
-    }
-    return CallDirectPath(std::move(ops));
-  };
-  ports.schedule_start = [make_path](const std::string& call_id, const std::string& peer, bool offerer) {
-    make_path().ScheduleStart(call_id, peer, offerer);
-  };
   ports.media_path_kind = [bridge]() { return bridge->MediaPathKind(); };
   ports.note_peer_id_relay_mapping = [bridge](const std::string& peer_id,
                                               const std::string& relay_identity) {
@@ -345,13 +320,6 @@ CallDirectMediaPorts TestDirectMediaPorts(CallMediaBridge* bridge, CallMediaSeat
   };
   ports.note_media_attempted = [bridge](const std::string& call_id) {
     bridge->NoteMediaAttempted(call_id);
-  };
-  ports.release_direct_transport = [bridge, seat, make_path]() {
-    if (seat) {
-      (void)make_path().ReleaseTransport(seat->CurrentToken());
-      return;
-    }
-    bridge->ReleaseDirectTransport();
   };
   ports.on_media_key_ready = [bridge](const std::string& call_id) {
     bridge->OnMediaKeyReady(call_id);
@@ -463,8 +431,10 @@ protected:
     bridge_->SetDirectArmingPorts(TestDirectArmingPorts(lifecycle_.get()));
     bridge_->SetSeatPorts(TestDirectSeatPorts(seat_.get()));
     csm_->SetDirectMediaPorts(TestDirectMediaPorts(bridge_.get(), seat_.get()));
+    csm_->SetDirectDriver(bridge_.get());
     csm_->SetTopologySeatPorts(TestTopologySeatPorts(seat_.get()));
     csm_->SetMediaSeatPorts(csm_->MakeSeatPorts(seat_.get()));
+    csm_->SetCallMediaSeat(seat_.get());
     csm_->SetTopologyHopArmingPorts(TestHopArmingPorts(lifecycle_.get()));
     csm_->SetLifecyclePorts(TestSessionLifecyclePorts(lifecycle_.get()));
     CallLifecycleSignalingPorts ports;
@@ -532,8 +502,10 @@ protected:
     }
     if (csm_) {
       csm_->SetDirectMediaPorts({});
+      csm_->SetDirectDriver(nullptr);
       csm_->SetLifecyclePorts({});
       csm_->SetMediaSeatPorts({});
+      csm_->SetCallMediaSeat(nullptr);
       csm_->SetTopologyHopArmingPorts({});
       csm_->SetTopologySeatPorts({});
     }
@@ -892,14 +864,22 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
   std::string scheduled_peer;
   bool scheduled_offerer = false;
   int schedule_calls = 0;
-  CallDirectMediaPorts spy = TestDirectMediaPorts(bridge_.get(), seat_.get());
-  spy.schedule_start = [&](const std::string& cid, const std::string& peer, bool offerer) {
+  // The call's coordinator starts the 1:1 path through the direct driver: spy on that.
+  struct SpyDriver final : CallDirectDriver {
+    std::function<void(const std::string&, const std::string&, bool)> on_start;
+    void ScheduleDirectStart(const std::string& cid, const std::string& peer, bool offerer) override {
+      on_start(cid, peer, offerer);
+    }
+    void ReleaseDirectTransport(const CallMediaSeat::Token&) override {}
+    void ReleaseDirectTransport() override {}
+  } spy;
+  spy.on_start = [&](const std::string& cid, const std::string& peer, bool offerer) {
     ++schedule_calls;
     scheduled_call = cid;
     scheduled_peer = peer;
     scheduled_offerer = offerer;
   };
-  csm_->SetDirectMediaPorts(std::move(spy));
+  csm_->SetDirectDriver(&spy);
 
   lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
   lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
@@ -920,6 +900,7 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
   EXPECT_EQ(scheduled_call, call_id);
   EXPECT_EQ(scheduled_peer, "account:peer");
   EXPECT_TRUE(scheduled_offerer);
+  csm_->SetDirectDriver(bridge_.get());
 
   auto session = sessions_->LoadSession(call_id);
   ASSERT_TRUE(session && session->has_value());

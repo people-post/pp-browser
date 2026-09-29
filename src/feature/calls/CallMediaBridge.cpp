@@ -1330,6 +1330,15 @@ Roe<void> CallMediaBridge::StartMediaAsAnswerer(const std::string& call_id,
   return BeginSession(call_id, peer_identity, false);
 }
 
+void CallMediaBridge::ScheduleDirectStart(const std::string& call_id, const std::string& peer_identity,
+                                          const bool offerer) {
+  if (offerer) {
+    ScheduleStartMediaAsOfferer(call_id, peer_identity);
+  } else {
+    ScheduleStartMediaAsAnswerer(call_id, peer_identity);
+  }
+}
+
 void CallMediaBridge::ScheduleStartMediaAsOfferer(const std::string& call_id,
                                                         const std::string& peer_identity) {
   // Mark before UI hop so CallController orphan auto-Leave cannot race CallAccept→Active.

@@ -102,6 +102,17 @@ class FakeTopologyHost {
 public:
   /** Every call the hop path drives is live here (the harness seeds store rows only). */
   LiveCalls live;
+  /** The 1:1 path the calls' coordinators release when the hop takes over. */
+  struct CountingDirectDriver final : CallDirectDriver {
+    int* releases = nullptr;
+    void ScheduleDirectStart(const std::string&, const std::string&, bool) override {}
+    void ReleaseDirectTransport(const CallMediaSeat::Token&) override { ++*releases; }
+    void ReleaseDirectTransport() override { ++*releases; }
+  } direct;
+  FakeTopologyHost() {
+    direct.releases = &direct_media_releases;
+    live.BindDirectDriver(&direct);
+  }
 
   CallTopologyController::HostPorts MakeHostPorts() {
     CallTopologyController::HostPorts ports;
@@ -146,9 +157,7 @@ public:
     ports.set_media_activity = [this](std::string message) { media_activity = std::move(message); };
     ports.clear_media_activity = [this]() { media_activity.clear(); };
     ports.note_media_attempted = [this](const std::string& call_id) { media_attempted.push_back(call_id); };
-    ports.bind_media_call_id = [](const std::string& /*call_id*/) {};
     ports.clear_media_peer_identity = []() {};
-    ports.release_direct_media = [this]() { ++direct_media_releases; };
     ports.request_inbox_sync = [this]() { ++inbox_sync_requests; };
     return ports;
   }

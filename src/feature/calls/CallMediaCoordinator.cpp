@@ -27,22 +27,23 @@ const char* PathName(const CallMediaSeat::PathKind path) {
 
 } // namespace
 
-CallMediaCoordinator::CallMediaCoordinator(std::string call_id, CallMediaEngine& engine, CallMediaSeat* seat)
-    : call_id_(std::move(call_id)), engine_(engine), seat_(seat) {}
+CallMediaCoordinator::CallMediaCoordinator(std::string call_id, const CallMediaResources& resources)
+    : call_id_(std::move(call_id)), resources_(resources) {}
 
 Roe<void> CallMediaCoordinator::StartEngine(const CallMediaSeat::PathKind path, CallMediaEngine::SfuSendFn send) {
-  if (seat_ && !seat_->AllowsPathOp(seat_->Acquire(call_id_))) {
+  CallMediaSeat* const seat = resources_.seat;
+  if (seat && !seat->AllowsPathOp(seat->Acquire(call_id_))) {
     return Error("media seat will not hold call " + call_id_);
   }
-  if (auto started = engine_.StartSfu(call_id_, std::move(send)); !started) {
+  if (auto started = Engine().StartSfu(call_id_, std::move(send)); !started) {
     return started;
   }
-  if (seat_) {
-    seat_->NoteStart(call_id_);
-    seat_->NotePath(path);
+  if (seat) {
+    seat->NoteStart(call_id_);
+    seat->NotePath(path);
     // NoteStart bumps the epoch; the call must still hold the seat (a concurrent release lost it).
-    if (!seat_->IsBound(call_id_)) {
-      engine_.Stop();
+    if (!seat->IsBound(call_id_)) {
+      Engine().Stop();
       return Error("media seat lost call " + call_id_ + " during start");
     }
   }
@@ -52,13 +53,50 @@ Roe<void> CallMediaCoordinator::StartEngine(const CallMediaSeat::PathKind path, 
 }
 
 void CallMediaCoordinator::StopEngine(const char* why) {
-  const std::string running = engine_.ActiveCallId();
+  const std::string running = Engine().ActiveCallId();
   if (!running.empty() && running != call_id_) {
     // Parity: the stop paths always stopped leftover media (a drifted engine is worse than a stop).
     CallMediaCoordinatorLog().warning << "stopping engine running call_id=" << running << " for call_id=" << call_id_
                                       << " (" << (why ? why : "") << ")";
   }
-  engine_.Stop();
+  Engine().Stop();
+}
+
+Roe<void> CallMediaCoordinator::BeginDirect(const std::string& peer_identity, const bool offerer) {
+  if (!resources_.direct) {
+    return Error("direct media path unavailable");
+  }
+  if (resources_.seat) {
+    (void)resources_.seat->Acquire(call_id_);
+  }
+  CallMediaCoordinatorLog().info << "begin direct call_id=" << call_id_
+                                 << " role=" << (offerer ? "offerer" : "answerer");
+  resources_.direct->ScheduleDirectStart(call_id_, peer_identity, offerer);
+  return {};
+}
+
+void CallMediaCoordinator::HoldSeatForHop() {
+  if (resources_.seat) {
+    (void)resources_.seat->Acquire(call_id_);
+  }
+}
+
+void CallMediaCoordinator::ReleaseDirect() {
+  if (!resources_.direct) {
+    return;
+  }
+  CallMediaSeat* const seat = resources_.seat;
+  if (!seat) {
+    resources_.direct->ReleaseDirectTransport();
+    return;
+  }
+  const CallMediaSeat::Token token = seat->CurrentToken();
+  // Another call took the seat (or none holds it): this call's 1:1 transport is not ours to drop now.
+  if (token.call_id != call_id_ || !seat->AllowsPathOp(token)) {
+    return;
+  }
+  seat->NotePath(CallMediaSeat::PathKind::Hop);
+  resources_.direct->ReleaseDirectTransport(token);
 }
 
 } // namespace pbr

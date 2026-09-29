@@ -134,6 +134,8 @@ public:
 
   /** The one media engine and the media seat every call's coordinator drives (seat may be null). */
   void BindMediaResources(CallMediaEngine* engine, CallMediaSeat* seat);
+  /** The 1:1 path the coordinators drive (null: none wired). */
+  void BindDirectDriver(CallDirectDriver* direct) { resources_.direct = direct; }
   /**
    * The call's media coordinator, created on first use. Null for a call this device never admitted
    * (or pruned), or before media resources are bound. An ended call keeps it for its stops.
@@ -148,8 +150,7 @@ private:
   void PruneEnded();
 
   std::map<std::string, LiveCall> calls_;
-  CallMediaEngine* engine_ = nullptr;
-  CallMediaSeat* seat_ = nullptr;
+  CallMediaResources resources_;
   std::vector<std::string> ended_order_;
   uint64_t next_instance_ = 1;
 };

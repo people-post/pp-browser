@@ -5,6 +5,7 @@
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallMediaHost.h"
+#include "feature/calls/CallDirectDriver.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "domain/messaging/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
@@ -68,7 +69,7 @@ struct CallDirectSeatPorts {
  * Uses CallMediaEngine SFU-mode capture/playback with Opus frames over ICallMediaTransport
  * (Amp; [A020]). Path Start / ReleaseTransport require a seat token when the seat is wired.
  */
-class CallMediaBridge : public Module {
+class CallMediaBridge : public Module, public CallDirectDriver {
 public:
   CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions, CallMediaKeyStore& media_keys,
                         CallMediaEngine& media, ICallMediaTransport& direct, IDialRegistry* dial,
@@ -147,9 +148,11 @@ public:
    * SoftMigrate: close 1:1 call-media stream without CallMediaEngine::Stop so SFU capture continues.
    * Prefer ReleaseDirectTransport(token) when a MediaSeat is wired.
    */
-  void ReleaseDirectTransport();
+  void ReleaseDirectTransport() override;
   /** V036 Phase 3: token-gated SoftMigrate release (no-op when token not bound). */
-  void ReleaseDirectTransport(const CallMediaSeat::Token& token);
+  void ReleaseDirectTransport(const CallMediaSeat::Token& token) override;
+  /** CallDirectDriver: the call's coordinator starts the 1:1 connect (offerer / answerer). */
+  void ScheduleDirectStart(const std::string& call_id, const std::string& peer_identity, bool offerer) override;
 
   /**
    * Engine Stop — **seat teardown hook only** when MediaSeat is wired (V036).

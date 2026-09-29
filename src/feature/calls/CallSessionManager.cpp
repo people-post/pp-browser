@@ -1,6 +1,5 @@
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallsThread.h"
-#include "feature/calls/CallMediaPaths.h"
 #include "domain/messaging/CallListenAddrsLogic.h"
 #include "domain/messaging/CallAnswererKickLogic.h"
 #include "domain/messaging/CallMediaPlannerSelectLogic.h"
@@ -99,9 +98,7 @@ void CallSessionManager::BindTopologyHostPorts() {
   ports.set_media_activity = [this](std::string message) { TopologySetMediaActivity(std::move(message)); };
   ports.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
   ports.note_media_attempted = [this](const std::string& call_id) { TopologyNoteMediaAttempted(call_id); };
-  ports.bind_media_call_id = [this](const std::string& call_id) { TopologyBindMediaCallId(call_id); };
   ports.clear_media_peer_identity = [this]() { TopologyClearMediaPeerIdentity(); };
-  ports.release_direct_media = [this]() { TopologyReleaseDirectMedia(); };
   ports.request_inbox_sync = [this]() { TopologyRequestInboxSync(); };
   topology_.SetHostPorts(std::move(ports));
 }
@@ -301,17 +298,6 @@ CallMediaSeatPorts CallSessionManager::MakeSeatPorts(CallMediaSeat* seat) {
     return ports;
   }
   ports.release = [seat](const std::string& call_id) { seat->Release(call_id); };
-  ports.bind_hop_for_attach = [seat](const std::string& call_id) {
-    if (call_id.empty()) {
-      return;
-    }
-    CallHopPath::Ops ops;
-    ops.acquire = [seat](const std::string& cid) { return seat->Acquire(cid); };
-    ops.allows_path_op = [seat](const CallMediaSeat::Token& token) {
-      return seat->AllowsPathOp(token);
-    };
-    (void)CallHopPath(std::move(ops)).BindForAttach(call_id);
-  };
   return ports;
 }
 
@@ -322,7 +308,6 @@ void CallSessionManager::TopologyOnMediaStoppedForSeat(const std::string& call_i
 void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity,
                                                   bool offerer) {
   const auto lifecycle = lifecycle_ports_.Get();
-  const auto direct_media = direct_media_.Get();
   const bool allows =
       !lifecycle->allows_direct_path || lifecycle->allows_direct_path();
   if (!allows) {
@@ -333,16 +318,18 @@ void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, co
                << (lifecycle->armed_planner_name ? lifecycle->armed_planner_name() : "?");
     return;
   }
-  if (!direct_media->schedule_start) {
-    log().error << "ScheduleStartDirectMedia: mesh media bridge not configured call_id=" << call_id;
-    last_media_error_ = "Call media unavailable";
-    NotifyRingChanged();
-    return;
-  }
-  // V036 Phase 3: CSM is signaling-only for duplex start — Direct path façade owns Acquire+Schedule.
+  // CSM is signaling-only for duplex start — the call's media coordinator takes the seat and has the
+  // direct driver connect.
   log().info << "ScheduleStartDirectMedia libp2p role=" << (offerer ? "offerer" : "answerer")
                 << " call_id=" << call_id << " peer=" << peer_identity;
-  direct_media->schedule_start(call_id, peer_identity, offerer);
+  CallMediaCoordinator* call_media = live_calls_.Media(call_id);
+  if (auto begun = call_media ? call_media->BeginDirect(peer_identity, offerer)
+                              : Roe<void>(Error("no live call for media"));
+      !begun) {
+    log().error << "ScheduleStartDirectMedia: " << begun.error().message << " call_id=" << call_id;
+    last_media_error_ = "Call media unavailable";
+    NotifyRingChanged();
+  }
 }
 
 void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_id) {
@@ -1561,23 +1548,7 @@ void CallSessionManager::TopologyNoteMediaAttempted(const std::string& call_id) 
   }
 }
 
-void CallSessionManager::TopologyBindMediaCallId(const std::string& call_id) {
-  const auto seat_ports = media_seat_ports_.Get();
-  // Hop path bind — CallHopPath façade (Acquire under seat) via ports.
-  if (seat_ports->bind_hop_for_attach) {
-    seat_ports->bind_hop_for_attach(call_id);
-  }
-}
-
 void CallSessionManager::TopologyClearMediaPeerIdentity() {
-}
-
-void CallSessionManager::TopologyReleaseDirectMedia() {
-  const auto direct_media = direct_media_.Get();
-  // SoftMigrate path replace: Direct path ReleaseTransport under current seat token.
-  if (direct_media->release_direct_transport) {
-    direct_media->release_direct_transport();
-  }
 }
 
 void CallSessionManager::TopologyRequestInboxSync() {

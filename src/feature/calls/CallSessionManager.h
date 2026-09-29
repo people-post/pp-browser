@@ -38,8 +38,6 @@ class CallMediaBridge;
  * CSM must not hold CallMediaBridge* — ops copy these functions.
  */
 struct CallDirectMediaPorts {
-  std::function<void(const std::string& call_id, const std::string& peer_identity, bool offerer)>
-      schedule_start;
   std::function<std::string()> media_path_kind;
   std::function<void(const std::string& peer_id, const std::string& relay_identity)>
       note_peer_id_relay_mapping;
@@ -51,10 +49,9 @@ struct CallDirectMediaPorts {
   std::function<Roe<void>(const std::string& call_id)> resume_mesh_media;
   std::function<bool(const std::string& call_id)> media_attempted;
   std::function<void(const std::string& call_id)> note_media_attempted;
-  std::function<void()> release_direct_transport;
   std::function<void(const std::string& call_id)> on_media_key_ready;
 
-  bool IsBound() const { return static_cast<bool>(schedule_start); }
+  bool IsBound() const { return static_cast<bool>(stop_mesh_media); }
 };
 
 /**
@@ -81,7 +78,6 @@ struct CallSessionLifecyclePorts {
  */
 struct CallMediaSeatPorts {
   std::function<void(const std::string& call_id)> release;
-  std::function<void(const std::string& call_id)> bind_hop_for_attach;
 
   bool IsBound() const { return static_cast<bool>(release); }
 };
@@ -180,6 +176,8 @@ public:
   CallMediaSeatPorts MakeSeatPorts(CallMediaSeat* seat);
   /** The seat the calls' media coordinators take (null: none bound — mesh stopped / harness). */
   void SetCallMediaSeat(CallMediaSeat* seat) { live_calls_.BindMediaResources(&media_, seat); }
+  /** The 1:1 path the calls' media coordinators start / release (null: mesh media not wired). */
+  void SetDirectDriver(CallDirectDriver* direct) { live_calls_.BindDirectDriver(direct); }
   /** A call's media coordinator (LiveCall); null for a call not admitted here. Calls owner. */
   CallMediaCoordinator* CallMedia(const std::string& call_id) { return live_calls_.Media(call_id); }
   /** Seat teardown hook: topology detach without re-entering seat.Release. */
@@ -292,9 +290,7 @@ private:
   void TopologySetMediaActivity(std::string message);
   void TopologyClearMediaActivity();
   void TopologyNoteMediaAttempted(const std::string& call_id);
-  void TopologyBindMediaCallId(const std::string& call_id);
   void TopologyClearMediaPeerIdentity();
-  void TopologyReleaseDirectMedia();
   void TopologyRequestInboxSync();
   void BindTopologyHostPorts();
 

@@ -173,10 +173,8 @@ CallHopMigrateHostPorts CallTopologyController::MakeMigrateHostPorts(const HostP
   out.set_media_activity = ports.set_media_activity;
   out.clear_media_activity = ports.clear_media_activity;
   out.note_media_attempted = ports.note_media_attempted;
-  out.bind_media_call_id = ports.bind_media_call_id;
   out.call_media = ports.call_media;
   out.clear_media_peer_identity = ports.clear_media_peer_identity;
-  out.release_direct_media = ports.release_direct_media;
   out.request_inbox_sync = ports.request_inbox_sync;
   return out;
 }

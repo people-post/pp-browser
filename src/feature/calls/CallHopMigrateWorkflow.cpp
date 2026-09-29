@@ -849,7 +849,9 @@ Roe<void> CallHopMigrateWorkflow::CompleteHopAttach(const HopAttach& at, int64_t
   ApplyQuoteAdaptation(a_up_bps);
   publishers_.local_stream_id = ops_.publisher_stream_id_for_local();
   host_.note_media_attempted(call_id);
-  host_.bind_media_call_id(call_id);
+  if (CallMediaCoordinator* call_media = host_.call_media ? host_.call_media(call_id) : nullptr) {
+    call_media->HoldSeatForHop();
+  }
   if (auto wanted = CheckHopAttachStillWanted(at); !wanted) {
     return wanted;
   }
@@ -1051,11 +1053,18 @@ void CallHopMigrateWorkflow::MarkHopAttachLive(const HopAttach& at, bool fresh_s
   }
 }
 
+void CallHopMigrateWorkflow::ReleaseDirectFor(const std::string& call_id) {
+  // The call runs on the hop now: its coordinator drops the 1:1 transport (seat-checked).
+  if (CallMediaCoordinator* call_media = host_.call_media ? host_.call_media(call_id) : nullptr) {
+    call_media->ReleaseDirect();
+  }
+}
+
 void CallHopMigrateWorkflow::ReleaseDirectAfterHopAttach(const HopAttach& at) {
   // Advance lifecycle (DirectConnected via ReleaseDirect) + clear Connecting immediately, and again
   // after a settle delay. Do not gate on migrate gen — stampede leaves gen_at_start permanently
   // stale (dogfood UI).
-  host_.ReleaseDirectMedia();
+  ReleaseDirectFor(at.call_id);
   host_.ClearMediaActivity();
   auto do_release = [this, token = timers_self_.token(), snap = timers_self_.Snapshot(), call_id = at.call_id,
                      release_gen = at.gen_at_start, release_fanout = BuildSfuAttachFanout(at.attach),
@@ -1071,7 +1080,7 @@ void CallHopMigrateWorkflow::ReleaseDirectAfterHopAttach(const HopAttach& at) {
         }
       }
     }
-    host_.ReleaseDirectMedia();
+    ReleaseDirectFor(call_id);
     host_.ClearMediaActivity();
   };
   const uint64_t timer = AppRuntime::ScheduleCoordinatorOneShot(

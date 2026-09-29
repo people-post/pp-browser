@@ -13,7 +13,6 @@
 #include "domain/mesh/reachability/punch/AmpPunchCoordinator.h"
 #include "domain/mesh/reachability/AmpObservedAddrs.h"
 #include "feature/calls/CallMediaBridge.h"
-#include "feature/calls/CallMediaPaths.h"
 #include "domain/messaging/CallLifecycleTypes.h"
 
 #include <functional>
@@ -340,6 +339,7 @@ void CallStack::BindMediaProducts() {
   call_sessions_->SetMediaRelayDeps(media_plane_->BuildMediaRelayDeps());
   call_sessions_->SetDirectMediaPorts(
       MakeDirectMediaPorts());
+  call_sessions_->SetDirectDriver(media_plane_ ? media_plane_->Bridge() : nullptr);
   if (call_media_seat_) {
     call_sessions_->SetTopologySeatPorts(MakeTopologySeatPorts());
     call_sessions_->SetMediaSeatPorts(call_sessions_->MakeSeatPorts(call_media_seat_.get()));
@@ -627,6 +627,7 @@ void CallStack::PrepareForMeshStopOnOwner(const std::function<void()>& abort_inf
   }
   if (call_sessions_) {
     call_sessions_->SetDirectMediaPorts({});
+    call_sessions_->SetDirectDriver(nullptr);
     call_sessions_->SetLifecyclePorts({});
     call_sessions_->SetMediaSeatPorts({});
     call_sessions_->SetCallMediaSeat(nullptr);
@@ -647,6 +648,9 @@ void CallStack::PrepareForMeshStopOnOwner(const std::function<void()>& abort_inf
 }
 
 void CallStack::FinishMeshStopOnOwner() {
+  if (call_sessions_) {
+    call_sessions_->SetDirectDriver(nullptr);  // the bridge goes with the plane's mesh stop
+  }
   if (media_plane_) {
     media_plane_->FinishMeshStop();
   }
@@ -809,6 +813,9 @@ void CallStack::ReleaseOnOwner() {
   if (call_media_engine_ && (call_media_engine_->IsActive() || call_media_engine_->IsSfuMode())) {
     call_media_engine_->Stop();
   }
+  if (call_sessions_) {
+    call_sessions_->SetDirectDriver(nullptr);
+  }
   if (media_plane_) {
     media_plane_->Clear();
   }
@@ -953,34 +960,9 @@ CallSessionLifecyclePorts CallStack::MakeSessionLifecyclePorts() const {
 CallDirectMediaPorts CallStack::MakeDirectMediaPorts() const {
   CallDirectMediaPorts ports;
   CallMediaBridge* bridge = media_plane_ ? media_plane_->Bridge() : nullptr;
-  CallMediaSeat* seat = call_media_seat_.get();
   if (!bridge) {
     return ports;
   }
-  auto make_path = [bridge, seat]() {
-    CallDirectPath::Ops ops;
-    ops.schedule_start = [bridge](const std::string& cid, const std::string& p, bool off) {
-      if (off) {
-        bridge->ScheduleStartMediaAsOfferer(cid, p);
-      } else {
-        bridge->ScheduleStartMediaAsAnswerer(cid, p);
-      }
-    };
-    ops.release_transport = [bridge](const CallMediaSeat::Token& token) {
-      bridge->ReleaseDirectTransport(token);
-    };
-    if (seat) {
-      ops.acquire = [seat](const std::string& cid) { return seat->Acquire(cid); };
-      ops.allows_path_op = [seat](const CallMediaSeat::Token& token) {
-        return seat->AllowsPathOp(token);
-      };
-      ops.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
-    }
-    return CallDirectPath(std::move(ops));
-  };
-  ports.schedule_start = [make_path](const std::string& call_id, const std::string& peer, bool offerer) {
-    make_path().ScheduleStart(call_id, peer, offerer);
-  };
   ports.media_path_kind = [bridge]() { return bridge->MediaPathKind(); };
   ports.note_peer_id_relay_mapping = [bridge](const std::string& peer_id,
                                               const std::string& relay_identity) {
@@ -1003,13 +985,6 @@ CallDirectMediaPorts CallStack::MakeDirectMediaPorts() const {
   };
   ports.note_media_attempted = [bridge](const std::string& call_id) {
     bridge->NoteMediaAttempted(call_id);
-  };
-  ports.release_direct_transport = [bridge, seat, make_path]() {
-    if (seat) {
-      (void)make_path().ReleaseTransport(seat->CurrentToken());
-      return;
-    }
-    bridge->ReleaseDirectTransport();
   };
   ports.on_media_key_ready = [bridge](const std::string& call_id) {
     bridge->OnMediaKeyReady(call_id);
