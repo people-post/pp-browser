@@ -388,6 +388,8 @@ private:
     std::string call_id;
     std::string peer_identity;
     bool offerer = false;
+    /** PeerReconnected already raised: a second inbound bundle must not queue a second resume. */
+    bool resume_requested = false;
   };
   std::optional<FailedOpenCall> failed_open_;
   int media_key_inbox_poll_rounds_ = 90;

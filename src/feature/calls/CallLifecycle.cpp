@@ -447,7 +447,11 @@ void CallLifecycle::PostRestartMedia(const std::string& call_id,
     if (!restarted) {
       log().warning << CallLifecycleEventName(ev) << " media restart failed call_id=" << call_id
                     << " err=" << restarted.error().message;
-      Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+      // Back to Failed only while this call is still failed: a duplicate restart whose call already
+      // resumed (InCall) or moved on must not knock it down (PR #239 review).
+      if (phase_ == CallPhase::ConnectFailed && call_id_ == call_id) {
+        Apply(CallLifecycleEvent::ConnectFailedEvt, call_id);
+      }
       return;
     }
     // A resume over the peer's live stream commits Connected inside the restart — never move an

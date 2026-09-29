@@ -755,9 +755,10 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
       direct_planner_phase_ != CallDirectPlannerPhase::DegradedTxOnly) {
     // Connected after this side's connect failed: the call may still be open (failed ≠ closed) —
     // the lifecycle resumes media over this stream if so; after Leave it ignores it.
-    if (mesh_connect_failed_ && failed_open_ && failed_open_->call_id == call_id && DirectMediaReady() &&
-        arming_.on_peer_reconnected) {
+    if (mesh_connect_failed_ && failed_open_ && failed_open_->call_id == call_id && !failed_open_->resume_requested &&
+        DirectMediaReady() && arming_.on_peer_reconnected) {
       log().info << "call-media connected after connect failed call_id=" << call_id << " — resume?";
+      failed_open_->resume_requested = true;
       arming_.on_peer_reconnected(call_id);
     }
     return;

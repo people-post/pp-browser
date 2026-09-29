@@ -1932,9 +1932,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   };
 
   /**
-   * Open the leg's control channel: on a Connected link to the peer when there is one (#235 — the
-   * relay carrier, even while a redial holds the dial key), else OpenChannel dials by key. Each
-   * AssociationNotReady retry picks again, so a carrier that comes up mid-dial is used.
+   * Open the leg's control channel on a Connected link to the peer (#235 — the relay carrier, even
+   * while a redial holds the dial key), dialing first when none is up. Each pass resolves again, so
+   * a carrier that comes up mid-dial is used; the channel is always opened on a known link handle.
    */
   void OpenOutboundControl(OutboundOpen open, const int retries) {
     if (retries == 0) {
@@ -1961,10 +1961,17 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
           });
       return;
     }
-    runtime->Links().OpenChannel(open.peer_key, kCallMediaDirectProtocolId, pp::amp::CallMediaControlChannelPolicy(),
-                                 [on_channel](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
-                                   on_channel(pp::amp::LinkHandle{}, std::move(channel));
-                                 });
+    // Nothing up: dial, then open on the link the next pass resolves. Never open by key — the
+    // channel id belongs to one mux, and its link must be the one we wait on and bind (PR #239).
+    runtime->Links().EnsureAssociation(
+        open.peer_key, [this, self = shared_from_this(), open, retries,
+                        on_channel](pp::amp::PeerLinkManager::LinkRoe associated) mutable {
+          if (!associated) {
+            on_channel(pp::amp::LinkHandle{}, pp::amp::PeerLinkManager::ChannelRoe::error(associated.error()));
+            return;
+          }
+          PostIo([this, self, open, retries]() { OpenOutboundControl(open, retries + 1); });
+        });
   }
 
   void OnOutboundControlOpened(const OutboundOpen& open, const int retries, const pp::amp::LinkHandle bound,
@@ -1997,7 +2004,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       CallMediaLegLog().info << "CallMediaLeg OpenChannel ok call_id=" << open.call_id << " peer=" << open.peer_key
                              << " after_retries=" << retries;
     }
-    auto* link = bound.valid() ? LiveLink(bound) : runtime->Links().ResolveConnectedLink(open.peer_key);
+    auto* link = LiveLink(bound);  // the link the channel was opened on (its id is that mux's)
     if (!link) {
       CallMediaLegLog().info << "CallMediaLeg OpenChannel ok but link missing call_id=" << open.call_id
                              << " peer=" << open.peer_key;

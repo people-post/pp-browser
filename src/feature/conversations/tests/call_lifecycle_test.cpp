@@ -256,6 +256,44 @@ TEST_F(CallLifecycleTest, RetryClickedRearmsDirectConnectingStatus) {
   AppRuntime::Shutdown();
 }
 
+// PR #239 review: two inbound bundles can each raise PeerReconnected before the first queued resume
+// runs. The first resume commits InCall; the second finds nothing to resume and fails — which must
+// not knock the live call back to ConnectFailed.
+TEST_F(CallLifecycleTest, ADuplicateResumeThatFailsLeavesTheResumedCallInCall) {
+  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
+  AppRuntime::InitializeUI();
+  int resumes = 0;
+  CallLifecycleSignalingPorts ports;
+  ports.accept_invite = [](const std::string&, std::function<void(Roe<void>)> done) { done({}); };
+  ports.resume_p2p_media = [this, &resumes](const std::string& call_id) -> Roe<void> {
+    if (++resumes == 1) {
+      life_.Apply(CallLifecycleEvent::DirectConnected, call_id);  // resumed over the peer's stream
+      return {};
+    }
+    return Error("call is not failed-open here");
+  };
+  life_.BindSignalingPorts(std::move(ports));
+
+  life_.Apply(CallLifecycleEvent::OutboundStarted, "call:1");
+  life_.SetMediaStatus(CallMediaStatus::DirectConnecting, "call:1");
+  life_.Apply(CallLifecycleEvent::ConnectFailedEvt, "call:1");
+  ASSERT_EQ(life_.Phase(), CallPhase::ConnectFailed);
+
+  life_.Apply(CallLifecycleEvent::PeerReconnected, "call:1");
+  life_.Apply(CallLifecycleEvent::PeerReconnected, "call:1");  // queued before the first runs
+  for (int i = 0; i < 100 && resumes < 2; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_EQ(resumes, 2);
+  EXPECT_EQ(life_.Phase(), CallPhase::InCall) << "the failed duplicate must not fail the resumed call";
+
+  life_.ClearBinding();
+  AppRuntime::ShutdownUI();
+  AppRuntime::Shutdown();
+}
+
 TEST_F(CallLifecycleTest, ListenDesireCallbackFiresOnPhaseEnterExit) {
   int want_true = 0;
   int want_false = 0;
