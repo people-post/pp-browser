@@ -51,7 +51,6 @@ public:
   void PollP2pConnectHealth();
   void ClearMediaActivity();
   void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
-  void NoteRingCallId(const std::string& call_id);
   void ClearLastError();
   void LeaveCall(const std::string& call_id, LiveCallEndReason reason = LiveCallEndReason::LocalLeave);
   void StopCallMedia(const std::string& call_id);

@@ -102,5 +102,21 @@ TEST(LiveCallsTest, EndedByPeerOnlyForACallThisSideHad) {
   EXPECT_FALSE(calls.Find("call:left")->EndedByPeer());
 }
 
+// The ring the device shows is the newest call still Ringing or being accepted.
+TEST(LiveCallsTest, TheRingIsTheNewestRingingOrAcceptingCall) {
+  LiveCalls calls;
+  EXPECT_EQ(calls.TheRing(), nullptr);
+  calls.AdmitInvited("call:a", {"account:alice"});
+  calls.AdmitInvited("call:b", {"account:bob"});
+  ASSERT_NE(calls.TheRing(), nullptr);
+  EXPECT_EQ(calls.TheRing()->Id(), "call:b");
+  calls.MarkAccepting("call:b");
+  EXPECT_EQ(calls.TheRing()->Id(), "call:b") << "still the ring while its accept is in flight";
+  calls.MarkJoined("call:b");
+  EXPECT_EQ(calls.TheRing()->Id(), "call:a") << "a joined call is not a ring";
+  calls.Close("call:a", LiveCallEndReason::Expired);
+  EXPECT_EQ(calls.TheRing(), nullptr);
+}
+
 } // namespace
 } // namespace pbr

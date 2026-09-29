@@ -553,8 +553,6 @@ void CallController::RefreshPendingRing() {
       // Fall through to in-call rendering below.
     } else {
       ringing_call_id_ = (*top)->call_id;
-      last_ring_call_id_ = ringing_call_id_;
-      backend->NoteRingCallId(ringing_call_id_);
       if (backend->Phase() == CallPhase::Idle) {
         backend->Apply(CallLifecycleEvent::InviteSeen, ringing_call_id_);
       }
@@ -1098,9 +1096,6 @@ void CallController::AcceptIncomingImpl(const bool voice_only) {
     call_id = ring_.call_id.c_str();
   }
   if (call_id.empty()) {
-    call_id = last_ring_call_id_;
-  }
-  if (call_id.empty()) {
     call_id = backend->LastRingCallId();
   }
   if (call_id.empty()) {
@@ -1143,9 +1138,6 @@ void CallController::AcceptIncomingWithCharge() {
   std::string call_id = ringing_call_id_;
   if (call_id.empty()) {
     call_id = ring_.call_id.c_str();
-  }
-  if (call_id.empty()) {
-    call_id = last_ring_call_id_;
   }
   if (call_id.empty()) {
     call_id = backend->LastRingCallId();

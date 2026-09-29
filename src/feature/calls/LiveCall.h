@@ -114,6 +114,8 @@ public:
   LiveCall* Active();
   const LiveCall* Active() const;
   std::vector<const LiveCall*> Ringing() const;
+  /** The ring this device shows: the newest call still Ringing or being accepted; null if none. */
+  const LiveCall* TheRing() const;
   /** The most recently closed call, if any is still kept. */
   const LiveCall* LastEnded() const;
 

@@ -132,6 +132,7 @@ void CallLifecycle::ClearBinding() {
   media_cancel_gen_ = 0;
   call_id_.clear();
   accepting_call_id_.clear();
+  ringing_call_ = {};
   want_ephemeral_listen_ = false;
   on_chrome_refresh_ = nullptr;
   on_listen_desire_ = nullptr;
@@ -243,12 +244,6 @@ bool CallLifecycle::ShouldSuppressRing(const std::string& call_id) const {
     return true;
   }
   return false;
-}
-
-void CallLifecycle::NoteRingCallId(const std::string& call_id) {
-  if (!call_id.empty()) {
-    last_ring_call_id_ = call_id;
-  }
 }
 
 void CallLifecycle::SetPhase(const CallPhase next, const std::string& call_id,
@@ -492,7 +487,7 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
   ctx.status = status_;
   ctx.active_call_id = call_id_;
   ctx.accepting_call_id = accepting_call_id_;
-  ctx.last_ring_call_id = last_ring_call_id_;
+  ctx.last_ring_call_id = LastRingCallId();
   ctx.event_call_id = call_id_arg;
   ctx.sessions_bound = signaling->IsBound();
   ctx.allows_direct_path = AllowsDirectPath();
@@ -515,12 +510,8 @@ void CallLifecycle::Apply(const CallLifecycleEvent ev, const std::string& call_i
     }
   }
 
-  if (HasAction(actions, CallLifecycleAction::NoteRing)) {
-    NoteRingCallId(out.call_id);
-  }
   if (HasAction(actions, CallLifecycleAction::SetAccepting)) {
     accepting_call_id_ = out.call_id;
-    last_ring_call_id_ = out.call_id;
   }
   if (HasAction(actions, CallLifecycleAction::ClearAccepting)) {
     accepting_call_id_.clear();

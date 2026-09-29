@@ -112,6 +112,17 @@ std::vector<const LiveCall*> LiveCalls::Ringing() const {
   return out;
 }
 
+const LiveCall* LiveCalls::TheRing() const {
+  const LiveCall* newest = nullptr;
+  for (const auto& [id, call] : calls_) {
+    if ((call.state_ == LiveCallState::Ringing || call.state_ == LiveCallState::Accepting) &&
+        (!newest || call.instance_ > newest->instance_)) {
+      newest = &call;
+    }
+  }
+  return newest;
+}
+
 const LiveCall* LiveCalls::LastEnded() const {
   return ended_order_.empty() ? nullptr : Find(ended_order_.back());
 }

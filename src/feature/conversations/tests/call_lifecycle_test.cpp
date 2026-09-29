@@ -1,4 +1,5 @@
 #include "feature/calls/CallLifecycle.h"
+#include "feature/calls/LiveCall.h"
 
 #include "foundation/runtime/AppRuntime.h"
 
@@ -11,11 +12,21 @@ namespace {
 
 class CallLifecycleTest : public ::testing::Test {
 protected:
+  void SetUp() override {
+    // The ring is the LiveCall's (the stack binds LiveCalls the same way).
+    life_.SetRingingCallSource([this]() -> std::string {
+      const LiveCall* ring = live_.TheRing();
+      return ring ? ring->Id() : std::string{};
+    });
+  }
+
+  LiveCalls live_;
   CallLifecycle life_;
 };
 
 TEST_F(CallLifecycleTest, InviteSeenRingsAndWantsListen) {
   EXPECT_EQ(life_.Phase(), CallPhase::Idle);
+  live_.AdmitInvited("call:1", {"account:alice"});  // the invite admitted the call before the UI saw it
   EXPECT_FALSE(life_.WantEphemeralListen());
 
   life_.Apply(CallLifecycleEvent::InviteSeen, "call:1");
@@ -200,6 +211,7 @@ TEST_F(CallLifecycleTest, InviteSeenDuringInCallDoesNotLeavePhase) {
   life_.Apply(CallLifecycleEvent::DirectConnected, "call:active");
   EXPECT_EQ(life_.Phase(), CallPhase::InCall);
 
+  live_.AdmitInvited("call:other", {"account:bob"});
   life_.Apply(CallLifecycleEvent::InviteSeen, "call:other");
   EXPECT_EQ(life_.Phase(), CallPhase::InCall);
   EXPECT_EQ(life_.ActiveCallId(), "call:active");

@@ -87,7 +87,10 @@ public:
 
   const std::string& ActiveCallId() const { return call_id_; }
   const std::string& AcceptingCallId() const { return accepting_call_id_; }
-  const std::string& LastRingCallId() const { return last_ring_call_id_; }
+  /** The ring (newest Ringing / Accepting LiveCall) — from the bound source; empty when none. */
+  std::string LastRingCallId() const { return ringing_call_ ? ringing_call_() : std::string{}; }
+  /** Where the ring comes from (the stack binds LiveCalls). Calls owner. */
+  void SetRingingCallSource(std::function<std::string()> ringing_call) { ringing_call_ = std::move(ringing_call); }
   bool WantEphemeralListen() const { return want_ephemeral_listen_; }
   const std::string& LastError() const { return last_error_; }
   void ClearLastError() { last_error_.clear(); }
@@ -98,7 +101,6 @@ public:
   void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
 
   /** Resolve Accept click call_id from controller/shell fallbacks. */
-  void NoteRingCallId(const std::string& call_id);
 
 private:
   void SetPhase(CallPhase next, const std::string& call_id, CallLifecycleEvent ev);
@@ -128,7 +130,7 @@ private:
   DeferredSelf deferred_;
   std::string call_id_;
   std::string accepting_call_id_;
-  std::string last_ring_call_id_;
+  std::function<std::string()> ringing_call_;
   bool want_ephemeral_listen_ = false;
   std::string last_error_;
 

@@ -21,15 +21,14 @@ CallLifecycleTransitionOutcome DecideCallLifecycleTransition(CallLifecycleEvent 
   switch (ev) {
   case CallLifecycleEvent::InviteSeen:
     if (ctx.phase == CallPhase::Idle || ctx.phase == CallPhase::Ringing) {
-      out.actions = CallLifecycleAction::NoteRing | CallLifecycleAction::SetPhase |
-                    CallLifecycleAction::NotifyChrome;
+      out.actions = CallLifecycleAction::SetPhase | CallLifecycleAction::NotifyChrome;
       out.next_phase = CallPhase::Ringing;
       return out;
     }
     if (ctx.phase == CallPhase::OutboundCalling || ctx.phase == CallPhase::InCall ||
         ctx.phase == CallPhase::MediaConnecting || ctx.phase == CallPhase::JoinedLocal ||
         ctx.phase == CallPhase::MediaPending || ctx.phase == CallPhase::ConnectFailed) {
-      out.actions = CallLifecycleAction::NoteRing | CallLifecycleAction::NotifyChrome;
+      out.actions = CallLifecycleAction::NotifyChrome;
       return out;
     }
     return out;
@@ -68,7 +67,7 @@ CallLifecycleTransitionOutcome DecideCallLifecycleTransition(CallLifecycleEvent 
       out.ignore_reason = "AcceptClicked already in flight";
       return out;
     }
-    out.actions = CallLifecycleAction::NoteRing | CallLifecycleAction::SetAccepting |
+    out.actions = CallLifecycleAction::SetAccepting |
                   CallLifecycleAction::SetPhase | CallLifecycleAction::PostAcceptInvite |
                   CallLifecycleAction::DeferChrome;
     out.next_phase = CallPhase::Accepting;

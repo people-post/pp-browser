@@ -10,7 +10,6 @@ namespace pbr {
 /** Named side effects for CallLifecycle::Apply to execute (no I/O in Decide). */
 enum class CallLifecycleAction : uint16_t {
   None = 0,
-  NoteRing = 1u << 0,
   SetAccepting = 1u << 1,
   ClearAccepting = 1u << 2,
   SetPhase = 1u << 3,

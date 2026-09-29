@@ -19,16 +19,14 @@ TEST(CallLifecycleTransitionLogicTest, InviteSeenIdleToRinging) {
   const auto out = DecideCallLifecycleTransition(CallLifecycleEvent::InviteSeen, ctx);
   EXPECT_TRUE(HasAction(out.actions, CallLifecycleAction::SetPhase));
   EXPECT_EQ(out.next_phase, CallPhase::Ringing);
-  EXPECT_TRUE(HasAction(out.actions, CallLifecycleAction::NoteRing));
   EXPECT_TRUE(HasAction(out.actions, CallLifecycleAction::NotifyChrome));
 }
 
-TEST(CallLifecycleTransitionLogicTest, InviteSeenWhileInCallNotesRingOnly) {
+TEST(CallLifecycleTransitionLogicTest, InviteSeenWhileInCallOnlyRefreshesChrome) {
   auto ctx = Ctx(CallPhase::InCall, CallMediaStatus::DirectLive);
   ctx.event_call_id = "call:2";
   const auto out = DecideCallLifecycleTransition(CallLifecycleEvent::InviteSeen, ctx);
   EXPECT_FALSE(HasAction(out.actions, CallLifecycleAction::SetPhase));
-  EXPECT_TRUE(HasAction(out.actions, CallLifecycleAction::NoteRing));
   EXPECT_TRUE(HasAction(out.actions, CallLifecycleAction::NotifyChrome));
 }
 

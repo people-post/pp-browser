@@ -741,6 +741,11 @@ void CallStack::EnsureCallLifecycleBound() {
   lifecycle_port_binds_.fetch_add(1, std::memory_order_relaxed);
   call_lifecycle_->BindSignalingPorts(MakeLifecycleSignalingPorts());
   call_lifecycle_->SetOnListenDesireChanged([this](bool want) { SetEphemeralListenDesire(want); });
+  // The ring is the LiveCall's (newest Ringing / Accepting) — calls owner, like the lifecycle.
+  call_lifecycle_->SetRingingCallSource([sessions = call_sessions_.get()]() -> std::string {
+    const LiveCall* ring = sessions ? sessions->Live().TheRing() : nullptr;
+    return ring ? ring->Id() : std::string{};
+  });
   call_sessions_->SetTopologyHopArmingPorts(MakeHopArmingPorts());
   call_sessions_->SetLifecyclePorts(MakeSessionLifecyclePorts());
   if (media_plane_) {
