@@ -16,41 +16,43 @@ domain = {
     "pp_domain_media",
     "pp_domain_net",
     "pp_domain_messaging",
-        "pp_domain_mesh",
+    "pp_domain_mesh",
     "pp_domain_ai",
     "pp_domain_ui",
 }
 legacy = {
 }
 
-fail = 0
-cmake_roots = [root / "src" / "domain"]
-lib_helpers = (
-    r"pp_browser_add_(?:base|domain)_library\(\s*(pp_(?:base|domain)_[A-Za-z0-9_]+)\s*(.*?)^\s*\)"
-)
+def peer_of(lib):
+    """Sub-libraries (pp_domain_mesh_host, pp_domain_ai_mcp, ...) belong to their peer."""
+    if lib in domain:
+        return lib
+    for peer in sorted(domain, key=len, reverse=True):
+        if lib.startswith(peer + "_"):
+            return peer
+    return None
 
-for cmake_root in cmake_roots:
-    if not cmake_root.is_dir():
+fail = 0
+# Every pp_domain_* name in a peer's (non-test) CMake — helper PUBLIC_LIBS, variables, raw
+# target_link_libraries — must belong to that peer. Sub-libraries count as their peer.
+domain_root = root / "src" / "domain"
+for peer_dir in sorted(p for p in domain_root.iterdir() if p.is_dir()):
+    owner = f"pp_domain_{peer_dir.name}"
+    if owner not in domain:
         continue
-    for cmake in sorted(cmake_root.rglob("CMakeLists.txt")):
-        text = cmake.read_text()
-        for m in re.finditer(lib_helpers, text, re.S | re.M):
-            target, body = m.group(1), m.group(2)
-            if target not in domain:
+    for cmake in sorted(peer_dir.rglob("CMakeLists.txt")):
+        if "tests" in cmake.relative_to(peer_dir).parts:
+            continue
+        for lib in sorted(set(re.findall(r"\b(pp_(?:base|domain)_[A-Za-z0-9_]+)", cmake.read_text()))):
+            peer = peer_of(lib)
+            if peer is None or peer == owner:
                 continue
-            libs_m = re.search(r"PUBLIC_LIBS\s*(.*?)(?=PRIVATE_LIBS|\Z)", body, re.S)
-            if not libs_m:
-                continue
-            libs = re.findall(r"(pp_(?:base|domain)_[A-Za-z0-9_]+)", libs_m.group(1))
-            for lib in libs:
-                if lib not in domain or lib == target:
-                    continue
-                edge = f"{target}->{lib}"
-                if edge not in legacy:
-                    print(f"FAIL: new domain peer PUBLIC_LIBS edge {edge}")
-                    print(f"  {cmake.relative_to(root)}")
-                    print("  Wire via common ports / feature; do not add peer→peer links.")
-                    fail = 1
+            edge = f"{owner}->{peer}"
+            if edge not in legacy:
+                print(f"FAIL: new domain peer link edge {edge} ({lib})")
+                print(f"  {cmake.relative_to(root)}")
+                print("  Wire via common ports / feature; do not add peer→peer links.")
+                fail = 1
 sys.exit(fail)
 PY
 

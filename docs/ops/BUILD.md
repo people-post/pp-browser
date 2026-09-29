@@ -223,6 +223,7 @@ Needs [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`). On Debian/Ubuntu:
 
 ```bash
 ./scripts/check/check_feature_includes.sh
+./scripts/check/check_mesh_layers.sh
 ./scripts/check/check_platform_ifdefs.sh
 ```
 

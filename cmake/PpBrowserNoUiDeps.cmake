@@ -136,7 +136,8 @@ endfunction()
 # pp_* target reachable from root_target fails configure — widening the node is a deliberate edit here.
 set(PP_BROWSER_NODE_LINK_ALLOWLIST
   "^pp_foundation_(crypto|data|error|i18n|identity|platform_core|runtime_core)$"
-  "^pp_domain_(mesh|people|net)$"
+  "^pp_domain_mesh(_[a-z_]+)?$"
+  "^pp_domain_(people|net)$"
   "^pp_feature_(registration|node)$"
   "^pp_pbr_common$"
   "^pp_(common|crypto)$"

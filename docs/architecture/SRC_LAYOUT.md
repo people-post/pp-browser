@@ -122,7 +122,7 @@ crypto
 | `domain/people/` | Identity and contacts stores; presentation DTOs; registration classify (`RegistrationStatus`) |
 | `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; pure call planner gates (`Call*Logic`); attachment prepare; **also hosts Content CAS for now** (`CasStore` / attachment CAS I/O — [C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner); peel to `domain/content` at P3/P4) |
 | `domain/net/` | HTTP client, service clients (no people/messaging policy) |
-| `domain/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
+| `domain/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators; one `pp_domain_mesh_<folder>` library per folder, layered — [MESH.md § Folder libraries](MESH.md#folder-libraries) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
 | `domain/ai/` | LLM client, turn types, parsers, payload plan builder; `conversation/`, `mcp/` sublibs |
 | `domain/ui/` | Product shell: theme, catalogs, input, context menu, `ShellLayout`, `ShellInterruption`, `ShellGestureAxis`, calendar/form helpers, `UiEditSession`, chat widget config builders |
@@ -133,7 +133,7 @@ Module maps: [`src/foundation/README.md`](../../src/foundation/README.md), [`src
 
 **Domain rule:** `net` must not link `people`/`messaging`; `ai` must not link concrete messaging stores; cross-peer needs go through `common` contracts and `feature` wiring.
 
-Amp L1–L3 + link are FetchContent [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp) targets (`pp_amp_l1` … `pp_amp_link`). Product mesh glue is `pp_domain_mesh`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
+Amp L1–L3 + link are FetchContent [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp) targets (`pp_amp_l1` … `pp_amp_link`). Product mesh glue is `pp_domain_mesh` (an aggregate of its folder libraries). See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
 
 ## Lib subtree (`src/lib/`)
 
