@@ -138,7 +138,6 @@ public:
   void ClearSfuAttachWait();
   void PollPendingSfuAttach();
 
-  void ClearAwaitingSfuRecovery();
   void OnMediaStopped(const std::string& call_id);
 
   void EjectParticipantAfterMigrateFailure(const std::string& call_id, const std::string& identity,
@@ -151,8 +150,6 @@ public:
   void AttachLocalToSfuAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
                              std::function<void(Roe<void>)> on_done);
 
-  /** Group (N≥3) ICE failed — recover via soft-migrate (posted to UI by caller if needed). */
-  void TryRecoverViaSfu(const std::string& call_id);
 
   /**
    * After local AcceptInvite: attach via hint, soft-migrate, or clear wait for 1:1.

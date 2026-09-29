@@ -173,7 +173,6 @@ public:
 
   struct SfuSurface {
     bool attached = false;
-    bool awaiting_recovery = false;
     int64_t last_quote_a_up_bps = 0;
     CallHopPlannerPhase hop_planner_phase = CallHopPlannerPhase::Idle;
   };

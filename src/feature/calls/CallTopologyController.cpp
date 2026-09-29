@@ -197,7 +197,7 @@ CallHopMigrateSeatPorts CallTopologyController::MakeMigrateSeatPorts(
 }
 
 bool CallTopologyController::IsAwaitingSfuRecovery() const {
-  return sfu_.awaiting_recovery || flight_.in_flight || !attach_wait_.call_id.empty() ||
+  return flight_.in_flight || !attach_wait_.call_id.empty() ||
          guest_.reattach_in_flight;
 }
 
@@ -435,10 +435,6 @@ void CallTopologyController::Apply(CallHopPlannerEvent ev, const std::string& ca
   }
 }
 
-void CallTopologyController::ClearAwaitingSfuRecovery() {
-  sfu_.awaiting_recovery = false;
-}
-
 void CallTopologyController::OnMediaStopped(const std::string& call_id) {
   const auto seat_ports = seat_.Get();
   // Invalidate in-flight SoftMigrate / AttachLocalToSfu so they cannot StartSfu after Leave
@@ -452,7 +448,6 @@ void CallTopologyController::OnMediaStopped(const std::string& call_id) {
     relay_deps_.relay->Detach();
   }
   sfu_.attached = false;
-  sfu_.awaiting_recovery = false;
   ReleaseMigrateFlight();
   flight_.attaching_hop_peer_id.clear();
   flight_.attached_hop_peer_id.clear();
@@ -500,11 +495,9 @@ void CallTopologyController::PollPendingSfuAttach() {
   case SfuAttachWaitPollResult::ClearAttached:
   case SfuAttachWaitPollResult::ClearAsP2p:
     ClearSfuAttachWait();
-    sfu_.awaiting_recovery = false;
     return;
   case SfuAttachWaitPollResult::TimeoutLeave:
     ClearSfuAttachWait();
-    sfu_.awaiting_recovery = false;
     host_.SetLastMediaError(Tr("call.error.no_media_relay_hop"));
     log().warning << "SFU attach wait timed out call_id=" << call_id;
     (void)host_.leave_call(call_id);
@@ -1200,50 +1193,6 @@ void CallTopologyController::OnGuestSfuTransportLost() {
   hop_migrate_.OnGuestSfuTransportLost();
 }
 
-void CallTopologyController::TryRecoverViaSfu(const std::string& call_id) {
-  if (sfu_.attached && media_.IsSfuMode()) {
-    return;
-  }
-  if (flight_.in_flight || (!attach_wait_.call_id.empty() && attach_wait_.call_id == call_id)) {
-    return;
-  }
-  sfu_.awaiting_recovery = true;
-  BeginSfuAttachWait(call_id);
-  host_.SetMediaActivity(Tr("call.status.finding_media_path"));
-  host_.NotifyRingChanged();
-  const uint64_t gen = ClaimMigrateFlight(call_id);
-  MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::IceRecover, {}, gen,
-                             [this, call_id, gen](Roe<void> migrated) {
-    const bool attached = sfu_.attached && media_.IsSfuMode();
-    CallsThread::Post([this, call_id, migrated, attached, gen]() {
-      if (!IsMigrateGenerationCurrent(gen)) {
-        return;
-      }
-      ReleaseMigrateFlight();
-      if (attached || (sfu_.attached && media_.IsSfuMode())) {
-        sfu_.awaiting_recovery = false;
-        ClearSfuAttachWait();
-        SyncSfuSubscriptions(call_id);
-        host_.NotifyRingChanged();
-        return;
-      }
-      if (!migrated) {
-        sfu_.awaiting_recovery = false;
-        const std::string msg =
-            migrated.error().message.empty()
-                ? Tr("call.error.no_media_relay_hop")
-                : migrated.error().message;
-        host_.SetLastMediaError(msg);
-        log().warning << "ICE-fail SFU recovery failed: " << msg;
-        (void)host_.leave_call(call_id);
-        host_.NotifyRingChanged();
-        return;
-      }
-      host_.NotifyRingChanged();
-    });
-  });
-}
-
 uint64_t CallTopologyController::ClaimMigrateFlight(const std::string& call_id) {
   const uint64_t gen = flight_.migrate_generation.fetch_add(1, std::memory_order_acq_rel) + 1;
   flight_.flight_gen = gen;
@@ -1414,7 +1363,6 @@ void CallTopologyController::FinishJoinSoftMigrate(const std::string& call_id, u
 
 void CallTopologyController::StayDirectAfterAccept(const std::string& call_id, size_t n_joined) {
   ClearSfuAttachWait();
-  sfu_.awaiting_recovery = false;
   // Cancel any leftover SoftMigrate / inbound AcceptAndAttach so it cannot StartSfu on this 1:1
   // after ScheduleStartDirectMedia (dogfood: stale gen StartSfu → brief hop audio → "direct").
   flight_.migrate_generation.fetch_add(1, std::memory_order_acq_rel);
@@ -1438,7 +1386,6 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
     log().info << "OnRemoteAcceptJoined stay P2P call_id=" << call_id << " n=" << n_joined
                << " joiner=" << joiner_identity;
     ClearSfuAttachWait();
-    sfu_.awaiting_recovery = false;
     host_.ClearMediaActivity();
     return false;
   }
@@ -2124,7 +2071,6 @@ void CallTopologyController::OnInboundHopRefuse(const CallHopRefuseDetail& detai
   host_.SetLastMediaError(message);
   log().warning << "CallHopRefuse call_id=" << detail.call_id << " reason=" << detail.reason;
   ClearSfuAttachWait();
-  sfu_.awaiting_recovery = false;
   (void)host_.leave_call(detail.call_id);
   host_.NotifyRingChanged();
 }

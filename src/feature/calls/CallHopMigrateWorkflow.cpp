@@ -1027,7 +1027,6 @@ void CallHopMigrateWorkflow::MarkHopAttachLive(const HopAttach& at, bool fresh_s
   sfu_.attached = true;
   flight_.attached_hop_peer_id = at.attach.hop_peer_id;
   flight_.attaching_hop_peer_id.clear();
-  sfu_.awaiting_recovery = false;
   if (!at.self_hop) {
     guest_.active_attach = at.attach;
     guest_.active_call_id = call_id;
