@@ -5,6 +5,7 @@
 #include "domain/media/CallRingtone.h"
 #include "domain/media/CameraCaptureOrientation.h"
 #include "domain/media/CaptureStarvePolicy.h"
+#include "common/Metrics.h"
 #include "domain/media/IVideoCodec.h"
 #include "domain/media/MediaDeviceArbiter.h"
 #include "domain/media/NoiseSuppressor.h"
@@ -1164,8 +1165,10 @@ struct CallMediaEngine::Impl {
         continue;
       }
       if (camera_requested_ms != 0) {
-        EngineLog().info << "camera start lease_ms=" << camera_lease_ms
-                         << " first_frame_ms=" << util::NowUnixMs() - camera_requested_ms;
+        MetricsLine("camera.start")
+            .Add("lease_ms", camera_lease_ms)
+            .Add("first_frame_ms", util::NowUnixMs() - camera_requested_ms)
+            .Emit();
         camera_requested_ms = 0;
       }
       EncodeAndSend(std::move(*frame), geometry, need_keyframe);

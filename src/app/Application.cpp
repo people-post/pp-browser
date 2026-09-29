@@ -88,6 +88,7 @@
 #include "ElementCallVideoTile.h"
 #include "domain/ui/Theme.h"
 #include "common/StartupTiming.h"
+#include "common/Metrics.h"
 #include "domain/mesh/reachability/Reachability.h"
 
 #include <ui/dom/Context.h>
@@ -1381,6 +1382,11 @@ void Application::Run() {
       Backend::PresentFrame();
       if (!logged_first_present) {
         StartupMark("first_present");
+        MetricsLine("app.start")
+            .Add("first_present_ms", static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                              std::chrono::steady_clock::now() - StartupEpoch())
+                                                              .count()))
+            .Emit();
         logged_first_present = true;
         AppRuntime::PostUI([this]() {
           OnFirstPresentDeferredStartup(*client_compat_, *unlock_gate_, MakeShellNavigationPorts(*shell_));

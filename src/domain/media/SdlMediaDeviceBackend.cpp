@@ -4,7 +4,7 @@
 #include "domain/media/SdlAudioBootstrap.h"
 #include "domain/media/VideoYuv.h"
 #include "domain/media/VoiceProcessingIo.h"
-#include "common/Logger.h"
+#include "common/Metrics.h"
 
 #include <SDL3/SDL.h>
 
@@ -16,12 +16,6 @@
 
 namespace pbr {
 namespace {
-
-/** Device open timings go to the app log too: SDL_Log never reaches the phone's log file. */
-logging::Logger& BackendLog() {
-  static logging::Logger log = logging::getLogger("MediaDeviceArbiter");
-  return log;
-}
 
 class SdlAudioEndpoint final : public IAudioEndpoint {
 public:
@@ -325,10 +319,15 @@ public:
       }
       if (camera) {
         SDL_Log("MediaDeviceArbiter: camera opened \"%s\"", name ? name : "?");
-        BackendLog().info << "camera opened \"" << (name ? name : "?") << "\" open_ms="
-                          << std::chrono::duration_cast<std::chrono::milliseconds>(
-                                 std::chrono::steady_clock::now() - open_t0)
-                                 .count();
+        // Metrics channel (SDL_Log never reaches the phone's log file). No device name: a
+        // Continuity Camera is named after its owner's iPhone.
+        MetricsLine("device.open")
+            .Add("kind", "camera")
+            .Add("front", SDL_GetCameraPosition(id) == SDL_CAMERA_POSITION_FRONT_FACING)
+            .Add("open_ms", static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                     std::chrono::steady_clock::now() - open_t0)
+                                                     .count()))
+            .Emit();
         return std::make_unique<SdlCameraEndpoint>(camera, geometry);
       }
       last_error = SDL_GetError();
@@ -360,7 +359,7 @@ public:
     }
     SDL_Log("MediaDeviceArbiter: vpio open (voice processing: echo cancellation on) open_ms=%lld",
             static_cast<long long>(open_ms));
-    BackendLog().info << "vpio open open_ms=" << open_ms;
+    MetricsLine("device.open").Add("kind", "vpio").Add("open_ms", static_cast<int64_t>(open_ms)).Emit();
     VoiceDuplexEndpoints pair;
     pair.mic = std::make_unique<VoiceMicEndpoint>(unit);
     pair.speaker = std::make_unique<VoiceSpeakerEndpoint>(unit);
