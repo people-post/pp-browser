@@ -15,6 +15,30 @@
 
 namespace pbr {
 
+namespace {
+
+CMMotionManager* OrientationMotion() {
+  static CMMotionManager* motion = nil;
+  if (motion == nil) {
+    motion = [[CMMotionManager alloc] init];
+    motion.deviceMotionUpdateInterval = 0.2;
+  }
+  return motion;
+}
+
+} // namespace
+
+bool CameraRotationFollowsDevice() {
+  return true;
+}
+
+void StopCameraOrientationTracking() {
+  CMMotionManager* motion = OrientationMotion();
+  if (motion.deviceMotionActive) {
+    [motion stopDeviceMotionUpdates];
+  }
+}
+
 int CameraDisplayRotationDegrees() {
   // The app is portrait-locked and the sensor turns with the phone, so we need the phone's
   // PHYSICAL orientation. UIDevice.orientation stays Portrait while the user's Control Center
@@ -23,14 +47,10 @@ int CameraDisplayRotationDegrees() {
   // Degrees are CW display rotation, matching IosCameraRotateCw's table: portrait 0, home side
   // right (UIDeviceOrientationLandscapeLeft) 90, upside down 180, home side left 270.
   // UI thread only (called from the call UI tick while the camera is on).
-  static CMMotionManager* motion = nil;
   static int last_valid_deg = 0;
-  if (motion == nil) {
-    motion = [[CMMotionManager alloc] init];
-    motion.deviceMotionUpdateInterval = 0.2;
-    if (motion.deviceMotionAvailable) {
-      [motion startDeviceMotionUpdates];
-    }
+  CMMotionManager* motion = OrientationMotion();
+  if (motion.deviceMotionAvailable && !motion.deviceMotionActive) {
+    [motion startDeviceMotionUpdates];  // stopped again by StopCameraOrientationTracking
   }
   CMDeviceMotion* dm = motion.deviceMotion;
   if (dm == nil) {

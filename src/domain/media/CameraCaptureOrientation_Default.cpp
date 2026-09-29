@@ -10,6 +10,12 @@
 
 namespace pbr {
 
+bool CameraRotationFollowsDevice() {
+  return false;
+}
+
+void StopCameraOrientationTracking() {}
+
 int CameraDisplayRotationDegrees() {
   return 0;
 }

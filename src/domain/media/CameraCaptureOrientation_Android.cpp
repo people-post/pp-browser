@@ -13,6 +13,12 @@
 
 namespace pbr {
 
+bool CameraRotationFollowsDevice() {
+  return false;
+}
+
+void StopCameraOrientationTracking() {}
+
 int CameraDisplayRotationDegrees() {
   // Prefer JNI Surface.ROTATION_* — matches CameraX getRotationCompensation.
   JNIEnv* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
