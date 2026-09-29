@@ -108,6 +108,9 @@ public:
     void ScheduleDirectStart(const std::string&, const std::string&, bool) override {}
     void ReleaseDirectTransport(const CallMediaSeat::Token&) override { ++*releases; }
     void ReleaseDirectTransport() override { ++*releases; }
+    void StopMeshMedia(const std::string&) override {}
+    Roe<void> RetryMeshMedia(const std::string&) override { return {}; }
+    Roe<void> ResumeMeshMediaFromInbound(const std::string&) override { return {}; }
   } direct;
   FakeTopologyHost() {
     direct.releases = &direct_media_releases;

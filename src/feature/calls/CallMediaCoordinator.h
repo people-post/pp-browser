@@ -95,6 +95,18 @@ public:
   /** The 1:1 stream dropped ahead of the hop attach: have the hop wait for it. */
   void ExpectHopAttach();
 
+  // --- The call's devices and restarts -------------------------------------------------------------
+
+  void SetMuted(bool muted);
+  /** Camera on / off; the hop re-picks what it sends. False when the camera would not open. */
+  Roe<void> SetCamera(bool enabled, int display_rotation_degrees);
+  bool CameraOn() const;
+  /** Our own video: send a keyframe (a viewer asked). */
+  void RequestKeyframe();
+  /** A failed, open call: Retry / resume over the peer's connection (the 1:1 driver runs them). */
+  Roe<void> Retry();
+  Roe<void> ResumeFromInbound();
+
 private:
   CallMediaEngine& Engine() const { return *resources_.engine; }
 

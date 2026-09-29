@@ -84,12 +84,12 @@ public:
   /** True when mesh call-media path is available (direct or circuit-brokered). */
   bool ShouldUseMeshForPeer(const std::string& peer_identity) const;
 
-  Roe<void> RetryMeshMedia(const std::string& call_id);
+  Roe<void> RetryMeshMedia(const std::string& call_id) override;
   /**
    * The call failed but is still open, and the peer's connection for it is up (its Retry): restart
    * the engine as this side's role and commit over that stream (no Detach, no redial).
    */
-  Roe<void> ResumeMeshMediaFromInbound(const std::string& call_id);
+  Roe<void> ResumeMeshMediaFromInbound(const std::string& call_id) override;
   /**
    * Retry / resume restart a call whose planner went Idle on failure: arm it again (Schedule →
    * Arming, key already held → Connecting) so the restarted connect's ConnectSucceeded lands.
@@ -160,7 +160,7 @@ public:
    * Any thread: off the calls owner the whole stop is posted to the front of its queue and
    * skipped if a newer media session (StartSfu) started in the meantime.
    */
-  void StopMeshMedia(const std::string& call_id);
+  void StopMeshMedia(const std::string& call_id) override;
   /**
    * CallAccept/Invite taught PeerId→relay: (works for non-contacts). Rebind deferred inbound
    * on_audio stream_id when it matches the pending inbound PeerId.

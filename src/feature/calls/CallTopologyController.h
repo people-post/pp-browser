@@ -138,7 +138,7 @@ public:
   void ClearSfuAttachWait();
   void PollPendingSfuAttach();
 
-  void OnMediaStopped(const std::string& call_id);
+  void OnMediaStopped(const std::string& call_id) override;
 
   void EjectParticipantAfterMigrateFailure(const std::string& call_id, const std::string& identity,
                                            const std::string& reason);
@@ -188,7 +188,7 @@ public:
   void OnInboundHopRefuse(const CallHopRefuseDetail& detail);
 
   void RefreshAdaptation(const std::string& call_id);
-  void RefreshAdaptation(const std::string& call_id, bool camera_user_wants);
+  void RefreshAdaptation(const std::string& call_id, bool camera_user_wants) override;
   /** Re-Subscribe hop streams for all currently Joined peers (late join / roster). */
   void SyncSfuSubscriptions(const std::string& call_id);
   uint32_t PublisherStreamIdForLocal() const;

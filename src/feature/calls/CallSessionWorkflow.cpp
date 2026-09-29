@@ -543,25 +543,9 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
                                                       InitiationChargeDecision charge_decision,
                                                       bool voice_only_accept,
                                                       const std::string& local_identity) {
-  // LeaveCallIfActiveExcept only sees Joined sessions. An Ended prior call can leave the
-  // engine in sfu_mode (Stop gated on ActiveCallId match) — purge before WaitForAttach.
-  // Never Release/Stop the call we are accepting (empty ActiveCallId used to target accept id
-  // and PostUIFront-Stop raced answerer StartSfu).
-  if ((host_.duplex.media_is_active && host_.duplex.media_is_active()) || (host_.duplex.media_is_sfu_mode && host_.duplex.media_is_sfu_mode())) {
-    const std::string leftover = (host_.duplex.media_active_call_id ? host_.duplex.media_active_call_id() : std::string{});
-    if (!leftover.empty() && leftover != call_id) {
-      log().info << "AcceptInvite stopping leftover media call_id=" << leftover
-                 << " accept=" << call_id;
-      host_.duplex.stop_media_if_call(leftover);
-    } else if (leftover.empty()) {
-      log().info << "AcceptInvite stopping zombie engine (no ActiveCallId) accept=" << call_id;
-      if (host_.duplex.stop_media_if_call) {
-        host_.duplex.stop_media_if_call({});
-      } else if (host_.duplex.media_stop) {
-        host_.duplex.media_stop();
-      }
-    }
-  }
+  // LeaveCallIfActiveExcept only sees Joined sessions; an Ended prior call can leave the engine
+  // running. Stop it before this call's media — never the call we are accepting.
+  live_calls_.StopMediaExcept(call_id);
   auto pending = sessions_.LoadPendingInvite(call_id, local_identity);
   if (!pending || !pending->has_value() || (*pending)->status != "pending") {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=Pending call invite not found";
@@ -913,9 +897,7 @@ Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, c
 Roe<void> CallSessionWorkflow::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms,
                                           const LiveCallEndReason reason) {
   live_calls_.Close(session.call_id, reason);
-  if (host_.duplex.stop_media_if_call) {
-    host_.duplex.stop_media_if_call(session.call_id);
-  }
+  live_calls_.StopMedia(session.call_id);
   session.state = CallSessionState::Ended;
   session.ended_at = util::NowUnixMs();
   if (auto saved = sessions_.UpsertSession(session); !saved) {
@@ -956,22 +938,16 @@ Roe<void> CallSessionWorkflow::LeaveCall(const std::string& call_id, const LiveC
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value()) {
     // Still detach leftover SFU if the disk row is gone but capture is live.
-    if (host_.duplex.stop_media_if_call) {
-      host_.duplex.stop_media_if_call(call_id);
-    }
+    live_calls_.StopMedia(call_id);
     return Error("Call session not found");
   }
   if ((*session)->state == CallSessionState::Ended) {
     // Session already Ended (remote CallEnded / prior EndCallLocal) must still tear down
     // media_relay — otherwise the next Accept inherits zombie RX and red "reconnecting".
-    if (host_.duplex.stop_media_if_call) {
-      host_.duplex.stop_media_if_call(call_id);
-    }
+    live_calls_.StopMedia(call_id);
     return {};
   }
-  if (host_.duplex.stop_media_if_call) {
-    host_.duplex.stop_media_if_call(call_id);
-  }
+  live_calls_.StopMedia(call_id);
 
   const int64_t now = util::NowUnixMs();
   CallParticipant self;
@@ -1061,7 +1037,7 @@ void CallSessionWorkflow::SweepExpiredInvites() {
 
   // CALLS outbound unanswered: clear sticky Calling bar without waiting on GUI LeaveClicked.
   if (host_.chrome.is_outbound_calling && host_.chrome.is_outbound_calling() &&
-      !(host_.duplex.media_is_active && host_.duplex.media_is_active())) {
+      !live_calls_.MediaRunning()) {
     auto active = ActiveLocalCall();
     if (active && active->has_value() &&
         CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(true, false, (*active)->created_at, now)) {
@@ -1561,7 +1537,7 @@ Roe<void> CallSessionWorkflow::HandleInboundLeave(const std::string& detail_json
       }
       return EndCallLocal(**session, duration, LiveCallEndReason::RemoteEnded);
     }
-    host_.duplex.stop_media_if_call(leave->call_id);
+    live_calls_.StopMedia(leave->call_id);
     host_.wire.notify_ring_changed();
     return {};
   }
@@ -1751,10 +1727,12 @@ Roe<void> CallSessionWorkflow::HandleInboundVideoRefresh(const std::string& deta
     }
   }
   if (!CallSessionLogic::ShouldHonorInboundVideoRefresh(refresh->call_id, refresh->identity, sender_identity,
-                                                        *local, (host_.duplex.media_active_call_id ? host_.duplex.media_active_call_id() : std::string{}), sender_joined)) {
+                                                        *local, live_calls_.MediaRunningCallId(), sender_joined)) {
     return {};
   }
-  if (host_.duplex.media_request_keyframe) host_.duplex.media_request_keyframe();
+  if (CallMediaCoordinator* call_media = live_calls_.Media(refresh->call_id)) {
+    call_media->RequestKeyframe();
+  }
   return {};
 }
 

@@ -27,6 +27,9 @@ protected:
     }
     void ReleaseDirectTransport(const CallMediaSeat::Token& token) override { released.push_back(token); }
     void ReleaseDirectTransport() override { released.push_back({}); }
+    void StopMeshMedia(const std::string&) override {}
+    Roe<void> RetryMeshMedia(const std::string&) override { return {}; }
+    Roe<void> ResumeMeshMediaFromInbound(const std::string&) override { return {}; }
   };
 
   /** The group path: takes a call once `group_from` are joined; answers the hop questions. */
@@ -44,6 +47,8 @@ protected:
     bool IsAwaitingSfuRecovery() const override { return in_flight; }
     bool ExpectsGroupMedia(const std::string&) const override { return expects; }
     void BeginSfuAttachWait(const std::string& call_id) override { attach_waits.push_back(call_id); }
+    void OnMediaStopped(const std::string&) override {}
+    void RefreshAdaptation(const std::string&, bool) override {}
   };
 
   CallMediaEngine engine_;

@@ -136,7 +136,6 @@ void CallSessionManager::BindWorkflowHostPorts() {
     return control_.AppendOriginHistory(thread_id, type, text, detail);
   };
   ports.wire.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
-  ports.duplex.stop_media_if_call = [this](const std::string& call_id) { StopMediaIfCall(call_id); };
   ports.duplex.schedule_start_direct = [this](const std::string& call_id, const std::string& peer, bool offerer) {
     ScheduleStartDirectMedia(call_id, peer, offerer);
   };
@@ -146,11 +145,6 @@ void CallSessionManager::BindWorkflowHostPorts() {
       direct_media->on_media_key_ready(call_id);
     }
   };
-  ports.duplex.media_is_active = [this]() { return media_.IsActive(); };
-  ports.duplex.media_is_sfu_mode = [this]() { return media_.IsSfuMode(); };
-  ports.duplex.media_active_call_id = [this]() { return media_.ActiveCallId(); };
-  ports.duplex.media_request_keyframe = [this]() { media_.RequestVideoKeyframe(); };
-  ports.duplex.media_stop = [this]() { media_.Stop(); };
   ports.hop.on_joined_count_observed = [this](const std::string& call_id, size_t n) {
     topology_.OnJoinedCountObserved(call_id, n);
   };
@@ -400,11 +394,12 @@ Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
   if (!local) {
     return local.error();
   }
-  const std::string call_id = media_.ActiveCallId();
-  if (call_id.empty()) {
+  const std::string call_id = live_calls_.MediaRunningCallId();
+  CallMediaCoordinator* call_media = call_id.empty() ? nullptr : live_calls_.Media(call_id);
+  if (!call_media) {
     return Error("No active call media");
   }
-  media_.SetMuted(muted);
+  call_media->SetMuted(muted);
   auto participant = sessions_.FindParticipant(call_id, *local);
   if (participant && participant->has_value()) {
     (*participant)->media.audio_muted = muted;
@@ -426,8 +421,9 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
   if (!local) {
     return local.error();
   }
-  const std::string call_id = media_.ActiveCallId();
-  if (call_id.empty()) {
+  const std::string call_id = live_calls_.MediaRunningCallId();
+  CallMediaCoordinator* call_media = call_id.empty() ? nullptr : live_calls_.Media(call_id);
+  if (!call_media) {
     return Error("No active call media");
   }
   if (enabled) {
@@ -436,17 +432,12 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
       return Error("Video is not allowed for this call");
     }
   }
-  topology_.RefreshAdaptation(call_id, enabled);
-  if (enabled) {
-    if (auto cam = media_.SetCameraEnabled(true, display_rotation_degrees); !cam) {
-      return cam.error();
-    }
-  } else {
-    (void)media_.SetCameraEnabled(false, 0);
+  if (auto cam = call_media->SetCamera(enabled, display_rotation_degrees); !cam) {
+    return cam.error();
   }
   auto participant = sessions_.FindParticipant(call_id, *local);
   if (participant && participant->has_value()) {
-    (*participant)->media.video_enabled = enabled && media_.IsCameraEnabled();
+    (*participant)->media.video_enabled = enabled && call_media->CameraOn();
     (void)sessions_.UpsertParticipant(**participant);
   }
   auto roster = BuildRosterDetail(call_id);
@@ -470,7 +461,9 @@ Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id,
     return Error("No active call");
   }
   if (publisher_identity.empty() || publisher_identity == *local) {
-    media_.RequestVideoKeyframe();
+    if (CallMediaCoordinator* call_media = live_calls_.Media(call_id)) {
+      call_media->RequestKeyframe();
+    }
     return {};
   }
   CallVideoRefreshDetail detail;
@@ -823,18 +816,8 @@ void CallSessionManager::StopCallMedia(const std::string& call_id) {
 }
 
 void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
-  const auto seat_ports = media_seat_ports_.Get();
-  const auto direct_media = direct_media_.Get();
-  // V036 Phase 3: CSM signaling-only for duplex stop — seat.Release owns Detach-then-Stop.
-  if (seat_ports->release) {
-    seat_ports->release(call_id);
-    return;
-  }
-  // Tests / incomplete wiring without a seat.
-  topology_.OnMediaStopped(call_id);
-  if (direct_media->stop_mesh_media) {
-    direct_media->stop_mesh_media(call_id);
-  }
+  // CSM is signaling-only for duplex stop: the call registry releases the seat (Detach-then-Stop).
+  live_calls_.StopMedia(call_id);
 }
 
 
@@ -1037,19 +1020,16 @@ void CallSessionManager::PollP2pConnectHealth() {
 
 Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
   const auto direct_media = direct_media_.Get();
-  if (direct_media->media_attempted && direct_media->retry_mesh_media &&
-      direct_media->media_attempted(call_id)) {
-    return direct_media->retry_mesh_media(call_id);
+  CallMediaCoordinator* call_media = live_calls_.Media(call_id);
+  if (call_media && direct_media->media_attempted && direct_media->media_attempted(call_id)) {
+    return call_media->Retry();
   }
   return Error("Call media retry unavailable");
 }
 
 Roe<void> CallSessionManager::ResumeP2pMedia(const std::string& call_id) {
-  const auto direct_media = direct_media_.Get();
-  if (direct_media->resume_mesh_media) {
-    return direct_media->resume_mesh_media(call_id);
-  }
-  return Error("Call media resume unavailable");
+  CallMediaCoordinator* call_media = live_calls_.Media(call_id);
+  return call_media ? call_media->ResumeFromInbound() : Roe<void>(Error("Call media resume unavailable"));
 }
 
 Roe<std::optional<CallSession>> CallSessionManager::SessionForCall(const std::string& call_id) const {

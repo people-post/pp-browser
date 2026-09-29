@@ -145,6 +145,20 @@ public:
    * (or pruned), or before media resources are bound. An ended call keeps it for its stops.
    */
   CallMediaCoordinator* Media(const std::string& call_id);
+  /**
+   * Stop `call_id`'s media (empty: whatever holds the seat). The seat's release tears the paths
+   * down; with no seat, each driver stops its part. Also for calls not admitted here (leftovers).
+   */
+  void StopMedia(const std::string& call_id);
+  /**
+   * Another call is about to take media: stop media still running for any call but `keep_call_id`
+   * (an ended call can leave the engine running). Never touches `keep_call_id`'s own media.
+   */
+  void StopMediaExcept(const std::string& keep_call_id);
+  /** The engine runs (1:1 or group capture). */
+  bool MediaRunning() const;
+  /** The call the engine runs for; empty when it runs for none (or is stopped). */
+  std::string MediaRunningCallId() const;
 
 private:
   LiveCall& Admit(const std::string& call_id, LiveCallOrigin origin, LiveCallState state,

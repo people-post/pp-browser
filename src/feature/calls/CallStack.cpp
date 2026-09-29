@@ -922,18 +922,11 @@ CallDirectMediaPorts CallStack::MakeDirectMediaPorts() const {
                                               const std::string& relay_identity) {
     bridge->NotePeerIdRelayMapping(peer_id, relay_identity);
   };
-  ports.stop_mesh_media = [bridge](const std::string& call_id) { bridge->StopMeshMedia(call_id); };
   ports.is_connect_failed = [bridge]() { return bridge->IsMeshConnectFailed(); };
   ports.connect_missing_mic = [bridge]() {
     return bridge->IsMeshConnectFailed() && bridge->MeshConnectMissingMic();
   };
   ports.poll_connect_health = [bridge]() { bridge->PollMeshConnectHealth(); };
-  ports.retry_mesh_media = [bridge](const std::string& call_id) {
-    return bridge->RetryMeshMedia(call_id);
-  };
-  ports.resume_mesh_media = [bridge](const std::string& call_id) {
-    return bridge->ResumeMeshMediaFromInbound(call_id);
-  };
   ports.media_attempted = [bridge](const std::string& call_id) {
     return bridge->MediaAttempted(call_id);
   };

@@ -30,6 +30,10 @@ public:
   virtual bool ExpectsGroupMedia(const std::string& call_id) const = 0;
   /** The 1:1 stream dropped ahead of the hop attach: wait for it (attach-wait). */
   virtual void BeginSfuAttachWait(const std::string& call_id) = 0;
+  /** The call's media stopped: drop hop state for it — the no-seat stop path. */
+  virtual void OnMediaStopped(const std::string& call_id) = 0;
+  /** The camera was turned on / off: re-pick what the hop sends. */
+  virtual void RefreshAdaptation(const std::string& call_id, bool camera_user_wants) = 0;
 };
 
 } // namespace pbr

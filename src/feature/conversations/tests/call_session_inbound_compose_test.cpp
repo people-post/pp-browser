@@ -306,15 +306,11 @@ CallDirectMediaPorts TestDirectMediaPorts(CallMediaBridge* bridge, CallMediaSeat
                                               const std::string& relay_identity) {
     bridge->NotePeerIdRelayMapping(peer_id, relay_identity);
   };
-  ports.stop_mesh_media = [bridge](const std::string& call_id) { bridge->StopMeshMedia(call_id); };
   ports.is_connect_failed = [bridge]() { return bridge->IsMeshConnectFailed(); };
   ports.connect_missing_mic = [bridge]() {
     return bridge->IsMeshConnectFailed() && bridge->MeshConnectMissingMic();
   };
   ports.poll_connect_health = [bridge]() { bridge->PollMeshConnectHealth(); };
-  ports.retry_mesh_media = [bridge](const std::string& call_id) {
-    return bridge->RetryMeshMedia(call_id);
-  };
   ports.media_attempted = [bridge](const std::string& call_id) {
     return bridge->MediaAttempted(call_id);
   };
@@ -872,6 +868,9 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
     }
     void ReleaseDirectTransport(const CallMediaSeat::Token&) override {}
     void ReleaseDirectTransport() override {}
+    void StopMeshMedia(const std::string&) override {}
+    Roe<void> RetryMeshMedia(const std::string&) override { return {}; }
+    Roe<void> ResumeMeshMediaFromInbound(const std::string&) override { return {}; }
   } spy;
   spy.on_start = [&](const std::string& cid, const std::string& peer, bool offerer) {
     ++schedule_calls;
@@ -1126,6 +1125,7 @@ TEST_F(CallSessionInboundComposeTest, GroupVoiceAnswerDoesNotNarrowCaller) {
   peer2.identity = "account:peer2";
   peer2.state = CallParticipantState::Ringing;
   ASSERT_TRUE(sessions_->UpsertParticipant(peer2));
+  csm_->LiveCallsForTest().AdmitPlaced(call_id, {"account:peer1", "account:peer2"});  // as StartCall does
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
 
   CallAcceptDetail accept;

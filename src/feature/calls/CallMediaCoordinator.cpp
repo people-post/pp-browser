@@ -139,4 +139,36 @@ void CallMediaCoordinator::ExpectHopAttach() {
   }
 }
 
+void CallMediaCoordinator::SetMuted(const bool muted) {
+  Engine().SetMuted(muted);
+}
+
+Roe<void> CallMediaCoordinator::SetCamera(const bool enabled, const int display_rotation_degrees) {
+  if (resources_.hop) {
+    resources_.hop->RefreshAdaptation(call_id_, enabled);
+  }
+  if (!enabled) {
+    (void)Engine().SetCameraEnabled(false, 0);
+    return {};
+  }
+  return Engine().SetCameraEnabled(true, display_rotation_degrees);
+}
+
+bool CallMediaCoordinator::CameraOn() const {
+  return Engine().IsCameraEnabled();
+}
+
+void CallMediaCoordinator::RequestKeyframe() {
+  Engine().RequestVideoKeyframe();
+}
+
+Roe<void> CallMediaCoordinator::Retry() {
+  return resources_.direct ? resources_.direct->RetryMeshMedia(call_id_) : Roe<void>(Error("direct media path unavailable"));
+}
+
+Roe<void> CallMediaCoordinator::ResumeFromInbound() {
+  return resources_.direct ? resources_.direct->ResumeMeshMediaFromInbound(call_id_)
+                           : Roe<void>(Error("direct media path unavailable"));
+}
+
 } // namespace pbr

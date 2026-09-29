@@ -56,15 +56,9 @@ public:
 
   /** Duplex start/stop + engine queries the session workflow needs. */
   struct DuplexPorts {
-    std::function<void(const std::string& call_id)> stop_media_if_call;
     std::function<void(const std::string& call_id, const std::string& peer, bool offerer)>
         schedule_start_direct;
     std::function<void(const std::string& call_id)> on_media_key_ready;
-    std::function<bool()> media_is_active;
-    std::function<bool()> media_is_sfu_mode;
-    std::function<std::string()> media_active_call_id;
-    std::function<void()> media_request_keyframe;
-    std::function<void()> media_stop;
   };
 
   /** Hop-path / SFU attach outcomes observed by durable session. */

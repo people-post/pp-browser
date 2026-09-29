@@ -241,6 +241,42 @@ CallMediaCoordinator* LiveCalls::Media(const std::string& call_id) {
   return call->media_.get();
 }
 
+void LiveCalls::StopMedia(const std::string& call_id) {
+  if (resources_.seat) {
+    resources_.seat->Release(call_id);  // Detach then engine Stop (seat teardown hooks)
+    return;
+  }
+  if (resources_.hop) {
+    resources_.hop->OnMediaStopped(call_id);
+  }
+  if (resources_.direct) {
+    resources_.direct->StopMeshMedia(call_id);
+  }
+}
+
+bool LiveCalls::MediaRunning() const {
+  return resources_.engine && resources_.engine->IsActive();
+}
+
+std::string LiveCalls::MediaRunningCallId() const {
+  return resources_.engine ? resources_.engine->ActiveCallId() : std::string{};
+}
+
+void LiveCalls::StopMediaExcept(const std::string& keep_call_id) {
+  CallMediaEngine* engine = resources_.engine;
+  if (!engine || (!engine->IsActive() && !engine->IsSfuMode())) {
+    return;
+  }
+  const std::string leftover = engine->ActiveCallId();
+  if (!leftover.empty() && leftover != keep_call_id) {
+    LiveCallLog().info << "stopping leftover media call_id=" << leftover << " for=" << keep_call_id;
+    StopMedia(leftover);
+  } else if (leftover.empty()) {
+    LiveCallLog().info << "stopping zombie engine (no call id) for=" << keep_call_id;
+    StopMedia({});
+  }
+}
+
 void LiveCalls::WarnIfSecondActive(const std::string& call_id) const {
   for (const auto& [id, call] : calls_) {
     if (id != call_id && IsActiveState(call.state_)) {

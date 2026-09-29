@@ -42,17 +42,14 @@ struct CallDirectMediaPorts {
   std::function<std::string()> media_path_kind;
   std::function<void(const std::string& peer_id, const std::string& relay_identity)>
       note_peer_id_relay_mapping;
-  std::function<void(const std::string& call_id)> stop_mesh_media;
   std::function<bool()> is_connect_failed;
   std::function<bool()> connect_missing_mic;
   std::function<void()> poll_connect_health;
-  std::function<Roe<void>(const std::string& call_id)> retry_mesh_media;
-  std::function<Roe<void>(const std::string& call_id)> resume_mesh_media;
   std::function<bool(const std::string& call_id)> media_attempted;
   std::function<void(const std::string& call_id)> note_media_attempted;
   std::function<void(const std::string& call_id)> on_media_key_ready;
 
-  bool IsBound() const { return static_cast<bool>(stop_mesh_media); }
+  bool IsBound() const { return static_cast<bool>(media_path_kind); }
 };
 
 /**
