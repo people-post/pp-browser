@@ -6,6 +6,7 @@ pp_browser_add_domain_library(pp_domain_net
     ClientCompat.cpp
     HttpBlobClient.cpp
     HttpClient.cpp
+    PublicAddress.cpp
     RelayApiSignPayload.cpp
     RelayBlobSignPayload.cpp
     RelayInboxCursor.cpp
@@ -19,6 +20,13 @@ pp_browser_add_domain_library(pp_domain_net
     pp_foundation_crypto
     pp_foundation_platform_core
     CURL::libcurl)
+
+# Post-DNS SSRF guard socket (OS backend next to HttpClient; see docs/architecture/PLATFORM_CODE.md).
+if(WIN32)
+  target_sources(pp_domain_net PRIVATE PublicOnlySocket_Win32.cpp)
+else()
+  target_sources(pp_domain_net PRIVATE PublicOnlySocket_Posix.cpp)
+endif()
 
 target_compile_definitions(pp_domain_net PUBLIC
   "PP_BROWSER_RELEASE_VERSION=\"${PP_BROWSER_RELEASE_VERSION}\""
