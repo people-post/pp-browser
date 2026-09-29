@@ -99,14 +99,6 @@ void CallUiBackend::Apply(CallLifecycleEvent ev, const std::string& call_id) {
   });
 }
 
-void CallUiBackend::NoteRingCallId(const std::string& call_id) {
-  CallsThread::Post([this, call_id]() {
-    if (auto* life = stack_.Lifecycle()) {
-      life->NoteRingCallId(call_id);
-    }
-  });
-}
-
 void CallUiBackend::ClearLastError() {
   CallsThread::Post([this]() {
     if (auto* life = stack_.Lifecycle()) {
@@ -170,14 +162,8 @@ void CallUiBackend::StartCall(const std::string& origin_thread_id, const bool vi
       reply(UnavailableError());
       return;
     }
-    auto started = calls->StartCall(origin_thread_id, video_allowed, invitee_identities);
-    if (started) {
-      if (auto* life = stack_.Lifecycle()) {
-        // Idempotent if the workflow already noted it via lifecycle ports (preferred, pre-Invite).
-        life->Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
-      }
-    }
-    reply(std::move(started));
+    // The workflow notes OutboundStarted itself (lifecycle ports) before the invite goes out.
+    reply(calls->StartCall(origin_thread_id, video_allowed, invitee_identities));
   });
 }
 
