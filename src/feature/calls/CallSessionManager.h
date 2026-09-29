@@ -304,11 +304,6 @@ private:
   Roe<std::optional<std::string>> MeshPeerIdForAccount(const std::string& account) const override;
   Roe<std::optional<std::string>> RelayIdentityForMeshPeerId(const std::string& call_id,
                                                                   const std::string& peer_id) const override;
-  bool P2pIsAwaitingSfuRecovery() const override;
-  bool P2pExpectGroupSfuMigration(const std::string& call_id) const override;
-  void P2pNoteExpectSfuAttach(const std::string& call_id) override;
-  bool P2pIsSfuAttached() const override;
-  void P2pClearAwaitingSfuRecovery() override;
   void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) override;
   void P2pRequestInboxSync() override;
   const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live_calls_.Find(call_id); }

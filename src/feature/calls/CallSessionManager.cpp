@@ -76,6 +76,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
   live_calls_.BindMediaResources(&media_, nullptr);
+  live_calls_.BindHopDriver(&topology_);
   BindTopologyHostPorts();
   BindWorkflowHostPorts();
 }
@@ -141,13 +142,6 @@ void CallSessionManager::BindWorkflowHostPorts() {
   ports.duplex.media_active_call_id = [this]() { return media_.ActiveCallId(); };
   ports.duplex.media_request_keyframe = [this]() { media_.RequestVideoKeyframe(); };
   ports.duplex.media_stop = [this]() { media_.Stop(); };
-  ports.hop.on_local_accept_joined = [this](const std::string& call_id, size_t n,
-                                        const std::optional<std::string>& hint) {
-    return topology_.OnLocalAcceptJoined(call_id, n, hint);
-  };
-  ports.hop.on_remote_accept_joined = [this](const std::string& call_id, size_t n, const std::string& peer) {
-    return topology_.OnRemoteAcceptJoined(call_id, n, peer);
-  };
   ports.hop.on_joined_count_observed = [this](const std::string& call_id, size_t n) {
     topology_.OnJoinedCountObserved(call_id, n);
   };
@@ -1690,42 +1684,6 @@ void CallSessionManager::P2pRequestInboxSync() {
   if (delivery_.sync_inbox_from_wake) {
     delivery_.sync_inbox_from_wake(true);
   }
-}
-
-bool CallSessionManager::P2pIsAwaitingSfuRecovery() const {
-  return topology_.IsAwaitingSfuRecovery();
-}
-
-bool CallSessionManager::P2pExpectGroupSfuMigration(const std::string& call_id) const {
-  if (call_id.empty()) {
-    return false;
-  }
-  CallExpectGroupSfuInput in;
-  in.awaiting_sfu_recovery = topology_.IsAwaitingSfuRecovery();
-  in.sfu_attached = topology_.IsSfuAttached();
-  if (auto n = sessions_.CountJoined(call_id)) {
-    in.joined_count = *n;
-  }
-  if (auto session = sessions_.LoadSession(call_id);
-      session && *session && (*session)->sfu_hint && !(*session)->sfu_hint->empty()) {
-    in.has_sfu_hint = true;
-  }
-  return ShouldExpectGroupSfuMigration(in);
-}
-
-void CallSessionManager::P2pNoteExpectSfuAttach(const std::string& call_id) {
-  if (call_id.empty()) {
-    return;
-  }
-  topology_.BeginSfuAttachWait(call_id);
-}
-
-bool CallSessionManager::P2pIsSfuAttached() const {
-  return topology_.IsSfuAttached();
-}
-
-void CallSessionManager::P2pClearAwaitingSfuRecovery() {
-  topology_.ClearAwaitingSfuRecovery();
 }
 
 } // namespace pbr

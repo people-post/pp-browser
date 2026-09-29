@@ -2,10 +2,12 @@
 
 #include "domain/media/CallMediaEngine.h"
 #include "feature/calls/CallDirectDriver.h"
+#include "feature/calls/CallHopDriver.h"
 #include "feature/calls/CallMediaSeat.h"
 
 #include "common/Error.h"
 
+#include <optional>
 #include <string>
 
 namespace pbr {
@@ -17,6 +19,18 @@ struct CallMediaResources {
   CallMediaSeat* seat = nullptr;
   /** Null: no 1:1 path (mesh media not wired). */
   CallDirectDriver* direct = nullptr;
+  /** Null: no group path (harness). */
+  CallHopDriver* hop = nullptr;
+};
+
+/** Which path carries a call's media, as its coordinator decided. */
+enum class CallMediaPath {
+  /** Not decided yet (before a join). */
+  Undecided,
+  /** 1:1 direct / punched / relayed carrier (Bridge). */
+  Direct,
+  /** Group, on a hop / media_relay (Topology). A call never goes back to Direct. */
+  Hop,
 };
 
 /**
@@ -58,12 +72,36 @@ public:
   /** The path the engine was last started on for this call. */
   CallMediaSeat::PathKind Path() const { return path_; }
 
+  // --- Media mode: which path carries the call ----------------------------------------------------
+
+  /**
+   * Our accept landed with `n_joined` in the call: the hop driver takes it (group, via hint or
+   * SoftMigrate) or it stays 1:1. Records and returns the mode; the caller starts Direct (after its
+   * own chrome / store steps) when this returns Direct.
+   */
+  CallMediaPath DecideOnLocalAccept(size_t n_joined, const std::optional<std::string>& sfu_hint);
+  /** A peer accepted our call: as above (Hop also when the call is no longer the active one). */
+  CallMediaPath DecideOnRemoteAccept(size_t n_joined, const std::string& joiner_identity);
+  CallMediaPath MediaPath() const { return media_path_; }
+
+  // --- What the 1:1 path needs to know about the group path ----------------------------------------
+
+  /** Media runs on a hop now. */
+  bool HopAttached() const;
+  /** A hop attach / migration / recovery is in flight. */
+  bool HopInFlight() const;
+  /** The call is (or is about to be) a group call: its 1:1 stream closing is expected. */
+  bool ExpectsHop() const;
+  /** The 1:1 stream dropped ahead of the hop attach: have the hop wait for it. */
+  void ExpectHopAttach();
+
 private:
   CallMediaEngine& Engine() const { return *resources_.engine; }
 
   std::string call_id_;
   const CallMediaResources& resources_;
   CallMediaSeat::PathKind path_ = CallMediaSeat::PathKind::None;
+  CallMediaPath media_path_ = CallMediaPath::Undecided;
 };
 
 } // namespace pbr

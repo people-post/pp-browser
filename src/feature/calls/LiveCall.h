@@ -136,6 +136,8 @@ public:
   void BindMediaResources(CallMediaEngine* engine, CallMediaSeat* seat);
   /** The 1:1 path the coordinators drive (null: none wired). */
   void BindDirectDriver(CallDirectDriver* direct) { resources_.direct = direct; }
+  /** The group path the coordinators drive (null: harness). */
+  void BindHopDriver(CallHopDriver* hop) { resources_.hop = hop; }
   /**
    * The call's media coordinator, created on first use. Null for a call this device never admitted
    * (or pruned), or before media resources are bound. An ended call keeps it for its stops.

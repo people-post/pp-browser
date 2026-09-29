@@ -69,11 +69,6 @@ public:
 
   /** Hop-path / SFU attach outcomes observed by durable session. */
   struct HopPathPorts {
-    std::function<bool(const std::string& call_id, size_t planner_n,
-                       const std::optional<std::string>& sfu_hint)>
-        on_local_accept_joined;
-    std::function<bool(const std::string& call_id, size_t n_joined, const std::string& peer)>
-        on_remote_accept_joined;
     std::function<void(const std::string& call_id, size_t n_joined)> on_joined_count_observed;
     std::function<void()> clear_sfu_attach_wait;
     /** `sender`: who fanned it out — a hop change is followed only from the hop owner (V050). */

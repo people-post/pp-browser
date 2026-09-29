@@ -99,4 +99,44 @@ void CallMediaCoordinator::ReleaseDirect() {
   resources_.direct->ReleaseDirectTransport(token);
 }
 
+CallMediaPath CallMediaCoordinator::DecideOnLocalAccept(const size_t n_joined,
+                                                       const std::optional<std::string>& sfu_hint) {
+  CallHopDriver* hop = resources_.hop;
+  media_path_ = hop && hop->OnLocalAcceptJoined(call_id_, n_joined, sfu_hint) ? CallMediaPath::Hop : CallMediaPath::Direct;
+  CallMediaCoordinatorLog().info << "local accept call_id=" << call_id_ << " n=" << n_joined
+                                 << " mode=" << (media_path_ == CallMediaPath::Hop ? "hop" : "direct");
+  return media_path_;
+}
+
+CallMediaPath CallMediaCoordinator::DecideOnRemoteAccept(const size_t n_joined, const std::string& joiner_identity) {
+  CallHopDriver* hop = resources_.hop;
+  if (hop && hop->OnRemoteAcceptJoined(call_id_, n_joined, joiner_identity)) {
+    media_path_ = CallMediaPath::Hop;
+  } else if (media_path_ != CallMediaPath::Hop) {  // a group call never goes back to 1:1
+    media_path_ = CallMediaPath::Direct;
+  }
+  CallMediaCoordinatorLog().info << "remote accept call_id=" << call_id_ << " n=" << n_joined
+                                 << " joiner=" << joiner_identity
+                                 << " mode=" << (media_path_ == CallMediaPath::Hop ? "hop" : "direct");
+  return media_path_;
+}
+
+bool CallMediaCoordinator::HopAttached() const {
+  return resources_.hop && resources_.hop->IsSfuAttached();
+}
+
+bool CallMediaCoordinator::HopInFlight() const {
+  return resources_.hop && resources_.hop->IsAwaitingSfuRecovery();
+}
+
+bool CallMediaCoordinator::ExpectsHop() const {
+  return resources_.hop && resources_.hop->ExpectsGroupMedia(call_id_);
+}
+
+void CallMediaCoordinator::ExpectHopAttach() {
+  if (resources_.hop) {
+    resources_.hop->BeginSfuAttachWait(call_id_);
+  }
+}
+
 } // namespace pbr

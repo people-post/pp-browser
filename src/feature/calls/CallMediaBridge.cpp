@@ -165,7 +165,8 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
   // SoftMigrate StartSfu swaps send to media_relay but leaves the 1:1 stream until
   // ReleaseDirectTransport; peer teardown must not flip ConnectFailed over live SFU.
   // IsSfuMode() is also true for 1:1 capture — require media_relay attach.
-  if (host_.P2pIsSfuAttached() && media_.IsConnected()) {
+  CallMediaCoordinator* call_media = LiveCallMedia(call_id);
+  if (call_media && call_media->HopAttached() && media_.IsConnected()) {
     log().info << "Ignoring call-media fail after SoftMigrate/SFU call_id=" << call_id << " reason=" << reason;
     direct_.Detach();
     ClearMeshConnectFailed();
@@ -179,11 +180,13 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
   // flight (dogfood: Moto ConnectFailed when attach lagged ReleaseDirect).
   const bool soft_direct_close =
       reason.find("read_eof") != std::string::npos || reason.find("stream closed") != std::string::npos;
-  if (host_.P2pIsAwaitingSfuRecovery() || host_.P2pExpectGroupSfuMigration(call_id) ||
+  if ((call_media && (call_media->HopInFlight() || call_media->ExpectsHop())) ||
       (soft_direct_close && media_.IsActive() && media_.IsConnected())) {
     log().info << "Ignoring call-media fail while awaiting SFU attach call_id=" << call_id
                << " reason=" << reason;
-    host_.P2pNoteExpectSfuAttach(call_id);
+    if (call_media) {
+      call_media->ExpectHopAttach();
+    }
     direct_.Detach();
     ClearMeshConnectFailed();
     host_.P2pRequestInboxSync();
@@ -772,7 +775,7 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
   // V036 Phase 2: seat Live is the chrome Connected gate — DirectConnected alone is signaling.
   // Prefer Live only when the direct stream is actually up (not StartSfu alone).
   if (seat_.IsBound() && media_.IsActive() && media_.ActiveCallId() == call_id &&
-      (DirectMediaReady() || host_.P2pIsSfuAttached())) {
+      (DirectMediaReady() || HopAttachedFor(call_id))) {
     seat_.note_live(call_id);
   }
   if (arming_.on_connected) {
@@ -791,7 +794,7 @@ void CallMediaBridge::DeliverDirectMedia(const std::string& call_id, const uint3
     if (!media_.IsActive() || media_.ActiveCallId() != call_id) {
       return;
     }
-    if (host_.P2pIsSfuAttached()) {
+    if (HopAttachedFor(call_id)) {
       return;
     }
     // Outbound bundles know the dialed identity; inbound ones use the bound (or deferred) stream.
@@ -847,7 +850,10 @@ void CallMediaBridge::ClearMeshConnectFailed() {
 }
 
 void CallMediaBridge::PollMeshConnectHealth() {
-  if (mesh_connect_failed_ || host_.P2pIsAwaitingSfuRecovery() || !media_.IsActive() || !media_.IsSfuMode()) {
+  if (mesh_connect_failed_ || !media_.IsActive() || !media_.IsSfuMode()) {
+    return;
+  }
+  if (CallMediaCoordinator* call_media = LiveCallMedia(media_.ActiveCallId()); call_media && call_media->HopInFlight()) {
     return;
   }
   // ConnectOffererWithRetry runs on a worker thread — do not UI-timeout while it is dialing.
@@ -900,7 +906,7 @@ void CallMediaBridge::MaybeEscalateTxOnlyDirect() {
   const auto snap = media_.HealthSnapshot();
   CallTxOnlyEscalateDecisionInput in;
   in.already_done = tx_only_escalation_done_;
-  in.sfu_attached = host_.P2pIsSfuAttached();
+  in.sfu_attached = HopAttachedFor(media_.ActiveCallId());
   in.stopping = stopping_.load();
   // Bound-link truth: never "escalate via circuit" when media already rides a relay carrier.
   in.media_path_kind = MediaPathKind();
@@ -1600,6 +1606,16 @@ void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
   StopEngineFor(call_id.empty() ? active : call_id, "stop mesh media");
 }
 
+CallMediaCoordinator* CallMediaBridge::LiveCallMedia(const std::string& call_id) {
+  // Quietly null for a call not admitted here (a leftover engine id): nothing to ask about it.
+  return !call_id.empty() && host_.P2pLiveCall(call_id) ? host_.P2pCallMedia(call_id) : nullptr;
+}
+
+bool CallMediaBridge::HopAttachedFor(const std::string& call_id) {
+  CallMediaCoordinator* call_media = LiveCallMedia(call_id);
+  return call_media && call_media->HopAttached();
+}
+
 void CallMediaBridge::StopEngineFor(const std::string& call_id, const char* why) {
   if (CallMediaCoordinator* call_media = call_id.empty() ? nullptr : host_.P2pCallMedia(call_id)) {
     call_media->StopEngine(why);
@@ -1643,7 +1659,7 @@ void CallMediaBridge::ReleaseDirectTransportBody() {
   inbound_remote_stream_.store(0, std::memory_order_release);
   // Do not ClearRemoteAudioTracks here — SoftMigrate+2s would wipe live media_relay tracks
   // that already replaced 1:1 (dogfood: streams look healthy then Moto silent on PreferLocal).
-  // 1:1 on_audio is already ignored once P2pIsSfuAttached(); stream_id==1 is dropped in engine.
+  // 1:1 on_audio is already ignored once the hop is attached; stream_id==1 is dropped in engine.
   ClearMeshConnectFailed();
   // V036 Phase 2: signaling may advance to InCall, but chrome Connected requires seat Live
   // (set by CompleteAttachLocalToSfu NoteLive — not ReleaseDirect alone).

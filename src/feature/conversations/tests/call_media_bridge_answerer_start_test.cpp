@@ -125,11 +125,6 @@ public:
     }
     return std::optional<std::string>{};
   }
-  bool P2pIsAwaitingSfuRecovery() const override { return false; }
-  bool P2pExpectGroupSfuMigration(const std::string& /*call_id*/) const override { return false; }
-  void P2pNoteExpectSfuAttach(const std::string& /*call_id*/) override {}
-  bool P2pIsSfuAttached() const override { return false; }
-  void P2pClearAwaitingSfuRecovery() override {}
   void P2pResendMediaKey(const std::string& /*call_id*/, const std::string& /*peer*/) override {
     ++media_key_resends;
   }

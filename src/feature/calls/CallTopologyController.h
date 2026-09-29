@@ -10,6 +10,7 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/messaging/CallMediaKeyStore.h"
+#include "feature/calls/CallHopDriver.h"
 #include "feature/calls/CallTopologyHostPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaSeat.h"
@@ -82,7 +83,7 @@ struct CallTopologySeatPorts {
  * SoftMigrate race clusters live on CallHopMigrateWorkflow (V047); this type keeps refs +
  * Host/HopArming/Seat ports for Topology-local control paths.
  */
-class CallTopologyController : public Module {
+class CallTopologyController : public Module, public CallHopDriver {
 public:
   using HostPorts = CallTopologyHostPorts;
   using MediaRelayDeps = CallTopologyMediaRelayDeps;
@@ -102,8 +103,10 @@ public:
   /** V048 hop arming / progress — empty ports = permissive (unit tests). */
   void SetHopArmingPorts(CallHopArmingPorts ports);
 
-  bool IsAwaitingSfuRecovery() const;
-  bool IsSfuAttached() const;
+  bool IsAwaitingSfuRecovery() const override;
+  bool IsSfuAttached() const override;
+  /** Hop driver: SoftMigrate / hint / N≥3 / recovery — the call's 1:1 stream closing is expected. */
+  bool ExpectsGroupMedia(const std::string& call_id) const override;
   bool IsOnSfuForCall(const std::string& call_id) const;
   /** Soft-migrate / attach-wait in flight (suppress ICE→SFU re-entry + stale LeaveCall). */
   bool IsSoftMigrateInFlight() const;
@@ -131,7 +134,7 @@ public:
   /** V050 gt4 (initiator): what a joiner reported in its CallAccept. */
   void NoteAcceptHopReport(const std::string& call_id, const std::string& identity, const CallHopReport& report);
 
-  void BeginSfuAttachWait(const std::string& call_id);
+  void BeginSfuAttachWait(const std::string& call_id) override;
   void ClearSfuAttachWait();
   void PollPendingSfuAttach();
 
@@ -156,14 +159,14 @@ public:
    * Returns true if an SFU path was scheduled (caller should not start P2P).
    */
   bool OnLocalAcceptJoined(const std::string& call_id, size_t n_joined,
-                           const std::optional<std::string>& sfu_hint);
+                           const std::optional<std::string>& sfu_hint) override;
 
   /**
    * After inbound CallAccept raised joined count: soft-migrate or clear SFU wait.
    * Returns true if SFU path was taken (caller should not start P2P offerer).
    */
   bool OnRemoteAcceptJoined(const std::string& call_id, size_t n_joined,
-                            const std::string& joiner_identity);
+                            const std::string& joiner_identity) override;
 
   /**
    * After CallRoster updated local joined count (mid-call invite path): initiator may SoftMigrate.

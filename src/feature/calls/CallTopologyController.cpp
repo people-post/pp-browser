@@ -1261,6 +1261,23 @@ bool CallTopologyController::MigrateFlightBusyFor(const std::string& call_id) co
   return flight_.in_flight && (flight_.call_id.empty() || flight_.call_id == call_id);
 }
 
+bool CallTopologyController::ExpectsGroupMedia(const std::string& call_id) const {
+  if (call_id.empty()) {
+    return false;
+  }
+  CallExpectGroupSfuInput in;
+  in.awaiting_sfu_recovery = IsAwaitingSfuRecovery();
+  in.sfu_attached = IsSfuAttached();
+  if (auto n = sessions_.CountJoined(call_id)) {
+    in.joined_count = *n;
+  }
+  if (auto session = sessions_.LoadSession(call_id);
+      session && *session && (*session)->sfu_hint && !(*session)->sfu_hint->empty()) {
+    in.has_sfu_hint = true;
+  }
+  return ShouldExpectGroupSfuMigration(in);
+}
+
 bool CallTopologyController::OnLocalAcceptJoined(const std::string& call_id, size_t n_joined,
                                                  const std::optional<std::string>& sfu_hint) {
   Apply(CallHopPlannerEvent::LocalAcceptN3, call_id);

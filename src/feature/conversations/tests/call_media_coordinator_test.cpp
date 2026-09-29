@@ -14,6 +14,7 @@ protected:
     with_seat_.engine = &engine_;
     with_seat_.seat = &seat_;
     with_seat_.direct = &direct_;
+    with_seat_.hop = &hop_;
     no_seat_.engine = &engine_;
   }
   void TearDown() override { engine_.Stop(); }
@@ -28,9 +29,27 @@ protected:
     void ReleaseDirectTransport() override { released.push_back({}); }
   };
 
+  /** The group path: takes a call once `group_from` are joined; answers the hop questions. */
+  struct FakeHopDriver final : CallHopDriver {
+    size_t group_from = 3;
+    bool attached = false;
+    bool in_flight = false;
+    bool expects = false;
+    std::vector<std::string> attach_waits;
+    bool OnLocalAcceptJoined(const std::string&, size_t n, const std::optional<std::string>&) override {
+      return n >= group_from;
+    }
+    bool OnRemoteAcceptJoined(const std::string&, size_t n, const std::string&) override { return n >= group_from; }
+    bool IsSfuAttached() const override { return attached; }
+    bool IsAwaitingSfuRecovery() const override { return in_flight; }
+    bool ExpectsGroupMedia(const std::string&) const override { return expects; }
+    void BeginSfuAttachWait(const std::string& call_id) override { attach_waits.push_back(call_id); }
+  };
+
   CallMediaEngine engine_;
   CallMediaSeat seat_;
   RecordingDirectDriver direct_;
+  FakeHopDriver hop_;
   CallMediaResources with_seat_;
   CallMediaResources no_seat_;
 };
@@ -92,6 +111,39 @@ TEST_F(CallMediaCoordinatorTest, ReleaseDirectOnlyWhileTheCallHoldsTheSeat) {
   other.HoldSeatForHop();  // another call took the seat
   call.ReleaseDirect();
   EXPECT_EQ(direct_.released.size(), 1u) << "not this call's transport to drop any more";
+}
+
+// The call's coordinator decides the path at a join: the hop takes a group call, else 1:1 — and a
+// call that went group never goes back to Direct.
+TEST_F(CallMediaCoordinatorTest, JoinDecidesThePathAndGroupIsOneWay) {
+  CallMediaCoordinator call("call:1", with_seat_);
+  EXPECT_EQ(call.MediaPath(), CallMediaPath::Undecided);
+  EXPECT_EQ(call.DecideOnRemoteAccept(2, "account:bob"), CallMediaPath::Direct);
+  EXPECT_EQ(call.DecideOnRemoteAccept(3, "account:carol"), CallMediaPath::Hop);
+  EXPECT_EQ(call.MediaPath(), CallMediaPath::Hop);
+  hop_.group_from = 99;  // even if the hop would not take a later join
+  EXPECT_EQ(call.DecideOnRemoteAccept(2, "account:bob"), CallMediaPath::Hop) << "group is one-way";
+
+  CallMediaCoordinator accepted("call:2", with_seat_);
+  EXPECT_EQ(accepted.DecideOnLocalAccept(2, std::nullopt), CallMediaPath::Direct);
+  CallMediaCoordinator no_hop("call:3", no_seat_);
+  EXPECT_EQ(no_hop.DecideOnLocalAccept(5, std::nullopt), CallMediaPath::Direct) << "no group path wired";
+}
+
+// What the 1:1 path asks about the group path goes through the call's coordinator.
+TEST_F(CallMediaCoordinatorTest, HopQuestionsAskTheHopDriver) {
+  CallMediaCoordinator call("call:1", with_seat_);
+  EXPECT_FALSE(call.HopAttached());
+  EXPECT_FALSE(call.HopInFlight());
+  EXPECT_FALSE(call.ExpectsHop());
+  hop_.attached = hop_.in_flight = hop_.expects = true;
+  EXPECT_TRUE(call.HopAttached());
+  EXPECT_TRUE(call.HopInFlight());
+  EXPECT_TRUE(call.ExpectsHop());
+  call.ExpectHopAttach();
+  EXPECT_EQ(hop_.attach_waits, std::vector<std::string>{"call:1"});
+  CallMediaCoordinator no_hop("call:2", no_seat_);
+  EXPECT_FALSE(no_hop.ExpectsHop());
 }
 
 } // namespace

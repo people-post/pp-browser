@@ -711,8 +711,10 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
     n_joined = *joined_after;
   }
   const size_t planner_n = n_joined;  // V050: joined only — ringing invitees never arm the hop
+  // The call's media coordinator decides the path (the hop takes a group call; else 1:1 Direct).
+  CallMediaCoordinator* call_media = live_calls_.Media(call_id);
   const bool topology_took_media =
-      host_.hop.on_local_accept_joined && host_.hop.on_local_accept_joined(call_id, planner_n, row.sfu_hint);
+      call_media && call_media->DecideOnLocalAccept(planner_n, row.sfu_hint) == CallMediaPath::Hop;
   bool schedule_answerer_direct = false;
   if (!topology_took_media) {
     if (row.sfu_hint && !row.sfu_hint->empty()) {
@@ -1444,7 +1446,10 @@ Roe<void> CallSessionWorkflow::ApplyRemoteAccept(const CallAcceptDetail& accept_
     if (!implicit && host_.hop.note_accept_hop_report) {
       host_.hop.note_accept_hop_report(accept->call_id, identity, accept->hop_report);
     }
-    if (!host_.hop.on_remote_accept_joined(accept->call_id, n_joined, identity)) {
+    CallMediaCoordinator* call_media = live_calls_.Media(accept->call_id);
+    const bool stays_direct =
+        !call_media || call_media->DecideOnRemoteAccept(n_joined, identity) == CallMediaPath::Direct;
+    if (stays_direct) {
       if (host_.chrome.note_direct_connecting) {
         host_.chrome.note_direct_connecting(accept->call_id);
       }
