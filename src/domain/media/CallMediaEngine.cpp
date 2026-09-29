@@ -1121,14 +1121,25 @@ struct CallMediaEngine::Impl {
     CameraGeometry geometry;
     bool need_keyframe = true;
     int64_t applied_bps = 0;
+    // Camera start timing (video start took 4-6 s on device, 2026-09-29): request → lease (device
+    // thread queue + open) → first frame. 0 = nothing pending.
+    int64_t camera_requested_ms = 0;
+    int64_t camera_lease_ms = 0;
     while (video_running.load()) {
       if (video_need_keyframe.exchange(false, std::memory_order_acq_rel)) {
         need_keyframe = true;
       }
       const bool wanted = camera_enabled.load(std::memory_order_relaxed);
+      if (!wanted) {
+        camera_requested_ms = 0;
+      }
       if (wanted && !camera) {
+        if (camera_requested_ms == 0) {
+          camera_requested_ms = util::NowUnixMs();
+        }
         camera = OpenCameraLease();
         if (camera) {
+          camera_lease_ms = util::NowUnixMs() - camera_requested_ms;
           geometry = camera->Geometry();
           ConfigureLocalEncoder(geometry);
           applied_bps = 0;
@@ -1151,6 +1162,11 @@ struct CallMediaEngine::Impl {
       if (!frame) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
         continue;
+      }
+      if (camera_requested_ms != 0) {
+        EngineLog().info << "camera start lease_ms=" << camera_lease_ms
+                         << " first_frame_ms=" << util::NowUnixMs() - camera_requested_ms;
+        camera_requested_ms = 0;
       }
       EncodeAndSend(std::move(*frame), geometry, need_keyframe);
       const auto elapsed = std::chrono::steady_clock::now() - t0;

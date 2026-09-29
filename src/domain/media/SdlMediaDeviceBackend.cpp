@@ -4,6 +4,7 @@
 #include "domain/media/SdlAudioBootstrap.h"
 #include "domain/media/VideoYuv.h"
 #include "domain/media/VoiceProcessingIo.h"
+#include "common/Logger.h"
 
 #include <SDL3/SDL.h>
 
@@ -15,6 +16,12 @@
 
 namespace pbr {
 namespace {
+
+/** Device open timings go to the app log too: SDL_Log never reaches the phone's log file. */
+logging::Logger& BackendLog() {
+  static logging::Logger log = logging::getLogger("MediaDeviceArbiter");
+  return log;
+}
 
 class SdlAudioEndpoint final : public IAudioEndpoint {
 public:
@@ -306,6 +313,7 @@ public:
       want.height = std::min(geometry.encode_width, geometry.encode_height);
       want.framerate_numerator = format.fps;
       want.framerate_denominator = 1;
+      const auto open_t0 = std::chrono::steady_clock::now();
       SDL_Camera* camera = SDL_OpenCamera(id, &want);
       if (!camera) {
         // Fall back: ask SDL to deliver RGBA so the driver converts when possible.
@@ -317,6 +325,10 @@ public:
       }
       if (camera) {
         SDL_Log("MediaDeviceArbiter: camera opened \"%s\"", name ? name : "?");
+        BackendLog().info << "camera opened \"" << (name ? name : "?") << "\" open_ms="
+                          << std::chrono::duration_cast<std::chrono::milliseconds>(
+                                 std::chrono::steady_clock::now() - open_t0)
+                                 .count();
         return std::make_unique<SdlCameraEndpoint>(camera, geometry);
       }
       last_error = SDL_GetError();
@@ -348,6 +360,7 @@ public:
     }
     SDL_Log("MediaDeviceArbiter: vpio open (voice processing: echo cancellation on) open_ms=%lld",
             static_cast<long long>(open_ms));
+    BackendLog().info << "vpio open open_ms=" << open_ms;
     VoiceDuplexEndpoints pair;
     pair.mic = std::make_unique<VoiceMicEndpoint>(unit);
     pair.speaker = std::make_unique<VoiceSpeakerEndpoint>(unit);
