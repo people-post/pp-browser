@@ -115,25 +115,25 @@ void CallSessionManager::BindTopologyHostPorts() {
 
 void CallSessionManager::BindWorkflowHostPorts() {
   CallSessionWorkflow::HostPorts ports;
-  ports.wire.local_relay_identity = [this]() { return LocalRelayIdentity(); };
+  ports.wire.local_relay_identity = [this]() { return control_.LocalRelayIdentity(); };
   ports.wire.notify_ring_changed = [this]() { NotifyRingChanged(); };
   ports.wire.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
                              const std::string& display) {
-    return SendCallDirectMessage(peer, type, detail, display);
+    return control_.SendDirect(peer, type, detail, display);
   };
-  ports.wire.ensure_control_thread = [this](const std::string& peer) { return EnsureCallControlThread(peer); };
+  ports.wire.ensure_control_thread = [this](const std::string& peer) { return control_.EnsureCallControlThread(peer); };
   ports.wire.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
                                 const std::string& display, const std::string& skip) {
-    return FanOutToJoined(call_id, type, detail, display, skip);
+    return control_.FanOutToJoined(call_id, type, detail, display, skip);
   };
   ports.wire.fan_out_joined_and_ringing = [this](const std::string& call_id, CallControlType type,
                                             const std::string& detail, const std::string& display,
                                             const std::string& skip) {
-    return FanOutToJoinedAndRinging(call_id, type, detail, display, skip);
+    return control_.FanOutToJoinedAndRinging(call_id, type, detail, display, skip);
   };
   ports.wire.append_origin_history = [this](const std::string& thread_id, CallControlType type,
                                        const std::string& text, const std::string& detail) {
-    return AppendOriginHistory(thread_id, type, text, detail);
+    return control_.AppendOriginHistory(thread_id, type, text, detail);
   };
   ports.wire.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
   ports.duplex.stop_media_if_call = [this](const std::string& call_id) { StopMediaIfCall(call_id); };
@@ -251,7 +251,7 @@ void CallSessionManager::BindWorkflowHostPorts() {
   ports.reach.resolve_peer_session_key = [this](const std::string& peer) { return control_.ResolvePeerSessionKey(peer); };
   ports.reach.send_media_key = [this](const std::string& call_id, const std::string& peer, uint32_t epoch,
                                 const std::string& key_id, const ByteVector& key) {
-    return SendMediaKeyToPeer(call_id, peer, epoch, key_id, key);
+    return control_.SendMediaKey(call_id, peer, epoch, key_id, key);
   };
   ports.reach.local_listen_multiaddrs = [this]() -> std::vector<std::string> {
     return local_listen_multiaddrs_ ? local_listen_multiaddrs_() : std::vector<std::string>{};
@@ -396,7 +396,7 @@ CallMediaEngine& CallSessionManager::Media() {
 }
 
 Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
@@ -414,7 +414,7 @@ Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
   if (roster) {
     auto roster_json = CallControlCodec::EncodeRoster(*roster);
     if (roster_json) {
-      (void)FanOutToJoined(call_id, CallControlType::CallRoster, *roster_json, "Call roster", *local);
+      (void)control_.FanOutToJoined(call_id, CallControlType::CallRoster, *roster_json, "Call roster", *local);
     }
   }
   NotifyRingChanged();
@@ -422,7 +422,7 @@ Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
 }
 
 Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int display_rotation_degrees) {
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
@@ -453,7 +453,7 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
   if (roster) {
     auto roster_json = CallControlCodec::EncodeRoster(*roster);
     if (roster_json) {
-      (void)FanOutToJoined(call_id, CallControlType::CallRoster, *roster_json, "Call roster", *local);
+      (void)control_.FanOutToJoined(call_id, CallControlType::CallRoster, *roster_json, "Call roster", *local);
     }
   }
   NotifyRingChanged();
@@ -462,7 +462,7 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
 
 Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id,
                                                  const std::string& publisher_identity) {
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
@@ -480,7 +480,7 @@ Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id,
   if (!encoded) {
     return encoded.error();
   }
-  return SendCallDirectMessage(publisher_identity, CallControlType::CallVideoRefresh, *encoded, "");
+  return control_.SendDirect(publisher_identity, CallControlType::CallVideoRefresh, *encoded, "");
 }
 
 void CallSessionManager::ClearLastMediaErrorIf(const std::string& seen) {
@@ -546,7 +546,7 @@ void CallSessionManager::AnnounceCircuitR1(const std::string& circuit_r1_peer_id
                   << " err=" << encoded.error().message;
     return;
   }
-  if (auto sent = SendCallDirectMessage(**peer, CallControlType::CallCircuitR1, *encoded, ""); !sent) {
+  if (auto sent = control_.SendDirect(**peer, CallControlType::CallCircuitR1, *encoded, ""); !sent) {
     log().warning << "AnnounceCircuitR1 send failed call_id=" << call_id << " peer=" << **peer
                   << " err=" << sent.error().message;
     return;
@@ -631,7 +631,7 @@ void CallSessionManager::RequestSignalingPunch(const std::string& target_peer_id
   pending.on_done = std::move(on_done);
   pending_signaling_punch_ = std::move(pending);
   if (auto sent =
-          SendCallDirectMessage(**peer, CallControlType::CallPunchOffer, *encoded, "");
+          control_.SendDirect(**peer, CallControlType::CallPunchOffer, *encoded, "");
       !sent) {
     CompletePendingSignalingPunch(detail.epoch_id, sent.error());
     return;
@@ -670,7 +670,7 @@ void CallSessionManager::AnnounceCapsUpdate() {
   if (!encoded) {
     return;
   }
-  if (auto sent = SendCallDirectMessage(**peer, CallControlType::CallCapsUpdate, *encoded, ""); !sent) {
+  if (auto sent = control_.SendDirect(**peer, CallControlType::CallCapsUpdate, *encoded, ""); !sent) {
     log().warning << "caps update send failed call_id=" << call_id << " err=" << sent.error().message;
     return;
   }
@@ -787,23 +787,9 @@ void CallSessionManager::NotifyRingChanged() {
   }
 }
 
-Roe<std::string> CallSessionManager::LocalRelayIdentity() const {
-  return control_.LocalRelayIdentity();
-}
 
-Roe<std::string> CallSessionManager::EnsureCallControlThread(const std::string& peer_identity) {
-  return control_.EnsureCallControlThread(peer_identity);
-}
 
-Roe<void> CallSessionManager::SendCallDirectMessage(const std::string& peer_identity, const CallControlType type,
-                                                    const std::string& detail_json, const std::string& display) {
-  return control_.SendDirect(peer_identity, type, detail_json, display);
-}
 
-Roe<void> CallSessionManager::AppendOriginHistory(const std::string& thread_id, const CallControlType type,
-                                                  const std::string& text, const std::string& detail_json) {
-  return control_.AppendOriginHistory(thread_id, type, text, detail_json);
-}
 
 Roe<CallRosterDetail> CallSessionManager::BuildRosterDetail(const std::string& call_id) const {
   auto session = sessions_.LoadSession(call_id);
@@ -829,23 +815,8 @@ Roe<CallRosterDetail> CallSessionManager::BuildRosterDetail(const std::string& c
   return detail;
 }
 
-Roe<void> CallSessionManager::FanOutToJoined(const std::string& call_id, const CallControlType type,
-                                             const std::string& detail_json, const std::string& display,
-                                             const std::string& skip_identity) {
-  return control_.FanOutToJoined(call_id, type, detail_json, display, skip_identity);
-}
 
-Roe<void> CallSessionManager::FanOutToJoinedAndRinging(const std::string& call_id, const CallControlType type,
-                                                       const std::string& detail_json, const std::string& display,
-                                                       const std::string& skip_identity) {
-  return control_.FanOutToJoinedAndRinging(call_id, type, detail_json, display, skip_identity);
-}
 
-Roe<void> CallSessionManager::SendMediaKeyToPeer(const std::string& call_id, const std::string& peer_identity,
-                                                 const uint32_t media_epoch, const std::string& media_key_id,
-                                                 const ByteVector& key_bytes) {
-  return control_.SendMediaKey(call_id, peer_identity, media_epoch, media_key_id, key_bytes);
-}
 
 void CallSessionManager::StopCallMedia(const std::string& call_id) {
   StopMediaIfCall(call_id);
@@ -946,7 +917,7 @@ void CallSessionManager::MaybeCatchUpAfterCall() {
 
 Roe<std::vector<PendingCallInvite>> CallSessionManager::ListPendingInvites() {
   SweepExpiredInvites();
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
@@ -962,7 +933,7 @@ Roe<std::optional<PendingCallInvite>> CallSessionManager::TopPendingInvite() {
 }
 
 Roe<std::optional<std::string>> CallSessionManager::PeerIdentityForCall(const std::string& call_id) const {
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
@@ -979,7 +950,7 @@ Roe<std::optional<std::string>> CallSessionManager::PeerIdentityForCall(const st
 }
 
 Roe<std::optional<bool>> CallSessionManager::PeerVideoEnabledForCall(const std::string& call_id) const {
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
@@ -1230,7 +1201,7 @@ Roe<void> CallSessionManager::HandleInboundPunchOffer(const std::string& detail_
     return Error("signaling punch answer: no call peer");
   }
   if (auto sent =
-          SendCallDirectMessage(**peer, CallControlType::CallPunchAnswer, *encoded, "");
+          control_.SendDirect(**peer, CallControlType::CallPunchAnswer, *encoded, "");
       !sent) {
     return sent.error();
   }
@@ -1291,7 +1262,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     return Error("Call control missing detail");
   }
   const std::string detail_json = *detail;
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
@@ -1340,7 +1311,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
 
 
 Roe<std::string> CallSessionManager::TopologyLocalIdentity() const {
-  return LocalRelayIdentity();
+  return control_.LocalRelayIdentity();
 }
 
 Roe<void> CallSessionManager::TopologyLeaveCall(const std::string& call_id) {
@@ -1351,12 +1322,12 @@ Roe<void> CallSessionManager::TopologyLeaveCall(const std::string& call_id) {
 Roe<void> CallSessionManager::TopologyFanOutToJoined(const std::string& call_id, CallControlType type,
                                                      const std::string& detail_json, const std::string& display,
                                                      const std::string& skip_identity) {
-  return FanOutToJoined(call_id, type, detail_json, display, skip_identity);
+  return control_.FanOutToJoined(call_id, type, detail_json, display, skip_identity);
 }
 
 Roe<void> CallSessionManager::TopologySendDirect(const std::string& peer_identity, CallControlType type,
                                                  const std::string& detail_json, const std::string& display) {
-  return SendCallDirectMessage(peer_identity, type, detail_json, display);
+  return control_.SendDirect(peer_identity, type, detail_json, display);
 }
 
 void CallSessionManager::TopologyNotifyRingChanged() {
@@ -1400,12 +1371,12 @@ void CallSessionManager::TopologyRequestInboxSync() {
 }
 
 Roe<std::string> CallSessionManager::P2pLocalIdentity() const {
-  return LocalRelayIdentity();
+  return control_.LocalRelayIdentity();
 }
 
 Roe<void> CallSessionManager::P2pSendDirect(const std::string& peer_identity, CallControlType type,
                                             const std::string& detail_json, const std::string& display) {
-  return SendCallDirectMessage(peer_identity, type, detail_json, display);
+  return control_.SendDirect(peer_identity, type, detail_json, display);
 }
 
 void CallSessionManager::P2pNotifyRingChanged() {
@@ -1509,7 +1480,7 @@ void CallSessionManager::P2pResendMediaKey(const std::string& call_id, const std
     log().warning << "P2pResendMediaKey missing key call_id=" << call_id << " epoch=" << epoch;
     return;
   }
-  if (auto sent = SendMediaKeyToPeer(call_id, peer_identity, epoch, (*session)->media_key_id, **key_bytes); !sent) {
+  if (auto sent = control_.SendMediaKey(call_id, peer_identity, epoch, (*session)->media_key_id, **key_bytes); !sent) {
     log().warning << "P2pResendMediaKey send failed call_id=" << call_id << " err=" << sent.error().message;
     return;
   }
@@ -1519,7 +1490,7 @@ void CallSessionManager::P2pResendMediaKey(const std::string& call_id, const std
 
 void CallSessionManager::P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
                                              const std::string& peer_id) {
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return;
   }

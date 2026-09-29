@@ -312,26 +312,11 @@ private:
   void P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
                            const std::string& peer_id) override;
 
-  Roe<std::string> LocalRelayIdentity() const;
-  /** Mint/find e2e_public control DM before SoftMigrate / MediaKey fan-out (catalog warm). */
-  Roe<std::string> EnsureCallControlThread(const std::string& peer_identity);
-  Roe<void> SendCallDirectMessage(const std::string& peer_identity, CallControlType type,
-                                  const std::string& detail_json, const std::string& display);
-  Roe<void> AppendOriginHistory(const std::string& thread_id, CallControlType type, const std::string& text,
-                                const std::string& detail_json);
-  Roe<void> FanOutToJoined(const std::string& call_id, CallControlType type, const std::string& detail_json,
-                           const std::string& display, const std::string& skip_identity);
-  /** Fan-out to Joined and Ringing (and Invited) participants — used when ending so invitees clear. */
-  Roe<void> FanOutToJoinedAndRinging(const std::string& call_id, CallControlType type,
-                                     const std::string& detail_json, const std::string& display,
-                                     const std::string& skip_identity);
   Roe<void> MaybeRotateMediaKey(const std::string& call_id, const std::string& leaver_identity);
   Roe<void> EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms, LiveCallEndReason reason);
   Roe<CallRosterDetail> BuildRosterDetail(const std::string& call_id) const;
   void NotifyRingChanged();
 
-  Roe<void> SendMediaKeyToPeer(const std::string& call_id, const std::string& peer_identity,
-                               uint32_t media_epoch, const std::string& media_key_id, const ByteVector& key_bytes);
   void StopMediaIfCall(const std::string& call_id);
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
   void BindWorkflowHostPorts();
