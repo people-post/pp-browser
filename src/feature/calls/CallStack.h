@@ -14,6 +14,7 @@
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaPlane.h"
 #include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallPathMobility.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallSessionManager.h"
 #include "foundation/runtime/DeferredSelf.h"
@@ -115,7 +116,7 @@ public:
   /** k6: re-read the mobility override (config `mesh.mobility` / `--mobility=`) — any thread. */
   void ReloadMobilityOverride();
   /** k6: this endpoint's mobility class as advertised in caps (any thread). */
-  MobilityClass LocalMobility() const { return local_mobility_published_.load(std::memory_order_acquire); }
+  MobilityClass LocalMobility() const { return mobility_.LocalClass(); }
   /** k6: the path policy of a call (calls owner). */
   CallPathPolicy PathPolicyFor(const std::string& call_id) const;
   /** Before the owner replaces / drops mesh media objects: topology + bridge let go of them. */
@@ -175,6 +176,11 @@ private:
   // Bodies of the hub-facing edges above; the public methods run them on the calls owner.
   Roe<void> InitializeStoresOnOwner(const std::string& profile_db_path, const std::string& profile_id);
   void BuildSessionsOnOwner(const CallStackDeps& deps);
+  void BindSessionSeat();
+  void BindCallControlInbound();
+  void BindSessionProviders();
+  CallPeerCaps LocalPeerCaps() const;
+  void BindSessionMeshReach();
   void OnMeshServicesStartedOnOwner();
   void BindTestMediaPathOnOwner(ICallMediaTransport* transport, IDialRegistry* dial,
                                 ICircuitHopReach* circuit_reach, IMediaRelayClient* relay);
@@ -213,21 +219,11 @@ private:
   std::unique_ptr<CallMediaSeat> call_media_seat_;
   std::unique_ptr<CallSessionManager> call_sessions_;
   std::unique_ptr<CallMediaPlane> media_plane_;
-  // --- k6 mobility (calls owner; the class is also published for caps on any thread) -------------
-  MobilityClassifier local_mobility_;
-  std::atomic<MobilityClass> local_mobility_published_{MobilityClass::Unknown};
-  /** The remote's class per call, from invite / accept / caps_update. */
-  std::unordered_map<std::string, MobilityClass> remote_mobility_;
+  /** k6: this device's and each call peer's mobility → the call's path policy. */
+  CallPathMobility mobility_;
+  void BindMobility();
   void ApplyMobilityOverrideOnOwner();
-  /** Re-evaluate; on a flip tell the peer (caps_update) and re-plan the live call. */
-  void ReevaluateLocalMobilityOnOwner();
-  void NoteRemoteMobilityOnOwner(const std::string& call_id, MobilityClass mobility);
   void NotifyPathPolicyChangedOnOwner(const std::string& call_id);
-  /** A churn-driven Mobile relaxes with time alone: re-evaluate when the classifier says it could. */
-  void ScheduleMobilityReevaluationOnOwner();
-  void CancelMobilityReevaluationOnOwner();
-  uint64_t mobility_timer_id_ = 0;
-  std::shared_ptr<std::atomic<bool>> mobility_alive_ = std::make_shared<std::atomic<bool>>(true);
   SharedPorts<CallUiState> ui_state_;
   CallsThread::HookId publish_hook_ = 0;
   std::atomic<int> call_state_binds_{0};
