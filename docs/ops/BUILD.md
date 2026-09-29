@@ -131,7 +131,7 @@ cmake --build build-pp-node -j --target pp-node
 
 Or: `scripts/platform/pp_node_package_linux.sh configure` (same flags). Linux build host needs only toolchain + `pkg-config` — **not** `libx11-dev` / `libdbus-1-dev` / OpenGL.
 
-**Desktop GUI trees** also produce **`pp-node`** as an extra target (same node runtime). It must stay **UI-free** even when SDL/RmlUi are configured for `pp-browser`: link only `pp_foundation_platform_core` (and other `*_core` targets), never `pp_foundation_platform` / `pp_gui` / `pp_domain_media`. CMake enforces this via `pp_browser_assert_no_ui_dependencies` + a post-link symbol check in [`src/app/node/CMakeLists.txt`](../../src/app/node/CMakeLists.txt).
+**Desktop GUI trees** also produce **`pp-node`** as an extra target (same node runtime). It must stay **UI-free** even when SDL/RmlUi are configured for `pp-browser`: link only `pp_foundation_platform_core` (and other `*_core` targets), never `pp_foundation_platform` / `pp_gui` / `pp_domain_media`. CMake enforces this via `pp_browser_assert_no_ui_dependencies` + a post-link symbol check in [`src/app/node/CMakeLists.txt`](../../src/app/node/CMakeLists.txt). Beyond UI-free, its first-party closure is an **allowlist** (`pp_browser_assert_node_link_allowlist`, `PP_BROWSER_NODE_LINK_ALLOWLIST` in [`cmake/PpBrowserNoUiDeps.cmake`](../../cmake/PpBrowserNoUiDeps.cmake)): foundation `*_core`-style libs, `pp_pbr_common`, `pp_domain_{mesh,people,net}`, headless `pp_feature_{registration,node}`, and the Amp / common / crypto siblings. Any other `pp_*` target fails configure — widening the node is a deliberate edit to that list.
 
 ```bash
 cmake --build build -j --target pp-node
