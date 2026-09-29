@@ -126,6 +126,11 @@ public:
    * callers off the UI thread (the calls owner); iOS reads orientation from UIKit, main thread only.
    */
   Roe<void> SetCameraEnabled(bool enabled, int display_rotation_degrees);
+  /**
+   * The display turned while the camera is on (read on UI via `CameraDisplayRotationDegrees`): later
+   * frames rotate to match without reopening the camera or reconfiguring the encoder. Any thread.
+   */
+  void UpdateCameraDisplayRotation(int display_rotation_deg);
   bool IsCameraEnabled() const;
   /** Why the last camera request did not open, once (UI poll, like TakePendingVideoRefreshStreamIds). */
   std::optional<std::string> TakeCameraFailure();
@@ -136,6 +141,8 @@ public:
   bool HasRemoteVideo() const;
   /** Soft stall: frames aged past soft threshold but not yet cleared. */
   bool IsRemoteVideoStalling() const;
+  /** A remote frame arrived within the last within_ms (frames are still flowing). */
+  bool IsRemoteVideoLive(int64_t within_ms) const;
   /** True after at least one remote frame this media session (survives hard-stall clear). */
   bool EverHadRemoteVideo() const;
   /** Drop last remote frame (camera off, leave, hard stall, connection dead). */

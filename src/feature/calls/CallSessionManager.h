@@ -143,6 +143,11 @@ public:
   /** Local capability ads for invite/accept (V030). */
   using LocalPeerCapsFn = std::function<CallPeerCaps()>;
   void SetLocalPeerCapsProvider(LocalPeerCapsFn callback);
+  /** The remote's caps for a call — from invite / accept, then `call_caps_update` (K005). */
+  using CallPeerCapsSink = std::function<void(const std::string& call_id, const CallPeerCaps& caps)>;
+  void SetCallPeerCapsSink(CallPeerCapsSink sink);
+  /** Our caps changed mid-call (mobility flipped): tell the active call's peer (K005). */
+  void AnnounceCapsUpdate();
   /** Local mesh PeerId (base58) for invite/accept — PeerId→relay without contacts. */
   using LocalMeshPeerIdFn = std::function<std::string()>;
   void SetLocalMeshPeerIdProvider(LocalMeshPeerIdFn callback);
@@ -181,6 +186,8 @@ public:
   int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
   /** Set before AcceptClicked — consumed by AcceptInvite. */
   void SetPendingAcceptChargeDecision(InitiationChargeDecision decision);
+  /** Set before AcceptClicked — consumed (and reset to false) by AcceptInvite. */
+  void SetPendingAcceptVoiceOnly(bool voice_only);
   /** Expose private CallMediaHost base for bridge construction (MSVC-safe). */
   CallMediaHost& AsMediaHost() { return *this; }
 
@@ -205,6 +212,11 @@ public:
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;
+  /**
+   * True while a remote we invited is joined only through an implicit accept (B30): its CallAccept —
+   * and with it a voice-only answer — has not arrived yet.
+   */
+  Roe<bool> AwaitingExplicitAnswerForCall(const std::string& call_id) const;
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
 
   /**
@@ -333,11 +345,12 @@ private:
                                const std::string& local_identity);
   Roe<void> HandleInboundRoster(const std::string& detail_json);
   Roe<void> HandleInboundMediaKey(const std::string& detail_json, const std::string& sender_identity);
-  Roe<void> HandleInboundSfuAttach(const std::string& detail_json);
+  Roe<void> HandleInboundSfuAttach(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundCircuitR1(const std::string& detail_json);
+  Roe<void> HandleInboundCapsUpdate(const std::string& detail_json);
   Roe<void> HandleInboundPunchOffer(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundPunchAnswer(const std::string& detail_json);
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
@@ -377,6 +390,7 @@ private:
   std::optional<PendingSignalingPunch> pending_signaling_punch_;
   LocalListenMultiaddrsFn local_listen_multiaddrs_;
   LocalPeerCapsFn local_peer_caps_;
+  CallPeerCapsSink call_peer_caps_sink_;
   LocalMeshPeerIdFn local_mesh_peer_id_;
   RegisterPeerListenMultiaddrsFn register_peer_listen_multiaddrs_;
   /** PeerId → advertised media_relay (V030). Absent key = unknown / fail closed. */

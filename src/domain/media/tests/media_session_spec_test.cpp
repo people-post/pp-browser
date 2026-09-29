@@ -1,4 +1,5 @@
 #include "domain/media/CallMediaEngine.h"
+#include "domain/media/IVideoCodec.h"
 
 #include <gtest/gtest.h>
 #include <opus.h>
@@ -6,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -96,6 +98,16 @@ TEST_F(MediaSessionSpecTest, StartSfuIsDuplex) {
   EXPECT_EQ(engine_.HealthSnapshot().stream_count, 1u);
 }
 
+// A muted call (or one without a mic) keeps sending frames of silence: the peer's "no media" check
+// (TX-only escalation) counts frames, not audio level, so it never mistakes a muted user for a
+// broken path.
+TEST_F(MediaSessionSpecTest, MutedCallStillSendsFrames) {
+  ASSERT_TRUE(engine_.StartSfu("call:muted", CountingSend()));
+  engine_.SetMuted(true);
+  const int before = sent_.load();
+  EXPECT_TRUE(WaitFor([&] { return sent_.load() >= before + 3; }, std::chrono::seconds(2)));
+}
+
 TEST_F(MediaSessionSpecTest, InvalidSpecsAreRefused) {
   EXPECT_FALSE(engine_.Start("s", Spec{false, false}, CountingSend())) << "needs a half";
   EXPECT_FALSE(engine_.Start("s", Spec::CaptureOnly(), {})) << "capturing needs a send fn";
@@ -111,6 +123,89 @@ TEST_F(MediaSessionSpecTest, ChangingSpecRebuildsSession) {
   engine_.Stop();
   EXPECT_EQ(engine_.ActiveSpec(), Spec::Duplex()) << "idle reports duplex";
   EXPECT_FALSE(engine_.IsActive());
+}
+
+/** Decode-only stub that counts how many decoders get configured; every decode fails. */
+class CountingDecoder final : public IVideoCodec {
+public:
+  explicit CountingDecoder(std::shared_ptr<std::atomic<int>> configured) : configured_(std::move(configured)) {}
+  std::string BackendName() const override { return "counting-decoder"; }
+  bool HasEncoder() const override { return false; }
+  bool HasDecoder() const override { return has_decoder_; }
+  Roe<void> ConfigureEncoder(int, int, int) override { return Error("no encoder"); }
+  Roe<void> ConfigureDecoder() override {
+    has_decoder_ = true;
+    configured_->fetch_add(1);
+    return {};
+  }
+  Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override { return Error("no encoder"); }
+  Roe<VideoFrameRgba> Decode(const uint8_t*, size_t) override { return Error("broken session"); }
+  void ResetEncoder() override {}
+  void ResetDecoder() override { has_decoder_ = false; }
+
+private:
+  std::shared_ptr<std::atomic<int>> configured_;
+  bool has_decoder_ = false;
+};
+
+// A call decodes the peer's video with a fresh decoder: one kept from an earlier call also kept its
+// broken session, so the phone never showed the Mac's video again (device test 2026-09-29).
+TEST_F(MediaSessionSpecTest, EachCallDecodesPeerVideoWithAFreshDecoder) {
+  auto configured = std::make_shared<std::atomic<int>>(0);
+  engine_.SetVideoCodecFactoryForTest([configured] { return std::make_unique<CountingDecoder>(configured); });
+  CallMediaEngine::SfuPacket video;
+  video.stream_id = 7;
+  video.channel_id = 1;
+  video.payload = {0, 0, 0, 1, 0x65, 0x88};
+
+  ASSERT_TRUE(engine_.StartSfu("call:1", CountingSend()));
+  engine_.OnSfuPacket(video);
+  engine_.OnSfuPacket(video);
+  EXPECT_EQ(configured->load(), 1) << "one decoder per peer stream within a call";
+  engine_.Stop();
+
+  ASSERT_TRUE(engine_.StartSfu("call:2", CountingSend()));
+  engine_.OnSfuPacket(video);
+  EXPECT_EQ(configured->load(), 2) << "the next call must not reuse the last call's decoder";
+}
+
+/** Decode-only stub: every access unit decodes to a 2x2 frame. */
+class FrameDecoder final : public IVideoCodec {
+public:
+  std::string BackendName() const override { return "frame-decoder"; }
+  bool HasEncoder() const override { return false; }
+  bool HasDecoder() const override { return true; }
+  Roe<void> ConfigureEncoder(int, int, int) override { return Error("no encoder"); }
+  Roe<void> ConfigureDecoder() override { return {}; }
+  Roe<EncodedAccessUnit> Encode(const VideoFrameI420&, bool) override { return Error("no encoder"); }
+  Roe<VideoFrameRgba> Decode(const uint8_t*, size_t) override {
+    VideoFrameRgba frame;
+    frame.width = 2;
+    frame.height = 2;
+    frame.rgba.assign(2 * 2 * 4, 0xff);
+    return frame;
+  }
+  void ResetEncoder() override {}
+  void ResetDecoder() override {}
+};
+
+// B58: the UI trusts arriving frames over a peer's roster "camera off"; frames stop → not live.
+TEST_F(MediaSessionSpecTest, RemoteVideoIsLiveOnlyWhileFramesArrive) {
+  engine_.SetVideoCodecFactoryForTest([] { return std::make_unique<FrameDecoder>(); });
+  ASSERT_TRUE(engine_.StartSfu("call:live", CountingSend()));
+  EXPECT_FALSE(engine_.IsRemoteVideoLive(500)) << "no frame yet";
+
+  CallMediaEngine::SfuPacket video;
+  video.stream_id = 7;
+  video.channel_id = 1;
+  video.payload = {0, 0, 0, 1, 0x65, 0x88};
+  engine_.OnSfuPacket(video);
+  EXPECT_TRUE(engine_.IsRemoteVideoLive(500));
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(60));
+  EXPECT_FALSE(engine_.IsRemoteVideoLive(50)) << "no frame within the window";
+  engine_.ClearRemoteVideo();
+  EXPECT_FALSE(engine_.IsRemoteVideoLive(500)) << "cleared (camera off / hard stall)";
 }
 
 } // namespace

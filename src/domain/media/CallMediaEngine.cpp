@@ -4,6 +4,8 @@
 #include "domain/media/CallMediaPlayout.h"
 #include "domain/media/CallRingtone.h"
 #include "domain/media/CameraCaptureOrientation.h"
+#include "domain/media/CaptureStarvePolicy.h"
+#include "common/Metrics.h"
 #include "domain/media/IVideoCodec.h"
 #include "domain/media/MediaDeviceArbiter.h"
 #include "domain/media/NoiseSuppressor.h"
@@ -12,6 +14,8 @@
 
 #include <SDL3/SDL.h>
 #include <opus.h>
+
+#include <optional>
 
 #include <algorithm>
 #include <atomic>
@@ -40,6 +44,9 @@ constexpr int kFrameSamples = kSampleRate * kFrameMs / 1000;
 constexpr int kFrameBytes = kFrameSamples * static_cast<int>(sizeof(int16_t));
 /** Keep ~60 ms queued in the device (spec §1); above ~120 ms skip a slot to shed latency. */
 constexpr int kPlayoutTargetQueuedBytes = 3 * kFrameBytes;
+/** +6 dB on the voice-processing (VPIO) path: the OS attenuates call output there by design and
+ *  the Mac speaker was noticeably quieter than other apps. Soft-kneed, so peaks don't clip. */
+constexpr float kVoicePlayoutGain = 2.0f;
 constexpr int kPlayoutHighWaterBytes = 6 * kFrameBytes;
 /** Never produce more than this many slots per 20 ms wake-up (startup / after a stall). */
 constexpr int kPlayoutMaxSlotsPerTick = 3;
@@ -48,6 +55,12 @@ constexpr int kVideoFps = 20;
 constexpr int64_t kRemoteVideoStallSoftMs = 2000;
 /** Hard stall: drop last frame so the tile does not freeze forever. */
 constexpr int64_t kRemoteVideoStallHardMs = 5000;
+
+/** For Impl, which is not the Module (same channel as CallMediaEngine::log()). */
+logging::Logger& EngineLog() {
+  static logging::Logger log = logging::getLogger("CallMediaEngine");
+  return log;
+}
 
 } // namespace
 
@@ -152,8 +165,12 @@ struct CallMediaEngine::Impl {
   /** Local encoder + remote decoders come from here (platform HW; tests inject a stub). */
   std::function<std::unique_ptr<IVideoCodec>()> make_video_codec = CreatePlatformVideoCodec;
   std::unordered_map<uint32_t, std::unique_ptr<IVideoCodec>> remote_decoders;
+  int video_decode_fail_logs = 0;
   static constexpr size_t kMaxRemoteVideoDecoders = 4;
-  /** Display rotation read on the SetCameraEnabled caller's (UI) thread for the next camera open. */
+  /**
+   * Display rotation read on the UI thread: at SetCameraEnabled (for the open) and live via
+   * UpdateCameraDisplayRotation (per-frame rotation).
+   */
   std::atomic<int> camera_display_rotation{0};
   /** Why the last requested camera did not open; taken by the UI (TakeCameraFailure). */
   std::mutex camera_failure_mu;
@@ -430,13 +447,16 @@ struct CallMediaEngine::Impl {
     waiter.detach();
   }
 
-  /** One playout slot for one track: decode Packet / FEC-on-Gap / PLC-on-Empty into `mix`. */
+  /**
+   * One playout slot for one track: decode Packet / FEC-on-Gap / PLC-on-Empty into `mix`. When the
+   * buffer is over its adaptive target, a first-pass decoded Packet that turns out to be silence is
+   * dropped and a second frame is popped/decoded to catch up by one slot without an audible gap
+   * (adaptive jitter §2).
+   */
   void PopAndDecodeTrackLocked(RemoteAudioTrack& track, std::vector<int16_t>& mix, bool& any) {
     if (!track.decoder) {
       return;
     }
-    const uint64_t underruns_before = track.jitter.underruns();
-    AudioPlayoutPop pop = track.jitter.PopForPlayout();
     std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples), 0);
     const auto plc = [&]() {
       const int n = opus_decode(track.decoder, nullptr, 0, pcm.data(), kFrameSamples, 0);
@@ -446,32 +466,43 @@ struct CallMediaEngine::Impl {
       return n;
     };
     int decoded = 0;
-    switch (pop.kind) {
-    case AudioPlayoutPop::Kind::Packet:
-      decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
-                            kFrameSamples, 0);
-      break;
-    case AudioPlayoutPop::Kind::Gap:
-      // The next packet's in-band FEC (LBRR) only covers the frame right before it; earlier
-      // missing frames of a wider hole are PLC. PLC also if the FEC decode fails.
-      if (pop.fec_usable) {
+    for (int pass = 0; pass < 2; ++pass) {
+      const uint64_t underruns_before = track.jitter.underruns();
+      AudioPlayoutPop pop = track.jitter.PopForPlayout();
+      decoded = 0;
+      switch (pop.kind) {
+      case AudioPlayoutPop::Kind::Packet:
         decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
-                              kFrameSamples, 1);
+                              kFrameSamples, 0);
+        break;
+      case AudioPlayoutPop::Kind::Gap:
+        // The next packet's in-band FEC (LBRR) only covers the frame right before it; earlier
+        // missing frames of a wider hole are PLC. PLC also if the FEC decode fails.
+        if (pop.fec_usable) {
+          decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
+                                kFrameSamples, 1);
+        }
+        if (decoded > 0) {
+          // libopus returns >0 both for a real FEC frame and for a PLC-like frame it synthesises
+          // when the packet carried no FEC data — counting both as fec= is accepted (diagnostic).
+          fec_frames_total.fetch_add(1, std::memory_order_relaxed);
+        } else {
+          decoded = plc();
+        }
+        break;
+      case AudioPlayoutPop::Kind::Empty:
+        // Priming (buffer hasn't reached target depth yet) also returns Empty but is not a real
+        // underrun — only count/PLC it when this pop actually incremented the cumulative counter.
+        if (track.jitter.underruns() > underruns_before) {
+          playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
+          decoded = plc();
+        }
+        break;
       }
-      if (decoded > 0) {
-        // libopus returns >0 both for a real FEC frame and for a PLC-like frame it synthesises
-        // when the packet carried no FEC data — counting both as fec= is accepted (diagnostic).
-        fec_frames_total.fetch_add(1, std::memory_order_relaxed);
-      } else {
-        decoded = plc();
-      }
-      break;
-    case AudioPlayoutPop::Kind::Empty:
-      // Priming (buffer hasn't reached target depth yet) also returns Empty but is not a real
-      // underrun — only count/PLC it when this pop actually incremented the cumulative counter.
-      if (track.jitter.underruns() > underruns_before) {
-        playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
-        decoded = plc();
+      if (pass == 0 && pop.kind == AudioPlayoutPop::Kind::Packet && decoded > 0 && track.jitter.OverTarget() &&
+          IsCatchUpSilence(pcm, static_cast<size_t>(decoded))) {
+        track.jitter.NoteSilenceDrop();
+        continue; // catch up: pop and decode the next frame instead of playing this silent one
       }
       break;
     }
@@ -535,6 +566,7 @@ struct CallMediaEngine::Impl {
             tick_gap_max_ms = 0;
           }
           int slots = out ? PlayoutSlotsLocked(*out) : 1;
+          const bool voice_out = out && out->WithVoiceProcessing([](IVoiceProcessing&) {});
           if (audio_tracks.empty()) {
             slots = 0;  // nothing to pop or put; don't inflate playout_ticks (Pressure window)
           }
@@ -551,6 +583,9 @@ struct CallMediaEngine::Impl {
               pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(ticks, 1)));
             }
             if (out && any) {
+              if (voice_out) {
+                ApplySoftGain(mix, kVoicePlayoutGain);
+              }
               SmoothLevel(remote_output_level, FramePeakLevel(mix.data(), kFrameSamples));
               remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
               (void)out->Write(mix.data(), kFrameBytes);
@@ -719,7 +754,7 @@ struct CallMediaEngine::Impl {
 
   /**
    * Duplex calls take mic + speaker from one OS voice-processing unit (echo cancellation) when the
-   * backend has one (macOS VPIO; the other platforms' backends say "unsupported"); otherwise — or
+   * backend has one (Apple VPIO on macOS / iOS; other platforms say "unsupported"); otherwise — or
    * once disabled for this call — separate leases follow.
    */
   void TryAcquireVoiceDuplex(const SessionSpec& want_spec, const std::string& holder,
@@ -773,6 +808,8 @@ struct CallMediaEngine::Impl {
       OpusEncoder* bitrate_enc = nullptr;
       int64_t applied_audio_bps = 0;
       int64_t last_capture_starve_reopen_ms = 0;
+      // When the audio devices were last (re)opened: voice processing gets a warm-up (B56).
+      int64_t capture_opened_ms = last_capture_pcm_ms;
       // I3: consecutive starvation-triggered reopens while on voice processing; 3 in a row falls
       // back to SDL for the rest of this call. Capture-thread-local.
       int vpio_starve_reopens = 0;
@@ -788,6 +825,7 @@ struct CallMediaEngine::Impl {
             SDL_Log("CallMediaEngine: audio reopen — no capture device; sending silence");
           }
           last_capture_pcm_ms = util::NowUnixMs();
+          capture_opened_ms = last_capture_pcm_ms;
         }
         // The capture thread is mic_lease's only writer while it runs: read it without `mutex`.
         bool device_changed = false;
@@ -827,27 +865,30 @@ struct CallMediaEngine::Impl {
             const size_t samples = static_cast<size_t>(got) / sizeof(int16_t);
             pending.insert(pending.end(), chunk, chunk + samples);
             last_capture_pcm_ms = util::NowUnixMs();
-            if (vpio_on) {
+            // Not on the first PCM after a reopen: a unit that starts and stalls again is still
+            // starving "in a row" — otherwise the SDL fallback below never triggered (B56).
+            if (vpio_on && CaptureStarvePolicy::HealthyAfterOpen(last_capture_pcm_ms - capture_opened_ms)) {
               vpio_starve_reopens = 0;
             }
           }
           if (pending.size() < static_cast<size_t>(kFrameSamples)) {
             const int64_t now = util::NowUnixMs();
             // Wedged capture (got<=0 after AAudio disconnect) used to spin without TX —
-            // peers saw "Your mic isn't sending". After ~500ms, encode silence and reopen.
-            constexpr int64_t kStarveMs = 500;
-            if (got <= 0 && (now - last_capture_pcm_ms) >= kStarveMs) {
+            // peers saw "Your mic isn't sending". After ~500ms, encode silence and reopen (voice
+            // processing: only once it had time to warm up — CaptureStarvePolicy).
+            if (got <= 0 && (now - last_capture_pcm_ms) >= CaptureStarvePolicy::kSilenceAfterMs) {
               if (!muted.load(std::memory_order_relaxed)) {
                 SmoothLevel(local_input_level, 0.f);
               }
-              if (now - last_capture_starve_reopen_ms > 2000) {
+              const int64_t reopen_after_ms = CaptureStarvePolicy::ReopenAfterMs(vpio_on, now - capture_opened_ms);
+              if (now - last_capture_pcm_ms >= reopen_after_ms && now - last_capture_starve_reopen_ms > 2000) {
                 last_capture_starve_reopen_ms = now;
                 SDL_Log("CallMediaEngine: capture starved %lldms — requesting reopen",
                         static_cast<long long>(now - last_capture_pcm_ms));
                 audio_reopen_requested.store(true, std::memory_order_release);
                 // I3: persistent voice-processing capture starvation (not just a starved SDL
                 // device) falls back to SDL for the rest of this call after 3 reopens in a row.
-                if (vpio_on && ++vpio_starve_reopens >= 3) {
+                if (vpio_on && ++vpio_starve_reopens >= CaptureStarvePolicy::kVoiceMaxReopens) {
                   vpio_disabled_for_call.store(true, std::memory_order_release);
                   SDL_Log("CallMediaEngine: vpio capture starved 3x — using SDL for this call");
                 }
@@ -1018,14 +1059,33 @@ struct CallMediaEngine::Impl {
 
   /** Video thread only: orient + crop → preview; encode → send on channel 1. */
   void EncodeAndSend(VideoFrameRgba captured, const CameraGeometry& geometry, bool& need_keyframe) {
-    const VideoFrameRgba oriented = OrientFrame(std::move(captured), geometry.rotate_cw);
+    // Rotation follows the display turning mid-call (iOS: the phone's physical orientation); the
+    // encode size stays the one chosen at open — ScaleCenterCropRgba cover-crops the rest.
+    const CameraCaptureTransform opened{.rotate_cw = geometry.rotate_cw,
+                                        .encode_width = geometry.encode_width,
+                                        .encode_height = geometry.encode_height,
+                                        .front_facing = geometry.front_facing};
+    const int rotate_cw = CameraFrameRotateCw(opened, camera_display_rotation.load(std::memory_order_relaxed));
+    // The local preview is drawn on this device's screen, which turns with the phone: keep it
+    // upright relative to the screen (only differs from the sent frame when the phone is turned).
+    const int preview_rotate_cw = CameraPreviewRotateCw(opened);
+    if (preview_rotate_cw != rotate_cw) {
+      VideoFrameRgba preview_fitted;
+      if (ScaleCenterCropRgba(OrientFrame(captured, preview_rotate_cw), geometry.encode_width,
+                              geometry.encode_height, preview_fitted)) {
+        PublishLocalPreview(preview_fitted);
+      }
+    }
+    const VideoFrameRgba oriented = OrientFrame(std::move(captured), rotate_cw);
     VideoFrameRgba fitted;
     VideoFrameI420 i420;
     if (!ScaleCenterCropRgba(oriented, geometry.encode_width, geometry.encode_height, fitted) ||
         !RgbaToI420(fitted.rgba.data(), fitted.width, fitted.height, fitted.width * 4, true, i420)) {
       return;
     }
-    PublishLocalPreview(fitted);
+    if (preview_rotate_cw == rotate_cw) {
+      PublishLocalPreview(fitted);
+    }
     if (!video_codec || !video_codec->HasEncoder()) {
       return;
     }
@@ -1064,14 +1124,29 @@ struct CallMediaEngine::Impl {
     CameraGeometry geometry;
     bool need_keyframe = true;
     int64_t applied_bps = 0;
+    // Camera start timing (video start took 4-6 s on device, 2026-09-29): request → lease (device
+    // thread queue + open) → first frame. Steady clock: an NTP step must not skew it (cf. M6).
+    std::optional<std::chrono::steady_clock::time_point> camera_requested;
+    int64_t camera_lease_ms = 0;
+    auto ms_since = [](std::chrono::steady_clock::time_point t) {
+      return static_cast<int64_t>(
+          std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count());
+    };
     while (video_running.load()) {
       if (video_need_keyframe.exchange(false, std::memory_order_acq_rel)) {
         need_keyframe = true;
       }
       const bool wanted = camera_enabled.load(std::memory_order_relaxed);
+      if (!wanted) {
+        camera_requested.reset();
+      }
       if (wanted && !camera) {
+        if (!camera_requested) {
+          camera_requested = std::chrono::steady_clock::now();
+        }
         camera = OpenCameraLease();
         if (camera) {
+          camera_lease_ms = ms_since(*camera_requested);
           geometry = camera->Geometry();
           ConfigureLocalEncoder(geometry);
           applied_bps = 0;
@@ -1095,6 +1170,10 @@ struct CallMediaEngine::Impl {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
         continue;
       }
+      if (camera_requested) {
+        MetricsLine("camera.start").Add("lease_ms", camera_lease_ms).Add("first_frame_ms", ms_since(*camera_requested)).Emit();
+        camera_requested.reset();
+      }
       EncodeAndSend(std::move(*frame), geometry, need_keyframe);
       const auto elapsed = std::chrono::steady_clock::now() - t0;
       if (elapsed < frame_period) {
@@ -1113,11 +1192,16 @@ struct CallMediaEngine::Impl {
     }
     // Decoded at playout (packet-level jitter buffer: FEC on a gap needs the next packet).
     const int64_t recv_ms = util::NowUnixMs();
+    // Monotonic clock for the jitter estimator (AudioPacket.recv_ms): a wall-clock (NTP) step
+    // would otherwise look like packet lateness (M6). rx_age / health still compare wall clock.
+    const int64_t recv_mono_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::steady_clock::now().time_since_epoch())
+                                      .count();
     ++track->rx_frames;
     track->last_rx_ms = recv_ms;
     AudioPacket packet;
     packet.seq = seq;
-    packet.recv_ms = recv_ms;
+    packet.recv_ms = recv_mono_ms;
     packet.payload.assign(reinterpret_cast<const uint8_t*>(data), reinterpret_cast<const uint8_t*>(data) + size);
     track->jitter.Push(std::move(packet));
     rx_audio_frames.fetch_add(1, std::memory_order_relaxed);
@@ -1159,11 +1243,11 @@ struct CallMediaEngine::Impl {
     }
     auto decoded = decoder->Decode(reinterpret_cast<const uint8_t*>(data), size);
     if (!decoded) {
-      static int logged_decode = 0;
-      if (logged_decode < 5) {
-        ++logged_decode;
-        SDL_Log("CallMediaEngine: remote H264 decode failed: %s (size=%zu)",
-                decoded.error().message.c_str(), size);
+      // In the app log (SDL_Log never reaches the phone's log file), a few per call.
+      if (video_decode_fail_logs < 5) {
+        ++video_decode_fail_logs;
+        EngineLog().warning << "remote H264 decode failed stream=" << stream_id << " size=" << size << ": "
+                      << decoded.error().message << " call=" << call_id;
       }
       NoteVideoRefreshNeeded(stream_id);
       return;
@@ -1434,6 +1518,12 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
       s.last_rx_ms = track->last_rx_ms;
       s.peak_level = track->peak_level;
       h.streams.push_back(s);
+      h.jitter_target_ms = std::max(h.jitter_target_ms,
+                                     static_cast<int64_t>(track->jitter.TargetFrames()) * AudioJitterBuffer::kFrameMs);
+      h.jitter_depth_ms = std::max(h.jitter_depth_ms,
+                                    static_cast<int64_t>(track->jitter.size()) * AudioJitterBuffer::kFrameMs);
+      h.jitter_silence_drops += track->jitter.silence_drops();
+      h.jitter_speech_drops += track->jitter.speech_drops();
     }
   }
   return h;
@@ -1461,6 +1551,10 @@ void CallMediaEngine::Stop() {
     impl_->sfu_mode = false;
     impl_->capture_running = false;
     impl_->playout_running = false;
+    // Each call decodes with fresh decoders: one kept across calls also kept a broken session, and
+    // the cap of kMaxRemoteVideoDecoders counted every peer ever seen.
+    impl_->remote_decoders.clear();
+    impl_->video_decode_fail_logs = 0;
   }
   abandoned_send = nullptr;
   // Drain capture/video still inside (*sfu_send) after Detach unblocked BlockingWrite.
@@ -1538,6 +1632,10 @@ Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled, const int display_rota
   return {};
 }
 
+void CallMediaEngine::UpdateCameraDisplayRotation(const int display_rotation_deg) {
+  impl_->camera_display_rotation.store(display_rotation_deg, std::memory_order_relaxed);
+}
+
 std::optional<std::string> CallMediaEngine::TakeCameraFailure() {
   std::lock_guard lock(impl_->camera_failure_mu);
   if (impl_->camera_failure.empty()) {
@@ -1564,6 +1662,14 @@ bool CallMediaEngine::IsRemoteVideoStalling() const {
   }
   const int64_t age = util::NowUnixMs() - last;
   return age >= kRemoteVideoStallSoftMs && age < kRemoteVideoStallHardMs;
+}
+
+bool CallMediaEngine::IsRemoteVideoLive(const int64_t within_ms) const {
+  if (!impl_->has_remote_video.load(std::memory_order_relaxed)) {
+    return false;
+  }
+  const int64_t last = impl_->last_remote_video_ms.load(std::memory_order_relaxed);
+  return last > 0 && util::NowUnixMs() - last < within_ms;
 }
 
 bool CallMediaEngine::EverHadRemoteVideo() const {

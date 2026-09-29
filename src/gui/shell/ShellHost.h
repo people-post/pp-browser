@@ -213,6 +213,7 @@ public:
   static void PinGateIdentityNewCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void PinGateIdentityLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CallAcceptCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CallAcceptVoiceCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CallAcceptChargeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CallDeclineCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CallLeaveCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);

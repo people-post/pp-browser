@@ -11,6 +11,19 @@ function(pp_browser_add_feature_library target)
   pp_browser_apply_warnings(${target})
 endfunction()
 
+# Headless feature module (shared with pp-node): links only what it names — no pp_base, so no
+# UI / media domains ride along. pp-node's link allowlist (PpBrowserNoUiDeps) accepts these.
+function(pp_browser_add_headless_feature_library target)
+  cmake_parse_arguments(ARG "" "" "SOURCES;PUBLIC_LIBS;PRIVATE_LIBS" ${ARGN})
+  add_library(${target} STATIC ${ARG_SOURCES})
+  target_include_directories(${target} PUBLIC ${CMAKE_SOURCE_DIR}/src)
+  target_link_libraries(${target} PUBLIC pp_pbr_common ${ARG_PUBLIC_LIBS})
+  if(ARG_PRIVATE_LIBS)
+    target_link_libraries(${target} PRIVATE ${ARG_PRIVATE_LIBS})
+  endif()
+  pp_browser_apply_warnings(${target})
+endfunction()
+
 function(pp_browser_add_feature_folder_tests lib_target test_target)
   cmake_parse_arguments(ARG "" "" "EXTRA_SOURCES;PRIVATE_DEFINITIONS;LINK_LIBS" ${ARGN})
   if(NOT PP_BROWSER_BUILD_TESTS)

@@ -11,8 +11,9 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "feature/calls/CallMediaSeat.h"
-#include "domain/mesh/l4/media_relay/MediaRelayAttach.h"
+#include "domain/mesh/media_plane/MediaRelayAttach.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 #include "common/Error.h"
 #include "common/Module.h"
@@ -208,6 +209,7 @@ public:
   };
 
   CallHopMigrateWorkflow(CallSessionStore& sessions, CallMediaEngine& media);
+  ~CallHopMigrateWorkflow() override;
 
   void SetHostPorts(CallHopMigrateHostPorts ports);
   void SetArmingPorts(CallHopMigrateArmingPorts ports);
@@ -314,6 +316,8 @@ private:
   GuestSfuSession guest_;
   PublisherStreams publishers_;
   SfuSurface sfu_;
+  /** Coordinator timers (re-fan-out, settle, reattach backoff) drop once we are gone. */
+  DeferredSelf timers_self_;
 };
 
 } // namespace pbr

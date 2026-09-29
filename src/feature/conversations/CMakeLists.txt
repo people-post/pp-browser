@@ -31,11 +31,12 @@ pp_browser_add_feature_library(pp_feature_conversations
     ProfileIconFetch.cpp
     PushDeviceCoordinator.cpp
     LinkDeviceCoordinator.cpp
-    RegistrationClient.cpp
     RelayDirectoryKemKeyResolver.cpp
     RelayDirectorySigningKeyResolver.cpp
     RelayReceivePipeline.cpp
   PUBLIC_LIBS
+    pp_feature_registration
+    pp_feature_node
     pp_feature_calls
     pp_feature_broadcast
     pp_foundation_crypto

@@ -122,7 +122,7 @@ crypto
 | `domain/people/` | Identity and contacts stores; presentation DTOs; registration classify (`RegistrationStatus`) |
 | `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; pure call planner gates (`Call*Logic`); attachment prepare; **also hosts Content CAS for now** (`CasStore` / attachment CAS I/O — [C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner); peel to `domain/content` at P3/P4) |
 | `domain/net/` | HTTP client, service clients (no people/messaging policy) |
-| `domain/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators — [MESH.md](MESH.md) |
+| `domain/mesh/` | Product Amp glue: host, ports, reachability, L4 coordinators; one `pp_domain_mesh_<folder>` library per folder, layered — [MESH.md § Folder libraries](MESH.md#folder-libraries) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
 | `domain/ai/` | LLM client, turn types, parsers, payload plan builder; `conversation/`, `mcp/` sublibs |
 | `domain/ui/` | Product shell: theme, catalogs, input, context menu, `ShellLayout`, `ShellInterruption`, `ShellGestureAxis`, calendar/form helpers, `UiEditSession`, chat widget config builders |
@@ -133,7 +133,7 @@ Module maps: [`src/foundation/README.md`](../../src/foundation/README.md), [`src
 
 **Domain rule:** `net` must not link `people`/`messaging`; `ai` must not link concrete messaging stores; cross-peer needs go through `common` contracts and `feature` wiring.
 
-Amp L1–L3 + link are FetchContent [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp) targets (`pp_amp_l1` … `pp_amp_link`). Product mesh glue is `pp_domain_mesh`. See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
+Amp L1–L3 + link are FetchContent [`pp-cpp-amp`](https://github.com/people-post/pp-cpp-amp) targets (`pp_amp_l1` … `pp_amp_link`). Product mesh glue is `pp_domain_mesh` (an aggregate of its folder libraries). See [projects/adp/STACK.md](../../projects/adp/STACK.md) and [MESH.md](MESH.md).
 
 ## Lib subtree (`src/lib/`)
 
@@ -173,6 +173,10 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 | `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
 | `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer workflow; never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
 | `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
+| `feature/registration/` | Registration finish / renew / nickname (`pp_feature_registration`) — **headless**, linked by pp-node |
+| `feature/node/` | Node-role mesh services (`pp_feature_node`): hosting from capabilities, DHT / directory config, self row, org-seed admission — **headless**, shared by pp-node and desktop `MeshRole::Node` |
+
+**Headless modules** (`registration`, `node`) use `pp_browser_add_headless_feature_library` (no `pp_base`) and build in `PP_BROWSER_HEADLESS` configures. pp-node's link closure is an allowlist ([BUILD.md § Headless mesh node](../ops/BUILD.md#headless-mesh-node-pp-node)). `src/app/node/` stays thin (main, bootstrap, env overlay, status HTTP); lab / smoke probes live in `src/app/node/tools/`.
 
 Feature module libraries stay acyclic. Conversations invoke AI through `AgentInboundPorts` (app-filled); `pp_feature_conversations` does not link `pp_feature_ai`. Calls invoke delivery through `CallDeliveryPorts` (hub-filled); `pp_feature_calls` does not include conversations:
 
@@ -181,6 +185,7 @@ settings
 ai/tools → ai/bindings → ai
 calls
 conversations → calls
+conversations → registration, node   (headless; they include no other feature module)
 ```
 
 ## GUI subfolders
@@ -254,6 +259,19 @@ When a type lives in a **legal dependency** (same layer / lower layer / allowed 
 Examples: feature/app headers that hold `SessionStore*` should `#include "foundation/data/SessionStore.h"`, not `class SessionStore;`. Do **not** forward-declare lower-layer types just to keep a header “lean.”
 
 Still keep headers focused: avoid pulling unrelated heavy trees when a small `*Types.h` / ports header already exists (e.g. `SettingsCommands`, `ChatSessionPorts`).
+
+### L4 protocols: `serve/` and `client/`
+
+An Amp L4 protocol folder in `src/domain/mesh/` (`l4/<protocol>/`, `dht/`, `discovery/`, `reachability/dial_back/`, `reachability/punch/`) keeps **shared wire types and pure decisions at its root** and splits the two ends of the protocol into sub-folders, so node-side code is easy to tell from the attaching side:
+
+| Folder | Holds | Naming |
+|--------|-------|--------|
+| `<protocol>/` | Wire types, frame codecs, pure decision logic both ends use | `<Protocol>Types.h`, `<Protocol>Logic.*` |
+| `<protocol>/serve/` | The side that answers inbound requests (what a node hosts) | `<Protocol>Server` (+ its state machines) |
+| `<protocol>/client/` | The side that dials out and uses the service | `<Protocol>Client` (request / response), `<Protocol>ClientCoordinator` (session state), `I<Protocol>Client` / `Amp<Protocol>Client` (port + adapter) |
+| `<protocol>/Amp<Protocol>` | Only when both ends share state — DHT record store, directory config, punch candidate addresses: a thin owner that composes the server and client | `AmpDhtProtocol`, `AmpDirectoryProtocol`, `AmpPunchCoordinator` |
+
+Say **serve / server** for the answering side — not "host" (MeshHost, host sessions and `host_*` flags already mean other things). A client may use a co-located server directly (e.g. the media_relay local hop); the server never reaches into the client. Otherwise `MeshHost` owns the two ends directly (media_relay, circuit, dial-back). `call_media` is not split: both ends of a 1:1 media leg are peers running the same session.
 
 ### Free-function module names
 

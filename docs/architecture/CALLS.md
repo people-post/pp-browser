@@ -184,6 +184,41 @@ flowchart TB
 
 ---
 
+## Call media paths (1:1 — call-path-resilience)
+
+A 1:1 call's media rides a **path**: control + media channels bound on one link to the peer, either direct (ADP, dialed or punched) or relayed (a nested link over a circuit carrier). The call keeps a small **path set** and moves between paths without restarting — `CallMediaLegCoordinator` (domain/mesh) owns it; `CallMediaBridge` (feature/calls) decides when to ask. Wire: [AMP-CHANNEL.md § Path migration / § Path liveness and failover](../contracts/AMP-CHANNEL.md#path-migration-make-before-break--call-path-resilience-k3). Decisions: [projects/call-path-resilience/DECISIONS.md](../../projects/call-path-resilience/DECISIONS.md).
+
+| Path | Meaning |
+|------|---------|
+| **active** | TX goes here; RX is taken from every path of the call (transport-side seq de-dupe) |
+| **candidate** | Being brought up by a migration (make-before-break) |
+| **retiring** | The previous active path, drained until the driver's `path_release` is acknowledged |
+| **standby** | A warm fallback path (bound channels, 10 s heartbeat) — relayed preferred. Either what a migration left behind, or added on purpose: the offerer of a call Live on a direct / punched path adds a relayed one (`path_add`, K003 — best-effort, a loaded relay refuses the least needed first) |
+
+| Situation | Behaviour | Home |
+|-----------|-----------|------|
+| Relayed call, a direct link to the peer is Connected | The glare winner (offerer) migrates onto it (10 s backoff; never back onto the direct link the call left) | `MaybeAutoMigrate` |
+| Relayed call, Live | The offerer punches for a direct link at +3 / +20 / +60 s, the circuit's relay as introducer; a landed punch is picked up by the row above | `CallMediaBridge::ArmDirectUpgrade` → `PeerReachCoordinator::UpgradeToDirect` |
+| TX-only (no frames arriving — a muted mic still sends silence frames) | Migrate onto a circuit under the live call; break-before-make escalation only if that fails | `EscalateTxOnlyViaCircuit` / `EscalateBreakBeforeMake` |
+| Active link lost, or 1.5 s silent from a heartbeating peer | TX onto the standby at once; the peer follows its `active` heartbeat | `FailOverToStandby` |
+| Active lost, no standby, peer still Connected on another link (dual-dial election after a simultaneous punch) | Quiet rebind: the offerer migrates there; nothing is reported unless it has not landed in 1 s (K011) | `EnterPathLost` |
+| No path at all | `Reconnecting…` (planner `Reconnecting`, lifecycle `CallMediaStatus::Reconnecting`, timer runs on) for 30 s while the offerer re-anchors (reach + migrate); then the call fails | `CallMediaBridge::Reanchor` |
+| The device's network changed (k5) | Amp probes every link and drops the dead ones within 2 s (so the rows above fire at once); a reconnecting call re-anchors once links settled; a relayed call's upgrade punches start over ([MESH.md § Local network change](MESH.md#local-network-change-call-path-resilience-k5)) | `CallMediaBridge::OnLocalNetworkChanged` |
+
+**Voice / video answer ([V051](../../projects/p2p-av-calls/DECISIONS.md#v051--voice-or-video-answer-video-calls-start-with-the-camera-on)).** `call_accept` may carry `video_allowed: false`, written only when the callee answers a video call as voice. A missing field means unchanged; the field never widens. The callee narrows its own session; the caller narrows the call only for a call started from a direct thread (no `origin_group_id`). Video calls turn the local camera on once media connects — held while the camera button would be hidden, and on the caller while the answer is only implicit (B30).
+
+**Mobility and pair policy (k6).** Each end classifies itself `stationary | mobile | unknown` (`MobilityClassifier`: cellular or metered attachment → mobile at once; three attachment / observed-address changes in 10 min → mobile; back to stationary after 5 min calm; K004) and advertises it as `caps.mobility` on `call_invite` / `call_accept` (no `caps.v` bump; missing → unknown, K005). A mid-call flip is sent as `call_caps_update` `{call_id, identity, caps}` (additive plumbing — old peers ignore it). Both ends compute the same `CallPathPolicy` from the two classes (`DecideCallPathPolicy`, K013):
+
+| Pair | Call-start punch (answerer's Await) | Upgrade punches | Relay | Standby priority |
+|------|------|------|------|------|
+| Stationary / Stationary | yes | yes | standby | low (direct), medium (punched) |
+| any Unknown, no Mobile | yes | yes | standby | high |
+| any Mobile | no — waits for the offerer's circuit | no | **anchor** (the call stays relayed) | high |
+
+Override (dogfood / lab): config `mesh.mobility` (`auto | stationary | mobile`) or `--mobility=`. Owner: `CallStack` (classifier + per-call remote classes, fed by `NetworkMonitor` and the hub's observed-address changes); consumers: `CallMediaBridge` (upgrade, relay standby, reach `allow_punch`).
+
+Product surface: `on_path_changed` → planner `PathMigrated` (Live stays Live; the path label follows the bound link), `on_path_lost` → `Reconnecting`. Roles: the offerer is the glare winner and drives; a bundle born from the peer's hello takes the complementary role. Lab coverage: hard-w5 Phase-9 UPGRADE (relayed → direct → blackholed → relayed standby), Phase-10 PUNCH, Phase-11 FLIP (address change mid-call → failover onto the added relay standby) and Phase-12 MOBILE (a pinned mobile end keeps a punchable call on the relay) ([HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md)).
+
 ## Topology rules (V021 + V026 + V038)
 
 | Joined N | Media path (target) | Notes |
@@ -193,6 +228,7 @@ flowchart TB
 | **≥3** | **SFU** via `media_relay` hop | Soft-migrate same `call_id`; sticky initiator picks hop (re-pick: epoch coordinator); circuit may still reach the hop |
 
 - Soft-migrate on 2→3: keep session/roster/key epoch; tear down 1:1 call-media after SFU attach.
+- **Monotonic group topology ([V050](../../projects/p2p-av-calls/DECISIONS.md#v050--group-call-topology-11-first-planned-hop-monotonic)):** planners arm on **joined** count on every side (ringing never arms the hop); the first accept is direct 1:1, the third join migrates onto the **planned hop** chosen at StartCall from the invite list (one adjustment if an accept reported it unreachable); later joins re-pick only when the hop is full or unreachable for the newcomer; nobody leaving triggers re-evaluation (N→2 stays on the hop). The earliest-joined remaining participant owns re-picks after the initiator leaves.
 - Mid-call guest without a hop: refuse or eject — do **not** leave invitee on Connecting while existing peers stay on direct media.
 - Auto `media_relay` attach is **group-only**; 1:1 undialable recovery is Amp dial / punch / circuit (V025/V038).
 - **Hop dial:** SoftMigrate needs stack dialability — [media-hop-reachability](../../projects/media-hop-reachability/) (Amp mesh, H001/H007; punch H009).
@@ -278,7 +314,7 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
 | 1:1 phase / ring / listen desire | `feature/messaging` | **`CallLifecycle`** | Sole phase owner; see [Ringing handling](#ringing-handling) |
 | 1:1 Amp dial + connect-fail / Retry | `feature/messaging` | **`CallMediaBridge`** (`CallDirectPath`) | Direct path under seat token |
 | Soft-migrate / attach-wait / hop pick | `feature/messaging` | **`CallTopologyController`** (`CallHopPath`) | Hop path under seat token |
-| N→planner select (pure) | `domain/messaging` | **`CallMediaPlannerSelectLogic`** | Effective N; arm Hop vs Direct; relay-cap SoftMigrate nudge gates |
+| N→planner select (pure) | `domain/messaging` | **`CallMediaPlannerSelectLogic`** | Joined N (V050); arm Hop vs Direct; relay-cap SoftMigrate nudge gates |
 | Direct planner Apply (V039) | `feature/calls` | **`CallMediaBridge`** + **`CallDirectPlannerLogic`** (`domain/messaging`) | Schedule/Key/Connect/TX-only/Release; health timer |
 | Hop planner Apply (V039) | `feature/calls` | **`CallTopologyController`** + **`CallHopPlannerLogic`** (`domain/messaging`) | SoftMigrate/attach-wait/inbound SFU; attach-wait timer |
 | Media keys wrap/unwrap | `feature/messaging` | `CallMediaKeyStore` | Unchanged |
@@ -391,7 +427,7 @@ Session manager asks: “joined count is now N — what media action?”
 Responsibilities:
 
 - `StartMediaAsOfferer` / `Answerer` + `Schedule*`
-- Builds the connect request (bundle params + link request) and hands it to the owned [`CallMediaConnectCoordinator`](../../src/feature/calls/CallMediaConnectCoordinator.h), which per attempt asks [`PeerReachCoordinator`](../../src/domain/mesh/reachability/PeerReachCoordinator.h) for a link and opens the bundle on it (hello/ack, AEAD Opus)
+- Builds the connect request (bundle params + link request) and hands it to the owned [`CallMediaConnectCoordinator`](../../src/feature/calls/CallMediaConnectCoordinator.h), which per attempt asks [`PeerReachCoordinator`](../../src/domain/mesh/reach/PeerReachCoordinator.h) for a link and opens the bundle on it (hello/ack, AEAD Opus)
 - Call-side hooks only: offerer media-key resend before each attempt, path label, commit Connected / surface ConnectFailed when the sequence finishes; `exclude_direct` after TX-only
 - `ReleaseDirectTransport` on soft-migrate (keep engine capture for SFU)
 
@@ -435,6 +471,11 @@ These are architectural, not one-off hacks.
 | Dual call-media dial (offerer fallback + late reverse-dial) | Connecting forever; Critical hello/ack deadlock; shutdown segfault | Offerer grace ≥ dial budget; async hello on host io_context; inbound MediaKey fill on worker with **cancelable wait** (`CallMediaConnectCoordinator`; notify on key/teardown — no bare sleep); handshake deadline + `reset()` on timeout/Detach (do not trust peer); one-stream adopt; reject inbound while outbound hello (`offerer_glare` / HelloOutbound); `ClearInboundHandler` on teardown — **home:** call-media session SM ([SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) / V033 s2a) |
 | SoftMigrate ReleaseDirect vs duplex EOF | Local Detach then `on_failed` / ConnectFailed | Intentional Detach sets Detaching/Idle first; late `Fail` ignored when already detaching — bridge still suppresses ConnectFailed when SFU expected |
 | Seat Live vs TX-only | Connected chrome with no RX | Direct `DegradedTxOnly` / `TxOnlyGraceExpired` + circuit escalate; health NoAudio overrides Connected (V037/V039) |
+| Simultaneous punch → dual-dial election drops the call's link | `Reconnecting…` flash on a healthy call | Quiet rebind onto the surviving link, loss reported only after 1 s ([K011](../../projects/call-path-resilience/DECISIONS.md)) |
+| Answerer's hello reaches the offerer before its own media starts | Offerer joins that bundle with the default answerer role → nobody drives migrations | Hello-born bundle takes the complementary role; a joining local leg stamps its own ([K011](../../projects/call-path-resilience/DECISIONS.md)) |
+| New path dies right after a switch (dual-dial election after an upgrade punch) | Call pathless while the path it left is still retiring; every re-anchor refused ("migration in progress") | Fall back onto the retiring path; the auto-migrate backoff is cleared so the winning direct link is taken before it idles out (K013) |
+| Inbound placeholder keyed by channel id | Placeholder on one link collided with channel 1 on the next link → use-after-free | Placeholder key is unique per bundle (leg id + channel) |
+| Channel closed by a send on the media thread | Lock-order inversion with the IO pump (coordinator `mu` ↔ link manager) | Close handling always posted to the IO strand (`PostChannelClosed`) |
 
 ### Transport + planner machines (V033 / V039 / N026)
 
@@ -485,8 +526,8 @@ Landed (behavior-preserving + who-picks fix):
 | `src/feature/calls/CallTopologyHostPorts.h` | CSM→Topology HostPorts (V046); Topology projects migrate subset to Workflow |
 | `src/feature/calls/CallStack.*` | Private `Make*Ports` adapters close over Lifecycle / Bridge / Seat |
 | `src/feature/calls/CallTopologyRelayDeps.h` | `CallTopologyMediaRelayDeps` (hop pick wiring); includes the neutral ports below |
-| `src/domain/mesh/reachability/MeshReachPorts.h` | `IDialRegistry` + `PeerSessionDialRegistry`, `ICircuitHopReach` (link / service reach — [media-client-layers L008](../../projects/media-client-layers/DECISIONS.md)) |
-| `src/domain/mesh/l4/media_relay/IMediaRelayClient.h`, `MediaRelayAttach.*` | `media_relay` client surface; `AttachToMediaRelayAsync` = service reach → quote → quote gate → AcceptAndAttach, shared by the group joiner and (later) broadcast |
+| `src/domain/mesh/reach/MeshReachPorts.h` | `IDialRegistry` + `PeerSessionDialRegistry`, `ICircuitHopReach` (link / service reach — [media-client-layers L008](../../projects/media-client-layers/DECISIONS.md)) |
+| `src/domain/mesh/l4/media_relay/client/IMediaRelayClient.h`, `MediaRelayAttach.*` | `media_relay` client surface; `AttachToMediaRelayAsync` = service reach → quote → quote gate → AcceptAndAttach, shared by the group joiner and (later) broadcast |
 | `src/domain/messaging/CallMediaKeyStore.*` | Epoch key wrap |
 | `src/gui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |
 | `src/domain/media/CallMediaEngine.*` | Opus/H264/SDL capture; libp2p/SFU packet transport |

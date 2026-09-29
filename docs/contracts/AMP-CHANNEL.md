@@ -170,9 +170,36 @@ One call attempt = **`call_id`-keyed control + media channel pair** on an existi
 | Outbound / inbound control | Reliable `RealtimeControl` | JSON hello / hello_ack (provisional dual-dial may have both briefly) |
 | Media | BestEffort `Realtime` | length-prefixed AEAD frames (same crypto as libp2p path) |
 
-**Glare (dual offerer dial):** when both peers negotiate the same `call_id`, the **higher base58 PeerId** keeps outbound control; the lower PeerId abandons outbound (`CloseQuiet`) and adopts inbound. Rejected inbound receives `hello_ack` with `"error":"glare"`. Close of a non-winning inbound during `OutboundHello` must not tear down the winning outbound — see [A021](../../projects/adp/DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime).
+**Glare (dual offerer dial):** when both peers negotiate the same `call_id`, the **glare winner** keeps outbound control — the offerer beats the answerer; equal roles fall back to the **higher base58 PeerId** (`LocalWinsCallMediaGlareForRoles`). The loser abandons outbound (`CloseQuiet`) and adopts inbound. Rejected inbound receives `hello_ack` with `"error":"glare"`. Close of a non-winning inbound during `OutboundHello` must not tear down the winning outbound — see [A021](../../projects/adp/DECISIONS.md#a021--call-media--channel-bundle-on-meshruntime).
 
 Admit rules are pure (`CallMediaBundleLogic`); L4 runs on **`MeshRuntime`** io thread.
+
+A second `hello` for a call that is already live is refused (`hello_ack` `"error":"busy"`) on its **own** channel; the live bundle's channels are never touched.
+
+### Path migration (make-before-break — call-path-resilience k3)
+
+A live call can move to another Connected link to the same peer (e.g. a punched direct link while it runs on a relay carrier, or onto a relay carrier when the direct path stops delivering). Either end may start one; when both do at once the **glare winner**'s goes ahead and the other end yields (abandons its own, answers the winner's). A `migrate` arriving while this end already accepted one, or is still releasing an old path, is refused `busy`. Frames are link-portable (the AEAD AAD carries no path term), so no re-key.
+
+| Step | Channel | Message |
+|------|---------|---------|
+| 1 | new outbound control on the candidate link | `{"v":1,"type":"migrate","call_id":…,"media_epoch":…,"path_gen":n+1}` |
+| 2 | same | `{"v":1,"type":"migrate_ack","ok":true,"path_gen":n+1}` — or `ok:false`, `error` ∈ `no live call` / `media_epoch` / `busy` / `path_gen` / `same path` / `link gone` |
+| 3 | new media channel on the candidate link (driver opens it) | — each side switches TX to the new path when its end of this channel is bound; RX accepts every path of the call (seq de-dupe per media channel) |
+| 4 | new control (driver → peer) | `{"v":1,"type":"path_release","path_gen":n}` once media arrived on the new path and ≥ 1 s passed (≤ 5 s) |
+| 5 | same | `{"v":1,"type":"path_release_ack","path_gen":n}` — both close the old path's channels; closes on a released / retiring path are never failures |
+
+The call stays on its path when the candidate fails before step 3: `migrate_ack` refusal, the candidate link or channel lost, or **no answer in 5 s** — a peer from before k3 ignores the unknown `type`. If the new path dies **after** step 3 but before step 5 (a punched link lost to the dual-dial election a moment after the switch), both ends go back onto the retiring path — it is still bound and alive — and report the change like any failover. A lost candidate link, or such a fall-back, lets the driver's automatic relayed → direct move try another direct link at once (the lost one cannot be retried; an unused cold link lives only ~5 s). `path_gen` counts paths within the call (0 = the one it started on).
+
+### Path liveness and failover (call-path-resilience k4)
+
+- **Heartbeat** on each path's control channel (either direction): `{"v":1,"type":"hb","active":true}` every 500 ms on the sender's active path, `{"v":1,"type":"hb"}` every 10 s on its standby. Anything received on a path (heartbeat, control, media) proves it alive. Older peers ignore the type.
+- **Standby:** a released path (step 5) stays bound as the call's warm **standby** instead of closing — one per call, a relayed one preferred.
+- **Failover** (no handshake — the standby's channels are bound and RX takes every path): TX moves to the standby when the active path's link is lost, or when it has been silent **1.5 s** while the peer is known to heartbeat (a muted mic still heartbeats and sends silence frames). A standby silent 25 s is not taken. After a failover, silence alone does not switch again for 3 s.
+- **Follow:** an `active:true` heartbeat arriving on this end's standby means the peer moved there — this end switches too.
+- **No path left** (active link lost, no standby): the call is kept — MediaReady on a dead path — for a **30 s reconnect window**. A `migrate` onto any new link to the peer (the offerer reaches it again) brings it back; the window running out fails the call. A fresh `hello` for the same call (a peer from before k4 re-dialing) replaces the reconnecting bundle.
+- **Quiet rebind** (k7): when the path is lost while the peer is still Connected on another link (typically a simultaneous punch: both ends' associations came up and the dual-dial election dropped the one the call had bound), the glare winner migrates onto that link at once and the loss is not reported. The product hears of it (`on_path_lost` → `Reconnecting…`) only if the call is still without a path **1 s** later. The lost path leaves nothing behind: no retiring or standby entry.
+- **Standby add** (k6, K003): `{"v":1,"type":"path_add","call_id","media_epoch","path_gen"}` runs the migration handshake (`migrate_ack`, media channel) but the new path becomes the call's **standby** — TX stays on the active path, nothing is released. Refused (`migrate_ack` `ok:false`, `standby present`) when the call has a standby already; a peer without k6 ignores the unknown type, the add times out (5 s) and the call is unchanged. The offerer adds a relayed standby to a call Live on a direct / punched path (5 / 20 / 60 s attempts).
+- **Roles:** the glare winner is the offerer. A bundle created from the peer's `hello` takes the complementary role, and a local leg that joins it (the offerer's media started after the answerer's hello arrived) sets its own role, so exactly one end drives.
 
 ## Circuit tunnel (v1)
 
@@ -193,6 +220,8 @@ Relay hosts `/pp-browser/circuit/1.0.0`. After a JSON bridge handshake, the rela
 
 `target_multiaddr` and/or `target_peer_id` required. `target_protocol` defaults to the circuit protocol id when omitted.
 
+Optional `"standby_priority": "low" | "medium" | "high"` marks a call's **standby** circuit (call-path-resilience K003); omitted for a primary circuit. A relay admits standby circuits against its standby capacity (default 64, `CircuitRelayServer::SetStandbyLimits`) — `low` below 50 %, `medium` below 80 %, `high` up to 100 % — and at most 4 per dialer PeerId; otherwise it answers `{"ok":false,"error":"relay busy: standby refused"}`. Primary circuits are never refused for standby load. An unknown value reads as `low`; relays without it ignore the field. Standby circuits are marked so relay metering (none yet) can leave them free until a failover (K009).
+
 ### Reserve request (answerer park; double-NAT)
 
 Answerer opens a circuit channel and sends:
@@ -201,7 +230,7 @@ Answerer opens a circuit channel and sends:
 { "v": 1, "op": "reserve", "timeout_ms": 30000 }
 ```
 
-Relay acks `{ "v": 1, "ok": true, "op": "reserve" }` and keeps the PeerLink so a later `bridge` to that PeerId can `EnsureAssociation` without dialing into the answerer’s NAT. Client API: `CircuitTunnelCoordinator::StartReserve`. TTL / `CancelTunnel` / channel close clears the park.
+Relay acks `{ "v": 1, "ok": true, "op": "reserve" }` and keeps the PeerLink so a later `bridge` to that PeerId can `EnsureAssociation` without dialing into the answerer’s NAT. Client API: `CircuitClientCoordinator::StartReserve`. TTL / `CancelTunnel` / channel close clears the park.
 
 ### Bridge result (second DATA, before splice)
 
@@ -213,7 +242,7 @@ or `{ "v": 1, "ok": false, "error": "..." }`. On success, further DATA bodies ar
 
 Channel policy: `CircuitTunnelChannelPolicy` (Reliable Control, not `read_once`). Admission uses the same contact/scope rules as libp2p circuit ([RELAY_SCOPE](../../projects/p2p-mesh/RELAY_SCOPE.md)).
 
-Runtime: **`CircuitTunnelCoordinator`** on `MeshRuntime` — non-blocking `StartBridge` + completion callback ([A022](../../projects/adp/DECISIONS.md#a022--circuit-tunnel--non-blocking-coordinator-on-meshruntime)). L4 must not nest `Pump` / `IoPumpUntil`.
+Runtime: **`CircuitClientCoordinator`** (dialer / answerer: `StartBridge`, `StartReserve`) and **`CircuitRelayServer`** (relay: `bridge` / `reserve` answers) on `MeshRuntime` — non-blocking `StartBridge` + completion callback ([A022](../../projects/adp/DECISIONS.md#a022--circuit-tunnel--non-blocking-coordinator-on-meshruntime)). L4 must not nest `Pump` / `IoPumpUntil`.
 
 ### Nested Session carrier ([A024](../../projects/adp/DECISIONS.md#a024--amp-call-media-over-circuit--nested-session))
 

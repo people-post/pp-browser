@@ -62,14 +62,11 @@ function(_pp_browser_is_forbidden_ui_dep dep out_var)
   set(${out_var} FALSE PARENT_SCOPE)
 endfunction()
 
-function(pp_browser_assert_no_ui_dependencies root_target)
-  if(NOT TARGET ${root_target})
-    message(FATAL_ERROR "pp_browser_assert_no_ui_dependencies: not a target: ${root_target}")
-  endif()
-
+# Every link edge reachable from root_target, as "from -> to" (targets walked, genex dropped).
+function(_pp_browser_collect_link_edges root_target out_var)
   set(_queue "${root_target}")
   set(_seen "")
-  set(_hits "")
+  set(_edges "")
 
   while(_queue)
     list(POP_FRONT _queue _current)
@@ -98,24 +95,87 @@ function(pp_browser_assert_no_ui_dependencies root_target)
         if(_dep STREQUAL "")
           continue()
         endif()
-        _pp_browser_is_forbidden_ui_dep("${_dep}" _bad)
-        if(_bad)
-          list(APPEND _hits "${_current} -> ${_dep}")
-        elseif(TARGET "${_dep}" AND NOT _dep IN_LIST _seen)
+        list(APPEND _edges "${_current} -> ${_dep}")
+        if(TARGET "${_dep}" AND NOT _dep IN_LIST _seen)
           list(APPEND _queue "${_dep}")
         endif()
       endforeach()
     endforeach()
   endwhile()
+  list(REMOVE_DUPLICATES _edges)
+  set(${out_var} "${_edges}" PARENT_SCOPE)
+endfunction()
+
+function(pp_browser_assert_no_ui_dependencies root_target)
+  if(NOT TARGET ${root_target})
+    message(FATAL_ERROR "pp_browser_assert_no_ui_dependencies: not a target: ${root_target}")
+  endif()
+
+  _pp_browser_collect_link_edges(${root_target} _edges)
+  set(_hits "")
+  foreach(_edge IN LISTS _edges)
+    string(REGEX REPLACE "^.* -> " "" _dep "${_edge}")
+    _pp_browser_is_forbidden_ui_dep("${_dep}" _bad)
+    if(_bad)
+      list(APPEND _hits "${_edge}")
+    endif()
+  endforeach()
 
   if(_hits)
-    list(REMOVE_DUPLICATES _hits)
     string(JOIN "\n  " _hit_text ${_hits})
     message(FATAL_ERROR
       "${root_target} must stay UI-free (no SDL / RmlUi / pp_gui / pp_foundation_platform).\n"
       "Forbidden link edges:\n  ${_hit_text}\n"
       "Use pp_foundation_platform_core (and other *_core targets) instead. "
       "See docs/ops/BUILD.md (Headless mesh node).")
+  endif()
+endfunction()
+
+# pp-node's first-party closure: foundation (headless *_core), common, the node's domain peers
+# (mesh / people / net), headless feature modules, and the Amp / common / crypto siblings. Any other
+# pp_* target reachable from root_target fails configure — widening the node is a deliberate edit here.
+set(PP_BROWSER_NODE_LINK_ALLOWLIST
+  "^pp_foundation_(crypto|data|error|i18n|identity|platform_core|runtime_core)$"
+  "^pp_domain_mesh(_[a-z_]+)?$"
+  "^pp_domain_(people|net)$"
+  "^pp_feature_(registration|node)$"
+  "^pp_pbr_common$"
+  "^pp_(common|crypto)$"
+  "^pp_amp_")
+
+function(pp_browser_assert_node_link_allowlist root_target)
+  if(NOT TARGET ${root_target})
+    message(FATAL_ERROR "pp_browser_assert_node_link_allowlist: not a target: ${root_target}")
+  endif()
+
+  _pp_browser_collect_link_edges(${root_target} _edges)
+  set(_hits "")
+  foreach(_edge IN LISTS _edges)
+    string(REGEX REPLACE "^.* -> " "" _dep "${_edge}")
+    string(REGEX REPLACE "^.*::" "" _name "${_dep}")
+    if(NOT _name MATCHES "^pp_")
+      continue()
+    endif()
+    set(_ok FALSE)
+    foreach(_re IN LISTS PP_BROWSER_NODE_LINK_ALLOWLIST)
+      if(_name MATCHES "${_re}")
+        set(_ok TRUE)
+        break()
+      endif()
+    endforeach()
+    if(NOT _ok)
+      list(APPEND _hits "${_edge}")
+    endif()
+  endforeach()
+
+  if(_hits)
+    string(JOIN "\n  " _hit_text ${_hits})
+    message(FATAL_ERROR
+      "${root_target} links first-party targets outside the node allowlist.\n"
+      "Link edges:\n  ${_hit_text}\n"
+      "The node may link foundation *_core, common, pp_domain_{mesh,people,net}, headless "
+      "pp_feature_{registration,node} and Amp. See PP_BROWSER_NODE_LINK_ALLOWLIST in "
+      "cmake/PpBrowserNoUiDeps.cmake and docs/ops/BUILD.md (Headless mesh node).")
   endif()
 endfunction()
 

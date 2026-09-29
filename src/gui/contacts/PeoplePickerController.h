@@ -71,8 +71,8 @@ public:
   /** From open DM: peer locked; create group when ≥1 extra selected. */
   void OpenFromDm(const std::string& locked_contact_id);
 
-  /** OpenForGroupCall: optional Allow video checkbox (default off). */
-  void OpenForGroupCall(const std::string& thread_id);
+  /** OpenForGroupCall: optional Allow video checkbox, pre-checked to the caller's menu choice. */
+  void OpenForGroupCall(const std::string& thread_id, bool video_allowed);
 
   /** Active call: invite additional contacts as guests. */
   void OpenForCallAddGuest(const std::string& call_id);

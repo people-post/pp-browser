@@ -1,6 +1,6 @@
 # P2P A/V calls — current state
 
-**Last updated:** 2026-09-23
+**Last updated:** 2026-09-28
 
 **North star:** [NETWORKING.md](../../docs/architecture/NETWORKING.md) + **[V026](DECISIONS.md#v026--libp2p-only-call-media-http--libp2p-networking)** — HTTP + libp2p only; call media on libp2p (voice-first). **m2 done:** libdatachannel removed from build; wire-compat `call_sdp`/`call_ice` ignored.
 
@@ -38,6 +38,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | **1:1 vs stale CallSfuAttach** | Accept→P2P bumps migrate gen + clears SoftMigrate; inbound `CallSfuAttach` ignored unless N≥3 / WaitForAttach / SoftMigrate; stale CompleteAttach without flight ownership aborts StartSfu (dogfood: brief hop audio → chrome “direct”) |
 | **V034 libp2p video_lo** | H264 on same 1:1 duplex + SFU ch1; v2 frames; shared call media key (one encrypt / hop fan-out); hop never sheds audio for video; Immersive per-peer tiles |
 | Video on libp2p | **In progress (lv)** — LAN 1:1 Camera on is the first dogfood bar |
+| **V050 group topology** | **Landed (gt0–gt6)** — full invite roster + joined-count arming; initiator leave keeps the rest on the hop with one agreed next owner; `planned_hop` from the invite list; Accept hop report (reached / unreachable) with the one adjustment or joiner refusal at the third join; later joiners move the whole group once, only to a hop every member can use, guests following the owner. Hard lab Phases 13–15 across three NATs and two hops. Paid-hop ownership handover deferred (pricing P004) — [PHASES gt](PHASES.md#gt--group-call-topology-v050) |
 
 ## a4 thin in code (still relevant under V026)
 
@@ -86,7 +87,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 | **Incoming invite expire** | `SweepExpiredInvites` Missed + `EndCallLocal` → `RemoteEnded` clears Ringing Idle / listen (CALLS expire → Idle; gtest) |
 | **Retry after ConnectFailed** | Lifecycle `RetryClicked` re-arms `DirectConnecting` before `RetryP2pMedia`/`BeginSession` (gtest `RetryClickedRearms*` / `RetryP2pMediaAfterConnectFailed`) |
 | **lv video** | Prefer loopback/probe; OEM dogfood only for Camera/HW encode |
-| Group SoftMigrate in lifecycle | Phase hook reserved; not v1 |
+| Group SoftMigrate in lifecycle | Phase hook reserved; not v1 (group topology rules: V050 / phase gt) |
 | N≥3 unify engine on libp2p send/recv | N021 follow-on |
 
 ### rd automated exit (V038) — prefer over device dogfood

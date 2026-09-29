@@ -160,14 +160,15 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 | Answerer Kick / ScheduleStart → BeginSession | `call_answerer_kick_logic_test`, `call_media_bridge_answerer_start_test` — V038 D3 product glue; **MediaKey wait exhaustion → ConnectFailed**; **dialable DialInBackoff + circuit → no Ensure hammer / no ConnectFailed** |
 | CSM Invite→Leave compose + inbound arms | `call_session_inbound_compose_test` — Invite→Leave, K-cycle, conflict, Decline, **outbound unanswered TTL**, **incoming expire → Idle**, MediaKey, HopRefuse, Broadcast, StartCall, Retry; **remote Leave/Ended/Decline → Idle**; Bridge offerer/KeyReady/ReleaseDirect |
 | CallStack + CallUiBackend façade | `call_ui_backend_stack_test` — InitializeStores→BuildSessions + `BindTestMediaPath` → Available/InviteSeen→Accept→Leave, **Invite→InCall media path**, Decline, StartCall, Broadcast arm/accept, ResetSessions unavailable |
+| Group CallStack product wire (N=3) | `call_group_stack_compose_test` — three CallStacks, A invites B+C: direct 1:1 at N=2 → SoftMigrate at N=3 onto one media_relay hop (in-process blind forwarder: subscribed streams only, never back to the sender); every side InCall/HopLive and decodes **each other publisher**; guest Leave keeps the remaining pair's audio; initiator Leave Idles all (**B-GROUP-CALL**) |
 | Dual CallStack product wire | `call_dual_stack_compose_test` — Offer↔Answer Invite/Accept/InCall/Leave (**either side Leave Idles peer**); **Answer Decline → offerer Idle**; **K-cycle**; **Accept second invite ends prior** (B-CONFLICT) |
-| N→planner select (Direct vs Hop) | `call_media_planner_select_logic_test` — Effective N; relay-cap SoftMigrate nudge gates |
+| N→planner select (Direct vs Hop) | `call_media_planner_select_logic_test` — joined N arms Hop (V050: ringing never counts); relay-cap SoftMigrate nudge gates |
 | Direct / Hop planner tables (V039) | `call_direct_planner_logic_test`, `call_hop_planner_logic_test` |
 
 Run (from a configured desktop build tree):
 
 ```bash
-ctest --test-dir build -R 'CallMediaDirect|CallMediaLeg|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|CallTxOnly|CallListenAddrs|CallAnswererKick|CallMediaBridgeAnswerer|CallMediaPlannerSelect|CallDirectPlanner|CallHopPlanner|CallSessionInbound|CallUiBackendStack|CallDualStack|InboundSfuAttachIgnoredWhenStatus|AmpDirectChat' --output-on-failure --no-tests=error
+ctest --test-dir build -R 'CallMediaDirect|CallMediaLeg|MediaRelayService|CircuitCallMedia|CircuitMediaRelay|CircuitRelayService|CallLifecycle|CallTxOnly|CallListenAddrs|CallAnswererKick|CallMediaBridgeAnswerer|CallMediaPlannerSelect|CallDirectPlanner|CallHopPlanner|CallSessionInbound|CallUiBackendStack|CallDualStack|CallGroupStack|InboundSfuAttachIgnoredWhenStatus|AmpDirectChat' --output-on-failure --no-tests=error
 ```
 
 Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` if a local tree renames targets.
@@ -227,7 +228,7 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | ID | Status | Primary evidence |
 |----|--------|------------------|
 | N-SMOKE | **Covered** | [`scripts/test/pp_node_image_smoke.sh`](../../scripts/test/pp_node_image_smoke.sh); release CI L0 |
-| N-REACH | **Covered** | [`pp-node-probe`](../../src/app/node/probe/main.cpp); [`scripts/test/pp_node_relay_smoke.sh`](../../scripts/test/pp_node_relay_smoke.sh) |
+| N-REACH | **Covered** | [`pp-node-probe`](../../src/app/node/tools/probe/main.cpp); [`scripts/test/pp_node_relay_smoke.sh`](../../scripts/test/pp_node_relay_smoke.sh) |
 | N-FANOUT | **Covered** (scaffold) | L2: `pp-node-probe --mode media-fanout` + [`scripts/test/pp_node_fanout_smoke.sh`](../../scripts/test/pp_node_fanout_smoke.sh); in-process: `media_relay_service_test` |
 | N-ADMIT | **Partial** | gtests (contacts-only / call-scoped); no deploy-profile stranger probe |
 | N-CAP-MEDIA | **Covered** (soft scaffold) | `pp-node-probe --mode media-cap` sweep (`--attachers 4,8,12,16` or `--sweep 4:16:4`) + p50/p95; [`scripts/test/pp_node_cap_smoke.sh`](../../scripts/test/pp_node_cap_smoke.sh); driver `--suite cap`. Soft SLO: 100% attach for N≤**N₀=8** (first curve: hop participant limit 8; N=12/16 degrade). Hop RSS/FD via `docker stats`. |
@@ -245,8 +246,10 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 | B-HARD-CALL-NAT | **Scaffold** | Phase-1: answerer `--warm-hop --min-rx-frames`; offerer `--via-hop --peer-id-only`. Status port **18628**. |
 | B-HARD-CALL-NAT-PRODUCT / -DIRTY | **Retired** | Probe-local reach copies (`--reach product|bridge`, removed) — replaced by the COLD phases on the product `PeerReachCoordinator`. |
 | B-HARD-CALL-NAT-STACK | **Green target** | Phase-4: `--product-stack` CallUiBackend StartCall/Accept/Leave + real Amp CallStack Wire (no BindTestMediaPath mocks). |
+| B-HARD-GROUP-ADJUST-NAT / -MOVE-NAT | **Green** | Phases 14–15 (V050 gt4/gt5): second hop `hop2` + per-probe gateway blocks. ADJUST: C cannot reach the planned hop → group forms on hop2 (one adjustment). MOVE: D invited mid-call cannot reach hop1 → owner moves A, B, C, D to hop2 once; 4-way per-publisher RX. |
+| B-HARD-GROUP-CALL-NAT | **Green** | Phase-13: 3 product stacks behind 3 symmetric NATs (`peer-c` / `gw-c`); A invites B+C, 2→3 SoftMigrate onto the hop's `media_relay`; probe-enforced per-publisher RX (`--min-rx-streams 2`), guest C leaves, A↔B keep audio. Needs the non-RFC1918 public net (HL006). |
 | B-HARD-CALL-NAT-COLD / -COLD-DIRTY / -COLD-AWAIT | **Green** | Phases 5–7: product stack with `--signal-dir` (call control via `/share`, no pre-built peer link) — cold `PeerReachCoordinator` reach; dirty book + forced dial miss; offerer uplink delay for a cold answerer Await. ≥ 100 rx frames both sides. [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md) |
-| hard-w5 default phase | **all** | `circuit+stack+cold+cold-dirty+cold-await` |
+| hard-w5 default phase | **all** | `circuit+stack+cold+cold-dirty+cold-await+upgrade+punch+flip+mobile+group+group-adjust+group-move+broadcast` |
 | N-HARD-* (other) / N-ADMIT-HARD | **Design** | [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md); [projects/hard-lab/](../../projects/hard-lab/) |
 
 **Routing mode map** (direct / punch / circuit hop / SFU `media_relay` / ConnectFailed teardown → tier): [HARD_LAB.md § Routing mode coverage](../../packaging/pp-node/HARD_LAB.md#routing-mode-coverage-success-oracles).
@@ -259,6 +262,7 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 |----|---------|----------|-------------|---------|
 | **B-CALL-DIRECT** | Product call path without hop | 2 thin clients / in-process | Invite→InCall→Leave; media ok for D seconds | Nightly (multi-process); PR (in-process) |
 | **B-CALL-HOP** | Call via pp-node hop | 2 clients + 1 pp-node | Same; path marked hop/relay | Nightly |
+| **B-GROUP-CALL** | Group call (N≥3) on one media_relay hop | 3 peers + 1 hop | Invite→2→3 SoftMigrate→all InCall on the hop; each side hears every other publisher; guest Leave keeps the rest; Leave → all Idle | PR (in-process); hard lab later |
 | **B-TEARDOWN** | No stuck listen/media after leave | Repeat K cycles | After K: no orphan listen; call K+1 works | Nightly |
 | **B-CONFLICT** | Second invite / end-and-accept | 3 peers | Lifecycle rules hold across processes | Nightly |
 | **B-MSG+CALL** | Messaging + call coexistence | 2 peers | Chat during/after call; no stream starvation | Nightly |
@@ -274,6 +278,7 @@ Full hard-lab ladder (waves 1–7, BW/NAT/mix/soak IDs): [HARD_LAB.md](../../pac
 |----|--------|------------------|
 | B-CALL-DIRECT | **Partial** (improved) | In-process: `call_media_leg_coordinator_test` (ex-`CallMediaDirectService`), `CallMediaKeyStore` Put/Load, `call_listen_addrs_logic_test`, `call_answerer_kick_logic_test`, `call_media_planner_select_logic_test`, `call_media_bridge_answerer_start_test` (answerer + offerer ScheduleStart / KeyReady / ReleaseDirect / dial-backoff→circuit / **ConnectFailed stops media**), `call_session_inbound_compose_test` (CSM Invite→AcceptClicked→Leave Idle), `call_ui_backend_stack_test` (CallStack+CallUiBackend Invite→InCall), `call_dual_stack_compose_test` (Offer↔Answer Invite/Accept/InCall/Leave wire); multi-process: `pp-call-probe` + [`pp_call_direct_smoke.sh`](../../scripts/test/pp_call_direct_smoke.sh); thin smoke still Amp duplex (not product CSM wire) |
 | B-CALL-HOP | **Covered** (scaffold) | In-process: `AmpCircuitCallMediaComposeTest` / `circuit_call_media_compose_test`, `circuit_media_relay_compose_test`; multi-process: `pp-call-probe --via-hop` + [`pp_call_hop_smoke.sh`](../../scripts/test/pp_call_hop_smoke.sh); driver `--suite call-hop`. **V038 D4 loopback gate.** |
+| B-GROUP-CALL | **Covered** (in-process + hard lab) | In-process: `call_group_stack_compose_test` (CallStack×3 + CallUiBackend, `BindTestMediaPath(…, relay)` fake hop). Triple-NAT: **B-HARD-GROUP-CALL-NAT** (`--suite hard-w5 --phase group`) — [HARD_LAB.md](../../packaging/pp-node/HARD_LAB.md) Phase-13 |
 | B-TEARDOWN | **Partial** (improved) | `ConnectDetachKCycleNoHang` (direct); `--cycles` on `pp-call-probe` (direct and hop); Detach/timeout/Stop no-hang in services; in-process `InviteAcceptLeaveKCycleTeardown` (CSM); `OfferAnswerKCycleTeardown` (dual CallStack Leave→Idle→re-Invite) |
 | B-CONFLICT | **Covered** (scaffold) | In-process: `CallMediaLegCoordinator` second-inbound reject; `AcceptSecondInviteEndsPriorActiveCall` (CSM + dual CallStack); multi-process: `pp-call-probe --expect busy` + [`scripts/test/pp_call_conflict_smoke.sh`](../../scripts/test/pp_call_conflict_smoke.sh); driver `--suite conflict`. Chrome copy still unit-only. |
 | B-MSG+CALL | **Covered** (scaffold) | Direct: `ChatDuringAndAfterCallMedia` + `pp_call_msg_smoke.sh` (`--suite msg-call`). Hop same-session: `CircuitCallMediaChatComposeTest.ChatDuringAndAfterCallViaCircuit` + `pp-call-probe --via-hop --with-chat` + [`scripts/test/pp_call_hop_msg_smoke.sh`](../../scripts/test/pp_call_hop_msg_smoke.sh); driver `--suite msg-call-hop`. Chat uses a **separate** circuit hop from call-media. |

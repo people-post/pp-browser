@@ -629,6 +629,27 @@ public class MainActivity extends SDLActivity {
         }
     }
 
+    private PpNetworkMonitor mNetworkMonitor;
+
+    /** Called from native NetworkMonitor (call-path-resilience k5). */
+    public void startNetworkMonitor() {
+        synchronized (this) {
+            if (mNetworkMonitor == null) {
+                mNetworkMonitor = new PpNetworkMonitor(this);
+            }
+            mNetworkMonitor.start();
+        }
+    }
+
+    /** Called from native NetworkMonitor. */
+    public void stopNetworkMonitor() {
+        synchronized (this) {
+            if (mNetworkMonitor != null) {
+                mNetworkMonitor.stop();
+            }
+        }
+    }
+
     /** Called from native NetworkConnectivity (N025 Wi‑Fi gate). */
     public boolean isActiveNetworkWifi() {
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);

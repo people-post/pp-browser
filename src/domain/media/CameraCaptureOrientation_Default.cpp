@@ -10,6 +10,12 @@
 
 namespace pbr {
 
+bool CameraRotationFollowsDevice() {
+  return false;
+}
+
+void StopCameraOrientationTracking() {}
+
 int CameraDisplayRotationDegrees() {
   return 0;
 }
@@ -21,6 +27,14 @@ CameraCaptureTransform ResolveCameraCaptureTransform(SDL_CameraID /*camera_id*/,
     t.encode_height = 640;
   }
   return t;
+}
+
+int CameraFrameRotateCw(const CameraCaptureTransform& opened, int /*current_display_rotation_deg*/) {
+  return opened.rotate_cw;
+}
+
+int CameraPreviewRotateCw(const CameraCaptureTransform& opened) {
+  return opened.rotate_cw;
 }
 
 } // namespace pbr

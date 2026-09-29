@@ -76,7 +76,7 @@ Delivery: [V020](DECISIONS.md#v020--a4-requires-true-sfu-no-full-mesh-media)–[
 
 - [ ] Load-test; raise effective cap toward **16** or keep **8** with product copy
 - [ ] Full **video_lo + video_hi** — **deferred** until libp2p video (V026 voice-first)
-- [ ] Reconnect / “reconnecting…” after brief network loss
+- [x] Reconnect / “reconnecting…” after brief network loss — 1:1 direct / relayed calls: [call-path-resilience k4](../call-path-resilience/PHASES.md#k4--media-liveness-failover--reconnect-m5) (standby failover; no path → Reconnecting, 30 s window, offerer re-anchors). Group SFU calls: not covered
 - [x] 1:1 connect timeout + Retry (legacy PC path)
 - [ ] Missed/declined history hints optional
 - [ ] Document desktop dead-process ring limitation
@@ -267,6 +267,22 @@ Apply the repo-wide [composition vocabulary](../../docs/architecture/COMPOSITION
 
 **Non-goals:** Ownership-tree change (Topology under Lifecycle); moving SoftMigrate races into Lifecycle; rewriting every non-calls debt site in this phase.  
 **Exit:** topology unit + inbound/dual-stack compose gtests green; Topology/Workflow headers free of `CallLifecycleTypes` Status writers.
+
+## gt — Group call topology (V050)
+
+One rule set for 3+ invitees — [V050](DECISIONS.md#v050--group-call-topology-11-first-planned-hop-monotonic). Each step lands with a Tier B case in `call_group_stack_compose_test` (B-GROUP-CALL).
+
+- [x] gt0 — ADR + CALLS.md topology rules + pricing P004 (deferred paid-hop handover)
+- [x] gt1 — Invites carry the full roster **and** planners arm on joined count (ship together); regression: first acceptor's path independent of invite order (`EveryInviteeSeesTheWholeInviteList`, `SecondInviteeAcceptingFirstGetsTheDirectPath`, `SimultaneousAcceptsConvergeOnTheHop`)
+- [x] gt2 — Initiator leaves with ≥2 remaining: call stays on the hop; earliest-joined remaining owns re-picks (`InitiatorLeaveKeepsTheRestOnTheHop`; `SelectCallInitiator` order-independent tie-break)
+- [x] gt3 — `planned_hop` picked at StartCall from the invite list (no attach) and carried in `CallInvite`; SoftMigrate at the third join uses it (`ThirdJoinMigratesOntoThePlannedHop`; session columns `planned_hop` / `planned_hop_ma`)
+- [x] gt2b — Owner agreement under clock skew: every side holds identical `joined_at` for each participant — invitees seed stamps from the invite (inviter's clock) and never stamp themselves; the inviter's CallRoster brings their stamp (`InviteesNeverStampJoinsFromTheirOwnClock`)
+- [x] gt4 — Accept reports planned-hop reachability + reachable hops (invitee quotes the planned hop and two others while ringing); at the third join `DecideGroupHopAtJoin` keeps the plan, makes the one adjustment (replaces the session's planned hop), or refuses the joiner and keeps the call as is; `DecideSoftMigrate` never picks at <3 joined, whatever queued it (`OneAdjustmentWhenTheJoinerCannotReachThePlannedHop`, `NoSharedHopRefusesTheJoinerAndKeepsTheCall`, `GuestAddedByANonInitiatorFormsTheGroupFromTheRoster`)
+- [x] gt5 — Later joins: a newcomer the hop cannot serve (unreachable, or refused as full — both surface as its attach failure) reports to the owner (the invite-hint attach failure no longer just leaves); the owner moves the group only to a hop no member reported unreachable (their accept reports) and the newcomer can dial, once per joiner (failing again on that hop → refuse), and guests follow the owner's new hop (`CallSfuAttach` from the owner while attached elsewhere; others' attaches stay publisher announces) (`LaterJoinerThatCannotReachTheHopMovesTheGroupOnce`, `LaterJoinerRefusedWhenNoHopServesEveryone`, `NoSecondHopChangeForTheSameJoiner`)
+- [x] gt6 — Hard lab: second hop + per-probe blocks; B-HARD-GROUP-ADJUST-NAT (gt4) and B-HARD-GROUP-MOVE-NAT (gt5) green
+
+**Non-goals:** re-evaluating on leave; multi-SFU; paid-hop ownership handover (pricing P004).  
+**Exit:** gt1–gt5 gtests green; B-HARD-GROUP-CALL-NAT green.
 
 ## Later horizons
 

@@ -4,8 +4,9 @@
 #include "domain/messaging/RelayWirePayload.h"
 #include "domain/mesh/host/MeshPorts.h"
 #include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
-#include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
-#include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
+#include "domain/mesh/l4/circuit/client/CircuitClientCoordinator.h"
+#include "domain/mesh/l4/circuit/serve/CircuitRelayServer.h"
 #include "amp/link/Types.h"
 #include "domain/mesh/tests/support/mesh_triple_harness.h"
 
@@ -60,12 +61,11 @@ protected:
     chat_b_ = NewAmpChatPeerLinks(*harness_->runtime_b);
 
     hops_ = std::make_unique<AmpCircuitHopRegistry>();
-    circuit_r_ = std::make_unique<CircuitTunnelCoordinator>(*harness_->runtime_r);
-    circuit_a_ = std::make_unique<CircuitTunnelCoordinator>(*harness_->runtime_a);
+    circuit_r_ = std::make_unique<CircuitRelayServer>(*harness_->runtime_r);
+    circuit_a_ = std::make_unique<CircuitClientCoordinator>(*harness_->runtime_a);
     circuit_r_->Start();
     circuit_r_->SetServeInbound(true);
     circuit_a_->Start();
-    circuit_a_->SetServeInbound(false);
 
     a_chat_ = std::make_unique<AmpDirectChatTransport>(
         *chat_a_, [this] { harness_->PumpAll(); }, AmpDirectChatTransport::WorkerPost{},
@@ -185,8 +185,8 @@ protected:
   std::unique_ptr<IChatPeerLinks> chat_a_;
   std::unique_ptr<IChatPeerLinks> chat_b_;
   std::unique_ptr<AmpCircuitHopRegistry> hops_;
-  std::unique_ptr<CircuitTunnelCoordinator> circuit_r_;
-  std::unique_ptr<CircuitTunnelCoordinator> circuit_a_;
+  std::unique_ptr<CircuitRelayServer> circuit_r_;
+  std::unique_ptr<CircuitClientCoordinator> circuit_a_;
   std::unique_ptr<AmpDirectChatTransport> a_chat_;
   std::unique_ptr<AmpDirectChatTransport> b_chat_;
 };

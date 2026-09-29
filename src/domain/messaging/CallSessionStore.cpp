@@ -112,6 +112,12 @@ CallSession SessionFromStmt(sqlite3_stmt* stmt) {
   if (sqlite3_column_count(stmt) > 11) {
     session.session_kind = CallSessionKindFromString(ColumnText(stmt, 11));
   }
+  // V050 planned hop (idx 12, 13).
+  if (sqlite3_column_count(stmt) > 13) {
+    if (auto peer_id = ColumnOptText(stmt, 12); peer_id && !peer_id->empty()) {
+      session.planned_hop = CallPlannedHop{*peer_id, ColumnOptText(stmt, 13).value_or("")};
+    }
+  }
   return session;
 }
 
@@ -153,6 +159,8 @@ Roe<void> CallSessionStore::EnsureSchema(sqlite3* profile_db) const {
   (void)sqlite3_exec(profile_db,
                      "ALTER TABLE pending_call_invites ADD COLUMN session_kind TEXT NOT NULL DEFAULT 'group';",
                      nullptr, nullptr, nullptr);
+  (void)sqlite3_exec(profile_db, "ALTER TABLE call_sessions ADD COLUMN planned_hop TEXT;", nullptr, nullptr, nullptr);
+  (void)sqlite3_exec(profile_db, "ALTER TABLE call_sessions ADD COLUMN planned_hop_ma TEXT;", nullptr, nullptr, nullptr);
   return {};
 }
 
@@ -164,14 +172,15 @@ Roe<void> CallSessionStore::UpsertSession(const CallSession& session) const {
   sqlite3_stmt* stmt = nullptr;
   const char* sql =
       "INSERT INTO call_sessions (call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
-      "created_at, ended_at, media_epoch, media_key_id, sfu_hint, session_kind) "
-      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+      "created_at, ended_at, media_epoch, media_key_id, sfu_hint, session_kind, planned_hop, planned_hop_ma) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
       "ON CONFLICT(call_id) DO UPDATE SET origin_thread_id=excluded.origin_thread_id, "
       "origin_group_id=excluded.origin_group_id, media_mode=excluded.media_mode, "
       "video_allowed=excluded.video_allowed, state=excluded.state, "
       "created_at=excluded.created_at, ended_at=excluded.ended_at, media_epoch=excluded.media_epoch, "
       "media_key_id=excluded.media_key_id, sfu_hint=excluded.sfu_hint, "
-      "session_kind=excluded.session_kind;";
+      "session_kind=excluded.session_kind, planned_hop=excluded.planned_hop, "
+      "planned_hop_ma=excluded.planned_hop_ma;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
     return Error("Failed to prepare call session upsert");
@@ -191,6 +200,9 @@ Roe<void> CallSessionStore::UpsertSession(const CallSession& session) const {
   BindOptText(stmt, 11, session.sfu_hint);
   const std::string session_kind = CallSessionKindToString(session.session_kind);
   sqlite3_bind_text(stmt, 12, session_kind.c_str(), -1, SQLITE_TRANSIENT);
+  BindOptText(stmt, 13, session.planned_hop ? std::optional<std::string>(session.planned_hop->peer_id) : std::nullopt);
+  BindOptText(stmt, 14,
+              session.planned_hop ? std::optional<std::string>(session.planned_hop->multiaddr) : std::nullopt);
   if (sqlite3_step(stmt) != SQLITE_DONE) {
     sqlite3_finalize(stmt);
     sqlite3_close(*db);
@@ -209,7 +221,7 @@ Roe<std::optional<CallSession>> CallSessionStore::LoadSession(const std::string&
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(*db,
                          "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
-                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, session_kind FROM call_sessions WHERE "
+                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, session_kind, planned_hop, planned_hop_ma FROM call_sessions WHERE "
                          "call_id = ? LIMIT 1;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
@@ -233,7 +245,7 @@ Roe<std::vector<CallSession>> CallSessionStore::ListActiveSessions() const {
   sqlite3_stmt* stmt = nullptr;
   if (sqlite3_prepare_v2(*db,
                          "SELECT call_id, origin_thread_id, origin_group_id, media_mode, video_allowed, state, "
-                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, session_kind FROM call_sessions WHERE state "
+                         "created_at, ended_at, media_epoch, media_key_id, sfu_hint, session_kind, planned_hop, planned_hop_ma FROM call_sessions WHERE state "
                          "!= 'ended' ORDER BY created_at DESC;",
                          -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);

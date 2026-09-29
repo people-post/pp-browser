@@ -46,6 +46,7 @@ void WritePeerCaps(Object& json, const CallPeerCaps& caps) {
   Object caps_obj;
   caps_obj.set("v", static_cast<int64_t>(caps.v > 0 ? caps.v : kCallPeerCapsVersion));
   caps_obj.set("media_relay", caps.media_relay);
+  caps_obj.set("mobility", std::string(MobilityClassWire(caps.mobility)));
   json.set("caps", ObjectValue(std::move(caps_obj)));
 }
 
@@ -63,6 +64,7 @@ CallPeerCaps ReadPeerCaps(const Object& json) {
     return caps;
   }
   caps.media_relay = obj->getIf<bool>("media_relay").value_or(false);
+  caps.mobility = ParseMobilityClass(obj->getString("mobility").value_or(""));
   return caps;
 }
 
@@ -119,6 +121,12 @@ Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) 
   if (detail.sfu_hint) {
     json.set("sfu_hint", *detail.sfu_hint);
   }
+  if (detail.planned_hop && !detail.planned_hop->peer_id.empty()) {
+    json.set("planned_hop", detail.planned_hop->peer_id);
+    if (!detail.planned_hop->multiaddr.empty()) {
+      json.set("planned_hop_ma", detail.planned_hop->multiaddr);
+    }
+  }
   if (detail.expires_at) {
     json.set("expires_at", *detail.expires_at);
   }
@@ -163,6 +171,9 @@ Roe<CallInviteDetail> CallControlCodec::DecodeInvite(const std::string& detail_j
   detail.origin_thread_id = json->getString("origin_thread_id");
   detail.origin_group_id = json->getString("origin_group_id");
   detail.sfu_hint = json->getString("sfu_hint");
+  if (auto planned = json->getString("planned_hop"); planned && !planned->empty()) {
+    detail.planned_hop = CallPlannedHop{*planned, json->getString("planned_hop_ma").value_or("")};
+  }
   detail.expires_at = json->getIf<int64_t>("expires_at");
   ReadParticipants(*json, detail.participants);
   detail.media_epoch = static_cast<uint32_t>(json->getNonNegInt("media_epoch").value_or(1));
@@ -197,6 +208,14 @@ Roe<std::string> CallControlCodec::EncodeAccept(const CallAcceptDetail& detail) 
     json.set("charge_decision", detail.charge_decision.empty() ? "waive" : detail.charge_decision);
     json.set("offer_amount_minor", detail.offer_amount_minor);
   }
+  if (detail.video_allowed.has_value()) {
+    json.set("video_allowed", *detail.video_allowed);
+  }
+  if (detail.hop_report.planned_hop_ok) {
+    json.set("planned_hop_ok", *detail.hop_report.planned_hop_ok);
+  }
+  WriteStringArray(json, "reachable_hops", detail.hop_report.reachable_hops);
+  WriteStringArray(json, "unreachable_hops", detail.hop_report.unreachable_hops);
   return DumpJson(json);
 }
 
@@ -216,6 +235,12 @@ Roe<CallAcceptDetail> CallControlCodec::DecodeAccept(const std::string& detail_j
   detail.caps = ReadPeerCaps(*json);
   detail.charge_decision = json->getString("charge_decision").value_or("waive");
   detail.offer_amount_minor = json->getIf<int64_t>("offer_amount_minor").value_or(0);
+  if (auto v = json->getIf<bool>("video_allowed")) {
+    detail.video_allowed = *v;
+  }
+  detail.hop_report.planned_hop_ok = json->getIf<bool>("planned_hop_ok");
+  detail.hop_report.reachable_hops = ReadStringArray(*json, "reachable_hops");
+  detail.hop_report.unreachable_hops = ReadStringArray(*json, "unreachable_hops");
   return detail;
 }
 
@@ -531,6 +556,29 @@ Roe<CallCircuitR1Detail> CallControlCodec::DecodeCircuitR1(const std::string& de
   return detail;
 }
 
+Roe<std::string> CallControlCodec::EncodeCapsUpdate(const CallCapsUpdateDetail& detail) {
+  Object json;
+  json.set("call_id", detail.call_id);
+  json.set("identity", detail.identity);
+  CallPeerCaps caps = detail.caps;
+  caps.present = true;
+  WritePeerCaps(json, caps);
+  return DumpJson(json);
+}
+
+Roe<CallCapsUpdateDetail> CallControlCodec::DecodeCapsUpdate(const std::string& detail_json) {
+  auto json = TryParseObject(detail_json);
+  auto call_id = json ? json->getString("call_id") : std::nullopt;
+  if (!json || !call_id || call_id->empty() || !json->getObject("caps")) {
+    return Error("Invalid call_caps_update detail");
+  }
+  CallCapsUpdateDetail detail;
+  detail.call_id = *call_id;
+  detail.identity = json->getString("identity").value_or("");
+  detail.caps = ReadPeerCaps(*json);
+  return detail;
+}
+
 Roe<std::string> CallControlCodec::EncodePunch(const CallPunchDetail& detail) {
   Object json;
   json.set("call_id", detail.call_id);
@@ -613,6 +661,7 @@ bool CallControlCodec::IsPlumbingCallControl(const CallControlType type) {
   case CallControlType::CallCircuitR1:
   case CallControlType::CallPunchOffer:
   case CallControlType::CallPunchAnswer:
+  case CallControlType::CallCapsUpdate:
     return true;
   default:
     return false;

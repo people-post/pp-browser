@@ -1,5 +1,8 @@
 #pragma once
 
+#include "gui/CallAudioFaultToastGate.h"
+#include "gui/CallMetricsTracker.h"
+#include "gui/UiLatencyProbe.h"
 #include "common/media/CallMediaHealth.h"
 #include "domain/media/CallRingtone.h"
 #include "domain/ui/ShellTypes.h"
@@ -49,10 +52,14 @@ public:
   /** Start with explicit invitee relay identities (group / picker flow). */
   bool StartCallWithInvitees(const std::string& thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
-  void OpenGroupCallPicker(const std::string& thread_id);
+  void OpenGroupCallPicker(const std::string& thread_id, bool video_allowed);
   void OpenMidCallInvitePicker();
   void InviteIdentitiesToActiveCall(const std::vector<std::string>& invitee_identities);
+  /** Host can encode/send video at all (gates the chat call-type menu's "Video call" item). */
+  bool VideoCallAvailable();
   void AcceptIncoming();
+  /** Callee narrows this call to voice-only before accepting (video ring only). */
+  void AcceptIncomingVoiceOnly();
   /** Take-all when offer > 0; no-op toast when rails unavailable. */
   void AcceptIncomingWithCharge();
   void DeclineIncoming();
@@ -75,8 +82,13 @@ public:
 
 private:
   bool StartCallDirect(const std::string& thread_id, bool video_allowed);
+  /** Shared AcceptIncoming/AcceptIncomingVoiceOnly body (charge decision is always Waive here). */
+  void AcceptIncomingImpl(bool voice_only);
   void SyncShellState();
   void ClearRing();
+  /** Device vitals, re-read at most every 2 s. */
+  const DeviceVitals& Vitals(int64_t now_ms);
+  void EmitMetrics(const std::vector<std::string>& lines);
   void ClearInCall();
   /** Hide in-call bar without clearing active_call_id_ (conflict ring). */
   void HideInCallChrome();
@@ -109,8 +121,32 @@ private:
   int64_t ring_started_ms_ = 0;
   int64_t last_pulse_toggle_ms_ = 0;
   int64_t last_media_health_log_ms_ = 0;
-  int last_warned_quality_ = -1;
+  /** Lasting audio faults toast once per call (see CallAudioFaultToastGate). */
+  CallAudioFaultToastGate audio_fault_gate_;
+  /** Display rotation last pushed to the engine while the camera is on (-1: none). */
+  int pushed_camera_rotation_ = -1;
   int64_t last_video_refresh_ms_ = 0;
+  /** Operational metrics for the current call (Metrics channel; no identities). */
+  CallMetricsTracker metrics_;
+  UiLatencyProbe ui_probe_;
+  int64_t last_metrics_media_ms_ = 0;
+  DeviceVitals vitals_;
+  int64_t vitals_read_ms_ = 0;
+  /** Peer camera state last logged ("roster/frames"), so the log shows each change once. */
+  std::string peer_video_log_key_;
+  /** When this video call started waiting for the peer's first frame (0: not yet). */
+  int64_t video_start_since_ms_ = 0;
+  /** One-shot guard: camera already turned off because video_allowed narrowed mid-call. */
+  bool camera_sync_off_done_ = false;
+  /**
+   * 2026-09-28: video calls start with the local camera on (supersedes V009's old "join with
+   * camera off" default) — set once by the caller (video StartCall) or the callee (non-voice-only
+   * accept of a video call); consumed (camera enabled, flag cleared) on the first Tick where the
+   * call is connected. Cleared on voice-only accept and on ClearInCall.
+   */
+  bool auto_camera_pending_ = false;
+  /** Call id auto_camera_pending_ applies to. */
+  std::string auto_camera_call_id_;
   /** Last chrome applied — idle poll must not remount when unchanged. */
   CallChromeLayer synced_chrome_;
   CallChromeMode chrome_mode_ = CallChromeMode::Expanded;

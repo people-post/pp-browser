@@ -2,12 +2,13 @@
 
 > **2026-09:** Mesh layer consolidated — libp2p fork deleted; PeerId in `foundation/identity/`; `MeshPorts` / `IChatPeerLinks` boundary. See [MESH_ORGANIZATION.md](MESH_ORGANIZATION.md) and [docs/architecture/MESH.md](../../docs/architecture/MESH.md).
 
-**Last updated:** 2026-08-07
+**Last updated:** 2026-09-29
 
 ## Landed
 
 | Area | State |
 |------|-------|
+| **media_relay pending quotes bounded** (2026-09-29) | The hop kept every issued quote until accepted or the service stopped. V050 invitees quote hops while ringing and never accept those, so unaccepted quotes now expire (60 s) and the book is capped (4096; refuse "media-relay busy") — `MediaRelayQuoteBook` (`MediaRelayBundleLogic`), gtests `MediaRelayQuoteBookTest.*`. Hop-side: ships in the next pp-node |
 | Project docs | `projects/p2p-mesh/` (n0; renamed from `libp2p-node-roles`) |
 | ADRs | N001–**N029** in [DECISIONS.md](DECISIONS.md) (N027 = mesh directory; N028 = DHT; N029 = name-directory north star) |
 | Product model | Role/caps; pricing; `pp-node`; reachability; IPv6/UPnP; contact-first; listen **18517** + busy fallback (N016) |

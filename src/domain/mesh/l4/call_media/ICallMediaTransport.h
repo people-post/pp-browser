@@ -2,6 +2,7 @@
 
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/Error.h"
+#include "domain/mesh/l4/shared/L4ProtocolIds.h"
 
 #include <cstdint>
 #include <functional>
@@ -11,8 +12,6 @@
 
 namespace pbr {
 
-inline constexpr const char* kRealtimeProtocolId = "/pp-browser/realtime/1.0.0";
-inline constexpr const char* kCallMediaDirectProtocolId = kRealtimeProtocolId;
 
 /** Transport session phases for 1:1 call-media (V033). Product UX phases stay in CallLifecycle. */
 enum class CallMediaSessionPhase {
@@ -54,6 +53,15 @@ struct CallMediaDirectConnectParams {
   bool offerer = true;
 };
 
+/** Kind of mesh link the active call-media channels are bound on (path label truth). */
+enum class CallMediaLinkKind {
+  Unknown,
+  /** ADP association (dialed or punched). */
+  Direct,
+  /** Nested link over a relay circuit carrier. */
+  Relayed,
+};
+
 struct CallMediaDirectCallbacks {
   std::function<void()> on_connected;
   std::function<void(const std::vector<uint8_t>& opus_payload)> on_audio;
@@ -61,6 +69,14 @@ struct CallMediaDirectCallbacks {
   /** seq/mark come from the wire frame; the playout jitter buffer orders and de-dupes on seq (B20). */
   std::function<void(uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload)> on_media;
   std::function<void(const std::string& error)> on_failed;
+  /** k3: media moved to another path of the call (make-before-break migration); `kind` is the new path's. */
+  std::function<void(CallMediaLinkKind kind)> on_path_changed;
+  /**
+   * k4: the call lost its last path (link gone, no standby). It is kept for a reconnect window: a
+   * migration onto a new link brings it back (`on_path_changed`); the window running out fails it
+   * (`on_failed`).
+   */
+  std::function<void()> on_path_lost;
 };
 
 /** Answer to an inbound hello — any thread, at most once. An empty `media_key` NACKs the hello. */
@@ -84,15 +100,6 @@ inline CallMediaInboundHandler AnswerInline(
     answer(std::move(params), std::move(callbacks));
   };
 }
-
-/** Kind of mesh link the active call-media channels are bound on (path label truth). */
-enum class CallMediaLinkKind {
-  Unknown,
-  /** ADP association (dialed or punched). */
-  Direct,
-  /** Nested link over a relay circuit carrier. */
-  Relayed,
-};
 
 /**
  * Single product entry for 1:1 call-media transport ([A020]).
@@ -118,6 +125,34 @@ public:
   virtual CallMediaSessionPhase Phase() const = 0;
   /** Link kind carrying the primary bundle's channels; Unknown until bound. */
   virtual CallMediaLinkKind ActiveLinkKind() const { return CallMediaLinkKind::Unknown; }
+  /**
+   * k3 make-before-break: move the active call onto the peer's Connected link of `kind` while it
+   * keeps running. `done` (on the transport's IO strand) is OK once media flows there; an error
+   * leaves the call on its current path. Transports without path migration refuse.
+   */
+  virtual void MigrateTo(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) {
+    (void)kind;
+    if (done) {
+      done(Error("call-media path migration not supported"));
+    }
+  }
+  /**
+   * k6: whether the transport may move a relayed call onto a direct link to the peer by itself
+   * (the pair policy — a mobile pair anchors on the relay). Default: transports without it ignore.
+   */
+  virtual void SetAutoMigrateToDirect(bool allow) { (void)allow; }
+  /** k6: link kind of the call's warm standby path; Unknown when it has none. */
+  virtual CallMediaLinkKind StandbyLinkKind() const { return CallMediaLinkKind::Unknown; }
+  /**
+   * k6 (K003): bring the peer's Connected link of `kind` up as the call's standby; the call stays on
+   * its path. Best-effort: a peer without it refuses (the call is unharmed). `done` on the IO strand.
+   */
+  virtual void AddStandby(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) {
+    (void)kind;
+    if (done) {
+      done(Error("call-media standby not supported"));
+    }
+  }
   virtual void Detach() = 0;
 
   /**

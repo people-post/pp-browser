@@ -1,6 +1,7 @@
 #include "domain/people/PeerBriefRoute.h"
 
 #include "domain/people/ContactsStore.h"
+#include "common/Utilities.h"
 
 #include <filesystem>
 #include <memory>
@@ -12,7 +13,8 @@ namespace {
 class PeerBriefRouteTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    data_dir_ = std::filesystem::temp_directory_path() / "pp_browser_peer_brief_route_test";
+    // Unique per test: ctest runs each case as its own process, in parallel (TEST_STRATEGY).
+    data_dir_ = std::filesystem::temp_directory_path() / ("pp_browser_peer_brief_route_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
     std::filesystem::create_directories(data_dir_);
     contacts_ = std::make_unique<ContactsStore>(data_dir_.string());

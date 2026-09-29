@@ -33,7 +33,8 @@
 #include "domain/net/HttpClient.h"
 #include "feature/conversations/ProfileIconClient.h"
 #include "feature/conversations/ProfileIconFetch.h"
-#include "feature/conversations/RegistrationClient.h"
+#include "feature/node/NodeMeshServices.h"
+#include "feature/registration/RegistrationClient.h"
 #include "domain/people/ProfileIconCache.h"
 #include "foundation/platform/ProfileIconImagePrep.h"
 #include "domain/people/ContactIdentity.h"
@@ -41,13 +42,15 @@
 #include "foundation/runtime/AppLifecycle.h"
 #include "foundation/runtime/BackgroundSyncScheduler.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "feature/calls/LocalNetworkReaction.h"
 #include "foundation/platform/NetworkConnectivity.h"
 #include "foundation/platform/Platform.h"
 #include "foundation/data/PlatformDefaults.h"
 #include "domain/mesh/l4/circuit/CircuitBridgeTarget.h"
 #include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
 #include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
-#include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/l4/circuit/client/CircuitClientCoordinator.h"
+#include "domain/mesh/l4/circuit/serve/CircuitRelayServer.h"
 #include "domain/mesh/reachability/LanMdnsDiscovery.h"
 #include "domain/mesh/reachability/AmpObservedAddrs.h"
 #include "common/SettledWait.h"
@@ -324,13 +327,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   if (auto pub = identity_->GetDeviceMlDsaPublicKey()) {
     mesh_cfg.host.device_ml_dsa_public_key = *pub;
   }
-  mesh_cfg.host_circuit_relay = role == MeshRole::Node && config_.mesh.capabilities.circuit_relay;
-  mesh_cfg.host_media_relay = role == MeshRole::Node && config_.mesh.capabilities.media_relay;
-  mesh_cfg.host_dht = role == MeshRole::Node && config_.mesh.capabilities.dht;
-  // Org seed / desktop Node: serve Amp directory twin (N029 nd4).
-  mesh_cfg.host_directory = role == MeshRole::Node;
-  mesh_cfg.media_relay_budget = config_.mesh.media_relay_budget;
-  mesh_cfg.media_relay_pricing = config_.mesh.pricing.media_relay;
+  ApplyNodeHosting(mesh_cfg, config_.mesh, role == MeshRole::Node);
   // Skip blocking UPnP/seed probe when the app is already quitting (sync probe when no post_worker).
   mesh_cfg.start_reachability_probe =
       role == MeshRole::Node && !shutdown_requested_.load(std::memory_order_acquire);
@@ -348,6 +345,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
       PublishNodeAdvertisedAddrs();
       RegisterContactEndpoints();
       mesh_media_->RefreshHopPolicy();  // advertised addrs follow the probe (media consumers' view)
+      NoteObservedAddress();
       if (on_reachability_updated_) {
         on_reachability_updated_();
       }
@@ -407,6 +405,45 @@ void ConversationsHub::StartMeshServices() {
   RebuildBroadcast();
   PublishNodeAdvertisedAddrs();
   SyncLanMdnsAdvertisement();
+  StartNetworkMonitor();
+}
+
+void ConversationsHub::NoteObservedAddress() {
+  if (!mesh_) {
+    return;
+  }
+  const std::string observed = mesh_->Reachability().Snapshot().signals.dial_back_observed;
+  if (observed.empty()) {
+    return;
+  }
+  // Our public mapping moved (a NAT rebind, or a network change's re-probe): mobility churn (k6).
+  if (!last_observed_addr_.empty() && observed != last_observed_addr_ && call_stack_) {
+    call_stack_->OnObservedAddressChanged();
+  }
+  last_observed_addr_ = observed;
+}
+
+void ConversationsHub::StartNetworkMonitor() {
+  if (network_monitor_) {
+    return;
+  }
+  network_monitor_ = std::make_unique<NetworkMonitor>();
+  // Backend thread → straight to the mesh / calls entry points (both any-thread). StopMesh stops the
+  // monitor before it tears the mesh down, so mesh_ outlives every callback.
+  if (!network_monitor_->Start([this](const NetworkChange& change) { OnLocalNetworkChanged(change); })) {
+    log().info << "network monitor unavailable on this platform";
+  }
+}
+
+void ConversationsHub::StopNetworkMonitor() {
+  if (network_monitor_) {
+    network_monitor_->Stop();
+    network_monitor_.reset();
+  }
+}
+
+void ConversationsHub::OnLocalNetworkChanged(const NetworkChange& change) {
+  ReactToNetworkChange(change, mesh_.get(), call_stack_.get());
 }
 
 void ConversationsHub::PublishNodeAdvertisedAddrs() {
@@ -571,14 +608,14 @@ void ConversationsHub::ApplyMeshAdmissionPolicies() {
     serve_mask |= static_cast<RelayScopeMask>(RelayScope::Public);
   }
 
-  if (mesh_ && mesh_->AmpCircuitTunnel()) {
+  if (mesh_ && mesh_->AmpCircuitServer()) {
     CircuitRelayAdmissionPolicy policy;
     policy.prefer_contacts_only = limit_strangers;
     policy.serve_scope_mask = serve_mask;
     policy.contact_peer_ids = contact_ids;
-    mesh_->AmpCircuitTunnel()->SetAdmissionPolicy(std::move(policy));
+    mesh_->AmpCircuitServer()->SetAdmissionPolicy(std::move(policy));
   }
-  if (mesh_ && mesh_->AmpMediaRelayCoord()) {
+  if (mesh_ && mesh_->AmpMediaRelayServer()) {
     MediaRelayAdmissionPolicy policy;
     if (mobile_ephemeral) {
       policy.prefer_contacts_only = true;
@@ -589,7 +626,7 @@ void ConversationsHub::ApplyMeshAdmissionPolicies() {
       policy.serve_scope_mask = serve_mask;
       policy.contact_peer_ids = contact_ids;
     }
-    mesh_->AmpMediaRelayCoord()->SetAdmissionPolicy(std::move(policy));
+    mesh_->AmpMediaRelayServer()->SetAdmissionPolicy(std::move(policy));
   }
 }
 
@@ -676,6 +713,7 @@ std::shared_ptr<const MeshConfig> ConversationsHub::MeshConfigSnapshot() const {
 }
 
 void ConversationsHub::StopMesh() {
+  StopNetworkMonitor();
   ResetBroadcast();
   mobile_ephemeral_start_inflight_ = false;
   mobile_ephemeral_start_inflight_at_ms_ = 0;
@@ -805,31 +843,6 @@ void ConversationsHub::RegisterMeshDirectoryEndpoints() {
   }
 }
 
-namespace {
-
-std::vector<std::string> CollectDhtQueryPeerKeys(const std::vector<std::string>& bootstrap_peers,
-                                                 const std::vector<MeshDirectoryNode>& directory_nodes) {
-  std::vector<std::string> keys;
-  std::unordered_set<std::string> seen;
-  // Directory first (N027 L1), then L0 bootstrap seeds.
-  for (const MeshDirectoryNode& node : directory_nodes) {
-    if (node.peer_id.empty() || !seen.insert(node.peer_id).second) {
-      continue;
-    }
-    keys.push_back(node.peer_id);
-  }
-  for (const std::string& ma : bootstrap_peers) {
-    const std::string peer_id = PeerIdFromMultiaddr(ma);
-    if (peer_id.empty() || !seen.insert(peer_id).second) {
-      continue;
-    }
-    keys.push_back(peer_id);
-  }
-  return keys;
-}
-
-} // namespace
-
 void ConversationsHub::RegisterDhtBootstrapEndpoints() {
   if (!mesh_messaging_) {
     return;
@@ -861,9 +874,6 @@ void ConversationsHub::ConfigureAmpDhtProtocol() {
   if (!mesh_ || !mesh_->Amp() || !mesh_->AmpDht() || !identity_) {
     return;
   }
-  const MeshRole role = ResolveMeshRole(config_.mesh);
-  const bool participate = role == MeshRole::Node && config_.mesh.capabilities.dht;
-
   RegisterDhtBootstrapEndpoints();
 
   std::vector<MeshDirectoryNode> directory_nodes;
@@ -872,26 +882,8 @@ void ConversationsHub::ConfigureAmpDhtProtocol() {
   }
   MeshConfig mesh_cfg = config_.mesh;
   NormalizeMeshConfig(mesh_cfg);
-
-  AmpDhtProtocolConfig cfg;
-  cfg.local_peer_id = mesh_->Amp()->LocalPeerId();
-  cfg.listen_multiaddrs = mesh_->AdvertisedListenMultiaddrs();
-  if (cfg.listen_multiaddrs.empty() && IsUsableAdpListen(mesh_->AmpListenMultiaddr())) {
-    cfg.listen_multiaddrs = {mesh_->AmpListenMultiaddr()};
-  }
-  if (auto priv = identity_->GetDeviceMlDsaPrivateKey()) {
-    cfg.device_signing_secret = *priv;
-  }
-  if (auto pub = identity_->GetDeviceMlDsaPublicKey()) {
-    cfg.device_signing_public = *pub;
-  }
-  cfg.tunables = config_.mesh.dht;
-  cfg.query_peer_keys = CollectDhtQueryPeerKeys(mesh_cfg.bootstrap_peers, directory_nodes);
-  cfg.participate = participate;
-  cfg.publish_circuit_relay = participate && config_.mesh.capabilities.circuit_relay;
-  cfg.publish_media_relay = participate && config_.mesh.capabilities.media_relay;
-  mesh_->ConfigureAmpDht(std::move(cfg));
-  mesh_->RefreshAmpDhtHosting(participate);
+  ConfigureNodeAmpDht(*mesh_, *identity_, config_.mesh, ResolveMeshRole(config_.mesh) == MeshRole::Node,
+                      CollectNodeQueryPeerKeys(mesh_cfg.bootstrap_peers, directory_nodes));
 }
 
 namespace {
@@ -904,55 +896,6 @@ std::string AmpDirectoryPeerKeyFromBaseUrl(const std::string& base_url) {
     return PeerIdFromMultiaddr(base_url);
   }
   return base_url;
-}
-
-MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, MeshHost& mesh, const MeshConfig& mesh_cfg) {
-  MeshNodeHit hit;
-  hit.entity_kind = "mesh_node";
-  if (auto loaded = identity.Get()) {
-    hit.relay_user_id = loaded->relay_user_id.empty() ? loaded->peer_id : loaded->relay_user_id;
-    if (!loaded->account_id.empty()) {
-      hit.account_id = loaded->account_id;
-    }
-    if (!loaded->nickname.empty()) {
-      hit.nickname = loaded->nickname;
-    }
-    if (!loaded->public_key_b64.empty()) {
-      hit.signing_public_key_b64 = loaded->public_key_b64;
-    }
-    if (!loaded->kem_public_key_b64.empty()) {
-      hit.kem_public_key_b64 = loaded->kem_public_key_b64;
-    }
-  }
-  if (hit.relay_user_id.empty() && mesh.Amp()) {
-    hit.relay_user_id = mesh.Amp()->LocalPeerId();
-  }
-  hit.capabilities.circuit_relay = mesh_cfg.capabilities.circuit_relay;
-  hit.capabilities.media_relay = mesh_cfg.capabilities.media_relay;
-  hit.capabilities.dht = mesh_cfg.capabilities.dht;
-  hit.capabilities.ledger_gateway = mesh_cfg.capabilities.ledger_gateway;
-  DirectoryEndpoint ep;
-  if (mesh.Amp()) {
-    ep.peer_id = mesh.Amp()->LocalPeerId();
-  }
-  for (const std::string& ma : mesh.AdvertisedListenMultiaddrs()) {
-    if (!ma.empty()) {
-      ep.multiaddrs.push_back(ma);
-    }
-  }
-  if (ep.multiaddrs.empty() && IsUsableAdpListen(mesh.AmpListenMultiaddr())) {
-    ep.multiaddrs.push_back(mesh.AmpListenMultiaddr());
-  }
-  for (const std::string& ma : mesh_cfg.advertise_multiaddrs) {
-    if (!ma.empty() &&
-        std::find(ep.multiaddrs.begin(), ep.multiaddrs.end(), ma) == ep.multiaddrs.end()) {
-      ep.multiaddrs.push_back(ma);
-    }
-  }
-  if (!ep.peer_id.empty()) {
-    hit.endpoints.push_back(std::move(ep));
-  }
-  return hit;
 }
 
 } // namespace
@@ -984,18 +927,14 @@ void ConversationsHub::ConfigureAmpDirectoryProtocol() {
     }
     query_keys.push_back(key);
   }
-  for (const std::string& key : CollectDhtQueryPeerKeys(mesh_cfg.bootstrap_peers, {})) {
+  for (const std::string& key : CollectNodeQueryPeerKeys(mesh_cfg.bootstrap_peers, {})) {
     if (key.empty() || !seen.insert(key).second) {
       continue;
     }
     query_keys.push_back(key);
   }
 
-  AmpDirectoryProtocolConfig cfg;
-  cfg.local_peer_id = mesh_->Amp()->LocalPeerId();
-  cfg.query_peer_keys = std::move(query_keys);
-  mesh_->ConfigureAmpDirectory(std::move(cfg));
-  mesh_->RefreshAmpDirectoryHosting(host_directory);
+  ConfigureNodeAmpDirectory(*mesh_, host_directory, std::move(query_keys));
 
   if (host_directory) {
     mesh_->AmpDirectory()->SetNodesProvider([this, mesh_cfg]() {
@@ -2361,16 +2300,16 @@ void ConversationsHub::RefreshMeshCapabilities() {
   }
   const MeshRole role = ResolveMeshRole(config_.mesh);
   // Amp L4 inbound hosting is gated via SetServeInbound (no TCP CircuitRelay/MediaRelay).
-  if (mesh_->AmpCircuitTunnel()) {
-    mesh_->AmpCircuitTunnel()->SetServeInbound(role == MeshRole::Node &&
+  if (mesh_->AmpCircuitServer()) {
+    mesh_->AmpCircuitServer()->SetServeInbound(role == MeshRole::Node &&
                                                config_.mesh.capabilities.circuit_relay);
   }
   // Rewire sequence (L015): dependents let go of the mesh media objects → reset → rewire → rebind.
   ResetBroadcast();
   call_stack_->DetachMeshMedia();
   mesh_media_->ResetRelayClients();
-  if (mesh_->AmpMediaRelayCoord()) {
-    mesh_->AmpMediaRelayCoord()->SetServeInbound(role == MeshRole::Node &&
+  if (mesh_->AmpMediaRelayServer()) {
+    mesh_->AmpMediaRelayServer()->SetServeInbound(role == MeshRole::Node &&
                                                  config_.mesh.capabilities.media_relay);
   }
   ConfigureAmpDhtProtocol();
@@ -2475,7 +2414,7 @@ Roe<CircuitRelayBridgeResult> ConversationsHub::RequestCircuitBridgePreferred(co
   if (target_peer_id.empty() && target_multiaddr.empty()) {
     return Error("missing circuit bridge target");
   }
-  CircuitTunnelCoordinator* amp_circuit = mesh_ ? mesh_->AmpCircuitTunnel() : nullptr;
+  CircuitClientCoordinator* amp_circuit = mesh_ ? mesh_->AmpCircuitClient() : nullptr;
   if (!amp_circuit || !amp_circuit->IsStarted() || !mesh_ || !mesh_->Amp()) {
     return Error("Amp circuit-relay required");
   }

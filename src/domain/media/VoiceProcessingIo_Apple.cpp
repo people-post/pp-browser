@@ -6,10 +6,14 @@
 #include <TargetConditionals.h>
 #if TARGET_OS_OSX
 #include <CoreAudio/CoreAudio.h>
+#else
+#include "domain/media/CallAudioSession.h"
 #endif
 
 #include <atomic>
+#include <chrono>
 #include <cstring>
+#include <thread>
 #include <vector>
 
 namespace pbr {
@@ -18,8 +22,11 @@ namespace {
 constexpr double kSampleRate = 48000.0;
 constexpr size_t kRingSamples = 48000 / 5;  // 200 ms each way
 constexpr UInt32 kMaxFramesPerSlice = 4096;
-/** Ask for a 10 ms hardware IO buffer; VPIO on macOS otherwise ran 4096-frame (85 ms) cycles. */
+#if TARGET_OS_OSX
+/** Ask for a 10 ms hardware IO buffer; VPIO on macOS otherwise ran 4096-frame (85 ms) cycles.
+ *  (iOS sets the IO buffer on AVAudioSession instead.) */
 constexpr UInt32 kPreferredIoFrames = 480;
+#endif
 constexpr AudioUnitElement kOutputBus = 0;  // speaker
 constexpr AudioUnitElement kInputBus = 1;   // mic
 
@@ -261,6 +268,12 @@ bool VoiceProcessingIo::Open(std::string* reason) {
   desc.componentType = kAudioUnitType_Output;
   desc.componentSubType = kAudioUnitSubType_VoiceProcessingIO;
   desc.componentManufacturer = kAudioUnitManufacturer_Apple;
+#if !TARGET_OS_OSX
+  // Re-assert the call session here, on the device thread, right before the unit is built: a
+  // ringback / ringtone SDL stream closed just ahead of us in the device queue rewrites the
+  // AVAudioSession on close (B36), and VPIO then failed AudioOutputUnitStart with 'what'.
+  CallAudioSession::ActivateForVoipCall();
+#endif
   AudioComponent comp = AudioComponentFindNext(nullptr, &desc);
   if (!comp) {
     return fail("VoiceProcessingIO component not found");
@@ -272,7 +285,17 @@ bool VoiceProcessingIo::Open(std::string* reason) {
   }
   AudioUnit unit = impl_->unit;
 
-  // Input and output IO are both enabled by default on VPIO; setting EnableIO fails (-10865).
+  // macOS: input and output IO are both enabled by default on VPIO; setting EnableIO fails (-10865).
+  // iOS: like RemoteIO, the input element is disabled by default — without this the unit opens but
+  // never calls the input callback (on device: capture starved on every open, then SDL fallback).
+#if !TARGET_OS_OSX
+  const UInt32 enable = 1;
+  st = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, kInputBus, &enable,
+                            sizeof(enable));
+  if (st != noErr) {
+    return fail(Failed("enable input", st));
+  }
+#endif
   const AudioStreamBasicDescription fmt = MonoS16();
   st = AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, kInputBus, &fmt,
                             sizeof(fmt));
@@ -347,6 +370,12 @@ bool VoiceProcessingIo::Open(std::string* reason) {
   impl_->render_chunk_max.store(0, std::memory_order_relaxed);
 
   st = AudioOutputUnitStart(unit);
+  if (st != noErr) {
+    // One retry: a session/route change settling right now (e.g. the previous stream's close) is
+    // the usual cause of a transient start failure.
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    st = AudioOutputUnitStart(unit);
+  }
   if (st != noErr) {
     return fail(Failed("AudioOutputUnitStart", st));
   }

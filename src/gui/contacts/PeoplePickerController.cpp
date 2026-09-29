@@ -241,7 +241,7 @@ void PeoplePickerController::OpenFromDm(const std::string& locked_contact_id) {
   Open(PeoplePickerMode::FromDm, {locked_contact_id});
 }
 
-void PeoplePickerController::OpenForGroupCall(const std::string& thread_id) {
+void PeoplePickerController::OpenForGroupCall(const std::string& thread_id, const bool video_allowed) {
   if (!MessagingInitialized() || !picker_ports_.get_thread) {
     UserFeedback::Fail("Messaging not ready");
     return;
@@ -255,7 +255,8 @@ void PeoplePickerController::OpenForGroupCall(const std::string& thread_id) {
   mode_ = PeoplePickerMode::GroupCall;
   call_thread_id_ = thread_id;
   call_id_.clear();
-  call_video_allowed_ = false;
+  // I1: carry the caller's voice/video menu choice into the picker's checkbox (still editable).
+  call_video_allowed_ = video_allowed;
   show_call_video_option_ = true;
   locked_ids_.clear();
   selected_ids_.clear();

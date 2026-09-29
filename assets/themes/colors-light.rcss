@@ -945,9 +945,37 @@ select selectbox option:hover {
   border-color: #4a6cf7;
 }
 
+.shell-call-ring-action-label {
+  color: #4b5563;
+}
+
+.shell-call-ring-decline {
+  background-color: #dc2626;
+}
+
+.shell-call-ring-decline svg {
+  image-color: #ffffff;
+}
+
+.shell-call-ring-voice {
+  background-color: #e8eaed;
+}
+
+.shell-call-ring-voice svg {
+  image-color: #1a1a1a;
+}
+
+.shell-call-accept {
+  background-color: #16a34a;
+}
+
+.shell-call-accept svg {
+  image-color: #ffffff;
+}
+
 .shell-call-accept--pulse {
-  background-color: #5a7cff;
-  box-shadow: 0 0 0 4dp #4a6cf733, 0 4dp 14dp #4a6cf755;
+  background-color: #22c55e;
+  box-shadow: 0 0 0 4dp #16a34a33, 0 4dp 14dp #16a34a55;
 }
 
 .chat-empty {
@@ -1367,4 +1395,19 @@ select selectbox option:hover {
 .context-menu-item--danger svg {
   image-color: #dc2626;
 }
+}
+
+input.checkbox {
+  border-color: #d1d5db;
+  background-color: transparent;
+}
+
+input.checkbox:hover,
+input.checkbox:focus {
+  border-color: #4a6cf7;
+}
+
+input.checkbox:checked {
+  border-color: #4a6cf7;
+  background-color: #4a6cf7;
 }
