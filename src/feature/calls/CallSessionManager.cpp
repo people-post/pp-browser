@@ -80,7 +80,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
                  return std::nullopt;
                }),
       key_exchange_(sessions, media_keys, control_), billing_(identity),
-      workflow_(store, sessions, key_exchange_, billing_, live_calls_) {
+      workflow_(store, sessions, key_exchange_, billing_, live_calls_), peer_accounts_(contacts) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
   key_exchange_.SetOnKeyReady([this](const std::string& call_id) {
@@ -690,79 +690,30 @@ void CallSessionManager::SetRegisterPeerListenMultiaddrs(RegisterPeerListenMulti
 }
 
 void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool media_relay) {
-  if (peer_id.empty()) {
-    return;
-  }
-  const bool was = PeerHasMediaRelayCap(peer_id);
-  peer_media_relay_caps_[peer_id] = media_relay;
   // Topology owns SoftMigrate nudge (N≥3 / attach-wait only — V038).
-  if (media_relay && !was) {
+  if (media_relay_caps_.Note(peer_id, media_relay)) {
     if (auto active = ActiveLocalCall(); active && active->has_value()) {
       topology_.OnPeerMediaRelayCapLearned((*active)->call_id, peer_id);
     }
   }
 }
 
-void CallSessionManager::NoteMeshPeerIdForRelay(const std::string& relay_identity,
-                                                  const std::string& peer_id) {
-  const auto direct_media = direct_media_.Get();
-  if (relay_identity.empty() || peer_id.empty() || !IsAccountIdentityValue(relay_identity)) {
+void CallSessionManager::NoteMeshPeerIdForRelay(const std::string& relay_identity, const std::string& peer_id) {
+  if (!peer_accounts_.Learn(relay_identity, peer_id)) {
     return;
   }
-  peer_id_to_relay_[peer_id] = relay_identity;
+  const auto direct_media = direct_media_.Get();
   if (direct_media->note_peer_id_relay_mapping) {
     direct_media->note_peer_id_relay_mapping(peer_id, relay_identity);
   }
-  auto found = contacts_.FindByIdentity(relay_identity, ContactIdKind::Account);
-  if (!found || !found->has_value()) {
-    // Non-contact call participants: in-memory map + bridge rebind is enough.
-    log().info << "NoteMeshPeerIdForRelay map-only (no contact) peer_id=" << peer_id
-               << " account=" << relay_identity;
-    return;
-  }
-  Contact contact = **found;
-  if (PeerIdFromContact(contact) == peer_id) {
-    return;
-  }
-  bool has_peer = false;
-  for (const ContactId& id : contact.ids) {
-    if (id.kind == ContactIdKind::PeerId && id.value == peer_id) {
-      has_peer = true;
-      break;
-    }
-  }
-  if (has_peer) {
-    return;
-  }
-  contact.ids.push_back(ContactId{ContactIdKind::PeerId, peer_id, false});
-  contact.remote.ids = contact.ids;
-  PromoteFlatFieldsToNested(contact);
-  SyncContactMirrors(contact);
-  if (auto saved = contacts_.Upsert(contact); !saved) {
-    log().warning << "NoteMeshPeerIdForRelay contact upsert failed account=" << relay_identity
-                  << " peer=" << peer_id << " err=" << saved.error().message;
-    return;
-  }
-  log().info << "NoteMeshPeerIdForRelay learned peer_id=" << peer_id << " account=" << relay_identity;
 }
 
 bool CallSessionManager::PeerHasMediaRelayCap(const std::string& peer_id) const {
-  if (peer_id.empty()) {
-    return false;
-  }
-  const auto it = peer_media_relay_caps_.find(peer_id);
-  return it != peer_media_relay_caps_.end() && it->second;
+  return media_relay_caps_.Has(peer_id);
 }
 
 std::vector<std::string> CallSessionManager::ListMediaRelayCapablePeerIds() const {
-  std::vector<std::string> out;
-  out.reserve(peer_media_relay_caps_.size());
-  for (const auto& [peer_id, enabled] : peer_media_relay_caps_) {
-    if (enabled && !peer_id.empty()) {
-      out.push_back(peer_id);
-    }
-  }
-  return out;
+  return media_relay_caps_.ListCapable();
 }
 
 void CallSessionManager::NotifyRingChanged() {
@@ -1360,78 +1311,23 @@ Roe<std::optional<std::string>> CallSessionManager::P2pPeerIdentityForCall(const
 }
 
 Roe<std::optional<std::string>> CallSessionManager::MeshPeerIdForAccount(const std::string& account) const {
-  if (account.empty() || account.rfind("account:", 0) != 0) {
-    return std::optional<std::string>{};
-  }
-  for (const auto& [peer_id, relay] : peer_id_to_relay_) {
-    if (relay == account && !peer_id.empty()) {
-      return std::optional<std::string>{peer_id};
-    }
-  }
-  auto found = contacts_.FindByIdentity(account, ContactIdKind::Account);
-  if (!found) {
-    return found.error();
-  }
-  if (found->has_value()) {
-    const std::string peer_id = PeerIdFromContact(**found);
-    if (!peer_id.empty()) {
-      return std::optional<std::string>{peer_id};
-    }
-  }
-  return std::optional<std::string>{};
+  return peer_accounts_.PeerIdForAccount(account);
 }
 
 Roe<std::optional<std::string>> CallSessionManager::RelayIdentityForMeshPeerId(
     const std::string& call_id, const std::string& peer_id) const {
-  if (peer_id.empty()) {
-    return std::optional<std::string>{};
-  }
-  if (const auto it = peer_id_to_relay_.find(peer_id); it != peer_id_to_relay_.end()) {
-    return std::optional<std::string>{it->second};
-  }
-  auto account_from_contact = [](const Contact& contact) -> std::string {
-    if (auto account = ContactAccountId(contact)) {
-      return *account;
+  // Prefer the call's participants whose contact carries the inbound stream's PeerId.
+  std::vector<std::string> participants;
+  if (!call_id.empty() && !peer_id.empty()) {
+    auto rows = sessions_.ListParticipants(call_id);
+    if (!rows) {
+      return rows.error();
     }
-    return {};
-  };
-  // Prefer a call participant whose contact PeerId matches the inbound stream peer.
-  if (!call_id.empty()) {
-    auto participants = sessions_.ListParticipants(call_id);
-    if (!participants) {
-      return participants.error();
-    }
-    for (const CallParticipant& row : *participants) {
-      if (row.identity.empty()) {
-        continue;
-      }
-      auto found = contacts_.FindByIdentity(row.identity, ContactIdKind::Account);
-      if (!found) {
-        return found.error();
-      }
-      if (!found->has_value()) {
-        continue;
-      }
-      if (PeerIdFromContact(**found) == peer_id) {
-        return std::optional<std::string>{row.identity};
-      }
+    for (const CallParticipant& row : *rows) {
+      participants.push_back(row.identity);
     }
   }
-  // Fallback: any contact with this PeerId (or /p2p/ PeerId in multiaddrs).
-  auto listed = contacts_.List();
-  if (!listed) {
-    return listed.error();
-  }
-  for (const Contact& contact : *listed) {
-    if (PeerIdFromContact(contact) != peer_id) {
-      continue;
-    }
-    const std::string account = account_from_contact(contact);
-    if (!account.empty()) {
-      return std::optional<std::string>{account};
-    }
-  }
-  return std::optional<std::string>{};
+  return peer_accounts_.AccountForPeerId(peer_id, participants);
 }
 
 void CallSessionManager::P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) {

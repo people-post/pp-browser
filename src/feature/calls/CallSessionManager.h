@@ -13,6 +13,8 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallControlClient.h"
 #include "feature/calls/CallDeliveryPorts.h"
+#include "domain/mesh/reach/PeerMediaRelayCaps.h"
+#include "domain/people/PeerAccountBook.h"
 #include "feature/calls/CallInitiationBilling.h"
 #include "feature/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallMediaSeat.h"
@@ -388,10 +390,10 @@ private:
   CallPeerCapsSink call_peer_caps_sink_;
   LocalMeshPeerIdFn local_mesh_peer_id_;
   RegisterPeerListenMultiaddrsFn register_peer_listen_multiaddrs_;
-  /** PeerId → advertised media_relay (V030). Absent key = unknown / fail closed. */
-  std::unordered_map<std::string, bool> peer_media_relay_caps_;
-  /** mesh PeerId → relay: identity learned from CallAccept/Invite listen multiaddrs / mDNS. */
-  std::unordered_map<std::string, std::string> peer_id_to_relay_;
+  /** PeerId → advertised media_relay (V030). Unknown = fail closed. */
+  PeerMediaRelayCaps media_relay_caps_;
+  /** mesh PeerId ↔ account learned from CallAccept / Invite / mDNS, over the contacts. */
+  PeerAccountBook peer_accounts_;
   std::optional<std::string> last_media_error_;
   std::string media_activity_;
 };

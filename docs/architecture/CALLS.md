@@ -539,6 +539,8 @@ Landed (behavior-preserving + who-picks fix):
 | `src/domain/messaging/CallMediaKeyStore.*` | Epoch key wrap |
 | `src/feature/calls/CallMediaKeyExchange.*` | Epoch keys between the peers (mint, wrap, send, take in) |
 | `src/feature/calls/CallInitiationBilling.*` | P001 initiation pricing on invite / accept (offer, payable checks, our floor, per-peer book) |
+| `src/domain/people/PeerAccountBook.*` | Mesh PeerId ↔ account learned from invite / accept (in memory, written back onto the contact); CSM asks it for stream ids and dial keys |
+| `src/domain/mesh/reach/PeerMediaRelayCaps.h` | Which mesh peers advertised media_relay (V030), from their caps ads |
 | `src/gui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |
 | `src/domain/media/CallMediaEngine.*` | Opus/H264/SDL capture; libp2p/SFU packet transport |
 | `src/domain/media/CallMediaAdaptation.*` | V024 + `CallMediaTopology` |
