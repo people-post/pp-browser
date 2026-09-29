@@ -297,6 +297,7 @@ TEST_F(CallDualStackComposeTest, RetryFromOneSideReconnectsAFailedOpenCallOnBoth
   EXPECT_TRUE(offer_.stack->MediaEngine() && offer_.stack->MediaEngine()->IsActive());
   EXPECT_EQ(offer_.transport->connect_async_calls, offer_dials) << "resumed over the inbound stream, no redial";
   FinishAnswerLeaveExpectBothIdle(call_id);
+  EXPECT_EQ(offer_.ui->TakeRemoteEndedCallId(), std::optional<std::string>(call_id));
 }
 
 TEST_F(CallDualStackComposeTest, OfferLeaveClearsAnswererIdle) {
@@ -311,6 +312,10 @@ TEST_F(CallDualStackComposeTest, OfferLeaveClearsAnswererIdle) {
   const std::string call_id = RunOfferAnswerToInCall(thread.id);
   ASSERT_FALSE(call_id.empty());
   FinishOfferLeaveExpectBothIdle(call_id);
+  // The answerer is told why its call vanished — once; the side that left is not.
+  EXPECT_EQ(answer_.ui->TakeRemoteEndedCallId(), std::optional<std::string>(call_id));
+  EXPECT_EQ(answer_.ui->TakeRemoteEndedCallId(), std::nullopt) << "once per call";
+  EXPECT_EQ(offer_.ui->TakeRemoteEndedCallId(), std::nullopt) << "the leaver ended it itself";
 }
 
 TEST_F(CallDualStackComposeTest, OfferAnswerKCycleTeardown) {

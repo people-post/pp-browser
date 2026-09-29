@@ -502,6 +502,16 @@ void CallController::RefreshPendingRing() {
     // users can read multi-hop diagnostics.
     UserFeedback::NeedsSetup(PaymentErrorUserMessage(*media_err));
   }
+  // The peer ended a call we were in (also a failed one — failed is not closed): the panel is
+  // about to go, so say why instead of letting the call silently vanish.
+  if (auto ended = backend->TakeRemoteEndedCallId(); ended) {
+    std::string name;
+    if (auto peer = backend->PeerIdentityForCall(*ended); peer && peer->has_value()) {
+      name = DisplayNameForIdentity(**peer);
+    }
+    UserFeedback::Ok(name.empty() ? Tr("call.status.ended_by_peer_unknown")
+                                  : Tr("call.status.ended_by_peer", {{"name", name}}));
+  }
 
   // Attach-wait / connect health are SM-owned timers (V039 pm3) — do not poll on UI tick.
 

@@ -200,6 +200,7 @@ void CallStack::PublishUiState() {
     state.accepting_call_id = call_lifecycle_->AcceptingCallId();
     state.last_ring_call_id = call_lifecycle_->LastRingCallId();
     state.last_error = call_lifecycle_->LastError();
+    state.remote_ended_call_id = call_lifecycle_->RemoteEndedCallId();
   }
   if (call_sessions_) {
     state.awaiting_sfu_recovery = call_sessions_->IsAwaitingSfuRecovery();

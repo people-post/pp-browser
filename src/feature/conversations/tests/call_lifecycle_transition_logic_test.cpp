@@ -183,5 +183,24 @@ TEST(CallLifecycleTransitionLogicTest, PeerReconnectedResumesOnlyAFailedOpenCall
     EXPECT_FALSE(HasAction(out.actions, CallLifecycleAction::PostResumeMedia)) << CallPhaseName(phase);
   }
 }
+
+// The peer ending a call this side placed, joined or was failed in is news; a ring that ended is not.
+TEST(CallLifecycleTransitionLogicTest, RemoteEndNotedOnlyForACallThisSideWasIn) {
+  for (const auto phase : {CallPhase::OutboundCalling, CallPhase::JoinedLocal, CallPhase::MediaConnecting,
+                           CallPhase::InCall, CallPhase::ConnectFailed}) {
+    auto ctx = Ctx(phase);
+    ctx.active_call_id = "call:1";
+    ctx.event_call_id = "call:1";
+    const auto out = DecideCallLifecycleTransition(CallLifecycleEvent::RemoteEnded, ctx);
+    EXPECT_TRUE(HasAction(out.actions, CallLifecycleAction::NoteRemoteEnded)) << CallPhaseName(phase);
+    EXPECT_EQ(out.next_phase, CallPhase::Idle);
+  }
+  for (const auto phase : {CallPhase::Ringing, CallPhase::Idle}) {
+    auto ctx = Ctx(phase);
+    ctx.event_call_id = "call:1";
+    const auto out = DecideCallLifecycleTransition(CallLifecycleEvent::RemoteEnded, ctx);
+    EXPECT_FALSE(HasAction(out.actions, CallLifecycleAction::NoteRemoteEnded)) << CallPhaseName(phase);
+  }
+}
 } // namespace
 } // namespace pbr
