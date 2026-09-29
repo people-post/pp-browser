@@ -40,6 +40,9 @@ constexpr int kFrameSamples = kSampleRate * kFrameMs / 1000;
 constexpr int kFrameBytes = kFrameSamples * static_cast<int>(sizeof(int16_t));
 /** Keep ~60 ms queued in the device (spec §1); above ~120 ms skip a slot to shed latency. */
 constexpr int kPlayoutTargetQueuedBytes = 3 * kFrameBytes;
+/** +6 dB on the voice-processing (VPIO) path: the OS attenuates call output there by design and
+ *  the Mac speaker was noticeably quieter than other apps. Soft-kneed, so peaks don't clip. */
+constexpr float kVoicePlayoutGain = 2.0f;
 constexpr int kPlayoutHighWaterBytes = 6 * kFrameBytes;
 /** Never produce more than this many slots per 20 ms wake-up (startup / after a stall). */
 constexpr int kPlayoutMaxSlotsPerTick = 3;
@@ -430,13 +433,16 @@ struct CallMediaEngine::Impl {
     waiter.detach();
   }
 
-  /** One playout slot for one track: decode Packet / FEC-on-Gap / PLC-on-Empty into `mix`. */
+  /**
+   * One playout slot for one track: decode Packet / FEC-on-Gap / PLC-on-Empty into `mix`. When the
+   * buffer is over its adaptive target, a first-pass decoded Packet that turns out to be silence is
+   * dropped and a second frame is popped/decoded to catch up by one slot without an audible gap
+   * (adaptive jitter §2).
+   */
   void PopAndDecodeTrackLocked(RemoteAudioTrack& track, std::vector<int16_t>& mix, bool& any) {
     if (!track.decoder) {
       return;
     }
-    const uint64_t underruns_before = track.jitter.underruns();
-    AudioPlayoutPop pop = track.jitter.PopForPlayout();
     std::vector<int16_t> pcm(static_cast<size_t>(kFrameSamples), 0);
     const auto plc = [&]() {
       const int n = opus_decode(track.decoder, nullptr, 0, pcm.data(), kFrameSamples, 0);
@@ -446,32 +452,43 @@ struct CallMediaEngine::Impl {
       return n;
     };
     int decoded = 0;
-    switch (pop.kind) {
-    case AudioPlayoutPop::Kind::Packet:
-      decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
-                            kFrameSamples, 0);
-      break;
-    case AudioPlayoutPop::Kind::Gap:
-      // The next packet's in-band FEC (LBRR) only covers the frame right before it; earlier
-      // missing frames of a wider hole are PLC. PLC also if the FEC decode fails.
-      if (pop.fec_usable) {
+    for (int pass = 0; pass < 2; ++pass) {
+      const uint64_t underruns_before = track.jitter.underruns();
+      AudioPlayoutPop pop = track.jitter.PopForPlayout();
+      decoded = 0;
+      switch (pop.kind) {
+      case AudioPlayoutPop::Kind::Packet:
         decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
-                              kFrameSamples, 1);
+                              kFrameSamples, 0);
+        break;
+      case AudioPlayoutPop::Kind::Gap:
+        // The next packet's in-band FEC (LBRR) only covers the frame right before it; earlier
+        // missing frames of a wider hole are PLC. PLC also if the FEC decode fails.
+        if (pop.fec_usable) {
+          decoded = opus_decode(track.decoder, pop.payload.data(), static_cast<int>(pop.payload.size()), pcm.data(),
+                                kFrameSamples, 1);
+        }
+        if (decoded > 0) {
+          // libopus returns >0 both for a real FEC frame and for a PLC-like frame it synthesises
+          // when the packet carried no FEC data — counting both as fec= is accepted (diagnostic).
+          fec_frames_total.fetch_add(1, std::memory_order_relaxed);
+        } else {
+          decoded = plc();
+        }
+        break;
+      case AudioPlayoutPop::Kind::Empty:
+        // Priming (buffer hasn't reached target depth yet) also returns Empty but is not a real
+        // underrun — only count/PLC it when this pop actually incremented the cumulative counter.
+        if (track.jitter.underruns() > underruns_before) {
+          playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
+          decoded = plc();
+        }
+        break;
       }
-      if (decoded > 0) {
-        // libopus returns >0 both for a real FEC frame and for a PLC-like frame it synthesises
-        // when the packet carried no FEC data — counting both as fec= is accepted (diagnostic).
-        fec_frames_total.fetch_add(1, std::memory_order_relaxed);
-      } else {
-        decoded = plc();
-      }
-      break;
-    case AudioPlayoutPop::Kind::Empty:
-      // Priming (buffer hasn't reached target depth yet) also returns Empty but is not a real
-      // underrun — only count/PLC it when this pop actually incremented the cumulative counter.
-      if (track.jitter.underruns() > underruns_before) {
-        playout_underruns_total.fetch_add(1, std::memory_order_relaxed);
-        decoded = plc();
+      if (pass == 0 && pop.kind == AudioPlayoutPop::Kind::Packet && decoded > 0 && track.jitter.OverTarget() &&
+          IsCatchUpSilence(pcm, static_cast<size_t>(decoded))) {
+        track.jitter.NoteSilenceDrop();
+        continue; // catch up: pop and decode the next frame instead of playing this silent one
       }
       break;
     }
@@ -535,6 +552,7 @@ struct CallMediaEngine::Impl {
             tick_gap_max_ms = 0;
           }
           int slots = out ? PlayoutSlotsLocked(*out) : 1;
+          const bool voice_out = out && out->WithVoiceProcessing([](IVoiceProcessing&) {});
           if (audio_tracks.empty()) {
             slots = 0;  // nothing to pop or put; don't inflate playout_ticks (Pressure window)
           }
@@ -551,6 +569,9 @@ struct CallMediaEngine::Impl {
               pressure = std::max(pressure, track->jitter.Pressure(std::max<uint64_t>(ticks, 1)));
             }
             if (out && any) {
+              if (voice_out) {
+                ApplySoftGain(mix, kVoicePlayoutGain);
+              }
               SmoothLevel(remote_output_level, FramePeakLevel(mix.data(), kFrameSamples));
               remote_level_ms.store(util::NowUnixMs(), std::memory_order_relaxed);
               (void)out->Write(mix.data(), kFrameBytes);
@@ -719,7 +740,7 @@ struct CallMediaEngine::Impl {
 
   /**
    * Duplex calls take mic + speaker from one OS voice-processing unit (echo cancellation) when the
-   * backend has one (macOS VPIO; the other platforms' backends say "unsupported"); otherwise — or
+   * backend has one (Apple VPIO on macOS / iOS; other platforms say "unsupported"); otherwise — or
    * once disabled for this call — separate leases follow.
    */
   void TryAcquireVoiceDuplex(const SessionSpec& want_spec, const std::string& holder,
@@ -1113,11 +1134,16 @@ struct CallMediaEngine::Impl {
     }
     // Decoded at playout (packet-level jitter buffer: FEC on a gap needs the next packet).
     const int64_t recv_ms = util::NowUnixMs();
+    // Monotonic clock for the jitter estimator (AudioPacket.recv_ms): a wall-clock (NTP) step
+    // would otherwise look like packet lateness (M6). rx_age / health still compare wall clock.
+    const int64_t recv_mono_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                      std::chrono::steady_clock::now().time_since_epoch())
+                                      .count();
     ++track->rx_frames;
     track->last_rx_ms = recv_ms;
     AudioPacket packet;
     packet.seq = seq;
-    packet.recv_ms = recv_ms;
+    packet.recv_ms = recv_mono_ms;
     packet.payload.assign(reinterpret_cast<const uint8_t*>(data), reinterpret_cast<const uint8_t*>(data) + size);
     track->jitter.Push(std::move(packet));
     rx_audio_frames.fetch_add(1, std::memory_order_relaxed);
@@ -1434,6 +1460,12 @@ CallMediaEngineHealth CallMediaEngine::HealthSnapshot() const {
       s.last_rx_ms = track->last_rx_ms;
       s.peak_level = track->peak_level;
       h.streams.push_back(s);
+      h.jitter_target_ms = std::max(h.jitter_target_ms,
+                                     static_cast<int64_t>(track->jitter.TargetFrames()) * AudioJitterBuffer::kFrameMs);
+      h.jitter_depth_ms = std::max(h.jitter_depth_ms,
+                                    static_cast<int64_t>(track->jitter.size()) * AudioJitterBuffer::kFrameMs);
+      h.jitter_silence_drops += track->jitter.silence_drops();
+      h.jitter_speech_drops += track->jitter.speech_drops();
     }
   }
   return h;

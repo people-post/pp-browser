@@ -84,6 +84,28 @@ TEST_F(CallSessionStoreTest, UpsertSessionAndParticipants) {
   EXPECT_EQ((*after)->status, "accepted");
 }
 
+TEST_F(CallSessionStoreTest, PlannedHopPersists) {
+  CallSession session;
+  session.call_id = "call:planned";
+  session.state = CallSessionState::Ringing;
+  session.created_at = 1000;
+  session.media_key_id = "mk:1";
+  ASSERT_TRUE(calls_->UpsertSession(session));
+  auto loaded = calls_->LoadSession(session.call_id);
+  ASSERT_TRUE(loaded && loaded->has_value());
+  EXPECT_FALSE((*loaded)->planned_hop);
+
+  session.planned_hop = CallPlannedHop{"12D3KooWHop", "/ip4/198.18.117.2/udp/443/adp/1.0.0/p2p/12D3KooWHop"};
+  ASSERT_TRUE(calls_->UpsertSession(session));
+  loaded = calls_->LoadSession(session.call_id);
+  ASSERT_TRUE(loaded && loaded->has_value() && (*loaded)->planned_hop);
+  EXPECT_EQ((*loaded)->planned_hop->peer_id, "12D3KooWHop");
+  EXPECT_EQ((*loaded)->planned_hop->multiaddr, "/ip4/198.18.117.2/udp/443/adp/1.0.0/p2p/12D3KooWHop");
+  auto active = calls_->ListActiveSessions();
+  ASSERT_TRUE(active && !active->empty());
+  ASSERT_TRUE(active->front().planned_hop);
+}
+
 TEST_F(CallSessionStoreTest, UpsertPreservesFirstJoinedAt) {
   CallSession session;
   session.call_id = "call:joined-at";

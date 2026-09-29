@@ -125,6 +125,8 @@ public:
   void SetRelayStandbyDelayMsForTest(int delay_ms) { standby_delay_ms_for_test_ = delay_ms; }
   /** Every direct-upgrade attempt after this delay (0 = production 3 s / 20 s / 60 s). */
   void SetDirectUpgradeDelayMsForTest(int delay_ms) { upgrade_delay_ms_for_test_ = delay_ms; }
+  /** Test-only (calls owner): what the reach loop last settled on — may differ from the bound link. */
+  void SetReachKindForTest(PeerLinkKind kind) { reach_kind_ = kind; }
   /** Shrink per-attempt ConnectAsync timeout (and watchdog margin) for gtests (0 = production default). */
   void SetConnectAttemptTimeoutMsForTest(int timeout_ms);
 

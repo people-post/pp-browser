@@ -340,7 +340,7 @@ private:
                                const std::string& local_identity);
   Roe<void> HandleInboundRoster(const std::string& detail_json);
   Roe<void> HandleInboundMediaKey(const std::string& detail_json, const std::string& sender_identity);
-  Roe<void> HandleInboundSfuAttach(const std::string& detail_json);
+  Roe<void> HandleInboundSfuAttach(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);

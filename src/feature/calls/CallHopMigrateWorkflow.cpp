@@ -88,6 +88,10 @@ CallHopMigrateWorkflow::CallHopMigrateWorkflow(CallSessionStore& sessions, CallM
   redirectLogger("CallHopMigrateWorkflow");
 }
 
+CallHopMigrateWorkflow::~CallHopMigrateWorkflow() {
+  timers_self_.Invalidate();
+}
+
 void CallHopMigrateWorkflow::SetHostPorts(CallHopMigrateHostPorts ports) {
   host_ = std::move(ports);
 }
@@ -416,7 +420,23 @@ std::vector<MeshHopCandidate> CallHopMigrateWorkflow::RankHopsForSoftMigrate(Hop
              << " prefer_local=" << (prefer_local_flag ? 1 : 0)
              << " first=" << (ranked.empty() ? "" : ranked.front().peer_id) << " call_id=" << pick.call_id;
   if (!prefer_hop_peer_id.empty()) {
-    ranked = PreferNamedHopFirst(std::move(ranked), prefer_hop_peer_id);
+    return PreferNamedHopFirst(std::move(ranked), prefer_hop_peer_id);
+  }
+  // V050: the hop planned from the invite list at StartCall goes first — invitees were told about
+  // it, so it stays a candidate even if the listing changed since.
+  if (pick.session && pick.session->planned_hop && !pick.session->planned_hop->peer_id.empty()) {
+    const CallPlannedHop& planned = *pick.session->planned_hop;
+    const bool listed = std::any_of(ranked.begin(), ranked.end(),
+                                    [&](const MeshHopCandidate& c) { return c.peer_id == planned.peer_id; });
+    if (!listed && !planned.multiaddr.empty()) {
+      MeshHopCandidate hop;
+      hop.peer_id = planned.peer_id;
+      hop.multiaddr = planned.multiaddr;
+      hop.dialable = true;
+      ranked.insert(ranked.begin(), std::move(hop));
+    }
+    ranked = PreferNamedHopFirst(std::move(ranked), planned.peer_id);
+    log().info << "SoftMigrate planned hop first=" << planned.peer_id << " call_id=" << pick.call_id;
   }
   return ranked;
 }
@@ -547,10 +567,15 @@ void CallHopMigrateWorkflow::FanOutPickedHop(const std::string& call_id, const C
   log().info << "SoftMigrate fan-out CallSfuAttach hop=" << attach.hop_peer_id
              << " ma=" << (attach.hop_multiaddr.empty() ? "(empty)" : attach.hop_multiaddr) << " call_id=" << call_id;
   (void)host_.fan_out_joined(call_id, CallControlType::CallSfuAttach, *encoded, "Call SFU attach", local_identity);
-  AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(2000), [this, call_id, encoded = *encoded,
-                                                                            local_identity]() {
-    CallsThread::Post([this, call_id, encoded, local_identity]() {
-      if (!sfu_.attached || media_.ActiveCallId() != call_id) {
+  AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(2000), [this, token = timers_self_.token(),
+                                                                            snap = timers_self_.Snapshot(), call_id,
+                                                                            encoded = *encoded, local_identity,
+                                                                            hop = attach.hop_peer_id]() {
+    CallsThread::Post([this, token, snap, call_id, encoded, local_identity, hop]() {
+      // V050: the group may have moved since (a later joiner's re-pick) — re-announcing this hop
+      // would send everyone back to it.
+      if (!DeferredSelf::Alive(token, snap) || !sfu_.attached || media_.ActiveCallId() != call_id ||
+          flight_.attached_hop_peer_id != hop) {
         return;
       }
       log().info << "SoftMigrate re-fan-out CallSfuAttach call_id=" << call_id;
@@ -561,13 +586,7 @@ void CallHopMigrateWorkflow::FanOutPickedHop(const std::string& call_id, const C
 }
 
 MediaRelayAttachPorts CallHopMigrateWorkflow::RelayAttachPorts() const {
-  MediaRelayAttachPorts ports;
-  if (relay_deps_) {
-    ports.relay = relay_deps_->relay;
-    ports.dial = relay_deps_->dial;
-    ports.service_reach = relay_deps_->circuit_reach;
-  }
-  return ports;
+  return relay_deps_ ? relay_deps_->AttachPorts() : MediaRelayAttachPorts{};
 }
 
 MediaRelayAttachRequest CallHopMigrateWorkflow::MakeRelayAttachRequest(const std::string& call_id,
@@ -1043,9 +1062,10 @@ void CallHopMigrateWorkflow::ReleaseDirectAfterHopAttach(const HopAttach& at) {
   // stale (dogfood UI).
   host_.ReleaseDirectMedia();
   host_.ClearMediaActivity();
-  auto do_release = [this, call_id = at.call_id, release_gen = at.gen_at_start,
-                     release_fanout = BuildSfuAttachFanout(at.attach), self_hop = at.self_hop]() {
-    if (!sfu_.attached || media_.ActiveCallId() != call_id) {
+  auto do_release = [this, token = timers_self_.token(), snap = timers_self_.Snapshot(), call_id = at.call_id,
+                     release_gen = at.gen_at_start, release_fanout = BuildSfuAttachFanout(at.attach),
+                     self_hop = at.self_hop]() {
+    if (!DeferredSelf::Alive(token, snap) || !sfu_.attached || media_.ActiveCallId() != call_id) {
       return;
     }
     if (self_hop && IsMigrateGenerationCurrent(release_gen)) {
@@ -1116,9 +1136,14 @@ void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
       log().warning << "Guest SFU reattach failed attempt=" << attempt
                     << " err=" << ok.error().message << " call_id=" << call_id;
       const int backoff_ms = 400 * attempt;
-      (void)AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds(backoff_ms), [this]() {
-        CallsThread::Post([this]() { OnGuestSfuTransportLost(); });
-      });
+      (void)AppRuntime::ScheduleCoordinatorOneShot(
+          std::chrono::milliseconds(backoff_ms), [this, token = timers_self_.token(), snap = timers_self_.Snapshot()]() {
+            CallsThread::Post([this, token, snap]() {
+              if (DeferredSelf::Alive(token, snap)) {
+                OnGuestSfuTransportLost();
+              }
+            });
+          });
     });
   });
 }

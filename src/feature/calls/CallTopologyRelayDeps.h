@@ -5,6 +5,7 @@
 #include "domain/mesh/reachability/MeshReachPorts.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/mesh/l4/media_relay/IMediaRelayClient.h"
+#include "domain/mesh/l4/media_relay/MediaRelayAttach.h"
 #include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
 #include "common/media/CallMediaHealth.h"
 #include "amp/link/Types.h"
@@ -28,6 +29,9 @@ struct CallTopologyMediaRelayDeps {
   IMediaRelayClient* relay = nullptr;
   IDialRegistry* dial = nullptr;
   ICircuitHopReach* circuit_reach = nullptr;
+  /** Mesh media plane liveness for the three pointers above (null = ungated; tests). */
+  DeferredSelf::Token objects_alive;
+  uint64_t objects_snap = 0;
   std::vector<std::string> bootstrap_peers;
   bool prefer_contacts = true;
   /** Cached mesh_node listings (n-dir). */
@@ -69,6 +73,17 @@ struct CallTopologyMediaRelayDeps {
    * PreferLocal for private advertise requires this — same-/24 alone is insufficient.
    */
   std::function<bool(const std::string& peer_id)> peer_lan_confirmed;
+
+  /** Attach / quote ports carrying the plane's liveness gate. */
+  MediaRelayAttachPorts AttachPorts() const {
+    MediaRelayAttachPorts ports;
+    ports.relay = relay;
+    ports.dial = dial;
+    ports.service_reach = circuit_reach;
+    ports.objects_alive = objects_alive;
+    ports.objects_snap = objects_snap;
+    return ports;
+  }
 };
 
 } // namespace pbr

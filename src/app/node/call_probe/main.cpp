@@ -47,6 +47,43 @@ namespace {
 int g_rx_stall_ms = 0;
 /** --watch-ms (answerer): stall window after first rx (offerer hold minus margin). */
 int g_rx_watch_ms = 0;
+/** --min-rx-streams / --stream-rx-frames / --stream-window-ms (product-stack group calls). */
+int g_min_rx_streams = 0;
+int g_stream_rx_frames = 50;
+int g_stream_window_ms = 3000;
+/** --accept-delay-ms / --leave-after-gate-ms (product-stack answerer, group calls). */
+int g_accept_delay_ms = 0;
+int g_leave_after_gate_ms = 0;
+/** --extra-hop (product-stack, repeatable): more hops this probe knows, after the warm / via hop. */
+std::vector<std::string> g_extra_hops;
+/** --invite-later <peer-ma>,<account> + --invite-later-ms (product-stack offerer, V050 gt5). */
+std::string g_invite_later;
+int g_invite_later_ms = 15000;
+
+/** Group-call knobs shared by both product-stack roles. */
+void ApplyGroupCallKnobs(pbr::call_probe::ProductStackHarness& harness) {
+  harness.SetPublisherRxGate(g_min_rx_streams, g_stream_rx_frames, g_stream_window_ms);
+  harness.SetAcceptDelayMs(g_accept_delay_ms);
+  harness.SetLeaveAfterGateMs(g_leave_after_gate_ms);
+}
+
+/** "a,b,c" → {a, b, c} (empty items dropped). */
+std::vector<std::string> SplitCommaList(const std::string& list) {
+  std::vector<std::string> out;
+  size_t start = 0;
+  while (start <= list.size()) {
+    const size_t comma = list.find(',', start);
+    const size_t end = comma == std::string::npos ? list.size() : comma;
+    if (end > start) {
+      out.push_back(list.substr(start, end - start));
+    }
+    if (comma == std::string::npos) {
+      break;
+    }
+    start = comma + 1;
+  }
+  return out;
+}
 
 void PrintUsage(const char* argv0) {
   std::cerr
@@ -79,6 +116,15 @@ void PrintUsage(const char* argv0) {
       << "  --rx-stall-ms N  With --product-stack: log rx/tx per second and fail if rx frames stay\n"
       << "                  flat for N ms mid-call (answerer then holds until the offerer leaves).\n"
       << "  --watch-ms N     Answerer: judge rx stalls only for N ms after the first frame.\n"
+      << "  Group calls (--product-stack; B-HARD-GROUP-CALL-NAT):\n"
+      << "  --peer / --peer-account  Offerer: comma lists invite every peer (group thread).\n"
+      << "  --min-rx-streams N  Pass only once N remote publishers each decoded --stream-rx-frames F\n"
+      << "                  (default 50) audio frames within one --stream-window-ms W (default 3000).\n"
+      << "  --accept-delay-ms N  Answerer: AcceptClicked N ms after the invite shows.\n"
+      << "  --leave-after-gate-ms N  Leave N ms after the publisher gate is met (either role).\n"
+      << "  --extra-hop MA    Another hop this probe knows (repeatable), ranked after the warm/via hop.\n"
+      << "  --invite-later MA,ACCOUNT  Offerer: invite this peer into the live call after\n"
+      << "                  --invite-later-ms N (default 15000) of media.\n"
       << "\n"
       << "Live broadcast (B-HARD-BCAST-NAT, product BroadcastHub):\n"
       << "  " << argv0 << " --role broadcaster --listen <adp-ma> --warm-hop <hop-ma> --ready-file PATH\n"
@@ -444,7 +490,7 @@ int RunProductStackAnswerer(const std::string& listen_ma, const std::string& rea
   auto clock = (*peer)->clock;
   auto stack = std::move((*peer)->stack);
   auto harness = pbr::call_probe::ProductStackHarness::Create(std::move(stack), std::move(clock),
-                                                              advertise, warm_hop_ma);
+                                                              advertise, warm_hop_ma, g_extra_hops);
   if (!harness) {
     std::cerr << "error: product-stack harness: " << harness.error().message << "\n";
     return 1;
@@ -477,6 +523,7 @@ int RunProductStackAnswerer(const std::string& listen_ma, const std::string& rea
 
   (*harness)->SetRxStallMs(g_rx_stall_ms);
   (*harness)->SetRxWatchMs(g_rx_watch_ms);
+  ApplyGroupCallKnobs(**harness);
   const int rc = (*harness)->RunAnswererHold(hold_seconds, min_rx_frames);
   (*harness)->Shutdown();
   std::cout << "pp-call-probe answerer exit product-stack rc=" << rc << "\n";
@@ -687,11 +734,21 @@ int RunViewer(const std::string& listen_ma, const std::string& advertise_host, c
   return rc;
 }
 
-int RunProductStackOfferer(const std::string& peer_ma, const std::string& peer_account,
+int RunProductStackOfferer(const std::string& peer_ma_list, const std::string& peer_account_list,
                            const std::string& hop_ma, int hold_ms, int timeout_ms,
                            const std::string& signal_dir, bool dirty_book, bool force_dial_fail) {
-  if (peer_account.empty()) {
+  const std::vector<std::string> peer_mas = SplitCommaList(peer_ma_list);
+  const std::vector<std::string> peer_accounts = SplitCommaList(peer_account_list);
+  if (peer_accounts.empty()) {
     std::cerr << "error: --product-stack offerer requires --peer-account\n";
+    return 2;
+  }
+  if (peer_mas.size() != peer_accounts.size()) {
+    std::cerr << "error: --peer and --peer-account need the same number of comma-separated items\n";
+    return 2;
+  }
+  if (peer_mas.size() > 1 && (dirty_book || signal_dir.empty())) {
+    std::cerr << "error: group calls (several --peer) need --signal-dir and no --dirty-book\n";
     return 2;
   }
   if (hop_ma.empty()) {
@@ -702,10 +759,14 @@ int RunProductStackOfferer(const std::string& peer_ma, const std::string& peer_a
     std::cerr << "error: sodium_init failed\n";
     return 1;
   }
-  auto peer_id = PeerIdFromMultiaddr(peer_ma);
-  if (!peer_id) {
-    std::cerr << "error: cannot parse peer id from --peer\n";
-    return 2;
+  std::vector<std::string> peer_ids;
+  for (const std::string& ma : peer_mas) {
+    auto peer_id = PeerIdFromMultiaddr(ma);
+    if (!peer_id) {
+      std::cerr << "error: cannot parse peer id from --peer " << ma << "\n";
+      return 2;
+    }
+    peer_ids.push_back(*peer_id);
   }
   auto offerer = MakeAmpPeer(pp::adp::IpEndpoint::V4(0, 0, 0, 0, 0), true);
   if (!offerer) {
@@ -718,7 +779,7 @@ int RunProductStackOfferer(const std::string& peer_ma, const std::string& peer_a
   auto clock = (*offerer)->clock;
   auto stack = std::move((*offerer)->stack);
   auto harness = pbr::call_probe::ProductStackHarness::Create(std::move(stack), std::move(clock),
-                                                              advertise, hop_ma);
+                                                              advertise, hop_ma, g_extra_hops);
   if (!harness) {
     std::cerr << "error: product-stack harness: " << harness.error().message << "\n";
     return 1;
@@ -729,34 +790,53 @@ int RunProductStackOfferer(const std::string& peer_ma, const std::string& peer_a
   }
   std::cout << "ok  offerer warm-hop associated hop=" << hop_ma << "\n";
 
-  const std::string dial_peer_ma = RewriteWildcardListenHost(peer_ma);
-  if (auto up = (*harness)->UpsertPeerContact(peer_account, *peer_id, dial_peer_ma); !up) {
-    std::cerr << "error: upsert peer contact: " << up.error().message << "\n";
-    return 1;
+  for (size_t i = 0; i < peer_mas.size(); ++i) {
+    const std::string dial_peer_ma = RewriteWildcardListenHost(peer_mas[i]);
+    if (auto up = (*harness)->UpsertPeerContact(peer_accounts[i], peer_ids[i], dial_peer_ma); !up) {
+      std::cerr << "error: upsert peer contact: " << up.error().message << "\n";
+      return 1;
+    }
   }
   if (!signal_dir.empty()) {
     // Invite/Accept go through the inbox: no peer link exists when media starts (cold reach).
     (*harness)->SetSignalDir(signal_dir);
     if (dirty_book) {
-      if (auto reg = (*harness)->RegisterPeerPrivateEndpoint(*peer_id, dial_peer_ma); !reg) {
+      const std::string dial_peer_ma = RewriteWildcardListenHost(peer_mas.front());
+      if (auto reg = (*harness)->RegisterPeerPrivateEndpoint(peer_ids.front(), dial_peer_ma); !reg) {
         std::cerr << "error: dirty-book: " << reg.error().message << "\n";
         (*harness)->Shutdown();
         return 1;
       }
       if (force_dial_fail) {
-        (*harness)->ForceDialMiss(*peer_id);
+        (*harness)->ForceDialMiss(peer_ids.front());
       }
     }
-  } else if (auto path = (*harness)->EnsurePeerCircuitPath(*peer_id); !path) {
+  } else if (auto path = (*harness)->EnsurePeerCircuitPath(peer_ids.front()); !path) {
     // Invite/Accept ride Amp chat — under dual-SNAT that needs nested circuit first (HL004).
     std::cerr << "error: product-stack circuit path: " << path.error().message << "\n";
     (*harness)->Shutdown();
     return 1;
   }
 
+  if (!g_invite_later.empty()) {
+    const std::vector<std::string> later = SplitCommaList(g_invite_later);
+    auto later_peer = later.size() == 2 ? PeerIdFromMultiaddr(later[0]) : std::nullopt;
+    if (!later_peer) {
+      std::cerr << "error: --invite-later needs <peer-ma-with-p2p>,<account>\n";
+      (*harness)->Shutdown();
+      return 2;
+    }
+    if (auto up = (*harness)->UpsertPeerContact(later[1], *later_peer, RewriteWildcardListenHost(later[0])); !up) {
+      std::cerr << "error: upsert later peer contact: " << up.error().message << "\n";
+      (*harness)->Shutdown();
+      return 1;
+    }
+    (*harness)->SetInviteLater(later[1], g_invite_later_ms);
+  }
   const int hold = hold_ms > 0 ? hold_ms : 2000;
   (*harness)->SetRxStallMs(g_rx_stall_ms);
-  if (auto ran = (*harness)->RunOffererCall(peer_account, hold, timeout_ms); !ran) {
+  ApplyGroupCallKnobs(**harness);
+  if (auto ran = (*harness)->RunOffererCall(peer_accounts, hold, timeout_ms); !ran) {
     std::cerr << "error: product-stack offerer: " << ran.error().message << "\n";
     (*harness)->Shutdown();
     return 1;
@@ -1201,6 +1281,22 @@ int main(int argc, char** argv) {
       g_rx_stall_ms = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--watch-ms") == 0 && i + 1 < argc) {
       g_rx_watch_ms = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--min-rx-streams") == 0 && i + 1 < argc) {
+      g_min_rx_streams = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--stream-rx-frames") == 0 && i + 1 < argc) {
+      g_stream_rx_frames = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--stream-window-ms") == 0 && i + 1 < argc) {
+      g_stream_window_ms = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--accept-delay-ms") == 0 && i + 1 < argc) {
+      g_accept_delay_ms = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--leave-after-gate-ms") == 0 && i + 1 < argc) {
+      g_leave_after_gate_ms = std::atoi(argv[++i]);
+    } else if (std::strcmp(argv[i], "--extra-hop") == 0 && i + 1 < argc) {
+      g_extra_hops.push_back(argv[++i]);
+    } else if (std::strcmp(argv[i], "--invite-later") == 0 && i + 1 < argc) {
+      g_invite_later = argv[++i];
+    } else if (std::strcmp(argv[i], "--invite-later-ms") == 0 && i + 1 < argc) {
+      g_invite_later_ms = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--via-hop") == 0 && i + 1 < argc) {
       hop_ma = argv[++i];
     } else if (std::strcmp(argv[i], "--advertise-host") == 0 && i + 1 < argc) {

@@ -566,18 +566,23 @@ void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry*
 
 void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
                                   ICircuitHopReach* circuit_reach) {
-  CallsThread::RunAndWait([&]() { BindTestMediaPathOnOwner(transport, dial, circuit_reach); });
+  BindTestMediaPath(transport, dial, circuit_reach, nullptr);
+}
+
+void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
+                                  ICircuitHopReach* circuit_reach, IMediaRelayClient* relay) {
+  CallsThread::RunAndWait([&]() { BindTestMediaPathOnOwner(transport, dial, circuit_reach, relay); });
 }
 
 void CallStack::BindTestMediaPathOnOwner(ICallMediaTransport* transport, IDialRegistry* dial,
-                                         ICircuitHopReach* circuit_reach) {
+                                         ICircuitHopReach* circuit_reach, IMediaRelayClient* relay) {
   SyncMediaPlaneDeps();
   DetachMeshMedia();
   if (media_plane_) {
     media_plane_->BindTestMediaPath(transport);
   }
   if (MeshMediaPlane* shared = mesh_media()) {
-    shared->BindTestPath(dial, circuit_reach);
+    shared->BindTestPath(dial, circuit_reach, relay);
   }
   BindMediaProducts();
 }
