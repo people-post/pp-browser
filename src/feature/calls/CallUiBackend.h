@@ -77,6 +77,7 @@ public:
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;
+  Roe<bool> AwaitingExplicitAnswerForCall(const std::string& call_id) const;
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
   /** P001 initiation offer stored for inbound inviter (0 if none). */
   int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;

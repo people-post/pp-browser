@@ -136,7 +136,10 @@ struct PendingCallInvite {
   std::optional<std::string> sfu_hint;
   std::optional<int64_t> expires_at;
   int64_t created_at = 0;
-  /** pending | accepted | declined | expired | missed */
+  /**
+   * pending | accepted | accepted_implicit | declined | expired | missed. `accepted_implicit`: the
+   * inviter took the answerer's call-media hello as its accept (B30) before the CallAccept arrived.
+   */
   std::string status = "pending";
   CallSessionKind session_kind = CallSessionKind::Group;
 };

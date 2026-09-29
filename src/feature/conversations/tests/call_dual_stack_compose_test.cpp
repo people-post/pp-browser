@@ -234,6 +234,11 @@ TEST_F(CallDualStackComposeTest, AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsL
   ASSERT_FALSE(held_to_offer_.empty()) << "the accept never reached the offerer";
   EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall) << "the answerer's hello stood in for the accept";
   EXPECT_TRUE(offer_.stack->MediaEngine()->IsActive());
+  // The answer mode (e.g. voice-only) rides the real accept: until it lands the offerer holds its
+  // auto camera (PR #230 review).
+  auto awaiting = offer_.stack->Calls()->AwaitingExplicitAnswerForCall(call_id);
+  ASSERT_TRUE(awaiting);
+  EXPECT_TRUE(*awaiting) << "an implicit accept is not the answer yet";
 
   // The relay finally delivers the accept: idempotent.
   hold_accepts_to_offer_ = false;
@@ -244,6 +249,9 @@ TEST_F(CallDualStackComposeTest, AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsL
   PumpWire();
   EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall);
   EXPECT_TRUE(offer_.stack->MediaEngine()->IsActive());
+  awaiting = offer_.stack->Calls()->AwaitingExplicitAnswerForCall(call_id);
+  ASSERT_TRUE(awaiting);
+  EXPECT_FALSE(*awaiting) << "the late CallAccept is the answer";
   FinishAnswerLeaveExpectBothIdle(call_id);
 }
 

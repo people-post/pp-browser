@@ -1361,18 +1361,18 @@ Roe<void> CallSessionWorkflow::ApplyRemoteAccept(const CallAcceptDetail& accept_
   if (session && session->has_value() && (*session)->state != CallSessionState::Ended) {
     (*session)->state = CallSessionLogic::TransitionOnRemoteJoined((*session)->state);
     // video-voice-choice: a 1:1 remote answered voice-only — narrow the caller's session too.
-    // Never widens (missing/true field leaves video_allowed untouched); group calls (>2
-    // participants) are out of scope for call-wide narrowing (a per-invitee answer only).
-    if (accept->video_allowed && !*accept->video_allowed && (*session)->video_allowed) {
-      auto participants = sessions_.ListParticipants(accept->call_id);
-      if (participants && participants->size() == 2) {
-        (*session)->video_allowed = false;
-        log().info << "call accept voice-only → video disallowed call_id=" << accept->call_id;
-      }
+    // Never widens (missing/true field leaves video_allowed untouched); group-thread calls are out
+    // of scope for call-wide narrowing (a per-invitee answer only). Keyed on the call's origin, not
+    // the live row count, so a mid-call guest cannot leave the two sides disagreeing.
+    if (accept->video_allowed && !*accept->video_allowed && (*session)->video_allowed &&
+        CallSessionLogic::VoiceAnswerNarrowsCall(**session)) {
+      (*session)->video_allowed = false;
+      log().info << "call accept voice-only → video disallowed call_id=" << accept->call_id;
     }
     (void)sessions_.UpsertSession(**session);
   }
-  (void)sessions_.UpdateInviteStatus(accept->call_id, identity, "accepted");
+  // B30: an implicit accept is not the answer yet — its CallAccept (answer mode) is still on the way.
+  (void)sessions_.UpdateInviteStatus(accept->call_id, identity, implicit ? "accepted_implicit" : "accepted");
 
   if (session && session->has_value() && (*session)->state == CallSessionState::Ended) {
     log().info << "Inbound CallAccept ignored (ended session) call_id=" << accept->call_id
@@ -1550,9 +1550,19 @@ Roe<void> CallSessionWorkflow::HandleInboundRoster(const std::string& detail_jso
       continue;
     }
     // Our own entry is the sender's (possibly stale, relay-delayed) view of us; only we know our
-    // camera/mic, so never let a peer roster overwrite our own row (a callee's accept-time roster
-    // arriving late turned the caller's just-enabled camera "off" for both sides).
+    // camera/mic, so never let a peer roster overwrite our own state or media (a callee's
+    // accept-time roster arriving late turned the caller's just-enabled camera "off" for both
+    // sides). The join stamp is the exception: V050 stamps joins on the inviter's clock only and
+    // an invitee learns its own from the roster.
     if (local && !local->empty() && entry.identity == *local) {
+      if (entry.joined_at) {
+        if (auto own = sessions_.FindParticipant(roster->call_id, entry.identity);
+            own && own->has_value() && (*own)->joined_at != entry.joined_at) {
+          CallParticipant stamped = **own;
+          stamped.joined_at = entry.joined_at;
+          (void)sessions_.UpsertParticipant(stamped);
+        }
+      }
       continue;
     }
     // Do not resurrect Left/Declined peers from a stale roster fan-out (blocks re-invite).

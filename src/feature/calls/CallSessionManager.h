@@ -212,6 +212,11 @@ public:
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;
+  /**
+   * True while a remote we invited is joined only through an implicit accept (B30): its CallAccept —
+   * and with it a voice-only answer — has not arrived yet.
+   */
+  Roe<bool> AwaitingExplicitAnswerForCall(const std::string& call_id) const;
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
 
   /**

@@ -429,6 +429,16 @@ TEST(CallControlCodecTest, PlumbingAndInboxChromeSuppress) {
   EXPECT_FALSE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallEnded));
 }
 
+TEST(CallSessionLogicTest, VoiceAnswerNarrowsOnlyDirectOriginCalls) {
+  CallSession direct;
+  EXPECT_TRUE(CallSessionLogic::VoiceAnswerNarrowsCall(direct));
+  CallSession group;
+  group.origin_group_id = "group-1";  // a group-thread call with one invitee still has 2 rows
+  EXPECT_FALSE(CallSessionLogic::VoiceAnswerNarrowsCall(group));
+  group.origin_group_id = "";
+  EXPECT_TRUE(CallSessionLogic::VoiceAnswerNarrowsCall(group));
+}
+
 TEST(CallSessionLogicTest, VideoAllowedFromInvite) {
   CallInviteDetail voice;
   voice.media_mode = CallMediaMode::Voice;

@@ -236,6 +236,13 @@ Roe<std::optional<bool>> CallUiBackend::VideoAllowedForCall(const std::string& c
   return UnavailableError();
 }
 
+Roe<bool> CallUiBackend::AwaitingExplicitAnswerForCall(const std::string& call_id) const {
+  if (auto* calls = stack_.Calls()) {
+    return calls->AwaitingExplicitAnswerForCall(call_id);
+  }
+  return UnavailableError();
+}
+
 Roe<std::vector<CallParticipant>> CallUiBackend::ListJoinedParticipants(const std::string& call_id) const {
   if (auto* calls = stack_.Calls()) {
     return calls->ListJoinedParticipants(call_id);

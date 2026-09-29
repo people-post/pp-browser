@@ -1174,6 +1174,20 @@ Roe<std::optional<bool>> CallSessionManager::VideoAllowedForCall(const std::stri
   return std::optional<bool>{(*session)->video_allowed};
 }
 
+Roe<bool> CallSessionManager::AwaitingExplicitAnswerForCall(const std::string& call_id) const {
+  auto participants = sessions_.ListParticipants(call_id);
+  if (!participants) {
+    return participants.error();
+  }
+  for (const CallParticipant& p : *participants) {
+    auto invite = sessions_.LoadPendingInvite(call_id, p.identity);
+    if (invite && invite->has_value() && (*invite)->status == "accepted_implicit") {
+      return true;
+    }
+  }
+  return false;
+}
+
 Roe<std::vector<CallParticipant>> CallSessionManager::ListJoinedParticipants(const std::string& call_id) const {
   auto participants = sessions_.ListParticipants(call_id);
   if (!participants) {

@@ -839,9 +839,17 @@ void CallController::RefreshPendingRing() {
     // AcceptIncomingWithCharge); act on it here, exactly once, only after media_connected is the
     // same "connected" signal the UI above uses to show elapsed/"Connected" — never before the
     // callee has answered.
+    // Stays pending (not dropped) while the camera button would be hidden — no encoder or the path
+    // disallows video — so the camera never turns on without a way to turn it off; and on the
+    // caller while the answer is only implicit (B30), so a voice answer still in flight is not
+    // sent our video first.
     if (auto_camera_pending_ && auto_camera_call_id_ == active_call_id_ && media_connected) {
+      const bool camera_offerable =
+          backend->Media().VideoEncoderAvailable() && backend->Media().CameraPathAllowsVideo();
+      auto awaiting_answer = backend->AwaitingExplicitAnswerForCall(active_call_id_);
+      const bool answer_known = awaiting_answer && !*awaiting_answer;
       if (auto allowed = backend->VideoAllowedForCall(active_call_id_);
-          allowed && allowed->has_value() && **allowed) {
+          allowed && allowed->has_value() && **allowed && camera_offerable && answer_known) {
         auto_camera_pending_ = false;
         if (!backend->Media().IsCameraEnabled()) {
           log().info << "auto camera on call_id=" << active_call_id_;
