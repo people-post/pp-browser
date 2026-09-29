@@ -75,11 +75,24 @@ public:
         on_remote_accept_joined;
     std::function<void(const std::string& call_id, size_t n_joined)> on_joined_count_observed;
     std::function<void()> clear_sfu_attach_wait;
-    std::function<Roe<void>(const std::string& call_id, const CallSfuAttachDetail&)> on_inbound_sfu_attach;
+    /** `sender`: who fanned it out — a hop change is followed only from the hop owner (V050). */
+    std::function<Roe<void>(const std::string& call_id, const CallSfuAttachDetail&, const std::string& sender)>
+        on_inbound_sfu_attach;
     std::function<void(const CallSfuAttachFailedDetail&)> on_inbound_sfu_attach_failed;
     std::function<void(const CallHopRefuseDetail&)> on_inbound_hop_refuse;
     std::function<bool(const std::string& call_id)> is_on_sfu_for_call;
     std::function<bool()> has_media_relay_hop_candidates;
+    /** V050: hop planned from the invite list at StartCall (no attach); nullopt = none. */
+    std::function<std::optional<CallPlannedHop>(const std::vector<std::string>& invitees,
+                                                const std::string& local_identity)>
+        plan_hop_for_invitees;
+    /** V050 gt4 invitee: probe the planned hop (+ a few others) while ringing. */
+    std::function<void(const std::string& call_id)> probe_invite_hops;
+    /** V050 gt4 invitee: the report our CallAccept carries. */
+    std::function<CallHopReport(const std::string& call_id)> hop_report_for_accept;
+    /** V050 gt4 initiator: a joiner's CallAccept report (before the join decision). */
+    std::function<void(const std::string& call_id, const std::string& identity, const CallHopReport& report)>
+        note_accept_hop_report;
   };
 
   /** Session chrome / arming observations (projected from Lifecycle by CSM). */
@@ -186,13 +199,20 @@ public:
                                const std::string& local_identity);
   Roe<void> HandleInboundRoster(const std::string& detail_json);
   Roe<void> HandleInboundMediaKey(const std::string& detail_json, const std::string& sender_identity);
-  Roe<void> HandleInboundSfuAttach(const std::string& detail_json);
+  Roe<void> HandleInboundSfuAttach(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundSfuAttachFailed(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundHopRefuse(const std::string& detail_json);
   Roe<void> HandleInboundVideoRefresh(const std::string& detail_json, const std::string& sender_identity);
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
 
 private:
+  /**
+   * `co_invitees`: everyone StartCall is inviting now. Their rows are written only after each
+   * invite is on the wire (V045), so the roster snapshot lists them as Invited explicitly — every
+   * invitee sees the whole invite list (V050), not the part sent before it.
+   */
+  Roe<void> InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
+                              const std::vector<std::string>& co_invitees);
   /** Remote accepted (CallAccept, or implicitly by its media hello): join, key, media kickoff. */
   Roe<void> ApplyRemoteAccept(const CallAcceptDetail& accept, const std::string& identity,
                               const std::string& local_identity, bool implicit);

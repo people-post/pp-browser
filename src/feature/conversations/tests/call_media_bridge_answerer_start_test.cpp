@@ -1228,6 +1228,38 @@ TEST_F(CallMediaBridgeAnswererStartTest, DirectCallGetsARelayedStandby) {
   bridge_->PrepareForTeardown(0);
 }
 
+// Hard-lab FLIP race (2026-09-28): the call is bound on a direct (punched) link — the answerer's
+// hello won — while the offerer's own reach loop settled over the circuit. The bound link is the
+// path: the call must not be labelled "circuit" (which skipped the relay standby and ran a
+// pointless direct upgrade), and it gets its relayed standby like any direct call.
+TEST_F(CallMediaBridgeAnswererStartTest, DirectBoundCallReachedOverTheRelayStillGetsAStandby) {
+  const std::string call_id = "call:bound-direct";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  host_->account_to_peer["account:peer"] = "12D3KooWBoundDirectPeer";
+  transport_->link_kind = CallMediaLinkKind::Direct;
+  transport_->active = true;  // bound on a direct link
+  // The standby fires after the reach loop settled over the circuit (the lab's order).
+  bridge_->SetRelayStandbyDelayMsForTest(300);
+  bridge_->SetDirectUpgradeDelayMsForTest(20);
+  lifecycle_->Apply(CallLifecycleEvent::OutboundStarted, call_id);
+  lifecycle_->SetMediaStatus(CallMediaStatus::DirectConnecting, call_id);
+  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  CallsThread::RunAndWait([&] { bridge_->SetReachKindForTest(PeerLinkKind::Relayed); });  // reach loop: circuit
+  for (int i = 0; i < 400 && transport_->add_standby_calls.load() < 1; ++i) {
+    AppRuntime::RunUIAndOwnerTasks();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  EXPECT_NE(bridge_->MediaPathKind(), "circuit") << "a direct bound link is not a relayed path";
+  EXPECT_GE(transport_->add_standby_calls.load(), 1) << "the direct call gets its relayed standby";
+  EXPECT_EQ(circuit_->upgrade_calls.load(), 0) << "no direct upgrade for a call already on a direct link";
+  bridge_->PrepareForTeardown(0);
+}
+
 TEST_F(CallMediaBridgeAnswererStartTest, EnsureReachResolvesAccountToMeshPeerId) {
   // Hard-lab / dogfood: BeginSession peer is account:; circuit StartBridge needs Amp PeerId.
   const std::string call_id = "call:account-to-peerid";

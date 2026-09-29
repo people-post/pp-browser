@@ -10,6 +10,8 @@
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 
+#include <algorithm>
+
 namespace pbr {
 
 CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, IdentityStore& identity, CallSessionStore& sessions,
@@ -120,6 +122,54 @@ Roe<void> CallSessionWorkflow::LeaveCallIfActiveExcept(const std::string& keep_c
   return {};
 }
 
+namespace {
+
+/** Join stamp the roster carries for `identity` (the sender's clock), if any. */
+std::optional<int64_t> RosterJoinStamp(const std::vector<CallRosterEntry>& participants, const std::string& identity) {
+  for (const CallRosterEntry& entry : participants) {
+    if (entry.identity == identity && entry.joined_at) {
+      return entry.joined_at;
+    }
+  }
+  return std::nullopt;
+}
+
+/** Old peers send no stamps: this device's receipt time (still earlier than later acceptors). */
+int64_t LocalJoinStampFallback(const CallSession& session) {
+  return session.created_at > 0 ? session.created_at : 1;
+}
+
+size_t CountDistinctInvitees(const std::vector<std::string>& invitees, const std::string& local_identity) {
+  std::vector<std::string> seen;
+  for (const std::string& identity : invitees) {
+    if (!identity.empty() && identity != local_identity &&
+        std::find(seen.begin(), seen.end(), identity) == seen.end()) {
+      seen.push_back(identity);
+    }
+  }
+  return seen.size();
+}
+
+/** Roster entries for invitees the store has no row for yet (V050 full invite roster). */
+void AppendInvitedCoInvitees(std::vector<CallRosterEntry>& participants, const std::vector<std::string>& co_invitees,
+                             const std::string& local_identity) {
+  for (const std::string& identity : co_invitees) {
+    if (identity.empty() || identity == local_identity) {
+      continue;
+    }
+    const bool listed = std::any_of(participants.begin(), participants.end(),
+                                    [&identity](const CallRosterEntry& e) { return e.identity == identity; });
+    if (!listed) {
+      CallRosterEntry entry;
+      entry.identity = identity;
+      entry.state = CallParticipantState::Invited;
+      participants.push_back(std::move(entry));
+    }
+  }
+}
+
+} // namespace
+
 Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread_id, const bool video_allowed,
                                                const std::vector<std::string>& invitee_identities) {
   if (invitee_identities.empty()) {
@@ -219,6 +269,16 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
     return hist.error();
   }
 
+  // V050: plan the group hop from everyone invited (not attached until the third join).
+  if (CountDistinctInvitees(invitee_identities, *local) >= 2 && host_.hop.plan_hop_for_invitees) {
+    if (auto planned = host_.hop.plan_hop_for_invitees(invitee_identities, *local)) {
+      session.planned_hop = std::move(planned);
+      if (auto saved = sessions_.UpsertSession(session); !saved) {
+        return saved.error();
+      }
+    }
+  }
+
   for (const std::string& invitee : invitee_identities) {
     if (invitee.empty() || invitee == *local) {
       continue;
@@ -230,7 +290,7 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
                       << " err=" << warmed.error().message;
       }
     }
-    if (auto invited = InviteParticipant(call_id, invitee); !invited) {
+    if (auto invited = InviteParticipant(call_id, invitee, invitee_identities); !invited) {
       return invited.error();
     }
   }
@@ -248,6 +308,12 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
 }
 
 Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, const std::string& invitee_identity) {
+  return InviteParticipant(call_id, invitee_identity, {});
+}
+
+
+Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
+                                                 const std::vector<std::string>& co_invitees) {
   auto local = host_.wire.local_relay_identity();
   if (!local) {
     return local.error();
@@ -299,12 +365,14 @@ Roe<void> CallSessionWorkflow::InviteParticipant(const std::string& call_id, con
   invite.origin_thread_id = (*session)->origin_thread_id;
   invite.origin_group_id = (*session)->origin_group_id;
   invite.sfu_hint = (*session)->sfu_hint;
+  invite.planned_hop = (*session)->planned_hop;
   invite.expires_at = pending.expires_at;
   if (host_.wire.build_roster_detail) {
     if (auto roster = host_.wire.build_roster_detail(call_id); roster) {
       invite.participants = std::move(roster->participants);
     }
   }
+  AppendInvitedCoInvitees(invite.participants, co_invitees, *local);
   if (host_.reach.prefetch_reach) {
     host_.reach.prefetch_reach(invitee_identity);
   }
@@ -545,6 +613,9 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
     accept.caps = host_.reach.local_peer_caps();
     accept.caps.present = true;
   }
+  if (host_.hop.hop_report_for_accept) {
+    accept.hop_report = host_.hop.hop_report_for_accept(call_id);
+  }
   auto detail = CallControlCodec::EncodeAccept(accept);
   if (!detail) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << detail.error().message;
@@ -559,7 +630,6 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
     (void)initiation_billing_->MarkOpen(inviter);
   }
 
-  const int64_t now = util::NowUnixMs();
   row.state = CallSessionLogic::TransitionOnRemoteJoined(row.state);
   if (auto saved = sessions_.UpsertSession(row); !saved) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << saved.error().message;
@@ -571,7 +641,8 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
   self.identity = local_identity;
   self.state = CallParticipantState::Joined;
   self.media.video_enabled = false;
-  self.joined_at = now;
+  // V050 gt2b: no stamp from this device's clock — the inviter stamps our join when it processes the
+  // CallAccept and its CallRoster brings the stamp back (the store keeps the earliest).
   if (auto saved = sessions_.UpsertParticipant(self); !saved) {
     log().warning << "AcceptInvite end call_id=" << call_id << " err=" << saved.error().message;
     return saved.error();
@@ -602,11 +673,7 @@ Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_i
   if (auto joined_after = sessions_.CountJoined(call_id)) {
     n_joined = *joined_after;
   }
-  size_t n_active = n_joined;
-  if (auto all = sessions_.ListParticipants(call_id); all) {
-    n_active = CountMediaPlannerActiveParticipants(*all);
-  }
-  const size_t planner_n = EffectiveMediaPlannerN(n_joined, n_active);
+  const size_t planner_n = n_joined;  // V050: joined only — ringing invitees never arm the hop
   const bool topology_took_media =
       host_.hop.on_local_accept_joined && host_.hop.on_local_accept_joined(call_id, planner_n, row.sfu_hint);
   bool schedule_answerer_direct = false;
@@ -1116,7 +1183,11 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
   session.media_epoch = invite->media_epoch > 0 ? invite->media_epoch : 1;
   session.media_key_id = invite->media_key_id;
   session.sfu_hint = invite->sfu_hint;
+  session.planned_hop = invite->planned_hop;
   (void)sessions_.UpsertSession(session);
+  if (session.planned_hop && host_.hop.probe_invite_hops) {
+    host_.hop.probe_invite_hops(session.call_id);  // V050 gt4: check the planned hop while ringing
+  }
 
   // Media key embedded in invite (preferred); CallMediaKey message remains a backup.
   if (!invite->wrapped_key_b64.empty()) {
@@ -1160,8 +1231,9 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
         row.state = CallParticipantState::Joined;
       }
       if (row.state == CallParticipantState::Joined) {
-        // Prefer earlier stamp than late acceptors so soft-migrate initiator detection works.
-        row.joined_at = session.created_at > 0 ? session.created_at : 1;
+        // V050 gt2b: the inviter's stamp (one clock for everyone) — this device's receipt time only
+        // for peers that send none; it still precedes later acceptors (initiator detection).
+        row.joined_at = entry.joined_at ? entry.joined_at : std::optional<int64_t>(LocalJoinStampFallback(session));
       }
       (void)sessions_.UpsertParticipant(row);
     }
@@ -1170,7 +1242,8 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
   inviter.call_id = invite->call_id;
   inviter.identity = pending.inviter_identity;
   inviter.state = CallParticipantState::Joined;
-  inviter.joined_at = session.created_at > 0 ? session.created_at : 1;
+  inviter.joined_at = RosterJoinStamp(invite->participants, pending.inviter_identity)
+                          .value_or(LocalJoinStampFallback(session));
   (void)sessions_.UpsertParticipant(inviter);
   CallParticipant self;
   self.call_id = invite->call_id;
@@ -1302,6 +1375,9 @@ Roe<void> CallSessionWorkflow::ApplyRemoteAccept(const CallAcceptDetail& accept_
     }
     auto joined_after = sessions_.CountJoined(accept->call_id);
     const size_t n_joined = joined_after ? *joined_after : 0;
+    if (!implicit && host_.hop.note_accept_hop_report) {
+      host_.hop.note_accept_hop_report(accept->call_id, identity, accept->hop_report);
+    }
     if (!host_.hop.on_remote_accept_joined(accept->call_id, n_joined, identity)) {
       if (host_.chrome.note_direct_connecting) {
         host_.chrome.note_direct_connecting(accept->call_id);
@@ -1524,12 +1600,13 @@ Roe<void> CallSessionWorkflow::HandleInboundMediaKey(const std::string& detail_j
   return {};
 }
 
-Roe<void> CallSessionWorkflow::HandleInboundSfuAttach(const std::string& detail_json) {
+Roe<void> CallSessionWorkflow::HandleInboundSfuAttach(const std::string& detail_json,
+                                                     const std::string& sender_identity) {
   auto attach = CallControlCodec::DecodeSfuAttach(detail_json);
   if (!attach) {
     return attach.error();
   }
-  (void)host_.hop.on_inbound_sfu_attach(attach->call_id, *attach);
+  (void)host_.hop.on_inbound_sfu_attach(attach->call_id, *attach, sender_identity);
   host_.wire.notify_ring_changed();
   return {};
 }

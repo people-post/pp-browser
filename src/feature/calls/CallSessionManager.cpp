@@ -152,9 +152,21 @@ void CallSessionManager::BindWorkflowHostPorts() {
   ports.hop.on_joined_count_observed = [this](const std::string& call_id, size_t n) {
     topology_.OnJoinedCountObserved(call_id, n);
   };
+  ports.hop.plan_hop_for_invitees = [this](const std::vector<std::string>& invitees, const std::string& local) {
+    return topology_.PlanHopForInvitees(invitees, local);
+  };
+  ports.hop.probe_invite_hops = [this](const std::string& call_id) { topology_.ProbeInviteHops(call_id); };
+  ports.hop.hop_report_for_accept = [this](const std::string& call_id) {
+    return topology_.HopReportForAccept(call_id);
+  };
+  ports.hop.note_accept_hop_report = [this](const std::string& call_id, const std::string& identity,
+                                            const CallHopReport& report) {
+    topology_.NoteAcceptHopReport(call_id, identity, report);
+  };
   ports.hop.clear_sfu_attach_wait = [this]() { topology_.ClearSfuAttachWait(); };
-  ports.hop.on_inbound_sfu_attach = [this](const std::string& call_id, const CallSfuAttachDetail& d) {
-    return topology_.OnInboundSfuAttach(call_id, d);
+  ports.hop.on_inbound_sfu_attach = [this](const std::string& call_id, const CallSfuAttachDetail& d,
+                                           const std::string& sender) {
+    return topology_.OnInboundSfuAttach(call_id, d, sender);
   };
   ports.hop.on_inbound_sfu_attach_failed = [this](const CallSfuAttachFailedDetail& d) {
     topology_.OnInboundSfuAttachFailed(d);
@@ -1275,8 +1287,9 @@ Roe<void> CallSessionManager::HandleInboundMediaKey(const std::string& detail_js
 }
 
 
-Roe<void> CallSessionManager::HandleInboundSfuAttach(const std::string& detail_json) {
-  return workflow_.HandleInboundSfuAttach(detail_json);
+Roe<void> CallSessionManager::HandleInboundSfuAttach(const std::string& detail_json,
+                                                    const std::string& sender_identity) {
+  return workflow_.HandleInboundSfuAttach(detail_json, sender_identity);
 }
 
 
@@ -1443,7 +1456,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     log().debug << "Ignoring legacy call_sdp/call_ice from " << sender_identity;
     return {};
   case CallControlType::CallSfuAttach:
-    return HandleInboundSfuAttach(detail_json);
+    return HandleInboundSfuAttach(detail_json, sender_identity);
   case CallControlType::CallSfuAttachFailed:
     return HandleInboundSfuAttachFailed(detail_json, sender_identity);
   case CallControlType::CallHopRefuse:
@@ -1690,11 +1703,6 @@ bool CallSessionManager::P2pExpectGroupSfuMigration(const std::string& call_id) 
   in.sfu_attached = topology_.IsSfuAttached();
   if (auto n = sessions_.CountJoined(call_id)) {
     in.joined_count = *n;
-  }
-  if (auto all = sessions_.ListParticipants(call_id); all) {
-    in.active_roster_count = CountMediaPlannerActiveParticipants(*all);
-  } else {
-    in.active_roster_count = in.joined_count;
   }
   if (auto session = sessions_.LoadSession(call_id);
       session && *session && (*session)->sfu_hint && !(*session)->sfu_hint->empty()) {

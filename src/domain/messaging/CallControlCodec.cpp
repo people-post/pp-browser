@@ -121,6 +121,12 @@ Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) 
   if (detail.sfu_hint) {
     json.set("sfu_hint", *detail.sfu_hint);
   }
+  if (detail.planned_hop && !detail.planned_hop->peer_id.empty()) {
+    json.set("planned_hop", detail.planned_hop->peer_id);
+    if (!detail.planned_hop->multiaddr.empty()) {
+      json.set("planned_hop_ma", detail.planned_hop->multiaddr);
+    }
+  }
   if (detail.expires_at) {
     json.set("expires_at", *detail.expires_at);
   }
@@ -165,6 +171,9 @@ Roe<CallInviteDetail> CallControlCodec::DecodeInvite(const std::string& detail_j
   detail.origin_thread_id = json->getString("origin_thread_id");
   detail.origin_group_id = json->getString("origin_group_id");
   detail.sfu_hint = json->getString("sfu_hint");
+  if (auto planned = json->getString("planned_hop"); planned && !planned->empty()) {
+    detail.planned_hop = CallPlannedHop{*planned, json->getString("planned_hop_ma").value_or("")};
+  }
   detail.expires_at = json->getIf<int64_t>("expires_at");
   ReadParticipants(*json, detail.participants);
   detail.media_epoch = static_cast<uint32_t>(json->getNonNegInt("media_epoch").value_or(1));
@@ -199,6 +208,11 @@ Roe<std::string> CallControlCodec::EncodeAccept(const CallAcceptDetail& detail) 
     json.set("charge_decision", detail.charge_decision.empty() ? "waive" : detail.charge_decision);
     json.set("offer_amount_minor", detail.offer_amount_minor);
   }
+  if (detail.hop_report.planned_hop_ok) {
+    json.set("planned_hop_ok", *detail.hop_report.planned_hop_ok);
+  }
+  WriteStringArray(json, "reachable_hops", detail.hop_report.reachable_hops);
+  WriteStringArray(json, "unreachable_hops", detail.hop_report.unreachable_hops);
   return DumpJson(json);
 }
 
@@ -218,6 +232,9 @@ Roe<CallAcceptDetail> CallControlCodec::DecodeAccept(const std::string& detail_j
   detail.caps = ReadPeerCaps(*json);
   detail.charge_decision = json->getString("charge_decision").value_or("waive");
   detail.offer_amount_minor = json->getIf<int64_t>("offer_amount_minor").value_or(0);
+  detail.hop_report.planned_hop_ok = json->getIf<bool>("planned_hop_ok");
+  detail.hop_report.reachable_hops = ReadStringArray(*json, "reachable_hops");
+  detail.hop_report.unreachable_hops = ReadStringArray(*json, "unreachable_hops");
   return detail;
 }
 

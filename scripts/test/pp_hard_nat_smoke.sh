@@ -35,6 +35,20 @@
 #                           `--mobility mobile`: the pair anchors on the relay — the answerer awaits
 #                           the circuit without punching (it learned the class from the invite's
 #                           caps), the offerer never punches for an upgrade, media stays relayed
+# B-HARD-GROUP-CALL-NAT   — Phase-13: group call, three peers each behind its own symmetric NAT
+#                           (peer-c/gw-c). A invites B and C over /share signaling; B accepts at once
+#                           (N=2: 1:1 cold reach), C later (N=3): the initiator SoftMigrates onto the
+#                           hop's media_relay and fans out CallSfuAttach; B and C attach. Every side
+#                           must decode each other publisher (per-stream window gate), then C leaves
+#                           and A↔B keep audio until A's Leave ends the call
+# B-HARD-GROUP-ADJUST-NAT — Phase-14 (V050 gt4): as Phase-13 with a second hop; C's probe is blocked
+#                           from hop1 at gw-c, so its CallAccept reports the planned hop (hop1)
+#                           unreachable and the initiator makes the one adjustment: the group forms
+#                           on hop2
+# B-HARD-GROUP-MOVE-NAT   — Phase-15 (V050 gt5): A, B, C form on hop1; A invites D (a second probe in
+#                           peer-c, blocked from hop1) mid-call — D's attach fails, the owner moves the
+#                           whole group to hop2 once and B, C follow; four-way audio, then everyone
+#                           leaves (initiator first)
 # Cold phases also require >= COLD_MIN_RX audio frames received on BOTH sides.
 #
 # NAT: gateways default to symmetric mapping (punching can never land, so the phases above stay
@@ -56,7 +70,8 @@ CALL_BIN_NAME="pp-call-probe"
 SKIP_UP=0
 CYCLES="${PP_CALL_PROBE_CYCLES:-1}"
 CALL_EXPECT="${PP_HARD_NAT_CALL_EXPECT:-success}"
-# circuit | stack | cold | cold-dirty | cold-await | upgrade | broadcast | all
+# circuit | stack | cold | cold-dirty | cold-await | upgrade | punch | flip | mobile | group | group-adjust |
+# group-move | broadcast | all
 PHASE="${PP_HARD_NAT_PHASE:-all}"
 # Stack phase long-hold knobs (one-way stall repro, dogfood 2026-09-24 16:17):
 #   PP_HARD_NAT_STACK_HOLD_MS  offerer hold after media (default 3000)
@@ -80,7 +95,7 @@ while [[ $# -gt 0 ]]; do
 Usage: $(basename "$0") [--status-url URL] [--cycles K] [--phase PHASE]
                         [--expect-call success|fail] [--skip-up]
 
-  PHASE: circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|mobile|broadcast|all
+  PHASE: circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|mobile|group|group-adjust|group-move|broadcast|all
     all    = circuit + stack + cold + cold-dirty + cold-await + upgrade + punch + flip + mobile + broadcast (default)
   --expect-call fail  pass only if the call fails (reproduce dogfood)
 EOF
@@ -95,10 +110,10 @@ case "${CALL_EXPECT}" in
   *) pp_hard_die "--expect-call must be success|fail (got ${CALL_EXPECT})" ;;
 esac
 case "${PHASE}" in
-  circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|mobile|broadcast|all) ;;
+  circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|mobile|group|group-adjust|group-move|broadcast|all) ;;
   product|dirty|both)
     pp_hard_die "--phase ${PHASE} was retired (probe-local reach copies); use cold / cold-dirty / cold-await" ;;
-  *) pp_hard_die "--phase must be circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|mobile|broadcast|all (got ${PHASE})" ;;
+  *) pp_hard_die "--phase must be circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|mobile|group|group-adjust|group-move|broadcast|all (got ${PHASE})" ;;
 esac
 
 if [[ ! -x "${PP_HARD_PROBE_DIR}/${CALL_BIN_NAME}" ]]; then
@@ -111,6 +126,7 @@ pp_hard_cgnat_assert_nat_shape
 pp_hard_kill_peer_probes() {
   pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" sh -c 'for p in $(pidof pp-call-probe 2>/dev/null); do kill -9 "$p" 2>/dev/null || true; done' || true
   pp_hard_exec "${PP_HARD_CGNAT_PEER_B}" sh -c 'for p in $(pidof pp-call-probe 2>/dev/null); do kill -9 "$p" 2>/dev/null || true; done' || true
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_C}" sh -c 'for p in $(pidof pp-call-probe 2>/dev/null); do kill -9 "$p" 2>/dev/null || true; done' || true
 }
 
 LOG_DIR="$(mktemp -d)"
@@ -557,6 +573,270 @@ run_nat_broadcast() {
   echo "${label} smoke PASSED"
 }
 
+# B-HARD-GROUP-CALL-NAT: see the header. The probes enforce the per-publisher gate
+# (--min-rx-streams 2: each other participant, GROUP_STREAM_RX frames within GROUP_WINDOW_MS) and
+# the rx-stall gate; the script checks the path (SoftMigrate onto this hop, everyone attached).
+GROUP_HOLD_MS="${PP_HARD_NAT_GROUP_HOLD_MS:-30000}"
+GROUP_ACCEPT_DELAY_MS="${PP_HARD_NAT_GROUP_ACCEPT_DELAY_MS:-8000}"
+GROUP_LEAVE_AFTER_MS="${PP_HARD_NAT_GROUP_LEAVE_AFTER_MS:-5000}"
+GROUP_STREAM_RX="${PP_HARD_NAT_GROUP_STREAM_RX:-50}"
+GROUP_WINDOW_MS="${PP_HARD_NAT_GROUP_WINDOW_MS:-3000}"
+GROUP_RX_STALL_MS="${PP_HARD_NAT_GROUP_RX_STALL_MS:-5000}"
+
+# start_group_guest <container> <ip> <port> <name> <log> [extra args...] — backgrounds the probe;
+# its docker exec pid lands in GUEST_PID. GROUP_SIG (signal dir), GROUP_WARM_HOP, GROUP_STREAMS and
+# GROUP_EXTRA_HOP (an extra known hop) shape it per phase.
+start_group_guest() {
+  local container="$1" ip="$2" port="$3" name="$4" log="$5"
+  shift 5
+  rm -f "${PP_HARD_CGNAT_SHARE_DIR}/group-${name}.ready"
+  local extra=()
+  [[ -n "${GROUP_EXTRA_HOP:-}" ]] && extra=(--extra-hop "${GROUP_EXTRA_HOP}")
+  pp_hard_exec "${container}" /probes/${CALL_BIN_NAME} --role answerer --product-stack \
+    --listen "/ip4/0.0.0.0/udp/${port}/adp/1.0.0" --advertise-host "${ip}" \
+    --ready-file "/share/group-${name}.ready" --hold-seconds $((GROUP_HOLD_MS / 1000 + 90)) \
+    --warm-hop "${GROUP_WARM_HOP:-${HOP_MA_PUBLIC}}" --signal-dir "${GROUP_SIG:-/share/sig-pp-hard-group-call-nat}" \
+    --min-rx-frames 1 --rx-stall-ms "${GROUP_RX_STALL_MS}" --watch-ms $((GROUP_HOLD_MS - 3000)) \
+    --min-rx-streams "${GROUP_STREAMS:-2}" --stream-rx-frames "${GROUP_STREAM_RX}" \
+    --stream-window-ms "${GROUP_WINDOW_MS}" "${extra[@]}" "$@" > >(tee "${log}") 2>&1 &
+  GUEST_PID=$!
+}
+
+# wait_ready <name> — ready-file lines: advertise MA, account.
+wait_ready() {
+  local f="${PP_HARD_CGNAT_SHARE_DIR}/group-$1.ready" _
+  for _ in $(seq 1 150); do
+    [[ -s "${f}" ]] && [[ -n "$(sed -n '2p' "${f}")" ]] && return 0
+    sleep 0.1
+  done
+  pp_hard_die "group guest $1 ready-file not written (warm-hop may have failed)"
+}
+
+assert_group_path() {
+  local label="$1" a_log="$2" b_log="$3" c_log="$4" log
+  grep -q "SoftMigrate fan-out CallSfuAttach hop=${HOP_PEER_ID}" "${a_log}" ||
+    pp_hard_die "${label}: initiator never SoftMigrated onto the lab hop ${HOP_PEER_ID}"
+  for log in "${a_log}" "${b_log}" "${c_log}"; do
+    grep -q "AttachLocalToSfu StartSfu" "${log}" ||
+      pp_hard_die "${label}: $(basename "${log}") never started media on the hop"
+    grep -q "ok  publisher rx gate" "${log}" ||
+      pp_hard_die "${label}: $(basename "${log}") never heard every other publisher"
+  done
+  grep -q "answerer left the live call" "${c_log}" || pp_hard_die "${label}: guest C did not leave mid-call"
+  grep -q "answerer: offerer left" "${b_log}" || pp_hard_die "${label}: B did not end with A's Leave"
+  echo "ok  group path: SoftMigrate → hop ${HOP_PEER_ID}; A, B, C on media_relay; per-publisher RX:"
+  for log in "${a_log}" "${b_log}" "${c_log}"; do
+    echo "    $(basename "${log}" .log): $(grep -m1 'ok  publisher rx gate' "${log}" | sed 's/.*live=/live=/')"
+  done
+}
+
+run_nat_group_call() {
+  local label="B-HARD-GROUP-CALL-NAT" call_id="pp-hard-group-call-nat"
+  pp_hard_kill_peer_probes
+  echo "=== ${label} A (peer-a) invites B (peer-b) + C (peer-c); C accepts +${GROUP_ACCEPT_DELAY_MS} ms ==="
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" rm -rf "/share/sig-${call_id}"
+  local c
+  for c in "${PP_HARD_CGNAT_PEER_A}" "${PP_HARD_CGNAT_PEER_B}" "${PP_HARD_CGNAT_PEER_C}"; do
+    pp_hard_link_clear_container "${c}"
+  done
+  local a_log="${LOG_DIR}/group.a.log" b_log="${LOG_DIR}/group.b.log" c_log="${LOG_DIR}/group.c.log"
+  start_group_guest "${PP_HARD_CGNAT_PEER_B}" "${PEER_B_IP}" 47192 b "${b_log}"
+  local b_pid="${GUEST_PID}"
+  start_group_guest "${PP_HARD_CGNAT_PEER_C}" "${PEER_C_IP}" 47194 c "${c_log}" \
+    --accept-delay-ms "${GROUP_ACCEPT_DELAY_MS}" --leave-after-gate-ms "${GROUP_LEAVE_AFTER_MS}"
+  local c_pid="${GUEST_PID}"
+  cleanup_group() {
+    kill "${b_pid}" "${c_pid}" 2>/dev/null || true
+    wait "${b_pid}" "${c_pid}" 2>/dev/null || true
+  }
+  trap cleanup_group EXIT
+  wait_ready b
+  wait_ready c
+  sleep 1
+  local ready_b="${PP_HARD_CGNAT_SHARE_DIR}/group-b.ready" ready_c="${PP_HARD_CGNAT_SHARE_DIR}/group-c.ready"
+  local peers accounts
+  peers="$(head -n1 "${ready_b}" | tr -d '\n'),$(head -n1 "${ready_c}" | tr -d '\n')"
+  accounts="$(sed -n '2p' "${ready_b}" | tr -d '\n'),$(sed -n '2p' "${ready_c}" | tr -d '\n')"
+  echo "${label} hop=${HOP_MA_PUBLIC} peers=${peers}"
+
+  set +e
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" /probes/${CALL_BIN_NAME} --role offerer --product-stack \
+    --peer "${peers}" --peer-account "${accounts}" --via-hop "${HOP_MA_PUBLIC}" --call-id "${call_id}" \
+    --signal-dir "/share/sig-${call_id}" --hold-ms "${GROUP_HOLD_MS}" --timeout-ms 60000 \
+    --rx-stall-ms "${GROUP_RX_STALL_MS}" --min-rx-streams 2 --stream-rx-frames "${GROUP_STREAM_RX}" \
+    --stream-window-ms "${GROUP_WINDOW_MS}" > >(tee "${a_log}") 2>&1
+  local a_rc=$?
+  local rc_b rc_c _
+  for _ in $(seq 1 30); do
+    kill -0 "${b_pid}" 2>/dev/null || kill -0 "${c_pid}" 2>/dev/null || break
+    sleep 0.5
+  done
+  kill "${b_pid}" "${c_pid}" 2>/dev/null || true
+  wait "${b_pid}"; rc_b=$?
+  wait "${c_pid}"; rc_c=$?
+  set -e
+  trap - EXIT
+  echo "a_rc=${a_rc} b_rc=${rc_b} c_rc=${rc_c}"
+  if [[ "${a_rc}" -ne 0 || "${rc_b}" -ne 0 || "${rc_c}" -ne 0 ]]; then
+    if [[ "${CALL_EXPECT}" == "fail" ]]; then
+      echo "ok  REPRODUCED: dual-NAT group call failed"
+      echo "${label} smoke PASSED (expect=fail / reproduced)"
+      return 0
+    fi
+    echo "error: ${label} group call failed under triple NAT (a=${a_rc} b=${rc_b} c=${rc_c})" >&2
+    return 1
+  fi
+  [[ "${CALL_EXPECT}" == "fail" ]] &&
+    pp_hard_die "${label}: expected REPRODUCE (call fail) but the group call succeeded"
+  sleep 0.5  # let the tee'd guest logs flush
+  assert_group_path "${label}" "${a_log}" "${b_log}" "${c_log}"
+  echo "${label} smoke PASSED"
+}
+
+# ready_line <name> <line> — a group guest's ready-file line (1 = advertise MA, 2 = account).
+ready_line() {
+  sed -n "$2p" "${PP_HARD_CGNAT_SHARE_DIR}/group-$1.ready" | tr -d '\n'
+}
+
+# wait_exit <seconds> <pid>... — give probes time to finish on their own, then stop them.
+wait_exit() {
+  local secs="$1" _ p alive
+  shift
+  for _ in $(seq 1 $((secs * 2))); do
+    alive=0
+    for p in "$@"; do kill -0 "${p}" 2>/dev/null && alive=1; done
+    [[ "${alive}" -eq 0 ]] && break
+    sleep 0.5
+  done
+  for p in "$@"; do kill "${p}" 2>/dev/null || true; done
+}
+
+# B-HARD-GROUP-ADJUST-NAT / B-HARD-GROUP-MOVE-NAT (V050 gt4 / gt5): two hops, per-probe blocks.
+# run_nat_group_hops adjust|move
+run_nat_group_hops() {
+  local mode="$1" label call_id
+  case "${mode}" in
+    adjust) label="B-HARD-GROUP-ADJUST-NAT"; call_id="pp-hard-group-adjust-nat" ;;
+    move) label="B-HARD-GROUP-MOVE-NAT"; call_id="pp-hard-group-move-nat" ;;
+  esac
+  pp_hard_kill_peer_probes
+  pp_hard_cgnat_clear_probe_blocks
+  local c
+  for c in "${PP_HARD_CGNAT_PEER_A}" "${PP_HARD_CGNAT_PEER_B}" "${PP_HARD_CGNAT_PEER_C}"; do
+    pp_hard_link_clear_container "${c}"
+  done
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" rm -rf "/share/sig-${call_id}"
+  local c_port=47202 d_port=47204
+  local a_log="${LOG_DIR}/${mode}.a.log" b_log="${LOG_DIR}/${mode}.b.log" c_log="${LOG_DIR}/${mode}.c.log"
+  local d_log="${LOG_DIR}/${mode}.d.log"
+  local GROUP_SIG="/share/sig-${call_id}" GROUP_EXTRA_HOP="${HOP2_MA_PUBLIC}" GROUP_STREAMS=2 GROUP_WARM_HOP=""
+  local pids=() streams=2 a_extra=()
+  if [[ "${mode}" == "adjust" ]]; then
+    echo "=== ${label}: C blocked from hop1 → the group must form on hop2 ==="
+    pp_hard_cgnat_block_probe_to "${PP_HARD_CGNAT_GW_C}" "${PP_HARD_CGNAT_GW_C_PUB_IP}" "${PEER_C_IP}" "${c_port}" \
+      "${HOP_IP_PUBLIC}" on
+  else
+    echo "=== ${label}: A, B, C on hop1; D (blocked from hop1) invited mid-call → the group must move ==="
+    streams=3
+    GROUP_STREAMS=3
+    pp_hard_cgnat_block_probe_to "${PP_HARD_CGNAT_GW_C}" "${PP_HARD_CGNAT_GW_C_PUB_IP}" "${PEER_C_IP}" "${d_port}" \
+      "${HOP_IP_PUBLIC}" on
+  fi
+
+  start_group_guest "${PP_HARD_CGNAT_PEER_B}" "${PEER_B_IP}" 47200 "${mode}-b" "${b_log}" --leave-after-gate-ms 6000
+  pids+=("${GUEST_PID}")
+  local c_extra=(--accept-delay-ms "${GROUP_ACCEPT_DELAY_MS}" --leave-after-gate-ms 8000)
+  if [[ "${mode}" == "adjust" ]]; then
+    # C cannot reach hop1: warm hop2, know hop1 as the extra one (its probe of the plan must fail).
+    GROUP_WARM_HOP="${HOP2_MA_PUBLIC}" GROUP_EXTRA_HOP="${HOP_MA_PUBLIC}" \
+      start_group_guest "${PP_HARD_CGNAT_PEER_C}" "${PEER_C_IP}" "${c_port}" "${mode}-c" "${c_log}" "${c_extra[@]}"
+  else
+    start_group_guest "${PP_HARD_CGNAT_PEER_C}" "${PEER_C_IP}" "${c_port}" "${mode}-c" "${c_log}" "${c_extra[@]}"
+  fi
+  pids+=("${GUEST_PID}")
+  if [[ "${mode}" == "move" ]]; then
+    GROUP_WARM_HOP="${HOP2_MA_PUBLIC}" GROUP_EXTRA_HOP="${HOP_MA_PUBLIC}" \
+      start_group_guest "${PP_HARD_CGNAT_PEER_C}" "${PEER_C_IP}" "${d_port}" "${mode}-d" "${d_log}"
+    pids+=("${GUEST_PID}")
+  fi
+  cleanup_group_hops() {
+    kill "${pids[@]}" 2>/dev/null || true
+    wait "${pids[@]}" 2>/dev/null || true
+    pp_hard_cgnat_clear_probe_blocks
+  }
+  trap cleanup_group_hops EXIT
+  wait_ready "${mode}-b"
+  wait_ready "${mode}-c"
+  [[ "${mode}" == "move" ]] && wait_ready "${mode}-d"
+  sleep 1
+  if [[ "${mode}" == "move" ]]; then
+    a_extra=(--invite-later "$(ready_line "${mode}-d" 1),$(ready_line "${mode}-d" 2)" --invite-later-ms 15000)
+  fi
+  set +e
+  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" /probes/${CALL_BIN_NAME} --role offerer --product-stack \
+    --peer "$(ready_line "${mode}-b" 1),$(ready_line "${mode}-c" 1)" \
+    --peer-account "$(ready_line "${mode}-b" 2),$(ready_line "${mode}-c" 2)" \
+    --via-hop "${HOP_MA_PUBLIC}" --extra-hop "${HOP2_MA_PUBLIC}" --call-id "${call_id}" --signal-dir "${GROUP_SIG}" \
+    --hold-ms 60000 --timeout-ms 90000 --rx-stall-ms "${GROUP_RX_STALL_MS}" --min-rx-streams "${streams}" \
+    --stream-rx-frames "${GROUP_STREAM_RX}" --stream-window-ms "${GROUP_WINDOW_MS}" --leave-after-gate-ms 3000 \
+    "${a_extra[@]}" > >(tee "${a_log}") 2>&1
+  local a_rc=$?
+  wait_exit 30 "${pids[@]}"
+  local rcs=() p
+  for p in "${pids[@]}"; do
+    wait "${p}"
+    rcs+=($?)
+  done
+  set -e
+  trap - EXIT
+  pp_hard_cgnat_clear_probe_blocks
+  echo "a_rc=${a_rc} guest_rcs=${rcs[*]}"
+  local bad=0 r
+  [[ "${a_rc}" -eq 0 ]] || bad=1
+  for r in "${rcs[@]}"; do [[ "${r}" -eq 0 ]] || bad=1; done
+  [[ "${bad}" -eq 0 ]] || pp_hard_die "${label}: a probe failed (a=${a_rc} guests=${rcs[*]})"
+  sleep 0.5
+  assert_group_hops "${label}" "${mode}" "${a_log}" "${b_log}" "${c_log}" "${d_log}"
+  echo "${label} smoke PASSED"
+}
+
+assert_group_hops() {
+  local label="$1" mode="$2" a_log="$3" b_log="$4" c_log="$5" d_log="$6" log logs
+  logs=("${a_log}" "${b_log}" "${c_log}")
+  [[ "${mode}" == "move" ]] && logs+=("${d_log}")
+  for log in "${logs[@]}"; do
+    grep -q "AttachLocalToSfu begin .*hop=${HOP2_PEER_ID}" "${log}" ||
+      pp_hard_die "${label}: $(basename "${log}") never attached to hop2"
+    grep -q "ok  publisher rx gate" "${log}" ||
+      pp_hard_die "${label}: $(basename "${log}") never heard every other publisher"
+  done
+  if [[ "${mode}" == "adjust" ]]; then
+    grep -q "group hop adjustment .* → ${HOP2_PEER_ID}" "${a_log}" ||
+      pp_hard_die "${label}: the initiator did not make the one adjustment to hop2"
+    grep -q "hop probe .*hop=${HOP_PEER_ID} ok=0" "${c_log}" ||
+      pp_hard_die "${label}: C's probe of the planned hop did not fail (block not effective?)"
+    for log in "${logs[@]}"; do
+      if grep -q "AttachLocalToSfu begin .*hop=${HOP_PEER_ID}" "${log}"; then
+        pp_hard_die "${label}: $(basename "${log}") attached to hop1 (the unadjusted plan)"
+      fi
+    done
+    echo "ok  group formed on hop2 after C reported hop1 unreachable (one adjustment)"
+  else
+    grep -q "Hop hint re-pick prefer=${HOP2_PEER_ID}" "${a_log}" ||
+      pp_hard_die "${label}: the owner did not move the group to hop2 for D"
+    for log in "${b_log}" "${c_log}"; do
+      grep -q "owner moved the group ${HOP_PEER_ID} → ${HOP2_PEER_ID}" "${log}" ||
+        pp_hard_die "${label}: $(basename "${log}") did not follow the owner to hop2"
+    done
+    grep -q "ReportSfuAttachFailed to initiator" "${d_log}" ||
+      pp_hard_die "${label}: D never reported its failed attach to the owner"
+    echo "ok  group moved hop1 → hop2 for D; B and C followed the owner"
+  fi
+  for log in "${logs[@]}"; do
+    echo "    $(basename "${log}" .log): $(grep -m1 'ok  publisher rx gate' "${log}" | sed 's/.*live=/live=/')"
+  done
+}
+
 run_phase() {
   local want="$1"
   [[ "${PHASE}" == "all" || "${PHASE}" == "${want}" ]]
@@ -635,6 +915,18 @@ if run_phase mobile; then
   set -e
   pp_hard_cgnat_set_nat symmetric
   [[ "${mobile_rc}" -eq 0 ]] || exit "${mobile_rc}"
+fi
+
+if run_phase group; then
+  run_nat_group_call
+fi
+
+if run_phase group-adjust; then
+  run_nat_group_hops adjust
+fi
+
+if run_phase group-move; then
+  run_nat_group_hops move
 fi
 
 if run_phase broadcast; then
