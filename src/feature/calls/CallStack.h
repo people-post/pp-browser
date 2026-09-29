@@ -98,6 +98,9 @@ public:
   void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial);
   void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
                          ICircuitHopReach* circuit_reach);
+  /** Test-only, group calls: also stand in for the hub's media_relay client (SoftMigrate / hop attach). */
+  void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial, ICircuitHopReach* circuit_reach,
+                         IMediaRelayClient* relay);
   /** Teardown before mesh Stop: clear bindings, PrepareForTeardown; abort circuit via callback. */
   void PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit);
   /** Teardown after mesh Stop: drop the bridge and the call-media transport. */
@@ -175,7 +178,7 @@ private:
   void BuildSessionsOnOwner(const CallStackDeps& deps);
   void OnMeshServicesStartedOnOwner();
   void BindTestMediaPathOnOwner(ICallMediaTransport* transport, IDialRegistry* dial,
-                                ICircuitHopReach* circuit_reach);
+                                ICircuitHopReach* circuit_reach, IMediaRelayClient* relay);
   void PrepareForMeshStopOnOwner(const std::function<void()>& abort_inflight_circuit);
   void FinishMeshStopOnOwner();
   void DetachMeshMediaOnOwner();

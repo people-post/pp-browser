@@ -320,6 +320,51 @@ TEST(CallControlCodecTest, InviteOfferAmountRoundTrip) {
   EXPECT_EQ(decoded_accept->offer_amount_minor, 25);
 }
 
+// V050: planned_hop is additive — round-trips with its multiaddr, absent stays absent (old peers),
+// and never aliases sfu_hint (the hop the call is on).
+TEST(CallControlCodecTest, InvitePlannedHopRoundTrip) {
+  CallInviteDetail invite;
+  invite.call_id = "call:group";
+  invite.inviter_identity = "account:a";
+  invite.invitee_identity = "account:b";
+  invite.planned_hop = CallPlannedHop{"12D3KooWHop", "/ip4/198.18.117.2/udp/443/adp/1.0.0/p2p/12D3KooWHop"};
+  auto encoded = CallControlCodec::EncodeInvite(invite);
+  ASSERT_TRUE(encoded);
+  auto decoded = CallControlCodec::DecodeInvite(*encoded);
+  ASSERT_TRUE(decoded);
+  ASSERT_TRUE(decoded->planned_hop);
+  EXPECT_EQ(decoded->planned_hop->peer_id, "12D3KooWHop");
+  EXPECT_EQ(decoded->planned_hop->multiaddr, "/ip4/198.18.117.2/udp/443/adp/1.0.0/p2p/12D3KooWHop");
+  EXPECT_FALSE(decoded->sfu_hint);
+
+  invite.planned_hop.reset();
+  auto plain = CallControlCodec::DecodeInvite(*CallControlCodec::EncodeInvite(invite));
+  ASSERT_TRUE(plain);
+  EXPECT_FALSE(plain->planned_hop);
+}
+
+// V050 gt4: the accept's hop report is additive — absent stays unknown (old peers).
+TEST(CallControlCodecTest, AcceptHopReportRoundTrip) {
+  CallAcceptDetail accept;
+  accept.call_id = "call:group";
+  accept.identity = "account:c";
+  accept.hop_report.planned_hop_ok = false;
+  accept.hop_report.reachable_hops = {"12D3KooWOther"};
+  accept.hop_report.unreachable_hops = {"12D3KooWPlanned"};
+  auto decoded = CallControlCodec::DecodeAccept(*CallControlCodec::EncodeAccept(accept));
+  ASSERT_TRUE(decoded);
+  ASSERT_TRUE(decoded->hop_report.planned_hop_ok);
+  EXPECT_FALSE(*decoded->hop_report.planned_hop_ok);
+  EXPECT_EQ(decoded->hop_report.reachable_hops, std::vector<std::string>{"12D3KooWOther"});
+  EXPECT_EQ(decoded->hop_report.unreachable_hops, std::vector<std::string>{"12D3KooWPlanned"});
+
+  accept.hop_report = {};
+  auto plain = CallControlCodec::DecodeAccept(*CallControlCodec::EncodeAccept(accept));
+  ASSERT_TRUE(plain);
+  EXPECT_FALSE(plain->hop_report.planned_hop_ok);
+  EXPECT_TRUE(plain->hop_report.reachable_hops.empty());
+}
+
 TEST(CallControlCodecTest, VideoRefreshRoundTrip) {
   CallVideoRefreshDetail detail;
   detail.call_id = "call:vid";
@@ -382,6 +427,16 @@ TEST(CallControlCodecTest, PlumbingAndInboxChromeSuppress) {
   EXPECT_TRUE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallRoster));
   EXPECT_FALSE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallInvite));
   EXPECT_FALSE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallEnded));
+}
+
+TEST(CallSessionLogicTest, VoiceAnswerNarrowsOnlyDirectOriginCalls) {
+  CallSession direct;
+  EXPECT_TRUE(CallSessionLogic::VoiceAnswerNarrowsCall(direct));
+  CallSession group;
+  group.origin_group_id = "group-1";  // a group-thread call with one invitee still has 2 rows
+  EXPECT_FALSE(CallSessionLogic::VoiceAnswerNarrowsCall(group));
+  group.origin_group_id = "";
+  EXPECT_TRUE(CallSessionLogic::VoiceAnswerNarrowsCall(group));
 }
 
 TEST(CallSessionLogicTest, VideoAllowedFromInvite) {

@@ -89,6 +89,15 @@ struct CallParticipantMedia {
   bool video_enabled = false;
 };
 
+/**
+ * V050 planned hop: the media_relay the initiator picked at StartCall from the invite list. Not
+ * attached until the third join; carried in CallInvite so invitees can check it while ringing.
+ */
+struct CallPlannedHop {
+  std::string peer_id;
+  std::string multiaddr;
+};
+
 struct CallSession {
   std::string call_id;
   std::optional<std::string> origin_thread_id;
@@ -103,6 +112,8 @@ struct CallSession {
   std::string media_key_id;
   std::optional<std::string> sfu_hint;
   CallSessionKind session_kind = CallSessionKind::Group;
+  /** V050: hop planned from the invite list (not the hop the call is on — that is `sfu_hint`). */
+  std::optional<CallPlannedHop> planned_hop;
 };
 
 struct CallParticipant {
@@ -125,7 +136,10 @@ struct PendingCallInvite {
   std::optional<std::string> sfu_hint;
   std::optional<int64_t> expires_at;
   int64_t created_at = 0;
-  /** pending | accepted | declined | expired | missed */
+  /**
+   * pending | accepted | accepted_implicit | declined | expired | missed. `accepted_implicit`: the
+   * inviter took the answerer's call-media hello as its accept (B30) before the CallAccept arrived.
+   */
   std::string status = "pending";
   CallSessionKind session_kind = CallSessionKind::Group;
 };
@@ -165,8 +179,10 @@ struct CallInviteDetail {
   std::optional<std::string> origin_thread_id;
   std::optional<std::string> origin_group_id;
   std::optional<std::string> sfu_hint;
+  /** V050: planned hop (additive; old peers ignore). Distinct from `sfu_hint` = the hop in use. */
+  std::optional<CallPlannedHop> planned_hop;
   std::optional<int64_t> expires_at;
-  /** Full call roster snapshot at invite time (joined + ringing + this invitee). */
+  /** Full call roster at invite time: joined + ringing + every co-invitee (V050) + this invitee. */
   std::vector<CallRosterEntry> participants;
   /** Optional epoch-1 media key (same fields as CallMediaKey) so Accept need not wait on a second inbox row. */
   uint32_t media_epoch = 1;
@@ -194,6 +210,18 @@ struct CallInviteDetail {
   std::string currency = "pp_credit";
 };
 
+/**
+ * V050 gt4: what an invitee found while ringing, carried in CallAccept (additive; old peers send
+ * none). `planned_hop_ok` unset = unknown (no plan, or the probe had not finished).
+ */
+struct CallHopReport {
+  std::optional<bool> planned_hop_ok;
+  /** Hops (PeerIds) this invitee reached (media_relay quote ok) — the planned one included when ok. */
+  std::vector<std::string> reachable_hops;
+  /** Hops it tried and could not reach. A hop still being probed is in neither list (unknown). */
+  std::vector<std::string> unreachable_hops;
+};
+
 struct CallAcceptDetail {
   std::string call_id;
   std::string identity;
@@ -215,6 +243,8 @@ struct CallAcceptDetail {
   /** Callee's answer mode: absent = unchanged (old peers, video answer); false = answered as voice
    *  only — a 1:1 caller narrows the call to voice. Never true on the wire. */
   std::optional<bool> video_allowed;
+  /** V050 gt4: planned-hop reachability + reachable hops. */
+  CallHopReport hop_report;
 };
 
 struct CallDeclineDetail {

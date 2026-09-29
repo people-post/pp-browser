@@ -81,3 +81,23 @@ Escrow/settlement, public evidence, DEK encryption of `payment_promises.json`, d
 ### Cross-links
 
 - P002 receipts; P001 initiation gates; NETWORKING settlement note
+
+## P004 — Paid-hop ownership handover (deferred)
+
+**Status:** Proposed — deferred until paid `media_relay` quotes are payable (today `InitiationPricing::CheckRelayQuotePayable` rejects any non-zero rate without payment rails, so group-call hops are volunteer).
+
+### Decision (target)
+
+When the paying owner of a group call's hop leaves ([V050](../p2p-av-calls/DECISIONS.md#v050--group-call-topology-11-first-planned-hop-monotonic)), every remaining participant gets a confirmation to become the new owner, including payment. If nobody accepts, the call ends when the window the previous owner paid for runs out. Until then, ownership of re-picks passes to the earliest-joined remaining participant with no payment change (V050).
+
+### Needed first
+
+1. A **prepaid window + renewal** model for hop sessions; **renew-ahead** ≥ confirmation timeout + payment round trip + margin (not short).
+2. **Hop-side enforcement** of the window (the payee ends service) — a client-only rule is a courtesy, not a guarantee.
+3. Owner-lost detection beyond a clean `call_leave` (crash / network loss: owner's hop session drops, roster timeout).
+4. A single winner when several accept at once — the hop (payee) accepts the first valid payment.
+5. A visible countdown for the remaining participants; owner confirmation when a V050 re-pick changes the price.
+
+### Cross-links
+
+- P001 relay quote gate; V022 payer = sticky initiator; V050 group topology

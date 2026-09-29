@@ -1120,6 +1120,7 @@ TEST_F(CallSessionInboundComposeTest, GroupVoiceAnswerDoesNotNarrowCaller) {
   CallSession session;
   session.call_id = call_id;
   session.origin_thread_id = "thread:out";
+  session.origin_group_id = "group:out";  // started from a group thread
   session.media_mode = CallMediaMode::Voice;
   session.video_allowed = true;
   session.state = CallSessionState::Ringing;
@@ -1159,6 +1160,45 @@ TEST_F(CallSessionInboundComposeTest, GroupVoiceAnswerDoesNotNarrowCaller) {
   auto video_allowed = csm_->VideoAllowedForCall(call_id);
   ASSERT_TRUE(video_allowed && video_allowed->has_value());
   EXPECT_TRUE(**video_allowed) << "voice-only Accept from one of >=2 invitees must not narrow the whole call";
+}
+
+// PR #230 review: narrowing keys on the call's origin, not the live row count. A group-thread call
+// with a single invitee (2 rows) stays video-allowed; a direct call still narrows after the caller
+// added a guest (3 rows) before the voice-only accept arrived — both sides then agree.
+TEST_F(CallSessionInboundComposeTest, VoiceAnswerNarrowingFollowsTheCallOrigin) {
+  const std::string group_call = "call:group-one-invitee";
+  SeedOffererRingingCall(group_call, /*video_allowed=*/true);
+  auto group_session = sessions_->LoadSession(group_call);
+  ASSERT_TRUE(group_session && group_session->has_value());
+  (*group_session)->origin_group_id = "group:out";
+  ASSERT_TRUE(sessions_->UpsertSession(**group_session));
+
+  const std::string direct_call = "call:direct-with-guest";
+  SeedOffererRingingCall(direct_call, /*video_allowed=*/true);
+  CallParticipant guest;
+  guest.call_id = direct_call;
+  guest.identity = "account:guest";
+  guest.state = CallParticipantState::Ringing;
+  ASSERT_TRUE(sessions_->UpsertParticipant(guest));
+
+  for (const std::string& call_id : {group_call, direct_call}) {
+    CallAcceptDetail accept;
+    accept.call_id = call_id;
+    accept.identity = "account:peer";
+    accept.video_allowed = false;
+    auto detail = CallControlCodec::EncodeAccept(accept);
+    ASSERT_TRUE(detail);
+    auto msg = CallControlCodec::BuildSystemMessage("thread:out", CallControlType::CallAccept, "Accepted", *detail,
+                                                    "account:peer");
+    ASSERT_TRUE(msg);
+    ASSERT_TRUE(csm_->ApplyInboundControl(*msg, "account:peer"));
+  }
+  auto group_allowed = csm_->VideoAllowedForCall(group_call);
+  ASSERT_TRUE(group_allowed && group_allowed->has_value());
+  EXPECT_TRUE(**group_allowed) << "a group-thread call is never narrowed call-wide";
+  auto direct_allowed = csm_->VideoAllowedForCall(direct_call);
+  ASSERT_TRUE(direct_allowed && direct_allowed->has_value());
+  EXPECT_FALSE(**direct_allowed) << "a direct call narrows even with a guest already invited";
 }
 
 TEST_F(CallSessionInboundComposeTest, InboundMediaKeyUnwrapsAndKicksAnswerer) {

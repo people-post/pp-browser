@@ -81,6 +81,7 @@ Cross-project refs: [p2p-mesh N009–N015](../p2p-mesh/DECISIONS.md), [push P001
 ## V009 — Any group member may start; camera off by default on join
 
 **Date:** 2026-07-28  
+**Status:** Camera default **superseded** by [V051](#v051--voice-or-video-answer-video-calls-start-with-the-camera-on) (video calls start with the camera on); the group-start rule stands.  
 **Decision:** Starting a call from a group does **not** require owner role. Video sessions join with **camera off** until the user enables it; mic defaults on (user can mute).  
 **Rationale:** Matches common messengers; reduces surprise camera-on.  
 **Alternatives:** Owner-only start (rejected); camera-on by default (rejected).
@@ -175,7 +176,7 @@ Same pattern as a2 (V010): LAN dogfood proves media + UI; NAT claims wait for or
 **a3 exit criteria (claimable):**
 
 1. Two devices on LAN: video call → accept → remote video visible when peer enables camera; local preview when self enables  
-2. Camera **off** on join until user toggles on; mic defaults on (V009)  
+2. Camera **off** on join until user toggles on; mic defaults on (V009 — camera default superseded by [V051](#v051--voice-or-video-answer-video-calls-start-with-the-camera-on))  
 3. Codec preference **H264** in SDP; encode/decode via **platform HW** (V017)  
 4. Desktop camera permissions / OS privacy prompts exercised; Android `CAMERA` (+ `RECORD_AUDIO`); **iOS** `NSMicrophoneUsageDescription` + `NSCameraUsageDescription` + `AVAudioSession` play-and-record + `UIBackgroundModes` `audio` (V019) — **wiring complete**; physical iOS device dogfood optional follow-up  
 5. Docs: CURRENT_STATE marks LAN video path + mobile wiring; NAT/SFU still unclaimed; Linux video **send** may fail without camera and/or usable HW encoder (accepted); voice continues (V019)
@@ -743,7 +744,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 | **E2E / uplink** | **One key per call epoch** ([V004](#v004--shared-call-media-key-not-group-n-ciphertext)), not per subscriber. Publisher AEAD-seals each AU **once**; hop copies that ciphertext to subscribers. Per-target encrypt is rejected — it would multiply video uplink by N−1. AAD `stream_id` + channel is replay binding, not a per-peer key. |
 | **Group / SFU** | Existing N021 `channel_id=1` + `LatestLossy` + `mark=1` on IDR. Hop **never** inspects H264. Same shared-key AEAD on **all** channels as audio. |
 | **Hop queues** | Never shed `ReliableOrdered` (audio) to enqueue `LatestLossy` (video). Drop stale video first. |
-| **Camera** | Off on join ([V009](#v009--any-group-member-may-start-camera-off-by-default-on-join)). Adaptation `camera_user_wants` follows `IsCameraEnabled()`. Missing encoder/decoder must not tear down voice ([V019](#v019--unified-call-media-shape-voicevideo-entry-only)). |
+| **Camera** | On once connected for video calls ([V051](#v051--voice-or-video-answer-video-calls-start-with-the-camera-on); was off on join, V009). Adaptation `camera_user_wants` follows `IsCameraEnabled()`. Missing encoder/decoder must not tear down voice ([V019](#v019--unified-call-media-shape-voicevideo-entry-only)). |
 | **IDR** | Encoder `force_keyframe` on start / SoftMigrate send-swap / inbound `call_video_refresh`. Periodic IDR remains a backstop. |
 | **Group UI** | Expanded: one remote stage + local PiP. Immersive: per-peer tiles (cap concurrent HW decoders, e.g. 4). |
 | **Non-goals** | `video_hi`, screen share, recording, CallKit, libdatachannel, Linux soft-codec, N021 header change. |
@@ -884,7 +885,7 @@ One-step transitions only (no Immersive → Minimized in one fling). Restore fro
 |----------|------------|------------------|
 | **2** | Prefer **direct** Amp call-media (`/pp-browser/realtime/1.0.0`) | **publish → punch → circuit-carried nested Session** (A024); never auto SoftMigrate / `media_relay` attach for NAT alone |
 | **≥3** | SoftMigrate → blind **`media_relay`** star (V021) | Circuit may still be used underneath to *reach* the hop PeerId |
-| **N drops to 2** | **Stay on SFU** until hangup (v1) | Avoid P2P↔SFU flip-flop (V021) |
+| **N drops to 2** | **Stay on SFU** until hangup (v1) | Avoid P2P↔SFU flip-flop (V021); monotonic group rules in [V050](#v050--group-call-topology-11-first-planned-hop-monotonic) |
 
 ### Normative rules
 
@@ -1223,3 +1224,46 @@ Topology needs (example of the litmus): arming, cancel epoch, hop-native progres
 
 ---
 
+---
+
+## V050 — Group call topology: 1:1 first, planned hop, monotonic
+
+**Date:** 2026-09-28  
+**Status:** Accepted — phase [gt](PHASES.md#gt--group-call-topology-v050)  
+**Decision:** One small rule set for calls with 3+ invitees. Topology only moves **up** (direct → hop, or hop → a hop that can serve a newcomer); it is never re-evaluated because someone left.
+
+| When | Rule |
+|------|------|
+| `StartCall` (≥2 invitees) | The initiator picks a **planned hop** from the **invite list** (everyone it hopes will join, not only acceptors) with the usual policy — unknown / non-LAN invitees → Wide → public org seed. The planned hop rides each `CallInvite` as `planned_hop` (**not** `sfu_hint`, which keeps meaning "the call is already on this hop"). Nobody attaches yet. |
+| Ringing | Invitees may probe the planned hop; `CallAccept` reports whether it is reachable plus the relays the invitee can reach. |
+| First accept (2 joined) | **Direct 1:1** between initiator and acceptor (V038). Media planners arm on **joined** count on every side — ringing / invited rows never arm the hop planner. |
+| Third join (≥3 joined) | SoftMigrate onto the planned hop — or, if an accept reported it unreachable, **one** adjustment to a relay nobody reported unreachable and the refusing participant positively reached (a hop still being probed is unknown and excludes nothing — invitees may accept before their probes finish). No such relay → keep the planned hop and refuse the joiner (`CallHopRefuse`). The initiator decides from the joiner's **CallAccept** (it carries the report), never from a CallRoster that happens to arrive first — for a joiner it invited itself (a CallAccept goes only to the inviter; a guest another member added reaches the initiator only as a roster, so that roster forms the group). The decision is made once per call: after the plan is kept or adjusted, later joins take the later-join path. |
+| Later joins | Re-pick **only** when the current hop is **insufficient** for the newcomer: the hop is **full** (quote / attach refused for capacity) or the newcomer **cannot reach** it — both surface as the newcomer's attach failure, reported to the owner (`CallSfuAttachFailed`), so no separate wire reason is needed. The new hop must be one no member reported unreachable (their accept reports; a hop they never probed is unknown) and the newcomer can dial. Everyone moves — guests follow a `CallSfuAttach` for a different hop only from the owner (other members' attaches are publisher announces). One attempt per join (failing again on the hop the group moved to → refuse; without it the group ping-pongs between hops); failure → keep the hop, refuse the joiner. |
+| Anyone leaves | No re-evaluation. N dropping to 2 stays on the hop until hangup (V038 row "N drops to 2"). Recovery from a hop **failure** (guest re-attach, re-pick) is not re-evaluation and stays. |
+| Initiator leaves | The earliest-joined remaining participant becomes the hop owner for re-picks (`SoftMigrateLogic` initiator = earliest `joined_at` among Joined). Paid-hop ownership handover (confirmation dialog, prepaid window, renewal) is deferred to pricing [P004](../pricing/DECISIONS.md#p004--paid-hop-ownership-handover-deferred). |
+
+**Invariants:** join stamps (`joined_at`) come from one clock — the inviter stamps each join, invites and `CallRoster` carry the stamps, and an invitee never stamps itself or the inviter from its own clock — so every side names the same next owner from its own rows; ties break by identity. Invites carry the full roster (every invitee, not a snapshot taken mid-loop) **and** planners arm on joined count — the two ship together. The first acceptor's path used to depend on invite order (it took the 1:1 path only because its invite omitted later invitees); fixing the roster alone would make it wait for a hop while the initiator dials it directly.
+
+**Rationale:** Monotonic topology removes P2P↔SFU flip-flop and leave-driven races (V021). Deciding the planned hop from the invite list makes the pick independent of accept order and lets invitees check it before media depends on it; picking but not attaching avoids paying for a hop while phones ring. 1:1-first keeps the cheap direct path when only one invitee answers (V038: no hop-routed 1:1 for NAT).
+
+**Alternatives rejected:** Go to the hop before any accept (a declined group becomes a hop-routed 1:1 for the whole call); pick only at the third join (accept-order dependent, no pre-check); re-evaluate on leave (flip-flop, more races); a second relay for an unreachable guest (multi-SFU non-goal).
+
+**Cross-link:** [V021](#v021--blind-media-forwarder-11-p2p-soft-migrate-to-group-sfu) · [V022](#v022--media-relay-bandwidth--quote-no-surprise-payer-bills) · [V035](#v035--scope-aware-softmigrate-hop-pick) · [V038](#v038--n2-circuit-for-nat-softmigrate-reserved-for-n3); tests `call_group_stack_compose_test` (B-GROUP-CALL), hard-lab B-HARD-GROUP-CALL-NAT.
+
+---
+
+## V051 — Voice or video answer; video calls start with the camera on
+
+**Date:** 2026-09-28  
+**Status:** Accepted — PR #230 (supersedes V009's camera default)  
+**Decision:** The caller picks **voice** or **video** when starting a call. A video ring offers **Answer as voice** besides Answer. A video call turns the local camera **on** once media connects (the user can turn it off); a voice call never does.
+
+| Rule | Detail |
+|------|--------|
+| Voice answer on the wire | `call_accept.video_allowed: false` — written **only** for a voice answer to a video call. Missing field = unchanged (old peers, video answers). Never `true`: the field only **narrows**. |
+| Who narrows | The callee narrows its own session. The caller narrows the call only when it was started from a **direct** thread (no `origin_group_id`) — keyed on the call's origin, not the live participant count, so a group-thread call with one invitee or a guest added before the accept lands cannot leave the two sides disagreeing. Ended sessions and relay replays never widen. |
+| Auto camera | Stays pending (not dropped) while the camera button would be hidden (no encoder, or the path policy disallows video) — never on without a way to turn it off. The caller also waits while the callee is joined only through an implicit accept (B30, invite status `accepted_implicit`): the voice answer rides the real `call_accept`. |
+
+**Rationale:** Matches the messengers users know (voice/video choice at both ends); a video call that starts with the camera off reads as broken. The narrowing field is additive and one-directional, so old peers keep today's behavior.
+
+**Cross-link:** [V009](#v009--any-group-member-may-start-camera-off-by-default-on-join) · [V035](#v035--scope-aware-softmigrate-hop-pick) (`video_allowed`); tests `CallerNarrowsOnVoiceOnlyAccept`, `VoiceAnswerNarrowingFollowsTheCallOrigin`, `AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsLate`.

@@ -227,6 +227,12 @@ std::string CallMediaBridge::MediaPathKind() const {
   // A direct bound link wins over a relay hop still registered for the peer: after a k3
   // migration the relay stays the call's fallback, not its path.
   const bool bound_direct = direct_.IsActive() && direct_.ActiveLinkKind() == CallMediaLinkKind::Direct;
+  if (bound_direct && reach_kind_ == PeerLinkKind::Relayed) {
+    // Same rule the other way: the reach loop settled over the circuit while the call is bound on a
+    // direct (punched) link the peer's hello opened — that call is not relayed (hard-lab FLIP race:
+    // "circuit" skipped the relay standby and ran a pointless direct upgrade).
+    return "punched";
+  }
   if (!bound_direct && reach_.HasRelayHop(media_peer_identity_)) {
     return "circuit";
   }

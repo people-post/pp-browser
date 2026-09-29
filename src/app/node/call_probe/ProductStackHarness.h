@@ -23,9 +23,11 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 namespace pbr {
 namespace call_probe {
@@ -39,7 +41,8 @@ public:
   static Roe<std::unique_ptr<ProductStackHarness>> Create(std::unique_ptr<pp::amp::AmpStack> stack,
                                                           std::shared_ptr<pp::adp::Clock> clock,
                                                           std::string advertise_ma,
-                                                          const std::string& hop_ma);
+                                                          const std::string& hop_ma,
+                                                          std::vector<std::string> extra_hops = {});
 
   ~ProductStackHarness();
 
@@ -56,6 +59,8 @@ public:
   Roe<void> UpsertPeerContact(const std::string& account_id, const std::string& peer_id,
                               const std::string& multiaddr);
   Roe<void> EnsureOriginThread(const std::string& thread_id, const std::string& peer_account);
+  /** Group call origin (B-HARD-GROUP-CALL-NAT): call-control still rides per-peer direct threads. */
+  Roe<void> EnsureGroupOriginThread(const std::string& thread_id, const std::vector<std::string>& peer_accounts);
   /** Dual-SNAT: nested circuit to peer so Amp chat call-control can deliver before StartCall. */
   Roe<void> EnsurePeerCircuitPath(const std::string& peer_id);
 
@@ -91,8 +96,8 @@ public:
 
   /** Answerer: auto-Accept pending invite; exit when min RX frames met or hold expires. */
   int RunAnswererHold(int hold_seconds, int min_rx_frames);
-  /** Offerer: StartCall → InCall → hold → Leave. */
-  Roe<void> RunOffererCall(const std::string& peer_account, int hold_ms, int timeout_ms);
+  /** Offerer: StartCall (one invitee = 1:1, more = group) → InCall → hold → Leave. */
+  Roe<void> RunOffererCall(const std::vector<std::string>& peer_accounts, int hold_ms, int timeout_ms);
 
   void Shutdown();
 
@@ -109,10 +114,29 @@ public:
   void SetRxStallMs(int ms) { rx_stall_ms_ = ms; }
   /** Answerer: judge stalls only for this long after the first rx frame (0 = whole hold). */
   void SetRxWatchMs(int ms) { rx_watch_ms_ = ms; }
+  /**
+   * Group calls: the hold passes only once `streams` remote publishers each decoded `frames` audio
+   * frames within one `window_ms` window (0 streams = off). Per publisher, not aggregate: a group
+   * call that only hears one of two peers fails.
+   */
+  void SetPublisherRxGate(int streams, int frames, int window_ms) {
+    gate_streams_ = streams;
+    gate_frames_ = frames;
+    gate_window_ms_ = window_ms;
+  }
+  /** Answerer: AcceptClicked this long after the invite shows (orders joins: N=2, then N=3). */
+  void SetAcceptDelayMs(int ms) { accept_delay_ms_ = ms; }
+  /** Leave this long after the publisher gate is met (a guest leaving a live group; the offerer too). */
+  void SetLeaveAfterGateMs(int ms) { leave_after_gate_ms_ = ms; }
+  /** Offerer: invite `account` into the live call `ms` after media started (V050 gt5 later join). */
+  void SetInviteLater(std::string account, int ms) {
+    invite_later_account_ = std::move(account);
+    invite_later_ms_ = ms;
+  }
 
 private:
   ProductStackHarness() = default;
-  Roe<void> InitStoresAndStack(const std::string& hop_ma);
+  Roe<void> InitStoresAndStack(const std::string& hop_ma, const std::vector<std::string>& extra_hops);
   Roe<void> SendCallControl(const std::string& peer_account, const ThreadMessage& msg);
   Roe<void> WriteSignal(const std::string& peer_account, const RelayEnvelope& env);
   /** UI pump: hand files in our signal inbox to OnChatInbound on a worker (like relay IO). */
@@ -122,6 +146,10 @@ private:
   std::string AmpDialKeyForAccount(const std::string& account_id) const;
   void LearnAccountPeerId(const std::string& account_id, const std::string& peer_id);
   uint64_t RxAudioFrames() const;
+  /** Decoded RX per remote publisher stream. */
+  std::vector<CallMediaStreamHealth> RxStreams() const;
+  /** Accept the top pending invite once `accept_delay_ms_` passed since it showed; its call id. */
+  std::optional<std::string> MaybeAcceptPendingInvite(std::optional<std::chrono::steady_clock::time_point>& first_seen);
   uint64_t TxAudioFrames() const;
 
   std::shared_ptr<pp::adp::Clock> clock_;
@@ -157,6 +185,15 @@ private:
   std::unordered_map<std::string, std::string> account_to_peer_id_;
   int rx_stall_ms_ = 0;
   int rx_watch_ms_ = 0;
+  int gate_streams_ = 0;
+  int gate_frames_ = 0;
+  int gate_window_ms_ = 3000;
+  int accept_delay_ms_ = 0;
+  int leave_after_gate_ms_ = 0;
+  std::string invite_later_account_;
+  int invite_later_ms_ = 0;
+  /** Offerer hold: send the later invite once its time came (no-op otherwise). */
+  void MaybeInviteLater(const std::string& call_id, std::chrono::steady_clock::time_point media_at, bool& sent);
   std::filesystem::path signal_dir_;
   std::chrono::steady_clock::time_point next_signal_poll_{};
   uint64_t signal_seq_ = 0;

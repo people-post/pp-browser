@@ -60,9 +60,12 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
   }
   MeshHost* m = mesh();
   const bool use_amp_relay = mesh_media_->AmpRelayAvailable();
-  deps.relay = mesh_media_->RelayClient();
-  deps.dial = mesh_media_->Dial();
-  deps.circuit_reach = mesh_media_->CircuitReach();
+  const MediaRelayAttachPorts ports = mesh_media_->RelayAttachPorts();
+  deps.relay = ports.relay;
+  deps.dial = ports.dial;
+  deps.circuit_reach = ports.service_reach;
+  deps.objects_alive = ports.objects_alive;
+  deps.objects_snap = ports.objects_snap;
   const auto snapshot = mesh_config();
   MeshConfig mesh_cfg = *snapshot;
   NormalizeMeshConfig(mesh_cfg);

@@ -3,6 +3,7 @@
 #include "domain/mesh/l4/media_relay/IMediaRelayClient.h"
 #include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
 #include "domain/mesh/reachability/MeshReachPorts.h"
+#include "foundation/runtime/DeferredSelf.h"
 
 #include "common/Error.h"
 
@@ -13,11 +14,20 @@
 
 namespace pbr {
 
-/** Mesh ports an attach runs over. `service_reach` may be null (no circuit / punch fallback). */
+/**
+ * Mesh ports an attach runs over. `service_reach` may be null (no circuit / punch fallback).
+ * `objects_alive` / `objects_snap`: the owner's liveness for these raw pointers (`MeshMediaPlane`
+ * invalidates it before it frees them). Service reach can take seconds; the continuation after it
+ * (and before AcceptAndAttach) fails instead of dereferencing freed objects. Null = ungated (tests).
+ */
 struct MediaRelayAttachPorts {
   IMediaRelayClient* relay = nullptr;
   IDialRegistry* dial = nullptr;
   ICircuitHopReach* service_reach = nullptr;
+  DeferredSelf::Token objects_alive;
+  uint64_t objects_snap = 0;
+
+  bool Live() const { return !objects_alive || DeferredSelf::Alive(objects_alive, objects_snap); }
 };
 
 struct MediaRelayAttachRequest {
@@ -59,5 +69,13 @@ struct MediaRelayAttached {
 void AttachToMediaRelayAsync(const MediaRelayAttachPorts& ports, MediaRelayAttachRequest request,
                              MediaRelayAttachHooks hooks,
                              std::function<void(Roe<MediaRelayAttached>)> on_done);
+
+/**
+ * Quote only — the same reach steps as `AttachToMediaRelayAsync` (register the hint, service reach
+ * when not dialable), then a quote, no AcceptAndAttach. A reachability / capacity probe (V050: an
+ * invitee checks the planned hop while ringing). Completes on whatever thread the relay client does.
+ */
+void QuoteMediaRelayAsync(const MediaRelayAttachPorts& ports, MediaRelayAttachRequest request,
+                          std::function<void(Roe<MediaRelayQuote>)> on_done);
 
 } // namespace pbr
