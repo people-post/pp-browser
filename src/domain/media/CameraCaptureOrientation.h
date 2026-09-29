@@ -23,6 +23,16 @@ struct CameraCaptureTransform {
 int CameraDisplayRotationDegrees();
 
 /**
+ * True where the sent frame's rotation follows the device live during a call (iOS: gravity), so
+ * the call UI polls CameraDisplayRotationDegrees while the camera is on. False elsewhere (Android
+ * reads the display once per open; polling it per tick leaked a JNI local ref).
+ */
+bool CameraRotationFollowsDevice();
+
+/** Stop any orientation sensing CameraDisplayRotationDegrees started (iOS: CoreMotion). UI thread. */
+void StopCameraOrientationTracking();
+
+/**
  * Resolve capture transform for an SDL camera id. Any thread (the media device thread opens cameras).
  * Android: ACAMERA_SENSOR_ORIENTATION + display rotation (CameraX compensation).
  * iOS: conventional sensor angles + interface/display orientation.

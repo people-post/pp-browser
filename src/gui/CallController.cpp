@@ -1257,14 +1257,15 @@ void CallController::ApplyAudioLevels(CallMediaEngine& media) {
     }
   }
   in_call.camera_on = media.IsCameraEnabled();
-  if (in_call.camera_on) {
-    // iOS: video follows the phone's physical orientation (UIKit read, so here on UI).
+  if (in_call.camera_on && CameraRotationFollowsDevice()) {
+    // iOS: video follows the phone's physical orientation (read on UI, per tick).
     const int rotation = CameraDisplayRotationDegrees();
     if (rotation != pushed_camera_rotation_) {
       media.UpdateCameraDisplayRotation(rotation);
       pushed_camera_rotation_ = rotation;
     }
-  } else {
+  } else if (!in_call.camera_on && pushed_camera_rotation_ != -1) {
+    StopCameraOrientationTracking();  // camera off: don't keep the motion sensors running
     pushed_camera_rotation_ = -1;
   }
   in_call.show_speaker = CallAudioSession::SupportsSpeakerToggle();
