@@ -2,8 +2,9 @@
 
 #include "common/directory/MeshHopDial.h"
 #include "domain/mesh/media_plane/MediaRelayAttach.h"
-#include "feature/calls/CallsThread.h"
 
+#include <type_traits>
+#include <variant>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -22,8 +23,28 @@ CallHopPlanning::CallHopPlanning(CallSessionStore& sessions, const CallHopRankin
   redirectLogger("CallHopPlanning");
 }
 
-CallHopPlanning::~CallHopPlanning() {
-  probe_self_.Invalidate();
+void CallHopPlanning::Handle(PlanningEvent& event) {
+  std::visit(
+      [this](auto& e) {
+        using E = std::decay_t<decltype(e)>;
+        if constexpr (std::is_same_v<E, planning_event::ProbeAnswered>) {
+          OnProbeAnswered(e);
+        } else {
+          static_assert(!sizeof(E), "handle every PlanningEvent");
+        }
+      },
+      event);
+}
+
+void CallHopPlanning::OnProbeAnswered(const planning_event::ProbeAnswered& answer) {
+  const auto round = probe_round_.find(answer.call_id);
+  auto probes = probes_.find(answer.call_id);
+  if (round == probe_round_.end() || round->second != answer.round || probes == probes_.end()) {
+    return;  // a probe round since replaced (or dropped)
+  }
+  probes->second[answer.hop_peer_id] = answer.ok;
+  log().info << "hop probe call_id=" << answer.call_id << " hop=" << answer.hop_peer_id << " ok=" << (answer.ok ? 1 : 0)
+             << (answer.ok ? "" : " err=" + answer.error);
 }
 
 std::optional<CallPlannedHop> CallHopPlanning::Plan(const std::vector<std::string>& invitees,
@@ -63,8 +84,10 @@ void CallHopPlanning::ProbeInvite(const std::string& call_id) {
   if (probes_.size() > kMaxTrackedCalls) {
     probes_.clear();
     probe_planned_hop_.clear();
+    probe_round_.clear();
   }
   probes_[call_id].clear();
+  ++probe_round_[call_id];  // answers to an earlier round are stale
   probe_planned_hop_[call_id] = planned.peer_id;
   const bool private_off_lan =
       !planned.multiaddr.empty() && MultiaddrHasPrivateIpv4Host(planned.multiaddr) &&
@@ -98,21 +121,11 @@ void CallHopPlanning::QuoteProbe(const std::string& call_id, const std::string& 
   request.session_id = call_id;
   request.quote.session_id = call_id;
   request.quote.participants = 3;  // a group is what this hop would serve
-  auto done = [this, token = probe_self_.token(), snap = probe_self_.Snapshot(), call_id,
-               hop_peer_id](Roe<MediaRelayQuote> quote) {
+  // Edge: the quote answers on a worker / I/O — it only reports.
+  auto done = [outbox = outbox_, call_id, round = probe_round_[call_id], hop_peer_id](Roe<MediaRelayQuote> quote) {
     const bool ok = quote && quote->ok;
-    const std::string error = ok ? std::string() : (quote ? quote->error : quote.error().message);
-    CallsThread::Post([this, token, snap, call_id, hop_peer_id, ok, error]() {
-      if (!DeferredSelf::Alive(token, snap)) {
-        return;
-      }
-      auto it = probes_.find(call_id);
-      if (it != probes_.end()) {
-        it->second[hop_peer_id] = ok;
-        log().info << "hop probe call_id=" << call_id << " hop=" << hop_peer_id << " ok=" << (ok ? 1 : 0)
-                   << (ok ? "" : " err=" + error);
-      }
-    });
+    outbox.Emit(planning_event::ProbeAnswered{call_id, round, hop_peer_id, ok,
+                                              ok ? std::string() : (quote ? quote->error : quote.error().message)});
   };
   // Same reach steps as a real attach (register, circuit when not dialable), then quote only.
   QuoteMediaRelayAsync(deps_->AttachPorts(), std::move(request), std::move(done));

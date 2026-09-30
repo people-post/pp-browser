@@ -19,7 +19,10 @@
 #include "feature/calls/CallInitiationBilling.h"
 #include "feature/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallReachSignals.h"
+#include "feature/calls/CallSessionEvents.h"
+#include "foundation/runtime/OwnerOutbox.h"
 #include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallDirectPathDeps.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallTopologyController.h"
@@ -85,7 +88,6 @@ public:
   CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                      CallSessionStore& sessions, CallMediaKeyStore& media_keys, CallDeliveryPorts delivery,
                      IPskSessionStore& psk_store, CallMediaEngine& media);
-  ~CallSessionManager() override { intents_self_.Invalidate(); }
 
   void SetOnRingChanged(RingChangedFn callback);
   /** Second listener — mesh (N025 listen) must not overwrite UI chrome refresh. */
@@ -132,19 +134,37 @@ public:
   /** The 1:1 path's arming / progress ports over the calls' media progress (the stack binds the bridge). */
   CallDirectArmingPorts DirectArmingPorts();
   /** Seat ops (V043) — Stack installs; CSM must not hold CallMediaSeat*. */
-  void SetMediaSeatPorts(CallMediaSeatPorts ports);
   /** Topology Seat ports (V046) — Stack installs; Topology must not hold CallMediaSeat*. */
-  void SetTopologySeatPorts(CallTopologySeatPorts ports);
   /** Build CSM seat ports over owned topology_ (Stack / compose tests). */
-  CallMediaSeatPorts MakeSeatPorts(CallMediaSeat* seat);
   /** The seat the calls' media coordinators take (null: none bound — mesh stopped / harness). */
-  void SetCallMediaSeat(CallMediaSeat* seat) { live_calls_.BindMediaResources(&media_, seat); }
+  /** The media seat (owned here: the calls' coordinators arbitrate it). Calls owner. */
+  const CallMediaSeat& Seat() const { return seat_; }
+  CallMediaSeat& SeatForTest() { return seat_; }
+  // --- The 1:1 path (CallMediaBridge), owned here like the group path (topology) -------------------
+  /**
+   * Mesh media is wired: run the 1:1 path on `deps` — built on first use or a new transport, else
+   * re-pointed at the new reach. Without a usable transport the path is dropped.
+   */
+  void AttachDirectPath(CallDirectPathDeps deps);
+  /** Mesh media objects are being replaced: the path lets go of dial / reach (kept otherwise). */
+  void DetachDirectPathReach();
+  /** Before the transport stops: abort connects and let go of the path's streams. */
+  void PrepareDirectPathForStop(int wait_ms = 0);
+  /** After the transport stopped (or at teardown): drop the path. */
+  void DropDirectPath();
+  /** k5: the device's addresses moved. */
+  void OnLocalNetworkMoved();
+  /** k6: a call's path policy may have changed. */
+  void OnPathPolicyChanged(const std::string& call_id);
+  bool IsDirectConnectInFlight() const;
+  CallMediaBridge* DirectPathForTest() { return direct_path_.get(); }
   /** The 1:1 path the calls' media coordinators start / release (null: mesh media not wired). */
-  void SetDirectDriver(CallDirectDriver* direct) { live_calls_.BindDirectDriver(direct); }
+  void SetDirectDriver(CallDirectDriver* direct) {
+    direct_driver_ = direct;
+    live_calls_.BindDirectDriver(direct);
+  }
   /** A call's media coordinator (LiveCall); null for a call not admitted here. Calls owner. */
   CallMediaCoordinator* CallMedia(const std::string& call_id) { return live_calls_.Media(call_id); }
-  /** Seat teardown hook: topology detach without re-entering seat.Release. */
-  void TopologyOnMediaStoppedForSeat(const std::string& call_id);
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
   void SetInitiationBillingStore(InitiationBillingStore* store);
   InitiationBillingStore* InitiationBilling() const { return billing_.Store(); }
@@ -172,6 +192,10 @@ public:
    * device shows is projected from the calls (LiveCalls::Phase / Status). Calls owner.
    */
   void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
+  /** Where this subtree reports its events (the stack binds it at build). */
+  void SetOutbox(OwnerOutbox<SessionEvent> outbox);
+  /** An event this subtree reported, back from the calls owner's queue. */
+  void Handle(SessionEvent& event);
   /** Runs after anything that can change what the device shows (phase, Status, the shown call). */
   void SetOnCallStateChanged(std::function<void()> fn) { on_call_state_changed_ = std::move(fn); }
   /** The call whose accept is in flight (clicked, or being accepted); empty if none. */
@@ -286,6 +310,7 @@ private:
   void P2pRequestInboxSync() override;
   const LiveCall* P2pLiveCall(const std::string& call_id) const override { return live_calls_.Find(call_id); }
   CallMediaCoordinator* P2pCallMedia(const std::string& call_id) override { return live_calls_.Media(call_id); }
+  bool HopCarriesMedia() const override;
   void P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
                            const std::string& peer_id) override;
 
@@ -303,6 +328,12 @@ private:
   void BindReachSignalPorts();
   void NotifyCallStateChanged();
   CallHopArmingPorts MakeHopArmingPorts();
+  CallTopologySeatPorts MakeTopologySeatPorts();
+  CallDirectSeatPorts DirectSeatPorts();
+  CallDirectMediaPorts MakeDirectMediaPorts();
+  void BindSeat();
+  /** The seat released (or was taken over): stop that call's media. */
+  void StopMediaForSeat(const std::string& call_id, uint64_t epoch_at_post, bool force);
   void ClickAccept(const std::string& call_id);
   void OnAcceptResult(const std::string& call_id, const Roe<void>& accepted);
   /** Our accept landed: kick the answerer's 1:1 start (and once more if it did not take). */
@@ -311,6 +342,8 @@ private:
   void ClickLeave(const std::string& call_id);
   /** A failed, open call: Retry (this side dials) or resume over the peer's reconnect. */
   void RestartMedia(const std::string& call_id, bool resume);
+  void RunMediaRestart(const std::string& call_id, bool resume);
+  void RetryAnswererKick(const std::string& call_id);
   /** Flush deferred inbox/TailSync when no ActiveLocalCall remains. */
   void MaybeCatchUpAfterCall();
 
@@ -336,6 +369,13 @@ private:
   CallMediaKeyStore& media_keys_;
   CallDeliveryPorts delivery_;
   CallMediaEngine& media_;
+  /** Before topology_ / live_calls_: both hold it (ports / media resources). */
+  CallMediaSeat seat_;
+  CallDirectDriver* direct_driver_ = nullptr;
+  /** The 1:1 path's transport as attached (a new one rebuilds the path). */
+  ICallMediaTransport* direct_transport_ = nullptr;
+  /** Names the current 1:1 path: its events carry it (one built since drops the old ones). */
+  uint64_t direct_path_generation_ = 0;
   CallTopologyController topology_;
   /** Before workflow_: the workflow drives it. */
   LiveCalls live_calls_;
@@ -371,8 +411,9 @@ private:
   std::string accept_in_flight_;
   std::string last_error_;
   std::function<void()> on_call_state_changed_;
-  /** Posted intent follow-ups (the answerer kick retry, media restarts) drop once we are gone. */
-  DeferredSelf intents_self_;
+  OwnerOutbox<SessionEvent> outbox_;
+  /** The 1:1 path: last, so it goes first (it calls into the seat, LiveCalls and this manager). */
+  std::unique_ptr<CallMediaBridge> direct_path_;
   std::string media_activity_;
 };
 

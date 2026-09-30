@@ -7,6 +7,8 @@
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallDirectDriver.h"
 #include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallSessionEvents.h"
+#include "foundation/runtime/OwnerOutbox.h"
 #include "domain/messaging/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaConnectCoordinator.h"
@@ -131,6 +133,10 @@ public:
    */
   using PathPolicyProvider = std::function<CallPathPolicy(const std::string& call_id)>;
   void SetPathPolicyProvider(PathPolicyProvider provider) { path_policy_ = std::move(provider); }
+  /** Where the path reports its events (its parent binds it); its timers are delayed events. */
+  void SetOutbox(OwnerOutbox<DirectPathEvent> outbox);
+  /** An event it reported, back from the calls owner's queue. */
+  void Handle(DirectPathEvent& event);
   /** k6: a mobility class of the call flipped (calls owner): upgrade punches follow the new policy. */
   void OnPathPolicyChanged(const std::string& call_id);
   /** Wait after a network change before re-anchoring (production 2.5 s). */
@@ -212,12 +218,14 @@ public:
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
-  // Answerer start steps (UI; the key poll runs on a worker).
+  // Start steps (each runs as its own event; the key poll is a delayed event per round).
+  void RunOffererStart(const std::string& call_id, const std::string& peer_identity);
   void RunAnswererStart(const std::string& call_id, const std::string& peer_identity);
   void DeferAnswererUntilMediaKey(const std::string& call_id, const std::string& peer_identity,
                                   const std::string& reason);
-  void PollForDeferredMediaKey(const std::string& call_id, uint64_t key_wait_gen);
+  void OnKeyPollDue(const direct_event::KeyPollDue& due);
   void OnDeferredMediaKeyTimeout(const std::string& call_id);
+  void StartDeferredAnswerer(const std::string& call_id);
   // BeginSession steps.
   void ResetDirectSessionState(const std::string& call_id, const std::string& peer_identity, bool offerer);
   /** Stop the prior engine session / connect; true when an inbound direct stream is kept. */
@@ -256,8 +264,13 @@ private:
                                                const char* label);
   /** UI: a bundle closed / failed — ignore during SoftMigrate / SFU attach, else ConnectFailed. */
   void OnBundleFailed(const std::string& call_id, const std::string& reason);
-  void DeliverDirectMedia(const std::string& call_id, uint32_t fixed_stream, uint8_t channel, uint32_t seq,
-                          uint8_t mark, const std::vector<uint8_t>& payload);
+  struct ReceiveGate;
+  /** Transport I/O: hand a 1:1 frame to the engine (thread-safe), gated by `gate`. */
+  static void ReceiveDirectMedia(ReceiveGate& gate, CallMediaEngine& media, const CallMediaHost& host,
+                                 const OwnerOutbox<DirectPathEvent>& outbox, const std::string& call_id,
+                                 uint32_t fixed_stream, uint8_t channel, uint32_t seq, uint8_t mark,
+                                 const std::vector<uint8_t>& payload);
+  void RebindInboundStream(const std::string& call_id);
   void ReleaseDirectTransportBody();
   /** NAT dogfood: dialable "direct" with TX-only → force circuit ensure + re-dial. */
   void MaybeEscalateTxOnlyDirect();
@@ -291,6 +304,7 @@ private:
   void OnRelayStandbyFire();
   /** k3-4: TX-only restart (Detach + BeginSession via circuit) — the fallback when the call cannot move. */
   void EscalateBreakBeforeMake(const std::string& call_id, const std::string& peer);
+  void RestartAfterEscalate(const std::string& call_id, const std::string& peer);
   void CancelEscalateReach();
   /** k4: the offerer reaches the peer again and migrates the call onto that link (retries). */
   void ScheduleReanchor(const std::string& call_id, std::chrono::milliseconds delay);
@@ -345,10 +359,23 @@ private:
   /** Bumped by AbortConnectSequence; the StartSfu send fn drops TX from an older generation. */
   std::atomic<uint64_t> connect_generation_{0};
   std::atomic<bool> stopping_{false};
-  /** Bumped when the pending (key-deferred) answerer changes; the key-poll worker watches it. */
-  std::atomic<uint64_t> key_wait_gen_{0};
-  /** Cleared in the destructor; guards stops posted from other threads. */
-  std::shared_ptr<std::atomic<bool>> alive_;
+  /** Names the current key wait; bumped when the pending (key-deferred) answerer changes. */
+  uint64_t key_wait_gen_ = 0;
+  OwnerOutbox<DirectPathEvent> outbox_;
+  /** Steps waiting for a result from another thread (reach / upgrade / standby / migrate answers). */
+  OwnerSteps steps_;
+  /**
+   * The callback to hand an async API: it only reports its result (any thread); `step` runs with it
+   * on the owner, as the path's next event.
+   */
+  template <typename T>
+  std::function<void(T)> OnOwner(std::function<void(T)> step) {
+    const uint64_t id = steps_.StoreFor<T>(std::move(step));
+    return [outbox = outbox_, id](T value) {
+      outbox.Emit(direct_event::StepReady{OwnerStepReady{id, std::make_shared<std::any>(std::move(value))}});
+    };
+  }
+  void OnPathChanged(const std::string& call_id, CallMediaLinkKind kind);
   uint64_t direct_health_timer_id_ = 0;
   uint64_t reserve_renew_timer_id_ = 0;
   uint64_t upgrade_timer_id_ = 0;
@@ -409,8 +436,16 @@ private:
   std::optional<FailedOpenCall> failed_open_;
   int media_key_inbox_poll_rounds_ = 90;
   std::atomic<uint32_t> audio_seq_{0};
-  /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */
-  std::atomic<uint32_t> inbound_remote_stream_{0};
+  /** What 1:1 receive reads on the transport's I/O thread; the owner publishes it. */
+  struct ReceiveGate {
+    /** Cleared when the bridge goes: frames still in flight on I/O drop. */
+    std::atomic<bool> open{true};
+    /** Inbound remote mixer stream; 0 = defer until the relay: identity is known (BeginSession). */
+    std::atomic<uint32_t> remote_stream{0};
+    /** Steady-clock ms before which I/O does not ask for another rebind (one in flight / just failed). */
+    std::atomic<int64_t> rebind_not_before_ms{0};
+  };
+  std::shared_ptr<ReceiveGate> receive_ = std::make_shared<ReceiveGate>();
 };
 
 } // namespace pbr

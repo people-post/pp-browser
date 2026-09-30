@@ -1,6 +1,8 @@
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallsThread.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/conversations/tests/calls_loopback_outbox.h"
+#include "feature/conversations/tests/calls_on_owner.h"
 #include "domain/messaging/CallLifecycleTypes.h"
 
 #include "domain/media/CallMediaEngine.h"
@@ -378,13 +380,14 @@ protected:
     bridge_ = std::make_unique<CallMediaBridge>(*host_, *sessions_, *keys_, *media_, *transport_, dial_.get(),
                                                 circuit_.get());
     bridge_->SetDirectArmingPorts(TestDirectArmingPorts(&host_->live));
+    bridge_->SetOutbox(bridge_events_.Get());  // the fixture plays the session manager
     dial_->force_dialable["account:peer"] = true;
     dial_->endpoints["account:peer"] = "/ip4/10.0.0.2/udp/1/p2p/12D3KooWPeer";
   }
 
   void TearDown() override {
     if (bridge_) {
-      bridge_->PrepareForTeardown(0);
+      OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
     }
     // Join the worker pool before destroying objects a still-running task may touch
     // (see call_session_inbound_compose_test.cpp TearDown).
@@ -460,6 +463,11 @@ protected:
   std::unique_ptr<FakeCircuitHopReach> circuit_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
   std::unique_ptr<CallMediaBridge> bridge_;
+  CallsLoopbackOutbox<DirectPathEvent> bridge_events_{[this](DirectPathEvent& event) {
+    if (bridge_) {
+      bridge_->Handle(event);
+    }
+  }};
 };
 
 // Dogfood 2026-09-24: answerer showed "Punched" while its inbound leg rode a relay carrier.
@@ -509,6 +517,24 @@ TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloBindsPeerIdentityOnCallsOwn
   EXPECT_EQ(bridge_->MediaPathKind(), "circuit") << "PeerId mapped to account:peer on the calls owner";
 }
 
+// 1:1 media is read on the transport's I/O, so the stream must be bound by the time the hello is
+// answered — the bundle's first frame must never see the previous call's stream.
+TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloIsBoundWhenAnswered) {
+  const std::string call_id = "call:inbound-bound-at-answer";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  dial_->circuit_hops["account:peer"] = true;  // "circuit" once the hello's peer is bound
+  CallMediaDirectConnectParams params;
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.peer_key = "12D3KooWInboundDialer";
+  std::string kind_at_answer;
+  ASSERT_TRUE(transport_->inbound.DeliverThen(
+      params, [&](CallMediaDirectConnectParams, CallMediaDirectCallbacks) { kind_at_answer = bridge_->MediaPathKind(); }));
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_EQ(kind_at_answer, "circuit") << "bound only after the hello was answered";
+}
+
 TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloWithoutSessionIsRejected) {
   CallMediaDirectConnectParams params;
   params.call_id = "call:no-such-session";
@@ -518,73 +544,6 @@ TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloWithoutSessionIsRejected) {
   ASSERT_TRUE(transport_->inbound.DeliverAndWait(params, cbs)) << "answered (NACK)";
   EXPECT_TRUE(params.media_key.empty());
   EXPECT_FALSE(cbs.on_connected);
-}
-
-// No-seat fallback (CallSessionManager::StopMediaIfCall) can reach StopMeshMedia from the thread
-// that handled an inbound Leave. Bridge state, the connect sequence and engine Stop are UI-only:
-// nothing may change until the calls owner runs the stop.
-TEST_F(CallMediaBridgeAnswererStartTest, OffUiStopMeshMediaRunsOnCallsOwner) {
-  const std::string call_id = "call:off-ui-stop";
-  SeedActiveCall(call_id);
-  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
-  Answered(call_id);
-  host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
-  AppRuntime::RunUIAndOwnerTasks();
-  ASSERT_TRUE(media_->IsActive());
-  ASSERT_TRUE(bridge_->MediaAttempted(call_id));
-  const auto phase_before = bridge_->DirectPlannerPhase();
-  ASSERT_NE(phase_before, CallDirectPlannerPhase::Idle);
-  const int detaches_before = transport_->detach_calls;
-
-  std::thread worker([&]() { bridge_->StopMeshMedia(call_id); });
-  worker.join();
-  EXPECT_TRUE(media_->IsActive()) << "engine Stop must not run off the calls owner";
-  EXPECT_TRUE(bridge_->MediaAttempted(call_id)) << "bridge state must not change off the calls owner";
-  EXPECT_EQ(bridge_->DirectPlannerPhase(), phase_before);
-  EXPECT_EQ(transport_->detach_calls, detaches_before);
-
-  AppRuntime::RunUIAndOwnerTasks();
-  EXPECT_FALSE(media_->IsActive());
-  EXPECT_FALSE(bridge_->MediaAttempted(call_id));
-  EXPECT_EQ(bridge_->DirectPlannerPhase(), CallDirectPlannerPhase::Idle);
-  EXPECT_GT(transport_->detach_calls, detaches_before);
-  EXPECT_FALSE(bridge_->IsConnectWorkerInflight());
-}
-
-// A stop posted for call A that is overtaken by a new session (StartSfu for B) must not tear B
-// down — the whole stop is skipped, not just the engine part.
-TEST_F(CallMediaBridgeAnswererStartTest, OffUiStopIsStaleAfterNewSession) {
-  const std::string call_a = "call:off-ui-a";
-  const std::string call_b = "call:off-ui-b";
-  SeedActiveCall(call_a);
-  SeedActiveCall(call_b);
-  ASSERT_TRUE(keys_->PutEpochKey(call_a, 1, TestMediaKey()));
-  ASSERT_TRUE(keys_->PutEpochKey(call_b, 1, TestMediaKey()));
-  Answered(call_a);
-  host_->live.SetMediaStatus(call_a, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsAnswerer(call_a, "account:peer");
-  AppRuntime::RunUIAndOwnerTasks();
-  ASSERT_EQ(media_->ActiveCallId(), call_a);
-
-  std::thread worker([&]() { bridge_->StopMeshMedia(call_a); });
-  worker.join();
-
-  // B starts on the calls owner before the posted stop runs (a task queued ahead of it).
-  AppRuntime::PostToFront(OwnerThreadId::MediaSessions, [&]() {
-    bridge_->StopMeshMedia(call_a);  // owner stop of A (inline), as a real Accept of B would do
-    Answered(call_b);
-    host_->live.SetMediaStatus(call_b, CallMediaStatus::DirectConnecting, "test");
-    bridge_->ScheduleStartMediaAsAnswerer(call_b, "account:peer");
-    EXPECT_EQ(media_->ActiveCallId(), call_b);
-    EXPECT_TRUE(bridge_->MediaAttempted(call_b));
-  });
-
-  AppRuntime::RunUIAndOwnerTasks();  // B's start, then the stale posted stop for A
-  EXPECT_TRUE(media_->IsActive()) << "stale stop tore down the newer session";
-  EXPECT_EQ(media_->ActiveCallId(), call_b);
-  EXPECT_TRUE(bridge_->MediaAttempted(call_b));
-  EXPECT_NE(bridge_->DirectPlannerPhase(), CallDirectPlannerPhase::Idle);
 }
 
 // k2: relay reservations are a 15 s lease — renew while the media session lives, stop on Stop.
@@ -598,7 +557,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, ReservationRenewedWhileSessionLiveStops
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
   Answered(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
   ASSERT_GE(reserves.load(), 1) << "BeginSession parks once";
 
@@ -618,7 +577,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, ReservationRenewedWhileSessionLiveStops
   }
   EXPECT_GE(reserves.load(), 3) << "lease renewed while live";
 
-  bridge_->StopMeshMedia(call_id);
+  OnCallsOwner([&] { return bridge_->StopMeshMedia(call_id); });
   pump_for(std::chrono::milliseconds(50));
   const int after_stop = reserves.load();
   pump_for(std::chrono::milliseconds(200));
@@ -635,7 +594,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, KeyReadyScheduleStartActivatesMedia) {
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
   ASSERT_TRUE(host_->live.AllowsDirectPath());
 
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
   EXPECT_TRUE(bridge_->MediaAttempted(call_id));
@@ -651,14 +610,14 @@ TEST_F(CallMediaBridgeAnswererStartTest, MissingKeyDefersMediaPending) {
   Answered(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
 
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
   EXPECT_TRUE(bridge_->MediaAttempted(call_id));
   EXPECT_FALSE(media_->IsActive());
   EXPECT_EQ(host_->live.Phase(), CallPhase::MediaPending);
   // Inbox poll is PostWorkerBackground — assert defer contract here; sync may land after RunUITasks.
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, MissingKeyWaitExhaustionConnectFailed) {
@@ -670,7 +629,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, MissingKeyWaitExhaustionConnectFailed) 
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
   bridge_->SetMediaKeyInboxPollRoundsForTest(0);
 
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
   // Deferred first (MediaPending). With 0 poll rounds the exhaustion can land in the same drain,
   // so the call may already be past it — the end state below is the oracle.
@@ -688,7 +647,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, MissingKeyWaitExhaustionConnectFailed) 
       << "got phase=" << CallPhaseName(host_->live.Phase());
   EXPECT_TRUE(bridge_->IsMeshConnectFailed());
   EXPECT_FALSE(host_->last_error.empty());
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, HopLiveStatusDoesNotStartDirectDuplex) {
@@ -702,7 +661,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, HopLiveStatusDoesNotStartDirectDuplex) 
   ASSERT_FALSE(host_->live.AllowsDirectPath());
   ASSERT_TRUE(host_->live.AllowsHopPath());
 
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
   // InCall + HopLive: ScheduleStart must not re-arm Direct or StartSfu.
@@ -719,7 +678,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, OffererScheduleStartActivatesMedia) {
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
   ASSERT_TRUE(host_->live.AllowsDirectPath());
 
-  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
   EXPECT_TRUE(bridge_->MediaAttempted(call_id));
@@ -735,13 +694,13 @@ TEST_F(CallMediaBridgeAnswererStartTest, DeferredKeyThenOnMediaKeyReadyActivates
   Answered(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
 
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
   EXPECT_EQ(host_->live.Phase(), CallPhase::MediaPending);
   EXPECT_FALSE(media_->IsActive());
 
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
-  bridge_->OnMediaKeyReady(call_id);
+  OnCallsOwner([&] { return bridge_->OnMediaKeyReady(call_id); });
   AppRuntime::RunUIAndOwnerTasks();
 
   EXPECT_TRUE(media_->IsActive());
@@ -756,12 +715,12 @@ TEST_F(CallMediaBridgeAnswererStartTest, ReleaseDirectTransportDetachesWithoutSt
 
   Answered(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
   ASSERT_TRUE(media_->IsActive());
 
   const int detaches_before = transport_->detach_calls;
-  bridge_->ReleaseDirectTransport();
+  OnCallsOwner([&] { bridge_->ReleaseDirectTransport(); });
 
   EXPECT_GT(transport_->detach_calls, detaches_before);
   EXPECT_TRUE(media_->IsActive()) << "SoftMigrate ReleaseDirect must keep engine capture";
@@ -780,7 +739,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, CarrierOnlyLinkIsNotLabelledDirect) {
 
   Answered(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
 
   for (int i = 0; i < 200; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
@@ -792,7 +751,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, CarrierOnlyLinkIsNotLabelledDirect) {
 
   ASSERT_GT(transport_->connect_async_calls, 0) << "err=" << host_->last_error;
   EXPECT_EQ(bridge_->MediaPathKind(), "circuit");
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, DialableDialBackoffDoesNotHammerEnsureUsesCircuit) {
@@ -808,7 +767,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DialableDialBackoffDoesNotHammerEnsureU
 
   Answered(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
 
   for (int i = 0; i < 200; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
@@ -830,7 +789,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DialableDialBackoffDoesNotHammerEnsureU
       << "circuit Connected should prevent ConnectFailed; phase="
       << CallPhaseName(host_->live.Phase()) << " err=" << host_->last_error;
   EXPECT_GT(transport_->connect_async_calls, 0);
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, CircuitHopMissStopsMediaOnConnectFailed) {
@@ -850,7 +809,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, CircuitHopMissStopsMediaOnConnectFailed
   bridge_->SetDialWaitBudgetMsForTest(400);
   Answered(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
   ASSERT_TRUE(media_->IsActive()) << "BeginSession starts engine before Ensure settles";
 
@@ -867,7 +826,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, CircuitHopMissStopsMediaOnConnectFailed
   EXPECT_TRUE(bridge_->IsMeshConnectFailed());
   EXPECT_FALSE(media_->IsActive()) << "ConnectFailed must StopMeshMedia (no zombie TX)";
   EXPECT_EQ(bridge_->DirectPlannerPhase(), CallDirectPlannerPhase::Idle);
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // B44 (call-path-resilience k4): our attempts give up while the peer's own redial is mid-handshake.
@@ -883,7 +842,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, FailedAttemptsKeepTheCallWhenThePeersHe
 
   Answered(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   const auto pump_until = [&](const std::function<bool()>& done, int rounds) {
     for (int i = 0; i < rounds && !done(); ++i) {
       AppRuntime::RunUIAndOwnerTasks();
@@ -902,7 +861,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, FailedAttemptsKeepTheCallWhenThePeersHe
   EXPECT_NE(host_->live.Phase(), CallPhase::ConnectFailed);
   EXPECT_FALSE(bridge_->IsMeshConnectFailed());
   EXPECT_TRUE(media_->IsActive()) << "the recovered path keeps the call's media";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k3: an offerer Live on a relayed path keeps punching for a direct link (retrying a miss); once
@@ -919,7 +878,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, PathWorkTargetsThePeersPeerIdNotALinkAl
 
   Placed(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
   for (int i = 0; i < 100 && transport_->connect_async_calls == 0; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -932,7 +891,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, PathWorkTargetsThePeersPeerIdNotALinkAl
   }
   ASSERT_GE(circuit_->upgrade_calls.load(), 1);
   EXPECT_EQ(circuit_->LastUpgradePeer(), mesh_peer) << "not the link's dial alias";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, RelayedOffererPunchesForADirectPathUntilItMoves) {
@@ -946,7 +905,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, RelayedOffererPunchesForADirectPathUnti
 
   Placed(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
   for (int i = 0; i < 400 && circuit_->upgrade_calls.load() < 2; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -966,7 +925,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, RelayedOffererPunchesForADirectPathUnti
   }
   EXPECT_EQ(circuit_->upgrade_calls.load(), calls);
   EXPECT_EQ(bridge_->MediaPathKind(), "punched") << "the label follows the path the call moved to";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k3-4: a TX-only call keeps running while a circuit is built under it, then moves onto it — no
@@ -979,7 +938,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallMovesOntoACircuitWithoutResta
   transport_->link_kind = CallMediaLinkKind::Direct;
   Placed(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
   for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1002,7 +961,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallMovesOntoACircuitWithoutResta
   EXPECT_EQ(bridge_->MediaPathKind(), "circuit");
   EXPECT_TRUE(media_->IsActive());
   EXPECT_EQ(host_->live.Status(), CallMediaStatus::DirectLive) << "connected again on the circuit";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k3-4 fallback: a TX-only call that cannot move (the peer refused) restarts via the circuit as before.
@@ -1015,7 +974,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallThatCannotMoveRestartsViaCirc
   transport_->migrate_ok = false;
   Placed(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
   for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1031,7 +990,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallThatCannotMoveRestartsViaCirc
   EXPECT_EQ(transport_->migrate_calls.load(), 1);
   EXPECT_GT(transport_->detach_calls, detaches) << "break-before-make fallback";
   EXPECT_GE(transport_->connect_async_calls, 2) << "a new session via the circuit";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k4: the transport lost the call's last path. The call is Reconnecting (not failed); the offerer
@@ -1047,7 +1006,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, LostPathReconnectsOntoTheReachedLink) {
   bridge_->SetReanchorRetryMsForTest(20);
   Placed(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
   for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1071,7 +1030,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, LostPathReconnectsOntoTheReachedLink) {
   EXPECT_EQ(host_->live.Phase(), CallPhase::InCall);
   EXPECT_EQ(transport_->detach_calls, detaches) << "the call was never torn down";
   EXPECT_TRUE(media_->IsActive());
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k5: a relayed call that used up its direct-upgrade attempts on one network starts them over when
@@ -1085,7 +1044,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeRestartsTheDirectUpgrade) 
   bridge_->SetDirectUpgradeDelayMsForTest(20);
   Placed(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
   for (int i = 0; i < 400 && circuit_->upgrade_calls.load() < 3; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1103,7 +1062,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeRestartsTheDirectUpgrade) 
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   EXPECT_GE(circuit_->upgrade_calls.load(), 4) << "punching again on the new network";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k5: a reconnecting call waiting out its re-anchor backoff tries again as soon as the new
@@ -1119,7 +1078,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeReanchorsAReconnectingCall
   bridge_->SetNetworkSettleMsForTest(20);
   Placed(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
   for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1143,7 +1102,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeReanchorsAReconnectingCall
   }
   EXPECT_EQ(transport_->migrate_calls.load(), 2);
   EXPECT_EQ(host_->live.Status(), CallMediaStatus::DirectLive) << "reconnected on the new network";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k6: a pair with a mobile end anchors on the relay — a relayed offerer never punches for an
@@ -1161,7 +1120,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, MobilePairStaysOnTheRelayUntilThePolicy
   });
   Placed(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
   for (int i = 0; i < 40; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1179,7 +1138,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, MobilePairStaysOnTheRelayUntilThePolicy
   }
   EXPECT_GE(circuit_->upgrade_calls.load(), 1) << "both stationary: punch for a direct path";
   EXPECT_TRUE(transport_->auto_migrate_to_direct.load());
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k6: the answerer of a mobile pair waits for the offerer's circuit instead of punching.
@@ -1195,13 +1154,13 @@ TEST_F(CallMediaBridgeAnswererStartTest, MobilePairAnswererDoesNotPunch) {
       [](const std::string&) { return DecideCallPathPolicy(MobilityClass::Mobile, MobilityClass::Stationary); });
   Answered(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   for (int i = 0; i < 100; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   EXPECT_EQ(circuit_->call_media_ensure_calls.load(), 0) << "no punch toward the peer";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k6 (K003): an offerer Live on a direct path builds a circuit under the call and adds it as the
@@ -1217,7 +1176,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DirectCallGetsARelayedStandby) {
   bridge_->SetRelayStandbyDelayMsForTest(20);
   Placed(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
   for (int i = 0; i < 400 && transport_->add_standby_calls.load() < 1; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -1237,7 +1196,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DirectCallGetsARelayedStandby) {
   }
   EXPECT_EQ(transport_->add_standby_calls.load(), adds) << "done once it is up";
   EXPECT_EQ(transport_->link_kind, CallMediaLinkKind::Direct) << "the call stayed on its path";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // Hard-lab FLIP race (2026-09-28): the call is bound on a direct (punched) link — the answerer's
@@ -1256,7 +1215,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DirectBoundCallReachedOverTheRelayStill
   bridge_->SetDirectUpgradeDelayMsForTest(20);
   Placed(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer"); });
   // Bound already: media starts on the existing stream (no ConnectAsync). Wait for exactly that —
   // a wait that never ends outlasts the TX-only grace on slow runners (macOS CI), which then moves
   // the call onto the circuit for a reason this test is not about.
@@ -1273,7 +1232,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DirectBoundCallReachedOverTheRelayStill
   EXPECT_NE(bridge_->MediaPathKind(), "circuit") << "a direct bound link is not a relayed path";
   EXPECT_GE(transport_->add_standby_calls.load(), 1) << "the direct call gets its relayed standby";
   EXPECT_EQ(circuit_->upgrade_calls.load(), 0) << "no direct upgrade for a call already on a direct link";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, EnsureReachResolvesAccountToMeshPeerId) {
@@ -1290,7 +1249,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, EnsureReachResolvesAccountToMeshPeerId)
 
   Answered(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
 
   for (int i = 0; i < 200; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
@@ -1304,7 +1263,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, EnsureReachResolvesAccountToMeshPeerId)
   ASSERT_GE(circuit_->call_media_ensure_calls, 1);
   EXPECT_EQ(circuit_->LastPeer(), mesh_peer)
       << "TryEnsurePeerReachable must use MeshPeerId, not account:";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, StaleConnectedLinkIsDroppedAndRedialed) {
@@ -1327,7 +1286,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, StaleConnectedLinkIsDroppedAndRedialed)
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
   ASSERT_TRUE(host_->live.AllowsDirectPath());
 
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
   for (int i = 0; i < 400; ++i) {
@@ -1348,7 +1307,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, StaleConnectedLinkIsDroppedAndRedialed)
       << "second attempt must redial via Ensure, not short-circuit on the stale link";
   EXPECT_TRUE(media_->IsActive());
   EXPECT_EQ(media_->ActiveCallId(), call_id);
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, WatchdogFailsOnlyTheAttempt) {
@@ -1369,7 +1328,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, WatchdogFailsOnlyTheAttempt) {
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
   ASSERT_TRUE(host_->live.AllowsDirectPath());
 
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
   // Watchdog margin (timeout + 1000ms) + 1500ms retry — allow generous wall-clock slack.
@@ -1385,7 +1344,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, WatchdogFailsOnlyTheAttempt) {
       << "watchdog must have failed only attempt 1; attempt 2 must still be dialed";
   EXPECT_TRUE(media_->IsActive());
   EXPECT_EQ(media_->ActiveCallId(), call_id);
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, HalfOpenBundleIsNotAConnection) {
@@ -1404,7 +1363,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, HalfOpenBundleIsNotAConnection) {
 
   Answered(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
-  bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer");
+  OnCallsOwner([&] { return bridge_->ScheduleStartMediaAsAnswerer(call_id, "account:peer"); });
   AppRuntime::RunUIAndOwnerTasks();
 
   for (int i = 0; i < 500 && transport_->connect_async_calls < 2; ++i) {
@@ -1415,7 +1374,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, HalfOpenBundleIsNotAConnection) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   EXPECT_EQ(transport_->connect_async_calls, 2) << "failed attempt must be retried, not taken as connected";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 } // namespace

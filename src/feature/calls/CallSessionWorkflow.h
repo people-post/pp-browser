@@ -2,7 +2,6 @@
 
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/CallTypes.h"
-#include "foundation/runtime/DeferredSelf.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/thread/IThreadStore.h"
@@ -10,6 +9,9 @@
 #include "domain/messaging/CallSessionStore.h"
 #include "feature/calls/CallInitiationBilling.h"
 #include "feature/calls/CallMediaKeyExchange.h"
+#include "feature/calls/CallSessionEvents.h"
+#include "foundation/runtime/OwnerOutbox.h"
+#include "foundation/runtime/OwnerSteps.h"
 #include "feature/calls/LiveCall.h"
 
 #include <functional>
@@ -94,8 +96,8 @@ public:
     /** Kick mesh circuit park (composition projects MeshMediaPlane::ReserveOnBootstrapSeeds). */
     std::function<void()> ensure_circuit_ready;
     /**
-     * Await circuit-ready (Accept gate): `done(ready)` runs on the calls owner once parked or at the
-     * timeout. Never blocks the caller.
+     * Await circuit-ready (Accept gate): `done(ready)` once parked or at the timeout, from any thread
+     * (the workflow reports it as an event). Never blocks the caller.
      */
     std::function<void(int timeout_ms, std::function<void(bool ready)> done)> park_circuit;
     std::function<void(const std::string& relay, const std::string& peer_id)> note_mesh_peer_id_for_relay;
@@ -118,8 +120,15 @@ public:
   ~CallSessionWorkflow() override;
 
   void SetHostPorts(HostPorts ports);
-  /** Bump DeferredSelf so queued Accept/roster PostWorkerNormal cbs no-op (CSM teardown). */
-  void InvalidateDeferredOps();
+  /** Where the workflow reports its follow-ups (its parent binds it). */
+  void SetOutbox(OwnerOutbox<WorkflowEvent> outbox) { outbox_ = std::move(outbox); }
+  /** A follow-up it reported, back from the calls owner's queue. */
+  void Handle(WorkflowEvent& event);
+  /**
+   * Drop the follow-ups still to come (CSM teardown): accepts waiting on their circuit park, and
+   * roster fan-outs already reported — they must not run against a store / delivery being torn down.
+   */
+  void DropFollowUps();
 
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
@@ -251,6 +260,8 @@ private:
   /** The call's media coordinator picks the path; a 1:1 call schedules the answerer's start. */
   void ArmMediaAfterAccept(CallSession& row, const std::string& inviter, const CallAcceptDetail& accept);
   void PostRosterAfterAccept(const std::string& call_id, const std::string& inviter, const std::string& local_identity);
+  void SendRosterAfterAccept(const workflow_event::RosterAfterAccept& after);
+  void SendRosterAfterRemoteAccept(const workflow_event::RosterAfterRemoteAccept& after);
   IThreadStore& store_;
   CallSessionStore& sessions_;
   /** The call's media keys between the peers (owned by CallSessionManager). */
@@ -260,7 +271,11 @@ private:
   /** The calls live on this device (owned by CallSessionManager); driven where the store rows change. */
   LiveCalls& live_calls_;
   HostPorts host_;
-  DeferredSelf deferred_;
+  OwnerOutbox<WorkflowEvent> outbox_;
+  /** Accepts waiting on their circuit park. */
+  OwnerSteps steps_;
+  /** Names the follow-ups reported so far; `DropFollowUps` bumps it and the older ones are dropped. */
+  uint64_t followup_epoch_ = 0;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;
   bool pending_accept_voice_only_ = false;

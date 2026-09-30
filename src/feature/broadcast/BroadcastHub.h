@@ -6,6 +6,7 @@
 #include "domain/messaging/PeerAnnounceTypes.h"
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
 #include "feature/broadcast/BroadcasterWorkflow.h"
+#include "foundation/runtime/OwnerTasks.h"
 
 #include "common/Error.h"
 
@@ -50,9 +51,11 @@ struct BroadcastUiState {
  * call stack — no call session, lifecycle or ringing. Watching and broadcasting share the single
  * media_relay client session (L013), so only one of them attaches at a time.
  *
- * Threading (thread-ownership t2b-4): the workflows live on the media-sessions owner, next to the
- * call stack. Intents post there (results on UI); reads come from `BroadcastUiState`, published
- * after every owner step; the frame counter is read live. Built on any thread; destroyed from
+ * Threading (THREADING.md § Owner runners): the hub is broadcast's runner — the only broadcast type
+ * that posts, schedules or waits. It shares the media-sessions owner with the call stack (T001:
+ * one media thread) but runs its own tree there: intents and the workflows' events (their outboxes)
+ * are its tasks; the workflows are passive. Results go to UI; reads come from `BroadcastUiState`,
+ * published after every step; the frame counter is read live. Built on any thread; destroyed from
  * the thread that drives it (the product hub, on UI) — teardown runs on the owner, which the
  * destructor waits for.
  */
@@ -67,8 +70,10 @@ public:
   /**
    * `viewer.engine` / `broadcaster.engine` are ignored: the hub owns a playback and a capture
    * engine on `devices` (must outlive the hub). Empty broadcaster ports → GoLive is refused.
+   * `executor`: where the hub runs (null: the media-sessions owner; tests pass their own).
    */
-  BroadcastHub(BroadcastViewerPorts viewer, MediaDeviceArbiter& devices, BroadcasterPorts broadcaster = {});
+  BroadcastHub(BroadcastViewerPorts viewer, MediaDeviceArbiter& devices, BroadcasterPorts broadcaster = {},
+               OwnerExecutor* executor = nullptr);
   ~BroadcastHub();
   BroadcastHub(const BroadcastHub&) = delete;
   BroadcastHub& operator=(const BroadcastHub&) = delete;
@@ -96,11 +101,14 @@ public:
   void SetOnChanged(std::function<void()> callback);
 
 private:
-  /** Post `step` onto the owner and publish afterwards (inline when there is no owner). */
+  /** Run `step` as the hub's task on its owner, then publish. */
   void OnOwner(std::function<void()> step);
   void Publish();
   void OnStatusChanged();
 
+  OwnerExecutor& executor_;
+  /** The hub's work on its owner: intents and the workflows' events (dropped with the hub). */
+  OwnerTasks tasks_;
   // Destroyed after the workflows (declared first).
   std::unique_ptr<AmpBroadcastRpcClient> rpc_;
   std::unique_ptr<PeerReachCoordinator> reach_;

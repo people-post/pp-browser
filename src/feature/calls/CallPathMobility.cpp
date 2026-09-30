@@ -1,7 +1,5 @@
 #include "feature/calls/CallPathMobility.h"
 
-#include "feature/calls/CallsThread.h"
-#include "foundation/runtime/AppRuntime.h"
 
 #include <algorithm>
 #include <chrono>
@@ -20,89 +18,49 @@ CallPathMobility::CallPathMobility() {
   redirectLogger("CallPathMobility");
 }
 
-CallPathMobility::~CallPathMobility() {
-  Detach();
-  CancelReevaluation();
+bool CallPathMobility::OnAttachment(const MobilityAttachment& attachment, const bool changed,
+                                    const Clock::time_point now) {
+  local_.OnAttachment(attachment, changed, now);
+  return Reevaluate(now);
 }
 
-void CallPathMobility::Detach() {
-  alive_->store(false, std::memory_order_release);
+bool CallPathMobility::OnObservedAddressChanged(const Clock::time_point now) {
+  local_.OnObservedAddressChanged(now);
+  return Reevaluate(now);
 }
 
-void CallPathMobility::OnAttachment(const MobilityAttachment& attachment, const bool changed) {
-  local_.OnAttachment(attachment, changed, MobilityClassifier::Clock::now());
-  Reevaluate();
-}
-
-void CallPathMobility::OnObservedAddressChanged() {
-  local_.OnObservedAddressChanged(MobilityClassifier::Clock::now());
-  Reevaluate();
-}
-
-void CallPathMobility::SetOverride(const std::optional<MobilityClass> pinned) {
+bool CallPathMobility::SetOverride(const std::optional<MobilityClass> pinned, const Clock::time_point now) {
   local_.SetOverride(pinned);
   if (pinned) {
     log().info << "mobility pinned to " << MobilityClassWire(*pinned);
   }
-  Reevaluate();
+  return Reevaluate(now);
 }
 
-void CallPathMobility::Reevaluate() {
+bool CallPathMobility::Reevaluate(const Clock::time_point now) {
   const MobilityClass before = published_.load(std::memory_order_acquire);
-  const MobilityClass now = local_.Evaluate(MobilityClassifier::Clock::now());
-  published_.store(now, std::memory_order_release);
-  ScheduleReevaluation();
-  if (now == before) {
-    return;
+  const MobilityClass after = local_.Evaluate(now);
+  published_.store(after, std::memory_order_release);
+  if (after == before) {
+    return false;
   }
-  log().info << "mobility " << MobilityClassWire(before) << " -> " << MobilityClassWire(now);
-  if (ports_.on_local_class_changed) {
-    ports_.on_local_class_changed();
-  }
+  log().info << "mobility " << MobilityClassWire(before) << " -> " << MobilityClassWire(after);
+  return true;
 }
 
-void CallPathMobility::ScheduleReevaluation() {
-  // A churn-driven Mobile relaxes with time alone: re-evaluate when the classifier says it could.
-  CancelReevaluation();
-  const auto at = local_.NextReevaluationAt(MobilityClassifier::Clock::now());
-  if (!at) {
-    return;
-  }
-  const auto delay = std::max(
-      std::chrono::duration_cast<std::chrono::milliseconds>(*at - MobilityClassifier::Clock::now()),
-      std::chrono::milliseconds(1));
-  timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(delay, [this, alive = alive_]() {
-    CallsThread::Post([this, alive]() {
-      if (alive->load(std::memory_order_acquire)) {
-        timer_id_ = 0;
-        Reevaluate();
-      }
-    });
-  });
-}
-
-void CallPathMobility::CancelReevaluation() {
-  if (timer_id_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(timer_id_);
-    timer_id_ = 0;
-  }
-}
-
-void CallPathMobility::NoteRemote(const std::string& call_id, const MobilityClass mobility) {
+bool CallPathMobility::NoteRemote(const std::string& call_id, const MobilityClass mobility) {
   if (call_id.empty()) {
-    return;
+    return false;
   }
   if (remote_.size() > kRemoteKept && !remote_.contains(call_id)) {
     remote_.clear();
   }
   auto [it, inserted] = remote_.try_emplace(call_id, mobility);
   if (!inserted && it->second == mobility) {
-    return;
+    return false;
   }
   it->second = mobility;
-  if (ports_.on_policy_changed) {
-    ports_.on_policy_changed(call_id);
-  }
+  return true;
 }
 
 CallPathPolicy CallPathMobility::PolicyFor(const std::string& call_id) const {

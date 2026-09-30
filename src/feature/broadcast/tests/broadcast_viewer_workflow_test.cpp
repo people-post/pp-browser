@@ -9,6 +9,8 @@
 #include "feature/broadcast/tests/broadcast_test_fakes.h"
 
 #include "foundation/runtime/AppRuntime.h"
+#include "foundation/runtime/OwnerOutbox.h"
+#include "foundation/runtime/tests/queue_owner_executor.h"
 
 #include <gtest/gtest.h>
 #include <opus.h>
@@ -45,6 +47,8 @@ protected:
     media_key_.assign(32, 0x5a);
     engine_.SetVideoCodecFactoryForTest([]() { return MakeUnavailableVideoCodec("test"); });
     workflow_ = std::make_unique<BroadcastViewerWorkflow>(Ports());
+    // The fixture plays the runner: the workflow's events come back through `ui_`.
+    workflow_->SetOutbox(MakeOwnerOutbox<ViewerEvent>(tasks_, [this](ViewerEvent& event) { workflow_->Handle(event); }));
   }
   void TearDown() override {
     workflow_.reset();
@@ -97,8 +101,6 @@ protected:
     p.relay.relay = &relay_;
     p.relay.dial = &dial_;
     p.engine = &engine_;
-    p.post_owner = [this](std::function<void()> task) { ui_.push_back(std::move(task)); };
-    p.post_owner_after = [this](std::chrono::milliseconds, std::function<void()> task) { ui_.push_back(std::move(task)); };
     p.now_ms = []() { return kNow; };
     return p;
   }
@@ -159,6 +161,8 @@ protected:
   std::vector<BroadcastTicketRequest> ticket_requests_;
   std::vector<std::pair<std::string, BroadcastViewerAttachRequest>> admissions_;
   std::deque<std::function<void()>> ui_;
+  test::QueueOwnerExecutor owner_{ui_};
+  OwnerTasks tasks_{owner_};
   MediaDeviceArbiter devices_{CreateNullMediaDeviceBackend()};
   CallMediaEngine engine_{devices_};
   FakeDial dial_;
@@ -361,14 +365,14 @@ TEST_F(BroadcastViewerWorkflowTest, HubWatchesALiveTipAndStopsOnDestruction) {
   tip.state = PeerAnnounceState::Live;
   tip.hop_peer_id = "hop";
   {
-    BroadcastHub hub(Ports(), devices_);
+    BroadcastHub hub(Ports(), devices_, {}, &owner_);
     int changes = 0;
     hub.SetOnChanged([&changes]() { ++changes; });
-    // No runtime here: the hub runs its steps inline and answers at once.
+    // No runtime here: the hub runs on the test's queue and answers inline.
     std::optional<Roe<void>> watched;
     hub.WatchLive(tip, [&watched](Roe<void> result) { watched = std::move(result); });
-    ASSERT_TRUE(watched && *watched);
     Drain();
+    ASSERT_TRUE(watched && *watched);
     EXPECT_TRUE(hub.IsWatching());
     EXPECT_EQ(hub.Viewer().phase, Phase::Listening);
     EXPECT_GT(changes, 0);
@@ -379,6 +383,7 @@ TEST_F(BroadcastViewerWorkflowTest, HubWatchesALiveTipAndStopsOnDestruction) {
     tip.state = PeerAnnounceState::Ended;
     std::optional<Roe<void>> refused;
     hub.WatchLive(tip, [&refused](Roe<void> result) { refused = std::move(result); });
+    Drain();
     ASSERT_TRUE(refused);
     EXPECT_FALSE(*refused) << "an ended program is not watchable";
     EXPECT_TRUE(hub.IsWatching()) << "a refused tip leaves the current watch alone";

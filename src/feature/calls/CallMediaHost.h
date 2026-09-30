@@ -47,6 +47,8 @@ public:
    */
   virtual void P2pNoteInboundHello(const std::string& /*call_id*/, const std::string& /*identity*/,
                                    const std::string& /*peer_id*/) {}
+  /** The group hop carries the active call's media (1:1 frames are dropped). Any thread. */
+  virtual bool HopCarriesMedia() const { return false; }
 };
 
 } // namespace pbr

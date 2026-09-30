@@ -1,5 +1,4 @@
 #include "feature/calls/CallMediaSeat.h"
-#include "feature/calls/CallsThread.h"
 
 #include "foundation/runtime/AppRuntime.h"
 
@@ -361,22 +360,9 @@ void CallMediaSeat::InvokeTeardown(const std::string& call_id, uint64_t epoch_at
   if (!stop) {
     return;
   }
-  auto run = [stop = std::move(stop), call_id, epoch_at_post, force]() {
-    stop(call_id, epoch_at_post, force);
-  };
-  if (force || CallsThread::IsCurrent()) {
-    // Force (Acquire prior) and UI-thread Release run Stop inline so StartSfu cannot race.
-    if (CallsThread::IsCurrent()) {
-      run();
-    } else if (force) {
-      // Ordered: front of UI queue before any scheduled StartSfu for the new call.
-      CallsThread::PostFront(std::move(run));
-    } else {
-      CallsThread::PostFront(std::move(run));
-    }
-  } else {
-    CallsThread::PostFront(std::move(run));
-  }
+  // Passive: the seat's callers run on the calls owner, so the stop runs here, before any start
+  // that follows it in the same step.
+  stop(call_id, epoch_at_post, force);
 }
 
 } // namespace pbr

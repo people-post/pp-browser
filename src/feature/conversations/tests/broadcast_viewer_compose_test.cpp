@@ -19,6 +19,8 @@
 #include "domain/mesh/tests/support/mesh_triple_harness.h"
 #include "domain/messaging/BroadcastMedia.h"
 #include "foundation/crypto/MlDsa.h"
+#include "foundation/runtime/OwnerOutbox.h"
+#include "foundation/runtime/tests/queue_owner_executor.h"
 
 #include <gtest/gtest.h>
 #include <opus.h>
@@ -107,6 +109,8 @@ protected:
     engine_ = std::make_unique<CallMediaEngine>(devices_);
     engine_->SetVideoCodecFactoryForTest([]() { return MakeUnavailableVideoCodec("test"); });
     workflow_ = std::make_unique<BroadcastViewerWorkflow>(ViewerPorts());
+    // The fixture plays the runner: the workflow's events come back through `ui_`.
+    workflow_->SetOutbox(MakeOwnerOutbox<ViewerEvent>(tasks_, [this](ViewerEvent& event) { workflow_->Handle(event); }));
   }
 
   void TearDown() override {
@@ -162,8 +166,6 @@ protected:
     p.relay.relay = viewer_relay_.get();
     p.relay.dial = &dial_;
     p.engine = engine_.get();
-    p.post_owner = [this](std::function<void()> task) { ui_.push_back(std::move(task)); };
-    p.post_owner_after = [this](std::chrono::milliseconds, std::function<void()> task) { ui_.push_back(std::move(task)); };
     p.now_ms = []() {
       return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
           .count();
@@ -237,6 +239,8 @@ protected:
   std::unique_ptr<CallMediaEngine> engine_;
   std::unique_ptr<BroadcastViewerWorkflow> workflow_;
   std::deque<std::function<void()>> ui_;
+  test::QueueOwnerExecutor owner_{ui_};
+  OwnerTasks tasks_{owner_};
 };
 
 TEST_F(BroadcastViewerComposeTest, ViewerListensToThePublisherThroughAPlainRelayHop) {
@@ -324,8 +328,12 @@ TEST_F(BroadcastViewerComposeTest, BroadcasterToRelayToViewerEndToEnd) {
   bp.relay.relay = publisher_client.get();
   bp.relay.dial = &dial_;
   bp.engine = &capture;
-  bp.post_owner = [this](std::function<void()> task) { ui_.push_back(std::move(task)); };
   auto broadcaster = std::make_unique<BroadcasterWorkflow>(bp);
+  broadcaster->SetOutbox(MakeOwnerOutbox<BroadcasterEvent>(tasks_, [&broadcaster](BroadcasterEvent& event) {
+    if (broadcaster) {
+      broadcaster->Handle(event);
+    }
+  }));
 
   ASSERT_TRUE(broadcaster->GoLive({"topic", "show-e2e", {hop_}}));
   ASSERT_TRUE(RunUntil([&] { return broadcaster->CurrentStatus().phase == BroadcasterWorkflow::Phase::Live; }))

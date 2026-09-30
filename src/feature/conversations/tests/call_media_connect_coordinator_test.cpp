@@ -7,6 +7,8 @@
 #include <chrono>
 #include <functional>
 #include "feature/conversations/tests/call_media_inbound_fake.h"
+#include "feature/conversations/tests/calls_loopback_outbox.h"
+#include "feature/conversations/tests/calls_on_owner.h"
 
 #include <gtest/gtest.h>
 #include <memory>
@@ -133,13 +135,15 @@ protected:
     reach_->SetDialBudgetMsForTest(200);
     transport_ = std::make_unique<FakeTransport>();
     connect_ = std::make_unique<CallMediaConnectCoordinator>(*transport_, *reach_);
+    events_ = Loopback(connect_.get());
     dial_->connected.insert(kPeer);
   }
 
   void TearDown() override {
-    connect_->Shutdown();
+    OnCallsOwner([&] { connect_->Shutdown(); });
     reach_->CancelAll();
     AppRuntime::Shutdown();
+    events_.reset();
     connect_.reset();
     transport_.reset();
     reach_.reset();
@@ -169,6 +173,14 @@ protected:
     return h;
   }
 
+  /** The fixture plays the bridge: `coordinator`'s events come back to it on the calls owner. */
+  static std::unique_ptr<CallsLoopbackOutbox<ConnectEvent>> Loopback(CallMediaConnectCoordinator* coordinator) {
+    auto loop = std::make_unique<CallsLoopbackOutbox<ConnectEvent>>(
+        [coordinator](ConnectEvent& event) { coordinator->Handle(event); });
+    coordinator->SetOutbox(loop->Get());
+    return loop;
+  }
+
   /** Pump UI and the calls owner until `done` or the budget runs out. */
   static bool PumpUntil(const std::function<bool()>& done, std::chrono::milliseconds budget) {
     const auto until = std::chrono::steady_clock::now() + budget;
@@ -192,6 +204,8 @@ protected:
   std::unique_ptr<PeerReachCoordinator> reach_;
   std::unique_ptr<FakeTransport> transport_;
   std::unique_ptr<CallMediaConnectCoordinator> connect_;
+  /** Reset before `connect_`: its queued events point at the coordinator. */
+  std::unique_ptr<CallsLoopbackOutbox<ConnectEvent>> events_;
   int before_attempts_ = 0;
   int finished_ = 0;
   std::optional<Roe<void>> result_;
@@ -199,7 +213,7 @@ protected:
 };
 
 TEST_F(CallMediaConnectCoordinatorTest, ConnectsOnFirstAttempt) {
-  connect_->Start(Request(), Hooks());
+  OnCallsOwner([&] { connect_->Start(Request(), Hooks()); });
   EXPECT_TRUE(connect_->InFlight());
   ASSERT_TRUE(PumpUntil([&] { return finished_ > 0; }, std::chrono::seconds(5)));
   ASSERT_TRUE(result_ && *result_);
@@ -213,7 +227,7 @@ TEST_F(CallMediaConnectCoordinatorTest, ConnectsOnFirstAttempt) {
 // B39: an attempt that failed on a reused "connected" link makes the next reach drop it and redial.
 TEST_F(CallMediaConnectCoordinatorTest, FailureOnReusedLinkRedialsFresh) {
   transport_->fail_first_n = 1;
-  connect_->Start(Request(), Hooks());
+  OnCallsOwner([&] { connect_->Start(Request(), Hooks()); });
   ASSERT_TRUE(PumpUntil([&] { return finished_ > 0; }, std::chrono::seconds(10)));
   ASSERT_TRUE(result_ && *result_) << result_->error().message;
   EXPECT_EQ(transport_->connect_calls, 2);
@@ -225,7 +239,7 @@ TEST_F(CallMediaConnectCoordinatorTest, FailureOnReusedLinkRedialsFresh) {
 TEST_F(CallMediaConnectCoordinatorTest, WatchdogFailsOnlyTheAttempt) {
   connect_->SetAttemptTimeoutMsForTest(100);
   transport_->hang_first_n = 1;
-  connect_->Start(Request(), Hooks());
+  OnCallsOwner([&] { connect_->Start(Request(), Hooks()); });
   ASSERT_TRUE(PumpUntil([&] { return finished_ > 0; }, std::chrono::seconds(10)));
   ASSERT_TRUE(result_ && *result_);
   EXPECT_EQ(transport_->connect_calls, 2);
@@ -240,7 +254,7 @@ TEST_F(CallMediaConnectCoordinatorTest, WatchdogFailsOnlyTheAttempt) {
 
 TEST_F(CallMediaConnectCoordinatorTest, GivesUpAfterAllAttempts) {
   transport_->fail_first_n = 100;
-  connect_->Start(Request(), Hooks());
+  OnCallsOwner([&] { connect_->Start(Request(), Hooks()); });
   ASSERT_TRUE(PumpUntil([&] { return finished_ > 0; }, std::chrono::seconds(20)));
   ASSERT_TRUE(result_);
   EXPECT_FALSE(*result_);
@@ -252,9 +266,9 @@ TEST_F(CallMediaConnectCoordinatorTest, GivesUpAfterAllAttempts) {
 TEST_F(CallMediaConnectCoordinatorTest, AbortClearsInFlightWithoutFinishing) {
   connect_->SetAttemptTimeoutMsForTest(100);
   transport_->hang_first_n = 1;
-  connect_->Start(Request(), Hooks());
+  OnCallsOwner([&] { connect_->Start(Request(), Hooks()); });
   ASSERT_TRUE(PumpUntil([&] { return transport_->connect_calls > 0; }, std::chrono::seconds(5)));
-  connect_->Abort();
+  OnCallsOwner([&] { connect_->Abort(); });
   EXPECT_FALSE(connect_->InFlight());
   if (transport_->pending) {
     transport_->pending({});
@@ -267,25 +281,28 @@ TEST_F(CallMediaConnectCoordinatorTest, AbortClearsInFlightWithoutFinishing) {
 // A give-up posted before a restart must not reach the handler (it would fail the new session).
 TEST_F(CallMediaConnectCoordinatorTest, StaleGiveUpIsNotDelivered) {
   transport_->fail_first_n = 100;
-  // The last attempt's failure posts the give-up; a restart / stop lands before it runs.
+  // The last attempt's failure reports the give-up as an event; a restart / stop lands before it
+  // is handled. Queued behind the attempt's result, so it runs between the give-up and its delivery.
   transport_->after_fail = [this](int attempt) {
     if (attempt == 5) {
-      EXPECT_FALSE(connect_->InFlight()) << "sequence already gave up";
-      connect_->Abort();
+      AppRuntime::PostTo(OwnerThreadId::MediaSessions, [this]() {
+        EXPECT_FALSE(connect_->InFlight()) << "sequence already gave up";
+        connect_->Abort();
+      });
     }
   };
-  connect_->Start(Request(), Hooks());
+  OnCallsOwner([&] { connect_->Start(Request(), Hooks()); });
   ASSERT_TRUE(PumpUntil([&] { return transport_->connect_calls >= 5; }, std::chrono::seconds(20)));
   PumpFor(std::chrono::milliseconds(200));
   EXPECT_EQ(finished_, 0);
 }
 
 TEST_F(CallMediaConnectCoordinatorTest, ShutdownRejectsStart) {
-  connect_->Shutdown();
+  OnCallsOwner([&] { connect_->Shutdown(); });
   std::string failure;
   auto req = Request();
   req.callbacks.on_failed = [&failure](const std::string& why) { failure = why; };
-  connect_->Start(std::move(req), Hooks());
+  OnCallsOwner([&] { connect_->Start(std::move(req), Hooks()); });
   EXPECT_EQ(failure, "shutdown in progress");
   EXPECT_FALSE(connect_->InFlight());
   EXPECT_EQ(transport_->connect_calls, 0);
@@ -400,7 +417,7 @@ TEST_F(CallMediaConnectCoordinatorTest, ShutdownReleasesWaitingHelloAndDropsHand
   auto answer = transport_->inbound.Deliver(InboundParams());
   ASSERT_TRUE(answer);
   ASSERT_TRUE(PumpUntil([&] { return fx.key_requests.load() >= 1; }, std::chrono::seconds(2)));
-  connect_->Shutdown();
+  OnCallsOwner([&] { connect_->Shutdown(); });
   ASSERT_TRUE(test::InboundHelloFake::Answered(answer)) << "answered by Shutdown itself";
   EXPECT_TRUE(answer->params.media_key.empty()) << "NACK";
   EXPECT_EQ(fx.accepted.load(), 0);
@@ -409,15 +426,18 @@ TEST_F(CallMediaConnectCoordinatorTest, ShutdownReleasesWaitingHelloAndDropsHand
   EXPECT_FALSE(transport_->DeliverHello(again, again_cbs)) << "handler cleared";
 }
 
-// CallMediaPlane::BindBridge builds the replacement before destroying the old owner.
+// CallSessionManager::AttachDirectPath builds the replacement path before destroying the old one.
 TEST_F(CallMediaConnectCoordinatorTest, DestroyingOldOwnerKeepsReplacementHandler) {
   InboundFixture old_fx;
   InboundFixture new_fx;
   new_fx.key_stored = true;
   connect_->SetInboundPorts(old_fx.Ports());
   auto replacement = std::make_unique<CallMediaConnectCoordinator>(*transport_, *reach_);
+  auto replacement_events = Loopback(replacement.get());
   replacement->SetInboundPorts(new_fx.Ports());
-  connect_ = std::move(replacement);  // destroys the old owner
+  events_.reset();
+  OnCallsOwner([&] { connect_ = std::move(replacement); });  // destroys the old owner
+  events_ = std::move(replacement_events);
   auto params = InboundParams();
   CallMediaDirectCallbacks cbs;
   ASSERT_TRUE(transport_->DeliverHello(params, cbs));

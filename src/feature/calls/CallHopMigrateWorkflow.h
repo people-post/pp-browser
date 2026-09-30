@@ -13,7 +13,10 @@
 #include "domain/people/MeshHopPolicy.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "domain/mesh/media_plane/MediaRelayAttach.h"
+#include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
+#include "foundation/runtime/OwnerOutbox.h"
+#include "foundation/runtime/OwnerSteps.h"
 #include "foundation/runtime/DeferredSelf.h"
 
 #include "common/Error.h"
@@ -23,6 +26,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <unordered_map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -143,6 +147,8 @@ public:
     std::string call_id;
     int64_t deadline_ms = 0;
     uint64_t timer_id = 0;
+    /** Bumped at each arm: a deadline event for an earlier arm is stale. */
+    uint64_t armed = 0;
   };
 
   /** Deferred inbound CallSfuAttach + last failure. Calls owner only (hop migrate and topology). */
@@ -172,7 +178,8 @@ public:
   };
 
   struct SfuSurface {
-    bool attached = false;
+    /** Owner writes; the 1:1 receive path reads it on transport I/O (the hop carries the call). */
+    std::atomic<bool> attached{false};
     int64_t last_quote_a_up_bps = 0;
     CallHopPlannerPhase hop_planner_phase = CallHopPlannerPhase::Idle;
   };
@@ -204,9 +211,12 @@ public:
   };
 
   CallHopMigrateWorkflow(CallSessionStore& sessions, CallMediaEngine& media);
-  ~CallHopMigrateWorkflow() override;
 
   void SetHostPorts(CallHopMigrateHostPorts ports);
+  /** Where it reports its delayed follow-ups (its parent binds it). */
+  void SetOutbox(OwnerOutbox<HopMigrateEvent> outbox) { outbox_ = std::move(outbox); }
+  /** A follow-up it reported, back from the calls owner's queue. */
+  void Handle(HopMigrateEvent& event);
   void SetArmingPorts(CallHopMigrateArmingPorts ports);
   void SetSeatPorts(CallHopMigrateSeatPorts ports);
   void SetTopologyOps(TopologyOps ops);
@@ -287,6 +297,13 @@ private:
   Roe<void> StartHopMedia(const HopAttach& at);
   void MarkHopAttachLive(const HopAttach& at, bool fresh_start);
   void ReleaseDirectAfterHopAttach(const HopAttach& at);
+  void RefanOutPickedHop(const hop_migrate_event::RefanOutPickedHop& again);
+  /** Run `step` as the next event (never inside the caller). */
+  void Defer(std::function<void()> step);
+  uint64_t StoreAttach(HopAttach at, std::function<void(Roe<void>)> on_done, bool guest);
+  std::function<void(Roe<MediaRelayAttached>)> RelayAttachReporter(uint64_t id) const;
+  void OnRelayAttached(const hop_migrate_event::RelayAttached& answer);
+  void ReleaseDirectSettled(const hop_migrate_event::ReleaseDirectAfterAttach& release);
   void ReleaseDirectFor(const std::string& call_id);
   // Guest reattach after a lost relay transport (engine stays live).
   void StartGuestReattach(const std::string& call_id, const CallSfuAttachDetail& attach_in,
@@ -313,7 +330,17 @@ private:
   PublisherStreams publishers_;
   SfuSurface sfu_;
   /** Coordinator timers (re-fan-out, settle, reattach backoff) drop once we are gone. */
-  DeferredSelf timers_self_;
+  OwnerOutbox<HopMigrateEvent> outbox_;
+  /** Steps waiting for their Continue event (deferred steps, a picked hop's reach answer). */
+  OwnerSteps steps_;
+  /** Relay attaches waiting for the relay's answer. */
+  struct PendingAttach {
+    std::shared_ptr<HopAttach> at;  // HopAttach is private to the .cpp
+    std::function<void(Roe<void>)> on_done;
+    bool guest = false;
+  };
+  std::unordered_map<uint64_t, PendingAttach> attaches_;
+  uint64_t next_attach_ = 0;
 };
 
 } // namespace pbr

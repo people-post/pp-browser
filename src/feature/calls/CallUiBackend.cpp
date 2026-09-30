@@ -4,7 +4,6 @@
 #include "domain/media/CameraCaptureOrientation.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallStack.h"
-#include "feature/calls/CallsThread.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include <stdexcept>
@@ -56,8 +55,8 @@ std::shared_ptr<const CallUiState> CallUiBackend::State() const {
 }
 
 void CallUiBackend::OnOwner(std::function<void(CallSessionManager&)> op) {
-  CallsThread::Post([this, op = std::move(op)]() {
-    if (auto* calls = stack_.Calls()) {
+  stack_.PostToSessions([op = std::move(op)](CallSessionManager* calls) {
+    if (calls) {
       op(*calls);
     }
   });
@@ -144,8 +143,7 @@ void CallUiBackend::StartCall(const std::string& origin_thread_id, const bool vi
                               const std::vector<std::string>& invitee_identities,
                               std::function<void(Roe<CallSession>)> on_done) {
   auto reply = ReplyOnUi<Roe<CallSession>>(std::move(on_done));
-  CallsThread::Post([this, origin_thread_id, video_allowed, invitee_identities, reply]() {
-    auto* calls = stack_.Calls();
+  stack_.PostToSessions([origin_thread_id, video_allowed, invitee_identities, reply](CallSessionManager* calls) {
     if (!calls) {
       reply(UnavailableError());
       return;
@@ -158,16 +156,14 @@ void CallUiBackend::StartCall(const std::string& origin_thread_id, const bool vi
 void CallUiBackend::InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
                                       std::function<void(Roe<void>)> on_done) {
   auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
-  CallsThread::Post([this, call_id, invitee_identity, reply]() {
-    auto* calls = stack_.Calls();
+  stack_.PostToSessions([call_id, invitee_identity, reply](CallSessionManager* calls) {
     reply(calls ? calls->InviteParticipant(call_id, invitee_identity) : Roe<void>(UnavailableError()));
   });
 }
 
 void CallUiBackend::SetLocalAudioMuted(bool muted, std::function<void(Roe<void>)> on_done) {
   auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
-  CallsThread::Post([this, muted, reply]() {
-    auto* calls = stack_.Calls();
+  stack_.PostToSessions([muted, reply](CallSessionManager* calls) {
     reply(calls ? calls->SetLocalAudioMuted(muted) : Roe<void>(UnavailableError()));
   });
 }
@@ -176,8 +172,7 @@ void CallUiBackend::SetLocalVideoEnabled(bool enabled, std::function<void(Roe<vo
   // L012: the display rotation comes from UIKit on iOS — read it here, on UI, not on the owner.
   const int rotation = enabled ? CameraDisplayRotationDegrees() : 0;
   auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
-  CallsThread::Post([this, enabled, rotation, reply]() {
-    auto* calls = stack_.Calls();
+  stack_.PostToSessions([enabled, rotation, reply](CallSessionManager* calls) {
     reply(calls ? calls->SetLocalVideoEnabled(enabled, rotation) : Roe<void>(UnavailableError()));
   });
 }

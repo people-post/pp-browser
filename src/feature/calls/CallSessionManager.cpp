@@ -1,6 +1,5 @@
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallControlClient.h"
-#include "feature/calls/CallsThread.h"
 #include "domain/messaging/CallListenAddrsLogic.h"
 #include "domain/messaging/CallAnswererKickLogic.h"
 #include "domain/messaging/CallMediaPlannerSelectLogic.h"
@@ -22,6 +21,8 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <type_traits>
+#include <variant>
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
@@ -89,7 +90,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
       direct_media->on_media_key_ready(call_id);
     }
   });
-  live_calls_.BindMediaResources(&media_, nullptr);
+  BindSeat();
   live_calls_.BindHopDriver(&topology_);
   live_calls_.SetOnChanged([this]() { NotifyCallStateChanged(); });
   topology_.SetHopArmingPorts(MakeHopArmingPorts());
@@ -389,18 +390,8 @@ void CallSessionManager::KickAnswererAfterAccept(const std::string& call_id) {
   }
   log().info << "AcceptSucceeded KickAnswererDirectMedia StartSfu arm call_id=" << call_id;
   KickAnswererDirectMediaIfArmed(call_id);
-  // Once more, posted: the first kick can land before the 1:1 start is armed.
-  CallsThread::Post(intents_self_.Bind([this, call_id]() {
-    const LiveCall* active = live_calls_.Active();
-    if (!active || active->Id() != call_id || !live_calls_.AllowsDirectPath(call_id)) {
-      return;
-    }
-    if (media_.IsActive() && media_.ActiveCallId() == call_id) {
-      return;
-    }
-    log().info << "AcceptSucceeded retry KickAnswererDirectMedia StartSfu call_id=" << call_id;
-    KickAnswererDirectMediaIfArmed(call_id);
-  }));
+  // Once more, as the next event: the first kick can land before the 1:1 start is armed.
+  outbox_.Emit(session_event::AnswererKickRetry{call_id});
 }
 
 void CallSessionManager::ClickDecline(const std::string& call_id_arg) {
@@ -451,21 +442,66 @@ void CallSessionManager::RestartMedia(const std::string& call_id_arg, const bool
   }
   // Re-arm Direct before the restart → BeginSession (Failed blocks AllowsDirectPath).
   live_calls_.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, what);
-  // Posted, on the calls owner: the restart runs the engine and the bridge's connect sequence.
-  CallsThread::Post(intents_self_.Bind([this, call_id, resume, what]() {
-    const Roe<void> restarted = resume ? ResumeP2pMedia(call_id) : RetryP2pMedia(call_id);
-    if (!restarted) {
-      log().warning << what << " media restart failed call_id=" << call_id << " err=" << restarted.error().message;
-      // Back to Failed only while the call is still open and not live again (a duplicate restart
-      // whose call already resumed must not knock it down — PR #239 review).
-      const LiveCall* again = live_calls_.Find(call_id);
-      if (again && again->IsOpen() && !again->MediaProgress().reached_live) {
-        live_calls_.NoteMediaFailed(call_id);
-      }
-      return;
+  // As the next event: the restart runs the engine and the bridge's connect sequence — never inside
+  // the click (or the bridge callback) that asked for it.
+  outbox_.Emit(session_event::MediaRestart{call_id, resume});
+}
+
+void CallSessionManager::RunMediaRestart(const std::string& call_id, const bool resume) {
+  const char* what = resume ? "PeerReconnected" : "RetryClicked";
+  const Roe<void> restarted = resume ? ResumeP2pMedia(call_id) : RetryP2pMedia(call_id);
+  if (!restarted) {
+    log().warning << what << " media restart failed call_id=" << call_id << " err=" << restarted.error().message;
+    // Back to Failed only while the call is still open and not live again (a duplicate restart
+    // whose call already resumed must not knock it down — PR #239 review).
+    const LiveCall* again = live_calls_.Find(call_id);
+    if (again && again->IsOpen() && !again->MediaProgress().reached_live) {
+      live_calls_.NoteMediaFailed(call_id);
     }
-    NotifyCallStateChanged();
-  }));
+    return;
+  }
+  NotifyCallStateChanged();
+}
+
+void CallSessionManager::RetryAnswererKick(const std::string& call_id) {
+  const LiveCall* active = live_calls_.Active();
+  if (!active || active->Id() != call_id || !live_calls_.AllowsDirectPath(call_id)) {
+    return;
+  }
+  if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+    return;
+  }
+  log().info << "AcceptSucceeded retry KickAnswererDirectMedia StartSfu call_id=" << call_id;
+  KickAnswererDirectMediaIfArmed(call_id);
+}
+
+void CallSessionManager::SetOutbox(OwnerOutbox<SessionEvent> outbox) {
+  outbox_ = std::move(outbox);
+  workflow_.SetOutbox(outbox_.For<WorkflowEvent>([](WorkflowEvent event) { return SessionEvent{std::move(event)}; }));
+  topology_.SetOutbox(outbox_.For<TopologyEvent>([](TopologyEvent event) { return SessionEvent{std::move(event)}; }));
+}
+
+void CallSessionManager::Handle(SessionEvent& event) {
+  std::visit(
+      [this](auto& e) {
+        using E = std::decay_t<decltype(e)>;
+        if constexpr (std::is_same_v<E, session_event::AnswererKickRetry>) {
+          RetryAnswererKick(e.call_id);
+        } else if constexpr (std::is_same_v<E, session_event::MediaRestart>) {
+          RunMediaRestart(e.call_id, e.resume);
+        } else if constexpr (std::is_same_v<E, WorkflowEvent>) {
+          workflow_.Handle(e);
+        } else if constexpr (std::is_same_v<E, TopologyEvent>) {
+          topology_.Handle(e);
+        } else if constexpr (std::is_same_v<E, session_event::ForDirectPath>) {
+          if (direct_path_ && e.generation == direct_path_generation_) {
+            direct_path_->Handle(e.event);
+          }
+        } else {
+          static_assert(!sizeof(E), "route every SessionEvent");
+        }
+      },
+      event);
 }
 
 void CallSessionManager::SetInitiationBillingStore(InitiationBillingStore* store) {
@@ -510,25 +546,156 @@ CallDirectArmingPorts CallSessionManager::DirectArmingPorts() {
   return ports;
 }
 
-void CallSessionManager::SetMediaSeatPorts(CallMediaSeatPorts ports) {
-  media_seat_ports_.Set(std::move(ports));
+void CallSessionManager::BindSeat() {
+  live_calls_.BindMediaResources(&media_, &seat_);
+  CallMediaSeatPorts release;
+  release.release = [this](const std::string& call_id) { seat_.Release(call_id); };
+  media_seat_ports_.Set(std::move(release));
+  topology_.SetSeatPorts(MakeTopologySeatPorts());
+  seat_.SetTeardownHooks([this](const std::string& call_id) { topology_.OnMediaStopped(call_id); },
+                         [this](const std::string& call_id, uint64_t epoch_at_post, bool force) {
+                           StopMediaForSeat(call_id, epoch_at_post, force);
+                         });
 }
 
-void CallSessionManager::SetTopologySeatPorts(CallTopologySeatPorts ports) {
-  topology_.SetSeatPorts(std::move(ports));
+void CallSessionManager::StopMediaForSeat(const std::string& call_id, const uint64_t epoch_at_post, const bool force) {
+  if (!force && seat_.Epoch() != epoch_at_post) {
+    log().info << "MediaSeat stop skip stale call_id=" << call_id << " posted_epoch=" << epoch_at_post
+               << " seat_epoch=" << seat_.Epoch();
+    return;
+  }
+  if (direct_driver_) {
+    direct_driver_->StopMeshMedia(call_id);
+    return;
+  }
+  if (media_.IsActive() || media_.IsSfuMode()) {
+    media_.Stop();
+  }
 }
 
-CallMediaSeatPorts CallSessionManager::MakeSeatPorts(CallMediaSeat* seat) {
-  CallMediaSeatPorts ports;
-  if (!seat) {
+void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
+  if (!deps.IsUsable()) {
+    DropDirectPath();
+    return;
+  }
+  if (!direct_path_ || direct_transport_ != deps.transport) {
+    DropDirectPath();
+    direct_path_ = std::make_unique<CallMediaBridge>(AsMediaHost(), sessions_, media_keys_, media_, *deps.transport,
+                                                     deps.dial, deps.circuit_reach);
+    direct_transport_ = deps.transport;
+    const uint64_t generation = ++direct_path_generation_;
+    direct_path_->SetOutbox(outbox_.For<DirectPathEvent>([generation](DirectPathEvent event) {
+      return SessionEvent{session_event::ForDirectPath{generation, std::move(event)}};
+    }));
+    log().info << "1:1 path built";
+  } else {
+    direct_path_->SetReachDeps(deps.dial, deps.circuit_reach);
+  }
+  CallMediaBridge& path = *direct_path_;
+  path.SetSeedWarm(std::move(deps.seed_warm));
+  path.SetSeedReserve(std::move(deps.seed_reserve));
+  path.SetSeedParkAwait(std::move(deps.seed_park_await));
+  path.SetPathPolicyProvider(std::move(deps.path_policy));
+  path.SetDirectArmingPorts(DirectArmingPorts());
+  path.SetSeatPorts(DirectSeatPorts());
+  SetDirectMediaPorts(MakeDirectMediaPorts());
+  SetDirectDriver(&path);
+}
+
+void CallSessionManager::DetachDirectPathReach() {
+  if (direct_path_) {
+    direct_path_->SetReachDeps(nullptr, nullptr);
+  }
+}
+
+void CallSessionManager::PrepareDirectPathForStop(const int wait_ms) {
+  SetDirectMediaPorts({});
+  SetDirectDriver(nullptr);
+  if (direct_path_) {
+    direct_path_->SetDirectArmingPorts({});
+    direct_path_->SetSeatPorts({});
+    direct_path_->PrepareForTeardown(wait_ms);
+  }
+}
+
+void CallSessionManager::DropDirectPath() {
+  SetDirectMediaPorts({});
+  SetDirectDriver(nullptr);
+  direct_path_.reset();
+  direct_transport_ = nullptr;
+}
+
+void CallSessionManager::OnLocalNetworkMoved() {
+  if (direct_path_) {
+    direct_path_->OnLocalNetworkChanged();
+  }
+}
+
+void CallSessionManager::OnPathPolicyChanged(const std::string& call_id) {
+  if (direct_path_) {
+    direct_path_->OnPathPolicyChanged(call_id);
+  }
+}
+
+bool CallSessionManager::IsDirectConnectInFlight() const {
+  return direct_path_ && direct_path_->IsConnectWorkerInflight();
+}
+
+CallDirectMediaPorts CallSessionManager::MakeDirectMediaPorts() {
+  CallDirectMediaPorts ports;
+  CallMediaBridge* bridge = direct_path_.get();
+  if (!bridge) {
     return ports;
   }
-  ports.release = [seat](const std::string& call_id) { seat->Release(call_id); };
+  ports.media_path_kind = [bridge]() { return bridge->MediaPathKind(); };
+  ports.note_peer_id_relay_mapping = [bridge](const std::string& peer_id, const std::string& relay_identity) {
+    bridge->NotePeerIdRelayMapping(peer_id, relay_identity);
+  };
+  ports.is_connect_failed = [bridge]() { return bridge->IsMeshConnectFailed(); };
+  ports.connect_missing_mic = [bridge]() { return bridge->IsMeshConnectFailed() && bridge->MeshConnectMissingMic(); };
+  ports.poll_connect_health = [bridge]() { bridge->PollMeshConnectHealth(); };
+  ports.media_attempted = [bridge](const std::string& call_id) { return bridge->MediaAttempted(call_id); };
+  ports.note_media_attempted = [bridge](const std::string& call_id) { bridge->NoteMediaAttempted(call_id); };
+  ports.on_media_key_ready = [bridge](const std::string& call_id) { bridge->OnMediaKeyReady(call_id); };
   return ports;
 }
 
-void CallSessionManager::TopologyOnMediaStoppedForSeat(const std::string& call_id) {
-  topology_.OnMediaStopped(call_id);
+CallDirectSeatPorts CallSessionManager::DirectSeatPorts() {
+  CallDirectSeatPorts ports;
+  CallMediaSeat* seat = &seat_;
+  ports.acquire = [seat](const std::string& call_id) { return seat->Acquire(call_id); };
+  ports.allows_path_op = [seat](const CallMediaSeat::Token& token) { return seat->AllowsPathOp(token); };
+  ports.current_token = [seat]() { return seat->CurrentToken(); };
+  ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
+  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
+  ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
+  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
+  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
+  ports.note_failed = [seat](const std::string& call_id) { seat->NoteFailed(call_id); };
+  return ports;
+}
+
+CallTopologySeatPorts CallSessionManager::MakeTopologySeatPorts() {
+  CallTopologySeatPorts ports;
+  CallMediaSeat* seat = &seat_;
+  ports.is_bound = [seat](const std::string& call_id) { return seat->IsBound(call_id); };
+  ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
+  ports.acquire = [seat](const std::string& call_id) { return seat->Acquire(call_id); };
+  ports.allows_path_op = [seat](const CallMediaSeat::Token& token) { return seat->AllowsPathOp(token); };
+  ports.begin_attach = [seat](const std::string& call_id, const std::string& hop, CallMediaSeat::AttachTicket* ticket) {
+    return seat->BeginAttach(call_id, hop, ticket);
+  };
+  ports.end_attach_if_matching = [seat](const std::string& call_id, const std::string& hop) {
+    seat->EndAttachIfMatching(call_id, hop);
+  };
+  ports.has_attach_in_flight = [seat]() { return seat->HasAttachInFlight(); };
+  ports.attaching_hop = [seat]() { return seat->AttachingHopPeerId(); };
+  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
+  ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
+  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
+  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
+  ports.cancel_attach_for_call = [seat](const std::string& call_id) { seat->CancelAttachForCall(call_id); };
+  return ports;
 }
 
 void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity,
@@ -581,8 +748,7 @@ void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_
     }
     return;
   }
-  log().info << "KickAnswererDirectMediaIfArmed call_id=" << call_id << " peer=" << peer
-             << " on_owner=" << (CallsThread::IsCurrent() ? 1 : 0);
+  log().info << "KickAnswererDirectMediaIfArmed call_id=" << call_id << " peer=" << peer;
   ScheduleStartDirectMedia(call_id, peer, false);
 }
 
@@ -1055,8 +1221,8 @@ bool CallSessionManager::MediaAttemptedThisProcess(const std::string& call_id) c
 }
 
 void CallSessionManager::ClearMediaCallbacks() {
-  // Drop deferred Accept roster fan-out before CallStack drains/resets CSM (PR #216 follow-up).
-  workflow_.InvalidateDeferredOps();
+  // Drop accepts waiting on their park before CallStack drains / resets CSM (PR #216 follow-up).
+  workflow_.DropFollowUps();
 }
 
 Roe<void> CallSessionManager::HandleInboundInvite(const std::string& detail_json,
@@ -1293,6 +1459,10 @@ void CallSessionManager::P2pResendMediaKey(const std::string& call_id, const std
     return;
   }
   (void)key_exchange_.SendCurrent(call_id, peer_identity);
+}
+
+bool CallSessionManager::HopCarriesMedia() const {
+  return topology_.IsSfuAttached();  // an atomic flag: safe from the transport's I/O
 }
 
 void CallSessionManager::P2pNoteInboundHello(const std::string& call_id, const std::string& identity,

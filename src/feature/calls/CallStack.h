@@ -19,6 +19,8 @@
 #include "feature/calls/CallSessionManager.h"
 #include "foundation/runtime/DeferredSelf.h"
 #include "feature/calls/CallUiState.h"
+#include "feature/calls/CallsExecutor.h"
+#include "feature/calls/CallsLoop.h"
 #include "feature/calls/CallsThread.h"
 #include "feature/calls/SharedPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
@@ -140,13 +142,14 @@ public:
   CallSessionManager* Calls();
   CallMediaKeyStore* MediaKeys() { return call_media_keys_.get(); }
   CallMediaEngine* MediaEngine() { return call_media_engine_.get(); }
-  CallMediaSeat* MediaSeat() { return call_media_seat_.get(); }
 
   /**
    * Run `op` on the calls owner and wait (hub wiring that must touch the session manager, e.g.
    * billing store, media callbacks). No-op without sessions.
    */
   void RunOnOwner(const std::function<void(CallSessionManager&)>& op);
+  /** The UI edge's commands: queued behind the owner's events; `calls` is null without sessions. */
+  void PostToSessions(std::function<void(CallSessionManager* calls)> run);
 
   /** Abort in-flight call-media Connect before joining the worker pool (app shutdown). */
   void AbortCallMediaForShutdown();
@@ -176,7 +179,7 @@ private:
   // Bodies of the hub-facing edges above; the public methods run them on the calls owner.
   Roe<void> InitializeStoresOnOwner(const std::string& profile_db_path, const std::string& profile_id);
   void BuildSessionsOnOwner(const CallStackDeps& deps);
-  void BindSessionSeat();
+  void BindSessionOutbox();
   void BindCallControlInbound();
   void BindSessionProviders();
   CallPeerCaps LocalPeerCaps() const;
@@ -200,29 +203,34 @@ private:
   /** Mesh config snapshot (defaults when none is wired). */
   std::shared_ptr<const MeshConfig> mesh_config() const;
   void SyncMediaPlaneDeps();
-  /** BindBridge + CSM SetMediaRelayDeps / SetDirectMediaPorts. */
+  /** The session manager's 1:1 path (on the plane's transport) + its topology relay deps. */
   void BindMediaProducts();
   /** Calls' hooks on the shared mesh media (announce chosen R1, signaling punch). */
   void BindMeshMediaHooks();
   MeshMediaPlane* mesh_media() const { return deps_.mesh_media; }
-  void BindSeatTeardown();
   /** What the calls show may have changed: refresh chrome, wake N025 listen when its desire flips. */
   void OnCallStateChangedOnOwner();
-  CallDirectMediaPorts MakeDirectMediaPorts() const;
-  CallDirectSeatPorts MakeDirectSeatPorts() const;
-  CallTopologySeatPorts MakeTopologySeatPorts() const;
 
+  /** The calls owner's executor: every call object gets it from here (THREADING.md § Owner runners). */
+  OwnerExecutor& executor_ = CallsOwnerExecutor();
+  /** The calls owner's event queue: every input and delayed event goes through Dispatch. */
+  CallsLoop loop_{executor_, [this](CallStackEvent& event) { Dispatch(event); }};
   CallStackDeps deps_;
   std::unique_ptr<CallSessionStore> call_session_store_;
   std::unique_ptr<CallMediaKeyStore> call_media_keys_;
   std::unique_ptr<CallMediaEngine> call_media_engine_;
-  std::unique_ptr<CallMediaSeat> call_media_seat_;
   std::unique_ptr<CallSessionManager> call_sessions_;
   std::unique_ptr<CallMediaPlane> media_plane_;
   /** k6: this device's and each call peer's mobility → the call's path policy. */
   CallPathMobility mobility_;
-  void BindMobility();
+  CallsWakeSlot mobility_wake_{loop_, calls_event::MobilityWake{}};
+  /** Names the current session manager: its events carry it (a rebuilt one drops the old ones). */
+  uint64_t sessions_generation_ = 0;
   void ApplyMobilityOverrideOnOwner();
+  /** Route one event to the child it is for (owner). */
+  void Dispatch(CallStackEvent& event);
+  /** After a mobility event: re-arm its wake; a flipped class re-plans the active call. */
+  void AfterMobilityEvent(bool local_class_changed);
   void NotifyPathPolicyChangedOnOwner(const std::string& call_id);
   SharedPorts<CallUiState> ui_state_;
   CallsThread::HookId publish_hook_ = 0;
