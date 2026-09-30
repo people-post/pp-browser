@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/directory/IContactTrustAccess.h"
 #include "foundation/crypto/ReplayWindow.h"
 #include "foundation/crypto/IPskSessionStore.h"
 #include "domain/messaging/E2eIngestClassifier.h"
@@ -62,6 +63,11 @@ public:
   void BindCallControlInbound(CallControlInboundPorts ports) { call_control_ = std::move(ports); }
   void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
   void SetPaymentPromiseStore(PaymentPromiseStore* store) { payment_promises_ = store; }
+  /**
+   * projects/privacy T3: direct messages (chat and call control) from a Blocked sender are dropped
+   * on receipt. Not owned; null = no blocking.
+   */
+  void SetContactTrust(IContactTrustAccess* trust) { contact_trust_ = trust; }
 
   RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                       bool authorized_older_backfill = false,
@@ -115,6 +121,8 @@ private:
   CallControlInboundPorts call_control_;
   InitiationBillingStore* initiation_billing_ = nullptr;
   PaymentPromiseStore* payment_promises_ = nullptr;
+  IContactTrustAccess* contact_trust_ = nullptr;
+  bool SenderBlocked(const std::string& sender) const;
   PublicPskLockCoordinator public_lock_;
   std::unordered_map<ReplayKey, ReplayWindow, ReplayKeyHash> replay_windows_;
 };

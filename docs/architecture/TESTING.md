@@ -47,6 +47,7 @@ When a case you are already touching (or that blocks the change under review) as
 4. **Higher tiers verify wiring and environment** — they do not re-prove codec, SM, or store rules already covered below.
 5. **Extract only for real product boundaries** — do not invent test-only “libs.” Push into foundation/domain (or owned `src/lib/` / FetchContent stacks) when the logic is a coherent engine two features could share; leave genuine composition, lifetimes, and packaging at feature/app/smoke.
 6. **Promote failures downward** — when a higher tier (integration / smoke / hard lab) finds a bug, ask whether a cheaper gtest can lock the invariant before relying on Docker. See [When a higher tier finds a bug](#when-a-higher-tier-finds-a-bug).
+7. **One hard-lab scenario per major purpose** — a hard-lab scenario exists for what only a real network topology can prove. When two share a purpose, keep the harder one and pin the difference in gtests ([HARD_LAB § Retired scenarios](../../packaging/pp-node/HARD_LAB.md#retired-scenarios)).
 
 ---
 

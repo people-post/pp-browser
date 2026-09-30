@@ -70,6 +70,7 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
   NormalizeMeshConfig(mesh_cfg);
   deps.bootstrap_peers = mesh_cfg.bootstrap_peers;
   deps.prefer_contacts = mesh_cfg.prefer_contacts_for_routing;
+  deps.trusted_relays_only = mesh_cfg.trusted_relays_only;
   deps.list_directory_nodes = deps_.list_directory_nodes;
   deps.list_dht_nodes = deps_.list_dht_nodes;
   deps.seed_dial_ok = deps_.seed_dial_ok;

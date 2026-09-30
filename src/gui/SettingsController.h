@@ -130,6 +130,9 @@ private:
     ui::String dht_enabled = "off";
     bool show_dht_toggle = false;
     ui::String prefer_contacts_for_routing = "on";
+    ui::String direct_connections = "contacts";
+    ui::String direct_connections_label;
+    ui::String trusted_relays_only = "off";
     bool show_prefer_contacts_toggle = false;
     ui::String profile_nickname;
     ui::String profile_peer_id;
@@ -173,6 +176,8 @@ private:
     ui::String pin_change_confirm;
     ui::String group_invite_policy = "contacts_only";
     ui::String group_invite_policy_label = "Contacts only";
+    ui::String call_invite_policy = "everyone";
+    ui::String call_invite_policy_label = "Everyone";
     ui::String tool_permissions_summary = "None saved";
     bool tool_permissions_has_saved = false;
     ui::String app_name;
@@ -190,6 +195,8 @@ private:
   static void OnChooseThemeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnChooseLanguageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnChooseGroupInvitePolicyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnChooseCallInvitePolicyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnChooseDirectConnectionsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnChooseAttachmentDownloadPolicyCallback(ui::DataModelHandle model, ui::Event& ev,
                                                        const ui::VariantList& args);
   static void DrainPendingAttachmentMediaCallback(ui::DataModelHandle model, ui::Event& ev,
@@ -232,6 +239,7 @@ private:
   static void ToggleMediaRelayCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleDhtCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void TogglePreferContactsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleTrustedRelaysCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnProfileNicknameCommitCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnRegisterProfileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnRotateBriefLlmKeyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -300,6 +308,10 @@ private:
   void OnChooseLanguage(ui::Event& ev);
   void ApplyLanguageChoice(const std::string& language_pref);
   void OnChooseGroupInvitePolicy(ui::Event& ev);
+  void OnChooseDirectConnections(ui::Event& ev);
+  void OnChooseCallInvitePolicy(ui::Event& ev);
+  void ApplyCallInvitePolicyChoice(const std::string& policy);
+  void ApplyDirectConnectionsChoice(const std::string& audience);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
   void OnChooseAttachmentDownloadPolicy(ui::Event& ev);
   void ApplyAttachmentDownloadPolicyChoice(const std::string& policy);
