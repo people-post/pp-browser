@@ -415,19 +415,19 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Download macOS artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: macos-installer
           path: dist/macos
 
       - name: Download Windows artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: windows-installer
           path: dist/windows
 
       - name: Download Android artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: android-release-apk
           path: dist/android
