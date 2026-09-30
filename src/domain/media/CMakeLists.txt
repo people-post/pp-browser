@@ -20,6 +20,7 @@ pp_browser_add_domain_library(pp_domain_media
 if(WIN32)
   target_sources(pp_domain_media PRIVATE
     VideoCodec_Win32.cpp
+    CameraCandidates_Default.cpp
     DeviceVitals_Default.cpp
     CallAudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
@@ -37,6 +38,7 @@ elseif(APPLE)
   if(PP_BROWSER_IS_IOS)
     target_sources(pp_domain_media PRIVATE
       CallAudioSession_Ios.mm
+      CameraCandidates_Default.cpp
       CameraCaptureOrientation_Ios.mm
       SdlAudioBootstrap_Default.cpp
       VoiceProcessingIo_Apple.cpp)
@@ -44,14 +46,16 @@ elseif(APPLE)
   else()
     target_sources(pp_domain_media PRIVATE
       CallAudioSession_Default.cpp
+      CameraCandidates_Darwin.mm
       CameraCaptureOrientation_Default.cpp
       SdlAudioBootstrap_Default.cpp
       VoiceProcessingIo_Apple.cpp)
-    target_link_libraries(pp_domain_media PRIVATE "-framework AudioToolbox" "-framework CoreAudio")
+    target_link_libraries(pp_domain_media PRIVATE "-framework AudioToolbox" "-framework CoreAudio" "-framework AVFoundation")
   endif()
 elseif(ANDROID)
   target_sources(pp_domain_media PRIVATE
     VideoCodec_Android.cpp
+    CameraCandidates_Default.cpp
     DeviceVitals_Default.cpp
     CallAudioSession_Android.cpp
     CameraCaptureOrientation_Android.cpp
@@ -61,6 +65,7 @@ elseif(ANDROID)
 else()
   target_sources(pp_domain_media PRIVATE
     VideoCodec_Linux.cpp
+    CameraCandidates_Default.cpp
     DeviceVitals_Default.cpp
     CallAudioSession_Default.cpp
     CameraCaptureOrientation_Default.cpp
