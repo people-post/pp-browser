@@ -1205,6 +1205,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
   mesh_messaging_->SetProfileDataDir(data_dir_);
+  mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
   mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
@@ -1291,6 +1292,7 @@ Roe<void> ConversationsHub::BuildLocalMessagingStack() {
       *kem_resolver_, *psk_store_, *group_roster_, group_invite_gate_.get(), amp_links, std::move(amp_pump),
       std::move(amp_worker));
   mesh_messaging_->SetProfileDataDir(data_dir_);
+  mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
   mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);

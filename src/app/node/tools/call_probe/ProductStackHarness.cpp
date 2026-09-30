@@ -126,7 +126,6 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     return store_dek.error();
   }
   contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
-  // The product default audience (contacts): the lab's peers are each other's contacts.
   contacts_->SetOnChanged([this]() { PublishAddressDisclosure(); });
   identity_ = std::make_unique<IdentityStore>(data_dir_.string(), "call-probe");
   if (auto dek = identity_->SetDek(ProbeDek()); !dek) {
@@ -145,6 +144,14 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
 
   app_config_ = AppConfig{};
   NormalizeMeshConfig(app_config_.mesh);
+  // NAT scenarios test traversal: the answerer never learns the offerer's identity up front, so the
+  // probe discloses to everyone unless a scenario narrows it (projects/privacy T1 lab checks).
+  app_config_.mesh.direct_connections = DirectAudience::Everyone;
+  if (const char* audience = std::getenv("PP_PROBE_DIRECT_CONNECTIONS")) {
+    if (auto parsed = DirectAudienceFromName(audience)) {
+      app_config_.mesh.direct_connections = *parsed;
+    }
+  }
   if (!hop_ma.empty()) {
     app_config_.mesh.bootstrap_peers = {hop_ma};
   }
