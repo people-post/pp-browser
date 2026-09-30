@@ -31,8 +31,10 @@ struct CallUiState {
   std::string media_activity;
   /** Pending media error for the GUI to show once (TakeLastMediaError). */
   std::optional<std::string> last_media_error;
-  /** The last call the peer ended while this side was in it (TakeRemoteEndedCallId). */
+  /** The last call the peer ended or declined while this side had it (TakeRemoteEnd); empty if none. */
   std::string remote_ended_call_id;
+  /** That end was the peer declining our call (else it ended the call). */
+  bool remote_ended_declined = false;
   CallHopHealth hop_health;
   std::string media_path_kind;
   // Seat

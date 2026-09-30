@@ -29,7 +29,7 @@ Dogfood / codebase board for **this week**. Stable code map: [docs/architecture/
 | a2/a3 media | Historical LAN WebRTC dogfood (a2–a3); **not** product path after m2 |
 | **a4 thin** | Soft-migrate to `media_relay` when N≥3 |
 | Hop reachability | Program in [media-hop-reachability](../media-hop-reachability/) — **Amp mesh** (L1+; punch H009 planned); app `call_hop_addrs` **not** product |
-| **CallLifecycle orchestrator** | **V037 State+Status:** `CallPhase` + `CallMediaStatus`; one planner armed; `media_cancel_gen`; N025 from `WantEphemeralListen`; gtest `call_lifecycle_test` |
+| **Call phase projection** | **V052:** `LiveCall::Phase` projects call state + per-call media progress (V037 State+Status); intents on `CallSessionManager::Apply`; `media_cancel_gen` on `LiveCalls`; N025 from "a call is shown"; gtest `call_lifecycle_test` |
 | **m1 mobile LAN voice** | Android ↔ Android 1:1 Opus on `/pp-browser/realtime/1.0.0` — **dogfood OK 2026-08-02** |
 | **V031 call chrome modes** | Expanded / Immersive / Minimized + gestures landed (people grid for group voice; minimize chip) |
 | **V032 media QoS structure** | Host receive policy doc; hop A↑/A↓ token buckets + session/participant caps; per-`stream_id` Opus + jitter playout; path_pressure → Opus bps; SFU AEAD under call media key |
@@ -81,7 +81,7 @@ Filter: `adb logcat -s pp-browser:W` — release emit floor promotes INFO→WARN
 | Hop peerstore / circuit | media-hop **L1–L3** + loopback compose landed; **L3.5 multi-hop** later (transitive R1↛B) |
 | **Transport session SMs (V033 / N026)** | **s2a + s3a + s3b** + circuit compose; **ConnectAsync landed**; inbound MediaKey wait cancelable (**landed**); leftovers: sync L4 façades for tests; optional s4 if Leave hangs — [SESSION_MACHINES.md](SESSION_MACHINES.md#remaining-work-call-media--peer-honesty) |
 | **Answerer MediaKey wait** | Exhaustion → `ConnectFailed` + `call.error.media_key_timeout` (no stuck MediaPending); KeyReady kick + **timeout compose** (`SetMediaKeyInboxPollRoundsForTest(0)`) |
-| **Remote Leave / CallEnded chrome** | `EndCallLocal` applies `RemoteEnded` when lifecycle `ActiveCallId` matches — either side Leave Idles peer (dual-stack both directions); stale id ignored |
+| **Remote Leave / CallEnded chrome** | `EndCallLocal` closes the LiveCall — the projection goes Idle on either side's Leave (dual-stack both directions) |
 | **Inbound Decline clears offerer** | `HandleInboundDecline` `EndCallLocal` when no remote Joined/Ringing/Invited remain (1:1); keeps call if another invitee still rings; dual-stack Decline wire (gtest) |
 | **Outbound unanswered TTL** | `CallSessionLogic::ShouldAutoLeaveOutboundUnanswered` + `SweepExpiredInvites` LeaveCall (feature, not GUI-only); CallController Tick sweeps — gtest logic + compose |
 | **Incoming invite expire** | `SweepExpiredInvites` Missed + `EndCallLocal` → `RemoteEnded` clears Ringing Idle / listen (CALLS expire → Idle; gtest) |

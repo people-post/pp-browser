@@ -849,7 +849,9 @@ Roe<void> CallHopMigrateWorkflow::CompleteHopAttach(const HopAttach& at, int64_t
   ApplyQuoteAdaptation(a_up_bps);
   publishers_.local_stream_id = ops_.publisher_stream_id_for_local();
   host_.note_media_attempted(call_id);
-  host_.bind_media_call_id(call_id);
+  if (CallMediaCoordinator* call_media = host_.call_media ? host_.call_media(call_id) : nullptr) {
+    call_media->HoldSeatForHop();
+  }
   if (auto wanted = CheckHopAttachStillWanted(at); !wanted) {
     return wanted;
   }
@@ -987,35 +989,30 @@ CallMediaEngine::SfuSendFn CallHopMigrateWorkflow::MakeHopSendFn(const HopAttach
 }
 
 Roe<void> CallHopMigrateWorkflow::StartHopMedia(const HopAttach& at) {
-  const auto seat_ports = seat_.Get();
   const std::string& call_id = at.call_id;
   if (!at.self_hop) {
     relay_deps_->relay->StartClientFrameReader();
     log().info << "AttachLocalToSfu StartClientFrameReader call_id=" << call_id;
   }
   log().info << "AttachLocalToSfu StartSfu call_id=" << call_id << " pub_stream=" << publishers_.local_stream_id.load();
-  if (auto started = media_.StartSfu(call_id, MakeHopSendFn(at)); !started) {
+  CallMediaCoordinator* call_media = host_.call_media ? host_.call_media(call_id) : nullptr;
+  if (!call_media) {
     relay_deps_->relay->Detach();
+    return Error("no live call for media " + call_id);
+  }
+  // Takes the seat's hold for this call, starts (or send-swaps) the engine, marks the seat on Hop.
+  if (auto started = call_media->StartEngine(CallMediaSeat::PathKind::Hop, MakeHopSendFn(at)); !started) {
+    log().info << "AttachLocalToSfu aborted at StartSfu (" << started.error().message << ") call_id=" << call_id;
+    relay_deps_->relay->Detach();
+    sfu_.attached = false;
     return started.error();
   }
-  const char* abort_reason = nullptr;
-  if (seat_ports->IsBound()) {
-    seat_ports->note_start(call_id);
-    seat_ports->note_path(CallMediaSeat::PathKind::Hop);
-    // NoteStart bumps epoch — AllowsPathOp (call_id bind) still holds; MatchesToken would not.
-    if (!seat_ports->is_bound(call_id)) {
-      abort_reason = "seat unbound";
-    }
-  }
-  if (!abort_reason && !ops_.is_active_call_for_topology(call_id)) {
-    abort_reason = "call inactive";
-  }
-  if (abort_reason) {
-    log().info << "AttachLocalToSfu aborted after StartSfu (" << abort_reason << ") call_id=" << call_id
+  if (!ops_.is_active_call_for_topology(call_id)) {
+    log().info << "AttachLocalToSfu aborted after StartSfu (call inactive) call_id=" << call_id
                << " gen_want=" << at.gen_at_start
                << " gen_have=" << flight_.migrate_generation.load(std::memory_order_acquire);
     relay_deps_->relay->Detach();
-    media_.Stop();
+    call_media->StopEngine("hop attach aborted: call inactive");
     sfu_.attached = false;
     return Error("attach aborted");
   }
@@ -1030,7 +1027,6 @@ void CallHopMigrateWorkflow::MarkHopAttachLive(const HopAttach& at, bool fresh_s
   sfu_.attached = true;
   flight_.attached_hop_peer_id = at.attach.hop_peer_id;
   flight_.attaching_hop_peer_id.clear();
-  sfu_.awaiting_recovery = false;
   if (!at.self_hop) {
     guest_.active_attach = at.attach;
     guest_.active_call_id = call_id;
@@ -1056,11 +1052,18 @@ void CallHopMigrateWorkflow::MarkHopAttachLive(const HopAttach& at, bool fresh_s
   }
 }
 
+void CallHopMigrateWorkflow::ReleaseDirectFor(const std::string& call_id) {
+  // The call runs on the hop now: its coordinator drops the 1:1 transport (seat-checked).
+  if (CallMediaCoordinator* call_media = host_.call_media ? host_.call_media(call_id) : nullptr) {
+    call_media->ReleaseDirect();
+  }
+}
+
 void CallHopMigrateWorkflow::ReleaseDirectAfterHopAttach(const HopAttach& at) {
   // Advance lifecycle (DirectConnected via ReleaseDirect) + clear Connecting immediately, and again
   // after a settle delay. Do not gate on migrate gen — stampede leaves gen_at_start permanently
   // stale (dogfood UI).
-  host_.ReleaseDirectMedia();
+  ReleaseDirectFor(at.call_id);
   host_.ClearMediaActivity();
   auto do_release = [this, token = timers_self_.token(), snap = timers_self_.Snapshot(), call_id = at.call_id,
                      release_gen = at.gen_at_start, release_fanout = BuildSfuAttachFanout(at.attach),
@@ -1076,7 +1079,7 @@ void CallHopMigrateWorkflow::ReleaseDirectAfterHopAttach(const HopAttach& at) {
         }
       }
     }
-    host_.ReleaseDirectMedia();
+    ReleaseDirectFor(call_id);
     host_.ClearMediaActivity();
   };
   const uint64_t timer = AppRuntime::ScheduleCoordinatorOneShot(

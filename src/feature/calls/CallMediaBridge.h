@@ -5,6 +5,7 @@
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallMediaHost.h"
+#include "feature/calls/CallDirectDriver.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "domain/messaging/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
@@ -68,7 +69,7 @@ struct CallDirectSeatPorts {
  * Uses CallMediaEngine SFU-mode capture/playback with Opus frames over ICallMediaTransport
  * (Amp; [A020]). Path Start / ReleaseTransport require a seat token when the seat is wired.
  */
-class CallMediaBridge : public Module {
+class CallMediaBridge : public Module, public CallDirectDriver {
 public:
   CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions, CallMediaKeyStore& media_keys,
                         CallMediaEngine& media, ICallMediaTransport& direct, IDialRegistry* dial,
@@ -83,12 +84,12 @@ public:
   /** True when mesh call-media path is available (direct or circuit-brokered). */
   bool ShouldUseMeshForPeer(const std::string& peer_identity) const;
 
-  Roe<void> RetryMeshMedia(const std::string& call_id);
+  Roe<void> RetryMeshMedia(const std::string& call_id) override;
   /**
    * The call failed but is still open, and the peer's connection for it is up (its Retry): restart
    * the engine as this side's role and commit over that stream (no Detach, no redial).
    */
-  Roe<void> ResumeMeshMediaFromInbound(const std::string& call_id);
+  Roe<void> ResumeMeshMediaFromInbound(const std::string& call_id) override;
   /**
    * Retry / resume restart a call whose planner went Idle on failure: arm it again (Schedule →
    * Arming, key already held → Connecting) so the restarted connect's ConnectSucceeded lands.
@@ -147,9 +148,11 @@ public:
    * SoftMigrate: close 1:1 call-media stream without CallMediaEngine::Stop so SFU capture continues.
    * Prefer ReleaseDirectTransport(token) when a MediaSeat is wired.
    */
-  void ReleaseDirectTransport();
+  void ReleaseDirectTransport() override;
   /** V036 Phase 3: token-gated SoftMigrate release (no-op when token not bound). */
-  void ReleaseDirectTransport(const CallMediaSeat::Token& token);
+  void ReleaseDirectTransport(const CallMediaSeat::Token& token) override;
+  /** CallDirectDriver: the call's coordinator starts the 1:1 connect (offerer / answerer). */
+  void ScheduleDirectStart(const std::string& call_id, const std::string& peer_identity, bool offerer) override;
 
   /**
    * Engine Stop — **seat teardown hook only** when MediaSeat is wired (V036).
@@ -157,7 +160,7 @@ public:
    * Any thread: off the calls owner the whole stop is posted to the front of its queue and
    * skipped if a newer media session (StartSfu) started in the meantime.
    */
-  void StopMeshMedia(const std::string& call_id);
+  void StopMeshMedia(const std::string& call_id) override;
   /**
    * CallAccept/Invite taught PeerId→relay: (works for non-contacts). Rebind deferred inbound
    * on_audio stream_id when it matches the pending inbound PeerId.
@@ -300,6 +303,14 @@ private:
   }
   /** Amp PeerId for a call roster key (account: → PeerId); unchanged otherwise. */
   std::string ReachPeerIdFor(const std::string& key);
+  /** `call_id`'s media coordinator; null (quietly) for a call not admitted here. */
+  CallMediaCoordinator* LiveCallMedia(const std::string& call_id);
+  /** The group path carries `call_id`'s media now (its coordinator says so). */
+  bool HopAttachedFor(const std::string& call_id);
+  /** Stop the engine through `call_id`'s media coordinator (a leftover without one: directly). */
+  void StopEngineFor(const std::string& call_id, const char* why);
+  /** The call peer's mesh PeerId for reach / circuit / upgrade (never a local dial alias). */
+  std::string CallPeerMeshId();
   void OnDirectHealthTimerFire();
 
   CallMediaHost& host_;
@@ -380,15 +391,21 @@ private:
   };
   AttemptedCalls media_attempted_calls_;
   /**
-   * A call whose connect failed but which is still open (failed ≠ closed): stopping its engine must
-   * not forget it — Retry and a resume over the peer's connection need its peer and role. Set by
+   * The call whose connect failed here while it stays open (failed ≠ closed). Its peer and role are
+   * the LiveCall's (P2pLiveCall); this only marks that our media gave up on it. Set by
    * SurfaceConnectFailed after the stop; cleared by any other stop (Leave) or a new session.
    */
   struct FailedOpenCall {
     std::string call_id;
+    /** PeerReconnected already raised: a second inbound bundle must not queue a second resume. */
+    bool resume_requested = false;
+  };
+  /** A 1:1 call's peer and this side's media role, from its LiveCall (placed → offerer). */
+  struct CallPeerRole {
     std::string peer_identity;
     bool offerer = false;
   };
+  std::optional<CallPeerRole> PeerRoleFromLiveCall(const std::string& call_id) const;
   std::optional<FailedOpenCall> failed_open_;
   int media_key_inbox_poll_rounds_ = 90;
   std::atomic<uint32_t> audio_seq_{0};

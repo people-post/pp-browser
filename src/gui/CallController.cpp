@@ -17,7 +17,7 @@
 #include "foundation/runtime/ProductBranding.h"
 #include "domain/ui/ShellTypes.h"
 #include "feature/calls/CallFunctionalPorts.h"
-#include "feature/calls/CallLifecycle.h"
+#include "domain/messaging/CallLifecycleTypes.h"
 #include "feature/calls/CallUiBackend.h"
 #include "gui/CallChromeSync.h"
 #include "gui/CallMetricsTracker.h"
@@ -504,13 +504,15 @@ void CallController::RefreshPendingRing() {
   }
   // The peer ended a call we were in (also a failed one — failed is not closed): the panel is
   // about to go, so say why instead of letting the call silently vanish.
-  if (auto ended = backend->TakeRemoteEndedCallId(); ended) {
+  if (auto ended = backend->TakeRemoteEnd(); ended) {
     std::string name;
-    if (auto peer = backend->PeerIdentityForCall(*ended); peer && peer->has_value()) {
+    if (auto peer = backend->PeerIdentityForCall(ended->call_id); peer && peer->has_value()) {
       name = DisplayNameForIdentity(**peer);
     }
-    UserFeedback::Ok(name.empty() ? Tr("call.status.ended_by_peer_unknown")
-                                  : Tr("call.status.ended_by_peer", {{"name", name}}));
+    const char* named = ended->declined ? "call.status.declined_by_peer" : "call.status.ended_by_peer";
+    const char* unknown =
+        ended->declined ? "call.status.declined_by_peer_unknown" : "call.status.ended_by_peer_unknown";
+    UserFeedback::Ok(name.empty() ? Tr(unknown) : Tr(named, {{"name", name}}));
   }
 
   // Attach-wait / connect health are SM-owned timers (V039 pm3) — do not poll on UI tick.
@@ -551,8 +553,6 @@ void CallController::RefreshPendingRing() {
       // Fall through to in-call rendering below.
     } else {
       ringing_call_id_ = (*top)->call_id;
-      last_ring_call_id_ = ringing_call_id_;
-      backend->NoteRingCallId(ringing_call_id_);
       if (backend->Phase() == CallPhase::Idle) {
         backend->Apply(CallLifecycleEvent::InviteSeen, ringing_call_id_);
       }
@@ -685,7 +685,7 @@ void CallController::RefreshPendingRing() {
       if ((*active)->state == CallSessionState::Active && !backend->Media().IsActive() &&
           !backend->MediaAttemptedThisProcess((*active)->call_id) && !backend->IsAwaitingSfuRecovery()) {
         // True orphan after force-quit / process restart.
-        backend->LeaveCall((*active)->call_id);
+        backend->LeaveCall((*active)->call_id, LiveCallEndReason::Orphaned);
       }
       active_call_id_.clear();
       ClearInCall();
@@ -1096,9 +1096,6 @@ void CallController::AcceptIncomingImpl(const bool voice_only) {
     call_id = ring_.call_id.c_str();
   }
   if (call_id.empty()) {
-    call_id = last_ring_call_id_;
-  }
-  if (call_id.empty()) {
     call_id = backend->LastRingCallId();
   }
   if (call_id.empty()) {
@@ -1141,9 +1138,6 @@ void CallController::AcceptIncomingWithCharge() {
   std::string call_id = ringing_call_id_;
   if (call_id.empty()) {
     call_id = ring_.call_id.c_str();
-  }
-  if (call_id.empty()) {
-    call_id = last_ring_call_id_;
   }
   if (call_id.empty()) {
     call_id = backend->LastRingCallId();

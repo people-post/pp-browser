@@ -1,17 +1,15 @@
 #include "feature/calls/CallSessionManager.h"
+#include "feature/calls/CallControlClient.h"
 #include "feature/calls/CallsThread.h"
-#include "feature/calls/CallMediaPaths.h"
 #include "domain/messaging/CallListenAddrsLogic.h"
 #include "domain/messaging/CallAnswererKickLogic.h"
 #include "domain/messaging/CallMediaPlannerSelectLogic.h"
 
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/crypto/SessionKeyDeriver.h"
 #include "domain/media/CallMediaAdaptation.h"
 #include "domain/messaging/CallSessionLogic.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/people/DirectChatTargetFromContact.h"
-#include "domain/messaging/InitiationPricing.h"
 #include "domain/messaging/PairwiseFanoutLogic.h"
 #include "domain/messaging/CallControlThreadLogic.h"
 #include "domain/messaging/PeerCapsLogic.h"
@@ -70,20 +68,41 @@ void NoteCapsForIdentity(CallSessionManager& sessions, ContactsStore& contacts,
 CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                        CallSessionStore& sessions, CallMediaKeyStore& media_keys,
                                        CallDeliveryPorts delivery, IPskSessionStore& psk_store, CallMediaEngine& media)
-    : store_(store), contacts_(contacts), identity_(identity), sessions_(sessions), media_keys_(media_keys),
-      delivery_(std::move(delivery)), psk_store_(psk_store), media_(media),
+    : contacts_(contacts), sessions_(sessions), media_keys_(media_keys),
+      delivery_(std::move(delivery)), media_(media),
       topology_(sessions, contacts, media),
-      workflow_(store, identity, sessions, media_keys) {
+      control_(store, contacts, identity, sessions, psk_store, delivery_,
+               [this]() -> std::optional<std::string> {
+                 auto active = ActiveLocalCall();
+                 if (active && *active && (*active)->origin_thread_id) {
+                   return *(*active)->origin_thread_id;
+                 }
+                 return std::nullopt;
+               }),
+      key_exchange_(sessions, media_keys, control_), billing_(identity), reach_signals_(control_),
+      workflow_(store, sessions, key_exchange_, billing_, live_calls_), peer_accounts_(contacts) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);
+  key_exchange_.SetOnKeyReady([this](const std::string& call_id) {
+    const auto direct_media = direct_media_.Get();
+    if (direct_media->on_media_key_ready) {
+      direct_media->on_media_key_ready(call_id);
+    }
+  });
+  live_calls_.BindMediaResources(&media_, nullptr);
+  live_calls_.BindHopDriver(&topology_);
+  live_calls_.SetOnChanged([this]() { NotifyCallStateChanged(); });
+  topology_.SetHopArmingPorts(MakeHopArmingPorts());
   BindTopologyHostPorts();
   BindWorkflowHostPorts();
+  BindReachSignalPorts();
 }
 
 void CallSessionManager::BindTopologyHostPorts() {
   CallTopologyController::HostPorts ports;
   ports.local_relay_identity = [this]() { return TopologyLocalIdentity(); };
   ports.leave_call = [this](const std::string& call_id) { return TopologyLeaveCall(call_id); };
+  ports.call_media = [this](const std::string& call_id) { return live_calls_.Media(call_id); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
                                 const std::string& display, const std::string& skip) {
     return TopologyFanOutToJoined(call_id, type, detail, display, skip);
@@ -97,174 +116,360 @@ void CallSessionManager::BindTopologyHostPorts() {
   ports.set_media_activity = [this](std::string message) { TopologySetMediaActivity(std::move(message)); };
   ports.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
   ports.note_media_attempted = [this](const std::string& call_id) { TopologyNoteMediaAttempted(call_id); };
-  ports.bind_media_call_id = [this](const std::string& call_id) { TopologyBindMediaCallId(call_id); };
   ports.clear_media_peer_identity = [this]() { TopologyClearMediaPeerIdentity(); };
-  ports.release_direct_media = [this]() { TopologyReleaseDirectMedia(); };
   ports.request_inbox_sync = [this]() { TopologyRequestInboxSync(); };
   topology_.SetHostPorts(std::move(ports));
 }
 
 void CallSessionManager::BindWorkflowHostPorts() {
   CallSessionWorkflow::HostPorts ports;
-  ports.wire.local_relay_identity = [this]() { return LocalRelayIdentity(); };
-  ports.wire.notify_ring_changed = [this]() { NotifyRingChanged(); };
-  ports.wire.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
-                             const std::string& display) {
-    return SendCallDirectMessage(peer, type, detail, display);
-  };
-  ports.wire.ensure_control_thread = [this](const std::string& peer) { return EnsureCallControlThread(peer); };
-  ports.wire.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
-                                const std::string& display, const std::string& skip) {
-    return FanOutToJoined(call_id, type, detail, display, skip);
-  };
-  ports.wire.fan_out_joined_and_ringing = [this](const std::string& call_id, CallControlType type,
-                                            const std::string& detail, const std::string& display,
-                                            const std::string& skip) {
-    return FanOutToJoinedAndRinging(call_id, type, detail, display, skip);
-  };
-  ports.wire.append_origin_history = [this](const std::string& thread_id, CallControlType type,
-                                       const std::string& text, const std::string& detail) {
-    return AppendOriginHistory(thread_id, type, text, detail);
-  };
-  ports.wire.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
-  ports.duplex.stop_media_if_call = [this](const std::string& call_id) { StopMediaIfCall(call_id); };
+  ports.wire = MakeWorkflowWirePorts();
   ports.duplex.schedule_start_direct = [this](const std::string& call_id, const std::string& peer, bool offerer) {
     ScheduleStartDirectMedia(call_id, peer, offerer);
   };
-  ports.duplex.on_media_key_ready = [this](const std::string& call_id) {
-    const auto direct_media = direct_media_.Get();
-    if (direct_media->on_media_key_ready) {
-      direct_media->on_media_key_ready(call_id);
-    }
+  ports.hop = MakeWorkflowHopPorts();
+  ports.reach = MakeWorkflowReachPorts();
+  workflow_.SetHostPorts(std::move(ports));
+}
+
+CallSessionWorkflow::WirePorts CallSessionManager::MakeWorkflowWirePorts() {
+  CallSessionWorkflow::WirePorts ports;
+  ports.local_relay_identity = [this]() { return control_.LocalRelayIdentity(); };
+  ports.notify_ring_changed = [this]() { NotifyRingChanged(); };
+  ports.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
+                             const std::string& display) {
+    return control_.SendDirect(peer, type, detail, display);
   };
-  ports.duplex.media_is_active = [this]() { return media_.IsActive(); };
-  ports.duplex.media_is_sfu_mode = [this]() { return media_.IsSfuMode(); };
-  ports.duplex.media_active_call_id = [this]() { return media_.ActiveCallId(); };
-  ports.duplex.media_request_keyframe = [this]() { media_.RequestVideoKeyframe(); };
-  ports.duplex.media_stop = [this]() { media_.Stop(); };
-  ports.hop.on_local_accept_joined = [this](const std::string& call_id, size_t n,
-                                        const std::optional<std::string>& hint) {
-    return topology_.OnLocalAcceptJoined(call_id, n, hint);
+  ports.ensure_control_thread = [this](const std::string& peer) { return control_.EnsureCallControlThread(peer); };
+  ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
+                                const std::string& display, const std::string& skip) {
+    return control_.FanOutToJoined(call_id, type, detail, display, skip);
   };
-  ports.hop.on_remote_accept_joined = [this](const std::string& call_id, size_t n, const std::string& peer) {
-    return topology_.OnRemoteAcceptJoined(call_id, n, peer);
+  ports.fan_out_joined_and_ringing = [this](const std::string& call_id, CallControlType type,
+                                            const std::string& detail, const std::string& display,
+                                            const std::string& skip) {
+    return control_.FanOutToJoinedAndRinging(call_id, type, detail, display, skip);
   };
-  ports.hop.on_joined_count_observed = [this](const std::string& call_id, size_t n) {
-    topology_.OnJoinedCountObserved(call_id, n);
+  ports.append_origin_history = [this](const std::string& thread_id, CallControlType type,
+                                       const std::string& text, const std::string& detail) {
+    return control_.AppendOriginHistory(thread_id, type, text, detail);
   };
-  ports.hop.plan_hop_for_invitees = [this](const std::vector<std::string>& invitees, const std::string& local) {
-    return topology_.PlanHopForInvitees(invitees, local);
-  };
-  ports.hop.probe_invite_hops = [this](const std::string& call_id) { topology_.ProbeInviteHops(call_id); };
-  ports.hop.hop_report_for_accept = [this](const std::string& call_id) {
-    return topology_.HopReportForAccept(call_id);
-  };
-  ports.hop.note_accept_hop_report = [this](const std::string& call_id, const std::string& identity,
-                                            const CallHopReport& report) {
-    topology_.NoteAcceptHopReport(call_id, identity, report);
-  };
-  ports.hop.clear_sfu_attach_wait = [this]() { topology_.ClearSfuAttachWait(); };
-  ports.hop.on_inbound_sfu_attach = [this](const std::string& call_id, const CallSfuAttachDetail& d,
-                                           const std::string& sender) {
-    return topology_.OnInboundSfuAttach(call_id, d, sender);
-  };
-  ports.hop.on_inbound_sfu_attach_failed = [this](const CallSfuAttachFailedDetail& d) {
-    topology_.OnInboundSfuAttachFailed(d);
-  };
-  ports.hop.on_inbound_hop_refuse = [this](const CallHopRefuseDetail& d) { topology_.OnInboundHopRefuse(d); };
-  ports.hop.is_on_sfu_for_call = [this](const std::string& call_id) {
-    return topology_.IsOnSfuForCall(call_id);
-  };
-  ports.hop.has_media_relay_hop_candidates = [this]() {
-    return topology_.HasMediaRelayHopCandidates();
-  };
-  ports.wire.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
-  ports.wire.sync_inbox_from_wake = [this]() {
+  ports.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
+  ports.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
+  ports.sync_inbox_from_wake = [this]() {
     if (delivery_.sync_inbox_from_wake) {
       delivery_.sync_inbox_from_wake(true);
     }
   };
-  ports.chrome.note_direct_connecting = [this](const std::string& call_id) {
-    const auto lifecycle = lifecycle_ports_.Get();
-    if (lifecycle->set_direct_connecting) {
-      lifecycle->set_direct_connecting(call_id);
-    }
+  return ports;
+}
+
+CallSessionWorkflow::HopPathPorts CallSessionManager::MakeWorkflowHopPorts() {
+  CallSessionWorkflow::HopPathPorts ports;
+  ports.on_joined_count_observed = [this](const std::string& call_id, size_t n) {
+    topology_.OnJoinedCountObserved(call_id, n);
   };
-  ports.chrome.note_outbound_started = [this](const std::string& call_id) {
-    const auto lifecycle = lifecycle_ports_.Get();
-    if (lifecycle->apply_outbound_started) {
-      lifecycle->apply_outbound_started(call_id);
-    }
+  ports.plan_hop_for_invitees = [this](const std::vector<std::string>& invitees, const std::string& local) {
+    return topology_.HopPlanning().Plan(invitees, local);
   };
-  ports.chrome.accepting_call_id = [this]() {
-    const auto lifecycle = lifecycle_ports_.Get();
-    return lifecycle->accepting_call_id ? lifecycle->accepting_call_id() : std::string{};
+  ports.probe_invite_hops = [this](const std::string& call_id) { topology_.HopPlanning().ProbeInvite(call_id); };
+  ports.hop_report_for_accept = [this](const std::string& call_id) {
+    return topology_.HopPlanning().ReportForAccept(call_id);
   };
-  ports.chrome.active_call_id = [this]() {
-    const auto lifecycle = lifecycle_ports_.Get();
-    return lifecycle->active_call_id ? lifecycle->active_call_id() : std::string{};
+  ports.note_accept_hop_report = [this](const std::string& call_id, const std::string& identity,
+                                            const CallHopReport& report) {
+    topology_.HopPlanning().NoteAcceptReport(call_id, identity, report);
   };
-  ports.chrome.apply_remote_ended = [this](const std::string& call_id) {
-    const auto lifecycle = lifecycle_ports_.Get();
-    if (lifecycle->apply_remote_ended) {
-      lifecycle->apply_remote_ended(call_id);
-    }
+  ports.clear_sfu_attach_wait = [this]() { topology_.ClearSfuAttachWait(); };
+  ports.on_inbound_sfu_attach = [this](const std::string& call_id, const CallSfuAttachDetail& d,
+                                           const std::string& sender) {
+    return topology_.OnInboundSfuAttach(call_id, d, sender);
   };
-  ports.chrome.is_outbound_calling = [this]() {
-    const auto lifecycle = lifecycle_ports_.Get();
-    return lifecycle->is_outbound_calling && lifecycle->is_outbound_calling();
+  ports.on_inbound_sfu_attach_failed = [this](const CallSfuAttachFailedDetail& d) {
+    topology_.OnInboundSfuAttachFailed(d);
   };
-  ports.reach.register_peer_listen = [this](const std::string& identity, const std::vector<std::string>& mas) {
+  ports.on_inbound_hop_refuse = [this](const CallHopRefuseDetail& d) { topology_.OnInboundHopRefuse(d); };
+  ports.is_on_sfu_for_call = [this](const std::string& call_id) {
+    return topology_.IsOnSfuForCall(call_id);
+  };
+  ports.has_media_relay_hop_candidates = [this]() {
+    return topology_.HopRanking().HasCandidates();
+  };
+  return ports;
+}
+
+CallSessionWorkflow::ReachPorts CallSessionManager::MakeWorkflowReachPorts() {
+  CallSessionWorkflow::ReachPorts ports;
+  ports.register_peer_listen = [this](const std::string& identity, const std::vector<std::string>& mas) {
     if (register_peer_listen_multiaddrs_) {
       register_peer_listen_multiaddrs_(identity, mas);
     }
   };
-  ports.reach.note_caps_for_identity = [this](const std::string& identity, const CallPeerCaps& caps,
+  ports.note_caps_for_identity = [this](const std::string& identity, const CallPeerCaps& caps,
                                         const std::vector<std::string>& listen) {
     NoteCapsForIdentity(*this, contacts_, identity, caps, listen);
   };
-  ports.reach.note_call_peer_caps = [this](const std::string& call_id, const CallPeerCaps& caps) {
+  ports.note_call_peer_caps = [this](const std::string& call_id, const CallPeerCaps& caps) {
     if (call_peer_caps_sink_) {
       call_peer_caps_sink_(call_id, caps);
     }
   };
-  ports.reach.prefetch_reach = [this](const std::string& identity) {
+  ports.prefetch_reach = [this](const std::string& identity) {
     PrefetchReachForIdentity(prefetch_reach_, identity);
   };
-  ports.reach.ensure_circuit_ready = [this]() {
+  ports.ensure_circuit_ready = [this]() {
     if (ensure_circuit_ready_) {
       ensure_circuit_ready_();
     }
   };
-  ports.reach.park_circuit = [this](int timeout_ms, std::function<void(bool)> done) {
+  ports.park_circuit = [this](int timeout_ms, std::function<void(bool)> done) {
     if (park_circuit_) {
       park_circuit_(timeout_ms, std::move(done));
     } else {
       done(false);
     }
   };
-  ports.reach.note_mesh_peer_id_for_relay = [this](const std::string& relay, const std::string& peer_id) {
+  ports.note_mesh_peer_id_for_relay = [this](const std::string& relay, const std::string& peer_id) {
     NoteMeshPeerIdForRelay(relay, peer_id);
   };
-  ports.reach.resolve_peer_session_key = [this](const std::string& peer) { return ResolvePeerSessionKey(peer); };
-  ports.reach.send_media_key = [this](const std::string& call_id, const std::string& peer, uint32_t epoch,
-                                const std::string& key_id, const ByteVector& key) {
-    return SendMediaKeyToPeer(call_id, peer, epoch, key_id, key);
-  };
-  ports.reach.local_listen_multiaddrs = [this]() -> std::vector<std::string> {
+  ports.local_listen_multiaddrs = [this]() -> std::vector<std::string> {
     return local_listen_multiaddrs_ ? local_listen_multiaddrs_() : std::vector<std::string>{};
   };
-  ports.reach.local_peer_caps = [this]() -> CallPeerCaps {
+  ports.local_peer_caps = [this]() -> CallPeerCaps {
     return local_peer_caps_ ? local_peer_caps_() : CallPeerCaps{};
   };
-  ports.reach.local_mesh_peer_id = [this]() -> std::string {
+  ports.local_mesh_peer_id = [this]() -> std::string {
     return local_mesh_peer_id_ ? local_mesh_peer_id_() : std::string{};
   };
-  workflow_.SetHostPorts(std::move(ports));
+  return ports;
+}
+
+void CallSessionManager::BindReachSignalPorts() {
+  CallReachSignals::CallPorts ports;
+  ports.active_call_id = [this]() -> std::optional<std::string> {
+    auto active = ActiveLocalCall();
+    if (!active || !active->has_value()) {
+      return std::nullopt;
+    }
+    return (*active)->call_id;
+  };
+  ports.call_peer = [this](const std::string& call_id) -> std::optional<std::string> {
+    auto peer = PeerIdentityForCall(call_id);
+    if (!peer || !peer->has_value()) {
+      return std::nullopt;
+    }
+    return **peer;
+  };
+  ports.local_identity = [this]() -> std::string {
+    auto local = P2pLocalIdentity();
+    return local ? *local : std::string{};
+  };
+  ports.local_caps = [this]() -> std::optional<CallPeerCaps> {
+    return local_peer_caps_ ? std::optional<CallPeerCaps>{local_peer_caps_()} : std::nullopt;
+  };
+  ports.local_listen_addrs = [this]() {
+    return local_listen_multiaddrs_ ? local_listen_multiaddrs_() : std::vector<std::string>{};
+  };
+  ports.local_peer_id = [this]() { return local_mesh_peer_id_ ? local_mesh_peer_id_() : std::string{}; };
+  ports.register_listen = [this](const std::string& key, const std::vector<std::string>& addrs) {
+    if (register_peer_listen_multiaddrs_) {
+      register_peer_listen_multiaddrs_(key, addrs);
+    }
+  };
+  ports.on_peer_caps = [this](const std::string& call_id, const CallPeerCaps& caps) {
+    if (call_peer_caps_sink_) {
+      call_peer_caps_sink_(call_id, caps);
+    }
+  };
+  reach_signals_.SetCallPorts(std::move(ports));
+}
+
+// --- UI intents (V037) ---------------------------------------------------------------------------
+
+void CallSessionManager::NotifyCallStateChanged() {
+  if (on_call_state_changed_) {
+    on_call_state_changed_();
+  }
+}
+
+std::string CallSessionManager::AcceptingCallId() const {
+  return !accept_in_flight_.empty() ? accept_in_flight_ : live_calls_.AcceptingCallId();
+}
+
+void CallSessionManager::Apply(const CallLifecycleEvent ev, const std::string& call_id) {
+  switch (ev) {
+  case CallLifecycleEvent::AcceptClicked:
+    ClickAccept(call_id);
+    return;
+  case CallLifecycleEvent::DeclineClicked:
+    ClickDecline(call_id);
+    return;
+  case CallLifecycleEvent::LeaveClicked:
+    ClickLeave(call_id);
+    return;
+  case CallLifecycleEvent::RetryClicked:
+    RestartMedia(call_id, false);
+    return;
+  case CallLifecycleEvent::PeerReconnected:
+    RestartMedia(call_id, true);
+    return;
+  case CallLifecycleEvent::OutboundStarted:
+    live_calls_.NoteOutboundStarted(call_id);
+    return;
+  case CallLifecycleEvent::MediaDeferred:
+    live_calls_.NoteMediaDeferred(call_id);
+    return;
+  case CallLifecycleEvent::MediaKeyReady:
+    live_calls_.NoteMediaKeyReady(call_id);
+    return;
+  case CallLifecycleEvent::DirectConnected:
+    live_calls_.NoteMediaConnected(call_id);
+    return;
+  case CallLifecycleEvent::ConnectFailedEvt:
+    live_calls_.NoteMediaFailed(call_id);
+    return;
+  case CallLifecycleEvent::InviteSeen:
+  case CallLifecycleEvent::InviteCleared:
+    // The ring is the LiveCall's: nothing to change, only to show.
+    NotifyCallStateChanged();
+    return;
+  }
+}
+
+void CallSessionManager::ClickAccept(const std::string& call_id_arg) {
+  std::string call_id = call_id_arg;
+  if (call_id.empty()) {
+    if (const LiveCall* ring = live_calls_.TheRing()) {
+      call_id = ring->Id();
+    }
+  }
+  if (call_id.empty()) {
+    log().info << "AcceptClicked ignored (no call_id)";
+    return;
+  }
+  if (AcceptingCallId() == call_id) {
+    log().info << "AcceptClicked already in flight call_id=" << call_id;
+    NotifyCallStateChanged();
+    return;
+  }
+  accept_in_flight_ = call_id;
+  NotifyCallStateChanged();
+  AppRuntime::ResumeBackgroundWork();  // relay-fallback sends run on workers
+  log().info << "AcceptInvite queued call_id=" << call_id;
+  AcceptInviteAsync(call_id, [this, call_id](Roe<void> accepted) { OnAcceptResult(call_id, accepted); });
+}
+
+void CallSessionManager::OnAcceptResult(const std::string& call_id, const Roe<void>& accepted) {
+  if (accept_in_flight_ == call_id) {
+    accept_in_flight_.clear();
+  }
+  if (!accepted) {
+    // The workflow put the call back to ringing (or it ended meanwhile).
+    log().warning << "AcceptInvite failed call_id=" << call_id << " err=" << accepted.error().message;
+    last_error_ = accepted.error().message;
+    NotifyCallStateChanged();
+    return;
+  }
+  const LiveCall* active = live_calls_.Active();
+  if (!active || active->Id() != call_id) {
+    // B-CONFLICT: another accept (or a leave) moved on while this one was on the wire.
+    log().info << "AcceptInvite result ignored stale call_id=" << call_id;
+    return;
+  }
+  log().info << "AcceptInvite ok call_id=" << call_id;
+  KickAnswererAfterAccept(call_id);
+  NotifyCallStateChanged();
+}
+
+void CallSessionManager::KickAnswererAfterAccept(const std::string& call_id) {
+  if (!live_calls_.AllowsDirectPath(call_id)) {
+    log().info << "AcceptSucceeded skip KickAnswerer StartSfu call_id=" << call_id
+               << " status=" << CallMediaStatusName(live_calls_.Status(call_id));
+    return;
+  }
+  log().info << "AcceptSucceeded KickAnswererDirectMedia StartSfu arm call_id=" << call_id;
+  KickAnswererDirectMediaIfArmed(call_id);
+  // Once more, posted: the first kick can land before the 1:1 start is armed.
+  CallsThread::Post(intents_self_.Bind([this, call_id]() {
+    const LiveCall* active = live_calls_.Active();
+    if (!active || active->Id() != call_id || !live_calls_.AllowsDirectPath(call_id)) {
+      return;
+    }
+    if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+      return;
+    }
+    log().info << "AcceptSucceeded retry KickAnswererDirectMedia StartSfu call_id=" << call_id;
+    KickAnswererDirectMediaIfArmed(call_id);
+  }));
+}
+
+void CallSessionManager::ClickDecline(const std::string& call_id_arg) {
+  std::string call_id = call_id_arg;
+  if (call_id.empty()) {
+    if (const LiveCall* ring = live_calls_.TheRing()) {
+      call_id = ring->Id();
+    }
+  }
+  if (call_id.empty()) {
+    log().info << "DeclineClicked ignored (no call_id)";
+    return;
+  }
+  if (auto declined = DeclineInvite(call_id); !declined) {
+    log().warning << "DeclineInvite failed call_id=" << call_id << " err=" << declined.error().message;
+    live_calls_.Close(call_id, LiveCallEndReason::Declined);  // the ring goes either way
+  }
+  NotifyCallStateChanged();
+}
+
+void CallSessionManager::ClickLeave(const std::string& call_id_arg) {
+  std::string call_id = call_id_arg;
+  if (call_id.empty()) {
+    if (const LiveCall* shown = live_calls_.Shown()) {
+      call_id = shown->Id();
+    }
+  }
+  if (call_id.empty()) {
+    log().info << "LeaveClicked ignored (no call_id)";
+    return;
+  }
+  if (auto left = LeaveCall(call_id); !left) {
+    log().warning << "LeaveCall failed call_id=" << call_id << " err=" << left.error().message;
+    live_calls_.Close(call_id, LiveCallEndReason::LocalLeave);  // the call leaves the screen either way
+  }
+  NotifyCallStateChanged();
+}
+
+void CallSessionManager::RestartMedia(const std::string& call_id_arg, const bool resume) {
+  const char* what = resume ? "PeerReconnected" : "RetryClicked";
+  const LiveCall* active = live_calls_.Active();
+  const std::string call_id = call_id_arg.empty() && active ? active->Id() : call_id_arg;
+  const LiveCall* call = live_calls_.Find(call_id);
+  // Only a failed, still-open call restarts; a resume only for the call this device is in.
+  if (!call || call->Phase() != CallPhase::ConnectFailed || (resume && (!active || active->Id() != call_id))) {
+    log().info << what << " ignored (call not failed-open) call_id=" << call_id;
+    return;
+  }
+  // Re-arm Direct before the restart → BeginSession (Failed blocks AllowsDirectPath).
+  live_calls_.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, what);
+  // Posted, on the calls owner: the restart runs the engine and the bridge's connect sequence.
+  CallsThread::Post(intents_self_.Bind([this, call_id, resume, what]() {
+    const Roe<void> restarted = resume ? ResumeP2pMedia(call_id) : RetryP2pMedia(call_id);
+    if (!restarted) {
+      log().warning << what << " media restart failed call_id=" << call_id << " err=" << restarted.error().message;
+      // Back to Failed only while the call is still open and not live again (a duplicate restart
+      // whose call already resumed must not knock it down — PR #239 review).
+      const LiveCall* again = live_calls_.Find(call_id);
+      if (again && again->IsOpen() && !again->MediaProgress().reached_live) {
+        live_calls_.NoteMediaFailed(call_id);
+      }
+      return;
+    }
+    NotifyCallStateChanged();
+  }));
 }
 
 void CallSessionManager::SetInitiationBillingStore(InitiationBillingStore* store) {
-  workflow_.SetInitiationBillingStore(store);
+  billing_.SetStore(store);
 }
 
 void CallSessionManager::SetMediaRelayDeps(MediaRelayDeps deps) {
@@ -277,12 +482,32 @@ void CallSessionManager::SetDirectMediaPorts(CallDirectMediaPorts ports) {
   direct_media_.Set(std::move(ports));
 }
 
-void CallSessionManager::SetLifecyclePorts(CallSessionLifecyclePorts ports) {
-  lifecycle_ports_.Set(std::move(ports));
+CallHopArmingPorts CallSessionManager::MakeHopArmingPorts() {
+  CallHopArmingPorts ports;
+  ports.hop_ops_allowed = [this]() { return live_calls_.AllowsHopPath(); };
+  ports.soft_migrate_may_arm = [this]() { return live_calls_.SoftMigrateMayArm(); };
+  ports.media_cancel_gen = [this]() { return live_calls_.MediaCancelGen(); };
+  ports.report_progress = [this](CallHopPlannerPhase phase, const std::string& call_id) {
+    live_calls_.ReportHopProgress(call_id, phase);
+  };
+  ports.arming_debug_name = [this]() { return CallMediaStatusName(live_calls_.Status()); };
+  return ports;
 }
 
-void CallSessionManager::SetTopologyHopArmingPorts(CallHopArmingPorts ports) {
-  topology_.SetHopArmingPorts(std::move(ports));
+CallDirectArmingPorts CallSessionManager::DirectArmingPorts() {
+  CallDirectArmingPorts ports;
+  ports.direct_ops_allowed = [this]() { return live_calls_.AllowsDirectPath(); };
+  ports.request_direct_arming = [this](const std::string& call_id) { live_calls_.RequestDirectArming(call_id); };
+  ports.report_progress = [this](CallDirectPlannerPhase phase, const std::string& call_id) {
+    live_calls_.ReportDirectProgress(call_id, phase);
+  };
+  ports.on_connected = [this](const std::string& call_id) { live_calls_.NoteMediaConnected(call_id); };
+  ports.on_connect_failed = [this](const std::string& call_id) { live_calls_.NoteMediaFailed(call_id); };
+  ports.on_peer_reconnected = [this](const std::string& call_id) { RestartMedia(call_id, true); };
+  ports.on_media_deferred = [this](const std::string& call_id) { live_calls_.NoteMediaDeferred(call_id); };
+  ports.on_media_key_ready = [this](const std::string& call_id) { live_calls_.NoteMediaKeyReady(call_id); };
+  ports.arming_debug_name = [this]() { return CallMediaStatusName(live_calls_.Status()); };
+  return ports;
 }
 
 void CallSessionManager::SetMediaSeatPorts(CallMediaSeatPorts ports) {
@@ -299,17 +524,6 @@ CallMediaSeatPorts CallSessionManager::MakeSeatPorts(CallMediaSeat* seat) {
     return ports;
   }
   ports.release = [seat](const std::string& call_id) { seat->Release(call_id); };
-  ports.bind_hop_for_attach = [seat](const std::string& call_id) {
-    if (call_id.empty()) {
-      return;
-    }
-    CallHopPath::Ops ops;
-    ops.acquire = [seat](const std::string& cid) { return seat->Acquire(cid); };
-    ops.allows_path_op = [seat](const CallMediaSeat::Token& token) {
-      return seat->AllowsPathOp(token);
-    };
-    (void)CallHopPath(std::move(ops)).BindForAttach(call_id);
-  };
   return ports;
 }
 
@@ -319,32 +533,27 @@ void CallSessionManager::TopologyOnMediaStoppedForSeat(const std::string& call_i
 
 void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity,
                                                   bool offerer) {
-  const auto lifecycle = lifecycle_ports_.Get();
-  const auto direct_media = direct_media_.Get();
-  const bool allows =
-      !lifecycle->allows_direct_path || lifecycle->allows_direct_path();
-  if (!allows) {
+  if (!live_calls_.AllowsDirectPath(call_id)) {
     log().info << "ScheduleStartDirectMedia skipped (Status disallows Bridge) call_id=" << call_id
-               << " status="
-               << (lifecycle->status_name ? lifecycle->status_name() : "?")
-               << " armed="
-               << (lifecycle->armed_planner_name ? lifecycle->armed_planner_name() : "?");
+               << " status=" << CallMediaStatusName(live_calls_.Status(call_id))
+               << " armed=" << CallArmedPlannerName(live_calls_.ArmedPlanner(call_id));
     return;
   }
-  if (!direct_media->schedule_start) {
-    log().error << "ScheduleStartDirectMedia: mesh media bridge not configured call_id=" << call_id;
-    last_media_error_ = "Call media unavailable";
-    NotifyRingChanged();
-    return;
-  }
-  // V036 Phase 3: CSM is signaling-only for duplex start — Direct path façade owns Acquire+Schedule.
+  // CSM is signaling-only for duplex start — the call's media coordinator takes the seat and has the
+  // direct driver connect.
   log().info << "ScheduleStartDirectMedia libp2p role=" << (offerer ? "offerer" : "answerer")
                 << " call_id=" << call_id << " peer=" << peer_identity;
-  direct_media->schedule_start(call_id, peer_identity, offerer);
+  CallMediaCoordinator* call_media = live_calls_.Media(call_id);
+  if (auto begun = call_media ? call_media->BeginDirect(peer_identity, offerer)
+                              : Roe<void>(Error("no live call for media"));
+      !begun) {
+    log().error << "ScheduleStartDirectMedia: " << begun.error().message << " call_id=" << call_id;
+    last_media_error_ = "Call media unavailable";
+    NotifyRingChanged();
+  }
 }
 
 void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_id) {
-  const auto lifecycle = lifecycle_ports_.Get();
   if (call_id.empty()) {
     log().info << "KickAnswererDirectMediaIfArmed skip (empty call_id)";
     return;
@@ -357,16 +566,14 @@ void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_
     }
   }
   CallAnswererKickDecisionInput in;
-  in.allows_direct_path =
-      !lifecycle->allows_direct_path || lifecycle->allows_direct_path();
+  in.allows_direct_path = live_calls_.AllowsDirectPath(call_id);
   // IsActive alone — do not require tx/connected (capture lags StartSfu; dogfood e157 thrash).
   in.media_already_active_same_call = media_.IsActive() && media_.ActiveCallId() == call_id;
   in.peer_nonempty = !peer.empty();
   if (!ShouldKickAnswererDirectMedia(in)) {
     if (!in.allows_direct_path) {
       log().info << "KickAnswererDirectMediaIfArmed skip (Status disallows Bridge) call_id=" << call_id
-                 << " status="
-                 << (lifecycle->status_name ? lifecycle->status_name() : "?");
+                 << " status=" << CallMediaStatusName(live_calls_.Status(call_id));
     } else if (in.media_already_active_same_call) {
       log().info << "KickAnswererDirectMediaIfArmed skip (media already active) call_id=" << call_id;
     } else {
@@ -404,15 +611,16 @@ CallMediaEngine& CallSessionManager::Media() {
 }
 
 Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
-  const std::string call_id = media_.ActiveCallId();
-  if (call_id.empty()) {
+  const std::string call_id = live_calls_.MediaRunningCallId();
+  CallMediaCoordinator* call_media = call_id.empty() ? nullptr : live_calls_.Media(call_id);
+  if (!call_media) {
     return Error("No active call media");
   }
-  media_.SetMuted(muted);
+  call_media->SetMuted(muted);
   auto participant = sessions_.FindParticipant(call_id, *local);
   if (participant && participant->has_value()) {
     (*participant)->media.audio_muted = muted;
@@ -422,7 +630,7 @@ Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
   if (roster) {
     auto roster_json = CallControlCodec::EncodeRoster(*roster);
     if (roster_json) {
-      (void)FanOutToJoined(call_id, CallControlType::CallRoster, *roster_json, "Call roster", *local);
+      (void)control_.FanOutToJoined(call_id, CallControlType::CallRoster, *roster_json, "Call roster", *local);
     }
   }
   NotifyRingChanged();
@@ -430,12 +638,13 @@ Roe<void> CallSessionManager::SetLocalAudioMuted(bool muted) {
 }
 
 Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int display_rotation_degrees) {
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
-  const std::string call_id = media_.ActiveCallId();
-  if (call_id.empty()) {
+  const std::string call_id = live_calls_.MediaRunningCallId();
+  CallMediaCoordinator* call_media = call_id.empty() ? nullptr : live_calls_.Media(call_id);
+  if (!call_media) {
     return Error("No active call media");
   }
   if (enabled) {
@@ -444,24 +653,19 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
       return Error("Video is not allowed for this call");
     }
   }
-  topology_.RefreshAdaptation(call_id, enabled);
-  if (enabled) {
-    if (auto cam = media_.SetCameraEnabled(true, display_rotation_degrees); !cam) {
-      return cam.error();
-    }
-  } else {
-    (void)media_.SetCameraEnabled(false, 0);
+  if (auto cam = call_media->SetCamera(enabled, display_rotation_degrees); !cam) {
+    return cam.error();
   }
   auto participant = sessions_.FindParticipant(call_id, *local);
   if (participant && participant->has_value()) {
-    (*participant)->media.video_enabled = enabled && media_.IsCameraEnabled();
+    (*participant)->media.video_enabled = enabled && call_media->CameraOn();
     (void)sessions_.UpsertParticipant(**participant);
   }
   auto roster = BuildRosterDetail(call_id);
   if (roster) {
     auto roster_json = CallControlCodec::EncodeRoster(*roster);
     if (roster_json) {
-      (void)FanOutToJoined(call_id, CallControlType::CallRoster, *roster_json, "Call roster", *local);
+      (void)control_.FanOutToJoined(call_id, CallControlType::CallRoster, *roster_json, "Call roster", *local);
     }
   }
   NotifyRingChanged();
@@ -470,7 +674,7 @@ Roe<void> CallSessionManager::SetLocalVideoEnabled(bool enabled, const int displ
 
 Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id,
                                                  const std::string& publisher_identity) {
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
@@ -478,7 +682,9 @@ Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id,
     return Error("No active call");
   }
   if (publisher_identity.empty() || publisher_identity == *local) {
-    media_.RequestVideoKeyframe();
+    if (CallMediaCoordinator* call_media = live_calls_.Media(call_id)) {
+      call_media->RequestKeyframe();
+    }
     return {};
   }
   CallVideoRefreshDetail detail;
@@ -488,7 +694,7 @@ Roe<void> CallSessionManager::RequestVideoRefresh(const std::string& call_id,
   if (!encoded) {
     return encoded.error();
   }
-  return SendCallDirectMessage(publisher_identity, CallControlType::CallVideoRefresh, *encoded, "");
+  return control_.SendDirect(publisher_identity, CallControlType::CallVideoRefresh, *encoded, "");
 }
 
 void CallSessionManager::ClearLastMediaErrorIf(const std::string& seen) {
@@ -523,131 +729,6 @@ void CallSessionManager::SetParkCircuit(ParkCircuitFn park) {
   park_circuit_ = std::move(park);
 }
 
-void CallSessionManager::SetPreferLateReserve(PreferLateReserveFn callback) {
-  prefer_late_reserve_ = std::move(callback);
-}
-
-void CallSessionManager::AnnounceCircuitR1(const std::string& circuit_r1_peer_id) {
-  if (circuit_r1_peer_id.empty()) {
-    return;
-  }
-  auto active = ActiveLocalCall();
-  if (!active || !active->has_value()) {
-    pending_circuit_r1_announce_ = circuit_r1_peer_id;
-    log().debug << "AnnounceCircuitR1 pending (no active call) r1=" << circuit_r1_peer_id;
-    return;
-  }
-  const std::string call_id = (*active)->call_id;
-  auto peer = P2pPeerIdentityForCall(call_id);
-  if (!peer || !peer->has_value() || (*peer)->empty()) {
-    pending_circuit_r1_announce_ = circuit_r1_peer_id;
-    log().debug << "AnnounceCircuitR1 pending (no peer) call_id=" << call_id
-                << " r1=" << circuit_r1_peer_id;
-    return;
-  }
-  CallCircuitR1Detail detail;
-  detail.call_id = call_id;
-  detail.circuit_r1 = circuit_r1_peer_id;
-  auto encoded = CallControlCodec::EncodeCircuitR1(detail);
-  if (!encoded) {
-    log().warning << "AnnounceCircuitR1 encode failed call_id=" << call_id
-                  << " err=" << encoded.error().message;
-    return;
-  }
-  if (auto sent = SendCallDirectMessage(**peer, CallControlType::CallCircuitR1, *encoded, ""); !sent) {
-    log().warning << "AnnounceCircuitR1 send failed call_id=" << call_id << " peer=" << **peer
-                  << " err=" << sent.error().message;
-    return;
-  }
-  pending_circuit_r1_announce_.clear();
-  log().info << "AnnounceCircuitR1 sent call_id=" << call_id << " peer=" << **peer
-             << " r1=" << circuit_r1_peer_id;
-}
-
-void CallSessionManager::FlushPendingCircuitR1Announce() {
-  if (pending_circuit_r1_announce_.empty()) {
-    return;
-  }
-  const std::string r1 = pending_circuit_r1_announce_;
-  AnnounceCircuitR1(r1);
-}
-
-void CallSessionManager::SetSignalingPunchBurst(SignalingPunchBurstFn callback) {
-  signaling_punch_burst_ = std::move(callback);
-}
-
-void CallSessionManager::SetLocalPunchAddrsProvider(LocalPunchAddrsFn callback) {
-  local_punch_addrs_ = std::move(callback);
-}
-
-void CallSessionManager::CompletePendingSignalingPunch(const std::string& epoch_id, Roe<void> result) {
-  if (!pending_signaling_punch_ || pending_signaling_punch_->epoch_id != epoch_id) {
-    return;
-  }
-  auto on_done = std::move(pending_signaling_punch_->on_done);
-  pending_signaling_punch_.reset();
-  if (on_done) {
-    on_done(std::move(result));
-  }
-}
-
-void CallSessionManager::RequestSignalingPunch(const std::string& target_peer_id,
-                                               const std::vector<std::string>& my_addrs,
-                                               std::function<void(Roe<void>)> on_done) {
-  if (!on_done) {
-    return;
-  }
-  if (my_addrs.empty()) {
-    on_done(Error("signaling punch: no local candidates"));
-    return;
-  }
-  auto active = ActiveLocalCall();
-  if (!active || !active->has_value()) {
-    on_done(Error("signaling punch: no active call"));
-    return;
-  }
-  const std::string call_id = (*active)->call_id;
-  auto peer = P2pPeerIdentityForCall(call_id);
-  if (!peer || !peer->has_value() || (*peer)->empty()) {
-    on_done(Error("signaling punch: no call peer"));
-    return;
-  }
-  if (pending_signaling_punch_) {
-    CompletePendingSignalingPunch(pending_signaling_punch_->epoch_id,
-                                  Error("signaling punch: superseded"));
-  }
-  CallPunchDetail detail;
-  detail.call_id = call_id;
-  detail.epoch_id = util::GenerateUuid();
-  detail.window_ms = 2000;
-  detail.addrs = my_addrs;
-  if (local_mesh_peer_id_) {
-    detail.peer_id = local_mesh_peer_id_();
-  }
-  if (detail.peer_id.empty()) {
-    detail.peer_id = target_peer_id;
-  }
-  auto encoded = CallControlCodec::EncodePunch(detail);
-  if (!encoded) {
-    on_done(encoded.error());
-    return;
-  }
-  PendingSignalingPunch pending;
-  pending.epoch_id = detail.epoch_id;
-  pending.call_id = call_id;
-  pending.peer_identity = **peer;
-  pending.on_done = std::move(on_done);
-  pending_signaling_punch_ = std::move(pending);
-  if (auto sent =
-          SendCallDirectMessage(**peer, CallControlType::CallPunchOffer, *encoded, "");
-      !sent) {
-    CompletePendingSignalingPunch(detail.epoch_id, sent.error());
-    return;
-  }
-  log().info << "CallPunchOffer sent call_id=" << call_id << " peer=" << **peer
-             << " epoch=" << detail.epoch_id << " addrs=" << detail.addrs.size();
-}
-
 void CallSessionManager::SetLocalListenMultiaddrsProvider(LocalListenMultiaddrsFn callback) {
   local_listen_multiaddrs_ = std::move(callback);
 }
@@ -658,50 +739,6 @@ void CallSessionManager::SetLocalPeerCapsProvider(LocalPeerCapsFn callback) {
 
 void CallSessionManager::SetCallPeerCapsSink(CallPeerCapsSink sink) { call_peer_caps_sink_ = std::move(sink); }
 
-void CallSessionManager::AnnounceCapsUpdate() {
-  auto active = ActiveLocalCall();
-  if (!active || !active->has_value() || !local_peer_caps_) {
-    return;
-  }
-  const std::string call_id = (*active)->call_id;
-  auto peer = P2pPeerIdentityForCall(call_id);
-  if (!peer || !peer->has_value() || (*peer)->empty()) {
-    return;
-  }
-  CallCapsUpdateDetail detail;
-  detail.call_id = call_id;
-  if (auto local = P2pLocalIdentity()) {
-    detail.identity = *local;
-  }
-  detail.caps = local_peer_caps_();
-  auto encoded = CallControlCodec::EncodeCapsUpdate(detail);
-  if (!encoded) {
-    return;
-  }
-  if (auto sent = SendCallDirectMessage(**peer, CallControlType::CallCapsUpdate, *encoded, ""); !sent) {
-    log().warning << "caps update send failed call_id=" << call_id << " err=" << sent.error().message;
-    return;
-  }
-  log().info << "caps update sent call_id=" << call_id << " mobility=" << MobilityClassWire(detail.caps.mobility);
-}
-
-Roe<void> CallSessionManager::HandleInboundCapsUpdate(const std::string& detail_json) {
-  auto decoded = CallControlCodec::DecodeCapsUpdate(detail_json);
-  if (!decoded) {
-    return decoded.error();
-  }
-  auto active = ActiveLocalCall();
-  if (!active || !active->has_value() || (*active)->call_id != decoded->call_id) {
-    return {};  // not our live call: nothing to re-plan
-  }
-  log().info << "caps update inbound call_id=" << decoded->call_id
-             << " mobility=" << MobilityClassWire(decoded->caps.mobility);
-  if (call_peer_caps_sink_) {
-    call_peer_caps_sink_(decoded->call_id, decoded->caps);
-  }
-  return {};
-}
-
 void CallSessionManager::SetLocalMeshPeerIdProvider(LocalMeshPeerIdFn callback) {
   local_mesh_peer_id_ = std::move(callback);
 }
@@ -711,79 +748,30 @@ void CallSessionManager::SetRegisterPeerListenMultiaddrs(RegisterPeerListenMulti
 }
 
 void CallSessionManager::NotePeerMediaRelayCap(const std::string& peer_id, bool media_relay) {
-  if (peer_id.empty()) {
-    return;
-  }
-  const bool was = PeerHasMediaRelayCap(peer_id);
-  peer_media_relay_caps_[peer_id] = media_relay;
   // Topology owns SoftMigrate nudge (N≥3 / attach-wait only — V038).
-  if (media_relay && !was) {
+  if (media_relay_caps_.Note(peer_id, media_relay)) {
     if (auto active = ActiveLocalCall(); active && active->has_value()) {
       topology_.OnPeerMediaRelayCapLearned((*active)->call_id, peer_id);
     }
   }
 }
 
-void CallSessionManager::NoteMeshPeerIdForRelay(const std::string& relay_identity,
-                                                  const std::string& peer_id) {
-  const auto direct_media = direct_media_.Get();
-  if (relay_identity.empty() || peer_id.empty() || !IsAccountIdentityValue(relay_identity)) {
+void CallSessionManager::NoteMeshPeerIdForRelay(const std::string& relay_identity, const std::string& peer_id) {
+  if (!peer_accounts_.Learn(relay_identity, peer_id)) {
     return;
   }
-  peer_id_to_relay_[peer_id] = relay_identity;
+  const auto direct_media = direct_media_.Get();
   if (direct_media->note_peer_id_relay_mapping) {
     direct_media->note_peer_id_relay_mapping(peer_id, relay_identity);
   }
-  auto found = contacts_.FindByIdentity(relay_identity, ContactIdKind::Account);
-  if (!found || !found->has_value()) {
-    // Non-contact call participants: in-memory map + bridge rebind is enough.
-    log().info << "NoteMeshPeerIdForRelay map-only (no contact) peer_id=" << peer_id
-               << " account=" << relay_identity;
-    return;
-  }
-  Contact contact = **found;
-  if (PeerIdFromContact(contact) == peer_id) {
-    return;
-  }
-  bool has_peer = false;
-  for (const ContactId& id : contact.ids) {
-    if (id.kind == ContactIdKind::PeerId && id.value == peer_id) {
-      has_peer = true;
-      break;
-    }
-  }
-  if (has_peer) {
-    return;
-  }
-  contact.ids.push_back(ContactId{ContactIdKind::PeerId, peer_id, false});
-  contact.remote.ids = contact.ids;
-  PromoteFlatFieldsToNested(contact);
-  SyncContactMirrors(contact);
-  if (auto saved = contacts_.Upsert(contact); !saved) {
-    log().warning << "NoteMeshPeerIdForRelay contact upsert failed account=" << relay_identity
-                  << " peer=" << peer_id << " err=" << saved.error().message;
-    return;
-  }
-  log().info << "NoteMeshPeerIdForRelay learned peer_id=" << peer_id << " account=" << relay_identity;
 }
 
 bool CallSessionManager::PeerHasMediaRelayCap(const std::string& peer_id) const {
-  if (peer_id.empty()) {
-    return false;
-  }
-  const auto it = peer_media_relay_caps_.find(peer_id);
-  return it != peer_media_relay_caps_.end() && it->second;
+  return media_relay_caps_.Has(peer_id);
 }
 
 std::vector<std::string> CallSessionManager::ListMediaRelayCapablePeerIds() const {
-  std::vector<std::string> out;
-  out.reserve(peer_media_relay_caps_.size());
-  for (const auto& [peer_id, enabled] : peer_media_relay_caps_) {
-    if (enabled && !peer_id.empty()) {
-      out.push_back(peer_id);
-    }
-  }
-  return out;
+  return media_relay_caps_.ListCapable();
 }
 
 void CallSessionManager::NotifyRingChanged() {
@@ -795,85 +783,9 @@ void CallSessionManager::NotifyRingChanged() {
   }
 }
 
-Roe<std::string> CallSessionManager::LocalRelayIdentity() const {
-  auto identity = identity_.Get();
-  if (!identity || identity->account_id.empty()) {
-    return Error("Local account identity unavailable");
-  }
-  return identity->account_id;
-}
 
-Roe<std::string> CallSessionManager::EnsureCallControlThread(const std::string& peer_identity) {
-  std::optional<std::string> prefer;
-  if (auto active = ActiveLocalCall(); active && *active && (*active)->origin_thread_id) {
-    prefer = *(*active)->origin_thread_id;
-  }
-  std::string contact_id;
-  std::string dm_title = peer_identity;
-  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
-    if (*contact) {
-      contact_id = (*contact)->id;
-      dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
-      if (dm_title.empty()) {
-        dm_title = peer_identity;
-      }
-    }
-  }
-  return ResolveOrCreateE2ePublicDirectThread(store_, peer_identity, prefer, contact_id, dm_title);
-}
 
-Roe<void> CallSessionManager::SendCallDirectMessage(const std::string& peer_identity, const CallControlType type,
-                                                    const std::string& detail_json, const std::string& display) {
-  auto thread_id = EnsureCallControlThread(peer_identity);
-  if (!thread_id) {
-    return thread_id.error();
-  }
 
-  SendRelayOptions opts;
-  opts.content_type = ChatContentType::System;
-  Object payload;
-  payload.set("control_type", CallControlTypeToWire(type));
-  payload.set("detail", detail_json);
-  opts.payload_json = DumpJson(payload);
-  opts.generation = "system";
-  opts.update_preview = false;
-  // Call-control must not sit behind PollInbox on Normal workers (MediaKey + Accept).
-  opts.critical_lane = true;
-  {
-    std::lock_guard<std::mutex> lock(pending_call_key_init_mutex_);
-    if (auto it = pending_call_key_init_.find(peer_identity); it != pending_call_key_init_.end()) {
-      opts.key_init_b64 = it->second;
-    }
-  }
-  if (!delivery_.send_user_message) {
-    return Error("Call delivery not bound");
-  }
-  auto sent = delivery_.send_user_message(*thread_id, display, opts);
-  if (!sent) {
-    return sent.error();
-  }
-  if (opts.key_init_b64) {
-    std::lock_guard<std::mutex> lock(pending_call_key_init_mutex_);
-    pending_call_key_init_.erase(peer_identity);
-  }
-  return {};
-}
-
-Roe<void> CallSessionManager::AppendOriginHistory(const std::string& thread_id, const CallControlType type,
-                                                  const std::string& text, const std::string& detail_json) {
-  auto local = LocalRelayIdentity();
-  if (!local) {
-    return local.error();
-  }
-  auto message = CallControlCodec::BuildSystemMessage(thread_id, type, text, detail_json, *local);
-  if (!message) {
-    return message.error();
-  }
-  if (auto appended = store_.AppendMessage(*message); !appended) {
-    return appended.error();
-  }
-  return {};
-}
 
 Roe<CallRosterDetail> CallSessionManager::BuildRosterDetail(const std::string& call_id) const {
   auto session = sessions_.LoadSession(call_id);
@@ -899,140 +811,16 @@ Roe<CallRosterDetail> CallSessionManager::BuildRosterDetail(const std::string& c
   return detail;
 }
 
-Roe<void> CallSessionManager::FanOutToJoined(const std::string& call_id, const CallControlType type,
-                                             const std::string& detail_json, const std::string& display,
-                                             const std::string& skip_identity) {
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return participants.error();
-  }
-  const auto targets = SelectCallFanoutIdentities(*participants, skip_identity, true, false);
-  // Best-effort: one peer failure must not block CallSfuAttach / roster to the rest.
-  const auto result = FanOutPairwise(targets, PairwiseFanoutMode::BestEffort,
-                                     [&](const std::string& identity) {
-                                       return SendCallDirectMessage(identity, type, detail_json, display);
-                                     });
-  for (size_t i = 0; i < result.failed_identities.size(); ++i) {
-    log().warning << "FanOutToJoined send failed peer=" << result.failed_identities[i] << " type="
-                  << CallControlTypeToWire(type) << " err="
-                  << (i < result.failure_messages.size() ? result.failure_messages[i] : std::string{});
-  }
-  if (result.succeeded > 0) {
-    log().info << "FanOutToJoined queued n=" << result.succeeded << " type=" << CallControlTypeToWire(type);
-  }
-  return {};
-}
 
-Roe<void> CallSessionManager::FanOutToJoinedAndRinging(const std::string& call_id, const CallControlType type,
-                                                       const std::string& detail_json, const std::string& display,
-                                                       const std::string& skip_identity) {
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return participants.error();
-  }
-  const auto targets = SelectCallFanoutIdentities(*participants, skip_identity, true, true);
-  const auto result = FanOutPairwise(targets, PairwiseFanoutMode::BestEffort,
-                                     [&](const std::string& identity) {
-                                       return SendCallDirectMessage(identity, type, detail_json, display);
-                                     });
-  for (size_t i = 0; i < result.failed_identities.size(); ++i) {
-    log().warning << "FanOutToJoinedAndRinging send failed peer=" << result.failed_identities[i] << " type="
-                  << CallControlTypeToWire(type) << " err="
-                  << (i < result.failure_messages.size() ? result.failure_messages[i] : std::string{});
-  }
-  return {};
-}
 
-Roe<ByteVector> CallSessionManager::ResolvePeerSessionKey(const std::string& peer_identity) const {
-  ChatTargetKey target_key;
-  target_key.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
-  target_key.peer_identity_value = peer_identity;
-  target_key.channel = CryptoChannel::E2ePublic;
-
-  auto record = psk_store_.Load(target_key);
-  if (!record) {
-    return record.error();
-  }
-  if (!record->has_value()) {
-    if (delivery_.ensure_peer_session_key) {
-      auto ensured = delivery_.ensure_peer_session_key(peer_identity);
-      if (!ensured) {
-        return ensured.error();
-      }
-      if (ensured->first_message_key_init_b64 && !ensured->first_message_key_init_b64->empty()) {
-        std::lock_guard<std::mutex> lock(pending_call_key_init_mutex_);
-        pending_call_key_init_[peer_identity] = *ensured->first_message_key_init_b64;
-      }
-      return ensured->session_key;
-    }
-    return Error("No PSK session for peer");
-  }
-  const uint32_t active_epoch = (*record)->session_epoch;
-  auto master_psk_b64 = psk_store_.ResolveMasterPskForEpoch(target_key, active_epoch);
-  if (!master_psk_b64) {
-    return master_psk_b64.error();
-  }
-  if (!master_psk_b64->has_value()) {
-    if (delivery_.ensure_peer_session_key) {
-      auto ensured = delivery_.ensure_peer_session_key(peer_identity);
-      if (!ensured) {
-        return ensured.error();
-      }
-      if (ensured->first_message_key_init_b64 && !ensured->first_message_key_init_b64->empty()) {
-        std::lock_guard<std::mutex> lock(pending_call_key_init_mutex_);
-        pending_call_key_init_[peer_identity] = *ensured->first_message_key_init_b64;
-      }
-      return ensured->session_key;
-    }
-    return Error("No PSK for active session epoch");
-  }
-  auto master_psk = Base64Decode(**master_psk_b64);
-  if (!master_psk) {
-    return master_psk.error();
-  }
-  return SessionKeyDeriver::Derive(*master_psk, CryptoChannel::E2ePublic, active_epoch);
-}
-
-Roe<void> CallSessionManager::SendMediaKeyToPeer(const std::string& call_id, const std::string& peer_identity,
-                                                 const uint32_t media_epoch, const std::string& media_key_id,
-                                                 const ByteVector& key_bytes) {
-  auto session_key = ResolvePeerSessionKey(peer_identity);
-  if (!session_key) {
-    return session_key.error();
-  }
-  auto wrapped = CallMediaKeyStore::WrapKeyB64(*session_key, key_bytes, call_id, media_epoch, media_key_id);
-  if (!wrapped) {
-    return wrapped.error();
-  }
-  CallMediaKeyDetail key_detail;
-  key_detail.call_id = call_id;
-  key_detail.media_epoch = media_epoch;
-  key_detail.media_key_id = media_key_id;
-  key_detail.wrapped_key_b64 = *wrapped;
-  auto key_json = CallControlCodec::EncodeMediaKey(key_detail);
-  if (!key_json) {
-    return key_json.error();
-  }
-  return SendCallDirectMessage(peer_identity, CallControlType::CallMediaKey, *key_json, "Call media key");
-}
 
 void CallSessionManager::StopCallMedia(const std::string& call_id) {
   StopMediaIfCall(call_id);
 }
 
 void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
-  const auto seat_ports = media_seat_ports_.Get();
-  const auto direct_media = direct_media_.Get();
-  // V036 Phase 3: CSM signaling-only for duplex stop — seat.Release owns Detach-then-Stop.
-  if (seat_ports->release) {
-    seat_ports->release(call_id);
-    return;
-  }
-  // Tests / incomplete wiring without a seat.
-  topology_.OnMediaStopped(call_id);
-  if (direct_media->stop_mesh_media) {
-    direct_media->stop_mesh_media(call_id);
-  }
+  // CSM is signaling-only for duplex stop: the call registry releases the seat (Detach-then-Stop).
+  live_calls_.StopMedia(call_id);
 }
 
 
@@ -1042,7 +830,7 @@ Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_
   auto started = workflow_.StartCall(origin_thread_id, video_allowed, invitee_identities);
   if (started) {
     // Circuit path often chooses R1 before Invite (product-stack / hard-w5); flush wire announce.
-    FlushPendingCircuitR1Announce();
+    reach_signals_.FlushCircuitR1();
   }
   return started;
 }
@@ -1054,7 +842,7 @@ Roe<void> CallSessionManager::InviteParticipant(const std::string& call_id, cons
 
 
 int64_t CallSessionManager::InitiationOfferMinorForPeer(const std::string& peer_identity) const {
-  return workflow_.InitiationOfferMinorForPeer(peer_identity);
+  return billing_.OfferFrom(peer_identity);
 }
 
 
@@ -1087,15 +875,16 @@ Roe<void> CallSessionManager::MaybeRotateMediaKey(const std::string& call_id, co
 }
 
 
-Roe<void> CallSessionManager::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms) {
-  auto result = workflow_.EndCallLocal(session, duration_ms);
+Roe<void> CallSessionManager::EndCallLocal(CallSession& session, const std::optional<int64_t>& duration_ms,
+                                           const LiveCallEndReason reason) {
+  auto result = workflow_.EndCallLocal(session, duration_ms, reason);
   MaybeCatchUpAfterCall();
   return result;
 }
 
 
-Roe<void> CallSessionManager::LeaveCall(const std::string& call_id) {
-  auto result = workflow_.LeaveCall(call_id);
+Roe<void> CallSessionManager::LeaveCall(const std::string& call_id, const LiveCallEndReason reason) {
+  auto result = workflow_.LeaveCall(call_id, reason);
   MaybeCatchUpAfterCall();
   return result;
 }
@@ -1114,7 +903,7 @@ void CallSessionManager::MaybeCatchUpAfterCall() {
 
 Roe<std::vector<PendingCallInvite>> CallSessionManager::ListPendingInvites() {
   SweepExpiredInvites();
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
@@ -1130,7 +919,7 @@ Roe<std::optional<PendingCallInvite>> CallSessionManager::TopPendingInvite() {
 }
 
 Roe<std::optional<std::string>> CallSessionManager::PeerIdentityForCall(const std::string& call_id) const {
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
@@ -1147,7 +936,7 @@ Roe<std::optional<std::string>> CallSessionManager::PeerIdentityForCall(const st
 }
 
 Roe<std::optional<bool>> CallSessionManager::PeerVideoEnabledForCall(const std::string& call_id) const {
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
@@ -1234,19 +1023,16 @@ void CallSessionManager::PollP2pConnectHealth() {
 
 Roe<void> CallSessionManager::RetryP2pMedia(const std::string& call_id) {
   const auto direct_media = direct_media_.Get();
-  if (direct_media->media_attempted && direct_media->retry_mesh_media &&
-      direct_media->media_attempted(call_id)) {
-    return direct_media->retry_mesh_media(call_id);
+  CallMediaCoordinator* call_media = live_calls_.Media(call_id);
+  if (call_media && direct_media->media_attempted && direct_media->media_attempted(call_id)) {
+    return call_media->Retry();
   }
   return Error("Call media retry unavailable");
 }
 
 Roe<void> CallSessionManager::ResumeP2pMedia(const std::string& call_id) {
-  const auto direct_media = direct_media_.Get();
-  if (direct_media->resume_mesh_media) {
-    return direct_media->resume_mesh_media(call_id);
-  }
-  return Error("Call media resume unavailable");
+  CallMediaCoordinator* call_media = live_calls_.Media(call_id);
+  return call_media ? call_media->ResumeFromInbound() : Roe<void>(Error("Call media resume unavailable"));
 }
 
 Roe<std::optional<CallSession>> CallSessionManager::SessionForCall(const std::string& call_id) const {
@@ -1308,12 +1094,6 @@ Roe<void> CallSessionManager::HandleInboundRoster(const std::string& detail_json
 }
 
 
-Roe<void> CallSessionManager::HandleInboundMediaKey(const std::string& detail_json,
-                                                    const std::string& sender_identity) {
-  return workflow_.HandleInboundMediaKey(detail_json, sender_identity);
-}
-
-
 Roe<void> CallSessionManager::HandleInboundSfuAttach(const std::string& detail_json,
                                                     const std::string& sender_identity) {
   return workflow_.HandleInboundSfuAttach(detail_json, sender_identity);
@@ -1336,110 +1116,6 @@ Roe<void> CallSessionManager::HandleInboundVideoRefresh(const std::string& detai
   return workflow_.HandleInboundVideoRefresh(detail_json, sender_identity);
 }
 
-Roe<void> CallSessionManager::HandleInboundCircuitR1(const std::string& detail_json) {
-  auto decoded = CallControlCodec::DecodeCircuitR1(detail_json);
-  if (!decoded) {
-    return decoded.error();
-  }
-  auto active = ActiveLocalCall();
-  if (!active || !active->has_value() || (*active)->call_id != decoded->call_id) {
-    log().info << "CallCircuitR1 ignored; no matching active call call_id=" << decoded->call_id
-               << " r1=" << decoded->circuit_r1;
-    return {};
-  }
-  log().info << "CallCircuitR1 inbound call_id=" << decoded->call_id << " r1=" << decoded->circuit_r1;
-  if (prefer_late_reserve_) {
-    prefer_late_reserve_(decoded->circuit_r1);
-  }
-  return {};
-}
-
-Roe<void> CallSessionManager::HandleInboundPunchOffer(const std::string& detail_json,
-                                                      const std::string& sender_identity) {
-  auto decoded = CallControlCodec::DecodePunch(detail_json);
-  if (!decoded) {
-    return decoded.error();
-  }
-  auto active = ActiveLocalCall();
-  if (!active || !active->has_value() || (*active)->call_id != decoded->call_id) {
-    log().info << "CallPunchOffer ignored; no matching active call call_id=" << decoded->call_id;
-    return {};
-  }
-  if (!signaling_punch_burst_) {
-    return Error("signaling punch burst unavailable");
-  }
-  std::vector<std::string> my_addrs =
-      local_punch_addrs_ ? local_punch_addrs_() : std::vector<std::string>{};
-  if (my_addrs.empty() && local_listen_multiaddrs_) {
-    my_addrs = local_listen_multiaddrs_();
-  }
-  if (my_addrs.empty()) {
-    return Error("signaling punch: no local candidates for answer");
-  }
-  if (register_peer_listen_multiaddrs_) {
-    const std::string key =
-        !decoded->peer_id.empty() ? decoded->peer_id : sender_identity;
-    register_peer_listen_multiaddrs_(key, decoded->addrs);
-  }
-  CallPunchDetail answer;
-  answer.call_id = decoded->call_id;
-  answer.epoch_id = decoded->epoch_id;
-  answer.window_ms = decoded->window_ms > 0 ? decoded->window_ms : 2000;
-  answer.addrs = std::move(my_addrs);
-  if (local_mesh_peer_id_) {
-    answer.peer_id = local_mesh_peer_id_();
-  }
-  auto encoded = CallControlCodec::EncodePunch(answer);
-  if (!encoded) {
-    return encoded.error();
-  }
-  auto peer = P2pPeerIdentityForCall(decoded->call_id);
-  if (!peer || !peer->has_value() || (*peer)->empty()) {
-    return Error("signaling punch answer: no call peer");
-  }
-  if (auto sent =
-          SendCallDirectMessage(**peer, CallControlType::CallPunchAnswer, *encoded, "");
-      !sent) {
-    return sent.error();
-  }
-  log().info << "CallPunchAnswer sent call_id=" << decoded->call_id << " epoch=" << decoded->epoch_id
-             << " peer_addrs=" << decoded->addrs.size();
-  const int window = answer.window_ms;
-  signaling_punch_burst_(decoded->addrs, window, [this, epoch = decoded->epoch_id](Roe<void> r) {
-    if (!r) {
-      log().warning << "CallPunchOffer local burst failed epoch=" << epoch
-                    << " err=" << r.error().message;
-    } else {
-      log().info << "CallPunchOffer local burst ok epoch=" << epoch;
-    }
-  });
-  return {};
-}
-
-Roe<void> CallSessionManager::HandleInboundPunchAnswer(const std::string& detail_json) {
-  auto decoded = CallControlCodec::DecodePunch(detail_json);
-  if (!decoded) {
-    return decoded.error();
-  }
-  if (!pending_signaling_punch_ || pending_signaling_punch_->epoch_id != decoded->epoch_id) {
-    log().info << "CallPunchAnswer ignored; no pending epoch=" << decoded->epoch_id;
-    return {};
-  }
-  if (!signaling_punch_burst_) {
-    CompletePendingSignalingPunch(decoded->epoch_id, Error("signaling punch burst unavailable"));
-    return Error("signaling punch burst unavailable");
-  }
-  if (register_peer_listen_multiaddrs_ && !decoded->peer_id.empty()) {
-    register_peer_listen_multiaddrs_(decoded->peer_id, decoded->addrs);
-  }
-  const int window = decoded->window_ms > 0 ? decoded->window_ms : 2000;
-  const std::string epoch = decoded->epoch_id;
-  signaling_punch_burst_(decoded->addrs, window, [this, epoch](Roe<void> r) {
-    CompletePendingSignalingPunch(epoch, std::move(r));
-  });
-  return {};
-}
-
 Roe<void> CallSessionManager::HandleInboundEnded(const std::string& detail_json,
                                                  const std::string& local_identity) {
   return workflow_.HandleInboundEnded(detail_json, local_identity);
@@ -1459,7 +1135,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     return Error("Call control missing detail");
   }
   const std::string detail_json = *detail;
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return local.error();
   }
@@ -1477,7 +1153,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   case CallControlType::CallRoster:
     return HandleInboundRoster(detail_json);
   case CallControlType::CallMediaKey:
-    return HandleInboundMediaKey(detail_json, sender_identity);
+    return key_exchange_.HandleInbound(detail_json, sender_identity);
   case CallControlType::CallSdp:
   case CallControlType::CallIce:
     log().debug << "Ignoring legacy call_sdp/call_ice from " << sender_identity;
@@ -1491,13 +1167,13 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   case CallControlType::CallVideoRefresh:
     return HandleInboundVideoRefresh(detail_json, sender_identity);
   case CallControlType::CallCircuitR1:
-    return HandleInboundCircuitR1(detail_json);
+    return reach_signals_.HandleInboundCircuitR1(detail_json);
   case CallControlType::CallCapsUpdate:
-    return HandleInboundCapsUpdate(detail_json);
+    return reach_signals_.HandleInboundCapsUpdate(detail_json);
   case CallControlType::CallPunchOffer:
-    return HandleInboundPunchOffer(detail_json, sender_identity);
+    return reach_signals_.HandleInboundPunchOffer(detail_json, sender_identity);
   case CallControlType::CallPunchAnswer:
-    return HandleInboundPunchAnswer(detail_json);
+    return reach_signals_.HandleInboundPunchAnswer(detail_json);
   case CallControlType::CallEnded:
     return HandleInboundEnded(detail_json, *local);
   case CallControlType::CallStarted:
@@ -1508,22 +1184,23 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
 
 
 Roe<std::string> CallSessionManager::TopologyLocalIdentity() const {
-  return LocalRelayIdentity();
+  return control_.LocalRelayIdentity();
 }
 
 Roe<void> CallSessionManager::TopologyLeaveCall(const std::string& call_id) {
-  return LeaveCall(call_id);
+  // Topology leaves when the group media path cannot be kept (attach-wait timeout, failed migrate).
+  return LeaveCall(call_id, LiveCallEndReason::MediaUnavailable);
 }
 
 Roe<void> CallSessionManager::TopologyFanOutToJoined(const std::string& call_id, CallControlType type,
                                                      const std::string& detail_json, const std::string& display,
                                                      const std::string& skip_identity) {
-  return FanOutToJoined(call_id, type, detail_json, display, skip_identity);
+  return control_.FanOutToJoined(call_id, type, detail_json, display, skip_identity);
 }
 
 Roe<void> CallSessionManager::TopologySendDirect(const std::string& peer_identity, CallControlType type,
                                                  const std::string& detail_json, const std::string& display) {
-  return SendCallDirectMessage(peer_identity, type, detail_json, display);
+  return control_.SendDirect(peer_identity, type, detail_json, display);
 }
 
 void CallSessionManager::TopologyNotifyRingChanged() {
@@ -1557,23 +1234,7 @@ void CallSessionManager::TopologyNoteMediaAttempted(const std::string& call_id) 
   }
 }
 
-void CallSessionManager::TopologyBindMediaCallId(const std::string& call_id) {
-  const auto seat_ports = media_seat_ports_.Get();
-  // Hop path bind — CallHopPath façade (Acquire under seat) via ports.
-  if (seat_ports->bind_hop_for_attach) {
-    seat_ports->bind_hop_for_attach(call_id);
-  }
-}
-
 void CallSessionManager::TopologyClearMediaPeerIdentity() {
-}
-
-void CallSessionManager::TopologyReleaseDirectMedia() {
-  const auto direct_media = direct_media_.Get();
-  // SoftMigrate path replace: Direct path ReleaseTransport under current seat token.
-  if (direct_media->release_direct_transport) {
-    direct_media->release_direct_transport();
-  }
 }
 
 void CallSessionManager::TopologyRequestInboxSync() {
@@ -1583,12 +1244,12 @@ void CallSessionManager::TopologyRequestInboxSync() {
 }
 
 Roe<std::string> CallSessionManager::P2pLocalIdentity() const {
-  return LocalRelayIdentity();
+  return control_.LocalRelayIdentity();
 }
 
 Roe<void> CallSessionManager::P2pSendDirect(const std::string& peer_identity, CallControlType type,
                                             const std::string& detail_json, const std::string& display) {
-  return SendCallDirectMessage(peer_identity, type, detail_json, display);
+  return control_.SendDirect(peer_identity, type, detail_json, display);
 }
 
 void CallSessionManager::P2pNotifyRingChanged() {
@@ -1604,78 +1265,23 @@ Roe<std::optional<std::string>> CallSessionManager::P2pPeerIdentityForCall(const
 }
 
 Roe<std::optional<std::string>> CallSessionManager::MeshPeerIdForAccount(const std::string& account) const {
-  if (account.empty() || account.rfind("account:", 0) != 0) {
-    return std::optional<std::string>{};
-  }
-  for (const auto& [peer_id, relay] : peer_id_to_relay_) {
-    if (relay == account && !peer_id.empty()) {
-      return std::optional<std::string>{peer_id};
-    }
-  }
-  auto found = contacts_.FindByIdentity(account, ContactIdKind::Account);
-  if (!found) {
-    return found.error();
-  }
-  if (found->has_value()) {
-    const std::string peer_id = PeerIdFromContact(**found);
-    if (!peer_id.empty()) {
-      return std::optional<std::string>{peer_id};
-    }
-  }
-  return std::optional<std::string>{};
+  return peer_accounts_.PeerIdForAccount(account);
 }
 
 Roe<std::optional<std::string>> CallSessionManager::RelayIdentityForMeshPeerId(
     const std::string& call_id, const std::string& peer_id) const {
-  if (peer_id.empty()) {
-    return std::optional<std::string>{};
-  }
-  if (const auto it = peer_id_to_relay_.find(peer_id); it != peer_id_to_relay_.end()) {
-    return std::optional<std::string>{it->second};
-  }
-  auto account_from_contact = [](const Contact& contact) -> std::string {
-    if (auto account = ContactAccountId(contact)) {
-      return *account;
+  // Prefer the call's participants whose contact carries the inbound stream's PeerId.
+  std::vector<std::string> participants;
+  if (!call_id.empty() && !peer_id.empty()) {
+    auto rows = sessions_.ListParticipants(call_id);
+    if (!rows) {
+      return rows.error();
     }
-    return {};
-  };
-  // Prefer a call participant whose contact PeerId matches the inbound stream peer.
-  if (!call_id.empty()) {
-    auto participants = sessions_.ListParticipants(call_id);
-    if (!participants) {
-      return participants.error();
-    }
-    for (const CallParticipant& row : *participants) {
-      if (row.identity.empty()) {
-        continue;
-      }
-      auto found = contacts_.FindByIdentity(row.identity, ContactIdKind::Account);
-      if (!found) {
-        return found.error();
-      }
-      if (!found->has_value()) {
-        continue;
-      }
-      if (PeerIdFromContact(**found) == peer_id) {
-        return std::optional<std::string>{row.identity};
-      }
+    for (const CallParticipant& row : *rows) {
+      participants.push_back(row.identity);
     }
   }
-  // Fallback: any contact with this PeerId (or /p2p/ PeerId in multiaddrs).
-  auto listed = contacts_.List();
-  if (!listed) {
-    return listed.error();
-  }
-  for (const Contact& contact : *listed) {
-    if (PeerIdFromContact(contact) != peer_id) {
-      continue;
-    }
-    const std::string account = account_from_contact(contact);
-    if (!account.empty()) {
-      return std::optional<std::string>{account};
-    }
-  }
-  return std::optional<std::string>{};
+  return peer_accounts_.AccountForPeerId(peer_id, participants);
 }
 
 void CallSessionManager::P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) {
@@ -1686,23 +1292,12 @@ void CallSessionManager::P2pResendMediaKey(const std::string& call_id, const std
   if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
     return;
   }
-  const uint32_t epoch = (*session)->media_epoch;
-  auto key_bytes = media_keys_.LoadEpochKey(call_id, epoch);
-  if (!key_bytes || !key_bytes->has_value()) {
-    log().warning << "P2pResendMediaKey missing key call_id=" << call_id << " epoch=" << epoch;
-    return;
-  }
-  if (auto sent = SendMediaKeyToPeer(call_id, peer_identity, epoch, (*session)->media_key_id, **key_bytes); !sent) {
-    log().warning << "P2pResendMediaKey send failed call_id=" << call_id << " err=" << sent.error().message;
-    return;
-  }
-  log().info << "P2pResendMediaKey sent call_id=" << call_id << " peer=" << peer_identity
-                << " epoch=" << epoch;
+  (void)key_exchange_.SendCurrent(call_id, peer_identity);
 }
 
 void CallSessionManager::P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
                                              const std::string& peer_id) {
-  auto local = LocalRelayIdentity();
+  auto local = control_.LocalRelayIdentity();
   if (!local) {
     return;
   }
@@ -1715,42 +1310,6 @@ void CallSessionManager::P2pRequestInboxSync() {
   if (delivery_.sync_inbox_from_wake) {
     delivery_.sync_inbox_from_wake(true);
   }
-}
-
-bool CallSessionManager::P2pIsAwaitingSfuRecovery() const {
-  return topology_.IsAwaitingSfuRecovery();
-}
-
-bool CallSessionManager::P2pExpectGroupSfuMigration(const std::string& call_id) const {
-  if (call_id.empty()) {
-    return false;
-  }
-  CallExpectGroupSfuInput in;
-  in.awaiting_sfu_recovery = topology_.IsAwaitingSfuRecovery();
-  in.sfu_attached = topology_.IsSfuAttached();
-  if (auto n = sessions_.CountJoined(call_id)) {
-    in.joined_count = *n;
-  }
-  if (auto session = sessions_.LoadSession(call_id);
-      session && *session && (*session)->sfu_hint && !(*session)->sfu_hint->empty()) {
-    in.has_sfu_hint = true;
-  }
-  return ShouldExpectGroupSfuMigration(in);
-}
-
-void CallSessionManager::P2pNoteExpectSfuAttach(const std::string& call_id) {
-  if (call_id.empty()) {
-    return;
-  }
-  topology_.BeginSfuAttachWait(call_id);
-}
-
-bool CallSessionManager::P2pIsSfuAttached() const {
-  return topology_.IsSfuAttached();
-}
-
-void CallSessionManager::P2pClearAwaitingSfuRecovery() {
-  topology_.ClearAwaitingSfuRecovery();
 }
 
 } // namespace pbr

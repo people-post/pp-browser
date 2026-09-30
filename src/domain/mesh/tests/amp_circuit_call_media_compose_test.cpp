@@ -197,6 +197,21 @@ TEST_F(AmpCircuitCallMediaComposeTest, RelayRefusesStandbyCircuitsLowestPriority
   EXPECT_EQ(bridge(CircuitStandbyPriority::None), "ok") << "a primary circuit is never refused for standby load";
 }
 
+// Hard-lab flip (teardown hang): a bridge request whose send fails at once closes the channel
+// inline, and the channel's closed callback takes the coordinator's lock — the client used to send
+// while holding it and the I/O thread deadlocked on itself. The bridge must fail, not hang.
+TEST_F(AmpCircuitCallMediaComposeTest, BridgeRequestThatCannotBeSentFailsInsteadOfDeadlocking) {
+  CircuitBridgeTarget target;
+  target.target_peer_id = harness_->peer_id_b;
+  target.target_multiaddr = std::string(8 * 1024 * 1024, 'x');  // over every channel's size limit
+  target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
+  Wait<CircuitTunnelBridgeResult> wait;
+  ASSERT_TRUE(circuit_a_->StartBridge("relay", target, {}, {}, wait.Fn(), 8000));
+  wait.PumpUntilDone(*harness_);
+  const bool bridged = wait.result && wait.result->ok;
+  EXPECT_FALSE(bridged) << "an unsendable request cannot bridge";
+}
+
 TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedHelloAndEncryptedAudioRoundTrip) {
   ASSERT_FALSE(harness_->mgr_a().GetLinkSnapshot(harness_->peer_id_b).has_endpoint);
   ASSERT_FALSE(harness_->mgr_a().IsConnected(harness_->peer_id_b));

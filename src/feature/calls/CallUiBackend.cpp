@@ -48,11 +48,7 @@ void CallUiBackend::SetOnRingChanged(std::function<void()> callback) {
 }
 
 void CallUiBackend::SetOnChromeRefresh(std::function<void()> callback) {
-  CallsThread::RunAndWait([this, &callback]() {
-    if (auto* life = stack_.Lifecycle()) {
-      life->SetOnChromeRefresh(std::move(callback));  // CallLifecycle::NotifyChrome delivers on UI
-    }
-  });
+  stack_.SetOnChromeRefresh(std::move(callback));  // delivered on UI after the calls change
 }
 
 std::shared_ptr<const CallUiState> CallUiBackend::State() const {
@@ -92,31 +88,15 @@ void CallUiBackend::ClearMediaActivity() {
 }
 
 void CallUiBackend::Apply(CallLifecycleEvent ev, const std::string& call_id) {
-  CallsThread::Post([this, ev, call_id]() {
-    if (auto* life = stack_.Lifecycle()) {
-      life->Apply(ev, call_id);
-    }
-  });
-}
-
-void CallUiBackend::NoteRingCallId(const std::string& call_id) {
-  CallsThread::Post([this, call_id]() {
-    if (auto* life = stack_.Lifecycle()) {
-      life->NoteRingCallId(call_id);
-    }
-  });
+  OnOwner([ev, call_id](CallSessionManager& calls) { calls.Apply(ev, call_id); });
 }
 
 void CallUiBackend::ClearLastError() {
-  CallsThread::Post([this]() {
-    if (auto* life = stack_.Lifecycle()) {
-      life->ClearLastError();
-    }
-  });
+  OnOwner([](CallSessionManager& calls) { calls.ClearLastError(); });
 }
 
-void CallUiBackend::LeaveCall(const std::string& call_id) {
-  OnOwner([call_id](CallSessionManager& calls) { (void)calls.LeaveCall(call_id); });
+void CallUiBackend::LeaveCall(const std::string& call_id, const LiveCallEndReason reason) {
+  OnOwner([call_id, reason](CallSessionManager& calls) { (void)calls.LeaveCall(call_id, reason); });
 }
 
 void CallUiBackend::StopCallMedia(const std::string& call_id) {
@@ -151,13 +131,13 @@ std::optional<std::string> CallUiBackend::TakeLastMediaError() {
   return taken_media_error_;
 }
 
-std::optional<std::string> CallUiBackend::TakeRemoteEndedCallId() {
-  const std::string ended = State()->remote_ended_call_id;
-  if (ended.empty() || ended == taken_remote_ended_) {
+std::optional<CallUiBackend::RemoteEnd> CallUiBackend::TakeRemoteEnd() {
+  const auto state = State();
+  if (state->remote_ended_call_id.empty() || state->remote_ended_call_id == taken_remote_ended_) {
     return std::nullopt;
   }
-  taken_remote_ended_ = ended;
-  return ended;
+  taken_remote_ended_ = state->remote_ended_call_id;
+  return RemoteEnd{state->remote_ended_call_id, state->remote_ended_declined};
 }
 
 void CallUiBackend::StartCall(const std::string& origin_thread_id, const bool video_allowed,
@@ -170,14 +150,8 @@ void CallUiBackend::StartCall(const std::string& origin_thread_id, const bool vi
       reply(UnavailableError());
       return;
     }
-    auto started = calls->StartCall(origin_thread_id, video_allowed, invitee_identities);
-    if (started) {
-      if (auto* life = stack_.Lifecycle()) {
-        // Idempotent if the workflow already noted it via lifecycle ports (preferred, pre-Invite).
-        life->Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
-      }
-    }
-    reply(std::move(started));
+    // The workflow admits the placed call (Deciding, LiveCalls::NoteOutboundStarted) itself.
+    reply(calls->StartCall(origin_thread_id, video_allowed, invitee_identities));
   });
 }
 

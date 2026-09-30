@@ -54,7 +54,7 @@ Exact byte assembly uses `libp2p::read` (`basic/read.hpp`): loop `readSome` unti
 |--------|----------|------------------|------|
 | **Pipe** (`DuplexFrameSession`) | Can I read/write frames on *this* Yamux stream? | Until reset / EOF | Framing, outbound cap, drop vs fail, full-duplex, `read_once` |
 | **Peer link** (`PeerSessionManager`) | Can I open a stream to *this device*? | Warm TTL / connection | Dial, backoff, circuit vs direct |
-| **Domain session** | What are we *doing*? | Product lifetime | Call (`CallLifecycle`), thread store, hop `HostParticipant` |
+| **Domain session** | What are we *doing*? | Product lifetime | Call (`LiveCall`), thread store, hop `HostParticipant` |
 
 State that must survive `stream->reset()` does **not** live on the pipe. Classify inbound frames and dispatch to the stream’s handler immediately — no process-wide inbound heap. Jitter / SQLite / roster stay on domain consumers.
 

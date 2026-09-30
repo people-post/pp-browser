@@ -63,6 +63,17 @@ protected:
     DestroyStackSide(answer_);
   }
 
+  static const LiveCall* Live(StackSide& side, const std::string& call_id) {
+    return side.stack->Calls() ? side.stack->Calls()->Live().Find(call_id) : nullptr;
+  }
+  static void ExpectLive(StackSide& side, const std::string& call_id, const LiveCallState state,
+                         const LiveCallEndReason reason, const char* who) {
+    const LiveCall* call = Live(side, call_id);
+    ASSERT_NE(call, nullptr) << who;
+    EXPECT_EQ(call->State(), state) << who << " state=" << LiveCallStateName(call->State());
+    EXPECT_EQ(call->EndReason(), reason) << who << " reason=" << LiveCallEndReasonName(call->EndReason());
+  }
+
   /** Deliver queued call-control between the two stacks; drain UI between hops. */
   void PumpWire(int rounds = 8) {
     for (int r = 0; r < rounds; ++r) {
@@ -201,6 +212,56 @@ TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
   const std::string call_id = RunOfferAnswerInCallLeave(thread.id);
   ASSERT_FALSE(call_id.empty());
   EXPECT_GE(answer_.transport->connect_async_calls, 1);
+  // Each side's LiveCall ended for its own reason: the answerer left, the offerer was left.
+  ExpectLive(answer_, call_id, LiveCallState::Ended, LiveCallEndReason::LocalLeave, "answer");
+  ExpectLive(offer_, call_id, LiveCallState::Ended, LiveCallEndReason::RemoteEnded, "offer");
+}
+
+// H012 / H011 over call-control: a signaled punch runs offer → answer → both bursts, and our R1
+// reaches the peer's late reserve.
+TEST_F(CallDualStackComposeTest, ReachSignalsTravelOverCallControl) {
+  Thread thread;
+  thread.id = "thread-dual-reach";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+  const std::string call_id = RunOfferAnswerToInCall(thread.id);
+  ASSERT_FALSE(call_id.empty());
+
+  struct MeshFake {
+    std::vector<std::string> candidates;
+    std::vector<std::vector<std::string>> bursts;
+    std::vector<std::string> preferred;
+  };
+  MeshFake offer_mesh{{"/ip4/1.1.1.1/udp/1"}, {}, {}};
+  MeshFake answer_mesh{{"/ip4/2.2.2.2/udp/2"}, {}, {}};
+  for (auto [side, mesh] : {std::pair{&offer_, &offer_mesh}, std::pair{&answer_, &answer_mesh}}) {
+    CallReachSignals::MeshPorts ports;
+    ports.local_punch_addrs = [mesh]() { return mesh->candidates; };
+    ports.punch_burst = [mesh](const std::vector<std::string>& addrs, int, SignalingPunchExchange::DoneFn done) {
+      mesh->bursts.push_back(addrs);
+      done(Roe<void>{});
+    };
+    ports.prefer_late_reserve = [mesh](const std::string& r1) { mesh->preferred.push_back(r1); };
+    side->stack->Calls()->ReachSignals().SetMeshPorts(std::move(ports));
+  }
+
+  std::optional<bool> punched;
+  offer_.stack->Calls()->ReachSignals().RequestSignalingPunch("12D3KooWAnswer", offer_mesh.candidates,
+                                                              [&](Roe<void> r) { punched = static_cast<bool>(r); });
+  PumpWire();
+  ASSERT_EQ(answer_mesh.bursts.size(), 1u) << "the answer side bursts at the offer's candidates";
+  EXPECT_EQ(answer_mesh.bursts[0], offer_mesh.candidates);
+  ASSERT_EQ(offer_mesh.bursts.size(), 1u) << "the offer side bursts at the answer's candidates";
+  EXPECT_EQ(offer_mesh.bursts[0], answer_mesh.candidates);
+  ASSERT_TRUE(punched);
+  EXPECT_TRUE(*punched);
+
+  offer_.stack->Calls()->ReachSignals().AnnounceCircuitR1("12D3KooWR1");
+  PumpWire();
+  EXPECT_EQ(answer_mesh.preferred, std::vector<std::string>{"12D3KooWR1"});
+  FinishAnswerLeaveExpectBothIdle(call_id);
 }
 
 // B30 (call-path-resilience k4): the relay delivers CallAccept late (CN cellular: 11–58 s) while the
@@ -284,6 +345,9 @@ TEST_F(CallDualStackComposeTest, RetryFromOneSideReconnectsAFailedOpenCallOnBoth
       30000);
   ASSERT_EQ(offer_.ui->Phase(), CallPhase::ConnectFailed);
   ASSERT_EQ(answer_.ui->Phase(), CallPhase::ConnectFailed);
+  // Failed is not closed: both LiveCalls are still Joined.
+  ExpectLive(offer_, call_id, LiveCallState::Joined, LiveCallEndReason::None, "offer failed");
+  ExpectLive(answer_, call_id, LiveCallState::Joined, LiveCallEndReason::None, "answer failed");
   const int offer_dials = offer_.transport->connect_async_calls;
 
   answer_.transport->fail_connects = false;
@@ -297,7 +361,10 @@ TEST_F(CallDualStackComposeTest, RetryFromOneSideReconnectsAFailedOpenCallOnBoth
   EXPECT_TRUE(offer_.stack->MediaEngine() && offer_.stack->MediaEngine()->IsActive());
   EXPECT_EQ(offer_.transport->connect_async_calls, offer_dials) << "resumed over the inbound stream, no redial";
   FinishAnswerLeaveExpectBothIdle(call_id);
-  EXPECT_EQ(offer_.ui->TakeRemoteEndedCallId(), std::optional<std::string>(call_id));
+  const auto offer_end = offer_.ui->TakeRemoteEnd();
+  ASSERT_TRUE(offer_end.has_value());
+  EXPECT_EQ(offer_end->call_id, call_id);
+  EXPECT_FALSE(offer_end->declined);
 }
 
 TEST_F(CallDualStackComposeTest, OfferLeaveClearsAnswererIdle) {
@@ -313,9 +380,11 @@ TEST_F(CallDualStackComposeTest, OfferLeaveClearsAnswererIdle) {
   ASSERT_FALSE(call_id.empty());
   FinishOfferLeaveExpectBothIdle(call_id);
   // The answerer is told why its call vanished — once; the side that left is not.
-  EXPECT_EQ(answer_.ui->TakeRemoteEndedCallId(), std::optional<std::string>(call_id));
-  EXPECT_EQ(answer_.ui->TakeRemoteEndedCallId(), std::nullopt) << "once per call";
-  EXPECT_EQ(offer_.ui->TakeRemoteEndedCallId(), std::nullopt) << "the leaver ended it itself";
+  const auto answer_end = answer_.ui->TakeRemoteEnd();
+  ASSERT_TRUE(answer_end.has_value());
+  EXPECT_EQ(answer_end->call_id, call_id);
+  EXPECT_FALSE(answer_.ui->TakeRemoteEnd().has_value()) << "once per call";
+  EXPECT_FALSE(offer_.ui->TakeRemoteEnd().has_value()) << "the leaver ended it itself";
 }
 
 TEST_F(CallDualStackComposeTest, OfferAnswerKCycleTeardown) {
@@ -377,6 +446,13 @@ TEST_F(CallDualStackComposeTest, OfferInviteAnswerDeclineClearsOfferer) {
       << "offerer must Idle on remote Decline without local LeaveClicked";
   EXPECT_FALSE(offer_.stack->HasActiveLocalCall());
   EXPECT_FALSE(answer_.stack->HasActiveLocalCall());
+  ExpectLive(answer_, call_id, LiveCallState::Ended, LiveCallEndReason::Declined, "answer");
+  ExpectLive(offer_, call_id, LiveCallState::Ended, LiveCallEndReason::DeclinedByPeer, "offer");
+  // The caller is told the call was declined; the one who declined is told nothing.
+  const auto offer_end = offer_.ui->TakeRemoteEnd();
+  ASSERT_TRUE(offer_end.has_value());
+  EXPECT_TRUE(offer_end->declined);
+  EXPECT_FALSE(answer_.ui->TakeRemoteEnd().has_value());
 }
 
 TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
@@ -439,6 +515,12 @@ TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   ASSERT_TRUE(answer_sessions);
   // ActiveLocalCall is only the joined call — A must not be the active one.
   EXPECT_EQ((*active_b)->call_id, call_b);
+  // One active call: placing B ended A on the offerer (Superseded); its Leave reached the answerer
+  // before B's invite, so there A was ended by the peer.
+  ExpectLive(offer_, call_a, LiveCallState::Ended, LiveCallEndReason::Superseded, "offer A");
+  ExpectLive(answer_, call_a, LiveCallState::Ended, LiveCallEndReason::RemoteEnded, "answer A");
+  ExpectLive(answer_, call_b, LiveCallState::Joined, LiveCallEndReason::None, "answer B");
+  ExpectLive(offer_, call_b, LiveCallState::Joined, LiveCallEndReason::None, "offer B");
 
   FinishAnswerLeaveExpectBothIdle(call_b);
 }

@@ -100,6 +100,6 @@ When a parent must post work that captures raw `this` / `Impl*` onto IO (or anot
 | Conversation Amp transports (`AmpDirectChatTransport`, `AmpBroadcastTransport`, `AmpChatHistoryTransport`, `AmpPeerAnnounceTransport`, `AmpChatBlobTransport`) | Protocol-handler `Bind`; Invalidate on Stop |
 | `MeshMediaPlane` / `CircuitRendezvousCoordinator` | OnRelayChosen (plane); reserve / park / repark cbs (rendezvous); `InvalidateAsyncOps` → `Invalidate` at mesh stop and Clear (a pending park still answers `false` at its deadline) |
 | `AmpCircuitHopReach` | AbortPending Invalidates; EnsureViaCircuit / punch cbs check Alive |
-| `CallLifecycle` | ClearBinding Invalidates; worker/UI Accept/Decline/Leave replies check Alive |
+| `CallSessionManager` intents | `intents_self_` (dtor Invalidates): the posted answerer-kick retry and media restarts check Alive |
 
 Everything else: prefer parent-only destroy + sync Abort, `shared_ptr`/`weak_ptr` pins for dispatch, or finish callbacks that do **not** capture the owner. Do not spread raw-`this` posts outside this whitelist without updating this table.

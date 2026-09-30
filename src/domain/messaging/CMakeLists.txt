@@ -13,7 +13,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     ChatHistoryResponder.cpp
     ChatPayloadCodec.cpp
     CallControlCodec.cpp
-    CallLifecycleTransitionLogic.cpp
+    CallLifecycleTypes.cpp
     CallMediaKeyStore.cpp
     CallSessionLogic.cpp
     CallSessionStore.cpp

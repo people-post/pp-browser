@@ -118,6 +118,10 @@ void CallMediaAmpTransport::AddStandby(const CallMediaLinkKind kind, std::functi
   coordinator_.AddStandbyLegOfKind(leg, kind, std::move(done));
 }
 
+std::string CallMediaAmpTransport::ActiveRemotePeerId() const {
+  return coordinator_.ActiveRemotePeerId();
+}
+
 CallMediaLinkKind CallMediaAmpTransport::ActiveLinkKind() const {
   return coordinator_.ActiveLinkKind();
 }
