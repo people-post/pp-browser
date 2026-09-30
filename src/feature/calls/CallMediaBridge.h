@@ -218,12 +218,14 @@ public:
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
-  // Answerer start steps (UI; the key poll runs on a worker).
+  // Start steps (each runs as its own event; the key poll is a delayed event per round).
+  void RunOffererStart(const std::string& call_id, const std::string& peer_identity);
   void RunAnswererStart(const std::string& call_id, const std::string& peer_identity);
   void DeferAnswererUntilMediaKey(const std::string& call_id, const std::string& peer_identity,
                                   const std::string& reason);
-  void PollForDeferredMediaKey(const std::string& call_id, uint64_t key_wait_gen);
+  void OnKeyPollDue(const direct_event::KeyPollDue& due);
   void OnDeferredMediaKeyTimeout(const std::string& call_id);
+  void StartDeferredAnswerer(const std::string& call_id);
   // BeginSession steps.
   void ResetDirectSessionState(const std::string& call_id, const std::string& peer_identity, bool offerer);
   /** Stop the prior engine session / connect; true when an inbound direct stream is kept. */
@@ -297,6 +299,7 @@ private:
   void OnRelayStandbyFire();
   /** k3-4: TX-only restart (Detach + BeginSession via circuit) — the fallback when the call cannot move. */
   void EscalateBreakBeforeMake(const std::string& call_id, const std::string& peer);
+  void RestartAfterEscalate(const std::string& call_id, const std::string& peer);
   void CancelEscalateReach();
   /** k4: the offerer reaches the peer again and migrates the call onto that link (retries). */
   void ScheduleReanchor(const std::string& call_id, std::chrono::milliseconds delay);
@@ -351,10 +354,8 @@ private:
   /** Bumped by AbortConnectSequence; the StartSfu send fn drops TX from an older generation. */
   std::atomic<uint64_t> connect_generation_{0};
   std::atomic<bool> stopping_{false};
-  /** Bumped when the pending (key-deferred) answerer changes; the key-poll worker watches it. */
-  std::atomic<uint64_t> key_wait_gen_{0};
-  /** Cleared in the destructor; guards stops posted from other threads. */
-  std::shared_ptr<std::atomic<bool>> alive_;
+  /** Names the current key wait; bumped when the pending (key-deferred) answerer changes. */
+  uint64_t key_wait_gen_ = 0;
   CallsOutbox<DirectPathEvent> outbox_;
   /** Steps waiting for a result from another thread (reach / upgrade / standby / migrate answers). */
   CallsSteps steps_;

@@ -179,6 +179,26 @@ struct PathChanged {
   std::string call_id;
   CallMediaLinkKind kind = CallMediaLinkKind::Unknown;
 };
+/** TX-only escalate tore the session down: start it again over a circuit. */
+struct EscalateRestart {
+  std::string call_id;
+  std::string peer;
+};
+/** Start the offerer side of `call_id` (after the arming that scheduled it). */
+struct StartOfferer {
+  std::string call_id;
+  std::string peer;
+};
+/** The call's media key landed (key exchange, or found by the key poll). */
+struct MediaKeyReady {
+  std::string call_id;
+};
+/** The deferred answerer's key poll: round `round` of key wait `wait` is due. */
+struct KeyPollDue {
+  std::string call_id;
+  uint64_t wait = 0;
+  int round = 0;
+};
 /** A stored step's result arrived (a reach / upgrade / standby / migrate answer). */
 struct StepReady {
   CallsStepReady step;
@@ -190,7 +210,9 @@ using DirectPathEvent =
     std::variant<direct_event::HealthTick, direct_event::ReserveRenewTick, direct_event::UpgradeDue,
                  direct_event::StandbyDue, direct_event::ReanchorDue, direct_event::RecoveryGraceOver,
                  direct_event::InboundPeer, direct_event::BundleConnected, direct_event::BundleFailed,
-                 direct_event::PathLost, direct_event::PathChanged, direct_event::StepReady>;
+                 direct_event::PathLost, direct_event::PathChanged, direct_event::EscalateRestart,
+                 direct_event::StartOfferer, direct_event::MediaKeyReady, direct_event::KeyPollDue,
+                 direct_event::StepReady>;
 
 namespace session_event {
 

@@ -30,6 +30,8 @@ constexpr std::chrono::milliseconds kInboundRecoveryGrace{3000};
 constexpr int64_t kMeshConnectTimeoutMs = 75000;
 /** Cover long PollInbox HTTP + offerer MediaKey send/resend window. */
 constexpr int kMediaKeyInboxPollRounds = 90;
+/** One deferred-key poll round (90 rounds ≈ 90 s). */
+constexpr std::chrono::milliseconds kMediaKeyPollRound{1000};
 /** Rate-limit PeerId→relay unknown drops (PreferLocal / non-contact dogfood). */
 std::atomic<uint32_t> g_inbound_unmapped_audio_drops{0};
 
@@ -43,7 +45,6 @@ CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions
       reach_(dial, circuit_reach), connect_(direct, reach_),
       media_key_inbox_poll_rounds_(kMediaKeyInboxPollRounds) {
   redirectLogger("CallMediaBridge");
-  alive_ = std::make_shared<std::atomic<bool>>(true);
 
   connect_.SetInboundPorts(MakeInboundPorts());
 }
@@ -183,7 +184,6 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
 }
 
 CallMediaBridge::~CallMediaBridge() {
-  alive_->store(false, std::memory_order_release);
   media_.SetOnStateChanged({});  // installed by StartDirectEngine; the engine outlives the bridge
 }
 
@@ -415,6 +415,14 @@ void CallMediaBridge::Handle(DirectPathEvent& event) {
           Apply(CallDirectPlannerEvent::PathLost, e.call_id, media_peer_identity_);
         } else if constexpr (std::is_same_v<E, direct_event::PathChanged>) {
           OnPathChanged(e.call_id, e.kind);
+        } else if constexpr (std::is_same_v<E, direct_event::EscalateRestart>) {
+          RestartAfterEscalate(e.call_id, e.peer);
+        } else if constexpr (std::is_same_v<E, direct_event::StartOfferer>) {
+          RunOffererStart(e.call_id, e.peer);
+        } else if constexpr (std::is_same_v<E, direct_event::MediaKeyReady>) {
+          StartDeferredAnswerer(e.call_id);
+        } else if constexpr (std::is_same_v<E, direct_event::KeyPollDue>) {
+          OnKeyPollDue(e);
         } else if constexpr (std::is_same_v<E, direct_event::StepReady>) {
           steps_.Run(e.step.id, e.step.value.get());
         } else {
@@ -989,17 +997,19 @@ void CallMediaBridge::EscalateBreakBeforeMake(const std::string& call_id, const 
   AbortConnectSequence();
   force_circuit_ensure_ = true;  // consumed by the next reach (BuildReachRequest)
   direct_.Detach();
-  CallsThread::Post([this, call_id, peer]() {
-    if (stopping_.load() || media_.ActiveCallId() != call_id) {
-      return;
-    }
-    log().info << "TX-only escalate BeginSession role=" << (session_offerer_ ? "offerer" : "answerer")
-               << " call_id=" << call_id;
-    if (auto started = BeginSession(call_id, peer, session_offerer_); !started) {
-      log().warning << "TX-only escalate BeginSession failed: " << started.error().message;
-      FailUnlessDirectRecovered(call_id, started.error().message);
-    }
-  });
+  outbox_.Emit(direct_event::EscalateRestart{call_id, peer});
+}
+
+void CallMediaBridge::RestartAfterEscalate(const std::string& call_id, const std::string& peer) {
+  if (stopping_.load() || media_.ActiveCallId() != call_id) {
+    return;
+  }
+  log().info << "TX-only escalate BeginSession role=" << (session_offerer_ ? "offerer" : "answerer")
+             << " call_id=" << call_id;
+  if (auto started = BeginSession(call_id, peer, session_offerer_); !started) {
+    log().warning << "TX-only escalate BeginSession failed: " << started.error().message;
+    FailUnlessDirectRecovered(call_id, started.error().message);
+  }
 }
 
 bool CallMediaBridge::ShouldUseMeshForPeer(const std::string& /*peer_identity*/) const {
@@ -1216,7 +1226,7 @@ void CallMediaBridge::ResetDirectSessionState(const std::string& call_id, const 
   ClearMeshConnectFailed();
   if (!offerer) {
     pending_answerer_call_id_.clear();
-    key_wait_gen_.fetch_add(1, std::memory_order_acq_rel);
+    ++key_wait_gen_;
     pending_answerer_peer_.clear();
   }
 }
@@ -1342,53 +1352,49 @@ void CallMediaBridge::ScheduleStartMediaAsOfferer(const std::string& call_id,
                                                         const std::string& peer_identity) {
   // Mark before UI hop so CallController orphan auto-Leave cannot race CallAccept→Active.
   media_attempted_calls_.Insert(call_id);
-  CallsThread::Post([this, call_id, peer_identity]() {
-    Apply(CallDirectPlannerEvent::ScheduleOfferer, call_id, peer_identity);
-    if (direct_planner_phase_ != CallDirectPlannerPhase::Arming &&
-        direct_planner_phase_ != CallDirectPlannerPhase::Connecting &&
-        direct_planner_phase_ != CallDirectPlannerPhase::KeyWait) {
-      return;
-    }
-    auto session = sessions_.LoadSession(call_id);
-    if (!session || !session->has_value()) {
-      log().info << "StartMediaAsOfferer skip: no session call_id=" << call_id;
-      Apply(CallDirectPlannerEvent::Stop, call_id, peer_identity);
-      return;
-    }
-    if ((*session)->state == CallSessionState::Ended) {
-      log().info << "StartMediaAsOfferer skip: session ended call_id=" << call_id;
-      Apply(CallDirectPlannerEvent::Stop, call_id, peer_identity);
-      return;
-    }
-    if (media_.IsActive() && media_.ActiveCallId() == call_id) {
-      log().info << "StartMediaAsOfferer skip: media already active call_id=" << call_id;
-      return;
-    }
-    log().info << "StartMediaAsOfferer UI enter call_id=" << call_id << " peer=" << peer_identity;
-    SetDirectPlannerPhase(CallDirectPlannerPhase::Connecting, CallDirectPlannerEvent::ScheduleOfferer,
-                          call_id);
-    if (auto started = StartMediaAsOfferer(call_id, peer_identity); !started) {
-      log().warning << "StartMediaAsOfferer failed: " << started.error().message;
-      SurfaceConnectFailed(call_id, started.error().message, /*stop_media=*/true);
-    }
-  });
+  outbox_.Emit(direct_event::StartOfferer{call_id, peer_identity});
+}
+
+void CallMediaBridge::RunOffererStart(const std::string& call_id, const std::string& peer_identity) {
+  Apply(CallDirectPlannerEvent::ScheduleOfferer, call_id, peer_identity);
+  if (direct_planner_phase_ != CallDirectPlannerPhase::Arming &&
+      direct_planner_phase_ != CallDirectPlannerPhase::Connecting &&
+      direct_planner_phase_ != CallDirectPlannerPhase::KeyWait) {
+    return;
+  }
+  auto session = sessions_.LoadSession(call_id);
+  if (!session || !session->has_value()) {
+    log().info << "StartMediaAsOfferer skip: no session call_id=" << call_id;
+    Apply(CallDirectPlannerEvent::Stop, call_id, peer_identity);
+    return;
+  }
+  if ((*session)->state == CallSessionState::Ended) {
+    log().info << "StartMediaAsOfferer skip: session ended call_id=" << call_id;
+    Apply(CallDirectPlannerEvent::Stop, call_id, peer_identity);
+    return;
+  }
+  if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+    log().info << "StartMediaAsOfferer skip: media already active call_id=" << call_id;
+    return;
+  }
+  log().info << "StartMediaAsOfferer UI enter call_id=" << call_id << " peer=" << peer_identity;
+  SetDirectPlannerPhase(CallDirectPlannerPhase::Connecting, CallDirectPlannerEvent::ScheduleOfferer,
+                        call_id);
+  if (auto started = StartMediaAsOfferer(call_id, peer_identity); !started) {
+    log().warning << "StartMediaAsOfferer failed: " << started.error().message;
+    SurfaceConnectFailed(call_id, started.error().message, /*stop_media=*/true);
+  }
 }
 
 void CallMediaBridge::ScheduleStartMediaAsAnswerer(const std::string& call_id,
                                                          const std::string& peer_identity) {
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   media_attempted_calls_.Insert(call_id);
-  // Prefer inline when already on the calls owner (AcceptSucceeded Kick); otherwise ahead of queued work.
-  if (CallsThread::IsCurrent()) {
-    RunAnswererStart(call_id, peer_identity);
-    return;
-  }
-  log().info << "ScheduleStartMediaAsAnswerer queued (calls owner, front) call_id=" << call_id;
-  CallsThread::PostFront([this, call_id, peer_identity]() { RunAnswererStart(call_id, peer_identity); });
+  RunAnswererStart(call_id, peer_identity);
 }
 
 void CallMediaBridge::RunAnswererStart(const std::string& call_id, const std::string& peer_identity) {
-  log().info << "ScheduleStartMediaAsAnswerer UI enter call_id=" << call_id << " peer=" << peer_identity
-             << " on_owner=" << (CallsThread::IsCurrent() ? 1 : 0);
+  log().info << "ScheduleStartMediaAsAnswerer UI enter call_id=" << call_id << " peer=" << peer_identity;
   // Re-arm Direct before Apply so product AllowsDirectPath for Schedule.
   if (arming_.IsBound() && arming_.direct_ops_allowed && !arming_.direct_ops_allowed()) {
     log().info << "ScheduleStartMediaAsAnswerer request_direct_arming call_id=" << call_id
@@ -1442,39 +1448,34 @@ void CallMediaBridge::DeferAnswererUntilMediaKey(const std::string& call_id, con
   if (arming_.on_media_deferred) {
     arming_.on_media_deferred(call_id);
   }
-  // The worker must not read pending_answerer_call_id_ (UI-owned string): it watches the
-  // key-wait generation instead, bumped whenever the pending answerer changes (TSan).
-  const uint64_t key_wait_gen = key_wait_gen_.fetch_add(1, std::memory_order_acq_rel) + 1;
-  AppRuntime::PostWorkerBackground([this, call_id, key_wait_gen]() { PollForDeferredMediaKey(call_id, key_wait_gen); });
+  // Each poll round is a delayed event naming this wait; a newer wait (or none) makes it stale.
+  const uint64_t wait = ++key_wait_gen_;
+  if (media_key_inbox_poll_rounds_ <= 0) {
+    outbox_.Emit(direct_event::KeyPollDue{call_id, wait, 0});
+    return;
+  }
+  host_.P2pRequestInboxSync();
+  (void)outbox_.After(kMediaKeyPollRound, direct_event::KeyPollDue{call_id, wait, 0});
 }
 
-void CallMediaBridge::PollForDeferredMediaKey(const std::string& call_id, uint64_t key_wait_gen) {
-  // Worker. Accept-time SyncInbox often races the offerer's MediaKey send — keep polling.
-  // SyncInbox coalesces via poll_again_; do not assume each Request starts HTTP.
-  const auto superseded = [this, key_wait_gen]() {
-    return stopping_.load(std::memory_order_acquire) ||
-           key_wait_gen_.load(std::memory_order_acquire) != key_wait_gen;
-  };
-  for (int i = 0; i < media_key_inbox_poll_rounds_; ++i) {
-    if (superseded()) {
-      return;
-    }
+void CallMediaBridge::OnKeyPollDue(const direct_event::KeyPollDue& due) {
+  // Accept-time SyncInbox often races the offerer's MediaKey send — keep polling (one request a
+  // round; SyncInbox coalesces, so a request need not start HTTP).
+  if (stopping_.load(std::memory_order_acquire) || key_wait_gen_ != due.wait) {
+    return;  // key arrived, Leave, or a newer wait
+  }
+  if (due.round < media_key_inbox_poll_rounds_ && LoadActiveMediaKey(due.call_id)) {
+    log().info << "Deferred MediaKey found in store — kick start call_id=" << due.call_id;
+    OnMediaKeyReady(due.call_id);
+    return;
+  }
+  if (due.round + 1 < media_key_inbox_poll_rounds_) {
     host_.P2pRequestInboxSync();
-    // Chunked sleep so PrepareForTeardown / Leave can abort without a 1s hang.
-    for (int slice = 0; slice < 20; ++slice) {
-      if (superseded()) {
-        return;
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    if (LoadActiveMediaKey(call_id)) {
-      log().info << "Deferred MediaKey found in store — kick start call_id=" << call_id;
-      OnMediaKeyReady(call_id);
-      return;
-    }
+    (void)outbox_.After(kMediaKeyPollRound, direct_event::KeyPollDue{due.call_id, due.wait, due.round + 1});
+    return;
   }
   // Surface failure — do not leave chrome stuck in MediaPending forever.
-  CallsThread::Post([this, call_id]() { OnDeferredMediaKeyTimeout(call_id); });
+  OnDeferredMediaKeyTimeout(due.call_id);
 }
 
 void CallMediaBridge::OnDeferredMediaKeyTimeout(const std::string& call_id) {
@@ -1482,7 +1483,7 @@ void CallMediaBridge::OnDeferredMediaKeyTimeout(const std::string& call_id) {
     return; // key arrived, Leave, or superseding Accept
   }
   pending_answerer_call_id_.clear();
-  key_wait_gen_.fetch_add(1, std::memory_order_acq_rel);
+  ++key_wait_gen_;
   pending_answerer_peer_.clear();
   log().warning << "Deferred MediaKey wait exhausted call_id=" << call_id << " — ConnectFailed";
   mesh_connect_failed_ = true;
@@ -1500,57 +1501,42 @@ void CallMediaBridge::OnMediaKeyReady(const std::string& call_id) {
   }
   // Wake inbound hello key-wait (if any) before hopping to UI for deferred answerer start.
   connect_.NotifyKeyAvailable();
-  // Hop to UI — inbound CallMediaKey is processed on Browser IO (inside PollInbox).
-  CallsThread::Post([this, call_id]() {
-    std::string peer = pending_answerer_peer_;
-    const bool pending = (pending_answerer_call_id_ == call_id);
-    if (!pending) {
-      // Key stored for later Accept LoadActiveMediaKey — do NOT auto-start. Late keys from a
-      // prior call were starting answerer media on the wrong call_id (Samsung dogfood).
-      log().info << "CallMediaKey stored (not deferred yet) call_id=" << call_id;
-      return;
+  // The start runs as its own event, never inside the key exchange that reported the key.
+  outbox_.Emit(direct_event::MediaKeyReady{call_id});
+}
+
+void CallMediaBridge::StartDeferredAnswerer(const std::string& call_id) {
+  std::string peer = pending_answerer_peer_;
+  const bool pending = (pending_answerer_call_id_ == call_id);
+  if (!pending) {
+    // Key stored for later Accept LoadActiveMediaKey — do NOT auto-start. Late keys from a
+    // prior call were starting answerer media on the wrong call_id (Samsung dogfood).
+    log().info << "CallMediaKey stored (not deferred yet) call_id=" << call_id;
+    return;
+  }
+  if (peer.empty()) {
+    if (auto resolved = host_.P2pPeerIdentityForCall(call_id); resolved && resolved->has_value()) {
+      peer = **resolved;
     }
-    if (peer.empty()) {
-      if (auto resolved = host_.P2pPeerIdentityForCall(call_id); resolved && resolved->has_value()) {
-        peer = **resolved;
-      }
-    }
-    log().info << "CallMediaKey ready — starting deferred answerer media call_id=" << call_id;
-    pending_answerer_call_id_.clear();
-    key_wait_gen_.fetch_add(1, std::memory_order_acq_rel);
-    pending_answerer_peer_.clear();
-    Apply(CallDirectPlannerEvent::KeyReady, call_id, peer);
-    if (arming_.on_media_key_ready) {
-      arming_.on_media_key_ready(call_id);
-    }
-    if (!peer.empty()) {
-      ScheduleStartMediaAsAnswerer(call_id, peer);
-    }
-  });
+  }
+  log().info << "CallMediaKey ready — starting deferred answerer media call_id=" << call_id;
+  pending_answerer_call_id_.clear();
+  ++key_wait_gen_;
+  pending_answerer_peer_.clear();
+  Apply(CallDirectPlannerEvent::KeyReady, call_id, peer);
+  if (arming_.on_media_key_ready) {
+    arming_.on_media_key_ready(call_id);
+  }
+  if (!peer.empty()) {
+    ScheduleStartMediaAsAnswerer(call_id, peer);
+  }
 }
 
 void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
-  if (CallsThread::IsCurrent()) {
-    StopMeshMediaOnUi(call_id);
-    return;
-  }
   // Bridge state, the connect sequence and CallMediaEngine::Stop (SDL capture — CALLS.md) are
-  // UI-thread only: hop the whole stop, not just the engine part. Front of the queue — Leave must
-  // not sit behind chrome refresh while capture feeds a detached SFU (zombie TX + red reconnecting
-  // on the next call). A StartSfu that lands first (AcceptInvite SoftMigrate / CallSfuAttach /
-  // a new call) makes this stop stale — it must not tear down the newer session.
-  const uint64_t session_gen = media_.MediaSessionGeneration();
-  CallsThread::PostFront([this, alive = alive_, call_id, session_gen]() {
-    if (!alive->load(std::memory_order_acquire)) {
-      return;
-    }
-    if (media_.MediaSessionGeneration() != session_gen) {
-      log().info << "StopMeshMedia skip stale stop leave=" << call_id << " posted_gen=" << session_gen
-                 << " now=" << media_.MediaSessionGeneration();
-      return;
-    }
-    StopMeshMediaOnUi(call_id);
-  });
+  // calls-owner only; every stop reaches here through the owner's events.
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  StopMeshMediaOnUi(call_id);
 }
 
 void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
@@ -1567,7 +1553,7 @@ void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
   const std::string peer = media_peer_identity_;
   if (pending_answerer_call_id_ == call_id) {
     pending_answerer_call_id_.clear();
-    key_wait_gen_.fetch_add(1, std::memory_order_acq_rel);
+    ++key_wait_gen_;
     pending_answerer_peer_.clear();
   }
   reach_.ReleasePeer(peer);
@@ -1696,7 +1682,7 @@ void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
   const std::string peer = media_peer_identity_;
   const std::string call_id = media_call_id_;
   pending_answerer_call_id_.clear();
-  key_wait_gen_.fetch_add(1, std::memory_order_acq_rel);
+  ++key_wait_gen_;
   pending_answerer_peer_.clear();
   reach_.ReleasePeer(peer);
   direct_.Detach();
@@ -1705,15 +1691,7 @@ void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
   ClearMeshConnectFailed();
 
   if (!call_id.empty() && media_.IsActive() && media_.ActiveCallId() == call_id) {
-    if (CallsThread::IsCurrent()) {
-      media_.Stop();
-    } else {
-      CallsThread::Post([this, call_id]() {
-        if (media_.IsActive() && media_.ActiveCallId() == call_id) {
-          media_.Stop();
-        }
-      });
-    }
+    media_.Stop();
   }
 }
 
@@ -1721,11 +1699,8 @@ Roe<void> CallMediaBridge::RetryMeshMedia(const std::string& call_id) {
   if (call_id.empty()) {
     return Error("call_id required");
   }
-  // Restarts the engine and the connect sequence — calls owner only. Refuse rather than race.
-  if (!CallsThread::IsCurrent()) {
-    log().error << "RetryMeshMedia called off the calls owner call_id=" << call_id;
-    return Error("call media retry must run on the calls owner");
-  }
+  // Restarts the engine and the connect sequence — calls owner only.
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
     return Error("Call session not found");
@@ -1765,10 +1740,7 @@ Roe<void> CallMediaBridge::ResumeMeshMediaFromInbound(const std::string& call_id
   if (call_id.empty()) {
     return Error("call_id required");
   }
-  if (!CallsThread::IsCurrent()) {
-    log().error << "ResumeMeshMediaFromInbound called off the calls owner call_id=" << call_id;
-    return Error("call media resume must run on the calls owner");
-  }
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   auto session = sessions_.LoadSession(call_id);
   if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
     return Error("Call session not found");
