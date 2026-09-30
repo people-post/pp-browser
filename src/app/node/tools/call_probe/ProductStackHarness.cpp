@@ -1,6 +1,6 @@
 #include "app/node/tools/call_probe/ProductStackHarness.h"
 #include "feature/calls/LocalNetworkReaction.h"
-#include "feature/conversations/MeshMediaPlaneWiring.h"
+#include "feature/conversations/MeshConnectivityWiring.h"
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
@@ -151,7 +151,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     }
   }
 
-  mesh_media_ = std::make_unique<MeshMediaPlane>();
+  mesh_connectivity_ = std::make_unique<MeshConnectivity>();
+  mesh_media_relay_ = std::make_unique<MeshMediaRelay>(*mesh_connectivity_);
   stack_ = std::make_unique<CallStack>();
   if (auto stores = stack_->InitializeStores(store_->ProfileDbPath(), "call-probe"); !stores) {
     return stores.error();
@@ -222,16 +223,17 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     return msg;
   };
   deps.bind_call_control = [this](CallControlInboundPorts ports) { inbound_ = std::move(ports); };
-  MeshMediaPlaneWiringInputs media;
-  media.mesh = deps.mesh;
-  media.contacts = deps.contacts;
-  media.mesh_config = deps.mesh_config;
-  media.list_directory_nodes = deps.list_directory_nodes;
-  media.list_dht_nodes = deps.list_dht_nodes;
-  media.seed_dial_ok = deps.seed_dial_ok;
-  media.register_direct_endpoint = deps.delivery.register_peer_direct_endpoint;
-  mesh_media_->SetDeps(MakeMeshMediaPlaneDeps(std::move(media)));
-  deps.mesh_media = mesh_media_.get();
+  MeshConnectivityWiringInputs reach;
+  reach.mesh = deps.mesh;
+  reach.contacts = deps.contacts;
+  reach.mesh_config = deps.mesh_config;
+  reach.list_directory_nodes = deps.list_directory_nodes;
+  reach.list_dht_nodes = deps.list_dht_nodes;
+  reach.seed_dial_ok = deps.seed_dial_ok;
+  reach.register_direct_endpoint = deps.delivery.register_peer_direct_endpoint;
+  mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(std::move(reach)));
+  deps.connectivity = mesh_connectivity_.get();
+  deps.media_relay = mesh_media_relay_.get();
 
   stack_->BuildSessions(deps);
   if (!ui_->Available()) {
@@ -257,7 +259,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
         });
   });
   stack_->DetachMeshMedia();
-  mesh_media_->Wire();
+  mesh_connectivity_->Wire();
+  mesh_media_relay_->Wire();
   stack_->OnMeshServicesStarted();
   network_monitor_ = std::make_unique<NetworkMonitor>();
   if (!network_monitor_->Start([this](const NetworkChange& change) {
@@ -301,8 +304,8 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
   if (auto up = contacts_->Upsert(contact); !up) {
     return up.error();
   }
-  if (mesh_media_) {
-    mesh_media_->RefreshHopPolicy();  // contacts are rendezvous / punch-introducer candidates
+  if (mesh_connectivity_) {
+    mesh_connectivity_->RefreshHopPolicy();  // contacts are rendezvous / punch-introducer candidates
   }
   if (stack_) {
     stack_->RunOnOwner([account_id, peer_id](CallSessionManager& calls) {
@@ -325,8 +328,10 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
 void ProductStackHarness::RefreshMeshMedia() {
   broadcast_.reset();  // borrows the relay objects the rewire replaces
   stack_->DetachMeshMedia();
-  mesh_media_->ResetRelayClients();
-  mesh_media_->Wire();
+  mesh_media_relay_->ResetRelayClient();
+  mesh_connectivity_->ResetDialRegistry();
+  mesh_connectivity_->Wire();
+  mesh_media_relay_->Wire();
   stack_->RebindMeshMedia();
 }
 
@@ -336,7 +341,7 @@ Roe<void> ProductStackHarness::EnsurePeerCircuitPath(const std::string& peer_id)
   }
   // Async + PumpUntil: the completion lands on the UI mailbox.
   std::optional<Roe<void>> result;
-  mesh_media_->TryEnsurePeerReachableAsync(peer_id, [&](Roe<void> value) { result = std::move(value); });
+  mesh_connectivity_->TryEnsurePeerReachableAsync(peer_id, [&](Roe<void> value) { result = std::move(value); });
   if (!PumpUntil([&] { return result.has_value(); }, 30000)) {
     return Error("call-media circuit reach timed out");
   }
@@ -1078,7 +1083,7 @@ Roe<void> ProductStackHarness::EnableBroadcast(
   BroadcastMeshDeps deps;
   deps.links = &chat->links;
   deps.io = chat->io;
-  deps.relay = mesh_media_->RelayAttachPorts();
+  deps.relay = mesh_media_relay_->RelayAttachPorts();
   deps.publisher_key = std::move(publisher_key);
   deps.put_program_key = [this](const std::string& program_id, const std::string& join_handle,
                                 BroadcastProgramKey key) {
@@ -1145,13 +1150,13 @@ void ProductStackHarness::ShutdownImpl() {
     // Same order as ConversationsHub::StopMesh (L015). Detach = destroy (product
     // DetachAmpTransports): nothing may outlive the Amp stack.
     MeshHost* host = host_.get();
-    mesh_media_->InvalidateAsyncOps();
+    mesh_connectivity_->InvalidateAsyncOps();
     stack_->PrepareForMeshStop([host]() { host->AbortInflightCircuitRequests(); });
-    mesh_media_->ResetRelayClient();
+    mesh_media_relay_->ResetRelayClient();
     chat_.reset();
     host_->Stop();
     stack_->FinishMeshStop();
-    mesh_media_->ResetAfterMeshStop();
+    mesh_connectivity_->ResetAfterMeshStop();
   } else if (host_) {
     host_->Stop();
   }
@@ -1161,15 +1166,19 @@ void ProductStackHarness::ShutdownImpl() {
     ShutdownStep("call-stack-shutdown");
     stack_->Shutdown();
   }
-  if (mesh_media_) {
-    mesh_media_->Clear();
+  if (mesh_media_relay_) {
+    mesh_media_relay_->Clear();
+  }
+  if (mesh_connectivity_) {
+    mesh_connectivity_->Clear();
   }
   ShutdownStep("runtime");
   AppRuntime::Shutdown();
   ShutdownStep("free");
   ui_.reset();
   stack_.reset();
-  mesh_media_.reset();
+  mesh_media_relay_.reset();
+  mesh_connectivity_.reset();
   if (psk_) {
     psk_->ClearDek();
   }

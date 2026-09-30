@@ -52,8 +52,10 @@ domain/mesh/
   dht/            AmpDhtProtocol owns the record store, serve/ DhtServer, client/ DhtClient; codec, rate limiter
   discovery/      AmpDirectoryProtocol (serve/ DirectoryServer, client/ DirectoryClient),
                   MeshDirectoryCache, NameDirectory
-  media_plane/    MeshMediaPlane — owns the shared media_relay client, dial registry + listen
-                  book and circuit reach (with its punch / rendezvous pieces); lent to calls and broadcast.
+  connectivity/   MeshConnectivity — reaching peers for every consumer: owns the dial registry +
+                  listen book and circuit reach (with its punch / rendezvous pieces), hop-candidate
+                  policy and the local view; lent to calls and broadcast
+  media_plane/    MeshMediaRelay — the shared media_relay client, built on connectivity.
                   MediaRelayAttach (reach the hop, then quote / attach)
   reach/          Reach over a running MeshHost: PeerReachCoordinator, AmpCircuitHopReach,
                   PunchIntroducerWalk, CircuitRendezvousCoordinator, MeshReachPorts
@@ -80,7 +82,8 @@ shared          shared/ + l4/shared/
 reachability    dht <- discovery    circuit <- media_relay    call_media
 host            MeshHost composes the services above
 reach           reach / rendezvous / punch walk over MeshHost
-media_plane     MeshMediaPlane, MediaRelayAttach
+connectivity    MeshConnectivity
+media_plane     MeshMediaRelay, MediaRelayAttach
 ```
 
 A new edge is a `DEPS` change reviewed with the code; an upward include (a protocol reaching into
@@ -95,7 +98,8 @@ Feature code accesses mesh only through **`MeshHost` narrow ports**:
 | Chat / dial | `MeshHost::ChatDeps()` → `IChatPeerLinks&` | Amp chat, history, blob, warm/dial |
 | Circuit | `MeshHost::CircuitDeps()` | Circuit bridge, hop reach |
 | Call-media transport | `CallMediaAmpTransport` via `CallStack` | Wire transport in mesh; `CallMediaBridge` in feature |
-| Media relay / dial / reach / parking | `MeshMediaPlane` (owned by `ConversationsHub`) | Borrowed by `CallStack` (`CallStackDeps::mesh_media`) and broadcast (`RelayAttachPorts`); hop candidates injected by `MakeMeshMediaPlaneDeps` ([L015](../../projects/media-client-layers/DECISIONS.md#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast)) |
+| Dial / reach / parking | `MeshConnectivity` (owned by `ConversationsHub`) | Borrowed by `CallStack` (`CallStackDeps::connectivity`); hop candidates injected by `MakeMeshConnectivityDeps` ([L015](../../projects/media-client-layers/DECISIONS.md#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast)) |
+| Media relay | `MeshMediaRelay` (owned by `ConversationsHub`, built on `MeshConnectivity`) | Borrowed by `CallStack` (`CallStackDeps::media_relay`) and broadcast (`RelayAttachPorts`) |
 
 Feature must **not** `#include "amp/link/*"` in headers. Implementation `.cpp` files may include `amp/link/PeerLink.h` only where channel session binding requires it; new code should prefer `IChatPeerLinks`.
 

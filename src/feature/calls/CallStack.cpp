@@ -276,18 +276,18 @@ void CallStack::SyncMediaPlaneDeps() {
     loop.Enqueue(calls_event::MeshPeerIdLearned{account, peer_id});  // connectivity owner → calls owner
   };
   media_plane_->SetDeps(std::move(plane_deps));
-  media_plane_->SetMeshMedia(mesh_media());
+  media_plane_->SetMesh(connectivity(), media_relay());
   BindMeshMediaHooks();
 }
 
 void CallStack::BindMeshMediaHooks() {
-  MeshMediaPlane* shared = mesh_media();
+  MeshConnectivity* shared = connectivity();
   if (!shared) {
     return;
   }
-  // The plane runs these on the connectivity owner / Amp IO: hop to the calls owner.
+  // Connectivity runs these on its owner / Amp IO: hop to the calls owner.
   // H011: the rendezvous R1 our circuit reach chose is announced to the call peer.
-  // The hooks hold the loop's ref, not the stack: the plane outlives it.
+  // The hooks hold the loop's ref, not the stack: connectivity outlives it.
   shared->SetOnRelayChosen(
       [loop = loop_.Share()](const std::string& circuit_r1) { loop.Enqueue(calls_event::RelayChosen{circuit_r1}); });
   // H012: when Amp introducers are exhausted, exchange punch candidates over call-control.
@@ -441,15 +441,15 @@ CallPeerCaps CallStack::LocalPeerCaps() const {
 
 /** Connectivity for the sessions: circuit readiness / park, and the reach signals' mesh side. */
 void CallStack::BindSessionMeshReach() {
-  // Connectivity: park on org hops so this peer is ServeDial-reachable (shared mesh media).
+  // Connectivity: park on org hops so this peer is ServeDial-reachable.
   call_sessions_->SetEnsureCircuitReady([this]() {
-    if (MeshMediaPlane* shared = mesh_media()) {
+    if (MeshConnectivity* shared = connectivity()) {
       shared->Rendezvous().ReserveOnBootstrapSeeds();
     }
   });
   // Park completes on the Amp IO thread (or at a coordinator deadline); the workflow reports it as an event.
   call_sessions_->SetParkCircuit([this](int timeout_ms, std::function<void(bool)> done) {
-    if (MeshMediaPlane* shared = mesh_media()) {
+    if (MeshConnectivity* shared = connectivity()) {
       shared->Rendezvous().EnsureBootstrapSeedParkedAsync(std::move(done), timeout_ms);
     } else {
       done(false);
@@ -457,14 +457,14 @@ void CallStack::BindSessionMeshReach() {
   });
   CallReachSignals::MeshPorts reach;
   reach.prefer_late_reserve = [this](const std::string& relay_peer_id) {
-    if (MeshMediaPlane* shared = mesh_media()) {
+    if (MeshConnectivity* shared = connectivity()) {
       shared->Rendezvous().PreferLateReserve(relay_peer_id);
     }
   };
   reach.local_punch_addrs = [this]() -> std::vector<std::string> { return LocalMeshView()->punch_candidate_addrs; };
   reach.punch_burst = [this](const std::vector<std::string>& peer_addrs, int window_ms,
                              std::function<void(Roe<void>)> on_done) {
-    MeshMediaPlane* shared = mesh_media();
+    MeshConnectivity* shared = connectivity();
     if (!shared) {
       if (on_done) {
         on_done(Error("amp punch unavailable"));
@@ -506,8 +506,11 @@ void CallStack::BindTestMediaPathOnOwner(ICallMediaTransport* transport, IDialRe
   if (media_plane_) {
     media_plane_->BindTestMediaPath(transport);
   }
-  if (MeshMediaPlane* shared = mesh_media()) {
-    shared->BindTestPath(dial, circuit_reach, relay);
+  if (MeshConnectivity* shared = connectivity()) {
+    shared->BindTestPath(dial, circuit_reach);
+  }
+  if (MeshMediaRelay* relay_host = media_relay()) {
+    relay_host->BindTestRelay(relay);
   }
   BindMediaProducts();
 }
@@ -590,7 +593,7 @@ bool CallStack::IsConnectWorkerInflight() const {
 }
 
 std::shared_ptr<const MeshLocalView> CallStack::LocalMeshView() const {
-  MeshMediaPlane* shared = mesh_media();
+  MeshConnectivity* shared = connectivity();
   return shared ? shared->LocalView() : std::make_shared<const MeshLocalView>();
 }
 
@@ -705,7 +708,7 @@ void CallStack::ReleaseOnOwner() {
   PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   mobility_wake_.Disarm();
   DetachMeshMedia();
-  if (MeshMediaPlane* shared = mesh_media()) {
+  if (MeshConnectivity* shared = connectivity()) {
     shared->SetOnRelayChosen({});
     shared->SetSignalingPunch({});
   }

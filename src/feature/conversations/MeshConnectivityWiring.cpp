@@ -1,4 +1,4 @@
-#include "feature/conversations/MeshMediaPlaneWiring.h"
+#include "feature/conversations/MeshConnectivityWiring.h"
 
 #include "domain/people/MeshHopPolicy.h"
 #include "foundation/data/MeshRole.h"
@@ -32,19 +32,19 @@ std::vector<std::string> PeerIds(const std::vector<MeshHopCandidate>& hops) {
 
 namespace {
 
-MeshConfig MeshConfigOf(const MeshMediaPlaneWiringInputs& in) {
+MeshConfig MeshConfigOf(const MeshConnectivityWiringInputs& in) {
   auto cfg = in.mesh_config ? in.mesh_config() : nullptr;
   return cfg ? *cfg : MeshConfig{};
 }
 
 } // namespace
 
-MeshMediaPlaneDeps MakeMeshMediaPlaneDeps(MeshMediaPlaneWiringInputs in) {
-  auto inputs = std::make_shared<MeshMediaPlaneWiringInputs>(std::move(in));
+MeshConnectivityDeps MakeMeshConnectivityDeps(MeshConnectivityWiringInputs in) {
+  auto inputs = std::make_shared<MeshConnectivityWiringInputs>(std::move(in));
   const auto directory = [inputs]() {
     return inputs->list_directory_nodes ? inputs->list_directory_nodes() : std::vector<MeshDirectoryNode>{};
   };
-  MeshMediaPlaneDeps deps;
+  MeshConnectivityDeps deps;
   deps.mesh = inputs->mesh;
   deps.note_lan_peer_id = inputs->note_lan_peer_id;
   deps.register_direct_endpoint = inputs->register_direct_endpoint;

@@ -94,7 +94,7 @@ public:
   void SetOnRingChangedMesh(RingChangedFn callback);
   using PrefetchPeerReachFn = std::function<void(const std::string& identity)>;
   void SetPrefetchPeerReachability(PrefetchPeerReachFn callback);
-  /** Mesh circuit readiness (park/reserve) — composition projects the shared MeshMediaPlane. */
+  /** Mesh circuit readiness (park/reserve) — composition projects the shared MeshConnectivity. */
   using EnsureCircuitReadyFn = std::function<void()>;
   void SetEnsureCircuitReady(EnsureCircuitReadyFn callback);
   /** AcceptInvite may await circuit-ready before CallAccept. */

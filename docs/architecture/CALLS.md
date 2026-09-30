@@ -328,7 +328,7 @@ UI must not choose P2P vs SFU. It posts clicks to `CallSessionManager::Apply` an
 |-------|------|---------------------------|-------------------|
 | **CallStack** | `unique_ptr`s + deps | all siblings (composition root) | wires everyone |
 | **CallMediaSeat** | exclusive media epoch (owned by CSM) | none | teardown hooks from CSM |
-| **CallMediaPlane** | call_media transport | none to CSM; borrows `MeshMediaPlane` | `DirectPathDeps` + deps callbacks |
+| **CallMediaPlane** | call_media transport | none to CSM; borrows `MeshConnectivity` + `MeshMediaRelay` | `DirectPathDeps` + deps callbacks |
 | **CallSessionManager** | signaling façade + UI intents | stores (ctor); owns Workflow + Topology + LiveCalls + the seat + the 1:1 path (bridge); builds the path arming / seat ports over LiveCalls | `Set*Ports` / `SetTopology*Ports` / `BindWorkflowHostPorts` / `BindTopologyHostPorts` |
 
 ### CallSessionManager (façade)
@@ -507,8 +507,9 @@ Landed (behavior-preserving + who-picks fix):
 | Path | Role |
 |------|------|
 | `src/feature/calls/CallStack.*` | Phase assembler — stores / CSM / Lifecycle / Seat + owns `CallMediaPlane` |
-| `src/feature/calls/CallMediaPlane.*` | Call media plane — call_media Amp transport, bridge, topology relay deps (borrows `MeshMediaPlane`) |
-| `src/domain/mesh/media_plane/MeshMediaPlane.*` | Shared mesh media owner — media_relay client, dial registry + listen book, circuit reach built from `PunchIntroducerWalk` + `CircuitRendezvousCoordinator` (reachability) (hub-owned, L015) |
+| `src/feature/calls/CallMediaPlane.*` | Call media plane — call_media Amp transport, the 1:1 path's deps, topology relay deps (borrows `MeshConnectivity` + `MeshMediaRelay`) |
+| `src/domain/mesh/connectivity/MeshConnectivity.*` | Shared connectivity owner — dial registry + listen book, circuit reach built from `PunchIntroducerWalk` + `CircuitRendezvousCoordinator` (reachability), hop policy, local view (hub-owned, L015) |
+| `src/domain/mesh/media_plane/MeshMediaRelay.*` | Shared media_relay client, built on `MeshConnectivity` (hub-owned, L015) |
 | `src/feature/calls/LiveCall.*` | The calls on this device: call state, per-call media progress, the V037 projection (phase / Status / gates) |
 | `src/feature/calls/CallSessionManager.h` | Port structs for CSM: `CallDirectMediaPorts` / `CallSessionLifecyclePorts` / `CallMediaSeatPorts` (V042/V043); `MakeSeatPorts` private on CSM |
 | `src/feature/calls/CallSessionWorkflow.*` | Durable session/roster workflow (V044/V045) — HostPorts clustered wire/duplex/hop/chrome/reach (V048) |

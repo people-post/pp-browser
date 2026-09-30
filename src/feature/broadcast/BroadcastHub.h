@@ -25,7 +25,7 @@ class PeerReachCoordinator;
 struct BroadcastMeshDeps {
   IChatPeerLinks* links = nullptr;
   MeshIoContext io;
-  /** Lent by the product hub's MeshMediaPlane; the hub must be destroyed before they are rewired (L015). */
+  /** Lent by the product hub's MeshMediaRelay (built on MeshConnectivity); the hub must be destroyed before they are rewired (L015). */
   MediaRelayAttachPorts relay;
   std::function<std::optional<ByteVector>(const std::string& peer_id)> publisher_key;
   std::function<std::string(const std::string& hop_peer_id)> hop_multiaddr;

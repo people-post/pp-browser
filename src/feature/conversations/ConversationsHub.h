@@ -22,7 +22,8 @@
 #include "domain/messaging/InitiationBillingStore.h"
 #include "feature/broadcast/BroadcastHub.h"
 #include "foundation/runtime/DeferredSelf.h"
-#include "domain/mesh/media_plane/MeshMediaPlane.h"
+#include "domain/mesh/connectivity/MeshConnectivity.h"
+#include "domain/mesh/media_plane/MeshMediaRelay.h"
 #include "feature/calls/CallStack.h"
 #include "foundation/platform/NetworkMonitor.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
@@ -421,15 +422,18 @@ private:
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;
 
-  // --- Neutral mesh media (L015) — lent to the call stack and broadcast; outlives both ---
-  std::unique_ptr<MeshMediaPlane> mesh_media_;
+  // --- Neutral mesh objects (L015) — lent to the call stack and broadcast; outlive both ---
+  /** Reaching peers (dial registry, listen book, circuit reach, rendezvous, punch walk). */
+  std::unique_ptr<MeshConnectivity> mesh_connectivity_;
+  /** The media_relay client, built on connectivity (declared after it: goes first). */
+  std::unique_ptr<MeshMediaRelay> mesh_media_relay_;
 
   // --- CallStack (app-only) ------------------------------------------------
   std::unique_ptr<CallStack> call_stack_;
 
   // --- MeshHost (shared with pp-node) + app mesh glue ----------------------
   std::unique_ptr<MeshHost> mesh_;
-  // Borrows mesh links, mesh_media_'s relay objects and mesh_messaging_ — declared after them so
+  // Borrows mesh links, mesh_media_relay_'s relay client and mesh_messaging_ — declared after them so
   // it is destroyed first (also reset explicitly in StopMesh / before relay rewires).
   std::unique_ptr<BroadcastHub> broadcast_;
   /** Guards announces posted to UI for the current broadcast hub (invalidated on reset). */

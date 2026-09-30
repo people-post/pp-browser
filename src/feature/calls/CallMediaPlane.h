@@ -6,7 +6,8 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
-#include "domain/mesh/media_plane/MeshMediaPlane.h"
+#include "domain/mesh/connectivity/MeshConnectivity.h"
+#include "domain/mesh/media_plane/MeshMediaRelay.h"
 #include "feature/calls/CallDirectPathDeps.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaHost.h"
@@ -30,7 +31,8 @@ namespace pbr {
 /**
  * Call media plane under CallStack (V040): the call_media Amp transport, the 1:1 path's deps (the
  * session manager owns the path itself) and the topology's relay deps. The neutral mesh media objects (media_relay client, dial registry,
- * circuit reach, rendezvous parking) are borrowed from the product hub's `MeshMediaPlane` (L015).
+ * circuit reach, rendezvous parking) are borrowed from the product hub's `MeshConnectivity` and
+ * `MeshMediaRelay` (L015).
  *
  * Does **not** hold standing pointers to CallStack siblings (CSM / stores); the stack fills deps
  * callbacks.
@@ -57,8 +59,11 @@ public:
   ~CallMediaPlane() override;
 
   void SetDeps(CallMediaPlaneDeps deps);
-  /** Borrowed neutral mesh media (outlives the plane; null = none). */
-  void SetMeshMedia(MeshMediaPlane* mesh_media) { mesh_media_ = mesh_media; }
+  /** Borrowed neutral mesh objects (outlive the plane; null = none). */
+  void SetMesh(MeshConnectivity* connectivity, MeshMediaRelay* media_relay) {
+    connectivity_ = connectivity;
+    media_relay_ = media_relay;
+  }
 
   /** Mesh up: create / start the Amp call-media transport. */
   void OnMeshStarted();
@@ -89,7 +94,8 @@ private:
   ICallMediaTransport* Transport();
 
   CallMediaPlaneDeps deps_;
-  MeshMediaPlane* mesh_media_ = nullptr;
+  MeshConnectivity* connectivity_ = nullptr;
+  MeshMediaRelay* media_relay_ = nullptr;
   std::unique_ptr<CallMediaAmpTransport> call_media_amp_;
   ICallMediaTransport* test_media_transport_ = nullptr;
 };
