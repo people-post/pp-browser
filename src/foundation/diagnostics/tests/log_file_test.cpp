@@ -1,5 +1,9 @@
 #include "foundation/diagnostics/LogFile.h"
 
+#include "common/Logger.h"
+#include "common/Metrics.h"
+#include "common/PbrCompat.h"
+
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
@@ -64,6 +68,28 @@ TEST_F(LogFileTest, RotateSkipsGapsAndMissingCurrent) {
   EXPECT_FALSE(fs::exists(path_));
   EXPECT_FALSE(fs::exists(pbr::LogFile::RotatedPath(path_, 1)));
   EXPECT_EQ(ReadAll(pbr::LogFile::RotatedPath(path_, 3)), "prev2");
+}
+
+// Device test 2026-09-30: an app opened normally (root level WARNING) wrote no metrics at all —
+// the Metrics logger had no handler of its own and the root dropped its INFO lines.
+TEST_F(LogFileTest, MetricsReachTheirOwnFileAtAnyRootLevel) {
+  auto root = pbr::logging::getRootLogger();
+  const auto saved = root.getLevel();
+  root.setLevel(pbr::logging::Level::WARNING);
+
+  const std::string metrics = pbr::LogFile::InstallMetrics(path_);
+  ASSERT_EQ(fs::path(metrics), dir_ / "logs" / "metrics.log");
+  pbr::MetricsLine("test.event").Add("n", 7).Emit();
+  root.setLevel(saved);
+
+  const std::string text = ReadAll(metrics);
+  EXPECT_NE(text.find("[Metrics] event=test.event n=7"), std::string::npos) << text;
+}
+
+TEST_F(LogFileTest, InstallMetricsRotatesThePreviousLaunch) {
+  WriteText(pbr::LogFile::MetricsPath(path_), "previous launch");
+  ASSERT_FALSE(pbr::LogFile::InstallMetrics(path_).empty());
+  EXPECT_EQ(ReadAll((dir_ / "logs" / "metrics.1.log").string()), "previous launch");
 }
 
 TEST_F(LogFileTest, RotateWithZeroKeepRemovesCurrent) {
