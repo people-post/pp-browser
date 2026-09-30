@@ -91,7 +91,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
       direct_media->on_media_key_ready(call_id);
     }
   });
-  live_calls_.BindMediaResources(&media_, nullptr);
+  BindSeat();
   live_calls_.BindHopDriver(&topology_);
   live_calls_.SetOnChanged([this]() { NotifyCallStateChanged(); });
   topology_.SetHopArmingPorts(MakeHopArmingPorts());
@@ -543,25 +543,69 @@ CallDirectArmingPorts CallSessionManager::DirectArmingPorts() {
   return ports;
 }
 
-void CallSessionManager::SetMediaSeatPorts(CallMediaSeatPorts ports) {
-  media_seat_ports_.Set(std::move(ports));
+void CallSessionManager::BindSeat() {
+  live_calls_.BindMediaResources(&media_, &seat_);
+  CallMediaSeatPorts release;
+  release.release = [this](const std::string& call_id) { seat_.Release(call_id); };
+  media_seat_ports_.Set(std::move(release));
+  topology_.SetSeatPorts(MakeTopologySeatPorts());
+  seat_.SetTeardownHooks([this](const std::string& call_id) { topology_.OnMediaStopped(call_id); },
+                         [this](const std::string& call_id, uint64_t epoch_at_post, bool force) {
+                           StopMediaForSeat(call_id, epoch_at_post, force);
+                         });
 }
 
-void CallSessionManager::SetTopologySeatPorts(CallTopologySeatPorts ports) {
-  topology_.SetSeatPorts(std::move(ports));
-}
-
-CallMediaSeatPorts CallSessionManager::MakeSeatPorts(CallMediaSeat* seat) {
-  CallMediaSeatPorts ports;
-  if (!seat) {
-    return ports;
+void CallSessionManager::StopMediaForSeat(const std::string& call_id, const uint64_t epoch_at_post, const bool force) {
+  if (!force && seat_.Epoch() != epoch_at_post) {
+    log().info << "MediaSeat stop skip stale call_id=" << call_id << " posted_epoch=" << epoch_at_post
+               << " seat_epoch=" << seat_.Epoch();
+    return;
   }
-  ports.release = [seat](const std::string& call_id) { seat->Release(call_id); };
+  if (direct_driver_) {
+    direct_driver_->StopMeshMedia(call_id);
+    return;
+  }
+  if (media_.IsActive() || media_.IsSfuMode()) {
+    media_.Stop();
+  }
+}
+
+CallDirectSeatPorts CallSessionManager::DirectSeatPorts() {
+  CallDirectSeatPorts ports;
+  CallMediaSeat* seat = &seat_;
+  ports.acquire = [seat](const std::string& call_id) { return seat->Acquire(call_id); };
+  ports.allows_path_op = [seat](const CallMediaSeat::Token& token) { return seat->AllowsPathOp(token); };
+  ports.current_token = [seat]() { return seat->CurrentToken(); };
+  ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
+  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
+  ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
+  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
+  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
+  ports.note_failed = [seat](const std::string& call_id) { seat->NoteFailed(call_id); };
   return ports;
 }
 
-void CallSessionManager::TopologyOnMediaStoppedForSeat(const std::string& call_id) {
-  topology_.OnMediaStopped(call_id);
+CallTopologySeatPorts CallSessionManager::MakeTopologySeatPorts() {
+  CallTopologySeatPorts ports;
+  CallMediaSeat* seat = &seat_;
+  ports.is_bound = [seat](const std::string& call_id) { return seat->IsBound(call_id); };
+  ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
+  ports.acquire = [seat](const std::string& call_id) { return seat->Acquire(call_id); };
+  ports.allows_path_op = [seat](const CallMediaSeat::Token& token) { return seat->AllowsPathOp(token); };
+  ports.begin_attach = [seat](const std::string& call_id, const std::string& hop, CallMediaSeat::AttachTicket* ticket) {
+    return seat->BeginAttach(call_id, hop, ticket);
+  };
+  ports.end_attach_if_matching = [seat](const std::string& call_id, const std::string& hop) {
+    seat->EndAttachIfMatching(call_id, hop);
+  };
+  ports.has_attach_in_flight = [seat]() { return seat->HasAttachInFlight(); };
+  ports.attaching_hop = [seat]() { return seat->AttachingHopPeerId(); };
+  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
+  ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
+  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
+  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
+  ports.cancel_attach_for_call = [seat](const std::string& call_id) { seat->CancelAttachForCall(call_id); };
+  return ports;
 }
 
 void CallSessionManager::ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity,

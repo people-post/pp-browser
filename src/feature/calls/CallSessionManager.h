@@ -133,19 +133,21 @@ public:
   /** The 1:1 path's arming / progress ports over the calls' media progress (the stack binds the bridge). */
   CallDirectArmingPorts DirectArmingPorts();
   /** Seat ops (V043) — Stack installs; CSM must not hold CallMediaSeat*. */
-  void SetMediaSeatPorts(CallMediaSeatPorts ports);
   /** Topology Seat ports (V046) — Stack installs; Topology must not hold CallMediaSeat*. */
-  void SetTopologySeatPorts(CallTopologySeatPorts ports);
   /** Build CSM seat ports over owned topology_ (Stack / compose tests). */
-  CallMediaSeatPorts MakeSeatPorts(CallMediaSeat* seat);
   /** The seat the calls' media coordinators take (null: none bound — mesh stopped / harness). */
-  void SetCallMediaSeat(CallMediaSeat* seat) { live_calls_.BindMediaResources(&media_, seat); }
+  /** The media seat (owned here: the calls' coordinators arbitrate it). Calls owner. */
+  const CallMediaSeat& Seat() const { return seat_; }
+  CallMediaSeat& SeatForTest() { return seat_; }
+  /** The 1:1 path's seat ports (the stack binds the bridge with them until it moves under here). */
+  CallDirectSeatPorts DirectSeatPorts();
   /** The 1:1 path the calls' media coordinators start / release (null: mesh media not wired). */
-  void SetDirectDriver(CallDirectDriver* direct) { live_calls_.BindDirectDriver(direct); }
+  void SetDirectDriver(CallDirectDriver* direct) {
+    direct_driver_ = direct;
+    live_calls_.BindDirectDriver(direct);
+  }
   /** A call's media coordinator (LiveCall); null for a call not admitted here. Calls owner. */
   CallMediaCoordinator* CallMedia(const std::string& call_id) { return live_calls_.Media(call_id); }
-  /** Seat teardown hook: topology detach without re-entering seat.Release. */
-  void TopologyOnMediaStoppedForSeat(const std::string& call_id);
   /** Optional P001 initiation billing (outbound dial gate + inbound offer check). */
   void SetInitiationBillingStore(InitiationBillingStore* store);
   InitiationBillingStore* InitiationBilling() const { return billing_.Store(); }
@@ -308,6 +310,10 @@ private:
   void BindReachSignalPorts();
   void NotifyCallStateChanged();
   CallHopArmingPorts MakeHopArmingPorts();
+  CallTopologySeatPorts MakeTopologySeatPorts();
+  void BindSeat();
+  /** The seat released (or was taken over): stop that call's media. */
+  void StopMediaForSeat(const std::string& call_id, uint64_t epoch_at_post, bool force);
   void ClickAccept(const std::string& call_id);
   void OnAcceptResult(const std::string& call_id, const Roe<void>& accepted);
   /** Our accept landed: kick the answerer's 1:1 start (and once more if it did not take). */
@@ -343,6 +349,9 @@ private:
   CallMediaKeyStore& media_keys_;
   CallDeliveryPorts delivery_;
   CallMediaEngine& media_;
+  /** Before topology_ / live_calls_: both hold it (ports / media resources). */
+  CallMediaSeat seat_;
+  CallDirectDriver* direct_driver_ = nullptr;
   CallTopologyController topology_;
   /** Before workflow_: the workflow drives it. */
   LiveCalls live_calls_;

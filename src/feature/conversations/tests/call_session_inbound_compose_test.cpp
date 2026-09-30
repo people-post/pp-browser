@@ -219,55 +219,6 @@ CallDirectMediaPorts TestDirectMediaPorts(CallMediaBridge* bridge, CallMediaSeat
   return ports;
 }
 
-CallTopologySeatPorts TestTopologySeatPorts(CallMediaSeat* seat) {
-  CallTopologySeatPorts ports;
-  if (!seat) {
-    return ports;
-  }
-  ports.is_bound = [seat](const std::string& call_id) { return seat->IsBound(call_id); };
-  ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
-  ports.acquire = [seat](const std::string& call_id) { return seat->Acquire(call_id); };
-  ports.allows_path_op = [seat](const CallMediaSeat::Token& token) {
-    return seat->AllowsPathOp(token);
-  };
-  ports.begin_attach = [seat](const std::string& call_id, const std::string& hop,
-                              CallMediaSeat::AttachTicket* ticket) {
-    return seat->BeginAttach(call_id, hop, ticket);
-  };
-  ports.end_attach_if_matching = [seat](const std::string& call_id, const std::string& hop) {
-    seat->EndAttachIfMatching(call_id, hop);
-  };
-  ports.has_attach_in_flight = [seat]() { return seat->HasAttachInFlight(); };
-  ports.attaching_hop = [seat]() { return seat->AttachingHopPeerId(); };
-  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
-  ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
-  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
-  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
-  ports.cancel_attach_for_call = [seat](const std::string& call_id) {
-    seat->CancelAttachForCall(call_id);
-  };
-  return ports;
-}
-
-CallDirectSeatPorts TestDirectSeatPorts(CallMediaSeat* seat) {
-  CallDirectSeatPorts ports;
-  if (!seat) {
-    return ports;
-  }
-  ports.acquire = [seat](const std::string& call_id) { return seat->Acquire(call_id); };
-  ports.allows_path_op = [seat](const CallMediaSeat::Token& token) {
-    return seat->AllowsPathOp(token);
-  };
-  ports.current_token = [seat]() { return seat->CurrentToken(); };
-  ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
-  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
-  ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
-  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
-  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
-  ports.note_failed = [seat](const std::string& call_id) { seat->NoteFailed(call_id); };
-  return ports;
-}
-
 class CallSessionInboundComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -297,7 +248,6 @@ protected:
     media_->SetSkipDeviceOpenForTest(true);
     dial_ = std::make_unique<FakeDialRegistry>();
     transport_ = std::make_unique<FakeCallMediaTransport>();
-    seat_ = std::make_unique<CallMediaSeat>();
 
     CallDeliveryPorts delivery;
     delivery.send_user_message = [this](const std::string& thread_id, const std::string& text,
@@ -324,27 +274,9 @@ protected:
     bridge_ = std::make_unique<CallMediaBridge>(csm_->AsMediaHost(), *sessions_, *keys_, *media_, *transport_,
                                                 dial_.get(), nullptr);
     bridge_->SetDirectArmingPorts(csm_->DirectArmingPorts());
-    bridge_->SetSeatPorts(TestDirectSeatPorts(seat_.get()));
-    csm_->SetDirectMediaPorts(TestDirectMediaPorts(bridge_.get(), seat_.get()));
+    bridge_->SetSeatPorts(csm_->DirectSeatPorts());
+    csm_->SetDirectMediaPorts(TestDirectMediaPorts(bridge_.get(), &csm_->SeatForTest()));
     csm_->SetDirectDriver(bridge_.get());
-    csm_->SetTopologySeatPorts(TestTopologySeatPorts(seat_.get()));
-    csm_->SetMediaSeatPorts(csm_->MakeSeatPorts(seat_.get()));
-    csm_->SetCallMediaSeat(seat_.get());
-
-    seat_->SetTeardownHooks(
-        [this](const std::string& call_id) {
-          if (csm_) {
-            csm_->TopologyOnMediaStoppedForSeat(call_id);
-          }
-        },
-        [this](const std::string& call_id, uint64_t epoch_at_post, bool force) {
-          if (!force && seat_ && seat_->Epoch() != epoch_at_post) {
-            return;
-          }
-          if (bridge_) {
-            bridge_->StopMeshMedia(call_id);
-          }
-        });
 
     dial_->force_dialable["account:peer"] = true;
     dial_->endpoints["account:peer"] = "/ip4/10.0.0.2/udp/1/p2p/12D3KooWPeer";
@@ -358,9 +290,6 @@ protected:
     if (csm_) {
       csm_->SetDirectMediaPorts({});
       csm_->SetDirectDriver(nullptr);
-      csm_->SetMediaSeatPorts({});
-      csm_->SetCallMediaSeat(nullptr);
-      csm_->SetTopologySeatPorts({});
     }
     // Always Stop — StartSfu may arm capture after PrepareForTeardown cleared media_call_id_.
     if (media_) {
@@ -376,7 +305,6 @@ protected:
     AppRuntime::Shutdown();
     bridge_.reset();
     csm_.reset();
-    seat_.reset();
     transport_.reset();
     dial_.reset();
     media_.reset();
@@ -497,7 +425,6 @@ protected:
   std::unique_ptr<CallMediaEngine> media_;
   std::unique_ptr<FakeDialRegistry> dial_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
-  std::unique_ptr<CallMediaSeat> seat_;
   std::unique_ptr<CallMediaBridge> bridge_;
   std::unique_ptr<CallSessionManager> csm_;
   CallsLoopbackOutbox<SessionEvent> csm_events_{[this](SessionEvent& event) {
@@ -706,7 +633,7 @@ TEST_F(CallSessionInboundComposeTest, InviteAcceptLeaveKCycleTeardown) {
   // B-TEARDOWN: Leave→Idle then a second Invite→Accept→Leave must succeed (no orphan bind).
   RunAnswererInviteAcceptLeave("call:cycle-1");
   ASSERT_EQ(csm_->Live().Phase(), CallPhase::Idle);
-  EXPECT_FALSE(seat_->IsBound("call:cycle-1"));
+  EXPECT_FALSE(csm_->Seat().IsBound("call:cycle-1"));
 
   RunAnswererInviteAcceptLeave("call:cycle-2");
   ASSERT_EQ(csm_->Live().Phase(), CallPhase::Idle);
@@ -1383,8 +1310,8 @@ TEST_F(CallSessionInboundComposeTest, InboundHopRefuseEndsBoundCall) {
   ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
   csm_->Apply(CallLifecycleEvent::InviteSeen, call_id);
   csm_->Apply(CallLifecycleEvent::AcceptClicked, call_id);
-  DrainUntil([&]() { return seat_->IsBound(call_id) || media_->IsActive(); });
-  ASSERT_TRUE(seat_->IsBound(call_id) || media_->IsActive());
+  DrainUntil([&]() { return csm_->Seat().IsBound(call_id) || media_->IsActive(); });
+  ASSERT_TRUE(csm_->Seat().IsBound(call_id) || media_->IsActive());
 
   CallHopRefuseDetail refuse;
   refuse.call_id = call_id;

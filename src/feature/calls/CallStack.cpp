@@ -208,10 +208,11 @@ void CallStack::PublishUiState() {
     state.hop_health = call_sessions_->HopHealth();
     state.media_path_kind = call_sessions_->MediaPathKind();
   }
-  if (call_media_seat_) {
-    state.seat_bound_call_id = call_media_seat_->BoundCallId();
-    state.seat_state = call_media_seat_->State();
-    state.seat_live = call_media_seat_->IsLive(state.seat_bound_call_id);
+  if (call_sessions_) {
+    const CallMediaSeat& seat = call_sessions_->Seat();
+    state.seat_bound_call_id = seat.BoundCallId();
+    state.seat_state = seat.State();
+    state.seat_live = seat.IsLive(state.seat_bound_call_id);
   }
   state.want_ephemeral_listen = want_ephemeral_listen_;
   state.connect_in_flight = media_plane_ && media_plane_->IsConnectWorkerInflight();
@@ -322,48 +323,9 @@ void CallStack::BindMediaProducts() {
   call_sessions_->SetDirectMediaPorts(
       MakeDirectMediaPorts());
   call_sessions_->SetDirectDriver(media_plane_ ? media_plane_->Bridge() : nullptr);
-  if (call_media_seat_) {
-    call_sessions_->SetTopologySeatPorts(MakeTopologySeatPorts());
-    call_sessions_->SetMediaSeatPorts(call_sessions_->MakeSeatPorts(call_media_seat_.get()));
-    call_sessions_->SetCallMediaSeat(call_media_seat_.get());
-  }
-  // Lifecycle ↔ sessions / bridge ports (mesh stop cleared them): one bind point with BuildSessions.
+  // Call state ↔ bridge ports (mesh stop cleared them): one bind point with BuildSessions.
   BindCallState();
-  if (CallMediaBridge* bridge = media_plane_->Bridge()) {
-    bridge->SetSeatPorts(MakeDirectSeatPorts());
-  }
   PublishUiState();
-}
-
-void CallStack::BindSeatTeardown() {
-  if (!call_media_seat_) {
-    return;
-  }
-  call_media_seat_->SetTeardownHooks(
-      [this](const std::string& call_id) {
-        if (call_sessions_) {
-          call_sessions_->TopologyOnMediaStoppedForSeat(call_id);
-        }
-      },
-      [this](const std::string& call_id, uint64_t epoch_at_post, bool force) {
-        if (!force && call_media_seat_ && call_media_seat_->Epoch() != epoch_at_post) {
-          log().info << "MediaSeat stop skip stale call_id=" << call_id
-                     << " posted_epoch=" << epoch_at_post
-                     << " seat_epoch=" << call_media_seat_->Epoch();
-          return;
-        }
-        if (media_plane_ && media_plane_->Bridge()) {
-          media_plane_->StopMeshMedia(call_id);
-          return;
-        }
-        if (!call_media_engine_) {
-          return;
-        }
-        if (!call_media_engine_->IsActive() && !call_media_engine_->IsSfuMode()) {
-          return;
-        }
-        call_media_engine_->Stop();
-      });
 }
 
 Roe<void> CallStack::InitializeStores(const std::string& profile_db_path, const std::string& profile_id) {
@@ -376,7 +338,6 @@ Roe<void> CallStack::InitializeStoresOnOwner(const std::string& profile_db_path,
   call_session_store_ = std::make_unique<CallSessionStore>(profile_db_path);
   call_media_keys_ = std::make_unique<CallMediaKeyStore>(profile_db_path, profile_id);
   call_media_engine_ = std::make_unique<CallMediaEngine>();
-  call_media_seat_ = std::make_unique<CallMediaSeat>();
   if (!media_plane_) {
     media_plane_ = std::make_unique<CallMediaPlane>();
   }
@@ -390,7 +351,6 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
                                                         *call_session_store_, *call_media_keys_, deps_.delivery,
                                                         *deps_.psk, *call_media_engine_);
   BindSessionOutbox();
-  BindSessionSeat();
   BindCallControlInbound();
   call_sessions_->AbandonOrphanedCallsAfterRestart();
   call_sessions_->SetOnRingChangedMesh([this]() { SyncHubEphemeralListen(); });
@@ -412,16 +372,6 @@ void CallStack::BindSessionOutbox() {
   };
   sink.cancel = [this](CallsExecutor::TimerId id) { loop_.Cancel(id); };
   call_sessions_->SetOutbox(CallsOutbox<SessionEvent>(std::move(sink)));
-}
-
-void CallStack::BindSessionSeat() {
-  if (!call_media_seat_) {
-    return;
-  }
-  call_sessions_->SetTopologySeatPorts(MakeTopologySeatPorts());
-  call_sessions_->SetMediaSeatPorts(call_sessions_->MakeSeatPorts(call_media_seat_.get()));
-  call_sessions_->SetCallMediaSeat(call_media_seat_.get());
-  BindSeatTeardown();
 }
 
 void CallStack::BindCallControlInbound() {
@@ -592,9 +542,6 @@ void CallStack::PrepareForMeshStopOnOwner(const std::function<void()>& abort_inf
   if (call_sessions_) {
     call_sessions_->SetDirectMediaPorts({});
     call_sessions_->SetDirectDriver(nullptr);
-    call_sessions_->SetMediaSeatPorts({});
-    call_sessions_->SetCallMediaSeat(nullptr);
-    call_sessions_->SetTopologySeatPorts({});
   }
   DetachMeshMedia();
   if (media_plane_) {
@@ -693,7 +640,7 @@ void CallStack::BindCallState() {
   if (media_plane_) {
     if (CallMediaBridge* bridge = media_plane_->Bridge()) {
       bridge->SetDirectArmingPorts(call_sessions_->DirectArmingPorts());
-      bridge->SetSeatPorts(MakeDirectSeatPorts());
+      bridge->SetSeatPorts(call_sessions_->DirectSeatPorts());
     }
   }
   OnCallStateChangedOnOwner();
@@ -781,10 +728,6 @@ void CallStack::ReleaseOnOwner() {
     media_plane_->Clear();
   }
   call_sessions_.reset();
-  if (call_media_seat_) {
-    call_media_seat_->SetTeardownHooks({}, {});
-  }
-  call_media_seat_.reset();
   call_media_engine_.reset();
   call_media_keys_.reset();
   call_session_store_.reset();
@@ -816,57 +759,6 @@ CallDirectMediaPorts CallStack::MakeDirectMediaPorts() const {
   };
   ports.on_media_key_ready = [bridge](const std::string& call_id) {
     bridge->OnMediaKeyReady(call_id);
-  };
-  return ports;
-}
-
-CallDirectSeatPorts CallStack::MakeDirectSeatPorts() const {
-  CallDirectSeatPorts ports;
-  CallMediaSeat* seat = call_media_seat_.get();
-  if (!seat) {
-    return ports;
-  }
-  ports.acquire = [seat](const std::string& call_id) { return seat->Acquire(call_id); };
-  ports.allows_path_op = [seat](const CallMediaSeat::Token& token) {
-    return seat->AllowsPathOp(token);
-  };
-  ports.current_token = [seat]() { return seat->CurrentToken(); };
-  ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
-  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
-  ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
-  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
-  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
-  ports.note_failed = [seat](const std::string& call_id) { seat->NoteFailed(call_id); };
-  return ports;
-}
-
-CallTopologySeatPorts CallStack::MakeTopologySeatPorts() const {
-  CallTopologySeatPorts ports;
-  CallMediaSeat* seat = call_media_seat_.get();
-  if (!seat) {
-    return ports;
-  }
-  ports.is_bound = [seat](const std::string& call_id) { return seat->IsBound(call_id); };
-  ports.bound_call_id = [seat]() { return seat->BoundCallId(); };
-  ports.acquire = [seat](const std::string& call_id) { return seat->Acquire(call_id); };
-  ports.allows_path_op = [seat](const CallMediaSeat::Token& token) {
-    return seat->AllowsPathOp(token);
-  };
-  ports.begin_attach = [seat](const std::string& call_id, const std::string& hop,
-                              CallMediaSeat::AttachTicket* ticket) {
-    return seat->BeginAttach(call_id, hop, ticket);
-  };
-  ports.end_attach_if_matching = [seat](const std::string& call_id, const std::string& hop) {
-    seat->EndAttachIfMatching(call_id, hop);
-  };
-  ports.has_attach_in_flight = [seat]() { return seat->HasAttachInFlight(); };
-  ports.attaching_hop = [seat]() { return seat->AttachingHopPeerId(); };
-  ports.note_connecting = [seat](const std::string& call_id) { seat->NoteConnecting(call_id); };
-  ports.note_start = [seat](const std::string& call_id) { seat->NoteStart(call_id); };
-  ports.note_path = [seat](CallMediaSeat::PathKind kind) { seat->NotePath(kind); };
-  ports.note_live = [seat](const std::string& call_id) { seat->NoteLive(call_id); };
-  ports.cancel_attach_for_call = [seat](const std::string& call_id) {
-    seat->CancelAttachForCall(call_id);
   };
   return ports;
 }

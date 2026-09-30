@@ -142,7 +142,6 @@ public:
   CallSessionManager* Calls();
   CallMediaKeyStore* MediaKeys() { return call_media_keys_.get(); }
   CallMediaEngine* MediaEngine() { return call_media_engine_.get(); }
-  CallMediaSeat* MediaSeat() { return call_media_seat_.get(); }
 
   /**
    * Run `op` on the calls owner and wait (hub wiring that must touch the session manager, e.g.
@@ -179,7 +178,6 @@ private:
   Roe<void> InitializeStoresOnOwner(const std::string& profile_db_path, const std::string& profile_id);
   void BuildSessionsOnOwner(const CallStackDeps& deps);
   void BindSessionOutbox();
-  void BindSessionSeat();
   void BindCallControlInbound();
   void BindSessionProviders();
   CallPeerCaps LocalPeerCaps() const;
@@ -208,12 +206,9 @@ private:
   /** Calls' hooks on the shared mesh media (announce chosen R1, signaling punch). */
   void BindMeshMediaHooks();
   MeshMediaPlane* mesh_media() const { return deps_.mesh_media; }
-  void BindSeatTeardown();
   /** What the calls show may have changed: refresh chrome, wake N025 listen when its desire flips. */
   void OnCallStateChangedOnOwner();
   CallDirectMediaPorts MakeDirectMediaPorts() const;
-  CallDirectSeatPorts MakeDirectSeatPorts() const;
-  CallTopologySeatPorts MakeTopologySeatPorts() const;
 
   /** The calls owner's executor: every call object gets it from here (THREADING.md § Calls owner). */
   CallsExecutor& executor_ = CallsOwnerExecutor();
@@ -223,7 +218,6 @@ private:
   std::unique_ptr<CallSessionStore> call_session_store_;
   std::unique_ptr<CallMediaKeyStore> call_media_keys_;
   std::unique_ptr<CallMediaEngine> call_media_engine_;
-  std::unique_ptr<CallMediaSeat> call_media_seat_;
   std::unique_ptr<CallSessionManager> call_sessions_;
   std::unique_ptr<CallMediaPlane> media_plane_;
   /** k6: this device's and each call peer's mobility → the call's path policy. */
