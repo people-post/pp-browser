@@ -387,7 +387,7 @@ protected:
 
   void TearDown() override {
     if (bridge_) {
-      bridge_->PrepareForTeardown(0);
+      OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
     }
     // Join the worker pool before destroying objects a still-running task may touch
     // (see call_session_inbound_compose_test.cpp TearDown).
@@ -599,7 +599,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, MissingKeyDefersMediaPending) {
   EXPECT_FALSE(media_->IsActive());
   EXPECT_EQ(host_->live.Phase(), CallPhase::MediaPending);
   // Inbox poll is PostWorkerBackground — assert defer contract here; sync may land after RunUITasks.
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, MissingKeyWaitExhaustionConnectFailed) {
@@ -629,7 +629,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, MissingKeyWaitExhaustionConnectFailed) 
       << "got phase=" << CallPhaseName(host_->live.Phase());
   EXPECT_TRUE(bridge_->IsMeshConnectFailed());
   EXPECT_FALSE(host_->last_error.empty());
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, HopLiveStatusDoesNotStartDirectDuplex) {
@@ -702,7 +702,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, ReleaseDirectTransportDetachesWithoutSt
   ASSERT_TRUE(media_->IsActive());
 
   const int detaches_before = transport_->detach_calls;
-  bridge_->ReleaseDirectTransport();
+  OnCallsOwner([&] { bridge_->ReleaseDirectTransport(); });
 
   EXPECT_GT(transport_->detach_calls, detaches_before);
   EXPECT_TRUE(media_->IsActive()) << "SoftMigrate ReleaseDirect must keep engine capture";
@@ -733,7 +733,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, CarrierOnlyLinkIsNotLabelledDirect) {
 
   ASSERT_GT(transport_->connect_async_calls, 0) << "err=" << host_->last_error;
   EXPECT_EQ(bridge_->MediaPathKind(), "circuit");
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, DialableDialBackoffDoesNotHammerEnsureUsesCircuit) {
@@ -771,7 +771,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DialableDialBackoffDoesNotHammerEnsureU
       << "circuit Connected should prevent ConnectFailed; phase="
       << CallPhaseName(host_->live.Phase()) << " err=" << host_->last_error;
   EXPECT_GT(transport_->connect_async_calls, 0);
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, CircuitHopMissStopsMediaOnConnectFailed) {
@@ -808,7 +808,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, CircuitHopMissStopsMediaOnConnectFailed
   EXPECT_TRUE(bridge_->IsMeshConnectFailed());
   EXPECT_FALSE(media_->IsActive()) << "ConnectFailed must StopMeshMedia (no zombie TX)";
   EXPECT_EQ(bridge_->DirectPlannerPhase(), CallDirectPlannerPhase::Idle);
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // B44 (call-path-resilience k4): our attempts give up while the peer's own redial is mid-handshake.
@@ -843,7 +843,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, FailedAttemptsKeepTheCallWhenThePeersHe
   EXPECT_NE(host_->live.Phase(), CallPhase::ConnectFailed);
   EXPECT_FALSE(bridge_->IsMeshConnectFailed());
   EXPECT_TRUE(media_->IsActive()) << "the recovered path keeps the call's media";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k3: an offerer Live on a relayed path keeps punching for a direct link (retrying a miss); once
@@ -873,7 +873,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, PathWorkTargetsThePeersPeerIdNotALinkAl
   }
   ASSERT_GE(circuit_->upgrade_calls.load(), 1);
   EXPECT_EQ(circuit_->LastUpgradePeer(), mesh_peer) << "not the link's dial alias";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, RelayedOffererPunchesForADirectPathUntilItMoves) {
@@ -907,7 +907,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, RelayedOffererPunchesForADirectPathUnti
   }
   EXPECT_EQ(circuit_->upgrade_calls.load(), calls);
   EXPECT_EQ(bridge_->MediaPathKind(), "punched") << "the label follows the path the call moved to";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k3-4: a TX-only call keeps running while a circuit is built under it, then moves onto it — no
@@ -943,7 +943,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallMovesOntoACircuitWithoutResta
   EXPECT_EQ(bridge_->MediaPathKind(), "circuit");
   EXPECT_TRUE(media_->IsActive());
   EXPECT_EQ(host_->live.Status(), CallMediaStatus::DirectLive) << "connected again on the circuit";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k3-4 fallback: a TX-only call that cannot move (the peer refused) restarts via the circuit as before.
@@ -972,7 +972,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, TxOnlyCallThatCannotMoveRestartsViaCirc
   EXPECT_EQ(transport_->migrate_calls.load(), 1);
   EXPECT_GT(transport_->detach_calls, detaches) << "break-before-make fallback";
   EXPECT_GE(transport_->connect_async_calls, 2) << "a new session via the circuit";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k4: the transport lost the call's last path. The call is Reconnecting (not failed); the offerer
@@ -1012,7 +1012,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, LostPathReconnectsOntoTheReachedLink) {
   EXPECT_EQ(host_->live.Phase(), CallPhase::InCall);
   EXPECT_EQ(transport_->detach_calls, detaches) << "the call was never torn down";
   EXPECT_TRUE(media_->IsActive());
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k5: a relayed call that used up its direct-upgrade attempts on one network starts them over when
@@ -1044,7 +1044,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeRestartsTheDirectUpgrade) 
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   EXPECT_GE(circuit_->upgrade_calls.load(), 4) << "punching again on the new network";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k5: a reconnecting call waiting out its re-anchor backoff tries again as soon as the new
@@ -1084,7 +1084,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, NetworkChangeReanchorsAReconnectingCall
   }
   EXPECT_EQ(transport_->migrate_calls.load(), 2);
   EXPECT_EQ(host_->live.Status(), CallMediaStatus::DirectLive) << "reconnected on the new network";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k6: a pair with a mobile end anchors on the relay — a relayed offerer never punches for an
@@ -1120,7 +1120,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, MobilePairStaysOnTheRelayUntilThePolicy
   }
   EXPECT_GE(circuit_->upgrade_calls.load(), 1) << "both stationary: punch for a direct path";
   EXPECT_TRUE(transport_->auto_migrate_to_direct.load());
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k6: the answerer of a mobile pair waits for the offerer's circuit instead of punching.
@@ -1142,7 +1142,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, MobilePairAnswererDoesNotPunch) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   EXPECT_EQ(circuit_->call_media_ensure_calls.load(), 0) << "no punch toward the peer";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // k6 (K003): an offerer Live on a direct path builds a circuit under the call and adds it as the
@@ -1178,7 +1178,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DirectCallGetsARelayedStandby) {
   }
   EXPECT_EQ(transport_->add_standby_calls.load(), adds) << "done once it is up";
   EXPECT_EQ(transport_->link_kind, CallMediaLinkKind::Direct) << "the call stayed on its path";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 // Hard-lab FLIP race (2026-09-28): the call is bound on a direct (punched) link — the answerer's
@@ -1214,7 +1214,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DirectBoundCallReachedOverTheRelayStill
   EXPECT_NE(bridge_->MediaPathKind(), "circuit") << "a direct bound link is not a relayed path";
   EXPECT_GE(transport_->add_standby_calls.load(), 1) << "the direct call gets its relayed standby";
   EXPECT_EQ(circuit_->upgrade_calls.load(), 0) << "no direct upgrade for a call already on a direct link";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, EnsureReachResolvesAccountToMeshPeerId) {
@@ -1245,7 +1245,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, EnsureReachResolvesAccountToMeshPeerId)
   ASSERT_GE(circuit_->call_media_ensure_calls, 1);
   EXPECT_EQ(circuit_->LastPeer(), mesh_peer)
       << "TryEnsurePeerReachable must use MeshPeerId, not account:";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, StaleConnectedLinkIsDroppedAndRedialed) {
@@ -1289,7 +1289,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, StaleConnectedLinkIsDroppedAndRedialed)
       << "second attempt must redial via Ensure, not short-circuit on the stale link";
   EXPECT_TRUE(media_->IsActive());
   EXPECT_EQ(media_->ActiveCallId(), call_id);
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, WatchdogFailsOnlyTheAttempt) {
@@ -1326,7 +1326,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, WatchdogFailsOnlyTheAttempt) {
       << "watchdog must have failed only attempt 1; attempt 2 must still be dialed";
   EXPECT_TRUE(media_->IsActive());
   EXPECT_EQ(media_->ActiveCallId(), call_id);
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 TEST_F(CallMediaBridgeAnswererStartTest, HalfOpenBundleIsNotAConnection) {
@@ -1356,7 +1356,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, HalfOpenBundleIsNotAConnection) {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   EXPECT_EQ(transport_->connect_async_calls, 2) << "failed attempt must be retried, not taken as connected";
-  bridge_->PrepareForTeardown(0);
+  OnCallsOwner([&] { bridge_->PrepareForTeardown(0); });
 }
 
 } // namespace

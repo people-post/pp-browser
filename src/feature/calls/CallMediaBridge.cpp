@@ -50,7 +50,7 @@ CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions
 }
 
 CallMediaInboundPorts CallMediaBridge::MakeInboundPorts() {
-  // Worker hop (transport inbound handler): stores are thread-safe; no bridge UI state here.
+  // Calls owner (the connect sequence's inbound hello event).
   CallMediaInboundPorts ports;
   ports.session_open = [this](const std::string& call_id) {
     auto session = sessions_.LoadSession(call_id);
@@ -65,8 +65,8 @@ CallMediaInboundPorts CallMediaBridge::MakeInboundPorts() {
   // Offerer often dials before the relay delivers CallMediaKey — keep inbox sync running.
   ports.request_key = [this](const std::string& /*call_id*/) { host_.P2pRequestInboxSync(); };
   ports.on_accepted = [this](const CallMediaInboundHello& hello) {
-    // Identity binding reads / writes bridge state — calls owner. Posted ahead of any media or
-    // connected callback of this bundle (FIFO), so frames never see a stale stream id.
+    // Identity binding as its own event, queued ahead of any media or connected callback of this
+    // bundle (FIFO), so frames never see a stale stream id.
     outbox_.Emit(direct_event::InboundPeer{hello.call_id, hello.peer_id});
     return MakeBundleCallbacks(hello.call_id, /*fixed_stream=*/0, "Inbound call-media");
   };
@@ -372,6 +372,12 @@ void CallMediaBridge::Apply(CallDirectPlannerEvent ev, const std::string& call_i
   }
 }
 
+void CallMediaBridge::SetOutbox(CallsOutbox<DirectPathEvent> outbox) {
+  outbox_ = std::move(outbox);
+  connect_.SetOutbox(outbox_.For<ConnectEvent>(
+      [](ConnectEvent event) { return DirectPathEvent{direct_event::ForConnect{std::move(event)}}; }));
+}
+
 void CallMediaBridge::Handle(DirectPathEvent& event) {
   std::visit(
       [this](auto& e) {
@@ -423,6 +429,8 @@ void CallMediaBridge::Handle(DirectPathEvent& event) {
           StartDeferredAnswerer(e.call_id);
         } else if constexpr (std::is_same_v<E, direct_event::KeyPollDue>) {
           OnKeyPollDue(e);
+        } else if constexpr (std::is_same_v<E, direct_event::ForConnect>) {
+          connect_.Handle(e.event);
         } else if constexpr (std::is_same_v<E, direct_event::StepReady>) {
           steps_.Run(e.step.id, e.step.value.get());
         } else {

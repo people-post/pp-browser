@@ -46,7 +46,7 @@ struct CallMediaPlaneDeps {
   /** SoftMigrate relay-cap queries — filled from CallSessionManager by CallStack. */
   std::function<bool(const std::string& peer_id)> peer_has_media_relay;
   std::function<std::vector<std::string>()> list_media_relay_peers;
-  /** Dial-book account: ↔ PeerId learning (CallSessionManager::NoteMeshPeerIdForRelay). */
+  /** Dial-book account: ↔ PeerId learning — any thread (the stack enqueues it for the calls owner). */
   std::function<void(const std::string& account_identity, const std::string& peer_id)>
       note_mesh_peer_id_for_relay;
 };

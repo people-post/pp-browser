@@ -36,6 +36,10 @@ const char* CallStackEventName(const CallStackEvent& event) {
           return "RelayChosen";
         } else if constexpr (std::is_same_v<E, calls_event::SignalingPunchRequested>) {
           return "SignalingPunchRequested";
+        } else if constexpr (std::is_same_v<E, calls_event::MeshPeerIdLearned>) {
+          return "MeshPeerIdLearned";
+        } else if constexpr (std::is_same_v<E, calls_event::SessionsCommand>) {
+          return "SessionsCommand";
         } else if constexpr (std::is_same_v<E, calls_event::ForSessions>) {
           return "ForSessions";
         } else {

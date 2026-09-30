@@ -1,5 +1,4 @@
 #include "feature/calls/CallMediaPlane.h"
-#include "feature/calls/CallsThread.h"
 
 #include "foundation/data/MeshRole.h"
 
@@ -151,11 +150,11 @@ void CallMediaPlane::RegisterCallPeerListenMultiaddrs(const std::string& identit
     mesh_media_->RegisterPeerListenMultiaddrs(identity, multiaddrs);
     return;
   }
-  // Registered on the connectivity owner; the account → PeerId note is call state (calls owner).
+  // Registered on the connectivity owner; the note takes the account → PeerId to the calls owner.
   mesh_media_->RegisterPeerListenMultiaddrs(
       identity, multiaddrs, [identity, note = deps_.note_mesh_peer_id_for_relay](const std::string& peer_id) {
         if (!peer_id.empty()) {
-          CallsThread::Post([identity, note, peer_id]() { note(identity, peer_id); });
+          note(identity, peer_id);
         }
       });
 }

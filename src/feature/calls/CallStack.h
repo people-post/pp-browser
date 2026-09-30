@@ -148,6 +148,8 @@ public:
    * billing store, media callbacks). No-op without sessions.
    */
   void RunOnOwner(const std::function<void(CallSessionManager&)>& op);
+  /** The UI edge's commands: queued behind the owner's events; `calls` is null without sessions. */
+  void PostToSessions(std::function<void(CallSessionManager* calls)> run);
 
   /** Abort in-flight call-media Connect before joining the worker pool (app shutdown). */
   void AbortCallMediaForShutdown();

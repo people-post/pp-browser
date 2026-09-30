@@ -1,6 +1,5 @@
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallControlClient.h"
-#include "feature/calls/CallsThread.h"
 #include "domain/messaging/CallListenAddrsLogic.h"
 #include "domain/messaging/CallAnswererKickLogic.h"
 #include "domain/messaging/CallMediaPlannerSelectLogic.h"
@@ -749,8 +748,7 @@ void CallSessionManager::KickAnswererDirectMediaIfArmed(const std::string& call_
     }
     return;
   }
-  log().info << "KickAnswererDirectMediaIfArmed call_id=" << call_id << " peer=" << peer
-             << " on_owner=" << (CallsThread::IsCurrent() ? 1 : 0);
+  log().info << "KickAnswererDirectMediaIfArmed call_id=" << call_id << " peer=" << peer;
   ScheduleStartDirectMedia(call_id, peer, false);
 }
 

@@ -101,6 +101,12 @@ void CallStack::Dispatch(CallStackEvent& event) {
           if (call_sessions_) {
             call_sessions_->ReachSignals().AnnounceCircuitR1(e.circuit_r1);
           }
+        } else if constexpr (std::is_same_v<E, calls_event::MeshPeerIdLearned>) {
+          if (call_sessions_) {
+            call_sessions_->NoteMeshPeerIdForRelay(e.account_identity, e.peer_id);
+          }
+        } else if constexpr (std::is_same_v<E, calls_event::SessionsCommand>) {
+          e.run(call_sessions_.get());
         } else if constexpr (std::is_same_v<E, calls_event::ForSessions>) {
           if (call_sessions_ && e.generation == sessions_generation_) {
             call_sessions_->Handle(e.event);
@@ -165,6 +171,10 @@ void CallStack::AbortCallMediaForShutdown() {
 void CallStack::RegisterCallPeerListenMultiaddrs(const std::string& identity,
                                                  const std::vector<std::string>& multiaddrs) {
   CallsThread::RunAndWait([&]() { RegisterCallPeerListenMultiaddrsOnOwner(identity, multiaddrs); });
+}
+
+void CallStack::PostToSessions(std::function<void(CallSessionManager* calls)> run) {
+  loop_.Enqueue(calls_event::SessionsCommand{std::move(run)});
 }
 
 void CallStack::RunOnOwner(const std::function<void(CallSessionManager&)>& op) {
@@ -258,11 +268,8 @@ void CallStack::SyncMediaPlaneDeps() {
         deps_.list_dht_nodes ? deps_.list_dht_nodes() : std::vector<MeshDirectoryNode>{};
     return MergeMediaRelayCapablePeerIds(from_caps, directory, dht);
   };
-  plane_deps.note_mesh_peer_id_for_relay = [this](const std::string& account,
-                                                 const std::string& peer_id) {
-    if (call_sessions_) {
-      call_sessions_->NoteMeshPeerIdForRelay(account, peer_id);
-    }
+  plane_deps.note_mesh_peer_id_for_relay = [this](const std::string& account, const std::string& peer_id) {
+    loop_.Enqueue(calls_event::MeshPeerIdLearned{account, peer_id});  // connectivity owner → calls owner
   };
   media_plane_->SetDeps(std::move(plane_deps));
   media_plane_->SetMeshMedia(mesh_media());

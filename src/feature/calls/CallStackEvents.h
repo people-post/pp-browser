@@ -15,6 +15,8 @@
 
 namespace pbr {
 
+class CallSessionManager;
+
 /**
  * What the calls owner handles: inputs from other threads (edge adapters enqueue them) and the
  * delayed events its passive children asked for. Each is plain data in the vocabulary of whoever
@@ -54,6 +56,16 @@ struct SignalingPunchRequested {
   std::function<void(Roe<void>)> done;
 };
 
+/** The mesh learned an account's PeerId (dial-book registration, connectivity owner). */
+struct MeshPeerIdLearned {
+  std::string account_identity;
+  std::string peer_id;
+};
+/** A command from the UI edge (`CallUiBackend`); `calls` is null without a session manager. */
+struct SessionsCommand {
+  std::function<void(CallSessionManager* calls)> run;
+};
+
 /** An event the session manager's subtree reported to itself; `generation` names that manager. */
 struct ForSessions {
   uint64_t generation = 0;
@@ -65,7 +77,8 @@ struct ForSessions {
 using CallStackEvent =
     std::variant<calls_event::LocalNetworkChanged, calls_event::ObservedAddressChanged,
                  calls_event::MobilityOverrideChanged, calls_event::MobilityWake, calls_event::CallControlReceived,
-                 calls_event::RelayChosen, calls_event::SignalingPunchRequested, calls_event::ForSessions>;
+                 calls_event::RelayChosen, calls_event::SignalingPunchRequested, calls_event::MeshPeerIdLearned,
+                 calls_event::SessionsCommand, calls_event::ForSessions>;
 
 /** For logs: the event's name. */
 const char* CallStackEventName(const CallStackEvent& event);

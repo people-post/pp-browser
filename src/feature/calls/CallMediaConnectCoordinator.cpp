@@ -1,11 +1,12 @@
 #include "feature/calls/CallMediaConnectCoordinator.h"
-#include "feature/calls/CallsThread.h"
 
 #include "foundation/runtime/AppRuntime.h"
 
 #include <algorithm>
 #include <chrono>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -21,39 +22,69 @@ constexpr int kInboundKeyWaitMs = 8000;
 /** Re-ask for the key this often while a hello is parked. */
 constexpr int kInboundKeyPollMs = 250;
 
-/** Run `fn` on the calls owner: inline when already there, else posted. */
-void OnOwner(std::function<void()> fn) {
-  if (CallsThread::IsCurrent()) {
-    fn();
-    return;
-  }
-  CallsThread::Post(std::move(fn));
-}
-
 } // namespace
-
-void CallMediaConnectCoordinator::CheckUiThread(const char* what) const {
-  // Sequence state is calls-owner only (no lock). A caller on another thread is a bug — make it
-  // visible in dogfood logs rather than a silent race.
-  if (!CallsThread::IsCurrent()) {
-    log().error << what << " called off the calls owner — sequence state is owner-only";
-  }
-}
 
 CallMediaConnectCoordinator::CallMediaConnectCoordinator(ICallMediaTransport& transport,
                                                          PeerReachCoordinator& reach)
-    : transport_(transport), reach_(reach), alive_(std::make_shared<std::atomic<bool>>(true)),
-      inbound_key_wait_ms_(kInboundKeyWaitMs), attempt_timeout_ms_(kConnectAttemptTimeoutMs) {
+    : transport_(transport), reach_(reach), inbound_key_wait_ms_(kInboundKeyWaitMs),
+      attempt_timeout_ms_(kConnectAttemptTimeoutMs) {
   redirectLogger("CallMediaConnect");
 }
 
 CallMediaConnectCoordinator::~CallMediaConnectCoordinator() {
-  alive_->store(false, std::memory_order_release);
   shut_down_.store(true, std::memory_order_release);
   RejectPendingHellos("coordinator gone");
   Abort();
   // Do not ClearInboundHandler here: a replacement path may already have installed its own. Ours
-  // stays harmless until then — the alive flag makes a late hello a NACK (the offerer retries).
+  // holds no pointer to us — a late hello reaches a dropped outbox and is NACKed (the offerer retries).
+}
+
+void CallMediaConnectCoordinator::SetOutbox(CallsOutbox<ConnectEvent> outbox) {
+  outbox_ = std::move(outbox);
+  InstallInboundHandler();
+}
+
+void CallMediaConnectCoordinator::Handle(ConnectEvent& event) {
+  std::visit(
+      [this](auto& e) {
+        using E = std::decay_t<decltype(e)>;
+        if constexpr (std::is_same_v<E, connect_event::InboundHello>) {
+          HandleInboundHello(std::move(e.hello));
+        } else if constexpr (std::is_same_v<E, connect_event::KeyAvailable>) {
+          RecheckPendingHellos(/*ask_again=*/false);
+        } else if constexpr (std::is_same_v<E, connect_event::KeyPollTick>) {
+          if (key_poll_timer_id_ == 0) {
+            return;  // cancelled since
+          }
+          key_poll_timer_id_ = 0;
+          RecheckPendingHellos(/*ask_again=*/true);
+          ArmKeyPoll();
+        } else if constexpr (std::is_same_v<E, connect_event::LinkReady>) {
+          if (Current(e.seq)) {
+            reach_id_ = 0;
+            OnLinkReady(e.seq, e.attempt, std::move(e.reached));
+          }
+        } else if constexpr (std::is_same_v<E, connect_event::AttemptDone>) {
+          log().info << "ConnectAsync done attempt=" << e.attempt << " ok=" << (e.connected ? 1 : 0)
+                     << (e.connected ? "" : (" err=" + e.connected.error().message));
+          OnAttemptFinished(e.seq, e.attempt, std::move(e.connected));
+        } else if constexpr (std::is_same_v<E, connect_event::WatchdogDue>) {
+          OnWatchdog(e.seq, e.attempt);
+        } else if constexpr (std::is_same_v<E, connect_event::RetryDue>) {
+          if (retry_timer_id_ != 0 && Current(e.seq)) {
+            retry_timer_id_ = 0;
+            BeginAttempt(e.seq, e.attempt + 1);
+          }
+        } else if constexpr (std::is_same_v<E, connect_event::Finished>) {
+          // Skipped if Abort / Start ran since — a stale give-up must not tear down a newer session.
+          if (Current(e.seq) && hooks_.on_finished) {
+            hooks_.on_finished(std::move(e.result));
+          }
+        } else {
+          static_assert(!sizeof(E), "handle every ConnectEvent");
+        }
+      },
+      event);
 }
 
 void CallMediaConnectCoordinator::SetAttemptTimeoutMsForTest(const int timeout_ms) {
@@ -74,16 +105,13 @@ const char* CallMediaConnectCoordinator::Role() const {
 }
 
 void CallMediaConnectCoordinator::CancelTimers() {
-  if (retry_timer_id_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(std::exchange(retry_timer_id_, 0));
-  }
-  if (watchdog_timer_id_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(std::exchange(watchdog_timer_id_, 0));
-  }
+  outbox_.Cancel(retry_timer_id_);
+  outbox_.Cancel(watchdog_timer_id_);
 }
 
 void CallMediaConnectCoordinator::Abort() {
-  CheckUiThread("Abort");
+  // Sequence state is calls-owner only (no lock).
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   seq_.fetch_add(1, std::memory_order_acq_rel);
   CancelTimers();
   // Completes the pending reach inline; its continuation sees the new sequence and returns.
@@ -98,7 +126,7 @@ void CallMediaConnectCoordinator::Shutdown() {
   shut_down_.store(true, std::memory_order_release);
   RejectPendingHellos("shutting down");
   Abort();
-  // Drop the raw-`this` handler so late hellos cannot reach a destroyed owner.
+  // Late hellos NACK at the transport from here on.
   if (inbound_installed_) {
     transport_.ClearInboundHandler();
     inbound_installed_ = false;
@@ -112,48 +140,45 @@ void CallMediaConnectCoordinator::SetInboundKeyWaitMsForTest(const int wait_ms) 
 void CallMediaConnectCoordinator::SetInboundPorts(CallMediaInboundPorts ports) {
   inbound_ports_ = std::move(ports);
   inbound_installed_ = true;
-  // Called on the transport's IO hop: hand the hello to the calls owner and return.
-  transport_.SetInboundHandler([this, alive = alive_](CallMediaDirectConnectParams params,
-                                                      CallMediaInboundAnswer answer) {
-    CallsThread::Post([this, alive, params = std::move(params), answer = std::move(answer)]() mutable {
-      if (!alive->load(std::memory_order_acquire)) {
-        answer(std::move(params), {});  // owner gone: NACK, the offerer retries
-        return;
-      }
-      HandleInboundHello(std::move(params), std::move(answer));
-    });
+  InstallInboundHandler();
+}
+
+void CallMediaConnectCoordinator::InstallInboundHandler() {
+  if (!inbound_installed_ || !outbox_.IsBound()) {
+    return;  // both ports and the outbox are needed; the later of the two installs
+  }
+  // Called on the transport's IO hop: hand the hello over as an event and return. The handler
+  // holds only the outbox — never this coordinator.
+  transport_.SetInboundHandler([outbox = outbox_](CallMediaDirectConnectParams params, CallMediaInboundAnswer answer) {
+    outbox.Emit(connect_event::InboundHello{
+        std::make_shared<CallMediaInboundReply>(std::move(params), std::move(answer))});
   });
 }
 
 void CallMediaConnectCoordinator::NotifyKeyAvailable() {
-  OnOwner([this, alive = alive_]() {
-    if (alive->load(std::memory_order_acquire)) {
-      RecheckPendingHellos(/*ask_again=*/false);
-    }
-  });
+  outbox_.Emit(connect_event::KeyAvailable{});
 }
 
-void CallMediaConnectCoordinator::HandleInboundHello(CallMediaDirectConnectParams params,
-                                                     CallMediaInboundAnswer answer) {
+void CallMediaConnectCoordinator::HandleInboundHello(std::shared_ptr<CallMediaInboundReply> hello) {
   PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  CallMediaDirectConnectParams& params = hello->Params();
   log().info << "Inbound hello call_id=" << params.call_id << " epoch=" << params.media_epoch
              << " peer=" << (params.peer_key.empty() ? "(empty)" : params.peer_key);
   const CallMediaInboundPorts& ports = inbound_ports_;
   if (shut_down_.load(std::memory_order_acquire) || !ports.session_open || !ports.session_open(params.call_id)) {
     log().warning << "Inbound rejected: no open session call_id=" << params.call_id;
-    answer(std::move(params), {});
+    hello->Reject();
     return;
   }
   if (TryLoadInboundKey(params)) {
-    AcceptInboundHello(std::move(params), answer);
+    AcceptInboundHello(*hello);
     return;
   }
   if (ports.request_key) {
     ports.request_key(params.call_id);
   }
-  pending_hellos_.push_back(PendingHello{std::move(params), std::move(answer),
-                                         std::chrono::steady_clock::now() +
-                                             std::chrono::milliseconds(inbound_key_wait_ms_)});
+  pending_hellos_.push_back(PendingHello{std::move(hello), std::chrono::steady_clock::now() +
+                                                               std::chrono::milliseconds(inbound_key_wait_ms_)});
   ArmKeyPoll();
 }
 
@@ -168,17 +193,17 @@ bool CallMediaConnectCoordinator::TryLoadInboundKey(CallMediaDirectConnectParams
   return false;
 }
 
-void CallMediaConnectCoordinator::AcceptInboundHello(CallMediaDirectConnectParams params,
-                                                     const CallMediaInboundAnswer& answer) {
+void CallMediaConnectCoordinator::AcceptInboundHello(CallMediaInboundReply& reply) {
   CallMediaDirectCallbacks cbs;
   if (inbound_ports_.on_accepted) {
+    const CallMediaDirectConnectParams& params = reply.Params();
     CallMediaInboundHello hello;
     hello.call_id = params.call_id;
     hello.media_epoch = params.media_epoch;
     hello.peer_id = params.peer_key;
     cbs = inbound_ports_.on_accepted(hello);
   }
-  answer(std::move(params), std::move(cbs));
+  reply.Accept(std::move(cbs));
 }
 
 void CallMediaConnectCoordinator::RecheckPendingHellos(const bool ask_again) {
@@ -189,22 +214,23 @@ void CallMediaConnectCoordinator::RecheckPendingHellos(const bool ask_again) {
   pending_hellos_.clear();
   for (auto& hello : parked) {
     const CallMediaInboundPorts& ports = inbound_ports_;
-    if (!ports.session_open || !ports.session_open(hello.params.call_id)) {
-      hello.answer(std::move(hello.params), {});  // ended while parked
+    CallMediaDirectConnectParams& params = hello.reply->Params();
+    if (!ports.session_open || !ports.session_open(params.call_id)) {
+      hello.reply->Reject();  // ended while parked
       continue;
     }
-    if (TryLoadInboundKey(hello.params)) {
-      AcceptInboundHello(std::move(hello.params), hello.answer);
+    if (TryLoadInboundKey(params)) {
+      AcceptInboundHello(*hello.reply);
       continue;
     }
     if (now >= hello.deadline) {
       // No key in time: the transport NACKs the hello; the offerer retries.
-      log().info << "Inbound rejected: media key not ready call_id=" << hello.params.call_id;
-      hello.answer(std::move(hello.params), {});
+      log().info << "Inbound rejected: media key not ready call_id=" << params.call_id;
+      hello.reply->Reject();
       continue;
     }
     if (ask_again && ports.request_key) {
-      ports.request_key(hello.params.call_id);
+      ports.request_key(params.call_id);
     }
     still.push_back(std::move(hello));
   }
@@ -218,33 +244,21 @@ void CallMediaConnectCoordinator::ArmKeyPoll() {
   if (key_poll_timer_id_ != 0 || pending_hellos_.empty()) {
     return;
   }
-  key_poll_timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(
-      std::chrono::milliseconds(kInboundKeyPollMs), [this, alive = alive_]() {
-        CallsThread::Post([this, alive]() {
-          if (!alive->load(std::memory_order_acquire)) {
-            return;
-          }
-          key_poll_timer_id_ = 0;
-          RecheckPendingHellos(/*ask_again=*/true);
-          ArmKeyPoll();
-        });
-      });
+  key_poll_timer_id_ = outbox_.After(std::chrono::milliseconds(kInboundKeyPollMs), connect_event::KeyPollTick{});
 }
 
 void CallMediaConnectCoordinator::RejectPendingHellos(const char* why) {
-  if (key_poll_timer_id_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(std::exchange(key_poll_timer_id_, 0));
-  }
+  outbox_.Cancel(key_poll_timer_id_);
   auto parked = std::move(pending_hellos_);
   pending_hellos_.clear();
   for (auto& hello : parked) {
-    log().info << "Inbound rejected (" << why << ") call_id=" << hello.params.call_id;
-    hello.answer(std::move(hello.params), {});
+    log().info << "Inbound rejected (" << why << ") call_id=" << hello.reply->Params().call_id;
+    hello.reply->Reject();
   }
 }
 
 void CallMediaConnectCoordinator::Start(CallMediaConnectRequest request, CallMediaConnectHooks hooks) {
-  CheckUiThread("Start");
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   Abort();
   if (AppRuntime::IsShuttingDown() || shut_down_.load(std::memory_order_acquire)) {
     log().debug << "Start rejected: shutting down call_id=" << request.params.call_id;
@@ -281,14 +295,8 @@ void CallMediaConnectCoordinator::BeginAttempt(const uint64_t seq, const int att
   }
   reach.fresh_link = std::exchange(fresh_link_next_, false);
   attempt_reused_link_ = false;
-  reach_id_ = reach_.Ensure(std::move(reach), [this, alive = alive_, seq, attempt](Roe<PeerReachResult> reached) {
-    // Calls owner — the Coordinator can lag Pause/Resume.
-    OnOwner([this, alive, seq, attempt, reached = std::move(reached)]() mutable {
-      if (alive->load(std::memory_order_acquire) && Current(seq)) {
-        reach_id_ = 0;
-        OnLinkReady(seq, attempt, std::move(reached));
-      }
-    });
+  reach_id_ = reach_.Ensure(std::move(reach), [outbox = outbox_, seq, attempt](Roe<PeerReachResult> reached) {
+    outbox.Emit(connect_event::LinkReady{seq, attempt, std::move(reached)});
   });
 }
 
@@ -331,16 +339,8 @@ void CallMediaConnectCoordinator::OpenBundle(const uint64_t seq, const int attem
   ArmWatchdog(seq, attempt);
   transport_.ConnectAsync(
       request_.params, request_.callbacks,
-      [this, alive = alive_, seq, attempt](Roe<void> connected) {
-        // Calls owner — not the Coordinator (Pause / backlog can drop the timeout → stuck Connecting).
-        OnOwner([this, alive, seq, attempt, connected = std::move(connected)]() mutable {
-          if (!alive->load(std::memory_order_acquire)) {
-            return;
-          }
-          log().info << "ConnectAsync done attempt=" << attempt << " ok=" << (connected ? 1 : 0)
-                     << (connected ? "" : (" err=" + connected.error().message));
-          OnAttemptFinished(seq, attempt, std::move(connected));
-        });
+      [outbox = outbox_, seq, attempt](Roe<void> connected) {
+        outbox.Emit(connect_event::AttemptDone{seq, attempt, std::move(connected)});
       },
       attempt_timeout_ms_);
 }
@@ -349,27 +349,21 @@ void CallMediaConnectCoordinator::ArmWatchdog(const uint64_t seq, const int atte
   // CallMediaLeg TickDeadlines may not fire while OpenChannel / dial is stuck on a nested
   // MeshRuntime::Pump (dogfood 19f845 / 612b). B42: the watchdog fails only this attempt — it
   // goes through the normal failure path, so remaining attempts still run.
-  if (watchdog_timer_id_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(watchdog_timer_id_);
+  outbox_.Cancel(watchdog_timer_id_);
+  watchdog_timer_id_ = outbox_.After(std::chrono::milliseconds(attempt_timeout_ms_ + 1000),
+                                     connect_event::WatchdogDue{seq, attempt});
+}
+
+void CallMediaConnectCoordinator::OnWatchdog(const uint64_t seq, const int attempt) {
+  if (watchdog_timer_id_ == 0 || !Current(seq) || !InFlight() || attempt_current_ != attempt) {
+    return;
   }
-  watchdog_timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(
-      std::chrono::milliseconds(attempt_timeout_ms_ + 1000), [this, alive = alive_, seq, attempt]() {
-        if (!alive->load(std::memory_order_acquire) || !Current(seq) || !InFlight()) {
-          return;
-        }
-        CallsThread::Post([this, alive, seq, attempt]() {
-          if (!alive->load(std::memory_order_acquire) || !Current(seq) || !InFlight() ||
-              attempt_current_ != attempt) {
-            return;
-          }
-          log().warning << "ConnectAsync watchdog call_id=" << request_.params.call_id
-                        << " peer=" << request_.params.peer_key << " attempt=" << attempt;
-          watchdog_timer_id_ = 0;
-          // Detach may not deliver on_finished if Mesh IO is wedged — force attempt progress.
-          transport_.Detach();
-          OnAttemptFinished(seq, attempt, Error("amp call-media connect timed out (watchdog)"));
-        });
-      });
+  log().warning << "ConnectAsync watchdog call_id=" << request_.params.call_id << " peer=" << request_.params.peer_key
+                << " attempt=" << attempt;
+  watchdog_timer_id_ = 0;
+  // Detach may not deliver on_finished if Mesh IO is wedged — force attempt progress.
+  transport_.Detach();
+  OnAttemptFinished(seq, attempt, Error("amp call-media connect timed out (watchdog)"));
 }
 
 void CallMediaConnectCoordinator::OnAttemptFinished(const uint64_t seq, const int attempt,
@@ -386,9 +380,7 @@ void CallMediaConnectCoordinator::OnAttemptFinished(const uint64_t seq, const in
   if (attempt != attempt_current_) {
     return;
   }
-  if (watchdog_timer_id_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(std::exchange(watchdog_timer_id_, 0));
-  }
+  outbox_.Cancel(watchdog_timer_id_);
   if (connected || MediaReady()) {
     log().info << "Connect ok call_id=" << request_.params.call_id << " role=" << Role();
     Finish(seq, {});
@@ -406,16 +398,7 @@ void CallMediaConnectCoordinator::OnAttemptFinished(const uint64_t seq, const in
     Finish(seq, std::move(connected));
     return;
   }
-  retry_timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(
-      std::chrono::milliseconds(kRetryDelayMs), [this, alive = alive_, seq, attempt]() {
-        CallsThread::Post([this, alive, seq, attempt]() {
-          if (!alive->load(std::memory_order_acquire) || !Current(seq)) {
-            return;
-          }
-          retry_timer_id_ = 0;
-          BeginAttempt(seq, attempt + 1);
-        });
-      });
+  retry_timer_id_ = outbox_.After(std::chrono::milliseconds(kRetryDelayMs), connect_event::RetryDue{seq, attempt});
 }
 
 void CallMediaConnectCoordinator::Finish(const uint64_t seq, Roe<void> result) {
@@ -428,14 +411,8 @@ void CallMediaConnectCoordinator::Finish(const uint64_t seq, Roe<void> result) {
     log().info << "Connect give up call_id=" << request_.params.call_id << " role=" << Role()
                << " err=" << result.error().message;
   }
-  // Posted, not inline: the handler may restart or stop the call. Skipped if Abort / Start ran
-  // since — a stale give-up must not tear down a newer session.
-  CallsThread::Post([this, alive = alive_, seq, done = hooks_.on_finished, result = std::move(result)]() mutable {
-    if (!alive->load(std::memory_order_acquire) || !Current(seq) || !done) {
-      return;
-    }
-    done(std::move(result));
-  });
+  // An event, not inline: the owner's handler may restart or stop the call.
+  outbox_.Emit(connect_event::Finished{seq, std::move(result)});
 }
 
 } // namespace pbr

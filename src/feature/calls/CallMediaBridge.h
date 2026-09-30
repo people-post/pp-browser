@@ -134,7 +134,7 @@ public:
   using PathPolicyProvider = std::function<CallPathPolicy(const std::string& call_id)>;
   void SetPathPolicyProvider(PathPolicyProvider provider) { path_policy_ = std::move(provider); }
   /** Where the path reports its events (its parent binds it); its timers are delayed events. */
-  void SetOutbox(CallsOutbox<DirectPathEvent> outbox) { outbox_ = std::move(outbox); }
+  void SetOutbox(CallsOutbox<DirectPathEvent> outbox);
   /** An event it reported, back from the calls owner's queue. */
   void Handle(DirectPathEvent& event);
   /** k6: a mobility class of the call flipped (calls owner): upgrade punches follow the new policy. */

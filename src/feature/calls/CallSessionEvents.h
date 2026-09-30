@@ -1,10 +1,13 @@
 #pragma once
 
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
+#include "domain/mesh/reach/PeerReachCoordinator.h"
 #include "domain/messaging/CallTypes.h"
+#include "feature/calls/CallMediaInboundReply.h"
 #include "feature/calls/CallsSteps.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <variant>
 #include "common/PbrCompat.h"
@@ -136,6 +139,52 @@ using TopologyEvent = std::variant<topology_event::RelayTransportLost, topology_
                                    topology_event::Continue, HopMigrateEvent, PlanningEvent>;
 
 /** The 1:1 path's (CallMediaBridge) own events. */
+/** What the 1:1 connect sequence (`CallMediaConnectCoordinator`) reports to itself. */
+namespace connect_event {
+
+/** An inbound hello arrived (transport I/O). */
+struct InboundHello {
+  std::shared_ptr<CallMediaInboundReply> hello;
+};
+/** A media key landed: answer parked hellos that can be answered now. */
+struct KeyAvailable {};
+/** Re-check parked hellos (re-armed while any is parked). */
+struct KeyPollTick {};
+/** Attempt `attempt` of sequence `seq` has its link (or failed to get one). */
+struct LinkReady {
+  uint64_t seq = 0;
+  int attempt = 0;
+  Roe<PeerReachResult> reached;
+};
+/** Attempt `attempt`'s bundle open finished. */
+struct AttemptDone {
+  uint64_t seq = 0;
+  int attempt = 0;
+  Roe<void> connected;
+};
+/** Attempt `attempt` ran past its watchdog. */
+struct WatchdogDue {
+  uint64_t seq = 0;
+  int attempt = 0;
+};
+/** The pause before attempt `attempt + 1` ended. */
+struct RetryDue {
+  uint64_t seq = 0;
+  int attempt = 0;
+};
+/** Sequence `seq` ended: hand its result to the owner (never inside the step that ended it). */
+struct Finished {
+  uint64_t seq = 0;
+  Roe<void> result;
+};
+
+} // namespace connect_event
+
+using ConnectEvent =
+    std::variant<connect_event::InboundHello, connect_event::KeyAvailable, connect_event::KeyPollTick,
+                 connect_event::LinkReady, connect_event::AttemptDone, connect_event::WatchdogDue,
+                 connect_event::RetryDue, connect_event::Finished>;
+
 namespace direct_event {
 
 /** ~1 s connect-health tick while the 1:1 path connects / runs (re-armed by its handler). */
@@ -199,6 +248,10 @@ struct KeyPollDue {
   uint64_t wait = 0;
   int round = 0;
 };
+/** An event of the connect sequence (the bridge's child). */
+struct ForConnect {
+  ConnectEvent event;
+};
 /** A stored step's result arrived (a reach / upgrade / standby / migrate answer). */
 struct StepReady {
   CallsStepReady step;
@@ -212,7 +265,7 @@ using DirectPathEvent =
                  direct_event::InboundPeer, direct_event::BundleConnected, direct_event::BundleFailed,
                  direct_event::PathLost, direct_event::PathChanged, direct_event::EscalateRestart,
                  direct_event::StartOfferer, direct_event::MediaKeyReady, direct_event::KeyPollDue,
-                 direct_event::StepReady>;
+                 direct_event::ForConnect, direct_event::StepReady>;
 
 namespace session_event {
 
