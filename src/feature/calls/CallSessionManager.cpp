@@ -479,6 +479,7 @@ void CallSessionManager::RetryAnswererKick(const std::string& call_id) {
 void CallSessionManager::SetOutbox(CallsOutbox<SessionEvent> outbox) {
   outbox_ = std::move(outbox);
   workflow_.SetOutbox(outbox_.For<WorkflowEvent>([](WorkflowEvent event) { return SessionEvent{std::move(event)}; }));
+  topology_.SetOutbox(outbox_.For<TopologyEvent>([](TopologyEvent event) { return SessionEvent{std::move(event)}; }));
 }
 
 void CallSessionManager::Handle(SessionEvent& event) {
@@ -491,6 +492,8 @@ void CallSessionManager::Handle(SessionEvent& event) {
           RunMediaRestart(e.call_id, e.resume);
         } else if constexpr (std::is_same_v<E, WorkflowEvent>) {
           workflow_.Handle(e);
+        } else if constexpr (std::is_same_v<E, TopologyEvent>) {
+          topology_.Handle(e);
         } else {
           static_assert(!sizeof(E), "route every SessionEvent");
         }

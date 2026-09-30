@@ -3,6 +3,7 @@
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/LiveCall.h"
 #include "domain/messaging/CallLifecycleTypes.h"
+#include "feature/conversations/tests/calls_loopback_outbox.h"
 
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallControlCodec.h"
@@ -326,6 +327,7 @@ protected:
     dial_ = std::make_unique<FakeDialRegistry>();
     relay_ = std::make_unique<FakeMediaRelayClient>();
     topo_ = std::make_unique<CallTopologyController>(*sessions_, *contacts_, *media_);
+    topo_->SetOutbox(topo_events_.Get());  // the fixture plays the session manager
     topo_->SetHostPorts(host_->MakeHostPorts());
 
     CallTopologyController::MediaRelayDeps deps;
@@ -440,6 +442,11 @@ protected:
   std::unique_ptr<FakeDialRegistry> dial_;
   std::unique_ptr<FakeMediaRelayClient> relay_;
   std::unique_ptr<CallTopologyController> topo_;
+  CallsLoopbackOutbox<TopologyEvent> topo_events_{[this](TopologyEvent& event) {
+    if (topo_) {
+      topo_->Handle(event);
+    }
+  }};
 };
 
 TEST_F(CallTopologyControllerTest, InboundSfuAttachIgnoredWhenStatusDirectConnecting) {

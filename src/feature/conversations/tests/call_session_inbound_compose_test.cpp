@@ -1,5 +1,5 @@
 #include "domain/messaging/CallLifecycleTypes.h"
-#include "feature/calls/CallsExecutor.h"
+#include "feature/conversations/tests/calls_loopback_outbox.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionManager.h"
@@ -320,16 +320,7 @@ protected:
 
     csm_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *sessions_, *keys_,
                                                 std::move(delivery), *psk_, *media_);
-    // The fixture plays the stack: the manager's events come back through the calls owner.
-    CallsOutbox<SessionEvent>::Sink sink;
-    sink.emit = [this](SessionEvent event) {
-      CallsOwnerExecutor().Post([this, event = std::make_shared<SessionEvent>(std::move(event))]() {
-        if (csm_) {
-          csm_->Handle(*event);
-        }
-      });
-    };
-    csm_->SetOutbox(CallsOutbox<SessionEvent>(std::move(sink)));
+    csm_->SetOutbox(csm_events_.Get());  // the fixture plays the stack
     bridge_ = std::make_unique<CallMediaBridge>(csm_->AsMediaHost(), *sessions_, *keys_, *media_, *transport_,
                                                 dial_.get(), nullptr);
     bridge_->SetDirectArmingPorts(csm_->DirectArmingPorts());
@@ -509,6 +500,11 @@ protected:
   std::unique_ptr<CallMediaSeat> seat_;
   std::unique_ptr<CallMediaBridge> bridge_;
   std::unique_ptr<CallSessionManager> csm_;
+  CallsLoopbackOutbox<SessionEvent> csm_events_{[this](SessionEvent& event) {
+    if (csm_) {
+      csm_->Handle(event);
+    }
+  }};
   std::string local_identity_;
   int sent_control_messages_ = 0;
   /** Every call-control send fails (e.g. the relay is unreachable). */

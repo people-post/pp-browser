@@ -13,7 +13,9 @@
 #include "domain/people/MeshHopPolicy.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "domain/mesh/media_plane/MediaRelayAttach.h"
+#include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/calls/CallsOutbox.h"
 #include "foundation/runtime/DeferredSelf.h"
 
 #include "common/Error.h"
@@ -143,6 +145,8 @@ public:
     std::string call_id;
     int64_t deadline_ms = 0;
     uint64_t timer_id = 0;
+    /** Bumped at each arm: a deadline event for an earlier arm is stale. */
+    uint64_t armed = 0;
   };
 
   /** Deferred inbound CallSfuAttach + last failure. Calls owner only (hop migrate and topology). */
@@ -204,9 +208,12 @@ public:
   };
 
   CallHopMigrateWorkflow(CallSessionStore& sessions, CallMediaEngine& media);
-  ~CallHopMigrateWorkflow() override;
 
   void SetHostPorts(CallHopMigrateHostPorts ports);
+  /** Where it reports its delayed follow-ups (its parent binds it). */
+  void SetOutbox(CallsOutbox<HopMigrateEvent> outbox) { outbox_ = std::move(outbox); }
+  /** A follow-up it reported, back from the calls owner's queue. */
+  void Handle(HopMigrateEvent& event);
   void SetArmingPorts(CallHopMigrateArmingPorts ports);
   void SetSeatPorts(CallHopMigrateSeatPorts ports);
   void SetTopologyOps(TopologyOps ops);
@@ -287,6 +294,8 @@ private:
   Roe<void> StartHopMedia(const HopAttach& at);
   void MarkHopAttachLive(const HopAttach& at, bool fresh_start);
   void ReleaseDirectAfterHopAttach(const HopAttach& at);
+  void RefanOutPickedHop(const hop_migrate_event::RefanOutPickedHop& again);
+  void ReleaseDirectSettled(const hop_migrate_event::ReleaseDirectAfterAttach& release);
   void ReleaseDirectFor(const std::string& call_id);
   // Guest reattach after a lost relay transport (engine stays live).
   void StartGuestReattach(const std::string& call_id, const CallSfuAttachDetail& attach_in,
@@ -313,7 +322,7 @@ private:
   PublisherStreams publishers_;
   SfuSurface sfu_;
   /** Coordinator timers (re-fan-out, settle, reattach backoff) drop once we are gone. */
-  DeferredSelf timers_self_;
+  CallsOutbox<HopMigrateEvent> outbox_;
 };
 
 } // namespace pbr
