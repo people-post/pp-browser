@@ -22,6 +22,7 @@
 #include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallsOutbox.h"
 #include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallDirectPathDeps.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallTopologyController.h"
@@ -139,8 +140,24 @@ public:
   /** The media seat (owned here: the calls' coordinators arbitrate it). Calls owner. */
   const CallMediaSeat& Seat() const { return seat_; }
   CallMediaSeat& SeatForTest() { return seat_; }
-  /** The 1:1 path's seat ports (the stack binds the bridge with them until it moves under here). */
-  CallDirectSeatPorts DirectSeatPorts();
+  // --- The 1:1 path (CallMediaBridge), owned here like the group path (topology) -------------------
+  /**
+   * Mesh media is wired: run the 1:1 path on `deps` — built on first use or a new transport, else
+   * re-pointed at the new reach. Without a usable transport the path is dropped.
+   */
+  void AttachDirectPath(CallDirectPathDeps deps);
+  /** Mesh media objects are being replaced: the path lets go of dial / reach (kept otherwise). */
+  void DetachDirectPathReach();
+  /** Before the transport stops: abort connects and let go of the path's streams. */
+  void PrepareDirectPathForStop(int wait_ms = 0);
+  /** After the transport stopped (or at teardown): drop the path. */
+  void DropDirectPath();
+  /** k5: the device's addresses moved. */
+  void OnLocalNetworkMoved();
+  /** k6: a call's path policy may have changed. */
+  void OnPathPolicyChanged(const std::string& call_id);
+  bool IsDirectConnectInFlight() const;
+  CallMediaBridge* DirectPathForTest() { return direct_path_.get(); }
   /** The 1:1 path the calls' media coordinators start / release (null: mesh media not wired). */
   void SetDirectDriver(CallDirectDriver* direct) {
     direct_driver_ = direct;
@@ -311,6 +328,8 @@ private:
   void NotifyCallStateChanged();
   CallHopArmingPorts MakeHopArmingPorts();
   CallTopologySeatPorts MakeTopologySeatPorts();
+  CallDirectSeatPorts DirectSeatPorts();
+  CallDirectMediaPorts MakeDirectMediaPorts();
   void BindSeat();
   /** The seat released (or was taken over): stop that call's media. */
   void StopMediaForSeat(const std::string& call_id, uint64_t epoch_at_post, bool force);
@@ -352,6 +371,8 @@ private:
   /** Before topology_ / live_calls_: both hold it (ports / media resources). */
   CallMediaSeat seat_;
   CallDirectDriver* direct_driver_ = nullptr;
+  /** The 1:1 path's transport as attached (a new one rebuilds the path). */
+  ICallMediaTransport* direct_transport_ = nullptr;
   CallTopologyController topology_;
   /** Before workflow_: the workflow drives it. */
   LiveCalls live_calls_;
@@ -388,6 +409,8 @@ private:
   std::string last_error_;
   std::function<void()> on_call_state_changed_;
   CallsOutbox<SessionEvent> outbox_;
+  /** The 1:1 path: last, so it goes first (it calls into the seat, LiveCalls and this manager). */
+  std::unique_ptr<CallMediaBridge> direct_path_;
   std::string media_activity_;
 };
 

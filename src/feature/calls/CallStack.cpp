@@ -77,10 +77,8 @@ void CallStack::Dispatch(CallStackEvent& event) {
         using E = std::decay_t<decltype(e)>;
         if constexpr (std::is_same_v<E, calls_event::LocalNetworkChanged>) {
           AfterMobilityEvent(mobility_.OnAttachment(e.attachment, e.changed, now));
-          if (e.moved && media_plane_) {
-            if (CallMediaBridge* bridge = media_plane_->Bridge()) {
-              bridge->OnLocalNetworkChanged();
-            }
+          if (e.moved && call_sessions_) {
+            call_sessions_->OnLocalNetworkMoved();
           }
         } else if constexpr (std::is_same_v<E, calls_event::ObservedAddressChanged>) {
           AfterMobilityEvent(mobility_.OnObservedAddressChanged(now));
@@ -139,10 +137,8 @@ void CallStack::AfterMobilityEvent(const bool local_class_changed) {
 }
 
 void CallStack::NotifyPathPolicyChangedOnOwner(const std::string& call_id) {
-  if (media_plane_) {
-    if (CallMediaBridge* bridge = media_plane_->Bridge()) {
-      bridge->OnPathPolicyChanged(call_id);
-    }
+  if (call_sessions_) {
+    call_sessions_->OnPathPolicyChanged(call_id);
   }
 }
 
@@ -215,7 +211,7 @@ void CallStack::PublishUiState() {
     state.seat_live = seat.IsLive(state.seat_bound_call_id);
   }
   state.want_ephemeral_listen = want_ephemeral_listen_;
-  state.connect_in_flight = media_plane_ && media_plane_->IsConnectWorkerInflight();
+  state.connect_in_flight = call_sessions_ && call_sessions_->IsDirectConnectInFlight();
   state.sessions_identity = call_sessions_.get();
   state.available = call_sessions_ != nullptr;
   ui_state_.Set(std::move(state));
@@ -292,9 +288,7 @@ void CallStack::BindMeshMediaHooks() {
 void CallStack::DetachMeshMediaOnOwner() {
   if (call_sessions_) {
     call_sessions_->SetMediaRelayDeps({});
-  }
-  if (media_plane_) {
-    media_plane_->DetachFromMeshMedia();
+    call_sessions_->DetachDirectPathReach();
   }
 }
 
@@ -309,21 +303,11 @@ void CallStack::BindMediaProducts() {
       !call_media_engine_) {
     return;
   }
-  CallMediaBridgeBindArgs args;
-  args.host = &call_sessions_->AsMediaHost();
-  args.session_store = call_session_store_.get();
-  args.media_keys = call_media_keys_.get();
-  args.media_engine = call_media_engine_.get();
-  args.sessions_key = call_sessions_.get();
-  media_plane_->BindBridge(args);
-  if (CallMediaBridge* bridge = media_plane_->Bridge()) {
-    bridge->SetPathPolicyProvider([this](const std::string& call_id) { return PathPolicyFor(call_id); });
-  }
+  CallDirectPathDeps direct = media_plane_->DirectPathDeps();
+  direct.path_policy = [this](const std::string& call_id) { return PathPolicyFor(call_id); };
+  call_sessions_->AttachDirectPath(std::move(direct));
   call_sessions_->SetMediaRelayDeps(media_plane_->BuildMediaRelayDeps());
-  call_sessions_->SetDirectMediaPorts(
-      MakeDirectMediaPorts());
-  call_sessions_->SetDirectDriver(media_plane_ ? media_plane_->Bridge() : nullptr);
-  // Call state ↔ bridge ports (mesh stop cleared them): one bind point with BuildSessions.
+  // Call state ports (mesh stop cleared them): one bind point with BuildSessions.
   BindCallState();
   PublishUiState();
 }
@@ -539,26 +523,25 @@ bool CallStack::WantEphemeralListen() const {
 
 void CallStack::PrepareForMeshStopOnOwner(const std::function<void()>& abort_inflight_circuit) {
   PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
-  if (call_sessions_) {
-    call_sessions_->SetDirectMediaPorts({});
-    call_sessions_->SetDirectDriver(nullptr);
-  }
   DetachMeshMedia();
+  // The 1:1 path lets go of its streams between two circuit aborts, then the transport stops.
+  if (abort_inflight_circuit) {
+    abort_inflight_circuit();
+  }
+  if (call_sessions_) {
+    call_sessions_->PrepareDirectPathForStop();
+  }
+  if (abort_inflight_circuit) {
+    abort_inflight_circuit();
+  }
   if (media_plane_) {
-    if (CallMediaBridge* bridge = media_plane_->Bridge()) {
-      bridge->SetDirectArmingPorts({});
-      bridge->SetSeatPorts({});
-    }
-    media_plane_->PrepareForMeshStop(abort_inflight_circuit);
-  } else if (abort_inflight_circuit) {
-    abort_inflight_circuit();
-    abort_inflight_circuit();
+    media_plane_->StopTransport();
   }
 }
 
 void CallStack::FinishMeshStopOnOwner() {
   if (call_sessions_) {
-    call_sessions_->SetDirectDriver(nullptr);  // the bridge goes with the plane's mesh stop
+    call_sessions_->DropDirectPath();  // before its transport goes
   }
   if (media_plane_) {
     media_plane_->FinishMeshStop();
@@ -582,8 +565,11 @@ void CallStack::AbortCallMediaForShutdownOnOwner() {
       (void)call_sessions_->LeaveCall((*active)->call_id, LiveCallEndReason::Shutdown);
     }
   }
+  if (call_sessions_) {
+    call_sessions_->PrepareDirectPathForStop();
+  }
   if (media_plane_) {
-    media_plane_->AbortBridgeAndTransport();
+    media_plane_->DetachTransport();
   }
 }
 
@@ -637,12 +623,6 @@ void CallStack::BindCallState() {
   }
   call_state_binds_.fetch_add(1, std::memory_order_relaxed);
   call_sessions_->SetOnCallStateChanged([this]() { OnCallStateChangedOnOwner(); });
-  if (media_plane_) {
-    if (CallMediaBridge* bridge = media_plane_->Bridge()) {
-      bridge->SetDirectArmingPorts(call_sessions_->DirectArmingPorts());
-      bridge->SetSeatPorts(call_sessions_->DirectSeatPorts());
-    }
-  }
   OnCallStateChangedOnOwner();
 }
 
@@ -722,7 +702,7 @@ void CallStack::ReleaseOnOwner() {
     call_media_engine_->Stop();
   }
   if (call_sessions_) {
-    call_sessions_->SetDirectDriver(nullptr);
+    call_sessions_->DropDirectPath();  // before its transport goes with the plane
   }
   if (media_plane_) {
     media_plane_->Clear();
@@ -734,33 +714,5 @@ void CallStack::ReleaseOnOwner() {
   PublishUiState();
 }
 
-
-CallDirectMediaPorts CallStack::MakeDirectMediaPorts() const {
-  CallDirectMediaPorts ports;
-  CallMediaBridge* bridge = media_plane_ ? media_plane_->Bridge() : nullptr;
-  if (!bridge) {
-    return ports;
-  }
-  ports.media_path_kind = [bridge]() { return bridge->MediaPathKind(); };
-  ports.note_peer_id_relay_mapping = [bridge](const std::string& peer_id,
-                                              const std::string& relay_identity) {
-    bridge->NotePeerIdRelayMapping(peer_id, relay_identity);
-  };
-  ports.is_connect_failed = [bridge]() { return bridge->IsMeshConnectFailed(); };
-  ports.connect_missing_mic = [bridge]() {
-    return bridge->IsMeshConnectFailed() && bridge->MeshConnectMissingMic();
-  };
-  ports.poll_connect_health = [bridge]() { bridge->PollMeshConnectHealth(); };
-  ports.media_attempted = [bridge](const std::string& call_id) {
-    return bridge->MediaAttempted(call_id);
-  };
-  ports.note_media_attempted = [bridge](const std::string& call_id) {
-    bridge->NoteMediaAttempted(call_id);
-  };
-  ports.on_media_key_ready = [bridge](const std::string& call_id) {
-    bridge->OnMediaKeyReady(call_id);
-  };
-  return ports;
-}
 
 } // namespace pbr

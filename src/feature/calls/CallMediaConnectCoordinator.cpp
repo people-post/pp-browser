@@ -52,8 +52,8 @@ CallMediaConnectCoordinator::~CallMediaConnectCoordinator() {
   shut_down_.store(true, std::memory_order_release);
   RejectPendingHellos("coordinator gone");
   Abort();
-  // Do not ClearInboundHandler here: a replacement owner (CallMediaPlane::BindBridge builds the
-  // new bridge before destroying the old one) has already installed its own handler.
+  // Do not ClearInboundHandler here: a replacement path may already have installed its own. Ours
+  // stays harmless until then — the alive flag makes a late hello a NACK (the offerer retries).
 }
 
 void CallMediaConnectCoordinator::SetAttemptTimeoutMsForTest(const int timeout_ms) {

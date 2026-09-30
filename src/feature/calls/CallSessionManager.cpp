@@ -570,6 +570,89 @@ void CallSessionManager::StopMediaForSeat(const std::string& call_id, const uint
   }
 }
 
+void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
+  if (!deps.IsUsable()) {
+    DropDirectPath();
+    return;
+  }
+  if (!direct_path_ || direct_transport_ != deps.transport) {
+    DropDirectPath();
+    direct_path_ = std::make_unique<CallMediaBridge>(AsMediaHost(), sessions_, media_keys_, media_, *deps.transport,
+                                                     deps.dial, deps.circuit_reach);
+    direct_transport_ = deps.transport;
+    log().info << "1:1 path built";
+  } else {
+    direct_path_->SetReachDeps(deps.dial, deps.circuit_reach);
+  }
+  CallMediaBridge& path = *direct_path_;
+  path.SetSeedWarm(std::move(deps.seed_warm));
+  path.SetSeedReserve(std::move(deps.seed_reserve));
+  path.SetSeedParkAwait(std::move(deps.seed_park_await));
+  path.SetPathPolicyProvider(std::move(deps.path_policy));
+  path.SetDirectArmingPorts(DirectArmingPorts());
+  path.SetSeatPorts(DirectSeatPorts());
+  SetDirectMediaPorts(MakeDirectMediaPorts());
+  SetDirectDriver(&path);
+}
+
+void CallSessionManager::DetachDirectPathReach() {
+  if (direct_path_) {
+    direct_path_->SetReachDeps(nullptr, nullptr);
+  }
+}
+
+void CallSessionManager::PrepareDirectPathForStop(const int wait_ms) {
+  SetDirectMediaPorts({});
+  SetDirectDriver(nullptr);
+  if (direct_path_) {
+    direct_path_->SetDirectArmingPorts({});
+    direct_path_->SetSeatPorts({});
+    direct_path_->PrepareForTeardown(wait_ms);
+  }
+}
+
+void CallSessionManager::DropDirectPath() {
+  SetDirectMediaPorts({});
+  SetDirectDriver(nullptr);
+  direct_path_.reset();
+  direct_transport_ = nullptr;
+}
+
+void CallSessionManager::OnLocalNetworkMoved() {
+  if (direct_path_) {
+    direct_path_->OnLocalNetworkChanged();
+  }
+}
+
+void CallSessionManager::OnPathPolicyChanged(const std::string& call_id) {
+  if (direct_path_) {
+    direct_path_->OnPathPolicyChanged(call_id);
+  }
+}
+
+bool CallSessionManager::IsDirectConnectInFlight() const {
+  return direct_path_ && direct_path_->IsConnectWorkerInflight();
+}
+
+CallDirectMediaPorts CallSessionManager::MakeDirectMediaPorts() {
+  CallDirectMediaPorts ports;
+  CallMediaBridge* bridge = direct_path_.get();
+  if (!bridge) {
+    return ports;
+  }
+  ports.media_path_kind = [bridge]() { return bridge->MediaPathKind(); };
+  ports.note_peer_id_relay_mapping = [bridge](const std::string& peer_id, const std::string& relay_identity) {
+    bridge->NotePeerIdRelayMapping(peer_id, relay_identity);
+  };
+  ports.is_connect_failed = [bridge]() { return bridge->IsMeshConnectFailed(); };
+  ports.connect_missing_mic = [bridge]() { return bridge->IsMeshConnectFailed() && bridge->MeshConnectMissingMic(); };
+  ports.poll_connect_health = [bridge]() { bridge->PollMeshConnectHealth(); };
+  ports.media_attempted = [bridge](const std::string& call_id) { return bridge->MediaAttempted(call_id); };
+  ports.note_media_attempted = [bridge](const std::string& call_id) { bridge->NoteMediaAttempted(call_id); };
+  ports.on_media_key_ready = [bridge](const std::string& call_id) { bridge->OnMediaKeyReady(call_id); };
+  return ports;
+}
+
 CallDirectSeatPorts CallSessionManager::DirectSeatPorts() {
   CallDirectSeatPorts ports;
   CallMediaSeat* seat = &seat_;

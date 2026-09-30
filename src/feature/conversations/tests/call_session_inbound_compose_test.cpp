@@ -192,33 +192,6 @@ void DrainUntil(const std::function<bool()>& done, int max_ms = 4000) {
   AppRuntime::RunUIAndOwnerTasks();
 }
 
-CallDirectMediaPorts TestDirectMediaPorts(CallMediaBridge* bridge, CallMediaSeat* seat) {
-  CallDirectMediaPorts ports;
-  if (!bridge) {
-    return ports;
-  }
-  ports.media_path_kind = [bridge]() { return bridge->MediaPathKind(); };
-  ports.note_peer_id_relay_mapping = [bridge](const std::string& peer_id,
-                                              const std::string& relay_identity) {
-    bridge->NotePeerIdRelayMapping(peer_id, relay_identity);
-  };
-  ports.is_connect_failed = [bridge]() { return bridge->IsMeshConnectFailed(); };
-  ports.connect_missing_mic = [bridge]() {
-    return bridge->IsMeshConnectFailed() && bridge->MeshConnectMissingMic();
-  };
-  ports.poll_connect_health = [bridge]() { bridge->PollMeshConnectHealth(); };
-  ports.media_attempted = [bridge](const std::string& call_id) {
-    return bridge->MediaAttempted(call_id);
-  };
-  ports.note_media_attempted = [bridge](const std::string& call_id) {
-    bridge->NoteMediaAttempted(call_id);
-  };
-  ports.on_media_key_ready = [bridge](const std::string& call_id) {
-    bridge->OnMediaKeyReady(call_id);
-  };
-  return ports;
-}
-
 class CallSessionInboundComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -271,25 +244,21 @@ protected:
     csm_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *sessions_, *keys_,
                                                 std::move(delivery), *psk_, *media_);
     csm_->SetOutbox(csm_events_.Get());  // the fixture plays the stack
-    bridge_ = std::make_unique<CallMediaBridge>(csm_->AsMediaHost(), *sessions_, *keys_, *media_, *transport_,
-                                                dial_.get(), nullptr);
-    bridge_->SetDirectArmingPorts(csm_->DirectArmingPorts());
-    bridge_->SetSeatPorts(csm_->DirectSeatPorts());
-    csm_->SetDirectMediaPorts(TestDirectMediaPorts(bridge_.get(), &csm_->SeatForTest()));
-    csm_->SetDirectDriver(bridge_.get());
+    // The manager owns the 1:1 path, as in the product: attach it on the fake transport.
+    CallDirectPathDeps direct;
+    direct.transport = transport_.get();
+    direct.dial = dial_.get();
+    csm_->AttachDirectPath(std::move(direct));
+    bridge_ = csm_->DirectPathForTest();
 
     dial_->force_dialable["account:peer"] = true;
     dial_->endpoints["account:peer"] = "/ip4/10.0.0.2/udp/1/p2p/12D3KooWPeer";
   }
 
   void TearDown() override {
-    if (bridge_) {
-      // Brief wait so Connect/StartSfu workers release profile.db before remove_all (Windows).
-      bridge_->PrepareForTeardown(500);
-    }
     if (csm_) {
-      csm_->SetDirectMediaPorts({});
-      csm_->SetDirectDriver(nullptr);
+      // Brief wait so Connect/StartSfu workers release profile.db before remove_all (Windows).
+      csm_->PrepareDirectPathForStop(500);
     }
     // Always Stop — StartSfu may arm capture after PrepareForTeardown cleared media_call_id_.
     if (media_) {
@@ -303,7 +272,7 @@ protected:
     // heap-use-after-free in SqliteThreadStore::UpsertThread from FanOutToJoinedAndRinging
     // (Windows CI SEGFAULT in InboundAcceptAsOffererSchedulesDirectMedia).
     AppRuntime::Shutdown();
-    bridge_.reset();
+    bridge_ = nullptr;
     csm_.reset();
     transport_.reset();
     dial_.reset();
@@ -425,7 +394,8 @@ protected:
   std::unique_ptr<CallMediaEngine> media_;
   std::unique_ptr<FakeDialRegistry> dial_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
-  std::unique_ptr<CallMediaBridge> bridge_;
+  /** The manager's 1:1 path (owned by csm_). */
+  CallMediaBridge* bridge_ = nullptr;
   std::unique_ptr<CallSessionManager> csm_;
   CallsLoopbackOutbox<SessionEvent> csm_events_{[this](SessionEvent& event) {
     if (csm_) {
@@ -745,7 +715,7 @@ TEST_F(CallSessionInboundComposeTest, InboundAcceptAsOffererSchedulesDirectMedia
   EXPECT_EQ(scheduled_call, call_id);
   EXPECT_EQ(scheduled_peer, "account:peer");
   EXPECT_TRUE(scheduled_offerer);
-  csm_->SetDirectDriver(bridge_.get());
+  csm_->SetDirectDriver(bridge_);
 
   auto session = sessions_->LoadSession(call_id);
   ASSERT_TRUE(session && session->has_value());

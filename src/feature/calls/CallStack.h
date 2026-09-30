@@ -201,14 +201,13 @@ private:
   /** Mesh config snapshot (defaults when none is wired). */
   std::shared_ptr<const MeshConfig> mesh_config() const;
   void SyncMediaPlaneDeps();
-  /** BindBridge + CSM SetMediaRelayDeps / SetDirectMediaPorts. */
+  /** The session manager's 1:1 path (on the plane's transport) + its topology relay deps. */
   void BindMediaProducts();
   /** Calls' hooks on the shared mesh media (announce chosen R1, signaling punch). */
   void BindMeshMediaHooks();
   MeshMediaPlane* mesh_media() const { return deps_.mesh_media; }
   /** What the calls show may have changed: refresh chrome, wake N025 listen when its desire flips. */
   void OnCallStateChangedOnOwner();
-  CallDirectMediaPorts MakeDirectMediaPorts() const;
 
   /** The calls owner's executor: every call object gets it from here (THREADING.md § Calls owner). */
   CallsExecutor& executor_ = CallsOwnerExecutor();
