@@ -1,6 +1,7 @@
 #include "app/node/NodeMetrics.h"
 
 #include "domain/mesh/dht/AmpDhtProtocol.h"
+#include "domain/mesh/reachability/Reachability.h"
 #include "foundation/platform/os/OsProcessStats.h"
 #include "foundation/runtime/AppVersion.h"
 
@@ -37,6 +38,36 @@ void CollectMesh(MetricsRegistry& r, MeshHost& mesh) {
   r.Gauge("pp_node_capability", capability, {{"service", "circuit_relay"}}).Set(circuit ? 1 : 0);
   r.Gauge("pp_node_capability", capability, {{"service", "media_relay"}}).Set(media ? 1 : 0);
   r.Gauge("pp_node_capability", capability, {{"service", "dht"}}).Set(dht ? 1 : 0);
+
+  const ReachabilitySnapshot reach = mesh.Reachability().Snapshot();
+  const char* status = "Reachability verdict (1 = current).";
+  for (const ReachabilityStatus s : {ReachabilityStatus::Unknown, ReachabilityStatus::Checking,
+                                     ReachabilityStatus::Reachable, ReachabilityStatus::OutboundOnly,
+                                     ReachabilityStatus::Blocked}) {
+    r.Gauge("pp_reachability_status", status, {{"status", ReachabilityStatusKey(s)}}).Set(reach.status == s ? 1 : 0);
+  }
+  const char* signal = "Reachability probe signals (1 = true).";
+  const ReachabilitySignals& sig = reach.signals;
+  r.Gauge("pp_reachability_signal", signal, {{"signal", "dial_back_ok"}}).Set(sig.dial_back_ok ? 1 : 0);
+  r.Gauge("pp_reachability_signal", signal, {{"signal", "seed_dial_ok"}}).Set(sig.seed_dial_ok ? 1 : 0);
+  r.Gauge("pp_reachability_signal", signal, {{"signal", "upnp_mapped"}}).Set(sig.upnp_mapped ? 1 : 0);
+  r.Gauge("pp_reachability_signal", signal, {{"signal", "public_ipv4"}}).Set(sig.has_public_listen_ip ? 1 : 0);
+  r.Gauge("pp_reachability_signal", signal, {{"signal", "global_ipv6"}}).Set(sig.has_global_ipv6 ? 1 : 0);
+
+  if (auto* amp = mesh.Amp()) {
+    size_t links = 0;
+    amp->Runtime().WithIoLock([&]() { links = amp->Runtime().Links().CountLinks(); });
+    r.Gauge("pp_link_active", "Amp links in the link table.").Set(static_cast<double>(links));
+  }
+
+  if (CircuitRelayServer* server = mesh.AmpCircuitServer()) {
+    const CircuitRelayRuntimeStats load = server->RuntimeStats();
+    const char* tunnels = "Circuit relay tunnels open, by state.";
+    r.Gauge("pp_circuit_relay_tunnels", tunnels, {{"state", "bridged"}}).Set(static_cast<double>(load.active_bridges));
+    r.Gauge("pp_circuit_relay_tunnels", tunnels, {{"state", "setup"}}).Set(static_cast<double>(load.pending_tunnels));
+    r.Gauge("pp_circuit_relay_reservations", "Answerers parked on this relay.")
+        .Set(static_cast<double>(load.reservations));
+  }
 
   if (MediaRelayServer* server = mesh.AmpMediaRelayServer()) {
     const MediaRelayRuntimeStats load = server->RuntimeStats();

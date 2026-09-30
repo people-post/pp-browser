@@ -13,4 +13,6 @@
 | Owner-thread queues | `foundation/runtime/OwnerThread.*`, `AppRuntime.cpp` |
 | Media relay counters | `MediaRelayServer.cpp` |
 
-**Next:** M2 (links, reachability, circuit relay).
+**M2 landed** (links, reachability, punches, circuit relay): `MeshLinkEventLog.cpp` (`InstallMeshLinkMetrics`), `AmpPunchCoordinator.h`, `PunchServer.cpp`, `CircuitRelayServer.cpp` (`RuntimeStats`), `NodeMetrics.cpp`.
+
+**Next:** stats that need pp-cpp-amp (per-link RTT / loss / bytes, channels by protocol, circuit bridge bytes); M3 (pp-browser UI snapshot, with rendezvous parking).

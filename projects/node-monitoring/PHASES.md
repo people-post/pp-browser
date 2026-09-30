@@ -10,11 +10,13 @@
 - [x] DHT ops (circuit relay bridges moved to M2: the server exposes no count yet)
 - [x] Naming contract ([NODE_METRICS.md](../../docs/contracts/NODE_METRICS.md))
 
-## M2 — Links and reachability
+## M2 — Links, reachability, circuit relay
 
-- [ ] Amp links by kind, dials by outcome / error code, RTT and loss, bytes, channels by protocol
-- [ ] Punches (introducer / initiator) and success, dial-back probe, rendezvous parking
-- [ ] Circuit relay refusals by reason, setup latency, bytes relayed
+- [x] Amp links: active, connects by path / direction, drops by reason and stage (failed attempts), path changes
+- [x] Reachability verdict and probe signals; punches started (kind, result) and served (role)
+- [x] Circuit relay: requests by op / result, tunnels bridged / failed, setup latency, open tunnels, reservations
+- [ ] Needs pp-cpp-amp stats: per-link RTT / loss / bytes, open channels by protocol, bytes a circuit bridge relays
+- [ ] Rendezvous parking state (a pp-browser concern: `MeshConnectivity` — with M3)
 
 ## M3 — pp-browser UI snapshot
 

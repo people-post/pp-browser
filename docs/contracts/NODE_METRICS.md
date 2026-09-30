@@ -32,6 +32,19 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_media_relay_dropped_frames_total` | counter | `reason` = `stale` \| `video_level` | Stale latest-lossy frames; video of a level not agreed for the sender ([MEDIA_CHANNELS](MEDIA_CHANNELS.md)) |
 | `pp_media_relay_quotes_total` | counter | `result` = `issued` \| `refused_admission` \| `refused_video_level` \| `refused_busy` | |
 | `pp_media_relay_attaches_total` | counter | `result` = `ok` \| `refused` | |
+| `pp_link_active` | gauge | | Amp links in the link table |
+| `pp_link_connects_total` | counter | `path` = `direct` \| `punched` \| `carrier`; `direction` = `outbound` \| `inbound` | Links that connected |
+| `pp_link_drops_total` | counter | `reason` ([AMP-LINK-ERRORS](AMP-LINK-ERRORS.md) drop reasons, e.g. `connection-dead`, `handshake-timeout`); `stage` = `connected` \| `attempt` | `attempt` = never connected (a failed dial) |
+| `pp_link_path_changes_total` | counter | | Remote endpoint migrations |
+| `pp_reachability_status` | gauge | `status` = `unknown` \| `checking` \| `reachable` \| `outbound_only` \| `blocked` | 1 for the current verdict |
+| `pp_reachability_signal` | gauge | `signal` = `dial_back_ok` \| `seed_dial_ok` \| `upnp_mapped` \| `public_ipv4` \| `global_ipv6` | 1 = true |
+| `pp_punch_attempts_total` | counter | `kind` = `cold` \| `upgrade` \| `signaling`; `result` = `ok` \| `failed` | Punches this node started |
+| `pp_punch_served_total` | counter | `role` = `introducer` \| `target` | Punch requests served |
+| `pp_circuit_relay_requests_total` | counter | `op` = `bridge` \| `reserve`; `result` = `accepted` \| `refused_admission` \| `refused_standby_full` (bridge) / `accepted` \| `refused` (reserve) | |
+| `pp_circuit_relay_tunnels_total` | counter | `result` = `bridged` \| `failed` | Tunnels that ended setup |
+| `pp_circuit_relay_setup_seconds` | histogram | | Request → bridged (buckets 0.05 … 10) |
+| `pp_circuit_relay_tunnels` | gauge | `state` = `bridged` \| `setup` | Open now |
+| `pp_circuit_relay_reservations` | gauge | | Answerers parked here |
 | `pp_dht_records` | gauge | | Records cached |
 | `pp_dht_inbound_requests_total` | counter | `op` = `find_peer` \| `store` | Served |
 | `pp_dht_inbound_rate_limited_total` | counter | | Refused by the per-peer limit |
