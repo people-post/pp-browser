@@ -62,6 +62,7 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
       "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
   config.mesh.prefer_contacts_for_routing = false;
   config.mesh.direct_connections = pbr::DirectAudience::Friendly;
+  config.mesh.trusted_relays_only = true;
   config.mesh.mesh_enabled = false;
   config.mesh.amp_udp_port = 18518;
   config.mesh.capabilities.circuit_relay = true;
@@ -107,6 +108,7 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   EXPECT_EQ(parsed.mesh.bootstrap_peers[0], config.mesh.bootstrap_peers[0]);
   EXPECT_FALSE(parsed.mesh.prefer_contacts_for_routing);
   EXPECT_EQ(parsed.mesh.direct_connections, pbr::DirectAudience::Friendly);
+  EXPECT_TRUE(parsed.mesh.trusted_relays_only);
   EXPECT_FALSE(parsed.mesh.mesh_enabled);
   EXPECT_EQ(parsed.mesh.amp_udp_port, 18518);
   EXPECT_TRUE(parsed.mesh.capabilities.circuit_relay);

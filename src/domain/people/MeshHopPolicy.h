@@ -105,4 +105,14 @@ bool IsContactPeerId(const std::vector<Contact>& contacts, const std::string& pe
 /** All PeerId values from contacts (for provider admission). */
 std::vector<std::string> ContactPeerIds(const std::vector<Contact>& contacts);
 
+/**
+ * projects/privacy T4 — relays trusted with both ends' addresses: the configured org seeds
+ * (`org_seed_multiaddrs`, not directory-merged ones) and Friendly contacts' nodes.
+ */
+std::unordered_set<std::string> TrustedRelayPeerIds(const std::vector<Contact>& contacts,
+                                                    const std::vector<std::string>& org_seed_multiaddrs);
+/** `hops` without the ones outside `trusted` (order kept). */
+std::vector<MeshHopCandidate> KeepTrustedRelays(std::vector<MeshHopCandidate> hops,
+                                                const std::unordered_set<std::string>& trusted);
+
 } // namespace pbr

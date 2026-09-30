@@ -41,3 +41,9 @@
 **Date:** 2026-09-30
 **Decision:** `call_invite_policy` (preferences: `everyone` default | `contacts_only` | `nobody`; Me → Security) drops invites from outside the audience silently — no decline, the caller learns nothing. Messages from strangers are not restricted yet.
 **Rationale:** Calls from strangers already run relay-only (T1), so the default stays reachable; the setting is for users who want quiet. Restricting stranger messages without a "message requests" inbox would silently lose first contacts (directory discovery depends on them) — that needs UI, and is left open.
+
+## P008 — Trusted relays: org seeds and Friendly contacts' nodes
+
+**Date:** 2026-09-30
+**Decision:** `mesh.trusted_relays_only` (off by default; Me → Network) limits every relay role — rendezvous parking, circuit dialing, punch introducers, call media hops — to the configured org seeds and Friendly contacts' nodes. Directory volunteers and DHT-discovered nodes are left out, and the bootstrap set drops the directory nodes merged into it.
+**Rationale:** A relay operator sees both ends' addresses and who talks to whom. The org already sees routing metadata (T2), and a Friendly contact is someone the user chose to trust; a volunteer node is neither. Off by default because the narrower set can make connections slower or fail when the org seeds are loaded or unreachable.

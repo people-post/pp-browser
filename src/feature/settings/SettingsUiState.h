@@ -58,6 +58,8 @@ struct SettingsUiState {
   std::string prefer_contacts_for_routing = "on";
   /** projects/privacy T1: everyone / contacts / friendly / nobody (mesh.direct_connections). */
   std::string direct_connections = "contacts";
+  /** projects/privacy T4: "on" = only org seeds and Friendly contacts' nodes relay for us. */
+  std::string trusted_relays_only = "off";
   bool show_prefer_contacts_toggle = false;
   std::string profile_nickname;
   std::string profile_peer_id;

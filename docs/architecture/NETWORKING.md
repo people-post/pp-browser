@@ -59,6 +59,8 @@ A link that is already up may carry traffic (P003). Relays and seeds use the pla
 
 **Inbound control** (privacy T3): a Blocked contact's direct messages and call control are discarded on receipt (`RelayReceivePipeline::SetContactTrust`) and its Amp link is dropped on connect (`MeshHost`); `call_invite_policy` (Me → Security → Who can call me) drops invites from outside `everyone` | `contacts_only` | `nobody` silently (`CallSessionManager::AllowsInboundCall`).
 
+**Relay trust** (privacy T4): relays see both ends' addresses. `mesh.trusted_relays_only` (Me → Network → Trusted relays only) keeps every relay role — rendezvous parking, circuit dialing, punch introducers, call media hops — to the configured org seeds and Friendly contacts' nodes (`TrustedRelayPeerIds` / `KeepTrustedRelays` in `MeshHopPolicy`; applied in `MeshConnectivityWiring`, `CallHopRanking`, the hub's preferred bridge).
+
 ## Calls
 
 Call **media** product path is **AMP** (voice-first): direct PeerLink channels and/or circuit nested Session + SoftMigrate `media_relay`. Wire-compat `call_sdp` / `call_ice` controls are ignored inbound; product does not send them. Code map: [CALLS.md](CALLS.md) · Amp: [CALL_MEDIA_CIRCUIT.md](../../projects/adp/CALL_MEDIA_CIRCUIT.md).

@@ -170,6 +170,8 @@
     "settings.network.direct_connections.contacts": "我的联系人",
     "settings.network.direct_connections.friendly": "友好联系人",
     "settings.network.direct_connections.nobody": "无人（始终中继）",
+    "settings.network.trusted_relays": "仅使用可信中继",
+    "settings.network.trusted_relays.help": "中继能看到双方的连接地址。开启后，只有组织的服务器和你的友好联系人的节点为你中继；连接可能更慢或更易失败。",
     "settings.security.protection": "保护状态：",
     "settings.security.current_pin": "当前 PIN",
     "settings.security.new_pin": "新 PIN",

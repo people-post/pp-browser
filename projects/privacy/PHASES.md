@@ -26,7 +26,7 @@
 
 ## Y4 — Relay trust (T4)
 
-- [ ] Strict mode: relays limited to org seeds and trusted contacts' Nodes
+- [x] Trusted relays only: org seeds and Friendly contacts' nodes for every relay role ([P008](DECISIONS.md#p008--trusted-relays-org-seeds-and-friendly-contacts-nodes))
 
 ## Later
 

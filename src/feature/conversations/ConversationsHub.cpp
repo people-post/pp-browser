@@ -2382,7 +2382,8 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
       next.circuit_relay != config_.mesh.capabilities.circuit_relay ||
       next.media_relay != config_.mesh.capabilities.media_relay ||
       next.dht != config_.mesh.capabilities.dht ||
-      next.prefer_contacts_for_routing != config_.mesh.prefer_contacts_for_routing;
+      next.prefer_contacts_for_routing != config_.mesh.prefer_contacts_for_routing ||
+      next.trusted_relays_only != config_.mesh.trusted_relays_only;  // relay deps are built at Wire
 
   config_.relay = next.relay;
   config_.directory = next.directory;
@@ -2393,6 +2394,7 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
   config_.mesh.capabilities.dht = next.dht;
   config_.mesh.prefer_contacts_for_routing = next.prefer_contacts_for_routing;
   config_.mesh.direct_connections = next.direct_connections;
+  config_.mesh.trusted_relays_only = next.trusted_relays_only;
   PublishMeshConfig();  // republishes who may learn our address too
 
   if (service_urls_changed) {
@@ -2445,6 +2447,7 @@ ConversationsHub::NetworkConfig ConversationsHub::ProjectNetwork(const AppConfig
   out.dht = config.mesh.capabilities.dht;
   out.prefer_contacts_for_routing = config.mesh.prefer_contacts_for_routing;
   out.direct_connections = config.mesh.direct_connections;
+  out.trusted_relays_only = config.mesh.trusted_relays_only;
   return out;
 }
 
@@ -2487,6 +2490,9 @@ Roe<CircuitRelayBridgeResult> ConversationsHub::RequestCircuitBridgePreferred(co
   }
   auto hops = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, mesh_cfg.bootstrap_peers,
                                  mesh_cfg.prefer_contacts_for_routing, include_seeds);
+  if (mesh_cfg.trusted_relays_only) {  // privacy T4
+    hops = KeepTrustedRelays(std::move(hops), TrustedRelayPeerIds(contacts, mesh_cfg.bootstrap_peers));
+  }
   if (hops.empty()) {
     return Error("no circuit hop candidates");
   }

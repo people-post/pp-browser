@@ -96,6 +96,16 @@
         </button>
         <p class="text muted settings-help">{{i18n:settings.network.direct_connections.help}}</p>
 
+        <div class="settings-toggle-row row">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.network.trusted_relays}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="trusted_relays_only == 'on'"
+                  data-event-click="toggle_trusted_relays()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help">{{i18n:settings.network.trusted_relays.help}}</p>
+
         <label class="settings-field" data-if="show_node_toggle && node_enabled == 'on'">
           <span class="settings-label">{{i18n:settings.network.listen}}</span>
           <p class="text muted" data-rml="amp_listen_multiaddr"></p>

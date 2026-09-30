@@ -129,6 +129,9 @@ TEST(ConfigMergeTest, NetworkDraftCarriesDirectConnections) {
   pbr::SettingsUiState state;
   state.direct_connections = "friendly";
   EXPECT_EQ(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.direct_connections, pbr::DirectAudience::Friendly);
+  EXPECT_FALSE(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.trusted_relays_only);
+  state.trusted_relays_only = "on";
+  EXPECT_TRUE(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.trusted_relays_only);
   state.direct_connections = "strangers";  // not a choice: the saved value stands
   EXPECT_EQ(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.direct_connections, pbr::DirectAudience::Contacts);
 }
