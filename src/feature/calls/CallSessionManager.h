@@ -373,6 +373,8 @@ private:
   CallDirectDriver* direct_driver_ = nullptr;
   /** The 1:1 path's transport as attached (a new one rebuilds the path). */
   ICallMediaTransport* direct_transport_ = nullptr;
+  /** Names the current 1:1 path: its events carry it (one built since drops the old ones). */
+  uint64_t direct_path_generation_ = 0;
   CallTopologyController topology_;
   /** Before workflow_: the workflow drives it. */
   LiveCalls live_calls_;

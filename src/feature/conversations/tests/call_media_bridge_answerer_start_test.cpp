@@ -1,6 +1,7 @@
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallsThread.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
+#include "feature/conversations/tests/calls_loopback_outbox.h"
 #include "domain/messaging/CallLifecycleTypes.h"
 
 #include "domain/media/CallMediaEngine.h"
@@ -378,6 +379,7 @@ protected:
     bridge_ = std::make_unique<CallMediaBridge>(*host_, *sessions_, *keys_, *media_, *transport_, dial_.get(),
                                                 circuit_.get());
     bridge_->SetDirectArmingPorts(TestDirectArmingPorts(&host_->live));
+    bridge_->SetOutbox(bridge_events_.Get());  // the fixture plays the session manager
     dial_->force_dialable["account:peer"] = true;
     dial_->endpoints["account:peer"] = "/ip4/10.0.0.2/udp/1/p2p/12D3KooWPeer";
   }
@@ -460,6 +462,11 @@ protected:
   std::unique_ptr<FakeCircuitHopReach> circuit_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
   std::unique_ptr<CallMediaBridge> bridge_;
+  CallsLoopbackOutbox<DirectPathEvent> bridge_events_{[this](DirectPathEvent& event) {
+    if (bridge_) {
+      bridge_->Handle(event);
+    }
+  }};
 };
 
 // Dogfood 2026-09-24: answerer showed "Punched" while its inbound leg rode a relay carrier.

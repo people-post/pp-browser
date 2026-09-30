@@ -1,6 +1,8 @@
 #pragma once
 
+#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 #include "domain/messaging/CallTypes.h"
+#include "feature/calls/CallsSteps.h"
 
 #include <cstdint>
 #include <string>
@@ -133,7 +135,74 @@ using TopologyEvent = std::variant<topology_event::RelayTransportLost, topology_
                                    topology_event::ReannouncePublisher, topology_event::RefuseGuest,
                                    topology_event::Continue, HopMigrateEvent, PlanningEvent>;
 
-using SessionEvent =
-    std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent, TopologyEvent>;
+/** The 1:1 path's (CallMediaBridge) own events. */
+namespace direct_event {
+
+/** ~1 s connect-health tick while the 1:1 path connects / runs (re-armed by its handler). */
+struct HealthTick {};
+/** Circuit reservation renewal tick (re-armed by its handler). */
+struct ReserveRenewTick {};
+/** The next direct-upgrade attempt is due. */
+struct UpgradeDue {};
+/** The next relay-standby attempt is due. */
+struct StandbyDue {};
+/** Re-anchor a call that lost its last path. */
+struct ReanchorDue {
+  std::string call_id;
+};
+/** The grace for the peer's in-progress hello ended. */
+struct RecoveryGraceOver {
+  std::string call_id;
+  std::string error;
+};
+/** An inbound hello was accepted (transport I/O): bind its peer — ahead of the bundle's own events. */
+struct InboundPeer {
+  std::string call_id;
+  std::string peer_id;
+};
+/** A bundle connected (transport I/O). */
+struct BundleConnected {
+  std::string call_id;
+  std::string label;
+};
+/** A bundle failed (transport I/O). */
+struct BundleFailed {
+  std::string call_id;
+  std::string reason;
+};
+/** k4: the call lost its last path (transport I/O). */
+struct PathLost {
+  std::string call_id;
+};
+/** k3: the transport moved the call to another path (transport I/O). */
+struct PathChanged {
+  std::string call_id;
+  CallMediaLinkKind kind = CallMediaLinkKind::Unknown;
+};
+/** A stored step's result arrived (a reach / upgrade / standby / migrate answer). */
+struct StepReady {
+  CallsStepReady step;
+};
+
+} // namespace direct_event
+
+using DirectPathEvent =
+    std::variant<direct_event::HealthTick, direct_event::ReserveRenewTick, direct_event::UpgradeDue,
+                 direct_event::StandbyDue, direct_event::ReanchorDue, direct_event::RecoveryGraceOver,
+                 direct_event::InboundPeer, direct_event::BundleConnected, direct_event::BundleFailed,
+                 direct_event::PathLost, direct_event::PathChanged, direct_event::StepReady>;
+
+namespace session_event {
+
+/** An event of the 1:1 path; `generation` names that path (one built since drops it). */
+struct ForDirectPath {
+  uint64_t generation = 0;
+  DirectPathEvent event;
+};
+
+} // namespace session_event
+
+using SessionEvent = std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent,
+                                  TopologyEvent, session_event::ForDirectPath>;
 
 } // namespace pbr

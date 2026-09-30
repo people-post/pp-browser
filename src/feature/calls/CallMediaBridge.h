@@ -7,6 +7,8 @@
 #include "feature/calls/CallMediaHost.h"
 #include "feature/calls/CallDirectDriver.h"
 #include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallSessionEvents.h"
+#include "feature/calls/CallsOutbox.h"
 #include "domain/messaging/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaConnectCoordinator.h"
@@ -131,6 +133,10 @@ public:
    */
   using PathPolicyProvider = std::function<CallPathPolicy(const std::string& call_id)>;
   void SetPathPolicyProvider(PathPolicyProvider provider) { path_policy_ = std::move(provider); }
+  /** Where the path reports its events (its parent binds it); its timers are delayed events. */
+  void SetOutbox(CallsOutbox<DirectPathEvent> outbox) { outbox_ = std::move(outbox); }
+  /** An event it reported, back from the calls owner's queue. */
+  void Handle(DirectPathEvent& event);
   /** k6: a mobility class of the call flipped (calls owner): upgrade punches follow the new policy. */
   void OnPathPolicyChanged(const std::string& call_id);
   /** Wait after a network change before re-anchoring (production 2.5 s). */
@@ -349,6 +355,21 @@ private:
   std::atomic<uint64_t> key_wait_gen_{0};
   /** Cleared in the destructor; guards stops posted from other threads. */
   std::shared_ptr<std::atomic<bool>> alive_;
+  CallsOutbox<DirectPathEvent> outbox_;
+  /** Steps waiting for a result from another thread (reach / upgrade / standby / migrate answers). */
+  CallsSteps steps_;
+  /**
+   * The callback to hand an async API: it only reports its result (any thread); `step` runs with it
+   * on the owner, as the path's next event.
+   */
+  template <typename T>
+  std::function<void(T)> OnOwner(std::function<void(T)> step) {
+    const uint64_t id = steps_.StoreFor<T>(std::move(step));
+    return [outbox = outbox_, id](T value) {
+      outbox.Emit(direct_event::StepReady{CallsStepReady{id, std::make_shared<std::any>(std::move(value))}});
+    };
+  }
+  void OnPathChanged(const std::string& call_id, CallMediaLinkKind kind);
   uint64_t direct_health_timer_id_ = 0;
   uint64_t reserve_renew_timer_id_ = 0;
   uint64_t upgrade_timer_id_ = 0;

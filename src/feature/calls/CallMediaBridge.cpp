@@ -16,6 +16,8 @@
 #include <chrono>
 #include <thread>
 #include <utility>
+#include <type_traits>
+#include <variant>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -64,9 +66,7 @@ CallMediaInboundPorts CallMediaBridge::MakeInboundPorts() {
   ports.on_accepted = [this](const CallMediaInboundHello& hello) {
     // Identity binding reads / writes bridge state — calls owner. Posted ahead of any media or
     // connected callback of this bundle (FIFO), so frames never see a stale stream id.
-    CallsThread::Post([this, call_id = hello.call_id, peer_id = hello.peer_id]() {
-      BindInboundPeer(call_id, peer_id);
-    });
+    outbox_.Emit(direct_event::InboundPeer{hello.call_id, hello.peer_id});
     return MakeBundleCallbacks(hello.call_id, /*fixed_stream=*/0, "Inbound call-media");
   };
   return ports;
@@ -116,40 +116,22 @@ CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string&
                                                               const uint32_t fixed_stream,
                                                               const char* label) {
   CallMediaDirectCallbacks cbs;
-  cbs.on_connected = [this, call_id, label]() {
-    CallsThread::Post([this, call_id, label]() {
-      log().info << label << " connected call_id=" << call_id;
-      CommitDirectConnected(call_id);
-    });
+  // Edges: the transport calls these on its I/O thread — they only report.
+  cbs.on_connected = [outbox = outbox_, call_id, label]() {
+    outbox.Emit(direct_event::BundleConnected{call_id, label});
   };
   cbs.on_media = [this, call_id, fixed_stream](uint8_t channel, uint32_t seq, uint8_t mark,
                                                const std::vector<uint8_t>& payload) {
     DeliverDirectMedia(call_id, fixed_stream, channel, seq, mark, payload);
   };
-  cbs.on_failed = [this, call_id](const std::string& reason) {
-    CallsThread::Post([this, call_id, reason]() { OnBundleFailed(call_id, reason); });
+  cbs.on_failed = [outbox = outbox_, call_id](const std::string& reason) {
+    outbox.Emit(direct_event::BundleFailed{call_id, reason});
   };
   // k4: the call lost its last path — reconnect window (the offerer re-anchors).
-  cbs.on_path_lost = [this, call_id]() {
-    CallsThread::Post([this, call_id]() { Apply(CallDirectPlannerEvent::PathLost, call_id, media_peer_identity_); });
-  };
+  cbs.on_path_lost = [outbox = outbox_, call_id]() { outbox.Emit(direct_event::PathLost{call_id}); };
   // k3: the transport moved the call to another path; the path label (UI snapshot) follows.
-  cbs.on_path_changed = [this, call_id](CallMediaLinkKind kind) {
-    CallsThread::Post([this, call_id, kind]() {
-      log().info << "call-media path migrated call_id=" << call_id
-                 << " path=" << (kind == CallMediaLinkKind::Relayed ? "circuit" : "direct");
-      if (kind == CallMediaLinkKind::Direct) {
-        CancelDirectUpgrade();
-        ArmRelayStandby(call_id);  // after a failover onto a direct standby, keep a relay behind it
-        // Off the relay onto a link the upgrade punch (or the peer's punch) opened.
-        if (reach_kind_ == PeerLinkKind::Relayed || reach_kind_ == PeerLinkKind::Unknown) {
-          reach_kind_ = PeerLinkKind::Punched;
-        }
-      } else {
-        reach_kind_ = PeerLinkKind::Relayed;
-      }
-      Apply(CallDirectPlannerEvent::PathMigrated, call_id);
-    });
+  cbs.on_path_changed = [outbox = outbox_, call_id](CallMediaLinkKind kind) {
+    outbox.Emit(direct_event::PathChanged{call_id, kind});
   };
   return cbs;
 }
@@ -390,27 +372,86 @@ void CallMediaBridge::Apply(CallDirectPlannerEvent ev, const std::string& call_i
   }
 }
 
-void CallMediaBridge::CancelDirectHealthTimer() {
-  if (direct_health_timer_id_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(direct_health_timer_id_);
-    direct_health_timer_id_ = 0;
+void CallMediaBridge::Handle(DirectPathEvent& event) {
+  std::visit(
+      [this](auto& e) {
+        using E = std::decay_t<decltype(e)>;
+        if constexpr (std::is_same_v<E, direct_event::HealthTick>) {
+          if (direct_health_timer_id_ == 0) {
+            return;  // cancelled since
+          }
+          direct_health_timer_id_ = outbox_.After(std::chrono::milliseconds(1000), direct_event::HealthTick{});
+          OnDirectHealthTimerFire();
+        } else if constexpr (std::is_same_v<E, direct_event::ReserveRenewTick>) {
+          if (reserve_renew_timer_id_ == 0) {
+            return;
+          }
+          reserve_renew_timer_id_ =
+              outbox_.After(std::chrono::milliseconds(reserve_renew_interval_ms_), direct_event::ReserveRenewTick{});
+          OnReserveRenewFire();
+        } else if constexpr (std::is_same_v<E, direct_event::UpgradeDue>) {
+          if (upgrade_timer_id_ != 0) {
+            OnDirectUpgradeFire();
+          }
+        } else if constexpr (std::is_same_v<E, direct_event::StandbyDue>) {
+          if (standby_timer_id_ != 0) {
+            OnRelayStandbyFire();
+          }
+        } else if constexpr (std::is_same_v<E, direct_event::ReanchorDue>) {
+          if (reanchor_timer_id_ != 0 && reanchor_call_id_ == e.call_id) {
+            reanchor_timer_id_ = 0;
+            Reanchor(e.call_id);
+          }
+        } else if constexpr (std::is_same_v<E, direct_event::RecoveryGraceOver>) {
+          FailUnlessDirectRecovered(e.call_id, e.error, /*grace_used=*/true);
+        } else if constexpr (std::is_same_v<E, direct_event::InboundPeer>) {
+          BindInboundPeer(e.call_id, e.peer_id);
+        } else if constexpr (std::is_same_v<E, direct_event::BundleConnected>) {
+          log().info << e.label << " connected call_id=" << e.call_id;
+          CommitDirectConnected(e.call_id);
+        } else if constexpr (std::is_same_v<E, direct_event::BundleFailed>) {
+          OnBundleFailed(e.call_id, e.reason);
+        } else if constexpr (std::is_same_v<E, direct_event::PathLost>) {
+          Apply(CallDirectPlannerEvent::PathLost, e.call_id, media_peer_identity_);
+        } else if constexpr (std::is_same_v<E, direct_event::PathChanged>) {
+          OnPathChanged(e.call_id, e.kind);
+        } else if constexpr (std::is_same_v<E, direct_event::StepReady>) {
+          steps_.Run(e.step.id, e.step.value.get());
+        } else {
+          static_assert(!sizeof(E), "handle every DirectPathEvent");
+        }
+      },
+      event);
+}
+
+void CallMediaBridge::OnPathChanged(const std::string& call_id, const CallMediaLinkKind kind) {
+  log().info << "call-media path migrated call_id=" << call_id
+             << " path=" << (kind == CallMediaLinkKind::Relayed ? "circuit" : "direct");
+  if (kind == CallMediaLinkKind::Direct) {
+    CancelDirectUpgrade();
+    ArmRelayStandby(call_id);  // after a failover onto a direct standby, keep a relay behind it
+    // Off the relay onto a link the upgrade punch (or the peer's punch) opened.
+    if (reach_kind_ == PeerLinkKind::Relayed || reach_kind_ == PeerLinkKind::Unknown) {
+      reach_kind_ = PeerLinkKind::Punched;
+    }
+  } else {
+    reach_kind_ = PeerLinkKind::Relayed;
   }
+  Apply(CallDirectPlannerEvent::PathMigrated, call_id);
+}
+
+void CallMediaBridge::CancelDirectHealthTimer() {
+  outbox_.Cancel(direct_health_timer_id_);
 }
 
 void CallMediaBridge::ArmDirectHealthTimer() {
   CancelDirectHealthTimer();
   // ~1s tick while Connecting/Live/Degraded — primary connect health / TX-only path (no UI poll).
-  direct_health_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(
-      std::chrono::milliseconds(1000), [this]() {
-        CallsThread::Post([this]() { OnDirectHealthTimerFire(); });
-      });
+  direct_health_timer_id_ = outbox_.After(std::chrono::milliseconds(1000), direct_event::HealthTick{});
 }
 
 void CallMediaBridge::CancelReserveRenewal() {
-  if (reserve_renew_timer_id_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(reserve_renew_timer_id_);
-    reserve_renew_timer_id_ = 0;
-  }
+  outbox_.Cancel(reserve_renew_timer_id_);
 }
 
 void CallMediaBridge::ArmReserveRenewal() {
@@ -421,10 +462,8 @@ void CallMediaBridge::ArmReserveRenewal() {
   // Reservations are a 15 s lease (StartReserve TTL) and nothing else renews them; a caller that
   // dials after the lease lapses finds no park (dogfood 2026-09-24 "Couldn't connect"). 10 s keeps
   // one lease overlapping the next, so the relay link also stays hot throughout.
-  reserve_renew_timer_id_ = AppRuntime::ScheduleCoordinatorRepeating(
-      std::chrono::milliseconds(reserve_renew_interval_ms_), [this]() {
-        CallsThread::Post([this]() { OnReserveRenewFire(); });
-      });
+  reserve_renew_timer_id_ =
+      outbox_.After(std::chrono::milliseconds(reserve_renew_interval_ms_), direct_event::ReserveRenewTick{});
 }
 
 void CallMediaBridge::OnReserveRenewFire() {
@@ -462,21 +501,11 @@ void CallMediaBridge::ScheduleDirectUpgrade() {
     return;
   }
   const int delay_ms = upgrade_delay_ms_for_test_ > 0 ? upgrade_delay_ms_for_test_ : kDelaysMs[upgrade_attempt_];
-  upgrade_timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(
-      std::chrono::milliseconds(delay_ms), [this, alive = alive_]() {
-        CallsThread::Post([this, alive]() {
-          if (alive->load(std::memory_order_acquire)) {
-            OnDirectUpgradeFire();
-          }
-        });
-      });
+  upgrade_timer_id_ = outbox_.After(std::chrono::milliseconds(delay_ms), direct_event::UpgradeDue{});
 }
 
 void CallMediaBridge::CancelDirectUpgrade() {
-  if (upgrade_timer_id_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(upgrade_timer_id_);
-    upgrade_timer_id_ = 0;
-  }
+  outbox_.Cancel(upgrade_timer_id_);
   upgrade_call_id_.clear();
 }
 
@@ -491,19 +520,17 @@ void CallMediaBridge::OnDirectUpgradeFire() {
   ++upgrade_attempt_;
   const std::string peer_id = CallPeerMeshId();
   log().info << "direct upgrade attempt=" << upgrade_attempt_ << " call_id=" << call_id << " peer=" << peer_id;
-  reach_.UpgradeToDirect(peer_id, [this, alive = alive_, call_id](Roe<void> result) {
-    CallsThread::Post([this, alive, call_id, result = std::move(result)]() {
-      if (!alive->load(std::memory_order_acquire) || upgrade_call_id_ != call_id) {
-        return;
-      }
-      if (result) {
-        log().info << "direct upgrade: direct link up call_id=" << call_id << " (the call moves onto it)";
-        return;  // PathMigrated cancels the schedule; a failed migration retries from the transport
-      }
-      log().info << "direct upgrade miss call_id=" << call_id << " err=" << result.error().message;
-      ScheduleDirectUpgrade();
-    });
-  });
+  reach_.UpgradeToDirect(peer_id, OnOwner<Roe<void>>([this, call_id](Roe<void> result) {
+    if (upgrade_call_id_ != call_id) {
+      return;
+    }
+    if (result) {
+      log().info << "direct upgrade: direct link up call_id=" << call_id << " (the call moves onto it)";
+      return;  // PathMigrated cancels the schedule; a failed migration retries from the transport
+    }
+    log().info << "direct upgrade miss call_id=" << call_id << " err=" << result.error().message;
+    ScheduleDirectUpgrade();
+  }));
 }
 
 // --- k6: a direct call keeps a relayed standby (K003) -----------------------------------------------
@@ -529,21 +556,11 @@ void CallMediaBridge::ScheduleRelayStandby() {
     return;
   }
   const int delay_ms = standby_delay_ms_for_test_ > 0 ? standby_delay_ms_for_test_ : kDelaysMs[standby_attempt_];
-  standby_timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(
-      std::chrono::milliseconds(delay_ms), [this, alive = alive_]() {
-        CallsThread::Post([this, alive]() {
-          if (alive->load(std::memory_order_acquire)) {
-            OnRelayStandbyFire();
-          }
-        });
-      });
+  standby_timer_id_ = outbox_.After(std::chrono::milliseconds(delay_ms), direct_event::StandbyDue{});
 }
 
 void CallMediaBridge::CancelRelayStandby() {
-  if (standby_timer_id_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(standby_timer_id_);
-    standby_timer_id_ = 0;
-  }
+  outbox_.Cancel(standby_timer_id_);
   if (standby_reach_id_ != 0) {
     reach_.Cancel(standby_reach_id_);
     standby_reach_id_ = 0;
@@ -584,34 +601,30 @@ void CallMediaBridge::OnRelayStandbyFire() {
       ScheduleRelayStandby();
     }
   };
-  standby_reach_id_ =
-      reach_.Ensure(std::move(request), [this, alive = alive_, call_id, retry](Roe<PeerReachResult> reached) {
-        CallsThread::Post([this, alive, call_id, retry, reached = std::move(reached)]() {
-          if (!alive->load(std::memory_order_acquire) || standby_call_id_ != call_id) {
+  standby_reach_id_ = reach_.Ensure(
+      std::move(request), OnOwner<Roe<PeerReachResult>>([this, call_id, retry](Roe<PeerReachResult> reached) {
+        if (standby_call_id_ != call_id) {
+          return;
+        }
+        standby_reach_id_ = 0;
+        if (!reached) {
+          log().info << "relay standby: no circuit (" << reached.error().message << ")";
+          retry();
+          return;
+        }
+        direct_.AddStandby(CallMediaLinkKind::Relayed, OnOwner<Roe<void>>([this, call_id, retry](Roe<void> added) {
+          if (standby_call_id_ != call_id) {
             return;
           }
-          standby_reach_id_ = 0;
-          if (!reached) {
-            log().info << "relay standby: no circuit (" << reached.error().message << ")";
+          if (!added) {
+            log().info << "relay standby: not added (" << added.error().message << ")";
             retry();
             return;
           }
-          direct_.AddStandby(CallMediaLinkKind::Relayed, [this, alive, call_id, retry](Roe<void> added) {
-            CallsThread::Post([this, alive, call_id, retry, added = std::move(added)]() {
-              if (!alive->load(std::memory_order_acquire) || standby_call_id_ != call_id) {
-                return;
-              }
-              if (!added) {
-                log().info << "relay standby: not added (" << added.error().message << ")";
-                retry();
-                return;
-              }
-              log().info << "relay standby up call_id=" << call_id;
-              standby_call_id_.clear();
-            });
-          });
-        });
-      });
+          log().info << "relay standby up call_id=" << call_id;
+          standby_call_id_.clear();
+        }));
+      }));
 }
 
 void CallMediaBridge::ApplyPathPolicyToTransport(const std::string& call_id) {
@@ -665,21 +678,11 @@ void CallMediaBridge::OnLocalNetworkChanged() {
 void CallMediaBridge::ScheduleReanchor(const std::string& call_id, const std::chrono::milliseconds delay) {
   CancelReanchor();
   reanchor_call_id_ = call_id;
-  reanchor_timer_id_ = AppRuntime::ScheduleCoordinatorOneShot(delay, [this, alive = alive_, call_id]() {
-    CallsThread::Post([this, alive, call_id]() {
-      if (alive->load(std::memory_order_acquire) && reanchor_call_id_ == call_id) {
-        reanchor_timer_id_ = 0;
-        Reanchor(call_id);
-      }
-    });
-  });
+  reanchor_timer_id_ = outbox_.After(delay, direct_event::ReanchorDue{call_id});
 }
 
 void CallMediaBridge::CancelReanchor() {
-  if (reanchor_timer_id_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(reanchor_timer_id_);
-    reanchor_timer_id_ = 0;
-  }
+  outbox_.Cancel(reanchor_timer_id_);
   if (reanchor_reach_id_ != 0) {
     reach_.Cancel(reanchor_reach_id_);
     reanchor_reach_id_ = 0;
@@ -702,37 +705,33 @@ void CallMediaBridge::Reanchor(const std::string& call_id) {
       ScheduleReanchor(call_id, std::chrono::milliseconds(reanchor_retry_ms_));
     }
   };
-  reanchor_reach_id_ =
-      reach_.Ensure(std::move(request), [this, alive = alive_, call_id, retry](Roe<PeerReachResult> reached) {
-        CallsThread::Post([this, alive, call_id, retry, reached = std::move(reached)]() mutable {
-          if (!alive->load(std::memory_order_acquire) || reanchor_call_id_ != call_id) {
+  reanchor_reach_id_ = reach_.Ensure(
+      std::move(request), OnOwner<Roe<PeerReachResult>>([this, call_id, retry](Roe<PeerReachResult> reached) {
+        if (reanchor_call_id_ != call_id) {
+          return;
+        }
+        reanchor_reach_id_ = 0;
+        if (direct_planner_phase_ != CallDirectPlannerPhase::Reconnecting) {
+          return;
+        }
+        if (!reached) {
+          log().info << "reconnect: peer not reached yet (" << reached.error().message << ")";
+          retry();
+          return;
+        }
+        const CallMediaLinkKind kind =
+            reached->kind == PeerLinkKind::Relayed ? CallMediaLinkKind::Relayed : CallMediaLinkKind::Direct;
+        direct_.MigrateTo(kind, OnOwner<Roe<void>>([this, call_id, retry](Roe<void> moved) {
+          if (reanchor_call_id_ != call_id) {
             return;
           }
-          reanchor_reach_id_ = 0;
-          if (direct_planner_phase_ != CallDirectPlannerPhase::Reconnecting) {
-            return;
-          }
-          if (!reached) {
-            log().info << "reconnect: peer not reached yet (" << reached.error().message << ")";
+          if (!moved) {
+            log().info << "reconnect: migrate failed (" << moved.error().message << ")";
             retry();
-            return;
           }
-          const CallMediaLinkKind kind =
-              reached->kind == PeerLinkKind::Relayed ? CallMediaLinkKind::Relayed : CallMediaLinkKind::Direct;
-          direct_.MigrateTo(kind, [this, alive, call_id, retry](Roe<void> moved) {
-            CallsThread::Post([this, alive, call_id, retry, moved = std::move(moved)]() {
-              if (!alive->load(std::memory_order_acquire) || reanchor_call_id_ != call_id) {
-                return;
-              }
-              if (!moved) {
-                log().info << "reconnect: migrate failed (" << moved.error().message << ")";
-                retry();
-              }
-              // OK: on_path_changed → PathMigrated → Live.
-            });
-          });
-        });
-      });
+          // OK: on_path_changed → PathMigrated → Live.
+        }));
+      }));
 }
 
 void CallMediaBridge::CancelEscalateReach() {
@@ -948,11 +947,8 @@ void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const
   request.mode = session_offerer_ ? PeerReachMode::Reach : PeerReachMode::Await;
   request.exclude_direct = true;
   log().info << "TX-only escalate: building a circuit under the live call call_id=" << call_id << " peer=" << peer_id;
-  escalate_reach_id_ = reach_.Ensure(std::move(request), [this, alive = alive_, call_id, peer](Roe<PeerReachResult> reached) {
-    CallsThread::Post([this, alive, call_id, peer, reached = std::move(reached)]() {
-      if (!alive->load(std::memory_order_acquire)) {
-        return;
-      }
+  escalate_reach_id_ = reach_.Ensure(
+      std::move(request), OnOwner<Roe<PeerReachResult>>([this, call_id, peer](Roe<PeerReachResult> reached) {
       escalate_reach_id_ = 0;
       if (stopping_.load() || media_.ActiveCallId() != call_id ||
           direct_planner_phase_ != CallDirectPlannerPhase::DegradedTxOnly) {
@@ -963,24 +959,21 @@ void CallMediaBridge::EscalateTxOnlyViaCircuit(const std::string& call_id, const
         EscalateBreakBeforeMake(call_id, peer);
         return;
       }
-      direct_.MigrateTo(CallMediaLinkKind::Relayed, [this, alive, call_id, peer](Roe<void> moved) {
-        CallsThread::Post([this, alive, call_id, peer, moved = std::move(moved)]() {
-          if (!alive->load(std::memory_order_acquire) || stopping_.load() || media_.ActiveCallId() != call_id) {
-            return;
-          }
-          if (moved) {
-            log().info << "TX-only escalate: call moved onto the circuit call_id=" << call_id;
-            return;  // on_path_changed → PathMigrated brings the planner back to Live
-          }
-          if (direct_planner_phase_ == CallDirectPlannerPhase::DegradedTxOnly) {
-            log().warning << "TX-only escalate: migration failed (" << moved.error().message
-                          << ") — restarting via circuit";
-            EscalateBreakBeforeMake(call_id, peer);
-          }
-        });
-      });
-    });
-  });
+      direct_.MigrateTo(CallMediaLinkKind::Relayed, OnOwner<Roe<void>>([this, call_id, peer](Roe<void> moved) {
+        if (stopping_.load() || media_.ActiveCallId() != call_id) {
+          return;
+        }
+        if (moved) {
+          log().info << "TX-only escalate: call moved onto the circuit call_id=" << call_id;
+          return;  // on_path_changed → PathMigrated brings the planner back to Live
+        }
+        if (direct_planner_phase_ == CallDirectPlannerPhase::DegradedTxOnly) {
+          log().warning << "TX-only escalate: migration failed (" << moved.error().message
+                        << ") — restarting via circuit";
+          EscalateBreakBeforeMake(call_id, peer);
+        }
+      }));
+    }));
 }
 
 void CallMediaBridge::EscalateBreakBeforeMake(const std::string& call_id, const std::string& peer) {
@@ -1040,13 +1033,7 @@ void CallMediaBridge::FailUnlessDirectRecovered(const std::string& call_id, cons
     return;
   case CallConnectFailureDecision::WaitForHello:
     log().info << "connect attempt failed while the peer's hello is in progress — grace call_id=" << call_id;
-    (void)AppRuntime::ScheduleCoordinatorOneShot(kInboundRecoveryGrace, [this, alive = alive_, call_id, err]() {
-      CallsThread::Post([this, alive, call_id, err]() {
-        if (alive->load(std::memory_order_acquire)) {
-          FailUnlessDirectRecovered(call_id, err, /*grace_used=*/true);
-        }
-      });
-    });
+    (void)outbox_.After(kInboundRecoveryGrace, direct_event::RecoveryGraceOver{call_id, err});
     return;
   case CallConnectFailureDecision::Fail:
     break;

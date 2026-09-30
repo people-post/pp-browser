@@ -494,6 +494,10 @@ void CallSessionManager::Handle(SessionEvent& event) {
           workflow_.Handle(e);
         } else if constexpr (std::is_same_v<E, TopologyEvent>) {
           topology_.Handle(e);
+        } else if constexpr (std::is_same_v<E, session_event::ForDirectPath>) {
+          if (direct_path_ && e.generation == direct_path_generation_) {
+            direct_path_->Handle(e.event);
+          }
         } else {
           static_assert(!sizeof(E), "route every SessionEvent");
         }
@@ -580,6 +584,10 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
     direct_path_ = std::make_unique<CallMediaBridge>(AsMediaHost(), sessions_, media_keys_, media_, *deps.transport,
                                                      deps.dial, deps.circuit_reach);
     direct_transport_ = deps.transport;
+    const uint64_t generation = ++direct_path_generation_;
+    direct_path_->SetOutbox(outbox_.For<DirectPathEvent>([generation](DirectPathEvent event) {
+      return SessionEvent{session_event::ForDirectPath{generation, std::move(event)}};
+    }));
     log().info << "1:1 path built";
   } else {
     direct_path_->SetReachDeps(deps.dial, deps.circuit_reach);
