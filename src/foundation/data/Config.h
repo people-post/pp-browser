@@ -4,6 +4,7 @@
 #include "foundation/data/LlmConfig.h"
 #include "common/Error.h"
 #include "common/Module.h"
+#include "common/privacy/AddressDisclosure.h"
 
 #include <cstdint>
 #include <string>
@@ -174,6 +175,11 @@ struct MeshConfig {
    * On volunteer desktop Nodes, also prefer serving contacts (limit strangers).
    */
   bool prefer_contacts_for_routing = true;
+  /**
+   * Who may learn this device's IP address (projects/privacy T1): everyone / contacts / friendly /
+   * nobody. Others reach us through a relay. The Node role is always `everyone` (P004).
+   */
+  DirectAudience direct_connections = DirectAudience::Contacts;
   /**
    * Peer mesh on/off. When true, MeshHost hard-requires Amp UDP bind (D10).
    * When false, peer mesh underlay stays off. Requires device ML-DSA keys.

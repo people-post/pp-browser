@@ -27,6 +27,7 @@
 #include "feature/calls/CallStack.h"
 #include "foundation/platform/NetworkMonitor.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
+#include "common/privacy/AddressDisclosure.h"
 #include "domain/messaging/AttachmentSuppressionStore.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
@@ -336,6 +337,8 @@ private:
   /** Undo BuildMessagingStack / StartMesh without a full hub Shutdown (shutdown race). */
   void DiscardMessagingBringUp();
   void ApplyMeshAdmissionPolicies();
+  /** Republish who may learn our address (setting + contacts; projects/privacy T1). UI thread. */
+  void PublishAddressDisclosure();
   void PublishNodeAdvertisedAddrs();
   /** CallStackDeps for building the call stack against the current p2p / mesh / config. */
   CallStackDeps MakeCallStackDeps();
@@ -378,6 +381,8 @@ private:
   /** `config_.mesh` as owners read it (call stack, mesh media policy): republished on every write. */
   mutable std::mutex mesh_config_mu_;
   std::shared_ptr<const MeshConfig> mesh_config_snapshot_ = std::make_shared<const MeshConfig>();
+  /** Who may learn our address; read by mesh and call paths on any thread (outlives them all). */
+  AddressDisclosureGate address_disclosure_;
   AgentInboundPorts agent_inbound_;
   SessionStore* session_store_ = nullptr;
   ProfileSecretsEngine* secrets_ = nullptr;

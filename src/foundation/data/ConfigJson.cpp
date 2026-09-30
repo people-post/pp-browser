@@ -478,6 +478,7 @@ Object MeshConfigToObject(const MeshConfig& config) {
   object.set("advertise_multiaddrs", makeArray(std::move(advertise)));
   object.set("mesh_publish", config.mesh_publish);
   object.set("prefer_contacts_for_routing", config.prefer_contacts_for_routing);
+  object.set("direct_connections", DirectAudienceName(config.direct_connections));
   object.set("mesh_enabled", config.mesh_enabled);
   object.set("amp_udp_port", static_cast<int64_t>(config.amp_udp_port));
   object.set("mobility", config.mobility);
@@ -514,6 +515,11 @@ void MeshConfigFromObject(const Object& object, MeshConfig& config) {
   }
   if (auto prefer = object.getIf<bool>("prefer_contacts_for_routing")) {
     config.prefer_contacts_for_routing = *prefer;
+  }
+  if (auto audience = object.getString("direct_connections")) {
+    if (auto parsed = DirectAudienceFromName(*audience)) {
+      config.direct_connections = *parsed;
+    }
   }
   if (auto mesh_enabled = object.getIf<bool>("mesh_enabled")) {
     config.mesh_enabled = *mesh_enabled;

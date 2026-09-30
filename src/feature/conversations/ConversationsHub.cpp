@@ -54,6 +54,7 @@
 #include "domain/mesh/reachability/LanMdnsDiscovery.h"
 #include "domain/mesh/reachability/AmpObservedAddrs.h"
 #include "common/SettledWait.h"
+#include "domain/people/ContactAddressDisclosure.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/mesh/dht/DhtRecordCodec.h"
 #include "domain/mesh/discovery/AmpDirectoryProtocol.h"
@@ -569,7 +570,21 @@ void ConversationsHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer
 }
 
 
+void ConversationsHub::PublishAddressDisclosure() {
+  // P004: a Node is reachable by role — its address is published anyway.
+  const DirectAudience audience = ResolveMeshRole(config_.mesh) == MeshRole::Node ? DirectAudience::Everyone
+                                                                                  : config_.mesh.direct_connections;
+  std::vector<Contact> book;
+  if (contacts_) {
+    if (auto listed = contacts_->List()) {
+      book = std::move(*listed);
+    }
+  }
+  address_disclosure_.Publish(BuildAddressDisclosurePolicy(audience, book));
+}
+
 void ConversationsHub::ApplyMeshAdmissionPolicies() {
+  PublishAddressDisclosure();
   const bool prefer = config_.mesh.prefer_contacts_for_routing;
   const bool node = ResolveMeshRole(config_.mesh) == MeshRole::Node;
   // A017: Amp listen is always on; treat mobile in-call as link-scope hosting.
@@ -707,8 +722,11 @@ void ConversationsHub::SetOnBroadcastChanged(std::function<void()> callback) {
 
 void ConversationsHub::PublishMeshConfig() {
   auto snapshot = std::make_shared<const MeshConfig>(config_.mesh);
-  std::lock_guard lock(mesh_config_mu_);
-  mesh_config_snapshot_ = std::move(snapshot);
+  {
+    std::lock_guard lock(mesh_config_mu_);
+    mesh_config_snapshot_ = std::move(snapshot);
+  }
+  PublishAddressDisclosure();
 }
 
 std::shared_ptr<const MeshConfig> ConversationsHub::MeshConfigSnapshot() const {
@@ -1052,6 +1070,15 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
 
   store_ = std::make_unique<SqliteThreadStore>(data_dir_);
   contacts_ = std::make_unique<ContactsStore>(data_dir_);
+  // Contacts decide who may learn our address: republish on every change (any thread → UI).
+  contacts_->SetOnChanged([this]() {
+    AppRuntime::PostUI([this]() {
+      if (!shutdown_requested_.load(std::memory_order_acquire)) {
+        PublishAddressDisclosure();
+      }
+    });
+  });
+  PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
   initiation_billing_ = std::make_unique<InitiationBillingStore>(data_dir_);
   (void)initiation_billing_->Load();
@@ -2614,6 +2641,9 @@ void ConversationsHub::Shutdown() {
   http_directory_url_.clear();
   http_registration_url_.clear();
   identity_.reset();
+  if (contacts_) {
+    contacts_->SetOnChanged({});
+  }
   contacts_.reset();
   store_.reset();
   signing_key_store_.Clear();

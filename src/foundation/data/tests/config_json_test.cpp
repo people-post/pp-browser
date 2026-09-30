@@ -61,6 +61,7 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   config.mesh.bootstrap_peers = {
       "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
   config.mesh.prefer_contacts_for_routing = false;
+  config.mesh.direct_connections = pbr::DirectAudience::Friendly;
   config.mesh.mesh_enabled = false;
   config.mesh.amp_udp_port = 18518;
   config.mesh.capabilities.circuit_relay = true;
@@ -86,6 +87,7 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   ASSERT_NE(mesh->getArray("bootstrap_peers"), nullptr);
   EXPECT_EQ(mesh->getArray("bootstrap_peers")->elements.size(), 1u);
   EXPECT_EQ(mesh->getIf<bool>("prefer_contacts_for_routing"), false);
+  EXPECT_EQ(mesh->getString("direct_connections"), "friendly");
   EXPECT_EQ(mesh->getIf<bool>("mesh_enabled"), false);
   EXPECT_EQ(mesh->getNonNegInt("amp_udp_port"), 18518);
   const pbr::Object* caps = mesh->getObject("capabilities");
@@ -104,6 +106,7 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   ASSERT_EQ(parsed.mesh.bootstrap_peers.size(), 1u);
   EXPECT_EQ(parsed.mesh.bootstrap_peers[0], config.mesh.bootstrap_peers[0]);
   EXPECT_FALSE(parsed.mesh.prefer_contacts_for_routing);
+  EXPECT_EQ(parsed.mesh.direct_connections, pbr::DirectAudience::Friendly);
   EXPECT_FALSE(parsed.mesh.mesh_enabled);
   EXPECT_EQ(parsed.mesh.amp_udp_port, 18518);
   EXPECT_TRUE(parsed.mesh.capabilities.circuit_relay);

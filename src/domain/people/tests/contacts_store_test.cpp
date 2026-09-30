@@ -68,6 +68,25 @@ TEST_F(ContactsStoreTest, RemoveMissingReturnsFalse) {
   EXPECT_FALSE(*removed);
 }
 
+// projects/privacy: who may learn our address follows the address book as it changes.
+TEST_F(ContactsStoreTest, ChangesNotifyOnceEach) {
+  ContactsStore store(data_dir_.string());
+  int changes = 0;
+  store.SetOnChanged([&changes] { ++changes; });
+
+  auto created = store.AddEmpty();
+  ASSERT_TRUE(static_cast<bool>(created));
+  EXPECT_EQ(changes, 1);
+  Contact contact = *created;
+  contact.local.trust = TrustLevel::Friendly;
+  ASSERT_TRUE(static_cast<bool>(store.Upsert(contact)));
+  EXPECT_EQ(changes, 2);
+  ASSERT_TRUE(static_cast<bool>(store.Remove(contact.id)));
+  EXPECT_EQ(changes, 3);
+  (void)store.List();
+  EXPECT_EQ(changes, 3) << "reads do not notify";
+}
+
 TEST_F(ContactsStoreTest, AddEmptyPersists) {
   ContactsStore store(data_dir_.string());
 
