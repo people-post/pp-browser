@@ -4,6 +4,7 @@
 #include "foundation/crypto/MlDsa.h"
 
 #include "common/ValueJson.h"
+#include "common/media/MediaChannel.h"
 
 #include <algorithm>
 #include <cmath>
@@ -59,7 +60,9 @@ std::vector<int> ReadVideoLevels(const Object& o) {
   std::vector<int> out;
   if (const Array* arr = o.getArray("video_levels")) {
     for (const auto& item : arr->elements) {
-      if (const auto* level = std::get_if<int64_t>(&item)) {
+      // Only real levels (1..15): anything else would wrap into a channel that was never announced.
+      const auto* level = std::get_if<int64_t>(&item);
+      if (level && *level >= kMinVideoLevel && *level <= kMaxVideoLevel) {
         out.push_back(static_cast<int>(*level));
       }
     }
@@ -126,18 +129,16 @@ std::string PeerAnnounceCanonicalSignBytes(const PeerAnnounceTip& tip) {
   AppendField(out, "epoch", tip.epoch);
   AppendField(out, "created_at_ms", tip.created_at_ms);
   AppendField(out, "join_handle", tip.join_handle);
-  // Additive: omit when empty so pre-hop tips keep verifying.
+  // Optional fields are signed when present, in this order (WIRE_SCHEMAS § PeerAnnounceTip).
   if (!tip.hop_peer_id.empty()) {
     AppendField(out, "hop_peer_id", tip.hop_peer_id);
   }
-  // Additive B007 L1 list (omit empty).
   if (const std::string joined = JoinL1HopPeerIds(tip.l1_hop_peer_ids); !joined.empty()) {
     AppendField(out, "l1_hop_peer_ids", joined);
   }
   if (!tip.video_levels.empty()) {
     AppendField(out, "video_levels", JoinVideoLevels(tip.video_levels));
   }
-  // Additive kind / viewer attribution (omit defaults for legacy verify).
   if (!tip.kind.empty()) {
     AppendField(out, "kind", tip.kind);
   }

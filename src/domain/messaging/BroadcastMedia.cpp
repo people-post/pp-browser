@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "common/media/MediaChannel.h"
 #include "foundation/crypto/CryptoUtil.h"
 
 #include <sodium.h>
@@ -23,10 +24,13 @@ std::string NewBroadcastJoinHandle(const std::string& program_id) {
 }
 
 int ChooseWatchVideoLevel(const std::vector<int>& published, const int preferred) {
+  if (preferred <= 0) {
+    return 0;  // the viewer asked for no video
+  }
   int below = 0;
   int above = 0;
   for (const int level : published) {
-    if (level <= 0) {
+    if (!IsVideoLevel(level)) {
       continue;
     }
     if (level <= preferred) {

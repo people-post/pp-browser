@@ -217,6 +217,23 @@ TEST(CallMediaHealthTest, LinkHealthHasNoResendRateWithoutTwoSamplesOfOneAssocia
   EXPECT_FALSE(CallLinkHealthBetween(now, CallLinkCounters{}).available);
 }
 
+// Review: the call switches links (hop attach, a move onto a long-lived relay link) — the counters of
+// another link are not a delta, even when they happen to be larger.
+TEST(CallMediaHealthTest, LinkHealthHasNoResendRateAcrossALinkSwitch) {
+  const CallLinkCounters direct{.available = true, .link_id = 7, .reliable_sent = 100, .retransmits = 0, .srtt_ms = 20};
+  const CallLinkCounters relay{.available = true, .link_id = 9, .reliable_sent = 101, .retransmits = 50, .srtt_ms = 60};
+  const CallLinkHealth health = CallLinkHealthBetween(direct, relay);
+  EXPECT_TRUE(health.available);
+  EXPECT_EQ(health.rtt_ms, 60);
+  EXPECT_LT(health.resend_pct, 0.0) << "not 5000%";
+}
+
+TEST(CallMediaHealthTest, LinkHealthResendRateIsCappedAtEveryPacket) {
+  const CallLinkCounters before{.available = true, .link_id = 7, .reliable_sent = 100, .retransmits = 0, .srtt_ms = 20};
+  const CallLinkCounters now{.available = true, .link_id = 7, .reliable_sent = 102, .retransmits = 9, .srtt_ms = 20};
+  EXPECT_DOUBLE_EQ(CallLinkHealthBetween(before, now).resend_pct, 100.0);
+}
+
 TEST(CallMediaHealthTest, LinkHealthInformsButDoesNotGrade) {
   CallMediaHealthInput in;
   in.engine.active = true;

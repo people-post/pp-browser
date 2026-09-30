@@ -2323,6 +2323,7 @@ CallLinkCounters CallMediaLegCoordinator::ActiveLinkCounters() const {
     return {};
   }
   return CallLinkCounters{.available = true,
+                          .link_id = link.id.value,
                           .reliable_sent = stats->reliable_sent,
                           .retransmits = stats->retransmits,
                           .srtt_ms = stats->srtt_ms};

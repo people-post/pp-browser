@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <iomanip>
 #include <limits>
 #include <sstream>
@@ -64,7 +65,7 @@ std::string Number(const double value) {
   for (int precision = 6; precision <= std::numeric_limits<double>::max_digits10; ++precision) {
     std::ostringstream out;
     out << std::setprecision(precision) << value;
-    if (std::stod(out.str()) == value) {
+    if (std::strtod(out.str().c_str(), nullptr) == value) {  // no throw on subnormals (unlike stod)
       return out.str();
     }
   }

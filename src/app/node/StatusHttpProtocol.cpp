@@ -105,12 +105,20 @@ const char* StatusReason(int code) {
     return "Not Found";
   case 405:
     return "Method Not Allowed";
+  case 500:
+    return "Internal Server Error";
   default:
     return "Error";
   }
 }
 
 } // namespace
+
+StatusHttpResponse StatusHttpInternalError() {
+  Object body;
+  body.set("error", "internal_error");
+  return JsonResponse(500, body);
+}
 
 std::optional<StatusHttpBind> ParseStatusHttpBind(std::string_view spec) {
   const auto trimmed = Trim(spec);
@@ -232,7 +240,11 @@ StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,
     StatusHttpResponse r;
     r.status_code = 200;
     r.content_type = "text/plain; version=0.0.4; charset=utf-8";
-    r.body = MetricsRegistry::Global().RenderPrometheus();
+    try {
+      r.body = MetricsRegistry::Global().RenderPrometheus();  // runs every collector
+    } catch (...) {
+      return StatusHttpInternalError();  // a failed scrape must not take the node down
+    }
     return r;
   }
 

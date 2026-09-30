@@ -58,7 +58,12 @@ void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig 
               } catch (...) {
                 snap = StatusHttpSnapshot{};
               }
-              auto response = HandleStatusHttpRequest(*req, self->auth, snap);
+              StatusHttpResponse response;
+              try {
+                response = HandleStatusHttpRequest(*req, self->auth, snap);
+              } catch (...) {
+                response = StatusHttpInternalError();  // never let a request unwind io.run()
+              }
               if (req->method == "HEAD") {
                 response.body.clear();
               }

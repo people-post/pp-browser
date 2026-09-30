@@ -18,6 +18,16 @@ TEST(BroadcastWatchVideoLevelTest, NearestPublishedLevelBelowFirst) {
   EXPECT_EQ(ChooseWatchVideoLevel({}, 2), 0) << "audio-only program";
 }
 
+TEST(BroadcastWatchVideoLevelTest, NoVideoPreferenceTakesNoLevel) {
+  EXPECT_EQ(ChooseWatchVideoLevel({1, 2}, 0), 0);
+  EXPECT_EQ(ChooseWatchVideoLevel({1, 2}, -1), 0);
+}
+
+TEST(BroadcastWatchVideoLevelTest, IgnoresValuesThatAreNotLevels) {
+  EXPECT_EQ(ChooseWatchVideoLevel({300, 16}, 2), 0);
+  EXPECT_EQ(ChooseWatchVideoLevel({300, 1}, 20), 1);
+}
+
 TEST(BroadcastViewerLadderTest, AdmitAttachesToTheAdmittingHop) {
   BroadcastViewerLadder ladder({"h1", "h2"});
   auto step = ladder.Start();

@@ -315,3 +315,28 @@ TEST_F(StatusbarClusterTest, PopoverHidesTrafficWhenMeshDown) {
       false, {}, traffic);
   EXPECT_FALSE(snap.show_network);
 }
+
+TEST_F(StatusbarClusterTest, TrafficSamplerStartsOverAfterAGap) {
+  const auto t0 = std::chrono::steady_clock::now();
+  pbr::MeshTrafficSampler sampler;
+  pbr::MeshTrafficTotals a = TrafficAt(t0);
+  EXPECT_FALSE(sampler.Sample(a).valid) << "first sample";
+
+  pbr::MeshTrafficTotals b = TrafficAt(t0 + std::chrono::seconds(2));
+  b.sent_bytes = 2000;
+  const pbr::MeshTrafficRates rates = sampler.Sample(b);
+  ASSERT_TRUE(rates.valid);
+  EXPECT_DOUBLE_EQ(rates.sent_bps, 1000.0);
+
+  pbr::MeshTrafficTotals c = TrafficAt(t0 + std::chrono::milliseconds(2500));
+  c.sent_bytes = 9000;
+  EXPECT_DOUBLE_EQ(sampler.Sample(c).sent_bps, 1000.0) << "under a second: the last rates stand";
+
+  // The popover was closed for ten minutes: no rate averaged over the gap.
+  pbr::MeshTrafficTotals d = TrafficAt(t0 + std::chrono::minutes(10));
+  d.sent_bytes = 5000000;
+  EXPECT_FALSE(sampler.Sample(d).valid);
+  pbr::MeshTrafficTotals e = TrafficAt(t0 + std::chrono::minutes(10) + std::chrono::seconds(1));
+  e.sent_bytes = 5000500;
+  EXPECT_DOUBLE_EQ(sampler.Sample(e).sent_bps, 500.0);
+}

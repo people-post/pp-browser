@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <unistd.h>
 
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -48,7 +49,7 @@ int64_t Threads() {
   std::string line;
   while (std::getline(status, line)) {
     if (line.rfind("Threads:", 0) == 0) {
-      return std::stoll(line.substr(8));
+      return std::strtoll(line.c_str() + 8, nullptr, 10);  // no throw on a malformed line
     }
   }
   return 0;

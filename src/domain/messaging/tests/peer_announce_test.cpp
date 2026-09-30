@@ -455,4 +455,19 @@ TEST(PeerAnnounceVideoLevelsTest, JsonRoundTripAndSigned) {
   EXPECT_FALSE(VerifyPeerAnnounceTip(*decoded, keys->public_key)) << "levels are covered by the signature";
 }
 
+// A tip's levels feed VideoChannel(level): values outside 1..15 would wrap into unannounced channels.
+TEST(PeerAnnounceVideoLevelsTest, DecodeKeepsOnlyRealLevels) {
+  auto tip = SampleTip("topic-levels");
+  tip.video_levels = {1, 2};
+  auto json = EncodePeerAnnounceTipJson(tip);
+  ASSERT_TRUE(json);
+  std::string text = *json;
+  const auto at = text.find("[1,2]");
+  ASSERT_NE(at, std::string::npos) << text;
+  text.replace(at, 5, "[1,300,-1,0,16,4294967297,2]");
+  auto decoded = DecodePeerAnnounceTipJson(text);
+  ASSERT_TRUE(decoded) << decoded.error().message;
+  EXPECT_EQ(decoded->video_levels, (std::vector<int>{1, 2}));
+}
+
 } // namespace pbr

@@ -402,6 +402,44 @@ Chat-shaped response (libp2p / documentation):
 
 ---
 
+## `PeerAnnounceTip` (`/pp-browser/rpc/peer-announce/1.0.0`, `schema_version: 1`)
+
+A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine B). JSON object; codec `src/domain/messaging/PeerAnnounceCodec.cpp`.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `schema_version` | int | `1`; any other value is rejected |
+| `peer_id`, `topic_id`, `program_id` | string | required |
+| `state` | string | `scheduled` \| `live` \| `ended` |
+| `seq`, `epoch` | int ≥ 0 | |
+| `created_at_ms` | int | |
+| `join_handle` | string | |
+| `hop_peer_id` | string | optional: the `media_relay` hop carrying the show |
+| `l1_hop_peer_ids` | string[] | optional (B007) |
+| `video_levels` | int[] | optional: the video levels the program publishes ([MEDIA_CHANNELS](MEDIA_CHANNELS.md)); decoders keep only `1`–`15` (B009) |
+| `kind` | string | optional: `program` (default) \| `live_chat` |
+| `viewer_peer_id`, `viewer_msg_id` | string | optional (overlay attribution) |
+| `body`, `content_id_hex` | string | |
+| `signature_b64` | string | ML-DSA over the canonical bytes |
+
+**Canonical signed bytes:** `key=value\n` lines in this order — `v`, `peer_id`, `topic_id`, `program_id`, `state`, `seq`, `epoch`, `created_at_ms`, `join_handle`, then `hop_peer_id`, `l1_hop_peer_ids` (comma-joined), `video_levels` (comma-joined), `kind`, `viewer_peer_id`, `viewer_msg_id` **only when non-empty**, then `body`, `content_id_hex`. Every optional field present is signed: a verifier must rebuild the bytes from all of them.
+
+## `media_relay` control (`/pp-browser/datagram-relay/1.0.0`)
+
+JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies carry `"ok"` (and `"error"` when false). Codecs: `src/domain/mesh/l4/media_relay/` (client `MediaRelayClientCoordinator`, server `MediaRelayServer`).
+
+| `op` | Direction | Fields |
+|------|-----------|--------|
+| `quote` | client → relay | `call_id`, `participants`, `want_up_bps`, `want_down_bps`, `video_levels` (int[]: levels the publisher can produce), `video_parallel` (int: how many at once) |
+| `quote` reply | relay → client | `quote_id`, `A_up`, `A_down`, `B_up`, `B_down`, `mode`, `rate`, `ceiling_bytes`, `ceiling_amount`, `video_levels` (the levels the relay will carry for this participant, B009) |
+| `accept` | client → relay / reply | `quote_id` / `session_token`, `quote_id` |
+| `attach` | client → relay | `session_token`, `call_id`, `auth` |
+| `subscribe`, `unsubscribe`, `detach` | client → relay | stream / channel selection |
+
+**Data frames** (not JSON): `MediaDataFrame` — `stream_id` u32, `channel_id` u16, `channel_type`, `seq` u32, `mark` u8, payload (`EncodeMediaDataFrame`, `MediaRelayTypes.h`). `channel_id` follows [MEDIA_CHANNELS](MEDIA_CHANNELS.md); a relay that negotiated levels with a participant drops, at ingest, any of its frames on a channel other than audio and the carried video levels.
+
+**Call-media** (`/pp-browser/realtime/1.0.0`) frame bodies carry the same channel byte (`u8`): audio `0x00`, video `0x10 | level` — calls send level `1` (`0x11`).
+
 ## Versioning matrix
 
 | Artifact | Version field | Bump when |

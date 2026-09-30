@@ -116,6 +116,22 @@ struct MeshTrafficRates {
 
 MeshTrafficRates MeshTrafficRatesBetween(const MeshTrafficTotals& before, const MeshTrafficTotals& now);
 
+/**
+ * The popover's rates: deltas between samples at least a second apart (in between, the last rates
+ * stand). The popover only samples while open, so a sample after a gap longer than `kMaxGap` (it was
+ * closed, the mesh may have restarted) starts over instead of averaging across the gap.
+ */
+class MeshTrafficSampler {
+public:
+  static constexpr std::chrono::seconds kMinInterval{1};
+  static constexpr std::chrono::seconds kMaxGap{5};
+  MeshTrafficRates Sample(const MeshTrafficTotals& now);
+
+private:
+  MeshTrafficTotals last_;
+  MeshTrafficRates rates_;
+};
+
 /** What the popover shows of the mesh traffic (links now, rates since the last sample). */
 struct MeshTrafficView {
   bool available = false;

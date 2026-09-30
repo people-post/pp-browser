@@ -162,11 +162,15 @@ CallLinkHealth CallLinkHealthBetween(const CallLinkCounters& before, const CallL
   }
   health.available = true;
   health.rtt_ms = now.srtt_ms;
-  // A new association (path move, relay change) starts its counters over: no rate across that.
-  if (before.available && now.reliable_sent >= before.reliable_sent && now.retransmits >= before.retransmits) {
+  // Another link (path move, hop attach / detach): no rate across the switch.
+  if (before.available && before.link_id == now.link_id && now.reliable_sent >= before.reliable_sent &&
+      now.retransmits >= before.retransmits) {
     const uint64_t sent = now.reliable_sent - before.reliable_sent;
     if (sent > 0) {
-      health.resend_pct = 100.0 * static_cast<double>(now.retransmits - before.retransmits) / static_cast<double>(sent);
+      // Retransmits in the window can belong to packets first sent before it: cap at every one resent.
+      const double pct =
+          100.0 * static_cast<double>(now.retransmits - before.retransmits) / static_cast<double>(sent);
+      health.resend_pct = std::min(pct, 100.0);
     }
   }
   return health;

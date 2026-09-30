@@ -399,6 +399,17 @@ MeshTrafficRates MeshTrafficRatesBetween(const MeshTrafficTotals& before, const 
   return rates;
 }
 
+MeshTrafficRates MeshTrafficSampler::Sample(const MeshTrafficTotals& now) {
+  if (!now.available || !last_.available || now.at - last_.at > kMaxGap) {
+    last_ = now;
+    rates_ = {};
+  } else if (now.at - last_.at >= kMinInterval) {
+    rates_ = MeshTrafficRatesBetween(last_, now);
+    last_ = now;
+  }
+  return rates_;
+}
+
 MeshTrafficTotals CollectMeshTrafficTotals(MeshHost* mesh) {
   MeshTrafficTotals totals;
   totals.at = std::chrono::steady_clock::now();
@@ -416,7 +427,7 @@ MeshTrafficTotals CollectMeshTrafficTotals(MeshHost* mesh) {
   totals.rtt_samples = traffic.rtt_samples;
   totals.rtt_sum_ms = traffic.rtt_sum_ms;
   const RelayRuntimeStats load = CollectRelayRuntimeStats(mesh);
-  totals.relayed_bytes = load.circuit.bytes_relayed + load.media.bytes_forwarded;
+  totals.relayed_bytes = load.circuit.bytes_relayed + load.media.bytes_relayed;
   if (CircuitClientCoordinator* circuit = mesh->AmpCircuitClient()) {
     totals.parked_relays = circuit->ParkedRelayCount();
   }
@@ -436,12 +447,7 @@ MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps) {
     const BriefRelayHealth brief = deps.brief_health ? deps.brief_health() : BriefRelayHealth::Unknown;
     return BuildStatusbarClusterSnapshot(ready, brief, running, has_error, status, help, load);
   };
-  // Rates are deltas between samples at least a second apart; in between the last ones stand.
-  struct TrafficSampler {
-    MeshTrafficTotals last;
-    MeshTrafficRates rates;
-  };
-  auto sampler = std::make_shared<TrafficSampler>();
+  auto sampler = std::make_shared<MeshTrafficSampler>();
   ports.statusbar_popover = [deps, sampler]() -> StatusbarPopoverSnapshot {
     MeshHost* mesh = deps.mesh ? deps.mesh() : nullptr;
     const bool ready = deps.messaging_ready && deps.messaging_ready();
@@ -454,17 +460,10 @@ MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps) {
     MeshTrafficView traffic;
     if (deps.traffic_totals) {
       const MeshTrafficTotals now = deps.traffic_totals();
-      if (!now.available || !sampler->last.available) {
-        sampler->last = now;
-        sampler->rates = {};
-      } else if (now.at - sampler->last.at >= std::chrono::seconds(1)) {
-        sampler->rates = MeshTrafficRatesBetween(sampler->last, now);
-        sampler->last = now;
-      }
       traffic.available = now.available;
       traffic.links = now.links;
       traffic.parked_relays = now.parked_relays;
-      traffic.rates = sampler->rates;
+      traffic.rates = sampler->Sample(now);
     }
     return BuildStatusbarPopoverSnapshot(ready, brief, running, last_error, reach.status,
                                          reach.signals.has_global_ipv6, reach.signals.dial_back_ok,

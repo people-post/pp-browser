@@ -370,8 +370,8 @@ void BroadcasterWorkflow::StartPublishing(const std::string& hop) {
 }
 
 void BroadcasterWorkflow::ApplyVideoLevels(const std::vector<uint8_t>& carried) {
-  // One encoder: publish the highest level the relay carries (V5 sends two when it carries two).
-  const uint8_t level = carried.empty() ? 0 : carried.back();
+  // One encoder: publish the highest level the relay carries of those offered (V5 sends two when it carries two).
+  const uint8_t level = PublishVideoLevel(ports_.video_offer.levels, carried);
   if (level == video_level_) {
     return;
   }

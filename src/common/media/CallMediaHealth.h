@@ -77,6 +77,12 @@ struct CallMediaEngineHealth {
  */
 struct CallLinkCounters {
   bool available = false;
+  /**
+   * Which link these are (unique per link instance in the mesh): a delta only means something
+   * between two samples of the same link — the call switches between its 1:1 link and a hop's relay
+   * link, and a path move can land on a long-lived link whose counters are already far along.
+   */
+  uint64_t link_id = 0;
   uint64_t reliable_sent = 0;
   uint64_t retransmits = 0;
   /** Smoothed round trip; -1 before the first sample. */

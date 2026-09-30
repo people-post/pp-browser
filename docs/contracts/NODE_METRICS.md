@@ -8,7 +8,7 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 
 - Names: `pp_<area>_<name>[_<unit>]`; counters end in `_total`; units are base units (`_seconds`, `_bytes`).
 - Labels are low-cardinality and fixed per series. **Never** peer ids, account ids, addresses, call / session ids or content — the same rule as the `Metrics` log channel (`common/Metrics.h`).
-- A series exists from process start (at 0) where its component exists; names are stable — renaming one is a contract change.
+- Series without labels, and series whose label set is small and fixed (e.g. `direction`, `result`, `protocol`), exist from process start at 0 where their component exists. Series labelled per event (`pp_link_*` by `path` / `direction` / `reason` / `stage`) appear with their first event: use `or vector(0)` / `absent()` in queries. Names are stable — renaming one is a contract change.
 
 ## Series
 
@@ -29,7 +29,7 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_media_relay_participants` | gauge | | Across those sessions |
 | `pp_media_relay_frames_total` | counter | `direction` = `received` \| `forwarded` | Data frames (forwarded counts each recipient) |
 | `pp_media_relay_bytes_total` | counter | `direction` | Data frame bytes |
-| `pp_media_relay_dropped_frames_total` | counter | `reason` = `stale` \| `video_level` | Stale latest-lossy frames; video of a level not agreed for the sender ([MEDIA_CHANNELS](MEDIA_CHANNELS.md)) |
+| `pp_media_relay_dropped_frames_total` | counter | `reason` = `stale` \| `not_carried` | Stale latest-lossy frames; a channel not agreed for the sender — video of another level, or a reserved kind ([MEDIA_CHANNELS](MEDIA_CHANNELS.md)) |
 | `pp_media_relay_quotes_total` | counter | `result` = `issued` \| `refused_admission` \| `refused_video_level` \| `refused_busy` | |
 | `pp_media_relay_attaches_total` | counter | `result` = `ok` \| `refused` | |
 | `pp_amp_datagrams_total` | counter | `direction` = `sent` \| `received` | Amp UDP datagrams |
