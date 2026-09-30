@@ -187,6 +187,7 @@ RelayRuntimeStats CollectRelayRuntimeStats(MeshHost* mesh) {
   }
   if (CircuitRelayServer* amp_circuit = mesh->AmpCircuitServer()) {
     stats.circuit_serving = amp_circuit->IsStarted() && amp_circuit->ServeInbound();
+    stats.circuit = amp_circuit->RuntimeStats();
   }
   if (MediaRelayServer* amp_media = mesh->AmpMediaRelayServer()) {
     stats.media_serving = amp_media->IsStarted() && amp_media->ServeInbound();
