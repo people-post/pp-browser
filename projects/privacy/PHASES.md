@@ -14,7 +14,8 @@
 ## Y2 — Addresses on links and in records (T1, pp-cpp-amp)
 
 - [x] ch0 capability carries listen addresses only to allowed peers (pp-cpp-amp v2.13.0 `SetListenAddrDisclosure`; `MeshHost` applies the gate)
-- [ ] Clients register without IP addresses; the directory points at their rendezvous relays
+- [x] Clients register without IP addresses unless their audience is everyone (PeerId only; peers reach them through relays)
+- [ ] Re-register on an audience change (today: the next registration drops old addresses)
 
 ## Y3 — Inbound control (T3)
 
@@ -26,6 +27,8 @@
 - [ ] Strict mode: relays limited to org seeds and trusted contacts' Nodes
 
 ## Later
+
+- LAN: a phone's in-call mDNS advertisement shows its LAN address to the LAN (T1, low risk)
 
 - T2 server metadata audit and minimisation
 - T5 presence (online / live / read state audiences)

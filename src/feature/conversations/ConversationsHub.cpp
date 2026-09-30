@@ -572,10 +572,13 @@ void ConversationsHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer
 }
 
 
-void ConversationsHub::PublishAddressDisclosure() {
+DirectAudience ConversationsHub::EffectiveDirectAudience() const {
   // P004: a Node is reachable by role — its address is published anyway.
-  const DirectAudience audience = ResolveMeshRole(config_.mesh) == MeshRole::Node ? DirectAudience::Everyone
-                                                                                  : config_.mesh.direct_connections;
+  return ResolveMeshRole(config_.mesh) == MeshRole::Node ? DirectAudience::Everyone : config_.mesh.direct_connections;
+}
+
+void ConversationsHub::PublishAddressDisclosure() {
+  const DirectAudience audience = EffectiveDirectAudience();
   std::vector<Contact> book;
   if (contacts_) {
     if (auto listed = contacts_->List()) {
@@ -1773,7 +1776,9 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
   }
 
   std::vector<std::string> listen_addrs;
-  if (mesh_) {
+  // privacy Y2: the directory is readable by anyone — a narrower audience registers the PeerId only
+  // (peers reach us by it through relays; allowed peers learn addresses over ch0 / call signalling).
+  if (mesh_ && PublishesAddresses(EffectiveDirectAudience())) {
     listen_addrs = mesh_->AdvertisedListenMultiaddrs();
     if (listen_addrs.empty() && IsUsableAdpListen(mesh_->AmpListenMultiaddr())) {
       listen_addrs.push_back(mesh_->AmpListenMultiaddr());

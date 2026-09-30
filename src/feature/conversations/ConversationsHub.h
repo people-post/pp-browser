@@ -341,6 +341,8 @@ private:
   void ApplyMeshAdmissionPolicies();
   /** Republish who may learn our address (setting + contacts; projects/privacy T1). UI thread. */
   void PublishAddressDisclosure();
+  /** The audience in force: the setting, or everyone in the Node role (P004). */
+  DirectAudience EffectiveDirectAudience() const;
   void PublishNodeAdvertisedAddrs();
   /** CallStackDeps for building the call stack against the current p2p / mesh / config. */
   CallStackDeps MakeCallStackDeps();
