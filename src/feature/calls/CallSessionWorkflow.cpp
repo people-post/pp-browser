@@ -1,5 +1,4 @@
 #include "feature/calls/CallSessionWorkflow.h"
-#include "feature/calls/CallsThread.h"
 
 #include "domain/messaging/CallListenAddrsLogic.h"
 #include "domain/messaging/CallMediaPlannerSelectLogic.h"
@@ -10,6 +9,8 @@
 #include "common/PbrCompat.h"
 
 #include <algorithm>
+#include <type_traits>
+#include <variant>
 
 namespace pbr {
 
@@ -775,29 +776,61 @@ void CallSessionWorkflow::ArmMediaAfterAccept(CallSession& row, const std::strin
 
 void CallSessionWorkflow::PostRosterAfterAccept(const std::string& call_id, const std::string& inviter,
                                                 const std::string& local_identity) {
-  // Roster / prefetch as the owner's next task, after Accept has reported (no Accept hang UX). Sends
-  // only prepare + enqueue (Amp on Mesh I/O, relay fallback on a worker).
-  CallsThread::Post(deferred_.Bind([this, call_id, inviter, local_identity]() {
-    if (!host_.IsBound()) {
-      return;
-    }
-    if (host_.wire.build_roster_detail) {
-      if (auto roster = host_.wire.build_roster_detail(call_id); roster) {
-        if (auto roster_json = CallControlCodec::EncodeRoster(*roster); roster_json) {
-          if (host_.wire.send_direct) {
-            (void)host_.wire.send_direct(inviter, CallControlType::CallRoster, *roster_json, "Call roster");
-          }
-          if (host_.wire.fan_out_joined_and_ringing) {
-            (void)host_.wire.fan_out_joined_and_ringing(call_id, CallControlType::CallRoster, *roster_json,
-                                                        "Call roster", local_identity);
-          }
+  // Roster / prefetch as the owner's next event, after Accept has reported (no Accept hang UX).
+  outbox_.Emit(workflow_event::RosterAfterAccept{call_id, inviter, local_identity});
+}
+
+void CallSessionWorkflow::SendRosterAfterAccept(const workflow_event::RosterAfterAccept& after) {
+  // Sends only prepare + enqueue (Amp on Mesh I/O, relay fallback on a worker).
+  if (!host_.IsBound()) {
+    return;
+  }
+  if (host_.wire.build_roster_detail) {
+    if (auto roster = host_.wire.build_roster_detail(after.call_id); roster) {
+      if (auto roster_json = CallControlCodec::EncodeRoster(*roster); roster_json) {
+        if (host_.wire.send_direct) {
+          (void)host_.wire.send_direct(after.inviter, CallControlType::CallRoster, *roster_json, "Call roster");
+        }
+        if (host_.wire.fan_out_joined_and_ringing) {
+          (void)host_.wire.fan_out_joined_and_ringing(after.call_id, CallControlType::CallRoster, *roster_json,
+                                                      "Call roster", after.local_identity);
         }
       }
     }
-    if (host_.reach.prefetch_reach) {
-      host_.reach.prefetch_reach(inviter);
+  }
+  if (host_.reach.prefetch_reach) {
+    host_.reach.prefetch_reach(after.inviter);
+  }
+}
+
+void CallSessionWorkflow::SendRosterAfterRemoteAccept(const workflow_event::RosterAfterRemoteAccept& after) {
+  if (!host_.IsBound()) {
+    return;
+  }
+  if (host_.reach.prefetch_reach) {
+    host_.reach.prefetch_reach(after.peer);
+  }
+  if (auto roster = host_.wire.build_roster_detail(after.call_id); roster) {
+    if (auto roster_json = CallControlCodec::EncodeRoster(*roster); roster_json) {
+      (void)host_.wire.fan_out_joined_and_ringing(after.call_id, CallControlType::CallRoster, *roster_json,
+                                                  "Call roster", after.local_identity);
     }
-  }));
+  }
+}
+
+void CallSessionWorkflow::Handle(WorkflowEvent& event) {
+  std::visit(
+      [this](auto& e) {
+        using E = std::decay_t<decltype(e)>;
+        if constexpr (std::is_same_v<E, workflow_event::RosterAfterAccept>) {
+          SendRosterAfterAccept(e);
+        } else if constexpr (std::is_same_v<E, workflow_event::RosterAfterRemoteAccept>) {
+          SendRosterAfterRemoteAccept(e);
+        } else {
+          static_assert(!sizeof(E), "handle every WorkflowEvent");
+        }
+      },
+      event);
 }
 
 Roe<void> CallSessionWorkflow::DeclineInvite(const std::string& call_id) {
@@ -1440,19 +1473,8 @@ void CallSessionWorkflow::StartMediaAfterRemoteAccept(const CallAcceptDetail& ac
     live_calls_.SetMediaStatus(accept.call_id, CallMediaStatus::DirectConnecting, "ScheduleStartDirect");
     host_.duplex.schedule_start_direct(accept.call_id, identity, true);
   }
-  // Prefetch + roster fan-out after media kickoff — avoid starving MediaKey/Connect on IO.
-  // DeferredSelf: CSM teardown must not race store_ while this still runs (PR #216).
-  CallsThread::Post(deferred_.Bind([this, call_id = accept.call_id, peer = identity, local = local_identity]() {
-    if (host_.reach.prefetch_reach) {
-      host_.reach.prefetch_reach(peer);
-    }
-    if (auto roster = host_.wire.build_roster_detail(call_id); roster) {
-      if (auto roster_json = CallControlCodec::EncodeRoster(*roster); roster_json) {
-        (void)host_.wire.fan_out_joined_and_ringing(call_id, CallControlType::CallRoster, *roster_json, "Call roster",
-                                                    local);
-      }
-    }
-  }));
+  // Prefetch + roster fan-out as the next event, after media kickoff — avoid starving MediaKey/Connect.
+  outbox_.Emit(workflow_event::RosterAfterRemoteAccept{accept.call_id, identity, local_identity});
 }
 
 Roe<void> CallSessionWorkflow::HandleInboundDecline(const std::string& detail_json,

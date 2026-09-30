@@ -1,4 +1,5 @@
 #include "domain/messaging/CallLifecycleTypes.h"
+#include "feature/calls/CallsExecutor.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionManager.h"
@@ -319,6 +320,16 @@ protected:
 
     csm_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *sessions_, *keys_,
                                                 std::move(delivery), *psk_, *media_);
+    // The fixture plays the stack: the manager's events come back through the calls owner.
+    CallsOutbox<SessionEvent>::Sink sink;
+    sink.emit = [this](SessionEvent event) {
+      CallsOwnerExecutor().Post([this, event = std::make_shared<SessionEvent>(std::move(event))]() {
+        if (csm_) {
+          csm_->Handle(*event);
+        }
+      });
+    };
+    csm_->SetOutbox(CallsOutbox<SessionEvent>(std::move(sink)));
     bridge_ = std::make_unique<CallMediaBridge>(csm_->AsMediaHost(), *sessions_, *keys_, *media_, *transport_,
                                                 dial_.get(), nullptr);
     bridge_->SetDirectArmingPorts(csm_->DirectArmingPorts());

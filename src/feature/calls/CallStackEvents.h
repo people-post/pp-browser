@@ -3,6 +3,7 @@
 #include "common/Error.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "domain/messaging/CallMobility.h"
+#include "feature/calls/CallSessionEvents.h"
 
 #include <cstdint>
 #include <functional>
@@ -53,12 +54,18 @@ struct SignalingPunchRequested {
   std::function<void(Roe<void>)> done;
 };
 
+/** An event the session manager's subtree reported to itself; `generation` names that manager. */
+struct ForSessions {
+  uint64_t generation = 0;
+  SessionEvent event;
+};
+
 } // namespace calls_event
 
 using CallStackEvent =
     std::variant<calls_event::LocalNetworkChanged, calls_event::ObservedAddressChanged,
                  calls_event::MobilityOverrideChanged, calls_event::MobilityWake, calls_event::CallControlReceived,
-                 calls_event::RelayChosen, calls_event::SignalingPunchRequested>;
+                 calls_event::RelayChosen, calls_event::SignalingPunchRequested, calls_event::ForSessions>;
 
 /** For logs: the event's name. */
 const char* CallStackEventName(const CallStackEvent& event);

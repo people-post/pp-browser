@@ -19,6 +19,8 @@
 #include "feature/calls/CallInitiationBilling.h"
 #include "feature/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallReachSignals.h"
+#include "feature/calls/CallSessionEvents.h"
+#include "feature/calls/CallsOutbox.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallMediaHost.h"
@@ -85,7 +87,6 @@ public:
   CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                      CallSessionStore& sessions, CallMediaKeyStore& media_keys, CallDeliveryPorts delivery,
                      IPskSessionStore& psk_store, CallMediaEngine& media);
-  ~CallSessionManager() override { intents_self_.Invalidate(); }
 
   void SetOnRingChanged(RingChangedFn callback);
   /** Second listener — mesh (N025 listen) must not overwrite UI chrome refresh. */
@@ -172,6 +173,10 @@ public:
    * device shows is projected from the calls (LiveCalls::Phase / Status). Calls owner.
    */
   void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
+  /** Where this subtree reports its events (the stack binds it at build). */
+  void SetOutbox(CallsOutbox<SessionEvent> outbox);
+  /** An event this subtree reported, back from the calls owner's queue. */
+  void Handle(SessionEvent& event);
   /** Runs after anything that can change what the device shows (phase, Status, the shown call). */
   void SetOnCallStateChanged(std::function<void()> fn) { on_call_state_changed_ = std::move(fn); }
   /** The call whose accept is in flight (clicked, or being accepted); empty if none. */
@@ -311,6 +316,8 @@ private:
   void ClickLeave(const std::string& call_id);
   /** A failed, open call: Retry (this side dials) or resume over the peer's reconnect. */
   void RestartMedia(const std::string& call_id, bool resume);
+  void RunMediaRestart(const std::string& call_id, bool resume);
+  void RetryAnswererKick(const std::string& call_id);
   /** Flush deferred inbox/TailSync when no ActiveLocalCall remains. */
   void MaybeCatchUpAfterCall();
 
@@ -371,8 +378,7 @@ private:
   std::string accept_in_flight_;
   std::string last_error_;
   std::function<void()> on_call_state_changed_;
-  /** Posted intent follow-ups (the answerer kick retry, media restarts) drop once we are gone. */
-  DeferredSelf intents_self_;
+  CallsOutbox<SessionEvent> outbox_;
   std::string media_activity_;
 };
 

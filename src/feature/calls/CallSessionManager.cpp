@@ -22,6 +22,8 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <type_traits>
+#include <variant>
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
@@ -389,18 +391,8 @@ void CallSessionManager::KickAnswererAfterAccept(const std::string& call_id) {
   }
   log().info << "AcceptSucceeded KickAnswererDirectMedia StartSfu arm call_id=" << call_id;
   KickAnswererDirectMediaIfArmed(call_id);
-  // Once more, posted: the first kick can land before the 1:1 start is armed.
-  CallsThread::Post(intents_self_.Bind([this, call_id]() {
-    const LiveCall* active = live_calls_.Active();
-    if (!active || active->Id() != call_id || !live_calls_.AllowsDirectPath(call_id)) {
-      return;
-    }
-    if (media_.IsActive() && media_.ActiveCallId() == call_id) {
-      return;
-    }
-    log().info << "AcceptSucceeded retry KickAnswererDirectMedia StartSfu call_id=" << call_id;
-    KickAnswererDirectMediaIfArmed(call_id);
-  }));
+  // Once more, as the next event: the first kick can land before the 1:1 start is armed.
+  outbox_.Emit(session_event::AnswererKickRetry{call_id});
 }
 
 void CallSessionManager::ClickDecline(const std::string& call_id_arg) {
@@ -451,21 +443,59 @@ void CallSessionManager::RestartMedia(const std::string& call_id_arg, const bool
   }
   // Re-arm Direct before the restart → BeginSession (Failed blocks AllowsDirectPath).
   live_calls_.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, what);
-  // Posted, on the calls owner: the restart runs the engine and the bridge's connect sequence.
-  CallsThread::Post(intents_self_.Bind([this, call_id, resume, what]() {
-    const Roe<void> restarted = resume ? ResumeP2pMedia(call_id) : RetryP2pMedia(call_id);
-    if (!restarted) {
-      log().warning << what << " media restart failed call_id=" << call_id << " err=" << restarted.error().message;
-      // Back to Failed only while the call is still open and not live again (a duplicate restart
-      // whose call already resumed must not knock it down — PR #239 review).
-      const LiveCall* again = live_calls_.Find(call_id);
-      if (again && again->IsOpen() && !again->MediaProgress().reached_live) {
-        live_calls_.NoteMediaFailed(call_id);
-      }
-      return;
+  // As the next event: the restart runs the engine and the bridge's connect sequence — never inside
+  // the click (or the bridge callback) that asked for it.
+  outbox_.Emit(session_event::MediaRestart{call_id, resume});
+}
+
+void CallSessionManager::RunMediaRestart(const std::string& call_id, const bool resume) {
+  const char* what = resume ? "PeerReconnected" : "RetryClicked";
+  const Roe<void> restarted = resume ? ResumeP2pMedia(call_id) : RetryP2pMedia(call_id);
+  if (!restarted) {
+    log().warning << what << " media restart failed call_id=" << call_id << " err=" << restarted.error().message;
+    // Back to Failed only while the call is still open and not live again (a duplicate restart
+    // whose call already resumed must not knock it down — PR #239 review).
+    const LiveCall* again = live_calls_.Find(call_id);
+    if (again && again->IsOpen() && !again->MediaProgress().reached_live) {
+      live_calls_.NoteMediaFailed(call_id);
     }
-    NotifyCallStateChanged();
-  }));
+    return;
+  }
+  NotifyCallStateChanged();
+}
+
+void CallSessionManager::RetryAnswererKick(const std::string& call_id) {
+  const LiveCall* active = live_calls_.Active();
+  if (!active || active->Id() != call_id || !live_calls_.AllowsDirectPath(call_id)) {
+    return;
+  }
+  if (media_.IsActive() && media_.ActiveCallId() == call_id) {
+    return;
+  }
+  log().info << "AcceptSucceeded retry KickAnswererDirectMedia StartSfu call_id=" << call_id;
+  KickAnswererDirectMediaIfArmed(call_id);
+}
+
+void CallSessionManager::SetOutbox(CallsOutbox<SessionEvent> outbox) {
+  outbox_ = std::move(outbox);
+  workflow_.SetOutbox(outbox_.For<WorkflowEvent>([](WorkflowEvent event) { return SessionEvent{std::move(event)}; }));
+}
+
+void CallSessionManager::Handle(SessionEvent& event) {
+  std::visit(
+      [this](auto& e) {
+        using E = std::decay_t<decltype(e)>;
+        if constexpr (std::is_same_v<E, session_event::AnswererKickRetry>) {
+          RetryAnswererKick(e.call_id);
+        } else if constexpr (std::is_same_v<E, session_event::MediaRestart>) {
+          RunMediaRestart(e.call_id, e.resume);
+        } else if constexpr (std::is_same_v<E, WorkflowEvent>) {
+          workflow_.Handle(e);
+        } else {
+          static_assert(!sizeof(E), "route every SessionEvent");
+        }
+      },
+      event);
 }
 
 void CallSessionManager::SetInitiationBillingStore(InitiationBillingStore* store) {

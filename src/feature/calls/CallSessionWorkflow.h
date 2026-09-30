@@ -10,6 +10,8 @@
 #include "domain/messaging/CallSessionStore.h"
 #include "feature/calls/CallInitiationBilling.h"
 #include "feature/calls/CallMediaKeyExchange.h"
+#include "feature/calls/CallSessionEvents.h"
+#include "feature/calls/CallsOutbox.h"
 #include "feature/calls/LiveCall.h"
 
 #include <functional>
@@ -118,6 +120,10 @@ public:
   ~CallSessionWorkflow() override;
 
   void SetHostPorts(HostPorts ports);
+  /** Where the workflow reports its follow-ups (its parent binds it). */
+  void SetOutbox(CallsOutbox<WorkflowEvent> outbox) { outbox_ = std::move(outbox); }
+  /** A follow-up it reported, back from the calls owner's queue. */
+  void Handle(WorkflowEvent& event);
   /** Bump DeferredSelf so queued Accept/roster PostWorkerNormal cbs no-op (CSM teardown). */
   void InvalidateDeferredOps();
 
@@ -251,6 +257,8 @@ private:
   /** The call's media coordinator picks the path; a 1:1 call schedules the answerer's start. */
   void ArmMediaAfterAccept(CallSession& row, const std::string& inviter, const CallAcceptDetail& accept);
   void PostRosterAfterAccept(const std::string& call_id, const std::string& inviter, const std::string& local_identity);
+  void SendRosterAfterAccept(const workflow_event::RosterAfterAccept& after);
+  void SendRosterAfterRemoteAccept(const workflow_event::RosterAfterRemoteAccept& after);
   IThreadStore& store_;
   CallSessionStore& sessions_;
   /** The call's media keys between the peers (owned by CallSessionManager). */
@@ -260,6 +268,7 @@ private:
   /** The calls live on this device (owned by CallSessionManager); driven where the store rows change. */
   LiveCalls& live_calls_;
   HostPorts host_;
+  CallsOutbox<WorkflowEvent> outbox_;
   DeferredSelf deferred_;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;

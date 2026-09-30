@@ -178,6 +178,7 @@ private:
   // Bodies of the hub-facing edges above; the public methods run them on the calls owner.
   Roe<void> InitializeStoresOnOwner(const std::string& profile_db_path, const std::string& profile_id);
   void BuildSessionsOnOwner(const CallStackDeps& deps);
+  void BindSessionOutbox();
   void BindSessionSeat();
   void BindCallControlInbound();
   void BindSessionProviders();
@@ -228,6 +229,8 @@ private:
   /** k6: this device's and each call peer's mobility → the call's path policy. */
   CallPathMobility mobility_;
   CallsWakeSlot mobility_wake_{loop_, calls_event::MobilityWake{}};
+  /** Names the current session manager: its events carry it (a rebuilt one drops the old ones). */
+  uint64_t sessions_generation_ = 0;
   void ApplyMobilityOverrideOnOwner();
   /** Route one event to the child it is for (owner). */
   void Dispatch(CallStackEvent& event);

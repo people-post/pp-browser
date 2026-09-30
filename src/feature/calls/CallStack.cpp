@@ -103,6 +103,10 @@ void CallStack::Dispatch(CallStackEvent& event) {
           if (call_sessions_) {
             call_sessions_->ReachSignals().AnnounceCircuitR1(e.circuit_r1);
           }
+        } else if constexpr (std::is_same_v<E, calls_event::ForSessions>) {
+          if (call_sessions_ && e.generation == sessions_generation_) {
+            call_sessions_->Handle(e.event);
+          }
         } else if constexpr (std::is_same_v<E, calls_event::SignalingPunchRequested>) {
           if (!call_sessions_) {
             e.done(Error("Calls unavailable"));
@@ -385,6 +389,7 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
   call_sessions_ = std::make_unique<CallSessionManager>(*deps_.store, *deps_.contacts, *deps_.identity,
                                                         *call_session_store_, *call_media_keys_, deps_.delivery,
                                                         *deps_.psk, *call_media_engine_);
+  BindSessionOutbox();
   BindSessionSeat();
   BindCallControlInbound();
   call_sessions_->AbandonOrphanedCallsAfterRestart();
@@ -393,6 +398,20 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
   BindSessionMeshReach();
   BindCallState();
   RebindMeshMedia();
+}
+
+void CallStack::BindSessionOutbox() {
+  // The manager's events come back through the queue; one from a manager since rebuilt is dropped.
+  const uint64_t generation = ++sessions_generation_;
+  CallsOutbox<SessionEvent>::Sink sink;
+  sink.emit = [this, generation](SessionEvent event) {
+    loop_.Enqueue(calls_event::ForSessions{generation, std::move(event)});
+  };
+  sink.after = [this, generation](std::chrono::milliseconds delay, SessionEvent event) {
+    return loop_.After(delay, calls_event::ForSessions{generation, std::move(event)});
+  };
+  sink.cancel = [this](CallsExecutor::TimerId id) { loop_.Cancel(id); };
+  call_sessions_->SetOutbox(CallsOutbox<SessionEvent>(std::move(sink)));
 }
 
 void CallStack::BindSessionSeat() {
@@ -721,6 +740,7 @@ void CallStack::ResetSessionsOnOwner() {
     deps_.bind_call_control({});
   }
   call_sessions_.reset();
+  ++sessions_generation_;       // its events still queued go nowhere
   chrome_self_.Invalidate();    // refreshes queued for the dropped sessions (a later bind posts fresh ones)
   OnCallStateChangedOnOwner();  // nothing is shown any more
   PublishUiState();
