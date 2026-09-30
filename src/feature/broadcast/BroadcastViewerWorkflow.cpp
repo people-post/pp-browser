@@ -3,6 +3,7 @@
 
 #include "domain/mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
+#include "domain/media/VideoLevelProfile.h"
 #include "domain/messaging/BroadcastMedia.h"
 
 #include "common/Logger.h"
@@ -42,6 +43,7 @@ Roe<BroadcastWatchTarget> BroadcastWatchTargetFromTip(const PeerAnnounceTip& tip
   if (!tip.hop_peer_id.empty()) {
     target.hops.push_back(tip.hop_peer_id);
   }
+  target.video_levels = tip.video_levels;
   for (const auto& hop : tip.l1_hop_peer_ids) {
     if (!hop.empty() && std::find(target.hops.begin(), target.hops.end(), hop) == target.hops.end()) {
       target.hops.push_back(hop);
@@ -168,6 +170,7 @@ Roe<void> BroadcastViewerWorkflow::Watch(BroadcastWatchTarget target) {
   Teardown();
   status_ = Status{};
   status_.target = std::move(target);
+  status_.video_level = ChooseWatchVideoLevel(status_.target.video_levels, ports_.preferred_video_level);
   FetchTicket();
   return {};
 }
@@ -370,6 +373,9 @@ void BroadcastViewerWorkflow::Attach(const std::string& hop) {
   request.quote.participants = 1;
   request.quote.want_up_bps = 0;
   request.quote.want_down_bps = kAudioDownBps;
+  if (status_.video_level != 0) {
+    request.quote.want_down_bps += ProfileForVideoLevel(static_cast<uint8_t>(status_.video_level)).target_bps;
+  }
   request.quote.video_levels.clear();  // receive-only: publishes no video (B009)
 
   MediaRelayAttachHooks hooks;
@@ -420,6 +426,13 @@ void BroadcastViewerWorkflow::StartListening(const std::string& hop) {
   if (auto subscribed = relay->Subscribe(sink_->stream_id, kMediaChannelAudio); !subscribed) {
     Fail("subscribe: " + subscribed.error().message);
     return;
+  }
+  if (status_.video_level != 0) {
+    const auto video = VideoChannel(static_cast<uint8_t>(status_.video_level));
+    if (auto subscribed = relay->Subscribe(sink_->stream_id, video); !subscribed) {
+      Fail("subscribe video: " + subscribed.error().message);
+      return;
+    }
   }
   if (lost_observer_ == 0) {
     lost_observer_ = relay->AddClientTransportLostObserver(

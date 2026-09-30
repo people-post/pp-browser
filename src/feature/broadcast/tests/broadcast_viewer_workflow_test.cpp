@@ -55,6 +55,14 @@ protected:
     engine_.Stop();
   }
 
+  /** B009: this viewer's level preference; rebuilds the workflow with it. */
+  void PreferVideoLevel(const int level) {
+    preferred_video_level_ = level;
+    workflow_ = std::make_unique<BroadcastViewerWorkflow>(Ports());
+    workflow_->SetOutbox(MakeOwnerOutbox<ViewerEvent>(tasks_, [this](ViewerEvent& event) { workflow_->Handle(event); }));
+  }
+  int preferred_video_level_ = kDefaultVideoLevel;
+
   BroadcastViewerPorts Ports() {
     BroadcastViewerPorts p;
     p.local_peer_id = []() { return std::string(kViewer); };
@@ -102,6 +110,7 @@ protected:
     p.relay.dial = &dial_;
     p.engine = &engine_;
     p.now_ms = []() { return kNow; };
+    p.preferred_video_level = preferred_video_level_;
     return p;
   }
 
@@ -194,6 +203,33 @@ TEST_F(BroadcastViewerWorkflowTest, AdmittedViewerListensReceiveOnlyOnThePublish
   EXPECT_GE(engine_.HealthSnapshot().rx_audio_frames, 2u);
   std::this_thread::sleep_for(std::chrono::milliseconds(60));
   EXPECT_TRUE(relay_.SentFrames().empty()) << "a viewer never publishes";
+}
+
+// B009: the viewer subscribes to the published level nearest its preference, next to audio.
+TEST_F(BroadcastViewerWorkflowTest, WatchesThePublishedVideoLevelNearestItsPreference) {
+  PreferVideoLevel(2);
+  admission_.emplace("hop1", Admit("hop1"));
+  auto target = Target({"hop1"});
+  target.video_levels = {1, 2};
+  ASSERT_TRUE(workflow_->Watch(target));
+  Drain();
+  ASSERT_EQ(workflow_->CurrentStatus().phase, Phase::Listening) << workflow_->CurrentStatus().error;
+  EXPECT_EQ(workflow_->CurrentStatus().video_level, 2);
+  const uint32_t stream = BroadcastPublisherStreamId(kPublisher);
+  EXPECT_EQ(relay_.subscriptions,
+            (std::vector<std::pair<uint32_t, uint16_t>>{{stream, kMediaChannelAudio}, {stream, VideoChannel(2)}}));
+  EXPECT_GT(relay_.last_quote.want_down_bps, 64000) << "the quote asks for the video's downlink too";
+  EXPECT_TRUE(relay_.last_quote.video_levels.empty()) << "a viewer publishes nothing";
+}
+
+TEST_F(BroadcastViewerWorkflowTest, AudioOnlyProgramSubscribesAudioOnly) {
+  PreferVideoLevel(2);
+  admission_.emplace("hop1", Admit("hop1"));
+  ASSERT_TRUE(workflow_->Watch(Target({"hop1"})));
+  Drain();
+  ASSERT_EQ(workflow_->CurrentStatus().phase, Phase::Listening);
+  EXPECT_EQ(workflow_->CurrentStatus().video_level, 0);
+  EXPECT_EQ(relay_.subscriptions.size(), 1u);
 }
 
 TEST_F(BroadcastViewerWorkflowTest, FramesUnderAnotherLabelOrStreamNeverReachTheEngine) {

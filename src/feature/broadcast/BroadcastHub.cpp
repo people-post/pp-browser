@@ -108,6 +108,8 @@ std::unique_ptr<BroadcastHub> BroadcastHub::ForMesh(BroadcastMeshDeps deps, Medi
   };
   ports.relay = deps.relay;
   ports.hop_multiaddr = std::move(deps.hop_multiaddr);
+  // B009: a phone prefers the low level, a desktop the high one; the nearest published one is taken.
+  ports.preferred_video_level = Platform::IsMobile() ? kDefaultVideoLevel : 2;
   ports.now_ms = []() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
         .count();
