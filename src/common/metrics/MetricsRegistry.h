@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -149,5 +150,19 @@ private:
   MetricsRegistry* registry_ = nullptr;
   MetricsRegistry::CollectorId id_ = 0;
 };
+
+/** One entry of a fixed label set: raw key (e.g. a protocol id) → label value. */
+struct MetricLabelKey {
+  const char* key;
+  const char* label;
+};
+
+/**
+ * Counts by raw key → counts by a fixed label set, for keys a peer or caller chooses: every known
+ * label is present (0 when absent), and all other keys sum into a final `other`. The label set, and
+ * so the series cardinality, never grows.
+ */
+std::vector<std::pair<std::string, size_t>> FixedLabelCounts(const std::unordered_map<std::string, size_t>& by_key,
+                                                             const std::vector<MetricLabelKey>& known);
 
 } // namespace pbr

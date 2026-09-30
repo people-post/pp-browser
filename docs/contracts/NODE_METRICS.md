@@ -38,6 +38,7 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_amp_reliable_packets_total` | counter | `event` = `sent` \| `retransmitted` \| `lost` | `lost` = given up after the retry cap |
 | `pp_amp_rtt_seconds` | histogram | | Round trips: acks of never-retransmitted reliable packets (buckets 0.005 … 2.5) |
 | `pp_link_active` | gauge | | Amp links in the link table |
+| `pp_amp_channels_open` | gauge | `protocol` = `directory` \| `dht` \| `reach` \| `punch` \| `circuit` \| `circuit_carrier` \| `rpc_chat` \| `rpc_history` \| `rpc_peer_announce` \| `rpc_broadcast` \| `blob` \| `realtime` \| `datagram_relay` \| `other` | Open L3 channels across all links. Fixed label set: ids outside the shipped map ([L4_PROTOCOL_KINDS.md](L4_PROTOCOL_KINDS.md)) count as `other` |
 | `pp_link_connects_total` | counter | `path` = `direct` \| `punched` \| `carrier`; `direction` = `outbound` \| `inbound` | Links that connected |
 | `pp_link_drops_total` | counter | `reason` ([AMP-LINK-ERRORS](AMP-LINK-ERRORS.md) drop reasons, e.g. `connection-dead`, `handshake-timeout`); `stage` = `connected` \| `attempt` | `attempt` = never connected (a failed dial) |
 | `pp_link_path_changes_total` | counter | | Remote endpoint migrations |

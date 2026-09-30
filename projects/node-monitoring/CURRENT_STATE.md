@@ -21,4 +21,6 @@
 
 Rendezvous parking: `CircuitClientCoordinator::ParkedRelayCount` → `pp_circuit_parked_relays` and the popover's network section.
 
-**Open:** open channels by protocol (needs a mux-wide count in pp-cpp-amp); call quality (call screen).
+Open channels by protocol (pp-cpp-amp v2.11.0): `pp_amp_channels_open{protocol}`, peer-chosen ids outside the shipped map fold into `other`.
+
+**Open:** call quality (call screen).

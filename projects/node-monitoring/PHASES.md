@@ -16,7 +16,7 @@
 - [x] Reachability verdict and probe signals; punches started (kind, result) and served (role)
 - [x] Circuit relay: requests by op / result, tunnels bridged / failed, setup latency, open tunnels, reservations
 - [x] Amp traffic (pp-cpp-amp `Endpoint::Stats`): datagrams / bytes, rejects, reliable sent / retransmitted / lost, RTT histogram; circuit bridge bytes (`ChannelBridge::ForwardedBytes`)
-- [ ] Open channels by protocol (needs a mux-wide count in pp-cpp-amp)
+- [x] Open channels by protocol: `pp_amp_channels_open` (pp-cpp-amp v2.11.0 `PeerLinkManager::CountOpenChannelsByProtocol`; fixed label set via `FixedLabelCounts`)
 - [x] Rendezvous parking state: `pp_circuit_parked_relays` (`CircuitClientCoordinator::ParkedRelayCount`)
 
 ## M3 — pp-browser UI snapshot

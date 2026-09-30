@@ -1,11 +1,21 @@
 #include "app/node/NodeMetrics.h"
 
+#include "amp/link/Types.h"
+#include "common/chat/IDirectMessageClient.h"
+#include "common/thread/ChatBlobTypes.h"
 #include "domain/mesh/dht/AmpDhtProtocol.h"
+#include "domain/mesh/discovery/DirectoryTypes.h"
+#include "domain/mesh/l4/shared/L4ProtocolIds.h"
 #include "domain/mesh/reachability/Reachability.h"
+#include "domain/mesh/reachability/dial_back/DialBackTypes.h"
+#include "domain/mesh/reachability/punch/PunchTypes.h"
 #include "foundation/platform/os/OsProcessStats.h"
 #include "foundation/runtime/AppVersion.h"
 
 #include <chrono>
+#include <string>
+#include <unordered_map>
+#include <vector>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -26,6 +36,35 @@ void CollectProcess(MetricsRegistry& r, const std::chrono::steady_clock::time_po
   r.Gauge("pp_process_resident_memory_bytes", "Resident memory.").Set(static_cast<double>(stats.resident_bytes));
   r.Gauge("pp_process_threads", "OS threads.").Set(static_cast<double>(stats.threads));
   r.Gauge("pp_process_open_fds", "Open file descriptors.").Set(static_cast<double>(stats.open_fds));
+}
+
+/**
+ * Shipped L4 protocol ids (L4_PROTOCOL_KINDS.md) → metric label. Peers pick the ids they open, so
+ * anything else is `other`: the label set stays fixed.
+ */
+const std::vector<MetricLabelKey> kChannelProtocolLabels = {
+    {kDirectoryProtocolId, "directory"},
+    {kDhtProtocolId, "dht"},
+    {kReachProtocolId, "reach"},
+    {kAmpPunchProtocolId, "punch"},
+    {kCircuitProtocolId, "circuit"},
+    {pp::amp::kAmpCircuitCarrierProtocolId, "circuit_carrier"},
+    {kRpcChatProtocolId, "rpc_chat"},
+    {kRpcHistoryProtocolId, "rpc_history"},
+    {kRpcPeerAnnounceProtocolId, "rpc_peer_announce"},
+    {kRpcBroadcastProtocolId, "rpc_broadcast"},
+    {kBlobProtocolId, "blob"},
+    {kRealtimeProtocolId, "realtime"},
+    {kDatagramRelayProtocolId, "datagram_relay"},
+};
+
+void CollectChannels(MetricsRegistry& r, pp::amp::MeshRuntime& runtime) {
+  std::unordered_map<std::string, size_t> open;
+  runtime.WithIoLock([&]() { open = runtime.Links().CountOpenChannelsByProtocol(); });
+  const char* help = "Open Amp L3 channels across all links, by protocol.";
+  for (const auto& [label, count] : FixedLabelCounts(open, kChannelProtocolLabels)) {
+    r.Gauge("pp_amp_channels_open", help, {{"protocol", label}}).Set(static_cast<double>(count));
+  }
 }
 
 void CollectMesh(MetricsRegistry& r, MeshHost& mesh) {
@@ -71,6 +110,7 @@ void CollectMesh(MetricsRegistry& r, MeshHost& mesh) {
     r.Counter("pp_amp_reliable_packets_total", reliable, {{"event", "sent"}}).Mirror(traffic.reliable_sent);
     r.Counter("pp_amp_reliable_packets_total", reliable, {{"event", "retransmitted"}}).Mirror(traffic.retransmits);
     r.Counter("pp_amp_reliable_packets_total", reliable, {{"event", "lost"}}).Mirror(traffic.reliable_lost);
+    CollectChannels(r, amp->Runtime());
   }
 
   if (CircuitClientCoordinator* client = mesh.AmpCircuitClient()) {

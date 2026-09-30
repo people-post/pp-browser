@@ -200,4 +200,23 @@ std::string MetricsRegistry::RenderPrometheus() {
   return out.str();
 }
 
+std::vector<std::pair<std::string, size_t>> FixedLabelCounts(const std::unordered_map<std::string, size_t>& by_key,
+                                                             const std::vector<MetricLabelKey>& known) {
+  std::vector<std::pair<std::string, size_t>> out;
+  out.reserve(known.size() + 1);
+  size_t matched = 0;
+  size_t total = 0;
+  for (const auto& [key, count] : by_key) {
+    total += count;
+  }
+  for (const MetricLabelKey& entry : known) {
+    const auto it = by_key.find(entry.key);
+    const size_t count = it == by_key.end() ? 0 : it->second;
+    matched += count;
+    out.emplace_back(entry.label, count);
+  }
+  out.emplace_back("other", total - matched);
+  return out;
+}
+
 } // namespace pbr

@@ -3,6 +3,9 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace pbr {
 namespace {
@@ -63,3 +66,17 @@ TEST(MetricsRegistryTest, LabelValuesAreEscaped) {
 
 } // namespace
 } // namespace pbr
+
+TEST(MetricsRegistryTest, FixedLabelCountsFoldUnknownKeysIntoOther) {
+  const std::vector<pbr::MetricLabelKey> known = {{"/a/1.0.0", "a"}, {"/b/1.0.0", "b"}};
+  const std::unordered_map<std::string, size_t> by_key = {{"/a/1.0.0", 3}, {"/x/1.0.0", 2}, {"/y/1.0.0", 1}};
+  const auto counts = pbr::FixedLabelCounts(by_key, known);
+  ASSERT_EQ(counts.size(), 3u);
+  EXPECT_EQ(counts[0], (std::pair<std::string, size_t>{"a", 3}));
+  EXPECT_EQ(counts[1], (std::pair<std::string, size_t>{"b", 0}));  // present at zero: the series stays
+  EXPECT_EQ(counts[2], (std::pair<std::string, size_t>{"other", 3}));
+
+  const auto empty = pbr::FixedLabelCounts({}, known);
+  ASSERT_EQ(empty.size(), 3u);
+  EXPECT_EQ(empty[2].second, 0u);
+}
