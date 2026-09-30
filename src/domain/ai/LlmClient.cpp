@@ -88,7 +88,34 @@ void ReadOpenAiErrorField(const Value& err, std::string& api_message, std::strin
   }
 }
 
-Error MapHttpError(long http_code, const std::string& response_body) {
+std::string TruncateForLog(const std::string& text, const size_t max_chars) {
+  std::string out;
+  out.reserve(text.size() < max_chars ? text.size() : max_chars + 3);
+  for (const char c : text) {
+    if (out.size() >= max_chars) {
+      out += "...";
+      break;
+    }
+    if (c == '\n' || c == '\r' || c == '\t') {
+      out.push_back(' ');
+    } else {
+      out.push_back(c);
+    }
+  }
+  return out;
+}
+
+} // namespace
+
+LlmClient::LlmClient(LlmConfig config) : config_(std::move(config)) {
+  redirectLogger("LlmClient");
+}
+
+LlmClient::LlmClient(const LlmClient& other) : Module(), config_(other.config_) {
+  redirectLogger("LlmClient");
+}
+
+Error LlmClient::MapHttpError(long http_code, const std::string& response_body) {
   std::string api_message;
   std::string api_code;
   if (auto json = TryParseObject(response_body)) {
@@ -131,33 +158,6 @@ Error MapHttpError(long http_code, const std::string& response_body) {
     return AppError::Network(Err::Network::HttpError, detail).WithUser("LLM API error: " + api_message);
   }
   return AppError::Network(Err::Network::HttpError, detail);
-}
-
-std::string TruncateForLog(const std::string& text, const size_t max_chars) {
-  std::string out;
-  out.reserve(text.size() < max_chars ? text.size() : max_chars + 3);
-  for (const char c : text) {
-    if (out.size() >= max_chars) {
-      out += "...";
-      break;
-    }
-    if (c == '\n' || c == '\r' || c == '\t') {
-      out.push_back(' ');
-    } else {
-      out.push_back(c);
-    }
-  }
-  return out;
-}
-
-} // namespace
-
-LlmClient::LlmClient(LlmConfig config) : config_(std::move(config)) {
-  redirectLogger("LlmClient");
-}
-
-LlmClient::LlmClient(const LlmClient& other) : Module(), config_(other.config_) {
-  redirectLogger("LlmClient");
 }
 
 Roe<std::string> LlmClient::Complete(const std::string& system_prompt, const std::string& user_prompt) const {

@@ -4,6 +4,8 @@ pp_browser_add_domain_library(pp_domain_ai
     PromptBuilder.cpp
     PayloadTurnPlanBuilder.cpp
     RmlValidator.cpp
+    SseClient.cpp
+    SseParser.cpp
     StructuredTextParser.cpp
     ToolRegistry.cpp
     ToolResultFormatter.cpp
