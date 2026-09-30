@@ -218,6 +218,8 @@ Desktop and mobile builds write the root log (same lines and level as the consol
 | `--debug` | DEBUG level for console and file (desktop default is WARNING) |
 | `--mobility=auto\|stationary\|mobile` | Pin the call-path mobility class (wins over config `mesh.mobility`; also on `pp-call-probe`) |
 
+Operational metrics (`common/Metrics.h`: `event=… k=v` lines with timings, rates and device load, never account ids, PeerIds or addresses) go to their own file next to it, `{data_dir}/logs/metrics.log`, rotated the same way. They are written at any log level; with `--debug` they also appear in the main log. A collector should read only this file.
+
 The log opens before config is read, so it lives under the **default** data root (like `diagnostics/crash_pending.txt`), not a config `data_dir` override. Two instances sharing one data root rotate each other's logs — isolate them with `--sandbox` or `XDG_DATA_HOME`.
 
 Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps, tees non-logger console output to `logs/console.log`, and on a crash keeps `diagnostics/crash-<stamp>.{txt,log}` plus a symbolized backtrace (`crash-<stamp>-symbolized.txt`, using the dump's `image_base=`).

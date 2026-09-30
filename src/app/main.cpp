@@ -122,6 +122,7 @@ int main(int argc, char** argv) {
       // WARNING so the header survives the desktop default level (every log starts with it).
       root.warning << "Log file " << log_path << " version=" << pbr::AppVersionString()
                 << " level=" << LevelName(root.getLevel());
+      pbr::LogFile::InstallMetrics(log_path);
     }
   }
 

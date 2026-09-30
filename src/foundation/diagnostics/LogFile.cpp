@@ -1,6 +1,7 @@
 #include "foundation/diagnostics/LogFile.h"
 
 #include "common/Logger.h"
+#include "common/Metrics.h"
 #include "common/PbrCompat.h"
 
 #include <filesystem>
@@ -58,6 +59,33 @@ std::string LogFile::Install(const std::string& path, const std::size_t keep) {
   // Logs carry PeerIds / account ids — keep them owner-only (no-op on Windows ACLs).
   fs::permissions(path, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
   root.addHandler(std::move(handler));
+  return path;
+}
+
+std::string LogFile::MetricsPath(const std::string& log_path) {
+  return (fs::path(log_path).parent_path() / "metrics.log").string();
+}
+
+std::string LogFile::InstallMetrics(const std::string& log_path, const std::size_t keep) {
+  if (log_path.empty()) {
+    return {};
+  }
+  const std::string path = MetricsPath(log_path);
+  std::error_code ec;
+  fs::create_directories(fs::path(path).parent_path(), ec);
+  Rotate(path, keep);
+
+  std::shared_ptr<logging::FileHandler> handler;
+  try {
+    handler = std::make_shared<logging::FileHandler>(path);
+  } catch (const std::exception& ex) {
+    logging::getRootLogger().warning << "Metrics file disabled: " << ex.what();
+    return {};
+  }
+  fs::permissions(path, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
+  // The Metrics logger's own handler: its INFO lines reach this file whatever the root level
+  // (the root filters them out of the main log unless the app runs with --debug).
+  MetricsLog().addHandler(std::move(handler));
   return path;
 }
 
