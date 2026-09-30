@@ -578,3 +578,42 @@ TEST(GroupInviteIngestTest, GroupEnvelopeHardRejectsNonMember) {
 }
 
 } // namespace
+
+namespace pbr {
+namespace {
+
+// projects/privacy T3: a Blocked sender's direct messages (chat and call control alike) are dropped
+// on receipt — before the thread, the inbox or a ring sees them.
+TEST(BlockedSenderIngestTest, DirectEnvelopesFromABlockedSenderAreDropped) {
+  PartyHarness invitee("blocked-sender", "account:bob", "account:alice");
+  invitee.pipeline.SetContactTrust(&invitee.contacts);
+
+  GroupInvitePayload invite;
+  invite.group_id = "group:hike";
+  invite.group_title = "Weekend hike";
+  invite.inviter_identity = "account:alice";
+  invite.invitee_identity = "account:bob";
+  invite.invite_nonce = "nonce-before-block";
+  invite.roster_epoch = 1;
+  invite.expires_at = util::NowUnixMs() + 86400000;
+  auto detail = GroupMembershipCodec::EncodeInvite(invite);
+  ASSERT_TRUE(detail);
+  RelayReceiveOutcome outcome = invitee.pipeline.ProcessEnvelope(
+      invitee.MakeSystemEnvelope("group_invite", *detail, "Group invitation", 1), "account:bob");
+  ASSERT_TRUE(outcome.persisted) << "a Friendly contact's message lands";
+
+  ASSERT_TRUE(invitee.contacts.BlockAccountIfPresent("account:alice"));
+  invite.invite_nonce = "nonce-after-block";
+  detail = GroupMembershipCodec::EncodeInvite(invite);
+  ASSERT_TRUE(detail);
+  outcome = invitee.pipeline.ProcessEnvelope(
+      invitee.MakeSystemEnvelope("group_invite", *detail, "Group invitation", 2), "account:bob");
+  EXPECT_FALSE(outcome.persisted);
+  EXPECT_EQ(outcome.decision, IngestDecision::SilentDiscard);
+  auto pending = invitee.roster.LoadPendingInvite("nonce-after-block");
+  ASSERT_TRUE(pending);
+  EXPECT_FALSE(pending->has_value()) << "the Blocked sender's control applied";
+}
+
+} // namespace
+} // namespace pbr

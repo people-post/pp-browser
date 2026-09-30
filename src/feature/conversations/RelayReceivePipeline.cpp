@@ -549,6 +549,14 @@ std::optional<std::string> RelayReceivePipeline::FindMessageIdAtSeq(const std::s
   return rows->front().id;
 }
 
+bool RelayReceivePipeline::SenderBlocked(const std::string& sender) const {
+  if (!contact_trust_ || sender.empty()) {
+    return false;
+  }
+  const auto blocked = contact_trust_->IsAccountBlocked(sender);
+  return blocked && *blocked;
+}
+
 RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& envelope,
                                                           const std::string& local_relay_user_id,
                                                           const bool authorized_older_backfill,
@@ -578,6 +586,12 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
 
   if (envelope.route.kind != "direct" || !ThreadChannelIsE2e(envelope.route.channel)) {
     outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
+  // Early, on the claimed sender: a spoofed Blocked id only drops the spoofer's own message.
+  if (SenderBlocked(envelope.sender_contact_id)) {
+    log().info << "drop direct envelope from a Blocked sender message_id=" << envelope.message_id;
+    outcome.decision = IngestDecision::SilentDiscard;
     return outcome;
   }
 
