@@ -25,6 +25,12 @@ inline uint32_t BroadcastPublisherStreamId(const std::string& publisher_peer_id)
   return PublisherStreamIdForIdentity(publisher_peer_id);
 }
 
+/**
+ * The published video level a viewer takes (peer-scoped-broadcast B009): the highest one at or
+ * below `preferred`, else the lowest above it; 0 when the program publishes no video.
+ */
+int ChooseWatchVideoLevel(const std::vector<int>& published, int preferred);
+
 /** A fresh 32-byte show key (B004: one stable key per show, new on every go-live). */
 std::vector<uint8_t> NewBroadcastMediaKey();
 /** A fresh opaque join handle for one show of `program_id` (`live:<program>:<random hex>`). */

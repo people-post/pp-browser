@@ -37,6 +37,7 @@ public:
   CallMediaSessionPhase Phase() const override;
   CallMediaLinkKind ActiveLinkKind() const override;
   std::string ActiveRemotePeerId() const override;
+  CallLinkCounters ActiveLinkCounters() const override;
   void MigrateTo(CallMediaLinkKind kind, std::function<void(Roe<void>)> done) override;
   CallMediaLinkKind StandbyLinkKind() const override;
   void SetAutoMigrateToDirect(bool allow) override;

@@ -265,6 +265,13 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("statusbar_popover_circuit_load", &host.state_.statusbar_popover_circuit_load);
     ctor.Bind("statusbar_popover_media_sessions", &host.state_.statusbar_popover_media_sessions);
     ctor.Bind("statusbar_popover_media_participants", &host.state_.statusbar_popover_media_participants);
+    ctor.Bind("statusbar_popover_network_visible", &host.state_.statusbar_popover_network_visible);
+    ctor.Bind("statusbar_popover_network_links", &host.state_.statusbar_popover_network_links);
+    ctor.Bind("statusbar_popover_network_parked", &host.state_.statusbar_popover_network_parked);
+    ctor.Bind("statusbar_popover_network_rate", &host.state_.statusbar_popover_network_rate);
+    ctor.Bind("statusbar_popover_network_rtt", &host.state_.statusbar_popover_network_rtt);
+    ctor.Bind("statusbar_popover_network_resend", &host.state_.statusbar_popover_network_resend);
+    ctor.Bind("statusbar_popover_relay_rate", &host.state_.statusbar_popover_relay_rate);
     ctor.Bind("titlebar_visible", &host.state_.titlebar_visible);
     ctor.Bind("titlebar_traffic_lights", &host.state_.titlebar_traffic_lights);
     ctor.Bind("window_maximized", &host.state_.window_maximized);
@@ -865,6 +872,13 @@ void ShellHost::DirtyStatusbarPopover() {
   DataModelHost::Instance().Dirty("window", "statusbar_popover_circuit_load");
   DataModelHost::Instance().Dirty("window", "statusbar_popover_media_sessions");
   DataModelHost::Instance().Dirty("window", "statusbar_popover_media_participants");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_visible");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_links");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_parked");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_rate");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_rtt");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_network_resend");
+  DataModelHost::Instance().Dirty("window", "statusbar_popover_relay_rate");
 }
 
 void ShellHost::DirtyWindow() {
@@ -1408,6 +1422,13 @@ void ShellHost::ClearStatusbarPopover() {
   state_.statusbar_popover_circuit_load.clear();
   state_.statusbar_popover_media_sessions.clear();
   state_.statusbar_popover_media_participants.clear();
+  state_.statusbar_popover_network_visible = false;
+  state_.statusbar_popover_network_links.clear();
+  state_.statusbar_popover_network_parked.clear();
+  state_.statusbar_popover_network_rate.clear();
+  state_.statusbar_popover_network_rtt.clear();
+  state_.statusbar_popover_network_resend.clear();
+  state_.statusbar_popover_relay_rate.clear();
 }
 
 bool ShellHost::ApplyStatusbarPopover(const StatusbarPopoverSnapshot& snap) {
@@ -1422,6 +1443,12 @@ bool ShellHost::ApplyStatusbarPopover(const StatusbarPopoverSnapshot& snap) {
   const ui::String circuit_load = snap.circuit_load_label.c_str();
   const ui::String media_sessions = snap.media_sessions_label.c_str();
   const ui::String media_participants = snap.media_participants_label.c_str();
+  const ui::String network_links = snap.network_links_label.c_str();
+  const ui::String network_parked = snap.network_parked_label.c_str();
+  const ui::String network_rate = snap.network_rate_label.c_str();
+  const ui::String network_rtt = snap.network_rtt_label.c_str();
+  const ui::String network_resend = snap.network_resend_label.c_str();
+  const ui::String relay_rate = snap.relay_rate_label.c_str();
 
   if (state_.statusbar_popover_brief_label == brief && state_.statusbar_popover_direct_label == direct &&
       state_.statusbar_popover_reach_label == reach && state_.statusbar_popover_reach_summary == summary &&
@@ -1434,7 +1461,14 @@ bool ShellHost::ApplyStatusbarPopover(const StatusbarPopoverSnapshot& snap) {
       state_.statusbar_popover_load_visible == snap.show_load &&
       state_.statusbar_popover_circuit_load == circuit_load &&
       state_.statusbar_popover_media_sessions == media_sessions &&
-      state_.statusbar_popover_media_participants == media_participants) {
+      state_.statusbar_popover_media_participants == media_participants &&
+      state_.statusbar_popover_network_visible == snap.show_network &&
+      state_.statusbar_popover_network_links == network_links &&
+      state_.statusbar_popover_network_parked == network_parked &&
+      state_.statusbar_popover_network_rate == network_rate &&
+      state_.statusbar_popover_network_rtt == network_rtt &&
+      state_.statusbar_popover_network_resend == network_resend &&
+      state_.statusbar_popover_relay_rate == relay_rate) {
     return false;
   }
 
@@ -1452,6 +1486,13 @@ bool ShellHost::ApplyStatusbarPopover(const StatusbarPopoverSnapshot& snap) {
   state_.statusbar_popover_circuit_load = circuit_load;
   state_.statusbar_popover_media_sessions = media_sessions;
   state_.statusbar_popover_media_participants = media_participants;
+  state_.statusbar_popover_network_visible = snap.show_network;
+  state_.statusbar_popover_network_links = network_links;
+  state_.statusbar_popover_network_parked = network_parked;
+  state_.statusbar_popover_network_rate = network_rate;
+  state_.statusbar_popover_network_rtt = network_rtt;
+  state_.statusbar_popover_network_resend = network_resend;
+  state_.statusbar_popover_relay_rate = relay_rate;
   return true;
 }
 

@@ -49,6 +49,9 @@ public:
   Roe<std::string> Complete(const std::string& system_prompt, const std::string& user_prompt) const;
   Roe<ChatCompletionResponse> Complete(const ChatCompletionRequest& request) const;
 
+  // Maps a non-2xx HTTP status and its body to an app error (shared with SseClient).
+  static Error MapHttpError(long http_code, const std::string& response_body);
+
   static Roe<ChatCompletionResponse> ParseChatCompletionResponse(const std::string& response);
 
   // Merge leading consecutive system messages into one. Safe for strict chat templates (e.g. Qwen).

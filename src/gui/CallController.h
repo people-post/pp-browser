@@ -129,6 +129,12 @@ private:
   CallMetricsTracker metrics_;
   UiLatencyProbe ui_probe_;
   int64_t last_metrics_media_ms_ = 0;
+  /** The call's link, sampled at most every 2 s (resend % is a delta between samples). */
+  void SampleLinkHealth(CallUiBackend* backend, int64_t now_ms);
+  std::string link_sample_call_id_;
+  CallLinkCounters link_counters_;
+  CallLinkHealth link_health_;
+  int64_t last_link_sample_ms_ = 0;
   DeviceVitals vitals_;
   int64_t vitals_read_ms_ = 0;
   /** Peer camera state last logged ("roster/frames"), so the log shows each change once. */

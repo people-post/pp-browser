@@ -71,6 +71,9 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   config.mesh.dht.find_peer_timeout_ms = 8000;
   config.mesh.pricing.media_relay.mode = "volunteer";
   config.mesh.media_relay_budget.default_per_user_up_bps = 12345;
+  config.mesh.media_relay_video.serve_levels = {2};
+  config.mesh.media_relay_video.carry_levels = 1;
+  config.mesh.media_relay_video.strict = true;
 
   const pbr::Object out = pbr::AppConfigToObject(config);
   ASSERT_TRUE(out.contains("mesh"));
@@ -110,6 +113,9 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   EXPECT_EQ(parsed.mesh.dht.record_ttl_seconds, 7200);
   EXPECT_EQ(parsed.mesh.dht.find_peer_timeout_ms, 8000);
   EXPECT_EQ(parsed.mesh.media_relay_budget.default_per_user_up_bps, 12345);
+  EXPECT_EQ(parsed.mesh.media_relay_video.serve_levels, std::vector<int>{2});
+  EXPECT_EQ(parsed.mesh.media_relay_video.carry_levels, 1);
+  EXPECT_TRUE(parsed.mesh.media_relay_video.strict);
 }
 
 TEST(ConfigJsonTest, RoundTripsDirectoryProviders) {

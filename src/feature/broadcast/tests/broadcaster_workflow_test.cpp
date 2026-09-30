@@ -58,6 +58,7 @@ protected:
     p.relay.relay = &relay_;
     p.relay.dial = &dial_;
     p.engine = &engine_;
+    p.video_offer = video_offer_;
     return p;
   }
 
@@ -102,6 +103,14 @@ protected:
   std::deque<std::function<void()>> ui_;
   test::QueueOwnerExecutor owner_{ui_};
   OwnerTasks tasks_{owner_};
+  /** What this "device" can produce (B009); tests rebuild the workflow to change it. */
+  MediaRelayVideoOffer video_offer_{{kDefaultVideoLevel}, 1};
+  void RebuildWithOffer(MediaRelayVideoOffer offer) {
+    video_offer_ = std::move(offer);
+    workflow_ = std::make_unique<BroadcasterWorkflow>(Ports());
+    workflow_->SetOutbox(
+        MakeOwnerOutbox<BroadcasterEvent>(tasks_, [this](BroadcasterEvent& event) { workflow_->Handle(event); }));
+  }
   MediaDeviceArbiter devices_{CreateNullMediaDeviceBackend()};
   CallMediaEngine engine_{devices_};
   FakeDial dial_;
@@ -135,10 +144,66 @@ TEST_F(BroadcasterWorkflowTest, GoLivePublishesSealedFramesAndAnnounces) {
   const uint32_t stream = BroadcastPublisherStreamId(kSelf);
   const auto frame = relay_.SentFrames().front();
   EXPECT_EQ(frame.stream_id, stream);
+  EXPECT_EQ(frame.channel_id, kMediaChannelAudio);
+  EXPECT_EQ(frame.channel_type, MediaChannelType::ReliableOrdered) << "the relay QoS class follows the channel";
   auto opened = OpenMediaRelayFrame(key_, BroadcastMediaFrameContext(kProgram, status.join_handle), 1, stream,
                                     static_cast<uint8_t>(frame.channel_id), frame.payload);
   EXPECT_TRUE(opened) << "viewers open it with the broadcast label";
   EXPECT_GE(workflow_->CurrentStatus().frames_sent, 3u);
+}
+
+// B009: a desktop offers both levels and publishes the one the relay answers; the tip names it.
+TEST_F(BroadcasterWorkflowTest, DesktopPublishesTheLevelTheRelayCarries) {
+  RebuildWithOffer({{1, 2}, 1});
+  relay_.video_policies["hop1"] = MediaRelayVideoPolicy{{2}, 1, false};
+  BroadcastLiveRequest request{"topic", kProgram, {"hop1"}};
+  request.video = true;
+  ASSERT_TRUE(workflow_->GoLive(request));
+  Drain();
+  ASSERT_EQ(workflow_->CurrentStatus().phase, Phase::Live) << workflow_->CurrentStatus().error;
+  EXPECT_EQ(relay_.last_quote.video_levels, (std::vector<uint8_t>{1, 2})) << "the device's offer";
+  EXPECT_GT(relay_.last_quote.want_up_bps, 64000) << "the quote asks for the video's uplink too";
+  EXPECT_EQ(workflow_->CurrentStatus().video_level, 2);
+  EXPECT_EQ(engine_.VideoLevel(), 2);
+  const auto live = LiveTips();
+  ASSERT_EQ(live.size(), 1u);
+  EXPECT_EQ(live[0].video_levels, std::vector<int>{2});
+}
+
+TEST_F(BroadcasterWorkflowTest, PhoneOnAHighLevelRelayPublishesItsOwnLevel) {
+  RebuildWithOffer({{1}, 1});
+  relay_.video_policies["hop1"] = MediaRelayVideoPolicy{{2}, 1, false};
+  BroadcastLiveRequest request{"topic", kProgram, {"hop1"}};
+  request.video = true;
+  ASSERT_TRUE(workflow_->GoLive(request));
+  Drain();
+  ASSERT_EQ(workflow_->CurrentStatus().phase, Phase::Live);
+  EXPECT_EQ(workflow_->CurrentStatus().video_level, 1) << "the relay carries the phone's level";
+  ASSERT_EQ(LiveTips().size(), 1u);
+  EXPECT_EQ(LiveTips()[0].video_levels, std::vector<int>{1});
+}
+
+TEST_F(BroadcasterWorkflowTest, AudioOnlyShowOffersNoVideo) {
+  RebuildWithOffer({{1, 2}, 1});
+  ASSERT_TRUE(workflow_->GoLive({"topic", kProgram, {"hop1"}}));
+  Drain();
+  ASSERT_EQ(workflow_->CurrentStatus().phase, Phase::Live);
+  EXPECT_TRUE(relay_.last_quote.video_levels.empty());
+  EXPECT_EQ(workflow_->CurrentStatus().video_level, 0);
+  ASSERT_EQ(LiveTips().size(), 1u);
+  EXPECT_TRUE(LiveTips()[0].video_levels.empty());
+}
+
+TEST_F(BroadcasterWorkflowTest, StrictRelayWithoutTheLevelIsSkippedForTheNext) {
+  RebuildWithOffer({{1}, 1});
+  relay_.video_policies["hop1"] = MediaRelayVideoPolicy{{2}, 1, /*strict=*/true};
+  BroadcastLiveRequest request{"topic", kProgram, {"hop1", "hop2"}};
+  request.video = true;
+  ASSERT_TRUE(workflow_->GoLive(request));
+  Drain();
+  ASSERT_EQ(workflow_->CurrentStatus().phase, Phase::Live);
+  EXPECT_EQ(workflow_->CurrentStatus().hop, "hop2") << "a refusing relay is like an unreachable one";
+  EXPECT_EQ(workflow_->CurrentStatus().video_level, 1);
 }
 
 TEST_F(BroadcasterWorkflowTest, UnreachableFirstRelayFallsBackAndTheTipNamesTheCarrier) {

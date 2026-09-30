@@ -1,11 +1,14 @@
 #pragma once
 
+#include "common/metrics/MetricsRegistry.h"
+
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <functional>
 #include <mutex>
+#include <chrono>
 #include <string>
 #include <thread>
 #include "common/PbrCompat.h"
@@ -48,19 +51,28 @@ public:
   /** Manual mode: run queued tasks (including ones they post) until empty; returns how many ran. */
   size_t RunPending();
   bool HasPending() const;
+  /** Tasks queued and not started (operator metrics). */
+  size_t QueueDepth() const;
   OwnerThreadMode Mode() const { return mode_; }
   const std::string& Name() const { return name_; }
 
 private:
   void ThreadMain();
-  void RunTask(std::function<void()>& task);
+  struct Queued {
+    std::function<void()> task;
+    std::chrono::steady_clock::time_point enqueued;
+  };
+  void RunTask(Queued& queued);
 
   const std::string name_;
   const OwnerThreadMode mode_;
   std::function<void(const std::string&)> name_thread_;
   mutable std::mutex mu_;
   std::condition_variable cv_;
-  std::deque<std::function<void()>> tasks_;
+  std::deque<Queued> tasks_;
+  /** pp_runtime_task_{wait,run}_seconds{owner} (docs/contracts/NODE_METRICS.md). */
+  MetricHistogram* wait_seconds_ = nullptr;
+  MetricHistogram* run_seconds_ = nullptr;
   bool started_ = false;
   bool stopped_ = false;
   std::thread thread_;

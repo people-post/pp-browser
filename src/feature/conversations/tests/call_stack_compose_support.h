@@ -166,7 +166,9 @@ struct StackSide {
   std::unique_ptr<ContactsStore> contacts;
   std::unique_ptr<IdentityStore> identity;
   std::unique_ptr<SqlitePskSessionStore> psk;
-  std::unique_ptr<MeshMediaPlane> mesh_media = std::make_unique<MeshMediaPlane>();  // outlives stack
+  // Outlive the stack (connectivity first: the relay is built on it).
+  std::unique_ptr<MeshConnectivity> connectivity = std::make_unique<MeshConnectivity>();
+  std::unique_ptr<MeshMediaRelay> media_relay = std::make_unique<MeshMediaRelay>(*connectivity);
   std::unique_ptr<CallStack> stack;
   std::unique_ptr<CallUiBackend> ui;
   std::unique_ptr<FakeCallMediaTransport> transport;
@@ -240,7 +242,8 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   deps.sync_mobile_ephemeral_listen = []() {};
   deps.bind_call_control = [&side](CallControlInboundPorts ports) { side.inbound = std::move(ports); };
 
-  deps.mesh_media = side.mesh_media.get();
+  deps.connectivity = side.connectivity.get();
+  deps.media_relay = side.media_relay.get();
   side.stack->BuildSessions(deps);
   ASSERT_TRUE(side.ui->Available());
   ASSERT_TRUE(side.inbound.apply_inbound_control);

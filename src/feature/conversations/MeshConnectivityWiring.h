@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/directory/MeshHopTypes.h"
-#include "domain/mesh/media_plane/MeshMediaPlane.h"
+#include "domain/mesh/connectivity/MeshConnectivity.h"
 #include "domain/people/ContactsStore.h"
 #include "foundation/data/Config.h"
 
@@ -12,8 +12,8 @@
 
 namespace pbr {
 
-/** Product inputs for the neutral mesh media plane's hop candidates (media-client-layers L015). */
-struct MeshMediaPlaneWiringInputs {
+/** Product inputs for the mesh connectivity's hop candidates (media-client-layers L015). */
+struct MeshConnectivityWiringInputs {
   std::function<MeshHost*()> mesh;
   ContactsStore* contacts = nullptr;
   /** Published snapshot: the providers run on the Connectivity owner. */
@@ -27,10 +27,10 @@ struct MeshMediaPlaneWiringInputs {
 };
 
 /**
- * Candidate policy (MeshHopPolicy) as MeshMediaPlane ports: rendezvous surface = contacts ∪
+ * Candidate policy (MeshHopPolicy) as MeshConnectivity ports: rendezvous surface = contacts ∪
  * directory ∪ DHT ∪ effective seeds; bootstrap seeds = configured ∪ directory; punch introducers
  * = contacts, then configured seeds.
  */
-MeshMediaPlaneDeps MakeMeshMediaPlaneDeps(MeshMediaPlaneWiringInputs in);
+MeshConnectivityDeps MakeMeshConnectivityDeps(MeshConnectivityWiringInputs in);
 
 } // namespace pbr

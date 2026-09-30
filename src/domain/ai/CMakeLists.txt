@@ -1,9 +1,12 @@
 pp_browser_add_domain_library(pp_domain_ai
   SOURCES
     LlmClient.cpp
+    MarkdownToRml.cpp
     PromptBuilder.cpp
     PayloadTurnPlanBuilder.cpp
     RmlValidator.cpp
+    SseClient.cpp
+    SseParser.cpp
     StructuredTextParser.cpp
     ToolRegistry.cpp
     ToolResultFormatter.cpp

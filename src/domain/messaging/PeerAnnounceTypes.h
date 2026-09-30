@@ -85,6 +85,8 @@ struct PeerAnnounceTip {
    * hop_peer_id remains the Spine C primary dial target (often l1[0]).
    */
   std::vector<std::string> l1_hop_peer_ids;
+  /** B009: video levels the program publishes on its hop (ascending; empty = audio only). Signed. */
+  std::vector<int> video_levels;
   /**
    * Tip kind (additive). Empty or "program" = schedule/live/end tips.
    * "live_chat" = publisher-signed on-screen overlay tip.

@@ -88,3 +88,17 @@
 **Date:** 2026-09-26
 **Decision:** The broadcaster and viewer become a sibling feature (`feature/broadcast`) sharing only feature-neutral layers with calls (reach, `media_relay` attach, capture / playback pipelines, device leases). The viewer path stops riding the group-joiner topology path; `BroadcastSessionCoordinator` and the call-side broadcast hooks are removed once the viewer workflow lands.
 **Rationale / plan:** [media-client-layers L001–L007](../media-client-layers/DECISIONS.md); phases l1–l6 in [media-client-layers PHASES](../media-client-layers/PHASES.md).
+
+## B009 — Video levels: opaque ordered integers, negotiated per relay at attach
+
+**Date:** 2026-09-30
+**Decision:**
+- **Levels.** Video carries a quality level: an opaque ordered integer (1–15; higher = more bits). Only the order is shared; what a level means (size, fps, bitrate) is the client's. In practice at most two are used. Audio has no level. The track kind and level ride in the media `channel_id` ([MEDIA_CHANNELS.md](../../docs/contracts/MEDIA_CHANNELS.md)).
+- **One target, negotiated levels.** A publisher publishes to one relay the user chose. At attach it **offers** the levels it can produce (a phone: one; a desktop: more) and how many it can send at once; the relay **answers** with the levels it will carry, from its operator policy (levels it serves, how many it carries, strict or not). The publisher encodes exactly the answer.
+- **Fallback over refusal.** When none of the offered levels is one the relay serves, the relay carries the offered level closest to what it serves (a high-level relay still carries a phone's low level) — unless its operator marked it strict, which refuses.
+- **The relay enforces its answer.** A relay drops, at ingest, video frames of levels it did not agree to carry for that participant: an operator sizes relays by the levels they carry.
+- **The tip names what is published.** The Live tip lists the levels actually published (the answer), not the relay's capability: a viewer only ever sees levels that exist. The viewer prefers a level and takes the nearest published one (below first).
+- **No compatibility shims.** Not yet released: the quote carries the offer / answer, and today's single video channel becomes video level 1.
+
+**Rationale:** Relays that carry only some levels stay simple (no per-viewer layer switching) and let operators provision high-level relays separately; the one-target publisher and the automatic answer keep the user's choice to "which relay", never "which levels". Phases: [PHASES § V — Video levels](PHASES.md#v--video-levels-b009).
+

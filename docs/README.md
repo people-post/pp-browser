@@ -64,6 +64,8 @@ Shapes that peers, relay, older clients, or last year’s disk must understand. 
 | [contracts/L4_PROTOCOL_KINDS.md](contracts/L4_PROTOCOL_KINDS.md) | L4 conversation kinds + gate for new `protocol_id`s ([A028](../projects/adp/DECISIONS.md#a028--l4-protocol-kinds--seven-conversation-shapes) / [N030](../projects/p2p-mesh/DECISIONS.md#n030--adopt-l4-protocol-kinds-gate)) | kind taxonomy (wire ids versioned separately) |
 | [contracts/CODED_FAILURE.md](contracts/CODED_FAILURE.md) | Per-module `CodedFailure` escalation; adapter vs wrap; rollout | in-process `Err` ints (not wire) |
 | [contracts/AMP-LINK-ERRORS.md](contracts/AMP-LINK-ERRORS.md) | Stable `PeerLinkManager` / `IChatPeerLinks` link `Err` table | link/port codes only |
+| [contracts/MEDIA_CHANNELS.md](contracts/MEDIA_CHANNELS.md) | Media frame `channel_id`: track kind + video level; relay QoS type; level negotiation | layout (one byte: kind / level) |
+| [contracts/NODE_METRICS.md](contracts/NODE_METRICS.md) | pp-node `/metrics` (Prometheus text): series names, types, labels | series names (stable) |
 
 Configuration howto (Me tab, presets, env): [ops/CONFIGURATION.md](ops/CONFIGURATION.md).
 

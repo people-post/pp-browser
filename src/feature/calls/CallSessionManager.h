@@ -51,6 +51,7 @@ class CallMediaBridge;
  */
 struct CallDirectMediaPorts {
   std::function<std::string()> media_path_kind;
+  std::function<CallLinkCounters()> media_link_counters;
   std::function<void(const std::string& peer_id, const std::string& relay_identity)>
       note_peer_id_relay_mapping;
   std::function<bool()> is_connect_failed;
@@ -94,7 +95,7 @@ public:
   void SetOnRingChangedMesh(RingChangedFn callback);
   using PrefetchPeerReachFn = std::function<void(const std::string& identity)>;
   void SetPrefetchPeerReachability(PrefetchPeerReachFn callback);
-  /** Mesh circuit readiness (park/reserve) — composition projects the shared MeshMediaPlane. */
+  /** Mesh circuit readiness (park/reserve) — composition projects the shared MeshConnectivity. */
   using EnsureCircuitReadyFn = std::function<void()>;
   void SetEnsureCircuitReady(EnsureCircuitReadyFn callback);
   /** AcceptInvite may await circuit-ready before CallAccept. */
@@ -268,6 +269,7 @@ public:
   CallHopHealth HopHealth() const;
   /** 1:1 reach path from CallMediaBridge (direct|punched|circuit); empty if unknown. */
   std::string MediaPathKind() const;
+  CallLinkCounters MediaLinkCounters() const;
   bool IsSfuAttached() const;
 
   Roe<void> SetLocalAudioMuted(bool muted);

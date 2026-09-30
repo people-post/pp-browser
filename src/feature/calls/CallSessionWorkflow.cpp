@@ -1190,7 +1190,7 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
     }
   }
   live_calls_.AdmitInvited(invite->call_id, peers);
-  // Answerer: kick circuit readiness on ring (park owned by the shared MeshMediaPlane).
+  // Answerer: kick circuit readiness on ring (park owned by the shared MeshConnectivity).
   if (host_.reach.ensure_circuit_ready) {
     host_.reach.ensure_circuit_ready();
   }
