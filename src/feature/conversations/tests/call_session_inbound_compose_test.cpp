@@ -301,6 +301,9 @@ protected:
     CallDeliveryPorts delivery;
     delivery.send_user_message = [this](const std::string& thread_id, const std::string& text,
                                         const SendRelayOptions& options) -> Roe<ThreadMessage> {
+      if (fail_sends_) {
+        return Error("offline (test)");
+      }
       ThreadMessage msg;
       msg.id = util::GenerateUuid();
       msg.thread_id = thread_id;
@@ -497,6 +500,8 @@ protected:
   std::unique_ptr<CallSessionManager> csm_;
   std::string local_identity_;
   int sent_control_messages_ = 0;
+  /** Every call-control send fails (e.g. the relay is unreachable). */
+  bool fail_sends_ = false;
   std::atomic<int> inbox_syncs_{0};  // bumped from the deferred-key poll on workers
   std::string last_sent_payload_;
 };
@@ -1645,6 +1650,39 @@ TEST_F(CallSessionInboundComposeTest, StartCallOutboundCreatesSessionAndInvite) 
   EXPECT_GE(sent_control_messages_, 1);
   auto key = keys_->LoadEpochKey(started->call_id, 1);
   ASSERT_TRUE(key && key->has_value());
+}
+
+// PR #240 review: a new call whose invites cannot go out must leave the current call alone, and must
+// not stay behind ringing.
+TEST_F(CallSessionInboundComposeTest, StartCallThatCannotInviteKeepsTheCurrentCall) {
+  ASSERT_TRUE(store_->SetDek(TestDek()));
+  for (const char* id : {"thread-dm-a", "thread-dm-b"}) {
+    Thread thread;
+    thread.id = id;
+    thread.kind = ThreadKind::Direct;
+    thread.title = "Peer";
+    thread.updated_at = util::NowUnixMs();
+    ASSERT_TRUE(store_->UpsertThread(thread));
+  }
+  auto a = csm_->StartCall("thread-dm-a", false, {"account:peer"});
+  ASSERT_TRUE(a) << a.error().message;
+
+  fail_sends_ = true;
+  auto b = csm_->StartCall("thread-dm-b", false, {"account:other"});
+  ASSERT_FALSE(b) << "the invite could not be sent";
+
+  const LiveCall* active = csm_->Live().Active();
+  ASSERT_NE(active, nullptr);
+  EXPECT_EQ(active->Id(), a->call_id) << "the current call is still the one this device is in";
+  auto a_row = sessions_->LoadSession(a->call_id);
+  ASSERT_TRUE(a_row && a_row->has_value());
+  EXPECT_NE((*a_row)->state, CallSessionState::Ended);
+
+  auto sessions = sessions_->ListActiveSessions();
+  ASSERT_TRUE(sessions);
+  for (const CallSession& row : *sessions) {
+    EXPECT_EQ(row.call_id, a->call_id) << "the failed call was left behind: " << row.call_id;
+  }
 }
 
 TEST_F(CallSessionInboundComposeTest, SweepExpiredInvitesAutoLeavesOutboundUnanswered) {

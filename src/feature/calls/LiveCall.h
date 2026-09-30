@@ -51,6 +51,8 @@ enum class LiveCallEndReason {
   Unanswered,
   /** Accepting another call ended this one. */
   Superseded,
+  /** Placing it failed part-way (e.g. the invite could not be sent). */
+  StartFailed,
   /** No media path could be kept (e.g. the group hop never attached). */
   MediaUnavailable,
   /** The app is shutting down. */
@@ -138,6 +140,8 @@ public:
   const LiveCall* TheRing() const;
   /** The most recently closed call, if any is still kept. */
   const LiveCall* LastEnded() const;
+  /** The most recent call the peer ended or declined (news for the user) — later local closes keep it. */
+  const LiveCall* LastEndedByPeer() const;
   /** The call this device shows: the active call, else the ring; null when idle. */
   const LiveCall* Shown() const;
   /** The call being accepted, if any. */
@@ -235,6 +239,7 @@ private:
 
   std::map<std::string, LiveCall> calls_;
   uint64_t media_cancel_gen_ = 0;
+  std::string last_ended_by_peer_;
   std::function<void()> on_changed_;
   CallMediaResources resources_;
   std::vector<std::string> ended_order_;

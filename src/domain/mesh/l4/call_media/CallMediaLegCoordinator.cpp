@@ -1963,14 +1963,16 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
     // Nothing up: dial, then open on the link the next pass resolves. Never open by key — the
     // channel id belongs to one mux, and its link must be the one we wait on and bind (PR #239).
+    // The association being up does not mean a Connected link resolves under the key (it may not yet,
+    // or the key maps elsewhere): report it as not ready, so the next pass goes through the retry
+    // limit, the deadline and the bundle's liveness like any other wait — never a bare re-post.
     runtime->Links().EnsureAssociation(
-        open.peer_key, [this, self = shared_from_this(), open, retries,
-                        on_channel](pp::amp::PeerLinkManager::LinkRoe associated) mutable {
-          if (!associated) {
-            on_channel(pp::amp::LinkHandle{}, pp::amp::PeerLinkManager::ChannelRoe::error(associated.error()));
-            return;
-          }
-          PostIo([this, self, open, retries]() { OpenOutboundControl(open, retries + 1); });
+        open.peer_key, [on_channel](pp::amp::PeerLinkManager::LinkRoe associated) mutable {
+          using Links = pp::amp::PeerLinkManager;
+          on_channel(pp::amp::LinkHandle{},
+                     Links::ChannelRoe::error(associated ? Links::Failure::Of(Links::Err::AssociationNotReady,
+                                                                              "amp call-media: no connected link yet")
+                                                         : associated.error()));
         });
   }
 

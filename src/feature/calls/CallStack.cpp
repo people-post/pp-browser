@@ -151,7 +151,7 @@ void CallStack::PublishUiState() {
       state.last_ring_call_id = ring->Id();
     }
     state.last_error = call_sessions_->LastError();
-    if (const LiveCall* ended = call_sessions_->Live().LastEnded(); ended && ended->EndedByPeer()) {
+    if (const LiveCall* ended = call_sessions_->Live().LastEndedByPeer()) {
       state.remote_ended_call_id = ended->Id();
       state.remote_ended_declined = ended->EndReason() == LiveCallEndReason::DeclinedByPeer;
     }
@@ -702,6 +702,7 @@ void CallStack::ResetSessionsOnOwner() {
     deps_.bind_call_control({});
   }
   call_sessions_.reset();
+  chrome_self_.Invalidate();    // refreshes queued for the dropped sessions (a later bind posts fresh ones)
   OnCallStateChangedOnOwner();  // nothing is shown any more
   PublishUiState();
 }
@@ -712,6 +713,7 @@ void CallStack::Shutdown() {
       call_sessions_->ClearMediaCallbacks();
       call_sessions_->SetOnCallStateChanged({});
     }
+    chrome_self_.Invalidate();  // no chrome refresh after shutdown
   });
   // LeaveCall / DeclineInvite workers must finish while sessions_ / seat still live. From the
   // caller, not the owner: the drain pumps UI and the owners.

@@ -192,10 +192,11 @@ private:
   /** Invitees given, no ring pending, a direct / group thread, payable: the origin thread. */
   Roe<Thread> CheckCanStartCall(const std::string& origin_thread_id, const std::vector<std::string>& invitee_identities,
                                 const std::string& local_identity);
-  /** A new call id + first media key, the session and our Joined row; the LiveCall placed (Deciding). */
-  Roe<CallSession> CreatePlacedSession(const Thread& thread, bool video_allowed,
-                                       const std::vector<std::string>& invitee_identities,
-                                       const std::string& local_identity);
+  /** A new call id + first media key, the session and our Joined row (on disk only). */
+  Roe<CallSession> CreatePlacedSession(const Thread& thread, bool video_allowed, const std::string& local_identity);
+  /** History, planned hop, invite everyone; then end the current call and admit the new one (Deciding). */
+  Roe<void> PlaceCall(CallSession& session, const std::vector<std::string>& invitee_identities,
+                      const std::string& local_identity);
   /** "Call started" in the origin thread's history. */
   Roe<void> AppendCallStarted(const CallSession& session);
   /** Invite every invitee (control thread warmed first), then prefetch their reach. */

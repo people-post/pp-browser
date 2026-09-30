@@ -150,7 +150,7 @@ void CallUiBackend::StartCall(const std::string& origin_thread_id, const bool vi
       reply(UnavailableError());
       return;
     }
-    // The workflow notes OutboundStarted itself (lifecycle ports) before the invite goes out.
+    // The workflow admits the placed call (Deciding, LiveCalls::NoteOutboundStarted) itself.
     reply(calls->StartCall(origin_thread_id, video_allowed, invitee_identities));
   });
 }

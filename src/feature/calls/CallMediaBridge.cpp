@@ -1623,7 +1623,7 @@ bool CallMediaBridge::HopAttachedFor(const std::string& call_id) {
 }
 
 void CallMediaBridge::StopEngineFor(const std::string& call_id, const char* why) {
-  if (CallMediaCoordinator* call_media = call_id.empty() ? nullptr : host_.P2pCallMedia(call_id)) {
+  if (CallMediaCoordinator* call_media = LiveCallMedia(call_id)) {
     call_media->StopEngine(why);
     return;
   }

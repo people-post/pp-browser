@@ -68,8 +68,8 @@ void NoteCapsForIdentity(CallSessionManager& sessions, ContactsStore& contacts,
 CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& contacts, IdentityStore& identity,
                                        CallSessionStore& sessions, CallMediaKeyStore& media_keys,
                                        CallDeliveryPorts delivery, IPskSessionStore& psk_store, CallMediaEngine& media)
-    : store_(store), contacts_(contacts), identity_(identity), sessions_(sessions), media_keys_(media_keys),
-      delivery_(std::move(delivery)), psk_store_(psk_store), media_(media),
+    : contacts_(contacts), sessions_(sessions), media_keys_(media_keys),
+      delivery_(std::move(delivery)), media_(media),
       topology_(sessions, contacts, media),
       control_(store, contacts, identity, sessions, psk_store, delivery_,
                [this]() -> std::optional<std::string> {

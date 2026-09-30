@@ -106,6 +106,8 @@ const char* LiveCallEndReasonName(const LiveCallEndReason reason) {
     return "Unanswered";
   case LiveCallEndReason::Superseded:
     return "Superseded";
+  case LiveCallEndReason::StartFailed:
+    return "StartFailed";
   case LiveCallEndReason::MediaUnavailable:
     return "MediaUnavailable";
   case LiveCallEndReason::Shutdown:
@@ -204,6 +206,11 @@ const LiveCall* LiveCalls::TheRing() const {
 
 const LiveCall* LiveCalls::LastEnded() const {
   return ended_order_.empty() ? nullptr : Find(ended_order_.back());
+}
+
+const LiveCall* LiveCalls::LastEndedByPeer() const {
+  const LiveCall* call = last_ended_by_peer_.empty() ? nullptr : Find(last_ended_by_peer_);
+  return call && call->EndedByPeer() ? call : nullptr;  // re-admitted or pruned: no news
 }
 
 const LiveCall* LiveCalls::Shown() const {
@@ -492,6 +499,9 @@ void LiveCalls::Close(const std::string& call_id, const LiveCallEndReason reason
   call->state_ = LiveCallState::Ended;
   call->end_reason_ = reason;
   ++media_cancel_gen_;  // late path work for the closed call aborts
+  if (call->EndedByPeer()) {
+    last_ended_by_peer_ = call_id;
+  }
   ended_order_.push_back(call_id);
   PruneEnded();
   Changed();

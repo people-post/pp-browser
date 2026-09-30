@@ -100,6 +100,11 @@ TEST(LiveCallsTest, EndedByPeerOnlyForACallThisSideHad) {
   calls.MarkJoined("call:left");
   calls.Close("call:left", LiveCallEndReason::LocalLeave);
   EXPECT_FALSE(calls.Find("call:left")->EndedByPeer());
+  // PR #240 review: a later local close must not hide the peer's end before the UI reads it.
+  ASSERT_NE(calls.LastEndedByPeer(), nullptr);
+  EXPECT_EQ(calls.LastEndedByPeer()->Id(), "call:placed");
+  calls.AdmitPlaced("call:placed", {"account:bob"});  // the same id again: that news is gone
+  EXPECT_EQ(calls.LastEndedByPeer(), nullptr);
 }
 
 // The ring the device shows is the newest call still Ringing or being accepted.

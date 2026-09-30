@@ -331,13 +331,10 @@ private:
   Roe<void> HandleInboundEnded(const std::string& detail_json, const std::string& local_identity);
 
 
-  IThreadStore& store_;
   ContactsStore& contacts_;
-  IdentityStore& identity_;
   CallSessionStore& sessions_;
   CallMediaKeyStore& media_keys_;
   CallDeliveryPorts delivery_;
-  IPskSessionStore& psk_store_;
   CallMediaEngine& media_;
   CallTopologyController topology_;
   /** Before workflow_: the workflow drives it. */

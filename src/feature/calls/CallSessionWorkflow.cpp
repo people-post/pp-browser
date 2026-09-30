@@ -105,18 +105,26 @@ Roe<std::optional<PendingCallInvite>> CallSessionWorkflow::PeekTopPendingInvite(
 }
 
 Roe<void> CallSessionWorkflow::LeaveCallIfActiveExcept(const std::string& keep_call_id) {
-  // Drain any conflicting Joined sessions (normally at most one).
-  for (int i = 0; i < 4; ++i) {
-    auto active = ActiveLocalCall();
-    if (!active) {
-      return active.error();
+  // One active call: leave every session this device is joined in but `keep_call_id` (normally at
+  // most one) — whichever order the store lists them in.
+  auto local = host_.wire.local_relay_identity();
+  if (!local) {
+    return local.error();
+  }
+  auto active = sessions_.ListActiveSessions();
+  if (!active) {
+    return active.error();
+  }
+  for (const CallSession& session : *active) {
+    if (session.call_id == keep_call_id) {
+      continue;
     }
-    if (!active->has_value() || (*active)->call_id == keep_call_id) {
-      return {};
+    auto self = sessions_.FindParticipant(session.call_id, *local);
+    if (!self || !self->has_value() || (*self)->state != CallParticipantState::Joined) {
+      continue;
     }
-    if (auto left = LeaveCall((*active)->call_id, LiveCallEndReason::Superseded); !left) {
-      log().warning << "LeaveCallIfActiveExcept failed for " << (*active)->call_id << ": "
-                    << left.error().message;
+    if (auto left = LeaveCall(session.call_id, LiveCallEndReason::Superseded); !left) {
+      log().warning << "LeaveCallIfActiveExcept failed for " << session.call_id << ": " << left.error().message;
       return left.error();
     }
   }
@@ -181,36 +189,56 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
   if (!thread) {
     return thread.error();
   }
-  // One active call: placing a call ends the one this device is in (as accepting another does) —
-  // after every check that can refuse the new call, so a refused start leaves the current one alone.
-  if (auto cleared = LeaveCallIfActiveExcept({}); !cleared) {
-    return cleared.error();
-  }
-  auto session = CreatePlacedSession(*thread, video_allowed, invitee_identities, *local);
+  auto session = CreatePlacedSession(*thread, video_allowed, *local);
   if (!session) {
     return session.error();
+  }
+  // From here the new call exists on disk: a step that fails ends it, so nothing is left ringing.
+  if (auto placed = PlaceCall(*session, invitee_identities, *local); !placed) {
+    log().warning << "StartCall failed call_id=" << session->call_id << " err=" << placed.error().message;
+    (void)LeaveCall(session->call_id, LiveCallEndReason::StartFailed);
+    return placed.error();
+  }
+  host_.wire.notify_ring_changed();
+  return session;
+}
+
+Roe<void> CallSessionWorkflow::PlaceCall(CallSession& session, const std::vector<std::string>& invitee_identities,
+                                         const std::string& local_identity) {
+  if (auto noted = AppendCallStarted(session); !noted) {
+    return noted.error();
+  }
+  // V050: plan the group hop from everyone invited (not attached until the third join).
+  if (CountDistinctInvitees(invitee_identities, local_identity) >= 2 && host_.hop.plan_hop_for_invitees) {
+    if (auto planned = host_.hop.plan_hop_for_invitees(invitee_identities, local_identity)) {
+      session.planned_hop = std::move(planned);
+      if (auto saved = sessions_.UpsertSession(session); !saved) {
+        return saved.error();
+      }
+    }
   }
   // Offerer: kick circuit readiness early so StartBridge near-leg is warm by Accept.
   if (host_.reach.ensure_circuit_ready) {
     host_.reach.ensure_circuit_ready();
   }
-  if (auto noted = AppendCallStarted(*session); !noted) {
-    return noted.error();
-  }
-  // V050: plan the group hop from everyone invited (not attached until the third join).
-  if (CountDistinctInvitees(invitee_identities, *local) >= 2 && host_.hop.plan_hop_for_invitees) {
-    if (auto planned = host_.hop.plan_hop_for_invitees(invitee_identities, *local)) {
-      session->planned_hop = std::move(planned);
-      if (auto saved = sessions_.UpsertSession(*session); !saved) {
-        return saved.error();
-      }
-    }
-  }
-  if (auto invited = InviteAll(session->call_id, invitee_identities, *local); !invited) {
+  // The invites go out first: a start that cannot reach its invitees leaves the current call alone.
+  // (An accept is handled on this owner thread, after this returns — never before the admission.)
+  if (auto invited = InviteAll(session.call_id, invitee_identities, local_identity); !invited) {
     return invited.error();
   }
-  host_.wire.notify_ring_changed();
-  return session;
+  // One active call: placing a call ends the one this device is in (as accepting another does).
+  if (auto cleared = LeaveCallIfActiveExcept(session.call_id); !cleared) {
+    return cleared.error();
+  }
+  std::vector<std::string> peers;
+  for (const std::string& invitee : invitee_identities) {
+    if (invitee != local_identity) {
+      peers.push_back(invitee);
+    }
+  }
+  live_calls_.AdmitPlaced(session.call_id, peers);
+  live_calls_.NoteOutboundStarted(session.call_id);  // Deciding: no path planner armed yet
+  return {};
 }
 
 Roe<Thread> CallSessionWorkflow::CheckCanStartCall(const std::string& origin_thread_id,
@@ -241,7 +269,6 @@ Roe<Thread> CallSessionWorkflow::CheckCanStartCall(const std::string& origin_thr
 }
 
 Roe<CallSession> CallSessionWorkflow::CreatePlacedSession(const Thread& thread, const bool video_allowed,
-                                                          const std::vector<std::string>& invitee_identities,
                                                           const std::string& local_identity) {
   const std::string call_id = GenerateCallId();
   auto media_key = key_exchange_.Mint(call_id, 1);
@@ -273,15 +300,6 @@ Roe<CallSession> CallSessionWorkflow::CreatePlacedSession(const Thread& thread, 
   if (auto saved = sessions_.UpsertParticipant(self); !saved) {
     return saved.error();
   }
-  std::vector<std::string> peers;
-  for (const std::string& invitee : invitee_identities) {
-    if (invitee != local_identity) {
-      peers.push_back(invitee);
-    }
-  }
-  live_calls_.AdmitPlaced(call_id, peers);
-  // Deciding before Invite / circuit warm so an Accept cannot race past it.
-  live_calls_.NoteOutboundStarted(call_id);
   return session;
 }
 
