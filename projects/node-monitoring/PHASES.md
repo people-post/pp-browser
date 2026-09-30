@@ -15,7 +15,8 @@
 - [x] Amp links: active, connects by path / direction, drops by reason and stage (failed attempts), path changes
 - [x] Reachability verdict and probe signals; punches started (kind, result) and served (role)
 - [x] Circuit relay: requests by op / result, tunnels bridged / failed, setup latency, open tunnels, reservations
-- [ ] Needs pp-cpp-amp stats: per-link RTT / loss / bytes, open channels by protocol, bytes a circuit bridge relays
+- [x] Amp traffic (pp-cpp-amp `Endpoint::Stats`): datagrams / bytes, rejects, reliable sent / retransmitted / lost, RTT histogram; circuit bridge bytes (`ChannelBridge::ForwardedBytes`)
+- [ ] Open channels by protocol (needs a mux-wide count in pp-cpp-amp)
 - [ ] Rendezvous parking state (a pp-browser concern: `MeshConnectivity` — with M3)
 
 ## M3 — pp-browser UI snapshot

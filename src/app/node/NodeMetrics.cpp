@@ -58,6 +58,19 @@ void CollectMesh(MetricsRegistry& r, MeshHost& mesh) {
     size_t links = 0;
     amp->Runtime().WithIoLock([&]() { links = amp->Runtime().Links().CountLinks(); });
     r.Gauge("pp_link_active", "Amp links in the link table.").Set(static_cast<double>(links));
+    const pp::adp::EndpointStats traffic = amp->Runtime().GetEndpoint().Stats();  // atomics: any thread
+    const char* datagrams = "Amp UDP datagrams, by direction.";
+    const char* bytes = "Amp UDP datagram bytes, by direction.";
+    const char* reliable = "Amp reliable packets: first sends, retransmits, and given up after the retry cap.";
+    r.Counter("pp_amp_datagrams_total", datagrams, {{"direction", "sent"}}).Mirror(traffic.tx_datagrams);
+    r.Counter("pp_amp_datagrams_total", datagrams, {{"direction", "received"}}).Mirror(traffic.rx_datagrams);
+    r.Counter("pp_amp_bytes_total", bytes, {{"direction", "sent"}}).Mirror(traffic.tx_bytes);
+    r.Counter("pp_amp_bytes_total", bytes, {{"direction", "received"}}).Mirror(traffic.rx_bytes);
+    r.Counter("pp_amp_datagrams_rejected_total", "Received datagrams no association took (bad HMAC / decode).")
+        .Mirror(traffic.rx_rejected);
+    r.Counter("pp_amp_reliable_packets_total", reliable, {{"event", "sent"}}).Mirror(traffic.reliable_sent);
+    r.Counter("pp_amp_reliable_packets_total", reliable, {{"event", "retransmitted"}}).Mirror(traffic.retransmits);
+    r.Counter("pp_amp_reliable_packets_total", reliable, {{"event", "lost"}}).Mirror(traffic.reliable_lost);
   }
 
   if (CircuitRelayServer* server = mesh.AmpCircuitServer()) {
@@ -67,6 +80,8 @@ void CollectMesh(MetricsRegistry& r, MeshHost& mesh) {
     r.Gauge("pp_circuit_relay_tunnels", tunnels, {{"state", "setup"}}).Set(static_cast<double>(load.pending_tunnels));
     r.Gauge("pp_circuit_relay_reservations", "Answerers parked on this relay.")
         .Set(static_cast<double>(load.reservations));
+    r.Counter("pp_circuit_relay_bytes_total", "Bytes spliced through circuit relay bridges (both directions).")
+        .Mirror(load.bytes_relayed);
   }
 
   if (MediaRelayServer* server = mesh.AmpMediaRelayServer()) {

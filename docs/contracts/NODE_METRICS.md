@@ -32,6 +32,11 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_media_relay_dropped_frames_total` | counter | `reason` = `stale` \| `video_level` | Stale latest-lossy frames; video of a level not agreed for the sender ([MEDIA_CHANNELS](MEDIA_CHANNELS.md)) |
 | `pp_media_relay_quotes_total` | counter | `result` = `issued` \| `refused_admission` \| `refused_video_level` \| `refused_busy` | |
 | `pp_media_relay_attaches_total` | counter | `result` = `ok` \| `refused` | |
+| `pp_amp_datagrams_total` | counter | `direction` = `sent` \| `received` | Amp UDP datagrams |
+| `pp_amp_bytes_total` | counter | `direction` | Amp UDP datagram bytes |
+| `pp_amp_datagrams_rejected_total` | counter | | Received datagrams no association took (bad HMAC / decode) |
+| `pp_amp_reliable_packets_total` | counter | `event` = `sent` \| `retransmitted` \| `lost` | `lost` = given up after the retry cap |
+| `pp_amp_rtt_seconds` | histogram | | Round trips: acks of never-retransmitted reliable packets (buckets 0.005 … 2.5) |
 | `pp_link_active` | gauge | | Amp links in the link table |
 | `pp_link_connects_total` | counter | `path` = `direct` \| `punched` \| `carrier`; `direction` = `outbound` \| `inbound` | Links that connected |
 | `pp_link_drops_total` | counter | `reason` ([AMP-LINK-ERRORS](AMP-LINK-ERRORS.md) drop reasons, e.g. `connection-dead`, `handshake-timeout`); `stage` = `connected` \| `attempt` | `attempt` = never connected (a failed dial) |
@@ -45,6 +50,7 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_circuit_relay_setup_seconds` | histogram | | Request → bridged (buckets 0.05 … 10) |
 | `pp_circuit_relay_tunnels` | gauge | `state` = `bridged` \| `setup` | Open now |
 | `pp_circuit_relay_reservations` | gauge | | Answerers parked here |
+| `pp_circuit_relay_bytes_total` | counter | | Bytes spliced through bridges, both directions |
 | `pp_dht_records` | gauge | | Records cached |
 | `pp_dht_inbound_requests_total` | counter | `op` = `find_peer` \| `store` | Served |
 | `pp_dht_inbound_rate_limited_total` | counter | | Refused by the per-peer limit |
