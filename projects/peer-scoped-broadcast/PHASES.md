@@ -68,7 +68,7 @@ Locks [B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-re
 
 - [x] V1 — Channel convention: track kind + level in `channel_id` (contract + helpers); calls video = level 1; broadcast frames carry the lossy / ordered channel type
 - [x] V2 — Relay video policy (levels served, how many carried, strict) + the negotiation function (pure, tested); offer / answer in the quote; the relay drops frames of levels it did not agree to carry
-- [ ] V3 — Broadcaster offers its levels (device class), publishes video at the answered level; the Live tip lists the published levels
+- [x] V3 — Broadcaster offers its levels (device class), publishes video at the answered level; the Live tip lists the published levels
 - [ ] V4 — Viewer prefers a level, takes the nearest published one, subscribes to its video
 - [ ] V5 — Desktop publishes two levels at once (a second encoder) when the answer carries two
 - [ ] Relay capability advertised for the user's relay choice (texts / UI later)

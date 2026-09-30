@@ -435,4 +435,24 @@ TEST(PeerAnnounceL1HopPeerIdsTest, JsonAndSignRoundTripAdditive) {
   EXPECT_EQ(canonical.find("l1_hop_peer_ids="), std::string::npos);
 }
 
+// B009: the levels a program publishes travel in the tip and are signed — a viewer trusts them.
+TEST(PeerAnnounceVideoLevelsTest, JsonRoundTripAndSigned) {
+  auto keys = MlDsa::GenerateKeyPair();
+  ASSERT_TRUE(keys);
+  auto tip = SampleTip("topic-levels");
+  tip.video_levels = {1, 2};
+  auto signed_tip = SignPeerAnnounceTip(tip, keys->secret_key);
+  ASSERT_TRUE(signed_tip) << signed_tip.error().message;
+
+  auto json = EncodePeerAnnounceTipJson(*signed_tip);
+  ASSERT_TRUE(json);
+  auto decoded = DecodePeerAnnounceTipJson(*json);
+  ASSERT_TRUE(decoded) << decoded.error().message;
+  EXPECT_EQ(decoded->video_levels, (std::vector<int>{1, 2}));
+  ASSERT_TRUE(VerifyPeerAnnounceTip(*decoded, keys->public_key));
+
+  decoded->video_levels = {2};
+  EXPECT_FALSE(VerifyPeerAnnounceTip(*decoded, keys->public_key)) << "levels are covered by the signature";
+}
+
 } // namespace pbr

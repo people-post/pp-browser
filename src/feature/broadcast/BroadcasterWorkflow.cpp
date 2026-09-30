@@ -1,6 +1,7 @@
 #include "feature/broadcast/BroadcasterWorkflow.h"
 
 #include "domain/mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
+#include "domain/media/VideoLevelProfile.h"
 #include "domain/messaging/BroadcastMedia.h"
 
 #include "common/Logger.h"
@@ -154,6 +155,7 @@ Roe<void> BroadcasterWorkflow::GoLive(BroadcastLiveRequest request) {
   hops_ = std::move(hops);
   next_hop_ = 0;
   media_key_ = std::move(key);
+  video_wanted_ = request.video;
 
   self_peer_id_ = ports_.local_peer_id ? ports_.local_peer_id() : std::string();
   const std::string& self = self_peer_id_;
@@ -217,6 +219,9 @@ void BroadcasterWorkflow::Teardown(bool announce_end) {
   }
   announced_live_ = false;
   announced_hop_.clear();
+  video_level_ = 0;
+  announced_video_level_ = 0;
+  status_.video_level = 0;
   if (key_published_ && ports_.clear_program_key) {
     ports_.clear_program_key(status_.program_id, status_.join_handle);
   }
@@ -233,6 +238,9 @@ void BroadcasterWorkflow::Announce(PeerAnnounceState state, std::function<void(R
   draft.program_id = status_.program_id;
   draft.state = state;
   draft.join_handle = status_.join_handle;
+  if (state == PeerAnnounceState::Live && video_level_ != 0) {
+    draft.video_levels = {int{video_level_}};
+  }
   if (state == PeerAnnounceState::Live) {
     draft.hop_peer_id = status_.hop;
     for (const auto& hop : hops_) {
@@ -268,6 +276,19 @@ void BroadcasterWorkflow::AttachNext(const std::string& why) {
   request.quote.participants = 1;
   request.quote.want_up_bps = kAudioUpBps;
   request.quote.want_down_bps = 0;
+  // B009 offer: the levels this device can produce (none when audio only); the relay answers.
+  request.quote.video_levels.clear();
+  if (video_wanted_) {
+    request.quote.video_levels = ports_.video_offer.levels;
+    request.quote.video_parallel = ports_.video_offer.parallel;
+    uint8_t top = 0;
+    for (const uint8_t level : ports_.video_offer.levels) {
+      top = std::max(top, level);
+    }
+    if (top != 0) {
+      request.quote.want_up_bps += ProfileForVideoLevel(top).target_bps;
+    }
+  }
 
   MediaRelayAttachHooks hooks;
   hooks.accept_quote = [](const MediaRelayQuote& quote) -> Roe<void> {
@@ -299,11 +320,15 @@ void BroadcasterWorkflow::OnAttached(const std::string& hop, Roe<MediaRelayAttac
     return;
   }
   attached_ = true;
+  ApplyVideoLevels(attached->video_levels);
   StartPublishing(hop);
 }
 
 void BroadcasterWorkflow::StartPublishing(const std::string& hop) {
   if (!engine_started_) {
+    if (video_level_ != 0) {
+      ports_.engine->SetVideoLevel(video_level_);
+    }
     auto sender = sender_;
     if (auto started = ports_.engine->Start(status_.join_handle, CallMediaEngine::SessionSpec::CaptureOnly(),
                                             [sender](const CallMediaEngine::SfuPacket& packet) { sender->Send(packet); });
@@ -312,6 +337,12 @@ void BroadcasterWorkflow::StartPublishing(const std::string& hop) {
       return;
     }
     engine_started_ = true;
+    if (video_level_ != 0) {
+      if (auto camera = ports_.engine->SetCameraEnabled(true); !camera) {
+        BroadcasterLog().warning << "camera for level " << int{video_level_} << ": " << camera.error().message
+                                 << " — audio continues";
+      }
+    }
   }
   IMediaRelayClient* relay = ports_.relay.relay;
   if (lost_observer_ == 0) {
@@ -323,18 +354,40 @@ void BroadcasterWorkflow::StartPublishing(const std::string& hop) {
   sender_->live.store(true, std::memory_order_release);
   const bool first = !announced_live_;
   SetPhase(Phase::Live, hop);
-  if (hop != announced_hop_) {
+  if (hop != announced_hop_ || video_level_ != announced_video_level_) {
     // Tickets minted from now on point at the hop actually carrying the show.
     ports_.put_program_key(status_.program_id, status_.join_handle,
                            BroadcastProgramKey{self_peer_id_, media_key_, 1, hop});
     // Marked announced now: an End before the result still publishes Ended (after Live, FIFO).
     announced_live_ = true;
     announced_hop_ = hop;
+    announced_video_level_ = video_level_;
     Announce(PeerAnnounceState::Live, [outbox = outbox_, show = show_, first](Roe<void> announced) {
       outbox.Emit(broadcaster_event::Announced{show, first, std::move(announced)});
     });
   }
   consecutive_losses_ = 0;
+}
+
+void BroadcasterWorkflow::ApplyVideoLevels(const std::vector<uint8_t>& carried) {
+  // One encoder: publish the highest level the relay carries (V5 sends two when it carries two).
+  const uint8_t level = carried.empty() ? 0 : carried.back();
+  if (level == video_level_) {
+    return;
+  }
+  BroadcasterLog().info << "video level " << int{video_level_} << " -> " << int{level}
+                        << " program=" << status_.program_id;
+  video_level_ = level;
+  status_.video_level = level;
+  if (!engine_started_ || !ports_.engine) {
+    return;  // StartPublishing applies it
+  }
+  // A new relay answered another level (re-attach): reopen the camera at it.
+  (void)ports_.engine->SetCameraEnabled(false);
+  if (level != 0) {
+    ports_.engine->SetVideoLevel(level);
+    (void)ports_.engine->SetCameraEnabled(true);
+  }
 }
 
 void BroadcasterWorkflow::OnAnnounced(const bool first, Roe<void> announced) {

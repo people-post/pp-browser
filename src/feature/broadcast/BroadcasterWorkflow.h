@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/media/CallMediaEngine.h"
+#include "domain/mesh/l4/media_relay/MediaRelayVideoLevels.h"
 #include "domain/mesh/media_plane/MediaRelayAttach.h"
 #include "domain/messaging/PeerAnnounceTypes.h"
 #include "foundation/runtime/OwnerOutbox.h"
@@ -25,6 +26,8 @@ struct BroadcastLiveRequest {
   std::string program_id;
   /** media_relay hops in preference order; the rest become the tip's L1 hints. */
   std::vector<std::string> hops;
+  /** Publish camera video too (B009: at the level the relay answers); false = audio only. */
+  bool video = false;
 };
 
 /** What the ticket server needs to mint viewer tickets for the live program. */
@@ -44,6 +47,8 @@ struct BroadcastTipDraft {
   std::string join_handle;
   std::string hop_peer_id;
   std::vector<std::string> l1_hop_peer_ids;
+  /** B009: the video levels published (empty = audio only). */
+  std::vector<int> video_levels;
 };
 
 /** What the broadcaster needs from the process (wired by the app; faked in gtests). */
@@ -63,8 +68,10 @@ struct BroadcasterPorts {
   std::function<void(const BroadcastTipDraft& draft, std::function<void(Roe<void>)> on_done)> announce;
   MediaRelayAttachPorts relay;
   std::function<std::string(const std::string& hop_peer_id)> hop_multiaddr;
-  /** Capture-only session (mic lease). */
+  /** Capture-only session (mic lease; camera lease when publishing video). */
   CallMediaEngine* engine = nullptr;
+  /** B009: the video levels this device can produce, and how many at once (a phone: one level). */
+  MediaRelayVideoOffer video_offer{{kDefaultVideoLevel}, 1};
 };
 
 /** What the broadcaster reports to itself through its runner (BroadcastHub); `show` names the show. */
@@ -119,6 +126,8 @@ public:
     std::string error;
     int reattaches = 0;
     uint64_t frames_sent = 0;
+    /** The video level being published; 0 = audio only. */
+    int video_level = 0;
   };
 
   static constexpr int kMaxConsecutiveLosses = 3;
@@ -155,6 +164,8 @@ private:
   void Announce(PeerAnnounceState state, std::function<void(Roe<void>)> on_done);
   void OnSessionEnded(MediaRelayClientLoss loss);
   void OnAnnounced(bool first, Roe<void> announced);
+  /** Adopt the level the relay answered (the highest: one encoder); reopen the camera if it changed. */
+  void ApplyVideoLevels(const std::vector<uint8_t>& carried);
   /** A new show (or none): results of the previous one are stale from here on. */
   void NewShow();
 
@@ -179,6 +190,10 @@ private:
   bool key_published_ = false;
   bool announced_live_ = false;
   std::string announced_hop_;
+  bool video_wanted_ = false;
+  /** B009: the level published now (0 = audio only), and the one the Live tip announced. */
+  uint8_t video_level_ = 0;
+  uint8_t announced_video_level_ = 0;
   uint64_t lost_observer_ = 0;
   int consecutive_losses_ = 0;
 };

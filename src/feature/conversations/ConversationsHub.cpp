@@ -678,6 +678,7 @@ void ConversationsHub::RebuildBroadcast() {
     draft.join_handle = tip.join_handle;
     draft.hop_peer_id = tip.hop_peer_id;
     draft.l1_hop_peer_ids = tip.l1_hop_peer_ids;
+    draft.video_levels = tip.video_levels;
     auto published = messaging->PublishAnnounceTip(draft);
     if (!published) {
       return published.error();

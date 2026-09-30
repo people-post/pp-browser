@@ -28,6 +28,8 @@ public:
     std::string hop_peer_id;
     /** B007 L1 hints (whitelist ∩ online); omit-empty on wire. */
     std::vector<std::string> l1_hop_peer_ids;
+    /** B009: the video levels the program publishes (empty = audio only). */
+    std::vector<int> video_levels;
     std::string body;
     std::string content_id_hex;
     /** Empty/program = schedule/live/end; live_chat = overlay tip. */
