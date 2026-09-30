@@ -11,8 +11,9 @@ namespace pbr {
 
 /**
  * Tests play the parent: a component's events come straight back to `handle` through the calls
- * owner (posted / delayed like the product queue). Declare it after the component it serves, so it
- * goes first and drops what is still queued.
+ * owner (posted / delayed like the product queue). Outbox copies reach the loopback only through
+ * its tasks' shared handle, so a component that outlives the loopback (or cancels in its destructor
+ * after it) is harmless: queued events drop and later calls are no-ops.
  */
 template <typename Event>
 class CallsLoopbackOutbox {

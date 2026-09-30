@@ -6,8 +6,39 @@
 
 namespace pbr {
 
+OwnerTasks::OwnerTasks(OwnerExecutor& executor) : executor_(executor), handle_(std::make_shared<Handle>()) {
+  handle_->tasks_ = this;
+}
+
 OwnerTasks::~OwnerTasks() {
+  Close();
+}
+
+void OwnerTasks::Close() {
+  {
+    std::lock_guard<std::recursive_mutex> lock(handle_->mu_);  // waits out a handle call in flight
+    handle_->tasks_ = nullptr;
+  }
   DropPending();
+}
+
+void OwnerTasks::Handle::Post(std::function<void()> task) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  if (tasks_) {
+    tasks_->Post(std::move(task));
+  }
+}
+
+OwnerExecutor::TimerId OwnerTasks::Handle::After(const std::chrono::milliseconds delay, std::function<void()> task) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  return tasks_ ? tasks_->After(delay, std::move(task)) : 0;
+}
+
+void OwnerTasks::Handle::Cancel(OwnerExecutor::TimerId id) {
+  std::lock_guard<std::recursive_mutex> lock(mu_);
+  if (tasks_) {
+    tasks_->Cancel(id);
+  }
 }
 
 void OwnerTasks::Post(std::function<void()> task) {

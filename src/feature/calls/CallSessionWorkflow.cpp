@@ -24,8 +24,9 @@ CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, CallSessionStore& 
 
 CallSessionWorkflow::~CallSessionWorkflow() = default;
 
-void CallSessionWorkflow::DropWaitingSteps() {
+void CallSessionWorkflow::DropFollowUps() {
   steps_.DropAll();
+  ++followup_epoch_;
 }
 
 void CallSessionWorkflow::SetHostPorts(HostPorts ports) {
@@ -778,7 +779,7 @@ void CallSessionWorkflow::ArmMediaAfterAccept(CallSession& row, const std::strin
 void CallSessionWorkflow::PostRosterAfterAccept(const std::string& call_id, const std::string& inviter,
                                                 const std::string& local_identity) {
   // Roster / prefetch as the owner's next event, after Accept has reported (no Accept hang UX).
-  outbox_.Emit(workflow_event::RosterAfterAccept{call_id, inviter, local_identity});
+  outbox_.Emit(workflow_event::RosterAfterAccept{call_id, inviter, local_identity, followup_epoch_});
 }
 
 void CallSessionWorkflow::SendRosterAfterAccept(const workflow_event::RosterAfterAccept& after) {
@@ -824,9 +825,13 @@ void CallSessionWorkflow::Handle(WorkflowEvent& event) {
       [this](auto& e) {
         using E = std::decay_t<decltype(e)>;
         if constexpr (std::is_same_v<E, workflow_event::RosterAfterAccept>) {
-          SendRosterAfterAccept(e);
+          if (e.epoch == followup_epoch_) {
+            SendRosterAfterAccept(e);
+          }
         } else if constexpr (std::is_same_v<E, workflow_event::RosterAfterRemoteAccept>) {
-          SendRosterAfterRemoteAccept(e);
+          if (e.epoch == followup_epoch_) {
+            SendRosterAfterRemoteAccept(e);
+          }
         } else if constexpr (std::is_same_v<E, workflow_event::Continue>) {
           steps_.Run(e.step.id, e.step.value.get());
         } else {
@@ -1477,7 +1482,7 @@ void CallSessionWorkflow::StartMediaAfterRemoteAccept(const CallAcceptDetail& ac
     host_.duplex.schedule_start_direct(accept.call_id, identity, true);
   }
   // Prefetch + roster fan-out as the next event, after media kickoff — avoid starving MediaKey/Connect.
-  outbox_.Emit(workflow_event::RosterAfterRemoteAccept{accept.call_id, identity, local_identity});
+  outbox_.Emit(workflow_event::RosterAfterRemoteAccept{accept.call_id, identity, local_identity, followup_epoch_});
 }
 
 Roe<void> CallSessionWorkflow::HandleInboundDecline(const std::string& detail_json,

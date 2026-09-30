@@ -70,9 +70,9 @@ CallMediaInboundPorts CallMediaBridge::MakeInboundPorts() {
   // Offerer often dials before the relay delivers CallMediaKey — keep inbox sync running.
   ports.request_key = [this](const std::string& /*call_id*/) { host_.P2pRequestInboxSync(); };
   ports.on_accepted = [this](const CallMediaInboundHello& hello) {
-    // Identity binding as its own event, queued ahead of any media or connected callback of this
-    // bundle (FIFO), so frames never see a stale stream id.
-    outbox_.Emit(direct_event::InboundPeer{hello.call_id, hello.peer_id});
+    // On the owner, before the bundle's callbacks exist: bind the stream now. Media is read on the
+    // transport's I/O, so the first frame must already see this call's stream (never the last one's).
+    BindInboundPeer(hello.call_id, hello.peer_id);
     return MakeBundleCallbacks(hello.call_id, /*fixed_stream=*/0, "Inbound call-media");
   };
   return ports;
@@ -416,8 +416,6 @@ void CallMediaBridge::Handle(DirectPathEvent& event) {
           }
         } else if constexpr (std::is_same_v<E, direct_event::RecoveryGraceOver>) {
           FailUnlessDirectRecovered(e.call_id, e.error, /*grace_used=*/true);
-        } else if constexpr (std::is_same_v<E, direct_event::InboundPeer>) {
-          BindInboundPeer(e.call_id, e.peer_id);
         } else if constexpr (std::is_same_v<E, direct_event::BundleConnected>) {
           log().info << e.label << " connected call_id=" << e.call_id;
           CommitDirectConnected(e.call_id);
@@ -1246,6 +1244,7 @@ void CallMediaBridge::ResetDirectSessionState(const std::string& call_id, const 
   media_peer_identity_ = peer_identity;
   session_offerer_ = offerer;
   direct_connected_at_ms_ = 0;
+  // Otherwise keep what an inbound hello of this session bound; stop / teardown clear it between calls.
   if (peer_identity.rfind("account:", 0) == 0) {
     receive_->remote_stream.store(PublisherStreamIdForIdentity(peer_identity), std::memory_order_release);
   }
@@ -1567,6 +1566,7 @@ void CallMediaBridge::StopMeshMedia(const std::string& call_id) {
 }
 
 void CallMediaBridge::StopMeshMediaOnUi(const std::string& call_id) {
+  receive_->remote_stream.store(0, std::memory_order_release);  // the next call binds its own
   // Abort any Connect sequence before Detach — LeaveCall can run while Connect is mid-dial.
   reach_.AbortCircuitAttempts();
   Apply(CallDirectPlannerEvent::Stop, call_id, media_peer_identity_);
@@ -1693,6 +1693,7 @@ void CallMediaBridge::NotePeerIdRelayMapping(const std::string& peer_id,
 }
 
 void CallMediaBridge::PrepareForTeardown(int /*timeout_ms*/) {
+  receive_->remote_stream.store(0, std::memory_order_release);
   stopping_.store(true, std::memory_order_release);
   reach_.AbortCircuitAttempts();
   Apply(CallDirectPlannerEvent::Stop, media_call_id_, media_peer_identity_);

@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <functional>
+#include <memory>
 #include <optional>
 #include "common/PbrCompat.h"
 
@@ -21,6 +22,25 @@ public:
   using Handler = std::function<void(CallStackEvent&)>;
   using Clock = std::chrono::steady_clock;
 
+  /**
+   * The loop for whatever may outlive it (I/O completions, hooks installed on other owners): after
+   * `Close`, its calls are no-ops. Copyable; any thread.
+   */
+  class Ref {
+  public:
+    void Enqueue(CallStackEvent event) const;
+    /** 0 once closed. */
+    OwnerExecutor::TimerId After(std::chrono::milliseconds delay, CallStackEvent event) const;
+    void Cancel(OwnerExecutor::TimerId id) const;
+
+  private:
+    friend class CallsLoop;
+    Ref(std::shared_ptr<OwnerTasks::Handle> tasks, CallsLoop* loop) : tasks_(std::move(tasks)), loop_(loop) {}
+    std::shared_ptr<OwnerTasks::Handle> tasks_;
+    CallsLoop* loop_;  // dereferenced only inside the loop's own tasks (dropped with it)
+  };
+
+
   CallsLoop(OwnerExecutor& executor, Handler handler) : tasks_(executor), handler_(std::move(handler)) {}
 
   /** From any thread. */
@@ -30,8 +50,11 @@ public:
   /** `event` after `delay` (owner); 0 when not scheduled. */
   OwnerExecutor::TimerId After(std::chrono::milliseconds delay, CallStackEvent event);
   void Cancel(OwnerExecutor::TimerId& id) { tasks_.Cancel(id); }
-  /** Drop what is queued or scheduled (teardown); later events run normally. */
+  /** Drop what is queued or scheduled; later events run normally. */
   void DropPending() { tasks_.DropPending(); }
+  /** Teardown, on the owner: drop everything and refuse more (refs included). */
+  void Close() { tasks_.Close(); }
+  Ref Share() { return Ref(tasks_.Share(), this); }
 
 private:
   void Handle(CallStackEvent& event);

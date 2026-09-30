@@ -62,6 +62,20 @@ OwnerExecutor::TimerId CallsLoop::After(const std::chrono::milliseconds delay, C
   return tasks_.After(delay, [this, event = std::make_shared<CallStackEvent>(std::move(event))]() { Handle(*event); });
 }
 
+void CallsLoop::Ref::Enqueue(CallStackEvent event) const {
+  tasks_->Post([loop = loop_, event = std::make_shared<CallStackEvent>(std::move(event))]() { loop->Handle(*event); });
+}
+
+OwnerExecutor::TimerId CallsLoop::Ref::After(const std::chrono::milliseconds delay, CallStackEvent event) const {
+  return tasks_->After(delay, [loop = loop_, event = std::make_shared<CallStackEvent>(std::move(event))]() {
+    loop->Handle(*event);
+  });
+}
+
+void CallsLoop::Ref::Cancel(const OwnerExecutor::TimerId id) const {
+  tasks_->Cancel(id);
+}
+
 void CallsLoop::Handle(CallStackEvent& event) {
   CallsLoopLog().debug << "event " << CallStackEventName(event);
   if (handler_) {

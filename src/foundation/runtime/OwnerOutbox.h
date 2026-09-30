@@ -72,19 +72,21 @@ private:
 
 /**
  * A runner's outbox for one child: events come back to `handle` on the owner, posted / delayed
- * through `tasks` (dropped with it). `tasks` must outlive the child's use of the outbox.
+ * through `tasks`. Copies may outlive the runner (held by I/O completions): they reach `tasks`
+ * only through its shared handle, so once `tasks` is closed they drop everything.
  */
 template <typename Event>
 OwnerOutbox<Event> MakeOwnerOutbox(OwnerTasks& tasks, std::function<void(Event&)> handle) {
   auto run = std::make_shared<const std::function<void(Event&)>>(std::move(handle));
+  auto door = tasks.Share();
   typename OwnerOutbox<Event>::Sink sink;
-  sink.emit = [&tasks, run](Event event) {
-    tasks.Post([run, event = std::make_shared<Event>(std::move(event))]() { (*run)(*event); });
+  sink.emit = [door, run](Event event) {
+    door->Post([run, event = std::make_shared<Event>(std::move(event))]() { (*run)(*event); });
   };
-  sink.after = [&tasks, run](std::chrono::milliseconds delay, Event event) {
-    return tasks.After(delay, [run, event = std::make_shared<Event>(std::move(event))]() { (*run)(*event); });
+  sink.after = [door, run](std::chrono::milliseconds delay, Event event) {
+    return door->After(delay, [run, event = std::make_shared<Event>(std::move(event))]() { (*run)(*event); });
   };
-  sink.cancel = [&tasks](OwnerExecutor::TimerId id) { tasks.Cancel(id); };
+  sink.cancel = [door](OwnerExecutor::TimerId id) { door->Cancel(id); };
   return OwnerOutbox<Event>(std::move(sink));
 }
 

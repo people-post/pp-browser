@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <unordered_set>
 #include "common/PbrCompat.h"
@@ -39,10 +40,27 @@ public:
  * One object's work on an owner thread. Everything it posts or schedules is dropped once the object
  * is gone (or DropPending ran): no per-class alive flags. Any thread may post (results arriving from
  * I/O or workers) or cancel; the tasks and timers run on the owner.
+ *
+ * Whatever may outlive the object (an I/O completion, a callback held by another owner) holds a
+ * `Handle` from `Share()`, never the object itself: once the tasks are closed, the handle's calls
+ * are no-ops.
  */
 class OwnerTasks {
 public:
-  explicit OwnerTasks(OwnerExecutor& executor) : executor_(executor) {}
+  class Handle {
+  public:
+    void Post(std::function<void()> task);
+    /** 0 once closed. */
+    OwnerExecutor::TimerId After(std::chrono::milliseconds delay, std::function<void()> task);
+    void Cancel(OwnerExecutor::TimerId id);
+
+  private:
+    friend class OwnerTasks;
+    std::recursive_mutex mu_;  // an executor with no owner may run a task inline, which may post again
+    OwnerTasks* tasks_ = nullptr;
+  };
+
+  explicit OwnerTasks(OwnerExecutor& executor);
   ~OwnerTasks();
   OwnerTasks(const OwnerTasks&) = delete;
   OwnerTasks& operator=(const OwnerTasks&) = delete;
@@ -55,6 +73,10 @@ public:
   void Cancel(OwnerExecutor::TimerId& id);
   /** Drop everything queued or scheduled so far; later work runs normally. */
   void DropPending();
+  /** Drop everything and refuse more through handles (teardown, on the owner). Idempotent. */
+  void Close();
+  /** A reference that outlives these tasks (for completions that may). */
+  std::shared_ptr<Handle> Share() const { return handle_; }
   bool IsCurrent() const { return executor_.IsCurrent(); }
   OwnerExecutor& Executor() const { return executor_; }
 
@@ -64,6 +86,7 @@ private:
   std::mutex mu_;
   /** Timers not yet fired. */
   std::unordered_set<OwnerExecutor::TimerId> timers_;
+  std::shared_ptr<Handle> handle_;
 };
 
 } // namespace pbr

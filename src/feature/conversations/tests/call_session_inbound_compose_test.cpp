@@ -239,8 +239,13 @@ protected:
       msg.timestamp = util::NowUnixMs();
       ++sent_control_messages_;
       last_sent_payload_ = msg.payload_json;
-      if (auto payload = TryParseObject(msg.payload_json); payload && payload->getString("control_type") == "call_accept") {
-        last_sent_accept_payload_ = msg.payload_json;
+      if (auto payload = TryParseObject(msg.payload_json); payload) {
+        const auto type = payload->getString("control_type");
+        if (type == "call_accept") {
+          last_sent_accept_payload_ = msg.payload_json;
+        } else if (type == "call_roster") {
+          ++sent_rosters_;
+        }
       }
       return msg;
     };
@@ -415,6 +420,7 @@ protected:
   std::string last_sent_payload_;
   /** The last CallAccept on the wire (the answerer start may send more after it). */
   std::string last_sent_accept_payload_;
+  int sent_rosters_ = 0;
 };
 
 TEST_F(CallSessionInboundComposeTest, InboundInviteCreatesPendingAndRingingSession) {
@@ -778,6 +784,38 @@ TEST_F(CallSessionInboundComposeTest, VoiceOnlyAnswerOnVoiceCallWritesNothing) {
   auto session = sessions_->LoadSession(call_id);
   ASSERT_TRUE(session && session->has_value());
   EXPECT_FALSE((*session)->video_allowed);
+}
+
+// Our accept's roster fan-out is a follow-up the owner runs after the accept reported.
+TEST_F(CallSessionInboundComposeTest, AcceptFansOutTheRoster) {
+  const std::string call_id = "call:roster-after-accept";
+  auto msg = MakeInviteMessage(call_id);
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  OnCallsOwner([&] { csm_->AcceptInviteAsync(call_id, [](Roe<void>) {}); });
+  DrainUntil([&] { return sent_rosters_ > 0; }, 500);
+  EXPECT_GT(sent_rosters_, 0);
+}
+
+// PR #216 follow-up: ClearMediaCallbacks (hub teardown, before the store and delivery go) drops a
+// roster fan-out the accept already reported but the owner has not run yet.
+TEST_F(CallSessionInboundComposeTest, ClearMediaCallbacksDropsAQueuedRosterFanOut) {
+  const std::string call_id = "call:roster-dropped";
+  auto msg = MakeInviteMessage(call_id);
+  ASSERT_TRUE(msg);
+  ASSERT_TRUE(OnCallsOwner([&] { return csm_->ApplyInboundControl(*msg, "account:peer"); }));
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  bool accepted = false;
+  OnCallsOwner([&] {
+    csm_->AcceptInviteAsync(call_id, [&](Roe<void> result) {
+      accepted = static_cast<bool>(result);
+      csm_->ClearMediaCallbacks();  // the roster follow-up is queued, not yet run
+    });
+  });
+  DrainUntil([] { return false; }, 200);
+  ASSERT_TRUE(accepted);
+  EXPECT_EQ(sent_rosters_, 0) << "a roster queued before ClearMediaCallbacks still ran";
 }
 
 // A normal (video) accept on a video invite leaves the field unset and keeps video_allowed=true.

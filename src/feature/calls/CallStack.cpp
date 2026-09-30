@@ -31,11 +31,14 @@ CallStack::CallStack() {
 }
 
 CallStack::~CallStack() {
-  loop_.DropPending();  // inputs / wakes still queued would run against a dying stack
   chrome_self_.Invalidate();
   Shutdown();
-  // On the owner: hooks run only there, so none is mid-flight on this stack once this returns.
-  CallsThread::RunAndWait([this]() { CallsThread::RemoveAfterTaskHook(publish_hook_); });
+  // Last, on the owner: nothing queued or enqueued during Shutdown runs after this (refs held
+  // elsewhere go quiet), and no hook or event is mid-flight while the members are destroyed.
+  CallsThread::RunAndWait([this]() {
+    loop_.Close();
+    CallsThread::RemoveAfterTaskHook(publish_hook_);
+  });
 }
 
 // --- hub-facing lifecycle edges: run on the calls owner, the caller waits (t2b-3) ---------------
@@ -268,8 +271,9 @@ void CallStack::SyncMediaPlaneDeps() {
         deps_.list_dht_nodes ? deps_.list_dht_nodes() : std::vector<MeshDirectoryNode>{};
     return MergeMediaRelayCapablePeerIds(from_caps, directory, dht);
   };
-  plane_deps.note_mesh_peer_id_for_relay = [this](const std::string& account, const std::string& peer_id) {
-    loop_.Enqueue(calls_event::MeshPeerIdLearned{account, peer_id});  // connectivity owner → calls owner
+  plane_deps.note_mesh_peer_id_for_relay = [loop = loop_.Share()](const std::string& account,
+                                                                   const std::string& peer_id) {
+    loop.Enqueue(calls_event::MeshPeerIdLearned{account, peer_id});  // connectivity owner → calls owner
   };
   media_plane_->SetDeps(std::move(plane_deps));
   media_plane_->SetMeshMedia(mesh_media());
@@ -283,12 +287,14 @@ void CallStack::BindMeshMediaHooks() {
   }
   // The plane runs these on the connectivity owner / Amp IO: hop to the calls owner.
   // H011: the rendezvous R1 our circuit reach chose is announced to the call peer.
+  // The hooks hold the loop's ref, not the stack: the plane outlives it.
   shared->SetOnRelayChosen(
-      [this](const std::string& circuit_r1) { loop_.Enqueue(calls_event::RelayChosen{circuit_r1}); });
+      [loop = loop_.Share()](const std::string& circuit_r1) { loop.Enqueue(calls_event::RelayChosen{circuit_r1}); });
   // H012: when Amp introducers are exhausted, exchange punch candidates over call-control.
-  shared->SetSignalingPunch([this](const std::string& target_peer_id, const std::vector<std::string>& my_addrs,
-                                   std::function<void(Roe<void>)> on_done) {
-    loop_.Enqueue(calls_event::SignalingPunchRequested{target_peer_id, my_addrs, std::move(on_done)});
+  shared->SetSignalingPunch([loop = loop_.Share()](const std::string& target_peer_id,
+                                                   const std::vector<std::string>& my_addrs,
+                                                   std::function<void(Roe<void>)> on_done) {
+    loop.Enqueue(calls_event::SignalingPunchRequested{target_peer_id, my_addrs, std::move(on_done)});
   });
 }
 
@@ -353,15 +359,17 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
 
 void CallStack::BindSessionOutbox() {
   // The manager's events come back through the queue; one from a manager since rebuilt is dropped.
+  // Copies travel into completions other owners hold (park, attach, quote): they keep the loop's
+  // ref, never the stack, so a late one after teardown is a no-op.
   const uint64_t generation = ++sessions_generation_;
   OwnerOutbox<SessionEvent>::Sink sink;
-  sink.emit = [this, generation](SessionEvent event) {
-    loop_.Enqueue(calls_event::ForSessions{generation, std::move(event)});
+  sink.emit = [loop = loop_.Share(), generation](SessionEvent event) {
+    loop.Enqueue(calls_event::ForSessions{generation, std::move(event)});
   };
-  sink.after = [this, generation](std::chrono::milliseconds delay, SessionEvent event) {
-    return loop_.After(delay, calls_event::ForSessions{generation, std::move(event)});
+  sink.after = [loop = loop_.Share(), generation](std::chrono::milliseconds delay, SessionEvent event) {
+    return loop.After(delay, calls_event::ForSessions{generation, std::move(event)});
   };
-  sink.cancel = [this](OwnerExecutor::TimerId id) { loop_.Cancel(id); };
+  sink.cancel = [loop = loop_.Share()](OwnerExecutor::TimerId id) { loop.Cancel(id); };
   call_sessions_->SetOutbox(OwnerOutbox<SessionEvent>(std::move(sink)));
 }
 
@@ -372,10 +380,10 @@ void CallStack::BindCallControlInbound() {
   CallControlInboundPorts inbound;
   // Receive threads hand call control to the calls owner (thread-ownership t2a, T003): fire and
   // forget with a copy — ApplyInboundControl only reads the message; failures are logged there.
-  inbound.apply_inbound_control = [this](ThreadMessage& message, const std::string& sender_identity,
-                                         std::optional<int64_t> relay_created_at_ms,
-                                         std::optional<int64_t> relay_server_time_ms) -> Roe<void> {
-    loop_.Enqueue(calls_event::CallControlReceived{message, sender_identity, relay_created_at_ms, relay_server_time_ms});
+  inbound.apply_inbound_control = [loop = loop_.Share()](ThreadMessage& message, const std::string& sender_identity,
+                                                         std::optional<int64_t> relay_created_at_ms,
+                                                         std::optional<int64_t> relay_server_time_ms) -> Roe<void> {
+    loop.Enqueue(calls_event::CallControlReceived{message, sender_identity, relay_created_at_ms, relay_server_time_ms});
     return {};
   };
   inbound.has_active_local_call = [this]() { return HasActiveLocalCall(); };

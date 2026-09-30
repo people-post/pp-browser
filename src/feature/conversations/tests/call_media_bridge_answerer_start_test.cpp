@@ -517,6 +517,24 @@ TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloBindsPeerIdentityOnCallsOwn
   EXPECT_EQ(bridge_->MediaPathKind(), "circuit") << "PeerId mapped to account:peer on the calls owner";
 }
 
+// 1:1 media is read on the transport's I/O, so the stream must be bound by the time the hello is
+// answered — the bundle's first frame must never see the previous call's stream.
+TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloIsBoundWhenAnswered) {
+  const std::string call_id = "call:inbound-bound-at-answer";
+  SeedActiveCall(call_id);
+  ASSERT_TRUE(keys_->PutEpochKey(call_id, 1, TestMediaKey()));
+  dial_->circuit_hops["account:peer"] = true;  // "circuit" once the hello's peer is bound
+  CallMediaDirectConnectParams params;
+  params.call_id = call_id;
+  params.media_epoch = 1;
+  params.peer_key = "12D3KooWInboundDialer";
+  std::string kind_at_answer;
+  ASSERT_TRUE(transport_->inbound.DeliverThen(
+      params, [&](CallMediaDirectConnectParams, CallMediaDirectCallbacks) { kind_at_answer = bridge_->MediaPathKind(); }));
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_EQ(kind_at_answer, "circuit") << "bound only after the hello was answered";
+}
+
 TEST_F(CallMediaBridgeAnswererStartTest, InboundHelloWithoutSessionIsRejected) {
   CallMediaDirectConnectParams params;
   params.call_id = "call:no-such-session";

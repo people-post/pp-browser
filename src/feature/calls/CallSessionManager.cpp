@@ -1222,7 +1222,7 @@ bool CallSessionManager::MediaAttemptedThisProcess(const std::string& call_id) c
 
 void CallSessionManager::ClearMediaCallbacks() {
   // Drop accepts waiting on their park before CallStack drains / resets CSM (PR #216 follow-up).
-  workflow_.DropWaitingSteps();
+  workflow_.DropFollowUps();
 }
 
 Roe<void> CallSessionManager::HandleInboundInvite(const std::string& detail_json,

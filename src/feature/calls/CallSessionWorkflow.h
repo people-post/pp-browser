@@ -124,8 +124,11 @@ public:
   void SetOutbox(OwnerOutbox<WorkflowEvent> outbox) { outbox_ = std::move(outbox); }
   /** A follow-up it reported, back from the calls owner's queue. */
   void Handle(WorkflowEvent& event);
-  /** Drop the accepts waiting on their circuit park (CSM teardown). */
-  void DropWaitingSteps();
+  /**
+   * Drop the follow-ups still to come (CSM teardown): accepts waiting on their circuit park, and
+   * roster fan-outs already reported — they must not run against a store / delivery being torn down.
+   */
+  void DropFollowUps();
 
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
@@ -271,6 +274,8 @@ private:
   OwnerOutbox<WorkflowEvent> outbox_;
   /** Accepts waiting on their circuit park. */
   OwnerSteps steps_;
+  /** Names the follow-ups reported so far; `DropFollowUps` bumps it and the older ones are dropped. */
+  uint64_t followup_epoch_ = 0;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;
   bool pending_accept_voice_only_ = false;

@@ -37,12 +37,15 @@ struct RosterAfterAccept {
   std::string call_id;
   std::string inviter;
   std::string local_identity;
+  /** The workflow's follow-up epoch when reported (dropped once its follow-ups were cleared). */
+  uint64_t epoch = 0;
 };
 /** After a peer's accept started media: roster fan-out, prefetch the peer's reach. */
 struct RosterAfterRemoteAccept {
   std::string call_id;
   std::string peer;
   std::string local_identity;
+  uint64_t epoch = 0;
 };
 
 /** A waiting step's result arrived (the accept's circuit park). */
@@ -210,11 +213,6 @@ struct RecoveryGraceOver {
   std::string call_id;
   std::string error;
 };
-/** An inbound hello was accepted (transport I/O): bind its peer — ahead of the bundle's own events. */
-struct InboundPeer {
-  std::string call_id;
-  std::string peer_id;
-};
 /** A bundle connected (transport I/O). */
 struct BundleConnected {
   std::string call_id;
@@ -272,7 +270,7 @@ struct StepReady {
 using DirectPathEvent =
     std::variant<direct_event::HealthTick, direct_event::ReserveRenewTick, direct_event::UpgradeDue,
                  direct_event::StandbyDue, direct_event::ReanchorDue, direct_event::RecoveryGraceOver,
-                 direct_event::InboundPeer, direct_event::BundleConnected, direct_event::BundleFailed,
+                 direct_event::BundleConnected, direct_event::BundleFailed,
                  direct_event::PathLost, direct_event::PathChanged, direct_event::EscalateRestart,
                  direct_event::StartOfferer, direct_event::MediaKeyReady, direct_event::KeyPollDue,
                  direct_event::RebindInboundStream, direct_event::ForConnect, direct_event::StepReady>;
