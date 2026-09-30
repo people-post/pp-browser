@@ -17,7 +17,7 @@ jobs:
   guard:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Require tag commit on main (release line)
@@ -37,7 +37,7 @@ jobs:
       CCACHE_COMPRESSLEVEL: 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install macOS deps
         run: |
@@ -187,7 +187,7 @@ jobs:
       CCACHE_COMPRESSLEVEL: 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: ilammy/msvc-dev-cmd@v1
 
@@ -294,7 +294,7 @@ jobs:
       GRADLE_OPTS: -Dorg.gradle.daemon=false
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -412,7 +412,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Download macOS artifact
         uses: actions/download-artifact@v7
