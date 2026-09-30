@@ -20,6 +20,7 @@
 #include "foundation/runtime/DeferredSelf.h"
 #include "feature/calls/CallUiState.h"
 #include "feature/calls/CallsExecutor.h"
+#include "feature/calls/CallsLoop.h"
 #include "feature/calls/CallsThread.h"
 #include "feature/calls/SharedPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
@@ -215,8 +216,8 @@ private:
 
   /** The calls owner's executor: every call object gets it from here (THREADING.md § Calls owner). */
   CallsExecutor& executor_ = CallsOwnerExecutor();
-  /** The stack's own work on the owner (entry points, timers of passive components). */
-  CallsTasks tasks_{executor_};
+  /** The calls owner's event queue: every input and delayed event goes through Dispatch. */
+  CallsLoop loop_{executor_, [this](CallStackEvent& event) { Dispatch(event); }};
   CallStackDeps deps_;
   std::unique_ptr<CallSessionStore> call_session_store_;
   std::unique_ptr<CallMediaKeyStore> call_media_keys_;
@@ -226,10 +227,10 @@ private:
   std::unique_ptr<CallMediaPlane> media_plane_;
   /** k6: this device's and each call peer's mobility → the call's path policy. */
   CallPathMobility mobility_;
-  CallsWakeSlot mobility_wake_{tasks_, [this]() {
-    AfterMobilityEvent(mobility_.OnWake(CallPathMobility::Clock::now()));
-  }};
+  CallsWakeSlot mobility_wake_{loop_, calls_event::MobilityWake{}};
   void ApplyMobilityOverrideOnOwner();
+  /** Route one event to the child it is for (owner). */
+  void Dispatch(CallStackEvent& event);
   /** After a mobility event: re-arm its wake; a flipped class re-plans the active call. */
   void AfterMobilityEvent(bool local_class_changed);
   void NotifyPathPolicyChangedOnOwner(const std::string& call_id);

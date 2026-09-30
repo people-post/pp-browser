@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
-#include <optional>
 #include <unordered_set>
 #include "common/PbrCompat.h"
 
@@ -64,31 +63,6 @@ private:
   std::mutex mu_;
   /** Timers not yet fired. */
   std::unordered_set<CallsExecutor::TimerId> timers_;
-};
-
-/**
- * The owner's timer for one passive component: armed at the deadline the component reports after
- * each event (its `NextWakeAt`), firing `on_wake` on the owner. Re-arming at the same deadline keeps
- * the timer; nullopt disarms. Owner only.
- */
-class CallsWakeSlot {
-public:
-  using Clock = std::chrono::steady_clock;
-
-  CallsWakeSlot(CallsTasks& tasks, std::function<void()> on_wake)
-      : tasks_(tasks), on_wake_(std::move(on_wake)) {}
-  ~CallsWakeSlot() { Disarm(); }
-  CallsWakeSlot(const CallsWakeSlot&) = delete;
-  CallsWakeSlot& operator=(const CallsWakeSlot&) = delete;
-
-  void ArmAt(std::optional<Clock::time_point> at);
-  void Disarm();
-
-private:
-  CallsTasks& tasks_;
-  std::function<void()> on_wake_;
-  CallsExecutor::TimerId timer_ = 0;
-  std::optional<Clock::time_point> at_;
 };
 
 } // namespace pbr

@@ -3,7 +3,6 @@
 #include "feature/calls/CallsThread.h"
 #include "foundation/runtime/AppRuntime.h"
 
-#include <algorithm>
 #include <memory>
 #include <utility>
 #include "common/PbrCompat.h"
@@ -94,29 +93,6 @@ void CallsTasks::DropPending() {
   for (const CallsExecutor::TimerId id : timers) {
     executor_.Cancel(id);
   }
-}
-
-void CallsWakeSlot::ArmAt(const std::optional<Clock::time_point> at) {
-  if (at == at_ && (timer_ != 0 || !at)) {
-    return;  // already armed there (or already disarmed)
-  }
-  Disarm();
-  if (!at) {
-    return;
-  }
-  at_ = at;
-  const auto delay = std::max(std::chrono::duration_cast<std::chrono::milliseconds>(*at - Clock::now()),
-                              std::chrono::milliseconds(1));
-  timer_ = tasks_.After(delay, [this]() {
-    timer_ = 0;
-    at_.reset();
-    on_wake_();
-  });
-}
-
-void CallsWakeSlot::Disarm() {
-  tasks_.Cancel(timer_);
-  at_.reset();
 }
 
 } // namespace pbr

@@ -17,6 +17,8 @@
 
 #include <functional>
 #include <optional>
+#include <type_traits>
+#include <variant>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -29,7 +31,7 @@ CallStack::CallStack() {
 }
 
 CallStack::~CallStack() {
-  tasks_.DropPending();  // entry points / wakes still queued run against a dying stack
+  loop_.DropPending();  // inputs / wakes still queued would run against a dying stack
   chrome_self_.Invalidate();
   Shutdown();
   // On the owner: hooks run only there, so none is mid-flight on this stack once this returns.
@@ -54,23 +56,64 @@ void CallStack::FinishMeshStop() {
   CallsThread::RunAndWait([this]() { FinishMeshStopOnOwner(); });
 }
 
+// --- edge adapters: other threads enqueue; Dispatch routes on the owner ------------------------------
+
 void CallStack::OnLocalNetwork(const MobilityAttachment& attachment, const bool changed, const bool moved) {
-  tasks_.Post([this, attachment, changed, moved]() {
-    AfterMobilityEvent(mobility_.OnAttachment(attachment, changed, CallPathMobility::Clock::now()));
-    if (moved && media_plane_) {
-      if (CallMediaBridge* bridge = media_plane_->Bridge()) {
-        bridge->OnLocalNetworkChanged();
-      }
-    }
-  });
+  loop_.Enqueue(calls_event::LocalNetworkChanged{attachment, changed, moved});
 }
 
 void CallStack::OnObservedAddressChanged() {
-  tasks_.Post([this]() { AfterMobilityEvent(mobility_.OnObservedAddressChanged(CallPathMobility::Clock::now())); });
+  loop_.Enqueue(calls_event::ObservedAddressChanged{});
 }
 
 void CallStack::ReloadMobilityOverride() {
-  tasks_.Post([this]() { ApplyMobilityOverrideOnOwner(); });
+  loop_.Enqueue(calls_event::MobilityOverrideChanged{});
+}
+
+void CallStack::Dispatch(CallStackEvent& event) {
+  const auto now = CallPathMobility::Clock::now();
+  std::visit(
+      [this, now](auto& e) {
+        using E = std::decay_t<decltype(e)>;
+        if constexpr (std::is_same_v<E, calls_event::LocalNetworkChanged>) {
+          AfterMobilityEvent(mobility_.OnAttachment(e.attachment, e.changed, now));
+          if (e.moved && media_plane_) {
+            if (CallMediaBridge* bridge = media_plane_->Bridge()) {
+              bridge->OnLocalNetworkChanged();
+            }
+          }
+        } else if constexpr (std::is_same_v<E, calls_event::ObservedAddressChanged>) {
+          AfterMobilityEvent(mobility_.OnObservedAddressChanged(now));
+        } else if constexpr (std::is_same_v<E, calls_event::MobilityOverrideChanged>) {
+          ApplyMobilityOverrideOnOwner();
+        } else if constexpr (std::is_same_v<E, calls_event::MobilityWake>) {
+          mobility_wake_.Fired();
+          AfterMobilityEvent(mobility_.OnWake(now));
+        } else if constexpr (std::is_same_v<E, calls_event::CallControlReceived>) {
+          if (!call_sessions_) {
+            return;
+          }
+          if (auto applied = call_sessions_->ApplyInboundControl(e.message, e.sender_identity, e.relay_created_at_ms,
+                                                                 e.relay_server_time_ms);
+              !applied) {
+            log().warning << "inbound call control failed message_id=" << e.message.id
+                          << " err=" << applied.error().message;
+          }
+        } else if constexpr (std::is_same_v<E, calls_event::RelayChosen>) {
+          if (call_sessions_) {
+            call_sessions_->ReachSignals().AnnounceCircuitR1(e.circuit_r1);
+          }
+        } else if constexpr (std::is_same_v<E, calls_event::SignalingPunchRequested>) {
+          if (!call_sessions_) {
+            e.done(Error("Calls unavailable"));
+            return;
+          }
+          call_sessions_->ReachSignals().RequestSignalingPunch(e.target_peer_id, e.my_addrs, std::move(e.done));
+        } else {
+          static_assert(!sizeof(E), "route every CallStackEvent");
+        }
+      },
+      event);
 }
 
 void CallStack::ApplyMobilityOverrideOnOwner() {
@@ -232,23 +275,12 @@ void CallStack::BindMeshMediaHooks() {
   }
   // The plane runs these on the connectivity owner / Amp IO: hop to the calls owner.
   // H011: the rendezvous R1 our circuit reach chose is announced to the call peer.
-  shared->SetOnRelayChosen([this](const std::string& circuit_r1) {
-    CallsThread::Post([this, circuit_r1]() {
-      if (call_sessions_) {
-        call_sessions_->ReachSignals().AnnounceCircuitR1(circuit_r1);
-      }
-    });
-  });
+  shared->SetOnRelayChosen(
+      [this](const std::string& circuit_r1) { loop_.Enqueue(calls_event::RelayChosen{circuit_r1}); });
   // H012: when Amp introducers are exhausted, exchange punch candidates over call-control.
   shared->SetSignalingPunch([this](const std::string& target_peer_id, const std::vector<std::string>& my_addrs,
                                    std::function<void(Roe<void>)> on_done) {
-    CallsThread::Post([this, target_peer_id, my_addrs, on_done = std::move(on_done)]() mutable {
-      if (!call_sessions_) {
-        on_done(Error("Calls unavailable"));
-        return;
-      }
-      call_sessions_->ReachSignals().RequestSignalingPunch(target_peer_id, my_addrs, std::move(on_done));
-    });
+    loop_.Enqueue(calls_event::SignalingPunchRequested{target_peer_id, my_addrs, std::move(on_done)});
   });
 }
 
@@ -383,18 +415,7 @@ void CallStack::BindCallControlInbound() {
   inbound.apply_inbound_control = [this](ThreadMessage& message, const std::string& sender_identity,
                                          std::optional<int64_t> relay_created_at_ms,
                                          std::optional<int64_t> relay_server_time_ms) -> Roe<void> {
-    CallsThread::Post([this, message, sender_identity, relay_created_at_ms,
-                                                                relay_server_time_ms]() mutable {
-      if (!call_sessions_) {
-        return;
-      }
-      if (auto applied = call_sessions_->ApplyInboundControl(message, sender_identity, relay_created_at_ms,
-                                                             relay_server_time_ms);
-          !applied) {
-        log().warning << "inbound call control failed message_id=" << message.id
-                      << " err=" << applied.error().message;
-      }
-    });
+    loop_.Enqueue(calls_event::CallControlReceived{message, sender_identity, relay_created_at_ms, relay_server_time_ms});
     return {};
   };
   inbound.has_active_local_call = [this]() { return HasActiveLocalCall(); };
