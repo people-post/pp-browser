@@ -2385,7 +2385,8 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
   config_.mesh.capabilities.media_relay = next.media_relay;
   config_.mesh.capabilities.dht = next.dht;
   config_.mesh.prefer_contacts_for_routing = next.prefer_contacts_for_routing;
-  PublishMeshConfig();
+  config_.mesh.direct_connections = next.direct_connections;
+  PublishMeshConfig();  // republishes who may learn our address too
 
   if (service_urls_changed) {
     UpdateOrgBackendClients(config_);
@@ -2433,6 +2434,7 @@ ConversationsHub::NetworkConfig ConversationsHub::ProjectNetwork(const AppConfig
   out.media_relay = config.mesh.capabilities.media_relay;
   out.dht = config.mesh.capabilities.dht;
   out.prefer_contacts_for_routing = config.mesh.prefer_contacts_for_routing;
+  out.direct_connections = config.mesh.direct_connections;
   return out;
 }
 

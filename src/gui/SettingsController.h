@@ -130,6 +130,8 @@ private:
     ui::String dht_enabled = "off";
     bool show_dht_toggle = false;
     ui::String prefer_contacts_for_routing = "on";
+    ui::String direct_connections = "contacts";
+    ui::String direct_connections_label;
     bool show_prefer_contacts_toggle = false;
     ui::String profile_nickname;
     ui::String profile_peer_id;
@@ -190,6 +192,7 @@ private:
   static void OnChooseThemeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnChooseLanguageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnChooseGroupInvitePolicyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnChooseDirectConnectionsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnChooseAttachmentDownloadPolicyCallback(ui::DataModelHandle model, ui::Event& ev,
                                                        const ui::VariantList& args);
   static void DrainPendingAttachmentMediaCallback(ui::DataModelHandle model, ui::Event& ev,
@@ -300,6 +303,8 @@ private:
   void OnChooseLanguage(ui::Event& ev);
   void ApplyLanguageChoice(const std::string& language_pref);
   void OnChooseGroupInvitePolicy(ui::Event& ev);
+  void OnChooseDirectConnections(ui::Event& ev);
+  void ApplyDirectConnectionsChoice(const std::string& audience);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
   void OnChooseAttachmentDownloadPolicy(ui::Event& ev);
   void ApplyAttachmentDownloadPolicyChoice(const std::string& policy);

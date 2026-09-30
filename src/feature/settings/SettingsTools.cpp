@@ -465,6 +465,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          out.set("amp_udp_port", static_cast<int64_t>(mesh_cfg.amp_udp_port));
          out.set("mesh_enabled", mesh_cfg.mesh_enabled);
          out.set("prefer_contacts_for_routing", mesh_cfg.prefer_contacts_for_routing);
+         out.set("direct_connections", DirectAudienceName(mesh_cfg.direct_connections));
          out.set("circuit_relay", mesh_cfg.capabilities.circuit_relay);
          out.set("media_relay", mesh_cfg.capabilities.media_relay);
          return DumpJson(out);
@@ -708,15 +709,21 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      ToolDefinition{"set_mesh_capabilities", "Update mesh capability flags: circuit_relay, media_relay, dht, prefer_contacts_for_routing.", MustSchema(R"json({"type":"object","properties":{"circuit_relay":{"type":"boolean"},"media_relay":{"type":"boolean"},"dht":{"type":"boolean"},"prefer_contacts_for_routing":{"type":"boolean"}},"required":[]})json")},
+      ToolDefinition{"set_mesh_capabilities", "Update mesh capability flags: circuit_relay, media_relay, dht, prefer_contacts_for_routing; and direct_connections — who may connect directly and so learn this device's IP: everyone, contacts, friendly, or nobody (always relay).", MustSchema(R"json({"type":"object","properties":{"circuit_relay":{"type":"boolean"},"media_relay":{"type":"boolean"},"dht":{"type":"boolean"},"prefer_contacts_for_routing":{"type":"boolean"},"direct_connections":{"type":"string","enum":["everyone","contacts","friendly","nobody"]}},"required":[]})json")},
       Meta("network", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
          const auto circuit = BoolFromArgs(arguments, {"circuit_relay"});
          const auto media = BoolFromArgs(arguments, {"media_relay"});
          const auto dht = BoolFromArgs(arguments, {"dht"});
          const auto prefer = BoolFromArgs(arguments, {"prefer_contacts_for_routing"});
-         if (!circuit && !media && !dht && !prefer) {
-           return Error("provide at least one of circuit_relay, media_relay, dht, prefer_contacts_for_routing");
+         const std::string audience_name = FirstStringArg(arguments, {"direct_connections"});
+         const auto audience = DirectAudienceFromName(audience_name);
+         if (!audience_name.empty() && !audience) {
+           return Error("direct_connections must be everyone, contacts, friendly, or nobody");
+         }
+         if (!circuit && !media && !dht && !prefer && !audience) {
+           return Error("provide at least one of circuit_relay, media_relay, dht, prefer_contacts_for_routing, "
+                        "direct_connections");
          }
          auto store = RequireStore(ports);
          if (!store) {
@@ -735,6 +742,9 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (prefer) {
            config.mesh.prefer_contacts_for_routing = *prefer;
          }
+         if (audience) {
+           config.mesh.direct_connections = *audience;
+         }
          if (auto saved = SaveConfig(**store, config); !saved) {
            return saved.error();
          }
@@ -743,6 +753,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          ok.set("media_relay", config.mesh.capabilities.media_relay);
          ok.set("dht", config.mesh.capabilities.dht);
          ok.set("prefer_contacts_for_routing", config.mesh.prefer_contacts_for_routing);
+         ok.set("direct_connections", DirectAudienceName(config.mesh.direct_connections));
          return DumpJson(OkJson(std::move(ok)));
        }));
 

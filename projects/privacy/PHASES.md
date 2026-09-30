@@ -2,12 +2,14 @@
 
 ## Y1 — Direct audience (T1, pp-browser)
 
-- [ ] Setting `mesh.direct_connections` (everyone / contacts / friendly / nobody; default contacts) + `AddressDisclosureGate` published by the hub from contacts
-- [ ] Punch target answers only allowed initiators
-- [ ] Calls: a peer that is not allowed gets a relay-only path (no direct dial, no punch, no k3 upgrade) and no listen addresses in call signalling
-- [ ] Chat: no new direct Amp dial to a peer that is not allowed (Brief relay fallback)
-- [ ] LAN discovery dials follow the audience
-- [ ] Me → Network setting; docs promoted (CONFIGURATION, CALLS / NETWORKING)
+- [x] Setting `mesh.direct_connections` (everyone / contacts / friendly / nobody; default contacts) + `AddressDisclosureGate` published by the hub from contacts
+- [x] Punch target answers only allowed initiators
+- [x] Calls: a peer that is not allowed gets a relay-only path (no direct dial, no punch, no k3 upgrade), no listen addresses in call signalling, no signalling-punch answer
+- [x] Chat, attachments, history: no new direct Amp dial to a peer that is not allowed (existing link, else Brief relay)
+- [x] LAN discovery: only books addresses; the dials go through the gated paths above
+- [x] Me → Network setting (+ settings assistant); docs promoted (CONFIGURATION, NETWORKING, CALLS)
+- [ ] Hard-lab scenario: a stranger's call to a `contacts` peer runs relay-only and still connects (`PP_PROBE_DIRECT_CONNECTIONS`)
+- [ ] Peer-announce / broadcast fetches from a stranger publisher (decide: gate, or accept as a viewer's choice)
 
 ## Y2 — Addresses on links and in records (T1, pp-cpp-amp)
 

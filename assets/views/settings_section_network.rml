@@ -86,6 +86,16 @@
         </div>
         <p class="text muted settings-help" data-if="show_prefer_contacts_toggle">{{i18n:settings.network.prefer_contacts_hint}}</p>
 
+        <button class="settings-toggle-row settings-choice-row row" type="button"
+                data-event-click="on_choose_direct_connections()">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.network.direct_connections}}</span>
+          <span class="settings-choice-value row">
+            <span class="settings-choice-value-text" data-rml="direct_connections_label"></span>
+            <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
+          </span>
+        </button>
+        <p class="text muted settings-help">{{i18n:settings.network.direct_connections.help}}</p>
+
         <label class="settings-field" data-if="show_node_toggle && node_enabled == 'on'">
           <span class="settings-label">{{i18n:settings.network.listen}}</span>
           <p class="text muted" data-rml="amp_listen_multiaddr"></p>

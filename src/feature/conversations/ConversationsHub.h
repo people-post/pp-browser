@@ -93,12 +93,14 @@ public:
     bool media_relay = true;
     bool dht = false;
     bool prefer_contacts_for_routing = true;
+    DirectAudience direct_connections = DirectAudience::Contacts;
 
     bool operator==(const NetworkConfig& other) const {
       return relay.base_url == other.relay.base_url && directory == other.directory &&
              registration.base_url == other.registration.base_url && node_enabled == other.node_enabled &&
              circuit_relay == other.circuit_relay && media_relay == other.media_relay && dht == other.dht &&
-             prefer_contacts_for_routing == other.prefer_contacts_for_routing;
+             prefer_contacts_for_routing == other.prefer_contacts_for_routing &&
+             direct_connections == other.direct_connections;
     }
     bool operator!=(const NetworkConfig& other) const { return !(*this == other); }
   };

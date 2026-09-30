@@ -186,6 +186,10 @@ DHT complements [mesh directory](../../projects/p2p-mesh/MESH_DIRECTORY.md) (n-d
 
 Enter an **API key** directly in Me → Assistant (saved to `config.json`) or use **API key env var** for desktop-style env lookup when using Cloud/Custom. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Brief** (key from Profile registration); **Ollama (localhost)** remains available for local dev.
 
+### Direct connections (`mesh.direct_connections`)
+
+Who may connect to this device directly and so learn its IP address: `everyone` | `contacts` (default) | `friendly` | `nobody` (always relay). Blocked contacts never; the Node role is always `everyone`. Me → Network → **Direct connections**; the settings assistant's `set_mesh_capabilities` takes it too. Applies at once (no mesh restart). Behaviour: [NETWORKING § Address disclosure](../architecture/NETWORKING.md#address-disclosure-privacy). The hard-lab call probe discloses to `everyone` unless `PP_PROBE_DIRECT_CONNECTIONS` says otherwise.
+
 ### Media relay video levels (`mesh.media_relay_video`)
 
 Which video levels this node's `media_relay` carries per broadcast publisher ([peer-scoped-broadcast B009](../../projects/peer-scoped-broadcast/DECISIONS.md#b009--video-levels-opaque-ordered-integers-negotiated-per-relay-at-attach); levels: [MEDIA_CHANNELS.md](../contracts/MEDIA_CHANNELS.md)). Read at mesh start.

@@ -74,6 +74,9 @@ AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState
   config.mesh.capabilities.media_relay = (state.media_relay_enabled == "on");
   config.mesh.capabilities.dht = (state.dht_enabled == "on");
   config.mesh.prefer_contacts_for_routing = (state.prefer_contacts_for_routing != "off");
+  if (auto audience = DirectAudienceFromName(state.direct_connections)) {
+    config.mesh.direct_connections = *audience;
+  }
   NormalizeMeshConfig(config.mesh);
   return config;
 }

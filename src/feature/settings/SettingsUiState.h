@@ -56,6 +56,8 @@ struct SettingsUiState {
   std::string dht_enabled = "off";
   bool show_dht_toggle = false;
   std::string prefer_contacts_for_routing = "on";
+  /** projects/privacy T1: everyone / contacts / friendly / nobody (mesh.direct_connections). */
+  std::string direct_connections = "contacts";
   bool show_prefer_contacts_toggle = false;
   std::string profile_nickname;
   std::string profile_peer_id;

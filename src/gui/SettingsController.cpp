@@ -104,6 +104,12 @@ std::string ReachabilitySummary(const SettingsReachabilityView& view) {
   }
 }
 
+std::string DirectConnectionsDisplayLabel(const std::string& audience) {
+  const auto parsed = DirectAudienceFromName(audience);
+  return Tr(std::string("settings.network.direct_connections.") +
+            DirectAudienceName(parsed.value_or(DirectAudience::Contacts)));
+}
+
 /** Anchor ShowActions float menus under the right side of a settings choice row. */
 ui::Vector2i ChoiceRowMenuPosition(ui::Event& ev) {
   ui::Element* target = ev.GetCurrentElement();
@@ -241,6 +247,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.dht_enabled = bindings_.dht_enabled.c_str();
   ui_state_.show_dht_toggle = bindings_.show_dht_toggle;
   ui_state_.prefer_contacts_for_routing = bindings_.prefer_contacts_for_routing.c_str();
+  ui_state_.direct_connections = bindings_.direct_connections.c_str();
   ui_state_.show_prefer_contacts_toggle = bindings_.show_prefer_contacts_toggle;
   ui_state_.profile_nickname = bindings_.profile_nickname.c_str();
   ui_state_.profile_peer_id = bindings_.profile_peer_id.c_str();
@@ -316,6 +323,8 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.dht_enabled = ui_state_.dht_enabled.c_str();
   bindings_.show_dht_toggle = ui_state_.show_dht_toggle;
   bindings_.prefer_contacts_for_routing = ui_state_.prefer_contacts_for_routing.c_str();
+  bindings_.direct_connections = ui_state_.direct_connections.c_str();
+  bindings_.direct_connections_label = DirectConnectionsDisplayLabel(ui_state_.direct_connections).c_str();
   bindings_.show_prefer_contacts_toggle = ui_state_.show_prefer_contacts_toggle;
   bindings_.profile_nickname = ui_state_.profile_nickname.c_str();
   bindings_.profile_peer_id = ui_state_.profile_peer_id.c_str();
@@ -498,6 +507,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("dht_enabled", &controller.bindings_.dht_enabled);
     ctor.Bind("show_dht_toggle", &controller.bindings_.show_dht_toggle);
     ctor.Bind("prefer_contacts_for_routing", &controller.bindings_.prefer_contacts_for_routing);
+    ctor.Bind("direct_connections_label", &controller.bindings_.direct_connections_label);
     ctor.Bind("show_prefer_contacts_toggle", &controller.bindings_.show_prefer_contacts_toggle);
     ctor.Bind("profile_nickname", &controller.bindings_.profile_nickname);
     ctor.Bind("profile_peer_id", &controller.bindings_.profile_peer_id);
@@ -558,6 +568,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_choose_theme", &SettingsController::OnChooseThemeCallback);
     ctor.BindEventCallback("on_choose_language", &SettingsController::OnChooseLanguageCallback);
     ctor.BindEventCallback("on_choose_group_invite_policy", &SettingsController::OnChooseGroupInvitePolicyCallback);
+    ctor.BindEventCallback("on_choose_direct_connections", &SettingsController::OnChooseDirectConnectionsCallback);
     ctor.BindEventCallback("on_choose_attachment_download_policy",
                            &SettingsController::OnChooseAttachmentDownloadPolicyCallback);
     ctor.BindEventCallback("drain_pending_attachment_media", &SettingsController::DrainPendingAttachmentMediaCallback);
@@ -640,6 +651,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "dht_enabled");
   host.Dirty("settings", "show_dht_toggle");
   host.Dirty("settings", "prefer_contacts_for_routing");
+  host.Dirty("settings", "direct_connections_label");
   host.Dirty("settings", "show_prefer_contacts_toggle");
   if (push_nick) {
     host.Dirty("settings", "profile_nickname");
@@ -1385,6 +1397,42 @@ void SettingsController::ApplyLanguageChoice(const std::string& language_pref) {
   DirtyAll();
 }
 
+void SettingsController::OnChooseDirectConnectionsCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                                           const ui::VariantList& /*args*/) {
+  Instance().OnChooseDirectConnections(ev);
+}
+
+void SettingsController::OnChooseDirectConnections(ui::Event& ev) {
+  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
+  const std::string current =
+      bindings_.direct_connections.empty() ? "contacts" : std::string(bindings_.direct_connections.c_str());
+  std::vector<ContextMenuAction> actions;
+  for (const DirectAudience audience :
+       {DirectAudience::Everyone, DirectAudience::Contacts, DirectAudience::Friendly, DirectAudience::Nobody}) {
+    const std::string id = DirectAudienceName(audience);
+    actions.push_back({.id = id,
+                       .label = DirectConnectionsDisplayLabel(id),
+                       .enabled = {},
+                       .run = [this, id]() { ApplyDirectConnectionsChoice(id); },
+                       .icon = {},
+                       .danger = false,
+                       .selected = current == id});
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void SettingsController::ApplyDirectConnectionsChoice(const std::string& audience) {
+  if (suppress_auto_save_) {
+    return;
+  }
+  bindings_.direct_connections = audience.c_str();
+  bindings_.direct_connections_label = DirectConnectionsDisplayLabel(audience).c_str();
+  PullBindingsToUiState();
+  MarkSectionDirty("network");
+  FlushPending();
+  DirtyAll();
+}
+
 void SettingsController::OnChooseGroupInvitePolicyCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
                                                            const ui::VariantList& /*args*/) {
   Instance().OnChooseGroupInvitePolicy(ev);
@@ -1633,6 +1681,7 @@ void SettingsController::ApplyReachability() {
     ui_state_.media_relay_enabled = cfg.capabilities.media_relay ? "on" : "off";
     ui_state_.dht_enabled = cfg.capabilities.dht ? "on" : "off";
     ui_state_.prefer_contacts_for_routing = cfg.prefer_contacts_for_routing ? "on" : "off";
+    ui_state_.direct_connections = DirectAudienceName(cfg.direct_connections);
   }
   PushUiStateToBindings();
   ApplySectionAttention();
