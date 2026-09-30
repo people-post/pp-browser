@@ -1,4 +1,5 @@
 #include "feature/calls/CallMediaBridge.h"
+#include "common/media/MediaChannel.h"
 #include "domain/messaging/CallTxOnlyEscalateLogic.h"
 
 #include "foundation/i18n/LocalizationService.h"
@@ -1302,14 +1303,14 @@ Roe<void> CallMediaBridge::StartDirectEngine(const std::string& call_id) {
     return Error("no live call for media " + call_id);
   }
   auto started = call_media->StartEngine(CallMediaSeat::PathKind::Direct, [this, send_gen](const CallMediaEngine::SfuPacket& pkt) {
-    if (pkt.channel_id > kCallMediaChannelVideoLo) {
+    if (!IsAudioChannel(pkt.channel_id) && !IsVideoChannel(pkt.channel_id)) {
       return;
     }
     // SoftMigrate ReleaseDirectTransport bumps connect_generation_ before Detach.
     if (connect_generation_.load(std::memory_order_acquire) != send_gen) {
       return;
     }
-    const uint32_t seq = pkt.channel_id == 0 ? (audio_seq_.fetch_add(1) + 1) : pkt.seq;
+    const uint32_t seq = IsAudioChannel(pkt.channel_id) ? (audio_seq_.fetch_add(1) + 1) : pkt.seq;
     (void)direct_.SendMedia(static_cast<uint8_t>(pkt.channel_id), pkt.payload, seq, pkt.mark);
   });
   if (!started) {

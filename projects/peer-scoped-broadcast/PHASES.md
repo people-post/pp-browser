@@ -64,9 +64,22 @@ Locks [B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-re
 
 ---
 
+## V — Video levels ([B009](DECISIONS.md#b009--video-levels-opaque-ordered-integers-negotiated-per-relay-at-attach))
+
+- [x] V1 — Channel convention: track kind + level in `channel_id` (contract + helpers); calls video = level 1; broadcast frames carry the lossy / ordered channel type
+- [ ] V2 — Relay video policy (levels served, how many carried, strict) + the negotiation function (pure, tested); offer / answer in the quote; the relay drops frames of levels it did not agree to carry
+- [ ] V3 — Broadcaster offers its levels (device class), publishes video at the answered level; the Live tip lists the published levels
+- [ ] V4 — Viewer prefers a level, takes the nearest published one, subscribes to its video
+- [ ] V5 — Desktop publishes two levels at once (a second encoder) when the answer carries two
+- [ ] Relay capability advertised for the user's relay choice (texts / UI later)
+
+**Exit:** A desktop and a phone publish to relays with different level policies; viewers get the level nearest their preference with no user choice beyond the relay.
+
+---
+
 ## Explicitly later / parking
 
-- Simulcast / `video_hi` for adaptive tree layers
+- Per-viewer layer switching inside one relay (levels are per relay — [B009](DECISIONS.md#b009--video-levels-opaque-ordered-integers-negotiated-per-relay-at-attach))
 - Open helper marketplace (beyond whitelist)
 - Cleartext media (rejected — [B003](DECISIONS.md#b003--keep-encrypt-once-aead-for-broadcast); hops must carry opaque blobs)
 - Coordinator-assigned leaf on every ticket (optional ops mode; not default — [B007](DECISIONS.md#b007--recursive-whitelist-ladder-discovery-admit-or-redirect))

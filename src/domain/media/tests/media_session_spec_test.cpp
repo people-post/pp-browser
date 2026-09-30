@@ -1,4 +1,5 @@
 #include "domain/media/CallMediaEngine.h"
+#include "common/media/MediaChannel.h"
 #include "domain/media/IVideoCodec.h"
 
 #include <gtest/gtest.h>
@@ -51,7 +52,7 @@ protected:
   void Deliver(uint32_t stream_id, uint32_t seq) {
     CallMediaEngine::SfuPacket pkt;
     pkt.stream_id = stream_id;
-    pkt.channel_id = 0;
+    pkt.channel_id = kMediaChannelAudio;
     pkt.seq = seq;
     pkt.payload = frame_;
     engine_.OnSfuPacket(pkt);
@@ -155,7 +156,7 @@ TEST_F(MediaSessionSpecTest, EachCallDecodesPeerVideoWithAFreshDecoder) {
   engine_.SetVideoCodecFactoryForTest([configured] { return std::make_unique<CountingDecoder>(configured); });
   CallMediaEngine::SfuPacket video;
   video.stream_id = 7;
-  video.channel_id = 1;
+  video.channel_id = VideoChannel(kDefaultVideoLevel);
   video.payload = {0, 0, 0, 1, 0x65, 0x88};
 
   ASSERT_TRUE(engine_.StartSfu("call:1", CountingSend()));
@@ -197,7 +198,7 @@ TEST_F(MediaSessionSpecTest, RemoteVideoIsLiveOnlyWhileFramesArrive) {
 
   CallMediaEngine::SfuPacket video;
   video.stream_id = 7;
-  video.channel_id = 1;
+  video.channel_id = VideoChannel(kDefaultVideoLevel);
   video.payload = {0, 0, 0, 1, 0x65, 0x88};
   engine_.OnSfuPacket(video);
   EXPECT_TRUE(engine_.IsRemoteVideoLive(500));

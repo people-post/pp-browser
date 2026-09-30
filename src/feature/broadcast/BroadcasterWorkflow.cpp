@@ -45,6 +45,7 @@ struct BroadcasterWorkflow::Sender {
     MediaDataFrame frame;
     frame.stream_id = stream_id;
     frame.channel_id = packet.channel_id;
+    frame.channel_type = MediaChannelTypeFor(packet.channel_id);
     frame.seq = packet.seq;
     frame.mark = packet.mark;
     frame.payload = std::move(*body);

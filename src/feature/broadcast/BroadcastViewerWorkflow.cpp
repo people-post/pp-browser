@@ -1,4 +1,5 @@
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
+#include "common/media/MediaChannel.h"
 
 #include "domain/mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
@@ -19,7 +20,6 @@ logging::Logger& ViewerLog() {
   return log;
 }
 
-constexpr uint16_t kAudioChannel = 0;
 constexpr int64_t kAudioDownBps = 64000;
 constexpr std::chrono::milliseconds kRecoveryBackoff{500};
 
@@ -416,7 +416,7 @@ void BroadcastViewerWorkflow::StartListening(const std::string& hop) {
   }
   engine_started_ = true;
   relay->StartClientFrameReader();
-  if (auto subscribed = relay->Subscribe(sink_->stream_id, kAudioChannel); !subscribed) {
+  if (auto subscribed = relay->Subscribe(sink_->stream_id, kMediaChannelAudio); !subscribed) {
     Fail("subscribe: " + subscribed.error().message);
     return;
   }

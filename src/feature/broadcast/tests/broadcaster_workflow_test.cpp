@@ -135,6 +135,8 @@ TEST_F(BroadcasterWorkflowTest, GoLivePublishesSealedFramesAndAnnounces) {
   const uint32_t stream = BroadcastPublisherStreamId(kSelf);
   const auto frame = relay_.SentFrames().front();
   EXPECT_EQ(frame.stream_id, stream);
+  EXPECT_EQ(frame.channel_id, kMediaChannelAudio);
+  EXPECT_EQ(frame.channel_type, MediaChannelType::ReliableOrdered) << "the relay QoS class follows the channel";
   auto opened = OpenMediaRelayFrame(key_, BroadcastMediaFrameContext(kProgram, status.join_handle), 1, stream,
                                     static_cast<uint8_t>(frame.channel_id), frame.payload);
   EXPECT_TRUE(opened) << "viewers open it with the broadcast label";

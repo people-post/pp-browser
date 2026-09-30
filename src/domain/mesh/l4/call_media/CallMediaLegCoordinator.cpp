@@ -1,4 +1,5 @@
 #include "domain/mesh/l4/call_media/CallMediaLegCoordinator.h"
+#include "common/media/MediaChannel.h"
 
 #include "domain/mesh/l4/shared/ChannelSessionSlot.h"
 #include "domain/mesh/l4/shared/ProductChannelPolicies.h"
@@ -948,7 +949,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
     if (cbs.on_media) {
       cbs.on_media(decoded->channel, decoded->seq, decoded->mark, decoded->payload);
-    } else if (decoded->channel == kCallMediaChannelAudio && cbs.on_audio) {
+    } else if (decoded->channel == kMediaChannelAudio && cbs.on_audio) {
       cbs.on_audio(decoded->payload);
     }
     return true;
@@ -2438,7 +2439,7 @@ Roe<void> CallMediaLegCoordinator::SendMedia(const CallMediaLegId id, const uint
 
 Roe<void> CallMediaLegCoordinator::SendAudio(const CallMediaLegId id, const std::vector<uint8_t>& opus_payload,
                                              const uint32_t seq, const uint8_t mark) {
-  return SendMedia(id, kCallMediaChannelAudio, opus_payload, seq, mark);
+  return SendMedia(id, kMediaChannelAudio, opus_payload, seq, mark);
 }
 
 } // namespace pbr
