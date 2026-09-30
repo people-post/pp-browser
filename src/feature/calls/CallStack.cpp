@@ -152,7 +152,7 @@ void CallStack::NotifyPathPolicyChangedOnOwner(const std::string& call_id) {
 }
 
 void CallStack::SetInboundCallAudience(const InboundAudience audience) {
-  inbound_call_audience_ = audience;
+  inbound_call_audience_.store(audience, std::memory_order_relaxed);
   RunOnOwner([audience](CallSessionManager& calls) { calls.SetInboundCallAudience(audience); });
 }
 
@@ -428,7 +428,7 @@ void CallStack::BindSessionProviders() {
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
   call_sessions_->SetAddressDisclosure(deps_.address_disclosure);
-  call_sessions_->SetInboundCallAudience(inbound_call_audience_);  // a rebuilt CSM keeps the choice
+  call_sessions_->SetInboundCallAudience(inbound_call_audience_.load(std::memory_order_relaxed));  // a rebuilt CSM keeps the choice
   // Providers read the connectivity owner's published view of this node's mesh (never the
   // MeshHost the hub may be tearing down under a running call flow).
   call_sessions_->SetLocalMeshPeerIdProvider([this]() -> std::string { return LocalMeshView()->local_peer_id; });

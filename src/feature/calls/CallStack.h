@@ -224,7 +224,8 @@ private:
   /** The calls owner's event queue: every input and delayed event goes through Dispatch. */
   CallsLoop loop_{executor_, [this](CallStackEvent& event) { Dispatch(event); }};
   CallStackDeps deps_;
-  InboundAudience inbound_call_audience_ = InboundAudience::Everyone;
+  /** Written by the owner of the settings (UI), read when the calls owner rebuilds its CSM. */
+  std::atomic<InboundAudience> inbound_call_audience_{InboundAudience::Everyone};
   std::unique_ptr<CallSessionStore> call_session_store_;
   std::unique_ptr<CallMediaKeyStore> call_media_keys_;
   std::unique_ptr<CallMediaEngine> call_media_engine_;
