@@ -361,6 +361,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   mesh_cfg.bootstrap_peers = product_mesh_cfg.bootstrap_peers;
 
   mesh_ = std::make_unique<MeshHost>();
+  mesh_->SetAddressDisclosure(&address_disclosure_);
   auto started = mesh_->Start(mesh_cfg);
   if (!started) {
     mesh_last_error_ = mesh_->LastError().empty() ? started.error().message : mesh_->LastError();
