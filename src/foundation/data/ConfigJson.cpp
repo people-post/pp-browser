@@ -736,6 +736,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("call_diagnostics", prefs.call_diagnostics);
   object.set("crash_reports_enabled", prefs.crash_reports_enabled);
   object.set("group_invite_policy", prefs.group_invite_policy);
+  object.set("call_invite_policy", prefs.call_invite_policy);
   object.set("attachment_download_policy", prefs.attachment_download_policy);
   object.set("reduce_transparency", prefs.reduce_transparency);
   object.set("compact_chrome_frost", prefs.compact_chrome_frost);
@@ -787,6 +788,11 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
     prefs.group_invite_policy = *group_invite_policy;
   } else {
     prefs.group_invite_policy = "contacts_only";
+  }
+  if (auto call_invite_policy = object.getString("call_invite_policy")) {
+    prefs.call_invite_policy = *call_invite_policy;
+  } else {
+    prefs.call_invite_policy = "everyone";
   }
   if (auto attachment_download_policy = object.getString("attachment_download_policy")) {
     prefs.attachment_download_policy = *attachment_download_policy;

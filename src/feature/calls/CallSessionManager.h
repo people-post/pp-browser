@@ -113,6 +113,10 @@ public:
    * punch, only for peers this gate allows. Null = everyone. Not owned.
    */
   void SetAddressDisclosure(const AddressDisclosureGate* gate) { address_disclosure_ = gate; }
+  /** projects/privacy T3: who may call us; an invite from outside is dropped silently. Owner thread. */
+  void SetInboundCallAudience(InboundAudience audience) { inbound_call_audience_ = audience; }
+  /** Whether an invite from `caller` may ring (the audience; contacts from the disclosure gate). */
+  bool AllowsInboundCall(const std::string& caller) const;
   /** Local capability ads for invite/accept (V030). */
   using LocalPeerCapsFn = std::function<CallPeerCaps()>;
   void SetLocalPeerCapsProvider(LocalPeerCapsFn callback);
@@ -406,6 +410,7 @@ private:
   ParkCircuitFn park_circuit_;
   LocalListenMultiaddrsFn local_listen_multiaddrs_;
   const AddressDisclosureGate* address_disclosure_ = nullptr;
+  InboundAudience inbound_call_audience_ = InboundAudience::Everyone;
   LocalPeerCapsFn local_peer_caps_;
   CallPeerCapsSink call_peer_caps_sink_;
   LocalMeshPeerIdFn local_mesh_peer_id_;

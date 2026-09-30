@@ -1296,6 +1296,19 @@ Roe<void> CallSessionManager::HandleInboundEnded(const std::string& detail_json,
 }
 
 
+bool CallSessionManager::AllowsInboundCall(const std::string& caller) const {
+  switch (inbound_call_audience_) {
+  case InboundAudience::Everyone:
+    return true;
+  case InboundAudience::Nobody:
+    return false;
+  case InboundAudience::ContactsOnly:
+    // No gate wired (tests, tools): nothing to judge by — let it ring.
+    return !address_disclosure_ || address_disclosure_->Snapshot()->contacts.contains(caller);
+  }
+  return true;
+}
+
 Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity,
                                                   const std::optional<int64_t> relay_created_at_ms,
                                                   const std::optional<int64_t> relay_server_time_ms) {
@@ -1316,6 +1329,12 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
 
   switch (*type) {
   case CallControlType::CallInvite:
+    if (!AllowsInboundCall(sender_identity)) {
+      // Silent: a decline would tell the caller we exist and are online.
+      log().info << "call invite dropped (who can call me: " << InboundAudienceName(inbound_call_audience_)
+                 << ") from=" << sender_identity;
+      return {};
+    }
     return HandleInboundInvite(detail_json, sender_identity, message, relay_created_at_ms, relay_server_time_ms,
                                *local);
   case CallControlType::CallAccept:

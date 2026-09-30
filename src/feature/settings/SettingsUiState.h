@@ -116,6 +116,9 @@ struct SettingsUiState {
   std::string group_invite_policy = "contacts_only";
   /** Display label for the group-invite picker value. */
   std::string group_invite_policy_label = "Contacts only";
+  /** projects/privacy T3 — who may call: everyone | contacts_only | nobody */
+  std::string call_invite_policy = "everyone";
+  std::string call_invite_policy_label = "Everyone";
   /** Summary of remembered agent tool allow/deny decisions. */
   std::string tool_permissions_summary = "None saved";
   bool tool_permissions_has_saved = false;

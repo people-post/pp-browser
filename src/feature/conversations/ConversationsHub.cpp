@@ -1229,6 +1229,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     if (group_membership_) {
       group_membership_->SetInboundPolicy(GroupInvitePolicyFromString(prefs->group_invite_policy));
     }
+    call_stack_->SetInboundCallAudience(InboundAudienceFromName(prefs->call_invite_policy, InboundAudience::Everyone));
   }
 
   messaging_ready_ = false;
@@ -1314,6 +1315,7 @@ Roe<void> ConversationsHub::BuildLocalMessagingStack() {
     const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs->group_invite_policy);
     group_invite_gate_->SetInboundPolicy(policy);
     group_membership_->SetInboundPolicy(policy);
+    call_stack_->SetInboundCallAudience(InboundAudienceFromName(prefs->call_invite_policy, InboundAudience::Everyone));
   }
   RegisterContactEndpoints();
   if (agent_inbound_.IsBound()) {
@@ -2420,6 +2422,9 @@ void ConversationsHub::Apply(const PolicyPrefs& prefs) {
   if (attachment_downloads_) {
     attachment_downloads_->SetDownloadPolicy(prefs.attachment_download_policy);
   }
+  if (call_stack_) {
+    call_stack_->SetInboundCallAudience(prefs.call_invite_policy);
+  }
 }
 
 void ConversationsHub::Apply(const NotificationPrefs& prefs) {
@@ -2445,7 +2450,8 @@ ConversationsHub::NetworkConfig ConversationsHub::ProjectNetwork(const AppConfig
 
 ConversationsHub::PolicyPrefs ConversationsHub::ProjectPolicy(const ProfilePreferences& prefs) {
   return {.group_invite_policy = GroupInvitePolicyFromString(prefs.group_invite_policy),
-          .attachment_download_policy = AttachmentDownloadPolicyFromString(prefs.attachment_download_policy)};
+          .attachment_download_policy = AttachmentDownloadPolicyFromString(prefs.attachment_download_policy),
+          .call_invite_policy = InboundAudienceFromName(prefs.call_invite_policy, InboundAudience::Everyone)};
 }
 
 ConversationsHub::NotificationPrefs ConversationsHub::ProjectNotifications(const ProfilePreferences& prefs) {

@@ -109,9 +109,10 @@ public:
   struct PolicyPrefs {
     GroupInvitePolicy group_invite_policy = GroupInvitePolicy::ContactsOnly;
     AttachmentDownloadPolicy attachment_download_policy = AttachmentDownloadPolicy::Smart;
+    InboundAudience call_invite_policy = InboundAudience::Everyone;
 
     bool operator==(const PolicyPrefs& other) const {
-      return group_invite_policy == other.group_invite_policy &&
+      return group_invite_policy == other.group_invite_policy && call_invite_policy == other.call_invite_policy &&
              attachment_download_policy == other.attachment_download_policy;
     }
     bool operator!=(const PolicyPrefs& other) const { return !(*this == other); }

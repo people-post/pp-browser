@@ -175,6 +175,8 @@ private:
     ui::String pin_change_confirm;
     ui::String group_invite_policy = "contacts_only";
     ui::String group_invite_policy_label = "Contacts only";
+    ui::String call_invite_policy = "everyone";
+    ui::String call_invite_policy_label = "Everyone";
     ui::String tool_permissions_summary = "None saved";
     bool tool_permissions_has_saved = false;
     ui::String app_name;
@@ -192,6 +194,7 @@ private:
   static void OnChooseThemeCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnChooseLanguageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnChooseGroupInvitePolicyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OnChooseCallInvitePolicyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnChooseDirectConnectionsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnChooseAttachmentDownloadPolicyCallback(ui::DataModelHandle model, ui::Event& ev,
                                                        const ui::VariantList& args);
@@ -304,6 +307,8 @@ private:
   void ApplyLanguageChoice(const std::string& language_pref);
   void OnChooseGroupInvitePolicy(ui::Event& ev);
   void OnChooseDirectConnections(ui::Event& ev);
+  void OnChooseCallInvitePolicy(ui::Event& ev);
+  void ApplyCallInvitePolicyChoice(const std::string& policy);
   void ApplyDirectConnectionsChoice(const std::string& audience);
   void ApplyGroupInvitePolicyChoice(const std::string& policy);
   void OnChooseAttachmentDownloadPolicy(ui::Event& ev);

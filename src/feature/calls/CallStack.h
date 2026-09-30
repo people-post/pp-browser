@@ -124,6 +124,8 @@ public:
   /** k6: this endpoint's mobility class as advertised in caps (any thread). */
   MobilityClass LocalMobility() const { return mobility_.LocalClass(); }
   /** k6: the path policy of a call (calls owner). */
+  /** projects/privacy T3: who may call us (applied on the calls owner). */
+  void SetInboundCallAudience(InboundAudience audience);
   /** Mobility policy, restricted to the relay when the call's peer may not learn our address. */
   CallPathPolicy PathPolicyFor(const std::string& call_id) const;
   /** Before the owner replaces / drops mesh media objects: topology + bridge let go of them. */
@@ -222,6 +224,7 @@ private:
   /** The calls owner's event queue: every input and delayed event goes through Dispatch. */
   CallsLoop loop_{executor_, [this](CallStackEvent& event) { Dispatch(event); }};
   CallStackDeps deps_;
+  InboundAudience inbound_call_audience_ = InboundAudience::Everyone;
   std::unique_ptr<CallSessionStore> call_session_store_;
   std::unique_ptr<CallMediaKeyStore> call_media_keys_;
   std::unique_ptr<CallMediaEngine> call_media_engine_;

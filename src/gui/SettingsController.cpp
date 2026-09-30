@@ -280,6 +280,8 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.security_can_export_link = bindings_.security_can_export_link;
   ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
   ui_state_.group_invite_policy_label = bindings_.group_invite_policy_label.c_str();
+  ui_state_.call_invite_policy = bindings_.call_invite_policy.c_str();
+  ui_state_.call_invite_policy_label = bindings_.call_invite_policy_label.c_str();
   ui_state_.attachment_download_policy = bindings_.attachment_download_policy.c_str();
   ui_state_.attachment_download_policy_label = bindings_.attachment_download_policy_label.c_str();
   ui_state_.tool_permissions_summary = bindings_.tool_permissions_summary.c_str();
@@ -366,6 +368,8 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.security_can_export_link = ui_state_.security_can_export_link;
   bindings_.group_invite_policy = ui_state_.group_invite_policy.c_str();
   bindings_.group_invite_policy_label = ui_state_.group_invite_policy_label.c_str();
+  bindings_.call_invite_policy = ui_state_.call_invite_policy.c_str();
+  bindings_.call_invite_policy_label = ui_state_.call_invite_policy_label.c_str();
   bindings_.tool_permissions_summary = ui_state_.tool_permissions_summary.c_str();
   bindings_.tool_permissions_has_saved = ui_state_.tool_permissions_has_saved;
   bindings_.app_name = ui_state_.app_name.c_str();
@@ -548,6 +552,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("security_can_export_link", &controller.bindings_.security_can_export_link);
     ctor.Bind("group_invite_policy", &controller.bindings_.group_invite_policy);
     ctor.Bind("group_invite_policy_label", &controller.bindings_.group_invite_policy_label);
+    ctor.Bind("call_invite_policy_label", &controller.bindings_.call_invite_policy_label);
     ctor.Bind("tool_permissions_summary", &controller.bindings_.tool_permissions_summary);
     ctor.Bind("tool_permissions_has_saved", &controller.bindings_.tool_permissions_has_saved);
     ctor.Bind("app_name", &controller.bindings_.app_name);
@@ -568,6 +573,7 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("on_choose_theme", &SettingsController::OnChooseThemeCallback);
     ctor.BindEventCallback("on_choose_language", &SettingsController::OnChooseLanguageCallback);
     ctor.BindEventCallback("on_choose_group_invite_policy", &SettingsController::OnChooseGroupInvitePolicyCallback);
+    ctor.BindEventCallback("on_choose_call_invite_policy", &SettingsController::OnChooseCallInvitePolicyCallback);
     ctor.BindEventCallback("on_choose_direct_connections", &SettingsController::OnChooseDirectConnectionsCallback);
     ctor.BindEventCallback("on_choose_attachment_download_policy",
                            &SettingsController::OnChooseAttachmentDownloadPolicyCallback);
@@ -694,6 +700,7 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "security_can_export_link");
   host.Dirty("settings", "group_invite_policy");
   host.Dirty("settings", "group_invite_policy_label");
+  host.Dirty("settings", "call_invite_policy_label");
   host.Dirty("settings", "tool_permissions_summary");
   host.Dirty("settings", "tool_permissions_has_saved");
   host.Dirty("settings", "app_name");
@@ -1429,6 +1436,41 @@ void SettingsController::ApplyDirectConnectionsChoice(const std::string& audienc
   bindings_.direct_connections_label = DirectConnectionsDisplayLabel(audience).c_str();
   PullBindingsToUiState();
   MarkSectionDirty("network");
+  FlushPending();
+  DirtyAll();
+}
+
+void SettingsController::OnChooseCallInvitePolicyCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                                          const ui::VariantList& /*args*/) {
+  Instance().OnChooseCallInvitePolicy(ev);
+}
+
+void SettingsController::OnChooseCallInvitePolicy(ui::Event& ev) {
+  const ui::Vector2i position = ChoiceRowMenuPosition(ev);
+  const std::string current =
+      bindings_.call_invite_policy.empty() ? "everyone" : std::string(bindings_.call_invite_policy.c_str());
+  std::vector<ContextMenuAction> actions;
+  for (const char* id : {"everyone", "contacts_only", "nobody"}) {
+    const std::string policy_id = id;
+    actions.push_back({.id = policy_id,
+                       .label = CallInvitePolicyDisplayLabel(policy_id),
+                       .enabled = {},
+                       .run = [this, policy_id]() { ApplyCallInvitePolicyChoice(policy_id); },
+                       .icon = {},
+                       .danger = false,
+                       .selected = current == policy_id});
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void SettingsController::ApplyCallInvitePolicyChoice(const std::string& policy) {
+  if (suppress_auto_save_) {
+    return;
+  }
+  bindings_.call_invite_policy = policy.c_str();
+  bindings_.call_invite_policy_label = CallInvitePolicyDisplayLabel(policy).c_str();
+  PullBindingsToUiState();
+  MarkSectionDirty("security");
   FlushPending();
   DirtyAll();
 }

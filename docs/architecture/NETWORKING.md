@@ -57,6 +57,8 @@ Who may learn this device's IP address is one setting, `mesh.direct_connections`
 
 A link that is already up may carry traffic (P003). Relays and seeds use the plain links (relay operators see addresses: privacy T4); so do peer-announce and broadcast viewing — watching a publisher is the viewer's choice (P005). The ch0 capability carries our listen multiaddrs only to allowed peers (`MeshHost` → Amp `SetListenAddrDisclosure`). Registration publishes our listen addresses to the org directory — readable by anyone — only when the audience in force is `everyone` (a Node, or a user who chose it; `PublishesAddresses`); otherwise it registers the PeerId alone and peers reach us by it through relays. Addresses registered before the change stay on the server until the next registration.
 
+**Inbound control** (privacy T3): a Blocked contact's direct messages and call control are discarded on receipt (`RelayReceivePipeline::SetContactTrust`) and its Amp link is dropped on connect (`MeshHost`); `call_invite_policy` (Me → Security → Who can call me) drops invites from outside `everyone` | `contacts_only` | `nobody` silently (`CallSessionManager::AllowsInboundCall`).
+
 ## Calls
 
 Call **media** product path is **AMP** (voice-first): direct PeerLink channels and/or circuit nested Session + SoftMigrate `media_relay`. Wire-compat `call_sdp` / `call_ice` controls are ignored inbound; product does not send them. Code map: [CALLS.md](CALLS.md) · Amp: [CALL_MEDIA_CIRCUIT.md](../../projects/adp/CALL_MEDIA_CIRCUIT.md).

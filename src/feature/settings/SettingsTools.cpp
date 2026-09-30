@@ -621,6 +621,30 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
+      ToolDefinition{"set_call_invite_policy", "Set who may call this user: everyone, contacts_only, or nobody. "
+                                     "Calls from anyone else never ring and the caller is not told.",
+                     MustSchema(R"json({"type":"object","properties":{"policy":{"type":"string","enum":["everyone","contacts_only","nobody"]}},"required":["policy"]})json")},
+      Meta("security", "write", true),
+      [ports](const Object& arguments) -> Roe<std::string> {
+         const std::string policy = NormalizePolicyToken(FirstStringArg(arguments, {"policy", "call_invite_policy", "who"}));
+         if (!ValidGroupInvitePolicy(policy)) {  // the same three words as group invites
+           return Error("policy must be everyone, contacts_only, or nobody");
+         }
+         auto store = RequireStore(ports);
+         if (!store) {
+           return store.error();
+         }
+         ProfilePreferences prefs = (*store)->Snapshot().profile_prefs;
+         prefs.call_invite_policy = policy;
+         if (auto saved = SavePrefs(**store, prefs); !saved) {
+           return saved.error();
+         }
+         Object ok;
+         ok.set("call_invite_policy", policy);
+         return DumpJson(OkJson(std::move(ok)));
+       }));
+
+  tools.push_back(MakeTool(
       ToolDefinition{"set_auto_renew_registration", "Enable or disable automatic network registration renewal near expiry.", MustSchema(R"json({"type":"object","properties":{"enabled":{"type":"boolean"}},"required":[]})json")},
       Meta("identity", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {

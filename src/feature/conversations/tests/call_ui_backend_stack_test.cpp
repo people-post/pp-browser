@@ -332,6 +332,29 @@ TEST_F(CallUiBackendStackTest, AvailableAndSessionsIdentityStable) {
   EXPECT_FALSE(stack_->WantEphemeralListen());
 }
 
+// projects/privacy T3: "who can call me" — with contacts only, a stranger's invite never rings (and
+// nothing is sent back); a contact's does.
+TEST_F(CallUiBackendStackTest, ContactsOnlyCallAudienceDropsAStrangersInvite) {
+  stack_->SetInboundCallAudience(InboundAudience::ContactsOnly);
+  AppRuntime::RunUIAndOwnerTasks();
+  const int sent_before = sent_control_;
+  ASSERT_TRUE(IngestInvite("call:stranger"));
+  ui_->Apply(CallLifecycleEvent::InviteSeen, "call:stranger");
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_EQ(ui_->Phase(), CallPhase::Idle) << "a stranger's call rang";
+  EXPECT_EQ(sent_control_, sent_before) << "the drop answered the caller";
+
+  AddressDisclosurePolicy with_peer;
+  with_peer.audience = DirectAudience::Everyone;
+  with_peer.contacts.insert("account:peer");
+  disclosure_.Publish(with_peer);
+  ASSERT_TRUE(IngestInvite("call:contact"));
+  ui_->Apply(CallLifecycleEvent::InviteSeen, "call:contact");
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_EQ(ui_->Phase(), CallPhase::Ringing);
+  EXPECT_EQ(ui_->LastRingCallId(), "call:contact");
+}
+
 TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
   const std::string call_id = "call:ui-compose";
   ASSERT_TRUE(IngestInvite(call_id));

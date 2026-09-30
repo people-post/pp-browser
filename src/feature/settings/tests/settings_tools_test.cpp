@@ -199,6 +199,17 @@ TEST_F(SettingsToolsTest, SetGroupInvitePolicyAcceptsAliases) {
   EXPECT_EQ(store_.Snapshot().profile_prefs.group_invite_policy, "contacts_only");
 }
 
+// projects/privacy T3: "who can call me" through the settings assistant.
+TEST_F(SettingsToolsTest, SetCallInvitePolicySavesThePreference) {
+  pbr::ToolRegistry registry;
+  pbr::RegisterSettingsTools(registry, MakePorts());
+  EXPECT_EQ(store_.Snapshot().profile_prefs.call_invite_policy, "everyone");
+  auto set = registry.Execute("set_call_invite_policy", [&]() { pbr::Object args; args.set("policy", "Contacts Only"); return args; }());
+  ASSERT_TRUE(set) << set.error().message;
+  EXPECT_EQ(store_.Snapshot().profile_prefs.call_invite_policy, "contacts_only");
+  EXPECT_FALSE(registry.Execute("set_call_invite_policy", [&]() { pbr::Object args; args.set("policy", "friends"); return args; }()));
+}
+
 TEST_F(SettingsToolsTest, ResetToolPermissionsClearsRemembered) {
   pbr::ProfilePreferences prefs = store_.Snapshot().profile_prefs;
   prefs.tool_permissions.by_tool["add_contact"] = {.decision = "allow"};
