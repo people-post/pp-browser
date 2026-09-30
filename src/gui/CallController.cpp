@@ -1551,7 +1551,31 @@ CallMediaHealthView CallController::BuildMediaHealthView(CallMediaEngine& media,
   }
   in.now_ms = util::NowUnixMs();
   in.reconnecting = media_reconnect;
+  if (link_sample_call_id_ == active_call_id_) {
+    in.link = link_health_;
+  }
   return EvaluateCallMediaHealth(in);
+}
+
+void CallController::SampleLinkHealth(CallUiBackend* backend, const int64_t now_ms) {
+  if (link_sample_call_id_ != active_call_id_) {
+    link_sample_call_id_ = active_call_id_;
+    link_counters_ = {};
+    link_health_ = {};
+    last_link_sample_ms_ = 0;
+  }
+  if (last_link_sample_ms_ != 0 && now_ms - last_link_sample_ms_ < 2000) {
+    return;
+  }
+  last_link_sample_ms_ = now_ms;
+  const CallLinkCounters now =
+      backend && backend->Available() ? backend->MediaLinkCounters() : CallLinkCounters{};
+  const CallLinkHealth next = CallLinkHealthBetween(link_counters_, now);
+  // Keep the last resend figure while a quiet interval (no Reliable sends) has none of its own.
+  const double resend_pct = next.resend_pct >= 0.0 ? next.resend_pct : link_health_.resend_pct;
+  link_health_ = next;
+  link_health_.resend_pct = next.available ? resend_pct : -1.0;
+  link_counters_ = now;
 }
 
 void CallController::ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* backend,
@@ -1561,6 +1585,7 @@ void CallController::ApplyMediaHealth(CallMediaEngine& media, CallUiBackend* bac
     return;
   }
 
+  SampleLinkHealth(backend, util::NowUnixMs());
   const CallMediaHealthView view = BuildMediaHealthView(media, backend, media_reconnect);
   const int64_t now_ms = util::NowUnixMs();
 
@@ -1699,6 +1724,14 @@ void CallController::ShowCallDetails() {
   if (const char* hint_key = CallAudioAsymmetryHintKey(view.asymmetry); hint_key && hint_key[0]) {
     copy.asymmetry_hint = Tr(hint_key);
   }
+  if (view.link.available && view.link.rtt_ms >= 0) {
+    copy.network_label = Tr("call.details.network.rtt", {{"ms", std::to_string(view.link.rtt_ms)}});
+    if (view.link.resend_pct >= 0.0) {
+      char pct[16];
+      std::snprintf(pct, sizeof(pct), "%.1f", view.link.resend_pct);
+      copy.network_label += " · " + Tr("call.details.network.resend", {{"pct", pct}});
+    }
+  }
   copy.call_id = active_call_id_;
   copy.duration_heading = Tr("call.details.duration");
   copy.path_heading = Tr("call.details.path");
@@ -1706,6 +1739,7 @@ void CallController::ShowCallDetails() {
   copy.mic_heading = Tr("call.details.mic");
   copy.incoming_heading = Tr("call.details.incoming");
   copy.note_heading = Tr("call.details.note");
+  copy.network_heading = Tr("call.details.network");
   copy.diagnostics_heading = Tr("call.details.diagnostics");
 
   const std::string body = FormatCallDetailsText(view, now_ms, diagnostics, copy);

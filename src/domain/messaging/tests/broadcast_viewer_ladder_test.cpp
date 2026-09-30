@@ -8,6 +8,26 @@ namespace {
 
 using Action = BroadcastViewerLadder::Action;
 
+// B009: the viewer takes the published level nearest its preference, below first.
+TEST(BroadcastWatchVideoLevelTest, NearestPublishedLevelBelowFirst) {
+  EXPECT_EQ(ChooseWatchVideoLevel({1, 2}, 2), 2);
+  EXPECT_EQ(ChooseWatchVideoLevel({1, 2}, 1), 1);
+  EXPECT_EQ(ChooseWatchVideoLevel({1}, 2), 1) << "below the preference";
+  EXPECT_EQ(ChooseWatchVideoLevel({2}, 1), 2) << "nothing below: the lowest above";
+  EXPECT_EQ(ChooseWatchVideoLevel({1, 3}, 2), 1);
+  EXPECT_EQ(ChooseWatchVideoLevel({}, 2), 0) << "audio-only program";
+}
+
+TEST(BroadcastWatchVideoLevelTest, NoVideoPreferenceTakesNoLevel) {
+  EXPECT_EQ(ChooseWatchVideoLevel({1, 2}, 0), 0);
+  EXPECT_EQ(ChooseWatchVideoLevel({1, 2}, -1), 0);
+}
+
+TEST(BroadcastWatchVideoLevelTest, IgnoresValuesThatAreNotLevels) {
+  EXPECT_EQ(ChooseWatchVideoLevel({300, 16}, 2), 0);
+  EXPECT_EQ(ChooseWatchVideoLevel({300, 1}, 20), 1);
+}
+
 TEST(BroadcastViewerLadderTest, AdmitAttachesToTheAdmittingHop) {
   BroadcastViewerLadder ladder({"h1", "h2"});
   auto step = ladder.Start();

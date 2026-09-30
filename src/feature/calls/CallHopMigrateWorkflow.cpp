@@ -933,7 +933,7 @@ CallMediaEngine::SfuSendFn CallHopMigrateWorkflow::MakeHopSendFn(const HopAttach
     MediaDataFrame frame;
     frame.stream_id = pub;
     frame.channel_id = pkt.channel_id;
-    frame.channel_type = pkt.channel_id == 0 ? MediaChannelType::ReliableOrdered : MediaChannelType::LatestLossy;
+    frame.channel_type = MediaChannelTypeFor(pkt.channel_id);
     frame.seq = pkt.seq;
     frame.mark = pkt.mark;
     if (!media_key.empty()) {

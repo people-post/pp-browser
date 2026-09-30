@@ -1,5 +1,8 @@
 #include "domain/media/CallMediaEngine.h"
 
+#include "common/media/MediaChannel.h"
+#include "domain/media/VideoLevelProfile.h"
+
 #include "domain/media/CallAudioSession.h"
 #include "domain/media/CallMediaPlayout.h"
 #include "domain/media/CallRingtone.h"
@@ -100,6 +103,20 @@ struct CallMediaEngine::Impl {
   std::atomic<bool> video_need_keyframe{false};
   std::atomic<bool> adaptation_camera_allowed{true};
   std::atomic<int64_t> adaptation_target_video_bps{0};
+  /** The level outgoing video is sent at (docs/contracts/MEDIA_CHANNELS.md). */
+  std::atomic<uint8_t> video_level{kDefaultVideoLevel};
+  /** Set by SetVideoLevel: the level's profile sizes the encode and sets its bitrate (broadcast). */
+  std::atomic<bool> video_level_profile{false};
+
+  /** The camera's geometry, sized by the level's profile when one was set. */
+  CameraGeometry EncodeGeometry(CameraGeometry geometry) const {
+    if (video_level_profile.load(std::memory_order_relaxed)) {
+      const VideoLevelProfile profile = ProfileForVideoLevel(video_level.load(std::memory_order_relaxed));
+      geometry.encode_width = profile.width;
+      geometry.encode_height = profile.height;
+    }
+    return geometry;
+  }
   std::atomic<int64_t> adaptation_target_audio_bps{CallMediaAdaptation::kComfortAudioBps};
   std::atomic<double> path_pressure{0.0};
   std::atomic<uint64_t> outbound_drops{0};
@@ -961,7 +978,7 @@ struct CallMediaEngine::Impl {
         }
         if (send_fn) {
           SfuPacket pkt;
-          pkt.channel_id = 0;
+          pkt.channel_id = kMediaChannelAudio;
           pkt.seq = sfu_audio_seq.fetch_add(1) + 1;
           pkt.payload.assign(opus_buf.data(), opus_buf.data() + encoded);
           try {
@@ -1033,7 +1050,10 @@ struct CallMediaEngine::Impl {
 
   /** Video thread only: bitrate changes (ApplyAdaptation, any thread) land right before an encode. */
   void ApplyVideoBitrate(int64_t& applied_bps) {
-    const int64_t want = adaptation_target_video_bps.load(std::memory_order_relaxed);
+    int64_t want = adaptation_target_video_bps.load(std::memory_order_relaxed);
+    if (want <= 0 && video_level_profile.load(std::memory_order_relaxed)) {
+      want = ProfileForVideoLevel(video_level.load(std::memory_order_relaxed)).target_bps;
+    }
     if (video_codec && want > 0 && want != applied_bps) {
       video_codec->SetTargetBitrate(want);
       applied_bps = want;
@@ -1103,7 +1123,7 @@ struct CallMediaEngine::Impl {
       return;
     }
     SfuPacket pkt;
-    pkt.channel_id = 1;
+    pkt.channel_id = VideoChannel(video_level.load(std::memory_order_relaxed));
     pkt.seq = sfu_video_seq.fetch_add(1) + 1;
     pkt.mark = encoded->keyframe ? 1 : 0;
     pkt.payload = std::move(encoded->annex_b);
@@ -1145,7 +1165,7 @@ struct CallMediaEngine::Impl {
         camera = OpenCameraLease();
         if (camera) {
           camera_lease_ms = ms_since(*camera_requested);
-          geometry = camera->Geometry();
+          geometry = EncodeGeometry(camera->Geometry());
           ConfigureLocalEncoder(geometry);
           applied_bps = 0;
           need_keyframe = true;
@@ -1430,11 +1450,11 @@ void CallMediaEngine::OnSfuPacket(const SfuPacket& packet) {
                  << " call=" << impl_->call_id;
     }
   }
-  if (packet.channel_id == 0) {
+  if (IsAudioChannel(packet.channel_id)) {
     impl_->OnRemoteOpusFrame(packet.stream_id, packet.seq,
                              reinterpret_cast<const std::byte*>(packet.payload.data()),
                              packet.payload.size());
-  } else if (packet.channel_id == 1) {
+  } else if (IsVideoChannel(packet.channel_id)) {
     impl_->OnRemoteH264Frame(packet.stream_id, reinterpret_cast<const std::byte*>(packet.payload.data()),
                              packet.payload.size());
   }
@@ -1626,6 +1646,18 @@ Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled, const int display_rota
     impl_->StartVideoLoop();
   }
   return {};
+}
+
+void CallMediaEngine::SetVideoLevel(const uint8_t level) {
+  if (!IsVideoLevel(level)) {
+    return;
+  }
+  impl_->video_level.store(level, std::memory_order_relaxed);
+  impl_->video_level_profile.store(true, std::memory_order_relaxed);
+}
+
+uint8_t CallMediaEngine::VideoLevel() const {
+  return impl_->video_level.load(std::memory_order_relaxed);
 }
 
 void CallMediaEngine::UpdateCameraDisplayRotation(const int display_rotation_deg) {

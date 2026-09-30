@@ -285,6 +285,9 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedHelloAndEncryptedAudioRoundT
   // Path label truth: both ends report the relay carrier (answerer showed "Punched" — dogfood 2026-09-24).
   EXPECT_EQ(a_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
   EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+  // A relayed call's link figures are those of the association to the relay under the carrier.
+  EXPECT_TRUE(a_call_->ActiveLinkCounters().available);
+  EXPECT_TRUE(b_call_->ActiveLinkCounters().available);
 
   a_call_->DetachLeg(leg_id);
   harness_->PumpUntil([&] { return a_call_->Phase() == CallMediaSessionPhase::Idle; }, 500);

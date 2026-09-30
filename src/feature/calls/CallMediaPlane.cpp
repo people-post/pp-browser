@@ -54,12 +54,12 @@ void CallMediaPlane::BindTestMediaPath(ICallMediaTransport* transport) {
 
 CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() const {
   CallTopologyController::MediaRelayDeps deps;
-  if (!mesh_media_) {
+  if (!connectivity_ || !media_relay_) {
     return deps;
   }
   MeshHost* m = mesh();
-  const bool use_amp_relay = mesh_media_->AmpRelayAvailable();
-  const MediaRelayAttachPorts ports = mesh_media_->RelayAttachPorts();
+  const bool use_amp_relay = media_relay_->AmpRelayAvailable();
+  const MediaRelayAttachPorts ports = media_relay_->RelayAttachPorts();
   deps.relay = ports.relay;
   deps.dial = ports.dial;
   deps.circuit_reach = ports.service_reach;
@@ -86,9 +86,11 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
   deps.resolve_local_advertise = deps_.local_listen_multiaddrs;
   deps.peer_has_media_relay = deps_.peer_has_media_relay;
   deps.list_media_relay_peers = deps_.list_media_relay_peers;
-  MeshMediaPlane* mesh_media = mesh_media_;
-  deps.resolve_remote_listen_by_peer = [mesh_media]() { return *mesh_media->PeerListenBook(); };
-  deps.peer_lan_confirmed = [mesh_media](const std::string& peer_id) { return mesh_media->PeerLanConfirmed(peer_id); };
+  MeshConnectivity* connectivity = connectivity_;
+  deps.resolve_remote_listen_by_peer = [connectivity]() { return *connectivity->PeerListenBook(); };
+  deps.peer_lan_confirmed = [connectivity](const std::string& peer_id) {
+    return connectivity->PeerLanConfirmed(peer_id);
+  };
   if (deps.local_listen_multiaddr.find("/ip4/0.0.0.0/") != std::string::npos ||
       deps.local_listen_multiaddr.find("/ip6/::/") != std::string::npos) {
     deps.local_listen_multiaddr.clear();
@@ -99,12 +101,12 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
 CallDirectPathDeps CallMediaPlane::DirectPathDeps() {
   CallDirectPathDeps deps;
   deps.transport = Transport();
-  if (!mesh_media_) {
+  if (!connectivity_) {
     return deps;
   }
-  deps.dial = mesh_media_->Dial();
-  deps.circuit_reach = mesh_media_->CircuitReach();
-  CircuitRendezvousCoordinator* rendezvous = &mesh_media_->Rendezvous();
+  deps.dial = connectivity_->Dial();
+  deps.circuit_reach = connectivity_->CircuitReach();
+  CircuitRendezvousCoordinator* rendezvous = &connectivity_->Rendezvous();
   deps.seed_warm = [rendezvous]() { rendezvous->WarmBootstrapSeedSessions(); };
   deps.seed_reserve = [rendezvous]() { rendezvous->ReserveOnBootstrapSeeds(); };
   deps.seed_park_await = [rendezvous](std::function<void(bool)> done, int timeout_ms) {
@@ -125,7 +127,7 @@ void CallMediaPlane::FinishMeshStop() {
 }
 
 void CallMediaPlane::DetachRelayClient() {
-  if (IMediaRelayClient* relay = mesh_media_ ? mesh_media_->RelayClient() : nullptr) {
+  if (IMediaRelayClient* relay = media_relay_ ? media_relay_->RelayClient() : nullptr) {
     relay->Detach();
   }
 }
@@ -143,15 +145,15 @@ void CallMediaPlane::Clear() {
 
 void CallMediaPlane::RegisterCallPeerListenMultiaddrs(const std::string& identity,
                                                      const std::vector<std::string>& multiaddrs) {
-  if (!mesh_media_) {
+  if (!connectivity_) {
     return;
   }
   if (identity.rfind("account:", 0) != 0 || !deps_.note_mesh_peer_id_for_relay) {
-    mesh_media_->RegisterPeerListenMultiaddrs(identity, multiaddrs);
+    connectivity_->RegisterPeerListenMultiaddrs(identity, multiaddrs);
     return;
   }
   // Registered on the connectivity owner; the note takes the account → PeerId to the calls owner.
-  mesh_media_->RegisterPeerListenMultiaddrs(
+  connectivity_->RegisterPeerListenMultiaddrs(
       identity, multiaddrs, [identity, note = deps_.note_mesh_peer_id_for_relay](const std::string& peer_id) {
         if (!peer_id.empty()) {
           note(identity, peer_id);

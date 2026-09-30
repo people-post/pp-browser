@@ -4,6 +4,7 @@
 
 #include "domain/mesh/reach/PeerReachCoordinator.h"
 #include "domain/messaging/BroadcastMedia.h"
+#include "foundation/platform/Platform.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include <chrono>
@@ -107,6 +108,8 @@ std::unique_ptr<BroadcastHub> BroadcastHub::ForMesh(BroadcastMeshDeps deps, Medi
   };
   ports.relay = deps.relay;
   ports.hop_multiaddr = std::move(deps.hop_multiaddr);
+  // B009: a phone prefers the low level, a desktop the high one; the nearest published one is taken.
+  ports.preferred_video_level = Platform::IsMobile() ? kDefaultVideoLevel : 2;
   ports.now_ms = []() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
         .count();
@@ -132,6 +135,10 @@ std::unique_ptr<BroadcastHub> BroadcastHub::ForMesh(BroadcastMeshDeps deps, Medi
   };
   publish.relay = ports.relay;
   publish.hop_multiaddr = ports.hop_multiaddr;
+  // B009: a phone publishes one level; a desktop can produce the high level too (one at a time
+  // until it runs a second encoder). The relay answers which one it carries.
+  publish.video_offer = Platform::IsMobile() ? MediaRelayVideoOffer{{kDefaultVideoLevel}, 1}
+                                             : MediaRelayVideoOffer{{kDefaultVideoLevel, 2}, 1};
 
   auto hub = std::make_unique<BroadcastHub>(std::move(ports), devices, std::move(publish));
   hub->rpc_ = std::move(rpc);

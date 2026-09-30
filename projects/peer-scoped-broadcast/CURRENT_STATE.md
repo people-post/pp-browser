@@ -1,7 +1,7 @@
 # Peer-scoped broadcast — current state
 
-**As of:** 2026-09-26
-**Branch:** `refactor/peer-reach-coordinator` (media-client-layers)
+**As of:** 2026-09-30
+**Branch:** `refactor/mesh-connectivity` (video levels, B009)
 
 | Spine | Status |
 |-------|--------|
@@ -75,3 +75,16 @@
 **Product UX:** Discovery ≠ call ring; Notifications + optional live banner (domain inbox ready; UI later); Watch reuses join API without ringtone; Private vs On-screen replies (publisher-signed overlay tips + rate limit / block). See [DESIGN.md](DESIGN.md#product-pickup-ux--not-call-ringing).
 
 See [PROGRAM.md](PROGRAM.md) for sequencing.
+
+## Video levels (B009) — V1–V4 landed
+
+| Piece | Path |
+|-------|------|
+| Channel = track kind + level | `common/media/MediaChannel.h`; [MEDIA_CHANNELS.md](../../docs/contracts/MEDIA_CHANNELS.md) |
+| Relay policy + negotiation (offer / answer in the quote; ingest drop) | `MediaRelayVideoLevels.*`, `MediaRelayServer` (`SetVideoPolicy`), config `mesh.media_relay_video` |
+| Broadcaster offers device levels, publishes the answered one, tip lists it | `BroadcasterWorkflow` (`BroadcastLiveRequest::video`), `VideoLevelProfile.h`, `CallMediaEngine::SetVideoLevel`, `PeerAnnounceTip::video_levels` (signed) |
+| Viewer takes the nearest published level | `ChooseWatchVideoLevel`, `BroadcastViewerWorkflow` |
+| Tests | `media_relay_video_levels_test`, `media_relay_server_client_test` (answer + ingest drop), `broadcaster_workflow_test`, `broadcast_viewer_workflow_test`, `peer_announce_test` |
+
+**Open:** V5 (two encoders), relay capability advertised for the user's choice, watch / go-live UI.
+

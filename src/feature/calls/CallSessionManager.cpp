@@ -648,6 +648,7 @@ CallDirectMediaPorts CallSessionManager::MakeDirectMediaPorts() {
     return ports;
   }
   ports.media_path_kind = [bridge]() { return bridge->MediaPathKind(); };
+  ports.media_link_counters = [bridge]() { return bridge->MediaLinkCounters(); };
   ports.note_peer_id_relay_mapping = [bridge](const std::string& peer_id, const std::string& relay_identity) {
     bridge->NotePeerIdRelayMapping(peer_id, relay_identity);
   };
@@ -758,6 +759,11 @@ CallHopHealth CallSessionManager::HopHealth() const {
   }
   // Topology holds relay deps; sample via public IsSfuAttached + Media PathPressure elsewhere.
   return topology_.HopHealth();
+}
+
+CallLinkCounters CallSessionManager::MediaLinkCounters() const {
+  const auto direct_media = direct_media_.Get();
+  return direct_media->media_link_counters ? direct_media->media_link_counters() : CallLinkCounters{};
 }
 
 std::string CallSessionManager::MediaPathKind() const {

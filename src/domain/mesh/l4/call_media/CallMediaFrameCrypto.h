@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/media/MediaChannel.h"
+
 #include "common/Error.h"
 
 #include <cstdint>
@@ -11,14 +13,12 @@ namespace pbr {
 
 using ByteVector = std::vector<uint8_t>;
 
-inline constexpr uint8_t kCallMediaChannelAudio = 0;
-inline constexpr uint8_t kCallMediaChannelVideoLo = 1;
 inline constexpr uint8_t kCallMediaFrameVersionV1 = 1;
 inline constexpr uint8_t kCallMediaFrameVersionV2 = 2;
 
 /** Decrypted call-media / SFU body (V034). */
 struct CallMediaDecodedFrame {
-  uint8_t channel = kCallMediaChannelAudio;
+  uint8_t channel = kMediaChannelAudio;
   uint32_t seq = 0;
   uint8_t mark = 0;
   std::vector<uint8_t> payload;

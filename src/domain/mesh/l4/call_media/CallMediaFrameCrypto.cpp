@@ -47,7 +47,7 @@ Roe<CallMediaDecodedFrame> DecryptVersioned(const ByteVector& media_key, const s
   const uint32_t seq = ReadSeq(body);
   const uint8_t mark = body[5];
   if (ver == kCallMediaFrameVersionV1) {
-    return DecryptBody(media_key, aad_v1, kCallMediaChannelAudio, seq, mark, kCallMediaV1HeaderBytes, body);
+    return DecryptBody(media_key, aad_v1, kMediaChannelAudio, seq, mark, kCallMediaV1HeaderBytes, body);
   }
   if (ver == kCallMediaFrameVersionV2) {
     if (body.size() < kCallMediaV2HeaderBytes) {
@@ -95,7 +95,7 @@ Roe<CallMediaDecodedFrame> DecryptCallMediaFrame(const ByteVector& media_key, co
   const uint32_t seq = ReadSeq(body);
   const uint8_t channel = (body[0] == kCallMediaFrameVersionV2 && body.size() >= kCallMediaV2HeaderBytes)
                               ? body[6]
-                              : kCallMediaChannelAudio;
+                              : kMediaChannelAudio;
   return DecryptVersioned(media_key, body, BuildCallMediaFrameAad(call_id, media_epoch, seq),
                           BuildCallMediaFrameAad(call_id, media_epoch, seq, channel));
 }
@@ -103,7 +103,7 @@ Roe<CallMediaDecodedFrame> DecryptCallMediaFrame(const ByteVector& media_key, co
 Roe<std::vector<uint8_t>> EncryptCallMediaAudioFrame(const ByteVector& media_key, const std::string& call_id,
                                                       uint32_t media_epoch, uint32_t seq, uint8_t mark,
                                                       const std::vector<uint8_t>& opus_payload) {
-  return EncryptCallMediaFrame(media_key, call_id, media_epoch, seq, mark, kCallMediaChannelAudio,
+  return EncryptCallMediaFrame(media_key, call_id, media_epoch, seq, mark, kMediaChannelAudio,
                                opus_payload);
 }
 
@@ -144,7 +144,7 @@ Roe<std::vector<uint8_t>> DecryptCallMediaAudioFrame(const ByteVector& media_key
   if (!decoded) {
     return decoded.error();
   }
-  if (decoded->channel != kCallMediaChannelAudio) {
+  if (decoded->channel != kMediaChannelAudio) {
     return Error("call media frame is not audio");
   }
   return std::move(decoded->payload);
@@ -180,18 +180,18 @@ Roe<CallMediaDecodedFrame> DecryptCallMediaSfuFrame(const ByteVector& media_key,
 Roe<std::vector<uint8_t>> EncryptCallMediaSfuAudioFrame(const ByteVector& media_key, const std::string& call_id,
                                                         uint32_t media_epoch, uint32_t stream_id, uint32_t seq,
                                                         uint8_t mark, const std::vector<uint8_t>& opus_payload) {
-  return EncryptCallMediaSfuFrame(media_key, call_id, media_epoch, stream_id, seq, mark, kCallMediaChannelAudio,
+  return EncryptCallMediaSfuFrame(media_key, call_id, media_epoch, stream_id, seq, mark, kMediaChannelAudio,
                                   opus_payload);
 }
 
 Roe<std::vector<uint8_t>> DecryptCallMediaSfuAudioFrame(const ByteVector& media_key, const std::string& call_id,
                                                         uint32_t media_epoch, uint32_t stream_id,
                                                         const std::vector<uint8_t>& body) {
-  auto decoded = DecryptCallMediaSfuFrame(media_key, call_id, media_epoch, stream_id, kCallMediaChannelAudio, body);
+  auto decoded = DecryptCallMediaSfuFrame(media_key, call_id, media_epoch, stream_id, kMediaChannelAudio, body);
   if (!decoded) {
     return decoded.error();
   }
-  if (decoded->channel != kCallMediaChannelAudio) {
+  if (decoded->channel != kMediaChannelAudio) {
     return Error("call media SFU frame is not audio");
   }
   return std::move(decoded->payload);

@@ -109,6 +109,19 @@ struct MediaRelayBudgetConfig {
 };
 
 /**
+ * Which video levels this node's media_relay carries per publisher (peer-scoped-broadcast B009).
+ * Levels are opaque ordered integers (docs/contracts/MEDIA_CHANNELS.md).
+ */
+struct MediaRelayVideoConfig {
+  /** Levels served; empty = any. */
+  std::vector<int> serve_levels;
+  /** At most this many levels per publisher; 0 = no limit. */
+  int carry_levels = 0;
+  /** Refuse a publisher offering none of `serve_levels` (default: carry its closest level). */
+  bool strict = false;
+};
+
+/**
  * Per-capability relay pricing (N010 / P001).
  * Protocol branches on rate (== 0 free); mode is a UX label only.
  */
@@ -177,6 +190,7 @@ struct MeshConfig {
   MeshDhtConfig dht;
   MeshPricingConfig pricing;
   MediaRelayBudgetConfig media_relay_budget;
+  MediaRelayVideoConfig media_relay_video;
 };
 
 struct AppConfig {

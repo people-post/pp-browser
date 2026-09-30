@@ -93,7 +93,7 @@ public:
     /** The peer's caps for this call (invite / accept) — mobility feeds the call's path policy. */
     std::function<void(const std::string& call_id, const CallPeerCaps& caps)> note_call_peer_caps;
     std::function<void(const std::string& identity)> prefetch_reach;
-    /** Kick mesh circuit park (composition projects MeshMediaPlane::ReserveOnBootstrapSeeds). */
+    /** Kick mesh circuit park (composition projects MeshConnectivity rendezvous ReserveOnBootstrapSeeds). */
     std::function<void()> ensure_circuit_ready;
     /**
      * Await circuit-ready (Accept gate): `done(ready)` once parked or at the timeout, from any thread

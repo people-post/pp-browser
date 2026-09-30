@@ -58,7 +58,12 @@ void HandleConnection(std::shared_ptr<tcp::socket> socket, StatusHttpAuthConfig 
               } catch (...) {
                 snap = StatusHttpSnapshot{};
               }
-              auto response = HandleStatusHttpRequest(*req, self->auth, snap);
+              StatusHttpResponse response;
+              try {
+                response = HandleStatusHttpRequest(*req, self->auth, snap);
+              } catch (...) {
+                response = StatusHttpInternalError();  // never let a request unwind io.run()
+              }
               if (req->method == "HEAD") {
                 response.body.clear();
               }
@@ -179,7 +184,7 @@ Roe<void> StatusHttpServer::Start(const StatusHttpBind& bind, StatusHttpAuthConf
   thread_ = std::thread([this, raw]() {
     raw->ScheduleAccept();
     logging::getLogger("pp-node").info << "status HTTP listening on " << raw->bound
-                                       << " (/healthz, /status)";
+                                       << " (/healthz, /status, /metrics)";
     raw->io.run();
     running_.store(false);
   });

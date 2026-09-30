@@ -42,7 +42,7 @@ namespace pbr {
  * Call media / session / lifecycle stack (Wave 3 / V040).
  *
  * Phase assembler: profile stores, CSM, Lifecycle, MediaSeat, and `CallMediaPlane`
- * (call_media transport + bridge) over the hub's borrowed `MeshMediaPlane` (L015). Hub owns `unique_ptr<CallStack>`, forwards
+ * (call_media transport) over the hub's borrowed `MeshConnectivity` / `MeshMediaRelay` (L015). Hub owns `unique_ptr<CallStack>`, forwards
  * `Calls()`/`Lifecycle()`, injects mesh/config/mDNS glue through CallStackDeps.
  *
  * CallUiBackend binds a CallStack& directly (not the Hub) for call APIs.
@@ -76,11 +76,12 @@ struct CallStackDeps {
   std::function<void(const std::string& peer_id)> note_lan_mdns_peer_id;
 
   /**
-   * Neutral mesh media (relay client, dial, reach, parking) — owned by the product hub, outlives
-   * the stack (L015). The owner calls `DetachMeshMedia` before replacing its objects and
-   * `RebindMeshMedia` after.
+   * Neutral mesh objects — owned by the product hub, outlive the stack (L015): connectivity (dial,
+   * reach, rendezvous parking, punch) and the media_relay client built on it. The owner calls
+   * `DetachMeshMedia` before replacing their objects and `RebindMeshMedia` after.
    */
-  MeshMediaPlane* mesh_media = nullptr;
+  MeshConnectivity* connectivity = nullptr;
+  MeshMediaRelay* media_relay = nullptr;
 };
 
 class CallStack : public Module {
@@ -205,9 +206,10 @@ private:
   void SyncMediaPlaneDeps();
   /** The session manager's 1:1 path (on the plane's transport) + its topology relay deps. */
   void BindMediaProducts();
-  /** Calls' hooks on the shared mesh media (announce chosen R1, signaling punch). */
+  /** Calls' hooks on the shared connectivity (announce chosen R1, signaling punch). */
   void BindMeshMediaHooks();
-  MeshMediaPlane* mesh_media() const { return deps_.mesh_media; }
+  MeshConnectivity* connectivity() const { return deps_.connectivity; }
+  MeshMediaRelay* media_relay() const { return deps_.media_relay; }
   /** What the calls show may have changed: refresh chrome, wake N025 listen when its desire flips. */
   void OnCallStateChangedOnOwner();
 

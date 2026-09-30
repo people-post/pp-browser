@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/media/MediaChannel.h"
 #include "domain/media/CallMediaEngine.h"
 #include "domain/mesh/media_plane/MediaRelayAttach.h"
 #include "domain/messaging/BroadcastRpcCodec.h"
@@ -29,6 +30,8 @@ struct BroadcastWatchTarget {
   std::string join_handle;
   /** Hops to ask, in order: the tip's primary hop, then its L1 hints. */
   std::vector<std::string> hops;
+  /** B009: video levels the program publishes (from the signed tip); empty = audio only. */
+  std::vector<int> video_levels;
 };
 
 /** Refuses tips that are not a Live program with a join handle and publisher. */
@@ -60,6 +63,8 @@ struct BroadcastViewerPorts {
   /** Playback-only session target (owner for Start / Stop; OnSfuPacket any thread). */
   CallMediaEngine* engine = nullptr;
   std::function<int64_t()> now_ms;
+  /** B009: the video level this viewer prefers; the nearest published one is taken (0 = no video). */
+  int preferred_video_level = kDefaultVideoLevel;
 };
 
 /** What the viewer reports to itself through its runner (BroadcastHub); `watch` names the watch. */
@@ -120,6 +125,8 @@ public:
     std::string error;
     /** Re-admissions after relay loss, this watch. */
     int recoveries = 0;
+    /** The video level watched; 0 = audio only. */
+    int video_level = 0;
   };
 
   /** Consecutive losses without reaching Listening again before the watch fails. */

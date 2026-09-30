@@ -120,6 +120,13 @@ public:
    * asynchronous: the video thread opens the camera on the media device thread; IsCameraEnabled is
    * true from the request until it is turned off or the open fails (then TakeCameraFailure says why).
    */
+  /**
+   * Send video at `level` (docs/contracts/MEDIA_CHANNELS.md), sized and paced by its profile
+   * (`VideoLevelProfile`; a broadcast publisher's negotiated level). Takes effect when the camera
+   * next opens. Calls never set it: they send the default level at the camera's size.
+   */
+  void SetVideoLevel(uint8_t level);
+  uint8_t VideoLevel() const;
   Roe<void> SetCameraEnabled(bool enabled);
   /**
    * Same, with the display rotation read by the caller on UI (`CameraDisplayRotationDegrees`) — for

@@ -196,5 +196,67 @@ TEST(CallMediaHealthTest, LogLineIncludesHopPeers) {
   EXPECT_NE(line.find("ABCDEFGH:up=100/dn=200/dq=3/bl=1"), std::string::npos);
 }
 
+TEST(CallMediaHealthTest, LinkHealthRoundTripAndResendsBetweenSamples) {
+  CallLinkCounters before{.available = true, .reliable_sent = 100, .retransmits = 2, .srtt_ms = 40};
+  CallLinkCounters now{.available = true, .reliable_sent = 150, .retransmits = 7, .srtt_ms = 55};
+  const CallLinkHealth health = CallLinkHealthBetween(before, now);
+  EXPECT_TRUE(health.available);
+  EXPECT_EQ(health.rtt_ms, 55);  // the smoothed figure now, not a delta
+  EXPECT_DOUBLE_EQ(health.resend_pct, 10.0);
+}
+
+TEST(CallMediaHealthTest, LinkHealthHasNoResendRateWithoutTwoSamplesOfOneAssociation) {
+  const CallLinkCounters now{.available = true, .reliable_sent = 10, .retransmits = 1, .srtt_ms = 30};
+  EXPECT_LT(CallLinkHealthBetween(CallLinkCounters{}, now).resend_pct, 0.0) << "first sample";
+  // A path move starts a new association: its counters restart below the last sample.
+  const CallLinkCounters old{.available = true, .reliable_sent = 500, .retransmits = 50, .srtt_ms = 80};
+  const CallLinkHealth moved = CallLinkHealthBetween(old, now);
+  EXPECT_TRUE(moved.available);
+  EXPECT_EQ(moved.rtt_ms, 30);
+  EXPECT_LT(moved.resend_pct, 0.0);
+  EXPECT_FALSE(CallLinkHealthBetween(now, CallLinkCounters{}).available);
+}
+
+// Review: the call switches links (hop attach, a move onto a long-lived relay link) — the counters of
+// another link are not a delta, even when they happen to be larger.
+TEST(CallMediaHealthTest, LinkHealthHasNoResendRateAcrossALinkSwitch) {
+  const CallLinkCounters direct{.available = true, .link_id = 7, .reliable_sent = 100, .retransmits = 0, .srtt_ms = 20};
+  const CallLinkCounters relay{.available = true, .link_id = 9, .reliable_sent = 101, .retransmits = 50, .srtt_ms = 60};
+  const CallLinkHealth health = CallLinkHealthBetween(direct, relay);
+  EXPECT_TRUE(health.available);
+  EXPECT_EQ(health.rtt_ms, 60);
+  EXPECT_LT(health.resend_pct, 0.0) << "not 5000%";
+}
+
+TEST(CallMediaHealthTest, LinkHealthResendRateIsCappedAtEveryPacket) {
+  const CallLinkCounters before{.available = true, .link_id = 7, .reliable_sent = 100, .retransmits = 0, .srtt_ms = 20};
+  const CallLinkCounters now{.available = true, .link_id = 7, .reliable_sent = 102, .retransmits = 9, .srtt_ms = 20};
+  EXPECT_DOUBLE_EQ(CallLinkHealthBetween(before, now).resend_pct, 100.0);
+}
+
+TEST(CallMediaHealthTest, LinkHealthInformsButDoesNotGrade) {
+  CallMediaHealthInput in;
+  in.engine.active = true;
+  in.engine.connected = true;
+  in.now_ms = 10000;
+  in.engine.last_rx_audio_ms = 9900;
+  in.engine.last_tx_audio_ms = 9900;
+  in.engine.rx_audio_frames = 100;
+  in.engine.tx_audio_frames = 100;
+  const CallPathQuality baseline = EvaluateCallMediaHealth(in).quality;
+  in.link = CallLinkHealth{.available = true, .rtt_ms = 900, .resend_pct = 40.0};
+  const CallMediaHealthView view = EvaluateCallMediaHealth(in);
+  EXPECT_EQ(view.quality, baseline);
+  EXPECT_EQ(view.link.rtt_ms, 900);
+}
+
+TEST(CallMediaHealthTest, DetailsShowTheNetworkLineOnlyWhenGiven) {
+  CallMediaHealthView view;
+  CallDetailsCopy copy;
+  EXPECT_EQ(FormatCallDetailsText(view, 0, false, copy).find("Network:"), std::string::npos);
+  copy.network_label = "Round trip 42 ms";
+  EXPECT_NE(FormatCallDetailsText(view, 0, false, copy).find("Network: Round trip 42 ms"), std::string::npos);
+}
+
 } // namespace
 } // namespace pbr

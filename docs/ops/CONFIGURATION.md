@@ -40,7 +40,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_IDENTITY_SEED` | deterministic identity | ≥32-byte hex master seed; HKDF `pp-node-identity-v1` → device ML-DSA + account ML-DSA + account ML-KEM. Empty volume mints stably; existing `identity.enc` **fail-closed** on mismatch |
 | `PP_NODE_PROFILE` | active profile id | Or `--profile` |
 | `PP_NODE_STATUS_ADDR` | status HTTP bind | Default `127.0.0.1:18518`; empty disables. Set `0.0.0.0:18518` (or a host IP) to expose for console/probes — ADDR alone is enough |
-| `PP_NODE_STATUS_TOKEN` | status Bearer token | Optional; when set, required for both `/healthz` and `/status` |
+| `PP_NODE_STATUS_TOKEN` | status Bearer token | Optional; when set, required for `/healthz`, `/status` and `/metrics` |
 
 JSON remains the durable seed profile (caps, budgets, pricing). Env is for secrets and per-instance overrides (Compose/Kubernetes). Implementation: `src/app/node/NodeEnvOverlay.*`.
 
@@ -185,6 +185,18 @@ Spec: [MESH_DHT.md](../contracts/MESH_DHT.md), ADR [N028](../../projects/p2p-mes
 DHT complements [mesh directory](../../projects/p2p-mesh/MESH_DIRECTORY.md) (n-dir): bootstrap ∪ directory cache, never bypasses hop policy. pp-ledger fleet does **not** use this DHT — see [platform-integration](../../../pp-ledger/docs/platform-integration.md).
 
 Enter an **API key** directly in Me → Assistant (saved to `config.json`) or use **API key env var** for desktop-style env lookup when using Cloud/Custom. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Brief** (key from Profile registration); **Ollama (localhost)** remains available for local dev.
+
+### Media relay video levels (`mesh.media_relay_video`)
+
+Which video levels this node's `media_relay` carries per broadcast publisher ([peer-scoped-broadcast B009](../../projects/peer-scoped-broadcast/DECISIONS.md#b009--video-levels-opaque-ordered-integers-negotiated-per-relay-at-attach); levels: [MEDIA_CHANNELS.md](../contracts/MEDIA_CHANNELS.md)). Read at mesh start.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `serve_levels` | `[]` (any) | Levels this relay serves, e.g. `[2]` for a high-quality relay |
+| `carry_levels` | `0` (no limit) | At most this many levels per publisher |
+| `strict` | `false` | Refuse a publisher offering none of `serve_levels`; by default the relay carries the publisher's closest level instead |
+
+A publisher offers the levels it can produce; the relay answers with the ones it carries and drops video of other levels from that publisher.
 
 ### Verify settings persistence (manual)
 
