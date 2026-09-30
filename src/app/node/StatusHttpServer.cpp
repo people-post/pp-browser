@@ -179,7 +179,7 @@ Roe<void> StatusHttpServer::Start(const StatusHttpBind& bind, StatusHttpAuthConf
   thread_ = std::thread([this, raw]() {
     raw->ScheduleAccept();
     logging::getLogger("pp-node").info << "status HTTP listening on " << raw->bound
-                                       << " (/healthz, /status)";
+                                       << " (/healthz, /status, /metrics)";
     raw->io.run();
     running_.store(false);
   });

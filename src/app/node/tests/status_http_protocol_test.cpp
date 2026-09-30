@@ -1,6 +1,7 @@
 #include "app/node/StatusHttpProtocol.h"
 
 #include "common/ValueJson.h"
+#include "common/metrics/MetricsRegistry.h"
 
 #include <gtest/gtest.h>
 
@@ -89,6 +90,23 @@ TEST(StatusHttpProtocolTest, BearerAuth) {
 
   pbr::StatusHttpRequest ok{.method = "GET", .path = "/healthz", .authorization = "Bearer s3cret"};
   EXPECT_EQ(pbr::HandleStatusHttpRequest(ok, auth, snap).status_code, 200);
+}
+
+// node-monitoring M1: operators scrape Prometheus text, behind the same bearer auth.
+TEST(StatusHttpProtocolTest, MetricsServesPrometheusTextBehindAuth) {
+  pbr::MetricsRegistry::Global().Counter("pp_test_scrape_total", "Test counter.").Inc();
+  pbr::StatusHttpAuthConfig auth;
+  auth.bearer_token = "s3cret";
+  pbr::StatusHttpSnapshot snap;
+
+  pbr::StatusHttpRequest missing{.method = "GET", .path = "/metrics", .authorization = {}};
+  EXPECT_EQ(pbr::HandleStatusHttpRequest(missing, auth, snap).status_code, 401);
+
+  pbr::StatusHttpRequest ok{.method = "GET", .path = "/metrics", .authorization = "Bearer s3cret"};
+  const auto response = pbr::HandleStatusHttpRequest(ok, auth, snap);
+  EXPECT_EQ(response.status_code, 200);
+  EXPECT_EQ(response.content_type.rfind("text/plain; version=0.0.4", 0), 0u);
+  EXPECT_NE(response.body.find("# TYPE pp_test_scrape_total counter"), std::string::npos);
 }
 
 TEST(StatusHttpProtocolTest, ParseRequestExtractsAuthorization) {

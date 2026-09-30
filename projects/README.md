@@ -66,6 +66,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [group-chat](group-chat/) | Group threads (design / follow-on) |
 | [content-cas](content-cas/) | Private/public CAS realms; library / pin / Node-gated catalog use cases (C013) |
 | [support-chat](support-chat/) | Support channel notes |
+| [node-monitoring](node-monitoring/) | pp-node `/metrics` (scrape) + pp-browser UI metrics |
 
 ## Done / archived
 

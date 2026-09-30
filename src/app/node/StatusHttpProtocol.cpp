@@ -1,5 +1,7 @@
 #include "app/node/StatusHttpProtocol.h"
 
+#include "common/metrics/MetricsRegistry.h"
+
 #include "common/ValueJson.h"
 
 #include <algorithm>
@@ -223,6 +225,15 @@ StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,
   }
   if (request.method != "GET" && request.method != "HEAD") {
     return MethodNotAllowed();
+  }
+
+  if (request.path == "/metrics") {
+    // Operator scrape (projects/node-monitoring): Prometheus text, names in NODE_METRICS.md.
+    StatusHttpResponse r;
+    r.status_code = 200;
+    r.content_type = "text/plain; version=0.0.4; charset=utf-8";
+    r.body = MetricsRegistry::Global().RenderPrometheus();
+    return r;
   }
 
   if (request.path == "/healthz") {

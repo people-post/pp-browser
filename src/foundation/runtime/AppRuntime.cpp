@@ -1,5 +1,7 @@
 #include "foundation/runtime/AppRuntime.h"
 
+#include "common/metrics/MetricsRegistry.h"
+
 #include "foundation/runtime/ThreadRuntime.h"
 #include "foundation/runtime/WorkerDispatch.h"
 #include "common/Logger.h"
@@ -44,7 +46,21 @@ std::shared_ptr<OwnerThread> OwnerFor(const OwnerThreadId id) {
   return g_owners[static_cast<size_t>(id)];
 }
 
+/** pp_runtime_queue_depth{owner} at scrape time (reads whichever owners exist then). */
+void RegisterOwnerQueueMetrics() {
+  static const MetricsRegistry::CollectorId collector = MetricsRegistry::Global().AddCollector([](MetricsRegistry& r) {
+    for (size_t i = 0; i < kOwnerThreadCount; ++i) {
+      const auto id = static_cast<OwnerThreadId>(i);
+      const auto owner = OwnerFor(id);
+      r.Gauge("pp_runtime_queue_depth", "Owner thread tasks queued and not started.", {{"owner", OwnerThreadName(id)}})
+          .Set(owner ? static_cast<double>(owner->QueueDepth()) : 0.0);
+    }
+  });
+  (void)collector;
+}
+
 void StartOwnerThreads(const AppRuntimeConfig& config) {
+  RegisterOwnerQueueMetrics();
   std::lock_guard lock(g_owners_mu);
   g_owner_mode = config.owner_threads;
   for (size_t i = 0; i < kOwnerThreadCount; ++i) {

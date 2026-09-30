@@ -40,7 +40,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_IDENTITY_SEED` | deterministic identity | ≥32-byte hex master seed; HKDF `pp-node-identity-v1` → device ML-DSA + account ML-DSA + account ML-KEM. Empty volume mints stably; existing `identity.enc` **fail-closed** on mismatch |
 | `PP_NODE_PROFILE` | active profile id | Or `--profile` |
 | `PP_NODE_STATUS_ADDR` | status HTTP bind | Default `127.0.0.1:18518`; empty disables. Set `0.0.0.0:18518` (or a host IP) to expose for console/probes — ADDR alone is enough |
-| `PP_NODE_STATUS_TOKEN` | status Bearer token | Optional; when set, required for both `/healthz` and `/status` |
+| `PP_NODE_STATUS_TOKEN` | status Bearer token | Optional; when set, required for `/healthz`, `/status` and `/metrics` |
 
 JSON remains the durable seed profile (caps, budgets, pricing). Env is for secrets and per-instance overrides (Compose/Kubernetes). Implementation: `src/app/node/NodeEnvOverlay.*`.
 
