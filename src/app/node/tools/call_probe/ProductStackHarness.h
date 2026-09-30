@@ -3,6 +3,7 @@
 #include "amp/L1/Clock.h"
 #include "amp/link/AmpStack.h"
 #include "domain/media/MediaDeviceArbiter.h"
+#include "common/privacy/AddressDisclosure.h"
 #include "domain/mesh/host/MeshHost.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/messaging/SqliteThreadStore.h"
@@ -149,10 +150,13 @@ private:
   /** Decoded RX per remote publisher stream. */
   std::vector<CallMediaStreamHealth> RxStreams() const;
   /** Accept the top pending invite once `accept_delay_ms_` passed since it showed; its call id. */
+  void PublishAddressDisclosure();
   std::optional<std::string> MaybeAcceptPendingInvite(std::optional<std::chrono::steady_clock::time_point>& first_seen);
   uint64_t TxAudioFrames() const;
 
   std::shared_ptr<pp::adp::Clock> clock_;
+  /** Who may learn this probe's address, as in the product hub (projects/privacy T1); outlives host_. */
+  AddressDisclosureGate address_disclosure_;
   std::unique_ptr<MeshHost> host_;
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;

@@ -152,7 +152,18 @@ void CallStack::NotifyPathPolicyChangedOnOwner(const std::string& call_id) {
 }
 
 CallPathPolicy CallStack::PathPolicyFor(const std::string& call_id) const {
-  return mobility_.PolicyFor(call_id);
+  const CallPathPolicy policy = mobility_.PolicyFor(call_id);
+  if (!deps_.address_disclosure) {
+    return policy;
+  }
+  const auto disclosure = deps_.address_disclosure->Snapshot();
+  const LiveCall* call = call_sessions_ ? call_sessions_->Live().Find(call_id) : nullptr;
+  const std::optional<std::string> peer = call ? call->SolePeer() : std::nullopt;
+  if (peer ? disclosure->AllowsDirect(*peer) : disclosure->audience == DirectAudience::Everyone) {
+    return policy;
+  }
+  // Outside the audience — or, with a narrower audience, a peer not known yet: disclosure is the risk.
+  return RelayOnlyPolicy(policy);
 }
 
 void CallStack::DetachMeshMedia() {
@@ -411,6 +422,7 @@ void CallStack::BindSessionProviders() {
     }
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
+  call_sessions_->SetAddressDisclosure(deps_.address_disclosure);
   // Providers read the connectivity owner's published view of this node's mesh (never the
   // MeshHost the hub may be tearing down under a running call flow).
   call_sessions_->SetLocalMeshPeerIdProvider([this]() -> std::string { return LocalMeshView()->local_peer_id; });

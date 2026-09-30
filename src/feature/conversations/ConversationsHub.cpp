@@ -125,6 +125,7 @@ ConversationsHub::ConversationsHub() {
 
 CallStackDeps ConversationsHub::MakeCallStackDeps() {
   CallStackDeps deps;
+  deps.address_disclosure = &address_disclosure_;
   deps.store = store_.get();
   deps.contacts = contacts_.get();
   deps.identity = identity_.get();

@@ -34,9 +34,17 @@ struct CallPathPolicy {
   CallStandbyPriority standby_priority = CallStandbyPriority::Low;
   /** Keep a relayed standby next to a direct / punched primary (K003: requested for every call). */
   bool want_relay_standby = true;
+  /**
+   * The peer may not learn our address (projects/privacy T1): the relay is the only path — no
+   * direct dial, no punch, no move onto a direct link.
+   */
+  bool relay_only = false;
 };
 
 CallPathPolicy DecideCallPathPolicy(MobilityClass local, MobilityClass remote);
+
+/** `policy` for a peer that may not learn our address: relay only, the relay anchors the call. */
+CallPathPolicy RelayOnlyPolicy(CallPathPolicy policy);
 
 /** Standby priority for the call's current primary path (`punched`: a hole-punched link). */
 CallStandbyPriority StandbyPriorityFor(const CallPathPolicy& policy, bool punched);

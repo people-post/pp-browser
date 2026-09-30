@@ -33,6 +33,8 @@ public:
     std::function<std::optional<CallPeerCaps>()> local_caps;
     std::function<std::vector<std::string>()> local_listen_addrs;
     std::function<std::string()> local_peer_id;
+    /** projects/privacy T1: answer a signalling punch only from peers this allows (unset = all). */
+    std::function<bool(const std::string& peer)> may_learn_our_address;
     std::function<void(const std::string& key, const std::vector<std::string>& addrs)> register_listen;
     /** The peer's caps changed mid-call. */
     std::function<void(const std::string& call_id, const CallPeerCaps& caps)> on_peer_caps;

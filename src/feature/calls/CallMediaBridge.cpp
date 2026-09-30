@@ -1146,8 +1146,9 @@ PeerReachRequest CallMediaBridge::BuildReachRequest(const CallMediaDirectConnect
   }
   // The offerer reaches; the answerer awaits the offerer's link (invite/accept is the agreement).
   request.mode = params.offerer ? PeerReachMode::Reach : PeerReachMode::Await;
-  request.exclude_direct = std::exchange(force_circuit_ensure_, false);
-  request.allow_punch = PathPolicyFor(params.call_id).punch_at_start;
+  const CallPathPolicy policy = PathPolicyFor(params.call_id);
+  request.exclude_direct = std::exchange(force_circuit_ensure_, false) || policy.relay_only;
+  request.allow_punch = policy.punch_at_start;
   return request;
 }
 

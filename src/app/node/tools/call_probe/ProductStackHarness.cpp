@@ -1,4 +1,5 @@
 #include "app/node/tools/call_probe/ProductStackHarness.h"
+#include "domain/people/ContactAddressDisclosure.h"
 #include "feature/calls/LocalNetworkReaction.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
 
@@ -87,6 +88,7 @@ Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
   harness->shared_session_key_ = SharedSessionKey();
 
   harness->host_ = std::make_unique<MeshHost>();
+  harness->host_->SetAddressDisclosure(&harness->address_disclosure_);
   // Own MeshPump like the product: with the main thread as sole Amp driver, any main-thread wait
   // on work that needs mesh progress (capture send, parked worker) deadlocked (hard-w5 hang).
   if (auto attached = harness->host_->AttachAmpStack(std::move(stack), harness->advertise_ma_,
@@ -124,6 +126,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     return store_dek.error();
   }
   contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
+  // The product default audience (contacts): the lab's peers are each other's contacts.
+  contacts_->SetOnChanged([this]() { PublishAddressDisclosure(); });
   identity_ = std::make_unique<IdentityStore>(data_dir_.string(), "call-probe");
   if (auto dek = identity_->SetDek(ProbeDek()); !dek) {
     return dek.error();
@@ -163,7 +167,9 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
 
   ui_ = std::make_unique<CallUiBackend>(*stack_);
 
+  PublishAddressDisclosure();
   CallStackDeps deps;
+  deps.address_disclosure = &address_disclosure_;
   deps.store = store_.get();
   deps.contacts = contacts_.get();
   deps.identity = identity_.get();
@@ -283,6 +289,16 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   std::cout << "ok  product-stack CallStack+CallUiBackend wired account=" << local_account_
             << " peer_id=" << local_peer_id_ << "\n";
   return {};
+}
+
+void ProductStackHarness::PublishAddressDisclosure() {
+  std::vector<Contact> book;
+  if (contacts_) {
+    if (auto listed = contacts_->List()) {
+      book = std::move(*listed);
+    }
+  }
+  address_disclosure_.Publish(BuildAddressDisclosurePolicy(app_config_.mesh.direct_connections, book));
 }
 
 Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,

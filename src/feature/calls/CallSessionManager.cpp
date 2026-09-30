@@ -236,6 +236,7 @@ CallSessionWorkflow::ReachPorts CallSessionManager::MakeWorkflowReachPorts() {
   ports.local_listen_multiaddrs = [this]() -> std::vector<std::string> {
     return local_listen_multiaddrs_ ? local_listen_multiaddrs_() : std::vector<std::string>{};
   };
+  ports.may_learn_our_address = [this](const std::string& peer) { return AllowsDirect(address_disclosure_, peer); };
   ports.local_peer_caps = [this]() -> CallPeerCaps {
     return local_peer_caps_ ? local_peer_caps_() : CallPeerCaps{};
   };
@@ -272,6 +273,7 @@ void CallSessionManager::BindReachSignalPorts() {
     return local_listen_multiaddrs_ ? local_listen_multiaddrs_() : std::vector<std::string>{};
   };
   ports.local_peer_id = [this]() { return local_mesh_peer_id_ ? local_mesh_peer_id_() : std::string{}; };
+  ports.may_learn_our_address = [this](const std::string& peer) { return AllowsDirect(address_disclosure_, peer); };
   ports.register_listen = [this](const std::string& key, const std::vector<std::string>& addrs) {
     if (register_peer_listen_multiaddrs_) {
       register_peer_listen_multiaddrs_(key, addrs);

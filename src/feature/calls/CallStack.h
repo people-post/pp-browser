@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/privacy/AddressDisclosure.h"
 #include "foundation/data/Config.h"
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallSessionStore.h"
@@ -82,6 +83,8 @@ struct CallStackDeps {
    */
   MeshConnectivity* connectivity = nullptr;
   MeshMediaRelay* media_relay = nullptr;
+  /** Who may learn our address (projects/privacy T1; hub-owned, outlives the stack). Null = anyone. */
+  const AddressDisclosureGate* address_disclosure = nullptr;
 };
 
 class CallStack : public Module {
@@ -121,6 +124,7 @@ public:
   /** k6: this endpoint's mobility class as advertised in caps (any thread). */
   MobilityClass LocalMobility() const { return mobility_.LocalClass(); }
   /** k6: the path policy of a call (calls owner). */
+  /** Mobility policy, restricted to the relay when the call's peer may not learn our address. */
   CallPathPolicy PathPolicyFor(const std::string& call_id) const;
   /** Before the owner replaces / drops mesh media objects: topology + bridge let go of them. */
   void DetachMeshMedia();
