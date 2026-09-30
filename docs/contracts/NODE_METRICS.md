@@ -2,7 +2,7 @@
 
 **Tier:** contract
 
-What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`, default `127.0.0.1:18518`; the `--status-token` bearer applies): the Prometheus text exposition format 0.0.4. Scrape it with Prometheus or an OpenTelemetry collector's Prometheus receiver. Design and phases: [projects/node-monitoring](../../projects/node-monitoring/).
+What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`, default `127.0.0.1:18518`; the `--status-token` bearer applies): the Prometheus text exposition format 0.0.4. Scrape it with Prometheus or an OpenTelemetry collector's Prometheus receiver. Scrape only, no push; the registry and exposition are hand-rolled (`common/metrics/MetricsRegistry.*`, no Prometheus / OpenTelemetry SDK). Rationale: [node-monitoring D001](../../projects/node-monitoring/DECISIONS.md#d001--scrape-only-hand-rolled).
 
 ## Rules
 

@@ -210,6 +210,10 @@ void CallMediaBridge::SetSeedParkAwait(PeerReachCoordinator::SeedParkAwait park)
   reach_.SetSeedParkAwait(std::move(park));
 }
 
+CallLinkCounters CallMediaBridge::MediaLinkCounters() const {
+  return direct_.IsActive() ? direct_.ActiveLinkCounters() : CallLinkCounters{};
+}
+
 std::string CallMediaBridge::MediaPathKind() const {
   // The bound link is the truth: an answerer's inbound leg can ride a relay carrier while the
   // reach loop (and the dialer-only hop registry) think "punched" (dogfood 2026-09-24).

@@ -2307,6 +2307,27 @@ std::string CallMediaLegCoordinator::ActiveRemotePeerId() const {
   return bundle ? bundle->remote_peer_id : std::string{};
 }
 
+CallLinkCounters CallMediaLegCoordinator::ActiveLinkCounters() const {
+  pp::amp::LinkHandle link{};
+  {
+    Impl::CallbackLock lock(*impl_);
+    const auto* bundle = impl_->PrimaryBundle();
+    if (!bundle || bundle->active.kind == CallMediaLinkKind::Unknown) {
+      return {};
+    }
+    link = bundle->active.link;
+  }
+  // The IO strand takes this coordinator's lock inside link callbacks: never nest the other way.
+  const auto stats = runtime_.Links().LinkConnectionStats(link);
+  if (!stats) {
+    return {};
+  }
+  return CallLinkCounters{.available = true,
+                          .reliable_sent = stats->reliable_sent,
+                          .retransmits = stats->retransmits,
+                          .srtt_ms = stats->srtt_ms};
+}
+
 CallMediaLinkKind CallMediaLegCoordinator::ActiveLinkKind() const {
   Impl::CallbackLock lock(*impl_);
   const auto* bundle = impl_->PrimaryBundle();

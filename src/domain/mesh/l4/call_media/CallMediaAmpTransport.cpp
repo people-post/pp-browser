@@ -122,6 +122,10 @@ std::string CallMediaAmpTransport::ActiveRemotePeerId() const {
   return coordinator_.ActiveRemotePeerId();
 }
 
+CallLinkCounters CallMediaAmpTransport::ActiveLinkCounters() const {
+  return coordinator_.ActiveLinkCounters();
+}
+
 CallMediaLinkKind CallMediaAmpTransport::ActiveLinkKind() const {
   return coordinator_.ActiveLinkKind();
 }

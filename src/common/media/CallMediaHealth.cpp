@@ -30,6 +30,7 @@ CallMediaHealthView EvaluateCallMediaHealth(const CallMediaHealthInput& in) {
   CallMediaHealthView out;
   out.engine = in.engine;
   out.hop = in.hop;
+  out.link = in.link;
   // media_relay only when hop SFU is attached — 1:1 Amp also uses engine.sfu_mode for capture.
   if (in.hop.attached) {
     out.path_kind = "media_relay";
@@ -154,6 +155,23 @@ std::string FormatCallDebugSubtitle(const CallMediaHealthView& v, int64_t now_ms
   return out.str();
 }
 
+CallLinkHealth CallLinkHealthBetween(const CallLinkCounters& before, const CallLinkCounters& now) {
+  CallLinkHealth health;
+  if (!now.available) {
+    return health;
+  }
+  health.available = true;
+  health.rtt_ms = now.srtt_ms;
+  // A new association (path move, relay change) starts its counters over: no rate across that.
+  if (before.available && now.reliable_sent >= before.reliable_sent && now.retransmits >= before.retransmits) {
+    const uint64_t sent = now.reliable_sent - before.reliable_sent;
+    if (sent > 0) {
+      health.resend_pct = 100.0 * static_cast<double>(now.retransmits - before.retransmits) / static_cast<double>(sent);
+    }
+  }
+  return health;
+}
+
 std::string FormatCallDetailsText(const CallMediaHealthView& v, int64_t now_ms, bool include_debug,
                                   const CallDetailsCopy& copy) {
   std::ostringstream out;
@@ -162,6 +180,9 @@ std::string FormatCallDetailsText(const CallMediaHealthView& v, int64_t now_ms, 
   out << copy.quality_heading << ": " << copy.quality_label << "\n";
   out << copy.mic_heading << ": " << copy.mic_label << "\n";
   out << copy.incoming_heading << ": " << copy.incoming_label << "\n";
+  if (!copy.network_label.empty()) {
+    out << copy.network_heading << ": " << copy.network_label << "\n";
+  }
   if (!copy.asymmetry_hint.empty()) {
     out << copy.note_heading << ": " << copy.asymmetry_hint << "\n";
   }
@@ -206,6 +227,9 @@ std::string FormatMediaHealthLogLine(const CallMediaHealthView& v, int64_t now_m
       << " hop_drops_queue=" << v.hop.drops_queue << " hop_drops_ceiling=" << v.hop.drops_ceiling
       << " rx_age_ms=" << rx_age << " mic_lvl=" << v.engine.local_level
       << " peer_lvl=" << v.engine.remote_level;
+  if (v.link.available) {
+    out << " link_rtt_ms=" << v.link.rtt_ms << " link_resend_pct=" << v.link.resend_pct;
+  }
   if (!v.engine.streams.empty()) {
     out << " rx_streams=";
     for (size_t i = 0; i < v.engine.streams.size(); ++i) {

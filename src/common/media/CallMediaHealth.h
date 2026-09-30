@@ -71,6 +71,32 @@ struct CallMediaEngineHealth {
   std::vector<CallMediaStreamHealth> streams;
 };
 
+/**
+ * Cumulative Reliable figures of the UDP association a call's media rides (Amp `ConnectionStats`;
+ * a relayed call reads the association to its relay).
+ */
+struct CallLinkCounters {
+  bool available = false;
+  uint64_t reliable_sent = 0;
+  uint64_t retransmits = 0;
+  /** Smoothed round trip; -1 before the first sample. */
+  int64_t srtt_ms = -1;
+};
+
+/**
+ * What Call details shows of the call's link: the smoothed round trip, and the share of Reliable
+ * (control) packets resent between two samples. Media is BestEffort — its loss shows in PLC / jitter,
+ * not here — so this informs, it does not grade the call.
+ */
+struct CallLinkHealth {
+  bool available = false;
+  int64_t rtt_ms = -1;
+  /** -1 when nothing Reliable was sent in between. */
+  double resend_pct = -1.0;
+};
+
+CallLinkHealth CallLinkHealthBetween(const CallLinkCounters& before, const CallLinkCounters& now);
+
 struct CallHopPeerHealth {
   std::string peer_id;
   int64_t bytes_up = 0;
@@ -89,6 +115,8 @@ struct CallHopHealth {
   uint64_t drops_total = 0;
   /** Remote (non-local) hop participants — for dogfood / media_health. */
   std::vector<CallHopPeerHealth> peers;
+  /** The association to the relay (unavailable when attached to this device's own hop). */
+  CallLinkCounters link;
 };
 
 struct CallMediaHealthInput {
@@ -103,6 +131,8 @@ struct CallMediaHealthInput {
    * Used when hop is not attached (1:1 Amp also sets engine.sfu_mode for capture).
    */
   std::string reach_path_kind;
+  /** The call's link, sampled by the caller (rates need two samples). */
+  CallLinkHealth link;
 };
 
 struct CallMediaHealthView {
@@ -114,6 +144,7 @@ struct CallMediaHealthView {
   std::string path_kind = "direct";
   CallMediaEngineHealth engine;
   CallHopHealth hop;
+  CallLinkHealth link;
 };
 
 /** Pure evaluation for chrome + logs (V032 instrumentation). */
@@ -136,6 +167,7 @@ struct CallDetailsCopy {
   std::string mic_label;
   std::string incoming_label;
   std::string asymmetry_hint; // optional localized coaching
+  std::string network_label;  // optional localized link figures ("Round trip 42 ms · 1.2% resent")
   std::string call_id;
   /** Localized field headings (defaults match English diagnostics). */
   std::string duration_heading = "Duration";
@@ -144,6 +176,7 @@ struct CallDetailsCopy {
   std::string mic_heading = "Your mic";
   std::string incoming_heading = "Incoming audio";
   std::string note_heading = "Note";
+  std::string network_heading = "Network";
   std::string diagnostics_heading = "Diagnostics";
 };
 

@@ -216,6 +216,7 @@ void CallStack::PublishUiState() {
     state.last_media_error = call_sessions_->PeekLastMediaError();
     state.hop_health = call_sessions_->HopHealth();
     state.media_path_kind = call_sessions_->MediaPathKind();
+    state.media_link = call_sessions_->MediaLinkCounters();
   }
   if (call_sessions_) {
     const CallMediaSeat& seat = call_sessions_->Seat();

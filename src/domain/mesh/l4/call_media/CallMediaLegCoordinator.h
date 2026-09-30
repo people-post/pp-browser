@@ -67,6 +67,8 @@ public:
   CallMediaDirectConnectParams ActiveParams() const;
   CallMediaLinkKind ActiveLinkKind() const;
   std::string ActiveRemotePeerId() const;
+  /** Any thread: the primary bundle's active link, read under the link strand (not under this lock). */
+  CallLinkCounters ActiveLinkCounters() const;
   CallMediaLegPhase LegPhase(CallMediaLegId id) const;
   /** Transitional: maps active bundle phase → CallMediaSessionPhase for existing tests. */
   CallMediaSessionPhase Phase() const;

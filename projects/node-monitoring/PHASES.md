@@ -26,4 +26,4 @@ The home is the network-status popover (not a Me panel): it already carries the 
 - [x] Mesh traffic in the popover: links, up / down rate, round trip, resend % (deltas between samples ≥ 1 s apart; `MeshTrafficRatesBetween`)
 - [x] What a desktop Node relays for others: relaying rate (circuit bridge bytes + media relay forwarded bytes) under Helper load
 - [x] Rendezvous parking in the popover: "Reachable through N relays", or none when behind NAT
-- [ ] Call quality (per-call; belongs with the call screen, not the network popover)
+- [x] Call quality on the call screen: Call details **Network** line (round trip, resend %) of the call's own link — pp-cpp-amp v2.12.0 `Connection::Stats` / `LinkConnectionStats` ([CALLS.md](../../docs/architecture/CALLS.md) § Call media health)

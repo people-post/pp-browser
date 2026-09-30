@@ -208,6 +208,8 @@ public:
 
   /** Last successful 1:1 reach mode: direct | punched | circuit (empty before connect). */
   std::string MediaPathKind() const;
+  /** The active 1:1 call-media link's figures (unavailable when no direct call is bound). */
+  CallLinkCounters MediaLinkCounters() const;
   /** True when 1:1 call-media stream is up (not merely CallMediaEngine StartSfu). */
   bool HasActiveDirectStream() const;
 
