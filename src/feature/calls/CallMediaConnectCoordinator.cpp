@@ -39,7 +39,7 @@ CallMediaConnectCoordinator::~CallMediaConnectCoordinator() {
   // holds no pointer to us — a late hello reaches a dropped outbox and is NACKed (the offerer retries).
 }
 
-void CallMediaConnectCoordinator::SetOutbox(CallsOutbox<ConnectEvent> outbox) {
+void CallMediaConnectCoordinator::SetOutbox(OwnerOutbox<ConnectEvent> outbox) {
   outbox_ = std::move(outbox);
   InstallInboundHandler();
 }

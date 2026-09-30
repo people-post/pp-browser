@@ -378,7 +378,7 @@ void CallMediaBridge::Apply(CallDirectPlannerEvent ev, const std::string& call_i
   }
 }
 
-void CallMediaBridge::SetOutbox(CallsOutbox<DirectPathEvent> outbox) {
+void CallMediaBridge::SetOutbox(OwnerOutbox<DirectPathEvent> outbox) {
   outbox_ = std::move(outbox);
   connect_.SetOutbox(outbox_.For<ConnectEvent>(
       [](ConnectEvent event) { return DirectPathEvent{direct_event::ForConnect{std::move(event)}}; }));
@@ -817,7 +817,7 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
 }
 
 void CallMediaBridge::ReceiveDirectMedia(ReceiveGate& gate, CallMediaEngine& media, const CallMediaHost& host,
-                                         const CallsOutbox<DirectPathEvent>& outbox, const std::string& call_id,
+                                         const OwnerOutbox<DirectPathEvent>& outbox, const std::string& call_id,
                                          const uint32_t fixed_stream, const uint8_t channel, const uint32_t seq,
                                          const uint8_t mark, const std::vector<uint8_t>& payload) {
   // The data plane stays on I/O, like the hop's frames: only atomics and the engine's thread-safe

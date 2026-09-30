@@ -16,8 +16,8 @@
 #include "feature/calls/CallTopologyHostPorts.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/CallsOutbox.h"
-#include "feature/calls/CallsSteps.h"
+#include "foundation/runtime/OwnerOutbox.h"
+#include "foundation/runtime/OwnerSteps.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallHopMigrateWorkflow.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
@@ -108,7 +108,7 @@ public:
   /** V048 hop arming / progress — empty ports = permissive (unit tests). */
   void SetHopArmingPorts(CallHopArmingPorts ports);
   /** Where topology (and hop migrate under it) reports its events (the session manager binds it). */
-  void SetOutbox(CallsOutbox<TopologyEvent> outbox);
+  void SetOutbox(OwnerOutbox<TopologyEvent> outbox);
   /** An event it reported, back from the calls owner's queue. */
   void Handle(TopologyEvent& event);
 
@@ -299,9 +299,9 @@ private:
   // unwatch or our destruction.
   /** Names the current relay watch: a loss reported by an earlier one is stale. */
   uint64_t relay_watch_ = 0;
-  CallsOutbox<TopologyEvent> outbox_;
+  OwnerOutbox<TopologyEvent> outbox_;
   /** Finish steps waiting for their Continue event. */
-  CallsSteps steps_;
+  OwnerSteps steps_;
   uint64_t relay_loss_observer_ = 0;
 
   /** Coordinator timers (attach-wait deadline, publisher re-announce) drop once we are gone. */

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <type_traits>
 #include <utility>
 
 namespace pbr {
@@ -21,24 +22,6 @@ logging::Logger& ViewerLog() {
 constexpr uint16_t kAudioChannel = 0;
 constexpr int64_t kAudioDownBps = 64000;
 constexpr std::chrono::milliseconds kRecoveryBackoff{500};
-
-/**
- * Wrap an owner handler for a completion that may arrive on any thread: hop to the owner, then run
- * only while `deferred`'s generation is unchanged (no Stop / newer Watch since).
- */
-template <typename T>
-std::function<void(T)> OnOwner(const std::function<void(std::function<void()>)>& post_owner, const DeferredSelf& deferred,
-                            std::function<void(T)> handler) {
-  return [post_owner, token = deferred.token(), snap = deferred.Snapshot(),
-          handler = std::move(handler)](T value) {
-    auto held = std::make_shared<T>(std::move(value));
-    post_owner([token, snap, handler, held]() {
-      if (DeferredSelf::Alive(token, snap)) {
-        handler(std::move(*held));
-      }
-    });
-  };
-}
 
 } // namespace
 
@@ -120,12 +103,48 @@ const char* BroadcastViewerWorkflow::PhaseName(Phase phase) {
 BroadcastViewerWorkflow::BroadcastViewerWorkflow(BroadcastViewerPorts ports) : ports_(std::move(ports)) {}
 
 BroadcastViewerWorkflow::~BroadcastViewerWorkflow() {
-  deferred_.Invalidate();
+  NewWatch();
   Teardown();
 }
 
-void BroadcastViewerWorkflow::PostUi(std::function<void()> task) {
-  deferred_.Post(ports_.post_owner, std::move(task));
+void BroadcastViewerWorkflow::NewWatch() {
+  ++watch_;
+  current_watch_->store(watch_, std::memory_order_release);
+  outbox_.Cancel(readmit_timer_);
+}
+
+void BroadcastViewerWorkflow::Handle(ViewerEvent& event) {
+  std::visit(
+      [this](auto& e) {
+        using E = std::decay_t<decltype(e)>;
+        if (!Current(e.watch)) {
+          return;  // an older watch's result
+        }
+        if constexpr (std::is_same_v<E, viewer_event::Reached>) {
+          if (!e.reached) {
+            Fail("publisher unreachable: " + e.reached.error().message);
+            return;
+          }
+          RequestTicket();
+        } else if constexpr (std::is_same_v<E, viewer_event::Ticket>) {
+          OnTicket(std::move(e.response));
+        } else if constexpr (std::is_same_v<E, viewer_event::Admission>) {
+          OnAdmission(e.hop, std::move(e.result));
+        } else if constexpr (std::is_same_v<E, viewer_event::Attached>) {
+          OnAttached(e.hop, std::move(e.attached));
+        } else if constexpr (std::is_same_v<E, viewer_event::SessionEnded>) {
+          OnSessionEnded(e.loss);
+        } else if constexpr (std::is_same_v<E, viewer_event::ReadmitDue>) {
+          if (readmit_timer_ != 0) {
+            readmit_timer_ = 0;
+            ladder_ = std::make_unique<BroadcastViewerLadder>(MakeLadder());
+            RunLadder(ladder_->Start());
+          }
+        } else {
+          static_assert(!sizeof(E), "handle every ViewerEvent");
+        }
+      },
+      event);
 }
 
 void BroadcastViewerWorkflow::SetPhase(Phase phase, std::string hop) {
@@ -142,10 +161,10 @@ Roe<void> BroadcastViewerWorkflow::Watch(BroadcastWatchTarget target) {
   if (target.publisher_peer_id.empty() || target.program_id.empty() || target.join_handle.empty()) {
     return Error("watch target needs publisher, program and join handle");
   }
-  if (!ports_.engine || !ports_.relay.relay || !ports_.relay.dial || !ports_.request_ticket || !ports_.post_owner) {
+  if (!ports_.engine || !ports_.relay.relay || !ports_.relay.dial || !ports_.request_ticket || !outbox_.IsBound()) {
     return Error("broadcast viewing unavailable (media relay / engine not wired)");
   }
-  deferred_.Invalidate();
+  NewWatch();
   Teardown();
   status_ = Status{};
   status_.target = std::move(target);
@@ -154,7 +173,7 @@ Roe<void> BroadcastViewerWorkflow::Watch(BroadcastWatchTarget target) {
 }
 
 void BroadcastViewerWorkflow::Stop() {
-  deferred_.Invalidate();
+  NewWatch();
   Teardown();
   const bool was_idle = status_.phase == Phase::Idle;
   status_ = Status{};
@@ -165,7 +184,7 @@ void BroadcastViewerWorkflow::Stop() {
 
 void BroadcastViewerWorkflow::Fail(const std::string& error) {
   ViewerLog().warning << "watch failed program=" << status_.target.program_id << ": " << error;
-  deferred_.Invalidate();
+  NewWatch();
   Teardown();
   status_.error = error;
   SetPhase(Phase::Failed, status_.hop);
@@ -200,28 +219,24 @@ void BroadcastViewerWorkflow::Teardown() {
 
 void BroadcastViewerWorkflow::FetchTicket() {
   SetPhase(Phase::Ticket);
-  const std::string publisher = status_.target.publisher_peer_id;
-  auto request = [this, publisher]() {
-    BroadcastTicketRequest req;
-    req.program_id = status_.target.program_id;
-    req.join_handle = status_.target.join_handle;
-    req.viewer_peer_id = ports_.local_peer_id ? ports_.local_peer_id() : std::string();
-    ports_.request_ticket(publisher, req,
-                          OnOwner<Roe<BroadcastTicketResponse>>(
-                              ports_.post_owner, deferred_,
-                              [this](Roe<BroadcastTicketResponse> response) { OnTicket(std::move(response)); }));
-  };
   if (!ports_.reach_peer) {
-    request();
+    RequestTicket();
     return;
   }
-  ports_.reach_peer(publisher, OnOwner<Roe<void>>(ports_.post_owner, deferred_, [this, request](Roe<void> reached) {
-                      if (!reached) {
-                        Fail("publisher unreachable: " + reached.error().message);
-                        return;
-                      }
-                      request();
-                    }));
+  ports_.reach_peer(status_.target.publisher_peer_id, [outbox = outbox_, watch = watch_](Roe<void> reached) {
+    outbox.Emit(viewer_event::Reached{watch, std::move(reached)});
+  });
+}
+
+void BroadcastViewerWorkflow::RequestTicket() {
+  BroadcastTicketRequest req;
+  req.program_id = status_.target.program_id;
+  req.join_handle = status_.target.join_handle;
+  req.viewer_peer_id = ports_.local_peer_id ? ports_.local_peer_id() : std::string();
+  ports_.request_ticket(status_.target.publisher_peer_id, req,
+                        [outbox = outbox_, watch = watch_](Roe<BroadcastTicketResponse> response) {
+                          outbox.Emit(viewer_event::Ticket{watch, std::move(response)});
+                        });
 }
 
 void BroadcastViewerWorkflow::OnTicket(Roe<BroadcastTicketResponse> response) {
@@ -303,10 +318,9 @@ void BroadcastViewerWorkflow::AskAdmission(const std::string& hop) {
   request.redirect_budget = ladder_->RedirectBudget();
   request.path_stamp = ladder_->PathStamp();
   ports_.request_admission(hop, request,
-                           OnOwner<Roe<BroadcastViewerAttachResult>>(
-                               ports_.post_owner, deferred_, [this, hop](Roe<BroadcastViewerAttachResult> result) {
-                                 OnAdmission(hop, std::move(result));
-                               }));
+                           [outbox = outbox_, watch = watch_, hop](Roe<BroadcastViewerAttachResult> result) {
+                             outbox.Emit(viewer_event::Admission{watch, hop, std::move(result)});
+                           });
 }
 
 void BroadcastViewerWorkflow::OnAdmission(const std::string& hop, Roe<BroadcastViewerAttachResult> result) {
@@ -364,25 +378,22 @@ void BroadcastViewerWorkflow::Attach(const std::string& hop) {
     }
     return {};
   };
-  hooks.still_wanted = [token = deferred_.token(), snap = deferred_.Snapshot()]() {
-    return DeferredSelf::Alive(token, snap);
+  hooks.still_wanted = [current = current_watch_, watch = watch_]() {
+    return current->load(std::memory_order_acquire) == watch;
   };
   hooks.on_frame = [sink = sink_](MediaDataFrame frame) { sink->OnFrame(frame); };
 
-  auto on_owner = OnOwner<Roe<MediaRelayAttached>>(ports_.post_owner, deferred_, [this, hop](Roe<MediaRelayAttached> attached) {
-    OnAttached(hop, std::move(attached));
-  });
-  // A Stop while AcceptAndAttach is on the wire drops `on_owner`; the relay may still attach — detach
-  // it then so the client session does not leak. (A call attaching in that same window would be
-  // detached too; l4c stops watching before a call takes media.)
+  // A Stop while AcceptAndAttach is on the wire makes this watch stale; the relay may still attach —
+  // detach it then so the client session does not leak. (A call attaching in that same window would
+  // be detached too; l4c stops watching before a call takes media.)
   AttachToMediaRelayAsync(ports_.relay, std::move(request), std::move(hooks),
-                          [relay, on_owner, token = deferred_.token(), snap = deferred_.Snapshot()](
-                              Roe<MediaRelayAttached> attached) {
-                            if (attached && !DeferredSelf::Alive(token, snap)) {
+                          [relay, outbox = outbox_, current = current_watch_, watch = watch_,
+                           hop](Roe<MediaRelayAttached> attached) {
+                            if (attached && current->load(std::memory_order_acquire) != watch) {
                               relay->Detach();
                               return;
                             }
-                            on_owner(std::move(attached));
+                            outbox.Emit(viewer_event::Attached{watch, hop, std::move(attached)});
                           });
 }
 
@@ -411,13 +422,8 @@ void BroadcastViewerWorkflow::StartListening(const std::string& hop) {
   }
   if (lost_observer_ == 0) {
     lost_observer_ = relay->AddClientTransportLostObserver(
-        [post_owner = ports_.post_owner, token = deferred_.token(), snap = deferred_.Snapshot(),
-         this](MediaRelayClientLoss loss) {
-          post_owner([token, snap, this, loss]() {
-            if (DeferredSelf::Alive(token, snap)) {
-              OnSessionEnded(loss);
-            }
-          });
+        [outbox = outbox_, watch = watch_](MediaRelayClientLoss loss) {
+          outbox.Emit(viewer_event::SessionEnded{watch, loss});
         });
   }
   sink_->live.store(true, std::memory_order_release);
@@ -452,16 +458,7 @@ void BroadcastViewerWorkflow::Recover() {
   ++consecutive_losses_;
   ++status_.recoveries;
   SetPhase(Phase::Recovering, status_.hop);
-  auto readmit = [this]() {
-    ladder_ = std::make_unique<BroadcastViewerLadder>(MakeLadder());
-    RunLadder(ladder_->Start());
-  };
-  const auto backoff = kRecoveryBackoff * consecutive_losses_;
-  if (ports_.post_owner_after) {
-    ports_.post_owner_after(backoff, deferred_.Bind(readmit));
-  } else {
-    PostUi(readmit);
-  }
+  readmit_timer_ = outbox_.After(kRecoveryBackoff * consecutive_losses_, viewer_event::ReadmitDue{watch_});
 }
 
 } // namespace pbr

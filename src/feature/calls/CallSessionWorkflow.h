@@ -2,7 +2,6 @@
 
 #include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/CallTypes.h"
-#include "foundation/runtime/DeferredSelf.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/thread/IThreadStore.h"
@@ -11,7 +10,8 @@
 #include "feature/calls/CallInitiationBilling.h"
 #include "feature/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "feature/calls/CallsOutbox.h"
+#include "foundation/runtime/OwnerOutbox.h"
+#include "foundation/runtime/OwnerSteps.h"
 #include "feature/calls/LiveCall.h"
 
 #include <functional>
@@ -96,8 +96,8 @@ public:
     /** Kick mesh circuit park (composition projects MeshMediaPlane::ReserveOnBootstrapSeeds). */
     std::function<void()> ensure_circuit_ready;
     /**
-     * Await circuit-ready (Accept gate): `done(ready)` runs on the calls owner once parked or at the
-     * timeout. Never blocks the caller.
+     * Await circuit-ready (Accept gate): `done(ready)` once parked or at the timeout, from any thread
+     * (the workflow reports it as an event). Never blocks the caller.
      */
     std::function<void(int timeout_ms, std::function<void(bool ready)> done)> park_circuit;
     std::function<void(const std::string& relay, const std::string& peer_id)> note_mesh_peer_id_for_relay;
@@ -121,11 +121,11 @@ public:
 
   void SetHostPorts(HostPorts ports);
   /** Where the workflow reports its follow-ups (its parent binds it). */
-  void SetOutbox(CallsOutbox<WorkflowEvent> outbox) { outbox_ = std::move(outbox); }
+  void SetOutbox(OwnerOutbox<WorkflowEvent> outbox) { outbox_ = std::move(outbox); }
   /** A follow-up it reported, back from the calls owner's queue. */
   void Handle(WorkflowEvent& event);
-  /** Bump DeferredSelf so queued Accept/roster PostWorkerNormal cbs no-op (CSM teardown). */
-  void InvalidateDeferredOps();
+  /** Drop the accepts waiting on their circuit park (CSM teardown). */
+  void DropWaitingSteps();
 
   Roe<CallSession> StartCall(const std::string& origin_thread_id, bool video_allowed,
                              const std::vector<std::string>& invitee_identities);
@@ -268,8 +268,9 @@ private:
   /** The calls live on this device (owned by CallSessionManager); driven where the store rows change. */
   LiveCalls& live_calls_;
   HostPorts host_;
-  CallsOutbox<WorkflowEvent> outbox_;
-  DeferredSelf deferred_;
+  OwnerOutbox<WorkflowEvent> outbox_;
+  /** Accepts waiting on their circuit park. */
+  OwnerSteps steps_;
   InitiationChargeDecision pending_accept_charge_ = InitiationChargeDecision::Waive;
   bool pending_accept_charge_set_ = false;
   bool pending_accept_voice_only_ = false;

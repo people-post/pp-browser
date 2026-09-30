@@ -211,8 +211,8 @@ private:
   /** What the calls show may have changed: refresh chrome, wake N025 listen when its desire flips. */
   void OnCallStateChangedOnOwner();
 
-  /** The calls owner's executor: every call object gets it from here (THREADING.md § Calls owner). */
-  CallsExecutor& executor_ = CallsOwnerExecutor();
+  /** The calls owner's executor: every call object gets it from here (THREADING.md § Owner runners). */
+  OwnerExecutor& executor_ = CallsOwnerExecutor();
   /** The calls owner's event queue: every input and delayed event goes through Dispatch. */
   CallsLoop loop_{executor_, [this](CallStackEvent& event) { Dispatch(event); }};
   CallStackDeps deps_;

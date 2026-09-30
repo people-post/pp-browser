@@ -20,7 +20,7 @@ class CallSessionManager;
 /**
  * What the calls owner handles: inputs from other threads (edge adapters enqueue them) and the
  * delayed events its passive children asked for. Each is plain data in the vocabulary of whoever
- * reported it; CallStack routes it (THREADING.md § Calls owner).
+ * reported it; CallStack routes it (THREADING.md § Owner runners).
  */
 namespace calls_event {
 

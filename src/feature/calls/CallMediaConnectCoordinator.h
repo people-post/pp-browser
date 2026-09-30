@@ -4,7 +4,7 @@
 #include "domain/mesh/reach/PeerReachCoordinator.h"
 #include "feature/calls/CallMediaInboundReply.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "feature/calls/CallsOutbox.h"
+#include "foundation/runtime/OwnerOutbox.h"
 
 #include "common/Module.h"
 
@@ -73,7 +73,7 @@ struct CallMediaInboundPorts {
  * on the calls owner (bounded, asking for the key meanwhile) and answered when the key lands, the
  * session ends, the deadline passes or the coordinator shuts down. No thread waits.
  *
- * Threading: passive, on the calls owner (THREADING.md § Calls owner). Its timers, reach / bundle
+ * Threading: passive, on the calls owner (THREADING.md § Owner runners). Its timers, reach / bundle
  * results and inbound hellos come back through its outbox as `ConnectEvent`s, handled by `Handle`
  * (the bridge routes them). `InFlight()` and `NotifyKeyAvailable()` are safe from any thread.
  */
@@ -96,7 +96,7 @@ public:
   void Shutdown();
 
   /** Where its events go (the bridge wraps them); installs the inbound handler once ports are set. */
-  void SetOutbox(CallsOutbox<ConnectEvent> outbox);
+  void SetOutbox(OwnerOutbox<ConnectEvent> outbox);
   /** One of its own events, back on the calls owner. */
   void Handle(ConnectEvent& event);
 
@@ -145,13 +145,13 @@ private:
   std::atomic<uint64_t> seq_{0};
   std::atomic<bool> inflight_{false};
   std::atomic<bool> shut_down_{false};
-  CallsOutbox<ConnectEvent> outbox_;
+  OwnerOutbox<ConnectEvent> outbox_;
 
   // Inbound (calls owner). Ports are set once before traffic.
   CallMediaInboundPorts inbound_ports_;
   bool inbound_installed_ = false;
   std::vector<PendingHello> pending_hellos_;
-  CallsExecutor::TimerId key_poll_timer_id_ = 0;
+  OwnerExecutor::TimerId key_poll_timer_id_ = 0;
   int inbound_key_wait_ms_;
 
   // Calls owner.
@@ -161,8 +161,8 @@ private:
   int attempt_current_ = 0;
   bool attempt_reused_link_ = false;
   bool fresh_link_next_ = false;
-  CallsExecutor::TimerId retry_timer_id_ = 0;
-  CallsExecutor::TimerId watchdog_timer_id_ = 0;
+  OwnerExecutor::TimerId retry_timer_id_ = 0;
+  OwnerExecutor::TimerId watchdog_timer_id_ = 0;
   int attempt_timeout_ms_;
 };
 

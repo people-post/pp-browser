@@ -6,7 +6,7 @@
 #include "domain/messaging/CallTypes.h"
 #include "feature/calls/CallHopRanking.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "feature/calls/CallsOutbox.h"
+#include "foundation/runtime/OwnerOutbox.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 
 #include <map>
@@ -39,7 +39,7 @@ public:
 
   void SetMediaRelayDeps(const CallTopologyMediaRelayDeps* deps) { deps_ = deps; }
   /** Where planning reports its probe answers (its parent binds it). */
-  void SetOutbox(CallsOutbox<PlanningEvent> outbox) { outbox_ = std::move(outbox); }
+  void SetOutbox(OwnerOutbox<PlanningEvent> outbox) { outbox_ = std::move(outbox); }
   /** An answer it reported, back from the calls owner's queue. */
   void Handle(PlanningEvent& event);
 
@@ -88,7 +88,7 @@ private:
   std::unordered_set<std::string> resolved_;
   /** Per call: the invite's probe round (an answer from an earlier round is stale). */
   std::unordered_map<std::string, uint64_t> probe_round_;
-  CallsOutbox<PlanningEvent> outbox_;
+  OwnerOutbox<PlanningEvent> outbox_;
 };
 
 } // namespace pbr

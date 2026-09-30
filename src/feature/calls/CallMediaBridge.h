@@ -8,7 +8,7 @@
 #include "feature/calls/CallDirectDriver.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "feature/calls/CallsOutbox.h"
+#include "foundation/runtime/OwnerOutbox.h"
 #include "domain/messaging/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaConnectCoordinator.h"
@@ -134,7 +134,7 @@ public:
   using PathPolicyProvider = std::function<CallPathPolicy(const std::string& call_id)>;
   void SetPathPolicyProvider(PathPolicyProvider provider) { path_policy_ = std::move(provider); }
   /** Where the path reports its events (its parent binds it); its timers are delayed events. */
-  void SetOutbox(CallsOutbox<DirectPathEvent> outbox);
+  void SetOutbox(OwnerOutbox<DirectPathEvent> outbox);
   /** An event it reported, back from the calls owner's queue. */
   void Handle(DirectPathEvent& event);
   /** k6: a mobility class of the call flipped (calls owner): upgrade punches follow the new policy. */
@@ -267,7 +267,7 @@ private:
   struct ReceiveGate;
   /** Transport I/O: hand a 1:1 frame to the engine (thread-safe), gated by `gate`. */
   static void ReceiveDirectMedia(ReceiveGate& gate, CallMediaEngine& media, const CallMediaHost& host,
-                                 const CallsOutbox<DirectPathEvent>& outbox, const std::string& call_id,
+                                 const OwnerOutbox<DirectPathEvent>& outbox, const std::string& call_id,
                                  uint32_t fixed_stream, uint8_t channel, uint32_t seq, uint8_t mark,
                                  const std::vector<uint8_t>& payload);
   void RebindInboundStream(const std::string& call_id);
@@ -361,9 +361,9 @@ private:
   std::atomic<bool> stopping_{false};
   /** Names the current key wait; bumped when the pending (key-deferred) answerer changes. */
   uint64_t key_wait_gen_ = 0;
-  CallsOutbox<DirectPathEvent> outbox_;
+  OwnerOutbox<DirectPathEvent> outbox_;
   /** Steps waiting for a result from another thread (reach / upgrade / standby / migrate answers). */
-  CallsSteps steps_;
+  OwnerSteps steps_;
   /**
    * The callback to hand an async API: it only reports its result (any thread); `step` runs with it
    * on the owner, as the path's next event.
@@ -372,7 +372,7 @@ private:
   std::function<void(T)> OnOwner(std::function<void(T)> step) {
     const uint64_t id = steps_.StoreFor<T>(std::move(step));
     return [outbox = outbox_, id](T value) {
-      outbox.Emit(direct_event::StepReady{CallsStepReady{id, std::make_shared<std::any>(std::move(value))}});
+      outbox.Emit(direct_event::StepReady{OwnerStepReady{id, std::make_shared<std::any>(std::move(value))}});
     };
   }
   void OnPathChanged(const std::string& call_id, CallMediaLinkKind kind);

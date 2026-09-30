@@ -22,12 +22,10 @@ CallSessionWorkflow::CallSessionWorkflow(IThreadStore& store, CallSessionStore& 
   redirectLogger("CallSessionWorkflow");
 }
 
-CallSessionWorkflow::~CallSessionWorkflow() {
-  InvalidateDeferredOps();
-}
+CallSessionWorkflow::~CallSessionWorkflow() = default;
 
-void CallSessionWorkflow::InvalidateDeferredOps() {
-  deferred_.Invalidate();
+void CallSessionWorkflow::DropWaitingSteps() {
+  steps_.DropAll();
 }
 
 void CallSessionWorkflow::SetHostPorts(HostPorts ports) {
@@ -540,11 +538,14 @@ void CallSessionWorkflow::AcceptInviteAsync(const std::string& call_id, Initiati
     on_done(ContinueAcceptAfterPark(call_id, charge_decision, voice_only_accept, *local));
     return;
   }
-  host_.reach.park_circuit(12000, deferred_.Bind([this, call_id, charge_decision, voice_only_accept,
-                                                   local = *local, on_done](bool ready) {
-    log().info << "AcceptInvite circuit park call_id=" << call_id << " ready=" << (ready ? 1 : 0);
-    on_done(ContinueAcceptAfterPark(call_id, charge_decision, voice_only_accept, local));
-  }));
+  const uint64_t step = steps_.StoreFor<bool>(
+      [this, call_id, charge_decision, voice_only_accept, local = *local, on_done](bool ready) {
+        log().info << "AcceptInvite circuit park call_id=" << call_id << " ready=" << (ready ? 1 : 0);
+        on_done(ContinueAcceptAfterPark(call_id, charge_decision, voice_only_accept, local));
+      });
+  host_.reach.park_circuit(12000, [outbox = outbox_, step](bool ready) {
+    outbox.Emit(workflow_event::Continue{OwnerStepReady{step, std::make_shared<std::any>(ready)}});
+  });
 }
 
 Roe<void> CallSessionWorkflow::ContinueAcceptAfterPark(const std::string& call_id,
@@ -826,6 +827,8 @@ void CallSessionWorkflow::Handle(WorkflowEvent& event) {
           SendRosterAfterAccept(e);
         } else if constexpr (std::is_same_v<E, workflow_event::RosterAfterRemoteAccept>) {
           SendRosterAfterRemoteAccept(e);
+        } else if constexpr (std::is_same_v<E, workflow_event::Continue>) {
+          steps_.Run(e.step.id, e.step.value.get());
         } else {
           static_assert(!sizeof(E), "handle every WorkflowEvent");
         }

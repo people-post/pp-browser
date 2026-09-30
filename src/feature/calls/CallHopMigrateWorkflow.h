@@ -15,8 +15,8 @@
 #include "domain/mesh/media_plane/MediaRelayAttach.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/CallsOutbox.h"
-#include "feature/calls/CallsSteps.h"
+#include "foundation/runtime/OwnerOutbox.h"
+#include "foundation/runtime/OwnerSteps.h"
 #include "foundation/runtime/DeferredSelf.h"
 
 #include "common/Error.h"
@@ -214,7 +214,7 @@ public:
 
   void SetHostPorts(CallHopMigrateHostPorts ports);
   /** Where it reports its delayed follow-ups (its parent binds it). */
-  void SetOutbox(CallsOutbox<HopMigrateEvent> outbox) { outbox_ = std::move(outbox); }
+  void SetOutbox(OwnerOutbox<HopMigrateEvent> outbox) { outbox_ = std::move(outbox); }
   /** A follow-up it reported, back from the calls owner's queue. */
   void Handle(HopMigrateEvent& event);
   void SetArmingPorts(CallHopMigrateArmingPorts ports);
@@ -330,9 +330,9 @@ private:
   PublisherStreams publishers_;
   SfuSurface sfu_;
   /** Coordinator timers (re-fan-out, settle, reattach backoff) drop once we are gone. */
-  CallsOutbox<HopMigrateEvent> outbox_;
+  OwnerOutbox<HopMigrateEvent> outbox_;
   /** Steps waiting for their Continue event (deferred steps, a picked hop's reach answer). */
-  CallsSteps steps_;
+  OwnerSteps steps_;
   /** Relay attaches waiting for the relay's answer. */
   struct PendingAttach {
     std::shared_ptr<HopAttach> at;  // HopAttach is private to the .cpp

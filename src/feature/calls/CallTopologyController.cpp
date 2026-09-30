@@ -1528,7 +1528,7 @@ void CallTopologyController::RefuseGuest(const topology_event::RefuseGuest& refu
   EjectParticipantAfterMigrateFailure(call_id, guest_identity, owner_toast);
 }
 
-void CallTopologyController::SetOutbox(CallsOutbox<TopologyEvent> outbox) {
+void CallTopologyController::SetOutbox(OwnerOutbox<TopologyEvent> outbox) {
   outbox_ = std::move(outbox);
   if (relay_loss_observer_ != 0) {
     UnwatchRelayLoss();  // its observer holds the outbox it was given: watch again with this one

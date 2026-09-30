@@ -354,15 +354,15 @@ void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
 void CallStack::BindSessionOutbox() {
   // The manager's events come back through the queue; one from a manager since rebuilt is dropped.
   const uint64_t generation = ++sessions_generation_;
-  CallsOutbox<SessionEvent>::Sink sink;
+  OwnerOutbox<SessionEvent>::Sink sink;
   sink.emit = [this, generation](SessionEvent event) {
     loop_.Enqueue(calls_event::ForSessions{generation, std::move(event)});
   };
   sink.after = [this, generation](std::chrono::milliseconds delay, SessionEvent event) {
     return loop_.After(delay, calls_event::ForSessions{generation, std::move(event)});
   };
-  sink.cancel = [this](CallsExecutor::TimerId id) { loop_.Cancel(id); };
-  call_sessions_->SetOutbox(CallsOutbox<SessionEvent>(std::move(sink)));
+  sink.cancel = [this](OwnerExecutor::TimerId id) { loop_.Cancel(id); };
+  call_sessions_->SetOutbox(OwnerOutbox<SessionEvent>(std::move(sink)));
 }
 
 void CallStack::BindCallControlInbound() {
@@ -439,15 +439,12 @@ void CallStack::BindSessionMeshReach() {
       shared->Rendezvous().ReserveOnBootstrapSeeds();
     }
   });
-  // Park completes on the Amp IO thread (or at a coordinator deadline): back onto the calls owner.
+  // Park completes on the Amp IO thread (or at a coordinator deadline); the workflow reports it as an event.
   call_sessions_->SetParkCircuit([this](int timeout_ms, std::function<void(bool)> done) {
-    auto on_owner = [done = std::move(done)](bool ready) {
-      CallsThread::Post([done, ready]() { done(ready); });
-    };
     if (MeshMediaPlane* shared = mesh_media()) {
-      shared->Rendezvous().EnsureBootstrapSeedParkedAsync(std::move(on_owner), timeout_ms);
+      shared->Rendezvous().EnsureBootstrapSeedParkedAsync(std::move(done), timeout_ms);
     } else {
-      on_owner(false);
+      done(false);
     }
   });
   CallReachSignals::MeshPorts reach;

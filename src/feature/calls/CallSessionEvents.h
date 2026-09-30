@@ -4,7 +4,7 @@
 #include "domain/mesh/reach/PeerReachCoordinator.h"
 #include "domain/messaging/CallTypes.h"
 #include "feature/calls/CallMediaInboundReply.h"
-#include "feature/calls/CallsSteps.h"
+#include "foundation/runtime/OwnerSteps.h"
 
 #include <cstdint>
 #include <memory>
@@ -45,9 +45,15 @@ struct RosterAfterRemoteAccept {
   std::string local_identity;
 };
 
+/** A waiting step's result arrived (the accept's circuit park). */
+struct Continue {
+  OwnerStepReady step;
+};
+
 } // namespace workflow_event
 
-using WorkflowEvent = std::variant<workflow_event::RosterAfterAccept, workflow_event::RosterAfterRemoteAccept>;
+using WorkflowEvent = std::variant<workflow_event::RosterAfterAccept, workflow_event::RosterAfterRemoteAccept,
+                                   workflow_event::Continue>;
 
 /** The hop-migrate workflow's own events (V050 group hop flows). */
 namespace hop_migrate_event {
@@ -258,7 +264,7 @@ struct ForConnect {
 };
 /** A stored step's result arrived (a reach / upgrade / standby / migrate answer). */
 struct StepReady {
-  CallsStepReady step;
+  OwnerStepReady step;
 };
 
 } // namespace direct_event

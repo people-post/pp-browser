@@ -5,16 +5,18 @@
 #include "domain/messaging/BroadcastRpcCodec.h"
 #include "domain/messaging/BroadcastViewerLadder.h"
 #include "domain/messaging/PeerAnnounceTypes.h"
-#include "foundation/runtime/DeferredSelf.h"
+#include "foundation/runtime/OwnerOutbox.h"
 
 #include "common/Error.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -35,7 +37,7 @@ Roe<BroadcastWatchTarget> BroadcastWatchTargetFromTip(const PeerAnnounceTip& tip
 /**
  * What the viewer needs from the process, in its own words. Wired by the app from neutral mesh
  * objects and the broadcast RPC client; faked in gtests. Async completions may arrive on any
- * thread — the workflow hops to its owner through `post_owner`.
+ * thread — the workflow turns them into its own events.
  */
 struct BroadcastViewerPorts {
   /** Mesh PeerId tickets bind to. */
@@ -57,11 +59,44 @@ struct BroadcastViewerPorts {
   std::function<std::string(const std::string& hop_peer_id)> hop_multiaddr;
   /** Playback-only session target (owner for Start / Stop; OnSfuPacket any thread). */
   CallMediaEngine* engine = nullptr;
-  /** Onto the thread that owns the workflow (the media-sessions owner in the product). */
-  std::function<void(std::function<void()>)> post_owner;
-  std::function<void(std::chrono::milliseconds, std::function<void()>)> post_owner_after;
   std::function<int64_t()> now_ms;
 };
+
+/** What the viewer reports to itself through its runner (BroadcastHub); `watch` names the watch. */
+namespace viewer_event {
+
+struct Reached {
+  uint64_t watch = 0;
+  Roe<void> reached;
+};
+struct Ticket {
+  uint64_t watch = 0;
+  Roe<BroadcastTicketResponse> response;
+};
+struct Admission {
+  uint64_t watch = 0;
+  std::string hop;
+  Roe<BroadcastViewerAttachResult> result;
+};
+struct Attached {
+  uint64_t watch = 0;
+  std::string hop;
+  Roe<MediaRelayAttached> attached;
+};
+/** The relay client session ended (relay I/O). */
+struct SessionEnded {
+  uint64_t watch = 0;
+  MediaRelayClientLoss loss = MediaRelayClientLoss::TransportLost;
+};
+/** The back-off before re-admission ended. */
+struct ReadmitDue {
+  uint64_t watch = 0;
+};
+
+} // namespace viewer_event
+
+using ViewerEvent = std::variant<viewer_event::Reached, viewer_event::Ticket, viewer_event::Admission,
+                                 viewer_event::Attached, viewer_event::SessionEnded, viewer_event::ReadmitDue>;
 
 /**
  * Receive-only viewer of one live program (media-client-layers L013): reach publisher → ticket →
@@ -69,9 +104,10 @@ struct BroadcastViewerPorts {
  * publisher stream → playback-only engine session. Re-admits from the ladder on relay loss
  * (bounded, backed off). No call objects, no ringing.
  *
- * Threading: every public method and all state on the owner (`post_owner`: the media-sessions
- * owner); completions are posted there and dropped once Stop / a newer Watch invalidated them.
- * Frames are opened on the mesh IO thread and handed to the engine (thread-safe).
+ * Threading: passive, on its runner's owner (THREADING.md § Owner runners). Results come back as
+ * `ViewerEvent`s through its outbox, carrying the watch they belong to; one for an older watch
+ * (Stop / a newer Watch since) is dropped. Frames are opened on the mesh IO thread and handed to
+ * the engine (thread-safe).
  */
 class BroadcastViewerWorkflow {
 public:
@@ -97,6 +133,9 @@ public:
   /** Start watching (stops any current watch first). Errors only for an unusable target. */
   Roe<void> Watch(BroadcastWatchTarget target);
   void Stop();
+  /** Where its events go (the runner hands them back to `Handle` on the owner). */
+  void SetOutbox(OwnerOutbox<ViewerEvent> outbox) { outbox_ = std::move(outbox); }
+  void Handle(ViewerEvent& event);
   const Status& CurrentStatus() const { return status_; }
   /** On the owner, after every phase change. */
   void SetOnStatusChanged(std::function<void()> callback) { on_status_changed_ = std::move(callback); }
@@ -109,9 +148,12 @@ private:
   void SetPhase(Phase phase, std::string hop = {});
   void Fail(const std::string& error);
   void Teardown();
-  void PostUi(std::function<void()> task);
+  /** A new watch: results of the previous one are stale from here on. */
+  void NewWatch();
+  bool Current(uint64_t watch) const { return watch == watch_; }
 
   void FetchTicket();
+  void RequestTicket();
   void OnTicket(Roe<BroadcastTicketResponse> response);
   void RunLadder(BroadcastViewerLadder::Step step);
   void AskAdmission(const std::string& hop);
@@ -126,7 +168,11 @@ private:
   BroadcastViewerPorts ports_;
   Status status_;
   std::function<void()> on_status_changed_;
-  DeferredSelf deferred_;
+  OwnerOutbox<ViewerEvent> outbox_;
+  uint64_t watch_ = 0;
+  /** `watch_` for I/O-side checks (attach still wanted). */
+  std::shared_ptr<std::atomic<uint64_t>> current_watch_ = std::make_shared<std::atomic<uint64_t>>(0);
+  OwnerExecutor::TimerId readmit_timer_ = 0;
 
   // Per watch (reset by Teardown).
   std::string ticket_json_;

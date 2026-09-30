@@ -475,7 +475,7 @@ void CallSessionManager::RetryAnswererKick(const std::string& call_id) {
   KickAnswererDirectMediaIfArmed(call_id);
 }
 
-void CallSessionManager::SetOutbox(CallsOutbox<SessionEvent> outbox) {
+void CallSessionManager::SetOutbox(OwnerOutbox<SessionEvent> outbox) {
   outbox_ = std::move(outbox);
   workflow_.SetOutbox(outbox_.For<WorkflowEvent>([](WorkflowEvent event) { return SessionEvent{std::move(event)}; }));
   topology_.SetOutbox(outbox_.For<TopologyEvent>([](TopologyEvent event) { return SessionEvent{std::move(event)}; }));
@@ -1221,8 +1221,8 @@ bool CallSessionManager::MediaAttemptedThisProcess(const std::string& call_id) c
 }
 
 void CallSessionManager::ClearMediaCallbacks() {
-  // Drop deferred Accept roster fan-out before CallStack drains/resets CSM (PR #216 follow-up).
-  workflow_.InvalidateDeferredOps();
+  // Drop accepts waiting on their park before CallStack drains / resets CSM (PR #216 follow-up).
+  workflow_.DropWaitingSteps();
 }
 
 Roe<void> CallSessionManager::HandleInboundInvite(const std::string& detail_json,

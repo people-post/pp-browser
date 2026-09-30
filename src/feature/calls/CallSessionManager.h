@@ -20,7 +20,7 @@
 #include "feature/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallReachSignals.h"
 #include "feature/calls/CallSessionEvents.h"
-#include "feature/calls/CallsOutbox.h"
+#include "foundation/runtime/OwnerOutbox.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallDirectPathDeps.h"
 #include "feature/calls/CallMediaBridge.h"
@@ -193,7 +193,7 @@ public:
    */
   void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
   /** Where this subtree reports its events (the stack binds it at build). */
-  void SetOutbox(CallsOutbox<SessionEvent> outbox);
+  void SetOutbox(OwnerOutbox<SessionEvent> outbox);
   /** An event this subtree reported, back from the calls owner's queue. */
   void Handle(SessionEvent& event);
   /** Runs after anything that can change what the device shows (phase, Status, the shown call). */
@@ -411,7 +411,7 @@ private:
   std::string accept_in_flight_;
   std::string last_error_;
   std::function<void()> on_call_state_changed_;
-  CallsOutbox<SessionEvent> outbox_;
+  OwnerOutbox<SessionEvent> outbox_;
   /** The 1:1 path: last, so it goes first (it calls into the seat, LiveCalls and this manager). */
   std::unique_ptr<CallMediaBridge> direct_path_;
   std::string media_activity_;

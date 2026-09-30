@@ -11,7 +11,7 @@ namespace pbr {
 namespace {
 
 /** The calls owner by hand: tasks run when the test drains, timers when it fires them. */
-class ManualExecutor final : public CallsExecutor {
+class ManualExecutor final : public OwnerExecutor {
 public:
   void Post(std::function<void()> task) override { queue.push_back(std::move(task)); }
   void PostFront(std::function<void()> task) override { queue.push_front(std::move(task)); }
@@ -22,6 +22,7 @@ public:
   }
   void Cancel(TimerId id) override { timers.erase(id); }
   bool IsCurrent() const override { return true; }
+  void RunAndWait(const std::function<void()>& task) override { task(); }
 
   void Drain() {
     while (!queue.empty()) {

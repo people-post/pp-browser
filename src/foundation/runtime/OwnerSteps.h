@@ -11,13 +11,13 @@
 namespace pbr {
 
 /**
- * A component's next steps waiting for their event (THREADING.md § Calls owner): owner-only
+ * A component's next steps waiting for their event (THREADING.md § Owner runners): owner-only
  * continuations keyed by id. The component stores a step, reports `Continue{id}` — or, for a result
  * arriving from another thread, `Continue{id, value}` — through its outbox, and runs the step when
  * that event comes back. A step never crosses a thread; only the value does. An id with no step
  * (already run, or the component rebuilt) is a no-op. Owner only (Store / Run).
  */
-class CallsSteps {
+class OwnerSteps {
 public:
   /** A step with no result. */
   uint64_t Store(std::function<void()> step) {
@@ -44,6 +44,8 @@ public:
   }
   /** Drop a step whose result will never matter (the flow was cancelled). */
   void Drop(const uint64_t id) { steps_.erase(id); }
+  /** Drop every waiting step (the component is being reset). */
+  void DropAll() { steps_.clear(); }
   size_t Pending() const { return steps_.size(); }
 
 private:
@@ -58,7 +60,7 @@ private:
 };
 
 /** The event half of a step: its id, and the value a result brings (copied across threads as data). */
-struct CallsStepReady {
+struct OwnerStepReady {
   uint64_t id = 0;
   std::shared_ptr<std::any> value;
 };
