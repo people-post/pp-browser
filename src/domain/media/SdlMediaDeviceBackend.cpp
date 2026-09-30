@@ -1,4 +1,5 @@
 #include "domain/media/CallAudioSession.h"
+#include "domain/media/CameraCandidates.h"
 #include "domain/media/CameraCaptureOrientation.h"
 #include "domain/media/MediaDeviceArbiter.h"
 #include "domain/media/SdlAudioBootstrap.h"
@@ -271,22 +272,17 @@ public:
       }
       return fail(std::string("No camera: ") + SDL_GetError());
     }
-    // Front-facing first, then the rest in SDL order. If one won't open, try the next: on a Mac the
-    // list can include an iPhone's Continuity Camera (Bluetooth on), which reports front-facing and
-    // fails with "Cannot lockForConfiguration" while that iPhone uses its own camera — e.g. when the
-    // Mac calls that same phone (device test 2026-09-28).
-    std::vector<SDL_CameraID> candidates;
+    // This device's own cameras first (OrderCameraCandidates); a Mac also lists a nearby iPhone as a
+    // Continuity Camera. If one won't open, try the next: the Continuity Camera fails with "Cannot
+    // lockForConfiguration" while that iPhone uses its own camera (device test 2026-09-28).
+    std::vector<CameraCandidate> listed;
     for (int i = 0; i < count; ++i) {
-      if (SDL_GetCameraPosition(cameras[i]) == SDL_CAMERA_POSITION_FRONT_FACING) {
-        candidates.push_back(cameras[i]);
-      }
-    }
-    for (int i = 0; i < count; ++i) {
-      if (SDL_GetCameraPosition(cameras[i]) != SDL_CAMERA_POSITION_FRONT_FACING) {
-        candidates.push_back(cameras[i]);
-      }
+      listed.push_back({.id = cameras[i],
+                        .front_facing = SDL_GetCameraPosition(cameras[i]) == SDL_CAMERA_POSITION_FRONT_FACING,
+                        .borrowed = IsBorrowedCameraName(SDL_GetCameraName(cameras[i]))});
     }
     SDL_free(cameras);
+    const std::vector<SDL_CameraID> candidates = OrderCameraCandidates(listed);
 
     std::string last_error;
     for (const SDL_CameraID id : candidates) {
