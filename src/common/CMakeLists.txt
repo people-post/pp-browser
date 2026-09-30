@@ -12,6 +12,7 @@ add_library(pp_pbr_common STATIC
   directory/MeshHopDial.cpp
   ui/WorkingSetCodec.cpp
   LengthPrefixedCodec.cpp
+  net/PublicAddress.cpp
 )
 target_include_directories(pp_pbr_common PUBLIC ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(pp_pbr_common PUBLIC pp_common pp_crypto)

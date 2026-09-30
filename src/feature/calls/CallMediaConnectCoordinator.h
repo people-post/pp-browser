@@ -1,18 +1,19 @@
 #pragma once
 
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
-#include "domain/mesh/reachability/PeerReachCoordinator.h"
+#include "domain/mesh/reach/PeerReachCoordinator.h"
+#include "feature/calls/CallMediaInboundReply.h"
+#include "feature/calls/CallSessionEvents.h"
+#include "foundation/runtime/OwnerOutbox.h"
 
 #include "common/Module.h"
 
 #include <atomic>
-#include <condition_variable>
 #include <cstdint>
 #include <chrono>
 #include <vector>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
 #include "common/PbrCompat.h"
@@ -35,7 +36,7 @@ struct CallMediaConnectHooks {
   std::function<void(PeerLinkKind kind)> on_link_ready;
   /**
    * Sequence ended on its own: ok = bundle MediaReady, error = attempts exhausted / unreachable.
-   * Posted to UI; skipped when Abort / Start ran after the sequence ended. Never runs for Abort.
+   * Runs as its own event; skipped when Abort / Start ran after the sequence ended. Never runs for Abort.
    */
   std::function<void(Roe<void> result)> on_finished;
 };
@@ -48,10 +49,7 @@ struct CallMediaInboundHello {
   std::string peer_id;
 };
 
-/**
- * What the owner decides about inbound bundles. All run on the transport's worker hop — they must
- * be thread-safe and must not touch UI-thread state directly (post instead).
- */
+/** What the owner decides about inbound bundles. All run on the calls owner. */
 struct CallMediaInboundPorts {
   /** Session exists and still wants media; false → reject the hello. */
   std::function<bool(const std::string& call_id)> session_open;
@@ -75,9 +73,9 @@ struct CallMediaInboundPorts {
  * on the calls owner (bounded, asking for the key meanwhile) and answered when the key lands, the
  * session ends, the deadline passes or the coordinator shuts down. No thread waits.
  *
- * Threading: API, sequence state and parked hellos on the calls owner (CallsThread); timers hop
- * from the Coordinator to the owner. `InFlight()` and `NotifyKeyAvailable()` are safe from any
- * thread.
+ * Threading: passive, on the calls owner (THREADING.md § Owner runners). Its timers, reach / bundle
+ * results and inbound hellos come back through its outbox as `ConnectEvent`s, handled by `Handle`
+ * (the bridge routes them). `InFlight()` and `NotifyKeyAvailable()` are safe from any thread.
  */
 class CallMediaConnectCoordinator : public Module {
 public:
@@ -97,7 +95,12 @@ public:
   /** Abort, refuse later Starts, release waiting inbound hellos and drop the inbound handler. */
   void Shutdown();
 
-  /** Install the inbound handler. Call once, before the transport can deliver hellos. */
+  /** Where its events go (the bridge wraps them); installs the inbound handler once ports are set. */
+  void SetOutbox(OwnerOutbox<ConnectEvent> outbox);
+  /** One of its own events, back on the calls owner. */
+  void Handle(ConnectEvent& event);
+
+  /** The inbound decisions; the handler is installed once the outbox is bound too. */
   void SetInboundPorts(CallMediaInboundPorts ports);
   /** A media key landed — wake inbound hellos waiting for one. */
   void NotifyKeyAvailable();
@@ -116,21 +119,21 @@ private:
   void OnLinkReady(uint64_t seq, int attempt, Roe<PeerReachResult> reached);
   void OpenBundle(uint64_t seq, int attempt);
   void ArmWatchdog(uint64_t seq, int attempt);
+  void OnWatchdog(uint64_t seq, int attempt);
   void OnAttemptFinished(uint64_t seq, int attempt, Roe<void> connected);
   void Finish(uint64_t seq, Roe<void> result);
   void CancelTimers();
   const char* Role() const;
-  void CheckUiThread(const char* what) const;
   /** A hello parked until its key lands (or the session ends / the deadline passes). */
   struct PendingHello {
-    CallMediaDirectConnectParams params;
-    CallMediaInboundAnswer answer;
+    std::shared_ptr<CallMediaInboundReply> reply;
     std::chrono::steady_clock::time_point deadline;
   };
-  void HandleInboundHello(CallMediaDirectConnectParams params, CallMediaInboundAnswer answer);
+  void InstallInboundHandler();
+  void HandleInboundHello(std::shared_ptr<CallMediaInboundReply> hello);
   /** Fills params.media_key when the epoch key is stored. */
   bool TryLoadInboundKey(CallMediaDirectConnectParams& params) const;
-  void AcceptInboundHello(CallMediaDirectConnectParams params, const CallMediaInboundAnswer& answer);
+  void AcceptInboundHello(CallMediaInboundReply& reply);
   /** Answer each parked hello that can be answered now; `ask_again` re-requests missing keys. */
   void RecheckPendingHellos(bool ask_again);
   void ArmKeyPoll();
@@ -142,13 +145,13 @@ private:
   std::atomic<uint64_t> seq_{0};
   std::atomic<bool> inflight_{false};
   std::atomic<bool> shut_down_{false};
-  std::shared_ptr<std::atomic<bool>> alive_;
+  OwnerOutbox<ConnectEvent> outbox_;
 
   // Inbound (calls owner). Ports are set once before traffic.
   CallMediaInboundPorts inbound_ports_;
   bool inbound_installed_ = false;
   std::vector<PendingHello> pending_hellos_;
-  uint64_t key_poll_timer_id_ = 0;
+  OwnerExecutor::TimerId key_poll_timer_id_ = 0;
   int inbound_key_wait_ms_;
 
   // Calls owner.
@@ -158,8 +161,8 @@ private:
   int attempt_current_ = 0;
   bool attempt_reused_link_ = false;
   bool fresh_link_next_ = false;
-  uint64_t retry_timer_id_ = 0;
-  uint64_t watchdog_timer_id_ = 0;
+  OwnerExecutor::TimerId retry_timer_id_ = 0;
+  OwnerExecutor::TimerId watchdog_timer_id_ = 0;
   int attempt_timeout_ms_;
 };
 

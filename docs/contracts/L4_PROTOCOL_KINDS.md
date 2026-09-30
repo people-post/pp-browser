@@ -127,7 +127,7 @@ Dimensions below describe **conversation behavior** on the OPEN, not delivery pa
 | **Latency sensitivity** | moderate (chat) | low–moderate (sync) | low (bulk) | **high** (media) | **high** |
 | **Lifetime** | short OPEN | short OPEN (longer read timeout) | short OPEN | **long-lived call SM** | **long-lived hop / SoftMigrate** |
 | **In-band “signal”** | envelope `op`s (call invite, attachment pointer, …) | history request fields | blob `op` fetch/push | bundle hello / channel admit | attach / quote / SoftMigrate ops |
-| **Code owner (approx.)** | `AmpDirectChatTransport` | `AmpChatHistoryTransport` | `AmpChatBlobTransport` | `CallMediaLegCoordinator` | `AmpMediaRelayCoordinator` |
+| **Code owner (approx.)** | `AmpDirectChatTransport` | `AmpChatHistoryTransport` | `AmpChatBlobTransport` | `CallMediaLegCoordinator` | `MediaRelayServer` / `MediaRelayClientCoordinator` |
 
 **Mental model:** `rpc/chat` is the small **send + tiny return** bus (product signals via envelope `op`). `rpc/history` is the same reliability class with **pull + larger return**. `blob` is **large reliable** transfer. `realtime` / `datagram-relay` are **time-sensitive**, lossy media allowed, drop-oldest, long-lived.
 
@@ -143,6 +143,8 @@ Dimensions below describe **conversation behavior** on the OPEN, not delivery pa
 | **Latency** | setup-sensitive | setup-sensitive | setup then follows target | follows nested realtime/rpc | once per session | moderate |
 | **Lifetime** | one-shot | short multi-frame SM | live tunnel while needed | while nested call/path up | session start | short ops |
 | **Role** | “can you dial me?” | NAT assist | path when direct fails | nest E2E Session in tunnel | “what do you speak?” | find peers / names |
+
+**Dial-back serving rules** (`/pp-browser/reach/1.0.0`, `DialBackServer`): any peer may ask a seed to dial, so a probe is bounded — at most **4** `target_multiaddrs` (filtered first, then capped), `timeout_ms` clamped to **1–15 s**, **one probe in flight per requesting peer** (a second is refused until the first answers), and only targets `DialBackTargetAllowed` accepts: the requester's own observed IPv4 address, its own IPv6 **/64**, or — across families (a global IPv6 target over an IPv4 link) — a public-routable address. Others are dropped; a probe left with none answers `no target_multiaddrs`.
 
 **Delivery path** (direct ADP, punch-assisted direct, circuit → nested Session, HTTP/CDN fallback) is **orthogonal** to the rows above: same `protocol_id` conversation, different way to reach the peer.
 

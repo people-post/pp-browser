@@ -12,6 +12,12 @@ namespace CallAudioSession {
 
 void ActivateForVoipCall();
 void Deactivate();
+/**
+ * An audio user is about to start I/O without ActivateForVoipCall (ringtone / ringback open their
+ * speaker first): drop a pending delayed Deactivate retry so it cannot stop that I/O. No-op where
+ * Deactivate does not retry.
+ */
+void CancelPendingDeactivate();
 
 /** True when the OS exposes earpiece vs loudspeaker routing. */
 bool SupportsSpeakerToggle();

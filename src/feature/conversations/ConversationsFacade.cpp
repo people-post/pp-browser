@@ -5,7 +5,7 @@
 #include "domain/messaging/CallThreadPresenceLogic.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/InitiationPricing.h"
-#include "feature/conversations/RegistrationClient.h"
+#include "feature/registration/RegistrationClient.h"
 #include "feature/conversations/LinkDeviceCoordinator.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/PushDeviceCoordinator.h"
@@ -577,7 +577,9 @@ bool ConversationsFacade::AttachmentOpenNeedsConfirmForMessage(const std::string
       continue;
     }
     if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json)) {
-      return AttachmentOpenNeedsConfirm(fields->mime);
+      const std::string path = AttachmentLocalPath(hub_.ProfileDataDir(), thread_id, fields->content_hash,
+                                                    fields->mime, fields->filename);
+      return !AttachmentSafeToAutoOpen(path, fields->mime);
     }
     return true;
   }

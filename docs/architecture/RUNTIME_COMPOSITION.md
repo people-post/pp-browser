@@ -308,7 +308,7 @@ Full model: [THREADING.md](THREADING.md).
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
 | **ConversationsHub** (`ConversationsCore`) | `feature/conversations/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` + `CallStack`; nested network/policy slices |
 | **MeshHost** | `domain/mesh/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
-| **CallStack** | `feature/conversations/` | App-only call plane: media engine, CSM, lifecycle, mesh media bridge, CallMediaDirect, dial/hop helpers; Hub forwards `Calls()` / `Lifecycle()` |
+| **CallStack** | `feature/conversations/` | App-only call plane: media engine, CSM (with the calls' projection), mesh media bridge, CallMediaDirect, dial/hop helpers; Hub forwards `Calls()` |
 | **ConversationsFacade** | `feature/conversations/` | Non-owning wrapper over `ConversationsHub&`; app-owned; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (no direct hub peeks) |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
 | **ClientCompatController** | `gui/` | Relay client-compat check; app-owned; deferred startup |

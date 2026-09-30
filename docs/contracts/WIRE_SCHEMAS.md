@@ -137,7 +137,7 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `envelope_version` | integer | yes | **1** in v1. Signed (D072). Bump independently of `ChatPayload.payload_version`. |
-| `message_id` | string (UUID) | yes | Dedup key (D034) |
+| `message_id` | string, 1–96 chars of `[A-Za-z0-9_-]` (a UUID in practice) | yes | Dedup key (D034). Inbound envelopes with any other character or length are rejected: the id lands in generated RML and as a SQLite key |
 | `sender_relay_id` | string | yes | Relay registration id; **v1:** same string as `sender_contact_id` (D082) |
 | `sender_contact_id` | string | yes | Sender **communicating identity value** (D079) — e.g. `relay:abc123` (D082) |
 | `route` | object | yes | See `Route` below |

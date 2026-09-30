@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 #include "common/PbrCompat.h"
 
@@ -24,6 +25,24 @@ std::string AttachmentExtensionFromMime(const std::string& mime, const std::stri
 bool IsAttachmentImageMime(const std::string& mime);
 bool IsAttachmentVideoMime(const std::string& mime);
 bool AttachmentOpenNeedsConfirm(const std::string& mime);
+
+/**
+ * Best-effort magic-byte sniff for the mimes AttachmentExtensionFromMime knows about
+ * (png/jpeg/gif/webp/mp4/webm/pdf). Returns true (nothing to flag) when the mime has no
+ * checkable signature, the file is missing/too short, or the signature matches; false when
+ * the declared mime and the file's actual content clearly disagree (sender lied about mime
+ * to bypass the open-without-confirm path for images/videos).
+ */
+bool AttachmentContentMatchesMime(const std::string& path, const std::string& mime);
+
+/**
+ * True only when all of: mime is one of the image/video mimes AttachmentExtensionFromMime
+ * knows about, path's actual extension equals AttachmentExtensionFromMime(mime) exactly, and
+ * AttachmentContentMatchesMime confirms the file's content. Anything else (an unlisted mime
+ * such as image/svg+xml or video/quicktime, a mismatched extension, or mismatched content)
+ * is not safe to open without confirmation.
+ */
+bool AttachmentSafeToAutoOpen(const std::string& path, const std::string& mime);
 
 /**
  * Presentation gate for private video: above this size, skip session `blobs_view`
@@ -104,9 +123,17 @@ Roe<void> WipeAllAttachmentViewCaches(const std::string& profile_dir);
 
 /** Pending peer-push ciphertext before envelope key arrives (a6). */
 std::string AttachmentPendingCiphertextRoot(const std::string& profile_dir, const std::string& thread_id);
+/**
+ * Store pushed ciphertext for `content_hash`. `referenced_hex` holds the (lower-case hex) hashes
+ * the thread's attachment messages name: those blobs are real attachments — possibly left
+ * unopened because auto-download deferred them — and are never pruned or counted. Only orphan
+ * pushes (no matching message yet) are bounded: they expire after 24 h and a thread holds at
+ * most 64 of them.
+ */
 Roe<void> SavePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
                                           const std::vector<uint8_t>& content_hash,
-                                          const std::vector<uint8_t>& ciphertext);
+                                          const std::vector<uint8_t>& ciphertext,
+                                          const std::unordered_set<std::string>& referenced_hex = {});
 bool AttachmentPendingCiphertextExists(const std::string& profile_dir, const std::string& thread_id,
                                        const std::vector<uint8_t>& content_hash);
 Roe<ByteVector> LoadPendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,

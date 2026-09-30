@@ -108,6 +108,8 @@ void Deactivate() {
   ApplyVoipModeLocked(false);
 }
 
+void CancelPendingDeactivate() {}
+
 bool SupportsSpeakerToggle() {
   return QueryHasEarpieceRoute();
 }

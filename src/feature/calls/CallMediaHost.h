@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/messaging/CallControlCodec.h"
+#include "feature/calls/LiveCall.h"
 
 #include "common/Error.h"
 
@@ -20,6 +21,10 @@ public:
   virtual void P2pNotifyRingChanged() = 0;
   virtual void P2pSetLastMediaError(std::string message) = 0;
   virtual Roe<std::optional<std::string>> P2pPeerIdentityForCall(const std::string& call_id) const = 0;
+  /** The call as it lives on this device (peers, who placed it, open or ended); null if unknown. */
+  virtual const LiveCall* P2pLiveCall(const std::string& call_id) const = 0;
+  /** The call's media coordinator (engine + seat use); null for a call not admitted here. */
+  virtual CallMediaCoordinator* P2pCallMedia(const std::string& call_id) = 0;
   /**
    * Map inbound call-media mesh PeerId → call-roster `relay:` identity.
    * Do not use P2pPeerIdentityForCall for this — that returns an arbitrary remote and
@@ -32,17 +37,6 @@ public:
    * contact PeerId). Empty if unknown — dial may still use account: alias when registered.
    */
   virtual Roe<std::optional<std::string>> MeshPeerIdForAccount(const std::string& account) const = 0;
-  virtual bool P2pIsAwaitingSfuRecovery() const = 0;
-  /**
-   * True when 1:1 call-media close is expected during SoftMigrate (N≥3, sfu_hint, or attach-wait).
-   * Guests must not flip ConnectFailed before AttachLocalToSfu completes.
-   */
-  virtual bool P2pExpectGroupSfuMigration(const std::string& call_id) const = 0;
-  /** Arm attach-wait chrome / ignore window when 1:1 drops ahead of CallSfuAttach. */
-  virtual void P2pNoteExpectSfuAttach(const std::string& call_id) = 0;
-  /** True after AttachLocalToSfu / media_relay SoftMigrate — not 1:1 libp2p SFU-mode capture. */
-  virtual bool P2pIsSfuAttached() const = 0;
-  virtual void P2pClearAwaitingSfuRecovery() = 0;
   /** Offerer Connect retries — resend epoch media key (answerer often Defers waiting on relay). */
   virtual void P2pResendMediaKey(const std::string& call_id, const std::string& peer_identity) = 0;
   /** Answerer MediaPending — force relay inbox poll for CallMediaKey. */
@@ -53,6 +47,8 @@ public:
    */
   virtual void P2pNoteInboundHello(const std::string& /*call_id*/, const std::string& /*identity*/,
                                    const std::string& /*peer_id*/) {}
+  /** The group hop carries the active call's media (1:1 frames are dropped). Any thread. */
+  virtual bool HopCarriesMedia() const { return false; }
 };
 
 } // namespace pbr

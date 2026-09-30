@@ -151,5 +151,23 @@ TEST(CallDirectPlannerLogicTest, PhaseAfterArm) {
   EXPECT_EQ(DirectPlannerPhaseAfterArm(false, true), CallDirectPlannerPhase::Connecting);
 }
 
+// B44: when a connect sequence gives up, the call shows Failed unless media is already up or the
+// peer's hello is mid-handshake (one short grace). Failed leaves the call open.
+TEST(CallDirectPlannerLogicTest, ConnectFailureCommitsGracesOrFails) {
+  CallConnectFailureFacts f;
+  EXPECT_EQ(DecideConnectFailure(f), CallConnectFailureDecision::Fail);
+
+  CallConnectFailureFacts ready;
+  ready.direct_media_ready = true;
+  ready.hello_grace_used = true;
+  EXPECT_EQ(DecideConnectFailure(ready), CallConnectFailureDecision::Commit) << "media up beats every give-up";
+
+  CallConnectFailureFacts hello;
+  hello.inbound_in_progress = true;
+  EXPECT_EQ(DecideConnectFailure(hello), CallConnectFailureDecision::WaitForHello);
+  hello.hello_grace_used = true;
+  EXPECT_EQ(DecideConnectFailure(hello), CallConnectFailureDecision::Fail) << "one grace only";
+}
+
 } // namespace
 } // namespace pbr

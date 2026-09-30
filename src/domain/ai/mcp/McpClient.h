@@ -6,15 +6,23 @@
 #include "common/net/HttpTransport.h"
 #include "common/PbrCompat.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace pbr {
 
+/** MCP tool `annotations` (spec: tools may omit these; absence must not be read as "safe"). */
+struct McpToolAnnotations {
+  std::optional<bool> read_only_hint;
+  std::optional<bool> destructive_hint;
+};
+
 struct McpTool {
   std::string name;
   std::string description;
   Object input_schema;
+  McpToolAnnotations annotations;
 };
 
 class McpClient : public Module {

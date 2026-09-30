@@ -50,6 +50,18 @@ TEST(ClientCompatParse, HappyPathIgnoresUnknownKeys) {
   EXPECT_EQ(doc->crash_reports_url, "https://example.com/api/relay/v1/crash-reports");
 }
 
+TEST(ClientCompatParse, RejectsNonHttpsUpgradeUrl) {
+  // upgrade_url is surfaced to the user as an "update now" link; a plain-http (or other scheme)
+  // value must be dropped rather than shown/opened.
+  const char* json = R"({
+    "schema_version": 1,
+    "upgrade_url": "http://example.com/upgrade"
+  })";
+  auto doc = ParseClientCompatDocument(json);
+  ASSERT_TRUE(doc);
+  EXPECT_TRUE(doc->upgrade_url.empty());
+}
+
 TEST(ClientCompatParse, RejectsNewerSchemaVersion) {
   auto doc = ParseClientCompatDocument(R"({"schema_version": 99})");
   ASSERT_FALSE(doc);

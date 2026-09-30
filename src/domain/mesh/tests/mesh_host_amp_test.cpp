@@ -6,8 +6,10 @@
 #include "amp/link/AdpMultiaddr.h"
 #include "amp/link/AmpStack.h"
 #include "domain/mesh/tests/support/mesh_harness_support.h"
-#include "domain/mesh/l4/media_relay/AmpMediaRelayCoordinator.h"
-#include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/l4/media_relay/client/MediaRelayClientCoordinator.h"
+#include "domain/mesh/l4/media_relay/serve/MediaRelayServer.h"
+#include "domain/mesh/l4/circuit/client/CircuitClientCoordinator.h"
+#include "domain/mesh/l4/circuit/serve/CircuitRelayServer.h"
 #include "domain/mesh/host/LocalNetworkChange.h"
 #include "domain/mesh/host/MeshHost.h"
 #include "foundation/identity/PeerIdUtil.h"
@@ -66,17 +68,23 @@ TEST(MeshHostAmpTest, AttachAmpStackParallelNoMeshHost) {
   EXPECT_TRUE(host.Amp()->IsStarted());
   EXPECT_EQ(host.AmpListenMultiaddr(), *ma);
   EXPECT_EQ(host.Amp()->Links().LocalCapability().listen_multiaddrs, std::vector<std::string>{*ma});
-  ASSERT_NE(host.AmpCircuitTunnel(), nullptr);
-  ASSERT_NE(host.AmpMediaRelayCoord(), nullptr);
-  EXPECT_TRUE(host.AmpCircuitTunnel()->IsStarted());
-  EXPECT_TRUE(host.AmpMediaRelayCoord()->IsStarted());
+  ASSERT_NE(host.AmpCircuitClient(), nullptr);
+  ASSERT_NE(host.AmpCircuitServer(), nullptr);
+  ASSERT_NE(host.AmpMediaRelayServer(), nullptr);
+  ASSERT_NE(host.AmpMediaRelayClientCoord(), nullptr);
+  EXPECT_TRUE(host.AmpCircuitClient()->IsStarted());
+  EXPECT_TRUE(host.AmpCircuitServer()->IsStarted());
+  EXPECT_TRUE(host.AmpMediaRelayServer()->IsStarted());
+  EXPECT_TRUE(host.AmpMediaRelayClientCoord()->IsStarted());
   ASSERT_NE(host.AmpCircuitHops(), nullptr);
 
   host.Tick();
   host.Stop();
   EXPECT_EQ(host.Amp(), nullptr);
-  EXPECT_EQ(host.AmpCircuitTunnel(), nullptr);
-  EXPECT_EQ(host.AmpMediaRelayCoord(), nullptr);
+  EXPECT_EQ(host.AmpCircuitClient(), nullptr);
+  EXPECT_EQ(host.AmpCircuitServer(), nullptr);
+  EXPECT_EQ(host.AmpMediaRelayServer(), nullptr);
+  EXPECT_EQ(host.AmpMediaRelayClientCoord(), nullptr);
   EXPECT_EQ(host.AmpCircuitHops(), nullptr);
   EXPECT_TRUE(host.AmpListenMultiaddr().empty());
 }
@@ -97,23 +105,23 @@ TEST(MeshHostAmpTest, AmpL4CoordinatorsShareIoTickWithoutOverwrite) {
 
   MeshHost host;
   ASSERT_TRUE(static_cast<bool>(host.AttachAmpStack(std::move(stack), *ma)));
-  ASSERT_NE(host.AmpCircuitTunnel(), nullptr);
-  ASSERT_NE(host.AmpMediaRelayCoord(), nullptr);
+  ASSERT_NE(host.AmpCircuitClient(), nullptr);
+  ASSERT_NE(host.AmpMediaRelayServer(), nullptr);
 
-  host.AmpCircuitTunnel()->Start();
-  host.AmpMediaRelayCoord()->Start();
-  EXPECT_TRUE(host.AmpCircuitTunnel()->IsStarted());
-  EXPECT_TRUE(host.AmpMediaRelayCoord()->IsStarted());
+  host.AmpCircuitClient()->Start();
+  host.AmpMediaRelayServer()->Start();
+  EXPECT_TRUE(host.AmpCircuitClient()->IsStarted());
+  EXPECT_TRUE(host.AmpMediaRelayServer()->IsStarted());
 
   // Both deadline ticks must remain registered (AddIoTick multiplex).
   host.Tick();
-  EXPECT_TRUE(host.AmpCircuitTunnel()->IsStarted());
-  EXPECT_TRUE(host.AmpMediaRelayCoord()->IsStarted());
+  EXPECT_TRUE(host.AmpCircuitClient()->IsStarted());
+  EXPECT_TRUE(host.AmpMediaRelayServer()->IsStarted());
 
-  host.AmpCircuitTunnel()->Stop();
+  host.AmpCircuitClient()->Stop();
   host.Tick();
-  EXPECT_FALSE(host.AmpCircuitTunnel()->IsStarted());
-  EXPECT_TRUE(host.AmpMediaRelayCoord()->IsStarted());
+  EXPECT_FALSE(host.AmpCircuitClient()->IsStarted());
+  EXPECT_TRUE(host.AmpMediaRelayServer()->IsStarted());
 
   host.Stop();
 }

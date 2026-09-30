@@ -10,6 +10,7 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   IdentityStore.cpp
   LinkDeviceExchange.cpp
   MeshHopPolicy.cpp
+  PeerAccountBook.cpp
   PeerBriefRoute.cpp
   PeerDisplayLabel.cpp
   RegistrationStatus.cpp

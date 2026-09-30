@@ -1,9 +1,11 @@
 #include "feature/broadcast/BroadcasterWorkflow.h"
 #include "feature/broadcast/tests/broadcast_test_fakes.h"
+#include "foundation/runtime/OwnerOutbox.h"
+#include "foundation/runtime/tests/queue_owner_executor.h"
 
 #include "domain/media/MediaDeviceArbiter.h"
 #include "domain/media/VideoCodecUnavailable.h"
-#include "domain/mesh/l4/media_relay/MediaRelayFrameCrypto.h"
+#include "domain/mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
 #include "domain/messaging/BroadcastMedia.h"
 
 #include <gtest/gtest.h>
@@ -29,6 +31,9 @@ protected:
   void SetUp() override {
     engine_.SetVideoCodecFactoryForTest([]() { return MakeUnavailableVideoCodec("test"); });
     workflow_ = std::make_unique<BroadcasterWorkflow>(Ports());
+    // The fixture plays the runner: the workflow's events come back through `ui_`.
+    workflow_->SetOutbox(
+        MakeOwnerOutbox<BroadcasterEvent>(tasks_, [this](BroadcasterEvent& event) { workflow_->Handle(event); }));
   }
   void TearDown() override {
     workflow_.reset();
@@ -53,8 +58,6 @@ protected:
     p.relay.relay = &relay_;
     p.relay.dial = &dial_;
     p.engine = &engine_;
-    p.post_owner = [this](std::function<void()> task) { ui_.push_back(std::move(task)); };
-    p.post_owner_after = [this](std::chrono::milliseconds, std::function<void()> task) { ui_.push_back(std::move(task)); };
     return p;
   }
 
@@ -97,6 +100,8 @@ protected:
   std::vector<std::string> cleared_;
   std::vector<BroadcastTipDraft> tips_;
   std::deque<std::function<void()>> ui_;
+  test::QueueOwnerExecutor owner_{ui_};
+  OwnerTasks tasks_{owner_};
   MediaDeviceArbiter devices_{CreateNullMediaDeviceBackend()};
   CallMediaEngine engine_{devices_};
   FakeDial dial_;

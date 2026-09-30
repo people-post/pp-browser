@@ -1,12 +1,13 @@
 #include "feature/broadcast/BroadcasterWorkflow.h"
 
-#include "domain/mesh/l4/media_relay/MediaRelayFrameCrypto.h"
+#include "domain/mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
 #include "domain/messaging/BroadcastMedia.h"
 
 #include "common/Logger.h"
 
 #include <algorithm>
 #include <atomic>
+#include <type_traits>
 #include <utility>
 
 namespace pbr {
@@ -19,19 +20,6 @@ logging::Logger& BroadcasterLog() {
 
 constexpr int64_t kAudioUpBps = 64000;
 constexpr std::chrono::milliseconds kRecoveryBackoff{500};
-
-template <typename T>
-std::function<void(T)> OnOwner(const std::function<void(std::function<void()>)>& post_owner,
-                               const DeferredSelf& deferred, std::function<void(T)> handler) {
-  return [post_owner, token = deferred.token(), snap = deferred.Snapshot(), handler = std::move(handler)](T value) {
-    auto held = std::make_shared<T>(std::move(value));
-    post_owner([token, snap, handler, held]() {
-      if (DeferredSelf::Alive(token, snap)) {
-        handler(std::move(*held));
-      }
-    });
-  };
-}
 
 } // namespace
 
@@ -85,8 +73,39 @@ const char* BroadcasterWorkflow::PhaseName(Phase phase) {
 BroadcasterWorkflow::BroadcasterWorkflow(BroadcasterPorts ports) : ports_(std::move(ports)) {}
 
 BroadcasterWorkflow::~BroadcasterWorkflow() {
-  deferred_.Invalidate();
+  NewShow();
   Teardown(/*announce_end=*/true);
+}
+
+void BroadcasterWorkflow::NewShow() {
+  ++show_;
+  current_show_->store(show_, std::memory_order_release);
+  outbox_.Cancel(reattach_timer_);
+}
+
+void BroadcasterWorkflow::Handle(BroadcasterEvent& event) {
+  std::visit(
+      [this](auto& e) {
+        using E = std::decay_t<decltype(e)>;
+        if (e.show != show_) {
+          return;  // an older show's result
+        }
+        if constexpr (std::is_same_v<E, broadcaster_event::Attached>) {
+          OnAttached(e.hop, std::move(e.attached));
+        } else if constexpr (std::is_same_v<E, broadcaster_event::Announced>) {
+          OnAnnounced(e.first, std::move(e.announced));
+        } else if constexpr (std::is_same_v<E, broadcaster_event::SessionEnded>) {
+          OnSessionEnded(e.loss);
+        } else if constexpr (std::is_same_v<E, broadcaster_event::ReattachDue>) {
+          if (reattach_timer_ != 0) {
+            reattach_timer_ = 0;
+            AttachNext("relay lost");
+          }
+        } else {
+          static_assert(!sizeof(E), "handle every BroadcasterEvent");
+        }
+      },
+      event);
 }
 
 BroadcasterWorkflow::Status BroadcasterWorkflow::CurrentStatus() const {
@@ -118,14 +137,14 @@ Roe<void> BroadcasterWorkflow::GoLive(BroadcastLiveRequest request) {
     return Error("going live needs at least one media relay");
   }
   if (!ports_.engine || !ports_.relay.relay || !ports_.relay.dial || !ports_.announce || !ports_.put_program_key ||
-      !ports_.new_media_key || !ports_.new_join_handle || !ports_.post_owner) {
+      !ports_.new_media_key || !ports_.new_join_handle || !outbox_.IsBound()) {
     return Error("broadcasting unavailable (media relay / engine / announce not wired)");
   }
   ByteVector key = ports_.new_media_key();
   if (key.size() != 32) {
     return Error("media key must be 32 bytes");
   }
-  deferred_.Invalidate();
+  NewShow();
   Teardown(/*announce_end=*/true);
   status_ = Status{};
   status_.topic_id = request.topic_id;
@@ -153,7 +172,7 @@ Roe<void> BroadcasterWorkflow::GoLive(BroadcastLiveRequest request) {
 }
 
 void BroadcasterWorkflow::End() {
-  deferred_.Invalidate();
+  NewShow();
   const bool was_idle = status_.phase == Phase::Idle;
   Teardown(/*announce_end=*/true);
   status_ = Status{};
@@ -164,7 +183,7 @@ void BroadcasterWorkflow::End() {
 
 void BroadcasterWorkflow::Fail(const std::string& error) {
   BroadcasterLog().warning << "broadcast failed program=" << status_.program_id << ": " << error;
-  deferred_.Invalidate();
+  NewShow();
   Teardown(/*announce_end=*/true);
   status_.error = error;
   SetPhase(Phase::Failed, status_.hop);
@@ -256,23 +275,19 @@ void BroadcasterWorkflow::AttachNext(const std::string& why) {
     }
     return {};
   };
-  hooks.still_wanted = [token = deferred_.token(), snap = deferred_.Snapshot()]() {
-    return DeferredSelf::Alive(token, snap);
+  hooks.still_wanted = [current = current_show_, show = show_]() {
+    return current->load(std::memory_order_acquire) == show;
   };
   hooks.on_frame = [](MediaDataFrame) {};  // publish-only: subscribes to nothing
 
-  auto on_owner = OnOwner<Roe<MediaRelayAttached>>(ports_.post_owner, deferred_,
-                                                   [this, hop](Roe<MediaRelayAttached> attached) {
-                                                     OnAttached(hop, std::move(attached));
-                                                   });
   AttachToMediaRelayAsync(ports_.relay, std::move(request), std::move(hooks),
-                          [relay, on_owner, token = deferred_.token(), snap = deferred_.Snapshot()](
-                              Roe<MediaRelayAttached> attached) {
-                            if (attached && !DeferredSelf::Alive(token, snap)) {
+                          [relay, outbox = outbox_, current = current_show_, show = show_,
+                           hop](Roe<MediaRelayAttached> attached) {
+                            if (attached && current->load(std::memory_order_acquire) != show) {
                               relay->Detach();  // ended while AcceptAndAttach was on the wire
                               return;
                             }
-                            on_owner(std::move(attached));
+                            outbox.Emit(broadcaster_event::Attached{show, hop, std::move(attached)});
                           });
 }
 
@@ -300,13 +315,8 @@ void BroadcasterWorkflow::StartPublishing(const std::string& hop) {
   IMediaRelayClient* relay = ports_.relay.relay;
   if (lost_observer_ == 0) {
     lost_observer_ = relay->AddClientTransportLostObserver(
-        [post_owner = ports_.post_owner, token = deferred_.token(), snap = deferred_.Snapshot(),
-         this](MediaRelayClientLoss loss) {
-          post_owner([token, snap, this, loss]() {
-            if (DeferredSelf::Alive(token, snap)) {
-              OnSessionEnded(loss);
-            }
-          });
+        [outbox = outbox_, show = show_](MediaRelayClientLoss loss) {
+          outbox.Emit(broadcaster_event::SessionEnded{show, loss});
         });
   }
   sender_->live.store(true, std::memory_order_release);
@@ -319,19 +329,22 @@ void BroadcasterWorkflow::StartPublishing(const std::string& hop) {
     // Marked announced now: an End before the result still publishes Ended (after Live, FIFO).
     announced_live_ = true;
     announced_hop_ = hop;
-    Announce(PeerAnnounceState::Live,
-             OnOwner<Roe<void>>(ports_.post_owner, deferred_, [this, first](Roe<void> announced) {
-               if (announced) {
-                 return;
-               }
-               if (first) {
-                 Fail("live tip not published: " + announced.error().message);
-                 return;
-               }
-               BroadcasterLog().warning << "hop-change tip not published: " << announced.error().message;
-             }));
+    Announce(PeerAnnounceState::Live, [outbox = outbox_, show = show_, first](Roe<void> announced) {
+      outbox.Emit(broadcaster_event::Announced{show, first, std::move(announced)});
+    });
   }
   consecutive_losses_ = 0;
+}
+
+void BroadcasterWorkflow::OnAnnounced(const bool first, Roe<void> announced) {
+  if (announced) {
+    return;
+  }
+  if (first) {
+    Fail("live tip not published: " + announced.error().message);
+    return;
+  }
+  BroadcasterLog().warning << "hop-change tip not published: " << announced.error().message;
 }
 
 // --- recovery -------------------------------------------------------------------------------------
@@ -358,13 +371,7 @@ void BroadcasterWorkflow::OnSessionEnded(MediaRelayClientLoss loss) {
   std::stable_partition(hops_.begin(), hops_.end(), [&current](const std::string& h) { return h == current; });
   next_hop_ = 0;
   SetPhase(Phase::Recovering, current);
-  auto reattach = [this]() { AttachNext("relay lost"); };
-  const auto backoff = kRecoveryBackoff * consecutive_losses_;
-  if (ports_.post_owner_after) {
-    ports_.post_owner_after(backoff, deferred_.Bind(reattach));
-  } else {
-    deferred_.Post(ports_.post_owner, reattach);
-  }
+  reattach_timer_ = outbox_.After(kRecoveryBackoff * consecutive_losses_, broadcaster_event::ReattachDue{show_});
 }
 
 } // namespace pbr

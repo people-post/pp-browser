@@ -163,12 +163,16 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("call_ring_eyebrow", &host.state_.call_ring.eyebrow);
     ctor.Bind("call_ring_conflict_hint", &host.state_.call_ring.conflict_hint);
     ctor.Bind("call_ring_accept_label", &host.state_.call_ring.accept_label);
+    ctor.Bind("call_ring_voice_answer_label", &host.state_.call_ring.voice_answer_label);
+    ctor.Bind("call_ring_video_allowed", &host.state_.call_ring.video_allowed);
     ctor.Bind("call_ring_decline_label", &host.state_.call_ring.decline_label);
     ctor.Bind("call_ring_show_pricing", &host.state_.call_ring.show_pricing);
     ctor.Bind("call_ring_pricing_label", &host.state_.call_ring.pricing_label);
     ctor.Bind("call_ring_accept_charge_label", &host.state_.call_ring.accept_charge_label);
     ctor.Bind("call_ring_accept_charge_enabled", &host.state_.call_ring.accept_charge_enabled);
     ctor.Bind("call_ring_accept_charge_hint", &host.state_.call_ring.accept_charge_hint);
+    ctor.Bind("call_ring_accept_short", &host.state_.call_ring.accept_short);
+    ctor.Bind("call_ring_voice_short", &host.state_.call_ring.voice_short);
     ctor.Bind("call_in_progress_active", &host.state_.call_in_progress.active);
     ctor.Bind("call_in_progress_title", &host.state_.call_in_progress.title);
     ctor.Bind("call_in_progress_subtitle", &host.state_.call_in_progress.subtitle);
@@ -303,6 +307,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("pin_gate_identity_new", &ShellHost::PinGateIdentityNewCallback);
     ctor.BindEventCallback("pin_gate_identity_link", &ShellHost::PinGateIdentityLinkCallback);
     ctor.BindEventCallback("call_accept", &ShellHost::CallAcceptCallback);
+    ctor.BindEventCallback("call_accept_voice", &ShellHost::CallAcceptVoiceCallback);
     ctor.BindEventCallback("call_accept_charge", &ShellHost::CallAcceptChargeCallback);
     ctor.BindEventCallback("call_decline", &ShellHost::CallDeclineCallback);
     ctor.BindEventCallback("call_leave", &ShellHost::CallLeaveCallback);
@@ -879,12 +884,16 @@ void ShellHost::DirtyCallChrome() {
   DataModelHost::Instance().Dirty("window", "call_ring_eyebrow");
   DataModelHost::Instance().Dirty("window", "call_ring_conflict_hint");
   DataModelHost::Instance().Dirty("window", "call_ring_accept_label");
+  DataModelHost::Instance().Dirty("window", "call_ring_voice_answer_label");
+  DataModelHost::Instance().Dirty("window", "call_ring_video_allowed");
   DataModelHost::Instance().Dirty("window", "call_ring_decline_label");
   DataModelHost::Instance().Dirty("window", "call_ring_show_pricing");
   DataModelHost::Instance().Dirty("window", "call_ring_pricing_label");
   DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_label");
   DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_enabled");
   DataModelHost::Instance().Dirty("window", "call_ring_accept_charge_hint");
+  DataModelHost::Instance().Dirty("window", "call_ring_accept_short");
+  DataModelHost::Instance().Dirty("window", "call_ring_voice_short");
   DataModelHost::Instance().Dirty("window", "call_in_progress_active");
   DataModelHost::Instance().Dirty("window", "call_in_progress_title");
   DataModelHost::Instance().Dirty("window", "call_in_progress_subtitle");
@@ -1914,12 +1923,32 @@ std::string ShellHost::SerializeCallRing() const {
   out << "<p class=\"text shell-dialog-message\" data-if=\"call_ring_conflict\" data-rml=\"call_ring_conflict_hint\"></p>";
   out << "<p class=\"text-sm shell-dialog-message\" data-if=\"call_ring_show_pricing\" "
          "data-rml=\"call_ring_pricing_label\"></p>";
-  out << "<div class=\"shell-dialog-actions row\">";
-  out << "<button class=\"btn btn-secondary\" data-event-click=\"call_decline()\" "
-         "data-rml=\"call_ring_decline_label\"></button>";
-  out << "<button class=\"btn btn-primary shell-call-accept\" "
-         "data-class-shell-call-accept--pulse=\"call_ring_pulse\" "
-         "data-event-click=\"call_accept()\" data-rml=\"call_ring_accept_label\"></button>";
+  // WeChat-style round icon buttons with a short label underneath; long labels above
+  // (call_ring_decline_label / accept_label / voice_answer_label) stay bound for a11y.
+  out << "<div class=\"shell-call-ring-actions row\">";
+  out << "<div class=\"shell-call-ring-action\">";
+  out << "<button class=\"shell-call-ring-action-circle shell-call-ring-decline\" type=\"button\" "
+         "data-event-click=\"call_decline()\">";
+  out << "<svg src=\"../icons/phone-hangup.svg\" width=\"26\" height=\"26\" crop-to-content=\"true\"></svg>";
+  out << "</button>";
+  out << "<p class=\"text-xs shell-call-ring-action-label\">" << Tr("call.ring.short.decline") << "</p>";
+  out << "</div>";
+  out << "<div class=\"shell-call-ring-action\" data-if=\"call_ring_video_allowed\">";
+  out << "<button class=\"shell-call-ring-action-circle shell-call-ring-voice\" type=\"button\" "
+         "data-event-click=\"call_accept_voice()\">";
+  out << "<svg src=\"../icons/phone.svg\" width=\"26\" height=\"26\" crop-to-content=\"true\"></svg>";
+  out << "</button>";
+  out << "<p class=\"text-xs shell-call-ring-action-label\" data-rml=\"call_ring_voice_short\"></p>";
+  out << "</div>";
+  out << "<div class=\"shell-call-ring-action\">";
+  out << "<button class=\"shell-call-ring-action-circle shell-call-accept\" "
+         "data-class-shell-call-accept--pulse=\"call_ring_pulse\" type=\"button\" "
+         "data-event-click=\"call_accept()\">";
+  out << "<svg width=\"26\" height=\"26\" crop-to-content=\"true\" "
+         "data-attr-src=\"call_ring_video_allowed ? '../icons/video.svg' : '../icons/phone.svg'\"></svg>";
+  out << "</button>";
+  out << "<p class=\"text-xs shell-call-ring-action-label\" data-rml=\"call_ring_accept_short\"></p>";
+  out << "</div>";
   out << "</div>";
   out << "<div class=\"shell-dialog-actions column\" data-if=\"call_ring_show_pricing\">";
   out << "<button class=\"btn btn-secondary\" type=\"button\" "
@@ -2876,6 +2905,14 @@ void ShellHost::CallAcceptCallback(ui::DataModelHandle /*model*/, ui::Event& /*e
   Instance().log().warning << "call_accept click";
   if (Instance().call_actions_.accept_incoming) {
     Instance().call_actions_.accept_incoming();
+  }
+}
+
+void ShellHost::CallAcceptVoiceCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                        const ui::VariantList& /*args*/) {
+  Instance().log().warning << "call_accept_voice click";
+  if (Instance().call_actions_.accept_incoming_voice_only) {
+    Instance().call_actions_.accept_incoming_voice_only();
   }
 }
 

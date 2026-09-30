@@ -44,18 +44,47 @@ flowchart TB
 ```
 domain/mesh/
   host/           MeshHost, MeshIdentityConfig, MeshPorts (IChatPeerLinks)
-  identity/       PeerId derivation (ML-DSA → base58)
-  reachability/   Reachability, NAT, LAN mDNS, dial-back; link / service reach, punch step
-                  (PunchIntroducerWalk), circuit rendezvous (CircuitRendezvousCoordinator)
+  shared/         AmpChannelOpen, AmpParkUntil (PeerId derivation: foundation/identity)
+  reachability/   Below MeshHost: Reachability(Engine), NAT, LAN mDNS, observed addrs;
+                  dial_back/ (serve/ DialBackServer, client/ DialBackClient);
+                  punch/ (AmpPunchCoordinator owns serve/ PunchServer — introducer + target — and
+                  client/ PunchClientCoordinator — initiator)
+  dht/            AmpDhtProtocol owns the record store, serve/ DhtServer, client/ DhtClient; codec, rate limiter
+  discovery/      AmpDirectoryProtocol (serve/ DirectoryServer, client/ DirectoryClient),
+                  MeshDirectoryCache, NameDirectory
   media_plane/    MeshMediaPlane — owns the shared media_relay client, dial registry + listen
-                  book and circuit reach (with its punch / rendezvous pieces); lent to calls and broadcast
+                  book and circuit reach (with its punch / rendezvous pieces); lent to calls and broadcast.
+                  MediaRelayAttach (reach the hop, then quote / attach)
+  reach/          Reach over a running MeshHost: PeerReachCoordinator, AmpCircuitHopReach,
+                  PunchIntroducerWalk, CircuitRendezvousCoordinator, MeshReachPorts
   l4/
-    shared/       ProductChannelPolicies
-    circuit/      CircuitTunnelCoordinator, AmpCircuitHopRegistry
-    media_relay/  AmpMediaRelayCoordinator, MediaRelay*
+    shared/       ProductChannelPolicies, L4ProtocolIds, MediaFrameBody (e2e frame bodies)
+    circuit/      wire types + policies; serve/ CircuitRelayServer; client/ CircuitClientCoordinator,
+                  AmpCircuitHopRegistry
+    media_relay/  wire types + decisions; serve/ MediaRelayServer; client/ MediaRelayClientCoordinator,
+                  AmpMediaRelayClient, frame crypto (see SRC_LAYOUT § L4 protocols)
     call_media/   CallMediaLegCoordinator, ICallMediaTransport
   tests/
 ```
+
+## Folder libraries
+
+Each folder builds its own `pp_domain_mesh_<name>` static library; `pp_domain_mesh` is an interface
+aggregate for consumers outside the peer. The `DEPS` in
+[`src/domain/mesh/CMakeLists.txt`](../../src/domain/mesh/CMakeLists.txt) are the only allowed include
+edges between folders — [`check_mesh_layers.sh`](../../scripts/check/check_mesh_layers.sh) reads them
+(transitively) and fails on any other `#include "domain/mesh/…"`. Bottom to top:
+
+```
+shared          shared/ + l4/shared/
+reachability    dht <- discovery    circuit <- media_relay    call_media
+host            MeshHost composes the services above
+reach           reach / rendezvous / punch walk over MeshHost
+media_plane     MeshMediaPlane, MediaRelayAttach
+```
+
+A new edge is a `DEPS` change reviewed with the code; an upward include (a protocol reaching into
+`host`, `host` into `reach`) means the code sits in the wrong folder.
 
 ## Feature boundary
 

@@ -1,343 +1,169 @@
-#include "feature/calls/CallLifecycle.h"
+#include "feature/calls/LiveCall.h"
 
-#include "foundation/runtime/AppRuntime.h"
-
-#include <chrono>
 #include <gtest/gtest.h>
-#include <thread>
+
+#include <string>
 
 namespace pbr {
 namespace {
 
+// V037: what the device shows (State = phase, Status = the call's media) is projected from its calls.
 class CallLifecycleTest : public ::testing::Test {
 protected:
-  CallLifecycle life_;
+  void Answered(const std::string& call_id) {
+    live_.AdmitInvited(call_id, {"account:peer"});
+    live_.MarkAccepting(call_id);
+    live_.MarkJoined(call_id);
+  }
+  LiveCalls live_;
 };
 
-TEST_F(CallLifecycleTest, InviteSeenRingsAndWantsListen) {
-  EXPECT_EQ(life_.Phase(), CallPhase::Idle);
-  EXPECT_FALSE(life_.WantEphemeralListen());
+TEST_F(CallLifecycleTest, AnswererRingsAcceptsWaitsForTheKeyAndGoesLive) {
+  EXPECT_EQ(live_.Phase(), CallPhase::Idle);
+  live_.AdmitInvited("call:a", {"account:peer"});
+  EXPECT_EQ(live_.Phase(), CallPhase::Ringing);
+  EXPECT_EQ(live_.Status(), CallMediaStatus::None) << "a ring is not the active call";
 
-  life_.Apply(CallLifecycleEvent::InviteSeen, "call:1");
+  live_.MarkAccepting("call:a");
+  EXPECT_EQ(live_.Phase(), CallPhase::Accepting);
+  EXPECT_EQ(live_.AcceptingCallId(), "call:a");
 
-  EXPECT_EQ(life_.Phase(), CallPhase::Ringing);
-  EXPECT_EQ(life_.ActiveCallId(), "call:1");
-  EXPECT_EQ(life_.LastRingCallId(), "call:1");
-  EXPECT_TRUE(life_.WantEphemeralListen());
-  EXPECT_FALSE(life_.ShouldSuppressRing("call:1"));
+  live_.MarkJoined("call:a");
+  EXPECT_EQ(live_.Phase(), CallPhase::JoinedLocal);
+  EXPECT_EQ(live_.Status(), CallMediaStatus::Deciding);
+  EXPECT_EQ(live_.ArmedPlanner(), CallArmedPlanner::Lifecycle) << "deciding arms no path planner yet";
+  EXPECT_FALSE(live_.AllowsDirectPath());
+  EXPECT_FALSE(live_.AllowsHopPath());
+
+  live_.NoteMediaDeferred("call:a");
+  EXPECT_EQ(live_.Phase(), CallPhase::MediaPending);
+  live_.NoteMediaKeyReady("call:a");
+  EXPECT_EQ(live_.Phase(), CallPhase::MediaConnecting);
+  EXPECT_EQ(live_.Status(), CallMediaStatus::DirectConnecting) << "key ready prefers Direct";
+  EXPECT_TRUE(live_.AllowsDirectPath());
+
+  live_.NoteMediaConnected("call:a");
+  EXPECT_EQ(live_.Phase(), CallPhase::InCall);
+  EXPECT_EQ(live_.Status(), CallMediaStatus::DirectLive);
+  // k4: losing the path mid-call shows Reconnecting under InCall, never back to Connecting.
+  live_.ReportDirectProgress("call:a", CallDirectPlannerPhase::Reconnecting);
+  EXPECT_EQ(live_.Phase(), CallPhase::InCall);
+  EXPECT_EQ(live_.Status(), CallMediaStatus::Reconnecting);
 }
 
-TEST_F(CallLifecycleTest, InviteClearedReturnsIdleAndDropsListen) {
-  life_.Apply(CallLifecycleEvent::InviteSeen, "call:1");
-  life_.Apply(CallLifecycleEvent::InviteCleared, "call:1");
+TEST_F(CallLifecycleTest, PlacedCallRingsOutUntilAnsweredAndKeepsARunningPath) {
+  live_.AdmitPlaced("call:out", {"account:peer"});
+  live_.NoteOutboundStarted("call:out");
+  EXPECT_EQ(live_.Phase(), CallPhase::OutboundCalling);
+  EXPECT_EQ(live_.Status(), CallMediaStatus::Deciding);
 
-  EXPECT_EQ(life_.Phase(), CallPhase::Idle);
-  EXPECT_TRUE(life_.ActiveCallId().empty());
-  EXPECT_FALSE(life_.WantEphemeralListen());
+  // A fast accept can start the 1:1 path first: OutboundStarted must not regress it.
+  live_.SetMediaStatus("call:out", CallMediaStatus::DirectConnecting, "test");
+  live_.NoteOutboundStarted("call:out");
+  EXPECT_EQ(live_.Status(), CallMediaStatus::DirectConnecting);
+  EXPECT_EQ(live_.Phase(), CallPhase::OutboundCalling) << "nobody answered yet";
+
+  live_.MarkJoined("call:out");  // the peer answered
+  EXPECT_EQ(live_.Phase(), CallPhase::MediaConnecting);
+  live_.NoteMediaConnected("call:out");
+  EXPECT_EQ(live_.Phase(), CallPhase::InCall);
 }
 
-TEST_F(CallLifecycleTest, InviteClearedIgnoredOutsideRinging) {
-  life_.Apply(CallLifecycleEvent::OutboundStarted, "call:out");
-  life_.Apply(CallLifecycleEvent::InviteCleared, "call:other");
+TEST_F(CallLifecycleTest, FailedCallStaysOpenAndARestartConnectsAgain) {
+  Answered("call:f");
+  live_.NoteMediaConnected("call:f");
+  live_.NoteMediaFailed("call:f");
+  EXPECT_EQ(live_.Phase(), CallPhase::ConnectFailed);
+  EXPECT_EQ(live_.Status(), CallMediaStatus::Failed);
+  EXPECT_FALSE(live_.AllowsDirectPath()) << "Failed arms nothing";
+  ASSERT_NE(live_.Active(), nullptr) << "the call is still open";
 
-  EXPECT_EQ(life_.Phase(), CallPhase::OutboundCalling);
-  EXPECT_EQ(life_.ActiveCallId(), "call:out");
+  live_.SetMediaStatus("call:f", CallMediaStatus::DirectConnecting, "RetryClicked");
+  EXPECT_EQ(live_.Phase(), CallPhase::MediaConnecting) << "a restart connects, not InCall from before";
+  live_.NoteMediaConnected("call:f");
+  EXPECT_EQ(live_.Phase(), CallPhase::InCall);
 }
 
-TEST_F(CallLifecycleTest, AcceptSucceededMediaPathToInCall) {
-  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::JoinedLocal);
-  EXPECT_EQ(life_.Status(), CallMediaStatus::Deciding);
-  EXPECT_EQ(life_.ArmedPlanner(), CallArmedPlanner::Lifecycle);
+TEST_F(CallLifecycleTest, HopStatusesArmTheGroupPathOnly) {
+  Answered("call:g");
+  live_.ReportHopProgress("call:g", CallHopPlannerPhase::WaitingAttach);
+  EXPECT_EQ(live_.Status(), CallMediaStatus::HopWaiting);
+  EXPECT_TRUE(live_.AllowsHopPath());
+  EXPECT_FALSE(live_.AllowsDirectPath());
+  EXPECT_FALSE(live_.SoftMigrateMayArm()) << "no SoftMigrate over a hop in progress";
+  EXPECT_EQ(live_.ArmedPlanner(), CallArmedPlanner::Topology);
 
-  life_.Apply(CallLifecycleEvent::MediaDeferred, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::MediaPending);
-
-  life_.Apply(CallLifecycleEvent::MediaKeyReady, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::MediaConnecting);
-  EXPECT_EQ(life_.Status(), CallMediaStatus::DirectConnecting);
-  EXPECT_TRUE(life_.AllowsDirectPath());
-  EXPECT_FALSE(life_.AllowsHopPath());
-
-  life_.Apply(CallLifecycleEvent::DirectConnected, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::InCall);
-  EXPECT_EQ(life_.Status(), CallMediaStatus::DirectLive);
-  EXPECT_TRUE(life_.MediaChromeLive());
-  EXPECT_TRUE(life_.WantEphemeralListen());
+  live_.NoteMediaConnected("call:g");
+  EXPECT_EQ(live_.Status(), CallMediaStatus::HopLive) << "connected while on the hop is HopLive";
+  EXPECT_EQ(live_.Phase(), CallPhase::InCall);
+  live_.ReportHopProgress("call:g", CallHopPlannerPhase::Idle);
+  EXPECT_EQ(live_.Status(), CallMediaStatus::HopLive) << "idle / stopping progress changes nothing";
 }
 
-TEST_F(CallLifecycleTest, AcceptSucceededKeepsMediaPending) {
-  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
-  life_.SetMediaStatus(CallMediaStatus::DirectConnecting, "call:1");
-  life_.Apply(CallLifecycleEvent::MediaDeferred, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::MediaPending);
+TEST_F(CallLifecycleTest, DirectArmingRequestHonouredWhileSettingUpOnly) {
+  live_.AdmitPlaced("call:o", {"account:peer"});
+  live_.NoteOutboundStarted("call:o");
+  live_.RequestDirectArming("call:o");
+  EXPECT_EQ(live_.Status(), CallMediaStatus::Deciding) << "an unanswered outbound call does not arm";
+  live_.MarkJoined("call:o");
+  live_.RequestDirectArming("call:o");
+  EXPECT_EQ(live_.Status(), CallMediaStatus::DirectConnecting);
 
-  // Late AcceptSucceeded (UI queue after answerer Defer) must not regress to JoinedLocal.
-  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::MediaPending);
-  EXPECT_EQ(life_.Status(), CallMediaStatus::DirectConnecting);
-  EXPECT_TRUE(life_.AllowsDirectPath());
+  live_.Close("call:o", LiveCallEndReason::LocalLeave);
+  Answered("call:i");
+  live_.ReportHopProgress("call:i", CallHopPlannerPhase::Live);
+  live_.RequestDirectArming("call:i");
+  EXPECT_EQ(live_.Status(), CallMediaStatus::HopLive) << "an InCall call never re-arms Direct";
 }
 
-TEST_F(CallLifecycleTest, SetMediaStatusHopPathArmsTopology) {
-  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
-  const uint64_t gen0 = life_.MediaCancelGen();
-  life_.SetMediaStatus(CallMediaStatus::HopWaiting, "call:1");
-  EXPECT_EQ(life_.Status(), CallMediaStatus::HopWaiting);
-  EXPECT_TRUE(life_.AllowsHopPath());
-  EXPECT_FALSE(life_.AllowsDirectPath());
-  EXPECT_EQ(life_.MediaCancelGen(), gen0) << "HopWaiting must not bump cancel gen";
-
-  life_.SetMediaStatus(CallMediaStatus::Deciding, "call:1");
-  EXPECT_GT(life_.MediaCancelGen(), gen0);
-  EXPECT_EQ(life_.ArmedPlanner(), CallArmedPlanner::Lifecycle);
+TEST_F(CallLifecycleTest, CancelGenerationBumpsOnADecisionAndOnClose) {
+  const uint64_t start = live_.MediaCancelGen();
+  Answered("call:c");  // Deciding
+  const uint64_t deciding = live_.MediaCancelGen();
+  EXPECT_GT(deciding, start);
+  live_.SetMediaStatus("call:c", CallMediaStatus::Deciding, "test");
+  EXPECT_EQ(live_.MediaCancelGen(), deciding) << "staying Deciding is not a new decision";
+  live_.Close("call:c", LiveCallEndReason::RemoteEnded);
+  EXPECT_GT(live_.MediaCancelGen(), deciding) << "late path work for a closed call aborts";
 }
 
-TEST_F(CallLifecycleTest, LeaveClearsStatusAndBumpsCancelGen) {
-  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
-  life_.SetMediaStatus(CallMediaStatus::DirectConnecting, "call:1");
-  const uint64_t gen = life_.MediaCancelGen();
-  life_.Apply(CallLifecycleEvent::LeaveClicked, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::Idle);
-  EXPECT_EQ(life_.Status(), CallMediaStatus::None);
-  EXPECT_GT(life_.MediaCancelGen(), gen);
-  EXPECT_FALSE(life_.MediaChromeLive());
+TEST_F(CallLifecycleTest, TheActiveCallIsShownOverARingAndTheRingAfterIt) {
+  Answered("call:in");
+  live_.NoteMediaConnected("call:in");
+  live_.AdmitInvited("call:ring", {"account:other"});
+  EXPECT_EQ(live_.Phase(), CallPhase::InCall) << "a second ring does not take over the screen";
+  ASSERT_NE(live_.Shown(), nullptr);
+  EXPECT_EQ(live_.Shown()->Id(), "call:in");
+
+  live_.Close("call:in", LiveCallEndReason::RemoteEnded);
+  EXPECT_EQ(live_.Phase(), CallPhase::Ringing);
+  EXPECT_EQ(live_.Shown()->Id(), "call:ring");
+  live_.Close("call:ring", LiveCallEndReason::Declined);
+  EXPECT_EQ(live_.Phase(), CallPhase::Idle);
+  EXPECT_EQ(live_.Shown(), nullptr);
 }
 
-TEST_F(CallLifecycleTest, DegradedTxOnlyNotChromeLive) {
-  life_.Apply(CallLifecycleEvent::DirectConnected, "call:1");
-  EXPECT_TRUE(life_.MediaChromeLive());
-  life_.SetMediaStatus(CallMediaStatus::DegradedTxOnly, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::InCall);
-  EXPECT_FALSE(life_.MediaChromeLive());
-  EXPECT_TRUE(life_.AllowsDirectPath());
+TEST_F(CallLifecycleTest, EventsForClosedOrUnknownCallsChangeNothing) {
+  Answered("call:x");
+  live_.Close("call:x", LiveCallEndReason::LocalLeave);
+  live_.NoteMediaConnected("call:x");
+  live_.NoteMediaFailed("call:unknown");
+  EXPECT_EQ(live_.Phase(), CallPhase::Idle);
+  EXPECT_EQ(live_.Status(), CallMediaStatus::None);
+  EXPECT_EQ(live_.Find("call:x")->MediaProgress().status, CallMediaStatus::Deciding) << "a closed call keeps its last";
 }
 
-TEST_F(CallLifecycleTest, AcceptSucceededAloneDoesNotArmDirectKick) {
-  // AcceptSucceeded → JoinedLocal/Deciding. KickAnswererDirectMediaIfArmed only runs when
-  // AllowsDirectPath (DirectConnecting / DegradedTxOnly / DirectLive).
-  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
-  EXPECT_EQ(life_.Status(), CallMediaStatus::Deciding);
-  EXPECT_FALSE(life_.AllowsDirectPath());
-  EXPECT_FALSE(life_.AllowsHopPath());
-}
-
-TEST_F(CallLifecycleTest, AcceptSucceededKickEligibleWhenDirectConnecting) {
-  // Late AcceptSucceeded after MediaKeyReady / ScheduleStart armed DirectConnecting — Kick gate.
-  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
-  life_.SetMediaStatus(CallMediaStatus::DirectConnecting, "call:1");
-  EXPECT_TRUE(life_.AllowsDirectPath());
-  EXPECT_FALSE(life_.AllowsHopPath());
-  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
-  EXPECT_TRUE(life_.AllowsDirectPath()) << "KickAnswererDirectMediaIfArmed may ScheduleStart";
-  EXPECT_FALSE(life_.AllowsHopPath());
-}
-
-TEST_F(CallLifecycleTest, DirectLiveBlocksHopPlanner) {
-  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
-  life_.SetMediaStatus(CallMediaStatus::DirectConnecting, "call:1");
-  life_.Apply(CallLifecycleEvent::DirectConnected, "call:1");
-  EXPECT_EQ(life_.Status(), CallMediaStatus::DirectLive);
-  EXPECT_TRUE(life_.AllowsDirectPath());
-  EXPECT_FALSE(life_.AllowsHopPath());
-}
-
-TEST_F(CallLifecycleTest, MediaDeferredIgnoredFromIdle) {
-  life_.Apply(CallLifecycleEvent::MediaDeferred, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::Idle);
-}
-
-TEST_F(CallLifecycleTest, MediaKeyReadyFromJoinedLocalSkipsPending) {
-  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
-  life_.Apply(CallLifecycleEvent::MediaKeyReady, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::MediaConnecting);
-}
-
-TEST_F(CallLifecycleTest, ConnectFailedThenRemoteEndedClears) {
-  life_.Apply(CallLifecycleEvent::OutboundStarted, "call:1");
-  life_.Apply(CallLifecycleEvent::ConnectFailedEvt, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::ConnectFailed);
-  EXPECT_TRUE(life_.WantEphemeralListen());
-
-  life_.Apply(CallLifecycleEvent::RemoteEnded, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::Idle);
-  EXPECT_FALSE(life_.WantEphemeralListen());
-}
-
-TEST_F(CallLifecycleTest, RemoteEndedIgnoredForStaleCallId) {
-  life_.Apply(CallLifecycleEvent::DirectConnected, "call:active");
-  EXPECT_EQ(life_.Phase(), CallPhase::InCall);
-
-  life_.Apply(CallLifecycleEvent::RemoteEnded, "call:prior");
-  EXPECT_EQ(life_.Phase(), CallPhase::InCall);
-  EXPECT_EQ(life_.ActiveCallId(), "call:active");
-
-  life_.Apply(CallLifecycleEvent::RemoteEnded, "call:active");
-  EXPECT_EQ(life_.Phase(), CallPhase::Idle);
-}
-
-TEST_F(CallLifecycleTest, AcceptSucceededIgnoredForStaleCallId) {
-  // B-CONFLICT: late AcceptInvite(A) must not JoinedLocal-clobber chrome already on B.
-  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:b");
-  EXPECT_EQ(life_.Phase(), CallPhase::JoinedLocal);
-  EXPECT_EQ(life_.ActiveCallId(), "call:b");
-
-  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:a");
-  EXPECT_EQ(life_.Phase(), CallPhase::JoinedLocal);
-  EXPECT_EQ(life_.ActiveCallId(), "call:b");
-
-  life_.Apply(CallLifecycleEvent::AcceptFailed, "call:a");
-  EXPECT_EQ(life_.Phase(), CallPhase::JoinedLocal);
-  EXPECT_EQ(life_.ActiveCallId(), "call:b");
-}
-
-TEST_F(CallLifecycleTest, ConnectFailedIgnoredFromIdle) {
-  life_.Apply(CallLifecycleEvent::ConnectFailedEvt, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::Idle);
-}
-
-TEST_F(CallLifecycleTest, InviteSeenDuringInCallDoesNotLeavePhase) {
-  life_.Apply(CallLifecycleEvent::DirectConnected, "call:active");
-  EXPECT_EQ(life_.Phase(), CallPhase::InCall);
-
-  life_.Apply(CallLifecycleEvent::InviteSeen, "call:other");
-  EXPECT_EQ(life_.Phase(), CallPhase::InCall);
-  EXPECT_EQ(life_.ActiveCallId(), "call:active");
-  EXPECT_EQ(life_.LastRingCallId(), "call:other");
-}
-
-TEST_F(CallLifecycleTest, AcceptFailedReturnsToRinging) {
-  life_.Apply(CallLifecycleEvent::AcceptSucceeded, "call:1");
-  // Simulate Accepting→failed by applying AcceptFailed (clears accepting id).
-  life_.Apply(CallLifecycleEvent::AcceptFailed, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::Ringing);
-  EXPECT_EQ(life_.ActiveCallId(), "call:1");
-  EXPECT_TRUE(life_.AcceptingCallId().empty());
-  EXPECT_FALSE(life_.ShouldSuppressRing("call:1"));
-}
-
-TEST_F(CallLifecycleTest, DeclineClickedWithoutCallIdIgnored) {
-  life_.Apply(CallLifecycleEvent::DeclineClicked, {});
-  EXPECT_EQ(life_.Phase(), CallPhase::Idle);
-}
-
-TEST_F(CallLifecycleTest, LeaveClickedWithoutCallIdIgnored) {
-  life_.Apply(CallLifecycleEvent::LeaveClicked, {});
-  EXPECT_EQ(life_.Phase(), CallPhase::Idle);
-}
-
-TEST_F(CallLifecycleTest, RetryClickedRearmsDirectConnectingStatus) {
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
-  AppRuntime::InitializeUI();
-
-  life_.Apply(CallLifecycleEvent::OutboundStarted, "call:1");
-  life_.SetMediaStatus(CallMediaStatus::DirectConnecting, "call:1");
-  life_.Apply(CallLifecycleEvent::ConnectFailedEvt, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::ConnectFailed);
-  EXPECT_EQ(life_.Status(), CallMediaStatus::Failed);
-  EXPECT_FALSE(life_.AllowsDirectPath());
-
-  // Unbound sessions → Retry fails back to ConnectFailed, but Status must re-arm first.
-  life_.Apply(CallLifecycleEvent::RetryClicked, "call:1");
-  EXPECT_TRUE(life_.AllowsDirectPath()) << "Retry must SetMediaStatus DirectConnecting before worker";
-  EXPECT_EQ(life_.Status(), CallMediaStatus::DirectConnecting);
-
-  for (int i = 0; i < 200; ++i) {
-    AppRuntime::RunUIAndOwnerTasks();
-    if (life_.Phase() == CallPhase::ConnectFailed && life_.Status() == CallMediaStatus::Failed) {
-      break;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  AppRuntime::RunUIAndOwnerTasks();
-  EXPECT_EQ(life_.Phase(), CallPhase::ConnectFailed);
-
-  AppRuntime::ShutdownUI();
-  AppRuntime::Shutdown();
-}
-
-TEST_F(CallLifecycleTest, ListenDesireCallbackFiresOnPhaseEnterExit) {
-  int want_true = 0;
-  int want_false = 0;
-  life_.SetOnListenDesireChanged([&](const bool want) {
-    if (want) {
-      ++want_true;
-    } else {
-      ++want_false;
-    }
-  });
-
-  life_.Apply(CallLifecycleEvent::InviteSeen, "call:1");
-  EXPECT_EQ(want_true, 1);
-  EXPECT_EQ(want_false, 0);
-
-  life_.Apply(CallLifecycleEvent::InviteCleared, "call:1");
-  EXPECT_EQ(want_true, 1);
-  EXPECT_EQ(want_false, 1);
-}
-
-TEST_F(CallLifecycleTest, AcceptClickedSuppressesRingUntilAcceptFails) {
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
-  AppRuntime::InitializeUI();
-
-  life_.Apply(CallLifecycleEvent::InviteSeen, "call:1");
-  life_.Apply(CallLifecycleEvent::AcceptClicked, "call:1");
-
-  EXPECT_EQ(life_.Phase(), CallPhase::Accepting);
-  EXPECT_EQ(life_.AcceptingCallId(), "call:1");
-  EXPECT_TRUE(life_.ShouldSuppressRing("call:1"));
-  EXPECT_FALSE(life_.ShouldSuppressRing("call:other"));
-
-  // Unbound sessions → AcceptInvite fails → AcceptFailed → Ringing.
-  bool back_to_ringing = false;
-  for (int i = 0; i < 200; ++i) {
-    AppRuntime::RunUIAndOwnerTasks();
-    if (life_.Phase() == CallPhase::Ringing && life_.AcceptingCallId().empty()) {
-      back_to_ringing = true;
-      break;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  AppRuntime::RunUIAndOwnerTasks();
-  EXPECT_TRUE(back_to_ringing);
-  EXPECT_FALSE(life_.ShouldSuppressRing("call:1"));
-  EXPECT_FALSE(life_.LastError().empty());
-
-  AppRuntime::Shutdown();
-  AppRuntime::ShutdownUI();
-}
-
-TEST_F(CallLifecycleTest, AcceptClickedDedupesInFlight) {
-  AppRuntime::Initialize(ManualOwnerRuntimeConfig());
-  AppRuntime::InitializeUI();
-
-  life_.Apply(CallLifecycleEvent::InviteSeen, "call:1");
-  life_.Apply(CallLifecycleEvent::AcceptClicked, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::Accepting);
-  // Re-click before draining UI AcceptFailed — accepting_call_id_ still set.
-  life_.Apply(CallLifecycleEvent::AcceptClicked, "call:1");
-  EXPECT_EQ(life_.Phase(), CallPhase::Accepting);
-  EXPECT_EQ(life_.AcceptingCallId(), "call:1");
-
-  for (int i = 0; i < 200; ++i) {
-    AppRuntime::RunUIAndOwnerTasks();
-    if (life_.AcceptingCallId().empty()) {
-      break;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  AppRuntime::RunUIAndOwnerTasks();
-
-  AppRuntime::Shutdown();
-  AppRuntime::ShutdownUI();
-}
-
-TEST_F(CallLifecycleTest, ClearBindingResetsPhaseAndListen) {
-  life_.Apply(CallLifecycleEvent::InviteSeen, "call:1");
-  life_.ClearBinding();
-  EXPECT_EQ(life_.Phase(), CallPhase::Idle);
-  EXPECT_TRUE(life_.ActiveCallId().empty());
-  EXPECT_FALSE(life_.WantEphemeralListen());
+TEST_F(CallLifecycleTest, EveryChangeToWhatIsShownIsAnnounced) {
+  int changes = 0;
+  live_.SetOnChanged([&]() { ++changes; });
+  live_.AdmitInvited("call:n", {"account:peer"});
+  EXPECT_EQ(changes, 1);
+  live_.MarkAccepting("call:n");
+  live_.MarkJoined("call:n");
+  live_.NoteMediaKeyReady("call:n");
+  live_.NoteMediaConnected("call:n");
+  live_.Close("call:n", LiveCallEndReason::LocalLeave);
+  EXPECT_EQ(changes, 6);
 }
 
 } // namespace

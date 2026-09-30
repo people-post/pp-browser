@@ -32,7 +32,7 @@ jobs:
   lint:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Feature include edges
@@ -41,6 +41,9 @@ jobs:
         run: |
           ./scripts/check/check_base_includes.sh
           ./scripts/check/check_base_public_libs.sh
+          ./scripts/check/check_mesh_layers.sh
+      - name: Owner runners
+        run: ./scripts/check/check_owner_runners.sh
       - name: Platform ifdef locations
         run: ./scripts/check/check_platform_ifdefs.sh
 
@@ -55,7 +58,7 @@ jobs:
       CCACHE_COMPRESSLEVEL: 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Free disk space
         if: runner.os == 'Linux'
@@ -162,7 +165,7 @@ jobs:
       GRADLE_OPTS: -Dorg.gradle.daemon=false
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
 

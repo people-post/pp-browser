@@ -87,7 +87,7 @@ When a parent must post work that captures raw `this` / `Impl*` onto IO (or anot
 
 `Invalidate` only bumps a generation; already-queued callbacks no-op when their snap no longer matches. New posts after Invalidate capture the new snap and keep working until the next Invalidate.
 
-**Abort vs lifetime tickets (Amp L4):** `CircuitTunnelCoordinator` and `AmpMediaRelayCoordinator` keep two `DeferredSelf`s — `deferred` for `PostIo` (Invalidate on AbortInflight) and `lifetime` for IoTick / protocol / PeerConnected (Invalidate only on Stop). Mid-life Abort must not poison ticks still needed while Started. `CallMediaLegCoordinator` uses `weak_ptr(Impl)` for ticks/handlers instead of a lifetime ticket.
+**Abort vs lifetime tickets (Amp L4):** The circuit and media_relay servers / client coordinators keep two `DeferredSelf`s — `deferred` for `PostIo` (Invalidate on AbortInflight) and `lifetime` for IoTick / protocol / PeerConnected (Invalidate only on Stop). Mid-life Abort must not poison ticks still needed while Started. `CallMediaLegCoordinator` uses `weak_ptr(Impl)` for ticks/handlers instead of a lifetime ticket.
 
 **Teardown vs mid-life:** `DeferredSelf` is for owners that stop or abort **mid-life** on their own strand. Teardown of the messaging graph (quit, profile reset) is covered centrally by the `AppRuntime` gate — [THREADING.md § Teardown quiesce](THREADING.md#teardown-quiesce); do not add per-owner gates for it.
 
@@ -95,11 +95,11 @@ When a parent must post work that captures raw `this` / `Impl*` onto IO (or anot
 
 | Owner | Notes |
 |-------|--------|
-| Amp L4 coordinators (`CircuitTunnelCoordinator`, `AmpMediaRelayCoordinator`, `CallMediaLegCoordinator`) | `PostIo` → `deferred`; circuit/media-relay also `lifetime` for ticks/handlers; call-media uses `weak_ptr` for ticks |
-| Amp protocols (`AmpPunchCoordinator`, `AmpDialBackProtocol`, `AmpDhtProtocol`, `AmpDirectoryProtocol`) | Protocol-handler `Bind`; Invalidate on Stop |
+| Amp L4 coordinators (`CircuitRelayServer` / `CircuitClientCoordinator`, `MediaRelayServer` / `MediaRelayClientCoordinator`, `CallMediaLegCoordinator`) | `PostIo` → `deferred`; circuit/media-relay also `lifetime` for ticks/handlers; call-media uses `weak_ptr` for ticks |
+| Amp protocols (`AmpPunchCoordinator`, `DialBackServer`, `AmpDhtProtocol`, `AmpDirectoryProtocol`) | Protocol-handler `Bind`; Invalidate on Stop |
 | Conversation Amp transports (`AmpDirectChatTransport`, `AmpBroadcastTransport`, `AmpChatHistoryTransport`, `AmpPeerAnnounceTransport`, `AmpChatBlobTransport`) | Protocol-handler `Bind`; Invalidate on Stop |
 | `MeshMediaPlane` / `CircuitRendezvousCoordinator` | OnRelayChosen (plane); reserve / park / repark cbs (rendezvous); `InvalidateAsyncOps` → `Invalidate` at mesh stop and Clear (a pending park still answers `false` at its deadline) |
 | `AmpCircuitHopReach` | AbortPending Invalidates; EnsureViaCircuit / punch cbs check Alive |
-| `CallLifecycle` | ClearBinding Invalidates; worker/UI Accept/Decline/Leave replies check Alive |
+| `CallSessionManager` intents | `intents_self_` (dtor Invalidates): the posted answerer-kick retry and media restarts check Alive |
 
 Everything else: prefer parent-only destroy + sync Abort, `shared_ptr`/`weak_ptr` pins for dispatch, or finish callbacks that do **not** capture the owner. Do not spread raw-`this` posts outside this whitelist without updating this table.

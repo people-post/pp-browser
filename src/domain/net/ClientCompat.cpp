@@ -152,7 +152,11 @@ Roe<ClientCompatDocument> ParseClientCompatDocument(std::string_view json_text) 
     doc.min_protocol_gen = static_cast<int>(*v);
   }
   if (auto v = root->getString("upgrade_url")) {
-    doc.upgrade_url = *v;
+    // This URL gets surfaced to the user as an "update now" link — the backend response is
+    // otherwise trusted, but still never accept a non-https link here.
+    if (v->rfind("https://", 0) == 0) {
+      doc.upgrade_url = *v;
+    }
   }
   if (auto v = root->getString("message")) {
     doc.message = *v;

@@ -3,8 +3,8 @@
 #include "domain/mesh/host/MeshHost.h"
 #include "domain/mesh/host/AmpLinkConfig.h"
 #include "domain/mesh/host/MeshLinkEventLog.h"
-#include "domain/mesh/reachability/DialBackTypes.h"
-#include "domain/mesh/reachability/PunchTypes.h"
+#include "domain/mesh/reachability/dial_back/DialBackTypes.h"
+#include "domain/mesh/reachability/punch/PunchTypes.h"
 #include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
 #include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
@@ -208,17 +208,27 @@ void MeshHost::EnsureAmpL4Coordinators() {
   if (!amp_circuit_hops_) {
     amp_circuit_hops_ = std::make_unique<AmpCircuitHopRegistry>();
   }
-  if (!amp_circuit_) {
-    amp_circuit_ = std::make_unique<CircuitTunnelCoordinator>(amp_->Runtime());
+  if (!amp_circuit_server_) {
+    amp_circuit_server_ = std::make_unique<CircuitRelayServer>(amp_->Runtime());
   }
-  if (!amp_media_relay_) {
-    amp_media_relay_ = std::make_unique<AmpMediaRelayCoordinator>(amp_->Runtime());
+  if (!amp_circuit_client_) {
+    amp_circuit_client_ = std::make_unique<CircuitClientCoordinator>(amp_->Runtime());
   }
-  amp_media_relay_->SetCircuitHopRegistry(amp_circuit_hops_.get());
+  if (!amp_media_relay_server_) {
+    amp_media_relay_server_ = std::make_unique<MediaRelayServer>(amp_->Runtime());
+  }
+  if (!amp_media_relay_client_) {
+    amp_media_relay_client_ =
+        std::make_unique<MediaRelayClientCoordinator>(amp_->Runtime(), amp_media_relay_server_.get());
+  }
+  amp_media_relay_client_->SetCircuitHopRegistry(amp_circuit_hops_.get());
   auto io_pump = MakeL4IoPump();
   auto post_worker = MakeL4WorkerPost(WorkerLane::Normal);
+  if (!amp_dial_back_server_) {
+    amp_dial_back_server_ = std::make_unique<DialBackServer>(amp_->Runtime());
+  }
   if (!amp_dial_back_) {
-    amp_dial_back_ = std::make_unique<AmpDialBackProtocol>(amp_->Runtime(), io_pump);
+    amp_dial_back_ = std::make_unique<DialBackClient>(amp_->Runtime(), io_pump);
   }
   if (!amp_punch_) {
     amp_punch_ = std::make_unique<AmpPunchCoordinator>(amp_->Runtime(), io_pump);
@@ -241,11 +251,20 @@ void MeshHost::StartAmpL4Hosting(const bool host_circuit, const bool host_media,
     amp_->Links().EnableNestedCarrierAccept(true);
   }
   // Always Start so SoftMigrate guests / circuit clients can dial; inbound hosting is gated.
-  if (amp_circuit_ && !amp_circuit_->IsStarted()) {
-    amp_circuit_->Start();
+  if (amp_circuit_server_ && !amp_circuit_server_->IsStarted()) {
+    amp_circuit_server_->Start();
   }
-  if (amp_media_relay_ && !amp_media_relay_->IsStarted()) {
-    amp_media_relay_->Start();
+  if (amp_circuit_client_ && !amp_circuit_client_->IsStarted()) {
+    amp_circuit_client_->Start();
+  }
+  if (amp_media_relay_server_ && !amp_media_relay_server_->IsStarted()) {
+    amp_media_relay_server_->Start();
+  }
+  if (amp_media_relay_client_ && !amp_media_relay_client_->IsStarted()) {
+    amp_media_relay_client_->Start();
+  }
+  if (amp_dial_back_server_ && !amp_dial_back_server_->IsStarted()) {
+    amp_dial_back_server_->Start();
   }
   if (amp_dial_back_ && !amp_dial_back_->IsStarted()) {
     amp_dial_back_->Start();
@@ -262,11 +281,11 @@ void MeshHost::StartAmpL4Hosting(const bool host_circuit, const bool host_media,
   if (amp_directory_ && !amp_directory_->IsStarted()) {
     amp_directory_->Start();
   }
-  if (amp_circuit_) {
-    amp_circuit_->SetServeInbound(host_circuit);
+  if (amp_circuit_server_) {
+    amp_circuit_server_->SetServeInbound(host_circuit);
   }
-  if (amp_media_relay_) {
-    amp_media_relay_->SetServeInbound(host_media);
+  if (amp_media_relay_server_) {
+    amp_media_relay_server_->SetServeInbound(host_media);
   }
   ApplyAmpAdvertisement(MeshHostConfig{.host_circuit_relay = host_circuit,
                                        .host_media_relay = host_media,
@@ -286,17 +305,26 @@ void MeshHost::StopAmp() {
   if (amp_dial_back_) {
     amp_dial_back_->Stop();
   }
+  if (amp_dial_back_server_) {
+    amp_dial_back_server_->Stop();
+  }
   if (amp_directory_) {
     amp_directory_->Stop();
   }
   if (amp_dht_) {
     amp_dht_->Stop();
   }
-  if (amp_media_relay_) {
-    amp_media_relay_->Stop();
+  if (amp_media_relay_client_) {
+    amp_media_relay_client_->Stop();
   }
-  if (amp_circuit_) {
-    amp_circuit_->Stop();
+  if (amp_media_relay_server_) {
+    amp_media_relay_server_->Stop();
+  }
+  if (amp_circuit_client_) {
+    amp_circuit_client_->Stop();
+  }
+  if (amp_circuit_server_) {
+    amp_circuit_server_->Stop();
   }
   if (amp_circuit_hops_) {
     amp_circuit_hops_->ClearAll();
@@ -305,10 +333,13 @@ void MeshHost::StopAmp() {
   StopOwnedThreads();
   amp_punch_.reset();
   amp_dial_back_.reset();
+  amp_dial_back_server_.reset();
   amp_directory_.reset();
   amp_dht_.reset();
-  amp_media_relay_.reset();
-  amp_circuit_.reset();
+  amp_media_relay_client_.reset();
+  amp_media_relay_server_.reset();
+  amp_circuit_client_.reset();
+  amp_circuit_server_.reset();
   amp_circuit_hops_.reset();
   if (amp_) {
     amp_->Stop();
@@ -376,11 +407,17 @@ void MeshHost::Stop() {
   // Retire the probe first (its destructor waits on the Connectivity owner), so no `on_updated`
   // runs while the Amp stack below goes away. Reachability() stays valid (a fresh engine).
   reachability_ = std::make_unique<ReachabilityEngine>();
-  if (amp_circuit_) {
-    amp_circuit_->AbortInflight();
+  if (amp_circuit_client_) {
+    amp_circuit_client_->AbortInflight();
   }
-  if (amp_media_relay_) {
-    amp_media_relay_->AbortInflight();
+  if (amp_circuit_server_) {
+    amp_circuit_server_->AbortInflight();
+  }
+  if (amp_media_relay_client_) {
+    amp_media_relay_client_->AbortInflight();
+  }
+  if (amp_media_relay_server_) {
+    amp_media_relay_server_->AbortInflight();
   }
   StopAmp();
   bootstrap_peers_.clear();
@@ -429,7 +466,7 @@ void MeshHost::RefreshAdvertisedListenAddrs() {
   }
 }
 
-AmpDialBackProtocol* MeshHost::AmpDialBack() { return amp_dial_back_.get(); }
+DialBackClient* MeshHost::AmpDialBack() { return amp_dial_back_.get(); }
 
 AmpPunchCoordinator* MeshHost::AmpPunch() { return amp_punch_.get(); }
 
@@ -450,8 +487,8 @@ void MeshHost::RefreshAmpDhtHosting(const bool host_dht) {
     return;
   }
   MeshHostConfig ad_cfg;
-  ad_cfg.host_circuit_relay = amp_circuit_ && amp_circuit_->ServeInbound();
-  ad_cfg.host_media_relay = amp_media_relay_ && amp_media_relay_->ServeInbound();
+  ad_cfg.host_circuit_relay = amp_circuit_server_ && amp_circuit_server_->ServeInbound();
+  ad_cfg.host_media_relay = amp_media_relay_server_ && amp_media_relay_server_->ServeInbound();
   ad_cfg.host_dht = host_dht_;
   ad_cfg.host_directory = host_directory_;
   ApplyAmpAdvertisement(ad_cfg);
@@ -473,8 +510,8 @@ void MeshHost::RefreshAmpDirectoryHosting(const bool host_directory) {
     return;
   }
   MeshHostConfig ad_cfg;
-  ad_cfg.host_circuit_relay = amp_circuit_ && amp_circuit_->ServeInbound();
-  ad_cfg.host_media_relay = amp_media_relay_ && amp_media_relay_->ServeInbound();
+  ad_cfg.host_circuit_relay = amp_circuit_server_ && amp_circuit_server_->ServeInbound();
+  ad_cfg.host_media_relay = amp_media_relay_server_ && amp_media_relay_server_->ServeInbound();
   ad_cfg.host_dht = host_dht_;
   ad_cfg.host_directory = host_directory_;
   ApplyAmpAdvertisement(ad_cfg);
@@ -563,25 +600,27 @@ std::optional<MeshChatDeps> MeshHost::ChatDeps() {
 }
 
 std::optional<MeshCircuitDeps> MeshHost::CircuitDeps() {
-  if (!amp_ || !chat_links_ || !amp_circuit_ || !amp_circuit_hops_) {
+  if (!amp_ || !chat_links_ || !amp_circuit_client_ || !amp_circuit_hops_) {
     return std::nullopt;
   }
-  return MeshCircuitDeps{*amp_circuit_, *amp_circuit_hops_, *chat_links_};
+  return MeshCircuitDeps{*amp_circuit_client_, *amp_circuit_hops_, *chat_links_};
 }
 
 pp::amp::AmpStack* MeshHost::Amp() { return amp_.get(); }
 
 const pp::amp::AmpStack* MeshHost::Amp() const { return amp_.get(); }
 
-CircuitTunnelCoordinator* MeshHost::AmpCircuitTunnel() { return amp_circuit_.get(); }
+CircuitRelayServer* MeshHost::AmpCircuitServer() { return amp_circuit_server_.get(); }
+CircuitClientCoordinator* MeshHost::AmpCircuitClient() { return amp_circuit_client_.get(); }
 
-AmpMediaRelayCoordinator* MeshHost::AmpMediaRelayCoord() { return amp_media_relay_.get(); }
+MediaRelayServer* MeshHost::AmpMediaRelayServer() { return amp_media_relay_server_.get(); }
+MediaRelayClientCoordinator* MeshHost::AmpMediaRelayClientCoord() { return amp_media_relay_client_.get(); }
 
 AmpCircuitHopRegistry* MeshHost::AmpCircuitHops() { return amp_circuit_hops_.get(); }
 
 void MeshHost::AbortInflightCircuitRequests() {
-  if (amp_circuit_) {
-    amp_circuit_->AbortInflight();
+  if (amp_circuit_client_) {
+    amp_circuit_client_->AbortInflight();
   }
   if (amp_circuit_hops_) {
     amp_circuit_hops_->ClearAll();

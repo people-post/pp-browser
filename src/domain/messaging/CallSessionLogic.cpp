@@ -100,6 +100,10 @@ bool CallSessionLogic::VideoAllowedFromInvite(const CallInviteDetail& invite) {
   return invite.video_allowed;
 }
 
+bool CallSessionLogic::VoiceAnswerNarrowsCall(const CallSession& session) {
+  return !session.origin_group_id || session.origin_group_id->empty();
+}
+
 bool CallSessionLogic::ShouldHonorInboundVideoRefresh(const std::string& refresh_call_id,
                                                       const std::string& refresh_publisher_identity,
                                                       const std::string& sender_identity,

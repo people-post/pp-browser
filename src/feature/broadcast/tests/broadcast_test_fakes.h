@@ -3,8 +3,8 @@
 // Shared fakes for feature/broadcast gtests: a dial registry that reaches everything and a
 // scripted media_relay client (attach per hop, sessions ending on demand, frames recorded).
 
-#include "domain/mesh/l4/media_relay/IMediaRelayClient.h"
-#include "domain/mesh/reachability/MeshReachPorts.h"
+#include "domain/mesh/l4/media_relay/client/IMediaRelayClient.h"
+#include "domain/mesh/reach/MeshReachPorts.h"
 
 #include <opus.h>
 

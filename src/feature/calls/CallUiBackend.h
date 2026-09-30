@@ -4,9 +4,10 @@
 #include "common/media/CallMediaHealth.h"
 #include "domain/messaging/CallTypes.h"
 #include "common/Error.h"
-#include "feature/calls/CallLifecycle.h"
+#include "domain/messaging/CallLifecycleTypes.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallUiState.h"
+#include "feature/calls/LiveCall.h"
 
 #include <functional>
 #include <memory>
@@ -50,15 +51,22 @@ public:
   void PollP2pConnectHealth();
   void ClearMediaActivity();
   void Apply(CallLifecycleEvent ev, const std::string& call_id = {});
-  void NoteRingCallId(const std::string& call_id);
   void ClearLastError();
-  void LeaveCall(const std::string& call_id);
+  void LeaveCall(const std::string& call_id, LiveCallEndReason reason = LiveCallEndReason::LocalLeave);
   void StopCallMedia(const std::string& call_id);
   void RequestVideoRefresh(const std::string& call_id, const std::string& publisher_identity);
   /** Set before AcceptClicked — consumed by AcceptInvite. */
   void SetPendingAcceptChargeDecision(InitiationChargeDecision decision);
+  /** Set before AcceptClicked — consumed (and reset to false) by AcceptInvite. */
+  void SetPendingAcceptVoiceOnly(bool voice_only);
   /** The pending media error, once per error (the owner clears it). */
   std::optional<std::string> TakeLastMediaError();
+  /** A call the peer ended or declined while this side had it — once per call. */
+  struct RemoteEnd {
+    std::string call_id;
+    bool declined = false;
+  };
+  std::optional<RemoteEnd> TakeRemoteEnd();
 
   // --- Intents with a result (`on_done` on UI) ---------------------------------------------------
   void StartCall(const std::string& origin_thread_id, bool video_allowed,
@@ -75,6 +83,7 @@ public:
   Roe<std::optional<std::string>> PeerIdentityForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> PeerVideoEnabledForCall(const std::string& call_id) const;
   Roe<std::optional<bool>> VideoAllowedForCall(const std::string& call_id) const;
+  Roe<bool> AwaitingExplicitAnswerForCall(const std::string& call_id) const;
   Roe<std::vector<CallParticipant>> ListJoinedParticipants(const std::string& call_id) const;
   /** P001 initiation offer stored for inbound inviter (0 if none). */
   int64_t InitiationOfferMinorForPeer(const std::string& peer_identity) const;
@@ -112,6 +121,7 @@ private:
   CallStack& stack_;
   /** Last media error handed to the GUI (shown once until the owner clears it). */
   std::optional<std::string> taken_media_error_;
+  std::string taken_remote_ended_;
 };
 
 } // namespace pbr

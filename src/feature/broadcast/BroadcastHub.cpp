@@ -2,7 +2,7 @@
 
 #include "feature/broadcast/AmpBroadcastRpcClient.h"
 
-#include "domain/mesh/reachability/PeerReachCoordinator.h"
+#include "domain/mesh/reach/PeerReachCoordinator.h"
 #include "domain/messaging/BroadcastMedia.h"
 #include "foundation/runtime/AppRuntime.h"
 
@@ -29,14 +29,50 @@ std::function<void(Roe<void>)> ReplyOnUi(std::function<void(Roe<void>)> on_done)
   };
 }
 
+/** The product runner's thread: the media-sessions owner (inline when the runtime has none). */
+class MediaSessionsExecutor final : public OwnerExecutor {
+public:
+  void Post(std::function<void()> task) override { AppRuntime::PostToOwnerOrRun(kOwner, std::move(task)); }
+  void PostFront(std::function<void()> task) override { AppRuntime::PostToFront(kOwner, std::move(task)); }
+  TimerId After(const std::chrono::milliseconds delay, std::function<void()> task) override {
+    return AppRuntime::ScheduleOn(kOwner, delay, std::move(task));
+  }
+  void Cancel(const TimerId id) override {
+    if (id != 0) {
+      AppRuntime::CancelCoordinatorTimer(id);
+    }
+  }
+  bool IsCurrent() const override { return AppRuntime::CurrentlyOn(kOwner); }
+  void RunAndWait(const std::function<void()>& task) override { AppRuntime::RunAndWait(kOwner, task); }
+};
+
+OwnerExecutor& MediaSessionsOwner() {
+  static MediaSessionsExecutor executor;
+  return executor;
+}
+
 } // namespace
 
-BroadcastHub::BroadcastHub(BroadcastViewerPorts viewer, MediaDeviceArbiter& devices, BroadcasterPorts broadcaster)
-    : engine_(std::make_unique<CallMediaEngine>(devices)), capture_engine_(std::make_unique<CallMediaEngine>(devices)) {
+BroadcastHub::BroadcastHub(BroadcastViewerPorts viewer, MediaDeviceArbiter& devices, BroadcasterPorts broadcaster,
+                           OwnerExecutor* executor)
+    : executor_(executor ? *executor : MediaSessionsOwner()), tasks_(executor_),
+      engine_(std::make_unique<CallMediaEngine>(devices)), capture_engine_(std::make_unique<CallMediaEngine>(devices)) {
   viewer.engine = engine_.get();
   viewer_ = std::make_unique<BroadcastViewerWorkflow>(std::move(viewer));
+  viewer_->SetOutbox(MakeOwnerOutbox<ViewerEvent>(tasks_, [this](ViewerEvent& event) {
+    if (viewer_) {
+      viewer_->Handle(event);
+      Publish();
+    }
+  }));
   broadcaster.engine = capture_engine_.get();
   broadcaster_ = std::make_unique<BroadcasterWorkflow>(std::move(broadcaster));
+  broadcaster_->SetOutbox(MakeOwnerOutbox<BroadcasterEvent>(tasks_, [this](BroadcasterEvent& event) {
+    if (broadcaster_) {
+      broadcaster_->Handle(event);
+      Publish();
+    }
+  }));
   frames_sent_ = broadcaster_->FramesSentCounter();
   viewer_->SetOnStatusChanged([this]() { OnStatusChanged(); });
   broadcaster_->SetOnStatusChanged([this]() { OnStatusChanged(); });
@@ -71,10 +107,6 @@ std::unique_ptr<BroadcastHub> BroadcastHub::ForMesh(BroadcastMeshDeps deps, Medi
   };
   ports.relay = deps.relay;
   ports.hop_multiaddr = std::move(deps.hop_multiaddr);
-  ports.post_owner = [](std::function<void()> task) { AppRuntime::PostTo(kOwner, std::move(task)); };
-  ports.post_owner_after = [](std::chrono::milliseconds delay, std::function<void()> task) {
-    (void)AppRuntime::ScheduleOn(kOwner, delay, std::move(task));
-  };
   ports.now_ms = []() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
         .count();
@@ -100,8 +132,6 @@ std::unique_ptr<BroadcastHub> BroadcastHub::ForMesh(BroadcastMeshDeps deps, Medi
   };
   publish.relay = ports.relay;
   publish.hop_multiaddr = ports.hop_multiaddr;
-  publish.post_owner = ports.post_owner;
-  publish.post_owner_after = ports.post_owner_after;
 
   auto hub = std::make_unique<BroadcastHub>(std::move(ports), devices, std::move(publish));
   hub->rpc_ = std::move(rpc);
@@ -112,7 +142,8 @@ std::unique_ptr<BroadcastHub> BroadcastHub::ForMesh(BroadcastMeshDeps deps, Medi
 BroadcastHub::~BroadcastHub() {
   // The workflows end on their owner (Ended tip, key cleared, sessions stopped) before the
   // engines go; the owner's queued steps for this hub run first (FIFO).
-  AppRuntime::RunAndWait(kOwner, [this]() {
+  executor_.RunAndWait([this]() {
+    tasks_.DropPending();
     broadcaster_.reset();
     viewer_.reset();
     on_changed_ = nullptr;
@@ -126,15 +157,10 @@ BroadcastHub::~BroadcastHub() {
 }
 
 void BroadcastHub::OnOwner(std::function<void()> step) {
-  auto run = [this, step = std::move(step)]() {
+  tasks_.Post([this, step = std::move(step)]() {
     step();
     Publish();
-  };
-  if (AppRuntime::HasOwner(kOwner)) {
-    AppRuntime::PostTo(kOwner, std::move(run));
-  } else {
-    run();
-  }
+  });
 }
 
 void BroadcastHub::Publish() {

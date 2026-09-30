@@ -22,86 +22,77 @@ Do **not** restate the full product decision table here — link DECISIONS. Prom
 
 ## Call lifecycle
 
-1:1 call phases are owned by [`CallLifecycle`](../../src/feature/calls/CallLifecycle.h) (`Idle` → `Ringing` / `OutboundCalling` → `Accepting` → `JoinedLocal` → `MediaPending` / `MediaConnecting` → `InCall` / `ConnectFailed`). **Transitions** are pure [`DecideCallLifecycleTransition`](../../src/domain/messaging/CallLifecycleTransitionLogic.h) (gtest table); `Apply` only executes named actions (`PostAcceptInvite`, chrome, kick). `CallController` posts clicks and paints chrome; session/media/listen report outcomes into `Apply(event)`. Heavy media logic stays in Bridge / Topology planners (V039) — not in phase handlers.
+What the device shows about calls is a **projection of its calls** ([`LiveCalls`](../../src/feature/calls/LiveCall.h)), not a separate state machine. Each `LiveCall` has a call state (Calling / Ringing / Accepting / Joined / Ended, driven by the session workflow) and its own media progress (the V037 Status, plus "live since the last failure" and "waiting for the key"). `LiveCall::Phase()` projects them to the `CallPhase` the chrome paints (`Idle`, `Ringing`, `Accepting`, `OutboundCalling`, `JoinedLocal`, `MediaPending`, `MediaConnecting`, `InCall`, `ConnectFailed`); `LiveCalls::Phase()` is the shown call's (the active call, else the ring). Clicks and media events go to `CallSessionManager::Apply(event)`: clicks run their session op (accept / decline / leave / retry / resume), media events move the call's progress. Heavy media logic stays in Bridge / Topology planners (V039).
 
 | Owner | Responsibility |
 |-------|----------------|
-| **CallLifecycle** | Phase/Status enums, execute transition actions, thread policy, listen desire, `ShouldSuppressRing` |
-| **CallLifecycleTransitionLogic** | Pure `(phase, status, event) → Outcome` table (no I/O) |
+| **LiveCall / LiveCalls** | Per call: call state + media Status / progress; projection (`Phase`, `Status`, `Shown`); path gates (`AllowsDirectPath` / `AllowsHopPath` / `SoftMigrateMayArm`, armed planner); media cancel generation; change hook |
+| **CallSessionManager** | UI intents (`Apply`: Accept in flight + dedupe, Decline, Leave, Retry / PeerReconnected restart, answerer kick after accept); binds the path arming ports over `LiveCalls`; persist session/invite/roster; encode/send controls |
+| **CallStack** | Publishes the projection in `CallUiState`; on a change refreshes chrome (UI) and wakes N025 listen when `WantEphemeralListen` (a call is shown) flips |
 | **CallController** | Rml clicks → `Apply(event)`; ring / in-call chrome via `apply_chrome_update` → ShellHost Remount / DirtyCallChrome |
-| **CallSessionManager** | Persist session/invite/roster; encode/send controls; notify lifecycle |
 | **CallMediaBridge** | Media-key defer, channel connect/retry; report `MediaDeferred` / `DirectConnected` / `ConnectFailed` |
-| **CallMediaConnectCoordinator** | Both directions of the 1:1 bundle. Outbound: per attempt reach a link then open the bundle; watchdog (B42), 5 retries, fresh-link feedback (B39). Inbound: owns the transport handler — accept once the epoch key is available (cancelable wait on the worker hop) via `CallMediaInboundPorts` |
+| **CallMediaConnectCoordinator** | Both directions of the 1:1 bundle. Outbound: per attempt reach a link then open the bundle; watchdog (B42), 5 retries, fresh-link feedback (B39). Inbound: owns the transport handler — a hello is an event on the calls owner, parked until its epoch key is available, via `CallMediaInboundPorts` |
 | **PeerReachCoordinator** | Call-agnostic link establishment to one peer (dial → circuit → punch, seed park); `Reach` / `Await` modes |
 | **ICallMediaTransport** | 1:1 `/pp-browser/realtime/1.0.0` — Amp `CallMediaAmpTransport` / `CallMediaLegCoordinator` ([A020](../../projects/adp/DECISIONS.md#a020--single-transport-entry-per-protocol) / D10) |
-| **ConversationsHub** | N025 listen + mDNS as **lifecycle-driven** commands (`WantEphemeralListen`), not tick side effects |
+| **ConversationsHub** | N025 listen + mDNS as **call-driven** commands (`WantEphemeralListen`), not tick side effects |
 
-```mermaid
-stateDiagram-v2
-  [*] --> Idle
-  Idle --> Ringing: InviteSeen
-  Idle --> OutboundCalling: OutboundStarted
-  Ringing --> Accepting: AcceptClicked
-  Ringing --> Idle: DeclineOrExpire
-  Accepting --> JoinedLocal: AcceptSucceeded
-  Accepting --> Ringing: AcceptFailed
-  JoinedLocal --> MediaPending: MediaDeferred
-  JoinedLocal --> MediaConnecting: MediaKeyReady
-  MediaPending --> MediaConnecting: MediaKeyReady
-  MediaConnecting --> InCall: DirectConnected
-  MediaConnecting --> ConnectFailed: ConnectFailed
-  ConnectFailed --> MediaConnecting: Retry
-  OutboundCalling --> MediaConnecting: peer media
-  InCall --> Idle: LeaveOrRemoteEnd
-```
+The projection, per call (first match wins for a Calling / Joined call):
+
+| Call state | Media progress | Phase |
+|------------|----------------|-------|
+| Ringing / Accepting / Ended | — | `Ringing` / `Accepting` / `Idle` |
+| Calling / Joined | Status `Failed` | `ConnectFailed` (the call stays open: Retry / the peer's reconnect resumes it) |
+| Calling / Joined | live since the last failure | `InCall` (Reconnecting / Migrating / DegradedTxOnly keep it) |
+| Calling | — | `OutboundCalling` (nobody answered yet) |
+| Joined | waiting for the key | `MediaPending` |
+| Joined | a connecting Status, or we placed the call | `MediaConnecting` |
+| Joined | — | `JoinedLocal` (our accept landed; Status `Deciding`) |
 
 ### Ringing handling
 
-Ring chrome is a **lifecycle phase**, not a free-standing UI poll of `TopPendingInvite`. The controller may observe pending invites to paint labels, but phase / listen / Accept sequencing go through `CallLifecycle`.
+Ring chrome is the **ring `LiveCall`** (the newest Ringing / Accepting call), not a free-standing UI poll of `TopPendingInvite`. The controller may observe pending invites to paint labels, but phase / listen / Accept sequencing follow the calls.
 
 ```mermaid
 sequenceDiagram
+  participant WF as CallSessionWorkflow
   participant CSM as CallSessionManager
-  participant Life as CallLifecycle
+  participant Stack as CallStack
   participant Hub as ConversationsHub
   participant Ctrl as CallController
   participant UI as Shell_RemountCallChrome
 
-  CSM-->>Ctrl: NotifyRingChanged / pending invite
-  Ctrl->>Life: InviteSeen(call_id)
-  Life->>Life: phase=Ringing WantEphemeralListen=1
-  Life->>Hub: listen desire on (IO only)
-  Life->>Ctrl: chrome refresh
+  WF->>WF: inbound invite → LiveCalls AdmitInvited (Ringing)
+  WF-->>Stack: calls changed
+  Stack->>Hub: WantEphemeralListen=1 (IO only)
+  Stack->>Ctrl: chrome refresh (UI)
   Ctrl->>UI: RemountCallChrome (mount only)
   Note over Ctrl,UI: Never full SyncLayout for ring/Accept overlays
   UI->>Ctrl: Accept / Decline click
-  Ctrl->>Life: AcceptClicked / DeclineClicked
+  Ctrl->>CSM: Apply(AcceptClicked / DeclineClicked) on the calls owner
   alt Accept
-    Life->>Life: phase=Accepting suppress ring
-    Life->>Ctrl: ClearRing RemountCallChrome
-    Life->>CSM: Post AcceptInvite on IO
+    CSM->>WF: AcceptInviteAsync (accept in flight; LiveCall Accepting)
+    Stack->>Ctrl: chrome refresh (ring suppressed)
   else Decline or expire
-    Life->>Life: phase=Idle listen off if idle
-    Life->>CSM: Post DeclineInvite on IO
+    CSM->>WF: DeclineInvite → LiveCall Ended → Idle
   end
 ```
 
 | Rule | Why |
 |------|-----|
-| `InviteSeen` → `Ringing` | Sole entry for inbound ring; arms N025 via `WantEphemeralListen` on IO |
+| An admitted invite → `Ringing` | The ring is the LiveCall's; arms N025 via `WantEphemeralListen` |
 | Chrome layer = `RemountCallChrome` | Mount into `#shell-call-*-mount` only. Full-shell `SyncLayout` breaks Samsung hit-testing. Always-mounted `data-if` + Dirty alone failed to reveal Accept despite idle Present |
 | Labels/pulse/icons = `DirtyCallChrome` | Via `apply_chrome_update(DirtyOnly)` while layer already mounted; does not create the overlay |
-| Accept → `Accepting` **before** IO work | Dismiss dialog on the next frame; never run `AcceptInvite` / listen / encrypt on the click thread |
-| `ShouldSuppressRing(call_id)` while Accept in flight | `RefreshPendingRing` must not resurrect the dialog for the same invite |
-| Accept fail → back to `Ringing` | Restore pending ring if invite still valid; clear `accepting_call_id_` |
-| Decline / TTL expire / `call_ended` → `Idle` | Clear ring; stop listen when no other call need |
-| Conflict (2nd invite while outbound/in-call) | Conflict copy (`End & Accept` / `Ignore`); Accept implies leave-other-except; single active call |
+| Accept on the calls owner, never the click thread | The click only posts; the ring is suppressed from the click (`accepting_call_id`) until the accept answers |
+| A second Accept click while one is in flight is not a second accept | Dedupe on the in-flight call id |
+| Accept fail → back to `Ringing` | The workflow puts the call back to Ringing; `last_error` for the GUI |
+| Decline / TTL expire / `call_ended` → `Idle` | The call closes; listen stops when nothing is shown |
+| Conflict (2nd invite while outbound/in-call) | Conflict copy (`End & Accept` / `Ignore`); Accept implies leave-other-except; single active call. The active call stays shown over a second ring |
 | Same-call duplicate pending | Keep in-call chrome; do not flip back to ring |
 | Wire before durable Joined/pending (V045) | `CallInvite` / `CallAccept` / `CallDecline` succeed on the wire before Upsert Joined/Ringing/pending or planner arm; local Decline `EndCallLocal` like expire |
 
-Instrument: INFO `phase=… status=… event=…` and `WantEphemeralListen=` so “no AcceptIncoming” vs “Accept ok, media stuck” is obvious on Android (release emit floor promotes INFO → WARNING for `adb logcat -s pp-browser:W`).
+Instrument: INFO `[LiveCall] status=… phase=… reason=…` (and `admit` / `accepting` / `joined` / `close`) and `WantEphemeralListen=` so “no AcceptIncoming” vs “Accept ok, media stuck” is obvious on Android (release emit floor promotes INFO → WARNING for `adb logcat -s pp-browser:W`).
 
-**State + Status ([V037](../../projects/p2p-av-calls/DECISIONS.md#v037--calllifecycle-state--status-one-planner-armed)):** `CallPhase` is the chrome/shell State; `CallMediaStatus` arms exactly one media planner (Bridge vs Topology). JoinedLocal / MediaPending / MediaConnecting are **Calling-like** for arming until a future enum rename. SoftMigrate is Status `Migrating`, not a side flag.
+**State + Status ([V037](../../projects/p2p-av-calls/DECISIONS.md#v037--calllifecycle-state--status-one-planner-armed)):** `CallPhase` is the chrome/shell State, projected from the call; `CallMediaStatus` is the call's own and arms exactly one media planner (Bridge vs Topology). JoinedLocal / MediaPending / MediaConnecting are **Calling-like** for arming. SoftMigrate is Status `Migrating`, not a side flag. A new path decision (`Deciding`) or a call closing bumps the media cancel generation late path work compares.
 
 Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Two planes](#two-planes).
 
@@ -126,9 +117,9 @@ Invite TTL / cancel (wire ageing, `call_ended` to Ringing peers) lives under [Tw
 | Decline / expire | Idle; listen desire off when no call |
 | Outbound unanswered | Offerer `OutboundCalling` with no media past invite TTL (`kDefaultCallInviteTtlMs`) → auto-Leave; clears sticky Calling bar |
 | Conflict (2nd invite) | Conflict copy; Accept leaves other local call first; single active call |
-| Leave / remote end | Idle; `StopCallMedia` (Detach SFU then SDL Stop) on UI; LeaveCall on Critical |
+| Leave / remote end | Idle; `StopCallMedia` (Detach SFU then SDL Stop) on UI; LeaveCall on Critical. Every end names its reason at the source (`LiveCallEndReason` on the call's `LiveCall`). When the peer ended or declined a call this side had placed or was in (not a ring it withdrew), the UI shows it once: "*name* ended the call" / "*name* declined the call" |
 | Answerer before key | `MediaDeferred` → `MediaPending` until `MediaKeyReady` |
-| Offerer dial fail | `ConnectFailed`; Retry re-enters `MediaConnecting` |
+| Connect fails (either role) | `ConnectFailed` — the call stays **open** (failed ≠ closed; no auto-close). Retry re-enters `MediaConnecting`; the peer's connection for the call (its Retry) arrives as `PeerReconnected` and resumes media over that stream (no redial). Only Leave / remote end closes it |
 | Listen fail / no bound port | Surface error; stay `MediaPending` / `ConnectFailed`; Retry re-arms listen |
 | Stack rebuild | Bridge recreate only when `CallSessionManager*` changes |
 
@@ -197,6 +188,7 @@ A 1:1 call's media rides a **path**: control + media channels bound on one link 
 
 | Situation | Behaviour | Home |
 |-----------|-----------|------|
+| Leg start, the peer's dial key held by a dial still in flight | The first path opens on any Connected link to the peer (direct first, then the relay carrier); only with none up does it dial by key (#235) | `OpenOutboundControl` over Amp `ResolveConnectedLink` |
 | Relayed call, a direct link to the peer is Connected | The glare winner (offerer) migrates onto it (10 s backoff; never back onto the direct link the call left) | `MaybeAutoMigrate` |
 | Relayed call, Live | The offerer punches for a direct link at +3 / +20 / +60 s, the circuit's relay as introducer; a landed punch is picked up by the row above | `CallMediaBridge::ArmDirectUpgrade` → `PeerReachCoordinator::UpgradeToDirect` |
 | TX-only (no frames arriving — a muted mic still sends silence frames) | Migrate onto a circuit under the live call; break-before-make escalation only if that fails | `EscalateTxOnlyViaCircuit` / `EscalateBreakBeforeMake` |
@@ -204,6 +196,8 @@ A 1:1 call's media rides a **path**: control + media channels bound on one link 
 | Active lost, no standby, peer still Connected on another link (dual-dial election after a simultaneous punch) | Quiet rebind: the offerer migrates there; nothing is reported unless it has not landed in 1 s (K011) | `EnterPathLost` |
 | No path at all | `Reconnecting…` (planner `Reconnecting`, lifecycle `CallMediaStatus::Reconnecting`, timer runs on) for 30 s while the offerer re-anchors (reach + migrate); then the call fails | `CallMediaBridge::Reanchor` |
 | The device's network changed (k5) | Amp probes every link and drops the dead ones within 2 s (so the rows above fire at once); a reconnecting call re-anchors once links settled; a relayed call's upgrade punches start over ([MESH.md § Local network change](MESH.md#local-network-change-call-path-resilience-k5)) | `CallMediaBridge::OnLocalNetworkChanged` |
+
+**Voice / video answer ([V051](../../projects/p2p-av-calls/DECISIONS.md#v051--voice-or-video-answer-video-calls-start-with-the-camera-on)).** `call_accept` may carry `video_allowed: false`, written only when the callee answers a video call as voice. A missing field means unchanged; the field never widens. The callee narrows its own session; the caller narrows the call only for a call started from a direct thread (no `origin_group_id`). Video calls turn the local camera on once media connects — held while the camera button would be hidden, and on the caller while the answer is only implicit (B30).
 
 **Mobility and pair policy (k6).** Each end classifies itself `stationary | mobile | unknown` (`MobilityClassifier`: cellular or metered attachment → mobile at once; three attachment / observed-address changes in 10 min → mobile; back to stationary after 5 min calm; K004) and advertises it as `caps.mobility` on `call_invite` / `call_accept` (no `caps.v` bump; missing → unknown, K005). A mid-call flip is sent as `call_caps_update` `{call_id, identity, caps}` (additive plumbing — old peers ignore it). Both ends compute the same `CallPathPolicy` from the two classes (`DecideCallPathPolicy`, K013):
 
@@ -226,6 +220,7 @@ Product surface: `on_path_changed` → planner `PathMigrated` (Live stays Live; 
 | **≥3** | **SFU** via `media_relay` hop | Soft-migrate same `call_id`; sticky initiator picks hop (re-pick: epoch coordinator); circuit may still reach the hop |
 
 - Soft-migrate on 2→3: keep session/roster/key epoch; tear down 1:1 call-media after SFU attach.
+- **Monotonic group topology ([V050](../../projects/p2p-av-calls/DECISIONS.md#v050--group-call-topology-11-first-planned-hop-monotonic)):** planners arm on **joined** count on every side (ringing never arms the hop); the first accept is direct 1:1, the third join migrates onto the **planned hop** chosen at StartCall from the invite list (one adjustment if an accept reported it unreachable); later joins re-pick only when the hop is full or unreachable for the newcomer; nobody leaving triggers re-evaluation (N→2 stays on the hop). The earliest-joined remaining participant owns re-picks after the initiator leaves.
 - Mid-call guest without a hop: refuse or eject — do **not** leave invitee on Connecting while existing peers stay on direct media.
 - Auto `media_relay` attach is **group-only**; 1:1 undialable recovery is Amp dial / punch / circuit (V025/V038).
 - **Hop dial:** SoftMigrate needs stack dialability — [media-hop-reachability](../../projects/media-hop-reachability/) (Amp mesh, H001/H007; punch H009).
@@ -305,36 +300,36 @@ Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`.
 | Control encode/decode | `base/messaging` | `CallControlCodec` | Unchanged |
 | PC / Opus / H264 / SDL | `domain/media` | `CallMediaEngine` | libp2p/SFU packet transport only |
 | Adaptation policy | `domain/media` | `CallMediaAdaptation`, `CallMediaTopology` | Unchanged |
-| Call stack ownership (phase assembly + media plane) | `feature/calls` | **`CallStack`** + **`CallMediaPlane`** | Stack owns stores / CSM / Lifecycle / Seat and phase-orders the plane; plane owns the call_media Amp transport + bridge and builds the topology's relay deps ([V040](../../projects/p2p-av-calls/DECISIONS.md#v040--callmediaplane--callstack-ownership-collapse)); media_relay client / dial registry / circuit reach / parking are the hub's shared `MeshMediaPlane`, borrowed ([L015](../../projects/media-client-layers/DECISIONS.md#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast)); Hub holds `unique_ptr<CallStack>` and forwards `Calls()`/`Lifecycle()`; `CallUiBackend` binds the stack |
-| **Exclusive media bind (epoch)** | `feature/calls` | **`CallMediaSeat`** + **`CallDirectPath` / `CallHopPath`** ([V036](../../projects/p2p-av-calls/DECISIONS.md#v036--mediaseat--exclusive-media-epoch)) | Sole `Acquire`/`Release`/`NoteLive`/`IsBound`; path plugins token-gated (`AllowsPathOp`); SoftMigrate = path replace under same token |
+| Call stack ownership (phase assembly + media plane) | `feature/calls` | **`CallStack`** + **`CallMediaPlane`** | Stack owns stores / CSM and phase-orders the plane; plane owns the call_media Amp transport and builds the 1:1 path's deps and the topology's relay deps (CSM owns the seat and both paths) ([V040](../../projects/p2p-av-calls/DECISIONS.md#v040--callmediaplane--callstack-ownership-collapse)); media_relay client / dial registry / circuit reach / parking are the hub's shared `MeshMediaPlane`, borrowed ([L015](../../projects/media-client-layers/DECISIONS.md#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast)); Hub holds `unique_ptr<CallStack>` and forwards `Calls()`/`Lifecycle()`; `CallUiBackend` binds the stack |
+| **Exclusive media bind (epoch)** | `feature/calls` | **`CallMediaSeat`**, driven per call by **`CallMediaCoordinator`** ([V036](../../projects/p2p-av-calls/DECISIONS.md#v036--mediaseat--exclusive-media-epoch)) | Sole `Acquire`/`Release`/`NoteLive`/`IsBound`; path ops token-gated (`AllowsPathOp`); SoftMigrate = path replace under same token |
 | Session lifecycle + inbound dispatch | `feature/messaging` | **`CallSessionManager`** | Signaling only for duplex start/stop (seat + path façades); mute/camera stay device controls |
-| 1:1 phase / ring / listen desire | `feature/messaging` | **`CallLifecycle`** | Sole phase owner; see [Ringing handling](#ringing-handling) |
-| 1:1 Amp dial + connect-fail / Retry | `feature/messaging` | **`CallMediaBridge`** (`CallDirectPath`) | Direct path under seat token |
-| Soft-migrate / attach-wait / hop pick | `feature/messaging` | **`CallTopologyController`** (`CallHopPath`) | Hop path under seat token |
-| N→planner select (pure) | `domain/messaging` | **`CallMediaPlannerSelectLogic`** | Effective N; arm Hop vs Direct; relay-cap SoftMigrate nudge gates |
+| 1:1 phase / ring / listen desire | `feature/calls` | **`LiveCalls`** projection; intents on **`CallSessionManager::Apply`** | Phase projected from the calls; see [Ringing handling](#ringing-handling) |
+| 1:1 Amp dial + connect-fail / Retry | `feature/messaging` | **`CallMediaBridge`** (the call's `CallDirectDriver`) | Direct path under seat token |
+| Soft-migrate / attach-wait / hop pick | `feature/messaging` | **`CallTopologyController`** (hop side of the call's coordinator) | Hop path under seat token |
+| N→planner select (pure) | `domain/messaging` | **`CallMediaPlannerSelectLogic`** | Joined N (V050); arm Hop vs Direct; relay-cap SoftMigrate nudge gates |
 | Direct planner Apply (V039) | `feature/calls` | **`CallMediaBridge`** + **`CallDirectPlannerLogic`** (`domain/messaging`) | Schedule/Key/Connect/TX-only/Release; health timer |
 | Hop planner Apply (V039) | `feature/calls` | **`CallTopologyController`** + **`CallHopPlannerLogic`** (`domain/messaging`) | SoftMigrate/attach-wait/inbound SFU; attach-wait timer |
 | Media keys wrap/unwrap | `feature/messaging` | `CallMediaKeyStore` | Unchanged |
+| Media keys between peers | `feature/calls` | **`CallMediaKeyExchange`** (owned by `CallSessionManager`) | Mint (new call / rotation), wrap into the invite, send `CallMediaKey` (accept, resend, rotation), take a peer's wrapped key → "key ready" (V015 answerer start); the workflow decides when |
 | Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync`, `ShellCallChromeGesture`, `ShellHost::ApplyCallChromeUpdate` | Layer identity / control *presence* / **mode** (Expanded/Immersive/Minimized — V031) / status kind → remount; mute/speaker/camera icons → DirtyCallChrome (`data-attr-src` + `data-class-*--on`); meters/pulse/quality chip → DirtyCallChrome; mobile speaker via `CallAudioSession` |
 | Call media health | `domain/media` + `feature/ui` | `CallMediaHealth`, `CallMediaEngine::HealthSnapshot`, hop `HealthSnapshot`, `CallController::ApplyMediaHealth` / `ShowCallDetails` | Tier A quality bars always; Call details for everyone; debug subtitle + rich diagnostics behind profile `call_diagnostics` or `--debug`; `media_health` INFO ~2s |
 | Blind SFU protocol | `base/p2p` | `MediaRelayService` | Unchanged |
 
-UI must not choose P2P vs SFU. It posts clicks to `CallLifecycle` and paints from session + phase; it does not invent listen or media policy.
+UI must not choose P2P vs SFU. It posts clicks to `CallSessionManager::Apply` and paints from session + the projected phase; it does not invent listen or media policy.
 
 ---
 
 ## Major systems (relationships)
 
 ### ConversationsHub / CallStack
-`CallStack` (`feature/calls`) is a **phase assembler** ([V040](../../projects/p2p-av-calls/DECISIONS.md#v040--callmediaplane--callstack-ownership-collapse) / [V041](../../projects/p2p-av-calls/DECISIONS.md#v041--calllifecycle-signaling-ports--stack-composition-root)): profile stores (`CallSessionStore`, `CallMediaKeyStore`, `CallMediaEngine`), `CallSessionManager`, `CallLifecycle`, `CallMediaSeat`, and `unique_ptr<CallMediaPlane>`. **`CallMediaPlane`** owns the Amp call-media transport and `CallMediaBridge` (object); the media_relay client, dial registry + listen book, circuit reach and rendezvous parking live in the hub-owned **`MeshMediaPlane`** (`domain/mesh`, L015), which the stack borrows through `CallStackDeps::mesh_media`. Stack **binds** the bridge with stack-owned ingredients (`BindBridge`) and installs relay deps onto CSM — the plane does **not** hold standing live refs to CSM/stores/seat/lifecycle. Lifecycle talks to signaling only via **`CallLifecycleSignalingPorts`** (no `CallSessionManager*`). N025 listen *desire* is sole on `CallLifecycle::WantEphemeralListen` (stack only wakes Hub sync). `ConversationsHub` holds a `unique_ptr<CallStack>`, forwards `Calls()`/`Lifecycle()`, injects mesh/config/mDNS glue via `CallStackDeps`, and still owns mesh admission, LAN mDNS, N025 listen *execution* (Hub `SyncMobileEphemeralListen`), and inbound control routing via `RelayReceivePipeline` → `ApplyInboundControl`. Build/teardown order: Hub `Initialize`/`BuildMessagingStack` → `CallStack::InitializeStores`/`BuildSessions`; mesh up → `DetachMeshMedia` → `MeshMediaPlane::Wire` → `OnMeshServicesStarted`; capability refresh → broadcast reset → `DetachMeshMedia` → `ResetRelayClients` → `Wire` → `RebindMeshMedia`; `StopMesh` → `InvalidateAsyncOps` → `PrepareForMeshStop` (bracketed by mesh circuit aborts) → relay client reset → `mesh_->Stop()` → `FinishMeshStop` → `ResetAfterMeshStop`. Do **not** recreate dial registry / bridge mid-call on N025 listen sync — rebuild bridge only when the CSM rebuild key changes. `MeshMediaPlane::Wire()` is mesh-only; `BindMediaProducts` on the stack follows — keep both thin under the general [function complexity](../../AGENTS.md#conventions) convention.
+`CallStack` (`feature/calls`) is a **phase assembler** ([V040](../../projects/p2p-av-calls/DECISIONS.md#v040--callmediaplane--callstack-ownership-collapse) / [V041](../../projects/p2p-av-calls/DECISIONS.md#v041--calllifecycle-signaling-ports--stack-composition-root)): profile stores (`CallSessionStore`, `CallMediaKeyStore`, `CallMediaEngine`), `CallSessionManager`, `CallMediaSeat`, and `unique_ptr<CallMediaPlane>`. **`CallMediaPlane`** owns the Amp call-media transport; the session manager owns the 1:1 path (`CallMediaBridge`, via `AttachDirectPath` on the plane's transport) next to the group path (topology) and the seat; the media_relay client, dial registry + listen book, circuit reach and rendezvous parking live in the hub-owned **`MeshMediaPlane`** (`domain/mesh`, L015), which the stack borrows through `CallStackDeps::mesh_media`. The stack hands CSM the plane's `DirectPathDeps` and installs relay deps onto CSM — the plane does **not** hold standing live refs to CSM/stores. N025 listen *desire* is "a call is shown" (`LiveCalls::Phase() != Idle`); the stack wakes Hub sync when it flips. `ConversationsHub` holds a `unique_ptr<CallStack>`, forwards `Calls()`, injects mesh/config/mDNS glue via `CallStackDeps`, and still owns mesh admission, LAN mDNS, N025 listen *execution* (Hub `SyncMobileEphemeralListen`), and inbound control routing via `RelayReceivePipeline` → `ApplyInboundControl`. Build/teardown order: Hub `Initialize`/`BuildMessagingStack` → `CallStack::InitializeStores`/`BuildSessions`; mesh up → `DetachMeshMedia` → `MeshMediaPlane::Wire` → `OnMeshServicesStarted`; capability refresh → broadcast reset → `DetachMeshMedia` → `ResetRelayClients` → `Wire` → `RebindMeshMedia`; `StopMesh` → `InvalidateAsyncOps` → `PrepareForMeshStop` (bracketed by mesh circuit aborts) → relay client reset → `mesh_->Stop()` → `FinishMeshStop` → `ResetAfterMeshStop`. Do **not** recreate dial registry / bridge mid-call on N025 listen sync — rebuild bridge only when the CSM rebuild key changes. `MeshMediaPlane::Wire()` is mesh-only; `BindMediaProducts` on the stack follows — keep both thin under the general [function complexity](../../AGENTS.md#conventions) convention.
 
 | Piece | Owns | Standing ptrs to siblings | Bind-only / ports |
 |-------|------|---------------------------|-------------------|
 | **CallStack** | `unique_ptr`s + deps | all siblings (composition root) | wires everyone |
-| **CallLifecycle** | phase / status | none to CSM | `CallLifecycleSignalingPorts` from Stack |
-| **CallMediaSeat** | exclusive media epoch | none | teardown hooks from Stack (`BindSeatTeardown`) |
-| **CallMediaPlane** | call_media transport + bridge object | none to CSM / seat / lifecycle; borrows `MeshMediaPlane` | `BindBridge` args + deps callbacks |
-| **CallSessionManager** | signaling façade | stores (ctor); owns Workflow + Topology; Direct/Lifecycle/Seat via ports | `Set*Ports` / `SetTopology*Ports` / `BindWorkflowHostPorts` / `BindTopologyHostPorts` |
+| **CallMediaSeat** | exclusive media epoch (owned by CSM) | none | teardown hooks from CSM |
+| **CallMediaPlane** | call_media transport | none to CSM; borrows `MeshMediaPlane` | `DirectPathDeps` + deps callbacks |
+| **CallSessionManager** | signaling façade + UI intents | stores (ctor); owns Workflow + Topology + LiveCalls + the seat + the 1:1 path (bridge); builds the path arming / seat ports over LiveCalls | `Set*Ports` / `SetTopology*Ports` / `BindWorkflowHostPorts` / `BindTopologyHostPorts` |
 
 ### CallSessionManager (façade)
 **Should own:** Hub-facing API, Topology/MediaHost, dial-book maps, delivery, port install, device mute/camera. Durable session/roster work lives in owned **`CallSessionWorkflow`** (V044).
@@ -347,20 +342,23 @@ Durable multi-party session/roster executor (store mutations + `CallSessionLogic
 ### CallTopologyController (V046/V047)
 Hop planner façade (`Apply` / On*). SoftMigrate + attach completion live in value-owned **`CallHopMigrateWorkflow`**, which **owns** race clusters; Topology holds cluster refs (`flight_` / `sfu_` / …) and projects Host/Arming/Seat into Workflow ports + **TopologyOps**. CSM fills Topology `HostPorts` (`CallTopologyHostPorts`); Stack installs Topology **`CallHopArmingPorts`** / **`CallTopologySeatPorts`**. Clusters: `SoftMigrateFlight`, `AttachWait`, `InboundAttachGate`, `GuestSfuSession`, `PublisherStreams`, `SfuSurface`.
 
-**Vocabulary ([COMPOSITION_VOCABULARY.md](COMPOSITION_VOCABULARY.md), [V048](../../projects/p2p-av-calls/DECISIONS.md#v048--composition-vocabulary-no-upward-concepts)):** repo-wide — lower peers must not speak higher peers’ concepts. Topology embeds **`CallHopArmingPorts`** / **`CallTopologySeatPorts`**; owned Workflow embeds migrate host/arming/seat ports; Bridge embeds **`CallDirectArmingPorts`** / **`CallDirectSeatPorts`**; CSM embeds Direct/Lifecycle/Seat ports. **`CallDirectPath` / `CallHopPath`** take Ops only (no standing `CallMediaBridge*` / `CallMediaSeat*`). Stack / Topology private `Make*` (and CSM `MakeSeatPorts`) close over producers.
+**Vocabulary ([COMPOSITION_VOCABULARY.md](COMPOSITION_VOCABULARY.md), [V048](../../projects/p2p-av-calls/DECISIONS.md#v048--composition-vocabulary-no-upward-concepts)):** repo-wide — lower peers must not speak higher peers’ concepts. Topology embeds **`CallHopArmingPorts`** / **`CallTopologySeatPorts`**; owned Workflow embeds migrate host/arming/seat ports; Bridge embeds **`CallDirectArmingPorts`** / **`CallDirectSeatPorts`**; CSM embeds Direct/Lifecycle/Seat ports. The per-call **`CallMediaCoordinator`** holds the seat and the direct driver (`CallDirectDriver`, bound by the stack); drivers reach it by call id. Stack / Topology private `Make*` (and CSM `MakeSeatPorts`) close over producers.
 
 ### CallMediaSeat (V036)
-Process-wide exclusive bind `call_id` ↔ duplex. `Release` = topology Detach then engine Stop; `NoteStart` invalidates in-flight Release; SoftMigrate uses `NotePath(Hop)` without Release. Topology “active call” prefers `seat.IsBound`, not leftover engine `ActiveCallId`. **Phase 2:** `MediaState` (`Idle` / `Connecting` / `Live` / `Failed`) drives chrome Connected; `BeginAttach` serializes hop AcceptAndAttach. **Phase 3:** `CallDirectPath` / `CallHopPath` façades (Ops-only; Stack/CSM project Bridge + seat); path ops require `AllowsPathOp(token)`; CSM schedules Direct start / seat `Release` only (no parallel `StopMeshMedia` when seat wired).
+Process-wide exclusive bind `call_id` ↔ duplex. `Release` = topology Detach then engine Stop; `NoteStart` invalidates in-flight Release; SoftMigrate uses `NotePath(Hop)` without Release. Topology “active call” prefers `seat.IsBound`, not leftover engine `ActiveCallId`. **Phase 2:** `MediaState` (`Idle` / `Connecting` / `Live` / `Failed`) drives chrome Connected; `BeginAttach` serializes hop AcceptAndAttach. **Phase 3 (now the call's `CallMediaCoordinator`):** `BeginDirect` (seat, then the direct driver connects), `HoldSeatForHop`, `ReleaseDirect` (Direct → Hop hand-off under the seat token, `NotePath(Hop)`); path ops require `AllowsPathOp(token)`; CSM starts Direct via the coordinator and releases the seat only (no parallel `StopMeshMedia` when seat wired).
+
+### LiveCall and CallMediaCoordinator
+`LiveCalls` (owned by `CallSessionManager`, driven by the workflow) holds one **`LiveCall`** per call on this device from admission to close: who placed it, its peers, call state (Calling / Ringing / Accepting / Joined / Ended) and the end reason, named where the call ended. Persisted facts stay in `CallSessionStore`. The ring the device shows is `LiveCalls::TheRing()` (the newest call still Ringing or being accepted); Accept / Decline without a call id take it, and the stored pending invite carries its content. What the device shows (phase, Status, the gates) is projected from the calls — see [Call lifecycle](#call-lifecycle). Each `LiveCall` owns a **`CallMediaCoordinator`** (created on first use): that call's use of the one engine and the seat. Both path drivers start and stop the engine through it — `StartEngine(path, send)` takes the seat, starts (or re-points) the engine and marks the seat on the path; the drivers reach it through `CallMediaHost::P2pCallMedia` (Bridge) and the topology host's `call_media` (hop workflow). It also owns the call's media path: at each join (`DecideOnLocalAccept` / `DecideOnRemoteAccept`) it asks the hop driver (`CallHopDriver`, implemented by `CallTopologyController`) whether the group path takes the call, and records `CallMediaPath` (Undecided → Direct → Hop; a call never goes back from Hop). The 1:1 start (`BeginDirect`, via the Bridge as `CallDirectDriver`) and the Direct → Hop hand-off (`HoldSeatForHop`, `ReleaseDirect`) run through it, and the Bridge asks it — not Topology — what the group path is doing (`HopAttached`, `HopInFlight`, `ExpectsHop`, `ExpectHopAttach`). The call's devices (mute, camera with the hop's adaptation, keyframes) and Retry / resume go through it too; stopping a call's media is `LiveCalls::StopMedia` (seat release, or each driver with no seat), and before a call takes media `StopMediaExcept` stops what an ended call left running.
 
 ### CallMediaEngine
 Single A/V device for the process (owned by the seat’s bound call):
 
-- **Direct 1:1:** `CallMediaBridge` drives `StartSfu` with a send fn wired to Amp call-media transport; inbound frames → `OnSfuPacket`.
-- **Group SFU:** encode → `SfuSendFn` / inbound `OnSfuPacket` via `media_relay`.
+- **Direct 1:1:** `CallMediaBridge` runs it (via the call's `CallMediaCoordinator`) with a send fn wired to Amp call-media transport; inbound frames → `OnSfuPacket`.
+- **Group SFU:** encode → `SfuSendFn` / inbound `OnSfuPacket` via `media_relay` (hop workflow, via the same coordinator).
 - Capture/playback and camera stay off the libp2p IO thread (mic TCC can block).
 
 ### CallController / shell
-Maps ring + in-call chrome from lifecycle phase + session snapshot. **Layer appear/disappear** uses `ShellHost::RemountCallChrome` (dedicated mounts only) via `apply_chrome_update(Remount)`. **Labels / pulse / meters / icon toggles** use `DirtyCallChrome` while a layer is already mounted. Clicks → `CallLifecycle::Apply`; attach-wait / connect health are **planner SM timers** (V039) — CallController must not poll them on UI tick. CallController notifies ShellHost; it does not call grab-bag `DirtyWindow`.
+Maps ring + in-call chrome from the projected phase + session snapshot. **Layer appear/disappear** uses `ShellHost::RemountCallChrome` (dedicated mounts only) via `apply_chrome_update(Remount)`. **Labels / pulse / meters / icon toggles** use `DirtyCallChrome` while a layer is already mounted. Clicks → `CallSessionManager::Apply` (via `CallUiBackend`); attach-wait / connect health are **planner SM timers** (V039) — CallController must not poll them on UI tick. CallController notifies ShellHost; it does not call grab-bag `DirtyWindow`.
 
 **Do not** rely on always-mounted `data-if="call_ring_active"` alone to show Accept — dogfood showed C++ `active=true` + Present alive while the overlay stayed `display:none`. **Do not** full-shell `SyncLayout` for call chrome (Samsung Accept hit-test).
 
@@ -424,15 +422,16 @@ Session manager asks: “joined count is now N — what media action?”
 Responsibilities:
 
 - `StartMediaAsOfferer` / `Answerer` + `Schedule*`
-- Builds the connect request (bundle params + link request) and hands it to the owned [`CallMediaConnectCoordinator`](../../src/feature/calls/CallMediaConnectCoordinator.h), which per attempt asks [`PeerReachCoordinator`](../../src/domain/mesh/reachability/PeerReachCoordinator.h) for a link and opens the bundle on it (hello/ack, AEAD Opus)
+- Builds the connect request (bundle params + link request) and hands it to the owned [`CallMediaConnectCoordinator`](../../src/feature/calls/CallMediaConnectCoordinator.h), which per attempt asks [`PeerReachCoordinator`](../../src/domain/mesh/reach/PeerReachCoordinator.h) for a link and opens the bundle on it (hello/ack, AEAD Opus)
 - Call-side hooks only: offerer media-key resend before each attempt, path label, commit Connected / surface ConnectFailed when the sequence finishes; `exclude_direct` after TX-only
+- **Failure decision** (`DecideConnectFailure`, [`CallDirectPlannerLogic.h`](../../src/domain/messaging/CallDirectPlannerLogic.h)): when the sequence gives up — commit if direct media is already up, one short grace if the peer's hello is mid-handshake (B44), else `ConnectFailed`. Failed is not closed: the engine stops, but the bridge keeps the call's peer and role (`failed_open_`), so Retry works and a later connection for the call resumes it (`PeerReconnected` → `ResumeMeshMediaFromInbound`, which keeps the inbound bundle and re-arms the direct planner). Leave / remote end clears it
 - `ReleaseDirectTransport` on soft-migrate (keep engine capture for SFU)
 
 Does not decide SFU. Topology calls `StartSfu` / attach via session or engine APIs.
 
-**Link / channel / call layers.** `CallMediaConnectCoordinator` knows the bundle protocol (params, ConnectAsync, MediaReady) and retry policy but not the call product (no engine, seat, planner, SFU); a give-up is posted and dropped if Abort / Start ran since. Inbound hellos reach the bridge only through `CallMediaInboundPorts` (session open, load / request key, accepted → callbacks) on the worker hop; the bridge maps the dialer's mesh PeerId to the roster identity (mixer stream id) **on the calls owner**, posted ahead of the bundle's own callbacks. `PeerReachCoordinator` takes mesh dial keys (PeerId first, aliases after) and a mode, and returns a Connected link kind (`Direct` / `Punched` / `Relayed`). It knows no call id, media key, roster identity or SFU state. **Glare (simultaneous open):** when both sides send a call-media hello on one link, exactly one wins — `LocalWinsCallMediaGlareForRoles`: offerer beats answerer; equal roles (e.g. two retries) fall back to the PeerId order. The winner rejects the inbound hello, the loser yields its outbound and adopts the inbound. (The earlier rule let an answerer always yield and an offerer with the lower PeerId yield too — both yielded and both bundles closed.)
+**Link / channel / call layers.** `CallMediaConnectCoordinator` knows the bundle protocol (params, ConnectAsync, MediaReady) and retry policy but not the call product (no engine, seat, planner, SFU); a give-up is an event, dropped if Abort / Start ran since. Inbound hellos reach the bridge only through `CallMediaInboundPorts` (session open, load / request key, accepted → callbacks) on the calls owner; the bridge maps the dialer's mesh PeerId to the roster identity (mixer stream id) as its own event, queued ahead of the bundle's callbacks. `PeerReachCoordinator` takes mesh dial keys (PeerId first, aliases after) and a mode, and returns a Connected link kind (`Direct` / `Punched` / `Relayed`). It knows no call id, media key, roster identity or SFU state. **Glare (simultaneous open):** when both sides send a call-media hello on one link, exactly one wins — `LocalWinsCallMediaGlareForRoles`: offerer beats answerer; equal roles (e.g. two retries) fall back to the PeerId order. The winner rejects the inbound hello, the loser yields its outbound and adopts the inbound. (The earlier rule let an answerer always yield and an offerer with the lower PeerId yield too — both yielded and both bundles closed.)
 
-**Threads:** bridge state, `CallMediaConnectCoordinator` sequence state and engine `StartSfu` / `Stop` belong to the calls owner (`CallsThread` → media-sessions owner, [THREADING.md § Owner threads](THREADING.md#owner-threads)). The SFU attach completion (`CallHopMigrateWorkflow::CompleteAttachLocalToSfu`: `StartSfu`, adaptation, seat, hop planner) is posted to the owner after the attach network work; the topology's publisher-stream sets are mutex-guarded because relay subscription paths read them off the owner. Engine audio bitrate changes are applied by the capture thread before its next encode (Opus encoders are not thread-safe). `StopMeshMedia` is the one any-thread entry — off the owner it posts its whole body to the front of the owner's queue and skips it if a newer media session started meanwhile. Retry (`CallLifecycle::PostRetryMedia` → `RetryMeshMedia`) runs on the owner; the bridge refuses an off-owner retry, and the connect coordinator logs an error if `Start` / `Abort` run off the owner. The engine is stopped before the bridge is destroyed (its send / state callbacks point into the bridge). The bridge holds no dial registry or circuit reach of its own: link-state changes go through named `PeerReachCoordinator` operations (`ForgetPath` before a re-selection, `ReleasePeer` when the call no longer needs the link, `AbortCircuitAttempts`, `PreferDialKey` for account-alias vs PeerId dial keys). The bridge maps call knowledge onto it: account → PeerId resolution, offerer → `Reach`, answerer → `Await` (invite/accept is the agreement that the peer reaches; the coordinator does not negotiate roles). All reach state lives on the Coordinator strand; the bridge's attempt state is owner-only.
+**Threads:** bridge state, `CallMediaConnectCoordinator` sequence state and engine `StartSfu` / `Stop` belong to the calls owner (`CallsThread` → media-sessions owner, [THREADING.md § Owner threads](THREADING.md#owner-threads)). The SFU attach completion (`CallHopMigrateWorkflow::CompleteAttachLocalToSfu`: `StartSfu`, adaptation, seat, hop planner) runs on the owner as an event after the attach network work; the topology's publisher-stream sets are mutex-guarded because relay subscription paths read them off the owner. Engine audio bitrate changes are applied by the capture thread before its next encode (Opus encoders are not thread-safe). `StopMeshMedia`, Retry (`CallSessionManager::Apply(RetryClicked)` → `RetryMeshMedia`) and the connect coordinator's `Start` / `Abort` are owner-only (asserted in Debug) — [THREADING.md § Owner runners](THREADING.md#owner-runners). The engine is stopped before the bridge is destroyed (its send / state callbacks point into the bridge). The bridge holds no dial registry or circuit reach of its own: link-state changes go through named `PeerReachCoordinator` operations (`ForgetPath` before a re-selection, `ReleasePeer` when the call no longer needs the link, `AbortCircuitAttempts`, `PreferDialKey` for account-alias vs PeerId dial keys). The bridge maps call knowledge onto it: account → PeerId resolution, offerer → `Reach`, answerer → `Await` (invite/accept is the agreement that the peer reaches; the coordinator does not negotiate roles). All reach state lives on the Coordinator strand; the bridge's attempt state is owner-only.
 
 ### 3. `CallSessionManager` (shrunk)
 Keeps thin `ApplyInboundControl` switch → `CallSessionWorkflow::HandleInbound*`. Store mutations and invite/leave arms live on the Workflow (V044).
@@ -462,10 +461,10 @@ These are architectural, not one-off hacks.
 | 1:1 connect fail / hang | Connecting forever | Direct planner health timer + ~75s timeout; UI Retry rebuilds offerer dial; tip via `PlatformUserHints` |
 | Mid-call invite from 2nd peer | Chrome gone after 45s | Hop `Apply(SoftMigrateRequested)` / `JoinedCountObserved`; WaitForAttach + attach-wait timer (pm3); Status `Migrating` |
 | macOS Local Network | Android↔Mac LAN libp2p dial | Packaged `NSLocalNetworkUsageDescription` ([PLATFORMS.md](PLATFORMS.md)); on 1:1 connect fail UI tips Local Network |
-| Accept on UI / ring stuck | Samsung frozen Accept dialog | CallLifecycle AcceptClicked + Dirty-only chrome; see [Ringing handling](#ringing-handling) |
+| Accept on UI / ring stuck | Samsung frozen Accept dialog | `Apply(AcceptClicked)` on the calls owner + Dirty-only chrome; see [Ringing handling](#ringing-handling) |
 | Answerer media before `CallMediaKey` | Hello rejected / silent call | Direct `KeyWait` → `KeyReady` / KeyTimeout; **exhaustion → `ConnectFailed` + `call.error.media_key_timeout`** |
 | N025 listen on UI tick | UI hitch; `/tcp/0` advertised | Late bind in fork; lifecycle desire; start listen on IO; mDNS after bound port |
-| Dual call-media dial (offerer fallback + late reverse-dial) | Connecting forever; Critical hello/ack deadlock; shutdown segfault | Offerer grace ≥ dial budget; async hello on host io_context; inbound MediaKey fill on worker with **cancelable wait** (`CallMediaConnectCoordinator`; notify on key/teardown — no bare sleep); handshake deadline + `reset()` on timeout/Detach (do not trust peer); one-stream adopt; reject inbound while outbound hello (`offerer_glare` / HelloOutbound); `ClearInboundHandler` on teardown — **home:** call-media session SM ([SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) / V033 s2a) |
+| Dual call-media dial (offerer fallback + late reverse-dial) | Connecting forever; Critical hello/ack deadlock; shutdown segfault | Offerer grace ≥ dial budget; async hello on host io_context; inbound hello parked on the calls owner until its MediaKey (`CallMediaConnectCoordinator`; notify on key/teardown — no thread waits); handshake deadline + `reset()` on timeout/Detach (do not trust peer); one-stream adopt; reject inbound while outbound hello (`offerer_glare` / HelloOutbound); `ClearInboundHandler` on teardown — **home:** call-media session SM ([SESSION_MACHINES.md](../../projects/p2p-av-calls/SESSION_MACHINES.md) / V033 s2a) |
 | SoftMigrate ReleaseDirect vs duplex EOF | Local Detach then `on_failed` / ConnectFailed | Intentional Detach sets Detaching/Idle first; late `Fail` ignored when already detaching — bridge still suppresses ConnectFailed when SFU expected |
 | Seat Live vs TX-only | Connected chrome with no RX | Direct `DegradedTxOnly` / `TxOnlyGraceExpired` + circuit escalate; health NoAudio overrides Connected (V037/V039) |
 | Simultaneous punch → dual-dial election drops the call's link | `Reconnecting…` flash on a healthy call | Quiet rebind onto the surviving link, loss reported only after 1 s ([K011](../../projects/call-path-resilience/DECISIONS.md)) |
@@ -476,7 +475,7 @@ These are architectural, not one-off hacks.
 
 ### Transport + planner machines (V033 / V039 / N026)
 
-Product phases stay in `CallLifecycle`. Planners and host sessions use flat enum + phase logs:
+Product phases are the calls' projection (`LiveCall::Phase`). Planners and host sessions use flat enum + phase logs:
 
 | Concern | Home | Status |
 |---------|------|--------|
@@ -510,7 +509,7 @@ Landed (behavior-preserving + who-picks fix):
 | `src/feature/calls/CallStack.*` | Phase assembler — stores / CSM / Lifecycle / Seat + owns `CallMediaPlane` |
 | `src/feature/calls/CallMediaPlane.*` | Call media plane — call_media Amp transport, bridge, topology relay deps (borrows `MeshMediaPlane`) |
 | `src/domain/mesh/media_plane/MeshMediaPlane.*` | Shared mesh media owner — media_relay client, dial registry + listen book, circuit reach built from `PunchIntroducerWalk` + `CircuitRendezvousCoordinator` (reachability) (hub-owned, L015) |
-| `src/feature/calls/CallLifecycle.*` | 1:1 phase machine — embeds `CallLifecycleSignalingPorts` (V041) |
+| `src/feature/calls/LiveCall.*` | The calls on this device: call state, per-call media progress, the V037 projection (phase / Status / gates) |
 | `src/feature/calls/CallSessionManager.h` | Port structs for CSM: `CallDirectMediaPorts` / `CallSessionLifecyclePorts` / `CallMediaSeatPorts` (V042/V043); `MakeSeatPorts` private on CSM |
 | `src/feature/calls/CallSessionWorkflow.*` | Durable session/roster workflow (V044/V045) — HostPorts clustered wire/duplex/hop/chrome/reach (V048) |
 | `src/feature/calls/CallSessionManager.*` | Façade — thin Start/Accept/Leave/inbound → Workflow |
@@ -523,9 +522,18 @@ Landed (behavior-preserving + who-picks fix):
 | `src/feature/calls/CallTopologyHostPorts.h` | CSM→Topology HostPorts (V046); Topology projects migrate subset to Workflow |
 | `src/feature/calls/CallStack.*` | Private `Make*Ports` adapters close over Lifecycle / Bridge / Seat |
 | `src/feature/calls/CallTopologyRelayDeps.h` | `CallTopologyMediaRelayDeps` (hop pick wiring); includes the neutral ports below |
-| `src/domain/mesh/reachability/MeshReachPorts.h` | `IDialRegistry` + `PeerSessionDialRegistry`, `ICircuitHopReach` (link / service reach — [media-client-layers L008](../../projects/media-client-layers/DECISIONS.md)) |
-| `src/domain/mesh/l4/media_relay/IMediaRelayClient.h`, `MediaRelayAttach.*` | `media_relay` client surface; `AttachToMediaRelayAsync` = service reach → quote → quote gate → AcceptAndAttach, shared by the group joiner and (later) broadcast |
+| `src/domain/mesh/reach/MeshReachPorts.h` | `IDialRegistry` + `PeerSessionDialRegistry`, `ICircuitHopReach` (link / service reach — [media-client-layers L008](../../projects/media-client-layers/DECISIONS.md)) |
+| `src/domain/mesh/l4/media_relay/client/IMediaRelayClient.h`, `MediaRelayAttach.*` | `media_relay` client surface; `AttachToMediaRelayAsync` = service reach → quote → quote gate → AcceptAndAttach, shared by the group joiner and (later) broadcast |
 | `src/domain/messaging/CallMediaKeyStore.*` | Epoch key wrap |
+| `src/feature/calls/CallMediaKeyExchange.*` | Epoch keys between the peers (mint, wrap, send, take in) |
+| `src/feature/calls/CallInitiationBilling.*` | P001 initiation pricing on invite / accept (offer, payable checks, our floor, per-peer book) |
+| `src/domain/people/PeerAccountBook.*` | Mesh PeerId ↔ account learned from invite / accept (in memory, written back onto the contact); CSM asks it for stream ids and dial keys |
+| `src/domain/mesh/reach/PeerMediaRelayCaps.h` | Which mesh peers advertised media_relay (V030), from their caps ads |
+| `src/domain/mesh/reach/SignalingPunchExchange.*`, `CircuitR1Hint.h` | H012 punch over a signaling carrier (offer / answer epochs, bursts); H011 R1 hint (kept until a carrier exists) — carrier-agnostic |
+| `src/feature/calls/CallReachSignals.*` | Call-control as their carrier to the active call's peer, plus the K005 caps update; CSM routes the inbound types to it |
+| `src/feature/calls/CallHopRanking.*` | Media hops ranked (contacts ∪ directory ∪ DHT ∪ seeds, V030 ads, dialable), hop scope / LAN confirmation for the call's peers — shared by Topology, SoftMigrate and planning |
+| `src/feature/calls/CallHopPlanning.*` | V050: planned hop at StartCall, invitee probes while ringing, accept reports, join resolution (keep / one adjustment / refuse), hop-hint member filter |
+| `src/feature/calls/CallPathMobility.*` | k6: this device's mobility class (attachment, rebinds, override, timed re-evaluation) and each call peer's → the call's path policy; the stack reacts to a flip (caps update + re-plan) |
 | `src/gui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |
 | `src/domain/media/CallMediaEngine.*` | Opus/H264/SDL capture; libp2p/SFU packet transport |
 | `src/domain/media/CallMediaAdaptation.*` | V024 + `CallMediaTopology` |

@@ -103,4 +103,8 @@ Do **not** thread `Logger&` through every private leaf helper of a single Module
 | `Runtime.ThreadRuntime` | Module (`ThreadRuntime` ctor) |
 | `Runtime.Coordinator` | Module (`CoordinatorThread` ctor) |
 
-Changelog: 2026-09-09 — conventions + Runtime.* wiring for shutdown-latency work.
+## Metrics channel
+
+`Metrics` (`common/Metrics.h`) is not a developer log: one `event=… k=v` line per operational event, with no account ids, PeerIds or addresses. It has its own file handler (`logs/metrics.log`, see [CONFIGURATION.md § Log file](../ops/CONFIGURATION.md#log-file)), so its INFO lines are written at any root level. Emit through `MetricsLine(...).Emit()`, never through a module logger.
+
+Changelog: 2026-09-09 — conventions + Runtime.* wiring for shutdown-latency work. 2026-09-30 — Metrics channel.

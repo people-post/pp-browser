@@ -1,9 +1,10 @@
 #include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
-#include "domain/mesh/l4/circuit/AmpCircuitHopRegistry.h"
+#include "domain/mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
 #include "domain/mesh/l4/call_media/CallMediaBundleLogic.h"
 #include "domain/mesh/l4/call_media/CallMediaLegCoordinator.h"
 #include "domain/mesh/l4/call_media/CallMediaSessionLogic.h"
-#include "domain/mesh/l4/circuit/CircuitTunnelCoordinator.h"
+#include "domain/mesh/l4/circuit/client/CircuitClientCoordinator.h"
+#include "domain/mesh/l4/circuit/serve/CircuitRelayServer.h"
 #include "amp/link/Types.h"
 #include "domain/mesh/tests/support/mesh_triple_harness.h"
 
@@ -61,15 +62,14 @@ protected:
     harness_->mgr_b().EnableNestedCarrierAccept(true);
 
     hops_ = std::make_unique<AmpCircuitHopRegistry>();
-    circuit_r_ = std::make_unique<CircuitTunnelCoordinator>(*harness_->runtime_r);
-    circuit_a_ = std::make_unique<CircuitTunnelCoordinator>(*harness_->runtime_a);
+    circuit_r_ = std::make_unique<CircuitRelayServer>(*harness_->runtime_r);
+    circuit_a_ = std::make_unique<CircuitClientCoordinator>(*harness_->runtime_a);
     a_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_a);
     b_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b);
 
     circuit_r_->Start();
     circuit_r_->SetServeInbound(true);
     circuit_a_->Start();
-    circuit_a_->SetServeInbound(false);
     a_call_->Start();
     b_call_->Start();
   }
@@ -167,8 +167,8 @@ protected:
 
   std::unique_ptr<pbr::test::AmpMeshTripleHarness> harness_;
   std::unique_ptr<AmpCircuitHopRegistry> hops_;
-  std::unique_ptr<CircuitTunnelCoordinator> circuit_r_;
-  std::unique_ptr<CircuitTunnelCoordinator> circuit_a_;
+  std::unique_ptr<CircuitRelayServer> circuit_r_;
+  std::unique_ptr<CircuitClientCoordinator> circuit_a_;
   std::unique_ptr<CallMediaLegCoordinator> a_call_;
   std::unique_ptr<CallMediaLegCoordinator> b_call_;
 };
@@ -195,6 +195,21 @@ TEST_F(AmpCircuitCallMediaComposeTest, RelayRefusesStandbyCircuitsLowestPriority
   EXPECT_NE(bridge(CircuitStandbyPriority::Low).find("standby refused"), std::string::npos) << "Low: half full";
   EXPECT_EQ(bridge(CircuitStandbyPriority::High), "ok") << "High still fits";
   EXPECT_EQ(bridge(CircuitStandbyPriority::None), "ok") << "a primary circuit is never refused for standby load";
+}
+
+// Hard-lab flip (teardown hang): a bridge request whose send fails at once closes the channel
+// inline, and the channel's closed callback takes the coordinator's lock — the client used to send
+// while holding it and the I/O thread deadlocked on itself. The bridge must fail, not hang.
+TEST_F(AmpCircuitCallMediaComposeTest, BridgeRequestThatCannotBeSentFailsInsteadOfDeadlocking) {
+  CircuitBridgeTarget target;
+  target.target_peer_id = harness_->peer_id_b;
+  target.target_multiaddr = std::string(8 * 1024 * 1024, 'x');  // over every channel's size limit
+  target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
+  Wait<CircuitTunnelBridgeResult> wait;
+  ASSERT_TRUE(circuit_a_->StartBridge("relay", target, {}, {}, wait.Fn(), 8000));
+  wait.PumpUntilDone(*harness_);
+  const bool bridged = wait.result && wait.result->ok;
+  EXPECT_FALSE(bridged) << "an unsendable request cannot bridge";
 }
 
 TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedHelloAndEncryptedAudioRoundTrip) {
@@ -276,6 +291,45 @@ TEST_F(AmpCircuitCallMediaComposeTest, CircuitNestedHelloAndEncryptedAudioRoundT
   EXPECT_EQ(a_call_->Phase(), CallMediaSessionPhase::Idle);
 }
 
+// #235 (callee side): B's own dial to A's dead address holds A's dial key when A's relay carrier
+// arrives, so the accepted carrier is not aliased under it. B's call leg opens on that carrier
+// instead of waiting on the dead dial until the call times out.
+TEST_F(AmpCircuitCallMediaComposeTest, LegOpensOnTheCarrierWhileADeadDialHoldsTheKey) {
+  const std::string dead = "/ip4/192.0.2.1/udp/1/adp/1.0.0/p2p/" + harness_->peer_id_a;
+  ASSERT_TRUE(static_cast<bool>(harness_->mgr_b().RegisterEndpoint(harness_->peer_id_a, dead)));
+  harness_->mgr_b().EnsureAssociation(harness_->peer_id_a, [](pp::amp::PeerLinkManager::LinkRoe) {});
+  harness_->PumpAll();
+
+  auto nested = EstablishNestedCallMediaPath();
+  ASSERT_TRUE(nested) << nested.error().message;
+  auto* keyed = harness_->mgr_b().FindLink(harness_->peer_id_a);
+  ASSERT_TRUE(keyed && !keyed->IsCarrierBacked() && keyed->Phase() != pp::amp::PeerLinkPhase::Connected)
+      << "the dead dial still holds the key";
+  ASSERT_NE(harness_->mgr_b().FindConnectedLinkByPeerId(harness_->peer_id_a, pp::amp::TransportClass::Carrier),
+            nullptr);
+
+  const ByteVector media_key(32, 0x42);
+  a_call_->SetInboundHandler(AnswerInline([&](CallMediaDirectConnectParams& params, CallMediaDirectCallbacks&) {
+    params.media_key = media_key;
+    params.call_id = "call-235";
+    params.offerer = true;
+  }));
+  CallMediaDirectConnectParams params;
+  params.peer_key = harness_->peer_id_a;
+  params.call_id = "call-235";
+  params.media_key = media_key;
+  params.offerer = false;
+  LegCompletion leg_done;
+  const CallMediaLegId leg_id = b_call_->StartLeg(params, {}, leg_done.Fn(), 8000);
+  ASSERT_TRUE(leg_id);
+  // Far fewer rounds than the dead dial's give-up: only the carrier can settle this.
+  harness_->PumpUntil([&] { return leg_done.finished.load(std::memory_order_acquire); }, 600);
+  ASSERT_TRUE(leg_done.finished.load(std::memory_order_acquire)) << "the leg waited on the dead dial";
+  ASSERT_TRUE(leg_done.result) << leg_done.result.error().message;
+  EXPECT_EQ(b_call_->ActiveLinkKind(), CallMediaLinkKind::Relayed);
+  b_call_->DetachLeg(leg_id);
+}
+
 // A live relayed call must keep caller→callee audio through the disturbances a real call sees:
 // reservation renewals (k2), reserves aimed at the callee, lease expiry, burst loss on the relay hop.
 // Dogfood 2026-09-24 16:17 lost that direction mid-call; these ruled out each local cause.
@@ -340,9 +394,8 @@ TEST_F(RelayedCallDisturbanceTest, CallerReserveOnCarryingRelayKeepsAudio) {
 // Dogfood timeline: both ends parked on R before the call; B runs the product circuit coordinator
 // (not serving); A renews on R and (B41 gap) on B every 10 s while earlier leases expire.
 TEST_F(RelayedCallDisturbanceTest, RenewalsOverTimeKeepAudioBothWays) {
-  CircuitTunnelCoordinator circuit_b(*harness_->runtime_b);
+  CircuitClientCoordinator circuit_b(*harness_->runtime_b);
   circuit_b.Start();
-  circuit_b.SetServeInbound(false);
   {
     Wait<CircuitTunnelBridgeResult> wb;
     (void)circuit_b.StartReserve("relay", wb.Fn(), 15000);
@@ -376,10 +429,9 @@ TEST_F(RelayedCallDisturbanceTest, RenewalsOverTimeKeepAudioBothWays) {
 // Same, with real-time lease expiry (coordinator deadlines use steady_clock): 300 ms leases renewed
 // every 200 ms, so superseded reservations expire and tear down on client and relay mid-call.
 TEST_F(RelayedCallDisturbanceTest, LeaseExpiryDuringCallKeepsAudio) {
-  CircuitTunnelCoordinator circuit_b(*harness_->runtime_b);
+  CircuitClientCoordinator circuit_b(*harness_->runtime_b);
   circuit_b.Start();
-  circuit_b.SetServeInbound(false);
-  auto reserve = [&](CircuitTunnelCoordinator& c, const std::string& key) {
+  auto reserve = [&](CircuitClientCoordinator& c, const std::string& key) {
     Wait<CircuitTunnelBridgeResult> w;
     (void)c.StartReserve(key, w.Fn(), 300);
     w.PumpUntilDone(*harness_, 1500);

@@ -10,8 +10,14 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/messaging/CallMediaKeyStore.h"
+#include "feature/calls/CallHopDriver.h"
+#include "feature/calls/CallHopPlanning.h"
+#include "feature/calls/CallHopRanking.h"
 #include "feature/calls/CallTopologyHostPorts.h"
+#include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
+#include "foundation/runtime/OwnerOutbox.h"
+#include "foundation/runtime/OwnerSteps.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallHopMigrateWorkflow.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
@@ -27,6 +33,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <map>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -81,7 +88,7 @@ struct CallTopologySeatPorts {
  * SoftMigrate race clusters live on CallHopMigrateWorkflow (V047); this type keeps refs +
  * Host/HopArming/Seat ports for Topology-local control paths.
  */
-class CallTopologyController : public Module {
+class CallTopologyController : public Module, public CallHopDriver {
 public:
   using HostPorts = CallTopologyHostPorts;
   using MediaRelayDeps = CallTopologyMediaRelayDeps;
@@ -100,25 +107,30 @@ public:
   void SetSeatPorts(CallTopologySeatPorts ports);
   /** V048 hop arming / progress — empty ports = permissive (unit tests). */
   void SetHopArmingPorts(CallHopArmingPorts ports);
+  /** Where topology (and hop migrate under it) reports its events (the session manager binds it). */
+  void SetOutbox(OwnerOutbox<TopologyEvent> outbox);
+  /** An event it reported, back from the calls owner's queue. */
+  void Handle(TopologyEvent& event);
 
-  bool IsAwaitingSfuRecovery() const;
-  bool IsSfuAttached() const;
+  bool IsAwaitingSfuRecovery() const override;
+  bool IsSfuAttached() const override;
+  /** Hop driver: SoftMigrate / hint / N≥3 / recovery — the call's 1:1 stream closing is expected. */
+  bool ExpectsGroupMedia(const std::string& call_id) const override;
   bool IsOnSfuForCall(const std::string& call_id) const;
   /** Soft-migrate / attach-wait in flight (suppress ICE→SFU re-entry + stale LeaveCall). */
   bool IsSoftMigrateInFlight() const;
   bool IsSfuAttachWaitActive() const;
 
-  bool HasMediaRelayHopCandidates() const;
-  std::vector<MeshHopCandidate> RankedMediaHopCandidates() const;
-  /** Resolve dialable multiaddr for a hop PeerId (contacts ∪ seeds ∪ L1 address book). */
-  std::string ResolveHopMultiaddr(const std::string& hop_peer_id) const;
+  /** The media hops this device could use, ranked (shared with SoftMigrate). */
+  const CallHopRanking& HopRanking() const { return ranking_; }
+  /** V050 group hop planning (plan at StartCall, probe while ringing, reports, join resolution). */
+  CallHopPlanning& HopPlanning() { return planning_; }
 
-  void BeginSfuAttachWait(const std::string& call_id);
+  void BeginSfuAttachWait(const std::string& call_id) override;
   void ClearSfuAttachWait();
   void PollPendingSfuAttach();
 
-  void ClearAwaitingSfuRecovery();
-  void OnMediaStopped(const std::string& call_id);
+  void OnMediaStopped(const std::string& call_id) override;
 
   void EjectParticipantAfterMigrateFailure(const std::string& call_id, const std::string& identity,
                                            const std::string& reason);
@@ -130,22 +142,20 @@ public:
   void AttachLocalToSfuAsync(const std::string& call_id, const CallSfuAttachDetail& attach,
                              std::function<void(Roe<void>)> on_done);
 
-  /** Group (N≥3) ICE failed — recover via soft-migrate (posted to UI by caller if needed). */
-  void TryRecoverViaSfu(const std::string& call_id);
 
   /**
    * After local AcceptInvite: attach via hint, soft-migrate, or clear wait for 1:1.
    * Returns true if an SFU path was scheduled (caller should not start P2P).
    */
   bool OnLocalAcceptJoined(const std::string& call_id, size_t n_joined,
-                           const std::optional<std::string>& sfu_hint);
+                           const std::optional<std::string>& sfu_hint) override;
 
   /**
    * After inbound CallAccept raised joined count: soft-migrate or clear SFU wait.
    * Returns true if SFU path was taken (caller should not start P2P offerer).
    */
   bool OnRemoteAcceptJoined(const std::string& call_id, size_t n_joined,
-                            const std::string& joiner_identity);
+                            const std::string& joiner_identity) override;
 
   /**
    * After CallRoster updated local joined count (mid-call invite path): initiator may SoftMigrate.
@@ -158,14 +168,19 @@ public:
    */
   void OnPeerMediaRelayCapLearned(const std::string& call_id, const std::string& peer_id);
 
-  Roe<void> OnInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach);
+  /**
+   * `sender` fanned the attach out. Attached to another hop, a guest follows only the hop owner's
+   * attach (V050: the owner moved the group); others' attaches there are publisher announces.
+   */
+  Roe<void> OnInboundSfuAttach(const std::string& call_id, const CallSfuAttachDetail& attach,
+                               const std::string& sender = {});
   /** Guest attach failed with hop preferences (V029) — initiator only. */
   void OnInboundSfuAttachFailed(const CallSfuAttachFailedDetail& detail);
   /** Owner refused guest after empty hop intersection (V029). */
   void OnInboundHopRefuse(const CallHopRefuseDetail& detail);
 
   void RefreshAdaptation(const std::string& call_id);
-  void RefreshAdaptation(const std::string& call_id, bool camera_user_wants);
+  void RefreshAdaptation(const std::string& call_id, bool camera_user_wants) override;
   /** Re-Subscribe hop streams for all currently Joined peers (late join / roster). */
   void SyncSfuSubscriptions(const std::string& call_id);
   uint32_t PublisherStreamIdForLocal() const;
@@ -184,14 +199,18 @@ private:
   void ReportSfuAttachFailedToInitiator(const std::string& call_id, const std::string& failed_hop,
                                         const std::string& error);
   void RefuseGuestNoSharedHop(const std::string& call_id, const std::string& guest_identity);
+  void RefuseGuest(const topology_event::RefuseGuest& refuse_event);
+  void ReannouncePublisher(const topology_event::ReannouncePublisher& again);
+  /** Run `step` as the next event (owner). */
+  void Defer(std::function<void()> step);
   std::vector<std::string> DialableHopPeerIds() const;
   bool IsMigrateGenerationCurrent(uint64_t gen) const;
   /** Local advertise MA + InferCallHopScope for SoftMigrate (V035). */
-  std::string ResolveLocalAdvertiseMa(const std::string& local_peer_id) const;
-  std::vector<std::string> ResolveLocalAdvertiseMas() const;
   CallHopScope InferScopeForCall(const std::string& call_id, const std::string& local_identity) const;
   bool LanReachabilityConfirmedForCall(const std::string& call_id,
                                        const std::string& local_identity) const;
+  /** Joined remotes of the call (local excluded) — the peers SoftMigrate scope / LAN checks cover. */
+  std::vector<std::string> JoinedRemoteIdentities(const std::string& call_id, const std::string& local_identity) const;
   bool IsActiveCallForTopology(const std::string& call_id) const;
   void FanOutSfuAttachForHop(const std::string& call_id, const std::string& hop_peer_id,
                              const std::string& local_identity);
@@ -201,7 +220,7 @@ private:
   void SubscribePublisherStream(uint32_t stream_id);
   void SetHopPlannerPhase(CallHopPlannerPhase next, CallHopPlannerEvent ev, const std::string& call_id);
   void ReportHopProgress(CallHopPlannerPhase phase, const std::string& call_id);
-  CallHopPlannerApplyContext BuildHopPlannerContext(const std::string& call_id, size_t effective_n,
+  CallHopPlannerApplyContext BuildHopPlannerContext(const std::string& call_id, size_t joined_count,
                                                     bool has_sfu_hint) const;
   void ArmAttachWaitTimer(const std::string& call_id, int64_t deadline_ms);
   void CancelAttachWaitTimer();
@@ -233,6 +252,8 @@ private:
                                  const Roe<void>& mig);
   // Hop hint (guest could not reach our hop) steps.
   bool IsStickyInitiator(const std::string& call_id, const std::string& local_identity) const;
+  /** V050: attached to another hop and the owner fanned out a new one — let go of ours. True = detached. */
+  bool LeaveHopForOwnerMove(const std::string& call_id, const CallSfuAttachDetail& attach, const std::string& sender);
   bool HopHintMayLeavePreferLocal(const std::string& prefer_hop_peer_id) const;
   bool IsOnOrHintedHop(const std::string& call_id, const std::string& hop_peer_id) const;
   void StartHopHintRepick(const std::string& call_id, const std::string& prefer, const std::string& guest);
@@ -271,10 +292,30 @@ private:
   SharedPorts<CallTopologySeatPorts> seat_;
   SharedPorts<CallHopArmingPorts> arming_;
   MediaRelayDeps relay_deps_;
+  /** Read relay_deps_ (non-owning): the hop ranking and V050 planning. */
+  CallHopRanking ranking_;
+  CallHopPlanning planning_;
   // Relay session-end observer on relay_deps_.relay; the token drops notices queued before an
   // unwatch or our destruction.
-  DeferredSelf relay_loss_self_;
+  /** Names the current relay watch: a loss reported by an earlier one is stale. */
+  uint64_t relay_watch_ = 0;
+  OwnerOutbox<TopologyEvent> outbox_;
+  /** Finish steps waiting for their Continue event. */
+  OwnerSteps steps_;
   uint64_t relay_loss_observer_ = 0;
+
+  /** Coordinator timers (attach-wait deadline, publisher re-announce) drop once we are gone. */
+  /**
+   * V050: at the first group migrate — keep the planned hop, make the one adjustment (replaces the
+   * session's planned hop), or refuse the joiner. False = joiner refused (no migration now).
+   */
+  bool ResolveGroupHopForJoin(const std::string& call_id, const std::string& joiner_identity);
+  /** Joined remotes of the call other than `guest` (the members a hop change must suit). */
+  std::vector<std::string> JoinedMembersOtherThan(const std::string& call_id, const std::string& guest) const;
+  /** V050: per call, guest → the hop the group moved to for it (one change per joiner). */
+  std::unordered_map<std::string, std::map<std::string, std::string>> hop_hint_repicked_;
+  /** V050: a joined remote this device invited whose CallAccept has not arrived yet. */
+  bool AwaitsOwnInviteeAccept(const std::string& call_id, const std::string& local_identity) const;
 
   void WatchRelayLoss();
   void UnwatchRelayLoss();

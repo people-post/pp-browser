@@ -190,7 +190,6 @@ public:
   CallStack& CallStackRef() { return *call_stack_; }
   const CallStack& CallStackRef() const { return *call_stack_; }
   CallSessionManager* Calls();
-  CallLifecycle* Lifecycle();
   /**
    * Live broadcast viewer (sibling of calls, media-client-layers L013). Null while the mesh is down;
    * rebuilt — and any watch stopped — whenever the media_relay plane is rewired. UI thread.

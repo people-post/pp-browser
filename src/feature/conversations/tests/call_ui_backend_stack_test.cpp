@@ -535,28 +535,28 @@ TEST_F(CallUiBackendStackTest, StartCallAndLeaveViaBackend) {
   EXPECT_EQ(ui_->Phase(), CallPhase::Idle);
 }
 
-TEST_F(CallUiBackendStackTest, RingChangesDoNotRebindLifecyclePorts) {
+TEST_F(CallUiBackendStackTest, RingChangesDoNotRebindCallStatePorts) {
   // B49: port sets used to be re-bound on every ring change (relay-receive thread) and every
-  // Lifecycle() query while the bridge / CSM called them → SIGABRT in std::function::operator=.
+  // accessor query while the bridge / CSM called them → SIGABRT in std::function::operator=.
   // Binding happens only at the owner's bind points (BuildSessions / BindMediaProducts).
-  const int binds = stack_->LifecyclePortBindsForTest();
+  const int binds = stack_->CallStateBindsForTest();
   EXPECT_GT(binds, 0);
   for (int i = 0; i < 5; ++i) {
-    ASSERT_NE(stack_->Lifecycle(), nullptr);
+    ASSERT_NE(stack_->Calls(), nullptr);
   }
   const int desires_before = listen_desires_;
   ASSERT_TRUE(IngestInvite("call:b49-a"));
   ASSERT_TRUE(IngestInvite("call:b49-b"));
   DrainUntil([&]() { return listen_desires_ > desires_before; });
   EXPECT_GT(listen_desires_, desires_before) << "ring-change path did not run";
-  EXPECT_EQ(stack_->LifecyclePortBindsForTest(), binds);
+  EXPECT_EQ(stack_->CallStateBindsForTest(), binds);
 
   // Genuine teardown / recreate re-binds.
   stack_->PrepareForMeshStop({});
   stack_->FinishMeshStop();
   stack_->BindTestMediaPath(transport_.get(), dial_.get());
-  ASSERT_NE(stack_->Lifecycle(), nullptr);
-  EXPECT_GT(stack_->LifecyclePortBindsForTest(), binds);
+  ASSERT_NE(stack_->Calls(), nullptr);
+  EXPECT_GT(stack_->CallStateBindsForTest(), binds);
   EXPECT_TRUE(ui_->Available());
 }
 

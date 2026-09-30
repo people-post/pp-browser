@@ -28,6 +28,17 @@ public:
    * use, or empty when the file could not be opened (reported on the root logger).
    */
   static std::string Install(const std::string& path, std::size_t keep = kDefaultKeep);
+
+  /** `metrics.log` next to the log file at `log_path`. */
+  static std::string MetricsPath(const std::string& log_path);
+
+  /**
+   * Rotate and attach `MetricsPath(log_path)` to the "Metrics" logger (common/Metrics.h), so
+   * operational metrics are written at any root log level and live in a file of their own —
+   * the only one a collector should read (no account ids, PeerIds or addresses). Returns the path
+   * in use, or empty when the file could not be opened.
+   */
+  static std::string InstallMetrics(const std::string& log_path, std::size_t keep = kDefaultKeep);
 };
 
 } // namespace pbr

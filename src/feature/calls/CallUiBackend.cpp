@@ -4,7 +4,6 @@
 #include "domain/media/CameraCaptureOrientation.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallStack.h"
-#include "feature/calls/CallsThread.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include <stdexcept>
@@ -48,11 +47,7 @@ void CallUiBackend::SetOnRingChanged(std::function<void()> callback) {
 }
 
 void CallUiBackend::SetOnChromeRefresh(std::function<void()> callback) {
-  CallsThread::RunAndWait([this, &callback]() {
-    if (auto* life = stack_.Lifecycle()) {
-      life->SetOnChromeRefresh(std::move(callback));  // CallLifecycle::NotifyChrome delivers on UI
-    }
-  });
+  stack_.SetOnChromeRefresh(std::move(callback));  // delivered on UI after the calls change
 }
 
 std::shared_ptr<const CallUiState> CallUiBackend::State() const {
@@ -60,8 +55,8 @@ std::shared_ptr<const CallUiState> CallUiBackend::State() const {
 }
 
 void CallUiBackend::OnOwner(std::function<void(CallSessionManager&)> op) {
-  CallsThread::Post([this, op = std::move(op)]() {
-    if (auto* calls = stack_.Calls()) {
+  stack_.PostToSessions([op = std::move(op)](CallSessionManager* calls) {
+    if (calls) {
       op(*calls);
     }
   });
@@ -92,31 +87,15 @@ void CallUiBackend::ClearMediaActivity() {
 }
 
 void CallUiBackend::Apply(CallLifecycleEvent ev, const std::string& call_id) {
-  CallsThread::Post([this, ev, call_id]() {
-    if (auto* life = stack_.Lifecycle()) {
-      life->Apply(ev, call_id);
-    }
-  });
-}
-
-void CallUiBackend::NoteRingCallId(const std::string& call_id) {
-  CallsThread::Post([this, call_id]() {
-    if (auto* life = stack_.Lifecycle()) {
-      life->NoteRingCallId(call_id);
-    }
-  });
+  OnOwner([ev, call_id](CallSessionManager& calls) { calls.Apply(ev, call_id); });
 }
 
 void CallUiBackend::ClearLastError() {
-  CallsThread::Post([this]() {
-    if (auto* life = stack_.Lifecycle()) {
-      life->ClearLastError();
-    }
-  });
+  OnOwner([](CallSessionManager& calls) { calls.ClearLastError(); });
 }
 
-void CallUiBackend::LeaveCall(const std::string& call_id) {
-  OnOwner([call_id](CallSessionManager& calls) { (void)calls.LeaveCall(call_id); });
+void CallUiBackend::LeaveCall(const std::string& call_id, const LiveCallEndReason reason) {
+  OnOwner([call_id, reason](CallSessionManager& calls) { (void)calls.LeaveCall(call_id, reason); });
 }
 
 void CallUiBackend::StopCallMedia(const std::string& call_id) {
@@ -133,6 +112,10 @@ void CallUiBackend::SetPendingAcceptChargeDecision(const InitiationChargeDecisio
   OnOwner([decision](CallSessionManager& calls) { calls.SetPendingAcceptChargeDecision(decision); });
 }
 
+void CallUiBackend::SetPendingAcceptVoiceOnly(const bool voice_only) {
+  OnOwner([voice_only](CallSessionManager& calls) { calls.SetPendingAcceptVoiceOnly(voice_only); });
+}
+
 std::optional<std::string> CallUiBackend::TakeLastMediaError() {
   const auto state = State();
   if (!state->last_media_error) {
@@ -147,40 +130,40 @@ std::optional<std::string> CallUiBackend::TakeLastMediaError() {
   return taken_media_error_;
 }
 
+std::optional<CallUiBackend::RemoteEnd> CallUiBackend::TakeRemoteEnd() {
+  const auto state = State();
+  if (state->remote_ended_call_id.empty() || state->remote_ended_call_id == taken_remote_ended_) {
+    return std::nullopt;
+  }
+  taken_remote_ended_ = state->remote_ended_call_id;
+  return RemoteEnd{state->remote_ended_call_id, state->remote_ended_declined};
+}
+
 void CallUiBackend::StartCall(const std::string& origin_thread_id, const bool video_allowed,
                               const std::vector<std::string>& invitee_identities,
                               std::function<void(Roe<CallSession>)> on_done) {
   auto reply = ReplyOnUi<Roe<CallSession>>(std::move(on_done));
-  CallsThread::Post([this, origin_thread_id, video_allowed, invitee_identities, reply]() {
-    auto* calls = stack_.Calls();
+  stack_.PostToSessions([origin_thread_id, video_allowed, invitee_identities, reply](CallSessionManager* calls) {
     if (!calls) {
       reply(UnavailableError());
       return;
     }
-    auto started = calls->StartCall(origin_thread_id, video_allowed, invitee_identities);
-    if (started) {
-      if (auto* life = stack_.Lifecycle()) {
-        // Idempotent if the workflow already noted it via lifecycle ports (preferred, pre-Invite).
-        life->Apply(CallLifecycleEvent::OutboundStarted, started->call_id);
-      }
-    }
-    reply(std::move(started));
+    // The workflow admits the placed call (Deciding, LiveCalls::NoteOutboundStarted) itself.
+    reply(calls->StartCall(origin_thread_id, video_allowed, invitee_identities));
   });
 }
 
 void CallUiBackend::InviteParticipant(const std::string& call_id, const std::string& invitee_identity,
                                       std::function<void(Roe<void>)> on_done) {
   auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
-  CallsThread::Post([this, call_id, invitee_identity, reply]() {
-    auto* calls = stack_.Calls();
+  stack_.PostToSessions([call_id, invitee_identity, reply](CallSessionManager* calls) {
     reply(calls ? calls->InviteParticipant(call_id, invitee_identity) : Roe<void>(UnavailableError()));
   });
 }
 
 void CallUiBackend::SetLocalAudioMuted(bool muted, std::function<void(Roe<void>)> on_done) {
   auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
-  CallsThread::Post([this, muted, reply]() {
-    auto* calls = stack_.Calls();
+  stack_.PostToSessions([muted, reply](CallSessionManager* calls) {
     reply(calls ? calls->SetLocalAudioMuted(muted) : Roe<void>(UnavailableError()));
   });
 }
@@ -189,8 +172,7 @@ void CallUiBackend::SetLocalVideoEnabled(bool enabled, std::function<void(Roe<vo
   // L012: the display rotation comes from UIKit on iOS — read it here, on UI, not on the owner.
   const int rotation = enabled ? CameraDisplayRotationDegrees() : 0;
   auto reply = ReplyOnUi<Roe<void>>(std::move(on_done));
-  CallsThread::Post([this, enabled, rotation, reply]() {
-    auto* calls = stack_.Calls();
+  stack_.PostToSessions([enabled, rotation, reply](CallSessionManager* calls) {
     reply(calls ? calls->SetLocalVideoEnabled(enabled, rotation) : Roe<void>(UnavailableError()));
   });
 }
@@ -228,6 +210,13 @@ Roe<std::optional<bool>> CallUiBackend::PeerVideoEnabledForCall(const std::strin
 Roe<std::optional<bool>> CallUiBackend::VideoAllowedForCall(const std::string& call_id) const {
   if (auto* calls = stack_.Calls()) {
     return calls->VideoAllowedForCall(call_id);
+  }
+  return UnavailableError();
+}
+
+Roe<bool> CallUiBackend::AwaitingExplicitAnswerForCall(const std::string& call_id) const {
+  if (auto* calls = stack_.Calls()) {
+    return calls->AwaitingExplicitAnswerForCall(call_id);
   }
   return UnavailableError();
 }

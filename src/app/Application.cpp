@@ -88,6 +88,7 @@
 #include "ElementCallVideoTile.h"
 #include "domain/ui/Theme.h"
 #include "common/StartupTiming.h"
+#include "common/Metrics.h"
 #include "domain/mesh/reachability/Reachability.h"
 
 #include <ui/dom/Context.h>
@@ -841,6 +842,7 @@ void Application::WireCalls() {
       return call_->StartCall(thread_id, video_allowed);
     };
     call_actions.refresh_pending_ring = [this]() { call_->RefreshPendingRing(); };
+    call_actions.video_call_available = [this]() { return call_->VideoCallAvailable(); };
     call_actions.invite_identities = [this](const std::vector<std::string>& identities) {
       call_->InviteIdentitiesToActiveCall(identities);
     };
@@ -850,6 +852,7 @@ void Application::WireCalls() {
           return call_->StartCallWithInvitees(thread_id, video_allowed, identities);
         };
     call_actions.accept_incoming = [this]() { call_->AcceptIncoming(); };
+    call_actions.accept_incoming_voice_only = [this]() { call_->AcceptIncomingVoiceOnly(); };
     call_actions.accept_incoming_with_charge = [this]() { call_->AcceptIncomingWithCharge(); };
     call_actions.decline_incoming = [this]() { call_->DeclineIncoming(); };
     call_actions.leave_active = [this]() { call_->LeaveActive(); };
@@ -1069,8 +1072,8 @@ bool Application::MountPresenters(ui::Context* context) {
   chat_->BindEmojiPickerNotify(std::move(emoji_notify));
 
   PeoplePickerNotifyPorts call_people_picker_notify;
-  call_people_picker_notify.open_for_group_call = [this](const std::string& thread_id) {
-    people_picker_->OpenForGroupCall(thread_id);
+  call_people_picker_notify.open_for_group_call = [this](const std::string& thread_id, bool video_allowed) {
+    people_picker_->OpenForGroupCall(thread_id, video_allowed);
   };
   call_people_picker_notify.open_for_call_add_guest = [this](const std::string& call_id) {
     people_picker_->OpenForCallAddGuest(call_id);
@@ -1379,6 +1382,11 @@ void Application::Run() {
       Backend::PresentFrame();
       if (!logged_first_present) {
         StartupMark("first_present");
+        MetricsLine("app.start")
+            .Add("first_present_ms", static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                              std::chrono::steady_clock::now() - StartupEpoch())
+                                                              .count()))
+            .Emit();
         logged_first_present = true;
         AppRuntime::PostUI([this]() {
           OnFirstPresentDeferredStartup(*client_compat_, *unlock_gate_, MakeShellNavigationPorts(*shell_));

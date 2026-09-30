@@ -1,169 +1,17 @@
-#include "feature/calls/CallStack.h"
-#include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/CallUiBackend.h"
+#include "feature/conversations/tests/call_stack_compose_support.h"
 
-#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
-#include "domain/messaging/CallTypes.h"
-#include "domain/messaging/SqlitePskSessionStore.h"
-#include "domain/messaging/SqliteThreadStore.h"
-#include "domain/people/ContactsStore.h"
-#include "domain/people/IdentityStore.h"
-#include "foundation/crypto/CryptoConstants.h"
-#include "foundation/crypto/CryptoUtil.h"
-#include "foundation/data/Config.h"
-#include "foundation/runtime/AppRuntime.h"
-#include "common/Utilities.h"
-#include "common/thread/ThreadRecordTypes.h"
-
-#include <chrono>
 #include <deque>
-#include <filesystem>
-#include <functional>
-#include "feature/conversations/tests/call_media_inbound_fake.h"
-
-#include <gtest/gtest.h>
-#include <optional>
-#include <memory>
 #include <string>
-#include <thread>
-#include <unordered_map>
-#include <vector>
 
 namespace pbr {
 namespace {
 
-ByteVector TestDek(uint8_t seed) {
-  ByteVector dek(kDataEncryptionKeySize);
-  for (size_t i = 0; i < dek.size(); ++i) {
-    dek[i] = static_cast<uint8_t>(seed + i);
-  }
-  return dek;
-}
-
-class FakeDialRegistry final : public IDialRegistry {
-public:
-  Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) override {
-    endpoints[peer_key] = multiaddr;
-    return {};
-  }
-  bool IsDialable(const std::string& peer_key) const override {
-    return endpoints.count(peer_key) > 0 || connected.count(peer_key) > 0;
-  }
-  bool IsConnected(const std::string& peer_key) const override {
-    return connected.count(peer_key) > 0;
-  }
-  std::optional<std::string> PreferredMultiaddr(const std::string& peer_key) const override {
-    const auto it = endpoints.find(peer_key);
-    if (it != endpoints.end()) {
-      return it->second;
-    }
-    return std::nullopt;
-  }
-  void ClearDialBackoff(const std::string& /*peer_key*/) override {}
-  void AbortInflightDial(const std::string& /*peer_key*/) override {}
-  void ClearPeerCircuitHop(const std::string& /*peer_key*/) override {}
-
-  std::unordered_map<std::string, std::string> endpoints;
-  std::unordered_map<std::string, bool> connected;
-};
-
-class FakeCallMediaTransport final : public ICallMediaTransport {
-public:
-  void Start() override { started = true; }
-  void Stop() override { started = false; }
-  void SetInboundHandler(CallMediaInboundHandler handler) override { inbound.Set(std::move(handler)); }
-  void ClearInboundHandler() override { inbound.Clear(); }
-  bool IsActive() const override { return active; }
-  CallMediaDirectConnectParams ActiveParams() const override { return active_params; }
-  CallMediaSessionPhase Phase() const override {
-    return active ? CallMediaSessionPhase::MediaReady : CallMediaSessionPhase::Idle;
-  }
-  void Detach() override {
-    active = false;
-    ++detach_calls;
-  }
-  void ConnectAsync(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    std::function<void(Roe<void>)> on_done, int /*timeout_ms*/) override {
-    ++connect_async_calls;
-    last_params = params;
-    active = true;
-    active_params = params;
-    if (peer_inbound) {
-      // Simulate reverse-dial landing on the peer's CallMediaBridge inbound handler.
-      peer_inbound(params);
-    }
-    if (callbacks.on_connected) {
-      callbacks.on_connected();
-    }
-    if (on_done) {
-      on_done({});
-    }
-  }
-  Roe<void> Connect(const CallMediaDirectConnectParams& params, CallMediaDirectCallbacks callbacks,
-                    int timeout_ms) override {
-    Roe<void> out;
-    ConnectAsync(params, std::move(callbacks), [&](Roe<void> r) { out = std::move(r); }, timeout_ms);
-    return out;
-  }
-  Roe<void> SendAudio(const std::vector<uint8_t>& /*opus*/, uint32_t /*seq*/, uint8_t /*mark*/) override {
-    return {};
-  }
-  Roe<void> SendMedia(uint8_t /*channel*/, const std::vector<uint8_t>& /*payload*/, uint32_t /*seq*/,
-                      uint8_t /*mark*/) override {
-    return {};
-  }
-
-  bool started = false;
-  bool active = false;
-  int connect_async_calls = 0;
-  int detach_calls = 0;
-  CallMediaDirectConnectParams last_params;
-  CallMediaDirectConnectParams active_params;
-  test::InboundHelloFake inbound;
-  /** When set, ConnectAsync also drives the peer stack's inbound handler (dual-stack wire). */
-  /** Reverse dial: deliver a hello to the peer; its answer connects the peer's side. */
-  std::function<void(CallMediaDirectConnectParams)> peer_inbound;
-};
-
-void DrainUntil(const std::function<bool()>& done, int max_ms = 6000) {
-  const int slices = std::max(1, max_ms / 10);
-  for (int i = 0; i < slices; ++i) {
-    AppRuntime::RunUIAndOwnerTasks();
-    if (done()) {
-      return;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  AppRuntime::RunUIAndOwnerTasks();
-}
-
-/** CallUiBackend::StartCall is an intent: run the calls owner until it reports. */
-Roe<CallSession> StartCallNow(CallUiBackend& ui, const std::string& thread_id, bool video,
-                              const std::vector<std::string>& invitees) {
-  std::optional<Roe<CallSession>> started;
-  ui.StartCall(thread_id, video, invitees, [&started](Roe<CallSession> result) { started = std::move(result); });
-  for (int i = 0; i < 1000 && !started; ++i) {
-    AppRuntime::RunUIAndOwnerTasks();
-  }
-  return started ? *started : Roe<CallSession>(Error("StartCall did not report"));
-}
-
-struct StackSide {
-  std::filesystem::path data_dir;
-  std::unique_ptr<SqliteThreadStore> store;
-  std::unique_ptr<ContactsStore> contacts;
-  std::unique_ptr<IdentityStore> identity;
-  std::unique_ptr<SqlitePskSessionStore> psk;
-  std::unique_ptr<MeshMediaPlane> mesh_media = std::make_unique<MeshMediaPlane>();  // outlives stack
-  std::unique_ptr<CallStack> stack;
-  std::unique_ptr<CallUiBackend> ui;
-  std::unique_ptr<FakeCallMediaTransport> transport;
-  std::unique_ptr<FakeDialRegistry> dial;
-  CallControlInboundPorts inbound;
-  AppConfig app_config;
-  std::string local_identity;
-  std::deque<ThreadMessage>* outbox = nullptr;
-};
+using test::BuildStackSide;
+using test::DestroyStackSide;
+using test::DrainUntil;
+using test::SoftStopStackSide;
+using test::StackSide;
+using test::StartCallNow;
 
 class CallDualStackComposeTest : public ::testing::Test {
 protected:
@@ -172,8 +20,10 @@ protected:
     AppRuntime::Initialize(ManualOwnerRuntimeConfig());
     AppRuntime::InitializeUI();
 
-    BuildSide(offer_, "offer", 0xa0, &answer_inbox_);
-    BuildSide(answer_, "answer", 0xb0, &offer_inbox_);
+    offer_.on_send = [this](const ThreadMessage& msg) { answer_inbox_.push_back(msg); };
+    answer_.on_send = [this](const ThreadMessage& msg) { offer_inbox_.push_back(msg); };
+    BuildStackSide(offer_, "offer", 0xa0);
+    BuildStackSide(answer_, "answer", 0xb0);
 
     // Each side treats the other as already connected for EnsurePeerReachable.
     offer_.dial->connected[answer_.local_identity] = true;
@@ -205,107 +55,23 @@ protected:
   void TearDown() override {
     // Soft-stop stacks first, then join AppRuntime before destroying stores — DrainWorkersThenUI
     // alone does not wait for every pool thread (PR #216 follow-up).
-    SoftStopSide(offer_);
-    SoftStopSide(answer_);
+    SoftStopStackSide(offer_);
+    SoftStopStackSide(answer_);
     AppRuntime::ShutdownUI();
     AppRuntime::Shutdown();
-    DestroySide(offer_);
-    DestroySide(answer_);
+    DestroyStackSide(offer_);
+    DestroyStackSide(answer_);
   }
 
-  void BuildSide(StackSide& side, const char* tag, uint8_t dek_seed,
-                 std::deque<ThreadMessage>* outbox) {
-    side.data_dir =
-        std::filesystem::temp_directory_path() / ("pp_dual_" + std::string(tag) + "_" + util::GenerateUuid());
-    std::filesystem::remove_all(side.data_dir);
-    std::filesystem::create_directories(side.data_dir);
-
-    side.store = std::make_unique<SqliteThreadStore>(side.data_dir.string());
-    ASSERT_TRUE(side.store->ListThreads());
-    ASSERT_TRUE(side.store->SetDek(TestDek(dek_seed)));
-    side.contacts = std::make_unique<ContactsStore>(side.data_dir.string());
-    side.identity = std::make_unique<IdentityStore>(side.data_dir.string(), tag);
-    ASSERT_TRUE(side.identity->SetDek(TestDek(dek_seed)));
-    auto loaded = side.identity->LoadOrCreate();
-    ASSERT_TRUE(loaded) << loaded.error().message;
-    side.local_identity = loaded->account_id;
-    ASSERT_FALSE(side.local_identity.empty());
-
-    side.psk = std::make_unique<SqlitePskSessionStore>(side.store->ProfileDbPath(), tag);
-    ASSERT_TRUE(side.psk->SetDek(TestDek(dek_seed)));
-
-    side.app_config = AppConfig{};
-    side.outbox = outbox;
-    side.stack = std::make_unique<CallStack>();
-    ASSERT_TRUE(side.stack->InitializeStores(side.store->ProfileDbPath(), tag));
-    ASSERT_TRUE(side.stack->MediaKeys()->SetDek(TestDek(dek_seed)));
-    side.ui = std::make_unique<CallUiBackend>(*side.stack);
-
-    CallStackDeps deps;
-    deps.store = side.store.get();
-    deps.contacts = side.contacts.get();
-    deps.identity = side.identity.get();
-    deps.psk = side.psk.get();
-    deps.delivery.send_user_message = [&side](const std::string& thread_id, const std::string& text,
-                                              const SendRelayOptions& options) -> Roe<ThreadMessage> {
-      ThreadMessage msg;
-      msg.id = util::GenerateUuid();
-      msg.thread_id = thread_id;
-      msg.text = text;
-      msg.content_type = options.content_type.value_or(ChatContentType::System);
-      msg.payload_json = options.payload_json.value_or("");
-      msg.timestamp = util::NowUnixMs();
-      if (side.outbox) {
-        side.outbox->push_back(msg);
-      }
-      return msg;
-    };
-    deps.delivery.sync_inbox_from_wake = [](bool) {};
-    deps.mesh_config = [&side]() { return std::make_shared<const MeshConfig>(side.app_config.mesh); };
-    deps.mesh = []() -> MeshHost* { return nullptr; };
-    deps.list_directory_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
-    deps.list_dht_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
-    deps.seed_dial_ok = []() { return false; };
-    deps.prefetch_peer_reachability = [](const std::string&) {};
-    deps.sync_mobile_ephemeral_listen = []() {};
-    deps.bind_call_control = [&side](CallControlInboundPorts ports) { side.inbound = std::move(ports); };
-
-    deps.mesh_media = side.mesh_media.get();
-    side.stack->BuildSessions(deps);
-    ASSERT_TRUE(side.ui->Available());
-    ASSERT_TRUE(side.inbound.apply_inbound_control);
-    if (CallMediaEngine* media = side.stack->MediaEngine()) {
-      media->SetSkipDeviceOpenForTest(true);
-    }
-
-    side.transport = std::make_unique<FakeCallMediaTransport>();
-    side.dial = std::make_unique<FakeDialRegistry>();
-    side.stack->BindTestMediaPath(side.transport.get(), side.dial.get());
+  static const LiveCall* Live(StackSide& side, const std::string& call_id) {
+    return side.stack->Calls() ? side.stack->Calls()->Live().Find(call_id) : nullptr;
   }
-
-  void SoftStopSide(StackSide& side) {
-    side.ui.reset();
-    if (side.stack) {
-      side.stack->AbortCallMediaForShutdown();
-      side.stack->Shutdown();
-    }
-    side.stack.reset();
-    side.transport.reset();
-    side.dial.reset();
-  }
-
-  void DestroySide(StackSide& side) {
-    if (side.psk) {
-      side.psk->ClearDek();
-    }
-    side.psk.reset();
-    side.identity.reset();
-    side.contacts.reset();
-    side.store.reset();
-    if (!side.data_dir.empty()) {
-      std::filesystem::remove_all(side.data_dir);
-      side.data_dir.clear();
-    }
+  static void ExpectLive(StackSide& side, const std::string& call_id, const LiveCallState state,
+                         const LiveCallEndReason reason, const char* who) {
+    const LiveCall* call = Live(side, call_id);
+    ASSERT_NE(call, nullptr) << who;
+    EXPECT_EQ(call->State(), state) << who << " state=" << LiveCallStateName(call->State());
+    EXPECT_EQ(call->EndReason(), reason) << who << " reason=" << LiveCallEndReasonName(call->EndReason());
   }
 
   /** Deliver queued call-control between the two stacks; drain UI between hops. */
@@ -446,6 +212,56 @@ TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
   const std::string call_id = RunOfferAnswerInCallLeave(thread.id);
   ASSERT_FALSE(call_id.empty());
   EXPECT_GE(answer_.transport->connect_async_calls, 1);
+  // Each side's LiveCall ended for its own reason: the answerer left, the offerer was left.
+  ExpectLive(answer_, call_id, LiveCallState::Ended, LiveCallEndReason::LocalLeave, "answer");
+  ExpectLive(offer_, call_id, LiveCallState::Ended, LiveCallEndReason::RemoteEnded, "offer");
+}
+
+// H012 / H011 over call-control: a signaled punch runs offer → answer → both bursts, and our R1
+// reaches the peer's late reserve.
+TEST_F(CallDualStackComposeTest, ReachSignalsTravelOverCallControl) {
+  Thread thread;
+  thread.id = "thread-dual-reach";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+  const std::string call_id = RunOfferAnswerToInCall(thread.id);
+  ASSERT_FALSE(call_id.empty());
+
+  struct MeshFake {
+    std::vector<std::string> candidates;
+    std::vector<std::vector<std::string>> bursts;
+    std::vector<std::string> preferred;
+  };
+  MeshFake offer_mesh{{"/ip4/1.1.1.1/udp/1"}, {}, {}};
+  MeshFake answer_mesh{{"/ip4/2.2.2.2/udp/2"}, {}, {}};
+  for (auto [side, mesh] : {std::pair{&offer_, &offer_mesh}, std::pair{&answer_, &answer_mesh}}) {
+    CallReachSignals::MeshPorts ports;
+    ports.local_punch_addrs = [mesh]() { return mesh->candidates; };
+    ports.punch_burst = [mesh](const std::vector<std::string>& addrs, int, SignalingPunchExchange::DoneFn done) {
+      mesh->bursts.push_back(addrs);
+      done(Roe<void>{});
+    };
+    ports.prefer_late_reserve = [mesh](const std::string& r1) { mesh->preferred.push_back(r1); };
+    side->stack->Calls()->ReachSignals().SetMeshPorts(std::move(ports));
+  }
+
+  std::optional<bool> punched;
+  offer_.stack->Calls()->ReachSignals().RequestSignalingPunch("12D3KooWAnswer", offer_mesh.candidates,
+                                                              [&](Roe<void> r) { punched = static_cast<bool>(r); });
+  PumpWire();
+  ASSERT_EQ(answer_mesh.bursts.size(), 1u) << "the answer side bursts at the offer's candidates";
+  EXPECT_EQ(answer_mesh.bursts[0], offer_mesh.candidates);
+  ASSERT_EQ(offer_mesh.bursts.size(), 1u) << "the offer side bursts at the answer's candidates";
+  EXPECT_EQ(offer_mesh.bursts[0], answer_mesh.candidates);
+  ASSERT_TRUE(punched);
+  EXPECT_TRUE(*punched);
+
+  offer_.stack->Calls()->ReachSignals().AnnounceCircuitR1("12D3KooWR1");
+  PumpWire();
+  EXPECT_EQ(answer_mesh.preferred, std::vector<std::string>{"12D3KooWR1"});
+  FinishAnswerLeaveExpectBothIdle(call_id);
 }
 
 // B30 (call-path-resilience k4): the relay delivers CallAccept late (CN cellular: 11–58 s) while the
@@ -479,6 +295,11 @@ TEST_F(CallDualStackComposeTest, AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsL
   ASSERT_FALSE(held_to_offer_.empty()) << "the accept never reached the offerer";
   EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall) << "the answerer's hello stood in for the accept";
   EXPECT_TRUE(offer_.stack->MediaEngine()->IsActive());
+  // The answer mode (e.g. voice-only) rides the real accept: until it lands the offerer holds its
+  // auto camera (PR #230 review).
+  auto awaiting = offer_.stack->Calls()->AwaitingExplicitAnswerForCall(call_id);
+  ASSERT_TRUE(awaiting);
+  EXPECT_TRUE(*awaiting) << "an implicit accept is not the answer yet";
 
   // The relay finally delivers the accept: idempotent.
   hold_accepts_to_offer_ = false;
@@ -489,7 +310,61 @@ TEST_F(CallDualStackComposeTest, AnswerersHelloActsAsAcceptWhenTheRelayAcceptIsL
   PumpWire();
   EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall);
   EXPECT_TRUE(offer_.stack->MediaEngine()->IsActive());
+  awaiting = offer_.stack->Calls()->AwaitingExplicitAnswerForCall(call_id);
+  ASSERT_TRUE(awaiting);
+  EXPECT_FALSE(*awaiting) << "the late CallAccept is the answer";
   FinishAnswerLeaveExpectBothIdle(call_id);
+}
+
+// Failed is not closed: both sides' connects fail and both show ConnectFailed, the call still open.
+// The answerer's Retry dials the offerer, whose failed-but-open call accepts that connection and
+// resumes media over it — both sides InCall, with no redial on the offerer.
+TEST_F(CallDualStackComposeTest, RetryFromOneSideReconnectsAFailedOpenCallOnBoth) {
+  Thread thread;
+  thread.id = "thread-dual-fail-retry";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+  offer_.transport->fail_connects = true;
+  answer_.transport->fail_connects = true;
+  auto started = StartCallNow(*offer_.ui, thread.id, false, {answer_.local_identity});
+  ASSERT_TRUE(started) << started.error().message;
+  const std::string call_id = started->call_id;
+  auto key = offer_.stack->MediaKeys()->LoadEpochKey(call_id, 1);
+  ASSERT_TRUE(key && key->has_value());
+  ASSERT_TRUE(answer_.stack->MediaKeys()->PutEpochKey(call_id, 1, **key));
+  PumpWire();
+  answer_.ui->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  answer_.ui->Apply(CallLifecycleEvent::AcceptClicked, call_id);
+  DrainUntil(
+      [&]() {
+        PumpWire();
+        return offer_.ui->Phase() == CallPhase::ConnectFailed && answer_.ui->Phase() == CallPhase::ConnectFailed;
+      },
+      30000);
+  ASSERT_EQ(offer_.ui->Phase(), CallPhase::ConnectFailed);
+  ASSERT_EQ(answer_.ui->Phase(), CallPhase::ConnectFailed);
+  // Failed is not closed: both LiveCalls are still Joined.
+  ExpectLive(offer_, call_id, LiveCallState::Joined, LiveCallEndReason::None, "offer failed");
+  ExpectLive(answer_, call_id, LiveCallState::Joined, LiveCallEndReason::None, "answer failed");
+  const int offer_dials = offer_.transport->connect_async_calls;
+
+  answer_.transport->fail_connects = false;
+  answer_.ui->Apply(CallLifecycleEvent::RetryClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return offer_.ui->Phase() == CallPhase::InCall && answer_.ui->Phase() == CallPhase::InCall;
+  });
+  EXPECT_EQ(answer_.ui->Phase(), CallPhase::InCall);
+  EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall) << "the offerer's failed call accepted the peer's retry";
+  EXPECT_TRUE(offer_.stack->MediaEngine() && offer_.stack->MediaEngine()->IsActive());
+  EXPECT_EQ(offer_.transport->connect_async_calls, offer_dials) << "resumed over the inbound stream, no redial";
+  FinishAnswerLeaveExpectBothIdle(call_id);
+  const auto offer_end = offer_.ui->TakeRemoteEnd();
+  ASSERT_TRUE(offer_end.has_value());
+  EXPECT_EQ(offer_end->call_id, call_id);
+  EXPECT_FALSE(offer_end->declined);
 }
 
 TEST_F(CallDualStackComposeTest, OfferLeaveClearsAnswererIdle) {
@@ -504,6 +379,12 @@ TEST_F(CallDualStackComposeTest, OfferLeaveClearsAnswererIdle) {
   const std::string call_id = RunOfferAnswerToInCall(thread.id);
   ASSERT_FALSE(call_id.empty());
   FinishOfferLeaveExpectBothIdle(call_id);
+  // The answerer is told why its call vanished — once; the side that left is not.
+  const auto answer_end = answer_.ui->TakeRemoteEnd();
+  ASSERT_TRUE(answer_end.has_value());
+  EXPECT_EQ(answer_end->call_id, call_id);
+  EXPECT_FALSE(answer_.ui->TakeRemoteEnd().has_value()) << "once per call";
+  EXPECT_FALSE(offer_.ui->TakeRemoteEnd().has_value()) << "the leaver ended it itself";
 }
 
 TEST_F(CallDualStackComposeTest, OfferAnswerKCycleTeardown) {
@@ -565,6 +446,13 @@ TEST_F(CallDualStackComposeTest, OfferInviteAnswerDeclineClearsOfferer) {
       << "offerer must Idle on remote Decline without local LeaveClicked";
   EXPECT_FALSE(offer_.stack->HasActiveLocalCall());
   EXPECT_FALSE(answer_.stack->HasActiveLocalCall());
+  ExpectLive(answer_, call_id, LiveCallState::Ended, LiveCallEndReason::Declined, "answer");
+  ExpectLive(offer_, call_id, LiveCallState::Ended, LiveCallEndReason::DeclinedByPeer, "offer");
+  // The caller is told the call was declined; the one who declined is told nothing.
+  const auto offer_end = offer_.ui->TakeRemoteEnd();
+  ASSERT_TRUE(offer_end.has_value());
+  EXPECT_TRUE(offer_end->declined);
+  EXPECT_FALSE(answer_.ui->TakeRemoteEnd().has_value());
 }
 
 TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
@@ -627,6 +515,12 @@ TEST_F(CallDualStackComposeTest, AcceptSecondInviteEndsPriorActiveCall) {
   ASSERT_TRUE(answer_sessions);
   // ActiveLocalCall is only the joined call — A must not be the active one.
   EXPECT_EQ((*active_b)->call_id, call_b);
+  // One active call: placing B ended A on the offerer (Superseded); its Leave reached the answerer
+  // before B's invite, so there A was ended by the peer.
+  ExpectLive(offer_, call_a, LiveCallState::Ended, LiveCallEndReason::Superseded, "offer A");
+  ExpectLive(answer_, call_a, LiveCallState::Ended, LiveCallEndReason::RemoteEnded, "answer A");
+  ExpectLive(answer_, call_b, LiveCallState::Joined, LiveCallEndReason::None, "answer B");
+  ExpectLive(offer_, call_b, LiveCallState::Joined, LiveCallEndReason::None, "offer B");
 
   FinishAnswerLeaveExpectBothIdle(call_b);
 }

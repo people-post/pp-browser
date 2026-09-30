@@ -616,13 +616,22 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
 
   void TryEnterMediaReady(Bundle& bundle) { EnterMediaReady(bundle); }
 
-  void ScheduleWhenChannelOpen(const std::string& peer_key, const uint32_t channel_id,
+  /** Waits on the channel's own link (by handle): a direct and a relayed link to one peer coexist. */
+  void ScheduleWhenChannelOpen(const pp::amp::LinkHandle link, const uint32_t channel_id,
                                const Clock::time_point deadline, std::function<void(bool open)> done) {
-    if (!runtime || peer_key.empty()) {
+    if (!runtime || !link.valid()) {
       done(false);
       return;
     }
-    AmpWhenChannelOpen(runtime->Links(), peer_key, channel_id, deadline, std::move(done));
+    AmpWhenChannelOpenOnLink(runtime->Links(), link, channel_id, deadline, std::move(done));
+  }
+
+  pp::amp::PeerLink* LiveLink(const pp::amp::LinkHandle handle) const {
+    pp::amp::PeerLink* link = nullptr;
+    if (runtime && handle.valid()) {
+      (void)runtime->Links().WithLiveLink(handle, [&](pp::amp::PeerLink& live) { link = &live; });
+    }
+    return link;
   }
 
   void TickDeadlines() {
@@ -814,9 +823,8 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     const auto call_id = bundle.call_id;
     const auto leg_id = bundle.leg_id;
     const auto deadline = bundle.deadline;
-    const std::string peer_key = bundle.params.peer_key;
-    ScheduleWhenChannelOpen(peer_key, *channel_id, deadline,
-                            [this, self = shared_from_this(), call_id, leg_id, peer_key,
+    ScheduleWhenChannelOpen(link->Handle(), *channel_id, deadline,
+                            [this, self = shared_from_this(), call_id, leg_id,
                              channel_id = *channel_id](const bool open) {
                               CallbackLock lock(*this);
                               auto* bundle = FindByCallId(call_id);
@@ -1914,6 +1922,155 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     return true;
   }
 
+  /** One outbound leg's control-channel open (retried while the association is not ready). */
+  struct OutboundOpen {
+    CallMediaLegId leg_id;
+    std::string peer_key;
+    std::string call_id;
+    CallMediaDirectConnectParams params;
+    Clock::time_point deadline;
+  };
+
+  /**
+   * Open the leg's control channel on a Connected link to the peer (#235 — the relay carrier, even
+   * while a redial holds the dial key), dialing first when none is up. Each pass resolves again, so
+   * a carrier that comes up mid-dial is used; the channel is always opened on a known link handle.
+   */
+  void OpenOutboundControl(OutboundOpen open, const int retries) {
+    if (retries == 0) {
+      CallMediaLegLog().info << "CallMediaLeg OpenChannel invoke call_id=" << open.call_id
+                             << " peer=" << open.peer_key;
+    }
+    auto on_channel = [this, self = shared_from_this(), open, retries](const pp::amp::LinkHandle bound,
+                                                                         pp::amp::PeerLinkManager::ChannelRoe channel) {
+      OnOutboundControlOpened(open, retries, bound, std::move(channel));
+    };
+    // Any Connected link to the peer (the relay carrier included) — a dial in flight under the key
+    // must not hide it (#235). The handle pins the wait to that link.
+    if (pp::amp::PeerLink* link = runtime->Links().ResolveConnectedLink(open.peer_key)) {
+      const pp::amp::LinkHandle bound = link->Handle();
+      if (retries > 0 || link->IsCarrierBacked()) {
+        CallMediaLegLog().info << "CallMediaLeg OpenChannel on connected link call_id=" << open.call_id
+                               << " peer=" << open.peer_key
+                               << " path=" << (link->IsCarrierBacked() ? "relayed" : "direct");
+      }
+      runtime->Links().OpenChannelOnLink(
+          *link, kCallMediaDirectProtocolId, pp::amp::CallMediaControlChannelPolicy(),
+          [on_channel, bound](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
+            on_channel(bound, std::move(channel));
+          });
+      return;
+    }
+    // Nothing up: dial, then open on the link the next pass resolves. Never open by key — the
+    // channel id belongs to one mux, and its link must be the one we wait on and bind (PR #239).
+    // The association being up does not mean a Connected link resolves under the key (it may not yet,
+    // or the key maps elsewhere): report it as not ready, so the next pass goes through the retry
+    // limit, the deadline and the bundle's liveness like any other wait — never a bare re-post.
+    runtime->Links().EnsureAssociation(
+        open.peer_key, [on_channel](pp::amp::PeerLinkManager::LinkRoe associated) mutable {
+          using Links = pp::amp::PeerLinkManager;
+          on_channel(pp::amp::LinkHandle{},
+                     Links::ChannelRoe::error(associated ? Links::Failure::Of(Links::Err::AssociationNotReady,
+                                                                              "amp call-media: no connected link yet")
+                                                         : associated.error()));
+        });
+  }
+
+  void OnOutboundControlOpened(const OutboundOpen& open, const int retries, const pp::amp::LinkHandle bound,
+                               pp::amp::PeerLinkManager::ChannelRoe channel) {
+    CallbackLock lock(*this);
+    auto* bundle = FindByCallId(open.call_id);
+    if (!bundle || bundle->leg_id.value != open.leg_id.value) {
+      return;
+    }
+    if (!channel) {
+      const bool assoc_not_ready = pp::amp::PeerLinkManager::IsAssociationNotReady(channel.error());
+      if (assoc_not_ready && retries < 500 && !bundle->finished && Clock::now() < open.deadline) {
+        if (retries == 0 || (retries % 50) == 0) {
+          CallMediaLegLog().info << "CallMediaLeg OpenChannel wait call_id=" << open.call_id
+                                 << " peer=" << open.peer_key << " retries=" << retries
+                                 << " err=" << channel.error().message;
+        }
+        lock.unlock();
+        PostIo([this, self = shared_from_this(), open, retries]() { OpenOutboundControl(open, retries + 1); });
+        return;
+      }
+      CallMediaLegLog().info << "CallMediaLeg OpenChannel fail call_id=" << open.call_id << " peer=" << open.peer_key
+                             << " retries=" << retries << " err=" << channel.error().message;
+      if (bundle->phase == CallMediaBundlePhase::OutboundHello) {
+        TearDownBundle(*bundle, false, false, channel.error().message);
+      }
+      return;
+    }
+    if (retries > 0) {
+      CallMediaLegLog().info << "CallMediaLeg OpenChannel ok call_id=" << open.call_id << " peer=" << open.peer_key
+                             << " after_retries=" << retries;
+    }
+    auto* link = LiveLink(bound);  // the link the channel was opened on (its id is that mux's)
+    if (!link) {
+      CallMediaLegLog().info << "CallMediaLeg OpenChannel ok but link missing call_id=" << open.call_id
+                             << " peer=" << open.peer_key;
+      if (bundle->phase == CallMediaBundlePhase::OutboundHello) {
+        TearDownBundle(*bundle, false, false, "amp call-media: peer link missing");
+      }
+      return;
+    }
+    // Glare loser (or inbound-first admit) already left OutboundHello — abandon this open.
+    if (bundle->phase != CallMediaBundlePhase::OutboundHello) {
+      if (link->Mux()) {
+        (void)link->Mux()->CloseChannel(*channel, "call-media glare yield");
+      }
+      return;
+    }
+    const pp::amp::LinkHandle handle = link->Handle();
+    const uint32_t channel_id = *channel;
+    lock.unlock();
+    ScheduleWhenChannelOpen(handle, channel_id, open.deadline,
+                            [this, self = shared_from_this(), open, handle, channel_id](const bool opened) {
+                              OnOutboundControlReady(open, handle, channel_id, opened);
+                            });
+  }
+
+  void OnOutboundControlReady(const OutboundOpen& open, const pp::amp::LinkHandle handle, const uint32_t channel_id,
+                              const bool opened) {
+    CallbackLock lock(*this);
+    auto* bundle = FindByCallId(open.call_id);
+    if (!bundle || bundle->leg_id.value != open.leg_id.value) {
+      return;
+    }
+    auto* link = LiveLink(handle);
+    if (!opened) {
+      if (bundle->phase == CallMediaBundlePhase::OutboundHello) {
+        CallMediaLegLog().info << "CallMediaLeg channel open failed call_id=" << open.call_id
+                               << " peer=" << open.peer_key;
+        TearDownBundle(*bundle, false, false, "amp call-media: channel open failed");
+      } else if (link && link->Mux()) {
+        (void)link->Mux()->CloseChannel(channel_id, "call-media glare yield");
+      }
+      return;
+    }
+    if (bundle->phase != CallMediaBundlePhase::OutboundHello) {
+      if (link && link->Mux()) {
+        (void)link->Mux()->CloseChannel(channel_id, "call-media glare yield");
+      }
+      return;
+    }
+    if (!link) {
+      TearDownBundle(*bundle, false, false, "amp call-media: peer link missing");
+      return;
+    }
+    BindControlChannel(*bundle, *link, channel_id, CallMediaChannelRole::OutboundControl);
+    if (!bundle->active.outbound_control ||
+        !bundle->active.outbound_control->EnqueueOutbound(Utf8Body(BuildHelloJson(open.params)))) {
+      CallMediaLegLog().info << "CallMediaLeg hello write failed call_id=" << open.call_id
+                             << " peer=" << open.peer_key;
+      TearDownBundle(*bundle, false, false, "amp call-media: hello write failed");
+      return;
+    }
+    CallMediaLegLog().info << "CallMediaLeg hello sent call_id=" << open.call_id << " peer=" << open.peer_key
+                           << " role=" << (open.params.offerer ? "offerer" : "answerer");
+  }
+
   void BeginOutboundLeg(const CallMediaLegId leg_id, const CallMediaDirectConnectParams& params,
                         CallMediaDirectCallbacks callbacks, LegFinished on_finished, const int timeout_ms) {
     if (stopped.load(std::memory_order_acquire)) {
@@ -1973,113 +2130,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
                              << " ma=" << (ma.empty() ? "(none)" : ma);
     }
 
-    auto open_control = std::make_shared<std::function<void(int)>>();
-    *open_control = [this, self = shared_from_this(), leg_id, peer_key, call_id, params, deadline,
-                     open_control](const int retries) {
-      if (retries == 0) {
-        CallMediaLegLog().info << "CallMediaLeg OpenChannel invoke call_id=" << call_id
-                               << " peer=" << peer_key;
-      }
-      runtime->Links().OpenChannel(
-          peer_key, kCallMediaDirectProtocolId, pp::amp::CallMediaControlChannelPolicy(),
-          [this, self, leg_id, peer_key, call_id, params, deadline, retries,
-           open_control](pp::amp::PeerLinkManager::ChannelRoe channel) mutable {
-            CallbackLock lock(*this);
-            auto* bundle = FindByCallId(call_id);
-            if (!bundle || bundle->leg_id.value != leg_id.value) {
-              return;
-            }
-            if (!channel) {
-              const bool assoc_not_ready =
-                  pp::amp::PeerLinkManager::IsAssociationNotReady(channel.error());
-              if (assoc_not_ready && retries < 500 && !bundle->finished && Clock::now() < deadline) {
-                if (retries == 0 || (retries % 50) == 0) {
-                  CallMediaLegLog().info << "CallMediaLeg OpenChannel wait call_id="
-                                         << call_id << " peer=" << peer_key
-                                         << " retries=" << retries
-                                         << " err=" << channel.error().message;
-                }
-                lock.unlock();
-                PostIo([open_control, retries]() { (*open_control)(retries + 1); });
-                return;
-              }
-              CallMediaLegLog().info << "CallMediaLeg OpenChannel fail call_id="
-                                     << call_id << " peer=" << peer_key << " retries=" << retries
-                                     << " err=" << channel.error().message;
-              if (bundle->phase == CallMediaBundlePhase::OutboundHello) {
-                TearDownBundle(*bundle, false, false, channel.error().message);
-              }
-              return;
-            }
-            if (retries > 0) {
-              CallMediaLegLog().info << "CallMediaLeg OpenChannel ok call_id=" << call_id
-                                     << " peer=" << peer_key << " after_retries=" << retries;
-            }
-            auto* link = runtime->Links().FindLink(peer_key);
-            if (!link) {
-              CallMediaLegLog().info << "CallMediaLeg OpenChannel ok but link missing call_id="
-                                     << call_id << " peer=" << peer_key;
-              if (bundle->phase == CallMediaBundlePhase::OutboundHello) {
-                TearDownBundle(*bundle, false, false, "amp call-media: peer link missing");
-              }
-              return;
-            }
-            // Glare loser (or inbound-first admit) already left OutboundHello — abandon this open.
-            if (bundle->phase != CallMediaBundlePhase::OutboundHello) {
-              if (link->Mux()) {
-                (void)link->Mux()->CloseChannel(*channel, "call-media glare yield");
-              }
-              return;
-            }
-            lock.unlock();
-            ScheduleWhenChannelOpen(peer_key, *channel, deadline,
-                                    [this, self, leg_id, call_id, peer_key, channel = *channel,
-                                     params](const bool open) {
-                                      CallbackLock lock(*this);
-                                      auto* bundle = FindByCallId(call_id);
-                                      if (!bundle || bundle->leg_id.value != leg_id.value) {
-                                        return;
-                                      }
-                                      auto* link = runtime->Links().FindLink(peer_key);
-                                      if (!open) {
-                                        if (bundle->phase == CallMediaBundlePhase::OutboundHello) {
-                                          CallMediaLegLog().info
-                                              << "CallMediaLeg channel open failed call_id="
-                                              << call_id << " peer=" << peer_key;
-                                          TearDownBundle(*bundle, false, false,
-                                                         "amp call-media: channel open failed");
-                                        } else if (link && link->Mux()) {
-                                          (void)link->Mux()->CloseChannel(channel, "call-media glare yield");
-                                        }
-                                        return;
-                                      }
-                                      if (bundle->phase != CallMediaBundlePhase::OutboundHello) {
-                                        if (link && link->Mux()) {
-                                          (void)link->Mux()->CloseChannel(channel, "call-media glare yield");
-                                        }
-                                        return;
-                                      }
-                                      if (!link) {
-                                        TearDownBundle(*bundle, false, false, "amp call-media: peer link missing");
-                                        return;
-                                      }
-                                      BindControlChannel(*bundle, *link, channel, CallMediaChannelRole::OutboundControl);
-                                      if (!bundle->active.outbound_control ||
-                                          !bundle->active.outbound_control->EnqueueOutbound(Utf8Body(BuildHelloJson(params)))) {
-                                        CallMediaLegLog().info
-                                            << "CallMediaLeg hello write failed call_id="
-                                            << call_id << " peer=" << peer_key;
-                                        TearDownBundle(*bundle, false, false, "amp call-media: hello write failed");
-                                      } else {
-                                        CallMediaLegLog().info
-                                            << "CallMediaLeg hello sent call_id=" << call_id
-                                            << " peer=" << peer_key
-                                            << " role=" << (params.offerer ? "offerer" : "answerer");
-                                      }
-                                    });
-          });
-    };
-    (*open_control)(0);
+    OpenOutboundControl(OutboundOpen{leg_id, peer_key, call_id, params, deadline}, 0);
   }
 };
 
@@ -2130,7 +2181,7 @@ void CallMediaLegCoordinator::Stop() {
   // Tear down synchronously: a PostIo(raw Impl*) races if the caller destroys then Pumps
   // (macOS: "mutex lock failed: Invalid argument"). Strand before the coordinator lock — IO
   // callbacks hold the strand, so an off-IO Stop taking `mu` first can invert against MeshPump
-  // (see CircuitTunnelCoordinator::AbortInflight).
+  // (see CircuitClientCoordinator::AbortInflight).
   runtime_.WithIoLock([this]() {
     Impl::CallbackLock lock(*impl_);
     std::vector<std::string> ids;
@@ -2247,6 +2298,12 @@ CallMediaDirectConnectParams CallMediaLegCoordinator::ActiveParams() const {
   Impl::CallbackLock lock(*impl_);
   const auto* bundle = impl_->PrimaryBundle();
   return bundle ? bundle->params : CallMediaDirectConnectParams{};
+}
+
+std::string CallMediaLegCoordinator::ActiveRemotePeerId() const {
+  Impl::CallbackLock lock(*impl_);
+  const auto* bundle = impl_->PrimaryBundle();
+  return bundle ? bundle->remote_peer_id : std::string{};
 }
 
 CallMediaLinkKind CallMediaLegCoordinator::ActiveLinkKind() const {
@@ -2368,7 +2425,12 @@ Roe<void> CallMediaLegCoordinator::SendMedia(const CallMediaLegId id, const uint
     return encrypted.error();
   }
   auto framed = EncodeLengthPrefixedFrame(*encrypted);
-  if (!session->EnqueueOutbound(std::move(framed))) {
+  // The channel session is io-affine: the capture thread enqueues under the runtime io lock, or it
+  // races the mesh pump on the same session — a link drop orphaning the session cleared its queue
+  // mid-push (hard-w5 cold-upgrade answerer SIGSEGV, 2026-09-29). Not under the callback lock: a
+  // failed write fails the channel synchronously and its closed callback takes that lock
+  // (io lock → callback lock, as the io tick). Same rule as MediaRelayClientCoordinator::SendFrame.
+  if (!runtime_.WithIoLock([&]() { return session->EnqueueOutbound(std::move(framed)); })) {
     return Error("amp call-media: send queue full");
   }
   return Roe<void>();

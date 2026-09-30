@@ -2,7 +2,7 @@
 # Configure SNAT gateway for hard-lab CGNAT-ish topo.
 # Env:
 #   PP_HARD_GW_PRIV_CIDR  e.g. 10.117.1.0/24  (iface with this addr = private)
-#   PP_HARD_GW_PUB_CIDR   e.g. 10.117.0.0/24  (iface with this addr = public)
+#   PP_HARD_GW_PUB_CIDR   e.g. 198.18.117.0/24  (iface with this addr = public)
 #   PP_HARD_GW_NAT        symmetric (default) | cone
 #     symmetric — MASQUERADE --random-fully: a fresh public port per destination, so the port the
 #                 hop observes is useless to the other peer and hole punching can never land.

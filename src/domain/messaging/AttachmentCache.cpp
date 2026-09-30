@@ -11,8 +11,10 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstring>
 #include <filesystem>
+#include <unordered_set>
 #include <fstream>
 #include "common/PbrCompat.h"
 
@@ -150,13 +152,40 @@ std::string AttachmentHashHex(const std::vector<uint8_t>& content_hash) {
 
 
 
-std::string AttachmentExtensionFromMime(const std::string& mime, const std::string& filename) {
-  if (!filename.empty()) {
-    const std::string ext = std::filesystem::path(filename).extension().string();
-    if (!ext.empty() && ext.size() <= 8) {
-      return ext.size() > 1 && ext[0] == '.' ? ext.substr(1) : ext;
-    }
+namespace {
+
+/**
+ * Filename extensions a non-image/video attachment may keep on disk. These open only after the
+ * confirm dialog; the OS still dispatches on the extension, so only inert document / archive /
+ * audio types are accepted — never an executable or script (exe, bat, cmd, com, scr, msi, ps1,
+ * vbs, js, jar, app, sh, desktop, lnk, html, svg …), which would run or render active content.
+ */
+bool IsInertAttachmentExtension(const std::string& ext) {
+  static const std::unordered_set<std::string> kInert = {
+      "pdf", "txt",  "md",  "csv", "rtf",  "doc", "docx", "xls",  "xlsx", "ppt", "pptx", "odt", "ods",
+      "odp", "epub", "zip", "7z",  "tar",  "gz",  "tgz",  "bz2",  "xz",   "rar", "mp3",  "m4a", "wav",
+      "ogg", "oga",  "opus", "flac", "aac", "heic", "heif", "avif", "bmp", "tif", "tiff", "mov", "mkv",
+  };
+  return kInert.count(ext) != 0;
+}
+
+std::string LowerFilenameExtension(const std::string& filename) {
+  std::string ext = std::filesystem::path(filename).extension().string();
+  if (ext.size() < 2 || ext.size() > 8 || ext[0] != '.') {
+    return {};
   }
+  ext.erase(0, 1);
+  std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return ext;
+}
+
+} // namespace
+
+std::string AttachmentExtensionFromMime(const std::string& mime, const std::string& filename) {
+  // Known mimes map to a fixed extension. Beyond them the peer-supplied filename is trusted only
+  // for mimes that open after a confirm (AttachmentOpenNeedsConfirm) and only for an inert
+  // extension: an attacker could otherwise pair an auto-opened mime (image / video) or any mime
+  // with an executable extension and have it run on open (extension-based handler dispatch).
   if (mime == "image/png") {
     return "png";
   }
@@ -181,6 +210,12 @@ std::string AttachmentExtensionFromMime(const std::string& mime, const std::stri
   if (mime == "text/plain") {
     return "txt";
   }
+  if (AttachmentOpenNeedsConfirm(mime)) {
+    const std::string ext = LowerFilenameExtension(filename);
+    if (IsInertAttachmentExtension(ext)) {
+      return ext;
+    }
+  }
   return {};
 }
 
@@ -194,6 +229,83 @@ bool IsAttachmentVideoMime(const std::string& mime) {
 
 bool AttachmentOpenNeedsConfirm(const std::string& mime) {
   return !IsAttachmentImageMime(mime) && !IsAttachmentVideoMime(mime);
+}
+
+bool AttachmentContentMatchesMime(const std::string& path, const std::string& mime) {
+  static constexpr size_t kSniffLen = 16;
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    return true; // Can't read it; nothing to flag here (open will fail on its own).
+  }
+  unsigned char buf[kSniffLen] = {};
+  in.read(reinterpret_cast<char*>(buf), static_cast<std::streamsize>(kSniffLen));
+  const auto got = static_cast<size_t>(in.gcount());
+
+  const auto has_prefix = [&](std::initializer_list<unsigned char> bytes) {
+    if (got < bytes.size()) {
+      return false;
+    }
+    return std::equal(bytes.begin(), bytes.end(), buf);
+  };
+
+  // A Windows/DOS executable (MZ) or bare PE header never matches any attachment mime this
+  // function knows about, including one crafted to also satisfy a later signature check at a
+  // different offset (e.g. "MZ??ftyp..." would otherwise pass the video/mp4 check below).
+  if (got >= 2 && buf[0] == 'M' && buf[1] == 'Z') {
+    return false;
+  }
+  if (has_prefix({'P', 'E', 0x00, 0x00})) {
+    return false;
+  }
+
+  if (mime == "image/png") {
+    return has_prefix({0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A});
+  }
+  if (mime == "image/jpeg" || mime == "image/jpg") {
+    return has_prefix({0xFF, 0xD8, 0xFF});
+  }
+  if (mime == "image/gif") {
+    return has_prefix({'G', 'I', 'F', '8', '7', 'a'}) || has_prefix({'G', 'I', 'F', '8', '9', 'a'});
+  }
+  if (mime == "image/webp") {
+    return got >= 12 && std::memcmp(buf, "RIFF", 4) == 0 && std::memcmp(buf + 8, "WEBP", 4) == 0;
+  }
+  if (mime == "video/mp4") {
+    if (got < 8 || std::memcmp(buf + 4, "ftyp", 4) != 0) {
+      return false;
+    }
+    // Box size sanity: big-endian u32 at offset 0. 1 means "read the 64-bit size that follows"
+    // (legitimate for a huge mp4); otherwise it must be at least the 8-byte box header itself
+    // and not implausibly large for what is nominally the first box of the file.
+    const uint32_t box_size = (static_cast<uint32_t>(buf[0]) << 24) | (static_cast<uint32_t>(buf[1]) << 16) |
+                              (static_cast<uint32_t>(buf[2]) << 8) | static_cast<uint32_t>(buf[3]);
+    return box_size == 1 || (box_size >= 8 && box_size <= 0x10000000u);
+  }
+  if (mime == "video/webm") {
+    return has_prefix({0x1A, 0x45, 0xDF, 0xA3});
+  }
+  if (mime == "application/pdf") {
+    return has_prefix({'%', 'P', 'D', 'F', '-'});
+  }
+  return true; // No known signature for this mime (e.g. text/plain); nothing to check.
+}
+
+bool AttachmentSafeToAutoOpen(const std::string& path, const std::string& mime) {
+  if (path.empty() || (!IsAttachmentImageMime(mime) && !IsAttachmentVideoMime(mime))) {
+    return false;
+  }
+  const std::string expected_ext = AttachmentExtensionFromMime(mime);
+  if (expected_ext.empty()) {
+    return false; // Not one of the whitelisted mimes (e.g. image/svg+xml, video/quicktime).
+  }
+  std::string actual_ext = std::filesystem::path(path).extension().string();
+  if (!actual_ext.empty() && actual_ext[0] == '.') {
+    actual_ext = actual_ext.substr(1);
+  }
+  if (actual_ext != expected_ext) {
+    return false;
+  }
+  return AttachmentContentMatchesMime(path, mime);
 }
 
 bool AttachmentAllowsInlinePrivateView(const std::string& mime, const uint64_t byte_length) {
@@ -492,9 +604,55 @@ std::string AttachmentPendingCiphertextRoot(const std::string& profile_dir, cons
   return (std::filesystem::path(ThreadsRoot(profile_dir)) / thread_id / "blob_cipher").string();
 }
 
+namespace {
+/**
+ * A peer can push before the matching message arrives, so orphan pushes are bounded instead:
+ * they expire and a thread holds only so many. Blobs the thread's messages reference are exempt.
+ */
+constexpr size_t kMaxOrphanPendingBlobsPerThread = 64;
+constexpr std::chrono::hours kOrphanPendingBlobTtl{24};
+
+/** Drop expired orphan blobs; returns how many orphans remain. */
+size_t PruneOrphanPendingCiphertext(const std::filesystem::path& root,
+                                    const std::unordered_set<std::string>& referenced_hex) {
+  std::error_code ec;
+  size_t orphans = 0;
+  if (!std::filesystem::exists(root, ec) || ec) {
+    return orphans;
+  }
+  const auto now = std::filesystem::file_time_type::clock::now();
+  for (const auto& entry : std::filesystem::directory_iterator(root, ec)) {
+    if (ec) {
+      break;
+    }
+    if (!entry.is_regular_file(ec) || ec) {
+      ec.clear();
+      continue;
+    }
+    if (referenced_hex.count(entry.path().filename().string()) != 0) {
+      continue;  // a real attachment, maybe left unopened: kept until it is opened
+    }
+    const auto mtime = entry.last_write_time(ec);
+    if (ec) {
+      ec.clear();
+      ++orphans;
+      continue;
+    }
+    if (now - mtime > kOrphanPendingBlobTtl) {
+      std::filesystem::remove(entry.path(), ec);
+      ec.clear();
+      continue;
+    }
+    ++orphans;
+  }
+  return orphans;
+}
+} // namespace
+
 Roe<void> SavePendingAttachmentCiphertext(const std::string& profile_dir, const std::string& thread_id,
                                           const std::vector<uint8_t>& content_hash,
-                                          const std::vector<uint8_t>& ciphertext) {
+                                          const std::vector<uint8_t>& ciphertext,
+                                          const std::unordered_set<std::string>& referenced_hex) {
   if (profile_dir.empty() || thread_id.empty()) {
     return Error("Attachment cache profile directory and thread_id are required");
   }
@@ -507,7 +665,13 @@ Roe<void> SavePendingAttachmentCiphertext(const std::string& profile_dir, const 
   if (ec) {
     return Error("Failed to create pending attachment directory");
   }
-  const auto path = root / AttachmentHashHex(content_hash);
+  const std::string hex = AttachmentHashHex(content_hash);
+  const auto path = root / hex;
+  const size_t orphans = PruneOrphanPendingCiphertext(root, referenced_hex);
+  const bool referenced = referenced_hex.count(hex) != 0;
+  if (!referenced && !std::filesystem::exists(path) && orphans >= kMaxOrphanPendingBlobsPerThread) {
+    return Error("Too many pending attachment blobs for this thread");
+  }
   std::ofstream output(path, std::ios::binary | std::ios::trunc);
   if (!output) {
     return Error("Failed to write pending attachment ciphertext");

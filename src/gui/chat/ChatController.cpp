@@ -34,7 +34,7 @@
 #include "domain/messaging/GroupTypes.h"
 #include "domain/people/PeerDisplayLabel.h"
 #include "domain/people/ContactJson.h"
-#include "feature/conversations/RegistrationClient.h"
+#include "feature/registration/RegistrationClient.h"
 #include "domain/messaging/AtAiParser.h"
 #include "domain/messaging/CallThreadPresenceLogic.h"
 #include "domain/messaging/ChatPayloadCodec.h"
@@ -754,24 +754,9 @@ void ChatController::OpenThreadActionsMenuCallback(ui::DataModelHandle /*model*/
   Instance().OnOpenThreadActionsMenu(ev);
 }
 
-void ChatController::StartCallCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+void ChatController::StartCallCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
                                        const ui::VariantList& /*args*/) {
-  ChatController& self = Instance();
-  const std::string thread_id = self.ActiveThreadId();
-  if (thread_id.empty()) {
-    return;
-  }
-  self.ShowConfirmWithCheckbox(
-      Tr("call.start.title"), Tr("call.start.message"), Tr("call.start.allow_video"), false,
-      [thread_id](const bool ok, const bool allow_video) {
-        if (!ok) {
-          return;
-        }
-        ChatController& inner = Instance();
-        if (inner.call_actions_.start_call) {
-          (void)inner.call_actions_.start_call(thread_id, allow_video);
-        }
-      });
+  Instance().OnStartCall(ev);
 }
 
 void ChatController::OpenPeerSheetCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
@@ -1856,6 +1841,38 @@ void ChatController::OnOpenThreadActionsMenu(ui::Event& ev) {
   if (actions.empty()) {
     return;
   }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void ChatController::OnStartCall(ui::Event& ev) {
+  const std::string thread_id = ActiveThreadId();
+  if (thread_id.empty() || !call_actions_.start_call) {
+    return;
+  }
+  auto start_call = call_actions_.start_call;
+  const bool video_available =
+      !call_actions_.video_call_available || call_actions_.video_call_available();
+  if (!video_available) {
+    (void)start_call(thread_id, false);
+    return;
+  }
+
+  const ui::Vector2i position = MenuPositionBelowRightAlignedEvent(ev);
+  std::vector<ContextMenuAction> actions;
+  actions.push_back({
+      "call_voice",
+      Tr("call.start.voice"),
+      nullptr,
+      [thread_id, start_call]() { (void)start_call(thread_id, false); },
+      "../icons/phone.svg",
+  });
+  actions.push_back({
+      "call_video",
+      Tr("call.start.video"),
+      nullptr,
+      [thread_id, start_call]() { (void)start_call(thread_id, true); },
+      "../icons/video.svg",
+  });
   ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
 

@@ -112,6 +112,12 @@ public:
     return request;
   }
 
+  ChatBlobRequest MakePushRequest(const ChatAttachmentFields& fields) {
+    ChatBlobRequest request = MakeFetchRequest(fields);
+    request.op = ChatBlobOp::Push;
+    return request;
+  }
+
   std::filesystem::path data_dir;
   SqliteThreadStore store;
   IdentityStore identity;
@@ -154,4 +160,36 @@ TEST(ChatBlobResponderTest, ServeFetchReturnsCiphertextForCachedPlaintext) {
       AttachmentContentCipher::Decrypt(fields.content_key, fields.blob_nonce, cipher_bytes, fields.content_hash);
   ASSERT_TRUE(static_cast<bool>(decrypted));
   EXPECT_EQ(*decrypted, harness.plain);
+}
+
+TEST(ChatBlobResponderTest, ServePushAcceptsHashBeforeAttachmentMessageArrives) {
+  // Real wire order: the sender pushes the ciphertext first, then the attachment message
+  // itself follows separately. ServePush must not require the hash to already be in history.
+  ChatBlobResponderHarness harness("push-before-message");
+  const auto fields = harness.MakeAttachmentFields();
+  const ByteVector ciphertext{'c', 'i', 'p', 'h', 'e', 'r'};
+
+  auto result = ChatBlobResponder::ServePush(harness.store, harness.MakePushRequest(fields), harness.local_relay_id,
+                                             harness.profile_data_dir, ciphertext);
+  ASSERT_TRUE(static_cast<bool>(result)) << result.error().message;
+
+  auto loaded = LoadPendingAttachmentCiphertext(harness.profile_data_dir, harness.thread.id, fields.content_hash);
+  ASSERT_TRUE(static_cast<bool>(loaded));
+  EXPECT_EQ(*loaded, ciphertext);
+
+  harness.SeedAttachmentMessage(fields);
+}
+
+TEST(ChatBlobResponderTest, ServePushRejectsPastPerThreadPendingCap) {
+  ChatBlobResponderHarness harness("push-cap");
+  const ByteVector ciphertext{'c', 'i', 'p', 'h', 'e', 'r'};
+
+  Roe<void> last_result;
+  for (int i = 0; i < 65; ++i) {
+    ChatAttachmentFields fields = harness.MakeAttachmentFields();
+    fields.content_hash.assign(kAttachmentContentHashSize, static_cast<uint8_t>(i));
+    last_result = ChatBlobResponder::ServePush(harness.store, harness.MakePushRequest(fields),
+                                               harness.local_relay_id, harness.profile_data_dir, ciphertext);
+  }
+  EXPECT_FALSE(static_cast<bool>(last_result));
 }

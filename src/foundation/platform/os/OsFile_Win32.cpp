@@ -53,6 +53,10 @@ Roe<void> AtomicRename(const std::filesystem::path& tmp_path, const std::filesys
   return {};
 }
 
+void SetOwnerOnlyPermissions(const std::filesystem::path& /*path*/) {
+  // No-op: see header comment. Windows ACLs are not modeled here.
+}
+
 } // namespace pbr::os
 
 #endif

@@ -1,5 +1,4 @@
 #include "feature/calls/CallMediaPlane.h"
-#include "feature/calls/CallsThread.h"
 
 #include "foundation/data/MeshRole.h"
 
@@ -60,9 +59,12 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
   }
   MeshHost* m = mesh();
   const bool use_amp_relay = mesh_media_->AmpRelayAvailable();
-  deps.relay = mesh_media_->RelayClient();
-  deps.dial = mesh_media_->Dial();
-  deps.circuit_reach = mesh_media_->CircuitReach();
+  const MediaRelayAttachPorts ports = mesh_media_->RelayAttachPorts();
+  deps.relay = ports.relay;
+  deps.dial = ports.dial;
+  deps.circuit_reach = ports.service_reach;
+  deps.objects_alive = ports.objects_alive;
+  deps.objects_snap = ports.objects_snap;
   const auto snapshot = mesh_config();
   MeshConfig mesh_cfg = *snapshot;
   NormalizeMeshConfig(mesh_cfg);
@@ -94,49 +96,24 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
   return deps;
 }
 
-void CallMediaPlane::BindBridge(const CallMediaBridgeBindArgs& args) {
-  ICallMediaTransport* transport = Transport();
-  IDialRegistry* dial = mesh_media_ ? mesh_media_->Dial() : nullptr;
-  ICircuitHopReach* reach = mesh_media_ ? mesh_media_->CircuitReach() : nullptr;
-  if (!transport || !dial || !args.host || !args.session_store || !args.media_keys || !args.media_engine) {
-    call_media_bridge_.reset();
-    media_bridge_bound_sessions_key_ = nullptr;
-    return;
+CallDirectPathDeps CallMediaPlane::DirectPathDeps() {
+  CallDirectPathDeps deps;
+  deps.transport = Transport();
+  if (!mesh_media_) {
+    return deps;
   }
-  const bool sessions_changed = (media_bridge_bound_sessions_key_ != args.sessions_key);
-  if (!call_media_bridge_ || sessions_changed) {
-    call_media_bridge_ = std::make_unique<CallMediaBridge>(*args.host, *args.session_store, *args.media_keys,
-                                                           *args.media_engine, *transport, dial, reach);
-    media_bridge_bound_sessions_key_ = args.sessions_key;
-    log().info << "CallMediaBridge bound (sessions_changed=" << (sessions_changed ? 1 : 0)
-               << " transport=" << (test_media_transport_ ? "test" : "amp") << ")";
-  } else {
-    call_media_bridge_->SetReachDeps(dial, reach);
-  }
+  deps.dial = mesh_media_->Dial();
+  deps.circuit_reach = mesh_media_->CircuitReach();
   CircuitRendezvousCoordinator* rendezvous = &mesh_media_->Rendezvous();
-  call_media_bridge_->SetSeedWarm([rendezvous]() { rendezvous->WarmBootstrapSeedSessions(); });
-  call_media_bridge_->SetSeedReserve([rendezvous]() { rendezvous->ReserveOnBootstrapSeeds(); });
-  call_media_bridge_->SetSeedParkAwait([rendezvous](std::function<void(bool)> done, int timeout_ms) {
+  deps.seed_warm = [rendezvous]() { rendezvous->WarmBootstrapSeedSessions(); };
+  deps.seed_reserve = [rendezvous]() { rendezvous->ReserveOnBootstrapSeeds(); };
+  deps.seed_park_await = [rendezvous](std::function<void(bool)> done, int timeout_ms) {
     rendezvous->EnsureBootstrapSeedParkedAsync(std::move(done), timeout_ms);
-  });
+  };
+  return deps;
 }
 
-void CallMediaPlane::DetachFromMeshMedia() {
-  if (call_media_bridge_) {
-    call_media_bridge_->SetReachDeps(nullptr, nullptr);
-  }
-}
-
-void CallMediaPlane::PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit) {
-  if (abort_inflight_circuit) {
-    abort_inflight_circuit();
-  }
-  if (call_media_bridge_) {
-    call_media_bridge_->PrepareForTeardown(0);
-  }
-  if (abort_inflight_circuit) {
-    abort_inflight_circuit();
-  }
+void CallMediaPlane::StopTransport() {
   if (ICallMediaTransport* transport = Transport()) {
     transport->ClearInboundHandler();
     transport->Stop();
@@ -144,8 +121,6 @@ void CallMediaPlane::PrepareForMeshStop(const std::function<void()>& abort_infli
 }
 
 void CallMediaPlane::FinishMeshStop() {
-  call_media_bridge_.reset();
-  media_bridge_bound_sessions_key_ = nullptr;
   call_media_amp_.reset();
 }
 
@@ -155,30 +130,15 @@ void CallMediaPlane::DetachRelayClient() {
   }
 }
 
-void CallMediaPlane::AbortBridgeAndTransport() {
-  if (call_media_bridge_) {
-    call_media_bridge_->PrepareForTeardown(0);
-  }
+void CallMediaPlane::DetachTransport() {
   if (ICallMediaTransport* transport = Transport()) {
     transport->Detach();
   }
 }
 
-bool CallMediaPlane::IsConnectWorkerInflight() const {
-  return call_media_bridge_ && call_media_bridge_->IsConnectWorkerInflight();
-}
-
 void CallMediaPlane::Clear() {
-  call_media_bridge_.reset();
-  media_bridge_bound_sessions_key_ = nullptr;
   call_media_amp_.reset();
   test_media_transport_ = nullptr;
-}
-
-void CallMediaPlane::StopMeshMedia(const std::string& call_id) {
-  if (call_media_bridge_) {
-    call_media_bridge_->StopMeshMedia(call_id);
-  }
 }
 
 void CallMediaPlane::RegisterCallPeerListenMultiaddrs(const std::string& identity,
@@ -190,11 +150,11 @@ void CallMediaPlane::RegisterCallPeerListenMultiaddrs(const std::string& identit
     mesh_media_->RegisterPeerListenMultiaddrs(identity, multiaddrs);
     return;
   }
-  // Registered on the connectivity owner; the account → PeerId note is call state (calls owner).
+  // Registered on the connectivity owner; the note takes the account → PeerId to the calls owner.
   mesh_media_->RegisterPeerListenMultiaddrs(
       identity, multiaddrs, [identity, note = deps_.note_mesh_peer_id_for_relay](const std::string& peer_id) {
         if (!peer_id.empty()) {
-          CallsThread::Post([identity, note, peer_id]() { note(identity, peer_id); });
+          note(identity, peer_id);
         }
       });
 }

@@ -5,11 +5,14 @@
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallMediaHost.h"
+#include "feature/calls/CallDirectDriver.h"
 #include "feature/calls/CallMediaSeat.h"
+#include "feature/calls/CallSessionEvents.h"
+#include "foundation/runtime/OwnerOutbox.h"
 #include "domain/messaging/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaConnectCoordinator.h"
-#include "domain/mesh/reachability/PeerReachCoordinator.h"
+#include "domain/mesh/reach/PeerReachCoordinator.h"
 #include "domain/mesh/l4/call_media/ICallMediaTransport.h"
 
 #include "common/Module.h"
@@ -19,6 +22,7 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include "common/PbrCompat.h"
@@ -35,6 +39,8 @@ struct CallDirectArmingPorts {
   std::function<void(CallDirectPlannerPhase phase, const std::string& call_id)> report_progress;
   std::function<void(const std::string& call_id)> on_connected;
   std::function<void(const std::string& call_id)> on_connect_failed;
+  /** A connection for this call came up after it failed (the peer's retry); lifecycle decides. */
+  std::function<void(const std::string& call_id)> on_peer_reconnected;
   std::function<void(const std::string& call_id)> on_media_deferred;
   std::function<void(const std::string& call_id)> on_media_key_ready;
   std::function<const char*()> arming_debug_name;
@@ -65,7 +71,7 @@ struct CallDirectSeatPorts {
  * Uses CallMediaEngine SFU-mode capture/playback with Opus frames over ICallMediaTransport
  * (Amp; [A020]). Path Start / ReleaseTransport require a seat token when the seat is wired.
  */
-class CallMediaBridge : public Module {
+class CallMediaBridge : public Module, public CallDirectDriver {
 public:
   CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions, CallMediaKeyStore& media_keys,
                         CallMediaEngine& media, ICallMediaTransport& direct, IDialRegistry* dial,
@@ -80,7 +86,17 @@ public:
   /** True when mesh call-media path is available (direct or circuit-brokered). */
   bool ShouldUseMeshForPeer(const std::string& peer_identity) const;
 
-  Roe<void> RetryMeshMedia(const std::string& call_id);
+  Roe<void> RetryMeshMedia(const std::string& call_id) override;
+  /**
+   * The call failed but is still open, and the peer's connection for it is up (its Retry): restart
+   * the engine as this side's role and commit over that stream (no Detach, no redial).
+   */
+  Roe<void> ResumeMeshMediaFromInbound(const std::string& call_id) override;
+  /**
+   * Retry / resume restart a call whose planner went Idle on failure: arm it again (Schedule →
+   * Arming, key already held → Connecting) so the restarted connect's ConnectSucceeded lands.
+   */
+  void ArmPlannerForRestart(const std::string& call_id, const std::string& peer_identity, bool offerer);
 
   Roe<void> StartMediaAsOfferer(const std::string& call_id, const std::string& peer_identity);
   Roe<void> StartMediaAsAnswerer(const std::string& call_id, const std::string& peer_identity);
@@ -117,6 +133,10 @@ public:
    */
   using PathPolicyProvider = std::function<CallPathPolicy(const std::string& call_id)>;
   void SetPathPolicyProvider(PathPolicyProvider provider) { path_policy_ = std::move(provider); }
+  /** Where the path reports its events (its parent binds it); its timers are delayed events. */
+  void SetOutbox(OwnerOutbox<DirectPathEvent> outbox);
+  /** An event it reported, back from the calls owner's queue. */
+  void Handle(DirectPathEvent& event);
   /** k6: a mobility class of the call flipped (calls owner): upgrade punches follow the new policy. */
   void OnPathPolicyChanged(const std::string& call_id);
   /** Wait after a network change before re-anchoring (production 2.5 s). */
@@ -125,6 +145,8 @@ public:
   void SetRelayStandbyDelayMsForTest(int delay_ms) { standby_delay_ms_for_test_ = delay_ms; }
   /** Every direct-upgrade attempt after this delay (0 = production 3 s / 20 s / 60 s). */
   void SetDirectUpgradeDelayMsForTest(int delay_ms) { upgrade_delay_ms_for_test_ = delay_ms; }
+  /** Test-only (calls owner): what the reach loop last settled on — may differ from the bound link. */
+  void SetReachKindForTest(PeerLinkKind kind) { reach_kind_ = kind; }
   /** Shrink per-attempt ConnectAsync timeout (and watchdog margin) for gtests (0 = production default). */
   void SetConnectAttemptTimeoutMsForTest(int timeout_ms);
 
@@ -132,9 +154,11 @@ public:
    * SoftMigrate: close 1:1 call-media stream without CallMediaEngine::Stop so SFU capture continues.
    * Prefer ReleaseDirectTransport(token) when a MediaSeat is wired.
    */
-  void ReleaseDirectTransport();
+  void ReleaseDirectTransport() override;
   /** V036 Phase 3: token-gated SoftMigrate release (no-op when token not bound). */
-  void ReleaseDirectTransport(const CallMediaSeat::Token& token);
+  void ReleaseDirectTransport(const CallMediaSeat::Token& token) override;
+  /** CallDirectDriver: the call's coordinator starts the 1:1 connect (offerer / answerer). */
+  void ScheduleDirectStart(const std::string& call_id, const std::string& peer_identity, bool offerer) override;
 
   /**
    * Engine Stop — **seat teardown hook only** when MediaSeat is wired (V036).
@@ -142,7 +166,7 @@ public:
    * Any thread: off the calls owner the whole stop is posted to the front of its queue and
    * skipped if a newer media session (StartSfu) started in the meantime.
    */
-  void StopMeshMedia(const std::string& call_id);
+  void StopMeshMedia(const std::string& call_id) override;
   /**
    * CallAccept/Invite taught PeerId→relay: (works for non-contacts). Rebind deferred inbound
    * on_audio stream_id when it matches the pending inbound PeerId.
@@ -194,12 +218,14 @@ public:
 
 private:
   Roe<void> BeginSession(const std::string& call_id, const std::string& peer_identity, bool offerer);
-  // Answerer start steps (UI; the key poll runs on a worker).
+  // Start steps (each runs as its own event; the key poll is a delayed event per round).
+  void RunOffererStart(const std::string& call_id, const std::string& peer_identity);
   void RunAnswererStart(const std::string& call_id, const std::string& peer_identity);
   void DeferAnswererUntilMediaKey(const std::string& call_id, const std::string& peer_identity,
                                   const std::string& reason);
-  void PollForDeferredMediaKey(const std::string& call_id, uint64_t key_wait_gen);
+  void OnKeyPollDue(const direct_event::KeyPollDue& due);
   void OnDeferredMediaKeyTimeout(const std::string& call_id);
+  void StartDeferredAnswerer(const std::string& call_id);
   // BeginSession steps.
   void ResetDirectSessionState(const std::string& call_id, const std::string& peer_identity, bool offerer);
   /** Stop the prior engine session / connect; true when an inbound direct stream is kept. */
@@ -224,9 +250,9 @@ private:
   /** Direct stream up: mark media connected when capture is live, always advance lifecycle/chrome. */
   void CommitDirectConnected(const std::string& call_id);
   /**
-   * B44: a connect attempt failed — but the peer's own redial may already have restored direct
-   * media, or be mid-handshake. Commit if MediaReady; give an inbound handshake in progress one
-   * short grace; only then surface the failure.
+   * The connect sequence gave up (DecideConnectFailure): commit if the peer's redial restored direct
+   * media, hold one short grace for its hello in progress (B44), else surface Failed — the call
+   * stays open, and a later connection for it reconnects it (PeerReconnected).
    */
   void FailUnlessDirectRecovered(const std::string& call_id, const std::string& err, bool grace_used = false);
   /** Inbound bundles: accept policy + key lookup on the worker hop (connect coordinator). */
@@ -238,8 +264,13 @@ private:
                                                const char* label);
   /** UI: a bundle closed / failed — ignore during SoftMigrate / SFU attach, else ConnectFailed. */
   void OnBundleFailed(const std::string& call_id, const std::string& reason);
-  void DeliverDirectMedia(const std::string& call_id, uint32_t fixed_stream, uint8_t channel, uint32_t seq,
-                          uint8_t mark, const std::vector<uint8_t>& payload);
+  struct ReceiveGate;
+  /** Transport I/O: hand a 1:1 frame to the engine (thread-safe), gated by `gate`. */
+  static void ReceiveDirectMedia(ReceiveGate& gate, CallMediaEngine& media, const CallMediaHost& host,
+                                 const OwnerOutbox<DirectPathEvent>& outbox, const std::string& call_id,
+                                 uint32_t fixed_stream, uint8_t channel, uint32_t seq, uint8_t mark,
+                                 const std::vector<uint8_t>& payload);
+  void RebindInboundStream(const std::string& call_id);
   void ReleaseDirectTransportBody();
   /** NAT dogfood: dialable "direct" with TX-only → force circuit ensure + re-dial. */
   void MaybeEscalateTxOnlyDirect();
@@ -273,6 +304,7 @@ private:
   void OnRelayStandbyFire();
   /** k3-4: TX-only restart (Detach + BeginSession via circuit) — the fallback when the call cannot move. */
   void EscalateBreakBeforeMake(const std::string& call_id, const std::string& peer);
+  void RestartAfterEscalate(const std::string& call_id, const std::string& peer);
   void CancelEscalateReach();
   /** k4: the offerer reaches the peer again and migrates the call onto that link (retries). */
   void ScheduleReanchor(const std::string& call_id, std::chrono::milliseconds delay);
@@ -285,6 +317,14 @@ private:
   }
   /** Amp PeerId for a call roster key (account: → PeerId); unchanged otherwise. */
   std::string ReachPeerIdFor(const std::string& key);
+  /** `call_id`'s media coordinator; null (quietly) for a call not admitted here. */
+  CallMediaCoordinator* LiveCallMedia(const std::string& call_id);
+  /** The group path carries `call_id`'s media now (its coordinator says so). */
+  bool HopAttachedFor(const std::string& call_id);
+  /** Stop the engine through `call_id`'s media coordinator (a leftover without one: directly). */
+  void StopEngineFor(const std::string& call_id, const char* why);
+  /** The call peer's mesh PeerId for reach / circuit / upgrade (never a local dial alias). */
+  std::string CallPeerMeshId();
   void OnDirectHealthTimerFire();
 
   CallMediaHost& host_;
@@ -319,10 +359,23 @@ private:
   /** Bumped by AbortConnectSequence; the StartSfu send fn drops TX from an older generation. */
   std::atomic<uint64_t> connect_generation_{0};
   std::atomic<bool> stopping_{false};
-  /** Bumped when the pending (key-deferred) answerer changes; the key-poll worker watches it. */
-  std::atomic<uint64_t> key_wait_gen_{0};
-  /** Cleared in the destructor; guards stops posted from other threads. */
-  std::shared_ptr<std::atomic<bool>> alive_;
+  /** Names the current key wait; bumped when the pending (key-deferred) answerer changes. */
+  uint64_t key_wait_gen_ = 0;
+  OwnerOutbox<DirectPathEvent> outbox_;
+  /** Steps waiting for a result from another thread (reach / upgrade / standby / migrate answers). */
+  OwnerSteps steps_;
+  /**
+   * The callback to hand an async API: it only reports its result (any thread); `step` runs with it
+   * on the owner, as the path's next event.
+   */
+  template <typename T>
+  std::function<void(T)> OnOwner(std::function<void(T)> step) {
+    const uint64_t id = steps_.StoreFor<T>(std::move(step));
+    return [outbox = outbox_, id](T value) {
+      outbox.Emit(direct_event::StepReady{OwnerStepReady{id, std::make_shared<std::any>(std::move(value))}});
+    };
+  }
+  void OnPathChanged(const std::string& call_id, CallMediaLinkKind kind);
   uint64_t direct_health_timer_id_ = 0;
   uint64_t reserve_renew_timer_id_ = 0;
   uint64_t upgrade_timer_id_ = 0;
@@ -364,10 +417,35 @@ private:
     std::unordered_set<std::string> ids;
   };
   AttemptedCalls media_attempted_calls_;
+  /**
+   * The call whose connect failed here while it stays open (failed ≠ closed). Its peer and role are
+   * the LiveCall's (P2pLiveCall); this only marks that our media gave up on it. Set by
+   * SurfaceConnectFailed after the stop; cleared by any other stop (Leave) or a new session.
+   */
+  struct FailedOpenCall {
+    std::string call_id;
+    /** PeerReconnected already raised: a second inbound bundle must not queue a second resume. */
+    bool resume_requested = false;
+  };
+  /** A 1:1 call's peer and this side's media role, from its LiveCall (placed → offerer). */
+  struct CallPeerRole {
+    std::string peer_identity;
+    bool offerer = false;
+  };
+  std::optional<CallPeerRole> PeerRoleFromLiveCall(const std::string& call_id) const;
+  std::optional<FailedOpenCall> failed_open_;
   int media_key_inbox_poll_rounds_ = 90;
   std::atomic<uint32_t> audio_seq_{0};
-  /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */
-  std::atomic<uint32_t> inbound_remote_stream_{0};
+  /** What 1:1 receive reads on the transport's I/O thread; the owner publishes it. */
+  struct ReceiveGate {
+    /** Cleared when the bridge goes: frames still in flight on I/O drop. */
+    std::atomic<bool> open{true};
+    /** Inbound remote mixer stream; 0 = defer until the relay: identity is known (BeginSession). */
+    std::atomic<uint32_t> remote_stream{0};
+    /** Steady-clock ms before which I/O does not ask for another rebind (one in flight / just failed). */
+    std::atomic<int64_t> rebind_not_before_ms{0};
+  };
+  std::shared_ptr<ReceiveGate> receive_ = std::make_shared<ReceiveGate>();
 };
 
 } // namespace pbr

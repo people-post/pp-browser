@@ -179,4 +179,44 @@ std::vector<MeshHopCandidate> SelectCallMediaHop(std::vector<MeshHopCandidate> r
   return public_org;
 }
 
+bool HopUsableForAllReporters(const std::string& hop, const std::map<std::string, CallHopReport>& reports) {
+  auto listed = [&hop](const std::vector<std::string>& hops) {
+    return std::find(hops.begin(), hops.end(), hop) != hops.end();
+  };
+  for (const auto& [identity, report] : reports) {
+    (void)identity;
+    if (listed(report.unreachable_hops)) {
+      return false;
+    }
+    const bool refused_plan = report.planned_hop_ok.has_value() && !*report.planned_hop_ok;
+    if (refused_plan && !listed(report.reachable_hops)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+GroupHopJoinDecision DecideGroupHopAtJoin(const GroupHopJoinInput& in) {
+  GroupHopJoinDecision out;
+  out.hop = in.planned_hop;
+  if (in.planned_hop.empty()) {
+    return out;
+  }
+  const bool planned_refused = std::any_of(in.reports.begin(), in.reports.end(), [](const auto& entry) {
+    return entry.second.planned_hop_ok.has_value() && !*entry.second.planned_hop_ok;
+  });
+  if (!planned_refused) {
+    return out;
+  }
+  for (const std::string& hop : in.ranked_hops) {
+    if (!hop.empty() && hop != in.planned_hop && HopUsableForAllReporters(hop, in.reports)) {
+      out.action = GroupHopAtJoin::UseAlternative;
+      out.hop = hop;
+      return out;
+    }
+  }
+  out.action = GroupHopAtJoin::RefuseJoiner;
+  return out;
+}
+
 } // namespace pbr

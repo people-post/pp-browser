@@ -256,6 +256,7 @@ private:
   void OnNewMessage();
   void OnOpenNewSessionMenu(ui::Event& ev);
   void OnOpenThreadActionsMenu(ui::Event& ev);
+  void OnStartCall(ui::Event& ev);
   void OnOpenPeerSheet(ui::Event& ev);
   void OnCloseThread(const std::string& thread_id);
   void OnClearHistory();

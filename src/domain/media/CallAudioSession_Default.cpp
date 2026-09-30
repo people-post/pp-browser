@@ -6,6 +6,8 @@ namespace CallAudioSession {
 void ActivateForVoipCall() {}
 void Deactivate() {}
 
+void CancelPendingDeactivate() {}
+
 bool SupportsSpeakerToggle() {
   return false;
 }

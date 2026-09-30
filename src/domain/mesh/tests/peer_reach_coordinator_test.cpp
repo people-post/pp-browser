@@ -1,6 +1,6 @@
-#include "domain/mesh/reachability/PeerReachCoordinator.h"
+#include "domain/mesh/reach/PeerReachCoordinator.h"
 
-#include "domain/mesh/reachability/MeshReachPorts.h"
+#include "domain/mesh/reach/MeshReachPorts.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include <atomic>
@@ -308,6 +308,45 @@ TEST_F(PeerReachCoordinatorTest, ExcludeDirectForcesCircuit) {
   EXPECT_TRUE(circuit_->last_allow_circuit.load());
   EXPECT_EQ((*out->result)->kind, PeerLinkKind::Relayed);
   EXPECT_FALSE((*out->result)->reused_link);
+}
+
+// #235: the reacher's own circuit missed, then the peer's relay link landed. The reacher waits the
+// peer-dial overlap for it (as the awaiting side does) instead of failing on its spent dial budget.
+TEST_F(PeerReachCoordinatorTest, ReachWaitsForThePeersLinkAfterItsCircuitMisses) {
+  dial_->endpoints[kPeer] = kPublicMa;
+  circuit_->connects = false;
+  auto out = Run(Request(PeerReachMode::Reach));
+  std::thread peer([this, out] {
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (circuit_->calls.load() == 0 && std::chrono::steady_clock::now() < until) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    // Inside the fixture's shortened peer window (300 ms; production waits kPeerDialOverlapMs).
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    dial_->Connect(kPeer, /*carrier=*/true, /*hop=*/true);
+  });
+  const bool done = WaitDone(out, std::chrono::seconds(10));
+  peer.join();
+  ASSERT_TRUE(done);
+  ASSERT_TRUE(*out->result) << "gave up at the circuit miss: " << out->result->error().message;
+  EXPECT_EQ((*out->result)->kind, PeerLinkKind::Relayed);
+  EXPECT_EQ(circuit_->calls.load(), 1);
+}
+
+// A relay standby (exclude_direct) whose circuit misses must fail — never "succeed" by dialing the
+// peer directly: that only reaches the direct link the call is already on (hard-lab flip).
+TEST_F(PeerReachCoordinatorTest, ExcludeDirectNeverSettlesOnADirectDial) {
+  dial_->Connect(kPeer);  // the call's direct link
+  dial_->endpoints[kPeer] = kPublicMa;
+  dial_->ensure_connects = true;
+  circuit_->connects = false;
+  auto req = Request(PeerReachMode::Reach);
+  req.exclude_direct = true;
+  auto out = Run(req);
+  ASSERT_TRUE(WaitDone(out, std::chrono::seconds(10)));
+  ASSERT_FALSE(*out->result) << "settled as " << PeerLinkKindName((*out->result)->kind);
+  EXPECT_EQ(dial_->ensure_calls.load(), 0) << "no direct dial for a relay-only reach";
+  EXPECT_EQ(circuit_->calls.load(), 1);
 }
 
 TEST_F(PeerReachCoordinatorTest, UnreachablePeerFailsWithLastError) {
