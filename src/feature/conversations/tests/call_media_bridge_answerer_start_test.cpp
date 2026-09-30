@@ -1257,10 +1257,14 @@ TEST_F(CallMediaBridgeAnswererStartTest, DirectBoundCallReachedOverTheRelayStill
   Placed(call_id);
   host_->live.SetMediaStatus(call_id, CallMediaStatus::DirectConnecting, "test");
   bridge_->ScheduleStartMediaAsOfferer(call_id, "account:peer");
-  for (int i = 0; i < 400 && transport_->connect_async_calls == 0; ++i) {
+  // Bound already: media starts on the existing stream (no ConnectAsync). Wait for exactly that —
+  // a wait that never ends outlasts the TX-only grace on slow runners (macOS CI), which then moves
+  // the call onto the circuit for a reason this test is not about.
+  for (int i = 0; i < 400 && !media_->IsActive(); ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
+  ASSERT_TRUE(media_->IsActive());
   CallsThread::RunAndWait([&] { bridge_->SetReachKindForTest(PeerLinkKind::Relayed); });  // reach loop: circuit
   for (int i = 0; i < 400 && transport_->add_standby_calls.load() < 1; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
