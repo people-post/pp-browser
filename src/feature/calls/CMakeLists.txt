@@ -12,6 +12,7 @@ pp_browser_add_feature_library(pp_feature_calls
     CallStack.cpp
     LocalNetworkReaction.cpp
     CallsThread.cpp
+    CallsExecutor.cpp
     CallTopologyController.cpp
     CallUiBackend.cpp
     LiveCall.cpp

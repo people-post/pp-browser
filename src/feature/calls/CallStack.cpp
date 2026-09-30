@@ -24,13 +24,12 @@ namespace pbr {
 
 CallStack::CallStack() {
   redirectLogger("CallStack");
-  BindMobility();
   media_plane_ = std::make_unique<CallMediaPlane>();
   publish_hook_ = CallsThread::AddAfterTaskHook([this]() { PublishUiState(); });
 }
 
 CallStack::~CallStack() {
-  mobility_.Detach();
+  tasks_.DropPending();  // entry points / wakes still queued run against a dying stack
   chrome_self_.Invalidate();
   Shutdown();
   // On the owner: hooks run only there, so none is mid-flight on this stack once this returns.
@@ -56,8 +55,8 @@ void CallStack::FinishMeshStop() {
 }
 
 void CallStack::OnLocalNetwork(const MobilityAttachment& attachment, const bool changed, const bool moved) {
-  CallsThread::Post([this, attachment, changed, moved]() {
-    mobility_.OnAttachment(attachment, changed);
+  tasks_.Post([this, attachment, changed, moved]() {
+    AfterMobilityEvent(mobility_.OnAttachment(attachment, changed, CallPathMobility::Clock::now()));
     if (moved && media_plane_) {
       if (CallMediaBridge* bridge = media_plane_->Bridge()) {
         bridge->OnLocalNetworkChanged();
@@ -67,32 +66,29 @@ void CallStack::OnLocalNetwork(const MobilityAttachment& attachment, const bool 
 }
 
 void CallStack::OnObservedAddressChanged() {
-  CallsThread::Post([this]() { mobility_.OnObservedAddressChanged(); });
+  tasks_.Post([this]() { AfterMobilityEvent(mobility_.OnObservedAddressChanged(CallPathMobility::Clock::now())); });
 }
 
 void CallStack::ReloadMobilityOverride() {
-  CallsThread::Post([this]() { ApplyMobilityOverrideOnOwner(); });
+  tasks_.Post([this]() { ApplyMobilityOverrideOnOwner(); });
 }
 
 void CallStack::ApplyMobilityOverrideOnOwner() {
   const auto cfg = mesh_config();
-  mobility_.SetOverride(ResolveMobilityOverride(cfg ? cfg->mobility : std::string("auto")));
+  const auto pinned = ResolveMobilityOverride(cfg ? cfg->mobility : std::string("auto"));
+  AfterMobilityEvent(mobility_.SetOverride(pinned, CallPathMobility::Clock::now()));
 }
 
-void CallStack::BindMobility() {
-  CallPathMobility::Ports ports;
+void CallStack::AfterMobilityEvent(const bool local_class_changed) {
+  mobility_wake_.ArmAt(mobility_.NextWakeAt(CallPathMobility::Clock::now()));
+  if (!local_class_changed || !call_sessions_) {
+    return;
+  }
   // Our class flipped mid-call: tell the peer (caps_update) and re-plan the live call.
-  ports.on_local_class_changed = [this]() {
-    if (!call_sessions_) {
-      return;
-    }
-    if (auto active = call_sessions_->ActiveLocalCall(); active && active->has_value()) {
-      call_sessions_->ReachSignals().AnnounceCapsUpdate();
-      NotifyPathPolicyChangedOnOwner((*active)->call_id);
-    }
-  };
-  ports.on_policy_changed = [this](const std::string& call_id) { NotifyPathPolicyChangedOnOwner(call_id); };
-  mobility_.SetPorts(std::move(ports));
+  if (auto active = call_sessions_->ActiveLocalCall(); active && active->has_value()) {
+    call_sessions_->ReachSignals().AnnounceCapsUpdate();
+    NotifyPathPolicyChangedOnOwner((*active)->call_id);
+  }
 }
 
 void CallStack::NotifyPathPolicyChangedOnOwner(const std::string& call_id) {
@@ -429,7 +425,9 @@ void CallStack::BindSessionProviders() {
   // MeshHost the hub may be tearing down under a running call flow).
   call_sessions_->SetLocalMeshPeerIdProvider([this]() -> std::string { return LocalMeshView()->local_peer_id; });
   call_sessions_->SetCallPeerCapsSink([this](const std::string& call_id, const CallPeerCaps& caps) {
-    mobility_.NoteRemote(call_id, caps.mobility);
+    if (mobility_.NoteRemote(call_id, caps.mobility)) {
+      NotifyPathPolicyChangedOnOwner(call_id);
+    }
   });
   call_sessions_->SetLocalPeerCapsProvider([this]() { return LocalPeerCaps(); });
   call_sessions_->SetRegisterPeerListenMultiaddrs(
@@ -725,7 +723,7 @@ void CallStack::Shutdown() {
 
 void CallStack::ReleaseOnOwner() {
   PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
-  mobility_.CancelReevaluation();
+  mobility_wake_.Disarm();
   DetachMeshMedia();
   if (MeshMediaPlane* shared = mesh_media()) {
     shared->SetOnRelayChosen({});
