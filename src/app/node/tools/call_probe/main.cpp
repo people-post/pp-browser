@@ -1333,7 +1333,10 @@ int main(int argc, char** argv) {
       peer_id_only = true;
     } else if (std::strcmp(argv[i], "--direct-connections") == 0 && i + 1 < argc) {
       // projects/privacy T1: who this probe discloses its address to (default everyone for NAT tests).
-      ::setenv("PP_PROBE_DIRECT_CONNECTIONS", argv[++i], 1);
+      if (!pbr::call_probe::ProductStackHarness::SetDirectConnectionsOverride(argv[++i])) {
+        std::cerr << "error: --direct-connections must be everyone|contacts|friendly|nobody\n";
+        return 2;
+      }
     } else if (std::strcmp(argv[i], "--mobility") == 0 && i + 1 < argc) {
       pbr::SetMobilityCliOverride(argv[++i]);  // k6: pin the call path mobility class
     } else if (std::strcmp(argv[i], "--dirty-book") == 0) {

@@ -40,6 +40,11 @@ namespace call_probe {
  */
 class ProductStackHarness {
 public:
+  /**
+   * projects/privacy T1: who the probe discloses its address to (`--direct-connections`); wins over
+   * PP_PROBE_DIRECT_CONNECTIONS. False for an unknown word. Call before Create.
+   */
+  static bool SetDirectConnectionsOverride(const std::string& audience);
   static Roe<std::unique_ptr<ProductStackHarness>> Create(std::unique_ptr<pp::amp::AmpStack> stack,
                                                           std::shared_ptr<pp::adp::Clock> clock,
                                                           std::string advertise_ma,

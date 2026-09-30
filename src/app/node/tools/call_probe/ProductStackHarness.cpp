@@ -39,6 +39,11 @@ namespace pbr {
 namespace call_probe {
 namespace {
 
+std::optional<DirectAudience>& DirectConnectionsOverride() {
+  static std::optional<DirectAudience> audience;  // set once from the command line, before Create
+  return audience;
+}
+
 ByteVector ProbeDek() {
   ByteVector dek(kDataEncryptionKeySize);
   for (size_t i = 0; i < dek.size(); ++i) {
@@ -147,7 +152,9 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   // NAT scenarios test traversal: the answerer never learns the offerer's identity up front, so the
   // probe discloses to everyone unless a scenario narrows it (projects/privacy T1 lab checks).
   app_config_.mesh.direct_connections = DirectAudience::Everyone;
-  if (const char* audience = std::getenv("PP_PROBE_DIRECT_CONNECTIONS")) {
+  if (DirectConnectionsOverride()) {
+    app_config_.mesh.direct_connections = *DirectConnectionsOverride();
+  } else if (const char* audience = std::getenv("PP_PROBE_DIRECT_CONNECTIONS")) {
     if (auto parsed = DirectAudienceFromName(audience)) {
       app_config_.mesh.direct_connections = *parsed;
     }
@@ -296,6 +303,15 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   std::cout << "ok  product-stack CallStack+CallUiBackend wired account=" << local_account_
             << " peer_id=" << local_peer_id_ << "\n";
   return {};
+}
+
+bool ProductStackHarness::SetDirectConnectionsOverride(const std::string& audience) {
+  const auto parsed = DirectAudienceFromName(audience);
+  if (!parsed) {
+    return false;
+  }
+  DirectConnectionsOverride() = parsed;
+  return true;
 }
 
 void ProductStackHarness::PublishAddressDisclosure() {
