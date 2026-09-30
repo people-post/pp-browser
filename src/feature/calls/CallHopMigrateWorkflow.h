@@ -16,6 +16,7 @@
 #include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallsOutbox.h"
+#include "feature/calls/CallsSteps.h"
 #include "foundation/runtime/DeferredSelf.h"
 
 #include "common/Error.h"
@@ -25,6 +26,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <unordered_map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -295,6 +297,11 @@ private:
   void MarkHopAttachLive(const HopAttach& at, bool fresh_start);
   void ReleaseDirectAfterHopAttach(const HopAttach& at);
   void RefanOutPickedHop(const hop_migrate_event::RefanOutPickedHop& again);
+  /** Run `step` as the next event (never inside the caller). */
+  void Defer(std::function<void()> step);
+  uint64_t StoreAttach(HopAttach at, std::function<void(Roe<void>)> on_done, bool guest);
+  std::function<void(Roe<MediaRelayAttached>)> RelayAttachReporter(uint64_t id) const;
+  void OnRelayAttached(const hop_migrate_event::RelayAttached& answer);
   void ReleaseDirectSettled(const hop_migrate_event::ReleaseDirectAfterAttach& release);
   void ReleaseDirectFor(const std::string& call_id);
   // Guest reattach after a lost relay transport (engine stays live).
@@ -323,6 +330,16 @@ private:
   SfuSurface sfu_;
   /** Coordinator timers (re-fan-out, settle, reattach backoff) drop once we are gone. */
   CallsOutbox<HopMigrateEvent> outbox_;
+  /** Steps waiting for their Continue event (deferred steps, a picked hop's reach answer). */
+  CallsSteps steps_;
+  /** Relay attaches waiting for the relay's answer. */
+  struct PendingAttach {
+    std::shared_ptr<HopAttach> at;  // HopAttach is private to the .cpp
+    std::function<void(Roe<void>)> on_done;
+    bool guest = false;
+  };
+  std::unordered_map<uint64_t, PendingAttach> attaches_;
+  uint64_t next_attach_ = 0;
 };
 
 } // namespace pbr

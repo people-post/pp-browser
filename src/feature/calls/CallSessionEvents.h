@@ -63,11 +63,23 @@ struct ReleaseDirectAfterAttach {
 };
 /** The guest's re-attach backoff ended: try again. */
 struct GuestReattachRetry {};
+/** A stored step's turn (a deferred step, or the circuit reach answered for a picked hop). */
+struct Continue {
+  uint64_t id = 0;
+};
+/** The media relay answered an attach (from its I/O thread); `id` names the attach awaiting it. */
+struct RelayAttached {
+  uint64_t id = 0;
+  bool ok = false;
+  int64_t a_up_bps = 0;
+  std::string error;
+};
 
 } // namespace hop_migrate_event
 
-using HopMigrateEvent = std::variant<hop_migrate_event::RefanOutPickedHop, hop_migrate_event::ReleaseDirectAfterAttach,
-                                     hop_migrate_event::GuestReattachRetry>;
+using HopMigrateEvent =
+    std::variant<hop_migrate_event::RefanOutPickedHop, hop_migrate_event::ReleaseDirectAfterAttach,
+                 hop_migrate_event::GuestReattachRetry, hop_migrate_event::Continue, hop_migrate_event::RelayAttached>;
 
 /** V050 hop planning's own events. */
 namespace planning_event {
@@ -110,12 +122,16 @@ struct RefuseGuest {
   std::string call_id;
   std::string guest_identity;
 };
+/** A stored step's turn (a hop flow finished: its finish step runs as the next event). */
+struct Continue {
+  uint64_t id = 0;
+};
 
 } // namespace topology_event
 
 using TopologyEvent = std::variant<topology_event::RelayTransportLost, topology_event::AttachWaitDeadline,
-                                   topology_event::ReannouncePublisher, topology_event::RefuseGuest, HopMigrateEvent,
-                                   PlanningEvent>;
+                                   topology_event::ReannouncePublisher, topology_event::RefuseGuest,
+                                   topology_event::Continue, HopMigrateEvent, PlanningEvent>;
 
 using SessionEvent =
     std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent, TopologyEvent>;

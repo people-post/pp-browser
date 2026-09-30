@@ -1,5 +1,4 @@
 #include "feature/calls/CallHopMigrateWorkflow.h"
-#include "feature/calls/CallsThread.h"
 
 #include "feature/calls/CallMediaSeat.h"
 
@@ -31,13 +30,6 @@
 
 namespace pbr {
 namespace {
-
-/** Next step of a migrate / attach flow, on the calls owner (was MeshControl before thread-ownership t2a). */
-void PostOnCallsOwner(std::function<void()> task) {
-  if (task) {
-    CallsThread::Post(std::move(task));
-  }
-}
 
 std::vector<MeshHopCandidate> PreferNamedHopFirst(std::vector<MeshHopCandidate> ranked,
                                                   const std::string& hop_peer_id) {
@@ -151,8 +143,7 @@ void CallHopMigrateWorkflow::MaybeSoftMigrateToSfuAsync(const std::string& call_
   if (!PassSoftMigrateArmingGate(call_id, trigger, prefer_hop_peer_id, on_done)) {
     return;
   }
-  PostOnCallsOwner([this, call_id, trigger, prefer_hop_peer_id, expected_gen,
-                    on_done = std::move(on_done)]() mutable {
+  Defer([this, call_id, trigger, prefer_hop_peer_id, expected_gen, on_done = std::move(on_done)]() mutable {
     RunSoftMigrate(call_id, trigger, prefer_hop_peer_id, expected_gen, std::move(on_done));
   });
 }
@@ -458,9 +449,10 @@ void CallHopMigrateWorkflow::TryPickHop(std::shared_ptr<HopPick> pick, size_t in
     (void)relay_deps_->dial->RegisterEndpoint(hop.peer_id, hop.multiaddr);
   }
   if (!self_hop && relay_deps_->circuit_reach && relay_deps_->dial && !relay_deps_->dial->IsDialable(hop.peer_id)) {
-    relay_deps_->circuit_reach->TryEnsureHopReachableAsync(hop.peer_id, [this, pick, index](Roe<void>) {
-      PostOnCallsOwner([this, pick, index]() { AttachPickedHop(pick, index); });
-    });
+    // Edge: the reach answers on another thread — it only reports; the pick goes on as the next event.
+    const uint64_t id = steps_.Store([this, pick, index]() { AttachPickedHop(pick, index); });
+    relay_deps_->circuit_reach->TryEnsureHopReachableAsync(
+        hop.peer_id, [outbox = outbox_, id](Roe<void>) { outbox.Emit(hop_migrate_event::Continue{id}); });
     return;
   }
   AttachPickedHop(std::move(pick), index);
@@ -540,7 +532,7 @@ void CallHopMigrateWorkflow::OnPickedHopAttached(const std::shared_ptr<HopPick>&
     }
     pick->failures.push_back(detail);
     log().warning << "SoftMigrate hop failed: " << detail;
-    PostOnCallsOwner([this, pick, index]() { TryPickHop(pick, index + 1); });
+    Defer([this, pick, index]() { TryPickHop(pick, index + 1); });
     return;
   }
   RecordPickedHop(*pick, attach.hop_peer_id);
@@ -809,22 +801,10 @@ void CallHopMigrateWorkflow::AttachThroughRelay(HopAttach at, std::function<void
   hooks.accept_quote = RelayQuotePricingGate();
   hooks.on_frame = MakeHopFrameSink(at);
   const MediaRelayAttachRequest request = MakeRelayAttachRequest(at.call_id, at.attach);
-  AttachToMediaRelayAsync(
-      RelayAttachPorts(), request, std::move(hooks),
-      [this, at = std::move(at), on_done = std::move(on_done)](Roe<MediaRelayAttached> attached) mutable {
-        if (!attached) {
-          on_done(attached.error());
-          return;
-        }
-        // Calls owner: completion calls CallMediaEngine::StartSfu / ApplyAdaptation and mutates seat and
-        // topology planner state — all owner state (CALLS.md). On MeshControl it raced OnLocalAcceptJoined
-        // (TSan: hop planner phase; heap corruption in CallTopologyControllerTest). The attach
-        // network work already ran; only the local commit hops.
-        CallsThread::Post([this, at = std::move(at), bps = attached->a_up_bps, on_done = std::move(on_done)]() {
-          PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
-          on_done(CompleteHopAttach(at, bps));
-        });
-      });
+  // The commit (StartSfu, adaptation, seat, planner) is owner state: the relay's answer — success
+  // or failure — comes back as an event, never run on its I/O thread.
+  const uint64_t id = StoreAttach(std::move(at), std::move(on_done), /*guest=*/false);
+  AttachToMediaRelayAsync(RelayAttachPorts(), request, std::move(hooks), RelayAttachReporter(id));
 }
 
 // --- attach (completion, UI) ----------------------------------------------------------------------
@@ -1054,11 +1034,56 @@ void CallHopMigrateWorkflow::Handle(HopMigrateEvent& event) {
           ReleaseDirectSettled(e);
         } else if constexpr (std::is_same_v<E, hop_migrate_event::GuestReattachRetry>) {
           OnGuestSfuTransportLost();
+        } else if constexpr (std::is_same_v<E, hop_migrate_event::Continue>) {
+          steps_.Run(e.id);
+        } else if constexpr (std::is_same_v<E, hop_migrate_event::RelayAttached>) {
+          OnRelayAttached(e);
         } else {
           static_assert(!sizeof(E), "handle every HopMigrateEvent");
         }
       },
       event);
+}
+
+void CallHopMigrateWorkflow::Defer(std::function<void()> step) {
+  outbox_.Emit(hop_migrate_event::Continue{steps_.Store(std::move(step))});
+}
+
+uint64_t CallHopMigrateWorkflow::StoreAttach(HopAttach at, std::function<void(Roe<void>)> on_done, const bool guest) {
+  const uint64_t id = ++next_attach_;
+  attaches_.emplace(id, PendingAttach{std::make_shared<HopAttach>(std::move(at)), std::move(on_done), guest});
+  return id;
+}
+
+std::function<void(Roe<MediaRelayAttached>)> CallHopMigrateWorkflow::RelayAttachReporter(const uint64_t id) const {
+  // Edge: the relay answers on its I/O thread — it only reports.
+  return [outbox = outbox_, id](Roe<MediaRelayAttached> attached) {
+    hop_migrate_event::RelayAttached answer;
+    answer.id = id;
+    answer.ok = static_cast<bool>(attached);
+    if (attached) {
+      answer.a_up_bps = attached->a_up_bps;
+    } else {
+      answer.error = attached.error().message;
+    }
+    outbox.Emit(std::move(answer));
+  };
+}
+
+void CallHopMigrateWorkflow::OnRelayAttached(const hop_migrate_event::RelayAttached& answer) {
+  auto it = attaches_.find(answer.id);
+  if (it == attaches_.end()) {
+    return;
+  }
+  PendingAttach pending = std::move(it->second);
+  attaches_.erase(it);
+  if (!answer.ok) {
+    pending.on_done(Error(answer.error));
+    return;
+  }
+  // Calls owner: the commit runs StartSfu / adaptation and moves seat and planner state (CALLS.md).
+  pending.on_done(pending.guest ? CompleteGuestReattach(*pending.at, answer.a_up_bps)
+                                : CompleteHopAttach(*pending.at, answer.a_up_bps));
 }
 
 void CallHopMigrateWorkflow::RefanOutPickedHop(const hop_migrate_event::RefanOutPickedHop& again) {
@@ -1133,27 +1158,22 @@ void CallHopMigrateWorkflow::OnGuestSfuTransportLost() {
                 << " hop=" << attach.hop_peer_id << " call_id=" << call_id;
   host_.SetMediaActivity(Tr("call.status.reconnecting"));
 
+  // The completion runs on the owner (from the attach's event, or a deferred early failure).
   ReattachGuestSfuTransportAsync(call_id, attach, [this, call_id, gen, attempt](Roe<void> ok) {
+    guest_.reattach_in_flight = false;
     if (!IsMigrateGenerationCurrent(gen)) {
-      CallsThread::Post([this]() { guest_.reattach_in_flight = false; });
       return;
     }
-    CallsThread::Post([this, call_id, ok, gen, attempt]() {
-      guest_.reattach_in_flight = false;
-      if (!IsMigrateGenerationCurrent(gen)) {
-        return;
-      }
-      if (ok) {
-        log().info << "Guest SFU reattach ok call_id=" << call_id;
-        guest_.reattach_attempts = 0;
-        host_.ClearMediaActivity();
-        return;
-      }
-      log().warning << "Guest SFU reattach failed attempt=" << attempt
-                    << " err=" << ok.error().message << " call_id=" << call_id;
-      const int backoff_ms = 400 * attempt;
-      outbox_.After(std::chrono::milliseconds(backoff_ms), hop_migrate_event::GuestReattachRetry{});
-    });
+    if (ok) {
+      log().info << "Guest SFU reattach ok call_id=" << call_id;
+      guest_.reattach_attempts = 0;
+      host_.ClearMediaActivity();
+      return;
+    }
+    log().warning << "Guest SFU reattach failed attempt=" << attempt << " err=" << ok.error().message
+                  << " call_id=" << call_id;
+    const int backoff_ms = 400 * attempt;
+    outbox_.After(std::chrono::milliseconds(backoff_ms), hop_migrate_event::GuestReattachRetry{});
   });
 }
 
@@ -1163,7 +1183,7 @@ void CallHopMigrateWorkflow::ReattachGuestSfuTransportAsync(const std::string& c
   if (!on_done) {
     return;
   }
-  PostOnCallsOwner([this, call_id, attach_in, on_done = std::move(on_done)]() mutable {
+  Defer([this, call_id, attach_in, on_done = std::move(on_done)]() mutable {
     StartGuestReattach(call_id, attach_in, std::move(on_done));
   });
 }
@@ -1205,17 +1225,8 @@ void CallHopMigrateWorkflow::StartGuestReattach(const std::string& call_id, cons
   hooks.still_wanted = [this, gen = at.gen_at_start]() { return IsMigrateGenerationCurrent(gen); };
   hooks.on_frame = MakeHopFrameSink(at);
   const MediaRelayAttachRequest request = MakeRelayAttachRequest(call_id, at.attach);
-  AttachToMediaRelayAsync(
-      RelayAttachPorts(), request, std::move(hooks),
-      [this, at = std::move(at), on_done = std::move(on_done)](Roe<MediaRelayAttached> attached) mutable {
-        if (!attached) {
-          on_done(attached.error());
-          return;
-        }
-        PostOnCallsOwner([this, at = std::move(at), bps = attached->a_up_bps, on_done = std::move(on_done)]() {
-          on_done(CompleteGuestReattach(at, bps));
-        });
-      });
+  const uint64_t id = StoreAttach(std::move(at), std::move(on_done), /*guest=*/true);
+  AttachToMediaRelayAsync(RelayAttachPorts(), request, std::move(hooks), RelayAttachReporter(id));
 }
 
 Roe<void> CallHopMigrateWorkflow::CompleteGuestReattach(const HopAttach& at, int64_t a_up_bps) {

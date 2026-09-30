@@ -1,5 +1,4 @@
 #include "feature/calls/CallTopologyController.h"
-#include "feature/calls/CallsThread.h"
 #include "domain/messaging/CallMediaPlannerSelectLogic.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
 
@@ -630,7 +629,7 @@ void CallTopologyController::FlushPendingHopPrefer(const std::string& call_id) {
   flight_.call_id = call_id;
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::IceRecover, prefer, gen,
                              [this, call_id, gen](Roe<void> /*mig*/) {
-    CallsThread::Post([this, call_id, gen]() {
+    Defer([this, call_id, gen]() {
       if (flight_.flight_gen != gen && !IsMigrateGenerationCurrent(gen)) {
         return;
       }
@@ -873,7 +872,7 @@ void CallTopologyController::AttachFromInviteHint(const std::string& call_id, co
   }
   const uint64_t gen = ClaimMigrateFlight(call_id);
   AttachLocalToSfuAsync(call_id, attach, [this, call_id, gen](Roe<void> ok) {
-    CallsThread::Post([this, call_id, ok, gen]() { FinishInviteHintAttach(call_id, gen, ok); });
+    Defer([this, call_id, ok, gen]() { FinishInviteHintAttach(call_id, gen, ok); });
   });
 }
 
@@ -939,7 +938,7 @@ void CallTopologyController::JoinGroupWithoutHint(const std::string& call_id, si
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::LocalJoinedWithoutHint, {}, gen,
                              [this, call_id, gen](Roe<void> mig) {
                                const bool attached = sfu_.attached;
-                               CallsThread::Post([this, call_id, mig, attached, gen]() {
+                               Defer([this, call_id, mig, attached, gen]() {
                                  FinishJoinSoftMigrate(call_id, gen, mig, attached);
                                });
                              });
@@ -1031,7 +1030,7 @@ bool CallTopologyController::OnRemoteAcceptJoined(const std::string& call_id, si
   const uint64_t gen = ClaimMigrateFlight(call_id);
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::RemoteAcceptObserved, {}, gen,
                              [this, call_id, joiner_identity, gen](Roe<void> mig) {
-                               CallsThread::Post([this, call_id, joiner_identity, mig, gen]() {
+                               Defer([this, call_id, joiner_identity, mig, gen]() {
                                  FinishRemoteAcceptMigrate(call_id, joiner_identity, gen, mig);
                                });
                              });
@@ -1110,7 +1109,7 @@ void CallTopologyController::OnPeerMediaRelayCapLearned(const std::string& call_
         if (!mig) {
           log().warning << "SoftMigrate (relay-cap nudge) failed: " << mig.error().message;
         }
-        CallsThread::Post([this]() { host_.NotifyRingChanged(); });
+        Defer([this]() { host_.NotifyRingChanged(); });
       });
 }
 
@@ -1163,7 +1162,7 @@ void CallTopologyController::OnJoinedCountObserved(const std::string& call_id, s
   const uint64_t gen = ClaimMigrateFlight(call_id);
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::JoinedCountObserved, {}, gen,
                              [this, call_id, gen](Roe<void> mig) {
-    CallsThread::Post([this, call_id, mig, gen]() {
+    Defer([this, call_id, mig, gen]() {
       if (!IsMigrateGenerationCurrent(gen)) {
         return;
       }
@@ -1348,7 +1347,7 @@ void CallTopologyController::StartInboundSfuAttach(const std::string& call_id, c
                  << " have=" << flight_.migrate_generation.load(std::memory_order_acquire)
                  << " attached=" << (sfu_.attached ? 1 : 0) << " ok=" << (ok ? 1 : 0);
     }
-    CallsThread::Post([this, call_id, attach, gen, superseded, ok]() {
+    Defer([this, call_id, attach, gen, superseded, ok]() {
       if (superseded) {
         FinishSupersededInboundSfuAttach(call_id, gen, ok);
       } else {
@@ -1557,6 +1556,8 @@ void CallTopologyController::Handle(TopologyEvent& event) {
           ReannouncePublisher(e);
         } else if constexpr (std::is_same_v<E, topology_event::RefuseGuest>) {
           RefuseGuest(e);
+        } else if constexpr (std::is_same_v<E, topology_event::Continue>) {
+          steps_.Run(e.id);
         } else if constexpr (std::is_same_v<E, HopMigrateEvent>) {
           hop_migrate_.Handle(e);
         } else if constexpr (std::is_same_v<E, PlanningEvent>) {
@@ -1566,6 +1567,12 @@ void CallTopologyController::Handle(TopologyEvent& event) {
         }
       },
       event);
+}
+
+void CallTopologyController::Defer(std::function<void()> step) {
+  // A hop flow's finish step runs as the next event, never inside the flow that reported it.
+  PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  outbox_.Emit(topology_event::Continue{steps_.Store(std::move(step))});
 }
 
 void CallTopologyController::ReannouncePublisher(const topology_event::ReannouncePublisher& again) {
@@ -1694,7 +1701,7 @@ void CallTopologyController::StartHopHintRepick(const std::string& call_id, cons
   flight_.call_id = call_id;
   MaybeSoftMigrateToSfuAsync(call_id, SoftMigrateTrigger::IceRecover, prefer, gen,
                              [this, call_id, guest, gen](Roe<void> mig) {
-                               CallsThread::Post([this, call_id, mig, guest, gen]() {
+                               Defer([this, call_id, mig, guest, gen]() {
                                  FinishHopHintRepick(call_id, guest, gen, mig);
                                });
                              });

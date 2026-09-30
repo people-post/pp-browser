@@ -17,6 +17,7 @@
 #include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallsOutbox.h"
+#include "feature/calls/CallsSteps.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallHopMigrateWorkflow.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
@@ -200,6 +201,8 @@ private:
   void RefuseGuestNoSharedHop(const std::string& call_id, const std::string& guest_identity);
   void RefuseGuest(const topology_event::RefuseGuest& refuse_event);
   void ReannouncePublisher(const topology_event::ReannouncePublisher& again);
+  /** Run `step` as the next event (owner). */
+  void Defer(std::function<void()> step);
   std::vector<std::string> DialableHopPeerIds() const;
   bool IsMigrateGenerationCurrent(uint64_t gen) const;
   /** Local advertise MA + InferCallHopScope for SoftMigrate (V035). */
@@ -297,6 +300,8 @@ private:
   /** Names the current relay watch: a loss reported by an earlier one is stale. */
   uint64_t relay_watch_ = 0;
   CallsOutbox<TopologyEvent> outbox_;
+  /** Finish steps waiting for their Continue event. */
+  CallsSteps steps_;
   uint64_t relay_loss_observer_ = 0;
 
   /** Coordinator timers (attach-wait deadline, publisher re-announce) drop once we are gone. */
