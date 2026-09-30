@@ -1461,6 +1461,10 @@ void CallSessionManager::P2pResendMediaKey(const std::string& call_id, const std
   (void)key_exchange_.SendCurrent(call_id, peer_identity);
 }
 
+bool CallSessionManager::HopCarriesMedia() const {
+  return topology_.IsSfuAttached();  // an atomic flag: safe from the transport's I/O
+}
+
 void CallSessionManager::P2pNoteInboundHello(const std::string& call_id, const std::string& identity,
                                              const std::string& peer_id) {
   auto local = control_.LocalRelayIdentity();

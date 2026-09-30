@@ -1,5 +1,4 @@
 #include "feature/calls/CallMediaBridge.h"
-#include "feature/calls/CallsThread.h"
 #include "domain/messaging/CallTxOnlyEscalateLogic.h"
 
 #include "foundation/i18n/LocalizationService.h"
@@ -34,6 +33,12 @@ constexpr int kMediaKeyInboxPollRounds = 90;
 constexpr std::chrono::milliseconds kMediaKeyPollRound{1000};
 /** Rate-limit PeerId→relay unknown drops (PreferLocal / non-contact dogfood). */
 std::atomic<uint32_t> g_inbound_unmapped_audio_drops{0};
+
+/** The 1:1 receive path logs from the transport's I/O thread (no bridge there). */
+logging::Logger& DirectReceiveLog() {
+  static logging::Logger logger = logging::getLogger("CallMediaBridge");
+  return logger;
+}
 
 } // namespace
 
@@ -95,7 +100,7 @@ void CallMediaBridge::BindInboundPeer(const std::string& call_id, const std::str
   }
   if (!identity.empty() && identity.rfind("account:", 0) == 0) {
     media_peer_identity_ = identity;
-    inbound_remote_stream_.store(PublisherStreamIdForIdentity(identity), std::memory_order_release);
+    receive_->remote_stream.store(PublisherStreamIdForIdentity(identity), std::memory_order_release);
     if (!inbound_peer_id.empty() && inbound_peer_id != identity) {
       log().info << "Inbound call-media mapped PeerId→account stream identity peer_id=" << inbound_peer_id
                  << " account=" << identity;
@@ -105,7 +110,7 @@ void CallMediaBridge::BindInboundPeer(const std::string& call_id, const std::str
   } else {
     // Do not hash PeerId into a mixer track — SoftMigrate uses Account stream ids. Defer until
     // BeginSession / CallAccept teaches PeerId→Account (moto contact often lacks peer_id).
-    inbound_remote_stream_.store(0, std::memory_order_release);
+    receive_->remote_stream.store(0, std::memory_order_release);
     log().warning << "Inbound call-media stream identity not account: peer_id="
                   << (inbound_peer_id.empty() ? "(empty)" : inbound_peer_id)
                   << " — deferring on_audio stream_id until Account identity known";
@@ -121,9 +126,9 @@ CallMediaDirectCallbacks CallMediaBridge::MakeBundleCallbacks(const std::string&
   cbs.on_connected = [outbox = outbox_, call_id, label]() {
     outbox.Emit(direct_event::BundleConnected{call_id, label});
   };
-  cbs.on_media = [this, call_id, fixed_stream](uint8_t channel, uint32_t seq, uint8_t mark,
-                                               const std::vector<uint8_t>& payload) {
-    DeliverDirectMedia(call_id, fixed_stream, channel, seq, mark, payload);
+  cbs.on_media = [gate = receive_, &media = media_, &host = host_, outbox = outbox_, call_id,
+                 fixed_stream](uint8_t channel, uint32_t seq, uint8_t mark, const std::vector<uint8_t>& payload) {
+    ReceiveDirectMedia(*gate, media, host, outbox, call_id, fixed_stream, channel, seq, mark, payload);
   };
   cbs.on_failed = [outbox = outbox_, call_id](const std::string& reason) {
     outbox.Emit(direct_event::BundleFailed{call_id, reason});
@@ -184,6 +189,7 @@ void CallMediaBridge::OnBundleFailed(const std::string& call_id, const std::stri
 }
 
 CallMediaBridge::~CallMediaBridge() {
+  receive_->open.store(false, std::memory_order_release);  // frames still in flight on I/O drop
   media_.SetOnStateChanged({});  // installed by StartDirectEngine; the engine outlives the bridge
 }
 
@@ -429,6 +435,8 @@ void CallMediaBridge::Handle(DirectPathEvent& event) {
           StartDeferredAnswerer(e.call_id);
         } else if constexpr (std::is_same_v<E, direct_event::KeyPollDue>) {
           OnKeyPollDue(e);
+        } else if constexpr (std::is_same_v<E, direct_event::RebindInboundStream>) {
+          RebindInboundStream(e.call_id);
         } else if constexpr (std::is_same_v<E, direct_event::ForConnect>) {
           connect_.Handle(e.event);
         } else if constexpr (std::is_same_v<E, direct_event::StepReady>) {
@@ -808,53 +816,64 @@ void CallMediaBridge::CommitDirectConnected(const std::string& call_id) {
   host_.P2pNotifyRingChanged();
 }
 
-void CallMediaBridge::DeliverDirectMedia(const std::string& call_id, const uint32_t fixed_stream,
-                                         uint8_t channel, uint32_t seq, uint8_t mark,
-                                         const std::vector<uint8_t>& payload) {
-  CallsThread::Post([this, call_id, fixed_stream, channel, seq, mark, payload]() {
-    if (!media_.IsActive() || media_.ActiveCallId() != call_id) {
-      return;
+void CallMediaBridge::ReceiveDirectMedia(ReceiveGate& gate, CallMediaEngine& media, const CallMediaHost& host,
+                                         const CallsOutbox<DirectPathEvent>& outbox, const std::string& call_id,
+                                         const uint32_t fixed_stream, const uint8_t channel, const uint32_t seq,
+                                         const uint8_t mark, const std::vector<uint8_t>& payload) {
+  // The data plane stays on I/O, like the hop's frames: only atomics and the engine's thread-safe
+  // surface here. Owner state it needs (the bound stream) is published into the gate.
+  if (!gate.open.load(std::memory_order_acquire) || !media.IsActive() || media.ActiveCallId() != call_id ||
+      host.HopCarriesMedia()) {
+    return;
+  }
+  // Outbound bundles know the dialed identity; inbound ones use the bound (or deferred) stream.
+  const uint32_t remote_stream =
+      fixed_stream != 0 ? fixed_stream : gate.remote_stream.load(std::memory_order_acquire);
+  if (remote_stream == 0) {
+    const int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now().time_since_epoch())
+                            .count();
+    int64_t not_before = gate.rebind_not_before_ms.load(std::memory_order_acquire);
+    if (now >= not_before && gate.rebind_not_before_ms.compare_exchange_strong(not_before, now + 250)) {
+      outbox.Emit(direct_event::RebindInboundStream{call_id});
     }
-    if (HopAttachedFor(call_id)) {
-      return;
+    const uint32_t n = g_inbound_unmapped_audio_drops.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (n == 1 || (n % 50) == 0) {
+      DirectReceiveLog().warning << "Inbound call-media drop: stream not bound yet call_id=" << call_id << " drops=" << n;
     }
-    // Outbound bundles know the dialed identity; inbound ones use the bound (or deferred) stream.
-    uint32_t remote_stream =
-        fixed_stream != 0 ? fixed_stream : inbound_remote_stream_.load(std::memory_order_acquire);
-    if (remote_stream == 0) {
-      std::string account = media_peer_identity_;
-      const std::string deferred = inbound_deferred_peer_id_;
-      if (account.rfind("account:", 0) != 0 && !deferred.empty()) {
-        if (auto mapped = host_.RelayIdentityForMeshPeerId(call_id, deferred);
-            mapped && mapped->has_value() && !mapped->value().empty()) {
-          account = mapped->value();
-          media_peer_identity_ = account;
-        }
-      }
-      if (account.rfind("account:", 0) == 0) {
-        remote_stream = PublisherStreamIdForIdentity(account);
-        inbound_remote_stream_.store(remote_stream, std::memory_order_release);
-        log().info << "Inbound call-media rebound stream_id=" << remote_stream
-                   << " account=" << account << " call_id=" << call_id;
-      } else {
-        const uint32_t n = g_inbound_unmapped_audio_drops.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (n == 1 || (n % 50) == 0) {
-          log().warning << "Inbound call-media drop: PeerId→relay unknown"
-                        << " peer_id=" << (deferred.empty() ? "(empty)" : deferred)
-                        << " media_peer=" << (media_peer_identity_.empty() ? "(empty)" : media_peer_identity_)
-                        << " call_id=" << call_id << " drops=" << n;
-        }
-        return;
-      }
+    return;
+  }
+  CallMediaEngine::SfuPacket pkt;
+  pkt.stream_id = remote_stream;
+  pkt.channel_id = channel;
+  pkt.seq = seq;
+  pkt.mark = mark;
+  pkt.payload = payload;
+  media.OnSfuPacket(pkt);
+}
+
+void CallMediaBridge::RebindInboundStream(const std::string& call_id) {
+  if (receive_->remote_stream.load(std::memory_order_acquire) != 0 || media_.ActiveCallId() != call_id) {
+    return;
+  }
+  std::string account = media_peer_identity_;
+  const std::string deferred = inbound_deferred_peer_id_;
+  if (account.rfind("account:", 0) != 0 && !deferred.empty()) {
+    if (auto mapped = host_.RelayIdentityForMeshPeerId(call_id, deferred);
+        mapped && mapped->has_value() && !mapped->value().empty()) {
+      account = mapped->value();
+      media_peer_identity_ = account;
     }
-    CallMediaEngine::SfuPacket pkt;
-    pkt.stream_id = remote_stream;
-    pkt.channel_id = channel;
-    pkt.seq = seq;
-    pkt.mark = mark;
-    pkt.payload = payload;
-    media_.OnSfuPacket(pkt);
-  });
+  }
+  if (account.rfind("account:", 0) != 0) {
+    log().debug << "Inbound call-media stream still unknown peer_id=" << (deferred.empty() ? "(empty)" : deferred)
+                << " media_peer=" << (media_peer_identity_.empty() ? "(empty)" : media_peer_identity_)
+                << " call_id=" << call_id;
+    return;  // I/O asks again after its backoff
+  }
+  const uint32_t stream = PublisherStreamIdForIdentity(account);
+  receive_->remote_stream.store(stream, std::memory_order_release);
+  log().info << "Inbound call-media rebound stream_id=" << stream << " account=" << account << " call_id=" << call_id;
 }
 
 bool CallMediaBridge::IsMeshConnectFailed() const {
@@ -1228,7 +1247,7 @@ void CallMediaBridge::ResetDirectSessionState(const std::string& call_id, const 
   session_offerer_ = offerer;
   direct_connected_at_ms_ = 0;
   if (peer_identity.rfind("account:", 0) == 0) {
-    inbound_remote_stream_.store(PublisherStreamIdForIdentity(peer_identity), std::memory_order_release);
+    receive_->remote_stream.store(PublisherStreamIdForIdentity(peer_identity), std::memory_order_release);
   }
   audio_seq_.store(0);
   ClearMeshConnectFailed();
@@ -1643,7 +1662,7 @@ void CallMediaBridge::ReleaseDirectTransportBody() {
   media_peer_identity_.clear();
   reach_kind_ = PeerLinkKind::Unknown;
   inbound_deferred_peer_id_.clear();
-  inbound_remote_stream_.store(0, std::memory_order_release);
+  receive_->remote_stream.store(0, std::memory_order_release);
   // Do not ClearRemoteAudioTracks here — SoftMigrate+2s would wipe live media_relay tracks
   // that already replaced 1:1 (dogfood: streams look healthy then Moto silent on PreferLocal).
   // 1:1 on_audio is already ignored once the hop is attached; stream_id==1 is dropped in engine.
@@ -1668,7 +1687,7 @@ void CallMediaBridge::NotePeerIdRelayMapping(const std::string& peer_id,
   }
   media_peer_identity_ = relay_identity;
   const uint32_t stream = PublisherStreamIdForIdentity(relay_identity);
-  inbound_remote_stream_.store(stream, std::memory_order_release);
+  receive_->remote_stream.store(stream, std::memory_order_release);
   log().info << "Inbound call-media mapping from CallAccept/Invite stream_id=" << stream
              << " peer_id=" << peer_id << " account=" << relay_identity;
 }

@@ -178,7 +178,8 @@ public:
   };
 
   struct SfuSurface {
-    bool attached = false;
+    /** Owner writes; the 1:1 receive path reads it on transport I/O (the hop carries the call). */
+    std::atomic<bool> attached{false};
     int64_t last_quote_a_up_bps = 0;
     CallHopPlannerPhase hop_planner_phase = CallHopPlannerPhase::Idle;
   };

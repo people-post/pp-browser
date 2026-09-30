@@ -6,8 +6,8 @@
 # under src/feature/calls is a passive component: it reports through its CallsOutbox and gets
 # timers from it. CallUiBackend is the UI edge and may post replies to UI. Tests are exempt.
 #
-# EXCEPTIONS lists the sites that are known and documented, with a count: a new site fails, and so
-# does a removed one (drop it from the list).
+# EXCEPTIONS lists known, documented sites with a count: a new site fails, and so does a removed one
+# (drop it from the list). Empty today.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -34,9 +34,7 @@ UI_POST = re.compile(r"\bAppRuntime::PostUI\b")
 UI_EDGE = {"CallUiBackend"}
 
 # path (relative to src/feature/calls) -> (count, why)
-EXCEPTIONS = {
-    "CallMediaBridge.cpp": (1, "received 1:1 media is delivered through the owner (THREADING.md)"),
-}
+EXCEPTIONS = {}
 
 fail = 0
 counts = {}

@@ -248,6 +248,10 @@ struct KeyPollDue {
   uint64_t wait = 0;
   int round = 0;
 };
+/** 1:1 frames arrive with no stream bound yet (transport I/O): try to bind it from what we know. */
+struct RebindInboundStream {
+  std::string call_id;
+};
 /** An event of the connect sequence (the bridge's child). */
 struct ForConnect {
   ConnectEvent event;
@@ -265,7 +269,7 @@ using DirectPathEvent =
                  direct_event::InboundPeer, direct_event::BundleConnected, direct_event::BundleFailed,
                  direct_event::PathLost, direct_event::PathChanged, direct_event::EscalateRestart,
                  direct_event::StartOfferer, direct_event::MediaKeyReady, direct_event::KeyPollDue,
-                 direct_event::ForConnect, direct_event::StepReady>;
+                 direct_event::RebindInboundStream, direct_event::ForConnect, direct_event::StepReady>;
 
 namespace session_event {
 

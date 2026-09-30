@@ -264,8 +264,13 @@ private:
                                                const char* label);
   /** UI: a bundle closed / failed — ignore during SoftMigrate / SFU attach, else ConnectFailed. */
   void OnBundleFailed(const std::string& call_id, const std::string& reason);
-  void DeliverDirectMedia(const std::string& call_id, uint32_t fixed_stream, uint8_t channel, uint32_t seq,
-                          uint8_t mark, const std::vector<uint8_t>& payload);
+  struct ReceiveGate;
+  /** Transport I/O: hand a 1:1 frame to the engine (thread-safe), gated by `gate`. */
+  static void ReceiveDirectMedia(ReceiveGate& gate, CallMediaEngine& media, const CallMediaHost& host,
+                                 const CallsOutbox<DirectPathEvent>& outbox, const std::string& call_id,
+                                 uint32_t fixed_stream, uint8_t channel, uint32_t seq, uint8_t mark,
+                                 const std::vector<uint8_t>& payload);
+  void RebindInboundStream(const std::string& call_id);
   void ReleaseDirectTransportBody();
   /** NAT dogfood: dialable "direct" with TX-only → force circuit ensure + re-dial. */
   void MaybeEscalateTxOnlyDirect();
@@ -431,8 +436,16 @@ private:
   std::optional<FailedOpenCall> failed_open_;
   int media_key_inbox_poll_rounds_ = 90;
   std::atomic<uint32_t> audio_seq_{0};
-  /** 1:1 inbound remote mixer stream; 0 = defer until relay: identity known (BeginSession). */
-  std::atomic<uint32_t> inbound_remote_stream_{0};
+  /** What 1:1 receive reads on the transport's I/O thread; the owner publishes it. */
+  struct ReceiveGate {
+    /** Cleared when the bridge goes: frames still in flight on I/O drop. */
+    std::atomic<bool> open{true};
+    /** Inbound remote mixer stream; 0 = defer until the relay: identity is known (BeginSession). */
+    std::atomic<uint32_t> remote_stream{0};
+    /** Steady-clock ms before which I/O does not ask for another rebind (one in flight / just failed). */
+    std::atomic<int64_t> rebind_not_before_ms{0};
+  };
+  std::shared_ptr<ReceiveGate> receive_ = std::make_shared<ReceiveGate>();
 };
 
 } // namespace pbr
