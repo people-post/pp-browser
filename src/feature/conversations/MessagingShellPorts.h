@@ -3,7 +3,9 @@
 #include "domain/mesh/reachability/Reachability.h"
 #include "domain/mesh/l4/shared/RelayRuntimeStats.h"
 
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include "common/PbrCompat.h"
@@ -83,6 +85,42 @@ struct StatusbarClusterSnapshot {
  * Hybrid status-bar popover — inspect + Retest; no capability toggles.
  * Strings use settings reachability parity where applicable.
  */
+/** Cumulative mesh traffic at one moment (node-monitoring M3: the popover's rates are deltas). */
+struct MeshTrafficTotals {
+  bool available = false;
+  size_t links = 0;
+  uint64_t sent_bytes = 0;
+  uint64_t received_bytes = 0;
+  uint64_t reliable_sent = 0;
+  uint64_t retransmits = 0;
+  uint64_t rtt_samples = 0;
+  uint64_t rtt_sum_ms = 0;
+  /** Bytes this node relayed for others (circuit bridges + media relay forwarding). */
+  uint64_t relayed_bytes = 0;
+  std::chrono::steady_clock::time_point at{};
+};
+
+/** Rates between two samples; a figure with nothing to base it on is negative. */
+struct MeshTrafficRates {
+  bool valid = false;
+  double sent_bps = 0.0;
+  double received_bps = 0.0;
+  double relayed_bps = 0.0;
+  /** Mean round trip of the samples in between; -1 when none. */
+  int64_t rtt_ms = -1;
+  /** Retransmits per reliable send in between, in percent; -1 when nothing was sent. */
+  double resend_pct = -1.0;
+};
+
+MeshTrafficRates MeshTrafficRatesBetween(const MeshTrafficTotals& before, const MeshTrafficTotals& now);
+
+/** What the popover shows of the mesh traffic (links now, rates since the last sample). */
+struct MeshTrafficView {
+  bool available = false;
+  size_t links = 0;
+  MeshTrafficRates rates;
+};
+
 struct StatusbarPopoverSnapshot {
   bool messaging_ready = false;
   std::string brief_label;
@@ -102,6 +140,13 @@ struct StatusbarPopoverSnapshot {
   std::string circuit_load_label;
   std::string media_sessions_label;
   std::string media_participants_label;
+  /** node-monitoring M3: mesh traffic (links, rates, round trip, resends) and what we relay. */
+  bool show_network = false;
+  std::string network_links_label;
+  std::string network_rate_label;
+  std::string network_rtt_label;
+  std::string network_resend_label;
+  std::string relay_rate_label;
 
   bool operator==(const StatusbarPopoverSnapshot& other) const {
     return messaging_ready == other.messaging_ready && brief_label == other.brief_label &&
@@ -115,7 +160,10 @@ struct StatusbarPopoverSnapshot {
            media_participants == other.media_participants &&
            circuit_load_label == other.circuit_load_label &&
            media_sessions_label == other.media_sessions_label &&
-           media_participants_label == other.media_participants_label;
+           media_participants_label == other.media_participants_label && show_network == other.show_network &&
+           network_links_label == other.network_links_label && network_rate_label == other.network_rate_label &&
+           network_rtt_label == other.network_rtt_label && network_resend_label == other.network_resend_label &&
+           relay_rate_label == other.relay_rate_label;
   }
   bool operator!=(const StatusbarPopoverSnapshot& other) const { return !(*this == other); }
 };
@@ -139,7 +187,8 @@ StatusbarPopoverSnapshot BuildStatusbarPopoverSnapshot(bool messaging_ready, Bri
                                                        ReachabilityStatus reachability, bool has_global_ipv6,
                                                        bool dial_back_ok, bool upnp_mapped,
                                                        bool help_network_enabled,
-                                                       const RelayRuntimeStats& load = {});
+                                                       const RelayRuntimeStats& load = {},
+                                                       const MeshTrafficView& traffic = {});
 
 /**
  * Narrow messaging read/action ports for shell chrome (status bar cluster + popover).
@@ -170,7 +219,12 @@ struct MessagingShellPortsDeps {
   std::function<std::string()> last_mesh_error;
   std::function<void()> retest_reachability;
   std::function<RelayRuntimeStats()> relay_load_stats;
+  /** Cumulative mesh traffic now (the ports turn samples into rates). */
+  std::function<MeshTrafficTotals()> traffic_totals;
 };
+
+/** Mesh traffic totals from a (possibly null) mesh host. */
+MeshTrafficTotals CollectMeshTrafficTotals(MeshHost* mesh);
 
 /** Collect circuit + media relay serving stats from a (possibly null) mesh host. */
 RelayRuntimeStats CollectRelayRuntimeStats(MeshHost* mesh);

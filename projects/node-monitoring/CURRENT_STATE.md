@@ -15,4 +15,8 @@
 
 **M2 landed** (links, reachability, punches, circuit relay): `MeshLinkEventLog.cpp` (`InstallMeshLinkMetrics`), `AmpPunchCoordinator.h`, `PunchServer.cpp`, `CircuitRelayServer.cpp` (`RuntimeStats`), `NodeMetrics.cpp`.
 
-**Next:** stats that need pp-cpp-amp (per-link RTT / loss / bytes, channels by protocol, circuit bridge bytes); M3 (pp-browser UI snapshot, with rendezvous parking).
+**Amp traffic landed** (pp-cpp-amp v2.10.0: `Endpoint::Stats`, RTT observer, `ChannelBridge::ForwardedBytes`): `pp_amp_*` series, `pp_circuit_relay_bytes_total`.
+
+**M3 landed (popover):** `MeshTrafficTotals` / `MeshTrafficRatesBetween` / `CollectMeshTrafficTotals` in `feature/conversations/MessagingShellPorts.*`; rendered by `ShellHost::ApplyStatusbarPopover` into `window_shell.rml`.
+
+**Open:** rendezvous parking in the popover; open channels by protocol (needs a mux-wide count in pp-cpp-amp); call quality (call screen).

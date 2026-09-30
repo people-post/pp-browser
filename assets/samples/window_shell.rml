@@ -166,6 +166,16 @@
     </div>
     <p class="text-xs muted" data-if="statusbar_popover_upnp_visible"
        data-rml="statusbar_popover_upnp_label"></p>
+    <div class="stack" data-if="statusbar_popover_network_visible">
+      <p class="text-xs muted">{{i18n:shell.statusbar.popover.network}}</p>
+      <p class="text-xs" data-rml="statusbar_popover_network_links"></p>
+      <p class="text-xs" data-if="statusbar_popover_network_rate != ''"
+         data-rml="statusbar_popover_network_rate"></p>
+      <p class="text-xs" data-if="statusbar_popover_network_rtt != ''"
+         data-rml="statusbar_popover_network_rtt"></p>
+      <p class="text-xs" data-if="statusbar_popover_network_resend != ''"
+         data-rml="statusbar_popover_network_resend"></p>
+    </div>
     <div class="stack" data-if="statusbar_popover_load_visible">
       <p class="text-xs muted">{{i18n:shell.statusbar.popover.load}}</p>
       <p class="text-xs" data-if="statusbar_popover_circuit_load != ''"
@@ -174,6 +184,8 @@
          data-rml="statusbar_popover_media_sessions"></p>
       <p class="text-xs" data-if="statusbar_popover_media_participants != ''"
          data-rml="statusbar_popover_media_participants"></p>
+      <p class="text-xs" data-if="statusbar_popover_relay_rate != ''"
+         data-rml="statusbar_popover_relay_rate"></p>
     </div>
     <p class="text-xs error" data-if="statusbar_popover_error_visible"
        data-rml="statusbar_popover_error" selectable="text"></p>

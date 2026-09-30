@@ -8,6 +8,9 @@
 #include "domain/mesh/host/MeshHost.h"
 #include "common/PbrCompat.h"
 
+#include <cstdio>
+#include <memory>
+
 namespace pbr {
 namespace {
 
@@ -114,6 +117,45 @@ void FillLoadSlots(StatusbarClusterSnapshot& snap, bool help_network_enabled,
     snap.load_media_label = Tr("shell.statusbar.load.media", {{"count", CountArg(media_n)}});
     snap.load_media_title =
         Tr("shell.statusbar.a11y.load_media", {{"count", CountArg(media_n)}});
+  }
+}
+
+/** "12 KB", "1.4 MB" (rates add "/s" in the strings). */
+std::string FormatBytes(const double bytes) {
+  char buf[32];
+  if (bytes >= 1024.0 * 1024.0) {
+    std::snprintf(buf, sizeof(buf), "%.1f MB", bytes / (1024.0 * 1024.0));
+  } else if (bytes >= 1024.0) {
+    std::snprintf(buf, sizeof(buf), "%.0f KB", bytes / 1024.0);
+  } else {
+    std::snprintf(buf, sizeof(buf), "%.0f B", bytes);
+  }
+  return buf;
+}
+
+void FillPopoverNetwork(StatusbarPopoverSnapshot& snap, bool host_running, bool help_network_enabled,
+                        const MeshTrafficView& traffic) {
+  if (!host_running || !traffic.available) {
+    return;
+  }
+  snap.show_network = true;
+  snap.network_links_label = Tr("shell.statusbar.popover.links", {{"count", CountArg(traffic.links)}});
+  const MeshTrafficRates& rates = traffic.rates;
+  if (!rates.valid) {
+    return;  // the first sample: rates come with the next refresh
+  }
+  snap.network_rate_label = Tr("shell.statusbar.popover.traffic",
+                               {{"up", FormatBytes(rates.sent_bps)}, {"down", FormatBytes(rates.received_bps)}});
+  if (rates.rtt_ms >= 0) {
+    snap.network_rtt_label = Tr("shell.statusbar.popover.rtt", {{"ms", std::to_string(rates.rtt_ms)}});
+  }
+  if (rates.resend_pct >= 0.0) {
+    char pct[16];
+    std::snprintf(pct, sizeof(pct), "%.1f", rates.resend_pct);
+    snap.network_resend_label = Tr("shell.statusbar.popover.resend", {{"pct", pct}});
+  }
+  if (help_network_enabled && rates.relayed_bps > 0.0) {
+    snap.relay_rate_label = Tr("shell.statusbar.popover.relaying", {{"rate", FormatBytes(rates.relayed_bps)}});
   }
 }
 
@@ -286,7 +328,8 @@ StatusbarPopoverSnapshot BuildStatusbarPopoverSnapshot(bool messaging_ready, Bri
                                                        ReachabilityStatus reachability, bool has_global_ipv6,
                                                        bool dial_back_ok, bool upnp_mapped,
                                                        bool help_network_enabled,
-                                                       const RelayRuntimeStats& load) {
+                                                       const RelayRuntimeStats& load,
+                                                       const MeshTrafficView& traffic) {
   StatusbarPopoverSnapshot snap;
   snap.messaging_ready = messaging_ready;
   if (!messaging_ready) {
@@ -321,7 +364,55 @@ StatusbarPopoverSnapshot BuildStatusbarPopoverSnapshot(bool messaging_ready, Bri
 
   snap.last_error = last_error;
   FillPopoverLoad(snap, help_network_enabled, load);
+  FillPopoverNetwork(snap, host_running, help_network_enabled, traffic);
+  if (!snap.relay_rate_label.empty()) {
+    snap.show_load = true;  // relaying shows in Helper load even with no session open right now
+  }
   return snap;
+}
+
+MeshTrafficRates MeshTrafficRatesBetween(const MeshTrafficTotals& before, const MeshTrafficTotals& now) {
+  MeshTrafficRates rates;
+  const double seconds = std::chrono::duration<double>(now.at - before.at).count();
+  if (!before.available || !now.available || seconds <= 0.0) {
+    return rates;
+  }
+  const auto delta = [](const uint64_t later, const uint64_t earlier) {
+    return later >= earlier ? later - earlier : uint64_t{0};  // a restarted mesh counts from zero
+  };
+  rates.valid = true;
+  rates.sent_bps = static_cast<double>(delta(now.sent_bytes, before.sent_bytes)) / seconds;
+  rates.received_bps = static_cast<double>(delta(now.received_bytes, before.received_bytes)) / seconds;
+  rates.relayed_bps = static_cast<double>(delta(now.relayed_bytes, before.relayed_bytes)) / seconds;
+  if (const uint64_t samples = delta(now.rtt_samples, before.rtt_samples); samples > 0) {
+    rates.rtt_ms = static_cast<int64_t>(delta(now.rtt_sum_ms, before.rtt_sum_ms) / samples);
+  }
+  if (const uint64_t sent = delta(now.reliable_sent, before.reliable_sent); sent > 0) {
+    rates.resend_pct =
+        100.0 * static_cast<double>(delta(now.retransmits, before.retransmits)) / static_cast<double>(sent);
+  }
+  return rates;
+}
+
+MeshTrafficTotals CollectMeshTrafficTotals(MeshHost* mesh) {
+  MeshTrafficTotals totals;
+  totals.at = std::chrono::steady_clock::now();
+  if (!mesh || !mesh->IsRunning() || !mesh->Amp()) {
+    return totals;
+  }
+  auto& runtime = mesh->Amp()->Runtime();
+  totals.available = true;
+  runtime.WithIoLock([&]() { totals.links = runtime.Links().CountLinks(); });
+  const pp::adp::EndpointStats traffic = runtime.GetEndpoint().Stats();
+  totals.sent_bytes = traffic.tx_bytes;
+  totals.received_bytes = traffic.rx_bytes;
+  totals.reliable_sent = traffic.reliable_sent;
+  totals.retransmits = traffic.retransmits;
+  totals.rtt_samples = traffic.rtt_samples;
+  totals.rtt_sum_ms = traffic.rtt_sum_ms;
+  const RelayRuntimeStats load = CollectRelayRuntimeStats(mesh);
+  totals.relayed_bytes = load.circuit.bytes_relayed + load.media.bytes_forwarded;
+  return totals;
 }
 
 MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps) {
@@ -337,7 +428,13 @@ MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps) {
     const BriefRelayHealth brief = deps.brief_health ? deps.brief_health() : BriefRelayHealth::Unknown;
     return BuildStatusbarClusterSnapshot(ready, brief, running, has_error, status, help, load);
   };
-  ports.statusbar_popover = [deps]() -> StatusbarPopoverSnapshot {
+  // Rates are deltas between samples at least a second apart; in between the last ones stand.
+  struct TrafficSampler {
+    MeshTrafficTotals last;
+    MeshTrafficRates rates;
+  };
+  auto sampler = std::make_shared<TrafficSampler>();
+  ports.statusbar_popover = [deps, sampler]() -> StatusbarPopoverSnapshot {
     MeshHost* mesh = deps.mesh ? deps.mesh() : nullptr;
     const bool ready = deps.messaging_ready && deps.messaging_ready();
     const bool running = mesh && mesh->IsRunning();
@@ -346,9 +443,23 @@ MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps) {
     const bool help = deps.help_network_enabled && deps.help_network_enabled();
     const RelayRuntimeStats load = deps.relay_load_stats ? deps.relay_load_stats() : RelayRuntimeStats{};
     const BriefRelayHealth brief = deps.brief_health ? deps.brief_health() : BriefRelayHealth::Unknown;
+    MeshTrafficView traffic;
+    if (deps.traffic_totals) {
+      const MeshTrafficTotals now = deps.traffic_totals();
+      if (!now.available || !sampler->last.available) {
+        sampler->last = now;
+        sampler->rates = {};
+      } else if (now.at - sampler->last.at >= std::chrono::seconds(1)) {
+        sampler->rates = MeshTrafficRatesBetween(sampler->last, now);
+        sampler->last = now;
+      }
+      traffic.available = now.available;
+      traffic.links = now.links;
+      traffic.rates = sampler->rates;
+    }
     return BuildStatusbarPopoverSnapshot(ready, brief, running, last_error, reach.status,
                                          reach.signals.has_global_ipv6, reach.signals.dial_back_ok,
-                                         reach.signals.upnp_mapped, help, load);
+                                         reach.signals.upnp_mapped, help, load, traffic);
   };
   ports.retest_reachability = std::move(deps.retest_reachability);
   return ports;
@@ -363,6 +474,7 @@ MessagingShellPorts MakeMessagingShellPorts(ConversationsHub& hub) {
   deps.last_mesh_error = [&hub]() { return hub.LastMeshError(); };
   deps.retest_reachability = [&hub]() { hub.RunReachabilityProbe(false); };
   deps.relay_load_stats = [&hub]() { return CollectRelayRuntimeStats(hub.Mesh()); };
+  deps.traffic_totals = [&hub]() { return CollectMeshTrafficTotals(hub.Mesh()); };
   return MakeMessagingShellPorts(std::move(deps));
 }
 

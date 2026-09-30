@@ -21,4 +21,9 @@
 
 ## M3 — pp-browser UI snapshot
 
-- [ ] Published snapshot for the GUI (call quality, network, what a desktop Node serves); Me → node panel
+The home is the network-status popover (not a Me panel): it already carries the helper load.
+
+- [x] Mesh traffic in the popover: links, up / down rate, round trip, resend % (deltas between samples ≥ 1 s apart; `MeshTrafficRatesBetween`)
+- [x] What a desktop Node relays for others: relaying rate (circuit bridge bytes + media relay forwarded bytes) under Helper load
+- [ ] Rendezvous parking state in the popover (carried over from M2)
+- [ ] Call quality (per-call; belongs with the call screen, not the network popover)

@@ -257,7 +257,7 @@ On **desktop + expanded** layout (`Platform::IsDesktop() && layout_mode == Expan
 
 Data comes from `MessagingShellPorts::statusbar_cluster` (polled in `ShellHost::RefreshStatusbarCluster`). Adaptive: Client shows Brief+Direct; Node adds Help+Inbound; Load only when count > 0. Circuit/media aggregates from `RelayRuntimeStats` (`CircuitRelayService` / `MediaRelayService`).
 
-**Click → hybrid popover (s2):** Left cluster is a hit target (`toggle_statusbar_popover`). Opens `#shell-statusbar-popover` above the bar (inspect Brief/Direct/reachability summary, help echo, UPnP when helping, helper load aggregates, last libp2p error) with **Test again** and **Open Network settings…**. No capability toggles. Escape / scrim dismiss.
+**Click → hybrid popover (s2):** Left cluster is a hit target (`toggle_statusbar_popover`). Opens `#shell-statusbar-popover` above the bar (inspect Brief/Direct/reachability summary, help echo, UPnP when helping, mesh traffic — links, up / down rate, round trip, resend % — helper load aggregates plus the rate relayed for others, last libp2p error) with **Test again** and **Open Network settings…**. No capability toggles. Escape / scrim dismiss.
 
 `#shell-root` is inset with `bottom = statusbar_height_dp` while visible. Compact layout and mobile/tablet platforms omit the bar.
 
