@@ -903,7 +903,11 @@ void CallController::RefreshPendingRing() {
       const bool camera_offerable =
           backend->Media().VideoEncoderAvailable() && backend->Media().CameraPathAllowsVideo();
       auto awaiting_answer = backend->AwaitingExplicitAnswerForCall(active_call_id_);
-      const bool answer_known = awaiting_answer && !*awaiting_answer;
+      // The peer's video arriving also answers "video or voice?": on a slow relay the explicit
+      // Accept came 51 s after the call connected and the caller's camera never turned on by
+      // itself (device test 2026-09-30, cellular without VPN).
+      const bool answer_known = (awaiting_answer && !*awaiting_answer) ||
+                                backend->Media().IsRemoteVideoLive(kPeerVideoLiveMs);
       if (auto allowed = backend->VideoAllowedForCall(active_call_id_);
           allowed && allowed->has_value() && **allowed && camera_offerable && answer_known) {
         auto_camera_pending_ = false;
