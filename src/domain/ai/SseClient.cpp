@@ -8,7 +8,9 @@
 #include <curl/curl.h>
 #include "common/PbrCompat.h"
 
+#include <algorithm>
 #include <chrono>
+#include <string_view>
 #include <vector>
 
 namespace pbr {
@@ -21,6 +23,9 @@ struct StreamState {
   CURL* curl = nullptr;
   SseParser parser;
   std::string error_body; // body of an HTTP error response (not SSE)
+  bool headers_checked = false;
+  bool not_event_stream = false;
+  bool handler_threw = false;
   long http_code = 0;
   size_t total_bytes = 0;
   size_t event_count = 0;
@@ -35,8 +40,20 @@ size_t WriteCallback(char* contents, size_t size, size_t nmemb, StreamState* sta
     state->cancelled = true;
     return 0;
   }
-  if (state->http_code == 0) {
+  if (!state->headers_checked) {
+    state->headers_checked = true;
     curl_easy_getinfo(state->curl, CURLINFO_RESPONSE_CODE, &state->http_code);
+    // A 2xx that is not an event stream (a JSON completion, a gateway error page) must not pass
+    // as an empty answer.
+    char* content_type = nullptr;
+    curl_easy_getinfo(state->curl, CURLINFO_CONTENT_TYPE, &content_type);
+    static constexpr std::string_view kEventStream = "text/event-stream";
+    const std::string_view type = std::string_view(content_type ? content_type : "").substr(0, kEventStream.size());
+    state->not_event_stream =
+        state->http_code < 400 &&
+        !std::equal(kEventStream.begin(), kEventStream.end(), type.begin(), type.end(), [](char a, char b) {
+          return a == ((b >= 'A' && b <= 'Z') ? static_cast<char>(b - 'A' + 'a') : b);
+        });
   }
   state->last_activity = std::chrono::steady_clock::now();
   const size_t total = size * nmemb;
@@ -50,17 +67,31 @@ size_t WriteCallback(char* contents, size_t size, size_t nmemb, StreamState* sta
     state->error_body.append(contents, total);
     return total;
   }
+  if (state->not_event_stream) {
+    return 0;
+  }
 
   std::vector<SseEvent> events;
   if (!state->parser.Feed(std::string_view(contents, total), events)) {
     state->limit_exceeded = true;
     return 0;
   }
-  for (const SseEvent& event : events) {
-    ++state->event_count;
-    (*state->on_event)(event);
+  // An exception must not unwind through libcurl.
+  try {
+    for (const SseEvent& event : events) {
+      ++state->event_count;
+      (*state->on_event)(event);
+    }
+  } catch (...) {
+    state->handler_threw = true;
+    return 0;
   }
   return total;
+}
+
+size_t HeaderCallback(char*, size_t size, size_t nitems, StreamState* state) {
+  state->last_activity = std::chrono::steady_clock::now();
+  return size * nitems;
 }
 
 int XferInfoCallback(void* clientp, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
@@ -107,6 +138,8 @@ Roe<SseOutcome> SseClient::Post(const SseRequest& request, const std::function<v
   curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE_LARGE, static_cast<curl_off_t>(request.json_body.size()));
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &state);
+  curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, HeaderCallback);
+  curl_easy_setopt(curl, CURLOPT_HEADERDATA, &state);
   curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
   curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, XferInfoCallback);
   curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &state);
@@ -159,6 +192,13 @@ Roe<SseOutcome> SseClient::Post(const SseRequest& request, const std::function<v
   }
   if (multi_failed) {
     return AppError::Internal("curl multi failed");
+  }
+  if (state.handler_threw) {
+    return AppError::Internal("SSE event handler threw");
+  }
+  if (state.not_event_stream) {
+    log().error << "HTTP " << http_code << " response is not an event stream";
+    return AppError::Network(Err::Network::HttpError, "LLM response is not an event stream");
   }
   if (state.limit_exceeded) {
     return AppError::Network(Err::Network::HttpError,

@@ -169,6 +169,14 @@ TEST(MarkdownToRmlTest, HttpsLinks) {
   EXPECT_EQ(r.links.size(), 1u);
 }
 
+TEST(MarkdownToRmlTest, NoAutolinkAfterAnUnclosedBracket) {
+  // Known limit: an open `[` may still become a link, and links cannot nest, so a bare URL after
+  // it stays plain text for the rest of the paragraph.
+  const auto r = MarkdownToRml("values in [0, 1) see https://x.com/docs");
+  EXPECT_EQ(r.rml, "<p>values in [0, 1) see https://x.com/docs</p>");
+  EXPECT_TRUE(r.links.empty());
+}
+
 TEST(MarkdownToRmlTest, AutolinkInsideChineseText) {
   // Chinese text has no spaces around a URL: it must still link, and stop where the Chinese resumes.
   const auto r = MarkdownToRml("详见https://x.com/a?b=1的内容。");

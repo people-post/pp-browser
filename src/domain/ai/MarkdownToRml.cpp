@@ -410,6 +410,7 @@ private:
 
   size_t autolink_end_ = 0;
 
+  // Not inside an open `[`: it may still become a link, and links cannot nest.
   bool TryAutolink(size_t i) {
     if (!brackets_.empty() || !MatchCi(s_, i, "https://") || (i > 0 && IsAsciiAlnum(s_[i - 1]))) {
       return false;

@@ -23,6 +23,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -326,6 +327,44 @@ TEST(SseClientTest, RateLimitMapsLikeLlmClient) {
 
 TEST(SseClientTest, UnauthorizedMapsLikeLlmClient) {
   ExpectSameErrorAsLlmClient(401, "Unauthorized", R"({"detail":{"error":{"message":"bad key","code":"auth_error"}}})");
+}
+
+TEST(SseClientTest, SuccessThatIsNotAnEventStreamIsAnError) {
+  const std::string body = R"({"choices":[{"message":{"content":"not streamed"}}]})";
+  SseTestServer server({{"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " +
+                         std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body}},
+                       false);
+  pbr::SseClient client;
+  std::atomic<bool> cancel{false};
+  std::vector<pbr::SseEvent> events;
+  auto result = client.Post(RequestFor(server), [&](const pbr::SseEvent& e) { events.push_back(e); }, cancel);
+  ASSERT_FALSE(static_cast<bool>(result));
+  EXPECT_EQ(result.error().category, static_cast<int32_t>(pbr::ErrorCategory::Network));
+  EXPECT_EQ(result.error().code, static_cast<int32_t>(pbr::Err::Network::HttpError));
+  EXPECT_TRUE(events.empty());
+}
+
+TEST(SseClientTest, HeadersCountAsActivity) {
+  // Headers at 1.2 s and the first event 1.2 s later: each gap is inside the 2 s idle limit,
+  // although the first body byte arrives 2.4 s after the request.
+  SseTestServer server({{kSseHead, 1200}, {"data: late\n\n", 1200}}, false);
+  pbr::SseClient client;
+  std::atomic<bool> cancel{false};
+  pbr::SseRequest request = RequestFor(server);
+  request.idle_timeout_s = 2;
+  std::vector<pbr::SseEvent> events;
+  auto result = client.Post(request, [&](const pbr::SseEvent& e) { events.push_back(e); }, cancel);
+  ASSERT_TRUE(static_cast<bool>(result));
+  EXPECT_EQ(events.size(), 1u);
+}
+
+TEST(SseClientTest, ThrowingHandlerIsAnErrorNotACrash) {
+  SseTestServer server({{kSseHead}, {"data: x\n\n"}}, false);
+  pbr::SseClient client;
+  std::atomic<bool> cancel{false};
+  auto result = client.Post(RequestFor(server), [](const pbr::SseEvent&) { throw std::runtime_error("boom"); }, cancel);
+  ASSERT_FALSE(static_cast<bool>(result));
+  EXPECT_EQ(result.error().category, static_cast<int32_t>(pbr::ErrorCategory::Internal));
 }
 
 TEST(SseClientTest, ConnectionRefusedIsUnreachable) {

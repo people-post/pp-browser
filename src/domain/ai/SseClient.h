@@ -16,7 +16,9 @@ struct SseRequest {
   std::string bearer_token; // empty = no Authorization header
   std::string json_body;
   long connect_timeout_s = 10;
-  long idle_timeout_s = 60; // abort when no bytes arrive for this long
+  // Abort when neither headers nor body bytes arrive for this long. The clock starts with the
+  // request, so it also bounds connect + time to the response headers.
+  long idle_timeout_s = 60;
 };
 
 enum class SseOutcome { Completed, Cancelled };
