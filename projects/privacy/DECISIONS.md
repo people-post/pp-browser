@@ -23,3 +23,9 @@
 **Date:** 2026-09-30
 **Decision:** In the Node role (pp-node, desktop Node) the audience is `everyone`.
 **Rationale:** A Node serves relaying, DHT and directory to anyone; its address is published on purpose. Operators who need privacy do not run a Node.
+
+## P005 — Watching a stranger's broadcast is the viewer's choice
+
+**Date:** 2026-09-30
+**Decision:** Peer-announce fetches and broadcast viewing reach the publisher (and its hops) the viewer chose to watch without the direct-audience gate; they use the plain links.
+**Rationale:** Opening a stranger's program is a deliberate act toward that publisher, like visiting a website: the viewer accepts that the publisher's side sees its address. Gating it would make every stranger's broadcast unwatchable. The audience still governs everything the viewer did not choose (inbound punches, calls, chat, signalling).

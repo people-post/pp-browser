@@ -8,12 +8,12 @@
 - [x] Chat, attachments, history: no new direct Amp dial to a peer that is not allowed (existing link, else Brief relay)
 - [x] LAN discovery: only books addresses; the dials go through the gated paths above
 - [x] Me → Network setting (+ settings assistant); docs promoted (CONFIGURATION, NETWORKING, CALLS)
-- [ ] Hard-lab scenario: a stranger's call to a `contacts` peer runs relay-only and still connects (`PP_PROBE_DIRECT_CONNECTIONS`)
-- [ ] Peer-announce / broadcast fetches from a stranger publisher (decide: gate, or accept as a viewer's choice)
+- [x] Hard-lab scenario B-HARD-CALL-NAT-PRIVATE: a stranger's call to a `contacts` peer runs relay-only (its punches declined) and still connects
+- [x] Peer-announce / broadcast fetches from a stranger publisher: the viewer's choice, not gated ([P005](DECISIONS.md#p005--watching-a-strangers-broadcast-is-the-viewers-choice))
 
 ## Y2 — Addresses on links and in records (T1, pp-cpp-amp)
 
-- [ ] ch0 capability carries listen addresses only to allowed peers (per-peer filter in Amp)
+- [x] ch0 capability carries listen addresses only to allowed peers (pp-cpp-amp v2.13.0 `SetListenAddrDisclosure`; `MeshHost` applies the gate)
 - [ ] Clients register without IP addresses; the directory points at their rendezvous relays
 
 ## Y3 — Inbound control (T3)

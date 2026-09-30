@@ -1331,6 +1331,9 @@ int main(int argc, char** argv) {
       min_rx_frames = std::atoi(argv[++i]);
     } else if (std::strcmp(argv[i], "--peer-id-only") == 0) {
       peer_id_only = true;
+    } else if (std::strcmp(argv[i], "--direct-connections") == 0 && i + 1 < argc) {
+      // projects/privacy T1: who this probe discloses its address to (default everyone for NAT tests).
+      ::setenv("PP_PROBE_DIRECT_CONNECTIONS", argv[++i], 1);
     } else if (std::strcmp(argv[i], "--mobility") == 0 && i + 1 < argc) {
       pbr::SetMobilityCliOverride(argv[++i]);  // k6: pin the call path mobility class
     } else if (std::strcmp(argv[i], "--dirty-book") == 0) {

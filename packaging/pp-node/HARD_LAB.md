@@ -177,7 +177,9 @@ SNAT gateways per peer (a, b; c for the group phase); hop on the public net only
 - In COLD / COLD-DIRTY the answerer legitimately needs no reach of its own (it reuses the offerer's circuit or joins the offerer's live bundle); the audio gate proves it connected.
 - Runtime knobs (`pp_hard_lab_lib.sh`): `pp_hard_cgnat_set_nat symmetric|cone`, `pp_hard_cgnat_block_p2p on|off`, `pp_hard_cgnat_flip_peer_a_addr away|back`; `pp_hard_cgnat_ensure_up` restores symmetric, unblocked and peer-a's address, so a run that died mid-phase cannot leak into the next.
 
-Default `--phase all` (circuit+stack+cold+cold-dirty+cold-await+upgrade+punch+flip+mobile+group+group-adjust+group-move+broadcast); `product` / `dirty` / `both` now fail with a pointer to the COLD phases. Reproduce mode: `PP_HARD_NAT_CALL_EXPECT=fail`.
+- **B-HARD-CALL-NAT-PRIVATE** ([privacy](../../projects/privacy/) T1): gateways **cone**, the answerer on `--direct-connections contacts` and the offerer not its contact (a stranger's call). Gates: the answerer's path policy is `relay_only=1`, no punch to it lands, media never moves onto a direct path, audio both ways over the relay. The probes otherwise disclose to `everyone` (`--direct-connections` / `PP_PROBE_DIRECT_CONNECTIONS`).
+
+Default `--phase all` (circuit+stack+cold+cold-dirty+cold-await+upgrade+punch+flip+mobile+private+group+group-adjust+group-move+broadcast); `product` / `dirty` / `both` now fail with a pointer to the COLD phases. Reproduce mode: `PP_HARD_NAT_CALL_EXPECT=fail`.
 
 ### Routing mode coverage (success oracles)
 

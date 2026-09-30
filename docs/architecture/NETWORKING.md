@@ -55,7 +55,7 @@ Who may learn this device's IP address is one setting, `mesh.direct_connections`
 | Call signalling | Invite / accept carry no listen addresses; a signalling punch is not answered | `CallSessionWorkflow`, `SignalingPunchExchange` |
 | Chat, attachments, history | No new dial — an existing link, else the Brief relay | `DisclosureGatedPeerLinks` in `MeshDeliveryOrchestrator` |
 
-A link that is already up may carry traffic (P003). Relays, seeds and peer-announce use the plain links: relay operators see addresses (privacy T4). Not yet gated: ch0 capability listen addresses and the directory registration (privacy Y2).
+A link that is already up may carry traffic (P003). Relays and seeds use the plain links (relay operators see addresses: privacy T4); so do peer-announce and broadcast viewing — watching a publisher is the viewer's choice (P005). The ch0 capability carries our listen multiaddrs only to allowed peers (`MeshHost` → Amp `SetListenAddrDisclosure`). Not yet gated: the directory registration (privacy Y2).
 
 ## Calls
 

@@ -666,7 +666,7 @@ void CallMediaBridge::OnPathPolicyChanged(const std::string& call_id) {
   }
   const CallPathPolicy policy = PathPolicyFor(call_id);
   log().info << "path policy call_id=" << call_id << " upgrade=" << (policy.upgrade_to_direct ? 1 : 0)
-             << " relay=" << CallRelayRoleName(policy.relay_role);
+             << " relay=" << CallRelayRoleName(policy.relay_role) << " relay_only=" << (policy.relay_only ? 1 : 0);
   ApplyPathPolicyToTransport(call_id);
   if (!policy.upgrade_to_direct) {
     CancelDirectUpgrade();
