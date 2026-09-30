@@ -297,6 +297,9 @@ private:
   void StopMediaIfCall(const std::string& call_id);
   void ScheduleStartDirectMedia(const std::string& call_id, const std::string& peer_identity, bool offerer);
   void BindWorkflowHostPorts();
+  CallSessionWorkflow::WirePorts MakeWorkflowWirePorts();
+  CallSessionWorkflow::HopPathPorts MakeWorkflowHopPorts();
+  CallSessionWorkflow::ReachPorts MakeWorkflowReachPorts();
   void BindReachSignalPorts();
   void NotifyCallStateChanged();
   CallHopArmingPorts MakeHopArmingPorts();

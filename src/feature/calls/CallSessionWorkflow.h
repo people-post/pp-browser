@@ -188,6 +188,68 @@ private:
                               const std::string& local_identity, bool implicit);
   Roe<void> ContinueAcceptAfterPark(const std::string& call_id, InitiationChargeDecision charge_decision,
                                     bool voice_only_accept, const std::string& local_identity);
+  // --- StartCall steps ---
+  /** Invitees given, no ring pending, a direct / group thread, payable: the origin thread. */
+  Roe<Thread> CheckCanStartCall(const std::string& origin_thread_id, const std::vector<std::string>& invitee_identities,
+                                const std::string& local_identity);
+  /** A new call id + first media key, the session and our Joined row; the LiveCall placed (Deciding). */
+  Roe<CallSession> CreatePlacedSession(const Thread& thread, bool video_allowed,
+                                       const std::vector<std::string>& invitee_identities,
+                                       const std::string& local_identity);
+  /** "Call started" in the origin thread's history. */
+  Roe<void> AppendCallStarted(const CallSession& session);
+  /** Invite every invitee (control thread warmed first), then prefetch their reach. */
+  Roe<void> InviteAll(const std::string& call_id, const std::vector<std::string>& invitee_identities,
+                      const std::string& local_identity);
+  // --- InviteParticipant steps ---
+  /** Not ended, room to join, and a hop for a third participant (V021). */
+  Roe<void> CheckCanInvite(const CallSession& session);
+  /** The CallInvite for `invitee_identity`: roster + co-invitees, wrapped media key, listen addrs, caps, offer. */
+  Roe<CallInviteDetail> BuildInvite(const CallSession& session, const std::string& local_identity,
+                                    const std::string& invitee_identity, const std::vector<std::string>& co_invitees,
+                                    int64_t expires_at);
+  /** The invite is on the wire: the invitee Ringing, its pending row, the offer booked, the LiveCall's peer. */
+  Roe<void> RecordInviteSent(const CallSession& session, const CallInviteDetail& invite);
+  // --- HandleInboundInvite steps ---
+  /** Already joined / ended here, an offer below our floor (declined), or a stale replay. */
+  bool ShouldIgnoreInvite(const CallInviteDetail& invite, const std::string& sender_identity,
+                          const std::string& local_identity, std::optional<int64_t> relay_created_at_ms,
+                          std::optional<int64_t> relay_server_time_ms);
+  /** The pending invite and the Ringing session (re-armed TTL); probes the planned hop. */
+  Roe<CallSession> StoreRingingInvite(const CallInviteDetail& invite, const std::string& inviter,
+                                      const ThreadMessage& message, const std::string& local_identity);
+  /** The invite's roster, the inviter Joined, self Ringing. */
+  void SeedInviteRoster(const CallInviteDetail& invite, const std::string& inviter, const CallSession& session,
+                        const std::string& local_identity);
+  /** The inviter's listen addrs, mesh PeerId, caps; prefetch its reach. */
+  void NoteInviterReach(const CallInviteDetail& invite, const std::string& inviter);
+  // --- ApplyRemoteAccept steps ---
+  /** The accepter's mesh PeerId, and (a real accept) its caps. */
+  void NoteAccepterReach(const CallAcceptDetail& accept, const std::string& identity, bool implicit);
+  /** The accepter Joined, the session moved on (and narrowed for a voice answer); the stored session. */
+  Roe<std::optional<CallSession>> CommitRemoteJoin(const CallAcceptDetail& accept, const std::string& identity,
+                                                   bool implicit);
+  /** Send the key, note the hop report, pick the path (1:1 schedules the offerer's start); roster after. */
+  void StartMediaAfterRemoteAccept(const CallAcceptDetail& accept, const std::string& identity,
+                                   const std::string& local_identity, bool implicit);
+  // --- ContinueAcceptAfterPark steps ---
+  /** The pending invite this device may accept (not expired, not a legacy broadcast row). */
+  Roe<PendingCallInvite> LoadAcceptableInvite(const std::string& call_id, const std::string& local_identity);
+  /** The stored session, or one built from the invite. */
+  CallSession SessionRowForAccept(const PendingCallInvite& pending);
+  /** Room to join, and the call not ended meanwhile. */
+  Roe<void> CheckAcceptJoinable(const std::string& call_id);
+  /** Build and send our CallAccept to `inviter` (listen addrs, caps, hop report, pricing). */
+  Roe<CallAcceptDetail> SendCallAccept(const std::string& call_id, const std::string& local_identity,
+                                       const std::string& inviter, bool narrow_to_voice, int64_t offer_minor,
+                                       InitiationChargeDecision charge_decision);
+  /** Joined in the store and on the LiveCall. */
+  Roe<void> CommitLocalJoin(CallSession& row, const std::string& local_identity);
+  /** Another accept / a leave moved on while our CallAccept was on the wire: leave this one. */
+  bool AcceptSuperseded(const std::string& call_id);
+  /** The call's media coordinator picks the path; a 1:1 call schedules the answerer's start. */
+  void ArmMediaAfterAccept(CallSession& row, const std::string& inviter, const CallAcceptDetail& accept);
+  void PostRosterAfterAccept(const std::string& call_id, const std::string& inviter, const std::string& local_identity);
   IThreadStore& store_;
   CallSessionStore& sessions_;
   /** The call's media keys between the peers (owned by CallSessionManager). */

@@ -123,107 +123,125 @@ void CallSessionManager::BindTopologyHostPorts() {
 
 void CallSessionManager::BindWorkflowHostPorts() {
   CallSessionWorkflow::HostPorts ports;
-  ports.wire.local_relay_identity = [this]() { return control_.LocalRelayIdentity(); };
-  ports.wire.notify_ring_changed = [this]() { NotifyRingChanged(); };
-  ports.wire.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
+  ports.wire = MakeWorkflowWirePorts();
+  ports.duplex.schedule_start_direct = [this](const std::string& call_id, const std::string& peer, bool offerer) {
+    ScheduleStartDirectMedia(call_id, peer, offerer);
+  };
+  ports.hop = MakeWorkflowHopPorts();
+  ports.reach = MakeWorkflowReachPorts();
+  workflow_.SetHostPorts(std::move(ports));
+}
+
+CallSessionWorkflow::WirePorts CallSessionManager::MakeWorkflowWirePorts() {
+  CallSessionWorkflow::WirePorts ports;
+  ports.local_relay_identity = [this]() { return control_.LocalRelayIdentity(); };
+  ports.notify_ring_changed = [this]() { NotifyRingChanged(); };
+  ports.send_direct = [this](const std::string& peer, CallControlType type, const std::string& detail,
                              const std::string& display) {
     return control_.SendDirect(peer, type, detail, display);
   };
-  ports.wire.ensure_control_thread = [this](const std::string& peer) { return control_.EnsureCallControlThread(peer); };
-  ports.wire.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
+  ports.ensure_control_thread = [this](const std::string& peer) { return control_.EnsureCallControlThread(peer); };
+  ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
                                 const std::string& display, const std::string& skip) {
     return control_.FanOutToJoined(call_id, type, detail, display, skip);
   };
-  ports.wire.fan_out_joined_and_ringing = [this](const std::string& call_id, CallControlType type,
+  ports.fan_out_joined_and_ringing = [this](const std::string& call_id, CallControlType type,
                                             const std::string& detail, const std::string& display,
                                             const std::string& skip) {
     return control_.FanOutToJoinedAndRinging(call_id, type, detail, display, skip);
   };
-  ports.wire.append_origin_history = [this](const std::string& thread_id, CallControlType type,
+  ports.append_origin_history = [this](const std::string& thread_id, CallControlType type,
                                        const std::string& text, const std::string& detail) {
     return control_.AppendOriginHistory(thread_id, type, text, detail);
   };
-  ports.wire.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
-  ports.duplex.schedule_start_direct = [this](const std::string& call_id, const std::string& peer, bool offerer) {
-    ScheduleStartDirectMedia(call_id, peer, offerer);
-  };
-  ports.hop.on_joined_count_observed = [this](const std::string& call_id, size_t n) {
-    topology_.OnJoinedCountObserved(call_id, n);
-  };
-  ports.hop.plan_hop_for_invitees = [this](const std::vector<std::string>& invitees, const std::string& local) {
-    return topology_.HopPlanning().Plan(invitees, local);
-  };
-  ports.hop.probe_invite_hops = [this](const std::string& call_id) { topology_.HopPlanning().ProbeInvite(call_id); };
-  ports.hop.hop_report_for_accept = [this](const std::string& call_id) {
-    return topology_.HopPlanning().ReportForAccept(call_id);
-  };
-  ports.hop.note_accept_hop_report = [this](const std::string& call_id, const std::string& identity,
-                                            const CallHopReport& report) {
-    topology_.HopPlanning().NoteAcceptReport(call_id, identity, report);
-  };
-  ports.hop.clear_sfu_attach_wait = [this]() { topology_.ClearSfuAttachWait(); };
-  ports.hop.on_inbound_sfu_attach = [this](const std::string& call_id, const CallSfuAttachDetail& d,
-                                           const std::string& sender) {
-    return topology_.OnInboundSfuAttach(call_id, d, sender);
-  };
-  ports.hop.on_inbound_sfu_attach_failed = [this](const CallSfuAttachFailedDetail& d) {
-    topology_.OnInboundSfuAttachFailed(d);
-  };
-  ports.hop.on_inbound_hop_refuse = [this](const CallHopRefuseDetail& d) { topology_.OnInboundHopRefuse(d); };
-  ports.hop.is_on_sfu_for_call = [this](const std::string& call_id) {
-    return topology_.IsOnSfuForCall(call_id);
-  };
-  ports.hop.has_media_relay_hop_candidates = [this]() {
-    return topology_.HopRanking().HasCandidates();
-  };
-  ports.wire.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
-  ports.wire.sync_inbox_from_wake = [this]() {
+  ports.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
+  ports.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
+  ports.sync_inbox_from_wake = [this]() {
     if (delivery_.sync_inbox_from_wake) {
       delivery_.sync_inbox_from_wake(true);
     }
   };
-  ports.reach.register_peer_listen = [this](const std::string& identity, const std::vector<std::string>& mas) {
+  return ports;
+}
+
+CallSessionWorkflow::HopPathPorts CallSessionManager::MakeWorkflowHopPorts() {
+  CallSessionWorkflow::HopPathPorts ports;
+  ports.on_joined_count_observed = [this](const std::string& call_id, size_t n) {
+    topology_.OnJoinedCountObserved(call_id, n);
+  };
+  ports.plan_hop_for_invitees = [this](const std::vector<std::string>& invitees, const std::string& local) {
+    return topology_.HopPlanning().Plan(invitees, local);
+  };
+  ports.probe_invite_hops = [this](const std::string& call_id) { topology_.HopPlanning().ProbeInvite(call_id); };
+  ports.hop_report_for_accept = [this](const std::string& call_id) {
+    return topology_.HopPlanning().ReportForAccept(call_id);
+  };
+  ports.note_accept_hop_report = [this](const std::string& call_id, const std::string& identity,
+                                            const CallHopReport& report) {
+    topology_.HopPlanning().NoteAcceptReport(call_id, identity, report);
+  };
+  ports.clear_sfu_attach_wait = [this]() { topology_.ClearSfuAttachWait(); };
+  ports.on_inbound_sfu_attach = [this](const std::string& call_id, const CallSfuAttachDetail& d,
+                                           const std::string& sender) {
+    return topology_.OnInboundSfuAttach(call_id, d, sender);
+  };
+  ports.on_inbound_sfu_attach_failed = [this](const CallSfuAttachFailedDetail& d) {
+    topology_.OnInboundSfuAttachFailed(d);
+  };
+  ports.on_inbound_hop_refuse = [this](const CallHopRefuseDetail& d) { topology_.OnInboundHopRefuse(d); };
+  ports.is_on_sfu_for_call = [this](const std::string& call_id) {
+    return topology_.IsOnSfuForCall(call_id);
+  };
+  ports.has_media_relay_hop_candidates = [this]() {
+    return topology_.HopRanking().HasCandidates();
+  };
+  return ports;
+}
+
+CallSessionWorkflow::ReachPorts CallSessionManager::MakeWorkflowReachPorts() {
+  CallSessionWorkflow::ReachPorts ports;
+  ports.register_peer_listen = [this](const std::string& identity, const std::vector<std::string>& mas) {
     if (register_peer_listen_multiaddrs_) {
       register_peer_listen_multiaddrs_(identity, mas);
     }
   };
-  ports.reach.note_caps_for_identity = [this](const std::string& identity, const CallPeerCaps& caps,
+  ports.note_caps_for_identity = [this](const std::string& identity, const CallPeerCaps& caps,
                                         const std::vector<std::string>& listen) {
     NoteCapsForIdentity(*this, contacts_, identity, caps, listen);
   };
-  ports.reach.note_call_peer_caps = [this](const std::string& call_id, const CallPeerCaps& caps) {
+  ports.note_call_peer_caps = [this](const std::string& call_id, const CallPeerCaps& caps) {
     if (call_peer_caps_sink_) {
       call_peer_caps_sink_(call_id, caps);
     }
   };
-  ports.reach.prefetch_reach = [this](const std::string& identity) {
+  ports.prefetch_reach = [this](const std::string& identity) {
     PrefetchReachForIdentity(prefetch_reach_, identity);
   };
-  ports.reach.ensure_circuit_ready = [this]() {
+  ports.ensure_circuit_ready = [this]() {
     if (ensure_circuit_ready_) {
       ensure_circuit_ready_();
     }
   };
-  ports.reach.park_circuit = [this](int timeout_ms, std::function<void(bool)> done) {
+  ports.park_circuit = [this](int timeout_ms, std::function<void(bool)> done) {
     if (park_circuit_) {
       park_circuit_(timeout_ms, std::move(done));
     } else {
       done(false);
     }
   };
-  ports.reach.note_mesh_peer_id_for_relay = [this](const std::string& relay, const std::string& peer_id) {
+  ports.note_mesh_peer_id_for_relay = [this](const std::string& relay, const std::string& peer_id) {
     NoteMeshPeerIdForRelay(relay, peer_id);
   };
-  ports.reach.local_listen_multiaddrs = [this]() -> std::vector<std::string> {
+  ports.local_listen_multiaddrs = [this]() -> std::vector<std::string> {
     return local_listen_multiaddrs_ ? local_listen_multiaddrs_() : std::vector<std::string>{};
   };
-  ports.reach.local_peer_caps = [this]() -> CallPeerCaps {
+  ports.local_peer_caps = [this]() -> CallPeerCaps {
     return local_peer_caps_ ? local_peer_caps_() : CallPeerCaps{};
   };
-  ports.reach.local_mesh_peer_id = [this]() -> std::string {
+  ports.local_mesh_peer_id = [this]() -> std::string {
     return local_mesh_peer_id_ ? local_mesh_peer_id_() : std::string{};
   };
-  workflow_.SetHostPorts(std::move(ports));
+  return ports;
 }
 
 void CallSessionManager::BindReachSignalPorts() {
