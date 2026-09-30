@@ -69,6 +69,22 @@ struct GuestReattachRetry {};
 using HopMigrateEvent = std::variant<hop_migrate_event::RefanOutPickedHop, hop_migrate_event::ReleaseDirectAfterAttach,
                                      hop_migrate_event::GuestReattachRetry>;
 
+/** V050 hop planning's own events. */
+namespace planning_event {
+
+/** A hop quote probe answered (from a worker / I/O); `round` names the invite's probe round. */
+struct ProbeAnswered {
+  std::string call_id;
+  uint64_t round = 0;
+  std::string hop_peer_id;
+  bool ok = false;
+  std::string error;
+};
+
+} // namespace planning_event
+
+using PlanningEvent = std::variant<planning_event::ProbeAnswered>;
+
 /** The topology controller's own events. */
 namespace topology_event {
 
@@ -98,7 +114,8 @@ struct RefuseGuest {
 } // namespace topology_event
 
 using TopologyEvent = std::variant<topology_event::RelayTransportLost, topology_event::AttachWaitDeadline,
-                                   topology_event::ReannouncePublisher, topology_event::RefuseGuest, HopMigrateEvent>;
+                                   topology_event::ReannouncePublisher, topology_event::RefuseGuest, HopMigrateEvent,
+                                   PlanningEvent>;
 
 using SessionEvent =
     std::variant<session_event::AnswererKickRetry, session_event::MediaRestart, WorkflowEvent, TopologyEvent>;

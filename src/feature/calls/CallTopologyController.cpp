@@ -104,7 +104,6 @@ CallTopologyController::~CallTopologyController() {
   // No RemoveClientTransportLostObserver here: the relay may already be gone (CallStack::Shutdown
   // clears the media plane first; mesh stop unwatches through SetMediaRelayDeps({})). Invalidating
   // drops notices still queued for us.
-  planning_.Invalidate();
 }
 
 void CallTopologyController::SetMediaRelayDeps(MediaRelayDeps deps) {
@@ -1538,6 +1537,7 @@ void CallTopologyController::SetOutbox(CallsOutbox<TopologyEvent> outbox) {
   }
   hop_migrate_.SetOutbox(
       outbox_.For<HopMigrateEvent>([](HopMigrateEvent event) { return TopologyEvent{std::move(event)}; }));
+  planning_.SetOutbox(outbox_.For<PlanningEvent>([](PlanningEvent event) { return TopologyEvent{std::move(event)}; }));
 }
 
 void CallTopologyController::Handle(TopologyEvent& event) {
@@ -1559,6 +1559,8 @@ void CallTopologyController::Handle(TopologyEvent& event) {
           RefuseGuest(e);
         } else if constexpr (std::is_same_v<E, HopMigrateEvent>) {
           hop_migrate_.Handle(e);
+        } else if constexpr (std::is_same_v<E, PlanningEvent>) {
+          planning_.Handle(e);
         } else {
           static_assert(!sizeof(E), "handle every TopologyEvent");
         }

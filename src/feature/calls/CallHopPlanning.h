@@ -5,8 +5,9 @@
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/CallTypes.h"
 #include "feature/calls/CallHopRanking.h"
+#include "feature/calls/CallSessionEvents.h"
+#include "feature/calls/CallsOutbox.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "foundation/runtime/DeferredSelf.h"
 
 #include <map>
 #include <optional>
@@ -35,11 +36,12 @@ public:
   };
 
   CallHopPlanning(CallSessionStore& sessions, const CallHopRanking& ranking);
-  ~CallHopPlanning() override;
 
   void SetMediaRelayDeps(const CallTopologyMediaRelayDeps* deps) { deps_ = deps; }
-  /** Drop quotes still in flight (teardown). */
-  void Invalidate() { probe_self_.Invalidate(); }
+  /** Where planning reports its probe answers (its parent binds it). */
+  void SetOutbox(CallsOutbox<PlanningEvent> outbox) { outbox_ = std::move(outbox); }
+  /** An answer it reported, back from the calls owner's queue. */
+  void Handle(PlanningEvent& event);
 
   /**
    * The hop to plan for everyone the initiator invites (joined or not) — same ranking as SoftMigrate
@@ -72,6 +74,7 @@ public:
 
 private:
   void QuoteProbe(const std::string& call_id, const std::string& hop_peer_id, const std::string& hop_multiaddr);
+  void OnProbeAnswered(const planning_event::ProbeAnswered& answer);
 
   CallSessionStore& sessions_;
   const CallHopRanking& ranking_;
@@ -83,7 +86,9 @@ private:
   std::unordered_map<std::string, std::map<std::string, CallHopReport>> accept_reports_;
   /** Calls whose first group hop is settled (planned kept or the one adjustment made). */
   std::unordered_set<std::string> resolved_;
-  DeferredSelf probe_self_;
+  /** Per call: the invite's probe round (an answer from an earlier round is stale). */
+  std::unordered_map<std::string, uint64_t> probe_round_;
+  CallsOutbox<PlanningEvent> outbox_;
 };
 
 } // namespace pbr
