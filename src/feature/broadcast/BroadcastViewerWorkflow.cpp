@@ -370,6 +370,7 @@ void BroadcastViewerWorkflow::Attach(const std::string& hop) {
   request.quote.participants = 1;
   request.quote.want_up_bps = 0;
   request.quote.want_down_bps = kAudioDownBps;
+  request.quote.video_levels.clear();  // receive-only: publishes no video (B009)
 
   MediaRelayAttachHooks hooks;
   hooks.accept_quote = [](const MediaRelayQuote& quote) -> Roe<void> {

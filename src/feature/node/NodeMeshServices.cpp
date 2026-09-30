@@ -1,6 +1,7 @@
 #include "feature/node/NodeMeshServices.h"
 
 #include "common/directory/RelayScope.h"
+#include "common/media/MediaChannel.h"
 #include "domain/mesh/dht/DhtTypes.h"
 #include "domain/mesh/discovery/AmpDirectoryProtocol.h"
 #include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
@@ -35,6 +36,14 @@ void ApplyNodeHosting(MeshHostConfig& cfg, const MeshConfig& mesh, bool node_rol
   cfg.host_directory = node_role;
   cfg.media_relay_budget = mesh.media_relay_budget;
   cfg.media_relay_pricing = mesh.pricing.media_relay;
+  cfg.media_relay_video.serve_levels.clear();
+  for (const int level : mesh.media_relay_video.serve_levels) {
+    if (IsVideoLevel(level)) {
+      cfg.media_relay_video.serve_levels.push_back(static_cast<uint8_t>(level));
+    }
+  }
+  cfg.media_relay_video.carry_levels = mesh.media_relay_video.carry_levels;
+  cfg.media_relay_video.strict = mesh.media_relay_video.strict;
 }
 
 std::vector<std::string> CollectNodeQueryPeerKeys(const std::vector<std::string>& bootstrap_peers,

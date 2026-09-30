@@ -186,6 +186,18 @@ DHT complements [mesh directory](../../projects/p2p-mesh/MESH_DIRECTORY.md) (n-d
 
 Enter an **API key** directly in Me → Assistant (saved to `config.json`) or use **API key env var** for desktop-style env lookup when using Cloud/Custom. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Brief** (key from Profile registration); **Ollama (localhost)** remains available for local dev.
 
+### Media relay video levels (`mesh.media_relay_video`)
+
+Which video levels this node's `media_relay` carries per broadcast publisher ([peer-scoped-broadcast B009](../../projects/peer-scoped-broadcast/DECISIONS.md#b009--video-levels-opaque-ordered-integers-negotiated-per-relay-at-attach); levels: [MEDIA_CHANNELS.md](../contracts/MEDIA_CHANNELS.md)). Read at mesh start.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `serve_levels` | `[]` (any) | Levels this relay serves, e.g. `[2]` for a high-quality relay |
+| `carry_levels` | `0` (no limit) | At most this many levels per publisher |
+| `strict` | `false` | Refuse a publisher offering none of `serve_levels`; by default the relay carries the publisher's closest level instead |
+
+A publisher offers the levels it can produce; the relay answers with the ones it carries and drops video of other levels from that publisher.
+
 ### Verify settings persistence (manual)
 
 ```bash

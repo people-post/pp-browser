@@ -83,6 +83,35 @@ Object MediaRelayBudgetToObject(const MediaRelayBudgetConfig& budget) {
   return object;
 }
 
+Object MediaRelayVideoToObject(const MediaRelayVideoConfig& video) {
+  std::vector<Value> levels;
+  for (const int level : video.serve_levels) {
+    levels.emplace_back(int64_t{level});
+  }
+  Object object;
+  object.set("serve_levels", makeArray(std::move(levels)));
+  object.set("carry_levels", int64_t{video.carry_levels});
+  object.set("strict", video.strict);
+  return object;
+}
+
+void MediaRelayVideoFromObject(const Object& object, MediaRelayVideoConfig& video) {
+  if (const Array* levels = object.getArray("serve_levels")) {
+    video.serve_levels.clear();
+    for (const Value& row : levels->elements) {
+      if (const auto* level = std::get_if<int64_t>(&row)) {
+        video.serve_levels.push_back(static_cast<int>(*level));
+      }
+    }
+  }
+  if (auto carry = ReadI64(object, "carry_levels")) {
+    video.carry_levels = static_cast<int>(*carry);
+  }
+  if (auto strict = object.getIf<bool>("strict")) {
+    video.strict = *strict;
+  }
+}
+
 void MediaRelayBudgetFromObject(const Object& object, MediaRelayBudgetConfig& budget) {
   auto read_bps = [&](const char* key, int64_t& out) {
     if (!object.contains(key) || object.isNull(key)) {
@@ -456,6 +485,7 @@ Object MeshConfigToObject(const MeshConfig& config) {
   object.set("dht", MeshDhtConfigToObject(config.dht));
   object.set("pricing", MeshPricingToObject(config.pricing));
   object.set("media_relay_budget", MediaRelayBudgetToObject(config.media_relay_budget));
+  object.set("media_relay_video", MediaRelayVideoToObject(config.media_relay_video));
   return object;
 }
 
@@ -505,6 +535,9 @@ void MeshConfigFromObject(const Object& object, MeshConfig& config) {
   }
   if (const Object* media_relay_budget = object.getObject("media_relay_budget")) {
     MediaRelayBudgetFromObject(*media_relay_budget, config.media_relay_budget);
+  }
+  if (const Object* media_relay_video = object.getObject("media_relay_video")) {
+    MediaRelayVideoFromObject(*media_relay_video, config.media_relay_video);
   }
 }
 
