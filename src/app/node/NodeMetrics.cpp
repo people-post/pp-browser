@@ -73,6 +73,10 @@ void CollectMesh(MetricsRegistry& r, MeshHost& mesh) {
     r.Counter("pp_amp_reliable_packets_total", reliable, {{"event", "lost"}}).Mirror(traffic.reliable_lost);
   }
 
+  if (CircuitClientCoordinator* client = mesh.AmpCircuitClient()) {
+    r.Gauge("pp_circuit_parked_relays", "Relays holding a reservation for this node (rendezvous parking).")
+        .Set(static_cast<double>(client->ParkedRelayCount()));
+  }
   if (CircuitRelayServer* server = mesh.AmpCircuitServer()) {
     const CircuitRelayRuntimeStats load = server->RuntimeStats();
     const char* tunnels = "Circuit relay tunnels open, by state.";

@@ -55,6 +55,8 @@
     "shell.statusbar.popover.media_participants": "{count} 位媒体参与者",
     "shell.statusbar.popover.network": "网状网络流量",
     "shell.statusbar.popover.links": "{count} 条链路",
+    "shell.statusbar.popover.parked": "可通过 {count} 个中继被连接",
+    "shell.statusbar.popover.not_parked": "暂无中继可为你转接连接",
     "shell.statusbar.popover.traffic": "上行 {up}/s，下行 {down}/s",
     "shell.statusbar.popover.rtt": "往返 {ms} 毫秒",
     "shell.statusbar.popover.resend": "重传 {pct}%",

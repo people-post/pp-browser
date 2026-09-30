@@ -97,6 +97,8 @@ struct MeshTrafficTotals {
   uint64_t rtt_sum_ms = 0;
   /** Bytes this node relayed for others (circuit bridges + media relay forwarding). */
   uint64_t relayed_bytes = 0;
+  /** Relays holding a reservation for this node (rendezvous parking). */
+  size_t parked_relays = 0;
   std::chrono::steady_clock::time_point at{};
 };
 
@@ -118,6 +120,7 @@ MeshTrafficRates MeshTrafficRatesBetween(const MeshTrafficTotals& before, const 
 struct MeshTrafficView {
   bool available = false;
   size_t links = 0;
+  size_t parked_relays = 0;
   MeshTrafficRates rates;
 };
 
@@ -143,6 +146,8 @@ struct StatusbarPopoverSnapshot {
   /** node-monitoring M3: mesh traffic (links, rates, round trip, resends) and what we relay. */
   bool show_network = false;
   std::string network_links_label;
+  /** Rendezvous parking: how many relays can bridge dialers to us (or that none can). */
+  std::string network_parked_label;
   std::string network_rate_label;
   std::string network_rtt_label;
   std::string network_resend_label;
@@ -161,7 +166,8 @@ struct StatusbarPopoverSnapshot {
            circuit_load_label == other.circuit_load_label &&
            media_sessions_label == other.media_sessions_label &&
            media_participants_label == other.media_participants_label && show_network == other.show_network &&
-           network_links_label == other.network_links_label && network_rate_label == other.network_rate_label &&
+           network_links_label == other.network_links_label &&
+           network_parked_label == other.network_parked_label && network_rate_label == other.network_rate_label &&
            network_rtt_label == other.network_rtt_label && network_resend_label == other.network_resend_label &&
            relay_rate_label == other.relay_rate_label;
   }

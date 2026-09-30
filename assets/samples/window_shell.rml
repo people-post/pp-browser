@@ -169,6 +169,8 @@
     <div class="stack" data-if="statusbar_popover_network_visible">
       <p class="text-xs muted">{{i18n:shell.statusbar.popover.network}}</p>
       <p class="text-xs" data-rml="statusbar_popover_network_links"></p>
+      <p class="text-xs" data-if="statusbar_popover_network_parked != ''"
+         data-rml="statusbar_popover_network_parked"></p>
       <p class="text-xs" data-if="statusbar_popover_network_rate != ''"
          data-rml="statusbar_popover_network_rate"></p>
       <p class="text-xs" data-if="statusbar_popover_network_rtt != ''"

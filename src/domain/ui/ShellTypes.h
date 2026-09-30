@@ -388,6 +388,7 @@ struct ShellState {
   ui::String statusbar_popover_media_participants;
   bool statusbar_popover_network_visible = false;
   ui::String statusbar_popover_network_links;
+  ui::String statusbar_popover_network_parked;
   ui::String statusbar_popover_network_rate;
   ui::String statusbar_popover_network_rtt;
   ui::String statusbar_popover_network_resend;

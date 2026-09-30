@@ -51,6 +51,7 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_circuit_relay_tunnels` | gauge | `state` = `bridged` \| `setup` | Open now |
 | `pp_circuit_relay_reservations` | gauge | | Answerers parked here |
 | `pp_circuit_relay_bytes_total` | counter | | Bytes spliced through bridges, both directions |
+| `pp_circuit_parked_relays` | gauge | | Relays holding a reservation for this node (client side: rendezvous parking) |
 | `pp_dht_records` | gauge | | Records cached |
 | `pp_dht_inbound_requests_total` | counter | `op` = `find_peer` \| `store` | Served |
 | `pp_dht_inbound_rate_limited_total` | counter | | Refused by the per-peer limit |

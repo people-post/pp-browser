@@ -282,6 +282,31 @@ TEST_F(StatusbarClusterTest, PopoverRelayRateOnlyWhenHelping) {
   EXPECT_TRUE(snap.relay_rate_label.empty());
 }
 
+TEST_F(StatusbarClusterTest, PopoverShowsRendezvousParking) {
+  pbr::MeshTrafficView traffic;
+  traffic.available = true;
+  traffic.parked_relays = 2;
+  auto snap = pbr::BuildStatusbarPopoverSnapshot(true, pbr::BriefRelayHealth::Ok, true, "",
+                                                 pbr::ReachabilityStatus::OutboundOnly, false, false, false,
+                                                 false, {}, traffic);
+  EXPECT_FALSE(snap.network_parked_label.empty());
+  const std::string parked = snap.network_parked_label;
+
+  // Behind NAT with no relay parked: say dialers have no way in.
+  traffic.parked_relays = 0;
+  snap = pbr::BuildStatusbarPopoverSnapshot(true, pbr::BriefRelayHealth::Ok, true, "",
+                                            pbr::ReachabilityStatus::OutboundOnly, false, false, false, false,
+                                            {}, traffic);
+  EXPECT_FALSE(snap.network_parked_label.empty());
+  EXPECT_NE(snap.network_parked_label, parked);
+
+  // Directly reachable: parking does not matter, nothing to say.
+  snap = pbr::BuildStatusbarPopoverSnapshot(true, pbr::BriefRelayHealth::Ok, true, "",
+                                            pbr::ReachabilityStatus::Reachable, false, true, false, false, {},
+                                            traffic);
+  EXPECT_TRUE(snap.network_parked_label.empty());
+}
+
 TEST_F(StatusbarClusterTest, PopoverHidesTrafficWhenMeshDown) {
   pbr::MeshTrafficView traffic;
   traffic.available = true;

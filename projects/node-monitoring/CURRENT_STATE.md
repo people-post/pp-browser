@@ -19,4 +19,6 @@
 
 **M3 landed (popover):** `MeshTrafficTotals` / `MeshTrafficRatesBetween` / `CollectMeshTrafficTotals` in `feature/conversations/MessagingShellPorts.*`; rendered by `ShellHost::ApplyStatusbarPopover` into `window_shell.rml`.
 
-**Open:** rendezvous parking in the popover; open channels by protocol (needs a mux-wide count in pp-cpp-amp); call quality (call screen).
+Rendezvous parking: `CircuitClientCoordinator::ParkedRelayCount` → `pp_circuit_parked_relays` and the popover's network section.
+
+**Open:** open channels by protocol (needs a mux-wide count in pp-cpp-amp); call quality (call screen).

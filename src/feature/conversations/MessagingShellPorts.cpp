@@ -133,13 +133,18 @@ std::string FormatBytes(const double bytes) {
   return buf;
 }
 
-void FillPopoverNetwork(StatusbarPopoverSnapshot& snap, bool host_running, bool help_network_enabled,
-                        const MeshTrafficView& traffic) {
+void FillPopoverNetwork(StatusbarPopoverSnapshot& snap, bool host_running, ReachabilityStatus reachability,
+                        bool help_network_enabled, const MeshTrafficView& traffic) {
   if (!host_running || !traffic.available) {
     return;
   }
   snap.show_network = true;
   snap.network_links_label = Tr("shell.statusbar.popover.links", {{"count", CountArg(traffic.links)}});
+  if (traffic.parked_relays > 0) {
+    snap.network_parked_label = Tr("shell.statusbar.popover.parked", {{"count", CountArg(traffic.parked_relays)}});
+  } else if (reachability == ReachabilityStatus::OutboundOnly || reachability == ReachabilityStatus::Blocked) {
+    snap.network_parked_label = Tr("shell.statusbar.popover.not_parked");  // dialers have no way in
+  }
   const MeshTrafficRates& rates = traffic.rates;
   if (!rates.valid) {
     return;  // the first sample: rates come with the next refresh
@@ -364,7 +369,7 @@ StatusbarPopoverSnapshot BuildStatusbarPopoverSnapshot(bool messaging_ready, Bri
 
   snap.last_error = last_error;
   FillPopoverLoad(snap, help_network_enabled, load);
-  FillPopoverNetwork(snap, host_running, help_network_enabled, traffic);
+  FillPopoverNetwork(snap, host_running, reachability, help_network_enabled, traffic);
   if (!snap.relay_rate_label.empty()) {
     snap.show_load = true;  // relaying shows in Helper load even with no session open right now
   }
@@ -412,6 +417,9 @@ MeshTrafficTotals CollectMeshTrafficTotals(MeshHost* mesh) {
   totals.rtt_sum_ms = traffic.rtt_sum_ms;
   const RelayRuntimeStats load = CollectRelayRuntimeStats(mesh);
   totals.relayed_bytes = load.circuit.bytes_relayed + load.media.bytes_forwarded;
+  if (CircuitClientCoordinator* circuit = mesh->AmpCircuitClient()) {
+    totals.parked_relays = circuit->ParkedRelayCount();
+  }
   return totals;
 }
 
@@ -455,6 +463,7 @@ MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps) {
       }
       traffic.available = now.available;
       traffic.links = now.links;
+      traffic.parked_relays = now.parked_relays;
       traffic.rates = sampler->rates;
     }
     return BuildStatusbarPopoverSnapshot(ready, brief, running, last_error, reach.status,

@@ -17,7 +17,7 @@
 - [x] Circuit relay: requests by op / result, tunnels bridged / failed, setup latency, open tunnels, reservations
 - [x] Amp traffic (pp-cpp-amp `Endpoint::Stats`): datagrams / bytes, rejects, reliable sent / retransmitted / lost, RTT histogram; circuit bridge bytes (`ChannelBridge::ForwardedBytes`)
 - [ ] Open channels by protocol (needs a mux-wide count in pp-cpp-amp)
-- [ ] Rendezvous parking state (a pp-browser concern: `MeshConnectivity` — with M3)
+- [x] Rendezvous parking state: `pp_circuit_parked_relays` (`CircuitClientCoordinator::ParkedRelayCount`)
 
 ## M3 — pp-browser UI snapshot
 
@@ -25,5 +25,5 @@ The home is the network-status popover (not a Me panel): it already carries the 
 
 - [x] Mesh traffic in the popover: links, up / down rate, round trip, resend % (deltas between samples ≥ 1 s apart; `MeshTrafficRatesBetween`)
 - [x] What a desktop Node relays for others: relaying rate (circuit bridge bytes + media relay forwarded bytes) under Helper load
-- [ ] Rendezvous parking state in the popover (carried over from M2)
+- [x] Rendezvous parking in the popover: "Reachable through N relays", or none when behind NAT
 - [ ] Call quality (per-call; belongs with the call screen, not the network popover)
