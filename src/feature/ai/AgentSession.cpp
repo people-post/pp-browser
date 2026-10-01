@@ -32,6 +32,7 @@
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/runtime/AppVersion.h"
+#include "common/Metrics.h"
 
 #include <atomic>
 #include <chrono>
@@ -86,6 +87,8 @@ struct AgentSession::Impl : public Module {
   std::mutex stream_cancel_mutex;
   std::shared_ptr<std::atomic<bool>> stream_cancel = std::make_shared<std::atomic<bool>>(false);
   std::atomic<uint64_t> turn_generation{0};
+  /** The current turn came back from brief_AI as "app action"; FinishTurn reports whether tools ran. */
+  bool handoff_turn = false;
   std::atomic<bool> busy{false};
   std::mutex configure_mutex;
   std::condition_variable configure_cv;
@@ -168,6 +171,11 @@ void AgentSession::PushError(const std::shared_ptr<Impl>& state, const Error& er
 
 void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
   state->turn_trace.Log();
+  if (state->handoff_turn) {
+    // A handoff that ran no tool locally is the signal for a mis-routed question (plan step 5).
+    MetricsLine("ai.handoff").Add("tools", static_cast<int64_t>(state->turn_trace.tools_executed.size())).Emit();
+    state->handoff_turn = false;
+  }
   state->busy = false;
   state->iterations = 0;
   state->turn_scratch.clear();
@@ -773,11 +781,37 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     return state->turn_generation.load(std::memory_order_acquire) == generation;
   };
 
+  // Operational metrics only: timings and outcome, never text.
+  struct TurnStats {
+    std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+    std::optional<std::chrono::steady_clock::time_point> first_token;
+    size_t deltas = 0;
+    std::string route;
+  };
+  auto stats = std::make_shared<TurnStats>();
+  const auto emit_turn = [stats](const char* outcome) {
+    const auto now = std::chrono::steady_clock::now();
+    const auto ms = [](auto from, auto to) {
+      return std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count();
+    };
+    MetricsLine("ai.turn")
+        .Add("outcome", outcome)
+        .Add("route", stats->route.empty() ? "none" : stats->route)
+        .Add("first_token_ms", stats->first_token ? ms(stats->started, *stats->first_token) : -1)
+        .Add("total_ms", ms(stats->started, now))
+        .Add("deltas", static_cast<int64_t>(stats->deltas))
+        .Emit();
+  };
+
   BriefTurnSinks sinks;
   // Deltas carry the whole text so far; cap them at 20/s so a long answer does not flood the UI queue.
   auto last_delta = std::make_shared<std::optional<std::chrono::steady_clock::time_point>>();
-  sinks.on_delta = [state, current, last_delta](const std::string& text) {
+  sinks.on_delta = [state, current, last_delta, stats](const std::string& text) {
     const auto now = std::chrono::steady_clock::now();
+    if (!stats->first_token) {
+      stats->first_token = now;
+    }
+    ++stats->deltas;
     if (!current() || (*last_delta && now - **last_delta < std::chrono::milliseconds(50))) {
       return;
     }
@@ -792,8 +826,10 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
       PushToolActivity(state, tool, phase);
     }
   };
-  sinks.on_done = [state, current](const std::string& response, const std::string& finish,
-                                   const std::vector<BriefAiSource>& sources) {
+  sinks.on_meta = [stats](const std::string& route) { stats->route = route; };
+  sinks.on_done = [state, current, emit_turn](const std::string& response, const std::string& finish,
+                                              const std::vector<BriefAiSource>& sources) {
+    emit_turn(finish == "length" ? "done_truncated" : "done");
     if (!current()) {
       state->Log().info << "brief_AI stream finished after the turn was replaced; dropped";
       return;
@@ -801,15 +837,19 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     EmitStreamedAnswer(state, response, finish, sources);
     FinishTurn(state);
   };
-  sinks.on_handoff = [state, current]() {
+  sinks.on_handoff = [state, current, emit_turn]() {
+    emit_turn("handoff");
     if (!current()) {
       return;
     }
     state->Log().info << "brief_AI handed the turn back; running the local pipeline";
+    state->handoff_turn = true;
     RunTurnPipeline(state);
   };
-  sinks.on_error = [state, current](const std::string& message, const bool retryable, const std::string& partial) {
+  sinks.on_error = [state, current, emit_turn](const std::string& message, const bool retryable,
+                                               const std::string& partial) {
     state->Log().warning << "brief_AI stream error (retryable=" << retryable << ", partial_chars=" << partial.size() << ")";
+    emit_turn(partial.empty() ? "error" : "error_partial");
     if (!current()) {
       return;
     }
@@ -819,7 +859,8 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     PushError(state, message, retryable);
     FinishTurn(state);
   };
-  sinks.on_cancelled = [state, current](const std::string& partial) {
+  sinks.on_cancelled = [state, current, emit_turn](const std::string& partial) {
+    emit_turn("cancelled");
     if (!current()) {
       return; // Cancel() followed by a new Submit: the new turn owns the state now
     }
