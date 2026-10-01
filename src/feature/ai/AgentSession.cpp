@@ -172,9 +172,17 @@ void AgentSession::PushError(const std::shared_ptr<Impl>& state, const Error& er
 void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
   state->turn_trace.Log();
   if (state->handoff_turn) {
-    // A handoff that ran no tool locally is the signal for a mis-routed question (plan step 5).
-    MetricsLine("ai.handoff").Add("tools", static_cast<int64_t>(state->turn_trace.tools_executed.size())).Emit();
-    state->handoff_turn = false;
+    bool parked = false;
+    {
+      std::lock_guard lock(state->park_mutex);
+      parked = state->parked_approval && state->parked_approval->state == ParkedApprovalState::Pending;
+    }
+    // A handoff that ran no tool locally is the signal for a mis-routed question (plan step 5). A turn
+    // parked on a permission prompt is not finished: count it when the resumed turn ends.
+    if (!parked) {
+      MetricsLine("ai.handoff").Add("tools", static_cast<int64_t>(state->turn_trace.tools_executed.size())).Emit();
+      state->handoff_turn = false;
+    }
   }
   state->busy = false;
   state->iterations = 0;
@@ -791,13 +799,13 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   auto stats = std::make_shared<TurnStats>();
   const auto emit_turn = [stats](const char* outcome) {
     const auto now = std::chrono::steady_clock::now();
-    const auto ms = [](auto from, auto to) {
-      return std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count();
+    const auto ms = [](auto from, auto to) -> int64_t {
+      return static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count());
     };
     MetricsLine("ai.turn")
         .Add("outcome", outcome)
         .Add("route", stats->route.empty() ? "none" : stats->route)
-        .Add("first_token_ms", stats->first_token ? ms(stats->started, *stats->first_token) : -1)
+        .Add("first_token_ms", stats->first_token ? ms(stats->started, *stats->first_token) : int64_t{-1})
         .Add("total_ms", ms(stats->started, now))
         .Add("deltas", static_cast<int64_t>(stats->deltas))
         .Emit();

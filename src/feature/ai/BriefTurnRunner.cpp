@@ -36,6 +36,9 @@ void BriefTurnRunner::Run(const BriefAiStreamFn& stream, const BriefAiRequest& r
       Call(sinks.on_delta, text);
       break;
     case BriefAiEvent::Type::Done:
+      if (!event.route.empty()) {
+        Call(sinks.on_meta, event.route); // done may carry the final (corrected) route
+      }
       done = event;
       break;
     case BriefAiEvent::Type::Handoff:
