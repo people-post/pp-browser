@@ -4,6 +4,7 @@
 #include "feature/conversations/ConversationsFacade.h"
 #include "gui/shell/ShellSetupPorts.h"
 #include "gui/chat/ChatDataModel.h"
+#include "gui/chat/ChatAnswer.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/BadgeAggregator.h"
 #include "gui/BadgeNotifyPorts.h"
@@ -16,7 +17,9 @@
 #include "foundation/platform/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "foundation/platform/PlatformOpenFile.h"
+#include "foundation/platform/PlatformOpenUrl.h"
 
+#include "domain/ai/MarkdownToRml.h"
 #include "domain/ai/StructuredTextParser.h"
 #include "domain/ai/WorkingSetPolicy.h"
 #include "domain/ai/conversation/Conversation.h"
@@ -92,6 +95,22 @@ namespace pbr {
 namespace {
 
 std::string ToolActivityLabel(const std::string& tool_name, const std::string& status) {
+  // brief_AI status events: tool = backend tool name, status = phase ("answer" has no tool).
+  if (status == "answer") {
+    return Tr("chat.status.writing");
+  }
+  if (tool_name == "search_web") {
+    return Tr("chat.status.searching_web");
+  }
+  if (tool_name == "read_url") {
+    return Tr("chat.status.reading_page");
+  }
+  if (tool_name == "search_opensearch") {
+    return Tr("chat.status.searching_nfsc");
+  }
+  if (tool_name == "get_quote") {
+    return Tr("chat.status.getting_quote");
+  }
   if (tool_name == "web_search") {
     if (status == "running") {
       return "Searching the web...";
@@ -665,6 +684,23 @@ void ChatController::SendChatActionCallback(ui::DataModelHandle /*model*/, ui::E
   }
 
   Instance().SendChatAction(std::string(args[0].Get<ui::String>().c_str()), *action_index);
+}
+
+void ChatController::OpenChatLinkCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                          const ui::VariantList& args) {
+  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING) {
+    return;
+  }
+  const std::optional<int> link_index = EventArgAsInt(args, 1);
+  if (!link_index) {
+    return;
+  }
+  Instance().OpenChatLink(std::string(args[0].Get<ui::String>().c_str()), *link_index);
+}
+
+void ChatController::StopTurnCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& /*args*/) {
+  Instance().OnStopTurn();
 }
 
 void ChatController::ToggleReactionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -1465,6 +1501,98 @@ void ChatController::SyncDisplayFromThread() {
   chat_.use_messages_layout = true;
 
   scroller_.EndDisplaySync(thread_changed, prev_tail_id, prev_count);
+}
+
+// The delta's entry_id is the pending turn's user message id; the final AssistantReady carries the
+// persisted assistant message id, so the live bubble is a synthetic last row that ClearStreamingRow
+// drops right before FinishAssistantReply rebuilds the rows.
+void ChatController::OnAssistantDelta(const AgentEvent& event) {
+  if (!messaging_ready_) {
+    return;
+  }
+  if (!streaming_ || streaming_->row_id != "streaming-" + event.entry_id) {
+    ClearStreamingRow();
+    streaming_ = StreamingRow{};
+    streaming_->row_id = "streaming-" + event.entry_id;
+    streaming_->thread_id = event.thread_id;
+  }
+  streaming_->text = event.text;
+  streaming_->dirty = true;
+  FlushStreamingRow();
+}
+
+void ChatController::FlushStreamingRow() {
+  if (!streaming_) {
+    return;
+  }
+  bool changed = false;
+  const auto now = std::chrono::steady_clock::now();
+  if (streaming_->dirty && ShouldRenderStreamDelta(streaming_->last_render, now)) {
+    ChatAnswerRml answer = BuildMarkdownAnswer(streaming_->text, {}, "");
+    streaming_->rml = ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", streaming_->text) +
+                      R"( selectable="text">)" + InjectEntryPlaceholders(answer.rml, streaming_->row_id) + "</div>";
+    chat_links_[streaming_->row_id] = std::move(answer.links);
+    streaming_->last_render = now;
+    streaming_->dirty = false;
+    changed = true;
+  }
+  if (streaming_->rml.empty() || streaming_->thread_id != ActiveThreadId()) {
+    return;
+  }
+  // Row rebuilds (scroller paging, thread sync) drop the synthetic row; put it back.
+  if (chat_.messages.empty() || std::string(chat_.messages.back().message_id.c_str()) != streaming_->row_id) {
+    MessageDisplayRow row;
+    row.message_id = streaming_->row_id.c_str();
+    row.row_class = "message-row-ai";
+    chat_.messages.push_back(std::move(row));
+    changed = true;
+  }
+  if (changed) {
+    chat_.messages.back().content_rml = streaming_->rml.c_str();
+    DirtyChatTurns();
+  }
+}
+
+void ChatController::ClearStreamingRow() {
+  if (!streaming_) {
+    return;
+  }
+  chat_links_.erase(streaming_->row_id);
+  streaming_.reset();
+}
+
+void ChatController::OnStopTurn() {
+  if (AgentReady() && agent_ports_.cancel) {
+    agent_ports_.cancel();
+  }
+}
+
+void ChatController::OpenChatLink(const std::string& entry_id, const int link_index) {
+  auto links = chat_links_.find(entry_id);
+  if (links == chat_links_.end() && messaging_ready_ && facade_ && entry_id.rfind("streaming-", 0) != 0) {
+    // After a restart the map is empty: rebuild from the message's own stored text (sources are not persisted).
+    if (auto messages = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 10000)) {
+      for (const ThreadMessage& message : *messages) {
+        if (message.id == entry_id && message.sender_contact_id == kAiAssistantContactId) {
+          links = chat_links_.emplace(entry_id, RecoverChatLinks(message.text)).first;
+          break;
+        }
+      }
+    }
+  }
+  if (links == chat_links_.end()) {
+    return;
+  }
+  const std::optional<std::string> url = ResolveChatLink(links->second, link_index);
+  if (!url) {
+    return;
+  }
+  ShowConfirm(Tr("chat.open_link_title", {{"host", UrlHost(*url)}}), Tr("chat.open_link_body", {{"url", *url}}),
+              [url = *url](const bool ok) {
+                if (ok) {
+                  (void)PlatformOpenUrl(url);
+                }
+              });
 }
 
 void ChatController::RestoreWorkingSetsFromActiveThread() {
@@ -2393,13 +2521,23 @@ void ChatController::SendChatAction(const std::string& entry_id, int action_inde
 
 void ChatController::FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, const bool from_llm,
                                     const std::string& finish_reason, const std::string& thread_id,
-                                    ResponseGoal response_goal, RenderMode render_mode, const AtAiMode shared_ai_mode) {
-  if (!from_llm) {
+                                    ResponseGoal response_goal, RenderMode render_mode, const AtAiMode shared_ai_mode,
+                                    const std::vector<BriefAiSource>& sources) {
+  const bool markdown = render_mode == RenderMode::Markdown;
+  if (!from_llm && !markdown) {
     response_goal = InferResponseGoalFromBlocksJson(raw_output);
   }
 
-  auto parsed = from_llm ? StructuredTextParser::ParseFromLlmOutput(raw_output, response_goal, render_mode)
-                         : StructuredTextParser::ParseBlocksJson(raw_output, response_goal, render_mode);
+  ChatAnswerRml markdown_answer;
+  ParseResult parsed;
+  if (markdown) {
+    markdown_answer = BuildMarkdownAnswer(raw_output, sources, Tr("chat.sources"));
+    parsed.ok = true;
+    parsed.rml = markdown_answer.rml;
+  } else {
+    parsed = from_llm ? StructuredTextParser::ParseFromLlmOutput(raw_output, response_goal, render_mode)
+                      : StructuredTextParser::ParseBlocksJson(raw_output, response_goal, render_mode);
+  }
   if (!parsed.ok) {
     log().warning << "Failed to parse assistant reply: " << parsed.error;
     if (from_llm && !finish_reason.empty()) {
@@ -2522,6 +2660,10 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
       (void)facade_->UpdatePreview(active_thread, parsed.rml);
     }
 
+    if (markdown) {
+      chat_links_[action_entry_id] = std::move(markdown_answer.links);
+    }
+
     working_set_.ApplyFromParse(action_entry_id, working_set_candidates, chat_actions);
 
     if (shared_ai_mode == AtAiMode::SharedReply || shared_ai_mode == AtAiMode::SharedFull) {
@@ -2568,6 +2710,11 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
   case AgentEventType::LoadingChanged:
     chat_.loading = event.loading;
     if (!event.loading) {
+      if (streaming_) { // turn ended without a persisted answer
+        ClearStreamingRow();
+        SyncDisplayFromThread();
+        DirtyChatTurns();
+      }
       chat_.status = "";
       ShellSetActivity(false);
     } else {
@@ -2584,13 +2731,18 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
     ShellSetActivity(true, chat_.status);
     DirtyChatChrome();
     break;
+  case AgentEventType::AssistantDelta:
+    OnAssistantDelta(event);
+    break;
   case AgentEventType::AssistantReady:
+    ClearStreamingRow();
     FinishAssistantReply(event.entry_id, event.text, !StructuredTextParser::IsBlocksJsonDocument(event.text),
                          event.finish_reason, event.thread_id, event.response_goal, event.render_mode,
-                         event.shared_ai_mode);
+                         event.shared_ai_mode, event.sources);
     break;
   case AgentEventType::Error:
     log().error << "Agent session error: " << event.message;
+    // A partial answer was already persisted via AssistantReady; the error toast is separate.
     UserFeedback::NeedsSetup(event.message);
     if (AgentReady() && agent_ports_.has_conversation_entries && agent_ports_.has_conversation_entries() &&
         agent_ports_.last_conversation_entry_id && agent_ports_.complete_assistant_message &&
@@ -2953,6 +3105,8 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("send_message", &ChatController::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatController::SendSuggestionCallback);
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
+        ctor.BindEventCallback("open_chat_link", &ChatController::OpenChatLinkCallback);
+        ctor.BindEventCallback("stop_turn", &ChatController::StopTurnCallback);
         ctor.BindEventCallback("toggle_reaction", &ChatController::ToggleReactionCallback);
         ctor.BindEventCallback("open_emoji_insert", &ChatController::OpenEmojiInsertCallback);
         ctor.BindEventCallback("attach_file", &ChatController::AttachFileCallback);
@@ -3218,6 +3372,7 @@ void ChatController::OnApplicationPause() {
 }
 
 void ChatController::Update() {
+  FlushStreamingRow();
   if (pending_reply_) {
     PendingReply reply = std::move(*pending_reply_);
     pending_reply_.reset();
@@ -3275,6 +3430,8 @@ void ChatController::Shutdown() {
   messaging_ready_ = false;
   mesh_ready_ = false;
   pending_reply_.reset();
+  streaming_.reset();
+  chat_links_.clear();
   context_ = nullptr;
   widgets_.ClearAll();
   chat_ = {};

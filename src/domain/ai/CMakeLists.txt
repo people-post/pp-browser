@@ -1,5 +1,6 @@
 pp_browser_add_domain_library(pp_domain_ai
   SOURCES
+    BriefAiClient.cpp
     LlmClient.cpp
     MarkdownToRml.cpp
     PromptBuilder.cpp

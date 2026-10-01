@@ -253,6 +253,7 @@ Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps
 | `PP_BROWSER_CONFIG` | Explicit config file path |
 | `PP_BROWSER_SANDBOX` | When truthy, same as `--sandbox` (sandbox backend + isolated dirs) |
 | `PP_BROWSER_PIN` | Profile unlock PIN (`pp-node` / automation) |
+| `PP_BROWSER_BRIEF_STREAM_URL` | Dev only: full URL of the brief_AI stream endpoint, replacing `llm.base_url` + the client's stream path (e.g. a local fake server) |
 | `PP_BROWSER_LLM_MODEL` | Default Brief model when no config file |
 | `PP_NODE_*` | Headless node deploy overlays — see [pp-node deploy overlays](#pp-node-deploy-overlays) |
 | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Linux path overrides |

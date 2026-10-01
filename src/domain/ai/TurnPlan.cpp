@@ -73,6 +73,8 @@ const char* RenderModeName(const RenderMode mode) {
     return "blocks";
   case RenderMode::PeopleList:
     return "people_list";
+  case RenderMode::Markdown:
+    return "markdown";
   }
   return "blocks";
 }

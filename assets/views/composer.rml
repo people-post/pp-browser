@@ -21,7 +21,11 @@
         <span class="prompt-attachment-chip-status">{{i18n:chat.attachment.uploading}}</span>
       </div>
     </div>
-    <button class="prompt-send-btn" type="button" data-event-click="send_message()" data-attrif-disabled="composer_input_disabled">
+    <button class="prompt-send-btn" type="button" data-if="loading" data-event-click="stop_turn()"
+            title="{{i18n:chat.stop}}">
+      <svg src="../icons/stop.svg" width="14" height="14" crop-to-content="true"></svg>
+    </button>
+    <button class="prompt-send-btn" type="button" data-if="!loading" data-event-click="send_message()" data-attrif-disabled="composer_input_disabled">
       <svg src="../icons/send.svg" width="14" height="14" crop-to-content="true"></svg>
     </button>
   </div>

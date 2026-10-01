@@ -15,6 +15,8 @@ bool SandboxMode();
 
 const char* BriefOrigin();
 std::string BriefLlmBaseUrl();
+/** Dev override for the brief_AI stream endpoint (PP_BROWSER_BRIEF_STREAM_URL); empty = derive from the LLM base URL. */
+std::string BriefStreamUrlOverride();
 std::string BriefRelayBaseUrl();
 std::string BriefMcpUrl();
 
