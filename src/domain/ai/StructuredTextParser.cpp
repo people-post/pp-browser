@@ -1028,17 +1028,26 @@ std::optional<std::vector<EmbeddedToolCall>> StructuredTextParser::ExtractEmbedd
 }
 
 std::string StructuredTextParser::PlainText(const std::string& llm_output) {
+  const auto prose = PlainTextIfBlocks(llm_output);
+  return prose && !prose->empty() ? *prose : llm_output;
+}
+
+std::optional<std::string> StructuredTextParser::PlainTextIfBlocks(const std::string& llm_output) {
   const auto payload = ExtractJsonPayload(llm_output);
   if (!payload) {
-    return llm_output;
+    return std::nullopt;
   }
-  const auto doc = TryParseObject(*payload);
+  // Same repair as the renderer: a truncated answer still renders, so it must still read as prose.
+  auto doc = TryParseObject(*payload);
   if (!doc) {
-    return llm_output;
+    doc = TryParseObject(BalanceJsonBraces(*payload));
+  }
+  if (!doc) {
+    return std::nullopt;
   }
   const Array* blocks = doc->getArray("blocks");
   if (!blocks) {
-    return llm_output;
+    return std::nullopt;
   }
 
   std::string out;
@@ -1064,10 +1073,37 @@ std::string StructuredTextParser::PlainText(const std::string& llm_output) {
       add(str(*block, "title"));
       add(str(*block, "subtitle"));
       add(str(*block, "body"));
-    } else if (type == "choice") {
-      add(str(*block, "prompt"));
-    } else if (type == "poll") {
-      add(str(*block, "question"));
+    } else if (type == "choice" || type == "poll") {
+      add(type == "choice" ? str(*block, "prompt") : str(*block, "question"));
+      if (const Array* options = block->getArray("options")) {
+        for (const Value& option_value : options->elements) {
+          if (auto text = asString(option_value)) {
+            add("- " + *text);
+          } else if (const Object* option = asObject(option_value)) {
+            add("- " + (str(*option, "label").empty() ? str(*option, "text") : str(*option, "label")));
+          }
+        }
+      }
+    } else if (type == "table") {
+      const auto row_line = [&](const Array& cells) {
+        std::string line;
+        for (const Value& cell : cells.elements) {
+          if (auto text = asString(cell)) {
+            line += (line.empty() ? "" : " | ") + *text;
+          }
+        }
+        add(line);
+      };
+      if (const Array* headers = block->getArray("headers")) {
+        row_line(*headers);
+      }
+      if (const Array* rows = block->getArray("rows")) {
+        for (const Value& row : rows->elements) {
+          if (const Array* cells = asArray(row)) {
+            row_line(*cells);
+          }
+        }
+      }
     } else if (type == "list" || type == "key_value" || type == "long_list" || type == "action_list") {
       if (const Array* items = block->getArray("items")) {
         for (const Value& item_value : items->elements) {
@@ -1081,9 +1117,9 @@ std::string StructuredTextParser::PlainText(const std::string& llm_output) {
         }
       }
     }
-    // buttons, forms, calendars and tables have no prose worth sharing
+    // buttons, forms and calendars have no prose worth sharing
   }
-  return out.empty() ? llm_output : out;
+  return out;
 }
 
 bool StructuredTextParser::IsBlocksJsonDocument(const std::string& text) {

@@ -53,6 +53,8 @@ public:
    * (or a document with no readable blocks) is returned as-is. For sharing and for chat history.
    */
   static std::string PlainText(const std::string& llm_output);
+  /** nullopt when `llm_output` is not a blocks document; otherwise its prose (empty when nothing is readable). */
+  static std::optional<std::string> PlainTextIfBlocks(const std::string& llm_output);
 
   static std::optional<std::vector<EmbeddedToolCall>> ExtractEmbeddedToolCalls(const std::string& llm_output);
 };

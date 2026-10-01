@@ -348,4 +348,14 @@ TEST(StructuredTextParserTest, PlainTextReadsFencedAndBareBlocksAndPassesProseTh
   EXPECT_EQ(pbr::StructuredTextParser::PlainText("plain prose"), "plain prose");
   EXPECT_EQ(pbr::StructuredTextParser::PlainText(R"({"blocks":[{"type":"button","label":"x"}]})"),
             R"({"blocks":[{"type":"button","label":"x"}]})");
+
+  // Callers that must never forward JSON tell "prose" from "blocks with nothing readable".
+  EXPECT_FALSE(pbr::StructuredTextParser::PlainTextIfBlocks("plain prose").has_value());
+  EXPECT_EQ(pbr::StructuredTextParser::PlainTextIfBlocks(R"({"blocks":[{"type":"button","label":"x"}]})"), "");
+
+  // Tables and poll options read as lines; a truncated document gets the renderer's brace repair.
+  EXPECT_EQ(pbr::StructuredTextParser::PlainText(
+                R"({"blocks":[{"type":"table","headers":["A","B"],"rows":[["1","2"]]},{"type":"poll","question":"Q?","options":["yes","no"]}]})"),
+            "A | B\n1 | 2\nQ?\n- yes\n- no");
+  EXPECT_EQ(pbr::StructuredTextParser::PlainText(R"({"blocks":[{"type":"paragraph","text":"cut off"}])"), "cut off");
 }
