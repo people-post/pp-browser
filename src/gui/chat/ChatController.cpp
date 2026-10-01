@@ -2667,32 +2667,8 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
     working_set_.ApplyFromParse(action_entry_id, working_set_candidates, chat_actions);
 
     if (shared_ai_mode == AtAiMode::SharedReply || shared_ai_mode == AtAiMode::SharedFull) {
-      std::string relay_plain = raw_output;
-      if (StructuredTextParser::IsBlocksJsonDocument(raw_output)) {
-        if (auto blocks_doc = TryParseObject(raw_output)) {
-          if (const Array* blocks = blocks_doc->getArray("blocks")) {
-            std::string joined;
-            for (const Value& block_value : blocks->elements) {
-              const Object* block = asObject(block_value);
-              if (!block) {
-                continue;
-              }
-              if (block->getString("type").value_or("") == "paragraph") {
-                if (auto text = block->getString("text")) {
-                  if (!joined.empty()) {
-                    joined += "\n";
-                  }
-                  joined += *text;
-                }
-              }
-            }
-            if (!joined.empty()) {
-              relay_plain = joined;
-            }
-          }
-        }
-      }
-      SendSharedAssistantRelay(active_thread, shared_ai_mode, relay_plain);
+      // The peer gets prose, never the blocks document (fenced answers used to go out as raw JSON).
+      SendSharedAssistantRelay(active_thread, shared_ai_mode, StructuredTextParser::PlainText(raw_output));
     }
   }
 

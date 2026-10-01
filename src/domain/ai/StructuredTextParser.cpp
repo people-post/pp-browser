@@ -1027,6 +1027,65 @@ std::optional<std::vector<EmbeddedToolCall>> StructuredTextParser::ExtractEmbedd
   return tools;
 }
 
+std::string StructuredTextParser::PlainText(const std::string& llm_output) {
+  const auto payload = ExtractJsonPayload(llm_output);
+  if (!payload) {
+    return llm_output;
+  }
+  const auto doc = TryParseObject(*payload);
+  if (!doc) {
+    return llm_output;
+  }
+  const Array* blocks = doc->getArray("blocks");
+  if (!blocks) {
+    return llm_output;
+  }
+
+  std::string out;
+  const auto add = [&out](const std::string& line) {
+    if (line.empty()) {
+      return;
+    }
+    if (!out.empty()) {
+      out += "\n";
+    }
+    out += line;
+  };
+  const auto str = [](const Object& o, const char* key) { return o.getString(key).value_or(std::string()); };
+  for (const Value& value : blocks->elements) {
+    const Object* block = asObject(value);
+    if (!block) {
+      continue;
+    }
+    const std::string type = str(*block, "type");
+    if (type == "paragraph" || type == "heading" || type == "callout" || type == "quote" || type == "code") {
+      add(str(*block, "text"));
+    } else if (type == "card") {
+      add(str(*block, "title"));
+      add(str(*block, "subtitle"));
+      add(str(*block, "body"));
+    } else if (type == "choice") {
+      add(str(*block, "prompt"));
+    } else if (type == "poll") {
+      add(str(*block, "question"));
+    } else if (type == "list" || type == "key_value" || type == "long_list" || type == "action_list") {
+      if (const Array* items = block->getArray("items")) {
+        for (const Value& item_value : items->elements) {
+          if (auto text = asString(item_value)) {
+            add("- " + *text);
+          } else if (const Object* item = asObject(item_value)) {
+            const std::string label = str(*item, "label").empty() ? str(*item, "title") : str(*item, "label");
+            const std::string detail = str(*item, "value").empty() ? str(*item, "subtitle") : str(*item, "value");
+            add(detail.empty() ? "- " + label : "- " + label + ": " + detail);
+          }
+        }
+      }
+    }
+    // buttons, forms, calendars and tables have no prose worth sharing
+  }
+  return out.empty() ? llm_output : out;
+}
+
 bool StructuredTextParser::IsBlocksJsonDocument(const std::string& text) {
   const std::string trimmed = TrimAsciiWhitespace(text);
   if (trimmed.empty() || trimmed.front() != '{') {
