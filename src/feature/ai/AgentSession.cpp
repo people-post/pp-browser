@@ -915,20 +915,9 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
 
     state->pending_entry_id = util::GenerateUuid();
 
-    auto messages = state->thread_store->GetMessagesForContext(state->pending_thread_id, state->config.context);
-    if (!messages) {
-      PushError(state, messages.error());
-      FinishTurn(state);
-      return;
-    }
-
-    std::optional<ConversationSummary> summary;
-    if (auto memory = state->thread_store->GetThreadMemory(state->pending_thread_id)) {
-      summary = *memory;
-    }
-
+    // Only the question goes out; the chat transcript stays on the device (plan decision 11).
     ThreadContextPolicy policy(state->config.context);
-    state->turn_scratch = policy.BuildAssistContext(*messages, state->pending_user_text, summary);
+    state->turn_scratch = policy.BuildAssistContext(state->pending_user_text);
     if (!state->turn_scratch.empty() && state->turn_scratch.front().role == "system") {
       state->turn_scratch.front().content =
           PromptBuilder::BuildScopedAssistSystemPrompt(state->tools.SummaryForPrompt());

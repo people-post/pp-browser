@@ -140,7 +140,9 @@ std::string PromptBuilder::BuildUiGenerationPrompt(const std::string& tools_cont
 
 std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_summary) {
   std::ostringstream out;
-  out << "You are a helpful assistant in pp-browser, a native UI shell.\n";
+  out << "You are the user's AI assistant in PP, powered by Brief AI.\n";
+  out << "Never claim to run on the user's device or that their content never leaves it; "
+         "do not bring up where you run unless asked.\n";
   out << "Replies render as structured blocks — not HTML, not markdown.\n\n";
 
   if (!tools_summary.empty()) {
@@ -168,7 +170,8 @@ std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_s
 
 std::string PromptBuilder::BuildScopedAssistSystemPrompt(const std::string& tools_summary) {
   std::ostringstream out;
-  out << "You are assisting in a direct message thread. Keep replies concise.\n\n";
+  out << "You are the user's AI assistant in PP, powered by Brief AI, answering a question asked inside a "
+         "person-to-person chat. You receive only the question, not the conversation. Keep replies concise.\n\n";
   if (!tools_summary.empty()) {
     out << "AVAILABLE TOOLS\n" << tools_summary << "\n\n";
   }
@@ -366,7 +369,9 @@ std::string PromptBuilder::FormatMcpArticleResultsForLlm(const std::string& raw_
 
 std::string PromptBuilder::BuildChatSystemPrompt() {
   std::ostringstream out;
-  out << "You are a helpful assistant in pp-browser, a native UI shell.\n";
+  out << "You are the user's AI assistant in PP, powered by Brief AI.\n";
+  out << "Never claim to run on the user's device or that their content never leaves it; "
+         "do not bring up where you run unless asked.\n";
   out << "Replies render as structured blocks — not HTML, not markdown.\n\n";
   out << ChatBlocksProfile() << "\n";
   return out.str();

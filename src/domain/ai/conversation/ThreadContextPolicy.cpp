@@ -8,9 +8,20 @@ namespace pbr {
 
 namespace {
 
+// Role labels only: contact ids and names never go to the model.
+const char* RoleLabel(const ThreadMessage& message) {
+  if (message.sender_contact_id == kLocalSelfContactId) {
+    return "user";
+  }
+  if (message.sender_contact_id == kAiAssistantContactId) {
+    return "assistant";
+  }
+  return "peer";
+}
+
 std::string FormatThreadLine(const ThreadMessage& message) {
   std::ostringstream out;
-  out << message.sender_contact_id << ": " << message.text;
+  out << RoleLabel(message) << ": " << message.text;
   if (message.content_rml) {
     out << " [rich]";
   }
@@ -89,33 +100,11 @@ ContextBuildResult ThreadContextPolicy::Build(const std::vector<ThreadMessage>& 
   return result;
 }
 
-std::vector<ChatMessage> ThreadContextPolicy::BuildAssistContext(const std::vector<ThreadMessage>& messages,
-                                                                 const std::string& prompt,
-                                                                 const std::optional<ConversationSummary>& summary) const {
-  std::ostringstream transcript;
-  int char_budget = budget_.max_recent_chars;
-  for (auto it = messages.rbegin(); it != messages.rend(); ++it) {
-    const std::string line = FormatThreadLine(*it);
-    if (char_budget - static_cast<int>(line.size()) < 0) {
-      break;
-    }
-    char_budget -= static_cast<int>(line.size());
-    transcript << line << "\n";
-  }
-
-  std::vector<ChatMessage> out;
-  std::string system_content =
-      "You are assisting in a person-to-person chat. Use the transcript for context. Reply concisely.";
-  if (summary && !summary->text.empty()) {
-    const std::string trimmed = TrimTextToCharBudget(summary->text, budget_.max_summary_chars);
-    system_content += "\n\nConversation summary:\n" + trimmed;
-  }
-  out.push_back(ChatMessage{.role = "system", .content = std::move(system_content)});
-  if (!transcript.str().empty()) {
-    out.push_back(ChatMessage{.role = "user", .content = "Transcript:\n" + transcript.str()});
-  }
-  out.push_back(ChatMessage{.role = "user", .content = prompt});
-  return out;
+// In-chat @ai sends only the question: the other person's messages never leave the device for it
+// (plan decision 11). The caller replaces the system message with the scoped-assist prompt.
+std::vector<ChatMessage> ThreadContextPolicy::BuildAssistContext(const std::string& prompt) const {
+  return {ChatMessage{.role = "system", .content = "You are assisting inside a person-to-person chat."},
+          ChatMessage{.role = "user", .content = prompt}};
 }
 
 } // namespace pbr

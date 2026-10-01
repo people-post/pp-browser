@@ -142,7 +142,9 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
   if (!agent_.submit_to_thread) {
     return Error("Agent not bound");
   }
-  agent_.submit_to_thread(thread_id, text, std::move(user_payload));
+  // In an AI thread "@ai …" is just a habit from person-to-person chats: send the question itself.
+  const std::string& ai_text = (*thread)->kind == ThreadKind::Ai && at_ai.is_ai_invoke ? at_ai.prompt : text;
+  agent_.submit_to_thread(thread_id, ai_text, std::move(user_payload));
   return {};
 }
 
