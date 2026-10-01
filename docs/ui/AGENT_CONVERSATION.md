@@ -46,6 +46,10 @@ Turn execution (turn_scratch) — tool calls / search injections, current turn o
 
 Natural-language turns add one planner LLM call. Structured UI actions (form submit, article chips, pagination) skip the planner via the payload fast path.
 
+### Streamed answers (brief preset)
+
+With `llm.preset = "brief"`, a natural-language turn in the assistant panel or an AI thread does not run steps 3–6. After step 2, `AgentSession::StreamBriefTurn` sends the message plus the thread's own user/assistant history (last 6) and the `ConversationSummary` to the brief_AI stream endpoint (`BriefAiClient`, contract: brief_AI `docs/contracts/pp-client.md`) and relays events: `AssistantDelta` (accumulated Markdown text), `ToolActivity` for `status`, then `AssistantReady` with `RenderMode::Markdown` and the `sources` list. The backend decides whether the message is an app action: on `handoff` the turn continues at step 3 with `turn_scratch` already built. `Cancel()` drops the connection; a partial answer is persisted with `finish_reason` `cancelled` / `error`. UI payloads (buttons, forms) and in-chat `@ai` (`ScopedAssist`) always take the local path. `PP_BROWSER_BRIEF_STREAM_URL` points the stream at a local fake server for development.
+
 ### Tool permissions (mutating tools)
 
 Before executing a planned tool with risk `write` / `destructive` (or `mutating`), `TurnExecutor` consults `ToolPermissionPolicy` against profile `tool_permissions`:
