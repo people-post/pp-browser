@@ -26,6 +26,7 @@ void BriefTurnRunner::Run(const BriefAiStreamFn& stream, const BriefAiRequest& r
   const auto on_event = [&](const BriefAiEvent& event) {
     switch (event.type) {
     case BriefAiEvent::Type::Meta:
+      Call(sinks.on_meta, event.route);
       break;
     case BriefAiEvent::Type::Status:
       Call(sinks.on_status, event.tool, event.phase, event.query);
@@ -35,6 +36,9 @@ void BriefTurnRunner::Run(const BriefAiStreamFn& stream, const BriefAiRequest& r
       Call(sinks.on_delta, text);
       break;
     case BriefAiEvent::Type::Done:
+      if (!event.route.empty()) {
+        Call(sinks.on_meta, event.route); // done may carry the final (corrected) route
+      }
       done = event;
       break;
     case BriefAiEvent::Type::Handoff:

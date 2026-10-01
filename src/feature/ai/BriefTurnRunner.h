@@ -15,6 +15,7 @@ using BriefAiStreamFn = std::function<Roe<BriefAiOutcome>(
 
 // Exactly one of on_done / on_handoff / on_error / on_cancelled fires per Run.
 struct BriefTurnSinks {
+  std::function<void(const std::string& route)> on_meta; // optional
   std::function<void(const std::string& text_so_far)> on_delta; // accumulated text after each token
   std::function<void(const std::string& tool, const std::string& phase, const std::string& query)> on_status;
   std::function<void(const std::string& response, const std::string& finish, const std::vector<BriefAiSource>& sources)>
