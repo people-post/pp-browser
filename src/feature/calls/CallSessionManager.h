@@ -55,6 +55,7 @@ struct CallDirectMediaPorts {
       note_peer_id_relay_mapping;
   std::function<bool()> is_connect_failed;
   std::function<bool()> connect_missing_mic;
+  std::function<bool()> connect_seed_unreachable;
   std::function<void()> poll_connect_health;
   std::function<bool(const std::string& call_id)> media_attempted;
   std::function<void(const std::string& call_id)> note_media_attempted;
@@ -239,6 +240,7 @@ public:
   bool IsSfuAttachWaitActive() const;
   bool IsP2pConnectFailed() const;
   bool P2pConnectMissingMic() const;
+  bool P2pConnectSeedUnreachable() const;
   Roe<void> RetryP2pMedia(const std::string& call_id);
   /** A failed, open call: the peer's connection reached us — restart media keeping its stream. */
   Roe<void> ResumeP2pMedia(const std::string& call_id);

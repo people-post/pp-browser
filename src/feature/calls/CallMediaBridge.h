@@ -21,6 +21,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -80,6 +81,8 @@ public:
 
   bool IsMeshConnectFailed() const;
   bool MeshConnectMissingMic() const;
+  /** The last bootstrap seed park for this connect timed out: no seed reachable (VPN / firewall). */
+  bool MeshConnectSeedUnreachable() const;
   void ClearMeshConnectFailed();
   void PollMeshConnectHealth();
 
@@ -356,6 +359,8 @@ private:
   std::string inbound_deferred_peer_id_;
   bool mesh_connect_failed_ = false;
   bool mesh_connect_missing_mic_ = false;
+  /** Written on the park's completion thread (which may outlive this bridge), read by the UI state snapshot. */
+  std::shared_ptr<std::atomic<bool>> mesh_connect_seed_unreachable_ = std::make_shared<std::atomic<bool>>(false);
   /** Bumped by AbortConnectSequence; the StartSfu send fn drops TX from an older generation. */
   std::atomic<uint64_t> connect_generation_{0};
   std::atomic<bool> stopping_{false};

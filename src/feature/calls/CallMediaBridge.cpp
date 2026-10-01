@@ -206,7 +206,17 @@ void CallMediaBridge::SetSeedReserve(std::function<void()> reserve) {
 }
 
 void CallMediaBridge::SetSeedParkAwait(PeerReachCoordinator::SeedParkAwait park) {
-  reach_.SetSeedParkAwait(std::move(park));
+  // Remember the outcome so the UI can say why a connect failed (no seed reachable, e.g. a VPN
+  // that drops UDP) — the reach coordinator itself keeps nothing across attempts.
+  reach_.SetSeedParkAwait([flag = mesh_connect_seed_unreachable_, park = std::move(park)](
+                              std::function<void(bool)> done, int timeout_ms) {
+    park(
+        [flag, done = std::move(done)](bool parked) {
+          flag->store(!parked, std::memory_order_relaxed);
+          done(parked);
+        },
+        timeout_ms);
+  });
 }
 
 std::string CallMediaBridge::MediaPathKind() const {
@@ -882,9 +892,14 @@ bool CallMediaBridge::MeshConnectMissingMic() const {
   return mesh_connect_missing_mic_;
 }
 
+bool CallMediaBridge::MeshConnectSeedUnreachable() const {
+  return mesh_connect_seed_unreachable_->load(std::memory_order_relaxed);
+}
+
 void CallMediaBridge::ClearMeshConnectFailed() {
   mesh_connect_failed_ = false;
   mesh_connect_missing_mic_ = false;
+  mesh_connect_seed_unreachable_->store(false, std::memory_order_relaxed);
 }
 
 void CallMediaBridge::PollMeshConnectHealth() {

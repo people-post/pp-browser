@@ -97,6 +97,7 @@ public:
   bool IsSfuAttachWaitActive() const { return State()->sfu_attach_wait_active; }
   bool IsP2pConnectFailed() const { return State()->p2p_connect_failed; }
   bool P2pConnectMissingMic() const { return State()->p2p_connect_missing_mic; }
+  bool P2pConnectSeedUnreachable() const { return State()->p2p_connect_seed_unreachable; }
   std::string PeekMediaActivity() const { return State()->media_activity; }
   CallHopHealth HopHealth() const { return State()->hop_health; }
   std::string MediaPathKind() const { return State()->media_path_kind; }

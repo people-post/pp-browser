@@ -338,6 +338,7 @@
     "call.hint.group_media": "Group call needs call hosting help. Enable Help host calls on a computer that's helping the network, or an org node, then retry.",
     "call.hint.switching_media_path": "Everyone will reconnect on the new path.",
     "call.hint.looking_for_another_path": "Your device couldn't reach the current path.",
+    "call.hint.seed_unreachable": "Network restricted — if a VPN is on, turn it off first.",
     "call.error.no_media_relay_hop": "No call host available — join from a computer with Help host calls on, or start the group call from that computer, then retry.",
     "call.error.local_media_relay_unavailable": "This device can't host group media. Use a computer with Help host calls on, or an org node.",
     "call.error.media_key_timeout": "Couldn't finish connecting — call key never arrived. Retry the call, or check that both devices are online.",

@@ -212,6 +212,7 @@ void CallStack::PublishUiState() {
     state.sfu_attach_wait_active = call_sessions_->IsSfuAttachWaitActive();
     state.p2p_connect_failed = call_sessions_->IsP2pConnectFailed();
     state.p2p_connect_missing_mic = call_sessions_->P2pConnectMissingMic();
+    state.p2p_connect_seed_unreachable = call_sessions_->P2pConnectSeedUnreachable();
     state.media_activity = call_sessions_->PeekMediaActivity();
     state.last_media_error = call_sessions_->PeekLastMediaError();
     state.hop_health = call_sessions_->HopHealth();
