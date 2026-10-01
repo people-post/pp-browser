@@ -1113,6 +1113,9 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
   }
   // Stop late EnsureViaCircuit / StartBridge before chrome refresh (dogfood SIGSEGV after give-up).
   reach_.AbortCircuitAttempts();
+  // StopMeshMedia also resets the seed-park outcome; this failure is what it explains (dogfood 2026-10-01:
+  // the "turn off your VPN" hint never showed because the stop ran first).
+  const bool seed_unreachable = MeshConnectSeedUnreachable();
   if (stop_media && (media_.IsActive() || media_.IsSfuMode())) {
     // StopMeshMedia clears mesh_connect_failed_ and the attempted mark for Leave hygiene — the call
     // is still open, so both are re-asserted below.
@@ -1132,6 +1135,9 @@ void CallMediaBridge::SurfaceConnectFailed(const std::string& call_id, const std
     arming_.on_connect_failed(call_id);
   }
   mesh_connect_failed_ = true;
+  if (seed_unreachable) {
+    seed_park_state_->unreachable.store(true, std::memory_order_release);
+  }
   host_.P2pNotifyRingChanged();
 }
 

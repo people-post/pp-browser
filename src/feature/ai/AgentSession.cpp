@@ -941,12 +941,18 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
           continue;
         }
         const bool assistant = message.sender_contact_id == kAiAssistantContactId;
-        // Local-pipeline answers are stored as UI block documents, not prose; sending them as past
-        // answers would push the backend toward that format. The user's turns still carry the context.
-        if (assistant && StructuredTextParser::IsBlocksJsonDocument(message.text)) {
-          continue;
+        // Local-pipeline answers are stored as UI block documents; the backend gets their prose, and a
+        // document with nothing readable (buttons, a form) is left out rather than sent as JSON.
+        std::string content = message.text;
+        if (assistant) {
+          if (const auto prose = StructuredTextParser::PlainTextIfBlocks(message.text)) {
+            if (prose->empty()) {
+              continue;
+            }
+            content = *prose;
+          }
         }
-        history.push_back(BriefAiHistoryTurn{.role = assistant ? "assistant" : "user", .content = message.text});
+        history.push_back(BriefAiHistoryTurn{.role = assistant ? "assistant" : "user", .content = std::move(content)});
       }
       StreamBriefTurn(state, std::move(history), summary ? summary->text : std::string());
       return;
