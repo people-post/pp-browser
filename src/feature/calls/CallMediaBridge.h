@@ -359,8 +359,15 @@ private:
   std::string inbound_deferred_peer_id_;
   bool mesh_connect_failed_ = false;
   bool mesh_connect_missing_mic_ = false;
-  /** Written on the park's completion thread (which may outlive this bridge), read by the UI state snapshot. */
-  std::shared_ptr<std::atomic<bool>> mesh_connect_seed_unreachable_ = std::make_shared<std::atomic<bool>>(false);
+  /**
+   * Outcome of the seed parks for the current connect (SeedParkOutcome). Written on the park's
+   * completion thread, which may outlive this bridge; read by the UI state snapshot.
+   */
+  struct SeedParkState {
+    std::atomic<bool> unreachable{false};
+    std::atomic<uint64_t> epoch{0}; // bumped by ClearMeshConnectFailed
+  };
+  std::shared_ptr<SeedParkState> seed_park_state_ = std::make_shared<SeedParkState>();
   /** Bumped by AbortConnectSequence; the StartSfu send fn drops TX from an older generation. */
   std::atomic<uint64_t> connect_generation_{0};
   std::atomic<bool> stopping_{false};
