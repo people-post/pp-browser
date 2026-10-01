@@ -144,9 +144,12 @@ std::string LevelHint(int level, bool remote, bool muted) {
   return Tr("call.level.loud");
 }
 
-std::string ComposeP2pStatusHint(bool missing_mic) {
+std::string ComposeP2pStatusHint(bool missing_mic, bool seed_unreachable) {
   const std::map<std::string, std::string> product{{"product", kProductName}};
-  std::string hint = Tr(PlatformUserHints::P2pNetworkHintKey(), product);
+  // No seed reachable means the network (often a VPN dropping UDP) blocked the call, so the
+  // platform's local-network / firewall hint would point the user the wrong way.
+  std::string hint = seed_unreachable ? Tr("call.hint.seed_unreachable")
+                                      : Tr(PlatformUserHints::P2pNetworkHintKey(), product);
   if (missing_mic) {
     const std::string mic = Tr(PlatformUserHints::MicBlockedHintKey());
     if (!mic.empty()) {
@@ -814,7 +817,9 @@ void CallController::RefreshPendingRing() {
       in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
       in_call.status_hint =
           group_call_context ? ComposeGroupCallStatusHint().c_str()
-                             : ComposeP2pStatusHint(backend->P2pConnectMissingMic()).c_str();
+                             : ComposeP2pStatusHint(backend->P2pConnectMissingMic(),
+                                                    backend->P2pConnectSeedUnreachable())
+                                   .c_str();
       in_call.show_invite = false;
     } else if (!activity.empty()) {
       in_call.elapsed = {};

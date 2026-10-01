@@ -28,6 +28,7 @@ struct CallUiState {
   bool sfu_attach_wait_active = false;
   bool p2p_connect_failed = false;
   bool p2p_connect_missing_mic = false;
+  bool p2p_connect_seed_unreachable = false;
   std::string media_activity;
   /** Pending media error for the GUI to show once (TakeLastMediaError). */
   std::optional<std::string> last_media_error;

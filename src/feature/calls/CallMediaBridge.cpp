@@ -1,6 +1,7 @@
 #include "feature/calls/CallMediaBridge.h"
 #include "common/media/MediaChannel.h"
 #include "domain/messaging/CallTxOnlyEscalateLogic.h"
+#include "feature/calls/SeedParkOutcome.h"
 
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/messaging/CallHopAttachLogic.h"
@@ -207,7 +208,25 @@ void CallMediaBridge::SetSeedReserve(std::function<void()> reserve) {
 }
 
 void CallMediaBridge::SetSeedParkAwait(PeerReachCoordinator::SeedParkAwait park) {
-  reach_.SetSeedParkAwait(std::move(park));
+  // Remember the outcome so the UI can say why a connect failed (no seed reachable, e.g. a VPN
+  // that drops UDP) — the reach coordinator itself keeps nothing across attempts.
+  reach_.SetSeedParkAwait([state = seed_park_state_, park = std::move(park)](std::function<void(bool)> done,
+                                                                              int timeout_ms) {
+    const auto started = std::chrono::steady_clock::now();
+    const uint64_t epoch = state->epoch.load(std::memory_order_acquire);
+    park(
+        [state, done = std::move(done), started, epoch, timeout_ms](bool parked) {
+          const auto elapsed_ms =
+              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started)
+                  .count();
+          if (SeedParkOutcome::SeedUnreachable(parked, elapsed_ms, timeout_ms, epoch,
+                                               state->epoch.load(std::memory_order_acquire))) {
+            state->unreachable.store(true, std::memory_order_release);
+          }
+          done(parked);
+        },
+        timeout_ms);
+  });
 }
 
 CallLinkCounters CallMediaBridge::MediaLinkCounters() const {
@@ -887,9 +906,15 @@ bool CallMediaBridge::MeshConnectMissingMic() const {
   return mesh_connect_missing_mic_;
 }
 
+bool CallMediaBridge::MeshConnectSeedUnreachable() const {
+  return seed_park_state_->unreachable.load(std::memory_order_acquire);
+}
+
 void CallMediaBridge::ClearMeshConnectFailed() {
   mesh_connect_failed_ = false;
   mesh_connect_missing_mic_ = false;
+  seed_park_state_->unreachable.store(false, std::memory_order_release);
+  seed_park_state_->epoch.fetch_add(1, std::memory_order_acq_rel);
 }
 
 void CallMediaBridge::PollMeshConnectHealth() {
