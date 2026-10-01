@@ -1,6 +1,7 @@
 #include "feature/conversations/MessageRouter.h"
 
 #include "common/PlatformLimits.h"
+#include "common/thread/ThreadTypes.h"
 
 #include <gtest/gtest.h>
 
@@ -17,4 +18,11 @@ TEST(MessageRouterTest, BoundsStructuredUserPayloadWithoutRestrictingText) {
   ASSERT_FALSE(rejected);
   EXPECT_EQ(rejected.error().message,
             "User payload exceeds limit of " + std::to_string(pbr::kMaxUserPayloadBytes) + " bytes");
+}
+
+TEST(MessageRouterTest, AiThreadDropsTheAtAiPrefixAndOtherThreadsKeepTheText) {
+  EXPECT_EQ(pbr::MessageRouter::TextForAgent(pbr::ThreadKind::Ai, "@ai+ hello"), "hello");
+  EXPECT_EQ(pbr::MessageRouter::TextForAgent(pbr::ThreadKind::Ai, "@ai what time is it"), "what time is it");
+  EXPECT_EQ(pbr::MessageRouter::TextForAgent(pbr::ThreadKind::Ai, "plain question"), "plain question");
+  EXPECT_EQ(pbr::MessageRouter::TextForAgent(pbr::ThreadKind::Direct, "@ai+ hello"), "@ai+ hello");
 }
