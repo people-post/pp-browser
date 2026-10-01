@@ -13,8 +13,7 @@
 #include "domain/people/ContactTypes.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/platform/ILocalNotifier.h"
-#include "foundation/platform/PlatformUserHints.h"
-#include "foundation/runtime/ProductBranding.h"
+#include "gui/CallStatusHint.h"
 #include "domain/ui/ShellTypes.h"
 #include "feature/calls/CallFunctionalPorts.h"
 #include "domain/messaging/CallLifecycleTypes.h"
@@ -145,19 +144,16 @@ std::string LevelHint(int level, bool remote, bool muted) {
 }
 
 std::string ComposeP2pStatusHint(bool missing_mic, bool seed_unreachable) {
-  const std::map<std::string, std::string> product{{"product", kProductName}};
-  // No seed reachable means the network (often a VPN dropping UDP) blocked the call, so the
-  // platform's local-network / firewall hint would point the user the wrong way.
-  std::string hint = seed_unreachable ? Tr("call.hint.seed_unreachable")
-                                      : Tr(PlatformUserHints::P2pNetworkHintKey(), product);
-  if (missing_mic) {
-    const std::string mic = Tr(PlatformUserHints::MicBlockedHintKey());
-    if (!mic.empty()) {
-      if (!hint.empty()) {
-        hint += " ";
-      }
-      hint += mic;
+  std::string hint;
+  for (const char* key : P2pStatusHintKeys(missing_mic, seed_unreachable)) {
+    const std::string line = Tr(key);
+    if (line.empty()) {
+      continue;
     }
+    if (!hint.empty()) {
+      hint += " ";
+    }
+    hint += line;
   }
   return hint;
 }
