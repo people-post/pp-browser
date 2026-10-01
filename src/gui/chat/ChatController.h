@@ -30,6 +30,8 @@
 #include <ui/base/Input.h>
 #include <ui/base/Types.h>
 
+#include <chrono>
+#include <map>
 #include <optional>
 #include <string>
 #include <functional>
@@ -216,6 +218,8 @@ private:
   static void SendMessageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SendSuggestionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SendChatActionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void OpenChatLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void StopTurnCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleReactionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenEmojiInsertCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void AttachFileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -290,6 +294,11 @@ private:
   void CalendarNext(const std::string& entry_id);
   void SelectCalendarDay(const std::string& entry_id, const std::string& iso_date);
   void SyncDisplayFromThread();
+  void OnStopTurn();
+  void OpenChatLink(const std::string& entry_id, int link_index);
+  void OnAssistantDelta(const AgentEvent& event);
+  void FlushStreamingRow();
+  void ClearStreamingRow();
   void RestoreWorkingSetsFromActiveThread();
   void SyncShellSessions();
   void UpdateThreadChrome();
@@ -298,7 +307,8 @@ private:
   void FinishAssistantReply(const std::string& entry_id, const std::string& raw_output, bool from_llm,
                             const std::string& finish_reason = {}, const std::string& thread_id = {},
                             ResponseGoal response_goal = ResponseGoal::General,
-                            RenderMode render_mode = RenderMode::Blocks, AtAiMode shared_ai_mode = AtAiMode::None);
+                            RenderMode render_mode = RenderMode::Blocks, AtAiMode shared_ai_mode = AtAiMode::None,
+                            const std::vector<BriefAiSource>& sources = {});
   void HandleAgentEvent(const AgentEvent& event);
   void HandleLocalAction(const std::string& message, const std::optional<std::string>& payload);
   void RefreshFromMessaging();
@@ -379,6 +389,19 @@ private:
   ChatThreadChrome chrome_;
   ChatWidgetHost widgets_;
   std::optional<PendingReply> pending_reply_;
+
+  /** The in-flight streamed answer: shown as a synthetic last row until AssistantReady replaces it. */
+  struct StreamingRow {
+    std::string row_id; // "streaming-<user message id>"; also the __ENTRY__ of its links
+    std::string thread_id;
+    std::string text;
+    std::string rml;
+    bool dirty = false;
+    std::optional<std::chrono::steady_clock::time_point> last_render;
+  };
+  std::optional<StreamingRow> streaming_;
+  /** entry id -> https links its rendered bubble refers to (open_chat_link index). */
+  std::map<std::string, std::vector<std::string>> chat_links_;
   bool focus_draft_after_sync_ = false;
 
   static ChatController* installed_instance_;
