@@ -156,6 +156,24 @@ protected:
   std::vector<BriefAiRequest> requests_;
 };
 
+// Without PP_BROWSER_BRIEF_STREAM_URL and without an injected stream, the default brief config must
+// stay on the local pipeline (the gateway endpoint is not live yet).
+TEST_F(AgentSessionBriefStreamTest, DefaultBriefConfigStaysOnLocalPath) {
+  Start("brief");
+  session_->Submit("hi there");
+  const auto events = WaitForTurn();
+  bool delta = false, ready = false, ended = false;
+  for (const AgentEvent& event : events) {
+    delta |= event.type == AgentEventType::AssistantDelta;
+    ready |= event.type == AgentEventType::AssistantReady;
+    ended |= event.type == AgentEventType::LoadingChanged && !event.loading;
+  }
+  EXPECT_FALSE(delta);
+  EXPECT_FALSE(ready);
+  EXPECT_TRUE(ended);
+  EXPECT_TRUE(Requests().empty());
+}
+
 TEST_F(AgentSessionBriefStreamTest, DoneStreamsDeltasThenReady) {
   Start();
   Script({Meta(), Status("search_web", "tool"), Status("", "answer"), Token("Hel"), Token("lo"), Done("Hello")},
@@ -163,7 +181,7 @@ TEST_F(AgentSessionBriefStreamTest, DoneStreamsDeltasThenReady) {
   session_->Submit("hi there");
   const auto events = WaitForTurn();
 
-  ASSERT_GE(events.size(), 7u);
+  ASSERT_GE(events.size(), 6u);
   EXPECT_EQ(events.front().type, AgentEventType::LoadingChanged);
   EXPECT_TRUE(events.front().loading);
   EXPECT_EQ(events.back().type, AgentEventType::LoadingChanged);
@@ -173,12 +191,16 @@ TEST_F(AgentSessionBriefStreamTest, DoneStreamsDeltasThenReady) {
   ASSERT_FALSE(activity.empty());
   EXPECT_EQ(activity.front().tool_name, "search_web");
 
+  // Deltas are rate-limited (20/s) and carry the text so far; the final text always comes with
+  // AssistantReady, so a scripted burst may collapse to the first delta only.
   const auto deltas = Of(events, AgentEventType::AssistantDelta);
-  ASSERT_EQ(deltas.size(), 2u);
+  ASSERT_GE(deltas.size(), 1u);
   EXPECT_EQ(deltas[0].text, "Hel");
-  EXPECT_EQ(deltas[1].text, "Hello");
+  for (const AgentEvent& delta : deltas) {
+    EXPECT_EQ(std::string("Hello").rfind(delta.text, 0), 0u) << delta.text; // each delta is a prefix
+    EXPECT_EQ(delta.entry_id, deltas[0].entry_id);
+  }
   EXPECT_FALSE(deltas[0].entry_id.empty());
-  EXPECT_EQ(deltas[0].entry_id, deltas[1].entry_id);
 
   const auto ready = Of(events, AgentEventType::AssistantReady);
   ASSERT_EQ(ready.size(), 1u);

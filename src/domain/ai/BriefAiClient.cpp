@@ -18,6 +18,14 @@ std::string StringOrEmpty(const Object& json, const char* key) {
   return json.getString(key).value_or(std::string());
 }
 
+bool BearerAllowedFor(const std::string& url, const bool overridden) {
+  if (!overridden || url.rfind("https://", 0) == 0) {
+    return true;
+  }
+  return url.rfind("http://127.0.0.1", 0) == 0 || url.rfind("http://localhost", 0) == 0 ||
+         url.rfind("http://[::1]", 0) == 0;
+}
+
 bool IsTerminal(BriefAiEvent::Type type) {
   return type == BriefAiEvent::Type::Done || type == BriefAiEvent::Type::Handoff ||
          type == BriefAiEvent::Type::Error;
@@ -135,7 +143,11 @@ Roe<BriefAiOutcome> BriefAiClient::Stream(const BriefAiRequest& request,
                                           const std::atomic<bool>& cancel) const {
   SseRequest sse;
   sse.url = stream_url_.empty() ? config_.base_url + std::string(kStreamPath) : stream_url_;
-  sse.bearer_token = config_.api_key;
+  // The user's key goes only to the derived gateway URL, or to an override that is https or loopback;
+  // a stale dev override pointing at a plain-http host must not receive it.
+  if (BearerAllowedFor(sse.url, !stream_url_.empty())) {
+    sse.bearer_token = config_.api_key;
+  }
   sse.json_body = BuildRequestJson(request);
   log().debug << "stream " << sse.url;
 

@@ -82,6 +82,10 @@ struct AgentSession::Impl : public Module {
   std::vector<AgentEvent> pending_events;
 
   std::atomic<bool> cancelled{false};
+  /** Streamed turns: a fresh cancel flag per submit, so a stopped stream can never act on a later turn. */
+  std::mutex stream_cancel_mutex;
+  std::shared_ptr<std::atomic<bool>> stream_cancel = std::make_shared<std::atomic<bool>>(false);
+  std::atomic<uint64_t> turn_generation{0};
   std::atomic<bool> busy{false};
   std::mutex configure_mutex;
   std::condition_variable configure_cv;
@@ -757,34 +761,68 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     }
   }
 
+  // This turn's cancel flag and generation. Cancel() + a new Submit replace both; a stream that is
+  // still draining then sees a stale generation and must not touch the new turn's state.
+  std::shared_ptr<std::atomic<bool>> cancel;
+  {
+    std::lock_guard lock(state->stream_cancel_mutex);
+    cancel = state->stream_cancel;
+  }
+  const uint64_t generation = state->turn_generation.load(std::memory_order_acquire);
+  const auto current = [state, generation]() {
+    return state->turn_generation.load(std::memory_order_acquire) == generation;
+  };
+
   BriefTurnSinks sinks;
-  sinks.on_delta = [state](const std::string& text) {
+  // Deltas carry the whole text so far; cap them at 20/s so a long answer does not flood the UI queue.
+  auto last_delta = std::make_shared<std::optional<std::chrono::steady_clock::time_point>>();
+  sinks.on_delta = [state, current, last_delta](const std::string& text) {
+    const auto now = std::chrono::steady_clock::now();
+    if (!current() || (*last_delta && now - **last_delta < std::chrono::milliseconds(50))) {
+      return;
+    }
+    *last_delta = now;
     PushEvent(state, AgentEvent{.type = AgentEventType::AssistantDelta,
                                 .text = text,
                                 .entry_id = state->pending_entry_id,
                                 .thread_id = state->pending_thread_id});
   };
-  sinks.on_status = [state](const std::string& tool, const std::string& phase, const std::string& /*query*/) {
-    PushToolActivity(state, tool, phase);
+  sinks.on_status = [state, current](const std::string& tool, const std::string& phase, const std::string& /*query*/) {
+    if (current()) {
+      PushToolActivity(state, tool, phase);
+    }
   };
-  sinks.on_done = [state](const std::string& response, const std::string& finish,
-                          const std::vector<BriefAiSource>& sources) {
+  sinks.on_done = [state, current](const std::string& response, const std::string& finish,
+                                   const std::vector<BriefAiSource>& sources) {
+    if (!current()) {
+      state->Log().info << "brief_AI stream finished after the turn was replaced; dropped";
+      return;
+    }
     EmitStreamedAnswer(state, response, finish, sources);
     FinishTurn(state);
   };
-  sinks.on_handoff = [state]() {
+  sinks.on_handoff = [state, current]() {
+    if (!current()) {
+      return;
+    }
     state->Log().info << "brief_AI handed the turn back; running the local pipeline";
     RunTurnPipeline(state);
   };
-  sinks.on_error = [state](const std::string& message, const bool retryable, const std::string& partial) {
+  sinks.on_error = [state, current](const std::string& message, const bool retryable, const std::string& partial) {
     state->Log().warning << "brief_AI stream error (retryable=" << retryable << ", partial_chars=" << partial.size() << ")";
+    if (!current()) {
+      return;
+    }
     if (!partial.empty()) {
       EmitStreamedAnswer(state, partial, "error", {});
     }
     PushError(state, message, retryable);
     FinishTurn(state);
   };
-  sinks.on_cancelled = [state](const std::string& partial) {
+  sinks.on_cancelled = [state, current](const std::string& partial) {
+    if (!current()) {
+      return; // Cancel() followed by a new Submit: the new turn owns the state now
+    }
     if (!partial.empty()) {
       EmitStreamedAnswer(state, partial, "cancelled", {});
     }
@@ -792,7 +830,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   };
 
   const BriefAiStreamFn& stream = state->brief_stream_override ? state->brief_stream_override : state->brief_stream;
-  BriefTurnRunner::Run(stream, request, state->cancelled, sinks);
+  BriefTurnRunner::Run(stream, request, *cancel, sinks);
 }
 
 void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
@@ -853,8 +891,13 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
         if (message.id == state->pending_entry_id || message.text.empty()) {
           continue;
         }
-        history.push_back(BriefAiHistoryTurn{
-            .role = message.sender_contact_id == kAiAssistantContactId ? "assistant" : "user", .content = message.text});
+        const bool assistant = message.sender_contact_id == kAiAssistantContactId;
+        // Local-pipeline answers are stored as UI block documents, not prose; sending them as past
+        // answers would push the backend toward that format. The user's turns still carry the context.
+        if (assistant && StructuredTextParser::IsBlocksJsonDocument(message.text)) {
+          continue;
+        }
+        history.push_back(BriefAiHistoryTurn{.role = assistant ? "assistant" : "user", .content = message.text});
       }
       StreamBriefTurn(state, std::move(history), summary ? summary->text : std::string());
       return;
@@ -950,12 +993,17 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
       llm_config.require_api_key = true;
     }
     state->llm = std::make_unique<LlmClient>(llm_config);
-    const auto brief_client = std::make_shared<BriefAiClient>(llm_config, BriefStreamUrlOverride());
-    state->brief_stream = [brief_client](const BriefAiRequest& request,
-                                         const std::function<void(const BriefAiEvent&)>& on_event,
-                                         const std::atomic<bool>& cancel) {
-      return brief_client->Stream(request, on_event, cancel);
-    };
+    // Streamed answers are opt-in until the gateway endpoint is live (plan step 3): without the dev
+    // override every turn stays on the local pipeline. Flip this to "always" when the backend ships.
+    state->brief_stream = nullptr;
+    if (const std::string stream_url = BriefStreamUrlOverride(); !stream_url.empty()) {
+      const auto brief_client = std::make_shared<BriefAiClient>(llm_config, stream_url);
+      state->brief_stream = [brief_client](const BriefAiRequest& request,
+                                           const std::function<void(const BriefAiEvent&)>& on_event,
+                                           const std::atomic<bool>& cancel) {
+        return brief_client->Stream(request, on_event, cancel);
+      };
+    }
 
     const AppConfig defaults = Config::DefaultAppConfig();
     McpClient::SetHttpPost([](const std::string& url, const std::string& body,
@@ -1101,12 +1149,19 @@ void AgentSession::SetThreadStore(IThreadStore* store) {
   RefreshCompactionService(impl_);
 }
 
+void AgentSession::BeginStreamTurn() {
+  std::lock_guard lock(impl_->stream_cancel_mutex);
+  impl_->stream_cancel = std::make_shared<std::atomic<bool>>(false);
+  impl_->turn_generation.fetch_add(1, std::memory_order_acq_rel);
+}
+
 void AgentSession::Submit(const std::string& user_text, std::optional<std::string> user_payload) {
   if (user_text.empty() || impl_->busy.exchange(true)) {
     return;
   }
 
   impl_->cancelled = false;
+  BeginStreamTurn();
   impl_->pending_user_text = user_text;
   impl_->pending_user_payload = std::move(user_payload);
   impl_->turn_mode = AgentTurnMode::Conversation;
@@ -1128,6 +1183,7 @@ void AgentSession::SubmitToThread(const std::string& thread_id, const std::strin
   }
 
   impl_->cancelled = false;
+  BeginStreamTurn();
   impl_->pending_user_text = user_text;
   impl_->pending_user_payload = std::move(user_payload);
   impl_->pending_thread_id = thread_id;
@@ -1149,6 +1205,7 @@ void AgentSession::SubmitScopedAssist(const std::string& thread_id, const std::s
   }
 
   impl_->cancelled = false;
+  BeginStreamTurn();
   impl_->pending_user_text = prompt;
   impl_->pending_user_payload = std::move(user_payload);
   impl_->pending_thread_id = thread_id;
@@ -1172,6 +1229,10 @@ void AgentSession::PollEvents(std::vector<AgentEvent>& out) {
 
 void AgentSession::Cancel() {
   impl_->cancelled = true;
+  {
+    std::lock_guard lock(impl_->stream_cancel_mutex);
+    impl_->stream_cancel->store(true);
+  }
   impl_->busy = false;
   impl_->tool_registration_hook = nullptr;
   CancelParkedApproval(impl_, ParkedApprovalState::Cancelled);

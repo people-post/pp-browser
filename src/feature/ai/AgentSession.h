@@ -101,6 +101,7 @@ public:
 private:
   struct Impl;
 
+  void BeginStreamTurn();
   static void ConfigureOnIO(const std::shared_ptr<Impl>& state);
   static void StartTurn(const std::shared_ptr<Impl>& state);
   static void RunTurnPipeline(const std::shared_ptr<Impl>& state);

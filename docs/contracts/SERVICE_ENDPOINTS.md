@@ -231,6 +231,10 @@ Wire format is OpenAI chat completions, including client tool loops (`assistant.
 
 Lost registered key or expired registration: use **Renew registration** in Me → Profile (finish) to issue a new key. **Rotate Brief API key** remains available while registration is active. Guests remint via `/guest/start` (app caches until expiry / register).
 
+### Streamed answers (planned)
+
+`POST {llm.base_url}/pp/chat/stream` — JSON request, `text/event-stream` response (`data: {"type": meta|status|token|done|handoff|error}` … `data: [DONE]`, `: ping` heartbeat). Same Bearer as the completions endpoint. The wire contract is owned by brief_AI (`docs/contracts/pp-client.md` in that repo); the gateway path is not final (`BriefAiClient::kStreamPath`). Until the endpoint is live the client uses it only when `PP_BROWSER_BRIEF_STREAM_URL` is set (dev), and sends the Bearer to an override only over https or loopback.
+
 ## libp2p (deferred)
 
 Future work adds `Libp2p*Client` implementations behind the same interfaces and sign-byte auth over libp2p HTTP to www.
