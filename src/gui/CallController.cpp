@@ -145,11 +145,10 @@ std::string LevelHint(int level, bool remote, bool muted) {
 }
 
 std::string ComposeP2pStatusHint(bool missing_mic, bool seed_unreachable) {
-  const std::map<std::string, std::string> product{{"product", kProductName}};
-  // No seed reachable means the network (often a VPN dropping UDP) blocked the call, so the
-  // platform's local-network / firewall hint would point the user the wrong way.
-  std::string hint = seed_unreachable ? Tr("call.hint.seed_unreachable")
-                                      : Tr(PlatformUserHints::P2pNetworkHintKey(), product);
+  // Only hints we have evidence for: our own seeds unreachable (a VPN or firewall dropping UDP) or
+  // the microphone blocked. Otherwise the failure is most likely on the other side, and sending the
+  // user into network / permission settings is wrong guidance (dogfood 2026-10-01).
+  std::string hint = seed_unreachable ? Tr("call.hint.seed_unreachable") : Tr("call.hint.peer_unreachable");
   if (missing_mic) {
     const std::string mic = Tr(PlatformUserHints::MicBlockedHintKey());
     if (!mic.empty()) {
