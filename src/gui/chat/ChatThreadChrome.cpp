@@ -302,8 +302,8 @@ void ChatThreadChrome::Update() {
       }
     }
     if (thread->kind == ThreadKind::Ai) {
-      view_.thread_subtitle = "Local assistant";
-      view_.draft_placeholder = "Ask anything…";
+      view_.thread_subtitle = Tr("chat.ai_thread.subtitle").c_str();
+      view_.draft_placeholder = Tr("chat.ai_thread.placeholder").c_str();
     } else if (thread->kind == ThreadKind::Direct) {
       if (thread->channel == ThreadChannel::E2ePublic) {
         view_.thread_subtitle = Tr("chat.device_lock.subtitle_all").c_str();
@@ -316,13 +316,13 @@ void ChatThreadChrome::Update() {
             }
           }
         }
-        view_.draft_placeholder = "Message… · @ai · @ai+ · @ai++";
+        view_.draft_placeholder = Tr("chat.direct.placeholder").c_str();
       } else if (thread->channel == ThreadChannel::E2e) {
         view_.thread_subtitle = "Verified private · E2E";
-        view_.draft_placeholder = "Secure message… · @ai · @ai+ · @ai++";
+        view_.draft_placeholder = Tr("chat.direct.placeholder_secure").c_str();
       } else {
         view_.thread_subtitle = "Direct message";
-        view_.draft_placeholder = "Message… · @ai · @ai+ · @ai++";
+        view_.draft_placeholder = Tr("chat.direct.placeholder").c_str();
       }
       if (label.trust == PeerLabelTrust::DirectoryUnverified) {
         view_.thread_subtitle = std::string(view_.thread_subtitle.c_str()) + " · Unverified";
@@ -343,7 +343,7 @@ void ChatThreadChrome::Update() {
         roster_label = "Shared: " + *label.shared_title + " · " + roster_label;
       }
       view_.thread_subtitle = roster_label.c_str();
-      view_.draft_placeholder = "Message the group… or @ai ask assistant";
+      view_.draft_placeholder = Tr("chat.group.placeholder").c_str();
     }
     view_.show_thread_menu =
         view_.show_thread_actions || view_.show_forget_memory || view_.show_sync_with_peer;

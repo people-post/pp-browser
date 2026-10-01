@@ -2949,11 +2949,9 @@ void ChatController::WireMessagingBindings() {
     facade_->SetSharedAiConfirmCallback(
         [this](const std::string& thread_id, const AtAiMode mode, const std::string& prompt,
                std::function<void(bool confirmed, bool dont_ask_again)> done) {
-          const char* mode_label = mode == AtAiMode::SharedFull ? "share the prompt and reply" : "share the AI reply";
-          ShowConfirmWithCheckbox("Share with peer?",
-              std::string("This will ") + mode_label +
-                  " on the encrypted thread. Your local @ai assist stays private.",
-              "Don't ask again for this conversation", false,
+          ShowConfirmWithCheckbox(Tr("chat.share_ai.title"),
+              Tr(mode == AtAiMode::SharedFull ? "chat.share_ai.body_full" : "chat.share_ai.body_reply"),
+              Tr("chat.share_ai.dont_ask"), false,
               [this, thread_id, done = std::move(done)](const bool ok, const bool dont_ask) {
                 if (ok && dont_ask) {
                   facade_->MarkSharedAiConfirmed(thread_id);

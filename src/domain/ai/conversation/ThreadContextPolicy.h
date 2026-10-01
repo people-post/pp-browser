@@ -19,8 +19,8 @@ public:
                            const std::optional<std::string>& current_user_payload = std::nullopt,
                            const std::optional<ConversationSummary>& summary = std::nullopt) const;
 
-  std::vector<ChatMessage> BuildAssistContext(const std::vector<ThreadMessage>& messages, const std::string& prompt,
-                                              const std::optional<ConversationSummary>& summary = std::nullopt) const;
+  /** In-chat @ai: system prompt + the question only. No transcript, no summary. */
+  std::vector<ChatMessage> BuildAssistContext(const std::string& prompt) const;
 
 private:
   ContextBudget budget_;

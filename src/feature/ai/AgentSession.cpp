@@ -929,7 +929,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     }
 
     ThreadContextPolicy policy(state->config.context);
-    const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(state->tools.SummaryForPrompt());
+    const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(state->tools.SummaryForPrompt(), ResolvePreset(state->config) == "brief");
     const ContextBuildResult built = policy.Build(*messages, system_prompt, state->pending_user_text,
                                                   state->pending_user_payload, summary);
     state->turn_scratch = built.messages;
@@ -964,23 +964,12 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
 
     state->pending_entry_id = util::GenerateUuid();
 
-    auto messages = state->thread_store->GetMessagesForContext(state->pending_thread_id, state->config.context);
-    if (!messages) {
-      PushError(state, messages.error());
-      FinishTurn(state);
-      return;
-    }
-
-    std::optional<ConversationSummary> summary;
-    if (auto memory = state->thread_store->GetThreadMemory(state->pending_thread_id)) {
-      summary = *memory;
-    }
-
+    // Only the question goes out; the chat transcript stays on the device (plan decision 11).
     ThreadContextPolicy policy(state->config.context);
-    state->turn_scratch = policy.BuildAssistContext(*messages, state->pending_user_text, summary);
+    state->turn_scratch = policy.BuildAssistContext(state->pending_user_text);
     if (!state->turn_scratch.empty() && state->turn_scratch.front().role == "system") {
       state->turn_scratch.front().content =
-          PromptBuilder::BuildScopedAssistSystemPrompt(state->tools.SummaryForPrompt());
+          PromptBuilder::BuildScopedAssistSystemPrompt(state->tools.SummaryForPrompt(), ResolvePreset(state->config) == "brief");
     }
     RunTurnPipeline(state);
     return;
@@ -989,7 +978,7 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
   TranscriptEntry& entry = state->conversation.AppendUser(state->pending_user_text, state->pending_user_payload);
   state->pending_entry_id = entry.id;
 
-  const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(state->tools.SummaryForPrompt());
+  const std::string system_prompt = PromptBuilder::BuildChatAgentSystemPrompt(state->tools.SummaryForPrompt(), ResolvePreset(state->config) == "brief");
   const TurnSnapshot snapshot =
       state->coordinator.BeginTurn(state->conversation, system_prompt, entry, state->config.context);
   state->turn_scratch = snapshot.messages;
