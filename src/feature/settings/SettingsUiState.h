@@ -56,6 +56,10 @@ struct SettingsUiState {
   std::string dht_enabled = "off";
   bool show_dht_toggle = false;
   std::string prefer_contacts_for_routing = "on";
+  /** projects/privacy T1: everyone / contacts / friendly / nobody (mesh.direct_connections). */
+  std::string direct_connections = "contacts";
+  /** projects/privacy T4: "on" = only org seeds and Friendly contacts' nodes relay for us. */
+  std::string trusted_relays_only = "off";
   bool show_prefer_contacts_toggle = false;
   std::string profile_nickname;
   std::string profile_peer_id;
@@ -114,6 +118,9 @@ struct SettingsUiState {
   std::string group_invite_policy = "contacts_only";
   /** Display label for the group-invite picker value. */
   std::string group_invite_policy_label = "Contacts only";
+  /** projects/privacy T3 — who may call: everyone | contacts_only | nobody */
+  std::string call_invite_policy = "everyone";
+  std::string call_invite_policy_label = "Everyone";
   /** Summary of remembered agent tool allow/deny decisions. */
   std::string tool_permissions_summary = "None saved";
   bool tool_permissions_has_saved = false;

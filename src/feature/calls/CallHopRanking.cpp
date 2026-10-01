@@ -63,6 +63,9 @@ std::vector<MeshHopCandidate> CallHopRanking::Ranked() const {
                                            });
     FillDialInfo(ranked, true);
   }
+  if (deps_->trusted_relays_only) {  // privacy T4: a relay sees both ends' addresses
+    ranked = KeepTrustedRelays(std::move(ranked), TrustedRelayPeerIds(contacts, deps_->bootstrap_peers));
+  }
   return ranked;
 }
 

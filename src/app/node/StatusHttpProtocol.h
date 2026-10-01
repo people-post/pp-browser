@@ -69,5 +69,7 @@ StatusHttpResponse HandleStatusHttpRequest(const StatusHttpRequest& request,
 
 /** Serialize a complete HTTP/1.1 response. */
 std::string FormatStatusHttpResponse(const StatusHttpResponse& response);
+/** 500 with a JSON error body (a handler threw). */
+StatusHttpResponse StatusHttpInternalError();
 
 } // namespace pbr

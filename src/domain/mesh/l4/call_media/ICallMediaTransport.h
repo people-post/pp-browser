@@ -2,6 +2,7 @@
 
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/Error.h"
+#include "common/media/CallMediaHealth.h"
 #include "domain/mesh/l4/shared/L4ProtocolIds.h"
 
 #include <cstdint>
@@ -131,6 +132,8 @@ public:
    * move can be a local alias (amp:burst:…) no relay or dial can use.
    */
   virtual std::string ActiveRemotePeerId() const { return {}; }
+  /** Reliable figures of the association the primary bundle's active path rides; unavailable until bound. */
+  virtual CallLinkCounters ActiveLinkCounters() const { return {}; }
   /**
    * k3 make-before-break: move the active call onto the peer's Connected link of `kind` while it
    * keeps running. `done` (on the transport's IO strand) is OK once media flows there; an error

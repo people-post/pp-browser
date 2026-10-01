@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/privacy/AddressDisclosure.h"
 #include "foundation/data/Config.h"
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallSessionStore.h"
@@ -42,7 +43,7 @@ namespace pbr {
  * Call media / session / lifecycle stack (Wave 3 / V040).
  *
  * Phase assembler: profile stores, CSM, Lifecycle, MediaSeat, and `CallMediaPlane`
- * (call_media transport + bridge) over the hub's borrowed `MeshMediaPlane` (L015). Hub owns `unique_ptr<CallStack>`, forwards
+ * (call_media transport) over the hub's borrowed `MeshConnectivity` / `MeshMediaRelay` (L015). Hub owns `unique_ptr<CallStack>`, forwards
  * `Calls()`/`Lifecycle()`, injects mesh/config/mDNS glue through CallStackDeps.
  *
  * CallUiBackend binds a CallStack& directly (not the Hub) for call APIs.
@@ -76,11 +77,14 @@ struct CallStackDeps {
   std::function<void(const std::string& peer_id)> note_lan_mdns_peer_id;
 
   /**
-   * Neutral mesh media (relay client, dial, reach, parking) — owned by the product hub, outlives
-   * the stack (L015). The owner calls `DetachMeshMedia` before replacing its objects and
-   * `RebindMeshMedia` after.
+   * Neutral mesh objects — owned by the product hub, outlive the stack (L015): connectivity (dial,
+   * reach, rendezvous parking, punch) and the media_relay client built on it. The owner calls
+   * `DetachMeshMedia` before replacing their objects and `RebindMeshMedia` after.
    */
-  MeshMediaPlane* mesh_media = nullptr;
+  MeshConnectivity* connectivity = nullptr;
+  MeshMediaRelay* media_relay = nullptr;
+  /** Who may learn our address (projects/privacy T1; hub-owned, outlives the stack). Null = anyone. */
+  const AddressDisclosureGate* address_disclosure = nullptr;
 };
 
 class CallStack : public Module {
@@ -120,6 +124,9 @@ public:
   /** k6: this endpoint's mobility class as advertised in caps (any thread). */
   MobilityClass LocalMobility() const { return mobility_.LocalClass(); }
   /** k6: the path policy of a call (calls owner). */
+  /** projects/privacy T3: who may call us (applied on the calls owner). */
+  void SetInboundCallAudience(InboundAudience audience);
+  /** Mobility policy, restricted to the relay when the call's peer may not learn our address. */
   CallPathPolicy PathPolicyFor(const std::string& call_id) const;
   /** Before the owner replaces / drops mesh media objects: topology + bridge let go of them. */
   void DetachMeshMedia();
@@ -205,9 +212,10 @@ private:
   void SyncMediaPlaneDeps();
   /** The session manager's 1:1 path (on the plane's transport) + its topology relay deps. */
   void BindMediaProducts();
-  /** Calls' hooks on the shared mesh media (announce chosen R1, signaling punch). */
+  /** Calls' hooks on the shared connectivity (announce chosen R1, signaling punch). */
   void BindMeshMediaHooks();
-  MeshMediaPlane* mesh_media() const { return deps_.mesh_media; }
+  MeshConnectivity* connectivity() const { return deps_.connectivity; }
+  MeshMediaRelay* media_relay() const { return deps_.media_relay; }
   /** What the calls show may have changed: refresh chrome, wake N025 listen when its desire flips. */
   void OnCallStateChangedOnOwner();
 
@@ -216,6 +224,8 @@ private:
   /** The calls owner's event queue: every input and delayed event goes through Dispatch. */
   CallsLoop loop_{executor_, [this](CallStackEvent& event) { Dispatch(event); }};
   CallStackDeps deps_;
+  /** Written by the owner of the settings (UI), read when the calls owner rebuilds its CSM. */
+  std::atomic<InboundAudience> inbound_call_audience_{InboundAudience::Everyone};
   std::unique_ptr<CallSessionStore> call_session_store_;
   std::unique_ptr<CallMediaKeyStore> call_media_keys_;
   std::unique_ptr<CallMediaEngine> call_media_engine_;

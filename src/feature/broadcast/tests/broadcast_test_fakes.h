@@ -3,6 +3,7 @@
 // Shared fakes for feature/broadcast gtests: a dial registry that reaches everything and a
 // scripted media_relay client (attach per hop, sessions ending on demand, frames recorded).
 
+#include "domain/mesh/l4/media_relay/MediaRelayVideoLevels.h"
 #include "domain/mesh/l4/media_relay/client/IMediaRelayClient.h"
 #include "domain/mesh/reach/MeshReachPorts.h"
 
@@ -35,13 +36,21 @@ class FakeRelay final : public IMediaRelayClient {
 public:
   Roe<std::string> LocalPeerIdBase58() const override { return std::string(kFakeRelaySelf); }
   bool IsStarted() const override { return true; }
-  Roe<MediaRelayQuote> RequestQuote(const std::string& /*hop*/, const MediaRelayQuoteRequest& request,
+  Roe<MediaRelayQuote> RequestQuote(const std::string& hop, const MediaRelayQuoteRequest& request,
                                     int /*timeout_ms*/) override {
     last_quote = request;
+    // The relay's answer to the video offer (B009), by this hop's policy (none = any level).
+    const auto policy = video_policies.find(hop);
+    auto carried = ChooseCarriedVideoLevels({request.video_levels, request.video_parallel},
+                                            policy == video_policies.end() ? MediaRelayVideoPolicy{} : policy->second);
+    if (!carried) {
+      return carried.error();
+    }
     MediaRelayQuote q;
     q.ok = true;
     q.quote_id = "q";
     q.rate = rate;
+    q.video_levels = *carried;
     return q;
   }
   Roe<MediaRelayAttachResult> AcceptAndAttach(const std::string&, const std::string&, const std::string&,
@@ -122,6 +131,7 @@ public:
   MediaRelayQuoteRequest last_quote;
   std::vector<std::string> attach_hops;
   std::unordered_map<std::string, bool> failing_hops;
+  std::unordered_map<std::string, MediaRelayVideoPolicy> video_policies;
   std::function<void(MediaDataFrame)> sink;
   std::vector<std::pair<uint32_t, uint16_t>> subscriptions;
   std::map<uint64_t, std::function<void(MediaRelayClientLoss)>> observers;

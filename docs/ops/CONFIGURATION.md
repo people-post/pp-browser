@@ -40,7 +40,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_IDENTITY_SEED` | deterministic identity | ≥32-byte hex master seed; HKDF `pp-node-identity-v1` → device ML-DSA + account ML-DSA + account ML-KEM. Empty volume mints stably; existing `identity.enc` **fail-closed** on mismatch |
 | `PP_NODE_PROFILE` | active profile id | Or `--profile` |
 | `PP_NODE_STATUS_ADDR` | status HTTP bind | Default `127.0.0.1:18518`; empty disables. Set `0.0.0.0:18518` (or a host IP) to expose for console/probes — ADDR alone is enough |
-| `PP_NODE_STATUS_TOKEN` | status Bearer token | Optional; when set, required for both `/healthz` and `/status` |
+| `PP_NODE_STATUS_TOKEN` | status Bearer token | Optional; when set, required for `/healthz`, `/status` and `/metrics` |
 
 JSON remains the durable seed profile (caps, budgets, pricing). Env is for secrets and per-instance overrides (Compose/Kubernetes). Implementation: `src/app/node/NodeEnvOverlay.*`.
 
@@ -185,6 +185,28 @@ Spec: [MESH_DHT.md](../contracts/MESH_DHT.md), ADR [N028](../../projects/p2p-mes
 DHT complements [mesh directory](../../projects/p2p-mesh/MESH_DIRECTORY.md) (n-dir): bootstrap ∪ directory cache, never bypasses hop policy. pp-ledger fleet does **not** use this DHT — see [platform-integration](../../../pp-ledger/docs/platform-integration.md).
 
 Enter an **API key** directly in Me → Assistant (saved to `config.json`) or use **API key env var** for desktop-style env lookup when using Cloud/Custom. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Brief** (key from Profile registration); **Ollama (localhost)** remains available for local dev.
+
+### Direct connections (`mesh.direct_connections`)
+
+Who may connect to this device directly and so learn its IP address: `everyone` | `contacts` (default) | `friendly` | `nobody` (always relay). Blocked contacts never; the Node role is always `everyone`. Me → Network → **Direct connections**; the settings assistant's `set_mesh_capabilities` takes it too. Applies at once (no mesh restart). Behaviour: [NETWORKING § Address disclosure](../architecture/NETWORKING.md#address-disclosure-privacy). The hard-lab call probe discloses to `everyone` unless `PP_PROBE_DIRECT_CONNECTIONS` says otherwise.
+
+### Trusted relays only (`mesh.trusted_relays_only`)
+
+Default `false`. When `true`, only the configured org seeds (`bootstrap_peers` after normalization, not directory nodes merged into them) and Friendly contacts' nodes relay, park, introduce punches or carry call media for this device. Me → Network → **Trusted relays only**; `set_mesh_capabilities` takes it too. Changing it rewires the mesh. Behaviour: [NETWORKING § Address disclosure](../architecture/NETWORKING.md#address-disclosure-privacy).
+
+Profile preference **`call_invite_policy`** (`preferences.json`: `everyone` default | `contacts_only` | `nobody`) — who may call; others' invites are dropped silently. Me → Security → **Who can call me**.
+
+### Media relay video levels (`mesh.media_relay_video`)
+
+Which video levels this node's `media_relay` carries per broadcast publisher ([peer-scoped-broadcast B009](../../projects/peer-scoped-broadcast/DECISIONS.md#b009--video-levels-opaque-ordered-integers-negotiated-per-relay-at-attach); levels: [MEDIA_CHANNELS.md](../contracts/MEDIA_CHANNELS.md)). Read at mesh start.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `serve_levels` | `[]` (any) | Levels this relay serves, e.g. `[2]` for a high-quality relay |
+| `carry_levels` | `0` (no limit) | At most this many levels per publisher |
+| `strict` | `false` | Refuse a publisher offering none of `serve_levels`; by default the relay carries the publisher's closest level instead |
+
+A publisher offers the levels it can produce; the relay answers with the ones it carries and drops video of other levels from that publisher.
 
 ### Verify settings persistence (manual)
 

@@ -77,7 +77,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | Mesh stream framing / hangs | [docs/architecture/LIBP2P_STREAMS.md](docs/architecture/LIBP2P_STREAMS.md), `src/domain/mesh/StreamFrameIo.*` |
 | P2P mesh / Amp | [docs/architecture/MESH.md](docs/architecture/MESH.md), [docs/architecture/NETWORKING.md](docs/architecture/NETWORKING.md), [projects/p2p-mesh/](projects/p2p-mesh/), [projects/adp/](projects/adp/) |
 | P2P A/V calls | [docs/architecture/CALLS.md](docs/architecture/CALLS.md), [projects/p2p-av-calls/](projects/p2p-av-calls/) |
-| Reach / relay attach / media pipelines shared by calls + broadcast | [projects/media-client-layers/](projects/media-client-layers/) — `PeerReachCoordinator`, `CallMediaConnectCoordinator`, `MediaDeviceArbiter`, hub-owned `MeshMediaPlane` (relay client / dial / reach / parking); broadcast is a sibling feature, not a call |
+| Reach / relay attach / media pipelines shared by calls + broadcast | [projects/media-client-layers/](projects/media-client-layers/) — `PeerReachCoordinator`, `CallMediaConnectCoordinator`, `MediaDeviceArbiter`, hub-owned `MeshConnectivity` (dial / reach / parking) + `MeshMediaRelay` (relay client); broadcast is a sibling feature, not a call |
 | Live broadcast viewer | `src/feature/broadcast/` (`BroadcastHub`, `BroadcastViewerWorkflow`, `AmpBroadcastRpcClient`); facade `WatchLiveAnnounce`; [media-client-layers L013](projects/media-client-layers/DECISIONS.md) |
 | Media hop reachability | [projects/media-hop-reachability/](projects/media-hop-reachability/) |
 | Call path migration / link events / mobility | [projects/call-path-resilience/](projects/call-path-resilience/) |
@@ -87,6 +87,7 @@ Paths and stable docs only. For in-flight feature status, open the project’s *
 | E2E message crypto | `src/foundation/crypto/`, [docs/contracts/MESSAGE_ENCRYPTION.md](docs/contracts/MESSAGE_ENCRYPTION.md), [projects/e2e-message-crypto/](projects/e2e-message-crypto/) |
 | At-rest encryption (PIN vault) | `ProfileSecretsEngine`, `DataKeyVault`, `IDekConsumer`, `PinGateController`, [docs/contracts/AT_REST_ENCRYPTION.md](docs/contracts/AT_REST_ENCRYPTION.md), [projects/at-rest-crypto/](projects/at-rest-crypto/) |
 | Multi-device / Account ID | [projects/multi-device-account/](projects/multi-device-account/) |
+| User privacy (IP disclosure, metadata, presence) | [projects/privacy/](projects/privacy/) |
 | PIN chooser / Change PIN | `PinGateController`, `SecuritySettingsSection`, Me → Security — [at-rest A007](projects/at-rest-crypto/DECISIONS.md) |
 | pp-node / node role | `src/app/node/` (thin: main, bootstrap, status HTTP), `src/feature/node/NodeMeshServices.*` (shared with desktop `MeshRole::Node`), probes in `src/app/node/tools/`; link allowlist + `scripts/dev/pp_node_closure.sh` — [docs/ops/BUILD.md](docs/ops/BUILD.md#headless-mesh-node-pp-node) |
 | Config / data / profiles | `src/app/Bootstrap.*`, `src/foundation/data/`, `src/foundation/runtime/`, `src/foundation/platform/`, [docs/contracts/DATA_LAYOUT.md](docs/contracts/DATA_LAYOUT.md), [docs/ops/CONFIGURATION.md](docs/ops/CONFIGURATION.md), [docs/contracts/COMPATIBILITY.md](docs/contracts/COMPATIBILITY.md) |

@@ -1,5 +1,5 @@
 #include "feature/calls/CallMediaBridge.h"
-
+#include "common/media/MediaChannel.h"
 #include "domain/messaging/CallTxOnlyEscalateLogic.h"
 #include "feature/calls/SeedParkOutcome.h"
 
@@ -227,6 +227,10 @@ void CallMediaBridge::SetSeedParkAwait(PeerReachCoordinator::SeedParkAwait park)
         },
         timeout_ms);
   });
+}
+
+CallLinkCounters CallMediaBridge::MediaLinkCounters() const {
+  return direct_.IsActive() ? direct_.ActiveLinkCounters() : CallLinkCounters{};
 }
 
 std::string CallMediaBridge::MediaPathKind() const {
@@ -681,7 +685,7 @@ void CallMediaBridge::OnPathPolicyChanged(const std::string& call_id) {
   }
   const CallPathPolicy policy = PathPolicyFor(call_id);
   log().info << "path policy call_id=" << call_id << " upgrade=" << (policy.upgrade_to_direct ? 1 : 0)
-             << " relay=" << CallRelayRoleName(policy.relay_role);
+             << " relay=" << CallRelayRoleName(policy.relay_role) << " relay_only=" << (policy.relay_only ? 1 : 0);
   ApplyPathPolicyToTransport(call_id);
   if (!policy.upgrade_to_direct) {
     CancelDirectUpgrade();
@@ -1167,8 +1171,9 @@ PeerReachRequest CallMediaBridge::BuildReachRequest(const CallMediaDirectConnect
   }
   // The offerer reaches; the answerer awaits the offerer's link (invite/accept is the agreement).
   request.mode = params.offerer ? PeerReachMode::Reach : PeerReachMode::Await;
-  request.exclude_direct = std::exchange(force_circuit_ensure_, false);
-  request.allow_punch = PathPolicyFor(params.call_id).punch_at_start;
+  const CallPathPolicy policy = PathPolicyFor(params.call_id);
+  request.exclude_direct = std::exchange(force_circuit_ensure_, false) || policy.relay_only;
+  request.allow_punch = policy.punch_at_start;
   return request;
 }
 
@@ -1328,14 +1333,14 @@ Roe<void> CallMediaBridge::StartDirectEngine(const std::string& call_id) {
     return Error("no live call for media " + call_id);
   }
   auto started = call_media->StartEngine(CallMediaSeat::PathKind::Direct, [this, send_gen](const CallMediaEngine::SfuPacket& pkt) {
-    if (pkt.channel_id > kCallMediaChannelVideoLo) {
+    if (!IsAudioChannel(pkt.channel_id) && !IsVideoChannel(pkt.channel_id)) {
       return;
     }
     // SoftMigrate ReleaseDirectTransport bumps connect_generation_ before Detach.
     if (connect_generation_.load(std::memory_order_acquire) != send_gen) {
       return;
     }
-    const uint32_t seq = pkt.channel_id == 0 ? (audio_seq_.fetch_add(1) + 1) : pkt.seq;
+    const uint32_t seq = IsAudioChannel(pkt.channel_id) ? (audio_seq_.fetch_add(1) + 1) : pkt.seq;
     (void)direct_.SendMedia(static_cast<uint8_t>(pkt.channel_id), pkt.payload, seq, pkt.mark);
   });
   if (!started) {

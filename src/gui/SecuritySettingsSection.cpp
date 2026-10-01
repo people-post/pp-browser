@@ -29,6 +29,16 @@ std::string GroupInvitePolicyDisplayLabel(const std::string& policy) {
   return Tr("settings.security.group_invites.contacts_only");
 }
 
+std::string CallInvitePolicyDisplayLabel(const std::string& policy) {
+  if (policy == "contacts_only") {
+    return Tr("settings.security.calls.contacts_only");
+  }
+  if (policy == "nobody") {
+    return Tr("settings.security.calls.nobody");
+  }
+  return Tr("settings.security.calls.everyone");
+}
+
 void SecuritySettingsSection::BindPorts(SettingsCommands* commands) {
   commands_ = commands;
 }
@@ -48,6 +58,8 @@ SettingsFlushMode SecuritySettingsSection::FlushMode() const {
 void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, SettingsUiState& state) {
   state.group_invite_policy = bootstrap.profile_prefs.group_invite_policy;
   state.group_invite_policy_label = GroupInvitePolicyDisplayLabel(state.group_invite_policy);
+  state.call_invite_policy = bootstrap.profile_prefs.call_invite_policy;
+  state.call_invite_policy_label = CallInvitePolicyDisplayLabel(state.call_invite_policy);
   state.crash_reports_enabled = bootstrap.profile_prefs.crash_reports_enabled ? "on" : "off";
   state.tool_permissions_summary = ToolPermissionsSummaryLabel(bootstrap.profile_prefs.tool_permissions);
   state.tool_permissions_has_saved =
@@ -78,7 +90,8 @@ void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, 
 
 bool SecuritySettingsSection::IsPersisted(const SettingsUiState& state,
                                           const BootstrapResult& bootstrap) const {
-  const bool invites_match = state.group_invite_policy == bootstrap.profile_prefs.group_invite_policy;
+  const bool invites_match = state.group_invite_policy == bootstrap.profile_prefs.group_invite_policy &&
+                             state.call_invite_policy == bootstrap.profile_prefs.call_invite_policy;
   const bool crash_match =
       (state.crash_reports_enabled == "on") == bootstrap.profile_prefs.crash_reports_enabled;
   const bool tools_match = state.tool_permissions_summary ==
@@ -90,12 +103,16 @@ Roe<void> SecuritySettingsSection::Flush(SettingsUiState& state, SessionStore& s
   ProfilePreferences prefs = store.Snapshot().profile_prefs;
   const bool crash_enabled = state.crash_reports_enabled == "on";
   const bool invites_changed = state.group_invite_policy != prefs.group_invite_policy;
+  const bool calls_changed = state.call_invite_policy != prefs.call_invite_policy;
   const bool crash_changed = crash_enabled != prefs.crash_reports_enabled;
-  if (!invites_changed && !crash_changed) {
+  if (!invites_changed && !calls_changed && !crash_changed) {
     return {};
   }
   if (invites_changed) {
     prefs.group_invite_policy = state.group_invite_policy;
+  }
+  if (calls_changed) {
+    prefs.call_invite_policy = state.call_invite_policy;
   }
   if (crash_changed) {
     prefs.crash_reports_enabled = crash_enabled;

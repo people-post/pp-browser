@@ -74,6 +74,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     os/OsProcess_Win32.cpp
     os/OsLocale_Win32.cpp
     os/OsExecutablePath_Win32.cpp
+    os/OsProcessStats_Default.cpp
     os/OsThreadStackDump_Default.cpp
     desktop/PathProvider_Win32.cpp
   )
@@ -85,6 +86,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
 elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Darwin.cpp
+    os/OsProcessStats_Default.cpp
     os/OsThreadStackDump_Default.cpp
     desktop/PathProvider_Darwin.cpp
   )
@@ -101,6 +103,7 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
 else()
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Linux.cpp
+    os/OsProcessStats_Linux.cpp
     os/OsThreadStackDump_Linux.cpp
     desktop/PathProvider_Linux.cpp
   )

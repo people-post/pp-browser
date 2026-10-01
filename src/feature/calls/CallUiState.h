@@ -38,6 +38,7 @@ struct CallUiState {
   bool remote_ended_declined = false;
   CallHopHealth hop_health;
   std::string media_path_kind;
+  CallLinkCounters media_link;
   // Seat
   std::string seat_bound_call_id;
   CallMediaSeat::MediaState seat_state = CallMediaSeat::MediaState::Idle;

@@ -446,7 +446,7 @@ Roe<CallInviteDetail> CallSessionWorkflow::BuildInvite(const CallSession& sessio
   if (auto key = key_exchange_.Current(call_id); key) {
     invite.wrapped_key_b64 = key_exchange_.WrapForPeer(call_id, *key, invitee_identity);
   }
-  if (host_.reach.local_listen_multiaddrs) {
+  if (host_.reach.local_listen_multiaddrs && MayLearnOurAddress(invitee_identity)) {
     FillCallListenFields(host_.reach.local_listen_multiaddrs(), invite.libp2p_peer_id, invite.listen_multiaddrs);
   }
   // Explicit mesh PeerId wins over /p2p/ suffix derived from listen MAs.
@@ -662,7 +662,7 @@ Roe<CallAcceptDetail> CallSessionWorkflow::SendCallAccept(const std::string& cal
     accept.video_allowed = false;
   }
   billing_.FillAccept(offer_minor, charge_decision, accept);
-  if (host_.reach.local_listen_multiaddrs) {
+  if (host_.reach.local_listen_multiaddrs && MayLearnOurAddress(inviter)) {
     FillCallListenFields(host_.reach.local_listen_multiaddrs(), accept.libp2p_peer_id, accept.listen_multiaddrs);
   }
   if (host_.reach.local_mesh_peer_id) {
@@ -1190,7 +1190,7 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
     }
   }
   live_calls_.AdmitInvited(invite->call_id, peers);
-  // Answerer: kick circuit readiness on ring (park owned by the shared MeshMediaPlane).
+  // Answerer: kick circuit readiness on ring (park owned by the shared MeshConnectivity).
   if (host_.reach.ensure_circuit_ready) {
     host_.reach.ensure_circuit_ready();
   }

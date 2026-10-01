@@ -4,6 +4,7 @@
 #include "foundation/crypto/MlDsa.h"
 
 #include "common/ValueJson.h"
+#include "common/media/MediaChannel.h"
 
 #include <algorithm>
 #include <cmath>
@@ -40,6 +41,31 @@ std::string JoinL1HopPeerIds(const std::vector<std::string>& ids) {
       out.push_back(',');
     }
     out += id;
+  }
+  return out;
+}
+
+std::string JoinVideoLevels(const std::vector<int>& levels) {
+  std::string out;
+  for (const int level : levels) {
+    if (!out.empty()) {
+      out.push_back(',');
+    }
+    out += std::to_string(level);
+  }
+  return out;
+}
+
+std::vector<int> ReadVideoLevels(const Object& o) {
+  std::vector<int> out;
+  if (const Array* arr = o.getArray("video_levels")) {
+    for (const auto& item : arr->elements) {
+      // Only real levels (1..15): anything else would wrap into a channel that was never announced.
+      const auto* level = std::get_if<int64_t>(&item);
+      if (level && *level >= kMinVideoLevel && *level <= kMaxVideoLevel) {
+        out.push_back(static_cast<int>(*level));
+      }
+    }
   }
   return out;
 }
@@ -103,15 +129,16 @@ std::string PeerAnnounceCanonicalSignBytes(const PeerAnnounceTip& tip) {
   AppendField(out, "epoch", tip.epoch);
   AppendField(out, "created_at_ms", tip.created_at_ms);
   AppendField(out, "join_handle", tip.join_handle);
-  // Additive: omit when empty so pre-hop tips keep verifying.
+  // Optional fields are signed when present, in this order (WIRE_SCHEMAS § PeerAnnounceTip).
   if (!tip.hop_peer_id.empty()) {
     AppendField(out, "hop_peer_id", tip.hop_peer_id);
   }
-  // Additive B007 L1 list (omit empty).
   if (const std::string joined = JoinL1HopPeerIds(tip.l1_hop_peer_ids); !joined.empty()) {
     AppendField(out, "l1_hop_peer_ids", joined);
   }
-  // Additive kind / viewer attribution (omit defaults for legacy verify).
+  if (!tip.video_levels.empty()) {
+    AppendField(out, "video_levels", JoinVideoLevels(tip.video_levels));
+  }
   if (!tip.kind.empty()) {
     AppendField(out, "kind", tip.kind);
   }
@@ -142,6 +169,13 @@ Roe<std::string> EncodePeerAnnounceTipJson(const PeerAnnounceTip& tip) {
   }
   if (!tip.l1_hop_peer_ids.empty()) {
     json.set("l1_hop_peer_ids", L1HopPeerIdsArray(tip.l1_hop_peer_ids));
+  }
+  if (!tip.video_levels.empty()) {
+    std::vector<Value> levels;
+    for (const int level : tip.video_levels) {
+      levels.emplace_back(int64_t{level});
+    }
+    json.set("video_levels", makeArray(std::move(levels)));
   }
   if (!tip.kind.empty()) {
     json.set("kind", tip.kind);
@@ -184,6 +218,7 @@ Roe<PeerAnnounceTip> DecodePeerAnnounceTipJson(const std::string_view json) {
   tip.join_handle = ObjectString(o, "join_handle").value_or("");
   tip.hop_peer_id = ObjectString(o, "hop_peer_id").value_or("");
   tip.l1_hop_peer_ids = ReadL1HopPeerIds(o);
+  tip.video_levels = ReadVideoLevels(o);
   tip.kind = ObjectString(o, "kind").value_or("");
   tip.viewer_peer_id = ObjectString(o, "viewer_peer_id").value_or("");
   tip.viewer_msg_id = ObjectString(o, "viewer_msg_id").value_or("");

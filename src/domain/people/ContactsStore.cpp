@@ -196,7 +196,7 @@ Roe<std::optional<Contact>> ContactsStore::FindByIdentity(const std::string& ide
   return Roe<std::optional<Contact>>(std::optional<Contact>{});
 }
 
-Roe<Contact> ContactsStore::Upsert(const Contact& contact) {
+Roe<Contact> ContactsStore::UpsertUnnotified(const Contact& contact) {
   std::lock_guard lock(mutex_);
   auto load = EnsureLoaded();
   if (!load) {
@@ -226,7 +226,7 @@ Roe<Contact> ContactsStore::Upsert(const Contact& contact) {
   return Error("Failed to save contacts");
 }
 
-Roe<bool> ContactsStore::Remove(const std::string& contact_id) {
+Roe<bool> ContactsStore::RemoveUnnotified(const std::string& contact_id) {
   std::lock_guard lock(mutex_);
   auto load = EnsureLoaded();
   if (!load) {
@@ -274,7 +274,7 @@ Roe<std::vector<Contact>> ContactsStore::SearchLocal(const std::string& query) c
   return out;
 }
 
-Roe<Contact> ContactsStore::AddFromDirectoryHit(const DirectoryHit& hit) {
+Roe<Contact> ContactsStore::AddFromDirectoryHitUnnotified(const DirectoryHit& hit) {
   std::string account_id;
   if (hit.account_id && !hit.account_id->empty()) {
     account_id = *hit.account_id;
@@ -325,10 +325,10 @@ Roe<Contact> ContactsStore::AddFromDirectoryHit(const DirectoryHit& hit) {
   contact.remote.icon = hit.icon;
   contact.remote.fetched_at = util::NowUnixMs();
   SyncContactMirrors(contact);
-  return Upsert(contact);
+  return UpsertUnnotified(contact);
 }
 
-Roe<Contact> ContactsStore::ApplyRemoteSnapshot(const std::string& contact_id, const DirectoryHit& hit,
+Roe<Contact> ContactsStore::ApplyRemoteSnapshotUnnotified(const std::string& contact_id, const DirectoryHit& hit,
                                                 const int64_t fetched_at_ms) {
   auto loaded = Get(contact_id);
   if (!loaded) {
@@ -345,15 +345,15 @@ Roe<Contact> ContactsStore::ApplyRemoteSnapshot(const std::string& contact_id, c
   contact.remote.icon = hit.icon;
   contact.remote.fetched_at = fetched_at_ms > 0 ? fetched_at_ms : util::NowUnixMs();
   SyncContactMirrors(contact);
-  return Upsert(contact);
+  return UpsertUnnotified(contact);
 }
 
-Roe<Contact> ContactsStore::AddEmpty() {
+Roe<Contact> ContactsStore::AddEmptyUnnotified() {
   Contact contact;
   contact.id = util::GenerateUuid();
   contact.local.trust = TrustLevel::Unknown;
   SyncContactMirrors(contact);
-  return Upsert(contact);
+  return UpsertUnnotified(contact);
 }
 
 Roe<bool> ContactsStore::IsAccountBlocked(const std::string& account_id) const {
@@ -365,7 +365,7 @@ Roe<bool> ContactsStore::IsAccountBlocked(const std::string& account_id) const {
   return contact.local.trust == TrustLevel::Blocked || contact.trust == TrustLevel::Blocked;
 }
 
-Roe<void> ContactsStore::BlockAccountIfPresent(const std::string& account_id) {
+Roe<void> ContactsStore::BlockAccountIfPresentUnnotified(const std::string& account_id) {
   auto hit = FindByIdentity(account_id, ContactIdKind::Account);
   if (!hit) {
     return hit.error();
@@ -376,11 +376,75 @@ Roe<void> ContactsStore::BlockAccountIfPresent(const std::string& account_id) {
   Contact contact = **hit;
   contact.local.trust = TrustLevel::Blocked;
   SyncContactMirrors(contact);
-  auto upserted = Upsert(contact);
+  auto upserted = UpsertUnnotified(contact);
   if (!upserted) {
     return upserted.error();
   }
   return {};
+}
+
+void ContactsStore::SetOnChanged(std::function<void()> on_changed) {
+  std::lock_guard lock(observer_mu_);
+  on_changed_ = std::move(on_changed);
+}
+
+void ContactsStore::NotifyChanged() const {
+  std::function<void()> on_changed;
+  {
+    std::lock_guard lock(observer_mu_);
+    on_changed = on_changed_;
+  }
+  if (on_changed) {
+    on_changed();  // outside every lock: the observer may read the store
+  }
+}
+
+Roe<Contact> ContactsStore::Upsert(const Contact& contact) {
+  auto result = UpsertUnnotified(contact);
+  if (result) {
+    NotifyChanged();
+  }
+  return result;
+}
+
+Roe<bool> ContactsStore::Remove(const std::string& contact_id) {
+  auto result = RemoveUnnotified(contact_id);
+  if (result) {
+    NotifyChanged();
+  }
+  return result;
+}
+
+Roe<Contact> ContactsStore::AddFromDirectoryHit(const DirectoryHit& hit) {
+  auto result = AddFromDirectoryHitUnnotified(hit);
+  if (result) {
+    NotifyChanged();
+  }
+  return result;
+}
+
+Roe<Contact> ContactsStore::ApplyRemoteSnapshot(const std::string& contact_id, const DirectoryHit& hit, const int64_t fetched_at_ms) {
+  auto result = ApplyRemoteSnapshotUnnotified(contact_id, hit, fetched_at_ms);
+  if (result) {
+    NotifyChanged();
+  }
+  return result;
+}
+
+Roe<Contact> ContactsStore::AddEmpty() {
+  auto result = AddEmptyUnnotified();
+  if (result) {
+    NotifyChanged();
+  }
+  return result;
+}
+
+Roe<void> ContactsStore::BlockAccountIfPresent(const std::string& account_id) {
+  auto result = BlockAccountIfPresentUnnotified(account_id);
+  if (result) {
+    NotifyChanged();
+  }
+  return result;
 }
 
 } // namespace pbr

@@ -1,4 +1,5 @@
 #include "feature/calls/CallTopologyController.h"
+#include "common/media/MediaChannel.h"
 #include "domain/messaging/CallMediaPlannerSelectLogic.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
 
@@ -649,8 +650,9 @@ void CallTopologyController::SubscribePublisherStream(uint32_t stream_id) {
   if (local_stream != 0 && stream_id == local_stream) {
     return;
   }
-  (void)relay_deps_.relay->Subscribe(stream_id, 0);
-  (void)relay_deps_.relay->Subscribe(stream_id, 1);
+  // Calls send one video level (the default): audio + that video channel.
+  (void)relay_deps_.relay->Subscribe(stream_id, kMediaChannelAudio);
+  (void)relay_deps_.relay->Subscribe(stream_id, VideoChannel(kDefaultVideoLevel));
   MaybeRequestPublisherKeyframe(stream_id);
 }
 

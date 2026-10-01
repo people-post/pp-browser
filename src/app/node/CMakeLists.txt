@@ -10,6 +10,7 @@ add_executable(pp-node
   NodeBootstrap.cpp
   NodeEnvOverlay.cpp
   NodeMeshPublish.cpp
+  NodeMetrics.cpp
   StatusHttpProtocol.cpp
   StatusHttpServer.cpp
 )

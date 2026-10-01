@@ -34,6 +34,8 @@ struct CallTopologyMediaRelayDeps {
   uint64_t objects_snap = 0;
   std::vector<std::string> bootstrap_peers;
   bool prefer_contacts = true;
+  /** projects/privacy T4: only org seeds and Friendly contacts' nodes carry call media. */
+  bool trusted_relays_only = false;
   /** Cached mesh_node listings (n-dir). */
   std::function<std::vector<MeshDirectoryNode>()> list_directory_nodes;
   /** DHT peer_routing cache (n2-caps). */

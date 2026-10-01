@@ -1,6 +1,7 @@
 #include "foundation/runtime/OwnerThread.h"
 
 #include "common/Logger.h"
+#include "common/metrics/MetricsRegistry.h"
 
 #include <exception>
 #include <utility>
@@ -29,7 +30,14 @@ const char* OwnerThreadName(OwnerThreadId id) {
 }
 
 OwnerThread::OwnerThread(std::string name, OwnerThreadMode mode, std::function<void(const std::string&)> name_thread)
-    : name_(std::move(name)), mode_(mode), name_thread_(std::move(name_thread)) {}
+    : name_(std::move(name)), mode_(mode), name_thread_(std::move(name_thread)) {
+  static const std::vector<double> kBounds{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5};
+  MetricsRegistry& registry = MetricsRegistry::Global();
+  wait_seconds_ = &registry.Histogram("pp_runtime_task_wait_seconds", "Owner thread task time queued before it ran.",
+                                      kBounds, {{"owner", name_}});
+  run_seconds_ = &registry.Histogram("pp_runtime_task_run_seconds", "Owner thread task run time.", kBounds,
+                                     {{"owner", name_}});
+}
 
 OwnerThread::~OwnerThread() {
   Stop();
@@ -47,7 +55,7 @@ void OwnerThread::Start() {
 }
 
 void OwnerThread::Stop() {
-  std::deque<std::function<void()>> dropped;
+  std::deque<Queued> dropped;
   {
     std::lock_guard lock(mu_);
     if (stopped_) {
@@ -76,7 +84,7 @@ bool OwnerThread::Post(std::function<void()> task) {
     if (stopped_) {
       return false;
     }
-    tasks_.push_back(std::move(task));
+    tasks_.push_back(Queued{std::move(task), std::chrono::steady_clock::now()});
   }
   cv_.notify_one();
   return true;
@@ -91,7 +99,7 @@ bool OwnerThread::PostFront(std::function<void()> task) {
     if (stopped_) {
       return false;
     }
-    tasks_.push_front(std::move(task));
+    tasks_.push_front(Queued{std::move(task), std::chrono::steady_clock::now()});
   }
   cv_.notify_one();
   return true;
@@ -106,10 +114,15 @@ bool OwnerThread::HasPending() const {
   return !tasks_.empty();
 }
 
+size_t OwnerThread::QueueDepth() const {
+  std::lock_guard lock(mu_);
+  return tasks_.size();
+}
+
 size_t OwnerThread::RunPending() {
   size_t ran = 0;
   for (;;) {
-    std::function<void()> task;
+    Queued task;
     {
       std::lock_guard lock(mu_);
       if (stopped_ || tasks_.empty()) {
@@ -132,7 +145,7 @@ void OwnerThread::ThreadMain() {
   }
   t_current_owner = this;
   for (;;) {
-    std::function<void()> task;
+    Queued task;
     {
       std::unique_lock lock(mu_);
       cv_.wait(lock, [this]() { return stopped_ || !tasks_.empty(); });
@@ -146,7 +159,11 @@ void OwnerThread::ThreadMain() {
   }
 }
 
-void OwnerThread::RunTask(std::function<void()>& task) {
+void OwnerThread::RunTask(Queued& queued) {
+  using Seconds = std::chrono::duration<double>;
+  const auto started = std::chrono::steady_clock::now();
+  wait_seconds_->Observe(Seconds(started - queued.enqueued).count());
+  std::function<void()>& task = queued.task;
   try {
     task();
   } catch (const std::exception& e) {
@@ -155,6 +172,7 @@ void OwnerThread::RunTask(std::function<void()>& task) {
     OwnerLog().error << name_ << " task threw a non-std exception";
   }
   task = nullptr;  // destroy captures on the owner
+  run_seconds_->Observe(Seconds(std::chrono::steady_clock::now() - started).count());
 }
 
 } // namespace pbr

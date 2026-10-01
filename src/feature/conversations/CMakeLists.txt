@@ -25,7 +25,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     MessagingCompatPorts.cpp
     MessagingPeoplePickerPorts.cpp
     MeshDeliveryOrchestrator.cpp
-    MeshMediaPlaneWiring.cpp
+    MeshConnectivityWiring.cpp
     PeerDisplayResolver.cpp
     ProfileIconClient.cpp
     ProfileIconFetch.cpp

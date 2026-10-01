@@ -1,4 +1,5 @@
 #include "app/node/NodeBootstrap.h"
+#include "app/node/NodeMetrics.h"
 #include "app/node/NodeMeshPublish.h"
 #include "app/node/StatusHttpProtocol.h"
 #include "app/node/StatusHttpServer.h"
@@ -46,7 +47,7 @@ void PrintUsage(const char* argv0) {
       << "  --status-addr <addr>  HTTP admin bind (default 127.0.0.1:18518).\n"
       << "                       Use 0.0.0.0:18518 (or a host IP) for console/probes.\n"
       << "                       Empty string disables. Env: PP_NODE_STATUS_ADDR\n"
-      << "  --status-token <tok>  Optional Bearer token for /healthz and /status.\n"
+      << "  --status-token <tok>  Optional Bearer token for /healthz, /status and /metrics.\n"
       << "                       Env: PP_NODE_STATUS_TOKEN\n"
       << "  --pin <pin>           Profile PIN (or PP_BROWSER_PIN) — required\n"
       << "  --profile <id>        Profile id override (or PP_NODE_PROFILE)\n"
@@ -62,7 +63,8 @@ void PrintUsage(const char* argv0) {
       << "\n"
       << "Live status HTTP (long-running mode), e.g.:\n"
       << "  curl -sS http://127.0.0.1:18518/healthz\n"
-      << "  curl -sS http://127.0.0.1:18518/status\n";
+      << "  curl -sS http://127.0.0.1:18518/status\n"
+      << "  curl -sS http://127.0.0.1:18518/metrics   (Prometheus text)\n";
 }
 
 void ShutdownNode(pbr::NodeBootstrapResult& boot) {
@@ -195,6 +197,8 @@ int main(int argc, char** argv) {
     return 0;
   }
 
+  // Operator metrics for /metrics (projects/node-monitoring); goes before the mesh stops.
+  pbr::ScopedMetricsCollector node_metrics = pbr::RegisterNodeMetrics(*boot);
   pbr::StatusHttpServer status_http;
   if (auto bind = pbr::ParseStatusHttpBind(status_addr_spec)) {
     pbr::StatusHttpAuthConfig auth;
@@ -244,6 +248,7 @@ int main(int argc, char** argv) {
 
   root.info << "pp-node shutting down";
   status_http.Stop();
+  node_metrics.Reset();
   ShutdownNode(*boot);
   return 0;
 }

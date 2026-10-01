@@ -3,13 +3,15 @@
 #include "amp/L1/Clock.h"
 #include "amp/link/AmpStack.h"
 #include "domain/media/MediaDeviceArbiter.h"
+#include "common/privacy/AddressDisclosure.h"
 #include "domain/mesh/host/MeshHost.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "feature/calls/CallControlInboundPorts.h"
-#include "domain/mesh/media_plane/MeshMediaPlane.h"
+#include "domain/mesh/connectivity/MeshConnectivity.h"
+#include "domain/mesh/media_plane/MeshMediaRelay.h"
 #include "feature/calls/CallStack.h"
 #include "foundation/platform/NetworkMonitor.h"
 #include "feature/calls/CallUiBackend.h"
@@ -38,6 +40,11 @@ namespace call_probe {
  */
 class ProductStackHarness {
 public:
+  /**
+   * projects/privacy T1: who the probe discloses its address to (`--direct-connections`); wins over
+   * PP_PROBE_DIRECT_CONNECTIONS. False for an unknown word. Call before Create.
+   */
+  static bool SetDirectConnectionsOverride(const std::string& audience);
   static Roe<std::unique_ptr<ProductStackHarness>> Create(std::unique_ptr<pp::amp::AmpStack> stack,
                                                           std::shared_ptr<pp::adp::Clock> clock,
                                                           std::string advertise_ma,
@@ -49,7 +56,6 @@ public:
   MeshHost& Host() { return *host_; }
   CallUiBackend& Ui() { return *ui_; }
   CallStack& Stack() { return *stack_; }
-  MeshMediaPlane& MeshMedia() { return *mesh_media_; }
   /** Capability-refresh rewire, same sequence as ConversationsHub (L015): detach → reset → wire → rebind. */
   void RefreshMeshMedia();
   const std::string& LocalAccountId() const { return local_account_; }
@@ -149,10 +155,13 @@ private:
   /** Decoded RX per remote publisher stream. */
   std::vector<CallMediaStreamHealth> RxStreams() const;
   /** Accept the top pending invite once `accept_delay_ms_` passed since it showed; its call id. */
+  void PublishAddressDisclosure();
   std::optional<std::string> MaybeAcceptPendingInvite(std::optional<std::chrono::steady_clock::time_point>& first_seen);
   uint64_t TxAudioFrames() const;
 
   std::shared_ptr<pp::adp::Clock> clock_;
+  /** Who may learn this probe's address, as in the product hub (projects/privacy T1); outlives host_. */
+  AddressDisclosureGate address_disclosure_;
   std::unique_ptr<MeshHost> host_;
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;
@@ -161,7 +170,8 @@ private:
   std::unique_ptr<SqlitePskSessionStore> psk_;
   AppConfig app_config_;
   // Outlives the call stack and broadcast (they borrow its objects).
-  std::unique_ptr<MeshMediaPlane> mesh_media_;
+  std::unique_ptr<MeshConnectivity> mesh_connectivity_;
+  std::unique_ptr<MeshMediaRelay> mesh_media_relay_;  // built on connectivity (goes first)
   std::unique_ptr<CallStack> stack_;
   /** k5: the container's network changes reach the mesh and calls as in the product hub. */
   std::unique_ptr<NetworkMonitor> network_monitor_;

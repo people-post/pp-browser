@@ -365,4 +365,28 @@ std::vector<std::string> ContactPeerIds(const std::vector<Contact>& contacts) {
   return out;
 }
 
+std::unordered_set<std::string> TrustedRelayPeerIds(const std::vector<Contact>& contacts,
+                                                    const std::vector<std::string>& org_seed_multiaddrs) {
+  std::unordered_set<std::string> trusted;
+  for (const MeshHopCandidate& seed : CollectSeedHopCandidates(org_seed_multiaddrs)) {
+    trusted.insert(seed.peer_id);
+  }
+  for (const Contact& contact : contacts) {
+    if (contact.trust != TrustLevel::Friendly) {
+      continue;
+    }
+    for (const std::string& peer_id : PeerIdsFromContact(contact)) {
+      trusted.insert(peer_id);
+    }
+  }
+  trusted.erase("");
+  return trusted;
+}
+
+std::vector<MeshHopCandidate> KeepTrustedRelays(std::vector<MeshHopCandidate> hops,
+                                                const std::unordered_set<std::string>& trusted) {
+  std::erase_if(hops, [&trusted](const MeshHopCandidate& hop) { return !trusted.contains(hop.peer_id); });
+  return hops;
+}
+
 } // namespace pbr

@@ -66,6 +66,7 @@ One-line intent only. **Phase detail → each folder’s CURRENT_STATE.md.**
 | [group-chat](group-chat/) | Group threads (design / follow-on) |
 | [content-cas](content-cas/) | Private/public CAS realms; library / pin / Node-gated catalog use cases (C013) |
 | [support-chat](support-chat/) | Support channel notes |
+| [privacy](privacy/) | What peers, relays, servers and logs learn about a user, and the controls that bound it (first: who gets our IP) |
 
 ## Done / archived
 
@@ -73,6 +74,7 @@ Delivery ended; use **docs/** for normative refs. Folders kept for ADR / history
 
 | Project | Stable refs |
 |---------|-------------|
+| [node-monitoring](node-monitoring/) | [NODE_METRICS](../docs/contracts/NODE_METRICS.md), [WINDOW_SHELL](../docs/ui/WINDOW_SHELL.md), [CALLS § Call media health](../docs/architecture/CALLS.md) |
 | [thread-ownership](thread-ownership/) | [THREADING.md § Owner threads](../docs/architecture/THREADING.md#owner-threads), [CALLS.md](../docs/architecture/CALLS.md) |
 | [liquid-glass](liquid-glass/) | [UI_DESIGN_SYSTEM — Floating Chrome](../docs/ui/UI_DESIGN_SYSTEM.md#compact-floating-chrome-materials), [WINDOW_SHELL](../docs/ui/WINDOW_SHELL.md) |
 | [libp2p-pq-transport](libp2p-pq-transport/) | [AT_REST_ENCRYPTION](../docs/contracts/AT_REST_ENCRYPTION.md), [DATA_LAYOUT](../docs/contracts/DATA_LAYOUT.md), [LIBP2P_UPSTREAM](../docs/architecture/LIBP2P_UPSTREAM.md) |

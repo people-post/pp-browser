@@ -1,5 +1,7 @@
 #include "domain/mesh/reachability/punch/serve/PunchServer.h"
 
+#include "common/metrics/MetricsRegistry.h"
+
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/AdpMultiaddr.h"
 #include "amp/link/PeerLink.h"
@@ -61,6 +63,7 @@ struct PunchServer::Impl {
   /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
   DeferredSelf deferred;
   std::vector<std::string>* local_addrs = nullptr;
+  std::atomic<const AddressDisclosureGate*> disclosure{nullptr};
 
   pp::amp::PeerLinkManager& Links() { return runtime->Links(); }
 
@@ -324,6 +327,13 @@ struct PunchServer::Impl {
                        [complete](pp::amp::BurstDialResult r) { (*complete)(ToPunchBurst(std::move(r))); });
   }
 
+  /** pp_punch_served_total{role} (docs/contracts/NODE_METRICS.md § Reachability). */
+  static void CountServed(const char* role) {
+    MetricsRegistry::Global()
+        .Counter("pp_punch_served_total", "Punch requests this node served, by role.", {{"role", role}})
+        .Inc();
+  }
+
   void HandleInboundFrame(const std::shared_ptr<pp::amp::ChannelSession>& session,
                           const std::string& remote_peer_id, const std::shared_ptr<std::string>& phase,
                           const std::shared_ptr<std::string>& punch_remote_peer_id,
@@ -343,6 +353,7 @@ struct PunchServer::Impl {
         return;
       }
       *phase = "introducing";
+      CountServed("introducer");
       RunIntroducerConnect(session, remote_peer_id, *req);
       return;
     }
@@ -352,7 +363,16 @@ struct PunchServer::Impl {
         FailSession(session, "", "punch: invalid offer");
         return;
       }
+      if (!AllowsDirect(disclosure.load(std::memory_order_acquire), offer->initiator_peer_id)) {
+        // projects/privacy T1: our candidates and burst would hand this initiator our IP.
+        AmpPunchLog().info << "punch target declined epoch=" << offer->epoch_id
+                           << " (initiator outside the direct-connections audience)";
+        CountServed("target_declined");
+        FailSession(session, offer->epoch_id, "punch: target declines this initiator");
+        return;
+      }
       *phase = "await_sync";
+      CountServed("target");
       *punch_remote_peer_id = offer->initiator_peer_id;
       PunchCandidates reply;
       reply.peer_id = Links().LocalPeerId();
@@ -410,6 +430,10 @@ PunchServer::PunchServer(pp::amp::MeshRuntime& runtime, IoPump io_pump)
 }
 
 PunchServer::~PunchServer() { Stop(); }
+
+void PunchServer::SetAddressDisclosure(const AddressDisclosureGate* gate) {
+  impl_->disclosure.store(gate, std::memory_order_release);
+}
 
 void PunchServer::SetLocalCandidateAddrs(std::vector<std::string> addrs) {
   local_addrs_ = SanitizePunchAddrs(std::move(addrs));

@@ -93,7 +93,7 @@ public:
     /** The peer's caps for this call (invite / accept) — mobility feeds the call's path policy. */
     std::function<void(const std::string& call_id, const CallPeerCaps& caps)> note_call_peer_caps;
     std::function<void(const std::string& identity)> prefetch_reach;
-    /** Kick mesh circuit park (composition projects MeshMediaPlane::ReserveOnBootstrapSeeds). */
+    /** Kick mesh circuit park (composition projects MeshConnectivity rendezvous ReserveOnBootstrapSeeds). */
     std::function<void()> ensure_circuit_ready;
     /**
      * Await circuit-ready (Accept gate): `done(ready)` once parked or at the timeout, from any thread
@@ -102,6 +102,8 @@ public:
     std::function<void(int timeout_ms, std::function<void(bool ready)> done)> park_circuit;
     std::function<void(const std::string& relay, const std::string& peer_id)> note_mesh_peer_id_for_relay;
     std::function<std::vector<std::string>()> local_listen_multiaddrs;
+    /** projects/privacy T1: our listen addresses go only to peers this allows (unset = all). */
+    std::function<bool(const std::string& peer)> may_learn_our_address;
     std::function<CallPeerCaps()> local_peer_caps;
     std::function<std::string()> local_mesh_peer_id;
   };
@@ -214,6 +216,10 @@ private:
   // --- InviteParticipant steps ---
   /** Not ended, room to join, and a hop for a third participant (V021). */
   Roe<void> CheckCanInvite(const CallSession& session);
+  /** projects/privacy T1: whether `peer` may get our listen addresses in call signalling. */
+  bool MayLearnOurAddress(const std::string& peer) const {
+    return !host_.reach.may_learn_our_address || host_.reach.may_learn_our_address(peer);
+  }
   /** The CallInvite for `invitee_identity`: roster + co-invitees, wrapped media key, listen addrs, caps, offer. */
   Roe<CallInviteDetail> BuildInvite(const CallSession& session, const std::string& local_identity,
                                     const std::string& invitee_identity, const std::vector<std::string>& co_invitees,

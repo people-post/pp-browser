@@ -40,20 +40,20 @@ TEST(CallMediaSfuCryptoTest, DistinctFromDirectAad) {
 TEST(CallMediaSfuCryptoTest, DirectV2AudioAndVideoRoundTrip) {
   const std::string call_id = "call:direct-v2";
   const std::vector<uint8_t> opus = {0x11, 0x22};
-  auto audio = EncryptCallMediaFrame(FakeKey(), call_id, 1, 3, 0, kCallMediaChannelAudio, opus);
+  auto audio = EncryptCallMediaFrame(FakeKey(), call_id, 1, 3, 0, kMediaChannelAudio, opus);
   ASSERT_TRUE(audio) << audio.error().message;
   auto decoded_audio = DecryptCallMediaFrame(FakeKey(), call_id, 1, *audio);
   ASSERT_TRUE(decoded_audio) << decoded_audio.error().message;
-  EXPECT_EQ(decoded_audio->channel, kCallMediaChannelAudio);
+  EXPECT_EQ(decoded_audio->channel, kMediaChannelAudio);
   EXPECT_EQ(decoded_audio->payload, opus);
 
   std::vector<uint8_t> au(20 * 1024, 0x5a);
-  auto video = EncryptCallMediaFrame(FakeKey(), call_id, 1, 4, 1, kCallMediaChannelVideoLo, au);
+  auto video = EncryptCallMediaFrame(FakeKey(), call_id, 1, 4, 1, VideoChannel(kDefaultVideoLevel), au);
   ASSERT_TRUE(video) << video.error().message;
   EXPECT_GT(video->size(), 16 * 1024u);
   auto decoded_video = DecryptCallMediaFrame(FakeKey(), call_id, 1, *video);
   ASSERT_TRUE(decoded_video) << decoded_video.error().message;
-  EXPECT_EQ(decoded_video->channel, kCallMediaChannelVideoLo);
+  EXPECT_EQ(decoded_video->channel, VideoChannel(kDefaultVideoLevel));
   EXPECT_EQ(decoded_video->mark, 1);
   EXPECT_EQ(decoded_video->payload, au);
 
@@ -64,27 +64,27 @@ TEST(CallMediaSfuCryptoTest, DirectV2AudioAndVideoRoundTrip) {
 TEST(CallMediaSfuCryptoTest, OneSealDecryptsForEveryParticipantWithSharedKey) {
   const std::string call_id = "call:group-one-key";
   std::vector<uint8_t> au(4096, 0x7e);
-  auto sealed = EncryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, 1, 1, kCallMediaChannelVideoLo, au);
+  auto sealed = EncryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, 1, 1, VideoChannel(kDefaultVideoLevel), au);
   ASSERT_TRUE(sealed);
   // Two subscribers, same epoch key — not per-target ciphertext.
-  auto peer_a = DecryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, kCallMediaChannelVideoLo, *sealed);
-  auto peer_b = DecryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, kCallMediaChannelVideoLo, *sealed);
+  auto peer_a = DecryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, VideoChannel(kDefaultVideoLevel), *sealed);
+  auto peer_b = DecryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, VideoChannel(kDefaultVideoLevel), *sealed);
   ASSERT_TRUE(peer_a);
   ASSERT_TRUE(peer_b);
   EXPECT_EQ(peer_a->payload, au);
   EXPECT_EQ(peer_b->payload, au);
   ByteVector other_key(32, 0x24);
-  EXPECT_FALSE(DecryptCallMediaSfuFrame(other_key, call_id, 1, 10, kCallMediaChannelVideoLo, *sealed));
+  EXPECT_FALSE(DecryptCallMediaSfuFrame(other_key, call_id, 1, 10, VideoChannel(kDefaultVideoLevel), *sealed));
 }
 
 TEST(CallMediaSfuCryptoTest, ChannelBoundInAad) {
   const std::string call_id = "call:ch-aad";
   const std::vector<uint8_t> payload = {1, 2, 3};
-  auto sealed = EncryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, 1, 0, kCallMediaChannelVideoLo, payload);
+  auto sealed = EncryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, 1, 0, VideoChannel(kDefaultVideoLevel), payload);
   ASSERT_TRUE(sealed);
-  auto wrong_ch = DecryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, kCallMediaChannelAudio, *sealed);
+  auto wrong_ch = DecryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, kMediaChannelAudio, *sealed);
   EXPECT_FALSE(wrong_ch);
-  auto ok = DecryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, kCallMediaChannelVideoLo, *sealed);
+  auto ok = DecryptCallMediaSfuFrame(FakeKey(), call_id, 1, 10, VideoChannel(kDefaultVideoLevel), *sealed);
   ASSERT_TRUE(ok) << ok.error().message;
   EXPECT_EQ(ok->payload, payload);
 }
@@ -96,7 +96,7 @@ TEST(CallMediaSfuCryptoTest, DecryptV1AudioStillWorks) {
   EXPECT_EQ((*v1)[0], kCallMediaFrameVersionV1);
   auto decoded = DecryptCallMediaFrame(FakeKey(), "c", 1, *v1);
   ASSERT_TRUE(decoded) << decoded.error().message;
-  EXPECT_EQ(decoded->channel, kCallMediaChannelAudio);
+  EXPECT_EQ(decoded->channel, kMediaChannelAudio);
   EXPECT_EQ(decoded->payload, (std::vector<uint8_t>{9, 9}));
   auto plain = DecryptCallMediaAudioFrame(FakeKey(), "c", 1, *v1);
   ASSERT_TRUE(plain);

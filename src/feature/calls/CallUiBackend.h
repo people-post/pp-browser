@@ -101,6 +101,11 @@ public:
   std::string PeekMediaActivity() const { return State()->media_activity; }
   CallHopHealth HopHealth() const { return State()->hop_health; }
   std::string MediaPathKind() const { return State()->media_path_kind; }
+  /** The call's link: the relay's when a hop is attached, else the 1:1 call-media link. */
+  CallLinkCounters MediaLinkCounters() const {
+    const auto state = State();
+    return state->hop_health.attached ? state->hop_health.link : state->media_link;
+  }
   CallMediaSeat::MediaState SeatMediaState(const std::string& call_id) const { return State()->SeatStateFor(call_id); }
   bool SeatMediaLive(const std::string& call_id) const { return State()->SeatLiveFor(call_id); }
   bool MediaChromeLive() const { return State()->MediaChromeLive(); }

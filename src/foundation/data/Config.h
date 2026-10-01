@@ -4,6 +4,7 @@
 #include "foundation/data/LlmConfig.h"
 #include "common/Error.h"
 #include "common/Module.h"
+#include "common/privacy/AddressDisclosure.h"
 
 #include <cstdint>
 #include <string>
@@ -109,6 +110,19 @@ struct MediaRelayBudgetConfig {
 };
 
 /**
+ * Which video levels this node's media_relay carries per publisher (peer-scoped-broadcast B009).
+ * Levels are opaque ordered integers (docs/contracts/MEDIA_CHANNELS.md).
+ */
+struct MediaRelayVideoConfig {
+  /** Levels served; empty = any. */
+  std::vector<int> serve_levels;
+  /** At most this many levels per publisher; 0 = no limit. */
+  int carry_levels = 0;
+  /** Refuse a publisher offering none of `serve_levels` (default: carry its closest level). */
+  bool strict = false;
+};
+
+/**
  * Per-capability relay pricing (N010 / P001).
  * Protocol branches on rate (== 0 free); mode is a UX label only.
  */
@@ -162,6 +176,17 @@ struct MeshConfig {
    */
   bool prefer_contacts_for_routing = true;
   /**
+   * Who may learn this device's IP address (projects/privacy T1): everyone / contacts / friendly /
+   * nobody. Others reach us through a relay. The Node role is always `everyone` (P004).
+   */
+  DirectAudience direct_connections = DirectAudience::Contacts;
+  /**
+   * projects/privacy T4: relays see both ends' addresses. When true, only the configured org seeds
+   * and Friendly contacts' nodes may relay, park, introduce punches or carry call media for us —
+   * not directory volunteers or DHT-discovered nodes.
+   */
+  bool trusted_relays_only = false;
+  /**
    * Peer mesh on/off. When true, MeshHost hard-requires Amp UDP bind (D10).
    * When false, peer mesh underlay stays off. Requires device ML-DSA keys.
    */
@@ -177,6 +202,7 @@ struct MeshConfig {
   MeshDhtConfig dht;
   MeshPricingConfig pricing;
   MediaRelayBudgetConfig media_relay_budget;
+  MediaRelayVideoConfig media_relay_video;
 };
 
 struct AppConfig {

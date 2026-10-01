@@ -50,6 +50,8 @@ struct MeshHostConfig {
   bool host_directory = false;
   MediaRelayBudgetConfig media_relay_budget{};
   RelayPricingConfig media_relay_pricing{};
+  /** Video levels the hosted media_relay carries per publisher (B009). */
+  MediaRelayVideoPolicy media_relay_video{};
   /** Fire an Amp dial-back reachability probe after start (Node / pp-node). */
   bool start_reachability_probe = false;
   bool try_upnp_first = false;
@@ -118,6 +120,11 @@ public:
   DialBackClient* AmpDialBack();
   /** Amp coordinated punch (H009 / L3.25a); null when Amp is down. */
   AmpPunchCoordinator* AmpPunch();
+  /**
+   * Who may learn this node's address (projects/privacy T1): applied to the services that would
+   * disclose it (punch target), now and whenever they are rebuilt. Null = everyone. Not owned.
+   */
+  void SetAddressDisclosure(const AddressDisclosureGate* gate);
   /** Amp mesh DHT (n2); null when Amp is down. */
   AmpDhtProtocol* AmpDht();
   /** Amp directory twin (N029 nd4); null when Amp is down. */
@@ -197,6 +204,11 @@ private:
   std::unique_ptr<DialBackServer> amp_dial_back_server_;
   std::unique_ptr<DialBackClient> amp_dial_back_;
   std::unique_ptr<AmpPunchCoordinator> amp_punch_;
+  const AddressDisclosureGate* address_disclosure_ = nullptr;
+  /** The Amp stack the Blocked-peer link listener is installed on (one listener per stack). */
+  const void* blocked_listener_amp_ = nullptr;
+  /** Apply the gate to Amp's ch0 capability (listen multiaddrs per peer); after every Amp (re)build. */
+  void ApplyAddressDisclosureToAmp();
   std::unique_ptr<AmpDhtProtocol> amp_dht_;
   std::unique_ptr<AmpDirectoryProtocol> amp_directory_;
   bool host_dht_ = false;

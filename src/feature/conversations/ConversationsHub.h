@@ -22,10 +22,12 @@
 #include "domain/messaging/InitiationBillingStore.h"
 #include "feature/broadcast/BroadcastHub.h"
 #include "foundation/runtime/DeferredSelf.h"
-#include "domain/mesh/media_plane/MeshMediaPlane.h"
+#include "domain/mesh/connectivity/MeshConnectivity.h"
+#include "domain/mesh/media_plane/MeshMediaRelay.h"
 #include "feature/calls/CallStack.h"
 #include "foundation/platform/NetworkMonitor.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
+#include "common/privacy/AddressDisclosure.h"
 #include "domain/messaging/AttachmentSuppressionStore.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
@@ -91,12 +93,15 @@ public:
     bool media_relay = true;
     bool dht = false;
     bool prefer_contacts_for_routing = true;
+    DirectAudience direct_connections = DirectAudience::Contacts;
+    bool trusted_relays_only = false;
 
     bool operator==(const NetworkConfig& other) const {
       return relay.base_url == other.relay.base_url && directory == other.directory &&
              registration.base_url == other.registration.base_url && node_enabled == other.node_enabled &&
              circuit_relay == other.circuit_relay && media_relay == other.media_relay && dht == other.dht &&
-             prefer_contacts_for_routing == other.prefer_contacts_for_routing;
+             prefer_contacts_for_routing == other.prefer_contacts_for_routing &&
+             direct_connections == other.direct_connections && trusted_relays_only == other.trusted_relays_only;
     }
     bool operator!=(const NetworkConfig& other) const { return !(*this == other); }
   };
@@ -105,9 +110,10 @@ public:
   struct PolicyPrefs {
     GroupInvitePolicy group_invite_policy = GroupInvitePolicy::ContactsOnly;
     AttachmentDownloadPolicy attachment_download_policy = AttachmentDownloadPolicy::Smart;
+    InboundAudience call_invite_policy = InboundAudience::Everyone;
 
     bool operator==(const PolicyPrefs& other) const {
-      return group_invite_policy == other.group_invite_policy &&
+      return group_invite_policy == other.group_invite_policy && call_invite_policy == other.call_invite_policy &&
              attachment_download_policy == other.attachment_download_policy;
     }
     bool operator!=(const PolicyPrefs& other) const { return !(*this == other); }
@@ -335,6 +341,10 @@ private:
   /** Undo BuildMessagingStack / StartMesh without a full hub Shutdown (shutdown race). */
   void DiscardMessagingBringUp();
   void ApplyMeshAdmissionPolicies();
+  /** Republish who may learn our address (setting + contacts; projects/privacy T1). UI thread. */
+  void PublishAddressDisclosure();
+  /** The audience in force: the setting, or everyone in the Node role (P004). */
+  DirectAudience EffectiveDirectAudience() const;
   void PublishNodeAdvertisedAddrs();
   /** CallStackDeps for building the call stack against the current p2p / mesh / config. */
   CallStackDeps MakeCallStackDeps();
@@ -377,6 +387,8 @@ private:
   /** `config_.mesh` as owners read it (call stack, mesh media policy): republished on every write. */
   mutable std::mutex mesh_config_mu_;
   std::shared_ptr<const MeshConfig> mesh_config_snapshot_ = std::make_shared<const MeshConfig>();
+  /** Who may learn our address; read by mesh and call paths on any thread (outlives them all). */
+  AddressDisclosureGate address_disclosure_;
   AgentInboundPorts agent_inbound_;
   SessionStore* session_store_ = nullptr;
   ProfileSecretsEngine* secrets_ = nullptr;
@@ -421,15 +433,18 @@ private:
   std::unique_ptr<ContactActionDispatcher> actions_;
   std::unique_ptr<MessageRouter> router_;
 
-  // --- Neutral mesh media (L015) — lent to the call stack and broadcast; outlives both ---
-  std::unique_ptr<MeshMediaPlane> mesh_media_;
+  // --- Neutral mesh objects (L015) — lent to the call stack and broadcast; outlive both ---
+  /** Reaching peers (dial registry, listen book, circuit reach, rendezvous, punch walk). */
+  std::unique_ptr<MeshConnectivity> mesh_connectivity_;
+  /** The media_relay client, built on connectivity (declared after it: goes first). */
+  std::unique_ptr<MeshMediaRelay> mesh_media_relay_;
 
   // --- CallStack (app-only) ------------------------------------------------
   std::unique_ptr<CallStack> call_stack_;
 
   // --- MeshHost (shared with pp-node) + app mesh glue ----------------------
   std::unique_ptr<MeshHost> mesh_;
-  // Borrows mesh links, mesh_media_'s relay objects and mesh_messaging_ — declared after them so
+  // Borrows mesh links, mesh_media_relay_'s relay client and mesh_messaging_ — declared after them so
   // it is destroyed first (also reset explicitly in StopMesh / before relay rewires).
   std::unique_ptr<BroadcastHub> broadcast_;
   /** Guards announces posted to UI for the current broadcast hub (invalidated on reset). */

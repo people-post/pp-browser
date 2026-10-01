@@ -148,7 +148,7 @@ Prefix **L**. Status lives in [CURRENT_STATE.md](CURRENT_STATE.md); spec in [DES
 ## L015 — A neutral `MeshMediaPlane` in `domain/mesh`, owned by the product hub, lent to calls and broadcast
 
 **Date:** 2026-09-27
-**Status:** Accepted (l8)
+**Status:** Accepted (l8). **Amended 2026-09-30:** the plane is split by concern — `MeshConnectivity` (`domain/mesh/connectivity`: dial registry + listen book, circuit reach, punch walk, rendezvous, hop policy, local view) and `MeshMediaRelay` (`domain/mesh/media_plane`: the media_relay client, built on connectivity); ownership and lending are unchanged. Current shape: [MESH.md § Feature boundary](../../docs/architecture/MESH.md#feature-boundary).
 **Decision:**
 - **What moves.** The media_relay client, dial registry + peer listen book, circuit/service reach (with cold / upgrade punch) and rendezvous parking (warm, reserve, late reserve, park-await, re-park listener) leave `CallMediaPlane` for `domain/mesh/media_plane/MeshMediaPlane`. `CallMediaPlane` keeps call policy only: the call_media Amp transport, `CallMediaBridge`, and the topology's relay deps (`BuildMediaRelayDeps`) built from the neutral objects.
 - **Plane = composition, reach = reachability.** The plane owns objects and their lifecycle; reach mechanics stay in `domain/mesh/reachability`: the punch step reach calls (`PunchIntroducerWalk`) and the rendezvous relay surface used both to dial through and to park on (`CircuitRendezvousCoordinator`). The plane builds circuit reach from them.

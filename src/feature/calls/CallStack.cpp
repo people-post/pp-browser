@@ -151,8 +151,24 @@ void CallStack::NotifyPathPolicyChangedOnOwner(const std::string& call_id) {
   }
 }
 
+void CallStack::SetInboundCallAudience(const InboundAudience audience) {
+  inbound_call_audience_.store(audience, std::memory_order_relaxed);
+  RunOnOwner([audience](CallSessionManager& calls) { calls.SetInboundCallAudience(audience); });
+}
+
 CallPathPolicy CallStack::PathPolicyFor(const std::string& call_id) const {
-  return mobility_.PolicyFor(call_id);
+  const CallPathPolicy policy = mobility_.PolicyFor(call_id);
+  if (!deps_.address_disclosure) {
+    return policy;
+  }
+  const auto disclosure = deps_.address_disclosure->Snapshot();
+  const LiveCall* call = call_sessions_ ? call_sessions_->Live().Find(call_id) : nullptr;
+  const std::optional<std::string> peer = call ? call->SolePeer() : std::nullopt;
+  if (peer ? disclosure->AllowsDirect(*peer) : disclosure->audience == DirectAudience::Everyone) {
+    return policy;
+  }
+  // Outside the audience — or, with a narrower audience, a peer not known yet: disclosure is the risk.
+  return RelayOnlyPolicy(policy);
 }
 
 void CallStack::DetachMeshMedia() {
@@ -217,6 +233,7 @@ void CallStack::PublishUiState() {
     state.last_media_error = call_sessions_->PeekLastMediaError();
     state.hop_health = call_sessions_->HopHealth();
     state.media_path_kind = call_sessions_->MediaPathKind();
+    state.media_link = call_sessions_->MediaLinkCounters();
   }
   if (call_sessions_) {
     const CallMediaSeat& seat = call_sessions_->Seat();
@@ -277,18 +294,18 @@ void CallStack::SyncMediaPlaneDeps() {
     loop.Enqueue(calls_event::MeshPeerIdLearned{account, peer_id});  // connectivity owner → calls owner
   };
   media_plane_->SetDeps(std::move(plane_deps));
-  media_plane_->SetMeshMedia(mesh_media());
+  media_plane_->SetMesh(connectivity(), media_relay());
   BindMeshMediaHooks();
 }
 
 void CallStack::BindMeshMediaHooks() {
-  MeshMediaPlane* shared = mesh_media();
+  MeshConnectivity* shared = connectivity();
   if (!shared) {
     return;
   }
-  // The plane runs these on the connectivity owner / Amp IO: hop to the calls owner.
+  // Connectivity runs these on its owner / Amp IO: hop to the calls owner.
   // H011: the rendezvous R1 our circuit reach chose is announced to the call peer.
-  // The hooks hold the loop's ref, not the stack: the plane outlives it.
+  // The hooks hold the loop's ref, not the stack: connectivity outlives it.
   shared->SetOnRelayChosen(
       [loop = loop_.Share()](const std::string& circuit_r1) { loop.Enqueue(calls_event::RelayChosen{circuit_r1}); });
   // H012: when Amp introducers are exhausted, exchange punch candidates over call-control.
@@ -411,6 +428,8 @@ void CallStack::BindSessionProviders() {
     }
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
+  call_sessions_->SetAddressDisclosure(deps_.address_disclosure);
+  call_sessions_->SetInboundCallAudience(inbound_call_audience_.load(std::memory_order_relaxed));  // a rebuilt CSM keeps the choice
   // Providers read the connectivity owner's published view of this node's mesh (never the
   // MeshHost the hub may be tearing down under a running call flow).
   call_sessions_->SetLocalMeshPeerIdProvider([this]() -> std::string { return LocalMeshView()->local_peer_id; });
@@ -442,15 +461,15 @@ CallPeerCaps CallStack::LocalPeerCaps() const {
 
 /** Connectivity for the sessions: circuit readiness / park, and the reach signals' mesh side. */
 void CallStack::BindSessionMeshReach() {
-  // Connectivity: park on org hops so this peer is ServeDial-reachable (shared mesh media).
+  // Connectivity: park on org hops so this peer is ServeDial-reachable.
   call_sessions_->SetEnsureCircuitReady([this]() {
-    if (MeshMediaPlane* shared = mesh_media()) {
+    if (MeshConnectivity* shared = connectivity()) {
       shared->Rendezvous().ReserveOnBootstrapSeeds();
     }
   });
   // Park completes on the Amp IO thread (or at a coordinator deadline); the workflow reports it as an event.
   call_sessions_->SetParkCircuit([this](int timeout_ms, std::function<void(bool)> done) {
-    if (MeshMediaPlane* shared = mesh_media()) {
+    if (MeshConnectivity* shared = connectivity()) {
       shared->Rendezvous().EnsureBootstrapSeedParkedAsync(std::move(done), timeout_ms);
     } else {
       done(false);
@@ -458,14 +477,14 @@ void CallStack::BindSessionMeshReach() {
   });
   CallReachSignals::MeshPorts reach;
   reach.prefer_late_reserve = [this](const std::string& relay_peer_id) {
-    if (MeshMediaPlane* shared = mesh_media()) {
+    if (MeshConnectivity* shared = connectivity()) {
       shared->Rendezvous().PreferLateReserve(relay_peer_id);
     }
   };
   reach.local_punch_addrs = [this]() -> std::vector<std::string> { return LocalMeshView()->punch_candidate_addrs; };
   reach.punch_burst = [this](const std::vector<std::string>& peer_addrs, int window_ms,
                              std::function<void(Roe<void>)> on_done) {
-    MeshMediaPlane* shared = mesh_media();
+    MeshConnectivity* shared = connectivity();
     if (!shared) {
       if (on_done) {
         on_done(Error("amp punch unavailable"));
@@ -507,8 +526,11 @@ void CallStack::BindTestMediaPathOnOwner(ICallMediaTransport* transport, IDialRe
   if (media_plane_) {
     media_plane_->BindTestMediaPath(transport);
   }
-  if (MeshMediaPlane* shared = mesh_media()) {
-    shared->BindTestPath(dial, circuit_reach, relay);
+  if (MeshConnectivity* shared = connectivity()) {
+    shared->BindTestPath(dial, circuit_reach);
+  }
+  if (MeshMediaRelay* relay_host = media_relay()) {
+    relay_host->BindTestRelay(relay);
   }
   BindMediaProducts();
 }
@@ -591,7 +613,7 @@ bool CallStack::IsConnectWorkerInflight() const {
 }
 
 std::shared_ptr<const MeshLocalView> CallStack::LocalMeshView() const {
-  MeshMediaPlane* shared = mesh_media();
+  MeshConnectivity* shared = connectivity();
   return shared ? shared->LocalView() : std::make_shared<const MeshLocalView>();
 }
 
@@ -706,7 +728,7 @@ void CallStack::ReleaseOnOwner() {
   PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   mobility_wake_.Disarm();
   DetachMeshMedia();
-  if (MeshMediaPlane* shared = mesh_media()) {
+  if (MeshConnectivity* shared = connectivity()) {
     shared->SetOnRelayChosen({});
     shared->SetSignalingPunch({});
   }
