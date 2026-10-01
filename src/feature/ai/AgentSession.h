@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/messaging/AtAiParser.h"
+#include "domain/ai/BriefAiClient.h"
 #include "domain/ai/ToolRegistry.h"
 #include "domain/ai/TurnPlan.h"
 #include "domain/ai/TurnTrace.h"
@@ -9,6 +10,7 @@
 #include "foundation/data/Config.h"
 #include "foundation/data/ToolPermissions.h"
 #include "common/Error.h"
+#include "feature/ai/BriefTurnRunner.h"
 #include "feature/ai/ParkedApproval.h"
 #include "feature/ai/TurnExecutor.h"
 
@@ -30,6 +32,7 @@ using ToolPermissionsSaveFn = std::function<Roe<void>(const ToolPermissionsPrefs
 enum class AgentEventType {
   LoadingChanged,
   ToolActivity,
+  AssistantDelta, // text = accumulated streamed text so far
   AssistantReady,
   Error,
 };
@@ -48,6 +51,8 @@ struct AgentEvent {
   AtAiMode shared_ai_mode = AtAiMode::None;
   ResponseGoal response_goal = ResponseGoal::General;
   RenderMode render_mode = RenderMode::Blocks;
+  std::vector<BriefAiSource> sources; // AssistantReady of a streamed answer
+  bool retryable = false;             // Error
 };
 
 class AgentSession {
@@ -64,6 +69,8 @@ public:
   void SetToolPermissionsSaver(ToolPermissionsSaveFn saver);
   McpClient* PromotedMcp();
   void SetThreadStore(IThreadStore* store);
+  /** Replace the brief_AI stream (tests / fake server); otherwise built from the LLM config in Configure. */
+  void SetBriefAiStream(BriefAiStreamFn fn);
   void Submit(const std::string& user_text, std::optional<std::string> user_payload = std::nullopt);
   void SubmitToThread(const std::string& thread_id, const std::string& user_text,
                       std::optional<std::string> user_payload = std::nullopt);
@@ -97,6 +104,11 @@ private:
   static void ConfigureOnIO(const std::shared_ptr<Impl>& state);
   static void StartTurn(const std::shared_ptr<Impl>& state);
   static void RunTurnPipeline(const std::shared_ptr<Impl>& state);
+  static bool UseBriefStream(const std::shared_ptr<Impl>& state);
+  static void StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vector<BriefAiHistoryTurn> history,
+                              std::string summary);
+  static void EmitStreamedAnswer(const std::shared_ptr<Impl>& state, const std::string& text,
+                                 const std::string& finish_reason, const std::vector<BriefAiSource>& sources);
   static Roe<TurnPlan> ResolveTurnPlan(const std::shared_ptr<Impl>& state);
   static void ContinueAfterExecution(const std::shared_ptr<Impl>& state);
   static void RunSynthesisStep(const std::shared_ptr<Impl>& state);
@@ -126,8 +138,9 @@ private:
   static void PushToolActivity(const std::shared_ptr<Impl>& state, const std::string& tool_name,
                                const std::string& status);
   static void PushAssistantReady(const std::shared_ptr<Impl>& state, const std::string& entry_id,
-                                 const std::string& text, const std::string& finish_reason);
-  static void PushError(const std::shared_ptr<Impl>& state, const std::string& message);
+                                 const std::string& text, const std::string& finish_reason,
+                                 std::vector<BriefAiSource> sources = {});
+  static void PushError(const std::shared_ptr<Impl>& state, const std::string& message, bool retryable = false);
   static void PushError(const std::shared_ptr<Impl>& state, const Error& err);
   static void FinishTurn(const std::shared_ptr<Impl>& state);
   static void RefreshCompactionService(const std::shared_ptr<Impl>& state);

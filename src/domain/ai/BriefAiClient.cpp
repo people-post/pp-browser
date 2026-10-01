@@ -25,7 +25,8 @@ bool IsTerminal(BriefAiEvent::Type type) {
 
 } // namespace
 
-BriefAiClient::BriefAiClient(LlmConfig config) : config_(std::move(config)) {
+BriefAiClient::BriefAiClient(LlmConfig config, std::string stream_url)
+    : config_(std::move(config)), stream_url_(std::move(stream_url)) {
   redirectLogger("BriefAiClient");
 }
 
@@ -133,7 +134,7 @@ Roe<BriefAiOutcome> BriefAiClient::Stream(const BriefAiRequest& request,
                                           const std::function<void(const BriefAiEvent&)>& on_event,
                                           const std::atomic<bool>& cancel) const {
   SseRequest sse;
-  sse.url = config_.base_url + std::string(kStreamPath);
+  sse.url = stream_url_.empty() ? config_.base_url + std::string(kStreamPath) : stream_url_;
   sse.bearer_token = config_.api_key;
   sse.json_body = BuildRequestJson(request);
   log().debug << "stream " << sse.url;

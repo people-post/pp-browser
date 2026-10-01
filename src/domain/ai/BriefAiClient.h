@@ -53,7 +53,8 @@ public:
   // Stream endpoint relative to LlmConfig::base_url. The gateway path is not final (contract §十二 P3).
   static constexpr std::string_view kStreamPath = "/pp/chat/stream";
 
-  explicit BriefAiClient(LlmConfig config);
+  // `stream_url` overrides base_url + kStreamPath (dev: a local fake server).
+  explicit BriefAiClient(LlmConfig config, std::string stream_url = {});
 
   // Blocks until the stream ends; `on_event` runs on the calling thread, in stream order.
   // A stream that ends without done/handoff/error is an "answer interrupted" HttpError.
@@ -66,6 +67,7 @@ public:
 
 private:
   LlmConfig config_;
+  std::string stream_url_;
 };
 
 } // namespace pbr

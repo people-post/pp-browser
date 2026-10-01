@@ -36,6 +36,11 @@ std::string BriefLlmBaseUrl() {
   return std::string(BriefOrigin()) + "/api/llm/v1";
 }
 
+std::string BriefStreamUrlOverride() {
+  const char* value = std::getenv("PP_BROWSER_BRIEF_STREAM_URL");
+  return value ? std::string(value) : std::string();
+}
+
 std::string BriefRelayBaseUrl() {
   return std::string(BriefOrigin()) + "/api/relay";
 }

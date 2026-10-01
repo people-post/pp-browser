@@ -29,7 +29,9 @@
 #include "common/Utilities.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
+#include "foundation/platform/DeploymentProfile.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "foundation/runtime/AppVersion.h"
 
 #include <atomic>
 #include <chrono>
@@ -89,6 +91,8 @@ struct AgentSession::Impl : public Module {
 
   AppConfig config;
   std::unique_ptr<LlmClient> llm;
+  BriefAiStreamFn brief_stream;          // built in ConfigureOnIO
+  BriefAiStreamFn brief_stream_override; // SetBriefAiStream; wins over brief_stream
   McpRuntime mcp;
   ToolRegistry tools;
   Conversation conversation;
@@ -135,7 +139,8 @@ void AgentSession::PushToolActivity(const std::shared_ptr<Impl>& state, const st
 }
 
 void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const std::string& entry_id,
-                                      const std::string& text, const std::string& finish_reason) {
+                                      const std::string& text, const std::string& finish_reason,
+                                      std::vector<BriefAiSource> sources) {
   PushEvent(state, AgentEvent{.type = AgentEventType::AssistantReady,
                               .text = text,
                               .entry_id = entry_id,
@@ -144,11 +149,12 @@ void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const 
                               .scoped_assist = state->turn_mode == AgentTurnMode::ScopedAssist,
                               .shared_ai_mode = state->assist_mode,
                               .response_goal = state->turn_plan.response_goal,
-                              .render_mode = state->turn_plan.render_mode});
+                              .render_mode = state->turn_plan.render_mode,
+                              .sources = std::move(sources)});
 }
 
-void AgentSession::PushError(const std::shared_ptr<Impl>& state, const std::string& message) {
-  PushEvent(state, AgentEvent{.type = AgentEventType::Error, .message = message});
+void AgentSession::PushError(const std::shared_ptr<Impl>& state, const std::string& message, const bool retryable) {
+  PushEvent(state, AgentEvent{.type = AgentEventType::Error, .message = message, .retryable = retryable});
 }
 
 void AgentSession::PushError(const std::shared_ptr<Impl>& state, const Error& err) {
@@ -700,6 +706,95 @@ void AgentSession::RunTurnPipeline(const std::shared_ptr<Impl>& state) {
   ContinueAfterExecution(state);
 }
 
+bool AgentSession::UseBriefStream(const std::shared_ptr<Impl>& state) {
+  if (state->turn_mode == AgentTurnMode::ScopedAssist) {
+    return false;
+  }
+  if (state->pending_user_payload && !state->pending_user_payload->empty()) {
+    return false;
+  }
+  if (!state->brief_stream && !state->brief_stream_override) {
+    return false;
+  }
+  return ResolvePreset(state->config) == "brief";
+}
+
+void AgentSession::EmitStreamedAnswer(const std::shared_ptr<Impl>& state, const std::string& text,
+                                      const std::string& finish_reason, const std::vector<BriefAiSource>& sources) {
+  state->turn_plan = TurnPlan{};
+  state->turn_plan.render_mode = RenderMode::Markdown;
+
+  if (state->turn_mode == AgentTurnMode::Conversation) {
+    state->coordinator.CompleteTurn(state->conversation, state->pending_entry_id, text);
+    PushAssistantReady(state, state->pending_entry_id, text, finish_reason, sources);
+    return;
+  }
+
+  std::string assistant_message_id;
+  const std::string thread_id = state->pending_thread_id;
+  PersistAssistantToThread(state, text, &assistant_message_id);
+  PushAssistantReady(state, assistant_message_id, text, finish_reason, sources);
+  if (state->turn_mode == AgentTurnMode::Thread && state->compaction && !thread_id.empty()) {
+    state->compaction->MaybeCompactAsync(thread_id);
+  }
+}
+
+void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vector<BriefAiHistoryTurn> history,
+                                   std::string summary) {
+  state->turn_trace = TurnTrace{};
+  state->turn_trace.turn_id = util::GenerateUuid();
+  state->turn_trace.entry_id = state->pending_entry_id;
+  state->turn_trace.thread_id = state->pending_thread_id;
+
+  BriefAiRequest request;
+  request.message = state->pending_user_text;
+  request.history = std::move(history); // the client keeps the last 6
+  request.summary = std::move(summary);
+  request.app_version = AppVersionString();
+  for (const ToolDescriptor& tool : state->tools.Tools()) {
+    if (tool.meta.provider == "messaging" || tool.meta.provider == "settings") {
+      request.capabilities.push_back(tool.definition.name);
+    }
+  }
+
+  BriefTurnSinks sinks;
+  sinks.on_delta = [state](const std::string& text) {
+    PushEvent(state, AgentEvent{.type = AgentEventType::AssistantDelta,
+                                .text = text,
+                                .entry_id = state->pending_entry_id,
+                                .thread_id = state->pending_thread_id});
+  };
+  sinks.on_status = [state](const std::string& tool, const std::string& phase, const std::string& /*query*/) {
+    PushToolActivity(state, tool, phase);
+  };
+  sinks.on_done = [state](const std::string& response, const std::string& finish,
+                          const std::vector<BriefAiSource>& sources) {
+    EmitStreamedAnswer(state, response, finish, sources);
+    FinishTurn(state);
+  };
+  sinks.on_handoff = [state]() {
+    state->Log().info << "brief_AI handed the turn back; running the local pipeline";
+    RunTurnPipeline(state);
+  };
+  sinks.on_error = [state](const std::string& message, const bool retryable, const std::string& partial) {
+    state->Log().warning << "brief_AI stream error (retryable=" << retryable << ", partial_chars=" << partial.size() << ")";
+    if (!partial.empty()) {
+      EmitStreamedAnswer(state, partial, "error", {});
+    }
+    PushError(state, message, retryable);
+    FinishTurn(state);
+  };
+  sinks.on_cancelled = [state](const std::string& partial) {
+    if (!partial.empty()) {
+      EmitStreamedAnswer(state, partial, "cancelled", {});
+    }
+    FinishTurn(state);
+  };
+
+  const BriefAiStreamFn& stream = state->brief_stream_override ? state->brief_stream_override : state->brief_stream;
+  BriefTurnRunner::Run(stream, request, state->cancelled, sinks);
+}
+
 void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
   if (state->cancelled || !state->llm) {
     FinishTurn(state);
@@ -751,6 +846,19 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     const ContextBuildResult built = policy.Build(*messages, system_prompt, state->pending_user_text,
                                                   state->pending_user_payload, summary);
     state->turn_scratch = built.messages;
+    if (UseBriefStream(state)) {
+      // Built context is a transcript blob plus a pending user turn; send the real messages instead.
+      std::vector<BriefAiHistoryTurn> history;
+      for (const ThreadMessage& message : *messages) {
+        if (message.id == state->pending_entry_id || message.text.empty()) {
+          continue;
+        }
+        history.push_back(BriefAiHistoryTurn{
+            .role = message.sender_contact_id == kAiAssistantContactId ? "assistant" : "user", .content = message.text});
+      }
+      StreamBriefTurn(state, std::move(history), summary ? summary->text : std::string());
+      return;
+    }
     RunTurnPipeline(state);
     return;
   }
@@ -793,6 +901,16 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
   const TurnSnapshot snapshot =
       state->coordinator.BeginTurn(state->conversation, system_prompt, entry, state->config.context);
   state->turn_scratch = snapshot.messages;
+  if (UseBriefStream(state)) {
+    // Context layout: [system, history..., pending user]; the policy appends the pending user message last.
+    std::vector<BriefAiHistoryTurn> history;
+    for (size_t i = 1; i + 1 < snapshot.messages.size(); ++i) {
+      history.push_back(BriefAiHistoryTurn{.role = snapshot.messages[i].role, .content = snapshot.messages[i].content});
+    }
+    const auto& summary = state->conversation.Summary();
+    StreamBriefTurn(state, std::move(history), summary ? summary->text : std::string());
+    return;
+  }
   RunTurnPipeline(state);
 }
 
@@ -832,6 +950,12 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
       llm_config.require_api_key = true;
     }
     state->llm = std::make_unique<LlmClient>(llm_config);
+    const auto brief_client = std::make_shared<BriefAiClient>(llm_config, BriefStreamUrlOverride());
+    state->brief_stream = [brief_client](const BriefAiRequest& request,
+                                         const std::function<void(const BriefAiEvent&)>& on_event,
+                                         const std::atomic<bool>& cancel) {
+      return brief_client->Stream(request, on_event, cancel);
+    };
 
     const AppConfig defaults = Config::DefaultAppConfig();
     McpClient::SetHttpPost([](const std::string& url, const std::string& body,
@@ -907,6 +1031,10 @@ void AgentSession::Configure(const AppConfig& config) {
 
 void AgentSession::SetToolRegistrationHook(ToolRegistrationHook hook) {
   impl_->tool_registration_hook = std::move(hook);
+}
+
+void AgentSession::SetBriefAiStream(BriefAiStreamFn fn) {
+  impl_->brief_stream_override = std::move(fn);
 }
 
 void AgentSession::SetToolPermissions(ToolPermissionsPrefs permissions) {

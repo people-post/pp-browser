@@ -2584,6 +2584,8 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
     ShellSetActivity(true, chat_.status);
     DirtyChatChrome();
     break;
+  case AgentEventType::AssistantDelta:
+    break; // streamed text is rendered by a later change
   case AgentEventType::AssistantReady:
     FinishAssistantReply(event.entry_id, event.text, !StructuredTextParser::IsBlocksJsonDocument(event.text),
                          event.finish_reason, event.thread_id, event.response_goal, event.render_mode,
