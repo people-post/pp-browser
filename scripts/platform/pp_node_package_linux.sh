@@ -7,7 +7,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 BUILD_DIR="${PP_NODE_BUILD_DIR:-${ROOT}/build-pp-node}"
 OUT_DIR="${PP_NODE_OUT_DIR:-${ROOT}/dist/pp-node}"
-RELEASE_VERSION="${PP_BROWSER_RELEASE_VERSION:-${PP_BROWSER_VERSION:-dev}}"
+# Defaults come from CMakeLists.txt (the one place versions are set); CMake's
+# project() needs a numeric PP_BROWSER_VERSION, so there is no "dev" fallback.
+cmake_default() {
+  sed -n "s/^set($1 \"\([^\"]*\)\".*/\1/p" "${ROOT}/CMakeLists.txt" | head -1
+}
+RELEASE_VERSION="${PP_BROWSER_RELEASE_VERSION:-${PP_BROWSER_VERSION:-$(cmake_default PP_BROWSER_RELEASE_VERSION)}}"
+PROJECT_VERSION="${PP_BROWSER_VERSION:-${RELEASE_VERSION%%-*}}"
 JOBS="${PP_NODE_JOBS:-$(nproc 2>/dev/null || echo 2)}"
 
 usage() {
@@ -20,7 +26,8 @@ Usage: $(basename "$0") [configure|build|package|all]
   all        configure + build + package (default)
 
 Environment:
-  PP_BROWSER_VERSION / PP_BROWSER_RELEASE_VERSION  version strings
+  PP_BROWSER_VERSION / PP_BROWSER_RELEASE_VERSION  version strings (default:
+                      the values in CMakeLists.txt)
   PP_NODE_BUILD_DIR   build tree (default: ./build-pp-node)
   PP_NODE_OUT_DIR     output dir (default: ./dist/pp-node)
   PP_NODE_JOBS        parallel compile jobs
@@ -46,7 +53,7 @@ do_configure() {
     -DPP_BROWSER_HEADLESS=ON \
     -DPP_BROWSER_BUILD_TESTS=OFF \
     -DPP_BROWSER_COMPILER_CACHE=ON \
-    -DPP_BROWSER_VERSION="${PP_BROWSER_VERSION:-${RELEASE_VERSION%%-*}}" \
+    -DPP_BROWSER_VERSION="${PROJECT_VERSION}" \
     -DPP_BROWSER_RELEASE_VERSION="${RELEASE_VERSION}"
 }
 

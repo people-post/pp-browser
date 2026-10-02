@@ -141,11 +141,19 @@ free_hop_ports() {
 }
 
 ensure_docker_context() {
-  if [[ ! -f "${DOCKER_CONTEXT}/Dockerfile" ]]; then
-    die "missing ${DOCKER_CONTEXT}/Dockerfile
-Package the node image first (Ubuntu 24.04 family):
-  PP_BROWSER_RELEASE_VERSION=0.0.0-local bash scripts/platform/pp_node_package_linux.sh all"
+  if [[ -f "${DOCKER_CONTEXT}/Dockerfile" ]]; then
+    return 0
   fi
+  # A fresh checkout has no packaged context: stage it from the desktop build
+  # (pp-node + Dockerfile + config is all the image needs).
+  if [[ -x "${DESKTOP_NODE}" ]]; then
+    echo "no packaged hop context; staging it from ${DESKTOP_NODE}"
+    stage_hop_binary_if_newer
+    return 0
+  fi
+  die "missing ${DOCKER_CONTEXT}/Dockerfile and ${DESKTOP_NODE}
+Build pp-node in ${BUILD_DIR}, or package the node image (Ubuntu 24.04 family):
+  bash scripts/platform/pp_node_package_linux.sh all"
 }
 
 cmake_build_probes() {
