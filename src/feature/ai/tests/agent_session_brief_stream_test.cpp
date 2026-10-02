@@ -85,13 +85,7 @@ protected:
   void Start(const std::string& preset = "brief") {
     session_ = std::make_unique<AgentSession>();
     session_->Configure(MakeConfig(preset));
-    // WaitForConfigureIdle() alone can return before the posted ConfigureOnIO has started (the in-flight counter is
-    // bumped on the worker), so wait for IsConfigured() first.
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (!session_->IsConfigured() && std::chrono::steady_clock::now() < deadline) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-    session_->WaitForConfigureIdle();
+    session_->WaitForConfigureIdle(); // Configure() counts the run before posting it, so this is enough
     ASSERT_TRUE(session_->IsConfigured());
   }
 
