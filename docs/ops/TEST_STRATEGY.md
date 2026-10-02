@@ -194,7 +194,9 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 ./scripts/test/pp_local_test.sh clear               # down -v + ready-file
 ```
 
-`run` leaves the hop up unless `--down`. Package `dist/pp-node/docker` before `up` / `node` (`scripts/platform/pp_node_package_linux.sh all`).
+`run` leaves the hop up unless `--down`. The hop image is built from `dist/pp-node/docker`; when that is missing (fresh checkout) `up` / `run` stage it from the desktop `build/src/app/node/pp-node`, and they restage whenever the desktop binary is newer. `scripts/platform/pp_node_package_linux.sh all` (stripped Ubuntu 24.04 build) still works and is what release CI uses.
+
+Probes dial the hop at a **private / loopback** address from `/status` `listen_addrs` (its Docker network address) when the status URL is local: the hop ranks a public address learned from an internet seed first, which probes on the same host usually cannot reach (no NAT hairpin). Set `PP_NODE_HOP_MULTIADDR` to dial a specific hop address.
 
 ---
 
