@@ -29,6 +29,7 @@
 #include "common/Utilities.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/DeploymentProfile.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/runtime/AppVersion.h"
@@ -323,7 +324,7 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
       std::lock_guard lock(state->park_mutex);
       state->parked_approval.reset();
     }
-    append_decision_user(decision_label.empty() ? "Deny" : decision_label);
+    append_decision_user(decision_label.empty() ? Tr("chat.permission.deny") : decision_label);
     ValidateAndFinishAssistant(state, BuildToolPermissionDeniedBlocks(park.offered_tools), "stop", false);
     return;
   }
@@ -358,7 +359,7 @@ void AgentSession::ResumeToolPermissionOnWorker(const std::shared_ptr<Impl>& sta
   }
 
   append_decision_user(decision_label.empty()
-                           ? (decision == "allow_always" ? "Always allow" : "Allow once")
+                           ? Tr(decision == "allow_always" ? "chat.permission.allow_always" : "chat.permission.allow_once")
                            : decision_label);
 
   const auto on_activity = [state](const std::string& tool_name, const std::string& status) {
