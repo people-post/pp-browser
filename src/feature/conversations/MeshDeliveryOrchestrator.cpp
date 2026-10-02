@@ -138,6 +138,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
   receive_pipeline_ =
       std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_, group_roster_,
                                              invite_gate);
+  receive_pipeline_->SetContactTrust(&contacts_);
   // Blob + chat/history: Amp single entry ([A020] / D10). May also AttachAmpTransports later.
   if (amp_links) {
     AttachAmpTransports(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io),
@@ -2288,21 +2289,25 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, st
   }
   DetachAmpTransports();
   amp_links_ = amp_links;
+  if (address_disclosure_) {
+    people_links_ = std::make_unique<DisclosureGatedPeerLinks>(*amp_links_, *address_disclosure_);
+  }
+  IChatPeerLinks& people = people_links_ ? static_cast<IChatPeerLinks&>(*people_links_) : *amp_links_;
 
   auto worker = std::move(amp_worker_post);
   if (!worker) {
     worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
   }
 
-  auto blob = std::make_unique<AmpChatBlobTransport>(*amp_links_, amp_io_pump, store_, identity_, worker, amp_post_io,
+  auto blob = std::make_unique<AmpChatBlobTransport>(people, amp_io_pump, store_, identity_, worker, amp_post_io,
                                                      amp_post_after);
   blob->Start();
   peer_blob_ = std::move(blob);
 
-  auto history = std::make_unique<AmpChatHistoryTransport>(*amp_links_, amp_io_pump, store_, identity_, psk_store_,
+  auto history = std::make_unique<AmpChatHistoryTransport>(people, amp_io_pump, store_, identity_, psk_store_,
                                                          worker, amp_post_io, amp_post_after);
   history->Start();
-  auto chat = std::make_unique<AmpDirectChatTransport>(*amp_links_, amp_io_pump, worker, amp_post_io, amp_post_after);
+  auto chat = std::make_unique<AmpDirectChatTransport>(people, amp_io_pump, worker, amp_post_io, amp_post_after);
   chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });
   chat->Start();
   peer_history_ = std::move(history);
@@ -2357,6 +2362,7 @@ void MeshDeliveryOrchestrator::DetachAmpTransports() {
   direct_chat_.reset();
   peer_history_.reset();
   peer_blob_.reset();
+  people_links_.reset();  // after the transports that hold it
   amp_links_ = nullptr;
 }
 

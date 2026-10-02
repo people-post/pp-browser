@@ -13,8 +13,7 @@
 #include "domain/people/ContactTypes.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/platform/ILocalNotifier.h"
-#include "foundation/platform/PlatformUserHints.h"
-#include "foundation/runtime/ProductBranding.h"
+#include "gui/CallStatusHint.h"
 #include "domain/ui/ShellTypes.h"
 #include "feature/calls/CallFunctionalPorts.h"
 #include "domain/messaging/CallLifecycleTypes.h"
@@ -144,17 +143,17 @@ std::string LevelHint(int level, bool remote, bool muted) {
   return Tr("call.level.loud");
 }
 
-std::string ComposeP2pStatusHint(bool missing_mic) {
-  const std::map<std::string, std::string> product{{"product", kProductName}};
-  std::string hint = Tr(PlatformUserHints::P2pNetworkHintKey(), product);
-  if (missing_mic) {
-    const std::string mic = Tr(PlatformUserHints::MicBlockedHintKey());
-    if (!mic.empty()) {
-      if (!hint.empty()) {
-        hint += " ";
-      }
-      hint += mic;
+std::string ComposeP2pStatusHint(bool missing_mic, bool seed_unreachable) {
+  std::string hint;
+  for (const char* key : P2pStatusHintKeys(missing_mic, seed_unreachable)) {
+    const std::string line = Tr(key);
+    if (line.empty()) {
+      continue;
     }
+    if (!hint.empty()) {
+      hint += " ";
+    }
+    hint += line;
   }
   return hint;
 }
@@ -814,7 +813,9 @@ void CallController::RefreshPendingRing() {
       in_call.subtitle = Tr("call.status.couldnt_connect").c_str();
       in_call.status_hint =
           group_call_context ? ComposeGroupCallStatusHint().c_str()
-                             : ComposeP2pStatusHint(backend->P2pConnectMissingMic()).c_str();
+                             : ComposeP2pStatusHint(backend->P2pConnectMissingMic(),
+                                                    backend->P2pConnectSeedUnreachable())
+                                   .c_str();
       in_call.show_invite = false;
     } else if (!activity.empty()) {
       in_call.elapsed = {};

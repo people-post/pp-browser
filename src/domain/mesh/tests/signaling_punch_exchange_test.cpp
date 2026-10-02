@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <functional>
+
 #include <map>
 #include <optional>
 #include <string>
@@ -22,6 +24,7 @@ struct Side {
   std::map<std::string, std::vector<std::string>> registered;
   SignalingPunchExchange::DoneFn pending_burst;
   bool carrier_up = true;
+  std::function<bool(const std::string& sender_key)> may_answer;
 
   void Bind() {
     SignalingPunchExchange::Ports ports;
@@ -45,6 +48,7 @@ struct Side {
     };
     ports.local_candidates = [this]() { return candidates; };
     ports.local_peer_id = [this]() { return peer_id; };
+    ports.may_answer = may_answer;
     exchange.SetPorts(std::move(ports));
   }
 };
@@ -80,6 +84,49 @@ TEST(SignalingPunchExchangeTest, OfferAnswerBurstCompletesTheEpoch) {
   ASSERT_TRUE(result);
   EXPECT_TRUE(*result);
   EXPECT_FALSE(a.exchange.HasPending());
+}
+
+// projects/privacy T1: answering sends our candidates and bursts from our IP — not for a peer the
+// address-disclosure audience leaves out.
+TEST(SignalingPunchExchangeTest, DeclinedPeerGetsNoAnswerAndNoBurst) {
+  Side a;
+  Side b;
+  a.peer_id = "12D3a";
+  b.peer_id = "12D3b";
+  b.candidates = {"/ip4/2.2.2.2/tcp/2"};
+  b.may_answer = [](const std::string& sender_key) { return sender_key == "account:friend"; };
+  a.Bind();
+  b.Bind();
+
+  a.exchange.Request("12D3b", {"/ip4/1.1.1.1/tcp/1"}, [](Roe<void>) {});
+  ASSERT_TRUE(a.sent_offer);
+  EXPECT_FALSE(b.exchange.OnOffer(*a.sent_offer, "account:a"));
+  EXPECT_FALSE(b.sent_answer) << "our candidates went to a declined peer";
+  EXPECT_TRUE(b.bursts.empty()) << "we burst toward a declined peer";
+  EXPECT_TRUE(b.registered.empty());
+
+  EXPECT_TRUE(b.exchange.OnOffer(*a.sent_offer, "account:friend"));
+  EXPECT_TRUE(b.sent_answer);
+}
+
+// PR 249 review: the offer's peer_id is self-declared. A stranger naming a contact's PeerId gets no
+// answer, no burst, and does not overwrite that contact's listen addresses.
+TEST(SignalingPunchExchangeTest, AClaimedPeerIdDoesNotGetAStrangerAnAnswer) {
+  Side stranger;
+  Side b;
+  stranger.peer_id = "12D3friend";  // the contact's PeerId, claimed
+  b.peer_id = "12D3b";
+  b.candidates = {"/ip4/2.2.2.2/tcp/2"};
+  b.may_answer = [](const std::string& sender_key) { return sender_key == "account:friend"; };
+  stranger.Bind();
+  b.Bind();
+
+  stranger.exchange.Request("12D3b", {"/ip4/6.6.6.6/tcp/6"}, [](Roe<void>) {});
+  ASSERT_TRUE(stranger.sent_offer);
+  EXPECT_FALSE(b.exchange.OnOffer(*stranger.sent_offer, "account:stranger"));
+  EXPECT_FALSE(b.sent_answer);
+  EXPECT_TRUE(b.bursts.empty());
+  EXPECT_TRUE(b.registered.empty()) << "the contact's listen addresses were overwritten";
 }
 
 TEST(SignalingPunchExchangeTest, NewRequestSupersedesAndStaleAnswersAreIgnored) {

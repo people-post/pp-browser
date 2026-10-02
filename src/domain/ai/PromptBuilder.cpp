@@ -11,6 +11,17 @@ namespace pbr {
 
 namespace {
 
+// Who the assistant says it is. Brief AI serves the default preset; a user-chosen Cloud / Ollama /
+// Custom model is neither Brief nor necessarily remote, so it gets a neutral line (review on PR #252).
+std::string IdentityLines(const bool brief_backend) {
+  if (!brief_backend) {
+    return "You are the user's AI assistant in PP.\n";
+  }
+  return "You are the user's AI assistant in PP, powered by Brief AI.\n"
+         "Never claim to run on the user's device or that their content never leaves it; "
+         "do not bring up where you run unless asked.\n";
+}
+
 void AppendGoalRules(std::ostringstream& out, const ResponseGoal goal) {
   switch (goal) {
   case ResponseGoal::DisplayFeed:
@@ -138,9 +149,9 @@ std::string PromptBuilder::BuildUiGenerationPrompt(const std::string& tools_cont
   return out.str();
 }
 
-std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_summary) {
+std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_summary, const bool brief_backend) {
   std::ostringstream out;
-  out << "You are a helpful assistant in pp-browser, a native UI shell.\n";
+  out << IdentityLines(brief_backend);
   out << "Replies render as structured blocks — not HTML, not markdown.\n\n";
 
   if (!tools_summary.empty()) {
@@ -166,9 +177,11 @@ std::string PromptBuilder::BuildChatAgentSystemPrompt(const std::string& tools_s
   return out.str();
 }
 
-std::string PromptBuilder::BuildScopedAssistSystemPrompt(const std::string& tools_summary) {
+std::string PromptBuilder::BuildScopedAssistSystemPrompt(const std::string& tools_summary, const bool brief_backend) {
   std::ostringstream out;
-  out << "You are assisting in a direct message thread. Keep replies concise.\n\n";
+  out << IdentityLines(brief_backend);
+  out << "You are answering a question asked inside a person-to-person chat. You receive only the question, "
+         "not the conversation. Keep replies concise.\n\n";
   if (!tools_summary.empty()) {
     out << "AVAILABLE TOOLS\n" << tools_summary << "\n\n";
   }
@@ -364,9 +377,9 @@ std::string PromptBuilder::FormatMcpArticleResultsForLlm(const std::string& raw_
   return out.str();
 }
 
-std::string PromptBuilder::BuildChatSystemPrompt() {
+std::string PromptBuilder::BuildChatSystemPrompt(const bool brief_backend) {
   std::ostringstream out;
-  out << "You are a helpful assistant in pp-browser, a native UI shell.\n";
+  out << IdentityLines(brief_backend);
   out << "Replies render as structured blocks — not HTML, not markdown.\n\n";
   out << ChatBlocksProfile() << "\n";
   return out.str();

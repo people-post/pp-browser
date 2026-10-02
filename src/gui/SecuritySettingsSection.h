@@ -9,6 +9,7 @@
 namespace pbr {
 
 std::string GroupInvitePolicyDisplayLabel(const std::string& policy);
+std::string CallInvitePolicyDisplayLabel(const std::string& policy);
 
 class SecuritySettingsSection final : public SettingsSectionHandler {
 public:

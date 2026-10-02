@@ -1,7 +1,9 @@
 #include "feature/ai/ToolPermissionPrompt.h"
 
 #include "common/ValueJson.h"
+#include "foundation/i18n/LocalizationService.h"
 
+#include <map>
 #include <sstream>
 #include "common/PbrCompat.h"
 
@@ -41,26 +43,24 @@ Object DecisionPayload(const std::string& approval_id, const std::string& decisi
 std::string BuildToolPermissionChoiceBlocks(const std::string& approval_id,
                                             const std::vector<PlannedToolCall>& offered_tools) {
   const std::string names = DescribeTools(offered_tools);
-  std::string prompt = "Allow the assistant to run ";
-  prompt += offered_tools.size() == 1 ? "this action" : "these actions";
-  prompt += " that can change your data";
-  if (!names.empty()) {
-    prompt += " (" + names + ")";
-  }
-  prompt += "?";
+  // Each catalog owns its punctuation around the tool names (CJK uses full-width brackets).
+  const std::string base = offered_tools.size() == 1 ? "chat.permission.prompt_one" : "chat.permission.prompt_many";
+  const std::string prompt = names.empty() ? Tr(base) : Tr(base + "_named", {{"names", names}});
 
   Object paragraph;
   paragraph.set("type", "paragraph");
-  paragraph.set("text", "I need your permission before changing contacts, chats, or identity settings.");
+  paragraph.set("text", Tr("chat.permission.intro"));
 
+  const std::string allow_once = Tr("chat.permission.allow_once");
+  const std::string allow_always = Tr("chat.permission.allow_always");
+  const std::string deny = Tr("chat.permission.deny");
   Object choice;
   choice.set("type", "choice");
   choice.set("prompt", prompt);
   choice.set("options",
-             ArrayValue({ObjectValue(Option("Allow once", "Allow once", DecisionPayload(approval_id, "allow_once"))),
-                         ObjectValue(Option("Always allow", "Always allow",
-                                            DecisionPayload(approval_id, "allow_always"))),
-                         ObjectValue(Option("Deny", "Deny", DecisionPayload(approval_id, "deny")))}));
+             ArrayValue({ObjectValue(Option(allow_once, allow_once, DecisionPayload(approval_id, "allow_once"))),
+                         ObjectValue(Option(allow_always, allow_always, DecisionPayload(approval_id, "allow_always"))),
+                         ObjectValue(Option(deny, deny, DecisionPayload(approval_id, "deny")))}));
 
   Object root;
   root.set("blocks", ArrayValue({ObjectValue(std::move(paragraph)), ObjectValue(std::move(choice))}));
@@ -69,9 +69,8 @@ std::string BuildToolPermissionChoiceBlocks(const std::string& approval_id,
 
 std::string BuildToolPermissionDeniedBlocks(const std::vector<PlannedToolCall>& offered_tools) {
   const std::string names = DescribeTools(offered_tools);
-  std::string text = "Okay — I won't run ";
-  text += names.empty() ? "those actions" : names;
-  text += ".";
+  const std::string text =
+      Tr("chat.permission.denied", {{"names", names.empty() ? Tr("chat.permission.those_actions") : names}});
   Object paragraph;
   paragraph.set("type", "paragraph");
   paragraph.set("text", text);
@@ -81,11 +80,8 @@ std::string BuildToolPermissionDeniedBlocks(const std::vector<PlannedToolCall>& 
 }
 
 std::string BuildToolPermissionStaleBlocks(const std::string& reason_code) {
-  std::string text = "That permission prompt is no longer active";
-  if (!reason_code.empty()) {
-    text += " (" + reason_code + ")";
-  }
-  text += ". Ask again if you still want this.";
+  const std::string text = reason_code.empty() ? Tr("chat.permission.stale")
+                                               : Tr("chat.permission.stale_reason", {{"reason", reason_code}});
   Object callout;
   callout.set("type", "callout");
   callout.set("variant", "info");

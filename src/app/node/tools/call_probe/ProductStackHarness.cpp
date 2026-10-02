@@ -1,4 +1,5 @@
 #include "app/node/tools/call_probe/ProductStackHarness.h"
+#include "domain/people/ContactAddressDisclosure.h"
 #include "feature/calls/LocalNetworkReaction.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
 
@@ -37,6 +38,11 @@
 namespace pbr {
 namespace call_probe {
 namespace {
+
+std::optional<DirectAudience>& DirectConnectionsOverride() {
+  static std::optional<DirectAudience> audience;  // set once from the command line, before Create
+  return audience;
+}
 
 ByteVector ProbeDek() {
   ByteVector dek(kDataEncryptionKeySize);
@@ -87,6 +93,7 @@ Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
   harness->shared_session_key_ = SharedSessionKey();
 
   harness->host_ = std::make_unique<MeshHost>();
+  harness->host_->SetAddressDisclosure(&harness->address_disclosure_);
   // Own MeshPump like the product: with the main thread as sole Amp driver, any main-thread wait
   // on work that needs mesh progress (capture send, parked worker) deadlocked (hard-w5 hang).
   if (auto attached = harness->host_->AttachAmpStack(std::move(stack), harness->advertise_ma_,
@@ -124,6 +131,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     return store_dek.error();
   }
   contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
+  contacts_->SetOnChanged([this]() { PublishAddressDisclosure(); });
   identity_ = std::make_unique<IdentityStore>(data_dir_.string(), "call-probe");
   if (auto dek = identity_->SetDek(ProbeDek()); !dek) {
     return dek.error();
@@ -141,6 +149,16 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
 
   app_config_ = AppConfig{};
   NormalizeMeshConfig(app_config_.mesh);
+  // NAT scenarios test traversal: the answerer never learns the offerer's identity up front, so the
+  // probe discloses to everyone unless a scenario narrows it (projects/privacy T1 lab checks).
+  app_config_.mesh.direct_connections = DirectAudience::Everyone;
+  if (DirectConnectionsOverride()) {
+    app_config_.mesh.direct_connections = *DirectConnectionsOverride();
+  } else if (const char* audience = std::getenv("PP_PROBE_DIRECT_CONNECTIONS")) {
+    if (auto parsed = DirectAudienceFromName(audience)) {
+      app_config_.mesh.direct_connections = *parsed;
+    }
+  }
   if (!hop_ma.empty()) {
     app_config_.mesh.bootstrap_peers = {hop_ma};
   }
@@ -163,7 +181,9 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
 
   ui_ = std::make_unique<CallUiBackend>(*stack_);
 
+  PublishAddressDisclosure();
   CallStackDeps deps;
+  deps.address_disclosure = &address_disclosure_;
   deps.store = store_.get();
   deps.contacts = contacts_.get();
   deps.identity = identity_.get();
@@ -283,6 +303,25 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   std::cout << "ok  product-stack CallStack+CallUiBackend wired account=" << local_account_
             << " peer_id=" << local_peer_id_ << "\n";
   return {};
+}
+
+bool ProductStackHarness::SetDirectConnectionsOverride(const std::string& audience) {
+  const auto parsed = DirectAudienceFromName(audience);
+  if (!parsed) {
+    return false;
+  }
+  DirectConnectionsOverride() = parsed;
+  return true;
+}
+
+void ProductStackHarness::PublishAddressDisclosure() {
+  std::vector<Contact> book;
+  if (contacts_) {
+    if (auto listed = contacts_->List()) {
+      book = std::move(*listed);
+    }
+  }
+  address_disclosure_.Publish(BuildAddressDisclosurePolicy(app_config_.mesh.direct_connections, book));
 }
 
 Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,

@@ -2,57 +2,36 @@
 # Wave 5 CGNAT-ish: dual SNAT peers + public hop.
 #
 # N-HARD-CGNAT-ISH     — topology asserts (A↛B, hop↛peer-private, peers→hop via SNAT)
-# B-HARD-CALL-NAT      — Phase-1: forced nested circuit (--via-hop --peer-id-only)
-# (Phase-2 PRODUCT / Phase-3 DIRTY retired: they ran probe-local copies of the reach logic;
-#  COLD / COLD-DIRTY / COLD-AWAIT drive the product PeerReachCoordinator instead.)
-# B-HARD-CALL-NAT-STACK   — Phase-4: Invite/Accept control + dirty-book media (--product-stack)
-# B-HARD-CALL-NAT-COLD    — Phase-5: product stack, signaling via /share (relay-inbox stand-in),
-#                           so media reach starts with NO peer link: offerer PeerReachCoordinator
-#                           Reach (seed park → circuit), answerer Await (punch, wait for circuit)
-# B-HARD-CALL-NAT-COLD-DIRTY — Phase-6: as COLD with the answerer's private MA in the offerer's
-#                           dial book and one forced dial miss (backoff left armed) — H010: park
-#                           before the private dial, then skip it; the product heals the backoff
-# B-HARD-CALL-NAT-COLD-AWAIT — Phase-7: as COLD with the offerer's uplink delayed, so the
-#                           answerer's media starts before the offerer's circuit lands and its
-#                           Await reach runs cold (dogfood: answerer waiting on the caller)
-# B-HARD-CALL-NAT-UPGRADE — Phase-9 (call-path-resilience k7): gateways switched to cone NAT and
-#                           the gateway↔gateway path blocked, so the call starts relayed; the path
+# One scenario per major purpose; what distinguishes the retired siblings is pinned in gtests
+# (packaging/pp-node/HARD_LAB.md § Retired scenarios).
+# B-HARD-CALL-NAT-STACK   — Invite/Accept control over Amp chat across SNAT + dirty-book media
+#                           (--product-stack): the one phase whose call control rides real chat
+# B-HARD-CALL-NAT-COLD-DIRTY — cold relayed reach (signaling via /share, no peer link at start):
+#                           offerer PeerReachCoordinator Reach with the answerer's private MA in its
+#                           dial book and one forced dial miss — H010: park before the private dial,
+#                           then skip it; the product heals the backoff
+# B-HARD-CALL-NAT-COLD-AWAIT — as cold with the offerer's uplink delayed, so the answerer's media
+#                           starts before the offerer's circuit lands and its Await reach runs cold
+# B-HARD-CALL-NAT-UPGRADE — cone NAT, gateway↔gateway blocked: the call starts relayed; the path
 #                           opens, the offerer's direct-upgrade punch moves the live call onto it
-#                           (make-before-break); then the direct path is blackholed mid-call and
-#                           the call must fail over to its warm relayed standby with audio flowing
-# B-HARD-CALL-NAT-PUNCH   — Phase-10 (k7): cone NAT, nothing blocked: the call-start punch lands and
-#                           media rides the punched link. Both ends dialing produces two
-#                           associations; the dual-dial election may drop the one the call bound
-#                           first — the call must move to the winner without ever showing
-#                           Reconnecting, and never fall back to the relay
-# B-HARD-CALL-NAT-FLIP    — Phase-11 (k5/k6): cone NAT; the call starts direct (call-start punch)
-#                           and keeps a relayed standby (K003); then peer-a moves to another private
-#                           address mid-call (a phone changing network: new NAT mapping, the direct
-#                           path dies). Its NetworkMonitor sees the change, Amp drops the dead link
-#                           (network-changed) and the call fails over onto the standby — never
-#                           Reconnecting
-# B-HARD-CALL-NAT-MOBILE  — Phase-12 (k6): cone NAT (a punch would land), the offerer pinned
-#                           `--mobility mobile`: the pair anchors on the relay — the answerer awaits
-#                           the circuit without punching (it learned the class from the invite's
-#                           caps), the offerer never punches for an upgrade, media stays relayed
-# B-HARD-GROUP-CALL-NAT   — Phase-13: group call, three peers each behind its own symmetric NAT
-#                           (peer-c/gw-c). A invites B and C over /share signaling; B accepts at once
-#                           (N=2: 1:1 cold reach), C later (N=3): the initiator SoftMigrates onto the
-#                           hop's media_relay and fans out CallSfuAttach; B and C attach. Every side
-#                           must decode each other publisher (per-stream window gate), then C leaves
-#                           and A↔B keep audio until A's Leave ends the call
-# B-HARD-GROUP-ADJUST-NAT — Phase-14 (V050 gt4): as Phase-13 with a second hop; C's probe is blocked
-#                           from hop1 at gw-c, so its CallAccept reports the planned hop (hop1)
-#                           unreachable and the initiator makes the one adjustment: the group forms
-#                           on hop2
-# B-HARD-GROUP-MOVE-NAT   — Phase-15 (V050 gt5): A, B, C form on hop1; A invites D (a second probe in
-#                           peer-c, blocked from hop1) mid-call — D's attach fails, the owner moves the
-#                           whole group to hop2 once and B, C follow; four-way audio, then everyone
-#                           leaves (initiator first)
+#                           (make-before-break); the direct path is blackholed mid-call and the call
+#                           fails over to its warm relayed standby with audio flowing
+# B-HARD-CALL-NAT-FLIP    — cone NAT: the call starts on a punched link with a relayed standby
+#                           (K003); peer-a moves to another private address mid-call (a phone
+#                           changing network); NetworkMonitor + Amp drop the dead link and the call
+#                           fails over onto the standby — never Reconnecting
+# B-HARD-CALL-NAT-PRIVATE — policy keeps a landable punch relayed: cone NAT, the answerer on
+#                           `--direct-connections contacts` and the offerer not its contact (a
+#                           stranger's call, projects/privacy T1): relay-only reach, the offerer's
+#                           punches declined, never a direct path, audio both ways
+# B-HARD-GROUP-MOVE-NAT   — (V050 gt5) A, B, C form on hop1; A invites D (blocked from hop1)
+#                           mid-call — D's attach fails, the owner moves the whole group to hop2
+#                           once and B, C follow; four-way audio, then everyone leaves
+# B-HARD-BCAST-NAT        — broadcaster behind NAT, two viewers: ticket via circuit, hop media_relay
 # Cold phases also require >= COLD_MIN_RX audio frames received on BOTH sides.
 #
-# NAT: gateways default to symmetric mapping (punching can never land, so the phases above stay
-# relay-shaped); the upgrade phase flips them to cone and back (hard-gw-entrypoint.sh).
+# NAT: gateways default to symmetric mapping (punching can never land); the upgrade / flip /
+# private phases flip them to cone and back (hard-gw-entrypoint.sh).
 #
 # Reproduce gate (applies to the selected call phase):
 #   PP_HARD_NAT_CALL_EXPECT=success  (default) — call must pass
@@ -110,10 +89,10 @@ case "${CALL_EXPECT}" in
   *) pp_hard_die "--expect-call must be success|fail (got ${CALL_EXPECT})" ;;
 esac
 case "${PHASE}" in
-  circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|mobile|group|group-adjust|group-move|broadcast|all) ;;
-  product|dirty|both)
-    pp_hard_die "--phase ${PHASE} was retired (probe-local reach copies); use cold / cold-dirty / cold-await" ;;
-  *) pp_hard_die "--phase must be circuit|stack|cold|cold-dirty|cold-await|upgrade|punch|flip|mobile|group|group-adjust|group-move|broadcast|all (got ${PHASE})" ;;
+  stack|cold-dirty|cold-await|upgrade|flip|private|group-move|broadcast|all) ;;
+  product|dirty|both|circuit|cold|punch|mobile|group|group-adjust)
+    pp_hard_die "--phase ${PHASE} was retired: one scenario per major purpose, differences in gtests (packaging/pp-node/HARD_LAB.md § Retired scenarios)" ;;
+  *) pp_hard_die "--phase must be stack|cold-dirty|cold-await|upgrade|flip|private|group-move|broadcast|all (got ${PHASE})" ;;
 esac
 
 if [[ ! -x "${PP_HARD_PROBE_DIR}/${CALL_BIN_NAME}" ]]; then
@@ -143,7 +122,7 @@ UPGRADE_HOLD_MS="${PP_HARD_NAT_UPGRADE_HOLD_MS:-45000}"
 FLIP_HOLD_MS="${PP_HARD_NAT_FLIP_HOLD_MS:-35000}"
 FLIP_RX_STALL_MS="${PP_HARD_NAT_FLIP_RX_STALL_MS:-12000}"
 # Mobile phase: past the +3 s and +20 s upgrade slots a stationary pair would use.
-MOBILE_HOLD_MS="${PP_HARD_NAT_MOBILE_HOLD_MS:-25000}"
+PRIVATE_HOLD_MS="${PP_HARD_NAT_PRIVATE_HOLD_MS:-25000}"
 
 # Highest "flow <role> ... rx=N" in a probe log (0 when none).
 max_rx() {
@@ -273,22 +252,24 @@ assert_flip() {
   echo "ok  flip: failover onto the relay standby $(sed -n 's/^recovered //p' "${marks}") s after the flip, never Reconnecting"
 }
 
-# assert_mobile <label> <offerer_log> <answerer_log>
-assert_mobile() {
+# assert_private <label> <offerer_log> <answerer_log> — projects/privacy T1 (see the header).
+assert_private() {
   local label="$1" off_log="$2" ans_log="$3"
-  grep -q 'mobility pinned to mobile' "${off_log}" || pp_hard_die "${label}: --mobility mobile not applied"
-  grep -q 'await without punch (path policy)' "${ans_log}" ||
-    pp_hard_die "${label}: the answerer punched (it did not learn the offerer's class from the invite)"
-  ! grep -q 'direct upgrade attempt' "${off_log}" || pp_hard_die "${label}: the offerer punched for an upgrade"
-  ! grep -qE 'call-media path migrated .* path=direct' "${off_log}" "${ans_log}" ||
-    pp_hard_die "${label}: media moved onto a direct path"
-  echo "ok  mobile: relay anchor — no call-start punch, no upgrade, media stayed relayed"
+  grep -qE '\[PeerReach\] reach start .*exclude_direct=1' "${ans_log}" ||
+    pp_hard_die "${label}: the answerer's reach was not relay-only for a stranger's call"
+  ! grep -qE 'call-media path migrated .* path=direct|CallMediaLeg migrate switched .* path=direct' \
+    "${off_log}" "${ans_log}" || pp_hard_die "${label}: media moved onto a direct path"
+  ! grep -qE '\[PeerReach\] (peer reachable via circuit/punch .*path=punched|peer connected .*path=direct)' \
+    "${off_log}" "${ans_log}" || pp_hard_die "${label}: the peers connected directly (punched or dialed)"
+  local declined
+  declined="$(grep -cE 'punch target declined|signaling punch declined' "${ans_log}" || true)"
+  echo "ok  private: relay-only for a stranger's call — no direct path (punches declined: ${declined})"
   local off_rx ans_rx
   off_rx="$(max_rx "${off_log}")"
   ans_rx="$(max_rx "${ans_log}")"
   [[ "${off_rx}" -ge "${COLD_MIN_RX}" && "${ans_rx}" -ge "${COLD_MIN_RX}" ]] ||
     pp_hard_die "${label}: audio short offerer_rx=${off_rx} answerer_rx=${ans_rx}"
-  echo "ok  mobile audio both ways offerer_rx=${off_rx} answerer_rx=${ans_rx}"
+  echo "ok  private audio both ways over the relay offerer_rx=${off_rx} answerer_rx=${ans_rx}"
 }
 
 # assert_upgrade <label> <offerer_log> <answerer_log> <marks>
@@ -306,29 +287,8 @@ assert_upgrade() {
   echo "ok  failover: direct blackholed → warm relayed standby ($(grep -hoE 'CallMediaLeg failover .* to=[a-z]+' "${off_log}" "${ans_log}" | head -1 | sed 's/.*reason=//'))"
 }
 
-# assert_punch <label> <offerer_log> <answerer_log>
-assert_punch() {
-  local label="$1" off_log="$2" ans_log="$3"
-  grep -qE '\[PeerReach\] (peer reachable via circuit/punch .*path=punched|peer connected .*path=direct)' \
-    "${off_log}" "${ans_log}" || pp_hard_die "${label}: the call-start punch never connected the peers"
-  echo "ok  punch: peers connected over a punched link"
-  ! grep -qE 'call-media path migrated .* path=circuit' "${off_log}" "${ans_log}" ||
-    pp_hard_die "${label}: media fell back onto the relay"
-  ! grep -qE '\[LiveCall\] status=[A-Za-z]+->Reconnecting' "${off_log}" "${ans_log}" ||
-    pp_hard_die "${label}: the call showed Reconnecting (a dual-dial drop must rebind quietly)"
-  local rebinds
-  rebinds="$(cat "${off_log}" "${ans_log}" | grep -c 'CallMediaLeg reconnected .*(quiet rebind)' || true)"
-  echo "ok  punch: media on the punched link, never Reconnecting (quiet rebinds=${rebinds})"
-  local off_rx ans_rx
-  off_rx="$(max_rx "${off_log}")"
-  ans_rx="$(max_rx "${ans_log}")"
-  [[ "${off_rx}" -ge "${COLD_MIN_RX}" && "${ans_rx}" -ge "${COLD_MIN_RX}" ]] ||
-    pp_hard_die "${label}: audio short offerer_rx=${off_rx} answerer_rx=${ans_rx} (< ${COLD_MIN_RX})"
-  echo "ok  punch audio both ways offerer_rx=${off_rx} answerer_rx=${ans_rx}"
-}
-
 # run_nat_call <label> <call_id> <ready_name> <listen_ma> <mode>
-# mode: circuit | stack | cold | cold-dirty | cold-await | cold-upgrade | cold-punch
+# mode: stack | cold-dirty | cold-await | cold-upgrade | cold-flip | cold-private
 run_nat_call() {
   local label="$1"
   local call_id="$2"
@@ -360,7 +320,9 @@ run_nat_call() {
     hold_ms="${FLIP_HOLD_MS}"
     stall_ms="${FLIP_RX_STALL_MS}"
   fi
-  [[ "${mode}" == "cold-mobile" ]] && hold_ms="${MOBILE_HOLD_MS}"
+  [[ "${mode}" == "cold-private" ]] && hold_ms="${PRIVATE_HOLD_MS}"
+  # A stranger's call: the answerer discloses its address to its contacts only (the offerer is not one).
+  [[ "${mode}" == "cold-private" ]] && ans_args+=(--direct-connections contacts)
   if [[ "${product_stack}" -eq 1 ]]; then
     local watch_ms=$((hold_ms > 4000 ? hold_ms - 3000 : 0))
     ans_args+=(--product-stack --rx-stall-ms "${stall_ms}" --watch-ms "${watch_ms}")
@@ -415,12 +377,13 @@ run_nat_call() {
   case "${mode}" in
     stack) off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms "${STACK_HOLD_MS}"
              --rx-stall-ms "${RX_STALL_MS}" --timeout-ms 45000) ;;
-    cold|cold-dirty|cold-await|cold-upgrade|cold-punch|cold-flip|cold-mobile)
+    cold-dirty|cold-await|cold-upgrade|cold-flip|cold-private)
       off_args+=(--product-stack --peer-account "${peer_account}" --hold-ms "${hold_ms}"
                  --rx-stall-ms "${stall_ms}" --timeout-ms $((hold_ms + 60000)) --signal-dir "${signal_dir}")
-      [[ "${mode}" == "cold-dirty" ]] && off_args+=(--dirty-book --force-dial-fail)
-      [[ "${mode}" == "cold-mobile" ]] && off_args+=(--mobility mobile) ;;
-    *) off_args+=(--peer-id-only) ;;
+      if [[ "${mode}" == "cold-dirty" ]]; then
+        off_args+=(--dirty-book --force-dial-fail)
+      fi ;;
+    *) pp_hard_die "run_nat_call: unknown mode ${mode}" ;;
   esac
 
   local marks="${LOG_DIR}/${call_id}.marks" choreo_pid=""
@@ -480,12 +443,9 @@ run_nat_call() {
     return 1
   fi
 
-  if [[ "${mode}" == "cold-punch" ]]; then
+  if [[ "${mode}" == "cold-private" ]]; then
     sleep 0.5
-    assert_punch "${label}" "${off_log}" "${ans_log}"
-  elif [[ "${mode}" == "cold-mobile" ]]; then
-    sleep 0.5
-    assert_mobile "${label}" "${off_log}" "${ans_log}"
+    assert_private "${label}" "${off_log}" "${ans_log}"
   elif [[ "${mode}" == "cold-flip" ]]; then
     sleep 0.5
     assert_flip "${label}" "${off_log}" "${marks}"
@@ -610,87 +570,6 @@ wait_ready() {
     sleep 0.1
   done
   pp_hard_die "group guest $1 ready-file not written (warm-hop may have failed)"
-}
-
-assert_group_path() {
-  local label="$1" a_log="$2" b_log="$3" c_log="$4" log
-  grep -q "SoftMigrate fan-out CallSfuAttach hop=${HOP_PEER_ID}" "${a_log}" ||
-    pp_hard_die "${label}: initiator never SoftMigrated onto the lab hop ${HOP_PEER_ID}"
-  for log in "${a_log}" "${b_log}" "${c_log}"; do
-    grep -q "AttachLocalToSfu StartSfu" "${log}" ||
-      pp_hard_die "${label}: $(basename "${log}") never started media on the hop"
-    grep -q "ok  publisher rx gate" "${log}" ||
-      pp_hard_die "${label}: $(basename "${log}") never heard every other publisher"
-  done
-  grep -q "answerer left the live call" "${c_log}" || pp_hard_die "${label}: guest C did not leave mid-call"
-  grep -q "answerer: offerer left" "${b_log}" || pp_hard_die "${label}: B did not end with A's Leave"
-  echo "ok  group path: SoftMigrate → hop ${HOP_PEER_ID}; A, B, C on media_relay; per-publisher RX:"
-  for log in "${a_log}" "${b_log}" "${c_log}"; do
-    echo "    $(basename "${log}" .log): $(grep -m1 'ok  publisher rx gate' "${log}" | sed 's/.*live=/live=/')"
-  done
-}
-
-run_nat_group_call() {
-  local label="B-HARD-GROUP-CALL-NAT" call_id="pp-hard-group-call-nat"
-  pp_hard_kill_peer_probes
-  echo "=== ${label} A (peer-a) invites B (peer-b) + C (peer-c); C accepts +${GROUP_ACCEPT_DELAY_MS} ms ==="
-  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" rm -rf "/share/sig-${call_id}"
-  local c
-  for c in "${PP_HARD_CGNAT_PEER_A}" "${PP_HARD_CGNAT_PEER_B}" "${PP_HARD_CGNAT_PEER_C}"; do
-    pp_hard_link_clear_container "${c}"
-  done
-  local a_log="${LOG_DIR}/group.a.log" b_log="${LOG_DIR}/group.b.log" c_log="${LOG_DIR}/group.c.log"
-  start_group_guest "${PP_HARD_CGNAT_PEER_B}" "${PEER_B_IP}" 47192 b "${b_log}"
-  local b_pid="${GUEST_PID}"
-  start_group_guest "${PP_HARD_CGNAT_PEER_C}" "${PEER_C_IP}" 47194 c "${c_log}" \
-    --accept-delay-ms "${GROUP_ACCEPT_DELAY_MS}" --leave-after-gate-ms "${GROUP_LEAVE_AFTER_MS}"
-  local c_pid="${GUEST_PID}"
-  cleanup_group() {
-    kill "${b_pid}" "${c_pid}" 2>/dev/null || true
-    wait "${b_pid}" "${c_pid}" 2>/dev/null || true
-  }
-  trap cleanup_group EXIT
-  wait_ready b
-  wait_ready c
-  sleep 1
-  local ready_b="${PP_HARD_CGNAT_SHARE_DIR}/group-b.ready" ready_c="${PP_HARD_CGNAT_SHARE_DIR}/group-c.ready"
-  local peers accounts
-  peers="$(head -n1 "${ready_b}" | tr -d '\n'),$(head -n1 "${ready_c}" | tr -d '\n')"
-  accounts="$(sed -n '2p' "${ready_b}" | tr -d '\n'),$(sed -n '2p' "${ready_c}" | tr -d '\n')"
-  echo "${label} hop=${HOP_MA_PUBLIC} peers=${peers}"
-
-  set +e
-  pp_hard_exec "${PP_HARD_CGNAT_PEER_A}" /probes/${CALL_BIN_NAME} --role offerer --product-stack \
-    --peer "${peers}" --peer-account "${accounts}" --via-hop "${HOP_MA_PUBLIC}" --call-id "${call_id}" \
-    --signal-dir "/share/sig-${call_id}" --hold-ms "${GROUP_HOLD_MS}" --timeout-ms 60000 \
-    --rx-stall-ms "${GROUP_RX_STALL_MS}" --min-rx-streams 2 --stream-rx-frames "${GROUP_STREAM_RX}" \
-    --stream-window-ms "${GROUP_WINDOW_MS}" > >(tee "${a_log}") 2>&1
-  local a_rc=$?
-  local rc_b rc_c _
-  for _ in $(seq 1 30); do
-    kill -0 "${b_pid}" 2>/dev/null || kill -0 "${c_pid}" 2>/dev/null || break
-    sleep 0.5
-  done
-  kill "${b_pid}" "${c_pid}" 2>/dev/null || true
-  wait "${b_pid}"; rc_b=$?
-  wait "${c_pid}"; rc_c=$?
-  set -e
-  trap - EXIT
-  echo "a_rc=${a_rc} b_rc=${rc_b} c_rc=${rc_c}"
-  if [[ "${a_rc}" -ne 0 || "${rc_b}" -ne 0 || "${rc_c}" -ne 0 ]]; then
-    if [[ "${CALL_EXPECT}" == "fail" ]]; then
-      echo "ok  REPRODUCED: dual-NAT group call failed"
-      echo "${label} smoke PASSED (expect=fail / reproduced)"
-      return 0
-    fi
-    echo "error: ${label} group call failed under triple NAT (a=${a_rc} b=${rc_b} c=${rc_c})" >&2
-    return 1
-  fi
-  [[ "${CALL_EXPECT}" == "fail" ]] &&
-    pp_hard_die "${label}: expected REPRODUCE (call fail) but the group call succeeded"
-  sleep 0.5  # let the tee'd guest logs flush
-  assert_group_path "${label}" "${a_log}" "${b_log}" "${c_log}"
-  echo "${label} smoke PASSED"
 }
 
 # ready_line <name> <line> — a group guest's ready-file line (1 = advertise MA, 2 = account).
@@ -842,19 +721,9 @@ run_phase() {
   [[ "${PHASE}" == "all" || "${PHASE}" == "${want}" ]]
 }
 
-if run_phase circuit; then
-  run_nat_call "B-HARD-CALL-NAT" "pp-hard-call-nat" "call-nat.ready" \
-    "${PP_HARD_NAT_CALL_LISTEN:-/ip4/0.0.0.0/udp/47160/adp/1.0.0}" circuit
-fi
-
 if run_phase stack; then
   run_nat_call "B-HARD-CALL-NAT-STACK" "pp-hard-call-nat-stack" "call-nat-stack.ready" \
     "${PP_HARD_NAT_STACK_LISTEN:-/ip4/0.0.0.0/udp/47166/adp/1.0.0}" stack
-fi
-
-if run_phase cold; then
-  run_nat_call "B-HARD-CALL-NAT-COLD" "pp-hard-call-nat-cold" "call-nat-cold.ready" \
-    "${PP_HARD_NAT_COLD_LISTEN:-/ip4/0.0.0.0/udp/47168/adp/1.0.0}" cold
 fi
 
 if run_phase cold-dirty; then
@@ -880,18 +749,6 @@ if run_phase upgrade; then
   [[ "${upgrade_rc}" -eq 0 ]] || exit "${upgrade_rc}"
 fi
 
-if run_phase punch; then
-  pp_hard_cgnat_set_nat cone
-  pp_hard_cgnat_block_p2p off
-  set +e
-  run_nat_call "B-HARD-CALL-NAT-PUNCH" "pp-hard-call-nat-punch" "call-nat-punch.ready" \
-    "${PP_HARD_NAT_PUNCH_LISTEN:-/ip4/0.0.0.0/udp/47176/adp/1.0.0}" cold-punch
-  punch_rc=$?
-  set -e
-  pp_hard_cgnat_set_nat symmetric
-  [[ "${punch_rc}" -eq 0 ]] || exit "${punch_rc}"
-fi
-
 if run_phase flip; then
   pp_hard_cgnat_set_nat cone
   pp_hard_cgnat_block_p2p off
@@ -905,24 +762,16 @@ if run_phase flip; then
   [[ "${flip_rc}" -eq 0 ]] || exit "${flip_rc}"
 fi
 
-if run_phase mobile; then
+if run_phase private; then
   pp_hard_cgnat_set_nat cone
   pp_hard_cgnat_block_p2p off
   set +e
-  run_nat_call "B-HARD-CALL-NAT-MOBILE" "pp-hard-call-nat-mobile" "call-nat-mobile.ready" \
-    "${PP_HARD_NAT_MOBILE_LISTEN:-/ip4/0.0.0.0/udp/47190/adp/1.0.0}" cold-mobile
-  mobile_rc=$?
+  run_nat_call "B-HARD-CALL-NAT-PRIVATE" "pp-hard-call-nat-private" "call-nat-private.ready" \
+    "${PP_HARD_NAT_PRIVATE_LISTEN:-/ip4/0.0.0.0/udp/47206/adp/1.0.0}" cold-private
+  private_rc=$?
   set -e
   pp_hard_cgnat_set_nat symmetric
-  [[ "${mobile_rc}" -eq 0 ]] || exit "${mobile_rc}"
-fi
-
-if run_phase group; then
-  run_nat_group_call
-fi
-
-if run_phase group-adjust; then
-  run_nat_group_hops adjust
+  [[ "${private_rc}" -eq 0 ]] || exit "${private_rc}"
 fi
 
 if run_phase group-move; then

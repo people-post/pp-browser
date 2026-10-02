@@ -121,3 +121,17 @@ TEST(ConfigMergeTest, LoadsDefaultsAndAppliesDrafts) {
   const pbr::AppConfig after_reset = pbr::ApplyNetworkSettingsDraft(defaults, reset_node);
   EXPECT_TRUE(after_reset.mesh.node_enabled);
 }
+
+// projects/privacy T1: Me → Network → Direct connections saves mesh.direct_connections.
+TEST(ConfigMergeTest, NetworkDraftCarriesDirectConnections) {
+  const pbr::AppConfig defaults = pbr::Config::DefaultAppConfig();
+  EXPECT_EQ(defaults.mesh.direct_connections, pbr::DirectAudience::Contacts);
+  pbr::SettingsUiState state;
+  state.direct_connections = "friendly";
+  EXPECT_EQ(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.direct_connections, pbr::DirectAudience::Friendly);
+  EXPECT_FALSE(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.trusted_relays_only);
+  state.trusted_relays_only = "on";
+  EXPECT_TRUE(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.trusted_relays_only);
+  state.direct_connections = "strangers";  // not a choice: the saved value stands
+  EXPECT_EQ(pbr::ApplyNetworkSettingsDraft(defaults, state).mesh.direct_connections, pbr::DirectAudience::Contacts);
+}

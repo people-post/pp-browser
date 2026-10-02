@@ -151,8 +151,24 @@ void CallStack::NotifyPathPolicyChangedOnOwner(const std::string& call_id) {
   }
 }
 
+void CallStack::SetInboundCallAudience(const InboundAudience audience) {
+  inbound_call_audience_.store(audience, std::memory_order_relaxed);
+  RunOnOwner([audience](CallSessionManager& calls) { calls.SetInboundCallAudience(audience); });
+}
+
 CallPathPolicy CallStack::PathPolicyFor(const std::string& call_id) const {
-  return mobility_.PolicyFor(call_id);
+  const CallPathPolicy policy = mobility_.PolicyFor(call_id);
+  if (!deps_.address_disclosure) {
+    return policy;
+  }
+  const auto disclosure = deps_.address_disclosure->Snapshot();
+  const LiveCall* call = call_sessions_ ? call_sessions_->Live().Find(call_id) : nullptr;
+  const std::optional<std::string> peer = call ? call->SolePeer() : std::nullopt;
+  if (peer ? disclosure->AllowsDirect(*peer) : disclosure->audience == DirectAudience::Everyone) {
+    return policy;
+  }
+  // Outside the audience — or, with a narrower audience, a peer not known yet: disclosure is the risk.
+  return RelayOnlyPolicy(policy);
 }
 
 void CallStack::DetachMeshMedia() {
@@ -212,6 +228,7 @@ void CallStack::PublishUiState() {
     state.sfu_attach_wait_active = call_sessions_->IsSfuAttachWaitActive();
     state.p2p_connect_failed = call_sessions_->IsP2pConnectFailed();
     state.p2p_connect_missing_mic = call_sessions_->P2pConnectMissingMic();
+    state.p2p_connect_seed_unreachable = call_sessions_->P2pConnectSeedUnreachable();
     state.media_activity = call_sessions_->PeekMediaActivity();
     state.last_media_error = call_sessions_->PeekLastMediaError();
     state.hop_health = call_sessions_->HopHealth();
@@ -411,6 +428,8 @@ void CallStack::BindSessionProviders() {
     }
   });
   call_sessions_->SetLocalListenMultiaddrsProvider([this]() { return LocalCallListenMultiaddrs(); });
+  call_sessions_->SetAddressDisclosure(deps_.address_disclosure);
+  call_sessions_->SetInboundCallAudience(inbound_call_audience_.load(std::memory_order_relaxed));  // a rebuilt CSM keeps the choice
   // Providers read the connectivity owner's published view of this node's mesh (never the
   // MeshHost the hub may be tearing down under a running call flow).
   call_sessions_->SetLocalMeshPeerIdProvider([this]() -> std::string { return LocalMeshView()->local_peer_id; });

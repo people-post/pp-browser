@@ -15,8 +15,19 @@ pp_node_status_auth_args() {
   fi
 }
 
+# Hop multiaddr for probes on this machine. Override with PP_NODE_HOP_MULTIADDR.
+#
+# The hop ranks its advertised addresses for remote peers: a public address it
+# learned from an internet seed (dial-back) comes first. Probes on the same host
+# usually cannot reach that (no NAT hairpin), so when /status is local we pick
+# a private / loopback address from listen_addrs (the hop's Docker network
+# address); otherwise the first-ranked one.
 pp_node_hop_multiaddr() {
   local status_url="${1:-${PP_NODE_STATUS_URL:-http://127.0.0.1:18518}}"
+  if [[ -n "${PP_NODE_HOP_MULTIADDR:-}" ]]; then
+    printf '%s\n' "${PP_NODE_HOP_MULTIADDR}"
+    return 0
+  fi
   pp_node_need_cmd curl
   pp_node_need_cmd python3
   local auth_args=()
@@ -25,13 +36,33 @@ pp_node_hop_multiaddr() {
   fi
   local status_json
   status_json="$(curl -fsS -m 5 "${auth_args[@]}" "${status_url}/status")"
-  STATUS_JSON="${status_json}" python3 <<'PY'
-import json, os
+  STATUS_JSON="${status_json}" STATUS_URL_FOR_HOP="${status_url}" python3 <<'PY'
+import ipaddress, json, os
+from urllib.parse import urlparse
+
 s = json.loads(os.environ["STATUS_JSON"])
 peer = s.get("peer_id") or ""
 listen = s.get("listen") or ""
 if not peer or not listen:
     raise SystemExit("missing peer_id or listen in /status")
+
+def ip_of(ma: str):
+    parts = ma.split("/")
+    if len(parts) > 2 and parts[1] in ("ip4", "ip6"):
+        try:
+            return ipaddress.ip_address(parts[2])
+        except ValueError:
+            return None
+    return None
+
+status_host = urlparse(os.environ["STATUS_URL_FOR_HOP"]).hostname or ""
+local_hop = status_host in ("127.0.0.1", "localhost", "::1")
+if local_hop:
+    for ma in [listen] + list(s.get("listen_addrs") or []):
+        ip = ip_of(ma)
+        if ip is not None and (ip.is_private or ip.is_loopback) and "/udp/" in ma and "/adp/" in ma:
+            listen = ma
+            break
 if "/udp/" not in listen or "/adp/" not in listen:
     raise SystemExit(f"listen is not Amp ADP (/udp/…/adp/…): {listen}")
 listen = listen.replace("/ip4/0.0.0.0/", "/ip4/127.0.0.1/")

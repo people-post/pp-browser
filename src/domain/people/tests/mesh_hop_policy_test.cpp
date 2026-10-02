@@ -341,5 +341,30 @@ TEST(MeshHopPolicyTest, CollectLedgerGatewayFiltersCapability) {
   EXPECT_EQ(hops[0].affinity, MeshHopAffinity::DirectoryNode);
 }
 
+// projects/privacy T4: with trusted relays only, org seeds and Friendly contacts' nodes carry our
+// traffic — not plain contacts, directory volunteers or DHT-discovered nodes.
+TEST(MeshHopPolicyTest, TrustedRelaysAreOrgSeedsAndFriendlyContacts) {
+  const std::string seed = "12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR";
+  Contact friendly = MakeContact("12D3KooWFriend");
+  friendly.trust = TrustLevel::Friendly;
+  const Contact plain = MakeContact("12D3KooWPlain");
+  const auto trusted = TrustedRelayPeerIds({friendly, plain}, {"/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/" + seed});
+  EXPECT_TRUE(trusted.contains(seed));
+  EXPECT_TRUE(trusted.contains("12D3KooWFriend"));
+  EXPECT_FALSE(trusted.contains("12D3KooWPlain"));
+
+  std::vector<MeshHopCandidate> hops;
+  for (const std::string& id : {std::string("12D3KooWPlain"), seed, std::string("12D3KooWVolunteer"),
+                                std::string("12D3KooWFriend")}) {
+    MeshHopCandidate hop;
+    hop.peer_id = id;
+    hops.push_back(hop);
+  }
+  const auto kept = KeepTrustedRelays(hops, trusted);
+  ASSERT_EQ(kept.size(), 2u);
+  EXPECT_EQ(kept[0].peer_id, seed) << "order kept";
+  EXPECT_EQ(kept[1].peer_id, "12D3KooWFriend");
+}
+
 } // namespace
 } // namespace pbr

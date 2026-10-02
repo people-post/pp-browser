@@ -816,7 +816,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       TearDownBundle(bundle, false, false, "amp call-media: no link for media channel");
       return;
     }
-    auto channel_id = link->Mux()->OpenOutbound(kCallMediaDirectProtocolId, pp::amp::CallMediaChannelPolicy(std::chrono::milliseconds{0}));
+    auto channel_id = link->Mux()->OpenOutbound(kCallMediaDirectProtocolId, pp::amp::CallMediaChannelPolicy());
     if (!channel_id) {
       TearDownBundle(bundle, false, false, channel_id.error().message);
       return;
@@ -891,7 +891,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     const std::string call_id = bundle.call_id;
     std::weak_ptr<pp::amp::ChannelSession> weak_session = channel_session;
     channel_session->Bind(
-        *link.Mux(), channel_id, pp::amp::CallMediaChannelPolicy(std::chrono::milliseconds{0}),
+        *link.Mux(), channel_id, pp::amp::CallMediaChannelPolicy(),
         [this, self = shared_from_this(), call_id, weak_session](Roe<std::vector<uint8_t>> frame) {
           if (!frame) {
             return false;
@@ -1264,7 +1264,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       return AbandonMigration(*bundle, "candidate link lost");
     }
     auto media = link->Mux()->OpenOutbound(kCallMediaDirectProtocolId,
-                                          pp::amp::CallMediaChannelPolicy(std::chrono::milliseconds{0}));
+                                          pp::amp::CallMediaChannelPolicy());
     if (!media) {
       return AbandonMigration(*bundle, media.error().message);
     }

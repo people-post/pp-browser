@@ -26,6 +26,7 @@ enum class ResponseGoal {
 enum class RenderMode {
   Blocks,
   PeopleList,
+  Markdown,
 };
 
 struct PlannedToolCall {

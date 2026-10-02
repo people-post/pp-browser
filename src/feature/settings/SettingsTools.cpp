@@ -465,6 +465,7 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          out.set("amp_udp_port", static_cast<int64_t>(mesh_cfg.amp_udp_port));
          out.set("mesh_enabled", mesh_cfg.mesh_enabled);
          out.set("prefer_contacts_for_routing", mesh_cfg.prefer_contacts_for_routing);
+         out.set("direct_connections", DirectAudienceName(mesh_cfg.direct_connections));
          out.set("circuit_relay", mesh_cfg.capabilities.circuit_relay);
          out.set("media_relay", mesh_cfg.capabilities.media_relay);
          return DumpJson(out);
@@ -620,6 +621,30 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
+      ToolDefinition{"set_call_invite_policy", "Set who may call this user: everyone, contacts_only, or nobody. "
+                                     "Calls from anyone else never ring and the caller is not told.",
+                     MustSchema(R"json({"type":"object","properties":{"policy":{"type":"string","enum":["everyone","contacts_only","nobody"]}},"required":["policy"]})json")},
+      Meta("security", "write", true),
+      [ports](const Object& arguments) -> Roe<std::string> {
+         const std::string policy = NormalizePolicyToken(FirstStringArg(arguments, {"policy", "call_invite_policy", "who"}));
+         if (!ValidGroupInvitePolicy(policy)) {  // the same three words as group invites
+           return Error("policy must be everyone, contacts_only, or nobody");
+         }
+         auto store = RequireStore(ports);
+         if (!store) {
+           return store.error();
+         }
+         ProfilePreferences prefs = (*store)->Snapshot().profile_prefs;
+         prefs.call_invite_policy = policy;
+         if (auto saved = SavePrefs(**store, prefs); !saved) {
+           return saved.error();
+         }
+         Object ok;
+         ok.set("call_invite_policy", policy);
+         return DumpJson(OkJson(std::move(ok)));
+       }));
+
+  tools.push_back(MakeTool(
       ToolDefinition{"set_auto_renew_registration", "Enable or disable automatic network registration renewal near expiry.", MustSchema(R"json({"type":"object","properties":{"enabled":{"type":"boolean"}},"required":[]})json")},
       Meta("identity", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
@@ -708,15 +733,22 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
        }));
 
   tools.push_back(MakeTool(
-      ToolDefinition{"set_mesh_capabilities", "Update mesh capability flags: circuit_relay, media_relay, dht, prefer_contacts_for_routing.", MustSchema(R"json({"type":"object","properties":{"circuit_relay":{"type":"boolean"},"media_relay":{"type":"boolean"},"dht":{"type":"boolean"},"prefer_contacts_for_routing":{"type":"boolean"}},"required":[]})json")},
+      ToolDefinition{"set_mesh_capabilities", "Update mesh capability flags: circuit_relay, media_relay, dht, prefer_contacts_for_routing; direct_connections — who may connect directly and so learn this device's IP: everyone, contacts, friendly, or nobody (always relay); and trusted_relays_only — only org servers and Friendly contacts' nodes relay.", MustSchema(R"json({"type":"object","properties":{"circuit_relay":{"type":"boolean"},"media_relay":{"type":"boolean"},"dht":{"type":"boolean"},"prefer_contacts_for_routing":{"type":"boolean"},"direct_connections":{"type":"string","enum":["everyone","contacts","friendly","nobody"]},"trusted_relays_only":{"type":"boolean"}},"required":[]})json")},
       Meta("network", "write", true),
       [ports](const Object& arguments) -> Roe<std::string> {
          const auto circuit = BoolFromArgs(arguments, {"circuit_relay"});
          const auto media = BoolFromArgs(arguments, {"media_relay"});
          const auto dht = BoolFromArgs(arguments, {"dht"});
          const auto prefer = BoolFromArgs(arguments, {"prefer_contacts_for_routing"});
-         if (!circuit && !media && !dht && !prefer) {
-           return Error("provide at least one of circuit_relay, media_relay, dht, prefer_contacts_for_routing");
+         const std::string audience_name = FirstStringArg(arguments, {"direct_connections"});
+         const auto audience = DirectAudienceFromName(audience_name);
+         if (!audience_name.empty() && !audience) {
+           return Error("direct_connections must be everyone, contacts, friendly, or nobody");
+         }
+         const auto trusted_relays = BoolFromArgs(arguments, {"trusted_relays_only"});
+         if (!circuit && !media && !dht && !prefer && !audience && !trusted_relays) {
+           return Error("provide at least one of circuit_relay, media_relay, dht, prefer_contacts_for_routing, "
+                        "direct_connections");
          }
          auto store = RequireStore(ports);
          if (!store) {
@@ -735,6 +767,12 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          if (prefer) {
            config.mesh.prefer_contacts_for_routing = *prefer;
          }
+         if (audience) {
+           config.mesh.direct_connections = *audience;
+         }
+         if (trusted_relays) {
+           config.mesh.trusted_relays_only = *trusted_relays;
+         }
          if (auto saved = SaveConfig(**store, config); !saved) {
            return saved.error();
          }
@@ -743,6 +781,8 @@ std::vector<ToolDescriptor> SettingsToolProvider::ListTools() {
          ok.set("media_relay", config.mesh.capabilities.media_relay);
          ok.set("dht", config.mesh.capabilities.dht);
          ok.set("prefer_contacts_for_routing", config.mesh.prefer_contacts_for_routing);
+         ok.set("direct_connections", DirectAudienceName(config.mesh.direct_connections));
+         ok.set("trusted_relays_only", config.mesh.trusted_relays_only);
          return DumpJson(OkJson(std::move(ok)));
        }));
 

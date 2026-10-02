@@ -27,6 +27,7 @@
 #include "feature/calls/CallStack.h"
 #include "foundation/platform/NetworkMonitor.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
+#include "common/privacy/AddressDisclosure.h"
 #include "domain/messaging/AttachmentSuppressionStore.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
@@ -92,12 +93,15 @@ public:
     bool media_relay = true;
     bool dht = false;
     bool prefer_contacts_for_routing = true;
+    DirectAudience direct_connections = DirectAudience::Contacts;
+    bool trusted_relays_only = false;
 
     bool operator==(const NetworkConfig& other) const {
       return relay.base_url == other.relay.base_url && directory == other.directory &&
              registration.base_url == other.registration.base_url && node_enabled == other.node_enabled &&
              circuit_relay == other.circuit_relay && media_relay == other.media_relay && dht == other.dht &&
-             prefer_contacts_for_routing == other.prefer_contacts_for_routing;
+             prefer_contacts_for_routing == other.prefer_contacts_for_routing &&
+             direct_connections == other.direct_connections && trusted_relays_only == other.trusted_relays_only;
     }
     bool operator!=(const NetworkConfig& other) const { return !(*this == other); }
   };
@@ -106,9 +110,10 @@ public:
   struct PolicyPrefs {
     GroupInvitePolicy group_invite_policy = GroupInvitePolicy::ContactsOnly;
     AttachmentDownloadPolicy attachment_download_policy = AttachmentDownloadPolicy::Smart;
+    InboundAudience call_invite_policy = InboundAudience::Everyone;
 
     bool operator==(const PolicyPrefs& other) const {
-      return group_invite_policy == other.group_invite_policy &&
+      return group_invite_policy == other.group_invite_policy && call_invite_policy == other.call_invite_policy &&
              attachment_download_policy == other.attachment_download_policy;
     }
     bool operator!=(const PolicyPrefs& other) const { return !(*this == other); }
@@ -336,6 +341,10 @@ private:
   /** Undo BuildMessagingStack / StartMesh without a full hub Shutdown (shutdown race). */
   void DiscardMessagingBringUp();
   void ApplyMeshAdmissionPolicies();
+  /** Republish who may learn our address (setting + contacts; projects/privacy T1). UI thread. */
+  void PublishAddressDisclosure();
+  /** The audience in force: the setting, or everyone in the Node role (P004). */
+  DirectAudience EffectiveDirectAudience() const;
   void PublishNodeAdvertisedAddrs();
   /** CallStackDeps for building the call stack against the current p2p / mesh / config. */
   CallStackDeps MakeCallStackDeps();
@@ -378,6 +387,8 @@ private:
   /** `config_.mesh` as owners read it (call stack, mesh media policy): republished on every write. */
   mutable std::mutex mesh_config_mu_;
   std::shared_ptr<const MeshConfig> mesh_config_snapshot_ = std::make_shared<const MeshConfig>();
+  /** Who may learn our address; read by mesh and call paths on any thread (outlives them all). */
+  AddressDisclosureGate address_disclosure_;
   AgentInboundPorts agent_inbound_;
   SessionStore* session_store_ = nullptr;
   ProfileSecretsEngine* secrets_ = nullptr;

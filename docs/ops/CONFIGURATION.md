@@ -186,6 +186,16 @@ DHT complements [mesh directory](../../projects/p2p-mesh/MESH_DIRECTORY.md) (n-d
 
 Enter an **API key** directly in Me → Assistant (saved to `config.json`) or use **API key env var** for desktop-style env lookup when using Cloud/Custom. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Brief** (key from Profile registration); **Ollama (localhost)** remains available for local dev.
 
+### Direct connections (`mesh.direct_connections`)
+
+Who may connect to this device directly and so learn its IP address: `everyone` | `contacts` (default) | `friendly` | `nobody` (always relay). Blocked contacts never; the Node role is always `everyone`. Me → Network → **Direct connections**; the settings assistant's `set_mesh_capabilities` takes it too. Applies at once (no mesh restart). Behaviour: [NETWORKING § Address disclosure](../architecture/NETWORKING.md#address-disclosure-privacy). The hard-lab call probe discloses to `everyone` unless `PP_PROBE_DIRECT_CONNECTIONS` says otherwise.
+
+### Trusted relays only (`mesh.trusted_relays_only`)
+
+Default `false`. When `true`, only the configured org seeds (`bootstrap_peers` after normalization, not directory nodes merged into them) and Friendly contacts' nodes relay, park, introduce punches or carry call media for this device. Me → Network → **Trusted relays only**; `set_mesh_capabilities` takes it too. Changing it rewires the mesh. Behaviour: [NETWORKING § Address disclosure](../architecture/NETWORKING.md#address-disclosure-privacy).
+
+Profile preference **`call_invite_policy`** (`preferences.json`: `everyone` default | `contacts_only` | `nobody`) — who may call; others' invites are dropped silently. Me → Security → **Who can call me**.
+
 ### Media relay video levels (`mesh.media_relay_video`)
 
 Which video levels this node's `media_relay` carries per broadcast publisher ([peer-scoped-broadcast B009](../../projects/peer-scoped-broadcast/DECISIONS.md#b009--video-levels-opaque-ordered-integers-negotiated-per-relay-at-attach); levels: [MEDIA_CHANNELS.md](../contracts/MEDIA_CHANNELS.md)). Read at mesh start.
@@ -243,6 +253,7 @@ Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps
 | `PP_BROWSER_CONFIG` | Explicit config file path |
 | `PP_BROWSER_SANDBOX` | When truthy, same as `--sandbox` (sandbox backend + isolated dirs) |
 | `PP_BROWSER_PIN` | Profile unlock PIN (`pp-node` / automation) |
+| `PP_BROWSER_BRIEF_STREAM_URL` | Dev only: full URL that replaces the streamed-answer endpoint (`llm.base_url` + `/pp/chat/stream`), e.g. a local fake server |
 | `PP_BROWSER_LLM_MODEL` | Default Brief model when no config file |
 | `PP_NODE_*` | Headless node deploy overlays — see [pp-node deploy overlays](#pp-node-deploy-overlays) |
 | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Linux path overrides |

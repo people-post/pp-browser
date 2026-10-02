@@ -47,6 +47,14 @@ public:
   static ParseResult ParseFromLlmOutput(const std::string& llm_output, ResponseGoal goal = ResponseGoal::General,
                                         RenderMode render_mode = RenderMode::Blocks);
   static bool IsBlocksJsonDocument(const std::string& text);
+  /**
+   * The readable text of an assistant answer: for a blocks document (fenced or bare JSON) the text of
+   * its paragraphs, headings, lists, cards, quotes, callouts and code, one per line; anything else
+   * (or a document with no readable blocks) is returned as-is. For sharing and for chat history.
+   */
+  static std::string PlainText(const std::string& llm_output);
+  /** nullopt when `llm_output` is not a blocks document; otherwise its prose (empty when nothing is readable). */
+  static std::optional<std::string> PlainTextIfBlocks(const std::string& llm_output);
 
   static std::optional<std::vector<EmbeddedToolCall>> ExtractEmbeddedToolCalls(const std::string& llm_output);
 };

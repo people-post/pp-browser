@@ -45,4 +45,13 @@ const char* CallStandbyPriorityName(const CallStandbyPriority priority) {
   return "low";
 }
 
+CallPathPolicy RelayOnlyPolicy(CallPathPolicy policy) {
+  policy.relay_only = true;
+  policy.punch_at_start = false;
+  policy.upgrade_to_direct = false;
+  policy.relay_role = CallRelayRole::Anchor;
+  policy.want_relay_standby = false;  // the relay is the primary, not a standby
+  return policy;
+}
+
 } // namespace pbr

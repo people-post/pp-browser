@@ -6,6 +6,7 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   ContactIdentity.cpp
   ContactReachability.cpp
   ContactsStore.cpp
+  ContactAddressDisclosure.cpp
   Ed25519Signer.cpp
   IdentityStore.cpp
   LinkDeviceExchange.cpp

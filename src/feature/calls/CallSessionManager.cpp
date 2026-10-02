@@ -236,6 +236,7 @@ CallSessionWorkflow::ReachPorts CallSessionManager::MakeWorkflowReachPorts() {
   ports.local_listen_multiaddrs = [this]() -> std::vector<std::string> {
     return local_listen_multiaddrs_ ? local_listen_multiaddrs_() : std::vector<std::string>{};
   };
+  ports.may_learn_our_address = [this](const std::string& peer) { return AllowsDirect(address_disclosure_, peer); };
   ports.local_peer_caps = [this]() -> CallPeerCaps {
     return local_peer_caps_ ? local_peer_caps_() : CallPeerCaps{};
   };
@@ -272,6 +273,7 @@ void CallSessionManager::BindReachSignalPorts() {
     return local_listen_multiaddrs_ ? local_listen_multiaddrs_() : std::vector<std::string>{};
   };
   ports.local_peer_id = [this]() { return local_mesh_peer_id_ ? local_mesh_peer_id_() : std::string{}; };
+  ports.may_learn_our_address = [this](const std::string& peer) { return AllowsDirect(address_disclosure_, peer); };
   ports.register_listen = [this](const std::string& key, const std::vector<std::string>& addrs) {
     if (register_peer_listen_multiaddrs_) {
       register_peer_listen_multiaddrs_(key, addrs);
@@ -654,6 +656,9 @@ CallDirectMediaPorts CallSessionManager::MakeDirectMediaPorts() {
   };
   ports.is_connect_failed = [bridge]() { return bridge->IsMeshConnectFailed(); };
   ports.connect_missing_mic = [bridge]() { return bridge->IsMeshConnectFailed() && bridge->MeshConnectMissingMic(); };
+  ports.connect_seed_unreachable = [bridge]() {
+    return bridge->IsMeshConnectFailed() && bridge->MeshConnectSeedUnreachable();
+  };
   ports.poll_connect_health = [bridge]() { bridge->PollMeshConnectHealth(); };
   ports.media_attempted = [bridge](const std::string& call_id) { return bridge->MediaAttempted(call_id); };
   ports.note_media_attempted = [bridge](const std::string& call_id) { bridge->NoteMediaAttempted(call_id); };
@@ -1186,6 +1191,11 @@ bool CallSessionManager::P2pConnectMissingMic() const {
   return direct_media->connect_missing_mic && direct_media->connect_missing_mic();
 }
 
+bool CallSessionManager::P2pConnectSeedUnreachable() const {
+  const auto direct_media = direct_media_.Get();
+  return direct_media->connect_seed_unreachable && direct_media->connect_seed_unreachable();
+}
+
 void CallSessionManager::PollP2pConnectHealth() {
   const auto direct_media = direct_media_.Get();
   if (direct_media->poll_connect_health) {
@@ -1294,6 +1304,19 @@ Roe<void> CallSessionManager::HandleInboundEnded(const std::string& detail_json,
 }
 
 
+bool CallSessionManager::AllowsInboundCall(const std::string& caller) const {
+  switch (inbound_call_audience_) {
+  case InboundAudience::Everyone:
+    return true;
+  case InboundAudience::Nobody:
+    return false;
+  case InboundAudience::ContactsOnly:
+    // No gate wired (tests, tools): nothing to judge by — let it ring.
+    return !address_disclosure_ || address_disclosure_->Snapshot()->contacts.contains(caller);
+  }
+  return true;
+}
+
 Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const std::string& sender_identity,
                                                   const std::optional<int64_t> relay_created_at_ms,
                                                   const std::optional<int64_t> relay_server_time_ms) {
@@ -1314,6 +1337,12 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
 
   switch (*type) {
   case CallControlType::CallInvite:
+    if (!AllowsInboundCall(sender_identity)) {
+      // Silent: a decline would tell the caller we exist and are online.
+      log().info << "call invite dropped (who can call me: " << InboundAudienceName(inbound_call_audience_)
+                 << ") from=" << sender_identity;
+      return {};
+    }
     return HandleInboundInvite(detail_json, sender_identity, message, relay_created_at_ms, relay_server_time_ms,
                                *local);
   case CallControlType::CallAccept:

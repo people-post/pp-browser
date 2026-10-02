@@ -184,5 +184,18 @@ TEST(CallPathPolicyTest, PairTable) {
   EXPECT_TRUE(us.want_relay_standby);
 }
 
+// projects/privacy T1: relay only, whatever the mobility pair would allow.
+TEST(CallPathPolicyTest, RelayOnlyDropsEveryDirectStep) {
+  const CallPathPolicy base = DecideCallPathPolicy(MobilityClass::Stationary, MobilityClass::Stationary);
+  ASSERT_TRUE(base.punch_at_start);
+  const CallPathPolicy relay = RelayOnlyPolicy(base);
+  EXPECT_TRUE(relay.relay_only);
+  EXPECT_FALSE(relay.punch_at_start);
+  EXPECT_FALSE(relay.upgrade_to_direct);
+  EXPECT_EQ(relay.relay_role, CallRelayRole::Anchor);
+  EXPECT_FALSE(relay.want_relay_standby);
+  EXPECT_FALSE(base.relay_only);
+}
+
 } // namespace
 } // namespace pbr

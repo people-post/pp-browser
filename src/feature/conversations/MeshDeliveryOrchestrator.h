@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/mesh/host/DisclosureGatedPeerLinks.h"
 #include "common/Module.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
@@ -133,6 +134,11 @@ public:
    * Prefer this over destroying/recreating the orchestrator after messaging is ready —
    * in-flight SyncInbox / PostWorker lambdas still hold `this`.
    */
+  /**
+   * projects/privacy T1: chat, attachments and history dial only peers this gate allows (others over
+   * a link that is already up, else the Brief relay). Set before AttachAmpTransports. Not owned.
+   */
+  void SetAddressDisclosure(const AddressDisclosureGate* gate) { address_disclosure_ = gate; }
   void AttachAmpTransports(IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},
@@ -324,6 +330,9 @@ private:
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
   std::string profile_data_dir_;
   IChatPeerLinks* amp_links_ = nullptr;
+  const AddressDisclosureGate* address_disclosure_ = nullptr;
+  /** `amp_links_` limited to the audience, for the people-facing transports (outlives them). */
+  std::unique_ptr<DisclosureGatedPeerLinks> people_links_;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   std::unique_ptr<IChatHistoryPeerClient> peer_history_;
   std::unique_ptr<IChatBlobPeerService> peer_blob_;

@@ -220,6 +220,10 @@ protected:
 
     deps.connectivity = &connectivity_;
     deps.media_relay = &media_relay_;
+    AddressDisclosurePolicy everyone;
+    everyone.audience = DirectAudience::Everyone;
+    disclosure_.Publish(everyone);
+    deps.address_disclosure = &disclosure_;
     stack_->BuildSessions(deps);
     ASSERT_TRUE(ui_->Available());
     ASSERT_TRUE(inbound_bound_);
@@ -299,6 +303,7 @@ protected:
   // Outlive stack_ (declared first; connectivity before the relay built on it).
   MeshConnectivity connectivity_;
   MeshMediaRelay media_relay_{connectivity_};
+  AddressDisclosureGate disclosure_;
   std::unique_ptr<CallStack> stack_;
   std::unique_ptr<CallUiBackend> ui_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
@@ -325,6 +330,29 @@ TEST_F(CallUiBackendStackTest, AvailableAndSessionsIdentityStable) {
   EXPECT_EQ(ui_->Phase(), CallPhase::Idle);
   EXPECT_FALSE(stack_->HasActiveLocalCall());
   EXPECT_FALSE(stack_->WantEphemeralListen());
+}
+
+// projects/privacy T3: "who can call me" — with contacts only, a stranger's invite never rings (and
+// nothing is sent back); a contact's does.
+TEST_F(CallUiBackendStackTest, ContactsOnlyCallAudienceDropsAStrangersInvite) {
+  stack_->SetInboundCallAudience(InboundAudience::ContactsOnly);
+  AppRuntime::RunUIAndOwnerTasks();
+  const int sent_before = sent_control_;
+  ASSERT_TRUE(IngestInvite("call:stranger"));
+  ui_->Apply(CallLifecycleEvent::InviteSeen, "call:stranger");
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_EQ(ui_->Phase(), CallPhase::Idle) << "a stranger's call rang";
+  EXPECT_EQ(sent_control_, sent_before) << "the drop answered the caller";
+
+  AddressDisclosurePolicy with_peer;
+  with_peer.audience = DirectAudience::Everyone;
+  with_peer.contacts.insert("account:peer");
+  disclosure_.Publish(with_peer);
+  ASSERT_TRUE(IngestInvite("call:contact"));
+  ui_->Apply(CallLifecycleEvent::InviteSeen, "call:contact");
+  AppRuntime::RunUIAndOwnerTasks();
+  EXPECT_EQ(ui_->Phase(), CallPhase::Ringing);
+  EXPECT_EQ(ui_->LastRingCallId(), "call:contact");
 }
 
 TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
@@ -431,6 +459,30 @@ TEST_F(CallUiBackendStackTest, PinnedMobilityRidesTheAcceptAndSetsThePolicy) {
   EXPECT_EQ(stack_->LocalMobility(), MobilityClass::Unknown) << "auto, no network seen in the test";
   ui_->Apply(CallLifecycleEvent::LeaveClicked, call_id);
   EXPECT_TRUE(AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds(2000)));
+}
+
+// projects/privacy T1: a call with a peer outside the audience runs on the relay only — no direct
+// dial, no punch, no move onto a direct link — whatever the mobility policy would allow.
+TEST_F(CallUiBackendStackTest, PeerOutsideTheAudienceGetsARelayOnlyCall) {
+  AddressDisclosurePolicy contacts_only;
+  contacts_only.audience = DirectAudience::Contacts;
+  disclosure_.Publish(contacts_only);
+  const std::string call_id = "call:stranger";
+  CallPeerCaps remote;
+  remote.present = true;
+  remote.mobility = MobilityClass::Stationary;
+  ASSERT_TRUE(IngestInvite(call_id, remote));
+
+  CallPathPolicy policy = stack_->PathPolicyFor(call_id);
+  EXPECT_TRUE(policy.relay_only);
+  EXPECT_FALSE(policy.punch_at_start);
+  EXPECT_FALSE(policy.upgrade_to_direct);
+  EXPECT_EQ(policy.relay_role, CallRelayRole::Anchor);
+
+  contacts_only.contacts.insert("account:peer");
+  disclosure_.Publish(contacts_only);
+  policy = stack_->PathPolicyFor(call_id);
+  EXPECT_FALSE(policy.relay_only) << "a contact may learn our address";
 }
 
 // k6: the invite's caps.mobility is recorded for the call — a mobile inviter anchors this end's

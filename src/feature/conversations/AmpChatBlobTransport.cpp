@@ -124,8 +124,12 @@ struct AmpChatBlobTransport::Impl {
     }
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     auto pending_push = std::make_shared<std::optional<ChatBlobRequest>>();
+    // The client's whole operation deadline: a fetch reply (up to the blob cap) drains
+    // outbound-only after Close, with nothing inbound to restart the read clock.
+    auto policy = pp::amp::BulkChannelPolicy(/*read_once=*/false);
+    policy.read_timeout = kChatBlobOperationTimeout;
     *session_holder = links->BindChannel(
-        remote_peer_id, channel_id, pp::amp::BulkChannelPolicy(/*read_once=*/false),
+        remote_peer_id, channel_id, policy,
         [this, session_holder, pending_push](Roe<std::vector<uint8_t>> frame) {
           auto session = *session_holder;
           if (!session || !frame || stopped.load(std::memory_order_acquire)) {

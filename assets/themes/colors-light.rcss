@@ -205,6 +205,22 @@ select selectbox option:hover {
   box-shadow: 0 2dp 8dp #00000014;
 }
 
+.chat-link {
+  color: #4f46e5;
+}
+
+.inline-code {
+  background-color: #e1e4e9;
+}
+
+.chat-sources p {
+  color: #6b7280;
+}
+
+.chat-sources .chat-link {
+  color: #4f46e5;
+}
+
 .code-block {
   background-color: #eef0f3;
   color: #1a1a1a;

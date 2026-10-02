@@ -54,6 +54,7 @@
 #include "domain/mesh/reachability/LanMdnsDiscovery.h"
 #include "domain/mesh/reachability/AmpObservedAddrs.h"
 #include "common/SettledWait.h"
+#include "domain/people/ContactAddressDisclosure.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/mesh/dht/DhtRecordCodec.h"
 #include "domain/mesh/discovery/AmpDirectoryProtocol.h"
@@ -124,6 +125,7 @@ ConversationsHub::ConversationsHub() {
 
 CallStackDeps ConversationsHub::MakeCallStackDeps() {
   CallStackDeps deps;
+  deps.address_disclosure = &address_disclosure_;
   deps.store = store_.get();
   deps.contacts = contacts_.get();
   deps.identity = identity_.get();
@@ -360,6 +362,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   mesh_cfg.bootstrap_peers = product_mesh_cfg.bootstrap_peers;
 
   mesh_ = std::make_unique<MeshHost>();
+  mesh_->SetAddressDisclosure(&address_disclosure_);
   auto started = mesh_->Start(mesh_cfg);
   if (!started) {
     mesh_last_error_ = mesh_->LastError().empty() ? started.error().message : mesh_->LastError();
@@ -569,7 +572,24 @@ void ConversationsHub::OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer
 }
 
 
+DirectAudience ConversationsHub::EffectiveDirectAudience() const {
+  // P004: a Node is reachable by role — its address is published anyway.
+  return ResolveMeshRole(config_.mesh) == MeshRole::Node ? DirectAudience::Everyone : config_.mesh.direct_connections;
+}
+
+void ConversationsHub::PublishAddressDisclosure() {
+  const DirectAudience audience = EffectiveDirectAudience();
+  std::vector<Contact> book;
+  if (contacts_) {
+    if (auto listed = contacts_->List()) {
+      book = std::move(*listed);
+    }
+  }
+  address_disclosure_.Publish(BuildAddressDisclosurePolicy(audience, book));
+}
+
 void ConversationsHub::ApplyMeshAdmissionPolicies() {
+  PublishAddressDisclosure();
   const bool prefer = config_.mesh.prefer_contacts_for_routing;
   const bool node = ResolveMeshRole(config_.mesh) == MeshRole::Node;
   // A017: Amp listen is always on; treat mobile in-call as link-scope hosting.
@@ -707,8 +727,11 @@ void ConversationsHub::SetOnBroadcastChanged(std::function<void()> callback) {
 
 void ConversationsHub::PublishMeshConfig() {
   auto snapshot = std::make_shared<const MeshConfig>(config_.mesh);
-  std::lock_guard lock(mesh_config_mu_);
-  mesh_config_snapshot_ = std::move(snapshot);
+  {
+    std::lock_guard lock(mesh_config_mu_);
+    mesh_config_snapshot_ = std::move(snapshot);
+  }
+  PublishAddressDisclosure();
 }
 
 std::shared_ptr<const MeshConfig> ConversationsHub::MeshConfigSnapshot() const {
@@ -1052,6 +1075,15 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
 
   store_ = std::make_unique<SqliteThreadStore>(data_dir_);
   contacts_ = std::make_unique<ContactsStore>(data_dir_);
+  // Contacts decide who may learn our address: republish on every change (any thread → UI).
+  contacts_->SetOnChanged([this]() {
+    AppRuntime::PostUI([this]() {
+      if (!shutdown_requested_.load(std::memory_order_acquire)) {
+        PublishAddressDisclosure();
+      }
+    });
+  });
+  PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
   initiation_billing_ = std::make_unique<InitiationBillingStore>(data_dir_);
   (void)initiation_billing_->Load();
@@ -1176,6 +1208,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
   mesh_messaging_->SetProfileDataDir(data_dir_);
+  mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
   mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
@@ -1196,6 +1229,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     if (group_membership_) {
       group_membership_->SetInboundPolicy(GroupInvitePolicyFromString(prefs->group_invite_policy));
     }
+    call_stack_->SetInboundCallAudience(InboundAudienceFromName(prefs->call_invite_policy, InboundAudience::Everyone));
   }
 
   messaging_ready_ = false;
@@ -1262,6 +1296,7 @@ Roe<void> ConversationsHub::BuildLocalMessagingStack() {
       *kem_resolver_, *psk_store_, *group_roster_, group_invite_gate_.get(), amp_links, std::move(amp_pump),
       std::move(amp_worker));
   mesh_messaging_->SetProfileDataDir(data_dir_);
+  mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
   mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
@@ -1280,6 +1315,7 @@ Roe<void> ConversationsHub::BuildLocalMessagingStack() {
     const GroupInvitePolicy policy = GroupInvitePolicyFromString(prefs->group_invite_policy);
     group_invite_gate_->SetInboundPolicy(policy);
     group_membership_->SetInboundPolicy(policy);
+    call_stack_->SetInboundCallAudience(InboundAudienceFromName(prefs->call_invite_policy, InboundAudience::Everyone));
   }
   RegisterContactEndpoints();
   if (agent_inbound_.IsBound()) {
@@ -1742,7 +1778,9 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
   }
 
   std::vector<std::string> listen_addrs;
-  if (mesh_) {
+  // privacy Y2: the directory is readable by anyone — a narrower audience registers the PeerId only
+  // (peers reach us by it through relays; allowed peers learn addresses over ch0 / call signalling).
+  if (mesh_ && PublishesAddresses(EffectiveDirectAudience())) {
     listen_addrs = mesh_->AdvertisedListenMultiaddrs();
     if (listen_addrs.empty() && IsUsableAdpListen(mesh_->AmpListenMultiaddr())) {
       listen_addrs.push_back(mesh_->AmpListenMultiaddr());
@@ -2344,7 +2382,8 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
       next.circuit_relay != config_.mesh.capabilities.circuit_relay ||
       next.media_relay != config_.mesh.capabilities.media_relay ||
       next.dht != config_.mesh.capabilities.dht ||
-      next.prefer_contacts_for_routing != config_.mesh.prefer_contacts_for_routing;
+      next.prefer_contacts_for_routing != config_.mesh.prefer_contacts_for_routing ||
+      next.trusted_relays_only != config_.mesh.trusted_relays_only;  // relay deps are built at Wire
 
   config_.relay = next.relay;
   config_.directory = next.directory;
@@ -2354,7 +2393,9 @@ void ConversationsHub::Apply(const NetworkConfig& next) {
   config_.mesh.capabilities.media_relay = next.media_relay;
   config_.mesh.capabilities.dht = next.dht;
   config_.mesh.prefer_contacts_for_routing = next.prefer_contacts_for_routing;
-  PublishMeshConfig();
+  config_.mesh.direct_connections = next.direct_connections;
+  config_.mesh.trusted_relays_only = next.trusted_relays_only;
+  PublishMeshConfig();  // republishes who may learn our address too
 
   if (service_urls_changed) {
     UpdateOrgBackendClients(config_);
@@ -2383,6 +2424,9 @@ void ConversationsHub::Apply(const PolicyPrefs& prefs) {
   if (attachment_downloads_) {
     attachment_downloads_->SetDownloadPolicy(prefs.attachment_download_policy);
   }
+  if (call_stack_) {
+    call_stack_->SetInboundCallAudience(prefs.call_invite_policy);
+  }
 }
 
 void ConversationsHub::Apply(const NotificationPrefs& prefs) {
@@ -2402,12 +2446,15 @@ ConversationsHub::NetworkConfig ConversationsHub::ProjectNetwork(const AppConfig
   out.media_relay = config.mesh.capabilities.media_relay;
   out.dht = config.mesh.capabilities.dht;
   out.prefer_contacts_for_routing = config.mesh.prefer_contacts_for_routing;
+  out.direct_connections = config.mesh.direct_connections;
+  out.trusted_relays_only = config.mesh.trusted_relays_only;
   return out;
 }
 
 ConversationsHub::PolicyPrefs ConversationsHub::ProjectPolicy(const ProfilePreferences& prefs) {
   return {.group_invite_policy = GroupInvitePolicyFromString(prefs.group_invite_policy),
-          .attachment_download_policy = AttachmentDownloadPolicyFromString(prefs.attachment_download_policy)};
+          .attachment_download_policy = AttachmentDownloadPolicyFromString(prefs.attachment_download_policy),
+          .call_invite_policy = InboundAudienceFromName(prefs.call_invite_policy, InboundAudience::Everyone)};
 }
 
 ConversationsHub::NotificationPrefs ConversationsHub::ProjectNotifications(const ProfilePreferences& prefs) {
@@ -2443,6 +2490,9 @@ Roe<CircuitRelayBridgeResult> ConversationsHub::RequestCircuitBridgePreferred(co
   }
   auto hops = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, mesh_cfg.bootstrap_peers,
                                  mesh_cfg.prefer_contacts_for_routing, include_seeds);
+  if (mesh_cfg.trusted_relays_only) {  // privacy T4
+    hops = KeepTrustedRelays(std::move(hops), TrustedRelayPeerIds(contacts, mesh_cfg.bootstrap_peers));
+  }
   if (hops.empty()) {
     return Error("no circuit hop candidates");
   }
@@ -2614,6 +2664,9 @@ void ConversationsHub::Shutdown() {
   http_directory_url_.clear();
   http_registration_url_.clear();
   identity_.reset();
+  if (contacts_) {
+    contacts_->SetOnChanged({});
+  }
   contacts_.reset();
   store_.reset();
   signing_key_store_.Clear();

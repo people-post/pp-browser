@@ -45,7 +45,7 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 | `pp_reachability_status` | gauge | `status` = `unknown` \| `checking` \| `reachable` \| `outbound_only` \| `blocked` | 1 for the current verdict |
 | `pp_reachability_signal` | gauge | `signal` = `dial_back_ok` \| `seed_dial_ok` \| `upnp_mapped` \| `public_ipv4` \| `global_ipv6` | 1 = true |
 | `pp_punch_attempts_total` | counter | `kind` = `cold` \| `upgrade` \| `signaling`; `result` = `ok` \| `failed` | Punches this node started |
-| `pp_punch_served_total` | counter | `role` = `introducer` \| `target` | Punch requests served |
+| `pp_punch_served_total` | counter | `role` = `introducer` \| `target` \| `target_declined` | Punch requests served; `target_declined`: an initiator our address-disclosure audience does not allow (projects/privacy T1) |
 | `pp_circuit_relay_requests_total` | counter | `op` = `bridge` \| `reserve`; `result` = `accepted` \| `refused_admission` \| `refused_standby_full` (bridge) / `accepted` \| `refused` (reserve) | |
 | `pp_circuit_relay_tunnels_total` | counter | `result` = `bridged` \| `failed` | Tunnels that ended setup |
 | `pp_circuit_relay_setup_seconds` | histogram | | Request → bridged (buckets 0.05 … 10) |

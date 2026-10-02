@@ -47,6 +47,10 @@ void CallReachSignals::BindExchangePorts() {
     return addrs;
   };
   punch.local_peer_id = [this]() { return call_.local_peer_id ? call_.local_peer_id() : std::string{}; };
+  // The authenticated signalling sender only: the offer's peer_id is self-declared (PR 249 review).
+  punch.may_answer = [this](const std::string& sender_key) {
+    return !call_.may_learn_our_address || call_.may_learn_our_address(sender_key);
+  };
   punch_.SetPorts(std::move(punch));
 
   CircuitR1Hint::Ports r1;
