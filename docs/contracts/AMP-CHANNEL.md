@@ -137,15 +137,31 @@ Core factories: `lib/amp/L3/ChannelPolicy.h` (Amp owns Bulk class + size). Produ
 
 | Factory | Class | `max_outbound` | Drop | `read_once` | Read timeout | Home |
 |---------|-------|----------------|------|-------------|--------------|------|
-| `CallMediaChannelPolicy` | Realtime | 64 | Oldest | no | off | product |
+| `CallMediaChannelPolicy` | Realtime | 64 | Oldest | no | off | core |
+| `CallMediaControlChannelPolicy` | RealtimeControl | 1 | Never | no | off | product |
 | `MediaRelayHopChannelPolicy` | Realtime | 2 | Oldest | no | off | product |
-| `MediaRelayClientChannelPolicy` | RealtimeControl | 6 | Never | no | 8 s | product |
-| `ControlJsonChannelPolicy` | Control | 1 | Never | yes | 8 s | core |
+| `MediaRelayClientChannelPolicy` | RealtimeControl | 6 | Never | no | off | product |
+| `CircuitTunnelChannelPolicy` | Control | 1 | Never | no | off | product |
+| `CircuitCarrierChannelPolicy` | Realtime | 64 | Oldest | no | off | core |
+| `ControlJsonChannelPolicy` | Control | 1 | Never | yes | 8 s (callers pass their deadline) | core |
 | `MakeBulkChannelPolicy` / `BulkChannelPolicy()` | Bulk | 1 | Never | no | off | **core** |
-| `BulkChannelPolicy(bool)` (wrap + timeout) | Bulk | 1 | Never | configurable | 8 s | product |
-| `CircuitCarrierChannelPolicy` | Realtime | 64 | Oldest | no | 8 s | core |
+| `BulkChannelPolicy(bool)` (wrap + timeout) | Bulk | 1 | Never | configurable | 8 s (client: remaining operation time; inbound: 15 s) | product |
 
-Timers require `MeshPump` io executor (same as `timer_executor` on `DuplexFrameSession` today).
+**Read timeout is enforced** (pp-cpp-amp v2.15.0+): a channel with nothing *inbound*
+for that long is reset (`read-timeout` to the local side, RESET to the peer); the clock
+starts at open / bind and restarts on every inbound DATA or FRAG, not on sends. So:
+
+- **Long-lived legs have it off** — call control and media, media-relay attach and hop,
+  circuit tunnels and carriers. Each is legitimately silent on one side for long
+  stretches (standby-path heartbeat 10 s, a publisher gets nothing back, reservations,
+  one-way splices); their coordinators own handshake deadlines and liveness.
+- **Request/response channels keep it**, sized to the slowest legitimate reply: the
+  inbound side of a request answered by a worker (`InboundReplyPolicy`) waits for the
+  whole job — dial-back serving waits for its sequential target walk (4 × 15 s + 5 s);
+  an inbound blob fetch drains its reply outbound-only after `Close`, so it gets the
+  client's 15 s operation deadline.
+
+Checked on the mux tick (`MeshPump` io thread), so it fires up to one tick late.
 
 ## L4 mapping (unchanged payloads)
 
