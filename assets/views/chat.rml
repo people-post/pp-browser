@@ -101,7 +101,11 @@
       <p class="text muted">{{i18n:chat.empty_body}}</p>
     </div>
     <div data-if="use_messages_layout">
-      <div data-for="row : messages" data-class="row.row_class" data-attr-message-id="row.message_id">
+      <div data-for="row : messages" class="message-row"
+           data-class-message-row-user="row.row_class == 'message-row-user'"
+           data-class-message-row-ai="row.row_class == 'message-row-ai'"
+           data-class-message-row-peer="row.row_class == 'message-row-peer'"
+           data-attr-message-id="row.message_id">
         <p class="sender-label muted" data-if="row.sender_label != ''">
           <span data-rml="row.sender_label"></span><span class="chat-transport-inline muted" data-if="row.transport_badge != ''"> · <span data-rml="row.transport_badge"></span></span>
         </p>
