@@ -62,3 +62,5 @@ What pp-node serves at `GET /metrics` on its status HTTP server (`--status-addr`
 Owner names: `pp-media-sess`, `pp-connectivity`. Histogram buckets (seconds): 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5.
 
 Code: `common/metrics/MetricsRegistry.*` (registry + rendering), `app/node/NodeMetrics.*` (scrape-time collectors).
+
+Grafana dashboard on these series (and the collector labels it expects): [`packaging/pp-node/monitoring/`](../../packaging/pp-node/monitoring/README.md). Keep it in step when a series is added or renamed.
