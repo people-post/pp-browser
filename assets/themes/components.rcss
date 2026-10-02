@@ -2836,6 +2836,17 @@ input.checkbox {
 }
 
 .preview-title,
+.working-set-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8dp;
+}
+
+.working-set-header-text {
+  flex: 1;
+  min-width: 0;
+}
+
 .working-set-title {
   margin-top: 0;
   font-size: 18dp;

@@ -297,6 +297,7 @@
     "people_picker.allow_video": "Allow video",
     "people_picker.cta_invite_to_call": "Invite",
     "chat.new_chat": "New chat",
+    "common.close": "Close",
     "chat.permission.intro": "I need your permission before changing contacts, chats, or identity settings.",
     "chat.permission.prompt_one": "Allow the assistant to run this action that can change your data?",
     "chat.permission.prompt_one_named": "Allow the assistant to run this action that can change your data ({names})?",
