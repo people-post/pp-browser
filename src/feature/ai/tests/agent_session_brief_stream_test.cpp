@@ -82,9 +82,11 @@ protected:
     AppRuntime::Shutdown();
   }
 
-  void Start(const std::string& preset = "brief") {
+  void Start(const std::string& preset = "brief") { StartWith(MakeConfig(preset)); }
+
+  void StartWith(const AppConfig& config) {
     session_ = std::make_unique<AgentSession>();
-    session_->Configure(MakeConfig(preset));
+    session_->Configure(config);
     session_->WaitForConfigureIdle(); // Configure() counts the run before posting it, so this is enough
     ASSERT_TRUE(session_->IsConfigured());
   }
@@ -150,22 +152,47 @@ protected:
   std::vector<BriefAiRequest> requests_;
 };
 
-// Without PP_BROWSER_BRIEF_STREAM_URL and without an injected stream, the default brief config must
-// stay on the local pipeline (the gateway endpoint is not live yet).
-TEST_F(AgentSessionBriefStreamTest, DefaultBriefConfigStaysOnLocalPath) {
+// The default brief config streams through the real client (here: a closed port), so the turn ends
+// with a retryable error and never reaches the local pipeline or a persisted answer.
+TEST_F(AgentSessionBriefStreamTest, DefaultBriefConfigStreamsThroughTheRealClient) {
   Start("brief");
   session_->Submit("hi there");
   const auto events = WaitForTurn();
-  bool delta = false, ready = false, ended = false;
+  bool delta = false, ready = false, ended = false, error = false;
   for (const AgentEvent& event : events) {
     delta |= event.type == AgentEventType::AssistantDelta;
     ready |= event.type == AgentEventType::AssistantReady;
     ended |= event.type == AgentEventType::LoadingChanged && !event.loading;
+    error |= event.type == AgentEventType::Error && event.retryable;
   }
   EXPECT_FALSE(delta);
   EXPECT_FALSE(ready);
+  EXPECT_TRUE(error);
   EXPECT_TRUE(ended);
-  EXPECT_TRUE(Requests().empty());
+  // (No fake is installed here, so Requests() says nothing; the retryable error is what shows the
+  // stream path ran: PushError(Error) from the local pipeline is never retryable.)
+}
+
+TEST_F(AgentSessionBriefStreamTest, MissingKeyIsASettingsErrorNotARetry) {
+  AppConfig config = MakeConfig("brief");
+  config.llm.api_key.clear();
+  StartWith(config);
+  Script({Meta(), Token("x"), Done("x")}, BriefAiOutcome::Done);
+  session_->Submit("hi there");
+  const auto events = WaitForTurn();
+  bool error = false, retryable = false, ready = false;
+  for (const AgentEvent& event : events) {
+    if (event.type == AgentEventType::Error) {
+      error = true;
+      retryable |= event.retryable;
+      EXPECT_NE(event.message.find("key"), std::string::npos) << event.message;
+    }
+    ready |= event.type == AgentEventType::AssistantReady;
+  }
+  EXPECT_TRUE(error);
+  EXPECT_FALSE(retryable);
+  EXPECT_FALSE(ready);
+  EXPECT_TRUE(Requests().empty()); // the fake stream was never called
 }
 
 TEST_F(AgentSessionBriefStreamTest, DoneStreamsDeltasThenReady) {

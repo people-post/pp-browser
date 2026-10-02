@@ -163,3 +163,26 @@ TEST(BriefTurnRunnerTest, StatusEventsReachOnStatus) {
   EXPECT_EQ(rec.statuses, (std::vector<std::string>{"web_search:running", "web_search:done"}));
   EXPECT_EQ(rec.Terminals(), 1);
 }
+
+TEST(BriefTurnRunnerTest, StreamFailureIsRetryableOnlyForNetworkErrors) {
+  for (const auto& [error, expect_retryable] :
+       std::vector<std::pair<pbr::Error, bool>>{
+           {pbr::AppError::Network(pbr::Err::Network::HttpError, "answer interrupted"), true},
+           {pbr::AppError::Network(pbr::Err::Network::Unreachable, "curl failed"), true},
+           {pbr::AppError::Auth(pbr::Err::Auth::Forbidden, "LLM HTTP 401"), false},
+           {pbr::AppError::Auth(pbr::Err::Auth::RateLimited, "LLM HTTP 429"), false},
+       }) {
+    const pbr::BriefAiStreamFn stream = [error = error](const pbr::BriefAiRequest&,
+                                                        const std::function<void(const pbr::BriefAiEvent&)>&,
+                                                        const std::atomic<bool>&) -> pbr::Roe<pbr::BriefAiOutcome> {
+      return error;
+    };
+    std::optional<bool> retryable;
+    pbr::BriefTurnSinks sinks;
+    sinks.on_error = [&](const std::string&, const bool r, const std::string&) { retryable = r; };
+    std::atomic<bool> cancel{false};
+    pbr::BriefTurnRunner::Run(stream, pbr::BriefAiRequest{}, cancel, sinks);
+    ASSERT_TRUE(retryable.has_value());
+    EXPECT_EQ(*retryable, expect_retryable) << error.message;
+  }
+}
