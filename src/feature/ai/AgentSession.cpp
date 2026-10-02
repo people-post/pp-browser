@@ -1025,11 +1025,10 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
       llm_config.require_api_key = true;
     }
     state->llm = std::make_unique<LlmClient>(llm_config);
-    // Streamed answers are opt-in until the gateway endpoint is live (plan step 3): without the dev
-    // override every turn stays on the local pipeline. Flip this to "always" when the backend ships.
-    state->brief_stream = nullptr;
-    if (const std::string stream_url = BriefStreamUrlOverride(); !stream_url.empty()) {
-      const auto brief_client = std::make_shared<BriefAiClient>(llm_config, stream_url);
+    // Streamed answers go through the gateway's /pp/chat/stream (live since app-static-api #169);
+    // PP_BROWSER_BRIEF_STREAM_URL only redirects them to a local fake server for development.
+    {
+      const auto brief_client = std::make_shared<BriefAiClient>(llm_config, BriefStreamUrlOverride());
       state->brief_stream = [brief_client](const BriefAiRequest& request,
                                            const std::function<void(const BriefAiEvent&)>& on_event,
                                            const std::atomic<bool>& cancel) {

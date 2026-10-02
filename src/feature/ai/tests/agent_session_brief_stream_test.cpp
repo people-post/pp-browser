@@ -150,22 +150,24 @@ protected:
   std::vector<BriefAiRequest> requests_;
 };
 
-// Without PP_BROWSER_BRIEF_STREAM_URL and without an injected stream, the default brief config must
-// stay on the local pipeline (the gateway endpoint is not live yet).
-TEST_F(AgentSessionBriefStreamTest, DefaultBriefConfigStaysOnLocalPath) {
+// The default brief config streams through the real client (here: a closed port), so the turn ends
+// with a retryable error and never reaches the local pipeline or a persisted answer.
+TEST_F(AgentSessionBriefStreamTest, DefaultBriefConfigStreamsThroughTheRealClient) {
   Start("brief");
   session_->Submit("hi there");
   const auto events = WaitForTurn();
-  bool delta = false, ready = false, ended = false;
+  bool delta = false, ready = false, ended = false, error = false;
   for (const AgentEvent& event : events) {
     delta |= event.type == AgentEventType::AssistantDelta;
     ready |= event.type == AgentEventType::AssistantReady;
     ended |= event.type == AgentEventType::LoadingChanged && !event.loading;
+    error |= event.type == AgentEventType::Error && event.retryable;
   }
   EXPECT_FALSE(delta);
   EXPECT_FALSE(ready);
+  EXPECT_TRUE(error);
   EXPECT_TRUE(ended);
-  EXPECT_TRUE(Requests().empty());
+  EXPECT_TRUE(Requests().empty()); // no injected fake: the real BriefAiClient was used
 }
 
 TEST_F(AgentSessionBriefStreamTest, DoneStreamsDeltasThenReady) {
