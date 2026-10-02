@@ -43,9 +43,9 @@ Object DecisionPayload(const std::string& approval_id, const std::string& decisi
 std::string BuildToolPermissionChoiceBlocks(const std::string& approval_id,
                                             const std::vector<PlannedToolCall>& offered_tools) {
   const std::string names = DescribeTools(offered_tools);
-  const std::map<std::string, std::string> args{{"names", names.empty() ? "" : " (" + names + ")"}};
-  const std::string prompt =
-      Tr(offered_tools.size() == 1 ? "chat.permission.prompt_one" : "chat.permission.prompt_many", args);
+  // Each catalog owns its punctuation around the tool names (CJK uses full-width brackets).
+  const std::string base = offered_tools.size() == 1 ? "chat.permission.prompt_one" : "chat.permission.prompt_many";
+  const std::string prompt = names.empty() ? Tr(base) : Tr(base + "_named", {{"names", names}});
 
   Object paragraph;
   paragraph.set("type", "paragraph");
@@ -80,8 +80,8 @@ std::string BuildToolPermissionDeniedBlocks(const std::vector<PlannedToolCall>& 
 }
 
 std::string BuildToolPermissionStaleBlocks(const std::string& reason_code) {
-  const std::string text =
-      Tr("chat.permission.stale", {{"reason", reason_code.empty() ? "" : " (" + reason_code + ")"}});
+  const std::string text = reason_code.empty() ? Tr("chat.permission.stale")
+                                               : Tr("chat.permission.stale_reason", {{"reason", reason_code}});
   Object callout;
   callout.set("type", "callout");
   callout.set("variant", "info");
