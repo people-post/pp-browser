@@ -1010,10 +1010,7 @@ void AgentSession::RefreshCompactionService(const std::shared_ptr<Impl>& state) 
 }
 
 void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
-  {
-    std::lock_guard lock(state->configure_mutex);
-    ++state->configure_inflight;
-  }
+  // Configure() counted this run; the guard releases it on every exit path.
   struct InflightGuard {
     const std::shared_ptr<Impl>& state;
     ~InflightGuard() {
@@ -1118,6 +1115,12 @@ void AgentSession::Configure(const AppConfig& config) {
   impl_->configured = false;
   impl_->cancelled = false;
 
+  // Count the configure as in flight before it is posted, so WaitForConfigureIdle() called right
+  // after Configure() cannot return before the worker has even started.
+  {
+    std::lock_guard lock(impl_->configure_mutex);
+    ++impl_->configure_inflight;
+  }
   AppRuntime::PostWorkerNormal([impl = impl_]() { ConfigureOnIO(impl); });
 }
 
