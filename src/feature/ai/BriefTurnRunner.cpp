@@ -51,7 +51,9 @@ void BriefTurnRunner::Run(const BriefAiStreamFn& stream, const BriefAiRequest& r
 
   const Roe<BriefAiOutcome> outcome = stream(request, on_event, cancel);
   if (!outcome) {
-    Call(sinks.on_error, AppError::Display(outcome.error()), true, text);
+    // Only network trouble is worth a retry; an invalid or rate-limited key is not.
+    const bool retryable = AppError::CategoryOf(outcome.error()) == ErrorCategory::Network;
+    Call(sinks.on_error, AppError::Display(outcome.error()), retryable, text);
     return;
   }
 

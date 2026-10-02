@@ -761,6 +761,13 @@ void AgentSession::EmitStreamedAnswer(const std::shared_ptr<Impl>& state, const 
 
 void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vector<BriefAiHistoryTurn> history,
                                    std::string summary) {
+  // Same gate as LlmClient::Complete: no key means a settings problem, not a network one — say so
+  // without a round-trip and without offering a retry.
+  if (state->config.llm.api_key.empty()) {
+    PushError(state, AppError::Config(Err::Config::MissingKey, "LLM API key not configured"));
+    FinishTurn(state);
+    return;
+  }
   state->turn_trace = TurnTrace{};
   state->turn_trace.turn_id = util::GenerateUuid();
   state->turn_trace.entry_id = state->pending_entry_id;

@@ -82,9 +82,11 @@ protected:
     AppRuntime::Shutdown();
   }
 
-  void Start(const std::string& preset = "brief") {
+  void Start(const std::string& preset = "brief") { StartWith(MakeConfig(preset)); }
+
+  void StartWith(const AppConfig& config) {
     session_ = std::make_unique<AgentSession>();
-    session_->Configure(MakeConfig(preset));
+    session_->Configure(config);
     session_->WaitForConfigureIdle(); // Configure() counts the run before posting it, so this is enough
     ASSERT_TRUE(session_->IsConfigured());
   }
@@ -167,7 +169,30 @@ TEST_F(AgentSessionBriefStreamTest, DefaultBriefConfigStreamsThroughTheRealClien
   EXPECT_FALSE(ready);
   EXPECT_TRUE(error);
   EXPECT_TRUE(ended);
-  EXPECT_TRUE(Requests().empty()); // no injected fake: the real BriefAiClient was used
+  // (No fake is installed here, so Requests() says nothing; the retryable error is what shows the
+  // stream path ran: PushError(Error) from the local pipeline is never retryable.)
+}
+
+TEST_F(AgentSessionBriefStreamTest, MissingKeyIsASettingsErrorNotARetry) {
+  AppConfig config = MakeConfig("brief");
+  config.llm.api_key.clear();
+  StartWith(config);
+  Script({Meta(), Token("x"), Done("x")}, BriefAiOutcome::Done);
+  session_->Submit("hi there");
+  const auto events = WaitForTurn();
+  bool error = false, retryable = false, ready = false;
+  for (const AgentEvent& event : events) {
+    if (event.type == AgentEventType::Error) {
+      error = true;
+      retryable |= event.retryable;
+      EXPECT_NE(event.message.find("key"), std::string::npos) << event.message;
+    }
+    ready |= event.type == AgentEventType::AssistantReady;
+  }
+  EXPECT_TRUE(error);
+  EXPECT_FALSE(retryable);
+  EXPECT_FALSE(ready);
+  EXPECT_TRUE(Requests().empty()); // the fake stream was never called
 }
 
 TEST_F(AgentSessionBriefStreamTest, DoneStreamsDeltasThenReady) {
