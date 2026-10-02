@@ -1010,16 +1010,7 @@ void AgentSession::RefreshCompactionService(const std::shared_ptr<Impl>& state) 
 }
 
 void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
-  // Configure() counted this run; the guard releases it on every exit path.
-  struct InflightGuard {
-    const std::shared_ptr<Impl>& state;
-    ~InflightGuard() {
-      std::lock_guard lock(state->configure_mutex);
-      --state->configure_inflight;
-      state->configure_cv.notify_all();
-    }
-  } inflight_guard{state};
-
+  // Configure() counted this run and releases it when the posted closure is destroyed.
   // Serialize ConfigureOnIO body — concurrent Configure() raced mcp.Start/Stop (UAF → SEGV in logger).
   // Cancel() means "abort the active turn", not "abort agent configure". OnNewChat /
   // find-someone calls Cancel while Me→ReloadFromDisk may still be reconfiguring; tearing
@@ -1116,12 +1107,26 @@ void AgentSession::Configure(const AppConfig& config) {
   impl_->cancelled = false;
 
   // Count the configure as in flight before it is posted, so WaitForConfigureIdle() called right
-  // after Configure() cannot return before the worker has even started.
+  // after Configure() cannot return before the worker has even started. The count is released when
+  // the posted closure is destroyed — after it ran, or when the runtime drops it during teardown —
+  // so a dropped post cannot leave WaitForConfigureIdle() waiting forever.
+  struct InflightToken {
+    explicit InflightToken(std::shared_ptr<Impl> owner) : impl(std::move(owner)) {}
+    InflightToken(const InflightToken&) = delete;
+    InflightToken& operator=(const InflightToken&) = delete;
+    ~InflightToken() {
+      std::lock_guard lock(impl->configure_mutex);
+      --impl->configure_inflight;
+      impl->configure_cv.notify_all();
+    }
+    std::shared_ptr<Impl> impl;
+  };
   {
     std::lock_guard lock(impl_->configure_mutex);
     ++impl_->configure_inflight;
   }
-  AppRuntime::PostWorkerNormal([impl = impl_]() { ConfigureOnIO(impl); });
+  AppRuntime::PostWorkerNormal(
+      [impl = impl_, token = std::make_shared<InflightToken>(impl_)]() { ConfigureOnIO(impl); });
 }
 
 void AgentSession::SetToolRegistrationHook(ToolRegistrationHook hook) {
