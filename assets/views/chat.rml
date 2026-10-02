@@ -105,6 +105,7 @@
            data-class-message-row-user="row.row_class == 'message-row-user'"
            data-class-message-row-ai="row.row_class == 'message-row-ai'"
            data-class-message-row-peer="row.row_class == 'message-row-peer'"
+           data-class-message-row-annotation-orphan="row.row_class == 'message-row-annotation-orphan'"
            data-attr-message-id="row.message_id">
         <p class="sender-label muted" data-if="row.sender_label != ''">
           <span data-rml="row.sender_label"></span><span class="chat-transport-inline muted" data-if="row.transport_badge != ''"> · <span data-rml="row.transport_badge"></span></span>
