@@ -2835,7 +2835,6 @@ input.checkbox {
   overflow-y: auto;
 }
 
-.preview-title,
 .working-set-header {
   display: flex;
   align-items: flex-start;
@@ -2847,6 +2846,7 @@ input.checkbox {
   min-width: 0;
 }
 
+.preview-title,
 .working-set-title {
   margin-top: 0;
   font-size: 18dp;
