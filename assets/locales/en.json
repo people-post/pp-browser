@@ -20,6 +20,8 @@
     "nav.sessions": "Sessions",
     "nav.contacts": "Contacts",
     "nav.me": "Me",
+    "shell.sidebar.collapse": "Collapse list",
+    "shell.sidebar.expand": "Expand list",
     "shell.statusbar.direct_off": "Direct off",
     "shell.statusbar.brief_offline": "Brief offline",
     "shell.statusbar.brief_ok": "Online",

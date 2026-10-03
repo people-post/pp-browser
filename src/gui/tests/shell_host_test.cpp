@@ -207,3 +207,38 @@ TEST(ShellHostTest, ProjectShellChromeSnapshot) {
   EXPECT_TRUE(snap.settings_detail_transient);
   EXPECT_TRUE(snap.settings_detail_primary);
 }
+
+TEST(ShellHostTest, SidebarWidthClampAndVisibility) {
+  using namespace pbr;
+
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(0), 200);
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(199), 200);
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(200), 200);
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(240), 240);
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(480), 480);
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(481), 480);
+  EXPECT_EQ(ShellLayout::ClampSidebarWidthDp(100000), 480);
+  EXPECT_EQ(ShellState{}.sidebar_width_dp, ShellLayout::kSidebarDefaultWidthDp);
+  EXPECT_FALSE(ShellState{}.sidebar_collapsed);
+
+  ShellState state{};
+  state.layout_mode = LayoutMode::Expanded;
+  state.nav_tab = NavTab::Sessions;
+  EXPECT_TRUE(ShellLayout::SecondaryPaneShown(state));
+  state.sidebar_collapsed = true;
+  EXPECT_FALSE(ShellLayout::SecondaryPaneShown(state));
+  state.sidebar_collapsed = false;
+  state.nav_tab = NavTab::Home;
+  EXPECT_FALSE(ShellLayout::SecondaryPaneShown(state));
+  state.nav_tab = NavTab::Me;
+  EXPECT_TRUE(ShellLayout::SecondaryPaneShown(state));
+  state.layout_mode = LayoutMode::Compact;
+  EXPECT_FALSE(ShellLayout::SecondaryPaneShown(state));
+
+  // Collapsed lists come back on tabs that have one; Home leaves the flag alone.
+  EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Sessions));
+  EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Contacts));
+  EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Me));
+  EXPECT_TRUE(ShellLayout::SidebarCollapsedAfterNavSelect(true, NavTab::Home));
+  EXPECT_FALSE(ShellLayout::SidebarCollapsedAfterNavSelect(false, NavTab::Home));
+}

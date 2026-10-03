@@ -1274,6 +1274,17 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   shell_->RefreshSafeAreaInsets(context);
   shell_->SyncChromeMaterialPrefs(bootstrap.profile_prefs.reduce_transparency,
                                   bootstrap.profile_prefs.compact_chrome_frost);
+  shell_->SetSidebarPrefs(bootstrap.profile_prefs.sidebar_width_dp, bootstrap.profile_prefs.sidebar_collapsed);
+  shell_->SetOnSidebarChanged([this](int width_dp, bool collapsed) {
+    ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+    if (prefs.sidebar_width_dp == width_dp && prefs.sidebar_collapsed == collapsed) {
+      return;
+    }
+    prefs.sidebar_width_dp = width_dp;
+    prefs.sidebar_collapsed = collapsed;
+    prefs.schema_version = ProfilePreferences::kSchemaVersion;
+    (void)store_.SaveProfilePrefs(prefs);
+  });
 
   ApplyUiDocumentLanguage(context);
 }

@@ -50,6 +50,18 @@ bool ShellLayout::TabHasSecondary(NavTab tab) {
   return NavContentKey(tab) != nullptr;
 }
 
+int ShellLayout::ClampSidebarWidthDp(int width_dp) {
+  return std::clamp(width_dp, kSidebarMinWidthDp, kSidebarMaxWidthDp);
+}
+
+bool ShellLayout::SecondaryPaneShown(const ShellState& state) {
+  return state.layout_mode == LayoutMode::Expanded && TabHasSecondary(state.nav_tab) && !state.sidebar_collapsed;
+}
+
+bool ShellLayout::SidebarCollapsedAfterNavSelect(bool collapsed, NavTab tab) {
+  return TabHasSecondary(tab) ? false : collapsed;
+}
+
 PaneVisibility ShellLayout::WhichPanesVisible(const ShellState& state) {
   PaneVisibility vis{};
   vis.primary = true;

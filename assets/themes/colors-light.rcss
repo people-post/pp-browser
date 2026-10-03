@@ -537,6 +537,15 @@ select selectbox option:hover {
   border-right: 1dp #e5e7eb;
 }
 
+.shell-splitter:hover,
+.shell-splitter--active {
+  background-color: #cbd5e1;
+}
+
+.shell-splitter--active {
+  background-color: #94a3b8;
+}
+
 .shell-nav-rail {
   background-color: #f1f5f9;
   border-right: 1dp #e5e7eb;
