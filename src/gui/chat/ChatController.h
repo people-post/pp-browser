@@ -297,7 +297,8 @@ private:
   void OnRemoveImage();
   /** Drops the pending (or still preparing) image and its session thumbnail file. */
   void DiscardPendingAiImage();
-  void SendImageQuestion(const std::string& text);
+  /** False when the question could not be sent (not ready, no thread); the draft and the chip then stay. */
+  bool SendImageQuestion(const std::string& text);
   void DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const;
   void OpenAttachment(const std::string& message_id);
   void DownloadAttachment(const std::string& message_id);

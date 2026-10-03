@@ -1597,20 +1597,20 @@ void ChatController::DiscardPendingAiImage() {
   DirtyChatHeader();
 }
 
-void ChatController::SendImageQuestion(const std::string& text) {
+bool ChatController::SendImageQuestion(const std::string& text) {
   if (!messaging_ready_ || !facade_ || !pending_image_ || !agent_ports_.submit_image_to_thread) {
-    return;
+    return false;
   }
   if (!AgentCloudReady()) {
     RefreshLlmSetupBanner();
-    return;
+    return false;
   }
   // Taken out first: opening the AI thread from Home switches threads, which discards a pending image.
   PendingAiImage image = std::move(*pending_image_);
   pending_image_.reset();
   if (ChromeSnapshot().nav_tab == NavTab::Home && !EnsureHomeOutboundSession()) {
     pending_image_ = std::move(image);
-    return;
+    return false;
   }
   chat_.image_chip = false;
   chat_.image_thumb_ready = false;
@@ -1633,10 +1633,23 @@ void ChatController::SendImageQuestion(const std::string& text) {
   DirtyChatHeader();
   log().info << "Submitting an image question to the agent session";
   agent_ports_.submit_image_to_thread(thread_id, question, AgentImageTurn{.image = std::move(image.image), .message_id = message_id});
+  return true;
 }
 
 void ChatController::DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const {
+  // Only the user's own questions in an AI thread carry the marker; a peer's or the AI's text that
+  // happens to start with it is left alone.
+  if (!facade_) {
+    return;
+  }
+  auto thread = facade_->GetActiveThread();
+  if (!thread || thread->kind != ThreadKind::Ai) {
+    return;
+  }
   for (MessageDisplayRow& row : rows) {
+    if (row.row_class != "message-row-user") {
+      continue;
+    }
     std::string rml = row.content_rml.c_str();
     if (rml.find(kAiImageTurnMarker) == std::string::npos) {
       continue;
@@ -1939,7 +1952,9 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
 }
 
 void ChatController::OnSendMessage() {
-  if (chat_.loading || chat_.compose_disabled) {
+  // Enter only checks focus: while an image is still being prepared the question must not go out
+  // alone (the image would then attach itself to the next one).
+  if (chat_.loading || chat_.compose_disabled || chat_.image_preparing) {
     return;
   }
 
@@ -1956,13 +1971,18 @@ void ChatController::OnSendMessage() {
     }
   }
 
+  if (with_image) {
+    // The draft is cleared only once the question is really on its way; a refused send keeps the text and the chip.
+    if (SendImageQuestion(text)) {
+      chat_.draft = "";
+      DirtyChatChrome();
+      scroller_.RequestScrollToLatest();
+    }
+    return;
+  }
   chat_.draft = "";
   DirtyChatChrome();
   scroller_.RequestScrollToLatest();
-  if (with_image) {
-    SendImageQuestion(text);
-    return;
-  }
   SendUserText(text);
 }
 
