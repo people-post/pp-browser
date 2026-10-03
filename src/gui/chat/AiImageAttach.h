@@ -45,22 +45,43 @@ inline const char* AiImageErrorKindKey(const std::string& error_kind) {
   return nullptr;
 }
 
+/** Longest edge of an image shown in a bubble, in dp. */
+constexpr int kAiImageBubbleMaxDp = 240;
+
+/** `width` x `height` scaled down (never up) to fit a kAiImageBubbleMaxDp square, keeping the aspect ratio. */
+inline std::pair<int, int> AiImageBubbleSize(const int width, const int height) {
+  const int longest = width > height ? width : height;
+  if (width <= 0 || height <= 0 || longest <= kAiImageBubbleMaxDp) {
+    return {width, height};
+  }
+  const auto scale = [longest](const int side) {
+    const int scaled = side * kAiImageBubbleMaxDp / longest;
+    return scaled > 0 ? scaled : 1;
+  };
+  return {scale(width), scale(height)};
+}
+
 /**
  * Rewrites the bubble of a stored image question ("[Image] <question>", see kAiImageTurnMarker).
- * `image_src` non-empty: the marker becomes a thumbnail above the question. Empty (the session file is
+ * `image_src` non-empty: the marker becomes a thumbnail (`width` x `height` are the image's pixels) above the question. Empty (the session file is
  * gone, e.g. after a restart): the marker is shown as `marker_label`. Anything else is returned as is.
  */
-inline std::string DecorateAiImageBubble(std::string rml, const std::string& image_src,
-                                         const std::string& marker_label) {
+inline std::string DecorateAiImageBubble(std::string rml, const std::string& image_src, const int width,
+                                         const int height, const std::string& marker_label) {
   const std::string anchor = std::string("<p class=\"bubble-text\">") + kAiImageTurnMarker;
   const size_t at = rml.find(anchor);
   if (at == std::string::npos) {
     return rml;
   }
   const std::string head = "<p class=\"bubble-text\">";
+  // Explicit size: with only max-width/max-height the image box kept its full width and ran out of the bubble.
+  const auto [shown_w, shown_h] = AiImageBubbleSize(width, height);
+  const std::string size = shown_w > 0 && shown_h > 0 ? " style=\"width: " + std::to_string(shown_w) +
+                                                            "dp; height: " + std::to_string(shown_h) + "dp;\""
+                                                      : std::string();
   const std::string replacement = image_src.empty()
                                       ? head + marker_label + " "
-                                      : "<img class=\"chat-ai-image\" src=\"" + image_src + "\"/>" + head;
+                                      : "<img class=\"chat-ai-image\" src=\"" + image_src + "\"" + size + "/>" + head;
   rml.replace(at, anchor.size(), replacement);
   return rml;
 }

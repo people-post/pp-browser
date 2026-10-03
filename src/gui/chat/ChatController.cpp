@@ -1473,6 +1473,8 @@ namespace {
 struct PreparedDraft {
   BriefAiImage image;
   std::string file_path;
+  int width = 0;
+  int height = 0;
 };
 
 /** Pseudo thread whose blobs_view holds AI image thumbnails; wiped with the other session plaintext views. */
@@ -1486,6 +1488,8 @@ Roe<PreparedDraft> PrepareAiImageDraft(const std::string& path, const std::strin
   PreparedDraft draft;
   draft.image.mime = prepared->mime;
   draft.image.data = prepared->bytes;
+  draft.width = prepared->width;
+  draft.height = prepared->height;
   if (!profile_dir.empty()) {
     const std::filesystem::path dir = AttachmentViewRoot(profile_dir, kAiImageViewThread);
     std::error_code ec;
@@ -1552,7 +1556,10 @@ void ChatController::StartAiImagePrepare(std::string path) {
       }
       log().info << "AI image ready: " << result->image.data.size() << " bytes";
       pending_image_ = PendingAiImage{
-          .image = std::move(result->image), .name = std::move(name), .file_path = std::move(result->file_path)};
+          .image = std::move(result->image), .name = std::move(name),
+          .file_path = std::move(result->file_path),
+          .width = result->width,
+          .height = result->height};
       chat_.image_thumb_ready = !pending_image_->file_path.empty();
       chat_.image_thumb_src = pending_image_->file_path.c_str();
       SyncComposerInputState();
@@ -1609,7 +1616,7 @@ void ChatController::SendImageQuestion(const std::string& text) {
   const std::string question = text.empty() ? Tr("chat.image.default_question") : text;
   const std::string message_id = util::GenerateUuid();
   if (!image.file_path.empty()) {
-    ai_image_files_[message_id] = image.file_path;
+    ai_image_files_[message_id] = AiImageView{image.file_path, image.width, image.height};
   }
   widgets_.ExpireOpenForms();
   DirtyChatTurns();
@@ -1630,13 +1637,17 @@ void ChatController::DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) c
     }
     // The thumbnail is a session file: after a restart (or a vault lock) only the marker remains.
     std::string src;
-    if (const auto file = ai_image_files_.find(row.message_id.c_str()); file != ai_image_files_.end()) {
+    int width = 0;
+    int height = 0;
+    if (const auto view = ai_image_files_.find(row.message_id.c_str()); view != ai_image_files_.end()) {
       std::error_code ec;
-      if (std::filesystem::is_regular_file(file->second, ec)) {
-        src = StructuredTextParser::EscapeText(file->second);
+      if (std::filesystem::is_regular_file(view->second.file_path, ec)) {
+        src = StructuredTextParser::EscapeText(view->second.file_path);
+        width = view->second.width;
+        height = view->second.height;
       }
     }
-    row.content_rml = DecorateAiImageBubble(std::move(rml), src, Tr("chat.image.marker")).c_str();
+    row.content_rml = DecorateAiImageBubble(std::move(rml), src, width, height, Tr("chat.image.marker")).c_str();
   }
 }
 

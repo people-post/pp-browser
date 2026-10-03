@@ -30,11 +30,18 @@ TEST(AiImageAttachTest, EachFailureHasItsOwnMessage) {
 
 TEST(AiImageAttachTest, BubbleShowsThumbnailOrMarker) {
   const std::string rml = R"(<div class="bubble bubble-user" selectable="text"><p class="bubble-text">[Image] What is this?</p></div>)";
-  EXPECT_EQ(DecorateAiImageBubble(rml, "/tmp/a.jpg", "[Image]"),
-            R"(<div class="bubble bubble-user" selectable="text"><img class="chat-ai-image" src="/tmp/a.jpg"/><p class="bubble-text">What is this?</p></div>)");
-  EXPECT_EQ(DecorateAiImageBubble(rml, "", "[图片]"),
+  EXPECT_EQ(DecorateAiImageBubble(rml, "/tmp/a.jpg", 1200, 1600, "[Image]"),
+            R"(<div class="bubble bubble-user" selectable="text"><img class="chat-ai-image" src="/tmp/a.jpg" style="width: 180dp; height: 240dp;"/><p class="bubble-text">What is this?</p></div>)");
+  EXPECT_EQ(DecorateAiImageBubble(rml, "", 0, 0, "[图片]"),
             R"(<div class="bubble bubble-user" selectable="text"><p class="bubble-text">[图片] What is this?</p></div>)");
   // Only a user bubble that starts with the marker is touched.
   const std::string other = R"(<div class="bubble bubble-assistant"><p>[Image] not mine</p></div>)";
-  EXPECT_EQ(DecorateAiImageBubble(other, "/tmp/a.jpg", "[Image]"), other);
+  EXPECT_EQ(DecorateAiImageBubble(other, "/tmp/a.jpg", 10, 10, "[Image]"), other);
+}
+
+TEST(AiImageAttachTest, BubbleImageFitsA240SquareKeepingItsShape) {
+  EXPECT_EQ(AiImageBubbleSize(2048, 1024), (std::pair<int, int>{240, 120}));
+  EXPECT_EQ(AiImageBubbleSize(600, 1800), (std::pair<int, int>{80, 240}));
+  EXPECT_EQ(AiImageBubbleSize(100, 50), (std::pair<int, int>{100, 50})); // never enlarged
+  EXPECT_EQ(AiImageBubbleSize(4000, 2), (std::pair<int, int>{240, 1}));
 }
