@@ -20,6 +20,8 @@
     "nav.sessions": "会话",
     "nav.contacts": "联系人",
     "nav.me": "我",
+    "shell.sidebar.collapse": "收起列表",
+    "shell.sidebar.expand": "展开列表",
     "shell.statusbar.direct_off": "直连关闭",
     "shell.statusbar.brief_offline": "Brief 离线",
     "shell.statusbar.brief_ok": "在线",

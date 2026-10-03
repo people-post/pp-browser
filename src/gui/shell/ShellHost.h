@@ -12,6 +12,7 @@
 #include "gui/shell/ShellBottomSheetGesture.h"
 #include "gui/shell/ShellCallChromeGesture.h"
 #include "domain/ui/ShellGestureAxis.h"
+#include "gui/shell/ShellSplitterDrag.h"
 #include "gui/shell/ShellSwipeBackGesture.h"
 
 #include <ui/data/DataModelHandle.h>
@@ -172,6 +173,13 @@ public:
   void SetOnTransientPopped(std::function<void(const std::string& key)> callback);
   void SetOnNavTabChanged(std::function<void(NavTab tab)> callback);
   void SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback);
+
+  /** Secondary-pane prefs from disk (width is clamped). Call before the first layout sync. */
+  void SetSidebarPrefs(int width_dp, bool collapsed);
+  /** Fired after the user resizes or collapses/expands the secondary pane (persist here). */
+  void SetOnSidebarChanged(std::function<void(int width_dp, bool collapsed)> callback);
+  /** Collapse/expand the secondary pane (expanded layout, tabs with a secondary pane only). */
+  void ToggleSidebarCollapsed();
   void SetOnLayoutSynced(std::function<void()> callback);
   void SetOnAccountSheetOpened(std::function<void()> callback);
   void SetOnAccountSheetClosed(std::function<void()> callback);
@@ -194,6 +202,7 @@ public:
   /** Sync compact chrome material prefs from profile; resyncs shell when changed. */
   void SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_chrome_frost);
 
+  static void ToggleSidebarCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleAuxiliaryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenAuxiliaryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SelectNavTabCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -266,6 +275,8 @@ private:
   void MountComposer();
   void DetachDismissGestures();
   void AttachSwipeBackGesture();
+  void AttachSplitterDrag();
+  void NotifySidebarChanged();
   void AttachAccountSheetGesture();
   void DetachCallChromeGesture();
   void AttachCallChromeGesture();
@@ -342,11 +353,13 @@ private:
   ShellSwipeBackGesture swipe_back_gesture_;
   ShellBottomSheetGesture account_sheet_gesture_;
   ShellCallChromeGesture call_chrome_gesture_;
+  ShellSplitterDrag splitter_drag_;
   std::function<void(const std::string&)> on_before_transient_mount_;
   std::function<void(const std::string&)> on_transient_mounted_;
   std::function<void(const std::string&)> on_transient_popped_;
   std::function<void(NavTab)> on_nav_tab_changed_;
   std::function<void(LayoutMode)> on_layout_mode_changed_;
+  std::function<void(int, bool)> on_sidebar_changed_;
   std::function<void()> on_layout_synced_;
   std::function<void()> on_account_sheet_opened_;
   std::function<void()> on_account_sheet_closed_;
