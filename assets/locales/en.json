@@ -510,7 +510,6 @@
     "chat.device_lock.subtitle_this": "Encrypted · Only on this device",
     "chat.device_lock.subtitle_locked_out": "Encrypted · Continues on another device",
     "chat.device_lock.locked_out_body": "This chat continues on another device. You can still read older messages here.",
-    "chat.details": "Details",
     "chat.thinking": "Thinking...",
     "chat.banner.gap": "Some messages from your peer may be missing. Peer sync does not resend your unsent messages.",
     "chat.banner.retry_sync": "Retry sync",

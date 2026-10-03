@@ -56,9 +56,6 @@
               data-event-click="open_thread_actions_menu()">
         <svg src="../icons/more.svg"></svg>
       </button>
-      <button class="shell-toolbar-btn shell-toolbar-btn-preview chat-preview-btn" data-model="window"
-              data-if="auxiliary_available && (layout_mode == 'expanded' || compact_chat_open)"
-              data-event-click="toggle_auxiliary()">{{i18n:chat.details}}</button>
     </div>
   </div>
   <div class="chat-gap-banner stack" data-if="show_peer_link_banner && !sync_in_progress">
