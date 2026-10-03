@@ -16,15 +16,15 @@
     <div class="home-landing-inner stack">
       <div class="home-composer-mount" id="home-composer-mount"></div>
       <div class="home-suggestions">
-        <button class="chat-suggestion" data-event-click="send_suggestion('Find someone on the network')"
+        <button class="chat-suggestion" data-event-click="send_suggestion('{{i18n:home.suggestion.find_someone_prompt}}')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.find_someone}}</button>
-        <button class="chat-suggestion" data-event-click="send_suggestion('What is in the news today?')"
+        <button class="chat-suggestion" data-event-click="send_suggestion('{{i18n:home.suggestion.headlines_prompt}}')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.headlines}}</button>
-        <button class="chat-suggestion" data-event-click="send_suggestion('Show me recent articles')"
+        <button class="chat-suggestion" data-event-click="send_suggestion('{{i18n:home.suggestion.articles_prompt}}')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.articles}}</button>
-        <button class="chat-suggestion" data-event-click="send_suggestion('Help me get started — suggest three useful things I can ask, with an example for each.')"
+        <button class="chat-suggestion" data-event-click="send_suggestion('{{i18n:home.suggestion.get_started_prompt}}')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.get_started}}</button>
-        <button class="chat-suggestion" data-event-click="send_suggestion('What can you do?')"
+        <button class="chat-suggestion" data-event-click="send_suggestion('{{i18n:home.suggestion.capabilities_prompt}}')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.capabilities}}</button>
       </div>
     </div>
