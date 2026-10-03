@@ -1627,6 +1627,7 @@ void ChatController::SendImageQuestion(const std::string& text) {
   DirtyChatTurns();
   chat_.loading = true;
   chat_.status = "";
+  (void)facade_->NameAiThreadFromFirstMessage(thread_id, AiThreadTitleFromMessage(question));
   UpdateSidebarPreview(question);
   DirtyChatChrome();
   DirtyChatHeader();
