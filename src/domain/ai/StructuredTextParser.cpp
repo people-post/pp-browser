@@ -1036,12 +1036,16 @@ std::string StructuredTextParser::PlainText(const std::string& llm_output) {
 }
 
 std::string StructuredTextParser::StorableText(const std::string& llm_output) {
-  if (llm_output.size() <= kMaxComposeTextBytes) {
+  return StorableText(llm_output, kMaxComposeTextBytes);
+}
+
+std::string StructuredTextParser::StorableText(const std::string& llm_output, const size_t max_bytes) {
+  if (llm_output.size() <= max_bytes) {
     return llm_output;
   }
   std::string text = PlainTextIfBlocks(llm_output).value_or(llm_output);
-  if (text.size() > kMaxComposeTextBytes) {
-    size_t cut = kMaxComposeTextBytes;
+  if (text.size() > max_bytes) {
+    size_t cut = max_bytes;
     while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) {
       --cut; // do not split a UTF-8 character
     }

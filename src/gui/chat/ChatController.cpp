@@ -2801,7 +2801,11 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
   std::string answer_text;
   ParseResult parsed;
   if (markdown) {
-    answer_text = WithDetailsLink(raw_output, sources, Tr("chat.view_details"));
+    // Cap the body first and append the link after: cutting the finished text at the store's limit
+    // would drop exactly the trailing details link that the link table is rebuilt from.
+    answer_text = WithDetailsLink(
+        StructuredTextParser::StorableText(raw_output, kMaxComposeTextBytes - kDetailsLinkHeadroomBytes), sources,
+        Tr("chat.view_details"));
     markdown_answer = BuildMarkdownAnswer(answer_text);
     parsed.ok = true;
     parsed.rml = markdown_answer.rml;

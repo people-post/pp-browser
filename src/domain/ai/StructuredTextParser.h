@@ -60,6 +60,8 @@ public:
    * message and the answer vanished from the transcript. The bubble markup is stored separately.
    */
   static std::string StorableText(const std::string& llm_output);
+  /** Same, with an explicit byte budget (e.g. to leave room for text appended afterwards). */
+  static std::string StorableText(const std::string& llm_output, size_t max_bytes);
   /** nullopt when `llm_output` is not a blocks document; otherwise its prose (empty when nothing is readable). */
   static std::optional<std::string> PlainTextIfBlocks(const std::string& llm_output);
 
