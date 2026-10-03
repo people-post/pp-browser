@@ -36,11 +36,11 @@ TEST(SessionListTextTest, LongMessageIsCutOnACharacterBoundary) {
   EXPECT_EQ(AiThreadTitleFromMessage("abcdefghijklmnopqrstuvwx"), "abcdefghijklmnopqrstuvwx");
 }
 
-TEST(SessionListTextTest, DateLabelShowsTimeTodayAndDateOtherwise) {
+TEST(SessionListTextTest, DateLabelShowsDateAndTimeThisYearAndFullDateBefore) {
   const std::tm now = Day(2026, 10, 3, 275, 18, 30);
-  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 3, 275, 9, 5), now), "09:05");
-  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 2, 274, 23, 59), now), "10/2");
-  EXPECT_EQ(SessionDateLabel(Day(2026, 1, 15, 14), now), "1/15");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 3, 275, 9, 5), now), "10/3 09:05");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 10, 2, 274, 23, 59), now), "10/2 23:59");
+  EXPECT_EQ(SessionDateLabel(Day(2026, 1, 15, 14), now), "1/15 00:00");
   EXPECT_EQ(SessionDateLabel(Day(2025, 12, 31, 364), now), "2025/12/31");
 }
 

@@ -47,15 +47,13 @@ inline std::string AiThreadTitleFromMessage(std::string_view message) {
 }
 
 /**
- * When a session was last active, for the list row: the time for today ("14:05"), month/day within
- * this year ("10/3"), otherwise with the year ("2025/10/3"). Empty for an unset timestamp.
+ * When a session was last active, for the list row: date and time within this year ("10/3 14:05"),
+ * the full date for earlier years ("2025/12/31"). Empty for an unset timestamp.
  */
 inline std::string SessionDateLabel(const std::tm& when, const std::tm& now) {
   char buf[24];
-  if (when.tm_year == now.tm_year && when.tm_yday == now.tm_yday) {
-    std::snprintf(buf, sizeof(buf), "%02d:%02d", when.tm_hour, when.tm_min);
-  } else if (when.tm_year == now.tm_year) {
-    std::snprintf(buf, sizeof(buf), "%d/%d", when.tm_mon + 1, when.tm_mday);
+  if (when.tm_year == now.tm_year) {
+    std::snprintf(buf, sizeof(buf), "%d/%d %02d:%02d", when.tm_mon + 1, when.tm_mday, when.tm_hour, when.tm_min);
   } else {
     std::snprintf(buf, sizeof(buf), "%d/%d/%d", when.tm_year + 1900, when.tm_mon + 1, when.tm_mday);
   }
