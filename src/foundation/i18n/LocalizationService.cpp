@@ -192,11 +192,16 @@ std::string LocalizationService::LanguageDisplayLabel(std::string_view pref) con
 }
 
 void LocalizationService::ResolveAndNotify(bool notify) {
-  const std::string previous = resolved_;
-  resolved_ = ResolvePreferred(preferred_);
-  if (notify && resolved_ != previous) {
+  const std::string previous = ResolvedLanguage();
+  const std::string next = ResolvePreferred(preferred_);
+  {
+    const std::lock_guard<std::mutex> lock(resolved_mutex_);
+    resolved_ = next;
+  }
+  // Listeners call Tr(); notify outside the lock.
+  if (notify && next != previous) {
     for (const auto& listener : listeners_) {
-      listener(resolved_);
+      listener(next);
     }
   }
 }
@@ -252,12 +257,13 @@ std::vector<std::string> LocalizationService::PreferredSystemLocales() const {
 
 std::string LocalizationService::Lookup(std::string_view key) const {
   const std::string key_str(key);
-  if (const auto cat = catalogs_.find(resolved_); cat != catalogs_.end()) {
+  const std::string resolved = ResolvedLanguage();
+  if (const auto cat = catalogs_.find(resolved); cat != catalogs_.end()) {
     if (const auto it = cat->second.find(key_str); it != cat->second.end()) {
       return it->second;
     }
   }
-  if (resolved_ != "en") {
+  if (resolved != "en") {
     if (const auto en = catalogs_.find("en"); en != catalogs_.end()) {
       if (const auto it = en->second.find(key_str); it != en->second.end()) {
         return it->second;

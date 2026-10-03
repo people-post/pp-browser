@@ -2793,20 +2793,20 @@ void ChatController::RefreshLlmSetupBanner() {
     }
     const std::string brief_key = ResolveBriefLlmApiKey(registered, guest);
     if (brief_key.empty()) {
-      if (!brief_guest_mint_user_hint_.empty()) {
-        UserFeedback::NeedsSetup(brief_guest_mint_user_hint_);
-      } else {
-        UserFeedback::NeedsSetup(kBriefUnavailable);
-      }
+      // The mint hint can be the server's own wording, so remember what was shown to dismiss it later.
+      last_brief_banner_ = !brief_guest_mint_user_hint_.empty() ? brief_guest_mint_user_hint_ : kBriefUnavailable;
+      UserFeedback::NeedsSetup(last_brief_banner_);
       return;
     }
     if (registered.empty() && !guest.empty()) {
-      UserFeedback::NeedsSetup(kGuestBriefSoft);
+      last_brief_banner_ = kGuestBriefSoft;
+      UserFeedback::NeedsSetup(last_brief_banner_);
       return;
     }
     const std::string& banner = ChromeSnapshot().banner_message;
-    if (banner == kRegisterBriefHard || banner == kGuestBriefSoft || banner == kBriefUnavailable ||
-        banner == kBriefUnavailableTemp) {
+    if ((!last_brief_banner_.empty() && banner == last_brief_banner_) || banner == kRegisterBriefHard ||
+        banner == kGuestBriefSoft || banner == kBriefUnavailable || banner == kBriefUnavailableTemp) {
+      last_brief_banner_.clear();
       if (shell_feedback_.dismiss_banner) {
         shell_feedback_.dismiss_banner();
       }
