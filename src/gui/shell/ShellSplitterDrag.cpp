@@ -85,6 +85,14 @@ void ShellSplitterDrag::ProcessEvent(ui::Event& event) {
     dragging_ = true;
     start_x_px_ = event.GetParameter<int>("mouse_x", 0);
     start_width_dp_ = width_dp_;
+    // In a narrow window the pane may be rendered narrower than its stored width (it shrinks). Start
+    // from what is on screen, or the first part of the drag would change nothing visible.
+    if (const float ratio = context_->GetDensityIndependentPixelRatio(); ratio > 0.f) {
+      const int rendered_dp = static_cast<int>(std::lround(pane_->GetOffsetWidth() / ratio));
+      if (rendered_dp > 0) {
+        start_width_dp_ = std::clamp(rendered_dp, min_dp_, max_dp_);
+      }
+    }
     handle_->SetClass(kActiveClass, true);
     SetDocumentCapture(true);
     break;
