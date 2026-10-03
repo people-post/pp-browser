@@ -465,6 +465,7 @@
     "chat.view_details": "查看详情",
     "chat.open_link_title": "打开 {host} 的链接？",
     "chat.open_link_body": "将在浏览器中打开 {url}。",
+    "chat.open_link_skip": "本次运行期间不再提醒",
     "chat.stop": "停止",
     "chat.composer_placeholder": "输入消息",
     "chat.attach_file": "附加文件…",

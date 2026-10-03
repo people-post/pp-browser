@@ -314,6 +314,8 @@ private:
   void SyncDisplayFromThread();
   void OnStopTurn();
   void OpenChatLink(const std::string& entry_id, int link_index);
+  /** Opens an https URL after the user confirms its host; the dialog offers to stop asking until the app restarts. */
+  void ConfirmAndOpenUrl(const std::string& url);
   void OnAssistantDelta(const AgentEvent& event);
   void FlushStreamingRow();
   void ClearStreamingRow();
@@ -439,6 +441,7 @@ private:
   std::optional<StreamingRow> streaming_;
   /** entry id -> https links its rendered bubble refers to (open_chat_link index). */
   std::map<std::string, std::vector<std::string>> chat_links_;
+  bool skip_link_confirm_this_run_ = false; // set from the confirm dialog's checkbox; never persisted
   bool focus_draft_after_sync_ = false;
 
   static ChatController* installed_instance_;
