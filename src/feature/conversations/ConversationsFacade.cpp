@@ -124,6 +124,10 @@ Roe<void> ConversationsFacade::SetThreadLocalTitle(const std::string& thread_id,
   return hub_.Inbox().SetThreadLocalTitle(thread_id, local_title);
 }
 
+Roe<void> ConversationsFacade::SetAiThreadTitle(const std::string& thread_id, const std::string& title) {
+  return hub_.Inbox().SetAiThreadTitle(thread_id, title);
+}
+
 Roe<Thread> ConversationsFacade::FindOrCreateDirectThread(const std::string& contact_id, const ThreadChannel channel) {
   return hub_.Inbox().FindOrCreateDirectThread(contact_id, channel);
 }

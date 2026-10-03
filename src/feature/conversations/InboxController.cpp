@@ -481,6 +481,26 @@ Roe<void> InboxController::SetThreadLocalTitle(const std::string& thread_id, con
   return {};
 }
 
+Roe<void> InboxController::SetAiThreadTitle(const std::string& thread_id, const std::string& title) {
+  auto thread = store_.GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  if ((*thread)->kind != ThreadKind::Ai) {
+    return Error("Only AI threads take a title from the conversation");
+  }
+  Thread updated = **thread;
+  updated.title = title;
+  if (auto saved = store_.UpsertThread(updated); !saved) {
+    return saved.error();
+  }
+  NotifyThreadChanged();
+  return {};
+}
+
 std::string InboxController::ResolveSenderLabel(const std::string& sender_contact_id) const {
   if (shadows_ && (sender_contact_id.rfind("account:", 0) == 0 || sender_contact_id.rfind("relay:", 0) == 0)) {
     shadows_->EnsureLookup(sender_contact_id);

@@ -29,6 +29,7 @@
           <svg src="../icons/group.svg" width="14" height="14" crop-to-content="true"></svg>
         </div>
         <p class="sidebar-session-title" data-rml="session.title"></p>
+        <span class="sidebar-session-date" data-if="session.date_label != ''" data-rml="session.date_label"></span>
         <span class="badge-count sidebar-unread" data-if="session.unread_count > 0" data-rml="session.unread_display"></span>
       </div>
       <button class="sidebar-session-close" type="button" data-if="session.closable" data-event-click="close_thread(session.id)">
