@@ -1,30 +1,30 @@
       <div class="settings-section stack">
         <p class="text muted">{{i18n:settings.security.protection}} <span data-rml="pin_protection_status"></span></p>
-        <p class="text muted" data-if="pin_protection_status == 'App default'">
+        <p class="text muted" data-if="pin_protection_is_default">
           {{i18n:settings.security.default_hint}}
         </p>
-        <p class="text muted" data-if="pin_protection_status == 'Not set up'">
+        <p class="text muted" data-if="pin_protection_not_setup">
           {{i18n:settings.security.not_setup_hint}}
         </p>
         <div data-if="security_can_change_pin" class="stack">
           <label class="settings-field">
             <span class="settings-label">{{i18n:settings.security.current_pin}}</span>
-            <input class="field" type="password" data-value="pin_change_old" placeholder="Current PIN"/>
+            <input class="field" type="password" data-value="pin_change_old" placeholder="{{i18n:settings.security.current_pin_placeholder}}"/>
           </label>
           <label class="settings-field">
             <span class="settings-label">{{i18n:settings.security.new_pin}}</span>
-            <input class="field" type="password" data-value="pin_change_new" placeholder="At least 4 characters"/>
+            <input class="field" type="password" data-value="pin_change_new" placeholder="{{i18n:settings.security.new_pin_placeholder}}"/>
           </label>
           <label class="settings-field">
             <span class="settings-label">{{i18n:settings.security.confirm_pin}}</span>
-            <input class="field" type="password" data-value="pin_change_confirm" placeholder="Confirm new PIN"/>
+            <input class="field" type="password" data-value="pin_change_confirm" placeholder="{{i18n:settings.security.confirm_pin_placeholder}}"/>
           </label>
           <div class="settings-actions row">
             <button class="btn btn-primary" type="button" data-event-click="change_pin()">{{i18n:settings.security.change_pin}}</button>
           </div>
         </div>
-        <p class="text muted" data-if="!security_can_change_pin && pin_protection_status != 'Not set up'">
-          Unlock your profile to change the PIN.
+        <p class="text muted" data-if="!security_can_change_pin && !pin_protection_not_setup">
+          {{i18n:settings.security.unlock_to_change}}
         </p>
         <div class="stack settings-actions">
           <p class="text">{{i18n:settings.security.link_device}}</p>

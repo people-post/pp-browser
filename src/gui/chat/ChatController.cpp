@@ -114,20 +114,20 @@ std::string ToolActivityLabel(const std::string& tool_name, const std::string& s
   }
   if (tool_name == "web_search") {
     if (status == "running") {
-      return "Searching the web...";
+      return Tr("chat.tool.searching_web");
     }
     if (status == "done") {
-      return "Search complete";
+      return Tr("chat.tool.search_complete");
     }
     if (status == "error") {
-      return "Search failed";
+      return Tr("chat.tool.search_failed");
     }
   }
   if (status == "running") {
-    return "Running " + tool_name + "...";
+    return Tr("chat.tool.running", {{"tool", tool_name}});
   }
   if (status == "done") {
-    return "Finished " + tool_name;
+    return Tr("chat.tool.finished", {{"tool", tool_name}});
   }
   return tool_name;
 }
@@ -918,7 +918,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
 
   auto finish_close = [this, thread_id]() {
     if (!facade_->CloseThread(thread_id)) {
-      UserFeedback::Fail("Could not delete conversation");
+      UserFeedback::Fail(Tr("chat.error.delete_failed"));
       NotifySurfaceChanged();
       return;
     }
@@ -1050,7 +1050,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
             const std::string successor = member.member_identity;
             actions.push_back({
                 "transfer_" + successor,
-                "Transfer to " + label,
+                Tr("chat.group.transfer_to", {{"name", label}}),
                 nullptr,
                 [this, finish_close, group_id, successor]() {
                   if (auto left = facade_->LeaveAsOwner(group_id, successor); !left) {
@@ -1065,7 +1065,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
           }
           actions.push_back({
               "dismiss_local",
-              "Dismiss on this device only",
+              Tr("chat.group.dismiss_local"),
               nullptr,
               [dismiss_and_close, group_id]() { dismiss_and_close(group_id); },
               "../icons/trash.svg",
@@ -1097,17 +1097,15 @@ void ChatController::OnClearHistory() {
 
   auto thread = facade_->GetActiveThread();
   const bool is_ai = thread && thread->kind == ThreadKind::Ai;
-  std::string message =
-      "Remove all messages on this device? The thread stays in your sidebar. "
-      "Messages on the peer's device or relay are not affected.";
+  std::string message = Tr("chat.clear_history.body");
   if (is_ai) {
-    message += " AI memory is kept unless you check the box below.";
+    message += " " + Tr("chat.clear_history.body_ai");
   } else if (thread && thread->kind == ThreadKind::Direct && thread->encrypted) {
-    message += " Unsent outbound messages are cancelled; assigned sender_seq values are not reused.";
+    message += " " + Tr("chat.clear_history.body_secure");
   }
 
   if (is_ai) {
-    ShowConfirmWithCheckbox(Tr("chat.clear_history"), message, "Also forget what AI learned", false,
+    ShowConfirmWithCheckbox(Tr("chat.clear_history"), message, Tr("chat.clear_history.forget_checkbox"), false,
         [this, thread_id](bool ok, bool forget_memory) {
           if (!ok) {
             return;
@@ -1152,8 +1150,8 @@ void ChatController::OnForgetMemory() {
     return;
   }
 
-  ShowConfirm("Forget what AI learned?",
-      "Delete the durable conversation summary? Your message transcript stays on this device.",
+  ShowConfirm(Tr("chat.forget_memory.title"),
+      Tr("chat.forget_memory.body"),
       [this, thread_id](bool ok) {
         if (!ok) {
           return;
@@ -1258,6 +1256,10 @@ void ChatController::SyncShellSessions() {
     row.title = facade_
                     ? facade_->ResolveThreadLabel(thread).title.c_str()
                     : thread.title.c_str();
+    // The stored default AI title is English; show it in the UI language.
+    if (thread.kind == ThreadKind::Ai && row.title == "New chat") {
+      row.title = Tr("chat.new_chat").c_str();
+    }
     row.preview = thread.preview.c_str();
     row.kind = SessionVisualKind(thread);
     row.unread_count = thread.unread_count;
@@ -1630,7 +1632,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
       const std::string approval_id = action_json->getString("approval_id").value_or("");
       const std::string decision = action_json->getString("decision").value_or("");
       if (!agent_ports_.resume_tool_permission) {
-        ShowToast("Assistant is not ready for permission decisions.");
+        ShowToast(Tr("chat.permission.not_ready"));
         return;
       }
       auto resumed = agent_ports_.resume_tool_permission(approval_id, decision, message);
@@ -1641,8 +1643,8 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
     }
     if (action_type && *action_type == "fork_group") {
       const std::string confirmed_payload = *payload;
-      ShowConfirm("Start a new group?",
-          "This creates a new group with a fresh history. People who are still reachable can be invited again.",
+      ShowConfirm(Tr("chat.fork_group.title"),
+          Tr("chat.fork_group.body"),
           [this, message, confirmed_payload](bool ok) {
             if (!ok) {
               return;
@@ -1713,7 +1715,7 @@ void ChatController::OnSendMessage() {
   }
 
   if (auto valid = ChatPayloadValidator::ValidateOutboundText(text); !valid) {
-    ShowToast("Message is too long to send.");
+    ShowToast(Tr("chat.error.message_too_long"));
     return;
   }
 
@@ -1841,7 +1843,7 @@ void ChatController::ShowReactionMorePrompt(const std::string& message_id) {
     return;
   }
   shell_feedback_.show_prompt(
-      "React", "Pick an emoji (use the keyboard emoji key on mobile).", "",
+      Tr("chat.react.title"), Tr("chat.react.prompt"), "",
       [this, message_id](bool confirmed, std::string value) {
         if (!confirmed) {
           return;
@@ -1865,7 +1867,7 @@ void ChatController::OpenReactPresetMenu(const std::string& message_id, ui::Vect
   }
   actions.push_back({
       "react_more",
-      "More…",
+      Tr("chat.react.more"),
       nullptr,
       [this, message_id]() { ShowReactionMorePrompt(message_id); },
   });
@@ -1900,21 +1902,21 @@ void ChatController::OnOpenNewSessionMenu(ui::Event& ev) {
   std::vector<ContextMenuAction> actions;
   actions.push_back({
       "chat_with_ai",
-      "Chat with AI",
+      Tr("chat.menu.chat_with_ai"),
       nullptr,
       [this]() { OnNewChat(); },
       "../icons/sparkle.svg",
   });
   actions.push_back({
       "message_contact",
-      "Message a contact",
+      Tr("chat.menu.message_a_contact"),
       nullptr,
       [this]() { OnNewMessage(); },
       "../icons/contacts.svg",
   });
   actions.push_back({
       "find_someone",
-      "Find someone",
+      Tr("chat.menu.find_someone"),
       nullptr,
       [this]() { OnFindSomeone(); },
       "../icons/message.svg",
@@ -1943,7 +1945,7 @@ void ChatController::OnOpenThreadActionsMenu(ui::Event& ev) {
   if (chat_.show_sync_with_peer && !chat_.sync_in_progress) {
     actions.push_back({
         "sync_with_peer",
-        "Sync with peer",
+        Tr("chat.menu.sync_with_peer"),
         nullptr,
         [this]() { OnSyncWithPeer(); },
         "../icons/sync.svg",
@@ -1952,7 +1954,7 @@ void ChatController::OnOpenThreadActionsMenu(ui::Event& ev) {
   if (chat_.show_thread_actions) {
     actions.push_back({
         "clear_history",
-        "Clear history…",
+        Tr("chat.menu.clear_history"),
         nullptr,
         [this]() { OnClearHistory(); },
         "../icons/trash.svg",
@@ -1962,7 +1964,7 @@ void ChatController::OnOpenThreadActionsMenu(ui::Event& ev) {
   if (chat_.show_forget_memory) {
     actions.push_back({
         "forget_memory",
-        "Forget AI memory…",
+        Tr("chat.menu.forget_ai_memory"),
         nullptr,
         [this]() { OnForgetMemory(); },
         "../icons/sparkle.svg",
@@ -2035,7 +2037,7 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
       const std::string contact_id = *dm_contact_id;
       actions.push_back({
           "add_people",
-          "Add people…",
+          Tr("chat.menu.add_people"),
           nullptr,
           [this, contact_id]() {
             if (people_picker_notify_.open_from_dm) {
@@ -2046,7 +2048,7 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
       });
       actions.push_back({
           "view_contact",
-          "View contact",
+          Tr("chat.menu.view_contact"),
           nullptr,
           [this, contact_id]() {
             if (contacts_notify_.select_contact) {
@@ -2058,7 +2060,7 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
     } else if (!peer_id.empty()) {
       actions.push_back({
           "add_contact",
-          "Add to contacts",
+          Tr("chat.menu.add_to_contacts"),
           nullptr,
           [this, peer_id]() {
             DirectoryHit hit;
@@ -2075,13 +2077,13 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
             }
             auto created = facade_->AddContactFromDirectoryHit(hit);
             if (!created) {
-              UserFeedback::Fail("Could not add contact");
+              UserFeedback::Fail(Tr("chat.error.add_contact_failed"));
               NotifySurfaceChanged();
               return;
             }
             if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
               if (!hit.account_id || hit.account_id->empty()) {
-                UserFeedback::Fail("Directory hit missing Account ID");
+                UserFeedback::Fail(Tr("chat.error.directory_missing_account"));
                 NotifySurfaceChanged();
                 return;
               }
@@ -2090,7 +2092,7 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
             }
             if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
               if (!hit.account_id || hit.account_id->empty()) {
-                UserFeedback::Fail("Directory hit missing Account ID");
+                UserFeedback::Fail(Tr("chat.error.directory_missing_account"));
                 NotifySurfaceChanged();
                 return;
               }
@@ -2116,13 +2118,13 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
     if (!peer_id.empty()) {
       actions.push_back({
           "copy_id",
-          "Copy ID",
+          Tr("contacts.copy_id"),
           nullptr,
           [this, peer_id]() {
             if (ui::SystemInterface* system = ui::GetSystemInterface()) {
               system->SetClipboardText(peer_id.c_str());
             }
-            ShowToast("ID copied");
+            ShowToast(Tr("chat.toast.id_copied"));
             NotifySurfaceChanged();
           },
           "../icons/copy.svg",
@@ -2137,10 +2139,10 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
 
     actions.push_back({
         "rename_for_me",
-        "Rename for me",
+        Tr("chat.group.rename_for_me"),
         nullptr,
         [this, thread_id, current_local, shared_default]() {
-          ShowPrompt("Rename for me", "Local nickname for this group",
+          ShowPrompt(Tr("chat.group.rename_for_me"), Tr("chat.group.rename_for_me_prompt"),
               current_local.empty() ? shared_default : current_local,
               [this, thread_id](bool ok, std::string value) {
                 if (!ok) {
@@ -2157,7 +2159,7 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
     if (!current_local.empty()) {
       actions.push_back({
           "clear_my_name",
-          "Clear my name",
+          Tr("chat.group.clear_my_name"),
           nullptr,
           [this, thread_id]() {
             (void)facade_->SetThreadLocalTitle(thread_id, "");
@@ -2184,16 +2186,16 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
     if (is_owner) {
       actions.push_back({
           "rename_for_everyone",
-          "Rename for everyone",
+          Tr("chat.group.rename_for_everyone"),
           nullptr,
           [this, group_id, shared_default]() {
-            ShowPrompt("Rename for everyone", "Shared group name for all members",
+            ShowPrompt(Tr("chat.group.rename_for_everyone"), Tr("chat.group.rename_for_everyone_prompt"),
                 shared_default, [this, group_id](bool ok, std::string value) {
                   if (!ok) {
                     return;
                   }
                   if (value.empty()) {
-                    UserFeedback::Fail("Title required");
+                    UserFeedback::Fail(Tr("chat.group.title_required"));
                     NotifySurfaceChanged();
                     return;
                   }
@@ -2223,11 +2225,11 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
         }
         actions.push_back({
             "remove_unreachable_" + unreachable_id,
-            "Remove unreachable: " + name,
+            Tr("chat.group.remove_unreachable", {{"name", name}}),
             nullptr,
             [this, group_id, unreachable_id, name]() {
-              ShowConfirm("Remove member",
-                  "Remove " + name + " from this group? Others will be notified.",
+              ShowConfirm(Tr("chat.group.remove_member_title"),
+                  Tr("chat.group.remove_member_confirm", {{"name", name}}),
                   [this, group_id, unreachable_id](bool ok) {
                     if (!ok) {
                       return;
@@ -2249,10 +2251,10 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
     } else if (owner_unreachable) {
       actions.push_back({
           "rename_for_everyone",
-          "Rename for everyone",
+          Tr("chat.group.rename_for_everyone"),
           nullptr,
           [this]() {
-            ShowToast("Only the owner can do that — see the note in the chat");
+            ShowToast(Tr("chat.group.owner_only"));
             NotifySurfaceChanged();
           },
           "../icons/group.svg",
@@ -2766,7 +2768,7 @@ void ChatController::WithSecrets(std::function<void()> action) {
       [this, action = std::move(action)](const bool unlocked) {
         if (!unlocked) {
           if (!unlock_ensure_.is_unlock_in_progress || !unlock_ensure_.is_unlock_in_progress()) {
-            ShowToast("PIN required to continue");
+            ShowToast(Tr("chat.toast.pin_required"));
             NotifySurfaceChanged();
           }
           return;
@@ -2783,13 +2785,13 @@ void ChatController::WithSecrets(std::function<void()> action) {
 void ChatController::RefreshLlmSetupBanner() {
   const AppConfig& config = Store().Snapshot().config;
   use_llm_ = !config.llm.base_url.empty();
-  constexpr const char* kRegisterBriefHard =
-      "Register your identity in Me → Profile to use Brief assistant (or switch to Cloud/Ollama).";
-  constexpr const char* kGuestBriefSoft =
-      "Using Brief free tier — register in Me → Profile for higher limits.";
+  const std::string kRegisterBriefHard = Tr("chat.hint.brief_register");
+  const std::string kGuestBriefSoft = Tr("chat.hint.brief_free_tier");
+  const std::string kBriefUnavailable = Tr("chat.hint.brief_unavailable");
+  const std::string kBriefUnavailableTemp = Tr("chat.hint.brief_unavailable_temp");
 
   if (!use_llm_) {
-    UserFeedback::NeedsSetup("Using mock replies — LLM is not configured.");
+    UserFeedback::NeedsSetup(Tr("chat.hint.mock_replies"));
     return;
   }
   if (ResolvePreset(config) == "brief") {
@@ -2804,21 +2806,20 @@ void ChatController::RefreshLlmSetupBanner() {
     }
     const std::string brief_key = ResolveBriefLlmApiKey(registered, guest);
     if (brief_key.empty()) {
-      if (!brief_guest_mint_user_hint_.empty()) {
-        UserFeedback::NeedsSetup(brief_guest_mint_user_hint_);
-      } else {
-        UserFeedback::NeedsSetup(
-            "Brief free tier unavailable right now — try again later, or register in Me → Profile.");
-      }
+      // The mint hint can be the server's own wording, so remember what was shown to dismiss it later.
+      last_brief_banner_ = !brief_guest_mint_user_hint_.empty() ? brief_guest_mint_user_hint_ : kBriefUnavailable;
+      UserFeedback::NeedsSetup(last_brief_banner_);
       return;
     }
     if (registered.empty() && !guest.empty()) {
-      UserFeedback::NeedsSetup(kGuestBriefSoft);
+      last_brief_banner_ = kGuestBriefSoft;
+      UserFeedback::NeedsSetup(last_brief_banner_);
       return;
     }
     const std::string& banner = ChromeSnapshot().banner_message;
-    if (banner == kRegisterBriefHard || banner == kGuestBriefSoft ||
-        banner.find("Brief free tier") != std::string::npos) {
+    if ((!last_brief_banner_.empty() && banner == last_brief_banner_) || banner == kRegisterBriefHard ||
+        banner == kGuestBriefSoft || banner == kBriefUnavailable || banner == kBriefUnavailableTemp) {
+      last_brief_banner_.clear();
       if (shell_feedback_.dismiss_banner) {
         shell_feedback_.dismiss_banner();
       }
@@ -2826,7 +2827,7 @@ void ChatController::RefreshLlmSetupBanner() {
     return;
   }
   if (config.llm.require_api_key && config.llm.api_key.empty()) {
-    UserFeedback::NeedsSetup("Add your API key in Me → Assistant to enable the assistant.");
+    UserFeedback::NeedsSetup(Tr("chat.hint.api_key_needed"));
   }
 }
 
@@ -2855,8 +2856,7 @@ void ChatController::EnsureBriefGuestLlmKey() {
   if (!minted) {
     brief_guest_mint_user_hint_ = AppError::Display(minted.error());
     if (brief_guest_mint_user_hint_.empty()) {
-      brief_guest_mint_user_hint_ =
-          "Brief free tier is temporarily unavailable — try again later.";
+      brief_guest_mint_user_hint_ = Tr("chat.hint.brief_unavailable_temp");
     }
     return;
   }
@@ -2864,7 +2864,7 @@ void ChatController::EnsureBriefGuestLlmKey() {
   LocalIdentity updated = *identity;
   updated.brief_llm_guest_api_key = minted->llm_api_key;
   if (!facade_->UpdateLocalIdentity(updated)) {
-    brief_guest_mint_user_hint_ = "Couldn't save Brief free-tier key — try again later.";
+    brief_guest_mint_user_hint_ = Tr("chat.hint.brief_key_save_failed");
   }
 }
 
@@ -2967,7 +2967,7 @@ void ChatController::WireMessagingBindings() {
   } else {
     auto identity = facade_->GetIdentity();
     if (identity && ShouldRenewRegistration(*identity) && !auto_renew) {
-      UserFeedback::NeedsSetup("Network registration expires soon — renew in Me → Profile");
+      UserFeedback::NeedsSetup(Tr("chat.hint.registration_expires"));
     }
   }
   // Always reload so Brief key from identity is applied after unlock (not only on renew).
@@ -2996,7 +2996,7 @@ bool ChatController::Setup(ui::Context* context) {
   widgets_.ClearAll();
   chat_ = {};
   shell_ = {};
-  shell_.sessions = {{ui::String("Chat"), ui::String("Ask anything...")}};
+  shell_.sessions = {{ui::String("Chat"), ui::String(Tr("chat.ai_thread.placeholder").c_str())}};
   pending_reply_.reset();
   use_llm_ = !config.llm.base_url.empty();
   StartupMark("chat_after_agent_ports");
@@ -3186,7 +3186,7 @@ bool ChatController::Setup(ui::Context* context) {
     const ui::Vector2i pos = request.position;
     actions.push_back({
         "react_message",
-        "React…",
+        Tr("chat.react.menu"),
         nullptr,
         [this, message_id, pos]() { OpenReactPresetMenu(message_id, pos); },
     });
@@ -3215,7 +3215,7 @@ bool ChatController::Setup(ui::Context* context) {
   shell_setup_.register_pane(
       {.key = "settings_detail", .rml_path = "views/settings_detail.rml", .role = PaneRole::Primary});
   shell_setup_.register_pane(
-      {.key = "preview", .rml_path = "views/preview.rml", .role = PaneRole::Auxiliary, .toolbar_label = "Preview"});
+      {.key = "preview", .rml_path = "views/preview.rml", .role = PaneRole::Auxiliary, .toolbar_label = Tr("shell.pane.preview").c_str()});
 
   if (DocumentLoader::LoadFile(context, IAssetLocator::Instance().Resolve("samples/window_shell.rml")) == nullptr) {
     return false;

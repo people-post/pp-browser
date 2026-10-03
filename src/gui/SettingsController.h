@@ -169,6 +169,8 @@ private:
     ui::String attachment_download_policy = "smart";
     ui::String attachment_download_policy_label;
     ui::String pin_protection_status;
+    bool pin_protection_is_default = false;
+    bool pin_protection_not_setup = false;
     bool security_can_change_pin = false;
     bool security_can_export_link = false;
     ui::String pin_change_old;

@@ -1,5 +1,6 @@
 #include "gui/EmojiPickerController.h"
 
+#include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "domain/ui/ShellTypes.h"
 #include "common/EmojiKey.h"
@@ -106,7 +107,7 @@ void EmojiPickerController::OpenInsert(
   react_message_id_.clear();
   on_insert_pick_ = std::move(on_pick);
   on_react_pick_ = nullptr;
-  title_ = "Insert emoji";
+  title_ = Tr("chat.insert_emoji").c_str();
   active_category_.clear();
   RebuildModel();
   DirtyAll();
@@ -134,7 +135,7 @@ void EmojiPickerController::OpenReact(std::string message_id,
   react_message_id_ = std::move(message_id);
   on_react_pick_ = std::move(on_pick);
   on_insert_pick_ = nullptr;
-  title_ = "React";
+  title_ = Tr("chat.react").c_str();
   active_category_.clear();
   RebuildModel();
   DirtyAll();
@@ -314,7 +315,7 @@ void EmojiPickerController::RebuildModel() {
     Section section;
     section.id = cat.id.c_str();
     section.element_id = ("emoji-section-" + cat.id).c_str();
-    section.label = cat.label.c_str();
+    section.label = Tr("emoji.category." + cat.id).c_str();
     sections_.push_back(std::move(section));
   }
 

@@ -17,6 +17,14 @@ namespace {
 
 constexpr size_t kDefaultMaxVisible = 10;
 
+std::string Fill(std::string templ, const std::string& name, const std::string& value) {
+  const std::string token = "{" + name + "}";
+  for (size_t pos = templ.find(token); pos != std::string::npos; pos = templ.find(token, pos + value.size())) {
+    templ.replace(pos, token.size(), value);
+  }
+  return templ;
+}
+
 std::string PrimaryIdentityValue(const std::vector<ContactId>& ids) {
   for (const ContactId& id : ids) {
     if (id.kind == ContactIdKind::Account && id.primary) {
@@ -178,7 +186,8 @@ Object MakeAction(const std::string& label, const std::string& message, Object p
 }
 
 Value DirectoryHitItemActions(const DirectoryHit& hit, const bool already_contact,
-                              const std::optional<std::string>& contact_id) {
+                              const std::optional<std::string>& contact_id,
+                              const PeopleDiscoveryLabels& labels) {
   const Object hit_json = DirectoryHitToJson(hit);
   std::vector<Value> actions;
   const std::string label_name =
@@ -193,52 +202,58 @@ Value DirectoryHitItemActions(const DirectoryHit& hit, const bool already_contac
       message_payload.set("directory_hit", ObjectValue(Object(hit_json)));
     }
     actions.push_back(ObjectValue(
-        MakeAction("Message", "Start chat with " + label_name, std::move(message_payload), "primary")));
+        MakeAction(labels.message, Fill(labels.start_chat_with, "name", label_name),
+                                           std::move(message_payload), "primary")));
 
     if (contact_id && !contact_id->empty()) {
       Object view_payload;
       view_payload.set("type", "show_contact");
       view_payload.set("contact_id", *contact_id);
       actions.push_back(
-          ObjectValue(MakeAction("View", "Show " + label_name, std::move(view_payload), "secondary")));
+          ObjectValue(MakeAction(labels.view, Fill(labels.show_name, "name", label_name),
+                                                  std::move(view_payload), "secondary")));
     }
   } else {
     Object add_payload;
     add_payload.set("type", "add_contact");
     add_payload.set("directory_hit", ObjectValue(Object(hit_json)));
     actions.push_back(
-        ObjectValue(MakeAction("Add contact", "Add " + label_name, std::move(add_payload), "primary")));
+        ObjectValue(MakeAction(labels.add_contact, Fill(labels.add_name, "name", label_name),
+                                         std::move(add_payload), "primary")));
 
     Object message_payload;
     message_payload.set("type", "start_conversation");
     message_payload.set("directory_hit", ObjectValue(Object(hit_json)));
     actions.push_back(ObjectValue(
-        MakeAction("Message", "Start chat with " + label_name, std::move(message_payload), "secondary")));
+        MakeAction(labels.message, Fill(labels.start_chat_with, "name", label_name),
+                                           std::move(message_payload), "secondary")));
   }
 
   return ArrayValue(std::move(actions));
 }
 
-Value ContactItemActions(const PeopleDiscoveryContactView& contact) {
+Value ContactItemActions(const PeopleDiscoveryContactView& contact, const PeopleDiscoveryLabels& labels) {
   std::vector<Value> actions;
 
   Object message_payload;
   message_payload.set("type", "start_conversation");
   message_payload.set("contact_id", contact.id);
-  actions.push_back(ObjectValue(MakeAction("Message", "Start chat with " + contact.display_name,
+  actions.push_back(ObjectValue(MakeAction(labels.message, Fill(labels.start_chat_with, "name", contact.display_name),
                                            std::move(message_payload), "primary")));
 
   Object view_payload;
   view_payload.set("type", "show_contact");
   view_payload.set("contact_id", contact.id);
   actions.push_back(ObjectValue(
-      MakeAction("View", "Show IDs for " + contact.display_name, std::move(view_payload), "secondary")));
+      MakeAction(labels.view, Fill(labels.show_ids_for, "name", contact.display_name),
+                                                  std::move(view_payload), "secondary")));
 
   return ArrayValue(std::move(actions));
 }
 
 void FillPersonRowFields(Object& item, const std::string& display_name, const std::string& nickname,
-                         const std::string& person_id, const bool already_contact) {
+                         const std::string& person_id, const bool already_contact,
+                         const PeopleDiscoveryLabels& labels) {
   std::string title = display_name;
   if (title.empty() && !nickname.empty()) {
     title = "~" + nickname;
@@ -247,7 +262,7 @@ void FillPersonRowFields(Object& item, const std::string& display_name, const st
     title = ShortIdentityId(person_id);
   }
   if (title.empty()) {
-    title = "Unknown person";
+    title = labels.unknown_person;
   }
   item.set("title", title);
 
@@ -271,7 +286,7 @@ void FillPersonRowFields(Object& item, const std::string& display_name, const st
   }
 
   if (already_contact) {
-    item.set("meta", "In contacts");
+    item.set("meta", labels.in_contacts);
   }
 
   SetAvatarFields(item, !display_name.empty() ? display_name : nickname, person_id);
@@ -333,10 +348,10 @@ std::unordered_set<std::string> CollectKnownIdentities(const std::vector<PeopleD
   return known;
 }
 
-Value RefineSearchFooter() {
+Value RefineSearchFooter(const PeopleDiscoveryLabels& labels) {
   Object refine;
-  refine.set("label", "Refine search…");
-  refine.set("message", "Search for someone more specifically by nickname or account id");
+  refine.set("label", labels.refine_label);
+  refine.set("message", labels.refine_message);
   return ArrayValue({ObjectValue(std::move(refine))});
 }
 
@@ -375,6 +390,7 @@ bool DirectoryHitMatchesIdentities(const DirectoryHit& hit,
 std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& directory_hits,
                                            const std::vector<PeopleDiscoveryContactView>& contacts,
                                            const PeopleDiscoveryBuildOptions& options) {
+  const PeopleDiscoveryLabels& labels = options.labels;
   std::vector<Value> blocks;
   const size_t max_visible =
       options.max_visible_items == 0 ? kDefaultMaxVisible : options.max_visible_items;
@@ -397,16 +413,12 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& dire
     Object paragraph;
     paragraph.set("type", "paragraph");
     if (total == 1) {
-      paragraph.set("text", "Found 1 person on the network:");
+      paragraph.set("text", labels.found_one);
     } else if (visible < total) {
-      std::ostringstream text;
-      text << "Found " << total << " people — showing the first " << visible
-           << ". Open the panel to pick who you mean.";
-      paragraph.set("text", text.str());
+      paragraph.set("text", Fill(Fill(labels.found_many_partial, "count", std::to_string(total)), "shown",
+                                  std::to_string(visible)));
     } else {
-      std::ostringstream text;
-      text << "Found " << total << " people on the network:";
-      paragraph.set("text", text.str());
+      paragraph.set("text", Fill(labels.found_many, "count", std::to_string(total)));
     }
     blocks.push_back(ObjectValue(std::move(paragraph)));
 
@@ -420,17 +432,17 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& dire
       const auto contact_id = MatchingContactId(hit.ids, hit.account_id, contacts);
 
       Object item;
-      FillPersonRowFields(item, hit.display_name, hit.nickname, PreferPersonId(hit), already);
-      item.set("actions", DirectoryHitItemActions(hit, already, contact_id));
+      FillPersonRowFields(item, hit.display_name, hit.nickname, PreferPersonId(hit), already, labels);
+      item.set("actions", DirectoryHitItemActions(hit, already, contact_id, labels));
       items.push_back(ObjectValue(std::move(item)));
     }
 
     Value footer;
     if (visible < total) {
-      footer = RefineSearchFooter();
+      footer = RefineSearchFooter(labels);
     }
     blocks.push_back(ObjectValue(BuildLongListBlock(
-        visible < total ? "Search results (partial)" : "Search results", ArrayValue(std::move(items)),
+        visible < total ? labels.results_title_partial : labels.results_title, ArrayValue(std::move(items)),
         std::move(footer))));
   } else if (!contacts.empty()) {
     const size_t total = contacts.size();
@@ -439,15 +451,12 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& dire
     Object paragraph;
     paragraph.set("type", "paragraph");
     if (total == 1) {
-      paragraph.set("text", "1 local contact:");
+      paragraph.set("text", labels.local_one);
     } else if (visible < total) {
-      std::ostringstream text;
-      text << total << " local contacts — showing the first " << visible << ".";
-      paragraph.set("text", text.str());
+      paragraph.set("text", Fill(Fill(labels.local_many_partial, "count", std::to_string(total)), "shown",
+                                  std::to_string(visible)));
     } else {
-      std::ostringstream text;
-      text << "Your local contacts (" << total << "):";
-      paragraph.set("text", text.str());
+      paragraph.set("text", Fill(labels.local_many, "count", std::to_string(total)));
     }
     blocks.push_back(ObjectValue(std::move(paragraph)));
 
@@ -457,27 +466,28 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& dire
       const PeopleDiscoveryContactView& contact = contacts[i];
       Object item;
       FillPersonRowFields(item, contact.display_name, contact.server_nickname, PreferPersonId(contact),
-                          false);
-      item.set("actions", ContactItemActions(contact));
+                          false, labels);
+      item.set("actions", ContactItemActions(contact, labels));
       items.push_back(ObjectValue(std::move(item)));
     }
     Value footer;
     if (visible < total) {
-      footer = RefineSearchFooter();
+      footer = RefineSearchFooter(labels);
     }
     blocks.push_back(
-        ObjectValue(BuildLongListBlock("Contacts", ArrayValue(std::move(items)), std::move(footer))));
+        ObjectValue(BuildLongListBlock(labels.contacts_title, ArrayValue(std::move(items)), std::move(footer))));
   } else {
     Object paragraph;
     paragraph.set("type", "paragraph");
-    paragraph.set("text", "No people found. Try a different name, nickname, or account id.");
+    paragraph.set("text", labels.no_people);
     blocks.push_back(ObjectValue(std::move(paragraph)));
   }
 
   return BuildBlocksJson(std::move(blocks));
 }
 
-std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json) {
+std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json,
+                                                 const PeopleDiscoveryLabels& labels) {
   auto parsed = ParseValue(raw_json);
   if (!parsed) {
     return {};
@@ -505,7 +515,9 @@ std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json) {
   if (hits.empty() && contacts.empty()) {
     return {};
   }
-  return BuildPeopleDiscoveryBlocksJson(hits, contacts);
+  PeopleDiscoveryBuildOptions options;
+  options.labels = labels;
+  return BuildPeopleDiscoveryBlocksJson(hits, contacts, options);
 }
 
 } // namespace pbr

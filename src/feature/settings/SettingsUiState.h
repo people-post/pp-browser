@@ -111,6 +111,9 @@ struct SettingsUiState {
   std::string attachment_download_policy = "smart";
   std::string attachment_download_policy_label;
   std::string pin_protection_status;
+  /** Language-independent flags for pin_protection_status (the text is localized). */
+  bool pin_protection_is_default = false;
+  bool pin_protection_not_setup = false;
   bool security_can_change_pin = false;
   /** Registered + unlocked — copy a link-device payload. */
   bool security_can_export_link = false;

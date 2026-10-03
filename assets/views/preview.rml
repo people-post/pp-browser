@@ -11,6 +11,6 @@
   </div>
   <div class="working-set-body" data-if="working_set_active" data-rml="working_set_rml"></div>
   <p class="text muted empty-panel" data-if="!working_set_active">
-    Results, forms, and lists appear here when the assistant produces them.
+    {{i18n:preview.empty}}
   </p>
 </div>

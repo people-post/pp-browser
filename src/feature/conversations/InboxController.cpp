@@ -522,7 +522,7 @@ std::string InboxController::BuildSharedBadgeHtml(const ThreadMessage& message) 
       (message.ai_invoke_mode != "shared_reply" && message.ai_invoke_mode != "shared_full")) {
     return "";
   }
-  return "<span class=\"chat-shared-badge muted\">Shared</span>";
+  return "<span class=\"chat-shared-badge muted\">" + Tr("chat.shared_badge") + "</span>";
 }
 
 std::string InboxController::FormatCallPeerLabel(const std::string& identity) const {

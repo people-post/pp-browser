@@ -2,13 +2,13 @@
         <label class="settings-field">
           <span class="settings-label">{{i18n:settings.llm.preset}}</span>
           <select class="field" data-value="llm_preset" data-event-change="on_llm_preset_changed()">
-            <option value="brief">Brief (default)</option>
-            <option value="cloud">Cloud (OpenAI-compatible)</option>
-            <option value="ollama">Ollama (localhost)</option>
-            <option value="custom">Custom</option>
+            <option value="brief">{{i18n:settings.llm.preset_brief}}</option>
+            <option value="cloud">{{i18n:settings.llm.preset_cloud}}</option>
+            <option value="ollama">{{i18n:settings.llm.preset_ollama}}</option>
+            <option value="custom">{{i18n:settings.llm.preset_custom}}</option>
           </select>
         </label>
-        <p class="text muted">Preset defaults apply when saved. Leave API key blank to keep the existing key.</p>
+        <p class="text muted">{{i18n:settings.llm.preset_help}}</p>
         <label class="settings-field">
           <span class="settings-label">{{i18n:settings.llm.base_url}}</span>
           <input class="field" type="text" data-value="llm_base_url" data-event-change="on_llm_field_changed()"/>
@@ -18,21 +18,21 @@
           <input class="field" type="text" data-value="llm_model" data-event-change="on_llm_field_changed()"/>
         </label>
         <div class="settings-field stack" data-if="llm_preset == 'brief'">
-          <span class="settings-label">Brief API key</span>
+          <span class="settings-label">{{i18n:settings.llm.brief_key}}</span>
           <p class="text muted" data-if="brief_llm_key_masked != ''">
-            <span data-rml="brief_llm_key_masked"></span> — rotate under Profile
+            <span data-rml="brief_llm_key_masked"></span> {{i18n:settings.llm.brief_key_rotate_hint}}
           </p>
           <p class="text muted" data-if="brief_llm_key_masked == ''">
-            Issued automatically when you register in Profile.
+            {{i18n:settings.llm.brief_key_auto}}
           </p>
         </div>
         <label class="settings-field" data-if="llm_preset != 'brief'">
           <span class="settings-label">{{i18n:settings.llm.api_key}}</span>
-          <input class="field" type="password" data-value="llm_api_key" data-event-change="on_llm_field_changed()" placeholder="Optional for local / Ollama endpoints"/>
+          <input class="field" type="password" data-value="llm_api_key" data-event-change="on_llm_field_changed()" placeholder="{{i18n:settings.llm.api_key_placeholder}}"/>
         </label>
         <label class="settings-field" data-if="llm_preset != 'brief'">
           <span class="settings-label">{{i18n:settings.llm.api_key_env}}</span>
-          <input class="field" type="text" data-value="llm_api_key_env" data-event-change="on_llm_field_changed()" placeholder="Optional (e.g. OPENAI_API_KEY)"/>
+          <input class="field" type="text" data-value="llm_api_key_env" data-event-change="on_llm_field_changed()" placeholder="{{i18n:settings.llm.api_key_env_placeholder}}"/>
         </label>
         <div class="settings-actions stack">
           <button class="btn btn-secondary settings-action-bar" type="button"

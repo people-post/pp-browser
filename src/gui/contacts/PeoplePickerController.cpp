@@ -234,7 +234,7 @@ void PeoplePickerController::OpenFree() {
 
 void PeoplePickerController::OpenFromDm(const std::string& locked_contact_id) {
   if (locked_contact_id.empty()) {
-    UserFeedback::Fail("No contact for this chat");
+    UserFeedback::Fail(Tr("people_picker.err.no_contact"));
     NotifySurfaceChanged();
     return;
   }
@@ -243,12 +243,12 @@ void PeoplePickerController::OpenFromDm(const std::string& locked_contact_id) {
 
 void PeoplePickerController::OpenForGroupCall(const std::string& thread_id, const bool video_allowed) {
   if (!MessagingInitialized() || !picker_ports_.get_thread) {
-    UserFeedback::Fail("Messaging not ready");
+    UserFeedback::Fail(Tr("people_picker.err.messaging_not_ready"));
     return;
   }
   auto thread = picker_ports_.get_thread(thread_id);
   if (!thread || !*thread || (*thread)->kind != ThreadKind::Group || !(*thread)->group_id) {
-    UserFeedback::Fail("Group chat required");
+    UserFeedback::Fail(Tr("people_picker.err.group_required"));
     return;
   }
   Close();
@@ -281,7 +281,7 @@ void PeoplePickerController::OpenForGroupCall(const std::string& thread_id, cons
 
 void PeoplePickerController::OpenForCallAddGuest(const std::string& call_id) {
   if (!MessagingInitialized() || call_id.empty()) {
-    UserFeedback::Fail("Calls unavailable");
+    UserFeedback::Fail(Tr("people_picker.err.calls_unavailable"));
     return;
   }
   Close();
@@ -309,7 +309,7 @@ void PeoplePickerController::OpenForCallAddGuest(const std::string& call_id) {
 
 void PeoplePickerController::Open(PeoplePickerMode mode, std::unordered_set<std::string> locked_ids) {
   if (!MessagingInitialized()) {
-    UserFeedback::Fail("Messaging not ready");
+    UserFeedback::Fail(Tr("people_picker.err.messaging_not_ready"));
     NotifySurfaceChanged();
     return;
   }
@@ -827,12 +827,12 @@ void PeoplePickerController::OnConfirm() {
 
 void PeoplePickerController::OnStartCall() {
   if (!call_actions_.invite_identities && !call_actions_.start_with_invitees) {
-    UserFeedback::Fail("Calls unavailable");
+    UserFeedback::Fail(Tr("people_picker.err.calls_unavailable"));
     return;
   }
   const std::vector<std::string> identities = SelectedInviteIdentities();
   if (identities.empty()) {
-    UserFeedback::Fail("Select at least one person");
+    UserFeedback::Fail(Tr("people_picker.err.select_one"));
     return;
   }
   if (picker_ports_.list_call_participants) {
@@ -842,12 +842,12 @@ void PeoplePickerController::OnStartCall() {
         joined = count->size();
       }
       if (!CallSessionLogic::CanAcceptJoin(joined + identities.size() - 1)) {
-        UserFeedback::Fail("Call is full");
+        UserFeedback::Fail(Tr("people_picker.err.call_full"));
         return;
       }
     } else if (mode_ == PeoplePickerMode::GroupCall) {
       if (!CallSessionLogic::CanAcceptJoin(identities.size())) {
-        UserFeedback::Fail("Too many invitees for this call");
+        UserFeedback::Fail(Tr("people_picker.err.too_many"));
         return;
       }
     }
