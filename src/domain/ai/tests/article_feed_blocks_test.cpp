@@ -72,3 +72,22 @@ TEST(ArticleFeedBlocksTest, LocalizedLabelsFallBackToEnglishWithoutACatalog) {
   EXPECT_EQ(labels.intro, ArticleFeedLabels{}.intro);
   EXPECT_EQ(labels.open, "Open");
 }
+
+// What McpToolAdapter really returns: the MCP result object with the JSON as text content.
+TEST(ArticleFeedBlocksTest, ReadsArticlesFromTheMcpResultWrapper) {
+  const std::string inner = R"({"articles":[{"id":"1","title":"","content":"A brief.","link_to":"https://example.com/a","created_at":1790000000}]})";
+  pbr::Object part;
+  part.set("type", "text");
+  part.set("text", inner);
+  pbr::Object wrapped;
+  wrapped.set("content", pbr::ArrayValue({pbr::ObjectValue(std::move(part))}));
+  const std::string raw = pbr::DumpJson(wrapped);
+
+  EXPECT_EQ(pbr::UnwrapMcpTextResult(raw), inner);
+  EXPECT_EQ(pbr::UnwrapMcpTextResult(inner), inner);
+  EXPECT_EQ(pbr::UnwrapMcpTextResult("not json"), "not json");
+
+  const std::string blocks = pbr::BuildArticleFeedBlocksJson(raw, {});
+  EXPECT_NE(blocks.find("A brief."), std::string::npos);
+  EXPECT_NE(blocks.find("example.com"), std::string::npos);
+}

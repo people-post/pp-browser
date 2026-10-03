@@ -1,5 +1,7 @@
 #include "domain/ai/PromptBuilder.h"
 
+#include "domain/ai/ArticleFeedBlocks.h"
+
 #include "common/ValueJson.h"
 
 #include <cctype>
@@ -319,7 +321,7 @@ bool PromptBuilder::IsMcpArticleFeedTool(const std::string& tool_name) {
 }
 
 std::string PromptBuilder::FormatMcpArticleResultsForLlm(const std::string& raw_result) {
-  auto parsed = ParseValue(raw_result);
+  auto parsed = ParseValue(UnwrapMcpTextResult(raw_result));
   if (!parsed) {
     return raw_result;
   }
@@ -349,7 +351,7 @@ std::string PromptBuilder::FormatMcpArticleResultsForLlm(const std::string& raw_
     }
     const std::string title = ExtractArticleField(*article, {"title", "headline", "name"});
     const std::string subtitle =
-        ExtractArticleField(*article, {"subtitle", "excerpt", "summary", "description", "snippet"});
+        ExtractArticleField(*article, {"subtitle", "excerpt", "summary", "description", "snippet", "content"});
     const std::string meta = ExtractArticleField(*article, {"meta", "date", "published_at", "source", "tag"});
     const std::string id = ExtractArticleField(*article, {"id", "article_id", "slug"});
     if (title.empty() && subtitle.empty() && id.empty()) {

@@ -67,8 +67,29 @@ Object MakeAction(const std::string& label, const std::string& message, Object p
 
 } // namespace
 
+std::string UnwrapMcpTextResult(const std::string& raw) {
+  const auto doc = TryParseObject(raw);
+  if (!doc) {
+    return raw;
+  }
+  const Array* content = doc->getArray("content");
+  if (!content) {
+    return raw;
+  }
+  for (const Value& part_value : content->elements) {
+    const Object* part = asObject(part_value);
+    if (!part || part->getString("type").value_or("") != "text") {
+      continue;
+    }
+    if (auto text = part->getString("text"); text && !text->empty()) {
+      return *text;
+    }
+  }
+  return raw;
+}
+
 std::string BuildArticleFeedBlocksJson(const std::string& raw_json, const ArticleFeedBuildOptions& options) {
-  auto parsed = ParseValue(raw_json);
+  auto parsed = ParseValue(UnwrapMcpTextResult(raw_json));
   if (!parsed) {
     return {};
   }
