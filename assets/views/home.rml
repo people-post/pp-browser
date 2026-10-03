@@ -16,11 +16,11 @@
     <div class="home-landing-inner stack">
       <div class="home-composer-mount" id="home-composer-mount"></div>
       <div class="home-suggestions">
-        <button class="chat-suggestion" data-event-click="send_suggestion('{{i18n:home.suggestion.find_someone_prompt}}')"
+        <button class="chat-suggestion" data-event-click="send_suggestion_action('find_someone')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.find_someone}}</button>
         <button class="chat-suggestion" data-event-click="send_suggestion('{{i18n:home.suggestion.headlines_prompt}}')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.headlines}}</button>
-        <button class="chat-suggestion" data-event-click="send_suggestion('{{i18n:home.suggestion.articles_prompt}}')"
+        <button class="chat-suggestion" data-event-click="send_suggestion_action('articles')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.articles}}</button>
         <button class="chat-suggestion" data-event-click="send_suggestion('{{i18n:home.suggestion.get_started_prompt}}')"
                 data-attrif-disabled="compose_disabled">{{i18n:home.suggestion.get_started}}</button>

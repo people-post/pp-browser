@@ -26,3 +26,13 @@ TEST(MessageRouterTest, AiThreadDropsTheAtAiPrefixAndOtherThreadsKeepTheText) {
   EXPECT_EQ(pbr::MessageRouter::TextForAgent(pbr::ThreadKind::Ai, "plain question"), "plain question");
   EXPECT_EQ(pbr::MessageRouter::TextForAgent(pbr::ThreadKind::Direct, "@ai+ hello"), "@ai+ hello");
 }
+
+TEST(MessageRouterTest, OnlyTypelessToolPayloadsGoToTheAgent) {
+  using pbr::MessageRouter;
+  EXPECT_TRUE(MessageRouter::IsAgentToolPayload(std::string(R"({"tool":"blog_articles","size":10})")));
+  EXPECT_FALSE(MessageRouter::IsAgentToolPayload(std::string(R"({"type":"add_contact","tool":"x"})")));
+  EXPECT_FALSE(MessageRouter::IsAgentToolPayload(std::string(R"({"type":"show_contact"})")));
+  EXPECT_FALSE(MessageRouter::IsAgentToolPayload(std::string(R"({"tool":""})")));
+  EXPECT_FALSE(MessageRouter::IsAgentToolPayload(std::string("not json")));
+  EXPECT_FALSE(MessageRouter::IsAgentToolPayload(std::nullopt));
+}

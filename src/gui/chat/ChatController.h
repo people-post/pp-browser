@@ -223,6 +223,7 @@ private:
 
   static void SendMessageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SendSuggestionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void SendSuggestionActionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SendChatActionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenChatLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void StopTurnCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);

@@ -8,6 +8,7 @@
 #include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatAnswer.h"
 #include "gui/chat/SessionListText.h"
+#include "gui/chat/SuggestionPayload.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/BadgeAggregator.h"
 #include "gui/BadgeNotifyPorts.h"
@@ -675,6 +676,20 @@ void ChatController::SendSuggestionCallback(ui::DataModelHandle /*model*/, ui::E
     return;
   }
   Instance().SendUserText(std::string(args[0].Get<ui::String>().c_str()));
+}
+
+void ChatController::SendSuggestionActionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                  const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
+    return;
+  }
+  const std::string id(args[0].Get<ui::String>().c_str());
+  auto payload = SuggestionPayload(id, LocalizationService::Instance().ResolvedLanguage());
+  if (!payload) {
+    return;
+  }
+  // The bubble shows the localized sentence; the payload makes the app run the function itself.
+  Instance().SendUserText(Tr("home.suggestion." + id + "_prompt"), std::move(payload));
 }
 
 void ChatController::SubmitFormCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -1886,6 +1901,24 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
       if (!resumed) {
         ShowToast(resumed.error().message);
       }
+      return;
+    }
+    if (action_type && *action_type == "open_url") {
+      // Same guard as open_chat_link: https only, and the user confirms the host first.
+      const std::string url = action_json->getString("url").value_or("");
+      if (IsHttpsUrl(url)) {
+        ShowConfirm(Tr("chat.open_link_title", {{"host", UrlHost(url)}}), Tr("chat.open_link_body", {{"url", url}}),
+                    [url](const bool ok) {
+                      if (ok) {
+                        (void)PlatformOpenUrl(url);
+                      }
+                    });
+      }
+      return;
+    }
+    if (!action_type && action_json && !action_json->getString("tool").value_or("").empty()) {
+      // A tool payload (e.g. "load more" of the article feed) is run by the agent, not by the contact dispatcher.
+      SendUserText(message, payload);
       return;
     }
     if (action_type && *action_type == "fork_group") {
@@ -3360,6 +3393,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.Bind("jump_to_latest_label", &controller.chat_.jump_to_latest_label);
         ctor.BindEventCallback("send_message", &ChatController::SendMessageCallback);
         ctor.BindEventCallback("send_suggestion", &ChatController::SendSuggestionCallback);
+        ctor.BindEventCallback("send_suggestion_action", &ChatController::SendSuggestionActionCallback);
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
         ctor.BindEventCallback("open_chat_link", &ChatController::OpenChatLinkCallback);
         ctor.BindEventCallback("stop_turn", &ChatController::StopTurnCallback);

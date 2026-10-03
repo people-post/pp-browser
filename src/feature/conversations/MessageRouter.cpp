@@ -5,6 +5,7 @@
 #include "common/thread/IThreadStore.h"
 #include "domain/messaging/SendRelayOptions.h"
 #include "common/Utilities.h"
+#include "common/ValueJson.h"
 #include "common/thread/ThreadTypes.h"
 #include "common/PbrCompat.h"
 
@@ -32,6 +33,14 @@ void MessageRouter::MarkSharedAiConfirmed(const std::string& thread_id) {
 
 bool MessageRouter::NeedsSharedAiConfirm(const std::string& thread_id) const {
   return shared_ai_confirmed_threads_.find(thread_id) == shared_ai_confirmed_threads_.end();
+}
+
+bool MessageRouter::IsAgentToolPayload(const std::optional<std::string>& user_payload) {
+  if (!user_payload || user_payload->empty()) {
+    return false;
+  }
+  const auto doc = TryParseObject(*user_payload);
+  return doc && !doc->getString("type") && doc->getString("tool").value_or("") != "";
 }
 
 Roe<void> MessageRouter::ValidateUserPayload(const std::optional<std::string>& user_payload) {
@@ -90,7 +99,7 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
     return Error("Thread not found");
   }
 
-  if (user_payload && !user_payload->empty() && on_local_action_) {
+  if (user_payload && !user_payload->empty() && on_local_action_ && !IsAgentToolPayload(user_payload)) {
     on_local_action_(text, user_payload);
     return {};
   }
@@ -161,7 +170,7 @@ bool MessageRouter::ExpectsAgentWork(const std::string& thread_id, const std::st
     return false;
   }
   if (user_payload && !user_payload->empty()) {
-    return false;
+    return IsAgentToolPayload(user_payload);
   }
 
   auto thread = store_.GetThread(thread_id);
