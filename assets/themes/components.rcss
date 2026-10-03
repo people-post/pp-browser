@@ -575,17 +575,6 @@ select selectbox option {
   font-weight: bold;
 }
 
-.chat-sources {
-  display: block;
-  margin-top: 8dp;
-}
-
-.chat-sources p {
-  font-size: 12dp;
-  margin-top: 2dp;
-  margin-bottom: 0;
-}
-
 .code-block {
   font-family: LatoLatin;
   font-size: 13dp;

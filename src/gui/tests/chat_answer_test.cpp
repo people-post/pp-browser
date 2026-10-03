@@ -21,34 +21,41 @@ TEST(ChatAnswerTest, UrlHostDropsUserinfoPortAndPath) {
   EXPECT_EQ(UrlHost("http://example.com"), "");
 }
 
-TEST(ChatAnswerTest, SourcesExtendMarkdownLinksAndReuseExistingIndex) {
+TEST(ChatAnswerTest, DetailsLinkPointsAtFirstHttpsSource) {
   const std::vector<BriefAiSource> sources = {
-      {"Example", "https://example.com/a", "web"},
-      {"", "https://other.org/x", "web"},
       {"Plain http", "http://insecure.test/", "web"},
-      {"Again", "https://example.com/a", "web"},
+      {"Example", "https://example.com/a", "web"},
+      {"Other", "https://other.org/x", "web"},
   };
-  const ChatAnswerRml out = BuildMarkdownAnswer("See [docs](https://docs.test/).", sources, "Sources");
-  ASSERT_EQ(out.links.size(), 3u);
-  EXPECT_EQ(out.links[0], "https://docs.test/");
-  EXPECT_EQ(out.links[1], "https://example.com/a");
-  EXPECT_EQ(out.links[2], "https://other.org/x");
-  EXPECT_NE(out.rml.find("<div class=\"chat-sources\">"), std::string::npos);
-  EXPECT_NE(out.rml.find("open_chat_link('__ENTRY__', 2)\">other.org</span>"), std::string::npos); // host fallback
-  EXPECT_EQ(out.rml.find("insecure.test"), std::string::npos);
+  const std::string text = WithDetailsLink("News.", sources, "View details");
+  EXPECT_EQ(text, "News.\n\n[View details](https://example.com/a)");
+
+  const ChatAnswerRml out = BuildMarkdownAnswer(text);
+  ASSERT_EQ(out.links.size(), 1u);
+  EXPECT_EQ(out.links[0], "https://example.com/a");
+  EXPECT_NE(out.rml.find("open_chat_link('__ENTRY__', 0)"), std::string::npos);
+  EXPECT_NE(out.rml.find("View details"), std::string::npos);
+  EXPECT_EQ(out.rml.find("Example"), std::string::npos); // no source title, no separate list
 }
 
-TEST(ChatAnswerTest, SourcesAreEscapedCappedAndOmittedWhenEmpty) {
-  EXPECT_EQ(BuildMarkdownAnswer("hi", {}, "Sources").rml.find("chat-sources"), std::string::npos);
+TEST(ChatAnswerTest, DetailsLinkSurvivesARestart) {
+  const std::string stored = WithDetailsLink("News.", {{"T", "https://example.com/a", "web"}}, "View details");
+  EXPECT_EQ(ResolveChatLink(RecoverChatLinks(stored), 0), "https://example.com/a");
+}
 
-  const ChatAnswerRml escaped = BuildMarkdownAnswer("hi", {{"<b>x</b>", "https://a.test/", ""}}, "Sources");
-  EXPECT_EQ(escaped.rml.find("<b>x"), std::string::npos);
+TEST(ChatAnswerTest, DetailsLinkOmittedWithoutHttpsSourceOrWhenAlreadyLinked) {
+  EXPECT_EQ(WithDetailsLink("hi", {}, "View details"), "hi");
+  EXPECT_EQ(WithDetailsLink("hi", {{"T", "http://a.test/", ""}}, "View details"), "hi");
+  const std::string linked = "See [docs](https://docs.test/).";
+  EXPECT_EQ(WithDetailsLink(linked, {{"T", "https://docs.test/", ""}}, "View details"), linked);
+}
 
-  std::vector<BriefAiSource> many;
-  for (int i = 0; i < 15; ++i) {
-    many.push_back({"t", "https://s" + std::to_string(i) + ".test/", ""});
-  }
-  EXPECT_EQ(BuildMarkdownAnswer("hi", many, "Sources").links.size(), kMaxAnswerSources);
+TEST(ChatAnswerTest, DetailsLinkDestinationCannotBreakOutOfTheLink) {
+  const std::string text = WithDetailsLink("hi", {{"T", "https://a.test/x_(y) z<b>", ""}}, "View details");
+  const ChatAnswerRml out = BuildMarkdownAnswer(text);
+  ASSERT_EQ(out.links.size(), 1u);
+  EXPECT_EQ(out.links[0], "https://a.test/x_%28y%29%20z%3Cb%3E");
+  EXPECT_EQ(out.rml.find("<b>"), std::string::npos);
 }
 
 TEST(ChatAnswerTest, ResolveChatLinkOnlyOpensInRangeHttps) {
@@ -64,5 +71,5 @@ TEST(ChatAnswerTest, RecoveredLinksComeFromStoredMarkdownOnly) {
   const auto links = RecoverChatLinks("a [x](https://x.test/) b [y](http://y.test/) c [z](https://z.test/)");
   EXPECT_EQ(ResolveChatLink(links, 0), "https://x.test/");
   EXPECT_EQ(ResolveChatLink(links, 1), "https://z.test/");
-  EXPECT_FALSE(ResolveChatLink(links, 2)); // source indices are not recoverable
+  EXPECT_FALSE(ResolveChatLink(links, 2));
 }
