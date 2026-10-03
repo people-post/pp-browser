@@ -1,5 +1,6 @@
 #include "domain/ai/StructuredTextParser.h"
 
+#include "domain/ai/LocalizedLabels.h"
 #include "domain/ai/WorkingSetPolicy.h"
 #include "common/PlatformLimits.h"
 #include "common/chat/PeopleDiscoveryBlocks.h"
@@ -1151,7 +1152,7 @@ ParseResult StructuredTextParser::ParseFromLlmOutput(const std::string& llm_outp
     }
   }
 
-  if (const std::string blocks = TryPeopleDiscoveryBlocksFromToolJson(trimmed); !blocks.empty()) {
+  if (const std::string blocks = TryPeopleDiscoveryBlocksFromToolJson(trimmed, LocalizedPeopleDiscoveryLabels()); !blocks.empty()) {
     return ParseBlocksJson(blocks, ResponseGoal::PeopleDiscovery, render_mode);
   }
 
