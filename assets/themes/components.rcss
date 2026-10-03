@@ -233,10 +233,6 @@ select selectbox option {
   cursor: pointer;
 }
 
-.chat-preview-btn {
-  flex-shrink: 0;
-}
-
 .chat-header-actions {
   flex-shrink: 0;
   align-items: center;
@@ -1715,19 +1711,6 @@ select selectbox option {
 .shell-toolbar-title {
   font-size: 14dp;
   text-align: center;
-}
-
-.shell-toolbar-btn {
-  width: auto;
-  min-width: 72dp;
-  min-height: 44dp;
-  padding: 6dp 12dp;
-  margin-bottom: 0;
-  border: 0;
-  font-family: LatoLatin;
-  font-size: 13dp;
-  border-radius: 6dp;
-  cursor: pointer;
 }
 
 .shell-transient-chrome {

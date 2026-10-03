@@ -693,16 +693,6 @@ select selectbox option:hover {
   color: #e5e7eb;
 }
 
-.shell-toolbar-btn {
-  background-color: #374151;
-  color: #f9fafb;
-}
-
-.shell-toolbar-btn-preview {
-  background-color: #6366f1;
-  color: #ffffff;
-}
-
 .shell-transient-chrome {
   background-color: #1f2937f0;
   border-bottom: 1dp #ffffff0f;
