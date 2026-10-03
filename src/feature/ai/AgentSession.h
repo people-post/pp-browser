@@ -53,6 +53,17 @@ struct AgentEvent {
   RenderMode render_mode = RenderMode::Blocks;
   std::vector<BriefAiSource> sources; // AssistantReady of a streamed answer
   bool retryable = false;             // Error
+  /** Error of an image turn the GUI words itself: "image_too_large" (HTTP 413) or "image_unsupported" (HTTP 400). */
+  std::string error_kind;
+};
+
+/** Prefix of a stored user message that carried an image; later history sends it as plain text. */
+inline constexpr const char* kAiImageTurnMarker = "[Image] ";
+
+/** One image sent with a question. `message_id` (optional) is the id the user message is stored under. */
+struct AgentImageTurn {
+  BriefAiImage image;
+  std::string message_id;
 };
 
 class AgentSession {
@@ -72,8 +83,13 @@ public:
   /** Replace the brief_AI stream (tests / fake server); otherwise built from the LLM config in Configure. */
   void SetBriefAiStream(BriefAiStreamFn fn);
   void Submit(const std::string& user_text, std::optional<std::string> user_payload = std::nullopt);
+  /**
+   * `image`: one prepared image sent with this question (brief preset only; any other preset fails the turn).
+   * The thread stores the question as kAiImageTurnMarker + text, never the bytes.
+   */
   void SubmitToThread(const std::string& thread_id, const std::string& user_text,
-                      std::optional<std::string> user_payload = std::nullopt);
+                      std::optional<std::string> user_payload = std::nullopt,
+                      std::optional<AgentImageTurn> image = std::nullopt);
   void SubmitScopedAssist(const std::string& thread_id, const std::string& prompt,
                           std::optional<std::string> user_payload = std::nullopt,
                           AtAiMode mode = AtAiMode::Local);
@@ -141,7 +157,8 @@ private:
   static void PushAssistantReady(const std::shared_ptr<Impl>& state, const std::string& entry_id,
                                  const std::string& text, const std::string& finish_reason,
                                  std::vector<BriefAiSource> sources = {});
-  static void PushError(const std::shared_ptr<Impl>& state, const std::string& message, bool retryable = false);
+  static void PushError(const std::shared_ptr<Impl>& state, const std::string& message, bool retryable = false,
+                        const std::string& error_kind = {});
   static void PushError(const std::shared_ptr<Impl>& state, const Error& err);
   static void FinishTurn(const std::shared_ptr<Impl>& state);
   static void RefreshCompactionService(const std::shared_ptr<Impl>& state);

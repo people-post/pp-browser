@@ -74,6 +74,14 @@ public:
   /** App/chat controller fills: surface→shell notify (not dirty_nav). */
   void SetNotifySurfaceChanged(std::function<void()> notify) { notify_surface_changed_ = std::move(notify); }
 
+  /** What the controller knows about AI image sending; `home` = on the Home tab (its composer opens an AI thread). */
+  struct AiAttachInfo {
+    bool brief_preset = false;
+    bool ai_usable = false;
+    bool home = false;
+  };
+  void SetAiAttachInfo(std::function<AiAttachInfo()> info) { ai_attach_info_ = std::move(info); }
+
   void SetRefreshFromMessaging(std::function<void()> refresh) { refresh_ = std::move(refresh); }
   void SetWithSecrets(std::function<void(std::function<void()>)> with_secrets) {
     with_secrets_ = std::move(with_secrets);
@@ -87,6 +95,8 @@ public:
   }
 
   void Update();
+  /** show_attach_button when no thread is open: only the Home composer, and only for an AI image. */
+  bool ShowAttachWithoutThread() const;
   void UpdatePeerLink();
   void ResetPanelState();
   /** Poll peer-link chrome on a short interval; returns true if header fields changed. */
@@ -108,6 +118,7 @@ public:
   bool& messaging_ready_;
   bool& mesh_ready_;
   std::function<void()> refresh_;
+  std::function<AiAttachInfo()> ai_attach_info_;
   std::function<void(std::function<void()>)> with_secrets_;
   std::function<void()> on_scroller_reset_;
   std::function<void()> capture_scroll_before_prepend_;

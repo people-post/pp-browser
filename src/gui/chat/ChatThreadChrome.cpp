@@ -1,5 +1,6 @@
 #include "gui/chat/ChatThreadChrome.h"
 
+#include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/PeerLinkText.h"
 #include "foundation/crypto/CryptoTypes.h"
@@ -83,6 +84,11 @@ std::string ActiveThreadId(ConversationsFacade* facade) {
 ChatThreadChrome::ChatThreadChrome(View view, bool& messaging_ready, bool& mesh_ready)
     : view_(view), messaging_ready_(messaging_ready), mesh_ready_(mesh_ready) {}
 
+bool ChatThreadChrome::ShowAttachWithoutThread() const {
+  const AiAttachInfo info = ai_attach_info_ ? ai_attach_info_() : AiAttachInfo{};
+  return ShowAttachButton({.ai_composer = info.home, .brief_preset = info.brief_preset, .ai_usable = info.ai_usable});
+}
+
 void ChatThreadChrome::ResetPanelState() {
   view_.thread_title = "";
   view_.thread_subtitle = "";
@@ -104,7 +110,7 @@ void ChatThreadChrome::ResetPanelState() {
   view_.thread_is_public = false;
   view_.thread_is_group = false;
   view_.compose_disabled = false;
-  view_.show_attach_button = false;
+  view_.show_attach_button = ShowAttachWithoutThread();
   view_.show_thread_actions = false;
   view_.show_call_actions = false;
   view_.show_forget_memory = false;
@@ -231,7 +237,11 @@ void ChatThreadChrome::Update() {
     view_.show_call_actions =
         (thread->kind == ThreadKind::Direct || thread->kind == ThreadKind::Group) && messaging_ready_ &&
         mesh_ready_;
-    view_.show_attach_button = view_.show_call_actions && thread->kind != ThreadKind::Ai;
+    const AiAttachInfo ai_info = ai_attach_info_ ? ai_attach_info_() : AiAttachInfo{};
+    view_.show_attach_button = ShowAttachButton({.peer_thread_attach = view_.show_call_actions && thread->kind != ThreadKind::Ai,
+                                                 .ai_composer = thread->kind == ThreadKind::Ai,
+                                                 .brief_preset = ai_info.brief_preset,
+                                                 .ai_usable = ai_info.ai_usable});
     view_.show_thread_actions = true;
     view_.show_forget_memory = thread->kind == ThreadKind::Ai;
     view_.show_sync_with_peer = false;
@@ -391,7 +401,7 @@ void ChatThreadChrome::Update() {
     view_.thread_is_public = false;
     view_.thread_is_group = false;
     view_.compose_disabled = false;
-    view_.show_attach_button = false;
+    view_.show_attach_button = ShowAttachWithoutThread();
     view_.show_thread_actions = false;
     view_.show_peer_sheet = false;
     view_.show_call_actions = false;

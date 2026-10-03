@@ -41,6 +41,11 @@ void DirtyChatHeader() {
   DataModelHost::Instance().Dirty("chat", "show_attach_button");
   DataModelHost::Instance().Dirty("chat", "attachment_uploading");
   DataModelHost::Instance().Dirty("chat", "attachment_draft_name");
+  DataModelHost::Instance().Dirty("chat", "image_chip");
+  DataModelHost::Instance().Dirty("chat", "image_preparing");
+  DataModelHost::Instance().Dirty("chat", "image_thumb_ready");
+  DataModelHost::Instance().Dirty("chat", "image_thumb_src");
+  DataModelHost::Instance().Dirty("chat", "image_draft_name");
   DataModelHost::Instance().Dirty("chat", "draft_placeholder");
   DataModelHost::Instance().Dirty("chat", "show_thread_actions");
   DataModelHost::Instance().Dirty("chat", "show_peer_sheet");

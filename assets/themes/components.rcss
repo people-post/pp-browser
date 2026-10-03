@@ -537,6 +537,35 @@ select selectbox option {
   opacity: 0.72;
 }
 
+.prompt-attachment-chip-thumb {
+  flex-shrink: 0;
+  display: block;
+  max-width: 28dp;
+  max-height: 28dp;
+  border-radius: 4dp;
+}
+
+.prompt-attachment-chip-remove {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20dp;
+  height: 20dp;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10dp;
+  background-color: transparent;
+  cursor: pointer;
+}
+
+.prompt-attachment-chip-remove svg {
+  flex-shrink: 0;
+  width: 10dp;
+  height: 10dp;
+}
+
 .prompt-send-btn {
   flex-shrink: 0;
   display: flex;
@@ -3176,6 +3205,12 @@ input.checkbox {
   display: block;
   max-width: 100%;
   max-height: 240dp;
+  border-radius: 8dp;
+  margin-bottom: 8dp;
+}
+
+.chat-ai-image {
+  display: block;
   border-radius: 8dp;
   margin-bottom: 8dp;
 }

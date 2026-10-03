@@ -172,6 +172,12 @@ private:
     bool show_attach_button = false;
     bool attachment_uploading = false;
     ui::String attachment_draft_name;
+    /** AI image chip: an image is being prepared (image_preparing) or waits for the question. */
+    bool image_chip = false;
+    bool image_preparing = false;
+    bool image_thumb_ready = false;
+    ui::String image_thumb_src;
+    ui::String image_draft_name;
     bool show_thread_actions = false;
     bool show_peer_sheet = false;
     bool show_call_actions = false;
@@ -223,6 +229,7 @@ private:
   static void ToggleReactionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenEmojiInsertCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void AttachFileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void RemoveImageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void DownloadAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void RetryAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -283,6 +290,16 @@ private:
   void OpenEmojiInsertMenu(ui::Event* ev);
   void OnAttachFile();
   void StartAttachmentUpload(const std::string& path);
+  /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
+  bool InAiComposerContext() const;
+  void OnAttachAiImage();
+  void StartAiImagePrepare(std::string path);
+  void OnRemoveImage();
+  /** Drops the pending (or still preparing) image and its session thumbnail file. */
+  void DiscardPendingAiImage();
+  /** False when the question could not be sent (not ready, no thread); the draft and the chip then stay. */
+  bool SendImageQuestion(const std::string& text);
+  void DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const;
   void OpenAttachment(const std::string& message_id);
   void DownloadAttachment(const std::string& message_id);
   void RetryAttachmentDownload(const std::string& message_id);
@@ -390,6 +407,24 @@ private:
   ChatThreadChrome chrome_;
   ChatWidgetHost widgets_;
   std::optional<PendingReply> pending_reply_;
+
+  /** The prepared image waiting in the composer for its question. */
+  struct PendingAiImage {
+    BriefAiImage image;
+    std::string name;      // shown on the chip only; never logged
+    std::string file_path; // session plaintext copy for the thumbnail; empty when it could not be written
+    int width = 0;         // pixels of the prepared image
+    int height = 0;
+  };
+  struct AiImageView {
+    std::string file_path;
+    int width = 0;
+    int height = 0;
+  };
+  std::optional<PendingAiImage> pending_image_;
+  uint64_t image_prepare_generation_ = 0; // a prepare that finishes after Discard / a newer pick is dropped
+  /** Sent image question (user message id) -> its session thumbnail file; gone after a restart. */
+  std::map<std::string, AiImageView> ai_image_files_;
 
   /** The in-flight streamed answer: shown as a synthetic last row until AssistantReady replaces it. */
   struct StreamingRow {

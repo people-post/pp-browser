@@ -3,6 +3,7 @@
 #include "common/ValueJson.h"
 #include "domain/ai/LlmClient.h"
 #include "domain/ai/tests/sse_test_server.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "foundation/error/AppError.h"
 
 #include <gtest/gtest.h>
@@ -104,6 +105,68 @@ TEST(BriefAiClientTest, RequestJsonMinimalRequest) {
   ASSERT_NE(client, nullptr);
   EXPECT_EQ(client->getString("app").value_or(""), "pp");
   EXPECT_EQ(client->fields().size(), 1u); // no empty optional fields
+}
+
+TEST(BriefAiClientTest, RequestJsonWithoutImageHasNullImage) {
+  pbr::BriefAiRequest request;
+  request.message = "hello";
+  EXPECT_NE(pbr::BriefAiClient::BuildRequestJson(request).find(R"("image":null)"), std::string::npos);
+}
+
+TEST(BriefAiClientTest, RequestJsonImageRoundTripsBase64) {
+  pbr::BriefAiRequest request;
+  request.message = "what is this";
+  std::vector<uint8_t> bytes;
+  for (int i = 0; i < 1001; ++i) { // length not a multiple of 3: exercises padding
+    bytes.push_back(static_cast<uint8_t>(i * 7));
+  }
+  request.image = pbr::BriefAiImage{"image/jpeg", bytes};
+  const pbr::Object json = ParsedRequest(request);
+  const pbr::Object* image = json.getObject("image");
+  ASSERT_NE(image, nullptr);
+  EXPECT_EQ(image->getString("mime").value_or(""), "image/jpeg");
+  const std::string data = image->getString("data").value_or("");
+  EXPECT_EQ(data.find('\n'), std::string::npos);
+  EXPECT_EQ(data.back(), '=');
+  auto decoded = pbr::Base64Decode(data);
+  ASSERT_TRUE(static_cast<bool>(decoded));
+  EXPECT_EQ(*decoded, bytes);
+}
+
+TEST(BriefAiClientTest, RequestJsonImageOmitsCapabilities) {
+  pbr::BriefAiRequest request;
+  request.message = "x";
+  request.capabilities = {"add_contact"};
+  request.image = pbr::BriefAiImage{"image/png", {1, 2, 3}};
+  const pbr::Object json = ParsedRequest(request);
+  const pbr::Object* client = json.getObject("client");
+  ASSERT_NE(client, nullptr);
+  EXPECT_EQ(client->getArray("capabilities"), nullptr);
+}
+
+TEST(BriefAiClientTest, StreamRejectsBadImageWithoutSending) {
+  SseTestServer server({{kSseHead}, {kMeta + kDone + kDoneLine}}, false);
+  std::atomic<bool> cancel{false};
+  auto client = ClientFor(server);
+  auto run = [&](pbr::BriefAiImage image) {
+    pbr::BriefAiRequest request;
+    request.message = "x";
+    request.image = std::move(image);
+    return client.Stream(request, [](const BriefAiEvent&) {}, cancel);
+  };
+  EXPECT_FALSE(static_cast<bool>(run({"image/bmp", {1, 2, 3}})));
+  EXPECT_FALSE(static_cast<bool>(run({"image/png", {}})));
+  EXPECT_FALSE(static_cast<bool>(
+      run({"image/png", std::vector<uint8_t>(pbr::BriefAiClient::kMaxImageBytes + 1, 0)})));
+  EXPECT_TRUE(server.Request().empty()); // nothing reached the server
+}
+
+TEST(BriefAiClientTest, ValidateImageAcceptsLimitAndSupportedMimes) {
+  for (const char* mime : {"image/png", "image/jpeg", "image/gif", "image/webp"}) {
+    pbr::BriefAiRequest request;
+    request.image = pbr::BriefAiImage{mime, std::vector<uint8_t>(pbr::BriefAiClient::kMaxImageBytes, 1)};
+    EXPECT_TRUE(static_cast<bool>(pbr::BriefAiClient::ValidateImage(request))) << mime;
+  }
 }
 
 TEST(BriefAiClientTest, RequestJsonContextOnlyWhenNeeded) {

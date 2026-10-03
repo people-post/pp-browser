@@ -4,6 +4,7 @@
 #include "foundation/data/Config.h"
 #include "foundation/error/AppError.h"
 #include "foundation/runtime/AppRuntime.h"
+#include "common/thread/IThreadStore.h"
 
 #include <gtest/gtest.h>
 
@@ -72,6 +73,76 @@ AppConfig MakeConfig(const std::string& preset) {
   config.promoted_mcp.enabled = false;
   config.mcp_servers.clear();
   return config;
+}
+
+// Keeps messages in memory; everything the AI thread path does not touch is a stub.
+class MemoryThreadStore : public IThreadStore {
+public:
+  std::vector<ThreadMessage> messages;
+
+  void Flush() override {}
+  Roe<std::vector<Thread>> ListThreads() const override { return std::vector<Thread>{}; }
+  Roe<std::optional<Thread>> GetThread(const std::string&) const override { return std::optional<Thread>{}; }
+  Roe<Thread> UpsertThread(const Thread& thread) override { return thread; }
+  Roe<bool> DeleteThread(const std::string&) override { return true; }
+  Roe<std::optional<Thread>> FindDirectThread(const DirectChatTarget&) const override { return std::optional<Thread>{}; }
+  Roe<Thread> FindOrCreateDirectThread(const DirectChatTarget&, const std::string&, const std::string&) override { return Thread{}; }
+  Roe<std::optional<Thread>> FindGroupThread(const std::string&) const override { return std::optional<Thread>{}; }
+  Roe<Thread> FindOrCreateGroupThread(const std::string&, const std::string&, const std::vector<std::string>&) override {
+    return Thread{};
+  }
+  Roe<std::vector<ThreadMessage>> GetMessages(const std::string&) const override { return messages; }
+  Roe<std::vector<ThreadMessage>> GetMessagesPage(const std::string&, std::optional<int64_t>, size_t) const override {
+    return messages;
+  }
+  Roe<std::vector<ThreadMessage>> GetMessagesForContext(const std::string&, const ContextBudget&) const override {
+    return messages;
+  }
+  Roe<int64_t> CountContextEligibleMessagesAfter(const std::string&, int64_t) const override { return int64_t{0}; }
+  Roe<int64_t> CountAnnotationsForTarget(const std::string&, const std::string&) const override { return int64_t{0}; }
+  Roe<std::vector<ThreadMessage>> GetContextEligibleMessagesAfter(const std::string&, int64_t) const override {
+    return std::vector<ThreadMessage>{};
+  }
+  Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) override {
+    ThreadMessage stored = message;
+    stored.display_order = static_cast<int64_t>(messages.size()) + 1;
+    messages.push_back(stored);
+    return stored;
+  }
+  Roe<bool> UpdateMessage(const ThreadMessage&) override { return true; }
+  Roe<bool> HasMessageId(const std::string&, const std::string&) const override { return false; }
+  Roe<void> ClearMessages(const std::string&, const ClearMessagesOptions&) override { return {}; }
+  Roe<std::vector<ThreadMessage>> ExportMessagesUpTo(const std::string&, const std::optional<std::string>&) const override {
+    return messages;
+  }
+  Roe<std::optional<ConversationSummary>> GetThreadMemory(const std::string&) const override {
+    return std::optional<ConversationSummary>{};
+  }
+  Roe<void> SetThreadMemory(const std::string&, const ConversationSummary&) override { return {}; }
+  Roe<void> ClearThreadMemory(const std::string&) override { return {}; }
+  Roe<uint64_t> AllocateSenderSeq(const std::string&) override { return uint64_t{0}; }
+  Roe<uint32_t> GetChatTargetSessionEpoch(const std::string&) const override { return uint32_t{0}; }
+  Roe<std::vector<ThreadMessage>> GetMessagesBySeqRange(const std::string&, const SeqRangeQuery&) const override {
+    return std::vector<ThreadMessage>{};
+  }
+  Roe<PeerSyncState> GetPeerSyncState(const std::string&, uint32_t) const override { return PeerSyncState{}; }
+  Roe<void> SetPeerSyncState(const std::string&, uint32_t, const PeerSyncState&) override { return {}; }
+  Roe<void> CancelOldEpochPending(const std::string&, uint32_t) override { return {}; }
+  Roe<void> AdoptChatTargetEpoch(const std::string&, uint32_t) override { return {}; }
+  Roe<ThreadMessage> AppendMessageWithPassiveEpochAdopt(const ThreadMessage& message, uint32_t, uint32_t,
+                                                        const PeerSyncState&) override {
+    return message;
+  }
+  Roe<uint32_t> BumpLocalChatTargetEpoch(const std::string&) override { return uint32_t{0}; }
+  Roe<void> ReconcileOutbox() override { return {}; }
+  Roe<std::vector<std::pair<std::string, std::string>>> ListPendingOutbox() const override {
+    return std::vector<std::pair<std::string, std::string>>{};
+  }
+};
+
+AgentImageTurn TestImage(const std::string& message_id = {}) {
+  return AgentImageTurn{.image = BriefAiImage{.mime = "image/jpeg", .data = {0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3}},
+                        .message_id = message_id};
 }
 
 class AgentSessionBriefStreamTest : public ::testing::Test {
@@ -397,6 +468,158 @@ TEST_F(AgentSessionBriefStreamTest, OtherPresetSkipsStream) {
   EXPECT_TRUE(Requests().empty());
   EXPECT_TRUE(Of(events, AgentEventType::AssistantDelta).empty());
   EXPECT_FALSE(events.back().loading);
+}
+
+// --- Image turns (thread mode) ---
+
+TEST_F(AgentSessionBriefStreamTest, ImageTurnSendsImageWithoutCapabilitiesAndStreams) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  Script({Meta(), Token("It is "), Token("a cat"), Done("It is a cat")}, BriefAiOutcome::Done);
+  session_->SubmitToThread("t1", "What is this?", std::nullopt, TestImage("msg-1"));
+  const auto events = WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 1u);
+  EXPECT_EQ(requests[0].message, "What is this?"); // the question only, no marker
+  ASSERT_TRUE(requests[0].image.has_value());
+  EXPECT_EQ(requests[0].image->mime, "image/jpeg");
+  EXPECT_EQ(requests[0].image->data, TestImage().image.data);
+  EXPECT_TRUE(requests[0].capabilities.empty());
+
+  EXPECT_FALSE(Of(events, AgentEventType::AssistantDelta).empty());
+  const auto ready = Of(events, AgentEventType::AssistantReady);
+  ASSERT_EQ(ready.size(), 1u);
+  EXPECT_EQ(ready[0].text, "It is a cat");
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  EXPECT_FALSE(events.back().loading);
+
+  // The stored user message is text only, with the marker.
+  ASSERT_GE(store.messages.size(), 2u);
+  EXPECT_EQ(store.messages[0].text, std::string(kAiImageTurnMarker) + "What is this?");
+  EXPECT_EQ(store.messages[0].id, "msg-1"); // the caller's id, so the GUI can pair its thumbnail
+}
+
+TEST_F(AgentSessionBriefStreamTest, ImageTurnCancelKeepsPartial) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  session_->SetBriefAiStream([this](const BriefAiRequest& request, const std::function<void(const BriefAiEvent&)>& on_event,
+                                    const std::atomic<bool>& cancel) -> Roe<BriefAiOutcome> {
+    Record(request);
+    on_event(Meta());
+    on_event(Token("part"));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (!cancel.load() && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return BriefAiOutcome::Cancelled;
+  });
+  session_->SubmitToThread("t1", "q", std::nullopt, TestImage());
+
+  std::vector<AgentEvent> events;
+  bool cancelled = false;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (std::chrono::steady_clock::now() < deadline) {
+    std::vector<AgentEvent> batch;
+    AppRuntime::RunUITasks();
+    session_->PollEvents(batch);
+    for (AgentEvent& event : batch) {
+      events.push_back(std::move(event));
+    }
+    if (!cancelled && !Of(events, AgentEventType::AssistantDelta).empty()) {
+      session_->Cancel();
+      cancelled = true;
+    }
+    if (!events.empty() && events.back().type == AgentEventType::LoadingChanged && !events.back().loading) {
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  ASSERT_TRUE(cancelled);
+  const auto ready = Of(events, AgentEventType::AssistantReady);
+  ASSERT_EQ(ready.size(), 1u);
+  EXPECT_EQ(ready[0].text, "part");
+  EXPECT_EQ(ready[0].finish_reason, "cancelled");
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+}
+
+TEST_F(AgentSessionBriefStreamTest, ImageTurnWithOtherPresetFailsWithoutDroppingSilently) {
+  Start("ollama");
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  Script({Meta(), Token("x"), Done("x")}, BriefAiOutcome::Done);
+  session_->SubmitToThread("t1", "q", std::nullopt, TestImage());
+  const auto events = WaitForTurn();
+
+  EXPECT_TRUE(Requests().empty());
+  const auto errors = Of(events, AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_NE(errors[0].message.find("Brief"), std::string::npos) << errors[0].message;
+  EXPECT_TRUE(Of(events, AgentEventType::AssistantReady).empty());
+  EXPECT_TRUE(store.messages.empty()); // nothing was recorded for the failed turn
+  EXPECT_FALSE(events.back().loading);
+}
+
+TEST_F(AgentSessionBriefStreamTest, ImageTurnIsNeverHandedBack) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  BriefAiEvent handoff;
+  handoff.type = BriefAiEvent::Type::Handoff;
+  handoff.capability = "messaging";
+  Script({Meta(), handoff}, BriefAiOutcome::Handoff);
+  session_->SubmitToThread("t1", "q", std::nullopt, TestImage());
+  const auto events = WaitForTurn();
+
+  EXPECT_EQ(Of(events, AgentEventType::Error).size(), 1u);
+  EXPECT_TRUE(Of(events, AgentEventType::AssistantReady).empty());
+  EXPECT_FALSE(events.back().loading);
+}
+
+TEST_F(AgentSessionBriefStreamTest, ImageTurnHttpStatusIsMarkedForTheGui) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  Script({}, Roe<BriefAiOutcome>(AppError::Network(Err::Network::HttpError, "LLM HTTP 413: too big")));
+  session_->SubmitToThread("t1", "q", std::nullopt, TestImage());
+  auto errors = Of(WaitForTurn(), AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_EQ(errors[0].error_kind, "image_too_large");
+
+  Script({}, Roe<BriefAiOutcome>(AppError::Network(Err::Network::HttpError, "LLM HTTP 400: bad")));
+  session_->SubmitToThread("t1", "q", std::nullopt, TestImage());
+  errors = Of(WaitForTurn(), AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_EQ(errors[0].error_kind, "image_unsupported");
+
+  // A turn without an image keeps the server's own wording.
+  session_->SubmitToThread("t1", "q");
+  errors = Of(WaitForTurn(), AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_TRUE(errors[0].error_kind.empty());
+}
+
+TEST_F(AgentSessionBriefStreamTest, FollowUpHistoryHasMarkerAndNoImage) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  Script({Meta(), Token("a"), Done("A cat.")}, BriefAiOutcome::Done);
+  session_->SubmitToThread("t1", "What is this?", std::nullopt, TestImage());
+  WaitForTurn();
+  session_->SubmitToThread("t1", "And its colour?");
+  WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 2u);
+  EXPECT_FALSE(requests[1].image.has_value());
+  EXPECT_EQ(requests[1].message, "And its colour?");
+  ASSERT_GE(requests[1].history.size(), 2u);
+  EXPECT_EQ(requests[1].history[0].role, "user");
+  EXPECT_EQ(requests[1].history[0].content, "[Image] What is this?");
+  EXPECT_EQ(requests[1].history[1].role, "assistant");
+  EXPECT_EQ(requests[1].history[1].content, "A cat.");
 }
 
 } // namespace
