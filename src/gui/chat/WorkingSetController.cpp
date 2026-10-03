@@ -179,8 +179,14 @@ std::vector<WorkingSetCandidate> WorkingSetController::RestoreEntry(
   std::vector<WorkingSetCandidate> hydrated = HydrateCandidates(candidates, entry_id);
   by_entry_[entry_id] = hydrated;
   actions_by_entry_[entry_id] = std::move(chat_actions);
+  const bool was_open = shell_navigation_.snapshot ? shell_navigation_.snapshot().auxiliary_open : false;
   if (shell_navigation_.set_auxiliary_available) {
     shell_navigation_.set_auxiliary_available(true);
+  }
+  // The expanded shell opens the pane as soon as it becomes available. A restore has nothing
+  // selected, so that showed an empty panel on every switch back to the thread.
+  if (!was_open && shell_navigation_.close_auxiliary) {
+    shell_navigation_.close_auxiliary();
   }
   return hydrated;
 }
