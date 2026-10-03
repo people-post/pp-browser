@@ -87,6 +87,14 @@ selection {
   image-color: #374151;
 }
 
+.prompt-attachment-chip-remove svg {
+  image-color: #6b7280;
+}
+
+.prompt-attachment-chip-remove:hover svg {
+  image-color: #374151;
+}
+
 .btn-secondary,
 .chat-suggestion {
   background-color: #e8eaed;

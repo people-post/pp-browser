@@ -20,6 +20,15 @@
         <span class="prompt-attachment-chip-name" data-value="attachment_draft_name"></span>
         <span class="prompt-attachment-chip-status">{{i18n:chat.attachment.uploading}}</span>
       </div>
+      <div class="prompt-attachment-chip" data-if="image_chip">
+        <img class="prompt-attachment-chip-thumb" data-if="image_thumb_ready" data-attr-src="image_thumb_src"/>
+        <span class="prompt-attachment-chip-name" data-value="image_draft_name"></span>
+        <span class="prompt-attachment-chip-status" data-if="image_preparing">{{i18n:chat.image.preparing}}</span>
+        <button class="prompt-attachment-chip-remove" type="button" data-event-click="remove_image()"
+                title="{{i18n:chat.image.remove}}">
+          <svg src="../icons/close.svg" width="10" height="10" crop-to-content="true"></svg>
+        </button>
+      </div>
     </div>
     <button class="prompt-send-btn" type="button" data-if="loading" data-event-click="stop_turn()"
             title="{{i18n:chat.stop}}">

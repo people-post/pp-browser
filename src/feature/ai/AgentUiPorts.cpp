@@ -33,6 +33,9 @@ AgentUiPorts MakeAgentUiPorts(AgentSession& agent) {
   ports.submit = [&agent](const std::string& text, std::optional<std::string> user_payload) {
     agent.Submit(text, std::move(user_payload));
   };
+  ports.submit_image_to_thread = [&agent](const std::string& thread_id, const std::string& text, AgentImageTurn image) {
+    agent.SubmitToThread(thread_id, text, std::nullopt, std::move(image));
+  };
   ports.cancel = [&agent]() { agent.Cancel(); };
   ports.poll_events = [&agent](std::vector<AgentEvent>& out) { agent.PollEvents(out); };
   ports.wait_for_configure_idle = [&agent]() { agent.WaitForConfigureIdle(); };

@@ -1,9 +1,11 @@
 #include <stdexcept>
 #include <filesystem>
+#include <fstream>
 #include "gui/chat/ChatController.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "gui/shell/ShellSetupPorts.h"
 #include "gui/chat/ChatDataModel.h"
+#include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatAnswer.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/BadgeAggregator.h"
@@ -16,6 +18,7 @@
 #include "foundation/platform/ILocalNotifier.h"
 #include "foundation/platform/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "domain/messaging/AttachmentCache.h"
 #include "foundation/platform/PlatformOpenFile.h"
 #include "foundation/platform/PlatformOpenUrl.h"
 
@@ -336,6 +339,13 @@ ChatController::ChatController()
   working_set_.SetWidgetLookup([this](const std::string& entry_id) -> const TurnWidgetState* {
     return widgets_.Find(entry_id);
   });
+  chrome_.SetAiAttachInfo([this]() {
+    ChatThreadChrome::AiAttachInfo info;
+    info.brief_preset = ResolvePreset(Store().Snapshot().config) == "brief";
+    info.ai_usable = messaging_ready_ && facade_ && AgentCloudReady();
+    info.home = ChromeSnapshot().nav_tab == NavTab::Home;
+    return info;
+  });
   chrome_.SetRefreshFromMessaging([this]() { RefreshFromMessaging(); });
   chrome_.SetWithSecrets([this](std::function<void()> action) { WithSecrets(std::move(action)); });
   chrome_.SetOnScrollerReset([this]() { scroller_.Reset(); });
@@ -350,6 +360,9 @@ void ChatController::BindConversationsFacade(ConversationsFacade* facade) {
   facade_ = facade;
   scroller_.BindConversationsFacade(facade);
   chrome_.BindConversationsFacade(facade);
+  if (facade) {
+    facade->SetDisplayRowDecorator([this](std::vector<MessageDisplayRow>& rows) { DecorateAiImageRows(rows); });
+  }
 }
 
 void ChatController::BindRegisterMessagingTools(std::function<void(ToolRegistry&)> hook) {
@@ -720,6 +733,11 @@ void ChatController::OpenEmojiInsertCallback(ui::DataModelHandle /*model*/, ui::
 void ChatController::AttachFileCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
                                       const ui::VariantList& /*args*/) {
   Instance().OnAttachFile();
+}
+
+void ChatController::RemoveImageCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                         const ui::VariantList& /*args*/) {
+  Instance().OnRemoveImage();
 }
 
 void ChatController::OpenAttachmentCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -1357,7 +1375,7 @@ void ChatController::UpdateThreadChrome() {
 }
 
 void ChatController::SyncComposerInputState() {
-  chat_.composer_input_disabled = chat_.compose_disabled || chat_.attachment_uploading;
+  chat_.composer_input_disabled = chat_.compose_disabled || chat_.attachment_uploading || chat_.image_preparing;
 }
 
 void ChatController::OnAttachFile() {
@@ -1365,6 +1383,10 @@ void ChatController::OnAttachFile() {
     return;
   }
   if (chat_.composer_input_disabled || chat_.attachment_uploading || !chat_.show_attach_button) {
+    return;
+  }
+  if (InAiComposerContext()) {
+    OnAttachAiImage();
     return;
   }
   const std::string thread_id = ActiveThreadId();
@@ -1419,6 +1441,203 @@ void ChatController::StartAttachmentUpload(const std::string& path) {
       },
       [this]() { return facade_->PlanRelayQuotaRecovery(); },
       [this]() { return facade_->FreeOldestRelayBlobSlot(); });
+}
+
+bool ChatController::InAiComposerContext() const {
+  if (!facade_) {
+    return false;
+  }
+  if (auto thread = facade_->GetActiveThread()) {
+    return thread->kind == ThreadKind::Ai;
+  }
+  return ChromeSnapshot().nav_tab == NavTab::Home;
+}
+
+void ChatController::OnAttachAiImage() {
+  ShowOpenImageFileDialog(
+      Backend::GetWindow(),
+      [this](std::vector<std::string> paths) {
+        AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
+          if (paths.empty()) {
+            return;
+          }
+          StartAiImagePrepare(std::move(paths.front()));
+        });
+      },
+      /*include_heic=*/true);
+}
+
+namespace {
+
+/** Result of preparing an image on a worker: the bytes for the request plus a thumbnail file for the UI. */
+struct PreparedDraft {
+  BriefAiImage image;
+  std::string file_path;
+};
+
+/** Pseudo thread whose blobs_view holds AI image thumbnails; wiped with the other session plaintext views. */
+constexpr const char* kAiImageViewThread = "ai-images";
+
+Roe<PreparedDraft> PrepareAiImageDraft(const std::string& path, const std::string& profile_dir) {
+  auto prepared = PrepareAiImageFromFile(path);
+  if (!prepared) {
+    return prepared.error();
+  }
+  PreparedDraft draft;
+  draft.image.mime = prepared->mime;
+  draft.image.data = prepared->bytes;
+  if (!profile_dir.empty()) {
+    const std::filesystem::path dir = AttachmentViewRoot(profile_dir, kAiImageViewThread);
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    const std::filesystem::path file = dir / (util::GenerateUuid() + (prepared->mime == "image/png" ? ".png" : ".jpg"));
+    if (!ec) {
+      std::ofstream out(file, std::ios::binary | std::ios::trunc);
+      out.write(reinterpret_cast<const char*>(prepared->bytes.data()), static_cast<std::streamsize>(prepared->bytes.size()));
+      out.close();
+      if (out) {
+        draft.file_path = file.string();
+      } else {
+        std::filesystem::remove(file, ec);
+      }
+    }
+  }
+  return draft;
+}
+
+void RemoveSessionFile(const std::string& path) {
+  if (!path.empty()) {
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+  }
+}
+
+} // namespace
+
+void ChatController::StartAiImagePrepare(std::string path) {
+  DiscardPendingAiImage();
+  const uint64_t generation = ++image_prepare_generation_;
+  std::string name = std::filesystem::path(path).filename().string();
+  chat_.image_chip = true;
+  chat_.image_preparing = true;
+  chat_.image_thumb_ready = false;
+  chat_.image_thumb_src = "";
+  chat_.image_draft_name = name.c_str();
+  SyncComposerInputState();
+  DirtyChatChrome();
+  DirtyChatHeader();
+
+  const std::string profile_dir = facade_ ? facade_->ProfileDataDir() : std::string();
+  // Decoding and re-encoding a photo is blocking work: off the UI thread, reply on it.
+  AppRuntime::PostWorkerNormal([this, path = std::move(path), profile_dir, generation, name = std::move(name)]() mutable {
+    Roe<PreparedDraft> result = PrepareAiImageDraft(path, profile_dir);
+    AppRuntime::PostUI([this, generation, name = std::move(name), result = std::move(result)]() mutable {
+      if (generation != image_prepare_generation_) {
+        if (result) {
+          RemoveSessionFile(result->file_path); // removed or replaced while it was being prepared
+        }
+        return;
+      }
+      chat_.image_preparing = false;
+      if (!result) {
+        // Sizes and kinds only in the log: no file name, no path.
+        log().warning << "AI image not prepared: kind=" << result.error().code;
+        chat_.image_chip = false;
+        chat_.image_draft_name = "";
+        SyncComposerInputState();
+        DirtyChatChrome();
+        DirtyChatHeader();
+        UserFeedback::Fail(Tr(AiImagePrepErrorKey(AiImagePrepErrorOf(result.error()))));
+        return;
+      }
+      log().info << "AI image ready: " << result->image.data.size() << " bytes";
+      pending_image_ = PendingAiImage{
+          .image = std::move(result->image), .name = std::move(name), .file_path = std::move(result->file_path)};
+      chat_.image_thumb_ready = !pending_image_->file_path.empty();
+      chat_.image_thumb_src = pending_image_->file_path.c_str();
+      SyncComposerInputState();
+      DirtyChatChrome();
+      DirtyChatHeader();
+    });
+  });
+}
+
+void ChatController::OnRemoveImage() {
+  DiscardPendingAiImage();
+}
+
+void ChatController::DiscardPendingAiImage() {
+  ++image_prepare_generation_;
+  if (pending_image_) {
+    RemoveSessionFile(pending_image_->file_path);
+    pending_image_.reset();
+  }
+  if (!chat_.image_chip && !chat_.image_preparing) {
+    return;
+  }
+  chat_.image_chip = false;
+  chat_.image_preparing = false;
+  chat_.image_thumb_ready = false;
+  chat_.image_thumb_src = "";
+  chat_.image_draft_name = "";
+  SyncComposerInputState();
+  DirtyChatChrome();
+  DirtyChatHeader();
+}
+
+void ChatController::SendImageQuestion(const std::string& text) {
+  if (!messaging_ready_ || !facade_ || !pending_image_ || !agent_ports_.submit_image_to_thread) {
+    return;
+  }
+  if (!AgentCloudReady()) {
+    RefreshLlmSetupBanner();
+    return;
+  }
+  // Taken out first: opening the AI thread from Home switches threads, which discards a pending image.
+  PendingAiImage image = std::move(*pending_image_);
+  pending_image_.reset();
+  if (ChromeSnapshot().nav_tab == NavTab::Home && !EnsureHomeOutboundSession()) {
+    pending_image_ = std::move(image);
+    return;
+  }
+  chat_.image_chip = false;
+  chat_.image_thumb_ready = false;
+  chat_.image_thumb_src = "";
+  chat_.image_draft_name = "";
+
+  const std::string thread_id = ActiveThreadId();
+  const std::string question = text.empty() ? Tr("chat.image.default_question") : text;
+  const std::string message_id = util::GenerateUuid();
+  if (!image.file_path.empty()) {
+    ai_image_files_[message_id] = image.file_path;
+  }
+  widgets_.ExpireOpenForms();
+  DirtyChatTurns();
+  chat_.loading = true;
+  chat_.status = "";
+  UpdateSidebarPreview(question);
+  DirtyChatChrome();
+  DirtyChatHeader();
+  log().info << "Submitting an image question to the agent session";
+  agent_ports_.submit_image_to_thread(thread_id, question, AgentImageTurn{.image = std::move(image.image), .message_id = message_id});
+}
+
+void ChatController::DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const {
+  for (MessageDisplayRow& row : rows) {
+    std::string rml = row.content_rml.c_str();
+    if (rml.find(kAiImageTurnMarker) == std::string::npos) {
+      continue;
+    }
+    // The thumbnail is a session file: after a restart (or a vault lock) only the marker remains.
+    std::string src;
+    if (const auto file = ai_image_files_.find(row.message_id.c_str()); file != ai_image_files_.end()) {
+      std::error_code ec;
+      if (std::filesystem::is_regular_file(file->second, ec)) {
+        src = StructuredTextParser::EscapeText(file->second);
+      }
+    }
+    row.content_rml = DecorateAiImageBubble(std::move(rml), src, Tr("chat.image.marker")).c_str();
+  }
 }
 
 void ChatController::OpenAttachment(const std::string& message_id) {
@@ -1487,6 +1706,9 @@ void ChatController::SyncDisplayFromThread() {
     facade_->EnsureThreadAttachments(thread_id);
   }
   const bool thread_changed = scroller_.BeginDisplaySync(thread_id);
+  if (thread_changed) {
+    DiscardPendingAiImage(); // the chip belongs to the composer of the thread it was picked in
+  }
 
   const std::string prev_tail_id =
       chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
@@ -1705,18 +1927,25 @@ void ChatController::OnSendMessage() {
   }
 
   const std::string text = util::Trim(chat_.draft.c_str());
-  if (text.empty()) {
+  const bool with_image = pending_image_.has_value() && InAiComposerContext();
+  if (text.empty() && !with_image) {
     return;
   }
 
-  if (auto valid = ChatPayloadValidator::ValidateOutboundText(text); !valid) {
-    ShowToast("Message is too long to send.");
-    return;
+  if (!text.empty()) {
+    if (auto valid = ChatPayloadValidator::ValidateOutboundText(text); !valid) {
+      ShowToast("Message is too long to send.");
+      return;
+    }
   }
 
   chat_.draft = "";
   DirtyChatChrome();
   scroller_.RequestScrollToLatest();
+  if (with_image) {
+    SendImageQuestion(text);
+    return;
+  }
   SendUserText(text);
 }
 
@@ -2682,6 +2911,9 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
 }
 
 void ChatController::HandleAgentEvent(const AgentEvent& event) {
+  // An image turn rejected by the server (413 / 400) is worded here, not with the server's text.
+  const char* image_error_key = AiImageErrorKindKey(event.error_kind);
+  const std::string error_message = image_error_key ? Tr(image_error_key) : event.message;
   switch (event.type) {
   case AgentEventType::LoadingChanged:
     chat_.loading = event.loading;
@@ -2719,13 +2951,13 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
   case AgentEventType::Error:
     log().error << "Agent session error: " << event.message;
     // A partial answer was already persisted via AssistantReady; the error toast is separate.
-    UserFeedback::NeedsSetup(event.message);
+    UserFeedback::NeedsSetup(error_message);
     if (AgentReady() && agent_ports_.has_conversation_entries && agent_ports_.has_conversation_entries() &&
         agent_ports_.last_conversation_entry_id && agent_ports_.complete_assistant_message &&
         agent_ports_.set_assistant_display_plain) {
       if (auto entry_id = agent_ports_.last_conversation_entry_id()) {
-        agent_ports_.complete_assistant_message(*entry_id, event.message);
-        agent_ports_.set_assistant_display_plain(*entry_id, event.message);
+        agent_ports_.complete_assistant_message(*entry_id, error_message);
+        agent_ports_.set_assistant_display_plain(*entry_id, error_message);
       }
       SyncDisplayFromThread();
       DirtyChatTurns();
@@ -3054,6 +3286,11 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.Bind("compose_disabled", &controller.chat_.compose_disabled);
         ctor.Bind("composer_input_disabled", &controller.chat_.composer_input_disabled);
         ctor.Bind("show_attach_button", &controller.chat_.show_attach_button);
+        ctor.Bind("image_chip", &controller.chat_.image_chip);
+        ctor.Bind("image_preparing", &controller.chat_.image_preparing);
+        ctor.Bind("image_thumb_ready", &controller.chat_.image_thumb_ready);
+        ctor.Bind("image_thumb_src", &controller.chat_.image_thumb_src);
+        ctor.Bind("image_draft_name", &controller.chat_.image_draft_name);
         ctor.Bind("attachment_uploading", &controller.chat_.attachment_uploading);
         ctor.Bind("attachment_draft_name", &controller.chat_.attachment_draft_name);
         ctor.Bind("show_thread_actions", &controller.chat_.show_thread_actions);
@@ -3084,6 +3321,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("toggle_reaction", &ChatController::ToggleReactionCallback);
         ctor.BindEventCallback("open_emoji_insert", &ChatController::OpenEmojiInsertCallback);
         ctor.BindEventCallback("attach_file", &ChatController::AttachFileCallback);
+        ctor.BindEventCallback("remove_image", &ChatController::RemoveImageCallback);
         ctor.BindEventCallback("open_attachment", &ChatController::OpenAttachmentCallback);
         ctor.BindEventCallback("download_attachment", &ChatController::DownloadAttachmentCallback);
         ctor.BindEventCallback("retry_attachment", &ChatController::RetryAttachmentCallback);

@@ -42,6 +42,8 @@ struct AgentUiPorts {
       resume_tool_permission;
   std::function<void(IThreadStore* store)> set_thread_store;
   std::function<void(const std::string& text, std::optional<std::string> user_payload)> submit;
+  /** One question with one prepared image to an AI thread (brief preset only). */
+  std::function<void(const std::string& thread_id, const std::string& text, AgentImageTurn image)> submit_image_to_thread;
   std::function<void()> cancel;
   std::function<void(std::vector<AgentEvent>& out)> poll_events;
   std::function<void()> wait_for_configure_idle;
