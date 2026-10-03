@@ -357,6 +357,7 @@ select selectbox option {
 }
 
 .bubble {
+  /* Horizontal padding is mirrored by kBubbleHorizontalPaddingDp (src/gui/chat/AiImageAttach.h); change both. */
   padding: 10dp 14dp;
   border-radius: 12dp;
   text-align: left;
