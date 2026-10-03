@@ -1528,7 +1528,7 @@ void ChatController::FlushStreamingRow() {
   bool changed = false;
   const auto now = std::chrono::steady_clock::now();
   if (streaming_->dirty && ShouldRenderStreamDelta(streaming_->last_render, now)) {
-    ChatAnswerRml answer = BuildMarkdownAnswer(streaming_->text, {}, "");
+    ChatAnswerRml answer = BuildMarkdownAnswer(streaming_->text);
     streaming_->rml = ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", streaming_->text) +
                       R"( selectable="text">)" + InjectEntryPlaceholders(answer.rml, streaming_->row_id) + "</div>";
     chat_links_[streaming_->row_id] = std::move(answer.links);
@@ -1570,7 +1570,7 @@ void ChatController::OnStopTurn() {
 void ChatController::OpenChatLink(const std::string& entry_id, const int link_index) {
   auto links = chat_links_.find(entry_id);
   if (links == chat_links_.end() && messaging_ready_ && facade_ && entry_id.rfind("streaming-", 0) != 0) {
-    // After a restart the map is empty: rebuild from the message's own stored text (sources are not persisted).
+    // After a restart the map is empty: rebuild from the message's own stored text.
     if (auto messages = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 10000)) {
       for (const ThreadMessage& message : *messages) {
         if (message.id == entry_id && message.sender_contact_id == kAiAssistantContactId) {
@@ -2529,9 +2529,11 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
   }
 
   ChatAnswerRml markdown_answer;
+  std::string answer_text;
   ParseResult parsed;
   if (markdown) {
-    markdown_answer = BuildMarkdownAnswer(raw_output, sources, Tr("chat.sources"));
+    answer_text = WithDetailsLink(raw_output, sources, Tr("chat.details"));
+    markdown_answer = BuildMarkdownAnswer(answer_text);
     parsed.ok = true;
     parsed.rml = markdown_answer.rml;
   } else {
@@ -2627,7 +2629,7 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
         ai_message.id = action_entry_id;
         ai_message.thread_id = active_thread;
         ai_message.sender_contact_id = kAiAssistantContactId;
-        ai_message.text = raw_output;
+        ai_message.text = markdown ? answer_text : raw_output;
         ai_message.content_rml = assistant_open + hydrated + "</div>";
         ai_message.chat_actions = chat_actions;
         ai_message.working_set_json = working_set_json;

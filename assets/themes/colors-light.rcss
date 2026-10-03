@@ -213,14 +213,6 @@ select selectbox option:hover {
   background-color: #e1e4e9;
 }
 
-.chat-sources p {
-  color: #6b7280;
-}
-
-.chat-sources .chat-link {
-  color: #4f46e5;
-}
-
 .code-block {
   background-color: #eef0f3;
   color: #1a1a1a;

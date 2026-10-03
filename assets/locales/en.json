@@ -339,7 +339,7 @@
     "chat.status.searching_nfsc": "Searching NFSC…",
     "chat.status.getting_quote": "Getting a quote…",
     "chat.status.writing": "Writing…",
-    "chat.sources": "Sources",
+    "chat.details": "View details",
     "chat.open_link_title": "Open link to {host}?",
     "chat.open_link_body": "This opens {url} in your browser.",
     "chat.stop": "Stop",
