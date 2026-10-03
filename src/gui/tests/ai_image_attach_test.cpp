@@ -31,7 +31,10 @@ TEST(AiImageAttachTest, EachFailureHasItsOwnMessage) {
 TEST(AiImageAttachTest, BubbleShowsThumbnailOrMarker) {
   const std::string rml = R"(<div class="bubble bubble-user" selectable="text"><p class="bubble-text">[Image] What is this?</p></div>)";
   EXPECT_EQ(DecorateAiImageBubble(rml, "/tmp/a.jpg", 1200, 1600, "[Image]"),
-            R"(<div class="bubble bubble-user" selectable="text"><img class="chat-ai-image" src="/tmp/a.jpg" style="width: 180dp; height: 240dp;"/><p class="bubble-text">What is this?</p></div>)");
+            R"(<div class="bubble bubble-user" style="min-width: 208dp;" selectable="text"><img class="chat-ai-image" src="/tmp/a.jpg" style="width: 180dp; height: 240dp;"/><p class="bubble-text">What is this?</p></div>)");
+  // Landscape (the reported overflow): the bubble gets its widest min-width, 240dp + padding.
+  EXPECT_EQ(DecorateAiImageBubble(rml, "/tmp/a.jpg", 1600, 1200, "[Image]"),
+            R"(<div class="bubble bubble-user" style="min-width: 268dp;" selectable="text"><img class="chat-ai-image" src="/tmp/a.jpg" style="width: 240dp; height: 180dp;"/><p class="bubble-text">What is this?</p></div>)");
   EXPECT_EQ(DecorateAiImageBubble(rml, "", 0, 0, "[图片]"),
             R"(<div class="bubble bubble-user" selectable="text"><p class="bubble-text">[图片] What is this?</p></div>)");
   // Only a user bubble that starts with the marker is touched.
