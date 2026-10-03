@@ -5,6 +5,7 @@
 #include "gui/shell/ShellSetupPorts.h"
 #include "gui/chat/ChatDataModel.h"
 #include "gui/chat/ChatAnswer.h"
+#include "gui/chat/SessionListText.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/BadgeAggregator.h"
 #include "gui/BadgeNotifyPorts.h"
@@ -1247,6 +1248,7 @@ void ChatController::SyncShellSessions() {
             [](const Thread& a, const Thread& b) { return a.updated_at > b.updated_at; });
 
   const std::string active_id = ActiveThreadId();
+  const int64_t now_ms = util::NowUnixMs();
   for (const Thread& thread : sorted_threads) {
     if (IsCallControlShadowThread(thread, sorted_threads)) {
       continue;
@@ -1260,6 +1262,7 @@ void ChatController::SyncShellSessions() {
     row.kind = SessionVisualKind(thread);
     row.unread_count = thread.unread_count;
     row.unread_display = FormatBadgeCount(thread.unread_count).c_str();
+    row.date_label = SessionDateLabel(thread.updated_at, now_ms).c_str();
     row.active = thread.id == active_id;
     row.closable = true;
     shell_.sessions.push_back(std::move(row));
@@ -2433,6 +2436,9 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     chat_.loading = true;
     chat_.status = "";
   }
+  // A fresh AI thread is named after its first question, so the list is not all "New chat". Done before
+  // the preview update, which rebuilds the session rows once.
+  (void)facade_->NameAiThreadFromFirstMessage(ActiveThreadId(), AiThreadTitleFromMessage(trimmed));
   UpdateSidebarPreview(trimmed);
   DirtyChatChrome();
 
@@ -3138,6 +3144,7 @@ bool ChatController::Setup(ui::Context* context) {
           session_handle.RegisterMember("kind", &ChatController::SessionRow::kind);
           session_handle.RegisterMember("unread_count", &ChatController::SessionRow::unread_count);
           session_handle.RegisterMember("unread_display", &ChatController::SessionRow::unread_display);
+          session_handle.RegisterMember("date_label", &ChatController::SessionRow::date_label);
           session_handle.RegisterMember("active", &ChatController::SessionRow::active);
           session_handle.RegisterMember("closable", &ChatController::SessionRow::closable);
         }

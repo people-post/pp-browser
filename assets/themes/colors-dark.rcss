@@ -1032,6 +1032,10 @@ select selectbox option:hover {
   box-shadow: inset 3dp 0 0 #fbbf24;
 }
 
+.sidebar-session-date {
+  color: #9ca3af;
+}
+
 .sidebar-session-title {
   color: #e5e7eb;
 }

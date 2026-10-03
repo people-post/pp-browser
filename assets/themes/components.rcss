@@ -2743,6 +2743,11 @@ input.checkbox {
   flex-shrink: 0;
 }
 
+.sidebar-session-date {
+  flex-shrink: 0;
+  font-size: 11dp;
+}
+
 .sidebar-unread {
   flex-shrink: 0;
 }
