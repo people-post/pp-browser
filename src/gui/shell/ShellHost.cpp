@@ -131,6 +131,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("compact_chat_open", &host.state_.compact_chat_open);
     ctor.Bind("account_sheet_open", &host.state_.account_sheet_open);
     ctor.Bind("auxiliary_open", &host.state_.auxiliary_open);
+    ctor.Bind("sidebar_collapsed", &host.state_.sidebar_collapsed);
     ctor.Bind("auxiliary_available", &host.state_.auxiliary_available);
     ctor.Bind("transient_active", &host.state_.transient_active);
     ctor.Bind("banner_message", &host.state_.banner_message);
@@ -565,6 +566,7 @@ void ShellHost::ToggleSidebarCollapsed() {
   }
   state_.sidebar_collapsed = !state_.sidebar_collapsed;
   NotifySidebarChanged();
+  DirtyNavChrome();
   RequestSyncLayout();
 }
 
@@ -809,6 +811,7 @@ void ShellHost::DirtyNavChrome() {
   DataModelHost::Instance().Dirty("window", "compact_chat_open");
   DataModelHost::Instance().Dirty("window", "account_sheet_open");
   DataModelHost::Instance().Dirty("window", "auxiliary_open");
+  DataModelHost::Instance().Dirty("window", "sidebar_collapsed");
   DataModelHost::Instance().Dirty("window", "auxiliary_available");
   DataModelHost::Instance().Dirty("window", "transient_active");
 }
@@ -1715,18 +1718,10 @@ std::string ShellHost::SerializeExpandedBase() const {
     out << "\" id=\"shell-nav-content-mount\" style=\"flex: 0 0 " << state_.sidebar_width_dp << "dp;\">";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
     out << "</div>";
-    // Drag handle (expanded) or slim expand strip (collapsed); the button toggles collapse.
-    out << "<div class=\"shell-splitter";
-    if (collapsed) {
-      out << " shell-splitter--collapsed";
+    // Drag handle on the pane's right edge. Collapse / expand lives at the bottom of the nav rail.
+    if (!collapsed) {
+      out << "<div class=\"shell-splitter\" id=\"shell-pane-splitter\"></div>";
     }
-    out << "\" id=\"shell-pane-splitter\">";
-    out << "<button class=\"shell-splitter-btn\" type=\"button\" title=\""
-        << Tr(collapsed ? "shell.sidebar.expand" : "shell.sidebar.collapse")
-        << "\" data-event-click=\"toggle_sidebar()\">";
-    out << "<svg src=\"../icons/" << (collapsed ? "chevron-right" : "chevron-left")
-        << ".svg\" width=\"10\" height=\"10\" crop-to-content=\"true\"></svg>";
-    out << "</button></div>";
   }
   ui::String primary_key = state_.primary_pane_key;
   if (primary_key.empty() && state_.nav_tab == NavTab::Home) {
@@ -2917,6 +2912,7 @@ void ShellHost::SelectNavTabCallback(ui::DataModelHandle /*model*/, ui::Event& /
       ShellLayout::SidebarCollapsedAfterNavSelect(host.state_.sidebar_collapsed, tab) != host.state_.sidebar_collapsed) {
     host.state_.sidebar_collapsed = false;
     host.NotifySidebarChanged();
+    host.DirtyNavChrome();
     host.RequestSyncLayout();
   }
   host.SelectNavTab(tab);

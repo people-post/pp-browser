@@ -550,28 +550,6 @@ select selectbox option:hover {
   background-color: #6b7280;
 }
 
-.shell-splitter--collapsed,
-.shell-splitter--collapsed:hover {
-  background-color: #0f172a;
-  border-right: 1dp #374151;
-}
-
-.shell-splitter-btn {
-  background-color: transparent;
-}
-
-.shell-splitter-btn:hover {
-  background-color: #1f2937;
-}
-
-.shell-splitter-btn svg {
-  image-color: #6b7280;
-}
-
-.shell-splitter-btn:hover svg {
-  image-color: #e5e7eb;
-}
-
 .shell-nav-rail {
   background-color: #0f172a;
   border-right: 1dp #374151;

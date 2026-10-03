@@ -10,20 +10,13 @@
 #include <cmath>
 #include <cstdio>
 
+#include <ui/base/Log.h>
+
 namespace pbr {
 
 namespace {
 
 constexpr const char* kActiveClass = "shell-splitter--active";
-
-bool IsButtonTarget(ui::Element* target, ui::Element* handle) {
-  for (ui::Element* node = target; node && node != handle; node = node->GetParentNode()) {
-    if (node->GetTagName() == "button") {
-      return true;
-    }
-  }
-  return false;
-}
 
 } // namespace
 
@@ -40,6 +33,8 @@ void ShellSplitterDrag::Attach(ui::Element* handle, ui::Element* pane, ui::Conte
   width_dp_ = width_dp;
   on_commit_ = std::move(on_commit);
   handle_->AddEventListener(ui::EventId::Mousedown, this);
+  ui::Log::Message(ui::Log::LT_INFO, "SPLITDIAG attach width=%d handle=%.0fx%.0f at %.0f", width_dp,
+                   handle->GetClientWidth(), handle->GetClientHeight(), handle->GetAbsoluteLeft());
 }
 
 void ShellSplitterDrag::Detach() {
@@ -85,9 +80,10 @@ void ShellSplitterDrag::EndDrag(bool commit) {
 void ShellSplitterDrag::ProcessEvent(ui::Event& event) {
   switch (event.GetId()) {
   case ui::EventId::Mousedown: {
-    if (dragging_ || !handle_ || !pane_ || !context_ || IsButtonTarget(event.GetTargetElement(), handle_)) {
+    if (dragging_ || !handle_ || !pane_ || !context_) {
       return;
     }
+    ui::Log::Message(ui::Log::LT_INFO, "SPLITDIAG mousedown");
     dragging_ = true;
     start_x_px_ = event.GetParameter<int>("mouse_x", 0);
     start_width_dp_ = width_dp_;
@@ -109,6 +105,7 @@ void ShellSplitterDrag::ProcessEvent(ui::Event& event) {
     break;
   }
   case ui::EventId::Mouseup:
+    ui::Log::Message(ui::Log::LT_INFO, "SPLITDIAG mouseup width=%d", width_dp_);
     EndDrag(true);
     break;
   default:
