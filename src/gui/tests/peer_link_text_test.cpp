@@ -39,6 +39,10 @@ TEST(PeerLinkTextTest, FailedDirectLinkIsSilentWhileRelayCarriesMessages) {
   EXPECT_STREQ(text.status_key, "chat.link.via_relay");
   EXPECT_EQ(text.banner_key, nullptr);
   EXPECT_FALSE(text.show_retry);
+  // The badge must agree with the text: relay icon, not the amber "degraded" one.
+  EXPECT_EQ(text.display_kind, ThreadPeerPathKind::ViaRelay);
+  EXPECT_EQ(PeerLinkTextFor(Link(ThreadPeerPathKind::Degraded, false)).display_kind, ThreadPeerPathKind::Degraded);
+  EXPECT_EQ(PeerLinkTextFor(Link(ThreadPeerPathKind::Direct)).display_kind, ThreadPeerPathKind::Direct);
 }
 
 TEST(PeerLinkTextTest, UnreachablePeerWithoutRelayOffersRetry) {

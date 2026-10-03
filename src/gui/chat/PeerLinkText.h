@@ -9,6 +9,8 @@ struct PeerLinkText {
   const char* status_key = nullptr;
   const char* banner_key = nullptr;
   bool show_retry = false;
+  /** Path the badge (icon and colour) shows; differs from the link's own path when the text does. */
+  ThreadPeerPathKind display_kind = ThreadPeerPathKind::None;
 };
 
 /**
@@ -19,6 +21,7 @@ struct PeerLinkText {
  */
 inline PeerLinkText PeerLinkTextFor(const ThreadPeerLinkView& link) {
   PeerLinkText text;
+  text.display_kind = link.path_kind;
   switch (link.path_kind) {
   case ThreadPeerPathKind::Direct:
     text.status_key = "chat.link.direct";
@@ -35,6 +38,7 @@ inline PeerLinkText PeerLinkTextFor(const ThreadPeerLinkView& link) {
   case ThreadPeerPathKind::Degraded:
     if (link.relay_available) {
       text.status_key = "chat.link.via_relay";
+      text.display_kind = ThreadPeerPathKind::ViaRelay;
     } else {
       text.status_key = "chat.link.retrying";
       text.banner_key = "chat.link.banner.unreachable";

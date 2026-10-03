@@ -179,7 +179,7 @@ void ChatThreadChrome::UpdatePeerLink() {
   view_.show_peer_link_banner = link_text.banner_key != nullptr;
   view_.peer_link_banner = link_text.banner_key ? Tr(link_text.banner_key).c_str() : "";
   view_.show_retry_peer_dial = link_text.show_retry;
-  switch (link.path_kind) {
+  switch (link_text.display_kind) {
   case ThreadPeerPathKind::Direct:
     view_.peer_link_direct = true;
     break;
