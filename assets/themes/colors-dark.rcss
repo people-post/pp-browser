@@ -25,6 +25,10 @@ selection {
   background-color: #3b5998;
 }
 
+.prompt-composer-input scrollbarvertical sliderbar {
+  background-color: #ffffff50;
+}
+
 .chat-form-field selection {
   background-color: #3b5998;
 }

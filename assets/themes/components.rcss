@@ -441,6 +441,17 @@ select selectbox option {
   cursor: text;
 }
 
+/* Without a sized scrollbar, text past the visible rows scrolls away with no hint. */
+.prompt-composer-input scrollbarvertical {
+  width: 6dp;
+}
+
+.prompt-composer-input scrollbarvertical sliderbar {
+  width: 6dp;
+  min-height: 16dp;
+  border-radius: 3dp;
+}
+
 .prompt-composer-footer {
   display: flex;
   flex-direction: row;
