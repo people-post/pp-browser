@@ -2532,7 +2532,7 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
   std::string answer_text;
   ParseResult parsed;
   if (markdown) {
-    answer_text = WithDetailsLink(raw_output, sources, Tr("chat.details"));
+    answer_text = WithDetailsLink(raw_output, sources, Tr("chat.view_details"));
     markdown_answer = BuildMarkdownAnswer(answer_text);
     parsed.ok = true;
     parsed.rml = markdown_answer.rml;
