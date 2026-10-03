@@ -2616,6 +2616,11 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
         if (messages) {
           for (ThreadMessage& message : *messages) {
             if (message.id == action_entry_id) {
+              if (markdown) {
+                // The session stored the raw answer; the details link must be in the stored text too,
+                // or the link table cannot be rebuilt from it after a restart.
+                message.text = answer_text;
+              }
               message.content_rml = assistant_open + hydrated + "</div>";
               message.chat_actions = chat_actions;
               message.working_set_json = working_set_json;
