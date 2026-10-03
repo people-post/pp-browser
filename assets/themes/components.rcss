@@ -1586,7 +1586,8 @@ select selectbox option {
 }
 
 .shell-pane-auxiliary {
-  flex: 0 0 320dp;
+  flex: 0 1 320dp;
+  min-width: 280dp;
 }
 
 .shell-layer-compact {

@@ -1,12 +1,11 @@
 #include "gui/shell/ShellSplitterDrag.h"
 
-#include "domain/ui/ShellLayout.h"
-
 #include <ui/dom/Context.h>
 #include <ui/dom/Element.h>
 #include <ui/dom/ElementDocument.h>
 #include <ui/dom/Event.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -19,7 +18,7 @@ constexpr const char* kActiveClass = "shell-splitter--active";
 } // namespace
 
 void ShellSplitterDrag::Attach(ui::Element* handle, ui::Element* pane, ui::Context* context, int width_dp,
-                               Commit on_commit) {
+                               Edge edge, int min_dp, int max_dp, Commit on_commit) {
   Detach();
   if (!handle || !pane || !context) {
     return;
@@ -29,6 +28,9 @@ void ShellSplitterDrag::Attach(ui::Element* handle, ui::Element* pane, ui::Conte
   context_ = context;
   document_ = handle->GetOwnerDocument();
   width_dp_ = width_dp;
+  edge_ = edge;
+  min_dp_ = min_dp;
+  max_dp_ = max_dp;
   on_commit_ = std::move(on_commit);
   handle_->AddEventListener(ui::EventId::Mousedown, this);
 }
@@ -94,7 +96,8 @@ void ShellSplitterDrag::ProcessEvent(ui::Event& event) {
     const float ratio = context_->GetDensityIndependentPixelRatio();
     const int dx_px = event.GetParameter<int>("mouse_x", start_x_px_) - start_x_px_;
     const float dx_dp = ratio > 0.f ? static_cast<float>(dx_px) / ratio : static_cast<float>(dx_px);
-    width_dp_ = ShellLayout::ClampSidebarWidthDp(start_width_dp_ + static_cast<int>(std::lround(dx_dp)));
+    const int delta_dp = static_cast<int>(std::lround(dx_dp));
+    width_dp_ = std::clamp(edge_ == Edge::Right ? start_width_dp_ + delta_dp : start_width_dp_ - delta_dp, min_dp_, max_dp_);
     char buffer[32];
     std::snprintf(buffer, sizeof(buffer), "0 1 %ddp", width_dp_);
     pane_->SetProperty("flex", buffer);

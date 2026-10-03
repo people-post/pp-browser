@@ -562,6 +562,20 @@ void ShellHost::SetOnSidebarChanged(std::function<void(int width_dp, bool collap
   on_sidebar_changed_ = std::move(callback);
 }
 
+void ShellHost::SetAuxiliaryWidthPref(int width_dp) {
+  const int clamped = ShellLayout::ClampAuxiliaryWidthDp(width_dp);
+  if (state_.auxiliary_width_dp == clamped) {
+    return;
+  }
+  state_.auxiliary_width_dp = clamped;
+  // Remount so an already-open auxiliary pane and the splitter's starting width use the stored value.
+  RequestSyncLayout();
+}
+
+void ShellHost::SetOnAuxiliaryWidthChanged(std::function<void(int width_dp)> callback) {
+  on_auxiliary_width_changed_ = std::move(callback);
+}
+
 void ShellHost::NotifySidebarChanged() {
   if (on_sidebar_changed_) {
     on_sidebar_changed_(state_.sidebar_width_dp, state_.sidebar_collapsed);
@@ -1696,13 +1710,18 @@ const char* ShellHost::NavContentKey() const {
   return ShellLayout::NavContentKey(state_.nav_tab);
 }
 
-std::string ShellHost::SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot) const {
+std::string ShellHost::SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot,
+                                         int flex_width_dp) const {
   std::ostringstream out;
   out << "<div class=\"shell-pane shell-pane-" << key;
   if (extra_class && extra_class[0] != '\0') {
     out << ' ' << extra_class;
   }
-  out << "\" id=\"pane-" << key << "\">";
+  out << "\" id=\"pane-" << key << "\"";
+  if (flex_width_dp > 0) {
+    out << " style=\"flex: 0 1 " << flex_width_dp << "dp;\"";
+  }
+  out << ">";
   out << "<div class=\"shell-pane-body\" id=\"pane-body-" << key << "\"></div>";
   if (with_composer_slot) {
     out << "<div class=\"shell-pane-composer\" id=\"pane-composer-" << key << "\"></div>";
@@ -1743,7 +1762,9 @@ std::string ShellHost::SerializeExpandedBase() const {
   if (state_.auxiliary_open) {
     for (const PaneState& pane : state_.panes) {
       if (pane.spec.role == PaneRole::Auxiliary) {
-        out << SerializePaneSlot(pane.spec.key, "shell-pane-auxiliary");
+        // Drag handle on the pane's left edge.
+        out << "<div class=\"shell-splitter\" id=\"shell-aux-splitter\"></div>";
+        out << SerializePaneSlot(pane.spec.key, "shell-pane-auxiliary", false, state_.auxiliary_width_dp);
       }
     }
   }
@@ -2606,6 +2627,7 @@ void ShellHost::SyncLayout() {
   UiEditSession::Instance().BeginRemount();
   const LayoutMode mode = state_.layout_mode;
   splitter_drag_.Detach();
+  aux_splitter_drag_.Detach();
   RmlMount::MountInner(root, SerializeShellRoot());
   last_synced_mode_ = mode;
   MountPaneBodies();
@@ -2634,19 +2656,48 @@ void ShellHost::SyncLayout() {
 }
 
 void ShellHost::AttachSplitterDrag() {
-  if (!context_ || context_->GetNumDocuments() == 0 || !ShellLayout::SecondaryPaneShown(state_)) {
+  if (!context_ || context_->GetNumDocuments() == 0) {
     return;
   }
   ui::ElementDocument* doc = context_->GetDocument(0);
+  AttachAuxiliarySplitterDrag(doc);
+  if (!ShellLayout::SecondaryPaneShown(state_)) {
+    return;
+  }
   ui::Element* handle = doc ? doc->GetElementById("shell-pane-splitter") : nullptr;
   ui::Element* pane = doc ? doc->GetElementById("shell-nav-content-mount") : nullptr;
   if (!handle || !pane) {
     return;
   }
-  splitter_drag_.Attach(handle, pane, context_, state_.sidebar_width_dp, [this](int width_dp) {
-    state_.sidebar_width_dp = width_dp;
-    NotifySidebarChanged();
-  });
+  splitter_drag_.Attach(handle, pane, context_, state_.sidebar_width_dp, ShellSplitterDrag::Edge::Right,
+                        ShellLayout::kSidebarMinWidthDp, ShellLayout::kSidebarMaxWidthDp, [this](int width_dp) {
+                          state_.sidebar_width_dp = width_dp;
+                          NotifySidebarChanged();
+                        });
+}
+
+void ShellHost::AttachAuxiliarySplitterDrag(ui::ElementDocument* doc) {
+  if (!doc || state_.layout_mode != LayoutMode::Expanded || !state_.auxiliary_open) {
+    return;
+  }
+  ui::Element* handle = doc->GetElementById("shell-aux-splitter");
+  ui::Element* pane = nullptr;
+  for (const PaneState& candidate : state_.panes) {
+    if (candidate.spec.role == PaneRole::Auxiliary) {
+      pane = doc->GetElementById(ui::String("pane-") + candidate.spec.key);
+    }
+  }
+  if (!handle || !pane) {
+    return;
+  }
+  aux_splitter_drag_.Attach(handle, pane, context_, state_.auxiliary_width_dp, ShellSplitterDrag::Edge::Left,
+                            ShellLayout::kAuxiliaryMinWidthDp, ShellLayout::kAuxiliaryMaxWidthDp,
+                            [this](int width_dp) {
+                              state_.auxiliary_width_dp = width_dp;
+                              if (on_auxiliary_width_changed_) {
+                                on_auxiliary_width_changed_(width_dp);
+                              }
+                            });
 }
 
 void ShellHost::RemountCallChrome() {

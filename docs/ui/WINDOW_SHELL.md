@@ -53,13 +53,15 @@ Resizing between compact and expanded migrates Me between sheet and tab when app
 
 The auxiliary pane is evolving from a reply mirror into a **working set** for browsable/actionable AI output (lists, forms, tables). See [WORKING_SET_PANEL.md](WORKING_SET_PANEL.md) for the implementation plan.
 
-### Resizable / collapsible secondary pane (expanded only)
+### Resizable / collapsible panes (expanded only)
 
 In expanded layout a splitter (`#shell-pane-splitter`, 6dp hit area straddling the secondary pane's border) sits between the secondary and primary panes. Compact layout never emits it and ignores the stored values; the nav rail is not collapsible.
 
 - **Resize:** drag the splitter (`ShellSplitterDrag`: mousedown on the handle plus document-level mousemove/mouseup). During the drag only the pane's inline `flex` is set (`0 1 <N>dp`; the pane may shrink to its 200dp `min-width` so the primary pane keeps room in a narrow window), with no shell remount. Width is `start width + Δmouse_x / dp ratio`, clamped to 200–480 dp (`ShellLayout::ClampSidebarWidthDp`). On mouseup `ShellState::sidebar_width_dp` is updated and persisted. `SerializeExpandedBase` emits the same inline `flex`, so re-serialization keeps the width.
 - **Collapse:** a chevron button at the bottom of the nav rail (`toggle_sidebar()`, shown in expanded layout on tabs with a secondary pane) flips `sidebar_collapsed` and remounts; the pane stays in the DOM with `display: none` (pane bodies keep mounted) and no splitter is emitted. The same button, now pointing right, expands it; so does a nav-rail click on any tab that has a secondary pane, including the active tab (`ShellLayout::SidebarCollapsedAfterNavSelect`). Programmatic `SelectNavTab` does not change the flag. Home has no secondary pane and is unaffected.
 - **Persistence:** `ProfilePreferences::sidebar_width_dp` (default 240) and `sidebar_collapsed` (default false) in `preferences.json`; `Application` wires `ShellHost::SetSidebarPrefs` / `SetOnSidebarChanged`. See [contracts/DATA_LAYOUT.md](../contracts/DATA_LAYOUT.md).
+
+- **Auxiliary pane resize:** while the auxiliary pane is open a second splitter (`#shell-aux-splitter`, same 6dp straddling trick) sits on the pane's LEFT edge. It uses the same `ShellSplitterDrag` with `Edge::Left` (dragging left widens: width is `start width - Δmouse_x / dp ratio`) and its own clamp, 280–640 dp (`ShellLayout::ClampAuxiliaryWidthDp`); the pane may shrink to its 280dp `min-width`. `SerializeExpandedBase` emits the splitter before the pane and the pane with inline `flex: 0 1 <N>dp`. No collapse (the pane has a close button). Compact layout shows the auxiliary pane as a sheet and gets neither splitter nor inline style. Persisted as `ProfilePreferences::auxiliary_width_dp` (default 320) via `ShellHost::SetAuxiliaryWidthPref` / `SetOnAuxiliaryWidthChanged`.
 
 Layout mode switches at **768dp** width (`ShellConfig::compact_breakpoint_dp`).
 

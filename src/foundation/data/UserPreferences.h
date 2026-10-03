@@ -70,6 +70,8 @@ struct ProfilePreferences {
   int sidebar_width_dp = 240;
   /** Expanded layout: secondary pane (list) hidden by the user. */
   bool sidebar_collapsed = false;
+  /** Expanded layout: auxiliary (right-hand) pane width in dp; shell clamps to ShellLayout bounds. */
+  int auxiliary_width_dp = 320;
   /**
    * Last acked Me → Network reachability nudge (`outbound_only` / `blocked`, or empty).
    * Cleared when status becomes reachable so a later regression can nudge again.

@@ -208,6 +208,19 @@ TEST(ShellHostTest, ProjectShellChromeSnapshot) {
   EXPECT_TRUE(snap.settings_detail_primary);
 }
 
+TEST(ShellHostTest, AuxiliaryWidthClamp) {
+  using namespace pbr;
+
+  EXPECT_EQ(ShellLayout::ClampAuxiliaryWidthDp(0), 280);
+  EXPECT_EQ(ShellLayout::ClampAuxiliaryWidthDp(279), 280);
+  EXPECT_EQ(ShellLayout::ClampAuxiliaryWidthDp(280), 280);
+  EXPECT_EQ(ShellLayout::ClampAuxiliaryWidthDp(320), 320);
+  EXPECT_EQ(ShellLayout::ClampAuxiliaryWidthDp(640), 640);
+  EXPECT_EQ(ShellLayout::ClampAuxiliaryWidthDp(641), 640);
+  EXPECT_EQ(ShellLayout::ClampAuxiliaryWidthDp(100000), 640);
+  EXPECT_EQ(ShellState{}.auxiliary_width_dp, ShellLayout::kAuxiliaryDefaultWidthDp);
+}
+
 TEST(ShellHostTest, SidebarWidthClampAndVisibility) {
   using namespace pbr;
 

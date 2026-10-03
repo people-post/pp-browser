@@ -156,16 +156,20 @@ TEST(ConfigJsonTest, ProfilePrefsSidebarFieldsDefaultWhenAbsentAndRoundTrip) {
   pbr::ProfilePreferences loaded;
   loaded.sidebar_width_dp = 999;
   loaded.sidebar_collapsed = true;
+  loaded.auxiliary_width_dp = 999;
   pbr::ProfilePrefsFromObject(*legacy, loaded);
   EXPECT_EQ(loaded.appearance, "dark");
   EXPECT_EQ(loaded.sidebar_width_dp, 240);
   EXPECT_FALSE(loaded.sidebar_collapsed);
+  EXPECT_EQ(loaded.auxiliary_width_dp, 320);
 
   pbr::ProfilePreferences edited;
   edited.sidebar_width_dp = 320;
   edited.sidebar_collapsed = true;
+  edited.auxiliary_width_dp = 400;
   pbr::ProfilePreferences parsed;
   pbr::ProfilePrefsFromObject(pbr::ProfilePrefsToObject(edited), parsed);
   EXPECT_EQ(parsed.sidebar_width_dp, 320);
   EXPECT_TRUE(parsed.sidebar_collapsed);
+  EXPECT_EQ(parsed.auxiliary_width_dp, 400);
 }
