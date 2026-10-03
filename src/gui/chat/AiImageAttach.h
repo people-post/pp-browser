@@ -47,6 +47,8 @@ inline const char* AiImageErrorKindKey(const std::string& error_kind) {
 
 /** Longest edge of an image shown in a bubble, in dp. */
 constexpr int kAiImageBubbleMaxDp = 240;
+/** Left + right padding of `.bubble` (14dp each, border-box), added to the image width for the bubble's min-width. */
+constexpr int kBubbleHorizontalPaddingDp = 28;
 
 /** `width` x `height` scaled down (never up) to fit a kAiImageBubbleMaxDp square, keeping the aspect ratio. */
 inline std::pair<int, int> AiImageBubbleSize(const int width, const int height) {
@@ -83,6 +85,15 @@ inline std::string DecorateAiImageBubble(std::string rml, const std::string& ima
                                       ? head + marker_label + " "
                                       : "<img class=\"chat-ai-image\" src=\"" + image_src + "\"" + size + "/>" + head;
   rml.replace(at, anchor.size(), replacement);
+  // The user bubble shrinks to its text; a block image wider than the question would stick out of it
+  // (and out of the window, the bubble being right-aligned). Make the bubble at least as wide as the image.
+  if (!image_src.empty() && shown_w > 0) {
+    const std::string bubble = "<div class=\"bubble bubble-user\"";
+    if (const size_t open = rml.rfind(bubble, at); open != std::string::npos) {
+      rml.insert(open + bubble.size(),
+                 " style=\"min-width: " + std::to_string(shown_w + kBubbleHorizontalPaddingDp) + "dp;\"");
+    }
+  }
   return rml;
 }
 
