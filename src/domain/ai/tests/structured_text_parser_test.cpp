@@ -2,6 +2,8 @@
 
 #include "common/PlatformLimits.h"
 
+#include "common/chat/MessagingLimits.h"
+
 #include <gtest/gtest.h>
 
 #include <cassert>
@@ -358,4 +360,26 @@ TEST(StructuredTextParserTest, PlainTextReadsFencedAndBareBlocksAndPassesProseTh
                 R"({"blocks":[{"type":"table","headers":["A","B"],"rows":[["1","2"]]},{"type":"poll","question":"Q?","options":["yes","no"]}]})"),
             "A | B\n1 | 2\nQ?\n- yes\n- no");
   EXPECT_EQ(pbr::StructuredTextParser::PlainText(R"({"blocks":[{"type":"paragraph","text":"cut off"}])"), "cut off");
+}
+
+TEST(StructuredTextParserTest, StorableTextKeepsSmallAnswersAndReducesHugeOnesToProse) {
+  const std::string small = R"({"blocks":[{"type":"paragraph","text":"Found 2 people:"}]})";
+  EXPECT_EQ(pbr::StructuredTextParser::StorableText(small), small);
+
+  // A people list whose action payloads carry large public keys.
+  const std::string huge = R"({"blocks":[{"type":"paragraph","text":"Found 9 people:"},{"type":"long_list","title":"Search results","items":[{"title":"A","key":")" +
+                           std::string(pbr::kMaxComposeTextBytes + 100, 'k') + R"("}]}]})";
+  const std::string stored = pbr::StructuredTextParser::StorableText(huge);
+  EXPECT_LE(stored.size(), pbr::kMaxComposeTextBytes);
+  EXPECT_NE(stored.find("Found 9 people:"), std::string::npos);
+  EXPECT_EQ(stored.find("kkkk"), std::string::npos);
+
+  // Plain text that is too long is cut on a character boundary.
+  std::string cjk;
+  while (cjk.size() <= pbr::kMaxComposeTextBytes) {
+    cjk += "好";
+  }
+  const std::string cut = pbr::StructuredTextParser::StorableText(cjk);
+  EXPECT_LE(cut.size(), pbr::kMaxComposeTextBytes);
+  EXPECT_EQ(cut.size() % 3, 0u);
 }

@@ -15,6 +15,8 @@
 namespace pbr {
 
 constexpr std::chrono::milliseconds kStreamRenderInterval{100};
+/** Bytes kept free in a stored answer for the trailing details link (label plus URL). */
+constexpr size_t kDetailsLinkHeadroomBytes = 4096;
 
 /** Pure rules for the streamed Markdown answer bubble (no RmlUi). */
 

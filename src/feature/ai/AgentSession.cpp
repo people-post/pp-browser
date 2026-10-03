@@ -447,7 +447,7 @@ void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, 
   message.id = util::GenerateUuid();
   message.thread_id = state->pending_thread_id;
   message.sender_contact_id = kAiAssistantContactId;
-  message.text = assistant_raw;
+  message.text = StructuredTextParser::StorableText(assistant_raw);
   message.timestamp = util::NowUnixMs();
   message.delivery = MessageDelivery::Local;
   message.relay_visible = state->turn_mode != AgentTurnMode::ScopedAssist;
