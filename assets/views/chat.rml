@@ -63,7 +63,7 @@
   </div>
   <div class="chat-gap-banner stack" data-if="show_peer_link_banner && !sync_in_progress">
     <p class="text muted" data-rml="peer_link_banner"></p>
-    <button class="chat-suggestion" data-if="show_retry_peer_dial" data-event-click="retry_peer_dial()">Retry connection</button>
+    <button class="chat-suggestion" data-if="show_retry_peer_dial" data-event-click="retry_peer_dial()">{{i18n:chat.link.retry}}</button>
   </div>
   <div class="chat-gap-banner stack" data-if="show_gap_banner && !sync_in_progress">
     <p class="text muted">Some messages from your peer may be missing. Peer sync does not resend your unsent messages.</p>

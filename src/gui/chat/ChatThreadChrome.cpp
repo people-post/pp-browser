@@ -1,8 +1,10 @@
 #include "gui/chat/ChatThreadChrome.h"
 
 #include "gui/chat/ChatDataModel.h"
+#include "gui/chat/PeerLinkText.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "common/Logger.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/people/PeerDisplayLabel.h"
@@ -26,6 +28,19 @@ void ChatThreadChrome::BindShellFeedback(ShellFeedbackPorts ports) {
 }
 
 namespace {
+
+// The transport's own failure text is for the log; the header shows PeerLinkText instead.
+void LogPeerLinkDetail(const std::string& detail) {
+  static auto logger = logging::getLogger("ChatThreadChrome");
+  static std::string last;
+  if (detail == last) {
+    return;
+  }
+  last = detail;
+  if (!detail.empty()) {
+    logger.debug << "peer link: " << detail;
+  }
+}
 
 void NotifySurfaceChanged(const std::function<void()>& notify) {
   if (notify) {
@@ -149,7 +164,9 @@ void ChatThreadChrome::UpdatePeerLink() {
     return;
   }
   const ThreadPeerLinkView link = facade_->GetThreadPeerLink(thread->id);
-  view_.show_peer_link = !link.status_label.empty() || in_call;
+  const PeerLinkText link_text = PeerLinkTextFor(link);
+  LogPeerLinkDetail(link.banner_message);
+  view_.show_peer_link = link_text.status_key != nullptr || in_call;
   if (in_call) {
     // Prefer call presence over mesh path label while the call is live.
     view_.peer_link_status = Tr("call.chat.in_call").c_str();
@@ -158,11 +175,11 @@ void ChatThreadChrome::UpdatePeerLink() {
     view_.show_retry_peer_dial = false;
     return;
   }
-  view_.peer_link_status = link.status_label.c_str();
-  view_.show_peer_link_banner = link.show_banner && !link.banner_message.empty();
-  view_.peer_link_banner = link.banner_message.c_str();
-  view_.show_retry_peer_dial = link.show_retry;
-  switch (link.path_kind) {
+  view_.peer_link_status = link_text.status_key ? Tr(link_text.status_key).c_str() : "";
+  view_.show_peer_link_banner = link_text.banner_key != nullptr;
+  view_.peer_link_banner = link_text.banner_key ? Tr(link_text.banner_key).c_str() : "";
+  view_.show_retry_peer_dial = link_text.show_retry;
+  switch (link_text.display_kind) {
   case ThreadPeerPathKind::Direct:
     view_.peer_link_direct = true;
     break;
