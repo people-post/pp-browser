@@ -20,6 +20,9 @@ namespace pbr {
 
 class GroupMembershipWorkflow;
 
+/** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */
+inline constexpr const char* kDefaultAiThreadTitle = "New chat";
+
 class InboxController : public Module {
 public:
   InboxController(IThreadStore& store, ContactsStore& contacts, PeerDisplayResolver& labels,
@@ -39,7 +42,11 @@ public:
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel);
   Roe<Thread> CreateGroup(const std::string& title, const std::vector<std::string>& member_contact_ids);
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
-  Roe<void> SetAiThreadTitle(const std::string& thread_id, const std::string& title);
+  /**
+   * Names an AI thread after its first question. Applies only while the thread still has
+   * kDefaultAiThreadTitle; does not notify (the caller refreshes the list as part of the send).
+   */
+  Roe<void> NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& title);
 
   Roe<void> CloseThread(const std::string& thread_id);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);

@@ -78,8 +78,8 @@ public:
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
-  /** Replace an AI thread's title (e.g. with its first question); other thread kinds are refused. */
-  Roe<void> SetAiThreadTitle(const std::string& thread_id, const std::string& title);
+  /** Names an AI thread after its first question; a no-op once it has any other title. No thread-changed notify. */
+  Roe<void> NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& title);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel);
   void NotifyThreadChanged();
   void SetOnThreadChanged(std::function<void()> callback);

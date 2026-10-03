@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/CivilTime.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -51,7 +53,7 @@ inline std::string AiThreadTitleFromMessage(std::string_view message) {
  * the full date for earlier years ("2025/12/31"). Empty for an unset timestamp.
  */
 inline std::string SessionDateLabel(const std::tm& when, const std::tm& now) {
-  char buf[24];
+  char buf[64];
   if (when.tm_year == now.tm_year) {
     std::snprintf(buf, sizeof(buf), "%d/%d %02d:%02d", when.tm_mon + 1, when.tm_mday, when.tm_hour, when.tm_min);
   } else {
@@ -68,8 +70,9 @@ inline std::string SessionDateLabel(const int64_t updated_at_ms, const int64_t n
   const std::time_t now_s = static_cast<std::time_t>(now_ms / 1000);
   std::tm when{};
   std::tm now{};
-  localtime_r(&when_s, &when);
-  localtime_r(&now_s, &now);
+  if (!pp::civil_time::LocalTime(when_s, &when) || !pp::civil_time::LocalTime(now_s, &now)) {
+    return {};
+  }
   return SessionDateLabel(when, now);
 }
 

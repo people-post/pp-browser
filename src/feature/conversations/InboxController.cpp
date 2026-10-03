@@ -146,7 +146,7 @@ Roe<Thread> InboxController::CreateNewAiThread() {
   Thread thread;
   thread.id = util::GenerateUuid();
   thread.kind = ThreadKind::Ai;
-  thread.title = "New chat";
+  thread.title = kDefaultAiThreadTitle;
   thread.preview = "";
   thread.updated_at = util::NowUnixMs();
 
@@ -481,7 +481,7 @@ Roe<void> InboxController::SetThreadLocalTitle(const std::string& thread_id, con
   return {};
 }
 
-Roe<void> InboxController::SetAiThreadTitle(const std::string& thread_id, const std::string& title) {
+Roe<void> InboxController::NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& title) {
   auto thread = store_.GetThread(thread_id);
   if (!thread) {
     return thread.error();
@@ -489,15 +489,14 @@ Roe<void> InboxController::SetAiThreadTitle(const std::string& thread_id, const 
   if (!*thread) {
     return Error("Thread not found");
   }
-  if ((*thread)->kind != ThreadKind::Ai) {
-    return Error("Only AI threads take a title from the conversation");
+  if ((*thread)->kind != ThreadKind::Ai || (*thread)->title != kDefaultAiThreadTitle || title.empty()) {
+    return {};
   }
   Thread updated = **thread;
   updated.title = title;
   if (auto saved = store_.UpsertThread(updated); !saved) {
     return saved.error();
   }
-  NotifyThreadChanged();
   return {};
 }
 

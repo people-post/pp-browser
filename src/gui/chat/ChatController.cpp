@@ -2436,13 +2436,10 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     chat_.loading = true;
     chat_.status = "";
   }
+  // A fresh AI thread is named after its first question, so the list is not all "New chat". Done before
+  // the preview update, which rebuilds the session rows once.
+  (void)facade_->NameAiThreadFromFirstMessage(ActiveThreadId(), AiThreadTitleFromMessage(trimmed));
   UpdateSidebarPreview(trimmed);
-  // A fresh AI thread is named after its first question, so the list is not all "New chat".
-  if (auto thread = facade_->GetActiveThread(); thread && thread->kind == ThreadKind::Ai && thread->title == "New chat") {
-    if (const std::string title = AiThreadTitleFromMessage(trimmed); !title.empty()) {
-      (void)facade_->SetAiThreadTitle(thread->id, title);
-    }
-  }
   DirtyChatChrome();
 
   if (!use_llm_) {
