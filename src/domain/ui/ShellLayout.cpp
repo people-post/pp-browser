@@ -54,6 +54,10 @@ int ShellLayout::ClampSidebarWidthDp(int width_dp) {
   return std::clamp(width_dp, kSidebarMinWidthDp, kSidebarMaxWidthDp);
 }
 
+int ShellLayout::ClampAuxiliaryWidthDp(int width_dp) {
+  return std::clamp(width_dp, kAuxiliaryMinWidthDp, kAuxiliaryMaxWidthDp);
+}
+
 bool ShellLayout::SecondaryPaneShown(const ShellState& state) {
   return state.layout_mode == LayoutMode::Expanded && TabHasSecondary(state.nav_tab) && !state.sidebar_collapsed;
 }

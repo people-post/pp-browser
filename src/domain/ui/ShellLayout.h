@@ -18,6 +18,10 @@ struct ShellLayout {
   static constexpr int kSidebarMaxWidthDp = 480;
   static constexpr int kSidebarDefaultWidthDp = 240;
   static int ClampSidebarWidthDp(int width_dp);
+  static constexpr int kAuxiliaryMinWidthDp = 280;
+  static constexpr int kAuxiliaryMaxWidthDp = 640;
+  static constexpr int kAuxiliaryDefaultWidthDp = 320;
+  static int ClampAuxiliaryWidthDp(int width_dp);
   /** Expanded layout, tab has a secondary pane, and the user has not collapsed it. */
   static bool SecondaryPaneShown(const ShellState& state);
   /** Collapsed flag after the user picks `tab` in the nav rail: tabs with a secondary pane re-expand it. */

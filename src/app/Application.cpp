@@ -1285,6 +1285,16 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
     prefs.schema_version = ProfilePreferences::kSchemaVersion;
     (void)store_.SaveProfilePrefs(prefs);
   });
+  shell_->SetAuxiliaryWidthPref(bootstrap.profile_prefs.auxiliary_width_dp);
+  shell_->SetOnAuxiliaryWidthChanged([this](int width_dp) {
+    ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+    if (prefs.auxiliary_width_dp == width_dp) {
+      return;
+    }
+    prefs.auxiliary_width_dp = width_dp;
+    prefs.schema_version = ProfilePreferences::kSchemaVersion;
+    (void)store_.SaveProfilePrefs(prefs);
+  });
 
   ApplyUiDocumentLanguage(context);
 }

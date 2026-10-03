@@ -1582,12 +1582,15 @@ select selectbox option {
   cursor: ew-resize;
 }
 
+/* The floor makes the shrinkable list / auxiliary panes absorb a narrow window instead of the chat pane. */
 .shell-pane-primary {
   flex: 1;
+  min-width: 240dp;
 }
 
 .shell-pane-auxiliary {
-  flex: 0 0 320dp;
+  flex: 0 1 320dp;
+  min-width: 280dp;
 }
 
 .shell-layer-compact {

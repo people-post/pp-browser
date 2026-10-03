@@ -178,6 +178,10 @@ public:
   void SetSidebarPrefs(int width_dp, bool collapsed);
   /** Fired after the user resizes or collapses/expands the secondary pane (persist here). */
   void SetOnSidebarChanged(std::function<void(int width_dp, bool collapsed)> callback);
+  /** Auxiliary-pane width from disk (clamped). Remounts when it differs from the current state. */
+  void SetAuxiliaryWidthPref(int width_dp);
+  /** Fired after the user resizes the auxiliary pane (persist here). */
+  void SetOnAuxiliaryWidthChanged(std::function<void(int width_dp)> callback);
   /** Collapse/expand the secondary pane (expanded layout, tabs with a secondary pane only). */
   void ToggleSidebarCollapsed();
   void SetOnLayoutSynced(std::function<void()> callback);
@@ -254,7 +258,8 @@ private:
 
   ui::Element* ShellRoot() const;
   std::string SerializeShellRoot() const;
-  std::string SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot = false) const;
+  std::string SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot = false,
+                                int flex_width_dp = 0) const;
   std::string SerializeExpandedBase() const;
   std::string SerializeCompactBase() const;
   std::string SerializeAccountSheet() const;
@@ -276,6 +281,7 @@ private:
   void DetachDismissGestures();
   void AttachSwipeBackGesture();
   void AttachSplitterDrag();
+  void AttachAuxiliarySplitterDrag(ui::ElementDocument* doc);
   void NotifySidebarChanged();
   void AttachAccountSheetGesture();
   void DetachCallChromeGesture();
@@ -354,12 +360,14 @@ private:
   ShellBottomSheetGesture account_sheet_gesture_;
   ShellCallChromeGesture call_chrome_gesture_;
   ShellSplitterDrag splitter_drag_;
+  ShellSplitterDrag aux_splitter_drag_;
   std::function<void(const std::string&)> on_before_transient_mount_;
   std::function<void(const std::string&)> on_transient_mounted_;
   std::function<void(const std::string&)> on_transient_popped_;
   std::function<void(NavTab)> on_nav_tab_changed_;
   std::function<void(LayoutMode)> on_layout_mode_changed_;
   std::function<void(int, bool)> on_sidebar_changed_;
+  std::function<void(int)> on_auxiliary_width_changed_;
   std::function<void()> on_layout_synced_;
   std::function<void()> on_account_sheet_opened_;
   std::function<void()> on_account_sheet_closed_;
