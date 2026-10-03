@@ -2,8 +2,10 @@
 
 #include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatDataModel.h"
+#include "gui/chat/PeerLinkText.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/i18n/LocalizationService.h"
+#include "common/Logger.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/people/PeerDisplayLabel.h"
@@ -27,6 +29,19 @@ void ChatThreadChrome::BindShellFeedback(ShellFeedbackPorts ports) {
 }
 
 namespace {
+
+// The transport's own failure text is for the log; the header shows PeerLinkText instead.
+void LogPeerLinkDetail(const std::string& detail) {
+  static auto logger = logging::getLogger("ChatThreadChrome");
+  static std::string last;
+  if (detail == last) {
+    return;
+  }
+  last = detail;
+  if (!detail.empty()) {
+    logger.debug << "peer link: " << detail;
+  }
+}
 
 void NotifySurfaceChanged(const std::function<void()>& notify) {
   if (notify) {
@@ -115,7 +130,7 @@ void ChatThreadChrome::ResetPanelState() {
   view_.turns.clear();
   view_.has_turns = false;
   view_.use_messages_layout = true;
-  view_.draft_placeholder = "Ask anything…";
+  view_.draft_placeholder = Tr("chat.ai_thread.placeholder").c_str();
   if (on_scroller_reset_) {
     on_scroller_reset_();
   }
@@ -155,7 +170,9 @@ void ChatThreadChrome::UpdatePeerLink() {
     return;
   }
   const ThreadPeerLinkView link = facade_->GetThreadPeerLink(thread->id);
-  view_.show_peer_link = !link.status_label.empty() || in_call;
+  const PeerLinkText link_text = PeerLinkTextFor(link);
+  LogPeerLinkDetail(link.banner_message);
+  view_.show_peer_link = link_text.status_key != nullptr || in_call;
   if (in_call) {
     // Prefer call presence over mesh path label while the call is live.
     view_.peer_link_status = Tr("call.chat.in_call").c_str();
@@ -164,11 +181,11 @@ void ChatThreadChrome::UpdatePeerLink() {
     view_.show_retry_peer_dial = false;
     return;
   }
-  view_.peer_link_status = link.status_label.c_str();
-  view_.show_peer_link_banner = link.show_banner && !link.banner_message.empty();
-  view_.peer_link_banner = link.banner_message.c_str();
-  view_.show_retry_peer_dial = link.show_retry;
-  switch (link.path_kind) {
+  view_.peer_link_status = link_text.status_key ? Tr(link_text.status_key).c_str() : "";
+  view_.show_peer_link_banner = link_text.banner_key != nullptr;
+  view_.peer_link_banner = link_text.banner_key ? Tr(link_text.banner_key).c_str() : "";
+  view_.show_retry_peer_dial = link_text.show_retry;
+  switch (link_text.display_kind) {
   case ThreadPeerPathKind::Direct:
     view_.peer_link_direct = true;
     break;
@@ -206,6 +223,10 @@ void ChatThreadChrome::Update() {
     const PeerDisplayLabel label =
         facade_ ? facade_->ResolveThreadLabel(*thread) : PeerDisplayLabel{};
     view_.thread_title = label.title.c_str();
+    // The stored default AI title is English; show it in the UI language.
+    if (thread->kind == ThreadKind::Ai && label.title == "New chat") {
+      view_.thread_title = Tr("chat.new_chat").c_str();
+    }
     view_.thread_encrypted = thread->encrypted;
     const ui::String visual_kind = SessionVisualKind(*thread);
     view_.thread_is_ai = visual_kind == "ai";
@@ -328,29 +349,29 @@ void ChatThreadChrome::Update() {
         }
         view_.draft_placeholder = Tr("chat.direct.placeholder").c_str();
       } else if (thread->channel == ThreadChannel::E2e) {
-        view_.thread_subtitle = "Verified private · E2E";
+        view_.thread_subtitle = Tr("chat.subtitle.verified_private").c_str();
         view_.draft_placeholder = Tr("chat.direct.placeholder_secure").c_str();
       } else {
-        view_.thread_subtitle = "Direct message";
+        view_.thread_subtitle = Tr("chat.subtitle.direct").c_str();
         view_.draft_placeholder = Tr("chat.direct.placeholder").c_str();
       }
       if (label.trust == PeerLabelTrust::DirectoryUnverified) {
-        view_.thread_subtitle = std::string(view_.thread_subtitle.c_str()) + " · Unverified";
+        view_.thread_subtitle = std::string(view_.thread_subtitle.c_str()) + " · " + Tr("chat.subtitle.unverified");
       }
     } else {
-      std::string roster_label = thread->encrypted ? "Group · E2E" : "Group chat";
+      std::string roster_label = thread->encrypted ? Tr("chat.subtitle.group_e2e") : Tr("chat.subtitle.group");
       if (PortsMessagingReady(facade_) && thread->group_id) {
         if (facade_) {
           if (auto roster = facade_->ListGroupRoster(*thread->group_id)) {
-            roster_label += " · " + std::to_string(roster->size()) + " members";
+            roster_label += " · " + Tr("chat.subtitle.members", {{"count", std::to_string(roster->size())}});
           }
         }
         if (facade_ && facade_->IsOwnerUnreachable(*thread->group_id)) {
-          roster_label += " · Owner unreachable";
+          roster_label += " · " + Tr("chat.subtitle.owner_unreachable");
         }
       }
       if (label.shared_title) {
-        roster_label = "Shared: " + *label.shared_title + " · " + roster_label;
+        roster_label = Tr("chat.subtitle.shared", {{"title", *label.shared_title}}) + " · " + roster_label;
       }
       view_.thread_subtitle = roster_label.c_str();
       view_.draft_placeholder = Tr("chat.group.placeholder").c_str();
@@ -397,7 +418,7 @@ void ChatThreadChrome::Update() {
     view_.psk_verified = false;
     view_.psk_fingerprint = "";
     view_.psk_export_b64 = "";
-    view_.draft_placeholder = "Ask anything…";
+    view_.draft_placeholder = Tr("chat.ai_thread.placeholder").c_str();
   }
 }
 
@@ -465,7 +486,7 @@ void ChatThreadChrome::OnLoadOlderHistory() {
   }
 
   view_.sync_in_progress = true;
-  view_.status = "Loading older messages…";
+  view_.status = Tr("chat.sync.loading_older").c_str();
   DirtyChatChrome();
 
   facade_->ScrollBackfill(thread_id, [this, thread_id](Roe<ChatSyncResult> result) {
@@ -504,13 +525,13 @@ void ChatThreadChrome::OnSyncWithPeer() {
   }
 
   view_.sync_in_progress = true;
-  view_.status = "Syncing missing messages from peer…";
+  view_.status = Tr("chat.sync.syncing_from_peer").c_str();
   DirtyChatChrome();
 
   facade_->SyncWithPeer(thread_id, [this](Roe<ChatSyncResult> result) {
     view_.sync_in_progress = false;
     if (result) {
-      view_.status = result->ingested > 0 ? "Sync complete." : "Up to date with peer.";
+      view_.status = Tr(result->ingested > 0 ? "chat.sync.complete" : "chat.sync.up_to_date").c_str();
     } else {
       view_.status = result.error().message.c_str();
     }
@@ -535,16 +556,16 @@ void ChatThreadChrome::OnRetryGapSync() {
   }
 
   view_.sync_in_progress = true;
-  view_.status = "Retrying sync for missing messages…";
+  view_.status = Tr("chat.sync.retrying_gap").c_str();
   DirtyChatChrome();
 
   facade_->RetryGapSync(thread_id, [this](Roe<ChatSyncResult> result) {
     view_.sync_in_progress = false;
     if (result) {
       if (result->ingested > 0 || result->empty_gap_closed) {
-        view_.status = "Gap repair complete.";
+        view_.status = Tr("chat.sync.gap_complete").c_str();
       } else {
-        view_.status = "No missing messages found for this gap.";
+        view_.status = Tr("chat.sync.gap_none").c_str();
       }
     } else {
       view_.status = result.error().message.c_str();
@@ -568,9 +589,8 @@ void ChatThreadChrome::OnStartNewSecureChat() {
     }
 
     ShowConfirm(
-        shell_feedback_, "Start new secure chat?",
-        "This bumps the session epoch and cancels unsent messages from the previous epoch. "
-        "Your saved transcript stays on this device.",
+        shell_feedback_, Tr("chat.psk.new_secure_title"),
+        Tr("chat.psk.new_secure_body"),
         [this, thread_id](bool ok) {
           if (!ok) {
             return;
@@ -582,7 +602,7 @@ void ChatThreadChrome::OnStartNewSecureChat() {
           if (!result) {
             view_.status = result.error().message.c_str();
           } else {
-            view_.status = "New secure session started.";
+            view_.status = Tr("chat.psk.new_secure_done").c_str();
           }
           if (refresh_) {
             refresh_();
@@ -608,7 +628,7 @@ void ChatThreadChrome::OnPauseIntegrityOnly() {
   if (!facade_->PauseIntegrityOnly(thread_id)) {
     return;
   }
-  view_.status = "Messaging paused until you rotate the encryption key.";
+  view_.status = Tr("chat.psk.paused").c_str();
   if (refresh_) {
     refresh_();
   }
@@ -639,7 +659,7 @@ void ChatThreadChrome::OnCopyPskKey() {
     if (ui::SystemInterface* system = ui::GetSystemInterface()) {
       system->SetClipboardText(view_.psk_export_b64);
     }
-    view_.status = "Encryption key copied.";
+    view_.status = Tr("chat.psk.key_copied").c_str();
     DirtyChatHeader();
     NotifySurfaceChanged(notify_surface_changed_);
   });
@@ -667,7 +687,7 @@ void ChatThreadChrome::OnImportPsk() {
   }
   const std::string pasted = view_.psk_import_text.c_str();
   if (pasted.empty()) {
-    view_.status = "Paste a key or bundle first.";
+    view_.status = Tr("chat.psk.paste_first").c_str();
     DirtyChatChrome();
     return;
   }
@@ -679,7 +699,7 @@ void ChatThreadChrome::OnImportPsk() {
       } else {
         view_.psk_import_text = "";
         view_.show_psk_import = false;
-        view_.status = "Encryption key installed. Verify the fingerprint before sending.";
+        view_.status = Tr("chat.psk.key_installed").c_str();
       }
     }
   } else if (facade_) {
@@ -688,7 +708,7 @@ void ChatThreadChrome::OnImportPsk() {
     } else {
       view_.psk_import_text = "";
       view_.show_psk_import = false;
-      view_.status = "Encryption key installed. Verify the fingerprint before sending.";
+      view_.status = Tr("chat.psk.key_installed").c_str();
     }
   }
   if (refresh_) {
@@ -714,9 +734,9 @@ void ChatThreadChrome::OnVerifyPsk() {
   }
 
   ShowConfirmWithCheckbox(
-      shell_feedback_, "Verify encryption fingerprint",
-      "Only confirm after you compared this fingerprint with your contact out of band.",
-      "I've verified this fingerprint with my contact", false,
+      shell_feedback_, Tr("chat.psk.verify_title"),
+      Tr("chat.psk.verify_body"),
+      Tr("chat.psk.verify_checkbox"), false,
       [this, thread_id](const bool confirmed, const bool checked) {
         if (!confirmed || !checked) {
           return;
@@ -728,7 +748,7 @@ void ChatThreadChrome::OnVerifyPsk() {
         if (!result) {
           view_.status = result.error().message.c_str();
         } else {
-          view_.status = "Encryption key verified. You can send secure messages.";
+          view_.status = Tr("chat.psk.verified").c_str();
         }
         if (refresh_) {
           refresh_();
@@ -754,9 +774,8 @@ void ChatThreadChrome::OnRotatePskExport() {
   }
 
   ShowConfirm(
-      shell_feedback_, "Rotate encryption key?",
-      "This generates a new key, bumps the session epoch, and cancels unsent messages from the previous epoch. "
-      "Share the exported bundle with your contact out of band.",
+      shell_feedback_, Tr("chat.psk.rotate_title"),
+      Tr("chat.psk.rotate_body"),
       [this, thread_id](const bool ok) {
         if (!ok) {
           return;
@@ -775,10 +794,10 @@ void ChatThreadChrome::OnRotatePskExport() {
           system->SetClipboardText(*bundle);
         }
         ShowAlert(
-            shell_feedback_, "Rotation bundle exported",
-            "The pp-browser-psk-bundle-v1 JSON was copied to your clipboard. Send it to your contact securely.",
+            shell_feedback_, Tr("chat.psk.rotated_title"),
+            Tr("chat.psk.rotated_body"),
             {});
-        view_.status = "Encryption key rotated. Share the bundle with your contact.";
+        view_.status = Tr("chat.psk.rotated").c_str();
         if (refresh_) {
           refresh_();
         }

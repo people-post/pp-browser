@@ -13,6 +13,15 @@ struct ShellLayout {
   static PaneVisibility WhichPanesVisible(const ShellState& state);
   static const char* NavContentKey(NavTab tab);
   static bool TabHasSecondary(NavTab tab);
+
+  static constexpr int kSidebarMinWidthDp = 200;
+  static constexpr int kSidebarMaxWidthDp = 480;
+  static constexpr int kSidebarDefaultWidthDp = 240;
+  static int ClampSidebarWidthDp(int width_dp);
+  /** Expanded layout, tab has a secondary pane, and the user has not collapsed it. */
+  static bool SecondaryPaneShown(const ShellState& state);
+  /** Collapsed flag after the user picks `tab` in the nav rail: tabs with a secondary pane re-expand it. */
+  static bool SidebarCollapsedAfterNavSelect(bool collapsed, NavTab tab);
   static CompactChromeLayout ComputeCompactChromeLayout(const ShellConfig& config,
                                                         int safe_area_top_dp,
                                                         int safe_area_bottom_dp,

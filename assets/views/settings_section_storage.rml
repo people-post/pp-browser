@@ -1,5 +1,5 @@
       <div class="settings-section stack">
-        <p class="text muted">Profile: <span data-rml="profile_label"></span></p>
+        <p class="text muted">{{i18n:settings.storage.profile_label}} <span data-rml="profile_label"></span></p>
         <p class="text" data-rml="profile_size_label"></p>
         <p class="text muted" data-rml="attachment_cache_size_label"></p>
         <div class="settings-choice-row">
@@ -51,12 +51,12 @@
           <button class="btn btn-secondary" type="button"
                   data-event-click="fetch_cas_tip()">{{i18n:settings.storage.library.fetch_tip}}</button>
         </div>
-        <p class="text muted settings-path">Config: <span data-rml="config_dir"></span></p>
-        <p class="text muted settings-path">Data: <span data-rml="data_dir"></span></p>
-        <p class="text muted settings-path">Profile data: <span data-rml="profile_dir"></span></p>
+        <p class="text muted settings-path">{{i18n:settings.storage.config_label}} <span data-rml="config_dir"></span></p>
+        <p class="text muted settings-path">{{i18n:settings.storage.data_label}} <span data-rml="data_dir"></span></p>
+        <p class="text muted settings-path">{{i18n:settings.storage.profile_data_label}} <span data-rml="profile_dir"></span></p>
         <div class="settings-danger-zone stack">
           <p class="text muted">
-            Reset deletes chats, contacts, keys, and PIN for this profile. Machine settings are kept.
+            {{i18n:settings.storage.reset_warning}}
           </p>
           <div class="settings-actions stack">
             <button class="btn btn-danger-soft settings-action-bar" type="button"

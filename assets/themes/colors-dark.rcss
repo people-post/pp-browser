@@ -25,6 +25,10 @@ selection {
   background-color: #3b5998;
 }
 
+.prompt-composer-input scrollbarvertical sliderbar {
+  background-color: #ffffff50;
+}
+
 .chat-form-field selection {
   background-color: #3b5998;
 }
@@ -219,14 +223,6 @@ select selectbox option:hover {
 
 .inline-code {
   background-color: #4b5563;
-}
-
-.chat-sources p {
-  color: #9ca3af;
-}
-
-.chat-sources .chat-link {
-  color: #818cf8;
 }
 
 .code-block {
@@ -547,6 +543,15 @@ select selectbox option:hover {
 
 .shell-pane-secondary {
   border-right: 1dp #374151;
+}
+
+.shell-splitter:hover,
+.shell-splitter--active {
+  background-color: #4b5563;
+}
+
+.shell-splitter--active {
+  background-color: #6b7280;
 }
 
 .shell-nav-rail {
@@ -1042,6 +1047,10 @@ select selectbox option:hover {
   background-color: #422006;
   border-color: #854d0e;
   box-shadow: inset 3dp 0 0 #fbbf24;
+}
+
+.sidebar-session-date {
+  color: #9ca3af;
 }
 
 .sidebar-session-title {

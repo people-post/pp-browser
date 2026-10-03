@@ -400,6 +400,7 @@ private:
   /** Avoid reminting guest Brief keys on every Apply / banner refresh. */
   bool brief_guest_mint_attempted_ = false;
   std::string brief_guest_mint_user_hint_;
+  std::string last_brief_banner_; // text RefreshLlmSetupBanner last showed for the brief preset
   ChatTranscriptScroller scroller_;
   WorkingSetController working_set_;
   ChatThreadChrome chrome_;

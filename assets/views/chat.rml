@@ -58,41 +58,41 @@
       </button>
       <button class="shell-toolbar-btn shell-toolbar-btn-preview chat-preview-btn" data-model="window"
               data-if="auxiliary_available && (layout_mode == 'expanded' || compact_chat_open)"
-              data-event-click="toggle_auxiliary()">Details</button>
+              data-event-click="toggle_auxiliary()">{{i18n:chat.details}}</button>
     </div>
   </div>
   <div class="chat-gap-banner stack" data-if="show_peer_link_banner && !sync_in_progress">
     <p class="text muted" data-rml="peer_link_banner"></p>
-    <button class="chat-suggestion" data-if="show_retry_peer_dial" data-event-click="retry_peer_dial()">Retry connection</button>
+    <button class="chat-suggestion" data-if="show_retry_peer_dial" data-event-click="retry_peer_dial()">{{i18n:chat.link.retry}}</button>
   </div>
   <div class="chat-gap-banner stack" data-if="show_gap_banner && !sync_in_progress">
-    <p class="text muted">Some messages from your peer may be missing. Peer sync does not resend your unsent messages.</p>
-    <button class="chat-suggestion" data-event-click="retry_gap_sync()">Retry sync</button>
+    <p class="text muted">{{i18n:chat.banner.gap}}</p>
+    <button class="chat-suggestion" data-event-click="retry_gap_sync()">{{i18n:chat.banner.retry_sync}}</button>
   </div>
   <div class="chat-gap-banner stack" data-if="show_compromised_banner && !sync_in_progress">
-    <p class="text muted">Message integrity issue detected. Sending and sync are paused. Rotate the encryption key and share the bundle with your contact, or pause only.</p>
-    <button class="chat-suggestion" data-event-click="rotate_psk_export()">Rotate key &amp; export bundle</button>
-    <button class="chat-suggestion" data-event-click="start_new_secure_chat()">New epoch (same key)</button>
-    <button class="chat-suggestion" data-event-click="pause_integrity_only()">Pause only</button>
+    <p class="text muted">{{i18n:chat.banner.integrity}}</p>
+    <button class="chat-suggestion" data-event-click="rotate_psk_export()">{{i18n:chat.banner.rotate_export}}</button>
+    <button class="chat-suggestion" data-event-click="start_new_secure_chat()">{{i18n:chat.banner.new_epoch}}</button>
+    <button class="chat-suggestion" data-event-click="pause_integrity_only()">{{i18n:chat.banner.pause_only}}</button>
   </div>
   <div class="chat-gap-banner stack" data-if="show_locked_out_banner && !sync_in_progress">
     <p class="text muted">{{i18n:chat.device_lock.locked_out_body}}</p>
   </div>
   <div class="chat-gap-banner stack" data-if="show_psk_setup_banner && !sync_in_progress">
-    <p class="text muted" data-if="!psk_has_key">Share your encryption key with this contact out of band, then verify the fingerprint before sending.</p>
-    <p class="text muted" data-if="psk_has_key && !psk_verified">Compare this fingerprint with your contact, then confirm verification before sending.</p>
-    <p class="text muted" data-if="psk_fingerprint != ''">Fingerprint: <span data-rml="psk_fingerprint"></span></p>
-    <p class="text muted" data-if="psk_export_b64 != ''">Key: <span data-rml="psk_export_b64"></span></p>
-    <button class="chat-suggestion" data-if="psk_has_key" data-event-click="copy_psk_key()">Copy key</button>
-    <button class="chat-suggestion" data-if="psk_has_key && !psk_verified" data-event-click="verify_psk()">I've verified this fingerprint</button>
-    <button class="chat-suggestion" data-event-click="toggle_psk_import()">Import key or bundle</button>
+    <p class="text muted" data-if="!psk_has_key">{{i18n:chat.banner.psk_share}}</p>
+    <p class="text muted" data-if="psk_has_key && !psk_verified">{{i18n:chat.banner.psk_compare}}</p>
+    <p class="text muted" data-if="psk_fingerprint != ''">{{i18n:chat.banner.fingerprint_label}} <span data-rml="psk_fingerprint"></span></p>
+    <p class="text muted" data-if="psk_export_b64 != ''">{{i18n:chat.banner.key_label}} <span data-rml="psk_export_b64"></span></p>
+    <button class="chat-suggestion" data-if="psk_has_key" data-event-click="copy_psk_key()">{{i18n:chat.banner.copy_key}}</button>
+    <button class="chat-suggestion" data-if="psk_has_key && !psk_verified" data-event-click="verify_psk()">{{i18n:chat.banner.verified}}</button>
+    <button class="chat-suggestion" data-event-click="toggle_psk_import()">{{i18n:chat.banner.import_key}}</button>
     <textarea class="prompt-composer-input" data-if="show_psk_import" rows="4" data-value="psk_import_text"
-              placeholder="Paste raw base64 key or pp-browser-psk-bundle-v1 JSON"></textarea>
-    <button class="chat-suggestion" data-if="show_psk_import" data-event-click="import_psk()">Install imported key</button>
+              placeholder="{{i18n:chat.banner.import_placeholder}}"></textarea>
+    <button class="chat-suggestion" data-if="show_psk_import" data-event-click="import_psk()">{{i18n:chat.banner.install_key}}</button>
   </div>
   <div class="chat-gap-banner stack" data-if="show_older_history_hint && !sync_in_progress">
-    <p class="text muted">Older messages may be available from your peer.</p>
-    <button class="chat-suggestion" data-event-click="load_older_history()">Load older messages</button>
+    <p class="text muted">{{i18n:chat.banner.older_hint}}</p>
+    <button class="chat-suggestion" data-event-click="load_older_history()">{{i18n:chat.banner.load_older}}</button>
   </div>
   <div class="chat-messages-wrap">
   <div id="chat-messages" class="messages" data-mount-id="messages"
@@ -123,7 +123,7 @@
         </div>
       </div>
     </div>
-    <p class="text muted thinking" data-if="loading && status == ''">Thinking...</p>
+    <p class="text muted thinking" data-if="loading && status == ''">{{i18n:chat.thinking}}</p>
     <p class="text muted thinking" data-if="loading && status != ''" data-rml="status"></p>
   </div>
   <button class="chat-jump-latest" type="button" data-if="show_jump_to_latest"

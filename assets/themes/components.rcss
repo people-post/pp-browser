@@ -441,6 +441,17 @@ select selectbox option {
   cursor: text;
 }
 
+/* Without a sized scrollbar, text past the visible rows scrolls away with no hint. */
+.prompt-composer-input scrollbarvertical {
+  width: 6dp;
+}
+
+.prompt-composer-input scrollbarvertical sliderbar {
+  width: 6dp;
+  min-height: 16dp;
+  border-radius: 3dp;
+}
+
 .prompt-composer-footer {
   display: flex;
   flex-direction: row;
@@ -591,17 +602,6 @@ select selectbox option {
 
 .bubble-assistant strong {
   font-weight: bold;
-}
-
-.chat-sources {
-  display: block;
-  margin-top: 8dp;
-}
-
-.chat-sources p {
-  font-size: 12dp;
-  margin-top: 2dp;
-  margin-bottom: 0;
 }
 
 .code-block {
@@ -1382,6 +1382,11 @@ select selectbox option {
   flex-shrink: 0;
 }
 
+/* Collapse / expand the list pane; sits at the bottom of the expanded rail. */
+.shell-nav-collapse {
+  height: 28dp;
+}
+
 .shell-nav-tab-icon-wrap {
   position: relative;
   display: flex;
@@ -1554,8 +1559,26 @@ select selectbox option {
   box-sizing: border-box;
 }
 
+/* May shrink (down to its minimum) so a wide list never squeezes the primary pane to nothing. */
 .shell-pane-secondary {
-  flex: 0 0 240dp;
+  flex: 0 1 240dp;
+  min-width: 200dp;
+}
+
+/* Width is overridden by the inline style from ShellHost (user-resizable); collapsed hides the pane. */
+.shell-pane-secondary--collapsed {
+  display: none;
+}
+
+/* Drag handle between secondary and primary: 6dp hit area straddling the pane border, zero layout width. */
+.shell-splitter {
+  position: relative;
+  z-index: 3;
+  flex: 0 0 6dp;
+  width: 6dp;
+  height: 100%;
+  margin: 0 -3dp;
+  cursor: ew-resize;
 }
 
 .shell-pane-primary {
@@ -2770,6 +2793,11 @@ input.checkbox {
 
 .sidebar-session-icon svg {
   flex-shrink: 0;
+}
+
+.sidebar-session-date {
+  flex-shrink: 0;
+  font-size: 11dp;
 }
 
 .sidebar-unread {

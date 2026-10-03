@@ -1,5 +1,6 @@
 #include "feature/ai/TurnExecutor.h"
 
+#include "domain/ai/LocalizedLabels.h"
 #include "domain/ai/ToolResultFormatter.h"
 #include "domain/people/PeopleDiscoveryContactAdapt.h"
 #include "domain/people/ContactJson.h"
@@ -194,6 +195,7 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
 
     // Directory hits win the list; local contacts annotate "In contacts" / Message by contact_id.
     // Self hits are already dropped in ConversationsFacade::SearchPeople.
+    people_options.labels = LocalizedPeopleDiscoveryLabels();
     result.people_list_blocks = BuildPeopleDiscoveryBlocksJson(hits, contacts, people_options);
   }
 

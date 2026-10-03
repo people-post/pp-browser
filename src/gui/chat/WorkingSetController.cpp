@@ -1,6 +1,7 @@
 #include "gui/chat/WorkingSetController.h"
 
 #include "domain/ui/ChatFormHelper.h"
+#include "foundation/i18n/LocalizationService.h"
 #include "gui/shell/DataModelHost.h"
 
 #include "common/ValueJson.h"
@@ -68,11 +69,10 @@ void WorkingSetController::ClearAll() {
 
 void WorkingSetController::ShowUnavailable(const std::string& entry_id) {
   shell_.working_set_active = true;
-  shell_.working_set_title = "Results unavailable";
+  shell_.working_set_title = Tr("working_set.unavailable_title").c_str();
   shell_.working_set_subtitle = "";
   shell_.working_set_rml =
-      ui::String("<p class=\"muted\">These results are no longer available. Run the search again "
-                 "from chat if you still need them.</p>");
+      ui::String(("<p class=\"muted\">" + Tr("working_set.unavailable_body") + "</p>").c_str());
   active_affinity_ = WorkingSetAffinity::None;
   active_entry_id_ = entry_id;
   shell_.working_set = {};
@@ -179,8 +179,14 @@ std::vector<WorkingSetCandidate> WorkingSetController::RestoreEntry(
   std::vector<WorkingSetCandidate> hydrated = HydrateCandidates(candidates, entry_id);
   by_entry_[entry_id] = hydrated;
   actions_by_entry_[entry_id] = std::move(chat_actions);
+  const bool was_open = shell_navigation_.snapshot ? shell_navigation_.snapshot().auxiliary_open : false;
   if (shell_navigation_.set_auxiliary_available) {
     shell_navigation_.set_auxiliary_available(true);
+  }
+  // The expanded shell opens the pane as soon as it becomes available. A restore has nothing
+  // selected, so that showed an empty panel on every switch back to the thread.
+  if (!was_open && shell_navigation_.close_auxiliary) {
+    shell_navigation_.close_auxiliary();
   }
   return hydrated;
 }

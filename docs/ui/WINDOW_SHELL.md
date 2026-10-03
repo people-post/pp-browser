@@ -53,6 +53,14 @@ Resizing between compact and expanded migrates Me between sheet and tab when app
 
 The auxiliary pane is evolving from a reply mirror into a **working set** for browsable/actionable AI output (lists, forms, tables). See [WORKING_SET_PANEL.md](WORKING_SET_PANEL.md) for the implementation plan.
 
+### Resizable / collapsible secondary pane (expanded only)
+
+In expanded layout a splitter (`#shell-pane-splitter`, 6dp hit area straddling the secondary pane's border) sits between the secondary and primary panes. Compact layout never emits it and ignores the stored values; the nav rail is not collapsible.
+
+- **Resize:** drag the splitter (`ShellSplitterDrag`: mousedown on the handle plus document-level mousemove/mouseup). During the drag only the pane's inline `flex` is set (`0 1 <N>dp`; the pane may shrink to its 200dp `min-width` so the primary pane keeps room in a narrow window), with no shell remount. Width is `start width + Δmouse_x / dp ratio`, clamped to 200–480 dp (`ShellLayout::ClampSidebarWidthDp`). On mouseup `ShellState::sidebar_width_dp` is updated and persisted. `SerializeExpandedBase` emits the same inline `flex`, so re-serialization keeps the width.
+- **Collapse:** a chevron button at the bottom of the nav rail (`toggle_sidebar()`, shown in expanded layout on tabs with a secondary pane) flips `sidebar_collapsed` and remounts; the pane stays in the DOM with `display: none` (pane bodies keep mounted) and no splitter is emitted. The same button, now pointing right, expands it; so does a nav-rail click on any tab that has a secondary pane, including the active tab (`ShellLayout::SidebarCollapsedAfterNavSelect`). Programmatic `SelectNavTab` does not change the flag. Home has no secondary pane and is unaffected.
+- **Persistence:** `ProfilePreferences::sidebar_width_dp` (default 240) and `sidebar_collapsed` (default false) in `preferences.json`; `Application` wires `ShellHost::SetSidebarPrefs` / `SetOnSidebarChanged`. See [contracts/DATA_LAYOUT.md](../contracts/DATA_LAYOUT.md).
+
 Layout mode switches at **768dp** width (`ShellConfig::compact_breakpoint_dp`).
 
 **Team UI review mock:** open [`shell_layout_review.html`](shell_layout_review.html) in a browser for side-by-side expanded vs compact page compositions (static HTML facsimile of the RML shell — not a live render).

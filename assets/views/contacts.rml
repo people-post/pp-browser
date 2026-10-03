@@ -1,7 +1,7 @@
 <div class="contacts-panel" data-model="contacts">
   <div class="contacts-list-view">
     <div class="contacts-header row">
-      <p class="contacts-header-title">Contacts</p>
+      <p class="contacts-header-title">{{i18n:contacts.title}}</p>
       <div class="contacts-header-actions row">
         <button class="contacts-find-btn" type="button" data-event-click="on_add_contact_menu()">
           <svg src="../icons/plus.svg" width="14" height="14" crop-to-content="true"></svg>
@@ -11,7 +11,7 @@
 
     <div class="contacts-search">
       <input class="field contacts-search-field" type="text" data-value="search_query"
-             data-event-change="on_search_changed()" placeholder="Search contacts"/>
+             data-event-change="on_search_changed()" placeholder="{{i18n:contacts.search_placeholder}}"/>
     </div>
 
     <div class="contacts-list">
@@ -35,9 +35,9 @@
           <div class="contacts-row-title-line row">
             <p class="contacts-row-title" data-rml="contact.title"></p>
             <span class="contacts-trust-badge contacts-trust-badge--friendly"
-                  data-if="contact.trust == 'friendly'">Friendly</span>
+                  data-if="contact.trust == 'friendly'">{{i18n:contacts.trust.friendly}}</span>
             <span class="contacts-trust-badge contacts-trust-badge--blocked"
-                  data-if="contact.trust == 'blocked'">Blocked</span>
+                  data-if="contact.trust == 'blocked'">{{i18n:contacts.trust.blocked}}</span>
             <span class="badge-count contacts-unread"
                   data-if="contact.unread_count > 0"
                   data-rml="contact.unread_display"></span>
@@ -47,13 +47,13 @@
       </div>
 
       <div class="contacts-empty stack" data-if="contacts.size == 0 && search_query == ''">
-        <p class="text muted">No contacts yet. Tap + to add one, find people on the network, or ask the assistant.</p>
+        <p class="text muted">{{i18n:contacts.empty_hint}}</p>
         <button class="chat-suggestion btn-icon" type="button" data-event-click="find_someone()">
           <svg src="../icons/sparkle.svg" width="14" height="14" crop-to-content="true"></svg>
-          Find someone
+          {{i18n:contacts.find_someone}}
         </button>
       </div>
-      <p class="text muted" data-if="contacts.size == 0 && search_query != ''">No matching contacts.</p>
+      <p class="text muted" data-if="contacts.size == 0 && search_query != ''">{{i18n:people_picker.no_matches}}</p>
     </div>
   </div>
 </div>

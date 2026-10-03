@@ -1,6 +1,8 @@
 body {
   font-family: LatoLatin;
   font-size: 16dp;
+  /* CJK text has no spaces; without this a Chinese sentence never wraps and runs off its box. */
+  word-break: break-word;
   padding: 24dp;
 }
 
