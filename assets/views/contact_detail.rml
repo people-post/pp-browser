@@ -17,9 +17,9 @@
         <div class="contacts-row-title-line row">
           <p class="contacts-header-title" data-rml="selected.title"></p>
           <span class="contacts-trust-badge contacts-trust-badge--friendly"
-                data-if="selected.trust_key == 'friendly'">Friendly</span>
+                data-if="selected.trust_key == 'friendly'">{{i18n:contacts.trust.friendly}}</span>
           <span class="contacts-trust-badge contacts-trust-badge--blocked"
-                data-if="selected.trust_key == 'blocked'">Blocked</span>
+                data-if="selected.trust_key == 'blocked'">{{i18n:contacts.trust.blocked}}</span>
         </div>
         <p class="contacts-row-subtitle text muted" data-if="selected.subtitle != ''" data-rml="selected.subtitle"></p>
       </div>
@@ -28,66 +28,66 @@
 
   <div class="contacts-detail-body stack">
     <div class="contact-detail-section stack">
-      <p class="settings-section-title">You</p>
+      <p class="settings-section-title">{{i18n:contacts.you}}</p>
       <label class="settings-field contacts-edit-field">
-        <span class="text muted">Display name</span>
+        <span class="text muted">{{i18n:contacts.display_name}}</span>
         <input class="field" type="text" data-value="selected.display_name"
-               data-event-change="on_contact_field_changed()" placeholder="Name"/>
+               data-event-change="on_contact_field_changed()" placeholder="{{i18n:contacts.name_placeholder}}"/>
       </label>
       <div class="contacts-trust-actions row">
         <button class="btn btn-secondary contacts-trust-btn"
                 data-class-contacts-trust-btn--active="selected.trust_key == 'friendly'"
-                type="button" data-event-click="set_trust('friendly')">Friendly</button>
+                type="button" data-event-click="set_trust('friendly')">{{i18n:contacts.trust.friendly}}</button>
         <button class="btn btn-secondary contacts-trust-btn"
                 data-class-contacts-trust-btn--active="selected.trust_key == 'unknown'"
-                type="button" data-event-click="set_trust('unknown')">Unknown</button>
+                type="button" data-event-click="set_trust('unknown')">{{i18n:contacts.trust.unknown}}</button>
         <button class="btn btn-secondary contacts-trust-btn"
                 data-class-contacts-trust-btn--active="selected.trust_key == 'blocked'"
-                type="button" data-event-click="set_trust('blocked')">Blocked</button>
+                type="button" data-event-click="set_trust('blocked')">{{i18n:contacts.trust.blocked}}</button>
       </div>
     </div>
 
     <div class="contact-detail-section stack">
-      <p class="settings-section-title">Directory</p>
+      <p class="settings-section-title">{{i18n:contacts.directory}}</p>
       <p class="text muted me-profile-meta" data-if="selected.nickname != ''">
-        Nickname: <span data-rml="selected.nickname"></span>
+        {{i18n:contacts.nickname_label}} <span data-rml="selected.nickname"></span>
       </p>
       <p class="text muted me-profile-meta" data-if="selected.relay_id != ''">
-        Relay ID: <span data-rml="selected.relay_id"></span>
+        {{i18n:contacts.relay_id_label}} <span data-rml="selected.relay_id"></span>
       </p>
       <p class="text muted me-profile-meta" data-if="selected.relay_id == ''">
-        Relay ID: not linked yet
+        {{i18n:contacts.relay_id_unlinked}}
       </p>
       <p class="text muted me-profile-meta" data-if="selected.peer_id != ''">
-        Peer ID: <span data-rml="selected.peer_id"></span>
+        {{i18n:contacts.peer_id_label}} <span data-rml="selected.peer_id"></span>
       </p>
       <p class="text muted me-profile-meta" data-if="selected.multiaddrs_summary != ''">
-        Multiaddrs: <span data-rml="selected.multiaddrs_summary"></span>
+        {{i18n:contacts.multiaddrs_label}} <span data-rml="selected.multiaddrs_summary"></span>
       </p>
       <p class="text muted me-profile-meta" data-if="selected.signing_fingerprint != ''">
-        Signing fingerprint: <span data-rml="selected.signing_fingerprint"></span>
+        {{i18n:contacts.signing_fingerprint_label}} <span data-rml="selected.signing_fingerprint"></span>
       </p>
       <p class="text muted me-profile-meta" data-rml="selected.remote_updated"></p>
       <div class="me-profile-actions row">
         <div data-if="selected.has_relay_id">
           <button class="btn btn-secondary btn-icon" type="button" data-event-click="sync_contact_remote()">
             <svg src="../icons/sync.svg" width="14" height="14" crop-to-content="true"></svg>
-            Sync from directory…
+            {{i18n:contacts.sync_directory}}
           </button>
         </div>
         <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_contact_id()">
           <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>
-          Copy ID
+          {{i18n:contacts.copy_id}}
         </button>
         <button class="btn btn-secondary btn-icon" type="button" data-event-click="share_contact()">
           <svg src="../icons/share.svg" width="14" height="14" crop-to-content="true"></svg>
-          Share
+          {{i18n:common.share}}
         </button>
       </div>
     </div>
 
     <div class="contacts-threads stack" data-if="selected.threads.size > 0">
-      <p class="settings-section-title">Conversations</p>
+      <p class="settings-section-title">{{i18n:contacts.conversations}}</p>
       <div data-for="thread : selected.threads" class="contacts-thread-row"
            data-event-click="open_thread(thread.id)">
         <div class="contacts-row-icon" data-if="thread.kind == 'private'">
@@ -106,25 +106,25 @@
     <div class="contact-detail-danger me-profile-actions row">
       <button class="btn btn-danger-soft btn-icon" type="button" data-event-click="remove_contact()">
         <svg src="../icons/trash.svg" width="14" height="14" crop-to-content="true"></svg>
-        Remove contact…
+        {{i18n:contacts.remove_button}}
       </button>
     </div>
   </div>
 
   <div class="contacts-actions stack">
     <p class="text muted contacts-actions-hint" data-if="selected.can_message">
-      Secure uses a shared key. Public chat is encrypted without a private shared key.
+      {{i18n:contacts.actions_hint}}
     </p>
     <p class="text muted contacts-actions-hint" data-if="!selected.can_message" data-rml="selected.message_hint"></p>
     <div class="contacts-action-buttons row" data-if="selected.can_message">
       <button class="btn btn-primary btn-icon contacts-action-secure" type="button"
               data-event-click="secure_message()">
         <svg src="../icons/lock.svg" width="14" height="14" crop-to-content="true"></svg>
-        Secure message
+        {{i18n:contacts.secure_message}}
       </button>
       <button class="btn btn-secondary btn-icon" type="button" data-event-click="start_chat()">
         <svg src="../icons/message.svg" width="14" height="14" crop-to-content="true"></svg>
-        Public chat
+        {{i18n:contacts.public_chat}}
       </button>
     </div>
   </div>

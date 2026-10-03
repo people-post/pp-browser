@@ -70,16 +70,20 @@ void SecuritySettingsSection::SyncFromSession(const BootstrapResult& bootstrap, 
     pin = commands_->load_pin_protection();
   }
   if (!pin.ready) {
-    state.pin_protection_status = "Not set up";
+    state.pin_protection_status = Tr("settings.security.pin_status.not_setup");
+    state.pin_protection_is_default = false;
+    state.pin_protection_not_setup = true;
     state.security_can_change_pin = false;
     state.security_can_export_link = false;
     return;
   }
   if (bootstrap.profile_prefs.pin_is_default) {
-    state.pin_protection_status = "App default";
+    state.pin_protection_status = Tr("settings.security.pin_status.app_default");
   } else {
-    state.pin_protection_status = "Custom PIN";
+    state.pin_protection_status = Tr("settings.security.pin_status.custom");
   }
+  state.pin_protection_is_default = bootstrap.profile_prefs.pin_is_default;
+  state.pin_protection_not_setup = false;
   state.security_can_change_pin = pin.unlocked;
   bool registered = false;
   if (commands_ && commands_->load_profile_identity) {

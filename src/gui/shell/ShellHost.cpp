@@ -1006,7 +1006,7 @@ void ShellHost::SetActivity(bool visible, const ui::String& message) {
   } else if (!message.empty()) {
     state_.statusbar_activity = message;
   } else {
-    state_.statusbar_activity = "Thinking...";
+    state_.statusbar_activity = Tr("chat.thinking").c_str();
   }
   DirtyStatusChrome();
 }

@@ -254,9 +254,9 @@ std::vector<ContextMenuAction> ContextMenuHost::BuildTextActions() const {
   auto paste_enabled = [editor]() { return editor != nullptr; };
   auto paste_run = [editor]() { PasteIntoEditor(editor); };
 
-  actions.push_back({"copy", "Copy", copy_enabled, copy_run});
-  actions.push_back({"select_all", "Select All", select_all_enabled, select_all_run});
-  actions.push_back({"paste", "Paste", paste_enabled, paste_run});
+  actions.push_back({"copy", Tr("common.copy"), copy_enabled, copy_run});
+  actions.push_back({"select_all", Tr("common.select_all"), select_all_enabled, select_all_run});
+  actions.push_back({"paste", Tr("common.paste"), paste_enabled, paste_run});
   return actions;
 }
 

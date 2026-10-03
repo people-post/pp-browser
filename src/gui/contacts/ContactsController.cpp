@@ -60,9 +60,9 @@ std::string MultiaddrsSummary(const std::vector<std::string>& multiaddrs) {
     return {};
   }
   if (multiaddrs.size() == 1) {
-    return "1 address";
+    return Tr("contacts.addresses_one");
   }
-  return std::to_string(multiaddrs.size()) + " addresses";
+  return Tr("contacts.addresses_many", {{"count", std::to_string(multiaddrs.size())}});
 }
 
 bool IsContactDetailTransientActive(const ShellChromeSnapshot& chrome) {
@@ -72,29 +72,29 @@ bool IsContactDetailTransientActive(const ShellChromeSnapshot& chrome) {
 std::string IdentityKindLabel(const ContactIdKind kind) {
   switch (kind) {
   case ContactIdKind::Account:
-    return "Account ID";
+    return Tr("contacts.id_kind.account");
   case ContactIdKind::RelayUser:
-    return "Relay ID";
+    return Tr("contacts.id_kind.relay");
   case ContactIdKind::PeerId:
-    return "Peer ID";
+    return Tr("contacts.id_kind.peer");
   case ContactIdKind::Blockchain:
-    return "Blockchain";
+    return Tr("contacts.id_kind.blockchain");
   case ContactIdKind::Custom:
-    return "Custom";
+    return Tr("contacts.id_kind.custom");
   }
-  return "ID";
+  return Tr("contacts.id_kind.generic");
 }
 
 std::string TrustDisplayLabel(const TrustLevel level) {
   switch (level) {
   case TrustLevel::Friendly:
-    return "Friendly";
+    return Tr("contacts.trust.friendly");
   case TrustLevel::Blocked:
-    return "Blocked";
+    return Tr("contacts.trust.blocked");
   case TrustLevel::Unknown:
-    return "Unknown";
+    return Tr("contacts.trust.unknown");
   }
-  return "Unknown";
+  return Tr("contacts.trust.unknown");
 }
 
 std::string PrimaryIdOfKind(const Contact& contact, const ContactIdKind kind) {
@@ -135,13 +135,13 @@ std::string PrimaryIdentityValue(const Contact& contact) {
 std::string ChannelLabel(const ThreadChannel channel) {
   switch (channel) {
   case ThreadChannel::E2e:
-    return "Secure";
+    return Tr("contacts.channel.secure");
   case ThreadChannel::E2ePublic:
-    return "Public";
+    return Tr("contacts.channel.public");
   case ThreadChannel::None:
-    return "Chat";
+    return Tr("contacts.channel.chat");
   }
-  return "Chat";
+  return Tr("contacts.channel.chat");
 }
 
 std::string ThreadKindClass(const ThreadChannel channel) {
@@ -160,7 +160,7 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact, cons
   ContactsController::ContactListRow row;
   row.id = contact.id.c_str();
   const std::string title = ContactEffectiveTitle(contact);
-  row.title = title.empty() ? "New contact" : title.c_str();
+  row.title = title.empty() ? Tr("people_picker.unnamed").c_str() : title.c_str();
   row.subtitle = PrimaryIdentityValue(contact).c_str();
   if (row.subtitle.empty() && !contact.server_nickname.empty() &&
       contact.server_nickname != contact.display_name) {
@@ -178,7 +178,7 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact, cons
     const std::string stable = AvatarStableId(PrimaryIdOfKind(contact, ContactIdKind::Account),
                                               PrimaryIdOfKind(contact, ContactIdKind::RelayUser),
                                               PrimaryIdOfKind(contact, ContactIdKind::PeerId), contact.id);
-    const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? "New contact" : title, stable);
+    const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? Tr("people_picker.unnamed") : title, stable);
     row.avatar_letter = glyph.letter.c_str();
     row.avatar_tone = glyph.tone;
   }
@@ -196,7 +196,7 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   ContactsController::ContactDetail detail;
   detail.id = contact.id.c_str();
   const std::string title = ContactEffectiveTitle(contact);
-  detail.title = title.empty() ? "New contact" : title.c_str();
+  detail.title = title.empty() ? Tr("people_picker.unnamed").c_str() : title.c_str();
   detail.display_name = contact.local.display_name.c_str();
   detail.nickname = contact.remote.nickname.c_str();
   detail.relay_id = PrimaryIdOfKind(contact, ContactIdKind::RelayUser).c_str();
@@ -220,7 +220,7 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
     const std::string stable = AvatarStableId(PrimaryIdOfKind(contact, ContactIdKind::Account),
                                               PrimaryIdOfKind(contact, ContactIdKind::RelayUser),
                                               PrimaryIdOfKind(contact, ContactIdKind::PeerId), contact.id);
-    const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? "New contact" : title, stable);
+    const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? Tr("people_picker.unnamed") : title, stable);
     detail.avatar_letter = glyph.letter.c_str();
     detail.avatar_tone = glyph.tone;
   }
@@ -228,9 +228,9 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
     ports.ensure_contact_icon_cached(contact);
   }
   if (contact.remote.fetched_at > 0) {
-    detail.remote_updated = "From directory";
+    detail.remote_updated = Tr("contacts.from_directory").c_str();
   } else {
-    detail.remote_updated = "Not synced yet";
+    detail.remote_updated = Tr("contacts.not_synced").c_str();
   }
 
   detail.identities.reserve(contact.ids.size());
@@ -292,18 +292,18 @@ void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const 
   const DirectChatTarget target = DirectChatTargetFromContact(contact, ThreadChannel::E2ePublic);
   if (target.peer_identity_value.empty()) {
     detail.can_message = false;
-    detail.message_hint = "Add a relay ID, or a peer ID with multiaddr, to message.";
+    detail.message_hint = Tr("contacts.hint.add_id").c_str();
     return;
   }
   if (ports.snapshot && ports.snapshot().messaging_ready && ports.is_contact_reachable) {
     detail.can_message = ports.is_contact_reachable(contact);
     if (!detail.can_message) {
       detail.message_hint =
-          "Add a relay ID or multiaddr, or connect on the same network so this PeerId becomes dialable.";
+          Tr("contacts.hint.not_dialable").c_str();
       return;
     }
     if (contact.multiaddrs.empty()) {
-      detail.message_hint = "Relay messaging available. Add a multiaddr for a pinned direct link.";
+      detail.message_hint = Tr("contacts.hint.relay_pinned").c_str();
     } else {
       detail.message_hint = "";
     }
@@ -311,12 +311,12 @@ void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const 
   }
   if (target.peer_identity_kind == ContactIdKindToString(ContactIdKind::PeerId) && contact.multiaddrs.empty()) {
     detail.can_message = false;
-    detail.message_hint = "Add a multiaddr for direct messaging without relay.";
+    detail.message_hint = Tr("contacts.hint.direct_no_relay").c_str();
     return;
   }
   detail.can_message = true;
   if (contact.multiaddrs.empty()) {
-    detail.message_hint = "Relay messaging available. Add a multiaddr for a direct link.";
+    detail.message_hint = Tr("contacts.hint.relay_direct").c_str();
   } else {
     detail.message_hint = "";
   }
@@ -813,7 +813,7 @@ bool ContactsController::FlushSelectedContact() {
 
   Contact updated = BuildContactFromDetail(**existing, selected_);
   if (!contacts_ports_.upsert_contact(updated)) {
-    UserFeedback::Fail("Could not save contact");
+    UserFeedback::Fail(Tr("contacts.err.save"));
     return false;
   }
 
@@ -845,7 +845,7 @@ void ContactsController::OnAddContactMenu(ui::Event& ev) {
   });
   actions.push_back({
       "find_someone",
-      "Find someone",
+      Tr("contacts.find_someone"),
       nullptr,
       []() { ContactsController::Instance().OnFindSomeone(); },
       "../icons/sparkle.svg",
@@ -859,7 +859,7 @@ void ContactsController::OnAddContact() {
   }
   auto created = contacts_ports_.add_empty_contact();
   if (!created) {
-    UserFeedback::Fail("Could not add contact");
+    UserFeedback::Fail(Tr("contacts.err.add"));
     return;
   }
   SyncFromStore();
@@ -910,7 +910,7 @@ void ContactsController::OnSecureMessage() {
   }
   unlock_ensure_.ensure_unlocked([this](const bool unlocked) {
     if (!unlocked) {
-      ShowToast("PIN required to continue");
+      ShowToast(Tr("people_picker.pin_required"));
       return;
     }
     const std::string contact_id = selected_.id.c_str();
@@ -943,23 +943,23 @@ void ContactsController::OnFindSomeone() {
 
 void ContactsController::OnCopyId() {
   std::string value = selected_.relay_id.c_str();
-  const char* label = "Relay ID";
+  std::string label = Tr("contacts.id_kind.relay");
   if (value.empty()) {
     value = selected_.peer_id.c_str();
-    label = "Peer ID";
+    label = Tr("contacts.id_kind.peer");
   }
   if (value.empty() && !selected_.identities.empty()) {
     value = selected_.identities.front().value.c_str();
-    label = "ID";
+    label = Tr("contacts.id_kind.generic");
   }
   if (value.empty()) {
-    ShowToast("No ID to copy");
+    ShowToast(Tr("contacts.toast.no_id"));
     return;
   }
   if (ui::SystemInterface* system = ui::GetSystemInterface()) {
     system->SetClipboardText(value.c_str());
   }
-  ShowToast(std::string(label) + " copied");
+  ShowToast(Tr("contacts.toast.id_copied", {{"label", label}}));
 }
 
 void ContactsController::OnShareContact() {
@@ -987,13 +987,13 @@ void ContactsController::OnShareContact() {
     }
   }
   if (invite.empty()) {
-    ShowToast("Nothing to share");
+    ShowToast(Tr("contacts.toast.nothing_share"));
     return;
   }
   if (ui::SystemInterface* system = ui::GetSystemInterface()) {
     system->SetClipboardText(invite.c_str());
   }
-  ShowToast("Contact copied");
+  ShowToast(Tr("contacts.toast.copied"));
 }
 
 void ContactsController::OnSetTrust(const std::string& trust) {
@@ -1009,13 +1009,13 @@ void ContactsController::OnSetTrust(const std::string& trust) {
   updated.local.trust = TrustLevelFromString(trust);
   SyncContactMirrors(updated);
   if (!contacts_ports_.upsert_contact(updated)) {
-    UserFeedback::Fail("Could not update trust");
+    UserFeedback::Fail(Tr("contacts.err.trust"));
     return;
   }
   LoadSelectedDetail(selected_.id.c_str());
   SyncFromStore();
   DirtyAll();
-  ShowToast("Trust updated");
+  ShowToast(Tr("contacts.toast.trust_updated"));
   NotifySurfaceChanged();
 }
 
@@ -1027,17 +1027,17 @@ void ContactsController::OnSyncRemote() {
   FlushPending();
   const std::string relay_id = selected_.relay_id.c_str();
   if (relay_id.empty()) {
-    UserFeedback::Fail("No relay ID to sync");
+    UserFeedback::Fail(Tr("contacts.err.no_relay_id"));
     return;
   }
   auto hit = contacts_ports_.lookup_relay_user(relay_id);
   if (!hit) {
-    UserFeedback::Fail(hit.error().message.empty() ? "Could not sync contact" : hit.error().message);
+    UserFeedback::Fail(hit.error().message.empty() ? Tr("contacts.err.sync") : hit.error().message);
     return;
   }
   if (hit->signing_public_key_b64 && !hit->signing_public_key_b64->empty() && contacts_ports_.register_peer_signing_key) {
     if (!hit->account_id || hit->account_id->empty()) {
-      UserFeedback::Fail("Directory hit missing Account ID");
+      UserFeedback::Fail(Tr("contacts.err.missing_account_id"));
       return;
     }
     contacts_ports_.register_peer_signing_key(ContactIdKindToString(ContactIdKind::Account), *hit->account_id,
@@ -1045,7 +1045,7 @@ void ContactsController::OnSyncRemote() {
   }
   if (hit->kem_public_key_b64 && !hit->kem_public_key_b64->empty() && contacts_ports_.register_peer_kem_key) {
     if (!hit->account_id || hit->account_id->empty()) {
-      UserFeedback::Fail("Directory hit missing Account ID");
+      UserFeedback::Fail(Tr("contacts.err.missing_account_id"));
       return;
     }
     contacts_ports_.register_peer_kem_key(ContactIdKindToString(ContactIdKind::Account), *hit->account_id,
@@ -1053,7 +1053,7 @@ void ContactsController::OnSyncRemote() {
   }
   auto applied = contacts_ports_.apply_remote_snapshot(selected_.id.c_str(), *hit, util::NowUnixMs());
   if (!applied) {
-    UserFeedback::Fail(applied.error().message.empty() ? "Could not save synced contact"
+    UserFeedback::Fail(applied.error().message.empty() ? Tr("contacts.err.save_synced")
                                                        : applied.error().message);
     return;
   }
@@ -1063,7 +1063,7 @@ void ContactsController::OnSyncRemote() {
   LoadSelectedDetail(selected_.id.c_str());
   SyncFromStore();
   DirtyAll();
-  ShowToast("Contact synced");
+  ShowToast(Tr("contacts.toast.synced"));
   NotifySurfaceChanged();
 }
 
@@ -1074,10 +1074,8 @@ void ContactsController::OnRemoveContact() {
   }
 
   const std::string contact_id = selected_.id.c_str();
-  const std::string display_name = selected_.display_name.empty() ? "this contact" : selected_.display_name.c_str();
-  const std::string message = "Remove " + display_name +
-                              " from contacts? Conversations stay on this device. "
-                              "You can add them again later from Find.";
+  const std::string display_name = selected_.display_name.empty() ? Tr("contacts.this_contact") : selected_.display_name.c_str();
+  const std::string message = Tr("contacts.remove_confirm_body", {{"name", display_name}});
 
   ShowConfirm(Tr("contacts.remove"), message, [this, contact_id](const bool ok) {
     if (!ok) {
@@ -1085,11 +1083,11 @@ void ContactsController::OnRemoveContact() {
     }
     auto removed = contacts_ports_.remove_contact(contact_id);
     if (!removed) {
-      UserFeedback::Fail("Could not remove contact");
+      UserFeedback::Fail(Tr("contacts.err.remove"));
       return;
     }
     if (!*removed) {
-      ShowToast("Contact not found");
+      ShowToast(Tr("contacts.err.not_found"));
       return;
     }
     if (!CloseContactDetailPane()) {
@@ -1097,7 +1095,7 @@ void ContactsController::OnRemoveContact() {
     }
     SyncFromStore();
     DirtyAll();
-    ShowToast("Contact removed");
+    ShowToast(Tr("contacts.toast.removed"));
     if (contacts_ports_.notify_thread_changed) {
       contacts_ports_.notify_thread_changed();
     }
