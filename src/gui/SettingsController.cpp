@@ -779,10 +779,17 @@ void SettingsController::MountSelectedSettingsSection() {
 }
 
 void SettingsController::OnShellLayoutSynced() {
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
   if (!suppress_auto_save_) {
+    // A remount this controller did not start (e.g. the list pane was collapsed) still empties the
+    // detail pane's section mount; fill it again or the open section shows blank.
+    if (chrome.settings_detail_primary && !selected_id_.empty()) {
+      suppress_auto_save_ = true;
+      UiEditSession::Instance().BeginRemount();
+      FinishPaneResync();
+    }
     return;
   }
-  const ShellChromeSnapshot chrome = ChromeSnapshot();
   if (chrome.nav_tab == NavTab::Me || chrome.account_sheet_open) {
     FinishPaneResync();
   } else {
