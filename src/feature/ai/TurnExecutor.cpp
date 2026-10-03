@@ -206,6 +206,7 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
     ArticleFeedBuildOptions feed_options;
     feed_options.labels = LocalizedArticleFeedLabels();
     feed_options.call_arguments = executed_calls[0].arguments;
+    feed_options.tool_name = executed_calls[0].name;
     if (std::string blocks = BuildArticleFeedBlocksJson(raw_results[0], feed_options); !blocks.empty()) {
       result.people_list_blocks = std::move(blocks);
     }

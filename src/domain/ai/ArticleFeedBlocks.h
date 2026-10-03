@@ -22,6 +22,8 @@ struct ArticleFeedBuildOptions {
   ArticleFeedLabels labels;
   /** Arguments of the tool call that produced the result; a "load more" payload repeats them with before_id. */
   Object call_arguments;
+  /** The feed tool that produced the result; "load more" calls the same one. */
+  std::string tool_name = "blog_articles";
   size_t max_items = 10;
 };
 

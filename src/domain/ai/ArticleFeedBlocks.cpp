@@ -162,7 +162,7 @@ std::string BuildArticleFeedBlocksJson(const std::string& raw_json, const Articl
     const size_t page_size = static_cast<size_t>(options.call_arguments.getNonNegInt("size").value_or(10));
     if (!last_id.empty() && shown >= page_size) {
       Object next = options.call_arguments;
-      next.set("tool", "blog_articles");
+      next.set("tool", options.tool_name);
       next.set("before_id", last_id);
       list.set("footer_actions",
                ArrayValue({ObjectValue(MakeAction(labels.more, labels.more_message, std::move(next), "secondary"))}));
