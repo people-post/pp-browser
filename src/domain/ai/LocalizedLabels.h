@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/chat/PeopleDiscoveryBlocks.h"
+#include "domain/ai/ArticleFeedBlocks.h"
 #include "foundation/i18n/LocalizationService.h"
 
 #include <string>
@@ -38,6 +39,19 @@ inline PeopleDiscoveryLabels LocalizedPeopleDiscoveryLabels() {
   l.local_many = TrOrDefault("people.result.local_many", d.local_many);
   l.contacts_title = TrOrDefault("people.result.contacts_title", d.contacts_title);
   l.no_people = TrOrDefault("people.result.no_people", d.no_people);
+  return l;
+}
+
+/** Article feed block labels in the UI language. Only for blocks shown to the user, never for LLM text. */
+inline ArticleFeedLabels LocalizedArticleFeedLabels() {
+  const ArticleFeedLabels d;
+  ArticleFeedLabels l;
+  l.intro = TrOrDefault("feed.result.intro", d.intro);
+  l.title = TrOrDefault("feed.result.title", d.title);
+  l.empty = TrOrDefault("feed.result.empty", d.empty);
+  l.open = TrOrDefault("feed.result.open", d.open);
+  l.more = TrOrDefault("feed.result.more", d.more);
+  l.more_message = TrOrDefault("feed.result.more_message", d.more_message);
   return l;
 }
 

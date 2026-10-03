@@ -26,3 +26,18 @@ TEST(MessageRouterTest, AiThreadDropsTheAtAiPrefixAndOtherThreadsKeepTheText) {
   EXPECT_EQ(pbr::MessageRouter::TextForAgent(pbr::ThreadKind::Ai, "plain question"), "plain question");
   EXPECT_EQ(pbr::MessageRouter::TextForAgent(pbr::ThreadKind::Direct, "@ai+ hello"), "@ai+ hello");
 }
+
+TEST(MessageRouterTest, OnlyTypelessToolPayloadsInAiThreadsGoToTheAgent) {
+  using pbr::MessageRouter;
+  using pbr::ThreadKind;
+  const std::optional<std::string> tool(R"({"tool":"blog_articles","size":10})");
+  EXPECT_TRUE(MessageRouter::IsAgentToolPayload(ThreadKind::Ai, tool));
+  // A model-written button in a peer thread must not be treated as agent work.
+  EXPECT_FALSE(MessageRouter::IsAgentToolPayload(ThreadKind::Direct, tool));
+  EXPECT_FALSE(MessageRouter::IsAgentToolPayload(ThreadKind::Group, tool));
+  EXPECT_FALSE(MessageRouter::IsAgentToolPayload(ThreadKind::Ai, std::string(R"({"type":"add_contact","tool":"x"})")));
+  EXPECT_FALSE(MessageRouter::IsAgentToolPayload(ThreadKind::Ai, std::string(R"({"type":"show_contact"})")));
+  EXPECT_FALSE(MessageRouter::IsAgentToolPayload(ThreadKind::Ai, std::string(R"({"tool":""})")));
+  EXPECT_FALSE(MessageRouter::IsAgentToolPayload(ThreadKind::Ai, std::string("not json")));
+  EXPECT_FALSE(MessageRouter::IsAgentToolPayload(ThreadKind::Ai, std::nullopt));
+}

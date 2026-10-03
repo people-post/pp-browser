@@ -5,6 +5,8 @@
 #include "foundation/error/AppError.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/thread/IThreadStore.h"
+#include "domain/ai/ToolRegistry.h"
+#include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
 
@@ -620,6 +622,96 @@ TEST_F(AgentSessionBriefStreamTest, FollowUpHistoryHasMarkerAndNoImage) {
   EXPECT_EQ(requests[1].history[0].content, "[Image] What is this?");
   EXPECT_EQ(requests[1].history[1].role, "assistant");
   EXPECT_EQ(requests[1].history[1].content, "A cat.");
+}
+
+// --- Home chips: tool payload turns run on the device, no stream and no completions call ---
+// The config's completions endpoint is a closed port, so a model call would surface as an Error event.
+
+class AgentSessionPayloadTurnTest : public AgentSessionBriefStreamTest {
+protected:
+  void StartWithTools(const bool with_articles) {
+    session_ = std::make_unique<AgentSession>();
+    session_->SetToolRegistrationHook([this, with_articles](ToolRegistry& registry) {
+      registry.Register(MakeTool(ToolDefinition{"search_people", "search", Object{}}, ToolMeta{},
+                                 [this](const Object& args) -> Roe<std::string> {
+                                   std::lock_guard lock(mu_);
+                                   calls_.push_back("search_people " + DumpJson(args));
+                                   return std::string("[]");
+                                 }));
+      if (with_articles) {
+        registry.Register(MakeTool(
+            ToolDefinition{"blog_articles", "articles", Object{}}, ToolMeta{},
+            [this](const Object& args) -> Roe<std::string> {
+              std::lock_guard lock(mu_);
+              calls_.push_back("blog_articles " + DumpJson(args));
+              return std::string(
+                  R"({"articles":[{"id":"a1","title":"","content":"First brief.","link_to":"https://apnews.com/x","created_at":1759000000},)"
+                  R"({"id":"a2","title":"Second","content":"Body.","link_to":"http://plain.example/y","created_at":1759000000000}]})");
+            }));
+      }
+    });
+    session_->Configure(MakeConfig("brief"));
+    session_->WaitForConfigureIdle();
+    ASSERT_TRUE(session_->IsConfigured());
+    session_->SetThreadStore(&store_);
+    Script({Meta(), Token("x"), Done("x")}, BriefAiOutcome::Done);
+  }
+
+  std::vector<std::string> Calls() {
+    std::lock_guard lock(mu_);
+    return calls_;
+  }
+
+  MemoryThreadStore store_;
+  std::vector<std::string> calls_;
+};
+
+TEST_F(AgentSessionPayloadTurnTest, ArticlesChipShowsTheFeedWithoutAnyModelCall) {
+  StartWithTools(true);
+  session_->SubmitToThread("t1", "Show me recent articles",
+                           std::string(R"({"tool":"blog_articles","brf_domain":"en","brf_language":"en","size":2})"));
+  const auto events = WaitForTurn();
+
+  EXPECT_TRUE(Requests().empty()); // no stream
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty()); // no completions call (it would fail on the closed port)
+  const auto ready = Of(events, AgentEventType::AssistantReady);
+  ASSERT_EQ(ready.size(), 1u);
+  EXPECT_EQ(ready[0].response_goal, ResponseGoal::DisplayFeed);
+  EXPECT_NE(ready[0].text.find("long_list"), std::string::npos);
+  EXPECT_NE(ready[0].text.find("apnews.com"), std::string::npos);
+  EXPECT_NE(ready[0].text.find("open_url"), std::string::npos);
+  EXPECT_NE(ready[0].text.find("before_id"), std::string::npos); // a full page offers "load more"
+  const auto calls = Calls();
+  ASSERT_EQ(calls.size(), 1u);
+  EXPECT_NE(calls[0].find(R"("brf_domain":"en")"), std::string::npos);
+}
+
+TEST_F(AgentSessionPayloadTurnTest, ArticlesChipWithoutTheToolSaysSoAndAsksNoModel) {
+  StartWithTools(false);
+  session_->SubmitToThread("t1", "Show me recent articles",
+                           std::string(R"({"tool":"blog_articles","brf_domain":"en","brf_language":"en","size":10})"));
+  const auto events = WaitForTurn();
+
+  EXPECT_TRUE(Requests().empty());
+  EXPECT_TRUE(Of(events, AgentEventType::AssistantReady).empty());
+  const auto errors = Of(events, AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u);
+  EXPECT_EQ(errors[0].message, "Articles are unavailable right now.");
+}
+
+TEST_F(AgentSessionPayloadTurnTest, FindSomeoneChipListsThePeopleWithoutAnyModelCall) {
+  StartWithTools(true);
+  session_->SubmitToThread("t1", "Find someone on the network", std::string(R"({"tool":"search_people","query":""})"));
+  const auto events = WaitForTurn();
+
+  EXPECT_TRUE(Requests().empty());
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+  const auto ready = Of(events, AgentEventType::AssistantReady);
+  ASSERT_EQ(ready.size(), 1u);
+  EXPECT_EQ(ready[0].render_mode, RenderMode::PeopleList);
+  const auto calls = Calls();
+  ASSERT_EQ(calls.size(), 1u);
+  EXPECT_NE(calls[0].find(R"("query":"")"), std::string::npos);
 }
 
 } // namespace

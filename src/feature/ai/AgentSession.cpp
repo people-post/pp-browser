@@ -1,6 +1,7 @@
 #include "feature/ai/AgentSession.h"
 #include "foundation/platform/Platform.h"
 
+#include "domain/ai/LocalizedLabels.h"
 #include "domain/ai/PayloadTurnPlanBuilder.h"
 #include "domain/ai/PromptBuilder.h"
 #include "domain/ai/StructuredTextParser.h"
@@ -671,6 +672,13 @@ Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state) 
       auto validated = ValidateTurnPlan(*payload_plan, AllowedToolNames(state));
       if (validated) {
         return validated;
+      }
+      if (payload_plan->response_goal == ResponseGoal::DisplayFeed) {
+        // The feed tool comes from the promoted MCP server; without it there is nothing to show, and asking the
+        // model instead would only produce a confusing answer.
+        Error unavailable = validated.error();
+        unavailable.user = TrOrDefault("feed.unavailable", "Articles are unavailable right now.");
+        return unavailable;
       }
     }
   }

@@ -1,5 +1,6 @@
 #include "feature/ai/TurnExecutor.h"
 
+#include "domain/ai/ArticleFeedBlocks.h"
 #include "domain/ai/LocalizedLabels.h"
 #include "domain/ai/ToolResultFormatter.h"
 #include "domain/people/PeopleDiscoveryContactAdapt.h"
@@ -197,6 +198,18 @@ TurnExecutionResult TurnExecutor::Execute(const TurnPlan& plan, ToolRegistry& to
     // Self hits are already dropped in ConversationsFacade::SearchPeople.
     people_options.labels = LocalizedPeopleDiscoveryLabels();
     result.people_list_blocks = BuildPeopleDiscoveryBlocksJson(hits, contacts, people_options);
+  }
+
+  // Payload turns (home chips, "load more") show the feed straight from the tool result; the model is not asked.
+  if (plan.source == TurnPlanSource::Payload && plan.response_goal == ResponseGoal::DisplayFeed &&
+      !result.needs_permission && raw_results.size() == 1) {
+    ArticleFeedBuildOptions feed_options;
+    feed_options.labels = LocalizedArticleFeedLabels();
+    feed_options.call_arguments = executed_calls[0].arguments;
+    feed_options.tool_name = executed_calls[0].name;
+    if (std::string blocks = BuildArticleFeedBlocksJson(raw_results[0], feed_options); !blocks.empty()) {
+      result.people_list_blocks = std::move(blocks);
+    }
   }
 
   return result;
