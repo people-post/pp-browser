@@ -50,12 +50,12 @@
     <button class="shell-nav-tab shell-nav-collapse" type="button"
             data-if="layout_mode == 'expanded' && nav_tab != 'home' && !sidebar_collapsed"
             data-event-click="toggle_sidebar()" title="{{i18n:shell.sidebar.collapse}}">
-      <svg src="../icons/chevron-left.svg" width="16" height="16" crop-to-content="true"></svg>
+      <svg src="../icons/chevrons-left.svg" width="12" height="12" crop-to-content="true"></svg>
     </button>
     <button class="shell-nav-tab shell-nav-collapse" type="button"
             data-if="layout_mode == 'expanded' && nav_tab != 'home' && sidebar_collapsed"
             data-event-click="toggle_sidebar()" title="{{i18n:shell.sidebar.expand}}">
-      <svg src="../icons/chevron-right.svg" width="16" height="16" crop-to-content="true"></svg>
+      <svg src="../icons/chevrons-right.svg" width="12" height="12" crop-to-content="true"></svg>
     </button>
   </div>
 </div>

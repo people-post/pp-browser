@@ -1708,6 +1708,11 @@ std::string ShellHost::SerializeExpandedBase() const {
   out << "<div class=\"shell-layer shell-layer-base\" data-model=\"window\">";
   out << "<div class=\"shell-pane-row\">";
   out << "<div class=\"shell-nav-rail\" id=\"shell-nav-rail-mount\"></div>";
+  ui::Log::Message(ui::Log::LT_INFO, "SPLITDIAG serialize tab=%d collapsed=%d primary='%s' found=%d aux=%d",
+                   static_cast<int>(state_.nav_tab), static_cast<int>(state_.sidebar_collapsed),
+                   state_.primary_pane_key.c_str(),
+                   static_cast<int>(!state_.primary_pane_key.empty() && FindPane(state_.primary_pane_key.c_str())),
+                   static_cast<int>(state_.auxiliary_open));
   if (ShellLayout::TabHasSecondary(state_.nav_tab)) {
     const char* nav_content = ShellLayout::NavContentKey(state_.nav_tab);
     const bool collapsed = state_.sidebar_collapsed;

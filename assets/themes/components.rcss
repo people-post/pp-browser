@@ -1355,7 +1355,7 @@ select selectbox option {
 
 /* Collapse / expand the list pane; sits at the bottom of the expanded rail. */
 .shell-nav-collapse {
-  height: 36dp;
+  height: 28dp;
 }
 
 .shell-nav-tab-icon-wrap {
