@@ -20,6 +20,10 @@ AI-generated UI must follow this profile.
 - `data-value`, `data-checked`, `data-for`, `data-if`, `data-visible`, `data-rml`
 - `data-event-click="action_name()"` — chat chips use `send_chat_action('__ENTRY__', n)`; forms use `submit_form('__ENTRY__', form_id)`; calendar uses `calendar_prev`, `calendar_next`, `select_calendar_day`
 
+## Growing textarea (`max-rows`)
+
+`<textarea rows="2" max-rows="6">` grows with its text between `rows` and `max-rows`, then scrolls. The chat composer uses it. The attribute needs the pp-cpp-ui release **after v0.3.1**; older engines ignore it and keep `rows` (no error), so check `cmake/PpCppUi.cmake` when the composer does not grow.
+
 ## Selectable text (pp-browser fork)
 
 Add `selectable="text"` on a static content container to enable drag-selection and Ctrl+C copy. Use `focus: none` on bubbles so the chat input keeps focus. Interactive controls (e.g. suggestion buttons, form fields, calendar days) may live inside selectable regions; elements opt out via `QuerySelection` / `BlocksSelectionInteraction`. Selection spans multiple `selectable="text"` containers in one drag.
