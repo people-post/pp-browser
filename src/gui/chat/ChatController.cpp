@@ -1922,8 +1922,9 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
       ConfirmAndOpenUrl(action_json->getString("url").value_or(""));
       return;
     }
-    if (!action_type && action_json && !action_json->getString("tool").value_or("").empty()) {
-      // A tool payload (e.g. "load more" of the article feed) is run by the agent, not by the contact dispatcher.
+    if (!action_type && action_json && !action_json->getString("tool").value_or("").empty() && chat_.thread_is_ai) {
+      // A tool payload (e.g. "load more" of the article feed) is run by the agent, not by the contact
+      // dispatcher. AI threads only: elsewhere the router would hand it straight back here.
       SendUserText(message, payload);
       return;
     }

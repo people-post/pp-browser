@@ -23,8 +23,11 @@ public:
   Roe<void> Route(const std::string& thread_id, const std::string& text,
                   std::optional<std::string> user_payload = std::nullopt);
 
-  /** True for a payload the agent runs as a tool call ({"tool":"…"} without a "type"), not a local action. */
-  static bool IsAgentToolPayload(const std::optional<std::string>& user_payload);
+  /**
+   * True for a payload the agent runs as a tool call ({"tool":"…"} without a "type") instead of a local
+   * action. AI threads only: in a peer thread nothing would run it and its text would go to the peer.
+   */
+  static bool IsAgentToolPayload(ThreadKind kind, const std::optional<std::string>& user_payload);
   static Roe<void> ValidateUserPayload(const std::optional<std::string>& user_payload);
   /** What the agent receives for a message typed in a thread: in an AI thread an "@ai…" prefix is dropped. */
   static std::string TextForAgent(ThreadKind kind, const std::string& text);

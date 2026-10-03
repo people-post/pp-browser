@@ -35,8 +35,9 @@ bool MessageRouter::NeedsSharedAiConfirm(const std::string& thread_id) const {
   return shared_ai_confirmed_threads_.find(thread_id) == shared_ai_confirmed_threads_.end();
 }
 
-bool MessageRouter::IsAgentToolPayload(const std::optional<std::string>& user_payload) {
-  if (!user_payload || user_payload->empty()) {
+bool MessageRouter::IsAgentToolPayload(const ThreadKind kind, const std::optional<std::string>& user_payload) {
+  // Only an AI thread runs tool payloads; anywhere else the text would be relayed to the peer.
+  if (kind != ThreadKind::Ai || !user_payload || user_payload->empty()) {
     return false;
   }
   const auto doc = TryParseObject(*user_payload);
@@ -99,7 +100,8 @@ Roe<void> MessageRouter::Route(const std::string& thread_id, const std::string& 
     return Error("Thread not found");
   }
 
-  if (user_payload && !user_payload->empty() && on_local_action_ && !IsAgentToolPayload(user_payload)) {
+  if (user_payload && !user_payload->empty() && on_local_action_ &&
+      !IsAgentToolPayload((*thread)->kind, user_payload)) {
     on_local_action_(text, user_payload);
     return {};
   }
@@ -169,11 +171,10 @@ bool MessageRouter::ExpectsAgentWork(const std::string& thread_id, const std::st
   if (text.empty()) {
     return false;
   }
-  if (user_payload && !user_payload->empty()) {
-    return IsAgentToolPayload(user_payload);
-  }
-
   auto thread = store_.GetThread(thread_id);
+  if (user_payload && !user_payload->empty()) {
+    return thread && *thread && IsAgentToolPayload((*thread)->kind, user_payload);
+  }
   if (!thread || !*thread) {
     return true;
   }
