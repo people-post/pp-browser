@@ -174,7 +174,7 @@ public:
   void SetOnNavTabChanged(std::function<void(NavTab tab)> callback);
   void SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback);
 
-  /** Secondary-pane prefs from disk (width is clamped). Call before the first layout sync. */
+  /** Secondary-pane prefs from disk (width is clamped). Remounts when they differ from the current state. */
   void SetSidebarPrefs(int width_dp, bool collapsed);
   /** Fired after the user resizes or collapses/expands the secondary pane (persist here). */
   void SetOnSidebarChanged(std::function<void(int width_dp, bool collapsed)> callback);

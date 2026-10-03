@@ -76,7 +76,8 @@ void ShellSplitterDrag::EndDrag(bool commit) {
 void ShellSplitterDrag::ProcessEvent(ui::Event& event) {
   switch (event.GetId()) {
   case ui::EventId::Mousedown: {
-    if (dragging_ || !handle_ || !pane_ || !context_) {
+    // Left button only: a right- or middle-click on the handle must not resize and persist.
+    if (dragging_ || !handle_ || !pane_ || !context_ || event.GetParameter<int>("button", 0) != 0) {
       return;
     }
     dragging_ = true;
@@ -95,7 +96,7 @@ void ShellSplitterDrag::ProcessEvent(ui::Event& event) {
     const float dx_dp = ratio > 0.f ? static_cast<float>(dx_px) / ratio : static_cast<float>(dx_px);
     width_dp_ = ShellLayout::ClampSidebarWidthDp(start_width_dp_ + static_cast<int>(std::lround(dx_dp)));
     char buffer[32];
-    std::snprintf(buffer, sizeof(buffer), "0 0 %ddp", width_dp_);
+    std::snprintf(buffer, sizeof(buffer), "0 1 %ddp", width_dp_);
     pane_->SetProperty("flex", buffer);
     break;
   }

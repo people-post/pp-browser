@@ -546,8 +546,16 @@ void ShellHost::CloseAccountSheet() {
 }
 
 void ShellHost::SetSidebarPrefs(int width_dp, bool collapsed) {
-  state_.sidebar_width_dp = ShellLayout::ClampSidebarWidthDp(width_dp);
+  const int clamped = ShellLayout::ClampSidebarWidthDp(width_dp);
+  if (state_.sidebar_width_dp == clamped && state_.sidebar_collapsed == collapsed) {
+    return;
+  }
+  state_.sidebar_width_dp = clamped;
   state_.sidebar_collapsed = collapsed;
+  // The shell may already be mounted with the defaults; remount so the pane and the splitter's
+  // starting width use the stored values.
+  DirtyNavChrome();
+  RequestSyncLayout();
 }
 
 void ShellHost::SetOnSidebarChanged(std::function<void(int width_dp, bool collapsed)> callback) {
@@ -1715,7 +1723,7 @@ std::string ShellHost::SerializeExpandedBase() const {
     if (collapsed) {
       out << " shell-pane-secondary--collapsed";
     }
-    out << "\" id=\"shell-nav-content-mount\" style=\"flex: 0 0 " << state_.sidebar_width_dp << "dp;\">";
+    out << "\" id=\"shell-nav-content-mount\" style=\"flex: 0 1 " << state_.sidebar_width_dp << "dp;\">";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
     out << "</div>";
     // Drag handle on the pane's right edge. Collapse / expand lives at the bottom of the nav rail.
