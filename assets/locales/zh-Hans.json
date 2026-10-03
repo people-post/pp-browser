@@ -402,6 +402,7 @@
     "people_picker.err.call_full": "通话人数已满",
     "people_picker.err.too_many": "受邀人数超出本次通话上限",
     "chat.new_chat": "新对话",
+    "chat.sender.you": "我",
     "common.close": "关闭",
     "common.select_all": "全选",
     "common.paste": "粘贴",

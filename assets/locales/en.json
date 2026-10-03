@@ -402,6 +402,7 @@
     "people_picker.err.call_full": "Call is full",
     "people_picker.err.too_many": "Too many invitees for this call",
     "chat.new_chat": "New chat",
+    "chat.sender.you": "You",
     "common.close": "Close",
     "common.select_all": "Select All",
     "common.paste": "Paste",
