@@ -1854,12 +1854,26 @@ void ChatController::OpenChatLink(const std::string& entry_id, const int link_in
   if (!url) {
     return;
   }
-  ShowConfirm(Tr("chat.open_link_title", {{"host", UrlHost(*url)}}), Tr("chat.open_link_body", {{"url", *url}}),
-              [url = *url](const bool ok) {
-                if (ok) {
-                  (void)PlatformOpenUrl(url);
-                }
-              });
+  ConfirmAndOpenUrl(*url);
+}
+
+void ChatController::ConfirmAndOpenUrl(const std::string& url) {
+  if (!IsHttpsUrl(url)) {
+    return;
+  }
+  if (skip_link_confirm_this_run_) {
+    (void)PlatformOpenUrl(url);
+    return;
+  }
+  // The opt-out lives in memory only: the next launch asks again.
+  ShowConfirmWithCheckbox(Tr("chat.open_link_title", {{"host", UrlHost(url)}}), Tr("chat.open_link_body", {{"url", url}}),
+                          Tr("chat.open_link_skip"), false, [this, url](const bool ok, const bool skip) {
+                            if (!ok) {
+                              return;
+                            }
+                            skip_link_confirm_this_run_ = skip;
+                            (void)PlatformOpenUrl(url);
+                          });
 }
 
 void ChatController::RestoreWorkingSetsFromActiveThread() {
@@ -1905,15 +1919,7 @@ void ChatController::HandleLocalAction(const std::string& message, const std::op
     }
     if (action_type && *action_type == "open_url") {
       // Same guard as open_chat_link: https only, and the user confirms the host first.
-      const std::string url = action_json->getString("url").value_or("");
-      if (IsHttpsUrl(url)) {
-        ShowConfirm(Tr("chat.open_link_title", {{"host", UrlHost(url)}}), Tr("chat.open_link_body", {{"url", url}}),
-                    [url](const bool ok) {
-                      if (ok) {
-                        (void)PlatformOpenUrl(url);
-                      }
-                    });
-      }
+      ConfirmAndOpenUrl(action_json->getString("url").value_or(""));
       return;
     }
     if (!action_type && action_json && !action_json->getString("tool").value_or("").empty() && chat_.thread_is_ai) {
