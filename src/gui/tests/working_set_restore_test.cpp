@@ -70,3 +70,18 @@ TEST(WorkingSetRestoreTest, RestoreLeavesAnAlreadyOpenPaneOpen) {
   (void)f.controller.RestoreEntry("entry-1", OneCandidate());
   EXPECT_TRUE(f.shell.open);
 }
+
+// The real sequence on a thread switch: ClearAll, then one RestoreEntry per stored message.
+TEST(WorkingSetRestoreTest, ThreadSwitchRestoresSeveralEntriesWithoutOpening) {
+  Fixture f;
+  f.shell.available = true;
+  f.shell.open = true;
+  f.controller.ClearAll();
+  EXPECT_FALSE(f.shell.open);
+  (void)f.controller.RestoreEntry("entry-1", OneCandidate());
+  (void)f.controller.RestoreEntry("entry-2", OneCandidate());
+  EXPECT_TRUE(f.shell.available);
+  EXPECT_FALSE(f.shell.open);
+  EXPECT_TRUE(f.controller.HasEntry("entry-1"));
+  EXPECT_TRUE(f.controller.HasEntry("entry-2"));
+}
