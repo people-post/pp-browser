@@ -1,5 +1,7 @@
 #include "domain/ai/StructuredTextParser.h"
 
+#include "common/chat/MessagingLimits.h"
+
 #include "domain/ai/LocalizedLabels.h"
 #include "domain/ai/WorkingSetPolicy.h"
 #include "common/PlatformLimits.h"
@@ -1031,6 +1033,21 @@ std::optional<std::vector<EmbeddedToolCall>> StructuredTextParser::ExtractEmbedd
 std::string StructuredTextParser::PlainText(const std::string& llm_output) {
   const auto prose = PlainTextIfBlocks(llm_output);
   return prose && !prose->empty() ? *prose : llm_output;
+}
+
+std::string StructuredTextParser::StorableText(const std::string& llm_output) {
+  if (llm_output.size() <= kMaxComposeTextBytes) {
+    return llm_output;
+  }
+  std::string text = PlainTextIfBlocks(llm_output).value_or(llm_output);
+  if (text.size() > kMaxComposeTextBytes) {
+    size_t cut = kMaxComposeTextBytes;
+    while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xC0) == 0x80) {
+      --cut; // do not split a UTF-8 character
+    }
+    text.resize(cut);
+  }
+  return text;
 }
 
 std::optional<std::string> StructuredTextParser::PlainTextIfBlocks(const std::string& llm_output) {

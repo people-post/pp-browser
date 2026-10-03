@@ -53,6 +53,13 @@ public:
    * (or a document with no readable blocks) is returned as-is. For sharing and for chat history.
    */
   static std::string PlainText(const std::string& llm_output);
+  /**
+   * The text to store for an assistant message: `llm_output` when it fits the thread store's limit
+   * (kMaxComposeTextBytes); otherwise its prose, cut on a character boundary. A people list carries each
+   * person's public keys in its action payloads and can exceed the limit; the store then refused the
+   * message and the answer vanished from the transcript. The bubble markup is stored separately.
+   */
+  static std::string StorableText(const std::string& llm_output);
   /** nullopt when `llm_output` is not a blocks document; otherwise its prose (empty when nothing is readable). */
   static std::optional<std::string> PlainTextIfBlocks(const std::string& llm_output);
 

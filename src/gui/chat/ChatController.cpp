@@ -2888,7 +2888,7 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
               if (markdown) {
                 // The session stored the raw answer; the details link must be in the stored text too,
                 // or the link table cannot be rebuilt from it after a restart.
-                message.text = answer_text;
+                message.text = StructuredTextParser::StorableText(answer_text);
               }
               message.content_rml = assistant_open + hydrated + "</div>";
               message.chat_actions = chat_actions;
@@ -2903,7 +2903,7 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
         ai_message.id = action_entry_id;
         ai_message.thread_id = active_thread;
         ai_message.sender_contact_id = kAiAssistantContactId;
-        ai_message.text = markdown ? answer_text : raw_output;
+        ai_message.text = StructuredTextParser::StorableText(markdown ? answer_text : raw_output);
         ai_message.content_rml = assistant_open + hydrated + "</div>";
         ai_message.chat_actions = chat_actions;
         ai_message.working_set_json = working_set_json;
