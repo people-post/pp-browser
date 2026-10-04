@@ -1383,7 +1383,11 @@ void Application::Run() {
     if (!Backend::ProcessEvents(context, ProcessKeyDown, true)) {
       break;
     }
+    // The frame's work starts with the posted UI tasks: that is where a new message's display sync runs.
+    const auto frame_started = std::chrono::steady_clock::now();
+    const bool count_slow_frame = logged_first_present; // false for the first presented frame (startup)
     AppRuntime::RunUITasks();
+    const auto tasks_done = std::chrono::steady_clock::now();
 
     if (shell_->State().account_sheet_open || shell_->State().nav_tab == NavTab::Me) {
       settings_->Tick();
@@ -1392,7 +1396,6 @@ void Application::Run() {
       contacts_->Tick();
     }
     call_->Tick();
-    const auto frame_started = std::chrono::steady_clock::now();
     chat_->Update();
     ContextMenuHost::Instance().Update();
     shell_->Update(context);
@@ -1419,16 +1422,18 @@ void Application::Run() {
         });
       }
       skip_log_countdown = 0;
-      // A frame that took long enough to be felt (layout + draw). Startup frames are not counted, and at
-      // most one line a second is written, carrying how many were skipped.
+      // A frame that took long enough to be felt (UI tasks + update/layout + draw). The first presented
+      // frame is not counted, and at most one line a second is written, carrying how many were skipped.
       const auto frame_done = std::chrono::steady_clock::now();
       const auto frame_ms = std::chrono::duration_cast<std::chrono::milliseconds>(frame_done - frame_started).count();
-      if (logged_first_present && frame_ms >= kSlowFrameMs) {
+      if (count_slow_frame && frame_ms >= kSlowFrameMs) {
         if (frame_done - last_slow_frame_line >= std::chrono::seconds(1)) {
           MetricsLine("ui.slow_frame")
               .Add("ms", static_cast<int64_t>(frame_ms))
+              .Add("tasks_ms", static_cast<int64_t>(
+                                   std::chrono::duration_cast<std::chrono::milliseconds>(tasks_done - frame_started).count()))
               .Add("layout_ms", static_cast<int64_t>(
-                                    std::chrono::duration_cast<std::chrono::milliseconds>(layout_done - frame_started).count()))
+                                    std::chrono::duration_cast<std::chrono::milliseconds>(layout_done - tasks_done).count()))
               .Add("skipped", static_cast<int64_t>(slow_frames_skipped))
               .Emit();
           last_slow_frame_line = frame_done;

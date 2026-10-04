@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include "gui/chat/ChatController.h"
+#include "gui/chat/AttachmentBackfillPolicy.h"
 #include "common/Metrics.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "gui/shell/ShellSetupPorts.h"
@@ -1755,10 +1756,14 @@ void ChatController::SyncDisplayFromThread() {
   const auto sync_started = std::chrono::steady_clock::now();
   const std::string thread_id = ActiveThreadId();
   const bool thread_changed = scroller_.BeginDisplaySync(thread_id);
-  if (thread_changed) {
-    // A backfill for attachments that were never queued: it reads the whole thread, so it runs when the
-    // thread is opened, not on every sync. New messages are queued where they are received or sent.
+  // The attachment backfill reads the whole thread, so it does not run on every sync. New messages are
+  // queued where they are received or sent; the backfill also re-queues failed downloads, which is why
+  // it still runs now and then while the thread stays open (AttachmentBackfillPolicy.h).
+  if (ShouldBackfillAttachments(thread_changed, sync_started, last_attachment_backfill_)) {
+    last_attachment_backfill_ = sync_started;
     facade_->EnsureThreadAttachments(thread_id);
+  }
+  if (thread_changed) {
     DiscardPendingAiImage(); // the chip belongs to the composer of the thread it was picked in
   }
 
