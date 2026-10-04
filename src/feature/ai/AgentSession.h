@@ -122,6 +122,8 @@ private:
   static void StartTurn(const std::shared_ptr<Impl>& state);
   static void RunTurnPipeline(const std::shared_ptr<Impl>& state);
   static bool UseBriefStream(const std::shared_ptr<Impl>& state);
+  /** The brief preset with its stream wired and no tool payload on this turn. */
+  static bool BriefStreamAvailable(const std::shared_ptr<Impl>& state);
   /** Tools brief_AI may hand a turn back for: the messaging and settings providers. */
   static std::vector<std::string> AppActionCapabilities(const std::shared_ptr<Impl>& state);
   /** Judges the pending text on the device; on a hit runs the local pipeline and returns true. */

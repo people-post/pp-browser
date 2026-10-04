@@ -746,9 +746,11 @@ void AgentSession::RunTurnPipeline(const std::shared_ptr<Impl>& state) {
 }
 
 bool AgentSession::UseBriefStream(const std::shared_ptr<Impl>& state) {
-  if (state->turn_mode == AgentTurnMode::ScopedAssist) {
-    return false;
-  }
+  // A scoped assist ("@ai" in a chat) decides for itself in StartTurn: only its local mode streams.
+  return state->turn_mode != AgentTurnMode::ScopedAssist && BriefStreamAvailable(state);
+}
+
+bool AgentSession::BriefStreamAvailable(const std::shared_ptr<Impl>& state) {
   if (state->pending_user_payload && !state->pending_user_payload->empty()) {
     return false;
   }
@@ -825,8 +827,9 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   if (state->pending_image) {
     request.image = state->pending_image->image;
   }
-  // A turn with an image is never handed back, so it advertises no capabilities.
-  if (!request.image) {
+  // A turn with an image is never handed back, so it advertises no capabilities; neither does "@ai" in a
+  // chat (contract: only the question goes out).
+  if (!request.image && state->turn_mode != AgentTurnMode::ScopedAssist) {
     request.capabilities = AppActionCapabilities(state);
   }
 
@@ -1077,6 +1080,13 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
     if (!state->turn_scratch.empty() && state->turn_scratch.front().role == "system") {
       state->turn_scratch.front().content =
           PromptBuilder::BuildScopedAssistSystemPrompt(state->tools.SummaryForPrompt(), ResolvePreset(state->config) == "brief");
+    }
+    // With the brief preset a local "@ai" is a brief_AI question like any other, so it gets the current
+    // date, retrieval and sources (the bare model answered from its training data: wrong year, wrong
+    // language). No history is sent. A shared reply keeps the local path: the chat UI renders and relays it.
+    if (state->assist_mode == AtAiMode::Local && BriefStreamAvailable(state)) {
+      StreamBriefTurn(state, {}, std::string());
+      return;
     }
     RunTurnPipeline(state);
     return;

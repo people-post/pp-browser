@@ -503,6 +503,44 @@ TEST_F(AgentSessionBriefStreamTest, ImageTurnSendsImageWithoutCapabilitiesAndStr
   EXPECT_EQ(store.messages[0].id, "msg-1"); // the caller's id, so the GUI can pair its thumbnail
 }
 
+// "@ai" in a chat goes to brief_AI too: the question only, no history, never handed back.
+TEST_F(AgentSessionBriefStreamTest, LocalAtAiInAChatStreamsTheQuestionOnly) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  Script({Meta(), Token("It is "), Token("true"), Done("It is true")}, BriefAiOutcome::Done);
+  session_->SubmitScopedAssist("t1", "Is this true?\n\n> the quoted message", std::nullopt, AtAiMode::Local);
+  const auto events = WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 1u);
+  EXPECT_EQ(requests[0].message, "Is this true?\n\n> the quoted message");
+  EXPECT_TRUE(requests[0].history.empty());
+  EXPECT_TRUE(requests[0].summary.empty());
+  EXPECT_TRUE(requests[0].capabilities.empty());
+  EXPECT_FALSE(requests[0].image.has_value());
+
+  const auto ready = Of(events, AgentEventType::AssistantReady);
+  ASSERT_EQ(ready.size(), 1u);
+  EXPECT_EQ(ready[0].text, "It is true");
+  EXPECT_TRUE(Of(events, AgentEventType::Error).empty());
+
+  // The answer stays on this device: stored, not relay-visible.
+  ASSERT_EQ(store.messages.size(), 1u);
+  EXPECT_EQ(store.messages[0].sender_contact_id, kAiAssistantContactId);
+  EXPECT_FALSE(store.messages[0].relay_visible);
+}
+
+// A shared "@ai+" reply is rendered and relayed by the chat UI: it keeps the local pipeline.
+TEST_F(AgentSessionBriefStreamTest, SharedAtAiKeepsTheLocalPipeline) {
+  Start();
+  MemoryThreadStore store;
+  session_->SetThreadStore(&store);
+  session_->SubmitScopedAssist("t1", "Is this true?", std::nullopt, AtAiMode::SharedReply);
+  WaitForTurn();
+  EXPECT_TRUE(Requests().empty());
+}
+
 TEST_F(AgentSessionBriefStreamTest, ImageTurnCancelKeepsPartial) {
   Start();
   MemoryThreadStore store;
