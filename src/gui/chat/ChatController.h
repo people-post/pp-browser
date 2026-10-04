@@ -307,8 +307,8 @@ private:
   void SyncComposerInputState();
   /** What the user reads in a message of the active thread ("" when not found). */
   std::string MessagePlainText(const std::string& message_id) const;
-  /** Puts "@ai <text>" into the composer and focuses it; the user decides whether to send. */
-  void DraftAskAi(const std::string& text);
+  /** Asks the AI about a message: the same as sending "@ai <text>" in this chat. */
+  void AskAiAbout(const std::string& text);
   void ShowReactionMorePrompt(const std::string& message_id);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
   void CalendarPrev(const std::string& entry_id);

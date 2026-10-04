@@ -2645,14 +2645,13 @@ input.checkbox {
 
 .chat-reaction-chip {
   display: inline-block;
-  min-width: 44dp;
-  min-height: 32dp;
-  margin-right: 6dp;
+  min-height: 30dp;
+  margin-right: 4dp;
   margin-top: 2dp;
-  padding: 4dp 10dp;
-  border-radius: 16dp;
+  padding: 2dp 6dp;
+  border-radius: 15dp;
   background-color: rgba(128, 128, 128, 0.12);
-  font-size: 14dp;
+  font-size: 18dp;
   text-align: center;
 }
 

@@ -1147,7 +1147,8 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
       continue;
     }
     std::ostringstream chip_rml;
-    chip_rml << "<div class=\"chat-reaction-row\">";
+    // menu-anchor-end: the message menu opens right under the bubble, over this row (ContextMenuHost).
+    chip_rml << "<div class=\"chat-reaction-row\" menu-anchor-end=\"\">";
     for (const ChipAgg& chip : chips) {
       chip_rml << "<button class=\"chat-reaction-chip";
       if (chip.mine) {

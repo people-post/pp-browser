@@ -377,7 +377,13 @@ void ContextMenuHost::LayoutAnchored(ui::Vector2i touch) {
   const float view_bottom = static_cast<float>(dims.y) - static_cast<float>(bottom_inset_dp_) * dp - kViewportMarginPx;
   const float gap = kAnchorGapDp * dp;
   const float anchor_top = menu_anchor_->GetAbsoluteOffset(ui::BoxArea::Border).y;
-  const float anchor_bottom = anchor_top + menu_anchor_->GetBox().GetSize(ui::BoxArea::Border).y;
+  float anchor_bottom = anchor_top + menu_anchor_->GetBox().GetSize(ui::BoxArea::Border).y;
+  // The item can mark where its body ends (a chat message's reaction chips come after it); the list opens there.
+  ui::ElementList body_end;
+  menu_anchor_->QuerySelectorAll(body_end, "[menu-anchor-end]");
+  if (!body_end.empty()) {
+    anchor_bottom = body_end.front()->GetAbsoluteOffset(ui::BoxArea::Border).y;
+  }
 
   const auto place = [&](ui::Element* element, const float top) {
     const float width = element->GetBox().GetSize(ui::BoxArea::Border).x;

@@ -63,6 +63,7 @@ public:
   void RegisterProvider(std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)> provider);
   /// Maps a pressed element to the item it belongs to (a chat message row), or nullptr. A menu for such an
   /// item shows only the providers' actions, the list below the item and `quick` actions above it.
+  /// A descendant with the attribute `menu-anchor-end` marks where the item's body ends: the list opens there.
   void SetAnchorResolver(std::function<ui::Element*(ui::Element* target)> resolver) { anchor_resolver_ = std::move(resolver); }
   void ShowAt(const ContextMenuRequest& request);
   /// Show an explicit action list (no copy/select/paste text actions).

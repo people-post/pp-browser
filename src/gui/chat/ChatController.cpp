@@ -2188,14 +2188,8 @@ std::string ChatController::MessagePlainText(const std::string& message_id) cons
   return {};
 }
 
-void ChatController::DraftAskAi(const std::string& text) {
-  chat_.draft = ("@ai " + text).c_str();
-  DirtyChatChrome();
-  if (context_ && context_->GetNumDocuments() > 0) {
-    if (ui::Element* draft = context_->GetDocument(0)->GetElementById("draft-input")) {
-      draft->Focus();
-    }
-  }
+void ChatController::AskAiAbout(const std::string& text) {
+  SendUserText("@ai " + text);
 }
 
 void ChatController::OpenEmojiInsertMenu(ui::Event* ev) {
@@ -3548,9 +3542,9 @@ bool ChatController::Setup(ui::Context* context) {
                              system->SetClipboardText(text);
                            }
                          }});
-      // Same as typing "@ai <text>" in a direct chat: the draft is filled in, nothing is sent until the user sends it.
+      // Same as typing and sending "@ai <text>" in a direct chat.
       if (auto active = facade_->GetActiveThread(); active && active->kind == ThreadKind::Direct) {
-        actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { DraftAskAi(text); }});
+        actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { AskAiAbout(text); }});
       }
     }
     return actions;
