@@ -170,6 +170,14 @@ const std::vector<std::pair<std::string, std::string>> kEnPositives = {
 
 const std::vector<std::string> kEnNegatives = {
     "Did the US contact Iran about talks?",
+    // "my" / "I" that do not qualify the tool's own words: someone's story, not a request to the app.
+    "Should I switch to English for my thesis?",
+    "My friend said Apple will turn off notifications next year",
+    "Why did my teacher say I should enable dark mode?",
+    "Is it true that WhatsApp lets you mute notifications? I wonder",
+    "I saw that Apple will turn off notifications for news apps",
+    "My company wants to register an account in Delaware",
+    "Can I mute notifications on WhatsApp?",
     // A person word followed by a clause is a question about the world, not a directory search.
     "Can you find people who survived the Titanic?",
     "Help me find someone to fix my car",

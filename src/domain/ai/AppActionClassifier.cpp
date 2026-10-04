@@ -423,15 +423,23 @@ bool EnFormOk(const Words& msg, const EnEntry& e, const Hit hit) {
     return true;
   }
 
-  // (b) about the user's own app or data; "i think ..." style opinions do not count
-  static const std::vector<Words> opinions = {Split("i think"), Split("i heard"), Split("i wonder"),
-                                              Split("i feel"),  Split("i believe"), Split("i read")};
-  if (!WordsPrefix(msg, 0, opinions)) {
-    static const std::vector<Words> own = {Split("my"), Split("i"), Split("this device"), Split("this phone")};
-    for (size_t i = rest; i < msg.size(); ++i) {
-      if (WordsPrefix(msg, i, own)) {
-        return true;
-      }
+  // (b) about the user's own app or data. "my" has to qualify one of the tool's words ("my contacts",
+  // "is my account secure") and "I" has to open the question ("am I registered"). A "my" or "I"
+  // anywhere else is someone's story ("... for my thesis", "my friend said ..."), and a hit there would
+  // now skip brief_AI and could run a setter tool.
+  static const std::vector<Words> device = {Split("this device"), Split("this phone")};
+  // Not "can I" / "could I": those open questions about anything ("can I mute notifications on WhatsApp?").
+  static const std::vector<Words> i_openers = {Split("am i"), Split("do i"), Split("did i"), Split("have i")};
+  if (WordsPrefix(msg, rest, i_openers)) {
+    return true;
+  }
+  for (size_t i = rest; i < msg.size(); ++i) {
+    if (WordsPrefix(msg, i, device)) {
+      return true;
+    }
+    if (msg[i] == "my" && (WordsPrefix(msg, i, e.phrases) || WordsPrefix(msg, i, e.objects) || WordsPrefix(msg, i + 1, e.objects) ||
+                           WordsPrefix(msg, i + 1, e.phrases) || WordsPrefix(msg, i + 2, e.objects))) {
+      return true;
     }
   }
 
