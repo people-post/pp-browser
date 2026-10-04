@@ -714,4 +714,71 @@ TEST_F(AgentSessionPayloadTurnTest, FindSomeoneChipListsThePeopleWithoutAnyModel
   EXPECT_NE(calls[0].find(R"("query":"")"), std::string::npos);
 }
 
+// --- Typed sentences judged on the device (AppActionClassifier) ---
+// A hit goes straight to the local pipeline (its completions endpoint is a closed port, so it ends with a
+// non-retryable Error); a miss, or a turn with an image, still streams.
+
+class AgentSessionLocalAppActionTest : public AgentSessionBriefStreamTest {
+protected:
+  void StartWithMessagingTool() {
+    session_ = std::make_unique<AgentSession>();
+    session_->SetToolRegistrationHook([](ToolRegistry& registry) {
+      registry.Register(MakeTool(ToolDefinition{"add_contact", "add a contact", Object{}}, ToolMeta{.provider = "messaging"},
+                                 [](const Object&) -> Roe<std::string> { return std::string("{}"); }));
+    });
+    session_->Configure(MakeConfig("brief"));
+    session_->WaitForConfigureIdle();
+    ASSERT_TRUE(session_->IsConfigured());
+    session_->SetThreadStore(&store_);
+    Script({Meta(), Token("x"), Done("x")}, BriefAiOutcome::Done);
+  }
+
+  MemoryThreadStore store_;
+};
+
+TEST_F(AgentSessionLocalAppActionTest, HitRunsTheLocalPipelineWithoutStreaming) {
+  StartWithMessagingTool();
+  session_->SubmitToThread("t1", "Add Tom as a friend");
+  const auto events = WaitForTurn();
+
+  EXPECT_TRUE(Requests().empty());
+  EXPECT_TRUE(Of(events, AgentEventType::AssistantDelta).empty());
+  const auto errors = Of(events, AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u); // the local pipeline ran and failed on the closed port
+  EXPECT_FALSE(errors[0].retryable);
+  EXPECT_FALSE(events.back().loading);
+}
+
+TEST_F(AgentSessionLocalAppActionTest, MissStillStreams) {
+  StartWithMessagingTool();
+  session_->SubmitToThread("t1", "What is in the news today?");
+  const auto events = WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 1u);
+  EXPECT_EQ(requests[0].capabilities, std::vector<std::string>{"add_contact"}); // the server fallback keeps its list
+  EXPECT_EQ(Of(events, AgentEventType::AssistantReady).size(), 1u);
+}
+
+TEST_F(AgentSessionLocalAppActionTest, HitWithAnImageStillStreams) {
+  StartWithMessagingTool();
+  session_->SubmitToThread("t1", "Add Tom as a friend", std::nullopt, TestImage());
+  const auto events = WaitForTurn();
+
+  const auto requests = Requests();
+  ASSERT_EQ(requests.size(), 1u);
+  EXPECT_TRUE(requests[0].image.has_value());
+  EXPECT_TRUE(requests[0].capabilities.empty());
+  EXPECT_EQ(Of(events, AgentEventType::AssistantReady).size(), 1u);
+}
+
+TEST_F(AgentSessionLocalAppActionTest, HitInTheHomeComposerAlsoSkipsTheStream) {
+  StartWithMessagingTool();
+  session_->Submit("加张三为好友");
+  const auto events = WaitForTurn();
+
+  EXPECT_TRUE(Requests().empty());
+  EXPECT_EQ(Of(events, AgentEventType::Error).size(), 1u);
+}
+
 } // namespace

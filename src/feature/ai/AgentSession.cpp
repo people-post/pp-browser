@@ -1,6 +1,7 @@
 #include "feature/ai/AgentSession.h"
 #include "foundation/platform/Platform.h"
 
+#include "domain/ai/AppActionClassifier.h"
 #include "domain/ai/LocalizedLabels.h"
 #include "domain/ai/PayloadTurnPlanBuilder.h"
 #include "domain/ai/PromptBuilder.h"
@@ -89,8 +90,10 @@ struct AgentSession::Impl : public Module {
   std::mutex stream_cancel_mutex;
   std::shared_ptr<std::atomic<bool>> stream_cancel = std::make_shared<std::atomic<bool>>(false);
   std::atomic<uint64_t> turn_generation{0};
-  /** The current turn came back from brief_AI as "app action"; FinishTurn reports whether tools ran. */
+  /** The current turn was judged an "app action" (here or by brief_AI); FinishTurn reports whether tools ran. */
   bool handoff_turn = false;
+  /** ...and it was judged on this device rather than by a handoff event. */
+  bool handoff_local = false;
   std::atomic<bool> busy{false};
   std::mutex configure_mutex;
   std::condition_variable configure_cv;
@@ -186,7 +189,10 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
     // A handoff that ran no tool locally is the signal for a mis-routed question (plan step 5). A turn
     // parked on a permission prompt is not finished: count it when the resumed turn ends.
     if (!parked) {
-      MetricsLine("ai.handoff").Add("tools", static_cast<int64_t>(state->turn_trace.tools_executed.size())).Emit();
+      MetricsLine("ai.handoff")
+          .Add("src", state->handoff_local ? "local" : "server")
+          .Add("tools", static_cast<int64_t>(state->turn_trace.tools_executed.size()))
+          .Emit();
       state->handoff_turn = false;
     }
   }
@@ -752,6 +758,31 @@ bool AgentSession::UseBriefStream(const std::shared_ptr<Impl>& state) {
   return ResolvePreset(state->config) == "brief";
 }
 
+std::vector<std::string> AgentSession::AppActionCapabilities(const std::shared_ptr<Impl>& state) {
+  std::vector<std::string> names;
+  for (const ToolDescriptor& tool : state->tools.Tools()) {
+    if (tool.meta.provider == "messaging" || tool.meta.provider == "settings") {
+      names.push_back(tool.definition.name);
+    }
+  }
+  return names;
+}
+
+bool AgentSession::TryLocalAppAction(const std::shared_ptr<Impl>& state) {
+  if (state->pending_image) {
+    return false;
+  }
+  const auto tool = ClassifyAppAction(state->pending_user_text, AppActionCapabilities(state));
+  if (!tool) {
+    return false;
+  }
+  state->Log().info << "Turn judged an app action on the device (" << *tool << "); running the local pipeline";
+  state->handoff_turn = true;
+  state->handoff_local = true;
+  RunTurnPipeline(state);
+  return true;
+}
+
 void AgentSession::EmitStreamedAnswer(const std::shared_ptr<Impl>& state, const std::string& text,
                                       const std::string& finish_reason, const std::vector<BriefAiSource>& sources) {
   state->turn_plan = TurnPlan{};
@@ -795,10 +826,8 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     request.image = state->pending_image->image;
   }
   // A turn with an image is never handed back, so it advertises no capabilities.
-  for (const ToolDescriptor& tool : state->tools.Tools()) {
-    if (!request.image && (tool.meta.provider == "messaging" || tool.meta.provider == "settings")) {
-      request.capabilities.push_back(tool.definition.name);
-    }
+  if (!request.image) {
+    request.capabilities = AppActionCapabilities(state);
   }
 
   // This turn's cancel flag and generation. Cancel() + a new Submit replace both; a stream that is
@@ -893,6 +922,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     }
     state->Log().info << "brief_AI handed the turn back; running the local pipeline";
     state->handoff_turn = true;
+    state->handoff_local = false;
     RunTurnPipeline(state);
   };
   sinks.on_error = [state, current, emit_turn, image_error_kind](const std::string& message, const bool retryable,
@@ -1002,6 +1032,9 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
                                                   state->pending_user_payload, summary);
     state->turn_scratch = built.messages;
     if (UseBriefStream(state)) {
+      if (TryLocalAppAction(state)) {
+        return;
+      }
       // Built context is a transcript blob plus a pending user turn; send the real messages instead.
       std::vector<BriefAiHistoryTurn> history;
       for (const ThreadMessage& message : *messages) {
@@ -1057,6 +1090,9 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
       state->coordinator.BeginTurn(state->conversation, system_prompt, entry, state->config.context);
   state->turn_scratch = snapshot.messages;
   if (UseBriefStream(state)) {
+    if (TryLocalAppAction(state)) {
+      return;
+    }
     // Context layout: [system, history..., pending user]; the policy appends the pending user message last.
     std::vector<BriefAiHistoryTurn> history;
     for (size_t i = 1; i + 1 < snapshot.messages.size(); ++i) {
