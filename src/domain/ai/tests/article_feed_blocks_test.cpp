@@ -33,6 +33,14 @@ TEST(ArticleFeedBlocksTest, BuildsIntroAndLongListThatTheParserAccepts) {
   EXPECT_NE(rml.find("apnews.com"), std::string::npos); // host only, no userinfo or port
   EXPECT_EQ(rml.find("8443"), std::string::npos);
   EXPECT_NE(rml.find("plain.example"), std::string::npos); // shown, but plain http gets no Open button
+
+  // "View details" is a text link at the end of the article's own text, not a button row under it.
+  const size_t link = rml.find("chat-inline-link");
+  ASSERT_NE(link, std::string::npos);
+  EXPECT_EQ(rml.find("chat-long-list-actions"), std::string::npos);
+  const size_t text = rml.rfind("First brief.", link);
+  ASSERT_NE(text, std::string::npos);
+  EXPECT_EQ(rml.find("</p>", text) > link, true); // inside the same paragraph as the text
 }
 
 TEST(ArticleFeedBlocksTest, OnlyHttpsLinksGetAnOpenAction) {
@@ -70,7 +78,7 @@ TEST(ArticleFeedBlocksTest, EmptyFeedSaysSoAndNonFeedJsonYieldsNothing) {
 TEST(ArticleFeedBlocksTest, LocalizedLabelsFallBackToEnglishWithoutACatalog) {
   const ArticleFeedLabels labels = LocalizedArticleFeedLabels();
   EXPECT_EQ(labels.intro, ArticleFeedLabels{}.intro);
-  EXPECT_EQ(labels.open, "Open");
+  EXPECT_EQ(labels.open, "[View details]");
 }
 
 // What McpToolAdapter really returns: the MCP result object with the JSON as text content.

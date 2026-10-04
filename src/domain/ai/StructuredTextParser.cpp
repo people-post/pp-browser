@@ -211,6 +211,8 @@ std::optional<std::string> ParseOptionalButtonPayload(const Object& block) {
   return payload_str;
 }
 
+constexpr const char* kInlineLinkActionStyle = "link";
+
 ParseResult AppendChatActionButton(ParseResult& parent, const std::string& label, const std::string& message,
                                    const std::optional<std::string>& payload,
                                    const std::string& style = {}) {
@@ -226,6 +228,8 @@ ParseResult AppendChatActionButton(ParseResult& parent, const std::string& label
     classes += " chat-suggestion-primary";
   } else if (style == "secondary") {
     classes += " chat-suggestion-secondary";
+  } else if (style == kInlineLinkActionStyle) {
+    classes = "chat-inline-link"; // small text link that sits at the end of the item's text
   }
 
   ParseResult result;
@@ -439,7 +443,8 @@ ParseResult ParseLongListActionButton(ParseResult& parent, const Value& action_v
                                 std::nullopt, style);
 }
 
-std::string RenderLongListItemBody(const Object& item) {
+// `inline_tail` (link-style actions) goes at the end of the item's text, inside its last paragraph.
+std::string RenderLongListItemBody(const Object& item, const std::string& inline_tail = {}) {
   std::ostringstream out;
   const bool has_avatar = item.getString("avatar_letter").has_value();
   if (has_avatar) {
@@ -451,11 +456,12 @@ std::string RenderLongListItemBody(const Object& item) {
     out << "<div class=\"chat-long-list-item-body\">";
   }
 
+  const auto subtitle = item.getString("subtitle");
   out << "<p class=\"chat-long-list-title\">" << StructuredTextParser::EscapeText(*item.getString("title"))
-      << "</p>";
-  if (auto subtitle = item.getString("subtitle")) {
+      << (subtitle ? std::string() : inline_tail) << "</p>";
+  if (subtitle) {
     out << "<p class=\"muted chat-long-list-subtitle\">" << StructuredTextParser::EscapeText(*subtitle)
-        << "</p>";
+        << inline_tail << "</p>";
   }
   if (auto meta = item.getString("meta")) {
     out << "<p class=\"muted chat-long-list-meta\">" << StructuredTextParser::EscapeText(*meta) << "</p>";
@@ -465,6 +471,31 @@ std::string RenderLongListItemBody(const Object& item) {
     out << "</div></div>";
   }
   return out.str();
+}
+
+// One item: its text, with link-style actions at the end of the text and the other actions in a row below.
+ParseResult RenderLongListItem(ParseResult& parent, const Object& item) {
+  std::string inline_tail;
+  std::string row;
+  if (const Array* actions = item.getArray("actions")) {
+    for (const Value& action_value : actions->elements) {
+      auto button = ParseLongListActionButton(parent, action_value);
+      if (!button.ok) {
+        return button;
+      }
+      const Object* action = asObject(action_value);
+      const bool is_link = action && action->getString("style").value_or("") == kInlineLinkActionStyle;
+      (is_link ? inline_tail : row) += button.rml;
+    }
+  }
+  ParseResult result;
+  result.ok = true;
+  result.rml = "<div class=\"chat-long-list-item\">" + RenderLongListItemBody(item, inline_tail);
+  if (!row.empty()) {
+    result.rml += "<div class=\"row chat-long-list-actions\">" + row + "</div>";
+  }
+  result.rml += "</div>";
+  return result;
 }
 
 ParseResult ParseLongListBlock(const Object& block, ParseResult& parent) {
@@ -483,20 +514,11 @@ ParseResult ParseLongListBlock(const Object& block, ParseResult& parent) {
     if (!item || !item->getString("title")) {
       return BlockError("long_list items require title");
     }
-    out << "<div class=\"chat-long-list-item\">";
-    out << RenderLongListItemBody(*item);
-    if (const Array* actions = item->getArray("actions")) {
-      out << "<div class=\"row chat-long-list-actions\">";
-      for (const Value& action_value : actions->elements) {
-        auto button = ParseLongListActionButton(parent, action_value);
-        if (!button.ok) {
-          return button;
-        }
-        out << button.rml;
-      }
-      out << "</div>";
+    if (auto rendered = RenderLongListItem(parent, *item); rendered.ok) {
+      out << rendered.rml;
+    } else {
+      return rendered;
     }
-    out << "</div>";
   }
   out << "</div>";
   if (block.getArray("footer_actions")) {
@@ -534,20 +556,11 @@ ParseResult ParseLongListArtifact(const Object& block, ParseResult& parent) {
     if (!item || !item->getString("title")) {
       return BlockError("long_list items require title");
     }
-    out << "<div class=\"chat-long-list-item\">";
-    out << RenderLongListItemBody(*item);
-    if (const Array* actions = item->getArray("actions")) {
-      out << "<div class=\"row chat-long-list-actions\">";
-      for (const Value& action_value : actions->elements) {
-        auto button = ParseLongListActionButton(parent, action_value);
-        if (!button.ok) {
-          return button;
-        }
-        out << button.rml;
-      }
-      out << "</div>";
+    if (auto rendered = RenderLongListItem(parent, *item); rendered.ok) {
+      out << rendered.rml;
+    } else {
+      return rendered;
     }
-    out << "</div>";
   }
   out << "</div>";
   if (block.getArray("footer_actions")) {
