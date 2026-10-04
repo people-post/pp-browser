@@ -2217,7 +2217,7 @@ void ChatController::StartQuoteReply(const std::string& text, const std::string&
     preview += (ch == '\n' || ch == '\r') ? ' ' : ch;
   }
   chat_.quote_reply = true;
-  chat_.quote_reply_text = preview.c_str();
+  chat_.quote_reply_text = StructuredTextParser::EscapeText(preview).c_str(); // bound with data-rml
   DataModelHost::Instance().Dirty("chat", "quote_reply");
   DataModelHost::Instance().Dirty("chat", "quote_reply_text");
   if (!context_ || context_->GetNumDocuments() == 0) {
@@ -2249,6 +2249,59 @@ void ChatController::CancelQuoteReply() {
   chat_.quote_reply_text = "";
   DataModelHost::Instance().Dirty("chat", "quote_reply");
   DataModelHost::Instance().Dirty("chat", "quote_reply_text");
+}
+
+void ChatController::JumpToQuotedMessage(const std::string& reply_message_id) {
+  if (!facade_ || !context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  auto page = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 500);
+  if (!page) {
+    return;
+  }
+  // The quote travels as text, so the original is found by its text: the nearest earlier message that
+  // starts with the quoted words.
+  std::string target_id;
+  for (size_t i = 0; i < page->size(); ++i) {
+    if ((*page)[i].id != reply_message_id) {
+      continue;
+    }
+    const auto parts = SplitQuoteReply((*page)[i].text);
+    if (!parts) {
+      return;
+    }
+    std::string needle = parts->quote;
+    if (needle.size() >= 3 && needle.compare(needle.size() - 3, 3, "\xE2\x80\xA6") == 0) {
+      needle.erase(needle.size() - 3); // the ellipsis of a cut quote
+    }
+    const int64_t reply_order = (*page)[i].display_order;
+    int64_t best_order = -1;
+    for (const ThreadMessage& candidate : *page) {
+      if (candidate.id == reply_message_id || candidate.display_order >= reply_order ||
+          candidate.display_order <= best_order || candidate.content_type == ChatContentType::Annotation) {
+        continue;
+      }
+      if (MessagePlainText(candidate.id).rfind(needle, 0) == 0) {
+        best_order = candidate.display_order;
+        target_id = candidate.id;
+      }
+    }
+    break;
+  }
+  ui::Element* row = target_id.empty() ? nullptr
+                                       : context_->GetDocument(0)->QuerySelector(("[message-id=\"" + target_id + "\"]").c_str());
+  if (!row) {
+    ShowToast(Tr("chat.quote.not_found"));
+    return;
+  }
+  row->ScrollIntoView(true);
+}
+
+void ChatController::JumpToQuoteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/, const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
+    return;
+  }
+  Instance().JumpToQuotedMessage(std::string(args[0].Get<ui::String>().c_str()));
 }
 
 void ChatController::CancelQuoteReplyCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -3497,6 +3550,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("attach_file", &ChatController::AttachFileCallback);
         ctor.BindEventCallback("remove_image", &ChatController::RemoveImageCallback);
         ctor.BindEventCallback("cancel_quote_reply", &ChatController::CancelQuoteReplyCallback);
+        ctor.BindEventCallback("jump_to_quote", &ChatController::JumpToQuoteCallback);
         ctor.BindEventCallback("open_attachment", &ChatController::OpenAttachmentCallback);
         ctor.BindEventCallback("download_attachment", &ChatController::DownloadAttachmentCallback);
         ctor.BindEventCallback("retry_attachment", &ChatController::RetryAttachmentCallback);

@@ -316,6 +316,9 @@ private:
    */
   void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {});
   void CancelQuoteReply();
+  /** A tap on the quote of reply `reply_message_id`: scrolls to the message it quotes, if it is on screen. */
+  void JumpToQuotedMessage(const std::string& reply_message_id);
+  static void JumpToQuoteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CancelQuoteReplyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   /** The message being replied to (full text); empty when no reply is pending. */
   std::string quote_reply_source_;

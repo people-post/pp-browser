@@ -22,6 +22,7 @@
 #include "common/Utilities.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <map>
 #include <sstream>
@@ -916,6 +917,17 @@ std::string InboxController::BuildUnsupportedRml(const ThreadMessage& /*message*
          "message.</p></div>";
 }
 
+namespace {
+
+// A quote shows at most two lines: line breaks would waste them.
+std::string OneLine(std::string text) {
+  std::replace(text.begin(), text.end(), '\n', ' ');
+  std::replace(text.begin(), text.end(), '\r', ' ');
+  return text;
+}
+
+} // namespace
+
 std::string InboxController::BuildMessageRml(const ThreadMessage& message) const {
   if (message.content_rml) {
     std::string rml = *message.content_rml;
@@ -958,7 +970,15 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   // A reply that quotes a message: the quote as a block on top (no "> " markers shown), the reply under it.
   std::string text_rml;
   if (const auto parts = SplitQuoteReply(message.text)) {
-    text_rml = "<div class=\"chat-quote\">" + paragraph + StructuredTextParser::EscapeText(parts->quote) + "</p></div>" +
+    // Message ids are generated locally or validated on receive; still keep the click argument to id characters.
+    std::string id_arg;
+    for (const char ch : message.id) {
+      if (std::isalnum(static_cast<unsigned char>(ch)) || ch == '-' || ch == '_') {
+        id_arg.push_back(ch);
+      }
+    }
+    text_rml = "<div class=\"chat-quote chat-quote--jump\" data-event-click=\"jump_to_quote('" + id_arg +
+               "')\"><p class=\"chat-quote-text\">" + StructuredTextParser::EscapeText(OneLine(parts->quote)) + "</p></div>" +
                paragraph + StructuredTextParser::EscapeText(parts->reply) + "</p>";
   } else {
     text_rml = paragraph + StructuredTextParser::EscapeText(message.text) + "</p>";
@@ -1090,8 +1110,8 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
         pending_ai_question = parts ? parts->reply : asked.prompt;
       }
     } else if (message.sender_contact_id == kAiAssistantContactId && !pending_ai_question.empty()) {
-      row.content_rml = ("<div class=\"chat-quote chat-quote--asked\"><p class=\"bubble-text-peer\">" +
-                         StructuredTextParser::EscapeText(pending_ai_question) + "</p></div>" +
+      row.content_rml = ("<div class=\"chat-quote chat-quote--asked\"><p class=\"chat-quote-text\">" +
+                         StructuredTextParser::EscapeText(OneLine(pending_ai_question)) + "</p></div>" +
                          std::string(row.content_rml.c_str()))
                             .c_str();
       pending_ai_question.clear();

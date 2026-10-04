@@ -556,6 +556,7 @@
     "chat.react.more": "More…",
     "chat.react.menu": "React…",
     "chat.menu.ask_ai": "Ask AI",
+    "chat.quote.not_found": "The quoted message is not in the loaded part of this chat.",
     "chat.menu.delete_confirm": "It is removed from this device only. The other side keeps their copy.",
     "chat.menu.delete_title": "Delete this message?",
     "chat.menu.reply": "Reply",

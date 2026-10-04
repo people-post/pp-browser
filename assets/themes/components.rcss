@@ -381,7 +381,23 @@ select selectbox option {
   border-left: 3dp #818cf8;
   border-radius: 6dp;
   background-color: rgba(128, 128, 128, 0.16);
-  opacity: 0.85;
+}
+
+/* Dimmed and at most two lines; the whole message is one tap away (jump_to_quote). */
+.chat-quote-text {
+  display: block;
+  margin-top: 0;
+  margin-bottom: 0;
+  max-height: 36dp;
+  overflow: hidden;
+  word-break: break-word;
+  font-size: 13dp;
+  line-height: 18dp;
+  opacity: 0.6;
+}
+
+.chat-quote--jump {
+  cursor: pointer;
 }
 
 /* A peer's plain-text message: keeps its line breaks, like our own (.bubble-text also sets our colour). */
@@ -544,10 +560,12 @@ select selectbox option {
 .prompt-quote-text {
   flex: 1;
   min-width: 0;
+  display: block;
+  max-height: 36dp; /* two lines */
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  word-break: break-word;
   font-size: 13dp;
+  line-height: 18dp;
   opacity: 0.8;
 }
 
