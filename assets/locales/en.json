@@ -829,7 +829,7 @@
     "feed.result.intro": "Latest from Brief ({count}):",
     "feed.result.title": "Latest briefs",
     "feed.result.empty": "No articles right now.",
-    "feed.result.open": "Open",
+    "feed.result.open": "[View details]",
     "feed.result.more": "Load more",
     "feed.result.more_message": "Load more articles",
     "feed.unavailable": "Articles are unavailable right now.",

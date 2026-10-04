@@ -136,8 +136,9 @@ std::string BuildArticleFeedBlocksJson(const std::string& raw_json, const Articl
       Object open_payload;
       open_payload.set("type", "open_url");
       open_payload.set("url", link);
+      // "link": a small text link at the end of the article's text instead of a button under it.
       item.set("actions", ArrayValue({ObjectValue(MakeAction(labels.open, labels.open, std::move(open_payload),
-                                                              "secondary"))}));
+                                                              "link"))}));
     }
     items.push_back(ObjectValue(std::move(item)));
     if (auto id = article->getString("id")) {

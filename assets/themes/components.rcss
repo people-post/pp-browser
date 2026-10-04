@@ -611,6 +611,24 @@ select selectbox option {
   white-space: pre-wrap;
 }
 
+/* A link-style action at the end of a list item's text (article feed "view details").
+   The text is 12dp; the vertical padding makes the tap target 44dp without changing the line (inline
+   padding does not add line height). focus: none keeps the draft textarea focused, like chat buttons. */
+.chat-inline-link {
+  display: inline;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  margin: 0 0 0 4dp;
+  padding: 16dp 8dp;
+  border: 0;
+  background-color: transparent;
+  font-family: LatoLatin;
+  font-size: 12dp;
+  cursor: pointer;
+  focus: none;
+}
+
 .chat-suggestion {
   display: inline-block;
   width: auto;

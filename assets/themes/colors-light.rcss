@@ -221,6 +221,10 @@ select selectbox option:hover {
   color: #4f46e5;
 }
 
+.chat-inline-link {
+  color: #4f46e5;
+}
+
 .inline-code {
   background-color: #e1e4e9;
 }
