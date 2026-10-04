@@ -18,6 +18,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/ILocalNotifier.h"
+#include "foundation/platform/Platform.h"
 #include "foundation/platform/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "domain/messaging/AttachmentCache.h"
@@ -2004,6 +2005,16 @@ void ChatController::OnSendMessage() {
     return;
   }
 
+  // On a phone the on-screen keyboard stays up for as long as the composer has focus; sending is what closes it.
+  const auto close_keyboard = [this] {
+    if (!Platform::IsMobile() || !context_ || context_->GetNumDocuments() == 0) {
+      return;
+    }
+    if (ui::Element* draft = context_->GetDocument(0)->GetElementById("draft-input")) {
+      draft->Blur();
+    }
+  };
+
   if (!text.empty()) {
     if (auto valid = ChatPayloadValidator::ValidateOutboundText(text); !valid) {
       ShowToast(Tr("chat.error.message_too_long"));
@@ -2017,12 +2028,14 @@ void ChatController::OnSendMessage() {
       chat_.draft = "";
       DirtyChatChrome();
       scroller_.RequestScrollToLatest();
+      close_keyboard();
     }
     return;
   }
   chat_.draft = "";
   DirtyChatChrome();
   scroller_.RequestScrollToLatest();
+  close_keyboard();
   SendUserText(text);
 }
 
