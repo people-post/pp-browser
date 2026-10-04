@@ -13,6 +13,7 @@
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "domain/messaging/PskRotateCodec.h"
+#include "domain/messaging/AtAiParser.h"
 #include "domain/messaging/QuoteReply.h"
 #include "domain/messaging/ReactionTypes.h"
 #include "domain/ui/ChatFormHelper.h"
@@ -954,11 +955,11 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   if (!badges.empty()) {
     badges = "<div class=\"chat-message-meta\">" + badges + "</div>";
   }
-  // A reply that quotes a message: the reply, then the quote as a block (no "> " markers shown).
+  // A reply that quotes a message: the quote as a block on top (no "> " markers shown), the reply under it.
   std::string text_rml;
   if (const auto parts = SplitQuoteReply(message.text)) {
-    text_rml = paragraph + StructuredTextParser::EscapeText(parts->reply) + "</p><div class=\"chat-quote\">" + paragraph +
-               StructuredTextParser::EscapeText(parts->quote) + "</p></div>";
+    text_rml = "<div class=\"chat-quote\">" + paragraph + StructuredTextParser::EscapeText(parts->quote) + "</p></div>" +
+               paragraph + StructuredTextParser::EscapeText(parts->reply) + "</p>";
   } else {
     text_rml = paragraph + StructuredTextParser::EscapeText(message.text) + "</p>";
   }
@@ -1026,6 +1027,7 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
   std::vector<ThreadMessage> orphan_annotations;
   std::vector<ThreadMessage> pending_annotations;
 
+  std::string pending_ai_question;
   // Messages this device hid ("delete for me"), each marked by a local annotation.
   std::unordered_set<std::string> hidden_ids;
   for (const ThreadMessage& message : messages) {
@@ -1078,6 +1080,21 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
     if (!CallControlCodec::IsCallControlMessage(message) && message.transport &&
         *message.transport != MessageTransport::Local) {
       row.transport_badge = MessageTransportBadgeLabel(*message.transport).c_str();
+    }
+    // An "@ai" question and its answer: the answer shows what was asked on top, like a reply.
+    if (message.sender_contact_id == kLocalSelfContactId) {
+      const AtAiParseResult asked = ParseAtAiPrefix(message.text);
+      pending_ai_question.clear();
+      if (asked.is_ai_invoke) {
+        const auto parts = SplitQuoteReply(asked.prompt);
+        pending_ai_question = parts ? parts->reply : asked.prompt;
+      }
+    } else if (message.sender_contact_id == kAiAssistantContactId && !pending_ai_question.empty()) {
+      row.content_rml = ("<div class=\"chat-quote chat-quote--asked\"><p class=\"bubble-text-peer\">" +
+                         StructuredTextParser::EscapeText(pending_ai_question) + "</p></div>" +
+                         std::string(row.content_rml.c_str()))
+                            .c_str();
+      pending_ai_question.clear();
     }
     row.has_content = true;
     row_index_by_id[message.id] = rows.size();

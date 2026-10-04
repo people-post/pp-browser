@@ -2196,7 +2196,7 @@ std::string ChatController::MessagePlainText(const std::string& message_id) cons
   return {};
 }
 
-void ChatController::StartQuoteReply(const std::string& text) {
+void ChatController::StartQuoteReply(const std::string& text, const std::string& draft_prefix) {
   if (chat_.compose_disabled || text.empty()) {
     return;
   }
@@ -2216,10 +2216,23 @@ void ChatController::StartQuoteReply(const std::string& text) {
   chat_.quote_reply_text = preview.c_str();
   DataModelHost::Instance().Dirty("chat", "quote_reply");
   DataModelHost::Instance().Dirty("chat", "quote_reply_text");
-  if (context_ && context_->GetNumDocuments() > 0) {
-    if (ui::Element* draft = context_->GetDocument(0)->GetElementById("draft-input")) {
-      draft->Focus();
-    }
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  auto* draft = ui_dynamic_cast<ui::ElementFormControlTextArea*>(context_->GetDocument(0)->GetElementById("draft-input"));
+  if (!draft) {
+    return;
+  }
+  if (!draft_prefix.empty()) {
+    chat_.draft = draft_prefix.c_str();
+    DataModelHost::Instance().Dirty("chat", "draft");
+    draft->SetValue(draft_prefix.c_str());
+  }
+  draft->Focus();
+  if (!draft_prefix.empty()) {
+    const ui::String current = draft->GetValue();
+    const int end = ui::StringUtilities::ConvertByteOffsetToCharacterOffset(current, static_cast<int>(current.size()));
+    draft->SetSelectionRange(end, end);
   }
 }
 
@@ -2239,24 +2252,6 @@ void ChatController::CancelQuoteReplyCallback(ui::DataModelHandle /*model*/, ui:
   Instance().CancelQuoteReply();
 }
 
-void ChatController::DraftAskAi(const std::string& text) {
-  if (chat_.compose_disabled || !context_ || context_->GetNumDocuments() == 0) {
-    return;
-  }
-  // The question goes on its own line after the message; the user types it and sends.
-  const std::string value = "@ai " + text + "\n";
-  chat_.draft = value.c_str();
-  DataModelHost::Instance().Dirty("chat", "draft");
-  auto* draft = ui_dynamic_cast<ui::ElementFormControlTextArea*>(context_->GetDocument(0)->GetElementById("draft-input"));
-  if (!draft) {
-    return;
-  }
-  draft->SetValue(value.c_str());
-  draft->Focus();
-  const ui::String current = draft->GetValue();
-  const int end = ui::StringUtilities::ConvertByteOffsetToCharacterOffset(current, static_cast<int>(current.size()));
-  draft->SetSelectionRange(end, end);
-}
 
 void ChatController::OpenEmojiInsertMenu(ui::Event* ev) {
   if (chat_.compose_disabled) {
@@ -3613,9 +3608,9 @@ bool ChatController::Setup(ui::Context* context) {
                              system->SetClipboardText(text);
                            }
                          }});
-      // "@ai " plus the message go into the composer; the user adds the question and sends.
+      // Ask AI: the message goes into the quote bar and "@ai " into the input; the user adds the question.
       if (auto active = facade_->GetActiveThread(); active && active->kind == ThreadKind::Direct) {
-        actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { DraftAskAi(text); }});
+        actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { StartQuoteReply(text, "@ai "); }});
       }
     }
     // Delete for me: this device stops showing the message; the peer keeps theirs.

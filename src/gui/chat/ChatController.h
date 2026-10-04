@@ -310,12 +310,13 @@ private:
   void SyncComposerInputState();
   /** What the user reads in a message of the active thread ("" when not found). */
   std::string MessagePlainText(const std::string& message_id) const;
-  /** Reply: shows `text` as the quote bar above the composer; the next send carries it as a quote. */
-  void StartQuoteReply(const std::string& text);
+  /**
+   * Reply / Ask AI: shows `text` as the quote bar above the composer; the next send carries it as a quote.
+   * `draft_prefix` ("@ai " for Ask AI) is put into the input with the caret after it.
+   */
+  void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {});
   void CancelQuoteReply();
   static void CancelQuoteReplyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  /** Ask AI: fills the composer with "@ai <text>" and puts the caret after it for the question. */
-  void DraftAskAi(const std::string& text);
   /** The message being replied to (full text); empty when no reply is pending. */
   std::string quote_reply_source_;
   void ShowReactionMorePrompt(const std::string& message_id);

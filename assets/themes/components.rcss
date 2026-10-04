@@ -373,13 +373,15 @@ select selectbox option {
   word-break: break-word;
 }
 
-/* The quoted message under a reply (domain/messaging/QuoteReply.h). */
+/* The quoted message on top of a reply, and the question on top of an @ai answer (domain/messaging/QuoteReply.h). */
 .chat-quote {
   display: block;
-  margin-top: 6dp;
-  padding: 2dp 0 2dp 8dp;
-  border-left: 3dp rgba(128, 128, 128, 0.7);
-  opacity: 0.8;
+  margin-bottom: 6dp;
+  padding: 4dp 8dp;
+  border-left: 3dp #818cf8;
+  border-radius: 6dp;
+  background-color: rgba(128, 128, 128, 0.16);
+  opacity: 0.85;
 }
 
 /* A peer's plain-text message: keeps its line breaks, like our own (.bubble-text also sets our colour). */
