@@ -27,6 +27,9 @@ struct ContextMenuAction {
   bool danger = false;
   /// When true, show a selected/checkmark affordance (pickers).
   bool selected = false;
+  /// When true and the menu is anchored to an item, the action goes into the row above the item
+  /// (reaction emoji over a chat message) instead of the list below it.
+  bool quick = false;
 };
 
 struct ContextMenuRequest {
@@ -58,6 +61,9 @@ public:
   /// Height at the bottom of the window that is covered (on-screen keyboard, bottom chrome); menus stay above it.
   void SetBottomInsetDp(int inset_dp) { bottom_inset_dp_ = inset_dp; }
   void RegisterProvider(std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)> provider);
+  /// Maps a pressed element to the item it belongs to (a chat message row), or nullptr. A menu for such an
+  /// item shows only the providers' actions, the list below the item and `quick` actions above it.
+  void SetAnchorResolver(std::function<ui::Element*(ui::Element* target)> resolver) { anchor_resolver_ = std::move(resolver); }
   void ShowAt(const ContextMenuRequest& request);
   /// Show an explicit action list (no copy/select/paste text actions).
   void ShowActions(ui::Vector2i position, std::vector<ContextMenuAction> actions);
@@ -82,6 +88,7 @@ private:
                    Presentation presentation);
   void ClampFloatPanel(ui::Vector2i preferred);
   void LayoutBar(ui::Vector2i touch);
+  void LayoutAnchored(ui::Vector2i touch);
   void LayoutActionSheet();
   int FindMenuItemIndex(ui::Element* target) const;
   void HandleMenuAction(int index);
@@ -91,6 +98,8 @@ private:
   ui::Context* menu_context_ = nullptr;
   ui::Element* menu_target_ = nullptr;
   ui::Element* menu_editor_ = nullptr;
+  ui::Element* menu_anchor_ = nullptr;
+  std::function<ui::Element*(ui::Element*)> anchor_resolver_;
   /// Focused element when the menu opened; restored on outside / Escape / Cancel dismiss.
   ui::Element* focus_restore_ = nullptr;
   ui::Element* layer_ = nullptr;

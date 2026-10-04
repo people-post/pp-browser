@@ -82,6 +82,7 @@
 #include "common/ValueJson.h"
 
 #include <ui/dom/Context.h>
+#include <ui/dom/SelectionController.h>
 #include <ui/Core.h>
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Element.h>
@@ -2166,26 +2167,35 @@ void ChatController::ShowReactionMorePrompt(const std::string& message_id) {
       });
 }
 
-void ChatController::OpenReactPresetMenu(const std::string& message_id, ui::Vector2i position) {
-  if (message_id.empty()) {
-    return;
+std::string ChatController::MessagePlainText(const std::string& message_id) const {
+  if (!facade_ || message_id.empty()) {
+    return {};
   }
-  std::vector<ContextMenuAction> actions;
-  for (const char* emoji : kReactionPresets) {
-    actions.push_back({
-        std::string("react_") + emoji,
-        emoji,
-        nullptr,
-        [this, message_id, emoji]() { ToggleReaction(message_id, emoji); },
-    });
+  const auto page = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 500);
+  if (!page) {
+    return {};
   }
-  actions.push_back({
-      "react_more",
-      Tr("chat.react.more"),
-      nullptr,
-      [this, message_id]() { ShowReactionMorePrompt(message_id); },
-  });
-  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  for (const ThreadMessage& message : *page) {
+    if (message.id != message_id) {
+      continue;
+    }
+    // Local-pipeline AI answers are stored as UI block documents; copy what the user reads.
+    if (const auto prose = StructuredTextParser::PlainTextIfBlocks(message.text)) {
+      return *prose;
+    }
+    return message.text;
+  }
+  return {};
+}
+
+void ChatController::DraftAskAi(const std::string& text) {
+  chat_.draft = ("@ai " + text).c_str();
+  DirtyChatChrome();
+  if (context_ && context_->GetNumDocuments() > 0) {
+    if (ui::Element* draft = context_->GetDocument(0)->GetElementById("draft-input")) {
+      draft->Focus();
+    }
+  }
 }
 
 void ChatController::OpenEmojiInsertMenu(ui::Event* ev) {
@@ -3511,14 +3521,47 @@ bool ChatController::Setup(ui::Context* context) {
     if (message_id.empty()) {
       return actions;
     }
-    const ui::Vector2i pos = request.position;
-    actions.push_back({
-        "react_message",
-        Tr("chat.react.menu"),
-        nullptr,
-        [this, message_id, pos]() { OpenReactPresetMenu(message_id, pos); },
-    });
+    // Reactions sit in the row above the message, the rest in the list below it.
+    for (const char* emoji : kReactionPresets) {
+      ContextMenuAction react{std::string("react_") + emoji, emoji, nullptr,
+                              [this, message_id, emoji]() { ToggleReaction(message_id, emoji); }};
+      react.quick = true;
+      actions.push_back(std::move(react));
+    }
+    ContextMenuAction more{"react_more", "+", nullptr, [this, message_id]() { ShowReactionMorePrompt(message_id); }};
+    more.quick = true;
+    actions.push_back(std::move(more));
+
+    // Copy takes the pointer selection when there is one (desktop), otherwise the whole message.
+    std::string text;
+    if (request.context) {
+      if (ui::SelectionController* selection = request.context->GetSelectionController()) {
+        text = selection->GetSelectedText();
+      }
+    }
+    if (text.empty()) {
+      text = MessagePlainText(message_id);
+    }
+    if (!text.empty()) {
+      actions.push_back({"copy_message", Tr("common.copy"), nullptr, [text]() {
+                           if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+                             system->SetClipboardText(text);
+                           }
+                         }});
+      // Same as typing "@ai <text>" in a direct chat: the draft is filled in, nothing is sent until the user sends it.
+      if (auto active = facade_->GetActiveThread(); active && active->kind == ThreadKind::Direct) {
+        actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { DraftAskAi(text); }});
+      }
+    }
     return actions;
+  });
+  ContextMenuHost::Instance().SetAnchorResolver([](ui::Element* target) -> ui::Element* {
+    for (ui::Element* cur = target; cur; cur = cur->GetParentNode()) {
+      if (cur->HasAttribute("message-id")) {
+        return cur;
+      }
+    }
+    return nullptr;
   });
 
   // After Initialize clears state: Latin UI is ready; CJK waits on deferred faces.

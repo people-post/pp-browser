@@ -553,6 +553,7 @@
     "chat.react.prompt": "Pick an emoji (use the keyboard emoji key on mobile).",
     "chat.react.more": "More…",
     "chat.react.menu": "React…",
+    "chat.menu.ask_ai": "Ask AI",
     "chat.menu.chat_with_ai": "Chat with AI",
     "chat.menu.message_a_contact": "Message a contact",
     "chat.menu.find_someone": "Find someone",

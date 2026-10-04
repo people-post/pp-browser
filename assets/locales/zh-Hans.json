@@ -553,6 +553,7 @@
     "chat.react.prompt": "选择一个表情（手机上可使用键盘的表情键）。",
     "chat.react.more": "更多…",
     "chat.react.menu": "回应…",
+    "chat.menu.ask_ai": "问问 AI",
     "chat.menu.chat_with_ai": "与 AI 聊天",
     "chat.menu.message_a_contact": "给联系人发消息",
     "chat.menu.find_someone": "查找联系人",

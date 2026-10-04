@@ -305,7 +305,10 @@ private:
   void DownloadAttachment(const std::string& message_id);
   void RetryAttachmentDownload(const std::string& message_id);
   void SyncComposerInputState();
-  void OpenReactPresetMenu(const std::string& message_id, ui::Vector2i position);
+  /** What the user reads in a message of the active thread ("" when not found). */
+  std::string MessagePlainText(const std::string& message_id) const;
+  /** Puts "@ai <text>" into the composer and focuses it; the user decides whether to send. */
+  void DraftAskAi(const std::string& text);
   void ShowReactionMorePrompt(const std::string& message_id);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
   void CalendarPrev(const std::string& entry_id);

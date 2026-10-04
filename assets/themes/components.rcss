@@ -3904,6 +3904,27 @@ input.checkbox {
   white-space: nowrap;
 }
 
+/* Reaction row above a chat message (ContextMenuHost::LayoutAnchored). */
+.context-menu-quick {
+  display: flex;
+  flex-direction: row;
+  min-width: 0;
+  border-radius: 22dp;
+}
+
+.context-menu-quick .context-menu-item {
+  width: auto;
+  min-height: 40dp;
+  padding: 4dp 8dp;
+  border-radius: 18dp;
+}
+
+.context-menu-quick .context-menu-item-label {
+  flex: 0 0 auto;
+  font-size: 22dp;
+  white-space: nowrap;
+}
+
 /* Compact ShowActions: iOS-style bottom action sheet.
    Sheet frame (left / width / bottom) comes from ContextMenuHost::LayoutActionSheet.
    Block stack (not flex) avoids min-content overflow past the viewport frame. */
