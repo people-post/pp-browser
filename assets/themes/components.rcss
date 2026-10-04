@@ -3886,6 +3886,24 @@ input.checkbox {
   box-sizing: border-box;
 }
 
+/* Touch text menu of an input field: one horizontal row, placed by ContextMenuHost::LayoutBar. */
+.context-menu-layer--bar .context-menu-panel {
+  display: flex;
+  flex-direction: row;
+  min-width: 0;
+}
+
+.context-menu-layer--bar .context-menu-item {
+  width: auto;
+  min-height: 36dp;
+  padding: 6dp 12dp;
+}
+
+.context-menu-layer--bar .context-menu-item-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 /* Compact ShowActions: iOS-style bottom action sheet.
    Sheet frame (left / width / bottom) comes from ContextMenuHost::LayoutActionSheet.
    Block stack (not flex) avoids min-content overflow past the viewport frame. */

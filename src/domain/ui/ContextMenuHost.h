@@ -33,6 +33,8 @@ struct ContextMenuRequest {
   ui::Vector2i position;
   ui::Element* target = nullptr;
   ui::Context* context = nullptr;
+  /** Opened by a long press (touch) rather than a pointer. */
+  bool touch = false;
 };
 
 /** Anchor a float menu just below an element (left-aligned). */
@@ -69,7 +71,8 @@ public:
   bool OnContextPointer(ui::Context* context, int x, int y);
 
 private:
-  enum class Presentation { Float, ActionSheet };
+  /** Bar: the touch text menu of an input field, one horizontal row placed clear of the field. */
+  enum class Presentation { Float, ActionSheet, Bar };
 
   void ProcessEvent(ui::Event& event) override;
   void OnDetach(ui::Element* element) override;
@@ -78,6 +81,7 @@ private:
   void RenderMenu(const ContextMenuRequest& request, const std::vector<ContextMenuAction>& actions,
                    Presentation presentation);
   void ClampFloatPanel(ui::Vector2i preferred);
+  void LayoutBar(ui::Vector2i touch);
   void LayoutActionSheet();
   int FindMenuItemIndex(ui::Element* target) const;
   void HandleMenuAction(int index);

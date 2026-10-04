@@ -13,6 +13,7 @@
 #include <ui/base/SystemInterface.h>
 
 #include <climits>
+#include <algorithm>
 #include <cstdio>
 #include <sstream>
 
@@ -68,6 +69,7 @@ ui::Vector2i MenuPositionBelowRightAlignedEvent(ui::Event& ev, float menu_min_wi
 namespace {
 
 constexpr float kViewportMarginPx = 8.f;
+constexpr float kBarGapDp = 8.f;
 constexpr float kActionSheetInsetDp = 12.f;
 constexpr float kActionSheetBottomDp = 20.f;
 constexpr float kActionSheetMaxWidthDp = 480.f;
@@ -193,6 +195,7 @@ void ContextMenuHost::OnLongPress(ui::Vector2i position, ui::Element* target) {
   request.position = position;
   request.target = target;
   request.context = context_;
+  request.touch = true;
   ShowAt(request);
 }
 
@@ -325,6 +328,37 @@ void ContextMenuHost::ClampFloatPanel(ui::Vector2i preferred) {
   panel_->SetProperty("top", top_buf);
 }
 
+void ContextMenuHost::LayoutBar(ui::Vector2i touch) {
+  if (!panel_ || !context_ || !menu_editor_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  context_->GetDocument(0)->UpdateDocument();
+
+  const ui::Vector2i dims = context_->GetDimensions();
+  const ui::Vector2f size = panel_->GetBox().GetSize(ui::BoxArea::Border);
+  if (size.x <= 0.f || size.y <= 0.f || dims.x <= 0 || dims.y <= 0) {
+    return;
+  }
+
+  // Above the field, so the row never covers the text being selected; below it only when there is no room.
+  const float gap = kBarGapDp * context_->GetDensityIndependentPixelRatio();
+  const float field_top = menu_editor_->GetAbsoluteOffset(ui::BoxArea::Border).y;
+  const float field_bottom = field_top + menu_editor_->GetBox().GetSize(ui::BoxArea::Border).y;
+  float top = field_top - gap - size.y;
+  if (top < kViewportMarginPx) {
+    top = field_bottom + gap;
+  }
+  const float max_left = static_cast<float>(dims.x) - size.x - kViewportMarginPx;
+  const float left = std::max(kViewportMarginPx, std::min(static_cast<float>(touch.x) - size.x * 0.5f, max_left));
+
+  char left_buf[32];
+  char top_buf[32];
+  std::snprintf(left_buf, sizeof(left_buf), "%.0fpx", left);
+  std::snprintf(top_buf, sizeof(top_buf), "%.0fpx", top);
+  panel_->SetProperty("left", left_buf);
+  panel_->SetProperty("top", top_buf);
+}
+
 void ContextMenuHost::LayoutActionSheet() {
   if (!panel_ || !context_) {
     return;
@@ -405,6 +439,9 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
   if (presentation == Presentation::ActionSheet) {
     layer_element->SetClass("context-menu-layer--sheet", true);
   }
+  if (presentation == Presentation::Bar) {
+    layer_element->SetClass("context-menu-layer--bar", true);
+  }
   layer_element->SetInnerRML(out.str());
   layer_ = body->AppendChild(std::move(layer_element));
   panel_ = layer_ ? layer_->GetElementById("context-menu-panel") : nullptr;
@@ -416,6 +453,8 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
 
   if (presentation == Presentation::Float) {
     ClampFloatPanel(request.position);
+  } else if (presentation == Presentation::Bar) {
+    LayoutBar(request.position);
   } else {
     LayoutActionSheet();
   }
@@ -456,7 +495,7 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
     return;
   }
   // Contextual menus stay anchored near the pointer/selection even on compact layout.
-  RenderMenu(request, active_actions_, Presentation::Float);
+  RenderMenu(request, active_actions_, request.touch && menu_editor_ ? Presentation::Bar : Presentation::Float);
 }
 
 void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenuAction> actions) {
