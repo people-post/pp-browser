@@ -425,12 +425,17 @@ ParseResult ParseCalendarBlock(const Object& block) {
   return result;
 }
 
-ParseResult ParseLongListActionButton(ParseResult& parent, const Value& action_value) {
+// `allow_link`: only an item's own actions may render as an inline text link; a footer action with that
+// style is a normal button.
+ParseResult ParseLongListActionButton(ParseResult& parent, const Value& action_value, const bool allow_link = false) {
   const Object* action = asObject(action_value);
   if (!action || !action->getString("label") || !action->getString("message")) {
     return BlockError("long_list actions require label and message");
   }
-  const std::string style = action->getString("style").value_or("");
+  std::string style = action->getString("style").value_or("");
+  if (style == kInlineLinkActionStyle && !allow_link) {
+    style.clear();
+  }
   if (action->contains("payload")) {
     const auto payload = ParseOptionalButtonPayload(*action);
     if (!payload) {
@@ -479,7 +484,7 @@ ParseResult RenderLongListItem(ParseResult& parent, const Object& item) {
   std::string row;
   if (const Array* actions = item.getArray("actions")) {
     for (const Value& action_value : actions->elements) {
-      auto button = ParseLongListActionButton(parent, action_value);
+      auto button = ParseLongListActionButton(parent, action_value, /*allow_link=*/true);
       if (!button.ok) {
         return button;
       }

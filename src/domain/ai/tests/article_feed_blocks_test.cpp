@@ -75,6 +75,22 @@ TEST(ArticleFeedBlocksTest, EmptyFeedSaysSoAndNonFeedJsonYieldsNothing) {
   EXPECT_TRUE(BuildArticleFeedBlocksJson(R"([1,2])").empty());
 }
 
+// The link style is for an item's own actions; in the footer it stays a button.
+TEST(ArticleFeedBlocksTest, LinkStyleInFooterIsAButton) {
+  const std::string json = R"({"blocks":[{"type":"long_list","items":[{"title":"One","actions":[
+      {"label":"Details","message":"Details","style":"link"}]}],
+      "footer_actions":[{"label":"More","message":"More","style":"link"}]}]})";
+  auto parsed = StructuredTextParser::ParseBlocksJson(json, ResponseGoal::DisplayFeed);
+  ASSERT_TRUE(parsed.ok) << parsed.error;
+  ASSERT_EQ(parsed.working_set_candidates.size(), 1u);
+  const std::string& rml = parsed.working_set_candidates[0].artifact_rml;
+  const size_t footer = rml.find("chat-long-list-footer");
+  ASSERT_NE(footer, std::string::npos);
+  EXPECT_NE(rml.find("chat-inline-link"), std::string::npos);          // the item's action
+  EXPECT_EQ(rml.find("chat-inline-link", footer), std::string::npos);  // not the footer's
+  EXPECT_NE(rml.find("chat-suggestion", footer), std::string::npos);
+}
+
 TEST(ArticleFeedBlocksTest, LocalizedLabelsFallBackToEnglishWithoutACatalog) {
   const ArticleFeedLabels labels = LocalizedArticleFeedLabels();
   EXPECT_EQ(labels.intro, ArticleFeedLabels{}.intro);
