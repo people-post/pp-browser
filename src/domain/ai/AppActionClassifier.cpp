@@ -17,6 +17,7 @@ constexpr size_t kZhBareMaxChars = 10;  // a bare settings-read phrase
 constexpr size_t kEnMaxChars = 160;
 constexpr size_t kEnMaxDistance = 5;    // words from the verb to the object
 constexpr size_t kEnBareMaxWords = 5;   // a bare settings-read phrase
+constexpr size_t kEnSearchMaxTail = 3;  // words after "people"/"user"/…: a name fits, a relative clause does not
 
 using Text = std::u32string;
 using View = std::u32string_view;
@@ -436,6 +437,19 @@ bool EnFormOk(const Words& msg, const EnEntry& e, const Hit hit) {
   return hit == Hit::Phrase && e.settings_read && msg.size() <= kEnBareMaxWords && WordsPrefix(msg, 0, e.phrases);
 }
 
+// "Find people who survived the Titanic" asks about the world, not the directory: after the person word a
+// directory search has at most a name.
+bool EnSearchTailOk(const Words& msg, const EnEntry& e) {
+  for (size_t i = msg.size(); i-- > 0;) {
+    for (const Words& object : e.objects) {
+      if (WordsAt(msg, i, object)) {
+        return msg.size() - (i + object.size()) <= kEnSearchMaxTail;
+      }
+    }
+  }
+  return true;
+}
+
 std::optional<std::string> ClassifyEnglish(std::string_view message, const std::vector<std::string>& declared) {
   std::string text(message);
   // Curly apostrophes would otherwise split "i'd" in two.
@@ -458,7 +472,7 @@ std::optional<std::string> ClassifyEnglish(std::string_view message, const std::
   for (const Hit want : {Hit::Phrase, Hit::VerbObject}) {
     for (const EnEntry* e : entries) {
       const Hit kind = EnHitKind(*e, msg);
-      if (kind == want && EnFormOk(msg, *e, kind)) {
+      if (kind == want && EnFormOk(msg, *e, kind) && (e->tool != "search_people" || EnSearchTailOk(msg, *e))) {
         return std::string(e->tool);
       }
     }

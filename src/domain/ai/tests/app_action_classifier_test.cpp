@@ -170,6 +170,10 @@ const std::vector<std::pair<std::string, std::string>> kEnPositives = {
 
 const std::vector<std::string> kEnNegatives = {
     "Did the US contact Iran about talks?",
+    // A person word followed by a clause is a question about the world, not a directory search.
+    "Can you find people who survived the Titanic?",
+    "Help me find someone to fix my car",
+    "Please search for users affected by the breach",
     "What tariffs did the EU set?",
     "Where is this company registered?",
     "What is in the news today?",
