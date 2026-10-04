@@ -3578,6 +3578,24 @@ bool ChatController::Setup(ui::Context* context) {
         actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { ComposeWithQuote("@ai ", text); }});
       }
     }
+    // Delete for me: this device stops showing the message; the peer keeps theirs.
+    ContextMenuAction remove{"delete_message", Tr("common.delete"), nullptr, [this, message_id]() {
+                               ShowConfirm(Tr("chat.menu.delete_title"), Tr("chat.menu.delete_confirm"),
+                                           [this, message_id](const bool ok) {
+                                             if (!ok || !facade_) {
+                                               return;
+                                             }
+                                             if (auto hidden = facade_->HideMessageLocally(ActiveThreadId(), message_id);
+                                                 !hidden) {
+                                               ShowToast(hidden.error().message);
+                                               return;
+                                             }
+                                             SyncDisplayFromThread();
+                                             NotifySurfaceChanged();
+                                           });
+                             }};
+    remove.danger = true;
+    actions.push_back(std::move(remove));
     return actions;
   });
   ContextMenuHost::Instance().SetAnchorResolver([](ui::Element* target) -> ui::Element* {

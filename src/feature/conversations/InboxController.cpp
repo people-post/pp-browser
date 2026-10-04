@@ -24,6 +24,7 @@
 #include <map>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "common/ValueJson.h"
@@ -195,6 +196,34 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
     }
   } else if (on_thread_changed_) {
     on_thread_changed_();
+  }
+  return {};
+}
+
+Roe<void> InboxController::HideMessageLocally(const std::string& thread_id, const std::string& message_id) {
+  auto has_target = store_.HasMessageId(thread_id, message_id);
+  if (!has_target) {
+    return has_target.error();
+  }
+  if (!*has_target) {
+    return Error("Message not found");
+  }
+  // A local annotation rather than a row delete: a history sync cannot bring the message back, and
+  // nothing in the stored format changes.
+  ThreadMessage marker;
+  marker.id = util::GenerateUuid();
+  marker.thread_id = thread_id;
+  marker.sender_contact_id = kLocalSelfContactId;
+  marker.content_type = ChatContentType::Annotation;
+  marker.payload_json = BuildReactionPayloadJson(kAnnotationTypeHiddenLocal, message_id, "");
+  marker.target_message_id = message_id;
+  marker.timestamp = util::NowUnixMs();
+  marker.delivery = MessageDelivery::Local;
+  marker.relay_visible = false;
+  marker.transport = MessageTransport::Local;
+  auto appended = store_.AppendMessage(marker);
+  if (!appended) {
+    return appended.error();
   }
   return {};
 }
@@ -989,7 +1018,24 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
   std::vector<ThreadMessage> orphan_annotations;
   std::vector<ThreadMessage> pending_annotations;
 
+  // Messages this device hid ("delete for me"), each marked by a local annotation.
+  std::unordered_set<std::string> hidden_ids;
   for (const ThreadMessage& message : messages) {
+    if (message.content_type != ChatContentType::Annotation || message.sender_contact_id != kLocalSelfContactId ||
+        !message.target_message_id) {
+      continue;
+    }
+    auto fields = ChatPayloadCodec::DecodeAnnotationJson(message.payload_json);
+    if (fields && fields->annotation_type == kAnnotationTypeHiddenLocal) {
+      hidden_ids.insert(*message.target_message_id);
+    }
+  }
+
+  for (const ThreadMessage& message : messages) {
+    if (hidden_ids.count(message.id) != 0 ||
+        (message.target_message_id && hidden_ids.count(*message.target_message_id) != 0)) {
+      continue; // the hidden message, and everything attached to it (its marker, its reactions)
+    }
     if (message.content_type == ChatContentType::Annotation) {
       pending_annotations.push_back(message);
       continue;

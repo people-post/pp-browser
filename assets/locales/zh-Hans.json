@@ -556,6 +556,8 @@
     "chat.react.more": "更多…",
     "chat.react.menu": "回应…",
     "chat.menu.ask_ai": "问问 AI",
+    "chat.menu.delete_confirm": "只从这台设备删除，对方那边仍然保留。",
+    "chat.menu.delete_title": "删除这条消息？",
     "chat.menu.reply": "回复",
     "chat.menu.chat_with_ai": "与 AI 聊天",
     "chat.menu.message_a_contact": "给联系人发消息",
