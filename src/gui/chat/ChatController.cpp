@@ -2191,6 +2191,10 @@ std::string ChatController::MessagePlainText(const std::string& message_id) cons
     if (const auto prose = StructuredTextParser::PlainTextIfBlocks(message.text)) {
       return *prose;
     }
+    // A reply that quotes another message: only what this message itself says.
+    if (const auto parts = SplitQuoteReply(message.text)) {
+      return parts->reply;
+    }
     return message.text;
   }
   return {};

@@ -1,13 +1,13 @@
+<div class="prompt-quote" data-model="chat" data-if="quote_reply">
+  <span class="prompt-quote-text" data-value="quote_reply_text"></span>
+  <button class="prompt-attachment-chip-remove" type="button" data-event-click="cancel_quote_reply()"
+          title="{{i18n:common.cancel}}">
+    <svg src="../icons/close.svg" width="10" height="10" crop-to-content="true"></svg>
+  </button>
+</div>
 <div class="prompt-composer" data-model="chat"
      data-class-prompt-composer--e2e="thread_is_private"
      data-class-prompt-composer--disabled="composer_input_disabled">
-  <div class="prompt-quote" data-if="quote_reply">
-    <span class="prompt-quote-text" data-value="quote_reply_text"></span>
-    <button class="prompt-attachment-chip-remove" type="button" data-event-click="cancel_quote_reply()"
-            title="{{i18n:common.cancel}}">
-      <svg src="../icons/close.svg" width="10" height="10" crop-to-content="true"></svg>
-    </button>
-  </div>
   <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="2" max-rows="6"
             maxlength="65536"
             data-value="draft" data-attr-placeholder="draft_placeholder"

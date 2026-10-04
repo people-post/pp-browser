@@ -528,12 +528,13 @@ select selectbox option {
   height: 18dp;
 }
 
-/* Reply in progress: the quoted message, one line, above the composer input. */
+/* Reply / Ask AI in progress: the quoted message, one line, above the composer box. */
 .prompt-quote {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8dp;
-  margin-bottom: 6dp;
+  margin: 0 12dp 6dp 12dp;
   padding: 6dp 10dp;
   border-left: 3dp #818cf8;
   border-radius: 6dp;
