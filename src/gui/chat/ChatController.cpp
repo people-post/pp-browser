@@ -3591,6 +3591,7 @@ bool ChatController::Setup(ui::Context* context) {
                                                return;
                                              }
                                              SyncDisplayFromThread();
+                                             DirtyChatTurns();
                                              NotifySurfaceChanged();
                                            });
                              }};

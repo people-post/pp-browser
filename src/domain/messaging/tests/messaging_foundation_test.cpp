@@ -67,3 +67,19 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   EXPECT_NE(blocks.find("add_contact"), std::string::npos);
   EXPECT_NE(blocks.find("start_conversation"), std::string::npos);
 }
+
+// "Ask AI" on a message puts the question and the quoted message on separate lines.
+TEST(AtAiParserTest, PromptMaySpanLines) {
+  using namespace pbr;
+
+  const AtAiParseResult parsed = ParseAtAiPrefix("@ai is this true?\n\n> line one\n> line two");
+  EXPECT_TRUE(parsed.is_ai_invoke);
+  EXPECT_EQ(parsed.mode, AtAiMode::Local);
+  EXPECT_EQ(parsed.prompt, "is this true?\n\n> line one\n> line two");
+
+  const AtAiParseResult quote_only = ParseAtAiPrefix("@ai \n\n> line one");
+  EXPECT_TRUE(quote_only.is_ai_invoke);
+  EXPECT_EQ(quote_only.prompt, "> line one");
+
+  EXPECT_FALSE(ParseAtAiPrefix("@ai").is_ai_invoke);
+}

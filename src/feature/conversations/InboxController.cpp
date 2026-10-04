@@ -948,7 +948,7 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   }
   const std::string bubble_class = message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
   const std::string paragraph =
-      message.sender_contact_id == kLocalSelfContactId ? "<p class=\"bubble-text\">" : "<p>";
+      message.sender_contact_id == kLocalSelfContactId ? "<p class=\"bubble-text\">" : "<p class=\"bubble-text-peer\">";
   std::string badges = BuildSharedBadgeHtml(message);
   if (!badges.empty()) {
     badges = "<div class=\"chat-message-meta\">" + badges + "</div>";
@@ -1242,6 +1242,10 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
     rows.push_back(std::move(row));
   }
 
+  // Orphan rows were appended last; put every row back where it belongs in time.
+  std::stable_sort(rows.begin(), rows.end(), [](const MessageDisplayRow& a, const MessageDisplayRow& b) {
+    return a.display_order < b.display_order;
+  });
   return rows;
 }
 

@@ -373,6 +373,14 @@ select selectbox option {
   word-break: break-word;
 }
 
+/* A peer's plain-text message: keeps its line breaks, like our own (.bubble-text also sets our colour). */
+.bubble-text-peer {
+  margin-top: 0;
+  margin-bottom: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .assistant-message {
   display: block;
 }
