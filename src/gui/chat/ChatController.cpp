@@ -2175,6 +2175,23 @@ void ChatController::ShowReactionMorePrompt(const std::string& message_id) {
       });
 }
 
+namespace {
+
+// What the user reads in a message.
+std::string PlainTextOf(const ThreadMessage& message) {
+  // Local-pipeline AI answers are stored as UI block documents.
+  if (const auto prose = StructuredTextParser::PlainTextIfBlocks(message.text)) {
+    return *prose;
+  }
+  // A reply that quotes another message: only what this message itself says.
+  if (const auto parts = SplitQuoteReply(message.text)) {
+    return parts->reply;
+  }
+  return message.text;
+}
+
+} // namespace
+
 std::string ChatController::MessagePlainText(const std::string& message_id) const {
   if (!facade_ || message_id.empty()) {
     return {};
@@ -2184,18 +2201,9 @@ std::string ChatController::MessagePlainText(const std::string& message_id) cons
     return {};
   }
   for (const ThreadMessage& message : *page) {
-    if (message.id != message_id) {
-      continue;
+    if (message.id == message_id) {
+      return PlainTextOf(message);
     }
-    // Local-pipeline AI answers are stored as UI block documents; copy what the user reads.
-    if (const auto prose = StructuredTextParser::PlainTextIfBlocks(message.text)) {
-      return *prose;
-    }
-    // A reply that quotes another message: only what this message itself says.
-    if (const auto parts = SplitQuoteReply(message.text)) {
-      return parts->reply;
-    }
-    return message.text;
   }
   return {};
 }
@@ -2281,7 +2289,7 @@ void ChatController::JumpToQuotedMessage(const std::string& reply_message_id) {
           candidate.display_order <= best_order || candidate.content_type == ChatContentType::Annotation) {
         continue;
       }
-      if (MessagePlainText(candidate.id).rfind(needle, 0) == 0) {
+      if (PlainTextOf(candidate).rfind(needle, 0) == 0) {
         best_order = candidate.display_order;
         target_id = candidate.id;
       }
