@@ -53,6 +53,8 @@ public:
   void Install(ui::Context* context);
   /// Compact layout uses a bottom action sheet for ShowActions; floats stay clamped.
   void SetCompactLayout(bool compact);
+  /// Height at the bottom of the window that is covered (on-screen keyboard, bottom chrome); menus stay above it.
+  void SetBottomInsetDp(int inset_dp) { bottom_inset_dp_ = inset_dp; }
   void RegisterProvider(std::function<std::vector<ContextMenuAction>(const ContextMenuRequest&)> provider);
   void ShowAt(const ContextMenuRequest& request);
   /// Show an explicit action list (no copy/select/paste text actions).
@@ -92,6 +94,7 @@ private:
   bool dismiss_pending_ = false;
   bool restore_focus_on_dismiss_ = false;
   bool compact_layout_ = false;
+  int bottom_inset_dp_ = 0;
   Presentation presentation_ = Presentation::Float;
   std::string copy_snapshot_;
   std::vector<ContextMenuAction> active_actions_;

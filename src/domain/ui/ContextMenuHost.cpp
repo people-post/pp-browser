@@ -280,7 +280,8 @@ void ContextMenuHost::ClampFloatPanel(ui::Vector2i preferred) {
   ui::ElementDocument* document = context_->GetDocument(0);
   document->UpdateDocument();
 
-  const ui::Vector2i dims = context_->GetDimensions();
+  ui::Vector2i dims = context_->GetDimensions();
+  dims.y -= static_cast<int>(static_cast<float>(bottom_inset_dp_) * context_->GetDensityIndependentPixelRatio());
   const ui::Vector2f size = panel_->GetBox().GetSize(ui::BoxArea::Border);
   if (size.x <= 0.f || size.y <= 0.f || dims.x <= 0 || dims.y <= 0) {
     return;
@@ -336,7 +337,7 @@ void ContextMenuHost::LayoutActionSheet() {
 
   const float dp = context_->GetDensityIndependentPixelRatio();
   const float inset = kActionSheetInsetDp * dp;
-  const float bottom = kActionSheetBottomDp * dp;
+  const float bottom = (kActionSheetBottomDp + static_cast<float>(bottom_inset_dp_)) * dp;
   const float max_width = kActionSheetMaxWidthDp * dp;
   float width = static_cast<float>(dims.x) - inset * 2.f;
   if (width > max_width) {

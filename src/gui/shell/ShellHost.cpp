@@ -5,6 +5,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/Platform.h"
+#include "foundation/platform/ScreenKeyboard.h"
 #include "foundation/platform/ui/PlatformNavigation.h"
 #include "domain/ui/ContextMenuHost.h"
 #include "domain/ui/RmlVariantHelpers.h"
@@ -1197,7 +1198,8 @@ ShellHost::SafeAreaFromSdl ShellHost::ReadSafeAreaFromSdl() const {
   const float window_to_dp =
       (display_scale > 0.f) ? ((density > 0.f ? density : 1.f) / display_scale) : 1.f;
   const int top_win = std::max(0, safe.y);
-  const int bottom_win = std::max(0, win_h - (safe.y + safe.h));
+  // iOS leaves the on-screen keyboard out of the safe area; it is reported separately (0 elsewhere).
+  const int bottom_win = std::max({0, win_h - (safe.y + safe.h), ScreenKeyboardHeight()});
   insets.top_dp = static_cast<int>(static_cast<float>(top_win) * window_to_dp + 0.5f);
   insets.bottom_dp = static_cast<int>(static_cast<float>(bottom_win) * window_to_dp + 0.5f);
 #endif
@@ -1281,6 +1283,8 @@ void ShellHost::ApplySafeAreaLayout() {
   // full-bleed and lift #shell-root by the panel height so nav stays above it
   // (same visual as OSK document-bottom inset).
   const int layout_bottom = bottom_chrome_open_ ? 0 : state_.safe_area_bottom_dp;
+  // Only a keyboard-sized inset: the home-indicator inset is already part of the menus' own margins.
+  ContextMenuHost::Instance().SetBottomInsetDp(state_.safe_area_bottom_dp >= kImeLatchMinDp ? state_.safe_area_bottom_dp : 0);
   const CompactChromeLayout layout = ShellLayout::ComputeCompactChromeLayout(
       config_, state_.safe_area_top_dp, layout_bottom, titlebar_dp);
   ui::ElementDocument* doc = context_->GetDocument(0);
