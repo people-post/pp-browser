@@ -26,6 +26,11 @@ inline constexpr size_t kUserSyncOlderHistoryLimit = 25;
 inline constexpr size_t kDefaultMessagesPageSize = 100;
 /** Cap on chat transcript rows kept in the Rml `messages` data-for window. */
 inline constexpr size_t kMaxMessagesDomWindow = 200;
+/**
+ * Rows dropped at once when a pinned transcript goes over the cap. The list is bound by index, so every
+ * drop makes the UI re-parse all rows; dropping one row per new message meant that for every message.
+ */
+inline constexpr size_t kMessagesDomWindowTrimBatch = 50;
 inline constexpr size_t kMaxOpenThreadDbs = 16;
 /** D042 — cap merged annotations per target message. */
 inline constexpr size_t kMaxAnnotationsPerTarget = 32;
