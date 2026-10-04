@@ -15,6 +15,7 @@
 #include <climits>
 #include <algorithm>
 #include <cstdio>
+#include <utility>
 #include <sstream>
 
 namespace pbr {
@@ -109,6 +110,26 @@ void SelectAllInEditor(ui::Element* editor) {
     textarea->SetSelectionRange(0, INT_MAX);
   } else if (auto* input = ui_dynamic_cast<ui::ElementFormControlInput*>(editor)) {
     input->SetSelectionRange(0, INT_MAX);
+  }
+}
+
+// Selects the word at the caret: the same expansion a double click does.
+void SelectWordInEditor(ui::Element* editor) {
+  if (!editor) {
+    return;
+  }
+  editor->Focus();
+  editor->DispatchEvent(ui::EventId::Dblclick, ui::Dictionary());
+}
+
+void DeleteEditorSelection(ui::Element* editor) {
+  if (!editor) {
+    return;
+  }
+  editor->Focus();
+  if (ui::Context* context = editor->GetContext()) {
+    context->ProcessKeyDown(ui::Input::KI_BACK, 0);
+    context->ProcessKeyUp(ui::Input::KI_BACK, 0);
   }
 }
 
@@ -262,6 +283,31 @@ std::vector<ContextMenuAction> ContextMenuHost::BuildTextActions() const {
 
   auto paste_enabled = [editor]() { return editor != nullptr; };
   auto paste_run = [editor]() { PasteIntoEditor(editor); };
+
+  if (menu_touch_ && editor) {
+    // Phone text field, two steps: with nothing selected offer Paste / Select / Select all; choosing a
+    // selection reopens the menu as Copy / Cut / Paste.
+    if (snapshot.empty()) {
+      const ContextMenuRequest again{last_position_, target, context, true};
+      actions.push_back({"paste", Tr("common.paste"), nullptr, paste_run});
+      actions.push_back({"select", Tr("common.select"), nullptr, [editor, again]() {
+                           SelectWordInEditor(editor);
+                           Instance().reopen_request_ = again;
+                         }});
+      actions.push_back({"select_all", Tr("common.select_all"), nullptr, [editor, again]() {
+                           SelectAllInEditor(editor);
+                           Instance().reopen_request_ = again;
+                         }});
+      return actions;
+    }
+    actions.push_back({"copy", Tr("common.copy"), nullptr, copy_run});
+    actions.push_back({"cut", Tr("common.cut"), nullptr, [copy_run, editor]() {
+                         copy_run();
+                         DeleteEditorSelection(editor);
+                       }});
+    actions.push_back({"paste", Tr("common.paste"), nullptr, paste_run});
+    return actions;
+  }
 
   actions.push_back({"copy", Tr("common.copy"), copy_enabled, copy_run});
   actions.push_back({"select_all", Tr("common.select_all"), select_all_enabled, select_all_run});
@@ -523,6 +569,8 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
 
 void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
   Dismiss();
+  menu_touch_ = request.touch;
+  last_position_ = request.position;
   menu_context_ = request.context ? request.context : context_;
   menu_target_ = request.target;
   menu_editor_ = nullptr;
@@ -646,6 +694,10 @@ void ContextMenuHost::Update() {
     return;
   }
   Dismiss();
+  // Not from inside the menu's own click: the old layer had to be gone first.
+  if (const auto again = std::exchange(reopen_request_, std::nullopt)) {
+    ShowAt(*again);
+  }
 }
 
 bool ContextMenuHost::HandleDismiss() {

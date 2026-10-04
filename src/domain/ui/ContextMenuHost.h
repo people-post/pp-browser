@@ -6,6 +6,7 @@
 #include <ui/base/Vector2.h>
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -100,6 +101,11 @@ private:
   ui::Element* menu_target_ = nullptr;
   ui::Element* menu_editor_ = nullptr;
   ui::Element* menu_anchor_ = nullptr;
+  /// The open menu came from a long press (touch): a text field then gets the two-step phone menu.
+  bool menu_touch_ = false;
+  ui::Vector2i last_position_;
+  /// Set by Select / Select all: once this menu is gone, open the selection menu for the same field.
+  std::optional<ContextMenuRequest> reopen_request_;
   std::function<ui::Element*(ui::Element*)> anchor_resolver_;
   /// Focused element when the menu opened; restored on outside / Escape / Cancel dismiss.
   ui::Element* focus_restore_ = nullptr;

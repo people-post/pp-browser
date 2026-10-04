@@ -2188,8 +2188,37 @@ std::string ChatController::MessagePlainText(const std::string& message_id) cons
   return {};
 }
 
-void ChatController::AskAiAbout(const std::string& text) {
-  SendUserText("@ai " + text);
+void ChatController::ComposeWithQuote(const std::string& prefix, const std::string& text) {
+  if (chat_.compose_disabled || !context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  // The quote goes under what the user is about to type; long messages are quoted by their beginning.
+  constexpr size_t kMaxQuoteChars = 300;
+  std::string quote = "> ";
+  size_t chars = 0;
+  for (size_t i = 0; i < text.size(); ++i) {
+    const auto byte = static_cast<unsigned char>(text[i]);
+    if ((byte & 0xC0) != 0x80 && ++chars > kMaxQuoteChars) {
+      quote += "\xE2\x80\xA6";
+      break;
+    }
+    quote += text[i];
+    if (text[i] == '\n') {
+      quote += "> ";
+    }
+  }
+  const std::string value = prefix + "\n\n" + quote;
+  chat_.draft = value.c_str();
+  DataModelHost::Instance().Dirty("chat", "draft");
+  auto* draft = ui_dynamic_cast<ui::ElementFormControlTextArea*>(context_->GetDocument(0)->GetElementById("draft-input"));
+  if (!draft) {
+    return;
+  }
+  draft->SetValue(value.c_str());
+  draft->Focus();
+  // Caret right after the prefix, above the quote.
+  const int caret = ui::StringUtilities::ConvertByteOffsetToCharacterOffset(draft->GetValue(), static_cast<int>(prefix.size()));
+  draft->SetSelectionRange(caret, caret);
 }
 
 void ChatController::OpenEmojiInsertMenu(ui::Event* ev) {
@@ -3537,14 +3566,16 @@ bool ChatController::Setup(ui::Context* context) {
       text = MessagePlainText(message_id);
     }
     if (!text.empty()) {
+      // Reply quotes the message under what the user types; the quote travels as plain text.
+      actions.push_back({"reply_message", Tr("chat.menu.reply"), nullptr, [this, text]() { ComposeWithQuote("", text); }});
       actions.push_back({"copy_message", Tr("common.copy"), nullptr, [text]() {
                            if (ui::SystemInterface* system = ui::GetSystemInterface()) {
                              system->SetClipboardText(text);
                            }
                          }});
-      // Same as typing and sending "@ai <text>" in a direct chat.
+      // "@ai " plus the quoted message go into the composer; the user adds the question and sends.
       if (auto active = facade_->GetActiveThread(); active && active->kind == ThreadKind::Direct) {
-        actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { AskAiAbout(text); }});
+        actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { ComposeWithQuote("@ai ", text); }});
       }
     }
     return actions;
