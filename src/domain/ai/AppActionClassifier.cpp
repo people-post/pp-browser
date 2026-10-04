@@ -99,9 +99,16 @@ const std::vector<ZhEntry>& ZhTable() {
   return table;
 }
 
+// Non-ASCII words are written as UTF-8 narrow literals and decoded here. A char32_t literal with CJK in it
+// depends on the compiler reading the source as UTF-8, which MSVC does not do without /utf-8.
+Text W(const char* utf8) {
+  return Decode(utf8);
+}
+
 // First matching prefix, in the given order (regex alternation semantics); returns its length or 0.
-size_t MatchAny(const View s, const std::initializer_list<View> prefixes) {
-  for (const View p : prefixes) {
+size_t MatchAny(const View s, const std::initializer_list<const char*> prefixes) {
+  for (const char* utf8 : prefixes) {
+    const Text p = W(utf8);
     if (StartsWith(s, p)) {
       return p.size();
     }
@@ -110,17 +117,17 @@ size_t MatchAny(const View s, const std::initializer_list<View> prefixes) {
 }
 
 size_t MatchStarter(const View s) {
-  return MatchAny(s, {U"请", U"帮我", U"帮忙", U"给我", U"给", U"替我", U"麻烦", U"把", U"让", U"和", U"跟", U"能不能",
-                      U"能否", U"可不可以", U"我要", U"我想要", U"我想"});
+  return MatchAny(s, {"请", "帮我", "帮忙", "给我", "给", "替我", "麻烦", "把", "让", "和", "跟", "能不能",
+                      "能否", "可不可以", "我要", "我想要", "我想"});
 }
 
 size_t MatchPronoun(const View s) {
-  return MatchAny(s, {U"他", U"她", U"它", U"这个人", U"这个", U"那个", U"这些", U"这位", U"此人"});
+  return MatchAny(s, {"他", "她", "它", "这个人", "这个", "那个", "这些", "这位", "此人"});
 }
 
 bool MatchOpinion(const View s) {
-  return MatchAny(s, {U"我觉得", U"我认为", U"我看", U"我听说", U"我想知道", U"我想了解", U"我想问", U"我想请教", U"我好奇",
-                      U"我感觉"}) > 0;
+  return MatchAny(s, {"我觉得", "我认为", "我看", "我听说", "我想知道", "我想了解", "我想问", "我想请教", "我好奇",
+                      "我感觉"}) > 0;
 }
 
 // ^(在|用)?((pp|app)(?![a-z])|这里|这个软件|这个应用|界面|设置里|通讯录)
@@ -131,9 +138,9 @@ bool MatchAppRef(const View s) {
         return true;
       }
     }
-    return MatchAny(r, {U"这里", U"这个软件", U"这个应用", U"界面", U"设置里", U"通讯录"}) > 0;
+    return MatchAny(r, {"这里", "这个软件", "这个应用", "界面", "设置里", "通讯录"}) > 0;
   };
-  if (!s.empty() && (s[0] == U'在' || s[0] == U'用') && body(s.substr(1))) {
+  if (!s.empty() && (s[0] == W("在")[0] || s[0] == W("用")[0]) && body(s.substr(1))) {
     return true;
   }
   return body(s);
@@ -141,26 +148,27 @@ bool MatchAppRef(const View s) {
 
 // ^(怎么|如何|怎样|咋)(?!评价|看待|看|理解|解读)
 bool MatchHowTo(const View s) {
-  const size_t n = MatchAny(s, {U"怎么", U"如何", U"怎样", U"咋"});
-  return n > 0 && MatchAny(s.substr(n), {U"评价", U"看待", U"看", U"理解", U"解读"}) == 0;
+  const size_t n = MatchAny(s, {"怎么", "如何", "怎样", "咋"});
+  return n > 0 && MatchAny(s.substr(n), {"评价", "看待", "看", "理解", "解读"}) == 0;
 }
 
 // 我(?!们|国|方|军|党|校|司|家|公司)|这台设备|本机|这部手机|这台电脑
 bool SearchSelf(const View s) {
   for (size_t i = 0; i < s.size(); ++i) {
-    if (s[i] == U'我') {
+    if (s[i] == W("我")[0]) {
       const View next = s.substr(i + 1);
-      if (MatchAny(next, {U"们", U"国", U"方", U"军", U"党", U"校", U"司", U"家", U"公司"}) == 0) {
+      if (MatchAny(next, {"们", "国", "方", "军", "党", "校", "司", "家", "公司"}) == 0) {
         return true;
       }
     }
   }
-  return Contains(s, U"这台设备") || Contains(s, U"本机") || Contains(s, U"这部手机") || Contains(s, U"这台电脑");
+  return Contains(s, W("这台设备")) || Contains(s, W("本机")) || Contains(s, W("这部手机")) || Contains(s, W("这台电脑"));
 }
 
 // (了吗|的是谁|是谁|过吗|没有)$
 bool QuestionTail(const View s) {
-  for (const View t : {View(U"了吗"), View(U"的是谁"), View(U"是谁"), View(U"过吗"), View(U"没有")}) {
+  for (const char* utf8 : {"了吗", "的是谁", "是谁", "过吗", "没有"}) {
+    const Text t = W(utf8);
     if (s.size() >= t.size() && s.compare(s.size() - t.size(), t.size(), t) == 0) {
       return true;
     }
@@ -234,7 +242,7 @@ bool ZhFormOk(const View msg, const ZhEntry& e, const Hit hit) {
     }
     const size_t pron = MatchPronoun(rest);
     for (const View r : {rest, rest.substr(pron)}) {
-      if (StartsWith(r, U"我") || MatchAppRef(r) || AnyPrefix(e.verbs, r) || AnyPrefix(e.objects, r) ||
+      if (StartsWith(r, W("我")) || MatchAppRef(r) || AnyPrefix(e.verbs, r) || AnyPrefix(e.objects, r) ||
           AnyPrefix(e.phrases, r)) {
         return true;
       }
