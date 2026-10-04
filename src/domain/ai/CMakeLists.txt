@@ -1,5 +1,6 @@
 pp_browser_add_domain_library(pp_domain_ai
   SOURCES
+    AppActionClassifier.cpp
     ArticleFeedBlocks.cpp
     BriefAiClient.cpp
     LlmClient.cpp
