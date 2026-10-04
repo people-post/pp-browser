@@ -1,7 +1,9 @@
+#include <chrono>
 #include <stdexcept>
 #include <filesystem>
 #include <fstream>
 #include "gui/chat/ChatController.h"
+#include "common/Metrics.h"
 #include "feature/conversations/ConversationsFacade.h"
 #include "gui/shell/ShellSetupPorts.h"
 #include "gui/chat/ChatDataModel.h"
@@ -1738,6 +1740,10 @@ void ChatController::ResetChatPanelState() {
   SyncComposerInputState();
 }
 
+namespace {
+constexpr int64_t kSlowDisplaySyncMs = 8; // half a 60 Hz frame
+} // namespace
+
 void ChatController::SyncDisplayFromThread() {
   if (!messaging_ready_) {
     return;
@@ -1746,12 +1752,13 @@ void ChatController::SyncDisplayFromThread() {
     chrome_.ResetPanelState();
     return;
   }
+  const auto sync_started = std::chrono::steady_clock::now();
   const std::string thread_id = ActiveThreadId();
-  if (facade_) {
-    facade_->EnsureThreadAttachments(thread_id);
-  }
   const bool thread_changed = scroller_.BeginDisplaySync(thread_id);
   if (thread_changed) {
+    // A backfill for attachments that were never queued: it reads the whole thread, so it runs when the
+    // thread is opened, not on every sync. New messages are queued where they are received or sent.
+    facade_->EnsureThreadAttachments(thread_id);
     DiscardPendingAiImage(); // the chip belongs to the composer of the thread it was picked in
   }
 
@@ -1768,6 +1775,17 @@ void ChatController::SyncDisplayFromThread() {
   chat_.use_messages_layout = true;
 
   scroller_.EndDisplaySync(thread_changed, prev_tail_id, prev_count);
+
+  // Runs on the UI thread for every message, reaction and AI reply: report the slow ones.
+  const auto sync_ms =
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - sync_started).count();
+  if (sync_ms >= kSlowDisplaySyncMs) {
+    MetricsLine("chat.sync_slow")
+        .Add("ms", static_cast<int64_t>(sync_ms))
+        .Add("rows", static_cast<int64_t>(chat_.messages.size()))
+        .Add("thread_changed", thread_changed ? "1" : "0")
+        .Emit();
+  }
 }
 
 // The delta's entry_id is the pending turn's user message id; the final AssistantReady carries the

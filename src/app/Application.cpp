@@ -1354,6 +1354,9 @@ void Application::Run() {
 
   int skip_log_countdown = 0;
   bool logged_first_present = false;
+  constexpr int64_t kSlowFrameMs = 50; // three 60 Hz frames
+  auto last_slow_frame_line = std::chrono::steady_clock::time_point{};
+  int slow_frames_skipped = 0;
 #if UI_SDL_VERSION_MAJOR >= 3
   // Live layout+Present while the OS modal resize loop blocks Poll/WaitEvent.
   Backend::SetLiveResizeHandler(context, [](ui::Context* ctx) {
@@ -1389,10 +1392,12 @@ void Application::Run() {
       contacts_->Tick();
     }
     call_->Tick();
+    const auto frame_started = std::chrono::steady_clock::now();
     chat_->Update();
     ContextMenuHost::Instance().Update();
     shell_->Update(context);
     context->Update();
+    const auto layout_done = std::chrono::steady_clock::now();
     chat_->AfterLayout();
     // After Context::Update (which resets next_update_timeout): arm power-save for shell timers.
     shell_->NotifyFrameEnd(context);
@@ -1414,6 +1419,24 @@ void Application::Run() {
         });
       }
       skip_log_countdown = 0;
+      // A frame that took long enough to be felt (layout + draw). Startup frames are not counted, and at
+      // most one line a second is written, carrying how many were skipped.
+      const auto frame_done = std::chrono::steady_clock::now();
+      const auto frame_ms = std::chrono::duration_cast<std::chrono::milliseconds>(frame_done - frame_started).count();
+      if (logged_first_present && frame_ms >= kSlowFrameMs) {
+        if (frame_done - last_slow_frame_line >= std::chrono::seconds(1)) {
+          MetricsLine("ui.slow_frame")
+              .Add("ms", static_cast<int64_t>(frame_ms))
+              .Add("layout_ms", static_cast<int64_t>(
+                                    std::chrono::duration_cast<std::chrono::milliseconds>(layout_done - frame_started).count()))
+              .Add("skipped", static_cast<int64_t>(slow_frames_skipped))
+              .Emit();
+          last_slow_frame_line = frame_done;
+          slow_frames_skipped = 0;
+        } else {
+          ++slow_frames_skipped;
+        }
+      }
     } else if (skip_log_countdown-- <= 0) {
       log().warning << "CanRender=false; skipping frame (docs=" << context->GetNumDocuments() << ")";
       skip_log_countdown = 120;
