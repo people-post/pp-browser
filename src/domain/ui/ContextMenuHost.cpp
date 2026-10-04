@@ -310,8 +310,14 @@ std::vector<ContextMenuAction> ContextMenuHost::BuildTextActions() const {
   }
 
   actions.push_back({"copy", Tr("common.copy"), copy_enabled, copy_run});
-  actions.push_back({"select_all", Tr("common.select_all"), select_all_enabled, select_all_run});
+  if (editor) {
+    actions.push_back({"cut", Tr("common.cut"), copy_enabled, [copy_run, editor]() {
+                         copy_run();
+                         DeleteEditorSelection(editor);
+                       }});
+  }
   actions.push_back({"paste", Tr("common.paste"), paste_enabled, paste_run});
+  actions.push_back({"select_all", Tr("common.select_all"), select_all_enabled, select_all_run});
   return actions;
 }
 
@@ -611,7 +617,8 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
     return;
   }
   // Contextual menus stay anchored near the pointer/selection even on compact layout.
-  RenderMenu(request, active_actions_, request.touch && menu_editor_ ? Presentation::Bar : Presentation::Float);
+  // A text field's menu is a row above the field, for a pointer as for a finger.
+  RenderMenu(request, active_actions_, menu_editor_ ? Presentation::Bar : Presentation::Float);
 }
 
 void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenuAction> actions) {

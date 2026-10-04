@@ -79,7 +79,7 @@ public:
   bool OnContextPointer(ui::Context* context, int x, int y);
 
 private:
-  /** Bar: the touch text menu of an input field, one horizontal row placed clear of the field. */
+  /** Bar: the text menu of an input field, one horizontal row placed clear of the field. */
   enum class Presentation { Float, ActionSheet, Bar };
 
   void ProcessEvent(ui::Event& event) override;
