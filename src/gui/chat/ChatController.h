@@ -178,6 +178,9 @@ private:
     bool image_thumb_ready = false;
     ui::String image_thumb_src;
     ui::String image_draft_name;
+    /** A reply is being written to a quoted message: the bar above the composer input. */
+    bool quote_reply = false;
+    ui::String quote_reply_text;
     bool show_thread_actions = false;
     bool show_peer_sheet = false;
     bool show_call_actions = false;
@@ -307,8 +310,14 @@ private:
   void SyncComposerInputState();
   /** What the user reads in a message of the active thread ("" when not found). */
   std::string MessagePlainText(const std::string& message_id) const;
-  /** Fills the composer with `prefix`, a blank line and the quoted message, caret after the prefix. */
-  void ComposeWithQuote(const std::string& prefix, const std::string& text);
+  /** Reply: shows `text` as the quote bar above the composer; the next send carries it as a quote. */
+  void StartQuoteReply(const std::string& text);
+  void CancelQuoteReply();
+  static void CancelQuoteReplyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  /** Ask AI: fills the composer with "@ai <text>" and puts the caret after it for the question. */
+  void DraftAskAi(const std::string& text);
+  /** The message being replied to (full text); empty when no reply is pending. */
+  std::string quote_reply_source_;
   void ShowReactionMorePrompt(const std::string& message_id);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
   void CalendarPrev(const std::string& entry_id);

@@ -373,6 +373,15 @@ select selectbox option {
   word-break: break-word;
 }
 
+/* The quoted message under a reply (domain/messaging/QuoteReply.h). */
+.chat-quote {
+  display: block;
+  margin-top: 6dp;
+  padding: 2dp 0 2dp 8dp;
+  border-left: 3dp rgba(128, 128, 128, 0.7);
+  opacity: 0.8;
+}
+
 /* A peer's plain-text message: keeps its line breaks, like our own (.bubble-text also sets our colour). */
 .bubble-text-peer {
   margin-top: 0;
@@ -515,6 +524,28 @@ select selectbox option {
   flex-shrink: 0;
   width: 18dp;
   height: 18dp;
+}
+
+/* Reply in progress: the quoted message, one line, above the composer input. */
+.prompt-quote {
+  display: flex;
+  align-items: center;
+  gap: 8dp;
+  margin-bottom: 6dp;
+  padding: 6dp 10dp;
+  border-left: 3dp #818cf8;
+  border-radius: 6dp;
+  background-color: rgba(128, 128, 128, 0.14);
+}
+
+.prompt-quote-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13dp;
+  opacity: 0.8;
 }
 
 .prompt-attachment-chip {

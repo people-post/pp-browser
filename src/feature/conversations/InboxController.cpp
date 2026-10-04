@@ -13,6 +13,7 @@
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "domain/messaging/PskRotateCodec.h"
+#include "domain/messaging/QuoteReply.h"
 #include "domain/messaging/ReactionTypes.h"
 #include "domain/ui/ChatFormHelper.h"
 #include "common/ui/WorkingSetCodec.h"
@@ -953,8 +954,15 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   if (!badges.empty()) {
     badges = "<div class=\"chat-message-meta\">" + badges + "</div>";
   }
-  std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + paragraph +
-                     StructuredTextParser::EscapeText(message.text) + "</p></div>";
+  // A reply that quotes a message: the reply, then the quote as a block (no "> " markers shown).
+  std::string text_rml;
+  if (const auto parts = SplitQuoteReply(message.text)) {
+    text_rml = paragraph + StructuredTextParser::EscapeText(parts->reply) + "</p><div class=\"chat-quote\">" + paragraph +
+               StructuredTextParser::EscapeText(parts->quote) + "</p></div>";
+  } else {
+    text_rml = paragraph + StructuredTextParser::EscapeText(message.text) + "</p>";
+  }
+  std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + text_rml + "</div>";
   body = HydrateChatActions(body, message.chat_actions);
   // __ENTRY__ is only ever introduced by HydrateChatActions' own template above; never treat a
   // literal "__ENTRY__" typed into message.text (peer-controlled) as a placeholder to fill in.

@@ -22,6 +22,7 @@
 #include "foundation/platform/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "domain/messaging/AttachmentCache.h"
+#include "domain/messaging/QuoteReply.h"
 #include "foundation/platform/PlatformOpenFile.h"
 #include "foundation/platform/PlatformOpenUrl.h"
 
@@ -1755,6 +1756,7 @@ void ChatController::SyncDisplayFromThread() {
   const bool thread_changed = scroller_.BeginDisplaySync(thread_id);
   if (thread_changed) {
     DiscardPendingAiImage(); // the chip belongs to the composer of the thread it was picked in
+    CancelQuoteReply();      // so does a pending reply
   }
 
   const std::string prev_tail_id =
@@ -2037,6 +2039,12 @@ void ChatController::OnSendMessage() {
   DirtyChatChrome();
   scroller_.RequestScrollToLatest();
   close_keyboard();
+  if (!quote_reply_source_.empty()) {
+    const std::string quoted = ComposeQuoteReply(text, quote_reply_source_);
+    CancelQuoteReply();
+    SendUserText(quoted);
+    return;
+  }
   SendUserText(text);
 }
 
@@ -2188,26 +2196,55 @@ std::string ChatController::MessagePlainText(const std::string& message_id) cons
   return {};
 }
 
-void ChatController::ComposeWithQuote(const std::string& prefix, const std::string& text) {
+void ChatController::StartQuoteReply(const std::string& text) {
+  if (chat_.compose_disabled || text.empty()) {
+    return;
+  }
+  quote_reply_source_ = text;
+  // One line in the bar, however long or multi-line the message is.
+  constexpr size_t kMaxPreviewChars = 120;
+  std::string preview;
+  size_t chars = 0;
+  for (const char ch : text) {
+    if ((static_cast<unsigned char>(ch) & 0xC0) != 0x80 && ++chars > kMaxPreviewChars) {
+      preview += "\xE2\x80\xA6";
+      break;
+    }
+    preview += (ch == '\n' || ch == '\r') ? ' ' : ch;
+  }
+  chat_.quote_reply = true;
+  chat_.quote_reply_text = preview.c_str();
+  DataModelHost::Instance().Dirty("chat", "quote_reply");
+  DataModelHost::Instance().Dirty("chat", "quote_reply_text");
+  if (context_ && context_->GetNumDocuments() > 0) {
+    if (ui::Element* draft = context_->GetDocument(0)->GetElementById("draft-input")) {
+      draft->Focus();
+    }
+  }
+}
+
+void ChatController::CancelQuoteReply() {
+  if (!chat_.quote_reply && quote_reply_source_.empty()) {
+    return;
+  }
+  quote_reply_source_.clear();
+  chat_.quote_reply = false;
+  chat_.quote_reply_text = "";
+  DataModelHost::Instance().Dirty("chat", "quote_reply");
+  DataModelHost::Instance().Dirty("chat", "quote_reply_text");
+}
+
+void ChatController::CancelQuoteReplyCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                              const ui::VariantList& /*args*/) {
+  Instance().CancelQuoteReply();
+}
+
+void ChatController::DraftAskAi(const std::string& text) {
   if (chat_.compose_disabled || !context_ || context_->GetNumDocuments() == 0) {
     return;
   }
-  // The quote goes under what the user is about to type; long messages are quoted by their beginning.
-  constexpr size_t kMaxQuoteChars = 300;
-  std::string quote = "> ";
-  size_t chars = 0;
-  for (size_t i = 0; i < text.size(); ++i) {
-    const auto byte = static_cast<unsigned char>(text[i]);
-    if ((byte & 0xC0) != 0x80 && ++chars > kMaxQuoteChars) {
-      quote += "\xE2\x80\xA6";
-      break;
-    }
-    quote += text[i];
-    if (text[i] == '\n') {
-      quote += "> ";
-    }
-  }
-  const std::string value = prefix + "\n\n" + quote;
+  // The question goes on its own line after the message; the user types it and sends.
+  const std::string value = "@ai " + text + "\n";
   chat_.draft = value.c_str();
   DataModelHost::Instance().Dirty("chat", "draft");
   auto* draft = ui_dynamic_cast<ui::ElementFormControlTextArea*>(context_->GetDocument(0)->GetElementById("draft-input"));
@@ -2216,9 +2253,9 @@ void ChatController::ComposeWithQuote(const std::string& prefix, const std::stri
   }
   draft->SetValue(value.c_str());
   draft->Focus();
-  // Caret right after the prefix, above the quote.
-  const int caret = ui::StringUtilities::ConvertByteOffsetToCharacterOffset(draft->GetValue(), static_cast<int>(prefix.size()));
-  draft->SetSelectionRange(caret, caret);
+  const ui::String current = draft->GetValue();
+  const int end = ui::StringUtilities::ConvertByteOffsetToCharacterOffset(current, static_cast<int>(current.size()));
+  draft->SetSelectionRange(end, end);
 }
 
 void ChatController::OpenEmojiInsertMenu(ui::Event* ev) {
@@ -3426,6 +3463,8 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.Bind("image_thumb_ready", &controller.chat_.image_thumb_ready);
         ctor.Bind("image_thumb_src", &controller.chat_.image_thumb_src);
         ctor.Bind("image_draft_name", &controller.chat_.image_draft_name);
+        ctor.Bind("quote_reply", &controller.chat_.quote_reply);
+        ctor.Bind("quote_reply_text", &controller.chat_.quote_reply_text);
         ctor.Bind("attachment_uploading", &controller.chat_.attachment_uploading);
         ctor.Bind("attachment_draft_name", &controller.chat_.attachment_draft_name);
         ctor.Bind("show_thread_actions", &controller.chat_.show_thread_actions);
@@ -3458,6 +3497,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("open_emoji_insert", &ChatController::OpenEmojiInsertCallback);
         ctor.BindEventCallback("attach_file", &ChatController::AttachFileCallback);
         ctor.BindEventCallback("remove_image", &ChatController::RemoveImageCallback);
+        ctor.BindEventCallback("cancel_quote_reply", &ChatController::CancelQuoteReplyCallback);
         ctor.BindEventCallback("open_attachment", &ChatController::OpenAttachmentCallback);
         ctor.BindEventCallback("download_attachment", &ChatController::DownloadAttachmentCallback);
         ctor.BindEventCallback("retry_attachment", &ChatController::RetryAttachmentCallback);
@@ -3566,16 +3606,16 @@ bool ChatController::Setup(ui::Context* context) {
       text = MessagePlainText(message_id);
     }
     if (!text.empty()) {
-      // Reply quotes the message under what the user types; the quote travels as plain text.
-      actions.push_back({"reply_message", Tr("chat.menu.reply"), nullptr, [this, text]() { ComposeWithQuote("", text); }});
+      // Reply: the message shows as a quote bar above the composer and is attached to the next send.
+      actions.push_back({"reply_message", Tr("chat.menu.reply"), nullptr, [this, text]() { StartQuoteReply(text); }});
       actions.push_back({"copy_message", Tr("common.copy"), nullptr, [text]() {
                            if (ui::SystemInterface* system = ui::GetSystemInterface()) {
                              system->SetClipboardText(text);
                            }
                          }});
-      // "@ai " plus the quoted message go into the composer; the user adds the question and sends.
+      // "@ai " plus the message go into the composer; the user adds the question and sends.
       if (auto active = facade_->GetActiveThread(); active && active->kind == ThreadKind::Direct) {
-        actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { ComposeWithQuote("@ai ", text); }});
+        actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { DraftAskAi(text); }});
       }
     }
     // Delete for me: this device stops showing the message; the peer keeps theirs.

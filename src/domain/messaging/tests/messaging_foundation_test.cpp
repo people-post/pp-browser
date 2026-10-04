@@ -1,4 +1,5 @@
 #include "domain/messaging/AtAiParser.h"
+#include "domain/messaging/QuoteReply.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/PeopleDiscoveryBlocks.h"
 #include "domain/messaging/RelayWirePayload.h"
@@ -82,4 +83,24 @@ TEST(AtAiParserTest, PromptMaySpanLines) {
   EXPECT_EQ(quote_only.prompt, "> line one");
 
   EXPECT_FALSE(ParseAtAiPrefix("@ai").is_ai_invoke);
+}
+
+// A quoting reply is plain text that splits back into the reply and the quote.
+TEST(QuoteReplyTest, ComposeAndSplitRoundTrip) {
+  using namespace pbr;
+
+  const std::string composed = ComposeQuoteReply("ok", "line one\nline two");
+  EXPECT_EQ(composed, "ok\n\n> line one\n> line two");
+  const auto parts = SplitQuoteReply(composed);
+  ASSERT_TRUE(parts.has_value());
+  EXPECT_EQ(parts->reply, "ok");
+  EXPECT_EQ(parts->quote, "line one\nline two");
+
+  // A long message is quoted by its beginning, counted in characters, not bytes.
+  const std::string cut = ComposeQuoteReply("ok", "\xE4\xBD\xA0\xE5\xA5\xBD\xE5\x90\x97", 2);
+  EXPECT_EQ(cut, "ok\n\n> \xE4\xBD\xA0\xE5\xA5\xBD\xE2\x80\xA6");
+
+  EXPECT_FALSE(SplitQuoteReply("just text").has_value());
+  EXPECT_FALSE(SplitQuoteReply("\n\n> quote without a reply").has_value());
+  EXPECT_FALSE(SplitQuoteReply("ok\n\n> quote\nnot a quote line").has_value());
 }
