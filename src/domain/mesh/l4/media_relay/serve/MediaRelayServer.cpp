@@ -28,6 +28,8 @@ namespace pbr {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+/** See Impl::empty_session_grace. */
+constexpr std::chrono::milliseconds kEmptySessionGrace{60000};
 
 std::vector<uint8_t> JsonToBody(const std::string& json_utf8) {
   return std::vector<uint8_t>(json_utf8.begin(), json_utf8.end());
@@ -121,6 +123,8 @@ struct MediaRelayServer::Impl {
     std::string call_id;
     std::string session_token;
     std::vector<std::shared_ptr<HostParticipant>> participants;
+    /** Set while the session has no participants; it is dropped once the grace has passed. */
+    std::optional<Clock::time_point> empty_since;
   };
 
   /** Quotes issued and not yet accepted — expire / capped. */
@@ -149,7 +153,27 @@ struct MediaRelayServer::Impl {
 
   void Tick() {
     std::lock_guard lock(mu);
-    quotes.Expire(Clock::now());
+    const auto now = Clock::now();
+    quotes.Expire(now);
+    DropEmptySessionsLocked(now);
+  }
+
+  /**
+   * How long a session outlives its last participant. Call-scoped admission lets a non-contact
+   * join a call while its session exists: when every participant drops at once (the hop's links
+   * flap, a path migration), they re-attach within the grace in any order; after it the call is
+   * over, and a new session for the call id needs contact admission again.
+   */
+  std::chrono::milliseconds empty_session_grace{kEmptySessionGrace};
+
+  /** Requires `mu`. */
+  void DropEmptySessionsLocked(const Clock::time_point now) {
+    for (auto it = hosts_by_call.begin(); it != hosts_by_call.end();) {
+      const auto& session = it->second;
+      const bool expired = session && session->participants.empty() && session->empty_since &&
+                           now - *session->empty_since >= empty_session_grace;
+      it = expired ? hosts_by_call.erase(it) : std::next(it);
+    }
   }
 
   static void EraseParticipant(HostSession& session, const HostParticipant* part) {
@@ -159,17 +183,50 @@ struct MediaRelayServer::Impl {
         session.participants.end());
   }
 
+  /**
+   * Requires `mu`. Erase `part`; a session left without participants is dropped after the empty
+   * grace (DropEmptySessionsLocked) — not the local hop's own session while it is attached.
+   */
+  void EraseParticipantLocked(const std::shared_ptr<HostSession>& session, const HostParticipant* part) {
+    EraseParticipant(*session, part);
+    if (session->participants.empty() && session != local_session_ && !session->empty_since) {
+      session->empty_since = Clock::now();
+    }
+  }
+
+  /**
+   * A participant's channel ended — the peer closed or reset it, its link dropped, or the peer
+   * vanished: release the participant. Amp reports that only to the channel's closed callback
+   * (never as a frame error), and a participant that left without `detach` used to stay in its
+   * session for the node's lifetime. Posted: the channel can close while `mu` is held (Reject).
+   */
+  void ReleaseParticipantOf(std::shared_ptr<pp::amp::ChannelSession> channel) {
+    if (!runtime || !channel) {
+      return;
+    }
+    lifetime.Post([rt = runtime](std::function<void()> t) { rt->PostToIo(std::move(t)); },
+                  [this, channel = std::move(channel)] {
+                    std::lock_guard lock(mu);
+                    std::shared_ptr<HostSession> host;
+                    std::shared_ptr<HostParticipant> part;
+                    if (FindParticipantByChannel(channel.get(), host, part)) {
+                      EraseParticipantLocked(host, part.get());
+                    }
+                  });
+  }
+
   /** Requires `mu`. */
   void DetachLocalLocked() {
+    std::shared_ptr<HostSession> session = local_session_;
     if (local_part_) {
       local_part_->local_on_frame = nullptr;
-      if (local_session_) {
-        EraseParticipant(*local_session_, local_part_.get());
-      }
     }
-    local_part_.reset();
+    const std::shared_ptr<HostParticipant> part = std::move(local_part_);
     local_session_.reset();
     local_peer_id_.clear();
+    if (part && session) {
+      EraseParticipantLocked(session, part.get());
+    }
   }
 
   /**
@@ -264,7 +321,7 @@ struct MediaRelayServer::Impl {
         SendAck(*part->channel, "detach");
         CloseQuietSlot(part->channel, ResolveLink(part->peer_id));
       }
-      EraseParticipant(*session, part.get());
+      EraseParticipantLocked(session, part.get());
       return false;
     }
     return true;
@@ -310,7 +367,7 @@ struct MediaRelayServer::Impl {
           CloseQuietSlot(part->channel, ResolveLink(part->peer_id));
         }
         std::lock_guard lock(mu);
-        EraseParticipant(*session, part.get());
+        EraseParticipantLocked(session, part.get());
         return false;
       }
       return HandleParticipantFrame(session, part, *frame);
@@ -540,6 +597,7 @@ struct MediaRelayServer::Impl {
     part->channel = channel;
     part->video_levels = sm.video_levels;
     host->participants.push_back(part);
+    host->empty_since.reset();
     MediaRelayMetrics::Get().attaches_ok.Inc();
     PostIo([this, host, part] { RebindParticipantHandlers(host, part); });
     SendAck(*channel, "attach");
@@ -613,7 +671,17 @@ struct MediaRelayServer::Impl {
         },
         // The handler (owned by the channel) captures this holder, which owns the channel: drop the
         // holder's reference when the channel ends, or every served session leaks (LeakSanitizer).
-        [channel_holder](const char* /*reason*/) { channel_holder->reset(); });
+        // An attached participant on this channel is released too (ReleaseParticipantOf). The
+        // callback can fire after this server is freed (MeshHost::Stop frees L4 before Amp tears
+        // down channels still mid-handshake): reach Impl only through the lifetime token, which
+        // outlives it and goes dead in Stop.
+        [release = lifetime.Bind([this](std::shared_ptr<pp::amp::ChannelSession> channel) {
+           ReleaseParticipantOf(std::move(channel));
+         }),
+         channel_holder](const char* /*reason*/) {
+          release(*channel_holder);
+          channel_holder->reset();
+        });
   }
 };
 
@@ -621,6 +689,11 @@ MediaRelayServer::MediaRelayServer(pp::amp::MeshRuntime& runtime)
     : impl_(std::make_unique<Impl>()), runtime_(runtime) {
   (void)MediaRelayMetrics::Get();  // its series exist (at 0) from the start
   impl_->runtime = &runtime_;
+}
+
+void MediaRelayServer::SetEmptySessionGraceForTest(const std::chrono::milliseconds grace) {
+  std::lock_guard lock(impl_->mu);
+  impl_->empty_session_grace = grace;
 }
 
 MediaRelayServer::~MediaRelayServer() {
@@ -734,6 +807,7 @@ Roe<MediaRelayAttachResult> MediaRelayServer::AttachLocal(const std::string& cal
                                              }),
                               session->participants.end());
   session->participants.push_back(part);
+  session->empty_since.reset();
   impl_->local_part_ = part;
   impl_->local_session_ = session;
   impl_->local_peer_id_ = local_peer_id;
