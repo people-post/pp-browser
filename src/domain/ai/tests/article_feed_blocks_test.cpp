@@ -69,7 +69,7 @@ TEST(ArticleFeedBlocksTest, FullPageOffersLoadMoreWithTheSameArgumentsAndBeforeI
 
 TEST(ArticleFeedBlocksTest, EmptyFeedSaysSoAndNonFeedJsonYieldsNothing) {
   const std::string empty = BuildArticleFeedBlocksJson(R"({"articles":[]})");
-  EXPECT_NE(empty.find("No articles right now."), std::string::npos);
+  EXPECT_NE(empty.find("No briefs right now."), std::string::npos);
   EXPECT_EQ(empty.find("long_list"), std::string::npos);
   EXPECT_TRUE(BuildArticleFeedBlocksJson("not json").empty());
   EXPECT_TRUE(BuildArticleFeedBlocksJson(R"([1,2])").empty());

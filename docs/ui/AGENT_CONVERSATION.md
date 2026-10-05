@@ -44,7 +44,7 @@ Turn execution (turn_scratch) — tool calls / search injections, current turn o
 6. **Validate** — `StructuredTextParser`; one output repair retry on parse failure
 7. Final assistant text → transcript / thread store → UI parses → `SetAssistantDisplay`
 
-Natural-language turns add one planner LLM call. Structured UI actions (form submit, article chips, pagination) skip the planner via the payload fast path.
+Natural-language turns add one planner LLM call. Structured UI actions (form submit, article chips, pagination) skip the planner via the payload fast path. One typed sentence takes that path too: a short request for the Brief feed ("给我今天最新的简报", "latest briefs") in an AI thread or the Home composer gets the same payload as the Home "Latest briefs" chip (`ChatController::SendUserText`, `gui/chat/BriefFeedIntent.h`), so the app shows the feed without a model call. The match is an allowlist: besides 简报 / briefs / briefing only request and time fillers may appear, so a question about a brief already on screen, a briefing to write, or any other sentence goes to the AI. The sentence's language picks the feed (Chinese → cn, English → en).
 
 ### Streamed answers (brief preset)
 

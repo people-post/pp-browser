@@ -734,7 +734,7 @@ TEST_F(AgentSessionPayloadTurnTest, ArticlesChipWithoutTheToolSaysSoAndAsksNoMod
   EXPECT_TRUE(Of(events, AgentEventType::AssistantReady).empty());
   const auto errors = Of(events, AgentEventType::Error);
   ASSERT_EQ(errors.size(), 1u);
-  EXPECT_EQ(errors[0].message, "Articles are unavailable right now.");
+  EXPECT_EQ(errors[0].message, "Briefs are unavailable right now.");
 }
 
 TEST_F(AgentSessionPayloadTurnTest, FindSomeoneChipListsThePeopleWithoutAnyModelCall) {
