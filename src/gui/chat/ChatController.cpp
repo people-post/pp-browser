@@ -2282,6 +2282,44 @@ void ChatController::CancelQuoteReply() {
   DataModelHost::Instance().Dirty("chat", "quote_reply_text");
 }
 
+void ChatController::OpenShareTargets(const std::string& text, const ui::Vector2i position) {
+  if (!facade_ || text.empty()) {
+    return;
+  }
+  // One friend per share, no caption: the direct chats, most recent first.
+  constexpr size_t kMaxShareTargets = 30;
+  std::vector<Thread> targets;
+  if (auto threads = facade_->ListThreads()) {
+    for (const Thread& thread : *threads) {
+      if (thread.kind == ThreadKind::Direct && !(thread.local_title.empty() && thread.title.empty())) {
+        targets.push_back(thread);
+      }
+    }
+  }
+  std::sort(targets.begin(), targets.end(), [](const Thread& a, const Thread& b) { return a.updated_at > b.updated_at; });
+  if (targets.size() > kMaxShareTargets) {
+    targets.resize(kMaxShareTargets);
+  }
+  if (targets.empty()) {
+    ShowToast(Tr("chat.share.no_friends"));
+    return;
+  }
+  std::vector<ContextMenuAction> actions;
+  for (const Thread& thread : targets) {
+    const std::string name = thread.local_title.empty() ? thread.title : thread.local_title;
+    actions.push_back({"share_to_" + thread.id, name, nullptr, [this, thread_id = thread.id, name, text]() {
+                         SendRelayOptions opts;
+                         opts.update_preview = true;
+                         if (auto sent = facade_->SendUserMessage(thread_id, text, opts); !sent) {
+                           ShowToast(sent.error().message);
+                           return;
+                         }
+                         ShowToast(Tr("chat.share.sent", {{"name", name}}));
+                       }});
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
 void ChatController::JumpToQuotedMessage(const std::string& reply_message_id) {
   if (!facade_ || !context_ || context_->GetNumDocuments() == 0) {
     return;
@@ -3664,6 +3702,35 @@ bool ChatController::Setup(ui::Context* context) {
     if (!messaging_ready_ || chat_.compose_disabled) {
       return actions;
     }
+    // An item the user can pass on (an article in a feed list): Ask AI / Copy / Share. The nearest of
+    // such an item and a message row wins.
+    for (ui::Element* cur = request.target; cur && !cur->HasAttribute("message-id"); cur = cur->GetParentNode()) {
+      if (!cur->HasAttribute("share-text")) {
+        continue;
+      }
+      std::string shared = cur->GetAttribute("share-text", ui::String()).c_str();
+      const std::string url = cur->GetAttribute("share-url", ui::String()).c_str();
+      if (!url.empty()) {
+        shared += "\n" + url;
+      }
+      // In a direct chat the question needs the "@ai " prefix; an AI thread takes it as it is.
+      auto active = facade_ ? facade_->GetActiveThread() : Roe<Thread>(Error("no facade"));
+      const std::string prefix = active && active->kind == ThreadKind::Direct ? "@ai " : "";
+      actions.push_back({"ask_ai_item", Tr("chat.menu.ask_ai"), nullptr,
+                         [this, shared, prefix]() { StartQuoteReply(shared, prefix); }});
+      actions.push_back({"copy_item", Tr("common.copy"), nullptr, [shared]() {
+                           if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+                             system->SetClipboardText(shared);
+                           }
+                         }});
+      const ui::Vector2i position = request.position;
+      // Opened after this menu is gone: a menu cannot replace itself from inside its own click.
+      actions.push_back({"share_item", Tr("chat.menu.share"), nullptr, [this, shared, position]() {
+                           AppRuntime::PostUI([this, shared, position]() { OpenShareTargets(shared, position); });
+                         }});
+      return actions;
+    }
+
     const std::string message_id = FindMessageIdFromElement(request.target);
     if (message_id.empty()) {
       return actions;
@@ -3725,7 +3792,7 @@ bool ChatController::Setup(ui::Context* context) {
   });
   ContextMenuHost::Instance().SetAnchorResolver([](ui::Element* target) -> ui::Element* {
     for (ui::Element* cur = target; cur; cur = cur->GetParentNode()) {
-      if (cur->HasAttribute("message-id")) {
+      if (cur->HasAttribute("message-id") || cur->HasAttribute("share-text")) {
         return cur;
       }
     }

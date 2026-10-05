@@ -316,6 +316,8 @@ private:
    */
   void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {});
   void CancelQuoteReply();
+  /** Share: lists the direct chats (most recent first); picking one sends `text` there. */
+  void OpenShareTargets(const std::string& text, ui::Vector2i position);
   /** A tap on the quote of reply `reply_message_id`: scrolls to the message it quotes, if it is on screen. */
   void JumpToQuotedMessage(const std::string& reply_message_id);
   static void JumpToQuoteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);

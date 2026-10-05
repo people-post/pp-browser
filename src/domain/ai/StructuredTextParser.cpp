@@ -495,7 +495,15 @@ ParseResult RenderLongListItem(ParseResult& parent, const Object& item) {
   }
   ParseResult result;
   result.ok = true;
-  result.rml = "<div class=\"chat-long-list-item\">" + RenderLongListItemBody(item, inline_tail);
+  // An item the user can pass on (an article) carries its text and link, for the host's item menu.
+  std::string share_attrs;
+  if (const auto share_text = item.getString("share_text"); share_text && !share_text->empty()) {
+    share_attrs = " share-text=\"" + StructuredTextParser::EscapeText(*share_text) + "\"";
+    if (const auto share_url = item.getString("share_url"); share_url && !share_url->empty()) {
+      share_attrs += " share-url=\"" + StructuredTextParser::EscapeText(*share_url) + "\"";
+    }
+  }
+  result.rml = "<div class=\"chat-long-list-item\"" + share_attrs + ">" + RenderLongListItemBody(item, inline_tail);
   if (!row.empty()) {
     result.rml += "<div class=\"row chat-long-list-actions\">" + row + "</div>";
   }
