@@ -49,6 +49,30 @@ inline std::string AiThreadTitleFromMessage(std::string_view message) {
 }
 
 /**
+ * The AI thread a Home chip should continue instead of starting another one: the most recently updated
+ * AI thread whose title is the chip's own (titles come from the first message, and a chip always sends
+ * the same sentence). Empty when there is none. `Thread` needs `kind_is_ai`, `title`, `updated_at`, `id`
+ * accessors through the callables, so this stays free of the thread types.
+ */
+template <typename Threads, typename IsAi, typename TitleOf, typename UpdatedAt, typename IdOf>
+std::string FindChipThreadId(const Threads& threads, std::string_view chip_message, IsAi is_ai, TitleOf title_of,
+                             UpdatedAt updated_at, IdOf id_of) {
+  const std::string title = AiThreadTitleFromMessage(chip_message);
+  std::string best_id;
+  int64_t best_time = 0;
+  if (title.empty()) {
+    return best_id;
+  }
+  for (const auto& thread : threads) {
+    if (is_ai(thread) && title_of(thread) == title && (best_id.empty() || updated_at(thread) > best_time)) {
+      best_id = id_of(thread);
+      best_time = updated_at(thread);
+    }
+  }
+  return best_id;
+}
+
+/**
  * When a session was last active, for the list row: date and time within this year ("10/3 14:05"),
  * the full date for earlier years ("2025/12/31"). Empty for an unset timestamp.
  */
