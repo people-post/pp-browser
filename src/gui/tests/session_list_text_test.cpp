@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <vector>
+
 using namespace pbr;
 
 namespace {
@@ -46,4 +48,29 @@ TEST(SessionListTextTest, DateLabelShowsDateAndTimeThisYearAndFullDateBefore) {
 
 TEST(SessionListTextTest, UnsetTimestampHasNoLabel) {
   EXPECT_EQ(SessionDateLabel(int64_t{0}, int64_t{1700000000000}), "");
+}
+
+// A Home chip continues its own thread: the newest AI thread titled like the chip's sentence.
+TEST(SessionListTextTest, ChipFindsItsNewestAiThread) {
+  struct T {
+    std::string id;
+    bool ai;
+    std::string title;
+    int64_t updated;
+  };
+  const std::vector<T> threads = {
+      {"a", true, "今天有什么新闻？", 10},
+      {"b", true, "今天有什么新闻？", 30},
+      {"c", false, "今天有什么新闻？", 99}, // a chat with a person named like that is not it
+      {"d", true, "别的话题", 50},
+  };
+  const auto find = [&](std::string_view message) {
+    return pbr::FindChipThreadId(
+        threads, message, [](const T& t) { return t.ai; }, [](const T& t) -> const std::string& { return t.title; },
+        [](const T& t) { return t.updated; }, [](const T& t) -> const std::string& { return t.id; });
+  };
+  EXPECT_EQ(find("今天有什么新闻？"), "b");
+  EXPECT_EQ(find("  今天有什么新闻？\n"), "b"); // the title rule collapses whitespace
+  EXPECT_EQ(find("给我看看最新的简报"), "");
+  EXPECT_EQ(find(""), "");
 }

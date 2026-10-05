@@ -770,12 +770,16 @@ ParseResult RenderBlock(const Object& block, ParseResult& parent) {
     const bool ordered = block.getIf<bool>("ordered").value_or(false);
     std::ostringstream out;
     out << (ordered ? "<ol>" : "<ul>");
+    // Same marker markup as MarkdownToRml lists: the engine draws no list markers of its own.
+    size_t number = 0;
     for (const Value& item_value : block.getArray("items")->elements) {
       auto item_text = asString(item_value);
       if (!item_text) {
         return BlockError("list items must be strings");
       }
-      out << "<li>" << StructuredTextParser::EscapeText(*item_text) << "</li>";
+      ++number;
+      out << "<li><span class=\"md-marker\">" << (ordered ? std::to_string(number) + "." : std::string("\xE2\x80\xA2"))
+          << "</span><div class=\"md-item\">" << StructuredTextParser::EscapeText(*item_text) << "</div></li>";
     }
     out << (ordered ? "</ol>" : "</ul>");
     ParseResult result;

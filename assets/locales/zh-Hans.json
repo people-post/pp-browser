@@ -461,7 +461,6 @@
     "chat.status.reading_page": "正在阅读网页…",
     "chat.status.searching_nfsc": "正在搜索 NFSC…",
     "chat.status.getting_quote": "正在获取报价…",
-    "chat.status.writing": "正在撰写…",
     "chat.view_details": "查看详情",
     "chat.open_link_title": "打开 {host} 的链接？",
     "chat.open_link_body": "将在浏览器中打开 {url}。",

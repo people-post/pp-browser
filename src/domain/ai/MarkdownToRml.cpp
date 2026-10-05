@@ -556,6 +556,7 @@ bool Quote(sv l, sv& content) {
 struct Item {
   size_t indent = 0;
   bool ordered = false;
+  sv number; // an ordered item's digits as written ("3" for "3. text")
   sv content;
 };
 
@@ -578,6 +579,7 @@ bool ParseItem(sv l, Item& item) {
       return false;
     }
     item.ordered = true;
+    item.number = l.substr(p, r - p);
     q = r + 1;
   } else {
     return false;
@@ -654,7 +656,7 @@ void EmitList(const Lines& lines, size_t& i, InlineContext& ctx, std::string& ou
   };
   std::vector<Level> stack;
   const auto open_list = [&](bool ordered) { out += ordered ? "<ol>" : "<ul>"; };
-  const auto close_list = [&](const Level& lv) { out += lv.ordered ? "</li></ol>" : "</li></ul>"; };
+  const auto close_list = [&](const Level& lv) { out += lv.ordered ? "</div></li></ol>" : "</div></li></ul>"; };
 
   while (i < lines.size()) {
     Item item;
@@ -688,10 +690,14 @@ void EmitList(const Lines& lines, size_t& i, InlineContext& ctx, std::string& ou
         open_list(item.ordered);
         stack.back().ordered = item.ordered;
       } else {
-        out += "</li>";
+        out += "</div></li>";
       }
     }
-    out += "<li>";
+    // The UI engine draws no list markers, so each item carries its own: the number as written, or a bullet.
+    // The marker and the body are separate boxes so wrapped lines align under the text (.md-marker / .md-item).
+    out += "<li><span class=\"md-marker\">";
+    out += item.ordered ? std::string(item.number) + "." : std::string("\xE2\x80\xA2");
+    out += "</span><div class=\"md-item\">";
 
     std::string text(item.content);
     ++i;

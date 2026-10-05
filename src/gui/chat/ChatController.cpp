@@ -104,10 +104,7 @@ namespace pbr {
 namespace {
 
 std::string ToolActivityLabel(const std::string& tool_name, const std::string& status) {
-  // brief_AI status events: tool = backend tool name, status = phase ("answer" has no tool).
-  if (status == "answer") {
-    return Tr("chat.status.writing");
-  }
+  // brief_AI status events: tool = backend tool name, status = phase.
   if (tool_name == "search_web") {
     return Tr("chat.status.searching_web");
   }
@@ -683,7 +680,8 @@ void ChatController::SendSuggestionCallback(ui::DataModelHandle /*model*/, ui::E
   if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().SendUserText(std::string(args[0].Get<ui::String>().c_str()));
+  // A Home chip continues its own thread instead of opening a new one on every tap.
+  Instance().SendUserText(std::string(args[0].Get<ui::String>().c_str()), std::nullopt, /*from_home_chip=*/true);
 }
 
 void ChatController::SendSuggestionActionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -697,7 +695,7 @@ void ChatController::SendSuggestionActionCallback(ui::DataModelHandle /*model*/,
     return;
   }
   // The bubble shows the localized sentence; the payload makes the app run the function itself.
-  Instance().SendUserText(Tr("home.suggestion." + id + "_prompt"), std::move(payload));
+  Instance().SendUserText(Tr("home.suggestion." + id + "_prompt"), std::move(payload), /*from_home_chip=*/true);
 }
 
 void ChatController::SubmitFormCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -2713,11 +2711,25 @@ void ChatController::UpdateSidebarPreview(const std::string& preview_text) {
   DirtyShell();
 }
 
-bool ChatController::EnsureHomeOutboundSession() {
+bool ChatController::EnsureHomeOutboundSession(const std::string& chip_message) {
   if (!messaging_ready_) {
     return false;
   }
-  if (!facade_->CreateNewAiThread()) {
+  // A chip's earlier thread (same first sentence, so the same title) is reopened; typed text starts a new one.
+  std::string reuse_id;
+  if (!chip_message.empty()) {
+    if (auto threads = facade_->ListThreads()) {
+      reuse_id = FindChipThreadId(
+          *threads, chip_message, [](const Thread& t) { return t.kind == ThreadKind::Ai; },
+          [](const Thread& t) -> const std::string& { return t.title; }, [](const Thread& t) { return t.updated_at; },
+          [](const Thread& t) -> const std::string& { return t.id; });
+    }
+  }
+  if (!reuse_id.empty()) {
+    if (!facade_->OpenThread(reuse_id)) {
+      return false;
+    }
+  } else if (!facade_->CreateNewAiThread()) {
     return false;
   }
   ShellSelectNavTab(NavTab::Sessions);
@@ -2727,7 +2739,8 @@ bool ChatController::EnsureHomeOutboundSession() {
   return true;
 }
 
-void ChatController::SendUserText(const std::string& text, std::optional<std::string> user_payload) {
+void ChatController::SendUserText(const std::string& text, std::optional<std::string> user_payload,
+                                  bool from_home_chip) {
   const std::string trimmed = util::Trim(text);
   if (trimmed.empty() || chat_.loading) {
     return;
@@ -2736,8 +2749,9 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     return;
   }
   if (!messaging_ready_) {
-    WithSecrets([this, trimmed, user_payload = std::move(user_payload)]() mutable {
-      SendUserText(trimmed, std::move(user_payload));
+    // The unlock can finish much later (PIN entry), so the chip origin travels with the deferred send.
+    WithSecrets([this, trimmed, user_payload = std::move(user_payload), from_home_chip]() mutable {
+      SendUserText(trimmed, std::move(user_payload), from_home_chip);
     });
     return;
   }
@@ -2751,7 +2765,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   }
 
   if (ChromeSnapshot().nav_tab == NavTab::Home) {
-    if (!EnsureHomeOutboundSession()) {
+    if (!EnsureHomeOutboundSession(from_home_chip ? trimmed : std::string())) {
       return;
     }
   }
@@ -3065,6 +3079,11 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
     DirtyChatChrome();
     break;
   case AgentEventType::ToolActivity:
+    // The "answer" phase has no tool and gets no label of its own: the last step ("Searching the web…")
+    // stays until the text arrives. Saying "Writing…" read as the AI making the answer up.
+    if (event.tool_name.empty() && event.status == "answer") {
+      break;
+    }
     chat_.status = ui::String(ToolActivityLabel(event.tool_name, event.status).c_str());
     ShellSetActivity(true, chat_.status);
     DirtyChatChrome();
