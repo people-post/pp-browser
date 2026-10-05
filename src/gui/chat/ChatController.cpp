@@ -2736,10 +2736,10 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   }
 
   // "给我今天最新的简报" / "latest briefs" typed to the AI is the Brief feed, the same as the Home chip:
-  // the app fetches it itself. A Chinese sentence gets the Chinese feed whatever the UI language.
+  // the app fetches it itself. The sentence's language picks the feed, whatever the UI language.
   if (!user_payload && InAiComposerContext()) {
     if (const BriefFeedRequest feed = MatchBriefFeedRequest(trimmed); feed.matched) {
-      user_payload = SuggestionPayload("articles", feed.chinese ? "zh" : LocalizationService::Instance().ResolvedLanguage());
+      user_payload = SuggestionPayload("articles", feed.chinese ? "zh" : "en");
     }
   }
 

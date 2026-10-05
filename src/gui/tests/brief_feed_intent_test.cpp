@@ -21,8 +21,13 @@ TEST(BriefFeedIntentTest, AsksForTheFeed) {
 // Writing or explaining a briefing, a briefing about a topic, and ordinary news questions go to the AI.
 TEST(BriefFeedIntentTest, EverythingElseGoesToTheAi) {
   for (const char* text : {"帮我写一份简报", "关于伊朗的简报", "简报是什么", "把这段总结成简报", "给我今天最新的文章", "今天有什么新闻",
+                           // follow-ups about a feed already on screen
+                           "第二条简报讲了什么？", "这篇简报的作者是谁", "把简报发给张三", "简报里有关于AI的吗",
                            "Give me a brief summary of the news", "Be brief", "Write a briefing for my boss",
-                           "A briefing on Iran", "What are briefs?", "Latest articles", ""}) {
+                           "A briefing on Iran", "What are briefs?", "Latest articles",
+                           "summarise today's briefs", "give me a summary of the briefs", "explain these briefs",
+                           "which of these briefs matters most?", "where can I buy men's briefs",
+                           "find legal briefs for my case", "other briefs", ""}) {
     EXPECT_FALSE(MatchBriefFeedRequest(text).matched) << text;
   }
   EXPECT_FALSE(MatchBriefFeedRequest(std::string(200, 'x') + " briefs").matched); // not a short ask
