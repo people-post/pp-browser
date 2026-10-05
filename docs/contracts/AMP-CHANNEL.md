@@ -168,7 +168,8 @@ CLOSE / RESET, a read timeout, the link dropping, a failed write, a local close 
 **only** through the closed callback (never as a frame error), and peers usually just close
 instead of sending a goodbye message. Anything kept per channel (a relay participant, a tunnel,
 an in-flight request, a placeholder) must be released there or by a deadline. Since pp-cpp-amp
-v2.16.0 a closed session also drops its handlers, so a handler may hold the session; and dial
+v2.16.0 a closed session also drops its handlers, so a handler may hold the session (and
+since v2.16.1 it forgets its mux, so it may outlive its link); and dial
 keys registered for one job are dropped with `UnregisterEndpoint` when it ends
 ([pp-cpp-amp STACK § Lifetimes](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/STACK.md)).
 The closed callback can run while the component's own lock is held (a write that fails inside
