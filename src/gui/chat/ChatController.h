@@ -328,6 +328,8 @@ private:
   void CalendarNext(const std::string& entry_id);
   void SelectCalendarDay(const std::string& entry_id, const std::string& iso_date);
   void SyncDisplayFromThread();
+  /** Last time a display sync ran the whole-thread attachment backfill. */
+  std::chrono::steady_clock::time_point last_attachment_backfill_{};
   void OnStopTurn();
   void OpenChatLink(const std::string& entry_id, int link_index);
   /** Opens an https URL after the user confirms its host; the dialog offers to stop asking until the app restarts. */
