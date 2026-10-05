@@ -1,4 +1,5 @@
 #include "domain/messaging/AtAiParser.h"
+#include "domain/messaging/PlainTextLinks.h"
 #include "domain/messaging/QuoteReply.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/PeopleDiscoveryBlocks.h"
@@ -103,4 +104,30 @@ TEST(QuoteReplyTest, ComposeAndSplitRoundTrip) {
   EXPECT_FALSE(SplitQuoteReply("just text").has_value());
   EXPECT_FALSE(SplitQuoteReply("\n\n> quote without a reply").has_value());
   EXPECT_FALSE(SplitQuoteReply("ok\n\n> quote\nnot a quote line").has_value());
+}
+
+// https links in a plain message become tappable; a shared article shows its label instead of the URL.
+TEST(PlainTextLinksTest, FindsHttpsLinksAndViewDetailsLabels) {
+  using namespace pbr;
+
+  const std::string shared = "G7 to release oil reserves.\n\xE3\x80\x90\xE6\x9F\xA5\xE7\x9C\x8B\xE8\xAF\xA6\xE6\x83\x85\xE3\x80\x91https://www.aa.com.tr/en/x?id=1";
+  auto links = FindPlainTextLinks(shared);
+  ASSERT_EQ(links.size(), 1u);
+  EXPECT_EQ(links[0].url, "https://www.aa.com.tr/en/x?id=1");
+  EXPECT_EQ(links[0].display, std::string(kViewDetailsLabels[0]));
+  EXPECT_EQ(shared.substr(0, links[0].begin), "G7 to release oil reserves.\n"); // the label is part of the span
+  EXPECT_EQ(links[0].end, shared.size());
+
+  links = FindPlainTextLinks("see https://example.com/a, then [View details]https://example.org/b.");
+  ASSERT_EQ(links.size(), 2u);
+  EXPECT_EQ(links[0].url, "https://example.com/a"); // trailing comma is not part of the link
+  EXPECT_EQ(links[0].display, links[0].url);
+  EXPECT_EQ(links[1].url, "https://example.org/b");
+  EXPECT_EQ(links[1].display, "[View details]");
+
+  // A link ends at CJK text; http, bare "https://" and "xhttps://" are not links.
+  links = FindPlainTextLinks("\xE7\x9C\x8Bhttps://example.com/a\xE8\xBF\x99\xE9\x87\x8C http://plain.example https:// xhttps://no.example");
+  ASSERT_EQ(links.size(), 1u);
+  EXPECT_EQ(links[0].url, "https://example.com/a");
+  EXPECT_TRUE(FindPlainTextLinks("no links here").empty());
 }

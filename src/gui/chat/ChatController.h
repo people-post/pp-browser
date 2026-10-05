@@ -321,6 +321,9 @@ private:
   /** A tap on the quote of reply `reply_message_id`: scrolls to the message it quotes, if it is on screen. */
   void JumpToQuotedMessage(const std::string& reply_message_id);
   static void JumpToQuoteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  /** A tap on link `link_index` of a plain-text message: confirms the host, then opens it. */
+  void OpenMessageLink(const std::string& message_id, int link_index);
+  static void OpenMessageLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CancelQuoteReplyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   /** The message being replied to (full text); empty when no reply is pending. */
   std::string quote_reply_source_;

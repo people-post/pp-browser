@@ -25,6 +25,7 @@
 #include "foundation/platform/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "domain/messaging/AttachmentCache.h"
+#include "domain/messaging/PlainTextLinks.h"
 #include "domain/messaging/QuoteReply.h"
 #include "foundation/platform/PlatformOpenFile.h"
 #include "foundation/platform/PlatformOpenUrl.h"
@@ -2366,6 +2367,39 @@ void ChatController::JumpToQuotedMessage(const std::string& reply_message_id) {
   row->ScrollIntoView(true);
 }
 
+void ChatController::OpenMessageLink(const std::string& message_id, const int link_index) {
+  if (!facade_ || link_index < 0) {
+    return;
+  }
+  auto page = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 500);
+  if (!page) {
+    return;
+  }
+  for (const ThreadMessage& message : *page) {
+    if (message.id != message_id) {
+      continue;
+    }
+    // The same scan the bubble was rendered from; the URL comes from the stored text, never the markup.
+    const std::vector<PlainTextLink> links = FindPlainTextLinks(message.text);
+    if (static_cast<size_t>(link_index) < links.size()) {
+      ConfirmAndOpenUrl(links[static_cast<size_t>(link_index)].url); // https only, host confirmed first
+    }
+    return;
+  }
+}
+
+void ChatController::OpenMessageLinkCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                             const ui::VariantList& args) {
+  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING) {
+    return;
+  }
+  const std::optional<int> link_index = EventArgAsInt(args, 1);
+  if (!link_index) {
+    return;
+  }
+  Instance().OpenMessageLink(std::string(args[0].Get<ui::String>().c_str()), *link_index);
+}
+
 void ChatController::JumpToQuoteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/, const ui::VariantList& args) {
   if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
@@ -3620,6 +3654,7 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("remove_image", &ChatController::RemoveImageCallback);
         ctor.BindEventCallback("cancel_quote_reply", &ChatController::CancelQuoteReplyCallback);
         ctor.BindEventCallback("jump_to_quote", &ChatController::JumpToQuoteCallback);
+        ctor.BindEventCallback("open_message_link", &ChatController::OpenMessageLinkCallback);
         ctor.BindEventCallback("open_attachment", &ChatController::OpenAttachmentCallback);
         ctor.BindEventCallback("download_attachment", &ChatController::DownloadAttachmentCallback);
         ctor.BindEventCallback("retry_attachment", &ChatController::RetryAttachmentCallback);
@@ -3711,13 +3746,20 @@ bool ChatController::Setup(ui::Context* context) {
       std::string shared = cur->GetAttribute("share-text", ui::String()).c_str();
       const std::string url = cur->GetAttribute("share-url", ui::String()).c_str();
       if (!url.empty()) {
-        shared += "\n" + url;
+        // "<label><url>": a PP bubble shows the label as the link (PlainTextLinks.h); pasted elsewhere it
+        // still reads as a label followed by the address.
+        shared += "\n" + Tr("feed.result.open") + url;
       }
       // In a direct chat the question needs the "@ai " prefix; an AI thread takes it as it is.
       auto active = facade_ ? facade_->GetActiveThread() : Roe<Thread>(Error("no facade"));
       const std::string prefix = active && active->kind == ThreadKind::Direct ? "@ai " : "";
-      actions.push_back({"ask_ai_item", Tr("chat.menu.ask_ai"), nullptr,
-                         [this, shared, prefix]() { StartQuoteReply(shared, prefix); }});
+      // The list panel closes so the composer with the quote bar is what the user sees next.
+      actions.push_back({"ask_ai_item", Tr("chat.menu.ask_ai"), nullptr, [this, shared, prefix]() {
+                           AppRuntime::PostUI([this, shared, prefix]() {
+                             working_set_.Clear();
+                             StartQuoteReply(shared, prefix);
+                           });
+                         }});
       actions.push_back({"copy_item", Tr("common.copy"), nullptr, [shared]() {
                            if (ui::SystemInterface* system = ui::GetSystemInterface()) {
                              system->SetClipboardText(shared);

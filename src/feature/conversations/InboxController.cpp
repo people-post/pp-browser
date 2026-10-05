@@ -14,6 +14,7 @@
 #include "common/chat/MessagingLimits.h"
 #include "domain/messaging/PskRotateCodec.h"
 #include "domain/messaging/AtAiParser.h"
+#include "domain/messaging/PlainTextLinks.h"
 #include "domain/messaging/QuoteReply.h"
 #include "domain/messaging/ReactionTypes.h"
 #include "domain/ui/ChatFormHelper.h"
@@ -919,6 +920,26 @@ std::string InboxController::BuildUnsupportedRml(const ThreadMessage& /*message*
 
 namespace {
 
+// Escaped text with its https links tappable. The click carries the message id and the link's index;
+// the handler finds the URL again in the stored text (PlainTextLinks.h), so none sits in the markup.
+// `text` must be the message text or a prefix of it, so the indexes agree.
+std::string LinkedTextRml(const std::string& text, const std::string& id_arg) {
+  const std::vector<PlainTextLink> links = FindPlainTextLinks(text);
+  if (links.empty() || id_arg.empty()) {
+    return StructuredTextParser::EscapeText(text);
+  }
+  std::string out;
+  size_t pos = 0;
+  for (size_t i = 0; i < links.size(); ++i) {
+    out += StructuredTextParser::EscapeText(text.substr(pos, links[i].begin - pos));
+    out += "<span class=\"chat-link\" data-event-click=\"open_message_link('" + id_arg + "', " + std::to_string(i) +
+           ")\">" + StructuredTextParser::EscapeText(links[i].display) + "</span>";
+    pos = links[i].end;
+  }
+  out += StructuredTextParser::EscapeText(text.substr(pos));
+  return out;
+}
+
 // A quote shows at most two lines: line breaks would waste them.
 std::string OneLine(std::string text) {
   std::replace(text.begin(), text.end(), '\n', ' ');
@@ -967,21 +988,21 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   if (!badges.empty()) {
     badges = "<div class=\"chat-message-meta\">" + badges + "</div>";
   }
+  // Message ids are generated locally or validated on receive; still keep the click argument to id characters.
+  std::string id_arg;
+  for (const char ch : message.id) {
+    if (std::isalnum(static_cast<unsigned char>(ch)) || ch == '-' || ch == '_') {
+      id_arg.push_back(ch);
+    }
+  }
   // A reply that quotes a message: the quote as a block on top (no "> " markers shown), the reply under it.
   std::string text_rml;
   if (const auto parts = SplitQuoteReply(message.text)) {
-    // Message ids are generated locally or validated on receive; still keep the click argument to id characters.
-    std::string id_arg;
-    for (const char ch : message.id) {
-      if (std::isalnum(static_cast<unsigned char>(ch)) || ch == '-' || ch == '_') {
-        id_arg.push_back(ch);
-      }
-    }
     text_rml = "<div class=\"chat-quote chat-quote--jump\" data-event-click=\"jump_to_quote('" + id_arg +
                "')\"><p class=\"chat-quote-text\">" + StructuredTextParser::EscapeText(OneLine(parts->quote)) + "</p></div>" +
-               paragraph + StructuredTextParser::EscapeText(parts->reply) + "</p>";
+               paragraph + LinkedTextRml(parts->reply, id_arg) + "</p>";
   } else {
-    text_rml = paragraph + StructuredTextParser::EscapeText(message.text) + "</p>";
+    text_rml = paragraph + LinkedTextRml(message.text, id_arg) + "</p>";
   }
   std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + text_rml + "</div>";
   body = HydrateChatActions(body, message.chat_actions);
