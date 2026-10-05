@@ -11,6 +11,7 @@
 #include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatAnswer.h"
 #include "gui/chat/SessionListText.h"
+#include "gui/chat/BriefFeedIntent.h"
 #include "gui/chat/SuggestionPayload.h"
 #include "gui/chat/ChatWidgetHost.h"
 #include "gui/BadgeAggregator.h"
@@ -2732,6 +2733,14 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
       SendUserText(trimmed, std::move(user_payload));
     });
     return;
+  }
+
+  // "给我今天最新的简报" / "latest briefs" typed to the AI is the Brief feed, the same as the Home chip:
+  // the app fetches it itself. A Chinese sentence gets the Chinese feed whatever the UI language.
+  if (!user_payload && InAiComposerContext()) {
+    if (const BriefFeedRequest feed = MatchBriefFeedRequest(trimmed); feed.matched) {
+      user_payload = SuggestionPayload("articles", feed.chinese ? "zh" : LocalizationService::Instance().ResolvedLanguage());
+    }
   }
 
   if (ChromeSnapshot().nav_tab == NavTab::Home) {
