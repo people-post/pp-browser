@@ -37,11 +37,19 @@ TEST(ChatTranscriptWindowTest, TrimWhilePinnedDropsOldest) {
   bool has_more = false;
   EXPECT_TRUE(pbr::ChatTranscriptScroller::TrimDomWindow(rows, /*pinned_to_bottom=*/true, loaded_min,
                                                          loaded_max, has_more));
-  EXPECT_EQ(rows.size(), pbr::kMaxMessagesDomWindow);
-  EXPECT_EQ(rows.front().display_order, 51);
-  EXPECT_EQ(*loaded_min, 51);
+  // Drops a batch below the cap, so the next messages do not trim (and re-parse every row) again.
+  const size_t kept = pbr::kMaxMessagesDomWindow - pbr::kMessagesDomWindowTrimBatch;
+  EXPECT_EQ(rows.size(), kept);
+  const auto first_kept = static_cast<int64_t>(pbr::kMaxMessagesDomWindow + 50 - kept + 1);
+  EXPECT_EQ(rows.front().display_order, first_kept);
+  EXPECT_EQ(*loaded_min, first_kept);
   EXPECT_FALSE(loaded_max.has_value());
   EXPECT_TRUE(has_more);
+
+  // One more message after a trim is under the cap again.
+  rows.push_back(rows.back());
+  EXPECT_FALSE(pbr::ChatTranscriptScroller::TrimDomWindow(rows, /*pinned_to_bottom=*/true, loaded_min,
+                                                          loaded_max, has_more));
 }
 
 TEST(ChatTranscriptWindowTest, TrimWhileReadingHistoryDropsNewest) {

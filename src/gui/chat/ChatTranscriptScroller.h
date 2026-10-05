@@ -47,7 +47,8 @@ public:
   const std::optional<int64_t>& LoadedMaxDisplayOrder() const { return loaded_max_display_order_; }
 
   /**
-   * Cap `messages` to kMaxMessagesDomWindow. When pinned, drop oldest and raise loaded_min.
+   * Cap `messages` to kMaxMessagesDomWindow. When pinned, drop the oldest down to a batch below the cap
+   * (kMessagesDomWindowTrimBatch) and raise loaded_min.
    * When unpinned (history), drop newest and set loaded_max. Returns true if trimmed.
    */
   static bool TrimDomWindow(std::vector<MessageDisplayRow>& messages, bool pinned_to_bottom,

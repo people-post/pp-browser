@@ -78,6 +78,8 @@ public:
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
+  /** Names an AI thread after its first question; a no-op once it has any other title. No thread-changed notify. */
+  Roe<void> NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& title);
   Roe<Thread> FindOrCreateDirectThread(const std::string& contact_id, ThreadChannel channel);
   void NotifyThreadChanged();
   void SetOnThreadChanged(std::function<void()> callback);
@@ -85,6 +87,10 @@ public:
   std::vector<MessageDisplayRow> BuildDisplayRows(const std::string& thread_id,
                                                   std::optional<int64_t> oldest_inclusive,
                                                   std::optional<int64_t> newest_inclusive = std::nullopt);
+  /** Lets the GUI rewrite built rows in place (e.g. a local image thumbnail in an AI question's bubble). */
+  void SetDisplayRowDecorator(std::function<void(std::vector<MessageDisplayRow>&)> decorator);
+  /** Active profile data directory (stores, session plaintext views). */
+  const std::string& ProfileDataDir() const;
   bool HasLocalMessagesBefore(const std::string& thread_id, int64_t before_display_order);
   int SumUnread();
 
@@ -260,6 +266,7 @@ public:
 
 private:
   ConversationsHub& hub_;
+  std::function<void(std::vector<MessageDisplayRow>&)> display_row_decorator_;
 };
 
 } // namespace pbr

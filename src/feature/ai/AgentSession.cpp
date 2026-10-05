@@ -1,6 +1,8 @@
 #include "feature/ai/AgentSession.h"
 #include "foundation/platform/Platform.h"
 
+#include "domain/ai/AppActionClassifier.h"
+#include "domain/ai/LocalizedLabels.h"
 #include "domain/ai/PayloadTurnPlanBuilder.h"
 #include "domain/ai/PromptBuilder.h"
 #include "domain/ai/StructuredTextParser.h"
@@ -88,8 +90,10 @@ struct AgentSession::Impl : public Module {
   std::mutex stream_cancel_mutex;
   std::shared_ptr<std::atomic<bool>> stream_cancel = std::make_shared<std::atomic<bool>>(false);
   std::atomic<uint64_t> turn_generation{0};
-  /** The current turn came back from brief_AI as "app action"; FinishTurn reports whether tools ran. */
+  /** The current turn was judged an "app action" (here or by brief_AI); FinishTurn reports whether tools ran. */
   bool handoff_turn = false;
+  /** ...and it was judged on this device rather than by a handoff event. */
+  bool handoff_local = false;
   std::atomic<bool> busy{false};
   std::mutex configure_mutex;
   std::condition_variable configure_cv;
@@ -111,6 +115,7 @@ struct AgentSession::Impl : public Module {
   std::optional<std::string> people_list_blocks;
   std::string pending_user_text;
   std::optional<std::string> pending_user_payload;
+  std::optional<AgentImageTurn> pending_image; // at most one per turn; SubmitToThread only
   std::string pending_entry_id;
   int iterations = 0;
   bool configured = false;
@@ -161,8 +166,10 @@ void AgentSession::PushAssistantReady(const std::shared_ptr<Impl>& state, const 
                               .sources = std::move(sources)});
 }
 
-void AgentSession::PushError(const std::shared_ptr<Impl>& state, const std::string& message, const bool retryable) {
-  PushEvent(state, AgentEvent{.type = AgentEventType::Error, .message = message, .retryable = retryable});
+void AgentSession::PushError(const std::shared_ptr<Impl>& state, const std::string& message, const bool retryable,
+                             const std::string& error_kind) {
+  PushEvent(state, AgentEvent{
+                       .type = AgentEventType::Error, .message = message, .retryable = retryable, .error_kind = error_kind});
 }
 
 void AgentSession::PushError(const std::shared_ptr<Impl>& state, const Error& err) {
@@ -171,6 +178,7 @@ void AgentSession::PushError(const std::shared_ptr<Impl>& state, const Error& er
 }
 
 void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
+  state->pending_image.reset(); // up to ~1.5 MB; not needed once the turn is over
   state->turn_trace.Log();
   if (state->handoff_turn) {
     bool parked = false;
@@ -181,7 +189,10 @@ void AgentSession::FinishTurn(const std::shared_ptr<Impl>& state) {
     // A handoff that ran no tool locally is the signal for a mis-routed question (plan step 5). A turn
     // parked on a permission prompt is not finished: count it when the resumed turn ends.
     if (!parked) {
-      MetricsLine("ai.handoff").Add("tools", static_cast<int64_t>(state->turn_trace.tools_executed.size())).Emit();
+      MetricsLine("ai.handoff")
+          .Add("src", state->handoff_local ? "local" : "server")
+          .Add("tools", static_cast<int64_t>(state->turn_trace.tools_executed.size()))
+          .Emit();
       state->handoff_turn = false;
     }
   }
@@ -442,7 +453,7 @@ void AgentSession::PersistAssistantToThread(const std::shared_ptr<Impl>& state, 
   message.id = util::GenerateUuid();
   message.thread_id = state->pending_thread_id;
   message.sender_contact_id = kAiAssistantContactId;
-  message.text = assistant_raw;
+  message.text = StructuredTextParser::StorableText(assistant_raw);
   message.timestamp = util::NowUnixMs();
   message.delivery = MessageDelivery::Local;
   message.relay_visible = state->turn_mode != AgentTurnMode::ScopedAssist;
@@ -668,6 +679,13 @@ Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state) 
       if (validated) {
         return validated;
       }
+      if (payload_plan->response_goal == ResponseGoal::DisplayFeed) {
+        // The feed tool comes from the promoted MCP server; without it there is nothing to show, and asking the
+        // model instead would only produce a confusing answer.
+        Error unavailable = validated.error();
+        unavailable.user = TrOrDefault("feed.unavailable", "Briefs are unavailable right now.");
+        return unavailable;
+      }
     }
   }
 
@@ -728,9 +746,11 @@ void AgentSession::RunTurnPipeline(const std::shared_ptr<Impl>& state) {
 }
 
 bool AgentSession::UseBriefStream(const std::shared_ptr<Impl>& state) {
-  if (state->turn_mode == AgentTurnMode::ScopedAssist) {
-    return false;
-  }
+  // A scoped assist ("@ai" in a chat) decides for itself in StartTurn: only its local mode streams.
+  return state->turn_mode != AgentTurnMode::ScopedAssist && BriefStreamAvailable(state);
+}
+
+bool AgentSession::BriefStreamAvailable(const std::shared_ptr<Impl>& state) {
   if (state->pending_user_payload && !state->pending_user_payload->empty()) {
     return false;
   }
@@ -738,6 +758,31 @@ bool AgentSession::UseBriefStream(const std::shared_ptr<Impl>& state) {
     return false;
   }
   return ResolvePreset(state->config) == "brief";
+}
+
+std::vector<std::string> AgentSession::AppActionCapabilities(const std::shared_ptr<Impl>& state) {
+  std::vector<std::string> names;
+  for (const ToolDescriptor& tool : state->tools.Tools()) {
+    if (tool.meta.provider == "messaging" || tool.meta.provider == "settings") {
+      names.push_back(tool.definition.name);
+    }
+  }
+  return names;
+}
+
+bool AgentSession::TryLocalAppAction(const std::shared_ptr<Impl>& state) {
+  if (state->pending_image) {
+    return false;
+  }
+  const auto tool = ClassifyAppAction(state->pending_user_text, AppActionCapabilities(state));
+  if (!tool) {
+    return false;
+  }
+  state->Log().info << "Turn judged an app action on the device (" << *tool << "); running the local pipeline";
+  state->handoff_turn = true;
+  state->handoff_local = true;
+  RunTurnPipeline(state);
+  return true;
 }
 
 void AgentSession::EmitStreamedAnswer(const std::shared_ptr<Impl>& state, const std::string& text,
@@ -779,10 +824,13 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
   request.history = std::move(history); // the client keeps the last 6
   request.summary = std::move(summary);
   request.app_version = AppVersionString();
-  for (const ToolDescriptor& tool : state->tools.Tools()) {
-    if (tool.meta.provider == "messaging" || tool.meta.provider == "settings") {
-      request.capabilities.push_back(tool.definition.name);
-    }
+  if (state->pending_image) {
+    request.image = state->pending_image->image;
+  }
+  // A turn with an image is never handed back, so it advertises no capabilities; neither does "@ai" in a
+  // chat (contract: only the question goes out).
+  if (!request.image && state->turn_mode != AgentTurnMode::ScopedAssist) {
+    request.capabilities = AppActionCapabilities(state);
   }
 
   // This turn's cancel flag and generation. Cancel() + a new Submit replace both; a stream that is
@@ -805,7 +853,12 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     std::string route;
   };
   auto stats = std::make_shared<TurnStats>();
-  const auto emit_turn = [stats](const char* outcome) {
+  // Size bucket only: no name, dimensions or content.
+  const bool has_image = request.image.has_value();
+  const char* image_kb = !has_image ? "none" : request.image->data.size() < 500u * 1024u ? "<500"
+                         : request.image->data.size() < 1536u * 1024u              ? "<1536"
+                                                                                   : ">=1536";
+  const auto emit_turn = [stats, has_image, image_kb](const char* outcome) {
     const auto now = std::chrono::steady_clock::now();
     const auto ms = [](auto from, auto to) -> int64_t {
       return static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count());
@@ -816,8 +869,13 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
         .Add("first_token_ms", stats->first_token ? ms(stats->started, *stats->first_token) : int64_t{-1})
         .Add("total_ms", ms(stats->started, now))
         .Add("deltas", static_cast<int64_t>(stats->deltas))
+        .Add("image", static_cast<int64_t>(has_image ? 1 : 0))
+        .Add("image_kb", image_kb)
         .Emit();
   };
+
+  // Image turn only: which HTTP status (413 / 400) ended the request, so the GUI can word it itself.
+  auto image_error_kind = std::make_shared<std::string>();
 
   BriefTurnSinks sinks;
   // Deltas carry the whole text so far; cap them at 20/s so a long answer does not flood the UI queue.
@@ -853,17 +911,25 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     EmitStreamedAnswer(state, response, finish, sources);
     FinishTurn(state);
   };
-  sinks.on_handoff = [state, current, emit_turn]() {
+  sinks.on_handoff = [state, current, emit_turn, has_image]() {
     emit_turn("handoff");
     if (!current()) {
       return;
     }
+    if (has_image) {
+      // The contract never hands back a turn with an image; do not run the local pipeline on one.
+      state->Log().warning << "brief_AI handed back a turn with an image; dropped";
+      PushError(state, "The AI could not answer this image. Try again.");
+      FinishTurn(state);
+      return;
+    }
     state->Log().info << "brief_AI handed the turn back; running the local pipeline";
     state->handoff_turn = true;
+    state->handoff_local = false;
     RunTurnPipeline(state);
   };
-  sinks.on_error = [state, current, emit_turn](const std::string& message, const bool retryable,
-                                               const std::string& partial) {
+  sinks.on_error = [state, current, emit_turn, image_error_kind](const std::string& message, const bool retryable,
+                                                                 const std::string& partial) {
     state->Log().warning << "brief_AI stream error (retryable=" << retryable << ", partial_chars=" << partial.size() << ")";
     emit_turn(partial.empty() ? "error" : "error_partial");
     if (!current()) {
@@ -872,7 +938,7 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     if (!partial.empty()) {
       EmitStreamedAnswer(state, partial, "error", {});
     }
-    PushError(state, message, retryable);
+    PushError(state, message, retryable, *image_error_kind);
     FinishTurn(state);
   };
   sinks.on_cancelled = [state, current, emit_turn](const std::string& partial) {
@@ -886,7 +952,24 @@ void AgentSession::StreamBriefTurn(const std::shared_ptr<Impl>& state, std::vect
     FinishTurn(state);
   };
 
-  const BriefAiStreamFn& stream = state->brief_stream_override ? state->brief_stream_override : state->brief_stream;
+  BriefAiStreamFn stream = state->brief_stream_override ? state->brief_stream_override : state->brief_stream;
+  if (has_image) {
+    // The failed status is only in the technical detail ("LLM HTTP 413: ..."); note it for the error sink.
+    stream = [inner = std::move(stream), image_error_kind](const BriefAiRequest& req,
+                                                           const std::function<void(const BriefAiEvent&)>& on_event,
+                                                           const std::atomic<bool>& cancelled) -> Roe<BriefAiOutcome> {
+      Roe<BriefAiOutcome> outcome = inner(req, on_event, cancelled);
+      if (!outcome) {
+        const std::string& detail = outcome.error().message;
+        if (detail.find("LLM HTTP 413") != std::string::npos) {
+          *image_error_kind = "image_too_large";
+        } else if (detail.find("LLM HTTP 400") != std::string::npos) {
+          *image_error_kind = "image_unsupported";
+        }
+      }
+      return outcome;
+    };
+  }
   BriefTurnRunner::Run(stream, request, *cancel, sinks);
 }
 
@@ -910,11 +993,21 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
       return;
     }
 
+    if (state->pending_image && !UseBriefStream(state)) {
+      // Only the streamed brief path carries an image; never drop it silently.
+      PushError(state, "Images can only be sent with the Brief AI model.");
+      FinishTurn(state);
+      return;
+    }
+
     ThreadMessage user_message;
-    user_message.id = util::GenerateUuid();
+    user_message.id = state->pending_image && !state->pending_image->message_id.empty()
+                          ? state->pending_image->message_id
+                          : util::GenerateUuid();
     user_message.thread_id = state->pending_thread_id;
     user_message.sender_contact_id = kLocalSelfContactId;
-    user_message.text = state->pending_user_text;
+    // Stored as text only: later history reads "[Image] <question>"; the bytes are never kept here.
+    user_message.text = (state->pending_image ? std::string(kAiImageTurnMarker) : std::string()) + state->pending_user_text;
     user_message.timestamp = util::NowUnixMs();
     user_message.delivery = MessageDelivery::Local;
     user_message.transport = MessageTransport::Local;
@@ -942,6 +1035,9 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
                                                   state->pending_user_payload, summary);
     state->turn_scratch = built.messages;
     if (UseBriefStream(state)) {
+      if (TryLocalAppAction(state)) {
+        return;
+      }
       // Built context is a transcript blob plus a pending user turn; send the real messages instead.
       std::vector<BriefAiHistoryTurn> history;
       for (const ThreadMessage& message : *messages) {
@@ -985,6 +1081,13 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
       state->turn_scratch.front().content =
           PromptBuilder::BuildScopedAssistSystemPrompt(state->tools.SummaryForPrompt(), ResolvePreset(state->config) == "brief");
     }
+    // With the brief preset a local "@ai" is a brief_AI question like any other, so it gets the current
+    // date, retrieval and sources (the bare model answered from its training data: wrong year, wrong
+    // language). No history is sent. A shared reply keeps the local path: the chat UI renders and relays it.
+    if (state->assist_mode == AtAiMode::Local && BriefStreamAvailable(state)) {
+      StreamBriefTurn(state, {}, std::string());
+      return;
+    }
     RunTurnPipeline(state);
     return;
   }
@@ -997,6 +1100,9 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
       state->coordinator.BeginTurn(state->conversation, system_prompt, entry, state->config.context);
   state->turn_scratch = snapshot.messages;
   if (UseBriefStream(state)) {
+    if (TryLocalAppAction(state)) {
+      return;
+    }
     // Context layout: [system, history..., pending user]; the policy appends the pending user message last.
     std::vector<BriefAiHistoryTurn> history;
     for (size_t i = 1; i + 1 < snapshot.messages.size(); ++i) {
@@ -1223,6 +1329,7 @@ void AgentSession::Submit(const std::string& user_text, std::optional<std::strin
   BeginStreamTurn();
   impl_->pending_user_text = user_text;
   impl_->pending_user_payload = std::move(user_payload);
+  impl_->pending_image.reset();
   impl_->turn_mode = AgentTurnMode::Conversation;
   impl_->pending_thread_id.clear();
 
@@ -1236,7 +1343,7 @@ void AgentSession::Submit(const std::string& user_text, std::optional<std::strin
 }
 
 void AgentSession::SubmitToThread(const std::string& thread_id, const std::string& user_text,
-                                  std::optional<std::string> user_payload) {
+                                  std::optional<std::string> user_payload, std::optional<AgentImageTurn> image) {
   if (user_text.empty() || impl_->busy.exchange(true)) {
     return;
   }
@@ -1245,6 +1352,7 @@ void AgentSession::SubmitToThread(const std::string& thread_id, const std::strin
   BeginStreamTurn();
   impl_->pending_user_text = user_text;
   impl_->pending_user_payload = std::move(user_payload);
+  impl_->pending_image = std::move(image);
   impl_->pending_thread_id = thread_id;
   impl_->turn_mode = AgentTurnMode::Thread;
 
@@ -1267,6 +1375,7 @@ void AgentSession::SubmitScopedAssist(const std::string& thread_id, const std::s
   BeginStreamTurn();
   impl_->pending_user_text = prompt;
   impl_->pending_user_payload = std::move(user_payload);
+  impl_->pending_image.reset();
   impl_->pending_thread_id = thread_id;
   impl_->turn_mode = AgentTurnMode::ScopedAssist;
   impl_->assist_mode = mode;
@@ -1310,6 +1419,7 @@ void AgentSession::StartNewConversation() {
     impl->pending_entry_id.clear();
     impl->pending_user_text.clear();
     impl->pending_user_payload.reset();
+    impl->pending_image.reset();
     impl->cancelled = false;
     impl->busy = false;
   });

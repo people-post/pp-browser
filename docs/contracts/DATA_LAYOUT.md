@@ -61,6 +61,8 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
   threads/{thread_id}/
     blobs_view/         # optional session plaintext materialization (not source of truth)
     # blobs/            # not used; durable bytes live in cas/private only
+  threads/ai-images/    # reserved name, NOT a thread (no thread.db): blobs_view/ only
+    blobs_view/         # session plaintext thumbnails of images the user sent to the AI; wiped with the others
 ```
 
 | Realm | At rest | Object id | How it gets bytes |
@@ -107,6 +109,9 @@ All JSON stores include `schema_version` (or `config_version` for config). Unsup
 | `reachability_nudge_acked_status` | `preferences.json` | string, schema v9; empty / `outbound_only` / `blocked` — Me → Network attention ack |
 | `tool_permissions` | `preferences.json` | object, schema v11 — agent tool trust (`defaults` by risk, `by_tool`, `by_provider`; decisions `allow` \| `ask` \| `deny`) |
 | `recent_emojis` | `preferences.json` | string array, schema v12 — MRU glyphs for the in-app emoji picker (cap 36) |
+| `sidebar_width_dp` | `preferences.json` | integer, optional (added after schema v14, no version bump); default 240; shell clamps to 200–480 dp. Expanded-layout secondary pane width |
+| `sidebar_collapsed` | `preferences.json` | boolean, optional (added after schema v14, no version bump); default false. Expanded-layout secondary pane collapsed |
+| `auxiliary_width_dp` | `preferences.json` | integer, optional (added after schema v14, no version bump); default 320; shell clamps to 280–640 dp. Expanded-layout auxiliary pane width |
 | `crash_reports_enabled` | `preferences.json` | boolean, schema v14 — opt-in upload of compact crash envelopes to `{relay}/v1/crash-reports` |
 
 `tool_permissions` shape:

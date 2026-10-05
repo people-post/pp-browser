@@ -29,22 +29,22 @@
           <span class="settings-label">{{i18n:settings.nickname}}</span>
           <input class="field" type="text" data-value="profile_nickname" lang=""
                  data-event-blur="on_profile_nickname_commit()"
-                 placeholder="Your display name"/>
+                 placeholder="{{i18n:settings.profile.nickname_placeholder}}"/>
         </label>
         <p class="text muted me-profile-meta" data-if="profile_peer_id != ''">
-          Peer ID: <span data-rml="profile_peer_id"></span>
+          {{i18n:settings.profile.peer_id_label}} <span data-rml="profile_peer_id"></span>
         </p>
         <p class="text muted me-profile-meta" data-if="profile_relay_id != ''">
-          Relay ID: <span data-rml="profile_relay_id"></span>
+          {{i18n:settings.profile.relay_id_label}} <span data-rml="profile_relay_id"></span>
         </p>
         <p class="text muted me-profile-meta" data-if="profile_relay_id == ''">
-          Relay ID: not registered yet
+          {{i18n:settings.profile.relay_id_none}}
         </p>
         <p class="text muted me-profile-meta">
-          Registration: <span data-rml="profile_registration_status"></span>
+          {{i18n:settings.registration.label}} <span data-rml="profile_registration_status"></span>
         </p>
         <p class="text muted me-profile-meta" data-if="profile_registration_expires != ''">
-          Expires: <span data-rml="profile_registration_expires"></span>
+          {{i18n:settings.registration.expires}} <span data-rml="profile_registration_expires"></span>
         </p>
         <div class="settings-toggle-row row">
           <span class="settings-label settings-toggle-label">{{i18n:settings.auto_renew}}</span>
@@ -62,20 +62,20 @@
             <div class="settings-switch-knob"></div>
           </button>
         </div>
-        <p class="text muted settings-help">Off silences OS banners and unregisters push; inbox still syncs in the background.</p>
+        <p class="text muted settings-help">{{i18n:settings.notifications.help}}</p>
         <div class="me-profile-actions row">
           <button class="btn btn-secondary btn-icon" type="button" data-event-click="copy_profile_id()">
             <svg src="../icons/copy.svg" width="14" height="14" crop-to-content="true"></svg>
-            Copy ID
+            {{i18n:contacts.copy_id}}
           </button>
           <button class="btn btn-secondary btn-icon" type="button" data-event-click="share_profile()">
             <svg src="../icons/share.svg" width="14" height="14" crop-to-content="true"></svg>
-            Share
+            {{i18n:common.share}}
           </button>
           <button class="btn btn-primary" type="button" data-if="profile_show_register"
                   data-event-click="register_profile()"><span data-rml="profile_register_label"></span></button>
           <button class="btn btn-secondary" type="button" data-if="profile_show_rotate"
-                  data-event-click="rotate_brief_llm_key()">Rotate Brief API key</button>
+                  data-event-click="rotate_brief_llm_key()">{{i18n:settings.llm.rotate_brief_key}}</button>
         </div>
       </div>
 

@@ -106,6 +106,10 @@ When adding a new Me-tab section, add its normalizer next to the domain types un
 
 **Language (UI):** `preferences.json` → `language` (`system`, `en`, or `zh-Hans`). `system` follows `SDL_GetPreferredLocales` and picks the first shipped catalog match (else English). Changing language in Me → Appearance applies immediately via `LocalizationService` + shell remount. Catalogs live under `assets/locales/`.
 
+**Secondary pane (expanded layout):** `preferences.json` → `sidebar_width_dp` (default 240, clamped 200–480) and `sidebar_collapsed` (default false). Written by `ShellHost` after a splitter drag ends or the collapse button is used; see [ui/WINDOW_SHELL.md](../ui/WINDOW_SHELL.md).
+
+**Auxiliary pane (expanded layout):** `preferences.json` → `auxiliary_width_dp` (default 320, clamped 280–640). Written by `ShellHost` after a splitter drag on the pane's left edge ends; see [ui/WINDOW_SHELL.md](../ui/WINDOW_SHELL.md).
+
 **Compact chrome materials:** `preferences.json` → `reduce_transparency` (Me → Appearance; opaque shell, no backdrop frost) and `compact_chrome_frost` (default true; disable frost tier via JSON for dogfood). Schema v8.
 
 **Reachability nudge ack:** `preferences.json` → `reachability_nudge_acked_status` (`outbound_only` / `blocked`, or empty). Schema v9. Cleared when inbound becomes reachable so a later regression can show the Me / Network attention dots again.

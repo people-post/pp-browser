@@ -23,7 +23,7 @@
               data-event-click="select_section('profile')">
         <p class="me-identity-name" data-rml="profile_nickname"></p>
         <p class="text muted me-profile-meta">
-          Registration: <span data-rml="profile_registration_status"></span>
+          {{i18n:settings.registration.label}} <span data-rml="profile_registration_status"></span>
         </p>
       </button>
       <div class="me-identity-actions row">

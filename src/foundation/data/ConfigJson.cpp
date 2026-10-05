@@ -744,6 +744,9 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("attachment_download_policy", prefs.attachment_download_policy);
   object.set("reduce_transparency", prefs.reduce_transparency);
   object.set("compact_chrome_frost", prefs.compact_chrome_frost);
+  object.set("sidebar_width_dp", static_cast<int64_t>(prefs.sidebar_width_dp));
+  object.set("sidebar_collapsed", prefs.sidebar_collapsed);
+  object.set("auxiliary_width_dp", static_cast<int64_t>(prefs.auxiliary_width_dp));
   object.set("reachability_nudge_acked_status", prefs.reachability_nudge_acked_status);
   object.set("tool_permissions", ToolPermissionsToObject(prefs.tool_permissions));
   object.set("recent_emojis", makeArray(std::move(recent)));
@@ -812,6 +815,21 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
     prefs.compact_chrome_frost = *compact_chrome_frost;
   } else {
     prefs.compact_chrome_frost = true;
+  }
+  if (auto sidebar_width = ReadI64(object, "sidebar_width_dp")) {
+    prefs.sidebar_width_dp = static_cast<int>(*sidebar_width);
+  } else {
+    prefs.sidebar_width_dp = 240;
+  }
+  if (auto sidebar_collapsed = object.getIf<bool>("sidebar_collapsed")) {
+    prefs.sidebar_collapsed = *sidebar_collapsed;
+  } else {
+    prefs.sidebar_collapsed = false;
+  }
+  if (auto auxiliary_width = ReadI64(object, "auxiliary_width_dp")) {
+    prefs.auxiliary_width_dp = static_cast<int>(*auxiliary_width);
+  } else {
+    prefs.auxiliary_width_dp = 320;
   }
   if (auto acked = object.getString("reachability_nudge_acked_status")) {
     prefs.reachability_nudge_acked_status = *acked;

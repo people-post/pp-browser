@@ -12,6 +12,7 @@
 #include "gui/shell/ShellBottomSheetGesture.h"
 #include "gui/shell/ShellCallChromeGesture.h"
 #include "domain/ui/ShellGestureAxis.h"
+#include "gui/shell/ShellSplitterDrag.h"
 #include "gui/shell/ShellSwipeBackGesture.h"
 
 #include <ui/data/DataModelHandle.h>
@@ -21,6 +22,7 @@
 #include <chrono>
 #include <functional>
 #include <optional>
+#include <source_location>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -87,7 +89,12 @@ public:
 
   void Initialize(ui::Context* context);
   void SyncLayout();
-  void RequestSyncLayout(bool restore_focus_after = false, const char* reason = nullptr);
+  /**
+   * `reason` names the caller for the log and the shell.sync_layout_slow metric. Without one, the call
+   * site (file:line) is used, so every request can be told apart.
+   */
+  void RequestSyncLayout(bool restore_focus_after = false, const char* reason = nullptr,
+                         std::source_location where = std::source_location::current());
   /** Mount/clear call ring + in-call overlays without remounting the full shell tree.
    *  Defers to the next UI turn so Rml click handlers are not mid-dispatch on destroyed nodes. */
   void RemountCallChrome();
@@ -172,6 +179,17 @@ public:
   void SetOnTransientPopped(std::function<void(const std::string& key)> callback);
   void SetOnNavTabChanged(std::function<void(NavTab tab)> callback);
   void SetOnLayoutModeChanged(std::function<void(LayoutMode mode)> callback);
+
+  /** Secondary-pane prefs from disk (width is clamped). Remounts when they differ from the current state. */
+  void SetSidebarPrefs(int width_dp, bool collapsed);
+  /** Fired after the user resizes or collapses/expands the secondary pane (persist here). */
+  void SetOnSidebarChanged(std::function<void(int width_dp, bool collapsed)> callback);
+  /** Auxiliary-pane width from disk (clamped). Remounts when it differs from the current state. */
+  void SetAuxiliaryWidthPref(int width_dp);
+  /** Fired after the user resizes the auxiliary pane (persist here). */
+  void SetOnAuxiliaryWidthChanged(std::function<void(int width_dp)> callback);
+  /** Collapse/expand the secondary pane (expanded layout, tabs with a secondary pane only). */
+  void ToggleSidebarCollapsed();
   void SetOnLayoutSynced(std::function<void()> callback);
   void SetOnAccountSheetOpened(std::function<void()> callback);
   void SetOnAccountSheetClosed(std::function<void()> callback);
@@ -194,6 +212,7 @@ public:
   /** Sync compact chrome material prefs from profile; resyncs shell when changed. */
   void SyncChromeMaterialPrefs(bool reduce_transparency, bool compact_chrome_frost);
 
+  static void ToggleSidebarCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleAuxiliaryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenAuxiliaryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SelectNavTabCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -245,7 +264,8 @@ private:
 
   ui::Element* ShellRoot() const;
   std::string SerializeShellRoot() const;
-  std::string SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot = false) const;
+  std::string SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot = false,
+                                int flex_width_dp = 0) const;
   std::string SerializeExpandedBase() const;
   std::string SerializeCompactBase() const;
   std::string SerializeAccountSheet() const;
@@ -266,6 +286,9 @@ private:
   void MountComposer();
   void DetachDismissGestures();
   void AttachSwipeBackGesture();
+  void AttachSplitterDrag();
+  void AttachAuxiliarySplitterDrag(ui::ElementDocument* doc);
+  void NotifySidebarChanged();
   void AttachAccountSheetGesture();
   void DetachCallChromeGesture();
   void AttachCallChromeGesture();
@@ -330,6 +353,11 @@ private:
   std::vector<LocalBackEntry> local_back_stack_;
   ui::String saved_focus_id_;
   bool sync_pending_ = false;
+  /** Who asked for the pending / running SyncLayout (first request) and how many requests it merges. */
+  std::string pending_sync_reason_;
+  int pending_sync_requests_ = 0;
+  std::string running_sync_reason_ = "direct";
+  int running_sync_requests_ = 1;
   bool remount_call_chrome_pending_ = false;
   bool remount_dialog_chrome_pending_ = false;
   bool remount_pin_gate_chrome_pending_ = false;
@@ -342,11 +370,15 @@ private:
   ShellSwipeBackGesture swipe_back_gesture_;
   ShellBottomSheetGesture account_sheet_gesture_;
   ShellCallChromeGesture call_chrome_gesture_;
+  ShellSplitterDrag splitter_drag_;
+  ShellSplitterDrag aux_splitter_drag_;
   std::function<void(const std::string&)> on_before_transient_mount_;
   std::function<void(const std::string&)> on_transient_mounted_;
   std::function<void(const std::string&)> on_transient_popped_;
   std::function<void(NavTab)> on_nav_tab_changed_;
   std::function<void(LayoutMode)> on_layout_mode_changed_;
+  std::function<void(int, bool)> on_sidebar_changed_;
+  std::function<void(int)> on_auxiliary_width_changed_;
   std::function<void()> on_layout_synced_;
   std::function<void()> on_account_sheet_opened_;
   std::function<void()> on_account_sheet_closed_;

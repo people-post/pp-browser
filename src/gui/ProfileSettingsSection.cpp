@@ -19,8 +19,42 @@ void ProfileSettingsSection::BindPorts(SettingsCommands* commands) {
   commands_ = commands;
 }
 
+namespace {
+
+// The identity view carries fixed English labels (also asserted by registration tests); map them
+// to localized text for display. Unknown values pass through unchanged.
+std::string LocalizedRegistrationStatus(const std::string& label) {
+  if (label == "not registered") {
+    return Tr("settings.registration.not_registered");
+  }
+  if (label == "active") {
+    return Tr("settings.registration.active");
+  }
+  if (label == "expiring soon") {
+    return Tr("settings.registration.expiring_soon");
+  }
+  if (label == "expired") {
+    return Tr("settings.registration.expired");
+  }
+  return label;
+}
+
+std::string LocalizedRegisterLabel(const std::string& label) {
+  if (label == "Register on network") {
+    return Tr("settings.register_network");
+  }
+  if (label == "Renew registration") {
+    return Tr("settings.registration.renew");
+  }
+  return label;
+}
+
+} // namespace
+
 void ProfileSettingsSection::ApplyIdentityView(const ProfileIdentityView& view, SettingsUiState& state) const {
   if (!view.ready) {
+    state.profile_registration_status = LocalizedRegistrationStatus(state.profile_registration_status);
+    state.profile_register_label = LocalizedRegisterLabel(state.profile_register_label);
     return;
   }
   state.profile_nickname = view.nickname;
@@ -29,9 +63,9 @@ void ProfileSettingsSection::ApplyIdentityView(const ProfileIdentityView& view, 
   state.profile_account_id = view.account_id;
   state.profile_public_key = view.public_key_b64;
   state.profile_registered = view.registered;
-  state.profile_registration_status = view.registration_status;
+  state.profile_registration_status = LocalizedRegistrationStatus(view.registration_status);
   state.profile_registration_expires = view.registration_expires;
-  state.profile_register_label = view.register_label;
+  state.profile_register_label = LocalizedRegisterLabel(view.register_label);
   state.profile_show_register = view.show_register;
   state.profile_show_rotate = view.show_rotate;
   state.brief_llm_key_masked = view.brief_llm_key_masked;

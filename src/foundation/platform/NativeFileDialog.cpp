@@ -30,7 +30,7 @@ void OnDialogComplete(void* userdata, const char* const* filelist, int /*filter*
 
 } // namespace
 
-void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callback) {
+void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callback, const bool include_heic) {
   if (!callback) {
     return;
   }
@@ -38,8 +38,12 @@ void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callba
       {"Images", "png;jpg;jpeg;webp;gif"},
       {"All files", "*"},
   };
+  static const SDL_DialogFileFilter filters_heic[] = {
+      {"Images", "png;jpg;jpeg;webp;gif;heic;heif"},
+      {"All files", "*"},
+  };
   auto* state = new DialogState{.callback = std::move(callback)};
-  SDL_ShowOpenFileDialog(OnDialogComplete, state, window, filters, 2, nullptr, false);
+  SDL_ShowOpenFileDialog(OnDialogComplete, state, window, include_heic ? filters_heic : filters, 2, nullptr, false);
 }
 
 void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback) {

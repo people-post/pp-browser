@@ -257,7 +257,7 @@ void PinGateController::OnSubmit() {
 
   const std::string pin = pin_state_.pin.c_str();
   if (pin.empty()) {
-    pin_state_.error = "PIN is required";
+    pin_state_.error = Tr("pin.error.required").c_str();
     ApplyPinGate();
     DirtyPinFields();
     return;
@@ -265,13 +265,13 @@ void PinGateController::OnSubmit() {
   if (pin_state_.create_mode) {
     const std::string confirm = pin_state_.pin_confirm.c_str();
     if (pin != confirm) {
-      pin_state_.error = "PINs do not match";
+      pin_state_.error = Tr("pin.error.mismatch").c_str();
       ApplyPinGate();
       DirtyPinFields();
       return;
     }
     if (pin.size() < 4) {
-      pin_state_.error = "Use at least 4 characters";
+      pin_state_.error = Tr("errors.pin.too_short").c_str();
       ApplyPinGate();
       DirtyPinFields();
       return;

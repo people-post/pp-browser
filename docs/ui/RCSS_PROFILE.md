@@ -107,7 +107,7 @@ See [UI_DESIGN_SYSTEM.md](UI_DESIGN_SYSTEM.md) for the full token table and surf
 
 ### Chat and shell
 
-`.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-card`, `.chat-card-highlight`, `.chat-working-set-chip`, `.shell-toolbar-btn`, `.sidebar-session`
+`.bubble-user`, `.bubble-assistant`, `.bubble-peer`, `.prompt-composer`, `.chat-suggestion`, `.chat-form`, `.chat-callout`, `.chat-callout-warning`, `.chat-card`, `.chat-card-highlight`, `.chat-working-set-chip`, `.sidebar-session`
 
 Theme colors are applied via `@media (theme: light|dark)` in app stylesheets only — not in AI output.
 

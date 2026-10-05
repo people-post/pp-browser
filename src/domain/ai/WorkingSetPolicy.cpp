@@ -1,5 +1,6 @@
 #include "domain/ai/WorkingSetPolicy.h"
 
+#include "domain/ai/LocalizedLabels.h"
 #include "domain/ai/StructuredTextParser.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
@@ -10,6 +11,16 @@
 namespace pbr {
 
 namespace {
+
+/** Localized (English fallback) text with a `{count}` placeholder; user-facing panel / teaser labels only. */
+std::string CountLabel(const std::string& key, const std::string& fallback, const size_t count) {
+  std::string text = TrOrDefault(key, fallback);
+  const std::string token = "{count}";
+  for (size_t pos = text.find(token); pos != std::string::npos; pos = text.find(token)) {
+    text.replace(pos, token.size(), std::to_string(count));
+  }
+  return text;
+}
 
 int CountLines(const std::string& text) {
   if (text.empty()) {
@@ -65,10 +76,11 @@ BlockEligibility EvaluateBlock(const Object& block, const ResponseGoal goal) {
     result.kind = WorkingSetKind::LongList;
     result.affinity = WorkingSetAffinity::Feed;
     result.auto_open = routing.auto_open_eligible;
-    result.title = block.getString("title").value_or("List");
+    result.title = block.getString("title").value_or(TrOrDefault("working_set.title_list", "List"));
     const size_t count = items->elements.size();
-    result.subtitle = std::to_string(count) + (count == 1 ? " item" : " items");
-    result.teaser_label = "View in panel (" + std::to_string(count) + " items)";
+    result.subtitle = count == 1 ? CountLabel("working_set.items_one", "{count} item", count)
+                                  : CountLabel("working_set.items_many", "{count} items", count);
+    result.teaser_label = CountLabel("working_set.teaser_list", "View in panel ({count} items)", count);
     return result;
   }
 
@@ -77,14 +89,15 @@ BlockEligibility EvaluateBlock(const Object& block, const ResponseGoal goal) {
     result.kind = WorkingSetKind::Form;
     result.affinity = WorkingSetAffinity::Form;
     result.auto_open = routing.auto_open_eligible;
-    result.title = block.getString("title").value_or("Form");
+    result.title = block.getString("title").value_or(TrOrDefault("working_set.title_form", "Form"));
     if (const Array* fields = block.getArray("fields")) {
       const size_t count = fields->elements.size();
-      result.subtitle = std::to_string(count) + (count == 1 ? " field" : " fields");
-      result.teaser_label = "Open form (" + std::to_string(count) + " fields)";
+      result.subtitle = count == 1 ? CountLabel("working_set.fields_one", "{count} field", count)
+                                    : CountLabel("working_set.fields_many", "{count} fields", count);
+      result.teaser_label = CountLabel("working_set.teaser_form_fields", "Open form ({count} fields)", count);
     } else {
       result.subtitle = "";
-      result.teaser_label = "Open form";
+      result.teaser_label = TrOrDefault("working_set.teaser_form", "Open form");
     }
     return result;
   }
@@ -94,9 +107,9 @@ BlockEligibility EvaluateBlock(const Object& block, const ResponseGoal goal) {
     result.kind = WorkingSetKind::Calendar;
     result.affinity = WorkingSetAffinity::Form;
     result.auto_open = routing.auto_open_eligible;
-    result.title = "Calendar";
+    result.title = TrOrDefault("working_set.title_calendar", "Calendar");
     result.subtitle = "";
-    result.teaser_label = "Open calendar";
+    result.teaser_label = TrOrDefault("working_set.teaser_calendar", "Open calendar");
     return result;
   }
 
@@ -117,9 +130,9 @@ BlockEligibility EvaluateBlock(const Object& block, const ResponseGoal goal) {
     result.kind = WorkingSetKind::Table;
     result.affinity = WorkingSetAffinity::DataTable;
     result.auto_open = routing.auto_open_eligible;
-    result.title = "Table";
-    result.subtitle = std::to_string(row_count) + " rows";
-    result.teaser_label = "View table (" + std::to_string(row_count) + " rows)";
+    result.title = TrOrDefault("working_set.title_table", "Table");
+    result.subtitle = CountLabel("working_set.rows", "{count} rows", row_count);
+    result.teaser_label = CountLabel("working_set.teaser_table", "View table ({count} rows)", row_count);
     return result;
   }
 
@@ -135,9 +148,10 @@ BlockEligibility EvaluateBlock(const Object& block, const ResponseGoal goal) {
     result.kind = WorkingSetKind::Code;
     result.affinity = WorkingSetAffinity::Document;
     result.auto_open = routing.auto_open_eligible;
-    result.title = "Code";
-    result.subtitle = std::to_string(CountLines(*text)) + " lines";
-    result.teaser_label = "View full code";
+    result.title = TrOrDefault("working_set.title_code", "Code");
+    result.subtitle = CountLabel("working_set.lines", "{count} lines",
+                              static_cast<size_t>(CountLines(*text)));
+    result.teaser_label = TrOrDefault("working_set.teaser_code", "View full code");
     return result;
   }
 
@@ -151,9 +165,9 @@ BlockEligibility EvaluateBlock(const Object& block, const ResponseGoal goal) {
     result.kind = WorkingSetKind::KeyValue;
     result.affinity = WorkingSetAffinity::Document;
     result.auto_open = routing.auto_open_eligible;
-    result.title = "Details";
-    result.subtitle = std::to_string(count) + " entries";
-    result.teaser_label = "View details (" + std::to_string(count) + " entries)";
+    result.title = TrOrDefault("working_set.title_details", "Details");
+    result.subtitle = CountLabel("working_set.entries", "{count} entries", count);
+    result.teaser_label = CountLabel("working_set.teaser_details", "View details ({count} entries)", count);
     return result;
   }
 
@@ -169,9 +183,9 @@ BlockEligibility EvaluateBlock(const Object& block, const ResponseGoal goal) {
     result.kind = WorkingSetKind::Card;
     result.affinity = WorkingSetAffinity::Document;
     result.auto_open = routing.auto_open_eligible;
-    result.title = block.getString("title").value_or("Card");
+    result.title = block.getString("title").value_or(TrOrDefault("working_set.title_card", "Card"));
     result.subtitle = "";
-    result.teaser_label = "View card";
+    result.teaser_label = TrOrDefault("working_set.teaser_card", "View card");
     return result;
   }
 

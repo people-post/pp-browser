@@ -146,7 +146,7 @@ Roe<Thread> InboxController::CreateNewAiThread() {
   Thread thread;
   thread.id = util::GenerateUuid();
   thread.kind = ThreadKind::Ai;
-  thread.title = "New chat";
+  thread.title = kDefaultAiThreadTitle;
   thread.preview = "";
   thread.updated_at = util::NowUnixMs();
 
@@ -481,6 +481,25 @@ Roe<void> InboxController::SetThreadLocalTitle(const std::string& thread_id, con
   return {};
 }
 
+Roe<void> InboxController::NameAiThreadFromFirstMessage(const std::string& thread_id, const std::string& title) {
+  auto thread = store_.GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  if ((*thread)->kind != ThreadKind::Ai || (*thread)->title != kDefaultAiThreadTitle || title.empty()) {
+    return {};
+  }
+  Thread updated = **thread;
+  updated.title = title;
+  if (auto saved = store_.UpsertThread(updated); !saved) {
+    return saved.error();
+  }
+  return {};
+}
+
 std::string InboxController::ResolveSenderLabel(const std::string& sender_contact_id) const {
   if (shadows_ && (sender_contact_id.rfind("account:", 0) == 0 || sender_contact_id.rfind("relay:", 0) == 0)) {
     shadows_->EnsureLookup(sender_contact_id);
@@ -503,7 +522,7 @@ std::string InboxController::BuildSharedBadgeHtml(const ThreadMessage& message) 
       (message.ai_invoke_mode != "shared_reply" && message.ai_invoke_mode != "shared_full")) {
     return "";
   }
-  return "<span class=\"chat-shared-badge muted\">Shared</span>";
+  return "<span class=\"chat-shared-badge muted\">" + Tr("chat.shared_badge") + "</span>";
 }
 
 std::string InboxController::FormatCallPeerLabel(const std::string& identity) const {

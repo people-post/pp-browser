@@ -25,6 +25,7 @@
 #include "common/Module.h"
 #include "domain/ui/ChatWidgetTypes.h"
 
+#include <source_location>
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Event.h>
 #include <ui/base/Input.h>
@@ -172,6 +173,12 @@ private:
     bool show_attach_button = false;
     bool attachment_uploading = false;
     ui::String attachment_draft_name;
+    /** AI image chip: an image is being prepared (image_preparing) or waits for the question. */
+    bool image_chip = false;
+    bool image_preparing = false;
+    bool image_thumb_ready = false;
+    ui::String image_thumb_src;
+    ui::String image_draft_name;
     bool show_thread_actions = false;
     bool show_peer_sheet = false;
     bool show_call_actions = false;
@@ -217,12 +224,14 @@ private:
 
   static void SendMessageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SendSuggestionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void SendSuggestionActionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SendChatActionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenChatLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void StopTurnCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ToggleReactionCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenEmojiInsertCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void AttachFileCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void RemoveImageCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void DownloadAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void RetryAttachmentCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -276,13 +285,26 @@ private:
   void OnRotatePskExport();
   void OnLockPublicToThisDevice();
   /** From Home landing: mint AI thread, switch to Sessions, open chat. */
-  bool EnsureHomeOutboundSession();
-  void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt);
+  /** Opens the AI thread a send from Home goes to: `chip_message`'s own earlier thread when there is one, else a new thread. */
+  bool EnsureHomeOutboundSession(const std::string& chip_message = {});
+  /** `from_home_chip`: a Home chip (not typed text) is being sent, so it continues that chip's own thread. */
+  void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt,
+                    bool from_home_chip = false);
   void SendChatAction(const std::string& entry_id, int action_index);
   void ToggleReaction(const std::string& message_id, const std::string& emoji);
   void OpenEmojiInsertMenu(ui::Event* ev);
   void OnAttachFile();
   void StartAttachmentUpload(const std::string& path);
+  /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
+  bool InAiComposerContext() const;
+  void OnAttachAiImage();
+  void StartAiImagePrepare(std::string path);
+  void OnRemoveImage();
+  /** Drops the pending (or still preparing) image and its session thumbnail file. */
+  void DiscardPendingAiImage();
+  /** False when the question could not be sent (not ready, no thread); the draft and the chip then stay. */
+  bool SendImageQuestion(const std::string& text);
+  void DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const;
   void OpenAttachment(const std::string& message_id);
   void DownloadAttachment(const std::string& message_id);
   void RetryAttachmentDownload(const std::string& message_id);
@@ -294,8 +316,12 @@ private:
   void CalendarNext(const std::string& entry_id);
   void SelectCalendarDay(const std::string& entry_id, const std::string& iso_date);
   void SyncDisplayFromThread();
+  /** Last time a display sync ran the whole-thread attachment backfill. */
+  std::chrono::steady_clock::time_point last_attachment_backfill_{};
   void OnStopTurn();
   void OpenChatLink(const std::string& entry_id, int link_index);
+  /** Opens an https URL after the user confirms its host; the dialog offers to stop asking until the app restarts. */
+  void ConfirmAndOpenUrl(const std::string& url);
   void OnAssistantDelta(const AgentEvent& event);
   void FlushStreamingRow();
   void ClearStreamingRow();
@@ -331,7 +357,8 @@ private:
   ShellChromeSnapshot ChromeSnapshot() const;
   ChatSurfaceSnapshot BuildSurfaceSnapshot() const;
   void NotifySurfaceChanged();
-  void ShellSyncLayout(bool restore_focus_after = false);
+  /** The call site is passed on as the request's reason (ShellHost::RequestSyncLayout). */
+  void ShellSyncLayout(bool restore_focus_after = false, std::source_location where = std::source_location::current());
   void ShellSelectNavTab(NavTab tab);
   void ShellSetPrimaryPane(const std::string& key);
   void ShellOpenCompactChat();
@@ -384,11 +411,30 @@ private:
   /** Avoid reminting guest Brief keys on every Apply / banner refresh. */
   bool brief_guest_mint_attempted_ = false;
   std::string brief_guest_mint_user_hint_;
+  std::string last_brief_banner_; // text RefreshLlmSetupBanner last showed for the brief preset
   ChatTranscriptScroller scroller_;
   WorkingSetController working_set_;
   ChatThreadChrome chrome_;
   ChatWidgetHost widgets_;
   std::optional<PendingReply> pending_reply_;
+
+  /** The prepared image waiting in the composer for its question. */
+  struct PendingAiImage {
+    BriefAiImage image;
+    std::string name;      // shown on the chip only; never logged
+    std::string file_path; // session plaintext copy for the thumbnail; empty when it could not be written
+    int width = 0;         // pixels of the prepared image
+    int height = 0;
+  };
+  struct AiImageView {
+    std::string file_path;
+    int width = 0;
+    int height = 0;
+  };
+  std::optional<PendingAiImage> pending_image_;
+  uint64_t image_prepare_generation_ = 0; // a prepare that finishes after Discard / a newer pick is dropped
+  /** Sent image question (user message id) -> its session thumbnail file; gone after a restart. */
+  std::map<std::string, AiImageView> ai_image_files_;
 
   /** The in-flight streamed answer: shown as a synthetic last row until AssistantReady replaces it. */
   struct StreamingRow {
@@ -402,6 +448,7 @@ private:
   std::optional<StreamingRow> streaming_;
   /** entry id -> https links its rendered bubble refers to (open_chat_link index). */
   std::map<std::string, std::vector<std::string>> chat_links_;
+  bool skip_link_confirm_this_run_ = false; // set from the confirm dialog's checkbox; never persisted
   bool focus_draft_after_sync_ = false;
 
   static ChatController* installed_instance_;

@@ -322,6 +322,12 @@ struct ShellState {
   bool auxiliary_available = false;
   bool transient_active = false;
 
+  /** Expanded layout only: secondary pane width (dp, clamped by ShellLayout) and user collapse. */
+  int sidebar_width_dp = 240;
+  bool sidebar_collapsed = false;
+  /** Expanded layout only: auxiliary pane width (dp, clamped by ShellLayout). */
+  int auxiliary_width_dp = 320;
+
   ui::String primary_pane_key;
 
   ui::String banner_message;

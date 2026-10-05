@@ -277,6 +277,8 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.call_diagnostics = bindings_.call_diagnostics.c_str();
   ui_state_.crash_reports_enabled = bindings_.crash_reports_enabled.c_str();
   ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
+  ui_state_.pin_protection_is_default = bindings_.pin_protection_is_default;
+  ui_state_.pin_protection_not_setup = bindings_.pin_protection_not_setup;
   ui_state_.security_can_change_pin = bindings_.security_can_change_pin;
   ui_state_.security_can_export_link = bindings_.security_can_export_link;
   ui_state_.group_invite_policy = bindings_.group_invite_policy.c_str();
@@ -366,6 +368,8 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.attachment_download_policy = ui_state_.attachment_download_policy.c_str();
   bindings_.attachment_download_policy_label = ui_state_.attachment_download_policy_label.c_str();
   bindings_.pin_protection_status = ui_state_.pin_protection_status.c_str();
+  bindings_.pin_protection_is_default = ui_state_.pin_protection_is_default;
+  bindings_.pin_protection_not_setup = ui_state_.pin_protection_not_setup;
   bindings_.security_can_change_pin = ui_state_.security_can_change_pin;
   bindings_.security_can_export_link = ui_state_.security_can_export_link;
   bindings_.group_invite_policy = ui_state_.group_invite_policy.c_str();
@@ -551,6 +555,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("attachment_download_policy", &controller.bindings_.attachment_download_policy);
     ctor.Bind("attachment_download_policy_label", &controller.bindings_.attachment_download_policy_label);
     ctor.Bind("pin_protection_status", &controller.bindings_.pin_protection_status);
+    ctor.Bind("pin_protection_is_default", &controller.bindings_.pin_protection_is_default);
+    ctor.Bind("pin_protection_not_setup", &controller.bindings_.pin_protection_not_setup);
     ctor.Bind("security_can_change_pin", &controller.bindings_.security_can_change_pin);
     ctor.Bind("security_can_export_link", &controller.bindings_.security_can_export_link);
     ctor.Bind("group_invite_policy", &controller.bindings_.group_invite_policy);
@@ -701,6 +707,8 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "attachment_download_policy");
   host.Dirty("settings", "attachment_download_policy_label");
   host.Dirty("settings", "pin_protection_status");
+  host.Dirty("settings", "pin_protection_is_default");
+  host.Dirty("settings", "pin_protection_not_setup");
   host.Dirty("settings", "security_can_change_pin");
   host.Dirty("settings", "security_can_export_link");
   host.Dirty("settings", "group_invite_policy");
@@ -779,10 +787,17 @@ void SettingsController::MountSelectedSettingsSection() {
 }
 
 void SettingsController::OnShellLayoutSynced() {
+  const ShellChromeSnapshot chrome = ChromeSnapshot();
   if (!suppress_auto_save_) {
+    // A remount this controller did not start (e.g. the list pane was collapsed) still empties the
+    // detail pane's section mount; fill it again or the open section shows blank.
+    if (chrome.settings_detail_primary && !selected_id_.empty()) {
+      suppress_auto_save_ = true;
+      UiEditSession::Instance().BeginRemount();
+      FinishPaneResync();
+    }
     return;
   }
-  const ShellChromeSnapshot chrome = ChromeSnapshot();
   if (chrome.nav_tab == NavTab::Me || chrome.account_sheet_open) {
     FinishPaneResync();
   } else {
@@ -1669,7 +1684,7 @@ void SettingsController::OpenSupportChatCallback(ui::DataModelHandle /*model*/, 
 
 void SettingsController::OnOpenSupportChat() {
   if (!commands_.open_support_chat) {
-    ReportFailure("Support is not available");
+    ReportFailure(Error("Support is not available").WithUser(Tr("settings.support.unavailable")));
     return;
   }
   if (auto opened = commands_.open_support_chat(); !opened) {
@@ -2030,9 +2045,8 @@ void SettingsController::OnRegisterProfile() {
         UiEditSession::Instance().OnCommitted(kUiFieldProfileNickname, view.nickname);
       }
     }
-    const char* message =
-        renewing ? "Registration renewed — Brief API key updated" : "Registered — Brief API key saved";
-    status_ = message;
+    const std::string message = renewing ? Tr("settings.registration.renewed") : Tr("settings.registration.done");
+    status_ = message.c_str();
     SyncBindingsFromSession();
     DirtyAll();
     UserFeedback::Ok(message);
@@ -2061,23 +2075,23 @@ void SettingsController::OnRotateBriefLlmKey() {
       ReportFailure(rotated.error());
       return;
     }
-    status_ = "Brief API key rotated";
+    status_ = Tr("settings.llm.brief_key_rotated").c_str();
     SyncBindingsFromSession();
     DirtyAll();
-    UserFeedback::Ok("Brief API key rotated");
+    UserFeedback::Ok(Tr("settings.llm.brief_key_rotated"));
   });
 }
 
 void SettingsController::OnCopyProfileId() {
   const std::string peer_id = bindings_.profile_peer_id.c_str();
   if (peer_id.empty()) {
-    UserFeedback::Fail("No Peer ID yet — register on the network first.");
+    UserFeedback::Fail(Tr("settings.profile.no_peer_id"));
     return;
   }
   if (ui::SystemInterface* system = ui::GetSystemInterface()) {
     system->SetClipboardText(bindings_.profile_peer_id);
   }
-  UserFeedback::Ok("Peer ID copied");
+  UserFeedback::Ok(Tr("settings.profile.peer_id_copied"));
 }
 
 void SettingsController::OnPickProfileIcon() {
@@ -2094,7 +2108,7 @@ void SettingsController::OnPickProfileIcon() {
     AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
       if (paths.empty()) {
         if (const char* err = SDL_GetError(); err != nullptr && err[0] != '\0') {
-          ReportFailure(Error(err).WithUser("Could not open file picker"));
+          ReportFailure(Error(err).WithUser(Tr("settings.profile.picker_failed")));
           SDL_ClearError();
         }
         return;
@@ -2116,7 +2130,7 @@ void SettingsController::OnPickProfileIcon() {
         ui_state_.profile_icon_uploading = true;
         PushUiStateToBindings();
         DirtyAll(/*include_profile_nickname=*/false);
-        status_ = "Uploading profile photo…";
+        status_ = Tr("settings.profile.photo_uploading").c_str();
         BlobQuotaRecoveryFlow::RunVoidUpload(
             [this, path]() { return commands_.upload_profile_icon_file(path); },
             [this](Roe<void> result) {
@@ -2128,10 +2142,10 @@ void SettingsController::OnPickProfileIcon() {
                 ReportFailure(result.error());
                 return;
               }
-              status_ = "Profile photo updated";
+              status_ = Tr("settings.profile.photo_updated").c_str();
               SyncBindingsFromSession();
               DirtyAll(/*include_profile_nickname=*/false);
-              UserFeedback::Ok("Profile photo updated");
+              UserFeedback::Ok(Tr("settings.profile.photo_updated"));
             },
             [this]() { return commands_.plan_relay_quota_recovery(); },
             [this]() { return commands_.free_oldest_relay_blob_slot(); });
@@ -2171,10 +2185,10 @@ void SettingsController::OnClearProfileIcon() {
           ReportFailure(result.error());
           return;
         }
-        status_ = "Profile photo removed";
+        status_ = Tr("settings.profile.photo_removed").c_str();
         SyncBindingsFromSession();
         DirtyAll(/*include_profile_nickname=*/false);
-        UserFeedback::Ok("Profile photo removed");
+        UserFeedback::Ok(Tr("settings.profile.photo_removed"));
       });
     });
   });
@@ -2183,7 +2197,7 @@ void SettingsController::OnClearProfileIcon() {
 void SettingsController::OnShareProfile() {
   const std::string peer_id = bindings_.profile_peer_id.c_str();
   if (peer_id.empty()) {
-    UserFeedback::Fail("No Peer ID yet — register on the network first.");
+    UserFeedback::Fail(Tr("settings.profile.no_peer_id"));
     return;
   }
   const std::string nickname = bindings_.profile_nickname.c_str();
@@ -2195,7 +2209,7 @@ void SettingsController::OnShareProfile() {
   if (ui::SystemInterface* system = ui::GetSystemInterface()) {
     system->SetClipboardText(invite.c_str());
   }
-  UserFeedback::Ok("Invite copied");
+  UserFeedback::Ok(Tr("settings.profile.invite_copied"));
 }
 
 void SettingsController::OnAddMcpServer() {
@@ -2344,7 +2358,7 @@ void SettingsController::PerformResetProfile() {
   DirtyAll();
   UserFeedback::Ok(Tr("settings.storage.profile_reset"));
   if (shell_navigation_.request_sync_layout) {
-    shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, nullptr);
+    shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, "settings_profile_reset");
   }
 }
 
@@ -2417,7 +2431,7 @@ void SettingsController::OnChangePin() {
       commands_.load_pin_protection ? commands_.load_pin_protection() : PinProtectionView{};
   if (!pin_state.ready) {
     ReportFailure(AppError::Pin(Err::Pin::VaultUnavailable, "Set up key protection first")
-                      .WithUser("Set up key protection first"));
+                      .WithUser(Tr("settings.security.pin_setup_first")));
     return;
   }
   if (!pin_state.unlocked) {
@@ -2440,7 +2454,7 @@ void SettingsController::OnChangePin() {
   const std::string confirm = bindings_.pin_change_confirm.c_str();
   if (old_pin.empty() || new_pin.empty()) {
     ReportFailure(AppError::Pin(Err::Pin::Required, "Current and new PIN are required")
-                      .WithUser("Current and new PIN are required"));
+                      .WithUser(Tr("settings.security.pin_both_required")));
     return;
   }
   if (new_pin != confirm) {
@@ -2471,10 +2485,10 @@ void SettingsController::OnChangePin() {
   bindings_.pin_change_old = "";
   bindings_.pin_change_new = "";
   bindings_.pin_change_confirm = "";
-  status_ = "PIN updated";
+  status_ = Tr("settings.security.pin_updated").c_str();
   SyncBindingsFromSession();
   DirtyAll();
-  UserFeedback::Ok("PIN updated");
+  UserFeedback::Ok(Tr("settings.security.pin_updated"));
 }
 
 

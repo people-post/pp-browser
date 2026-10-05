@@ -1,6 +1,6 @@
 <div class="sidebar-panel" data-model="shell">
   <div class="sidebar-header row">
-    <p class="sidebar-header-title">Sessions</p>
+    <p class="sidebar-header-title">{{i18n:nav.sessions}}</p>
     <div class="sidebar-header-actions row">
       <button class="sidebar-new-chat" type="button" data-event-click="open_new_session_menu()">
         <svg src="../icons/plus.svg" width="14" height="14" crop-to-content="true"></svg>
@@ -29,12 +29,13 @@
           <svg src="../icons/group.svg" width="14" height="14" crop-to-content="true"></svg>
         </div>
         <p class="sidebar-session-title" data-rml="session.title"></p>
+        <span class="sidebar-session-date" data-if="session.date_label != ''" data-rml="session.date_label"></span>
         <span class="badge-count sidebar-unread" data-if="session.unread_count > 0" data-rml="session.unread_display"></span>
       </div>
       <button class="sidebar-session-close" type="button" data-if="session.closable" data-event-click="close_thread(session.id)">
         <svg src="../icons/close.svg" width="14" height="14" crop-to-content="true"></svg>
       </button>
     </div>
-    <p class="text muted" data-if="sessions.size == 0">No conversations yet.</p>
+    <p class="text muted" data-if="sessions.size == 0">{{i18n:sidebar.empty}}</p>
   </div>
 </div>

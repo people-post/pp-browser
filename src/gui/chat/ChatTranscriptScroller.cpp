@@ -369,7 +369,7 @@ bool ChatTranscriptScroller::TrimDomWindow(std::vector<MessageDisplayRow>& messa
     return false;
   }
   if (pinned_to_bottom) {
-    const size_t drop = messages.size() - kMaxMessagesDomWindow;
+    const size_t drop = messages.size() - (kMaxMessagesDomWindow - kMessagesDomWindowTrimBatch);
     messages.erase(messages.begin(), messages.begin() + static_cast<std::ptrdiff_t>(drop));
     loaded_min = messages.front().display_order;
     loaded_max.reset();

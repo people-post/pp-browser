@@ -25,6 +25,10 @@ selection {
   background-color: #3b5998;
 }
 
+.prompt-composer-input scrollbarvertical sliderbar {
+  background-color: #ffffff50;
+}
+
 .chat-form-field selection {
   background-color: #3b5998;
 }
@@ -84,6 +88,14 @@ selection {
 }
 
 .prompt-attach-btn:hover svg {
+  image-color: #e5e7eb;
+}
+
+.prompt-attachment-chip-remove svg {
+  image-color: #9ca3af;
+}
+
+.prompt-attachment-chip-remove:hover svg {
   image-color: #e5e7eb;
 }
 
@@ -209,16 +221,12 @@ select selectbox option:hover {
   color: #818cf8;
 }
 
+.chat-inline-link {
+  color: #818cf8;
+}
+
 .inline-code {
   background-color: #4b5563;
-}
-
-.chat-sources p {
-  color: #9ca3af;
-}
-
-.chat-sources .chat-link {
-  color: #818cf8;
 }
 
 .code-block {
@@ -541,6 +549,15 @@ select selectbox option:hover {
   border-right: 1dp #374151;
 }
 
+.shell-splitter:hover,
+.shell-splitter--active {
+  background-color: #4b5563;
+}
+
+.shell-splitter--active {
+  background-color: #6b7280;
+}
+
 .shell-nav-rail {
   background-color: #0f172a;
   border-right: 1dp #374151;
@@ -678,16 +695,6 @@ select selectbox option:hover {
 
 .shell-toolbar-title {
   color: #e5e7eb;
-}
-
-.shell-toolbar-btn {
-  background-color: #374151;
-  color: #f9fafb;
-}
-
-.shell-toolbar-btn-preview {
-  background-color: #6366f1;
-  color: #ffffff;
 }
 
 .shell-transient-chrome {
@@ -1034,6 +1041,10 @@ select selectbox option:hover {
   background-color: #422006;
   border-color: #854d0e;
   box-shadow: inset 3dp 0 0 #fbbf24;
+}
+
+.sidebar-session-date {
+  color: #9ca3af;
 }
 
 .sidebar-session-title {

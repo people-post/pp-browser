@@ -80,6 +80,28 @@ protected:
   std::unique_ptr<CallMediaLegCoordinator> b_call_;
 };
 
+// An inbound control channel is held as a placeholder until its hello / migrate. One that ends
+// first carries no call: it is dropped (placeholders used to stay for the process's lifetime).
+TEST_F(CallMediaLegCoordinatorTest, ControlChannelThatEndsBeforeHelloIsDropped) {
+  for (int round = 0; round < 3; ++round) {
+    std::optional<uint32_t> channel;
+    harness_->mgr_a().OpenChannel("b", kCallMediaDirectProtocolId, pp::amp::CallMediaControlChannelPolicy(),
+                                  [&](const pp::amp::PeerLinkManager::ChannelRoe& ch) {
+                                    if (ch.isOk()) {
+                                      channel = ch.value();
+                                    }
+                                  });
+    harness_->PumpUntil([&] { return b_call_->PlaceholderCountForTest() == 1; });
+    ASSERT_TRUE(channel.has_value());
+    ASSERT_EQ(b_call_->PlaceholderCountForTest(), 1u) << "round " << round;
+    auto* link = harness_->mgr_a().FindLink("b");
+    ASSERT_TRUE(link && link->Mux());
+    ASSERT_TRUE(static_cast<bool>(link->Mux()->CloseChannel(*channel)));
+    harness_->PumpUntil([&] { return b_call_->PlaceholderCountForTest() == 0; });
+    EXPECT_EQ(b_call_->PlaceholderCountForTest(), 0u) << "round " << round;
+  }
+}
+
 TEST_F(CallMediaLegCoordinatorTest, HelloAndEncryptedAudioRoundTrip) {
   const std::string call_id = "call-amp-duplex";
   ByteVector media_key(32, 0x42);

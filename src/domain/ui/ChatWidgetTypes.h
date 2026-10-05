@@ -86,6 +86,8 @@ struct SessionDisplayRow {
   ui::String kind;
   int unread_count = 0;
   ui::String unread_display;
+  /** When the session was last active; format rules in gui/chat/SessionListText.h. */
+  ui::String date_label;
   bool active = false;
   bool closable = false;
 };

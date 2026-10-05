@@ -1,32 +1,32 @@
       <div class="settings-section stack">
         <label class="settings-field">
           <span class="settings-label">{{i18n:settings.integrations.promoted_mcp}}</span>
-          <input class="field" type="text" data-value="promoted_mcp_url" data-event-change="on_integrations_field_changed()" placeholder="Blank uses platform default"/>
+          <input class="field" type="text" data-value="promoted_mcp_url" data-event-change="on_integrations_field_changed()" placeholder="{{i18n:settings.integrations.promoted_mcp_placeholder}}"/>
         </label>
         <label class="settings-field">
           <span class="settings-label">{{i18n:settings.integrations.search}}</span>
           <input class="field" type="text" data-value="search_provider" data-event-change="on_integrations_field_changed()"/>
         </label>
-        <p class="text muted">Custom MCP servers (stdio on desktop; URL on mobile).</p>
+        <p class="text muted">{{i18n:settings.integrations.mcp_help}}</p>
         <div data-for="server, server_index : mcp_servers" class="settings-subsection stack">
           <label class="settings-field">
-            <span class="settings-label">ID</span>
+            <span class="settings-label">{{i18n:settings.integrations.server_id}}</span>
             <input class="field" type="text" data-value="server.id" data-event-change="on_integrations_field_changed()"/>
           </label>
           <label class="settings-field">
-            <span class="settings-label">URL</span>
+            <span class="settings-label">{{i18n:settings.integrations.server_url}}</span>
             <input class="field" type="text" data-value="server.url" data-event-change="on_integrations_field_changed()"/>
           </label>
           <label class="settings-field">
-            <span class="settings-label">Command</span>
+            <span class="settings-label">{{i18n:settings.integrations.mcp_command}}</span>
             <input class="field" type="text" data-value="server.command" data-event-change="on_integrations_field_changed()"/>
           </label>
           <label class="settings-field">
-            <span class="settings-label">Args</span>
-            <input class="field" type="text" data-value="server.args_text" data-event-change="on_integrations_field_changed()" placeholder="space-separated"/>
+            <span class="settings-label">{{i18n:settings.integrations.mcp_args}}</span>
+            <input class="field" type="text" data-value="server.args_text" data-event-change="on_integrations_field_changed()" placeholder="{{i18n:settings.integrations.mcp_args_placeholder}}"/>
           </label>
           <div class="settings-actions row">
-            <button class="btn btn-secondary" type="button" data-event-click="remove_mcp_server(server_index)">Remove</button>
+            <button class="btn btn-secondary" type="button" data-event-click="remove_mcp_server(server_index)">{{i18n:common.remove}}</button>
           </div>
         </div>
         <div class="settings-actions row">

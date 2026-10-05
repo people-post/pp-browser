@@ -1,6 +1,8 @@
 #include <stdexcept>
+#include <utility>
 #include "gui/shell/ShellHost.h"
 
+#include "common/Metrics.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
@@ -74,6 +76,7 @@ std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeF
 
 /** Bottom inset at or above this is treated as IME (not home-indicator only). */
 constexpr int kImeLatchMinDp = 120;
+constexpr int64_t kSlowSyncLayoutMs = 30; // two 60 Hz frames
 /** Fallback emoji panel height when the OSK has never been shown this session. */
 constexpr int kDefaultEmojiKeyboardPanelDp = 280;
 
@@ -131,6 +134,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("compact_chat_open", &host.state_.compact_chat_open);
     ctor.Bind("account_sheet_open", &host.state_.account_sheet_open);
     ctor.Bind("auxiliary_open", &host.state_.auxiliary_open);
+    ctor.Bind("sidebar_collapsed", &host.state_.sidebar_collapsed);
     ctor.Bind("auxiliary_available", &host.state_.auxiliary_available);
     ctor.Bind("transient_active", &host.state_.transient_active);
     ctor.Bind("banner_message", &host.state_.banner_message);
@@ -295,6 +299,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("nav_sessions_unread_display", &host.state_.nav_badges.sessions_unread_display);
     ctor.Bind("nav_contacts_unread_display", &host.state_.nav_badges.contacts_unread_display);
 
+    ctor.BindEventCallback("toggle_sidebar", &ShellHost::ToggleSidebarCallback);
     ctor.BindEventCallback("toggle_auxiliary", &ShellHost::ToggleAuxiliaryCallback);
     ctor.BindEventCallback("open_auxiliary", &ShellHost::OpenAuxiliaryCallback);
     ctor.BindEventCallback("select_nav_tab", &ShellHost::SelectNavTabCallback);
@@ -543,6 +548,53 @@ void ShellHost::CloseAccountSheet() {
   RequestSyncLayout();
 }
 
+void ShellHost::SetSidebarPrefs(int width_dp, bool collapsed) {
+  const int clamped = ShellLayout::ClampSidebarWidthDp(width_dp);
+  if (state_.sidebar_width_dp == clamped && state_.sidebar_collapsed == collapsed) {
+    return;
+  }
+  state_.sidebar_width_dp = clamped;
+  state_.sidebar_collapsed = collapsed;
+  // The shell may already be mounted with the defaults; remount so the pane and the splitter's
+  // starting width use the stored values.
+  DirtyNavChrome();
+  RequestSyncLayout();
+}
+
+void ShellHost::SetOnSidebarChanged(std::function<void(int width_dp, bool collapsed)> callback) {
+  on_sidebar_changed_ = std::move(callback);
+}
+
+void ShellHost::SetAuxiliaryWidthPref(int width_dp) {
+  const int clamped = ShellLayout::ClampAuxiliaryWidthDp(width_dp);
+  if (state_.auxiliary_width_dp == clamped) {
+    return;
+  }
+  state_.auxiliary_width_dp = clamped;
+  // Remount so an already-open auxiliary pane and the splitter's starting width use the stored value.
+  RequestSyncLayout();
+}
+
+void ShellHost::SetOnAuxiliaryWidthChanged(std::function<void(int width_dp)> callback) {
+  on_auxiliary_width_changed_ = std::move(callback);
+}
+
+void ShellHost::NotifySidebarChanged() {
+  if (on_sidebar_changed_) {
+    on_sidebar_changed_(state_.sidebar_width_dp, state_.sidebar_collapsed);
+  }
+}
+
+void ShellHost::ToggleSidebarCollapsed() {
+  if (state_.layout_mode != LayoutMode::Expanded || !ShellLayout::TabHasSecondary(state_.nav_tab)) {
+    return;
+  }
+  state_.sidebar_collapsed = !state_.sidebar_collapsed;
+  NotifySidebarChanged();
+  DirtyNavChrome();
+  RequestSyncLayout();
+}
+
 void ShellHost::ToggleAuxiliary() {
   if (!state_.auxiliary_available) {
     return;
@@ -784,6 +836,7 @@ void ShellHost::DirtyNavChrome() {
   DataModelHost::Instance().Dirty("window", "compact_chat_open");
   DataModelHost::Instance().Dirty("window", "account_sheet_open");
   DataModelHost::Instance().Dirty("window", "auxiliary_open");
+  DataModelHost::Instance().Dirty("window", "sidebar_collapsed");
   DataModelHost::Instance().Dirty("window", "auxiliary_available");
   DataModelHost::Instance().Dirty("window", "transient_active");
 }
@@ -1006,7 +1059,7 @@ void ShellHost::SetActivity(bool visible, const ui::String& message) {
   } else if (!message.empty()) {
     state_.statusbar_activity = message;
   } else {
-    state_.statusbar_activity = "Thinking...";
+    state_.statusbar_activity = Tr("chat.thinking").c_str();
   }
   DirtyStatusChrome();
 }
@@ -1048,10 +1101,19 @@ void ShellHost::RestoreFocus() {
   saved_focus_id_.clear();
 }
 
-void ShellHost::RequestSyncLayout(bool restore_focus_after, const char* reason) {
-  log().debug << "RequestSyncLayout reason=" << (reason && reason[0] ? reason : "?")
-              << " pending=" << (sync_pending_ ? 1 : 0)
+void ShellHost::RequestSyncLayout(bool restore_focus_after, const char* reason, const std::source_location where) {
+  std::string who = reason && reason[0] ? std::string(reason) : std::string();
+  if (who.empty()) {
+    // The call site, file name only (the full path is the build machine's).
+    const std::string_view file = where.file_name();
+    const size_t slash = file.find_last_of("/\\");
+    who = std::string(slash == std::string_view::npos ? file : file.substr(slash + 1)) + ":" + std::to_string(where.line());
+  }
+  log().debug << "RequestSyncLayout reason=" << who << " pending=" << (sync_pending_ ? 1 : 0)
               << " restore_focus=" << (restore_focus_after ? 1 : 0);
+  if (pending_sync_requests_++ == 0) {
+    pending_sync_reason_ = who;
+  }
   if (restore_focus_after) {
     restore_focus_after_sync_ = true;
   }
@@ -1073,6 +1135,8 @@ void ShellHost::FlushPendingSyncLayout() {
     return;
   }
   sync_pending_ = false;
+  running_sync_reason_ = std::exchange(pending_sync_reason_, std::string());
+  running_sync_requests_ = std::exchange(pending_sync_requests_, 0);
   try {
     SyncLayout();
   } catch (const std::exception& e) {
@@ -1660,13 +1724,18 @@ const char* ShellHost::NavContentKey() const {
   return ShellLayout::NavContentKey(state_.nav_tab);
 }
 
-std::string ShellHost::SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot) const {
+std::string ShellHost::SerializePaneSlot(const std::string& key, const char* extra_class, bool with_composer_slot,
+                                         int flex_width_dp) const {
   std::ostringstream out;
   out << "<div class=\"shell-pane shell-pane-" << key;
   if (extra_class && extra_class[0] != '\0') {
     out << ' ' << extra_class;
   }
-  out << "\" id=\"pane-" << key << "\">";
+  out << "\" id=\"pane-" << key << "\"";
+  if (flex_width_dp > 0) {
+    out << " style=\"flex: 0 1 " << flex_width_dp << "dp;\"";
+  }
+  out << ">";
   out << "<div class=\"shell-pane-body\" id=\"pane-body-" << key << "\"></div>";
   if (with_composer_slot) {
     out << "<div class=\"shell-pane-composer\" id=\"pane-composer-" << key << "\"></div>";
@@ -1682,9 +1751,18 @@ std::string ShellHost::SerializeExpandedBase() const {
   out << "<div class=\"shell-nav-rail\" id=\"shell-nav-rail-mount\"></div>";
   if (ShellLayout::TabHasSecondary(state_.nav_tab)) {
     const char* nav_content = ShellLayout::NavContentKey(state_.nav_tab);
-    out << "<div class=\"shell-pane shell-pane-secondary\" id=\"shell-nav-content-mount\">";
+    const bool collapsed = state_.sidebar_collapsed;
+    out << "<div class=\"shell-pane shell-pane-secondary";
+    if (collapsed) {
+      out << " shell-pane-secondary--collapsed";
+    }
+    out << "\" id=\"shell-nav-content-mount\" style=\"flex: 0 1 " << state_.sidebar_width_dp << "dp;\">";
     out << "<div class=\"shell-pane-body\" id=\"pane-body-" << nav_content << "\"></div>";
     out << "</div>";
+    // Drag handle on the pane's right edge. Collapse / expand lives at the bottom of the nav rail.
+    if (!collapsed) {
+      out << "<div class=\"shell-splitter\" id=\"shell-pane-splitter\"></div>";
+    }
   }
   ui::String primary_key = state_.primary_pane_key;
   if (primary_key.empty() && state_.nav_tab == NavTab::Home) {
@@ -1698,7 +1776,9 @@ std::string ShellHost::SerializeExpandedBase() const {
   if (state_.auxiliary_open) {
     for (const PaneState& pane : state_.panes) {
       if (pane.spec.role == PaneRole::Auxiliary) {
-        out << SerializePaneSlot(pane.spec.key, "shell-pane-auxiliary");
+        // Drag handle on the pane's left edge.
+        out << "<div class=\"shell-splitter\" id=\"shell-aux-splitter\"></div>";
+        out << SerializePaneSlot(pane.spec.key, "shell-pane-auxiliary", false, state_.auxiliary_width_dp);
       }
     }
   }
@@ -2553,16 +2633,45 @@ void ShellHost::RemountBottomChromeNow() {
 }
 
 void ShellHost::SyncLayout() {
+  // Taken before any early return, so a skipped flush cannot leave its reason for the next direct call.
+  const std::string reason = std::exchange(running_sync_reason_, std::string("direct"));
+  const int requests = std::exchange(running_sync_requests_, 1);
   ui::Element* root = ShellRoot();
   if (!root) {
     return;
   }
+  // The whole shell DOM is rebuilt here, on the UI thread. Report the slow ones with who asked, so the
+  // requests that did not need a full rebuild can be found (device logs: 75-230 ms each on a phone).
+  const auto started = std::chrono::steady_clock::now();
+  struct Report {
+    std::chrono::steady_clock::time_point started;
+    const std::string& reason;
+    int requests;
+    ~Report() {
+      // Also runs while a failed rebuild unwinds: diagnostics must never turn that into a terminate.
+      try {
+        const auto ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+        if (ms >= kSlowSyncLayoutMs) {
+          MetricsLine("shell.sync_layout_slow")
+              .Add("ms", static_cast<int64_t>(ms))
+              .Add("reason", reason)
+              .Add("requests", static_cast<int64_t>(requests))
+              .Emit();
+        }
+      } catch (...) {
+      }
+    }
+  } report{started, reason, requests};
   // Nestable remount gate: field blur/change commits must not run until settle.
   UiEditSession::Instance().BeginRemount();
   const LayoutMode mode = state_.layout_mode;
+  splitter_drag_.Detach();
+  aux_splitter_drag_.Detach();
   RmlMount::MountInner(root, SerializeShellRoot());
   last_synced_mode_ = mode;
   MountPaneBodies();
+  AttachSplitterDrag();
   remount_call_chrome_pending_ = false;
   remount_dialog_chrome_pending_ = false;
   remount_pin_gate_chrome_pending_ = false;
@@ -2584,6 +2693,51 @@ void ShellHost::SyncLayout() {
   ApplySafeAreaLayout();
   // Spurious change/blur can land on the next UI turn after remount.
   AppRuntime::PostUI([]() { UiEditSession::Instance().EndRemount(); });
+}
+
+void ShellHost::AttachSplitterDrag() {
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  ui::ElementDocument* doc = context_->GetDocument(0);
+  AttachAuxiliarySplitterDrag(doc);
+  if (!ShellLayout::SecondaryPaneShown(state_)) {
+    return;
+  }
+  ui::Element* handle = doc ? doc->GetElementById("shell-pane-splitter") : nullptr;
+  ui::Element* pane = doc ? doc->GetElementById("shell-nav-content-mount") : nullptr;
+  if (!handle || !pane) {
+    return;
+  }
+  splitter_drag_.Attach(handle, pane, context_, state_.sidebar_width_dp, ShellSplitterDrag::Edge::Right,
+                        ShellLayout::kSidebarMinWidthDp, ShellLayout::kSidebarMaxWidthDp, [this](int width_dp) {
+                          state_.sidebar_width_dp = width_dp;
+                          NotifySidebarChanged();
+                        });
+}
+
+void ShellHost::AttachAuxiliarySplitterDrag(ui::ElementDocument* doc) {
+  if (!doc || state_.layout_mode != LayoutMode::Expanded || !state_.auxiliary_open) {
+    return;
+  }
+  ui::Element* handle = doc->GetElementById("shell-aux-splitter");
+  ui::Element* pane = nullptr;
+  for (const PaneState& candidate : state_.panes) {
+    if (candidate.spec.role == PaneRole::Auxiliary) {
+      pane = doc->GetElementById(ui::String("pane-") + candidate.spec.key);
+    }
+  }
+  if (!handle || !pane) {
+    return;
+  }
+  aux_splitter_drag_.Attach(handle, pane, context_, state_.auxiliary_width_dp, ShellSplitterDrag::Edge::Left,
+                            ShellLayout::kAuxiliaryMinWidthDp, ShellLayout::kAuxiliaryMaxWidthDp,
+                            [this](int width_dp) {
+                              state_.auxiliary_width_dp = width_dp;
+                              if (on_auxiliary_width_changed_) {
+                                on_auxiliary_width_changed_(width_dp);
+                              }
+                            });
 }
 
 void ShellHost::RemountCallChrome() {
@@ -2840,12 +2994,27 @@ void ShellHost::OpenAuxiliaryCallback(ui::DataModelHandle /*model*/, ui::Event& 
   Instance().OpenAuxiliary();
 }
 
+void ShellHost::ToggleSidebarCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                      const ui::VariantList& /*args*/) {
+  Instance().ToggleSidebarCollapsed();
+}
+
 void ShellHost::SelectNavTabCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
                                      const ui::VariantList& args) {
   if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
     return;
   }
-  Instance().SelectNavTab(NavTabFromString(args[0].Get<ui::String>()));
+  ShellHost& host = Instance();
+  const NavTab tab = NavTabFromString(args[0].Get<ui::String>());
+  // A nav-rail click on a tab with a secondary pane (including the active tab) brings a collapsed list back.
+  if (host.state_.layout_mode == LayoutMode::Expanded &&
+      ShellLayout::SidebarCollapsedAfterNavSelect(host.state_.sidebar_collapsed, tab) != host.state_.sidebar_collapsed) {
+    host.state_.sidebar_collapsed = false;
+    host.NotifySidebarChanged();
+    host.DirtyNavChrome();
+    host.RequestSyncLayout();
+  }
+  host.SelectNavTab(tab);
 }
 
 void ShellHost::CompactChatBackCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,

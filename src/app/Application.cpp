@@ -1274,6 +1274,27 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   shell_->RefreshSafeAreaInsets(context);
   shell_->SyncChromeMaterialPrefs(bootstrap.profile_prefs.reduce_transparency,
                                   bootstrap.profile_prefs.compact_chrome_frost);
+  shell_->SetSidebarPrefs(bootstrap.profile_prefs.sidebar_width_dp, bootstrap.profile_prefs.sidebar_collapsed);
+  shell_->SetOnSidebarChanged([this](int width_dp, bool collapsed) {
+    ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+    if (prefs.sidebar_width_dp == width_dp && prefs.sidebar_collapsed == collapsed) {
+      return;
+    }
+    prefs.sidebar_width_dp = width_dp;
+    prefs.sidebar_collapsed = collapsed;
+    prefs.schema_version = ProfilePreferences::kSchemaVersion;
+    (void)store_.SaveProfilePrefs(prefs);
+  });
+  shell_->SetAuxiliaryWidthPref(bootstrap.profile_prefs.auxiliary_width_dp);
+  shell_->SetOnAuxiliaryWidthChanged([this](int width_dp) {
+    ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+    if (prefs.auxiliary_width_dp == width_dp) {
+      return;
+    }
+    prefs.auxiliary_width_dp = width_dp;
+    prefs.schema_version = ProfilePreferences::kSchemaVersion;
+    (void)store_.SaveProfilePrefs(prefs);
+  });
 
   ApplyUiDocumentLanguage(context);
 }
@@ -1333,6 +1354,9 @@ void Application::Run() {
 
   int skip_log_countdown = 0;
   bool logged_first_present = false;
+  constexpr int64_t kSlowFrameMs = 50; // three 60 Hz frames
+  auto last_slow_frame_line = std::chrono::steady_clock::time_point{};
+  int slow_frames_skipped = 0;
 #if UI_SDL_VERSION_MAJOR >= 3
   // Live layout+Present while the OS modal resize loop blocks Poll/WaitEvent.
   Backend::SetLiveResizeHandler(context, [](ui::Context* ctx) {
@@ -1359,7 +1383,11 @@ void Application::Run() {
     if (!Backend::ProcessEvents(context, ProcessKeyDown, true)) {
       break;
     }
+    // The frame's work starts with the posted UI tasks: that is where a new message's display sync runs.
+    const auto frame_started = std::chrono::steady_clock::now();
+    const bool count_slow_frame = logged_first_present; // false for the first presented frame (startup)
     AppRuntime::RunUITasks();
+    const auto tasks_done = std::chrono::steady_clock::now();
 
     if (shell_->State().account_sheet_open || shell_->State().nav_tab == NavTab::Me) {
       settings_->Tick();
@@ -1372,13 +1400,17 @@ void Application::Run() {
     ContextMenuHost::Instance().Update();
     shell_->Update(context);
     context->Update();
+    const auto layout_done = std::chrono::steady_clock::now();
     chat_->AfterLayout();
     // After Context::Update (which resets next_update_timeout): arm power-save for shell timers.
     shell_->NotifyFrameEnd(context);
     // Skip Clear/Present when the Android EGL surface is gone or size is not ready yet.
     if (Backend::CanRender()) {
+      const auto draw_started = std::chrono::steady_clock::now(); // after AfterLayout / NotifyFrameEnd
       Backend::BeginFrame();
       context->Render();
+      // Our own work ends here. Present can block on vsync or an occluded window, which is not jank.
+      const auto draw_done = std::chrono::steady_clock::now();
       Backend::PresentFrame();
       if (!logged_first_present) {
         StartupMark("first_present");
@@ -1393,6 +1425,29 @@ void Application::Run() {
         });
       }
       skip_log_countdown = 0;
+      // A frame whose own work took long enough to be felt (UI tasks + update/layout + draw; waiting for
+      // the swap is left out). The first presented
+      // frame is not counted, and at most one line a second is written, carrying how many were skipped.
+      const auto frame_done = std::chrono::steady_clock::now();
+      const auto frame_ms = std::chrono::duration_cast<std::chrono::milliseconds>(draw_done - frame_started).count();
+      if (count_slow_frame && frame_ms >= kSlowFrameMs) {
+        if (frame_done - last_slow_frame_line >= std::chrono::seconds(1)) {
+          MetricsLine("ui.slow_frame")
+              .Add("ms", static_cast<int64_t>(frame_ms))
+              .Add("tasks_ms", static_cast<int64_t>(
+                                   std::chrono::duration_cast<std::chrono::milliseconds>(tasks_done - frame_started).count()))
+              .Add("layout_ms", static_cast<int64_t>(
+                                    std::chrono::duration_cast<std::chrono::milliseconds>(layout_done - tasks_done).count()))
+              .Add("draw_ms", static_cast<int64_t>(
+                                  std::chrono::duration_cast<std::chrono::milliseconds>(draw_done - draw_started).count()))
+              .Add("skipped", static_cast<int64_t>(slow_frames_skipped))
+              .Emit();
+          last_slow_frame_line = frame_done;
+          slow_frames_skipped = 0;
+        } else {
+          ++slow_frames_skipped;
+        }
+      }
     } else if (skip_log_countdown-- <= 0) {
       log().warning << "CanRender=false; skipping frame (docs=" << context->GetNumDocuments() << ")";
       skip_log_countdown = 120;

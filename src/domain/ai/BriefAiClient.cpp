@@ -2,6 +2,7 @@
 
 #include "common/ValueJson.h"
 #include "domain/ai/SseClient.h"
+#include "foundation/crypto/CryptoUtil.h"
 #include "foundation/error/AppError.h"
 
 #include <algorithm>
@@ -38,13 +39,36 @@ BriefAiClient::BriefAiClient(LlmConfig config, std::string stream_url)
   redirectLogger("BriefAiClient");
 }
 
+Roe<void> BriefAiClient::ValidateImage(const BriefAiRequest& request) {
+  if (!request.image) {
+    return {};
+  }
+  const BriefAiImage& image = *request.image;
+  if (image.mime != "image/png" && image.mime != "image/jpeg" && image.mime != "image/gif" &&
+      image.mime != "image/webp") {
+    return AppError::Config(Err::Config::Invalid, "unsupported image type: " + image.mime);
+  }
+  if (image.data.empty() || image.data.size() > kMaxImageBytes) {
+    return AppError::Config(Err::Config::Invalid, "image must be 1 byte to 4 MB, got " +
+                                                      std::to_string(image.data.size()) + " bytes");
+  }
+  return {};
+}
+
 std::string BriefAiClient::BuildRequestJson(const BriefAiRequest& request) {
   Object body;
   body.set("message", request.message);
   if (request.intent) {
     body.set("intent", *request.intent);
   }
-  body.set("image", Null{});
+  if (request.image) {
+    Object image;
+    image.set("mime", request.image->mime);
+    image.set("data", Base64Encode(request.image->data));
+    body.set("image", image);
+  } else {
+    body.set("image", Null{});
+  }
 
   if (!request.history.empty() || !request.summary.empty()) {
     Object context;
@@ -76,7 +100,8 @@ std::string BriefAiClient::BuildRequestJson(const BriefAiRequest& request) {
   if (!request.lang.empty()) {
     client.set("lang", request.lang);
   }
-  if (!request.capabilities.empty()) {
+  // Contract section 5: a request with an image is never handed off, so it carries no capabilities.
+  if (!request.capabilities.empty() && !request.image) {
     std::vector<Value> capabilities;
     for (const std::string& capability : request.capabilities) {
       capabilities.emplace_back(capability);
@@ -141,6 +166,9 @@ std::optional<BriefAiEvent> BriefAiClient::ParseEvent(const std::string& data) {
 Roe<BriefAiOutcome> BriefAiClient::Stream(const BriefAiRequest& request,
                                           const std::function<void(const BriefAiEvent&)>& on_event,
                                           const std::atomic<bool>& cancel) const {
+  if (auto valid = ValidateImage(request); !valid) {
+    return valid.error();
+  }
   SseRequest sse;
   sse.url = stream_url_.empty() ? config_.base_url + std::string(kStreamPath) : stream_url_;
   // The user's key goes only to the derived gateway URL, or to an override that is https or loopback;

@@ -103,6 +103,8 @@ public:
   /** Test: send nothing (media, heartbeats) on paths of `kind` — the path goes quiet, its link stays up. */
   void SetSilencedPathKindForTest(CallMediaLinkKind kind);
   void SetReconnectWindowForTest(std::chrono::milliseconds window);
+  /** Test: inbound control channels held while waiting for their hello / migrate. */
+  size_t PlaceholderCountForTest() const;
 
   Roe<void> SendMedia(CallMediaLegId id, uint8_t channel, const std::vector<uint8_t>& payload, uint32_t seq,
                       uint8_t mark = 0);

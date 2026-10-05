@@ -18,8 +18,37 @@ struct PeopleDiscoveryContactView {
   std::vector<ContactId> ids;
 };
 
+/**
+ * User-visible strings of people-discovery blocks. Defaults are English; layers that may use i18n
+ * (see domain/ai/LocalizedLabels.h) fill localized text. `{count}`, `{shown}`, `{name}` are placeholders.
+ */
+struct PeopleDiscoveryLabels {
+  std::string message = "Message";
+  std::string view = "View";
+  std::string add_contact = "Add contact";
+  std::string in_contacts = "In contacts";
+  std::string unknown_person = "Unknown person";
+  std::string start_chat_with = "Start chat with {name}";
+  std::string show_name = "Show {name}";
+  std::string show_ids_for = "Show IDs for {name}";
+  std::string add_name = "Add {name}";
+  std::string refine_label = "Refine search…";
+  std::string refine_message = "Search for someone more specifically by nickname or account id";
+  std::string found_one = "Found 1 person on the network:";
+  std::string found_many_partial = "Found {count} people — showing the first {shown}. Open the panel to pick who you mean.";
+  std::string found_many = "Found {count} people on the network:";
+  std::string results_title = "Search results";
+  std::string results_title_partial = "Search results (partial)";
+  std::string local_one = "1 local contact:";
+  std::string local_many_partial = "{count} local contacts — showing the first {shown}.";
+  std::string local_many = "Your local contacts ({count}):";
+  std::string contacts_title = "Contacts";
+  std::string no_people = "No people found. Try a different name, nickname, or account id.";
+};
+
 /** Optional knobs when building people-discovery long_list blocks. */
 struct PeopleDiscoveryBuildOptions {
+  PeopleDiscoveryLabels labels;
   /** Identity values (account / relay / peer ids) already in local contacts. */
   std::unordered_set<std::string> known_local_identity_values;
   /** Local user identities — matching directory hits are omitted entirely. */
@@ -41,6 +70,7 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& dire
                                            const PeopleDiscoveryBuildOptions& options = {});
 
 // If raw text is a directory-hits or contacts JSON array, build blocks JSON; otherwise empty.
-std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json);
+std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json,
+                                                 const PeopleDiscoveryLabels& labels = {});
 
 } // namespace pbr

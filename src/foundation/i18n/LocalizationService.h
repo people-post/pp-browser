@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <map>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -38,7 +39,10 @@ public:
   /** Preferred pref: `system` or a BCP-47 tag we ship. */
   void SetPreferredLanguage(std::string pref);
   std::string PreferredLanguage() const { return preferred_; }
-  std::string ResolvedLanguage() const { return resolved_; }
+  std::string ResolvedLanguage() const {
+    const std::lock_guard<std::mutex> lock(resolved_mutex_);
+    return resolved_;
+  }
 
   /** Override OS locales for tests (empty = use env / Win32 locale APIs). */
   void SetSystemLocalesForTest(std::vector<std::string> locales);
@@ -72,6 +76,9 @@ private:
   static std::string Interpolate(std::string templ, const std::map<std::string, std::string>& args);
 
   std::string preferred_ = "system";
+  // Tr() is also called from worker threads (agent turns) while the UI thread may switch language.
+  // The catalogs are loaded once at startup; only resolved_ changes afterwards, so only it is guarded.
+  mutable std::mutex resolved_mutex_;
   std::string resolved_ = "en";
   std::unordered_map<std::string, std::unordered_map<std::string, std::string>> catalogs_;
   std::vector<LocaleInfo> available_;

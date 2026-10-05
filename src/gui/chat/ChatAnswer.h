@@ -15,7 +15,8 @@
 namespace pbr {
 
 constexpr std::chrono::milliseconds kStreamRenderInterval{100};
-constexpr size_t kMaxAnswerSources = 10;
+/** Bytes kept free in a stored answer for the trailing details link (label plus URL). */
+constexpr size_t kDetailsLinkHeadroomBytes = 4096;
 
 /** Pure rules for the streamed Markdown answer bubble (no RmlUi). */
 
@@ -55,36 +56,58 @@ struct ChatAnswerRml {
   std::vector<std::string> links; // indexed by open_chat_link('__ENTRY__', N)
 };
 
-/** Markdown body plus a compact Sources list; source URLs extend `links` (reusing an index when already linked). */
-inline ChatAnswerRml BuildMarkdownAnswer(std::string_view markdown, const std::vector<BriefAiSource>& sources,
-                                         const std::string& sources_label) {
-  MarkdownRml body = MarkdownToRml(markdown);
-  ChatAnswerRml out{std::move(body.rml), std::move(body.links)};
-
-  std::string lines;
-  size_t shown = 0;
-  for (const BriefAiSource& source : sources) {
-    if (shown >= kMaxAnswerSources) {
+/**
+ * The answer text to store and render: the Markdown plus one trailing "details" link to the first
+ * https source. Keeping the link in the text itself is what lets it survive a restart (a separate
+ * sources list was only held in memory, so its links went dead). Unchanged when there is no https
+ * source or the answer already links to it.
+ */
+inline std::string WithDetailsLink(std::string_view markdown, const std::vector<BriefAiSource>& sources,
+                                   const std::string& label) {
+  std::string out(markdown);
+  const auto source =
+      std::find_if(sources.begin(), sources.end(), [](const BriefAiSource& s) { return IsHttpsUrl(s.url); });
+  if (source == sources.end()) {
+    return out;
+  }
+  // Characters that would end or break a Markdown link destination.
+  std::string dest;
+  for (const char c : source->url) {
+    switch (c) {
+    case '(':
+      dest += "%28";
       break;
+    case ')':
+      dest += "%29";
+      break;
+    case ' ':
+      dest += "%20";
+      break;
+    case '<':
+      dest += "%3C";
+      break;
+    case '>':
+      dest += "%3E";
+      break;
+    case '\\':
+      dest += "%5C";
+      break;
+    default:
+      dest += c;
     }
-    if (!IsHttpsUrl(source.url)) {
-      continue;
-    }
-    auto it = std::find(out.links.begin(), out.links.end(), source.url);
-    const size_t index = static_cast<size_t>(it - out.links.begin());
-    if (it == out.links.end()) {
-      out.links.push_back(source.url);
-    }
-    const std::string title = source.title.empty() ? UrlHost(source.url) : source.title;
-    lines += "<p><span class=\"chat-link\" data-event-click=\"open_chat_link('__ENTRY__', " + std::to_string(index) +
-             ")\">" + StructuredTextParser::EscapeText(title) + "</span></p>";
-    ++shown;
   }
-  if (shown > 0) {
-    out.rml += "<div class=\"chat-sources\"><p class=\"muted\">" + StructuredTextParser::EscapeText(sources_label) +
-               "</p>" + lines + "</div>";
+  const std::vector<std::string> existing = MarkdownToRml(markdown).links;
+  if (std::find(existing.begin(), existing.end(), dest) != existing.end()) {
+    return out;
   }
+  out += "\n\n[" + label + "](" + dest + ")";
   return out;
+}
+
+/** Markdown answer as bubble markup; `links` is indexed by open_chat_link('__ENTRY__', N). */
+inline ChatAnswerRml BuildMarkdownAnswer(std::string_view markdown) {
+  MarkdownRml body = MarkdownToRml(markdown);
+  return ChatAnswerRml{std::move(body.rml), std::move(body.links)};
 }
 
 /** The URL a click may open: in range and https. Everything else is dropped. */
@@ -95,7 +118,7 @@ inline std::optional<std::string> ResolveChatLink(const std::vector<std::string>
   return links[static_cast<size_t>(index)];
 }
 
-/** Links of a stored message after a restart: only its own Markdown text (sources are not persisted). */
+/** Links of a stored message after a restart, from its own Markdown text. */
 inline std::vector<std::string> RecoverChatLinks(std::string_view stored_markdown) {
   return MarkdownToRml(stored_markdown).links;
 }
