@@ -287,9 +287,9 @@ private:
   /** From Home landing: mint AI thread, switch to Sessions, open chat. */
   /** Opens the AI thread a send from Home goes to: `chip_message`'s own earlier thread when there is one, else a new thread. */
   bool EnsureHomeOutboundSession(const std::string& chip_message = {});
-  /** Set while a Home chip (not typed text) is being sent. */
-  bool home_chip_send_ = false;
-  void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt);
+  /** `from_home_chip`: a Home chip (not typed text) is being sent, so it continues that chip's own thread. */
+  void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt,
+                    bool from_home_chip = false);
   void SendChatAction(const std::string& entry_id, int action_index);
   void ToggleReaction(const std::string& message_id, const std::string& emoji);
   void OpenEmojiInsertMenu(ui::Event* ev);

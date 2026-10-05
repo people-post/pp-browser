@@ -681,9 +681,7 @@ void ChatController::SendSuggestionCallback(ui::DataModelHandle /*model*/, ui::E
     return;
   }
   // A Home chip continues its own thread instead of opening a new one on every tap.
-  Instance().home_chip_send_ = true;
-  Instance().SendUserText(std::string(args[0].Get<ui::String>().c_str()));
-  Instance().home_chip_send_ = false;
+  Instance().SendUserText(std::string(args[0].Get<ui::String>().c_str()), std::nullopt, /*from_home_chip=*/true);
 }
 
 void ChatController::SendSuggestionActionCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -697,9 +695,7 @@ void ChatController::SendSuggestionActionCallback(ui::DataModelHandle /*model*/,
     return;
   }
   // The bubble shows the localized sentence; the payload makes the app run the function itself.
-  Instance().home_chip_send_ = true;
-  Instance().SendUserText(Tr("home.suggestion." + id + "_prompt"), std::move(payload));
-  Instance().home_chip_send_ = false;
+  Instance().SendUserText(Tr("home.suggestion." + id + "_prompt"), std::move(payload), /*from_home_chip=*/true);
 }
 
 void ChatController::SubmitFormCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -2743,7 +2739,8 @@ bool ChatController::EnsureHomeOutboundSession(const std::string& chip_message) 
   return true;
 }
 
-void ChatController::SendUserText(const std::string& text, std::optional<std::string> user_payload) {
+void ChatController::SendUserText(const std::string& text, std::optional<std::string> user_payload,
+                                  bool from_home_chip) {
   const std::string trimmed = util::Trim(text);
   if (trimmed.empty() || chat_.loading) {
     return;
@@ -2752,8 +2749,9 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
     return;
   }
   if (!messaging_ready_) {
-    WithSecrets([this, trimmed, user_payload = std::move(user_payload)]() mutable {
-      SendUserText(trimmed, std::move(user_payload));
+    // The unlock can finish much later (PIN entry), so the chip origin travels with the deferred send.
+    WithSecrets([this, trimmed, user_payload = std::move(user_payload), from_home_chip]() mutable {
+      SendUserText(trimmed, std::move(user_payload), from_home_chip);
     });
     return;
   }
@@ -2767,7 +2765,7 @@ void ChatController::SendUserText(const std::string& text, std::optional<std::st
   }
 
   if (ChromeSnapshot().nav_tab == NavTab::Home) {
-    if (!EnsureHomeOutboundSession(home_chip_send_ ? trimmed : std::string())) {
+    if (!EnsureHomeOutboundSession(from_home_chip ? trimmed : std::string())) {
       return;
     }
   }
