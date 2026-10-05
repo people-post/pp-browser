@@ -25,6 +25,7 @@
 #include "common/Module.h"
 #include "domain/ui/ChatWidgetTypes.h"
 
+#include <source_location>
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Event.h>
 #include <ui/base/Input.h>
@@ -353,7 +354,8 @@ private:
   ShellChromeSnapshot ChromeSnapshot() const;
   ChatSurfaceSnapshot BuildSurfaceSnapshot() const;
   void NotifySurfaceChanged();
-  void ShellSyncLayout(bool restore_focus_after = false);
+  /** The call site is passed on as the request's reason (ShellHost::RequestSyncLayout). */
+  void ShellSyncLayout(bool restore_focus_after = false, std::source_location where = std::source_location::current());
   void ShellSelectNavTab(NavTab tab);
   void ShellSetPrimaryPane(const std::string& key);
   void ShellOpenCompactChat();

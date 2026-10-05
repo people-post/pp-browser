@@ -1,6 +1,8 @@
 #include <stdexcept>
+#include <utility>
 #include "gui/shell/ShellHost.h"
 
+#include "common/Metrics.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
@@ -74,6 +76,7 @@ std::string SurfaceChromeClass(CompactChromeFrostSurface surface, CompactChromeF
 
 /** Bottom inset at or above this is treated as IME (not home-indicator only). */
 constexpr int kImeLatchMinDp = 120;
+constexpr int64_t kSlowSyncLayoutMs = 30; // two 60 Hz frames
 /** Fallback emoji panel height when the OSK has never been shown this session. */
 constexpr int kDefaultEmojiKeyboardPanelDp = 280;
 
@@ -1098,10 +1101,19 @@ void ShellHost::RestoreFocus() {
   saved_focus_id_.clear();
 }
 
-void ShellHost::RequestSyncLayout(bool restore_focus_after, const char* reason) {
-  log().debug << "RequestSyncLayout reason=" << (reason && reason[0] ? reason : "?")
-              << " pending=" << (sync_pending_ ? 1 : 0)
+void ShellHost::RequestSyncLayout(bool restore_focus_after, const char* reason, const std::source_location where) {
+  std::string who = reason && reason[0] ? std::string(reason) : std::string();
+  if (who.empty()) {
+    // The call site, file name only (the full path is the build machine's).
+    const std::string_view file = where.file_name();
+    const size_t slash = file.find_last_of("/\\");
+    who = std::string(slash == std::string_view::npos ? file : file.substr(slash + 1)) + ":" + std::to_string(where.line());
+  }
+  log().debug << "RequestSyncLayout reason=" << who << " pending=" << (sync_pending_ ? 1 : 0)
               << " restore_focus=" << (restore_focus_after ? 1 : 0);
+  if (pending_sync_requests_++ == 0) {
+    pending_sync_reason_ = who;
+  }
   if (restore_focus_after) {
     restore_focus_after_sync_ = true;
   }
@@ -1123,6 +1135,8 @@ void ShellHost::FlushPendingSyncLayout() {
     return;
   }
   sync_pending_ = false;
+  running_sync_reason_ = std::exchange(pending_sync_reason_, std::string());
+  running_sync_requests_ = std::exchange(pending_sync_requests_, 0);
   try {
     SyncLayout();
   } catch (const std::exception& e) {
@@ -2623,6 +2637,26 @@ void ShellHost::SyncLayout() {
   if (!root) {
     return;
   }
+  // The whole shell DOM is rebuilt here, on the UI thread. Report the slow ones with who asked, so the
+  // requests that did not need a full rebuild can be found (device logs: 75-230 ms each on a phone).
+  const auto started = std::chrono::steady_clock::now();
+  const std::string reason = std::exchange(running_sync_reason_, std::string("direct"));
+  const int requests = std::exchange(running_sync_requests_, 1);
+  struct Report {
+    std::chrono::steady_clock::time_point started;
+    const std::string& reason;
+    int requests;
+    ~Report() {
+      const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+      if (ms >= kSlowSyncLayoutMs) {
+        MetricsLine("shell.sync_layout_slow")
+            .Add("ms", static_cast<int64_t>(ms))
+            .Add("reason", reason)
+            .Add("requests", static_cast<int64_t>(requests))
+            .Emit();
+      }
+    }
+  } report{started, reason, requests};
   // Nestable remount gate: field blur/change commits must not run until settle.
   UiEditSession::Instance().BeginRemount();
   const LayoutMode mode = state_.layout_mode;

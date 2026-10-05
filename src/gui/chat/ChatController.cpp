@@ -571,9 +571,10 @@ void ChatController::NotifySurfaceChanged() {
   }
 }
 
-void ChatController::ShellSyncLayout(const bool restore_focus_after) {
+void ChatController::ShellSyncLayout(const bool restore_focus_after, const std::source_location where) {
   if (shell_navigation_.request_sync_layout) {
-    shell_navigation_.request_sync_layout(restore_focus_after, nullptr);
+    const std::string reason = "ChatController.cpp:" + std::to_string(where.line());
+    shell_navigation_.request_sync_layout(restore_focus_after, reason.c_str());
   }
 }
 
@@ -1759,9 +1760,11 @@ void ChatController::SyncDisplayFromThread() {
   // The attachment backfill reads the whole thread, so it does not run on every sync. New messages are
   // queued where they are received or sent; the backfill also re-queues failed downloads, which is why
   // it still runs now and then while the thread stays open (AttachmentBackfillPolicy.h).
+  int64_t backfill_ms = 0;
   if (ShouldBackfillAttachments(thread_changed, sync_started, last_attachment_backfill_)) {
     last_attachment_backfill_ = sync_started;
     facade_->EnsureThreadAttachments(thread_id);
+    backfill_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - sync_started).count();
   }
   if (thread_changed) {
     DiscardPendingAiImage(); // the chip belongs to the composer of the thread it was picked in
@@ -1787,6 +1790,7 @@ void ChatController::SyncDisplayFromThread() {
   if (sync_ms >= kSlowDisplaySyncMs) {
     MetricsLine("chat.sync_slow")
         .Add("ms", static_cast<int64_t>(sync_ms))
+        .Add("backfill_ms", backfill_ms) // the whole-thread attachment check, when it ran in this sync
         .Add("rows", static_cast<int64_t>(chat_.messages.size()))
         .Add("thread_changed", thread_changed ? "1" : "0")
         .Emit();

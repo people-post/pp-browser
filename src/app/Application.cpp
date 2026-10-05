@@ -1408,6 +1408,8 @@ void Application::Run() {
     if (Backend::CanRender()) {
       Backend::BeginFrame();
       context->Render();
+      // Our own work ends here. Present can block on vsync or an occluded window, which is not jank.
+      const auto draw_done = std::chrono::steady_clock::now();
       Backend::PresentFrame();
       if (!logged_first_present) {
         StartupMark("first_present");
@@ -1422,10 +1424,11 @@ void Application::Run() {
         });
       }
       skip_log_countdown = 0;
-      // A frame that took long enough to be felt (UI tasks + update/layout + draw). The first presented
+      // A frame whose own work took long enough to be felt (UI tasks + update/layout + draw; waiting for
+      // the swap is left out). The first presented
       // frame is not counted, and at most one line a second is written, carrying how many were skipped.
       const auto frame_done = std::chrono::steady_clock::now();
-      const auto frame_ms = std::chrono::duration_cast<std::chrono::milliseconds>(frame_done - frame_started).count();
+      const auto frame_ms = std::chrono::duration_cast<std::chrono::milliseconds>(draw_done - frame_started).count();
       if (count_slow_frame && frame_ms >= kSlowFrameMs) {
         if (frame_done - last_slow_frame_line >= std::chrono::seconds(1)) {
           MetricsLine("ui.slow_frame")
@@ -1434,6 +1437,8 @@ void Application::Run() {
                                    std::chrono::duration_cast<std::chrono::milliseconds>(tasks_done - frame_started).count()))
               .Add("layout_ms", static_cast<int64_t>(
                                     std::chrono::duration_cast<std::chrono::milliseconds>(layout_done - tasks_done).count()))
+              .Add("draw_ms", static_cast<int64_t>(
+                                  std::chrono::duration_cast<std::chrono::milliseconds>(draw_done - layout_done).count()))
               .Add("skipped", static_cast<int64_t>(slow_frames_skipped))
               .Emit();
           last_slow_frame_line = frame_done;
