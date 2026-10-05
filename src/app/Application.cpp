@@ -1406,6 +1406,7 @@ void Application::Run() {
     shell_->NotifyFrameEnd(context);
     // Skip Clear/Present when the Android EGL surface is gone or size is not ready yet.
     if (Backend::CanRender()) {
+      const auto draw_started = std::chrono::steady_clock::now(); // after AfterLayout / NotifyFrameEnd
       Backend::BeginFrame();
       context->Render();
       // Our own work ends here. Present can block on vsync or an occluded window, which is not jank.
@@ -1438,7 +1439,7 @@ void Application::Run() {
               .Add("layout_ms", static_cast<int64_t>(
                                     std::chrono::duration_cast<std::chrono::milliseconds>(layout_done - tasks_done).count()))
               .Add("draw_ms", static_cast<int64_t>(
-                                  std::chrono::duration_cast<std::chrono::milliseconds>(draw_done - layout_done).count()))
+                                  std::chrono::duration_cast<std::chrono::milliseconds>(draw_done - draw_started).count()))
               .Add("skipped", static_cast<int64_t>(slow_frames_skipped))
               .Emit();
           last_slow_frame_line = frame_done;

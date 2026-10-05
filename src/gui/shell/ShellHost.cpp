@@ -2633,6 +2633,9 @@ void ShellHost::RemountBottomChromeNow() {
 }
 
 void ShellHost::SyncLayout() {
+  // Taken before any early return, so a skipped flush cannot leave its reason for the next direct call.
+  const std::string reason = std::exchange(running_sync_reason_, std::string("direct"));
+  const int requests = std::exchange(running_sync_requests_, 1);
   ui::Element* root = ShellRoot();
   if (!root) {
     return;
@@ -2640,20 +2643,23 @@ void ShellHost::SyncLayout() {
   // The whole shell DOM is rebuilt here, on the UI thread. Report the slow ones with who asked, so the
   // requests that did not need a full rebuild can be found (device logs: 75-230 ms each on a phone).
   const auto started = std::chrono::steady_clock::now();
-  const std::string reason = std::exchange(running_sync_reason_, std::string("direct"));
-  const int requests = std::exchange(running_sync_requests_, 1);
   struct Report {
     std::chrono::steady_clock::time_point started;
     const std::string& reason;
     int requests;
     ~Report() {
-      const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
-      if (ms >= kSlowSyncLayoutMs) {
-        MetricsLine("shell.sync_layout_slow")
-            .Add("ms", static_cast<int64_t>(ms))
-            .Add("reason", reason)
-            .Add("requests", static_cast<int64_t>(requests))
-            .Emit();
+      // Also runs while a failed rebuild unwinds: diagnostics must never turn that into a terminate.
+      try {
+        const auto ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+        if (ms >= kSlowSyncLayoutMs) {
+          MetricsLine("shell.sync_layout_slow")
+              .Add("ms", static_cast<int64_t>(ms))
+              .Add("reason", reason)
+              .Add("requests", static_cast<int64_t>(requests))
+              .Emit();
+        }
+      } catch (...) {
       }
     }
   } report{started, reason, requests};

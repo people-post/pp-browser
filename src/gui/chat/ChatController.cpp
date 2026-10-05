@@ -573,7 +573,10 @@ void ChatController::NotifySurfaceChanged() {
 
 void ChatController::ShellSyncLayout(const bool restore_focus_after, const std::source_location where) {
   if (shell_navigation_.request_sync_layout) {
-    const std::string reason = "ChatController.cpp:" + std::to_string(where.line());
+    const std::string_view file = where.file_name();
+    const size_t slash = file.find_last_of("/\\");
+    const std::string reason =
+        std::string(slash == std::string_view::npos ? file : file.substr(slash + 1)) + ":" + std::to_string(where.line());
     shell_navigation_.request_sync_layout(restore_focus_after, reason.c_str());
   }
 }
