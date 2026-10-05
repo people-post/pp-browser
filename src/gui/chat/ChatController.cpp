@@ -104,10 +104,7 @@ namespace pbr {
 namespace {
 
 std::string ToolActivityLabel(const std::string& tool_name, const std::string& status) {
-  // brief_AI status events: tool = backend tool name, status = phase ("answer" has no tool).
-  if (status == "answer") {
-    return Tr("chat.status.writing");
-  }
+  // brief_AI status events: tool = backend tool name, status = phase.
   if (tool_name == "search_web") {
     return Tr("chat.status.searching_web");
   }
@@ -3065,6 +3062,11 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
     DirtyChatChrome();
     break;
   case AgentEventType::ToolActivity:
+    // The "answer" phase has no tool and gets no label of its own: the last step ("Searching the web…")
+    // stays until the text arrives. Saying "Writing…" read as the AI making the answer up.
+    if (event.tool_name.empty() && event.status == "answer") {
+      break;
+    }
     chat_.status = ui::String(ToolActivityLabel(event.tool_name, event.status).c_str());
     ShellSetActivity(true, chat_.status);
     DirtyChatChrome();

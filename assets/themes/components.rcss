@@ -391,6 +391,29 @@ select selectbox option {
 .bubble-assistant ul,
 .bubble-assistant ol {
   box-sizing: border-box;
+  /* The engine's defaults (40dp left padding, 1em margins) pushed lists far from the bubble's edge. */
+  margin-top: 4dp;
+  margin-bottom: 4dp;
+  padding-left: 0;
+}
+
+/* List items draw their own marker (MarkdownToRml): the number or bullet sits in the item's left padding,
+   so wrapped lines align under the text. */
+.bubble-assistant li {
+  display: block;
+  position: relative;
+  padding-left: 26dp;
+}
+
+.bubble-assistant .md-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0.7;
+}
+
+.bubble-assistant .md-item {
+  display: block;
 }
 
 .bubble-assistant p,

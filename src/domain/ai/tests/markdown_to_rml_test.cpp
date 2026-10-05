@@ -76,15 +76,15 @@ TEST(MarkdownToRmlTest, Headings) {
 }
 
 TEST(MarkdownToRmlTest, Lists) {
-  EXPECT_EQ(Rml("- a\n* b\n+ c"), "<ul><li>a</li><li>b</li><li>c</li></ul>");
-  EXPECT_EQ(Rml("1. a\n2. b"), "<ol><li>a</li><li>b</li></ol>");
-  EXPECT_EQ(Rml("- a\n  - b\n    - c\n- d"), "<ul><li>a<ul><li>b<ul><li>c</li></ul></li></ul></li><li>d</li></ul>");
-  EXPECT_EQ(Rml("1. a\n   - b\n2. c"), "<ol><li>a<ul><li>b</li></ul></li><li>c</li></ol>");
-  EXPECT_EQ(Rml("- a\n\n- b"), "<ul><li>a</li><li>b</li></ul>");
-  EXPECT_EQ(Rml("- a\n  more\n- b"), "<ul><li>a<br />more</li><li>b</li></ul>");
-  EXPECT_EQ(Rml("Intro:\n- a"), "<p>Intro:</p><ul><li>a</li></ul>");
-  EXPECT_EQ(Rml("- a\n1. b"), "<ul><li>a</li></ul><ol><li>b</li></ol>");
-  EXPECT_EQ(Rml("- a\n\ntext"), "<ul><li>a</li></ul><p>text</p>");
+  EXPECT_EQ(Rml("- a\n* b\n+ c"), "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b</div></li><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">c</div></li></ul>");
+  EXPECT_EQ(Rml("1. a\n2. b"), "<ol><li><span class=\"md-marker\">1.</span><div class=\"md-item\">a</div></li><li><span class=\"md-marker\">2.</span><div class=\"md-item\">b</div></li></ol>");
+  EXPECT_EQ(Rml("- a\n  - b\n    - c\n- d"), "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">c</div></li></ul></div></li></ul></div></li><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">d</div></li></ul>");
+  EXPECT_EQ(Rml("1. a\n   - b\n2. c"), "<ol><li><span class=\"md-marker\">1.</span><div class=\"md-item\">a<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b</div></li></ul></div></li><li><span class=\"md-marker\">2.</span><div class=\"md-item\">c</div></li></ol>");
+  EXPECT_EQ(Rml("- a\n\n- b"), "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b</div></li></ul>");
+  EXPECT_EQ(Rml("- a\n  more\n- b"), "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a<br />more</div></li><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">b</div></li></ul>");
+  EXPECT_EQ(Rml("Intro:\n- a"), "<p>Intro:</p><ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li></ul>");
+  EXPECT_EQ(Rml("- a\n1. b"), "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li></ul><ol><li><span class=\"md-marker\">1.</span><div class=\"md-item\">b</div></li></ol>");
+  EXPECT_EQ(Rml("- a\n\ntext"), "<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">a</div></li></ul><p>text</p>");
   EXPECT_EQ(Rml("**not a list**"), "<p><strong>not a list</strong></p>");
 }
 
