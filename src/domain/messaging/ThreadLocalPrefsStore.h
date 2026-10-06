@@ -26,9 +26,14 @@ struct ThreadLocalPrefs {
   /** Unix ms until which notifications are silenced; 0 = not muted; `kThreadMutedForever` = always. */
   int64_t muted_until = 0;
   bool archived = false;
+  /** The user marked the thread unread by hand: the row shows a ring until the thread is opened. */
+  bool marked_unread = false;
 };
 
-/** Pin / mute / archive per thread, in its own table of profile.db (additive; `threads` is untouched). */
+/**
+ * Pin / mute / archive / marked-unread per thread, in its own table of profile.db (additive; `threads` is
+ * untouched).
+ */
 class ThreadLocalPrefsStore {
 public:
   explicit ThreadLocalPrefsStore(std::string profile_db_path);

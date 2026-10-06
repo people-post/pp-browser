@@ -70,6 +70,55 @@ TEST_F(ThreadLocalPrefsStoreTest, SetAndReadBack) {
   EXPECT_EQ(all->front().thread_id, "thread-1");
 }
 
+TEST_F(ThreadLocalPrefsStoreTest, MarkedUnreadIsStoredAndIsNotADefault) {
+  ThreadLocalPrefs p;
+  p.thread_id = "thread-1";
+  p.marked_unread = true;
+  ASSERT_TRUE(prefs_->Set(p));
+  auto got = prefs_->Get("thread-1");
+  ASSERT_TRUE(got);
+  EXPECT_TRUE(got->marked_unread);
+  auto all = prefs_->List();
+  ASSERT_TRUE(all);
+  ASSERT_EQ(all->size(), 1u);
+  EXPECT_TRUE(all->front().marked_unread);
+
+  p.marked_unread = false;
+  ASSERT_TRUE(prefs_->Set(p));
+  all = prefs_->List();
+  ASSERT_TRUE(all);
+  EXPECT_TRUE(all->empty());
+}
+
+TEST_F(ThreadLocalPrefsStoreTest, ColumnAddedLaterIsAddedToAnExistingTable) {
+  // A table created before `marked_unread` existed (our own dev devices have one) gains the column.
+  const std::string db_path = store_->ProfileDbPath();
+  prefs_.reset();
+  sqlite3* db = nullptr;
+  ASSERT_EQ(sqlite3_open(db_path.c_str(), &db), SQLITE_OK);
+  ASSERT_EQ(sqlite3_exec(db,
+                         "DROP TABLE IF EXISTS thread_local_prefs;"
+                         "CREATE TABLE thread_local_prefs (thread_id TEXT PRIMARY KEY, pinned_at INTEGER NOT NULL "
+                         "DEFAULT 0, muted_until INTEGER NOT NULL DEFAULT 0, archived INTEGER NOT NULL DEFAULT 0);"
+                         "INSERT INTO thread_local_prefs (thread_id, pinned_at) VALUES ('thread-old', 7);",
+                         nullptr, nullptr, nullptr),
+            SQLITE_OK);
+  sqlite3_close(db);
+
+  prefs_ = std::make_unique<ThreadLocalPrefsStore>(db_path);
+  auto old = prefs_->Get("thread-old");
+  ASSERT_TRUE(old);
+  EXPECT_EQ(old->pinned_at, 7);
+  EXPECT_FALSE(old->marked_unread);
+  ThreadLocalPrefs p = *old;
+  p.marked_unread = true;
+  ASSERT_TRUE(prefs_->Set(p));
+  auto got = prefs_->Get("thread-old");
+  ASSERT_TRUE(got);
+  EXPECT_TRUE(got->marked_unread);
+  EXPECT_EQ(got->pinned_at, 7);
+}
+
 TEST_F(ThreadLocalPrefsStoreTest, AllDefaultsLeaveNoRow) {
   ThreadLocalPrefs p;
   p.thread_id = "thread-1";

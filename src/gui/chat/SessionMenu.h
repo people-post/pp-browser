@@ -63,6 +63,16 @@ inline std::vector<SessionMenuItem> SessionMenuItems(const SessionMenuState& sta
   return items;
 }
 
+/** Unread by real messages, or marked unread by hand. */
+inline bool SessionIsUnread(const int unread_count, const bool marked_unread) {
+  return unread_count > 0 || marked_unread;
+}
+
+/** A thread marked unread by hand has no count to show: the row shows a ring instead of a number. */
+inline bool SessionShowsUnreadRing(const int unread_count, const bool marked_unread) {
+  return marked_unread && unread_count <= 0;
+}
+
 /** `muted_until` for "always" (same value as the store's `kThreadMutedForever`). */
 inline constexpr int64_t kSessionMutedForever = std::numeric_limits<int64_t>::max();
 

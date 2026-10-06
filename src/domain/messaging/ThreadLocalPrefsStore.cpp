@@ -11,9 +11,14 @@ CREATE TABLE IF NOT EXISTS thread_local_prefs (
   thread_id TEXT PRIMARY KEY,
   pinned_at INTEGER NOT NULL DEFAULT 0,
   muted_until INTEGER NOT NULL DEFAULT 0,
-  archived INTEGER NOT NULL DEFAULT 0
+  archived INTEGER NOT NULL DEFAULT 0,
+  marked_unread INTEGER NOT NULL DEFAULT 0
 );
 )sql";
+
+// Column order is what PrefsFromStmt reads.
+constexpr const char* kSelectPrefsSql =
+    "SELECT thread_id, pinned_at, muted_until, archived, marked_unread FROM thread_local_prefs";
 
 ThreadLocalPrefs PrefsFromStmt(sqlite3_stmt* stmt) {
   ThreadLocalPrefs prefs;
@@ -22,6 +27,7 @@ ThreadLocalPrefs PrefsFromStmt(sqlite3_stmt* stmt) {
   prefs.pinned_at = static_cast<int64_t>(sqlite3_column_int64(stmt, 1));
   prefs.muted_until = static_cast<int64_t>(sqlite3_column_int64(stmt, 2));
   prefs.archived = sqlite3_column_int(stmt, 3) != 0;
+  prefs.marked_unread = sqlite3_column_int(stmt, 4) != 0;
   return prefs;
 }
 
@@ -51,6 +57,9 @@ Roe<void> ThreadLocalPrefsStore::EnsureSchema(sqlite3* profile_db) const {
     sqlite3_free(err);
     return Error(message);
   }
+  // Columns added after the table first shipped; the statement fails harmlessly when the column exists.
+  (void)sqlite3_exec(profile_db, "ALTER TABLE thread_local_prefs ADD COLUMN marked_unread INTEGER NOT NULL DEFAULT 0;",
+                     nullptr, nullptr, nullptr);
   return {};
 }
 
@@ -60,8 +69,7 @@ Roe<std::vector<ThreadLocalPrefs>> ThreadLocalPrefsStore::List() const {
     return db.error();
   }
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(*db, "SELECT thread_id, pinned_at, muted_until, archived FROM thread_local_prefs;", -1, &stmt,
-                         nullptr) != SQLITE_OK) {
+  if (sqlite3_prepare_v2(*db, kSelectPrefsSql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
     return Error("Failed to prepare thread prefs list");
   }
@@ -80,9 +88,8 @@ Roe<ThreadLocalPrefs> ThreadLocalPrefsStore::Get(const std::string& thread_id) c
     return db.error();
   }
   sqlite3_stmt* stmt = nullptr;
-  if (sqlite3_prepare_v2(
-          *db, "SELECT thread_id, pinned_at, muted_until, archived FROM thread_local_prefs WHERE thread_id = ?;", -1,
-          &stmt, nullptr) != SQLITE_OK) {
+  const std::string sql = std::string(kSelectPrefsSql) + " WHERE thread_id = ?";
+  if (sqlite3_prepare_v2(*db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
     return Error("Failed to prepare thread prefs get");
   }
@@ -98,7 +105,7 @@ Roe<ThreadLocalPrefs> ThreadLocalPrefsStore::Get(const std::string& thread_id) c
 }
 
 Roe<void> ThreadLocalPrefsStore::Set(const ThreadLocalPrefs& prefs) const {
-  if (prefs.pinned_at == 0 && prefs.muted_until == 0 && !prefs.archived) {
+  if (prefs.pinned_at == 0 && prefs.muted_until == 0 && !prefs.archived && !prefs.marked_unread) {
     return Delete(prefs.thread_id);
   }
   auto db = OpenDb();
@@ -106,9 +113,11 @@ Roe<void> ThreadLocalPrefsStore::Set(const ThreadLocalPrefs& prefs) const {
     return db.error();
   }
   sqlite3_stmt* stmt = nullptr;
-  const char* sql = "INSERT INTO thread_local_prefs (thread_id, pinned_at, muted_until, archived) VALUES (?, ?, ?, ?) "
+  const char* sql = "INSERT INTO thread_local_prefs (thread_id, pinned_at, muted_until, archived, marked_unread) "
+                    "VALUES (?, ?, ?, ?, ?) "
                     "ON CONFLICT(thread_id) DO UPDATE SET pinned_at=excluded.pinned_at, "
-                    "muted_until=excluded.muted_until, archived=excluded.archived;";
+                    "muted_until=excluded.muted_until, archived=excluded.archived, "
+                    "marked_unread=excluded.marked_unread;";
   if (sqlite3_prepare_v2(*db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     sqlite3_close(*db);
     return Error("Failed to prepare thread prefs upsert");
@@ -117,6 +126,7 @@ Roe<void> ThreadLocalPrefsStore::Set(const ThreadLocalPrefs& prefs) const {
   sqlite3_bind_int64(stmt, 2, static_cast<sqlite3_int64>(prefs.pinned_at));
   sqlite3_bind_int64(stmt, 3, static_cast<sqlite3_int64>(prefs.muted_until));
   sqlite3_bind_int(stmt, 4, prefs.archived ? 1 : 0);
+  sqlite3_bind_int(stmt, 5, prefs.marked_unread ? 1 : 0);
   const bool ok = sqlite3_step(stmt) == SQLITE_DONE;
   sqlite3_finalize(stmt);
   sqlite3_close(*db);

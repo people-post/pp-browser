@@ -53,8 +53,6 @@ public:
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
 
   void MarkThreadRead(const std::string& thread_id);
-  /** Shows an unread badge on a read thread. Not activity: `updated_at` is kept, so the row does not move. */
-  void MarkThreadUnread(const std::string& thread_id);
   void IncrementUnread(const std::string& thread_id, int delta = 1);
   void OnInboundMessagePersisted(const std::string& thread_id,
                                  const std::optional<std::string>& preview = std::nullopt);

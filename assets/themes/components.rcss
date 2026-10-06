@@ -2858,6 +2858,17 @@ input.checkbox {
   flex-shrink: 0;
 }
 
+/* "Marked as unread": a ring, since there is no message count to show. */
+.sidebar-unread-ring {
+  flex-shrink: 0;
+  display: block;
+  width: 12dp;
+  height: 12dp;
+  border-radius: 6dp;
+  border-width: 2dp;
+  box-sizing: border-box;
+}
+
 /* Opens the archived threads, or returns to the list; shown only when something is archived. */
 .sidebar-archived-entry {
   align-items: center;

@@ -288,7 +288,10 @@ private:
   /** Pin / mute / archive of every thread that has any set, read once and kept in step with the store. */
   const std::unordered_map<std::string, ThreadLocalPrefs>& ThreadPrefs();
   ThreadLocalPrefs ThreadPrefsOf(const std::string& thread_id);
+  /** Writes the settings and refreshes the list. */
   void SaveThreadPrefs(const ThreadLocalPrefs& prefs);
+  /** Writes the settings and the cache only; false when the store refused. */
+  bool StoreThreadPrefs(const ThreadLocalPrefs& prefs);
   void OnToggleArchived();
   static void ToggleArchivedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   std::optional<std::unordered_map<std::string, ThreadLocalPrefs>> thread_prefs_;

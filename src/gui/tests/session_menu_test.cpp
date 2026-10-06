@@ -111,3 +111,15 @@ TEST(SessionMenuTest, PinnedRowsSortFirstThenByActivity) {
   // The most recently pinned is on top; unpinned rows keep the newest-first order.
   EXPECT_EQ(order, (std::vector<std::string>{"pinned-later", "pinned-earlier", "new", "mid", "old"}));
 }
+
+TEST(SessionMenuTest, MarkedUnreadShowsARingUntilThereIsARealCount) {
+  // A thread marked unread by hand has no message count to show: it gets a ring. Once real messages
+  // arrive the number takes over.
+  EXPECT_TRUE(SessionShowsUnreadRing(0, true));
+  EXPECT_FALSE(SessionShowsUnreadRing(3, true));
+  EXPECT_FALSE(SessionShowsUnreadRing(0, false));
+  // Either kind of unread offers "Mark as read".
+  EXPECT_TRUE(SessionIsUnread(0, true));
+  EXPECT_TRUE(SessionIsUnread(2, false));
+  EXPECT_FALSE(SessionIsUnread(0, false));
+}

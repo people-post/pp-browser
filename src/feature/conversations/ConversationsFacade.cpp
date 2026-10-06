@@ -150,8 +150,6 @@ Roe<void> ConversationsFacade::SetThreadLocalPrefs(const ThreadLocalPrefs& prefs
 
 void ConversationsFacade::MarkThreadRead(const std::string& thread_id) { hub_.Inbox().MarkThreadRead(thread_id); }
 
-void ConversationsFacade::MarkThreadUnread(const std::string& thread_id) { hub_.Inbox().MarkThreadUnread(thread_id); }
-
 void ConversationsFacade::NotifyThreadChanged() { hub_.Inbox().NotifyThreadChanged(); }
 
 void ConversationsFacade::SetOnThreadChanged(std::function<void()> callback) {

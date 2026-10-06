@@ -78,8 +78,6 @@ public:
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
   void MarkThreadRead(const std::string& thread_id);
-  /** Shows an unread badge on a read thread without moving it in the list. */
-  void MarkThreadUnread(const std::string& thread_id);
   /** Per-thread local settings (pin / mute / archive); rows that differ from the defaults. */
   Roe<std::vector<ThreadLocalPrefs>> ListThreadLocalPrefs();
   Roe<ThreadLocalPrefs> GetThreadLocalPrefs(const std::string& thread_id);
