@@ -11,6 +11,7 @@
 #include "gui/chat/AiImageAttach.h"
 #include "gui/chat/ChatAnswer.h"
 #include "gui/chat/SessionListText.h"
+#include "gui/chat/SessionMenu.h"
 #include "gui/chat/BriefFeedIntent.h"
 #include "gui/chat/SuggestionPayload.h"
 #include "gui/chat/ChatWidgetHost.h"
@@ -847,14 +848,6 @@ void ChatController::SelectThreadCallback(ui::DataModelHandle /*model*/, ui::Eve
   Instance().OnSelectThread(std::string(args[0].Get<ui::String>().c_str()));
 }
 
-void ChatController::CloseThreadCallback(ui::DataModelHandle /*model*/, ui::Event& ev, const ui::VariantList& args) {
-  ev.StopPropagation();
-  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
-    return;
-  }
-  Instance().OnCloseThread(std::string(args[0].Get<ui::String>().c_str()));
-}
-
 void ChatController::ClearHistoryCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
                                           const ui::VariantList& /*args*/) {
   Instance().OnClearHistory();
@@ -956,18 +949,23 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
   }
 
   auto finish_close = [this, thread_id]() {
+    // Closing may change the active thread, so decide before it: a row closed from the sessions list
+    // may not be the open chat, and only the open chat has a draft, a reply in flight or widgets to drop.
+    const bool was_open = thread_id == ActiveThreadId();
     if (!facade_->CloseThread(thread_id)) {
       UserFeedback::Fail(Tr("chat.error.delete_failed"));
       NotifySurfaceChanged();
       return;
     }
-    chat_.draft = "";
-    chat_.status = "";
-    chat_.loading = false;
-    pending_reply_.reset();
-    working_set_.ClearAll();
-    widgets_.ClearAll();
-    chat_.turns.clear();
+    if (was_open) {
+      chat_.draft = "";
+      chat_.status = "";
+      chat_.loading = false;
+      pending_reply_.reset();
+      working_set_.ClearAll();
+      widgets_.ClearAll();
+      chat_.turns.clear();
+    }
     RefreshFromMessaging();
     if (shell_.sessions.empty()) {
       ShellSelectNavTab(NavTab::Home);
@@ -1116,8 +1114,9 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
     return;
   }
 
+  const bool is_ai = thread && *thread && (*thread)->kind == ThreadKind::Ai;
   ShowConfirm(Tr("chat.delete_conversation"),
-                             Tr("chat.delete_confirm"), [finish_close](bool ok) {
+                             Tr(is_ai ? "chat.delete_confirm_ai" : "chat.delete_confirm"), [finish_close](bool ok) {
                                if (!ok) {
                                  return;
                                }
@@ -1125,59 +1124,130 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                              });
 }
 
-void ChatController::OnClearHistory() {
-  if (!messaging_ready_) {
-    return;
+std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::string& thread_id) {
+  std::vector<ContextMenuAction> actions;
+  auto found = facade_->GetThread(thread_id);
+  if (!found || !*found) {
+    return actions;
   }
-  const std::string thread_id = ActiveThreadId();
-  if (thread_id.empty()) {
+  const Thread& thread = **found;
+
+  // Same rule as the chat header's "View contact": the resolved contact, else the first saved participant.
+  std::optional<std::string> contact_id;
+  if (thread.kind == ThreadKind::Direct) {
+    contact_id = facade_->ResolveThreadLabel(thread).contact_id;
+    if (!contact_id && !thread.participant_contact_ids.empty() && !thread.participant_contact_ids.front().empty()) {
+      const std::string& candidate = thread.participant_contact_ids.front();
+      if (auto contact = facade_->GetContact(candidate); contact && *contact) {
+        contact_id = candidate;
+      }
+    }
+  }
+
+  SessionMenuState state;
+  state.kind = thread.kind == ThreadKind::Group ? SessionKind::Group
+               : thread.kind == ThreadKind::Direct ? SessionKind::Direct
+                                                   : SessionKind::Ai;
+  state.unread = thread.unread_count > 0;
+  state.has_contact = contact_id.has_value();
+
+  for (const SessionMenuItem item : SessionMenuItems(state)) {
+    ContextMenuAction action;
+    action.danger = SessionMenuItemIsDestructive(item);
+    switch (item) {
+    case SessionMenuItem::MarkUnread:
+      action.id = "session_mark_unread";
+      action.label = Tr("sidebar.menu.mark_unread");
+      action.run = [this, thread_id]() {
+        facade_->MarkThreadUnread(thread_id);
+        RefreshFromMessaging();
+        NotifySurfaceChanged();
+      };
+      break;
+    case SessionMenuItem::MarkRead:
+      action.id = "session_mark_read";
+      action.label = Tr("sidebar.menu.mark_read");
+      action.run = [this, thread_id]() {
+        facade_->MarkThreadRead(thread_id);
+        RefreshFromMessaging();
+        NotifySurfaceChanged();
+      };
+      break;
+    case SessionMenuItem::ViewContact:
+      action.id = "session_view_contact";
+      action.label = Tr("chat.menu.view_contact");
+      action.icon = "../icons/contacts.svg";
+      action.run = [this, id = *contact_id]() {
+        if (contacts_notify_.select_contact) {
+          contacts_notify_.select_contact(id);
+        }
+      };
+      break;
+    case SessionMenuItem::ClearChat:
+      action.id = "session_clear_chat";
+      action.label = Tr("chat.menu.clear_history");
+      action.run = [this, thread_id]() { ClearHistoryOf(thread_id); };
+      break;
+    case SessionMenuItem::Delete:
+      action.id = "session_delete";
+      action.label = Tr("sidebar.menu.delete");
+      action.icon = "../icons/trash.svg";
+      // The close flow asks before it deletes.
+      action.run = [this, thread_id]() { OnCloseThread(thread_id); };
+      break;
+    case SessionMenuItem::LeaveGroup:
+      action.id = "session_leave_group";
+      action.label = Tr("chat.group.leave_title");
+      // The close flow asks by itself and, for an owner, hands the group over first.
+      action.run = [this, thread_id]() { OnCloseThread(thread_id); };
+      break;
+    }
+    actions.push_back(std::move(action));
+  }
+  return actions;
+}
+
+void ChatController::OnClearHistory() { ClearHistoryOf(ActiveThreadId()); }
+
+void ChatController::ClearHistoryOf(const std::string& thread_id) {
+  if (!messaging_ready_ || thread_id.empty()) {
     return;
   }
 
-  auto thread = facade_->GetActiveThread();
+  std::optional<Thread> thread;
+  if (auto found = facade_->GetThread(thread_id); found && *found) {
+    thread = **found;
+  }
+  // Clearing is local only, like deleting. An AI thread has no other side: clearing it also forgets what
+  // the assistant learned in it, so nothing of the cleared chat lingers (Kenneth 2026-10-06: no checkbox).
   const bool is_ai = thread && thread->kind == ThreadKind::Ai;
-  std::string message = Tr("chat.clear_history.body");
-  if (is_ai) {
-    message += " " + Tr("chat.clear_history.body_ai");
-  } else if (thread && thread->kind == ThreadKind::Direct && thread->encrypted) {
+  std::string message = Tr(is_ai ? "chat.clear_history.body_ai" : "chat.clear_history.body");
+  if (thread && thread->kind == ThreadKind::Direct && thread->encrypted) {
     message += " " + Tr("chat.clear_history.body_secure");
   }
 
-  if (is_ai) {
-    ShowConfirmWithCheckbox(Tr("chat.clear_history"), message, Tr("chat.clear_history.forget_checkbox"), false,
-        [this, thread_id](bool ok, bool forget_memory) {
-          if (!ok) {
-            return;
-          }
-          if (!facade_->ClearThreadHistory(thread_id, forget_memory)) {
-            return;
-          }
-          chat_.draft = "";
-          chat_.status = "";
-          chat_.loading = false;
-          pending_reply_.reset();
-          widgets_.ClearAll();
-          RefreshFromMessaging();
-          NotifySurfaceChanged();
-        });
-  } else {
-    ShowConfirm(Tr("chat.clear_history"), message,
-                               [this, thread_id](bool ok) {
-                                 if (!ok) {
-                                   return;
-                                 }
-                                 if (!facade_->ClearThreadHistory(thread_id, false)) {
-                                   return;
-                                 }
-                                 chat_.draft = "";
-                                 chat_.status = "";
-                                 chat_.loading = false;
-                                 pending_reply_.reset();
-                                 widgets_.ClearAll();
-                                 RefreshFromMessaging();
-                                 NotifySurfaceChanged();
-                               });
+  ShowConfirm(Tr("chat.clear_history"), message, [this, thread_id, is_ai](bool ok) {
+    if (!ok) {
+      return;
+    }
+    if (!facade_->ClearThreadHistory(thread_id, /*forget_memory=*/is_ai)) {
+      return;
+    }
+    AfterHistoryCleared(thread_id);
+  });
+}
+
+void ChatController::AfterHistoryCleared(const std::string& thread_id) {
+  // A thread cleared from the sessions list may not be the open one; only the open chat has state to reset.
+  if (thread_id == ActiveThreadId()) {
+    chat_.draft = "";
+    chat_.status = "";
+    chat_.loading = false;
+    pending_reply_.reset();
+    widgets_.ClearAll();
   }
+  RefreshFromMessaging();
+  NotifySurfaceChanged();
 }
 
 void ChatController::OnForgetMemory() {
@@ -1292,20 +1362,21 @@ void ChatController::SyncShellSessions() {
     }
     SessionRow row;
     row.id = thread.id.c_str();
-    row.title = facade_
-                    ? facade_->ResolveThreadLabel(thread).title.c_str()
-                    : thread.title.c_str();
+    std::string title = facade_ ? facade_->ResolveThreadLabel(thread).title : thread.title;
     // The stored default AI title is English; show it in the UI language.
-    if (thread.kind == ThreadKind::Ai && row.title == "New chat") {
-      row.title = Tr("chat.new_chat").c_str();
+    if (thread.kind == ThreadKind::Ai && title == "New chat") {
+      title = Tr("chat.new_chat");
     }
-    row.preview = thread.preview.c_str();
+    // The view sets both with data-rml (inner RML): names, group titles and message text are typed by
+    // people, so they are escaped here.
+    row.title = StructuredTextParser::EscapeText(title).c_str();
+    row.preview =
+        StructuredTextParser::EscapeText(SessionPreviewLine(StructuredTextParser::PlainText(thread.preview))).c_str();
     row.kind = SessionVisualKind(thread);
     row.unread_count = thread.unread_count;
     row.unread_display = FormatBadgeCount(thread.unread_count).c_str();
     row.date_label = SessionDateLabel(thread.updated_at, now_ms).c_str();
     row.active = thread.id == active_id;
-    row.closable = true;
     shell_.sessions.push_back(std::move(row));
   }
 }
@@ -2086,6 +2157,17 @@ void ChatController::OnNewMessage() {
 namespace {
 
 const char* kReactionPresets[] = {"👍", "❤️", "😂", "😮", "😢", "🙏"};
+
+/** The sessions-list row the pointer is on (`session-id` is set by sidebar.rml), or empty. */
+std::string FindSessionIdFromElement(ui::Element* element) {
+  for (ui::Element* cur = element; cur; cur = cur->GetParentNode()) {
+    if (cur->HasAttribute("session-id")) {
+      const ui::String value = cur->GetAttribute("session-id", ui::String());
+      return std::string(value.c_str());
+    }
+  }
+  return {};
+}
 
 std::string FindMessageIdFromElement(ui::Element* element) {
   for (ui::Element* cur = element; cur; cur = cur->GetParentNode()) {
@@ -3519,7 +3601,6 @@ bool ChatController::Setup(ui::Context* context) {
           session_handle.RegisterMember("unread_display", &ChatController::SessionRow::unread_display);
           session_handle.RegisterMember("date_label", &ChatController::SessionRow::date_label);
           session_handle.RegisterMember("active", &ChatController::SessionRow::active);
-          session_handle.RegisterMember("closable", &ChatController::SessionRow::closable);
         }
         ctor.RegisterArray<std::vector<ChatController::SessionRow>>();
         ctor.Bind("sessions", &controller.shell_.sessions);
@@ -3532,7 +3613,6 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("new_message", &ChatController::NewMessageCallback);
         ctor.BindEventCallback("open_new_session_menu", &ChatController::OpenNewSessionMenuCallback);
         ctor.BindEventCallback("select_thread", &ChatController::SelectThreadCallback);
-        ctor.BindEventCallback("close_thread", &ChatController::CloseThreadCallback);
         ctor.BindEventCallback("send_chat_action", &ChatController::SendChatActionCallback);
         ctor.BindEventCallback("submit_form", &ChatController::SubmitFormCallback);
         ctor.BindEventCallback("calendar_prev", &ChatController::CalendarPrevCallback);
@@ -3549,7 +3629,13 @@ bool ChatController::Setup(ui::Context* context) {
 
   ContextMenuHost::Instance().RegisterProvider([this](const ContextMenuRequest& request) {
     std::vector<ContextMenuAction> actions;
-    if (!messaging_ready_ || chat_.compose_disabled) {
+    if (!messaging_ready_) {
+      return actions;
+    }
+    if (const std::string session_id = FindSessionIdFromElement(request.target); !session_id.empty()) {
+      return SessionMenuActions(session_id);
+    }
+    if (chat_.compose_disabled) {
       return actions;
     }
     const std::string message_id = FindMessageIdFromElement(request.target);

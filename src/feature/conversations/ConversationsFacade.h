@@ -76,6 +76,9 @@ public:
   Roe<Thread> CreateNewAiThread();
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
+  void MarkThreadRead(const std::string& thread_id);
+  /** Shows an unread badge on a read thread without moving it in the list. */
+  void MarkThreadUnread(const std::string& thread_id);
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
   /** Names an AI thread after its first question; a no-op once it has any other title. No thread-changed notify. */

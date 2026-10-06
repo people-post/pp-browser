@@ -132,6 +132,10 @@ Roe<Thread> ConversationsFacade::FindOrCreateDirectThread(const std::string& con
   return hub_.Inbox().FindOrCreateDirectThread(contact_id, channel);
 }
 
+void ConversationsFacade::MarkThreadRead(const std::string& thread_id) { hub_.Inbox().MarkThreadRead(thread_id); }
+
+void ConversationsFacade::MarkThreadUnread(const std::string& thread_id) { hub_.Inbox().MarkThreadUnread(thread_id); }
+
 void ConversationsFacade::NotifyThreadChanged() { hub_.Inbox().NotifyThreadChanged(); }
 
 void ConversationsFacade::SetOnThreadChanged(std::function<void()> callback) {

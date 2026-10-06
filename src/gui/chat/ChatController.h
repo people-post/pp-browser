@@ -24,6 +24,7 @@
 #include "foundation/data/SessionStore.h"
 #include "common/Module.h"
 #include "domain/ui/ChatWidgetTypes.h"
+#include "domain/ui/ContextMenuHost.h"
 
 #include <source_location>
 #include <ui/data/DataModelHandle.h>
@@ -246,7 +247,6 @@ private:
   static void StartCallCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenPeerSheetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SelectThreadCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CloseThreadCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ClearHistoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ForgetMemoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SyncWithPeerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -273,6 +273,11 @@ private:
   void OnOpenPeerSheet(ui::Event& ev);
   void OnCloseThread(const std::string& thread_id);
   void OnClearHistory();
+  /** Asks, then deletes the thread's messages on this device (the thread stays in the list). */
+  void ClearHistoryOf(const std::string& thread_id);
+  void AfterHistoryCleared(const std::string& thread_id);
+  /** Context menu for a row in the sessions list (right-click / long-press). */
+  std::vector<ContextMenuAction> SessionMenuActions(const std::string& thread_id);
   void OnForgetMemory();
   void OnSyncWithPeer();
   void OnRetryGapSync();
