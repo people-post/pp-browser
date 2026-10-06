@@ -949,18 +949,23 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
   }
 
   auto finish_close = [this, thread_id]() {
+    // Closing may change the active thread, so decide before it: a row closed from the sessions list
+    // may not be the open chat, and only the open chat has a draft, a reply in flight or widgets to drop.
+    const bool was_open = thread_id == ActiveThreadId();
     if (!facade_->CloseThread(thread_id)) {
       UserFeedback::Fail(Tr("chat.error.delete_failed"));
       NotifySurfaceChanged();
       return;
     }
-    chat_.draft = "";
-    chat_.status = "";
-    chat_.loading = false;
-    pending_reply_.reset();
-    working_set_.ClearAll();
-    widgets_.ClearAll();
-    chat_.turns.clear();
+    if (was_open) {
+      chat_.draft = "";
+      chat_.status = "";
+      chat_.loading = false;
+      pending_reply_.reset();
+      working_set_.ClearAll();
+      widgets_.ClearAll();
+      chat_.turns.clear();
+    }
     RefreshFromMessaging();
     if (shell_.sessions.empty()) {
       ShellSelectNavTab(NavTab::Home);
@@ -1109,8 +1114,9 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
     return;
   }
 
+  const bool is_ai = thread && *thread && (*thread)->kind == ThreadKind::Ai;
   ShowConfirm(Tr("chat.delete_conversation"),
-                             Tr("chat.delete_confirm"), [finish_close](bool ok) {
+                             Tr(is_ai ? "chat.delete_confirm_ai" : "chat.delete_confirm"), [finish_close](bool ok) {
                                if (!ok) {
                                  return;
                                }
@@ -1186,13 +1192,8 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
       action.id = "session_delete";
       action.label = Tr("sidebar.menu.delete");
       action.icon = "../icons/trash.svg";
-      action.run = [this, thread_id]() {
-        ShowConfirm(Tr("sidebar.delete.title"), Tr("sidebar.delete.body"), [this, thread_id](bool ok) {
-          if (ok) {
-            OnCloseThread(thread_id);
-          }
-        });
-      };
+      // The close flow asks before it deletes.
+      action.run = [this, thread_id]() { OnCloseThread(thread_id); };
       break;
     case SessionMenuItem::LeaveGroup:
       action.id = "session_leave_group";
@@ -1217,37 +1218,23 @@ void ChatController::ClearHistoryOf(const std::string& thread_id) {
   if (auto found = facade_->GetThread(thread_id); found && *found) {
     thread = **found;
   }
+  // Clearing is local only, like deleting. An AI thread has no other side: clearing it also forgets what
+  // the assistant learned in it, so nothing of the cleared chat lingers (Kenneth 2026-10-06: no checkbox).
   const bool is_ai = thread && thread->kind == ThreadKind::Ai;
-  std::string message = Tr("chat.clear_history.body");
-  if (is_ai) {
-    message += " " + Tr("chat.clear_history.body_ai");
-  } else if (thread && thread->kind == ThreadKind::Direct && thread->encrypted) {
+  std::string message = Tr(is_ai ? "chat.clear_history.body_ai" : "chat.clear_history.body");
+  if (thread && thread->kind == ThreadKind::Direct && thread->encrypted) {
     message += " " + Tr("chat.clear_history.body_secure");
   }
 
-  if (is_ai) {
-    ShowConfirmWithCheckbox(Tr("chat.clear_history"), message, Tr("chat.clear_history.forget_checkbox"), false,
-        [this, thread_id](bool ok, bool forget_memory) {
-          if (!ok) {
-            return;
-          }
-          if (!facade_->ClearThreadHistory(thread_id, forget_memory)) {
-            return;
-          }
-          AfterHistoryCleared(thread_id);
-        });
-  } else {
-    ShowConfirm(Tr("chat.clear_history"), message,
-                               [this, thread_id](bool ok) {
-                                 if (!ok) {
-                                   return;
-                                 }
-                                 if (!facade_->ClearThreadHistory(thread_id, false)) {
-                                   return;
-                                 }
-                                 AfterHistoryCleared(thread_id);
-                               });
-  }
+  ShowConfirm(Tr("chat.clear_history"), message, [this, thread_id, is_ai](bool ok) {
+    if (!ok) {
+      return;
+    }
+    if (!facade_->ClearThreadHistory(thread_id, /*forget_memory=*/is_ai)) {
+      return;
+    }
+    AfterHistoryCleared(thread_id);
+  });
 }
 
 void ChatController::AfterHistoryCleared(const std::string& thread_id) {
