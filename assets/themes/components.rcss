@@ -2781,21 +2781,30 @@ input.checkbox {
   display: flex;
   flex-direction: row;
   align-items: center;
-  min-height: 56dp;
+  gap: 10dp;
+  min-height: 60dp;
   margin-bottom: 4dp;
-  padding: 8dp 4dp 8dp 8dp;
+  padding: 8dp 10dp;
   border-radius: 6dp;
   box-sizing: border-box;
   cursor: pointer;
 }
 
+/* Two lines: title + date, then the last message + unread badge. */
 .sidebar-session-body {
   flex: 1;
   min-width: 0;
   display: flex;
+  flex-direction: column;
+  gap: 3dp;
+}
+
+.sidebar-session-line {
+  display: flex;
   flex-direction: row;
   align-items: center;
   gap: 6dp;
+  min-height: 18dp;
 }
 
 .sidebar-session-title {
@@ -2804,7 +2813,23 @@ input.checkbox {
   display: block;
   margin-top: 0;
   margin-bottom: 0;
-  font-size: 13dp;
+  font-size: 14dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-session--unread .sidebar-session-title {
+  font-weight: bold;
+}
+
+.sidebar-session-preview {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 12dp;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2815,8 +2840,9 @@ input.checkbox {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18dp;
-  height: 18dp;
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
 }
 
 .sidebar-session-icon svg {

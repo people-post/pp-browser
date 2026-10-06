@@ -89,7 +89,6 @@ struct SessionDisplayRow {
   /** When the session was last active; format rules in gui/chat/SessionListText.h. */
   ui::String date_label;
   bool active = false;
-  bool closable = false;
 };
 
 struct TurnWidgetState {

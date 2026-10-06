@@ -1051,6 +1051,14 @@ select selectbox option:hover {
   color: #e5e7eb;
 }
 
+.sidebar-session-preview {
+  color: #9ca3af;
+}
+
+.sidebar-session-icon {
+  background-color: #374151;
+}
+
 .sidebar-unread {
   background-color: #6366f1;
   color: #ffffff;

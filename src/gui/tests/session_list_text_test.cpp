@@ -74,3 +74,20 @@ TEST(SessionListTextTest, ChipFindsItsNewestAiThread) {
   EXPECT_EQ(find("给我看看最新的简报"), "");
   EXPECT_EQ(find(""), "");
 }
+
+TEST(SessionListTextTest, PreviewIsOneLineOfReadableText) {
+  EXPECT_EQ(SessionPreviewLine("好的，\n明天  见\t！"), "好的， 明天 见 ！");
+  EXPECT_EQ(SessionPreviewLine("  \n "), "");
+}
+
+TEST(SessionListTextTest, PreviewShowsLinkTextNotMarkdown) {
+  // An AI answer's last message is Markdown; the row shows what the reader would see.
+  EXPECT_EQ(SessionPreviewLine("1. [五角大楼停用 Anthropic 工具](https://www.bbc.com/zhongwen/a-1)\n2. [诺贝尔物理学奖](https://dw.com/x)"),
+            "1. 五角大楼停用 Anthropic 工具 2. 诺贝尔物理学奖");
+  EXPECT_EQ(SessionPreviewLine("**结论**：见 [原文](https://a.example/x) 和 [1]"), "结论：见 原文 和 [1]");
+}
+
+TEST(SessionListTextTest, PreviewIsCutOnACharacterBoundary) {
+  const std::string cut = SessionPreviewLine("一二三四五六七八九十", 4);
+  EXPECT_EQ(cut, "一二三四…");
+}

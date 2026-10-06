@@ -44,6 +44,48 @@ struct InboxTestEnv {
   std::unique_ptr<InboxController> inbox;
 };
 
+TEST(InboxControllerUnreadTest, MarkUnreadShowsABadgeWithoutReorderingTheList) {
+  InboxTestEnv env("mark_unread_test");
+  ASSERT_TRUE(env.inbox->ListThreads());
+
+  Thread direct;
+  direct.id = "thread-direct-1";
+  direct.kind = ThreadKind::Direct;
+  direct.title = "Peer";
+  direct.updated_at = 1234;
+  ASSERT_TRUE(env.store->UpsertThread(direct));
+
+  env.inbox->MarkThreadUnread(direct.id);
+  auto loaded = env.store->GetThread(direct.id);
+  ASSERT_TRUE(loaded && *loaded);
+  EXPECT_EQ((*loaded)->unread_count, 1);
+  // Marking is not activity: the row keeps its place and its date.
+  EXPECT_EQ((*loaded)->updated_at, 1234);
+
+  // Already unread: the real count is kept.
+  env.inbox->IncrementUnread(direct.id, 3);
+  env.inbox->MarkThreadUnread(direct.id);
+  loaded = env.store->GetThread(direct.id);
+  ASSERT_TRUE(loaded && *loaded);
+  EXPECT_EQ((*loaded)->unread_count, 4);
+
+  // The open thread can be marked too; opening it again clears the badge.
+  ASSERT_TRUE(env.inbox->OpenThread(direct.id));
+  env.inbox->MarkThreadUnread(direct.id);
+  loaded = env.store->GetThread(direct.id);
+  ASSERT_TRUE(loaded && *loaded);
+  EXPECT_EQ((*loaded)->unread_count, 1);
+  ASSERT_TRUE(env.inbox->OpenThread(direct.id));
+  loaded = env.store->GetThread(direct.id);
+  ASSERT_TRUE(loaded && *loaded);
+  EXPECT_EQ((*loaded)->unread_count, 0);
+
+  env.inbox->MarkThreadUnread("no-such-thread"); // no crash, no row created
+  auto missing = env.store->GetThread("no-such-thread");
+  ASSERT_TRUE(missing);
+  EXPECT_FALSE(*missing);
+}
+
 TEST(InboxControllerUnreadTest, IncrementSumAndMarkRead) {
   InboxTestEnv env("unread_test");
   ASSERT_TRUE(env.inbox->ListThreads());

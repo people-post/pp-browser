@@ -48,6 +48,62 @@ inline std::string AiThreadTitleFromMessage(std::string_view message) {
   return collapsed.substr(0, i) + "…";
 }
 
+constexpr size_t kSessionPreviewMaxChars = 120;
+
+/**
+ * The last message as one line for a row in the sessions list: Markdown links show their text, bold
+ * markers are dropped, whitespace is collapsed, and the line is cut to `max_chars` characters (UTF-8
+ * aware) with an ellipsis. The view still truncates to the row's width; the cut only bounds the string.
+ */
+inline std::string SessionPreviewLine(std::string_view text, const size_t max_chars = kSessionPreviewMaxChars) {
+  std::string plain;
+  plain.reserve(text.size());
+  for (size_t i = 0; i < text.size();) {
+    if (text[i] == '*' && i + 1 < text.size() && text[i + 1] == '*') {
+      i += 2;
+      continue;
+    }
+    if (text[i] == '[') {
+      const size_t close = text.find(']', i + 1);
+      if (close != std::string_view::npos && close + 1 < text.size() && text[close + 1] == '(') {
+        const size_t end = text.find(')', close + 2);
+        if (end != std::string_view::npos) {
+          plain.append(text.substr(i + 1, close - i - 1));
+          i = end + 1;
+          continue;
+        }
+      }
+    }
+    plain += text[i++];
+  }
+
+  std::string line;
+  bool pending_space = false;
+  size_t chars = 0;
+  for (size_t i = 0; i < plain.size();) {
+    const char c = plain[i];
+    if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
+      pending_space = !line.empty();
+      ++i;
+      continue;
+    }
+    if (chars >= max_chars) {
+      return line + "…";
+    }
+    if (pending_space) {
+      line += ' ';
+      pending_space = false;
+    }
+    line += c;
+    ++i;
+    while (i < plain.size() && (static_cast<unsigned char>(plain[i]) & 0xC0) == 0x80) {
+      line += plain[i++]; // continuation bytes belong to the character just counted
+    }
+    ++chars;
+  }
+  return line;
+}
+
 /**
  * The AI thread a Home chip should continue instead of starting another one: the most recently updated
  * AI thread whose title is the chip's own (titles come from the first message, and a chip always sends
