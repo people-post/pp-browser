@@ -954,6 +954,9 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
       NotifySurfaceChanged();
       return;
     }
+    if (thread_prefs_) {
+      thread_prefs_->erase(thread_id);
+    }
     chat_.draft = "";
     chat_.status = "";
     chat_.loading = false;
@@ -1118,7 +1121,77 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
                              });
 }
 
-std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::string& thread_id) {
+const std::unordered_map<std::string, ThreadLocalPrefs>& ChatController::ThreadPrefs() {
+  if (!thread_prefs_) {
+    thread_prefs_.emplace();
+    if (auto listed = facade_->ListThreadLocalPrefs()) {
+      for (ThreadLocalPrefs& prefs : *listed) {
+        const std::string id = prefs.thread_id;
+        thread_prefs_->emplace(id, std::move(prefs));
+      }
+    }
+  }
+  return *thread_prefs_;
+}
+
+ThreadLocalPrefs ChatController::ThreadPrefsOf(const std::string& thread_id) {
+  const auto& all = ThreadPrefs();
+  const auto it = all.find(thread_id);
+  if (it != all.end()) {
+    return it->second;
+  }
+  ThreadLocalPrefs prefs;
+  prefs.thread_id = thread_id;
+  return prefs;
+}
+
+void ChatController::SaveThreadPrefs(const ThreadLocalPrefs& prefs) {
+  if (!facade_->SetThreadLocalPrefs(prefs)) {
+    UserFeedback::Fail(Tr("sidebar.error.prefs_failed"));
+    NotifySurfaceChanged();
+    return;
+  }
+  (void)ThreadPrefs();
+  (*thread_prefs_)[prefs.thread_id] = prefs;
+  RefreshFromMessaging();
+  NotifySurfaceChanged();
+}
+
+void ChatController::OpenMuteMenu(const std::string& thread_id, const ui::Vector2i position) {
+  static constexpr std::pair<SessionMuteChoice, const char*> kChoices[] = {
+      {SessionMuteChoice::EightHours, "sidebar.menu.mute_8h"},
+      {SessionMuteChoice::OneWeek, "sidebar.menu.mute_1w"},
+      {SessionMuteChoice::Always, "sidebar.menu.mute_always"},
+  };
+  std::vector<ContextMenuAction> actions;
+  for (const auto& [choice, label_key] : kChoices) {
+    actions.push_back({
+        std::string("session_") + label_key,
+        Tr(label_key),
+        nullptr,
+        [this, thread_id, choice = choice]() {
+          ThreadLocalPrefs prefs = ThreadPrefsOf(thread_id);
+          prefs.muted_until = MutedUntilFor(choice, util::NowUnixMs());
+          SaveThreadPrefs(prefs);
+        },
+    });
+  }
+  ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+}
+
+void ChatController::OnToggleArchived() {
+  shell_.showing_archived = !shell_.showing_archived;
+  RefreshFromMessaging();
+  NotifySurfaceChanged();
+}
+
+void ChatController::ToggleArchivedCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                            const ui::VariantList& /*args*/) {
+  Instance().OnToggleArchived();
+}
+
+std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::string& thread_id,
+                                                                  const ui::Vector2i position) {
   std::vector<ContextMenuAction> actions;
   auto found = facade_->GetThread(thread_id);
   if (!found || !*found) {
@@ -1144,6 +1217,10 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
                                                    : SessionKind::Ai;
   state.unread = thread.unread_count > 0;
   state.has_contact = contact_id.has_value();
+  const ThreadLocalPrefs prefs = ThreadPrefsOf(thread_id);
+  state.pinned = prefs.pinned_at != 0;
+  state.muted = ThreadIsMuted(prefs.muted_until, util::NowUnixMs());
+  state.archived = prefs.archived;
 
   for (const SessionMenuItem item : SessionMenuItems(state)) {
     ContextMenuAction action;
@@ -1165,6 +1242,44 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
         facade_->MarkThreadRead(thread_id);
         RefreshFromMessaging();
         NotifySurfaceChanged();
+      };
+      break;
+    case SessionMenuItem::Pin:
+    case SessionMenuItem::Unpin:
+      action.id = item == SessionMenuItem::Pin ? "session_pin" : "session_unpin";
+      action.label = Tr(item == SessionMenuItem::Pin ? "sidebar.menu.pin" : "sidebar.menu.unpin");
+      action.icon = "../icons/pin.svg";
+      action.run = [this, thread_id, pin = item == SessionMenuItem::Pin]() {
+        ThreadLocalPrefs updated = ThreadPrefsOf(thread_id);
+        updated.pinned_at = pin ? util::NowUnixMs() : 0;
+        SaveThreadPrefs(updated);
+      };
+      break;
+    case SessionMenuItem::Mute:
+      action.id = "session_mute";
+      action.label = Tr("sidebar.menu.mute");
+      action.icon = "../icons/bell-off.svg";
+      action.run = [this, thread_id, position]() { OpenMuteMenu(thread_id, position); };
+      break;
+    case SessionMenuItem::Unmute:
+      action.id = "session_unmute";
+      action.label = Tr("sidebar.menu.unmute");
+      action.icon = "../icons/bell-off.svg";
+      action.run = [this, thread_id]() {
+        ThreadLocalPrefs updated = ThreadPrefsOf(thread_id);
+        updated.muted_until = 0;
+        SaveThreadPrefs(updated);
+      };
+      break;
+    case SessionMenuItem::Archive:
+    case SessionMenuItem::Unarchive:
+      action.id = item == SessionMenuItem::Archive ? "session_archive" : "session_unarchive";
+      action.label = Tr(item == SessionMenuItem::Archive ? "sidebar.menu.archive" : "sidebar.menu.unarchive");
+      action.icon = "../icons/archive.svg";
+      action.run = [this, thread_id, archive = item == SessionMenuItem::Archive]() {
+        ThreadLocalPrefs updated = ThreadPrefsOf(thread_id);
+        updated.archived = archive;
+        SaveThreadPrefs(updated);
       };
       break;
     case SessionMenuItem::ViewContact:
@@ -1363,17 +1478,42 @@ void ChatController::SyncShellSessions() {
   if (!threads) {
     return;
   }
+  const auto& prefs = ThreadPrefs();
+  const auto prefs_of = [&prefs](const Thread& thread) -> ThreadLocalPrefs {
+    const auto it = prefs.find(thread.id);
+    return it == prefs.end() ? ThreadLocalPrefs{} : it->second;
+  };
   std::vector<Thread> sorted_threads = *threads;
-  std::sort(sorted_threads.begin(), sorted_threads.end(),
-            [](const Thread& a, const Thread& b) { return a.updated_at > b.updated_at; });
+  std::sort(sorted_threads.begin(), sorted_threads.end(), [&prefs_of](const Thread& a, const Thread& b) {
+    return SessionSortsBefore(prefs_of(a).pinned_at, a.updated_at, prefs_of(b).pinned_at, b.updated_at);
+  });
 
   const std::string active_id = ActiveThreadId();
   const int64_t now_ms = util::NowUnixMs();
+  int archived_count = 0;
+  for (const Thread& thread : sorted_threads) {
+    if (!IsCallControlShadowThread(thread, sorted_threads) && prefs_of(thread).archived) {
+      ++archived_count;
+    }
+  }
+  shell_.archived_count = archived_count;
+  if (archived_count == 0) {
+    shell_.showing_archived = false; // the last archived thread left: back to the list
+  }
+  shell_.archived_entry_label = shell_.showing_archived
+                                    ? Tr("sidebar.archived.back").c_str()
+                                    : Tr("sidebar.archived.entry", {{"count", std::to_string(archived_count)}}).c_str();
   for (const Thread& thread : sorted_threads) {
     if (IsCallControlShadowThread(thread, sorted_threads)) {
       continue;
     }
+    const ThreadLocalPrefs thread_prefs = prefs_of(thread);
+    if (thread_prefs.archived != shell_.showing_archived) {
+      continue;
+    }
     SessionRow row;
+    row.pinned = thread_prefs.pinned_at != 0;
+    row.muted = ThreadIsMuted(thread_prefs.muted_until, now_ms);
     row.id = thread.id.c_str();
     std::string title = facade_ ? facade_->ResolveThreadLabel(thread).title : thread.title;
     // The stored default AI title is English; show it in the UI language.
@@ -3362,6 +3502,10 @@ void ChatController::WireMessagingBindings() {
         if (!Store().Snapshot().profile_prefs.show_notifications) {
           return;
         }
+        // A muted thread still counts as unread in the list; it just does not notify.
+        if (ThreadIsMuted(ThreadPrefsOf(thread_id).muted_until, util::NowUnixMs())) {
+          return;
+        }
         ILocalNotifier::Instance().NotifyIncoming(title, body, thread_id);
       });
   ILocalNotifier::Instance().SetActivationHandler([this](std::string thread_id) {
@@ -3457,6 +3601,7 @@ bool ChatController::Setup(ui::Context* context) {
   widgets_.ClearAll();
   chat_ = {};
   shell_ = {};
+  thread_prefs_.reset();
   shell_.sessions = {{ui::String("Chat"), ui::String(Tr("chat.ai_thread.placeholder").c_str())}};
   pending_reply_.reset();
   use_llm_ = !config.llm.base_url.empty();
@@ -3614,9 +3759,15 @@ bool ChatController::Setup(ui::Context* context) {
           session_handle.RegisterMember("unread_display", &ChatController::SessionRow::unread_display);
           session_handle.RegisterMember("date_label", &ChatController::SessionRow::date_label);
           session_handle.RegisterMember("active", &ChatController::SessionRow::active);
+          session_handle.RegisterMember("pinned", &ChatController::SessionRow::pinned);
+          session_handle.RegisterMember("muted", &ChatController::SessionRow::muted);
         }
         ctor.RegisterArray<std::vector<ChatController::SessionRow>>();
         ctor.Bind("sessions", &controller.shell_.sessions);
+        ctor.Bind("archived_count", &controller.shell_.archived_count);
+        ctor.Bind("showing_archived", &controller.shell_.showing_archived);
+        ctor.Bind("archived_entry_label", &controller.shell_.archived_entry_label);
+        ctor.BindEventCallback("toggle_archived", &ChatController::ToggleArchivedCallback);
         ctor.Bind("working_set_active", &controller.shell_.working_set_active);
         ctor.Bind("working_set_title", &controller.shell_.working_set_title);
         ctor.Bind("working_set_subtitle", &controller.shell_.working_set_subtitle);
@@ -3646,7 +3797,7 @@ bool ChatController::Setup(ui::Context* context) {
       return actions;
     }
     if (const std::string session_id = FindSessionIdFromElement(request.target); !session_id.empty()) {
-      return SessionMenuActions(session_id);
+      return SessionMenuActions(session_id, request.position);
     }
     if (chat_.compose_disabled) {
       return actions;

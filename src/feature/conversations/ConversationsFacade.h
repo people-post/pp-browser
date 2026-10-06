@@ -5,6 +5,7 @@
 #include "domain/messaging/GroupTypes.h"
 #include "common/thread/IThreadStore.h"
 #include "domain/messaging/SendRelayOptions.h"
+#include "domain/messaging/ThreadLocalPrefsStore.h"
 #include "common/thread/SyncStateTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/net/OrgBackendClients.h"
@@ -79,6 +80,10 @@ public:
   void MarkThreadRead(const std::string& thread_id);
   /** Shows an unread badge on a read thread without moving it in the list. */
   void MarkThreadUnread(const std::string& thread_id);
+  /** Per-thread local settings (pin / mute / archive); rows that differ from the defaults. */
+  Roe<std::vector<ThreadLocalPrefs>> ListThreadLocalPrefs();
+  Roe<ThreadLocalPrefs> GetThreadLocalPrefs(const std::string& thread_id);
+  Roe<void> SetThreadLocalPrefs(const ThreadLocalPrefs& prefs);
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
   Roe<void> SetThreadLocalTitle(const std::string& thread_id, const std::string& local_title);
   /** Names an AI thread after its first question; a no-op once it has any other title. No thread-changed notify. */

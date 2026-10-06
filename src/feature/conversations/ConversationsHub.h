@@ -19,6 +19,7 @@
 #include "feature/conversations/GroupInviteGate.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/messaging/SqliteThreadStore.h"
+#include "domain/messaging/ThreadLocalPrefsStore.h"
 #include "domain/messaging/InitiationBillingStore.h"
 #include "feature/broadcast/BroadcastHub.h"
 #include "foundation/runtime/DeferredSelf.h"
@@ -184,6 +185,8 @@ public:
   Roe<void> EnsureMessagingReady();
 
   InboxController& Inbox();
+  /** Per-thread local settings (pin / mute / archive); device-only, not part of the chat protocol. */
+  ThreadLocalPrefsStore& ThreadPrefs();
   MeshDeliveryOrchestrator& MeshMessaging();
   GroupMembershipWorkflow& Groups();
   /** Call media / session / lifecycle stack (Wave 3). Always non-null after construction. */
@@ -403,6 +406,7 @@ private:
   PeerKemKeyStore kem_key_store_;
   std::unique_ptr<SqlitePskSessionStore> psk_store_;
   std::unique_ptr<GroupRosterStore> group_roster_;
+  std::unique_ptr<ThreadLocalPrefsStore> thread_prefs_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
   std::unique_ptr<MeshDirectoryCache> mesh_directory_cache_;
