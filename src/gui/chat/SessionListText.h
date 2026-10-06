@@ -8,6 +8,7 @@
 #include <ctime>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace pbr {
 
@@ -51,11 +52,45 @@ inline std::string AiThreadTitleFromMessage(std::string_view message) {
 constexpr size_t kSessionPreviewMaxChars = 120;
 
 /**
- * The last message as one line for a row in the sessions list: Markdown links show their text, bold
- * markers are dropped, whitespace is collapsed, and the line is cut to `max_chars` characters (UTF-8
- * aware) with an ellipsis. The view still truncates to the row's width; the cut only bounds the string.
+ * The last message as one line for a row in the sessions list. An AI answer's preview is stored as
+ * rendered markup, so tags are dropped and entities decoded (a `<` that does not open a tag is kept:
+ * people type "1 < 2"). Markdown links show their text, bold markers are dropped, whitespace is collapsed,
+ * and the line is cut to `max_chars` characters (UTF-8 aware) with an ellipsis. The view still truncates
+ * to the row's width; the cut only bounds the string.
  */
-inline std::string SessionPreviewLine(std::string_view text, const size_t max_chars = kSessionPreviewMaxChars) {
+inline std::string SessionPreviewLine(std::string_view raw, const size_t max_chars = kSessionPreviewMaxChars) {
+  std::string text;
+  text.reserve(raw.size());
+  for (size_t i = 0; i < raw.size();) {
+    if (raw[i] == '<' && i + 1 < raw.size()) {
+      const char next = raw[i + 1] == '/' && i + 2 < raw.size() ? raw[i + 2] : raw[i + 1];
+      const bool tag_like = (next >= 'a' && next <= 'z') || (next >= 'A' && next <= 'Z');
+      const size_t close = tag_like ? raw.find('>', i + 1) : std::string_view::npos;
+      if (close != std::string_view::npos) {
+        text += ' '; // a tag separates the text around it
+        i = close + 1;
+        continue;
+      }
+    }
+    if (raw[i] == '&') {
+      static constexpr std::pair<std::string_view, char> kEntities[] = {
+          {"&lt;", '<'}, {"&gt;", '>'}, {"&amp;", '&'}, {"&quot;", '"'}, {"&#39;", '\''}, {"&nbsp;", ' '}};
+      bool decoded = false;
+      for (const auto& [entity, ch] : kEntities) {
+        if (raw.substr(i, entity.size()) == entity) {
+          text += ch;
+          i += entity.size();
+          decoded = true;
+          break;
+        }
+      }
+      if (decoded) {
+        continue;
+      }
+    }
+    text += raw[i++];
+  }
+
   std::string plain;
   plain.reserve(text.size());
   for (size_t i = 0; i < text.size();) {

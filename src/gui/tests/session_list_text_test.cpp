@@ -91,3 +91,20 @@ TEST(SessionListTextTest, PreviewIsCutOnACharacterBoundary) {
   const std::string cut = SessionPreviewLine("一二三四五六七八九十", 4);
   EXPECT_EQ(cut, "一二三四…");
 }
+
+TEST(SessionListTextTest, PreviewShowsTheTextOfStoredMarkup) {
+  // An AI answer's preview is stored as rendered markup; the row shows its text, never the tags.
+  EXPECT_EQ(SessionPreviewLine("<ol><li><span class=\"md-marker\">1.</span><div class=\"md-item\">五角大楼停用工具</div></li>"
+                               "<li><span class=\"md-marker\">2.</span><div class=\"md-item\">诺贝尔物理学奖</div></li></ol>"),
+            "1. 五角大楼停用工具 2. 诺贝尔物理学奖");
+  EXPECT_EQ(SessionPreviewLine("<div class=\"stack\"><p>Brief 最新简报（10 条）：</p><button class=\"x\">打开</button></div>"),
+            "Brief 最新简报（10 条）： 打开");
+  EXPECT_EQ(SessionPreviewLine("<p>A &amp; B &lt;tag&gt; &quot;q&quot; it&#39;s</p>"), "A & B <tag> \"q\" it's");
+}
+
+TEST(SessionListTextTest, PreviewKeepsAngleBracketsThatAreNotTags) {
+  // A person's message is plain text: comparisons and emoticons stay as typed.
+  EXPECT_EQ(SessionPreviewLine("1 < 2 而且 3 > 2"), "1 < 2 而且 3 > 2");
+  EXPECT_EQ(SessionPreviewLine("爱你 <3"), "爱你 <3");
+  EXPECT_EQ(SessionPreviewLine("a<b 没有右括号"), "a<b 没有右括号");
+}
