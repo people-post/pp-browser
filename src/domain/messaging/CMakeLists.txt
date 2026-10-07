@@ -17,6 +17,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     CallMediaKeyStore.cpp
     CallSessionLogic.cpp
     CallSessionStore.cpp
+    ThreadLocalPrefsStore.cpp
     CallTypes.cpp
     SoftMigrateLogic.cpp
     CallHopPlan.cpp

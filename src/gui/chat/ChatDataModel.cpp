@@ -76,6 +76,9 @@ void DirtyChat() {
 
 void DirtyShell() {
   DataModelHost::Instance().Dirty("shell", "sessions");
+  DataModelHost::Instance().Dirty("shell", "archived_count");
+  DataModelHost::Instance().Dirty("shell", "showing_archived");
+  DataModelHost::Instance().Dirty("shell", "archived_entry_label");
   DataModelHost::Instance().Dirty("shell", "working_set_active");
   DataModelHost::Instance().Dirty("shell", "working_set_title");
   DataModelHost::Instance().Dirty("shell", "working_set_subtitle");

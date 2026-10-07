@@ -89,6 +89,11 @@ struct SessionDisplayRow {
   /** When the session was last active; format rules in gui/chat/SessionListText.h. */
   ui::String date_label;
   bool active = false;
+  /** Per-thread local settings (pin / mute); archived rows are listed separately. */
+  bool pinned = false;
+  bool muted = false;
+  /** Marked unread by hand and no real unread count: show a ring, not a number. */
+  bool unread_ring = false;
 };
 
 struct TurnWidgetState {

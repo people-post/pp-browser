@@ -462,6 +462,13 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
 }
 
 void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenuAction> actions) {
+  if (dismiss_pending_) {
+    // Opened from a menu item's click (Mute…, React): the first menu's DOM is still dispatching that
+    // event, which is why its teardown was deferred. Tearing it down here instead would leave the
+    // dangling Context::active pointers RequestDismiss() exists to avoid. Open this one from Update().
+    pending_show_ = PendingShow{position, std::move(actions)};
+    return;
+  }
   Dismiss();
   if (!context_ || actions.empty()) {
     return;
@@ -535,10 +542,14 @@ void ContextMenuHost::RequestDismiss(bool restore_focus) {
 }
 
 void ContextMenuHost::Update() {
-  if (!dismiss_pending_) {
-    return;
+  if (dismiss_pending_) {
+    Dismiss();
   }
-  Dismiss();
+  if (pending_show_) {
+    PendingShow show = std::move(*pending_show_);
+    pending_show_.reset();
+    ShowActions(show.position, std::move(show.actions));
+  }
 }
 
 bool ContextMenuHost::HandleDismiss() {
