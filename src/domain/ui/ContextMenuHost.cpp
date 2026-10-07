@@ -1,5 +1,7 @@
 #include "domain/ui/ContextMenuHost.h"
 
+#include "common/ui/RmlEscape.h"
+
 #include "foundation/i18n/LocalizationService.h"
 
 #include <ui/dom/Context.h>
@@ -145,7 +147,8 @@ void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuA
       out << "<div class=\"context-menu-item-icon\"><svg src=\"" << action.icon
           << "\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg></div>";
     }
-    out << "<span class=\"context-menu-item-label\">" << action.label << "</span>";
+    // Labels carry names people typed (share targets, group members).
+    out << "<span class=\"context-menu-item-label\">" << EscapeRml(action.label) << "</span>";
     if (action.selected) {
       out << "<span class=\"context-menu-item-check\">✓</span>";
     }

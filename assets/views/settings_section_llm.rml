@@ -20,7 +20,7 @@
         <div class="settings-field stack" data-if="llm_preset == 'brief'">
           <span class="settings-label">{{i18n:settings.llm.brief_key}}</span>
           <p class="text muted" data-if="brief_llm_key_masked != ''">
-            <span data-rml="brief_llm_key_masked"></span> {{i18n:settings.llm.brief_key_rotate_hint}}
+            <span>{{brief_llm_key_masked}}</span> {{i18n:settings.llm.brief_key_rotate_hint}}
           </p>
           <p class="text muted" data-if="brief_llm_key_masked == ''">
             {{i18n:settings.llm.brief_key_auto}}

@@ -31,12 +31,12 @@
       </div>
       <div class="sidebar-session-body">
         <div class="sidebar-session-line">
-          <p class="sidebar-session-title" data-rml="session.title"></p>
-          <span class="sidebar-session-date" data-if="session.date_label != ''" data-rml="session.date_label"></span>
+          <p class="sidebar-session-title">{{session.title}}</p>
+          <span class="sidebar-session-date" data-if="session.date_label != ''">{{session.date_label}}</span>
         </div>
         <div class="sidebar-session-line">
-          <p class="sidebar-session-preview" data-rml="session.preview"></p>
-          <span class="badge-count sidebar-unread" data-if="session.unread_count > 0" data-rml="session.unread_display"></span>
+          <p class="sidebar-session-preview">{{session.preview}}</p>
+          <span class="badge-count sidebar-unread" data-if="session.unread_count > 0">{{session.unread_display}}</span>
         </div>
       </div>
     </div>

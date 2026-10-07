@@ -43,12 +43,12 @@
   </div>
   <div id="shell-chrome" class="shell-chrome">
     <div class="shell-banner" data-if="banner_message != ''">
-      <p class="shell-banner-text" data-rml="banner_message"></p>
+      <p class="shell-banner-text">{{banner_message}}</p>
       <button class="shell-banner-dismiss" data-event-click="dismiss_banner()">×</button>
     </div>
     <div id="shell-toast-stack" class="shell-toast-stack">
       <div data-for="toast : toasts" class="shell-toast">
-        <p class="shell-toast-text" data-rml="toast.message"></p>
+        <p class="shell-toast-text">{{toast.message}}</p>
       </div>
     </div>
     <div class="shell-activity-strip" data-if="activity_visible && !statusbar_visible"></div>
@@ -97,20 +97,17 @@
         </div>
         <p class="shell-statusbar-load text-xs muted"
            data-if="statusbar_load_circuit_visible"
-           data-attr-title="statusbar_load_circuit_title"
-           data-rml="statusbar_load_circuit_label"></p>
+           data-attr-title="statusbar_load_circuit_title">{{statusbar_load_circuit_label}}</p>
         <p class="shell-statusbar-load text-xs muted"
            data-if="statusbar_load_media_visible"
-           data-attr-title="statusbar_load_media_title"
-           data-rml="statusbar_load_media_label"></p>
+           data-attr-title="statusbar_load_media_title">{{statusbar_load_media_label}}</p>
         <p class="shell-statusbar-label text-xs muted"
            data-if="statusbar_label != ''"
            data-class-shell-statusbar-label--warn="statusbar_label_warn"
-           data-class-shell-statusbar-label--error="statusbar_label_error"
-           data-rml="statusbar_label"></p>
+           data-class-shell-statusbar-label--error="statusbar_label_error">{{statusbar_label}}</p>
       </div>
     </div>
-    <p class="shell-statusbar-activity text-xs muted" data-rml="statusbar_activity"></p>
+    <p class="shell-statusbar-activity text-xs muted">{{statusbar_activity}}</p>
   </div>
   <div id="shell-statusbar-popover-scrim" class="shell-statusbar-popover-scrim"
        data-if="statusbar_popover_open"
@@ -128,7 +125,7 @@
         </div>
         <p class="text-xs muted">{{i18n:shell.statusbar.popover.brief}}</p>
       </div>
-      <p class="text-xs" data-rml="statusbar_popover_brief_label"></p>
+      <p class="text-xs">{{statusbar_popover_brief_label}}</p>
     </div>
     <div class="shell-statusbar-popover-row">
       <div class="shell-statusbar-popover-key">
@@ -141,7 +138,7 @@
         </div>
         <p class="text-xs muted">{{i18n:shell.statusbar.popover.direct}}</p>
       </div>
-      <p class="text-xs" data-rml="statusbar_popover_direct_label"></p>
+      <p class="text-xs">{{statusbar_popover_direct_label}}</p>
     </div>
     <div class="shell-statusbar-popover-row">
       <div class="shell-statusbar-popover-key">
@@ -153,44 +150,34 @@
         </div>
         <p class="text-xs muted">{{i18n:shell.statusbar.popover.reachability}}</p>
       </div>
-      <p class="text-xs" data-rml="statusbar_popover_reach_label"></p>
+      <p class="text-xs">{{statusbar_popover_reach_label}}</p>
     </div>
-    <p class="text-xs muted" data-rml="statusbar_popover_reach_summary"></p>
+    <p class="text-xs muted">{{statusbar_popover_reach_summary}}</p>
     <div class="shell-statusbar-popover-row" data-if="statusbar_popover_help_visible">
       <div class="shell-statusbar-popover-key">
         <div class="shell-statusbar-slot shell-statusbar-help">
           <svg src="../icons/status-help.svg" width="12" height="12" crop-to-content="true"></svg>
         </div>
-        <p class="text-xs" data-rml="statusbar_popover_help_label"></p>
+        <p class="text-xs">{{statusbar_popover_help_label}}</p>
       </div>
     </div>
-    <p class="text-xs muted" data-if="statusbar_popover_upnp_visible"
-       data-rml="statusbar_popover_upnp_label"></p>
+    <p class="text-xs muted" data-if="statusbar_popover_upnp_visible">{{statusbar_popover_upnp_label}}</p>
     <div class="stack" data-if="statusbar_popover_network_visible">
       <p class="text-xs muted">{{i18n:shell.statusbar.popover.network}}</p>
-      <p class="text-xs" data-rml="statusbar_popover_network_links"></p>
-      <p class="text-xs" data-if="statusbar_popover_network_parked != ''"
-         data-rml="statusbar_popover_network_parked"></p>
-      <p class="text-xs" data-if="statusbar_popover_network_rate != ''"
-         data-rml="statusbar_popover_network_rate"></p>
-      <p class="text-xs" data-if="statusbar_popover_network_rtt != ''"
-         data-rml="statusbar_popover_network_rtt"></p>
-      <p class="text-xs" data-if="statusbar_popover_network_resend != ''"
-         data-rml="statusbar_popover_network_resend"></p>
+      <p class="text-xs">{{statusbar_popover_network_links}}</p>
+      <p class="text-xs" data-if="statusbar_popover_network_parked != ''">{{statusbar_popover_network_parked}}</p>
+      <p class="text-xs" data-if="statusbar_popover_network_rate != ''">{{statusbar_popover_network_rate}}</p>
+      <p class="text-xs" data-if="statusbar_popover_network_rtt != ''">{{statusbar_popover_network_rtt}}</p>
+      <p class="text-xs" data-if="statusbar_popover_network_resend != ''">{{statusbar_popover_network_resend}}</p>
     </div>
     <div class="stack" data-if="statusbar_popover_load_visible">
       <p class="text-xs muted">{{i18n:shell.statusbar.popover.load}}</p>
-      <p class="text-xs" data-if="statusbar_popover_circuit_load != ''"
-         data-rml="statusbar_popover_circuit_load"></p>
-      <p class="text-xs" data-if="statusbar_popover_media_sessions != ''"
-         data-rml="statusbar_popover_media_sessions"></p>
-      <p class="text-xs" data-if="statusbar_popover_media_participants != ''"
-         data-rml="statusbar_popover_media_participants"></p>
-      <p class="text-xs" data-if="statusbar_popover_relay_rate != ''"
-         data-rml="statusbar_popover_relay_rate"></p>
+      <p class="text-xs" data-if="statusbar_popover_circuit_load != ''">{{statusbar_popover_circuit_load}}</p>
+      <p class="text-xs" data-if="statusbar_popover_media_sessions != ''">{{statusbar_popover_media_sessions}}</p>
+      <p class="text-xs" data-if="statusbar_popover_media_participants != ''">{{statusbar_popover_media_participants}}</p>
+      <p class="text-xs" data-if="statusbar_popover_relay_rate != ''">{{statusbar_popover_relay_rate}}</p>
     </div>
-    <p class="text-xs error" data-if="statusbar_popover_error_visible"
-       data-rml="statusbar_popover_error" selectable="text"></p>
+    <p class="text-xs error" data-if="statusbar_popover_error_visible" selectable="text">{{statusbar_popover_error}}</p>
     <div class="shell-statusbar-popover-actions row">
       <button class="btn btn-secondary" type="button"
               data-event-click="retest_statusbar_reachability()">
