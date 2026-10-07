@@ -102,6 +102,9 @@
 
 namespace pbr {
 
+static_assert(kSessionMutedForever == kThreadMutedForever,
+              "SessionMenu.h and ThreadLocalPrefsStore.h must agree on \"always\"");
+
 namespace {
 
 std::string ToolActivityLabel(const std::string& tool_name, const std::string& status) {
@@ -937,9 +940,9 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
   }
   if (facade_->OpenThread(thread_id)) {
     // Opening a thread reads it: a ring set by "Mark as unread" goes with the unread count.
-    if (ThreadLocalPrefs prefs = ThreadPrefsOf(thread_id); prefs.marked_unread) {
-      prefs.marked_unread = false;
-      (void)StoreThreadPrefs(prefs);
+    if (std::optional<ThreadLocalPrefs> prefs = ThreadPrefsOf(thread_id); prefs && prefs->marked_unread) {
+      prefs->marked_unread = false;
+      (void)StoreThreadPrefs(*prefs);
     }
     ILocalNotifier::Instance().ClearForThread(thread_id);
     facade_->MaybeTailSync(thread_id);
@@ -1133,20 +1136,32 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
 }
 
 const std::unordered_map<std::string, ThreadLocalPrefs>& ChatController::ThreadPrefs() {
+  static const std::unordered_map<std::string, ThreadLocalPrefs> kUnavailable;
   if (!thread_prefs_) {
+    auto listed = facade_->ListThreadLocalPrefs();
+    if (!listed) {
+      // Not cached: an empty cache would make every thread look default, and the next write would put
+      // those defaults over the thread's stored row. Read again next time instead.
+      return kUnavailable;
+    }
     thread_prefs_.emplace();
-    if (auto listed = facade_->ListThreadLocalPrefs()) {
-      for (ThreadLocalPrefs& prefs : *listed) {
-        const std::string id = prefs.thread_id;
-        thread_prefs_->emplace(id, std::move(prefs));
-      }
+    for (ThreadLocalPrefs& prefs : *listed) {
+      const std::string id = prefs.thread_id;
+      thread_prefs_->emplace(id, std::move(prefs));
     }
   }
   return *thread_prefs_;
 }
 
-ThreadLocalPrefs ChatController::ThreadPrefsOf(const std::string& thread_id) {
+std::optional<ThreadLocalPrefs> ChatController::ThreadPrefsOf(const std::string& thread_id) {
   const auto& all = ThreadPrefs();
+  if (!thread_prefs_) {
+    auto one = facade_->GetThreadLocalPrefs(thread_id);
+    if (!one) {
+      return std::nullopt;
+    }
+    return *one;
+  }
   const auto it = all.find(thread_id);
   if (it != all.end()) {
     return it->second;
@@ -1160,13 +1175,19 @@ bool ChatController::StoreThreadPrefs(const ThreadLocalPrefs& prefs) {
   if (!facade_->SetThreadLocalPrefs(prefs)) {
     return false;
   }
-  (void)ThreadPrefs();
-  (*thread_prefs_)[prefs.thread_id] = prefs;
+  if (thread_prefs_) {
+    (*thread_prefs_)[prefs.thread_id] = prefs;
+  }
   return true;
 }
 
-void ChatController::SaveThreadPrefs(const ThreadLocalPrefs& prefs) {
-  if (!StoreThreadPrefs(prefs)) {
+void ChatController::UpdateThreadPrefs(const std::string& thread_id,
+                                       const std::function<void(ThreadLocalPrefs&)>& change) {
+  std::optional<ThreadLocalPrefs> prefs = ThreadPrefsOf(thread_id);
+  if (prefs) {
+    change(*prefs);
+  }
+  if (!prefs || !StoreThreadPrefs(*prefs)) {
     UserFeedback::Fail(Tr("sidebar.error.prefs_failed"));
     NotifySurfaceChanged();
     return;
@@ -1188,9 +1209,9 @@ void ChatController::OpenMuteMenu(const std::string& thread_id, const ui::Vector
         Tr(label_key),
         nullptr,
         [this, thread_id, choice = choice]() {
-          ThreadLocalPrefs prefs = ThreadPrefsOf(thread_id);
-          prefs.muted_until = MutedUntilFor(choice, util::NowUnixMs());
-          SaveThreadPrefs(prefs);
+          UpdateThreadPrefs(thread_id, [choice](ThreadLocalPrefs& prefs) {
+            prefs.muted_until = MutedUntilFor(choice, util::NowUnixMs());
+          });
         },
     });
   }
@@ -1234,7 +1255,7 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
                : thread.kind == ThreadKind::Direct ? SessionKind::Direct
                                                    : SessionKind::Ai;
   state.has_contact = contact_id.has_value();
-  const ThreadLocalPrefs prefs = ThreadPrefsOf(thread_id);
+  const ThreadLocalPrefs prefs = ThreadPrefsOf(thread_id).value_or(ThreadLocalPrefs{});
   state.unread = SessionIsUnread(thread.unread_count, prefs.marked_unread);
   state.pinned = prefs.pinned_at != 0;
   state.muted = ThreadIsMuted(prefs.muted_until, util::NowUnixMs());
@@ -1249,9 +1270,7 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
       action.label = Tr("sidebar.menu.mark_unread");
       // A mark, not a message count: the row shows a ring and keeps its place in the list.
       action.run = [this, thread_id]() {
-        ThreadLocalPrefs updated = ThreadPrefsOf(thread_id);
-        updated.marked_unread = true;
-        SaveThreadPrefs(updated);
+        UpdateThreadPrefs(thread_id, [](ThreadLocalPrefs& prefs) { prefs.marked_unread = true; });
       };
       break;
     case SessionMenuItem::MarkRead:
@@ -1259,9 +1278,7 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
       action.label = Tr("sidebar.menu.mark_read");
       action.run = [this, thread_id]() {
         facade_->MarkThreadRead(thread_id);
-        ThreadLocalPrefs updated = ThreadPrefsOf(thread_id);
-        updated.marked_unread = false;
-        SaveThreadPrefs(updated);
+        UpdateThreadPrefs(thread_id, [](ThreadLocalPrefs& prefs) { prefs.marked_unread = false; });
       };
       break;
     case SessionMenuItem::Pin:
@@ -1270,9 +1287,8 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
       action.label = Tr(item == SessionMenuItem::Pin ? "sidebar.menu.pin" : "sidebar.menu.unpin");
       action.icon = "../icons/pin.svg";
       action.run = [this, thread_id, pin = item == SessionMenuItem::Pin]() {
-        ThreadLocalPrefs updated = ThreadPrefsOf(thread_id);
-        updated.pinned_at = pin ? util::NowUnixMs() : 0;
-        SaveThreadPrefs(updated);
+        UpdateThreadPrefs(thread_id,
+                          [pin](ThreadLocalPrefs& prefs) { prefs.pinned_at = pin ? util::NowUnixMs() : 0; });
       };
       break;
     case SessionMenuItem::Mute:
@@ -1286,9 +1302,7 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
       action.label = Tr("sidebar.menu.unmute");
       action.icon = "../icons/bell-off.svg";
       action.run = [this, thread_id]() {
-        ThreadLocalPrefs updated = ThreadPrefsOf(thread_id);
-        updated.muted_until = 0;
-        SaveThreadPrefs(updated);
+        UpdateThreadPrefs(thread_id, [](ThreadLocalPrefs& prefs) { prefs.muted_until = 0; });
       };
       break;
     case SessionMenuItem::Archive:
@@ -1297,9 +1311,7 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
       action.label = Tr(item == SessionMenuItem::Archive ? "sidebar.menu.archive" : "sidebar.menu.unarchive");
       action.icon = "../icons/archive.svg";
       action.run = [this, thread_id, archive = item == SessionMenuItem::Archive]() {
-        ThreadLocalPrefs updated = ThreadPrefsOf(thread_id);
-        updated.archived = archive;
-        SaveThreadPrefs(updated);
+        UpdateThreadPrefs(thread_id, [archive](ThreadLocalPrefs& prefs) { prefs.archived = archive; });
       };
       break;
     case SessionMenuItem::ViewContact:
@@ -1458,6 +1470,9 @@ void ChatController::RefreshFromMessaging() {
 void ChatController::OnProfileDataReset() {
   messaging_ready_ = false;
   mesh_ready_ = false;
+  // profile.db is recreated: nothing read from the old one may be written back into the new one.
+  thread_prefs_.reset();
+  shell_.showing_archived = false;
   working_set_.ClearAll();
   widgets_.ClearAll();
   pending_reply_.reset();
@@ -3505,7 +3520,8 @@ void ChatController::WireMessagingBindings() {
           return;
         }
         // A muted thread still counts as unread in the list; it just does not notify.
-        if (ThreadIsMuted(ThreadPrefsOf(thread_id).muted_until, util::NowUnixMs())) {
+        const std::optional<ThreadLocalPrefs> prefs = ThreadPrefsOf(thread_id);
+        if (prefs && ThreadIsMuted(prefs->muted_until, util::NowUnixMs())) {
           return;
         }
         ILocalNotifier::Instance().NotifyIncoming(title, body, thread_id);

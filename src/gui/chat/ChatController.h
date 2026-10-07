@@ -285,11 +285,17 @@ private:
   std::vector<ContextMenuAction> SessionMenuActions(const std::string& thread_id, ui::Vector2i position);
   /** Second step of "Mute": 8 hours / 1 week / Always. */
   void OpenMuteMenu(const std::string& thread_id, ui::Vector2i position);
-  /** Pin / mute / archive of every thread that has any set, read once and kept in step with the store. */
+  /**
+   * Pin / mute / archive / marked-unread of every thread that has any set: read once when the store can
+   * be listed, then kept in step with every write. Empty, and read again next time, while it cannot.
+   */
   const std::unordered_map<std::string, ThreadLocalPrefs>& ThreadPrefs();
-  ThreadLocalPrefs ThreadPrefsOf(const std::string& thread_id);
-  /** Writes the settings and refreshes the list. */
-  void SaveThreadPrefs(const ThreadLocalPrefs& prefs);
+  /** One thread's settings: from the cache, or from the store while the cache is unavailable; nullopt when
+   *  neither can be read. */
+  std::optional<ThreadLocalPrefs> ThreadPrefsOf(const std::string& thread_id);
+  /** Reads, changes and writes one thread's settings, then refreshes the list; tells the user when the
+   *  store refused. */
+  void UpdateThreadPrefs(const std::string& thread_id, const std::function<void(ThreadLocalPrefs&)>& change);
   /** Writes the settings and the cache only; false when the store refused. */
   bool StoreThreadPrefs(const ThreadLocalPrefs& prefs);
   void OnToggleArchived();

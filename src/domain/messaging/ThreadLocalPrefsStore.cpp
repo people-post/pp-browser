@@ -57,9 +57,6 @@ Roe<void> ThreadLocalPrefsStore::EnsureSchema(sqlite3* profile_db) const {
     sqlite3_free(err);
     return Error(message);
   }
-  // Columns added after the table first shipped; the statement fails harmlessly when the column exists.
-  (void)sqlite3_exec(profile_db, "ALTER TABLE thread_local_prefs ADD COLUMN marked_unread INTEGER NOT NULL DEFAULT 0;",
-                     nullptr, nullptr, nullptr);
   return {};
 }
 
