@@ -36,6 +36,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -209,6 +210,10 @@ private:
 
   struct ShellState {
     std::vector<SessionRow> sessions;
+    /** Archived threads are kept out of the list; the entry row above it opens them. */
+    int archived_count = 0;
+    bool showing_archived = false;
+    ui::String archived_entry_label;
     bool working_set_active = false;
     ui::String working_set_title;
     ui::String working_set_subtitle;
@@ -276,8 +281,26 @@ private:
   /** Asks, then deletes the thread's messages on this device (the thread stays in the list). */
   void ClearHistoryOf(const std::string& thread_id);
   void AfterHistoryCleared(const std::string& thread_id);
-  /** Context menu for a row in the sessions list (right-click / long-press). */
-  std::vector<ContextMenuAction> SessionMenuActions(const std::string& thread_id);
+  /** Context menu for a row in the sessions list (right-click / long-press); `position` anchors a second step. */
+  std::vector<ContextMenuAction> SessionMenuActions(const std::string& thread_id, ui::Vector2i position);
+  /** Second step of "Mute": 8 hours / 1 week / Always. */
+  void OpenMuteMenu(const std::string& thread_id, ui::Vector2i position);
+  /**
+   * Pin / mute / archive / marked-unread of every thread that has any set: read once when the store can
+   * be listed, then kept in step with every write. Empty, and read again next time, while it cannot.
+   */
+  const std::unordered_map<std::string, ThreadLocalPrefs>& ThreadPrefs();
+  /** One thread's settings: from the cache, or from the store while the cache is unavailable; nullopt when
+   *  neither can be read. */
+  std::optional<ThreadLocalPrefs> ThreadPrefsOf(const std::string& thread_id);
+  /** Reads, changes and writes one thread's settings, then refreshes the list; tells the user when the
+   *  store refused. */
+  void UpdateThreadPrefs(const std::string& thread_id, const std::function<void(ThreadLocalPrefs&)>& change);
+  /** Writes the settings and the cache only; false when the store refused. */
+  bool StoreThreadPrefs(const ThreadLocalPrefs& prefs);
+  void OnToggleArchived();
+  static void ToggleArchivedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  std::optional<std::unordered_map<std::string, ThreadLocalPrefs>> thread_prefs_;
   void OnForgetMemory();
   void OnSyncWithPeer();
   void OnRetryGapSync();

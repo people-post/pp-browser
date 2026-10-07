@@ -6,6 +6,7 @@
 #include <ui/base/Vector2.h>
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -90,6 +91,12 @@ private:
   ui::Element* layer_ = nullptr;
   ui::Element* panel_ = nullptr;
   bool dismiss_pending_ = false;
+  /** A ShowActions() made while a dismiss is pending (a second step opened from a menu item); runs in Update(). */
+  struct PendingShow {
+    ui::Vector2i position;
+    std::vector<ContextMenuAction> actions;
+  };
+  std::optional<PendingShow> pending_show_;
   bool restore_focus_on_dismiss_ = false;
   bool compact_layout_ = false;
   Presentation presentation_ = Presentation::Float;

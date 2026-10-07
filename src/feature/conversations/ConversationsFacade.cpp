@@ -102,7 +102,13 @@ bool ConversationsFacade::ThreadHasActiveCall(const std::string& thread_id) {
 
 Roe<Thread> ConversationsFacade::OpenThread(const std::string& thread_id) { return hub_.Inbox().OpenThread(thread_id); }
 
-Roe<void> ConversationsFacade::CloseThread(const std::string& thread_id) { return hub_.Inbox().CloseThread(thread_id); }
+Roe<void> ConversationsFacade::CloseThread(const std::string& thread_id) {
+  auto closed = hub_.Inbox().CloseThread(thread_id);
+  if (closed) {
+    (void)hub_.ThreadPrefs().Delete(thread_id); // a deleted thread keeps no pin / mute / archive row
+  }
+  return closed;
+}
 
 void ConversationsFacade::ClearActiveThread() { hub_.Inbox().ClearActiveThread(); }
 
@@ -132,9 +138,17 @@ Roe<Thread> ConversationsFacade::FindOrCreateDirectThread(const std::string& con
   return hub_.Inbox().FindOrCreateDirectThread(contact_id, channel);
 }
 
-void ConversationsFacade::MarkThreadRead(const std::string& thread_id) { hub_.Inbox().MarkThreadRead(thread_id); }
+Roe<std::vector<ThreadLocalPrefs>> ConversationsFacade::ListThreadLocalPrefs() { return hub_.ThreadPrefs().List(); }
 
-void ConversationsFacade::MarkThreadUnread(const std::string& thread_id) { hub_.Inbox().MarkThreadUnread(thread_id); }
+Roe<ThreadLocalPrefs> ConversationsFacade::GetThreadLocalPrefs(const std::string& thread_id) {
+  return hub_.ThreadPrefs().Get(thread_id);
+}
+
+Roe<void> ConversationsFacade::SetThreadLocalPrefs(const ThreadLocalPrefs& prefs) {
+  return hub_.ThreadPrefs().Set(prefs);
+}
+
+void ConversationsFacade::MarkThreadRead(const std::string& thread_id) { hub_.Inbox().MarkThreadRead(thread_id); }
 
 void ConversationsFacade::NotifyThreadChanged() { hub_.Inbox().NotifyThreadChanged(); }
 

@@ -1099,6 +1099,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
 
   psk_store_ = std::make_unique<SqlitePskSessionStore>(store_->ProfileDbPath(), profile_id_);
   group_roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
+  thread_prefs_ = std::make_unique<ThreadLocalPrefsStore>(store_->ProfileDbPath());
   if (auto stores = call_stack_->InitializeStores(store_->ProfileDbPath(), profile_id_); !stores) {
     return stores.error();
   }
@@ -2639,6 +2640,7 @@ void ConversationsHub::Shutdown() {
   group_membership_.reset();
   group_invite_gate_.reset();
   group_roster_.reset();
+  thread_prefs_.reset();
   signing_resolver_.reset();
   kem_resolver_.reset();
   // Reset media engine / key store / session store after DEK unregister above.
@@ -2680,6 +2682,8 @@ void ConversationsHub::Shutdown() {
 InboxController& ConversationsHub::Inbox() {
   return *inbox_;
 }
+
+ThreadLocalPrefsStore& ConversationsHub::ThreadPrefs() { return *thread_prefs_; }
 
 MeshDeliveryOrchestrator& ConversationsHub::MeshMessaging() {
   return *mesh_messaging_;

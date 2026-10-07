@@ -1015,6 +1015,11 @@ select selectbox option:hover {
   border: 1dp #374151;
 }
 
+/* Before the active rules so the open thread keeps its highlight. */
+.sidebar-session--pinned {
+  background-color: #273244;
+}
+
 .sidebar-session-active {
   background-color: #312e81;
   border-color: #4338ca;
@@ -1057,6 +1062,23 @@ select selectbox option:hover {
 
 .sidebar-session-icon {
   background-color: #374151;
+}
+
+.sidebar-session-flag,
+.sidebar-archived-entry svg {
+  image-color: #9ca3af;
+}
+
+.sidebar-archived-label {
+  color: #d1d5db;
+}
+
+.sidebar-archived-entry:hover {
+  background-color: #1f2937;
+}
+
+.sidebar-unread-ring {
+  border-color: #6366f1;
 }
 
 .sidebar-unread {

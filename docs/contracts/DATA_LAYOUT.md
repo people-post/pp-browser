@@ -41,7 +41,8 @@ Override data root with `data_dir` in config (supports `~` expansion). How confi
   contacts.json             # address book (schema_version 1: local + remote + overrides{}); unversioned legacy migrates on load
   client_compat.json        # cached GET /v1/client-compat (TTL 6h; optional)
   threads/
-    profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4)
+    profile.db              # thread catalog, outbox, chat_targets (PSK + preview_enc encrypted; user_version 4);
+                            # thread_local_prefs (pin / mute / archive per thread — device-only, plaintext, additive: no user_version bump)
     {thread_id}/
       thread.db             # messages.content_enc, memory.value_enc encrypted; sync_state + metadata plaintext (user_version 2 — D102)
 ```
