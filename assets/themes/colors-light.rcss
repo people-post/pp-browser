@@ -1077,8 +1077,8 @@ select selectbox option:hover {
   background-color: #f3f4f6;
 }
 
-.sidebar-unread-ring {
-  border-color: #3b82f6;
+.sidebar-unread-dot {
+  background-color: #3b82f6;
 }
 
 .sidebar-unread {

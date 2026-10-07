@@ -2858,15 +2858,13 @@ input.checkbox {
   flex-shrink: 0;
 }
 
-/* "Marked as unread": a ring, since there is no message count to show. */
-.sidebar-unread-ring {
+/* "Marked as unread": a dot in the badge colour, since there is no message count to show. */
+.sidebar-unread-dot {
   flex-shrink: 0;
   display: block;
-  width: 12dp;
-  height: 12dp;
-  border-radius: 6dp;
-  border-width: 2dp;
-  box-sizing: border-box;
+  width: 8dp;
+  height: 8dp;
+  border-radius: 4dp;
 }
 
 /* Opens the archived threads, or returns to the list; shown only when something is archived. */

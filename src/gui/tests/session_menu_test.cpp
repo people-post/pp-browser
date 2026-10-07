@@ -112,12 +112,12 @@ TEST(SessionMenuTest, PinnedRowsSortFirstThenByActivity) {
   EXPECT_EQ(order, (std::vector<std::string>{"pinned-later", "pinned-earlier", "new", "mid", "old"}));
 }
 
-TEST(SessionMenuTest, MarkedUnreadShowsARingUntilThereIsARealCount) {
-  // A thread marked unread by hand has no message count to show: it gets a ring. Once real messages
+TEST(SessionMenuTest, MarkedUnreadShowsADotUntilThereIsARealCount) {
+  // A thread marked unread by hand has no message count to show: it gets a dot. Once real messages
   // arrive the number takes over.
-  EXPECT_TRUE(SessionShowsUnreadRing(0, true));
-  EXPECT_FALSE(SessionShowsUnreadRing(3, true));
-  EXPECT_FALSE(SessionShowsUnreadRing(0, false));
+  EXPECT_TRUE(SessionShowsUnreadDot(0, true));
+  EXPECT_FALSE(SessionShowsUnreadDot(3, true));
+  EXPECT_FALSE(SessionShowsUnreadDot(0, false));
   // Either kind of unread offers "Mark as read".
   EXPECT_TRUE(SessionIsUnread(0, true));
   EXPECT_TRUE(SessionIsUnread(2, false));
