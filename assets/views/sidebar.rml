@@ -11,7 +11,7 @@
     <div class="sidebar-archived-entry row" data-if="archived_count > 0" data-event-click="toggle_archived()">
       <svg src="../icons/back.svg" width="14" height="14" crop-to-content="true" data-if="showing_archived"></svg>
       <svg src="../icons/archive.svg" width="14" height="14" crop-to-content="true" data-if="!showing_archived"></svg>
-      <p class="sidebar-archived-label" data-rml="archived_entry_label"></p>
+      <p class="sidebar-archived-label">{{archived_entry_label}}</p>
     </div>
     <div data-for="session : sessions" class="sidebar-session"
          data-attr-session-id="session.id"
@@ -37,14 +37,14 @@
       </div>
       <div class="sidebar-session-body">
         <div class="sidebar-session-line">
-          <p class="sidebar-session-title" data-rml="session.title"></p>
+          <p class="sidebar-session-title">{{session.title}}</p>
           <svg class="sidebar-session-flag" src="../icons/pin.svg" width="12" height="12" crop-to-content="true" data-if="session.pinned"></svg>
           <svg class="sidebar-session-flag" src="../icons/bell-off.svg" width="12" height="12" crop-to-content="true" data-if="session.muted"></svg>
-          <span class="sidebar-session-date" data-if="session.date_label != ''" data-rml="session.date_label"></span>
+          <span class="sidebar-session-date" data-if="session.date_label != ''">{{session.date_label}}</span>
         </div>
         <div class="sidebar-session-line">
-          <p class="sidebar-session-preview" data-rml="session.preview"></p>
-          <span class="badge-count sidebar-unread" data-if="session.unread_count > 0" data-rml="session.unread_display"></span>
+          <p class="sidebar-session-preview">{{session.preview}}</p>
+          <span class="badge-count sidebar-unread" data-if="session.unread_count > 0">{{session.unread_display}}</span>
           <span class="sidebar-unread-ring" data-if="session.unread_ring"></span>
         </div>
       </div>

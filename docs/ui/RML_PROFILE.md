@@ -18,6 +18,7 @@ AI-generated UI must follow this profile.
 
 - `data-model` on `body`
 - `data-value`, `data-checked`, `data-for`, `data-if`, `data-visible`, `data-rml`
+- Text is bound as `{{expr}}` in the element's content; the engine sets it as text, so names, titles and message text need no escaping. `data-rml` sets inner RML — the value is parsed as markup and a `{{…}}` inside it is evaluated — so it is only for fields that carry markup built by our code, named `*_rml` (`row.content_rml`, `turn.user_content_rml`, `turn.assistant_content_rml`, `working_set_rml`). `scripts/check/check_rml_bindings.sh` (CI lint) and `rml_binding_guard_test` enforce this in the views and in the markup `src/` serializes. Markup built in C++ escapes text with `common/ui/RmlEscape.h` (or `StructuredTextParser::EscapeText`).
 - `data-event-click="action_name()"` — chat chips use `send_chat_action('__ENTRY__', n)`; forms use `submit_form('__ENTRY__', form_id)`; calendar uses `calendar_prev`, `calendar_next`, `select_calendar_day`
 
 ## Growing textarea (`max-rows`)

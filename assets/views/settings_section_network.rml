@@ -11,8 +11,8 @@
 
         <div class="settings-subcard stack" data-if="show_connection_card">
           <p class="settings-label">{{i18n:settings.network.connection.title}}</p>
-          <p class="text"><span class="settings-chip" data-rml="reachability_status_label"></span></p>
-          <p class="text muted" data-rml="reachability_summary"></p>
+          <p class="text"><span class="settings-chip">{{reachability_status_label}}</span></p>
+          <p class="text muted">{{reachability_summary}}</p>
           <div class="settings-actions row">
             <button class="btn btn-secondary" type="button" data-event-click="retest_reachability()">
               {{i18n:settings.network.connection.retest}}
@@ -90,7 +90,7 @@
                 data-event-click="on_choose_direct_connections()">
           <span class="settings-label settings-toggle-label">{{i18n:settings.network.direct_connections}}</span>
           <span class="settings-choice-value row">
-            <span class="settings-choice-value-text" data-rml="direct_connections_label"></span>
+            <span class="settings-choice-value-text">{{direct_connections_label}}</span>
             <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
           </span>
         </button>
@@ -108,10 +108,9 @@
 
         <label class="settings-field" data-if="show_node_toggle && node_enabled == 'on'">
           <span class="settings-label">{{i18n:settings.network.listen}}</span>
-          <p class="text muted" data-rml="amp_listen_multiaddr"></p>
+          <p class="text muted">{{amp_listen_multiaddr}}</p>
         </label>
-        <p class="text muted settings-help" data-if="mesh_status_message != ''"
-           data-rml="mesh_status_message"></p>
+        <p class="text muted settings-help" data-if="mesh_status_message != ''">{{mesh_status_message}}</p>
         <label class="settings-field">
           <span class="settings-label">{{i18n:settings.network.relay}}</span>
           <input class="field" type="text" data-value="relay_base_url" data-event-change="on_network_field_changed()"/>

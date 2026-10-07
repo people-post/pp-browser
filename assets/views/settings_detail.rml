@@ -1,10 +1,10 @@
 <div class="settings-detail-panel stack" data-model="settings">
   <div class="settings-detail-header row">
-    <p class="settings-header-title" data-rml="selected_title"></p>
+    <p class="settings-header-title">{{selected_title}}</p>
   </div>
 
   <div class="settings-detail-body stack">
     <div id="settings-section-mount-pane"></div>
-    <p class="text muted" data-if="status != ''" data-rml="status"></p>
+    <p class="text muted" data-if="status != ''">{{status}}</p>
   </div>
 </div>

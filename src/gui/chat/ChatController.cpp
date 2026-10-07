@@ -1537,11 +1537,9 @@ void ChatController::SyncShellSessions() {
     if (thread.kind == ThreadKind::Ai && title == "New chat") {
       title = Tr("chat.new_chat");
     }
-    // The view sets both with data-rml (inner RML): names, group titles and message text are typed by
-    // people, so they are escaped here.
-    row.title = StructuredTextParser::EscapeText(title).c_str();
-    row.preview =
-        StructuredTextParser::EscapeText(SessionPreviewLine(StructuredTextParser::PlainText(thread.preview))).c_str();
+    // Both are bound as text ({{session.title}}), so names and message text need no escaping here.
+    row.title = title.c_str();
+    row.preview = SessionPreviewLine(StructuredTextParser::PlainText(thread.preview)).c_str();
     row.kind = SessionVisualKind(thread);
     row.unread_count = thread.unread_count;
     row.unread_display = FormatBadgeCount(thread.unread_count).c_str();

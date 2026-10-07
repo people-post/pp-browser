@@ -29,20 +29,19 @@
              data-class-avatar-tone-6="!contact.has_icon && contact.avatar_tone == 6"
              data-class-avatar-tone-7="!contact.has_icon && contact.avatar_tone == 7">
           <img class="contacts-row-avatar-image" data-if="contact.has_icon" data-attr-src="contact.icon_src"/>
-          <p class="avatar-letter" data-if="!contact.has_icon" data-rml="contact.avatar_letter"></p>
+          <p class="avatar-letter" data-if="!contact.has_icon">{{contact.avatar_letter}}</p>
         </div>
         <div class="contacts-row-body">
           <div class="contacts-row-title-line row">
-            <p class="contacts-row-title" data-rml="contact.title"></p>
+            <p class="contacts-row-title">{{contact.title}}</p>
             <span class="contacts-trust-badge contacts-trust-badge--friendly"
                   data-if="contact.trust == 'friendly'">{{i18n:contacts.trust.friendly}}</span>
             <span class="contacts-trust-badge contacts-trust-badge--blocked"
                   data-if="contact.trust == 'blocked'">{{i18n:contacts.trust.blocked}}</span>
             <span class="badge-count contacts-unread"
-                  data-if="contact.unread_count > 0"
-                  data-rml="contact.unread_display"></span>
+                  data-if="contact.unread_count > 0">{{contact.unread_display}}</span>
           </div>
-          <p class="contacts-row-subtitle text muted" data-if="contact.subtitle != ''" data-rml="contact.subtitle"></p>
+          <p class="contacts-row-subtitle text muted" data-if="contact.subtitle != ''">{{contact.subtitle}}</p>
         </div>
       </div>
 

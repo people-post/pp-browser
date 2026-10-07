@@ -11,17 +11,17 @@
            data-class-avatar-tone-6="!selected.has_icon && selected.avatar_tone == 6"
            data-class-avatar-tone-7="!selected.has_icon && selected.avatar_tone == 7">
         <img class="contact-detail-avatar-image" data-if="selected.has_icon" data-attr-src="selected.icon_src"/>
-        <p class="avatar-letter" data-if="!selected.has_icon" data-rml="selected.avatar_letter"></p>
+        <p class="avatar-letter" data-if="!selected.has_icon">{{selected.avatar_letter}}</p>
       </div>
       <div class="contact-detail-title-block stack">
         <div class="contacts-row-title-line row">
-          <p class="contacts-header-title" data-rml="selected.title"></p>
+          <p class="contacts-header-title">{{selected.title}}</p>
           <span class="contacts-trust-badge contacts-trust-badge--friendly"
                 data-if="selected.trust_key == 'friendly'">{{i18n:contacts.trust.friendly}}</span>
           <span class="contacts-trust-badge contacts-trust-badge--blocked"
                 data-if="selected.trust_key == 'blocked'">{{i18n:contacts.trust.blocked}}</span>
         </div>
-        <p class="contacts-row-subtitle text muted" data-if="selected.subtitle != ''" data-rml="selected.subtitle"></p>
+        <p class="contacts-row-subtitle text muted" data-if="selected.subtitle != ''">{{selected.subtitle}}</p>
       </div>
     </div>
   </div>
@@ -50,24 +50,24 @@
     <div class="contact-detail-section stack">
       <p class="settings-section-title">{{i18n:contacts.directory}}</p>
       <p class="text muted me-profile-meta" data-if="selected.nickname != ''">
-        {{i18n:contacts.nickname_label}} <span data-rml="selected.nickname"></span>
+        {{i18n:contacts.nickname_label}} <span>{{selected.nickname}}</span>
       </p>
       <p class="text muted me-profile-meta" data-if="selected.relay_id != ''">
-        {{i18n:contacts.relay_id_label}} <span data-rml="selected.relay_id"></span>
+        {{i18n:contacts.relay_id_label}} <span>{{selected.relay_id}}</span>
       </p>
       <p class="text muted me-profile-meta" data-if="selected.relay_id == ''">
         {{i18n:contacts.relay_id_unlinked}}
       </p>
       <p class="text muted me-profile-meta" data-if="selected.peer_id != ''">
-        {{i18n:contacts.peer_id_label}} <span data-rml="selected.peer_id"></span>
+        {{i18n:contacts.peer_id_label}} <span>{{selected.peer_id}}</span>
       </p>
       <p class="text muted me-profile-meta" data-if="selected.multiaddrs_summary != ''">
-        {{i18n:contacts.multiaddrs_label}} <span data-rml="selected.multiaddrs_summary"></span>
+        {{i18n:contacts.multiaddrs_label}} <span>{{selected.multiaddrs_summary}}</span>
       </p>
       <p class="text muted me-profile-meta" data-if="selected.signing_fingerprint != ''">
-        {{i18n:contacts.signing_fingerprint_label}} <span data-rml="selected.signing_fingerprint"></span>
+        {{i18n:contacts.signing_fingerprint_label}} <span>{{selected.signing_fingerprint}}</span>
       </p>
-      <p class="text muted me-profile-meta" data-rml="selected.remote_updated"></p>
+      <p class="text muted me-profile-meta">{{selected.remote_updated}}</p>
       <div class="me-profile-actions row">
         <div data-if="selected.has_relay_id">
           <button class="btn btn-secondary btn-icon" type="button" data-event-click="sync_contact_remote()">
@@ -97,8 +97,8 @@
           <svg src="../icons/message.svg" width="14" height="14" crop-to-content="true"></svg>
         </div>
         <div class="contacts-row-body">
-          <p class="contacts-row-title" data-rml="thread.title"></p>
-          <p class="contacts-row-subtitle text muted" data-rml="thread.channel_label"></p>
+          <p class="contacts-row-title">{{thread.title}}</p>
+          <p class="contacts-row-subtitle text muted">{{thread.channel_label}}</p>
         </div>
       </div>
     </div>
@@ -115,7 +115,7 @@
     <p class="text muted contacts-actions-hint" data-if="selected.can_message">
       {{i18n:contacts.actions_hint}}
     </p>
-    <p class="text muted contacts-actions-hint" data-if="!selected.can_message" data-rml="selected.message_hint"></p>
+    <p class="text muted contacts-actions-hint" data-if="!selected.can_message">{{selected.message_hint}}</p>
     <div class="contacts-action-buttons row" data-if="selected.can_message">
       <button class="btn btn-primary btn-icon contacts-action-secure" type="button"
               data-event-click="secure_message()">

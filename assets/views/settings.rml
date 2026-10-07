@@ -17,13 +17,13 @@
            data-class-avatar-tone-7="!profile_has_icon && profile_avatar_tone == 7">
         <img class="me-profile-avatar-image me-profile-avatar-image--compact"
              data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
-        <p class="avatar-letter" data-if="!profile_has_icon" data-rml="profile_avatar_letter"></p>
+        <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
       </div>
       <button class="me-identity-main stack" type="button"
               data-event-click="select_section('profile')">
-        <p class="me-identity-name" data-rml="profile_nickname"></p>
+        <p class="me-identity-name">{{profile_nickname}}</p>
         <p class="text muted me-profile-meta">
-          {{i18n:settings.registration.label}} <span data-rml="profile_registration_status"></span>
+          {{i18n:settings.registration.label}} <span>{{profile_registration_status}}</span>
         </p>
       </button>
       <div class="me-identity-actions row">
@@ -37,13 +37,13 @@
         </button>
       </div>
     </div>
-    <p class="text muted me-identity-status" data-if="status != ''" data-rml="status"></p>
+    <p class="text muted me-identity-status" data-if="status != ''">{{status}}</p>
 
     <div class="settings-list settings-list--pinned" data-if="support_visible">
       <button class="settings-row" type="button" data-event-click="open_support_chat()">
         <div class="settings-row-text stack">
-          <p class="settings-row-title" data-rml="support_display_name"></p>
-          <p class="settings-row-subtitle text muted" data-rml="support_subtitle"></p>
+          <p class="settings-row-title">{{support_display_name}}</p>
+          <p class="settings-row-subtitle text muted">{{support_subtitle}}</p>
         </div>
         <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="14" height="14"></svg>
       </button>
@@ -56,8 +56,8 @@
               data-class-settings-row--active="section.id == selected_id && selected_id != ''"
               data-event-click="select_section(section.id)">
         <div class="settings-row-text stack">
-          <p class="settings-row-title" data-rml="section.title"></p>
-          <p class="settings-row-subtitle text muted" data-if="section.subtitle != ''" data-rml="section.subtitle"></p>
+          <p class="settings-row-title">{{section.title}}</p>
+          <p class="settings-row-subtitle text muted" data-if="section.subtitle != ''">{{section.subtitle}}</p>
         </div>
         <span class="badge-dot badge-dot--settings" data-if="section.attention"></span>
         <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="14" height="14"></svg>
@@ -70,12 +70,12 @@
       <button class="settings-back-btn" type="button" data-event-click="back_to_list()">
         <svg src="../icons/back.svg" width="18" height="18"></svg>
       </button>
-      <p class="settings-header-title" data-rml="selected_title"></p>
+      <p class="settings-header-title">{{selected_title}}</p>
     </div>
 
     <div class="settings-detail-body stack">
       <div id="settings-section-mount-sheet"></div>
-      <p class="text muted" data-if="status != ''" data-rml="status"></p>
+      <p class="text muted" data-if="status != ''">{{status}}</p>
     </div>
   </div>
 </div>

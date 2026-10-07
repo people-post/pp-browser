@@ -11,7 +11,7 @@
                data-class-avatar-tone-6="!profile_has_icon && profile_avatar_tone == 6"
                data-class-avatar-tone-7="!profile_has_icon && profile_avatar_tone == 7">
             <img class="me-profile-avatar-image" data-if="profile_has_icon" data-attr-src="profile_icon_src"/>
-            <p class="avatar-letter" data-if="!profile_has_icon" data-rml="profile_avatar_letter"></p>
+            <p class="avatar-letter" data-if="!profile_has_icon">{{profile_avatar_letter}}</p>
           </div>
           <button class="btn btn-secondary me-profile-avatar-btn" type="button"
                   data-event-click="pick_profile_icon()"
@@ -32,19 +32,19 @@
                  placeholder="{{i18n:settings.profile.nickname_placeholder}}"/>
         </label>
         <p class="text muted me-profile-meta" data-if="profile_peer_id != ''">
-          {{i18n:settings.profile.peer_id_label}} <span data-rml="profile_peer_id"></span>
+          {{i18n:settings.profile.peer_id_label}} <span>{{profile_peer_id}}</span>
         </p>
         <p class="text muted me-profile-meta" data-if="profile_relay_id != ''">
-          {{i18n:settings.profile.relay_id_label}} <span data-rml="profile_relay_id"></span>
+          {{i18n:settings.profile.relay_id_label}} <span>{{profile_relay_id}}</span>
         </p>
         <p class="text muted me-profile-meta" data-if="profile_relay_id == ''">
           {{i18n:settings.profile.relay_id_none}}
         </p>
         <p class="text muted me-profile-meta">
-          {{i18n:settings.registration.label}} <span data-rml="profile_registration_status"></span>
+          {{i18n:settings.registration.label}} <span>{{profile_registration_status}}</span>
         </p>
         <p class="text muted me-profile-meta" data-if="profile_registration_expires != ''">
-          {{i18n:settings.registration.expires}} <span data-rml="profile_registration_expires"></span>
+          {{i18n:settings.registration.expires}} <span>{{profile_registration_expires}}</span>
         </p>
         <div class="settings-toggle-row row">
           <span class="settings-label settings-toggle-label">{{i18n:settings.auto_renew}}</span>
@@ -73,7 +73,7 @@
             {{i18n:common.share}}
           </button>
           <button class="btn btn-primary" type="button" data-if="profile_show_register"
-                  data-event-click="register_profile()"><span data-rml="profile_register_label"></span></button>
+                  data-event-click="register_profile()"><span>{{profile_register_label}}</span></button>
           <button class="btn btn-secondary" type="button" data-if="profile_show_rotate"
                   data-event-click="rotate_brief_llm_key()">{{i18n:settings.llm.rotate_brief_key}}</button>
         </div>

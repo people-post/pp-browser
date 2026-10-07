@@ -46,6 +46,8 @@ jobs:
         run: ./scripts/check/check_owner_runners.sh
       - name: Platform ifdef locations
         run: ./scripts/check/check_platform_ifdefs.sh
+      - name: RML text bindings
+        run: ./scripts/check/check_rml_bindings.sh
 
   build:
     strategy:
