@@ -384,9 +384,9 @@ ShellChromeSnapshot ContactsController::ChromeSnapshot() const {
 ContactsSurfaceSnapshot ContactsController::BuildSurfaceSnapshot() const {
   ContactsSurfaceSnapshot snap;
   snap.detail_open = !selected_.id.empty();
-  for (const ContactListRow& row : contacts_) {
-    snap.contacts_unread += row.unread_count;
-  }
+  // The Contacts tab badge is reserved for the tab's own queues (docs/ui/WINDOW_SHELL.md); chat unread is
+  // the Sessions tab's badge. Summing the rows' unread here lit both tabs for every message (Kenneth,
+  // 2026-10-07). The per-contact count stays on the rows.
   return snap;
 }
 
