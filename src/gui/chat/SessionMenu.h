@@ -68,8 +68,8 @@ inline bool SessionIsUnread(const int unread_count, const bool marked_unread) {
   return unread_count > 0 || marked_unread;
 }
 
-/** A thread marked unread by hand has no count to show: the row shows a ring instead of a number. */
-inline bool SessionShowsUnreadRing(const int unread_count, const bool marked_unread) {
+/** A thread marked unread by hand has no count to show: the row shows a dot instead of a number. */
+inline bool SessionShowsUnreadDot(const int unread_count, const bool marked_unread) {
   return marked_unread && unread_count <= 0;
 }
 

@@ -16,7 +16,7 @@
     <div data-for="session : sessions" class="sidebar-session"
          data-attr-session-id="session.id"
          data-class-sidebar-session-active="session.active"
-         data-class-sidebar-session--unread="session.unread_count > 0 || session.unread_ring"
+         data-class-sidebar-session--unread="session.unread_count > 0 || session.unread_dot"
          data-class-sidebar-session--pinned="session.pinned"
          data-class-sidebar-session--ai="session.kind == 'ai'"
          data-class-sidebar-session--private="session.kind == 'private'"
@@ -45,7 +45,7 @@
         <div class="sidebar-session-line">
           <p class="sidebar-session-preview">{{session.preview}}</p>
           <span class="badge-count sidebar-unread" data-if="session.unread_count > 0">{{session.unread_display}}</span>
-          <span class="sidebar-unread-ring" data-if="session.unread_ring"></span>
+          <span class="sidebar-unread-dot" data-if="session.unread_dot"></span>
         </div>
       </div>
     </div>

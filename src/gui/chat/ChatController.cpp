@@ -939,7 +939,7 @@ void ChatController::OnSelectThread(const std::string& thread_id) {
     return;
   }
   if (facade_->OpenThread(thread_id)) {
-    // Opening a thread reads it: a ring set by "Mark as unread" goes with the unread count.
+    // Opening a thread reads it: a dot set by "Mark as unread" goes with the unread count.
     if (std::optional<ThreadLocalPrefs> prefs = ThreadPrefsOf(thread_id); prefs && prefs->marked_unread) {
       prefs->marked_unread = false;
       (void)StoreThreadPrefs(*prefs);
@@ -1268,7 +1268,7 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
     case SessionMenuItem::MarkUnread:
       action.id = "session_mark_unread";
       action.label = Tr("sidebar.menu.mark_unread");
-      // A mark, not a message count: the row shows a ring and keeps its place in the list.
+      // A mark, not a message count: the row shows a dot and keeps its place in the list.
       action.run = [this, thread_id]() {
         UpdateThreadPrefs(thread_id, [](ThreadLocalPrefs& prefs) { prefs.marked_unread = true; });
       };
@@ -1529,7 +1529,7 @@ void ChatController::SyncShellSessions() {
     }
     SessionRow row;
     row.pinned = thread_prefs.pinned_at != 0;
-    row.unread_ring = SessionShowsUnreadRing(thread.unread_count, thread_prefs.marked_unread);
+    row.unread_dot = SessionShowsUnreadDot(thread.unread_count, thread_prefs.marked_unread);
     row.muted = ThreadIsMuted(thread_prefs.muted_until, now_ms);
     row.id = thread.id.c_str();
     std::string title = facade_ ? facade_->ResolveThreadLabel(thread).title : thread.title;
@@ -3777,7 +3777,7 @@ bool ChatController::Setup(ui::Context* context) {
           session_handle.RegisterMember("active", &ChatController::SessionRow::active);
           session_handle.RegisterMember("pinned", &ChatController::SessionRow::pinned);
           session_handle.RegisterMember("muted", &ChatController::SessionRow::muted);
-          session_handle.RegisterMember("unread_ring", &ChatController::SessionRow::unread_ring);
+          session_handle.RegisterMember("unread_dot", &ChatController::SessionRow::unread_dot);
         }
         ctor.RegisterArray<std::vector<ChatController::SessionRow>>();
         ctor.Bind("sessions", &controller.shell_.sessions);
