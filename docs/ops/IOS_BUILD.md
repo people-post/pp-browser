@@ -29,6 +29,7 @@ Until you fill in signing placeholders, **simulator builds work unsigned**; **de
 ## Prerequisites
 
 - macOS with **Xcode matching the device iOS major** (e.g. iPhone on **iOS 26.5** needs **Xcode 26.5+**; Xcode 26.5+ itself needs **macOS Tahoe 26.2+**)
+- **App Store Connect / TestFlight uploads** (since 2026-04-28): must be built with **Xcode 26+** and the **iOS 26 SDK** ([Apple upcoming requirements](https://developer.apple.com/news/upcoming-requirements/?id=04282026a)). Device USB installs can still use an older Xcode if it matches the phone; ASC rejects iOS 18 SDK IPAs.
 - **CMake 3.24+**, **Ninja** (recommended)
 - Vendored trees present (`./scripts/vendor/vendor_import.sh`, `./scripts/vendor/libp2p_vendor_import.sh` if needed)
 

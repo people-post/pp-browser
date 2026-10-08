@@ -371,9 +371,23 @@ load_signing_env() {
 }
 
 # Release device .app → distribution-signed IPA under dist-ios/ (TestFlight prep).
+# ASC (since 2026-04-28) rejects IPAs built with SDKs older than iOS 26.
+require_asc_ios_sdk() {
+  local sdk_ver major
+  sdk_ver="$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || true)"
+  major="${sdk_ver%%.*}"
+  if [[ -z "$major" || "$major" -lt 26 ]]; then
+    echo "error: App Store Connect requires the iOS 26 SDK (Xcode 26+); active SDK is ${sdk_ver:-unknown}" >&2
+    echo "hint: install Xcode 26+, then: sudo xcode-select -s /Applications/Xcode.app && xcodebuild -version" >&2
+    echo "hint: see docs/ops/IOS_BUILD.md (TestFlight / App Store Connect)" >&2
+    exit 1
+  fi
+}
+
 cmd_ipa() {
   require_macos
   load_signing_env
+  require_asc_ios_sdk
 
   if [[ -z "${IOS_EXPORT_METHOD:-}" ]]; then
     IOS_EXPORT_METHOD=app-store
@@ -420,6 +434,7 @@ cmd_ipa() {
 cmd_upload_ipa() {
   require_macos
   load_signing_env
+  require_asc_ios_sdk
   local ipa="${1:-${ROOT}/dist-ios/pp-browser.ipa}"
   if [[ ! -f "$ipa" ]]; then
     echo "error: IPA not found: ${ipa}" >&2

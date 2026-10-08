@@ -28,6 +28,12 @@
   <true/>
   <key>LSRequiresIPhoneOS</key>
   <true/>
+  <!-- 1 = iPhone, 2 = iPad (matches XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY). -->
+  <key>UIDeviceFamily</key>
+  <array>
+    <integer>1</integer>
+    <integer>2</integer>
+  </array>
   <!-- Must match PP_BROWSER_IOS_DEPLOYMENT_TARGET / CMAKE_OSX_DEPLOYMENT_TARGET. -->
   <key>MinimumOSVersion</key>
   <string>15.0</string>

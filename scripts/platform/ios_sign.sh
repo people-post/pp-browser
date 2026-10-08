@@ -247,6 +247,53 @@ stamp_bundle_versions() {
   fi
 }
 
+# Ninja/CMake bundles lack Xcode-injected DT* keys; ASC rejects uploads without them.
+plist_set_string() {
+  local plist="$1" key="$2" value="$3"
+  /usr/libexec/PlistBuddy -c "Set :${key} ${value}" "$plist" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Add :${key} string ${value}" "$plist" 2>/dev/null \
+    || plutil -replace "$key" -string "$value" "$plist"
+}
+
+stamp_xcode_build_keys() {
+  local app_path="$1"
+  local plist="${app_path}/Info.plist"
+  [[ -f "$plist" ]] || return 0
+
+  local sdk_name sdk_version platform_version xcode_ver xcode_build
+  sdk_name="$(xcrun --sdk iphoneos --show-sdk-build-version 2>/dev/null || true)"
+  sdk_version="$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || true)"
+  platform_version="${sdk_version}"
+  xcode_ver="$(xcodebuild -version 2>/dev/null | awk '/Xcode/{print $2; exit}')"
+  xcode_build="$(xcodebuild -version 2>/dev/null | awk '/Build/{print $3; exit}')"
+
+  # Prefer DTSDKName like iphoneos26.0 from the SDKSettings if available.
+  local sdk_root dtsdkname="iphoneos"
+  sdk_root="$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || true)"
+  if [[ -n "$sdk_version" ]]; then
+    dtsdkname="iphoneos${sdk_version}"
+  fi
+  if [[ -f "${sdk_root}/SDKSettings.plist" ]]; then
+    local canonical
+    canonical="$(/usr/libexec/PlistBuddy -c 'Print :CanonicalName' "${sdk_root}/SDKSettings.plist" 2>/dev/null || true)"
+    [[ -n "$canonical" ]] && dtsdkname="$canonical"
+  fi
+
+  plist_set_string "$plist" DTPlatformName iphoneos
+  [[ -n "$platform_version" ]] && plist_set_string "$plist" DTPlatformVersion "$platform_version"
+  plist_set_string "$plist" DTSDKName "$dtsdkname"
+  [[ -n "$sdk_name" ]] && plist_set_string "$plist" DTSDKBuild "$sdk_name"
+  [[ -n "$xcode_ver" ]] && plist_set_string "$plist" DTXcode "$(printf '%s' "$xcode_ver" | tr -d '.')"
+  [[ -n "$xcode_build" ]] && plist_set_string "$plist" DTXcodeBuild "$xcode_build"
+  plist_set_string "$plist" DTCompiler com.apple.compilers.llvm.clang.1_0
+  log "Stamped DT* keys (DTSDKName=${dtsdkname})"
+
+  if [[ -n "${IOS_EXPORT_COMPLIANCE_CODE:-}" ]]; then
+    plist_set_string "$plist" ITSEncryptionExportComplianceCode "$IOS_EXPORT_COMPLIANCE_CODE"
+    log "ITSEncryptionExportComplianceCode set from env"
+  fi
+}
+
 # Extract entitlements from the active provisioning profile; strip get-task-allow for distribution.
 extract_profile_entitlements() {
   local profile_src="$1"
@@ -368,6 +415,7 @@ EOF
       || plutil -replace CFBundleIdentifier -string "$bundle_id" "${app_path}/Info.plist"
   fi
   stamp_bundle_versions "$app_path"
+  stamp_xcode_build_keys "$app_path"
 
   # Drop Finder/zip junk that can break device / ASC verification.
   rm -rf "${app_path}/META-INF" "${app_path}/.DS_Store"
@@ -471,7 +519,10 @@ prepare_asc_key() {
       echo "error: ASC .p8 not found: ${IOS_ASC_P8_PATH}" >&2
       exit 1
     fi
-    cp "$IOS_ASC_P8_PATH" "$dest"
+    # Skip when already at altool's expected path (cp fails on identical paths).
+    if [[ ! "$IOS_ASC_P8_PATH" -ef "$dest" ]]; then
+      cp "$IOS_ASC_P8_PATH" "$dest"
+    fi
     return
   fi
 
@@ -486,10 +537,36 @@ prepare_asc_key() {
   exit 1
 }
 
+# Resolve symlinks; altool reports symlink IPAs as empty packages.
+resolve_ipa_path() {
+  local path="$1"
+  if command -v realpath >/dev/null 2>&1; then
+    realpath "$path"
+    return
+  fi
+  if [[ -L "$path" ]]; then
+    local dir target
+    dir="$(cd "$(dirname "$path")" && pwd)"
+    target="$(readlink "$path")"
+    if [[ "$target" != /* ]]; then
+      printf '%s\n' "${dir}/${target}"
+    else
+      printf '%s\n' "$target"
+    fi
+    return
+  fi
+  printf '%s\n' "$path"
+}
+
 cmd_upload_ipa() {
   local ipa_path="$1"
   if [[ ! -f "$ipa_path" ]]; then
     echo "error: IPA not found: ${ipa_path}" >&2
+    exit 1
+  fi
+  ipa_path="$(resolve_ipa_path "$ipa_path")"
+  if [[ ! -f "$ipa_path" ]]; then
+    echo "error: IPA not found after resolving path: ${ipa_path}" >&2
     exit 1
   fi
 
