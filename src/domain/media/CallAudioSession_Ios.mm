@@ -9,6 +9,11 @@
 #include <atomic>
 #include <mutex>
 
+// Xcode 26+ renamed AllowBluetooth → AllowBluetoothHFP; keep building on SDK 18.
+#if !defined(AVAudioSessionCategoryOptionAllowBluetoothHFP)
+#define AVAudioSessionCategoryOptionAllowBluetoothHFP AVAudioSessionCategoryOptionAllowBluetooth
+#endif
+
 namespace pbr {
 namespace CallAudioSession {
 namespace {
