@@ -22,18 +22,32 @@
   <string>@MACOSX_BUNDLE_SHORT_VERSION_STRING@</string>
   <key>CFBundleVersion</key>
   <string>@MACOSX_BUNDLE_BUNDLE_VERSION@</string>
-  <!-- Non–Apple-OS crypto (libsodium, PQ, TLS). See docs/ops/APP_STORE_EXPORT_COMPLIANCE.md.
-       After Apple issues an export-compliance code, add ITSEncryptionExportComplianceCode. -->
+  <!-- Uses industry-standard crypto (libsodium / NIST PQ), open source — not proprietary.
+       No US CCATS. Docs only if France is a store territory (French declaration).
+       false = exempt from ASC encryption *documentation* (see APP_STORE_EXPORT_COMPLIANCE.md).
+       If you later enable France or get an ASC compliance code, flip to true + set
+       ITSEncryptionExportComplianceCode (or IOS_EXPORT_COMPLIANCE_CODE in signing.env). -->
   <key>ITSAppUsesNonExemptEncryption</key>
-  <true/>
+  <false/>
   <key>LSRequiresIPhoneOS</key>
   <true/>
+  <!-- Xcode normally injects this; Ninja builds must set it for ASC (error 90562). -->
+  <key>CFBundleSupportedPlatforms</key>
+  <array>
+    <string>iPhoneOS</string>
+  </array>
   <!-- 1 = iPhone, 2 = iPad (matches XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY). -->
   <key>UIDeviceFamily</key>
   <array>
     <integer>1</integer>
     <integer>2</integer>
   </array>
+  <!-- Asset catalog AppIcon (compiled to Assets.car by ios_prepare_app_icons.sh). -->
+  <key>CFBundleIconName</key>
+  <string>AppIcon</string>
+  <!-- Portrait-only: opt out of iPad multitasking (avoids requiring all orientations). -->
+  <key>UIRequiresFullScreen</key>
+  <true/>
   <!-- Must match PP_BROWSER_IOS_DEPLOYMENT_TARGET / CMAKE_OSX_DEPLOYMENT_TARGET. -->
   <key>MinimumOSVersion</key>
   <string>15.0</string>

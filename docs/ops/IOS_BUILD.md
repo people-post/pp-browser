@@ -14,6 +14,7 @@ How to build **PP** for iOS (simulator and device) and connect an **Apple Develo
 |------|-------------------|
 | iOS app bundle | `PP.app` |
 | Bundle ID | `dev.pp-browser.ios` ([`packaging/ios/Info.plist`](../../packaging/ios/Info.plist), [`cmake/IosBundle.cmake`](../../cmake/IosBundle.cmake)) |
+| Local artifact root | `out-ios/` (gitignored; override with `IOS_OUT_DIR`) — build / install / dist |
 | Build script | [`scripts/platform/ios_build.sh`](../../scripts/platform/ios_build.sh) |
 | Signing script | [`scripts/platform/ios_sign.sh`](../../scripts/platform/ios_sign.sh) |
 | Entitlements | [`packaging/ios/pp-browser.entitlements`](../../packaging/ios/pp-browser.entitlements) |
@@ -73,19 +74,32 @@ If typing with the Mac keyboard works but nothing appears on screen, the app pat
 
 ---
 
+## Artifact layout
+
+All local iOS intermediates go under **`out-ios/`** (gitignored). Override the root with `IOS_OUT_DIR`.
+
+| Path | Role |
+|------|------|
+| `out-ios/build/device/` | CMake Ninja tree (device / `iphoneos`) |
+| `out-ios/build/simulator/` | CMake Ninja tree (simulator) |
+| `out-ios/install/PP.app` | `cmake --install` output (sign / run / IPA source) |
+| `out-ios/dist/*.ipa` | TestFlight / App Store IPA (`export-ipa`) |
+
+`./scripts/platform/ios_build.sh clean` removes `out-ios/` and any legacy `build-ios-*` / `install-ios/` / `dist-ios/` roots.
+
 ## Build commands
 
 ```bash
-./scripts/platform/ios_build.sh configure-sim     # CMake → build-ios-simulator/
-./scripts/platform/ios_build.sh configure-device  # CMake → build-ios-device/
+./scripts/platform/ios_build.sh configure-sim     # CMake → out-ios/build/simulator/
+./scripts/platform/ios_build.sh configure-device  # CMake → out-ios/build/device/
 ./scripts/platform/ios_build.sh build             # Build current tree
-./scripts/platform/ios_build.sh install           # Install to install-ios/PP.app
+./scripts/platform/ios_build.sh install           # Install to out-ios/install/PP.app
 ./scripts/platform/ios_build.sh sim               # configure + build + install (simulator)
 ./scripts/platform/ios_build.sh device            # configure + build + install (device)
 ./scripts/platform/ios_build.sh run-sim           # install + launch on Simulator
 ./scripts/platform/ios_build.sh run-device        # sign (from signing.env) + install + launch on iPhone
 ./scripts/platform/ios_build.sh xcode             # -G Xcode for IDE debugging
-./scripts/platform/ios_build.sh clean             # Remove build-ios-* trees
+./scripts/platform/ios_build.sh clean             # Remove out-ios/ (+ legacy roots)
 ```
 
 Optional version metadata:
@@ -99,15 +113,15 @@ export PP_BROWSER_RELEASE_VERSION=0.1.0-rc1
 Manual CMake (equivalent to `configure-sim`):
 
 ```bash
-cmake -B build-ios-simulator -S . \
+cmake -B out-ios/build/simulator -S . \
   -DCMAKE_SYSTEM_NAME=iOS \
   -DCMAKE_OSX_SYSROOT=iphonesimulator \
   -DCMAKE_OSX_ARCHITECTURES=arm64 \
   -DCMAKE_BUILD_TYPE=Debug \
   -DPP_BROWSER_PACKAGED_BUILD=ON \
   -G Ninja
-cmake --build build-ios-simulator -j
-cmake --install build-ios-simulator --prefix install-ios
+cmake --build out-ios/build/simulator -j
+cmake --install out-ios/build/simulator --prefix out-ios/install
 ```
 
 The first clean iOS build can take **15–30 minutes** (libp2p + RmlUi + BoringSSL), similar to Android NDK.
@@ -179,8 +193,8 @@ source packaging/ios/signing.env
 ./scripts/platform/ios_build.sh run-device      # embeds profile, codesigns, devicectl install + launch
 ```
 
-Or manually: `./scripts/platform/ios_sign.sh sign-app install-ios/PP.app` then  
-`xcrun devicectl device install app --device <UDID> install-ios/PP.app`.
+Or manually: `./scripts/platform/ios_sign.sh sign-app out-ios/install/PP.app` then  
+`xcrun devicectl device install app --device <UDID> out-ios/install/PP.app`.
 
 ---
 
@@ -231,8 +245,8 @@ PP_BROWSER_BUILD_NUMBER=1   # bump every upload
 ### Build, export, upload
 
 ```bash
-./scripts/platform/ios_build.sh ipa              # Release device build + dist-ios/*.ipa
-./scripts/platform/ios_build.sh upload-ipa       # or open dist-ios/ in Transporter.app
+./scripts/platform/ios_build.sh ipa              # Release device build + out-ios/dist/*.ipa
+./scripts/platform/ios_build.sh upload-ipa       # or open out-ios/dist/ in Transporter.app
 ```
 
 `ipa` forces `IOS_EXPORT_METHOD=app-store` if unset, signs with Distribution + App Store profile, uses a secure codesign timestamp, strips `get-task-allow`, and stamps `CFBundleShortVersionString` / `CFBundleVersion` from the env vars above. Each App Store Connect upload needs a **new** `PP_BROWSER_BUILD_NUMBER`.
@@ -305,10 +319,10 @@ See [PLATFORMS.md](../architecture/PLATFORMS.md) for lifecycle and GL reset beha
 - [ ] App ID `dev.pp-browser.ios` registered (or plist/CMake updated)
 - [ ] Development cert + provisioning profile created
 - [ ] `packaging/ios/signing.env` filled from example
-- [ ] `./scripts/platform/ios_sign.sh sign-app install-ios/PP.app` verifies on device
+- [ ] `./scripts/platform/ios_sign.sh sign-app out-ios/install/PP.app` verifies on device
 - [ ] Apple Distribution cert + App Store provisioning profile
 - [ ] App Store Connect iOS app for `dev.pp-browser.ios`
 - [ ] `IOS_DISTRIBUTION_*` + `IOS_EXPORT_METHOD=app-store` in `signing.env`
-- [ ] `./scripts/platform/ios_build.sh ipa` → `dist-ios/*.ipa`
+- [ ] `./scripts/platform/ios_build.sh ipa` → `out-ios/dist/*.ipa`
 - [ ] Upload (script or Transporter) + export compliance + Internal TestFlight
 - [ ] Encryption answers / docs per [APP_STORE_EXPORT_COMPLIANCE.md](APP_STORE_EXPORT_COMPLIANCE.md)
