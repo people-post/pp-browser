@@ -24,7 +24,9 @@
 #include "foundation/data/SessionStore.h"
 #include "common/Module.h"
 #include "domain/ui/ChatWidgetTypes.h"
+#include "domain/ui/ContextMenuHost.h"
 
+#include <source_location>
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Event.h>
 #include <ui/base/Input.h>
@@ -34,6 +36,7 @@
 #include <map>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -210,6 +213,10 @@ private:
 
   struct ShellState {
     std::vector<SessionRow> sessions;
+    /** Archived threads are kept out of the list; the entry row above it opens them. */
+    int archived_count = 0;
+    bool showing_archived = false;
+    ui::String archived_entry_label;
     bool working_set_active = false;
     ui::String working_set_title;
     ui::String working_set_subtitle;
@@ -248,7 +255,6 @@ private:
   static void StartCallCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenPeerSheetCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SelectThreadCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void CloseThreadCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ClearHistoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ForgetMemoryCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SyncWithPeerCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -275,6 +281,29 @@ private:
   void OnOpenPeerSheet(ui::Event& ev);
   void OnCloseThread(const std::string& thread_id);
   void OnClearHistory();
+  /** Asks, then deletes the thread's messages on this device (the thread stays in the list). */
+  void ClearHistoryOf(const std::string& thread_id);
+  void AfterHistoryCleared(const std::string& thread_id);
+  /** Context menu for a row in the sessions list (right-click / long-press); `position` anchors a second step. */
+  std::vector<ContextMenuAction> SessionMenuActions(const std::string& thread_id, ui::Vector2i position);
+  /** Second step of "Mute": 8 hours / 1 week / Always. */
+  void OpenMuteMenu(const std::string& thread_id, ui::Vector2i position);
+  /**
+   * Pin / mute / archive / marked-unread of every thread that has any set: read once when the store can
+   * be listed, then kept in step with every write. Empty, and read again next time, while it cannot.
+   */
+  const std::unordered_map<std::string, ThreadLocalPrefs>& ThreadPrefs();
+  /** One thread's settings: from the cache, or from the store while the cache is unavailable; nullopt when
+   *  neither can be read. */
+  std::optional<ThreadLocalPrefs> ThreadPrefsOf(const std::string& thread_id);
+  /** Reads, changes and writes one thread's settings, then refreshes the list; tells the user when the
+   *  store refused. */
+  void UpdateThreadPrefs(const std::string& thread_id, const std::function<void(ThreadLocalPrefs&)>& change);
+  /** Writes the settings and the cache only; false when the store refused. */
+  bool StoreThreadPrefs(const ThreadLocalPrefs& prefs);
+  void OnToggleArchived();
+  static void ToggleArchivedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  std::optional<std::unordered_map<std::string, ThreadLocalPrefs>> thread_prefs_;
   void OnForgetMemory();
   void OnSyncWithPeer();
   void OnRetryGapSync();
@@ -287,8 +316,11 @@ private:
   void OnRotatePskExport();
   void OnLockPublicToThisDevice();
   /** From Home landing: mint AI thread, switch to Sessions, open chat. */
-  bool EnsureHomeOutboundSession();
-  void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt);
+  /** Opens the AI thread a send from Home goes to: `chip_message`'s own earlier thread when there is one, else a new thread. */
+  bool EnsureHomeOutboundSession(const std::string& chip_message = {});
+  /** `from_home_chip`: a Home chip (not typed text) is being sent, so it continues that chip's own thread. */
+  void SendUserText(const std::string& text, std::optional<std::string> user_payload = std::nullopt,
+                    bool from_home_chip = false);
   void SendChatAction(const std::string& entry_id, int action_index);
   void ToggleReaction(const std::string& message_id, const std::string& emoji);
   void OpenEmojiInsertMenu(ui::Event* ev);
@@ -374,7 +406,8 @@ private:
   ShellChromeSnapshot ChromeSnapshot() const;
   ChatSurfaceSnapshot BuildSurfaceSnapshot() const;
   void NotifySurfaceChanged();
-  void ShellSyncLayout(bool restore_focus_after = false);
+  /** The call site is passed on as the request's reason (ShellHost::RequestSyncLayout). */
+  void ShellSyncLayout(bool restore_focus_after = false, std::source_location where = std::source_location::current());
   void ShellSelectNavTab(NavTab tab);
   void ShellSetPrimaryPane(const std::string& key);
   void ShellOpenCompactChat();

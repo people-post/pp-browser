@@ -640,10 +640,18 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     std::vector<std::string> timed_out;
     std::vector<std::string> link_lost;
     std::vector<std::string> reconnect_expired;
+    std::vector<std::string> stale_placeholders;
     {
       CallbackLock lock(*this);
       for (auto& [call_id, bundle] : bundles) {
-        if (!bundle || IsPendingCallId(call_id)) {
+        if (!bundle) {
+          continue;
+        }
+        if (IsPendingCallId(call_id)) {
+          // An inbound control channel that never said hello / migrate within its deadline.
+          if (bundle->deadline.time_since_epoch().count() != 0 && now >= bundle->deadline) {
+            stale_placeholders.push_back(call_id);
+          }
           continue;
         }
         if (bundle->phase == CallMediaBundlePhase::Idle || bundle->phase == CallMediaBundlePhase::Closing) {
@@ -688,6 +696,10 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
           timed_out.push_back(call_id);
         }
       }
+    }
+    for (const auto& call_id : stale_placeholders) {
+      CallbackLock lock(*this);
+      EraseBundle(call_id);
     }
     for (const auto& call_id : reconnect_expired) {
       CallbackLock lock(*this);
@@ -753,6 +765,12 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       }
     }
     if (!bundle) {
+      return;
+    }
+    if (IsPendingCallId(bundle->call_id)) {
+      // A placeholder's channel ended before hello / migrate: it carries no call, drop it (the
+      // close decision ignores Idle bundles, so placeholders used to stay forever).
+      EraseBundle(bundle->call_id);
       return;
     }
     if (bundle->candidate && path == &*bundle->candidate) {
@@ -2398,6 +2416,17 @@ void CallMediaLegCoordinator::SetAutoMigrateToDirect(const bool enable) {
 
 void CallMediaLegCoordinator::SetSilencedPathKindForTest(const CallMediaLinkKind kind) {
   impl_->silenced_kind_for_test.store(kind, std::memory_order_relaxed);
+}
+
+size_t CallMediaLegCoordinator::PlaceholderCountForTest() const {
+  Impl::CallbackLock lock(*impl_);
+  size_t count = 0;
+  for (const auto& [call_id, bundle] : impl_->bundles) {
+    if (bundle && IsPendingCallId(call_id)) {
+      ++count;
+    }
+  }
+  return count;
 }
 
 void CallMediaLegCoordinator::SetReconnectWindowForTest(const std::chrono::milliseconds window) {

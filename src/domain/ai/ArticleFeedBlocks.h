@@ -12,10 +12,10 @@ namespace pbr {
 struct ArticleFeedLabels {
   std::string intro = "Latest from Brief ({count}):";
   std::string title = "Latest briefs";
-  std::string empty = "No articles right now.";
+  std::string empty = "No briefs right now.";
   std::string open = "[View details]";
   std::string more = "Load more";
-  std::string more_message = "Load more articles";
+  std::string more_message = "Load more briefs";
 };
 
 struct ArticleFeedBuildOptions {

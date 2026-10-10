@@ -9,6 +9,12 @@
 #include <atomic>
 #include <mutex>
 
+// Enum cases are not preprocessor macros — do not use #if !defined(...).
+// SDK 26+: AllowBluetoothHFP; older SDKs: AllowBluetooth (same bit).
+#if !defined(__IPHONE_26_0) || (__IPHONE_OS_VERSION_MAX_ALLOWED < __IPHONE_26_0)
+#define AVAudioSessionCategoryOptionAllowBluetoothHFP AVAudioSessionCategoryOptionAllowBluetooth
+#endif
+
 namespace pbr {
 namespace CallAudioSession {
 namespace {

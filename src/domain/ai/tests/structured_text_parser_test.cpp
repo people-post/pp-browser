@@ -383,3 +383,17 @@ TEST(StructuredTextParserTest, StorableTextKeepsSmallAnswersAndReducesHugeOnesTo
   EXPECT_LE(cut.size(), pbr::kMaxComposeTextBytes);
   EXPECT_EQ(cut.size() % 3, 0u);
 }
+
+TEST(StructuredTextParserTest, ListBlockDrawsItsOwnMarkers) {
+  // The engine draws no list markers; the block uses the same marker markup as Markdown lists.
+  auto bullets = pbr::StructuredTextParser::ParseBlocksJson(R"({"blocks":[{"type":"list","items":["A","B"]}]})");
+  ASSERT_TRUE(bullets.ok);
+  EXPECT_NE(bullets.rml.find("<ul><li><span class=\"md-marker\">\xE2\x80\xA2</span><div class=\"md-item\">A</div></li>"),
+            std::string::npos);
+
+  auto numbered =
+      pbr::StructuredTextParser::ParseBlocksJson(R"({"blocks":[{"type":"list","ordered":true,"items":["A","B"]}]})");
+  ASSERT_TRUE(numbered.ok);
+  EXPECT_NE(numbered.rml.find("<li><span class=\"md-marker\">2.</span><div class=\"md-item\">B</div></li></ol>"),
+            std::string::npos);
+}

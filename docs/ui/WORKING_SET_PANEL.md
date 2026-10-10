@@ -205,8 +205,8 @@ Update [`assets/views/preview.rml`](../../assets/views/preview.rml) (keep file n
 ```html
 <div class="working-set-panel stack" data-model="shell">
   <div class="working-set-header">
-    <h2 class="heading-2" data-rml="working_set_title"></h2>
-    <p class="text muted" data-if="working_set_subtitle != ''" data-rml="working_set_subtitle"></p>
+    <h2 class="heading-2">{{working_set_title}}</h2>
+    <p class="text muted" data-if="working_set_subtitle != ''">{{working_set_subtitle}}</p>
   </div>
   <div class="working-set-body" data-if="working_set_active" data-rml="working_set_rml"></div>
   <p class="text muted empty-panel" data-if="!working_set_active">

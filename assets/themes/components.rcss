@@ -426,6 +426,29 @@ select selectbox option {
 .bubble-assistant ul,
 .bubble-assistant ol {
   box-sizing: border-box;
+  /* The engine's defaults (40dp left padding, 1em margins) pushed lists far from the bubble's edge. */
+  margin-top: 4dp;
+  margin-bottom: 4dp;
+  padding-left: 0;
+}
+
+/* List items draw their own marker (MarkdownToRml): the number or bullet sits in the item's left padding,
+   so wrapped lines align under the text. */
+.bubble-assistant li {
+  display: block;
+  position: relative;
+  padding-left: 26dp;
+}
+
+.bubble-assistant .md-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0.7;
+}
+
+.bubble-assistant .md-item {
+  display: block;
 }
 
 .bubble-assistant p,
@@ -2817,21 +2840,30 @@ input.checkbox {
   display: flex;
   flex-direction: row;
   align-items: center;
-  min-height: 56dp;
+  gap: 10dp;
+  min-height: 60dp;
   margin-bottom: 4dp;
-  padding: 8dp 4dp 8dp 8dp;
+  padding: 8dp 10dp;
   border-radius: 6dp;
   box-sizing: border-box;
   cursor: pointer;
 }
 
+/* Two lines: title + date, then the last message + unread badge. */
 .sidebar-session-body {
   flex: 1;
   min-width: 0;
   display: flex;
+  flex-direction: column;
+  gap: 3dp;
+}
+
+.sidebar-session-line {
+  display: flex;
   flex-direction: row;
   align-items: center;
   gap: 6dp;
+  min-height: 18dp;
 }
 
 .sidebar-session-title {
@@ -2840,7 +2872,23 @@ input.checkbox {
   display: block;
   margin-top: 0;
   margin-bottom: 0;
-  font-size: 13dp;
+  font-size: 14dp;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-session--unread .sidebar-session-title {
+  font-weight: bold;
+}
+
+.sidebar-session-preview {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 12dp;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2851,8 +2899,9 @@ input.checkbox {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 18dp;
-  height: 18dp;
+  width: 36dp;
+  height: 36dp;
+  border-radius: 18dp;
 }
 
 .sidebar-session-icon svg {
@@ -2862,6 +2911,39 @@ input.checkbox {
 .sidebar-session-date {
   flex-shrink: 0;
   font-size: 11dp;
+}
+
+.sidebar-session-flag {
+  flex-shrink: 0;
+}
+
+/* "Marked as unread": a dot in the badge colour, since there is no message count to show. */
+.sidebar-unread-dot {
+  flex-shrink: 0;
+  display: block;
+  width: 8dp;
+  height: 8dp;
+  border-radius: 4dp;
+}
+
+/* Opens the archived threads, or returns to the list; shown only when something is archived. */
+.sidebar-archived-entry {
+  align-items: center;
+  gap: 8dp;
+  min-height: 36dp;
+  margin-bottom: 4dp;
+  padding: 6dp 12dp;
+  border-radius: 6dp;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.sidebar-archived-label {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 13dp;
 }
 
 .sidebar-unread {

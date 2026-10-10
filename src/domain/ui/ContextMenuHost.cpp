@@ -1,5 +1,7 @@
 #include "domain/ui/ContextMenuHost.h"
 
+#include "common/ui/RmlEscape.h"
+
 #include "foundation/i18n/LocalizationService.h"
 
 #include <ui/dom/Context.h>
@@ -172,7 +174,8 @@ void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuA
       out << "<div class=\"context-menu-item-icon\"><svg src=\"" << action.icon
           << "\" width=\"16\" height=\"16\" crop-to-content=\"true\"></svg></div>";
     }
-    out << "<span class=\"context-menu-item-label\">" << action.label << "</span>";
+    // Labels carry names people typed (share targets, group members).
+    out << "<span class=\"context-menu-item-label\">" << EscapeRml(action.label) << "</span>";
     if (action.selected) {
       out << "<span class=\"context-menu-item-check\">✓</span>";
     }
@@ -622,6 +625,13 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
 }
 
 void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenuAction> actions) {
+  if (dismiss_pending_) {
+    // Opened from a menu item's click (Mute…, React): the first menu's DOM is still dispatching that
+    // event, which is why its teardown was deferred. Tearing it down here instead would leave the
+    // dangling Context::active pointers RequestDismiss() exists to avoid. Open this one from Update().
+    pending_show_ = PendingShow{position, std::move(actions)};
+    return;
+  }
   Dismiss();
   if (!context_ || actions.empty()) {
     return;
@@ -697,10 +707,14 @@ void ContextMenuHost::RequestDismiss(bool restore_focus) {
 }
 
 void ContextMenuHost::Update() {
-  if (!dismiss_pending_) {
-    return;
+  if (dismiss_pending_) {
+    Dismiss();
   }
-  Dismiss();
+  if (pending_show_) {
+    PendingShow show = std::move(*pending_show_);
+    pending_show_.reset();
+    ShowActions(show.position, std::move(show.actions));
+  }
   // Not from inside the menu's own click: the old layer had to be gone first.
   if (const auto again = std::exchange(reopen_request_, std::nullopt)) {
     ShowAt(*again);

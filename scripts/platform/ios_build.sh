@@ -5,13 +5,19 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # Sync with pbr::kProductBundleName in src/foundation/runtime/ProductBranding.h
 PRODUCT_BUNDLE_NAME="${PP_BROWSER_PRODUCT_BUNDLE_NAME:-PP}"
 
+# All local iOS intermediates live under out-ios/ (gitignored). Override with IOS_OUT_DIR.
+IOS_OUT_DIR="${IOS_OUT_DIR:-${ROOT}/out-ios}"
+IOS_BUILD_DEVICE="${IOS_OUT_DIR}/build/device"
+IOS_BUILD_SIMULATOR="${IOS_OUT_DIR}/build/simulator"
+IOS_DIST_DIR="${IOS_DIST_DIR:-${IOS_OUT_DIR}/dist}"
+
 # Remember whether the caller set IOS_PLATFORM before our default (used by resolve_ios_platform).
 if [[ -n "${IOS_PLATFORM+x}" ]]; then
   IOS_PLATFORM_EXPLICIT=1
 fi
 IOS_PLATFORM="${IOS_PLATFORM:-simulator}"
 BUILD_TYPE="${CMAKE_BUILD_TYPE:-Debug}"
-INSTALL_PREFIX="${INSTALL_PREFIX:-${ROOT}/install-ios}"
+INSTALL_PREFIX="${INSTALL_PREFIX:-${IOS_OUT_DIR}/install}"
 GENERATOR="${IOS_CMAKE_GENERATOR:-Ninja}"
 
 usage() {
@@ -22,20 +28,27 @@ Commands:
   configure-sim     Configure CMake for iOS Simulator (arm64)
   configure-device  Configure CMake for iOS device (arm64)
   build             Build the configured tree
-  install           cmake --install into INSTALL_PREFIX (default: install-ios/)
+  install           cmake --install into INSTALL_PREFIX (default: out-ios/install/)
   sim               configure-sim + build + install (simulator .app)
   device            configure-device + build + install (device .app)
   run-sim           Boot a simulator if needed, install PP.app, and launch
   run-device         Sign (if configured) and install+launch on a connected iPhone
   ipa               Release device build + install + export TestFlight IPA
-  upload-ipa        Upload dist-ios/pp-browser.ipa (or path) to App Store Connect
+  upload-ipa        Upload out-ios/dist/pp-browser.ipa (or path) to App Store Connect
   xcode             Configure with -G Xcode (open in Xcode for debugging)
-  clean             Remove build-ios-* directories
+  clean             Remove out-ios/ (and legacy build-ios-* / install-ios / dist-ios)
+
+Artifact layout (override root with IOS_OUT_DIR):
+  out-ios/build/device|simulator   CMake build trees
+  out-ios/install/PP.app           cmake --install output
+  out-ios/dist/*.ipa               TestFlight / App Store IPA
 
 Environment:
+  IOS_OUT_DIR               Artifact root (default: <repo>/out-ios)
+  IOS_DIST_DIR              IPA output dir (default: \$IOS_OUT_DIR/dist)
   IOS_PLATFORM              simulator (default) or device
   CMAKE_BUILD_TYPE          Debug (default) or Release
-  INSTALL_PREFIX            Output prefix for cmake --install
+  INSTALL_PREFIX            Output prefix for cmake --install (default: \$IOS_OUT_DIR/install)
   PP_BROWSER_VERSION        Marketing version (e.g. 0.1.0) → CFBundleShortVersionString
   PP_BROWSER_BUILD_NUMBER   Build number for App Store Connect (must bump each upload)
   PP_BROWSER_RELEASE_VERSION  Fallback build string if BUILD_NUMBER unset
@@ -67,9 +80,9 @@ require_macos() {
 
 build_dir() {
   if [[ "${IOS_PLATFORM}" == "device" ]]; then
-    printf '%s' "${ROOT}/build-ios-device"
+    printf '%s' "${IOS_BUILD_DEVICE}"
   else
-    printf '%s' "${ROOT}/build-ios-simulator"
+    printf '%s' "${IOS_BUILD_SIMULATOR}"
   fi
 }
 
@@ -79,8 +92,11 @@ resolve_ios_platform() {
   if [[ -n "${IOS_PLATFORM_EXPLICIT:-}" ]]; then
     return 0
   fi
-  local device_cache="${ROOT}/build-ios-device/CMakeCache.txt"
-  local sim_cache="${ROOT}/build-ios-simulator/CMakeCache.txt"
+  local device_cache="${IOS_BUILD_DEVICE}/CMakeCache.txt"
+  local sim_cache="${IOS_BUILD_SIMULATOR}/CMakeCache.txt"
+  # Legacy roots (pre-out-ios layout) still count for platform resolution.
+  [[ -f "$device_cache" ]] || device_cache="${ROOT}/build-ios-device/CMakeCache.txt"
+  [[ -f "$sim_cache" ]] || sim_cache="${ROOT}/build-ios-simulator/CMakeCache.txt"
   if [[ -f "$device_cache" && -f "$sim_cache" ]]; then
     if [[ "$device_cache" -nt "$sim_cache" ]]; then
       IOS_PLATFORM=device
@@ -356,7 +372,15 @@ cmd_run_device() {
 }
 
 cmd_clean() {
-  rm -rf "${ROOT}/build-ios-simulator" "${ROOT}/build-ios-device" "${ROOT}/build-ios-xcode"
+  echo "==> Removing ${IOS_OUT_DIR}"
+  rm -rf "${IOS_OUT_DIR}"
+  # Legacy roots from before out-ios/ consolidation.
+  rm -rf \
+    "${ROOT}/build-ios-simulator" \
+    "${ROOT}/build-ios-device" \
+    "${ROOT}/build-ios-xcode" \
+    "${ROOT}/install-ios" \
+    "${ROOT}/dist-ios"
 }
 
 load_signing_env() {
@@ -370,10 +394,24 @@ load_signing_env() {
   fi
 }
 
-# Release device .app → distribution-signed IPA under dist-ios/ (TestFlight prep).
+# Release device .app → distribution-signed IPA under out-ios/dist/ (TestFlight prep).
+# ASC (since 2026-04-28) rejects IPAs built with SDKs older than iOS 26.
+require_asc_ios_sdk() {
+  local sdk_ver major
+  sdk_ver="$(xcrun --sdk iphoneos --show-sdk-version 2>/dev/null || true)"
+  major="${sdk_ver%%.*}"
+  if [[ -z "$major" || "$major" -lt 26 ]]; then
+    echo "error: App Store Connect requires the iOS 26 SDK (Xcode 26+); active SDK is ${sdk_ver:-unknown}" >&2
+    echo "hint: install Xcode 26+, then: sudo xcode-select -s /Applications/Xcode.app && xcodebuild -version" >&2
+    echo "hint: see docs/ops/IOS_BUILD.md (TestFlight / App Store Connect)" >&2
+    exit 1
+  fi
+}
+
 cmd_ipa() {
   require_macos
   load_signing_env
+  require_asc_ios_sdk
 
   if [[ -z "${IOS_EXPORT_METHOD:-}" ]]; then
     IOS_EXPORT_METHOD=app-store
@@ -411,21 +449,24 @@ cmd_ipa() {
 
   local app="${INSTALL_PREFIX}/${PRODUCT_BUNDLE_NAME}.app"
   echo "==> Exporting IPA (${IOS_EXPORT_METHOD})"
+  export IOS_OUT_DIR IOS_DIST_DIR
   "${ROOT}/scripts/platform/ios_sign.sh" export-ipa "$app"
   echo "==> Next: ./scripts/platform/ios_build.sh upload-ipa"
-  echo "    or open dist-ios/ in Transporter"
+  echo "    or open ${IOS_DIST_DIR}/ in Transporter"
   echo "    then App Store Connect → build → export compliance → Internal Testing"
 }
 
 cmd_upload_ipa() {
   require_macos
   load_signing_env
-  local ipa="${1:-${ROOT}/dist-ios/pp-browser.ipa}"
+  require_asc_ios_sdk
+  local ipa="${1:-${IOS_DIST_DIR}/pp-browser.ipa}"
   if [[ ! -f "$ipa" ]]; then
     echo "error: IPA not found: ${ipa}" >&2
     echo "hint: run ./scripts/platform/ios_build.sh ipa first" >&2
     exit 1
   fi
+  export IOS_OUT_DIR IOS_DIST_DIR
   "${ROOT}/scripts/platform/ios_sign.sh" upload-ipa "$ipa"
 }
 

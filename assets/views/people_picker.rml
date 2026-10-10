@@ -1,7 +1,7 @@
 <div class="people-picker stack" data-model="people_picker">
   <div data-if="step == 'select'" class="people-picker-select stack">
     <div class="people-picker-header row">
-      <p class="people-picker-title" data-rml="title"></p>
+      <p class="people-picker-title">{{title}}</p>
     </div>
 
     <div class="people-picker-search">
@@ -19,13 +19,13 @@
           <p class="people-picker-check-mark" data-if="row.selected">✓</p>
         </div>
         <div class="people-picker-row-body">
-          <p class="people-picker-row-title" data-rml="row.title"></p>
-          <p class="people-picker-row-subtitle text muted" data-if="row.subtitle != ''" data-rml="row.subtitle"></p>
+          <p class="people-picker-row-title">{{row.title}}</p>
+          <p class="people-picker-row-subtitle text muted" data-if="row.subtitle != ''">{{row.subtitle}}</p>
         </div>
         <p class="text muted people-picker-locked-label" data-if="row.locked">{{i18n:people_picker.in_chat}}</p>
       </div>
 
-      <p class="text muted" data-if="rows.size == 0 && search_query == ''" data-rml="empty_hint"></p>
+      <p class="text muted" data-if="rows.size == 0 && search_query == ''">{{empty_hint}}</p>
       <p class="text muted" data-if="rows.size == 0 && search_query != ''">{{i18n:people_picker.no_matches}}</p>
     </div>
 
@@ -38,7 +38,7 @@
       <button class="btn btn-secondary" type="button" data-event-click="cancel_picker()">{{i18n:common.cancel}}</button>
       <button class="btn btn-primary" type="button" data-event-click="confirm_picker()"
               data-attrif-disabled="!cta_enabled">
-        <span data-rml="cta_label"></span>
+        <span>{{cta_label}}</span>
       </button>
       </div>
     </div>
@@ -46,10 +46,10 @@
 
   <div data-if="step == 'name'" class="people-picker-name stack">
     <div class="people-picker-header row">
-      <p class="people-picker-title" data-rml="title"></p>
+      <p class="people-picker-title">{{title}}</p>
     </div>
 
-    <p class="text muted people-picker-name-help" data-rml="group_title_help"></p>
+    <p class="text muted people-picker-name-help">{{group_title_help}}</p>
 
     <label class="settings-field people-picker-name-field">
       <span class="text muted">{{i18n:people_picker.group_title_prompt}}</span>
@@ -61,7 +61,7 @@
       <p class="text muted people-picker-members-label">{{i18n:people_picker.members_label}}</p>
       <div class="people-picker-member-chips row">
         <div data-for="member : member_summary" class="people-picker-member-chip">
-          <span data-rml="member.title"></span>
+          <span>{{member.title}}</span>
         </div>
       </div>
     </div>

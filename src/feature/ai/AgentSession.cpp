@@ -683,7 +683,7 @@ Roe<TurnPlan> AgentSession::ResolveTurnPlan(const std::shared_ptr<Impl>& state) 
         // The feed tool comes from the promoted MCP server; without it there is nothing to show, and asking the
         // model instead would only produce a confusing answer.
         Error unavailable = validated.error();
-        unavailable.user = TrOrDefault("feed.unavailable", "Articles are unavailable right now.");
+        unavailable.user = TrOrDefault("feed.unavailable", "Briefs are unavailable right now.");
         return unavailable;
       }
     }

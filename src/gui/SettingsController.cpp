@@ -2358,7 +2358,7 @@ void SettingsController::PerformResetProfile() {
   DirtyAll();
   UserFeedback::Ok(Tr("settings.storage.profile_reset"));
   if (shell_navigation_.request_sync_layout) {
-    shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, nullptr);
+    shell_navigation_.request_sync_layout(/*restore_focus_after=*/false, "settings_profile_reset");
   }
 }
 

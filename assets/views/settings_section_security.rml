@@ -1,5 +1,5 @@
       <div class="settings-section stack">
-        <p class="text muted">{{i18n:settings.security.protection}} <span data-rml="pin_protection_status"></span></p>
+        <p class="text muted">{{i18n:settings.security.protection}} <span>{{pin_protection_status}}</span></p>
         <p class="text muted" data-if="pin_protection_is_default">
           {{i18n:settings.security.default_hint}}
         </p>
@@ -40,7 +40,7 @@
                 data-event-click="on_choose_group_invite_policy()">
           <span class="settings-label settings-toggle-label">{{i18n:settings.security.group_invites}}</span>
           <span class="settings-choice-value row">
-            <span class="settings-choice-value-text" data-rml="group_invite_policy_label"></span>
+            <span class="settings-choice-value-text">{{group_invite_policy_label}}</span>
             <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
           </span>
         </button>
@@ -49,13 +49,13 @@
                 data-event-click="on_choose_call_invite_policy()">
           <span class="settings-label settings-toggle-label">{{i18n:settings.security.calls}}</span>
           <span class="settings-choice-value row">
-            <span class="settings-choice-value-text" data-rml="call_invite_policy_label"></span>
+            <span class="settings-choice-value-text">{{call_invite_policy_label}}</span>
             <svg class="settings-row-chevron" src="../icons/chevron-right.svg" width="12" height="12"></svg>
           </span>
         </button>
         <p class="text muted settings-help">{{i18n:settings.security.calls.help}}</p>
         <div class="stack settings-actions">
-          <p class="text">{{i18n:settings.security.tool_permissions}}: <span data-rml="tool_permissions_summary"></span></p>
+          <p class="text">{{i18n:settings.security.tool_permissions}}: <span>{{tool_permissions_summary}}</span></p>
           <p class="text muted settings-help">{{i18n:settings.security.tool_permissions.help}}</p>
           <button class="btn" type="button" data-if="tool_permissions_has_saved"
                   data-event-click="reset_tool_permissions()">

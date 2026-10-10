@@ -22,6 +22,7 @@
 #include <chrono>
 #include <functional>
 #include <optional>
+#include <source_location>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -88,7 +89,12 @@ public:
 
   void Initialize(ui::Context* context);
   void SyncLayout();
-  void RequestSyncLayout(bool restore_focus_after = false, const char* reason = nullptr);
+  /**
+   * `reason` names the caller for the log and the shell.sync_layout_slow metric. Without one, the call
+   * site (file:line) is used, so every request can be told apart.
+   */
+  void RequestSyncLayout(bool restore_focus_after = false, const char* reason = nullptr,
+                         std::source_location where = std::source_location::current());
   /** Mount/clear call ring + in-call overlays without remounting the full shell tree.
    *  Defers to the next UI turn so Rml click handlers are not mid-dispatch on destroyed nodes. */
   void RemountCallChrome();
@@ -347,6 +353,11 @@ private:
   std::vector<LocalBackEntry> local_back_stack_;
   ui::String saved_focus_id_;
   bool sync_pending_ = false;
+  /** Who asked for the pending / running SyncLayout (first request) and how many requests it merges. */
+  std::string pending_sync_reason_;
+  int pending_sync_requests_ = 0;
+  std::string running_sync_reason_ = "direct";
+  int running_sync_requests_ = 1;
   bool remount_call_chrome_pending_ = false;
   bool remount_dialog_chrome_pending_ = false;
   bool remount_pin_gate_chrome_pending_ = false;
