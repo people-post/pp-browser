@@ -118,6 +118,10 @@ Roe<void> ConversationsFacade::UpdatePreview(const std::string& thread_id, const
   return hub_.Inbox().UpdatePreview(thread_id, preview);
 }
 
+Roe<void> ConversationsFacade::HideMessageLocally(const std::string& thread_id, const std::string& message_id) {
+  return hub_.Inbox().HideMessageLocally(thread_id, message_id);
+}
+
 Roe<void> ConversationsFacade::ClearThreadHistory(const std::string& thread_id, const bool forget_memory) {
   return hub_.Inbox().ClearThreadHistory(thread_id, forget_memory);
 }

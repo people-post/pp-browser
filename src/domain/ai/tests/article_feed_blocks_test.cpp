@@ -30,9 +30,23 @@ TEST(ArticleFeedBlocksTest, BuildsIntroAndLongListThatTheParserAccepts) {
   EXPECT_NE(rml.find("First brief."), std::string::npos); // content stands in for the empty title
   EXPECT_NE(rml.find("Second"), std::string::npos);
   EXPECT_NE(rml.find("Body text."), std::string::npos); // title + content: content is the subtitle
-  EXPECT_NE(rml.find("apnews.com"), std::string::npos); // host only, no userinfo or port
-  EXPECT_EQ(rml.find("8443"), std::string::npos);
+  // The meta line shows the host only, no userinfo or port (the share-url attribute keeps the real link).
+  const std::string meta_open = "chat-long-list-meta\">";
+  size_t metas = 0;
+  for (size_t pos = rml.find(meta_open); pos != std::string::npos; pos = rml.find(meta_open, pos + 1)) {
+    const std::string meta = rml.substr(pos + meta_open.size(), rml.find("</p>", pos) - pos - meta_open.size());
+    EXPECT_EQ(meta.find("8443"), std::string::npos) << meta;
+    EXPECT_EQ(meta.find('@'), std::string::npos) << meta;
+    ++metas;
+  }
+  EXPECT_GE(metas, 2u);
+  EXPECT_NE(rml.find(">apnews.com"), std::string::npos);
   EXPECT_NE(rml.find("plain.example"), std::string::npos); // shown, but plain http gets no Open button
+
+  // Each article carries what the item menu copies / shares / asks about; the link only when it is https.
+  EXPECT_NE(rml.find("share-text=\"First brief.\""), std::string::npos);
+  EXPECT_NE(rml.find("share-url=\"https://"), std::string::npos);
+  EXPECT_EQ(rml.find("share-url=\"http://"), std::string::npos);
 
   // "View details" is a text link at the end of the article's own text, not a button row under it.
   const size_t link = rml.find("chat-inline-link");

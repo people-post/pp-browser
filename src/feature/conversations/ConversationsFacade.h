@@ -77,6 +77,7 @@ public:
   Roe<Thread> CreateNewAiThread();
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
+  Roe<void> HideMessageLocally(const std::string& thread_id, const std::string& message_id);
   void MarkThreadRead(const std::string& thread_id);
   /** Per-thread local settings (pin / mute / archive); rows that differ from the defaults. */
   Roe<std::vector<ThreadLocalPrefs>> ListThreadLocalPrefs();

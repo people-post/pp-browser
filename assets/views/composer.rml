@@ -1,4 +1,11 @@
-<div class="prompt-composer" data-model="chat"
+<div class="prompt-quote" data-model="chat" data-if="quote_reply" keep-focus="">
+  <span class="prompt-quote-text">{{quote_reply_text}}</span>
+  <button class="prompt-attachment-chip-remove" type="button" data-event-click="cancel_quote_reply()"
+          title="{{i18n:common.cancel}}">
+    <svg src="../icons/close.svg" width="10" height="10" crop-to-content="true"></svg>
+  </button>
+</div>
+<div class="prompt-composer" keep-focus="" data-model="chat"
      data-class-prompt-composer--e2e="thread_is_private"
      data-class-prompt-composer--disabled="composer_input_disabled">
   <textarea id="draft-input" class="prompt-composer-input" placeholder="Ask anything…" rows="2" max-rows="6"

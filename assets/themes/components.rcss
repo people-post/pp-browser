@@ -373,6 +373,41 @@ select selectbox option {
   word-break: break-word;
 }
 
+/* The quoted message on top of a reply, and the question on top of an @ai answer (domain/messaging/QuoteReply.h). */
+.chat-quote {
+  display: block;
+  margin-bottom: 6dp;
+  padding: 4dp 8dp;
+  border-left: 3dp #818cf8;
+  border-radius: 6dp;
+  background-color: rgba(128, 128, 128, 0.16);
+}
+
+/* Dimmed and at most two lines; the whole message is one tap away (jump_to_quote). */
+.chat-quote-text {
+  display: block;
+  margin-top: 0;
+  margin-bottom: 0;
+  max-height: 36dp;
+  overflow: hidden;
+  word-break: break-word;
+  font-size: 13dp;
+  line-height: 18dp;
+  opacity: 0.6;
+}
+
+.chat-quote--jump {
+  cursor: pointer;
+}
+
+/* A peer's plain-text message: keeps its line breaks, like our own (.bubble-text also sets our colour). */
+.bubble-text-peer {
+  margin-top: 0;
+  margin-bottom: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .assistant-message {
   display: block;
 }
@@ -530,6 +565,31 @@ select selectbox option {
   flex-shrink: 0;
   width: 18dp;
   height: 18dp;
+}
+
+/* Reply / Ask AI in progress: the quoted message, one line, above the composer box. */
+.prompt-quote {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8dp;
+  margin: 0 12dp 6dp 12dp;
+  padding: 6dp 10dp;
+  border-left: 3dp #818cf8;
+  border-radius: 6dp;
+  background-color: rgba(128, 128, 128, 0.14);
+}
+
+.prompt-quote-text {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  max-height: 36dp; /* two lines */
+  overflow: hidden;
+  word-break: break-word;
+  font-size: 13dp;
+  line-height: 18dp;
+  opacity: 0.8;
 }
 
 .prompt-attachment-chip {
@@ -2686,14 +2746,13 @@ input.checkbox {
 
 .chat-reaction-chip {
   display: inline-block;
-  min-width: 44dp;
-  min-height: 32dp;
-  margin-right: 6dp;
+  min-height: 30dp;
+  margin-right: 4dp;
   margin-top: 2dp;
-  padding: 4dp 10dp;
-  border-radius: 16dp;
+  padding: 2dp 6dp;
+  border-radius: 15dp;
   background-color: rgba(128, 128, 128, 0.12);
-  font-size: 14dp;
+  font-size: 18dp;
   text-align: center;
 }
 
@@ -3984,6 +4043,45 @@ input.checkbox {
   border-radius: 8dp;
   box-shadow: 0 4dp 16dp rgba(0, 0, 0, 0.18);
   box-sizing: border-box;
+}
+
+/* Touch text menu of an input field: one horizontal row, placed by ContextMenuHost::LayoutBar. */
+.context-menu-layer--bar .context-menu-panel {
+  display: flex;
+  flex-direction: row;
+  min-width: 0;
+}
+
+.context-menu-layer--bar .context-menu-item {
+  width: auto;
+  min-height: 36dp;
+  padding: 6dp 12dp;
+}
+
+.context-menu-layer--bar .context-menu-item-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Reaction row above a chat message (ContextMenuHost::LayoutAnchored). */
+.context-menu-quick {
+  display: flex;
+  flex-direction: row;
+  min-width: 0;
+  border-radius: 22dp;
+}
+
+.context-menu-quick .context-menu-item {
+  width: auto;
+  min-height: 40dp;
+  padding: 4dp 8dp;
+  border-radius: 18dp;
+}
+
+.context-menu-quick .context-menu-item-label {
+  flex: 0 0 auto;
+  font-size: 22dp;
+  white-space: nowrap;
 }
 
 /* Compact ShowActions: iOS-style bottom action sheet.

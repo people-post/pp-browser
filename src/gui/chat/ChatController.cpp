@@ -23,9 +23,12 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "foundation/platform/ui/DesktopWindowChrome.h"
 #include "foundation/platform/ILocalNotifier.h"
+#include "foundation/platform/Platform.h"
 #include "foundation/platform/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
 #include "domain/messaging/AttachmentCache.h"
+#include "domain/messaging/PlainTextLinks.h"
+#include "domain/messaging/QuoteReply.h"
 #include "foundation/platform/PlatformOpenFile.h"
 #include "foundation/platform/PlatformOpenUrl.h"
 
@@ -86,6 +89,7 @@
 #include "common/ValueJson.h"
 
 #include <ui/dom/Context.h>
+#include <ui/dom/SelectionController.h>
 #include <ui/Core.h>
 #include <ui/data/DataModelHandle.h>
 #include <ui/dom/Element.h>
@@ -2009,6 +2013,7 @@ void ChatController::SyncDisplayFromThread() {
   }
   if (thread_changed) {
     DiscardPendingAiImage(); // the chip belongs to the composer of the thread it was picked in
+    CancelQuoteReply();      // so does a pending reply
   }
 
   const std::string prev_tail_id =
@@ -2272,6 +2277,16 @@ void ChatController::OnSendMessage() {
     return;
   }
 
+  // On a phone the on-screen keyboard stays up for as long as the composer has focus; sending is what closes it.
+  const auto close_keyboard = [this] {
+    if (!Platform::IsMobile() || !context_ || context_->GetNumDocuments() == 0) {
+      return;
+    }
+    if (ui::Element* draft = context_->GetDocument(0)->GetElementById("draft-input")) {
+      draft->Blur();
+    }
+  };
+
   if (!text.empty()) {
     if (auto valid = ChatPayloadValidator::ValidateOutboundText(text); !valid) {
       ShowToast(Tr("chat.error.message_too_long"));
@@ -2285,12 +2300,20 @@ void ChatController::OnSendMessage() {
       chat_.draft = "";
       DirtyChatChrome();
       scroller_.RequestScrollToLatest();
+      close_keyboard();
     }
     return;
   }
   chat_.draft = "";
   DirtyChatChrome();
   scroller_.RequestScrollToLatest();
+  close_keyboard();
+  if (!quote_reply_source_.empty()) {
+    const std::string quoted = ComposeQuoteReply(text, quote_reply_source_);
+    CancelQuoteReply();
+    SendUserText(quoted);
+    return;
+  }
   SendUserText(text);
 }
 
@@ -2432,27 +2455,219 @@ void ChatController::ShowReactionMorePrompt(const std::string& message_id) {
       });
 }
 
-void ChatController::OpenReactPresetMenu(const std::string& message_id, ui::Vector2i position) {
-  if (message_id.empty()) {
+namespace {
+
+// What the user reads in a message.
+std::string PlainTextOf(const ThreadMessage& message) {
+  // Local-pipeline AI answers are stored as UI block documents.
+  if (const auto prose = StructuredTextParser::PlainTextIfBlocks(message.text)) {
+    return *prose;
+  }
+  // A reply that quotes another message: only what this message itself says.
+  if (const auto parts = SplitQuoteReply(message.text)) {
+    return parts->reply;
+  }
+  return message.text;
+}
+
+} // namespace
+
+std::string ChatController::MessagePlainText(const std::string& message_id) const {
+  if (!facade_ || message_id.empty()) {
+    return {};
+  }
+  const auto page = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 500);
+  if (!page) {
+    return {};
+  }
+  for (const ThreadMessage& message : *page) {
+    if (message.id == message_id) {
+      return PlainTextOf(message);
+    }
+  }
+  return {};
+}
+
+void ChatController::StartQuoteReply(const std::string& text, const std::string& draft_prefix) {
+  if (chat_.compose_disabled || text.empty()) {
+    return;
+  }
+  quote_reply_source_ = text;
+  // One line in the bar, however long or multi-line the message is.
+  constexpr size_t kMaxPreviewChars = 120;
+  std::string preview;
+  size_t chars = 0;
+  for (const char ch : text) {
+    if ((static_cast<unsigned char>(ch) & 0xC0) != 0x80 && ++chars > kMaxPreviewChars) {
+      preview += "\xE2\x80\xA6";
+      break;
+    }
+    preview += (ch == '\n' || ch == '\r') ? ' ' : ch;
+  }
+  chat_.quote_reply = true;
+  chat_.quote_reply_text = StructuredTextParser::EscapeText(preview).c_str(); // bound with data-rml
+  DataModelHost::Instance().Dirty("chat", "quote_reply");
+  DataModelHost::Instance().Dirty("chat", "quote_reply_text");
+  if (!context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  auto* draft = ui_dynamic_cast<ui::ElementFormControlTextArea*>(context_->GetDocument(0)->GetElementById("draft-input"));
+  if (!draft) {
+    return;
+  }
+  if (!draft_prefix.empty()) {
+    chat_.draft = draft_prefix.c_str();
+    DataModelHost::Instance().Dirty("chat", "draft");
+    draft->SetValue(draft_prefix.c_str());
+  }
+  draft->Focus();
+  if (!draft_prefix.empty()) {
+    const ui::String current = draft->GetValue();
+    const int end = ui::StringUtilities::ConvertByteOffsetToCharacterOffset(current, static_cast<int>(current.size()));
+    draft->SetSelectionRange(end, end);
+  }
+}
+
+void ChatController::CancelQuoteReply() {
+  if (!chat_.quote_reply && quote_reply_source_.empty()) {
+    return;
+  }
+  quote_reply_source_.clear();
+  chat_.quote_reply = false;
+  chat_.quote_reply_text = "";
+  DataModelHost::Instance().Dirty("chat", "quote_reply");
+  DataModelHost::Instance().Dirty("chat", "quote_reply_text");
+}
+
+void ChatController::OpenShareTargets(const std::string& text, const ui::Vector2i position) {
+  if (!facade_ || text.empty()) {
+    return;
+  }
+  // One friend per share, no caption: the direct chats, most recent first.
+  constexpr size_t kMaxShareTargets = 30;
+  std::vector<Thread> targets;
+  if (auto threads = facade_->ListThreads()) {
+    for (const Thread& thread : *threads) {
+      if (thread.kind == ThreadKind::Direct && !(thread.local_title.empty() && thread.title.empty())) {
+        targets.push_back(thread);
+      }
+    }
+  }
+  std::sort(targets.begin(), targets.end(), [](const Thread& a, const Thread& b) { return a.updated_at > b.updated_at; });
+  if (targets.size() > kMaxShareTargets) {
+    targets.resize(kMaxShareTargets);
+  }
+  if (targets.empty()) {
+    ShowToast(Tr("chat.share.no_friends"));
     return;
   }
   std::vector<ContextMenuAction> actions;
-  for (const char* emoji : kReactionPresets) {
-    actions.push_back({
-        std::string("react_") + emoji,
-        emoji,
-        nullptr,
-        [this, message_id, emoji]() { ToggleReaction(message_id, emoji); },
-    });
+  for (const Thread& thread : targets) {
+    const std::string name = thread.local_title.empty() ? thread.title : thread.local_title;
+    actions.push_back({"share_to_" + thread.id, name, nullptr, [this, thread_id = thread.id, name, text]() {
+                         SendRelayOptions opts;
+                         opts.update_preview = true;
+                         if (auto sent = facade_->SendUserMessage(thread_id, text, opts); !sent) {
+                           ShowToast(sent.error().message);
+                           return;
+                         }
+                         ShowToast(Tr("chat.share.sent", {{"name", name}}));
+                       }});
   }
-  actions.push_back({
-      "react_more",
-      Tr("chat.react.more"),
-      nullptr,
-      [this, message_id]() { ShowReactionMorePrompt(message_id); },
-  });
   ContextMenuHost::Instance().ShowActions(position, std::move(actions));
 }
+
+void ChatController::JumpToQuotedMessage(const std::string& reply_message_id) {
+  if (!facade_ || !context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  auto page = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 500);
+  if (!page) {
+    return;
+  }
+  // The quote travels as text, so the original is found by its text: the nearest earlier message that
+  // starts with the quoted words.
+  std::string target_id;
+  for (size_t i = 0; i < page->size(); ++i) {
+    if ((*page)[i].id != reply_message_id) {
+      continue;
+    }
+    const auto parts = SplitQuoteReply((*page)[i].text);
+    if (!parts) {
+      return;
+    }
+    std::string needle = parts->quote;
+    if (needle.size() >= 3 && needle.compare(needle.size() - 3, 3, "\xE2\x80\xA6") == 0) {
+      needle.erase(needle.size() - 3); // the ellipsis of a cut quote
+    }
+    const int64_t reply_order = (*page)[i].display_order;
+    int64_t best_order = -1;
+    for (const ThreadMessage& candidate : *page) {
+      if (candidate.id == reply_message_id || candidate.display_order >= reply_order ||
+          candidate.display_order <= best_order || candidate.content_type == ChatContentType::Annotation) {
+        continue;
+      }
+      if (PlainTextOf(candidate).rfind(needle, 0) == 0) {
+        best_order = candidate.display_order;
+        target_id = candidate.id;
+      }
+    }
+    break;
+  }
+  ui::Element* row = target_id.empty() ? nullptr
+                                       : context_->GetDocument(0)->QuerySelector(("[message-id=\"" + target_id + "\"]").c_str());
+  if (!row) {
+    ShowToast(Tr("chat.quote.not_found"));
+    return;
+  }
+  row->ScrollIntoView(true);
+}
+
+void ChatController::OpenMessageLink(const std::string& message_id, const int link_index) {
+  if (!facade_ || link_index < 0) {
+    return;
+  }
+  auto page = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 500);
+  if (!page) {
+    return;
+  }
+  for (const ThreadMessage& message : *page) {
+    if (message.id != message_id) {
+      continue;
+    }
+    // The same scan the bubble was rendered from; the URL comes from the stored text, never the markup.
+    const std::vector<PlainTextLink> links = FindPlainTextLinks(message.text);
+    if (static_cast<size_t>(link_index) < links.size()) {
+      ConfirmAndOpenUrl(links[static_cast<size_t>(link_index)].url); // https only, host confirmed first
+    }
+    return;
+  }
+}
+
+void ChatController::OpenMessageLinkCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                             const ui::VariantList& args) {
+  if (args.size() < 2 || args[0].GetType() != ui::Variant::STRING) {
+    return;
+  }
+  const std::optional<int> link_index = EventArgAsInt(args, 1);
+  if (!link_index) {
+    return;
+  }
+  Instance().OpenMessageLink(std::string(args[0].Get<ui::String>().c_str()), *link_index);
+}
+
+void ChatController::JumpToQuoteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/, const ui::VariantList& args) {
+  if (args.empty() || args[0].GetType() != ui::Variant::STRING) {
+    return;
+  }
+  Instance().JumpToQuotedMessage(std::string(args[0].Get<ui::String>().c_str()));
+}
+
+void ChatController::CancelQuoteReplyCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                              const ui::VariantList& /*args*/) {
+  Instance().CancelQuoteReply();
+}
+
 
 void ChatController::OpenEmojiInsertMenu(ui::Event* ev) {
   if (chat_.compose_disabled) {
@@ -3694,6 +3909,8 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.Bind("image_thumb_ready", &controller.chat_.image_thumb_ready);
         ctor.Bind("image_thumb_src", &controller.chat_.image_thumb_src);
         ctor.Bind("image_draft_name", &controller.chat_.image_draft_name);
+        ctor.Bind("quote_reply", &controller.chat_.quote_reply);
+        ctor.Bind("quote_reply_text", &controller.chat_.quote_reply_text);
         ctor.Bind("attachment_uploading", &controller.chat_.attachment_uploading);
         ctor.Bind("attachment_draft_name", &controller.chat_.attachment_draft_name);
         ctor.Bind("show_thread_actions", &controller.chat_.show_thread_actions);
@@ -3726,6 +3943,9 @@ bool ChatController::Setup(ui::Context* context) {
         ctor.BindEventCallback("open_emoji_insert", &ChatController::OpenEmojiInsertCallback);
         ctor.BindEventCallback("attach_file", &ChatController::AttachFileCallback);
         ctor.BindEventCallback("remove_image", &ChatController::RemoveImageCallback);
+        ctor.BindEventCallback("cancel_quote_reply", &ChatController::CancelQuoteReplyCallback);
+        ctor.BindEventCallback("jump_to_quote", &ChatController::JumpToQuoteCallback);
+        ctor.BindEventCallback("open_message_link", &ChatController::OpenMessageLinkCallback);
         ctor.BindEventCallback("open_attachment", &ChatController::OpenAttachmentCallback);
         ctor.BindEventCallback("download_attachment", &ChatController::DownloadAttachmentCallback);
         ctor.BindEventCallback("retry_attachment", &ChatController::RetryAttachmentCallback);
@@ -3819,18 +4039,108 @@ bool ChatController::Setup(ui::Context* context) {
     if (chat_.compose_disabled) {
       return actions;
     }
+    // An item the user can pass on (an article in a feed list): Ask AI / Copy / Share. The nearest of
+    // such an item and a message row wins.
+    for (ui::Element* cur = request.target; cur && !cur->HasAttribute("message-id"); cur = cur->GetParentNode()) {
+      if (!cur->HasAttribute("share-text")) {
+        continue;
+      }
+      std::string shared = cur->GetAttribute("share-text", ui::String()).c_str();
+      const std::string url = cur->GetAttribute("share-url", ui::String()).c_str();
+      if (!url.empty()) {
+        // "<label><url>": a PP bubble shows the label as the link (PlainTextLinks.h); pasted elsewhere it
+        // still reads as a label followed by the address.
+        shared += "\n" + Tr("feed.result.open") + url;
+      }
+      // In a direct chat the question needs the "@ai " prefix; an AI thread takes it as it is.
+      auto active = facade_ ? facade_->GetActiveThread() : Roe<Thread>(Error("no facade"));
+      const std::string prefix = active && active->kind == ThreadKind::Direct ? "@ai " : "";
+      // The list panel closes so the composer with the quote bar is what the user sees next.
+      actions.push_back({"ask_ai_item", Tr("chat.menu.ask_ai"), nullptr, [this, shared, prefix]() {
+                           AppRuntime::PostUI([this, shared, prefix]() {
+                             working_set_.Clear();
+                             StartQuoteReply(shared, prefix);
+                           });
+                         }});
+      actions.push_back({"copy_item", Tr("common.copy"), nullptr, [shared]() {
+                           if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+                             system->SetClipboardText(shared);
+                           }
+                         }});
+      const ui::Vector2i position = request.position;
+      // Opened after this menu is gone: a menu cannot replace itself from inside its own click.
+      actions.push_back({"share_item", Tr("chat.menu.share"), nullptr, [this, shared, position]() {
+                           AppRuntime::PostUI([this, shared, position]() { OpenShareTargets(shared, position); });
+                         }});
+      return actions;
+    }
+
     const std::string message_id = FindMessageIdFromElement(request.target);
     if (message_id.empty()) {
       return actions;
     }
-    const ui::Vector2i pos = request.position;
-    actions.push_back({
-        "react_message",
-        Tr("chat.react.menu"),
-        nullptr,
-        [this, message_id, pos]() { OpenReactPresetMenu(message_id, pos); },
-    });
+    // Reactions sit in the row above the message, the rest in the list below it.
+    for (const char* emoji : kReactionPresets) {
+      ContextMenuAction react{std::string("react_") + emoji, emoji, nullptr,
+                              [this, message_id, emoji]() { ToggleReaction(message_id, emoji); }};
+      react.quick = true;
+      actions.push_back(std::move(react));
+    }
+    ContextMenuAction more{"react_more", "+", nullptr, [this, message_id]() { ShowReactionMorePrompt(message_id); }};
+    more.quick = true;
+    actions.push_back(std::move(more));
+
+    // Copy takes the pointer selection when there is one (desktop), otherwise the whole message.
+    std::string text;
+    if (request.context) {
+      if (ui::SelectionController* selection = request.context->GetSelectionController()) {
+        text = selection->GetSelectedText();
+      }
+    }
+    if (text.empty()) {
+      text = MessagePlainText(message_id);
+    }
+    if (!text.empty()) {
+      // Reply: the message shows as a quote bar above the composer and is attached to the next send.
+      actions.push_back({"reply_message", Tr("chat.menu.reply"), nullptr, [this, text]() { StartQuoteReply(text); }});
+      actions.push_back({"copy_message", Tr("common.copy"), nullptr, [text]() {
+                           if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+                             system->SetClipboardText(text);
+                           }
+                         }});
+      // Ask AI: the message goes into the quote bar and "@ai " into the input; the user adds the question.
+      if (auto active = facade_->GetActiveThread(); active && active->kind == ThreadKind::Direct) {
+        actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { StartQuoteReply(text, "@ai "); }});
+      }
+    }
+    // Delete for me: this device stops showing the message; the peer keeps theirs.
+    ContextMenuAction remove{"delete_message", Tr("common.delete"), nullptr, [this, message_id]() {
+                               ShowConfirm(Tr("chat.menu.delete_title"), Tr("chat.menu.delete_confirm"),
+                                           [this, message_id](const bool ok) {
+                                             if (!ok || !facade_) {
+                                               return;
+                                             }
+                                             if (auto hidden = facade_->HideMessageLocally(ActiveThreadId(), message_id);
+                                                 !hidden) {
+                                               ShowToast(hidden.error().message);
+                                               return;
+                                             }
+                                             SyncDisplayFromThread();
+                                             DirtyChatTurns();
+                                             NotifySurfaceChanged();
+                                           });
+                             }};
+    remove.danger = true;
+    actions.push_back(std::move(remove));
     return actions;
+  });
+  ContextMenuHost::Instance().SetAnchorResolver([](ui::Element* target) -> ui::Element* {
+    for (ui::Element* cur = target; cur; cur = cur->GetParentNode()) {
+      if (cur->HasAttribute("message-id") || cur->HasAttribute("share-text")) {
+        return cur;
+      }
+    }
+    return nullptr;
   });
 
   // After Initialize clears state: Latin UI is ready; CJK waits on deferred faces.

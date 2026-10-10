@@ -238,6 +238,13 @@ if(PP_BROWSER_IS_IOS)
   target_sources(pp_foundation_platform PRIVATE NetworkConnectivity_Ios.mm)
 endif()
 
+# On-screen keyboard height: only iOS needs it (its safe area leaves the keyboard out).
+if(PP_BROWSER_IS_IOS)
+  target_sources(pp_foundation_platform PRIVATE ScreenKeyboard_Ios.mm)
+else()
+  target_sources(pp_foundation_platform PRIVATE ScreenKeyboard_Default.cpp)
+endif()
+
 # Desktop macOS: UNUserNotificationCenter for local banners.
 if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
   target_link_libraries(pp_foundation_platform PUBLIC

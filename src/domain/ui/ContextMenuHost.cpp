@@ -15,7 +15,9 @@
 #include <ui/base/SystemInterface.h>
 
 #include <climits>
+#include <algorithm>
 #include <cstdio>
+#include <utility>
 #include <sstream>
 
 namespace pbr {
@@ -70,6 +72,8 @@ ui::Vector2i MenuPositionBelowRightAlignedEvent(ui::Event& ev, float menu_min_wi
 namespace {
 
 constexpr float kViewportMarginPx = 8.f;
+constexpr float kBarGapDp = 8.f;
+constexpr float kAnchorGapDp = 6.f;
 constexpr float kActionSheetInsetDp = 12.f;
 constexpr float kActionSheetBottomDp = 20.f;
 constexpr float kActionSheetMaxWidthDp = 480.f;
@@ -111,6 +115,26 @@ void SelectAllInEditor(ui::Element* editor) {
   }
 }
 
+// Selects the word at the caret: the same expansion a double click does.
+void SelectWordInEditor(ui::Element* editor) {
+  if (!editor) {
+    return;
+  }
+  editor->Focus();
+  editor->DispatchEvent(ui::EventId::Dblclick, ui::Dictionary());
+}
+
+void DeleteEditorSelection(ui::Element* editor) {
+  if (!editor) {
+    return;
+  }
+  editor->Focus();
+  if (ui::Context* context = editor->GetContext()) {
+    context->ProcessKeyDown(ui::Input::KI_BACK, 0);
+    context->ProcessKeyUp(ui::Input::KI_BACK, 0);
+  }
+}
+
 void PasteIntoEditor(ui::Element* editor) {
   if (!editor) {
     return;
@@ -128,11 +152,14 @@ void PasteIntoEditor(ui::Element* editor) {
   editor->DispatchEvent(ui::EventId::Textinput, parameters);
 }
 
-void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuAction>& actions) {
+enum class ActionFilter { All, Quick, List };
+
+void AppendActionButtons(std::ostringstream& out, const std::vector<ContextMenuAction>& actions,
+                         const ActionFilter filter = ActionFilter::All) {
   for (size_t i = 0; i < actions.size(); ++i) {
     const ContextMenuAction& action = actions[i];
     const bool enabled = !action.enabled || action.enabled();
-    if (!enabled) {
+    if (!enabled || (filter == ActionFilter::Quick && !action.quick) || (filter == ActionFilter::List && action.quick)) {
       continue;
     }
     out << "<button class=\"context-menu-item";
@@ -168,6 +195,8 @@ void ContextMenuHost::Install(ui::Context* context) {
   if (!context_) {
     return;
   }
+  // A long press opens this host's menu for the pressed item; it does not start a word selection with handles.
+  context_->SetTouchLongPressSelectsText(false);
   context_->SetTouchLongPressCallback([](ui::Vector2i position, ui::Element* target) {
     ContextMenuHost::Instance().OnLongPress(position, target);
   });
@@ -196,6 +225,7 @@ void ContextMenuHost::OnLongPress(ui::Vector2i position, ui::Element* target) {
   request.position = position;
   request.target = target;
   request.context = context_;
+  request.touch = true;
   ShowAt(request);
 }
 
@@ -257,14 +287,46 @@ std::vector<ContextMenuAction> ContextMenuHost::BuildTextActions() const {
   auto paste_enabled = [editor]() { return editor != nullptr; };
   auto paste_run = [editor]() { PasteIntoEditor(editor); };
 
+  if (menu_touch_ && editor) {
+    // Phone text field, two steps: with nothing selected offer Paste / Select / Select all; choosing a
+    // selection reopens the menu as Copy / Cut / Paste.
+    if (snapshot.empty()) {
+      const ContextMenuRequest again{last_position_, target, context, true};
+      actions.push_back({"paste", Tr("common.paste"), nullptr, paste_run});
+      actions.push_back({"select", Tr("common.select"), nullptr, [editor, again]() {
+                           SelectWordInEditor(editor);
+                           Instance().reopen_request_ = again;
+                         }});
+      actions.push_back({"select_all", Tr("common.select_all"), nullptr, [editor, again]() {
+                           SelectAllInEditor(editor);
+                           Instance().reopen_request_ = again;
+                         }});
+      return actions;
+    }
+    actions.push_back({"copy", Tr("common.copy"), nullptr, copy_run});
+    actions.push_back({"cut", Tr("common.cut"), nullptr, [copy_run, editor]() {
+                         copy_run();
+                         DeleteEditorSelection(editor);
+                       }});
+    actions.push_back({"paste", Tr("common.paste"), nullptr, paste_run});
+    return actions;
+  }
+
   actions.push_back({"copy", Tr("common.copy"), copy_enabled, copy_run});
-  actions.push_back({"select_all", Tr("common.select_all"), select_all_enabled, select_all_run});
+  if (editor) {
+    actions.push_back({"cut", Tr("common.cut"), copy_enabled, [copy_run, editor]() {
+                         copy_run();
+                         DeleteEditorSelection(editor);
+                       }});
+  }
   actions.push_back({"paste", Tr("common.paste"), paste_enabled, paste_run});
+  actions.push_back({"select_all", Tr("common.select_all"), select_all_enabled, select_all_run});
   return actions;
 }
 
 std::vector<ContextMenuAction> ContextMenuHost::CollectActions(const ContextMenuRequest& request) const {
-  std::vector<ContextMenuAction> actions = BuildTextActions();
+  // An item menu (chat message) is the providers' alone: no text-editing actions.
+  std::vector<ContextMenuAction> actions = menu_anchor_ ? std::vector<ContextMenuAction>{} : BuildTextActions();
   for (const auto& provider : providers_) {
     if (!provider) {
       continue;
@@ -283,7 +345,8 @@ void ContextMenuHost::ClampFloatPanel(ui::Vector2i preferred) {
   ui::ElementDocument* document = context_->GetDocument(0);
   document->UpdateDocument();
 
-  const ui::Vector2i dims = context_->GetDimensions();
+  ui::Vector2i dims = context_->GetDimensions();
+  dims.y -= static_cast<int>(static_cast<float>(bottom_inset_dp_) * context_->GetDensityIndependentPixelRatio());
   const ui::Vector2f size = panel_->GetBox().GetSize(ui::BoxArea::Border);
   if (size.x <= 0.f || size.y <= 0.f || dims.x <= 0 || dims.y <= 0) {
     return;
@@ -327,6 +390,81 @@ void ContextMenuHost::ClampFloatPanel(ui::Vector2i preferred) {
   panel_->SetProperty("top", top_buf);
 }
 
+void ContextMenuHost::LayoutBar(ui::Vector2i touch) {
+  if (!panel_ || !context_ || !menu_editor_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  context_->GetDocument(0)->UpdateDocument();
+
+  const ui::Vector2i dims = context_->GetDimensions();
+  const ui::Vector2f size = panel_->GetBox().GetSize(ui::BoxArea::Border);
+  if (size.x <= 0.f || size.y <= 0.f || dims.x <= 0 || dims.y <= 0) {
+    return;
+  }
+
+  // Above the field, so the row never covers the text being selected; below it only when there is no room.
+  const float gap = kBarGapDp * context_->GetDensityIndependentPixelRatio();
+  const float field_top = menu_editor_->GetAbsoluteOffset(ui::BoxArea::Border).y;
+  const float field_bottom = field_top + menu_editor_->GetBox().GetSize(ui::BoxArea::Border).y;
+  float top = field_top - gap - size.y;
+  if (top < kViewportMarginPx) {
+    top = field_bottom + gap;
+  }
+  const float max_left = static_cast<float>(dims.x) - size.x - kViewportMarginPx;
+  const float left = std::max(kViewportMarginPx, std::min(static_cast<float>(touch.x) - size.x * 0.5f, max_left));
+
+  char left_buf[32];
+  char top_buf[32];
+  std::snprintf(left_buf, sizeof(left_buf), "%.0fpx", left);
+  std::snprintf(top_buf, sizeof(top_buf), "%.0fpx", top);
+  panel_->SetProperty("left", left_buf);
+  panel_->SetProperty("top", top_buf);
+}
+
+void ContextMenuHost::LayoutAnchored(ui::Vector2i touch) {
+  if (!panel_ || !layer_ || !context_ || !menu_anchor_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  context_->GetDocument(0)->UpdateDocument();
+
+  const float dp = context_->GetDensityIndependentPixelRatio();
+  const ui::Vector2i dims = context_->GetDimensions();
+  const float view_bottom = static_cast<float>(dims.y) - static_cast<float>(bottom_inset_dp_) * dp - kViewportMarginPx;
+  const float gap = kAnchorGapDp * dp;
+  const float anchor_top = menu_anchor_->GetAbsoluteOffset(ui::BoxArea::Border).y;
+  float anchor_bottom = anchor_top + menu_anchor_->GetBox().GetSize(ui::BoxArea::Border).y;
+  // The item can mark where its body ends (a chat message's reaction chips come after it); the list opens there.
+  ui::ElementList body_end;
+  menu_anchor_->QuerySelectorAll(body_end, "[menu-anchor-end]");
+  if (!body_end.empty()) {
+    anchor_bottom = body_end.front()->GetAbsoluteOffset(ui::BoxArea::Border).y;
+  }
+
+  const auto place = [&](ui::Element* element, const float top) {
+    const float width = element->GetBox().GetSize(ui::BoxArea::Border).x;
+    const float max_left = static_cast<float>(dims.x) - width - kViewportMarginPx;
+    const float left = std::max(kViewportMarginPx, std::min(static_cast<float>(touch.x) - width * 0.5f, max_left));
+    char left_buf[32];
+    char top_buf[32];
+    std::snprintf(left_buf, sizeof(left_buf), "%.0fpx", left);
+    std::snprintf(top_buf, sizeof(top_buf), "%.0fpx", top);
+    element->SetProperty("left", left_buf);
+    element->SetProperty("top", top_buf);
+  };
+
+  // Quick row above the item, list below it; a message taller than the view keeps both on screen.
+  float list_min_top = kViewportMarginPx;
+  if (ui::Element* quick = layer_->GetElementById("context-menu-quick")) {
+    const float quick_height = quick->GetBox().GetSize(ui::BoxArea::Border).y;
+    const float quick_top = std::max(kViewportMarginPx, anchor_top - gap - quick_height);
+    place(quick, quick_top);
+    list_min_top = quick_top + quick_height + gap;
+  }
+  const float list_height = panel_->GetBox().GetSize(ui::BoxArea::Border).y;
+  const float list_top = std::max(list_min_top, std::min(anchor_bottom + gap, view_bottom - list_height));
+  place(panel_, list_top);
+}
+
 void ContextMenuHost::LayoutActionSheet() {
   if (!panel_ || !context_) {
     return;
@@ -339,7 +477,7 @@ void ContextMenuHost::LayoutActionSheet() {
 
   const float dp = context_->GetDensityIndependentPixelRatio();
   const float inset = kActionSheetInsetDp * dp;
-  const float bottom = kActionSheetBottomDp * dp;
+  const float bottom = (kActionSheetBottomDp + static_cast<float>(bottom_inset_dp_)) * dp;
   const float max_width = kActionSheetMaxWidthDp * dp;
   float width = static_cast<float>(dims.x) - inset * 2.f;
   if (width > max_width) {
@@ -395,9 +533,17 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
         << Tr("common.cancel") << "</button>";
     out << "</div>";
   } else {
+    const bool anchored = presentation == Presentation::Float && menu_anchor_;
+    const bool has_quick =
+        anchored && std::any_of(actions.begin(), actions.end(), [](const ContextMenuAction& a) { return a.quick; });
+    if (has_quick) {
+      out << "<div class=\"context-menu-panel context-menu-quick\" id=\"context-menu-quick\">";
+      AppendActionButtons(out, actions, ActionFilter::Quick);
+      out << "</div>";
+    }
     out << "<div class=\"context-menu-panel\" id=\"context-menu-panel\" style=\"left: " << request.position.x
         << "px; top: " << request.position.y << "px;\">";
-    AppendActionButtons(out, actions);
+    AppendActionButtons(out, actions, anchored ? ActionFilter::List : ActionFilter::All);
     out << "</div>";
   }
 
@@ -406,6 +552,9 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
   layer_element->SetClass("context-menu-layer", true);
   if (presentation == Presentation::ActionSheet) {
     layer_element->SetClass("context-menu-layer--sheet", true);
+  }
+  if (presentation == Presentation::Bar) {
+    layer_element->SetClass("context-menu-layer--bar", true);
   }
   layer_element->SetInnerRML(out.str());
   layer_ = body->AppendChild(std::move(layer_element));
@@ -416,8 +565,12 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
   layer_->AddEventListener(ui::EventId::Mousedown, this, true);
   layer_->AddEventListener(ui::EventId::Click, this, true);
 
-  if (presentation == Presentation::Float) {
+  if (presentation == Presentation::Float && menu_anchor_) {
+    LayoutAnchored(request.position);
+  } else if (presentation == Presentation::Float) {
     ClampFloatPanel(request.position);
+  } else if (presentation == Presentation::Bar) {
+    LayoutBar(request.position);
   } else {
     LayoutActionSheet();
   }
@@ -425,15 +578,23 @@ void ContextMenuHost::RenderMenu(const ContextMenuRequest& request, const std::v
 
 void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
   Dismiss();
+  menu_touch_ = request.touch;
+  last_position_ = request.position;
   menu_context_ = request.context ? request.context : context_;
   menu_target_ = request.target;
   menu_editor_ = nullptr;
+  menu_anchor_ = nullptr;
   focus_restore_ = nullptr;
   copy_snapshot_.clear();
   if (menu_context_) {
     ui::Element* focus = menu_context_->GetFocusElement();
     menu_editor_ = FindTextEditor(focus ? focus : menu_target_);
     focus_restore_ = focus ? focus : menu_editor_;
+    menu_anchor_ = anchor_resolver_ ? anchor_resolver_(menu_target_) : nullptr;
+    if (menu_anchor_) {
+      // The press was on an item, whatever field happens to hold the focus.
+      menu_editor_ = nullptr;
+    }
     if (menu_editor_) {
       copy_snapshot_ = GetEditorSelectedText(menu_editor_);
     } else if (ui::SelectionController* selection = menu_context_->GetSelectionController()) {
@@ -454,11 +615,13 @@ void ContextMenuHost::ShowAt(const ContextMenuRequest& request) {
     menu_context_ = nullptr;
     menu_target_ = nullptr;
     menu_editor_ = nullptr;
+    menu_anchor_ = nullptr;
     focus_restore_ = nullptr;
     return;
   }
   // Contextual menus stay anchored near the pointer/selection even on compact layout.
-  RenderMenu(request, active_actions_, Presentation::Float);
+  // A text field's menu is a row above the field, for a pointer as for a finger.
+  RenderMenu(request, active_actions_, menu_editor_ ? Presentation::Bar : Presentation::Float);
 }
 
 void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenuAction> actions) {
@@ -477,6 +640,7 @@ void ContextMenuHost::ShowActions(ui::Vector2i position, std::vector<ContextMenu
   menu_context_ = context_;
   menu_target_ = nullptr;
   menu_editor_ = nullptr;
+  menu_anchor_ = nullptr;
   focus_restore_ = menu_context_ ? menu_context_->GetFocusElement() : nullptr;
   copy_snapshot_.clear();
   active_actions_ = std::move(actions);
@@ -526,6 +690,7 @@ void ContextMenuHost::Dismiss() {
   menu_context_ = nullptr;
   menu_target_ = nullptr;
   menu_editor_ = nullptr;
+  menu_anchor_ = nullptr;
   copy_snapshot_.clear();
   if (restore) {
     restore->Focus();
@@ -549,6 +714,10 @@ void ContextMenuHost::Update() {
     PendingShow show = std::move(*pending_show_);
     pending_show_.reset();
     ShowActions(show.position, std::move(show.actions));
+  }
+  // Not from inside the menu's own click: the old layer had to be gone first.
+  if (const auto again = std::exchange(reopen_request_, std::nullopt)) {
+    ShowAt(*again);
   }
 }
 

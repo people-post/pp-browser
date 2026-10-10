@@ -50,6 +50,8 @@ public:
 
   Roe<void> CloseThread(const std::string& thread_id);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
+  /** "Delete for me": the message stays in the store but no longer shows on this device. Nothing is sent. */
+  Roe<void> HideMessageLocally(const std::string& thread_id, const std::string& message_id);
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
 
   void MarkThreadRead(const std::string& thread_id);

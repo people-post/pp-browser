@@ -181,6 +181,9 @@ private:
     bool image_thumb_ready = false;
     ui::String image_thumb_src;
     ui::String image_draft_name;
+    /** A reply is being written to a quoted message: the bar above the composer input. */
+    bool quote_reply = false;
+    ui::String quote_reply_text;
     bool show_thread_actions = false;
     bool show_peer_sheet = false;
     bool show_call_actions = false;
@@ -337,7 +340,25 @@ private:
   void DownloadAttachment(const std::string& message_id);
   void RetryAttachmentDownload(const std::string& message_id);
   void SyncComposerInputState();
-  void OpenReactPresetMenu(const std::string& message_id, ui::Vector2i position);
+  /** What the user reads in a message of the active thread ("" when not found). */
+  std::string MessagePlainText(const std::string& message_id) const;
+  /**
+   * Reply / Ask AI: shows `text` as the quote bar above the composer; the next send carries it as a quote.
+   * `draft_prefix` ("@ai " for Ask AI) is put into the input with the caret after it.
+   */
+  void StartQuoteReply(const std::string& text, const std::string& draft_prefix = {});
+  void CancelQuoteReply();
+  /** Share: lists the direct chats (most recent first); picking one sends `text` there. */
+  void OpenShareTargets(const std::string& text, ui::Vector2i position);
+  /** A tap on the quote of reply `reply_message_id`: scrolls to the message it quotes, if it is on screen. */
+  void JumpToQuotedMessage(const std::string& reply_message_id);
+  static void JumpToQuoteCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  /** A tap on link `link_index` of a plain-text message: confirms the host, then opens it. */
+  void OpenMessageLink(const std::string& message_id, int link_index);
+  static void OpenMessageLinkCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void CancelQuoteReplyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  /** The message being replied to (full text); empty when no reply is pending. */
+  std::string quote_reply_source_;
   void ShowReactionMorePrompt(const std::string& message_id);
   void SubmitForm(const std::string& entry_id, const std::string& form_id);
   void CalendarPrev(const std::string& entry_id);
