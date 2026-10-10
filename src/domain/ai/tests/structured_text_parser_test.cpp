@@ -397,3 +397,25 @@ TEST(StructuredTextParserTest, ListBlockDrawsItsOwnMarkers) {
   EXPECT_NE(numbered.rml.find("<li><span class=\"md-marker\">2.</span><div class=\"md-item\">B</div></li></ol>"),
             std::string::npos);
 }
+
+// PB-016: the form id lands in data-form-id="…" and submit_form('…') verbatim, so it must be a plain token.
+TEST(StructuredTextParserTest, FormIdMustBeAPlainToken) {
+  const auto block = [](const std::string& id) {
+    return std::string(R"({"blocks":[{"type":"form","id":")") + id +
+           R"(","title":"Book","submit_label":"Go","submit_template":"book {{when}}","fields":[{"id":"when","label":"When","field_type":"date"}]}]})";
+  };
+  for (const char* bad : {"a\" onclick=\"x", "a'); evil('", "a>b", "{{x}}", "", "with space"}) {
+    const auto result = pbr::StructuredTextParser::ParseBlocksJson(block(bad));
+    EXPECT_FALSE(result.ok) << "accepted form id: " << bad;
+    EXPECT_EQ(result.rml.find("data-form-id"), std::string::npos) << bad;
+  }
+  const std::string too_long(65, 'a');
+  EXPECT_FALSE(pbr::StructuredTextParser::ParseBlocksJson(block(too_long)).ok);
+
+  for (const char* good : {"booking", "Booking-2", "form_1", "a"}) {
+    const auto result = pbr::StructuredTextParser::ParseBlocksJson(block(good));
+    EXPECT_TRUE(result.ok) << "rejected form id: " << good;
+    EXPECT_NE(result.rml.find(std::string("data-form-id=\"") + good + "\""), std::string::npos) << good;
+  }
+  EXPECT_TRUE(pbr::StructuredTextParser::ParseBlocksJson(block(std::string(64, 'a'))).ok);
+}

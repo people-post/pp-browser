@@ -381,9 +381,26 @@ ParseResult ParseQuoteBlock(const Object& block) {
   return result;
 }
 
+// The form id is substituted verbatim into data-form-id="…" and submit_form('…'): a plain token only (PB-016).
+bool IsPlainToken(const std::string& id) {
+  if (id.empty() || id.size() > 64) {
+    return false;
+  }
+  for (const char c : id) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+    if (!ok) {
+      return false;
+    }
+  }
+  return true;
+}
+
 ParseResult ParseFormBlock(const Object& block) {
   if (!block.getString("id")) {
     return BlockError("form block requires id");
+  }
+  if (!IsPlainToken(*block.getString("id"))) {
+    return BlockError("form id must be 1-64 characters of [A-Za-z0-9_-]");
   }
   if (!block.getArray("fields")) {
     return BlockError("form block requires fields array");
@@ -604,6 +621,9 @@ std::string BuildArtifactRml(const Object& block, const WorkingSetKind kind, con
   }
   case WorkingSetKind::Form: {
     const std::string form_id = *block.getString("id");
+    if (!IsPlainToken(form_id)) { // ParseFormBlock already refused it; never substitute anything else
+      return inline_rml;
+    }
     return ReplaceAll(ReplaceAll(kFormPanelWidgetRml, "__FORM_ID__", form_id), "__ENTRY__", "__ENTRY__");
   }
   case WorkingSetKind::Calendar:
