@@ -170,6 +170,7 @@ struct CallMediaEngine::Impl {
   };
   /** Per publisher stream_id (V032). Guarded by mutex (decode + playout mix). */
   std::unordered_map<uint32_t, std::unique_ptr<RemoteAudioTrack>> audio_tracks;
+  bool audio_track_cap_logged = false;
   /** First OnSfuPacket log per stream; cleared on SoftMigrate send-swap / StartSfu. */
   std::mutex sfu_rx_log_mu;
   std::unordered_set<uint32_t> sfu_rx_logged_streams;
@@ -662,6 +663,15 @@ struct CallMediaEngine::Impl {
     auto it = audio_tracks.find(stream_id);
     if (it != audio_tracks.end() && it->second) {
       return it->second.get();
+    }
+    if (audio_tracks.size() >= CallMediaEngine::kMaxRemoteAudioTracks) {
+      if (!audio_track_cap_logged) {
+        audio_track_cap_logged = true;
+        EngineLog().warning << "remote audio stream " << stream_id << " dropped: already "
+                            << audio_tracks.size() << " tracks (cap " << CallMediaEngine::kMaxRemoteAudioTracks
+                            << ")";
+      }
+      return nullptr;
     }
     auto track = std::make_unique<RemoteAudioTrack>();
     int err = 0;
