@@ -143,11 +143,14 @@ Roe<std::string> HttpGet(const std::string& url, const std::vector<std::string>&
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-  // Fetched URLs/redirects come from search results (untrusted): never let a redirect hop to
-  // a non-http(s) scheme.
-  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
+  curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+  // Every endpoint is https and the responses are untrusted: a redirect may not downgrade the
+  // query to plain http or hop to another scheme (PB-071).
+  curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
+  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
 
   const CURLcode code = curl_easy_perform(curl);
   curl_slist_free_all(headers);
@@ -182,11 +185,14 @@ Roe<std::string> HttpPost(const std::string& url, const std::string& body,
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-  // Fetched URLs/redirects come from search results (untrusted): never let a redirect hop to
-  // a non-http(s) scheme.
-  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
+  curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+  // Every endpoint is https and the responses are untrusted: a redirect may not downgrade the
+  // query to plain http or hop to another scheme (PB-071).
+  curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
+  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS_STR, "https");
 
   const CURLcode code = curl_easy_perform(curl);
   curl_slist_free_all(headers);
@@ -477,7 +483,9 @@ Roe<std::string> SearchTavily(const SearchConfig& config, const std::string& que
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+  curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
 
   const CURLcode code = curl_easy_perform(curl);
   curl_slist_free_all(headers);
