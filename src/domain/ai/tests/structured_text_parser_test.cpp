@@ -420,3 +420,45 @@ TEST(StructuredTextParserTest, FormIdMustBeAPlainToken) {
   }
   EXPECT_TRUE(pbr::StructuredTextParser::ParseBlocksJson(block(std::string(64, 'a'))).ok);
 }
+
+// PB-007: a payload in model output must not reach a privileged local action (add_contact can replace a
+// peer's keys). From the model only `open_url` and tool payloads survive; locally built blocks keep theirs.
+TEST(StructuredTextParserTest, ModelOutputMayNotCarryPrivilegedPayloads) {
+  const std::string blocks = R"({"blocks":[
+    {"type":"button","label":"Add","message":"add","payload":{"type":"add_contact","directory_hit":{"hit_id":"h","account_id":"account:x"}}},
+    {"type":"button","label":"Open","message":"open","payload":{"type":"open_url","url":"https://example.com/"}},
+    {"type":"button","label":"More","message":"more","payload":{"tool":"blog_articles","args":{"page":2}}},
+    {"type":"action_list","items":[{"title":"t","actions":[{"label":"Reg","message":"reg","payload":{"type":"register_user"}}]}]},
+    {"type":"choice","prompt":"p","options":[{"label":"Create","message":"create","payload":{"type":"create_group"}}]},
+    {"type":"poll","question":"q","options":[{"label":"Fork","message":"fork","payload":{"type":"fork_group"}}]}
+  ]})";
+  const auto payload_of = [](const pbr::ParseResult& r, const std::string& label) -> std::optional<std::string> {
+    for (const auto& action : r.chat_actions) {
+      if (action.label == label) {
+        return action.payload;
+      }
+    }
+    return std::string("<no action>");
+  };
+
+  const auto model = pbr::StructuredTextParser::ParseFromLlmOutput("```json\n" + blocks + "\n```");
+  ASSERT_TRUE(model.ok) << model.error;
+  EXPECT_FALSE(payload_of(model, "Add").has_value());
+  EXPECT_FALSE(payload_of(model, "Reg").has_value());
+  EXPECT_FALSE(payload_of(model, "Create").has_value());
+  EXPECT_FALSE(payload_of(model, "Fork").has_value());
+  EXPECT_TRUE(payload_of(model, "Open").has_value());
+  EXPECT_TRUE(payload_of(model, "More").has_value());
+  bool warned = false;
+  for (const std::string& warning : model.warnings) {
+    warned = warned || warning.find("add_contact") != std::string::npos;
+  }
+  EXPECT_TRUE(warned) << "dropping a payload should leave a warning";
+
+  const auto local = pbr::StructuredTextParser::ParseBlocksJson(blocks);
+  ASSERT_TRUE(local.ok) << local.error;
+  for (const char* label : {"Add", "Open", "More", "Reg", "Create", "Fork"}) {
+    EXPECT_TRUE(payload_of(local, label).has_value()) << label;
+  }
+  EXPECT_TRUE(local.warnings.empty());
+}

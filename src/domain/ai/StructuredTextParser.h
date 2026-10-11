@@ -23,8 +23,16 @@ struct WidgetInit {
   Object config;
 };
 
+/**
+ * Who wrote the blocks being parsed. Button payloads from the model are limited to `open_url` and tool
+ * payloads; anything that would run a privileged local action (add_contact, register_user, create_group, …)
+ * is dropped with a warning (PB-007). Blocks our own code builds (people discovery, tool permission) keep theirs.
+ */
+enum class PayloadSource { Local, Model };
+
 struct ParseResult {
   bool ok = false;
+  PayloadSource payload_source = PayloadSource::Local;
   std::string rml;
   std::vector<ParsedChatAction> chat_actions;
   std::vector<WidgetInit> widget_inits;
@@ -43,7 +51,8 @@ public:
   static std::string EscapeText(const std::string& text);
   static std::string EscapeExpressionString(const std::string& text);
   static ParseResult ParseBlocksJson(const std::string& json, ResponseGoal goal = ResponseGoal::General,
-                                     RenderMode render_mode = RenderMode::Blocks);
+                                     RenderMode render_mode = RenderMode::Blocks,
+                                     PayloadSource payload_source = PayloadSource::Local);
   static ParseResult ParseFromLlmOutput(const std::string& llm_output, ResponseGoal goal = ResponseGoal::General,
                                         RenderMode render_mode = RenderMode::Blocks);
   static bool IsBlocksJsonDocument(const std::string& text);
