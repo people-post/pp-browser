@@ -27,7 +27,10 @@ bool StartMcpClient(McpClient& client, const McpConfig& config) {
   }
 
   if (client.IsRunning()) {
-    (void)client.Initialize();
+    if (auto initialized = client.Initialize(); !initialized) {
+      client.Stop(); // Initialize already logged why
+      return false;
+    }
   }
   return client.IsRunning();
 }

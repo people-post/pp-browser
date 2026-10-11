@@ -25,6 +25,10 @@ int OsProcessPipe::Read(void* /*buffer*/, size_t /*size*/) {
   return -1;
 }
 
+int OsProcessPipe::Read(void* /*buffer*/, size_t /*size*/, int /*timeout_ms*/) {
+  return -1;
+}
+
 } // namespace pbr::os
 
 #endif
