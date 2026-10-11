@@ -2,7 +2,10 @@
 
 #include "foundation/platform/os/OsProcess.h"
 
+#include <algorithm>
 #include <cerrno>
+#include <cstdlib>
+#include <cstring>
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
@@ -10,7 +13,38 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+extern "C" char** environ; // NOLINT(readability-redundant-declaration)
+
 namespace pbr::os {
+
+namespace {
+
+// Runs in the child between fork and exec (PB-036): it keeps only its three standard streams and loses our
+// PP_BROWSER_* variables (the PIN, the config path). Everything else in the environment stays, since an MCP
+// server may need it. `keep_fd` is the exec status pipe, which is CLOEXEC.
+void IsolateChild(const int keep_fd) {
+  const long open_max = sysconf(_SC_OPEN_MAX);
+  const int max_fd = static_cast<int>(std::clamp<long>(open_max, 1024, 65536));
+  for (int fd = 3; fd < max_fd; ++fd) {
+    if (fd != keep_fd) {
+      close(fd);
+    }
+  }
+  constexpr const char* kPrefix = "PP_BROWSER_";
+  const size_t prefix_size = std::strlen(kPrefix);
+  for (size_t i = 0; environ != nullptr && environ[i] != nullptr;) {
+    const char* entry = environ[i];
+    if (std::strncmp(entry, kPrefix, prefix_size) != 0) {
+      ++i;
+      continue;
+    }
+    const char* equals = std::strchr(entry, '=');
+    const std::string name(entry, equals ? static_cast<size_t>(equals - entry) : std::strlen(entry));
+    unsetenv(name.c_str()); // shifts environ; re-check the same index
+  }
+}
+
+} // namespace
 
 OsProcessPipe::~OsProcessPipe() {
   Stop();
@@ -38,6 +72,7 @@ bool OsProcessPipe::Start(const std::string& command, const std::vector<std::str
     close(stdout_pipe[0]);
     close(stdout_pipe[1]);
     close(exec_status_pipe[0]);
+    IsolateChild(exec_status_pipe[1]);
 
     std::vector<char*> argv;
     argv.push_back(const_cast<char*>(command.c_str()));
