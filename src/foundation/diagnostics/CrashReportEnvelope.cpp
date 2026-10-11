@@ -85,7 +85,11 @@ std::string ValueAfterPrefix(const std::string& line, const char* prefix) {
 CrashReportEnvelope BuildCrashReportEnvelope(const std::string& dump_text) {
   CrashReportEnvelope env;
   env.product = kProductSlug;
-  env.sample = dump_text.size() <= kMaxSampleBytes ? dump_text : dump_text.substr(0, kMaxSampleBytes);
+  // The sample carries metadata and frames only. Breadcrumbs are recent log lines and may hold peer ids
+  // and addresses; of those only the logger tags leave the device (PB-038).
+  const size_t breadcrumbs_at = dump_text.find("--- breadcrumbs ---");
+  const std::string head = breadcrumbs_at == std::string::npos ? dump_text : dump_text.substr(0, breadcrumbs_at);
+  env.sample = head.size() <= kMaxSampleBytes ? head : head.substr(0, kMaxSampleBytes);
 
   bool in_breadcrumbs = false;
   std::unordered_set<std::string> seen_tags;
@@ -161,7 +165,8 @@ std::string CrashReportEnvelopeToJson(const CrashReportEnvelope& envelope) {
 
 std::string ResolveCrashReportUploadUrl(const std::string& relay_base_url,
                                         const std::string& crash_reports_url_override) {
-  if (!crash_reports_url_override.empty()) {
+  // The override comes from a cached server document: only an https URL is trusted with a report (PB-038).
+  if (crash_reports_url_override.rfind("https://", 0) == 0) {
     return crash_reports_url_override;
   }
   if (relay_base_url.empty()) {
