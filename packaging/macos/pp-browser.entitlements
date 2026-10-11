@@ -8,6 +8,11 @@
   <true/>
   <key>com.apple.security.network.server</key>
   <true/>
+  <!-- Hardened runtime blocks the microphone and camera unless these are granted (calls). -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.device.camera</key>
+  <true/>
   <!-- No JIT / unsigned executable memory: nothing in the app or its libraries needs it (PB-045);
        verified by running a hardened-runtime signed build with only the keys above. -->
 </dict>
