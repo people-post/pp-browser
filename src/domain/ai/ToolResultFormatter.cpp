@@ -5,7 +5,9 @@
 
 namespace pbr {
 
-std::string FormatToolResultForLlm(const std::string& tool_name, const std::string& raw_result) {
+namespace {
+
+std::string FormatBody(const std::string& tool_name, const std::string& raw_result) {
   if (tool_name == "web_search") {
     return PromptBuilder::FormatSearchResultsForLlm(raw_result);
   }
@@ -18,6 +20,25 @@ std::string FormatToolResultForLlm(const std::string& tool_name, const std::stri
     return PromptBuilder::FormatMcpArticleResultsForLlm(raw_result);
   }
   return raw_result;
+}
+
+// A result may quote the end marker; swapping its brackets keeps the words and breaks the fence.
+std::string NeutraliseFenceEnd(std::string body) {
+  const std::string marker = kToolResultFenceEnd;
+  std::string replacement = marker;
+  replacement.front() = '(';
+  replacement.back() = ')';
+  for (size_t pos = body.find(marker); pos != std::string::npos; pos = body.find(marker, pos + replacement.size())) {
+    body.replace(pos, marker.size(), replacement);
+  }
+  return body;
+}
+
+} // namespace
+
+std::string FormatToolResultForLlm(const std::string& tool_name, const std::string& raw_result) {
+  return std::string(kToolResultFenceBegin) + "\n" + NeutraliseFenceEnd(FormatBody(tool_name, raw_result)) + "\n" +
+         kToolResultFenceEnd;
 }
 
 } // namespace pbr
