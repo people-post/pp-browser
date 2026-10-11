@@ -86,7 +86,7 @@ Also:
 - [ ] Synthesis prompt: short act-specific reminder (optional if `synthesis_hints` enough)
 - [ ] Update [CURRENT_STATE.md](CURRENT_STATE.md) gap table
 
-**Exit criteria:** `src/base/ai/tests/fixtures/turn_plans/` (or equivalent) has ≥1 example per act; Monitor/Repair never no-op without user-visible text.
+**Exit criteria:** `src/domain/ai/tests/fixtures/turn_plans/` (or equivalent) has ≥1 example per act; Monitor/Repair never no-op without user-visible text.
 
 ---
 
@@ -94,7 +94,7 @@ Also:
 
 **Goal:** Hand off enduring facts to stable docs; close v1.
 
-- [ ] Promote summary to `docs/AI_CENTRIC_INTERFACE.md` (or section under AGENT_CONVERSATION)
+- [ ] Promote summary to `docs/ui/AGENT_CONVERSATION.md` (or section under AGENT_CONVERSATION)
 - [ ] Link from [AGENTS.md](../../AGENTS.md) / AGENT_CONVERSATION
 - [ ] README status → **v1 done**; list v2+ tracks
 - [ ] Note follow-ups in DECISIONS only if normative
