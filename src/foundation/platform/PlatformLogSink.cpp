@@ -4,6 +4,7 @@
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
 
+#include <filesystem>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
@@ -60,6 +61,13 @@ public:
   }
 };
 
+// Log files carry ids and addresses: owner-only like the main log (PB-062). No-op on Windows ACLs.
+void MakeOwnerOnly(const std::string& path) {
+  std::error_code ec;
+  std::filesystem::permissions(path, std::filesystem::perms::owner_read | std::filesystem::perms::owner_write,
+                               std::filesystem::perm_options::replace, ec);
+}
+
 bool TryOpenEnvLogFile() {
   const char* path = std::getenv("PP_BROWSER_LOG_FILE");
   if (path == nullptr || path[0] == '\0') {
@@ -73,6 +81,7 @@ bool TryOpenEnvLogFile() {
   if (!g_env_log_file) {
     return false;
   }
+  MakeOwnerOnly(path);
   std::fprintf(g_env_log_file, "---- pp-browser log open path=%s ----\n", path);
   std::fflush(g_env_log_file);
   return true;
@@ -90,6 +99,7 @@ void EnsureIosLogFile() {
     SDL_free(pref);
     g_log_file = std::fopen(path.c_str(), "a");
     if (g_log_file) {
+      MakeOwnerOnly(path);
       std::fprintf(g_log_file, "---- pp-browser log open ----\n");
       std::fflush(g_log_file);
     }

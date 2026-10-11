@@ -5,6 +5,7 @@
 #include "common/PbrCompat.h"
 
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <stdexcept>
 
@@ -40,6 +41,19 @@ void LogFile::Rotate(const std::string& path, const std::size_t keep) {
   }
 }
 
+namespace {
+
+// Creates `path` (empty, append mode) and makes it owner-only before anyone writes to it.
+void CreateOwnerOnly(const std::string& path) {
+  {
+    std::ofstream touch(path, std::ios::app);
+  }
+  std::error_code ec;
+  fs::permissions(path, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
+}
+
+} // namespace
+
 std::string LogFile::Install(const std::string& path, const std::size_t keep) {
   auto root = logging::getRootLogger();
   if (path.empty()) {
@@ -48,6 +62,9 @@ std::string LogFile::Install(const std::string& path, const std::size_t keep) {
   std::error_code ec;
   fs::create_directories(fs::path(path).parent_path(), ec);
   Rotate(path, keep);
+  // Logs carry PeerIds / account ids — keep them owner-only (no-op on Windows ACLs). The file is created
+  // and locked down before the handler opens it, so it never exists with umask permissions (PB-062).
+  CreateOwnerOnly(path);
 
   std::shared_ptr<logging::FileHandler> handler;
   try {
@@ -56,8 +73,6 @@ std::string LogFile::Install(const std::string& path, const std::size_t keep) {
     root.warning << "Log file disabled: " << ex.what();
     return {};
   }
-  // Logs carry PeerIds / account ids — keep them owner-only (no-op on Windows ACLs).
-  fs::permissions(path, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
   root.addHandler(std::move(handler));
   return path;
 }
@@ -74,6 +89,7 @@ std::string LogFile::InstallMetrics(const std::string& log_path, const std::size
   std::error_code ec;
   fs::create_directories(fs::path(path).parent_path(), ec);
   Rotate(path, keep);
+  CreateOwnerOnly(path);
 
   std::shared_ptr<logging::FileHandler> handler;
   try {
@@ -82,7 +98,6 @@ std::string LogFile::InstallMetrics(const std::string& log_path, const std::size
     logging::getRootLogger().warning << "Metrics file disabled: " << ex.what();
     return {};
   }
-  fs::permissions(path, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace, ec);
   // The Metrics logger's own handler: its INFO lines reach this file whatever the root level
   // (the root filters them out of the main log unless the app runs with --debug).
   MetricsLog().addHandler(std::move(handler));

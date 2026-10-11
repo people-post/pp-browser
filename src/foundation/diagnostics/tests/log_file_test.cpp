@@ -52,6 +52,20 @@ TEST_F(LogFileTest, DefaultPathUnderDataDirLogs) {
   EXPECT_EQ(fs::path(pbr::LogFile::RotatedPath(path_, 2)), dir_ / "logs" / "pp-browser.2.log");
 }
 
+#if !defined(_WIN32)
+// PB-062: the log and metrics files are owner-only from the moment they exist (logs carry ids and
+// addresses); Windows uses ACLs and is not checked here.
+TEST_F(LogFileTest, InstalledFilesAreOwnerOnly) {
+  const std::string installed = pbr::LogFile::Install(path_, 2);
+  ASSERT_EQ(installed, path_);
+  const std::string metrics = pbr::LogFile::InstallMetrics(path_, 2);
+  ASSERT_FALSE(metrics.empty());
+  const auto owner_only = fs::perms::owner_read | fs::perms::owner_write;
+  EXPECT_EQ(fs::status(path_).permissions(), owner_only);
+  EXPECT_EQ(fs::status(metrics).permissions(), owner_only);
+}
+#endif
+
 TEST_F(LogFileTest, RotateShiftsPreviousLaunchesAndDropsOldest) {
   WriteText(path_, "current");
   WriteText(pbr::LogFile::RotatedPath(path_, 1), "prev1");
