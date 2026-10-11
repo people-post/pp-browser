@@ -121,7 +121,12 @@ CPack on macOS packages the signed **`PP.app` only** from `CMAKE_INSTALL_PREFIX`
 
 On `Invalid`, the script prints the notary JSON log (`notarytool log <submission-id>`).
 
-Signing uses **hardened runtime** and [`pp-browser.entitlements`](../../packaging/macos/pp-browser.entitlements) (network client/server for Brief API and libp2p).
+Signing uses **hardened runtime** and [`pp-browser.entitlements`](../../packaging/macos/pp-browser.entitlements) (network client/server for Brief API and libp2p). The file deliberately has no `allow-jit` / `allow-unsigned-executable-memory`: nothing in the app needs them (PB-045). To check a change to the entitlements locally, sign the installed app with hardened runtime and launch it:
+
+```bash
+codesign --force --deep --options runtime --entitlements packaging/macos/pp-browser.entitlements \
+  --sign "<Apple Development identity hash>" /Applications/PP.app && open -a /Applications/PP.app
+```
 
 ---
 
