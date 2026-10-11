@@ -2,6 +2,7 @@
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/ConfigApplyBridge.h"
 
+#include "foundation/crypto/ConfigSecretsStore.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/data/AppPaths.h"
@@ -204,6 +205,19 @@ Application::Application() {
   runtime.name_thread = os::SetCurrentThreadName;
   AppRuntime::Initialize(runtime);
   secrets_ = std::make_unique<ProfileSecretsEngine>();
+  // Registered before Bootstrap so a PIN-from-environment unlock reaches it too; main() applies the
+  // secrets once the SessionStore exists, and the callback covers every later unlock.
+  config_secrets_ = std::make_unique<ConfigSecretsStore>(*secrets_);
+  secrets_->RegisterDekConsumer(config_secrets_.get());
+  store_.SetConfigSecrets(config_secrets_.get());
+  config_secrets_->SetOnReady([this] {
+    if (!store_.IsInitialized()) {
+      return;
+    }
+    if (auto applied = store_.ApplyConfigSecrets(); !applied) {
+      log().warning << "config secrets not applied: " << applied.error().message;
+    }
+  });
   messaging_ = std::make_unique<ConversationsHub>();
   messaging_->BindSessionStore(store_);
   messaging_->BindSecrets(*secrets_);
@@ -312,6 +326,7 @@ Roe<void> Application::ResetActiveProfile() {
   if (auto secrets = secrets_->Initialize(profile_dir); !secrets) {
     return secrets.error();
   }
+  secrets_->RegisterDekConsumer(config_secrets_.get()); // Shutdown above dropped every consumer
 
   if (auto hub = messaging_->Initialize(config, profile_dir); !hub) {
     return hub.error();

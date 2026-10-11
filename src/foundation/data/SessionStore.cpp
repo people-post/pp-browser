@@ -30,9 +30,31 @@ ProfilePreferences SessionStore::DefaultProfilePrefs() const {
   return UserPreferences::DefaultProfile();
 }
 
+void SessionStore::SetConfigSecrets(IConfigSecrets* secrets) {
+  config_secrets_ = secrets;
+}
+
+Roe<void> SessionStore::OverlayStoredSecrets(AppConfig& config) const {
+  if (!config_secrets_ || !config_secrets_->Ready()) {
+    return {};
+  }
+  auto stored = config_secrets_->Load();
+  if (!stored) {
+    return stored.error();
+  }
+  OverlaySecrets(config, *stored);
+  return {};
+}
+
 Roe<void> SessionStore::SaveConfig(const AppConfig& config) {
   const std::string& path = bootstrap_.config_path;
-  if (auto saved = Config::SaveToFile(path, config); !saved) {
+  const bool secrets_ready = config_secrets_ && config_secrets_->Ready();
+  if (secrets_ready) {
+    if (auto stored = config_secrets_->Store(TypedSecretsOf(config)); !stored) {
+      return stored.error();
+    }
+  }
+  if (auto saved = Config::SaveToFile(path, secrets_ready ? WithoutTypedSecrets(config) : config); !saved) {
     return saved.error();
   }
 
@@ -40,9 +62,46 @@ Roe<void> SessionStore::SaveConfig(const AppConfig& config) {
   if (!reloaded) {
     return reloaded.error();
   }
+  if (auto overlaid = OverlayStoredSecrets(*reloaded); !overlaid) {
+    return overlaid.error();
+  }
 
   bootstrap_.config = std::move(*reloaded);
   NotifyConfigListeners(bootstrap_.config);
+  return {};
+}
+
+Roe<void> SessionStore::ApplyConfigSecrets() {
+  if (!config_secrets_ || !config_secrets_->Ready()) {
+    return {};
+  }
+  auto stored = config_secrets_->Load();
+  if (!stored) {
+    return stored.error();
+  }
+  // Keys still in config.json (written before the store existed, or while locked) move into the store.
+  // The file is read again here: the in-memory config may already carry overlaid keys. A key in the file
+  // is the most recently typed one, so it wins over the store; SaveConfig then rewrites the file without it.
+  ConfigSecrets in_file;
+  if (!bootstrap_.config_path.empty() && std::filesystem::exists(bootstrap_.config_path)) {
+    if (auto on_disk = Config::LoadFromFile(bootstrap_.config_path)) {
+      in_file = TypedSecretsOf(*on_disk);
+    }
+  }
+  if (!in_file.Empty()) {
+    AppConfig merged = bootstrap_.config;
+    OverlaySecrets(merged, *stored);
+    OverlaySecrets(merged, in_file);
+    return SaveConfig(merged);
+  }
+  AppConfig overlaid = bootstrap_.config;
+  OverlaySecrets(overlaid, *stored);
+  const bool changed = overlaid.llm.api_key != bootstrap_.config.llm.api_key ||
+                       overlaid.search.api_key != bootstrap_.config.search.api_key;
+  bootstrap_.config = std::move(overlaid);
+  if (changed) {
+    NotifyConfigListeners(bootstrap_.config);
+  }
   return {};
 }
 
@@ -78,6 +137,9 @@ Roe<void> SessionStore::ReloadConfig() {
   auto reloaded = Config::LoadFromFile(bootstrap_.config_path);
   if (!reloaded) {
     return reloaded.error();
+  }
+  if (auto overlaid = OverlayStoredSecrets(*reloaded); !overlaid) {
+    return overlaid.error();
   }
   // Me tab opens ReloadFromDisk every time; skip listener churn when nothing changed so
   // ChatController::ApplyRuntimeConfig does not rebuild the agent (Cancel/find-someone race).

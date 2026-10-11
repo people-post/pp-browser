@@ -4,6 +4,7 @@ pp_browser_add_foundation_library(pp_foundation_crypto
     AttachmentContentCipher.cpp
     AutoKeyEstablishment.cpp
     CanonicalAad.cpp
+    ConfigSecretsStore.cpp
     CryptoUtil.cpp
     DataKeyVault.cpp
     EncryptedPayload.cpp
