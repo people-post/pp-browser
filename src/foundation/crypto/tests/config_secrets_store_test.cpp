@@ -16,7 +16,7 @@ ByteVector Dek(const uint8_t fill) {
 
 // PB-034: the codec round-trips, binds to the profile id and the DEK, and rejects other schemas.
 TEST(ConfigSecretsStoreTest, SealAndOpenRoundTripBoundToDekAndProfile) {
-  const ConfigSecrets secrets{.llm_api_key = "sk-typed", .search_api_key = "tvly-typed"};
+  const ConfigSecrets secrets{.llm_api_key = "sk-typed"};
   auto blob = ConfigSecretsStore::Seal(Dek(1), "profile-a", secrets);
   ASSERT_TRUE(static_cast<bool>(blob)) << blob.error().message;
   const std::string raw(blob->begin(), blob->end());
@@ -67,7 +67,7 @@ TEST_F(ConfigSecretsStoreFileTest, StoreLoadAndRemoveUnderTheDek) {
   ASSERT_TRUE(static_cast<bool>(empty)) << empty.error().message;
   EXPECT_TRUE(empty->Empty()) << "no file yet means no secrets, not an error";
 
-  const ConfigSecrets secrets{.llm_api_key = "sk-typed", .search_api_key = ""};
+  const ConfigSecrets secrets{.llm_api_key = "sk-typed"};
   auto stored = store.Store(secrets);
   ASSERT_TRUE(static_cast<bool>(stored)) << stored.error().message;
   const std::string path = ConfigSecretsStore::PathFor(dir_.string());

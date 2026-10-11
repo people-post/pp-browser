@@ -71,7 +71,6 @@ Roe<ByteVector> ConfigSecretsStore::Seal(const ByteVector& dek, const std::strin
   Object json;
   json.set("schema_version", kSchemaVersion);
   json.set("llm_api_key", secrets.llm_api_key);
-  json.set("search_api_key", secrets.search_api_key);
   const std::string text = DumpJson(json);
   const ByteVector plaintext(text.begin(), text.end());
   return FileCipher::Encrypt(dek, plaintext, FileCipher::BuildAad(kAadPurpose, profile_id));
@@ -93,7 +92,6 @@ Roe<ConfigSecrets> ConfigSecretsStore::Open(const ByteVector& dek, const std::st
   }
   ConfigSecrets out;
   out.llm_api_key = json->getString("llm_api_key").value_or("");
-  out.search_api_key = json->getString("search_api_key").value_or("");
   return out;
 }
 

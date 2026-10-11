@@ -63,17 +63,13 @@ TEST_F(SessionStoreSecretsTest, SaveKeepsTypedKeysOutOfTheFile) {
   AppConfig config = store_.Snapshot().config;
   config.llm.preset = "cloud";
   config.llm.api_key = "sk-typed";
-  config.search.api_key = "tvly-typed";
   auto saved = store_.SaveConfig(config);
   ASSERT_TRUE(static_cast<bool>(saved)) << saved.error().message;
 
   EXPECT_EQ(secrets_.stored.llm_api_key, "sk-typed");
-  EXPECT_EQ(secrets_.stored.search_api_key, "tvly-typed");
   const std::string file = FileText();
   EXPECT_EQ(file.find("sk-typed"), std::string::npos) << file;
-  EXPECT_EQ(file.find("tvly-typed"), std::string::npos) << file;
   EXPECT_EQ(store_.Snapshot().config.llm.api_key, "sk-typed");
-  EXPECT_EQ(store_.Snapshot().config.search.api_key, "tvly-typed");
 
   auto reloaded = store_.ReloadConfig();
   ASSERT_TRUE(static_cast<bool>(reloaded)) << reloaded.error().message;
