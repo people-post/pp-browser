@@ -64,7 +64,7 @@ if(PP_BROWSER_IS_ANDROID)
     os/OsTlsCaPath_Android.cpp
   )
 elseif(PP_BROWSER_IS_IOS)
-  list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Ios.cpp)
+  list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Ios.cpp IosBackupExclusion_Ios.mm)
 else()
   list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Default.cpp)
 endif()
@@ -219,7 +219,8 @@ if(PP_BROWSER_IS_IOS)
     OpenSSL::SSL
     OpenSSL::Crypto
     "-framework Security"
-    "-framework CoreFoundation")
+    "-framework CoreFoundation"
+    "-framework Foundation")
   target_link_libraries(pp_foundation_platform PUBLIC
     CURL::libcurl
     OpenSSL::SSL
