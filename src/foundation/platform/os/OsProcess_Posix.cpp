@@ -47,7 +47,9 @@ bool OsProcessPipe::Start(const std::string& command, const std::vector<std::str
     argv.push_back(nullptr);
     execvp(command.c_str(), argv.data());
     const int exec_errno = errno;
-    (void)write(exec_status_pipe[1], &exec_errno, sizeof(exec_errno));
+    // GCC keeps warn_unused_result through a (void) cast; the parent only checks that bytes arrived.
+    const ssize_t reported = write(exec_status_pipe[1], &exec_errno, sizeof(exec_errno));
+    (void)reported;
     _exit(127);
   }
 
