@@ -302,6 +302,11 @@ bool ParseSpsRbsp(const uint8_t* rbsp, size_t size, ParsedSps& out) {
     (void)br.ReadSe();
     (void)br.ReadSe();
     const uint32_t n = br.ReadUe();
+    // num_ref_frames_in_pic_order_cnt_cycle is peer-controlled ue(v) (up to ~4 billion); the spec caps
+    // it at 255. Bound it so a hostile SPS cannot force a multi-billion-iteration loop (PB-024).
+    if (n > 255) {
+      return false;
+    }
     for (uint32_t i = 0; i < n; ++i) {
       (void)br.ReadSe();
     }
@@ -325,20 +330,36 @@ bool ParseSpsRbsp(const uint8_t* rbsp, size_t size, ParsedSps& out) {
   if (!br.Ok()) {
     return false;
   }
-  const int width_mbs = out.pic_width_in_mbs_minus1 + 1;
-  const int height_mbs = (out.pic_height_in_map_units_minus1 + 1) * (2 - out.frame_mbs_only_flag);
-  out.coded_width = width_mbs * 16;
-  out.coded_height = height_mbs * 16;
-  out.width = out.coded_width;
-  out.height = out.coded_height;
-  if (out.frame_cropping_flag) {
-    const int crop_unit_x = (out.chroma_format_idc == 1 || out.chroma_format_idc == 2) ? 2 : 1;
-    const int crop_unit_y =
-        (out.chroma_format_idc == 1) ? (2 * (2 - out.frame_mbs_only_flag)) : (2 - out.frame_mbs_only_flag);
-    out.width -= (out.crop_left + out.crop_right) * crop_unit_x;
-    out.height -= (out.crop_top + out.crop_bottom) * crop_unit_y;
+  // pic_width_in_mbs_minus1 / pic_height_in_map_units_minus1 / crop_* are peer-controlled ue(v) values
+  // (up to ~4 billion each): compute in int64_t and bound the result to a generous real-world ceiling,
+  // so a hostile SPS cannot overflow the int math into a bogus width/height (PB-024).
+  constexpr int64_t kMaxReasonableDimension = 16384;
+  const int64_t width_mbs = static_cast<int64_t>(out.pic_width_in_mbs_minus1) + 1;
+  const int64_t height_mbs =
+      (static_cast<int64_t>(out.pic_height_in_map_units_minus1) + 1) * (2 - out.frame_mbs_only_flag);
+  const int64_t coded_width = width_mbs * 16;
+  const int64_t coded_height = height_mbs * 16;
+  if (coded_width <= 0 || coded_height <= 0 || coded_width > kMaxReasonableDimension ||
+      coded_height > kMaxReasonableDimension) {
+    return false;
   }
-  return out.width > 0 && out.height > 0 && out.coded_width > 0 && out.coded_height > 0;
+  int64_t width = coded_width;
+  int64_t height = coded_height;
+  if (out.frame_cropping_flag) {
+    const int64_t crop_unit_x = (out.chroma_format_idc == 1 || out.chroma_format_idc == 2) ? 2 : 1;
+    const int64_t crop_unit_y =
+        (out.chroma_format_idc == 1) ? (2 * (2 - out.frame_mbs_only_flag)) : (2 - out.frame_mbs_only_flag);
+    width -= (static_cast<int64_t>(out.crop_left) + out.crop_right) * crop_unit_x;
+    height -= (static_cast<int64_t>(out.crop_top) + out.crop_bottom) * crop_unit_y;
+  }
+  if (width <= 0 || height <= 0) {
+    return false;
+  }
+  out.coded_width = static_cast<int>(coded_width);
+  out.coded_height = static_cast<int>(coded_height);
+  out.width = static_cast<int>(width);
+  out.height = static_cast<int>(height);
+  return true;
 }
 
 bool ParsePpsRbsp(const uint8_t* rbsp, size_t size, ParsedPps& out) {
