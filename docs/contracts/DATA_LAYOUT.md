@@ -20,6 +20,8 @@ pp-browser stores machine-wide connection settings separately from per-profile i
 | Config | `$XDG_CONFIG_HOME/pp-browser/config.json` or `~/.config/pp-browser/` | `~/Library/Application Support/pp-browser/` | `%APPDATA%/pp-browser/` |
 | Data | `$XDG_DATA_HOME/pp-browser/` or `~/.local/share/pp-browser/` | `~/Library/Application Support/pp-browser/data/` | `%LOCALAPPDATA%/pp-browser/` |
 
+iOS keeps both under the app container's `Library/Application Support/pp-browser/` (SDL pref path); that directory is marked excluded from iCloud / iTunes backup at first use, so message history and keys never leave the device in a backup (PB-040).
+
 Override data root with `data_dir` in config (supports `~` expansion). How config is resolved and edited: [ops/CONFIGURATION.md](../ops/CONFIGURATION.md).
 
 ## On-disk layout
