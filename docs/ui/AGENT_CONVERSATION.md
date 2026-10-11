@@ -56,6 +56,8 @@ With `llm.preset = "brief"`, a natural-language turn in the assistant panel or a
 
 Before executing a planned tool with risk `write` / `destructive` (or `mutating`), `TurnExecutor` consults `ToolPermissionPolicy` against profile `tool_permissions`:
 
+An MCP tool's risk comes from `SchemaAdapter::RiskClass` (name floor, then the server's `destructiveHint` / `readOnlyHint`). The server's `readOnlyHint` is trusted only for the promoted server; a custom server's tool is at least `write`, so it asks the first time and the user may choose Always allow (PB-055).
+
 | Verdict | Behavior |
 |---------|----------|
 | Allow | Execute |
