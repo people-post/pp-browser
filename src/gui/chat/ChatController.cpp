@@ -2131,7 +2131,7 @@ void ChatController::OpenChatLink(const std::string& entry_id, const int link_in
 }
 
 void ChatController::ConfirmAndOpenUrl(const std::string& url) {
-  if (!IsHttpsUrl(url)) {
+  if (!IsOpenableUrl(url)) {
     return;
   }
   if (skip_link_confirm_this_run_) {
