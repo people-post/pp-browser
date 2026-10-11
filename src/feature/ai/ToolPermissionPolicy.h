@@ -29,6 +29,11 @@ public:
                                      const ToolPermissionsPrefs& prefs,
                                      const std::unordered_set<std::string>& session_grants = {});
 
+  /**
+   * Whether "Always allow" may be offered / remembered for a tool: an ordinary write tool only. Security and
+   * identity settings, and anything destructive, are confirmed every time; read tools never ask (PB-015).
+   */
+  static bool AllowAlwaysEligible(const ToolMeta& meta);
   /** Persist Always allow / Never for a tool name. */
   static void SetToolDecision(ToolPermissionsPrefs& prefs, const std::string& tool_name,
                               const std::string& decision);

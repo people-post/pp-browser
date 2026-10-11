@@ -158,6 +158,7 @@ private:
 
   static void PushEvent(const std::shared_ptr<Impl>& state, AgentEvent event);
   static void PushLoading(const std::shared_ptr<Impl>& state, bool loading);
+  static ToolMeta MetaForTool(const std::shared_ptr<Impl>& state, const std::string& name);
   static void PushToolActivity(const std::shared_ptr<Impl>& state, const std::string& tool_name,
                                const std::string& status);
   static void PushAssistantReady(const std::shared_ptr<Impl>& state, const std::string& entry_id,
