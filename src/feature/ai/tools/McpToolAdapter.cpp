@@ -69,7 +69,10 @@ std::vector<ToolDescriptor> McpToolAdapter::ListTools(McpClient& client, const M
     }
     occupied.insert(tool_name);
 
-    const std::string risk = SchemaAdapter::RiskClass(mcp_tool);
+    std::string risk = SchemaAdapter::RiskClass(mcp_tool);
+    if (risk == "read" && !options.trust_server_annotations) {
+      risk = "write"; // the server's word alone does not make a tool run unasked
+    }
     ToolDescriptor descriptor;
     descriptor.definition = ToolDefinition{
         .name = tool_name,

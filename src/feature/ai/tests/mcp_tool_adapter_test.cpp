@@ -60,3 +60,33 @@ TEST(McpToolAdapterTest, BoundsSerializedToolResultsAtConfiguredLimit) {
   EXPECT_EQ(over_limit.error().message,
             "MCP tool result exceeds limit of " + std::to_string(pbr::kMaxMcpToolResultBytes) + " bytes");
 }
+
+// PB-055: a server's own `readOnlyHint` makes a tool "read" (runs without asking) only for the promoted
+// server, which is ours. A custom server's tool is at least "write": the user is asked the first time and
+// may choose Always allow. A destructive-sounding name stays destructive either way.
+TEST(McpToolAdapterTest, ReadOnlyHintIsTrustedOnlyFromThePromotedServer) {
+  McpHttpPostReset reset;
+  pbr::McpClient::SetHttpPost([](const std::string&, const std::string&,
+                                 const std::map<std::string, std::string>&) -> pbr::Roe<pbr::HttpResponse> {
+    return pbr::HttpResponse{
+        .status_code = 200,
+        .body = R"({"jsonrpc":"2.0","id":1,"result":{"tools":[)"
+                R"({"name":"lookup","description":"","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}},)"
+                R"({"name":"delete_all","description":"","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}})"
+                R"(]}})"};
+  });
+  pbr::McpClient client;
+  ASSERT_TRUE(client.StartHttp("http://mcp.test"));
+
+  const auto custom = pbr::McpToolAdapter::ListTools(client);
+  ASSERT_EQ(custom.size(), 2u);
+  EXPECT_EQ(custom[0].meta.risk, "write");
+  EXPECT_TRUE(custom[0].meta.mutating);
+  EXPECT_EQ(custom[1].meta.risk, "destructive");
+
+  const auto promoted = pbr::McpToolAdapter::ListTools(client, {.trust_server_annotations = true});
+  ASSERT_EQ(promoted.size(), 2u);
+  EXPECT_EQ(promoted[0].meta.risk, "read");
+  EXPECT_FALSE(promoted[0].meta.mutating);
+  EXPECT_EQ(promoted[1].meta.risk, "destructive");
+}

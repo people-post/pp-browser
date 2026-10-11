@@ -14,7 +14,7 @@ void BuildToolRegistryFromConfig(ToolRegistry& registry, const AppConfig& config
   registry.RegisterProvider(web_search);
 
   if (promoted_mcp && promoted_mcp->IsRunning()) {
-    McpToolProvider promoted("mcp:promoted", *promoted_mcp, {}, "feeds");
+    McpToolProvider promoted("mcp:promoted", *promoted_mcp, {.trust_server_annotations = true}, "feeds");
     registry.RegisterProvider(promoted);
   }
 
