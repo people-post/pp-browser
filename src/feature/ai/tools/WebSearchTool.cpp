@@ -378,7 +378,8 @@ Roe<std::string> SearchGoogleNewsRss(const std::string& query) {
   const std::string url = query.empty()
                               ? "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"
                               : "https://news.google.com/rss/search?q=" + UrlEncode(query) + "&hl=en-US&gl=US&ceid=US:en";
-  logging::getLogger("WebSearchTool").info << "web_search (google news rss) query: " << query;
+  // The query is the user's own words: never at info level in a file that may be shared (PB-057).
+  logging::getLogger("WebSearchTool").debug << "web_search (google news rss) query: " << query;
 
   auto body = HttpGet(url);
   if (!body) {
@@ -401,7 +402,7 @@ Roe<std::string> SearchGoogleNewsRss(const std::string& query) {
 }
 
 Roe<std::string> SearchDuckDuckGo(const std::string& query) {
-  logging::getLogger("WebSearchTool").info << "web_search query: " << query;
+  logging::getLogger("WebSearchTool").debug << "web_search query: " << query;
 
   const std::string url =
       "https://api.duckduckgo.com/?q=" + UrlEncode(query) + "&format=json&no_html=1&skip_disambig=1";
@@ -442,7 +443,7 @@ Roe<std::string> SearchDuckDuckGo(const std::string& query) {
   }
 
   if (results_empty(results)) {
-    logging::getLogger("WebSearchTool").warning << "No search results for query: " << query;
+    logging::getLogger("WebSearchTool").warning << "No search results (query length " << query.size() << ")";
     Object out;
     out.set("results", ArrayValue({}));
     out.set("message", "No results found. Try rephrasing the query.");
@@ -457,7 +458,7 @@ Roe<std::string> SearchDuckDuckGo(const std::string& query) {
 }
 
 Roe<std::string> SearchTavily(const SearchConfig& config, const std::string& query) {
-  logging::getLogger("WebSearchTool").info << "web_search (tavily) query: " << query;
+  logging::getLogger("WebSearchTool").debug << "web_search (tavily) query: " << query;
 
   if (config.api_key.empty()) {
     return Error("Tavily API key not configured");
