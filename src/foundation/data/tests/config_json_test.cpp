@@ -228,3 +228,35 @@ TEST(ConfigJsonTest, ApiKeyEnvOnlyReadsApiKeyVariables) {
 
   pbr::ICredentialStore::SetInstance(nullptr);
 }
+
+// PB-037: a key that came from an environment variable is never written back to config.json. Saving keeps
+// the `api_key_env` reference (for the model and for search) and omits the resolved value.
+TEST(ConfigJsonTest, SavingKeepsEnvReferencesAndNeverWritesResolvedKeys) {
+  RecordingCredentialStore store;
+  pbr::ICredentialStore::SetInstance(&store);
+
+  auto parsed = pbr::TryParseObject(R"({
+    "llm": { "api_key_env": "OPENAI_API_KEY" },
+    "search": { "api_key_env": "BRAVE_API_KEY" }
+  })");
+  ASSERT_TRUE(parsed.has_value());
+  pbr::AppConfig config;
+  pbr::AppConfigFromObject(*parsed, config);
+  pbr::ResolveConfigCredentials(config);
+  ASSERT_EQ(config.llm.api_key, "value-of-OPENAI_API_KEY");
+  ASSERT_EQ(config.search.api_key, "value-of-BRAVE_API_KEY");
+
+  const std::string saved = pbr::DumpJson(pbr::ConfigToObject(config, 1));
+  EXPECT_EQ(saved.find("value-of-"), std::string::npos) << saved;
+  EXPECT_NE(saved.find("OPENAI_API_KEY"), std::string::npos) << saved;
+  EXPECT_NE(saved.find("BRAVE_API_KEY"), std::string::npos) << saved;
+
+  // A key the user typed (no env reference) is still saved as before.
+  pbr::AppConfig typed;
+  typed.llm.api_key = "sk-typed";
+  typed.llm_api_key_env.clear();
+  const std::string typed_saved = pbr::DumpJson(pbr::ConfigToObject(typed, 1));
+  EXPECT_NE(typed_saved.find("sk-typed"), std::string::npos) << typed_saved;
+
+  pbr::ICredentialStore::SetInstance(nullptr);
+}
