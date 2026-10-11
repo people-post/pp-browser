@@ -338,7 +338,9 @@ void ContextBudgetFromObject(const Object& object, ContextBudget& budget) {
 Object SearchConfigToObject(const SearchConfig& config) {
   Object object;
   object.set("provider", config.provider);
-  if (!config.api_key.empty()) {
+  if (!config.api_key_env.empty()) {
+    object.set("api_key_env", config.api_key_env); // the resolved key itself stays off disk (PB-037)
+  } else if (!config.api_key.empty()) {
     object.set("api_key", config.api_key);
   }
   return object;
@@ -347,6 +349,9 @@ Object SearchConfigToObject(const SearchConfig& config) {
 void SearchConfigFromObject(const Object& object, SearchConfig& config) {
   if (auto provider = object.getString("provider")) {
     config.provider = *provider;
+  }
+  if (auto api_key_env = object.getString("api_key_env")) {
+    config.api_key_env = *api_key_env;
   }
   if (auto api_key = object.getString("api_key")) {
     config.api_key = *api_key;
@@ -683,8 +688,8 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
   }
   if (const Object* search = object.getObject("search")) {
     SearchConfigFromObject(*search, config.search);
-    if (auto api_key_env = search->getString("api_key_env"); api_key_env && IsApiKeyEnvName(*api_key_env)) {
-      config.search.api_key = ICredentialStore::Instance().Get(*api_key_env);
+    if (!config.search.api_key_env.empty() && IsApiKeyEnvName(config.search.api_key_env)) {
+      config.search.api_key = ICredentialStore::Instance().Get(config.search.api_key_env);
     }
   }
   if (auto data_dir = object.getString("data_dir")) {
@@ -886,12 +891,14 @@ Object ConfigToObject(const AppConfig& config, int config_version) {
   root.set("config_version", static_cast<int64_t>(config_version));
   if (const Object* llm_ptr = root.getObject("llm")) {
     Object llm = *llm_ptr;
-    if (!config.llm.api_key.empty()) {
-      llm.set("api_key", config.llm.api_key);
-      llm.erase("api_key_env");
-    } else if (!config.llm_api_key_env.empty()) {
+    // An env reference wins: the key resolved from it at load is never written back (PB-037). A key the user
+    // typed arrives with the reference already cleared (ApplyLlmSettingsDraft).
+    if (!config.llm_api_key_env.empty()) {
       llm.set("api_key_env", config.llm_api_key_env);
       llm.erase("api_key");
+    } else if (!config.llm.api_key.empty()) {
+      llm.set("api_key", config.llm.api_key);
+      llm.erase("api_key_env");
     }
     root.set("llm", llm);
   }
