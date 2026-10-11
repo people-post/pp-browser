@@ -70,6 +70,13 @@ ToolPermissionEval ToolPermissionPolicy::Evaluate(const std::string& tool_name, 
   return out;
 }
 
+bool ToolPermissionPolicy::AllowAlwaysEligible(const ToolMeta& meta) {
+  if (EffectiveRisk(meta) != "write") {
+    return false;
+  }
+  return meta.domain != "security" && meta.domain != "identity";
+}
+
 void ToolPermissionPolicy::SetToolDecision(ToolPermissionsPrefs& prefs, const std::string& tool_name,
                                            const std::string& decision) {
   if (tool_name.empty() || !IsValidToolPermissionDecision(decision)) {
