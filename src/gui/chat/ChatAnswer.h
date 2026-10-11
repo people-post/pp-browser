@@ -30,14 +30,29 @@ inline bool IsHttpsUrl(const std::string& url) {
   return url.size() > 8 && url.compare(0, 8, "https://") == 0;
 }
 
-/** Host of an https URL for display; userinfo and port are dropped so "a.com@evil.com" shows evil.com. */
+/** An https URL with no control characters: the only kind handed to the OS to open (PB-072). */
+inline bool IsOpenableUrl(const std::string& url) {
+  if (!IsHttpsUrl(url)) {
+    return false;
+  }
+  for (const char c : url) {
+    const auto byte = static_cast<unsigned char>(c);
+    if (byte < 0x20 || byte == 0x7f) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Host of an https URL for display; userinfo and port are dropped so "a.com@evil.com" shows evil.com.
+ *  A backslash ends the host too, as browsers treat it like a slash (PB-072). */
 inline std::string UrlHost(const std::string& url) {
   if (!IsHttpsUrl(url)) {
     return {};
   }
   std::string_view rest(url);
   rest.remove_prefix(8);
-  rest = rest.substr(0, rest.find_first_of("/?#"));
+  rest = rest.substr(0, rest.find_first_of("/?#\\"));
   if (const size_t at = rest.rfind('@'); at != std::string_view::npos) {
     rest.remove_prefix(at + 1);
   }
