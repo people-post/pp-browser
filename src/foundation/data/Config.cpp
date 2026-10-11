@@ -132,6 +132,10 @@ Roe<AppConfig> Config::Load(int argc, char** argv) {
     return loaded.error();
   }
 
+  if (!loaded->llm_api_key_env.empty() && !IsApiKeyEnvName(loaded->llm_api_key_env)) {
+    logger.warning << "llm.api_key_env '" << loaded->llm_api_key_env
+                   << "' ignored: only an upper-case name ending in _API_KEY is read";
+  }
   logger.info << "Loaded config from " << path << " (model: " << loaded->llm.model << ")";
   return loaded.value();
 }
