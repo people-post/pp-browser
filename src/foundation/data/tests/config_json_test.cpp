@@ -1,5 +1,6 @@
 #include "foundation/data/ConfigJson.h"
 #include "common/ValueJson.h"
+#include "foundation/platform/ICredentialStore.h"
 
 #include <gtest/gtest.h>
 
@@ -172,4 +173,58 @@ TEST(ConfigJsonTest, ProfilePrefsSidebarFieldsDefaultWhenAbsentAndRoundTrip) {
   EXPECT_EQ(parsed.sidebar_width_dp, 320);
   EXPECT_TRUE(parsed.sidebar_collapsed);
   EXPECT_EQ(parsed.auxiliary_width_dp, 400);
+}
+
+namespace {
+
+// Answers every lookup, so the test sees which names the config layer is willing to ask for.
+class RecordingCredentialStore final : public pbr::ICredentialStore {
+public:
+  std::string Get(const std::string& key) const override {
+    asked.push_back(key);
+    return "value-of-" + key;
+  }
+  mutable std::vector<std::string> asked;
+};
+
+} // namespace
+
+// PB-035: `api_key_env` names an API-key variable, nothing else. A config file must not be able to read an
+// arbitrary environment variable (a cloud secret, a session token) and send it as the bearer key.
+TEST(ConfigJsonTest, ApiKeyEnvOnlyReadsApiKeyVariables) {
+  RecordingCredentialStore store;
+  pbr::ICredentialStore::SetInstance(&store);
+
+  EXPECT_TRUE(pbr::IsApiKeyEnvName("OPENAI_API_KEY"));
+  EXPECT_TRUE(pbr::IsApiKeyEnvName("BRAVE_SEARCH_API_KEY"));
+  EXPECT_FALSE(pbr::IsApiKeyEnvName("AWS_SECRET_ACCESS_KEY"));
+  EXPECT_FALSE(pbr::IsApiKeyEnvName("HOME"));
+  EXPECT_FALSE(pbr::IsApiKeyEnvName("_API_KEY"));
+  EXPECT_FALSE(pbr::IsApiKeyEnvName("openai_api_key"));
+  EXPECT_FALSE(pbr::IsApiKeyEnvName("X_API_KEY "));
+
+  auto bad = pbr::TryParseObject(R"({
+    "llm": { "api_key_env": "AWS_SECRET_ACCESS_KEY" },
+    "search": { "api_key_env": "GITHUB_TOKEN" }
+  })");
+  ASSERT_TRUE(bad.has_value());
+  pbr::AppConfig config;
+  pbr::AppConfigFromObject(*bad, config);
+  pbr::ResolveConfigCredentials(config);
+  EXPECT_TRUE(config.llm.api_key.empty());
+  EXPECT_TRUE(config.search.api_key.empty());
+  EXPECT_TRUE(store.asked.empty()) << "a rejected name must not even be looked up";
+
+  auto good = pbr::TryParseObject(R"({
+    "llm": { "api_key_env": "OPENAI_API_KEY" },
+    "search": { "api_key_env": "BRAVE_API_KEY" }
+  })");
+  ASSERT_TRUE(good.has_value());
+  pbr::AppConfig ok;
+  pbr::AppConfigFromObject(*good, ok);
+  pbr::ResolveConfigCredentials(ok);
+  EXPECT_EQ(ok.llm.api_key, "value-of-OPENAI_API_KEY");
+  EXPECT_EQ(ok.search.api_key, "value-of-BRAVE_API_KEY");
+
+  pbr::ICredentialStore::SetInstance(nullptr);
 }

@@ -262,4 +262,4 @@ Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps
 | `PP_NODE_*` | Headless node deploy overlays — see [pp-node deploy overlays](#pp-node-deploy-overlays) |
 | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Linux path overrides |
 
-API keys can be set inline in Settings/config (`llm.api_key`) or via `api_key_env` resolved through `ICredentialStore`.
+API keys can be set inline in Settings/config (`llm.api_key`) or via `api_key_env` resolved through `ICredentialStore`. An `api_key_env` name must be an upper-case identifier ending in `_API_KEY` (e.g. `OPENAI_API_KEY`); any other name is ignored with a warning. A key is sent only to an `https://` base URL or to this machine (`localhost`, `127.0.0.1`, `[::1]`) over plain http.

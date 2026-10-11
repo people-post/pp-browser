@@ -1,5 +1,6 @@
 #include "domain/ai/LlmClient.h"
 
+#include "domain/ai/BearerUrlPolicy.h"
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
 #include "foundation/error/AppError.h"
@@ -205,6 +206,10 @@ std::vector<ChatMessage> LlmClient::CoalesceLeadingSystemMessages(std::vector<Ch
 Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& request) const {
   if (config_.require_api_key && config_.api_key.empty()) {
     return AppError::Config(Err::Config::MissingKey, "LLM API key not configured");
+  }
+  if (!config_.api_key.empty() && !BearerAllowedOnUrl(config_.base_url)) {
+    return AppError::Config(Err::Config::Invalid,
+                            "LLM API key is only sent over https or to localhost; base_url is " + config_.base_url);
   }
 
   const std::vector<ChatMessage> wire_messages = CoalesceLeadingSystemMessages(request.messages);

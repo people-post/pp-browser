@@ -4,6 +4,7 @@
 #include "common/ValueJson.h"
 
 #include <limits>
+#include <string_view>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -253,6 +254,20 @@ ToolPermissionsPrefs ToolPermissionsFromObject(const Object& object) {
 }
 
 } // namespace
+
+bool IsApiKeyEnvName(const std::string& name) {
+  constexpr std::string_view kSuffix = "_API_KEY";
+  if (name.size() <= kSuffix.size() || name.compare(name.size() - kSuffix.size(), kSuffix.size(), kSuffix) != 0) {
+    return false;
+  }
+  for (const char c : name) {
+    const bool ok = (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+    if (!ok) {
+      return false;
+    }
+  }
+  return true;
+}
 
 Object LlmConfigToObject(const LlmConfig& config) {
   Object object;
@@ -668,7 +683,7 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
   }
   if (const Object* search = object.getObject("search")) {
     SearchConfigFromObject(*search, config.search);
-    if (auto api_key_env = search->getString("api_key_env")) {
+    if (auto api_key_env = search->getString("api_key_env"); api_key_env && IsApiKeyEnvName(*api_key_env)) {
       config.search.api_key = ICredentialStore::Instance().Get(*api_key_env);
     }
   }
@@ -860,7 +875,7 @@ AppConfig MergeConfig(const AppConfig& defaults, const Object& overlay) {
 }
 
 void ResolveConfigCredentials(AppConfig& config) {
-  if (!config.llm_api_key_env.empty() && config.llm.api_key.empty()) {
+  if (!config.llm_api_key_env.empty() && config.llm.api_key.empty() && IsApiKeyEnvName(config.llm_api_key_env)) {
     config.llm.api_key = ICredentialStore::Instance().Get(config.llm_api_key_env);
     config.llm.require_api_key = true;
   }
