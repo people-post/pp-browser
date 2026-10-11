@@ -81,6 +81,23 @@ TEST_F(MediaSessionSpecTest, PlaybackOnlyReceivesAndNeverSends) {
   EXPECT_FALSE(engine_.SetCameraEnabled(true)) << "camera needs a capturing session";
 }
 
+// PB-051: a remote that fans out packets under ever-new stream ids must not make us allocate an
+// Opus decoder and jitter buffer per id without end. Tracks beyond the cap are dropped; the ones we
+// already have keep receiving.
+TEST_F(MediaSessionSpecTest, RemoteAudioTracksAreCapped) {
+  ASSERT_TRUE(engine_.Start("session:view", Spec::PlaybackOnly(), {}));
+  // stream 1 is the id-less 1:1 path and always dropped; start at 2.
+  for (uint32_t stream = 2; stream <= CallMediaEngine::kMaxRemoteAudioTracks + 13; ++stream) {
+    Deliver(stream, 1);
+  }
+  EXPECT_EQ(engine_.HealthSnapshot().stream_count, CallMediaEngine::kMaxRemoteAudioTracks);
+  const uint64_t before = engine_.HealthSnapshot().rx_audio_frames;
+  Deliver(2, 2);
+  EXPECT_EQ(engine_.HealthSnapshot().rx_audio_frames, before + 1) << "an existing track still receives";
+  Deliver(CallMediaEngine::kMaxRemoteAudioTracks + 100, 1);
+  EXPECT_EQ(engine_.HealthSnapshot().rx_audio_frames, before + 1) << "a dropped stream is not counted";
+}
+
 // Broadcaster shape: capture → encode → send; inbound packets are not decoded.
 TEST_F(MediaSessionSpecTest, CaptureOnlySendsAndIgnoresInbound) {
   ASSERT_TRUE(engine_.Start("session:cast", Spec::CaptureOnly(), CountingSend()));
