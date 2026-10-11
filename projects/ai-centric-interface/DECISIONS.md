@@ -74,6 +74,6 @@ ADR-style log. Newest first within each ID series. Prefix **I** (interface / int
 | OI001 | Soft-default if planner omits `act`? | Prefer hard validate + repair; soft default only if models flake in practice |
 | OI002 | Confirm vs Execute allowlist for Operate | Partially answered by I005 (risk defaults + Always allow). PeerId Execute allowlist still open. |
 | OI003 | PeerId-only contacts without multiaddr | Enough for address book v1; dial may need multiaddr later |
-| OI004 | Where to promote stable doc | `docs/AI_CENTRIC_INTERFACE.md` vs section in AGENT_CONVERSATION |
+| OI004 | Where to promote stable doc | `docs/ui/AGENT_CONVERSATION.md` vs section in AGENT_CONVERSATION |
 
 Resolve into I-decisions before or during the relevant v1 phase.

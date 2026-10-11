@@ -189,4 +189,4 @@ Improve **one row at a time** without changing act names:
 
 ### Later
 
-- [ ] Stable summary folded into `docs/` (e.g. `docs/AI_CENTRIC_INTERFACE.md`) when v1 ships
+- [ ] Stable summary folded into `docs/` (e.g. `docs/ui/AGENT_CONVERSATION.md`) when v1 ships

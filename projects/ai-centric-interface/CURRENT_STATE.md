@@ -25,15 +25,15 @@ user → context → Plan → Execute tools → Synthesize blocks → validate �
 
 | Piece | Location | Notes |
 |-------|----------|-------|
-| `TurnPlan` | `src/base/ai/TurnPlan.*` | `response_goal`, `tools`, `render_mode`, `synthesis_hints` — **no act/domain/commitment** |
+| `TurnPlan` | `src/domain/ai/TurnPlan.*` | `response_goal`, `tools`, `render_mode`, `synthesis_hints` — **no act/domain/commitment** |
 | `TurnPlanner` | `src/feature/ai/TurnPlanner.cpp` | LLM JSON plan; live `tools_summary` in prompt |
-| `IToolProvider` / `ToolRegistry` | `src/base/ai/IToolProvider.h`, `ToolRegistry.*` | MCP-shaped in-process registration (layer-safe for settings/messaging) |
+| `IToolProvider` / `ToolRegistry` | `src/domain/ai/IToolProvider.h`, `ToolRegistry.*` | MCP-shaped in-process registration (layer-safe for settings/messaging) |
 | `PayloadTurnPlanBuilder` | `src/domain/ai/PayloadTurnPlanBuilder.*` | Fast path for article/form/tool chip payloads |
 | `TurnExecutor` | `src/feature/ai/TurnExecutor.cpp` | Runs planned tools; permission gate; `people_list` shortcut |
 | `ToolPermissionPolicy` | `src/feature/ai/ToolPermissionPolicy.*` | allow / ask / deny from prefs + session grants |
 | `ParkedApproval` | `src/feature/ai/ParkedApproval.h` | Single in-flight in-chat confirm |
 | `AgentSession` | `src/feature/ai/AgentSession.*` | Plan → execute → (park\|synthesize); resume permission |
-| `PromptBuilder` | `src/base/ai/PromptBuilder.cpp` | Planner + synthesis + chat-agent prompts |
+| `PromptBuilder` | `src/domain/ai/PromptBuilder.cpp` | Planner + synthesis + chat-agent prompts |
 
 ## ResponseGoal (render — exists)
 
@@ -111,9 +111,9 @@ Root cause: **Discover-shaped planning + Operate API that only accepts directory
 
 | Asset | Location |
 |-------|----------|
-| Turn plan parse fixtures | `src/base/ai/tests/fixtures/turn_plans/` (`people_discovery`, `headlines`, `chitchat_no_tools`) |
-| Payload plan tests | `src/feature/ai/tests/payload_turn_plan_test.cpp` |
-| Prompt builder tests | `src/base/ai/tests/prompt_builder_test.cpp` |
+| Turn plan parse fixtures | `src/domain/ai/tests/fixtures/turn_plans/` (`people_discovery`, `headlines`, `chitchat_no_tools`) |
+| Payload plan tests | `src/domain/ai/tests/payload_turn_plan_test.cpp` |
+| Prompt builder tests | `src/domain/ai/tests/prompt_builder_test.cpp` |
 
 No per-act corpus yet.
 
