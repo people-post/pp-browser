@@ -8,7 +8,6 @@ pp-browser is a native AI-oriented UI shell:
 - **Hard-forked RmlUi** — RML/RCSS layout and widgets ([`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui))
 - **Hard-forked libp2p** — C++ libp2p stack (`src/lib/libp2p/`)
 - **ActionRouter** — maps UI events to MCP tool calls via bindings manifest
-- **UiGenerator** — LLM produces RML/RCSS/bindings from MCP tool schemas
 
 Source code follows a four-layer layout — see [SRC_LAYOUT.md](SRC_LAYOUT.md). Runtime ownership and settings fan-out among app / messaging / shell / chat: [RUNTIME_COMPOSITION.md](RUNTIME_COMPOSITION.md). **Parent-only destroy** (lifetimes): [OWNERSHIP.md](OWNERSHIP.md). **UI ↔ functional boundary** (state, config, actions, events): [UI_FUNCTIONAL_BOUNDARY.md](UI_FUNCTIONAL_BOUNDARY.md). **Networking:** [NETWORKING.md](NETWORKING.md) (HTTP + libp2p). Voice/video call planes: [CALLS.md](CALLS.md).
 
@@ -16,7 +15,6 @@ Source code follows a four-layer layout — see [SRC_LAYOUT.md](SRC_LAYOUT.md). 
 Application → Backend (SDL_GL3) → RmlUi Context
            → DocumentLoader / Theme / DataModelHost
            → ActionRouter → McpClient
-           → UiGenerator → LlmClient
 ```
 
 Presentation (RML/RCSS) is separate from behavior (C++ action routing and MCP).
