@@ -236,7 +236,13 @@ if(PP_BROWSER_IS_ANDROID)
 endif()
 
 if(PP_BROWSER_IS_IOS)
-  target_sources(pp_foundation_platform PRIVATE NetworkConnectivity_Ios.mm)
+  target_sources(pp_foundation_platform PRIVATE
+    NetworkConnectivity_Ios.mm
+    IosPushDeviceRegistrar.mm
+    IosApnsAppDelegate.mm)
+  target_link_libraries(pp_foundation_platform PUBLIC
+    "-framework UserNotifications"
+    "-framework UIKit")
 endif()
 
 # On-screen keyboard height: only iOS needs it (its safe area leaves the keyboard out).

@@ -8,7 +8,7 @@
 
 namespace pbr {
 
-/** Platform push token source (FCM on Android; unsupported on desktop). */
+/** Platform push token source (FCM on Android, APNs on iOS; unsupported on desktop). */
 class IPushDeviceRegistrar {
 public:
   using TokenChangedFn = std::function<void(const std::string& token)>;

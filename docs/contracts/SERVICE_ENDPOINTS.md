@@ -182,17 +182,22 @@ Signed with `pp-browser:relay-api-v1` ops `DeviceRegister=3` / `DeviceUnregister
 
 | HTTP | Purpose |
 |------|---------|
-| `POST /v1/devices/register` | Bind FCM token `{ platform, device_id, push_token, relay_user_id, timestamp, signature }` |
+| `POST /v1/devices/register` | Bind push token `{ platform, device_id, push_token, relay_user_id, timestamp, signature }` (`platform` is `android` or `ios`) |
 | `POST /v1/devices/unregister` | Remove device binding (alerts off / logout) |
 
-On `POST /v1/messages` accept, a conforming relay **best-effort** sends an FCM **data** message to registered device tokens for the recipient:
+On `POST /v1/messages` accept, a conforming relay **best-effort** wakes registered devices for the recipient:
 
-| Condition | FCM data |
-|-----------|----------|
-| Ordinary message / default | `{ "type": "inbox_wake" }` |
-| Call-invite class system control (`control_type=call_invite`) or dedicated call-invite accept path | `{ "type": "call_wake" }` |
+| Condition | Opaque type |
+|-----------|-------------|
+| Ordinary message / default | `inbox_wake` |
+| Call-invite class system control (`control_type=call_invite`) or dedicated call-invite accept path | `call_wake` |
 
-Payloads remain **opaque** — no `call_id`, names, thread ids, or media. Failures must not fail message store. How the provider authenticates to FCM is outside this contract. See [projects/push-notifications](../../projects/push-notifications/) and [p2p-av-calls V006](../../projects/p2p-av-calls/DECISIONS.md).
+| `platform` | Provider shape |
+|------------|----------------|
+| `android` | FCM **data** message `{ "type": "…" }` |
+| `ios` | APNs silent push (`content-available: 1`, `apns-push-type: background`) with custom `type` |
+
+Payloads remain **opaque** — no `call_id`, names, thread ids, or media. Failures must not fail message store. How the provider authenticates to FCM/APNs is outside this contract. See [projects/push-notifications](../../projects/push-notifications/) and [p2p-av-calls V006](../../projects/p2p-av-calls/DECISIONS.md).
 
 ## Native agent tools
 

@@ -9,7 +9,7 @@
 ## P002 — No commercial push SaaS
 
 **Date:** 2026-07-13  
-**Decision:** The configured relay talks to FCM (and later APNs) directly. No OneSignal / Firebase Console product analytics as source of truth.  
+**Decision:** The configured relay talks to FCM and APNs directly. No OneSignal / Firebase Console product analytics as source of truth.  
 **Rationale:** Aggregators see engagement stats across the user base; conflicts with privacy product stance.
 
 ## P003 — PIN-locked generic notify
@@ -40,7 +40,14 @@
 
 **Date:** 2026-07-13  
 **Decision:** Interfaces may mention `platform: ios`; APNs implementation after Android E2E.  
-**Rationale:** Android is shipped/m milestone 2; iOS is reserved.
+**Rationale:** Android is shipped/m milestone 2; iOS is reserved.  
+**Status:** Superseded by p8 (2026-10-12) — `IosPushDeviceRegistrar` + www `ApnsPushSender` landed.
+
+## P009 — APNs silent wake + .p8 on relay
+
+**Date:** 2026-10-12  
+**Decision:** iOS uses APNs HTTP/2 silent pushes (`content-available`, `apns-push-type: background`) with opaque `type=inbox_wake|call_wake`. Auth is a Team .p8 JWT on www (`BRF_WWW_APNS_*`); client stores hex device token via `platform=ios`. Sandbox host only when `useSandbox` is set (USB/dev).  
+**Rationale:** Matches P001 opacity; keeps secrets off-device; same register API as FCM.
 
 ## P008 — `call_wake` opaque type
 

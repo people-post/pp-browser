@@ -160,13 +160,13 @@ Do this at [developer.apple.com/account](https://developer.apple.com/account) af
 
 **Membership details → Team ID** (10 characters, e.g. `AB12CD34EF`).
 
-### 5. Optional: APNs key (push — deferred)
+### 5. APNs key (relay send)
 
-Push notifications are not implemented yet ([`projects/push-notifications/`](../../projects/push-notifications/)). When ready:
+Client registration is in-tree (`IosPushDeviceRegistrar` + SDL app-delegate hooks). The **.p8** stays on the www/relay host:
 
-1. **Keys → + → Apple Push Notifications service (APNs)**
-2. Download **`AuthKey_XXXX.p8`** (once)
-3. Fill `IOS_APNS_*` placeholders in `signing.env.example`
+1. **Identifiers → App ID** → enable **Push Notifications**; regenerate Development + App Store profiles (`aps-environment`)
+2. **Keys → + → Apple Push Notifications service (APNs)** → download **`AuthKey_XXXX.p8`** (once)
+3. On www: set `BRF_WWW_APNS_KEY_ID` / `TEAM_ID` / `KEY_PATH` / `BUNDLE_ID` (see www README). Use `BRF_WWW_APNS_USE_SANDBOX=1` only for USB development tokens.
 
 ---
 
@@ -289,7 +289,7 @@ No iOS release workflow is wired yet — macOS release CI remains in [`.github/w
 | Paths | [`IosPathProvider`](../../src/foundation/platform/IosPathProvider.cpp) — SDL pref path under sandbox |
 | MCP | HTTP URL only — no subprocess on mobile |
 | libp2p | PeerId + key wire only (A017); no Host/protoc bootstrap |
-| Keychain / APNs | Placeholder entitlements; implementation deferred |
+| Keychain / APNs | `aps-environment` from provisioning profile; APNs token + silent wake in-tree |
 
 See [PLATFORMS.md](../architecture/PLATFORMS.md) for lifecycle and GL reset behavior (mirror Android where applicable).
 

@@ -96,7 +96,6 @@
     <key>NSAllowsArbitraryLoads</key>
     <false/>
   </dict>
-  <!-- Placeholder for future push (APNs) — enable when APNs is implemented. -->
   <key>NSMicrophoneUsageDescription</key>
   <string>PP uses the microphone for voice and video calls.</string>
   <key>NSCameraUsageDescription</key>
