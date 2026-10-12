@@ -58,8 +58,6 @@ void NormalizeDirectoryConfig(DirectoryConfig& config);
 
 struct SearchConfig {
   std::string provider = "duckduckgo";
-  std::string api_key;
-  std::string api_key_env; // when set, api_key is resolved from it at load and never written to disk
 };
 
 struct MeshCapabilities {

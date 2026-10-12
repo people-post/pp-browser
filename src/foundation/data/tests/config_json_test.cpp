@@ -204,52 +204,45 @@ TEST(ConfigJsonTest, ApiKeyEnvOnlyReadsApiKeyVariables) {
   EXPECT_FALSE(pbr::IsApiKeyEnvName("X_API_KEY "));
 
   auto bad = pbr::TryParseObject(R"({
-    "llm": { "api_key_env": "AWS_SECRET_ACCESS_KEY" },
-    "search": { "api_key_env": "GITHUB_TOKEN" }
+    "llm": { "api_key_env": "AWS_SECRET_ACCESS_KEY" }
   })");
   ASSERT_TRUE(bad.has_value());
   pbr::AppConfig config;
   pbr::AppConfigFromObject(*bad, config);
   pbr::ResolveConfigCredentials(config);
   EXPECT_TRUE(config.llm.api_key.empty());
-  EXPECT_TRUE(config.search.api_key.empty());
   EXPECT_TRUE(store.asked.empty()) << "a rejected name must not even be looked up";
 
   auto good = pbr::TryParseObject(R"({
-    "llm": { "api_key_env": "OPENAI_API_KEY" },
-    "search": { "api_key_env": "BRAVE_API_KEY" }
+    "llm": { "api_key_env": "OPENAI_API_KEY" }
   })");
   ASSERT_TRUE(good.has_value());
   pbr::AppConfig ok;
   pbr::AppConfigFromObject(*good, ok);
   pbr::ResolveConfigCredentials(ok);
   EXPECT_EQ(ok.llm.api_key, "value-of-OPENAI_API_KEY");
-  EXPECT_EQ(ok.search.api_key, "value-of-BRAVE_API_KEY");
 
   pbr::ICredentialStore::SetInstance(nullptr);
 }
 
 // PB-037: a key that came from an environment variable is never written back to config.json. Saving keeps
-// the `api_key_env` reference (for the model and for search) and omits the resolved value.
+// the `api_key_env` reference and omits the resolved value.
 TEST(ConfigJsonTest, SavingKeepsEnvReferencesAndNeverWritesResolvedKeys) {
   RecordingCredentialStore store;
   pbr::ICredentialStore::SetInstance(&store);
 
   auto parsed = pbr::TryParseObject(R"({
-    "llm": { "api_key_env": "OPENAI_API_KEY" },
-    "search": { "api_key_env": "BRAVE_API_KEY" }
+    "llm": { "api_key_env": "OPENAI_API_KEY" }
   })");
   ASSERT_TRUE(parsed.has_value());
   pbr::AppConfig config;
   pbr::AppConfigFromObject(*parsed, config);
   pbr::ResolveConfigCredentials(config);
   ASSERT_EQ(config.llm.api_key, "value-of-OPENAI_API_KEY");
-  ASSERT_EQ(config.search.api_key, "value-of-BRAVE_API_KEY");
 
   const std::string saved = pbr::DumpJson(pbr::ConfigToObject(config, 1));
   EXPECT_EQ(saved.find("value-of-"), std::string::npos) << saved;
   EXPECT_NE(saved.find("OPENAI_API_KEY"), std::string::npos) << saved;
-  EXPECT_NE(saved.find("BRAVE_API_KEY"), std::string::npos) << saved;
 
   // A key the user typed never reaches config.json either: it belongs to the profile's secrets.enc.
   pbr::AppConfig typed;

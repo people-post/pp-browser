@@ -13,7 +13,7 @@ namespace pbr {
 class ProfileSecretsEngine;
 
 /**
- * `{profile}/secrets.enc`: the typed API keys under the profile DEK (FileCipher, AAD purpose
+ * `{profile}/secrets.enc`: the typed model API key under the profile DEK (FileCipher, AAD purpose
  * "config-secrets"), schema_version 1 (PB-034). A DEK consumer like IdentityStore: Ready() once the
  * vault is unlocked. The file is removed when there is nothing to keep.
  */

@@ -457,71 +457,6 @@ Roe<std::string> SearchDuckDuckGo(const std::string& query) {
   return DumpJson(out);
 }
 
-Roe<std::string> SearchTavily(const SearchConfig& config, const std::string& query) {
-  logging::getLogger("WebSearchTool").debug << "web_search (tavily) query: " << query;
-
-  if (config.api_key.empty()) {
-    return Error("Tavily API key not configured");
-  }
-
-  Object body;
-  body.set("api_key", config.api_key);
-  body.set("query", query);
-  body.set("max_results", static_cast<int64_t>(5));
-  std::string response;
-  CURL* curl = curl_easy_init();
-  if (!curl) {
-    return Error("curl init failed");
-  }
-  ApplyCurlSslDefaults(curl);
-
-  struct curl_slist* headers = nullptr;
-  headers = curl_slist_append(headers, "Content-Type: application/json");
-  const std::string payload = DumpJson(body);
-
-  curl_easy_setopt(curl, CURLOPT_URL, "https://api.tavily.com/search");
-  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, payload.c_str());
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-  curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
-  curl_easy_setopt(curl, CURLOPT_PROTOCOLS_STR, "https");
-
-  const CURLcode code = curl_easy_perform(curl);
-  curl_slist_free_all(headers);
-  curl_easy_cleanup(curl);
-
-  if (code != CURLE_OK) {
-    return Error(std::string("curl failed: ") + curl_easy_strerror(code));
-  }
-
-  auto json = TryParseObject(response);
-  if (!json) {
-    return Error("Failed to parse Tavily response");
-  }
-
-  std::vector<Value> results;
-  if (const Array* items = json->getArray("results")) {
-    for (const Value& item_value : items->elements) {
-      const Object* item = asObject(item_value);
-      if (!item) {
-        continue;
-      }
-      Object result;
-      result.set("title", item->getString("title").value_or(""));
-      result.set("snippet", item->getString("content").value_or(""));
-      result.set("url", item->getString("url").value_or(""));
-      results.push_back(ObjectValue(std::move(result)));
-    }
-  }
-
-  logging::getLogger("WebSearchTool").info << "web_search (tavily) returned " << results.size() << " result(s)";
-  Object out;
-  out.set("results", ArrayValue(std::move(results)));
-  return DumpJson(out);
-}
-
 } // namespace
 
 ToolDescriptor WebSearchTool::Make(const SearchConfig& config) {
@@ -550,10 +485,7 @@ Roe<std::string> WebSearchTool::Search(const SearchConfig& config, const Object&
   }
 
   const std::string normalized_query = NormalizeWebSearchQuery(query);
-
-  if (config.provider == "tavily") {
-    return SearchTavily(config, normalized_query);
-  }
+  (void)config; // every source is keyless; the provider field is kept for a future choice between them
 
   if (WantsNewsHeadlines(query) || WantsNewsHeadlines(normalized_query)) {
     if (auto rss = SearchGoogleNewsRss(normalized_query)) {

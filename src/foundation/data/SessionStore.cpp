@@ -84,8 +84,7 @@ Roe<void> SessionStore::ApplyConfigSecrets() {
   }
   AppConfig overlaid = bootstrap_.config;
   OverlaySecrets(overlaid, *stored);
-  const bool changed = overlaid.llm.api_key != bootstrap_.config.llm.api_key ||
-                       overlaid.search.api_key != bootstrap_.config.search.api_key;
+  const bool changed = overlaid.llm.api_key != bootstrap_.config.llm.api_key;
   bootstrap_.config = std::move(overlaid);
   if (changed) {
     NotifyConfigListeners(bootstrap_.config);

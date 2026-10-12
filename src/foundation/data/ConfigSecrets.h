@@ -8,14 +8,11 @@
 
 namespace pbr {
 
-/** The API keys a user typed into Settings. Kept out of config.json (PB-034); stored under the profile DEK. */
+/** The API key a user typed into Settings (cloud / custom model). Kept out of config.json (PB-034); stored under the profile DEK. */
 struct ConfigSecrets {
   std::string llm_api_key;
-  std::string search_api_key;
-  bool Empty() const { return llm_api_key.empty() && search_api_key.empty(); }
-  bool operator==(const ConfigSecrets& other) const {
-    return llm_api_key == other.llm_api_key && search_api_key == other.search_api_key;
-  }
+  bool Empty() const { return llm_api_key.empty(); }
+  bool operator==(const ConfigSecrets& other) const { return llm_api_key == other.llm_api_key; }
 };
 
 /** Where SessionStore keeps the typed keys. Ready() is false until the profile vault is unlocked; config.json
@@ -34,9 +31,6 @@ inline ConfigSecrets TypedSecretsOf(const AppConfig& config) {
   if (config.llm_api_key_env.empty()) {
     out.llm_api_key = config.llm.api_key;
   }
-  if (config.search.api_key_env.empty()) {
-    out.search_api_key = config.search.api_key;
-  }
   return out;
 }
 
@@ -45,9 +39,6 @@ inline void OverlaySecrets(AppConfig& config, const ConfigSecrets& secrets) {
   if (config.llm_api_key_env.empty() && !secrets.llm_api_key.empty()) {
     config.llm.api_key = secrets.llm_api_key;
     config.llm.require_api_key = true;
-  }
-  if (config.search.api_key_env.empty() && !secrets.search_api_key.empty()) {
-    config.search.api_key = secrets.search_api_key;
   }
 }
 

@@ -333,18 +333,12 @@ void ContextBudgetFromObject(const Object& object, ContextBudget& budget) {
 Object SearchConfigToObject(const SearchConfig& config) {
   Object object;
   object.set("provider", config.provider);
-  if (!config.api_key_env.empty()) {
-    object.set("api_key_env", config.api_key_env); // the resolved key itself stays off disk
-  }
   return object;
 }
 
 void SearchConfigFromObject(const Object& object, SearchConfig& config) {
   if (auto provider = object.getString("provider")) {
     config.provider = *provider;
-  }
-  if (auto api_key_env = object.getString("api_key_env")) {
-    config.api_key_env = *api_key_env;
   }
 }
 
@@ -674,9 +668,6 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
   }
   if (const Object* search = object.getObject("search")) {
     SearchConfigFromObject(*search, config.search);
-    if (!config.search.api_key_env.empty() && IsApiKeyEnvName(config.search.api_key_env)) {
-      config.search.api_key = ICredentialStore::Instance().Get(config.search.api_key_env);
-    }
   }
   if (auto data_dir = object.getString("data_dir")) {
     config.data_dir = *data_dir;
