@@ -18,7 +18,8 @@ struct ConfigSecrets {
   }
 };
 
-/** Where SessionStore keeps the typed keys. Ready() is false until the profile vault is unlocked. */
+/** Where SessionStore keeps the typed keys. Ready() is false until the profile vault is unlocked; config.json
+ *  never carries a key, so a typed key cannot be saved before that. */
 class IConfigSecrets {
 public:
   virtual ~IConfigSecrets() = default;
@@ -37,17 +38,6 @@ inline ConfigSecrets TypedSecretsOf(const AppConfig& config) {
     out.search_api_key = config.search.api_key;
   }
   return out;
-}
-
-/** `config` without the typed keys: what may be written to config.json. */
-inline AppConfig WithoutTypedSecrets(AppConfig config) {
-  if (config.llm_api_key_env.empty()) {
-    config.llm.api_key.clear();
-  }
-  if (config.search.api_key_env.empty()) {
-    config.search.api_key.clear();
-  }
-  return config;
 }
 
 /** Puts stored keys back into a config read from disk; env-derived keys are left alone. */

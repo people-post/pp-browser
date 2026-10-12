@@ -23,12 +23,11 @@ public:
   ProfilePreferences DefaultProfilePrefs() const;
 
   /**
-   * Typed API keys live here, not in config.json (PB-034). SaveConfig stores them through it and writes the
-   * file without them; loads overlay them back. Until it is Ready() (vault unlocked) the file is written as
-   * before, so nothing is lost; ApplyConfigSecrets moves such keys out once the vault opens.
+   * Typed API keys live here, not in config.json (PB-034). SaveConfig stores them through it (and refuses a
+   * typed key while the vault is locked); every load overlays them back.
    */
   void SetConfigSecrets(IConfigSecrets* secrets);
-  /** After unlock: overlay the stored keys and migrate any typed key still in config.json into the store. */
+  /** After unlock: overlay the stored keys onto the live config and tell listeners when that changed it. */
   Roe<void> ApplyConfigSecrets();
 
   Roe<void> SaveConfig(const AppConfig& config);

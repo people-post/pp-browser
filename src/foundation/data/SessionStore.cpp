@@ -48,13 +48,16 @@ Roe<void> SessionStore::OverlayStoredSecrets(AppConfig& config) const {
 
 Roe<void> SessionStore::SaveConfig(const AppConfig& config) {
   const std::string& path = bootstrap_.config_path;
-  const bool secrets_ready = config_secrets_ && config_secrets_->Ready();
-  if (secrets_ready) {
-    if (auto stored = config_secrets_->Store(TypedSecretsOf(config)); !stored) {
+  const ConfigSecrets typed = TypedSecretsOf(config);
+  if (config_secrets_ && config_secrets_->Ready()) {
+    if (auto stored = config_secrets_->Store(typed); !stored) {
       return stored.error();
     }
+  } else if (!typed.Empty()) {
+    return Error("Unlock the profile before saving an API key");
   }
-  if (auto saved = Config::SaveToFile(path, secrets_ready ? WithoutTypedSecrets(config) : config); !saved) {
+  // ConfigToObject never writes a key, so the file is safe to write as is.
+  if (auto saved = Config::SaveToFile(path, config); !saved) {
     return saved.error();
   }
 
@@ -78,21 +81,6 @@ Roe<void> SessionStore::ApplyConfigSecrets() {
   auto stored = config_secrets_->Load();
   if (!stored) {
     return stored.error();
-  }
-  // Keys still in config.json (written before the store existed, or while locked) move into the store.
-  // The file is read again here: the in-memory config may already carry overlaid keys. A key in the file
-  // is the most recently typed one, so it wins over the store; SaveConfig then rewrites the file without it.
-  ConfigSecrets in_file;
-  if (!bootstrap_.config_path.empty() && std::filesystem::exists(bootstrap_.config_path)) {
-    if (auto on_disk = Config::LoadFromFile(bootstrap_.config_path)) {
-      in_file = TypedSecretsOf(*on_disk);
-    }
-  }
-  if (!in_file.Empty()) {
-    AppConfig merged = bootstrap_.config;
-    OverlaySecrets(merged, *stored);
-    OverlaySecrets(merged, in_file);
-    return SaveConfig(merged);
   }
   AppConfig overlaid = bootstrap_.config;
   OverlaySecrets(overlaid, *stored);

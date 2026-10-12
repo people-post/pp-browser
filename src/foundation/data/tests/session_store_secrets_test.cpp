@@ -94,23 +94,21 @@ TEST_F(SessionStoreSecretsTest, EnvDerivedKeysAreLeftAlone) {
   EXPECT_EQ(FileText().find("from-env"), std::string::npos);
 }
 
-// Before the vault opens the file is written as before (nothing lost); once it opens, ApplyConfigSecrets
-// moves the key from the file into the store and rewrites the file without it.
-TEST_F(SessionStoreSecretsTest, ApplyMigratesAKeyFoundInTheFile) {
+// A typed key cannot be saved while the vault is locked: config.json never carries one, and there is nowhere
+// else to put it yet. Settings are only reachable after unlock, so this is a guard, not a flow.
+TEST_F(SessionStoreSecretsTest, SavingATypedKeyWhileLockedIsRefused) {
   secrets_.ready = false;
   AppConfig config = store_.Snapshot().config;
   config.llm.preset = "cloud";
-  config.llm.api_key = "sk-legacy";
-  ASSERT_TRUE(static_cast<bool>(store_.SaveConfig(config)));
-  ASSERT_NE(FileText().find("sk-legacy"), std::string::npos) << "locked: still in the file";
+  config.llm.api_key = "sk-typed";
+  auto saved = store_.SaveConfig(config);
+  ASSERT_FALSE(static_cast<bool>(saved));
+  EXPECT_NE(saved.error().message.find("Unlock"), std::string::npos) << saved.error().message;
   EXPECT_EQ(secrets_.stores, 0);
+  EXPECT_FALSE(std::filesystem::exists(store_.Snapshot().config_path)) << "nothing was written";
 
-  secrets_.ready = true;
-  auto applied = store_.ApplyConfigSecrets();
-  ASSERT_TRUE(static_cast<bool>(applied)) << applied.error().message;
-  EXPECT_EQ(secrets_.stored.llm_api_key, "sk-legacy");
-  EXPECT_EQ(FileText().find("sk-legacy"), std::string::npos) << FileText();
-  EXPECT_EQ(store_.Snapshot().config.llm.api_key, "sk-legacy");
+  config.llm.api_key.clear();
+  ASSERT_TRUE(static_cast<bool>(store_.SaveConfig(config))) << "settings without a key save while locked";
 }
 
 // Nothing in the file, something in the store: Apply overlays and tells listeners once.

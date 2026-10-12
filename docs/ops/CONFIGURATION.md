@@ -188,7 +188,7 @@ Spec: [MESH_DHT.md](../contracts/MESH_DHT.md), ADR [N028](../../projects/p2p-mes
 
 DHT complements [mesh directory](../../projects/p2p-mesh/MESH_DIRECTORY.md) (n-dir): bootstrap ∪ directory cache, never bypasses hop policy. pp-ledger fleet does **not** use this DHT — see [platform-integration](../../../pp-ledger/docs/platform-integration.md).
 
-Enter an **API key** directly in Me → Assistant (saved to `config.json`) or use **API key env var** for desktop-style env lookup when using Cloud/Custom. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Brief** (key from Profile registration); **Ollama (localhost)** remains available for local dev.
+Enter an **API key** directly in Me → Assistant (kept in the profile's `secrets.enc`, never in `config.json`) or use **API key env var** for desktop-style env lookup when using Cloud/Custom. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Brief** (key from Profile registration); **Ollama (localhost)** remains available for local dev.
 
 ### Direct connections (`mesh.direct_connections`)
 
@@ -262,4 +262,4 @@ Dogfood launcher: `./scripts/dev/pp_dogfood.sh [-- app args]` enables core dumps
 | `PP_NODE_*` | Headless node deploy overlays — see [pp-node deploy overlays](#pp-node-deploy-overlays) |
 | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` | Linux path overrides |
 
-API keys typed in Settings are kept in the profile's `secrets.enc` under the vault DEK, not in `config.json` (a key found in `config.json` is moved there at the first unlock); `api_key_env` names an environment variable resolved through `ICredentialStore` instead. An `api_key_env` name must be an upper-case identifier ending in `_API_KEY` (e.g. `OPENAI_API_KEY`); any other name is ignored with a warning. A key resolved from a variable is never written back to `config.json`: saving keeps the `api_key_env` reference (for `llm` and `search`) and omits the value. A key is sent only to an `https://` base URL or to this machine (`localhost`, `127.0.0.1`, `[::1]`) over plain http.
+API keys typed in Settings are kept in the profile's `secrets.enc` under the vault DEK; `config.json` neither reads nor writes an `api_key` field; `api_key_env` names an environment variable resolved through `ICredentialStore` instead. An `api_key_env` name must be an upper-case identifier ending in `_API_KEY` (e.g. `OPENAI_API_KEY`); any other name is ignored with a warning. A key resolved from a variable is never written back to `config.json`: saving keeps the `api_key_env` reference (for `llm` and `search`) and omits the value. A key is sent only to an `https://` base URL or to this machine (`localhost`, `127.0.0.1`, `[::1]`) over plain http.
