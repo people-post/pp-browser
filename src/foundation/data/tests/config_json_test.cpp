@@ -251,12 +251,13 @@ TEST(ConfigJsonTest, SavingKeepsEnvReferencesAndNeverWritesResolvedKeys) {
   EXPECT_NE(saved.find("OPENAI_API_KEY"), std::string::npos) << saved;
   EXPECT_NE(saved.find("BRAVE_API_KEY"), std::string::npos) << saved;
 
-  // A key the user typed (no env reference) is still saved as before.
+  // A key the user typed never reaches config.json either: it belongs to the profile's secrets.enc.
   pbr::AppConfig typed;
   typed.llm.api_key = "sk-typed";
   typed.llm_api_key_env.clear();
   const std::string typed_saved = pbr::DumpJson(pbr::ConfigToObject(typed, 1));
-  EXPECT_NE(typed_saved.find("sk-typed"), std::string::npos) << typed_saved;
+  EXPECT_EQ(typed_saved.find("sk-typed"), std::string::npos) << typed_saved;
+  EXPECT_EQ(typed_saved.find("\"api_key\""), std::string::npos) << typed_saved;
 
   pbr::ICredentialStore::SetInstance(nullptr);
 }

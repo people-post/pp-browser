@@ -44,7 +44,7 @@ TEST(ConfigMergeTest, LoadsDefaultsAndAppliesDrafts) {
   ASSERT_TRUE(static_cast<bool>(reloaded));
   EXPECT_EQ(reloaded->llm.model, "gpt-4o");
   EXPECT_EQ(reloaded->llm.preset, "cloud");
-  EXPECT_EQ(reloaded->llm.api_key, "test-key");
+  EXPECT_TRUE(reloaded->llm.api_key.empty()) << "config.json never carries the key; secrets.enc does";
   std::filesystem::remove(roundtrip_path);
 
   pbr::AppConfig brief_config = defaults;

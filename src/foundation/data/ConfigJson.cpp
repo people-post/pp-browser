@@ -278,9 +278,7 @@ Object LlmConfigToObject(const LlmConfig& config) {
   if (!config.preset.empty()) {
     object.set("preset", config.preset);
   }
-  if (!config.api_key.empty()) {
-    object.set("api_key", config.api_key);
-  }
+  // No api_key: a typed key lives in the profile's secrets.enc, never in config.json.
   return object;
 }
 
@@ -293,9 +291,6 @@ void LlmConfigFromObject(const Object& object, LlmConfig& config) {
   }
   if (auto preset = object.getString("preset")) {
     config.preset = *preset;
-  }
-  if (auto api_key = object.getString("api_key")) {
-    config.api_key = *api_key;
   }
   if (auto require_api_key = object.getIf<bool>("require_api_key")) {
     config.require_api_key = *require_api_key;
@@ -339,9 +334,7 @@ Object SearchConfigToObject(const SearchConfig& config) {
   Object object;
   object.set("provider", config.provider);
   if (!config.api_key_env.empty()) {
-    object.set("api_key_env", config.api_key_env); // the resolved key itself stays off disk (PB-037)
-  } else if (!config.api_key.empty()) {
-    object.set("api_key", config.api_key);
+    object.set("api_key_env", config.api_key_env); // the resolved key itself stays off disk
   }
   return object;
 }
@@ -352,9 +345,6 @@ void SearchConfigFromObject(const Object& object, SearchConfig& config) {
   }
   if (auto api_key_env = object.getString("api_key_env")) {
     config.api_key_env = *api_key_env;
-  }
-  if (auto api_key = object.getString("api_key")) {
-    config.api_key = *api_key;
   }
 }
 
@@ -623,7 +613,6 @@ Object AppConfigToObject(const AppConfig& config) {
   Object llm = LlmConfigToObject(config.llm);
   if (!config.llm_api_key_env.empty()) {
     llm.set("api_key_env", config.llm_api_key_env);
-    llm.erase("api_key");
   }
   object.set("llm", llm);
   object.set("search", SearchConfigToObject(config.search));
@@ -660,9 +649,6 @@ void AppConfigFromObject(const Object& object, AppConfig& config) {
       config.llm_api_key_env = *api_key_env;
       config.llm.api_key.clear();
       config.llm.require_api_key = true;
-    } else if (auto api_key = llm->getString("api_key")) {
-      config.llm.api_key = *api_key;
-      config.llm_api_key_env.clear();
     }
   }
   if (const Object* promoted_mcp = object.getObject("promoted_mcp")) {
@@ -889,19 +875,6 @@ void ResolveConfigCredentials(AppConfig& config) {
 Object ConfigToObject(const AppConfig& config, int config_version) {
   Object root = AppConfigToObject(config);
   root.set("config_version", static_cast<int64_t>(config_version));
-  if (const Object* llm_ptr = root.getObject("llm")) {
-    Object llm = *llm_ptr;
-    // An env reference wins: the key resolved from it at load is never written back (PB-037). A key the user
-    // typed arrives with the reference already cleared (ApplyLlmSettingsDraft).
-    if (!config.llm_api_key_env.empty()) {
-      llm.set("api_key_env", config.llm_api_key_env);
-      llm.erase("api_key");
-    } else if (!config.llm.api_key.empty()) {
-      llm.set("api_key", config.llm.api_key);
-      llm.erase("api_key_env");
-    }
-    root.set("llm", llm);
-  }
   return root;
 }
 

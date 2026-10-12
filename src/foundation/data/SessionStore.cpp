@@ -30,8 +30,33 @@ ProfilePreferences SessionStore::DefaultProfilePrefs() const {
   return UserPreferences::DefaultProfile();
 }
 
+void SessionStore::SetConfigSecrets(IConfigSecrets* secrets) {
+  config_secrets_ = secrets;
+}
+
+Roe<void> SessionStore::OverlayStoredSecrets(AppConfig& config) const {
+  if (!config_secrets_ || !config_secrets_->Ready()) {
+    return {};
+  }
+  auto stored = config_secrets_->Load();
+  if (!stored) {
+    return stored.error();
+  }
+  OverlaySecrets(config, *stored);
+  return {};
+}
+
 Roe<void> SessionStore::SaveConfig(const AppConfig& config) {
   const std::string& path = bootstrap_.config_path;
+  const ConfigSecrets typed = TypedSecretsOf(config);
+  if (config_secrets_ && config_secrets_->Ready()) {
+    if (auto stored = config_secrets_->Store(typed); !stored) {
+      return stored.error();
+    }
+  } else if (!typed.Empty()) {
+    return Error("Unlock the profile before saving an API key");
+  }
+  // ConfigToObject never writes a key, so the file is safe to write as is.
   if (auto saved = Config::SaveToFile(path, config); !saved) {
     return saved.error();
   }
@@ -40,9 +65,31 @@ Roe<void> SessionStore::SaveConfig(const AppConfig& config) {
   if (!reloaded) {
     return reloaded.error();
   }
+  if (auto overlaid = OverlayStoredSecrets(*reloaded); !overlaid) {
+    return overlaid.error();
+  }
 
   bootstrap_.config = std::move(*reloaded);
   NotifyConfigListeners(bootstrap_.config);
+  return {};
+}
+
+Roe<void> SessionStore::ApplyConfigSecrets() {
+  if (!config_secrets_ || !config_secrets_->Ready()) {
+    return {};
+  }
+  auto stored = config_secrets_->Load();
+  if (!stored) {
+    return stored.error();
+  }
+  AppConfig overlaid = bootstrap_.config;
+  OverlaySecrets(overlaid, *stored);
+  const bool changed = overlaid.llm.api_key != bootstrap_.config.llm.api_key ||
+                       overlaid.search.api_key != bootstrap_.config.search.api_key;
+  bootstrap_.config = std::move(overlaid);
+  if (changed) {
+    NotifyConfigListeners(bootstrap_.config);
+  }
   return {};
 }
 
@@ -78,6 +125,9 @@ Roe<void> SessionStore::ReloadConfig() {
   auto reloaded = Config::LoadFromFile(bootstrap_.config_path);
   if (!reloaded) {
     return reloaded.error();
+  }
+  if (auto overlaid = OverlayStoredSecrets(*reloaded); !overlaid) {
+    return overlaid.error();
   }
   // Me tab opens ReloadFromDisk every time; skip listener churn when nothing changed so
   // ChatController::ApplyRuntimeConfig does not rebuild the agent (Cancel/find-someone race).

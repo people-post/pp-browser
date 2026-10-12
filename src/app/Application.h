@@ -26,6 +26,7 @@ class Context;
 namespace pbr {
 
 class ActionRouter;
+class ConfigSecretsStore;
 class BadgeAggregator;
 class CallController;
 class CallUiBackend;
@@ -83,6 +84,8 @@ private:
   bool initialized_ = false;
   SessionStore store_;
   std::unique_ptr<ProfileSecretsEngine> secrets_;
+  /** Typed API keys under the profile DEK (PB-034); registered with secrets_, serves store_. */
+  std::unique_ptr<ConfigSecretsStore> config_secrets_;
   std::unique_ptr<ConversationsHub> messaging_;
   std::unique_ptr<ConversationsFacade> messaging_facade_;
   std::unique_ptr<ConfigApplyBridge> config_apply_;
