@@ -258,8 +258,9 @@ void ProfileUnlockGate::BeginDeferredUnlockAfterFirstPresent() {
         on_done(work());
       }
     } else {
-      // No vault yet — leave locked until a feature calls EnsureUnlocked (identity fork).
-      DrainQueue(false);
+      // No vault yet (fresh install): go straight to "I'm new / I already have an account", so PIN
+      // creation and the first-run wizard follow the first frame instead of an empty home screen.
+      RequestShowIdentityFork(nullptr);
     }
     return;
   }
@@ -342,6 +343,13 @@ void ProfileUnlockGate::CompleteLinkDevice(const std::string& pin, const std::st
 }
 
 void ProfileUnlockGate::Cancel() {
+  if (secrets_ && !Secrets().HasVault()) {
+    // No account yet: PP is not usable without one, so "back" on the PIN / paste page returns to
+    // the identity fork instead of dropping the user on an empty home screen (Kenneth 2026-10-13).
+    showing_ = false;
+    RequestShowIdentityFork(nullptr);
+    return;
+  }
   Finish(false);
 }
 

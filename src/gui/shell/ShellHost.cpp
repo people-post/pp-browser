@@ -1999,15 +1999,13 @@ std::string ShellHost::SerializePinGate() const {
       << Tr("pin.identity_new") << "</button>";
   out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_identity_link()\">"
       << Tr("pin.identity_link") << "</button>";
-  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("pin.not_now")
-      << "</button>";
   out << "</div>";
   out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_chooser_mode\">";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_set_pin()\">" << Tr("pin.set_pin")
       << "</button>";
   out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_use_default()\">"
       << Tr("pin.just_continue") << "</button>";
-  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("pin.not_now")
+  out << "<button class=\"btn btn-ghost\" data-event-click=\"pin_gate_cancel()\">" << Tr("common.back")
       << "</button>";
   out << "</div>";
   out << "<textarea class=\"field shell-pin-gate-input\" data-if=\"pin_gate_link_paste_mode\" "
@@ -2023,9 +2021,12 @@ std::string ShellHost::SerializePinGate() const {
       << Tr("pin.confirm_placeholder") << "\"/>";
   out << "<div class=\"shell-dialog-actions row\" "
          "data-if=\"!pin_gate_chooser_mode && !pin_gate_identity_fork_mode\">";
-  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode || pin_gate_link_paste_mode\" "
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_create_mode\" "
          "data-event-click=\"pin_gate_cancel()\">"
       << Tr("pin.not_now") << "</button>";
+  out << "<button class=\"btn btn-secondary\" data-if=\"pin_gate_link_paste_mode\" "
+         "data-event-click=\"pin_gate_cancel()\">"
+      << Tr("common.back") << "</button>";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_submit()\">" << Tr("common.continue")
       << "</button>";
   out << "</div></div></div>";

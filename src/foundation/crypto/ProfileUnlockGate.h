@@ -73,7 +73,8 @@ public:
   void EnsureUnlocked(std::function<void(bool unlocked)> done);
 
   /**
-   * After first present: silent default unlock when pin_is_default, else unlock UI when vault exists.
+   * After first present: silent default unlock when pin_is_default, else unlock UI when a vault
+   * exists, else (fresh install) the identity fork.
    * Queues EnsureUnlocked callers while unlock_in_progress.
    * Heavy work runs via ports.run_heavy when set (keeps first paint interactive).
    */
@@ -90,7 +91,7 @@ public:
   void CompleteWithDefaultPin();
   /** UI: first-run "I already have an account" after PIN + paste. */
   void CompleteLinkDevice(const std::string& pin, const std::string& bundle_json, bool set_default_pin);
-  /** UI: cancel chooser / create only. */
+  /** UI: cancel chooser / create / paste. Without a vault this returns to the identity fork. */
   void Cancel();
 
 private:
