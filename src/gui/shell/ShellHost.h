@@ -102,6 +102,8 @@ public:
   void RemountDialogChrome();
   /** Mount/clear PIN gate into #shell-pin-gate-mount (not full SyncLayout). */
   void RemountPinGateChrome();
+  /** Mount `body` into the overlay mount element `mount_id` (empty body clears). Deferred to the next UI turn. */
+  void MountOverlayBody(const std::string& mount_id, const std::string& body);
   void Update(ui::Context* context);
   /** Call after ui::Context::Update so RequestNextUpdate is not cleared by it. Arms power-save. */
   void NotifyFrameEnd(ui::Context* context);

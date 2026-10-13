@@ -26,6 +26,7 @@ class Context;
 namespace pbr {
 
 class ActionRouter;
+class OnboardingController;
 class ConfigSecretsStore;
 class BadgeAggregator;
 class CallController;
@@ -108,6 +109,7 @@ private:
   std::unique_ptr<EmojiPickerController> emoji_picker_;
   std::unique_ptr<ProfileUnlockGate> unlock_gate_;
   std::unique_ptr<PinGateController> pin_gate_;
+  std::unique_ptr<OnboardingController> onboarding_;
   std::optional<AgentSession> agent_session_;
   std::unique_ptr<FontEngineInterfaceHarfBuzz> harfbuzz_font_engine_;
 };

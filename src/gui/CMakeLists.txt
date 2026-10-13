@@ -23,6 +23,7 @@ pp_browser_add_feature_library(pp_gui
     EmojiPickerController.cpp
     FlowCoordinator.cpp
     PinGateController.cpp
+    onboarding/OnboardingController.cpp
     ProfileSettingsSection.cpp
     SecuritySettingsSection.cpp
     SettingsController.cpp

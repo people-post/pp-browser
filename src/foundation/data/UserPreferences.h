@@ -64,6 +64,8 @@ struct ProfilePreferences {
   std::string attachment_download_policy = "smart";
   /** Me → About: show the technical options (ids, endpoints, MCP, paths). Off for everyone by default. */
   bool show_advanced_settings = false;
+  /** First-run wizard finished or skipped (or an account was brought over). */
+  bool onboarding_completed = false;
   /** When true, compact shell chrome uses opaque surfaces only (no backdrop frost). */
   bool reduce_transparency = false;
   /** When false, disables the single-surface frost tier (dogfood / perf); opaque chrome remains. */
