@@ -111,6 +111,9 @@ public:
   void OnSelectContact(const std::string& contact_id);
   void OnDetailDismissed();
 
+  /** Contacts → find people; also the first-run wizard's "Find friends". */
+  void OnFindSomeone();
+
 private:
   static void SelectContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void BackToListCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
@@ -139,7 +142,6 @@ private:
   void OnSecureMessage();
   void OnAddContactMenu(ui::Event& ev);
   void OnAddContact();
-  void OnFindSomeone();
   void OnCopyId();
   void OnShareContact();
   void OnSetTrust(const std::string& trust);

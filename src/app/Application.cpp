@@ -988,9 +988,9 @@ void Application::WireUnlockPinAndFlow() {
         system->SetClipboardText(text.c_str());
       }
     };
-    onboarding_ports.open_people_picker = [this]() {
-      if (people_picker_) {
-        people_picker_->OpenFree();
+    onboarding_ports.find_friends = [this]() {
+      if (contacts_) {
+        contacts_->OnFindSomeone();
       }
     };
     onboarding_ports.is_completed = [this]() {

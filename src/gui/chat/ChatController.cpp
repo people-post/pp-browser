@@ -3107,7 +3107,7 @@ void ChatController::OnFindSomeone() {
   }
   OnNewChat();
   focus_draft_after_sync_ = true;
-  chat_.draft = "Find someone on the network";
+  chat_.draft = Tr("home.suggestion.find_someone_prompt");
   DirtyChatChrome();
 }
 
@@ -3655,7 +3655,6 @@ void ChatController::RefreshLlmSetupBanner() {
   const AppConfig& config = Store().Snapshot().config;
   use_llm_ = !config.llm.base_url.empty();
   const std::string kRegisterBriefHard = Tr("chat.hint.brief_register");
-  const std::string kGuestBriefSoft = Tr("chat.hint.brief_free_tier");
   const std::string kBriefUnavailable = Tr("chat.hint.brief_unavailable");
   const std::string kBriefUnavailableTemp = Tr("chat.hint.brief_unavailable_temp");
 
@@ -3680,14 +3679,9 @@ void ChatController::RefreshLlmSetupBanner() {
       UserFeedback::NeedsSetup(last_brief_banner_);
       return;
     }
-    if (registered.empty() && !guest.empty()) {
-      last_brief_banner_ = kGuestBriefSoft;
-      UserFeedback::NeedsSetup(last_brief_banner_);
-      return;
-    }
     const std::string& banner = ChromeSnapshot().banner_message;
     if ((!last_brief_banner_.empty() && banner == last_brief_banner_) || banner == kRegisterBriefHard ||
-        banner == kGuestBriefSoft || banner == kBriefUnavailable || banner == kBriefUnavailableTemp) {
+        banner == kBriefUnavailable || banner == kBriefUnavailableTemp) {
       last_brief_banner_.clear();
       if (shell_feedback_.dismiss_banner) {
         shell_feedback_.dismiss_banner();
