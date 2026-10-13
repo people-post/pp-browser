@@ -1035,6 +1035,9 @@ void Application::WireAgentAndConfig() {
       }
     });
   }
+  contacts_->SetShowAdvanced(store_.Snapshot().profile_prefs.show_advanced_settings);
+  store_.AddProfilePrefsListener(
+      [this](const ProfilePreferences& prefs) { contacts_->SetShowAdvanced(prefs.show_advanced_settings); });
 }
 
 bool Application::MountPresenters(ui::Context* context) {

@@ -210,8 +210,12 @@ const SettingsSectionHandler* SettingsController::FindHandler(const std::string&
 
 void SettingsController::InitSections() {
   sections_.clear();
+  const bool advanced = ui_state_.show_advanced_settings == "on";
   for (const std::unique_ptr<SettingsSectionHandler>& handler : section_handlers_) {
     const SettingsSectionListItem item = handler->ListItem();
+    if (item.advanced_only && !advanced) {
+      continue;
+    }
     sections_.push_back({.id = item.id.c_str(),
                          .title = item.title.c_str(),
                          .subtitle = item.subtitle.c_str(),
@@ -276,6 +280,7 @@ void SettingsController::PullBindingsToUiState() {
   ui_state_.reduce_transparency = bindings_.reduce_transparency.c_str();
   ui_state_.call_diagnostics = bindings_.call_diagnostics.c_str();
   ui_state_.crash_reports_enabled = bindings_.crash_reports_enabled.c_str();
+  ui_state_.show_advanced_settings = bindings_.show_advanced_settings.c_str();
   ui_state_.pin_protection_status = bindings_.pin_protection_status.c_str();
   ui_state_.pin_protection_is_default = bindings_.pin_protection_is_default;
   ui_state_.pin_protection_not_setup = bindings_.pin_protection_not_setup;
@@ -359,6 +364,8 @@ void SettingsController::PushUiStateToBindings() {
   bindings_.reduce_transparency = ui_state_.reduce_transparency.c_str();
   bindings_.call_diagnostics = ui_state_.call_diagnostics.c_str();
   bindings_.crash_reports_enabled = ui_state_.crash_reports_enabled.c_str();
+  bindings_.show_advanced_settings = ui_state_.show_advanced_settings.c_str();
+  bindings_.advanced = ui_state_.show_advanced_settings == "on";
   bindings_.profile_label = ui_state_.profile_label.c_str();
   bindings_.config_dir = ui_state_.config_dir.c_str();
   bindings_.data_dir = ui_state_.data_dir.c_str();
@@ -546,6 +553,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.Bind("reduce_transparency", &controller.bindings_.reduce_transparency);
     ctor.Bind("call_diagnostics", &controller.bindings_.call_diagnostics);
     ctor.Bind("crash_reports_enabled", &controller.bindings_.crash_reports_enabled);
+    ctor.Bind("show_advanced_settings", &controller.bindings_.show_advanced_settings);
+    ctor.Bind("advanced", &controller.bindings_.advanced);
     ctor.Bind("profile_label", &controller.bindings_.profile_label);
     ctor.Bind("config_dir", &controller.bindings_.config_dir);
     ctor.Bind("data_dir", &controller.bindings_.data_dir);
@@ -596,6 +605,8 @@ bool SettingsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("toggle_show_notifications", &SettingsController::ToggleShowNotificationsCallback);
     ctor.BindEventCallback("toggle_reduce_transparency", &SettingsController::ToggleReduceTransparencyCallback);
     ctor.BindEventCallback("toggle_call_diagnostics", &SettingsController::ToggleCallDiagnosticsCallback);
+    ctor.BindEventCallback("toggle_show_advanced_settings",
+                           &SettingsController::ToggleShowAdvancedSettingsCallback);
     ctor.BindEventCallback("toggle_crash_reports", &SettingsController::ToggleCrashReportsCallback);
     ctor.BindEventCallback("toggle_auto_renew_registration", &SettingsController::ToggleAutoRenewRegistrationCallback);
     ctor.BindEventCallback("on_integrations_field_changed", &SettingsController::OnIntegrationsFieldChangedCallback);
@@ -1643,8 +1654,8 @@ void SettingsController::PerformClearDownloadedAttachments() {
 }
 
 void SettingsController::RefreshLocalizedChrome() {
-  InitSections();
   SyncBindingsFromSession();
+  InitSections(); // after the sync: the advanced flag comes from the profile prefs
   ApplySupportDiscovery();
   if (!selected_id_.empty()) {
     if (const SettingsSectionHandler* handler = FindHandler(selected_id_.c_str())) {
@@ -1952,6 +1963,18 @@ void SettingsController::ToggleCallDiagnosticsCallback(ui::DataModelHandle /*mod
       controller.bindings_.call_diagnostics == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
   controller.MarkSectionDirty("appearance");
+  controller.DirtyAll();
+}
+
+void SettingsController::ToggleShowAdvancedSettingsCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                            const ui::VariantList& /*args*/) {
+  auto& controller = Instance();
+  controller.bindings_.show_advanced_settings =
+      controller.bindings_.show_advanced_settings == "on" ? "off" : "on";
+  controller.PullBindingsToUiState();
+  controller.MarkSectionDirty("about");
+  controller.InitSections(); // the advanced-only sections appear or go
+  controller.PushUiStateToBindings();
   controller.DirtyAll();
 }
 

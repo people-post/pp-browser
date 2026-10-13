@@ -739,6 +739,7 @@ Object ProfilePrefsToObject(const ProfilePreferences& prefs) {
   object.set("group_invite_policy", prefs.group_invite_policy);
   object.set("call_invite_policy", prefs.call_invite_policy);
   object.set("attachment_download_policy", prefs.attachment_download_policy);
+  object.set("show_advanced_settings", prefs.show_advanced_settings);
   object.set("reduce_transparency", prefs.reduce_transparency);
   object.set("compact_chrome_frost", prefs.compact_chrome_frost);
   object.set("sidebar_width_dp", static_cast<int64_t>(prefs.sidebar_width_dp));
@@ -803,6 +804,7 @@ void ProfilePrefsFromObject(const Object& object, ProfilePreferences& prefs) {
   } else {
     prefs.attachment_download_policy = "smart";
   }
+  prefs.show_advanced_settings = object.getIf<bool>("show_advanced_settings").value_or(false);
   if (auto reduce_transparency = object.getIf<bool>("reduce_transparency")) {
     prefs.reduce_transparency = *reduce_transparency;
   } else {

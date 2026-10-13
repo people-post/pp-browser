@@ -16,6 +16,7 @@
           <button class="btn btn-secondary settings-action-bar" type="button"
                   data-event-click="clear_downloaded_attachments()">{{i18n:settings.storage.clear_attachments}}</button>
         </div>
+        <div class="stack" data-if="advanced">
         <p class="text">{{i18n:settings.storage.library.title}}</p>
         <p class="text muted">{{i18n:settings.storage.library.help}}</p>
         <div class="settings-actions row">
@@ -54,6 +55,7 @@
         <p class="text muted settings-path">{{i18n:settings.storage.config_label}} <span>{{config_dir}}</span></p>
         <p class="text muted settings-path">{{i18n:settings.storage.data_label}} <span>{{data_dir}}</span></p>
         <p class="text muted settings-path">{{i18n:settings.storage.profile_data_label}} <span>{{profile_dir}}</span></p>
+        </div>
         <div class="settings-danger-zone stack">
           <p class="text muted">
             {{i18n:settings.storage.reset_warning}}

@@ -31,7 +31,7 @@
                  data-event-blur="on_profile_nickname_commit()"
                  placeholder="{{i18n:settings.profile.nickname_placeholder}}"/>
         </label>
-        <p class="text muted me-profile-meta" data-if="profile_peer_id != ''">
+        <p class="text muted me-profile-meta" data-if="advanced && profile_peer_id != ''">
           {{i18n:settings.profile.peer_id_label}} <span>{{profile_peer_id}}</span>
         </p>
         <p class="text muted me-profile-meta" data-if="profile_relay_id != ''">
@@ -43,10 +43,10 @@
         <p class="text muted me-profile-meta">
           {{i18n:settings.registration.label}} <span>{{profile_registration_status}}</span>
         </p>
-        <p class="text muted me-profile-meta" data-if="profile_registration_expires != ''">
+        <p class="text muted me-profile-meta" data-if="advanced && profile_registration_expires != ''">
           {{i18n:settings.registration.expires}} <span>{{profile_registration_expires}}</span>
         </p>
-        <div class="settings-toggle-row row">
+        <div class="settings-toggle-row row" data-if="advanced">
           <span class="settings-label settings-toggle-label">{{i18n:settings.auto_renew}}</span>
           <button class="settings-switch" type="button"
                   data-class-settings-switch--on="auto_renew_registration == 'auto'"
@@ -74,7 +74,7 @@
           </button>
           <button class="btn btn-primary" type="button" data-if="profile_show_register"
                   data-event-click="register_profile()"><span>{{profile_register_label}}</span></button>
-          <button class="btn btn-secondary" type="button" data-if="profile_show_rotate"
+          <button class="btn btn-secondary" type="button" data-if="advanced && profile_show_rotate"
                   data-event-click="rotate_brief_llm_key()">{{i18n:settings.llm.rotate_brief_key}}</button>
         </div>
       </div>

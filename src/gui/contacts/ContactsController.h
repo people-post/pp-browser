@@ -102,6 +102,8 @@ public:
   void SyncLayoutMode();
   /** Reload list from store (e.g. after AI add_contact while tab is open). */
   void Refresh();
+  /** Me → About → "Show advanced settings": ids, addresses and fingerprints in the contact detail. */
+  void SetShowAdvanced(bool advanced);
   void Tick();
   void FlushPending();
   void OnSelectContact(const std::string& contact_id);
@@ -156,6 +158,7 @@ private:
   std::vector<ContactListRow> contacts_;
   ui::String search_query_;
   bool compact_layout_ = false;
+  bool advanced_ = false;
   ContactDetail selected_;
   ui::Context* context_ = nullptr;
   bool contact_dirty_ = false;

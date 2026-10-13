@@ -25,6 +25,8 @@ struct McpServerUiState {
 };
 
 struct SettingsUiState {
+  /** UI switch value: "on" or "off" (Me → About). Hides ids, endpoints, MCP and paths when off. */
+  std::string show_advanced_settings = "off";
   std::string llm_preset = "brief";
   std::string llm_base_url;
   std::string llm_model;
@@ -135,6 +137,8 @@ struct SettingsSectionListItem {
   std::string id;
   std::string title;
   std::string subtitle;
+  /** Listed only while Me → About → "Show advanced settings" is on. */
+  bool advanced_only = false;
   /** Non-count attention on the section row (e.g. Network reachability nudge). */
   bool attention = false;
 };
