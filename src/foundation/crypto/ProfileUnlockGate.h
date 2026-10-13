@@ -73,7 +73,8 @@ public:
   void EnsureUnlocked(std::function<void(bool unlocked)> done);
 
   /**
-   * After first present: silent default unlock when pin_is_default, else unlock UI when vault exists.
+   * After first present: silent default unlock when pin_is_default, else unlock UI when a vault
+   * exists, else (fresh install) the identity fork.
    * Queues EnsureUnlocked callers while unlock_in_progress.
    * Heavy work runs via ports.run_heavy when set (keeps first paint interactive).
    */
