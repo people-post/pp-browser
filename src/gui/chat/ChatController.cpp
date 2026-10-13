@@ -3107,7 +3107,7 @@ void ChatController::OnFindSomeone() {
   }
   OnNewChat();
   focus_draft_after_sync_ = true;
-  chat_.draft = "Find someone on the network";
+  chat_.draft = Tr("home.suggestion.find_someone_prompt");
   DirtyChatChrome();
 }
 

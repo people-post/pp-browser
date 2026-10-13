@@ -53,7 +53,6 @@ bool OnboardingController::RegisterModel(ui::Context* context) {
     ctor.Bind("busy", &busy_);
     ctor.BindEventCallback("onboarding_register", &OnboardingController::RegisterCallback);
     ctor.BindEventCallback("onboarding_copy_id", &OnboardingController::CopyIdCallback);
-    ctor.BindEventCallback("onboarding_share", &OnboardingController::ShareCallback);
     ctor.BindEventCallback("onboarding_next", &OnboardingController::NextCallback);
     ctor.BindEventCallback("onboarding_find_friends", &OnboardingController::FindFriendsCallback);
     ctor.BindEventCallback("onboarding_finish", &OnboardingController::FinishCallback);
@@ -182,18 +181,6 @@ void OnboardingController::CopyIdCallback(ui::DataModelHandle /*model*/, ui::Eve
   UserFeedback::Ok(Tr("onboarding.id_copied"));
 }
 
-void OnboardingController::ShareCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
-                                         const ui::VariantList& /*args*/) {
-  auto& self = Instance();
-  if (self.account_id_.empty() || !self.ports_.copy_text) {
-    return;
-  }
-  const std::string nickname = self.nickname_.c_str();
-  const std::string id = self.account_id_.c_str();
-  self.ports_.copy_text(Tr("onboarding.invite_text", {{"name", nickname}, {"id", id}}));
-  UserFeedback::Ok(Tr("onboarding.invite_copied"));
-}
-
 void OnboardingController::NextCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
                                         const ui::VariantList& /*args*/) {
   auto& self = Instance();
@@ -209,8 +196,8 @@ void OnboardingController::FindFriendsCallback(ui::DataModelHandle /*model*/, ui
                                                const ui::VariantList& /*args*/) {
   auto& self = Instance();
   self.Finish();
-  if (self.ports_.open_people_picker) {
-    self.ports_.open_people_picker();
+  if (self.ports_.find_friends) {
+    self.ports_.find_friends();
   }
 }
 

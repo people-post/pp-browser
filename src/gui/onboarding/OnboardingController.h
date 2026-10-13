@@ -34,7 +34,6 @@ public:
 private:
   static void RegisterCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CopyIdCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
-  static void ShareCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void NextCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void FindFriendsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void FinishCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
