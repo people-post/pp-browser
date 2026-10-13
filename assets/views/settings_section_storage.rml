@@ -1,5 +1,5 @@
       <div class="settings-section stack">
-        <p class="text muted">{{i18n:settings.storage.profile_label}} <span>{{profile_label}}</span></p>
+        <p class="text muted" data-if="advanced">{{i18n:settings.storage.profile_label}} <span>{{profile_label}}</span></p>
         <p class="text">{{profile_size_label}}</p>
         <p class="text muted">{{attachment_cache_size_label}}</p>
         <div class="settings-choice-row">
