@@ -14,7 +14,6 @@ set(_pp_platform_core_sources
   os/OsFile_Posix.cpp
   os/OsProcess_Posix.cpp
   os/OsThreadName_Posix.cpp
-  os/OsLocale_Posix.cpp
   CurlSsl.cpp
   AssetIO.cpp
   IAssetLocator.cpp
@@ -88,6 +87,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
 elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Darwin.cpp
+    os/OsLocale_Darwin.mm
     os/OsProcessStats_Default.cpp
     os/OsThreadStackDump_Darwin.cpp
     desktop/PathProvider_Darwin.cpp
@@ -105,6 +105,7 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
 else()
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Linux.cpp
+    os/OsLocale_Posix.cpp
     os/OsProcessStats_Linux.cpp
     os/OsThreadStackDump_Linux.cpp
     desktop/PathProvider_Linux.cpp
@@ -227,6 +228,11 @@ if(PP_BROWSER_IS_IOS)
     OpenSSL::Crypto
     "-framework Security"
     "-framework CoreFoundation")
+endif()
+
+# macOS: OsLocale_Darwin.mm (platform_core, also linked by pp-node) needs Foundation; iOS adds it above.
+if(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN" AND NOT PP_BROWSER_IS_IOS)
+  target_link_libraries(pp_foundation_platform_core PUBLIC "-framework Foundation")
 endif()
 
 # Android: ApplyPlatformCurlSsl sets CURLOPT_CAPATH via curl.
