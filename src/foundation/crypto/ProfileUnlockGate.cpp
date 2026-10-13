@@ -343,6 +343,13 @@ void ProfileUnlockGate::CompleteLinkDevice(const std::string& pin, const std::st
 }
 
 void ProfileUnlockGate::Cancel() {
+  if (secrets_ && !Secrets().HasVault()) {
+    // No account yet: PP is not usable without one, so "back" on the PIN / paste page returns to
+    // the identity fork instead of dropping the user on an empty home screen (Kenneth 2026-10-13).
+    showing_ = false;
+    RequestShowIdentityFork(nullptr);
+    return;
+  }
   Finish(false);
 }
 

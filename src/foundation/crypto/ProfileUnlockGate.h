@@ -91,7 +91,7 @@ public:
   void CompleteWithDefaultPin();
   /** UI: first-run "I already have an account" after PIN + paste. */
   void CompleteLinkDevice(const std::string& pin, const std::string& bundle_json, bool set_default_pin);
-  /** UI: cancel chooser / create only. */
+  /** UI: cancel chooser / create / paste. Without a vault this returns to the identity fork. */
   void Cancel();
 
 private:

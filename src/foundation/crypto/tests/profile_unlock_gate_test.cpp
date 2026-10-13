@@ -52,5 +52,26 @@ TEST_F(ProfileUnlockGateTest, FreshInstallShowsIdentityForkAfterFirstPresent) {
   EXPECT_FALSE(gate_.IsUnlockInProgress());
 }
 
+// Without an account the app is unusable, so "back" on the PIN chooser / paste page returns to
+// the identity fork instead of dismissing the gate onto an empty home screen.
+TEST_F(ProfileUnlockGateTest, CancelWithoutVaultReturnsToIdentityFork) {
+  ASSERT_FALSE(engine_.HasVault());
+  int fork_shown = 0;
+  bool dismissed = false;
+  ProfileUnlockPorts ports;
+  ports.messaging_initialized = []() { return true; };
+  ports.messaging_ready = []() { return false; };
+  ports.ui.show_identity_fork = [&]() { ++fork_shown; };
+  ports.ui.dismiss = [&]() { dismissed = true; };
+  gate_.BindPorts(std::move(ports));
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  ASSERT_EQ(fork_shown, 1);
+
+  gate_.Cancel(); // "back" from the chooser / paste page
+
+  EXPECT_EQ(fork_shown, 2);
+  EXPECT_FALSE(dismissed);
+}
+
 } // namespace
 } // namespace pbr
