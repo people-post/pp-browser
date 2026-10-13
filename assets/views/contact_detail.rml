@@ -34,17 +34,16 @@
         <input class="field" type="text" data-value="selected.display_name"
                data-event-change="on_contact_field_changed()" placeholder="{{i18n:contacts.name_placeholder}}"/>
       </label>
-      <div class="contacts-trust-actions row">
-        <button class="btn btn-secondary contacts-trust-btn"
-                data-class-contacts-trust-btn--active="selected.trust_key == 'friendly'"
-                type="button" data-event-click="set_trust('friendly')">{{i18n:contacts.trust.friendly}}</button>
-        <button class="btn btn-secondary contacts-trust-btn"
-                data-class-contacts-trust-btn--active="selected.trust_key == 'unknown'"
-                type="button" data-event-click="set_trust('unknown')">{{i18n:contacts.trust.unknown}}</button>
-        <button class="btn btn-secondary contacts-trust-btn"
-                data-class-contacts-trust-btn--active="selected.trust_key == 'blocked'"
-                type="button" data-event-click="set_trust('blocked')">{{i18n:contacts.trust.blocked}}</button>
+      <div class="settings-toggle-row row" data-if="selected.trust_key != 'blocked'">
+        <span class="settings-label settings-toggle-label">{{i18n:contacts.trust_toggle}}</span>
+        <button class="settings-switch" type="button"
+                data-class-settings-switch--on="selected.trust_key == 'friendly'"
+                data-event-click="toggle_trust_friendly()">
+          <div class="settings-switch-knob"></div>
+        </button>
       </div>
+      <p class="text muted settings-help" data-if="selected.trust_key != 'blocked'">{{i18n:contacts.trust_toggle.help}}</p>
+      <p class="text muted settings-help" data-if="selected.trust_key == 'blocked'">{{i18n:contacts.blocked_hint}}</p>
     </div>
 
     <div class="contact-detail-section stack">
@@ -104,6 +103,10 @@
     </div>
 
     <div class="contact-detail-danger me-profile-actions row">
+      <button class="btn btn-danger-soft" type="button" data-if="selected.trust_key != 'blocked'"
+              data-event-click="block_contact()">{{i18n:contacts.block}}</button>
+      <button class="btn btn-secondary" type="button" data-if="selected.trust_key == 'blocked'"
+              data-event-click="unblock_contact()">{{i18n:contacts.unblock}}</button>
       <button class="btn btn-danger-soft btn-icon" type="button" data-event-click="remove_contact()">
         <svg src="../icons/trash.svg" width="14" height="14" crop-to-content="true"></svg>
         {{i18n:contacts.remove_button}}

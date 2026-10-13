@@ -341,6 +341,23 @@ Roe<Contact> ConversationsFacade::AddContactFromDirectoryHit(const DirectoryHit&
   return hub_.Contacts().AddFromDirectoryHit(hit);
 }
 
+Roe<void> ConversationsFacade::SetContactTrust(const std::string& contact_id, const TrustLevel level) {
+  auto contact = hub_.Contacts().Get(contact_id);
+  if (!contact) {
+    return contact.error();
+  }
+  if (!*contact) {
+    return Error("Contact not found");
+  }
+  Contact updated = **contact;
+  updated.local.trust = level;
+  SyncContactMirrors(updated);
+  if (auto saved = hub_.Contacts().Upsert(updated); !saved) {
+    return saved.error();
+  }
+  return {};
+}
+
 Roe<RelayDeleteResult> ConversationsFacade::ClearUndeliveredOlderThan(const int older_than_days) {
   return hub_.MeshMessaging().ClearUndeliveredOlderThan(older_than_days);
 }

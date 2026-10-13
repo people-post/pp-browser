@@ -147,6 +147,8 @@ public:
   void RegisterPeerKemKey(const std::string& kind, const std::string& value, const std::string& key_b64,
                           const std::string& source);
   Roe<Contact> AddContactFromDirectoryHit(const DirectoryHit& hit);
+  /** Block / unblock / trust from wherever the person is shown (chat row menu, contact detail). */
+  Roe<void> SetContactTrust(const std::string& contact_id, TrustLevel level);
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
 
   // --- Groups ---------------------------------------------------------------
