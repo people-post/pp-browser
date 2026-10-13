@@ -199,6 +199,8 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   detail.title = title.empty() ? Tr("people_picker.unnamed").c_str() : title.c_str();
   detail.display_name = contact.local.display_name.c_str();
   detail.nickname = contact.remote.nickname.c_str();
+  detail.name_placeholder =
+      contact.remote.nickname.empty() ? Tr("contacts.name_placeholder").c_str() : contact.remote.nickname.c_str();
   detail.relay_id = PrimaryIdOfKind(contact, ContactIdKind::RelayUser).c_str();
   detail.peer_id = PrimaryIdOfKind(contact, ContactIdKind::PeerId).c_str();
   detail.has_relay_id = !detail.relay_id.empty();
@@ -475,6 +477,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
       detail_handle.RegisterMember("message_hint", &ContactDetail::message_hint);
       detail_handle.RegisterMember("remote_updated", &ContactDetail::remote_updated);
       detail_handle.RegisterMember("can_message", &ContactDetail::can_message);
+      detail_handle.RegisterMember("name_placeholder", &ContactDetail::name_placeholder);
       detail_handle.RegisterMember("has_relay_id", &ContactDetail::has_relay_id);
       detail_handle.RegisterMember("has_icon", &ContactDetail::has_icon);
       detail_handle.RegisterMember("icon_src", &ContactDetail::icon_src);

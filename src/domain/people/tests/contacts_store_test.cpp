@@ -255,4 +255,29 @@ TEST_F(ContactsStoreTest, RejectsContactsOverProfileJsonFileSizeLimit) {
   EXPECT_NE(listed.error().message.find("exceeds limit"), std::string::npos);
 }
 
+// A stranger who wrote first is added from a bare id; when the directory later answers, the nickname lands
+// in the contact and becomes its title, while the user's own remark stays empty (and editable).
+TEST_F(ContactsStoreTest, DirectoryNicknameFillsAContactAddedFromABareId) {
+  ContactsStore store(data_dir_.string());
+
+  DirectoryHit bare;
+  bare.hit_id = "account:stranger";
+  bare.account_id = "account:stranger";
+  bare.ids = {{ContactIdKind::Account, "account:stranger", true}};
+  auto added = store.AddFromDirectoryHit(bare);
+  ASSERT_TRUE(static_cast<bool>(added)) << added.error().message;
+  EXPECT_TRUE(added->local.display_name.empty());
+  EXPECT_TRUE(ContactEffectiveTitle(*added).find("account") != std::string::npos ||
+              ContactEffectiveTitle(*added).find("stranger") != std::string::npos)
+      << "before the lookup only the id is known: " << ContactEffectiveTitle(*added);
+
+  DirectoryHit answered = bare;
+  answered.nickname = "Ada";
+  auto filled = store.ApplyRemoteSnapshot(added->id, answered, 0);
+  ASSERT_TRUE(static_cast<bool>(filled)) << filled.error().message;
+  EXPECT_EQ(filled->remote.nickname, "Ada");
+  EXPECT_TRUE(filled->local.display_name.empty()) << "the remark is the user's; never filled from the directory";
+  EXPECT_EQ(ContactEffectiveTitle(*filled), "Ada");
+}
+
 } // namespace

@@ -167,6 +167,8 @@ public:
   Roe<std::optional<Contact>> FindContactByIdentity(const std::string& identity, ContactIdKind kind);
   Roe<std::optional<Contact>> GetContact(const std::string& contact_id);
   std::optional<DirectoryHit> GetDirectoryShadow(const std::string& peer_id);
+  /** Start a directory lookup for `peer_id` if none is cached or in flight; the result lands in the shadow cache. */
+  void EnsureDirectoryLookup(const std::string& peer_id);
 
   // --- Actions --------------------------------------------------------------
   Roe<std::optional<std::string>> DispatchAction(const std::string& payload_json);

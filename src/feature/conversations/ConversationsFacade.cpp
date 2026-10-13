@@ -409,6 +409,10 @@ std::optional<DirectoryHit> ConversationsFacade::GetDirectoryShadow(const std::s
   return hub_.DirectoryShadows().Get(peer_id);
 }
 
+void ConversationsFacade::EnsureDirectoryLookup(const std::string& peer_id) {
+  hub_.DirectoryShadows().EnsureLookup(peer_id);
+}
+
 // --- Actions ----------------------------------------------------------------
 
 Roe<std::optional<std::string>> ConversationsFacade::DispatchAction(const std::string& payload_json) {
