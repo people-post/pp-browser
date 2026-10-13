@@ -28,8 +28,13 @@ bool StartMcpClient(McpClient& client, const McpConfig& config) {
 
   if (client.IsRunning()) {
     if (auto initialized = client.Initialize(); !initialized) {
-      client.Stop(); // Initialize already logged why
-      return false;
+      // HTTP is stateless per request: a failed initialize (typically the phone's network is not up yet at
+      // launch) must not cost the server for the session; the next tools/list simply tries again. A stdio
+      // server whose initialize failed is dropped: its process is not trustworthy (#300).
+      if (config.url.empty()) {
+        client.Stop(); // Initialize already logged why
+        return false;
+      }
     }
   }
   return client.IsRunning();
