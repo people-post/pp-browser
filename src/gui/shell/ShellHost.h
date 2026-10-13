@@ -23,6 +23,7 @@
 #include <functional>
 #include <optional>
 #include <source_location>
+#include <map>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -307,6 +308,8 @@ private:
   void RemountDialogChromeNow();
   void FlushRemountDialogChrome();
   void RemountPinGateChromeNow();
+  /** SyncLayout rebuilt the DOM: put every MountOverlayBody body back into its (now empty) mount. */
+  void RemountOverlayBodiesNow();
   void FlushRemountPinGateChrome();
   DismissTarget ResolveDismissTarget() const;
   void BeginAnimatedDismiss(DismissTarget target);
@@ -363,6 +366,8 @@ private:
   bool remount_call_chrome_pending_ = false;
   bool remount_dialog_chrome_pending_ = false;
   bool remount_pin_gate_chrome_pending_ = false;
+  /** Last body per overlay mount id (onboarding wizard); survives the full rebuild in SyncLayout. */
+  std::map<std::string, std::string> overlay_bodies_;
   /** True from first paint until SettleStartupCoverArm (deferred unlock decision). */
   bool startup_cover_armed_ = true;
   /** Cleared after cold-start prepare ends — blocks mid-session unlock from re-showing the logo. */

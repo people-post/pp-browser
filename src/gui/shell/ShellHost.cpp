@@ -2654,6 +2654,7 @@ void ShellHost::SyncLayout() {
   RemountDialogChromeNow();
   RemountCallChromeNow();
   RemountPinGateChromeNow();
+  RemountOverlayBodiesNow();
   DirtyWindow();
   if (state_.auxiliary_open) {
     DataModelHost::Instance().Dirty("shell", "working_set_active");
@@ -2854,6 +2855,14 @@ void ShellHost::RemountDialogChromeNow() {
 }
 
 void ShellHost::MountOverlayBody(const std::string& mount_id, const std::string& body) {
+  // Remembered so SyncLayout can put it back: the wizard mounted right after unlock was wiped by
+  // the full shell rebuild that follows (session list load / language apply) — fresh install on
+  // the iPhone went straight to an empty home screen (Kenneth 2026-10-13).
+  if (body.empty()) {
+    overlay_bodies_.erase(mount_id);
+  } else {
+    overlay_bodies_[mount_id] = body;
+  }
   // Deferred like the PIN gate: a click handler may still be mid-dispatch inside the old overlay.
   AppRuntime::PostUI([mount_id, body]() {
     ShellHost& shell = ShellHost::Instance();
@@ -2892,6 +2901,21 @@ void ShellHost::FlushRemountPinGateChrome() {
     ShellHost::Instance().DirtyPinGate();
     Backend::RequestForceFrame();
   });
+}
+
+void ShellHost::RemountOverlayBodiesNow() {
+  if (overlay_bodies_.empty() || !context_ || context_->GetNumDocuments() == 0) {
+    return;
+  }
+  ui::ElementDocument* doc = context_->GetDocument(0);
+  if (!doc) {
+    return;
+  }
+  for (const auto& [mount_id, body] : overlay_bodies_) {
+    if (ui::Element* mount = doc->GetElementById(mount_id.c_str())) {
+      RmlMount::MountInner(mount, body);
+    }
+  }
 }
 
 void ShellHost::RemountPinGateChromeNow() {
