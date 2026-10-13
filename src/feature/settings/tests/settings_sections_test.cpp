@@ -77,7 +77,7 @@ TEST(SettingsSectionsTest, SyncAndPersistenceSignals) {
   storage_section.SyncFromSession(bootstrap, state);
   EXPECT_EQ(state.data_dir, "/tmp/data");
   EXPECT_FALSE(state.profile_size_label.empty());
-  EXPECT_NE(state.profile_size_label.find("Profile uses ~"), std::string::npos);
+  EXPECT_NE(state.profile_size_label.find("use about"), std::string::npos) << state.profile_size_label;
   EXPECT_FALSE(state.attachment_cache_size_label.empty());
   EXPECT_TRUE(storage_section.IsWritable());
 

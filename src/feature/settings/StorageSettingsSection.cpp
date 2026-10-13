@@ -96,7 +96,7 @@ void StorageSettingsSection::SyncFromSession(const BootstrapResult& bootstrap, S
   state.data_dir = bootstrap.data_dir;
   state.profile_dir = bootstrap.profile_data_dir;
   const uint64_t bytes = DirectoryByteSize(bootstrap.profile_data_dir);
-  state.profile_size_label = "Profile uses ~" + FormatByteSize(bytes);
+  state.profile_size_label = Tr("settings.storage.profile_size", {{"size", FormatByteSize(bytes)}});
   state.attachment_cache_size_label =
       Tr("settings.storage.attachment_cache_size",
          {{"size", FormatByteSize(AttachmentCacheByteSize(bootstrap.profile_data_dir))}});
