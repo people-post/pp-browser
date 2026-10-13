@@ -1260,6 +1260,11 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
                : thread.kind == ThreadKind::Direct ? SessionKind::Direct
                                                    : SessionKind::Ai;
   state.has_contact = contact_id.has_value();
+  if (contact_id) {
+    if (auto contact = facade_->GetContact(*contact_id); contact && *contact) {
+      state.blocked = (*contact)->local.trust == TrustLevel::Blocked;
+    }
+  }
   const ThreadLocalPrefs prefs = ThreadPrefsOf(thread_id).value_or(ThreadLocalPrefs{});
   state.unread = SessionIsUnread(thread.unread_count, prefs.marked_unread);
   state.pinned = prefs.pinned_at != 0;
@@ -1329,6 +1334,35 @@ std::vector<ContextMenuAction> ChatController::SessionMenuActions(const std::str
         }
       };
       break;
+    case SessionMenuItem::Block:
+    case SessionMenuItem::Unblock: {
+      const bool block = item == SessionMenuItem::Block;
+      action.id = block ? "session_block" : "session_unblock";
+      action.label = Tr(block ? "chat.menu.block" : "chat.menu.unblock");
+      action.run = [this, id = *contact_id, block]() {
+        const auto apply = [this, id, block]() {
+          if (auto set = facade_->SetContactTrust(id, block ? TrustLevel::Blocked : TrustLevel::Unknown); !set) {
+            UserFeedback::Fail(Tr("contacts.err.trust"));
+            return;
+          }
+          if (contacts_notify_.refresh) {
+            contacts_notify_.refresh();
+          }
+          ShowToast(Tr(block ? "chat.menu.blocked_toast" : "chat.menu.unblocked_toast"));
+          NotifySurfaceChanged();
+        };
+        if (!block) {
+          apply();
+          return;
+        }
+        ShowConfirm(Tr("chat.menu.block_confirm_title"), Tr("chat.menu.block_confirm_body"), [apply](const bool ok) {
+          if (ok) {
+            apply();
+          }
+        });
+      };
+      break;
+    }
     case SessionMenuItem::ClearChat:
       action.id = "session_clear_chat";
       action.label = Tr("chat.menu.clear_history");

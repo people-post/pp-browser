@@ -20,6 +20,8 @@ enum class SessionMenuItem {
   Archive,
   Unarchive,
   ViewContact,
+  Block,
+  Unblock,
   ClearChat,
   Delete,
   LeaveGroup,
@@ -31,6 +33,8 @@ struct SessionMenuState {
   bool unread = false;
   /** Direct chat whose peer is a saved contact. */
   bool has_contact = false;
+  /** That contact is blocked (messages and calls from them are dropped). */
+  bool blocked = false;
   bool pinned = false;
   /** Muted right now (an expired mute is not muted). */
   bool muted = false;
@@ -39,7 +43,8 @@ struct SessionMenuState {
 
 /** Destructive items are styled as danger and ask before they act. */
 inline bool SessionMenuItemIsDestructive(const SessionMenuItem item) {
-  return item == SessionMenuItem::ClearChat || item == SessionMenuItem::Delete || item == SessionMenuItem::LeaveGroup;
+  return item == SessionMenuItem::Block || item == SessionMenuItem::ClearChat || item == SessionMenuItem::Delete ||
+         item == SessionMenuItem::LeaveGroup;
 }
 
 /**
@@ -56,6 +61,7 @@ inline std::vector<SessionMenuItem> SessionMenuItems(const SessionMenuState& sta
   items.push_back(state.archived ? SessionMenuItem::Unarchive : SessionMenuItem::Archive);
   if (state.kind == SessionKind::Direct && state.has_contact) {
     items.push_back(SessionMenuItem::ViewContact);
+    items.push_back(state.blocked ? SessionMenuItem::Unblock : SessionMenuItem::Block);
   }
   items.push_back(SessionMenuItem::ClearChat);
   // Closing a group thread is leaving the group; the close flow asks and hands ownership over when needed.

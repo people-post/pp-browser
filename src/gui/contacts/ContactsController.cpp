@@ -500,6 +500,9 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.BindEventCallback("copy_contact_id", &ContactsController::CopyIdCallback);
     ctor.BindEventCallback("share_contact", &ContactsController::ShareContactCallback);
     ctor.BindEventCallback("set_trust", &ContactsController::SetTrustCallback);
+    ctor.BindEventCallback("toggle_trust_friendly", &ContactsController::ToggleTrustFriendlyCallback);
+    ctor.BindEventCallback("block_contact", &ContactsController::BlockContactCallback);
+    ctor.BindEventCallback("unblock_contact", &ContactsController::UnblockContactCallback);
     ctor.BindEventCallback("remove_contact", &ContactsController::RemoveContactCallback);
     ctor.BindEventCallback("open_thread", &ContactsController::OpenThreadCallback);
     ctor.BindEventCallback("on_search_changed", &ContactsController::OnSearchChangedCallback);
@@ -653,6 +656,30 @@ void ContactsController::OnContactFieldChangedCallback(ui::DataModelHandle /*mod
 void ContactsController::SyncRemoteCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
                                             const ui::VariantList& /*args*/) {
   Instance().OnSyncRemote();
+}
+
+void ContactsController::ToggleTrustFriendlyCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                     const ui::VariantList& /*args*/) {
+  auto& controller = Instance();
+  controller.OnSetTrust(controller.selected_.trust_key == "friendly" ? "unknown" : "friendly");
+}
+
+void ContactsController::BlockContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                              const ui::VariantList& /*args*/) {
+  auto& controller = Instance();
+  const std::string name = controller.selected_.title.empty() ? Tr("contacts.this_contact")
+                                                              : std::string(controller.selected_.title.c_str());
+  controller.ShowConfirm(Tr("contacts.block_confirm_title"), Tr("contacts.block_confirm_body", {{"name", name}}),
+                         [](const bool ok) {
+                           if (ok) {
+                             Instance().OnSetTrust("blocked");
+                           }
+                         });
+}
+
+void ContactsController::UnblockContactCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                                const ui::VariantList& /*args*/) {
+  Instance().OnSetTrust("unknown");
 }
 
 void ContactsController::CopyIdCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,

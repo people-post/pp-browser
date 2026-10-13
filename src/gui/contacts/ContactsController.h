@@ -121,6 +121,9 @@ private:
   static void CopyIdCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void ShareContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void SetTrustCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ToggleTrustFriendlyCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void BlockContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void UnblockContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void RemoveContactCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OpenThreadCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void OnSearchChangedCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);

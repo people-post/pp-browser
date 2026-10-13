@@ -25,7 +25,7 @@ bool Has(const std::vector<Item>& items, const Item item) {
 TEST(SessionMenuTest, DirectChatWithAContact) {
   EXPECT_EQ(Items(SessionKind::Direct, false, true),
             (std::vector<Item>{Item::MarkUnread, Item::Pin, Item::Mute, Item::Archive, Item::ViewContact,
-                               Item::ClearChat, Item::Delete}));
+                               Item::Block, Item::ClearChat, Item::Delete}));
 }
 
 TEST(SessionMenuTest, DirectChatWithAStrangerHasNoContactToView) {
@@ -122,4 +122,20 @@ TEST(SessionMenuTest, MarkedUnreadShowsADotUntilThereIsARealCount) {
   EXPECT_TRUE(SessionIsUnread(0, true));
   EXPECT_TRUE(SessionIsUnread(2, false));
   EXPECT_FALSE(SessionIsUnread(0, false));
+}
+
+// Blocking lives where the chat is: a direct chat with a saved contact offers Block (or Unblock when they are
+// already blocked), next to View contact; strangers and groups do not.
+TEST(SessionMenuTest, DirectChatWithAContactOffersBlockOrUnblock) {
+  const auto items = SessionMenuItems(SessionMenuState{.kind = SessionKind::Direct, .has_contact = true});
+  EXPECT_TRUE(Has(items, Item::Block));
+  EXPECT_FALSE(Has(items, Item::Unblock));
+  const auto blocked =
+      SessionMenuItems(SessionMenuState{.kind = SessionKind::Direct, .has_contact = true, .blocked = true});
+  EXPECT_TRUE(Has(blocked, Item::Unblock));
+  EXPECT_FALSE(Has(blocked, Item::Block));
+  EXPECT_FALSE(Has(Items(SessionKind::Direct), Item::Block)) << "a stranger has no contact to block";
+  EXPECT_FALSE(Has(Items(SessionKind::Group), Item::Block));
+  EXPECT_TRUE(SessionMenuItemIsDestructive(Item::Block));
+  EXPECT_FALSE(SessionMenuItemIsDestructive(Item::Unblock));
 }
