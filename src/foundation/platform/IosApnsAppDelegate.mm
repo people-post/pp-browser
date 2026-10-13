@@ -86,11 +86,17 @@
 
 @end
 
+// SDL documents overriding +getAppDelegateClassName from a category; clang
+// warns because SDLUIKitDelegate implements it too, which is the whole point
+// (Xcode 27 clang, -Werror).
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wobjc-protocol-method-implementation"
 @implementation SDLUIKitDelegate (PpApnsExtensions)
 + (NSString*)getAppDelegateClassName {
   return @"PpSdlUIKitDelegate";
 }
 @end
+#pragma clang diagnostic pop
 
 #endif // TARGET_OS_IPHONE
 #endif // __APPLE__
