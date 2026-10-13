@@ -163,8 +163,10 @@ TEST(ConfigJsonTest, ProfilePrefsSidebarFieldsDefaultWhenAbsentAndRoundTrip) {
   EXPECT_EQ(loaded.sidebar_width_dp, 240);
   EXPECT_FALSE(loaded.sidebar_collapsed);
   EXPECT_EQ(loaded.auxiliary_width_dp, 320);
+  EXPECT_FALSE(loaded.show_advanced_settings) << "technical options stay hidden unless the user opted in";
 
   pbr::ProfilePreferences edited;
+  edited.show_advanced_settings = true;
   edited.sidebar_width_dp = 320;
   edited.sidebar_collapsed = true;
   edited.auxiliary_width_dp = 400;
@@ -173,6 +175,7 @@ TEST(ConfigJsonTest, ProfilePrefsSidebarFieldsDefaultWhenAbsentAndRoundTrip) {
   EXPECT_EQ(parsed.sidebar_width_dp, 320);
   EXPECT_TRUE(parsed.sidebar_collapsed);
   EXPECT_EQ(parsed.auxiliary_width_dp, 400);
+  EXPECT_TRUE(parsed.show_advanced_settings);
 }
 
 namespace {

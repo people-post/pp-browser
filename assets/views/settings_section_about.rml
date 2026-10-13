@@ -1,4 +1,13 @@
       <div class="settings-section stack">
         <p class="heading-2">{{app_name}}</p>
         <p class="text muted">{{i18n:settings.about.version}}: <span>{{app_version}}</span></p>
+        <div class="settings-toggle-row row">
+          <span class="settings-label settings-toggle-label">{{i18n:settings.about.advanced.label}}</span>
+          <button class="settings-switch" type="button"
+                  data-class-settings-switch--on="show_advanced_settings == 'on'"
+                  data-event-click="toggle_show_advanced_settings()">
+            <div class="settings-switch-knob"></div>
+          </button>
+        </div>
+        <p class="text muted settings-help">{{i18n:settings.about.advanced.help}}</p>
       </div>

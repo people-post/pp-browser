@@ -58,18 +58,18 @@
       <p class="text muted me-profile-meta" data-if="selected.relay_id == ''">
         {{i18n:contacts.relay_id_unlinked}}
       </p>
-      <p class="text muted me-profile-meta" data-if="selected.peer_id != ''">
+      <p class="text muted me-profile-meta" data-if="advanced && selected.peer_id != ''">
         {{i18n:contacts.peer_id_label}} <span>{{selected.peer_id}}</span>
       </p>
-      <p class="text muted me-profile-meta" data-if="selected.multiaddrs_summary != ''">
+      <p class="text muted me-profile-meta" data-if="advanced && selected.multiaddrs_summary != ''">
         {{i18n:contacts.multiaddrs_label}} <span>{{selected.multiaddrs_summary}}</span>
       </p>
-      <p class="text muted me-profile-meta" data-if="selected.signing_fingerprint != ''">
+      <p class="text muted me-profile-meta" data-if="advanced && selected.signing_fingerprint != ''">
         {{i18n:contacts.signing_fingerprint_label}} <span>{{selected.signing_fingerprint}}</span>
       </p>
-      <p class="text muted me-profile-meta">{{selected.remote_updated}}</p>
+      <p class="text muted me-profile-meta" data-if="advanced">{{selected.remote_updated}}</p>
       <div class="me-profile-actions row">
-        <div data-if="selected.has_relay_id">
+        <div data-if="advanced && selected.has_relay_id">
           <button class="btn btn-secondary btn-icon" type="button" data-event-click="sync_contact_remote()">
             <svg src="../icons/sync.svg" width="14" height="14" crop-to-content="true"></svg>
             {{i18n:contacts.sync_directory}}

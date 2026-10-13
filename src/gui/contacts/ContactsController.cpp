@@ -486,6 +486,7 @@ bool ContactsController::RegisterModel(ui::Context* context) {
     ctor.Bind("contacts", &controller.contacts_);
     ctor.Bind("search_query", &controller.search_query_);
     ctor.Bind("compact_layout", &controller.compact_layout_);
+    ctor.Bind("advanced", &controller.advanced_);
     ctor.Bind("selected", &controller.selected_);
     ctor.BindEventCallback("select_contact", &ContactsController::SelectContactCallback);
     ctor.BindEventCallback("back_to_list", &ContactsController::BackToListCallback);
@@ -506,11 +507,20 @@ bool ContactsController::RegisterModel(ui::Context* context) {
   return registered;
 }
 
+void ContactsController::SetShowAdvanced(const bool advanced) {
+  if (advanced_ == advanced) {
+    return;
+  }
+  advanced_ = advanced;
+  DataModelHost::Instance().Dirty("contacts", "advanced");
+}
+
 void ContactsController::DirtyAll() {
   auto& host = DataModelHost::Instance();
   host.Dirty("contacts", "contacts");
   host.Dirty("contacts", "search_query");
   host.Dirty("contacts", "compact_layout");
+  host.Dirty("contacts", "advanced");
   host.Dirty("contacts", "selected");
 }
 

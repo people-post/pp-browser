@@ -1,4 +1,6 @@
       <div class="settings-section stack">
+        <p class="text" data-if="!advanced">{{i18n:settings.llm.summary}}</p>
+        <div class="stack" data-if="advanced">
         <label class="settings-field">
           <span class="settings-label">{{i18n:settings.llm.preset}}</span>
           <select class="field" data-value="llm_preset" data-event-change="on_llm_preset_changed()">
@@ -37,6 +39,7 @@
         <div class="settings-actions stack">
           <button class="btn btn-secondary settings-action-bar" type="button"
                   data-event-click="reset_section('llm')">{{i18n:common.reset_defaults}}</button>
+        </div>
         </div>
       </div>
 
