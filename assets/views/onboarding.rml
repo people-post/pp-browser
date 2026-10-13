@@ -1,0 +1,38 @@
+<div class="shell-layer shell-layer-dialog" data-model="onboarding">
+  <div class="shell-scrim"></div>
+  <div class="shell-dialog shell-pin-gate onboarding">
+    <div class="stack" data-if="step == 'name'">
+      <h2 class="heading-2 shell-dialog-title">{{i18n:onboarding.name_title}}</h2>
+      <p class="text shell-dialog-message">{{i18n:onboarding.name_message}}</p>
+      <input class="field shell-pin-gate-input" type="text" data-value="nickname" lang=""
+             placeholder="{{i18n:onboarding.name_placeholder}}" data-attrif-disabled="busy"/>
+      <p class="text shell-pin-gate-error" data-if="error != ''">{{error}}</p>
+      <p class="text muted" data-if="busy">{{i18n:onboarding.registering}}</p>
+      <div class="shell-dialog-actions row">
+        <button class="btn btn-primary" type="button" data-event-click="onboarding_register()"
+                data-attrif-disabled="busy">{{i18n:onboarding.register}}</button>
+      </div>
+    </div>
+    <div class="stack" data-if="step == 'account'">
+      <h2 class="heading-2 shell-dialog-title">{{i18n:onboarding.account_title}}</h2>
+      <p class="text shell-dialog-message">{{i18n:onboarding.account_message}}</p>
+      <p class="text"><span class="settings-label">{{i18n:onboarding.account_name}}</span> <span>{{nickname}}</span></p>
+      <p class="text"><span class="settings-label">{{i18n:onboarding.account_id}}</span> <span>{{account_id}}</span></p>
+      <p class="text muted">{{i18n:onboarding.account_hint}}</p>
+      <div class="shell-dialog-actions row">
+        <button class="btn btn-secondary" type="button" data-event-click="onboarding_copy_id()">{{i18n:onboarding.copy_id}}</button>
+        <button class="btn btn-secondary" type="button" data-event-click="onboarding_share()">{{i18n:onboarding.share}}</button>
+        <button class="btn btn-primary" type="button" data-event-click="onboarding_next()">{{i18n:common.continue}}</button>
+      </div>
+    </div>
+    <div class="stack" data-if="step == 'friends'">
+      <h2 class="heading-2 shell-dialog-title">{{i18n:onboarding.friends_title}}</h2>
+      <p class="text shell-dialog-message">{{i18n:onboarding.friends_message}}</p>
+      <div class="shell-dialog-actions row">
+        <button class="btn btn-primary" type="button" data-event-click="onboarding_find_friends()">{{i18n:onboarding.find_friends}}</button>
+        <button class="btn btn-secondary" type="button" data-event-click="onboarding_share()">{{i18n:onboarding.share}}</button>
+        <button class="btn btn-ghost" type="button" data-event-click="onboarding_finish()">{{i18n:onboarding.later}}</button>
+      </div>
+    </div>
+  </div>
+</div>

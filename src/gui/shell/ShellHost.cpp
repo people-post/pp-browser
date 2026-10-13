@@ -2321,6 +2321,7 @@ std::string ShellHost::SerializeShellRoot() const {
   out << "<div id=\"shell-call-in-progress-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--bar\"></div>";
   out << "<div id=\"shell-call-ring-mount\" class=\"shell-call-chrome-mount shell-call-chrome-mount--ring\"></div>";
   out << "<div id=\"shell-pin-gate-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--pin\"></div>";
+  out << "<div id=\"shell-onboarding-mount\" class=\"shell-overlay-chrome-mount shell-overlay-chrome-mount--pin\"></div>";
   return out.str();
 }
 
@@ -2849,6 +2850,25 @@ void ShellHost::RemountDialogChromeNow() {
     RmlMount::MountInner(mount, SerializeDialog());
   }
   DirtyFeedback();
+}
+
+void ShellHost::MountOverlayBody(const std::string& mount_id, const std::string& body) {
+  // Deferred like the PIN gate: a click handler may still be mid-dispatch inside the old overlay.
+  AppRuntime::PostUI([mount_id, body]() {
+    ShellHost& shell = ShellHost::Instance();
+    if (!shell.context_ || shell.context_->GetNumDocuments() == 0) {
+      return;
+    }
+    ui::ElementDocument* doc = shell.context_->GetDocument(0);
+    if (!doc) {
+      return;
+    }
+    if (ui::Element* mount = doc->GetElementById(mount_id.c_str())) {
+      RmlMount::MountInner(mount, body);
+    }
+    Backend::RequestForceFrame();
+  });
+  Backend::RequestForceFrame();
 }
 
 void ShellHost::RemountPinGateChrome() {

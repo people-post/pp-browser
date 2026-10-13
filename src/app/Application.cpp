@@ -3,6 +3,7 @@
 #include "app/ConfigApplyBridge.h"
 
 #include "foundation/crypto/ConfigSecretsStore.h"
+#include "gui/onboarding/OnboardingController.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/data/AppPaths.h"
@@ -247,6 +248,8 @@ Application::Application() {
   ChatController::InstallInstance(*chat_);
   unlock_gate_ = std::make_unique<ProfileUnlockGate>();
   pin_gate_ = std::make_unique<PinGateController>();
+  onboarding_ = std::make_unique<OnboardingController>();
+  OnboardingController::InstallInstance(*onboarding_);
   g_input_coordinator = input_.get();
 }
 
@@ -923,7 +926,13 @@ void Application::WireUnlockPinAndFlow() {
   unlock_ports.ui.show_identity_fork = [this]() { pin_gate_->ShowIdentityFork(); };
   unlock_ports.ui.show_chooser = [this]() { pin_gate_->ShowChooser(); };
   unlock_ports.ui.show_unlock = [this]() { pin_gate_->ShowUnlock(); };
-  unlock_ports.ui.dismiss = [this]() { pin_gate_->Dismiss(); };
+  unlock_ports.ui.dismiss = [this]() {
+    pin_gate_->Dismiss();
+    // The PIN gate is gone and the vault is open: a fresh account continues into the first-run wizard.
+    if (secrets_ && secrets_->IsUnlocked() && onboarding_) {
+      onboarding_->MaybeStart();
+    }
+  };
   unlock_ports.ui.set_unlock_in_progress = [this](const bool in_progress) {
     pin_gate_->SetUnlockInProgressUi(in_progress);
   };
@@ -936,6 +945,9 @@ void Application::WireUnlockPinAndFlow() {
     return facade.ImportLinkDevice(bundle_json, pin);
   };
   unlock_ports.ui.on_link_imported = [this, &facade]() {
+    if (onboarding_) {
+      onboarding_->MarkCompleted(); // an account brought over needs no wizard
+    }
     // Import runs before EnsureMessagingReady; push attach after the vault is open.
     AppRuntime::PostWorkerNormal([this, &facade]() {
       (void)facade.SyncPushDevices(Store().Snapshot().profile_prefs.show_notifications);
@@ -953,6 +965,52 @@ void Application::WireUnlockPinAndFlow() {
     AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Normal, std::move(work), std::move(on_done));
   };
   unlock_gate_->BindPorts(std::move(unlock_ports));
+
+  {
+    OnboardingPorts onboarding_ports;
+    onboarding_ports.load_identity = [&facade]() { return facade.LoadProfileIdentityView(); };
+    onboarding_ports.register_identity = [this, &facade](const std::string& nickname) {
+      auto result = facade.RegisterIdentity(nickname);
+      if (result && chat_) {
+        chat_->ReloadAgentConfig();
+      }
+      return result;
+    };
+    onboarding_ports.run_heavy = [](std::function<Roe<void>()> work, std::function<void(Roe<void>)> on_done) {
+      AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Normal, std::move(work), std::move(on_done));
+    };
+    onboarding_ports.copy_text = [](const std::string& text) {
+      if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+        system->SetClipboardText(text.c_str());
+      }
+    };
+    onboarding_ports.open_people_picker = [this]() {
+      if (people_picker_) {
+        people_picker_->OpenFree();
+      }
+    };
+    onboarding_ports.is_completed = [this]() {
+      return store_.IsInitialized() && store_.Snapshot().profile_prefs.onboarding_completed;
+    };
+    onboarding_ports.set_completed = [this](const bool completed) {
+      if (!store_.IsInitialized()) {
+        return;
+      }
+      ProfilePreferences prefs = store_.Snapshot().profile_prefs;
+      if (prefs.onboarding_completed == completed) {
+        return;
+      }
+      prefs.onboarding_completed = completed;
+      prefs.schema_version = ProfilePreferences::kSchemaVersion;
+      (void)store_.SaveProfilePrefs(prefs);
+    };
+    onboarding_ports.mount = [this](const std::string& body) {
+      if (shell_) {
+        shell_->MountOverlayBody("shell-onboarding-mount", body);
+      }
+    };
+    onboarding_->BindPorts(std::move(onboarding_ports));
+  }
 
   {
     UnlockEnsurePorts unlock_ensure;
@@ -1060,6 +1118,10 @@ bool Application::MountPresenters(ui::Context* context) {
     log().error << "EmojiPickerController RegisterModel failed";
     return false;
   }
+  if (!onboarding_->RegisterModel(context)) {
+    log().error << "OnboardingController RegisterModel failed";
+    return false;
+  }
 
   if (!shell_->RegisterWindowModel(context)) {
     log().error << "ShellHost RegisterWindowModel failed";
@@ -1161,6 +1223,9 @@ bool Application::MountPresenters(ui::Context* context) {
     if (pin_gate_) {
       pin_gate_->BindShellPinGate({});
       pin_gate_->BindGateComplete({});
+      if (onboarding_) {
+        onboarding_->BindPorts({});
+      }
     }
     if (call_) {
       call_->BindCallPorts({});
