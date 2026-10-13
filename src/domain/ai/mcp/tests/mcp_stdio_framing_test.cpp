@@ -1,10 +1,12 @@
 #include "domain/ai/mcp/McpClient.h"
+#include "domain/ai/mcp/McpRuntime.h"
 
 #include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <map>
 #include <cstring>
 #include <string>
 
@@ -89,4 +91,27 @@ TEST(McpStdioFramingTest, AFailedStartIsNotAMock) {
   pbr::McpClient client;
   EXPECT_FALSE(client.Start("/nonexistent/pp-mcp-server-that-does-not-exist"));
   EXPECT_FALSE(client.IsRunning());
+}
+
+// An HTTP MCP server is stateless per request: a failed initialize at startup (the phone's network is often
+// not up yet when the app launches) must not drop it for the rest of the session; the next request simply
+// tries again. A stdio server that fails initialize is still dropped (#300): its process is not trustworthy.
+TEST(McpRuntimeTest, HttpServerSurvivesAFailedInitialize) {
+  struct Reset {
+    ~Reset() { pbr::McpClient::SetHttpPost({}); }
+  } reset;
+  int posts = 0;
+  pbr::McpClient::SetHttpPost([&](const std::string&, const std::string&,
+                                  const std::map<std::string, std::string>&) -> pbr::Roe<pbr::HttpResponse> {
+    ++posts;
+    return pbr::Error("HTTP request failed: Could not resolve hostname");
+  });
+  pbr::McpConfig config;
+  config.id = "promoted";
+  config.url = "https://mcp.test/mcp";
+  config.enabled = true;
+  pbr::McpClient client;
+  EXPECT_TRUE(pbr::StartMcpClient(client, config));
+  EXPECT_TRUE(client.IsRunning());
+  EXPECT_GE(posts, 1);
 }
