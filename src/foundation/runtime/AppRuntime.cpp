@@ -291,6 +291,10 @@ void AppRuntime::Initialize(const AppRuntimeConfig& config) {
   if (IsRunning()) {
     return;
   }
+  // Bind the UI mailbox to this (the main) thread before any worker exists. Created lazily by
+  // the first PostUI instead, a worker's reply during Bootstrap (fresh install: directory refresh)
+  // owned it, CurrentlyOnUI() was false on the main thread and the first frame never came (B79).
+  EnsureUIMailbox();
   g_thread_runtime = std::make_unique<ThreadRuntime>();
   ThreadRuntimeConfig thread_config;
   thread_config.worker_pool_threads = config.worker_pool_threads;
