@@ -77,3 +77,11 @@ TEST_F(ViewCatalogTest, ClearCacheForcesReload) {
   pbr::ViewCatalog::ClearCache();
   EXPECT_EQ(pbr::ViewCatalog::LoadBody("views/parent.rml"), "<div>v2</div>");
 }
+
+// The first-run wizard mounts ViewCatalog::LoadBody("onboarding"). The key was never registered,
+// so the body came back empty and the wizard never appeared on a fresh install (Kenneth, 2026-10-13).
+TEST_F(ViewCatalogTest, OnboardingIsAKnownView) {
+  EXPECT_EQ(pbr::ViewCatalog::ResolvePath("onboarding"), "views/onboarding.rml");
+  WriteView("views/onboarding.rml", "<div>wizard</div>");
+  EXPECT_EQ(pbr::ViewCatalog::LoadBody("onboarding"), "<div>wizard</div>");
+}
