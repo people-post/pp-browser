@@ -4,6 +4,10 @@
 
 #include "foundation/crypto/ConfigSecretsStore.h"
 #include "gui/onboarding/OnboardingController.h"
+#include "foundation/platform/os/OsThreadStackDump.h"
+#include <atomic>
+#include <memory>
+#include <thread>
 #include "foundation/crypto/ProfileSecretsEngine.h"
 #include "foundation/crypto/ProfileUnlockGate.h"
 #include "foundation/data/AppPaths.h"
@@ -1437,6 +1441,17 @@ void Application::Run() {
 
   int skip_log_countdown = 0;
   bool logged_first_present = false;
+  // B79: a launch that never presents its first frame (black screen) left no trace. If nothing was
+  // presented 8 s after entering the loop, every thread prints its stack to stderr.
+  auto first_present_seen = std::make_shared<std::atomic<bool>>(false);
+  std::thread([first_present_seen]() {
+    std::this_thread::sleep_for(std::chrono::seconds(8));
+    if (first_present_seen->load()) {
+      return;
+    }
+    logging::getLogger("startup").error << "no first present 8 s after entering the run loop; dumping thread stacks";
+    os::DumpAllThreadStacks();
+  }).detach();
   constexpr int64_t kSlowFrameMs = 50; // three 60 Hz frames
   auto last_slow_frame_line = std::chrono::steady_clock::time_point{};
   int slow_frames_skipped = 0;
@@ -1496,6 +1511,7 @@ void Application::Run() {
       const auto draw_done = std::chrono::steady_clock::now();
       Backend::PresentFrame();
       if (!logged_first_present) {
+        first_present_seen->store(true);
         StartupMark("first_present");
         MetricsLine("app.start")
             .Add("first_present_ms", static_cast<int64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
