@@ -32,7 +32,7 @@
       <label class="settings-field contacts-edit-field">
         <span class="text muted">{{i18n:contacts.display_name}}</span>
         <input class="field" type="text" data-value="selected.display_name"
-               data-event-change="on_contact_field_changed()" placeholder="{{i18n:contacts.name_placeholder}}"/>
+               data-event-change="on_contact_field_changed()" data-attr-placeholder="selected.name_placeholder"/>
       </label>
       <div class="contacts-trust-actions row">
         <button class="btn btn-secondary contacts-trust-btn"

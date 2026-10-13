@@ -78,6 +78,8 @@ public:
     ui::String subtitle;
     ui::String display_name;
     ui::String nickname;
+    /** Placeholder of the remark field: the directory nickname, else the generic "Name". */
+    ui::String name_placeholder;
     ui::String relay_id;
     ui::String peer_id;
     ui::String multiaddrs_text;

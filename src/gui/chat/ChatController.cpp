@@ -1,4 +1,5 @@
 #include <chrono>
+#include <thread>
 #include <stdexcept>
 #include <filesystem>
 #include <fstream>
@@ -2876,6 +2877,9 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
               NotifySurfaceChanged();
               return;
             }
+            if (hit.nickname.empty()) {
+              facade_->EnsureDirectoryLookup(peer_id); // the hit fills the nickname in when it arrives
+            }
             if (hit.signing_public_key_b64 && !hit.signing_public_key_b64->empty()) {
               if (!hit.account_id || hit.account_id->empty()) {
                 UserFeedback::Fail(Tr("chat.error.directory_missing_account"));
@@ -3737,7 +3741,32 @@ void ChatController::WireMessagingBindings() {
         if (prefs && ThreadIsMuted(prefs->muted_until, util::NowUnixMs())) {
           return;
         }
-        ILocalNotifier::Instance().NotifyIncoming(title, body, thread_id);
+        // A stranger's first message arrives before the directory answered, so the title would be a bare
+        // id. Give the lookup a moment and use whatever name is known by then.
+        bool bare_id = false;
+        if (auto thread = facade_->GetThread(thread_id); thread && *thread) {
+          bare_id = facade_->ResolveThreadLabel(**thread).trust == PeerLabelTrust::RawId;
+        }
+        if (!bare_id) {
+          ILocalNotifier::Instance().NotifyIncoming(title, body, thread_id);
+          return;
+        }
+        AppRuntime::PostWorkerAndReplyOnUI<int>(
+            WorkerLane::Normal,
+            []() {
+              std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+              return 0;
+            },
+            [this, body, thread_id, title](int) {
+              std::string resolved = title;
+              if (auto thread = facade_->GetThread(thread_id); thread && *thread) {
+                const std::string now = facade_->ResolveThreadLabel(**thread).title;
+                if (!now.empty()) {
+                  resolved = now;
+                }
+              }
+              ILocalNotifier::Instance().NotifyIncoming(resolved, body, thread_id);
+            });
       });
   ILocalNotifier::Instance().SetActivationHandler([this](std::string thread_id) {
     DesktopWindowChrome::RaiseAndFocus();

@@ -1114,6 +1114,16 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   });
   directory_shadows_->SetOnHitCached([this](const DirectoryHit& hit) {
     EnsureDirectoryHitIconCached(hit);
+    // A contact added from a bare id (a stranger who wrote first) gets the directory's nickname as soon as
+    // it is known, so the list shows a name instead of the id. The user's own remark is never touched.
+    if (contacts_ && !hit.nickname.empty()) {
+      if (auto account = PrimaryAccountIdFromHit(hit)) {
+        if (auto contact = contacts_->FindByIdentity(*account, ContactIdKind::Account);
+            contact && *contact && (*contact)->remote.nickname.empty()) {
+          (void)contacts_->ApplyRemoteSnapshot((*contact)->id, hit, 0);
+        }
+      }
+    }
     if (!initiation_billing_) {
       return;
     }
