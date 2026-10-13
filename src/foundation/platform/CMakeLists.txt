@@ -89,7 +89,7 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Darwin.cpp
     os/OsProcessStats_Default.cpp
-    os/OsThreadStackDump_Default.cpp
+    os/OsThreadStackDump_Darwin.cpp
     desktop/PathProvider_Darwin.cpp
   )
   list(APPEND _pp_platform_gui_sources
