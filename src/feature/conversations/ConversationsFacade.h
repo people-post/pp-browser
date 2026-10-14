@@ -247,6 +247,8 @@ public:
   Roe<LocalIdentity> UpdateLocalIdentity(const LocalIdentity& identity);
   Roe<LocalIdentity> FinishAndPersistRegistration(const std::string& nickname);
   Roe<RegistrationResult> UpdateRegisteredNickname(const std::string& nickname);
+  /** #328: take this account off the directory (profile reset / delete account). */
+  Roe<void> RevokeRegistration();
 
   /**
    * Escape hatch for lifecycle / bridges that legitimately need the hub

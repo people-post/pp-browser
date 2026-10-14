@@ -136,6 +136,8 @@ public:
                                              const RegistrationPublishOpts& publish = {}) override;
   Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
                                          int64_t timestamp, const std::string& relay_user_id) override;
+  Roe<void> RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
+                               int64_t timestamp) override;
 };
 
 class HttpRelayClient : public IRelayClient {
@@ -215,6 +217,8 @@ public:
                                              const RegistrationPublishOpts& publish = {}) override;
   Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
                                          int64_t timestamp, const std::string& relay_user_id) override;
+  Roe<void> RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
+                               int64_t timestamp) override;
 
 private:
   std::string base_url_;

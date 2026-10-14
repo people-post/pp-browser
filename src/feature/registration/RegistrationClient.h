@@ -35,5 +35,11 @@ Roe<bool> MaybeAutoRenewRegistration(IRegistrationClient& registration, Identity
 
 Roe<RegistrationResult> UpdateRegisteredNickname(IRegistrationClient& registration, IdentityStore& identity,
                                                  const std::string& nickname);
+/**
+ * Remove this account's directory registration (#328). Nothing to do (success) when the identity never
+ * registered; otherwise signs `BuildAccountRevokeSignBytes` with the account key and calls the relay.
+ * Does not touch the local identity: the caller is about to wipe it.
+ */
+Roe<void> RevokeRegistrationWithIdentity(IRegistrationClient& registration, IdentityStore& identity);
 
 } // namespace pbr
