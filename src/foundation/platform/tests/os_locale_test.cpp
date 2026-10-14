@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 
 #include <cctype>
+#include <string>
+#include <vector>
 
 // Kenneth (2026-10-13): a fresh install on the iPhone came up in English for a Chinese phone. Apple
 // apps launched from the home screen carry no LANG / LC_* variables, so the POSIX reader found
@@ -17,4 +19,14 @@ TEST(OsLocaleTest, ApplePreferredLocalesComeFromTheOsNotTheEnvironment) {
   ASSERT_GE(first.size(), 2u);
   EXPECT_TRUE(std::isalpha(static_cast<unsigned char>(first[0])));
   EXPECT_TRUE(std::isalpha(static_cast<unsigned char>(first[1])));
+}
+
+// B80: Android hands over LocaleList.getDefault().toLanguageTags(), a comma-separated list.
+TEST(OsLocaleTest, SplitLanguageTagsTrimsAndDropsEmpties) {
+  using pbr::os::SplitLanguageTags;
+  EXPECT_EQ(SplitLanguageTags("zh-Hans-CN,en-US"), (std::vector<std::string>{"zh-Hans-CN", "en-US"}));
+  EXPECT_EQ(SplitLanguageTags(" zh-Hans-CN , ,en-US, "), (std::vector<std::string>{"zh-Hans-CN", "en-US"}));
+  EXPECT_EQ(SplitLanguageTags("en"), (std::vector<std::string>{"en"}));
+  EXPECT_TRUE(SplitLanguageTags("").empty());
+  EXPECT_TRUE(SplitLanguageTags(" , ").empty());
 }
