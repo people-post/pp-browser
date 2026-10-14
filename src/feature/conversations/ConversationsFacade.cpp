@@ -700,6 +700,10 @@ Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std:
   return pbr::UpdateRegisteredNickname(hub_.Registration(), hub_.Identity(), nickname);
 }
 
+Roe<void> ConversationsFacade::RevokeRegistration() {
+  return pbr::RevokeRegistrationWithIdentity(hub_.Registration(), hub_.Identity());
+}
+
 
 // --- Live broadcast viewer ---------------------------------------------------
 

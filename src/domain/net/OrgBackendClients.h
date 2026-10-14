@@ -135,6 +135,9 @@ public:
                                                      const RegistrationPublishOpts& publish = {}) = 0;
   virtual Roe<RegistrationResult> UpdateNickname(const std::string& new_nickname, const std::string& signature,
                                                  int64_t timestamp, const std::string& relay_user_id) = 0;
+  /** Remove this account's directory registration (#328; `BuildAccountRevokeSignBytes` + signature). */
+  virtual Roe<void> RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
+                                       int64_t timestamp) = 0;
 };
 
 } // namespace pbr

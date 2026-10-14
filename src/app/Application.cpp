@@ -304,6 +304,14 @@ Roe<void> Application::ResetActiveProfile() {
 
   log().info << "Resetting profile data at " << profile_dir;
 
+  // #328: take the registration off the directory before the local wipe, so the name does not
+  // linger in search until it expires. Best effort — a reset must still work offline.
+  if (messaging_facade_ && messaging_facade_->IsInitialized() && messaging_facade_->IsMessagingReady()) {
+    if (auto revoked = messaging_facade_->RevokeRegistration(); !revoked) {
+      log().warning << "Registration revoke failed, continuing with the local reset: " << revoked.error().message;
+    }
+  }
+
   if (messaging_) {
     messaging_->RequestShutdown();
   }

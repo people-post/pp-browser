@@ -401,6 +401,11 @@ Roe<RegistrationResult> MockRegistrationClient::UpdateNickname(const std::string
   return RegistrationResult{.success = true, .message = "Nickname updated to " + new_nickname};
 }
 
+Roe<void> MockRegistrationClient::RevokeRegistration(const std::string& /*relay_user_id*/,
+                                                     const std::string& /*signature*/, const int64_t /*timestamp*/) {
+  return {};
+}
+
 Roe<std::string> HttpRelayClient::SignRelayApiBytes(const std::vector<uint8_t>& sign_bytes) const {
   if (!auth_signer_) {
     return Error("Relay auth signer not configured");
@@ -1124,6 +1129,28 @@ Roe<RegistrationResult> HttpRegistrationClient::UpdateNickname(const std::string
     return Error("Nickname update failed with status " + std::to_string(response.value().status_code));
   }
   return RegistrationResult{.success = true, .message = "Nickname updated"};
+}
+
+Roe<void> HttpRegistrationClient::RevokeRegistration(const std::string& relay_user_id, const std::string& signature,
+                                                     const int64_t timestamp) {
+  if (base_url_.empty()) {
+    return Error("Registration base_url not configured");
+  }
+  Object body;
+  body.set("relay_user_id", relay_user_id);
+  body.set("timestamp", timestamp);
+  body.set("signature", signature);
+  // Called on the way into a profile reset: keep a stuck network from holding the UI for long.
+  const auto response = HttpClient::Post(base_url_ + "/v1/register/revoke", DumpJson(body),
+                                         {{"Content-Type", "application/json"}}, kMaxHttpClientBodyBytes,
+                                         HttpTimeout{.total_s = 10, .connect_s = 5});
+  if (!response) {
+    return response.error();
+  }
+  if (response.value().status_code < 200 || response.value().status_code >= 300) {
+    return Error("Registration revoke failed with status " + std::to_string(response.value().status_code));
+  }
+  return {};
 }
 
 Roe<ClientCompatDocument> MockClientCompatClient::Fetch() {
