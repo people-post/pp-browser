@@ -709,6 +709,8 @@ void SettingsController::DirtyAll(bool include_profile_nickname) {
   host.Dirty("settings", "reduce_transparency");
   host.Dirty("settings", "call_diagnostics");
   host.Dirty("settings", "crash_reports_enabled");
+  host.Dirty("settings", "show_advanced_settings");
+  host.Dirty("settings", "advanced");
   host.Dirty("settings", "profile_label");
   host.Dirty("settings", "config_dir");
   host.Dirty("settings", "data_dir");
