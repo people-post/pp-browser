@@ -32,6 +32,7 @@ pp_browser_add_feature_library(pp_feature_conversations
     ProfileIconFetch.cpp
     PushDeviceCoordinator.cpp
     LinkDeviceCoordinator.cpp
+    LocalAccountBackup.cpp
     RelayDirectoryKemKeyResolver.cpp
     RelayDirectorySigningKeyResolver.cpp
     RelayReceivePipeline.cpp

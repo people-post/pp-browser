@@ -23,6 +23,8 @@ public:
 
   /** Ports filled onto ProfileUnlockPorts::ui by Application. */
   void ShowIdentityFork();
+  /** Identity fork plus "Restore my account: <nickname>" (local backup found on a fresh install). */
+  void ShowIdentityRestore(const std::string& nickname);
   void ShowChooser();
   void ShowUnlock();
   void Dismiss();
@@ -36,6 +38,7 @@ public:
   void OnUseDefaultPin();
   void OnIdentityNew();
   void OnIdentityLink();
+  void OnIdentityRestore();
   void DirtyPinFields();
 
 private:
@@ -49,6 +52,8 @@ private:
   ShellPinGatePorts shell_pin_gate_;
   PinGateState pin_state_;
   bool link_flow_ = false;
+  /** PIN chosen here completes a local-backup restore instead of creating a new vault. */
+  bool restore_flow_ = false;
   bool pending_link_default_pin_ = false;
   std::string pending_link_pin_;
 };

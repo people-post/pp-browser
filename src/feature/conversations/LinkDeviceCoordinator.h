@@ -22,8 +22,9 @@ public:
   static Roe<std::vector<LinkDevicePublicPsk>> CollectPublicPsks(IPskSessionStore& psk_store);
   static Roe<void> ApplyPublicPsks(IPskSessionStore& psk_store, const std::vector<LinkDevicePublicPsk>& rows);
 
+  /** `ttl_ms`: 15 min for a pasted transfer code; the local account backup passes a very long one. */
   static Roe<std::string> ExportJson(IdentityStore& identity, DataKeyVault& vault, IPskSessionStore& psk_store,
-                                     int64_t now_ms);
+                                     int64_t now_ms, int64_t ttl_ms = kLinkDeviceDefaultTtlMs);
 
   /**
    * Vault + account import, then optional DEK fan-out, then public PSK apply.

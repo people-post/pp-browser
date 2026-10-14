@@ -1,4 +1,6 @@
 #include "feature/conversations/ConversationsHub.h"
+
+#include "feature/conversations/LocalAccountBackup.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
 #include "domain/messaging/PaymentPromiseLifecycle.h"
 #include "domain/messaging/PaymentPromiseAvoid.h"
@@ -1082,6 +1084,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
         PublishAddressDisclosure();
       }
     });
+    WriteLocalBackupAsync();
   });
   PublishAddressDisclosure();
   identity_ = std::make_unique<IdentityStore>(data_dir_, profile_id_);
@@ -1760,6 +1763,7 @@ Roe<void> ConversationsHub::SaveProfileNickname(const std::string& nickname) {
       return result.error();
     }
   }
+  WriteLocalBackupAsync();
   return {};
 }
 
@@ -1801,7 +1805,25 @@ Roe<void> ConversationsHub::RegisterIdentity(const std::string& nickname) {
   if (!applied) {
     return applied.error();
   }
+  WriteLocalBackupAsync();
   return {};
+}
+
+void ConversationsHub::WriteLocalBackupAsync() {
+  if (!IsInitialized() || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire)) {
+    return;
+  }
+  AppRuntime::PostWorkerNormal([this]() {
+    if (!IsInitialized() || !IsMessagingReady() || shutdown_requested_.load(std::memory_order_acquire) ||
+        Secrets() == nullptr || Secrets()->Vault() == nullptr || PskStore() == nullptr) {
+      return;
+    }
+    auto written = LocalAccountBackup::Write(OsSecureBlobStore(), Identity(), *Secrets()->Vault(), *PskStore(),
+                                             Contacts(), util::NowUnixMs());
+    if (!written) {
+      log().warning << "Local account backup not written: " << written.error().message;
+    }
+  });
 }
 
 Roe<void> ConversationsHub::UploadProfileIconFromPath(const std::string& path) {

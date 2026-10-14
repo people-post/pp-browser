@@ -78,6 +78,17 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
 
 Delivery (peer blob OPEN, circuit, HTTP/CDN) stays orthogonal to realm.
 
+### Local account backup (iOS Keychain, outside the data dir)
+
+One generic-password item, service `dev.pp-browser.secure-blob`, account `account-backup`,
+`kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` (never synced, never in device backups, gone with the device).
+Value: `pp-browser-account-backup` JSON v1 = `{ schema, version, updated_at_ms, link_bundle, contacts[] }` where
+`link_bundle` is a `pp-browser-link-device-v1` bundle with a 100-year expiry (account keys, DEK, relay id, nickname,
+public PSKs — same plaintext as a pasted transfer code) and `contacts[]` are `ContactToJson` rows. Written after
+registration, nickname changes and contact changes; deleted by profile reset; survives an uninstall so a fresh install
+can offer "Restore my account: <nickname>". Other platforms have no such store (desktop uninstalls keep the data dir;
+Android pending). See DESIGN-account-recovery §9–10 (local notes).
+
 ### PIN-related files (disk only)
 
 | File / field | Role |

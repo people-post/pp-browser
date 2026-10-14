@@ -14,6 +14,8 @@ struct UnlockGateCompletePorts {
   std::function<void()> complete_with_default_pin;
   std::function<void(const std::string& pin, const std::string& bundle_json, bool set_default_pin)>
       complete_link_device;
+  /** Fresh install with a local account backup: new PIN for this device, then restore. */
+  std::function<void(const std::string& pin, bool set_default_pin)> complete_restore_backup;
   std::function<void()> cancel;
 };
 

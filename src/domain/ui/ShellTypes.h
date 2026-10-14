@@ -148,6 +148,8 @@ struct PinGateState {
   bool active = false;
   /** No vault yet: I'm new vs I already have an account. */
   bool identity_fork_mode = false;
+  /** Fork extra: "Restore my account: <nickname>" when a local backup exists; empty hides it. */
+  ui::String restore_label;
   bool chooser_mode = false;
   bool create_mode = false;
   /** Paste `pp-browser-link-device-v1` after choosing a PIN on this device. */

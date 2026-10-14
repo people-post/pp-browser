@@ -63,6 +63,10 @@ public:
   Roe<void> SyncPushDevices(bool show_notifications);
   Roe<std::string> ExportLinkDevice();
   Roe<void> ImportLinkDevice(const std::string& bundle_json, const std::string& pin);
+  /** Local account backup (uninstall-surviving store). Nickname works before any vault exists. */
+  Roe<std::optional<std::string>> LocalBackupNickname();
+  Roe<void> RestoreLocalBackup(const std::string& pin);
+  Roe<void> DeleteLocalBackup();
   void SuspendMeshColdPeers();
 
   // --- Inbox ----------------------------------------------------------------

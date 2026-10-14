@@ -232,6 +232,8 @@ public:
   /** Me → Profile projection (no LocalIdentity leak to settings UI). */
   ProfileIdentityView LoadProfileIdentityView();
   Roe<void> SaveProfileNickname(const std::string& nickname);
+  /** Refresh the local account backup on a worker (registration, nickname, contacts). Best effort. */
+  void WriteLocalBackupAsync();
   Roe<void> RegisterIdentity(const std::string& nickname);
   Roe<void> UploadProfileIconFromPath(const std::string& path);
   Roe<void> ClearProfileIcon();

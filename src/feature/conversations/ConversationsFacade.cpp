@@ -7,6 +7,7 @@
 #include "domain/messaging/InitiationPricing.h"
 #include "feature/registration/RegistrationClient.h"
 #include "feature/conversations/LinkDeviceCoordinator.h"
+#include "feature/conversations/LocalAccountBackup.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "common/chat/PeopleDiscoveryBlocks.h"
@@ -65,6 +66,23 @@ Roe<void> ConversationsFacade::ImportLinkDevice(const std::string& bundle_json, 
     return imported.error();
   }
   return {};
+}
+
+Roe<std::optional<std::string>> ConversationsFacade::LocalBackupNickname() {
+  return LocalAccountBackup::PeekNickname(OsSecureBlobStore());
+}
+
+Roe<void> ConversationsFacade::RestoreLocalBackup(const std::string& pin) {
+  if (!hub_.IsInitialized() || hub_.Secrets() == nullptr || hub_.Secrets()->Vault() == nullptr ||
+      hub_.PskStore() == nullptr) {
+    return Error("Messaging is not ready");
+  }
+  return LocalAccountBackup::Restore(OsSecureBlobStore(), hub_.Identity(), *hub_.Secrets()->Vault(),
+                                     *hub_.PskStore(), hub_.Secrets(), hub_.Contacts(), pin, util::NowUnixMs());
+}
+
+Roe<void> ConversationsFacade::DeleteLocalBackup() {
+  return LocalAccountBackup::Delete(OsSecureBlobStore());
 }
 
 void ConversationsFacade::SuspendMeshColdPeers() { hub_.SuspendMeshColdPeers(); }
