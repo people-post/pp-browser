@@ -5,6 +5,7 @@
 #include "common/Module.h"
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -18,6 +19,8 @@ namespace pbr {
 struct ProfileUnlockUiPorts {
   /** No vault yet — I'm new vs I already have an account. Falls back to show_chooser. */
   std::function<void()> show_identity_fork;
+  /** Same page plus "Restore my account: <nickname>" (local backup found). Falls back to show_identity_fork. */
+  std::function<void(const std::string& nickname)> show_identity_restore;
   /** No vault, "I'm new" — three-way PIN chooser. */
   std::function<void()> show_chooser;
   /** Existing vault, custom PIN — blocking unlock modal. */
@@ -47,6 +50,9 @@ struct ProfileUnlockPorts {
   std::function<void(bool is_default)> set_pin_is_default;
   /** Empty-vault link-device: wrap shared DEK with `pin` and apply the bundle. */
   std::function<Roe<void>(const std::string& pin, const std::string& bundle_json)> import_link_device;
+  /** Local account backup (uninstall-surviving store): nickname when one exists; restore under `pin`. */
+  std::function<Roe<std::optional<std::string>>()> local_backup_nickname;
+  std::function<Roe<void>(const std::string& pin)> restore_local_backup;
 
   /**
    * Run Argon2 unlock + EnsureMessagingReady off the UI thread.
@@ -91,6 +97,8 @@ public:
   void CompleteWithDefaultPin();
   /** UI: first-run "I already have an account" after PIN + paste. */
   void CompleteLinkDevice(const std::string& pin, const std::string& bundle_json, bool set_default_pin);
+  /** UI: fresh install "Restore my account" after choosing a PIN for this device. */
+  void CompleteRestoreBackup(const std::string& pin, bool set_default_pin);
   /** UI: cancel chooser / create / paste. Without a vault this returns to the identity fork. */
   void Cancel();
 
@@ -99,6 +107,8 @@ private:
   Roe<void> UnlockAndReady(const std::string& pin);
   void RunUnlockAndReadyAsync(std::string pin, bool set_default_pin, bool clear_default_pin);
   void RequestShowIdentityFork(std::function<void(bool)> done);
+  /** Fresh install entry: the identity fork, with the restore button when a local backup exists. */
+  void RequestShowFreshInstallEntry();
   void RequestShowChooser(std::function<void(bool)> done);
   void RequestShowUnlock(std::function<void(bool)> done);
   void SetUnlockInProgress(bool in_progress);

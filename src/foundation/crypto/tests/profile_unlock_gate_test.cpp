@@ -73,5 +73,45 @@ TEST_F(ProfileUnlockGateTest, CancelWithoutVaultReturnsToIdentityFork) {
   EXPECT_FALSE(dismissed);
 }
 
+// A local backup (uninstall-surviving store) turns the fresh-install page into "Restore my account:
+// <nickname>" + the usual two buttons; without one, or when the store cannot be read, the plain fork.
+TEST_F(ProfileUnlockGateTest, FreshInstallOffersRestoreWhenALocalBackupExists) {
+  ASSERT_FALSE(engine_.HasVault());
+  std::string restore_nickname;
+  bool fork_shown = false;
+  ProfileUnlockPorts ports;
+  ports.messaging_initialized = []() { return true; };
+  ports.messaging_ready = []() { return false; };
+  ports.local_backup_nickname = []() -> Roe<std::optional<std::string>> { return std::optional<std::string>("alice"); };
+  ports.ui.show_identity_restore = [&](const std::string& nickname) { restore_nickname = nickname; };
+  ports.ui.show_identity_fork = [&]() { fork_shown = true; };
+  gate_.BindPorts(std::move(ports));
+
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+
+  EXPECT_EQ(restore_nickname, "alice");
+  EXPECT_FALSE(fork_shown);
+}
+
+TEST_F(ProfileUnlockGateTest, FreshInstallFallsBackToTheForkWithoutABackup) {
+  ASSERT_FALSE(engine_.HasVault());
+  int restore_shown = 0;
+  int fork_shown = 0;
+  ProfileUnlockPorts ports;
+  ports.messaging_initialized = []() { return true; };
+  ports.messaging_ready = []() { return false; };
+  ports.local_backup_nickname = []() -> Roe<std::optional<std::string>> { return std::optional<std::string>{}; };
+  ports.ui.show_identity_restore = [&](const std::string&) { ++restore_shown; };
+  ports.ui.show_identity_fork = [&]() { ++fork_shown; };
+  gate_.BindPorts(std::move(ports));
+
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  EXPECT_EQ(restore_shown, 0);
+  EXPECT_EQ(fork_shown, 1);
+
+  gate_.Cancel(); // "back" from the PIN chooser lands on the same entry page
+  EXPECT_EQ(fork_shown, 2);
+}
+
 } // namespace
 } // namespace pbr

@@ -69,6 +69,13 @@ else()
   list(APPEND _pp_platform_core_sources os/OsTlsPlatformCurl_Default.cpp)
 endif()
 
+# Uninstall-surviving blob store (local account backup): iOS Keychain; everywhere else a stub.
+if(PP_BROWSER_IS_IOS)
+  list(APPEND _pp_platform_core_sources os/OsSecureBlob_Ios.mm)
+else()
+  list(APPEND _pp_platform_core_sources os/OsSecureBlob_Default.cpp)
+endif()
+
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   list(APPEND _pp_platform_core_sources
     os/OsFile_Win32.cpp

@@ -130,3 +130,12 @@ Unit/integration tests may call `IdentityStore::SetDek` / `SqlitePskSessionStore
 
 
 Unlock + `EnsureMessagingReady` exposes local messaging without waiting on Amp mesh; see [SERVICE_CAPABILITIES.md](../architecture/SERVICE_CAPABILITIES.md).
+
+## Local account backup (iOS)
+
+The Keychain item described in [DATA_LAYOUT.md](DATA_LAYOUT.md#local-account-backup-ios-keychain-outside-the-data-dir)
+holds the link-device bundle **in the clear** (it contains the DEK and the account secret keys), protected only by the
+Keychain / device passcode / Secure Enclave — the same trust as the "I already have an account" transfer code, but
+persistent. Restore on a fresh install creates a new vault under the user's new PIN and imports the bundle exactly
+like a pasted transfer code (`LinkDeviceCoordinator::Import`), then upserts the contacts. An attacker needs an
+unlocked device; the item never leaves it.

@@ -151,6 +151,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.Bind("dialog_prompt_value", &host.state_.dialog.prompt_value);
     ctor.Bind("pin_gate_active", &host.state_.pin_gate.active);
     ctor.Bind("pin_gate_identity_fork_mode", &host.state_.pin_gate.identity_fork_mode);
+    ctor.Bind("pin_gate_restore_label", &host.state_.pin_gate.restore_label);
     ctor.Bind("pin_gate_chooser_mode", &host.state_.pin_gate.chooser_mode);
     ctor.Bind("pin_gate_create_mode", &host.state_.pin_gate.create_mode);
     ctor.Bind("pin_gate_link_paste_mode", &host.state_.pin_gate.link_paste_mode);
@@ -319,6 +320,7 @@ bool ShellHost::RegisterWindowModel(ui::Context* context) {
     ctor.BindEventCallback("pin_gate_use_default", &ShellHost::PinGateUseDefaultCallback);
     ctor.BindEventCallback("pin_gate_identity_new", &ShellHost::PinGateIdentityNewCallback);
     ctor.BindEventCallback("pin_gate_identity_link", &ShellHost::PinGateIdentityLinkCallback);
+    ctor.BindEventCallback("pin_gate_identity_restore", &ShellHost::PinGateIdentityRestoreCallback);
     ctor.BindEventCallback("call_accept", &ShellHost::CallAcceptCallback);
     ctor.BindEventCallback("call_accept_voice", &ShellHost::CallAcceptVoiceCallback);
     ctor.BindEventCallback("call_accept_charge", &ShellHost::CallAcceptChargeCallback);
@@ -859,6 +861,7 @@ void ShellHost::DirtyFeedback() {
 void ShellHost::DirtyPinGate() {
   DataModelHost::Instance().Dirty("window", "pin_gate_active");
   DataModelHost::Instance().Dirty("window", "pin_gate_identity_fork_mode");
+  DataModelHost::Instance().Dirty("window", "pin_gate_restore_label");
   DataModelHost::Instance().Dirty("window", "pin_gate_chooser_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_create_mode");
   DataModelHost::Instance().Dirty("window", "pin_gate_link_paste_mode");
@@ -1995,6 +1998,8 @@ std::string ShellHost::SerializePinGate() const {
   out << "<p class=\"text shell-dialog-message\">{{pin_gate_message}}</p>";
   out << "<p class=\"text shell-pin-gate-error\">{{pin_gate_error}}</p>";
   out << "<div class=\"shell-pin-gate-chooser\" data-if=\"pin_gate_identity_fork_mode\">";
+  out << "<button class=\"btn btn-primary\" data-if=\"pin_gate_restore_label != ''\" "
+         "data-event-click=\"pin_gate_identity_restore()\">{{pin_gate_restore_label}}</button>";
   out << "<button class=\"btn btn-primary\" data-event-click=\"pin_gate_identity_new()\">"
       << Tr("pin.identity_new") << "</button>";
   out << "<button class=\"btn btn-secondary\" data-event-click=\"pin_gate_identity_link()\">"
@@ -3126,6 +3131,13 @@ void ShellHost::PinGateIdentityLinkCallback(ui::DataModelHandle /*model*/, ui::E
                                             const ui::VariantList& /*args*/) {
   if (Instance().pin_gate_actions_.on_identity_link) {
     Instance().pin_gate_actions_.on_identity_link();
+  }
+}
+
+void ShellHost::PinGateIdentityRestoreCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+                                               const ui::VariantList& /*args*/) {
+  if (Instance().pin_gate_actions_.on_identity_restore) {
+    Instance().pin_gate_actions_.on_identity_restore();
   }
 }
 

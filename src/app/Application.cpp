@@ -311,6 +311,12 @@ Roe<void> Application::ResetActiveProfile() {
       log().warning << "Registration revoke failed, continuing with the local reset: " << revoked.error().message;
     }
   }
+  // Reset means "I do not want this account": drop the uninstall-surviving backup too.
+  if (messaging_facade_) {
+    if (auto dropped = messaging_facade_->DeleteLocalBackup(); !dropped) {
+      log().warning << "Local account backup not deleted: " << dropped.error().message;
+    }
+  }
 
   if (messaging_) {
     messaging_->RequestShutdown();
@@ -917,6 +923,9 @@ void Application::WireUnlockPinAndFlow() {
                                                 const bool set_default_pin) {
       unlock_gate_->CompleteLinkDevice(pin, bundle_json, set_default_pin);
     };
+    gate_complete.complete_restore_backup = [this](const std::string& pin, const bool set_default_pin) {
+      unlock_gate_->CompleteRestoreBackup(pin, set_default_pin);
+    };
     gate_complete.cancel = [this]() { unlock_gate_->Cancel(); };
     pin_gate_->BindGateComplete(std::move(gate_complete));
   }
@@ -936,6 +945,9 @@ void Application::WireUnlockPinAndFlow() {
     (void)store_.SaveProfilePrefs(prefs);
   };
   unlock_ports.ui.show_identity_fork = [this]() { pin_gate_->ShowIdentityFork(); };
+  unlock_ports.ui.show_identity_restore = [this](const std::string& nickname) {
+    pin_gate_->ShowIdentityRestore(nickname);
+  };
   unlock_ports.ui.show_chooser = [this]() { pin_gate_->ShowChooser(); };
   unlock_ports.ui.show_unlock = [this]() { pin_gate_->ShowUnlock(); };
   unlock_ports.ui.dismiss = [this]() {
@@ -956,6 +968,8 @@ void Application::WireUnlockPinAndFlow() {
                                              const std::string& bundle_json) -> Roe<void> {
     return facade.ImportLinkDevice(bundle_json, pin);
   };
+  unlock_ports.local_backup_nickname = [&facade]() { return facade.LocalBackupNickname(); };
+  unlock_ports.restore_local_backup = [&facade](const std::string& pin) { return facade.RestoreLocalBackup(pin); };
   unlock_ports.ui.on_link_imported = [this, &facade]() {
     if (onboarding_) {
       onboarding_->MarkCompleted(); // an account brought over needs no wizard
@@ -1052,6 +1066,7 @@ void Application::WireUnlockPinAndFlow() {
     pin_actions.on_use_default = [this]() { pin_gate_->OnUseDefaultPin(); };
     pin_actions.on_identity_new = [this]() { pin_gate_->OnIdentityNew(); };
     pin_actions.on_identity_link = [this]() { pin_gate_->OnIdentityLink(); };
+    pin_actions.on_identity_restore = [this]() { pin_gate_->OnIdentityRestore(); };
     shell_->BindPinGateActions(std::move(pin_actions));
   }
   {
