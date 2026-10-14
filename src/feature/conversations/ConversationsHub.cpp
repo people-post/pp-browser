@@ -1496,6 +1496,8 @@ Roe<void> ConversationsHub::EnsureMessagingReady() {
   StartCoordinatorTimers();
   NotifyMessagingReady();
   ScheduleMeshBringUp();
+  // Accounts that registered before this build get their backup on the next unlock.
+  WriteLocalBackupAsync();
   return {};
 }
 
@@ -1822,6 +1824,8 @@ void ConversationsHub::WriteLocalBackupAsync() {
                                              Contacts(), util::NowUnixMs());
     if (!written) {
       log().warning << "Local account backup not written: " << written.error().message;
+    } else if (OsSecureBlobStore().Supported()) {
+      log().info << "Local account backup written";
     }
   });
 }
