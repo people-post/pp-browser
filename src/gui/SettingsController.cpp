@@ -936,7 +936,7 @@ void SettingsController::SyncLayoutMode() {
   }
 }
 
-void SettingsController::MarkSectionDirty(const std::string& section_id) {
+void SettingsController::MarkSectionDirty(const std::string& section_id, const bool show_toast) {
   if (suppress_auto_save_ || UiEditSession::Instance().RemountBlocking()) {
     log().info << "MarkSectionDirty(" << section_id << ") suppressed during UI transition";
     return;
@@ -948,12 +948,17 @@ void SettingsController::MarkSectionDirty(const std::string& section_id) {
   }
 
   dirty_sections_.insert(section_id);
+  if (show_toast) {
+    quiet_sections_.erase(section_id);
+  } else {
+    quiet_sections_.insert(section_id);
+  }
   if (handler->FlushMode() == SettingsFlushMode::Debounced) {
     debounce_deadline_ms_ = SDL_GetTicks() + kDebounceMs;
     return;
   }
 
-  FlushSection(section_id);
+  FlushSection(section_id, show_toast);
 }
 
 void SettingsController::FlushPending() {
@@ -997,6 +1002,9 @@ void SettingsController::Tick() {
 }
 
 bool SettingsController::FlushSection(const std::string& section_id, bool show_toast) {
+  if (quiet_sections_.erase(section_id) > 0) {
+    show_toast = false;
+  }
   if (suppress_auto_save_ || UiEditSession::Instance().RemountBlocking()) {
     log().info << "FlushSection(" << section_id << ") suppressed during UI transition";
     return true;
@@ -1826,7 +1834,7 @@ void SettingsController::ToggleNodeEnabledCallback(ui::DataModelHandle /*model*/
   }
   controller.bindings_.node_enabled = controller.bindings_.node_enabled == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network");
+  controller.MarkSectionDirty("network", /*show_toast=*/false);
   controller.ApplyReachability();
   if (controller.commands_.refresh_nav_badges) {
     controller.commands_.refresh_nav_badges();
@@ -1879,7 +1887,7 @@ void SettingsController::ToggleCircuitRelayCallback(ui::DataModelHandle /*model*
   controller.bindings_.circuit_relay_enabled =
       controller.bindings_.circuit_relay_enabled == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network");
+  controller.MarkSectionDirty("network", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1892,7 +1900,7 @@ void SettingsController::ToggleMediaRelayCallback(ui::DataModelHandle /*model*/,
   controller.bindings_.media_relay_enabled =
       controller.bindings_.media_relay_enabled == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network");
+  controller.MarkSectionDirty("network", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1904,7 +1912,7 @@ void SettingsController::ToggleDhtCallback(ui::DataModelHandle /*model*/, ui::Ev
   }
   controller.bindings_.dht_enabled = controller.bindings_.dht_enabled == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network");
+  controller.MarkSectionDirty("network", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1917,7 +1925,7 @@ void SettingsController::TogglePreferContactsCallback(ui::DataModelHandle /*mode
   controller.bindings_.prefer_contacts_for_routing =
       controller.bindings_.prefer_contacts_for_routing == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network");
+  controller.MarkSectionDirty("network", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1926,7 +1934,7 @@ void SettingsController::ToggleTrustedRelaysCallback(ui::DataModelHandle /*model
   auto& controller = Instance();
   controller.bindings_.trusted_relays_only = controller.bindings_.trusted_relays_only == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("network");
+  controller.MarkSectionDirty("network", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1942,7 +1950,7 @@ void SettingsController::ToggleShowNotificationsCallback(ui::DataModelHandle /*m
   controller.bindings_.show_notifications =
       controller.bindings_.show_notifications == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("profile");
+  controller.MarkSectionDirty("profile", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1952,7 +1960,7 @@ void SettingsController::ToggleReduceTransparencyCallback(ui::DataModelHandle /*
   controller.bindings_.reduce_transparency =
       controller.bindings_.reduce_transparency == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("appearance");
+  controller.MarkSectionDirty("appearance", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1962,7 +1970,7 @@ void SettingsController::ToggleCallDiagnosticsCallback(ui::DataModelHandle /*mod
   controller.bindings_.call_diagnostics =
       controller.bindings_.call_diagnostics == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("appearance");
+  controller.MarkSectionDirty("appearance", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1972,7 +1980,7 @@ void SettingsController::ToggleShowAdvancedSettingsCallback(ui::DataModelHandle 
   controller.bindings_.show_advanced_settings =
       controller.bindings_.show_advanced_settings == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("about");
+  controller.MarkSectionDirty("about", /*show_toast=*/false);
   controller.InitSections(); // the advanced-only sections appear or go
   controller.PushUiStateToBindings();
   controller.DirtyAll();
@@ -1984,7 +1992,7 @@ void SettingsController::ToggleCrashReportsCallback(ui::DataModelHandle /*model*
   controller.bindings_.crash_reports_enabled =
       controller.bindings_.crash_reports_enabled == "on" ? "off" : "on";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("security");
+  controller.MarkSectionDirty("security", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
@@ -1994,7 +2002,7 @@ void SettingsController::ToggleAutoRenewRegistrationCallback(ui::DataModelHandle
   controller.bindings_.auto_renew_registration =
       controller.bindings_.auto_renew_registration == "auto" ? "off" : "auto";
   controller.PullBindingsToUiState();
-  controller.MarkSectionDirty("profile");
+  controller.MarkSectionDirty("profile", /*show_toast=*/false);
   controller.DirtyAll();
 }
 
