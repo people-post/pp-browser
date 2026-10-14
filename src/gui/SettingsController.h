@@ -284,7 +284,8 @@ private:
   void OnBackToList();
   void OnResetSection(const std::string& section_id);
   void PerformResetSection(const std::string& section_id);
-  void MarkSectionDirty(const std::string& section_id);
+  /** `show_toast=false` for switches: the knob moving is the feedback (Kenneth 2026-10-14). */
+  void MarkSectionDirty(const std::string& section_id, bool show_toast = true);
   void FlushPending();
   void FlushAllDirty();
   bool FlushSection(const std::string& section_id, bool show_toast = true);
@@ -343,6 +344,8 @@ private:
   /** Pane hydrate gate; also mirrored into UiEditSession remount depth. */
   bool suppress_auto_save_ = false;
   std::unordered_set<std::string> dirty_sections_;
+  /** Dirty sections whose next flush must not toast (switch toggles). */
+  std::unordered_set<std::string> quiet_sections_;
   uint64_t debounce_deadline_ms_ = 0;
   std::optional<std::string> last_toast_section_;
   uint64_t last_toast_at_ms_ = 0;

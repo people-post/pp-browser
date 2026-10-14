@@ -3554,6 +3554,15 @@ input.checkbox {
   transform: translateX(16dp);
 }
 
+/* The switch animating is the only feedback a toggle gives (no "saved" toast). */
+.settings-switch {
+  transition: background-color 0.15s ease-in-out;
+}
+
+.settings-switch-knob {
+  transition: transform 0.15s ease-in-out;
+}
+
 .settings-choice-row {
   margin: 0;
   padding: 0;
