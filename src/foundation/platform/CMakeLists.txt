@@ -14,6 +14,7 @@ set(_pp_platform_core_sources
   os/OsFile_Posix.cpp
   os/OsProcess_Posix.cpp
   os/OsThreadName_Posix.cpp
+  os/OsLocaleTags.cpp
   CurlSsl.cpp
   AssetIO.cpp
   IAssetLocator.cpp
@@ -105,7 +106,6 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
 else()
   list(APPEND _pp_platform_core_sources
     os/OsExecutablePath_Linux.cpp
-    os/OsLocale_Posix.cpp
     os/OsProcessStats_Linux.cpp
     os/OsThreadStackDump_Linux.cpp
     desktop/PathProvider_Linux.cpp
@@ -114,6 +114,11 @@ else()
     desktop/LocalNotifier_Linux.cpp
     VideoPosterExtractor_Default.cpp
   )
+  if(PP_BROWSER_IS_ANDROID)
+    list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp)
+  else()
+    list(APPEND _pp_platform_core_sources os/OsLocale_Posix.cpp)
+  endif()
   if(NOT PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_gui_sources NetworkMonitor_Linux.cpp)
   endif()
