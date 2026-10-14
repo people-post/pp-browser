@@ -15,11 +15,12 @@ namespace {
 // never synced to iCloud Keychain, never in device backups, gone with the device.
 constexpr const char kService[] = "dev.pp-browser.secure-blob";
 
+// The platform target compiles Objective-C++ without ARC: plain toll-free casts, manual CFRelease.
 NSMutableDictionary* BaseQuery(const std::string& name) {
   NSMutableDictionary* query = [NSMutableDictionary dictionary];
-  query[(__bridge id)kSecClass] = (__bridge id)kSecClassGenericPassword;
-  query[(__bridge id)kSecAttrService] = [NSString stringWithUTF8String:kService];
-  query[(__bridge id)kSecAttrAccount] = [NSString stringWithUTF8String:name.c_str()];
+  query[(id)kSecClass] = (id)kSecClassGenericPassword;
+  query[(id)kSecAttrService] = [NSString stringWithUTF8String:kService];
+  query[(id)kSecAttrAccount] = [NSString stringWithUTF8String:name.c_str()];
   return query;
 }
 
@@ -33,12 +34,12 @@ Roe<void> SecureBlobWrite(const std::string& name, const std::vector<uint8_t>& b
   @autoreleasepool {
     NSData* data = [NSData dataWithBytes:bytes.data() length:bytes.size()];
     NSMutableDictionary* query = BaseQuery(name);
-    NSDictionary* update = @{(__bridge id)kSecValueData : data};
-    OSStatus status = SecItemUpdate((__bridge CFDictionaryRef)query, (__bridge CFDictionaryRef)update);
+    NSDictionary* update = @{(id)kSecValueData : data};
+    OSStatus status = SecItemUpdate((CFDictionaryRef)query, (CFDictionaryRef)update);
     if (status == errSecItemNotFound) {
-      query[(__bridge id)kSecValueData] = data;
-      query[(__bridge id)kSecAttrAccessible] = (__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly;
-      status = SecItemAdd((__bridge CFDictionaryRef)query, nullptr);
+      query[(id)kSecValueData] = data;
+      query[(id)kSecAttrAccessible] = (id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly;
+      status = SecItemAdd((CFDictionaryRef)query, nullptr);
     }
     if (status != errSecSuccess) {
       return Error(StatusText("SecItemAdd/Update", status));
@@ -50,25 +51,30 @@ Roe<void> SecureBlobWrite(const std::string& name, const std::vector<uint8_t>& b
 Roe<std::optional<std::vector<uint8_t>>> SecureBlobRead(const std::string& name) {
   @autoreleasepool {
     NSMutableDictionary* query = BaseQuery(name);
-    query[(__bridge id)kSecReturnData] = @YES;
-    query[(__bridge id)kSecMatchLimit] = (__bridge id)kSecMatchLimitOne;
+    query[(id)kSecReturnData] = @YES;
+    query[(id)kSecMatchLimit] = (id)kSecMatchLimitOne;
     CFTypeRef result = nullptr;
-    const OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &result);
+    const OSStatus status = SecItemCopyMatching((CFDictionaryRef)query, &result);
     if (status == errSecItemNotFound) {
       return std::optional<std::vector<uint8_t>>{};
     }
     if (status != errSecSuccess || result == nullptr) {
+      if (result != nullptr) {
+        CFRelease(result);
+      }
       return Error(StatusText("SecItemCopyMatching", status));
     }
-    NSData* data = (__bridge_transfer NSData*)result;
-    const auto* begin = static_cast<const uint8_t*>(data.bytes);
-    return std::optional<std::vector<uint8_t>>(std::vector<uint8_t>(begin, begin + data.length));
+    CFDataRef data = static_cast<CFDataRef>(result);
+    const UInt8* begin = CFDataGetBytePtr(data);
+    std::vector<uint8_t> bytes(begin, begin + CFDataGetLength(data));
+    CFRelease(result);
+    return std::optional<std::vector<uint8_t>>(std::move(bytes));
   }
 }
 
 Roe<void> SecureBlobDelete(const std::string& name) {
   @autoreleasepool {
-    const OSStatus status = SecItemDelete((__bridge CFDictionaryRef)BaseQuery(name));
+    const OSStatus status = SecItemDelete((CFDictionaryRef)BaseQuery(name));
     if (status != errSecSuccess && status != errSecItemNotFound) {
       return Error(StatusText("SecItemDelete", status));
     }
