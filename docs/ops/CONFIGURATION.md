@@ -186,7 +186,7 @@ Spec: [MESH_DHT.md](../contracts/MESH_DHT.md), ADR [N028](../../projects/p2p-mes
 | `mesh.dht.soft_reputation_penalty_threshold` | `3` | Bad FIND_PEER replies before cooldown. |
 | `mesh.dht.soft_reputation_cooldown_seconds` | `300` | Skip query peer after soft-reputation penalty. |
 
-DHT complements [mesh directory](../../projects/p2p-mesh/MESH_DIRECTORY.md) (n-dir): bootstrap ∪ directory cache, never bypasses hop policy. pp-ledger fleet does **not** use this DHT — see [platform-integration](../../../pp-ledger/docs/platform-integration.md).
+DHT complements [mesh directory](../../projects/p2p-mesh/MESH_DIRECTORY.md) (n-dir): bootstrap ∪ directory cache, never bypasses hop policy. pp-ledger fleet does **not** use this DHT — see [platform-integration](../../../pp-ledger/docs/architecture/PLATFORM_INTEGRATION.md).
 
 Enter an **API key** directly in Me → Assistant (kept in the profile's `secrets.enc`, never in `config.json`) or use **API key env var** for desktop-style env lookup when using Cloud/Custom. Leaving the password field blank on save keeps an existing saved API key. Default preset is **Brief** (key from Profile registration); **Ollama (localhost)** remains available for local dev.
 

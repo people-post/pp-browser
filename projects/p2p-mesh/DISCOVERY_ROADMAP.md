@@ -4,7 +4,7 @@
 **Date:** 2026-09-01  
 **Updated:** 2026-09-02 — align with [N029](DECISIONS.md#n029--name-directory-north-star-chain-later-http-now) name-directory north star  
 **Amends:** N015 (delivery order), N027 (mesh directory), n2 in [PHASES.md](PHASES.md)  
-**Related:** [NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md), [MESH_DIRECTORY.md](MESH_DIRECTORY.md), [media-hop-reachability L5](../media-hop-reachability/PHASES.md#l5--directory--dht-later), [platform-integration](../../pp-ledger/docs/platform-integration.md) (pp-ledger DHT retired)
+**Related:** [NAME_DIRECTORY_NORTH_STAR.md](NAME_DIRECTORY_NORTH_STAR.md), [MESH_DIRECTORY.md](MESH_DIRECTORY.md), [media-hop-reachability L5](../media-hop-reachability/PHASES.md#l5--directory--dht-later), [platform-integration](../../../pp-ledger/docs/architecture/PLATFORM_INTEGRATION.md) (pp-ledger DHT retired)
 
 ## Context
 
