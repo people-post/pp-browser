@@ -1,13 +1,13 @@
-#include "domain/mesh/l4/call_media/CallMediaLegCoordinator.h"
+#include "feature/call_media/CallMediaLegCoordinator.h"
 #include "common/media/MediaChannel.h"
 
 #include "domain/mesh/l4/shared/ChannelSessionSlot.h"
 #include "domain/mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/PeerLink.h"
-#include "domain/mesh/l4/call_media/CallMediaBundleLogic.h"
-#include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
-#include "domain/mesh/l4/call_media/CallMediaSessionLogic.h"
+#include "feature/call_media/CallMediaBundleLogic.h"
+#include "feature/call_media/CallMediaFrameCrypto.h"
+#include "feature/call_media/CallMediaSessionLogic.h"
 #include "common/LengthPrefixedCodec.h"
 #include "common/Logger.h"
 

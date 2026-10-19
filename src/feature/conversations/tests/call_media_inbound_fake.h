@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
+#include "feature/call_media/ICallMediaTransport.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include <chrono>

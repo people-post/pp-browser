@@ -5,7 +5,7 @@
 
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/messaging/CallHopAttachLogic.h"
-#include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
+#include "feature/call_media/CallMediaFrameCrypto.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 

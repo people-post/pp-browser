@@ -5,6 +5,7 @@
 #include "common/thread/ChatBlobTypes.h"
 #include "domain/mesh/dht/AmpDhtProtocol.h"
 #include "domain/mesh/discovery/DirectoryTypes.h"
+#include "common/media/CallMediaProtocol.h"
 #include "domain/mesh/l4/shared/L4ProtocolIds.h"
 #include "domain/mesh/reachability/Reachability.h"
 #include "domain/mesh/reachability/dial_back/DialBackTypes.h"

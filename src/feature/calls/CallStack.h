@@ -26,7 +26,7 @@
 #include "feature/calls/SharedPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallControlInboundPorts.h"
-#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
+#include "feature/call_media/ICallMediaTransport.h"
 #include "domain/mesh/host/MeshHost.h"
 
 #include <unordered_map>

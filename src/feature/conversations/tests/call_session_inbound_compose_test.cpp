@@ -16,7 +16,7 @@
 #include "domain/messaging/SqliteThreadStore.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "common/ValueJson.h"
-#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
+#include "feature/call_media/ICallMediaTransport.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "foundation/crypto/CryptoConstants.h"

@@ -10,7 +10,7 @@
 #include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/CallTypes.h"
 #include "domain/messaging/SqliteThreadStore.h"
-#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
+#include "feature/call_media/ICallMediaTransport.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
