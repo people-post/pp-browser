@@ -149,6 +149,65 @@ jobs:
         shell: bash
         run: ccache --show-stats || true
 
+  # iOS compile check (no signing, no device): the Apple-only sources (*_Ios.*, Objective-C++ without
+  # ARC, the iOS CMake branches) were invisible to CI; two iOS-only compile errors reached develop in
+  # October 2026. Mirrors `scripts/platform/ios_build.sh configure-device` + `build`, Ninja tree.
+  ios:
+    runs-on: macos-14
+    timeout-minutes: 90
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_NOHASHDIR: true
+      CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros,pch_defines
+      CCACHE_MAXSIZE: 2G
+      CCACHE_COMPRESSLEVEL: 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install deps
+        run: |
+          for tool in ccache ninja; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              brew install "$tool"
+            fi
+          done
+          mkdir -p "$CCACHE_DIR"
+
+      - name: Restore ccache
+        uses: actions/cache@v6
+        with:
+          path: .cache/ccache
+          key: ${{ runner.os }}-ios-ccache-v1-${{ hashFiles('CMakeLists.txt', 'cmake/**/*.cmake', '.github/workflows/build.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-ios-ccache-v1-
+
+      - name: ccache stats (pre-build)
+        run: |
+          ccache --zero-stats || true
+          ccache --show-stats || true
+
+      - name: Configure (iphoneos SDK, Ninja)
+        run: |
+          cmake -S . -B out-ios/build/device -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DPP_BROWSER_IOS_DEPLOYMENT_TARGET=15.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPP_BROWSER_PACKAGED_BUILD=ON \
+            -DPP_BROWSER_BUILD_TESTS=OFF \
+            -DPP_BROWSER_COMPILER_CACHE=ON
+
+      - name: Build pp-browser
+        run: cmake --build out-ios/build/device --config Release -j 4 --target pp-browser
+
+      - name: ccache stats (post-build)
+        if: always()
+        run: ccache --show-stats || true
+
   android:
     runs-on: ubuntu-24.04
     env:
