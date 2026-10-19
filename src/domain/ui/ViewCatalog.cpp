@@ -3,15 +3,36 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/AssetIO.h"
 #include "foundation/platform/IAssetLocator.h"
+#include "common/Logger.h"
 
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace pbr {
 
 namespace {
 
 constexpr std::string_view kIncludePrefix = "{{include:";
+
+logging::Logger& CatalogLog() {
+  static logging::Logger log = logging::getLogger("ViewCatalog");
+  return log;
+}
+
+/** Once per missing view: panes and overlays remount often and empty bodies are never cached. */
+void WarnViewMissing(const std::string& key_or_path, const std::string& relative) {
+  static std::unordered_set<std::string> reported;
+  if (!reported.insert(relative).second) {
+    return;
+  }
+  // Silent before 2026-10-13: the first-run wizard mounted an empty body for a week because its key
+  // was never registered. Say which view and whether it was looked up as a key or a path.
+  const bool looked_like_key =
+      key_or_path.find('/') == std::string::npos && key_or_path.find('\\') == std::string::npos;
+  CatalogLog().warning << "View missing or empty: \"" << key_or_path << "\" -> " << relative
+                       << (looked_like_key && relative == key_or_path ? " (key not registered)" : "");
+}
 
 const std::unordered_map<std::string, std::string>& KnownKeys() {
   static const std::unordered_map<std::string, std::string> keys = {
@@ -46,6 +67,7 @@ std::string LoadRawBody(const std::string& key_or_path) {
   const std::string relative = ViewCatalog::ResolvePath(key_or_path);
   const std::string raw = ViewCatalog::LoadFile(IAssetLocator::Instance().Resolve(relative));
   if (raw.empty()) {
+    WarnViewMissing(key_or_path, relative);
     return raw;
   }
   return LocalizationService::Instance().LocalizeText(raw);
@@ -80,6 +102,15 @@ std::unordered_map<std::string, std::string>& BodyCache() {
 }
 
 } // namespace
+
+std::vector<std::string> ViewCatalog::KnownViewPaths() {
+  std::vector<std::string> out;
+  out.reserve(KnownKeys().size());
+  for (const auto& [key, path] : KnownKeys()) {
+    out.push_back(path);
+  }
+  return out;
+}
 
 std::string ViewCatalog::ResolvePath(const std::string& key_or_path) {
   if (key_or_path.find('/') != std::string::npos || key_or_path.find('\\') != std::string::npos) {
