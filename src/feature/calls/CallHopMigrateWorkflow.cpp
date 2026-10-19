@@ -10,7 +10,7 @@
 #include "domain/messaging/InitiationPricing.h"
 #include "domain/mesh/media_plane/MediaRelayAttach.h"
 #include "domain/messaging/SoftMigrateLogic.h"
-#include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
+#include "feature/call_media/CallMediaFrameCrypto.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/platform/PlatformUserHints.h"

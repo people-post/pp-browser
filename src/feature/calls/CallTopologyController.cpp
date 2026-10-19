@@ -17,7 +17,7 @@
 #include "common/Utilities.h"
 #include "common/directory/MeshHopDial.h"
 #include "domain/mesh/media_plane/MediaRelayAttach.h"
-#include "domain/mesh/l4/call_media/CallMediaFrameCrypto.h"
+#include "feature/call_media/CallMediaFrameCrypto.h"
 
 #include <algorithm>
 #include <atomic>
@@ -461,7 +461,16 @@ CallHopHealth CallTopologyController::HopHealth() const {
   if (!relay_deps_.relay || !sfu_.attached) {
     return {};
   }
-  return relay_deps_.relay->HealthSnapshot();
+  // The relay's session health, in the call's terms (Call details, media health).
+  const MediaRelayClientHealth relay = relay_deps_.relay->HealthSnapshot();
+  CallHopHealth hop;
+  hop.attached = relay.attached;
+  hop.link = CallLinkCounters{.available = relay.link_available,
+                              .link_id = relay.link_id,
+                              .reliable_sent = relay.reliable_sent,
+                              .retransmits = relay.retransmits,
+                              .srtt_ms = relay.srtt_ms};
+  return hop;
 }
 
 bool CallTopologyController::IsMigrateGenerationCurrent(uint64_t gen) const {

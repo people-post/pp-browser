@@ -65,7 +65,6 @@ domain/mesh/
                   AmpCircuitHopRegistry
     media_relay/  wire types + decisions; serve/ MediaRelayServer; client/ MediaRelayClientCoordinator,
                   AmpMediaRelayClient, frame crypto (see SRC_LAYOUT § L4 protocols)
-    call_media/   CallMediaLegCoordinator, ICallMediaTransport
   tests/
 ```
 
@@ -79,7 +78,7 @@ edges between folders — [`check_mesh_layers.sh`](../../scripts/check/check_mes
 
 ```
 shared          shared/ + l4/shared/
-reachability    dht <- discovery    circuit <- media_relay    call_media
+reachability    dht <- discovery    circuit <- media_relay
 host            MeshHost composes the services above
 reach           reach / rendezvous / punch walk over MeshHost
 connectivity    MeshConnectivity
@@ -97,7 +96,8 @@ Feature code accesses mesh only through **`MeshHost` narrow ports**:
 |------|----------|-----|
 | Chat / dial | `MeshHost::ChatDeps()` → `IChatPeerLinks&` | Amp chat, history, blob, warm/dial |
 | Circuit | `MeshHost::CircuitDeps()` | Circuit bridge, hop reach |
-| Call-media transport | `CallMediaAmpTransport` via `CallStack` | Wire transport in mesh; `CallMediaBridge` in feature |
+| Call-media transport | `CallMediaAmpTransport` via `CallStack` | `feature/call_media` (a client of the mesh's io lane and L4 helpers); `CallMediaBridge` in `feature/calls` |
+| App protocols | `MeshHost::SetAppProtocols` | Advertise the protocols the app serves on the mesh's links (chat, history, blobs, announce, broadcast, call media: `ProductMeshProtocols`) beside the mesh's own |
 | Dial / reach / parking | `MeshConnectivity` (owned by `ConversationsHub`) | Borrowed by `CallStack` (`CallStackDeps::connectivity`); hop candidates injected by `MakeMeshConnectivityDeps` ([L015](../../projects/media-client-layers/DECISIONS.md#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast)) |
 | Media relay | `MeshMediaRelay` (owned by `ConversationsHub`, built on `MeshConnectivity`) | Borrowed by `CallStack` (`CallStackDeps::media_relay`) and broadcast (`RelayAttachPorts`) |
 
@@ -149,7 +149,7 @@ The mesh leaves for its own library, [pp-cpp-mesh](https://github.com/people-pos
 |---------|----------|
 | `pp-cpp-amp` | L1–L3 + link; also PeerId derivation (from `foundation/identity`, shared with pp-ledger) |
 | `pp-cpp-mesh` | `domain/mesh` — host, connectivity, DHT, discovery, reach, reachability, circuit and media relay (both ends), media plane — with the types it owns; namespace `pp::mesh`, includes `mesh/…` |
-| `pp-browser` | feature + app, **pp-node** (an app on pp-cpp-mesh), call media (`l4/call_media`: client-side call logic), policy (`MeshHopPolicy`, `SoftMigrateLogic`) |
+| `pp-browser` | feature + app, **pp-node** (an app on pp-cpp-mesh), call media (`feature/call_media`: pp-browser's realtime protocol, a client of the mesh), policy (`MeshHopPolicy`, `SoftMigrateLogic`) |
 
 **Rules for the library:** it depends on pp-cpp-common, pp-cpp-amp and pp-cpp-crypto only; it carries
 protocols and bytes, product types stay in pp-browser; it does not use the app's threads directly —
@@ -166,7 +166,7 @@ shrinks. Then the move, with history; mesh tests come along clean too.
 | Mesh config types out of the app's `Config` (`foundation/data/MeshConfigTypes.h`) | done |
 | `DeferredSelf` → `pp::Lifetime` (pp-cpp-common), app-wide | done |
 | Mesh threads in place of `AppRuntime` ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane)): control on the io lane, `work` / `blocking` executors per instance, one driver | done |
-| `l4/call_media` out of the mesh (and `host`'s edge to it); product `common/` types (chat, thread, media health) out of mesh code | |
+| `l4/call_media` out of the mesh (now `feature/call_media`); `host` names no app protocol (`MeshHost::SetAppProtocols`; pp-node advertises none); product `common/` types (chat, thread, media health) out of mesh code (`MediaRelayClientHealth`) | done |
 | PeerId derivation and multiaddr helpers into pp-cpp-amp; ML-DSA / cipher wrappers onto pp-cpp-crypto | |
 | Mesh-owned `common/` types (directory, address disclosure, public address, metrics) and generic helpers (`PbrCompat`, `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `AtomicFileWrite`) | |
 | The move (pp-cpp-amp ≥ the pin pp-ledger needs) | |

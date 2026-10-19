@@ -3,7 +3,7 @@
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/Error.h"
 #include "common/media/CallMediaHealth.h"
-#include "domain/mesh/l4/shared/L4ProtocolIds.h"
+#include "common/media/CallMediaProtocol.h"
 
 #include <cstdint>
 #include <functional>

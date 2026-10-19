@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
+#include "feature/call_media/ICallMediaTransport.h"
 #include "domain/mesh/reach/PeerReachCoordinator.h"
 #include "domain/messaging/CallPathPolicy.h"
 #include "feature/calls/CallTopologyRelayDeps.h"

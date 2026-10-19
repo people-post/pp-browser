@@ -37,6 +37,7 @@ Top-level folders (+ calls band). Two sub-trees under `ai/`.
 src/feature/
 ├── registration/     Registration finish / renew / nickname (`pp_feature_registration`, headless — pp-node links it)
 ├── node/             Node-role mesh services (`pp_feature_node`, headless): hosting, DHT / directory, self row — pp-node + desktop Node
+├── call_media/       pp-browser's realtime protocol on the mesh (`pp_feature_call_media`, headless): call-media transport, leg coordinator, frame crypto — a client of the mesh, not part of it
 ├── settings/         Config apply logic, section handlers + SettingsTools
 ├── ai/               Agent session, turn pipeline, tools, bindings
 │   ├── tools/

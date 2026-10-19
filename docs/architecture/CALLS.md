@@ -518,7 +518,7 @@ Landed (behavior-preserving + who-picks fix):
 | `src/feature/calls/CallSessionManager.*` | Façade — thin Start/Accept/Leave/inbound → Workflow |
 | `src/feature/calls/CallMediaHost.h` | Narrow host façade for mesh media side effects |
 | `src/feature/calls/CallMediaBridge.*` | Amp 1:1 media — key defer, dial/retry, connect-fail; embeds `CallDirectArmingPorts` / `CallDirectSeatPorts` (V048) |
-| `src/domain/mesh/l4/call_media/CallMediaAmpTransport.*` | Amp call-media transport |
+| `src/feature/call_media/CallMediaAmpTransport.*` | Amp call-media transport (`pp_feature_call_media`: pp-browser's realtime protocol, a client of the mesh) |
 | `src/domain/mesh/CallMediaFrameCrypto.*` | AEAD frame wrap under call media key |
 | `src/feature/calls/CallTopologyController.*` | Hop planner façade; embeds `CallHopArmingPorts` / `CallTopologySeatPorts`; projects into owned Workflow (V046/V048) |
 | `src/feature/calls/CallHopMigrateWorkflow.*` | SoftMigrate + SFU attach; embeds `CallHopMigrateHostPorts` / arming / seat ports (V047/V048) |

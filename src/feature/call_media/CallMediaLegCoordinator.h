@@ -1,8 +1,8 @@
 #pragma once
 
 #include "amp/link/MeshRuntime.h"
-#include "domain/mesh/l4/call_media/CallMediaBundleLogic.h"
-#include "domain/mesh/l4/call_media/ICallMediaTransport.h"
+#include "feature/call_media/CallMediaBundleLogic.h"
+#include "feature/call_media/ICallMediaTransport.h"
 
 #include <atomic>
 #include <chrono>

@@ -3,6 +3,7 @@
 
 #include "feature/conversations/LocalAccountBackup.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
+#include "feature/conversations/ProductMeshProtocols.h"
 #include "domain/messaging/PaymentPromiseLifecycle.h"
 #include "domain/messaging/PaymentPromiseAvoid.h"
 #include "domain/messaging/PaymentPromiseWireCodec.h"
@@ -369,6 +370,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
 
   mesh_ = std::make_unique<MeshHost>(AppRuntimeMeshExecutors());
   mesh_->SetStopping(shutdown_requested_.load(std::memory_order_acquire));
+  mesh_->SetAppProtocols(ProductMeshProtocols());  // advertised from the first advertisement on
   mesh_->SetAddressDisclosure(&address_disclosure_);
   auto started = mesh_->Start(mesh_cfg);
   if (!started) {
