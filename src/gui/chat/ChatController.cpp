@@ -3478,6 +3478,8 @@ void ChatController::FinishAssistantReply(const std::string& entry_id, const std
 
     const std::string assistant_open =
         ApplyLangAttribute(R"(<div class="bubble bubble-assistant")", raw_output) + R"( selectable="text">)";
+    // B81: a blank first line shows in assistant bubbles; log how the body starts to see what sits before the text.
+    log().debug << "assistant bubble markup head: " << hydrated.substr(0, 160);
 
     if (messaging_ready_) {
       if (message_exists) {
