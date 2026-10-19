@@ -1,8 +1,8 @@
 #pragma once
 
 #include "common/Lifetime.h"
-#include "common/directory/MeshHopTypes.h"
-#include "domain/mesh/connectivity/MeshConnectivity.h"
+#include "mesh/types/MeshHopTypes.h"
+#include "mesh/connectivity/MeshConnectivity.h"
 #include "domain/people/ContactsStore.h"
 #include "foundation/data/Config.h"
 
@@ -14,17 +14,18 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
 /** Product inputs for the mesh connectivity's hop candidates (media-client-layers L015). */
 struct MeshConnectivityWiringInputs {
-  std::function<MeshHost*()> mesh;
+  std::function<mesh::MeshHost*()> mesh;
   ContactsStore* contacts = nullptr;
   /** Published snapshot: the policy is computed off the hub's thread (MeshHopPolicyFeed). */
   std::function<std::shared_ptr<const MeshConfig>()> mesh_config;
-  std::function<std::vector<MeshDirectoryNode>()> list_directory_nodes;
-  std::function<std::vector<MeshDirectoryNode>()> list_dht_nodes;
+  std::function<std::vector<mesh::MeshDirectoryNode>()> list_directory_nodes;
+  std::function<std::vector<mesh::MeshDirectoryNode>()> list_dht_nodes;
   /** Reachability seed probe — when false, the rendezvous surface skips org seeds. */
   std::function<bool()> seed_dial_ok;
   std::function<void(const std::string& peer_id)> note_lan_peer_id;
@@ -32,7 +33,7 @@ struct MeshConnectivityWiringInputs {
 };
 
 /** The connectivity's ports: the mesh it wires from and its LAN / delivery-plane notices. */
-MeshConnectivityDeps MakeMeshConnectivityDeps(const MeshConnectivityWiringInputs& in);
+mesh::MeshConnectivityDeps MakeMeshConnectivityDeps(const MeshConnectivityWiringInputs& in);
 
 /**
  * The candidate policy as of now: rendezvous surface = contacts ∪ directory ∪ DHT ∪ effective seeds;
@@ -40,7 +41,7 @@ MeshConnectivityDeps MakeMeshConnectivityDeps(const MeshConnectivityWiringInputs
  * trusted relays only narrows all three (privacy T4). Reads the contacts store, so never on the
  * mesh's threads.
  */
-MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in);
+mesh::MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in);
 
 /**
  * Pushes the candidate policy into the mesh (THREADING.md § Mesh threads, rule 1): at Start, on
@@ -54,7 +55,7 @@ class MeshHopPolicyFeed {
 public:
   static constexpr std::chrono::milliseconds kRefresh{5000};
 
-  explicit MeshHopPolicyFeed(MeshConnectivity& connectivity);
+  explicit MeshHopPolicyFeed(mesh::MeshConnectivity& connectivity);
   ~MeshHopPolicyFeed();
   MeshHopPolicyFeed(const MeshHopPolicyFeed&) = delete;
   MeshHopPolicyFeed& operator=(const MeshHopPolicyFeed&) = delete;
@@ -72,7 +73,7 @@ private:
   void PushNow();
   void ArmRefresh();
 
-  MeshConnectivity& connectivity_;
+  mesh::MeshConnectivity& connectivity_;
   /** Pushes in order: each reads the inputs as of its turn, so an older one never lands last. */
   std::mutex push_mu_;
   MeshConnectivityWiringInputs inputs_;  // push_mu_

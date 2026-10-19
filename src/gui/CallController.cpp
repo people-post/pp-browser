@@ -40,6 +40,7 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -456,7 +457,7 @@ std::string CallController::DisplayNameForIdentity(const std::string& identity) 
   if (identity.empty() || !call_ports_.find_contact_by_identity) {
     return {};
   }
-  if (auto contact = call_ports_.find_contact_by_identity(identity, ContactIdKind::Account)) {
+  if (auto contact = call_ports_.find_contact_by_identity(identity, mesh::ContactIdKind::Account)) {
     if (*contact) {
       std::string name =
           (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;

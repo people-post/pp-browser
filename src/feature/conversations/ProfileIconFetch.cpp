@@ -3,12 +3,13 @@
 #include "domain/net/HttpClient.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
 namespace {
 
-std::string ExtensionFromProfileIcon(const ProfileIconRef& icon) {
+std::string ExtensionFromProfileIcon(const mesh::ProfileIconRef& icon) {
   if (!icon.kind.empty()) {
     if (icon.kind == "image/jpeg" || icon.kind == "image/jpg") {
       return "jpg";
@@ -37,7 +38,7 @@ std::vector<uint8_t> BytesFromHttpBody(const std::string& body) {
 } // namespace
 
 Roe<void> FetchProfileIcon(const std::string& profile_dir, const std::string& cache_key,
-                           const ProfileIconRef& icon) {
+                           const mesh::ProfileIconRef& icon) {
   if (icon.url.empty()) {
     return Error("Profile icon URL is required");
   }
@@ -68,7 +69,7 @@ Roe<void> FetchProfileIcon(const std::string& profile_dir, const std::string& ca
 }
 
 Roe<void> FetchProfileIconIfNeeded(const std::string& profile_dir, const std::string& cache_key,
-                                   const ProfileIconRef& icon) {
+                                   const mesh::ProfileIconRef& icon) {
   if (icon.url.empty() || cache_key.empty()) {
     return Roe<void>{};
   }

@@ -27,7 +27,7 @@
 #include "domain/messaging/PeerAnnounceTypes.h"
 #include "feature/conversations/PeerDisplayResolver.h"
 #include "domain/messaging/PskSessionCoordinator.h"
-#include "domain/mesh/reachability/Reachability.h"
+#include "mesh/reachability/Reachability.h"
 
 #include <cstdint>
 #include <functional>
@@ -35,6 +35,7 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -150,7 +151,7 @@ public:
                               const std::string& source);
   void RegisterPeerKemKey(const std::string& kind, const std::string& value, const std::string& key_b64,
                           const std::string& source);
-  Roe<Contact> AddContactFromDirectoryHit(const DirectoryHit& hit);
+  Roe<Contact> AddContactFromDirectoryHit(const mesh::DirectoryHit& hit);
   /** Block / unblock / trust from wherever the person is shown (chat row menu, contact detail). */
   Roe<void> SetContactTrust(const std::string& contact_id, TrustLevel level);
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
@@ -170,9 +171,9 @@ public:
 
   // --- Identity / contacts / directory --------------------------------------
   std::optional<LocalIdentity> GetIdentity();
-  Roe<std::optional<Contact>> FindContactByIdentity(const std::string& identity, ContactIdKind kind);
+  Roe<std::optional<Contact>> FindContactByIdentity(const std::string& identity, mesh::ContactIdKind kind);
   Roe<std::optional<Contact>> GetContact(const std::string& contact_id);
-  std::optional<DirectoryHit> GetDirectoryShadow(const std::string& peer_id);
+  std::optional<mesh::DirectoryHit> GetDirectoryShadow(const std::string& peer_id);
   /** Start a directory lookup for `peer_id` if none is cached or in flight; the result lands in the shadow cache. */
   void EnsureDirectoryLookup(const std::string& peer_id);
 
@@ -237,7 +238,7 @@ public:
                                                            const std::string& message_id);
   bool AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id, const std::string& message_id);
   Roe<void> RotateBriefLlmKey();
-  ReachabilitySnapshot Reachability();
+  mesh::ReachabilitySnapshot Reachability();
   void RunReachabilityProbe(bool try_upnp);
   void TryUpnpPortMapping();
   std::string LastMeshError();
@@ -245,7 +246,7 @@ public:
   bool IsHelpNetworkEnabled();
 
   // --- Messaging tools helpers ----------------------------------------------
-  Roe<std::vector<DirectoryHit>> SearchPeople(const std::string& query);
+  Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string& query);
   Roe<std::vector<Contact>> SearchLocalContacts(const std::string& query);
   Roe<LocalIdentity> GetLocalIdentity();
   Roe<LocalIdentity> UpdateLocalIdentity(const LocalIdentity& identity);

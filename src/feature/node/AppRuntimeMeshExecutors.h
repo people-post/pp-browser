@@ -1,8 +1,9 @@
 #pragma once
 
-#include "domain/mesh/shared/MeshExecutors.h"
+#include "mesh/shared/MeshExecutors.h"
 
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -11,6 +12,6 @@ namespace pbr {
  * lane, `blocking` on its Background lane, so a long wait never holds up short jobs. Every mesh the
  * product or pp-node starts takes these.
  */
-MeshExecutors AppRuntimeMeshExecutors();
+mesh::MeshExecutors AppRuntimeMeshExecutors();
 
 } // namespace pbr

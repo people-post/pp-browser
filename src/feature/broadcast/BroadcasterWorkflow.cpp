@@ -1,10 +1,11 @@
 #include "feature/broadcast/BroadcasterWorkflow.h"
 
-#include "domain/mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
+#include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
 #include "domain/media/VideoLevelProfile.h"
 #include "domain/messaging/BroadcastMedia.h"
 
 #include "common/Logger.h"
+#include "common/MeshAlias.h"
 
 #include <algorithm>
 #include <atomic>
@@ -26,7 +27,7 @@ constexpr std::chrono::milliseconds kRecoveryBackoff{500};
 
 /** One per show; the engine's capture thread seals and sends through it while `live`. */
 struct BroadcasterWorkflow::Sender {
-  IMediaRelayClient* relay = nullptr;
+  mesh::IMediaRelayClient* relay = nullptr;
   ByteVector key;
   std::string context;
   uint32_t epoch = 1;
@@ -39,14 +40,14 @@ struct BroadcasterWorkflow::Sender {
       return;
     }
     const auto channel = static_cast<uint8_t>(packet.channel_id);
-    auto body = SealMediaRelayFrame(key, context, epoch, stream_id, packet.seq, packet.mark, channel, packet.payload);
+    auto body = mesh::SealMediaRelayFrame(key, context, epoch, stream_id, packet.seq, packet.mark, channel, packet.payload);
     if (!body) {
       return;
     }
-    MediaDataFrame frame;
+    mesh::MediaDataFrame frame;
     frame.stream_id = stream_id;
     frame.channel_id = packet.channel_id;
-    frame.channel_type = MediaChannelTypeFor(packet.channel_id);
+    frame.channel_type = mesh::MediaChannelTypeFor(packet.channel_id);
     frame.seq = packet.seq;
     frame.mark = packet.mark;
     frame.payload = std::move(*body);
@@ -196,7 +197,7 @@ void BroadcasterWorkflow::Teardown(bool announce_end) {
   if (sender_) {
     sender_->live.store(false, std::memory_order_release);
   }
-  IMediaRelayClient* relay = ports_.relay.relay;
+  mesh::IMediaRelayClient* relay = ports_.relay.relay;
   if (relay && lost_observer_ != 0) {
     relay->RemoveClientTransportLostObserver(lost_observer_);
   }
@@ -259,7 +260,7 @@ void BroadcasterWorkflow::AttachNext(const std::string& why) {
     Fail("no media relay accepted the broadcast" + (why.empty() ? std::string() : ": " + why));
     return;
   }
-  IMediaRelayClient* relay = ports_.relay.relay;
+  mesh::IMediaRelayClient* relay = ports_.relay.relay;
   if (relay->IsAttached() || relay->IsLocalHopAttached()) {
     Fail("media relay client in use by a call");  // one client session per mesh host (L013)
     return;
@@ -267,7 +268,7 @@ void BroadcasterWorkflow::AttachNext(const std::string& why) {
   const std::string hop = hops_[next_hop_++];
   SetPhase(status_.phase == Phase::Recovering ? Phase::Recovering : Phase::Attaching, hop);
 
-  MediaRelayAttachRequest request;
+  mesh::MediaRelayAttachRequest request;
   request.hop_peer_id = hop;
   request.hop_multiaddr = ports_.hop_multiaddr ? ports_.hop_multiaddr(hop) : std::string();
   request.session_id = status_.join_handle;
@@ -290,8 +291,8 @@ void BroadcasterWorkflow::AttachNext(const std::string& why) {
     }
   }
 
-  MediaRelayAttachHooks hooks;
-  hooks.accept_quote = [](const MediaRelayQuote& quote) -> Roe<void> {
+  mesh::MediaRelayAttachHooks hooks;
+  hooks.accept_quote = [](const mesh::MediaRelayQuote& quote) -> Roe<void> {
     if (quote.rate > 0) {
       return Error("paid relays are not supported for broadcast yet");
     }
@@ -300,11 +301,11 @@ void BroadcasterWorkflow::AttachNext(const std::string& why) {
   hooks.still_wanted = [current = current_show_, show = show_]() {
     return current->load(std::memory_order_acquire) == show;
   };
-  hooks.on_frame = [](MediaDataFrame) {};  // publish-only: subscribes to nothing
+  hooks.on_frame = [](mesh::MediaDataFrame) {};  // publish-only: subscribes to nothing
 
-  AttachToMediaRelayAsync(ports_.relay, std::move(request), std::move(hooks),
+  mesh::AttachToMediaRelayAsync(ports_.relay, std::move(request), std::move(hooks),
                           [relay, outbox = outbox_, current = current_show_, show = show_,
-                           hop](Roe<MediaRelayAttached> attached) {
+                           hop](Roe<mesh::MediaRelayAttached> attached) {
                             if (attached && current->load(std::memory_order_acquire) != show) {
                               relay->Detach();  // ended while AcceptAndAttach was on the wire
                               return;
@@ -313,7 +314,7 @@ void BroadcasterWorkflow::AttachNext(const std::string& why) {
                           });
 }
 
-void BroadcasterWorkflow::OnAttached(const std::string& hop, Roe<MediaRelayAttached> attached) {
+void BroadcasterWorkflow::OnAttached(const std::string& hop, Roe<mesh::MediaRelayAttached> attached) {
   if (!attached) {
     BroadcasterLog().info << "attach to " << hop << " failed: " << attached.error().message;
     AttachNext("attach to " + hop + " failed: " + attached.error().message);
@@ -344,10 +345,10 @@ void BroadcasterWorkflow::StartPublishing(const std::string& hop) {
       }
     }
   }
-  IMediaRelayClient* relay = ports_.relay.relay;
+  mesh::IMediaRelayClient* relay = ports_.relay.relay;
   if (lost_observer_ == 0) {
     lost_observer_ = relay->AddClientTransportLostObserver(
-        [outbox = outbox_, show = show_](MediaRelayClientLoss loss) {
+        [outbox = outbox_, show = show_](mesh::MediaRelayClientLoss loss) {
           outbox.Emit(broadcaster_event::SessionEnded{show, loss});
         });
   }
@@ -371,7 +372,7 @@ void BroadcasterWorkflow::StartPublishing(const std::string& hop) {
 
 void BroadcasterWorkflow::ApplyVideoLevels(const std::vector<uint8_t>& carried) {
   // One encoder: publish the highest level the relay carries of those offered (V5 sends two when it carries two).
-  const uint8_t level = PublishVideoLevel(ports_.video_offer.levels, carried);
+  const uint8_t level = mesh::PublishVideoLevel(ports_.video_offer.levels, carried);
   if (level == video_level_) {
     return;
   }
@@ -403,15 +404,15 @@ void BroadcasterWorkflow::OnAnnounced(const bool first, Roe<void> announced) {
 
 // --- recovery -------------------------------------------------------------------------------------
 
-void BroadcasterWorkflow::OnSessionEnded(MediaRelayClientLoss loss) {
+void BroadcasterWorkflow::OnSessionEnded(mesh::MediaRelayClientLoss loss) {
   if (status_.phase != Phase::Live || !attached_) {
     return;
   }
   attached_ = false;
   sender_->live.store(false, std::memory_order_release);
   BroadcasterLog().info << "relay session ended ("
-                        << (loss == MediaRelayClientLoss::TransportLost ? "lost"
-                            : loss == MediaRelayClientLoss::Replaced    ? "replaced"
+                        << (loss == mesh::MediaRelayClientLoss::TransportLost ? "lost"
+                            : loss == mesh::MediaRelayClientLoss::Replaced    ? "replaced"
                                                                         : "detached")
                         << ") program=" << status_.program_id;
   if (consecutive_losses_ >= kMaxConsecutiveLosses) {

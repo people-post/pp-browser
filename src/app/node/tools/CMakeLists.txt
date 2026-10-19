@@ -5,7 +5,7 @@ set(_pp_node_tools_out "${CMAKE_BINARY_DIR}/src/app/node")
 
 # Amp thin-client probes (A017) — ephemeral AmpStack, no Libp2pHost.
 set(_pp_probe_libs
-  pp_domain_mesh
+  pp_mesh
   pp_amp_link
   pp_foundation_crypto
   pp_amp_l1

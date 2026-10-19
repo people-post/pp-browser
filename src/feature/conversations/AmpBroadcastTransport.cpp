@@ -1,6 +1,6 @@
 #include "feature/conversations/AmpBroadcastTransport.h"
 
-#include "domain/mesh/l4/shared/InboundReply.h"
+#include "mesh/l4/shared/InboundReply.h"
 
 #include "amp/link/LinkIdentity.h"
 
@@ -20,6 +20,7 @@
 
 #include "common/PbrCompat.h"
 #include "common/Lifetime.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -50,7 +51,7 @@ int64_t DefaultNowMs() {
 } // namespace
 
 struct AmpBroadcastTransport::Impl {
-  IChatPeerLinks* links = nullptr;
+  mesh::IChatPeerLinks* links = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
   IoPost post_io;
@@ -274,7 +275,7 @@ struct AmpBroadcastTransport::Impl {
     // reference once used (first frame → `reply` owns the session) or when the channel closes, or
     // session → handler → holder → session leaks every served request (LeakSanitizer).
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
-    auto policy = InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy());
+    auto policy = mesh::InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy());
     *session_holder = links->BindChannel(
         remote_peer_id, channel_id, policy,
         [this, session_holder](Roe<std::vector<uint8_t>> frame) {
@@ -284,7 +285,7 @@ struct AmpBroadcastTransport::Impl {
       }
       auto body = std::move(*frame);
       // Keep the channel open for the worker's reply (InboundReply.h); `reply` closes it.
-      auto reply = MakeInboundReply(session, post_io);
+      auto reply = mesh::MakeInboundReply(session, post_io);
       RunWorker(post_worker, [this, reply, body = std::move(body)]() mutable {
         if (stopped.load(std::memory_order_acquire)) {
           return;
@@ -314,7 +315,7 @@ struct AmpBroadcastTransport::Impl {
 
 
 
-AmpBroadcastTransport::AmpBroadcastTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker, IoPost post_io,
+AmpBroadcastTransport::AmpBroadcastTransport(mesh::IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker, IoPost post_io,
                                              IoAfter post_after)
     : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
       post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),

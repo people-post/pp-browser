@@ -2,7 +2,7 @@
 #include "feature/broadcast/AmpBroadcastRpcClient.h"
 
 #include "domain/messaging/BroadcastJoinTicket.h"
-#include "domain/mesh/tests/support/mesh_test_harness.h"
+#include "mesh/testing/mesh_test_harness.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -28,7 +29,7 @@ ByteVector TestKeyBytes(uint8_t seed) {
 class AmpBroadcastTransportTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    auto created = pbr::test::AmpMeshHarness::Create();
+    auto created = mesh::test::AmpMeshHarness::Create();
     ASSERT_TRUE(static_cast<bool>(created));
     harness_ = std::move(*created);
 
@@ -109,7 +110,7 @@ protected:
     harness_.reset();
   }
 
-  std::unique_ptr<pbr::test::AmpMeshHarness> harness_;
+  std::unique_ptr<mesh::test::AmpMeshHarness> harness_;
   std::unique_ptr<AmpBroadcastTransport> a_svc_;
   std::unique_ptr<AmpBroadcastTransport> b_svc_;
   std::unique_ptr<AmpBroadcastRpcClient> b_client_;

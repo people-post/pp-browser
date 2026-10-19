@@ -73,7 +73,7 @@
 #include "domain/ui/PaymentFeedback.h"
 #include "gui/UserFeedback.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
-#include "domain/mesh/reachability/Reachability.h"
+#include "mesh/reachability/Reachability.h"
 #include "foundation/data/Config.h"
 #include "foundation/data/LlmPreset.h"
 #include "foundation/data/SessionStore.h"
@@ -104,6 +104,7 @@
 #include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -1092,7 +1093,7 @@ void ChatController::OnCloseThread(const std::string& thread_id) {
           for (const GroupRosterMember& member : successors) {
             std::string label = member.member_identity;
             if (auto contact = facade_->FindContactByIdentity(member.member_identity,
-                                                                                  ContactIdKind::Account)) {
+                                                                                  mesh::ContactIdKind::Account)) {
               if (*contact) {
                 label = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
                 if (label.empty()) {
@@ -2893,16 +2894,16 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
           Tr("chat.menu.add_to_contacts"),
           nullptr,
           [this, peer_id]() {
-            DirectoryHit hit;
+            mesh::DirectoryHit hit;
             if (auto shadow = facade_->GetDirectoryShadow(peer_id)) {
               hit = *shadow;
             } else {
               hit.hit_id = peer_id;
               if (peer_id.rfind("account:", 0) == 0) {
                 hit.account_id = peer_id;
-                hit.ids = {{ContactIdKind::Account, peer_id, true}};
+                hit.ids = {{mesh::ContactIdKind::Account, peer_id, true}};
               } else {
-                hit.ids = {{ContactIdKind::RelayUser, peer_id, false}};
+                hit.ids = {{mesh::ContactIdKind::RelayUser, peer_id, false}};
               }
             }
             auto created = facade_->AddContactFromDirectoryHit(hit);
@@ -2920,7 +2921,7 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
                 NotifySurfaceChanged();
                 return;
               }
-              facade_->RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::Account), *hit.account_id,
+              facade_->RegisterPeerSigningKey(ContactIdKindToString(mesh::ContactIdKind::Account), *hit.account_id,
                                               *hit.signing_public_key_b64, "directory");
             }
             if (hit.kem_public_key_b64 && !hit.kem_public_key_b64->empty()) {
@@ -2929,7 +2930,7 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
                 NotifySurfaceChanged();
                 return;
               }
-              facade_->RegisterPeerKemKey(ContactIdKindToString(ContactIdKind::Account), *hit.account_id,
+              facade_->RegisterPeerKemKey(ContactIdKindToString(mesh::ContactIdKind::Account), *hit.account_id,
                                           *hit.kem_public_key_b64, "directory");
             }
             facade_->RegisterContactDirectEndpoints(*created);
@@ -3048,7 +3049,7 @@ void ChatController::OnOpenPeerSheet(ui::Event& ev) {
         }
         std::string name = unreachable_id;
         if (auto contact =
-                facade_->FindContactByIdentity(unreachable_id, ContactIdKind::Account)) {
+                facade_->FindContactByIdentity(unreachable_id, mesh::ContactIdKind::Account)) {
           if (*contact) {
             name = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
             if (name.empty()) {

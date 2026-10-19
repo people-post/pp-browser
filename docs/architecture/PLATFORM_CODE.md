@@ -50,8 +50,8 @@ Hard rules:
 | `domain/media/CallAudioSession_*.{cpp,mm}` | VoIP audio session + capture-open policy |
 | `domain/media/SdlAudioBootstrap_*.cpp` | SDL audio-driver preference (Linux ALSA hint) |
 | `domain/media/CameraCaptureOrientation_*.{cpp,mm}` | Upright camera transform |
-| `domain/mesh/LanMdnsSocket_*.cpp` | UDP multicast for LAN mDNS |
-| `domain/mesh/ReachabilityNetIf_*.cpp` | Interface address enumeration |
+| pp-cpp-mesh `reachability/LanMdnsSocket_*.cpp` | UDP multicast for LAN mDNS |
+| pp-cpp-mesh `reachability/ReachabilityNetIf_*.cpp` | Interface address enumeration |
 | `pp-cpp-ui backend/GlBackend.h` | GLES vs desktop GL selection |
 | `foundation/platform/ui/gl/MobileGlLifecycle.*` | iOS/Android GL surface and drawable handling |
 
@@ -86,7 +86,7 @@ Regressions are caught by [`scripts/check/check_platform_ifdefs.sh`](../../scrip
 Allowed paths for OS preprocessor branches:
 
 - `src/foundation/platform/` (including `os/`, `desktop/`, and `ui/`)
-- Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `src/domain/media/` and `src/domain/mesh/`
+- Dedicated backend files: `*_Win32`, `*_Posix`, `*_Darwin`, `*_Linux`, `*_Android`, `*_Ios`, `*_Default` (`.cpp` / `.mm` / `.h`) under `src/domain/media/` (and in pp-cpp-mesh `src/reachability/`)
 - `src/common/CivilTime.cpp`, `src/common/WorkerPool.cpp`, `src/common/Logger.h` (CRT / pthread / Windows.h macro shims only)
 - `**/tests/**` (test harness env/path helpers)
 - `pp-cpp-ui rmlui/` (upstream; not product policy)

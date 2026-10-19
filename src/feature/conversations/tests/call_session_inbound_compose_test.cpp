@@ -41,6 +41,7 @@
 #include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -97,7 +98,7 @@ private:
   std::string master_psk_b64_;
 };
 
-class FakeDialRegistry final : public IDialRegistry {
+class FakeDialRegistry final : public mesh::IDialRegistry {
 public:
   Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) override {
     endpoints[peer_key] = multiaddr;

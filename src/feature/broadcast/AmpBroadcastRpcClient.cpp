@@ -1,7 +1,7 @@
 #include "feature/broadcast/AmpBroadcastRpcClient.h"
 
 #include "common/chat/IDirectMessageClient.h"
-#include "domain/mesh/shared/AmpParkUntil.h"
+#include "mesh/shared/AmpParkUntil.h"
 
 #include "amp/L3/ChannelPolicy.h"
 #include "amp/L3/ChannelSession.h"
@@ -12,11 +12,12 @@
 #include <variant>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
 struct AmpBroadcastRpcClient::State {
-  IChatPeerLinks* links = nullptr;
+  mesh::IChatPeerLinks* links = nullptr;
   IoPump io_pump;
   IoPost post_io;
   IoAfter post_after;
@@ -76,7 +77,7 @@ void SendAndAwait(const std::shared_ptr<State>& state, const std::string& peer_k
     finish(Error("Failed to send broadcast request").WithUser("Broadcast control request didn't confirm."));
     return;
   }
-  AmpScheduleUntilSettled(
+  mesh::AmpScheduleUntilSettled(
       state->post_io, state->io_pump, settled, deadline,
       [finish]() { finish(Error("amp broadcast send timed out").WithUser("Broadcast control timed out.")); },
       state->post_after);
@@ -119,7 +120,7 @@ void RoundTripAsync(const std::shared_ptr<State>& state, const std::string& peer
   state->links->OpenChannel(
       peer_key, kRpcBroadcastProtocolId, pp::amp::ControlJsonChannelPolicy(),
       [state, peer_key, json = std::move(*request_json), expect_label, deadline, settled, finish,
-       session_holder](IChatPeerLinks::ChannelRoe channel) {
+       session_holder](mesh::IChatPeerLinks::ChannelRoe channel) {
         if (!channel) {
           finish(Error(channel.error().message));
           return;
@@ -160,7 +161,7 @@ Roe<ResponseT> RoundTrip(const std::shared_ptr<State>& state, const std::string&
                               } catch (const std::future_error&) {
                               }
                             });
-  AmpParkUntil([&] { return future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; }, deadline,
+  mesh::AmpParkUntil([&] { return future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; }, deadline,
                state->io_pump);
   if (future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     return Error("amp broadcast send timed out").WithUser("Broadcast control timed out.");
@@ -170,7 +171,7 @@ Roe<ResponseT> RoundTrip(const std::shared_ptr<State>& state, const std::string&
 
 } // namespace
 
-AmpBroadcastRpcClient::AmpBroadcastRpcClient(IChatPeerLinks& links, IoPump io_pump, IoPost post_io, IoAfter post_after)
+AmpBroadcastRpcClient::AmpBroadcastRpcClient(mesh::IChatPeerLinks& links, IoPump io_pump, IoPost post_io, IoAfter post_after)
     : state_(std::make_shared<State>()) {
   state_->links = &links;
   state_->io_pump = std::move(io_pump);

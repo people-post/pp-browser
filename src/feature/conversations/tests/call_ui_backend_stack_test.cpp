@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <functional>
 #include "feature/conversations/tests/call_media_inbound_fake.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 #include <optional>
@@ -49,7 +50,7 @@ ByteVector TestMediaKey() {
   return key;
 }
 
-class FakeDialRegistry final : public IDialRegistry {
+class FakeDialRegistry final : public mesh::IDialRegistry {
 public:
   Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) override {
     endpoints[peer_key] = multiaddr;
@@ -207,9 +208,9 @@ protected:
     };
     deps.delivery.sync_inbox_from_wake = [this](bool /*force*/) { ++inbox_syncs_; };
     deps.mesh_config = [this]() { return std::make_shared<const MeshConfig>(app_config_.mesh); };
-    deps.mesh = []() -> MeshHost* { return nullptr; };
-    deps.list_directory_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
-    deps.list_dht_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
+    deps.mesh = []() -> mesh::MeshHost* { return nullptr; };
+    deps.list_directory_nodes = []() { return std::vector<mesh::MeshDirectoryNode>{}; };
+    deps.list_dht_nodes = []() { return std::vector<mesh::MeshDirectoryNode>{}; };
     deps.seed_dial_ok = []() { return false; };
     deps.prefetch_peer_reachability = [](const std::string&) {};
     deps.sync_mobile_ephemeral_listen = [this]() { ++listen_desires_; };
@@ -220,8 +221,8 @@ protected:
 
     deps.connectivity = &connectivity_;
     deps.media_relay = &media_relay_;
-    AddressDisclosurePolicy everyone;
-    everyone.audience = DirectAudience::Everyone;
+    mesh::AddressDisclosurePolicy everyone;
+    everyone.audience = mesh::DirectAudience::Everyone;
     disclosure_.Publish(everyone);
     deps.address_disclosure = &disclosure_;
     stack_->BuildSessions(deps);
@@ -301,9 +302,9 @@ protected:
   std::unique_ptr<IdentityStore> identity_;
   std::unique_ptr<SqlitePskSessionStore> psk_;
   // Outlive stack_ (declared first; connectivity before the relay built on it).
-  MeshConnectivity connectivity_;
-  MeshMediaRelay media_relay_{connectivity_};
-  AddressDisclosureGate disclosure_;
+  mesh::MeshConnectivity connectivity_;
+  mesh::MeshMediaRelay media_relay_{connectivity_};
+  mesh::AddressDisclosureGate disclosure_;
   std::unique_ptr<CallStack> stack_;
   std::unique_ptr<CallUiBackend> ui_;
   std::unique_ptr<FakeCallMediaTransport> transport_;
@@ -335,7 +336,7 @@ TEST_F(CallUiBackendStackTest, AvailableAndSessionsIdentityStable) {
 // projects/privacy T3: "who can call me" — with contacts only, a stranger's invite never rings (and
 // nothing is sent back); a contact's does.
 TEST_F(CallUiBackendStackTest, ContactsOnlyCallAudienceDropsAStrangersInvite) {
-  stack_->SetInboundCallAudience(InboundAudience::ContactsOnly);
+  stack_->SetInboundCallAudience(mesh::InboundAudience::ContactsOnly);
   AppRuntime::RunUIAndOwnerTasks();
   const int sent_before = sent_control_;
   ASSERT_TRUE(IngestInvite("call:stranger"));
@@ -344,8 +345,8 @@ TEST_F(CallUiBackendStackTest, ContactsOnlyCallAudienceDropsAStrangersInvite) {
   EXPECT_EQ(ui_->Phase(), CallPhase::Idle) << "a stranger's call rang";
   EXPECT_EQ(sent_control_, sent_before) << "the drop answered the caller";
 
-  AddressDisclosurePolicy with_peer;
-  with_peer.audience = DirectAudience::Everyone;
+  mesh::AddressDisclosurePolicy with_peer;
+  with_peer.audience = mesh::DirectAudience::Everyone;
   with_peer.contacts.insert("account:peer");
   disclosure_.Publish(with_peer);
   ASSERT_TRUE(IngestInvite("call:contact"));
@@ -464,8 +465,8 @@ TEST_F(CallUiBackendStackTest, PinnedMobilityRidesTheAcceptAndSetsThePolicy) {
 // projects/privacy T1: a call with a peer outside the audience runs on the relay only — no direct
 // dial, no punch, no move onto a direct link — whatever the mobility policy would allow.
 TEST_F(CallUiBackendStackTest, PeerOutsideTheAudienceGetsARelayOnlyCall) {
-  AddressDisclosurePolicy contacts_only;
-  contacts_only.audience = DirectAudience::Contacts;
+  mesh::AddressDisclosurePolicy contacts_only;
+  contacts_only.audience = mesh::DirectAudience::Contacts;
   disclosure_.Publish(contacts_only);
   const std::string call_id = "call:stranger";
   CallPeerCaps remote;

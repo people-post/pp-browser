@@ -6,6 +6,7 @@
 
 #include <string>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -29,12 +30,12 @@ void ServiceEndpointFromObject(const pp::common::Object& object,
 pp::common::Object DirectoryConfigToObject(const DirectoryConfig& config);
 void DirectoryConfigFromObject(const pp::common::Object& object, DirectoryConfig& config);
 
-pp::common::Object MeshCapabilitiesToObject(const MeshCapabilities& caps);
+pp::common::Object MeshCapabilitiesToObject(const mesh::MeshCapabilities& caps);
 void MeshCapabilitiesFromObject(const pp::common::Object& object,
-                                  MeshCapabilities& caps);
+                                  mesh::MeshCapabilities& caps);
 
-pp::common::Object MeshDhtConfigToObject(const MeshDhtConfig& config);
-void MeshDhtConfigFromObject(const pp::common::Object& object, MeshDhtConfig& config);
+pp::common::Object MeshDhtConfigToObject(const mesh::MeshDhtConfig& config);
+void MeshDhtConfigFromObject(const pp::common::Object& object, mesh::MeshDhtConfig& config);
 
 pp::common::Object MeshConfigToObject(const MeshConfig& config);
 void MeshConfigFromObject(const pp::common::Object& object, MeshConfig& config);

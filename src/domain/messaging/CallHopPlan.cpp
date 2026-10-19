@@ -1,6 +1,7 @@
 #include "domain/messaging/CallHopPlan.h"
 
-#include "common/directory/MeshHopDial.h"
+#include "mesh/types/MeshHopDial.h"
+#include "common/MeshAlias.h"
 
 #include <algorithm>
 
@@ -9,7 +10,7 @@ namespace {
 
 bool AnySameSubnet24(const std::vector<std::string>& local_mas, const std::string& remote_ma) {
   for (const std::string& local : local_mas) {
-    if (!local.empty() && IsSameIpv4Subnet24(local, remote_ma)) {
+    if (!local.empty() && mesh::IsSameIpv4Subnet24(local, remote_ma)) {
       return true;
     }
   }
@@ -18,7 +19,7 @@ bool AnySameSubnet24(const std::vector<std::string>& local_mas, const std::strin
 
 bool AnyPrivateLocal(const std::vector<std::string>& local_mas) {
   for (const std::string& local : local_mas) {
-    if (MultiaddrHasPrivateIpv4Host(local)) {
+    if (mesh::MultiaddrHasPrivateIpv4Host(local)) {
       return true;
     }
   }
@@ -51,20 +52,20 @@ bool PeerIsPrivateSite(const std::vector<std::string>& remote_mas) {
       continue;
     }
     saw = true;
-    if (!MultiaddrHasPrivateIpv4Host(remote)) {
+    if (!mesh::MultiaddrHasPrivateIpv4Host(remote)) {
       return false;
     }
   }
   return saw;
 }
 
-bool IsOrgOrDirectoryAffinity(MeshHopAffinity affinity) {
-  return affinity == MeshHopAffinity::OrgSeed || affinity == MeshHopAffinity::DirectoryNode ||
-         affinity == MeshHopAffinity::DhtDiscovered;
+bool IsOrgOrDirectoryAffinity(mesh::MeshHopAffinity affinity) {
+  return affinity == mesh::MeshHopAffinity::OrgSeed || affinity == mesh::MeshHopAffinity::DirectoryNode ||
+         affinity == mesh::MeshHopAffinity::DhtDiscovered;
 }
 
-bool HopHasPublicMa(const MeshHopCandidate& hop) {
-  return MultiaddrHasPublicDialHost(hop.multiaddr);
+bool HopHasPublicMa(const mesh::MeshHopCandidate& hop) {
+  return mesh::MultiaddrHasPublicDialHost(hop.multiaddr);
 }
 
 } // namespace
@@ -102,7 +103,7 @@ CallHopScope InferCallHopScope(
 
 bool LocalAdvertiseHasPublicIpv4(const std::vector<std::string>& local_mas) {
   for (const std::string& ma : local_mas) {
-    if (MultiaddrHasPublicDialHost(ma)) {
+    if (mesh::MultiaddrHasPublicDialHost(ma)) {
       return true;
     }
   }
@@ -120,20 +121,20 @@ bool PreferLocalAllowedForScope(CallHopScope scope, bool prefer_local_as_hop,
     return false;
   }
   if (scope == CallHopScope::Link) {
-    if (MultiaddrHasPrivateIpv4Host(local_advertise_ma)) {
+    if (mesh::MultiaddrHasPrivateIpv4Host(local_advertise_ma)) {
       // Coincidental same-/24 on different LANs is common — require positive LAN evidence.
       return lan_reachability_confirmed;
     }
     // Non-private Link advertise (public /ip4 or global /ip6) may PreferLocal without LAN proof.
-    return MultiaddrHasPublicDialHost(local_advertise_ma);
+    return mesh::MultiaddrHasPublicDialHost(local_advertise_ma);
   }
   // Wide: PreferLocal only when advertise MA is publicly dialable.
-  return MultiaddrHasPublicDialHost(local_advertise_ma);
+  return mesh::MultiaddrHasPublicDialHost(local_advertise_ma);
 }
 
 bool GuestMayDialPrivateHopMa(const std::string& hop_multiaddr,
                               const std::vector<std::string>& local_mas) {
-  if (hop_multiaddr.empty() || !MultiaddrHasPrivateIpv4Host(hop_multiaddr)) {
+  if (hop_multiaddr.empty() || !mesh::MultiaddrHasPrivateIpv4Host(hop_multiaddr)) {
     return true;
   }
   // WAN / publicly advertised node must not dial PreferLocal LAN hop.
@@ -146,7 +147,7 @@ bool GuestMayDialPrivateHopMa(const std::string& hop_multiaddr,
   return AnySameSubnet24(local_mas, hop_multiaddr);
 }
 
-std::vector<MeshHopCandidate> SelectCallMediaHop(std::vector<MeshHopCandidate> ranked,
+std::vector<mesh::MeshHopCandidate> SelectCallMediaHop(std::vector<mesh::MeshHopCandidate> ranked,
                                                  CallHopScope scope,
                                                  const std::string& local_peer_id,
                                                  bool prefer_local_as_hop,
@@ -154,17 +155,17 @@ std::vector<MeshHopCandidate> SelectCallMediaHop(std::vector<MeshHopCandidate> r
                                                  bool lan_reachability_confirmed) {
   if (PreferLocalAllowedForScope(scope, prefer_local_as_hop, local_advertise_ma,
                                  lan_reachability_confirmed)) {
-    return PreferLocalMediaHop(std::move(ranked), local_peer_id, local_advertise_ma);
+    return mesh::PreferLocalMediaHop(std::move(ranked), local_peer_id, local_advertise_ma);
   }
 
   // Site / Wide / unconfirmed Link: promote dialable org/directory public MAs first.
-  std::vector<MeshHopCandidate> public_org;
-  std::vector<MeshHopCandidate> rest;
+  std::vector<mesh::MeshHopCandidate> public_org;
+  std::vector<mesh::MeshHopCandidate> rest;
   public_org.reserve(ranked.size());
   rest.reserve(ranked.size());
-  for (MeshHopCandidate& hop : ranked) {
+  for (mesh::MeshHopCandidate& hop : ranked) {
     if (!local_peer_id.empty() && hop.peer_id == local_peer_id) {
-      if (MultiaddrHasPrivateIpv4Host(hop.multiaddr) || hop.multiaddr.empty()) {
+      if (mesh::MultiaddrHasPrivateIpv4Host(hop.multiaddr) || hop.multiaddr.empty()) {
         continue;
       }
     }

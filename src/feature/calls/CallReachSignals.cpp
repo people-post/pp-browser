@@ -4,6 +4,7 @@
 #include "domain/messaging/CallMobility.h"
 
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -22,12 +23,12 @@ void CallReachSignals::SetMeshPorts(MeshPorts ports) {
 
 void CallReachSignals::BindExchangePorts() {
   // The exchange's ports read call_ / mesh_ at use: either side may be (re)bound later.
-  SignalingPunchExchange::Ports punch;
-  punch.send_offer = [this](const PunchSignal& offer) { return SendPunch(CallControlType::CallPunchOffer, offer); };
-  punch.send_answer = [this](const PunchSignal& answer) {
+  mesh::SignalingPunchExchange::Ports punch;
+  punch.send_offer = [this](const mesh::PunchSignal& offer) { return SendPunch(CallControlType::CallPunchOffer, offer); };
+  punch.send_answer = [this](const mesh::PunchSignal& answer) {
     return SendPunch(CallControlType::CallPunchAnswer, answer);
   };
-  punch.burst = [this](const std::vector<std::string>& addrs, int window_ms, SignalingPunchExchange::DoneFn done) {
+  punch.burst = [this](const std::vector<std::string>& addrs, int window_ms, mesh::SignalingPunchExchange::DoneFn done) {
     if (!mesh_.punch_burst) {
       done(Error("signaling punch burst unavailable"));
       return;
@@ -53,7 +54,7 @@ void CallReachSignals::BindExchangePorts() {
   };
   punch_.SetPorts(std::move(punch));
 
-  CircuitR1Hint::Ports r1;
+  mesh::CircuitR1Hint::Ports r1;
   r1.send = [this](const std::string& circuit_r1) {
     auto target = ActiveCallPeer();
     if (!target) {
@@ -100,7 +101,7 @@ bool CallReachSignals::IsActiveCall(const std::string& call_id) const {
   return active && *active == call_id;
 }
 
-Roe<void> CallReachSignals::SendPunch(const CallControlType type, const PunchSignal& signal) {
+Roe<void> CallReachSignals::SendPunch(const CallControlType type, const mesh::PunchSignal& signal) {
   auto target = ActiveCallPeer();
   if (!target) {
     return Error("signaling punch: no active call peer");
@@ -179,8 +180,8 @@ Roe<void> CallReachSignals::HandleInboundCapsUpdate(const std::string& detail_js
 
 namespace {
 
-PunchSignal SignalFromDetail(CallPunchDetail detail) {
-  PunchSignal signal;
+mesh::PunchSignal SignalFromDetail(CallPunchDetail detail) {
+  mesh::PunchSignal signal;
   signal.epoch_id = std::move(detail.epoch_id);
   signal.window_ms = detail.window_ms;
   signal.addrs = std::move(detail.addrs);

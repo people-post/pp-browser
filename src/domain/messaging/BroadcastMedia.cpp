@@ -2,8 +2,9 @@
 
 #include <algorithm>
 
-#include "common/media/MediaChannel.h"
+#include "mesh/types/MediaChannel.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "common/MeshAlias.h"
 
 #include <sodium.h>
 
@@ -30,7 +31,7 @@ int ChooseWatchVideoLevel(const std::vector<int>& published, const int preferred
   int below = 0;
   int above = 0;
   for (const int level : published) {
-    if (!IsVideoLevel(level)) {
+    if (!mesh::IsVideoLevel(level)) {
       continue;
     }
     if (level <= preferred) {

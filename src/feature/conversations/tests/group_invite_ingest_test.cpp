@@ -25,6 +25,7 @@
 #include <gtest/gtest.h>
 #include <map>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace {
 
@@ -89,8 +90,8 @@ struct PartyHarness {
     contact.id = "contact-peer";
     contact.local.display_name = peer_account;
     contact.local.trust = TrustLevel::Friendly;
-    contact.remote.ids = {{ContactIdKind::Account, peer_account, true},
-                          {ContactIdKind::RelayUser, peer_relay, false}};
+    contact.remote.ids = {{mesh::ContactIdKind::Account, peer_account, true},
+                          {mesh::ContactIdKind::RelayUser, peer_relay, false}};
     SyncContactMirrors(contact);
     if (!contacts.Upsert(contact)) {
       throw std::runtime_error("Failed to upsert contact");

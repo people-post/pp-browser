@@ -4,6 +4,7 @@
 #include "domain/people/ContactsStore.h"
 #include "feature/conversations/DirectoryShadowCache.h"
 #include "feature/conversations/PeerDisplayResolver.h"
+#include "common/MeshAlias.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -37,11 +38,11 @@ TEST(PeerDisplayResolverTest, PrefersContactThenShadowThenShortId) {
   EXPECT_EQ(raw.trust, PeerLabelTrust::RawId);
   EXPECT_EQ(raw.title, "account:lHaE…");
 
-  DirectoryHit hit;
+  mesh::DirectoryHit hit;
   hit.nickname = "alice";
   hit.account_id = thread.peer_identity_value;
-  hit.ids = {{ContactIdKind::Account, thread.peer_identity_value, true},
-             {ContactIdKind::RelayUser, "relay:lHaEnkO4vSbVnl6A", false}};
+  hit.ids = {{mesh::ContactIdKind::Account, thread.peer_identity_value, true},
+             {mesh::ContactIdKind::RelayUser, "relay:lHaEnkO4vSbVnl6A", false}};
   shadows.Put(hit);
   PeerDisplayLabel unverified = resolver.ResolveThread(thread);
   EXPECT_EQ(unverified.trust, PeerLabelTrust::DirectoryUnverified);
@@ -51,8 +52,8 @@ TEST(PeerDisplayResolverTest, PrefersContactThenShadowThenShortId) {
   contact.id = "c1";
   contact.display_name = "Alice Example";
   contact.server_nickname = "alice";
-  contact.ids = {{ContactIdKind::Account, thread.peer_identity_value, true},
-                 {ContactIdKind::RelayUser, "relay:lHaEnkO4vSbVnl6A", false}};
+  contact.ids = {{mesh::ContactIdKind::Account, thread.peer_identity_value, true},
+                 {mesh::ContactIdKind::RelayUser, "relay:lHaEnkO4vSbVnl6A", false}};
   ASSERT_TRUE(contacts.Upsert(contact));
   PeerDisplayLabel trusted = resolver.ResolveThread(thread);
   EXPECT_EQ(trusted.trust, PeerLabelTrust::Contact);

@@ -13,6 +13,7 @@
 #include "common/chat/PeopleDiscoveryBlocks.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 #include <unordered_set>
 
@@ -355,7 +356,7 @@ void ConversationsFacade::RegisterPeerKemKey(const std::string& kind, const std:
   hub_.MeshMessaging().RegisterPeerKemKey(kind, value, key_b64, source);
 }
 
-Roe<Contact> ConversationsFacade::AddContactFromDirectoryHit(const DirectoryHit& hit) {
+Roe<Contact> ConversationsFacade::AddContactFromDirectoryHit(const mesh::DirectoryHit& hit) {
   return hub_.Contacts().AddFromDirectoryHit(hit);
 }
 
@@ -432,7 +433,7 @@ std::optional<LocalIdentity> ConversationsFacade::GetIdentity() {
 }
 
 Roe<std::optional<Contact>> ConversationsFacade::FindContactByIdentity(const std::string& identity,
-                                                                  const ContactIdKind kind) {
+                                                                  const mesh::ContactIdKind kind) {
   return hub_.Contacts().FindByIdentity(identity, kind);
 }
 
@@ -440,7 +441,7 @@ Roe<std::optional<Contact>> ConversationsFacade::GetContact(const std::string& c
   return hub_.Contacts().Get(contact_id);
 }
 
-std::optional<DirectoryHit> ConversationsFacade::GetDirectoryShadow(const std::string& peer_id) {
+std::optional<mesh::DirectoryHit> ConversationsFacade::GetDirectoryShadow(const std::string& peer_id) {
   return hub_.DirectoryShadows().Get(peer_id);
 }
 
@@ -665,7 +666,7 @@ bool ConversationsFacade::AttachmentOpenNeedsConfirmForMessage(const std::string
 
 Roe<void> ConversationsFacade::RotateBriefLlmKey() { return hub_.RotateBriefLlmKey(); }
 
-ReachabilitySnapshot ConversationsFacade::Reachability() { return hub_.Reachability(); }
+mesh::ReachabilitySnapshot ConversationsFacade::Reachability() { return hub_.Reachability(); }
 
 void ConversationsFacade::RunReachabilityProbe(const bool try_upnp) { hub_.RunReachabilityProbe(try_upnp); }
 
@@ -677,7 +678,7 @@ bool ConversationsFacade::IsHelpNetworkEnabled() { return hub_.IsHelpNetworkEnab
 
 // --- Messaging tools helpers ------------------------------------------------
 
-Roe<std::vector<DirectoryHit>> ConversationsFacade::SearchPeople(const std::string& query) {
+Roe<std::vector<mesh::DirectoryHit>> ConversationsFacade::SearchPeople(const std::string& query) {
   auto hits = hub_.Directory().SearchPeople(query);
   if (!hits) {
     return hits.error();
@@ -689,9 +690,9 @@ Roe<std::vector<DirectoryHit>> ConversationsFacade::SearchPeople(const std::stri
   if (self_ids.empty()) {
     return hits;
   }
-  std::vector<DirectoryHit> filtered;
+  std::vector<mesh::DirectoryHit> filtered;
   filtered.reserve(hits->size());
-  for (DirectoryHit& hit : *hits) {
+  for (mesh::DirectoryHit& hit : *hits) {
     if (DirectoryHitMatchesIdentities(hit, self_ids)) {
       continue;
     }

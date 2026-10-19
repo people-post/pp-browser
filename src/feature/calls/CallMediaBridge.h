@@ -12,7 +12,7 @@
 #include "domain/messaging/CallDirectPlannerLogic.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallMediaConnectCoordinator.h"
-#include "domain/mesh/reach/PeerReachCoordinator.h"
+#include "mesh/reach/PeerReachCoordinator.h"
 #include "feature/call_media/ICallMediaTransport.h"
 
 #include "common/Module.h"
@@ -27,6 +27,7 @@
 #include <string>
 #include <unordered_set>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -75,7 +76,7 @@ struct CallDirectSeatPorts {
 class CallMediaBridge : public Module, public CallDirectDriver {
 public:
   CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions, CallMediaKeyStore& media_keys,
-                        CallMediaEngine& media, ICallMediaTransport& direct, PeerReachPorts reach);
+                        CallMediaEngine& media, ICallMediaTransport& direct, mesh::PeerReachPorts reach);
   ~CallMediaBridge();
 
   bool IsMeshConnectFailed() const;
@@ -148,7 +149,7 @@ public:
   /** Every direct-upgrade attempt after this delay (0 = production 3 s / 20 s / 60 s). */
   void SetDirectUpgradeDelayMsForTest(int delay_ms) { upgrade_delay_ms_for_test_ = delay_ms; }
   /** Test-only (calls owner): what the reach loop last settled on — may differ from the bound link. */
-  void SetReachKindForTest(PeerLinkKind kind) { reach_kind_ = kind; }
+  void SetReachKindForTest(mesh::PeerLinkKind kind) { reach_kind_ = kind; }
   /** Shrink per-attempt ConnectAsync timeout (and watchdog margin) for gtests (0 = production default). */
   void SetConnectAttemptTimeoutMsForTest(int timeout_ms);
 
@@ -193,7 +194,7 @@ public:
   bool MediaAttempted(const std::string& call_id) const;
 
   /** Keep dial/circuit pointers valid when ConversationsHub rewires deps (N025 listen sync). */
-  void SetReachDeps(PeerReachPorts reach);
+  void SetReachDeps(mesh::PeerReachPorts reach);
   /** Fire-and-forget bootstrap seed warm (CallStack::WarmBootstrapSeedSessions). */
   void SetSeedWarm(std::function<void()> warm);
   /** Both roles: park circuit reserve on org seed (CallStack::ReserveOnBootstrapSeeds). */
@@ -202,7 +203,7 @@ public:
    * Await at least one bootstrap/directory seed Connected before circuit/punch
    * (MeshConnectivity rendezvous EnsureBootstrapSeedParkedAsync). Forwarded to PeerReachCoordinator.
    */
-  void SetSeedParkAwait(PeerReachCoordinator::SeedParkAwait park);
+  void SetSeedParkAwait(mesh::PeerReachCoordinator::SeedParkAwait park);
 
   void SetDirectArmingPorts(CallDirectArmingPorts ports);
   /** V036 exclusive media epoch — Stack installs; Bridge must not hold CallMediaSeat*. */
@@ -240,7 +241,7 @@ private:
                           uint32_t media_epoch, const ByteVector& media_key);
   void StopMeshMediaOnUi(const std::string& call_id);
   /** Link to reach for this session's Connect (call roster → mesh keys, offerer → Reach). */
-  PeerReachRequest BuildReachRequest(const CallMediaDirectConnectParams& params);
+  mesh::PeerReachRequest BuildReachRequest(const CallMediaDirectConnectParams& params);
   /** Call-side reactions to the connect sequence (media key resend, path label, commit / fail). */
   CallMediaConnectHooks MakeConnectHooks(const std::string& call_id);
   /** Chrome ConnectFailed + Direct Idle; optionally StopMeshMedia (zombie TX / teardown). */
@@ -341,11 +342,11 @@ private:
   std::function<void()> seed_warm_;
   std::function<void()> seed_reserve_;
   /** Peer link establishment (reach loop); owns no call state. */
-  PeerReachCoordinator reach_;
+  mesh::PeerReachCoordinator reach_;
   /** Connect attempts (reach + bundle open, watchdog, retry); owns no call product state. */
   CallMediaConnectCoordinator connect_;
   /** Link kind the last successful reach settled on (calls owner). */
-  PeerLinkKind reach_kind_ = PeerLinkKind::Unknown;
+  mesh::PeerLinkKind reach_kind_ = mesh::PeerLinkKind::Unknown;
   /** Next connect sequence must insist on a relayed link (TX-only escalate). */
   bool force_circuit_ensure_ = false;
   bool session_offerer_ = false;
@@ -395,16 +396,16 @@ private:
   std::string standby_call_id_;
   int standby_attempt_ = 0;
   uint64_t standby_timer_id_ = 0;
-  PeerReachId standby_reach_id_ = 0;
+  mesh::PeerReachId standby_reach_id_ = 0;
   int standby_delay_ms_for_test_ = 0;
   std::string upgrade_call_id_;
   int upgrade_attempt_ = 0;
   int upgrade_delay_ms_for_test_ = 0;
   /** k3-4: circuit being built under a TX-only call (0 = none). */
-  PeerReachId escalate_reach_id_ = 0;
+  mesh::PeerReachId escalate_reach_id_ = 0;
   std::string reanchor_call_id_;
   uint64_t reanchor_timer_id_ = 0;
-  PeerReachId reanchor_reach_id_ = 0;
+  mesh::PeerReachId reanchor_reach_id_ = 0;
   int reanchor_retry_ms_ = 2000;
   /** Past Amp's network-change grace (2 s): the links left are the ones that answered. */
   int network_settle_ms_ = 2500;

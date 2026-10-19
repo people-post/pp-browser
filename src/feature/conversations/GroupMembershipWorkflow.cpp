@@ -14,6 +14,7 @@
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -225,13 +226,13 @@ Roe<void> GroupMembershipWorkflow::SendInviteResponseDirectMessage(const std::st
                                                                   const std::string& group_id,
                                                                   const GroupMembershipControlType response_type) {
   DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  direct_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   direct_target.peer_identity_value = inviter_identity;
   direct_target.channel = ThreadChannel::E2ePublic;
 
   std::string contact_id;
   std::string dm_title = inviter_identity;
-  if (auto contact = contacts_.FindByIdentity(inviter_identity, ContactIdKind::Account)) {
+  if (auto contact = contacts_.FindByIdentity(inviter_identity, mesh::ContactIdKind::Account)) {
     if (*contact) {
       contact_id = (*contact)->id;
       dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -392,7 +393,7 @@ Roe<void> GroupMembershipWorkflow::ResolveInviteCard(const std::string& inviter_
                                                     const std::string& invite_nonce, const InviteStatus status,
                                                     const std::string& status_text) {
   DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  direct_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   direct_target.peer_identity_value = inviter_identity;
   direct_target.channel = ThreadChannel::E2ePublic;
   auto thread = store_.FindDirectThread(direct_target);
@@ -428,13 +429,13 @@ Roe<void> GroupMembershipWorkflow::SendMembershipDirectMessage(const std::string
                                                               const std::string& detail_json,
                                                               const std::string& display) {
   DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  direct_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   direct_target.peer_identity_value = peer_identity;
   direct_target.channel = ThreadChannel::E2ePublic;
 
   std::string contact_id;
   std::string dm_title = peer_identity;
-  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
+  if (auto contact = contacts_.FindByIdentity(peer_identity, mesh::ContactIdKind::Account)) {
     if (*contact) {
       contact_id = (*contact)->id;
       dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -775,12 +776,12 @@ Roe<Thread> GroupMembershipWorkflow::OpenOwnerDirectMessage(const std::string& o
     return Error("owner_identity required");
   }
   DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  direct_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   direct_target.peer_identity_value = owner_identity;
   direct_target.channel = ThreadChannel::E2ePublic;
   std::string contact_id;
   std::string title = owner_identity;
-  if (auto contact = contacts_.FindByIdentity(owner_identity, ContactIdKind::Account)) {
+  if (auto contact = contacts_.FindByIdentity(owner_identity, mesh::ContactIdKind::Account)) {
     if (*contact) {
       contact_id = (*contact)->id;
       title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;

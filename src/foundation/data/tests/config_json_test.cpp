@@ -63,7 +63,7 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   config.mesh.bootstrap_peers = {
       "/ip4/3.208.41.58/udp/443/adp/1.0.0/p2p/12D3KooWCmqCKgBL47m25WzUgiAPayf3GqKiRosmPvAqp2MQUFYR"};
   config.mesh.prefer_contacts_for_routing = false;
-  config.mesh.direct_connections = pbr::DirectAudience::Friendly;
+  config.mesh.direct_connections = pp::mesh::DirectAudience::Friendly;
   config.mesh.trusted_relays_only = true;
   config.mesh.mesh_enabled = false;
   config.mesh.amp_udp_port = 18518;
@@ -109,7 +109,7 @@ TEST(ConfigJsonTest, RoundTripsMeshRoleFields) {
   ASSERT_EQ(parsed.mesh.bootstrap_peers.size(), 1u);
   EXPECT_EQ(parsed.mesh.bootstrap_peers[0], config.mesh.bootstrap_peers[0]);
   EXPECT_FALSE(parsed.mesh.prefer_contacts_for_routing);
-  EXPECT_EQ(parsed.mesh.direct_connections, pbr::DirectAudience::Friendly);
+  EXPECT_EQ(parsed.mesh.direct_connections, pp::mesh::DirectAudience::Friendly);
   EXPECT_TRUE(parsed.mesh.trusted_relays_only);
   EXPECT_FALSE(parsed.mesh.mesh_enabled);
   EXPECT_EQ(parsed.mesh.amp_udp_port, 18518);

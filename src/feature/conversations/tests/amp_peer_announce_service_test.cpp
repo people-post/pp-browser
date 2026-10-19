@@ -4,7 +4,7 @@
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "domain/messaging/PeerSigningKeyStore.h"
-#include "domain/mesh/tests/support/mesh_test_harness.h"
+#include "mesh/testing/mesh_test_harness.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -27,7 +28,7 @@ namespace {
 class AmpPeerAnnounceTransportTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    auto created = pbr::test::AmpMeshHarness::Create();
+    auto created = mesh::test::AmpMeshHarness::Create();
     ASSERT_TRUE(static_cast<bool>(created));
     harness_ = std::move(*created);
 
@@ -75,7 +76,7 @@ protected:
     harness_.reset();
   }
 
-  std::unique_ptr<pbr::test::AmpMeshHarness> harness_;
+  std::unique_ptr<mesh::test::AmpMeshHarness> harness_;
   PeerAnnounceFeed feed_a_;
   PeerAnnounceFeed feed_b_;
   std::unique_ptr<AmpPeerAnnounceTransport> a_svc_;
@@ -141,7 +142,7 @@ TEST_F(AmpPeerAnnounceTransportTest, PushTipRoundTripWithStoreBackedResolver) {
   PeerSigningKeyRecord record;
   record.signing_public_key_b64 = Base64Encode(keys->public_key);
   record.source = "test";
-  store.Put(ContactIdKindToString(ContactIdKind::PeerId), *peer_id, record);
+  store.Put(ContactIdKindToString(mesh::ContactIdKind::PeerId), *peer_id, record);
 
   b_svc_->SetPublisherKeyResolver(
       [&store](const std::string& tip_peer_id) -> std::optional<std::vector<uint8_t>> {

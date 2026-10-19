@@ -3,6 +3,7 @@
 #include "foundation/data/SessionStore.h"
 #include "common/media/CallMediaHealth.h"
 #include "feature/calls/CallUiBackend.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -12,7 +13,7 @@ CallFunctionalPorts MakeCallFunctionalPorts(CallUiBackend& backend, Conversation
   ports.initialized = [&hub]() { return hub.IsInitialized(); };
   ports.backend = [&backend]() -> CallUiBackend* { return &backend; };
   ports.get_thread = [&hub](const std::string& thread_id) { return hub.Store().GetThread(thread_id); };
-  ports.find_contact_by_identity = [&hub](const std::string& identity, const ContactIdKind kind) {
+  ports.find_contact_by_identity = [&hub](const std::string& identity, const mesh::ContactIdKind kind) {
     return hub.Contacts().FindByIdentity(identity, kind);
   };
   ports.identity_icon_local_path = [&hub](const std::string& identity) { return hub.IdentityIconLocalPath(identity); };

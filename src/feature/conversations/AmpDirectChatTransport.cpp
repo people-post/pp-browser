@@ -1,13 +1,13 @@
 #include "feature/conversations/AmpDirectChatTransport.h"
 
-#include "domain/mesh/l4/shared/InboundReply.h"
+#include "mesh/l4/shared/InboundReply.h"
 
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "amp/L3/ChannelPolicy.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/LinkIdentity.h"
-#include "domain/mesh/shared/AmpParkUntil.h"
+#include "mesh/shared/AmpParkUntil.h"
 #include "common/Lifetime.h"
 
 #include <atomic>
@@ -18,6 +18,7 @@
 #include <vector>
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -44,7 +45,7 @@ void RunWorker(const AmpDirectChatTransport::WorkerPost& post_worker, std::funct
 } // namespace
 
 struct AmpDirectChatTransport::Impl {
-  IChatPeerLinks* links = nullptr;
+  mesh::IChatPeerLinks* links = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
   IoPost post_io;
@@ -59,7 +60,7 @@ struct AmpDirectChatTransport::Impl {
       return;
     }
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
-    auto policy = InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy());
+    auto policy = mesh::InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy());
     *session_holder = links->BindChannel(
         remote_peer_id, channel_id, policy,
         [this, session_holder](Roe<std::vector<uint8_t>> frame) {
@@ -69,7 +70,7 @@ struct AmpDirectChatTransport::Impl {
           }
           auto body = std::move(*frame);
           // Keep the channel open for the worker's ack (InboundReply.h); `reply` closes it.
-          auto reply = MakeInboundReply(session, post_io);
+          auto reply = mesh::MakeInboundReply(session, post_io);
           RunWorker(post_worker, [this, reply, body = std::move(body)]() mutable {
             if (stopped.load(std::memory_order_acquire)) {
               return;
@@ -101,7 +102,7 @@ struct AmpDirectChatTransport::Impl {
   }
 };
 
-AmpDirectChatTransport::AmpDirectChatTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker,
+AmpDirectChatTransport::AmpDirectChatTransport(mesh::IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker,
                                                IoPost post_io, IoAfter post_after)
     : impl_(std::make_unique<Impl>()), links_(links), io_pump_(std::move(io_pump)),
       post_worker_(std::move(post_worker)), post_io_(std::move(post_io)),
@@ -194,7 +195,7 @@ void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_use
   const std::string peer_key = peer_relay_user_id;
   links_.OpenChannel(peer_key, kDirectChatProtocolId, pp::amp::ControlJsonChannelPolicy(),
                      [this, peer_key, envelope_json, finish, settled, session_holder,
-                      deadline](IChatPeerLinks::ChannelRoe channel) mutable {
+                      deadline](mesh::IChatPeerLinks::ChannelRoe channel) mutable {
                        if (!channel) {
                          (*finish)(Error(channel.error().message));
                          return;
@@ -245,7 +246,7 @@ void AmpDirectChatTransport::SendEnvelopeAsync(const std::string& peer_relay_use
                                                  "Direct send didn't confirm — will use relay if available."));
                                return;
                              }
-                             AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
+                             mesh::AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                                (*finish)(Error("amp direct chat send timed out")
                                              .WithUser("Direct send didn't confirm — will use relay if "
                                                        "available."));
@@ -269,7 +270,7 @@ Roe<void> AmpDirectChatTransport::SendEnvelope(const std::string& peer_relay_use
     }
   });
 
-  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+  mesh::AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
                deadline, io_pump_);
 
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {

@@ -1,8 +1,8 @@
 #include "feature/call_media/CallMediaLegCoordinator.h"
-#include "common/media/MediaChannel.h"
+#include "mesh/types/MediaChannel.h"
 
-#include "domain/mesh/l4/shared/ChannelSessionSlot.h"
-#include "domain/mesh/l4/shared/ProductChannelPolicies.h"
+#include "mesh/l4/shared/ChannelSessionSlot.h"
+#include "mesh/l4/shared/ProductChannelPolicies.h"
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/PeerLink.h"
 #include "feature/call_media/CallMediaBundleLogic.h"
@@ -25,7 +25,8 @@
 #include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
-#include "domain/mesh/shared/AmpChannelOpen.h"
+#include "mesh/shared/AmpChannelOpen.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -495,7 +496,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     if (*slot) {
       UnindexChannel((*slot)->ChannelId());
     }
-    CloseQuietSlot(*slot, link);
+    mesh::CloseQuietSlot(*slot, link);
   }
 
   void DropRole(Bundle& bundle, const CallMediaChannelRole role) { DropPathRole(bundle, bundle.active, role); }
@@ -624,7 +625,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
       done(false);
       return;
     }
-    AmpWhenChannelOpenOnLink(runtime->Links(), link, channel_id, deadline, std::move(done));
+    mesh::AmpWhenChannelOpenOnLink(runtime->Links(), link, channel_id, deadline, std::move(done));
   }
 
   pp::amp::PeerLink* LiveLink(const pp::amp::LinkHandle handle) const {
@@ -967,7 +968,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
     }
     if (cbs.on_media) {
       cbs.on_media(decoded->channel, decoded->seq, decoded->mark, decoded->payload);
-    } else if (decoded->channel == kMediaChannelAudio && cbs.on_audio) {
+    } else if (decoded->channel == mesh::kMediaChannelAudio && cbs.on_audio) {
       cbs.on_audio(decoded->payload);
     }
     return true;
@@ -2490,7 +2491,7 @@ Roe<void> CallMediaLegCoordinator::SendMedia(const CallMediaLegId id, const uint
 
 Roe<void> CallMediaLegCoordinator::SendAudio(const CallMediaLegId id, const std::vector<uint8_t>& opus_payload,
                                              const uint32_t seq, const uint8_t mark) {
-  return SendMedia(id, kMediaChannelAudio, opus_payload, seq, mark);
+  return SendMedia(id, mesh::kMediaChannelAudio, opus_payload, seq, mark);
 }
 
 } // namespace pbr

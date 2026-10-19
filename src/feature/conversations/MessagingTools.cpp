@@ -8,6 +8,7 @@
 #include "domain/people/ContactJson.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -88,7 +89,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
            }
            std::vector<Value> out;
            out.reserve(hits->size());
-           for (const DirectoryHit& hit : *hits) {
+           for (const mesh::DirectoryHit& hit : *hits) {
              out.push_back(ObjectValue(DirectoryHitToJson(hit)));
            }
            return DumpJson(ArrayValue(std::move(out)));
@@ -124,7 +125,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
            if (!directory_hit) {
              return Error("directory_hit required");
            }
-           const DirectoryHit hit = DirectoryHitFromJson(*directory_hit);
+           const mesh::DirectoryHit hit = DirectoryHitFromJson(*directory_hit);
            auto contact = messaging.AddContactFromDirectoryHit(hit);
            if (!contact) {
              return contact.error();

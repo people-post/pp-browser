@@ -1,8 +1,9 @@
 #include "feature/calls/LocalNetworkReaction.h"
 
 #include "common/Logger.h"
-#include "domain/mesh/host/MeshHost.h"
+#include "mesh/host/MeshHost.h"
 #include "feature/calls/CallStack.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -14,8 +15,8 @@ logging::Logger& NetworkChangeLog() {
 
 } // namespace
 
-LocalNetworkChange ToLocalNetworkChange(const NetworkChange& change) {
-  LocalNetworkChange local;
+mesh::LocalNetworkChange ToLocalNetworkChange(const NetworkChange& change) {
+  mesh::LocalNetworkChange local;
   local.was_online = change.previous.online;
   local.online = change.current.online;
   local.attachment_changed = change.previous.fingerprint != change.current.fingerprint;
@@ -30,7 +31,7 @@ MobilityAttachment ToMobilityAttachment(const NetworkState& state) {
   return attachment;
 }
 
-void ReactToNetworkChange(const NetworkChange& change, MeshHost* mesh, CallStack* calls) {
+void ReactToNetworkChange(const NetworkChange& change, mesh::MeshHost* mesh, CallStack* calls) {
   if (change.generation == 0) {
     NetworkChangeLog().info << "network baseline online=" << (change.current.online ? 1 : 0)
                             << " transport=" << static_cast<int>(change.current.transport)
@@ -40,7 +41,7 @@ void ReactToNetworkChange(const NetworkChange& change, MeshHost* mesh, CallStack
     }
     return;
   }
-  const LocalNetworkChange local = ToLocalNetworkChange(change);
+  const mesh::LocalNetworkChange local = ToLocalNetworkChange(change);
   NetworkChangeLog().info << "network change gen=" << change.generation << " online=" << (local.was_online ? 1 : 0)
                           << "->" << (local.online ? 1 : 0) << " transport=" << static_cast<int>(change.previous.transport)
                           << "->" << static_cast<int>(change.current.transport)
@@ -51,7 +52,7 @@ void ReactToNetworkChange(const NetworkChange& change, MeshHost* mesh, CallStack
   }
   if (calls) {
     calls->OnLocalNetwork(ToMobilityAttachment(change.current), /*changed=*/local.attachment_changed,
-                          /*moved=*/DecideLocalNetworkReaction(local).probe_links);
+                          /*moved=*/mesh::DecideLocalNetworkReaction(local).probe_links);
   }
 }
 

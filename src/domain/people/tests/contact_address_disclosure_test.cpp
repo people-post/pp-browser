@@ -1,4 +1,5 @@
 #include "domain/people/ContactAddressDisclosure.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 
@@ -8,8 +9,8 @@ namespace {
 Contact MakeContact(const std::string& peer_id, const std::string& account_id, const TrustLevel trust) {
   Contact c;
   c.id = "c-" + peer_id;
-  c.ids.push_back({ContactIdKind::PeerId, peer_id, true});
-  c.ids.push_back({ContactIdKind::Account, account_id, false});
+  c.ids.push_back({mesh::ContactIdKind::PeerId, peer_id, true});
+  c.ids.push_back({mesh::ContactIdKind::Account, account_id, false});
   c.trust = trust;
   c.local.trust = trust;
   return c;
@@ -23,7 +24,7 @@ TEST(ContactAddressDisclosureTest, ContactsFriendlyAndBlockedByTrust) {
       MakeContact("12D3KooWBlocked", "account:blocked", TrustLevel::Blocked),
   };
 
-  const auto contacts = BuildAddressDisclosurePolicy(DirectAudience::Contacts, book);
+  const auto contacts = BuildAddressDisclosurePolicy(mesh::DirectAudience::Contacts, book);
   EXPECT_TRUE(contacts.AllowsDirect("12D3KooWPlain"));
   EXPECT_TRUE(contacts.AllowsDirect("account:plain"));
   EXPECT_TRUE(contacts.AllowsDirect("12D3KooWFriend"));
@@ -31,12 +32,12 @@ TEST(ContactAddressDisclosureTest, ContactsFriendlyAndBlockedByTrust) {
   EXPECT_FALSE(contacts.AllowsDirect("account:blocked"));
   EXPECT_FALSE(contacts.AllowsDirect("12D3KooWStranger"));
 
-  const auto friendly = BuildAddressDisclosurePolicy(DirectAudience::Friendly, book);
+  const auto friendly = BuildAddressDisclosurePolicy(mesh::DirectAudience::Friendly, book);
   EXPECT_TRUE(friendly.AllowsDirect("12D3KooWFriend"));
   EXPECT_TRUE(friendly.AllowsDirect("account:friend"));
   EXPECT_FALSE(friendly.AllowsDirect("12D3KooWPlain"));
 
-  const auto everyone = BuildAddressDisclosurePolicy(DirectAudience::Everyone, book);
+  const auto everyone = BuildAddressDisclosurePolicy(mesh::DirectAudience::Everyone, book);
   EXPECT_TRUE(everyone.AllowsDirect("12D3KooWStranger"));
   EXPECT_FALSE(everyone.AllowsDirect("12D3KooWBlocked"));
 }

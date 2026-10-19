@@ -41,7 +41,7 @@ curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../../third_party/): curl, SQLite (amalgamation), Opus, BoringSSL, Asio, and PeerId/wire helpers (fmt, qtils, soralog, …). JSON (`Value`/`Object`) comes from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); libsodium + ML-KEM/ML-DSA from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling or FetchContent).
+**Vendored source** under [`third_party/`](../../third_party/): curl, SQLite (amalgamation), Opus, BoringSSL, Asio, and PeerId/wire helpers (fmt, qtils, soralog, …). JSON (`Value`/`Object`) comes from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); the mesh (host, reachability, DHT, directory, relays) from [`pp-cpp-mesh`](https://github.com/people-post/pp-cpp-mesh) (pinned tag; `-DPP_CPP_MESH_SOURCE_DIR=…` for a local checkout); libsodium + ML-KEM/ML-DSA from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling or FetchContent).
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
@@ -131,7 +131,7 @@ cmake --build build-pp-node -j --target pp-node
 
 Or: `scripts/platform/pp_node_package_linux.sh configure` (same flags). Linux build host needs only toolchain + `pkg-config` — **not** `libx11-dev` / `libdbus-1-dev` / OpenGL.
 
-**Desktop GUI trees** also produce **`pp-node`** as an extra target (same node runtime). It must stay **UI-free** even when SDL/RmlUi are configured for `pp-browser`: link only `pp_foundation_platform_core` (and other `*_core` targets), never `pp_foundation_platform` / `pp_gui` / `pp_domain_media`. CMake enforces this via `pp_browser_assert_no_ui_dependencies` + a post-link symbol check in [`src/app/node/CMakeLists.txt`](../../src/app/node/CMakeLists.txt). Beyond UI-free, its first-party closure is an **allowlist** (`pp_browser_assert_node_link_allowlist`, `PP_BROWSER_NODE_LINK_ALLOWLIST` in [`cmake/PpBrowserNoUiDeps.cmake`](../../cmake/PpBrowserNoUiDeps.cmake)): foundation `*_core`-style libs, `pp_pbr_common`, `pp_domain_{mesh,people,net}`, headless `pp_feature_{registration,node}`, and the Amp / common / crypto siblings. Any other `pp_*` target fails configure — widening the node is a deliberate edit to that list.
+**Desktop GUI trees** also produce **`pp-node`** as an extra target (same node runtime). It must stay **UI-free** even when SDL/RmlUi are configured for `pp-browser`: link only `pp_foundation_platform_core` (and other `*_core` targets), never `pp_foundation_platform` / `pp_gui` / `pp_domain_media`. CMake enforces this via `pp_browser_assert_no_ui_dependencies` + a post-link symbol check in [`src/app/node/CMakeLists.txt`](../../src/app/node/CMakeLists.txt). Beyond UI-free, its first-party closure is an **allowlist** (`pp_browser_assert_node_link_allowlist`, `PP_BROWSER_NODE_LINK_ALLOWLIST` in [`cmake/PpBrowserNoUiDeps.cmake`](../../cmake/PpBrowserNoUiDeps.cmake)): foundation `*_core`-style libs, `pp_pbr_common`, `pp_domain_{people,net}`, headless `pp_feature_{registration,node}`, and the Amp / common / crypto / mesh siblings (not `pp_mesh_testing`). Any other `pp_*` target fails configure — widening the node is a deliberate edit to that list.
 
 ```bash
 cmake --build build -j --target pp-node
@@ -224,7 +224,7 @@ Needs [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`). On Debian/Ubuntu:
 
 ```bash
 ./scripts/check/check_feature_includes.sh
-./scripts/check/check_mesh_layers.sh
+./scripts/check/check_base_includes.sh
 ./scripts/check/check_platform_ifdefs.sh
 ```
 

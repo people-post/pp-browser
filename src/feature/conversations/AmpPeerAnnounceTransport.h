@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/mesh/host/MeshPorts.h"
+#include "mesh/host/MeshPorts.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
 #include "domain/messaging/PeerAnnounceRpcCodec.h"
 
@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -32,7 +33,7 @@ public:
   /** Fired after a tip is verified and ingested into the local feed (any thread). */
   using OnTipIngested = std::function<void(const PeerAnnounceTip& tip)>;
 
-  AmpPeerAnnounceTransport(IChatPeerLinks& links, PeerAnnounceFeed& feed, IoPump io_pump,
+  AmpPeerAnnounceTransport(mesh::IChatPeerLinks& links, PeerAnnounceFeed& feed, IoPump io_pump,
                          WorkerPost post_worker = {}, ResolvePublisherKey resolve_key = {},
                          IoPost post_io = {}, IoAfter post_after = {});
   ~AmpPeerAnnounceTransport();
@@ -60,7 +61,7 @@ public:
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
-  IChatPeerLinks& links_;
+  mesh::IChatPeerLinks& links_;
   PeerAnnounceFeed& feed_;
   IoPump io_pump_;
   WorkerPost post_worker_;

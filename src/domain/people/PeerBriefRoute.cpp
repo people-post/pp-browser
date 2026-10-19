@@ -1,6 +1,7 @@
 #include "domain/people/PeerBriefRoute.h"
 
 #include "domain/people/ContactIdentity.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -9,15 +10,15 @@ bool IsRelayUserIdValue(const std::string& value) {
 }
 
 std::optional<std::string> RelayUserIdFromContact(const Contact& contact) {
-  for (const ContactId& id : contact.ids) {
-    if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+  for (const mesh::ContactId& id : contact.ids) {
+    if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
       return id.value;
     }
   }
   return std::nullopt;
 }
 
-std::optional<std::string> RelayUserIdFromDirectoryHit(const DirectoryHit& hit) {
+std::optional<std::string> RelayUserIdFromDirectoryHit(const mesh::DirectoryHit& hit) {
   if (auto relay = PrimaryRelayIdFromHit(hit)) {
     return relay;
   }
@@ -41,7 +42,7 @@ std::optional<std::string> ResolvePeerBriefRoute(
   }
 
   if (IsAccountIdentityValue(thread.peer_identity_value)) {
-    auto by_account = contacts.FindByIdentity(thread.peer_identity_value, ContactIdKind::Account);
+    auto by_account = contacts.FindByIdentity(thread.peer_identity_value, mesh::ContactIdKind::Account);
     if (by_account && by_account->has_value()) {
       if (auto relay = RelayUserIdFromContact(**by_account)) {
         return relay;

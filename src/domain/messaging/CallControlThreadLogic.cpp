@@ -4,6 +4,7 @@
 #include "common/directory/DirectoryJson.h"
 #include "common/thread/ThreadChannel.h"
 #include "common/thread/ThreadTypes.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -26,7 +27,7 @@ Roe<std::string> ResolveOrCreateE2ePublicDirectThread(IThreadStore& store,
   }
 
   DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  direct_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   direct_target.peer_identity_value = peer_identity;
   direct_target.channel = ThreadChannel::E2ePublic;
 

@@ -18,6 +18,7 @@
 #include "domain/messaging/GroupRosterStore.h"
 #include "feature/conversations/RelayReceivePipeline.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
+#include "common/MeshAlias.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -70,8 +71,8 @@ public:
 
     Contact peer_contact;
     peer_contact.id = "contact-peer";
-    peer_contact.remote.ids = {{ContactIdKind::Account, "account:peer", true},
-                               {ContactIdKind::RelayUser, "relay:peer", false}};
+    peer_contact.remote.ids = {{mesh::ContactIdKind::Account, "account:peer", true},
+                               {mesh::ContactIdKind::RelayUser, "relay:peer", false}};
     SyncContactMirrors(peer_contact);
     if (!contacts.Upsert(peer_contact)) {
       throw std::runtime_error("Failed to upsert peer contact");

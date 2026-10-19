@@ -1,7 +1,7 @@
 #pragma once
 
 #include "feature/call_media/ICallMediaTransport.h"
-#include "domain/mesh/reach/PeerReachCoordinator.h"
+#include "mesh/reach/PeerReachCoordinator.h"
 #include "domain/messaging/CallTypes.h"
 #include "feature/calls/CallMediaInboundReply.h"
 #include "foundation/runtime/OwnerSteps.h"
@@ -11,6 +11,7 @@
 #include <string>
 #include <variant>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -163,7 +164,7 @@ struct KeyPollTick {};
 struct LinkReady {
   uint64_t seq = 0;
   int attempt = 0;
-  Roe<PeerReachResult> reached;
+  Roe<mesh::PeerReachResult> reached;
 };
 /** Attempt `attempt`'s bundle open finished. */
 struct AttemptDone {

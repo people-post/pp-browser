@@ -18,9 +18,9 @@ Use **subdir paths** (`common/thread/…`, `common/chat/…`). Do not add top-le
 
 | Subdir | Contents |
 |--------|----------|
-| *(root)* | Small utilities: `PbrCompat` (bridges pp-cpp-common's names — `ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry` — into `pbr`), `StartupTiming`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `ArgsText` |
+| *(root)* | Small utilities: `PbrCompat` (bridges pp-cpp-common's names — `ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry` — into `pbr`), `MeshAlias` (`mesh::` = pp-cpp-mesh's `pp::mesh`), `StartupTiming`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `ArgsText` |
 | [`net/`](net/) | `HttpTransport` / `HttpResponse` injectable POST seam |
-| [`directory/`](directory/) | Phone-book vocabulary: `DirectoryTypes`, `DirectoryJson`, `IDirectoryClient`, `RelayScope`, `MeshHopTypes`, `MeshHopDial`, `IdentityTypes` |
+| [`directory/`](directory/) | Phone-book glue: `DirectoryJson`, `IdentityTypes`, trust / signing access ports. The rows themselves (`DirectoryTypes`, `IDirectoryClient`, `RelayScope`, `MeshHopTypes`, `MeshHopDial`) are pp-cpp-mesh's vocabulary, `mesh/types/` |
 | [`thread/`](thread/) | Thread/message records, history/blob DTOs, sync/memory, `ContextBudget`, role ports + `IThreadStore` |
 | [`chat/`](chat/) | Chat payload/action DTOs, relay envelope/stream key, `MessagingJson`, messaging limits, people-discovery blocks, `AttachmentDownloadPolicy` |
 | [`media/`](media/) | `CallMediaHealth` |

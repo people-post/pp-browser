@@ -4,16 +4,17 @@
 
 #include <string>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
-AddressDisclosurePolicy BuildAddressDisclosurePolicy(const DirectAudience audience,
+mesh::AddressDisclosurePolicy BuildAddressDisclosurePolicy(const mesh::DirectAudience audience,
                                                      const std::vector<Contact>& contacts) {
-  AddressDisclosurePolicy policy;
+  mesh::AddressDisclosurePolicy policy;
   policy.audience = audience;
   for (const Contact& contact : contacts) {
     std::vector<std::string> keys = PeerIdsFromContact(contact);
-    for (const ContactId& id : contact.ids) {
+    for (const mesh::ContactId& id : contact.ids) {
       keys.push_back(id.value);
     }
     for (const std::string& key : keys) {

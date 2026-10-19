@@ -3,6 +3,7 @@
 #include "domain/people/ContactJson.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "foundation/runtime/ProductBranding.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -18,7 +19,7 @@ PeerDisplayLabel PeerDisplayResolver::ResolveDirectPeer(const std::string& peer_
     return label;
   }
 
-  std::optional<ContactIdKind> kind;
+  std::optional<mesh::ContactIdKind> kind;
   if (!peer_identity_kind.empty()) {
     kind = ContactIdKindFromString(peer_identity_kind);
   }
@@ -120,7 +121,7 @@ PeerDisplayLabel PeerDisplayResolver::ResolveSender(const std::string& sender_co
     }
   }
   // Sender may be a raw Account ID (inbound stranger threads).
-  return ResolveDirectPeer(ContactIdKindToString(ContactIdKind::Account), sender_contact_id);
+  return ResolveDirectPeer(ContactIdKindToString(mesh::ContactIdKind::Account), sender_contact_id);
 }
 
 } // namespace pbr

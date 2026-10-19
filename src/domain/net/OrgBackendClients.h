@@ -2,9 +2,9 @@
 
 #include "common/chat/IDirectMessageClient.h"
 
-#include "common/directory/DirectoryTypes.h"
+#include "mesh/types/DirectoryTypes.h"
 #include "common/Error.h"
-#include "common/directory/IDirectoryClient.h"
+#include "mesh/types/IDirectoryClient.h"
 #include "foundation/crypto/IDekConsumer.h"
 #include "common/thread/ChatBlobTypes.h"
 #include "common/thread/ChatHistoryTypes.h"
@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -92,7 +93,7 @@ struct RegistrationPublishOpts {
   /** Empty → omit (server defaults person). Values: person | mesh_node. */
   std::string entity_kind;
   bool has_capabilities = false;
-  MeshCapabilitiesAd capabilities;
+  mesh::MeshCapabilitiesAd capabilities;
 };
 
 struct RegistrationResult {

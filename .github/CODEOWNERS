@@ -2,11 +2,11 @@
 # protection enables "require review from code owners"; until then it is documentation for reviewers.
 #
 # Network layer, Amp, call connection, chat protocol, server contracts, CI / release, Android shell.
-src/domain/mesh/                     @yhw1630
 src/domain/net/                      @yhw1630
 src/domain/messaging/                @yhw1630
 src/feature/calls/                   @yhw1630
 cmake/PpCppAmp.cmake                 @yhw1630
+cmake/PpCppMesh.cmake                @yhw1630
 .github/workflows/                   @yhw1630
 android/                             @yhw1630
 docs/contracts/                      @yhw1630 @gzdemon77

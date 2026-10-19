@@ -1,8 +1,9 @@
 #include "feature/call_media/CallMediaLegCoordinator.h"
-#include "domain/mesh/l4/shared/ProductChannelPolicies.h"
-#include "domain/mesh/tests/support/mesh_harness_support.h"
-#include "domain/mesh/tests/support/mesh_test_harness.h"
+#include "mesh/l4/shared/ProductChannelPolicies.h"
+#include "mesh/testing/mesh_harness_support.h"
+#include "mesh/testing/mesh_test_harness.h"
 #include "crypto/MlDsa.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
@@ -54,7 +55,7 @@ protected:
   void SetUp() override {
     ASSERT_GE(sodium_init(), 0);
 
-    auto created = pbr::test::AmpMeshHarness::Create();
+    auto created = mesh::test::AmpMeshHarness::Create();
     ASSERT_TRUE(static_cast<bool>(created));
     harness_ = std::move(*created);
 
@@ -75,7 +76,7 @@ protected:
     harness_.reset();
   }
 
-  std::unique_ptr<pbr::test::AmpMeshHarness> harness_;
+  std::unique_ptr<mesh::test::AmpMeshHarness> harness_;
   std::unique_ptr<CallMediaLegCoordinator> a_call_;
   std::unique_ptr<CallMediaLegCoordinator> b_call_;
 };
@@ -1172,9 +1173,9 @@ struct AmpTripleMeshHarness {
     harness->charlie.ml_dsa_secret_key = std::move(charlie_keys->secret_key);
     harness->charlie.ml_dsa_public_key = std::move(charlie_keys->public_key);
 
-    auto alice_id = pbr::test::DeriveTestPeerId(harness->alice.ml_dsa_public_key);
-    auto bob_id = pbr::test::DeriveTestPeerId(harness->bob.ml_dsa_public_key);
-    auto charlie_id = pbr::test::DeriveTestPeerId(harness->charlie.ml_dsa_public_key);
+    auto alice_id = mesh::test::DeriveTestPeerId(harness->alice.ml_dsa_public_key);
+    auto bob_id = mesh::test::DeriveTestPeerId(harness->bob.ml_dsa_public_key);
+    auto charlie_id = mesh::test::DeriveTestPeerId(harness->charlie.ml_dsa_public_key);
     if (!alice_id || !bob_id || !charlie_id) {
       return pp::Error("triple harness: peer id derivation failed");
     }
@@ -1182,7 +1183,7 @@ struct AmpTripleMeshHarness {
     harness->peer_id_b = *bob_id;
     harness->peer_id_c = *charlie_id;
 
-    const auto link_config = pbr::test::AmpMeshTestLinkConfig();
+    const auto link_config = mesh::test::AmpMeshTestLinkConfig();
     harness->runtime_a =
         std::make_unique<pp::amp::MeshRuntime>(*harness->ep_a, harness->alice, harness->peer_id_a, link_config);
     harness->runtime_b =

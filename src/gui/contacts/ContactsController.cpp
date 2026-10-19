@@ -37,6 +37,7 @@
 #include <cctype>
 #include <sstream>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -69,17 +70,17 @@ bool IsContactDetailTransientActive(const ShellChromeSnapshot& chrome) {
   return chrome.contact_detail_transient;
 }
 
-std::string IdentityKindLabel(const ContactIdKind kind) {
+std::string IdentityKindLabel(const mesh::ContactIdKind kind) {
   switch (kind) {
-  case ContactIdKind::Account:
+  case mesh::ContactIdKind::Account:
     return Tr("contacts.id_kind.account");
-  case ContactIdKind::RelayUser:
+  case mesh::ContactIdKind::RelayUser:
     return Tr("contacts.id_kind.relay");
-  case ContactIdKind::PeerId:
+  case mesh::ContactIdKind::PeerId:
     return Tr("contacts.id_kind.peer");
-  case ContactIdKind::Blockchain:
+  case mesh::ContactIdKind::Blockchain:
     return Tr("contacts.id_kind.blockchain");
-  case ContactIdKind::Custom:
+  case mesh::ContactIdKind::Custom:
     return Tr("contacts.id_kind.custom");
   }
   return Tr("contacts.id_kind.generic");
@@ -97,13 +98,13 @@ std::string TrustDisplayLabel(const TrustLevel level) {
   return Tr("contacts.trust.unknown");
 }
 
-std::string PrimaryIdOfKind(const Contact& contact, const ContactIdKind kind) {
-  for (const ContactId& id : contact.ids) {
+std::string PrimaryIdOfKind(const Contact& contact, const mesh::ContactIdKind kind) {
+  for (const mesh::ContactId& id : contact.ids) {
     if (id.kind == kind && id.primary) {
       return id.value;
     }
   }
-  for (const ContactId& id : contact.ids) {
+  for (const mesh::ContactId& id : contact.ids) {
     if (id.kind == kind) {
       return id.value;
     }
@@ -112,16 +113,16 @@ std::string PrimaryIdOfKind(const Contact& contact, const ContactIdKind kind) {
 }
 
 std::string PrimaryIdentityValue(const Contact& contact) {
-  if (const std::string account = PrimaryIdOfKind(contact, ContactIdKind::Account); !account.empty()) {
+  if (const std::string account = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account); !account.empty()) {
     return account;
   }
-  if (const std::string relay = PrimaryIdOfKind(contact, ContactIdKind::RelayUser); !relay.empty()) {
+  if (const std::string relay = PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser); !relay.empty()) {
     return relay;
   }
-  if (const std::string peer = PrimaryIdOfKind(contact, ContactIdKind::PeerId); !peer.empty()) {
+  if (const std::string peer = PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId); !peer.empty()) {
     return peer;
   }
-  for (const ContactId& id : contact.ids) {
+  for (const mesh::ContactId& id : contact.ids) {
     if (id.primary) {
       return id.value;
     }
@@ -175,9 +176,9 @@ ContactsController::ContactListRow ToContactListRow(const Contact& contact, cons
     }
   }
   {
-    const std::string stable = AvatarStableId(PrimaryIdOfKind(contact, ContactIdKind::Account),
-                                              PrimaryIdOfKind(contact, ContactIdKind::RelayUser),
-                                              PrimaryIdOfKind(contact, ContactIdKind::PeerId), contact.id);
+    const std::string stable = AvatarStableId(PrimaryIdOfKind(contact, mesh::ContactIdKind::Account),
+                                              PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser),
+                                              PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId), contact.id);
     const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? Tr("people_picker.unnamed") : title, stable);
     row.avatar_letter = glyph.letter.c_str();
     row.avatar_tone = glyph.tone;
@@ -201,8 +202,8 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   detail.nickname = contact.remote.nickname.c_str();
   detail.name_placeholder =
       contact.remote.nickname.empty() ? Tr("contacts.name_placeholder").c_str() : contact.remote.nickname.c_str();
-  detail.relay_id = PrimaryIdOfKind(contact, ContactIdKind::RelayUser).c_str();
-  detail.peer_id = PrimaryIdOfKind(contact, ContactIdKind::PeerId).c_str();
+  detail.relay_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser).c_str();
+  detail.peer_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId).c_str();
   detail.has_relay_id = !detail.relay_id.empty();
   if (!detail.relay_id.empty()) {
     detail.subtitle = ShortRelayId(detail.relay_id.c_str()).c_str();
@@ -219,9 +220,9 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
     }
   }
   {
-    const std::string stable = AvatarStableId(PrimaryIdOfKind(contact, ContactIdKind::Account),
-                                              PrimaryIdOfKind(contact, ContactIdKind::RelayUser),
-                                              PrimaryIdOfKind(contact, ContactIdKind::PeerId), contact.id);
+    const std::string stable = AvatarStableId(PrimaryIdOfKind(contact, mesh::ContactIdKind::Account),
+                                              PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser),
+                                              PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId), contact.id);
     const AvatarGlyph glyph = MakeAvatarGlyph(title.empty() ? Tr("people_picker.unnamed") : title, stable);
     detail.avatar_letter = glyph.letter.c_str();
     detail.avatar_tone = glyph.tone;
@@ -236,7 +237,7 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   }
 
   detail.identities.reserve(contact.ids.size());
-  for (const ContactId& id : contact.ids) {
+  for (const mesh::ContactId& id : contact.ids) {
     ContactsController::ContactIdentityRow row;
     row.label = IdentityKindLabel(id.kind).c_str();
     row.value = id.value.c_str();
@@ -246,9 +247,9 @@ ContactsController::ContactDetail ToContactDetail(const Contact& contact, const 
   }
 
   if (ports.snapshot && ports.snapshot().initialized) {
-    const std::string account_id = PrimaryIdOfKind(contact, ContactIdKind::Account);
+    const std::string account_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account);
     if (!account_id.empty() && ports.get_signing_key) {
-      if (auto key = ports.get_signing_key(ContactIdKindToString(ContactIdKind::Account), account_id)) {
+      if (auto key = ports.get_signing_key(ContactIdKindToString(mesh::ContactIdKind::Account), account_id)) {
         if (auto bytes = Base64Decode(key->signing_public_key_b64)) {
           if (auto digest = PskFingerprint::Compute(*bytes)) {
             detail.signing_fingerprint = PskFingerprint::FormatDisplay(*digest).c_str();
@@ -311,7 +312,7 @@ void ApplyMessagingEligibility(ContactsController::ContactDetail& detail, const 
     }
     return;
   }
-  if (target.peer_identity_kind == ContactIdKindToString(ContactIdKind::PeerId) && contact.multiaddrs.empty()) {
+  if (target.peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::PeerId) && contact.multiaddrs.empty()) {
     detail.can_message = false;
     detail.message_hint = Tr("contacts.hint.direct_no_relay").c_str();
     return;
@@ -1080,7 +1081,7 @@ void ContactsController::OnSyncRemote() {
       UserFeedback::Fail(Tr("contacts.err.missing_account_id"));
       return;
     }
-    contacts_ports_.register_peer_signing_key(ContactIdKindToString(ContactIdKind::Account), *hit->account_id,
+    contacts_ports_.register_peer_signing_key(ContactIdKindToString(mesh::ContactIdKind::Account), *hit->account_id,
                                               *hit->signing_public_key_b64, "directory");
   }
   if (hit->kem_public_key_b64 && !hit->kem_public_key_b64->empty() && contacts_ports_.register_peer_kem_key) {
@@ -1088,7 +1089,7 @@ void ContactsController::OnSyncRemote() {
       UserFeedback::Fail(Tr("contacts.err.missing_account_id"));
       return;
     }
-    contacts_ports_.register_peer_kem_key(ContactIdKindToString(ContactIdKind::Account), *hit->account_id,
+    contacts_ports_.register_peer_kem_key(ContactIdKindToString(mesh::ContactIdKind::Account), *hit->account_id,
                                           *hit->kem_public_key_b64, "directory");
   }
   auto applied = contacts_ports_.apply_remote_snapshot(selected_.id.c_str(), *hit, util::NowUnixMs());

@@ -5,11 +5,12 @@
 
 #include "feature/conversations/tests/call_stack_compose_support.h"
 
-#include "domain/mesh/l4/media_relay/client/IMediaRelayClient.h"
+#include "mesh/l4/media_relay/client/IMediaRelayClient.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "common/directory/DirectoryJson.h"
 #include "domain/messaging/SoftMigrateLogic.h"
 #include "foundation/crypto/CryptoUtil.h"
+#include "common/MeshAlias.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -52,7 +53,7 @@ class FakeHopClient;
 class FakeMediaRelayHop {
 public:
   void Attach(const FakeHopClient* client, const std::string& hop_peer_id, const std::string& session_id,
-              std::function<void(MediaDataFrame)> on_frame) {
+              std::function<void(mesh::MediaDataFrame)> on_frame) {
     std::unique_lock lock(mu_);
     {
       std::lock_guard stats(stats_mu_);
@@ -87,7 +88,7 @@ public:
     return {};
   }
 
-  Roe<void> Forward(const FakeHopClient* sender, const MediaDataFrame& frame) {
+  Roe<void> Forward(const FakeHopClient* sender, const mesh::MediaDataFrame& frame) {
     std::shared_lock lock(mu_);
     const auto from = members_.find(sender);
     if (from == members_.end()) {
@@ -138,7 +139,7 @@ private:
   struct Member {
     std::string hop_peer_id;
     std::string session_id;
-    std::function<void(MediaDataFrame)> on_frame;
+    std::function<void(mesh::MediaDataFrame)> on_frame;
     bool reading = false;
     std::set<uint64_t> subscriptions;
   };
@@ -155,7 +156,7 @@ private:
 };
 
 /** A participant's media_relay client, attached to the shared FakeMediaRelayHop. */
-class FakeHopClient final : public IMediaRelayClient {
+class FakeHopClient final : public mesh::IMediaRelayClient {
 public:
   FakeHopClient(FakeMediaRelayHop& hop, std::string local_peer_id)
       : hop_(hop), local_peer_id_(std::move(local_peer_id)) {}
@@ -163,7 +164,7 @@ public:
   Roe<std::string> LocalPeerIdBase58() const override { return local_peer_id_; }
   bool IsStarted() const override { return true; }
 
-  Roe<MediaRelayQuote> RequestQuote(const std::string& hop_peer_key, const MediaRelayQuoteRequest& /*request*/,
+  Roe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop_peer_key, const mesh::MediaRelayQuoteRequest& /*request*/,
                                     int /*timeout_ms*/) override {
     std::lock_guard lock(mu_);
     if (unreachable_.count(hop_peer_key) > 0) {
@@ -171,7 +172,7 @@ public:
     }
     ++quote_calls_;
     quoted_hops_.push_back(hop_peer_key);
-    MediaRelayQuote q;
+    mesh::MediaRelayQuote q;
     q.ok = true;
     q.quote_id = local_peer_id_ + "-quote-" + std::to_string(quote_calls_);
     q.a_up_bps = 64000;
@@ -179,9 +180,9 @@ public:
     return q;
   }
 
-  Roe<MediaRelayAttachResult> AcceptAndAttach(const std::string& hop_peer_key, const std::string& /*quote_id*/,
+  Roe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string& hop_peer_key, const std::string& /*quote_id*/,
                                               const std::string& session_id, const std::string& /*auth_stub*/,
-                                              std::function<void(MediaDataFrame)> on_frame,
+                                              std::function<void(mesh::MediaDataFrame)> on_frame,
                                               int /*timeout_ms*/) override {
     {
       std::lock_guard lock(mu_);
@@ -190,7 +191,7 @@ public:
       }
     }
     hop_.Attach(this, hop_peer_key, session_id, std::move(on_frame));
-    MediaRelayAttachResult r;
+    mesh::MediaRelayAttachResult r;
     r.ok = true;
     r.session_token = "tok-" + local_peer_id_;
     return r;
@@ -198,15 +199,15 @@ public:
 
   void StartClientFrameReader() override { hop_.StartReading(this); }
 
-  Roe<MediaRelayAttachResult> AttachAsLocalHop(const std::string& /*session_id*/,
-                                               std::function<void(MediaDataFrame)> /*on_frame*/) override {
+  Roe<mesh::MediaRelayAttachResult> AttachAsLocalHop(const std::string& /*session_id*/,
+                                               std::function<void(mesh::MediaDataFrame)> /*on_frame*/) override {
     return Error("not a local hop");
   }
 
   Roe<void> Subscribe(uint32_t stream_id, uint16_t channel_id) override {
     return hop_.Subscribe(this, stream_id, channel_id);
   }
-  Roe<void> SendFrame(const MediaDataFrame& frame) override { return hop_.Forward(this, frame); }
+  Roe<void> SendFrame(const mesh::MediaDataFrame& frame) override { return hop_.Forward(this, frame); }
   void Detach() override { hop_.Detach(this); }
   bool IsAttached() const override { return hop_.IsAttached(this); }
   bool IsLocalHopAttached() const override { return false; }
@@ -290,13 +291,13 @@ protected:
         for (auto [self, peer] : {std::pair{i, j}, std::pair{j, i}}) {
           // The row belongs to the pair's direct thread (the call-control thread); the PSK save updates it.
           DirectChatTarget target;
-          target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+          target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
           target.peer_identity_value = sides_[peer].local_identity;
           target.channel = ThreadChannel::E2ePublic;
           auto thread = sides_[self].store->FindOrCreateDirectThread(target, "", sides_[peer].local_identity);
           ASSERT_TRUE(thread) << thread.error().message;
           PskSessionRecord record;
-          record.key.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+          record.key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
           record.key.peer_identity_value = sides_[peer].local_identity;
           record.key.channel = CryptoChannel::E2ePublic;
           record.master_psk_b64 = master_b64;

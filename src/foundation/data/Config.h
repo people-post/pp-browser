@@ -4,13 +4,14 @@
 #include "foundation/data/LlmConfig.h"
 #include "common/Error.h"
 #include "common/Module.h"
-#include "common/privacy/AddressDisclosure.h"
-#include "foundation/data/MeshConfigTypes.h"
+#include "mesh/types/AddressDisclosure.h"
+#include "mesh/types/MeshConfigTypes.h"
 
 #include <cstdint>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -90,7 +91,7 @@ struct MeshConfig {
    * Who may learn this device's IP address (projects/privacy T1): everyone / contacts / friendly /
    * nobody. Others reach us through a relay. The Node role is always `everyone` (P004).
    */
-  DirectAudience direct_connections = DirectAudience::Contacts;
+  mesh::DirectAudience direct_connections = mesh::DirectAudience::Contacts;
   /**
    * projects/privacy T4: relays see both ends' addresses. When true, only the configured org seeds
    * and Friendly contacts' nodes may relay, park, introduce punches or carry call media for us —
@@ -109,11 +110,11 @@ struct MeshConfig {
    * pinned "stationary" / "mobile" for dogfood and the hard lab. `--mobility=` overrides it.
    */
   std::string mobility = "auto";
-  MeshCapabilities capabilities;
-  MeshDhtConfig dht;
-  MeshPricingConfig pricing;
-  MediaRelayBudgetConfig media_relay_budget;
-  MediaRelayVideoConfig media_relay_video;
+  mesh::MeshCapabilities capabilities;
+  mesh::MeshDhtConfig dht;
+  mesh::MeshPricingConfig pricing;
+  mesh::MediaRelayBudgetConfig media_relay_budget;
+  mesh::MediaRelayVideoConfig media_relay_video;
 };
 
 struct AppConfig {

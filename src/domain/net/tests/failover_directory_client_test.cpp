@@ -6,41 +6,42 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
 
 TEST(FailoverDirectoryClientTest, FallsBackWhenTheFirstBackendFails) {
-  class FakeHttpDirectory : public IDirectoryClient {
+  class FakeHttpDirectory : public mesh::IDirectoryClient {
   public:
-    Roe<std::vector<DirectoryHit>> SearchPeople(const std::string&) override {
+    Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string&) override {
       return Error("unused");
     }
-    Roe<DirectoryHit> LookupRelayUser(const std::string&) override { return Error("unused"); }
-    Roe<DirectoryHit> LookupByAccount(const std::string&) override { return Error("unused"); }
-    Roe<std::vector<MeshNodeHit>> ListMeshNodes() override {
-      MeshNodeHit hit;
+    Roe<mesh::DirectoryHit> LookupRelayUser(const std::string&) override { return Error("unused"); }
+    Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override { return Error("unused"); }
+    Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override {
+      mesh::MeshNodeHit hit;
       hit.relay_user_id = "from-http";
       hit.entity_kind = "mesh_node";
-      return std::vector<MeshNodeHit>{hit};
+      return std::vector<mesh::MeshNodeHit>{hit};
     }
   };
 
-  class FailingAmpDirectory : public IDirectoryClient {
+  class FailingAmpDirectory : public mesh::IDirectoryClient {
   public:
-    Roe<std::vector<DirectoryHit>> SearchPeople(const std::string&) override {
+    Roe<std::vector<mesh::DirectoryHit>> SearchPeople(const std::string&) override {
       return Error("amp person unsupported");
     }
-    Roe<DirectoryHit> LookupRelayUser(const std::string&) override {
+    Roe<mesh::DirectoryHit> LookupRelayUser(const std::string&) override {
       return Error("amp person unsupported");
     }
-    Roe<DirectoryHit> LookupByAccount(const std::string&) override {
+    Roe<mesh::DirectoryHit> LookupByAccount(const std::string&) override {
       return Error("amp person unsupported");
     }
-    Roe<std::vector<MeshNodeHit>> ListMeshNodes() override { return Error("amp unavailable"); }
+    Roe<std::vector<mesh::MeshNodeHit>> ListMeshNodes() override { return Error("amp unavailable"); }
   };
 
-  std::vector<std::unique_ptr<IDirectoryClient>> backends;
+  std::vector<std::unique_ptr<mesh::IDirectoryClient>> backends;
   backends.push_back(std::make_unique<FailingAmpDirectory>());
   backends.push_back(std::make_unique<FakeHttpDirectory>());
   FailoverDirectoryClient failover(std::move(backends));

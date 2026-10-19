@@ -1,11 +1,12 @@
 #include "feature/calls/CallHopPlanning.h"
 
-#include "common/directory/MeshHopDial.h"
-#include "domain/mesh/media_plane/MediaRelayAttach.h"
+#include "mesh/types/MeshHopDial.h"
+#include "mesh/media_plane/MediaRelayAttach.h"
 
 #include <type_traits>
 #include <variant>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -64,7 +65,7 @@ std::optional<CallPlannedHop> CallHopPlanning::Plan(const std::vector<std::strin
   const bool lan_ok = ranking_.LanConfirmedForPeers(remotes);
   const bool prefer_local = deps_->prefer_local_as_hop && deps_->relay->IsStarted() && !local_peer_id.empty();
   const auto ranked = SelectCallMediaHop(ranking_.Ranked(), scope, local_peer_id, prefer_local, local_ma, lan_ok);
-  for (const MeshHopCandidate& hop : ranked) {
+  for (const mesh::MeshHopCandidate& hop : ranked) {
     if (!hop.peer_id.empty()) {
       CallPlannedHop planned{hop.peer_id, hop.multiaddr.empty() ? ranking_.HopMultiaddr(hop.peer_id) : hop.multiaddr};
       log().info << "planned hop=" << planned.peer_id << " scope=" << static_cast<int>(scope)
@@ -90,7 +91,7 @@ void CallHopPlanning::ProbeInvite(const std::string& call_id) {
   ++probe_round_[call_id];  // answers to an earlier round are stale
   probe_planned_hop_[call_id] = planned.peer_id;
   const bool private_off_lan =
-      !planned.multiaddr.empty() && MultiaddrHasPrivateIpv4Host(planned.multiaddr) &&
+      !planned.multiaddr.empty() && mesh::MultiaddrHasPrivateIpv4Host(planned.multiaddr) &&
       !(GuestMayDialPrivateHopMa(planned.multiaddr, ranking_.LocalAdvertiseMas()) && deps_->peer_lan_confirmed &&
         deps_->peer_lan_confirmed(planned.peer_id));
   if (private_off_lan) {
@@ -100,7 +101,7 @@ void CallHopPlanning::ProbeInvite(const std::string& call_id) {
   }
   const std::string local_peer_id = ranking_.LocalPeerId();
   size_t others = 0;
-  for (const MeshHopCandidate& hop : ranking_.Ranked()) {
+  for (const mesh::MeshHopCandidate& hop : ranking_.Ranked()) {
     if (others >= kOtherProbedHops) {
       break;
     }
@@ -115,20 +116,20 @@ void CallHopPlanning::ProbeInvite(const std::string& call_id) {
 void CallHopPlanning::QuoteProbe(const std::string& call_id, const std::string& hop_peer_id,
                                  const std::string& hop_multiaddr) {
   probes_[call_id][hop_peer_id] = std::nullopt;
-  MediaRelayAttachRequest request;
+  mesh::MediaRelayAttachRequest request;
   request.hop_peer_id = hop_peer_id;
   request.hop_multiaddr = hop_multiaddr;
   request.session_id = call_id;
   request.quote.session_id = call_id;
   request.quote.participants = 3;  // a group is what this hop would serve
   // Edge: the quote answers on a worker / I/O — it only reports.
-  auto done = [outbox = outbox_, call_id, round = probe_round_[call_id], hop_peer_id](Roe<MediaRelayQuote> quote) {
+  auto done = [outbox = outbox_, call_id, round = probe_round_[call_id], hop_peer_id](Roe<mesh::MediaRelayQuote> quote) {
     const bool ok = quote && quote->ok;
     outbox.Emit(planning_event::ProbeAnswered{call_id, round, hop_peer_id, ok,
                                               ok ? std::string() : (quote ? quote->error : quote.error().message)});
   };
   // Same reach steps as a real attach (register, circuit when not dialable), then quote only.
-  QuoteMediaRelayAsync(deps_->AttachPorts(), std::move(request), std::move(done));
+  mesh::QuoteMediaRelayAsync(deps_->AttachPorts(), std::move(request), std::move(done));
 }
 
 CallHopReport CallHopPlanning::ReportForAccept(const std::string& call_id) const {
@@ -175,7 +176,7 @@ CallHopPlanning::JoinOutcome CallHopPlanning::ResolveAtJoin(const std::string& c
   }
   GroupHopJoinInput in;
   in.planned_hop = (*session)->planned_hop->peer_id;
-  for (const MeshHopCandidate& hop : ranking_.Ranked()) {
+  for (const mesh::MeshHopCandidate& hop : ranking_.Ranked()) {
     in.ranked_hops.push_back(hop.peer_id);
   }
   if (auto reports = accept_reports_.find(call_id); reports != accept_reports_.end()) {

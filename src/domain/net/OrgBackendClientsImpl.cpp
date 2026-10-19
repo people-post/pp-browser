@@ -16,6 +16,7 @@
 #include <mutex>
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -111,14 +112,14 @@ Roe<void> MockBlobClient::PutUpload(const std::string& /*upload_url*/, const std
   return Roe<void>{};
 }
 
-Roe<std::vector<DirectoryHit>> MockDirectoryClient::SearchPeople(const std::string& query) {
-  DirectoryHit alice;
+Roe<std::vector<mesh::DirectoryHit>> MockDirectoryClient::SearchPeople(const std::string& query) {
+  mesh::DirectoryHit alice;
   alice.hit_id = "hit_alice";
   alice.display_name = "Alice Example";
   alice.nickname = "alice";
   alice.account_id = "account:alice_acct";
-  alice.ids = {{ContactIdKind::Account, "account:alice_acct", true},
-               {ContactIdKind::RelayUser, "relay:alice123", false}};
+  alice.ids = {{mesh::ContactIdKind::Account, "account:alice_acct", true},
+               {mesh::ContactIdKind::RelayUser, "relay:alice123", false}};
   alice.signing_public_key_b64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
   if (auto kem = MockPeerKemPublicKeyB64()) {
     alice.kem_public_key_b64 = *kem;
@@ -126,13 +127,13 @@ Roe<std::vector<DirectoryHit>> MockDirectoryClient::SearchPeople(const std::stri
     alice.kem_public_key_b64 = default_kem_public_key_b64_;
   }
 
-  DirectoryHit bob;
+  mesh::DirectoryHit bob;
   bob.hit_id = "hit_bob";
   bob.display_name = "Bob Builder";
   bob.nickname = "bob";
   bob.account_id = "account:bob_acct";
-  bob.ids = {{ContactIdKind::Account, "account:bob_acct", true},
-             {ContactIdKind::RelayUser, "relay:bob456", false}};
+  bob.ids = {{mesh::ContactIdKind::Account, "account:bob_acct", true},
+             {mesh::ContactIdKind::RelayUser, "relay:bob456", false}};
   bob.signing_public_key_b64 = "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=";
   if (auto kem = MockPeerKemPublicKeyB64()) {
     bob.kem_public_key_b64 = *kem;
@@ -141,11 +142,11 @@ Roe<std::vector<DirectoryHit>> MockDirectoryClient::SearchPeople(const std::stri
   }
 
   if (query.empty()) {
-    return std::vector<DirectoryHit>{alice, bob};
+    return std::vector<mesh::DirectoryHit>{alice, bob};
   }
 
-  std::vector<DirectoryHit> out;
-  for (const DirectoryHit& hit : {alice, bob}) {
+  std::vector<mesh::DirectoryHit> out;
+  for (const mesh::DirectoryHit& hit : {alice, bob}) {
     if (hit.display_name.find(query) != std::string::npos || hit.nickname.find(query) != std::string::npos) {
       out.push_back(hit);
       continue;
@@ -154,7 +155,7 @@ Roe<std::vector<DirectoryHit>> MockDirectoryClient::SearchPeople(const std::stri
       out.push_back(hit);
       continue;
     }
-    for (const ContactId& id : hit.ids) {
+    for (const mesh::ContactId& id : hit.ids) {
       if (id.value.find(query) != std::string::npos) {
         out.push_back(hit);
         break;
@@ -164,14 +165,14 @@ Roe<std::vector<DirectoryHit>> MockDirectoryClient::SearchPeople(const std::stri
   return out;
 }
 
-Roe<DirectoryHit> MockDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
+Roe<mesh::DirectoryHit> MockDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
   auto hits = SearchPeople("");
   if (!hits) {
     return hits.error();
   }
-  for (const DirectoryHit& hit : *hits) {
-    for (const ContactId& id : hit.ids) {
-      if (id.kind == ContactIdKind::RelayUser && id.value == relay_user_id) {
+  for (const mesh::DirectoryHit& hit : *hits) {
+    for (const mesh::ContactId& id : hit.ids) {
+      if (id.kind == mesh::ContactIdKind::RelayUser && id.value == relay_user_id) {
         return hit;
       }
     }
@@ -179,17 +180,17 @@ Roe<DirectoryHit> MockDirectoryClient::LookupRelayUser(const std::string& relay_
   return Error("Relay user not found");
 }
 
-Roe<DirectoryHit> MockDirectoryClient::LookupByAccount(const std::string& account_id) {
+Roe<mesh::DirectoryHit> MockDirectoryClient::LookupByAccount(const std::string& account_id) {
   auto hits = SearchPeople("");
   if (!hits) {
     return hits.error();
   }
-  for (const DirectoryHit& hit : *hits) {
+  for (const mesh::DirectoryHit& hit : *hits) {
     if (hit.account_id && *hit.account_id == account_id) {
       return hit;
     }
-    for (const ContactId& id : hit.ids) {
-      if (id.kind == ContactIdKind::Account && id.value == account_id) {
+    for (const mesh::ContactId& id : hit.ids) {
+      if (id.kind == mesh::ContactIdKind::Account && id.value == account_id) {
         return hit;
       }
     }
@@ -716,14 +717,14 @@ HttpDirectoryClient::HttpDirectoryClient(std::string base_url) : base_url_(std::
 namespace {
 
 template <typename Fn>
-auto FailoverTry(const std::vector<std::unique_ptr<IDirectoryClient>>& backends, Fn&& fn)
+auto FailoverTry(const std::vector<std::unique_ptr<mesh::IDirectoryClient>>& backends, Fn&& fn)
     -> decltype(fn(*backends.front())) {
   using Result = decltype(fn(*backends.front()));
   if (backends.empty()) {
     return Error("Directory providers empty");
   }
   Result last_error = Error("Directory providers empty");
-  for (const std::unique_ptr<IDirectoryClient>& backend : backends) {
+  for (const std::unique_ptr<mesh::IDirectoryClient>& backend : backends) {
     if (!backend) {
       continue;
     }
@@ -738,27 +739,27 @@ auto FailoverTry(const std::vector<std::unique_ptr<IDirectoryClient>>& backends,
 
 } // namespace
 
-FailoverDirectoryClient::FailoverDirectoryClient(std::vector<std::unique_ptr<IDirectoryClient>> backends)
+FailoverDirectoryClient::FailoverDirectoryClient(std::vector<std::unique_ptr<mesh::IDirectoryClient>> backends)
     : backends_(std::move(backends)) {}
 
-Roe<std::vector<DirectoryHit>> FailoverDirectoryClient::SearchPeople(const std::string& query) {
-  return FailoverTry(backends_, [&](IDirectoryClient& client) { return client.SearchPeople(query); });
+Roe<std::vector<mesh::DirectoryHit>> FailoverDirectoryClient::SearchPeople(const std::string& query) {
+  return FailoverTry(backends_, [&](mesh::IDirectoryClient& client) { return client.SearchPeople(query); });
 }
 
-Roe<DirectoryHit> FailoverDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
+Roe<mesh::DirectoryHit> FailoverDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
   return FailoverTry(backends_,
-                     [&](IDirectoryClient& client) { return client.LookupRelayUser(relay_user_id); });
+                     [&](mesh::IDirectoryClient& client) { return client.LookupRelayUser(relay_user_id); });
 }
 
-Roe<DirectoryHit> FailoverDirectoryClient::LookupByAccount(const std::string& account_id) {
-  return FailoverTry(backends_, [&](IDirectoryClient& client) { return client.LookupByAccount(account_id); });
+Roe<mesh::DirectoryHit> FailoverDirectoryClient::LookupByAccount(const std::string& account_id) {
+  return FailoverTry(backends_, [&](mesh::IDirectoryClient& client) { return client.LookupByAccount(account_id); });
 }
 
-Roe<std::vector<MeshNodeHit>> FailoverDirectoryClient::ListMeshNodes() {
-  return FailoverTry(backends_, [](IDirectoryClient& client) { return client.ListMeshNodes(); });
+Roe<std::vector<mesh::MeshNodeHit>> FailoverDirectoryClient::ListMeshNodes() {
+  return FailoverTry(backends_, [](mesh::IDirectoryClient& client) { return client.ListMeshNodes(); });
 }
 
-Roe<std::vector<DirectoryHit>> HttpDirectoryClient::SearchPeople(const std::string& query) {
+Roe<std::vector<mesh::DirectoryHit>> HttpDirectoryClient::SearchPeople(const std::string& query) {
   if (base_url_.empty()) {
     return Error("Directory base_url not configured");
   }
@@ -777,7 +778,7 @@ Roe<std::vector<DirectoryHit>> HttpDirectoryClient::SearchPeople(const std::stri
     return Error("Invalid directory search JSON");
   }
 
-  std::vector<DirectoryHit> hits;
+  std::vector<mesh::DirectoryHit> hits;
   for (const Value& item_value : hits_arr->elements) {
     const Object* item = asObject(item_value);
     if (!item) {
@@ -788,7 +789,7 @@ Roe<std::vector<DirectoryHit>> HttpDirectoryClient::SearchPeople(const std::stri
   return hits;
 }
 
-Roe<DirectoryHit> HttpDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
+Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupRelayUser(const std::string& relay_user_id) {
   if (base_url_.empty()) {
     return Error("Directory base_url not configured");
   }
@@ -848,7 +849,7 @@ void ApplyRegistrationPublishOpts(Object& body, const RegistrationPublishOpts& p
 
 } // namespace
 
-Roe<DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& account_id) {
+Roe<mesh::DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& account_id) {
   if (base_url_.empty()) {
     return Error("Directory base_url not configured");
   }
@@ -874,7 +875,7 @@ Roe<DirectoryHit> HttpDirectoryClient::LookupByAccount(const std::string& accoun
   return DirectoryHitFromJson(*root);
 }
 
-Roe<std::vector<MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
+Roe<std::vector<mesh::MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
   if (base_url_.empty()) {
     return Error("Directory base_url not configured");
   }
@@ -893,14 +894,14 @@ Roe<std::vector<MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
   if (!nodes) {
     return Error("Invalid mesh nodes JSON (missing nodes)");
   }
-  std::vector<MeshNodeHit> out;
+  std::vector<mesh::MeshNodeHit> out;
   out.reserve(nodes->elements.size());
   for (const Value& item : nodes->elements) {
     const Object* obj = asObject(item);
     if (!obj) {
       continue;
     }
-    MeshNodeHit hit;
+    mesh::MeshNodeHit hit;
     if (auto relay = obj->getString("relay_user_id")) {
       hit.relay_user_id = *relay;
     }
@@ -951,7 +952,7 @@ Roe<std::vector<MeshNodeHit>> HttpDirectoryClient::ListMeshNodes() {
         if (!ep) {
           continue;
         }
-        DirectoryEndpoint row;
+        mesh::DirectoryEndpoint row;
         if (auto peer = ep->getString("peer_id")) {
           row.peer_id = *peer;
         }

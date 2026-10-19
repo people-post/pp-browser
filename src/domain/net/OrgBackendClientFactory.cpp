@@ -4,6 +4,7 @@
 #include "domain/net/OrgBackendClientsImpl.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -20,7 +21,7 @@ OrgBackendClients CreateOrgBackendClients(const AppConfig& config) {
 
   {
     const std::vector<ServiceEndpointConfig> providers = EffectiveDirectoryProviders(config.directory);
-    std::vector<std::unique_ptr<IDirectoryClient>> backends;
+    std::vector<std::unique_ptr<mesh::IDirectoryClient>> backends;
     backends.reserve(providers.size());
     for (const ServiceEndpointConfig& provider : providers) {
       const std::string transport = provider.transport.empty() ? "http" : provider.transport;

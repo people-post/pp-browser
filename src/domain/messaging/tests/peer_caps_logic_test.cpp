@@ -1,4 +1,5 @@
 #include "domain/messaging/PeerCapsLogic.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 
@@ -6,19 +7,19 @@ namespace pbr {
 namespace {
 
 TEST(PeerCapsLogicTest, KeepsOrgSeedsDropsUnknownContacts) {
-  MeshHopCandidate contact;
+  mesh::MeshHopCandidate contact;
   contact.peer_id = "12D3KooWPhone";
-  contact.affinity = MeshHopAffinity::Contact;
+  contact.affinity = mesh::MeshHopAffinity::Contact;
   contact.dialable = true;
 
-  MeshHopCandidate seed;
+  mesh::MeshHopCandidate seed;
   seed.peer_id = "12D3KooWSeed";
-  seed.affinity = MeshHopAffinity::OrgSeed;
+  seed.affinity = mesh::MeshHopAffinity::OrgSeed;
   seed.dialable = true;
 
-  MeshHopCandidate friend_node;
+  mesh::MeshHopCandidate friend_node;
   friend_node.peer_id = "12D3KooWDesktop";
-  friend_node.affinity = MeshHopAffinity::Contact;
+  friend_node.affinity = mesh::MeshHopAffinity::Contact;
   friend_node.dialable = true;
 
   auto ranked = FilterHopsByMediaRelayAds(
@@ -30,14 +31,14 @@ TEST(PeerCapsLogicTest, KeepsOrgSeedsDropsUnknownContacts) {
 }
 
 TEST(PeerCapsLogicTest, KeepsDirectoryNodesWithMediaRelay) {
-  MeshHopCandidate directory;
+  mesh::MeshHopCandidate directory;
   directory.peer_id = "12D3KooWNode";
-  directory.affinity = MeshHopAffinity::DirectoryNode;
+  directory.affinity = mesh::MeshHopAffinity::DirectoryNode;
   directory.advertises_media_relay = true;
 
-  MeshHopCandidate directory_no_media;
+  mesh::MeshHopCandidate directory_no_media;
   directory_no_media.peer_id = "12D3KooWOther";
-  directory_no_media.affinity = MeshHopAffinity::DirectoryNode;
+  directory_no_media.affinity = mesh::MeshHopAffinity::DirectoryNode;
   directory_no_media.advertises_media_relay = false;
 
   auto ranked = FilterHopsByMediaRelayAds({directory, directory_no_media}, {});
@@ -46,14 +47,14 @@ TEST(PeerCapsLogicTest, KeepsDirectoryNodesWithMediaRelay) {
 }
 
 TEST(PeerCapsLogicTest, KeepsDhtNodesWithMediaRelay) {
-  MeshHopCandidate dht;
+  mesh::MeshHopCandidate dht;
   dht.peer_id = "12D3KooWDht";
-  dht.affinity = MeshHopAffinity::DhtDiscovered;
+  dht.affinity = mesh::MeshHopAffinity::DhtDiscovered;
   dht.advertises_media_relay = true;
 
-  MeshHopCandidate dht_no_media;
+  mesh::MeshHopCandidate dht_no_media;
   dht_no_media.peer_id = "12D3KooWOther";
-  dht_no_media.affinity = MeshHopAffinity::DhtDiscovered;
+  dht_no_media.affinity = mesh::MeshHopAffinity::DhtDiscovered;
   dht_no_media.advertises_media_relay = false;
 
   auto ranked = FilterHopsByMediaRelayAds({dht, dht_no_media}, {});
@@ -62,13 +63,13 @@ TEST(PeerCapsLogicTest, KeepsDhtNodesWithMediaRelay) {
 }
 
 TEST(PeerCapsLogicTest, NullAdsKeepsOnlySeeds) {
-  MeshHopCandidate contact;
+  mesh::MeshHopCandidate contact;
   contact.peer_id = "12D3KooWPhone";
-  contact.affinity = MeshHopAffinity::Contact;
+  contact.affinity = mesh::MeshHopAffinity::Contact;
 
-  MeshHopCandidate seed;
+  mesh::MeshHopCandidate seed;
   seed.peer_id = "12D3KooWSeed";
-  seed.affinity = MeshHopAffinity::OrgSeed;
+  seed.affinity = mesh::MeshHopAffinity::OrgSeed;
 
   auto ranked = FilterHopsByMediaRelayAds({contact, seed}, {});
   ASSERT_EQ(ranked.size(), 1u);
@@ -85,9 +86,9 @@ TEST(PeerCapsLogicTest, PeerIdsFromListenMultiaddrs) {
 }
 
 TEST(PeerCapsLogicTest, MergeAdvertisedMediaRelayHopsPrependsMissing) {
-  MeshHopCandidate seed;
+  mesh::MeshHopCandidate seed;
   seed.peer_id = "12D3KooWSeed";
-  seed.affinity = MeshHopAffinity::OrgSeed;
+  seed.affinity = mesh::MeshHopAffinity::OrgSeed;
 
   auto ranked = MergeAdvertisedMediaRelayHops(
       {seed}, {"12D3KooWLinux", "12D3KooWSeed"},
@@ -101,13 +102,13 @@ TEST(PeerCapsLogicTest, MergeAdvertisedMediaRelayHopsPrependsMissing) {
 }
 
 TEST(PeerCapsLogicTest, DirectoryMediaRelayLookupAndMerge) {
-  MeshDirectoryNode with_relay;
+  mesh::MeshDirectoryNode with_relay;
   with_relay.peer_id = "12D3KooWNode";
   with_relay.media_relay = true;
-  MeshDirectoryNode no_relay;
+  mesh::MeshDirectoryNode no_relay;
   no_relay.peer_id = "12D3KooWOther";
   no_relay.media_relay = false;
-  MeshDirectoryNode dht_relay;
+  mesh::MeshDirectoryNode dht_relay;
   dht_relay.peer_id = "12D3KooWDht";
   dht_relay.media_relay = true;
 

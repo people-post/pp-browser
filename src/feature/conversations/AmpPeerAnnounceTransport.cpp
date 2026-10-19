@@ -1,6 +1,6 @@
 #include "feature/conversations/AmpPeerAnnounceTransport.h"
 
-#include "domain/mesh/l4/shared/InboundReply.h"
+#include "mesh/l4/shared/InboundReply.h"
 
 #include "amp/link/LinkIdentity.h"
 
@@ -21,8 +21,9 @@
 #include <vector>
 
 #include "common/PbrCompat.h"
-#include "domain/mesh/shared/AmpParkUntil.h"
+#include "mesh/shared/AmpParkUntil.h"
 #include "common/Lifetime.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -48,7 +49,7 @@ void RunWorker(const AmpPeerAnnounceTransport::WorkerPost& post_worker, std::fun
 } // namespace
 
 struct AmpPeerAnnounceTransport::Impl {
-  IChatPeerLinks* links = nullptr;
+  mesh::IChatPeerLinks* links = nullptr;
   PeerAnnounceFeed* feed = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
@@ -115,7 +116,7 @@ struct AmpPeerAnnounceTransport::Impl {
       return;
     }
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
-    auto policy = InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy());
+    auto policy = mesh::InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy());
     *session_holder = links->BindChannel(
         remote_peer_id, channel_id, policy, [this, session_holder](Roe<std::vector<uint8_t>> frame) {
       auto session = *session_holder;
@@ -124,7 +125,7 @@ struct AmpPeerAnnounceTransport::Impl {
       }
       auto body = std::move(*frame);
       // Keep the channel open for the worker's reply (InboundReply.h); `reply` closes it.
-      auto reply = MakeInboundReply(session, post_io);
+      auto reply = mesh::MakeInboundReply(session, post_io);
       RunWorker(post_worker, [this, reply, body = std::move(body)]() mutable {
         if (stopped.load(std::memory_order_acquire)) {
           return;
@@ -152,7 +153,7 @@ struct AmpPeerAnnounceTransport::Impl {
   }
 };
 
-AmpPeerAnnounceTransport::AmpPeerAnnounceTransport(IChatPeerLinks& links, PeerAnnounceFeed& feed, IoPump io_pump,
+AmpPeerAnnounceTransport::AmpPeerAnnounceTransport(mesh::IChatPeerLinks& links, PeerAnnounceFeed& feed, IoPump io_pump,
                                                WorkerPost post_worker, ResolvePublisherKey resolve_key, IoPost post_io,
                                                IoAfter post_after)
     : impl_(std::make_unique<Impl>()), links_(links), feed_(feed), io_pump_(std::move(io_pump)),
@@ -253,7 +254,7 @@ void AmpPeerAnnounceTransport::PushTipAsync(const std::string& peer_key, const P
 
   links_.OpenChannel(peer_key, kRpcPeerAnnounceProtocolId, pp::amp::ControlJsonChannelPolicy(),
                      [this, peer_key, push_json = *push_json, finish, settled, session_holder,
-                      deadline](IChatPeerLinks::ChannelRoe channel) mutable {
+                      deadline](mesh::IChatPeerLinks::ChannelRoe channel) mutable {
                        if (!channel) {
                          finish(Error(channel.error().message));
                          return;
@@ -305,7 +306,7 @@ void AmpPeerAnnounceTransport::PushTipAsync(const std::string& peer_key, const P
                                return;
                              }
 
-                             AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
+                             mesh::AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                                finish(Error("amp peer-announce send timed out")
                                           .WithUser("Direct tip push timed out."));
                              },
@@ -327,7 +328,7 @@ Roe<PeerAnnounceTipAck> AmpPeerAnnounceTransport::PushTip(const std::string& pee
     }
   });
 
-  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+  mesh::AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
                deadline, io_pump_);
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     return Error("amp peer-announce send timed out").WithUser("Direct tip push timed out.");

@@ -1,9 +1,15 @@
 # Mesh layer
 
-**Location:** `src/domain/mesh/`  
-**CMake:** `pp_domain_mesh`, `pp_foundation_identity`
+**Code:** [pp-cpp-mesh](https://github.com/people-post/pp-cpp-mesh) — namespace `pp::mesh`, `#include "mesh/…"`
+(pinned in [`cmake/PpCppMesh.cmake`](../../cmake/PpCppMesh.cmake); `-DPP_CPP_MESH_SOURCE_DIR=…` for a local checkout)  
+**CMake:** `pp_mesh` (feature / app), `pp_mesh_types` (the vocabulary, through `pp_pbr_common`), `pp_mesh_testing` (tests)
 
-The mesh layer is the product peer-network runtime: identity, Amp composition, reachability, and L4 protocol hosting. It is not chat UX, HTTP Brief, or hop-ranking policy (those live in `feature/`).
+The mesh layer is the peer-network runtime: Amp composition, reachability, and L4 protocol hosting. It
+is not chat UX, HTTP Brief, or hop-ranking policy — those stay in pp-browser (`feature/`, `domain/`)
+and reach the mesh as pushed snapshots and app protocols. This page is pp-browser's view of it: how
+the app composes and uses it. The library's own layout, rules and threading contract are in its
+[README](https://github.com/people-post/pp-cpp-mesh#readme) and
+[docs/THREADING.md](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/THREADING.md).
 
 ## Architecture
 
@@ -13,80 +19,49 @@ flowchart TB
     Stack[AmpStack / PeerLinkManager / MeshRuntime]
   end
 
-  subgraph mesh [base/mesh]
+  subgraph mesh [pp-cpp-mesh]
     Host[host/MeshHost]
-    Identity[identity/PeerId]
     Reach[reachability/]
     L4[l4 coordinators]
     Ports[host/MeshPorts]
+    Conn[connectivity/MeshConnectivity]
   end
 
-  subgraph feature [feature/messaging]
+  subgraph feature [pp-browser feature/]
     Hub[ConversationsHub]
     MMS[MeshDeliveryOrchestrator]
     Chat[Amp chat services]
-    Bridge[CallMediaBridge]
+    Calls[CallStack]
   end
 
   amp --> Host
-  Identity --> Host
   Host --> L4
   Host --> Reach
   Host --> Ports
   Hub --> Host
+  Hub --> Conn
   MMS --> Ports
   Chat --> Ports
-  Bridge --> L4
+  Calls --> Conn
 ```
 
-## Directory layout
+PeerIds come from pp-cpp-crypto ([MESH_IDENTITY.md](MESH_IDENTITY.md)).
 
-```
-domain/mesh/
-  host/           MeshHost, MeshIdentityConfig, MeshPorts (IChatPeerLinks)
-  shared/         AmpChannelOpen, AmpParkUntil (PeerId derivation: pp-cpp-crypto, MESH_IDENTITY.md)
-  reachability/   Below MeshHost: Reachability(Engine), NAT, LAN mDNS, observed addrs;
-                  dial_back/ (serve/ DialBackServer, client/ DialBackClient);
-                  punch/ (AmpPunchCoordinator owns serve/ PunchServer — introducer + target — and
-                  client/ PunchClientCoordinator — initiator)
-  dht/            AmpDhtProtocol owns the record store, serve/ DhtServer, client/ DhtClient; codec, rate limiter
-  discovery/      AmpDirectoryProtocol (serve/ DirectoryServer, client/ DirectoryClient),
-                  MeshDirectoryCache, NameDirectory
-  connectivity/   MeshConnectivity — reaching peers for every consumer: owns the dial registry +
-                  listen book and circuit reach (with its punch / rendezvous pieces), hop-candidate
-                  policy and the local view; lent to calls and broadcast
-  media_plane/    MeshMediaRelay — the shared media_relay client, built on connectivity.
-                  MediaRelayAttach (reach the hop, then quote / attach)
-  reach/          Reach over a running MeshHost: PeerReachCoordinator, AmpCircuitHopReach,
-                  PunchIntroducerWalk, CircuitRendezvousCoordinator, MeshReachPorts
-  l4/
-    shared/       ProductChannelPolicies, L4ProtocolIds, MediaFrameBody (e2e frame bodies)
-    circuit/      wire types + policies; serve/ CircuitRelayServer; client/ CircuitClientCoordinator,
-                  AmpCircuitHopRegistry
-    media_relay/  wire types + decisions; serve/ MediaRelayServer; client/ MediaRelayClientCoordinator,
-                  AmpMediaRelayClient, frame crypto (see SRC_LAYOUT § L4 protocols)
-  tests/
-```
+## In pp-browser
 
-## Folder libraries
-
-Each folder builds its own `pp_domain_mesh_<name>` static library; `pp_domain_mesh` is an interface
-aggregate for consumers outside the peer. The `DEPS` in
-[`src/domain/mesh/CMakeLists.txt`](../../src/domain/mesh/CMakeLists.txt) are the only allowed include
-edges between folders — [`check_mesh_layers.sh`](../../scripts/check/check_mesh_layers.sh) reads them
-(transitively) and fails on any other `#include "domain/mesh/…"`. Bottom to top:
-
-```
-shared          shared/ + l4/shared/
-reachability    dht <- discovery    circuit <- media_relay
-host            MeshHost composes the services above
-reach           reach / rendezvous / punch walk over MeshHost
-connectivity    MeshConnectivity
-media_plane     MeshMediaRelay, MediaRelayAttach
-```
-
-A new edge is a `DEPS` change reviewed with the code; an upward include (a protocol reaching into
-`host`, `host` into `reach`) means the code sits in the wrong folder.
+- **Who composes it:** `ConversationsHub` (the app) and `NodeBootstrap` (pp-node) each own one
+  `MeshHost`, built with `AppRuntimeMeshExecutors()` and `MetricsRegistry::Global()`
+  ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane)).
+- **Spelling:** app code is in `pbr` and writes `mesh::MeshHost`, `mesh::DirectoryHit` through the alias
+  in [`common/MeshAlias.h`](../../src/common/MeshAlias.h).
+- **Layers:** `common/`, `foundation/` and `domain/` may include only the vocabulary (`mesh/types/…`:
+  directory rows, hops, relay scope, address disclosure, public address, media channel, config — no
+  Amp); the mesh itself is `feature/` and `app/`'s to compose. `check_base_includes.sh` enforces it.
+- **Tests:** the mesh's own run in pp-cpp-mesh CI; pp-browser's tests that need live Amp stacks link
+  `pp_mesh_testing` (`mesh/testing/mesh_test_harness.h`, `mesh_triple_harness.h`).
+- **UPnP** is off (`PP_MESH_WITH_UPNP`), as it always was here: pp-browser's build never found the
+  vendored miniupnpc target. Turning it on is a product decision (router port mappings disclose and
+  expose this device).
 
 ## Feature boundary
 
@@ -142,38 +117,41 @@ Full `MeshHost` + `MeshHostConfig` flags (no slim `NodeMeshHost` subclass). See 
 
 ## Extraction to `pp-cpp-mesh`
 
-The mesh leaves for its own library, [pp-cpp-mesh](https://github.com/people-post/pp-cpp-mesh)
-(decided 2026-10-19), consumed like pp-cpp-amp (FetchContent, sibling-checkout override).
+The mesh moved to its own library, [pp-cpp-mesh](https://github.com/people-post/pp-cpp-mesh)
+(decided 2026-10-19, moved with its history the same month), consumed like pp-cpp-amp (FetchContent
+pin, local-checkout override).
 
 | Package | Contents |
 |---------|----------|
 | `pp-cpp-amp` | L1–L3 + link; links name peers by their PeerId (`PeerIdFromIdentityKey`); `PeerIdFromMultiaddr` |
 | `pp-cpp-crypto` | ML-DSA / ML-KEM, the AEAD (`XChaCha20Poly1305`), and the PeerId derivation ([MESH_IDENTITY.md](MESH_IDENTITY.md)) |
-| `pp-cpp-mesh` | `domain/mesh` — host, connectivity, DHT, discovery, reach, reachability, circuit and media relay (both ends), media plane — with the types it owns; namespace `pp::mesh`, includes `mesh/…` |
+| `pp-cpp-mesh` | host, connectivity, DHT, discovery, reach, reachability, circuit and media relay (both ends), media plane, the vocabulary it shares with apps (`types/`) and test harnesses (`testing/`) |
 | `pp-browser` | feature + app, **pp-node** (an app on pp-cpp-mesh), call media (`feature/call_media`: pp-browser's realtime protocol, a client of the mesh), policy (`MeshHopPolicy`, `SoftMigrateLogic`) |
 
-**Rules for the library:** it depends on pp-cpp-common, pp-cpp-amp and pp-cpp-crypto only; it carries
-protocols and bytes, product types stay in pp-browser; it does not use the app's threads directly —
-control runs on its I/O lane and the host gives each instance `work` / `blocking` executors; it never
-calls app code synchronously ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane)).
-
-**Untangling first, in place.** Each PR removes mesh includes of pp-browser headers, keeping
-pp-browser green; `scripts/check/check_mesh_layers.sh` fails any such include not on its
-`LEGACY_APP_INCLUDES` list — the work left — and any list entry no longer used, so the list only
-shrinks. Then the move, with history; mesh tests come along clean too.
+The library depends on pp-cpp-common, pp-cpp-crypto and pp-cpp-amp only; it carries protocols and
+bytes, product types stay in pp-browser; its threads and rules are its
+[docs/THREADING.md](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/THREADING.md).
 
 | Step | |
 |------|---|
-| Mesh config types out of the app's `Config` (`foundation/data/MeshConfigTypes.h`) | done |
+| Mesh config types out of the app's `Config` (now `mesh/types/MeshConfigTypes.h`) | done |
 | `DeferredSelf` → `pp::Lifetime` (pp-cpp-common), app-wide | done |
 | Mesh threads in place of `AppRuntime` ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane)): control on the io lane, `work` / `blocking` executors per instance, one driver | done |
 | `l4/call_media` out of the mesh (now `feature/call_media`); `host` names no app protocol (`MeshHost::SetAppProtocols`; pp-node advertises none); product `common/` types (chat, thread, media health) out of mesh code (`MediaRelayClientHealth`) | done |
 | PeerId derivation into pp-cpp-crypto (below the network stack: product code derives PeerIds too) and the link hook / multiaddr helper into pp-cpp-amp; ML-DSA and the AEAD from pp-cpp-crypto (`XChaCha20Poly1305`, which `MessageCipher` now forwards to) | done |
-| Generic helpers into pp-cpp-common v1.2.0 (`ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry`; `PbrCompat` bridges them into `pbr`) | done |
+| Generic helpers into pp-cpp-common v1.2.0 (`ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry`) | done |
 | Metrics per mesh instance (`MeshHost(executors, metrics)`; the relay, punch and link-event counters go to that registry; the app passes `MetricsRegistry::Global()`) | done |
-| Links and tests self-contained: the mesh links pp-cpp-common / -crypto / -amp and `pp_pbr_common` (the vocabulary) only; its tests use no app code (the HTTP-failover test went to `domain/net`) and the layer check covers them | done |
-| The vocabulary the mesh shares with product code (directory types, `MeshHop*`, `RelayScope`, `MediaChannel`, `AddressDisclosure`, `PublicAddress`, `MeshConfigTypes`) moves with the mesh: pp-browser then includes it from pp-cpp-mesh; `PbrCompat` goes with the `pp::mesh` namespace | at the move |
-| The move (pp-cpp-amp ≥ the pin pp-ledger needs) | |
+| Links and tests self-contained (no app library or header, tests included) | done |
+| The move, with history: `namespace pp::mesh`, `mesh/…`; the vocabulary (directory types, `MeshHop*`, `RelayScope`, `MediaChannel`, `AddressDisclosure`, `PublicAddress`, `MeshConfigTypes`) as `pp_mesh_types`; the vendored miniupnpc along with it | done (pp-cpp-mesh v1.0.0) |
+
+Left for later, each its own change:
+
+- **Mesh wire contracts** (`MESH_DHT.md`, the mesh parts of `L4_PROTOCOL_KINDS.md` / `WIRE_SCHEMAS.md`,
+  `MEDIA_CHANNELS.md`) move to pp-cpp-mesh's `docs/`; this repo links them.
+- **App protocol policies still in the mesh:** `l4/shared/ProductChannelPolicies.h` names pp-browser's
+  realtime and blob protocols — they belong with the app, which hands its policies in with
+  `SetAppProtocols`.
+- **UPnP** on or off for desktop / pp-node (above).
 
 Invariants: the mesh must not depend on `feature/*`; policy (`MeshHopPolicy`, `SoftMigrateLogic`)
 stays in browser.

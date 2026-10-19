@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/people/ContactTypes.h"
+#include "common/MeshAlias.h"
 
 #include <optional>
 #include <string>
@@ -21,7 +22,7 @@ struct PeerDisplayLabel {
 std::string FormatContactTitle(const Contact& contact);
 
 /** Unverified directory nickname: "~nick @relay:…". Empty nickname → empty unless id present. */
-std::string FormatDirectoryTitle(const DirectoryHit& hit);
+std::string FormatDirectoryTitle(const mesh::DirectoryHit& hit);
 
 /** Shorten relay ids for UI (e.g. relay:lHaEnkO4…). */
 std::string ShortRelayId(const std::string& relay_or_peer_id);

@@ -18,7 +18,7 @@ Repo-wide decision rules live in [TESTING.md](../architecture/TESTING.md). This 
 1. **Design as oracle** — cases guard documented intent / purpose IDs, not the current call graph; see [TESTING.md § Design as oracle](../architecture/TESTING.md#design-as-oracle). Prefer narrowing or redesigning an over-wide case before heroic product fixes under harness constraints. Pre-existing cases may still mirror implementation — tighten them when spotted in the work at hand ([Legacy suites](../architecture/TESTING.md#legacy-suites)).
 2. **Purpose-first** — pick the question (cite a purpose ID or doc sentence), then the cheapest layer that can answer it.
 3. **Cost order** — unit → local integration (in-process / loopback) → deploy smoke → multi-node / hard lab.
-4. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](../../src/domain/mesh/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.
+4. **Hard filter** — if a failure mode reproduces with in-process loopback ([`loopback_partition_fixture.h`](https://github.com/people-post/pp-cpp-mesh/blob/develop/tests/loopback_partition_fixture.h)), it does **not** belong in multi-node.
 5. **Promote failures downward** — if smoke/hard-lab finds a policy bug that gtest can reproduce, lock it below; see [TESTING.md § When a higher tier finds a bug](../architecture/TESTING.md#when-a-higher-tier-finds-a-bug).
 6. **Three kinds of testing** (orthogonal to tiers) — correctness / reliability / capacity; see doctrine.
 7. **Do not merge** pp-node and pp-browser into one suite with shared pass criteria. Share fixtures where useful; qualify separately.
@@ -146,10 +146,10 @@ Keep these **PR-blocking** when `PP_BROWSER_BUILD_TESTS=ON` (desktop). They are 
 
 | Concern | ctest / sources |
 |---------|-----------------|
-| Direct call-media | `call_media_leg_coordinator_test` — [`src/domain/mesh/tests/call_media_leg_coordinator_test.cpp`](../../src/domain/mesh/tests/call_media_leg_coordinator_test.cpp) |
-| Media relay fan-out | `media_relay_service_test` — [`media_relay_service_test.cpp`](../../src/domain/mesh/tests/media_relay_service_test.cpp) |
-| Circuit + call-media | `amp_circuit_call_media_compose_test` — peer-id-only nest + private-MA hop-book poison contrast (hard-w5) — [`amp_circuit_call_media_compose_test.cpp`](../../src/domain/mesh/tests/amp_circuit_call_media_compose_test.cpp) |
-| Circuit + media_relay | `amp_circuit_media_relay_compose_test` — [`amp_circuit_media_relay_compose_test.cpp`](../../src/domain/mesh/tests/amp_circuit_media_relay_compose_test.cpp) |
+| Direct call-media | `call_media_leg_coordinator_test` — [`src/feature/call_media/tests/call_media_leg_coordinator_test.cpp`](../../src/feature/call_media/tests/call_media_leg_coordinator_test.cpp) |
+| Media relay fan-out | `media_relay_server_client_test` — pp-cpp-mesh [`tests/media_relay_server_client_test.cpp`](https://github.com/people-post/pp-cpp-mesh/blob/develop/tests/media_relay_server_client_test.cpp) |
+| Circuit + call-media | `amp_circuit_call_media_compose_test` — peer-id-only nest + private-MA hop-book poison contrast (hard-w5) — [`amp_circuit_call_media_compose_test.cpp`](../../src/feature/call_media/tests/amp_circuit_call_media_compose_test.cpp) |
+| Circuit + media_relay | `amp_circuit_media_relay_compose_test` — [`amp_circuit_media_relay_compose_test.cpp`](https://github.com/people-post/pp-cpp-mesh/blob/develop/tests/amp_circuit_media_relay_compose_test.cpp) |
 | AmpCircuitHopReach NAT policy | `amp_circuit_hop_reach_test` — skip EnsureAssociation / PreferredMultiaddr on nested; PeerId hop key; **dialable+DialInBackoff still Connected via circuit** — [`amp_circuit_hop_reach_test.cpp`](../../src/feature/conversations/tests/amp_circuit_hop_reach_test.cpp) |
 | Amp IPv6 dial preference | `reachability_test` / `amp_observed_addrs_test` / `mesh_hop_policy_test` — global `/ip6` > private `/ip4`; Reachable-via-v6; directory PreferredDial |
 | Amp IPv6 dial smoke | `amp_ipv6_dial_test` — MemoryIo `/ip6` EnsureAssociation + PreferredMultiaddr prefers global `/ip6` |

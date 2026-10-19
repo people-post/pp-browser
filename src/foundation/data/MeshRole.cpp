@@ -1,6 +1,7 @@
 #include "foundation/data/MeshRole.h"
 
 #include "foundation/platform/Platform.h"
+#include "common/MeshAlias.h"
 
 #include <algorithm>
 #include <unordered_set>
@@ -39,7 +40,7 @@ void NormalizeMeshConfig(MeshConfig& config) {
 }
 
 std::vector<std::string> ResolveEffectiveBootstrapPeers(const MeshConfig& config,
-                                                        const std::vector<MeshDirectoryNode>& directory_nodes) {
+                                                        const std::vector<mesh::MeshDirectoryNode>& directory_nodes) {
   MeshConfig normalized = config;
   NormalizeMeshConfig(normalized);
 
@@ -57,7 +58,7 @@ std::vector<std::string> ResolveEffectiveBootstrapPeers(const MeshConfig& config
   };
 
   // L1: Brief/Amp directory mesh_node listings (live snapshot or disk cache).
-  for (const MeshDirectoryNode& node : directory_nodes) {
+  for (const mesh::MeshDirectoryNode& node : directory_nodes) {
     if (node.peer_id.empty()) {
       continue;
     }

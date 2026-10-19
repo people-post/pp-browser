@@ -32,6 +32,7 @@
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -65,7 +66,7 @@ bool IsEnvelopeFromPeer(const Thread& thread, const RelayEnvelope& envelope) {
 
 DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
   DirectChatTarget target;
-  target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   target.peer_identity_value = envelope.sender_contact_id;
   target.channel = envelope.route.channel;
   return target;
@@ -1023,7 +1024,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   }
 
   DirectChatTarget inbound_target;
-  inbound_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  inbound_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   inbound_target.peer_identity_value = envelope.sender_contact_id;
   inbound_target.channel = ThreadChannel::E2ePublic;
 

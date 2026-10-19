@@ -133,7 +133,7 @@ Max reassembled size defaults match today’s stream caps:
 
 ## Channel policies (port StreamIoPolicy)
 
-Core factories: `lib/amp/L3/ChannelPolicy.h` (Amp owns Bulk class + size). Product L4 factories: `domain/mesh/l4/shared/ProductChannelPolicies.h` (product-only extras + `read_once` / timeouts). See [pp-cpp-amp OWNERSHIP](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/OWNERSHIP.md).
+Core factories: pp-cpp-amp `amp/L3/ChannelPolicy.h` (Amp owns Bulk class + size). Product L4 factories: pp-cpp-mesh `mesh/l4/shared/ProductChannelPolicies.h` (product-only extras + `read_once` / timeouts). See [pp-cpp-amp OWNERSHIP](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/OWNERSHIP.md).
 
 | Factory | Class | `max_outbound` | Drop | `read_once` | Read timeout | Home |
 |---------|-------|----------------|------|-------------|--------------|------|

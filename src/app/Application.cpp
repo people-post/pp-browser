@@ -96,7 +96,7 @@
 #include "domain/ui/Theme.h"
 #include "common/StartupTiming.h"
 #include "common/Metrics.h"
-#include "domain/mesh/reachability/Reachability.h"
+#include "mesh/reachability/Reachability.h"
 
 #include <ui/dom/Context.h>
 #include <ui/Core.h>
@@ -116,6 +116,7 @@
 #include <algorithm>
 #include <filesystem>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -615,7 +616,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     if (!facade.IsInitialized()) {
       return {};
     }
-    if (const MeshHost* mesh = facade.Hub().Mesh()) {
+    if (const mesh::MeshHost* mesh = facade.Hub().Mesh()) {
       const auto advertised = mesh->AdvertisedListenMultiaddrs();
       if (!advertised.empty()) {
         return advertised.front();
@@ -629,21 +630,21 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     if (!facade.IsInitialized()) {
       return view;
     }
-    const ReachabilitySnapshot snap = facade.Reachability();
+    const mesh::ReachabilitySnapshot snap = facade.Reachability();
     switch (snap.status) {
-    case ReachabilityStatus::Checking:
+    case mesh::ReachabilityStatus::Checking:
       view.status = SettingsReachabilityView::Status::Checking;
       break;
-    case ReachabilityStatus::Reachable:
+    case mesh::ReachabilityStatus::Reachable:
       view.status = SettingsReachabilityView::Status::Reachable;
       break;
-    case ReachabilityStatus::OutboundOnly:
+    case mesh::ReachabilityStatus::OutboundOnly:
       view.status = SettingsReachabilityView::Status::OutboundOnly;
       break;
-    case ReachabilityStatus::Blocked:
+    case mesh::ReachabilityStatus::Blocked:
       view.status = SettingsReachabilityView::Status::Blocked;
       break;
-    case ReachabilityStatus::Unknown:
+    case mesh::ReachabilityStatus::Unknown:
     default:
       view.status = SettingsReachabilityView::Status::Unknown;
       break;
@@ -651,7 +652,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
     view.has_global_ipv6 = snap.signals.has_global_ipv6;
     view.dial_back_ok = snap.signals.dial_back_ok;
     view.upnp_mapped = snap.signals.upnp_mapped;
-    view.help_kind = ReachabilityHelpKey(snap.status);
+    view.help_kind = mesh::ReachabilityHelpKey(snap.status);
     return view;
   };
   settings_commands.refresh_nav_badges = [this]() {
@@ -692,7 +693,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       display_name = Tr("support.entry.title");
     }
 
-    auto found = facade.FindContactByIdentity(account_id, ContactIdKind::Account);
+    auto found = facade.FindContactByIdentity(account_id, mesh::ContactIdKind::Account);
     if (!found) {
       return found.error();
     }
@@ -716,7 +717,7 @@ SettingsToolPorts Application::WireSettings(ui::Context* context) {
       contact.id = util::GenerateUuid();
       contact.local.display_name = display_name;
       contact.local.trust = TrustLevel::Unknown;
-      contact.remote.ids.push_back({ContactIdKind::Account, account_id, true});
+      contact.remote.ids.push_back({mesh::ContactIdKind::Account, account_id, true});
       SyncContactMirrors(contact);
       auto saved = Conversations().Contacts().Upsert(contact);
       if (!saved) {
@@ -850,8 +851,8 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
       inputs.contacts_unread = std::max(0, contacts_shell_bridge_->LastSurface().contacts_unread);
     }
     if (Platform::IsDesktop() && store_.Snapshot().config.mesh.node_enabled) {
-      const ReachabilitySnapshot snap = facade.Reachability();
-      const std::string status_key = ReachabilityStatusKey(snap.status);
+      const mesh::ReachabilitySnapshot snap = facade.Reachability();
+      const std::string status_key = mesh::ReachabilityStatusKey(snap.status);
       inputs.me_attention = ReachabilityNudgeActive(
           true, status_key, store_.Snapshot().profile_prefs.reachability_nudge_acked_status);
     }
@@ -1348,8 +1349,8 @@ void Application::WireHubLifecycle(ui::Context* context, const BootstrapResult& 
   });
   messaging.SetOnReachabilityUpdated([this]() {
     AppRuntime::PostUI([this]() {
-      const ReachabilitySnapshot snap = messaging_facade_->Reachability();
-      if (snap.status == ReachabilityStatus::Reachable) {
+      const mesh::ReachabilitySnapshot snap = messaging_facade_->Reachability();
+      if (snap.status == mesh::ReachabilityStatus::Reachable) {
         ProfilePreferences prefs = store_.Snapshot().profile_prefs;
         if (!prefs.reachability_nudge_acked_status.empty()) {
           prefs.reachability_nudge_acked_status.clear();

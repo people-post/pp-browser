@@ -46,7 +46,7 @@ See [p2p-mesh](../../projects/p2p-mesh/) (N022+) and [adp](../../projects/adp/).
 
 ## Address disclosure (privacy)
 
-Who may learn this device's IP address is one setting, `mesh.direct_connections` — `everyone` | `contacts` (default) | `friendly` | `nobody`; Blocked contacts never; the Node role is always `everyone` ([projects/privacy](../../projects/privacy/) T1, P001–P004). The hub publishes an `AddressDisclosureGate` (`common/privacy/AddressDisclosure.h`) from the setting and the address book, republished on every contact or setting change; mesh and call paths read it on any thread. For a peer outside the audience:
+Who may learn this device's IP address is one setting, `mesh.direct_connections` — `everyone` | `contacts` (default) | `friendly` | `nobody`; Blocked contacts never; the Node role is always `everyone` ([projects/privacy](../../projects/privacy/) T1, P001–P004). The hub publishes an `AddressDisclosureGate` (pp-cpp-mesh `mesh/types/AddressDisclosure.h`) from the setting and the address book, republished on every contact or setting change; mesh and call paths read it on any thread. For a peer outside the audience:
 
 | Path | Behaviour | Code |
 |------|-----------|------|

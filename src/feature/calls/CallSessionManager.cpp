@@ -26,6 +26,7 @@
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -45,7 +46,7 @@ void NoteCapsForIdentity(CallSessionManager& sessions, ContactsStore& contacts,
   }
   std::vector<std::string> peer_ids = PeerIdsFromListenMultiaddrs(listen_multiaddrs);
   if (peer_ids.empty() && !identity.empty()) {
-    if (auto found = contacts.FindByIdentity(identity, ContactIdKind::Account);
+    if (auto found = contacts.FindByIdentity(identity, mesh::ContactIdKind::Account);
         found && found->has_value()) {
       const std::string peer_id = PeerIdFromContact(**found);
       if (!peer_id.empty()) {
@@ -1306,11 +1307,11 @@ Roe<void> CallSessionManager::HandleInboundEnded(const std::string& detail_json,
 
 bool CallSessionManager::AllowsInboundCall(const std::string& caller) const {
   switch (inbound_call_audience_) {
-  case InboundAudience::Everyone:
+  case mesh::InboundAudience::Everyone:
     return true;
-  case InboundAudience::Nobody:
+  case mesh::InboundAudience::Nobody:
     return false;
-  case InboundAudience::ContactsOnly:
+  case mesh::InboundAudience::ContactsOnly:
     // No gate wired (tests, tools): nothing to judge by — let it ring.
     return !address_disclosure_ || address_disclosure_->Snapshot()->contacts.contains(caller);
   }
@@ -1339,7 +1340,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
   case CallControlType::CallInvite:
     if (!AllowsInboundCall(sender_identity)) {
       // Silent: a decline would tell the caller we exist and are online.
-      log().info << "call invite dropped (who can call me: " << InboundAudienceName(inbound_call_audience_)
+      log().info << "call invite dropped (who can call me: " << mesh::InboundAudienceName(inbound_call_audience_)
                  << ") from=" << sender_identity;
       return {};
     }

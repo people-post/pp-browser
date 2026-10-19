@@ -5,11 +5,12 @@
 #include "domain/people/IdentityStore.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Error.h"
-#include "domain/mesh/host/MeshHost.h"
+#include "mesh/host/MeshHost.h"
 
 #include <memory>
 #include <string>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -30,7 +31,7 @@ struct NodeBootstrapResult {
   std::unique_ptr<ProfileSecretsEngine> secrets;
   std::unique_ptr<IdentityStore> identity;
   /** Shared Amp mesh host: AmpStack + L4 coordinators + reachability. */
-  std::unique_ptr<MeshHost> mesh;
+  std::unique_ptr<mesh::MeshHost> mesh;
 };
 
 /** Headless node bootstrap: config + PIN unlock + Amp mesh + dial-back (N011). */

@@ -8,7 +8,7 @@
 #include "domain/messaging/CallSessionLogic.h"
 #include "domain/messaging/CallHopAttachLogic.h"
 #include "domain/messaging/InitiationPricing.h"
-#include "domain/mesh/media_plane/MediaRelayAttach.h"
+#include "mesh/media_plane/MediaRelayAttach.h"
 #include "domain/messaging/SoftMigrateLogic.h"
 #include "feature/call_media/CallMediaFrameCrypto.h"
 #include "domain/people/MeshHopPolicy.h"
@@ -27,22 +27,23 @@
 #include <memory>
 #include <thread>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
 
-std::vector<MeshHopCandidate> PreferNamedHopFirst(std::vector<MeshHopCandidate> ranked,
+std::vector<mesh::MeshHopCandidate> PreferNamedHopFirst(std::vector<mesh::MeshHopCandidate> ranked,
                                                   const std::string& hop_peer_id) {
   if (hop_peer_id.empty() || ranked.empty()) {
     return ranked;
   }
-  const auto it = std::find_if(ranked.begin(), ranked.end(), [&](const MeshHopCandidate& c) {
+  const auto it = std::find_if(ranked.begin(), ranked.end(), [&](const mesh::MeshHopCandidate& c) {
     return c.peer_id == hop_peer_id;
   });
   if (it == ranked.end() || it == ranked.begin()) {
     return ranked;
   }
-  MeshHopCandidate chosen = std::move(*it);
+  mesh::MeshHopCandidate chosen = std::move(*it);
   ranked.erase(it);
   ranked.insert(ranked.begin(), std::move(chosen));
   return ranked;
@@ -118,7 +119,7 @@ struct CallHopMigrateWorkflow::HopPick {
   std::string local_identity;
   std::string local_peer_id;
   std::optional<CallSession> session;
-  std::vector<MeshHopCandidate> ranked;
+  std::vector<mesh::MeshHopCandidate> ranked;
   std::vector<std::string> failures;
   std::function<void(Roe<void>)> on_done;
 };
@@ -322,7 +323,7 @@ bool CallHopMigrateWorkflow::HasDurableMediaRelayHop() const {
     }
   }
   if (relay_deps_->peer_has_media_relay) {
-    for (const MeshHopCandidate& hop : ops_.ranked_media_hop_candidates()) {
+    for (const mesh::MeshHopCandidate& hop : ops_.ranked_media_hop_candidates()) {
       if (!hop.peer_id.empty() && relay_deps_->peer_has_media_relay(hop.peer_id)) {
         return true;
       }
@@ -391,7 +392,7 @@ bool CallHopMigrateWorkflow::SettleRepickOnCurrentHop(HopPick& pick, const std::
   return false;
 }
 
-std::vector<MeshHopCandidate> CallHopMigrateWorkflow::RankHopsForSoftMigrate(HopPick& pick,
+std::vector<mesh::MeshHopCandidate> CallHopMigrateWorkflow::RankHopsForSoftMigrate(HopPick& pick,
                                                                              const std::string& prefer_hop_peer_id) {
   if (auto pid = relay_deps_->relay->LocalPeerIdBase58()) {
     pick.local_peer_id = *pid;
@@ -417,9 +418,9 @@ std::vector<MeshHopCandidate> CallHopMigrateWorkflow::RankHopsForSoftMigrate(Hop
   if (pick.session && pick.session->planned_hop && !pick.session->planned_hop->peer_id.empty()) {
     const CallPlannedHop& planned = *pick.session->planned_hop;
     const bool listed = std::any_of(ranked.begin(), ranked.end(),
-                                    [&](const MeshHopCandidate& c) { return c.peer_id == planned.peer_id; });
+                                    [&](const mesh::MeshHopCandidate& c) { return c.peer_id == planned.peer_id; });
     if (!listed && !planned.multiaddr.empty()) {
-      MeshHopCandidate hop;
+      mesh::MeshHopCandidate hop;
       hop.peer_id = planned.peer_id;
       hop.multiaddr = planned.multiaddr;
       hop.dialable = true;
@@ -442,7 +443,7 @@ void CallHopMigrateWorkflow::TryPickHop(std::shared_ptr<HopPick> pick, size_t in
     FailHopPick(*pick);
     return;
   }
-  const MeshHopCandidate& hop = pick->ranked[index];
+  const mesh::MeshHopCandidate& hop = pick->ranked[index];
   const bool self_hop = !pick->local_peer_id.empty() && hop.peer_id == pick->local_peer_id;
   // Directory/org seeds publish MAs before Amp address-book learn — register then dial.
   if (!self_hop && relay_deps_->dial && !hop.multiaddr.empty() && !relay_deps_->dial->IsDialable(hop.peer_id)) {
@@ -476,7 +477,7 @@ void CallHopMigrateWorkflow::FailHopPick(HopPick& pick) {
 
 void CallHopMigrateWorkflow::AttachPickedHop(std::shared_ptr<HopPick> pick, size_t index) {
   const auto seat_ports = seat_.Get();
-  const MeshHopCandidate& hop = pick->ranked[index];
+  const mesh::MeshHopCandidate& hop = pick->ranked[index];
   const bool self_hop = !pick->local_peer_id.empty() && hop.peer_id == pick->local_peer_id;
   if (!self_hop && (!relay_deps_->dial || !relay_deps_->dial->IsDialable(hop.peer_id))) {
     const std::string detail = "hop not dialable (hop=" + hop.peer_id + ")";
@@ -562,13 +563,13 @@ void CallHopMigrateWorkflow::FanOutPickedHop(const std::string& call_id, const C
                  hop_migrate_event::RefanOutPickedHop{call_id, *encoded, local_identity, attach.hop_peer_id});
 }
 
-MediaRelayAttachPorts CallHopMigrateWorkflow::RelayAttachPorts() const {
-  return relay_deps_ ? relay_deps_->AttachPorts() : MediaRelayAttachPorts{};
+mesh::MediaRelayAttachPorts CallHopMigrateWorkflow::RelayAttachPorts() const {
+  return relay_deps_ ? relay_deps_->AttachPorts() : mesh::MediaRelayAttachPorts{};
 }
 
-MediaRelayAttachRequest CallHopMigrateWorkflow::MakeRelayAttachRequest(const std::string& call_id,
+mesh::MediaRelayAttachRequest CallHopMigrateWorkflow::MakeRelayAttachRequest(const std::string& call_id,
                                                                        const CallSfuAttachDetail& attach) const {
-  MediaRelayAttachRequest request;
+  mesh::MediaRelayAttachRequest request;
   request.hop_peer_id = attach.hop_peer_id;
   request.hop_multiaddr = attach.hop_multiaddr;
   request.session_id = call_id;
@@ -587,9 +588,9 @@ MediaRelayAttachRequest CallHopMigrateWorkflow::MakeRelayAttachRequest(const std
   return request;
 }
 
-std::function<Roe<void>(const MediaRelayQuote&)> CallHopMigrateWorkflow::RelayQuotePricingGate() {
+std::function<Roe<void>(const mesh::MediaRelayQuote&)> CallHopMigrateWorkflow::RelayQuotePricingGate() {
   // Calls only take volunteer / free hops today (pricing project gate).
-  return [](const MediaRelayQuote& quote) -> Roe<void> { return InitiationPricing::CheckRelayQuotePayable(quote.rate); };
+  return [](const mesh::MediaRelayQuote& quote) -> Roe<void> { return InitiationPricing::CheckRelayQuotePayable(quote.rate); };
 }
 
 /** One attach of this call to a media_relay hop (remote or our own): what the completion checks against. */
@@ -740,9 +741,9 @@ Roe<void> CallHopMigrateWorkflow::LoadHopMediaKey(HopAttach& at) const {
   return {};
 }
 
-std::function<void(MediaDataFrame)> CallHopMigrateWorkflow::MakeHopFrameSink(const HopAttach& at) {
+std::function<void(mesh::MediaDataFrame)> CallHopMigrateWorkflow::MakeHopFrameSink(const HopAttach& at) {
   return [this, ready = at.frames_ready, call_id = at.call_id, media_epoch = at.media_epoch,
-          media_key = at.media_key](MediaDataFrame frame) {
+          media_key = at.media_key](mesh::MediaDataFrame frame) {
     if (!ready->load(std::memory_order_acquire)) {
       return;
     }
@@ -797,14 +798,14 @@ void CallHopMigrateWorkflow::AttachThroughRelay(HopAttach at, std::function<void
   if (at.attach.hop_multiaddr.empty()) {
     at.attach.hop_multiaddr = ops_.resolve_hop_multiaddr(at.attach.hop_peer_id);
   }
-  MediaRelayAttachHooks hooks;
+  mesh::MediaRelayAttachHooks hooks;
   hooks.accept_quote = RelayQuotePricingGate();
   hooks.on_frame = MakeHopFrameSink(at);
-  const MediaRelayAttachRequest request = MakeRelayAttachRequest(at.call_id, at.attach);
+  const mesh::MediaRelayAttachRequest request = MakeRelayAttachRequest(at.call_id, at.attach);
   // The commit (StartSfu, adaptation, seat, planner) is owner state: the relay's answer — success
   // or failure — comes back as an event, never run on its I/O thread.
   const uint64_t id = StoreAttach(std::move(at), std::move(on_done), /*guest=*/false);
-  AttachToMediaRelayAsync(RelayAttachPorts(), request, std::move(hooks), RelayAttachReporter(id));
+  mesh::AttachToMediaRelayAsync(RelayAttachPorts(), request, std::move(hooks), RelayAttachReporter(id));
 }
 
 // --- attach (completion, UI) ----------------------------------------------------------------------
@@ -930,10 +931,10 @@ CallMediaEngine::SfuSendFn CallHopMigrateWorkflow::MakeHopSendFn(const HopAttach
     if (!relay_deps_ || !relay_deps_->relay) {
       return;
     }
-    MediaDataFrame frame;
+    mesh::MediaDataFrame frame;
     frame.stream_id = pub;
     frame.channel_id = pkt.channel_id;
-    frame.channel_type = MediaChannelTypeFor(pkt.channel_id);
+    frame.channel_type = mesh::MediaChannelTypeFor(pkt.channel_id);
     frame.seq = pkt.seq;
     frame.mark = pkt.mark;
     if (!media_key.empty()) {
@@ -1055,9 +1056,9 @@ uint64_t CallHopMigrateWorkflow::StoreAttach(HopAttach at, std::function<void(Ro
   return id;
 }
 
-std::function<void(Roe<MediaRelayAttached>)> CallHopMigrateWorkflow::RelayAttachReporter(const uint64_t id) const {
+std::function<void(Roe<mesh::MediaRelayAttached>)> CallHopMigrateWorkflow::RelayAttachReporter(const uint64_t id) const {
   // Edge: the relay answers on its I/O thread — it only reports.
-  return [outbox = outbox_, id](Roe<MediaRelayAttached> attached) {
+  return [outbox = outbox_, id](Roe<mesh::MediaRelayAttached> attached) {
     hop_migrate_event::RelayAttached answer;
     answer.id = id;
     answer.ok = static_cast<bool>(attached);
@@ -1220,13 +1221,13 @@ void CallHopMigrateWorkflow::StartGuestReattach(const std::string& call_id, cons
   if (at.attach.hop_multiaddr.empty()) {
     at.attach.hop_multiaddr = ops_.resolve_hop_multiaddr(at.attach.hop_peer_id);
   }
-  MediaRelayAttachHooks hooks;
+  mesh::MediaRelayAttachHooks hooks;
   hooks.accept_quote = RelayQuotePricingGate();
   hooks.still_wanted = [this, gen = at.gen_at_start]() { return IsMigrateGenerationCurrent(gen); };
   hooks.on_frame = MakeHopFrameSink(at);
-  const MediaRelayAttachRequest request = MakeRelayAttachRequest(call_id, at.attach);
+  const mesh::MediaRelayAttachRequest request = MakeRelayAttachRequest(call_id, at.attach);
   const uint64_t id = StoreAttach(std::move(at), std::move(on_done), /*guest=*/true);
-  AttachToMediaRelayAsync(RelayAttachPorts(), request, std::move(hooks), RelayAttachReporter(id));
+  mesh::AttachToMediaRelayAsync(RelayAttachPorts(), request, std::move(hooks), RelayAttachReporter(id));
 }
 
 Roe<void> CallHopMigrateWorkflow::CompleteGuestReattach(const HopAttach& at, int64_t a_up_bps) {

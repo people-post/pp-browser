@@ -4,7 +4,7 @@
 #include "foundation/crypto/MlDsa.h"
 
 #include "common/ValueJson.h"
-#include "common/media/MediaChannel.h"
+#include "mesh/types/MediaChannel.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -62,7 +63,7 @@ std::vector<int> ReadVideoLevels(const Object& o) {
     for (const auto& item : arr->elements) {
       // Only real levels (1..15): anything else would wrap into a channel that was never announced.
       const auto* level = std::get_if<int64_t>(&item);
-      if (level && *level >= kMinVideoLevel && *level <= kMaxVideoLevel) {
+      if (level && *level >= mesh::kMinVideoLevel && *level <= mesh::kMaxVideoLevel) {
         out.push_back(static_cast<int>(*level));
       }
     }

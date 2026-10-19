@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/mesh/host/MeshPorts.h"
+#include "mesh/host/MeshPorts.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/messaging/BroadcastLadderLogic.h"
 #include "domain/messaging/BroadcastRpcCodec.h"
@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -76,7 +77,7 @@ public:
   using ResolveHopSlotWinContext = std::function<HopSlotWinContext(
       const std::string& program_id, const std::string& join_handle, const std::string& relay_peer_id)>;
 
-  AmpBroadcastTransport(IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker = {}, IoPost post_io = {},
+  AmpBroadcastTransport(mesh::IChatPeerLinks& links, IoPump io_pump, WorkerPost post_worker = {}, IoPost post_io = {},
                         IoAfter post_after = {});
   ~AmpBroadcastTransport();
 
@@ -102,7 +103,7 @@ public:
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
-  IChatPeerLinks& links_;
+  mesh::IChatPeerLinks& links_;
   IoPump io_pump_;
   WorkerPost post_worker_;
   IoPost post_io_;

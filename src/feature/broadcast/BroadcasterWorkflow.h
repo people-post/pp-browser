@@ -1,8 +1,8 @@
 #pragma once
 
 #include "domain/media/CallMediaEngine.h"
-#include "domain/mesh/l4/media_relay/MediaRelayVideoLevels.h"
-#include "domain/mesh/media_plane/MediaRelayAttach.h"
+#include "mesh/l4/media_relay/MediaRelayVideoLevels.h"
+#include "mesh/media_plane/MediaRelayAttach.h"
 #include "domain/messaging/PeerAnnounceTypes.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/runtime/OwnerOutbox.h"
@@ -18,6 +18,7 @@
 #include <variant>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -67,12 +68,12 @@ struct BroadcasterPorts {
    * belongs to another owner; `on_done` may run on any thread (the workflow reports it as an event).
    */
   std::function<void(const BroadcastTipDraft& draft, std::function<void(Roe<void>)> on_done)> announce;
-  MediaRelayAttachPorts relay;
+  mesh::MediaRelayAttachPorts relay;
   std::function<std::string(const std::string& hop_peer_id)> hop_multiaddr;
   /** Capture-only session (mic lease; camera lease when publishing video). */
   CallMediaEngine* engine = nullptr;
   /** B009: the video levels this device can produce, and how many at once (a phone: one level). */
-  MediaRelayVideoOffer video_offer{{kDefaultVideoLevel}, 1};
+  mesh::MediaRelayVideoOffer video_offer{{mesh::kDefaultVideoLevel}, 1};
 };
 
 /** What the broadcaster reports to itself through its runner (BroadcastHub); `show` names the show. */
@@ -81,7 +82,7 @@ namespace broadcaster_event {
 struct Attached {
   uint64_t show = 0;
   std::string hop;
-  Roe<MediaRelayAttached> attached;
+  Roe<mesh::MediaRelayAttached> attached;
 };
 /** The Live tip's announce answered (`first`: the show's first Live tip). */
 struct Announced {
@@ -92,7 +93,7 @@ struct Announced {
 /** The relay client session ended (relay I/O). */
 struct SessionEnded {
   uint64_t show = 0;
-  MediaRelayClientLoss loss = MediaRelayClientLoss::TransportLost;
+  mesh::MediaRelayClientLoss loss = mesh::MediaRelayClientLoss::TransportLost;
 };
 /** The back-off before re-attaching ended. */
 struct ReattachDue {
@@ -160,10 +161,10 @@ private:
   void Fail(const std::string& error);
   void Teardown(bool announce_end);
   void AttachNext(const std::string& why);
-  void OnAttached(const std::string& hop, Roe<MediaRelayAttached> attached);
+  void OnAttached(const std::string& hop, Roe<mesh::MediaRelayAttached> attached);
   void StartPublishing(const std::string& hop);
   void Announce(PeerAnnounceState state, std::function<void(Roe<void>)> on_done);
-  void OnSessionEnded(MediaRelayClientLoss loss);
+  void OnSessionEnded(mesh::MediaRelayClientLoss loss);
   void OnAnnounced(bool first, Roe<void> announced);
   /** Adopt the level the relay answered (the highest: one encoder); reopen the camera if it changed. */
   void ApplyVideoLevels(const std::vector<uint8_t>& carried);
