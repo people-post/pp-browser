@@ -462,6 +462,12 @@ select selectbox option {
   margin-bottom: 0;
 }
 
+/* B81: the engine gives <p> a top margin; the first paragraph must sit on the bubble padding, not a blank line below it. */
+.bubble-assistant p:first-child,
+.bubble-assistant .stack p:first-child {
+  margin-top: 0;
+}
+
 .bubble-assistant h1,
 .bubble-assistant h2,
 .bubble-assistant h3 {
