@@ -61,8 +61,9 @@ for path in sorted(mesh.rglob("*")):
             print(f"FAIL: {rel}:{n}: mesh {src} -> {dst} is not a DEPS edge")
             print(f"  {line.strip()}")
             fail = 1
-# pp-cpp-mesh extraction (docs/architecture/MESH.md): the mesh includes no pp-browser header but its
-# own — external libraries (pp-cpp-common, pp-cpp-amp, pp-cpp-crypto) are fine. These still do;
+# pp-cpp-mesh extraction (docs/architecture/MESH.md): the mesh, tests included (they move with it),
+# includes no pp-browser header but its own — external libraries (pp-cpp-common, pp-cpp-amp,
+# pp-cpp-crypto) are fine. These still do;
 # remove an entry when its last include goes (a stale entry fails too), and never add one.
 LEGACY_APP_INCLUDES = {
     "common/directory/DirectoryTypes.h",
@@ -79,7 +80,7 @@ LEGACY_APP_INCLUDES = {
 src = root / "src"
 used = set()
 for path in sorted(mesh.rglob("*")):
-    if path.suffix not in (".h", ".cpp") or "tests" in path.relative_to(mesh).parts:
+    if path.suffix not in (".h", ".cpp"):
         continue
     rel = path.relative_to(mesh).as_posix()
     for n, line in enumerate(path.read_text().splitlines(), 1):
