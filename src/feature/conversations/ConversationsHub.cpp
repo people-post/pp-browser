@@ -179,7 +179,7 @@ CallStackDeps ConversationsHub::MakeCallStackDeps() {
     PrefetchPeerReachability(identity);
   };
   deps.sync_mobile_ephemeral_listen = [this]() { SyncMobileEphemeralListen(); };
-  // Called by the mesh media plane on the Connectivity owner: the id set is the hub's (UI).
+  // Called by mesh connectivity on the mesh's io lane: the id set is the hub's (UI).
   deps.note_lan_mdns_peer_id = [this](const std::string& peer_id) {
     AppRuntime::PostUI([this, peer_id]() { lan_mdns_contact_peer_ids_.insert(peer_id); });
   };
@@ -344,7 +344,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
     mesh_cfg.try_upnp_first = !upnp_auto_tried_;
     upnp_auto_tried_ = true;
   }
-  // Runs on the Connectivity owner (ReachabilityEngine): the hub's work is ours — hop to UI.
+  // Runs on the mesh's io lane (ReachabilityEngine): the hub's work is ours — hop to UI.
   mesh_cfg.on_reachability_updated = [this]() {
     AppRuntime::PostUI([this]() {
       if (shutdown_requested_.load(std::memory_order_acquire)) {
@@ -368,6 +368,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
   mesh_cfg.bootstrap_peers = product_mesh_cfg.bootstrap_peers;
 
   mesh_ = std::make_unique<MeshHost>(AppRuntimeMeshExecutors());
+  mesh_->SetStopping(shutdown_requested_.load(std::memory_order_acquire));
   mesh_->SetAddressDisclosure(&address_disclosure_);
   auto started = mesh_->Start(mesh_cfg);
   if (!started) {
@@ -796,12 +797,16 @@ void ConversationsHub::RequestShutdown() {
   // Unblock circuit / dial waits inside an in-flight StartMesh / EnsureMessagingReady.
   AbortCallMediaForShutdown();
   if (mesh_) {
+    mesh_->SetStopping(true);
     mesh_->AbortInflightCircuitRequests();
   }
 }
 
 void ConversationsHub::CancelShutdownRequest() {
   shutdown_requested_.store(false, std::memory_order_release);
+  if (mesh_) {
+    mesh_->SetStopping(false);
+  }
 }
 
 void ConversationsHub::DiscardMessagingBringUp() {

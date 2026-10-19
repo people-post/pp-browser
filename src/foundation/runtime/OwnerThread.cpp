@@ -23,8 +23,6 @@ const char* OwnerThreadName(OwnerThreadId id) {
   switch (id) {
   case OwnerThreadId::MediaSessions:
     return "pp-media-sess";
-  case OwnerThreadId::Connectivity:
-    return "pp-connectivity";
   }
   return "pp-owner";
 }

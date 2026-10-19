@@ -394,13 +394,11 @@ bool AppRuntime::DrainWorkersThenUI(std::chrono::milliseconds budget) {
   ResumeBackgroundWork();
   std::atomic<bool> done{false};
   // Critical first so we sit behind LeaveCall (Critical); then Normal behind DeclineInvite; then
-  // each owner thread, so work they queued (and posted back) has run too.
+  // the owner thread, so work it queued (and posted back) has run too.
   PostWorker(WorkerLane::Critical, [&done]() {
     PostWorker(WorkerLane::Normal, [&done]() {
       PostToOrRun(OwnerThreadId::MediaSessions, [&done]() {
-        PostToOrRun(OwnerThreadId::Connectivity, [&done]() {
-          PostUI([&done]() { done.store(true, std::memory_order_release); });
-        });
+        PostUI([&done]() { done.store(true, std::memory_order_release); });
       });
     });
   });
