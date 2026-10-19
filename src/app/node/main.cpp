@@ -11,6 +11,9 @@
 #include "common/Logger.h"
 #include "common/ValueJson.h"
 #include "mesh/reachability/Reachability.h"
+#if defined(PP_BROWSER_HAS_LEDGER)
+#include "feature/node/NodeLedgerRole.h"
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -18,6 +21,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <thread>
 #include "common/PbrCompat.h"
@@ -51,6 +55,10 @@ void PrintUsage(const char* argv0) {
       << "  --status-token <tok>  Optional Bearer token for /healthz, /status and /metrics.\n"
       << "                       Env: PP_NODE_STATUS_TOKEN\n"
       << "  --pin <pin>           Profile PIN (or PP_BROWSER_PIN) — required\n"
+      << "  --ledger-role <role>  Run a pp-ledger relay or miner on this node's mesh (relay|miner;\n"
+      << "                        or PP_NODE_LEDGER_ROLE)\n"
+      << "  --ledger-dir <path>   Its work directory: config.json, keys, data (or PP_NODE_LEDGER_DIR;\n"
+      << "                        default <profile data dir>/ledger)\n"
       << "  --profile <id>        Profile id override (or PP_NODE_PROFILE)\n"
       << "  --sandbox             Use sandbox backend (www-en.qa.peoplepost.org)\n"
       << "  --debug               Verbose logging\n"
@@ -67,6 +75,69 @@ void PrintUsage(const char* argv0) {
       << "  curl -sS http://127.0.0.1:18518/status\n"
       << "  curl -sS http://127.0.0.1:18518/metrics   (Prometheus text)\n";
 }
+
+/**
+ * The node's pp-ledger role, if asked for (--ledger-role): it runs on the node's mesh runtime and stops
+ * before the mesh. Without the ledger in this build (PP_BROWSER_WITH_LEDGER=OFF) asking for one fails.
+ */
+class LedgerRoleSlot {
+public:
+  /** Checks the flags before bootstrap; an error is a usage error. */
+  pbr::Roe<void> Configure(const std::string& role, std::string dir) {
+    if (role.empty()) {
+      return {};
+    }
+#if defined(PP_BROWSER_HAS_LEDGER)
+    role_ = pbr::NodeLedgerRole::RoleNamed(role);
+    if (!role_) {
+      return pbr::Error("--ledger-role must be relay or miner (a beacon runs standalone only)");
+    }
+    dir_ = std::move(dir);
+    return {};
+#else
+    (void)dir;
+    return pbr::Error("this pp-node is built without the ledger role (PP_BROWSER_WITH_LEDGER=OFF)");
+#endif
+  }
+
+  pbr::Roe<void> Start(pbr::NodeBootstrapResult& boot) {
+#if defined(PP_BROWSER_HAS_LEDGER)
+    if (!role_) {
+      return {};
+    }
+    pbr::NodeLedgerRole::Options options;
+    options.role = *role_;
+    options.work_dir = dir_.empty() ? boot.profile_data_dir + "/ledger" : dir_;
+    return ledger_.Start(*boot.mesh, std::move(options));
+#else
+    (void)boot;
+    return {};
+#endif
+  }
+
+  /** Why the role ended on its own; none while it runs (or when there is none). */
+  std::optional<std::string> Failure() const {
+#if defined(PP_BROWSER_HAS_LEDGER)
+    return ledger_.Failure();
+#else
+    return std::nullopt;
+#endif
+  }
+
+  /** Before the mesh stops. */
+  void Stop() {
+#if defined(PP_BROWSER_HAS_LEDGER)
+    ledger_.Stop();
+#endif
+  }
+
+private:
+#if defined(PP_BROWSER_HAS_LEDGER)
+  std::optional<pbr::NodeLedgerRole::Role> role_;
+  std::string dir_;
+  pbr::NodeLedgerRole ledger_;
+#endif
+};
 
 void ShutdownNode(pbr::NodeBootstrapResult& boot) {
   if (boot.mesh) {
@@ -127,6 +198,8 @@ int main(int argc, char** argv) {
     status_addr_spec = env_addr;
   }
   std::string status_token = EnvOrEmpty("PP_NODE_STATUS_TOKEN");
+  std::string ledger_role = EnvOrEmpty("PP_NODE_LEDGER_ROLE");
+  std::string ledger_dir = EnvOrEmpty("PP_NODE_LEDGER_DIR");
 
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--help") == 0 || std::strcmp(argv[i], "-h") == 0) {
@@ -145,6 +218,10 @@ int main(int argc, char** argv) {
       status_token = argv[++i];
     } else if (std::strcmp(argv[i], "--pin") == 0 && i + 1 < argc) {
       pin = argv[++i];
+    } else if (std::strcmp(argv[i], "--ledger-role") == 0 && i + 1 < argc) {
+      ledger_role = argv[++i];
+    } else if (std::strcmp(argv[i], "--ledger-dir") == 0 && i + 1 < argc) {
+      ledger_dir = argv[++i];
     } else if (std::strcmp(argv[i], "--profile") == 0 && i + 1 < argc) {
       profile_override = argv[++i];
     } else if (std::strcmp(argv[i], "--config") == 0 && i + 1 < argc) {
@@ -154,6 +231,12 @@ int main(int argc, char** argv) {
       PrintUsage(argv[0]);
       return 2;
     }
+  }
+
+  LedgerRoleSlot ledger;
+  if (auto configured = ledger.Configure(ledger_role, ledger_dir); !configured) {
+    std::cerr << configured.error().message << "\n";
+    return 2;
   }
 
   pbr::SetSandboxMode(pbr::ResolveSandboxModeFromLaunch(argc, argv));
@@ -218,6 +301,14 @@ int main(int argc, char** argv) {
     return 2;
   }
 
+  if (auto started = ledger.Start(*boot); !started) {
+    root.error << "ledger role failed to start: " << started.error().message;
+    status_http.Stop();
+    node_metrics.Reset();
+    ShutdownNode(*boot);
+    return 1;
+  }
+
   auto schedule_probe = [&]() {
     boot->mesh->StartReachabilityProbe(/*try_upnp_first=*/false);
   };
@@ -232,7 +323,13 @@ int main(int argc, char** argv) {
   auto last_probe = std::chrono::steady_clock::now();
   auto last_mesh_publish = std::chrono::steady_clock::now();
   // MeshPump drives the mesh (the only driver); this loop only schedules node chores.
+  int exit_code = 0;
   while (!g_stop.load()) {
+    if (const auto failed = ledger.Failure()) {
+      root.error << "ledger role ended: " << *failed;
+      exit_code = 1;
+      break;
+    }
     const auto now = std::chrono::steady_clock::now();
     if (now - last_probe > std::chrono::seconds(60)) {
       last_probe = now;
@@ -248,8 +345,9 @@ int main(int argc, char** argv) {
   }
 
   root.info << "pp-node shutting down";
+  ledger.Stop();  // its protocols withdrawn, its thread joined — before the mesh stops
   status_http.Stop();
   node_metrics.Reset();
   ShutdownNode(*boot);
-  return 0;
+  return exit_code;
 }

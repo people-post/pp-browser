@@ -132,16 +132,19 @@ function(pp_browser_assert_no_ui_dependencies root_target)
 endfunction()
 
 # pp-node's first-party closure: foundation (headless *_core), common, the node's domain peers
-# (people / net), pp-cpp-mesh (not its test harness), headless feature modules, and the Amp / common / crypto siblings. Any other
-# pp_* target reachable from root_target fails configure — widening the node is a deliberate edit here.
+# (people / net), pp-cpp-mesh (not its test harness), headless feature modules, the Amp / common /
+# crypto siblings and pp-ledger (the ledger role). Any other pp_* target reachable from root_target
+# fails configure — widening the node is a deliberate edit here.
 set(PP_BROWSER_NODE_LINK_ALLOWLIST
   "^pp_foundation_(crypto|data|error|i18n|identity|platform_core|runtime_core)$"
   "^pp_mesh(_(types|shared|reachability|dht|discovery|circuit|media_relay|host|reach|connectivity|media_plane))?$"
   "^pp_domain_(people|net)$"
-  "^pp_feature_(registration|node)$"
+  "^pp_feature_(registration|node|node_ledger)$"
   "^pp_pbr_common$"
   "^pp_(common|crypto)$"
-  "^pp_amp_")
+  "^pp_amp_"
+  # pp-ledger, behind pp_feature_node_ledger (PP_BROWSER_WITH_LEDGER)
+  "^pp_(server|client|network|ledger|ledger_common|ledger_amp|consensus|chain|chain_types|operation)$")
 
 function(pp_browser_assert_node_link_allowlist root_target)
   if(NOT TARGET ${root_target})
@@ -173,8 +176,8 @@ function(pp_browser_assert_node_link_allowlist root_target)
     message(FATAL_ERROR
       "${root_target} links first-party targets outside the node allowlist.\n"
       "Link edges:\n  ${_hit_text}\n"
-      "The node may link foundation *_core, common, pp_domain_{mesh,people,net}, headless "
-      "pp_feature_{registration,node} and Amp. See PP_BROWSER_NODE_LINK_ALLOWLIST in "
+      "The node may link foundation *_core, common, pp_domain_{people,net}, headless "
+      "pp_feature_{registration,node,node_ledger}, Amp, pp-cpp-mesh and pp-ledger. See PP_BROWSER_NODE_LINK_ALLOWLIST in "
       "cmake/PpBrowserNoUiDeps.cmake and docs/ops/BUILD.md (Headless mesh node).")
   endif()
 endfunction()
