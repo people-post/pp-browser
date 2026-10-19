@@ -171,6 +171,7 @@ shrinks. Then the move, with history; mesh tests come along clean too.
 | PeerId derivation into pp-cpp-crypto (below the network stack: product code derives PeerIds too) and the link hook / multiaddr helper into pp-cpp-amp; ML-DSA and the AEAD from pp-cpp-crypto (`XChaCha20Poly1305`, which `MessageCipher` now forwards to) | done |
 | Generic helpers into pp-cpp-common v1.2.0 (`ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry`; `PbrCompat` bridges them into `pbr`) | done |
 | Metrics per mesh instance (`MeshHost(executors, metrics)`; the relay, punch and link-event counters go to that registry; the app passes `MetricsRegistry::Global()`) | done |
+| Links and tests self-contained: the mesh links pp-cpp-common / -crypto / -amp and `pp_pbr_common` (the vocabulary) only; its tests use no app code (the HTTP-failover test went to `domain/net`) and the layer check covers them | done |
 | The vocabulary the mesh shares with product code (directory types, `MeshHop*`, `RelayScope`, `MediaChannel`, `AddressDisclosure`, `PublicAddress`, `MeshConfigTypes`) moves with the mesh: pp-browser then includes it from pp-cpp-mesh; `PbrCompat` goes with the `pp::mesh` namespace | at the move |
 | The move (pp-cpp-amp ≥ the pin pp-ledger needs) | |
 
