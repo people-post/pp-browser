@@ -204,7 +204,7 @@ public:
   void TryEnsurePeerReachableAsync(const std::string& peer_key,
                                         std::function<void(Roe<void>)> on_done,
                                         bool /*allow_circuit*/ = true) override {
-    // Runs on the Connectivity owner (PeerReachCoordinator) while the test thread reads the fields.
+    // Runs on the reach's lane (PeerReachCoordinator) while the test thread reads the fields.
     ++call_media_ensure_calls;
     {
       std::lock_guard lock(mu);
@@ -377,8 +377,9 @@ protected:
     circuit_ = std::make_unique<FakeCircuitHopReach>();
     circuit_->dial = dial_.get();
     transport_ = std::make_unique<FakeCallMediaTransport>();
-    bridge_ = std::make_unique<CallMediaBridge>(*host_, *sessions_, *keys_, *media_, *transport_, dial_.get(),
-                                                circuit_.get());
+    bridge_ = std::make_unique<CallMediaBridge>(
+        *host_, *sessions_, *keys_, *media_, *transport_,
+        PeerReachPorts{dial_.get(), circuit_.get(), AppRuntime::MakeLaneForTesting()});
     bridge_->SetDirectArmingPorts(TestDirectArmingPorts(&host_->live));
     bridge_->SetOutbox(bridge_events_.Get());  // the fixture plays the session manager
     dial_->force_dialable["account:peer"] = true;

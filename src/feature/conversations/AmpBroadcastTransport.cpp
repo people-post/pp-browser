@@ -19,7 +19,7 @@
 #include <vector>
 
 #include "common/PbrCompat.h"
-#include "foundation/runtime/DeferredSelf.h"
+#include "common/Lifetime.h"
 
 namespace pbr {
 namespace {
@@ -64,8 +64,8 @@ struct AmpBroadcastTransport::Impl {
   std::unordered_map<std::string, LiveProgramKey> live_keys;
   std::atomic<bool> stopped{false};
 
-  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
-  DeferredSelf deferred;
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § Lifetime. */
+  pp::Lifetime deferred;
 
   int64_t NowMs() {
     ResolveNowMs resolver;

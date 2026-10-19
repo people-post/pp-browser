@@ -1,6 +1,6 @@
 #pragma once
 
-#include "foundation/runtime/DeferredSelf.h"
+#include "common/Lifetime.h"
 
 #include <chrono>
 #include <cstdint>
@@ -82,7 +82,7 @@ public:
 
 private:
   OwnerExecutor& executor_;
-  DeferredSelf self_;
+  pp::Lifetime self_;
   std::mutex mu_;
   /** Timers not yet fired. */
   std::unordered_set<OwnerExecutor::TimerId> timers_;

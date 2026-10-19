@@ -12,7 +12,7 @@
 #include "common/Logger.h"
 
 #include "common/ValueJson.h"
-#include "foundation/runtime/DeferredSelf.h"
+#include "common/Lifetime.h"
 
 #include <chrono>
 #include <cstring>
@@ -248,7 +248,7 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
    * They are invoked by CallbackLock only after `mu` is released: the transport/bridge
    * callbacks re-enter this coordinator (PrimaryLegId / IsActive), and `mu` is not
    * recursive, so invoking them under the lock deadlocked the Amp IO strand (B16).
-   * Named `pending_user_cbs` (not `deferred`) so it does not collide with DeferredSelf `io_deferred`.
+   * Named `pending_user_cbs` (not `deferred`) so it does not collide with the Lifetime `io_deferred`.
    */
   std::vector<std::function<void()>> pending_user_cbs;
 
@@ -282,9 +282,9 @@ struct CallMediaLegCoordinator::Impl : std::enable_shared_from_this<Impl> {
   std::atomic<bool> started{false};
   std::atomic<uint64_t> next_leg_id{1};
   pp::amp::MeshRuntime::IoTickId io_tick_id = 0;
-  /** Guards PostIo(raw this) past Stop — OWNERSHIP.md § DeferredSelf.
+  /** Guards PostIo(raw this) past Stop — OWNERSHIP.md § Lifetime.
    * IoTick / protocol use weak_ptr(Impl) instead of a separate lifetime ticket. */
-  DeferredSelf io_deferred;
+  pp::Lifetime io_deferred;
 
   /** call_id → bundle */
   std::unordered_map<std::string, std::unique_ptr<Bundle>> bundles;

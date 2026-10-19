@@ -21,7 +21,6 @@
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/CallHopMigrateWorkflow.h"
 #include "domain/messaging/CallHopPlannerLogic.h"
-#include "foundation/runtime/DeferredSelf.h"
 
 #include "common/Error.h"
 #include "common/Module.h"

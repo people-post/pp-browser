@@ -18,6 +18,7 @@
 #include "feature/broadcast/BroadcastHub.h"
 #include "feature/conversations/AmpBroadcastTransport.h"
 #include "feature/conversations/AmpDirectChatTransport.h"
+#include "feature/conversations/MeshConnectivityWiring.h"
 #include "foundation/data/Config.h"
 
 #include <atomic>
@@ -172,6 +173,7 @@ private:
   // Outlives the call stack and broadcast (they borrow its objects).
   std::unique_ptr<MeshConnectivity> mesh_connectivity_;
   std::unique_ptr<MeshMediaRelay> mesh_media_relay_;  // built on connectivity (goes first)
+  std::unique_ptr<MeshHopPolicyFeed> hop_policy_feed_;  // pushes into connectivity (goes first)
   std::unique_ptr<CallStack> stack_;
   /** k5: the container's network changes reach the mesh and calls as in the product hub. */
   std::unique_ptr<NetworkMonitor> network_monitor_;

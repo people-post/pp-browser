@@ -54,13 +54,13 @@ Contain unbounded item fan-out with **internal queues** on the shared pool (e.g.
 | # | Role | Owner | Blocking? | Responsibility |
 |---|------|-------|-----------|----------------|
 | **1** | **UI thread** | `Application` main loop | No | SDL events, RmlUi, controllers; drain UI mailbox via `RunUITasks()` |
-| **2** | **Amp MeshPump** | `MeshHost` (`MeshPumpThread`) | No — short `Drive` | `MeshRuntime::Drive()` ~5ms; Amp has no async reactor / no libp2p `io_context` |
+| **2** | **Amp MeshPump** | `MeshHost` (`MeshPumpThread`) | No — short `Drive` | `MeshRuntime::Drive()` ~5ms, the runtime's only driver (`ClaimDriver`: a drive from another thread is refused); the mesh's io lane — L4 engines and mesh control; Amp has no async reactor / no libp2p `io_context` |
 | **3** | **Coordinator** | `CoordinatorThread` | No — dispatcher only | Priority mailbox; timer wheel; relay poll + hub policy (~1s); posts blocking work to pool |
 | ~~4~~ | ~~Mesh control~~ | retired (thread-ownership t3-1) | — | Mesh waits are completions; L4 inbound CPU / disk work runs on the worker pool (`MeshHost::MakeL4WorkerPost`) |
 | **5** | **Worker pool** | `WorkerPool` (2–4 threads) | Yes — only here for product HTTP/LLM/disk | libcurl HTTP, UPnP, Argon2, SQLite writes, LLM HTTP, attachment drain, L4 inbound handlers (chat / history / blob / announce / broadcast / DHT / directory) under MeshPump |
 | **6** | **Platform I/O** | `ILocalNotifier` impls | Platform-specific | Linux: D-Bus watch thread. Android: JNI → coordinator wake |
 | **7** | **Media sessions** (owner) | `AppRuntime` (`OwnerThread`, `pp-media-sess`) | No | Calls + broadcast control state — see [§ Owner threads](#owner-threads) |
-| **8** | **Connectivity** (owner) | `AppRuntime` (`OwnerThread`, `pp-connectivity`) | No | `PeerReachCoordinator` steps, `MeshConnectivity` (edges, listen book, candidate policy, local view, relay-chosen notices) and `MeshMediaRelay` (edges), `ReachabilityEngine` probe steps |
+| ~~8~~ | ~~Connectivity~~ (owner) | retired ([§ Mesh threads](#mesh-threads-control-runs-on-the-io-lane)) | — | Mesh control (`PeerReachCoordinator`, `MeshConnectivity` / `MeshMediaRelay`, rendezvous, `ReachabilityEngine`) runs on the mesh's io lane — MeshPump (2) |
 
 **Call media** stays outside the general pool: dedicated capture / video / playout / ringtone threads per active call.
 
@@ -68,7 +68,7 @@ Contain unbounded item fan-out with **internal queues** on the shared pool (e.g.
 
 ### Steady-state thread budget (typical desktop, messaging on, no call)
 
-~**main + coordinator + MeshPump + owner threads (2) + WorkerPool (2–4) + optional LAN mDNS + optional Linux D-Bus notifier** (+ SDL audio internals).
+~**main + coordinator + MeshPump + owner thread (1) + WorkerPool (2–4) + optional LAN mDNS + optional Linux D-Bus notifier** (+ SDL audio internals).
 
 During an active call, add SDL capture/video/ringtone threads.
 
@@ -89,8 +89,10 @@ Composition root: `AppRuntime::Initialize()` / `Shutdown()` (from `Application` 
 | `AppRuntime::PostWorkerNormal` / `Critical` / `Background` | Worker pool lanes |
 | `AppRuntime::PostWorkerAndReplyOnUI` | Pool → UI |
 | `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` | Coordinator + **general** pool only (not MeshPump / owners / media) |
-| `MeshHost::MakeL4WorkerPost(lane)` | L4 inbound work: worker pool under MeshPump, inline on the driver for manual-drive harnesses |
-| `AppRuntime::PostTo(OwnerThreadId, …)` / `ScheduleOn` | Owner thread (Media sessions / Connectivity); `CurrentlyOn` / `PBR_ASSERT_ON_OWNER` for affinity |
+| `MeshHost::MakeL4WorkerPost(executor)` | L4 work off the IO strand: the mesh's `work` / `blocking` executor (`MeshExecutors`, given per `MeshHost`; pp-browser: `AppRuntimeMeshExecutors` → pool Normal / Background) under MeshPump, inline on the driver for manual-drive harnesses |
+| `AppRuntime::PostTo(OwnerThreadId, …)` / `ScheduleOn` | Owner thread (Media sessions); `CurrentlyOn` / `PBR_ASSERT_ON_OWNER` for affinity |
+| `MeshHost::IoLane()` (`MeshRuntime::IoExecutor`) | The mesh's io lane, a `pp::SerialExecutor`: mesh control posts, waits (lifecycle edges) and Amp-clock timers |
+| `AppRuntime::MakeLaneForTesting()` | Tests with fake dial registries: a lane standing in for the mesh's, drained with Manual owners |
 
 ### Worker pool priorities
 
@@ -181,23 +183,70 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 | **IO work lane** | `MeshRuntime::PostToIo` | PeerLink mutations, SM steps, dial start |
 | **Deferred teardown** | `MeshRuntime::PostDeferred` | Abort, Close, DropLink, L4 `on_done` |
 | **Timers** | `MeshRuntime::PostAfter` | punch window, channel-open deadlines |
+| **Off the IO strand** | The mesh's `work` / `blocking` executors (`MeshExecutors`; the app's `WorkerPool` lanes) | L4 inbound handlers, relay quote / attach, directory refresh, UPnP |
 | **Compute / HTTP** | App `WorkerPool` | Brief HTTP, LLM, Argon2, SQLite |
 
 Shared Amp helpers live under `pp-cpp-amp` + `domain/mesh/`. Frame size caps: `pp::amp::AmpChannelLimits`.
+
+### Mesh threads: control runs on the I/O lane
+
+**Decided and in place 2026-10-19** (steps below; lifecycle edges as events come later). Supersedes the Connectivity owner of T001 and the
+Connectivity rung of T004's hierarchy ([projects/thread-ownership](../../projects/thread-ownership/DECISIONS.md));
+the rest of both stands. Written for the mesh as a library ([MESH.md § Extraction](MESH.md#extraction-to-pp-cpp-mesh)).
+
+**Decision.** The mesh runs on two kinds of thread:
+
+| Lane | Runs | Given by |
+|------|------|----------|
+| **I/O** — one serial lane, Amp's driver | Amp, the L4 engines, **and mesh control**: connectivity, reach, rendezvous, reachability steps, media-relay attach orchestration. Timers are Amp timers (`PostAfter`, Amp's clock). | The mesh's runtime, as a `pp::SerialExecutor`: post = `PostToIo`, timers = `PostAfter`, on-lane = `OnDriverThread`; tests pass a `pp::ManualExecutor` |
+| **Work** — `work` and `blocking` executors | Off-lane work the mesh hands out: `work` is short and bounded (signature checks, disk, a lock-order hop such as relay quote / attach); `blocking` waits on the outside world (HTTP directory refresh, UPnP discovery) | The host, per mesh instance (`pp::Executor`); pp-browser maps them onto its worker pool lanes |
+
+Rules:
+
+1. **The mesh never calls app code synchronously.** What the mesh needs from the app is **pushed**: the
+   app computes snapshots off the mesh's lanes and hands them in (`MeshConnectivity::SetHopPolicy`).
+   Candidate policy — contacts, directory, DHT, seeds, trusted relays — is product policy and is
+   computed by the app; the mesh only reads the snapshot.
+2. **What the mesh tells the app is an event**, delivered on the I/O lane; the app's handler must not
+   block and moves the work to its own thread. The mesh has no notion of a UI.
+3. **Waits go one way: the app may wait on the mesh, never the reverse.** Lifecycle edges (wire,
+   rewire, teardown) run on the I/O lane and the caller waits (`SerialExecutor::RunAndWait`); steady
+   state is posts and completions. Nothing on the I/O lane waits on anything.
+4. **Control lives with its runtime.** Control state is created and freed with the runtime it runs on,
+   so its timers and completions never outlive their clock; what must survive a mesh restart is the
+   app's input, which it pushes again.
+
+**Why.** T001 moved policy off the I/O lane because evaluating it called into the app — the hop
+candidates read the contacts store (a mutex the UI holds; the first read loads from disk), the
+directory and the DHT — which could stall packet handling. The mesh's own control work is all
+reactions to I/O events and timers, cheap and non-blocking. Rule 1 removes the callouts, and with them
+the reason for a second thread: no hops between control and I/O, one clock for the whole mesh (so a
+`VirtualClock` test covers control too), and no separate serial lane for the library to require of its
+host. A dedicated Connectivity thread also outlived the runtime its timers ran against.
+
+**Steps** (each keeps pp-browser green):
+
+| Step | |
+|------|---|
+| Policy inputs pushed by the app (rule 1): `MeshHopPolicyFeed` → `SetHopPolicy`; the mesh refreshes only its own local view | done |
+| Off-lane work through `work` / `blocking` executors given per instance (`MeshExecutors`: `MeshHost`, `MediaRelayAttach`, `MeshDirectoryCache` without UI delivery) | done |
+| Mesh control onto the I/O lane: `MeshConnectivity`, `PeerReachCoordinator`, `CircuitRendezvousCoordinator`, `ReachabilityEngine`, `MeshMediaRelay`; the Connectivity owner retires | done |
+| MeshPump claims the driver (`MeshRuntime::ClaimDriver`); pp-node stops ticking beside it; the DHT's self-publish is an io tick | done |
+| Lifecycle edges as events instead of waits (THREADING § Owner runners style) — later, separately | |
 
 ---
 
 ### Owner threads
 
-Target model ([projects/thread-ownership](../../projects/thread-ownership/DESIGN.md), T001): every piece of mutable product state has **one owner** — Mesh I/O (Amp drive + L4 protocol engines), Connectivity, Media sessions, or UI. Rules:
+Target model ([projects/thread-ownership](../../projects/thread-ownership/DESIGN.md), T001): every piece of mutable product state has **one owner** — Mesh I/O (Amp drive, L4 protocol engines and, since [§ Mesh threads](#mesh-threads-control-runs-on-the-io-lane), mesh control), Media sessions, or UI. Rules:
 
 1. **One owner per object.** Public methods assert they run on it (`PBR_ASSERT_ON_OWNER`, debug builds abort with the call site) or post to it.
 2. **Messages between owners.** Posted closures carry values; shared views are immutable snapshots (`shared_ptr<const T>`). Ports are bound once, on the owner, and invoked there — never rebound from another thread.
 3. **Owners never block.** Blocking work goes to the worker pool; the result is posted back.
 4. **Data plane bypasses owners.** Capture → Amp send and Amp receive → playout stay direct (IO lock); only control goes through owners.
-5. **Destroy on the owner.** `DeferredSelf` covers queued callbacks.
+5. **Destroy on the owner.** `pp::Lifetime` covers queued callbacks.
 
-`AppRuntime` hosts the owners next to the UI mailbox, behind the teardown gate (T002). `AppRuntimeConfig::owner_threads`: **Dedicated** (product; own OS thread, named through `AppRuntimeConfig::name_thread`) or **Manual** (tests / harnesses: no thread — `RunOwnerTasks` / `RunAllOwnerTasks` drain on the calling thread, which is then `CurrentlyOn` the owner; `DrainWorkersThenUI` and `QuiesceForTeardown` pump manual owners). What runs where: **call state runs on Media sessions** (`CallsThread`, the one place that names the calls owner). Entry points (inbound call control, lifecycle Accept / Decline / Leave, roster fan-out, hop-migrate steps; T003), bridge / seat / topology / connect-coordinator steps and their timer hops all post there. The GUI posts intents and reads `CallUiState`, published after every owner task. The hub's lifecycle edges (build / reset / mesh start and stop / shutdown) use `CallsThread::RunAndWait`: the hub waits on the owner, which never waits on UI; a post the teardown gate drops runs inline, the caller standing in for the owner. A call-control send prepares on the sender and enqueues (Amp on Mesh I/O, relay fallback on a worker), never waiting for delivery. **Broadcast shares the thread with a runner of its own** (`BroadcastHub`, [§ Owner runners](#owner-runners)): its intents (watch / go live / stop / end) are the hub's tasks with results on UI, the GUI reads `BroadcastUiState` (published after every step; the frame counter is read live), the hub is torn down on the owner, and the broadcaster's announce runs on the product hub's thread, which owns the announce feed. `AppRuntime::RunAndWait(owner, task)` is the generic form `CallsThread::RunAndWait` builds on. **Connectivity** hosts `PeerReachCoordinator` (steps and timers; was the Coordinator strand) and `MeshConnectivity` with the `MeshMediaRelay` built on it (lifecycle edges wait there, listen registrations post there, the listen book is a snapshot, relay-chosen notices hop IO → connectivity → calls owner). Candidate policy (rendezvous surface, seeds, punch introducers) is evaluated there and read on the Amp IO strand only as a `MeshHopPolicy` snapshot — IO never runs product policy. Media consumers on other owners read this node's mesh from `MeshLocalView` (published while wired), never the `MeshHost` itself, and the mesh config from the hub's published `MeshConfig` snapshot, never its live `AppConfig`. Owner-internal steps carry `PBR_ASSERT_ON_OWNER` (debug). `ReachabilityEngine` runs its probe steps there (UPnP discovery on a worker; `on_updated` consumers hop to IO / UI). **Waits go downward only** (T004): UI → Media sessions → Connectivity → Mesh I/O; a component edge may `RunAndWait` on an owner below its caller, never above — upward is always a post.
+`AppRuntime` hosts the owners next to the UI mailbox, behind the teardown gate (T002). `AppRuntimeConfig::owner_threads`: **Dedicated** (product; own OS thread, named through `AppRuntimeConfig::name_thread`) or **Manual** (tests / harnesses: no thread — `RunOwnerTasks` / `RunAllOwnerTasks` drain on the calling thread, which is then `CurrentlyOn` the owner; `DrainWorkersThenUI` and `QuiesceForTeardown` pump manual owners). What runs where: **call state runs on Media sessions** (`CallsThread`, the one place that names the calls owner). Entry points (inbound call control, lifecycle Accept / Decline / Leave, roster fan-out, hop-migrate steps; T003), bridge / seat / topology / connect-coordinator steps and their timer hops all post there. The GUI posts intents and reads `CallUiState`, published after every owner task. The hub's lifecycle edges (build / reset / mesh start and stop / shutdown) use `CallsThread::RunAndWait`: the hub waits on the owner, which never waits on UI; a post the teardown gate drops runs inline, the caller standing in for the owner. A call-control send prepares on the sender and enqueues (Amp on Mesh I/O, relay fallback on a worker), never waiting for delivery. **Broadcast shares the thread with a runner of its own** (`BroadcastHub`, [§ Owner runners](#owner-runners)): its intents (watch / go live / stop / end) are the hub's tasks with results on UI, the GUI reads `BroadcastUiState` (published after every step; the frame counter is read live), the hub is torn down on the owner, and the broadcaster's announce runs on the product hub's thread, which owns the announce feed. `AppRuntime::RunAndWait(owner, task)` is the generic form `CallsThread::RunAndWait` builds on. **Mesh control** — `PeerReachCoordinator` (steps and timers), `MeshConnectivity` with the `MeshMediaRelay` built on it (lifecycle edges wait there, listen registrations post there, the listen book is a snapshot, the relay-chosen notice runs there and consumers hop to their own owner), the rendezvous parks and `ReachabilityEngine` — runs on the mesh's io lane ([§ Mesh threads](#mesh-threads-control-runs-on-the-io-lane)); the Connectivity owner it ran on is retired. Candidate policy (rendezvous surface, seeds, punch introducers) is the app's: `MeshHopPolicyFeed` computes it on a worker and pushes it (`SetHopPolicy`); the mesh reads only the `MeshHopPolicy` snapshot (rule 1). Media consumers on other owners read this node's mesh from `MeshLocalView` (published while wired), never the `MeshHost` itself, and the mesh config from the hub's published `MeshConfig` snapshot, never its live `AppConfig`. Owner-internal steps carry `PBR_ASSERT_ON_OWNER` (debug); mesh control asserts it runs on its lane. **Waits go downward only** (T004): UI → Media sessions → Mesh I/O; a component edge may `RunAndWait` on an owner below its caller, never above — upward is always a post.
 
 ### Owner runners
 
@@ -265,7 +314,7 @@ Owners post raw `this` onto the worker pool, coordinator and UI mailbox, but tea
 - `ReopenAfterTeardown` bumps an epoch: posts and one-shot timers from before the quiesce stay dead; repeating timers resume (GUI timers must survive a reset — owners cancel their own).
 - `DrainWorkersThenUI` is a no-op once quiesced (the quiesce already drained). Otherwise it sits behind Critical → Normal → each owner thread → UI.
 - A post a mailbox drops unrun (stopped pool / owner) settles its gate count on destruction, so it cannot stall a later quiesce.
-- Per-owner guards remain only for owners that die **mid-life** on their own strand (`DeferredSelf`, [OWNERSHIP.md](OWNERSHIP.md)); do not add per-owner gates for teardown.
+- Per-owner guards remain only for owners that die **mid-life** on their own strand (`pp::Lifetime`, [OWNERSHIP.md](OWNERSHIP.md#lifetime-ticket--invalidate)); do not add per-owner gates for teardown.
 
 Timeline marks (grep `[startup]`): `shutdown_begin`, `shutdown_window_hidden`,
 `shutdown_context` (call_active / connect_inflight / worker_queued),
@@ -370,6 +419,10 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 
 | Date | Change |
 |------|--------|
+| 2026-10-19 | **One driver:** MeshPump claims the runtime (`ClaimDriver` / `ReleaseDriver` on its thread); pp-node's main loop no longer ticks beside it; the DHT self-publish is an Amp io tick and `ConfigureAmpDht` runs on the lane (it raced the tick) |
+| 2026-10-19 | **Mesh control on the io lane:** `PeerReachCoordinator` (`PeerReachPorts` with its lane), `MeshConnectivity` / `MeshMediaRelay`, rendezvous parks and `ReachabilityEngine` run on `MeshHost::IoLane()` (pp-cpp-amp `IoExecutor`), timers on Amp's clock; a new lane fails reaches in flight and mesh stop answers pending parks at once (rule 4). `pp-connectivity` retired; `MeshHost::SetStopping` replaces the app's quit flag in the mesh; tests with fakes use `AppRuntime::MakeLaneForTesting` |
+| 2026-10-19 | **Mesh executors:** each `MeshHost` takes `MeshExecutors` (`work` / `blocking`; pp-browser's `AppRuntimeMeshExecutors`); relay attach continues on `work`, the directory cache refreshes on `blocking` and no longer posts to UI |
+| 2026-10-19 | **Mesh threads** decided ([§ Mesh threads](#mesh-threads-control-runs-on-the-io-lane)): control moves onto the I/O lane. First step: the app pushes the candidate policy (`MeshHopPolicyFeed`, on a worker); connectivity no longer calls the contacts store, directory or DHT |
 | 2026-09-27 | **UI snapshots / config** (thread-ownership t4): owners read a published `MeshConfig`; affinity asserts on owner-internal steps |
 | 2026-09-27 | **Connectivity owner, cont.** (thread-ownership t3-2b/c): `MeshHopPolicy` evaluated on connectivity; `ReachabilityEngine` steps there; call providers read `MeshLocalView` |
 | 2026-09-27 | **Connectivity owner** (thread-ownership t3-2a): `PeerReachCoordinator` + `MeshMediaPlane` (since split into `MeshConnectivity` + `MeshMediaRelay`) on `pp-connectivity`; T004 downward-only waits |

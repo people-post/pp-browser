@@ -8,7 +8,7 @@
 #include "amp/L3/ChannelSession.h"
 #include "amp/link/LinkIdentity.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
-#include "foundation/runtime/DeferredSelf.h"
+#include "common/Lifetime.h"
 
 #include <atomic>
 #include <chrono>
@@ -52,8 +52,8 @@ struct AmpDirectChatTransport::Impl {
   InboundHandler inbound;
   std::atomic<bool> stopped{false};
 
-  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
-  DeferredSelf deferred;
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § Lifetime. */
+  pp::Lifetime deferred;
   void HandleInboundChannel(const std::string& remote_peer_id, const uint32_t channel_id) {
     if (stopped.load(std::memory_order_acquire) || !links || remote_peer_id.empty()) {
       return;

@@ -30,7 +30,7 @@ TREES = {
 
 # Owner-thread machinery, and scheduling / waiting on any thread.
 FORBIDDEN = re.compile(
-    r"\bCallsThread::|\bOwnerTasks\b|\bCallsOwnerExecutor\s*\(|\bDeferredSelf\b(?!::Token|::Alive|\.h)|"
+    r"\bCallsThread::|\bOwnerTasks\b|\bCallsOwnerExecutor\s*\(|\bLifetime\b(?!::Token|::Alive|\.h)|"
     r"\bAppRuntime::(PostTo|PostToFront|PostToOwnerOrRun|ScheduleOn|ScheduleCoordinatorOneShot|"
     r"CancelCoordinatorTimer|PostWorker\w*|PostCoordinator\w*|RunAndWait)\b|"
     r"\bstd::thread\b|\bsleep_for\b"

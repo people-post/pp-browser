@@ -131,7 +131,8 @@ protected:
     AppRuntime::InitializeUI();
     dial_ = std::make_unique<FakeDialRegistry>();
     circuit_ = std::make_unique<FakeCircuitReach>(*dial_);
-    reach_ = std::make_unique<PeerReachCoordinator>(dial_.get(), circuit_.get());
+    reach_ = std::make_unique<PeerReachCoordinator>(
+        PeerReachPorts{dial_.get(), circuit_.get(), AppRuntime::MakeLaneForTesting()});
     reach_->SetDialBudgetMsForTest(200);
     transport_ = std::make_unique<FakeTransport>();
     connect_ = std::make_unique<CallMediaConnectCoordinator>(*transport_, *reach_);

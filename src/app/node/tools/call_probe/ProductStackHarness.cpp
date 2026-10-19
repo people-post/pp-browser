@@ -1,4 +1,5 @@
 #include "app/node/tools/call_probe/ProductStackHarness.h"
+#include "feature/node/AppRuntimeMeshExecutors.h"
 #include "domain/people/ContactAddressDisclosure.h"
 #include "feature/calls/LocalNetworkReaction.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
@@ -92,7 +93,7 @@ Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
   harness->local_peer_id_ = stack->LocalPeerId();
   harness->shared_session_key_ = SharedSessionKey();
 
-  harness->host_ = std::make_unique<MeshHost>();
+  harness->host_ = std::make_unique<MeshHost>(AppRuntimeMeshExecutors());
   harness->host_->SetAddressDisclosure(&harness->address_disclosure_);
   // Own MeshPump like the product: with the main thread as sole Amp driver, any main-thread wait
   // on work that needs mesh progress (capture send, parked worker) deadlocked (hard-w5 hang).
@@ -171,6 +172,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
 
   mesh_connectivity_ = std::make_unique<MeshConnectivity>();
   mesh_media_relay_ = std::make_unique<MeshMediaRelay>(*mesh_connectivity_);
+  hop_policy_feed_ = std::make_unique<MeshHopPolicyFeed>(*mesh_connectivity_);
   stack_ = std::make_unique<CallStack>();
   if (auto stores = stack_->InitializeStores(store_->ProfileDbPath(), "call-probe"); !stores) {
     return stores.error();
@@ -251,7 +253,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   reach.list_dht_nodes = deps.list_dht_nodes;
   reach.seed_dial_ok = deps.seed_dial_ok;
   reach.register_direct_endpoint = deps.delivery.register_peer_direct_endpoint;
-  mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(std::move(reach)));
+  mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(reach));
+  hop_policy_feed_->SetInputs(std::move(reach));
   deps.connectivity = mesh_connectivity_.get();
   deps.media_relay = mesh_media_relay_.get();
 
@@ -279,6 +282,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
         });
   });
   stack_->DetachMeshMedia();
+  hop_policy_feed_->Start();
   mesh_connectivity_->Wire();
   mesh_media_relay_->Wire();
   stack_->OnMeshServicesStarted();
@@ -343,8 +347,8 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
   if (auto up = contacts_->Upsert(contact); !up) {
     return up.error();
   }
-  if (mesh_connectivity_) {
-    mesh_connectivity_->RefreshHopPolicy();  // contacts are rendezvous / punch-introducer candidates
+  if (hop_policy_feed_) {
+    hop_policy_feed_->PushSoon();  // contacts are rendezvous / punch-introducer candidates
   }
   if (stack_) {
     stack_->RunOnOwner([account_id, peer_id](CallSessionManager& calls) {
@@ -369,6 +373,7 @@ void ProductStackHarness::RefreshMeshMedia() {
   stack_->DetachMeshMedia();
   mesh_media_relay_->ResetRelayClient();
   mesh_connectivity_->ResetDialRegistry();
+  hop_policy_feed_->Start();
   mesh_connectivity_->Wire();
   mesh_media_relay_->Wire();
   stack_->RebindMeshMedia();
@@ -1123,6 +1128,7 @@ Roe<void> ProductStackHarness::EnableBroadcast(
   deps.links = &chat->links;
   deps.io = chat->io;
   deps.relay = mesh_media_relay_->RelayAttachPorts();
+  deps.lane = mesh_connectivity_->Lane();
   deps.publisher_key = std::move(publisher_key);
   deps.put_program_key = [this](const std::string& program_id, const std::string& join_handle,
                                 BroadcastProgramKey key) {
@@ -1185,6 +1191,9 @@ void ProductStackHarness::ShutdownImpl() {
     std::cerr << "warning: probe teardown quiesce budget exceeded" << std::endl;
   }
   ShutdownStep("stop-mesh");
+  if (hop_policy_feed_) {
+    hop_policy_feed_->Stop();  // its inputs read the mesh
+  }
   if (stack_ && host_) {
     // Same order as ConversationsHub::StopMesh (L015). Detach = destroy (product
     // DetachAmpTransports): nothing may outlive the Amp stack.

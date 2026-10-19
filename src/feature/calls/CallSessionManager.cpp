@@ -583,7 +583,7 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
   if (!direct_path_ || direct_transport_ != deps.transport) {
     DropDirectPath();
     direct_path_ = std::make_unique<CallMediaBridge>(AsMediaHost(), sessions_, media_keys_, media_, *deps.transport,
-                                                     deps.dial, deps.circuit_reach);
+                                                     deps.Reach());
     direct_transport_ = deps.transport;
     const uint64_t generation = ++direct_path_generation_;
     direct_path_->SetOutbox(outbox_.For<DirectPathEvent>([generation](DirectPathEvent event) {
@@ -591,7 +591,7 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
     }));
     log().info << "1:1 path built";
   } else {
-    direct_path_->SetReachDeps(deps.dial, deps.circuit_reach);
+    direct_path_->SetReachDeps(deps.Reach());
   }
   CallMediaBridge& path = *direct_path_;
   path.SetSeedWarm(std::move(deps.seed_warm));
@@ -606,7 +606,7 @@ void CallSessionManager::AttachDirectPath(CallDirectPathDeps deps) {
 
 void CallSessionManager::DetachDirectPathReach() {
   if (direct_path_) {
-    direct_path_->SetReachDeps(nullptr, nullptr);
+    direct_path_->SetReachDeps({});
   }
 }
 

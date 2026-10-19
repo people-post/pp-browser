@@ -3,13 +3,17 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "foundation/data/MeshRole.h"
+#include "foundation/runtime/AppRuntime.h"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace pbr {
@@ -45,7 +49,7 @@ protected:
     ASSERT_TRUE(contacts_->Upsert(contact));
   }
 
-  MeshConnectivityDeps Deps(const bool trusted_only) {
+  MeshConnectivityWiringInputs Inputs(const bool trusted_only) {
     MeshConfig cfg;  // the org seeds are whatever normalization makes of the configured list
     cfg.trusted_relays_only = trusted_only;
     MeshConnectivityWiringInputs in;
@@ -59,7 +63,7 @@ protected:
       return std::vector<MeshDirectoryNode>{node};
     };
     in.seed_dial_ok = []() { return true; };
-    return MakeMeshConnectivityDeps(std::move(in));
+    return in;
   }
 
   static std::vector<std::string> Ids(const std::vector<MeshHopCandidate>& hops) {
@@ -78,8 +82,8 @@ protected:
 // projects/privacy T4: with trusted relays only, the rendezvous surface, the bootstrap seeds and the
 // punch introducers hold org seeds and Friendly contacts' nodes — nobody else sees both our addresses.
 TEST_F(MeshConnectivityWiringTest, TrustedRelaysOnlyNarrowsEveryRelayRole) {
-  const MeshConnectivityDeps open = Deps(false);
-  const auto open_surface = Ids(open.rendezvous_candidates());
+  const MeshHopPolicy open = ComputeMeshHopPolicy(Inputs(false));
+  const auto open_surface = Ids(open.rendezvous_candidates);
   EXPECT_NE(std::find(open_surface.begin(), open_surface.end(), kVolunteer), open_surface.end());
   EXPECT_NE(std::find(open_surface.begin(), open_surface.end(), kPlain), open_surface.end());
 
@@ -91,11 +95,57 @@ TEST_F(MeshConnectivityWiringTest, TrustedRelaysOnlyNarrowsEveryRelayRole) {
   seeds_and_friend.push_back(kFriend);
   std::sort(seeds_and_friend.begin(), seeds_and_friend.end());
 
-  const MeshConnectivityDeps trusted = Deps(true);
-  EXPECT_EQ(Ids(trusted.rendezvous_candidates()), seeds_and_friend);
-  EXPECT_EQ(Ids(trusted.bootstrap_seeds()), seeds) << "no directory volunteer";
-  const MeshPunchIntroducers introducers = trusted.punch_introducers();
-  EXPECT_EQ(introducers.contact_peer_ids, std::vector<std::string>{kFriend});
+  const MeshHopPolicy trusted = ComputeMeshHopPolicy(Inputs(true));
+  EXPECT_EQ(Ids(trusted.rendezvous_candidates), seeds_and_friend);
+  EXPECT_EQ(Ids(trusted.bootstrap_seeds), seeds) << "no directory volunteer";
+  EXPECT_EQ(trusted.punch_introducers.contact_peer_ids, std::vector<std::string>{kFriend});
+}
+
+// THREADING.md § Mesh threads, rule 1: the app pushes the policy; the mesh never computes it. Start
+// pushes on the caller (the policy is in before connectivity wires), changes push from a worker, and
+// nothing is pushed between Stop and the next Start (the inputs read a mesh that may be going).
+TEST_F(MeshConnectivityWiringTest, TheFeedPushesWhileStartedAndNeverAfterStop) {
+  AppRuntime::Initialize();
+  {
+    MeshConnectivity connectivity;
+    MeshHopPolicyFeed feed(connectivity);
+    MeshConnectivityWiringInputs in = Inputs(false);
+    auto directory_reads = std::make_shared<std::atomic<int>>(0);
+    in.list_directory_nodes = [directory_reads]() {
+      ++*directory_reads;
+      return std::vector<MeshDirectoryNode>{};
+    };
+    feed.SetInputs(std::move(in));
+    EXPECT_TRUE(connectivity.HopPolicy()->rendezvous_candidates.empty());
+
+    feed.Start();
+    EXPECT_EQ(directory_reads->load(), 1) << "Start pushes on the caller";
+    const auto surface = Ids(connectivity.HopPolicy()->rendezvous_candidates);
+    EXPECT_NE(std::find(surface.begin(), surface.end(), kPlain), surface.end());
+
+    AddContact("c-new", "12D3KooWNewContact", TrustLevel::Unknown);
+    feed.PushSoon();
+    for (int i = 0; i < 200 && directory_reads->load() < 2; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    ASSERT_GE(directory_reads->load(), 2) << "PushSoon pushes from a worker";
+    for (int i = 0; i < 200; ++i) {
+      const auto now = Ids(connectivity.HopPolicy()->rendezvous_candidates);
+      if (std::find(now.begin(), now.end(), "12D3KooWNewContact") != now.end()) {
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    const auto updated = Ids(connectivity.HopPolicy()->rendezvous_candidates);
+    EXPECT_NE(std::find(updated.begin(), updated.end(), "12D3KooWNewContact"), updated.end());
+
+    feed.Stop();
+    const int at_stop = directory_reads->load();
+    feed.PushSoon();
+    EXPECT_TRUE(AppRuntime::DrainWorkersThenUI());
+    EXPECT_EQ(directory_reads->load(), at_stop) << "nothing is computed while stopped";
+  }
+  AppRuntime::Shutdown();
 }
 
 } // namespace

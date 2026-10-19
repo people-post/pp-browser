@@ -13,6 +13,7 @@
 #include "common/Error.h"
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -30,8 +31,10 @@ struct CallTopologyMediaRelayDeps {
   IDialRegistry* dial = nullptr;
   ICircuitHopReach* circuit_reach = nullptr;
   /** Mesh media plane liveness for the three pointers above (null = ungated; tests). */
-  DeferredSelf::Token objects_alive;
+  pp::Lifetime::Token objects_alive;
   uint64_t objects_snap = 0;
+  /** The mesh's `work` executor: where an attach continues off the IO strand (null = inline; tests). */
+  std::shared_ptr<pp::Executor> work;
   std::vector<std::string> bootstrap_peers;
   bool prefer_contacts = true;
   /** projects/privacy T4: only org seeds and Friendly contacts' nodes carry call media. */
@@ -84,6 +87,7 @@ struct CallTopologyMediaRelayDeps {
     ports.service_reach = circuit_reach;
     ports.objects_alive = objects_alive;
     ports.objects_snap = objects_snap;
+    ports.work = work;
     return ports;
   }
 };

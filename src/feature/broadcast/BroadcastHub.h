@@ -27,6 +27,8 @@ struct BroadcastMeshDeps {
   MeshIoContext io;
   /** Lent by the product hub's MeshMediaRelay (built on MeshConnectivity); the hub must be destroyed before they are rewired (L015). */
   MediaRelayAttachPorts relay;
+  /** Where reaching a publisher runs: the mesh's io lane (MeshConnectivity::Lane). */
+  std::shared_ptr<pp::SerialExecutor> lane;
   std::function<std::optional<ByteVector>(const std::string& peer_id)> publisher_key;
   std::function<std::string(const std::string& hop_peer_id)> hop_multiaddr;
   // Publishing (l5): the ticket server's program keys and the signed announce.

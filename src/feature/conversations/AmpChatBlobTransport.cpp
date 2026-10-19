@@ -20,7 +20,7 @@
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
-#include "foundation/runtime/DeferredSelf.h"
+#include "common/Lifetime.h"
 
 namespace pbr {
 namespace {
@@ -107,8 +107,8 @@ struct AmpChatBlobTransport::Impl {
   IoPost post_io;
   std::atomic<bool> stopped{false};
 
-  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
-  DeferredSelf deferred;
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § Lifetime. */
+  pp::Lifetime deferred;
   ByteVector CopyDek() const {
     std::lock_guard lock(dek_mutex);
     if (dek.size() != kDataEncryptionKeySize) {

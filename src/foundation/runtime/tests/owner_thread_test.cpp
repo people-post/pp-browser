@@ -64,8 +64,7 @@ TEST_F(OwnerThreadTest, DedicatedRunsTasksInOrderOnItsOwnNamedThread) {
       std::lock_guard lock(mu);
       order.push_back(i);
       owner_thread = std::this_thread::get_id();
-      if (!AppRuntime::CurrentlyOn(OwnerThreadId::MediaSessions) ||
-          AppRuntime::CurrentlyOn(OwnerThreadId::Connectivity)) {
+      if (!AppRuntime::CurrentlyOn(OwnerThreadId::MediaSessions)) {
         on_owner = false;
       }
     });
@@ -83,25 +82,30 @@ TEST_F(OwnerThreadTest, DedicatedRunsTasksInOrderOnItsOwnNamedThread) {
   EXPECT_FALSE(AppRuntime::CurrentlyOn(OwnerThreadId::MediaSessions)) << "the test thread is not the owner";
   std::lock_guard names_lock(names_mu_);
   EXPECT_NE(std::find(names_.begin(), names_.end(), "pp-media-sess"), names_.end());
-  EXPECT_NE(std::find(names_.begin(), names_.end(), "pp-connectivity"), names_.end());
 }
 
-TEST_F(OwnerThreadTest, ManualRunsOnlyWhenDrainedAndFollowsCrossOwnerChains) {
+// A test lane (MakeLaneForTesting: a fake mesh's io lane) is drained with the owners, so chains
+// across them run to the end.
+TEST_F(OwnerThreadTest, ManualRunsOnlyWhenDrainedAndFollowsChainsThroughATestLane) {
   Start(OwnerThreadMode::Manual);
   ASSERT_TRUE(AppRuntime::OwnerThreadsManual());
+  auto lane = AppRuntime::MakeLaneForTesting();
   std::vector<std::string> trace;
   AppRuntime::PostTo(OwnerThreadId::MediaSessions, [&] {
     trace.push_back(AppRuntime::CurrentlyOn(OwnerThreadId::MediaSessions) ? "media" : "media-off-owner");
-    AppRuntime::PostTo(OwnerThreadId::Connectivity, [&] {
-      trace.push_back(AppRuntime::CurrentlyOn(OwnerThreadId::Connectivity) ? "conn" : "conn-off-owner");
+    lane->Post([&] {
+      trace.push_back(lane->RunsTasksOnCurrentThread() ? "lane" : "lane-off");
       AppRuntime::PostTo(OwnerThreadId::MediaSessions, [&] { trace.push_back("media-reply"); });
     });
   });
   std::this_thread::sleep_for(20ms);
-  EXPECT_TRUE(trace.empty()) << "manual owners have no thread of their own";
+  EXPECT_TRUE(trace.empty()) << "manual owners and lanes have no thread of their own";
   EXPECT_EQ(AppRuntime::RunAllOwnerTasks(), 3u);
-  EXPECT_EQ(trace, (std::vector<std::string>{"media", "conn", "media-reply"}));
+  EXPECT_EQ(trace, (std::vector<std::string>{"media", "lane", "media-reply"}));
   EXPECT_FALSE(AppRuntime::CurrentlyOn(OwnerThreadId::MediaSessions));
+  bool waited = false;
+  lane->RunAndWait([&] { waited = lane->RunsTasksOnCurrentThread(); });
+  EXPECT_TRUE(waited) << "RunAndWait drains a manual lane on the caller";
 }
 
 TEST_F(OwnerThreadTest, ScheduleOnPostsOntoTheOwnerAfterTheDelay) {
@@ -109,10 +113,10 @@ TEST_F(OwnerThreadTest, ScheduleOnPostsOntoTheOwnerAfterTheDelay) {
   std::atomic<bool> on_owner{false};
   const auto posted = std::chrono::steady_clock::now();
   std::atomic<long long> waited_ms{0};
-  ASSERT_NE(AppRuntime::ScheduleOn(OwnerThreadId::Connectivity, 30ms, [&] {
+  ASSERT_NE(AppRuntime::ScheduleOn(OwnerThreadId::MediaSessions, 30ms, [&] {
               waited_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - posted)
                               .count();
-              on_owner = AppRuntime::CurrentlyOn(OwnerThreadId::Connectivity);
+              on_owner = AppRuntime::CurrentlyOn(OwnerThreadId::MediaSessions);
             }),
             0u);
   ASSERT_TRUE(WaitFor([&] { return on_owner.load(); }));
@@ -140,7 +144,7 @@ TEST_F(OwnerThreadTest, QuiesceWaitsForRunningOwnerWorkThenDropsNewPosts) {
 TEST_F(OwnerThreadTest, QuiescePumpsManualOwners) {
   Start(OwnerThreadMode::Manual);
   std::atomic<bool> ran{false};
-  AppRuntime::PostTo(OwnerThreadId::Connectivity, [&] { ran = true; });
+  AppRuntime::PostTo(OwnerThreadId::MediaSessions, [&] { ran = true; });
   EXPECT_TRUE(AppRuntime::QuiesceForTeardown(2s));
   EXPECT_TRUE(ran.load());
 }
@@ -201,8 +205,8 @@ TEST_F(OwnerThreadTest, RunAndWaitRunsOnTheDedicatedOwnerAndWaits) {
 TEST_F(OwnerThreadTest, RunAndWaitDrainsAManualOwner) {
   Start(OwnerThreadMode::Manual);
   bool ran = false;
-  AppRuntime::RunAndWait(OwnerThreadId::Connectivity, [&] {
-    ran = AppRuntime::CurrentlyOn(OwnerThreadId::Connectivity);
+  AppRuntime::RunAndWait(OwnerThreadId::MediaSessions, [&] {
+    ran = AppRuntime::CurrentlyOn(OwnerThreadId::MediaSessions);
   });
   EXPECT_TRUE(ran);
 }

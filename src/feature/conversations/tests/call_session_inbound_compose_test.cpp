@@ -258,6 +258,7 @@ protected:
     CallDirectPathDeps direct;
     direct.transport = transport_.get();
     direct.dial = dial_.get();
+    direct.lane = AppRuntime::MakeLaneForTesting();  // stands in for the mesh's io lane
     csm_->AttachDirectPath(std::move(direct));
     bridge_ = csm_->DirectPathForTest();
 

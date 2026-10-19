@@ -1,4 +1,5 @@
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/node/AppRuntimeMeshExecutors.h"
 
 #include "feature/conversations/LocalAccountBackup.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
@@ -122,6 +123,7 @@ ConversationsHub::ConversationsHub() {
   // even before Initialize builds the call session/media objects.
   mesh_connectivity_ = std::make_unique<MeshConnectivity>();
   mesh_media_relay_ = std::make_unique<MeshMediaRelay>(*mesh_connectivity_);
+  hop_policy_feed_ = std::make_unique<MeshHopPolicyFeed>(*mesh_connectivity_);
   call_stack_ = std::make_unique<CallStack>();
 }
 
@@ -177,7 +179,7 @@ CallStackDeps ConversationsHub::MakeCallStackDeps() {
     PrefetchPeerReachability(identity);
   };
   deps.sync_mobile_ephemeral_listen = [this]() { SyncMobileEphemeralListen(); };
-  // Called by the mesh media plane on the Connectivity owner: the id set is the hub's (UI).
+  // Called by mesh connectivity on the mesh's io lane: the id set is the hub's (UI).
   deps.note_lan_mdns_peer_id = [this](const std::string& peer_id) {
     AppRuntime::PostUI([this, peer_id]() { lan_mdns_contact_peer_ids_.insert(peer_id); });
   };
@@ -190,7 +192,8 @@ CallStackDeps ConversationsHub::MakeCallStackDeps() {
   reach.seed_dial_ok = deps.seed_dial_ok;
   reach.note_lan_peer_id = deps.note_lan_mdns_peer_id;
   reach.register_direct_endpoint = deps.delivery.register_peer_direct_endpoint;
-  mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(std::move(reach)));
+  mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(reach));
+  hop_policy_feed_->SetInputs(std::move(reach));
   deps.connectivity = mesh_connectivity_.get();
   deps.media_relay = mesh_media_relay_.get();
   return deps;
@@ -341,7 +344,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
     mesh_cfg.try_upnp_first = !upnp_auto_tried_;
     upnp_auto_tried_ = true;
   }
-  // Runs on the Connectivity owner (ReachabilityEngine): the hub's work is ours — hop to UI.
+  // Runs on the mesh's io lane (ReachabilityEngine): the hub's work is ours — hop to UI.
   mesh_cfg.on_reachability_updated = [this]() {
     AppRuntime::PostUI([this]() {
       if (shutdown_requested_.load(std::memory_order_acquire)) {
@@ -350,7 +353,8 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
       ApplyMeshAdmissionPolicies();
       PublishNodeAdvertisedAddrs();
       RegisterContactEndpoints();
-      mesh_connectivity_->RefreshHopPolicy();  // advertised addrs follow the probe (media consumers' view)
+      mesh_connectivity_->RefreshLocalView();  // advertised addrs follow the probe (media consumers' view)
+      hop_policy_feed_->PushSoon();            // seed reachability gates the rendezvous surface
       NoteObservedAddress();
       if (on_reachability_updated_) {
         on_reachability_updated_();
@@ -363,7 +367,8 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
       product_mesh_cfg.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(product_mesh_cfg.amp_udp_port);
   mesh_cfg.bootstrap_peers = product_mesh_cfg.bootstrap_peers;
 
-  mesh_ = std::make_unique<MeshHost>();
+  mesh_ = std::make_unique<MeshHost>(AppRuntimeMeshExecutors());
+  mesh_->SetStopping(shutdown_requested_.load(std::memory_order_acquire));
   mesh_->SetAddressDisclosure(&address_disclosure_);
   auto started = mesh_->Start(mesh_cfg);
   if (!started) {
@@ -407,6 +412,7 @@ void ConversationsHub::StartMeshServices() {
 
   ApplyMeshAdmissionPolicies();
   call_stack_->DetachMeshMedia();
+  hop_policy_feed_->Start();  // the policy is in before connectivity wires
   mesh_connectivity_->Wire();
   mesh_media_relay_->Wire();
   call_stack_->OnMeshServicesStarted();
@@ -674,6 +680,7 @@ void ConversationsHub::RebuildBroadcast() {
   deps.links = &chat->links;
   deps.io = chat->io;
   deps.relay = mesh_media_relay_->RelayAttachPorts();
+  deps.lane = mesh_connectivity_->Lane();
   deps.publisher_key = [messaging = mesh_messaging_.get()](const std::string& peer_id) {
     return messaging->ResolveAnnouncePublisherKey(peer_id);
   };
@@ -764,6 +771,7 @@ void ConversationsHub::StopMesh() {
   // MeshHost::Stop (media_relay, circuit, dial-back, runtime; joins workers) → call-media freed →
   // dial registry / circuit reach freed.
   MeshHost* mesh = mesh_.get();
+  hop_policy_feed_->Stop();  // its inputs read the mesh
   mesh_connectivity_->InvalidateAsyncOps();
   call_stack_->PrepareForMeshStop([mesh]() {
     if (mesh) {
@@ -789,12 +797,16 @@ void ConversationsHub::RequestShutdown() {
   // Unblock circuit / dial waits inside an in-flight StartMesh / EnsureMessagingReady.
   AbortCallMediaForShutdown();
   if (mesh_) {
+    mesh_->SetStopping(true);
     mesh_->AbortInflightCircuitRequests();
   }
 }
 
 void ConversationsHub::CancelShutdownRequest() {
   shutdown_requested_.store(false, std::memory_order_release);
+  if (mesh_) {
+    mesh_->SetStopping(false);
+  }
 }
 
 void ConversationsHub::DiscardMessagingBringUp() {
@@ -1161,7 +1173,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
         return records.error();
       }
       return MeshDirectoryNodesFromNameRecords(*records);
-    });
+    }, AppRuntimeMeshExecutors().blocking);
     const std::string persist =
         (std::filesystem::path(AppPaths::DataDir(config_.data_dir)) / "mesh_directory_nodes.json").string();
     mesh_directory_cache_->SetPersistPath(persist);
@@ -1199,11 +1211,17 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
       }
       fetch_http();
     });
+    // Lands where the refresh ran (a worker): the hub's work is ours — hop to UI.
     mesh_directory_cache_->SetOnUpdated([this]() {
-      RegisterMeshDirectoryEndpoints();
-      ConfigureAmpDhtProtocol();
-      ConfigureAmpDirectoryProtocol();
-      mesh_connectivity_->RefreshHopPolicy();  // directory nodes are rendezvous / seed candidates
+      AppRuntime::PostUI([this]() {
+        if (shutdown_requested_.load(std::memory_order_acquire)) {
+          return;
+        }
+        RegisterMeshDirectoryEndpoints();
+        ConfigureAmpDhtProtocol();
+        ConfigureAmpDirectoryProtocol();
+        hop_policy_feed_->PushSoon();  // directory nodes are rendezvous / seed candidates
+      });
     });
     mesh_directory_cache_->RequestRefresh();
   }
@@ -2395,6 +2413,7 @@ void ConversationsHub::RefreshMeshCapabilities() {
   ConfigureAmpDhtProtocol();
   ConfigureAmpDirectoryProtocol();
   ApplyMeshAdmissionPolicies();
+  hop_policy_feed_->Start();  // pushes now: the role may have changed what is a candidate
   mesh_connectivity_->Wire();
   mesh_media_relay_->Wire();
   call_stack_->RebindMeshMedia();
@@ -2682,6 +2701,7 @@ void ConversationsHub::Shutdown() {
   // Reset media engine / key store / session store after DEK unregister above.
   call_stack_->Shutdown();
   mesh_media_relay_->Clear();
+  hop_policy_feed_->Stop();
   mesh_connectivity_->Clear();
   psk_store_.reset();
   inbox_.reset();

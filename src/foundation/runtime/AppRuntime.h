@@ -3,6 +3,8 @@
 #include "foundation/runtime/CoordinatorThread.h"
 #include "foundation/runtime/OwnerThread.h"
 #include "foundation/runtime/WorkerDispatch.h"
+#include "common/Executor.h"
+#include "common/SerialExecutor.h"
 #include "common/Logger.h"
 #include "common/WorkerPool.h"
 
@@ -132,6 +134,12 @@ public:
     });
   }
 
+  /**
+   * One worker lane as an executor, for libraries that take theirs from the host (pp-cpp-mesh's
+   * `work` / `blocking`). Posts go through PostWorker: teardown-gated, dropped when not running.
+   */
+  static std::shared_ptr<pp::Executor> WorkerExecutor(WorkerLane lane);
+
   static void PauseWorkers();
   static void ResumeWorkers();
   static void PauseCoordinator();
@@ -191,6 +199,14 @@ public:
   static void RunUIAndOwnerTasks();
   /** Debug builds: abort with `where` when called off `owner` while owners run. Use PBR_ASSERT_ON_OWNER. */
   static void AssertOn(OwnerThreadId owner, const char* where);
+
+  /**
+   * Tests / harnesses without Amp: a serial lane standing in for a mesh's io lane (fake dial
+   * registries), apart from the owners as the real lane is. In Manual mode it has no thread and is
+   * drained with the owners (RunOwnerTasks / RunAllOwnerTasks / RunUIAndOwnerTasks); Dedicated, it
+   * has its own. Timers fire on the coordinator (wall clock). Never used by the product.
+   */
+  static std::shared_ptr<pp::SerialExecutor> MakeLaneForTesting();
 
   static void InstallWorkerPoolForTesting(WorkerPool* pool);
   static void ClearWorkerPoolForTesting();

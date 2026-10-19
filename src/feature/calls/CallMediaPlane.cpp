@@ -65,6 +65,7 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
   deps.circuit_reach = ports.service_reach;
   deps.objects_alive = ports.objects_alive;
   deps.objects_snap = ports.objects_snap;
+  deps.work = ports.work;
   const auto snapshot = mesh_config();
   MeshConfig mesh_cfg = *snapshot;
   NormalizeMeshConfig(mesh_cfg);
@@ -107,6 +108,7 @@ CallDirectPathDeps CallMediaPlane::DirectPathDeps() {
   }
   deps.dial = connectivity_->Dial();
   deps.circuit_reach = connectivity_->CircuitReach();
+  deps.lane = connectivity_->Lane();
   CircuitRendezvousCoordinator* rendezvous = &connectivity_->Rendezvous();
   deps.seed_warm = [rendezvous]() { rendezvous->WarmBootstrapSeedSessions(); };
   deps.seed_reserve = [rendezvous]() { rendezvous->ReserveOnBootstrapSeeds(); };

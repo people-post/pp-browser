@@ -1,4 +1,5 @@
 #include "app/node/NodeBootstrap.h"
+#include "feature/node/AppRuntimeMeshExecutors.h"
 #include "foundation/platform/os/OsThreadName.h"
 #include "app/node/NodeEnvOverlay.h"
 
@@ -108,7 +109,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
       config->mesh.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(config->mesh.amp_udp_port);
   mesh_cfg.bootstrap_peers = config->mesh.bootstrap_peers;
 
-  auto mesh = std::make_unique<MeshHost>();
+  auto mesh = std::make_unique<MeshHost>(AppRuntimeMeshExecutors());
   if (auto started = mesh->Start(mesh_cfg); !started) {
     log.error << "mesh start failed: "
               << (mesh->LastError().empty() ? started.error().message : mesh->LastError());

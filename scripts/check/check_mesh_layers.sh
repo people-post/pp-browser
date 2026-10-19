@@ -91,8 +91,6 @@ LEGACY_APP_INCLUDES = {
     "foundation/data/MeshConfigTypes.h",
     "foundation/identity/MultiaddrPeerId.h",
     "foundation/identity/PeerIdUtil.h",
-    "foundation/runtime/AppRuntime.h",
-    "foundation/runtime/DeferredSelf.h",
 }
 src = root / "src"
 used = set()
