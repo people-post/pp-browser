@@ -368,7 +368,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
       product_mesh_cfg.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(product_mesh_cfg.amp_udp_port);
   mesh_cfg.bootstrap_peers = product_mesh_cfg.bootstrap_peers;
 
-  mesh_ = std::make_unique<MeshHost>(AppRuntimeMeshExecutors());
+  mesh_ = std::make_unique<MeshHost>(AppRuntimeMeshExecutors(), MetricsRegistry::Global());
   mesh_->SetStopping(shutdown_requested_.load(std::memory_order_acquire));
   mesh_->SetAppProtocols(ProductMeshProtocols());  // advertised from the first advertisement on
   mesh_->SetAddressDisclosure(&address_disclosure_);
