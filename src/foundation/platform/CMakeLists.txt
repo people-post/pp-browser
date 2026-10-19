@@ -91,6 +91,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     desktop/LocalNotifier_Win32.cpp
     NetworkMonitor_Win32.cpp
     VideoPosterExtractor_Win32.cpp
+    PlatformShare_Default.cpp
   )
 elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
@@ -106,9 +107,9 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
     NetworkMonitor_Darwin.mm
   )
   if(NOT PP_BROWSER_IS_IOS)
-    list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm)
+    list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm PlatformShare_Darwin.mm)
   else()
-    list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp)
+    list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp PlatformShare_Ios.mm)
   endif()
 else()
   list(APPEND _pp_platform_core_sources
@@ -120,6 +121,7 @@ else()
   list(APPEND _pp_platform_gui_sources
     desktop/LocalNotifier_Linux.cpp
     VideoPosterExtractor_Default.cpp
+    PlatformShare_Default.cpp
   )
   if(PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp)

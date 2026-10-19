@@ -29,11 +29,14 @@ public:
   void MaybeStart();
   /** The wizard will not show again (finished, skipped, or an account was brought over). */
   void MarkCompleted();
+  /** "Share my account": system sheet, or clipboard + toast where there is none. */
+  void OnShare(ShareAnchor anchor = {});
   bool IsActive() const { return active_; }
 
 private:
   static void RegisterCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void CopyIdCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
+  static void ShareCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void NextCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void FindFriendsCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
   static void FinishCallback(ui::DataModelHandle model, ui::Event& ev, const ui::VariantList& args);
