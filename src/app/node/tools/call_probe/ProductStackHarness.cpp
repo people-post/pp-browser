@@ -1128,6 +1128,7 @@ Roe<void> ProductStackHarness::EnableBroadcast(
   deps.links = &chat->links;
   deps.io = chat->io;
   deps.relay = mesh_media_relay_->RelayAttachPorts();
+  deps.lane = mesh_connectivity_->Lane();
   deps.publisher_key = std::move(publisher_key);
   deps.put_program_key = [this](const std::string& program_id, const std::string& join_handle,
                                 BroadcastProgramKey key) {

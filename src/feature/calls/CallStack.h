@@ -249,6 +249,8 @@ private:
   bool want_ephemeral_listen_ = false;
   /** Chrome refreshes posted to UI drop once the stack is gone. */
   pp::Lifetime chrome_self_;
+  /** BindTestMediaPath's stand-in for the mesh's io lane (fake dial registries); one per stack. */
+  std::shared_ptr<pp::SerialExecutor> test_lane_;
 };
 
 } // namespace pbr

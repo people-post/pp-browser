@@ -46,10 +46,9 @@ logging::Logger& DirectReceiveLog() {
 
 CallMediaBridge::CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions,
                                              CallMediaKeyStore& media_keys, CallMediaEngine& media,
-                                             ICallMediaTransport& direct, IDialRegistry* dial,
-                                             ICircuitHopReach* circuit_reach)
+                                             ICallMediaTransport& direct, PeerReachPorts reach)
     : host_(host), sessions_(sessions), media_keys_(media_keys), media_(media), direct_(direct),
-      reach_(dial, circuit_reach), connect_(direct, reach_),
+      reach_(std::move(reach)), connect_(direct, reach_),
       media_key_inbox_poll_rounds_(kMediaKeyInboxPollRounds) {
   redirectLogger("CallMediaBridge");
 
@@ -195,8 +194,8 @@ CallMediaBridge::~CallMediaBridge() {
   media_.SetOnStateChanged({});  // installed by StartDirectEngine; the engine outlives the bridge
 }
 
-void CallMediaBridge::SetReachDeps(IDialRegistry* dial, ICircuitHopReach* circuit_reach) {
-  reach_.SetDeps(dial, circuit_reach);
+void CallMediaBridge::SetReachDeps(PeerReachPorts reach) {
+  reach_.SetDeps(std::move(reach));
 }
 
 void CallMediaBridge::SetSeedWarm(std::function<void()> warm) {

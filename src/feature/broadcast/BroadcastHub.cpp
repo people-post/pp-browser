@@ -85,7 +85,7 @@ std::unique_ptr<BroadcastHub> BroadcastHub::ForMesh(BroadcastMeshDeps deps, Medi
     return nullptr;
   }
   auto rpc = std::make_unique<AmpBroadcastRpcClient>(*deps.links, deps.io.io_pump, deps.io.post_io, deps.io.post_after);
-  auto reach = std::make_unique<PeerReachCoordinator>(deps.relay.dial, deps.relay.service_reach);
+  auto reach = std::make_unique<PeerReachCoordinator>(PeerReachPorts{deps.relay.dial, deps.relay.service_reach, deps.lane});
 
   BroadcastViewerPorts ports;
   ports.local_peer_id = [peer = deps.io.local_peer_id]() { return peer; };

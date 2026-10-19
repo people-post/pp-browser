@@ -75,8 +75,7 @@ struct CallDirectSeatPorts {
 class CallMediaBridge : public Module, public CallDirectDriver {
 public:
   CallMediaBridge(CallMediaHost& host, CallSessionStore& sessions, CallMediaKeyStore& media_keys,
-                        CallMediaEngine& media, ICallMediaTransport& direct, IDialRegistry* dial,
-                        ICircuitHopReach* circuit_reach);
+                        CallMediaEngine& media, ICallMediaTransport& direct, PeerReachPorts reach);
   ~CallMediaBridge();
 
   bool IsMeshConnectFailed() const;
@@ -194,7 +193,7 @@ public:
   bool MediaAttempted(const std::string& call_id) const;
 
   /** Keep dial/circuit pointers valid when ConversationsHub rewires deps (N025 listen sync). */
-  void SetReachDeps(IDialRegistry* dial, ICircuitHopReach* circuit_reach);
+  void SetReachDeps(PeerReachPorts reach);
   /** Fire-and-forget bootstrap seed warm (CallStack::WarmBootstrapSeedSessions). */
   void SetSeedWarm(std::function<void()> warm);
   /** Both roles: park circuit reserve on org seed (CallStack::ReserveOnBootstrapSeeds). */

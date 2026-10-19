@@ -108,6 +108,7 @@ CallDirectPathDeps CallMediaPlane::DirectPathDeps() {
   }
   deps.dial = connectivity_->Dial();
   deps.circuit_reach = connectivity_->CircuitReach();
+  deps.lane = connectivity_->Lane();
   CircuitRendezvousCoordinator* rendezvous = &connectivity_->Rendezvous();
   deps.seed_warm = [rendezvous]() { rendezvous->WarmBootstrapSeedSessions(); };
   deps.seed_reserve = [rendezvous]() { rendezvous->ReserveOnBootstrapSeeds(); };

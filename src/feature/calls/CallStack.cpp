@@ -1,4 +1,5 @@
 #include "feature/calls/CallStack.h"
+
 #include "feature/calls/CallsThread.h"
 
 #include "foundation/data/MeshRole.h"
@@ -527,7 +528,11 @@ void CallStack::BindTestMediaPathOnOwner(ICallMediaTransport* transport, IDialRe
     media_plane_->BindTestMediaPath(transport);
   }
   if (MeshConnectivity* shared = connectivity()) {
-    shared->BindTestPath(dial, circuit_reach);
+    // Reach runs on a lane of its own, as on the mesh's io lane; Manual runtimes drain it with the owners.
+    if (!test_lane_) {
+      test_lane_ = AppRuntime::MakeLaneForTesting();
+    }
+    shared->BindTestPath(dial, circuit_reach, test_lane_);
   }
   if (MeshMediaRelay* relay_host = media_relay()) {
     relay_host->BindTestRelay(relay);

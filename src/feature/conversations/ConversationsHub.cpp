@@ -679,6 +679,7 @@ void ConversationsHub::RebuildBroadcast() {
   deps.links = &chat->links;
   deps.io = chat->io;
   deps.relay = mesh_media_relay_->RelayAttachPorts();
+  deps.lane = mesh_connectivity_->Lane();
   deps.publisher_key = [messaging = mesh_messaging_.get()](const std::string& peer_id) {
     return messaging->ResolveAnnouncePublisherKey(peer_id);
   };

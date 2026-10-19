@@ -15,6 +15,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 namespace pbr {
 
@@ -44,6 +45,27 @@ OwnerThreadMode g_owner_mode = OwnerThreadMode::Dedicated;
 std::shared_ptr<OwnerThread> OwnerFor(const OwnerThreadId id) {
   std::lock_guard lock(g_owners_mu);
   return g_owners[static_cast<size_t>(id)];
+}
+
+/** MakeLaneForTesting's Manual lanes, drained with the owners (g_owners_mu). */
+std::vector<std::weak_ptr<OwnerThread>> g_test_lanes;
+
+size_t RunTestLanes() {
+  std::vector<std::shared_ptr<OwnerThread>> lanes;
+  {
+    std::lock_guard lock(g_owners_mu);
+    std::erase_if(g_test_lanes, [](const std::weak_ptr<OwnerThread>& lane) { return lane.expired(); });
+    for (const auto& weak : g_test_lanes) {
+      if (auto lane = weak.lock()) {
+        lanes.push_back(std::move(lane));
+      }
+    }
+  }
+  size_t ran = 0;
+  for (const auto& lane : lanes) {
+    ran += lane->RunPending();
+  }
+  return ran;
 }
 
 /** pp_runtime_queue_depth{owner} at scrape time (reads whichever owners exist then). */
@@ -747,7 +769,7 @@ size_t AppRuntime::RunOwnerTasks(const OwnerThreadId owner) {
 size_t AppRuntime::RunAllOwnerTasks() {
   size_t total = 0;
   for (;;) {
-    size_t ran = 0;
+    size_t ran = RunTestLanes();
     for (size_t i = 0; i < kOwnerThreadCount; ++i) {
       ran += RunOwnerTasks(static_cast<OwnerThreadId>(i));
     }
@@ -801,6 +823,69 @@ uint64_t AppRuntime::ScheduleCoordinatorOneShot(std::chrono::milliseconds delay,
     return 0;
   }
   return g_thread_runtime->Coordinator().ScheduleOneShot(delay, GateTask(std::move(fn), GateKind::OneShotTimer));
+}
+
+namespace {
+
+class TestLane final : public pp::SerialExecutor {
+public:
+  explicit TestLane(std::shared_ptr<OwnerThread> lane) : lane_(std::move(lane)) {}
+  ~TestLane() override { lane_->Stop(); }
+
+  void Post(Task task) override {
+    if (auto gated = task ? GateTask(std::move(task), GateKind::Posted) : nullptr) {
+      (void)lane_->Post(std::move(gated));
+    }
+  }
+  bool RunsTasksOnCurrentThread() const override { return lane_->IsCurrent(); }
+  TimerId PostAfter(const std::chrono::milliseconds delay, Task task) override {
+    if (!task) {
+      return 0;
+    }
+    return AppRuntime::ScheduleCoordinatorOneShot(delay, [lane = std::weak_ptr<OwnerThread>(lane_), task = std::move(task)]() {
+      if (auto alive = lane.lock()) {
+        (void)alive->Post(task);
+      }
+    });
+  }
+  void CancelTimer(const TimerId id) override { AppRuntime::CancelCoordinatorTimer(id); }
+  void RunAndWait(const Task& task) override {
+    if (!task || lane_->Mode() != OwnerThreadMode::Manual || RunsTasksOnCurrentThread()) {
+      SerialExecutor::RunAndWait(task);  // Dedicated: post and wait; here already: inline
+      return;
+    }
+    // No thread: drain the lane on the caller up to (and past) the task.
+    auto ran = std::make_shared<bool>(false);
+    Post([&task, ran]() {
+      task();
+      *ran = true;
+    });
+    while (!*ran && lane_->RunPending() > 0) {
+    }
+    if (!*ran) {
+      task();  // dropped (teardown gate): nobody else runs it
+    }
+  }
+
+private:
+  std::shared_ptr<OwnerThread> lane_;
+};
+
+} // namespace
+
+std::shared_ptr<pp::SerialExecutor> AppRuntime::MakeLaneForTesting() {
+  OwnerThreadMode mode = OwnerThreadMode::Dedicated;
+  {
+    std::lock_guard lock(g_owners_mu);
+    mode = g_owner_mode;
+  }
+  auto lane = std::make_shared<OwnerThread>("pp-test-lane", mode);
+  lane->Start();
+  if (mode == OwnerThreadMode::Manual) {
+    std::lock_guard lock(g_owners_mu);
+    g_test_lanes.push_back(lane);
+  }
+  return std::make_shared<TestLane>(std::move(lane));
 }
 
 void AppRuntime::CancelCoordinatorTimer(uint64_t timer_id) {
