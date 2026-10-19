@@ -3659,7 +3659,7 @@ void ChatController::RefreshLlmSetupBanner() {
   const std::string kBriefUnavailableTemp = Tr("chat.hint.brief_unavailable_temp");
 
   if (!use_llm_) {
-    UserFeedback::NeedsSetup(Tr("chat.hint.mock_replies"));
+    UserFeedback::NeedsSetup(Tr("chat.hint.mock_replies"), /*sticky=*/true);
     return;
   }
   if (ResolvePreset(config) == "brief") {
@@ -3676,7 +3676,7 @@ void ChatController::RefreshLlmSetupBanner() {
     if (brief_key.empty()) {
       // The mint hint can be the server's own wording, so remember what was shown to dismiss it later.
       last_brief_banner_ = !brief_guest_mint_user_hint_.empty() ? brief_guest_mint_user_hint_ : kBriefUnavailable;
-      UserFeedback::NeedsSetup(last_brief_banner_);
+      UserFeedback::NeedsSetup(last_brief_banner_, /*sticky=*/true);
       return;
     }
     const std::string& banner = ChromeSnapshot().banner_message;
@@ -3690,7 +3690,7 @@ void ChatController::RefreshLlmSetupBanner() {
     return;
   }
   if (config.llm.require_api_key && config.llm.api_key.empty()) {
-    UserFeedback::NeedsSetup(Tr("chat.hint.api_key_needed"));
+    UserFeedback::NeedsSetup(Tr("chat.hint.api_key_needed"), /*sticky=*/true);
   }
 }
 
