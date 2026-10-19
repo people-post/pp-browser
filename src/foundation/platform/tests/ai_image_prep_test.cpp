@@ -39,7 +39,11 @@ SDL_Surface* MakeNoisySurface(int w, int h, bool alpha) {
 class AiImagePrepTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    dir_ = std::filesystem::temp_directory_path() / "pp_ai_image_prep_test";
+    // One directory per test: ctest runs each test as its own process, in parallel under -j, and a
+    // shared directory lets one test's TearDown delete another's images.
+    dir_ = std::filesystem::temp_directory_path() /
+           (std::string("pp_ai_image_prep_test-") +
+            ::testing::UnitTest::GetInstance()->current_test_info()->name());
     std::filesystem::create_directories(dir_);
   }
   void TearDown() override {
