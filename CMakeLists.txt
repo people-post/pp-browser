@@ -87,6 +87,7 @@ include(PpCppCommon)
 include(PpCppCrypto)
 include(PpCppAmp)
 include(PpCppMesh)
+include(PpLedger)
 
 if(PP_BROWSER_IS_MOBILE)
   set(PP_BROWSER_BUILD_TESTS_DEFAULT OFF)

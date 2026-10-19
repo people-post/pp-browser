@@ -26,7 +26,7 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | Variable | Maps to | Notes |
 |----------|---------|--------|
 | `PP_BROWSER_PIN` | profile unlock | Required (or `--pin`). Secret — never bake into images. |
-| `PP_BROWSER_CONFIG` | config file path | Or `--config` |
+| `PP_BROWSER_CONFIG` | config file path | Or `--config`. Without either, pp-node runs on defaults and these overlays — it never reads the desktop app's config file of the same user (`~/.config/pp-browser/config.json` and the like) |
 | `PP_NODE_DATA_DIR` | `data_dir` | Volume mount path |
 | `PP_NODE_AMP_UDP_PORT` | `libp2p.amp_udp_port` | Org seed should pin **443** to match default ADP bootstrap |
 | `PP_NODE_BOOTSTRAP_PEERS` | `libp2p.bootstrap_peers` | Comma-separated **ADP** multiaddrs (`/udp/…/adp/1.0.0/p2p/…`) |
@@ -41,6 +41,9 @@ Headless **`pp-node`** uses the same config file schema, then applies deploy env
 | `PP_NODE_PROFILE` | active profile id | Or `--profile` |
 | `PP_NODE_STATUS_ADDR` | status HTTP bind | Default `127.0.0.1:18518`; empty disables. Set `0.0.0.0:18518` (or a host IP) to expose for console/probes — ADDR alone is enough |
 | `PP_NODE_STATUS_TOKEN` | status Bearer token | Optional; when set, required for `/healthz`, `/status` and `/metrics` |
+| `PP_NODE_LOG_LEVEL` | log level | Or `--log-level`: `debug` \| `info` (default) \| `warning` \| `error`; `--debug` = `debug`. A server's log: unlike the desktop app's quiet default, startup, listen address, ledger role and shutdown show at `info` |
+| `PP_NODE_LEDGER_ROLE` | ledger role | Or `--ledger-role`: run a pp-ledger `relay` or `miner` on this node's mesh (one per node; a beacon runs standalone only). Unset: none |
+| `PP_NODE_LEDGER_DIR` | ledger work directory | Or `--ledger-dir`; default `<profile data dir>/ledger`. pp-ledger's own `config.json`, keys and data — its schema, not this file's ([pp-ledger PLATFORM_INTEGRATION.md](https://github.com/people-post/pp-ledger/blob/develop/docs/architecture/PLATFORM_INTEGRATION.md)) |
 
 JSON remains the durable seed profile (caps, budgets, pricing). Env is for secrets and per-instance overrides (Compose/Kubernetes). Implementation: `src/app/node/NodeEnvOverlay.*`.
 

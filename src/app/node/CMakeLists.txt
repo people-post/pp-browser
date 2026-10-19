@@ -36,6 +36,9 @@ target_link_libraries(pp-node PRIVATE
   sodium
   CURL::libcurl
 )
+if(TARGET pp_feature_node_ledger)
+  target_link_libraries(pp-node PRIVATE pp_feature_node_ledger)
+endif()
 if(TARGET OpenSSL::Crypto)
   target_link_libraries(pp-node PRIVATE OpenSSL::Crypto)
 endif()

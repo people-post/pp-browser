@@ -52,7 +52,7 @@ Commands:
   build     cmake --build probes (pp-node-probe, pp-call-probe)
 
 Options (run / up):
-  --suite unit|call|node|cap|soak|chaos|call-hop|msg-call-hop|conflict|msg-call|mix|hard|hard-w2|hard-w3|hard-w5|all
+  --suite unit|call|node|cap|soak|chaos|call-hop|msg-call-hop|conflict|msg-call|mix|hard|hard-w2|hard-w3|hard-w5|ledger|all
                                run only (default: all)
   --down                       after run, compose stop (not clear)
   --no-build                   skip compose --build on up
@@ -65,6 +65,7 @@ Environment:
   PP_NODE_PROBE_BRIDGES / PP_NODE_SOAK_SEC (default 120; weekly 3600)
   PP_MIX_BRIDGES (default 2) / PP_MIX_CALL_HOP_CYCLES (default 2)
   PP_HARD_COMPOSE_FILE / PP_HARD_STATUS_URL (default http://127.0.0.1:18618)
+  PP_LEDGER_ROOT / PP_LEDGER_BUILD_DIR (--suite ledger: a pp-ledger checkout with its apps built)
 
 Examples:
   $(basename "$0") run --suite unit
@@ -302,6 +303,13 @@ run_call() {
   bash "${ROOT}/scripts/test/pp_call_direct_smoke.sh"
 }
 
+run_ledger() {
+  need_cmd cmake
+  cmake --build "${BUILD_DIR}" --target pp-node -j
+  echo "=== suite ledger (N-LEDGER: pp-node as pp-ledger relay, then miner; local processes) ==="
+  PP_LOCAL_BUILD_DIR="${BUILD_DIR}" bash "${ROOT}/scripts/test/pp_node_ledger_smoke.sh" all
+}
+
 run_conflict() {
   cmake_build_probes
   echo "=== suite conflict (B-CONFLICT) ==="
@@ -464,6 +472,7 @@ cmd_run() {
     hard-w2) run_hard_w2 ;;
     hard-w3) run_hard_w3 ;;
     hard-w5) run_hard_w5 ;;
+    ledger) run_ledger ;;
     all)
       run_unit
       run_call
@@ -471,7 +480,7 @@ cmd_run() {
       run_msg_call
       run_node
       ;;
-    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|msg-call-hop|mix|hard|hard-w2|hard-w3|hard-w5|all)" ;;
+    *) die "unknown --suite ${SUITE} (unit|call|conflict|msg-call|node|cap|soak|chaos|call-hop|msg-call-hop|mix|hard|hard-w2|hard-w3|hard-w5|ledger|all)" ;;
   esac
   if [[ "${DOWN_AFTER}" -eq 1 ]]; then
     if [[ "${SUITE}" == "hard-w5" ]]; then

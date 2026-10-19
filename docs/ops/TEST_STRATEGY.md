@@ -189,6 +189,7 @@ Exact ctest names follow CMake target naming under `pp_browser_*`; adjust `-R` i
 ./scripts/test/pp_local_test.sh run --suite call-hop  # B-CALL-HOP thin client via packaged hop
 ./scripts/test/pp_local_test.sh run --suite msg-call-hop  # same-session chat during hop call
 ./scripts/test/pp_local_test.sh run --suite mix     # B-MIX + N-MIX + same-session hop chat (not in all)
+./scripts/test/pp_local_test.sh run --suite ledger  # N-LEDGER, local processes (needs PP_LEDGER_ROOT built; not in all)
 ./scripts/test/pp_local_test.sh run                 # unit + call + conflict + msg-call + node (not cap/soak/chaos/call-hop/mix)
 ./scripts/test/pp_local_test.sh stop                # compose stop, volume kept
 ./scripts/test/pp_local_test.sh clear               # down -v + ready-file
@@ -213,6 +214,7 @@ Probes dial the hop at a **private / loopback** address from `/status` `listen_a
 | **N-SOAK** | Long-run stability | hop + churning clients | T hours: 0 fatal; FD/RSS bounded; dials still accepted | Weekly / pre-release |
 | **N-CHAOS** | Process/network faults | kill/pause/restart | Survivors recover or fail cleanly; hop accepts new work | Manual / weekly |
 | **N-MIX** | Hop interference (existing smokes in parallel) | 1 hop + allowlisted children | Each child keeps its own criteria; hop `/healthz` after | Nightly |
+| **N-LEDGER** | pp-node runs a pp-ledger role on its mesh (pp-ledger platform-integration pi4) | Standalone beacon → pp-node relay → miner; beacon → relay → pp-node miner (local processes; pp-ledger's smoke library) | The tip advances after a transaction inject; the pp-node role serves `pp-client` on the node's address; it runs on the node's runtime | Before a ledger pin bump; manual |
 | **N-HARD-FORCE** | Forced hop: no A↔B route | A \| hop \| B isolated nets | Circuit + media via hop; direct fails | Nightly (when scaffolded) |
 | **N-HARD-LOSSY** | Forced hop + link impairment | Wave 1 + netem | Wave 1 still completes; no hop fatal | Nightly / weekly |
 | **N-HARD-ASYM** | Asymmetric / outbound-only path | Wave 1 + asym profile | Completes via circuit/dial-back story | Nightly / weekly |
