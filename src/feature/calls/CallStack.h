@@ -18,7 +18,7 @@
 #include "feature/calls/CallPathMobility.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "feature/calls/CallSessionManager.h"
-#include "foundation/runtime/DeferredSelf.h"
+#include "common/Lifetime.h"
 #include "feature/calls/CallUiState.h"
 #include "feature/calls/CallsExecutor.h"
 #include "feature/calls/CallsLoop.h"
@@ -248,7 +248,7 @@ private:
   std::function<void()> on_chrome_refresh_;
   bool want_ephemeral_listen_ = false;
   /** Chrome refreshes posted to UI drop once the stack is gone. */
-  DeferredSelf chrome_self_;
+  pp::Lifetime chrome_self_;
 };
 
 } // namespace pbr

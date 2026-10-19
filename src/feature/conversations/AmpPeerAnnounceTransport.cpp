@@ -22,7 +22,7 @@
 
 #include "common/PbrCompat.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
-#include "foundation/runtime/DeferredSelf.h"
+#include "common/Lifetime.h"
 
 namespace pbr {
 namespace {
@@ -59,8 +59,8 @@ struct AmpPeerAnnounceTransport::Impl {
   OnTipIngested on_tip_ingested;
   std::atomic<bool> stopped{false};
 
-  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
-  DeferredSelf deferred;
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § Lifetime. */
+  pp::Lifetime deferred;
 
   std::optional<std::vector<uint8_t>> ResolveKey(const std::string& peer_id) {
     ResolvePublisherKey resolver;

@@ -75,23 +75,23 @@ Do **not** destroy (or `unique_ptr::reset`) an object while a detached / still-r
 
 Primary owners: `CallStack`/`CallMediaBridge`, `ConversationsHub`/`MeshHost`, `AppRuntime`, LAN mDNS, `ILocalNotifier`, `CallRingtone`.
 
-## DeferredSelf (ticket + Invalidate)
+## Lifetime (ticket + Invalidate)
 
-When a parent must post work that captures raw `this` / `Impl*` onto IO (or another mailbox) and teardown can race the queue, use [`foundation/runtime/DeferredSelf.h`](../../src/foundation/runtime/DeferredSelf.h):
+When a parent must post work that captures raw `this` / `Impl*` onto IO (or another mailbox) and teardown can race the queue, use `pp::Lifetime` (pp-cpp-common [`common/Lifetime.h`](https://github.com/people-post/pp-cpp-common/blob/main/include/common/Lifetime.h); pp-ledger guards its hosted servers with the same type):
 
 | Do | Do not |
 |----|--------|
-| `DeferredSelf::Post` / `Bind` (exclusive post API) | Capture raw `this` into unguarded `PostToIo` |
+| `Lifetime::Post` / `Bind` (exclusive post API) | Capture raw `this` into unguarded `PostToIo` |
 | `Invalidate()` on Stop / Clear / AbortInflight | Yank tasks out of the queue |
 | Sync Abort under lock when Finish would touch a destroyed owner | `PostIo(raw Impl*)` past Stop that still runs Finish into the owner |
 
-`Invalidate` only bumps a generation; already-queued callbacks no-op when their snap no longer matches. New posts after Invalidate capture the new snap and keep working until the next Invalidate.
+`Invalidate` only bumps a generation; already-queued callbacks no-op when their snap no longer matches. New posts after Invalidate capture the new snap and keep working until the next Invalidate. Destroying the `Lifetime` invalidates too. `InvalidateAndWait` also waits for a bound call running on another thread — for an owner stopped from a thread other than the one its bound work runs on.
 
-**Abort vs lifetime tickets (Amp L4):** The circuit and media_relay servers / client coordinators keep two `DeferredSelf`s — `deferred` for `PostIo` (Invalidate on AbortInflight) and `lifetime` for IoTick / protocol / PeerConnected (Invalidate only on Stop). Mid-life Abort must not poison ticks still needed while Started. `CallMediaLegCoordinator` uses `weak_ptr(Impl)` for ticks/handlers instead of a lifetime ticket.
+**Abort vs lifetime tickets (Amp L4):** The circuit and media_relay servers / client coordinators keep two `Lifetime`s — `deferred` for `PostIo` (Invalidate on AbortInflight) and `lifetime` for IoTick / protocol / PeerConnected (Invalidate only on Stop). Mid-life Abort must not poison ticks still needed while Started. `CallMediaLegCoordinator` uses `weak_ptr(Impl)` for ticks/handlers instead of a lifetime ticket.
 
-**Teardown vs mid-life:** `DeferredSelf` is for owners that stop or abort **mid-life** on their own strand. Teardown of the messaging graph (quit, profile reset) is covered centrally by the `AppRuntime` gate — [THREADING.md § Teardown quiesce](THREADING.md#teardown-quiesce); do not add per-owner gates for it.
+**Teardown vs mid-life:** `Lifetime` is for owners that stop or abort **mid-life** on their own strand. Teardown of the messaging graph (quit, profile reset) is covered centrally by the `AppRuntime` gate — [THREADING.md § Teardown quiesce](THREADING.md#teardown-quiesce); do not add per-owner gates for it.
 
-### Whitelist (who may capture raw self via DeferredSelf)
+### Whitelist (who may capture raw self via Lifetime)
 
 | Owner | Notes |
 |-------|--------|

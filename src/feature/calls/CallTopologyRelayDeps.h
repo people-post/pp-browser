@@ -30,7 +30,7 @@ struct CallTopologyMediaRelayDeps {
   IDialRegistry* dial = nullptr;
   ICircuitHopReach* circuit_reach = nullptr;
   /** Mesh media plane liveness for the three pointers above (null = ungated; tests). */
-  DeferredSelf::Token objects_alive;
+  pp::Lifetime::Token objects_alive;
   uint64_t objects_snap = 0;
   std::vector<std::string> bootstrap_peers;
   bool prefer_contacts = true;

@@ -163,7 +163,8 @@ shrinks. Then the move, with history; mesh tests come along clean too.
 | Step | |
 |------|---|
 | Mesh config types out of the app's `Config` (`foundation/data/MeshConfigTypes.h`) | done |
-| Executor port in place of `AppRuntime`; `DeferredSelf` | |
+| `DeferredSelf` → `pp::Lifetime` (pp-cpp-common), app-wide | done |
+| Executor port in place of `AppRuntime` | |
 | `l4/call_media` out of the mesh (and `host`'s edge to it); product `common/` types (chat, thread, media health) out of mesh code | |
 | PeerId derivation and multiaddr helpers into pp-cpp-amp; ML-DSA / cipher wrappers onto pp-cpp-crypto | |
 | Mesh-owned `common/` types (directory, address disclosure, public address, metrics) and generic helpers (`PbrCompat`, `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `AtomicFileWrite`) | |

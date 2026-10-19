@@ -17,7 +17,7 @@
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
-#include "foundation/runtime/DeferredSelf.h"
+#include "common/Lifetime.h"
 
 namespace pbr {
 
@@ -64,8 +64,8 @@ struct AmpChatHistoryTransport::Impl {
   IoPost post_io;
   std::atomic<bool> stopped{false};
 
-  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § DeferredSelf. */
-  DeferredSelf deferred;
+  /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § Lifetime. */
+  pp::Lifetime deferred;
 
   void ServeRequest(std::shared_ptr<InboundReply> reply, std::vector<uint8_t> body) {
     RunWorker(post_worker, [this, reply, body = std::move(body)]() mutable {

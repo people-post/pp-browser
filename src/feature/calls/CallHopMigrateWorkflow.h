@@ -17,7 +17,6 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "foundation/runtime/OwnerOutbox.h"
 #include "foundation/runtime/OwnerSteps.h"
-#include "foundation/runtime/DeferredSelf.h"
 
 #include "common/Error.h"
 #include "common/Module.h"

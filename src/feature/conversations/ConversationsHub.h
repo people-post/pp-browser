@@ -22,7 +22,7 @@
 #include "domain/messaging/ThreadLocalPrefsStore.h"
 #include "domain/messaging/InitiationBillingStore.h"
 #include "feature/broadcast/BroadcastHub.h"
-#include "foundation/runtime/DeferredSelf.h"
+#include "common/Lifetime.h"
 #include "domain/mesh/connectivity/MeshConnectivity.h"
 #include "domain/mesh/media_plane/MeshMediaRelay.h"
 #include "feature/calls/CallStack.h"
@@ -454,7 +454,7 @@ private:
   // it is destroyed first (also reset explicitly in StopMesh / before relay rewires).
   std::unique_ptr<BroadcastHub> broadcast_;
   /** Guards announces posted to UI for the current broadcast hub (invalidated on reset). */
-  DeferredSelf broadcast_deferred_;
+  pp::Lifetime broadcast_deferred_;
   std::function<void()> on_broadcast_changed_;
   std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
   std::unique_ptr<NetworkMonitor> network_monitor_;
