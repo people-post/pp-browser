@@ -28,6 +28,11 @@ pp_browser_add_domain_library(pp_domain_people
     pp_foundation_platform_core
     sodium)
 
+# Ed25519Signer uses OpenSSL's EVP Ed25519 (the vendored BoringSSL's does not generate those keys).
+if(TARGET OpenSSL::Crypto)
+  target_link_libraries(pp_domain_people PUBLIC OpenSSL::Crypto)
+endif()
+
 if(PP_BROWSER_BUILD_TESTS)
   add_subdirectory(tests)
 endif()

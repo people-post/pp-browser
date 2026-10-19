@@ -8,7 +8,7 @@ include(PpFetchPin)
 
 set(PP_CPP_CRYPTO_GIT_REPOSITORY "https://github.com/people-post/pp-cpp-crypto.git"
   CACHE STRING "Git remote for pp-cpp-crypto")
-pp_fetch_git_tag(PP_CPP_CRYPTO_GIT_TAG "v0.2.0"
+pp_fetch_git_tag(PP_CPP_CRYPTO_GIT_TAG "v1.0.0"
   "Release tag on pp-cpp-crypto main (not a branch name)")
 
 set(PP_CRYPTO_BUILD_TESTS OFF CACHE BOOL "Build pp-cpp-crypto tests" FORCE)

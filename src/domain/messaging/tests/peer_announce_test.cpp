@@ -9,7 +9,7 @@
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
-#include "foundation/identity/PeerIdUtil.h"
+#include "crypto/PeerId.h"
 
 #include "common/directory/DirectoryJson.h"
 #include "common/thread/ThreadChannel.h"
@@ -193,7 +193,7 @@ TEST(PeerAnnounceTest, RpcTipPushAckRoundTrip) {
 TEST(PeerAnnounceKeyResolveTest, PrefersLocalDeviceKey) {
   auto keys = MlDsa::GenerateKeyPair();
   ASSERT_TRUE(keys);
-  auto peer_id = PeerIdFromMlDsaPublicKey(keys->public_key);
+  auto peer_id = pp::PeerIdFromMlDsaPublicKey(keys->public_key);
   ASSERT_TRUE(peer_id);
 
   PeerSigningKeyStore store;
@@ -206,7 +206,7 @@ TEST(PeerAnnounceKeyResolveTest, PrefersLocalDeviceKey) {
 TEST(PeerAnnounceKeyResolveTest, ResolvesPeerIdStoreAndRejectsAccountKind) {
   auto keys = MlDsa::GenerateKeyPair();
   ASSERT_TRUE(keys);
-  auto peer_id = PeerIdFromMlDsaPublicKey(keys->public_key);
+  auto peer_id = pp::PeerIdFromMlDsaPublicKey(keys->public_key);
   ASSERT_TRUE(peer_id);
 
   PeerSigningKeyStore store;
@@ -227,7 +227,7 @@ TEST(PeerAnnounceKeyResolveTest, ResolvesPeerIdStoreAndRejectsAccountKind) {
 TEST(PeerAnnounceKeyResolveTest, RejectsPeerIdBindMismatch) {
   auto keys = MlDsa::GenerateKeyPair();
   ASSERT_TRUE(keys);
-  auto peer_id = PeerIdFromMlDsaPublicKey(keys->public_key);
+  auto peer_id = pp::PeerIdFromMlDsaPublicKey(keys->public_key);
   ASSERT_TRUE(peer_id);
 
   PeerSigningKeyStore store;

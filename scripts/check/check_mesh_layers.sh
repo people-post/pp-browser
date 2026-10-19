@@ -78,14 +78,8 @@ LEGACY_APP_INCLUDES = {
     "common/privacy/AddressDisclosure.h",
     "common/SettledWait.h",
     "common/ValueJson.h",
-    "foundation/crypto/CryptoConstants.h",
-    "foundation/crypto/CryptoUtil.h",
-    "foundation/crypto/MessageCipher.h",
-    "foundation/crypto/MlDsa.h",
     "foundation/data/AtomicFileWrite.h",
     "foundation/data/MeshConfigTypes.h",
-    "foundation/identity/MultiaddrPeerId.h",
-    "foundation/identity/PeerIdUtil.h",
 }
 src = root / "src"
 used = set()

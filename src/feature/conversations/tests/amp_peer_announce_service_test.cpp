@@ -8,7 +8,7 @@
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
-#include "foundation/identity/PeerIdUtil.h"
+#include "crypto/PeerId.h"
 
 #include "common/directory/DirectoryJson.h"
 
@@ -134,7 +134,7 @@ TEST_F(AmpPeerAnnounceTransportTest, PushTipFailsAckWhenPublisherKeyUnknown) {
 TEST_F(AmpPeerAnnounceTransportTest, PushTipRoundTripWithStoreBackedResolver) {
   auto keys = MlDsa::GenerateKeyPair();
   ASSERT_TRUE(keys);
-  auto peer_id = PeerIdFromMlDsaPublicKey(keys->public_key);
+  auto peer_id = pp::PeerIdFromMlDsaPublicKey(keys->public_key);
   ASSERT_TRUE(peer_id);
 
   PeerSigningKeyStore store;

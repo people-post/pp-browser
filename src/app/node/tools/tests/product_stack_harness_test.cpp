@@ -6,7 +6,7 @@
 #include "amp/link/AdpMultiaddr.h"
 #include "amp/link/AmpStack.h"
 #include "foundation/crypto/MlDsa.h"
-#include "foundation/identity/PeerIdUtil.h"
+#include "crypto/PeerId.h"
 
 #include <gtest/gtest.h>
 #include <memory>
@@ -26,7 +26,7 @@ LoopbackStack MakeLoopbackStack() {
   LoopbackStack out;
   auto keys = pbr::MlDsa::GenerateKeyPair();
   EXPECT_TRUE(keys);
-  auto peer_id = pbr::PeerIdFromMlDsaPublicKey(keys->public_key);
+  auto peer_id = pp::PeerIdFromMlDsaPublicKey(keys->public_key);
   EXPECT_TRUE(peer_id);
   auto bound = pp::adp::OsUdpDatagramIo::Bind(pp::adp::IpEndpoint::V4(127, 0, 0, 1, 0));
   EXPECT_TRUE(bound);

@@ -6,7 +6,7 @@
 # 1) Hard bans (historical cycle points) — always fail.
 # 2) Domain peers must not include each other unless the edge is on the
 #    LEGACY_DOMAIN_EDGES allowlist (peel over time; do not add new edges).
-# 3) PeerId lives in foundation/identity/ (not under mesh).
+# 3) PeerId is derived by pp-cpp-crypto (crypto/PeerId.h), not under mesh.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
