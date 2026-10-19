@@ -1,7 +1,7 @@
 #include "domain/mesh/reach/PeerReachCoordinator.h"
 
 #include "domain/mesh/l4/circuit/CircuitServeDialPolicy.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/shared/MeshThreads.h"
 #include "common/Utilities.h"
 #include "common/directory/MeshHopDial.h"
 
@@ -36,21 +36,20 @@ constexpr int kSeedParkAwaitMs = 12000;
 
 /** Reach state lives on the Connectivity owner (thread-ownership T001); the Coordinator strand
  *  only when the runtime has no owners. */
-constexpr OwnerThreadId kOwner = OwnerThreadId::Connectivity;
 
 void PostStep(std::function<void()> step) {
-  if (AppRuntime::HasOwner(kOwner)) {
-    AppRuntime::PostTo(kOwner, std::move(step));
+  if (MeshThreads::HasOwner()) {
+    MeshThreads::PostToOwner(std::move(step));
   } else {
-    AppRuntime::PostCoordinatorNormal(std::move(step));
+    MeshThreads::PostCoordinator(std::move(step));
   }
 }
 
 void ScheduleStep(const std::chrono::milliseconds delay, std::function<void()> step) {
-  if (AppRuntime::HasOwner(kOwner)) {
-    (void)AppRuntime::ScheduleOn(kOwner, delay, std::move(step));
+  if (MeshThreads::HasOwner()) {
+    (void)MeshThreads::ScheduleOnOwner(delay, std::move(step));
   } else {
-    (void)AppRuntime::ScheduleCoordinatorOneShot(delay, std::move(step));
+    (void)MeshThreads::ScheduleOneShot(delay, std::move(step));
   }
 }
 
@@ -343,7 +342,7 @@ void PeerReachCoordinator::ClearBackoff(const Attempt& a) {
 }
 
 void PeerReachCoordinator::Start(const AttemptPtr& a) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::Connectivity);
+  PBR_MESH_ASSERT_ON_OWNER();
   if (a->settled.load(std::memory_order_acquire)) {
     return;
   }
@@ -427,7 +426,7 @@ bool PeerReachCoordinator::TrySettleConnected(const AttemptPtr& a) {
 }
 
 void PeerReachCoordinator::Tick(const AttemptPtr& a) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::Connectivity);
+  PBR_MESH_ASSERT_ON_OWNER();
   if (a->settled.load(std::memory_order_acquire)) {
     return;
   }

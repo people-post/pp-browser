@@ -171,7 +171,7 @@ std::function<void(std::function<void()>)> MeshHost::MakeL4WorkerPost(const Work
       return;
     }
     if (l4_on_workers_.load(std::memory_order_acquire)) {
-      AppRuntime::PostWorker(lane, std::move(task));
+      MeshThreads::PostWorker(lane, std::move(task));
     } else {
       task();
     }

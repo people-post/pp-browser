@@ -4,7 +4,7 @@
 #include "domain/mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
 #include "domain/mesh/l4/circuit/CircuitRendezvousPolicy.h"
 #include "domain/mesh/l4/circuit/client/CircuitClientCoordinator.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/shared/MeshThreads.h"
 
 #include <algorithm>
 #include <atomic>
@@ -435,7 +435,7 @@ void CircuitRendezvousCoordinator::EnsureBootstrapSeedParkedAsync(std::function<
   PostIoOrRun(deferred_.Bind([this, park]() { CheckSeedPark(park, /*at_deadline=*/false); }));
   // The deadline always answers: after InvalidateAsyncOps (mesh stop) the park is abandoned with
   // `false` instead of checking links that may be gone.
-  park->deadline_timer = AppRuntime::ScheduleCoordinatorOneShot(
+  park->deadline_timer = MeshThreads::ScheduleOneShot(
       std::chrono::milliseconds(timeout_ms > 0 ? timeout_ms : 12000),
       [this, park, alive = deferred_.token(), snap = deferred_.Snapshot()]() {
         if (!DeferredSelf::Alive(alive, snap)) {
@@ -474,7 +474,7 @@ void CircuitRendezvousCoordinator::CheckSeedPark(const std::shared_ptr<SeedPark>
     FinishSeedPark(park, false);
     return;
   case SeedParkStep::ArmGrace: {
-    const uint64_t timer = AppRuntime::ScheduleCoordinatorOneShot(
+    const uint64_t timer = MeshThreads::ScheduleOneShot(
         kSeedParkGrace, [this, park, alive = deferred_.token(), snap = deferred_.Snapshot()]() {
           if (!DeferredSelf::Alive(alive, snap)) {
             AbandonSeedPark(park);
@@ -484,7 +484,7 @@ void CircuitRendezvousCoordinator::CheckSeedPark(const std::shared_ptr<SeedPark>
         });
     uint64_t expected = 0;
     if (!park->grace_timer.compare_exchange_strong(expected, timer) && timer != 0) {
-      AppRuntime::CancelCoordinatorTimer(timer);  // raced another check: one grace is enough
+      MeshThreads::CancelTimer(timer);  // raced another check: one grace is enough
     }
     return;
   }
@@ -501,10 +501,10 @@ void CircuitRendezvousCoordinator::FinishSeedPark(const std::shared_ptr<SeedPark
     park->links->RemovePeerConnectedListener(id);
   }
   if (const auto timer = park->deadline_timer.exchange(0); timer != 0) {
-    AppRuntime::CancelCoordinatorTimer(timer);
+    MeshThreads::CancelTimer(timer);
   }
   if (const auto timer = park->grace_timer.exchange(0); timer != 0) {
-    AppRuntime::CancelCoordinatorTimer(timer);
+    MeshThreads::CancelTimer(timer);
   }
   park->on_done(parked);
 }

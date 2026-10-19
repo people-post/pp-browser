@@ -2,7 +2,7 @@
 
 #include "domain/mesh/discovery/NameDirectory.h"
 #include "foundation/data/AtomicFileWrite.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/shared/MeshThreads.h"
 #include "common/ValueJson.h"
 
 #include <fstream>
@@ -214,12 +214,12 @@ void MeshDirectoryCache::RequestRefresh() {
 
   if (async) {
     async([this](Roe<std::vector<MeshDirectoryNode>> result) {
-      AppRuntime::PostUI([this, result = std::move(result)]() mutable { ApplyRefreshResult(std::move(result)); });
+      MeshThreads::PostToApp([this, result = std::move(result)]() mutable { ApplyRefreshResult(std::move(result)); });
     });
     return;
   }
 
-  AppRuntime::PostWorkerAndReplyOnUI<Roe<std::vector<MeshDirectoryNode>>>(
+  MeshThreads::PostWorkerAndReplyToApp<Roe<std::vector<MeshDirectoryNode>>>(
       WorkerLane::Normal, [sync]() { return sync(); },
       [this](Roe<std::vector<MeshDirectoryNode>> result) { ApplyRefreshResult(std::move(result)); });
 }

@@ -6,7 +6,7 @@
 #include "domain/mesh/reachability/ReachabilityNetIf.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
 #include "common/ValueJson.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/shared/MeshThreads.h"
 
 #include <chrono>
 #include <memory>
@@ -20,7 +20,6 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 /** Reachability belongs to connectivity (thread-ownership T001). */
-constexpr OwnerThreadId kOwner = OwnerThreadId::Connectivity;
 
 ReachabilitySignals AnalyzeAmpListen(const std::string& amp_listen,
                                      const std::vector<std::string>& ipv6_addrs) {
@@ -83,7 +82,7 @@ void ReachabilityEngine::Publish(ReachabilitySnapshot snapshot) {
 }
 
 ReachabilityEngine::~ReachabilityEngine() {
-  AppRuntime::RunAndWait(kOwner, [this]() { alive_->store(false, std::memory_order_release); });
+  MeshThreads::RunOnOwnerAndWait([this]() { alive_->store(false, std::memory_order_release); });
 }
 
 void ReachabilityEngine::StartProbe(AmpReachabilityProbeDeps deps) {
@@ -92,7 +91,7 @@ void ReachabilityEngine::StartProbe(AmpReachabilityProbeDeps deps) {
   }
   ReachabilitySnapshot checking;
   checking.status = ReachabilityStatus::Checking;
-  AppRuntime::PostToOwnerOrRun(kOwner, [this, alive = alive_, checking, deps = std::move(deps)]() mutable {
+  MeshThreads::PostToOwnerOrRun([this, alive = alive_, checking, deps = std::move(deps)]() mutable {
     if (!alive->load(std::memory_order_acquire)) {
       return;
     }
@@ -107,8 +106,8 @@ void ReachabilityEngine::RunProbeBlocking(AmpReachabilityProbeDeps deps) {
   while (probing_.load()) {
     if (io_pump) {
       io_pump();
-    } else if (AppRuntime::OwnerThreadsManual()) {
-      AppRuntime::RunOwnerTasks(kOwner);
+    } else if (MeshThreads::OwnerTasksManual()) {
+      MeshThreads::RunOwnerTasks();
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     } else {
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -117,7 +116,7 @@ void ReachabilityEngine::RunProbeBlocking(AmpReachabilityProbeDeps deps) {
 }
 
 void ReachabilityEngine::Complete(ReachabilitySnapshot result, const bool classify) {
-  AppRuntime::PostToOwnerOrRun(kOwner, [this, alive = alive_, result = std::move(result), classify]() mutable {
+  MeshThreads::PostToOwnerOrRun([this, alive = alive_, result = std::move(result), classify]() mutable {
     if (!alive->load(std::memory_order_acquire)) {
       return;
     }
@@ -130,7 +129,7 @@ void ReachabilityEngine::Complete(ReachabilitySnapshot result, const bool classi
 }
 
 void ReachabilityEngine::RunProbe(AmpReachabilityProbeDeps deps) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::Connectivity);
+  PBR_MESH_ASSERT_ON_OWNER();
   ReachabilitySnapshot result;
   result.measured_at = Clock::now();
 
@@ -155,7 +154,7 @@ void ReachabilityEngine::RunProbe(AmpReachabilityProbeDeps deps) {
         result.signals.upnp_external_ip = mapped.external_ip;
         result.signals.upnp_external_port = mapped.external_port;
       }
-      AppRuntime::PostToOwnerOrRun(kOwner, [this, alive, deps = std::move(deps), result = std::move(result)]() mutable {
+      MeshThreads::PostToOwnerOrRun([this, alive, deps = std::move(deps), result = std::move(result)]() mutable {
         if (alive->load(std::memory_order_acquire)) {
           ProbeSeed(std::move(deps), std::move(result));
         }
@@ -173,7 +172,7 @@ void ReachabilityEngine::RunProbe(AmpReachabilityProbeDeps deps) {
 }
 
 void ReachabilityEngine::ProbeSeed(AmpReachabilityProbeDeps deps, ReachabilitySnapshot result) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::Connectivity);
+  PBR_MESH_ASSERT_ON_OWNER();
   if (result.signals.upnp_mapped) {
     upnp_external_ip_ = result.signals.upnp_external_ip;
     upnp_external_port_ = result.signals.upnp_external_port;

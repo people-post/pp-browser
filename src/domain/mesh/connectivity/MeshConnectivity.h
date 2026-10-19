@@ -75,7 +75,7 @@ struct MeshLocalView {
  *
  * Threading (thread-ownership t3-2): lives on the Connectivity owner (`pp-connectivity`).
  * Lifecycle edges (deps, hooks, Wire / Reset / Clear, test path) run there and the caller waits
- * (`AppRuntime::RunAndWait` — callers are UI or the media-sessions owner, never below it). Listen
+ * (`MeshThreads::RunOnOwnerAndWait` — callers are UI or the media-sessions owner, never below it). Listen
  * registrations post there; the listen book is read as a published snapshot. Circuit reach's
  * relay-chosen notice hops from Amp IO to the owner, and the consumer hook runs there — consumers
  * hop to their own owner. The object accessors (`Dial` / `CircuitReach`) are read by consumers at

@@ -1,6 +1,6 @@
 #include "domain/mesh/media_plane/MediaRelayAttach.h"
 
-#include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/shared/MeshThreads.h"
 
 #include "common/Logger.h"
 
@@ -21,8 +21,8 @@ logging::Logger& AttachLog() {
 
 /** Off the IO strand (quote / attach take the relay client's lock): a worker, or inline without a runtime. */
 void PostOffIo(std::function<void()> task) {
-  if (AppRuntime::IsRunning()) {
-    AppRuntime::PostWorkerNormal(std::move(task));
+  if (MeshThreads::IsRunning()) {
+    MeshThreads::PostWorker(WorkerLane::Normal, std::move(task));
   } else {
     task();
   }

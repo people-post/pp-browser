@@ -15,7 +15,7 @@
 #include "domain/mesh/l4/circuit/serve/CircuitRelayServer.h"
 #include "domain/mesh/host/MeshIdentityConfig.h"
 #include "domain/mesh/host/MeshPorts.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/shared/MeshThreads.h"
 #include "domain/mesh/host/MeshPumpThread.h"
 #include "domain/mesh/reachability/ReachabilityEngine.h"
 #include "common/Error.h"

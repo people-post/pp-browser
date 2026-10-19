@@ -91,8 +91,11 @@ LEGACY_APP_INCLUDES = {
     "foundation/data/MeshConfigTypes.h",
     "foundation/identity/MultiaddrPeerId.h",
     "foundation/identity/PeerIdUtil.h",
-    "foundation/runtime/AppRuntime.h",
     "foundation/runtime/DeferredSelf.h",
+}
+# The app's side of a mesh seam, kept in the mesh folders until the move and left in pp-browser then.
+APP_SIDE_FILES = {
+    "shared/AppRuntimeMeshThreads.cpp",  # MeshThreads on AppRuntime
 }
 src = root / "src"
 used = set()
@@ -100,6 +103,8 @@ for path in sorted(mesh.rglob("*")):
     if path.suffix not in (".h", ".cpp") or "tests" in path.relative_to(mesh).parts:
         continue
     rel = path.relative_to(mesh).as_posix()
+    if rel in APP_SIDE_FILES:
+        continue
     for n, line in enumerate(path.read_text().splitlines(), 1):
         m = re.match(r'\s*#include "([^"]+)"', line)
         if not m or m.group(1).startswith("domain/mesh/") or not (src / m.group(1)).is_file():
@@ -112,7 +117,7 @@ for path in sorted(mesh.rglob("*")):
 for stale in sorted(LEGACY_APP_INCLUDES - used):
     print(f"FAIL: LEGACY_APP_INCLUDES lists {stale}, which the mesh no longer includes: drop the entry")
     fail = 1
+if not fail:
+    print(f"OK: domain/mesh layer edges; {len(LEGACY_APP_INCLUDES)} app headers still to peel (LEGACY_APP_INCLUDES)")
 sys.exit(fail)
 PY
-
-echo "OK: domain/mesh layer edges; $(grep -c '^    "' "$0") app headers still to peel (LEGACY_APP_INCLUDES)"

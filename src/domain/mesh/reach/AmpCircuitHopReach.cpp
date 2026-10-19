@@ -7,7 +7,7 @@
 #include "common/directory/MeshHopDial.h"
 #include "domain/mesh/l4/shared/L4ProtocolIds.h"
 #include "domain/mesh/shared/AmpParkUntil.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/shared/MeshThreads.h"
 #include "common/SettledWait.h"
 #include "common/Logger.h"
 
@@ -623,7 +623,7 @@ void AmpCircuitHopReach::AbortPending() {
 }
 
 Roe<void> AmpCircuitHopReach::TryEnsureHopReachable(const std::string& hop_peer_id) {
-  if (AppRuntime::IsShuttingDown()) {
+  if (MeshThreads::IsShuttingDown()) {
     AmpReachLog().debug << "TryEnsureHopReachable rejected: shutting down";
     return Error("shutdown in progress");
   }
@@ -635,7 +635,7 @@ Roe<void> AmpCircuitHopReach::TryEnsureHopReachable(const std::string& hop_peer_
 }
 
 Roe<void> AmpCircuitHopReach::TryEnsurePeerReachable(const std::string& peer_key) {
-  if (AppRuntime::IsShuttingDown()) {
+  if (MeshThreads::IsShuttingDown()) {
     AmpReachLog().debug << "TryEnsurePeerReachable rejected: shutting down";
     return Error("shutdown in progress");
   }

@@ -3,7 +3,7 @@
 #include "domain/mesh/reach/AmpCircuitHopReach.h"
 #include "domain/mesh/reachability/punch/AmpPunchCoordinator.h"
 #include "domain/mesh/reachability/Reachability.h"
-#include "foundation/runtime/AppRuntime.h"
+#include "domain/mesh/shared/MeshThreads.h"
 
 #include <algorithm>
 #include <utility>
@@ -26,7 +26,6 @@ std::string PeerIdFromListenMultiaddr(const std::string& ma) {
 }
 
 /** Its owner (thread-ownership T001): connectivity decisions, not Amp I/O. */
-constexpr OwnerThreadId kOwner = OwnerThreadId::Connectivity;
 /** Candidate policy inputs (contacts, directory, DHT, seeds) change without notice: re-read. */
 constexpr std::chrono::milliseconds kHopPolicyRefresh{5000};
 
@@ -38,12 +37,12 @@ MeshConnectivity::MeshConnectivity() {
 
 MeshConnectivity::~MeshConnectivity() {
   // On the owner, so no queued registration runs against an object being destroyed.
-  AppRuntime::RunAndWait(kOwner, [this]() { alive_->store(false, std::memory_order_release); });
+  MeshThreads::RunOnOwnerAndWait([this]() { alive_->store(false, std::memory_order_release); });
   Clear();
 }
 
 void MeshConnectivity::SetDeps(MeshConnectivityDeps deps) {
-  AppRuntime::RunAndWait(kOwner, [&]() {
+  MeshThreads::RunOnOwnerAndWait([&]() {
     deps_ = std::move(deps);
     // The IO side (punch walk, rendezvous) reads the owner's policy snapshot, never the providers.
     punch_.SetDeps({deps_.mesh, [this]() { return HopPolicy()->punch_introducers; }});
@@ -60,13 +59,13 @@ void MeshConnectivity::SetDeps(MeshConnectivityDeps deps) {
 }
 
 void MeshConnectivity::SetSignalingPunch(SignalingPunchFn punch) {
-  AppRuntime::RunAndWait(kOwner, [&]() {
+  MeshThreads::RunOnOwnerAndWait([&]() {
     punch_.SetSignalingPunch(std::move(punch));
   });
 }
 
 void MeshConnectivity::SetOnRelayChosen(std::function<void(const std::string&)> callback) {
-  AppRuntime::RunAndWait(kOwner, [&]() {
+  MeshThreads::RunOnOwnerAndWait([&]() {
     on_relay_chosen_ = std::move(callback);
   });
 }
@@ -74,7 +73,7 @@ void MeshConnectivity::SetOnRelayChosen(std::function<void(const std::string&)> 
 // --- wiring ---------------------------------------------------------------------------------------
 
 void MeshConnectivity::Wire() {
-  AppRuntime::RunAndWait(kOwner, [&]() {
+  MeshThreads::RunOnOwnerAndWait([&]() {
     MeshHost* m = mesh();
     MeshIoContext io;
     if (auto chat = m ? m->ChatDeps() : std::nullopt) {
@@ -92,7 +91,7 @@ void MeshConnectivity::Wire() {
 }
 
 void MeshConnectivity::RefreshHopPolicy() {
-  AppRuntime::PostToOwnerOrRun(kOwner, [this, alive = alive_]() {
+  MeshThreads::PostToOwnerOrRun([this, alive = alive_]() {
     if (alive->load(std::memory_order_acquire)) {
       RefreshHopPolicyOnOwner();
     }
@@ -117,7 +116,7 @@ void MeshConnectivity::PublishLocalView(MeshLocalView view) {
 
 void MeshConnectivity::SignalingPunchBurstAsync(std::vector<std::string> peer_addrs, const int window_ms,
                                               std::function<void(Roe<void>)> on_done) {
-  AppRuntime::PostToOwnerOrRun(kOwner, [this, alive = alive_, peer_addrs = std::move(peer_addrs), window_ms,
+  MeshThreads::PostToOwnerOrRun([this, alive = alive_, peer_addrs = std::move(peer_addrs), window_ms,
                                         on_done = std::move(on_done)]() mutable {
     MeshHost* m = alive->load(std::memory_order_acquire) && wired_ ? mesh() : nullptr;
     AmpPunchCoordinator* punch = m ? m->AmpPunch() : nullptr;
@@ -146,7 +145,7 @@ void MeshConnectivity::SignalingPunchBurstAsync(std::vector<std::string> peer_ad
 }
 
 void MeshConnectivity::RefreshHopPolicyOnOwner() {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::Connectivity);
+  PBR_MESH_ASSERT_ON_OWNER();
   if (!wired_) {
     return;  // unwired: the product's inputs (and its mesh) may be going away
   }
@@ -181,9 +180,9 @@ void MeshConnectivity::RefreshHopPolicyOnOwner() {
 
 void MeshConnectivity::ArmHopPolicyRefresh() {
   if (hop_policy_timer_ != 0) {
-    AppRuntime::CancelCoordinatorTimer(std::exchange(hop_policy_timer_, 0));
+    MeshThreads::CancelTimer(std::exchange(hop_policy_timer_, 0));
   }
-  hop_policy_timer_ = AppRuntime::ScheduleOn(kOwner, kHopPolicyRefresh, deferred_.Bind([this]() {
+  hop_policy_timer_ = MeshThreads::ScheduleOnOwner(kHopPolicyRefresh, deferred_.Bind([this]() {
     hop_policy_timer_ = 0;
     RefreshHopPolicyOnOwner();
     ArmHopPolicyRefresh();
@@ -229,7 +228,7 @@ void MeshConnectivity::WireCircuitHopReach(MeshHost* m, const MeshIoContext& io)
     if (relay_peer_key.empty()) {
       return;
     }
-    AppRuntime::PostToOwnerOrRun(kOwner, [this, alive, snap, relay_peer_key]() {
+    MeshThreads::PostToOwnerOrRun([this, alive, snap, relay_peer_key]() {
       if (!DeferredSelf::Alive(alive, snap)) {
         return;
       }
@@ -245,7 +244,7 @@ void MeshConnectivity::WireCircuitHopReach(MeshHost* m, const MeshIoContext& io)
 }
 
 void MeshConnectivity::BindTestPath(IDialRegistry* dial, ICircuitHopReach* circuit_reach) {
-  AppRuntime::RunAndWait(kOwner, [&]() {
+  MeshThreads::RunOnOwnerAndWait([&]() {
     test_dial_ = dial;
     test_circuit_reach_ = circuit_reach;
   });
@@ -260,12 +259,12 @@ ICircuitHopReach* MeshConnectivity::CircuitReach() const {
 }
 
 void MeshConnectivity::InvalidateAsyncOps() {
-  AppRuntime::RunAndWait(kOwner, [&]() {
+  MeshThreads::RunOnOwnerAndWait([&]() {
     rendezvous_.Invalidate();
     wired_ = false;
     PublishLocalView({});  // consumers stop seeing the mesh the owner is about to tear down
     if (hop_policy_timer_ != 0) {
-      AppRuntime::CancelCoordinatorTimer(std::exchange(hop_policy_timer_, 0));
+      MeshThreads::CancelTimer(std::exchange(hop_policy_timer_, 0));
     }
     if (auto* amp = dynamic_cast<AmpCircuitHopReach*>(circuit_hop_reach_.get())) {
       amp->SetOnRelayChosen({});
@@ -276,14 +275,14 @@ void MeshConnectivity::InvalidateAsyncOps() {
 }
 
 void MeshConnectivity::ResetDialRegistry() {
-  AppRuntime::RunAndWait(kOwner, [&]() {
+  MeshThreads::RunOnOwnerAndWait([&]() {
     objects_.Invalidate();
     dial_registry_.reset();
   });
 }
 
 void MeshConnectivity::ResetAfterMeshStop() {
-  AppRuntime::RunAndWait(kOwner, [&]() {
+  MeshThreads::RunOnOwnerAndWait([&]() {
     objects_.Invalidate();
     dial_registry_.reset();
     circuit_hop_reach_.reset();
@@ -291,7 +290,7 @@ void MeshConnectivity::ResetAfterMeshStop() {
 }
 
 void MeshConnectivity::Clear() {
-  AppRuntime::RunAndWait(kOwner, [&]() {
+  MeshThreads::RunOnOwnerAndWait([&]() {
     InvalidateAsyncOps();
     dial_registry_.reset();
     circuit_hop_reach_.reset();
@@ -307,7 +306,7 @@ void MeshConnectivity::Clear() {
 
 void MeshConnectivity::RegisterPeerListenMultiaddrs(const std::string& key, const std::vector<std::string>& multiaddrs,
                                                   std::function<void(const std::string& peer_id)> on_registered) {
-  AppRuntime::PostToOwnerOrRun(kOwner, [this, alive = alive_, key, multiaddrs,
+  MeshThreads::PostToOwnerOrRun([this, alive = alive_, key, multiaddrs,
                                         on_registered = std::move(on_registered)]() {
     if (!alive->load(std::memory_order_acquire)) {
       return;  // gone (cleared on the owner by the destructor)
@@ -333,7 +332,7 @@ void MeshConnectivity::PublishListenBook() {
 
 std::string MeshConnectivity::RegisterPeerListenMultiaddrsOnOwner(const std::string& key,
                                                                 const std::vector<std::string>& multiaddrs) {
-  PBR_ASSERT_ON_OWNER(OwnerThreadId::Connectivity);
+  PBR_MESH_ASSERT_ON_OWNER();
   if (key.empty() || multiaddrs.empty()) {
     return {};
   }
@@ -395,7 +394,7 @@ bool MeshConnectivity::PeerLanConfirmed(const std::string& peer_id) const {
 // --- reach ----------------------------------------------------------------------------------------
 
 Roe<void> MeshConnectivity::TryEnsureCircuitHopReachable(const std::string& hop_peer_id) {
-  if (AppRuntime::IsShuttingDown()) {
+  if (MeshThreads::IsShuttingDown()) {
     return Error("shutdown in progress");
   }
   if (!circuit_hop_reach_) {
@@ -405,7 +404,7 @@ Roe<void> MeshConnectivity::TryEnsureCircuitHopReachable(const std::string& hop_
 }
 
 Roe<void> MeshConnectivity::TryEnsurePeerReachable(const std::string& peer_key) {
-  if (AppRuntime::IsShuttingDown()) {
+  if (MeshThreads::IsShuttingDown()) {
     return Error("shutdown in progress");
   }
   if (!circuit_hop_reach_) {
@@ -421,7 +420,7 @@ void MeshConnectivity::TryEnsurePeerReachableAsync(const std::string& peer_key, 
   if (!on_done) {
     return;
   }
-  if (AppRuntime::IsShuttingDown()) {
+  if (MeshThreads::IsShuttingDown()) {
     on_done(Error("shutdown in progress"));
   } else if (!circuit_hop_reach_) {
     on_done(Error("Amp circuit reach required"));

@@ -36,7 +36,8 @@ endfunction()
 
 _pp_mesh_library(shared
   SOURCES
-    l4/shared/MediaFrameBody.cpp)
+    l4/shared/MediaFrameBody.cpp
+    shared/AppRuntimeMeshThreads.cpp)  # the app's side of MeshThreads: stays in pp-browser at the move
 
 set(_pp_mesh_reachability_sources
   reachability/Reachability.cpp

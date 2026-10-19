@@ -153,7 +153,7 @@ The mesh leaves for its own library, [pp-cpp-mesh](https://github.com/people-pos
 
 **Rules for the library:** it depends on pp-cpp-common, pp-cpp-amp and pp-cpp-crypto only; it carries
 protocols and bytes, product types stay in pp-browser; it does not use the app's threads directly — the
-app gives it an executor (work, coordinator, timers) built on `AppRuntime`.
+app defines its threads (`MeshThreads`: the owner lane, timers, workers, the app's loop) — pp-browser on `AppRuntime`.
 
 **Untangling first, in place.** Each PR removes mesh includes of pp-browser headers, keeping
 pp-browser green; `scripts/check/check_mesh_layers.sh` fails any such include not on its
@@ -163,10 +163,10 @@ shrinks. Then the move, with history; mesh tests come along clean too.
 | Step | |
 |------|---|
 | Mesh config types out of the app's `Config` (`foundation/data/MeshConfigTypes.h`) | done |
-| Executor port in place of `AppRuntime`; `DeferredSelf` | |
+| `MeshThreads` in place of `AppRuntime` (the owner lane, timers, workers, the app's loop); pp-browser defines it on `AppRuntime` (`shared/AppRuntimeMeshThreads.cpp`, which stays in pp-browser) | done |
 | `l4/call_media` out of the mesh (and `host`'s edge to it); product `common/` types (chat, thread, media health) out of mesh code | |
 | PeerId derivation and multiaddr helpers into pp-cpp-amp; ML-DSA / cipher wrappers onto pp-cpp-crypto | |
-| Mesh-owned `common/` types (directory, address disclosure, public address, metrics) and generic helpers (`PbrCompat`, `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `AtomicFileWrite`) | |
+| Mesh-owned `common/` types (directory, address disclosure, public address, metrics) and generic helpers (`PbrCompat`, `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `AtomicFileWrite`, `DeferredSelf`) | |
 | The move (pp-cpp-amp ≥ the pin pp-ledger needs) | |
 
 Invariants: the mesh must not depend on `feature/*`; policy (`MeshHopPolicy`, `SoftMigrateLogic`)
