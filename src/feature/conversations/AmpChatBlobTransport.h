@@ -3,7 +3,7 @@
 #include "foundation/crypto/CryptoTypes.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
-#include "domain/mesh/host/MeshPorts.h"
+#include "mesh/host/MeshPorts.h"
 #include "domain/net/OrgBackendClients.h"
 #include "domain/people/IdentityStore.h"
 
@@ -15,6 +15,7 @@
 #include <vector>
 #include <chrono>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -28,7 +29,7 @@ public:
   using IoPost = std::function<void(std::function<void()>)>;
   using IoAfter = std::function<void(std::chrono::milliseconds, std::function<void()>)>;
 
-  AmpChatBlobTransport(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
+  AmpChatBlobTransport(mesh::IChatPeerLinks& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
                      WorkerPost post_worker = {}, IoPost post_io = {}, IoAfter post_after = {});
   ~AmpChatBlobTransport() override;
 
@@ -55,7 +56,7 @@ public:
 private:
   struct Impl;
   std::unique_ptr<Impl> impl_;
-  IChatPeerLinks& links_;
+  mesh::IChatPeerLinks& links_;
   IoPump io_pump_;
   WorkerPost post_worker_;
   IoPost post_io_;

@@ -5,13 +5,14 @@
 #include "amp/L1/OsUdpDatagramIo.h"
 #include "amp/link/AdpMultiaddr.h"
 #include "amp/link/AmpStack.h"
-#include "domain/mesh/host/MeshHost.h"
-#include "domain/mesh/tests/support/mesh_harness_support.h"
+#include "mesh/host/MeshHost.h"
+#include "mesh/testing/mesh_harness_support.h"
 #include "domain/messaging/RelayWirePayload.h"
 #include "foundation/crypto/MlDsa.h"
 #include "crypto/PeerId.h"
 
 #include "foundation/runtime/AppRuntime.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
@@ -25,7 +26,7 @@ namespace pbr {
 namespace {
 
 struct PumpedHost {
-  std::unique_ptr<MeshHost> host;
+  std::unique_ptr<mesh::MeshHost> host;
   std::string peer_id;
   std::string listen_ma;
 };
@@ -48,7 +49,7 @@ Roe<PumpedHost> MakePumpedHost() {
   cfg.identity.ml_dsa_secret_key = std::move(keys->secret_key);
   cfg.identity.ml_dsa_public_key = std::move(keys->public_key);
   cfg.local_peer_id = *peer_id;
-  cfg.link_config = pbr::test::AmpMeshTestLinkConfig();
+  cfg.link_config = mesh::test::AmpMeshTestLinkConfig();
   std::shared_ptr<pp::adp::DatagramIo> io = std::move(*bound);
   auto stack = pp::amp::AmpStack::Create(std::move(io), std::make_shared<pp::adp::WallClock>(), std::move(cfg));
   if (!stack) {
@@ -61,17 +62,17 @@ Roe<PumpedHost> MakePumpedHost() {
     return Error(ma.error().message);
   }
   PumpedHost out;
-  out.host = std::make_unique<MeshHost>(AppRuntimeMeshExecutors(), MetricsRegistry::Global());
+  out.host = std::make_unique<mesh::MeshHost>(AppRuntimeMeshExecutors(), MetricsRegistry::Global());
   out.peer_id = *peer_id;
   out.listen_ma = *ma;
-  if (auto attached = out.host->AttachAmpStack(std::move(*stack), *ma, MeshHost::AttachDrive::MeshPump);
+  if (auto attached = out.host->AttachAmpStack(std::move(*stack), *ma, mesh::MeshHost::AttachDrive::MeshPump);
       !attached) {
     return attached.error();
   }
   return out;
 }
 
-std::unique_ptr<AmpDirectChatTransport> MakeChat(MeshHost& host) {
+std::unique_ptr<AmpDirectChatTransport> MakeChat(mesh::MeshHost& host) {
   auto deps = host.ChatDeps();
   if (!deps) {
     return nullptr;

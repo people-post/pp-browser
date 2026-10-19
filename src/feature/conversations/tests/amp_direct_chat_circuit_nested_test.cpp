@@ -2,13 +2,14 @@
 
 #include "common/chat/MessagingJson.h"
 #include "domain/messaging/RelayWirePayload.h"
-#include "domain/mesh/host/MeshPorts.h"
-#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
-#include "domain/mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
-#include "domain/mesh/l4/circuit/client/CircuitClientCoordinator.h"
-#include "domain/mesh/l4/circuit/serve/CircuitRelayServer.h"
+#include "mesh/host/MeshPorts.h"
+#include "mesh/l4/circuit/CircuitRelayTypes.h"
+#include "mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
+#include "mesh/l4/circuit/client/CircuitClientCoordinator.h"
+#include "mesh/l4/circuit/serve/CircuitRelayServer.h"
 #include "amp/link/Types.h"
-#include "domain/mesh/tests/support/mesh_triple_harness.h"
+#include "mesh/testing/mesh_triple_harness.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
@@ -44,7 +45,7 @@ class AmpDirectChatCircuitNestedTest : public ::testing::Test {
 protected:
   void SetUp() override {
     ASSERT_GE(sodium_init(), 0);
-    auto created = pbr::test::AmpMeshTripleHarness::Create();
+    auto created = mesh::test::AmpMeshTripleHarness::Create();
     ASSERT_TRUE(static_cast<bool>(created)) << created.error().message;
     harness_ = std::move(*created);
 
@@ -57,12 +58,12 @@ protected:
     harness_->mgr_a().EnableNestedCarrierAccept(true);
     harness_->mgr_b().EnableNestedCarrierAccept(true);
 
-    chat_a_ = NewAmpChatPeerLinks(*harness_->runtime_a);
-    chat_b_ = NewAmpChatPeerLinks(*harness_->runtime_b);
+    chat_a_ = mesh::NewAmpChatPeerLinks(*harness_->runtime_a);
+    chat_b_ = mesh::NewAmpChatPeerLinks(*harness_->runtime_b);
 
-    hops_ = std::make_unique<AmpCircuitHopRegistry>();
-    circuit_r_ = std::make_unique<CircuitRelayServer>(*harness_->runtime_r);
-    circuit_a_ = std::make_unique<CircuitClientCoordinator>(*harness_->runtime_a);
+    hops_ = std::make_unique<mesh::AmpCircuitHopRegistry>();
+    circuit_r_ = std::make_unique<mesh::CircuitRelayServer>(*harness_->runtime_r);
+    circuit_a_ = std::make_unique<mesh::CircuitClientCoordinator>(*harness_->runtime_a);
     circuit_r_->Start();
     circuit_r_->SetServeInbound(true);
     circuit_a_->Start();
@@ -141,19 +142,19 @@ protected:
       };
     }
 
-    void PumpUntilDone(pbr::test::AmpMeshTripleHarness& harness, const size_t max_rounds = 2000) {
+    void PumpUntilDone(mesh::test::AmpMeshTripleHarness& harness, const size_t max_rounds = 2000) {
       harness.PumpUntil([this] { return done.load(std::memory_order_acquire); }, max_rounds);
       ASSERT_TRUE(done.load(std::memory_order_acquire));
     }
   };
 
   Roe<void> EstablishNestedChatPath() {
-    CircuitBridgeTarget target;
+    mesh::CircuitBridgeTarget target;
     target.target_peer_id = harness_->peer_id_b;
     target.target_multiaddr = harness_->ma_b;
     target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
 
-    Wait<CircuitTunnelBridgeResult> bridge_wait;
+    Wait<mesh::CircuitTunnelBridgeResult> bridge_wait;
     auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 8000);
     if (!tunnel_id) {
       return Error("start bridge failed");
@@ -181,12 +182,12 @@ protected:
     return {};
   }
 
-  std::unique_ptr<pbr::test::AmpMeshTripleHarness> harness_;
-  std::unique_ptr<IChatPeerLinks> chat_a_;
-  std::unique_ptr<IChatPeerLinks> chat_b_;
-  std::unique_ptr<AmpCircuitHopRegistry> hops_;
-  std::unique_ptr<CircuitRelayServer> circuit_r_;
-  std::unique_ptr<CircuitClientCoordinator> circuit_a_;
+  std::unique_ptr<mesh::test::AmpMeshTripleHarness> harness_;
+  std::unique_ptr<mesh::IChatPeerLinks> chat_a_;
+  std::unique_ptr<mesh::IChatPeerLinks> chat_b_;
+  std::unique_ptr<mesh::AmpCircuitHopRegistry> hops_;
+  std::unique_ptr<mesh::CircuitRelayServer> circuit_r_;
+  std::unique_ptr<mesh::CircuitClientCoordinator> circuit_a_;
   std::unique_ptr<AmpDirectChatTransport> a_chat_;
   std::unique_ptr<AmpDirectChatTransport> b_chat_;
 };

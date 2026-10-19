@@ -33,7 +33,7 @@ TEST(MeshRoleTest, NormalizeStripsRetiredBootstrapAndFillsDefaults) {
 TEST(MeshRoleTest, ResolveEffectivePrefersDirectoryThenConfig) {
   pbr::MeshConfig config;
   config.bootstrap_peers = {"/ip4/9.9.9.9/udp/443/adp/1.0.0/p2p/12D3KooWConfigSeed"};
-  pbr::MeshDirectoryNode dir;
+  pp::mesh::MeshDirectoryNode dir;
   dir.peer_id = "12D3KooWDirNode";
   dir.multiaddrs = {"/ip4/8.8.8.8/udp/443/adp/1.0.0/p2p/12D3KooWDirNode"};
   dir.circuit_relay = true;

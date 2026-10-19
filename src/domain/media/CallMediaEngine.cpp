@@ -1,6 +1,6 @@
 #include "domain/media/CallMediaEngine.h"
 
-#include "common/media/MediaChannel.h"
+#include "mesh/types/MediaChannel.h"
 #include "domain/media/VideoLevelProfile.h"
 
 #include "domain/media/CallAudioSession.h"
@@ -35,6 +35,7 @@
 #include <utility>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -104,7 +105,7 @@ struct CallMediaEngine::Impl {
   std::atomic<bool> adaptation_camera_allowed{true};
   std::atomic<int64_t> adaptation_target_video_bps{0};
   /** The level outgoing video is sent at (docs/contracts/MEDIA_CHANNELS.md). */
-  std::atomic<uint8_t> video_level{kDefaultVideoLevel};
+  std::atomic<uint8_t> video_level{mesh::kDefaultVideoLevel};
   /** Set by SetVideoLevel: the level's profile sizes the encode and sets its bitrate (broadcast). */
   std::atomic<bool> video_level_profile{false};
 
@@ -988,7 +989,7 @@ struct CallMediaEngine::Impl {
         }
         if (send_fn) {
           SfuPacket pkt;
-          pkt.channel_id = kMediaChannelAudio;
+          pkt.channel_id = mesh::kMediaChannelAudio;
           pkt.seq = sfu_audio_seq.fetch_add(1) + 1;
           pkt.payload.assign(opus_buf.data(), opus_buf.data() + encoded);
           try {
@@ -1133,7 +1134,7 @@ struct CallMediaEngine::Impl {
       return;
     }
     SfuPacket pkt;
-    pkt.channel_id = VideoChannel(video_level.load(std::memory_order_relaxed));
+    pkt.channel_id = mesh::VideoChannel(video_level.load(std::memory_order_relaxed));
     pkt.seq = sfu_video_seq.fetch_add(1) + 1;
     pkt.mark = encoded->keyframe ? 1 : 0;
     pkt.payload = std::move(encoded->annex_b);
@@ -1460,11 +1461,11 @@ void CallMediaEngine::OnSfuPacket(const SfuPacket& packet) {
                  << " call=" << impl_->call_id;
     }
   }
-  if (IsAudioChannel(packet.channel_id)) {
+  if (mesh::IsAudioChannel(packet.channel_id)) {
     impl_->OnRemoteOpusFrame(packet.stream_id, packet.seq,
                              reinterpret_cast<const std::byte*>(packet.payload.data()),
                              packet.payload.size());
-  } else if (IsVideoChannel(packet.channel_id)) {
+  } else if (mesh::IsVideoChannel(packet.channel_id)) {
     impl_->OnRemoteH264Frame(packet.stream_id, reinterpret_cast<const std::byte*>(packet.payload.data()),
                              packet.payload.size());
   }
@@ -1659,7 +1660,7 @@ Roe<void> CallMediaEngine::SetCameraEnabled(bool enabled, const int display_rota
 }
 
 void CallMediaEngine::SetVideoLevel(const uint8_t level) {
-  if (!IsVideoLevel(level)) {
+  if (!mesh::IsVideoLevel(level)) {
     return;
   }
   impl_->video_level.store(level, std::memory_order_relaxed);

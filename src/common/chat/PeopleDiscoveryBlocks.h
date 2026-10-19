@@ -1,7 +1,8 @@
 #pragma once
 
-#include "common/directory/DirectoryTypes.h"
+#include "mesh/types/DirectoryTypes.h"
 #include "common/directory/IdentityTypes.h"
+#include "common/MeshAlias.h"
 
 #include <cstddef>
 #include <string>
@@ -15,7 +16,7 @@ struct PeopleDiscoveryContactView {
   std::string id;
   std::string display_name;
   std::string server_nickname;
-  std::vector<ContactId> ids;
+  std::vector<mesh::ContactId> ids;
 };
 
 /**
@@ -61,11 +62,11 @@ struct PeopleDiscoveryBuildOptions {
 std::unordered_set<std::string> SelfIdentityValuesFromLocal(const LocalIdentity& identity);
 
 /** True when hit account/ids intersect `identities`. */
-bool DirectoryHitMatchesIdentities(const DirectoryHit& hit,
+bool DirectoryHitMatchesIdentities(const mesh::DirectoryHit& hit,
                                    const std::unordered_set<std::string>& identities);
 
 // Builds structured blocks JSON ({"blocks":[...]}) for people-discovery tool results.
-std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& directory_hits,
+std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>& directory_hits,
                                            const std::vector<PeopleDiscoveryContactView>& contacts,
                                            const PeopleDiscoveryBuildOptions& options = {});
 

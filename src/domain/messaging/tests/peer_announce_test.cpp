@@ -18,6 +18,7 @@
 #include <variant>
 
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -213,14 +214,14 @@ TEST(PeerAnnounceKeyResolveTest, ResolvesPeerIdStoreAndRejectsAccountKind) {
   PeerSigningKeyRecord record;
   record.signing_public_key_b64 = Base64Encode(keys->public_key);
   record.source = "test";
-  store.Put(ContactIdKindToString(ContactIdKind::PeerId), *peer_id, record);
+  store.Put(ContactIdKindToString(mesh::ContactIdKind::PeerId), *peer_id, record);
 
   auto resolved = ResolvePeerAnnouncePublisherKey(*peer_id, "other-local", {}, store);
   ASSERT_TRUE(resolved);
   EXPECT_EQ(*resolved, keys->public_key);
 
   PeerSigningKeyStore account_only;
-  account_only.Put(ContactIdKindToString(ContactIdKind::Account), *peer_id, record);
+  account_only.Put(ContactIdKindToString(mesh::ContactIdKind::Account), *peer_id, record);
   EXPECT_FALSE(ResolvePeerAnnouncePublisherKey(*peer_id, "other-local", {}, account_only));
 }
 
@@ -234,7 +235,7 @@ TEST(PeerAnnounceKeyResolveTest, RejectsPeerIdBindMismatch) {
   PeerSigningKeyRecord record;
   record.signing_public_key_b64 = Base64Encode(keys->public_key);
   record.source = "test";
-  store.Put(ContactIdKindToString(ContactIdKind::PeerId), "not-the-derived-peer-id", record);
+  store.Put(ContactIdKindToString(mesh::ContactIdKind::PeerId), "not-the-derived-peer-id", record);
 
   EXPECT_FALSE(
       ResolvePeerAnnouncePublisherKey("not-the-derived-peer-id", "other-local", {}, store));
@@ -245,7 +246,7 @@ TEST(PeerAnnounceKeyResolveTest, RejectsPeerIdBindMismatch) {
 TEST(AnnounceDmReplyTest, PrefersAccountThreadWhenContactKnown) {
   auto plan = PlanAnnounceDmReply("12D3KooWPublisher", "c1", "account:alice", "Alice");
   ASSERT_TRUE(plan) << plan.error().message;
-  EXPECT_EQ(plan->target.peer_identity_kind, ContactIdKindToString(ContactIdKind::Account));
+  EXPECT_EQ(plan->target.peer_identity_kind, ContactIdKindToString(mesh::ContactIdKind::Account));
   EXPECT_EQ(plan->target.peer_identity_value, "account:alice");
   EXPECT_EQ(plan->target.channel, ThreadChannel::E2ePublic);
   EXPECT_EQ(plan->contact_id, "c1");
@@ -255,7 +256,7 @@ TEST(AnnounceDmReplyTest, PrefersAccountThreadWhenContactKnown) {
 TEST(AnnounceDmReplyTest, FallsBackToPeerIdThread) {
   auto plan = PlanAnnounceDmReply("12D3KooWPublisher", "", "", "");
   ASSERT_TRUE(plan) << plan.error().message;
-  EXPECT_EQ(plan->target.peer_identity_kind, ContactIdKindToString(ContactIdKind::PeerId));
+  EXPECT_EQ(plan->target.peer_identity_kind, ContactIdKindToString(mesh::ContactIdKind::PeerId));
   EXPECT_EQ(plan->target.peer_identity_value, "12D3KooWPublisher");
   EXPECT_EQ(plan->thread_title, "12D3KooWPublisher");
 }

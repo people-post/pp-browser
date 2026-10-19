@@ -1,7 +1,7 @@
 #pragma once
 
-#include "domain/mesh/reachability/Reachability.h"
-#include "domain/mesh/l4/shared/RelayRuntimeStats.h"
+#include "mesh/reachability/Reachability.h"
+#include "mesh/l4/shared/RelayRuntimeStats.h"
 
 #include <chrono>
 #include <cstddef>
@@ -9,6 +9,8 @@
 #include <functional>
 #include <string>
 #include "common/PbrCompat.h"
+#include "mesh/host/MeshHost.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -200,16 +202,16 @@ enum class BriefRelayHealth {
 /** Pure mapping for tests and MakeMessagingShellPorts. */
 StatusbarClusterSnapshot BuildStatusbarClusterSnapshot(bool messaging_ready, BriefRelayHealth brief_health,
                                                        bool host_running, bool has_mesh_error,
-                                                       ReachabilityStatus reachability,
+                                                       mesh::ReachabilityStatus reachability,
                                                        bool help_network_enabled,
-                                                       const RelayRuntimeStats& load = {});
+                                                       const mesh::RelayRuntimeStats& load = {});
 
 StatusbarPopoverSnapshot BuildStatusbarPopoverSnapshot(bool messaging_ready, BriefRelayHealth brief_health,
                                                        bool host_running, const std::string& last_error,
-                                                       ReachabilityStatus reachability, bool has_global_ipv6,
+                                                       mesh::ReachabilityStatus reachability, bool has_global_ipv6,
                                                        bool dial_back_ok, bool upnp_mapped,
                                                        bool help_network_enabled,
-                                                       const RelayRuntimeStats& load = {},
+                                                       const mesh::RelayRuntimeStats& load = {},
                                                        const MeshTrafficView& traffic = {});
 
 /**
@@ -224,7 +226,6 @@ struct MessagingShellPorts {
   std::function<void()> open_network_settings;
 };
 
-class MeshHost;
 class ConversationsHub;
 
 /**
@@ -234,22 +235,22 @@ class ConversationsHub;
  */
 struct MessagingShellPortsDeps {
   /** Current mesh host; null before the libp2p stack is up (degrade gracefully). */
-  std::function<MeshHost*()> mesh;
+  std::function<mesh::MeshHost*()> mesh;
   std::function<bool()> messaging_ready;
   std::function<BriefRelayHealth()> brief_health;
   std::function<bool()> help_network_enabled;
   std::function<std::string()> last_mesh_error;
   std::function<void()> retest_reachability;
-  std::function<RelayRuntimeStats()> relay_load_stats;
+  std::function<mesh::RelayRuntimeStats()> relay_load_stats;
   /** Cumulative mesh traffic now (the ports turn samples into rates). */
   std::function<MeshTrafficTotals()> traffic_totals;
 };
 
 /** Mesh traffic totals from a (possibly null) mesh host. */
-MeshTrafficTotals CollectMeshTrafficTotals(MeshHost* mesh);
+MeshTrafficTotals CollectMeshTrafficTotals(mesh::MeshHost* mesh);
 
 /** Collect circuit + media relay serving stats from a (possibly null) mesh host. */
-RelayRuntimeStats CollectRelayRuntimeStats(MeshHost* mesh);
+mesh::RelayRuntimeStats CollectRelayRuntimeStats(mesh::MeshHost* mesh);
 
 /** Core builder: mesh reads via deps.mesh(), hub-owned bits via the deps lambdas. */
 MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps);

@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -29,7 +30,7 @@ struct MessagingContactsPorts {
   std::function<Roe<Contact>(const Contact& contact)> upsert_contact;
   std::function<Roe<Contact>()> add_empty_contact;
   std::function<Roe<bool>(const std::string& contact_id)> remove_contact;
-  std::function<Roe<Contact>(const std::string& contact_id, const DirectoryHit& hit, int64_t fetched_at_ms)>
+  std::function<Roe<Contact>(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms)>
       apply_remote_snapshot;
 
   std::function<Roe<std::vector<Thread>>()> list_threads;
@@ -41,11 +42,11 @@ struct MessagingContactsPorts {
                                                      const std::string& peer_identity_value)>
       get_signing_key;
 
-  std::function<Roe<DirectoryHit>(const std::string& relay_user_id)> lookup_relay_user;
+  std::function<Roe<mesh::DirectoryHit>(const std::string& relay_user_id)> lookup_relay_user;
 
   std::function<std::string(const Contact& contact)> contact_icon_local_path;
   std::function<void(const Contact& contact)> ensure_contact_icon_cached;
-  std::function<void(const DirectoryHit& hit)> ensure_directory_hit_icon_cached;
+  std::function<void(const mesh::DirectoryHit& hit)> ensure_directory_hit_icon_cached;
 
   std::function<void(const Contact& contact)> register_contact_direct_endpoints;
   std::function<void(const std::string& thread_id)> warm_peer_for_thread;

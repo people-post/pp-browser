@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/mesh/host/DisclosureGatedPeerLinks.h"
+#include "mesh/host/DisclosureGatedPeerLinks.h"
 #include "common/Module.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
@@ -23,7 +23,7 @@
 #include "feature/calls/CallControlInboundPorts.h"
 #include "feature/conversations/RelayReceivePipeline.h"
 #include "feature/conversations/GroupInviteGate.h"
-#include "domain/mesh/host/MeshPorts.h"
+#include "mesh/host/MeshPorts.h"
 #include "feature/conversations/AmpPeerAnnounceTransport.h"
 #include "feature/conversations/AmpBroadcastTransport.h"
 #include "domain/messaging/PeerAnnounceFeed.h"
@@ -43,6 +43,7 @@
 #include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -66,7 +67,7 @@ enum class ThreadPeerPathKind {
 
 /** Aggregated peer-link UX for a direct chat thread. */
 struct ThreadPeerLinkView {
-  MeshPeerLinkPhase phase = MeshPeerLinkPhase::Unavailable;
+  mesh::MeshPeerLinkPhase phase = mesh::MeshPeerLinkPhase::Unavailable;
   ThreadPeerPathKind path_kind = ThreadPeerPathKind::None;
   std::string status_label;
   std::string banner_message;
@@ -86,7 +87,7 @@ public:
                       IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
                       IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
                       GroupRosterStore& group_roster, GroupInviteGate* invite_gate = nullptr,
-                      IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
+                      mesh::IChatPeerLinks* amp_links = nullptr, std::function<void()> amp_io_pump = {},
                       std::function<void(std::function<void()>)> amp_worker_post = {},
                       std::function<void(std::function<void()>)> amp_post_io = {},
                       std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after = {});
@@ -138,8 +139,8 @@ public:
    * projects/privacy T1: chat, attachments and history dial only peers this gate allows (others over
    * a link that is already up, else the Brief relay). Set before AttachAmpTransports. Not owned.
    */
-  void SetAddressDisclosure(const AddressDisclosureGate* gate) { address_disclosure_ = gate; }
-  void AttachAmpTransports(IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
+  void SetAddressDisclosure(const mesh::AddressDisclosureGate* gate) { address_disclosure_ = gate; }
+  void AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump = {},
                            std::function<void(std::function<void()>)> amp_worker_post = {},
                            std::function<void(std::function<void()>)> amp_post_io = {},
                            std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after = {});
@@ -252,7 +253,7 @@ public:
    * Brief route sources for Account→`relay:` (P001 strangers / non-contact calls).
    * Shadows: cached directory hits; directory: sync LookupByAccount on send miss.
    */
-  void SetPeerRouteSources(DirectoryShadowCache* shadows, IDirectoryClient* directory);
+  void SetPeerRouteSources(DirectoryShadowCache* shadows, mesh::IDirectoryClient* directory);
   /** Learn Account→`relay:` from inbound `sender_contact_id` + `sender_relay_id`. */
   void NoteAccountRelayRoute(const std::string& account_id, const std::string& relay_user_id);
   /** D052 — fetch one older-history page when scrolled to top. */
@@ -329,10 +330,10 @@ private:
   PaymentPromiseStore* payment_promises_ = nullptr;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
   std::string profile_data_dir_;
-  IChatPeerLinks* amp_links_ = nullptr;
-  const AddressDisclosureGate* address_disclosure_ = nullptr;
+  mesh::IChatPeerLinks* amp_links_ = nullptr;
+  const mesh::AddressDisclosureGate* address_disclosure_ = nullptr;
   /** `amp_links_` limited to the audience, for the people-facing transports (outlives them). */
-  std::unique_ptr<DisclosureGatedPeerLinks> people_links_;
+  std::unique_ptr<mesh::DisclosureGatedPeerLinks> people_links_;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   std::unique_ptr<IChatHistoryPeerClient> peer_history_;
   std::unique_ptr<IChatBlobPeerService> peer_blob_;
@@ -348,7 +349,7 @@ private:
   PublicPskLockCoordinator public_lock_;
   CallControlInboundPorts call_control_;
   DirectoryShadowCache* directory_shadows_ = nullptr;
-  IDirectoryClient* directory_ = nullptr;
+  mesh::IDirectoryClient* directory_ = nullptr;
   std::string support_account_id_;
   std::string relay_cursor_;
   std::function<void()> on_messages_changed_;

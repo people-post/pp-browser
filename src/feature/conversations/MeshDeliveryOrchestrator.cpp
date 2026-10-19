@@ -23,8 +23,8 @@
 #include "domain/messaging/InitiationPricing.h"
 #include "foundation/data/PricingTypes.h"
 #include "domain/people/MeshHopPolicy.h"
-#include "domain/mesh/reachability/AmpObservedAddrs.h"
-#include "domain/mesh/reachability/Reachability.h"
+#include "mesh/reachability/AmpObservedAddrs.h"
+#include "mesh/reachability/Reachability.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "common/chat/ChatPayloadTypes.h"
 #include "common/thread/E2eIntegrityUtil.h"
@@ -45,7 +45,7 @@
 #include "domain/messaging/RelayWirePayload.h"
 #include "domain/people/PeerBriefRoute.h"
 #include "common/thread/SyncStateTypes.h"
-#include "domain/mesh/host/MeshPorts.h"
+#include "mesh/host/MeshPorts.h"
 #include "domain/net/OrgBackendClientsImpl.h"
 #include "domain/net/RelayInboxCursor.h"
 #include "domain/people/ContactIdentity.h"
@@ -65,6 +65,7 @@
 
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -112,7 +113,7 @@ constexpr const char* kMockPeerSigningPublicKeyB64 = "A6EHv/POEL4dcN0Y50vAmWfk1j
 
 DirectChatTarget InboundTargetFromEnvelope(const RelayEnvelope& envelope) {
   DirectChatTarget target;
-  target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   target.peer_identity_value = envelope.sender_contact_id;
   target.channel = envelope.route.channel;
   return target;
@@ -126,7 +127,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
                                          IPeerSigningKeyResolver& signing_key_resolver, PeerKemKeyStore& kem_key_store,
                                          IPeerKemKeyResolver& kem_key_resolver, IPskSessionStore& psk_store,
                                          GroupRosterStore& group_roster, GroupInviteGate* invite_gate,
-                                         IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
+                                         mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
                                          std::function<void(std::function<void()>)> amp_worker_post,
                                          std::function<void(std::function<void()>)> amp_post_io,
                                          std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after)
@@ -207,11 +208,11 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::ReplyToAnnouncePublisher(const std:
   std::string contact_id;
   std::string account_id;
   std::string title = tip_peer_id;
-  if (auto found = contacts_.FindByIdentity(tip_peer_id, ContactIdKind::PeerId)) {
+  if (auto found = contacts_.FindByIdentity(tip_peer_id, mesh::ContactIdKind::PeerId)) {
     if (*found) {
       const Contact& contact = **found;
       contact_id = contact.id;
-      account_id = PrimaryIdOfKind(contact, ContactIdKind::Account);
+      account_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account);
       title = FormatContactTitle(contact);
       if (title.empty()) {
         title = tip_peer_id;
@@ -248,11 +249,11 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::ReplyToAnnounceOverlay(const std::s
   std::string contact_id;
   std::string account_id;
   std::string title = tip_peer_id;
-  if (auto found = contacts_.FindByIdentity(tip_peer_id, ContactIdKind::PeerId)) {
+  if (auto found = contacts_.FindByIdentity(tip_peer_id, mesh::ContactIdKind::PeerId)) {
     if (*found) {
       const Contact& contact = **found;
       contact_id = contact.id;
-      account_id = PrimaryIdOfKind(contact, ContactIdKind::Account);
+      account_id = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account);
       title = FormatContactTitle(contact);
       if (title.empty()) {
         title = tip_peer_id;
@@ -375,7 +376,7 @@ void MeshDeliveryOrchestrator::RegisterPeerKemKey(const std::string& peer_identi
 }
 
 void MeshDeliveryOrchestrator::RegisterMockPeerKeyForReply(const std::string& peer_identity_value) {
-  RegisterPeerSigningKey(ContactIdKindToString(ContactIdKind::Account), peer_identity_value,
+  RegisterPeerSigningKey(ContactIdKindToString(mesh::ContactIdKind::Account), peer_identity_value,
                          kMockPeerSigningPublicKeyB64, "mock_relay");
 }
 
@@ -458,9 +459,9 @@ void MeshDeliveryOrchestrator::PersistRelayCursor(const std::string& relay_user_
 
 void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoint(const std::string& peer_relay_user_id,
                                                      const std::string& multiaddr) {
-  const bool is_adp = IsAdpMultiaddr(multiaddr);
+  const bool is_adp = mesh::IsAdpMultiaddr(multiaddr);
   // B6: never register undialable ADP hosts (0.0.0.0 / :: / link-local) into the dial book.
-  if (is_adp && !IsUsableAdpListen(multiaddr)) {
+  if (is_adp && !mesh::IsUsableAdpListen(multiaddr)) {
     return;
   }
   if (amp_links_ && is_adp) {
@@ -484,8 +485,8 @@ void MeshDeliveryOrchestrator::RegisterPeerDirectEndpoints(
     if (ma.empty()) {
       continue;
     }
-    if (IsAdpMultiaddr(ma)) {
-      if (!IsUsableAdpListen(ma)) {
+    if (mesh::IsAdpMultiaddr(ma)) {
+      if (!mesh::IsUsableAdpListen(ma)) {
         continue;
       }
       usable.push_back(ma);
@@ -513,16 +514,16 @@ void MeshDeliveryOrchestrator::RegisterContactDirectEndpoints(const Contact& con
   if (target.peer_identity_value.empty()) {
     return;
   }
-  const AmpDialLocalContext local_ctx = CollectAmpDialLocalContext();
+  const mesh::AmpDialLocalContext local_ctx = mesh::CollectAmpDialLocalContext();
   auto register_ranked = [&](const std::string& dial_key, const std::vector<std::string>& multiaddrs) {
     if (dial_key.empty() || multiaddrs.empty()) {
       return;
     }
-    RegisterPeerDirectEndpoints(dial_key, RankAmpDialMultiaddrs(multiaddrs, local_ctx));
+    RegisterPeerDirectEndpoints(dial_key, mesh::RankAmpDialMultiaddrs(multiaddrs, local_ctx));
   };
   if (!contact.remote.endpoints.empty()) {
-    for (const DirectoryEndpoint& endpoint : contact.remote.endpoints) {
-      const auto ranked = RankAmpDialMultiaddrs(endpoint.multiaddrs, local_ctx);
+    for (const mesh::DirectoryEndpoint& endpoint : contact.remote.endpoints) {
+      const auto ranked = mesh::RankAmpDialMultiaddrs(endpoint.multiaddrs, local_ctx);
       RegisterPeerDirectEndpoints(endpoint.peer_id, ranked);
       RegisterPeerDirectEndpoints(target.peer_identity_value, ranked);
     }
@@ -541,7 +542,7 @@ void MeshDeliveryOrchestrator::RegisterContactDirectEndpoints(const Contact& con
   }
 }
 
-void MeshDeliveryOrchestrator::SetPeerRouteSources(DirectoryShadowCache* shadows, IDirectoryClient* directory) {
+void MeshDeliveryOrchestrator::SetPeerRouteSources(DirectoryShadowCache* shadows, mesh::IDirectoryClient* directory) {
   directory_shadows_ = shadows;
   directory_ = directory;
 }
@@ -556,11 +557,11 @@ void MeshDeliveryOrchestrator::NoteAccountRelayRoute(const std::string& account_
     account_to_relay_[account_id] = relay_user_id;
   }
   if (directory_shadows_) {
-    DirectoryHit hit;
+    mesh::DirectoryHit hit;
     hit.hit_id = relay_user_id;
     hit.account_id = account_id;
-    hit.ids = {{ContactIdKind::Account, account_id, true},
-               {ContactIdKind::RelayUser, relay_user_id, false}};
+    hit.ids = {{mesh::ContactIdKind::Account, account_id, true},
+               {mesh::ContactIdKind::RelayUser, relay_user_id, false}};
     directory_shadows_->Put(hit);
   }
 }
@@ -715,7 +716,7 @@ void MeshDeliveryOrchestrator::WarmPeerByKey(const std::string& peer_key) {
   }
   amp_links_->MarkWarm(peer_key);
   if (amp_links_->GetLinkSnapshot(peer_key).has_endpoint) {
-    amp_links_->EnsureAssociation(peer_key, [](IChatPeerLinks::LinkRoe) {});
+    amp_links_->EnsureAssociation(peer_key, [](mesh::IChatPeerLinks::LinkRoe) {});
   }
 }
 
@@ -730,7 +731,7 @@ Roe<EnsuredE2ePublicSessionKey> MeshDeliveryOrchestrator::EnsureE2ePublicSession
   }
   std::string contact_id;
   std::string dm_title = peer_identity;
-  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
+  if (auto contact = contacts_.FindByIdentity(peer_identity, mesh::ContactIdKind::Account)) {
     if (*contact) {
       contact_id = (*contact)->id;
       dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -786,13 +787,13 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
   const std::string peer = (*thread)->peer_identity_value;
   view.relay_available = false;
   if (relay_ != nullptr &&
-      ((*thread)->peer_identity_kind == ContactIdKindToString(ContactIdKind::Account) ||
+      ((*thread)->peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::Account) ||
        (*thread)->peer_identity_kind == "account")) {
     if (!(*thread)->participant_contact_ids.empty()) {
       if (auto contact = contacts_.Get((*thread)->participant_contact_ids.front())) {
         if (*contact) {
-          for (const ContactId& id : (*contact)->ids) {
-            if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+          for (const mesh::ContactId& id : (*contact)->ids) {
+            if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
               view.relay_available = true;
               break;
             }
@@ -801,10 +802,10 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
       }
     }
     if (!view.relay_available) {
-      auto by_account = contacts_.FindByIdentity(peer, ContactIdKind::Account);
+      auto by_account = contacts_.FindByIdentity(peer, mesh::ContactIdKind::Account);
       if (by_account && by_account->has_value()) {
-        for (const ContactId& id : (**by_account).ids) {
-          if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+        for (const mesh::ContactId& id : (**by_account).ids) {
+          if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
             view.relay_available = true;
             break;
           }
@@ -814,7 +815,7 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
   }
 
   if (peer.empty()) {
-    view.phase = MeshPeerLinkPhase::Unavailable;
+    view.phase = mesh::MeshPeerLinkPhase::Unavailable;
     view.path_kind = ThreadPeerPathKind::Failed;
     view.status_label = "Can't connect";
     view.banner_message = "Add a Peer ID with multiaddr, or a Relay ID, to message.";
@@ -823,13 +824,13 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
   }
 
   if (amp_links_) {
-    const MeshPeerLinkSnapshot snap = amp_links_->GetLinkSnapshot(peer);
+    const mesh::MeshPeerLinkSnapshot snap = amp_links_->GetLinkSnapshot(peer);
     view.phase = snap.phase;
     view.has_direct_endpoint = snap.has_endpoint;
     view.carrier_backed = snap.carrier_backed;
     view.backoff_seconds = static_cast<int>((snap.backoff_remaining.count() + 999) / 1000);
     switch (snap.phase) {
-    case MeshPeerLinkPhase::Connected:
+    case mesh::MeshPeerLinkPhase::Connected:
       if (snap.carrier_backed) {
         view.path_kind = ThreadPeerPathKind::ViaHop;
         view.status_label = "Via hop";
@@ -838,15 +839,15 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
         view.status_label = "Direct";
       }
       break;
-    case MeshPeerLinkPhase::Dialing:
-    case MeshPeerLinkPhase::Handshaking:
+    case mesh::MeshPeerLinkPhase::Dialing:
+    case mesh::MeshPeerLinkPhase::Handshaking:
       // Includes hole-punch burst dial — short-lived, never a settled badge.
       view.path_kind = ThreadPeerPathKind::Connecting;
       view.status_label = "Connecting…";
       view.banner_message = "Trying a direct link…";
       view.show_banner = true;
       break;
-    case MeshPeerLinkPhase::Backoff:
+    case mesh::MeshPeerLinkPhase::Backoff:
       view.path_kind = ThreadPeerPathKind::Degraded;
       view.status_label = view.backoff_seconds > 0
                               ? ("Retrying soon (" + std::to_string(view.backoff_seconds) + "s)")
@@ -860,11 +861,11 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
       view.show_banner = true;
       view.show_retry = true;
       break;
-    case MeshPeerLinkPhase::Idle:
+    case mesh::MeshPeerLinkPhase::Idle:
       view.path_kind = ThreadPeerPathKind::Ready;
       view.status_label = view.relay_available ? "Ready · relay available" : "Ready to connect";
       break;
-    case MeshPeerLinkPhase::Unavailable:
+    case mesh::MeshPeerLinkPhase::Unavailable:
     default:
       if (view.relay_available) {
         view.path_kind = ThreadPeerPathKind::ViaRelay;
@@ -885,7 +886,7 @@ ThreadPeerLinkView MeshDeliveryOrchestrator::GetThreadPeerLink(const std::string
     return view;
   }
 
-  view.phase = MeshPeerLinkPhase::Unavailable;
+  view.phase = mesh::MeshPeerLinkPhase::Unavailable;
   if (view.relay_available) {
     view.path_kind = ThreadPeerPathKind::ViaRelay;
     view.status_label = "Via relay";
@@ -1735,13 +1736,13 @@ Roe<void> MeshDeliveryOrchestrator::SendChargeRequired(const std::string& peer_i
   const int64_t floor = floor_minor.value_or(identity->initiation_floor);
 
   DirectChatTarget direct_target;
-  direct_target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  direct_target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   direct_target.peer_identity_value = peer_identity;
   direct_target.channel = ThreadChannel::E2ePublic;
 
   std::string contact_id;
   std::string dm_title = peer_identity;
-  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
+  if (auto contact = contacts_.FindByIdentity(peer_identity, mesh::ContactIdKind::Account)) {
     if (*contact) {
       contact_id = (*contact)->id;
       dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -2275,7 +2276,7 @@ void MeshDeliveryOrchestrator::SetAttachmentDownloads(AttachmentFetchWorkflow* d
   }
 }
 
-void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
+void MeshDeliveryOrchestrator::AttachAmpTransports(mesh::IChatPeerLinks* amp_links, std::function<void()> amp_io_pump,
                                                    std::function<void(std::function<void()>)> amp_worker_post,
                                                    std::function<void(std::function<void()>)> amp_post_io,
                                                    std::function<void(std::chrono::milliseconds, std::function<void()>)> amp_post_after) {
@@ -2290,9 +2291,9 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(IChatPeerLinks* amp_links, st
   DetachAmpTransports();
   amp_links_ = amp_links;
   if (address_disclosure_) {
-    people_links_ = std::make_unique<DisclosureGatedPeerLinks>(*amp_links_, *address_disclosure_);
+    people_links_ = std::make_unique<mesh::DisclosureGatedPeerLinks>(*amp_links_, *address_disclosure_);
   }
-  IChatPeerLinks& people = people_links_ ? static_cast<IChatPeerLinks&>(*people_links_) : *amp_links_;
+  mesh::IChatPeerLinks& people = people_links_ ? static_cast<mesh::IChatPeerLinks&>(*people_links_) : *amp_links_;
 
   auto worker = std::move(amp_worker_post);
   if (!worker) {

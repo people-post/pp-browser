@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -20,7 +21,7 @@ std::vector<Contact> ListContacts(ContactsStore* contacts) {
   return {};
 }
 
-std::vector<std::string> PeerIds(const std::vector<MeshHopCandidate>& hops) {
+std::vector<std::string> PeerIds(const std::vector<mesh::MeshHopCandidate>& hops) {
   std::vector<std::string> out;
   for (const auto& hop : hops) {
     if (!hop.peer_id.empty()) {
@@ -41,23 +42,23 @@ MeshConfig MeshConfigOf(const MeshConnectivityWiringInputs& in) {
 
 } // namespace
 
-MeshConnectivityDeps MakeMeshConnectivityDeps(const MeshConnectivityWiringInputs& in) {
-  MeshConnectivityDeps deps;
+mesh::MeshConnectivityDeps MakeMeshConnectivityDeps(const MeshConnectivityWiringInputs& in) {
+  mesh::MeshConnectivityDeps deps;
   deps.mesh = in.mesh;
   deps.note_lan_peer_id = in.note_lan_peer_id;
   deps.register_direct_endpoint = in.register_direct_endpoint;
   return deps;
 }
 
-MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in) {
+mesh::MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in) {
   MeshConfig mesh_cfg = MeshConfigOf(in);
   NormalizeMeshConfig(mesh_cfg);
   const std::vector<Contact> contacts = ListContacts(in.contacts);
-  const auto directory_nodes = in.list_directory_nodes ? in.list_directory_nodes() : std::vector<MeshDirectoryNode>{};
-  const auto dht_nodes = in.list_dht_nodes ? in.list_dht_nodes() : std::vector<MeshDirectoryNode>{};
+  const auto directory_nodes = in.list_directory_nodes ? in.list_directory_nodes() : std::vector<mesh::MeshDirectoryNode>{};
+  const auto dht_nodes = in.list_dht_nodes ? in.list_dht_nodes() : std::vector<mesh::MeshDirectoryNode>{};
   const bool include_seeds = !in.seed_dial_ok || in.seed_dial_ok();
 
-  MeshHopPolicy policy;
+  mesh::MeshHopPolicy policy;
   policy.rendezvous_candidates =
       BuildCircuitHopList(contacts, directory_nodes, dht_nodes, ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes),
                           mesh_cfg.prefer_contacts_for_routing, include_seeds);
@@ -75,7 +76,7 @@ MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in) {
   return policy;
 }
 
-MeshHopPolicyFeed::MeshHopPolicyFeed(MeshConnectivity& connectivity) : connectivity_(connectivity) {}
+MeshHopPolicyFeed::MeshHopPolicyFeed(mesh::MeshConnectivity& connectivity) : connectivity_(connectivity) {}
 
 MeshHopPolicyFeed::~MeshHopPolicyFeed() {
   Stop();

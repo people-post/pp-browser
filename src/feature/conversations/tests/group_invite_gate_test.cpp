@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -51,8 +52,8 @@ protected:
     contact.id = util::GenerateUuid();
     contact.display_name = relay_id;
     contact.trust = trust;
-    ContactId id;
-    id.kind = ContactIdKind::Account;
+    mesh::ContactId id;
+    id.kind = mesh::ContactIdKind::Account;
     id.value = relay_id;
     id.primary = true;
     contact.ids.push_back(id);

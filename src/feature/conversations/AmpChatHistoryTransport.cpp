@@ -1,6 +1,6 @@
 #include "feature/conversations/AmpChatHistoryTransport.h"
 
-#include "domain/mesh/l4/shared/InboundReply.h"
+#include "mesh/l4/shared/InboundReply.h"
 
 #include "domain/messaging/ChatHistoryResponder.h"
 #include "common/chat/MessagingJson.h"
@@ -16,8 +16,9 @@
 #include <vector>
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
-#include "domain/mesh/shared/AmpParkUntil.h"
+#include "mesh/shared/AmpParkUntil.h"
 #include "common/Lifetime.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -58,7 +59,7 @@ struct AmpChatHistoryTransport::Impl {
   IThreadStore& store;
   IdentityStore& identity;
   IPskSessionStore& psk_store;
-  IChatPeerLinks* links = nullptr;
+  mesh::IChatPeerLinks* links = nullptr;
   IoPump io_pump;
   WorkerPost post_worker;
   IoPost post_io;
@@ -67,7 +68,7 @@ struct AmpChatHistoryTransport::Impl {
   /** Guards protocol-handler raw Impl* past Stop — OWNERSHIP.md § Lifetime. */
   pp::Lifetime deferred;
 
-  void ServeRequest(std::shared_ptr<InboundReply> reply, std::vector<uint8_t> body) {
+  void ServeRequest(std::shared_ptr<mesh::InboundReply> reply, std::vector<uint8_t> body) {
     RunWorker(post_worker, [this, reply, body = std::move(body)]() mutable {
                       if (stopped.load(std::memory_order_acquire)) {
                         return;
@@ -105,20 +106,20 @@ struct AmpChatHistoryTransport::Impl {
     }
     auto session_holder = std::make_shared<std::shared_ptr<pp::amp::ChannelSession>>();
     *session_holder = links->BindChannel(
-        remote_peer_id, channel_id, InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy()),
+        remote_peer_id, channel_id, mesh::InboundReplyPolicy(pp::amp::ControlJsonChannelPolicy()),
         [this, session_holder](Roe<std::vector<uint8_t>> frame) {
           auto session = *session_holder;
           if (!session || !frame || stopped.load(std::memory_order_acquire)) {
             return false;
           }
           // Keep the channel open for the worker's reply (InboundReply.h); `reply` closes it.
-          ServeRequest(MakeInboundReply(session, post_io), std::move(*frame));
+          ServeRequest(mesh::MakeInboundReply(session, post_io), std::move(*frame));
           return true;
         });
   }
 };
 
-AmpChatHistoryTransport::AmpChatHistoryTransport(IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
+AmpChatHistoryTransport::AmpChatHistoryTransport(mesh::IChatPeerLinks& links, IoPump io_pump, IThreadStore& store,
                                              IdentityStore& identity, IPskSessionStore& psk_store,
                                              WorkerPost post_worker, IoPost post_io, IoAfter post_after)
     : impl_(std::make_unique<Impl>(store, identity, psk_store)), links_(links), io_pump_(std::move(io_pump)),
@@ -216,14 +217,14 @@ void AmpChatHistoryTransport::FetchChatHistoryAsync(const ChatHistoryRequest& re
   const auto read_timeout = RemainingTimeout(deadline);
 
   links_.EnsureAssociation(peer_key, [this, peer_key, request_json, finish, settled, session_holder, deadline,
-                                      read_timeout](IChatPeerLinks::LinkRoe assoc) mutable {
+                                      read_timeout](mesh::IChatPeerLinks::LinkRoe assoc) mutable {
     if (!assoc) {
       (*finish)(Error(assoc.error().message));
       return;
     }
     links_.OpenChannel(peer_key, kChatHistoryProtocolId, pp::amp::ControlJsonChannelPolicy(read_timeout),
                        [this, peer_key, request_json, finish, settled, session_holder, deadline,
-                        read_timeout](IChatPeerLinks::ChannelRoe channel) mutable {
+                        read_timeout](mesh::IChatPeerLinks::ChannelRoe channel) mutable {
                          if (!channel) {
                            (*finish)(Error(channel.error().message));
                            return;
@@ -266,7 +267,7 @@ void AmpChatHistoryTransport::FetchChatHistoryAsync(const ChatHistoryRequest& re
                                  return;
                                }
 
-                               AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
+                               mesh::AmpScheduleUntilSettled(post_io_, io_pump_, settled, deadline, [finish]() {
                                  (*finish)(Error("amp chat-history fetch timed out"));
                                },
                                                       post_after_);
@@ -288,7 +289,7 @@ Roe<ChatHistoryResponse> AmpChatHistoryTransport::FetchChatHistory(const ChatHis
     }
   });
 
-  AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
+  mesh::AmpParkUntil([&] { return result_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready; },
                deadline, io_pump_);
   if (result_future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
     return Error("amp chat-history fetch timed out");

@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 #include <memory>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -29,14 +30,14 @@ protected:
     Contact contact;
     contact.id = id;
     contact.display_name = id;
-    contact.ids = {{ContactIdKind::Account, account, true}};
+    contact.ids = {{mesh::ContactIdKind::Account, account, true}};
     if (!peer_id.empty()) {
-      contact.ids.push_back({ContactIdKind::PeerId, peer_id, false});
+      contact.ids.push_back({mesh::ContactIdKind::PeerId, peer_id, false});
     }
     ASSERT_TRUE(contacts_->Upsert(contact));
   }
   std::string ContactPeerId(const std::string& account) {
-    auto found = contacts_->FindByIdentity(account, ContactIdKind::Account);
+    auto found = contacts_->FindByIdentity(account, mesh::ContactIdKind::Account);
     return found && found->has_value() ? PeerIdFromContact(**found) : std::string{};
   }
 

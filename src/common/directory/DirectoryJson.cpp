@@ -1,46 +1,47 @@
 #include "common/directory/DirectoryJson.h"
 
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
-std::string ContactIdKindToString(const ContactIdKind kind) {
+std::string ContactIdKindToString(const mesh::ContactIdKind kind) {
   switch (kind) {
-  case ContactIdKind::Account:
+  case mesh::ContactIdKind::Account:
     return "account";
-  case ContactIdKind::RelayUser:
+  case mesh::ContactIdKind::RelayUser:
     return "relay_user";
-  case ContactIdKind::PeerId:
+  case mesh::ContactIdKind::PeerId:
     return "peer_id";
-  case ContactIdKind::Blockchain:
+  case mesh::ContactIdKind::Blockchain:
     return "blockchain";
-  case ContactIdKind::Custom:
+  case mesh::ContactIdKind::Custom:
     return "custom";
   }
   return "account";
 }
 
-ContactIdKind ContactIdKindFromString(const std::string& value) {
+mesh::ContactIdKind ContactIdKindFromString(const std::string& value) {
   if (value == "account") {
-    return ContactIdKind::Account;
+    return mesh::ContactIdKind::Account;
   }
   if (value == "peer_id") {
-    return ContactIdKind::PeerId;
+    return mesh::ContactIdKind::PeerId;
   }
   if (value == "blockchain") {
-    return ContactIdKind::Blockchain;
+    return mesh::ContactIdKind::Blockchain;
   }
   if (value == "custom") {
-    return ContactIdKind::Custom;
+    return mesh::ContactIdKind::Custom;
   }
   if (value == "relay_user") {
-    return ContactIdKind::RelayUser;
+    return mesh::ContactIdKind::RelayUser;
   }
   // Unknown kinds must not silently become relay_user (M009).
-  return ContactIdKind::Custom;
+  return mesh::ContactIdKind::Custom;
 }
 
-void AppendContactIdsFromJson(const Object& json, std::vector<ContactId>& ids) {
+void AppendContactIdsFromJson(const Object& json, std::vector<mesh::ContactId>& ids) {
   const Array* arr = json.getArray("ids");
   if (!arr) {
     return;
@@ -50,7 +51,7 @@ void AppendContactIdsFromJson(const Object& json, std::vector<ContactId>& ids) {
     if (!item) {
       continue;
     }
-    ContactId id;
+    mesh::ContactId id;
     if (auto kind = item->getString("kind")) {
       id.kind = ContactIdKindFromString(*kind);
     }
@@ -66,10 +67,10 @@ void AppendContactIdsFromJson(const Object& json, std::vector<ContactId>& ids) {
   }
 }
 
-Value ContactIdsToJson(const std::vector<ContactId>& ids) {
+Value ContactIdsToJson(const std::vector<mesh::ContactId>& ids) {
   std::vector<Value> out;
   out.reserve(ids.size());
-  for (const ContactId& id : ids) {
+  for (const mesh::ContactId& id : ids) {
     Object row;
     row.set("kind", ContactIdKindToString(id.kind));
     row.set("value", id.value);
@@ -96,10 +97,10 @@ void ParseMultiaddrsArray(const Array& arr, std::vector<std::string>& multiaddrs
   }
 }
 
-Value DirectoryEndpointsToJson(const std::vector<DirectoryEndpoint>& endpoints) {
+Value DirectoryEndpointsToJson(const std::vector<mesh::DirectoryEndpoint>& endpoints) {
   std::vector<Value> out;
   out.reserve(endpoints.size());
-  for (const DirectoryEndpoint& endpoint : endpoints) {
+  for (const mesh::DirectoryEndpoint& endpoint : endpoints) {
     Object row;
     row.set("peer_id", endpoint.peer_id);
     row.set("multiaddrs", MultiaddrsToJson(endpoint.multiaddrs));
@@ -109,13 +110,13 @@ Value DirectoryEndpointsToJson(const std::vector<DirectoryEndpoint>& endpoints) 
   return ArrayValue(std::move(out));
 }
 
-void ParseDirectoryEndpointsArray(const Array& arr, std::vector<DirectoryEndpoint>& endpoints) {
+void ParseDirectoryEndpointsArray(const Array& arr, std::vector<mesh::DirectoryEndpoint>& endpoints) {
   for (const Value& item_value : arr.elements) {
     const Object* item = asObject(item_value);
     if (!item) {
       continue;
     }
-    DirectoryEndpoint endpoint;
+    mesh::DirectoryEndpoint endpoint;
     if (auto peer_id = item->getString("peer_id")) {
       endpoint.peer_id = *peer_id;
     }
@@ -131,8 +132,8 @@ void ParseDirectoryEndpointsArray(const Array& arr, std::vector<DirectoryEndpoin
   }
 }
 
-std::optional<ProfileIconRef> ProfileIconRefFromJson(const Object& json) {
-  ProfileIconRef icon;
+std::optional<mesh::ProfileIconRef> ProfileIconRefFromJson(const Object& json) {
+  mesh::ProfileIconRef icon;
   if (auto url = json.getString("url")) {
     icon.url = *url;
   }
@@ -148,7 +149,7 @@ std::optional<ProfileIconRef> ProfileIconRefFromJson(const Object& json) {
   return icon;
 }
 
-Object ProfileIconRefToJson(const ProfileIconRef& icon) {
+Object ProfileIconRefToJson(const mesh::ProfileIconRef& icon) {
   Object out;
   if (!icon.url.empty()) {
     out.set("url", icon.url);
@@ -164,18 +165,18 @@ Object ProfileIconRefToJson(const ProfileIconRef& icon) {
 
 namespace {
 
-bool HasRelayUserId(const std::vector<ContactId>& ids, const std::string& relay_user_id) {
-  for (const ContactId& id : ids) {
-    if (id.kind == ContactIdKind::RelayUser && id.value == relay_user_id) {
+bool HasRelayUserId(const std::vector<mesh::ContactId>& ids, const std::string& relay_user_id) {
+  for (const mesh::ContactId& id : ids) {
+    if (id.kind == mesh::ContactIdKind::RelayUser && id.value == relay_user_id) {
       return true;
     }
   }
   return false;
 }
 
-bool HasAccountId(const std::vector<ContactId>& ids, const std::string& account_id) {
-  for (const ContactId& id : ids) {
-    if (id.kind == ContactIdKind::Account && id.value == account_id) {
+bool HasAccountId(const std::vector<mesh::ContactId>& ids, const std::string& account_id) {
+  for (const mesh::ContactId& id : ids) {
+    if (id.kind == mesh::ContactIdKind::Account && id.value == account_id) {
       return true;
     }
   }
@@ -184,7 +185,7 @@ bool HasAccountId(const std::vector<ContactId>& ids, const std::string& account_
 
 }  // namespace
 
-Object DirectoryHitToJson(const DirectoryHit& hit) {
+Object DirectoryHitToJson(const mesh::DirectoryHit& hit) {
   Object out;
   out.set("hit_id", hit.hit_id);
   out.set("display_name", hit.display_name);
@@ -207,8 +208,8 @@ Object DirectoryHitToJson(const DirectoryHit& hit) {
   return out;
 }
 
-DirectoryHit DirectoryHitFromJson(const Object& json) {
-  DirectoryHit hit;
+mesh::DirectoryHit DirectoryHitFromJson(const Object& json) {
+  mesh::DirectoryHit hit;
   if (auto hit_id = json.getString("hit_id")) {
     hit.hit_id = *hit_id;
   }
@@ -223,10 +224,10 @@ DirectoryHit DirectoryHitFromJson(const Object& json) {
     if (!account_id->empty()) {
       hit.account_id = *account_id;
       if (!HasAccountId(hit.ids, *account_id)) {
-        for (ContactId& id : hit.ids) {
+        for (mesh::ContactId& id : hit.ids) {
           id.primary = false;
         }
-        hit.ids.insert(hit.ids.begin(), {ContactIdKind::Account, *account_id, true});
+        hit.ids.insert(hit.ids.begin(), {mesh::ContactIdKind::Account, *account_id, true});
       }
     }
   }
@@ -236,7 +237,7 @@ DirectoryHit DirectoryHitFromJson(const Object& json) {
         hit.hit_id = *relay_user_id;
       }
       if (!HasRelayUserId(hit.ids, *relay_user_id)) {
-        hit.ids.push_back({ContactIdKind::RelayUser, *relay_user_id, hit.ids.empty()});
+        hit.ids.push_back({mesh::ContactIdKind::RelayUser, *relay_user_id, hit.ids.empty()});
       }
     }
   }
@@ -252,7 +253,7 @@ DirectoryHit DirectoryHitFromJson(const Object& json) {
   if (const Array* endpoints = json.getArray("endpoints")) {
     ParseDirectoryEndpointsArray(*endpoints, hit.endpoints);
   }
-  FlattenDirectoryEndpoints(hit.ids, hit.multiaddrs, hit.endpoints);
+  mesh::FlattenDirectoryEndpoints(hit.ids, hit.multiaddrs, hit.endpoints);
   if (auto floor = json.getIf<int64_t>("initiation_floor")) {
     hit.initiation_floor = *floor;
   }

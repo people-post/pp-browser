@@ -14,6 +14,7 @@
 
 #include <utility>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -37,7 +38,7 @@ Roe<std::string> CallControlClient::EnsureCallControlThread(const std::string& p
   const std::optional<std::string> prefer = preferred_thread_ ? preferred_thread_() : std::nullopt;
   std::string contact_id;
   std::string dm_title = peer_identity;
-  if (auto contact = contacts_.FindByIdentity(peer_identity, ContactIdKind::Account)) {
+  if (auto contact = contacts_.FindByIdentity(peer_identity, mesh::ContactIdKind::Account)) {
     if (*contact) {
       contact_id = (*contact)->id;
       dm_title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
@@ -148,7 +149,7 @@ Roe<void> CallControlClient::FanOutToJoinedAndRinging(const std::string& call_id
 
 Roe<ByteVector> CallControlClient::ResolvePeerSessionKey(const std::string& peer_identity) const {
   ChatTargetKey target_key;
-  target_key.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+  target_key.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
   target_key.peer_identity_value = peer_identity;
   target_key.channel = CryptoChannel::E2ePublic;
 

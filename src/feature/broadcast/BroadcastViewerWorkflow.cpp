@@ -1,12 +1,13 @@
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
-#include "common/media/MediaChannel.h"
+#include "mesh/types/MediaChannel.h"
 
-#include "domain/mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
+#include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/media/VideoLevelProfile.h"
 #include "domain/messaging/BroadcastMedia.h"
 
 #include "common/Logger.h"
+#include "common/MeshAlias.h"
 
 #include <algorithm>
 #include <atomic>
@@ -62,11 +63,11 @@ struct BroadcastViewerWorkflow::FrameSink {
   CallMediaEngine* engine = nullptr;
   std::atomic<uint64_t> rejected{0};
 
-  void OnFrame(const MediaDataFrame& frame) {
+  void OnFrame(const mesh::MediaDataFrame& frame) {
     if (!live.load(std::memory_order_acquire) || frame.stream_id != stream_id) {
       return;
     }
-    auto opened = OpenMediaRelayFrame(key, context, epoch, stream_id, static_cast<uint8_t>(frame.channel_id),
+    auto opened = mesh::OpenMediaRelayFrame(key, context, epoch, stream_id, static_cast<uint8_t>(frame.channel_id),
                                       frame.payload);
     if (!opened) {
       rejected.fetch_add(1, std::memory_order_relaxed);
@@ -197,7 +198,7 @@ void BroadcastViewerWorkflow::Teardown() {
   if (sink_) {
     sink_->live.store(false, std::memory_order_release);
   }
-  IMediaRelayClient* relay = ports_.relay.relay;
+  mesh::IMediaRelayClient* relay = ports_.relay.relay;
   if (relay && lost_observer_ != 0) {
     relay->RemoveClientTransportLostObserver(lost_observer_);
   }
@@ -349,7 +350,7 @@ void BroadcastViewerWorkflow::OnAdmission(const std::string& hop, Roe<BroadcastV
 // --- attach + listen ----------------------------------------------------------------------------
 
 void BroadcastViewerWorkflow::Attach(const std::string& hop) {
-  IMediaRelayClient* relay = ports_.relay.relay;
+  mesh::IMediaRelayClient* relay = ports_.relay.relay;
   if (relay->IsAttached() || relay->IsLocalHopAttached()) {
     // One media_relay client session per mesh host today (L013); a call holds it.
     Fail("media relay client in use by a call");
@@ -364,7 +365,7 @@ void BroadcastViewerWorkflow::Attach(const std::string& hop) {
   sink_->stream_id = BroadcastPublisherStreamId(target.publisher_peer_id);
   sink_->engine = ports_.engine;
 
-  MediaRelayAttachRequest request;
+  mesh::MediaRelayAttachRequest request;
   request.hop_peer_id = hop;
   request.hop_multiaddr = ports_.hop_multiaddr ? ports_.hop_multiaddr(hop) : std::string();
   request.session_id = target.join_handle;
@@ -378,8 +379,8 @@ void BroadcastViewerWorkflow::Attach(const std::string& hop) {
   }
   request.quote.video_levels.clear();  // receive-only: publishes no video (B009)
 
-  MediaRelayAttachHooks hooks;
-  hooks.accept_quote = [](const MediaRelayQuote& quote) -> Roe<void> {
+  mesh::MediaRelayAttachHooks hooks;
+  hooks.accept_quote = [](const mesh::MediaRelayQuote& quote) -> Roe<void> {
     if (quote.rate > 0) {
       return Error("paid relays are not supported for broadcast yet");
     }
@@ -388,14 +389,14 @@ void BroadcastViewerWorkflow::Attach(const std::string& hop) {
   hooks.still_wanted = [current = current_watch_, watch = watch_]() {
     return current->load(std::memory_order_acquire) == watch;
   };
-  hooks.on_frame = [sink = sink_](MediaDataFrame frame) { sink->OnFrame(frame); };
+  hooks.on_frame = [sink = sink_](mesh::MediaDataFrame frame) { sink->OnFrame(frame); };
 
   // A Stop while AcceptAndAttach is on the wire makes this watch stale; the relay may still attach —
   // detach it then so the client session does not leak. (A call attaching in that same window would
   // be detached too; l4c stops watching before a call takes media.)
-  AttachToMediaRelayAsync(ports_.relay, std::move(request), std::move(hooks),
+  mesh::AttachToMediaRelayAsync(ports_.relay, std::move(request), std::move(hooks),
                           [relay, outbox = outbox_, current = current_watch_, watch = watch_,
-                           hop](Roe<MediaRelayAttached> attached) {
+                           hop](Roe<mesh::MediaRelayAttached> attached) {
                             if (attached && current->load(std::memory_order_acquire) != watch) {
                               relay->Detach();
                               return;
@@ -404,7 +405,7 @@ void BroadcastViewerWorkflow::Attach(const std::string& hop) {
                           });
 }
 
-void BroadcastViewerWorkflow::OnAttached(const std::string& hop, Roe<MediaRelayAttached> attached) {
+void BroadcastViewerWorkflow::OnAttached(const std::string& hop, Roe<mesh::MediaRelayAttached> attached) {
   if (!attached) {
     ViewerLog().info << "attach to " << hop << " failed: " << attached.error().message;
     RunLadder(ladder_->OnAttachFailed(hop, attached.error().message));
@@ -415,7 +416,7 @@ void BroadcastViewerWorkflow::OnAttached(const std::string& hop, Roe<MediaRelayA
 }
 
 void BroadcastViewerWorkflow::StartListening(const std::string& hop) {
-  IMediaRelayClient* relay = ports_.relay.relay;
+  mesh::IMediaRelayClient* relay = ports_.relay.relay;
   if (auto started = ports_.engine->Start(status_.target.join_handle, CallMediaEngine::SessionSpec::PlaybackOnly(), {});
       !started) {
     Fail("playback: " + started.error().message);
@@ -423,12 +424,12 @@ void BroadcastViewerWorkflow::StartListening(const std::string& hop) {
   }
   engine_started_ = true;
   relay->StartClientFrameReader();
-  if (auto subscribed = relay->Subscribe(sink_->stream_id, kMediaChannelAudio); !subscribed) {
+  if (auto subscribed = relay->Subscribe(sink_->stream_id, mesh::kMediaChannelAudio); !subscribed) {
     Fail("subscribe: " + subscribed.error().message);
     return;
   }
   if (status_.video_level != 0) {
-    const auto video = VideoChannel(static_cast<uint8_t>(status_.video_level));
+    const auto video = mesh::VideoChannel(static_cast<uint8_t>(status_.video_level));
     if (auto subscribed = relay->Subscribe(sink_->stream_id, video); !subscribed) {
       Fail("subscribe video: " + subscribed.error().message);
       return;
@@ -436,7 +437,7 @@ void BroadcastViewerWorkflow::StartListening(const std::string& hop) {
   }
   if (lost_observer_ == 0) {
     lost_observer_ = relay->AddClientTransportLostObserver(
-        [outbox = outbox_, watch = watch_](MediaRelayClientLoss loss) {
+        [outbox = outbox_, watch = watch_](mesh::MediaRelayClientLoss loss) {
           outbox.Emit(viewer_event::SessionEnded{watch, loss});
         });
   }
@@ -447,14 +448,14 @@ void BroadcastViewerWorkflow::StartListening(const std::string& hop) {
 
 // --- recovery -------------------------------------------------------------------------------------
 
-void BroadcastViewerWorkflow::OnSessionEnded(MediaRelayClientLoss loss) {
+void BroadcastViewerWorkflow::OnSessionEnded(mesh::MediaRelayClientLoss loss) {
   if (status_.phase != Phase::Listening || !attached_) {
     return;
   }
   // Our observer is removed before our own Detach, so any end here is not ours. Transport loss →
   // re-admit; replaced / detached by a call → re-admission finds the client busy and fails clearly.
-  ViewerLog().info << "relay session ended (" << (loss == MediaRelayClientLoss::TransportLost ? "lost"
-                                                  : loss == MediaRelayClientLoss::Replaced    ? "replaced"
+  ViewerLog().info << "relay session ended (" << (loss == mesh::MediaRelayClientLoss::TransportLost ? "lost"
+                                                  : loss == mesh::MediaRelayClientLoss::Replaced    ? "replaced"
                                                                                               : "detached")
                    << ") program=" << status_.target.program_id;
   Recover();

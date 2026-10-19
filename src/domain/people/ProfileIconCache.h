@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -22,7 +23,7 @@ struct ProfileIconCacheMeta {
 /** Filesystem-safe cache directory segment (relay/account ids may contain `:`). */
 std::string SanitizeProfileIconCacheKey(const std::string& key);
 
-std::string ProfileIconCacheKeyForHit(const DirectoryHit& hit);
+std::string ProfileIconCacheKeyForHit(const mesh::DirectoryHit& hit);
 std::string ProfileIconCacheKeyForContact(const Contact& contact);
 
 std::string ProfileIconCacheRoot(const std::string& profile_dir, const std::string& cache_key = "self");
@@ -41,6 +42,6 @@ Roe<void> ClearProfileIconCache(const std::string& profile_dir, const std::strin
 
 /** True when URL/blob_id changed or local cache file is missing. */
 bool ProfileIconNeedsFetch(const std::string& profile_dir, const std::string& cache_key,
-                           const ProfileIconRef& icon);
+                           const mesh::ProfileIconRef& icon);
 
 } // namespace pbr

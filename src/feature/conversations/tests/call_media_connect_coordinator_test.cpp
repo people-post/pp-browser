@@ -1,7 +1,7 @@
 #include "feature/calls/CallMediaConnectCoordinator.h"
 
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "domain/mesh/reach/PeerReachCoordinator.h"
+#include "mesh/reach/PeerReachCoordinator.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include <chrono>
@@ -9,6 +9,7 @@
 #include "feature/conversations/tests/call_media_inbound_fake.h"
 #include "feature/conversations/tests/calls_loopback_outbox.h"
 #include "feature/conversations/tests/calls_on_owner.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 #include <memory>
@@ -23,7 +24,7 @@ namespace {
 
 constexpr const char* kPeer = "12D3KooWConnectPeer";
 
-class FakeDialRegistry final : public IDialRegistry {
+class FakeDialRegistry final : public mesh::IDialRegistry {
 public:
   Roe<void> RegisterEndpoint(const std::string& /*peer*/, const std::string& /*ma*/) override { return {}; }
   bool IsDialable(const std::string& /*peer*/) const override { return false; }
@@ -50,7 +51,7 @@ public:
 };
 
 /** Punch/circuit that re-establishes the link, so a fresh-link redial can succeed. */
-class FakeCircuitReach final : public ICircuitHopReach {
+class FakeCircuitReach final : public mesh::ICircuitHopReach {
 public:
   explicit FakeCircuitReach(FakeDialRegistry& dial) : dial_(dial) {}
   Roe<void> TryEnsureHopReachable(const std::string& /*hop*/) override { return {}; }
@@ -131,8 +132,8 @@ protected:
     AppRuntime::InitializeUI();
     dial_ = std::make_unique<FakeDialRegistry>();
     circuit_ = std::make_unique<FakeCircuitReach>(*dial_);
-    reach_ = std::make_unique<PeerReachCoordinator>(
-        PeerReachPorts{dial_.get(), circuit_.get(), AppRuntime::MakeLaneForTesting()});
+    reach_ = std::make_unique<mesh::PeerReachCoordinator>(
+        mesh::PeerReachPorts{dial_.get(), circuit_.get(), AppRuntime::MakeLaneForTesting()});
     reach_->SetDialBudgetMsForTest(200);
     transport_ = std::make_unique<FakeTransport>();
     connect_ = std::make_unique<CallMediaConnectCoordinator>(*transport_, *reach_);
@@ -166,7 +167,7 @@ protected:
   CallMediaConnectHooks Hooks() {
     CallMediaConnectHooks h;
     h.before_attempt = [this](const CallMediaDirectConnectParams&) { ++before_attempts_; };
-    h.on_link_ready = [this](PeerLinkKind kind) { last_kind_ = kind; };
+    h.on_link_ready = [this](mesh::PeerLinkKind kind) { last_kind_ = kind; };
     h.on_finished = [this](Roe<void> r) {
       ++finished_;
       result_ = std::move(r);
@@ -202,7 +203,7 @@ protected:
 
   std::unique_ptr<FakeDialRegistry> dial_;
   std::unique_ptr<FakeCircuitReach> circuit_;
-  std::unique_ptr<PeerReachCoordinator> reach_;
+  std::unique_ptr<mesh::PeerReachCoordinator> reach_;
   std::unique_ptr<FakeTransport> transport_;
   std::unique_ptr<CallMediaConnectCoordinator> connect_;
   /** Reset before `connect_`: its queued events point at the coordinator. */
@@ -210,7 +211,7 @@ protected:
   int before_attempts_ = 0;
   int finished_ = 0;
   std::optional<Roe<void>> result_;
-  PeerLinkKind last_kind_ = PeerLinkKind::Unknown;
+  mesh::PeerLinkKind last_kind_ = mesh::PeerLinkKind::Unknown;
 };
 
 TEST_F(CallMediaConnectCoordinatorTest, ConnectsOnFirstAttempt) {
@@ -221,7 +222,7 @@ TEST_F(CallMediaConnectCoordinatorTest, ConnectsOnFirstAttempt) {
   EXPECT_EQ(finished_, 1);
   EXPECT_EQ(transport_->connect_calls, 1);
   EXPECT_EQ(before_attempts_, 1);
-  EXPECT_EQ(last_kind_, PeerLinkKind::Direct);
+  EXPECT_EQ(last_kind_, mesh::PeerLinkKind::Direct);
   EXPECT_FALSE(connect_->InFlight());
 }
 

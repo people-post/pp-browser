@@ -2,6 +2,7 @@
 
 #include "domain/people/ContactsStore.h"
 #include "common/Utilities.h"
+#include "common/MeshAlias.h"
 
 #include <filesystem>
 #include <memory>
@@ -47,8 +48,8 @@ TEST_F(PeerBriefRouteTest, LearnedAccountRouteWithoutContact) {
 TEST_F(PeerBriefRouteTest, ContactRelayPreferredOverLearned) {
   Contact contact;
   contact.id = "c1";
-  contact.ids = {{ContactIdKind::Account, "account:peer", true},
-                 {ContactIdKind::RelayUser, "relay:from-contact", false}};
+  contact.ids = {{mesh::ContactIdKind::Account, "account:peer", true},
+                 {mesh::ContactIdKind::RelayUser, "relay:from-contact", false}};
   ASSERT_TRUE(contacts_->Upsert(contact));
 
   Thread thread;
@@ -64,10 +65,10 @@ TEST_F(PeerBriefRouteTest, ContactRelayPreferredOverLearned) {
 }
 
 TEST_F(PeerBriefRouteTest, DirectoryHitRelay) {
-  DirectoryHit hit;
+  mesh::DirectoryHit hit;
   hit.hit_id = "relay:hit";
-  hit.ids = {{ContactIdKind::Account, "account:x", true},
-             {ContactIdKind::RelayUser, "relay:from-hit", false}};
+  hit.ids = {{mesh::ContactIdKind::Account, "account:x", true},
+             {mesh::ContactIdKind::RelayUser, "relay:from-hit", false}};
   auto route = RelayUserIdFromDirectoryHit(hit);
   ASSERT_TRUE(route.has_value());
   EXPECT_EQ(*route, "relay:from-hit");

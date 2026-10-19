@@ -24,12 +24,12 @@
 #include "domain/messaging/InitiationBillingStore.h"
 #include "feature/broadcast/BroadcastHub.h"
 #include "common/Lifetime.h"
-#include "domain/mesh/connectivity/MeshConnectivity.h"
-#include "domain/mesh/media_plane/MeshMediaRelay.h"
+#include "mesh/connectivity/MeshConnectivity.h"
+#include "mesh/media_plane/MeshMediaRelay.h"
 #include "feature/calls/CallStack.h"
 #include "foundation/platform/NetworkMonitor.h"
 #include "common/chat/AttachmentDownloadPolicy.h"
-#include "common/privacy/AddressDisclosure.h"
+#include "mesh/types/AddressDisclosure.h"
 #include "domain/messaging/AttachmentSuppressionStore.h"
 #include "feature/conversations/AgentInboundPorts.h"
 #include "feature/conversations/MessageRouter.h"
@@ -39,14 +39,14 @@
 #include "domain/net/HttpBlobClient.h"
 #include "domain/net/OrgBackendClientsImpl.h"
 #include "domain/net/IPushDeviceClient.h"
-#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
-#include "domain/mesh/reachability/LanMdnsDiscovery.h"
-#include "domain/mesh/reachability/Reachability.h"
-#include "domain/mesh/reachability/ReachabilityEngine.h"
-#include "domain/mesh/discovery/MeshDirectoryCache.h"
-#include "domain/mesh/discovery/NameDirectory.h"
-#include "domain/mesh/dht/DhtTypes.h"
-#include "domain/mesh/host/MeshHost.h"
+#include "mesh/l4/circuit/CircuitRelayTypes.h"
+#include "mesh/reachability/LanMdnsDiscovery.h"
+#include "mesh/reachability/Reachability.h"
+#include "mesh/reachability/ReachabilityEngine.h"
+#include "mesh/discovery/MeshDirectoryCache.h"
+#include "mesh/discovery/NameDirectory.h"
+#include "mesh/dht/DhtTypes.h"
+#include "mesh/host/MeshHost.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "domain/messaging/PaymentPromiseStore.h"
 #include "domain/messaging/PaymentPromiseLifecycle.h"
@@ -61,6 +61,7 @@
 #include <string>
 #include <unordered_set>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -95,7 +96,7 @@ public:
     bool media_relay = true;
     bool dht = false;
     bool prefer_contacts_for_routing = true;
-    DirectAudience direct_connections = DirectAudience::Contacts;
+    mesh::DirectAudience direct_connections = mesh::DirectAudience::Contacts;
     bool trusted_relays_only = false;
 
     bool operator==(const NetworkConfig& other) const {
@@ -112,7 +113,7 @@ public:
   struct PolicyPrefs {
     GroupInvitePolicy group_invite_policy = GroupInvitePolicy::ContactsOnly;
     AttachmentDownloadPolicy attachment_download_policy = AttachmentDownloadPolicy::Smart;
-    InboundAudience call_invite_policy = InboundAudience::Everyone;
+    mesh::InboundAudience call_invite_policy = mesh::InboundAudience::Everyone;
 
     bool operator==(const PolicyPrefs& other) const {
       return group_invite_policy == other.group_invite_policy && call_invite_policy == other.call_invite_policy &&
@@ -215,7 +216,7 @@ public:
   IdentityStore& Identity();
   IPskSessionStore* PskStore();
   ProfileSecretsEngine* Secrets();
-  IDirectoryClient& Directory();
+  mesh::IDirectoryClient& Directory();
   DirectoryShadowCache& DirectoryShadows();
   PeerDisplayResolver& PeerLabels();
   IRegistrationClient& Registration();
@@ -249,7 +250,7 @@ public:
   AttachmentFetchWorkflow& Attachments();
   std::string ContactIconLocalPath(const Contact& contact);
   std::string IdentityIconLocalPath(const std::string& identity);
-  void EnsureDirectoryHitIconCached(const DirectoryHit& hit);
+  void EnsureDirectoryHitIconCached(const mesh::DirectoryHit& hit);
   void EnsureContactIconCached(const Contact& contact);
   void SetOnPeerIconsChanged(std::function<void()> callback);
   Roe<void> RotateBriefLlmKey();
@@ -286,7 +287,7 @@ public:
   /** Stage a remote signed receipt from an inbound control message (does not commit; P003). */
   Roe<PaymentPromise> StagePaymentPromiseControlMessage(const ThreadMessage& message);
 
-  ReachabilitySnapshot Reachability() const;
+  mesh::ReachabilitySnapshot Reachability() const;
   void RunReachabilityProbe(bool try_upnp);
   void TryUpnpPortMapping();
   void TickReachabilityUx();
@@ -300,14 +301,14 @@ public:
    * Shared Amp mesh composition root. Mesh UX (status chrome, reachability, relay load) should
    * read through here. Null before the stack is up; callers must degrade gracefully.
    */
-  MeshHost* Mesh() { return mesh_.get(); }
-  const MeshHost* Mesh() const { return mesh_.get(); }
+  mesh::MeshHost* Mesh() { return mesh_.get(); }
+  const mesh::MeshHost* Mesh() const { return mesh_.get(); }
 
   /**
    * nf: try circuit bridge via preferred hops (contacts then seed when prefer_contacts).
    * Registers hop endpoints as needed; returns first successful Amp bridge.
    */
-  Roe<CircuitRelayBridgeResult> RequestCircuitBridgePreferred(const std::string& target_peer_id,
+  Roe<mesh::CircuitRelayBridgeResult> RequestCircuitBridgePreferred(const std::string& target_peer_id,
                                                               const std::string& target_multiaddr,
                                                               int timeout_ms = 8000);
 
@@ -350,7 +351,7 @@ private:
   /** Republish who may learn our address (setting + contacts; projects/privacy T1). UI thread. */
   void PublishAddressDisclosure();
   /** The audience in force: the setting, or everyone in the Node role (P004). */
-  DirectAudience EffectiveDirectAudience() const;
+  mesh::DirectAudience EffectiveDirectAudience() const;
   void PublishNodeAdvertisedAddrs();
   /** CallStackDeps for building the call stack against the current p2p / mesh / config. */
   CallStackDeps MakeCallStackDeps();
@@ -359,7 +360,7 @@ private:
   void RegisterDhtBootstrapEndpoints();
   void ConfigureAmpDhtProtocol();
   void ConfigureAmpDirectoryProtocol();
-  void ApplyDhtFindPeerResult(const std::string& peer_id, const PeerRoutingRecord& record);
+  void ApplyDhtFindPeerResult(const std::string& peer_id, const mesh::PeerRoutingRecord& record);
   /** Local (relay-capable) stack only — no StartMesh. */
   Roe<void> BuildLocalMessagingStack();
   /** Rebuild orchestrator/call stack with Amp links from a running mesh_. */
@@ -370,13 +371,13 @@ private:
   void NotifyMessagingReady();
   void NotifyMeshReady();
 
-  void ScheduleDirectoryHitIconFetch(const DirectoryHit& hit);
+  void ScheduleDirectoryHitIconFetch(const mesh::DirectoryHit& hit);
   void ScheduleContactIconFetch(const Contact& contact);
   void NotifyPeerIconsChanged();
 
   void SyncMobileEphemeralListen();
   void SyncLanMdnsAdvertisement();
-  void OnLanMdnsPeerDiscovered(const LanMdnsDiscoveredPeer& peer);
+  void OnLanMdnsPeerDiscovered(const mesh::LanMdnsDiscoveredPeer& peer);
   /** k5: OS network monitor lives with the mesh services (started / stopped with them). */
   void StartNetworkMonitor();
   void StopNetworkMonitor();
@@ -394,7 +395,7 @@ private:
   mutable std::mutex mesh_config_mu_;
   std::shared_ptr<const MeshConfig> mesh_config_snapshot_ = std::make_shared<const MeshConfig>();
   /** Who may learn our address; read by mesh and call paths on any thread (outlives them all). */
-  AddressDisclosureGate address_disclosure_;
+  mesh::AddressDisclosureGate address_disclosure_;
   AgentInboundPorts agent_inbound_;
   SessionStore* session_store_ = nullptr;
   ProfileSecretsEngine* secrets_ = nullptr;
@@ -412,7 +413,7 @@ private:
   std::unique_ptr<ThreadLocalPrefsStore> thread_prefs_;
   std::unique_ptr<GroupInviteGate> group_invite_gate_;
   std::unique_ptr<DirectoryShadowCache> directory_shadows_;
-  std::unique_ptr<MeshDirectoryCache> mesh_directory_cache_;
+  std::unique_ptr<mesh::MeshDirectoryCache> mesh_directory_cache_;
   std::unique_ptr<PeerDisplayResolver> peer_labels_;
   std::unique_ptr<GroupMembershipWorkflow> group_membership_;
   std::unique_ptr<RelayDirectorySigningKeyResolver> signing_resolver_;
@@ -426,13 +427,13 @@ private:
   std::unique_ptr<HttpRelayClient> http_relay_;
   std::unique_ptr<HttpPushDeviceClient> http_push_devices_;
   /** Owns HTTP or FailoverDirectoryClient backends (person + HTTP mesh list). */
-  std::unique_ptr<IDirectoryClient> directory_owned_;
+  std::unique_ptr<mesh::IDirectoryClient> directory_owned_;
   std::unique_ptr<HttpRegistrationClient> http_registration_;
   std::unique_ptr<HttpBlobClient> http_blob_;
   std::unique_ptr<HttpClientCompatClient> http_client_compat_;
   IRelayClient* relay_ = nullptr;
   IPushDeviceClient* push_devices_ = nullptr;
-  IDirectoryClient* directory_ = nullptr;
+  mesh::IDirectoryClient* directory_ = nullptr;
   IRegistrationClient* registration_ = nullptr;
   IBlobClient* blob_ = nullptr;
   IClientCompatClient* client_compat_ = nullptr;
@@ -442,9 +443,9 @@ private:
 
   // --- Neutral mesh objects (L015) — lent to the call stack and broadcast; outlive both ---
   /** Reaching peers (dial registry, listen book, circuit reach, rendezvous, punch walk). */
-  std::unique_ptr<MeshConnectivity> mesh_connectivity_;
+  std::unique_ptr<mesh::MeshConnectivity> mesh_connectivity_;
   /** The media_relay client, built on connectivity (declared after it: goes first). */
-  std::unique_ptr<MeshMediaRelay> mesh_media_relay_;
+  std::unique_ptr<mesh::MeshMediaRelay> mesh_media_relay_;
   /** Pushes the candidate policy into connectivity while the mesh runs (declared after it: goes first). */
   std::unique_ptr<MeshHopPolicyFeed> hop_policy_feed_;
 
@@ -452,14 +453,14 @@ private:
   std::unique_ptr<CallStack> call_stack_;
 
   // --- MeshHost (shared with pp-node) + app mesh glue ----------------------
-  std::unique_ptr<MeshHost> mesh_;
+  std::unique_ptr<mesh::MeshHost> mesh_;
   // Borrows mesh links, mesh_media_relay_'s relay client and mesh_messaging_ — declared after them so
   // it is destroyed first (also reset explicitly in StopMesh / before relay rewires).
   std::unique_ptr<BroadcastHub> broadcast_;
   /** Guards announces posted to UI for the current broadcast hub (invalidated on reset). */
   pp::Lifetime broadcast_deferred_;
   std::function<void()> on_broadcast_changed_;
-  std::unique_ptr<LanMdnsDiscovery> lan_mdns_;
+  std::unique_ptr<mesh::LanMdnsDiscovery> lan_mdns_;
   std::unique_ptr<NetworkMonitor> network_monitor_;
   /** Last seed-observed public address (k6 churn). UI thread. */
   std::string last_observed_addr_;

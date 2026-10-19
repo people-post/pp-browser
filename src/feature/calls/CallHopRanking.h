@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -23,7 +24,7 @@ public:
 
   void SetMediaRelayDeps(const CallTopologyMediaRelayDeps* deps) { deps_ = deps; }
 
-  std::vector<MeshHopCandidate> Ranked() const;
+  std::vector<mesh::MeshHopCandidate> Ranked() const;
   /** A hop we could move to now (or we host one). */
   bool HasCandidates() const;
   /** A dialable multiaddr for `hop_peer_id` (ranked candidates, then the dial registry); empty if none. */
@@ -41,7 +42,7 @@ public:
   std::string LocalPeerId() const;
 
 private:
-  void FillDialInfo(std::vector<MeshHopCandidate>& ranked, bool published_ma_is_dialable) const;
+  void FillDialInfo(std::vector<mesh::MeshHopCandidate>& ranked, bool published_ma_is_dialable) const;
 
   ContactsStore& contacts_;
   const CallTopologyMediaRelayDeps* deps_ = nullptr;

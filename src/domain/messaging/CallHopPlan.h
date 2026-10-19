@@ -1,7 +1,8 @@
 #pragma once
 
-#include "common/directory/MeshHopTypes.h"
+#include "mesh/types/MeshHopTypes.h"
 #include "domain/messaging/CallTypes.h"
+#include "common/MeshAlias.h"
 
 #include <map>
 #include <string>
@@ -34,7 +35,7 @@ CallHopScope InferCallHopScope(
  * Wide / Site → org/directory public MAs first. PreferLocal on Wide only when
  * local_advertise_ma is publicly dialable (public /ip4 or global /ip6).
  */
-std::vector<MeshHopCandidate> SelectCallMediaHop(std::vector<MeshHopCandidate> ranked,
+std::vector<mesh::MeshHopCandidate> SelectCallMediaHop(std::vector<mesh::MeshHopCandidate> ranked,
                                                  CallHopScope scope,
                                                  const std::string& local_peer_id,
                                                  bool prefer_local_as_hop,

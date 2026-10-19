@@ -13,6 +13,7 @@
 #include <map>
 #include <memory>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -90,7 +91,7 @@ void SeedRegisteredAccount(Device& d, const ByteVector& dek) {
   bob.local.display_name = "Bob from work";
   bob.local.trust = TrustLevel::Friendly;
   bob.remote.nickname = "bob";
-  bob.remote.ids = {{ContactIdKind::Account, "account:bob", true}};
+  bob.remote.ids = {{mesh::ContactIdKind::Account, "account:bob", true}};
   SyncContactMirrors(bob);
   ASSERT_TRUE(d.contacts->Upsert(bob));
 }

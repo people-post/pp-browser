@@ -4,6 +4,7 @@
 #include "crypto/PeerId.h"
 
 #include "common/directory/DirectoryJson.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -18,7 +19,7 @@ std::optional<std::vector<uint8_t>> ResolvePeerAnnouncePublisherKey(
     return std::vector<uint8_t>(local_device_public_key.begin(), local_device_public_key.end());
   }
 
-  const std::string kind = ContactIdKindToString(ContactIdKind::PeerId);
+  const std::string kind = ContactIdKindToString(mesh::ContactIdKind::PeerId);
   auto record = signing_key_store.Get(kind, std::string(tip_peer_id));
   if (!record || record->signing_public_key_b64.empty()) {
     return std::nullopt;

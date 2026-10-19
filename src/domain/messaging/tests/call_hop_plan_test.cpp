@@ -1,4 +1,5 @@
 #include "domain/messaging/CallHopPlan.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 
@@ -36,11 +37,11 @@ TEST(CallHopPlanTest, AllPrivateDifferentSubnetIsSite) {
 }
 
 TEST(CallHopPlanTest, SelectLinkPrefersLocalOnlyWhenLanConfirmed) {
-  std::vector<MeshHopCandidate> ranked;
-  MeshHopCandidate seed;
+  std::vector<mesh::MeshHopCandidate> ranked;
+  mesh::MeshHopCandidate seed;
   seed.peer_id = "seed";
   seed.multiaddr = "/ip4/1.2.3.4/tcp/443/p2p/seed";
-  seed.affinity = MeshHopAffinity::OrgSeed;
+  seed.affinity = mesh::MeshHopAffinity::OrgSeed;
   seed.dialable = true;
   ranked.push_back(seed);
 
@@ -58,11 +59,11 @@ TEST(CallHopPlanTest, SelectLinkPrefersLocalOnlyWhenLanConfirmed) {
 TEST(CallHopPlanTest, SelectSiteNeverPreferLocal) {
   EXPECT_FALSE(PreferLocalAllowedForScope(CallHopScope::Site, true, "/ip4/10.0.0.1/tcp/1/p2p/local",
                                           true));
-  std::vector<MeshHopCandidate> ranked;
-  MeshHopCandidate seed;
+  std::vector<mesh::MeshHopCandidate> ranked;
+  mesh::MeshHopCandidate seed;
   seed.peer_id = "seed";
   seed.multiaddr = "/ip4/54.1.2.3/tcp/443/p2p/seed";
-  seed.affinity = MeshHopAffinity::OrgSeed;
+  seed.affinity = mesh::MeshHopAffinity::OrgSeed;
   seed.dialable = true;
   ranked.push_back(seed);
   auto out = SelectCallMediaHop(std::move(ranked), CallHopScope::Site, "local", true,
@@ -72,17 +73,17 @@ TEST(CallHopPlanTest, SelectSiteNeverPreferLocal) {
 }
 
 TEST(CallHopPlanTest, SelectWidePromotesPublicSeedNotPrivateLocal) {
-  std::vector<MeshHopCandidate> ranked;
-  MeshHopCandidate contact;
+  std::vector<mesh::MeshHopCandidate> ranked;
+  mesh::MeshHopCandidate contact;
   contact.peer_id = "contact";
   contact.multiaddr = "/ip4/10.0.0.9/tcp/1/p2p/contact";
-  contact.affinity = MeshHopAffinity::Contact;
+  contact.affinity = mesh::MeshHopAffinity::Contact;
   contact.dialable = true;
   ranked.push_back(contact);
-  MeshHopCandidate seed;
+  mesh::MeshHopCandidate seed;
   seed.peer_id = "seed";
   seed.multiaddr = "/ip4/54.1.2.3/tcp/443/p2p/seed";
-  seed.affinity = MeshHopAffinity::OrgSeed;
+  seed.affinity = mesh::MeshHopAffinity::OrgSeed;
   seed.dialable = true;
   ranked.push_back(seed);
 
@@ -96,11 +97,11 @@ TEST(CallHopPlanTest, SelectWidePromotesPublicSeedNotPrivateLocal) {
 }
 
 TEST(CallHopPlanTest, SelectWideAllowsPublicPreferLocal) {
-  std::vector<MeshHopCandidate> ranked;
-  MeshHopCandidate seed;
+  std::vector<mesh::MeshHopCandidate> ranked;
+  mesh::MeshHopCandidate seed;
   seed.peer_id = "seed";
   seed.multiaddr = "/ip4/1.2.3.4/tcp/443/p2p/seed";
-  seed.affinity = MeshHopAffinity::OrgSeed;
+  seed.affinity = mesh::MeshHopAffinity::OrgSeed;
   seed.dialable = true;
   ranked.push_back(seed);
 

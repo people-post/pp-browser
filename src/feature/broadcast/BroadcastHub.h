@@ -2,7 +2,7 @@
 
 #include "domain/media/CallMediaEngine.h"
 #include "domain/media/MediaDeviceArbiter.h"
-#include "domain/mesh/host/MeshPorts.h"
+#include "mesh/host/MeshPorts.h"
 #include "domain/messaging/PeerAnnounceTypes.h"
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
 #include "feature/broadcast/BroadcasterWorkflow.h"
@@ -15,18 +15,19 @@
 #include <memory>
 #include <mutex>
 #include "common/PbrCompat.h"
+#include "mesh/reach/PeerReachCoordinator.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
 class AmpBroadcastRpcClient;
-class PeerReachCoordinator;
 
 /** Neutral mesh pieces the product hub is built from (app wiring hands them over). */
 struct BroadcastMeshDeps {
-  IChatPeerLinks* links = nullptr;
-  MeshIoContext io;
+  mesh::IChatPeerLinks* links = nullptr;
+  mesh::MeshIoContext io;
   /** Lent by the product hub's MeshMediaRelay (built on MeshConnectivity); the hub must be destroyed before they are rewired (L015). */
-  MediaRelayAttachPorts relay;
+  mesh::MediaRelayAttachPorts relay;
   /** Where reaching a publisher runs: the mesh's io lane (MeshConnectivity::Lane). */
   std::shared_ptr<pp::SerialExecutor> lane;
   std::function<std::optional<ByteVector>(const std::string& peer_id)> publisher_key;
@@ -113,7 +114,7 @@ private:
   OwnerTasks tasks_;
   // Destroyed after the workflows (declared first).
   std::unique_ptr<AmpBroadcastRpcClient> rpc_;
-  std::unique_ptr<PeerReachCoordinator> reach_;
+  std::unique_ptr<mesh::PeerReachCoordinator> reach_;
   std::unique_ptr<CallMediaEngine> engine_;
   std::unique_ptr<CallMediaEngine> capture_engine_;
   std::unique_ptr<BroadcastViewerWorkflow> viewer_;

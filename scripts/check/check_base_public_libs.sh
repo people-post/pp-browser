@@ -16,7 +16,6 @@ domain = {
     "pp_domain_media",
     "pp_domain_net",
     "pp_domain_messaging",
-    "pp_domain_mesh",
     "pp_domain_ai",
     "pp_domain_ui",
 }
@@ -24,7 +23,7 @@ legacy = {
 }
 
 def peer_of(lib):
-    """Sub-libraries (pp_domain_mesh_host, pp_domain_ai_mcp, ...) belong to their peer."""
+    """Sub-libraries (pp_domain_ai_mcp, ...) belong to their peer."""
     if lib in domain:
         return lib
     for peer in sorted(domain, key=len, reverse=True):
@@ -138,16 +137,16 @@ if rg -n '\bpp_base_ai(_conversation|_mcp)?\b' \
 fi
 echo "OK: ai domain lib names"
 
-# Product mesh target must stay pp_domain_mesh (no pp_base_mesh product target).
-if rg -n '\bpp_base_mesh\b' \
+# The mesh is pp-cpp-mesh (pp_mesh*): no pp_domain_mesh / pp_base_mesh target is left in the build.
+if rg -n '\bpp_(base|domain)_mesh\b' \
   --glob '!build/**' --glob '!.git/**' --glob '!third_party/**' --glob '!scripts/**' \
   --glob '!docs/**' --glob '!projects/**' --glob '!AGENTS.md' \
   "$ROOT" >/tmp/pp_mesh_rename.txt 2>/dev/null; then
-  echo "FAIL: leftover pp_base_mesh (use pp_domain_mesh):"
+  echo "FAIL: leftover pp_domain_mesh / pp_base_mesh (the mesh is pp-cpp-mesh: pp_mesh*):"
   cat /tmp/pp_mesh_rename.txt
   exit 1
 fi
-echo "OK: mesh domain lib name"
+echo "OK: mesh lib names"
 
 # Amp FetchContent targets use pp_amp_* (no legacy pp_base_adp / pp_base_mesh_* aliases).
 if rg -n '\bpp_base_(adp|mesh_session|mesh_channel|mesh_link)\b' \

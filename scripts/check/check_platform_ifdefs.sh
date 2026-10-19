@@ -52,8 +52,6 @@ check_tree "foundation/runtime/ must not use OS #ifdefs" src/foundation/runtime
 
 check_tree "domain/media/ portable TUs must not use OS #ifdefs" src/domain/media \
   "${BACKEND_GLOBS[@]}"
-check_tree "domain/mesh/ portable TUs must not use OS #ifdefs" src/domain/mesh \
-  "${BACKEND_GLOBS[@]}"
 
 check_tree "common/ must not use OS #ifdefs (except CivilTime.cpp, WorkerPool.cpp, Logger.h)" src/common \
   --glob '!CivilTime.cpp' --glob '!WorkerPool.cpp' --glob '!Logger.h'

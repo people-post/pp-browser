@@ -3,10 +3,11 @@
 #include "foundation/i18n/LocalizationService.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
-#include "domain/mesh/l4/media_relay/serve/MediaRelayServer.h"
-#include "domain/mesh/l4/circuit/serve/CircuitRelayServer.h"
-#include "domain/mesh/host/MeshHost.h"
+#include "mesh/l4/media_relay/serve/MediaRelayServer.h"
+#include "mesh/l4/circuit/serve/CircuitRelayServer.h"
+#include "mesh/host/MeshHost.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 #include <cstdio>
 #include <memory>
@@ -54,28 +55,28 @@ std::string DirectLabel(StatusbarClusterSnapshot::DirectState direct) {
   }
 }
 
-std::string ReachabilityStatusLabel(ReachabilityStatus status) {
+std::string ReachabilityStatusLabel(mesh::ReachabilityStatus status) {
   switch (status) {
-  case ReachabilityStatus::Checking:
+  case mesh::ReachabilityStatus::Checking:
     return Tr("settings.network.reachability.checking");
-  case ReachabilityStatus::Reachable:
+  case mesh::ReachabilityStatus::Reachable:
     return Tr("settings.network.reachability.reachable");
-  case ReachabilityStatus::OutboundOnly:
+  case mesh::ReachabilityStatus::OutboundOnly:
     return Tr("settings.network.reachability.outbound_only");
-  case ReachabilityStatus::Blocked:
+  case mesh::ReachabilityStatus::Blocked:
     return Tr("settings.network.reachability.blocked");
-  case ReachabilityStatus::Unknown:
+  case mesh::ReachabilityStatus::Unknown:
   default:
     return Tr("settings.network.reachability.unknown");
   }
 }
 
-std::string ReachabilitySummary(ReachabilityStatus status, bool has_global_ipv6, bool dial_back_ok,
+std::string ReachabilitySummary(mesh::ReachabilityStatus status, bool has_global_ipv6, bool dial_back_ok,
                                 bool upnp_mapped) {
   switch (status) {
-  case ReachabilityStatus::Checking:
+  case mesh::ReachabilityStatus::Checking:
     return Tr("settings.network.reachability.summary_checking");
-  case ReachabilityStatus::Reachable:
+  case mesh::ReachabilityStatus::Reachable:
     if (has_global_ipv6 && dial_back_ok) {
       return Tr("settings.network.reachability.summary_reachable_ipv6");
     }
@@ -83,11 +84,11 @@ std::string ReachabilitySummary(ReachabilityStatus status, bool has_global_ipv6,
       return Tr("settings.network.reachability.summary_reachable_upnp");
     }
     return Tr("settings.network.reachability.summary_reachable");
-  case ReachabilityStatus::OutboundOnly:
+  case mesh::ReachabilityStatus::OutboundOnly:
     return Tr("settings.network.reachability.summary_outbound_only");
-  case ReachabilityStatus::Blocked:
+  case mesh::ReachabilityStatus::Blocked:
     return Tr("settings.network.reachability.summary_blocked");
-  case ReachabilityStatus::Unknown:
+  case mesh::ReachabilityStatus::Unknown:
   default:
     return Tr("settings.network.reachability.summary_unknown");
   }
@@ -98,7 +99,7 @@ std::string CountArg(size_t n) {
 }
 
 void FillLoadSlots(StatusbarClusterSnapshot& snap, bool help_network_enabled,
-                   const RelayRuntimeStats& load) {
+                   const mesh::RelayRuntimeStats& load) {
   if (!help_network_enabled) {
     return;
   }
@@ -133,7 +134,7 @@ std::string FormatBytes(const double bytes) {
   return buf;
 }
 
-void FillPopoverNetwork(StatusbarPopoverSnapshot& snap, bool host_running, ReachabilityStatus reachability,
+void FillPopoverNetwork(StatusbarPopoverSnapshot& snap, bool host_running, mesh::ReachabilityStatus reachability,
                         bool help_network_enabled, const MeshTrafficView& traffic) {
   if (!host_running || !traffic.available) {
     return;
@@ -142,7 +143,7 @@ void FillPopoverNetwork(StatusbarPopoverSnapshot& snap, bool host_running, Reach
   snap.network_links_label = Tr("shell.statusbar.popover.links", {{"count", CountArg(traffic.links)}});
   if (traffic.parked_relays > 0) {
     snap.network_parked_label = Tr("shell.statusbar.popover.parked", {{"count", CountArg(traffic.parked_relays)}});
-  } else if (reachability == ReachabilityStatus::OutboundOnly || reachability == ReachabilityStatus::Blocked) {
+  } else if (reachability == mesh::ReachabilityStatus::OutboundOnly || reachability == mesh::ReachabilityStatus::Blocked) {
     snap.network_parked_label = Tr("shell.statusbar.popover.not_parked");  // dialers have no way in
   }
   const MeshTrafficRates& rates = traffic.rates;
@@ -165,7 +166,7 @@ void FillPopoverNetwork(StatusbarPopoverSnapshot& snap, bool host_running, Reach
 }
 
 void FillPopoverLoad(StatusbarPopoverSnapshot& snap, bool help_network_enabled,
-                     const RelayRuntimeStats& load) {
+                     const mesh::RelayRuntimeStats& load) {
   if (!help_network_enabled) {
     return;
   }
@@ -227,16 +228,16 @@ void FillSlotTitles(StatusbarClusterSnapshot& snap) {
 
 } // namespace
 
-RelayRuntimeStats CollectRelayRuntimeStats(MeshHost* mesh) {
-  RelayRuntimeStats stats;
+mesh::RelayRuntimeStats CollectRelayRuntimeStats(mesh::MeshHost* mesh) {
+  mesh::RelayRuntimeStats stats;
   if (!mesh) {
     return stats;
   }
-  if (CircuitRelayServer* amp_circuit = mesh->AmpCircuitServer()) {
+  if (mesh::CircuitRelayServer* amp_circuit = mesh->AmpCircuitServer()) {
     stats.circuit_serving = amp_circuit->IsStarted() && amp_circuit->ServeInbound();
     stats.circuit = amp_circuit->RuntimeStats();
   }
-  if (MediaRelayServer* amp_media = mesh->AmpMediaRelayServer()) {
+  if (mesh::MediaRelayServer* amp_media = mesh->AmpMediaRelayServer()) {
     stats.media_serving = amp_media->IsStarted() && amp_media->ServeInbound();
     stats.media = amp_media->RuntimeStats();
   }
@@ -245,9 +246,9 @@ RelayRuntimeStats CollectRelayRuntimeStats(MeshHost* mesh) {
 
 StatusbarClusterSnapshot BuildStatusbarClusterSnapshot(bool messaging_ready, BriefRelayHealth brief_health,
                                                        bool host_running, bool has_mesh_error,
-                                                       ReachabilityStatus reachability,
+                                                       mesh::ReachabilityStatus reachability,
                                                        bool help_network_enabled,
-                                                       const RelayRuntimeStats& load) {
+                                                       const mesh::RelayRuntimeStats& load) {
   StatusbarClusterSnapshot snap;
   if (!messaging_ready) {
     return snap;
@@ -289,16 +290,16 @@ StatusbarClusterSnapshot BuildStatusbarClusterSnapshot(bool messaging_ready, Bri
   }
 
   switch (reachability) {
-  case ReachabilityStatus::Checking:
+  case mesh::ReachabilityStatus::Checking:
     snap.direct = StatusbarClusterSnapshot::DirectState::Checking;
     break;
-  case ReachabilityStatus::Reachable:
+  case mesh::ReachabilityStatus::Reachable:
     snap.direct = StatusbarClusterSnapshot::DirectState::On;
     if (help_network_enabled) {
       snap.inbound = StatusbarClusterSnapshot::InboundState::On;
     }
     break;
-  case ReachabilityStatus::OutboundOnly:
+  case mesh::ReachabilityStatus::OutboundOnly:
     snap.direct = StatusbarClusterSnapshot::DirectState::On;
     if (help_network_enabled) {
       snap.inbound = StatusbarClusterSnapshot::InboundState::Off;
@@ -308,7 +309,7 @@ StatusbarClusterSnapshot BuildStatusbarClusterSnapshot(bool messaging_ready, Bri
       }
     }
     break;
-  case ReachabilityStatus::Blocked:
+  case mesh::ReachabilityStatus::Blocked:
     snap.direct = StatusbarClusterSnapshot::DirectState::Error;
     if (help_network_enabled) {
       snap.inbound = StatusbarClusterSnapshot::InboundState::Off;
@@ -318,7 +319,7 @@ StatusbarClusterSnapshot BuildStatusbarClusterSnapshot(bool messaging_ready, Bri
       snap.label_tone = StatusbarClusterSnapshot::LabelTone::Error;
     }
     break;
-  case ReachabilityStatus::Unknown:
+  case mesh::ReachabilityStatus::Unknown:
   default:
     snap.direct = StatusbarClusterSnapshot::DirectState::Checking;
     break;
@@ -330,10 +331,10 @@ StatusbarClusterSnapshot BuildStatusbarClusterSnapshot(bool messaging_ready, Bri
 
 StatusbarPopoverSnapshot BuildStatusbarPopoverSnapshot(bool messaging_ready, BriefRelayHealth brief_health,
                                                        bool host_running, const std::string& last_error,
-                                                       ReachabilityStatus reachability, bool has_global_ipv6,
+                                                       mesh::ReachabilityStatus reachability, bool has_global_ipv6,
                                                        bool dial_back_ok, bool upnp_mapped,
                                                        bool help_network_enabled,
-                                                       const RelayRuntimeStats& load,
+                                                       const mesh::RelayRuntimeStats& load,
                                                        const MeshTrafficView& traffic) {
   StatusbarPopoverSnapshot snap;
   snap.messaging_ready = messaging_ready;
@@ -410,7 +411,7 @@ MeshTrafficRates MeshTrafficSampler::Sample(const MeshTrafficTotals& now) {
   return rates_;
 }
 
-MeshTrafficTotals CollectMeshTrafficTotals(MeshHost* mesh) {
+MeshTrafficTotals CollectMeshTrafficTotals(mesh::MeshHost* mesh) {
   MeshTrafficTotals totals;
   totals.at = std::chrono::steady_clock::now();
   if (!mesh || !mesh->IsRunning() || !mesh->Amp()) {
@@ -426,9 +427,9 @@ MeshTrafficTotals CollectMeshTrafficTotals(MeshHost* mesh) {
   totals.retransmits = traffic.retransmits;
   totals.rtt_samples = traffic.rtt_samples;
   totals.rtt_sum_ms = traffic.rtt_sum_ms;
-  const RelayRuntimeStats load = CollectRelayRuntimeStats(mesh);
+  const mesh::RelayRuntimeStats load = CollectRelayRuntimeStats(mesh);
   totals.relayed_bytes = load.circuit.bytes_relayed + load.media.bytes_relayed;
-  if (CircuitClientCoordinator* circuit = mesh->AmpCircuitClient()) {
+  if (mesh::CircuitClientCoordinator* circuit = mesh->AmpCircuitClient()) {
     totals.parked_relays = circuit->ParkedRelayCount();
   }
   return totals;
@@ -437,25 +438,25 @@ MeshTrafficTotals CollectMeshTrafficTotals(MeshHost* mesh) {
 MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps) {
   MessagingShellPorts ports;
   ports.statusbar_cluster = [deps]() -> StatusbarClusterSnapshot {
-    MeshHost* mesh = deps.mesh ? deps.mesh() : nullptr;
+    mesh::MeshHost* mesh = deps.mesh ? deps.mesh() : nullptr;
     const bool ready = deps.messaging_ready && deps.messaging_ready();
     const bool running = mesh && mesh->IsRunning();
     const bool has_error = deps.last_mesh_error && !deps.last_mesh_error().empty();
-    const ReachabilityStatus status = mesh ? mesh->Reachability().Snapshot().status : ReachabilityStatus::Unknown;
+    const mesh::ReachabilityStatus status = mesh ? mesh->Reachability().Snapshot().status : mesh::ReachabilityStatus::Unknown;
     const bool help = deps.help_network_enabled && deps.help_network_enabled();
-    const RelayRuntimeStats load = deps.relay_load_stats ? deps.relay_load_stats() : RelayRuntimeStats{};
+    const mesh::RelayRuntimeStats load = deps.relay_load_stats ? deps.relay_load_stats() : mesh::RelayRuntimeStats{};
     const BriefRelayHealth brief = deps.brief_health ? deps.brief_health() : BriefRelayHealth::Unknown;
     return BuildStatusbarClusterSnapshot(ready, brief, running, has_error, status, help, load);
   };
   auto sampler = std::make_shared<MeshTrafficSampler>();
   ports.statusbar_popover = [deps, sampler]() -> StatusbarPopoverSnapshot {
-    MeshHost* mesh = deps.mesh ? deps.mesh() : nullptr;
+    mesh::MeshHost* mesh = deps.mesh ? deps.mesh() : nullptr;
     const bool ready = deps.messaging_ready && deps.messaging_ready();
     const bool running = mesh && mesh->IsRunning();
-    const ReachabilitySnapshot reach = mesh ? mesh->Reachability().Snapshot() : ReachabilitySnapshot{};
+    const mesh::ReachabilitySnapshot reach = mesh ? mesh->Reachability().Snapshot() : mesh::ReachabilitySnapshot{};
     const std::string last_error = deps.last_mesh_error ? deps.last_mesh_error() : std::string{};
     const bool help = deps.help_network_enabled && deps.help_network_enabled();
-    const RelayRuntimeStats load = deps.relay_load_stats ? deps.relay_load_stats() : RelayRuntimeStats{};
+    const mesh::RelayRuntimeStats load = deps.relay_load_stats ? deps.relay_load_stats() : mesh::RelayRuntimeStats{};
     const BriefRelayHealth brief = deps.brief_health ? deps.brief_health() : BriefRelayHealth::Unknown;
     MeshTrafficView traffic;
     if (deps.traffic_totals) {
@@ -475,7 +476,7 @@ MessagingShellPorts MakeMessagingShellPorts(MessagingShellPortsDeps deps) {
 
 MessagingShellPorts MakeMessagingShellPorts(ConversationsHub& hub) {
   MessagingShellPortsDeps deps;
-  deps.mesh = [&hub]() -> MeshHost* { return hub.Mesh(); };
+  deps.mesh = [&hub]() -> mesh::MeshHost* { return hub.Mesh(); };
   deps.messaging_ready = [&hub]() { return hub.IsMessagingReady(); };
   deps.brief_health = [&hub]() { return MapBriefHealth(hub.MeshMessaging().BriefRelayHealth()); };
   deps.help_network_enabled = [&hub]() { return hub.IsHelpNetworkEnabled(); };

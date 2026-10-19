@@ -1,6 +1,7 @@
 #include "domain/people/ContactReachability.h"
 
 #include "domain/people/ContactTypes.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 
@@ -10,7 +11,7 @@ namespace {
 Contact MakePeerOnlyContact(const std::string& peer_id) {
   Contact c;
   c.id = "c1";
-  c.ids.push_back({ContactIdKind::PeerId, peer_id, true});
+  c.ids.push_back({mesh::ContactIdKind::PeerId, peer_id, true});
   return c;
 }
 
@@ -23,7 +24,7 @@ TEST(ContactReachabilityTest, PeerIdOnlyNotReachableWithoutMultiaddr) {
 
 TEST(ContactReachabilityTest, RelayContactReachableWhenRelayConfigured) {
   Contact c;
-  c.ids.push_back({ContactIdKind::RelayUser, "relay:alice", true});
+  c.ids.push_back({mesh::ContactIdKind::RelayUser, "relay:alice", true});
   EXPECT_TRUE(IsContactReachableForMessaging(c, true));
   EXPECT_FALSE(IsContactReachableForMessaging(c, false));
 }

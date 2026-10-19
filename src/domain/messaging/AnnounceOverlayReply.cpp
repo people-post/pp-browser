@@ -4,6 +4,7 @@
 #include "common/directory/DirectoryJson.h"
 #include "common/thread/ThreadChannel.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -36,10 +37,10 @@ Roe<AnnounceDmReplyPlan> PlanAnnounceDmReply(const std::string_view tip_peer_id,
   plan.target.channel = ThreadChannel::E2ePublic;
 
   if (!contact_account_id.empty()) {
-    plan.target.peer_identity_kind = ContactIdKindToString(ContactIdKind::Account);
+    plan.target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::Account);
     plan.target.peer_identity_value = std::string(contact_account_id);
   } else {
-    plan.target.peer_identity_kind = ContactIdKindToString(ContactIdKind::PeerId);
+    plan.target.peer_identity_kind = ContactIdKindToString(mesh::ContactIdKind::PeerId);
     plan.target.peer_identity_value = std::string(tip_peer_id);
   }
   return plan;

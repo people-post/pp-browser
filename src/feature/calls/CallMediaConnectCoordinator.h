@@ -1,7 +1,7 @@
 #pragma once
 
 #include "feature/call_media/ICallMediaTransport.h"
-#include "domain/mesh/reach/PeerReachCoordinator.h"
+#include "mesh/reach/PeerReachCoordinator.h"
 #include "feature/calls/CallMediaInboundReply.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "foundation/runtime/OwnerOutbox.h"
@@ -17,6 +17,7 @@
 #include <optional>
 #include <string>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -26,14 +27,14 @@ struct CallMediaConnectRequest {
   CallMediaDirectConnectParams params;
   CallMediaDirectCallbacks callbacks;
   /** Link for the first attempt; later attempts drop exclude_direct and set fresh_link as needed. */
-  PeerReachRequest reach;
+  mesh::PeerReachRequest reach;
 };
 
 struct CallMediaConnectHooks {
   /** After the link is ready, before each ConnectAsync (e.g. offerer resends the media key). */
   std::function<void(const CallMediaDirectConnectParams&)> before_attempt;
   /** Link settled for an attempt. */
-  std::function<void(PeerLinkKind kind)> on_link_ready;
+  std::function<void(mesh::PeerLinkKind kind)> on_link_ready;
   /**
    * Sequence ended on its own: ok = bundle MediaReady, error = attempts exhausted / unreachable.
    * Runs as its own event; skipped when Abort / Start ran after the sequence ended. Never runs for Abort.
@@ -79,7 +80,7 @@ struct CallMediaInboundPorts {
  */
 class CallMediaConnectCoordinator : public Module {
 public:
-  CallMediaConnectCoordinator(ICallMediaTransport& transport, PeerReachCoordinator& reach);
+  CallMediaConnectCoordinator(ICallMediaTransport& transport, mesh::PeerReachCoordinator& reach);
   ~CallMediaConnectCoordinator() override;
 
   CallMediaConnectCoordinator(const CallMediaConnectCoordinator&) = delete;
@@ -116,7 +117,7 @@ private:
   bool Current(uint64_t seq) const;
   bool MediaReady() const;
   void BeginAttempt(uint64_t seq, int attempt);
-  void OnLinkReady(uint64_t seq, int attempt, Roe<PeerReachResult> reached);
+  void OnLinkReady(uint64_t seq, int attempt, Roe<mesh::PeerReachResult> reached);
   void OpenBundle(uint64_t seq, int attempt);
   void ArmWatchdog(uint64_t seq, int attempt);
   void OnWatchdog(uint64_t seq, int attempt);
@@ -141,7 +142,7 @@ private:
   void RejectPendingHellos(const char* why);
 
   ICallMediaTransport& transport_;
-  PeerReachCoordinator& reach_;
+  mesh::PeerReachCoordinator& reach_;
   std::atomic<uint64_t> seq_{0};
   std::atomic<bool> inflight_{false};
   std::atomic<bool> shut_down_{false};
@@ -157,7 +158,7 @@ private:
   // Calls owner.
   CallMediaConnectRequest request_;
   CallMediaConnectHooks hooks_;
-  PeerReachId reach_id_ = 0;
+  mesh::PeerReachId reach_id_ = 0;
   int attempt_current_ = 0;
   bool attempt_reused_link_ = false;
   bool fresh_link_next_ = false;

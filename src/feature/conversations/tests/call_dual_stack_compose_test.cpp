@@ -1,4 +1,5 @@
 #include "feature/conversations/tests/call_stack_compose_support.h"
+#include "common/MeshAlias.h"
 
 #include <deque>
 #include <string>
@@ -236,14 +237,14 @@ TEST_F(CallDualStackComposeTest, ReachSignalsTravelOverCallControl) {
   };
   MeshFake offer_mesh{{"/ip4/1.1.1.1/udp/1"}, {}, {}};
   MeshFake answer_mesh{{"/ip4/2.2.2.2/udp/2"}, {}, {}};
-  for (auto [side, mesh] : {std::pair{&offer_, &offer_mesh}, std::pair{&answer_, &answer_mesh}}) {
+  for (auto [side, fake] : {std::pair{&offer_, &offer_mesh}, std::pair{&answer_, &answer_mesh}}) {
     CallReachSignals::MeshPorts ports;
-    ports.local_punch_addrs = [mesh]() { return mesh->candidates; };
-    ports.punch_burst = [mesh](const std::vector<std::string>& addrs, int, SignalingPunchExchange::DoneFn done) {
-      mesh->bursts.push_back(addrs);
+    ports.local_punch_addrs = [fake]() { return fake->candidates; };
+    ports.punch_burst = [fake](const std::vector<std::string>& addrs, int, mesh::SignalingPunchExchange::DoneFn done) {
+      fake->bursts.push_back(addrs);
       done(Roe<void>{});
     };
-    ports.prefer_late_reserve = [mesh](const std::string& r1) { mesh->preferred.push_back(r1); };
+    ports.prefer_late_reserve = [fake](const std::string& r1) { fake->preferred.push_back(r1); };
     side->stack->Calls()->ReachSignals().SetMeshPorts(std::move(ports));
   }
 

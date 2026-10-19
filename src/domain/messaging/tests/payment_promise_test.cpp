@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace {
 
@@ -105,7 +106,7 @@ TEST_F(PaymentPromiseTest, AvoidBlocksContactAndStampsReceipt) {
   Contact contact;
   contact.id = "contact-bob";
   contact.local.display_name = "Bob";
-  contact.remote.ids = {{ContactIdKind::Account, "account:bob", true}};
+  contact.remote.ids = {{mesh::ContactIdKind::Account, "account:bob", true}};
   contact.local.trust = TrustLevel::Unknown;
   SyncContactMirrors(contact);
   ASSERT_TRUE(static_cast<bool>(contacts.Upsert(contact)));
@@ -119,7 +120,7 @@ TEST_F(PaymentPromiseTest, AvoidBlocksContactAndStampsReceipt) {
   ASSERT_TRUE(static_cast<bool>(avoided)) << avoided.error().message;
   EXPECT_TRUE(PaymentPromiseAvoid::ShouldAvoid(promises, contacts, "account:alice", "account:bob"));
 
-  auto hit = contacts.FindByIdentity("account:bob", ContactIdKind::Account);
+  auto hit = contacts.FindByIdentity("account:bob", mesh::ContactIdKind::Account);
   ASSERT_TRUE(static_cast<bool>(hit));
   ASSERT_TRUE(hit->has_value());
   EXPECT_EQ((*hit)->local.trust, TrustLevel::Blocked);

@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   using namespace pbr;
@@ -57,11 +58,11 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(verified));
   EXPECT_TRUE(*verified);
 
-  DirectoryHit hit;
+  mesh::DirectoryHit hit;
   hit.hit_id = "hit_alice";
   hit.display_name = "Alice Example";
   hit.nickname = "alice";
-  hit.ids = {{ContactIdKind::RelayUser, "relay:alice123", true}};
+  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:alice123", true}};
   const std::string blocks = BuildPeopleDiscoveryBlocksJson({hit}, std::vector<PeopleDiscoveryContactView>{});
   EXPECT_NE(blocks.find("long_list"), std::string::npos);
   EXPECT_NE(blocks.find("Alice Example"), std::string::npos);

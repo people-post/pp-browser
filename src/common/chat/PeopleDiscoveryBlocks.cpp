@@ -3,6 +3,7 @@
 #include "common/directory/DirectoryJson.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 #include <algorithm>
 #include <cctype>
@@ -25,24 +26,24 @@ std::string Fill(std::string templ, const std::string& name, const std::string& 
   return templ;
 }
 
-std::string PrimaryIdentityValue(const std::vector<ContactId>& ids) {
-  for (const ContactId& id : ids) {
-    if (id.kind == ContactIdKind::Account && id.primary) {
+std::string PrimaryIdentityValue(const std::vector<mesh::ContactId>& ids) {
+  for (const mesh::ContactId& id : ids) {
+    if (id.kind == mesh::ContactIdKind::Account && id.primary) {
       return id.value;
     }
   }
-  for (const ContactId& id : ids) {
-    if (id.kind == ContactIdKind::Account) {
+  for (const mesh::ContactId& id : ids) {
+    if (id.kind == mesh::ContactIdKind::Account) {
       return id.value;
     }
   }
-  for (const ContactId& id : ids) {
-    if (id.kind == ContactIdKind::RelayUser && id.primary) {
+  for (const mesh::ContactId& id : ids) {
+    if (id.kind == mesh::ContactIdKind::RelayUser && id.primary) {
       return id.value;
     }
   }
-  for (const ContactId& id : ids) {
-    if (id.kind == ContactIdKind::RelayUser) {
+  for (const mesh::ContactId& id : ids) {
+    if (id.kind == mesh::ContactIdKind::RelayUser) {
       return id.value;
     }
   }
@@ -82,12 +83,12 @@ std::string ShortIdentityId(const std::string& relay_or_peer_id) {
   return relay_or_peer_id.substr(0, kKeep) + "…";
 }
 
-std::string PreferPersonId(const DirectoryHit& hit) {
+std::string PreferPersonId(const mesh::DirectoryHit& hit) {
   if (hit.account_id && !hit.account_id->empty()) {
     return *hit.account_id;
   }
-  for (const ContactId& id : hit.ids) {
-    if (id.kind == ContactIdKind::Account && !id.value.empty()) {
+  for (const mesh::ContactId& id : hit.ids) {
+    if (id.kind == mesh::ContactIdKind::Account && !id.value.empty()) {
       return id.value;
     }
   }
@@ -95,15 +96,15 @@ std::string PreferPersonId(const DirectoryHit& hit) {
 }
 
 std::string PreferPersonId(const PeopleDiscoveryContactView& contact) {
-  for (const ContactId& id : contact.ids) {
-    if (id.kind == ContactIdKind::Account && !id.value.empty()) {
+  for (const mesh::ContactId& id : contact.ids) {
+    if (id.kind == mesh::ContactIdKind::Account && !id.value.empty()) {
       return id.value;
     }
   }
   return PrimaryIdentityValue(contact.ids);
 }
 
-bool IdentityKnown(const std::vector<ContactId>& ids, const std::optional<std::string>& account_id,
+bool IdentityKnown(const std::vector<mesh::ContactId>& ids, const std::optional<std::string>& account_id,
                    const std::unordered_set<std::string>& known) {
   if (known.empty()) {
     return false;
@@ -111,7 +112,7 @@ bool IdentityKnown(const std::vector<ContactId>& ids, const std::optional<std::s
   if (account_id && known.count(*account_id) != 0) {
     return true;
   }
-  for (const ContactId& id : ids) {
+  for (const mesh::ContactId& id : ids) {
     if (!id.value.empty() && known.count(id.value) != 0) {
       return true;
     }
@@ -119,19 +120,19 @@ bool IdentityKnown(const std::vector<ContactId>& ids, const std::optional<std::s
   return false;
 }
 
-std::optional<std::string> MatchingContactId(const std::vector<ContactId>& hit_ids,
+std::optional<std::string> MatchingContactId(const std::vector<mesh::ContactId>& hit_ids,
                                              const std::optional<std::string>& account_id,
                                              const std::vector<PeopleDiscoveryContactView>& contacts) {
   auto matches = [&](const PeopleDiscoveryContactView& contact) {
     if (account_id) {
-      for (const ContactId& id : contact.ids) {
+      for (const mesh::ContactId& id : contact.ids) {
         if (id.value == *account_id) {
           return true;
         }
       }
     }
-    for (const ContactId& hit_id : hit_ids) {
-      for (const ContactId& id : contact.ids) {
+    for (const mesh::ContactId& hit_id : hit_ids) {
+      for (const mesh::ContactId& id : contact.ids) {
         if (!hit_id.value.empty() && hit_id.value == id.value) {
           return true;
         }
@@ -185,7 +186,7 @@ Object MakeAction(const std::string& label, const std::string& message, Object p
   return action;
 }
 
-Value DirectoryHitItemActions(const DirectoryHit& hit, const bool already_contact,
+Value DirectoryHitItemActions(const mesh::DirectoryHit& hit, const bool already_contact,
                               const std::optional<std::string>& contact_id,
                               const PeopleDiscoveryLabels& labels) {
   const Object hit_json = DirectoryHitToJson(hit);
@@ -339,7 +340,7 @@ std::unordered_set<std::string> CollectKnownIdentities(const std::vector<PeopleD
                                                        const PeopleDiscoveryBuildOptions& options) {
   std::unordered_set<std::string> known = options.known_local_identity_values;
   for (const PeopleDiscoveryContactView& contact : contacts) {
-    for (const ContactId& id : contact.ids) {
+    for (const mesh::ContactId& id : contact.ids) {
       if (!id.value.empty()) {
         known.insert(id.value);
       }
@@ -371,7 +372,7 @@ std::unordered_set<std::string> SelfIdentityValuesFromLocal(const LocalIdentity&
   return out;
 }
 
-bool DirectoryHitMatchesIdentities(const DirectoryHit& hit,
+bool DirectoryHitMatchesIdentities(const mesh::DirectoryHit& hit,
                                    const std::unordered_set<std::string>& identities) {
   if (identities.empty()) {
     return false;
@@ -379,7 +380,7 @@ bool DirectoryHitMatchesIdentities(const DirectoryHit& hit,
   if (hit.account_id && identities.count(*hit.account_id) != 0) {
     return true;
   }
-  for (const ContactId& id : hit.ids) {
+  for (const mesh::ContactId& id : hit.ids) {
     if (!id.value.empty() && identities.count(id.value) != 0) {
       return true;
     }
@@ -387,7 +388,7 @@ bool DirectoryHitMatchesIdentities(const DirectoryHit& hit,
   return false;
 }
 
-std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& directory_hits,
+std::string BuildPeopleDiscoveryBlocksJson(const std::vector<mesh::DirectoryHit>& directory_hits,
                                            const std::vector<PeopleDiscoveryContactView>& contacts,
                                            const PeopleDiscoveryBuildOptions& options) {
   const PeopleDiscoveryLabels& labels = options.labels;
@@ -396,9 +397,9 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& dire
       options.max_visible_items == 0 ? kDefaultMaxVisible : options.max_visible_items;
   const auto known = CollectKnownIdentities(contacts, options);
 
-  std::vector<DirectoryHit> filtered_hits;
+  std::vector<mesh::DirectoryHit> filtered_hits;
   filtered_hits.reserve(directory_hits.size());
-  for (const DirectoryHit& hit : directory_hits) {
+  for (const mesh::DirectoryHit& hit : directory_hits) {
     if (!options.self_identity_values.empty() &&
         DirectoryHitMatchesIdentities(hit, options.self_identity_values)) {
       continue;
@@ -425,7 +426,7 @@ std::string BuildPeopleDiscoveryBlocksJson(const std::vector<DirectoryHit>& dire
     std::vector<Value> items;
     items.reserve(visible);
     for (size_t i = 0; i < visible; ++i) {
-      const DirectoryHit& hit = filtered_hits[i];
+      const mesh::DirectoryHit& hit = filtered_hits[i];
       const bool already =
           IdentityKnown(hit.ids, hit.account_id, known) ||
           MatchingContactId(hit.ids, hit.account_id, contacts).has_value();
@@ -497,7 +498,7 @@ std::string TryPeopleDiscoveryBlocksFromToolJson(const std::string& raw_json,
     return {};
   }
 
-  std::vector<DirectoryHit> hits;
+  std::vector<mesh::DirectoryHit> hits;
   std::vector<PeopleDiscoveryContactView> contacts;
   for (const Value& item_value : doc->elements) {
     const Object* item = asObject(item_value);

@@ -1,12 +1,12 @@
 #pragma once
 
-#include "domain/mesh/host/MeshPorts.h"
-#include "domain/mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
-#include "domain/mesh/reach/MeshReachPorts.h"
+#include "mesh/host/MeshPorts.h"
+#include "mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
+#include "mesh/reach/MeshReachPorts.h"
 #include "feature/call_media/ICallMediaTransport.h"
-#include "domain/mesh/l4/media_relay/client/IMediaRelayClient.h"
-#include "domain/mesh/media_plane/MediaRelayAttach.h"
-#include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
+#include "mesh/l4/media_relay/client/IMediaRelayClient.h"
+#include "mesh/media_plane/MediaRelayAttach.h"
+#include "mesh/l4/media_relay/MediaRelayTypes.h"
 #include "common/media/CallMediaHealth.h"
 #include "amp/link/Types.h"
 
@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -27,9 +28,9 @@ namespace pbr {
  * Owned by CallTopologyController; CallHopMigrateWorkflow holds a non-owning pointer (V047).
  */
 struct CallTopologyMediaRelayDeps {
-  IMediaRelayClient* relay = nullptr;
-  IDialRegistry* dial = nullptr;
-  ICircuitHopReach* circuit_reach = nullptr;
+  mesh::IMediaRelayClient* relay = nullptr;
+  mesh::IDialRegistry* dial = nullptr;
+  mesh::ICircuitHopReach* circuit_reach = nullptr;
   /** Mesh media plane liveness for the three pointers above (null = ungated; tests). */
   pp::Lifetime::Token objects_alive;
   uint64_t objects_snap = 0;
@@ -40,9 +41,9 @@ struct CallTopologyMediaRelayDeps {
   /** projects/privacy T4: only org seeds and Friendly contacts' nodes carry call media. */
   bool trusted_relays_only = false;
   /** Cached mesh_node listings (n-dir). */
-  std::function<std::vector<MeshDirectoryNode>()> list_directory_nodes;
+  std::function<std::vector<mesh::MeshDirectoryNode>()> list_directory_nodes;
   /** DHT peer_routing cache (n2-caps). */
-  std::function<std::vector<MeshDirectoryNode>()> list_dht_nodes;
+  std::function<std::vector<mesh::MeshDirectoryNode>()> list_dht_nodes;
   /** When false, org seed hops are omitted (bridge score / n-dir). */
   std::function<bool()> seed_dial_ok;
   /**
@@ -80,8 +81,8 @@ struct CallTopologyMediaRelayDeps {
   std::function<bool(const std::string& peer_id)> peer_lan_confirmed;
 
   /** Attach / quote ports carrying the plane's liveness gate. */
-  MediaRelayAttachPorts AttachPorts() const {
-    MediaRelayAttachPorts ports;
+  mesh::MediaRelayAttachPorts AttachPorts() const {
+    mesh::MediaRelayAttachPorts ports;
     ports.relay = relay;
     ports.dial = dial;
     ports.service_reach = circuit_reach;

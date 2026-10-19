@@ -1,5 +1,6 @@
 #include "domain/people/ContactsStore.h"
 #include "domain/people/PeerDisplayLabel.h"
+#include "common/MeshAlias.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -16,12 +17,12 @@ TEST(PeerDisplayLabelTest, FormatsContactDirectoryAndShortId) {
   contact.display_name.clear();
   EXPECT_EQ(FormatContactTitle(contact), "bob");
 
-  DirectoryHit hit;
+  mesh::DirectoryHit hit;
   hit.nickname = "alice";
-  hit.ids = {{ContactIdKind::RelayUser, "relay:lHaEnkO4vSbVnl6A", true}};
+  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:lHaEnkO4vSbVnl6A", true}};
   EXPECT_EQ(FormatDirectoryTitle(hit), "~alice @relay:lHaEnkO4…");
 
-  DirectoryHit nick_only;
+  mesh::DirectoryHit nick_only;
   nick_only.nickname = "bob";
   EXPECT_EQ(FormatDirectoryTitle(nick_only), "~bob");
 
@@ -37,15 +38,15 @@ TEST(ContactsStoreFindByIdentityTest, FindsExactRelayId) {
   Contact contact;
   contact.id = "c1";
   contact.display_name = "Alice";
-  contact.ids = {{ContactIdKind::RelayUser, "relay:alice123", true}};
+  contact.ids = {{mesh::ContactIdKind::RelayUser, "relay:alice123", true}};
   ASSERT_TRUE(store.Upsert(contact));
 
-  auto found = store.FindByIdentity("relay:alice123", ContactIdKind::RelayUser);
+  auto found = store.FindByIdentity("relay:alice123", mesh::ContactIdKind::RelayUser);
   ASSERT_TRUE(found);
   ASSERT_TRUE(*found);
   EXPECT_EQ((*found)->id, "c1");
 
-  auto missing = store.FindByIdentity("relay:other", ContactIdKind::RelayUser);
+  auto missing = store.FindByIdentity("relay:other", mesh::ContactIdKind::RelayUser);
   ASSERT_TRUE(missing);
   EXPECT_FALSE(missing->has_value());
 

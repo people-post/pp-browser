@@ -12,15 +12,16 @@
 #include "domain/media/CallMediaEngine.h"
 #include "domain/media/MediaDeviceArbiter.h"
 #include "domain/media/VideoCodecUnavailable.h"
-#include "domain/mesh/l4/media_relay/client/AmpMediaRelayClient.h"
-#include "domain/mesh/l4/media_relay/client/MediaRelayClientCoordinator.h"
-#include "domain/mesh/l4/media_relay/serve/MediaRelayServer.h"
-#include "domain/mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
-#include "domain/mesh/tests/support/mesh_triple_harness.h"
+#include "mesh/l4/media_relay/client/AmpMediaRelayClient.h"
+#include "mesh/l4/media_relay/client/MediaRelayClientCoordinator.h"
+#include "mesh/l4/media_relay/serve/MediaRelayServer.h"
+#include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
+#include "mesh/testing/mesh_triple_harness.h"
 #include "domain/messaging/BroadcastMedia.h"
 #include "foundation/crypto/MlDsa.h"
 #include "foundation/runtime/OwnerOutbox.h"
 #include "foundation/runtime/tests/queue_owner_executor.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 #include <opus.h>
@@ -39,7 +40,7 @@ namespace {
 constexpr const char* kProgram = "show-compose";
 constexpr const char* kJoin = "live:show-compose";
 
-class AlwaysDialable final : public IDialRegistry {
+class AlwaysDialable final : public mesh::IDialRegistry {
 public:
   Roe<void> RegisterEndpoint(const std::string&, const std::string&) override { return {}; }
   bool IsDialable(const std::string&) const override { return true; }
@@ -62,7 +63,7 @@ std::vector<uint8_t> OpusFrame() {
 class BroadcastViewerComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    auto created = test::AmpMeshTripleHarness::Create();
+    auto created = mesh::test::AmpMeshTripleHarness::Create();
     ASSERT_TRUE(created) << created.error().message;
     h_ = std::move(*created);
     publisher_ = h_->peer_id_b;
@@ -72,8 +73,8 @@ protected:
     ASSERT_TRUE(h_->mgr_a().RegisterEndpoint(hop_, h_->ma_r));
     ASSERT_TRUE(h_->mgr_a().RegisterEndpoint(publisher_, h_->ma_b));
 
-    links_a_ = NewAmpChatPeerLinks(*h_->runtime_a);
-    links_b_ = NewAmpChatPeerLinks(*h_->runtime_b);
+    links_a_ = mesh::NewAmpChatPeerLinks(*h_->runtime_a);
+    links_b_ = mesh::NewAmpChatPeerLinks(*h_->runtime_b);
     // RPC channels go through the chat-link adapter's own endpoint book.
     ASSERT_TRUE(links_a_->RegisterEndpoint(publisher_, h_->ma_b));
     ASSERT_TRUE(links_a_->RegisterEndpoint(hop_, h_->ma_r));
@@ -96,13 +97,13 @@ protected:
     server_->PutLiveProgramKey(kProgram, kJoin, live);
     server_->Start();
 
-    hop_relay_ = std::make_unique<MediaRelayServer>(*h_->runtime_r);
-    publisher_relay_ = std::make_unique<MediaRelayClientCoordinator>(*h_->runtime_b);
-    viewer_relay_coord_ = std::make_unique<MediaRelayClientCoordinator>(*h_->runtime_a);
+    hop_relay_ = std::make_unique<mesh::MediaRelayServer>(*h_->runtime_r);
+    publisher_relay_ = std::make_unique<mesh::MediaRelayClientCoordinator>(*h_->runtime_b);
+    viewer_relay_coord_ = std::make_unique<mesh::MediaRelayClientCoordinator>(*h_->runtime_a);
     hop_relay_->Start();
     publisher_relay_->Start();
     viewer_relay_coord_->Start();
-    viewer_relay_ = std::make_unique<AmpMediaRelayClient>(*viewer_relay_coord_, pump, viewer_,
+    viewer_relay_ = std::make_unique<mesh::AmpMediaRelayClient>(*viewer_relay_coord_, pump, viewer_,
                                                           PostIo(*h_->runtime_a), PostAfter(*h_->runtime_a));
 
     rpc_ = std::make_unique<AmpBroadcastRpcClient>(*links_a_, pump, PostIo(*h_->runtime_a), PostAfter(*h_->runtime_a));
@@ -188,18 +189,18 @@ protected:
 
   void PublisherAttach() {
     std::atomic<bool> quoted{false};
-    Roe<MediaRelayQuote> quote = Error("pending");
-    MediaRelayQuoteRequest req;
+    Roe<mesh::MediaRelayQuote> quote = Error("pending");
+    mesh::MediaRelayQuoteRequest req;
     req.session_id = kJoin;
-    ASSERT_TRUE(publisher_relay_->StartQuote(hop_, req, [&](Roe<MediaRelayQuote> q) {
+    ASSERT_TRUE(publisher_relay_->StartQuote(hop_, req, [&](Roe<mesh::MediaRelayQuote> q) {
       quote = std::move(q);
       quoted = true;
     }));
     ASSERT_TRUE(RunUntil([&] { return quoted.load(); }));
     ASSERT_TRUE(quote && quote->ok) << (quote ? quote->error : quote.error().message);
     std::atomic<bool> attached{false};
-    Roe<MediaRelayAttachResult> result = Error("pending");
-    ASSERT_TRUE(publisher_relay_->StartAttach(hop_, quote->quote_id, kJoin, kJoin, {}, [&](Roe<MediaRelayAttachResult> r) {
+    Roe<mesh::MediaRelayAttachResult> result = Error("pending");
+    ASSERT_TRUE(publisher_relay_->StartAttach(hop_, quote->quote_id, kJoin, kJoin, {}, [&](Roe<mesh::MediaRelayAttachResult> r) {
       result = std::move(r);
       attached = true;
     }));
@@ -209,9 +210,9 @@ protected:
 
   void PublishFrame(uint32_t seq) {
     const uint32_t stream = BroadcastPublisherStreamId(publisher_);
-    auto body = SealMediaRelayFrame(media_key_, BroadcastMediaFrameContext(kProgram, kJoin), 1, stream, seq, 0, 0, opus_);
+    auto body = mesh::SealMediaRelayFrame(media_key_, BroadcastMediaFrameContext(kProgram, kJoin), 1, stream, seq, 0, 0, opus_);
     ASSERT_TRUE(body);
-    MediaDataFrame frame;
+    mesh::MediaDataFrame frame;
     frame.stream_id = stream;
     frame.channel_id = 0;
     frame.seq = seq;
@@ -219,20 +220,20 @@ protected:
     ASSERT_TRUE(publisher_relay_->SendFrame(frame));
   }
 
-  std::unique_ptr<test::AmpMeshTripleHarness> h_;
+  std::unique_ptr<mesh::test::AmpMeshTripleHarness> h_;
   std::string publisher_, hop_, viewer_;
-  std::unique_ptr<IChatPeerLinks> links_a_;
-  std::unique_ptr<IChatPeerLinks> links_b_;
+  std::unique_ptr<mesh::IChatPeerLinks> links_a_;
+  std::unique_ptr<mesh::IChatPeerLinks> links_b_;
   MlDsaKeyPair publisher_keys_;
   ByteVector media_key_;
   const std::vector<uint8_t> opus_ = OpusFrame();
   std::unique_ptr<AmpBroadcastTransport> server_;
-  std::unique_ptr<IChatPeerLinks> hop_links_;
+  std::unique_ptr<mesh::IChatPeerLinks> hop_links_;
   std::unique_ptr<AmpBroadcastTransport> hop_admission_;
-  std::unique_ptr<MediaRelayServer> hop_relay_;
-  std::unique_ptr<MediaRelayClientCoordinator> publisher_relay_;
-  std::unique_ptr<MediaRelayClientCoordinator> viewer_relay_coord_;
-  std::unique_ptr<AmpMediaRelayClient> viewer_relay_;
+  std::unique_ptr<mesh::MediaRelayServer> hop_relay_;
+  std::unique_ptr<mesh::MediaRelayClientCoordinator> publisher_relay_;
+  std::unique_ptr<mesh::MediaRelayClientCoordinator> viewer_relay_coord_;
+  std::unique_ptr<mesh::AmpMediaRelayClient> viewer_relay_;
   std::unique_ptr<AmpBroadcastRpcClient> rpc_;
   AlwaysDialable dial_;
   MediaDeviceArbiter devices_{CreateNullMediaDeviceBackend()};
@@ -274,7 +275,7 @@ TEST_F(BroadcastViewerComposeTest, ViewerListensToThePublisherThroughAPlainRelay
 // at the ticket step, before any relay work.
 // A hop that serves admission (a B1 ladder relay): the viewer is admitted, then attaches there.
 TEST_F(BroadcastViewerComposeTest, AdmittingHopAdmitsThenTheViewerListens) {
-  hop_links_ = NewAmpChatPeerLinks(*h_->runtime_r);
+  hop_links_ = mesh::NewAmpChatPeerLinks(*h_->runtime_r);
   hop_admission_ = std::make_unique<AmpBroadcastTransport>(*hop_links_, [this]() { h_->PumpAll(); },
                                                            AmpBroadcastTransport::WorkerPost{}, PostIo(*h_->runtime_r),
                                                            PostAfter(*h_->runtime_r));
@@ -301,7 +302,7 @@ TEST_F(BroadcastViewerComposeTest, AdmittingHopAdmitsThenTheViewerListens) {
 // server, capture engine sealing silence frames), A watches from the tip B announced.
 TEST_F(BroadcastViewerComposeTest, BroadcasterToRelayToViewerEndToEnd) {
   std::vector<BroadcastTipDraft> tips;
-  auto publisher_client = std::make_unique<AmpMediaRelayClient>(*publisher_relay_, [this]() { h_->PumpAll(); },
+  auto publisher_client = std::make_unique<mesh::AmpMediaRelayClient>(*publisher_relay_, [this]() { h_->PumpAll(); },
                                                                 publisher_, PostIo(*h_->runtime_b),
                                                                 PostAfter(*h_->runtime_b));
   CallMediaEngine capture(devices_);

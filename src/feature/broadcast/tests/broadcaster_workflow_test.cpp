@@ -5,8 +5,9 @@
 
 #include "domain/media/MediaDeviceArbiter.h"
 #include "domain/media/VideoCodecUnavailable.h"
-#include "domain/mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
+#include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
 #include "domain/messaging/BroadcastMedia.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 
@@ -104,8 +105,8 @@ protected:
   test::QueueOwnerExecutor owner_{ui_};
   OwnerTasks tasks_{owner_};
   /** What this "device" can produce (B009); tests rebuild the workflow to change it. */
-  MediaRelayVideoOffer video_offer_{{kDefaultVideoLevel}, 1};
-  void RebuildWithOffer(MediaRelayVideoOffer offer) {
+  mesh::MediaRelayVideoOffer video_offer_{{mesh::kDefaultVideoLevel}, 1};
+  void RebuildWithOffer(mesh::MediaRelayVideoOffer offer) {
     video_offer_ = std::move(offer);
     workflow_ = std::make_unique<BroadcasterWorkflow>(Ports());
     workflow_->SetOutbox(
@@ -144,9 +145,9 @@ TEST_F(BroadcasterWorkflowTest, GoLivePublishesSealedFramesAndAnnounces) {
   const uint32_t stream = BroadcastPublisherStreamId(kSelf);
   const auto frame = relay_.SentFrames().front();
   EXPECT_EQ(frame.stream_id, stream);
-  EXPECT_EQ(frame.channel_id, kMediaChannelAudio);
-  EXPECT_EQ(frame.channel_type, MediaChannelType::ReliableOrdered) << "the relay QoS class follows the channel";
-  auto opened = OpenMediaRelayFrame(key_, BroadcastMediaFrameContext(kProgram, status.join_handle), 1, stream,
+  EXPECT_EQ(frame.channel_id, mesh::kMediaChannelAudio);
+  EXPECT_EQ(frame.channel_type, mesh::MediaChannelType::ReliableOrdered) << "the relay QoS class follows the channel";
+  auto opened = mesh::OpenMediaRelayFrame(key_, BroadcastMediaFrameContext(kProgram, status.join_handle), 1, stream,
                                     static_cast<uint8_t>(frame.channel_id), frame.payload);
   EXPECT_TRUE(opened) << "viewers open it with the broadcast label";
   EXPECT_GE(workflow_->CurrentStatus().frames_sent, 3u);
@@ -155,7 +156,7 @@ TEST_F(BroadcasterWorkflowTest, GoLivePublishesSealedFramesAndAnnounces) {
 // B009: a desktop offers both levels and publishes the one the relay answers; the tip names it.
 TEST_F(BroadcasterWorkflowTest, DesktopPublishesTheLevelTheRelayCarries) {
   RebuildWithOffer({{1, 2}, 1});
-  relay_.video_policies["hop1"] = MediaRelayVideoPolicy{{2}, 1, false};
+  relay_.video_policies["hop1"] = mesh::MediaRelayVideoPolicy{{2}, 1, false};
   BroadcastLiveRequest request{"topic", kProgram, {"hop1"}};
   request.video = true;
   ASSERT_TRUE(workflow_->GoLive(request));
@@ -172,7 +173,7 @@ TEST_F(BroadcasterWorkflowTest, DesktopPublishesTheLevelTheRelayCarries) {
 
 TEST_F(BroadcasterWorkflowTest, PhoneOnAHighLevelRelayPublishesItsOwnLevel) {
   RebuildWithOffer({{1}, 1});
-  relay_.video_policies["hop1"] = MediaRelayVideoPolicy{{2}, 1, false};
+  relay_.video_policies["hop1"] = mesh::MediaRelayVideoPolicy{{2}, 1, false};
   BroadcastLiveRequest request{"topic", kProgram, {"hop1"}};
   request.video = true;
   ASSERT_TRUE(workflow_->GoLive(request));
@@ -196,7 +197,7 @@ TEST_F(BroadcasterWorkflowTest, AudioOnlyShowOffersNoVideo) {
 
 TEST_F(BroadcasterWorkflowTest, StrictRelayWithoutTheLevelIsSkippedForTheNext) {
   RebuildWithOffer({{1}, 1});
-  relay_.video_policies["hop1"] = MediaRelayVideoPolicy{{2}, 1, /*strict=*/true};
+  relay_.video_policies["hop1"] = mesh::MediaRelayVideoPolicy{{2}, 1, /*strict=*/true};
   BroadcastLiveRequest request{"topic", kProgram, {"hop1", "hop2"}};
   request.video = true;
   ASSERT_TRUE(workflow_->GoLive(request));

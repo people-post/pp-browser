@@ -1,12 +1,13 @@
-#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
-#include "domain/mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
+#include "mesh/l4/circuit/CircuitRelayTypes.h"
+#include "mesh/l4/circuit/client/AmpCircuitHopRegistry.h"
 #include "feature/call_media/CallMediaBundleLogic.h"
 #include "feature/call_media/CallMediaLegCoordinator.h"
 #include "feature/call_media/CallMediaSessionLogic.h"
-#include "domain/mesh/l4/circuit/client/CircuitClientCoordinator.h"
-#include "domain/mesh/l4/circuit/serve/CircuitRelayServer.h"
+#include "mesh/l4/circuit/client/CircuitClientCoordinator.h"
+#include "mesh/l4/circuit/serve/CircuitRelayServer.h"
 #include "amp/link/Types.h"
-#include "domain/mesh/tests/support/mesh_triple_harness.h"
+#include "mesh/testing/mesh_triple_harness.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 #include <sodium.h>
@@ -34,7 +35,7 @@ struct LegCompletion {
     };
   }
 
-  void PumpUntilDone(pbr::test::AmpMeshTripleHarness& harness, const size_t max_rounds = 2500) {
+  void PumpUntilDone(mesh::test::AmpMeshTripleHarness& harness, const size_t max_rounds = 2500) {
     harness.PumpUntil([this] { return finished.load(std::memory_order_acquire); }, max_rounds);
     ASSERT_TRUE(finished.load(std::memory_order_acquire)) << "leg completion timed out";
   }
@@ -47,7 +48,7 @@ class AmpCircuitCallMediaComposeTest : public ::testing::Test {
 protected:
   void SetUp() override {
     ASSERT_GE(sodium_init(), 0);
-    auto created = pbr::test::AmpMeshTripleHarness::Create();
+    auto created = mesh::test::AmpMeshTripleHarness::Create();
     ASSERT_TRUE(static_cast<bool>(created)) << created.error().message;
     harness_ = std::move(*created);
 
@@ -61,9 +62,9 @@ protected:
     harness_->mgr_a().EnableNestedCarrierAccept(true);
     harness_->mgr_b().EnableNestedCarrierAccept(true);
 
-    hops_ = std::make_unique<AmpCircuitHopRegistry>();
-    circuit_r_ = std::make_unique<CircuitRelayServer>(*harness_->runtime_r);
-    circuit_a_ = std::make_unique<CircuitClientCoordinator>(*harness_->runtime_a);
+    hops_ = std::make_unique<mesh::AmpCircuitHopRegistry>();
+    circuit_r_ = std::make_unique<mesh::CircuitRelayServer>(*harness_->runtime_r);
+    circuit_a_ = std::make_unique<mesh::CircuitClientCoordinator>(*harness_->runtime_a);
     a_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_a);
     b_call_ = std::make_unique<CallMediaLegCoordinator>(*harness_->runtime_b);
 
@@ -118,7 +119,7 @@ protected:
       };
     }
 
-    void PumpUntilDone(pbr::test::AmpMeshTripleHarness& harness, const size_t max_rounds = 2000) {
+    void PumpUntilDone(mesh::test::AmpMeshTripleHarness& harness, const size_t max_rounds = 2000) {
       harness.PumpUntil([this] { return done.load(std::memory_order_acquire); }, max_rounds);
       ASSERT_TRUE(done.load(std::memory_order_acquire));
     }
@@ -130,14 +131,14 @@ protected:
    */
   Roe<void> EstablishNestedCallMediaPath(bool peer_id_only = false,
                                          const std::string& override_multiaddr = {}) {
-    CircuitBridgeTarget target;
+    mesh::CircuitBridgeTarget target;
     target.target_peer_id = harness_->peer_id_b;
     if (!peer_id_only) {
       target.target_multiaddr = override_multiaddr.empty() ? harness_->ma_b : override_multiaddr;
     }
     target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
 
-    Wait<CircuitTunnelBridgeResult> bridge_wait;
+    Wait<mesh::CircuitTunnelBridgeResult> bridge_wait;
     auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 8000);
     if (!tunnel_id) {
       return Error("start bridge failed");
@@ -165,10 +166,10 @@ protected:
     return {};
   }
 
-  std::unique_ptr<pbr::test::AmpMeshTripleHarness> harness_;
-  std::unique_ptr<AmpCircuitHopRegistry> hops_;
-  std::unique_ptr<CircuitRelayServer> circuit_r_;
-  std::unique_ptr<CircuitClientCoordinator> circuit_a_;
+  std::unique_ptr<mesh::test::AmpMeshTripleHarness> harness_;
+  std::unique_ptr<mesh::AmpCircuitHopRegistry> hops_;
+  std::unique_ptr<mesh::CircuitRelayServer> circuit_r_;
+  std::unique_ptr<mesh::CircuitClientCoordinator> circuit_a_;
   std::unique_ptr<CallMediaLegCoordinator> a_call_;
   std::unique_ptr<CallMediaLegCoordinator> b_call_;
 };
@@ -177,13 +178,13 @@ protected:
 // circuit once its (priority-scaled) capacity is used, while higher priorities still get in.
 TEST_F(AmpCircuitCallMediaComposeTest, RelayRefusesStandbyCircuitsLowestPriorityFirst) {
   circuit_r_->SetStandbyLimits(/*max_standby=*/2, /*max_per_dialer=*/4);  // Low: < 1, High: < 2
-  const auto bridge = [&](CircuitStandbyPriority priority) {
-    CircuitBridgeTarget target;
+  const auto bridge = [&](mesh::CircuitStandbyPriority priority) {
+    mesh::CircuitBridgeTarget target;
     target.target_peer_id = harness_->peer_id_b;
     target.target_multiaddr = harness_->ma_b;
     target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
     target.standby_priority = priority;
-    Wait<CircuitTunnelBridgeResult> wait;
+    Wait<mesh::CircuitTunnelBridgeResult> wait;
     EXPECT_TRUE(circuit_a_->StartBridge("relay", target, {}, {}, wait.Fn(), 8000));
     wait.PumpUntilDone(*harness_);
     if (!wait.result) {
@@ -191,21 +192,21 @@ TEST_F(AmpCircuitCallMediaComposeTest, RelayRefusesStandbyCircuitsLowestPriority
     }
     return wait.result->ok ? std::string("ok") : wait.result->error;
   };
-  EXPECT_EQ(bridge(CircuitStandbyPriority::Low), "ok");
-  EXPECT_NE(bridge(CircuitStandbyPriority::Low).find("standby refused"), std::string::npos) << "Low: half full";
-  EXPECT_EQ(bridge(CircuitStandbyPriority::High), "ok") << "High still fits";
-  EXPECT_EQ(bridge(CircuitStandbyPriority::None), "ok") << "a primary circuit is never refused for standby load";
+  EXPECT_EQ(bridge(mesh::CircuitStandbyPriority::Low), "ok");
+  EXPECT_NE(bridge(mesh::CircuitStandbyPriority::Low).find("standby refused"), std::string::npos) << "Low: half full";
+  EXPECT_EQ(bridge(mesh::CircuitStandbyPriority::High), "ok") << "High still fits";
+  EXPECT_EQ(bridge(mesh::CircuitStandbyPriority::None), "ok") << "a primary circuit is never refused for standby load";
 }
 
 // Hard-lab flip (teardown hang): a bridge request whose send fails at once closes the channel
 // inline, and the channel's closed callback takes the coordinator's lock — the client used to send
 // while holding it and the I/O thread deadlocked on itself. The bridge must fail, not hang.
 TEST_F(AmpCircuitCallMediaComposeTest, BridgeRequestThatCannotBeSentFailsInsteadOfDeadlocking) {
-  CircuitBridgeTarget target;
+  mesh::CircuitBridgeTarget target;
   target.target_peer_id = harness_->peer_id_b;
   target.target_multiaddr = std::string(8 * 1024 * 1024, 'x');  // over every channel's size limit
   target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
-  Wait<CircuitTunnelBridgeResult> wait;
+  Wait<mesh::CircuitTunnelBridgeResult> wait;
   ASSERT_TRUE(circuit_a_->StartBridge("relay", target, {}, {}, wait.Fn(), 8000));
   wait.PumpUntilDone(*harness_);
   const bool bridged = wait.result && wait.result->ok;
@@ -376,7 +377,7 @@ protected:
   }
 
   void Reserve(const std::string& relay_key) {
-    Wait<CircuitTunnelBridgeResult> w;
+    Wait<mesh::CircuitTunnelBridgeResult> w;
     (void)circuit_a_->StartReserve(relay_key, w.Fn(), 15000);
     w.PumpUntilDone(*harness_, 1500);
   }
@@ -397,10 +398,10 @@ TEST_F(RelayedCallDisturbanceTest, CallerReserveOnCarryingRelayKeepsAudio) {
 // Dogfood timeline: both ends parked on R before the call; B runs the product circuit coordinator
 // (not serving); A renews on R and (B41 gap) on B every 10 s while earlier leases expire.
 TEST_F(RelayedCallDisturbanceTest, RenewalsOverTimeKeepAudioBothWays) {
-  CircuitClientCoordinator circuit_b(*harness_->runtime_b);
+  mesh::CircuitClientCoordinator circuit_b(*harness_->runtime_b);
   circuit_b.Start();
   {
-    Wait<CircuitTunnelBridgeResult> wb;
+    Wait<mesh::CircuitTunnelBridgeResult> wb;
     (void)circuit_b.StartReserve("relay", wb.Fn(), 15000);
     wb.PumpUntilDone(*harness_, 1500);
   }
@@ -416,7 +417,7 @@ TEST_F(RelayedCallDisturbanceTest, RenewalsOverTimeKeepAudioBothWays) {
     Reserve("relay");
     Reserve(harness_->peer_id_b);
     {
-      Wait<CircuitTunnelBridgeResult> wb;
+      Wait<mesh::CircuitTunnelBridgeResult> wb;
       (void)circuit_b.StartReserve("relay", wb.Fn(), 15000);
       wb.PumpUntilDone(*harness_, 1500);
     }
@@ -432,10 +433,10 @@ TEST_F(RelayedCallDisturbanceTest, RenewalsOverTimeKeepAudioBothWays) {
 // Same, with real-time lease expiry (coordinator deadlines use steady_clock): 300 ms leases renewed
 // every 200 ms, so superseded reservations expire and tear down on client and relay mid-call.
 TEST_F(RelayedCallDisturbanceTest, LeaseExpiryDuringCallKeepsAudio) {
-  CircuitClientCoordinator circuit_b(*harness_->runtime_b);
+  mesh::CircuitClientCoordinator circuit_b(*harness_->runtime_b);
   circuit_b.Start();
-  auto reserve = [&](CircuitClientCoordinator& c, const std::string& key) {
-    Wait<CircuitTunnelBridgeResult> w;
+  auto reserve = [&](mesh::CircuitClientCoordinator& c, const std::string& key) {
+    Wait<mesh::CircuitTunnelBridgeResult> w;
     (void)c.StartReserve(key, w.Fn(), 300);
     w.PumpUntilDone(*harness_, 1500);
   };
@@ -1551,12 +1552,12 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyPrivatePreferredFastFailsWhenNo
   ASSERT_TRUE(static_cast<bool>(harness_->mgr_r().RegisterEndpoint(harness_->peer_id_b, private_ma)));
   ASSERT_EQ(harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b).value_or(""), private_ma);
 
-  CircuitBridgeTarget target;
+  mesh::CircuitBridgeTarget target;
   target.target_peer_id = harness_->peer_id_b;
   target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
   ASSERT_TRUE(target.target_multiaddr.empty());
 
-  Wait<CircuitTunnelBridgeResult> bridge_wait;
+  Wait<mesh::CircuitTunnelBridgeResult> bridge_wait;
   const auto t0 = std::chrono::steady_clock::now();
   // Short bridge budget so ServeDial far-leg wait caps quickly in this test.
   auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 800);
@@ -1594,11 +1595,11 @@ TEST_F(AmpCircuitCallMediaComposeTest, PeerIdOnlyServeDialResumesWhenFarLegConne
   ASSERT_TRUE(a_assoc.result) << a_assoc.result.error().message;
   ASSERT_EQ(harness_->mgr_r().CountConnectedLinksForPeerId(harness_->peer_id_b), 0u);
 
-  CircuitBridgeTarget target;
+  mesh::CircuitBridgeTarget target;
   target.target_peer_id = harness_->peer_id_b;
   target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
 
-  Wait<CircuitTunnelBridgeResult> bridge_wait;
+  Wait<mesh::CircuitTunnelBridgeResult> bridge_wait;
   auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 8000);
   ASSERT_TRUE(static_cast<bool>(tunnel_id));
 
@@ -1634,12 +1635,12 @@ TEST_F(AmpCircuitCallMediaComposeTest, PrivateTargetMultiaddrPoisonsRelayBook) {
       "/ip4/10.255.255.1/udp/9/adp/1.0.0/p2p/" + harness_->peer_id_b;
   ASSERT_EQ(harness_->mgr_r().PreferredMultiaddr(harness_->peer_id_b).value_or(""), harness_->ma_b);
 
-  CircuitBridgeTarget target;
+  mesh::CircuitBridgeTarget target;
   target.target_peer_id = harness_->peer_id_b;
   target.target_multiaddr = private_ma;
   target.target_protocol = pp::amp::kAmpCircuitCarrierProtocolId;
 
-  Wait<CircuitTunnelBridgeResult> bridge_wait;
+  Wait<mesh::CircuitTunnelBridgeResult> bridge_wait;
   auto tunnel_id = circuit_a_->StartBridge("relay", target, {}, {}, bridge_wait.Fn(), 500);
   ASSERT_TRUE(static_cast<bool>(tunnel_id));
   // Pump long enough for the hop to apply target_multiaddr RegisterEndpoint.

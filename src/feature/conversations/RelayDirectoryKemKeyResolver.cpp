@@ -3,14 +3,15 @@
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
-RelayDirectoryKemKeyResolver::RelayDirectoryKemKeyResolver(PeerKemKeyStore& store, IDirectoryClient& directory)
+RelayDirectoryKemKeyResolver::RelayDirectoryKemKeyResolver(PeerKemKeyStore& store, mesh::IDirectoryClient& directory)
     : store_(store), directory_(directory) {}
 
 bool RelayDirectoryKemKeyResolver::IsAccountKind(const std::string& peer_identity_kind) {
-  return peer_identity_kind == ContactIdKindToString(ContactIdKind::Account) || peer_identity_kind == "account";
+  return peer_identity_kind == ContactIdKindToString(mesh::ContactIdKind::Account) || peer_identity_kind == "account";
 }
 
 Roe<PeerKemKeyRecord> RelayDirectoryKemKeyResolver::Resolve(const std::string& peer_identity_kind,

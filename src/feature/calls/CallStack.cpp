@@ -3,16 +3,16 @@
 #include "feature/calls/CallsThread.h"
 
 #include "foundation/data/MeshRole.h"
-#include "domain/mesh/host/MeshPorts.h"
+#include "mesh/host/MeshPorts.h"
 #include "domain/messaging/CallTypes.h"
 #include "domain/messaging/PeerCapsLogic.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
-#include "domain/mesh/reachability/Reachability.h"
-#include "domain/mesh/reachability/punch/AmpPunchCoordinator.h"
-#include "domain/mesh/reachability/AmpObservedAddrs.h"
+#include "mesh/reachability/Reachability.h"
+#include "mesh/reachability/punch/AmpPunchCoordinator.h"
+#include "mesh/reachability/AmpObservedAddrs.h"
 #include "feature/calls/CallMediaBridge.h"
 #include "domain/messaging/CallLifecycleTypes.h"
 
@@ -22,6 +22,7 @@
 #include <variant>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -152,7 +153,7 @@ void CallStack::NotifyPathPolicyChangedOnOwner(const std::string& call_id) {
   }
 }
 
-void CallStack::SetInboundCallAudience(const InboundAudience audience) {
+void CallStack::SetInboundCallAudience(const mesh::InboundAudience audience) {
   inbound_call_audience_.store(audience, std::memory_order_relaxed);
   RunOnOwner([audience](CallSessionManager& calls) { calls.SetInboundCallAudience(audience); });
 }
@@ -165,7 +166,7 @@ CallPathPolicy CallStack::PathPolicyFor(const std::string& call_id) const {
   const auto disclosure = deps_.address_disclosure->Snapshot();
   const LiveCall* call = call_sessions_ ? call_sessions_->Live().Find(call_id) : nullptr;
   const std::optional<std::string> peer = call ? call->SolePeer() : std::nullopt;
-  if (peer ? disclosure->AllowsDirect(*peer) : disclosure->audience == DirectAudience::Everyone) {
+  if (peer ? disclosure->AllowsDirect(*peer) : disclosure->audience == mesh::DirectAudience::Everyone) {
     return policy;
   }
   // Outside the audience — or, with a narrower audience, a peer not known yet: disclosure is the risk.
@@ -284,10 +285,10 @@ void CallStack::SyncMediaPlaneDeps() {
     if (call_sessions_) {
       from_caps = call_sessions_->ListMediaRelayCapablePeerIds();
     }
-    const std::vector<MeshDirectoryNode> directory =
-        deps_.list_directory_nodes ? deps_.list_directory_nodes() : std::vector<MeshDirectoryNode>{};
-    const std::vector<MeshDirectoryNode> dht =
-        deps_.list_dht_nodes ? deps_.list_dht_nodes() : std::vector<MeshDirectoryNode>{};
+    const std::vector<mesh::MeshDirectoryNode> directory =
+        deps_.list_directory_nodes ? deps_.list_directory_nodes() : std::vector<mesh::MeshDirectoryNode>{};
+    const std::vector<mesh::MeshDirectoryNode> dht =
+        deps_.list_dht_nodes ? deps_.list_dht_nodes() : std::vector<mesh::MeshDirectoryNode>{};
     return MergeMediaRelayCapablePeerIds(from_caps, directory, dht);
   };
   plane_deps.note_mesh_peer_id_for_relay = [loop = loop_.Share()](const std::string& account,
@@ -300,7 +301,7 @@ void CallStack::SyncMediaPlaneDeps() {
 }
 
 void CallStack::BindMeshMediaHooks() {
-  MeshConnectivity* shared = connectivity();
+  mesh::MeshConnectivity* shared = connectivity();
   if (!shared) {
     return;
   }
@@ -464,13 +465,13 @@ CallPeerCaps CallStack::LocalPeerCaps() const {
 void CallStack::BindSessionMeshReach() {
   // Connectivity: park on org hops so this peer is ServeDial-reachable.
   call_sessions_->SetEnsureCircuitReady([this]() {
-    if (MeshConnectivity* shared = connectivity()) {
+    if (mesh::MeshConnectivity* shared = connectivity()) {
       shared->Rendezvous().ReserveOnBootstrapSeeds();
     }
   });
   // Park completes on the Amp IO thread (or at a coordinator deadline); the workflow reports it as an event.
   call_sessions_->SetParkCircuit([this](int timeout_ms, std::function<void(bool)> done) {
-    if (MeshConnectivity* shared = connectivity()) {
+    if (mesh::MeshConnectivity* shared = connectivity()) {
       shared->Rendezvous().EnsureBootstrapSeedParkedAsync(std::move(done), timeout_ms);
     } else {
       done(false);
@@ -478,14 +479,14 @@ void CallStack::BindSessionMeshReach() {
   });
   CallReachSignals::MeshPorts reach;
   reach.prefer_late_reserve = [this](const std::string& relay_peer_id) {
-    if (MeshConnectivity* shared = connectivity()) {
+    if (mesh::MeshConnectivity* shared = connectivity()) {
       shared->Rendezvous().PreferLateReserve(relay_peer_id);
     }
   };
   reach.local_punch_addrs = [this]() -> std::vector<std::string> { return LocalMeshView()->punch_candidate_addrs; };
   reach.punch_burst = [this](const std::vector<std::string>& peer_addrs, int window_ms,
                              std::function<void(Roe<void>)> on_done) {
-    MeshConnectivity* shared = connectivity();
+    mesh::MeshConnectivity* shared = connectivity();
     if (!shared) {
       if (on_done) {
         on_done(Error("amp punch unavailable"));
@@ -506,35 +507,35 @@ void CallStack::OnMeshServicesStartedOnOwner() {
   ApplyMobilityOverrideOnOwner();
 }
 
-void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial) {
+void CallStack::BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialRegistry* dial) {
   BindTestMediaPath(transport, dial, nullptr);
 }
 
-void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
-                                  ICircuitHopReach* circuit_reach) {
+void CallStack::BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialRegistry* dial,
+                                  mesh::ICircuitHopReach* circuit_reach) {
   BindTestMediaPath(transport, dial, circuit_reach, nullptr);
 }
 
-void CallStack::BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
-                                  ICircuitHopReach* circuit_reach, IMediaRelayClient* relay) {
+void CallStack::BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialRegistry* dial,
+                                  mesh::ICircuitHopReach* circuit_reach, mesh::IMediaRelayClient* relay) {
   CallsThread::RunAndWait([&]() { BindTestMediaPathOnOwner(transport, dial, circuit_reach, relay); });
 }
 
-void CallStack::BindTestMediaPathOnOwner(ICallMediaTransport* transport, IDialRegistry* dial,
-                                         ICircuitHopReach* circuit_reach, IMediaRelayClient* relay) {
+void CallStack::BindTestMediaPathOnOwner(ICallMediaTransport* transport, mesh::IDialRegistry* dial,
+                                         mesh::ICircuitHopReach* circuit_reach, mesh::IMediaRelayClient* relay) {
   SyncMediaPlaneDeps();
   DetachMeshMedia();
   if (media_plane_) {
     media_plane_->BindTestMediaPath(transport);
   }
-  if (MeshConnectivity* shared = connectivity()) {
+  if (mesh::MeshConnectivity* shared = connectivity()) {
     // Reach runs on a lane of its own, as on the mesh's io lane; Manual runtimes drain it with the owners.
     if (!test_lane_) {
       test_lane_ = AppRuntime::MakeLaneForTesting();
     }
     shared->BindTestPath(dial, circuit_reach, test_lane_);
   }
-  if (MeshMediaRelay* relay_host = media_relay()) {
+  if (mesh::MeshMediaRelay* relay_host = media_relay()) {
     relay_host->BindTestRelay(relay);
   }
   BindMediaProducts();
@@ -590,7 +591,7 @@ void CallStack::FinishMeshStopOnOwner() {
 
 void CallStack::AbortCallMediaForShutdownOnOwner() {
   // Unblock Connect workers stuck in circuit RequestBridge (~8–10s) BEFORE waiting/joining.
-  if (MeshHost* m = mesh()) {
+  if (mesh::MeshHost* m = mesh()) {
     m->AbortInflightCircuitRequests();
   }
   // Group SFU: close media_relay before LeaveCall joins capture (BlockingWrite hang on quit).
@@ -617,9 +618,9 @@ bool CallStack::IsConnectWorkerInflight() const {
   return UiState()->connect_in_flight;
 }
 
-std::shared_ptr<const MeshLocalView> CallStack::LocalMeshView() const {
-  MeshConnectivity* shared = connectivity();
-  return shared ? shared->LocalView() : std::make_shared<const MeshLocalView>();
+std::shared_ptr<const mesh::MeshLocalView> CallStack::LocalMeshView() const {
+  mesh::MeshConnectivity* shared = connectivity();
+  return shared ? shared->LocalView() : std::make_shared<const mesh::MeshLocalView>();
 }
 
 std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
@@ -641,8 +642,8 @@ std::vector<std::string> CallStack::LocalCallListenMultiaddrs() const {
   }
   // B40: a peer dialed our 169.254.x link-local address first. Never advertise addresses the
   // peer cannot dial (link-local, wildcard, loopback) in call signaling.
-  std::erase_if(addrs, [](const std::string& ma) { return !IsUsableAdpListen(ma); });
-  return RankAmpDialMultiaddrs(std::move(addrs));
+  std::erase_if(addrs, [](const std::string& ma) { return !mesh::IsUsableAdpListen(ma); });
+  return mesh::RankAmpDialMultiaddrs(std::move(addrs));
 }
 
 void CallStack::RegisterCallPeerListenMultiaddrsOnOwner(const std::string& identity,
@@ -733,7 +734,7 @@ void CallStack::ReleaseOnOwner() {
   PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
   mobility_wake_.Disarm();
   DetachMeshMedia();
-  if (MeshConnectivity* shared = connectivity()) {
+  if (mesh::MeshConnectivity* shared = connectivity()) {
     shared->SetOnRelayChosen({});
     shared->SetSignalingPunch({});
   }

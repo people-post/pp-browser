@@ -40,6 +40,7 @@
 #include <functional>
 #include "common/PbrCompat.h"
 #include "domain/messaging/CasLibrary.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -108,9 +109,9 @@ std::string ReachabilitySummary(const SettingsReachabilityView& view) {
 }
 
 std::string DirectConnectionsDisplayLabel(const std::string& audience) {
-  const auto parsed = DirectAudienceFromName(audience);
+  const auto parsed = mesh::DirectAudienceFromName(audience);
   return Tr(std::string("settings.network.direct_connections.") +
-            DirectAudienceName(parsed.value_or(DirectAudience::Contacts)));
+            mesh::DirectAudienceName(parsed.value_or(mesh::DirectAudience::Contacts)));
 }
 
 /** Anchor ShowActions float menus under the right side of a settings choice row. */
@@ -1458,9 +1459,9 @@ void SettingsController::OnChooseDirectConnections(ui::Event& ev) {
   const std::string current =
       bindings_.direct_connections.empty() ? "contacts" : std::string(bindings_.direct_connections.c_str());
   std::vector<ContextMenuAction> actions;
-  for (const DirectAudience audience :
-       {DirectAudience::Everyone, DirectAudience::Contacts, DirectAudience::Friendly, DirectAudience::Nobody}) {
-    const std::string id = DirectAudienceName(audience);
+  for (const mesh::DirectAudience audience :
+       {mesh::DirectAudience::Everyone, mesh::DirectAudience::Contacts, mesh::DirectAudience::Friendly, mesh::DirectAudience::Nobody}) {
+    const std::string id = mesh::DirectAudienceName(audience);
     actions.push_back({.id = id,
                        .label = DirectConnectionsDisplayLabel(id),
                        .enabled = {},
@@ -1767,7 +1768,7 @@ void SettingsController::ApplyReachability() {
     ui_state_.media_relay_enabled = cfg.capabilities.media_relay ? "on" : "off";
     ui_state_.dht_enabled = cfg.capabilities.dht ? "on" : "off";
     ui_state_.prefer_contacts_for_routing = cfg.prefer_contacts_for_routing ? "on" : "off";
-    ui_state_.direct_connections = DirectAudienceName(cfg.direct_connections);
+    ui_state_.direct_connections = mesh::DirectAudienceName(cfg.direct_connections);
     ui_state_.trusted_relays_only = cfg.trusted_relays_only ? "on" : "off";
   }
   PushUiStateToBindings();

@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -25,13 +26,13 @@ public:
   Roe<std::optional<Contact>> Get(const std::string& contact_id) const;
   /** Exact match on contact.ids[].value; when kind is set, also requires matching kind. */
   Roe<std::optional<Contact>> FindByIdentity(const std::string& identity_value,
-                                             std::optional<ContactIdKind> kind = std::nullopt) const;
+                                             std::optional<mesh::ContactIdKind> kind = std::nullopt) const;
   Roe<Contact> Upsert(const Contact& contact);
   Roe<bool> Remove(const std::string& contact_id);
   Roe<std::vector<Contact>> SearchLocal(const std::string& query) const;
-  Roe<Contact> AddFromDirectoryHit(const DirectoryHit& hit);
+  Roe<Contact> AddFromDirectoryHit(const mesh::DirectoryHit& hit);
   /** Refresh remote snapshot from a directory hit; preserves local annotations. */
-  Roe<Contact> ApplyRemoteSnapshot(const std::string& contact_id, const DirectoryHit& hit, int64_t fetched_at_ms);
+  Roe<Contact> ApplyRemoteSnapshot(const std::string& contact_id, const mesh::DirectoryHit& hit, int64_t fetched_at_ms);
   Roe<Contact> AddEmpty();
   void Flush();
   /**
@@ -46,8 +47,8 @@ public:
 private:
   Roe<Contact> UpsertUnnotified(const Contact& contact);
   Roe<bool> RemoveUnnotified(const std::string& contact_id);
-  Roe<Contact> AddFromDirectoryHitUnnotified(const DirectoryHit& hit);
-  Roe<Contact> ApplyRemoteSnapshotUnnotified(const std::string& contact_id, const DirectoryHit& hit,
+  Roe<Contact> AddFromDirectoryHitUnnotified(const mesh::DirectoryHit& hit);
+  Roe<Contact> ApplyRemoteSnapshotUnnotified(const std::string& contact_id, const mesh::DirectoryHit& hit,
                                              int64_t fetched_at_ms);
   Roe<Contact> AddEmptyUnnotified();
   Roe<void> BlockAccountIfPresentUnnotified(const std::string& account_id);

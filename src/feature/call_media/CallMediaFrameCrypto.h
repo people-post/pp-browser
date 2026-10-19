@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/media/MediaChannel.h"
+#include "mesh/types/MediaChannel.h"
 
 #include "common/Error.h"
 
@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -18,7 +19,7 @@ inline constexpr uint8_t kCallMediaFrameVersionV2 = 2;
 
 /** Decrypted call-media / SFU body (V034). */
 struct CallMediaDecodedFrame {
-  uint8_t channel = kMediaChannelAudio;
+  uint8_t channel = mesh::kMediaChannelAudio;
   uint32_t seq = 0;
   uint8_t mark = 0;
   std::vector<uint8_t> payload;

@@ -22,7 +22,7 @@ protected:
 TEST_F(StatusbarClusterTest, HiddenWhenMessagingNotReady) {
   const auto snap =
       pbr::BuildStatusbarClusterSnapshot(false, pbr::BriefRelayHealth::Ok, false, false,
-                                         pbr::ReachabilityStatus::Reachable, true);
+                                         pp::mesh::ReachabilityStatus::Reachable, true);
   EXPECT_EQ(snap.brief, pbr::StatusbarClusterSnapshot::BriefState::Hidden);
   EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::Hidden);
   EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::Hidden);
@@ -33,7 +33,7 @@ TEST_F(StatusbarClusterTest, HiddenWhenMessagingNotReady) {
 TEST_F(StatusbarClusterTest, ClientShowsBriefAndDirectOff) {
   const auto snap =
       pbr::BuildStatusbarClusterSnapshot(true, pbr::BriefRelayHealth::Unknown, false, false,
-                                         pbr::ReachabilityStatus::Unknown, false);
+                                         pp::mesh::ReachabilityStatus::Unknown, false);
   EXPECT_EQ(snap.brief, pbr::StatusbarClusterSnapshot::BriefState::Unknown);
   EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::Off);
   EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::Hidden);
@@ -45,7 +45,7 @@ TEST_F(StatusbarClusterTest, ClientShowsBriefAndDirectOff) {
 TEST_F(StatusbarClusterTest, BriefFailedTakesLabelPriority) {
   const auto snap =
       pbr::BuildStatusbarClusterSnapshot(true, pbr::BriefRelayHealth::Failed, false, false,
-                                         pbr::ReachabilityStatus::Unknown, false);
+                                         pp::mesh::ReachabilityStatus::Unknown, false);
   EXPECT_EQ(snap.brief, pbr::StatusbarClusterSnapshot::BriefState::Failed);
   EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::Off);
   EXPECT_EQ(snap.label_tone, pbr::StatusbarClusterSnapshot::LabelTone::Error);
@@ -55,7 +55,7 @@ TEST_F(StatusbarClusterTest, BriefFailedTakesLabelPriority) {
 TEST_F(StatusbarClusterTest, DirectOnWhenSeedDialOk) {
   const auto snap =
       pbr::BuildStatusbarClusterSnapshot(true, pbr::BriefRelayHealth::Ok, true, false,
-                                         pbr::ReachabilityStatus::OutboundOnly, false);
+                                         pp::mesh::ReachabilityStatus::OutboundOnly, false);
   EXPECT_EQ(snap.brief, pbr::StatusbarClusterSnapshot::BriefState::Ok);
   EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::On);
   EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::Hidden);
@@ -65,7 +65,7 @@ TEST_F(StatusbarClusterTest, DirectOnWhenSeedDialOk) {
 TEST_F(StatusbarClusterTest, NodeShowsInboundOffWhenOutboundOnly) {
   const auto snap =
       pbr::BuildStatusbarClusterSnapshot(true, pbr::BriefRelayHealth::Ok, true, false,
-                                         pbr::ReachabilityStatus::OutboundOnly, true);
+                                         pp::mesh::ReachabilityStatus::OutboundOnly, true);
   EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::On);
   EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::Off);
   EXPECT_TRUE(snap.help_visible);
@@ -76,7 +76,7 @@ TEST_F(StatusbarClusterTest, NodeShowsInboundOffWhenOutboundOnly) {
 TEST_F(StatusbarClusterTest, NodeShowsInboundOnWhenReachable) {
   const auto snap =
       pbr::BuildStatusbarClusterSnapshot(true, pbr::BriefRelayHealth::Ok, true, false,
-                                         pbr::ReachabilityStatus::Reachable, true);
+                                         pp::mesh::ReachabilityStatus::Reachable, true);
   EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::On);
   EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::On);
   EXPECT_TRUE(snap.label.empty());
@@ -85,7 +85,7 @@ TEST_F(StatusbarClusterTest, NodeShowsInboundOnWhenReachable) {
 TEST_F(StatusbarClusterTest, BlockedMarksDirectError) {
   const auto snap =
       pbr::BuildStatusbarClusterSnapshot(true, pbr::BriefRelayHealth::Ok, true, false,
-                                         pbr::ReachabilityStatus::Blocked, true);
+                                         pp::mesh::ReachabilityStatus::Blocked, true);
   EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::Error);
   EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::Off);
   EXPECT_EQ(snap.label_tone, pbr::StatusbarClusterSnapshot::LabelTone::Error);
@@ -94,7 +94,7 @@ TEST_F(StatusbarClusterTest, BlockedMarksDirectError) {
 TEST_F(StatusbarClusterTest, CheckingMapsDirectChecking) {
   const auto snap =
       pbr::BuildStatusbarClusterSnapshot(true, pbr::BriefRelayHealth::Ok, true, false,
-                                         pbr::ReachabilityStatus::Checking, false);
+                                         pp::mesh::ReachabilityStatus::Checking, false);
   EXPECT_EQ(snap.direct, pbr::StatusbarClusterSnapshot::DirectState::Checking);
   EXPECT_EQ(snap.inbound, pbr::StatusbarClusterSnapshot::InboundState::Hidden);
   EXPECT_TRUE(snap.label.empty());
@@ -103,7 +103,7 @@ TEST_F(StatusbarClusterTest, CheckingMapsDirectChecking) {
 
 TEST_F(StatusbarClusterTest, PopoverClientSummary) {
   const auto snap = pbr::BuildStatusbarPopoverSnapshot(
-      true, pbr::BriefRelayHealth::Ok, true, "", pbr::ReachabilityStatus::OutboundOnly, false, false,
+      true, pbr::BriefRelayHealth::Ok, true, "", pp::mesh::ReachabilityStatus::OutboundOnly, false, false,
       false, false);
   EXPECT_TRUE(snap.messaging_ready);
   EXPECT_FALSE(snap.brief_label.empty());
@@ -117,7 +117,7 @@ TEST_F(StatusbarClusterTest, PopoverClientSummary) {
 
 TEST_F(StatusbarClusterTest, PopoverNodeShowsHelpAndUpnp) {
   const auto snap = pbr::BuildStatusbarPopoverSnapshot(
-      true, pbr::BriefRelayHealth::Ok, true, "dial failed", pbr::ReachabilityStatus::Reachable, true,
+      true, pbr::BriefRelayHealth::Ok, true, "dial failed", pp::mesh::ReachabilityStatus::Reachable, true,
       true, true, true);
   EXPECT_TRUE(snap.help_visible);
   EXPECT_FALSE(snap.help_label.empty());
@@ -129,21 +129,21 @@ TEST_F(StatusbarClusterTest, PopoverNodeShowsHelpAndUpnp) {
 
 TEST_F(StatusbarClusterTest, PopoverHiddenWhenMessagingNotReady) {
   const auto snap = pbr::BuildStatusbarPopoverSnapshot(
-      false, pbr::BriefRelayHealth::Ok, true, "", pbr::ReachabilityStatus::Reachable, false, false,
+      false, pbr::BriefRelayHealth::Ok, true, "", pp::mesh::ReachabilityStatus::Reachable, false, false,
       false, false);
   EXPECT_FALSE(snap.messaging_ready);
   EXPECT_TRUE(snap.brief_label.empty());
 }
 
 TEST_F(StatusbarClusterTest, LoadPillsWhenHelpingWithCounts) {
-  pbr::RelayRuntimeStats load;
+  pp::mesh::RelayRuntimeStats load;
   load.circuit_serving = true;
   load.circuit.active_bridges = 2;
   load.media_serving = true;
   load.media.active_sessions = 1;
   load.media.active_participants = 3;
   const auto snap = pbr::BuildStatusbarClusterSnapshot(
-      true, pbr::BriefRelayHealth::Ok, true, false, pbr::ReachabilityStatus::Reachable, true, load);
+      true, pbr::BriefRelayHealth::Ok, true, false, pp::mesh::ReachabilityStatus::Reachable, true, load);
   EXPECT_TRUE(snap.load_circuit_visible);
   EXPECT_TRUE(snap.load_media_visible);
   EXPECT_FALSE(snap.load_circuit_label.empty());
@@ -151,34 +151,34 @@ TEST_F(StatusbarClusterTest, LoadPillsWhenHelpingWithCounts) {
 }
 
 TEST_F(StatusbarClusterTest, LoadHiddenWhenCountsZero) {
-  pbr::RelayRuntimeStats load;
+  pp::mesh::RelayRuntimeStats load;
   load.circuit_serving = true;
   load.media_serving = true;
   const auto snap = pbr::BuildStatusbarClusterSnapshot(
-      true, pbr::BriefRelayHealth::Ok, true, false, pbr::ReachabilityStatus::Reachable, true, load);
+      true, pbr::BriefRelayHealth::Ok, true, false, pp::mesh::ReachabilityStatus::Reachable, true, load);
   EXPECT_FALSE(snap.load_circuit_visible);
   EXPECT_FALSE(snap.load_media_visible);
 }
 
 TEST_F(StatusbarClusterTest, LoadHiddenForClientEvenWithCounts) {
-  pbr::RelayRuntimeStats load;
+  pp::mesh::RelayRuntimeStats load;
   load.circuit_serving = true;
   load.circuit.active_bridges = 2;
   const auto snap = pbr::BuildStatusbarClusterSnapshot(
-      true, pbr::BriefRelayHealth::Ok, true, false, pbr::ReachabilityStatus::Reachable, false, load);
+      true, pbr::BriefRelayHealth::Ok, true, false, pp::mesh::ReachabilityStatus::Reachable, false, load);
   EXPECT_FALSE(snap.load_circuit_visible);
   EXPECT_FALSE(snap.help_visible);
 }
 
 TEST_F(StatusbarClusterTest, PopoverShowsLoadAggregates) {
-  pbr::RelayRuntimeStats load;
+  pp::mesh::RelayRuntimeStats load;
   load.circuit_serving = true;
   load.circuit.active_bridges = 1;
   load.media_serving = true;
   load.media.active_sessions = 2;
   load.media.active_participants = 4;
   const auto snap = pbr::BuildStatusbarPopoverSnapshot(
-      true, pbr::BriefRelayHealth::Ok, true, "", pbr::ReachabilityStatus::Reachable, false, true, false,
+      true, pbr::BriefRelayHealth::Ok, true, "", pp::mesh::ReachabilityStatus::Reachable, false, true, false,
       true, load);
   EXPECT_TRUE(snap.show_load);
   EXPECT_EQ(snap.circuit_bridges, 1u);
@@ -254,7 +254,7 @@ TEST_F(StatusbarClusterTest, PopoverShowsMeshTraffic) {
   traffic.rates.rtt_ms = 42;
   traffic.rates.resend_pct = 1.5;
   const auto snap = pbr::BuildStatusbarPopoverSnapshot(
-      true, pbr::BriefRelayHealth::Ok, true, "", pbr::ReachabilityStatus::Reachable, false, true, false,
+      true, pbr::BriefRelayHealth::Ok, true, "", pp::mesh::ReachabilityStatus::Reachable, false, true, false,
       false, {}, traffic);
   EXPECT_TRUE(snap.show_network);
   EXPECT_FALSE(snap.network_links_label.empty());
@@ -271,13 +271,13 @@ TEST_F(StatusbarClusterTest, PopoverRelayRateOnlyWhenHelping) {
   traffic.rates.valid = true;
   traffic.rates.relayed_bps = 50000;
   auto snap = pbr::BuildStatusbarPopoverSnapshot(true, pbr::BriefRelayHealth::Ok, true, "",
-                                                 pbr::ReachabilityStatus::Reachable, false, true, false, true,
+                                                 pp::mesh::ReachabilityStatus::Reachable, false, true, false, true,
                                                  {}, traffic);
   EXPECT_FALSE(snap.relay_rate_label.empty());
   EXPECT_TRUE(snap.show_load);
 
   snap = pbr::BuildStatusbarPopoverSnapshot(true, pbr::BriefRelayHealth::Ok, true, "",
-                                            pbr::ReachabilityStatus::Reachable, false, true, false, false, {},
+                                            pp::mesh::ReachabilityStatus::Reachable, false, true, false, false, {},
                                             traffic);
   EXPECT_TRUE(snap.relay_rate_label.empty());
 }
@@ -287,7 +287,7 @@ TEST_F(StatusbarClusterTest, PopoverShowsRendezvousParking) {
   traffic.available = true;
   traffic.parked_relays = 2;
   auto snap = pbr::BuildStatusbarPopoverSnapshot(true, pbr::BriefRelayHealth::Ok, true, "",
-                                                 pbr::ReachabilityStatus::OutboundOnly, false, false, false,
+                                                 pp::mesh::ReachabilityStatus::OutboundOnly, false, false, false,
                                                  false, {}, traffic);
   EXPECT_FALSE(snap.network_parked_label.empty());
   const std::string parked = snap.network_parked_label;
@@ -295,14 +295,14 @@ TEST_F(StatusbarClusterTest, PopoverShowsRendezvousParking) {
   // Behind NAT with no relay parked: say dialers have no way in.
   traffic.parked_relays = 0;
   snap = pbr::BuildStatusbarPopoverSnapshot(true, pbr::BriefRelayHealth::Ok, true, "",
-                                            pbr::ReachabilityStatus::OutboundOnly, false, false, false, false,
+                                            pp::mesh::ReachabilityStatus::OutboundOnly, false, false, false, false,
                                             {}, traffic);
   EXPECT_FALSE(snap.network_parked_label.empty());
   EXPECT_NE(snap.network_parked_label, parked);
 
   // Directly reachable: parking does not matter, nothing to say.
   snap = pbr::BuildStatusbarPopoverSnapshot(true, pbr::BriefRelayHealth::Ok, true, "",
-                                            pbr::ReachabilityStatus::Reachable, false, true, false, false, {},
+                                            pp::mesh::ReachabilityStatus::Reachable, false, true, false, false, {},
                                             traffic);
   EXPECT_TRUE(snap.network_parked_label.empty());
 }
@@ -311,7 +311,7 @@ TEST_F(StatusbarClusterTest, PopoverHidesTrafficWhenMeshDown) {
   pbr::MeshTrafficView traffic;
   traffic.available = true;
   const auto snap = pbr::BuildStatusbarPopoverSnapshot(
-      true, pbr::BriefRelayHealth::Ok, false, "", pbr::ReachabilityStatus::Unknown, false, false, false,
+      true, pbr::BriefRelayHealth::Ok, false, "", pp::mesh::ReachabilityStatus::Unknown, false, false, false,
       false, {}, traffic);
   EXPECT_FALSE(snap.show_network);
 }

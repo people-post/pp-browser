@@ -18,6 +18,7 @@
 #include <chrono>
 #include <filesystem>
 #include "feature/conversations/tests/call_media_inbound_fake.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 #include <memory>
@@ -107,7 +108,7 @@ public:
   std::string last_error;
 };
 
-class FakeDialRegistry final : public IDialRegistry {
+class FakeDialRegistry final : public mesh::IDialRegistry {
 public:
   Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) override {
     endpoints[peer_key] = multiaddr;
@@ -187,7 +188,7 @@ public:
   std::string ensure_error = "ensure association not available";
 };
 
-class FakeCircuitHopReach final : public ICircuitHopReach {
+class FakeCircuitHopReach final : public mesh::ICircuitHopReach {
 public:
   Roe<void> TryEnsureHopReachable(const std::string& /*hop_peer_id*/) override { return {}; }
 
@@ -379,7 +380,7 @@ protected:
     transport_ = std::make_unique<FakeCallMediaTransport>();
     bridge_ = std::make_unique<CallMediaBridge>(
         *host_, *sessions_, *keys_, *media_, *transport_,
-        PeerReachPorts{dial_.get(), circuit_.get(), AppRuntime::MakeLaneForTesting()});
+        mesh::PeerReachPorts{dial_.get(), circuit_.get(), AppRuntime::MakeLaneForTesting()});
     bridge_->SetDirectArmingPorts(TestDirectArmingPorts(&host_->live));
     bridge_->SetOutbox(bridge_events_.Get());  // the fixture plays the session manager
     dial_->force_dialable["account:peer"] = true;
@@ -1225,7 +1226,7 @@ TEST_F(CallMediaBridgeAnswererStartTest, DirectBoundCallReachedOverTheRelayStill
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   ASSERT_TRUE(media_->IsActive());
-  CallsThread::RunAndWait([&] { bridge_->SetReachKindForTest(PeerLinkKind::Relayed); });  // reach loop: circuit
+  CallsThread::RunAndWait([&] { bridge_->SetReachKindForTest(mesh::PeerLinkKind::Relayed); });  // reach loop: circuit
   for (int i = 0; i < 400 && transport_->add_standby_calls.load() < 1; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(10));

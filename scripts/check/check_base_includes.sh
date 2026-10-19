@@ -114,20 +114,23 @@ fi
 check_absent "common must not include domain/" \
   '#include "domain/' src/common
 
-check_absent "must not include base/mesh/identity/ (moved to foundation/identity/)" \
-  '#include "domain/mesh/identity/' src
+check_absent "must not include domain/mesh/ (moved to pp-cpp-mesh: mesh/…)" \
+  '#include "domain/mesh/' src
+
+# The app's lower layers may embed the mesh vocabulary (pp_mesh_types: pp-cpp-common only), never the
+# mesh itself, which sits on Amp: that is feature/ and app/'s to compose.
+lower_mesh=$(rg -n -g '*.h' -g '*.cpp' -g '*.mm' '#include "mesh/' \
+  "$ROOT/src/common" "$ROOT/src/foundation" "$ROOT/src/domain" 2>/dev/null \
+  | grep -v '#include "mesh/types/' || true)
+if [[ -n "$lower_mesh" ]]; then
+  echo "FAIL: common/ foundation/ domain/ may include mesh/types/ only (pp-cpp-mesh's vocabulary):"
+  echo "$lower_mesh"
+  FAIL=1
+fi
 check_absent "common must not include foundation/" \
   '#include "foundation/' src/common
 
 # Peeled paths must stay peeled (old locations / shims removed).
-check_absent "mesh must not include people/RelayScope.h (use common/directory/RelayScope.h)" \
-  '#include "domain/people/RelayScope.h"' src/domain/mesh
-check_absent "mesh must not include people/ContactTypes.h (use common/directory/DirectoryTypes.h)" \
-  '#include "domain/people/ContactTypes.h"' src/domain/mesh
-check_absent "mesh production must not include base/net/ (use common/directory/IDirectoryClient.h)" \
-  '#include "domain/net/' src/domain/mesh/discovery
-check_absent "mesh must not include domain/media/ (use common/media/CallMediaHealth.h)" \
-  '#include "domain/media/' src/domain/mesh
 check_absent "ai must not include ui/WorkingSetTypes.h (use common/ui/WorkingSetTypes.h)" \
   '#include "domain/ui/WorkingSetTypes.h"' src/domain/ai
 check_absent "ai must not include base/messaging/ChatActionTypes.h (use common/chat/)" \
@@ -152,7 +155,7 @@ check_absent "ai must not include messaging/PeopleDiscoveryBlocks.h (use common/
   '#include "domain/messaging/PeopleDiscoveryBlocks.h"' src/domain/ai
 check_absent "ai must not include base/net/ (use common/net/HttpTransport + feature wiring)" \
   '#include "domain/net/' src/domain/ai
-check_absent "messaging must not include people/MeshHopPolicy.h (use common/directory/MeshHopTypes.h)" \
+check_absent "messaging must not include people/MeshHopPolicy.h (use mesh/types/MeshHopTypes.h)" \
   '#include "domain/people/MeshHopPolicy.h"' src/domain/messaging
 check_absent "net must not include base/messaging/RelayStreamKey.h (use common/chat/)" \
   '#include "base/messaging/RelayStreamKey.h"' src/domain/net
@@ -196,7 +199,7 @@ check_absent "must not include base/messaging/ (moved to domain/messaging/)" \
   '#include "base/messaging/' src
 check_absent "must not include base/ai/ (moved to domain/ai/)" \
   '#include "base/ai/' src
-check_absent "must not include base/mesh/ (moved to domain/mesh/; identity → foundation/identity/)" \
+check_absent "must not include base/mesh/ (moved to pp-cpp-mesh; identity → foundation/identity/)" \
   '#include "base/mesh/' src
 check_absent "must not include base/ui/ (moved to domain/ui/)" \
   '#include "base/ui/' src
@@ -226,8 +229,16 @@ for shim in \
   src/domain/messaging/MessagingJson.h \
   src/domain/messaging/ChatBlobRequestUtil.h \
   src/domain/messaging/PeerBriefRoute.h \
-  src/domain/mesh/host/MeshChannelLimits.h \
-  src/domain/mesh/identity \
+  src/domain/mesh \
+  src/common/directory/DirectoryTypes.h \
+  src/common/directory/IDirectoryClient.h \
+  src/common/directory/MeshHopDial.h \
+  src/common/directory/MeshHopTypes.h \
+  src/common/directory/RelayScope.h \
+  src/common/media/MediaChannel.h \
+  src/common/net/PublicAddress.h \
+  src/common/privacy/AddressDisclosure.h \
+  src/foundation/data/MeshConfigTypes.h \
   src/domain/messaging/PeopleDiscoveryBlocks.h
 do
   if [[ -e "$ROOT/$shim" ]]; then

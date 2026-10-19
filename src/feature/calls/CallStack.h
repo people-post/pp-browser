@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/privacy/AddressDisclosure.h"
+#include "mesh/types/AddressDisclosure.h"
 #include "foundation/data/Config.h"
 #include "domain/media/CallMediaEngine.h"
 #include "domain/messaging/CallSessionStore.h"
@@ -27,7 +27,7 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "feature/calls/CallControlInboundPorts.h"
 #include "feature/call_media/ICallMediaTransport.h"
-#include "domain/mesh/host/MeshHost.h"
+#include "mesh/host/MeshHost.h"
 
 #include <unordered_map>
 #include <atomic>
@@ -36,6 +36,7 @@
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -59,15 +60,15 @@ struct CallStackDeps {
   std::function<void(CallControlInboundPorts ports)> bind_call_control;
 
   /** Current MeshHost (null before StartMesh, reset on stop). */
-  std::function<MeshHost*()> mesh;
+  std::function<mesh::MeshHost*()> mesh;
   /** Live AppConfig (libp2p role / caps / bootstrap / listen multiaddr). */
   /** The hub's mesh config as last published (immutable snapshot — read from any owner). */
   std::function<std::shared_ptr<const MeshConfig>()> mesh_config;
 
   /** Cached mesh_node rows from Brief directory (n-dir). */
-  std::function<std::vector<MeshDirectoryNode>()> list_directory_nodes;
+  std::function<std::vector<mesh::MeshDirectoryNode>()> list_directory_nodes;
   /** DHT peer_routing cache (n2-caps); directory-shaped nodes. */
-  std::function<std::vector<MeshDirectoryNode>()> list_dht_nodes;
+  std::function<std::vector<mesh::MeshDirectoryNode>()> list_dht_nodes;
   /** Reachability seed probe — when false, hop policy skips org seed candidates. */
   std::function<bool()> seed_dial_ok;
 
@@ -81,10 +82,10 @@ struct CallStackDeps {
    * reach, rendezvous parking, punch) and the media_relay client built on it. The owner calls
    * `DetachMeshMedia` before replacing their objects and `RebindMeshMedia` after.
    */
-  MeshConnectivity* connectivity = nullptr;
-  MeshMediaRelay* media_relay = nullptr;
+  mesh::MeshConnectivity* connectivity = nullptr;
+  mesh::MeshMediaRelay* media_relay = nullptr;
   /** Who may learn our address (projects/privacy T1; hub-owned, outlives the stack). Null = anyone. */
-  const AddressDisclosureGate* address_disclosure = nullptr;
+  const mesh::AddressDisclosureGate* address_disclosure = nullptr;
 };
 
 class CallStack : public Module {
@@ -102,12 +103,12 @@ public:
    * Test-only: bind CallMediaBridge without Amp mesh.
    * `transport` / `dial` / `circuit_reach` are non-owning; call after BuildSessions.
    */
-  void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial);
-  void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial,
-                         ICircuitHopReach* circuit_reach);
+  void BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialRegistry* dial);
+  void BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialRegistry* dial,
+                         mesh::ICircuitHopReach* circuit_reach);
   /** Test-only, group calls: also stand in for the hub's media_relay client (SoftMigrate / hop attach). */
-  void BindTestMediaPath(ICallMediaTransport* transport, IDialRegistry* dial, ICircuitHopReach* circuit_reach,
-                         IMediaRelayClient* relay);
+  void BindTestMediaPath(ICallMediaTransport* transport, mesh::IDialRegistry* dial, mesh::ICircuitHopReach* circuit_reach,
+                         mesh::IMediaRelayClient* relay);
   /** Teardown before mesh Stop: clear bindings, PrepareForTeardown; abort circuit via callback. */
   void PrepareForMeshStop(const std::function<void()>& abort_inflight_circuit);
   /** Teardown after mesh Stop: drop the bridge and the call-media transport. */
@@ -125,7 +126,7 @@ public:
   MobilityClass LocalMobility() const { return mobility_.LocalClass(); }
   /** k6: the path policy of a call (calls owner). */
   /** projects/privacy T3: who may call us (applied on the calls owner). */
-  void SetInboundCallAudience(InboundAudience audience);
+  void SetInboundCallAudience(mesh::InboundAudience audience);
   /** Mobility policy, restricted to the relay when the call's peer may not learn our address. */
   CallPathPolicy PathPolicyFor(const std::string& call_id) const;
   /** Before the owner replaces / drops mesh media objects: topology + bridge let go of them. */
@@ -178,7 +179,7 @@ public:
 
   std::vector<std::string> LocalCallListenMultiaddrs() const;
   /** This node's mesh as the connectivity owner last published it (empty without mesh media). */
-  std::shared_ptr<const MeshLocalView> LocalMeshView() const;
+  std::shared_ptr<const mesh::MeshLocalView> LocalMeshView() const;
   void RegisterCallPeerListenMultiaddrs(const std::string& identity,
                                         const std::vector<std::string>& multiaddrs);
 
@@ -192,8 +193,8 @@ private:
   CallPeerCaps LocalPeerCaps() const;
   void BindSessionMeshReach();
   void OnMeshServicesStartedOnOwner();
-  void BindTestMediaPathOnOwner(ICallMediaTransport* transport, IDialRegistry* dial,
-                                ICircuitHopReach* circuit_reach, IMediaRelayClient* relay);
+  void BindTestMediaPathOnOwner(ICallMediaTransport* transport, mesh::IDialRegistry* dial,
+                                mesh::ICircuitHopReach* circuit_reach, mesh::IMediaRelayClient* relay);
   void PrepareForMeshStopOnOwner(const std::function<void()>& abort_inflight_circuit);
   void FinishMeshStopOnOwner();
   void DetachMeshMediaOnOwner();
@@ -206,7 +207,7 @@ private:
   /** Wake the hub's N025 listen sync (on UI) after publishing the listen desire. */
   void SyncHubEphemeralListen();
 
-  MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
+  mesh::MeshHost* mesh() const { return deps_.mesh ? deps_.mesh() : nullptr; }
   /** Mesh config snapshot (defaults when none is wired). */
   std::shared_ptr<const MeshConfig> mesh_config() const;
   void SyncMediaPlaneDeps();
@@ -214,8 +215,8 @@ private:
   void BindMediaProducts();
   /** Calls' hooks on the shared connectivity (announce chosen R1, signaling punch). */
   void BindMeshMediaHooks();
-  MeshConnectivity* connectivity() const { return deps_.connectivity; }
-  MeshMediaRelay* media_relay() const { return deps_.media_relay; }
+  mesh::MeshConnectivity* connectivity() const { return deps_.connectivity; }
+  mesh::MeshMediaRelay* media_relay() const { return deps_.media_relay; }
   /** What the calls show may have changed: refresh chrome, wake N025 listen when its desire flips. */
   void OnCallStateChangedOnOwner();
 
@@ -225,7 +226,7 @@ private:
   CallsLoop loop_{executor_, [this](CallStackEvent& event) { Dispatch(event); }};
   CallStackDeps deps_;
   /** Written by the owner of the settings (UI), read when the calls owner rebuilds its CSM. */
-  std::atomic<InboundAudience> inbound_call_audience_{InboundAudience::Everyone};
+  std::atomic<mesh::InboundAudience> inbound_call_audience_{mesh::InboundAudience::Everyone};
   std::unique_ptr<CallSessionStore> call_session_store_;
   std::unique_ptr<CallMediaKeyStore> call_media_keys_;
   std::unique_ptr<CallMediaEngine> call_media_engine_;

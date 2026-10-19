@@ -4,19 +4,20 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
 namespace {
 
-std::string AccountKeyFromHit(const DirectoryHit& hit) {
+std::string AccountKeyFromHit(const mesh::DirectoryHit& hit) {
   if (auto account = PrimaryAccountIdFromHit(hit)) {
     return *account;
   }
   return {};
 }
 
-std::string RelayKeyFromHit(const DirectoryHit& hit) {
+std::string RelayKeyFromHit(const mesh::DirectoryHit& hit) {
   if (auto relay = PrimaryRelayIdFromHit(hit)) {
     return *relay;
   }
@@ -26,7 +27,7 @@ std::string RelayKeyFromHit(const DirectoryHit& hit) {
   return {};
 }
 
-void IndexHit(std::unordered_map<std::string, DirectoryHit>& by_id, const DirectoryHit& hit) {
+void IndexHit(std::unordered_map<std::string, mesh::DirectoryHit>& by_id, const mesh::DirectoryHit& hit) {
   const std::string account = AccountKeyFromHit(hit);
   const std::string relay = RelayKeyFromHit(hit);
   if (!account.empty()) {
@@ -39,19 +40,19 @@ void IndexHit(std::unordered_map<std::string, DirectoryHit>& by_id, const Direct
 
 } // namespace
 
-DirectoryShadowCache::DirectoryShadowCache(IDirectoryClient& directory) : directory_(directory) {}
+DirectoryShadowCache::DirectoryShadowCache(mesh::IDirectoryClient& directory) : directory_(directory) {}
 
 void DirectoryShadowCache::SetOnUpdated(std::function<void()> callback) {
   std::lock_guard lock(mutex_);
   on_updated_ = std::move(callback);
 }
 
-void DirectoryShadowCache::SetOnHitCached(std::function<void(const DirectoryHit&)> callback) {
+void DirectoryShadowCache::SetOnHitCached(std::function<void(const mesh::DirectoryHit&)> callback) {
   std::lock_guard lock(mutex_);
   on_hit_cached_ = std::move(callback);
 }
 
-std::optional<DirectoryHit> DirectoryShadowCache::Get(const std::string& identity) const {
+std::optional<mesh::DirectoryHit> DirectoryShadowCache::Get(const std::string& identity) const {
   if (identity.empty()) {
     return std::nullopt;
   }
@@ -63,10 +64,10 @@ std::optional<DirectoryHit> DirectoryShadowCache::Get(const std::string& identit
   return it->second;
 }
 
-void DirectoryShadowCache::Put(const DirectoryHit& hit) {
+void DirectoryShadowCache::Put(const mesh::DirectoryHit& hit) {
   std::function<void()> notify;
-  std::function<void(const DirectoryHit&)> on_hit;
-  DirectoryHit cached = hit;
+  std::function<void(const mesh::DirectoryHit&)> on_hit;
+  mesh::DirectoryHit cached = hit;
   {
     std::lock_guard lock(mutex_);
     IndexHit(by_id_, hit);
@@ -94,15 +95,15 @@ void DirectoryShadowCache::EnsureLookup(const std::string& identity) {
   }
 
   const bool by_account = IsAccountIdentityValue(identity);
-  AppRuntime::PostWorkerAndReplyOnUI<Roe<DirectoryHit>>(
+  AppRuntime::PostWorkerAndReplyOnUI<Roe<mesh::DirectoryHit>>(
       WorkerLane::Normal,
       [this, identity, by_account]() {
         return by_account ? directory_.LookupByAccount(identity) : directory_.LookupRelayUser(identity);
       },
-      [this, identity, by_account](Roe<DirectoryHit> result) {
+      [this, identity, by_account](Roe<mesh::DirectoryHit> result) {
         std::function<void()> notify;
-        std::function<void(const DirectoryHit&)> on_hit;
-        std::optional<DirectoryHit> cached;
+        std::function<void(const mesh::DirectoryHit&)> on_hit;
+        std::optional<mesh::DirectoryHit> cached;
         {
           std::lock_guard lock(mutex_);
           inflight_.erase(identity);
@@ -113,31 +114,31 @@ void DirectoryShadowCache::EnsureLookup(const std::string& identity) {
                 << result.error().message;
           }
           if (result) {
-            DirectoryHit hit = *result;
+            mesh::DirectoryHit hit = *result;
             if (by_account) {
               bool has_account = false;
-              for (const ContactId& id : hit.ids) {
-                if (id.kind == ContactIdKind::Account && id.value == identity) {
+              for (const mesh::ContactId& id : hit.ids) {
+                if (id.kind == mesh::ContactIdKind::Account && id.value == identity) {
                   has_account = true;
                   break;
                 }
               }
               if (!has_account) {
-                hit.ids.push_back({ContactIdKind::Account, identity, true});
+                hit.ids.push_back({mesh::ContactIdKind::Account, identity, true});
               }
               if (!hit.account_id || hit.account_id->empty()) {
                 hit.account_id = identity;
               }
             } else {
               bool has_relay = false;
-              for (const ContactId& id : hit.ids) {
-                if (id.kind == ContactIdKind::RelayUser && id.value == identity) {
+              for (const mesh::ContactId& id : hit.ids) {
+                if (id.kind == mesh::ContactIdKind::RelayUser && id.value == identity) {
                   has_relay = true;
                   break;
                 }
               }
               if (!has_relay) {
-                hit.ids.push_back({ContactIdKind::RelayUser, identity, false});
+                hit.ids.push_back({mesh::ContactIdKind::RelayUser, identity, false});
               }
             }
             IndexHit(by_id_, hit);

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/mesh/host/MeshPorts.h"
+#include "mesh/host/MeshPorts.h"
 #include "domain/messaging/BroadcastRpcCodec.h"
 
 #include "common/Error.h"
@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -36,7 +37,7 @@ public:
    */
   static constexpr std::chrono::milliseconds kAdmissionTimeout{1500};
 
-  AmpBroadcastRpcClient(IChatPeerLinks& links, IoPump io_pump, IoPost post_io = {}, IoAfter post_after = {});
+  AmpBroadcastRpcClient(mesh::IChatPeerLinks& links, IoPump io_pump, IoPost post_io = {}, IoAfter post_after = {});
   ~AmpBroadcastRpcClient();
   AmpBroadcastRpcClient(const AmpBroadcastRpcClient&) = delete;
   AmpBroadcastRpcClient& operator=(const AmpBroadcastRpcClient&) = delete;

@@ -22,7 +22,7 @@ target_include_directories(pp-node PRIVATE
 target_link_libraries(pp-node PRIVATE
   pp_feature_registration
   pp_feature_node
-  pp_domain_mesh
+  pp_mesh
   pp_domain_people
   pp_domain_net
   pp_foundation_crypto

@@ -1,28 +1,29 @@
 #include "domain/messaging/PeerCapsLogic.h"
 
 #include "foundation/data/MeshRole.h"
+#include "common/MeshAlias.h"
 
 #include <unordered_set>
 
 namespace pbr {
 
-std::vector<MeshHopCandidate> FilterHopsByMediaRelayAds(
-    std::vector<MeshHopCandidate> ranked,
+std::vector<mesh::MeshHopCandidate> FilterHopsByMediaRelayAds(
+    std::vector<mesh::MeshHopCandidate> ranked,
     const std::function<bool(const std::string& peer_id)>& has_media_relay_ad) {
-  std::vector<MeshHopCandidate> out;
+  std::vector<mesh::MeshHopCandidate> out;
   out.reserve(ranked.size());
-  for (MeshHopCandidate& hop : ranked) {
-    if (hop.affinity == MeshHopAffinity::OrgSeed) {
+  for (mesh::MeshHopCandidate& hop : ranked) {
+    if (hop.affinity == mesh::MeshHopAffinity::OrgSeed) {
       out.push_back(std::move(hop));
       continue;
     }
-    if (hop.affinity == MeshHopAffinity::DirectoryNode) {
+    if (hop.affinity == mesh::MeshHopAffinity::DirectoryNode) {
       if (hop.advertises_media_relay) {
         out.push_back(std::move(hop));
       }
       continue;
     }
-    if (hop.affinity == MeshHopAffinity::DhtDiscovered) {
+    if (hop.affinity == mesh::MeshHopAffinity::DhtDiscovered) {
       if (hop.advertises_media_relay) {
         out.push_back(std::move(hop));
       }
@@ -35,27 +36,27 @@ std::vector<MeshHopCandidate> FilterHopsByMediaRelayAds(
   return out;
 }
 
-std::vector<MeshHopCandidate> MergeAdvertisedMediaRelayHops(
-    std::vector<MeshHopCandidate> ranked, const std::vector<std::string>& advertised_media_relay_peer_ids,
+std::vector<mesh::MeshHopCandidate> MergeAdvertisedMediaRelayHops(
+    std::vector<mesh::MeshHopCandidate> ranked, const std::vector<std::string>& advertised_media_relay_peer_ids,
     const std::function<std::string(const std::string& peer_id)>& resolve_multiaddr) {
   if (advertised_media_relay_peer_ids.empty()) {
     return ranked;
   }
   std::unordered_set<std::string> seen;
-  for (const MeshHopCandidate& hop : ranked) {
+  for (const mesh::MeshHopCandidate& hop : ranked) {
     if (!hop.peer_id.empty()) {
       seen.insert(hop.peer_id);
     }
   }
-  std::vector<MeshHopCandidate> injected;
+  std::vector<mesh::MeshHopCandidate> injected;
   injected.reserve(advertised_media_relay_peer_ids.size());
   for (const std::string& peer_id : advertised_media_relay_peer_ids) {
     if (peer_id.empty() || !seen.insert(peer_id).second) {
       continue;
     }
-    MeshHopCandidate hop;
+    mesh::MeshHopCandidate hop;
     hop.peer_id = peer_id;
-    hop.affinity = MeshHopAffinity::Contact;
+    hop.affinity = mesh::MeshHopAffinity::Contact;
     hop.dialable = true;
     if (resolve_multiaddr) {
       hop.multiaddr = resolve_multiaddr(peer_id);
@@ -85,16 +86,16 @@ std::vector<std::string> PeerIdsFromListenMultiaddrs(const std::vector<std::stri
   return out;
 }
 
-bool DirectoryNodeAdvertisesMediaRelay(const MeshDirectoryNode& node) {
+bool DirectoryNodeAdvertisesMediaRelay(const mesh::MeshDirectoryNode& node) {
   return node.media_relay && !node.peer_id.empty();
 }
 
 bool PeerHasMediaRelayInDirectory(const std::string& peer_id,
-                                  const std::vector<MeshDirectoryNode>& nodes) {
+                                  const std::vector<mesh::MeshDirectoryNode>& nodes) {
   if (peer_id.empty()) {
     return false;
   }
-  for (const MeshDirectoryNode& node : nodes) {
+  for (const mesh::MeshDirectoryNode& node : nodes) {
     if (node.peer_id == peer_id && DirectoryNodeAdvertisesMediaRelay(node)) {
       return true;
     }
@@ -102,10 +103,10 @@ bool PeerHasMediaRelayInDirectory(const std::string& peer_id,
   return false;
 }
 
-std::vector<std::string> MediaRelayPeerIdsFromDirectory(const std::vector<MeshDirectoryNode>& nodes) {
+std::vector<std::string> MediaRelayPeerIdsFromDirectory(const std::vector<mesh::MeshDirectoryNode>& nodes) {
   std::vector<std::string> out;
   std::unordered_set<std::string> seen;
-  for (const MeshDirectoryNode& node : nodes) {
+  for (const mesh::MeshDirectoryNode& node : nodes) {
     if (!DirectoryNodeAdvertisesMediaRelay(node) || !seen.insert(node.peer_id).second) {
       continue;
     }
@@ -115,8 +116,8 @@ std::vector<std::string> MediaRelayPeerIdsFromDirectory(const std::vector<MeshDi
 }
 
 std::vector<std::string> MergeMediaRelayCapablePeerIds(
-    const std::vector<std::string>& from_call_caps, const std::vector<MeshDirectoryNode>& directory_nodes,
-    const std::vector<MeshDirectoryNode>& dht_nodes) {
+    const std::vector<std::string>& from_call_caps, const std::vector<mesh::MeshDirectoryNode>& directory_nodes,
+    const std::vector<mesh::MeshDirectoryNode>& dht_nodes) {
   std::vector<std::string> out;
   std::unordered_set<std::string> seen;
   auto append = [&](const std::string& peer_id) {

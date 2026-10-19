@@ -2,6 +2,7 @@
 
 #include "feature/conversations/ConversationsHub.h"
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -17,7 +18,7 @@ MessagingPeoplePickerPorts MakeMessagingPeoplePickerPorts(ConversationsHub& hub)
     }
     return std::nullopt;
   };
-  ports.find_contact_by_identity = [&hub](const std::string& identity_value, const ContactIdKind kind) {
+  ports.find_contact_by_identity = [&hub](const std::string& identity_value, const mesh::ContactIdKind kind) {
     return hub.Contacts().FindByIdentity(identity_value, kind);
   };
   ports.create_group = [&hub](const std::string& title, const std::vector<std::string>& member_contact_ids) {

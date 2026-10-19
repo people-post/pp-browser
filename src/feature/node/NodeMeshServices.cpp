@@ -1,23 +1,24 @@
 #include "feature/node/NodeMeshServices.h"
 
-#include "common/directory/RelayScope.h"
-#include "common/media/MediaChannel.h"
-#include "domain/mesh/dht/DhtTypes.h"
-#include "domain/mesh/discovery/AmpDirectoryProtocol.h"
-#include "domain/mesh/l4/circuit/CircuitRelayTypes.h"
-#include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
-#include "domain/mesh/reachability/AmpObservedAddrs.h"
+#include "mesh/types/RelayScope.h"
+#include "mesh/types/MediaChannel.h"
+#include "mesh/dht/DhtTypes.h"
+#include "mesh/discovery/AmpDirectoryProtocol.h"
+#include "mesh/l4/circuit/CircuitRelayTypes.h"
+#include "mesh/l4/media_relay/MediaRelayTypes.h"
+#include "mesh/reachability/AmpObservedAddrs.h"
 #include "foundation/data/MeshRole.h"
 
 #include <algorithm>
 #include <unordered_set>
 #include <utility>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
 
-void RegisterSeedEndpoints(MeshHost& mesh, const std::vector<std::string>& bootstrap_peers) {
+void RegisterSeedEndpoints(mesh::MeshHost& mesh, const std::vector<std::string>& bootstrap_peers) {
   for (const std::string& ma : bootstrap_peers) {
     const std::string peer_id = PeerIdFromMultiaddr(ma);
     if (peer_id.empty() || ma.empty()) {
@@ -29,7 +30,7 @@ void RegisterSeedEndpoints(MeshHost& mesh, const std::vector<std::string>& boots
 
 } // namespace
 
-void ApplyNodeHosting(MeshHostConfig& cfg, const MeshConfig& mesh, bool node_role) {
+void ApplyNodeHosting(mesh::MeshHostConfig& cfg, const MeshConfig& mesh, bool node_role) {
   cfg.host_circuit_relay = node_role && mesh.capabilities.circuit_relay;
   cfg.host_media_relay = node_role && mesh.capabilities.media_relay;
   cfg.host_dht = node_role && mesh.capabilities.dht;
@@ -38,7 +39,7 @@ void ApplyNodeHosting(MeshHostConfig& cfg, const MeshConfig& mesh, bool node_rol
   cfg.media_relay_pricing = mesh.pricing.media_relay;
   cfg.media_relay_video.serve_levels.clear();
   for (const int level : mesh.media_relay_video.serve_levels) {
-    if (IsVideoLevel(level)) {
+    if (mesh::IsVideoLevel(level)) {
       cfg.media_relay_video.serve_levels.push_back(static_cast<uint8_t>(level));
     }
   }
@@ -47,10 +48,10 @@ void ApplyNodeHosting(MeshHostConfig& cfg, const MeshConfig& mesh, bool node_rol
 }
 
 std::vector<std::string> CollectNodeQueryPeerKeys(const std::vector<std::string>& bootstrap_peers,
-                                                  const std::vector<MeshDirectoryNode>& directory_nodes) {
+                                                  const std::vector<mesh::MeshDirectoryNode>& directory_nodes) {
   std::vector<std::string> keys;
   std::unordered_set<std::string> seen;
-  for (const MeshDirectoryNode& node : directory_nodes) {
+  for (const mesh::MeshDirectoryNode& node : directory_nodes) {
     if (node.peer_id.empty() || !seen.insert(node.peer_id).second) {
       continue;
     }
@@ -66,17 +67,17 @@ std::vector<std::string> CollectNodeQueryPeerKeys(const std::vector<std::string>
   return keys;
 }
 
-void ConfigureNodeAmpDht(MeshHost& mesh, IdentityStore& identity, const MeshConfig& config, bool node_role,
+void ConfigureNodeAmpDht(mesh::MeshHost& mesh, IdentityStore& identity, const MeshConfig& config, bool node_role,
                          std::vector<std::string> query_peer_keys) {
   if (!mesh.Amp() || !mesh.AmpDht()) {
     return;
   }
   const bool participate = node_role && config.capabilities.dht;
 
-  AmpDhtProtocolConfig cfg;
+  mesh::AmpDhtProtocolConfig cfg;
   cfg.local_peer_id = mesh.Amp()->LocalPeerId();
   cfg.listen_multiaddrs = mesh.AdvertisedListenMultiaddrs();
-  if (cfg.listen_multiaddrs.empty() && IsUsableAdpListen(mesh.AmpListenMultiaddr())) {
+  if (cfg.listen_multiaddrs.empty() && mesh::IsUsableAdpListen(mesh.AmpListenMultiaddr())) {
     cfg.listen_multiaddrs = {mesh.AmpListenMultiaddr()};
   }
   if (auto priv = identity.GetDeviceMlDsaPrivateKey()) {
@@ -94,19 +95,19 @@ void ConfigureNodeAmpDht(MeshHost& mesh, IdentityStore& identity, const MeshConf
   mesh.RefreshAmpDhtHosting(participate);
 }
 
-void ConfigureNodeAmpDirectory(MeshHost& mesh, bool node_role, std::vector<std::string> query_peer_keys) {
+void ConfigureNodeAmpDirectory(mesh::MeshHost& mesh, bool node_role, std::vector<std::string> query_peer_keys) {
   if (!mesh.Amp() || !mesh.AmpDirectory()) {
     return;
   }
-  AmpDirectoryProtocolConfig cfg;
+  mesh::AmpDirectoryProtocolConfig cfg;
   cfg.local_peer_id = mesh.Amp()->LocalPeerId();
   cfg.query_peer_keys = std::move(query_peer_keys);
   mesh.ConfigureAmpDirectory(std::move(cfg));
   mesh.RefreshAmpDirectoryHosting(node_role);
 }
 
-MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, MeshHost& mesh, const MeshConfig& config) {
-  MeshNodeHit hit;
+mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost& mesh, const MeshConfig& config) {
+  mesh::MeshNodeHit hit;
   hit.entity_kind = "mesh_node";
   if (auto loaded = identity.Get()) {
     hit.relay_user_id = loaded->relay_user_id.empty() ? loaded->peer_id : loaded->relay_user_id;
@@ -130,7 +131,7 @@ MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, MeshHost& mesh, const
   hit.capabilities.media_relay = config.capabilities.media_relay;
   hit.capabilities.dht = config.capabilities.dht;
   hit.capabilities.ledger_gateway = config.capabilities.ledger_gateway;
-  DirectoryEndpoint ep;
+  mesh::DirectoryEndpoint ep;
   if (mesh.Amp()) {
     ep.peer_id = mesh.Amp()->LocalPeerId();
   }
@@ -139,7 +140,7 @@ MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, MeshHost& mesh, const
       ep.multiaddrs.push_back(ma);
     }
   }
-  if (ep.multiaddrs.empty() && IsUsableAdpListen(mesh.AmpListenMultiaddr())) {
+  if (ep.multiaddrs.empty() && mesh::IsUsableAdpListen(mesh.AmpListenMultiaddr())) {
     ep.multiaddrs.push_back(mesh.AmpListenMultiaddr());
   }
   for (const std::string& ma : config.advertise_multiaddrs) {
@@ -153,24 +154,24 @@ MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, MeshHost& mesh, const
   return hit;
 }
 
-void ApplyOrgSeedAdmission(MeshHost& mesh) {
+void ApplyOrgSeedAdmission(mesh::MeshHost& mesh) {
   // Do not rely on an empty contact set to mean "serve everyone".
-  const RelayScopeMask org_serve = kRelayScopeShortTerm | static_cast<RelayScopeMask>(RelayScope::Public);
+  const mesh::RelayScopeMask org_serve = mesh::kRelayScopeShortTerm | static_cast<mesh::RelayScopeMask>(mesh::RelayScope::Public);
   if (auto* circuit = mesh.AmpCircuitServer()) {
-    CircuitRelayAdmissionPolicy policy;
+    mesh::CircuitRelayAdmissionPolicy policy;
     policy.prefer_contacts_only = false;
     policy.serve_scope_mask = org_serve;
     circuit->SetAdmissionPolicy(std::move(policy));
   }
   if (auto* media = mesh.AmpMediaRelayServer()) {
-    MediaRelayAdmissionPolicy policy;
+    mesh::MediaRelayAdmissionPolicy policy;
     policy.prefer_contacts_only = false;
     policy.serve_scope_mask = org_serve;
     media->SetAdmissionPolicy(std::move(policy));
   }
 }
 
-void StartOrgSeedServices(MeshHost& mesh, IdentityStore& identity, const MeshConfig& config) {
+void StartOrgSeedServices(mesh::MeshHost& mesh, IdentityStore& identity, const MeshConfig& config) {
   if (!mesh.Amp()) {
     return;
   }

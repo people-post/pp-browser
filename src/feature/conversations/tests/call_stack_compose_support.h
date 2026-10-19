@@ -20,6 +20,7 @@
 #include "common/Utilities.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "feature/conversations/tests/call_media_inbound_fake.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 
@@ -44,7 +45,7 @@ inline ByteVector TestDek(uint8_t seed) {
   return dek;
 }
 
-class FakeDialRegistry final : public IDialRegistry {
+class FakeDialRegistry final : public mesh::IDialRegistry {
 public:
   Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) override {
     endpoints[peer_key] = multiaddr;
@@ -167,8 +168,8 @@ struct StackSide {
   std::unique_ptr<IdentityStore> identity;
   std::unique_ptr<SqlitePskSessionStore> psk;
   // Outlive the stack (connectivity first: the relay is built on it).
-  std::unique_ptr<MeshConnectivity> connectivity = std::make_unique<MeshConnectivity>();
-  std::unique_ptr<MeshMediaRelay> media_relay = std::make_unique<MeshMediaRelay>(*connectivity);
+  std::unique_ptr<mesh::MeshConnectivity> connectivity = std::make_unique<mesh::MeshConnectivity>();
+  std::unique_ptr<mesh::MeshMediaRelay> media_relay = std::make_unique<mesh::MeshMediaRelay>(*connectivity);
   std::unique_ptr<CallStack> stack;
   std::unique_ptr<CallUiBackend> ui;
   std::unique_ptr<FakeCallMediaTransport> transport;
@@ -184,7 +185,7 @@ struct StackSideOptions {
   /** Hub `seed_dial_ok`: org seeds (mesh bootstrap peers) count as media_relay hop candidates. */
   bool seed_dial_ok = false;
   /** Stands in for the hub's media_relay client (group calls); null = none. */
-  IMediaRelayClient* relay = nullptr;
+  mesh::IMediaRelayClient* relay = nullptr;
 };
 
 /** Build `side` (tag = profile id, dirs under temp). Set `side.app_config` / `on_send` before. */
@@ -234,9 +235,9 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   };
   deps.delivery.sync_inbox_from_wake = [](bool) {};
   deps.mesh_config = [&side]() { return std::make_shared<const MeshConfig>(side.app_config.mesh); };
-  deps.mesh = []() -> MeshHost* { return nullptr; };
-  deps.list_directory_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
-  deps.list_dht_nodes = []() { return std::vector<MeshDirectoryNode>{}; };
+  deps.mesh = []() -> mesh::MeshHost* { return nullptr; };
+  deps.list_directory_nodes = []() { return std::vector<mesh::MeshDirectoryNode>{}; };
+  deps.list_dht_nodes = []() { return std::vector<mesh::MeshDirectoryNode>{}; };
   deps.seed_dial_ok = [ok = options.seed_dial_ok]() { return ok; };
   deps.prefetch_peer_reachability = [](const std::string&) {};
   deps.sync_mobile_ephemeral_listen = []() {};

@@ -7,6 +7,7 @@
 #include "feature/settings/SettingsUiState.h"
 
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -75,7 +76,7 @@ AppConfig ApplyNetworkSettingsDraft(const AppConfig& base, const SettingsUiState
   config.mesh.capabilities.dht = (state.dht_enabled == "on");
   config.mesh.prefer_contacts_for_routing = (state.prefer_contacts_for_routing != "off");
   config.mesh.trusted_relays_only = (state.trusted_relays_only == "on");
-  if (auto audience = DirectAudienceFromName(state.direct_connections)) {
+  if (auto audience = mesh::DirectAudienceFromName(state.direct_connections)) {
     config.mesh.direct_connections = *audience;
   }
   NormalizeMeshConfig(config.mesh);

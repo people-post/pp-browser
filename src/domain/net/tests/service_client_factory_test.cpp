@@ -65,30 +65,30 @@ TEST(OrgBackendClientFactoryTest, SkipsNonHttpDirectoryProviders) {
 
 namespace {
 
-class ScriptedDirectoryClient : public pbr::IDirectoryClient {
+class ScriptedDirectoryClient : public pp::mesh::IDirectoryClient {
 public:
   explicit ScriptedDirectoryClient(bool fail) : fail_(fail) {}
 
-  pbr::Roe<std::vector<pbr::DirectoryHit>> SearchPeople(const std::string& /*query*/) override {
+  pbr::Roe<std::vector<pp::mesh::DirectoryHit>> SearchPeople(const std::string& /*query*/) override {
     if (fail_) {
       return pbr::Error("scripted search fail");
     }
-    return std::vector<pbr::DirectoryHit>{};
+    return std::vector<pp::mesh::DirectoryHit>{};
   }
-  pbr::Roe<pbr::DirectoryHit> LookupRelayUser(const std::string& /*relay_user_id*/) override {
+  pbr::Roe<pp::mesh::DirectoryHit> LookupRelayUser(const std::string& /*relay_user_id*/) override {
     return pbr::Error("unused");
   }
-  pbr::Roe<pbr::DirectoryHit> LookupByAccount(const std::string& /*account_id*/) override {
+  pbr::Roe<pp::mesh::DirectoryHit> LookupByAccount(const std::string& /*account_id*/) override {
     return pbr::Error("unused");
   }
-  pbr::Roe<std::vector<pbr::MeshNodeHit>> ListMeshNodes() override {
+  pbr::Roe<std::vector<pp::mesh::MeshNodeHit>> ListMeshNodes() override {
     ++list_calls;
     if (fail_) {
       return pbr::Error("scripted list fail");
     }
-    pbr::MeshNodeHit hit;
+    pp::mesh::MeshNodeHit hit;
     hit.relay_user_id = "relay:ok";
-    return std::vector<pbr::MeshNodeHit>{hit};
+    return std::vector<pp::mesh::MeshNodeHit>{hit};
   }
 
   int list_calls = 0;
@@ -100,7 +100,7 @@ private:
 } // namespace
 
 TEST(OrgBackendClientFactoryTest, FailoverDirectoryClientUsesSecondBackend) {
-  std::vector<std::unique_ptr<pbr::IDirectoryClient>> backends;
+  std::vector<std::unique_ptr<pp::mesh::IDirectoryClient>> backends;
   auto first = std::make_unique<ScriptedDirectoryClient>(true);
   auto second = std::make_unique<ScriptedDirectoryClient>(false);
   auto* second_ptr = second.get();

@@ -1,6 +1,7 @@
 #include "domain/people/AccountBackupCodec.h"
 
 #include "domain/people/ContactTypes.h"
+#include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
 
@@ -15,7 +16,7 @@ Contact SampleContact() {
   contact.local.display_name = "Alice at work";
   contact.local.trust = TrustLevel::Friendly;
   contact.remote.nickname = "alice";
-  contact.remote.ids = {{ContactIdKind::Account, "account:abc", true}};
+  contact.remote.ids = {{mesh::ContactIdKind::Account, "account:abc", true}};
   SyncContactMirrors(contact);
   return contact;
 }

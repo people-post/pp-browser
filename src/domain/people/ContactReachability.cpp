@@ -1,6 +1,7 @@
 #include "domain/people/ContactReachability.h"
 
 #include "domain/people/ContactIdentity.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -8,13 +9,13 @@ bool IsContactReachableForMessaging(const Contact& contact, bool relay_configure
   if (contact.trust == TrustLevel::Blocked) {
     return false;
   }
-  if (PrimaryIdOfKind(contact, ContactIdKind::Account).empty() &&
-      PrimaryIdOfKind(contact, ContactIdKind::RelayUser).empty() &&
-      PrimaryIdOfKind(contact, ContactIdKind::PeerId).empty()) {
+  if (PrimaryIdOfKind(contact, mesh::ContactIdKind::Account).empty() &&
+      PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser).empty() &&
+      PrimaryIdOfKind(contact, mesh::ContactIdKind::PeerId).empty()) {
     return false;
   }
-  for (const ContactId& id : contact.ids) {
-    if (id.kind == ContactIdKind::RelayUser && !id.value.empty() && relay_configured) {
+  for (const mesh::ContactId& id : contact.ids) {
+    if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty() && relay_configured) {
       return true;
     }
   }

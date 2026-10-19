@@ -10,7 +10,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Logger.h"
 #include "common/ValueJson.h"
-#include "domain/mesh/reachability/Reachability.h"
+#include "mesh/reachability/Reachability.h"
 
 #include <atomic>
 #include <chrono>

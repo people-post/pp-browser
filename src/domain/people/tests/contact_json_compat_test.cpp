@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace {
 
@@ -34,10 +35,10 @@ TEST(ContactJsonCompat, ParsesLegacyFlatContactFields) {
   EXPECT_EQ(contact.trust, TrustLevel::Friendly);
   EXPECT_EQ(contact.local.trust, TrustLevel::Friendly);
   ASSERT_EQ(contact.ids.size(), 2u);
-  EXPECT_EQ(contact.ids[0].kind, ContactIdKind::RelayUser);
+  EXPECT_EQ(contact.ids[0].kind, mesh::ContactIdKind::RelayUser);
   EXPECT_EQ(contact.ids[0].value, "relay:alice123");
   EXPECT_TRUE(contact.ids[0].primary);
-  EXPECT_EQ(contact.ids[1].kind, ContactIdKind::PeerId);
+  EXPECT_EQ(contact.ids[1].kind, mesh::ContactIdKind::PeerId);
   EXPECT_EQ(contact.ids[1].value, "12D3KooWPeer");
   ASSERT_EQ(contact.multiaddrs.size(), 1u);
   EXPECT_EQ(contact.multiaddrs[0], "/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWPeer");
@@ -50,7 +51,7 @@ TEST(ContactJsonCompat, NestedRoundTripPreservesLocalRemote) {
   contact.local.display_name = "Local Alice";
   contact.local.trust = TrustLevel::Friendly;
   contact.remote.nickname = "alice";
-  contact.remote.ids = {{ContactIdKind::RelayUser, "relay:alice", true}};
+  contact.remote.ids = {{mesh::ContactIdKind::RelayUser, "relay:alice", true}};
   contact.remote.multiaddrs = {"/ip4/1.2.3.4/tcp/1/p2p/12D3"};
   contact.remote.fetched_at = 1700000000000;
   SyncContactMirrors(contact);
@@ -77,7 +78,7 @@ TEST(ContactJsonCompat, ParsesDirectoryWireShapeWithRelayUserId) {
     "kem_public_key_b64": "kemkey"
   })");
 
-  const DirectoryHit hit = DirectoryHitFromJson(json);
+  const mesh::DirectoryHit hit = DirectoryHitFromJson(json);
   EXPECT_EQ(hit.hit_id, "relay:demon");
   EXPECT_EQ(hit.nickname, "demon");
   EXPECT_EQ(hit.display_name, "demon");
@@ -91,17 +92,17 @@ TEST(ContactJsonCompat, ParsesDirectoryWireShapeWithRelayUserId) {
 }
 
 TEST(ContactJsonCompat, DirectoryHitRoundTripPreservesKeys) {
-  DirectoryHit hit;
+  mesh::DirectoryHit hit;
   hit.hit_id = "relay:x";
   hit.display_name = "X";
   hit.nickname = "x";
-  hit.ids = {{ContactIdKind::RelayUser, "relay:x", true}};
+  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:x", true}};
   hit.signing_public_key_b64 = "sig";
   hit.kem_public_key_b64 = "kem";
   hit.initiation_floor = 55;
   hit.endpoints = {{"12D3KooWX", {"/ip4/1.2.3.4/tcp/1/p2p/12D3KooWX"}, 99}};
 
-  const DirectoryHit again = DirectoryHitFromJson(DirectoryHitToJson(hit));
+  const mesh::DirectoryHit again = DirectoryHitFromJson(DirectoryHitToJson(hit));
   EXPECT_EQ(again.hit_id, hit.hit_id);
   ASSERT_TRUE(again.signing_public_key_b64.has_value());
   EXPECT_EQ(*again.signing_public_key_b64, "sig");
@@ -126,14 +127,14 @@ TEST(ContactJsonCompat, DirectoryHitIgnoresTopLevelPeerId) {
       "updated_at": 5
     }]
   })");
-  const DirectoryHit hit = DirectoryHitFromJson(json);
+  const mesh::DirectoryHit hit = DirectoryHitFromJson(json);
   ASSERT_EQ(hit.endpoints.size(), 1u);
   EXPECT_EQ(hit.endpoints[0].peer_id, "12D3New");
   ASSERT_EQ(hit.multiaddrs.size(), 1u);
   EXPECT_EQ(hit.multiaddrs[0], "/ip4/1.1.1.1/tcp/1");
   bool saw_legacy = false;
-  for (const ContactId& id : hit.ids) {
-    if (id.kind == ContactIdKind::PeerId && id.value == "12D3Legacy") {
+  for (const mesh::ContactId& id : hit.ids) {
+    if (id.kind == mesh::ContactIdKind::PeerId && id.value == "12D3Legacy") {
       saw_legacy = true;
     }
   }
@@ -142,7 +143,7 @@ TEST(ContactJsonCompat, DirectoryHitIgnoresTopLevelPeerId) {
 
 TEST(ContactJsonCompat, DirectoryHitMissingFloorDefaultsZero) {
   const Object json = MustParseObject(R"({"relay_user_id":"relay:y","nickname":"y"})");
-  const DirectoryHit hit = DirectoryHitFromJson(json);
+  const mesh::DirectoryHit hit = DirectoryHitFromJson(json);
   EXPECT_EQ(hit.initiation_floor, 0);
 }
 
@@ -157,7 +158,7 @@ TEST(ContactJsonCompat, ParsesDirectoryIconAndRoundTripsContactRemote) {
     }
   })");
 
-  const DirectoryHit hit = DirectoryHitFromJson(json);
+  const mesh::DirectoryHit hit = DirectoryHitFromJson(json);
   ASSERT_TRUE(hit.icon.has_value());
   EXPECT_EQ(hit.icon->url, "https://cdn.example/icon.jpg");
   EXPECT_EQ(hit.icon->blob_id, "blob-1");
@@ -175,7 +176,7 @@ TEST(ContactJsonCompat, ParsesDirectoryIconAndRoundTripsContactRemote) {
   EXPECT_EQ(again.remote.icon->url, hit.icon->url);
   EXPECT_EQ(again.remote.icon->blob_id, hit.icon->blob_id);
 
-  const DirectoryHit hit_again = DirectoryHitFromJson(DirectoryHitToJson(hit));
+  const mesh::DirectoryHit hit_again = DirectoryHitFromJson(DirectoryHitToJson(hit));
   ASSERT_TRUE(hit_again.icon.has_value());
   EXPECT_EQ(hit_again.icon->url, hit.icon->url);
 }

@@ -15,7 +15,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "common/SettledWait.h"
 #include "common/Utilities.h"
-#include "domain/mesh/shared/AmpParkUntil.h"
+#include "mesh/shared/AmpParkUntil.h"
 
 #include <filesystem>
 #include <functional>
@@ -26,6 +26,7 @@
 #include <unordered_map>
 #include <vector>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -163,7 +164,7 @@ public:
   int inbox_sync_requests = 0;
 };
 
-class FakeDialRegistry final : public IDialRegistry {
+class FakeDialRegistry final : public mesh::IDialRegistry {
 public:
   Roe<void> RegisterEndpoint(const std::string& peer_key, const std::string& multiaddr) override {
     endpoints[peer_key] = multiaddr;
@@ -190,7 +191,7 @@ public:
   std::unordered_map<std::string, bool> force_dialable;
 };
 
-class FakeMediaRelayClient final : public IMediaRelayClient {
+class FakeMediaRelayClient final : public mesh::IMediaRelayClient {
 public:
   Roe<std::string> LocalPeerIdBase58() const override {
     return local_peer_id;
@@ -198,8 +199,8 @@ public:
 
   bool IsStarted() const override { return started; }
 
-  Roe<MediaRelayQuote> RequestQuote(const std::string& hop_peer_key,
-                                    const MediaRelayQuoteRequest& request,
+  Roe<mesh::MediaRelayQuote> RequestQuote(const std::string& hop_peer_key,
+                                    const mesh::MediaRelayQuoteRequest& request,
                                     int /*timeout_ms*/) override {
     ++quote_calls;
     last_quote_hop = hop_peer_key;
@@ -207,7 +208,7 @@ public:
     if (!quote_ok) {
       return Error(quote_error);
     }
-    MediaRelayQuote q;
+    mesh::MediaRelayQuote q;
     q.ok = true;
     q.quote_id = "quote-" + std::to_string(quote_calls);
     q.a_up_bps = 64000;
@@ -216,11 +217,11 @@ public:
     return q;
   }
 
-  Roe<MediaRelayAttachResult> AcceptAndAttach(const std::string& /*hop_peer_key*/,
+  Roe<mesh::MediaRelayAttachResult> AcceptAndAttach(const std::string& /*hop_peer_key*/,
                                               const std::string& /*quote_id*/,
                                               const std::string& /*call_id*/,
                                               const std::string& /*auth_stub*/,
-                                              std::function<void(MediaDataFrame)> /*on_frame*/,
+                                              std::function<void(mesh::MediaDataFrame)> /*on_frame*/,
                                               int /*timeout_ms*/) override {
     ++attach_calls;
     if (!attach_ok) {
@@ -230,7 +231,7 @@ public:
       before_accept_done();
     }
     attached_ = true;
-    MediaRelayAttachResult r;
+    mesh::MediaRelayAttachResult r;
     r.ok = true;
     r.session_token = "tok";
     return r;
@@ -238,28 +239,28 @@ public:
 
   void StartClientFrameReader() override { ++reader_starts; }
 
-  uint64_t AddClientTransportLostObserver(std::function<void(MediaRelayClientLoss)> observer) override {
+  uint64_t AddClientTransportLostObserver(std::function<void(mesh::MediaRelayClientLoss)> observer) override {
     session_end_observers[next_observer_token] = std::move(observer);
     return next_observer_token++;
   }
   void RemoveClientTransportLostObserver(uint64_t token) override { session_end_observers.erase(token); }
 
-  void FireSessionEnd(MediaRelayClientLoss loss = MediaRelayClientLoss::TransportLost) {
+  void FireSessionEnd(mesh::MediaRelayClientLoss loss = mesh::MediaRelayClientLoss::TransportLost) {
     for (const auto& [token, observer] : session_end_observers) {
       (void)token;
       observer(loss);
     }
   }
 
-  Roe<MediaRelayAttachResult> AttachAsLocalHop(
-      const std::string& /*call_id*/, std::function<void(MediaDataFrame)> /*on_frame*/) override {
+  Roe<mesh::MediaRelayAttachResult> AttachAsLocalHop(
+      const std::string& /*call_id*/, std::function<void(mesh::MediaDataFrame)> /*on_frame*/) override {
     ++local_hop_calls;
     if (!local_hop_ok) {
       return Error(local_hop_error);
     }
     attached_ = true;
     local_hop_attached_ = true;
-    MediaRelayAttachResult r;
+    mesh::MediaRelayAttachResult r;
     r.ok = true;
     r.session_token = "local-tok";
     return r;
@@ -273,7 +274,7 @@ public:
     subscribed_channels.push_back(channel_id);
     return {};
   }
-  Roe<void> SendFrame(const MediaDataFrame& /*frame*/) override { return {}; }
+  Roe<void> SendFrame(const mesh::MediaDataFrame& /*frame*/) override { return {}; }
   void Detach() override {
     attached_ = false;
     local_hop_attached_ = false;
@@ -302,7 +303,7 @@ public:
   std::mutex subscribe_mu;
   std::vector<uint32_t> subscribed_streams;
   std::vector<uint16_t> subscribed_channels;
-  std::map<uint64_t, std::function<void(MediaRelayClientLoss)>> session_end_observers;
+  std::map<uint64_t, std::function<void(mesh::MediaRelayClientLoss)>> session_end_observers;
   uint64_t next_observer_token = 1;
   std::function<void()> before_accept_done;
 
@@ -375,7 +376,7 @@ protected:
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       };
     }
-    AmpParkUntil([&] { return wait.IsSettled(); }, std::chrono::steady_clock::now() + budget, pump);
+    mesh::AmpParkUntil([&] { return wait.IsSettled(); }, std::chrono::steady_clock::now() + budget, pump);
     return wait.Wait(std::chrono::milliseconds(1), Error("topology flow timed out"));
   }
 
@@ -592,8 +593,8 @@ TEST_F(CallTopologyControllerTest, PreferLocalOwnerHopOverInCallContact) {
   Contact b;
   b.id = "contact-b";
   b.display_name = "B";
-  b.ids = {{ContactIdKind::Account, "account:B", true},
-           {ContactIdKind::PeerId, "12D3KooWInCallB", false}};
+  b.ids = {{mesh::ContactIdKind::Account, "account:B", true},
+           {mesh::ContactIdKind::PeerId, "12D3KooWInCallB", false}};
   b.multiaddrs = {"/ip4/10.0.0.2/tcp/1/p2p/12D3KooWInCallB"};
   PromoteFlatFieldsToNested(b);
   SyncContactMirrors(b);
@@ -1349,8 +1350,8 @@ TEST_F(CallTopologyControllerTest, RelaySessionReplacedOrDetachedDoesNotReattach
   ASSERT_TRUE(AttachToHop(call_id, attach));
   const int attaches = relay_->attach_calls;
 
-  relay_->FireSessionEnd(MediaRelayClientLoss::Replaced);
-  relay_->FireSessionEnd(MediaRelayClientLoss::Detached);
+  relay_->FireSessionEnd(mesh::MediaRelayClientLoss::Replaced);
+  relay_->FireSessionEnd(mesh::MediaRelayClientLoss::Detached);
   for (int i = 0; i < 20; ++i) {
     AppRuntime::RunUIAndOwnerTasks();
     std::this_thread::sleep_for(std::chrono::milliseconds(5));

@@ -132,11 +132,11 @@ function(pp_browser_assert_no_ui_dependencies root_target)
 endfunction()
 
 # pp-node's first-party closure: foundation (headless *_core), common, the node's domain peers
-# (mesh / people / net), headless feature modules, and the Amp / common / crypto siblings. Any other
+# (people / net), pp-cpp-mesh (not its test harness), headless feature modules, and the Amp / common / crypto siblings. Any other
 # pp_* target reachable from root_target fails configure — widening the node is a deliberate edit here.
 set(PP_BROWSER_NODE_LINK_ALLOWLIST
   "^pp_foundation_(crypto|data|error|i18n|identity|platform_core|runtime_core)$"
-  "^pp_domain_mesh(_[a-z_]+)?$"
+  "^pp_mesh(_(types|shared|reachability|dht|discovery|circuit|media_relay|host|reach|connectivity|media_plane))?$"
   "^pp_domain_(people|net)$"
   "^pp_feature_(registration|node)$"
   "^pp_pbr_common$"

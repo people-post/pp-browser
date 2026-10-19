@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 #include <sstream>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace {
 
@@ -34,7 +35,7 @@ TEST_F(ContactsStoreTest, RemoveDeletesContactAndPersists) {
   contact.id = "contact-alice";
   contact.display_name = "Alice";
   contact.server_nickname = "alice";
-  contact.ids = {{ContactIdKind::RelayUser, "relay:alice123", true}};
+  contact.ids = {{mesh::ContactIdKind::RelayUser, "relay:alice123", true}};
   contact.trust = TrustLevel::Unknown;
 
   ASSERT_TRUE(static_cast<bool>(store.Upsert(contact))) << "upsert failed";
@@ -109,13 +110,13 @@ TEST_F(ContactsStoreTest, AddEmptyPersists) {
 TEST_F(ContactsStoreTest, AddFromDirectoryHitMergesByAccountAndPreservesLocal) {
   ContactsStore store(data_dir_.string());
 
-  DirectoryHit hit;
+  mesh::DirectoryHit hit;
   hit.hit_id = "relay:bob";
   hit.display_name = "Bob";
   hit.nickname = "bob";
   hit.account_id = "account:bob";
-  hit.ids = {{ContactIdKind::Account, "account:bob", true},
-             {ContactIdKind::RelayUser, "relay:bob", false}};
+  hit.ids = {{mesh::ContactIdKind::Account, "account:bob", true},
+             {mesh::ContactIdKind::RelayUser, "relay:bob", false}};
   hit.multiaddrs = {"/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWBob"};
 
   auto first = store.AddFromDirectoryHit(hit);
@@ -141,10 +142,10 @@ TEST_F(ContactsStoreTest, AddFromDirectoryHitMergesByAccountAndPreservesLocal) {
 
 TEST_F(ContactsStoreTest, AddFromDirectoryHitRequiresAccountId) {
   ContactsStore store(data_dir_.string());
-  DirectoryHit hit;
+  mesh::DirectoryHit hit;
   hit.hit_id = "relay:bob";
   hit.nickname = "bob";
-  hit.ids = {{ContactIdKind::RelayUser, "relay:bob", true}};
+  hit.ids = {{mesh::ContactIdKind::RelayUser, "relay:bob", true}};
   auto result = store.AddFromDirectoryHit(hit);
   ASSERT_FALSE(static_cast<bool>(result));
   EXPECT_NE(result.error().message.find("Account ID"), std::string::npos);
@@ -260,10 +261,10 @@ TEST_F(ContactsStoreTest, RejectsContactsOverProfileJsonFileSizeLimit) {
 TEST_F(ContactsStoreTest, DirectoryNicknameFillsAContactAddedFromABareId) {
   ContactsStore store(data_dir_.string());
 
-  DirectoryHit bare;
+  mesh::DirectoryHit bare;
   bare.hit_id = "account:stranger";
   bare.account_id = "account:stranger";
-  bare.ids = {{ContactIdKind::Account, "account:stranger", true}};
+  bare.ids = {{mesh::ContactIdKind::Account, "account:stranger", true}};
   auto added = store.AddFromDirectoryHit(bare);
   ASSERT_TRUE(static_cast<bool>(added)) << added.error().message;
   EXPECT_TRUE(added->local.display_name.empty());
@@ -271,7 +272,7 @@ TEST_F(ContactsStoreTest, DirectoryNicknameFillsAContactAddedFromABareId) {
               ContactEffectiveTitle(*added).find("stranger") != std::string::npos)
       << "before the lookup only the id is known: " << ContactEffectiveTitle(*added);
 
-  DirectoryHit answered = bare;
+  mesh::DirectoryHit answered = bare;
   answered.nickname = "Ada";
   auto filled = store.ApplyRemoteSnapshot(added->id, answered, 0);
   ASSERT_TRUE(static_cast<bool>(filled)) << filled.error().message;

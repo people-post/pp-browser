@@ -5,6 +5,7 @@
 #include "domain/people/MeshHopPolicy.h"
 
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -22,7 +23,7 @@ bool PeerAccountBook::Learn(const std::string& account, const std::string& peer_
 }
 
 void PeerAccountBook::LearnIntoContact(const std::string& account, const std::string& peer_id) {
-  auto found = contacts_.FindByIdentity(account, ContactIdKind::Account);
+  auto found = contacts_.FindByIdentity(account, mesh::ContactIdKind::Account);
   if (!found || !found->has_value()) {
     log().info << "PeerId learned map-only (no contact) peer_id=" << peer_id << " account=" << account;
     return;
@@ -31,12 +32,12 @@ void PeerAccountBook::LearnIntoContact(const std::string& account, const std::st
   if (PeerIdFromContact(contact) == peer_id) {
     return;
   }
-  for (const ContactId& id : contact.ids) {
-    if (id.kind == ContactIdKind::PeerId && id.value == peer_id) {
+  for (const mesh::ContactId& id : contact.ids) {
+    if (id.kind == mesh::ContactIdKind::PeerId && id.value == peer_id) {
       return;
     }
   }
-  contact.ids.push_back(ContactId{ContactIdKind::PeerId, peer_id, false});
+  contact.ids.push_back(mesh::ContactId{mesh::ContactIdKind::PeerId, peer_id, false});
   contact.remote.ids = contact.ids;
   PromoteFlatFieldsToNested(contact);
   SyncContactMirrors(contact);
@@ -57,7 +58,7 @@ Roe<std::optional<std::string>> PeerAccountBook::PeerIdForAccount(const std::str
       return std::optional<std::string>{peer_id};
     }
   }
-  auto found = contacts_.FindByIdentity(account, ContactIdKind::Account);
+  auto found = contacts_.FindByIdentity(account, mesh::ContactIdKind::Account);
   if (!found) {
     return found.error();
   }
@@ -81,7 +82,7 @@ Roe<std::optional<std::string>> PeerAccountBook::AccountForPeerId(const std::str
     if (candidate.empty()) {
       continue;
     }
-    auto found = contacts_.FindByIdentity(candidate, ContactIdKind::Account);
+    auto found = contacts_.FindByIdentity(candidate, mesh::ContactIdKind::Account);
     if (!found) {
       return found.error();
     }

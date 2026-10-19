@@ -8,6 +8,7 @@
 #include <fstream>
 #include <sstream>
 #include "common/PbrCompat.h"
+#include "common/MeshAlias.h"
 
 namespace pbr {
 
@@ -39,17 +40,17 @@ std::string SanitizeProfileIconCacheKey(const std::string& key) {
   return sanitized;
 }
 
-std::string ProfileIconCacheKeyForHit(const DirectoryHit& hit) {
-  for (const ContactId& id : hit.ids) {
-    if (id.kind == ContactIdKind::RelayUser && !id.value.empty()) {
+std::string ProfileIconCacheKeyForHit(const mesh::DirectoryHit& hit) {
+  for (const mesh::ContactId& id : hit.ids) {
+    if (id.kind == mesh::ContactIdKind::RelayUser && !id.value.empty()) {
       return SanitizeProfileIconCacheKey(id.value);
     }
   }
   if (hit.account_id && !hit.account_id->empty()) {
     return SanitizeProfileIconCacheKey(*hit.account_id);
   }
-  for (const ContactId& id : hit.ids) {
-    if (id.kind == ContactIdKind::Account && !id.value.empty()) {
+  for (const mesh::ContactId& id : hit.ids) {
+    if (id.kind == mesh::ContactIdKind::Account && !id.value.empty()) {
       return SanitizeProfileIconCacheKey(id.value);
     }
   }
@@ -60,10 +61,10 @@ std::string ProfileIconCacheKeyForHit(const DirectoryHit& hit) {
 }
 
 std::string ProfileIconCacheKeyForContact(const Contact& contact) {
-  if (const std::string relay = PrimaryIdOfKind(contact, ContactIdKind::RelayUser); !relay.empty()) {
+  if (const std::string relay = PrimaryIdOfKind(contact, mesh::ContactIdKind::RelayUser); !relay.empty()) {
     return SanitizeProfileIconCacheKey(relay);
   }
-  if (const std::string account = PrimaryIdOfKind(contact, ContactIdKind::Account); !account.empty()) {
+  if (const std::string account = PrimaryIdOfKind(contact, mesh::ContactIdKind::Account); !account.empty()) {
     return SanitizeProfileIconCacheKey(account);
   }
   return {};
@@ -183,7 +184,7 @@ Roe<void> ClearProfileIconCache(const std::string& profile_dir, const std::strin
 }
 
 bool ProfileIconNeedsFetch(const std::string& profile_dir, const std::string& cache_key,
-                           const ProfileIconRef& icon) {
+                           const mesh::ProfileIconRef& icon) {
   if (icon.url.empty() || cache_key.empty()) {
     return false;
   }
