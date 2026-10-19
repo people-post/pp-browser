@@ -171,6 +171,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
 
   mesh_connectivity_ = std::make_unique<MeshConnectivity>();
   mesh_media_relay_ = std::make_unique<MeshMediaRelay>(*mesh_connectivity_);
+  hop_policy_feed_ = std::make_unique<MeshHopPolicyFeed>(*mesh_connectivity_);
   stack_ = std::make_unique<CallStack>();
   if (auto stores = stack_->InitializeStores(store_->ProfileDbPath(), "call-probe"); !stores) {
     return stores.error();
@@ -251,7 +252,8 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   reach.list_dht_nodes = deps.list_dht_nodes;
   reach.seed_dial_ok = deps.seed_dial_ok;
   reach.register_direct_endpoint = deps.delivery.register_peer_direct_endpoint;
-  mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(std::move(reach)));
+  mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(reach));
+  hop_policy_feed_->SetInputs(std::move(reach));
   deps.connectivity = mesh_connectivity_.get();
   deps.media_relay = mesh_media_relay_.get();
 
@@ -279,6 +281,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
         });
   });
   stack_->DetachMeshMedia();
+  hop_policy_feed_->Start();
   mesh_connectivity_->Wire();
   mesh_media_relay_->Wire();
   stack_->OnMeshServicesStarted();
@@ -343,8 +346,8 @@ Roe<void> ProductStackHarness::UpsertPeerContact(const std::string& account_id,
   if (auto up = contacts_->Upsert(contact); !up) {
     return up.error();
   }
-  if (mesh_connectivity_) {
-    mesh_connectivity_->RefreshHopPolicy();  // contacts are rendezvous / punch-introducer candidates
+  if (hop_policy_feed_) {
+    hop_policy_feed_->PushSoon();  // contacts are rendezvous / punch-introducer candidates
   }
   if (stack_) {
     stack_->RunOnOwner([account_id, peer_id](CallSessionManager& calls) {
@@ -369,6 +372,7 @@ void ProductStackHarness::RefreshMeshMedia() {
   stack_->DetachMeshMedia();
   mesh_media_relay_->ResetRelayClient();
   mesh_connectivity_->ResetDialRegistry();
+  hop_policy_feed_->Start();
   mesh_connectivity_->Wire();
   mesh_media_relay_->Wire();
   stack_->RebindMeshMedia();
@@ -1185,6 +1189,9 @@ void ProductStackHarness::ShutdownImpl() {
     std::cerr << "warning: probe teardown quiesce budget exceeded" << std::endl;
   }
   ShutdownStep("stop-mesh");
+  if (hop_policy_feed_) {
+    hop_policy_feed_->Stop();  // its inputs read the mesh
+  }
   if (stack_ && host_) {
     // Same order as ConversationsHub::StopMesh (L015). Detach = destroy (product
     // DetachAmpTransports): nothing may outlive the Amp stack.

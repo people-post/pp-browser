@@ -122,6 +122,7 @@ ConversationsHub::ConversationsHub() {
   // even before Initialize builds the call session/media objects.
   mesh_connectivity_ = std::make_unique<MeshConnectivity>();
   mesh_media_relay_ = std::make_unique<MeshMediaRelay>(*mesh_connectivity_);
+  hop_policy_feed_ = std::make_unique<MeshHopPolicyFeed>(*mesh_connectivity_);
   call_stack_ = std::make_unique<CallStack>();
 }
 
@@ -190,7 +191,8 @@ CallStackDeps ConversationsHub::MakeCallStackDeps() {
   reach.seed_dial_ok = deps.seed_dial_ok;
   reach.note_lan_peer_id = deps.note_lan_mdns_peer_id;
   reach.register_direct_endpoint = deps.delivery.register_peer_direct_endpoint;
-  mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(std::move(reach)));
+  mesh_connectivity_->SetDeps(MakeMeshConnectivityDeps(reach));
+  hop_policy_feed_->SetInputs(std::move(reach));
   deps.connectivity = mesh_connectivity_.get();
   deps.media_relay = mesh_media_relay_.get();
   return deps;
@@ -350,7 +352,8 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
       ApplyMeshAdmissionPolicies();
       PublishNodeAdvertisedAddrs();
       RegisterContactEndpoints();
-      mesh_connectivity_->RefreshHopPolicy();  // advertised addrs follow the probe (media consumers' view)
+      mesh_connectivity_->RefreshLocalView();  // advertised addrs follow the probe (media consumers' view)
+      hop_policy_feed_->PushSoon();            // seed reachability gates the rendezvous surface
       NoteObservedAddress();
       if (on_reachability_updated_) {
         on_reachability_updated_();
@@ -407,6 +410,7 @@ void ConversationsHub::StartMeshServices() {
 
   ApplyMeshAdmissionPolicies();
   call_stack_->DetachMeshMedia();
+  hop_policy_feed_->Start();  // the policy is in before connectivity wires
   mesh_connectivity_->Wire();
   mesh_media_relay_->Wire();
   call_stack_->OnMeshServicesStarted();
@@ -764,6 +768,7 @@ void ConversationsHub::StopMesh() {
   // MeshHost::Stop (media_relay, circuit, dial-back, runtime; joins workers) → call-media freed →
   // dial registry / circuit reach freed.
   MeshHost* mesh = mesh_.get();
+  hop_policy_feed_->Stop();  // its inputs read the mesh
   mesh_connectivity_->InvalidateAsyncOps();
   call_stack_->PrepareForMeshStop([mesh]() {
     if (mesh) {
@@ -1203,7 +1208,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
       RegisterMeshDirectoryEndpoints();
       ConfigureAmpDhtProtocol();
       ConfigureAmpDirectoryProtocol();
-      mesh_connectivity_->RefreshHopPolicy();  // directory nodes are rendezvous / seed candidates
+      hop_policy_feed_->PushSoon();  // directory nodes are rendezvous / seed candidates
     });
     mesh_directory_cache_->RequestRefresh();
   }
@@ -2395,6 +2400,7 @@ void ConversationsHub::RefreshMeshCapabilities() {
   ConfigureAmpDhtProtocol();
   ConfigureAmpDirectoryProtocol();
   ApplyMeshAdmissionPolicies();
+  hop_policy_feed_->Start();  // pushes now: the role may have changed what is a candidate
   mesh_connectivity_->Wire();
   mesh_media_relay_->Wire();
   call_stack_->RebindMeshMedia();
@@ -2682,6 +2688,7 @@ void ConversationsHub::Shutdown() {
   // Reset media engine / key store / session store after DEK unregister above.
   call_stack_->Shutdown();
   mesh_media_relay_->Clear();
+  hop_policy_feed_->Stop();
   mesh_connectivity_->Clear();
   psk_store_.reset();
   inbox_.reset();

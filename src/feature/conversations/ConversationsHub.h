@@ -12,6 +12,7 @@
 #include "feature/conversations/ContactActionDispatcher.h"
 #include "feature/conversations/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
+#include "feature/conversations/MeshConnectivityWiring.h"
 #include "feature/conversations/PeerDisplayResolver.h"
 #include "domain/messaging/PeerKemKeyStore.h"
 #include "domain/messaging/GroupRosterStore.h"
@@ -444,6 +445,8 @@ private:
   std::unique_ptr<MeshConnectivity> mesh_connectivity_;
   /** The media_relay client, built on connectivity (declared after it: goes first). */
   std::unique_ptr<MeshMediaRelay> mesh_media_relay_;
+  /** Pushes the candidate policy into connectivity while the mesh runs (declared after it: goes first). */
+  std::unique_ptr<MeshHopPolicyFeed> hop_policy_feed_;
 
   // --- CallStack (app-only) ------------------------------------------------
   std::unique_ptr<CallStack> call_stack_;

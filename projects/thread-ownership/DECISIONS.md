@@ -3,7 +3,7 @@
 ## T001 — Four owners; calls and broadcast share one media-sessions thread
 
 **Date:** 2026-09-27
-**Status:** Accepted — outcome superseded by [THREADING.md § Owner threads](../../docs/architecture/THREADING.md#owner-threads) (rationale stays here)
+**Status:** Accepted — outcome superseded by [THREADING.md § Owner threads](../../docs/architecture/THREADING.md#owner-threads) (rationale stays here); the Connectivity owner is superseded by [THREADING.md § Mesh threads](../../docs/architecture/THREADING.md#mesh-threads-control-runs-on-the-io-lane) (2026-10-19: mesh control runs on the I/O lane once the app pushes its policy inputs)
 **Decision:** Mesh I/O (MeshPump, as today: Amp drive + L4 protocol engines), Connectivity (new), Media sessions (new: calls **and** broadcast control), UI. Worker pool for blocking work; real-time media threads unchanged; coordinator shrinks to timers; MeshControl retires when sync waits are gone.
 **Rationale:** Mesh I/O already is a protocol-engine thread and must stay one (channel sessions are IO-affine; lock order depends on it) — what leaks onto it is product policy, which moves to Connectivity. Calls and broadcast drive the same engine, device arbiter and relay client, so one media-sessions owner turns "call + broadcast at once" into scheduling instead of locking. Dedicated named threads (not strands on a pool): two new threads, readable TSan / stack traces, trivial affinity asserts.
 **Consequence:** UI stops owning call state; `CallUiBackend` queries become snapshot reads (t4).
@@ -31,7 +31,7 @@
 ## T004 — Waits between owners go downward only; mesh waits are completions
 
 **Date:** 2026-09-27
-**Status:** Accepted (t2b-3, t3-1, t3-2) — outcome superseded by [THREADING.md § Owner threads](../../docs/architecture/THREADING.md#owner-threads) (rationale stays here)
+**Status:** Accepted (t2b-3, t3-1, t3-2) — outcome superseded by [THREADING.md § Owner threads](../../docs/architecture/THREADING.md#owner-threads) (rationale stays here); the Connectivity rung leaves the hierarchy with [THREADING.md § Mesh threads](../../docs/architecture/THREADING.md#mesh-threads-control-runs-on-the-io-lane) (UI → Media sessions → Mesh I/O)
 **Decision:**
 - **Hierarchy:** UI → Media sessions → Connectivity → Mesh I/O. A component's lifecycle edge (build, rewire, reset, teardown) may `AppRuntime::RunAndWait` on an owner **below** its caller: the hub (UI) on the calls owner (`CallsThread::RunAndWait`) or on connectivity (`MeshMediaPlane` edges); the calls owner on connectivity (plane hooks). Upward is always a post (results, notices, hub callbacks). Nothing below waits on anything above, so a wait cannot close a cycle.
 - **Steady-state traffic never waits:** intents, notices and completions are posts; `RunAndWait` is for the edges where the caller must know the owner's objects are rebound or gone before it continues (L015 sequencing, destruction).

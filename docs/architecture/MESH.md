@@ -152,8 +152,9 @@ The mesh leaves for its own library, [pp-cpp-mesh](https://github.com/people-pos
 | `pp-browser` | feature + app, **pp-node** (an app on pp-cpp-mesh), call media (`l4/call_media`: client-side call logic), policy (`MeshHopPolicy`, `SoftMigrateLogic`) |
 
 **Rules for the library:** it depends on pp-cpp-common, pp-cpp-amp and pp-cpp-crypto only; it carries
-protocols and bytes, product types stay in pp-browser; it does not use the app's threads directly — the
-app gives it an executor (work, coordinator, timers) built on `AppRuntime`.
+protocols and bytes, product types stay in pp-browser; it does not use the app's threads directly —
+control runs on its I/O lane and the host gives each instance `work` / `blocking` executors; it never
+calls app code synchronously ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane)).
 
 **Untangling first, in place.** Each PR removes mesh includes of pp-browser headers, keeping
 pp-browser green; `scripts/check/check_mesh_layers.sh` fails any such include not on its
@@ -164,7 +165,7 @@ shrinks. Then the move, with history; mesh tests come along clean too.
 |------|---|
 | Mesh config types out of the app's `Config` (`foundation/data/MeshConfigTypes.h`) | done |
 | `DeferredSelf` → `pp::Lifetime` (pp-cpp-common), app-wide | done |
-| Executor port in place of `AppRuntime` | |
+| Mesh threads in place of `AppRuntime` ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane), which tracks the steps) | in progress |
 | `l4/call_media` out of the mesh (and `host`'s edge to it); product `common/` types (chat, thread, media health) out of mesh code | |
 | PeerId derivation and multiaddr helpers into pp-cpp-amp; ML-DSA / cipher wrappers onto pp-cpp-crypto | |
 | Mesh-owned `common/` types (directory, address disclosure, public address, metrics) and generic helpers (`PbrCompat`, `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `AtomicFileWrite`) | |
