@@ -499,7 +499,7 @@ void CallController::RefreshPendingRing() {
   if (auto media_err = backend->TakeLastMediaError(); media_err && !media_err->empty()) {
     // SoftMigrate / hop failures need a sticky banner — toast (even Long=6s) vanishes before
     // users can read multi-hop diagnostics.
-    UserFeedback::NeedsSetup(PaymentErrorUserMessage(*media_err));
+    UserFeedback::NeedsSetup(PaymentErrorUserMessage(*media_err), /*sticky=*/true);
   }
   // The peer ended a call we were in (also a failed one — failed is not closed): the panel is
   // about to go, so say why instead of letting the call silently vanish.

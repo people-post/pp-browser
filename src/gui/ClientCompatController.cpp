@@ -135,7 +135,7 @@ void ClientCompatController::PresentAction(CompatUiAction action, const ClientCo
     soft_banner_shown_ = true;
     const std::string message =
         doc.message.empty() ? Tr("compat.update_available.message") : doc.message;
-    UserFeedback::NeedsSetup(message);
+    UserFeedback::NeedsSetup(message, /*sticky=*/true); // once per session; must outlive a glance away
   }
 }
 

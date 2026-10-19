@@ -2943,11 +2943,11 @@ void ShellHost::Update(ui::Context* context) {
   // Must match ShellFeedback::ShowToast's default clock (steady_clock).
   using clock = std::chrono::steady_clock;
   const auto now = clock::now();
-  elapsed_ms_ = static_cast<float>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+  elapsed_ms_ = ShellFeedback::NowMs();
   const size_t toast_count_before = state_.toasts.size();
   ShellFeedback::ExpireToasts(state_, elapsed_ms_);
-  if (state_.toasts.size() != toast_count_before) {
+  const bool banner_gone = ShellFeedback::ExpireBanner(state_, elapsed_ms_);
+  if (state_.toasts.size() != toast_count_before || banner_gone) {
     DirtyFeedback();
   }
 
@@ -2992,7 +2992,7 @@ void ShellHost::NotifyFrameEnd(ui::Context* context) {
     delay_sec = std::min(delay_sec, std::max(0.0, remaining));
   }
 
-  const double toast_delay = ShellFeedback::SecondsUntilNextToastExpiry(state_, elapsed_ms_);
+  const double toast_delay = ShellFeedback::SecondsUntilNextFeedbackExpiry(state_, elapsed_ms_);
   if (toast_delay >= 0.0) {
     delay_sec = std::min(delay_sec, toast_delay);
   }

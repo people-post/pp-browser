@@ -13,9 +13,18 @@ struct ShellFeedback {
                         float now_ms = 0.f);
   static void ExpireToasts(ShellState& state, float now_ms);
   /** Seconds until the soonest toast expiry, or < 0 if none. Used to arm power-save wake. */
-  static double SecondsUntilNextToastExpiry(const ShellState& state, float now_ms);
-  static void ShowBanner(ShellState& state, const std::string& message);
+  static double SecondsUntilNextFeedbackExpiry(const ShellState& state, float now_ms);
+  /** Long enough to read one sentence, then gone; nobody wants to hunt for the × (Kenneth 2026-10-19). */
+  static constexpr float kBannerTtlMs = 5000.f;
+  /** `now_ms` ≤ 0 means the wall clock (NowMs), like ShowToast. Showing again restarts the clock. */
+  static void ShowBanner(ShellState& state, const std::string& message, float now_ms = 0.f);
+  /** Stays until dismissed: for things the user must act on (update available, AI not set up, call diagnostics). */
+  static void ShowStickyBanner(ShellState& state, const std::string& message);
   static void DismissBanner(ShellState& state);
+  /** True when the banner just expired (caller refreshes the chrome). */
+  static bool ExpireBanner(ShellState& state, float now_ms);
+  /** Steady-clock milliseconds: the one clock toasts, banners and ShellHost::Update share. */
+  static float NowMs();
   static void ShowAlert(ShellState& state, const std::string& title, const std::string& message,
                         std::function<void()> on_ok = {}, const std::string& ok_label = {});
   static void ShowConfirm(ShellState& state, const std::string& title, const std::string& message,

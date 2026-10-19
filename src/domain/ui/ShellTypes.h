@@ -333,6 +333,8 @@ struct ShellState {
   ui::String primary_pane_key;
 
   ui::String banner_message;
+  /** Banners go away on their own (ShellFeedback::kBannerTtlMs); 0 = none showing. */
+  float banner_expires_at_ms = 0.f;
   std::vector<ToastEntry> toasts;
   DialogState dialog;
   PinGateState pin_gate;

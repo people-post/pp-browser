@@ -35,12 +35,7 @@ float DurationMs(ToastDuration duration) {
 /** Default ShowToast now_ms is 0; treat that as "use wall clock" so callers that omit
  *  timing still expire correctly under power-save (idle frames can be seconds apart). */
 float ResolveNowMs(float now_ms) {
-  if (now_ms > 0.f) {
-    return now_ms;
-  }
-  using clock = std::chrono::steady_clock;
-  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(clock::now().time_since_epoch());
-  return static_cast<float>(ms.count());
+  return now_ms > 0.f ? now_ms : ShellFeedback::NowMs();
 }
 
 } // namespace
@@ -63,11 +58,13 @@ void ShellFeedback::ExpireToasts(ShellState& state, float now_ms) {
                      state.toasts.end());
 }
 
-double ShellFeedback::SecondsUntilNextToastExpiry(const ShellState& state, float now_ms) {
-  if (state.toasts.empty()) {
+double ShellFeedback::SecondsUntilNextFeedbackExpiry(const ShellState& state, float now_ms) {
+  // The banner counts too: an idle (power-save) loop must still wake up to take it down.
+  const bool banner = !state.banner_message.empty() && state.banner_expires_at_ms > 0.f;
+  if (state.toasts.empty() && !banner) {
     return -1.0;
   }
-  float soonest_ms = state.toasts.front().expires_at_ms;
+  float soonest_ms = banner ? state.banner_expires_at_ms : state.toasts.front().expires_at_ms;
   for (const ToastEntry& toast : state.toasts) {
     soonest_ms = std::min(soonest_ms, toast.expires_at_ms);
   }
@@ -78,12 +75,33 @@ double ShellFeedback::SecondsUntilNextToastExpiry(const ShellState& state, float
   return static_cast<double>(remaining_ms) / 1000.0;
 }
 
-void ShellFeedback::ShowBanner(ShellState& state, const std::string& message) {
+float ShellFeedback::NowMs() {
+  using clock = std::chrono::steady_clock;
+  return static_cast<float>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(clock::now().time_since_epoch()).count());
+}
+
+void ShellFeedback::ShowBanner(ShellState& state, const std::string& message, const float now_ms) {
   state.banner_message = ui::String(message.c_str());
+  state.banner_expires_at_ms = ResolveNowMs(now_ms) + kBannerTtlMs;
+}
+
+void ShellFeedback::ShowStickyBanner(ShellState& state, const std::string& message) {
+  state.banner_message = ui::String(message.c_str());
+  state.banner_expires_at_ms = 0.f;
 }
 
 void ShellFeedback::DismissBanner(ShellState& state) {
   state.banner_message = {};
+  state.banner_expires_at_ms = 0.f;
+}
+
+bool ShellFeedback::ExpireBanner(ShellState& state, const float now_ms) {
+  if (state.banner_message.empty() || state.banner_expires_at_ms <= 0.f || now_ms < state.banner_expires_at_ms) {
+    return false;
+  }
+  DismissBanner(state);
+  return true;
 }
 
 void ShellFeedback::ShowAlert(ShellState& state, const std::string& title, const std::string& message,
