@@ -10,7 +10,8 @@
 #include "domain/mesh/l4/media_relay/client/MediaRelayClientCoordinator.h"
 #include "domain/mesh/l4/circuit/client/CircuitClientCoordinator.h"
 #include "domain/mesh/l4/media_relay/MediaRelayTypes.h"
-#include "foundation/identity/PeerIdUtil.h"
+#include "amp/link/PeerId.h"
+#include "crypto/PeerId.h"
 
 #include "common/Logger.h"
 
@@ -213,13 +214,7 @@ std::string RewriteListenHost(std::string multiaddr, const std::string& host) {
 
 pp::amp::PeerLinkConfig MakeProbeLinkConfig() {
   pp::amp::PeerLinkConfig config;
-  config.peer_id_from_identity = [](const pbr::ByteVector& identity_public_key) -> std::string {
-    auto peer_id = pbr::PeerIdFromMlDsaPublicKey(identity_public_key);
-    if (!peer_id) {
-      return {};
-    }
-    return *peer_id;
-  };
+  config.peer_id_from_identity = pp::amp::PeerIdFromIdentityKey;
   return config;
 }
 
@@ -267,7 +262,7 @@ pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pp::adp::IpEndpoint& bind_e
   if (!keys) {
     return keys.error();
   }
-  auto peer_id = pbr::PeerIdFromMlDsaPublicKey(keys->public_key);
+  auto peer_id = pp::PeerIdFromMlDsaPublicKey(keys->public_key);
   if (!peer_id) {
     return peer_id.error();
   }

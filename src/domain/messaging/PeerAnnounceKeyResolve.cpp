@@ -1,7 +1,7 @@
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
 
 #include "foundation/crypto/CryptoUtil.h"
-#include "foundation/identity/PeerIdUtil.h"
+#include "crypto/PeerId.h"
 
 #include "common/directory/DirectoryJson.h"
 
@@ -27,7 +27,7 @@ std::optional<std::vector<uint8_t>> ResolvePeerAnnouncePublisherKey(
   if (!pk || pk->empty()) {
     return std::nullopt;
   }
-  if (auto derived = PeerIdFromMlDsaPublicKey(*pk); !derived || *derived != tip_peer_id) {
+  if (auto derived = pp::PeerIdFromMlDsaPublicKey(*pk); !derived || *derived != tip_peer_id) {
     return std::nullopt;
   }
   return *pk;

@@ -44,7 +44,7 @@ flowchart TB
 ```
 domain/mesh/
   host/           MeshHost, MeshIdentityConfig, MeshPorts (IChatPeerLinks)
-  shared/         AmpChannelOpen, AmpParkUntil (PeerId derivation: foundation/identity)
+  shared/         AmpChannelOpen, AmpParkUntil (PeerId derivation: pp-cpp-crypto, MESH_IDENTITY.md)
   reachability/   Below MeshHost: Reachability(Engine), NAT, LAN mDNS, observed addrs;
                   dial_back/ (serve/ DialBackServer, client/ DialBackClient);
                   punch/ (AmpPunchCoordinator owns serve/ PunchServer — introducer + target — and
@@ -147,7 +147,8 @@ The mesh leaves for its own library, [pp-cpp-mesh](https://github.com/people-pos
 
 | Package | Contents |
 |---------|----------|
-| `pp-cpp-amp` | L1–L3 + link; also PeerId derivation (from `foundation/identity`, shared with pp-ledger) |
+| `pp-cpp-amp` | L1–L3 + link; links name peers by their PeerId (`PeerIdFromIdentityKey`); `PeerIdFromMultiaddr` |
+| `pp-cpp-crypto` | ML-DSA / ML-KEM, the AEAD (`XChaCha20Poly1305`), and the PeerId derivation ([MESH_IDENTITY.md](MESH_IDENTITY.md)) |
 | `pp-cpp-mesh` | `domain/mesh` — host, connectivity, DHT, discovery, reach, reachability, circuit and media relay (both ends), media plane — with the types it owns; namespace `pp::mesh`, includes `mesh/…` |
 | `pp-browser` | feature + app, **pp-node** (an app on pp-cpp-mesh), call media (`feature/call_media`: pp-browser's realtime protocol, a client of the mesh), policy (`MeshHopPolicy`, `SoftMigrateLogic`) |
 
@@ -167,7 +168,7 @@ shrinks. Then the move, with history; mesh tests come along clean too.
 | `DeferredSelf` → `pp::Lifetime` (pp-cpp-common), app-wide | done |
 | Mesh threads in place of `AppRuntime` ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane)): control on the io lane, `work` / `blocking` executors per instance, one driver | done |
 | `l4/call_media` out of the mesh (now `feature/call_media`); `host` names no app protocol (`MeshHost::SetAppProtocols`; pp-node advertises none); product `common/` types (chat, thread, media health) out of mesh code (`MediaRelayClientHealth`) | done |
-| PeerId derivation and multiaddr helpers into pp-cpp-amp; ML-DSA / cipher wrappers onto pp-cpp-crypto | |
+| PeerId derivation into pp-cpp-crypto (below the network stack: product code derives PeerIds too) and the link hook / multiaddr helper into pp-cpp-amp; ML-DSA and the AEAD from pp-cpp-crypto (`XChaCha20Poly1305`, which `MessageCipher` now forwards to) | done |
 | Mesh-owned `common/` types (directory, address disclosure, public address, metrics) and generic helpers (`PbrCompat`, `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `AtomicFileWrite`) | |
 | The move (pp-cpp-amp ≥ the pin pp-ledger needs) | |
 

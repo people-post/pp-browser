@@ -16,7 +16,8 @@
 #include "feature/call_media/ICallMediaTransport.h"
 #include "domain/mesh/host/MeshPorts.h"
 #include "domain/messaging/CallTypes.h"
-#include "foundation/identity/PeerIdUtil.h"
+#include "amp/link/PeerId.h"
+#include "crypto/PeerId.h"
 #include "feature/conversations/AmpDirectChatTransport.h"
 #include "common/chat/IDirectMessageClient.h"
 #include "common/Utilities.h"
@@ -231,13 +232,7 @@ pp::amp::PeerLinkConfig MakeProbeLinkConfig() {
   // keep NAT/mapping fresh so circuit StartBridge still finds the answerer on the hop.
   config.keepalive_hot_interval = std::chrono::milliseconds(2000);
   config.keepalive_warm_interval = std::chrono::milliseconds(2000);
-  config.peer_id_from_identity = [](const pbr::ByteVector& identity_public_key) -> std::string {
-    auto peer_id = pbr::PeerIdFromMlDsaPublicKey(identity_public_key);
-    if (!peer_id) {
-      return {};
-    }
-    return *peer_id;
-  };
+  config.peer_id_from_identity = pp::amp::PeerIdFromIdentityKey;
   return config;
 }
 
@@ -277,7 +272,7 @@ pbr::Roe<std::unique_ptr<AmpPeer>> MakeAmpPeer(const pp::adp::IpEndpoint& bind_e
   if (!keys) {
     return keys.error();
   }
-  auto peer_id = pbr::PeerIdFromMlDsaPublicKey(keys->public_key);
+  auto peer_id = pp::PeerIdFromMlDsaPublicKey(keys->public_key);
   if (!peer_id) {
     return peer_id.error();
   }

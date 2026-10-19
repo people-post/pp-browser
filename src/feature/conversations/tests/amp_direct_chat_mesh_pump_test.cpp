@@ -9,7 +9,7 @@
 #include "domain/mesh/tests/support/mesh_harness_support.h"
 #include "domain/messaging/RelayWirePayload.h"
 #include "foundation/crypto/MlDsa.h"
-#include "foundation/identity/PeerIdUtil.h"
+#include "crypto/PeerId.h"
 
 #include "foundation/runtime/AppRuntime.h"
 
@@ -36,7 +36,7 @@ Roe<PumpedHost> MakePumpedHost() {
   if (!keys) {
     return keys.error();
   }
-  auto peer_id = PeerIdFromMlDsaPublicKey(keys->public_key);
+  auto peer_id = pp::PeerIdFromMlDsaPublicKey(keys->public_key);
   if (!peer_id) {
     return peer_id.error();
   }

@@ -20,7 +20,7 @@ pp-browser is a native AI-oriented UI shell:
 
 - **SDL3 + OpenGL3** — product window host in `src/foundation/platform/ui/`; reusable Platform_SDL / Renderer_GL3 in [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui)
 - **First-party UI engine** — layout via FetchContent / sibling [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (`ui::` / `#include <ui/…>`; RmlUi-derived)
-- **PeerId** — derived in-tree in `src/foundation/identity/` (base58 / multihash / ML-DSA key wire); the mesh underlay is Amp
+- **PeerId** — derived by [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto) (`crypto/PeerId.h`: ML-DSA key wire / multihash / base58); the mesh underlay is Amp
 - **Third-party libs** — curl and shared deps in [`third_party/`](third_party/); JSON via [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common) (`Value`/`Object`); libsodium + PQ via [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType / HarfBuzz / LunaSVG + SDL3 / SDL3_image via pp-cpp-ui
 - **Layered source tree** — FetchContent `pp-cpp-common` + `pp-cpp-crypto` + `pp-cpp-amp` + `pp-cpp-ui` + `src/common/`, `src/foundation/`, `src/domain/`, `src/feature/`, `src/gui/`, `src/app/` — North Star: `app → feature → domain → foundation → common` in [docs/architecture/SRC_LAYOUT.md](docs/architecture/SRC_LAYOUT.md)
 
@@ -43,7 +43,7 @@ We **own and modify** the engine in sibling [`pp-cpp-ui`](https://github.com/peo
 
 ## Mesh identity (PeerId)
 
-PeerId derivation lives in [`src/foundation/identity/`](src/foundation/identity/) — spec and golden vectors in [docs/architecture/MESH_IDENTITY.md](docs/architecture/MESH_IDENTITY.md). Mesh / dial / mux lives in [**pp-cpp-amp**](https://github.com/people-post/pp-cpp-amp) (FetchContent; `#include "amp/..."`) + [`src/domain/mesh/`](src/domain/mesh/). There is no libp2p fork in the tree.
+PeerId derivation lives in pp-cpp-crypto (`pp::PeerIdFromMlDsaPublicKey`) — spec and golden vectors in [docs/architecture/MESH_IDENTITY.md](docs/architecture/MESH_IDENTITY.md). Mesh / dial / mux lives in [**pp-cpp-amp**](https://github.com/people-post/pp-cpp-amp) (FetchContent; `#include "amp/..."`) + [`src/domain/mesh/`](src/domain/mesh/). There is no libp2p fork in the tree.
 
 - Shared vendored deps (BoringSSL, fmt, …) come from `cmake/libp2p_dependencies.cmake`; import or bump them with `./scripts/vendor/libp2p_vendor_import.sh` (both named after the retired fork).
 
