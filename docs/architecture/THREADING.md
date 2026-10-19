@@ -190,7 +190,7 @@ Shared Amp helpers live under `pp-cpp-amp` + `domain/mesh/`. Frame size caps: `p
 
 ### Mesh threads: control runs on the I/O lane
 
-**Decided and in place 2026-10-19** (steps below; lifecycle edges as events come later). Supersedes the Connectivity owner of T001 and the
+**Decided and in place 2026-10-19** (steps below). Supersedes the Connectivity owner of T001 and the
 Connectivity rung of T004's hierarchy ([projects/thread-ownership](../../projects/thread-ownership/DECISIONS.md));
 the rest of both stands. Written for the mesh as a library ([MESH.md § Extraction](MESH.md#extraction-to-pp-cpp-mesh)).
 
@@ -232,7 +232,16 @@ host. A dedicated Connectivity thread also outlived the runtime its timers ran a
 | Off-lane work through `work` / `blocking` executors given per instance (`MeshExecutors`: `MeshHost`, `MediaRelayAttach`, `MeshDirectoryCache` without UI delivery) | done |
 | Mesh control onto the I/O lane: `MeshConnectivity`, `PeerReachCoordinator`, `CircuitRendezvousCoordinator`, `ReachabilityEngine`, `MeshMediaRelay`; the Connectivity owner retires | done |
 | MeshPump claims the driver (`MeshRuntime::ClaimDriver`); pp-node stops ticking beside it; the DHT's self-publish is an io tick | done |
-| Lifecycle edges as events instead of waits (THREADING § Owner runners style) — later, separately | |
+| Lifecycle edges as events instead of waits (THREADING § Owner runners style) | kept synchronous (decided 2026-10-19) |
+
+**Lifecycle edges stay synchronous.** The waits left are lifecycle edges only — mesh start, stop and
+teardown, a rewire on a network-settings change (`RefreshMeshCapabilities`), messaging bring-up, and
+the calls stack binding its connectivity hooks — rare and user- or bring-up-driven, never steady-state
+traffic. Each is bounded: a wait on the io lane is its lock for at most a drive turn (~5 ms) plus the
+edge's own work, and a wait on the calls owner is its current task (owners never block); waits go one
+way (hub → calls owner → io lane), so none can close a cycle. Turning them into events (an async hub
+mesh lifecycle, an async quit) would cost far more than it saves; revisit if a rewire ever shows as a
+UI stall. In the mesh library edges stay `RunAndWait` on the io lane — simple for every embedder.
 
 ---
 
