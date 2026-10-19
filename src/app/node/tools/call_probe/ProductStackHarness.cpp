@@ -36,6 +36,7 @@
 #include <sstream>
 #include <thread>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace call_probe {
@@ -94,7 +95,7 @@ Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
   harness->local_peer_id_ = stack->LocalPeerId();
   harness->shared_session_key_ = SharedSessionKey();
 
-  harness->host_ = std::make_unique<MeshHost>(AppRuntimeMeshExecutors());
+  harness->host_ = std::make_unique<MeshHost>(AppRuntimeMeshExecutors(), MetricsRegistry::Global());
   harness->host_->SetAppProtocols(ProductMeshProtocols());
   harness->host_->SetAddressDisclosure(&harness->address_disclosure_);
   // Own MeshPump like the product: with the main thread as sole Amp driver, any main-thread wait

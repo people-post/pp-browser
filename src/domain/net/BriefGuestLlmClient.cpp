@@ -3,6 +3,7 @@
 #include "foundation/error/AppError.h"
 #include "domain/net/HttpClient.h"
 #include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 

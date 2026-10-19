@@ -77,7 +77,7 @@ Two buckets only:
 
 | Bucket | Examples | Not here |
 |--------|----------|----------|
-| **Basics** | `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `PbrCompat`, `ArgsText`, `AttachmentDownloadPolicy`, startup timing | SQLite, curl, SDL, RmlUi, Amp |
+| **Basics** | `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `PbrCompat` (pp-cpp-common's `ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry` in `pbr`), `ArgsText`, `AttachmentDownloadPolicy`, startup timing | SQLite, curl, SDL, RmlUi, Amp |
 | **Domain contracts** | Ports (`IThreadStore`-shaped APIs, blob/relay interfaces), shared ids/enums, narrow DTOs two+ peers must name | Full codecs, stores, hubs, UI ports |
 
 Guardrails:

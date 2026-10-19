@@ -9,6 +9,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace {
 

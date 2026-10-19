@@ -23,7 +23,7 @@ Do **not** move media codecs, camera, or call audio-session backends into `found
 Hard rules:
 
 1. **OS `#ifdef`s belong in dedicated backend files** (naming below) or in `foundation/platform/` (including `platform/ui/`). Portable TUs (`CallMediaEngine.cpp`, `LanMdnsDiscovery.cpp`, `Reachability.cpp`, feature/app logic) call portable APIs only.
-2. **Other layers call portable APIs** — `Platform::`, `IPathProvider`, `OsFile`, `IVideoCodec`, `CallAudioSession`, etc. No Win32, POSIX, or JNI headers outside backend files and `foundation/platform/` (including `platform/ui/` GL integration).
+2. **Other layers call portable APIs** — `Platform::`, `IPathProvider`, `IVideoCodec`, `CallAudioSession`, etc. No Win32, POSIX, or JNI headers outside backend files and `foundation/platform/` (including `platform/ui/` GL integration).
 3. **Runtime dispatch preferred over `#ifdef` in business logic** — use `Platform::Detect()` / `Platform::IsMobile()` when behavior differs by mobile vs desktop, not by OS family.
 4. **Process runtime** (threads, lifecycle, branding) lives in [`src/foundation/runtime/`](../../src/foundation/runtime/) — not here.
 5. **Public headers must not expose OS types** (`SOCKET`, `HANDLE`, `NativeSocket`). Hide them in the `.cpp` or a private impl header.
@@ -38,7 +38,7 @@ Hard rules:
 | `foundation/platform/PlatformHooks.*` | Registers Android/iOS/desktop implementations at startup |
 | `foundation/platform/ui/SdlAppEvents.*`, `AppEventHooks.*` | SDL lifecycle / input pre-process → `AppLifecycle` / Backend |
 | `foundation/platform/ui/` | `RmlUi_Backend.h`, `BrowserHost`, overlays, desktop window chrome, navigation-via-Backend |
-| `foundation/platform/os/` | Low-level OS primitives (`OsFile`, `OsProcess`, `OsTlsCaPath` / `OsTlsPlatformCurl`, executable path). Civil time is implemented in `common/CivilTime` and re-exported as `pbr::os::{TimeGm,LocalTime,UtcTime}`. |
+| `foundation/platform/os/` | Low-level OS primitives (`OsProcess`, `OsTlsCaPath` / `OsTlsPlatformCurl`, executable path). Civil time is implemented in `common/CivilTime` and re-exported as `pbr::os::{TimeGm,LocalTime,UtcTime}`. |
 | `foundation/platform/desktop/` | Per-OS desktop path and **native** notification implementations (Linux Freedesktop Notifications via linked `libdbus-1`, macOS `UNUserNotificationCenter`, Windows WinRT toasts) — not shell helpers |
 | `foundation/platform/Android*`, `Ios*`, `Desktop*` | Facades implementing `IPathProvider`, `ILocalNotifier`, etc. |
 | `foundation/platform/MobileWindowSizing.*` | SDL display-mode sizing for mobile windows |
@@ -72,7 +72,7 @@ New product tips use keys. `InitFailureHint()` remains a rare English string_vie
 
 | Pattern | Example |
 |---------|---------|
-| OS primitive | `os/OsFile.h`, `os/OsFile_Win32.cpp`, `os/OsFile_Posix.cpp` |
+| OS primitive | `os/OsProcess.h`, `os/OsProcess_Win32.cpp`, `os/OsProcess_Posix.cpp` (atomic file replace: pp-cpp-common `AtomicFileWrite`) |
 | Desktop per-OS | `desktop/PathProvider_Win32.cpp`, `desktop/LocalNotifier_Linux.cpp` |
 | Facade | `DesktopPathProvider.cpp` delegates to `desktop::*Impl()` |
 | Domain backend | `VideoCodec_Win32.cpp`, `LanMdnsSocket_Posix.cpp`, `CallAudioSession_Android.cpp` |

@@ -7,6 +7,7 @@
 
 #include <string>
 #include <unordered_set>
+#include "common/PbrCompat.h"
 
 namespace {
 

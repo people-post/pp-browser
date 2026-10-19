@@ -3,6 +3,7 @@
 #include "common/ValueJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/thread/ThreadChannel.h"
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace {

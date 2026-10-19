@@ -11,7 +11,6 @@ set(_pp_platform_core_sources
   ICredentialStore.cpp
   EnvCredentialStore.cpp
   ExecutablePath.cpp
-  os/OsFile_Posix.cpp
   os/OsProcess_Posix.cpp
   os/OsThreadName_Posix.cpp
   os/OsLocaleTags.cpp
@@ -78,7 +77,6 @@ endif()
 
 if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
   list(APPEND _pp_platform_core_sources
-    os/OsFile_Win32.cpp
     os/OsThreadName_Win32.cpp
     os/OsProcess_Win32.cpp
     os/OsLocale_Win32.cpp

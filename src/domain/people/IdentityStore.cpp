@@ -6,7 +6,7 @@
 #include "foundation/crypto/HybridKem.h"
 #include "foundation/crypto/IdentitySeedDeriver.h"
 #include "foundation/crypto/MlDsa.h"
-#include "foundation/data/AtomicFileWrite.h"
+#include "common/AtomicFileWrite.h"
 #include "foundation/data/SchemaVersion.h"
 #include "foundation/error/AppError.h"
 #include "crypto/PeerId.h"

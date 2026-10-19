@@ -18,7 +18,7 @@ Use **subdir paths** (`common/thread/…`, `common/chat/…`). Do not add top-le
 
 | Subdir | Contents |
 |--------|----------|
-| *(root)* | Small utilities: `ValueJson`, `PbrCompat`, `SettledWait`, `StartupTiming`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `CodedFailure`, `ArgsText` |
+| *(root)* | Small utilities: `PbrCompat` (bridges pp-cpp-common's names — `ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry` — into `pbr`), `StartupTiming`, `LengthPrefixedCodec`, `ByteRateLimiter`, `EmojiKey`, `ArgsText` |
 | [`net/`](net/) | `HttpTransport` / `HttpResponse` injectable POST seam |
 | [`directory/`](directory/) | Phone-book vocabulary: `DirectoryTypes`, `DirectoryJson`, `IDirectoryClient`, `RelayScope`, `MeshHopTypes`, `MeshHopDial`, `IdentityTypes` |
 | [`thread/`](thread/) | Thread/message records, history/blob DTOs, sync/memory, `ContextBudget`, role ports + `IThreadStore` |

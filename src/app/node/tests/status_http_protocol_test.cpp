@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <stdexcept>
+#include "common/PbrCompat.h"
 
 TEST(StatusHttpProtocolTest, ParsesDefaultBindAndBarePort) {
   auto def = pbr::ParseStatusHttpBind("127.0.0.1:18518");

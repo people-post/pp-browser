@@ -61,7 +61,7 @@ Roe<PumpedHost> MakePumpedHost() {
     return Error(ma.error().message);
   }
   PumpedHost out;
-  out.host = std::make_unique<MeshHost>(AppRuntimeMeshExecutors());
+  out.host = std::make_unique<MeshHost>(AppRuntimeMeshExecutors(), MetricsRegistry::Global());
   out.peer_id = *peer_id;
   out.listen_ma = *ma;
   if (auto attached = out.host->AttachAmpStack(std::move(*stack), *ma, MeshHost::AttachDrive::MeshPump);

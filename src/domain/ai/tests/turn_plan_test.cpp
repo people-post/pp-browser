@@ -5,6 +5,7 @@
 
 #include <string>
 #include <vector>
+#include "common/PbrCompat.h"
 
 TEST(TurnPlanTest, ParsesAndValidatesKnownTools) {
   const std::string json = R"({

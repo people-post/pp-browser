@@ -1,6 +1,6 @@
 #include "domain/messaging/PaymentPromiseStore.h"
 
-#include "foundation/data/AtomicFileWrite.h"
+#include "common/AtomicFileWrite.h"
 #include "domain/messaging/PaymentPromiseCodec.h"
 #include "common/ValueJson.h"
 

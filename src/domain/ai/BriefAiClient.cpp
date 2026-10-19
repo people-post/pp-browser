@@ -8,6 +8,7 @@
 #include "foundation/error/AppError.h"
 
 #include <algorithm>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 
