@@ -5,7 +5,7 @@
 #include "foundation/crypto/EncryptedPayload.h"
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/MessageCipher.h"
-#include "foundation/data/AtomicFileWrite.h"
+#include "common/AtomicFileWrite.h"
 #include "foundation/error/AppError.h"
 
 #include <cstring>

@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 #include "common/ValueJson.h"
+#include "common/PbrCompat.h"
 
 namespace {
 

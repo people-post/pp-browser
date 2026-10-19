@@ -3,6 +3,7 @@
 #include "foundation/platform/ICredentialStore.h"
 
 #include <gtest/gtest.h>
+#include "common/PbrCompat.h"
 
 TEST(ConfigJsonTest, ParsesLegacyAndModernFields) {
   auto legacy = pbr::TryParseObject(R"({

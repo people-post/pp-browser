@@ -1,6 +1,6 @@
 #include "domain/messaging/InitiationBillingStore.h"
 
-#include "foundation/data/AtomicFileWrite.h"
+#include "common/AtomicFileWrite.h"
 #include "common/ValueJson.h"
 
 #include <filesystem>

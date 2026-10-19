@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include "common/PbrCompat.h"
 
 TEST(WorkingSetPolicyTest, RoutesFeedAndAnswerTurns) {
   const auto feed_routing = pbr::RouteTurn(pbr::ResponseGoal::DisplayFeed, pbr::RenderMode::Blocks);

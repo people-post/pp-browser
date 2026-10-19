@@ -65,20 +65,15 @@ for path in sorted(mesh.rglob("*")):
 # own — external libraries (pp-cpp-common, pp-cpp-amp, pp-cpp-crypto) are fine. These still do;
 # remove an entry when its last include goes (a stale entry fails too), and never add one.
 LEGACY_APP_INCLUDES = {
-    "common/CodedFailure.h",
     "common/directory/DirectoryTypes.h",
     "common/directory/IDirectoryClient.h",
     "common/directory/MeshHopDial.h",
     "common/directory/MeshHopTypes.h",
     "common/directory/RelayScope.h",
     "common/media/MediaChannel.h",
-    "common/metrics/MetricsRegistry.h",
     "common/net/PublicAddress.h",
     "common/PbrCompat.h",
     "common/privacy/AddressDisclosure.h",
-    "common/SettledWait.h",
-    "common/ValueJson.h",
-    "foundation/data/AtomicFileWrite.h",
     "foundation/data/MeshConfigTypes.h",
 }
 src = root / "src"

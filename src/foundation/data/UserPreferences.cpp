@@ -1,6 +1,6 @@
 #include "foundation/data/UserPreferences.h"
 
-#include "foundation/data/AtomicFileWrite.h"
+#include "common/AtomicFileWrite.h"
 #include "foundation/data/ConfigJson.h"
 #include "foundation/data/SchemaVersion.h"
 #include "common/ValueJson.h"

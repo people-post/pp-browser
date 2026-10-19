@@ -12,6 +12,7 @@
 #include <chrono>
 #include <filesystem>
 #include <string>
+#include "common/PbrCompat.h"
 
 namespace {
 

@@ -1,7 +1,6 @@
 pp_browser_add_foundation_library(pp_foundation_data
   SOURCES
     AppPaths.cpp
-    AtomicFileWrite.cpp
     Config.cpp
     ConfigJson.cpp
     MeshRole.cpp

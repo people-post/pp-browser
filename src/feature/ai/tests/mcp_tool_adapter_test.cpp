@@ -7,6 +7,7 @@
 
 #include <map>
 #include <string>
+#include "common/PbrCompat.h"
 
 namespace {
 

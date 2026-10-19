@@ -43,8 +43,9 @@ static Failure WrapChildFailure(const Child::Failure& child) {
 }
 ```
 
-Helpers live in `src/common/CodedFailure.h` (`pbr::`) and per-layer copies in pp-cpp-amp
-(`pp::amp::`, `pp::adp::`). New pp-browser modules use **`pbr::CodedFailure`**.
+Helpers live in pp-cpp-common's `common/CodedFailure.h` (`pp::`, bridged into `pbr` by `PbrCompat`)
+and per-layer copies in pp-cpp-amp (`pp::amp::`, `pp::adp::`). New pp-browser modules use
+**`CodedFailure`** (`pp::CodedFailure`).
 
 ---
 

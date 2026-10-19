@@ -36,6 +36,7 @@
 #include <sstream>
 #include <thread>
 #include <vector>
+#include "common/PbrCompat.h"
 
 namespace pbr {
 namespace call_probe {

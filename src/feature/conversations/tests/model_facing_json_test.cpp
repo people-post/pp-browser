@@ -3,6 +3,7 @@
 #include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
+#include "common/PbrCompat.h"
 
 // PB-057: the model sees names and ids, never keys, addresses, endpoints, icons or message text.
 TEST(ModelFacingJsonTest, ContactKeepsNamesAndIdOnly) {

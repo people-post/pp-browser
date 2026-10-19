@@ -169,7 +169,9 @@ shrinks. Then the move, with history; mesh tests come along clean too.
 | Mesh threads in place of `AppRuntime` ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane)): control on the io lane, `work` / `blocking` executors per instance, one driver | done |
 | `l4/call_media` out of the mesh (now `feature/call_media`); `host` names no app protocol (`MeshHost::SetAppProtocols`; pp-node advertises none); product `common/` types (chat, thread, media health) out of mesh code (`MediaRelayClientHealth`) | done |
 | PeerId derivation into pp-cpp-crypto (below the network stack: product code derives PeerIds too) and the link hook / multiaddr helper into pp-cpp-amp; ML-DSA and the AEAD from pp-cpp-crypto (`XChaCha20Poly1305`, which `MessageCipher` now forwards to) | done |
-| Mesh-owned `common/` types (directory, address disclosure, public address, metrics) and generic helpers (`PbrCompat`, `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `AtomicFileWrite`) | |
+| Generic helpers into pp-cpp-common v1.2.0 (`ValueJson`, `SettledWait`, `CodedFailure`, `AtomicFileWrite`, `MetricsRegistry`; `PbrCompat` bridges them into `pbr`) | done |
+| Metrics per mesh instance (`MeshHost` takes a registry, like its executors) | |
+| The vocabulary the mesh shares with product code (directory types, `MeshHop*`, `RelayScope`, `MediaChannel`, `AddressDisclosure`, `PublicAddress`, `MeshConfigTypes`) moves with the mesh: pp-browser then includes it from pp-cpp-mesh; `PbrCompat` goes with the `pp::mesh` namespace | at the move |
 | The move (pp-cpp-amp ≥ the pin pp-ledger needs) | |
 
 Invariants: the mesh must not depend on `feature/*`; policy (`MeshHopPolicy`, `SoftMigrateLogic`)

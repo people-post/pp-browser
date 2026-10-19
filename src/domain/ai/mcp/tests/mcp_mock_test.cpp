@@ -3,6 +3,7 @@
 #include "common/ValueJson.h"
 
 #include <gtest/gtest.h>
+#include "common/PbrCompat.h"
 
 TEST(McpMockTest, InitializesAndCallsMockTools) {
   auto& client = pbr::McpClient::MockInstance();

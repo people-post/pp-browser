@@ -3,7 +3,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
-#include "foundation/data/AtomicFileWrite.h"
+#include "common/AtomicFileWrite.h"
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
 

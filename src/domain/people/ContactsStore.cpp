@@ -1,6 +1,6 @@
 #include "domain/people/ContactsStore.h"
 
-#include "foundation/data/AtomicFileWrite.h"
+#include "common/AtomicFileWrite.h"
 #include "domain/people/ContactJson.h"
 #include "common/PlatformLimits.h"
 #include "common/Utilities.h"
