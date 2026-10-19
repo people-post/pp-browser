@@ -140,12 +140,34 @@ Full `MeshHost` + `MeshHostConfig` flags (no slim `NodeMeshHost` subclass). See 
 - [NETWORKING.md](NETWORKING.md) — product networking overview
 - [projects/p2p-mesh/MESH_ORGANIZATION.md](../../projects/p2p-mesh/MESH_ORGANIZATION.md) — rename + consolidation notes
 
-## Extraction checklist (future `pp-cpp-mesh`)
+## Extraction to `pp-cpp-mesh`
+
+The mesh leaves for its own library, [pp-cpp-mesh](https://github.com/people-post/pp-cpp-mesh)
+(decided 2026-10-19), consumed like pp-cpp-amp (FetchContent, sibling-checkout override).
 
 | Package | Contents |
 |---------|----------|
-| `pp-cpp-amp` | L1–L3 + link (extracted) |
-| `pp-cpp-mesh` | `base/mesh` — host, identity, reachability, l4, ports |
-| `pp-browser` | feature + app |
+| `pp-cpp-amp` | L1–L3 + link; also PeerId derivation (from `foundation/identity`, shared with pp-ledger) |
+| `pp-cpp-mesh` | `domain/mesh` — host, connectivity, DHT, discovery, reach, reachability, circuit and media relay (both ends), media plane — with the types it owns; namespace `pp::mesh`, includes `mesh/…` |
+| `pp-browser` | feature + app, **pp-node** (an app on pp-cpp-mesh), call media (`l4/call_media`: client-side call logic), policy (`MeshHopPolicy`, `SoftMigrateLogic`) |
 
-Invariants: `base/mesh` must not depend on `feature/*`; policy (`MeshHopPolicy`, `SoftMigrateLogic`) stays in browser.
+**Rules for the library:** it depends on pp-cpp-common, pp-cpp-amp and pp-cpp-crypto only; it carries
+protocols and bytes, product types stay in pp-browser; it does not use the app's threads directly — the
+app gives it an executor (work, coordinator, timers) built on `AppRuntime`.
+
+**Untangling first, in place.** Each PR removes mesh includes of pp-browser headers, keeping
+pp-browser green; `scripts/check/check_mesh_layers.sh` fails any such include not on its
+`LEGACY_APP_INCLUDES` list — the work left — and any list entry no longer used, so the list only
+shrinks. Then the move, with history; mesh tests come along clean too.
+
+| Step | |
+|------|---|
+| Mesh config types out of the app's `Config` (`foundation/data/MeshConfigTypes.h`) | done |
+| Executor port in place of `AppRuntime`; `DeferredSelf` | |
+| `l4/call_media` out of the mesh (and `host`'s edge to it); product `common/` types (chat, thread, media health) out of mesh code | |
+| PeerId derivation and multiaddr helpers into pp-cpp-amp; ML-DSA / cipher wrappers onto pp-cpp-crypto | |
+| Mesh-owned `common/` types (directory, address disclosure, public address, metrics) and generic helpers (`PbrCompat`, `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `AtomicFileWrite`) | |
+| The move (pp-cpp-amp ≥ the pin pp-ledger needs) | |
+
+Invariants: the mesh must not depend on `feature/*`; policy (`MeshHopPolicy`, `SoftMigrateLogic`)
+stays in browser.

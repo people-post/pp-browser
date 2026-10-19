@@ -1,6 +1,7 @@
 #pragma once
 
 #include "foundation/data/Config.h"
+#include "foundation/identity/MultiaddrPeerId.h"
 
 #include <cstddef>
 #include <string>
@@ -52,7 +53,5 @@ void NormalizeMeshConfig(MeshConfig& config);
 std::vector<std::string> ResolveEffectiveBootstrapPeers(
     const MeshConfig& config, const std::vector<MeshDirectoryNode>& directory_nodes = {});
 
-/** Extract PeerId after `/p2p/` (last component). */
-std::string PeerIdFromMultiaddr(const std::string& multiaddr);
 
 } // namespace pbr
