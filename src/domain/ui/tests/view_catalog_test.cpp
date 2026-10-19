@@ -7,7 +7,9 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <algorithm>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -84,4 +86,27 @@ TEST_F(ViewCatalogTest, OnboardingIsAKnownView) {
   EXPECT_EQ(pbr::ViewCatalog::ResolvePath("onboarding"), "views/onboarding.rml");
   WriteView("views/onboarding.rml", "<div>wizard</div>");
   EXPECT_EQ(pbr::ViewCatalog::LoadBody("onboarding"), "<div>wizard</div>");
+}
+
+// Every registered key points at a real file, and every file under assets/views is registered
+// (includes use keys too). The first-run wizard shipped with its .rml present but no key, so
+// LoadBody("onboarding") returned nothing and the wizard never appeared (2026-10-13).
+TEST(ViewCatalogAssetsTest, KeysAndViewFilesMatch) {
+  const std::filesystem::path assets(PP_BROWSER_ASSETS_DIR);
+  ASSERT_TRUE(std::filesystem::is_directory(assets / "views")) << assets;
+
+  std::vector<std::string> registered = pbr::ViewCatalog::KnownViewPaths();
+  std::sort(registered.begin(), registered.end());
+  for (const std::string& relative : registered) {
+    EXPECT_TRUE(std::filesystem::is_regular_file(assets / relative)) << "registered key has no file: " << relative;
+  }
+
+  for (const auto& entry : std::filesystem::recursive_directory_iterator(assets / "views")) {
+    if (!entry.is_regular_file() || entry.path().extension() != ".rml") {
+      continue;
+    }
+    const std::string relative = std::filesystem::relative(entry.path(), assets).generic_string();
+    EXPECT_TRUE(std::binary_search(registered.begin(), registered.end(), relative))
+        << "view file has no key in ViewCatalog::KnownKeys: " << relative;
+  }
 }
