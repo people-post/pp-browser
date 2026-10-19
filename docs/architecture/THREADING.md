@@ -54,7 +54,7 @@ Contain unbounded item fan-out with **internal queues** on the shared pool (e.g.
 | # | Role | Owner | Blocking? | Responsibility |
 |---|------|-------|-----------|----------------|
 | **1** | **UI thread** | `Application` main loop | No | SDL events, RmlUi, controllers; drain UI mailbox via `RunUITasks()` |
-| **2** | **Amp MeshPump** | `MeshHost` (`MeshPumpThread`) | No — short `Drive` | `MeshRuntime::Drive()` ~5ms; Amp has no async reactor / no libp2p `io_context` |
+| **2** | **Amp MeshPump** | `MeshHost` (`MeshPumpThread`) | No — short `Drive` | `MeshRuntime::Drive()` ~5ms, the runtime's only driver (`ClaimDriver`: a drive from another thread is refused); the mesh's io lane — L4 engines and mesh control; Amp has no async reactor / no libp2p `io_context` |
 | **3** | **Coordinator** | `CoordinatorThread` | No — dispatcher only | Priority mailbox; timer wheel; relay poll + hub policy (~1s); posts blocking work to pool |
 | ~~4~~ | ~~Mesh control~~ | retired (thread-ownership t3-1) | — | Mesh waits are completions; L4 inbound CPU / disk work runs on the worker pool (`MeshHost::MakeL4WorkerPost`) |
 | **5** | **Worker pool** | `WorkerPool` (2–4 threads) | Yes — only here for product HTTP/LLM/disk | libcurl HTTP, UPnP, Argon2, SQLite writes, LLM HTTP, attachment drain, L4 inbound handlers (chat / history / blob / announce / broadcast / DHT / directory) under MeshPump |
@@ -190,7 +190,7 @@ Shared Amp helpers live under `pp-cpp-amp` + `domain/mesh/`. Frame size caps: `p
 
 ### Mesh threads: control runs on the I/O lane
 
-**Decided 2026-10-19; moving in** (steps below). Supersedes the Connectivity owner of T001 and the
+**Decided and in place 2026-10-19** (steps below; lifecycle edges as events come later). Supersedes the Connectivity owner of T001 and the
 Connectivity rung of T004's hierarchy ([projects/thread-ownership](../../projects/thread-ownership/DECISIONS.md));
 the rest of both stands. Written for the mesh as a library ([MESH.md § Extraction](MESH.md#extraction-to-pp-cpp-mesh)).
 
@@ -231,7 +231,7 @@ host. A dedicated Connectivity thread also outlived the runtime its timers ran a
 | Policy inputs pushed by the app (rule 1): `MeshHopPolicyFeed` → `SetHopPolicy`; the mesh refreshes only its own local view | done |
 | Off-lane work through `work` / `blocking` executors given per instance (`MeshExecutors`: `MeshHost`, `MediaRelayAttach`, `MeshDirectoryCache` without UI delivery) | done |
 | Mesh control onto the I/O lane: `MeshConnectivity`, `PeerReachCoordinator`, `CircuitRendezvousCoordinator`, `ReachabilityEngine`, `MeshMediaRelay`; the Connectivity owner retires | done |
-| MeshPump claims the driver (`MeshRuntime::ClaimDriver`); pp-node stops ticking beside it | |
+| MeshPump claims the driver (`MeshRuntime::ClaimDriver`); pp-node stops ticking beside it; the DHT's self-publish is an io tick | done |
 | Lifecycle edges as events instead of waits (THREADING § Owner runners style) — later, separately | |
 
 ---
@@ -419,6 +419,7 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 
 | Date | Change |
 |------|--------|
+| 2026-10-19 | **One driver:** MeshPump claims the runtime (`ClaimDriver` / `ReleaseDriver` on its thread); pp-node's main loop no longer ticks beside it; the DHT self-publish is an Amp io tick and `ConfigureAmpDht` runs on the lane (it raced the tick) |
 | 2026-10-19 | **Mesh control on the io lane:** `PeerReachCoordinator` (`PeerReachPorts` with its lane), `MeshConnectivity` / `MeshMediaRelay`, rendezvous parks and `ReachabilityEngine` run on `MeshHost::IoLane()` (pp-cpp-amp `IoExecutor`), timers on Amp's clock; a new lane fails reaches in flight and mesh stop answers pending parks at once (rule 4). `pp-connectivity` retired; `MeshHost::SetStopping` replaces the app's quit flag in the mesh; tests with fakes use `AppRuntime::MakeLaneForTesting` |
 | 2026-10-19 | **Mesh executors:** each `MeshHost` takes `MeshExecutors` (`work` / `blocking`; pp-browser's `AppRuntimeMeshExecutors`); relay attach continues on `work`, the directory cache refreshes on `blocking` and no longer posts to UI |
 | 2026-10-19 | **Mesh threads** decided ([§ Mesh threads](#mesh-threads-control-runs-on-the-io-lane)): control moves onto the I/O lane. First step: the app pushes the candidate policy (`MeshHopPolicyFeed`, on a worker); connectivity no longer calls the contacts store, directory or DHT |

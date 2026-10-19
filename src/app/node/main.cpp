@@ -230,8 +230,8 @@ int main(int argc, char** argv) {
   root.info << "pp-node running (SIGINT/SIGTERM to stop)";
   auto last_probe = std::chrono::steady_clock::now();
   auto last_mesh_publish = std::chrono::steady_clock::now();
+  // MeshPump drives the mesh (the only driver); this loop only schedules node chores.
   while (!g_stop.load()) {
-    boot->mesh->Tick();
     const auto now = std::chrono::steady_clock::now();
     if (now - last_probe > std::chrono::seconds(60)) {
       last_probe = now;

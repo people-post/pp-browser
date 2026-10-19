@@ -165,7 +165,7 @@ shrinks. Then the move, with history; mesh tests come along clean too.
 |------|---|
 | Mesh config types out of the app's `Config` (`foundation/data/MeshConfigTypes.h`) | done |
 | `DeferredSelf` → `pp::Lifetime` (pp-cpp-common), app-wide | done |
-| Mesh threads in place of `AppRuntime` ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane), which tracks the steps) | in progress |
+| Mesh threads in place of `AppRuntime` ([THREADING.md § Mesh threads](THREADING.md#mesh-threads-control-runs-on-the-io-lane)): control on the io lane, `work` / `blocking` executors per instance, one driver | done |
 | `l4/call_media` out of the mesh (and `host`'s edge to it); product `common/` types (chat, thread, media health) out of mesh code | |
 | PeerId derivation and multiaddr helpers into pp-cpp-amp; ML-DSA / cipher wrappers onto pp-cpp-crypto | |
 | Mesh-owned `common/` types (directory, address disclosure, public address, metrics) and generic helpers (`PbrCompat`, `ValueJson`, `SettledWait`, `CodedFailure`, `LengthPrefixedCodec`, `AtomicFileWrite`) | |
