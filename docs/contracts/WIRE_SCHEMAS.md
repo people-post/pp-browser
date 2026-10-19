@@ -426,7 +426,7 @@ A program's signed tip under a PeerId-owned topic (peer-scoped broadcast, Spine 
 
 ## `media_relay` control (`/pp-browser/datagram-relay/1.0.0`)
 
-JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies carry `"ok"` (and `"error"` when false). Codecs: `src/domain/mesh/l4/media_relay/` (client `MediaRelayClientCoordinator`, server `MediaRelayServer`).
+JSON frames on the relay channel, every one with `"v": 1` and `"op"`; replies carry `"ok"` (and `"error"` when false). Codecs: pp-cpp-mesh `l4/media_relay/` (client `MediaRelayClientCoordinator`, server `MediaRelayServer`).
 
 | `op` | Direction | Fields |
 |------|-----------|--------|

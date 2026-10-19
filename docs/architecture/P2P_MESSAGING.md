@@ -205,7 +205,7 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | Path | Role |
 |------|------|
 | `src/feature/conversations/ConversationsHub.*` | App messaging assembler (`ConversationsCore`): stores/inbox/P2P; owns `MeshHost` + `CallStack` |
-| `src/domain/mesh/MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
+| pp-cpp-mesh `MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
 | `src/feature/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
 | `src/feature/conversations/ConversationsFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
 | `src/feature/conversations/InboxController.*` | Active thread, display rows |

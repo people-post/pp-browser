@@ -5,7 +5,7 @@
 
 How pp-browser schedules work across threads: fixed roles, coordinator mailbox, Amp mesh pump, mesh-control waiters, and bounded worker pool.
 
-**Code map:** `AppRuntime`, `CoordinatorThread`, `WorkerPool` — `src/foundation/runtime/`, `src/common/`; Amp pump + mesh-control pool — `MeshHost` (`src/domain/mesh/host/`).
+**Code map:** `AppRuntime`, `CoordinatorThread`, `WorkerPool` — `src/foundation/runtime/`, `src/common/`; Amp pump + mesh control — `MeshHost` (pp-cpp-mesh `host/`).
 
 ---
 
@@ -161,7 +161,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 
 **Hard rule:** only worker-pool threads may block on network or disk for longer than a few milliseconds, and never on the mesh. Amp data-plane progress is **exclusive** `MeshRuntime::Drive` on MeshPump (or the harness). Nested `Pump`/`Tick`/`Drive` is refused.
 
-**Exclusive Amp Drive (hard):** Exactly one driver calls `Drive`/`Tick`/`Pump` per `MeshRuntime`. Product: `MeshPumpThread`. Tests: harness loop (`AttachAmpStack` default `AttachDrive::Manual`, VirtualClock); wall-clock harnesses such as pp-call-probe pass `AttachDrive::MeshPump` and run the product threading — a main-thread driver deadlocked whenever main waited on work that needed mesh progress. L4 services (punch, hop, broadcast, messaging, dial-back, DHT) are state machines on that thread via `PostToIo` / `PostDeferred` / `PostAfter` — they never call Tick to “unstick” a wait. Product `MakeL4IoPump()` is empty (MeshPump owns Drive). AttachAmpStack harnesses may use `MakeL4IoPump`→`Tick` only from sync `AmpParkUntil` on the harness thread (sole driver) — never from mux/`PostToIo`. Frame handlers may only parse + Post; Abort/Close/complete go on `PostDeferred` after mux stack unwinds. **Lock order: Amp strand → L4 owner mutex.** IO callbacks already hold the strand when they take an L4 coordinator's `mu`; an off-IO entry point that mutates under `mu` and calls back into Amp (`Links()`, session close) must enter via `MeshRuntime::WithIoLock` first (the circuit / media_relay servers and client coordinators `AbortInflight`, `CallMediaLegCoordinator::Stop`) — `mu` → strand deadlocked against MeshPump (quit / Leave hang, 2026-09-25). Read-only accessors may take `mu` alone (leaf). **Inbound request answered from a worker:** bind with `InboundReplyPolicy(policy)` (no `read_once`), return `true`, and reply through `InboundReply` ([`l4/shared/InboundReply.h`](../../src/domain/mesh/l4/shared/InboundReply.h)) — `ChannelSession` is IO-affine, and returning `false` / `read_once` closes the channel before the worker replies (every Amp direct-chat ack was lost under MeshPump until 2026-09-25; sends fell back to the relay after 4 s). See [ADR_LINK_PLANE](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md).
+**Exclusive Amp Drive (hard):** Exactly one driver calls `Drive`/`Tick`/`Pump` per `MeshRuntime`. Product: `MeshPumpThread`. Tests: harness loop (`AttachAmpStack` default `AttachDrive::Manual`, VirtualClock); wall-clock harnesses such as pp-call-probe pass `AttachDrive::MeshPump` and run the product threading — a main-thread driver deadlocked whenever main waited on work that needed mesh progress. L4 services (punch, hop, broadcast, messaging, dial-back, DHT) are state machines on that thread via `PostToIo` / `PostDeferred` / `PostAfter` — they never call Tick to “unstick” a wait. Product `MakeL4IoPump()` is empty (MeshPump owns Drive). AttachAmpStack harnesses may use `MakeL4IoPump`→`Tick` only from sync `AmpParkUntil` on the harness thread (sole driver) — never from mux/`PostToIo`. Frame handlers may only parse + Post; Abort/Close/complete go on `PostDeferred` after mux stack unwinds. **Lock order: Amp strand → L4 owner mutex.** IO callbacks already hold the strand when they take an L4 coordinator's `mu`; an off-IO entry point that mutates under `mu` and calls back into Amp (`Links()`, session close) must enter via `MeshRuntime::WithIoLock` first (the circuit / media_relay servers and client coordinators `AbortInflight`, `CallMediaLegCoordinator::Stop`) — `mu` → strand deadlocked against MeshPump (quit / Leave hang, 2026-09-25). Read-only accessors may take `mu` alone (leaf). **Inbound request answered from a worker:** bind with `InboundReplyPolicy(policy)` (no `read_once`), return `true`, and reply through `InboundReply` ([pp-cpp-mesh `l4/shared/InboundReply.h`](https://github.com/people-post/pp-cpp-mesh/blob/develop/include/mesh/l4/shared/InboundReply.h)) — `ChannelSession` is IO-affine, and returning `false` / `read_once` closes the channel before the worker replies (every Amp direct-chat ack was lost under MeshPump until 2026-09-25; sends fell back to the relay after 4 s). See [ADR_LINK_PLANE](https://github.com/people-post/pp-cpp-amp/blob/develop/docs/ADR_LINK_PLANE.md).
 
 **Amp PeerLink strand:** `MeshRuntime` is the product entry (`WhenChannelOpen` / `BindChannel` / `SnapshotByPeerId` / `IsReachable`). Never stash `PeerLink*`. Prefer `IsReachable(PeerId)` over exact-key `IsConnected`.
 
@@ -186,64 +186,41 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 | **Off the IO strand** | The mesh's `work` / `blocking` executors (`MeshExecutors`; the app's `WorkerPool` lanes) | L4 inbound handlers, relay quote / attach, directory refresh, UPnP |
 | **Compute / HTTP** | App `WorkerPool` | Brief HTTP, LLM, Argon2, SQLite |
 
-Shared Amp helpers live under `pp-cpp-amp` + `domain/mesh/`. Frame size caps: `pp::amp::AmpChannelLimits`.
+Shared Amp helpers live in `pp-cpp-amp` + `pp-cpp-mesh`. Frame size caps: `pp::amp::AmpChannelLimits`.
 
 ### Mesh threads: control runs on the I/O lane
 
-**Decided and in place 2026-10-19** (steps below). Supersedes the Connectivity owner of T001 and the
-Connectivity rung of T004's hierarchy ([projects/thread-ownership](../../projects/thread-ownership/DECISIONS.md));
-the rest of both stands. Written for the mesh as a library ([MESH.md § Extraction](MESH.md#extraction-to-pp-cpp-mesh)).
+**Decided and in place 2026-10-19.** Supersedes the Connectivity owner of T001 and the Connectivity
+rung of T004's hierarchy ([projects/thread-ownership](../../projects/thread-ownership/DECISIONS.md));
+the rest of both stands. The mesh is now a library, and its side of the contract — the I/O lane that
+runs Amp **and** mesh control, the per-instance `work` / `blocking` executors, and the four rules (the
+mesh never calls app code synchronously; it tells the app through events on the I/O lane; waits go
+one way, app → mesh; control lives with its runtime) — is
+[pp-cpp-mesh `docs/THREADING.md`](https://github.com/people-post/pp-cpp-mesh/blob/develop/docs/THREADING.md).
 
-**Decision.** The mesh runs on two kinds of thread:
+pp-browser's side:
 
-| Lane | Runs | Given by |
-|------|------|----------|
-| **I/O** — one serial lane, Amp's driver | Amp, the L4 engines, **and mesh control**: connectivity, reach, rendezvous, reachability steps, media-relay attach orchestration. Timers are Amp timers (`PostAfter`, Amp's clock). | The mesh's runtime, as a `pp::SerialExecutor`: post = `PostToIo`, timers = `PostAfter`, on-lane = `OnDriverThread`; tests pass a `pp::ManualExecutor` |
-| **Work** — `work` and `blocking` executors | Off-lane work the mesh hands out: `work` is short and bounded (signature checks, disk, a lock-order hop such as relay quote / attach); `blocking` waits on the outside world (HTTP directory refresh, UPnP discovery) | The host, per mesh instance (`pp::Executor`); pp-browser maps them onto its worker pool lanes |
+| Contract | pp-browser |
+|----------|------------|
+| Executors per mesh instance | `AppRuntimeMeshExecutors()` maps `work` / `blocking` onto the `WorkerPool` lanes |
+| Inputs pushed, not pulled (rule 1) | `MeshHopPolicyFeed` computes hop candidates (contacts, directory, DHT, seeds) off the mesh's lanes → `MeshConnectivity::SetHopPolicy` |
+| Events handed off (rule 2) | Handlers on the I/O lane post to the app's owners (`calls`, the coordinator) |
+| Metrics registry per instance | `MeshHost(executors, MetricsRegistry::Global())` — the registry `/metrics` renders |
 
-Rules:
+**Why the I/O lane.** T001 moved policy off the I/O lane because evaluating it called into the app — the
+hop candidates read the contacts store (a mutex the UI holds; the first read loads from disk), the
+directory and the DHT — which could stall packet handling. Pushing the inputs removed the callouts and
+with them the reason for a separate Connectivity thread, which also outlived the runtime its timers ran
+against.
 
-1. **The mesh never calls app code synchronously.** What the mesh needs from the app is **pushed**: the
-   app computes snapshots off the mesh's lanes and hands them in (`MeshConnectivity::SetHopPolicy`).
-   Candidate policy — contacts, directory, DHT, seeds, trusted relays — is product policy and is
-   computed by the app; the mesh only reads the snapshot.
-2. **What the mesh tells the app is an event**, delivered on the I/O lane; the app's handler must not
-   block and moves the work to its own thread. The mesh has no notion of a UI.
-3. **Waits go one way: the app may wait on the mesh, never the reverse.** Lifecycle edges (wire,
-   rewire, teardown) run on the I/O lane and the caller waits (`SerialExecutor::RunAndWait`); steady
-   state is posts and completions. Nothing on the I/O lane waits on anything.
-4. **Control lives with its runtime.** Control state is created and freed with the runtime it runs on,
-   so its timers and completions never outlive their clock; what must survive a mesh restart is the
-   app's input, which it pushes again.
-
-**Why.** T001 moved policy off the I/O lane because evaluating it called into the app — the hop
-candidates read the contacts store (a mutex the UI holds; the first read loads from disk), the
-directory and the DHT — which could stall packet handling. The mesh's own control work is all
-reactions to I/O events and timers, cheap and non-blocking. Rule 1 removes the callouts, and with them
-the reason for a second thread: no hops between control and I/O, one clock for the whole mesh (so a
-`VirtualClock` test covers control too), and no separate serial lane for the library to require of its
-host. A dedicated Connectivity thread also outlived the runtime its timers ran against.
-
-**Steps** (each keeps pp-browser green):
-
-| Step | |
-|------|---|
-| Policy inputs pushed by the app (rule 1): `MeshHopPolicyFeed` → `SetHopPolicy`; the mesh refreshes only its own local view | done |
-| Off-lane work through `work` / `blocking` executors given per instance (`MeshExecutors`: `MeshHost`, `MediaRelayAttach`, `MeshDirectoryCache` without UI delivery) | done |
-| Mesh control onto the I/O lane: `MeshConnectivity`, `PeerReachCoordinator`, `CircuitRendezvousCoordinator`, `ReachabilityEngine`, `MeshMediaRelay`; the Connectivity owner retires | done |
-| MeshPump claims the driver (`MeshRuntime::ClaimDriver`); pp-node stops ticking beside it; the DHT's self-publish is an io tick | done |
-| Lifecycle edges as events instead of waits (THREADING § Owner runners style) | kept synchronous (decided 2026-10-19) |
-
-**Lifecycle edges stay synchronous.** The waits left are lifecycle edges only — mesh start, stop and
-teardown, a rewire on a network-settings change (`RefreshMeshCapabilities`), messaging bring-up, and
-the calls stack binding its connectivity hooks — rare and user- or bring-up-driven, never steady-state
-traffic. Each is bounded: a wait on the io lane is its lock for at most a drive turn (~5 ms) plus the
-edge's own work, and a wait on the calls owner is its current task (owners never block); waits go one
-way (hub → calls owner → io lane), so none can close a cycle. Turning them into events (an async hub
-mesh lifecycle, an async quit) would cost far more than it saves; revisit if a rewire ever shows as a
-UI stall. In the mesh library edges stay `RunAndWait` on the io lane — simple for every embedder.
-
----
+**Lifecycle edges stay synchronous** (decided 2026-10-19). The waits left are lifecycle edges only —
+mesh start, stop and teardown, a rewire on a network-settings change (`RefreshMeshCapabilities`),
+messaging bring-up, and the calls stack binding its connectivity hooks — rare and user- or
+bring-up-driven, never steady-state traffic. Each is bounded: a wait on the io lane holds it for at
+most a drive turn (~5 ms) plus the edge's own work, and a wait on the calls owner is its current task
+(owners never block); waits go one way (hub → calls owner → io lane), so none can close a cycle.
+Turning them into events (an async hub mesh lifecycle, an async quit) would cost far more than it
+saves; revisit if a rewire ever shows as a UI stall.
 
 ### Owner threads
 

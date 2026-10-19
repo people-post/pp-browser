@@ -29,4 +29,4 @@ Senders set the relay frame's `channel_type` from the kind: audio → `ReliableO
 
 A publisher offers the levels it can produce in the `media_relay` quote; the relay answers with the levels it will carry and drops, at ingest, any other channel from that participant (video of another level, or a reserved kind). Wire fields: [WIRE_SCHEMAS § media_relay control](WIRE_SCHEMAS.md#media_relay-control-pp-browserdatagram-relay100). Rules: [peer-scoped-broadcast B009](../../projects/peer-scoped-broadcast/DECISIONS.md#b009--video-levels-opaque-ordered-integers-negotiated-per-relay-at-attach).
 
-Code: `src/common/media/MediaChannel.h`.
+Code: pp-cpp-mesh `mesh/types/MediaChannel.h`.

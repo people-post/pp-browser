@@ -103,7 +103,7 @@ flowchart LR
 
   subgraph services["Core services"]
     Hub["ConversationsHub<br/><small>feature/conversations/</small>"]
-    Mesh["MeshHost<br/><small>domain/mesh/ — shared w/ pp-node</small>"]
+    Mesh["MeshHost<br/><small>pp-cpp-mesh — shared w/ pp-node</small>"]
     Agent["AgentSession<br/><small>feature/ai/</small>"]
     Locale["LocalizationService<br/><small>base/i18n/</small>"]
     ThemeNode["Theme<br/><small>domain/ui/</small>"]
@@ -283,7 +283,7 @@ flowchart TB
 | **Main / UI** | `Application` + `AppRuntime` UI mailbox | `app/` · `foundation/runtime/` | SDL loop, RmlUi, shell/chat; drained by `RunUITasks()` |
 | **Coordinator** | `CoordinatorThread` | `foundation/runtime/` | Mailbox + timer wheel; relay poll + hub policy |
 | **Worker pool** | `WorkerPool` via `AppRuntime` | `common/` · `foundation/runtime/` | HTTP, LLM/tools, relay sync/send |
-| **Amp MeshPump** | `MeshHost` | `domain/mesh/host/` | `MeshRuntime::Drive` ~5ms (no libp2p `io_context`) |
+| **Amp MeshPump** | `MeshHost` | pp-cpp-mesh `host/` | `MeshRuntime::Drive` ~5ms (no libp2p `io_context`) |
 | **Media capture / video** | `CallMediaEngine` | `domain/media/` | Dedicated capture + video encode loops |
 | **Media devices** | `MediaDeviceArbiter` | `domain/media/` | Device thread: every audio / camera open / close / reopen; per-kind leases (mic + camera exclusive, speaker shared) |
 | **Ringtone** | `CallRingtone` | `domain/media/` | Playback loop thread (speaker lease) |
@@ -307,7 +307,7 @@ Full model: [THREADING.md](THREADING.md).
 | **SessionStore** | `foundation/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
 | **ConversationsHub** (`ConversationsCore`) | `feature/conversations/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` + `CallStack`; nested network/policy slices |
-| **MeshHost** | `domain/mesh/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
+| **MeshHost** | pp-cpp-mesh `mesh/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
 | **CallStack** | `feature/conversations/` | App-only call plane: media engine, CSM (with the calls' projection), mesh media bridge, CallMediaDirect, dial/hop helpers; Hub forwards `Calls()` |
 | **ConversationsFacade** | `feature/conversations/` | Non-owning wrapper over `ConversationsHub&`; app-owned; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (no direct hub peeks) |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
@@ -335,5 +335,5 @@ Full model: [THREADING.md](THREADING.md).
 | **ChatController** | `gui/chat/` | Chat UI + agent; nested `AgentConfig` |
 | **AgentSession** | `feature/ai/` | Turn plan/execute; GUI via `AgentUiPorts`; conversations via `AgentInboundPorts` (app-filled) |
 | **AppRuntime** | `foundation/runtime/` | UI mailbox + worker pool + coordinator |
-| **Libp2pHost** | `domain/mesh/` | Vendored host + asio IO thread |
+| **Libp2pHost** | pp-cpp-mesh `mesh/` | Vendored host + asio IO thread |
 | **CallMediaEngine** | `domain/media/` | A/V capture threads; encode/decode → libp2p direct or SFU send fn |
