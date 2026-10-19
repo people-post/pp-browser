@@ -89,7 +89,7 @@ Composition root: `AppRuntime::Initialize()` / `Shutdown()` (from `Application` 
 | `AppRuntime::PostWorkerNormal` / `Critical` / `Background` | Worker pool lanes |
 | `AppRuntime::PostWorkerAndReplyOnUI` | Pool → UI |
 | `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` | Coordinator + **general** pool only (not MeshPump / owners / media) |
-| `MeshHost::MakeL4WorkerPost(lane)` | L4 inbound work: worker pool under MeshPump, inline on the driver for manual-drive harnesses |
+| `MeshHost::MakeL4WorkerPost(executor)` | L4 work off the IO strand: the mesh's `work` / `blocking` executor (`MeshExecutors`, given per `MeshHost`; pp-browser: `AppRuntimeMeshExecutors` → pool Normal / Background) under MeshPump, inline on the driver for manual-drive harnesses |
 | `AppRuntime::PostTo(OwnerThreadId, …)` / `ScheduleOn` | Owner thread (Media sessions / Connectivity); `CurrentlyOn` / `PBR_ASSERT_ON_OWNER` for affinity |
 
 ### Worker pool priorities
@@ -181,6 +181,7 @@ Do **not** couple relay poll cadence back to `ChatController::Update` for livene
 | **IO work lane** | `MeshRuntime::PostToIo` | PeerLink mutations, SM steps, dial start |
 | **Deferred teardown** | `MeshRuntime::PostDeferred` | Abort, Close, DropLink, L4 `on_done` |
 | **Timers** | `MeshRuntime::PostAfter` | punch window, channel-open deadlines |
+| **Off the IO strand** | The mesh's `work` / `blocking` executors (`MeshExecutors`; the app's `WorkerPool` lanes) | L4 inbound handlers, relay quote / attach, directory refresh, UPnP |
 | **Compute / HTTP** | App `WorkerPool` | Brief HTTP, LLM, Argon2, SQLite |
 
 Shared Amp helpers live under `pp-cpp-amp` + `domain/mesh/`. Frame size caps: `pp::amp::AmpChannelLimits`.
@@ -226,7 +227,7 @@ host. A dedicated Connectivity thread also outlived the runtime its timers ran a
 | Step | |
 |------|---|
 | Policy inputs pushed by the app (rule 1): `MeshHopPolicyFeed` → `SetHopPolicy`; the mesh refreshes only its own local view | done |
-| Off-lane work through `work` / `blocking` executors given per instance (`MeshHost`, `MediaRelayAttach`, `MeshDirectoryCache` without UI delivery) | |
+| Off-lane work through `work` / `blocking` executors given per instance (`MeshExecutors`: `MeshHost`, `MediaRelayAttach`, `MeshDirectoryCache` without UI delivery) | done |
 | Mesh control onto the I/O lane: `MeshConnectivity`, `PeerReachCoordinator`, `CircuitRendezvousCoordinator`, `ReachabilityEngine`, `MeshMediaRelay`; the Connectivity owner retires | |
 | MeshPump claims the driver (`MeshRuntime::ClaimDriver`); pp-node stops ticking beside it | |
 | Lifecycle edges as events instead of waits (THREADING § Owner runners style) — later, separately | |
@@ -416,6 +417,7 @@ Checklist: titlebar/OS close, Accept-dialog quit while ringing, quit during grou
 
 | Date | Change |
 |------|--------|
+| 2026-10-19 | **Mesh executors:** each `MeshHost` takes `MeshExecutors` (`work` / `blocking`; pp-browser's `AppRuntimeMeshExecutors`); relay attach continues on `work`, the directory cache refreshes on `blocking` and no longer posts to UI |
 | 2026-10-19 | **Mesh threads** decided ([§ Mesh threads](#mesh-threads-control-runs-on-the-io-lane)): control moves onto the I/O lane. First step: the app pushes the candidate policy (`MeshHopPolicyFeed`, on a worker); connectivity no longer calls the contacts store, directory or DHT |
 | 2026-09-27 | **UI snapshots / config** (thread-ownership t4): owners read a published `MeshConfig`; affinity asserts on owner-internal steps |
 | 2026-09-27 | **Connectivity owner, cont.** (thread-ownership t3-2b/c): `MeshHopPolicy` evaluated on connectivity; `ReachabilityEngine` steps there; call providers read `MeshLocalView` |

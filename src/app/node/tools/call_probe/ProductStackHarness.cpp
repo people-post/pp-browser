@@ -1,4 +1,5 @@
 #include "app/node/tools/call_probe/ProductStackHarness.h"
+#include "feature/node/AppRuntimeMeshExecutors.h"
 #include "domain/people/ContactAddressDisclosure.h"
 #include "feature/calls/LocalNetworkReaction.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
@@ -92,7 +93,7 @@ Roe<std::unique_ptr<ProductStackHarness>> ProductStackHarness::Create(
   harness->local_peer_id_ = stack->LocalPeerId();
   harness->shared_session_key_ = SharedSessionKey();
 
-  harness->host_ = std::make_unique<MeshHost>();
+  harness->host_ = std::make_unique<MeshHost>(AppRuntimeMeshExecutors());
   harness->host_->SetAddressDisclosure(&harness->address_disclosure_);
   // Own MeshPump like the product: with the main thread as sole Amp driver, any main-thread wait
   // on work that needs mesh progress (capture send, parked worker) deadlocked (hard-w5 hang).

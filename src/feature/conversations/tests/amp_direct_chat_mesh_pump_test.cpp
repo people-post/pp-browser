@@ -1,4 +1,5 @@
 #include "feature/conversations/AmpDirectChatTransport.h"
+#include "feature/node/AppRuntimeMeshExecutors.h"
 
 #include "amp/L1/Clock.h"
 #include "amp/L1/OsUdpDatagramIo.h"
@@ -60,7 +61,7 @@ Roe<PumpedHost> MakePumpedHost() {
     return Error(ma.error().message);
   }
   PumpedHost out;
-  out.host = std::make_unique<MeshHost>();
+  out.host = std::make_unique<MeshHost>(AppRuntimeMeshExecutors());
   out.peer_id = *peer_id;
   out.listen_ma = *ma;
   if (auto attached = out.host->AttachAmpStack(std::move(*stack), *ma, MeshHost::AttachDrive::MeshPump);

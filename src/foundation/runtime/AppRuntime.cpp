@@ -542,6 +542,23 @@ void AppRuntime::SetUIWakeCallback(std::function<void()> callback) {
   g_ui_wake_callback = std::move(callback);
 }
 
+namespace {
+
+class WorkerLaneRuntimeExecutor final : public pp::Executor {
+public:
+  explicit WorkerLaneRuntimeExecutor(const WorkerLane lane) : lane_(lane) {}
+  void Post(Task task) override { AppRuntime::PostWorker(lane_, std::move(task)); }
+
+private:
+  WorkerLane lane_;
+};
+
+} // namespace
+
+std::shared_ptr<pp::Executor> AppRuntime::WorkerExecutor(const WorkerLane lane) {
+  return std::make_shared<WorkerLaneRuntimeExecutor>(lane);
+}
+
 void AppRuntime::PostWorker(WorkerLane lane, std::function<void()> task) {
   // Mid-shutdown: ThreadRuntime clears running_ before joining the pool. In-flight work may
   // still PostWorker (unlock → directory refresh). No-op once !IsRunning so a nested task

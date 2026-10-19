@@ -294,7 +294,7 @@ flowchart TB
 - **UI** owns RmlUi and controller mutations. `AppRuntime::PostUI` from pool/coordinator.
 - **Worker pool** runs blocking HTTP, LLM, relay orchestration. `PostTaskAndReply` is pool → UI.
 - **Coordinator** runs fast policy only; posts blocking steps to pool (not Amp UDP).
-- **MeshHost** owns the Amp pump; L4 inbound work goes to the worker pool (`MakeL4WorkerPost`); nothing waits on the mesh on a thread.
+- **MeshHost** owns the Amp pump; L4 work leaves the IO strand through the executors it is built with (`MeshExecutors`: `AppRuntimeMeshExecutors` maps them onto the worker pool); nothing waits on the mesh on a thread.
 - **Pause/resume:** `AppRuntime::PauseBackgroundWork` / `ResumeBackgroundWork` pauses coordinator + general pool only (mesh/media follow their own lifetime).
 
 Full model: [THREADING.md](THREADING.md).

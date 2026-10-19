@@ -3,6 +3,7 @@
 #include "foundation/runtime/CoordinatorThread.h"
 #include "foundation/runtime/OwnerThread.h"
 #include "foundation/runtime/WorkerDispatch.h"
+#include "common/Executor.h"
 #include "common/Logger.h"
 #include "common/WorkerPool.h"
 
@@ -131,6 +132,12 @@ public:
       });
     });
   }
+
+  /**
+   * One worker lane as an executor, for libraries that take theirs from the host (pp-cpp-mesh's
+   * `work` / `blocking`). Posts go through PostWorker: teardown-gated, dropped when not running.
+   */
+  static std::shared_ptr<pp::Executor> WorkerExecutor(WorkerLane lane);
 
   static void PauseWorkers();
   static void ResumeWorkers();

@@ -1,4 +1,5 @@
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/node/AppRuntimeMeshExecutors.h"
 
 #include "feature/conversations/LocalAccountBackup.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
@@ -366,7 +367,7 @@ Roe<void> ConversationsHub::StartMesh(const AppConfig& config) {
       product_mesh_cfg.amp_udp_port <= 0 ? 0 : static_cast<uint16_t>(product_mesh_cfg.amp_udp_port);
   mesh_cfg.bootstrap_peers = product_mesh_cfg.bootstrap_peers;
 
-  mesh_ = std::make_unique<MeshHost>();
+  mesh_ = std::make_unique<MeshHost>(AppRuntimeMeshExecutors());
   mesh_->SetAddressDisclosure(&address_disclosure_);
   auto started = mesh_->Start(mesh_cfg);
   if (!started) {
@@ -1166,7 +1167,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
         return records.error();
       }
       return MeshDirectoryNodesFromNameRecords(*records);
-    });
+    }, AppRuntimeMeshExecutors().blocking);
     const std::string persist =
         (std::filesystem::path(AppPaths::DataDir(config_.data_dir)) / "mesh_directory_nodes.json").string();
     mesh_directory_cache_->SetPersistPath(persist);
@@ -1204,11 +1205,17 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
       }
       fetch_http();
     });
+    // Lands where the refresh ran (a worker): the hub's work is ours — hop to UI.
     mesh_directory_cache_->SetOnUpdated([this]() {
-      RegisterMeshDirectoryEndpoints();
-      ConfigureAmpDhtProtocol();
-      ConfigureAmpDirectoryProtocol();
-      hop_policy_feed_->PushSoon();  // directory nodes are rendezvous / seed candidates
+      AppRuntime::PostUI([this]() {
+        if (shutdown_requested_.load(std::memory_order_acquire)) {
+          return;
+        }
+        RegisterMeshDirectoryEndpoints();
+        ConfigureAmpDhtProtocol();
+        ConfigureAmpDirectoryProtocol();
+        hop_policy_feed_->PushSoon();  // directory nodes are rendezvous / seed candidates
+      });
     });
     mesh_directory_cache_->RequestRefresh();
   }
