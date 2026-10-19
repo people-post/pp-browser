@@ -146,11 +146,20 @@ public:
 
   static constexpr int kConfigVersion = 1;
 
-  static Roe<AppConfig> Load(int argc, char** argv);
+  /** The config file when neither `--config` nor PP_BROWSER_CONFIG names one. */
+  enum class Fallback {
+    /** The app's own file (AppPaths::ConfigFilePath) when it exists: the desktop app. */
+    AppConfigFile,
+    /** None — defaults: pp-node, which must not take the desktop app's settings of the same user. */
+    None,
+  };
+
+  static Roe<AppConfig> Load(int argc, char** argv, Fallback fallback = Fallback::AppConfigFile);
   static Roe<AppConfig> LoadFromFile(const std::string& path);
   static AppConfig DefaultAppConfig();
   static Roe<void> SaveToFile(const std::string& path, const AppConfig& config);
-  static std::string DiscoverConfigPath(int argc, char** argv);
+  /** `--config`, else PP_BROWSER_CONFIG, else `fallback`; empty: no file. */
+  static std::string DiscoverConfigPath(int argc, char** argv, Fallback fallback = Fallback::AppConfigFile);
 
   // Backward-compatible alias used by Application.h default arg.
   static AppConfig DefaultOllama() { return DefaultAppConfig(); }

@@ -47,7 +47,8 @@ void PrintUsage(const char* argv0) {
       << "Precedence: CLI flags → environment → config file → defaults.\n"
       << "\n"
       << "Options:\n"
-      << "  --config <path>       Config JSON (or PP_BROWSER_CONFIG)\n"
+      << "  --config <path>       Config JSON (or PP_BROWSER_CONFIG). None: defaults + environment\n"
+      << "                        (never the desktop app's config of the same user)\n"
       << "  --status              Print reachability JSON and exit (nr ops)\n"
       << "  --status-addr <addr>  HTTP admin bind (default 127.0.0.1:18518).\n"
       << "                       Use 0.0.0.0:18518 (or a host IP) for console/probes.\n"
@@ -61,19 +62,41 @@ void PrintUsage(const char* argv0) {
       << "                        default <profile data dir>/ledger)\n"
       << "  --profile <id>        Profile id override (or PP_NODE_PROFILE)\n"
       << "  --sandbox             Use sandbox backend (www-en.qa.peoplepost.org)\n"
-      << "  --debug               Verbose logging\n"
+      << "  --log-level <level>   debug|info|warning|error (or PP_NODE_LOG_LEVEL; default info)\n"
+      << "  --debug               Verbose logging (--log-level debug)\n"
       << "  --help                Show this help\n"
       << "\n"
       << "Deploy env (see docs/ops/CONFIGURATION.md):\n"
       << "  PP_NODE_DATA_DIR, PP_NODE_AMP_UDP_PORT, PP_NODE_BOOTSTRAP_PEERS,\n"
       << "  PP_NODE_CAP_CIRCUIT_RELAY, PP_NODE_CAP_MEDIA_RELAY, PP_NODE_CAP_DHT,\n"
       << "  PP_NODE_ADVERTISE_MULTIADDRS, PP_NODE_MESH_PUBLISH,\n"
-      << "  PP_NODE_STATUS_ADDR, PP_NODE_STATUS_TOKEN\n"
+      << "  PP_NODE_STATUS_ADDR, PP_NODE_STATUS_TOKEN, PP_NODE_LOG_LEVEL,\n"
+      << "  PP_NODE_LEDGER_ROLE, PP_NODE_LEDGER_DIR\n"
       << "\n"
       << "Live status HTTP (long-running mode), e.g.:\n"
       << "  curl -sS http://127.0.0.1:18518/healthz\n"
       << "  curl -sS http://127.0.0.1:18518/status\n"
       << "  curl -sS http://127.0.0.1:18518/metrics   (Prometheus text)\n";
+}
+
+/**
+ * A server's log: what it runs, where it listens, its roles, its shutdown — INFO by default, unlike
+ * the desktop app's quiet WARNING (DefaultRootLogLevel). The ledger role logs through it too.
+ */
+std::optional<pbr::logging::Level> NodeLogLevel(const std::string& name, const bool debug_mode) {
+  if (debug_mode || name == "debug") {
+    return pbr::logging::kLevelDebug;
+  }
+  if (name.empty() || name == "info") {
+    return pbr::logging::Level::INFO;
+  }
+  if (name == "warning") {
+    return pbr::logging::Level::WARNING;
+  }
+  if (name == "error") {
+    return pbr::logging::Level::ERROR;
+  }
+  return std::nullopt;
 }
 
 /**
@@ -198,6 +221,7 @@ int main(int argc, char** argv) {
     status_addr_spec = env_addr;
   }
   std::string status_token = EnvOrEmpty("PP_NODE_STATUS_TOKEN");
+  std::string log_level = EnvOrEmpty("PP_NODE_LOG_LEVEL");
   std::string ledger_role = EnvOrEmpty("PP_NODE_LEDGER_ROLE");
   std::string ledger_dir = EnvOrEmpty("PP_NODE_LEDGER_DIR");
 
@@ -218,6 +242,8 @@ int main(int argc, char** argv) {
       status_token = argv[++i];
     } else if (std::strcmp(argv[i], "--pin") == 0 && i + 1 < argc) {
       pin = argv[++i];
+    } else if (std::strcmp(argv[i], "--log-level") == 0 && i + 1 < argc) {
+      log_level = argv[++i];
     } else if (std::strcmp(argv[i], "--ledger-role") == 0 && i + 1 < argc) {
       ledger_role = argv[++i];
     } else if (std::strcmp(argv[i], "--ledger-dir") == 0 && i + 1 < argc) {
@@ -233,6 +259,11 @@ int main(int argc, char** argv) {
     }
   }
 
+  const auto level = NodeLogLevel(log_level, debug_mode);
+  if (!level) {
+    std::cerr << "--log-level must be debug, info, warning or error\n";
+    return 2;
+  }
   LedgerRoleSlot ledger;
   if (auto configured = ledger.Configure(ledger_role, ledger_dir); !configured) {
     std::cerr << configured.error().message << "\n";
@@ -242,7 +273,7 @@ int main(int argc, char** argv) {
   pbr::SetSandboxMode(pbr::ResolveSandboxModeFromLaunch(argc, argv));
 
   auto root = pbr::logging::getRootLogger();
-  root.setLevel(pbr::DefaultRootLogLevel(debug_mode));
+  root.setLevel(*level);
   pbr::logging::setEmitFloor(pbr::DefaultEmitFloor(debug_mode));
   if (pbr::SandboxMode()) {
     root.warning << "Sandbox mode: backend origin " << pbr::BriefOrigin()

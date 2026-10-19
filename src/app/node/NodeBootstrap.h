@@ -26,6 +26,7 @@ struct NodeBootstrapResult {
   std::string data_dir;
   std::string profile_data_dir;
   std::string profile_id;
+  /** The config file loaded (`--config` / PP_BROWSER_CONFIG); empty: defaults and env overlays only. */
   std::string config_path;
   /** Node-owned profile vault / DEK service (holds identity DEK consumer). */
   std::unique_ptr<ProfileSecretsEngine> secrets;

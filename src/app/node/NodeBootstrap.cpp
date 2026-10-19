@@ -24,7 +24,8 @@ namespace pbr {
 Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   auto log = logging::getLogger("pp-node");
 
-  auto config = Config::Load(options.argc, options.argv);
+  // Only a file named for it (--config / PP_BROWSER_CONFIG): never the desktop app's of the same user.
+  auto config = Config::Load(options.argc, options.argv, Config::Fallback::None);
   if (!config) {
     return config.error();
   }
@@ -136,10 +137,7 @@ Roe<NodeBootstrapResult> BootstrapPpNode(const NodeBootstrapOptions& options) {
   result.data_dir = AppPaths::DataDir();
   result.profile_data_dir = profile_data_dir;
   result.profile_id = registry->ActiveProfileId();
-  result.config_path = Config::DiscoverConfigPath(options.argc, options.argv);
-  if (result.config_path.empty()) {
-    result.config_path = AppPaths::ConfigFilePath();
-  }
+  result.config_path = Config::DiscoverConfigPath(options.argc, options.argv, Config::Fallback::None);
   result.secrets = std::move(secrets);
   result.identity = std::move(identity);
   result.mesh = std::move(mesh);

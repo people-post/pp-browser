@@ -138,6 +138,7 @@ cmake --build build -j --target pp-node
 PP_NODE_AMP_UDP_PORT=18517 ./build/src/app/node/pp-node --pin "$PP_BROWSER_PIN"
 ```
 
+- Config: `--config` / `PP_BROWSER_CONFIG` only (packaging passes `/etc/pp-node/config.json`); without one the node runs on defaults and env — it never reads the desktop app's config of the same user. Logs at `info` (`--log-level` / `PP_NODE_LOG_LEVEL`; `--debug`).
 - PIN via `--pin` or `PP_BROWSER_PIN` (required). Deploy overlays (`PP_NODE_AMP_UDP_PORT`, `PP_NODE_DATA_DIR`, caps, …) follow **CLI → env → config file**; see [CONFIGURATION.md](CONFIGURATION.md#pp-node-deploy-overlays).
 - Amp UDP listen is controlled by `libp2p.amp_udp_port` / `PP_NODE_AMP_UDP_PORT` (0 = ephemeral; org seed should pin **443**).
 - Dial-back protocol `/pp-browser/reach/1.0.0` is enabled for reachability probes (feeds phase **nr**).
