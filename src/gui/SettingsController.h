@@ -6,6 +6,7 @@
 #include "feature/settings/SettingsSections.h"
 #include "feature/settings/SettingsUiState.h"
 #include "gui/shell/ShellFeedbackPorts.h"
+#include "foundation/platform/PlatformShare.h"
 #include "gui/shell/ShellNavigationPorts.h"
 #include "gui/UnlockEnsurePorts.h"
 #include "common/Error.h"
@@ -300,7 +301,7 @@ private:
   void OnCopyProfileId();
   void OnPickProfileIcon();
   void OnClearProfileIcon();
-  void OnShareProfile();
+  void OnShareProfile(ShareAnchor anchor = {});
   void OnOpenSupportChat();
   void OnAddMcpServer();
   void OnRemoveMcpServer(int index);

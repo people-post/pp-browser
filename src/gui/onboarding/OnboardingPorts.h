@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/people/ProfileIdentityView.h"
+#include "foundation/platform/PlatformShare.h"
 #include "common/Error.h"
 
 #include <functional>
@@ -17,6 +18,8 @@ struct OnboardingPorts {
   /** Run blocking work off the UI thread; on_done runs on the UI thread. */
   std::function<void(std::function<Roe<void>()> work, std::function<void(Roe<void>)> on_done)> run_heavy;
   std::function<void(const std::string& text)> copy_text;
+  /** System share sheet; false when the platform has none, then the wizard copies instead. */
+  std::function<bool(const std::string& text, ShareAnchor anchor)> share_text;
   /** Friends step: closes the wizard and opens the app's find-someone flow (same as Contacts → find people). */
   std::function<void()> find_friends;
   std::function<bool()> is_completed;

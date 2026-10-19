@@ -1,5 +1,7 @@
 #include "gui/onboarding/OnboardingController.h"
 
+#include "gui/AccountInvite.h"
+
 #include "domain/ui/ViewCatalog.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "gui/UserFeedback.h"
@@ -53,6 +55,7 @@ bool OnboardingController::RegisterModel(ui::Context* context) {
     ctor.Bind("busy", &busy_);
     ctor.BindEventCallback("onboarding_register", &OnboardingController::RegisterCallback);
     ctor.BindEventCallback("onboarding_copy_id", &OnboardingController::CopyIdCallback);
+    ctor.BindEventCallback("onboarding_share", &OnboardingController::ShareCallback);
     ctor.BindEventCallback("onboarding_next", &OnboardingController::NextCallback);
     ctor.BindEventCallback("onboarding_find_friends", &OnboardingController::FindFriendsCallback);
     ctor.BindEventCallback("onboarding_finish", &OnboardingController::FinishCallback);
@@ -97,7 +100,8 @@ void OnboardingController::LoadIdentityFields() {
   if (nickname_.empty() || !view.nickname.empty()) {
     nickname_ = view.nickname.c_str();
   }
-  account_id_ = (!view.account_id.empty() ? view.account_id : view.relay_id).c_str();
+  // The id friends type: the same "account ID" Me → Profile shows and shares (relay id; M002 id as fallback).
+  account_id_ = (!view.relay_id.empty() ? view.relay_id : view.account_id).c_str();
 }
 
 void OnboardingController::ShowStep(const OnboardingStep step) {
@@ -179,6 +183,19 @@ void OnboardingController::CopyIdCallback(ui::DataModelHandle /*model*/, ui::Eve
   }
   self.ports_.copy_text(self.account_id_.c_str());
   UserFeedback::Ok(Tr("onboarding.id_copied"));
+}
+
+void OnboardingController::ShareCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
+                                         const ui::VariantList& /*args*/) {
+  Instance().OnShare(ShareAnchorFromEvent(ev));
+}
+
+void OnboardingController::OnShare(const ShareAnchor anchor) {
+  if (account_id_.empty()) {
+    return;
+  }
+  ShareInviteOrCopy(AccountInviteText(nickname_.c_str(), account_id_.c_str()), ports_.share_text, anchor,
+                    ports_.copy_text);
 }
 
 void OnboardingController::NextCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,

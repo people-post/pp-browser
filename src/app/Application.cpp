@@ -5,6 +5,7 @@
 #include "foundation/crypto/ConfigSecretsStore.h"
 #include "gui/onboarding/OnboardingController.h"
 #include "foundation/platform/os/OsThreadStackDump.h"
+#include "foundation/platform/PlatformShare.h"
 #include <atomic>
 #include <memory>
 #include <thread>
@@ -1004,6 +1005,9 @@ void Application::WireUnlockPinAndFlow() {
     };
     onboarding_ports.run_heavy = [](std::function<Roe<void>()> work, std::function<void(Roe<void>)> on_done) {
       AppRuntime::PostWorkerAndReplyOnUI<Roe<void>>(WorkerLane::Normal, std::move(work), std::move(on_done));
+    };
+    onboarding_ports.share_text = [](const std::string& text, const ShareAnchor anchor) {
+      return PlatformShareText(Backend::GetWindow(), text, anchor);
     };
     onboarding_ports.copy_text = [](const std::string& text) {
       if (ui::SystemInterface* system = ui::GetSystemInterface()) {

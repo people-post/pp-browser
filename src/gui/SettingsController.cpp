@@ -23,6 +23,9 @@
 #include "gui/UserFeedback.h"
 #include "gui/BlobQuotaRecoveryFlow.h"
 #include "foundation/error/AppError.h"
+#include "foundation/platform/PlatformShare.h"
+#include "foundation/platform/ui/RmlUi_Backend.h"
+#include "gui/AccountInvite.h"
 
 #include <ui/dom/Context.h>
 #include <ui/Core.h>
@@ -2033,9 +2036,9 @@ void SettingsController::OnClearProfileIconCallback(ui::DataModelHandle /*model*
   Instance().OnClearProfileIcon();
 }
 
-void SettingsController::OnShareProfileCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
+void SettingsController::OnShareProfileCallback(ui::DataModelHandle /*model*/, ui::Event& ev,
                                                 const ui::VariantList& /*args*/) {
-  Instance().OnShareProfile();
+  Instance().OnShareProfile(ShareAnchorFromEvent(ev));
 }
 
 void SettingsController::OnAddMcpServerCallback(ui::DataModelHandle /*model*/, ui::Event& /*ev*/,
@@ -2227,22 +2230,21 @@ void SettingsController::OnClearProfileIcon() {
   });
 }
 
-void SettingsController::OnShareProfile() {
-  const std::string peer_id = bindings_.profile_peer_id.c_str();
-  if (peer_id.empty()) {
+void SettingsController::OnShareProfile(const ShareAnchor anchor) {
+  // The account id is what friends type to find you; without one there is nothing to share yet.
+  const std::string account_id = bindings_.profile_relay_id.c_str();
+  if (account_id.empty()) {
     UserFeedback::Fail(Tr("settings.profile.no_peer_id"));
     return;
   }
-  const std::string nickname = bindings_.profile_nickname.c_str();
-  const std::string relay_id = bindings_.profile_relay_id.c_str();
-  std::string invite = nickname.empty() ? peer_id : (nickname + " (" + peer_id + ")");
-  if (!relay_id.empty()) {
-    invite += " [" + relay_id + "]";
-  }
-  if (ui::SystemInterface* system = ui::GetSystemInterface()) {
-    system->SetClipboardText(invite.c_str());
-  }
-  UserFeedback::Ok(Tr("settings.profile.invite_copied"));
+  ShareInviteOrCopy(
+      AccountInviteText(bindings_.profile_nickname.c_str(), account_id),
+      [](const std::string& text, const ShareAnchor at) { return PlatformShareText(Backend::GetWindow(), text, at); },
+      anchor, [](const std::string& text) {
+        if (ui::SystemInterface* system = ui::GetSystemInterface()) {
+          system->SetClipboardText(text.c_str());
+        }
+      });
 }
 
 void SettingsController::OnAddMcpServer() {

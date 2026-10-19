@@ -21,6 +21,7 @@
       <p class="text muted">{{i18n:onboarding.account_hint}}</p>
       <div class="shell-dialog-actions row">
         <button class="btn btn-secondary" type="button" data-event-click="onboarding_copy_id()">{{i18n:onboarding.copy_id}}</button>
+        <button class="btn btn-secondary" type="button" data-event-click="onboarding_share()">{{i18n:onboarding.share}}</button>
         <button class="btn btn-primary" type="button" data-event-click="onboarding_next()">{{i18n:common.continue}}</button>
       </div>
     </div>
@@ -29,6 +30,7 @@
       <p class="text shell-dialog-message">{{i18n:onboarding.friends_message}}</p>
       <div class="shell-dialog-actions row">
         <button class="btn btn-primary" type="button" data-event-click="onboarding_find_friends()">{{i18n:onboarding.find_friends}}</button>
+        <button class="btn btn-secondary" type="button" data-event-click="onboarding_share()">{{i18n:onboarding.share}}</button>
         <button class="btn btn-ghost" type="button" data-event-click="onboarding_finish()">{{i18n:onboarding.later}}</button>
       </div>
     </div>
