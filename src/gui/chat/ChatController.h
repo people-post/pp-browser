@@ -329,6 +329,8 @@ private:
   /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
   bool InAiComposerContext() const;
   void OnAttachAiImage();
+  /** Phones: "Photo / File / Cancel" before a picker (both composers). */
+  void ShowAttachChoice(std::function<void()> photo, std::function<void()> file);
   void StartAiImagePrepare(std::string path);
   void OnRemoveImage();
   /** Drops the pending (or still preparing) image and its session thumbnail file. */

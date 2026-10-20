@@ -1711,14 +1711,8 @@ void ChatController::OnAttachFile() {
     ShowOpenFileDialog(Backend::GetWindow(), std::move(on_picked));
     return;
   }
-  // A phone keeps photos and files apart: ask which (the desktop dialog shows both at once).
-  std::vector<ContextMenuAction> actions;
-  actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr,
-                     [on_picked]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked); }});
-  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr,
-                     [on_picked]() { ShowOpenFileDialog(Backend::GetWindow(), on_picked); }});
-  actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
-  ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions));
+  ShowAttachChoice([on_picked]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked); },
+                   [on_picked]() { ShowOpenFileDialog(Backend::GetWindow(), on_picked); });
 }
 
 void ChatController::StartAttachmentUpload(const std::string& path) {
@@ -1771,17 +1765,30 @@ bool ChatController::InAiComposerContext() const {
 }
 
 void ChatController::OnAttachAiImage() {
-  ShowOpenImageFileDialog(
-      Backend::GetWindow(),
-      [this](std::vector<std::string> paths) {
-        AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
-          if (paths.empty()) {
-            return;
-          }
-          StartAiImagePrepare(std::move(paths.front()));
-        });
-      },
-      /*include_heic=*/true);
+  NativeFileDialogCallback on_picked = [this](std::vector<std::string> paths) {
+    AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
+      if (paths.empty()) {
+        return;
+      }
+      StartAiImagePrepare(std::move(paths.front()));
+    });
+  };
+  if (!Platform::IsMobile()) {
+    ShowOpenImageFileDialog(Backend::GetWindow(), std::move(on_picked), /*include_heic=*/true);
+    return;
+  }
+  // Same two ways as a chat; the assistant reads images only, so "File" offers image files.
+  ShowAttachChoice([on_picked]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked, /*include_heic=*/true); },
+                   [on_picked]() { ShowOpenImageDocumentDialog(Backend::GetWindow(), on_picked, /*include_heic=*/true); });
+}
+
+void ChatController::ShowAttachChoice(std::function<void()> photo, std::function<void()> file) {
+  // A phone keeps photos and files apart: ask which (the desktop dialog shows both at once).
+  std::vector<ContextMenuAction> actions;
+  actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, std::move(photo)});
+  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, std::move(file)});
+  actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
+  ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions));
 }
 
 namespace {

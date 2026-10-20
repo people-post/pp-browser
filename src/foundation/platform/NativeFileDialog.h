@@ -17,5 +17,10 @@ using NativeFileDialogCallback = std::function<void(std::vector<std::string> pat
  */
 void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callback, bool include_heic = false);
 void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback);
+/**
+ * An image kept as a file (not in the photo library): on iOS the Files picker limited to JPEG / PNG / GIF /
+ * WebP; elsewhere the same dialog as ShowOpenImageFileDialog.
+ */
+void ShowOpenImageDocumentDialog(SDL_Window* window, NativeFileDialogCallback callback, bool include_heic = false);
 
 } // namespace pbr

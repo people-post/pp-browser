@@ -47,6 +47,10 @@ void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callba
   SDL_ShowOpenFileDialog(OnDialogComplete, state, window, include_heic ? filters_heic : filters, 2, nullptr, false);
 }
 
+void ShowOpenImageDocumentDialog(SDL_Window* window, NativeFileDialogCallback callback, const bool include_heic) {
+  ShowOpenImageFileDialog(window, std::move(callback), include_heic);
+}
+
 void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback) {
   if (!callback) {
     return;

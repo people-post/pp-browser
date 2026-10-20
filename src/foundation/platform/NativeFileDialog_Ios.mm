@@ -167,10 +167,9 @@ void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callba
   }
 }
 
-void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback) {
-  if (!callback) {
-    return;
-  }
+namespace {
+
+void PresentDocumentPicker(SDL_Window* window, NativeFileDialogCallback callback, NSArray<UTType*>* types) {
   @autoreleasepool {
     UIViewController* host = nil;
     PPPickDelegate* delegate = BeginPick(window, std::move(callback), &host);
@@ -178,11 +177,28 @@ void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback) {
       return;
     }
     UIDocumentPickerViewController* picker =
-        [[[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[ UTTypeItem ] asCopy:YES] autorelease];
+        [[[UIDocumentPickerViewController alloc] initForOpeningContentTypes:types asCopy:YES] autorelease];
     picker.delegate = delegate;
     picker.allowsMultipleSelection = NO;
     [host presentViewController:picker animated:YES completion:nil];
   }
+}
+
+} // namespace
+
+void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback) {
+  if (!callback) {
+    return;
+  }
+  PresentDocumentPicker(window, std::move(callback), @[ UTTypeItem ]);
+}
+
+void ShowOpenImageDocumentDialog(SDL_Window* window, NativeFileDialogCallback callback, const bool /*include_heic*/) {
+  if (!callback) {
+    return;
+  }
+  // Only what SDL_image decodes here: HEIC files are left out (the photo library converts; a file cannot).
+  PresentDocumentPicker(window, std::move(callback), @[ UTTypeJPEG, UTTypePNG, UTTypeGIF, UTTypeWebP ]);
 }
 
 } // namespace pbr
