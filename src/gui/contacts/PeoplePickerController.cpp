@@ -2,8 +2,8 @@
 #include "gui/contacts/PeoplePickerController.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "domain/messaging/CallSessionLogic.h"
-#include "domain/messaging/CallTypes.h"
+#include "domain/calls/CallSessionLogic.h"
+#include "domain/calls/CallTypes.h"
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/messaging/GroupTypes.h"
 #include "common/thread/ThreadTypes.h"

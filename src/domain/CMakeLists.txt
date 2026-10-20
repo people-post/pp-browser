@@ -12,12 +12,14 @@ set(_pp_domain_peers
 
 if(NOT PP_BROWSER_HEADLESS)
   add_subdirectory(messaging)
+  add_subdirectory(calls)
   add_subdirectory(ai)
   add_subdirectory(media)
   # Product shell (theme/catalogs). Host/overlays: foundation/platform/ui/.
   add_subdirectory(ui)
   list(APPEND _pp_domain_peers
     pp_domain_messaging
+    pp_domain_calls
     pp_domain_ai
     pp_domain_ai_conversation
     pp_domain_ai_mcp

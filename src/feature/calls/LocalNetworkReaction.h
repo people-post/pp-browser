@@ -2,7 +2,7 @@
 
 #include "foundation/platform/NetworkMonitor.h"
 #include "mesh/host/LocalNetworkChange.h"
-#include "domain/messaging/CallMobility.h"
+#include "domain/calls/CallMobility.h"
 #include "mesh/host/MeshHost.h"
 #include "common/MeshAlias.h"
 

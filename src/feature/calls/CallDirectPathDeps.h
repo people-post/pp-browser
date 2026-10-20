@@ -2,7 +2,7 @@
 
 #include "feature/call_media/ICallMediaTransport.h"
 #include "mesh/reach/PeerReachCoordinator.h"
-#include "domain/messaging/CallPathPolicy.h"
+#include "domain/calls/CallPathPolicy.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
 
 #include <functional>

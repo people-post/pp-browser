@@ -1,4 +1,4 @@
-#include "domain/messaging/CallHopPlannerLogic.h"
+#include "domain/calls/CallHopPlannerLogic.h"
 
 #include <gtest/gtest.h>
 

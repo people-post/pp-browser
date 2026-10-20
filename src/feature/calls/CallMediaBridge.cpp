@@ -1,10 +1,10 @@
 #include "feature/calls/CallMediaBridge.h"
 #include "mesh/types/MediaChannel.h"
-#include "domain/messaging/CallTxOnlyEscalateLogic.h"
+#include "domain/calls/CallTxOnlyEscalateLogic.h"
 #include "feature/calls/SeedParkOutcome.h"
 
 #include "foundation/i18n/LocalizationService.h"
-#include "domain/messaging/CallHopAttachLogic.h"
+#include "domain/calls/CallHopAttachLogic.h"
 #include "feature/call_media/CallMediaFrameCrypto.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"

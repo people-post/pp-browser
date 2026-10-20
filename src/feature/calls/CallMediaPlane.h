@@ -2,8 +2,8 @@
 
 #include "foundation/data/Config.h"
 #include "domain/media/CallMediaEngine.h"
-#include "domain/messaging/CallSessionStore.h"
-#include "domain/messaging/CallMediaKeyStore.h"
+#include "domain/calls/CallSessionStore.h"
+#include "domain/calls/CallMediaKeyStore.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "mesh/connectivity/MeshConnectivity.h"

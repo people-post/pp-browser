@@ -1,10 +1,10 @@
 #include "feature/calls/CallControlClient.h"
-#include "domain/messaging/CallSessionLogic.h"
+#include "domain/calls/CallSessionLogic.h"
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
 #include "domain/messaging/ControlThreadLogic.h"
-#include "domain/messaging/CallMediaKeyStore.h"
+#include "domain/calls/CallMediaKeyStore.h"
 #include "domain/messaging/PairwiseFanoutLogic.h"
 #include "domain/messaging/SendRelayOptions.h"
 #include "domain/people/ContactIdentity.h"

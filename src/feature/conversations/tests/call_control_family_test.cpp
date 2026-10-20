@@ -1,7 +1,7 @@
 // Call control as a system-control family: what is hidden, and how history lines read.
 #include "feature/calls/CallControlFamily.h"
 
-#include "domain/messaging/CallControlCodec.h"
+#include "domain/calls/CallControlCodec.h"
 #include "foundation/i18n/LocalizationService.h"
 
 #include <gtest/gtest.h>

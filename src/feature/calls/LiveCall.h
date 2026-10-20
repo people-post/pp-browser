@@ -1,7 +1,7 @@
 #pragma once
 
-#include "domain/messaging/CallLifecycleTypes.h"
-#include "domain/messaging/CallMediaStatusLogic.h"
+#include "domain/calls/CallLifecycleTypes.h"
+#include "domain/calls/CallMediaStatusLogic.h"
 #include "feature/calls/CallMediaCoordinator.h"
 
 #include <cstdint>

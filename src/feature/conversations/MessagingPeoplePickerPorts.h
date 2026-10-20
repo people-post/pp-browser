@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/messaging/CallTypes.h"
+#include "domain/calls/CallTypes.h"
 #include "domain/messaging/GroupTypes.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/people/ContactTypes.h"

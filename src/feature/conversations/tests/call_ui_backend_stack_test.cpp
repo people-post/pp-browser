@@ -3,8 +3,8 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 
 #include "feature/call_media/ICallMediaTransport.h"
-#include "domain/messaging/CallControlCodec.h"
-#include "domain/messaging/CallTypes.h"
+#include "domain/calls/CallControlCodec.h"
+#include "domain/calls/CallTypes.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/people/ContactsStore.h"

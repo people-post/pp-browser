@@ -2,7 +2,7 @@
 
 #include "foundation/data/PricingTypes.h"
 #include "domain/messaging/AttachmentCache.h"
-#include "domain/messaging/CallSessionLogic.h"
+#include "domain/calls/CallSessionLogic.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/InitiationPricing.h"
 #include "feature/registration/RegistrationClient.h"

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/chat/SystemControl.h"
-#include "domain/messaging/CallTypes.h"
+#include "domain/calls/CallTypes.h"
 
 #include <functional>
 #include <optional>

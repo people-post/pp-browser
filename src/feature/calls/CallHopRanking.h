@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/messaging/CallHopPlan.h"
+#include "domain/calls/CallHopPlan.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/MeshHopPolicy.h"
 #include "feature/calls/CallTopologyRelayDeps.h"

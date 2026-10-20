@@ -1,9 +1,9 @@
 #pragma once
 
 #include "common/Module.h"
-#include "domain/messaging/CallHopPlan.h"
-#include "domain/messaging/CallSessionStore.h"
-#include "domain/messaging/CallTypes.h"
+#include "domain/calls/CallHopPlan.h"
+#include "domain/calls/CallSessionStore.h"
+#include "domain/calls/CallTypes.h"
 #include "feature/calls/CallHopRanking.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "foundation/runtime/OwnerOutbox.h"

@@ -1,9 +1,9 @@
 #include "feature/calls/CallSessionWorkflow.h"
 
-#include "domain/messaging/CallListenAddrsLogic.h"
-#include "domain/messaging/CallMediaPlannerSelectLogic.h"
-#include "domain/messaging/CallSessionLogic.h"
-#include "domain/messaging/PeerCapsLogic.h"
+#include "domain/calls/CallListenAddrsLogic.h"
+#include "domain/calls/CallMediaPlannerSelectLogic.h"
+#include "domain/calls/CallSessionLogic.h"
+#include "domain/calls/PeerCapsLogic.h"
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"

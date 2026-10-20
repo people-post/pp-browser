@@ -1,4 +1,4 @@
-#include "domain/messaging/CallMediaPlannerSelectLogic.h"
+#include "domain/calls/CallMediaPlannerSelectLogic.h"
 
 #include <gtest/gtest.h>
 

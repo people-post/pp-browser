@@ -1,6 +1,6 @@
 #include "feature/calls/CallMediaKeyExchange.h"
 
-#include "domain/messaging/CallControlCodec.h"
+#include "domain/calls/CallControlCodec.h"
 
 #include <utility>
 #include "common/PbrCompat.h"

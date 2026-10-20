@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/messaging/CallLifecycleTypes.h"
+#include "domain/calls/CallLifecycleTypes.h"
 #include "feature/calls/CallMediaSeat.h"
 #include "common/media/CallMediaHealth.h"
 

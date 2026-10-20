@@ -1,12 +1,12 @@
 #pragma once
 
-#include "domain/messaging/CallControlCodec.h"
-#include "domain/messaging/CallTypes.h"
+#include "domain/calls/CallControlCodec.h"
+#include "domain/calls/CallTypes.h"
 #include "common/Error.h"
 #include "common/Module.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadRecordTypes.h"
-#include "domain/messaging/CallSessionStore.h"
+#include "domain/calls/CallSessionStore.h"
 #include "feature/calls/CallInitiationBilling.h"
 #include "feature/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallSessionEvents.h"

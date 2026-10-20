@@ -12,18 +12,6 @@ pp_browser_add_domain_library(pp_domain_messaging
     ChatBlobResponder.cpp
     ChatHistoryResponder.cpp
     ChatPayloadCodec.cpp
-    CallControlCodec.cpp
-    CallHopAttachLogic.cpp
-    CallHopPlan.cpp
-    CallLifecycleTypes.cpp
-    CallMediaKeyStore.cpp
-    CallMobility.cpp
-    CallPathPolicy.cpp
-    CallSessionLogic.cpp
-    CallSessionStore.cpp
-    CallTypes.cpp
-    PeerCapsLogic.cpp
-    SoftMigrateLogic.cpp
     ThreadLocalPrefsStore.cpp
     PairwiseFanoutLogic.cpp
     ControlThreadLogic.cpp

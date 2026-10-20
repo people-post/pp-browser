@@ -5,8 +5,8 @@
 
 #include "foundation/data/MeshRole.h"
 #include "mesh/host/MeshPorts.h"
-#include "domain/messaging/CallTypes.h"
-#include "domain/messaging/PeerCapsLogic.h"
+#include "domain/calls/CallTypes.h"
+#include "domain/calls/PeerCapsLogic.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
 #include "foundation/runtime/AppRuntime.h"
@@ -15,7 +15,7 @@
 #include "mesh/reachability/punch/AmpPunchCoordinator.h"
 #include "mesh/reachability/AmpObservedAddrs.h"
 #include "feature/calls/CallMediaBridge.h"
-#include "domain/messaging/CallLifecycleTypes.h"
+#include "domain/calls/CallLifecycleTypes.h"
 
 #include <functional>
 #include <optional>

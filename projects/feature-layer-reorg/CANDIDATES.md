@@ -9,7 +9,7 @@ Per [F006](DECISIONS.md#f006--sure-peels-use-existing-domain-peers-no-new-peers)
 | Files (now) | Home | Notes |
 |-------------|------|-------|
 | `domain/messaging/SqlitePskSessionStore.*` | `domain/messaging/` | Done |
-| `domain/messaging/CallMediaKeyStore.*` | `domain/messaging/` | Done — not `domain/media` |
+| `domain/calls/CallMediaKeyStore.*` | `domain/messaging/` | Done — not `domain/media` |
 | `domain/messaging/PskSessionCoordinator.*` | `domain/messaging/` | Done |
 | `domain/messaging/PublicPskLockCoordinator.*` | `domain/messaging/` | Done; feature test still covers LinkDevice export case |
 | `domain/messaging/EpochBumpCoordinator.*` | `domain/messaging/` | Done |

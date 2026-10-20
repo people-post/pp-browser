@@ -2,7 +2,7 @@
 
 #include "common/Error.h"
 #include "common/Module.h"
-#include "domain/messaging/CallTypes.h"
+#include "domain/calls/CallTypes.h"
 #include "domain/messaging/InitiationBillingStore.h"
 #include "domain/people/IdentityStore.h"
 #include "foundation/data/PricingTypes.h"

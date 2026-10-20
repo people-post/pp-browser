@@ -6,9 +6,9 @@
 #include "feature/conversations/tests/call_stack_compose_support.h"
 
 #include "mesh/l4/media_relay/client/IMediaRelayClient.h"
-#include "domain/messaging/CallSessionStore.h"
+#include "domain/calls/CallSessionStore.h"
 #include "common/directory/DirectoryJson.h"
-#include "domain/messaging/SoftMigrateLogic.h"
+#include "domain/calls/SoftMigrateLogic.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/MeshAlias.h"
 

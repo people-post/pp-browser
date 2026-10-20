@@ -1,6 +1,6 @@
 #include "feature/calls/CallHopRanking.h"
 
-#include "domain/messaging/PeerCapsLogic.h"
+#include "domain/calls/PeerCapsLogic.h"
 
 #include <unordered_map>
 #include "common/PbrCompat.h"

@@ -120,7 +120,8 @@ crypto
 | Path | Contents |
 |------|----------|
 | `domain/people/` | Identity and contacts stores; presentation DTOs; registration classify (`RegistrationStatus`) |
-| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; pure call planner gates (`Call*Logic`); attachment prepare; **also hosts Content CAS for now** (`CasStore` / attachment CAS I/O — [C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner); peel to `domain/content` at P3/P4) |
+| `domain/messaging/` | Thread types, SQLite/JSON stores, relay/group/E2E codecs; system-control twin threads (`ControlThreadLogic`); attachment prepare; **also hosts Content CAS for now** (`CasStore` / attachment CAS I/O — [C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner); peel to `domain/content` at P3/P4) |
+| `domain/calls/` | Call vocabulary (`CallTypes`, `CallLifecycleTypes`), control codec, session and media-key stores, pure path / hop / migration logic (`Call*Logic`, `CallPathPolicy`, `SoftMigrateLogic`, `PeerCapsLogic`). No messaging include: messaging carries call control as a system-control family |
 | `domain/net/` | HTTP client, service clients (no people/messaging policy) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
 | `domain/ai/` | LLM client, turn types, parsers, payload plan builder; `conversation/`, `mcp/` sublibs |
