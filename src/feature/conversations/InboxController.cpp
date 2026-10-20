@@ -1022,7 +1022,7 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   if (message.content_type == ChatContentType::Deleted) {
     // On the sender's side, small and grey, so it is clear whose message it was.
     const std::string side = message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
-    return "<div class=\"bubble " + side + " bubble-deleted\"><p class=\"bubble-deleted-text muted\">" +
+    return "<div class=\"bubble " + side + " bubble-deleted\"><p class=\"bubble-deleted-text\">" +
            StructuredTextParser::EscapeText(Tr("chat.message.deleted")) + "</p></div>";
   }
   if (message.content_type == ChatContentType::ContactCard) {

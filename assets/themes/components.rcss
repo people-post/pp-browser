@@ -412,7 +412,7 @@ select selectbox option {
 .bubble-deleted-text {
   margin-top: 0;
   margin-bottom: 0;
-  font-size: 13dp;
+  font-size: 12dp;
 }
 
 .bubble-text-peer {
