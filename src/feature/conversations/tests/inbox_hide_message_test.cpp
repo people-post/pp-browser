@@ -58,7 +58,8 @@ TEST(InboxHideMessageTest, DeletedMessageBecomesATombstoneLine) {
     ASSERT_EQ(rows.size(), 2u);
     EXPECT_EQ(std::string(rows[0].message_id.c_str()), "m1");
     EXPECT_EQ(std::string(rows[1].message_id.c_str()), "m2");
-    EXPECT_NE(std::string(rows[1].content_rml.c_str()).find("chat-system-line"), std::string::npos);
+    // On the sender's side (a peer here), as a small grey note.
+    EXPECT_NE(std::string(rows[1].content_rml.c_str()).find("bubble-assistant bubble-deleted"), std::string::npos);
     EXPECT_EQ(std::string(rows[1].content_rml.c_str()).find("hide me"), std::string::npos);
     // No orphan row for the reaction; the id is still known (dedupe), the content is gone.
     const auto has = store.HasMessageId("thread-1", "m2");

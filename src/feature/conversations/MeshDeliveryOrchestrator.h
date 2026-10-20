@@ -108,6 +108,8 @@ public:
                                   const std::string& emoji);
   /** "Delete for everyone": tell the peer / group to delete our message `target_message_id`. */
   Roe<ThreadMessage> SendRetract(const std::string& thread_id, const std::string& target_message_id);
+  /** A deleted message that has not gone out yet is not retried. */
+  void CancelPendingSend(const std::string& message_id);
   Roe<ThreadMessage> ClearReaction(const std::string& thread_id, const std::string& target_message_id,
                                    const std::string& emoji);
   void PollAndMerge();

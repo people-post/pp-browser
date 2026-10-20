@@ -124,8 +124,9 @@ TEST(ChatHistoryResponderTest, ServesSignedOutboundRows) {
   EXPECT_TRUE(*verified);
 }
 
-// A message deleted on this device is never served to the peer again, even inside the requested range.
-TEST(ChatHistoryResponderTest, SkipsDeletedRows) {
+// A message deleted on this device is never served to the peer again, even inside the requested range;
+// an annotation is served as an annotation (so a missed retract can be repaired).
+TEST(ChatHistoryResponderTest, SkipsDeletedRowsAndServesAnnotations) {
   ResponderHarness harness("deleted");
   harness.SeedOutbound(1, "hello");
   harness.SeedOutbound(2, "world");
@@ -165,8 +166,9 @@ TEST(ChatHistoryResponderTest, SkipsDeletedRows) {
       harness.identity.Get()->account_id.empty() ? harness.local_relay_id : harness.identity.Get()->account_id,
       [&](const std::vector<uint8_t>& bytes) { return harness.identity.SignBytes(bytes); });
   ASSERT_TRUE(static_cast<bool>(response));
-  ASSERT_EQ(response->messages.size(), 1u);
+  ASSERT_EQ(response->messages.size(), 2u);
   EXPECT_EQ(response->messages[0].sender_seq, 2u);
+  EXPECT_EQ(response->messages[1].sender_seq, 3u);
 }
 
 TEST(ChatHistoryResponderTest, RejectsNonParticipantRequester) {

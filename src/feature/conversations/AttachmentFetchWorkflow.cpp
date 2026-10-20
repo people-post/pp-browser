@@ -13,6 +13,19 @@
 #include <sodium.h>
 
 #include <filesystem>
+#include <unordered_set>
+
+namespace pbr {
+namespace {
+
+/** Content hashes a message refers to (attachment, AI image). */
+std::vector<std::vector<uint8_t>> MessageContentHashes(const ThreadMessage& message);
+/** Bytes a cancelled download wrote: CAS object, view, poster, RAM copy. */
+void DeleteFetchedBytes(const std::string& profile_dir, const std::string& profile_id, const std::string& thread_id,
+                        const ChatAttachmentFields& fields);
+
+} // namespace
+} // namespace pbr
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -250,6 +263,19 @@ void AttachmentFetchWorkflow::RunJobAsync(Job job, std::function<void()> on_done
                                            job.fields.filename, dek_copy, profile_id_);
           }
           MaybeBuildPoster(job.thread_id, job.fields);
+          // Cancelled while writing (message deleted): take back what was just written.
+          bool cancelled_meanwhile = false;
+          {
+            std::lock_guard lock(mutex_);
+            cancelled_meanwhile = !active_.contains(key);
+          }
+          if (cancelled_meanwhile) {
+            DeleteFetchedBytes(profile_dir_, profile_id_, job.thread_id, job.fields);
+            if (on_done) {
+              on_done();
+            }
+            return;
+          }
           MarkReady(key);
           if (on_done) {
             on_done();
@@ -400,16 +426,38 @@ void DeleteLocalBytes(const std::string& profile_dir, const std::string& profile
   std::filesystem::remove(AttachmentPosterPath(profile_dir, thread_id, content_hash), ec); // video first frame
 }
 
-/** The bytes a message refers to: a chat attachment, or the image of an AI question. */
-void DeleteMessageBytes(const std::string& profile_dir, const std::string& profile_id, const std::string& thread_id,
-                        const ThreadMessage& message) {
+std::vector<std::vector<uint8_t>> MessageContentHashes(const ThreadMessage& message) {
+  std::vector<std::vector<uint8_t>> hashes;
   if (message.content_type == ChatContentType::Attachment) {
     if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json)) {
-      DeleteLocalBytes(profile_dir, profile_id, thread_id, fields->content_hash, fields->mime, fields->filename);
+      hashes.push_back(fields->content_hash);
     }
   }
   if (message.ai_image_json) {
     if (const auto ref = AiImageRefFromJson(*message.ai_image_json)) {
+      hashes.push_back(ref->content_hash);
+    }
+  }
+  return hashes;
+}
+
+void DeleteFetchedBytes(const std::string& profile_dir, const std::string& profile_id, const std::string& thread_id,
+                        const ChatAttachmentFields& fields) {
+  DeleteLocalBytes(profile_dir, profile_id, thread_id, fields.content_hash, fields.mime, fields.filename);
+}
+
+/** The bytes a message refers to (a chat attachment, or the image of an AI question), unless still used. */
+void DeleteMessageBytes(const std::string& profile_dir, const std::string& profile_id, const std::string& thread_id,
+                        const ThreadMessage& message, const std::unordered_set<std::string>& still_used) {
+  if (message.content_type == ChatContentType::Attachment) {
+    if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
+        fields && !still_used.contains(AttachmentHashHex(fields->content_hash))) {
+      DeleteLocalBytes(profile_dir, profile_id, thread_id, fields->content_hash, fields->mime, fields->filename);
+    }
+  }
+  if (message.ai_image_json) {
+    if (const auto ref = AiImageRefFromJson(*message.ai_image_json);
+        ref && !still_used.contains(AttachmentHashHex(ref->content_hash))) {
       DeleteLocalBytes(profile_dir, profile_id, thread_id, ref->content_hash, ref->mime, std::string());
     }
   }
@@ -425,14 +473,22 @@ Roe<void> AttachmentFetchWorkflow::DeleteThreadMedia(const std::string& thread_i
   if (!page) {
     return page.error();
   }
-  DeleteMessagesMedia(thread_id, *page);
+  DeleteMessagesMedia(thread_id, *page, {});
   return {};
 }
 
 void AttachmentFetchWorkflow::DeleteMessagesMedia(const std::string& thread_id,
-                                                  const std::vector<ThreadMessage>& messages) {
+                                                  const std::vector<ThreadMessage>& messages,
+                                                  const std::vector<ThreadMessage>& kept) {
   if (profile_dir_.empty() || profile_id_.empty()) {
     return;
+  }
+  // Content-addressed: bytes another live message of this thread still shows stay.
+  std::unordered_set<std::string> still_used;
+  for (const ThreadMessage& message : kept) {
+    for (const std::vector<uint8_t>& hash : MessageContentHashes(message)) {
+      still_used.insert(AttachmentHashHex(hash));
+    }
   }
   std::unordered_set<std::string> keys;
   for (const ThreadMessage& message : messages) {
@@ -448,7 +504,7 @@ void AttachmentFetchWorkflow::DeleteMessagesMedia(const std::string& thread_id,
     CancelJobsLocked([&keys](const std::string& key) { return keys.contains(key); });
   }
   for (const ThreadMessage& message : messages) {
-    DeleteMessageBytes(profile_dir_, profile_id_, thread_id, message);
+    DeleteMessageBytes(profile_dir_, profile_id_, thread_id, message, still_used);
   }
 }
 
@@ -532,7 +588,6 @@ void AttachmentFetchWorkflow::DrainPendingMediaBacklog(IThreadStore& store) {
 }
 
 Roe<void> AttachmentFetchWorkflow::PrepareThreadHistoryClear(const std::string& thread_id, IThreadStore& store) {
-  (void)DeleteThreadMedia(thread_id, store); // the bytes go with the history; R020 suppression keeps them away
   auto page = store.GetMessagesPage(thread_id, std::nullopt, 10000);
   if (!page) {
     return page.error();
@@ -559,35 +614,10 @@ Roe<void> AttachmentFetchWorkflow::PrepareThreadHistoryClear(const std::string& 
 
   {
     std::lock_guard lock(mutex_);
-    for (auto it = queue_.begin(); it != queue_.end();) {
-      if (it->thread_id == thread_id) {
-        it = queue_.erase(it);
-      } else {
-        ++it;
-      }
-    }
-    for (auto it = active_.begin(); it != active_.end();) {
-      if (it->find(thread_id + "|") == 0) {
-        it = active_.erase(it);
-      } else {
-        ++it;
-      }
-    }
-    for (auto it = failed_.begin(); it != failed_.end();) {
-      if (it->find(thread_id + "|") == 0) {
-        it = failed_.erase(it);
-      } else {
-        ++it;
-      }
-    }
-    for (auto it = pending_.begin(); it != pending_.end();) {
-      if (it->find(thread_id + "|") == 0) {
-        it = pending_.erase(it);
-      } else {
-        ++it;
-      }
-    }
+    const std::string prefix = thread_id + "|";
+    CancelJobsLocked([&prefix](const std::string& key) { return key.rfind(prefix, 0) == 0; });
   }
+  DeleteMessagesMedia(thread_id, *page, {}); // the bytes go with the history; R020 suppression keeps them away
 
   return WipeThreadAttachmentBlobs(profile_dir_, thread_id);
 }

@@ -174,7 +174,7 @@ Roe<ChatSyncResult> ChatSyncWorkflow::IngestHistoryResponse(const std::string& t
     if (outcome.persisted) {
       ++result.ingested;
       changed = true;
-      if (!outcome.thread_id.empty()) {
+      if (!outcome.thread_id.empty() && !outcome.deleted_by_sender) {
         inbox_.OnInboundMessagePersisted(outcome.thread_id);
         if (attachment_downloads_) {
           if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {

@@ -2598,32 +2598,24 @@ bool ChatController::IsOwnMessage(const std::string& message_id) const {
   if (!facade_ || message_id.empty()) {
     return false;
   }
-  const auto page = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 500);
-  if (!page) {
+  auto found = facade_->GetMessage(ActiveThreadId(), message_id);
+  if (!found || !found->has_value()) {
     return false;
   }
-  for (const ThreadMessage& message : *page) {
-    if (message.id == message_id) {
-      return message.sender_contact_id == kLocalSelfContactId;
-    }
-  }
-  return false;
+  const ThreadMessage& message = **found;
+  return message.sender_contact_id == kLocalSelfContactId;
 }
 
 bool ChatController::IsDeletedMessage(const std::string& message_id) const {
   if (!facade_ || message_id.empty()) {
     return false;
   }
-  const auto page = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 500);
-  if (!page) {
+  auto found = facade_->GetMessage(ActiveThreadId(), message_id);
+  if (!found || !found->has_value()) {
     return false;
   }
-  for (const ThreadMessage& message : *page) {
-    if (message.id == message_id) {
-      return message.content_type == ChatContentType::Deleted;
-    }
-  }
-  return false;
+  const ThreadMessage& message = **found;
+  return message.content_type == ChatContentType::Deleted;
 }
 
 std::string ChatController::MessagePlainText(const std::string& message_id) const {

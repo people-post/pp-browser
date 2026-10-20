@@ -1,4 +1,5 @@
 #include "feature/conversations/InboxController.h"
+#include "foundation/runtime/AppRuntime.h"
 
 #include "domain/messaging/CallThreadPresenceLogic.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
@@ -186,7 +187,7 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
   if (attachment_downloads_) {
     attachment_downloads_->ForgetThread(thread_id);
     if (messages) {
-      attachment_downloads_->DeleteMessagesMedia(thread_id, *messages);
+      attachment_downloads_->DeleteMessagesMedia(thread_id, *messages, {});
     }
   }
 
@@ -213,19 +214,17 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
 }
 
 Roe<void> InboxController::DeleteMessageForMe(const std::string& thread_id, const std::string& message_id) {
-  auto page = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
-  if (!page) {
-    return page.error();
+  auto found = store_.GetMessage(thread_id, message_id);
+  if (!found) {
+    return found.error();
   }
-  const auto found =
-      std::find_if(page->begin(), page->end(), [&](const ThreadMessage& m) { return m.id == message_id; });
-  if (found == page->end()) {
+  if (!found->has_value()) {
     return Error("Message not found");
   }
-  if (found->content_type == ChatContentType::Deleted) {
+  if ((*found)->content_type == ChatContentType::Deleted) {
     return {};
   }
-  const ThreadMessage original = *found;
+  const ThreadMessage original = **found;
   // The row first (the part that can fail); its bytes only once the content is gone for good.
   auto deleted = store_.DeleteMessageContent(thread_id, message_id);
   if (!deleted) {
@@ -240,8 +239,10 @@ Roe<void> InboxController::DeleteMessageForMe(const std::string& thread_id, cons
 
 void InboxController::AfterMessageDeleted(const std::string& thread_id, const ThreadMessage& original) {
   const std::string& message_id = original.id;
-  if (attachment_downloads_) {
-    attachment_downloads_->DeleteMessagesMedia(thread_id, {original});
+  if (attachment_downloads_ && (original.content_type == ChatContentType::Attachment || original.ai_image_json)) {
+    // The rest of the thread, so bytes another message here still shows are kept.
+    auto rest = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
+    attachment_downloads_->DeleteMessagesMedia(thread_id, {original}, rest ? *rest : std::vector<ThreadMessage>{});
   }
   // A summary that already folded this message in still carries its words: forget it (it is rebuilt from
   // what is left).
@@ -265,8 +266,17 @@ void InboxController::AfterMessageDeleted(const std::string& thread_id, const Th
       Thread updated = **thread;
       updated.preview = Tr("chat.message.deleted");
       (void)store_.UpsertThread(updated); // updated_at untouched: deleting does not move the chat up the list
+      // Reached from workers too (delete for everyone, a peer's retract): the UI refresh runs on the UI thread.
       if (on_thread_changed_) {
-        on_thread_changed_();
+        if (AppRuntime::IsRunning()) {
+          AppRuntime::PostUI([this]() {
+            if (on_thread_changed_) {
+              on_thread_changed_();
+            }
+          });
+        } else {
+          on_thread_changed_();
+        }
       }
     }
   }
@@ -1010,7 +1020,10 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
     return BuildSystemRml(message);
   }
   if (message.content_type == ChatContentType::Deleted) {
-    return SystemLineRml(Tr("chat.message.deleted"));
+    // On the sender's side, small and grey, so it is clear whose message it was.
+    const std::string side = message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
+    return "<div class=\"bubble " + side + " bubble-deleted\"><p class=\"bubble-deleted-text muted\">" +
+           StructuredTextParser::EscapeText(Tr("chat.message.deleted")) + "</p></div>";
   }
   if (message.content_type == ChatContentType::ContactCard) {
     return BuildContactCardRml(message);

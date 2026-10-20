@@ -34,6 +34,34 @@ public:
                                                                           int64_t after_display_order) const = 0;
   virtual Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) = 0;
   virtual Roe<bool> UpdateMessage(const ThreadMessage& message) = 0;
+  /** One message by id (nullopt when unknown). Default: scan the newest page (test doubles). */
+  virtual Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id) const {
+    auto page = GetMessagesPage(thread_id, std::nullopt, 10000);
+    if (!page) {
+      return page.error();
+    }
+    for (const ThreadMessage& message : *page) {
+      if (message.id == message_id) {
+        return std::optional<ThreadMessage>(message);
+      }
+    }
+    return std::optional<ThreadMessage>();
+  }
+  /** Annotation rows aimed at `target_message_id`. Default: scan the newest page (test doubles). */
+  virtual Roe<std::vector<ThreadMessage>> GetAnnotationsForTarget(const std::string& thread_id,
+                                                                  const std::string& target_message_id) const {
+    auto page = GetMessagesPage(thread_id, std::nullopt, 10000);
+    if (!page) {
+      return page.error();
+    }
+    std::vector<ThreadMessage> out;
+    for (const ThreadMessage& message : *page) {
+      if (message.content_type == ChatContentType::Annotation && message.target_message_id == target_message_id) {
+        out.push_back(message);
+      }
+    }
+    return out;
+  }
   /**
    * "Delete for me": wipe the message's content (text, payload, attachment / image references) and keep an
    * id-only tombstone (`ChatContentType::Deleted`), so dedupe and history sync still see the id and never

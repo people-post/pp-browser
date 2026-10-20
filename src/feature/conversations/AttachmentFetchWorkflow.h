@@ -81,9 +81,11 @@ public:
   /**
    * The same for messages already read by the caller (one message on "delete for me", a whole thread
    * after its rows are gone). Their downloads in flight or queued are cancelled first, so a finishing
-   * fetch cannot put the bytes back.
+   * fetch cannot put the bytes back. Bytes that a message in `kept` (the rest of the thread) still refers
+   * to stay. Identical bytes held by another thread are not checked: they show "download" again.
    */
-  void DeleteMessagesMedia(const std::string& thread_id, const std::vector<ThreadMessage>& messages);
+  void DeleteMessagesMedia(const std::string& thread_id, const std::vector<ThreadMessage>& messages,
+                           const std::vector<ThreadMessage>& kept);
   /** The thread is gone: cancel its downloads and drop its attachment suppression entries. */
   void ForgetThread(const std::string& thread_id);
 

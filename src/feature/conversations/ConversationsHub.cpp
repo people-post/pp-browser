@@ -1932,22 +1932,20 @@ Roe<void> ConversationsHub::DeleteMessageForEveryone(const std::string& thread_i
   if (!*thread || (*thread)->kind == ThreadKind::Ai) {
     return Error("Delete for everyone is only for chats");
   }
-  auto page = Store().GetMessagesPage(thread_id, std::nullopt, 10000);
-  if (!page) {
-    return page.error();
+  auto found = Store().GetMessage(thread_id, message_id);
+  if (!found) {
+    return found.error();
   }
-  const auto found =
-      std::find_if(page->begin(), page->end(), [&](const ThreadMessage& m) { return m.id == message_id; });
-  if (found == page->end()) {
+  if (!found->has_value()) {
     return Error("Message not found");
   }
-  if (found->sender_contact_id != kLocalSelfContactId) {
+  if ((*found)->sender_contact_id != kLocalSelfContactId) {
     return Error("Only your own messages can be deleted for everyone");
   }
-  if (found->content_type == ChatContentType::Deleted) {
+  if ((*found)->content_type == ChatContentType::Deleted) {
     return {};
   }
-  const ThreadMessage original = *found;
+  const ThreadMessage original = **found;
   if (auto sent = MeshMessaging().SendRetract(thread_id, message_id); !sent) {
     return sent.error();
   }

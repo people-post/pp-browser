@@ -139,7 +139,13 @@ Roe<void> ConversationsFacade::UpdatePreview(const std::string& thread_id, const
 }
 
 Roe<void> ConversationsFacade::DeleteMessageForMe(const std::string& thread_id, const std::string& message_id) {
+  hub_.MeshMessaging().CancelPendingSend(message_id);
   return hub_.Inbox().DeleteMessageForMe(thread_id, message_id);
+}
+
+Roe<std::optional<ThreadMessage>> ConversationsFacade::GetMessage(const std::string& thread_id,
+                                                                  const std::string& message_id) {
+  return hub_.Store().GetMessage(thread_id, message_id);
 }
 
 Roe<void> ConversationsFacade::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {

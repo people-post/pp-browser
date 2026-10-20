@@ -798,7 +798,8 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
   const char* sql =
       "UPDATE messages SET sender_contact_id = ?, content_enc = ?, content_type = ?, control_type = ?, timestamp = ?, "
       "relay_visible = ?, delivery = ?, transport = ?, sender_seq = ?, session_epoch = ?, target_message_id = ?, "
-      "generation = ?, seq_owner_contact_id = ?, ai_invoke_mode = ? WHERE id = ?;";
+      "generation = ?, seq_owner_contact_id = ?, ai_invoke_mode = ? WHERE id = ? "
+      "AND (content_type != 'deleted' OR ? = 'deleted');"; // a tombstone is final (a late send result cannot undo it)
   if (sqlite3_prepare_v2(*thread_db, sql, -1, &stmt, nullptr) != SQLITE_OK) {
     return false;
   }
@@ -806,6 +807,7 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
     sqlite3_finalize(stmt);
     return bound.error();
   }
+  sqlite3_bind_text(stmt, 16, ContentTypeToDb(message.content_type).c_str(), -1, SQLITE_TRANSIENT);
   const bool updated = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(*thread_db) > 0;
   sqlite3_finalize(stmt);
   if (updated && message.delivery != MessageDelivery::Pending) {
@@ -814,7 +816,8 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
   return updated;
 }
 
-Roe<bool> SqliteThreadStore::DeleteMessageContent(const std::string& thread_id, const std::string& message_id) {
+Roe<std::optional<ThreadMessage>> SqliteThreadStore::GetMessage(const std::string& thread_id,
+                                                                const std::string& message_id) const {
   auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
     return thread_db.error();
@@ -828,18 +831,55 @@ Roe<bool> SqliteThreadStore::DeleteMessageContent(const std::string& thread_id, 
   sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
   if (sqlite3_step(stmt) != SQLITE_ROW) {
     sqlite3_finalize(stmt);
-    return false;
+    return std::optional<ThreadMessage>();
   }
   auto message = ReadMessageRow(thread_id, stmt);
   sqlite3_finalize(stmt);
   if (!message) {
     return message.error();
   }
-  if (message->content_type == ChatContentType::Deleted) {
+  message->thread_id = thread_id;
+  return std::optional<ThreadMessage>(std::move(*message));
+}
+
+Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetAnnotationsForTarget(const std::string& thread_id,
+                                                                         const std::string& target_message_id) const {
+  auto thread_db = db_.OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  const std::string sql = std::string("SELECT ") + kSqliteThreadMessageSelectColumns +
+                          " FROM messages WHERE content_type = 'annotation' AND target_message_id = ? "
+                          "ORDER BY display_order ASC;";
+  if (sqlite3_prepare_v2(*thread_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare annotation lookup");
+  }
+  sqlite3_bind_text(stmt, 1, target_message_id.c_str(), -1, SQLITE_TRANSIENT);
+  std::vector<ThreadMessage> out;
+  while (sqlite3_step(stmt) == SQLITE_ROW) {
+    if (auto message = ReadMessageRow(thread_id, stmt)) {
+      message->thread_id = thread_id;
+      out.push_back(std::move(*message));
+    }
+  }
+  sqlite3_finalize(stmt);
+  return out;
+}
+
+Roe<bool> SqliteThreadStore::DeleteMessageContent(const std::string& thread_id, const std::string& message_id) {
+  auto message = GetMessage(thread_id, message_id);
+  if (!message) {
+    return message.error();
+  }
+  if (!message->has_value()) {
+    return false;
+  }
+  if ((*message)->content_type == ChatContentType::Deleted) {
     return true;
   }
   // Same row, same id / seq / order: only the content goes.
-  ThreadMessage tombstone = *message;
+  ThreadMessage tombstone = **message;
   tombstone.thread_id = thread_id;
   tombstone.content_type = ChatContentType::Deleted;
   tombstone.text.clear();
@@ -1706,7 +1746,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesBySeqRange(const s
   const char* order_clause = query.ascending ? "ASC" : "DESC";
   std::string sql = std::string("SELECT ") + kSqliteThreadMessageSelectColumns +
                     " FROM messages WHERE relay_visible = 1 AND session_epoch = ? AND sender_contact_id = ? AND "
-                    "sender_seq IS NOT NULL AND content_type != 'deleted'"; // a deleted message is never served again
+                    "sender_seq IS NOT NULL";
   if (query.min_sender_seq) {
     sql += " AND sender_seq >= ?";
   }

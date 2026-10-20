@@ -1,5 +1,7 @@
 #include "domain/messaging/ChatHistoryResponder.h"
 
+#include "domain/messaging/ChatPayloadCodec.h"
+
 #include "foundation/crypto/CryptoUtil.h"
 #include "domain/messaging/E2eRelayPayloadCodec.h"
 #include "domain/messaging/EnvelopeSigner.h"
@@ -50,12 +52,26 @@ Roe<RelayEnvelope> OutboundMessageToEnvelope(const ThreadMessage& message, const
     params.sender_seq = *message.sender_seq;
     params.session_epoch = *message.session_epoch;
     params.timestamp = message.timestamp;
-    auto encrypted = E2eRelayPayloadCodec::EncryptText(params, *master_psk);
+    // Annotations (reactions, retracts) go out as what they are, so a missed "delete for everyone" can
+    // still be repaired; other rows keep the text encoding.
+    Roe<std::string> encrypted = Error("not encrypted");
+    if (message.content_type == ChatContentType::Annotation) {
+      auto row = ChatPayloadCodec::EncodeToRow(message);
+      if (!row) {
+        return row.error();
+      }
+      encrypted = E2eRelayPayloadCodec::EncryptChatPayloadBytes(params, *row, *master_psk);
+    } else {
+      encrypted = E2eRelayPayloadCodec::EncryptText(params, *master_psk);
+    }
     if (!encrypted) {
       return encrypted.error();
     }
     payload_b64 = std::move(*encrypted);
   } else {
+    if (message.content_type == ChatContentType::Annotation) {
+      return Error("Annotation history is end-to-end only");
+    }
     auto plaintext = RelayWirePayload::EncodePlaintextText(message.text);
     if (!plaintext) {
       return plaintext.error();
@@ -152,14 +168,16 @@ Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, IPskSe
   }
 
   for (const ThreadMessage& message : *rows) {
-    // Rows are re-sent as plain text: a reaction or a retract would arrive as a text bubble. Leave them out
-    // (the requester closes the seq as empty).
-    if (message.content_type == ChatContentType::Annotation) {
+    // A message deleted here is never served again (the requester closes its seq as empty).
+    if (message.content_type == ChatContentType::Deleted) {
       continue;
     }
     auto envelope = OutboundMessageToEnvelope(message, **thread, local_relay_user_id, request.requester_identity_value,
                                               local_account_id, psk_store, sign_bytes);
     if (!envelope) {
+      if (message.content_type == ChatContentType::Annotation) {
+        continue; // not servable on this channel: the requester closes the seq as empty
+      }
       return envelope.error();
     }
     response.messages.push_back(std::move(*envelope));

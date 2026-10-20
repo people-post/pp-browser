@@ -1952,8 +1952,9 @@ Roe<ThreadMessage> SendAnnotationReaction(MeshDeliveryOrchestrator& mesh_messagi
   if (target_message_id.empty()) {
     return Error("Missing target message");
   }
-  const std::string trimmed = NormalizeEmojiKey(emoji);
-  if (trimmed.empty()) {
+  const bool retract = std::string(annotation_type) == kAnnotationTypeRetract;
+  const std::string trimmed = retract ? std::string() : NormalizeEmojiKey(emoji);
+  if (trimmed.empty() && !retract) {
     return Error("Empty reaction");
   }
   auto has_target = store.HasMessageId(thread_id, target_message_id);
@@ -1999,31 +2000,12 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::ClearReaction(const std::string& th
 
 Roe<ThreadMessage> MeshDeliveryOrchestrator::SendRetract(const std::string& thread_id,
                                                         const std::string& target_message_id) {
-  if (target_message_id.empty()) {
-    return Error("Missing target message");
-  }
-  auto has_target = store_.HasMessageId(thread_id, target_message_id);
-  if (!has_target) {
-    return has_target.error();
-  }
-  if (!*has_target) {
-    return Error("Target message not found");
-  }
-  SendRelayOptions opts;
-  opts.content_type = ChatContentType::Annotation;
-  opts.payload_json = BuildReactionPayloadJson(kAnnotationTypeRetract, target_message_id, "");
-  opts.update_preview = false;
-  auto thread = store_.GetThread(thread_id);
-  if (!thread) {
-    return thread.error();
-  }
-  if (!*thread) {
-    return Error("Thread not found");
-  }
-  if ((*thread)->kind == ThreadKind::Group) {
-    return SendGroupMessage(thread_id, std::string(), opts);
-  }
-  return SendUserMessage(thread_id, std::string(), opts);
+  return SendAnnotationReaction(*this, store_, thread_id, target_message_id, std::string(), kAnnotationTypeRetract);
+}
+
+void MeshDeliveryOrchestrator::CancelPendingSend(const std::string& message_id) {
+  std::lock_guard lock(retry_mutex_);
+  std::erase_if(retry_queue_, [&](const PendingRelaySend& pending) { return pending.message_id == message_id; });
 }
 
 void MeshDeliveryOrchestrator::RetryFailedOutbound() {

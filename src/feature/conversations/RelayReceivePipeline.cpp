@@ -1185,28 +1185,22 @@ void RelayReceivePipeline::ApplyInboundRetract(const ThreadMessage& persisted, R
   }
   outcome.deleted_by_sender = true;
   outcome.suppress_inbox_chrome = true;
-  auto page = store_.GetMessagesPage(persisted.thread_id, std::nullopt, 10000);
-  if (!page) {
+  auto found = store_.GetMessage(persisted.thread_id, *persisted.target_message_id);
+  if (!found || !found->has_value()) {
+    return; // target not here yet: the stored retract tombstones it on arrival
+  }
+  const ThreadMessage target = **found;
+  if (target.content_type == ChatContentType::Deleted) {
     return;
   }
-  for (const ThreadMessage& target : *page) {
-    if (target.id != *persisted.target_message_id) {
-      continue;
-    }
-    if (target.content_type == ChatContentType::Deleted) {
-      return;
-    }
-    if (!IsRetractOf(persisted, target)) {
-      log().warning << "retract ignored: not from the message's sender";
-      return;
-    }
-    auto deleted = store_.DeleteMessageContent(persisted.thread_id, target.id);
-    if (deleted && *deleted && on_message_retracted_) {
-      on_message_retracted_(persisted.thread_id, target);
-    }
+  if (!IsRetractOf(persisted, target)) {
+    log().warning << "retract ignored: not from the message's sender";
     return;
   }
-  // Target not here yet: the stored retract tombstones it on arrival.
+  auto deleted = store_.DeleteMessageContent(persisted.thread_id, target.id);
+  if (deleted && *deleted && on_message_retracted_) {
+    on_message_retracted_(persisted.thread_id, target);
+  }
 }
 
 void RelayReceivePipeline::TombstoneIfRetractedBeforeArrival(ThreadMessage& persisted, RelayReceiveOutcome& outcome) {
@@ -1218,11 +1212,11 @@ void RelayReceivePipeline::TombstoneIfRetractedBeforeArrival(ThreadMessage& pers
   if (!count || *count == 0) {
     return;
   }
-  auto page = store_.GetMessagesPage(persisted.thread_id, std::nullopt, 10000);
-  if (!page) {
+  auto annotations = store_.GetAnnotationsForTarget(persisted.thread_id, persisted.id);
+  if (!annotations) {
     return;
   }
-  for (const ThreadMessage& annotation : *page) {
+  for (const ThreadMessage& annotation : *annotations) {
     if (IsRetractOf(annotation, persisted)) {
       persisted.content_type = ChatContentType::Deleted;
       persisted.text.clear();

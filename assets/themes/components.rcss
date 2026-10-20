@@ -401,6 +401,20 @@ select selectbox option {
 }
 
 /* A peer's plain-text message: keeps its line breaks, like our own (.bubble-text also sets our colour). */
+/* "This message was deleted": no bubble, a small grey note on the sender's side (InboxController). */
+.bubble.bubble-deleted {
+  background-color: transparent;
+  border-width: 0;
+  padding: 2dp 4dp;
+}
+
+.bubble-deleted-text {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 13dp;
+  font-style: italic;
+}
+
 .bubble-text-peer {
   margin-top: 0;
   margin-bottom: 0;

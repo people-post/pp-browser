@@ -140,12 +140,15 @@ TEST(AttachmentFetchWorkflowLocalImageTest, DeleteThreadMediaRemovesCasObjectsAn
     CasStore cas(h.data_dir.string(), "test");
     EXPECT_TRUE(cas.Exists(CasRealm::Private, stored->content_hash));
     EXPECT_TRUE(cas.Exists(CasRealm::Private, other->content_hash));
-    h.workflow.DeleteMessagesMedia(thread.id, {second});
+    h.workflow.DeleteMessagesMedia(thread.id, {second}, {});
     EXPECT_FALSE(cas.Exists(CasRealm::Private, other->content_hash));
     EXPECT_FALSE(std::filesystem::exists(other->view_path));
     EXPECT_TRUE(cas.Exists(CasRealm::Private, stored->content_hash));
     EXPECT_TRUE(std::filesystem::exists(stored->view_path));
-    h.workflow.DeleteMessagesMedia(thread.id, {plain}); // no image: nothing happens
+    h.workflow.DeleteMessagesMedia(thread.id, {plain}, {}); // no image: nothing happens
+    // Another live message of the thread still shows the same bytes: they stay.
+    h.workflow.DeleteMessagesMedia(thread.id, {question}, {question});
+    EXPECT_TRUE(cas.Exists(CasRealm::Private, stored->content_hash));
     EXPECT_TRUE(cas.Exists(CasRealm::Private, stored->content_hash));
 
     // A chat attachment row: its object goes with the thread too.
