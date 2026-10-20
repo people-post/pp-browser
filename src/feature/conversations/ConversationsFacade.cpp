@@ -2,7 +2,6 @@
 
 #include "foundation/data/PricingTypes.h"
 #include "domain/messaging/AttachmentCache.h"
-#include "domain/calls/CallSessionLogic.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/pricing/InitiationPricing.h"
 #include "feature/registration/RegistrationClient.h"
@@ -98,26 +97,18 @@ Roe<Thread> ConversationsFacade::GetActiveThread() { return hub_.Inbox().GetActi
 Roe<std::vector<Thread>> ConversationsFacade::ListThreads() { return hub_.Inbox().ListThreads(); }
 
 bool ConversationsFacade::ThreadHasActiveCall(const std::string& thread_id) {
-  if (thread_id.empty()) {
-    return false;
-  }
-  auto* calls = hub_.Calls();
-  if (!calls) {
-    return false;
-  }
-  auto active = calls->ActiveLocalCall();
-  if (!active || !*active) {
+  if (thread_id.empty() || !active_call_query_) {
     return false;
   }
   auto thread = GetThread(thread_id);
   if (!thread || !*thread) {
     return false;
   }
-  std::vector<CallParticipant> joined;
-  if (auto parts = calls->ListJoinedParticipants((*active)->call_id); parts) {
-    joined = std::move(*parts);
-  }
-  return ThreadMatchesActiveCall(**thread, **active, joined);
+  return active_call_query_(**thread);
+}
+
+void ConversationsFacade::SetActiveCallQuery(std::function<bool(const Thread& thread)> query) {
+  active_call_query_ = std::move(query);
 }
 
 Roe<Thread> ConversationsFacade::OpenThread(const std::string& thread_id) { return hub_.Inbox().OpenThread(thread_id); }
@@ -748,73 +739,6 @@ Roe<RegistrationResult> ConversationsFacade::UpdateRegisteredNickname(const std:
 
 Roe<void> ConversationsFacade::RevokeRegistration() {
   return pbr::RevokeRegistrationWithIdentity(hub_.Registration(), hub_.Identity());
-}
-
-
-// --- Live broadcast viewer ---------------------------------------------------
-
-void ConversationsFacade::WatchLiveAnnounce(const PeerAnnounceTip& tip, std::function<void(Roe<void>)> on_done) {
-  auto* broadcast = hub_.Broadcast();
-  if (!broadcast) {
-    if (on_done) {
-      on_done(Error("Live broadcasts unavailable (mesh / media relay not ready)"));
-    }
-    return;
-  }
-  broadcast->WatchLive(tip, std::move(on_done));
-}
-
-void ConversationsFacade::WatchStoredLiveAnnounce(const std::string& peer_id, const std::string& topic_id,
-                                                  const std::string& program_id,
-                                                  std::function<void(Roe<void>)> on_done) {
-  auto tip = hub_.MeshMessaging().LatestAnnounceTip(peer_id, topic_id, program_id);
-  if (!tip) {
-    if (on_done) {
-      on_done(Error("No stored announce for that program"));
-    }
-    return;
-  }
-  WatchLiveAnnounce(*tip, std::move(on_done));
-}
-
-void ConversationsFacade::StopWatchingBroadcast() {
-  if (auto* broadcast = hub_.Broadcast()) {
-    broadcast->StopWatching();
-  }
-}
-
-std::optional<BroadcastViewerWorkflow::Status> ConversationsFacade::BroadcastWatchStatus() {
-  auto* broadcast = hub_.Broadcast();
-  if (!broadcast) {
-    return std::nullopt;
-  }
-  return broadcast->Viewer();
-}
-
-void ConversationsFacade::GoLive(const std::string& topic_id, const std::string& program_id,
-                                 std::vector<std::string> hops, std::function<void(Roe<void>)> on_done) {
-  auto* broadcast = hub_.Broadcast();
-  if (!broadcast) {
-    if (on_done) {
-      on_done(Error("Live broadcasts unavailable (mesh / media relay not ready)"));
-    }
-    return;
-  }
-  broadcast->GoLive(BroadcastLiveRequest{topic_id, program_id, std::move(hops)}, std::move(on_done));
-}
-
-void ConversationsFacade::EndLive() {
-  if (auto* broadcast = hub_.Broadcast()) {
-    broadcast->EndLive();
-  }
-}
-
-std::optional<BroadcasterWorkflow::Status> ConversationsFacade::BroadcastLiveStatus() {
-  auto* broadcast = hub_.Broadcast();
-  if (!broadcast) {
-    return std::nullopt;
-  }
-  return broadcast->Live();
 }
 
 } // namespace pbr

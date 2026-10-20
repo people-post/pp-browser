@@ -8,6 +8,7 @@ add_subdirectory(ai)
 add_subdirectory(calls)
 add_subdirectory(broadcast)
 add_subdirectory(conversations)
+add_subdirectory(product)
 
 set(PP_FEATURE_MODULE_LIBS
   pp_feature_registration
@@ -20,6 +21,7 @@ set(PP_FEATURE_MODULE_LIBS
   pp_feature_calls
   pp_feature_broadcast
   pp_feature_conversations
+  pp_feature_product
 )
 
 add_library(pp_feature INTERFACE)

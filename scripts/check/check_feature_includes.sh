@@ -42,6 +42,13 @@ check_absent "conversations must not include retired feature/ui/" \
   '#include "feature/ui/' src/feature/conversations
 check_absent "conversations must not include gui/" \
   '#include "gui/' src/feature/conversations
+# Calls and broadcast ride the hub as participants, wired in feature/product (ProductStack).
+check_absent "conversations must not include feature/calls|broadcast|call_media|product/" \
+  '#include "feature/(calls|broadcast|call_media|product)/' src/feature/conversations
+for module in calls broadcast call_media settings ai registration node; do
+  check_absent "$module must not include feature/product/ (only app/ and gui/ compose it)" \
+    '#include "feature/product/' "src/feature/$module"
+done
 
 check_absent "calls must not include conversations/" \
   '#include "feature/conversations/' src/feature/calls

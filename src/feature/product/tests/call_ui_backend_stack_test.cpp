@@ -20,7 +20,7 @@
 #include <chrono>
 #include <filesystem>
 #include <functional>
-#include "feature/conversations/tests/call_media_inbound_fake.h"
+#include "feature/product/tests/call_media_inbound_fake.h"
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>

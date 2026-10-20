@@ -21,7 +21,7 @@
 #include "foundation/runtime/AppRuntime.h"
 #include "common/Utilities.h"
 #include "common/thread/ThreadRecordTypes.h"
-#include "feature/conversations/tests/call_media_inbound_fake.h"
+#include "feature/product/tests/call_media_inbound_fake.h"
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>
@@ -182,6 +182,8 @@ struct StackSide {
   std::string local_identity;
   /** Call-control this side sends (its `send_user_message`); the test delivers it. */
   std::function<void(const ThreadMessage& msg)> on_send;
+  /** What the stack was built with (a test may build its sessions again). */
+  CallStackDeps deps;
 
   /** Deliver call control to this side, as the receive path does: to the family that owns it. */
   Roe<void> Deliver(ThreadMessage msg, const std::string& sender) const {
@@ -257,6 +259,7 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
 
   deps.connectivity = side.connectivity.get();
   deps.media_relay = side.media_relay.get();
+  side.deps = deps;
   side.stack->BuildSessions(deps);
   ASSERT_TRUE(side.ui->Available());
   ASSERT_FALSE(side.controls.Snapshot()->empty()) << "the call family is bound";

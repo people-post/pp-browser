@@ -93,7 +93,7 @@ Amp owns link liveness; the mesh layer only observes it ([ADR_LINK_PLANE §9–1
 
 ### Local network change (call-path-resilience k5)
 
-`foundation/platform/NetworkMonitor` reports material changes of the device's attachment (online, transport, cost, and a fingerprint of the default-route interfaces and their addresses). Backends: Linux rtnetlink (2 s poll fallback), macOS / iOS `NWPathMonitor`, Windows IP-helper notifications + `GetNetworkConnectivityHint`, Android `registerDefaultNetworkCallback` (`PpNetworkMonitor.java`). The owner of the mesh services starts it — `ConversationsHub` in the app, `ProductStackHarness` in `pp-call-probe` — and fans changes out with `ReactToNetworkChange` (`feature/calls/LocalNetworkReaction.h`):
+`foundation/platform/NetworkMonitor` reports material changes of the device's attachment (online, transport, cost, and a fingerprint of the default-route interfaces and their addresses). Backends: Linux rtnetlink (2 s poll fallback), macOS / iOS `NWPathMonitor`, Windows IP-helper notifications + `GetNetworkConnectivityHint`, Android `registerDefaultNetworkCallback` (`PpNetworkMonitor.java`). The owner of the mesh services starts it — `ConversationsHub` in the app, `ProductStackHarness` in `pp-call-probe` — and fans changes out: the mesh first (`ReactMeshToNetworkChange`, `feature/conversations/MeshNetworkReaction.h`), then the calls with what the mesh made of it (`ReactCallsToNetworkChange`, `feature/calls/LocalNetworkReaction.h`; the hub reaches them through its participants):
 
 | Change | Mesh (`MeshHost::OnLocalNetworkChanged`, `DecideLocalNetworkReaction`) | Calls (`CallMediaBridge::OnLocalNetworkChanged`) |
 |--------|---------------------------|------------------|

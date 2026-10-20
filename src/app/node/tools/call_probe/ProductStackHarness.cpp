@@ -2,6 +2,7 @@
 #include "feature/node/AppRuntimeMeshExecutors.h"
 #include "domain/people/ContactAddressDisclosure.h"
 #include "feature/calls/LocalNetworkReaction.h"
+#include "feature/conversations/MeshNetworkReaction.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
 #include "feature/conversations/ProductMeshProtocols.h"
 
@@ -292,7 +293,10 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
   stack_->OnMeshServicesStarted();
   network_monitor_ = std::make_unique<NetworkMonitor>();
   if (!network_monitor_->Start([this](const NetworkChange& change) {
-        ReactToNetworkChange(change, host_.get(), stack_.get());
+        const auto local = ReactMeshToNetworkChange(change, host_.get());
+        if (stack_) {
+          ReactCallsToNetworkChange(change, local ? &*local : nullptr, *stack_);
+        }
       })) {
     std::cerr << "warning: product-stack network monitor unavailable" << std::endl;
   }

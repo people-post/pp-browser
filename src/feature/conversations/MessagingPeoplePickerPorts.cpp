@@ -24,15 +24,6 @@ MessagingPeoplePickerPorts MakeMessagingPeoplePickerPorts(ConversationsHub& hub)
   ports.create_group = [&hub](const std::string& title, const std::vector<std::string>& member_contact_ids) {
     return hub.Inbox().CreateGroup(title, member_contact_ids);
   };
-  ports.list_call_participants = [&hub](const std::string& call_id) -> Roe<std::vector<CallParticipant>> {
-    if (auto* calls = hub.Calls()) {
-      if (auto participants = calls->ListJoinedParticipants(call_id)) {
-        return *participants;
-      }
-      return Roe<std::vector<CallParticipant>>(Error("call participants unavailable"));
-    }
-    return Roe<std::vector<CallParticipant>>(Error("calls unavailable"));
-  };
   return ports;
 }
 

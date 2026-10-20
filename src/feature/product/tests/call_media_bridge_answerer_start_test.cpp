@@ -1,8 +1,8 @@
 #include "feature/calls/CallMediaBridge.h"
 #include "feature/calls/CallsThread.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/conversations/tests/calls_loopback_outbox.h"
-#include "feature/conversations/tests/calls_on_owner.h"
+#include "feature/product/tests/calls_loopback_outbox.h"
+#include "feature/product/tests/calls_on_owner.h"
 #include "domain/calls/CallLifecycleTypes.h"
 
 #include "domain/media/CallMediaEngine.h"
@@ -17,7 +17,7 @@
 
 #include <chrono>
 #include <filesystem>
-#include "feature/conversations/tests/call_media_inbound_fake.h"
+#include "feature/product/tests/call_media_inbound_fake.h"
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>

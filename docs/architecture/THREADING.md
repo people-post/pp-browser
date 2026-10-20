@@ -269,7 +269,7 @@ Each component tree on an owner thread is run by **one runner**, its root — th
 ```text
 RequestExit → HideWindow (<100ms close feel)
 → AppRuntime::BeginShutdown (gen + 3s deadline + watchdog)
-→ RequestShutdown → AbortCallMediaForShutdown (PrepareForTeardown non-blocking)
+→ RequestShutdown → AbortParticipantsForShutdown (calls: AbortCallMediaForShutdown; PrepareForTeardown non-blocking)
 → AppRuntime::QuiesceForTeardown(≤2s) — see Teardown quiesce
 → MeshHost::Stop (abort + stop L4 → join MeshPump → free L4 / Amp)
 → AppRuntime::Shutdown (coordinator ≤500ms + WorkerPool ≤500ms; detach+leak on timeout)

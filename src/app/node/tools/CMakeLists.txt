@@ -35,7 +35,7 @@ if(TARGET pp_feature_conversations OR TARGET pp_domain_messaging)
   )
   # Phase-2 NAT + HL004 product-stack: CallStack / AmpCircuitHopReach in pp_feature_calls.
   if(TARGET pp_feature_calls)
-    target_link_libraries(pp-call-probe PRIVATE pp_feature_calls)
+    target_link_libraries(pp-call-probe PRIVATE pp_feature_calls pp_feature_broadcast)
   endif()
   if(TARGET pp_feature_conversations)
     target_link_libraries(pp-call-probe PRIVATE pp_feature_conversations)
@@ -59,6 +59,7 @@ if(TARGET pp_feature_conversations OR TARGET pp_domain_messaging)
       ${_pp_probe_libs}
       pp_foundation_platform_core
       pp_feature_calls
+      pp_feature_broadcast
       pp_feature_conversations
       GTest::gtest
       GTest::gtest_main

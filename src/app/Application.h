@@ -11,6 +11,7 @@
 #include "common/Error.h"
 #include "common/Module.h"
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/product/ProductStack.h"
 
 #include <memory>
 #include <optional>
@@ -87,7 +88,10 @@ private:
   std::unique_ptr<ProfileSecretsEngine> secrets_;
   /** Typed API keys under the profile DEK (PB-034); registered with secrets_, serves store_. */
   std::unique_ptr<ConfigSecretsStore> config_secrets_;
-  std::unique_ptr<ConversationsHub> messaging_;
+  /** The hub with calls and broadcast riding it (feature-level composition). */
+  std::unique_ptr<ProductStack> product_;
+  /** product_'s hub (non-owning; null once the stack is gone). */
+  ConversationsHub* messaging_ = nullptr;
   std::unique_ptr<ConversationsFacade> messaging_facade_;
   std::unique_ptr<ConfigApplyBridge> config_apply_;
   std::unique_ptr<ActionRouter> action_router_;

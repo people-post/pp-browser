@@ -23,8 +23,6 @@
 #include "feature/conversations/MessageRouter.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
-#include "domain/calls/CallTypes.h"
-#include "domain/broadcast/PeerAnnounceTypes.h"
 #include "feature/conversations/PeerDisplayResolver.h"
 #include "domain/messaging/PskSessionCoordinator.h"
 #include "mesh/reachability/Reachability.h"
@@ -76,6 +74,8 @@ public:
   Roe<std::vector<Thread>> ListThreads();
   /** True when an active local call is for this thread (origin / peer / group). */
   bool ThreadHasActiveCall(const std::string& thread_id);
+  /** Calls answer ThreadHasActiveCall (feature-level wiring sets it; none: never). */
+  void SetActiveCallQuery(std::function<bool(const Thread& thread)> query);
   Roe<Thread> OpenThread(const std::string& thread_id);
   Roe<void> CloseThread(const std::string& thread_id);
   void ClearActiveThread();
@@ -272,31 +272,12 @@ public:
    * (e.g. ConfigApplyBridge Apply slices). Prefer facade methods otherwise.
    */
 
-  // --- Live broadcast viewer (feature/broadcast — not a call; media-client-layers L013) ---
-  /**
-   * Listen to the live program a signed tip announces (replaces any current watch). UI thread;
-   * the broadcast owner answers through `on_done`, on UI.
-   */
-  void WatchLiveAnnounce(const PeerAnnounceTip& tip, std::function<void(Roe<void>)> on_done);
-  /** Same, from the latest stored tip of that program. */
-  void WatchStoredLiveAnnounce(const std::string& peer_id, const std::string& topic_id,
-                               const std::string& program_id, std::function<void(Roe<void>)> on_done);
-  void StopWatchingBroadcast();
-  /** Current watch (phase, hop, error); nullopt while broadcast viewing is unavailable. */
-  std::optional<BroadcastViewerWorkflow::Status> BroadcastWatchStatus();
-
-  /** Publish a program live through `hops` (media_relay nodes, preference order). UI thread; `on_done` on UI. */
-  void GoLive(const std::string& topic_id, const std::string& program_id, std::vector<std::string> hops,
-              std::function<void(Roe<void>)> on_done);
-  void EndLive();
-  /** Current show (phase, join handle, hop, frames sent); nullopt while broadcasting is unavailable. */
-  std::optional<BroadcasterWorkflow::Status> BroadcastLiveStatus();
-
   ConversationsHub& Hub() { return hub_; }
 
 private:
   ConversationsHub& hub_;
   std::function<void(std::vector<MessageDisplayRow>&)> display_row_decorator_;
+  std::function<bool(const Thread& thread)> active_call_query_;
 };
 
 } // namespace pbr

@@ -50,6 +50,7 @@ pp_browser_add_feature_library(pp_gui
     pp_feature_ai
     pp_feature_calls
     pp_feature_conversations
+    pp_feature_product
     pp_foundation_platform
     pp_domain_ui
     ui::core)

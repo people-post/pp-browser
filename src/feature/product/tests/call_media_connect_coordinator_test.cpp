@@ -6,9 +6,9 @@
 
 #include <chrono>
 #include <functional>
-#include "feature/conversations/tests/call_media_inbound_fake.h"
-#include "feature/conversations/tests/calls_loopback_outbox.h"
-#include "feature/conversations/tests/calls_on_owner.h"
+#include "feature/product/tests/call_media_inbound_fake.h"
+#include "feature/product/tests/calls_loopback_outbox.h"
+#include "feature/product/tests/calls_on_owner.h"
 #include "common/MeshAlias.h"
 
 #include <gtest/gtest.h>

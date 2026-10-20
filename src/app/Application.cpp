@@ -41,7 +41,7 @@
 #include "foundation/platform/WindowIcon.h"
 #include "feature/ai/AgentUiPorts.h"
 #include "feature/conversations/AgentInboundPorts.h"
-#include "feature/conversations/MakeCallFunctionalPorts.h"
+#include "feature/product/MakeCallFunctionalPorts.h"
 #include "feature/calls/CallFunctionalPorts.h"
 #include "feature/calls/CallUiBackend.h"
 #include "feature/conversations/ConversationsFacade.h"
@@ -225,10 +225,12 @@ Application::Application() {
       log().warning << "config secrets not applied: " << applied.error().message;
     }
   });
-  messaging_ = std::make_unique<ConversationsHub>();
+  product_ = std::make_unique<ProductStack>();
+  messaging_ = &product_->Hub();
   messaging_->BindSessionStore(store_);
   messaging_->BindSecrets(*secrets_);
   messaging_facade_ = std::make_unique<ConversationsFacade>(*messaging_);
+  product_->BindFacade(*messaging_facade_);
   config_apply_ = std::make_unique<ConfigApplyBridge>();
   action_router_ = std::make_unique<ActionRouter>();
   client_compat_ = std::make_unique<ClientCompatController>();
@@ -238,7 +240,7 @@ Application::Application() {
   shell_ = std::make_unique<ShellHost>();
   ShellHost::InstallInstance(*shell_);
   call_ = std::make_unique<CallController>();
-  call_ui_ = std::make_unique<CallUiBackend>(messaging_->CallStackRef());
+  call_ui_ = std::make_unique<CallUiBackend>(product_->Calls().Stack());
   settings_ = std::make_unique<SettingsController>();
   SettingsController::InstallInstance(*settings_);
   contacts_ = std::make_unique<ContactsController>();
@@ -266,7 +268,8 @@ Application::~Application() {
   SettingsController::ClearInstance();
   Shutdown();
   messaging_facade_.reset();
-  messaging_.reset();
+  messaging_ = nullptr;
+  product_.reset();
 }
 
 ConversationsHub& Application::Conversations() {
@@ -803,7 +806,7 @@ void Application::WireShellPresenters(const SettingsToolPorts& settings_tool_por
   pin_gate_->BindShellPinGate(MakeShellPinGatePorts(shell));
   flow_->BindShellNavigation(shell_navigation);
   people_picker_->BindContactsPorts(MakeMessagingContactsPorts(messaging));
-  people_picker_->BindPickerPorts(MakeMessagingPeoplePickerPorts(messaging));
+  people_picker_->BindPickerPorts(product_->PeoplePickerPorts());
   people_picker_->BindShellNavigation(shell_navigation);
   people_picker_->BindShellFeedback(shared_feedback);
   people_picker_shell_bridge_->BindApply(MakeShellChromeApplyPorts(shell, "people_picker_chrome"));
@@ -1597,9 +1600,9 @@ void Application::Shutdown() {
   // Cheap context flags for dogfood latency diagnosis (grep [startup] shutdown_context).
   {
     const bool call_active =
-        messaging_ != nullptr && messaging_->CallStackRef().HasActiveLocalCall();
+        product_ != nullptr && product_->Calls().Stack().HasActiveLocalCall();
     const bool connect_inflight =
-        messaging_ != nullptr && messaging_->CallStackRef().IsConnectWorkerInflight();
+        product_ != nullptr && product_->Calls().Stack().IsConnectWorkerInflight();
     const size_t worker_queued =
         AppRuntime::IsRunning() ? AppRuntime::WorkerTotalQueuedCount() : 0;
     StartupLog().info << "[startup] shutdown_context call_active=" << (call_active ? 1 : 0)
@@ -1758,7 +1761,7 @@ void Application::Shutdown() {
       // Work still running may touch messaging: persist, then keep it alive until exit.
       log().warning << "Shutdown: runtime work still running — skipping messaging teardown";
       messaging_->FlushForExit();
-      (void)messaging_.release();
+      (void)product_.release();
     }
     StartupMark("shutdown_stop_mesh_done");
     if (AppRuntime::IsRunning()) {
@@ -1803,7 +1806,7 @@ void Application::Shutdown() {
     }
     if (messaging_) {
       messaging_->RequestShutdown();
-      messaging_->AbortCallMediaForShutdown();
+      messaging_->AbortParticipantsForShutdown();
     }
     ShutdownMessaging();
     if (AppRuntime::IsRunning()) {

@@ -3,7 +3,7 @@
 // an in-process blind forwarder (subscribed streams only, never back to the sender); call-control
 // is routed by each direct thread's peer. CALLS.md § Topology rules / § Soft-migrate 2→3.
 
-#include "feature/conversations/tests/call_stack_compose_support.h"
+#include "feature/product/tests/call_stack_compose_support.h"
 
 #include "mesh/l4/media_relay/client/IMediaRelayClient.h"
 #include "domain/calls/CallSessionStore.h"

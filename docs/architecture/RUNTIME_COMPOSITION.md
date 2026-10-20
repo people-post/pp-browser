@@ -70,7 +70,9 @@ flowchart TB
   ConversationsHub --> Libp2p
   ConversationsHub --> IdentityStore
   ConversationsHub --> ThreadStore
-  ConversationsHub -->|owns unique_ptr, forwards Calls/Lifecycle| CallStack
+  ProductStack -->|owns| ConversationsHub
+  ProductStack -->|owns, registers as HubParticipant| CallStack
+  ProductStack -->|owns, registers as HubParticipant| BroadcastHub
   CallStack --> CallMediaEngine
   ShellHost --> RmlUi
   ChatController --> RmlUi
@@ -175,7 +177,7 @@ flowchart LR
   PeoplePicker -->|MessagingContactsPorts / MessagingPeoplePickerPorts| Hub
   Shell -->|MessagingShellPorts mesh reads via MeshHost| Hub
   Call -->|CallFunctionalPorts / CallUiBackend → CallStack| Hub
-  App -->|owns CallUiBackend bound to Hub::CallStackRef| Call
+  App -->|owns ProductStack; CallUiBackend bound to its CallStack| Call
   Settings -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
   Chat -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
   Contacts -->|ShellNavigationPorts / ShellFeedbackPorts| Shell
@@ -303,12 +305,13 @@ Full model: [THREADING.md](THREADING.md).
 
 | Class | Location | Role |
 |-------|----------|------|
-| **Application** | `app/` | Owns hub, `ProfileSecretsEngine`, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
+| **Application** | `app/` | Owns the `ProductStack` (hub + participants), `ProfileSecretsEngine`, shell, all presenters (`SettingsController`, `ContactsController`, `PeoplePickerController`, `ChatController`, `ShellHost`), `AgentSession`, ActionRouter / ClientCompat / BadgeAggregator / InputCoordinator / FlowCoordinator / CallController / ProfileUnlockGate / PinGate UI; binds ports; installs `ConfigApplyBridge` |
 | **SessionStore** | `foundation/data/` | Live disk DTOs; notifies on save/reload |
 | **ConfigApplyBridge** | `app/` | Projects nested service slices; fans out `Apply` |
-| **ConversationsHub** (`ConversationsCore`) | `feature/conversations/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` + `CallStack`; nested network/policy slices |
+| **ProductStack** | `feature/product/` | The app's feature-level composition: owns `ConversationsHub` and the features riding it as `HubParticipant`s — `CallsParticipant` (owns `CallStack`) and `BroadcastParticipant` (owns `BroadcastHub`); the only feature module that sees conversations, calls and broadcast |
+| **ConversationsHub** (`ConversationsCore`) | `feature/conversations/` | App-only messaging assembler: stores, HTTP Brief clients, inbox/P2P/groups/router, LAN mDNS, policy timers; owns `MeshHost` and the neutral mesh objects; drives its `HubParticipant`s (calls, broadcast) through its lifecycle without naming them; nested network/policy slices |
 | **MeshHost** | pp-cpp-mesh `mesh/` | Shared mesh composition root (`NodeRuntime` + dial-back + circuit/media relay + reachability). App Hub and headless `pp-node` (`NodeBootstrap`) both own one — not a second libp2p stack |
-| **CallStack** | `feature/conversations/` | App-only call plane: media engine, CSM (with the calls' projection), mesh media bridge, CallMediaDirect, dial/hop helpers; Hub forwards `Calls()` |
+| **CallStack** | `feature/calls/` | App-only call plane: media engine, CSM (with the calls' projection), mesh media bridge, CallMediaDirect, dial/hop helpers; owned by `CallsParticipant` |
 | **ConversationsFacade** | `feature/conversations/` | Non-owning wrapper over `ConversationsHub&`; app-owned; chat / chat sub-presenters / messaging tools / settings+badge wiring call its methods (no direct hub peeks) |
 | **ActionRouter** | `feature/ai/bindings/` | Rml action → tool routing; app-owned |
 | **ClientCompatController** | `gui/` | Relay client-compat check; app-owned; deferred startup |

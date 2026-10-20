@@ -3,7 +3,7 @@
 #include "feature/calls/CallMediaSeat.h"
 #include "feature/calls/LiveCall.h"
 #include "domain/calls/CallLifecycleTypes.h"
-#include "feature/conversations/tests/calls_loopback_outbox.h"
+#include "feature/product/tests/calls_loopback_outbox.h"
 
 #include "domain/media/CallMediaEngine.h"
 #include "domain/calls/CallControlCodec.h"
