@@ -10,7 +10,7 @@ namespace pbr {
 
 std::optional<std::vector<uint8_t>> ResolvePeerAnnouncePublisherKey(
     const std::string_view tip_peer_id, const std::string_view local_peer_id,
-    const std::vector<uint8_t>& local_device_public_key, const PeerSigningKeyStore& signing_key_store) {
+    const std::vector<uint8_t>& local_device_public_key, const StoredSigningKeyLookup& stored_signing_key) {
   if (tip_peer_id.empty()) {
     return std::nullopt;
   }
@@ -19,12 +19,15 @@ std::optional<std::vector<uint8_t>> ResolvePeerAnnouncePublisherKey(
     return std::vector<uint8_t>(local_device_public_key.begin(), local_device_public_key.end());
   }
 
-  const std::string kind = ContactIdKindToString(mesh::ContactIdKind::PeerId);
-  auto record = signing_key_store.Get(kind, std::string(tip_peer_id));
-  if (!record || record->signing_public_key_b64.empty()) {
+  if (!stored_signing_key) {
     return std::nullopt;
   }
-  auto pk = Base64Decode(record->signing_public_key_b64);
+  const auto stored =
+      stored_signing_key(ContactIdKindToString(mesh::ContactIdKind::PeerId), std::string(tip_peer_id));
+  if (!stored || stored->empty()) {
+    return std::nullopt;
+  }
+  auto pk = Base64Decode(*stored);
   if (!pk || pk->empty()) {
     return std::nullopt;
   }

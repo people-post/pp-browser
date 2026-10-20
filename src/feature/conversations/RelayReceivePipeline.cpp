@@ -12,11 +12,6 @@
 #include "domain/messaging/EnvelopeSigner.h"
 #include "domain/messaging/GroupMembershipApply.h"
 #include "domain/messaging/GroupMembershipCodec.h"
-#include "domain/messaging/InitiationBillingCodec.h"
-#include "domain/messaging/InitiationBillingStore.h"
-#include "domain/messaging/InitiationPricing.h"
-#include "domain/messaging/PaymentPromiseStore.h"
-#include "domain/messaging/PaymentPromiseWireCodec.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
 #include "common/chat/MessagingLimits.h"
@@ -150,97 +145,6 @@ void RelayReceivePipeline::MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome
   if (controls_ && (controls_->Hidden(message) || controls_->Quiet(message))) {
     outcome.suppress_inbox_chrome = true;
   }
-}
-
-Roe<void> RelayReceivePipeline::ApplyInboundBillingMessage(ThreadMessage& message,
-                                                           const std::string& actor_identity) const {
-  if (!initiation_billing_) {
-    return {};
-  }
-  const auto type = InitiationBillingCodec::ControlTypeFromMessage(message);
-  if (!type) {
-    return {};
-  }
-  auto payload = TryParseObject(message.payload_json);
-  auto detail_text = payload ? payload->getString("detail") : std::nullopt;
-  if (!detail_text) {
-    return Error("Initiation billing control missing detail");
-  }
-  const std::string detail_json = *detail_text;
-  const std::string peer = actor_identity.empty() ? std::string() : actor_identity;
-
-  switch (*type) {
-  case InitiationBillingControlType::ChargeRequired: {
-    auto charge = InitiationBillingCodec::DecodeChargeRequired(detail_json);
-    if (!charge) {
-      return charge.error();
-    }
-    const std::string key = charge->peer_identity.empty() ? peer : charge->peer_identity;
-    if (key.empty()) {
-      return {};
-    }
-    (void)initiation_billing_->SetFloor(key, charge->floor_minor);
-    (void)initiation_billing_->MarkClosed(key);
-    log().info << "charge_required from " << key << " floor=" << charge->floor_minor;
-    return {};
-  }
-  case InitiationBillingControlType::InitiationOffer: {
-    auto offer = InitiationBillingCodec::DecodeInitiationOffer(detail_json);
-    if (!offer) {
-      return offer.error();
-    }
-    const std::string key = offer->peer_identity.empty() ? peer : offer->peer_identity;
-    int64_t local_floor = 0;
-    if (auto id = identity_.Get()) {
-      local_floor = id->initiation_floor;
-    }
-    if (local_floor > 0) {
-      if (auto ok = InitiationPricing::CheckOfferAgainstFloor(offer->offer_minor, local_floor); !ok) {
-        log().info << "initiation_offer rejected offer_too_low peer=" << key
-                   << " offer=" << offer->offer_minor << " floor=" << local_floor;
-        return {}; // soft drop; sender sees no accept
-      }
-    }
-    (void)initiation_billing_->MarkOffered(key, offer->offer_minor, local_floor > 0 ? local_floor : offer->floor_minor);
-    return {};
-  }
-  case InitiationBillingControlType::InitiationAccept: {
-    auto accept = InitiationBillingCodec::DecodeInitiationAccept(detail_json);
-    if (!accept) {
-      return accept.error();
-    }
-    const std::string key = accept->peer_identity.empty() ? peer : accept->peer_identity;
-    // waive or take_all both open the relationship; settlement deferred.
-    (void)initiation_billing_->MarkOpen(key);
-    return {};
-  }
-  }
-  return {};
-}
-
-Roe<void> RelayReceivePipeline::ApplyInboundPaymentPromiseMessage(ThreadMessage& message) const {
-  if (!payment_promises_) {
-    return {};
-  }
-  if (!PaymentPromiseWireCodec::ControlTypeFromMessage(message)) {
-    return {};
-  }
-  auto payload = TryParseObject(message.payload_json);
-  auto detail_text = payload ? payload->getString("detail") : std::nullopt;
-  if (!detail_text || detail_text->empty()) {
-    return Error("payment promise control missing detail");
-  }
-  auto decoded = PaymentPromiseWireCodec::DecodeDetail(*detail_text);
-  if (!decoded) {
-    return decoded.error();
-  }
-  // P003: stage only — chat still shows the system message; commit needs AcceptInbound.
-  auto staged = payment_promises_->StageInbound(*decoded);
-  if (!staged) {
-    return staged.error();
-  }
-  log().info << "staged inbound payment promise id=" << decoded->promise_id;
-  return {};
 }
 
 Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& message,
@@ -960,18 +864,6 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     return outcome;
   }
   MaybeSuppressInboxChrome(outcome, persisted);
-  if (auto billing = ApplyInboundBillingMessage(persisted, envelope.sender_contact_id); !billing) {
-    outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply billing update",
-                       billing.error().message, resolved_thread_id);
-    return outcome;
-  }
-  if (auto promise = ApplyInboundPaymentPromiseMessage(persisted); !promise) {
-    outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't stage payment promise",
-                       promise.error().message, resolved_thread_id);
-    return outcome;
-  }
 
   TombstoneIfRetractedBeforeArrival(persisted, outcome);
   if (auto cap = RejectIfAnnotationCapExceeded(store_, persisted); !cap) {

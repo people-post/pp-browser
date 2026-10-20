@@ -223,7 +223,7 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 
 ## System-control families
 
-A feature's control messages — call control today — are **system messages** whose payload names a
+A feature's control messages — call control, initiation billing, payment promises — are **system messages** whose payload names a
 `control_type`: sent end to end, sequenced and stored like any message. Messaging does not know what
 they mean. A feature binds a `SystemControlFamily` (`common/chat/SystemControl.h`) in the
 `SystemControlRegistry` the hub owns, saying:
@@ -237,6 +237,14 @@ they mean. A feature binds a `SystemControlFamily` (`common/chat/SystemControl.h
 | `line` | The transcript line, names included (`SystemControlLabels`) |
 | `live` | A live exchange (a call): messaging holds key rotation and defers background history sync |
 | `preferred_public_thread` | The public direct thread the family is acting in |
+
+Bound today:
+
+| Family | Bound by | Notes |
+|--------|----------|-------|
+| `call` | the call stack (`feature/calls/CallControlFamily`) | Out of order; plumbing and roster updates hidden; history lines worded with names |
+| `billing` | the hub (`PricingControlFamilies`) | In order. Keyed on the authenticated sender; a message naming another peer is refused |
+| `payment promise` | the hub (`PricingControlFamilies`) | In order. An offer from a party to it is staged for the user's accept |
 
 The receive pipeline, delivery and the inbox read the registry; membership updates and PSK rotation
 are messaging's own and stay in it. Families bind and unbind from any thread (the call stack rebuilds

@@ -132,7 +132,6 @@ public:
   void SetSystemControls(const SystemControlRegistry* controls);
   void SetGroupMembership(GroupMembershipWorkflow* groups);
   void SetInitiationBillingStore(InitiationBillingStore* store);
-  void SetPaymentPromiseStore(PaymentPromiseStore* store);
   void SetProfileDataDir(std::string profile_data_dir);
   void SetAttachmentDownloads(AttachmentFetchWorkflow* downloads);
   /**
@@ -333,7 +332,6 @@ private:
   GroupRosterStore& group_roster_;
   GroupMembershipWorkflow* groups_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
-  PaymentPromiseStore* payment_promises_ = nullptr;
   AttachmentFetchWorkflow* attachment_downloads_ = nullptr;
   std::string profile_data_dir_;
   mesh::IChatPeerLinks* amp_links_ = nullptr;

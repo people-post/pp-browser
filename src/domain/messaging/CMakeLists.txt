@@ -36,6 +36,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     PaymentPromiseStore.cpp
     PaymentPromiseLifecycle.cpp
     PaymentPromiseWireCodec.cpp
+    PricingControlFamilies.cpp
     PeerAnnounceCodec.cpp
     PeerAnnounceFeed.cpp
     PeerAnnouncePublisher.cpp

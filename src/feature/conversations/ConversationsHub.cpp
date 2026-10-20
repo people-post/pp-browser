@@ -8,6 +8,7 @@
 #include "domain/messaging/PaymentPromiseLifecycle.h"
 #include "domain/messaging/PaymentPromiseAvoid.h"
 #include "domain/messaging/PaymentPromiseWireCodec.h"
+#include "domain/messaging/PricingControlFamilies.h"
 #include "common/ValueJson.h"
 
 #include "domain/people/ContactReachability.h"
@@ -1106,6 +1107,11 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   (void)initiation_billing_->Load();
   payment_promises_ = std::make_unique<PaymentPromiseStore>(data_dir_);
   (void)payment_promises_->Load();
+  system_controls_.Bind(MakeInitiationBillingFamily(*initiation_billing_, [identity = identity_.get()]() -> int64_t {
+    auto local = identity->Get();
+    return local ? local->initiation_floor : 0;
+  }));
+  system_controls_.Bind(MakePaymentPromiseFamily(*payment_promises_));
 
   {
     StartupPhase phase("ConversationsHub::ReconcileOutbox");
@@ -1246,7 +1252,6 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   mesh_messaging_->SetProfileDataDir(data_dir_);
   mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
-  mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
   WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
@@ -1335,7 +1340,6 @@ Roe<void> ConversationsHub::BuildLocalMessagingStack() {
   mesh_messaging_->SetProfileDataDir(data_dir_);
   mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
-  mesh_messaging_->SetPaymentPromiseStore(payment_promises_.get());
   mesh_messaging_->SetPeerRouteSources(directory_shadows_.get(), directory_);
   WireAttachmentDownloads();
   group_membership_ = std::make_unique<GroupMembershipWorkflow>(*store_, *contacts_, *identity_, *group_roster_,
@@ -2762,6 +2766,9 @@ void ConversationsHub::Shutdown() {
   call_stack_->ResetSessions();
   // Destroy P2P before groups — P2P held a non-owning Groups pointer.
   mesh_messaging_.reset();
+  // Nothing receives any more: the pricing families may let go of their stores.
+  system_controls_.Unbind(kInitiationBillingFamily);
+  system_controls_.Unbind(kPaymentPromiseFamily);
   group_membership_.reset();
   group_invite_gate_.reset();
   group_roster_.reset();

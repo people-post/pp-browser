@@ -22,8 +22,6 @@
 namespace pbr {
 
 class GroupInviteGate;
-class InitiationBillingStore;
-class PaymentPromiseStore;
 
 struct RelayReceiveOutcome {
   bool persisted = false;
@@ -67,8 +65,6 @@ public:
 
   /** The system-control families features bind (call control, …). Not owned; null: none. */
   void SetSystemControls(const SystemControlRegistry* controls) { controls_ = controls; }
-  void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
-  void SetPaymentPromiseStore(PaymentPromiseStore* store) { payment_promises_ = store; }
   /**
    * projects/privacy T3: direct messages (chat and call control) from a Blocked sender are dropped
    * on receipt. Not owned; null = no blocking.
@@ -130,9 +126,6 @@ private:
                                RelayReceiveOutcome& outcome) const;
   /** A hidden or quiet control message bumps no unread count, preview or notice. */
   void MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome, const ThreadMessage& message) const;
-  Roe<void> ApplyInboundBillingMessage(ThreadMessage& message, const std::string& actor_identity) const;
-  /** P003: stage remote payment-promise receipts; never auto-commit. */
-  Roe<void> ApplyInboundPaymentPromiseMessage(ThreadMessage& message) const;
   Roe<void> ValidateInboundPskRotate(const RelayEnvelope& envelope, const ThreadMessage& message) const;
   Roe<void> ApplyInboundPskRotate(const std::string& thread_id, const RelayEnvelope& envelope,
                                  const ThreadMessage& message);
@@ -144,8 +137,6 @@ private:
   GroupRosterStore& group_roster_;
   GroupInviteGate* invite_gate_ = nullptr;
   const SystemControlRegistry* controls_ = nullptr;
-  InitiationBillingStore* initiation_billing_ = nullptr;
-  PaymentPromiseStore* payment_promises_ = nullptr;
   IContactTrustAccess* contact_trust_ = nullptr;
   bool SenderBlocked(const std::string& sender) const;
   PublicPskLockCoordinator public_lock_;

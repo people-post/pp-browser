@@ -5,7 +5,6 @@
 #include "domain/messaging/PeerAnnounceKeyResolve.h"
 #include "domain/messaging/PeerAnnouncePublisher.h"
 #include "domain/messaging/PeerAnnounceRpcCodec.h"
-#include "domain/messaging/PeerSigningKeyStore.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "foundation/crypto/MlDsa.h"
@@ -15,6 +14,7 @@
 #include "common/thread/ThreadChannel.h"
 
 #include <gtest/gtest.h>
+#include <map>
 #include <variant>
 
 #include "common/PbrCompat.h"
@@ -191,15 +191,29 @@ TEST(PeerAnnounceTest, RpcTipPushAckRoundTrip) {
   EXPECT_STREQ(kRpcPeerAnnounceProtocolId, "/pp-browser/rpc/peer-announce/1.0.0");
 }
 
+/** Stored signing keys (base64) by identity kind and value. */
+using StoredKeys = std::map<std::pair<std::string, std::string>, std::string>;
+
+StoredSigningKeyLookup Lookup(const StoredKeys& keys) {
+  return [&keys](const std::string& kind, const std::string& value) -> std::optional<std::string> {
+    const auto it = keys.find({kind, value});
+    if (it == keys.end()) {
+      return std::nullopt;
+    }
+    return it->second;
+  };
+}
+
+const std::string kPeerIdKind = ContactIdKindToString(mesh::ContactIdKind::PeerId);
+
 TEST(PeerAnnounceKeyResolveTest, PrefersLocalDeviceKey) {
   auto keys = MlDsa::GenerateKeyPair();
   ASSERT_TRUE(keys);
   auto peer_id = pp::PeerIdFromMlDsaPublicKey(keys->public_key);
   ASSERT_TRUE(peer_id);
 
-  PeerSigningKeyStore store;
-  auto resolved =
-      ResolvePeerAnnouncePublisherKey(*peer_id, *peer_id, keys->public_key, store);
+  const StoredKeys stored;
+  auto resolved = ResolvePeerAnnouncePublisherKey(*peer_id, *peer_id, keys->public_key, Lookup(stored));
   ASSERT_TRUE(resolved);
   EXPECT_EQ(*resolved, keys->public_key);
 }
@@ -210,19 +224,15 @@ TEST(PeerAnnounceKeyResolveTest, ResolvesPeerIdStoreAndRejectsAccountKind) {
   auto peer_id = pp::PeerIdFromMlDsaPublicKey(keys->public_key);
   ASSERT_TRUE(peer_id);
 
-  PeerSigningKeyStore store;
-  PeerSigningKeyRecord record;
-  record.signing_public_key_b64 = Base64Encode(keys->public_key);
-  record.source = "test";
-  store.Put(ContactIdKindToString(mesh::ContactIdKind::PeerId), *peer_id, record);
-
-  auto resolved = ResolvePeerAnnouncePublisherKey(*peer_id, "other-local", {}, store);
+  const StoredKeys stored{{{kPeerIdKind, *peer_id}, Base64Encode(keys->public_key)}};
+  auto resolved = ResolvePeerAnnouncePublisherKey(*peer_id, "other-local", {}, Lookup(stored));
   ASSERT_TRUE(resolved);
   EXPECT_EQ(*resolved, keys->public_key);
 
-  PeerSigningKeyStore account_only;
-  account_only.Put(ContactIdKindToString(mesh::ContactIdKind::Account), *peer_id, record);
-  EXPECT_FALSE(ResolvePeerAnnouncePublisherKey(*peer_id, "other-local", {}, account_only));
+  const StoredKeys account_only{
+      {{ContactIdKindToString(mesh::ContactIdKind::Account), *peer_id}, Base64Encode(keys->public_key)}};
+  EXPECT_FALSE(ResolvePeerAnnouncePublisherKey(*peer_id, "other-local", {}, Lookup(account_only)));
+  EXPECT_FALSE(ResolvePeerAnnouncePublisherKey(*peer_id, "other-local", {}, nullptr));
 }
 
 TEST(PeerAnnounceKeyResolveTest, RejectsPeerIdBindMismatch) {
@@ -231,15 +241,9 @@ TEST(PeerAnnounceKeyResolveTest, RejectsPeerIdBindMismatch) {
   auto peer_id = pp::PeerIdFromMlDsaPublicKey(keys->public_key);
   ASSERT_TRUE(peer_id);
 
-  PeerSigningKeyStore store;
-  PeerSigningKeyRecord record;
-  record.signing_public_key_b64 = Base64Encode(keys->public_key);
-  record.source = "test";
-  store.Put(ContactIdKindToString(mesh::ContactIdKind::PeerId), "not-the-derived-peer-id", record);
-
-  EXPECT_FALSE(
-      ResolvePeerAnnouncePublisherKey("not-the-derived-peer-id", "other-local", {}, store));
-  EXPECT_FALSE(ResolvePeerAnnouncePublisherKey(*peer_id, "other-local", {}, store));
+  const StoredKeys stored{{{kPeerIdKind, "not-the-derived-peer-id"}, Base64Encode(keys->public_key)}};
+  EXPECT_FALSE(ResolvePeerAnnouncePublisherKey("not-the-derived-peer-id", "other-local", {}, Lookup(stored)));
+  EXPECT_FALSE(ResolvePeerAnnouncePublisherKey(*peer_id, "other-local", {}, Lookup(stored)));
 }
 
 

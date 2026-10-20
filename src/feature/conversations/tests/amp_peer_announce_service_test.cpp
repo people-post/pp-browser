@@ -146,7 +146,11 @@ TEST_F(AmpPeerAnnounceTransportTest, PushTipRoundTripWithStoreBackedResolver) {
 
   b_svc_->SetPublisherKeyResolver(
       [&store](const std::string& tip_peer_id) -> std::optional<std::vector<uint8_t>> {
-        return ResolvePeerAnnouncePublisherKey(tip_peer_id, "", {}, store);
+        return ResolvePeerAnnouncePublisherKey(
+            tip_peer_id, "", {}, [&store](const std::string& kind, const std::string& value) -> std::optional<std::string> {
+              auto stored = store.Get(kind, value);
+              return stored ? std::optional<std::string>(stored->signing_public_key_b64) : std::nullopt;
+            });
       });
 
   auto topic = MakePeerAnnounceTopicId(*peer_id, "live");

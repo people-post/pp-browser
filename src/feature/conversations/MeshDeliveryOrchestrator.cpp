@@ -370,7 +370,15 @@ std::optional<std::vector<uint8_t>> MeshDeliveryOrchestrator::ResolveAnnouncePub
     if (auto pk = identity_.GetDeviceMlDsaPublicKey()) {
       local_pk = *pk;
     }
-  return ResolvePeerAnnouncePublisherKey(peer_id, local_peer_id, local_pk, signing_key_store_);
+  return ResolvePeerAnnouncePublisherKey(
+      peer_id, local_peer_id, local_pk,
+      [this](const std::string& kind, const std::string& value) -> std::optional<std::string> {
+        auto record = signing_key_store_.Get(kind, value);
+        if (!record) {
+          return std::nullopt;
+        }
+        return record->signing_public_key_b64;
+      });
 }
 
 void MeshDeliveryOrchestrator::RegisterPeerKemKey(const std::string& peer_identity_kind,
@@ -409,16 +417,6 @@ void MeshDeliveryOrchestrator::SetRelayClient(IRelayClient* relay) {
 
 void MeshDeliveryOrchestrator::SetInitiationBillingStore(InitiationBillingStore* store) {
   initiation_billing_ = store;
-  if (receive_pipeline_) {
-    receive_pipeline_->SetInitiationBillingStore(store);
-  }
-}
-
-void MeshDeliveryOrchestrator::SetPaymentPromiseStore(PaymentPromiseStore* store) {
-  payment_promises_ = store;
-  if (receive_pipeline_) {
-    receive_pipeline_->SetPaymentPromiseStore(store);
-  }
 }
 
 void MeshDeliveryOrchestrator::SetSystemControls(const SystemControlRegistry* controls) {
