@@ -1,4 +1,5 @@
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/conversations/DeleteForEveryone.h"
 #include "feature/node/AppRuntimeMeshExecutors.h"
 
 #include "feature/conversations/LocalAccountBackup.h"
@@ -1939,13 +1940,15 @@ Roe<void> ConversationsHub::DeleteMessageForEveryone(const std::string& thread_i
   if (!found->has_value()) {
     return Error("Message not found");
   }
-  if ((*found)->sender_contact_id != kLocalSelfContactId) {
-    return Error("Only your own messages can be deleted for everyone");
-  }
   if ((*found)->content_type == ChatContentType::Deleted) {
     return {};
   }
+  if (!CanDeleteForEveryone(**found)) {
+    return Error("Only your own sent messages can be deleted for everyone");
+  }
   const ThreadMessage original = **found;
+  // A resend still queued for it must not go out after the retract.
+  MeshMessaging().CancelPendingSend(message_id);
   if (auto sent = MeshMessaging().SendRetract(thread_id, message_id); !sent) {
     return sent.error();
   }

@@ -49,6 +49,10 @@ Roe<void> RejectIfAnnotationCapExceeded(IThreadStore& store, const ThreadMessage
   if (target_id.empty()) {
     return {};
   }
+  if (auto fields = ChatPayloadCodec::DecodeAnnotationJson(persisted.payload_json);
+      fields && fields->annotation_type == kAnnotationTypeRetract) {
+    return {}; // the cap guards against reaction floods; it must never stop a delete
+  }
   auto count = store.CountAnnotationsForTarget(persisted.thread_id, target_id);
   if (!count) {
     return count.error();
@@ -1185,13 +1189,20 @@ void RelayReceivePipeline::ApplyInboundRetract(const ThreadMessage& persisted, R
   }
   outcome.deleted_by_sender = true;
   outcome.suppress_inbox_chrome = true;
+  if (*persisted.target_message_id == persisted.id) {
+    // History placeholder for a message its sender deleted (ChatHistoryResponder): it fills the seq, and
+    // shows as "This message was deleted".
+    (void)store_.DeleteMessageContent(persisted.thread_id, persisted.id);
+    return;
+  }
   auto found = store_.GetMessage(persisted.thread_id, *persisted.target_message_id);
   if (!found || !found->has_value()) {
     return; // target not here yet: the stored retract tombstones it on arrival
   }
   const ThreadMessage target = **found;
-  if (target.content_type == ChatContentType::Deleted) {
-    return;
+  if (target.content_type == ChatContentType::Deleted || target.content_type == ChatContentType::Annotation ||
+      target.content_type == ChatContentType::System) {
+    return; // only a message can be withdrawn, not a reaction or a system line
   }
   if (!IsRetractOf(persisted, target)) {
     log().warning << "retract ignored: not from the message's sender";

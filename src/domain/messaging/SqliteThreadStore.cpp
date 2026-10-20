@@ -889,6 +889,7 @@ Roe<bool> SqliteThreadStore::DeleteMessageContent(const std::string& thread_id, 
   tombstone.working_set_json.reset();
   tombstone.ai_image_json.reset();
   tombstone.ai_invoke_mode.reset();
+  tombstone.target_message_id.reset();
   return UpdateMessage(tombstone);
 }
 

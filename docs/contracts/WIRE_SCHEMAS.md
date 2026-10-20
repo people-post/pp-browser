@@ -250,7 +250,7 @@ AEAD uses the **current** `master_psk`. New PSK is only in `body.e2e.key_init_b6
 | `target_message_id` | **LenUtf8** (UUID of target message) |
 | `value` | **LenUtf8** — plain UTF-8 emoji string for reactions (not JSON object) |
 
-Top-level `text` is the display glyph for `reaction` (may be empty for `reaction_clear`, empty for `retract`). A receiver applies `retract` only when its sender is the target's sender: the target becomes a local tombstone (D103) and its bytes are deleted; a target arriving after its retract is stored as a tombstone. Annotation rows are not served by chat history (they would be re-encoded as text). See [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026) and D098.
+Top-level `text` is the display glyph for `reaction` (may be empty for `reaction_clear`, empty for `retract`). A receiver applies `retract` only when its sender is the target's sender and the target is a message (not an annotation or a system line): the target becomes a local tombstone (D103) and its bytes are deleted; a target arriving after its retract is stored as a tombstone. `retract` is exempt from the per-target annotation cap. **Chat history** (`ChatHistoryResponder`) serves annotation rows as annotations on E2E channels (left out on plaintext ones), and serves a message deleted on the sender's device as a **placeholder**: same `message_id` / seq, annotation `retract` whose `target_message_id` is its own `message_id`; the requester stores it as a tombstone, which fills the seq so its gap closes. See [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026) and D098.
 
 **`content_type = attachment` (relay blob upload a1):**
 

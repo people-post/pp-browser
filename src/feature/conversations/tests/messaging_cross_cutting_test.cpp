@@ -331,6 +331,68 @@ TEST(MessagingCrossCuttingTest, RetractOfSomeoneElsesMessageIsIgnored) {
   EXPECT_EQ(target->text, "keep me");
 }
 
+// History placeholder for a message the sender deleted: a retract aimed at its own id fills the seq and is
+// stored as "This message was deleted".
+TEST(MessagingCrossCuttingTest, HistoryPlaceholderIsStoredDeleted) {
+  PipelineHarness harness("retract_placeholder", ThreadChannel::E2e);
+  const RelayReceiveOutcome outcome =
+      harness.pipeline.ProcessEnvelope(harness.MakeRetract("gone-1", 1, "gone-1"), harness.local_account_id);
+  EXPECT_TRUE(outcome.persisted);
+  EXPECT_TRUE(outcome.deleted_by_sender);
+  const auto row = harness.Stored("gone-1");
+  ASSERT_TRUE(row.has_value());
+  EXPECT_EQ(row->content_type, ChatContentType::Deleted);
+}
+
+// Only a message can be withdrawn: a retract aimed at the sender's own reaction does nothing.
+TEST(MessagingCrossCuttingTest, RetractOfAReactionIsIgnored) {
+  PipelineHarness harness("retract_reaction", ThreadChannel::E2e);
+  ASSERT_TRUE(harness.pipeline
+                  .ProcessEnvelope(harness.MakeSignedEnvelope("peer-1", 1, "hello", ThreadChannel::E2e),
+                                   harness.local_account_id)
+                  .persisted);
+  ThreadMessage reaction;
+  reaction.content_type = ChatContentType::Annotation;
+  reaction.target_message_id = "peer-1";
+  reaction.text = "x";
+  reaction.payload_json = BuildReactionPayloadJson(kAnnotationTypeReaction, "peer-1", "x");
+  ASSERT_TRUE(harness.pipeline
+                  .ProcessEnvelope(harness.MakeSignedPayloadEnvelope("react-1", 2, reaction), harness.local_account_id)
+                  .persisted);
+  ASSERT_TRUE(harness.pipeline.ProcessEnvelope(harness.MakeRetract("retract-1", 3, "react-1"), harness.local_account_id)
+                  .persisted);
+  const auto row = harness.Stored("react-1");
+  ASSERT_TRUE(row.has_value());
+  EXPECT_EQ(row->content_type, ChatContentType::Annotation);
+}
+
+// The reaction cap never stops a delete.
+TEST(MessagingCrossCuttingTest, RetractPassesTheAnnotationCap) {
+  PipelineHarness harness("retract_cap", ThreadChannel::E2e);
+  ASSERT_TRUE(harness.pipeline
+                  .ProcessEnvelope(harness.MakeSignedEnvelope("peer-1", 1, "hello", ThreadChannel::E2e),
+                                   harness.local_account_id)
+                  .persisted);
+  for (size_t i = 0; i < kMaxAnnotationsPerTarget; ++i) {
+    ThreadMessage filler;
+    filler.id = "fill-" + std::to_string(i);
+    filler.thread_id = harness.thread.id;
+    filler.sender_contact_id = kLocalSelfContactId;
+    filler.content_type = ChatContentType::Annotation;
+    filler.target_message_id = "peer-1";
+    filler.text = "x";
+    filler.payload_json = BuildReactionPayloadJson(kAnnotationTypeReaction, "peer-1", "x");
+    filler.timestamp = 2;
+    ASSERT_TRUE(harness.store.AppendMessage(filler));
+  }
+  const RelayReceiveOutcome outcome =
+      harness.pipeline.ProcessEnvelope(harness.MakeRetract("retract-1", 2, "peer-1"), harness.local_account_id);
+  EXPECT_TRUE(outcome.persisted);
+  const auto row = harness.Stored("peer-1");
+  ASSERT_TRUE(row.has_value());
+  EXPECT_EQ(row->content_type, ChatContentType::Deleted);
+}
+
 TEST(MessagingCrossCuttingTest, OversizeEnvelopeHardRejected) {
   PipelineHarness harness("oversize", ThreadChannel::E2ePublic);
 

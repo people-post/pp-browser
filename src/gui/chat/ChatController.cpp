@@ -27,6 +27,7 @@
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "feature/conversations/DeleteForEveryone.h"
 #include "domain/messaging/AttachmentCache.h"
 #include "domain/messaging/PlainTextLinks.h"
 #include "domain/messaging/QuoteReply.h"
@@ -1735,7 +1736,8 @@ void ChatController::StartAttachmentUpload(const std::string& path) {
       [this, thread_id, path](std::function<void(Roe<ThreadMessage>)> done) {
         facade_->SendAttachmentFromPathAsync(thread_id, path, std::move(done));
       },
-      [this](Roe<ThreadMessage> sent) {
+      [this, path](Roe<ThreadMessage> sent) {
+        ReleasePickedFile(path); // read (and kept as a CAS copy) by now
         chat_.attachment_uploading = false;
         chat_.attachment_draft_name = "";
         chat_.status = "";
@@ -1859,6 +1861,7 @@ void ChatController::StartAiImagePrepare(std::string path) {
   // Decoding and re-encoding a photo is blocking work: off the UI thread, reply on it.
   AppRuntime::PostWorkerNormal([this, path = std::move(path), profile_dir, generation, name = std::move(name)]() mutable {
     Roe<PreparedDraft> result = PrepareAiImageDraft(path, profile_dir);
+    ReleasePickedFile(path); // the draft keeps its own copy
     AppRuntime::PostUI([this, generation, name = std::move(name), result = std::move(result)]() mutable {
       if (generation != image_prepare_generation_) {
         if (result) {
@@ -2569,7 +2572,7 @@ void ChatController::OnDeleteMessage(const std::string& message_id, const ui::Ve
     NotifySurfaceChanged();
   };
   auto thread = facade_->GetActiveThread();
-  const bool for_everyone = thread && thread->kind != ThreadKind::Ai && IsOwnMessage(message_id);
+  const bool for_everyone = thread && thread->kind != ThreadKind::Ai && CanDeleteForEveryone(message_id);
   if (!for_everyone) {
     ShowConfirm(Tr("chat.menu.delete_title"), Tr("chat.menu.delete_confirm"), [delete_for_me](const bool ok) {
       if (ok) {
@@ -2613,7 +2616,7 @@ void ChatController::DeleteMessageForEveryone(const std::string& thread_id, cons
   });
 }
 
-bool ChatController::IsOwnMessage(const std::string& message_id) const {
+bool ChatController::CanDeleteForEveryone(const std::string& message_id) const {
   if (!facade_ || message_id.empty()) {
     return false;
   }
@@ -2621,8 +2624,7 @@ bool ChatController::IsOwnMessage(const std::string& message_id) const {
   if (!found || !found->has_value()) {
     return false;
   }
-  const ThreadMessage& message = **found;
-  return message.sender_contact_id == kLocalSelfContactId;
+  return pbr::CanDeleteForEveryone(**found);
 }
 
 bool ChatController::IsDeletedMessage(const std::string& message_id) const {

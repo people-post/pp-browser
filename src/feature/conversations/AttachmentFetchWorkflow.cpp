@@ -495,8 +495,9 @@ void AttachmentFetchWorkflow::DeleteMessagesMedia(const std::string& thread_id,
     if (message.content_type != ChatContentType::Attachment) {
       continue;
     }
-    if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json)) {
-      keys.insert(JobKey(thread_id, fields->content_hash));
+    if (auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
+        fields && !still_used.contains(AttachmentHashHex(fields->content_hash))) {
+      keys.insert(JobKey(thread_id, fields->content_hash)); // a kept message's download goes on
     }
   }
   if (!keys.empty()) {
@@ -617,8 +618,8 @@ Roe<void> AttachmentFetchWorkflow::PrepareThreadHistoryClear(const std::string& 
     const std::string prefix = thread_id + "|";
     CancelJobsLocked([&prefix](const std::string& key) { return key.rfind(prefix, 0) == 0; });
   }
-  DeleteMessagesMedia(thread_id, *page, {}); // the bytes go with the history; R020 suppression keeps them away
-
+  // Views only: the CAS bytes stay (messages keep them through "clear downloaded media"; clear history
+  // deletes them itself once its rows are gone).
   return WipeThreadAttachmentBlobs(profile_dir_, thread_id);
 }
 

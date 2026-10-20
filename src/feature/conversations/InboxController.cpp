@@ -240,9 +240,17 @@ Roe<void> InboxController::DeleteMessageForMe(const std::string& thread_id, cons
 void InboxController::AfterMessageDeleted(const std::string& thread_id, const ThreadMessage& original) {
   const std::string& message_id = original.id;
   if (attachment_downloads_ && (original.content_type == ChatContentType::Attachment || original.ai_image_json)) {
-    // The rest of the thread, so bytes another message here still shows are kept.
-    auto rest = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
-    attachment_downloads_->DeleteMessagesMedia(thread_id, {original}, rest ? *rest : std::vector<ThreadMessage>{});
+    // The rest of the thread, so bytes another message here still shows are kept. Reading it decrypts the
+    // transcript: off the UI thread.
+    auto delete_media = [this, thread_id, original]() {
+      auto rest = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
+      attachment_downloads_->DeleteMessagesMedia(thread_id, {original}, rest ? *rest : std::vector<ThreadMessage>{});
+    };
+    if (AppRuntime::IsRunning()) {
+      AppRuntime::PostWorkerNormal(std::move(delete_media));
+    } else {
+      delete_media();
+    }
   }
   // A summary that already folded this message in still carries its words: forget it (it is rebuilt from
   // what is left).
@@ -291,6 +299,7 @@ Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, cons
     return Error("Thread not found");
   }
 
+  auto before = store_.GetMessagesPage(thread_id, std::nullopt, 10000); // what the bytes belong to
   if (attachment_downloads_) {
     if (auto prepared = attachment_downloads_->PrepareThreadHistoryClear(thread_id, store_); !prepared) {
       return prepared.error();
@@ -299,6 +308,9 @@ Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, cons
 
   if (auto cleared = store_.ClearMessages(thread_id, ClearMessagesOptions{.forget_memory = forget_memory}); !cleared) {
     return cleared.error();
+  }
+  if (attachment_downloads_ && before) {
+    attachment_downloads_->DeleteMessagesMedia(thread_id, *before, {}); // the history is gone: so are its bytes
   }
 
   Thread updated = **thread;

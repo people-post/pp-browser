@@ -174,6 +174,12 @@ TEST(AttachmentFetchWorkflowLocalImageTest, DeleteThreadMediaRemovesCasObjectsAn
     ASSERT_TRUE(store.AppendMessage(attachment));
     EXPECT_TRUE(cas.Exists(CasRealm::Private, file->content_hash));
 
+    // "Clear downloaded media" (and the first step of clear history) drops views only: the messages stay,
+    // and so do their only copies.
+    ASSERT_TRUE(h.workflow.PrepareThreadHistoryClear(thread.id, store));
+    EXPECT_TRUE(cas.Exists(CasRealm::Private, stored->content_hash));
+    EXPECT_TRUE(cas.Exists(CasRealm::Private, file->content_hash));
+
     ASSERT_TRUE(h.workflow.DeleteThreadMedia(thread.id, store));
     EXPECT_FALSE(cas.Exists(CasRealm::Private, file->content_hash));
     EXPECT_FALSE(cas.Exists(CasRealm::Private, stored->content_hash));

@@ -1,6 +1,7 @@
 #include "domain/messaging/ChatHistoryResponder.h"
 
 #include "domain/messaging/ChatPayloadCodec.h"
+#include "domain/messaging/ReactionTypes.h"
 
 #include "foundation/crypto/CryptoUtil.h"
 #include "domain/messaging/E2eRelayPayloadCodec.h"
@@ -168,14 +169,20 @@ Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, IPskSe
   }
 
   for (const ThreadMessage& message : *rows) {
-    // A message deleted here is never served again (the requester closes its seq as empty).
+    // A message deleted here is never served again. Its seq is still filled, with a retract aimed at
+    // itself: the requester's gap closes (an empty answer would not, with later seqs stored) and it shows
+    // "This message was deleted" there.
+    ThreadMessage served = message;
     if (message.content_type == ChatContentType::Deleted) {
-      continue;
+      served.content_type = ChatContentType::Annotation;
+      served.text.clear();
+      served.target_message_id = message.id;
+      served.payload_json = BuildReactionPayloadJson(kAnnotationTypeRetract, message.id, "");
     }
-    auto envelope = OutboundMessageToEnvelope(message, **thread, local_relay_user_id, request.requester_identity_value,
+    auto envelope = OutboundMessageToEnvelope(served, **thread, local_relay_user_id, request.requester_identity_value,
                                               local_account_id, psk_store, sign_bytes);
     if (!envelope) {
-      if (message.content_type == ChatContentType::Annotation) {
+      if (served.content_type == ChatContentType::Annotation) {
         continue; // not servable on this channel: the requester closes the seq as empty
       }
       return envelope.error();

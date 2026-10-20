@@ -22,5 +22,10 @@ void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback);
  * WebP; elsewhere the same dialog as ShowOpenImageFileDialog.
  */
 void ShowOpenImageDocumentDialog(SDL_Window* window, NativeFileDialogCallback callback, bool include_heic = false);
+/**
+ * Done with a picked path: on iOS its private copy (tmp/pp-picks) is deleted, so a picked photo does not
+ * stay on disk unencrypted. Anything else (desktop originals, other paths) is left alone.
+ */
+void ReleasePickedFile(const std::string& path);
 
 } // namespace pbr

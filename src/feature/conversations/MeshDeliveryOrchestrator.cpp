@@ -79,6 +79,10 @@ Roe<void> EnsureAnnotationCap(IThreadStore& store, const std::string& thread_id,
   if (target_id.empty()) {
     return Error("Annotation missing target_message_id");
   }
+  if (auto fields = ChatPayloadCodec::DecodeAnnotationJson(message.payload_json);
+      fields && fields->annotation_type == kAnnotationTypeRetract) {
+    return {}; // the cap guards against reaction floods; it must never stop a delete
+  }
   auto count = store.CountAnnotationsForTarget(thread_id, target_id);
   if (!count) {
     return count.error();

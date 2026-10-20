@@ -1,6 +1,7 @@
 // iOS file pickers: SDL3 has no iOS dialog backend. Photos via PHPickerViewController (no photo-library
 // permission needed), files via UIDocumentPickerViewController. Picked items are copied into
-// tmp/pp-picks/<uuid>/<name>; the folder is cleared when the next pick starts.
+// tmp/pp-picks/<uuid>/<name>; the consumer releases its copy when done (ReleasePickedFile), and leftovers
+// of an earlier run (a crash, a kill) are cleared when the first pick of this run starts.
 #include "foundation/platform/NativeFileDialog.h"
 
 #import <PhotosUI/PhotosUI.h>
@@ -81,7 +82,11 @@ PPPickDelegate* BeginPick(SDL_Window* window, pbr::NativeFileDialogCallback call
     callback({});
     return nil;
   }
-  ClearPickRoot(); // the previous pick's copy has been read by now
+  static bool cleared_leftovers = false; // only earlier runs: this run's copies may still be in use
+  if (!cleared_leftovers) {
+    ClearPickRoot();
+    cleared_leftovers = true;
+  }
   PPPickDelegate* delegate = [[PPPickDelegate alloc] init]; // released in Finish
   delegate->callback = std::move(callback);
   g_active = delegate;
@@ -185,6 +190,18 @@ void PresentDocumentPicker(SDL_Window* window, NativeFileDialogCallback callback
 }
 
 } // namespace
+
+void ReleasePickedFile(const std::string& path) {
+  @autoreleasepool {
+    NSString* file = [NSString stringWithUTF8String:path.c_str()];
+    NSString* root = [PickRoot() stringByAppendingString:@"/"];
+    // Resolve /private/var vs /var: compare standardized paths.
+    if (file == nil || ![file.stringByStandardizingPath hasPrefix:root.stringByStandardizingPath]) {
+      return;
+    }
+    [[NSFileManager defaultManager] removeItemAtPath:[file stringByDeletingLastPathComponent] error:nil];
+  }
+}
 
 void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback) {
   if (!callback) {
