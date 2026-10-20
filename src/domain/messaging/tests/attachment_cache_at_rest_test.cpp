@@ -282,4 +282,20 @@ TEST_F(AttachmentCacheAtRestTest, SafeToAutoOpenRequiresWhitelistedExtensionAndC
 }
 
 } // namespace
+TEST(AttachmentPlaintextMemoryCacheTest, EraseDropsOneEntryOnly) {
+  auto& cache = AttachmentPlaintextMemoryCache::Instance();
+  cache.Clear();
+  cache.Put("aa", ByteVector{1, 2, 3});
+  cache.Put("bb", ByteVector{4, 5});
+  ASSERT_EQ(cache.EntryCountForTest(), 2u);
+  cache.Erase("aa");
+  cache.Erase("missing");
+  EXPECT_EQ(cache.EntryCountForTest(), 1u);
+  EXPECT_EQ(cache.TotalBytesForTest(), 2u);
+  ByteVector out;
+  EXPECT_FALSE(cache.TryGet("aa", out));
+  EXPECT_TRUE(cache.TryGet("bb", out));
+  cache.Clear();
+}
+
 } // namespace pbr

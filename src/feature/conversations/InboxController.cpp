@@ -177,6 +177,9 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
   }
 
   const bool was_active = active_thread_id_ == thread_id;
+  if (attachment_downloads_) {
+    (void)attachment_downloads_->DeleteLocalImages(thread_id, store_); // AI images have no copy elsewhere
+  }
   auto deleted = store_.DeleteThread(thread_id);
   if (!deleted || !*deleted) {
     return Error("Failed to delete thread");
@@ -228,6 +231,10 @@ Roe<void> InboxController::HideMessageLocally(const std::string& thread_id, cons
   auto appended = store_.AppendMessage(marker);
   if (!appended) {
     return appended.error();
+  }
+  if (attachment_downloads_) {
+    // An AI question's image has no copy anywhere else: hiding the question deletes it.
+    (void)attachment_downloads_->DeleteLocalImageOfMessage(thread_id, message_id, store_);
   }
   return {};
 }
@@ -1106,6 +1113,7 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
     MessageDisplayRow row;
     row.message_id = message.id.c_str();
     row.display_order = message.display_order;
+    row.ai_image_json = message.ai_image_json.value_or(std::string());
     // Call history lines already include names; skip the sender chip above the system line.
     if (CallControlCodec::IsCallControlMessage(message)) {
       row.sender_label = "";

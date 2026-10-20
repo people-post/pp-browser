@@ -1920,9 +1920,6 @@ bool ChatController::SendImageQuestion(const std::string& text) {
   const std::string thread_id = ActiveThreadId();
   const std::string question = text.empty() ? Tr("chat.image.default_question") : text;
   const std::string message_id = util::GenerateUuid();
-  if (!image.file_path.empty()) {
-    ai_image_files_[message_id] = AiImageView{image.file_path, image.width, image.height};
-  }
   widgets_.ExpireOpenForms();
   DirtyChatTurns();
   chat_.loading = true;
@@ -1931,8 +1928,35 @@ bool ChatController::SendImageQuestion(const std::string& text) {
   UpdateSidebarPreview(question);
   DirtyChatChrome();
   DirtyChatHeader();
-  log().info << "Submitting an image question to the agent session";
-  agent_ports_.submit_image_to_thread(thread_id, question, AgentImageTurn{.image = std::move(image.image), .message_id = message_id});
+  // The image is kept like a received attachment (private CAS + this thread's view file) and the message
+  // stores a reference to it, so the bubble can show it after a restart. Hashing, encrypting and writing
+  // ~1.5 MB is blocking work: off the UI thread, submit from the reply. If the store fails the question
+  // still goes out and the bubble shows only the marker.
+  ConversationsFacade* facade = facade_;
+  AppRuntime::PostWorkerNormal([this, facade, thread_id, question, message_id, image = std::move(image)]() mutable {
+    auto stored = facade->StoreAiImage(thread_id, image.image.data, image.image.mime);
+    AppRuntime::PostUI([this, thread_id, question, message_id, image = std::move(image),
+                        stored = std::move(stored)]() mutable {
+      std::string ai_image_json;
+      if (stored) {
+        ai_image_json = AiImageRefToJson(AiImageRef{.content_hash = std::move(stored->content_hash),
+                                                    .mime = image.image.mime,
+                                                    .width = image.width,
+                                                    .height = image.height});
+      } else {
+        log().warning << "AI image not stored: " << AppError::Log(stored.error());
+      }
+      RemoveSessionFile(image.file_path); // the composer's preview; the thread's view file takes over
+      if (!agent_ports_.submit_image_to_thread) {
+        return;
+      }
+      log().info << "Submitting an image question to the agent session";
+      agent_ports_.submit_image_to_thread(thread_id, question,
+                                          AgentImageTurn{.image = std::move(image.image),
+                                                         .message_id = message_id,
+                                                         .ai_image_json = std::move(ai_image_json)});
+    });
+  });
   return true;
 }
 
@@ -1954,16 +1978,16 @@ void ChatController::DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) c
     if (rml.find(kAiImageTurnMarker) == std::string::npos) {
       continue;
     }
-    // The thumbnail is a session file: after a restart (or a vault lock) only the marker remains.
+    // The message references the stored image (private CAS); the view file is materialized on demand.
+    // Without a reference (older questions, a failed store) or while locked only the marker remains.
     std::string src;
     int width = 0;
     int height = 0;
-    if (const auto view = ai_image_files_.find(row.message_id.c_str()); view != ai_image_files_.end()) {
-      std::error_code ec;
-      if (std::filesystem::is_regular_file(view->second.file_path, ec)) {
-        src = StructuredTextParser::EscapeText(view->second.file_path);
-        width = view->second.width;
-        height = view->second.height;
+    if (const auto ref = AiImageRefFromJson(row.ai_image_json)) {
+      if (const auto view = facade_->AiImageViewPath(thread->id, ref->content_hash, ref->mime)) {
+        src = StructuredTextParser::EscapeText(*view);
+        width = ref->width;
+        height = ref->height;
       }
     }
     row.content_rml = DecorateAiImageBubble(std::move(rml), src, width, height, Tr("chat.image.marker")).c_str();
@@ -3743,6 +3767,11 @@ void ChatController::WireMessagingBindings() {
     return;
   }
   messaging_ready_ = true;
+  // Pre-send image previews are session files; a crash or a kill leaves them behind, so start clean.
+  if (const std::string profile_dir = facade_ ? facade_->ProfileDataDir() : std::string(); !profile_dir.empty()) {
+    std::error_code ec;
+    std::filesystem::remove_all(AttachmentViewRoot(profile_dir, kAiImageViewThread), ec);
+  }
   EnsureBriefGuestLlmKey();
   RefreshLlmSetupBanner();
   if (IThreadStore* store = facade_ ? facade_->ThreadStore() : nullptr) {

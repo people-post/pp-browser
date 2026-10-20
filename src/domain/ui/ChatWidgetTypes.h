@@ -71,6 +71,8 @@ struct MessageDisplayRow {
   ui::String transport_badge;
   /** Store cursor for local scroll-up paging (D031) — not bound to RML. */
   int64_t display_order = 0;
+  /** `ThreadMessage::ai_image_json` of an AI question that carried an image — not bound to RML. */
+  std::string ai_image_json;
   bool has_content = true;
   bool has_form = false;
   FormWidgetState form;

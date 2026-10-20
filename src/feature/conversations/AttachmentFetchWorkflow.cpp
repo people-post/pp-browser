@@ -3,11 +3,16 @@
 #include "foundation/crypto/AttachmentContentHash.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "domain/messaging/AttachmentCache.h"
+#include "domain/messaging/AttachmentPlaintextMemoryCache.h"
+#include "domain/messaging/CasStore.h"
+#include "feature/conversations/AiImageRef.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "feature/conversations/AttachmentFetch.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include <sodium.h>
+
+#include <filesystem>
 #include "common/PbrCompat.h"
 
 namespace pbr {
@@ -344,6 +349,81 @@ Roe<std::string> AttachmentFetchWorkflow::EnsureLocalViewPath(const std::string&
   return EnsureAttachmentViewPath(profile_dir_, thread_id, content_hash, mime, filename, dek_copy, profile_id_);
 }
 
+Roe<AttachmentFetchWorkflow::StoredLocalImage> AttachmentFetchWorkflow::StoreLocalImage(
+    const std::string& thread_id, const ByteVector& plaintext, const std::string& mime) {
+  const ByteVector dek_copy = CopyDek();
+  if (dek_copy.empty() || profile_id_.empty()) {
+    return Error("Storing an image requires unlocked DEK");
+  }
+  auto hash = AttachmentContentHash(plaintext);
+  if (!hash) {
+    return hash.error();
+  }
+  if (auto saved = SaveAttachmentPlaintext(profile_dir_, thread_id, *hash, mime, plaintext, std::string(), dek_copy,
+                                           profile_id_);
+      !saved) {
+    return saved.error();
+  }
+  auto view = EnsureAttachmentViewPath(profile_dir_, thread_id, *hash, mime, std::string(), dek_copy, profile_id_);
+  if (!view) {
+    return view.error();
+  }
+  return StoredLocalImage{.content_hash = std::move(*hash), .view_path = std::move(*view)};
+}
+
+namespace {
+
+/** CAS object, RAM copy and this thread's view file of one AI image; errors are not reported (best effort). */
+void DeleteLocalImageRef(const std::string& profile_dir, const std::string& profile_id, const std::string& thread_id,
+                         const std::string& ai_image_json) {
+  const auto ref = AiImageRefFromJson(ai_image_json);
+  if (!ref) {
+    return;
+  }
+  CasStore cas(profile_dir, profile_id);
+  (void)cas.Delete(CasRealm::Private, ref->content_hash); // the object id is the content hash (R016)
+  AttachmentPlaintextMemoryCache::Instance().Erase(AttachmentHashHex(ref->content_hash));
+  if (const auto view = AttachmentLocalPath(profile_dir, thread_id, ref->content_hash, ref->mime); !view.empty()) {
+    std::error_code ec;
+    std::filesystem::remove(view, ec);
+  }
+}
+
+} // namespace
+
+Roe<void> AttachmentFetchWorkflow::DeleteLocalImages(const std::string& thread_id, IThreadStore& store) {
+  if (profile_dir_.empty() || profile_id_.empty()) {
+    return Error("Deleting images requires a profile");
+  }
+  auto page = store.GetMessagesPage(thread_id, std::nullopt, 10000);
+  if (!page) {
+    return page.error();
+  }
+  for (const ThreadMessage& message : *page) {
+    if (message.ai_image_json) {
+      DeleteLocalImageRef(profile_dir_, profile_id_, thread_id, *message.ai_image_json);
+    }
+  }
+  return {};
+}
+
+Roe<void> AttachmentFetchWorkflow::DeleteLocalImageOfMessage(const std::string& thread_id,
+                                                             const std::string& message_id, IThreadStore& store) {
+  if (profile_dir_.empty() || profile_id_.empty()) {
+    return Error("Deleting images requires a profile");
+  }
+  auto page = store.GetMessagesPage(thread_id, std::nullopt, 10000);
+  if (!page) {
+    return page.error();
+  }
+  for (const ThreadMessage& message : *page) {
+    if (message.id == message_id && message.ai_image_json) {
+      DeleteLocalImageRef(profile_dir_, profile_id_, thread_id, *message.ai_image_json);
+    }
+  }
+  return {};
+}
+
 void AttachmentFetchWorkflow::MaybeBuildPoster(const std::string& thread_id,
                                                  const ChatAttachmentFields& fields) {
   if (!IsAttachmentVideoMime(fields.mime) || profile_dir_.empty() || thread_id.empty()) {
@@ -406,6 +486,7 @@ void AttachmentFetchWorkflow::DrainPendingMediaBacklog(IThreadStore& store) {
 }
 
 Roe<void> AttachmentFetchWorkflow::PrepareThreadHistoryClear(const std::string& thread_id, IThreadStore& store) {
+  (void)DeleteLocalImages(thread_id, store); // AI images have no CDN copy: gone with the history
   auto page = store.GetMessagesPage(thread_id, std::nullopt, 10000);
   if (!page) {
     return page.error();

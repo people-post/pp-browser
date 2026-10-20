@@ -20,6 +20,7 @@ TEST(TranscriptBodyCodecTest, RoundTripPreservesFields) {
   body.content_rml = "<p>rml</p>";
   body.chat_actions.push_back(TranscriptChatAction{.label = "Go", .message = "do it"});
   body.working_set_json = R"({"candidates":[{"block_index":1,"kind":"long_list","affinity":"feed","auto_open":true,"title":"T","subtitle":"1 item","artifact_rml":"<div/>","teaser_rml":"<button/>"}]})";
+  body.ai_image_json = R"({"content_hash":"ab","mime":"image/jpeg","width":4,"height":3})";
 
   auto encoded = TranscriptBodyCodec::Encode(body);
   ASSERT_TRUE(encoded);
@@ -34,6 +35,19 @@ TEST(TranscriptBodyCodecTest, RoundTripPreservesFields) {
   EXPECT_EQ(decoded->chat_actions.front().label, "Go");
   ASSERT_TRUE(decoded->working_set_json);
   EXPECT_EQ(*decoded->working_set_json, *body.working_set_json);
+  ASSERT_TRUE(decoded->ai_image_json);
+  EXPECT_EQ(*decoded->ai_image_json, *body.ai_image_json);
+}
+
+TEST(TranscriptBodyCodecTest, MessageWithoutAiImageStaysWithout) {
+  TranscriptBodyPlaintext body;
+  body.chat_payload = {0x01, 0x00, 0x05, 'h', 'i'};
+  auto encoded = TranscriptBodyCodec::Encode(body);
+  ASSERT_TRUE(encoded);
+  EXPECT_EQ(std::string(encoded->begin(), encoded->end()).find("ai_image_json"), std::string::npos);
+  auto decoded = TranscriptBodyCodec::Decode(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_FALSE(decoded->ai_image_json);
 }
 
 TEST(TranscriptCipherTest, MessageBodyRoundTripAndAadBind) {

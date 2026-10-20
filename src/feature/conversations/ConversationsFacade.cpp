@@ -8,6 +8,7 @@
 #include "feature/registration/RegistrationClient.h"
 #include "feature/conversations/LinkDeviceCoordinator.h"
 #include "feature/conversations/LocalAccountBackup.h"
+#include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "common/chat/PeopleDiscoveryBlocks.h"
@@ -642,6 +643,26 @@ std::optional<std::string> ConversationsFacade::AttachmentLocalPathForMessage(co
     return path;
   }
   return std::nullopt;
+}
+
+Roe<ConversationsFacade::StoredAiImage> ConversationsFacade::StoreAiImage(const std::string& thread_id,
+                                                                          const std::vector<uint8_t>& bytes,
+                                                                          const std::string& mime) {
+  auto stored = hub_.Attachments().StoreLocalImage(thread_id, bytes, mime);
+  if (!stored) {
+    return stored.error();
+  }
+  return StoredAiImage{.content_hash = std::move(stored->content_hash), .view_path = std::move(stored->view_path)};
+}
+
+std::optional<std::string> ConversationsFacade::AiImageViewPath(const std::string& thread_id,
+                                                                const std::vector<uint8_t>& content_hash,
+                                                                const std::string& mime) {
+  auto view = hub_.Attachments().EnsureLocalViewPath(thread_id, content_hash, mime, std::string());
+  if (!view || view->empty()) {
+    return std::nullopt;
+  }
+  return *view;
 }
 
 bool ConversationsFacade::AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id,
