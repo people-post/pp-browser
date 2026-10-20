@@ -329,6 +329,8 @@ private:
   /** The composer sends to an AI thread: an open AI thread, or Home (its first send opens one). */
   bool InAiComposerContext() const;
   void OnAttachAiImage();
+  /** Phones: "Photo / File / Cancel" before a picker (both composers). */
+  void ShowAttachChoice(std::function<void()> photo, std::function<void()> file);
   void StartAiImagePrepare(std::string path);
   void OnRemoveImage();
   /** Drops the pending (or still preparing) image and its session thumbnail file. */
@@ -341,6 +343,10 @@ private:
   void RetryAttachmentDownload(const std::string& message_id);
   void SyncComposerInputState();
   /** What the user reads in a message of the active thread ("" when not found). */
+  void OnDeleteMessage(const std::string& message_id, ui::Vector2i position);
+  void DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
+  bool CanDeleteForEveryone(const std::string& message_id) const;
+  bool IsDeletedMessage(const std::string& message_id) const;
   std::string MessagePlainText(const std::string& message_id) const;
   /**
    * Reply / Ask AI: shows `text` as the quote bar above the composer; the next send carries it as a quote.

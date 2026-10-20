@@ -48,6 +48,11 @@ struct RelayReceiveOutcome {
    * thread to attach a local system line. `receive_failure_detail` is for logs.
    */
   std::optional<std::string> receive_failure_notice;
+  /**
+   * A "delete for everyone" from the sender: either the retract itself, or a message that arrived after its
+   * retract and was stored as a tombstone. No preview / unread bump, no attachment download.
+   */
+  bool deleted_by_sender = false;
   std::optional<std::string> receive_failure_thread_id;
   std::optional<std::string> receive_failure_sender;
   std::string receive_failure_detail;
@@ -68,12 +73,22 @@ public:
    * on receipt. Not owned; null = no blocking.
    */
   void SetContactTrust(IContactTrustAccess* trust) { contact_trust_ = trust; }
+  /** Called after a sender's retract wiped one of their messages here (`original` = the row before). */
+  void SetOnMessageRetracted(std::function<void(const std::string& thread_id, const ThreadMessage& original)> callback) {
+    on_message_retracted_ = std::move(callback);
+  }
 
   RelayReceiveOutcome ProcessEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                       bool authorized_older_backfill = false,
                                       MessageTransport transport = MessageTransport::Relay);
 
 private:
+  /** A retract from the target's own sender tombstones the target (when it is here already). */
+  void ApplyInboundRetract(const ThreadMessage& persisted, RelayReceiveOutcome& outcome);
+  /** A message whose retract arrived first is stored as a tombstone straight away. */
+  void TombstoneIfRetractedBeforeArrival(ThreadMessage& persisted, RelayReceiveOutcome& outcome);
+  std::function<void(const std::string&, const ThreadMessage&)> on_message_retracted_;
+
   RelayReceiveOutcome ProcessDirectEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                             bool authorized_older_backfill, MessageTransport transport);
   RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,

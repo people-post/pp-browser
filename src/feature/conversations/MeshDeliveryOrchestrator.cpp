@@ -79,6 +79,10 @@ Roe<void> EnsureAnnotationCap(IThreadStore& store, const std::string& thread_id,
   if (target_id.empty()) {
     return Error("Annotation missing target_message_id");
   }
+  if (auto fields = ChatPayloadCodec::DecodeAnnotationJson(message.payload_json);
+      fields && fields->annotation_type == kAnnotationTypeRetract) {
+    return {}; // the cap guards against reaction floods; it must never stop a delete
+  }
   auto count = store.CountAnnotationsForTarget(thread_id, target_id);
   if (!count) {
     return count.error();
@@ -140,6 +144,9 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_, group_roster_,
                                              invite_gate);
   receive_pipeline_->SetContactTrust(&contacts_);
+  // A peer withdrew a message we hold: its bytes, summary and preview follow (the pipeline wiped the row).
+  receive_pipeline_->SetOnMessageRetracted(
+      [this](const std::string& thread_id, const ThreadMessage& original) { inbox_.AfterMessageDeleted(thread_id, original); });
   // Blob + chat/history: Amp single entry ([A020] / D10). May also AttachAmpTransports later.
   if (amp_links) {
     AttachAmpTransports(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io),
@@ -669,7 +676,7 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope) {
       MaybeRepairGap((*thread)->id, envelope);
     }
   }
-  if (outcome.persisted && !outcome.thread_id.empty()) {
+  if (outcome.persisted && !outcome.thread_id.empty() && !outcome.deleted_by_sender) {
     std::optional<std::string> preview;
     if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
       preview = decoded->text;
@@ -1949,8 +1956,9 @@ Roe<ThreadMessage> SendAnnotationReaction(MeshDeliveryOrchestrator& mesh_messagi
   if (target_message_id.empty()) {
     return Error("Missing target message");
   }
-  const std::string trimmed = NormalizeEmojiKey(emoji);
-  if (trimmed.empty()) {
+  const bool retract = std::string(annotation_type) == kAnnotationTypeRetract;
+  const std::string trimmed = retract ? std::string() : NormalizeEmojiKey(emoji);
+  if (trimmed.empty() && !retract) {
     return Error("Empty reaction");
   }
   auto has_target = store.HasMessageId(thread_id, target_message_id);
@@ -1992,6 +2000,16 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::ClearReaction(const std::string& th
                                                       const std::string& target_message_id,
                                                       const std::string& emoji) {
   return SendAnnotationReaction(*this, store_, thread_id, target_message_id, emoji, kAnnotationTypeReactionClear);
+}
+
+Roe<ThreadMessage> MeshDeliveryOrchestrator::SendRetract(const std::string& thread_id,
+                                                        const std::string& target_message_id) {
+  return SendAnnotationReaction(*this, store_, thread_id, target_message_id, std::string(), kAnnotationTypeRetract);
+}
+
+void MeshDeliveryOrchestrator::CancelPendingSend(const std::string& message_id) {
+  std::lock_guard lock(retry_mutex_);
+  std::erase_if(retry_queue_, [&](const PendingRelaySend& pending) { return pending.message_id == message_id; });
 }
 
 void MeshDeliveryOrchestrator::RetryFailedOutbound() {

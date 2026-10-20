@@ -82,7 +82,10 @@ public:
   Roe<Thread> CreateNewAiThread();
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
   Roe<void> ClearThreadHistory(const std::string& thread_id, bool forget_memory);
-  Roe<void> HideMessageLocally(const std::string& thread_id, const std::string& message_id);
+  Roe<void> DeleteMessageForMe(const std::string& thread_id, const std::string& message_id);
+  Roe<std::optional<ThreadMessage>> GetMessage(const std::string& thread_id, const std::string& message_id);
+  /** Our own message, for everyone in the chat / group. Blocking (network): call off the UI thread. */
+  Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
   void MarkThreadRead(const std::string& thread_id);
   /** Per-thread local settings (pin / mute / archive); rows that differ from the defaults. */
   Roe<std::vector<ThreadLocalPrefs>> ListThreadLocalPrefs();

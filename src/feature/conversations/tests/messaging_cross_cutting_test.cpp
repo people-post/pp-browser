@@ -8,6 +8,7 @@
 #include "domain/people/IdentityStore.h"
 #include "domain/messaging/RelayWirePayload.h"
 #include "domain/messaging/SqliteThreadStore.h"
+#include "domain/messaging/ReactionTypes.h"
 #include "foundation/crypto/AutoKeyEstablishment.h"
 #include "foundation/crypto/MlDsa.h"
 #include "domain/people/IdentityStore.h"
@@ -175,6 +176,69 @@ public:
     return envelope;
   }
 
+  /** A peer E2E envelope carrying any chat payload (annotations etc.), signed like the text one. */
+  RelayEnvelope MakeSignedPayloadEnvelope(const std::string& message_id, uint64_t seq, const ThreadMessage& body) const {
+    RelayEnvelope envelope;
+    envelope.envelope_version = kRelayEnvelopeVersion;
+    envelope.message_id = message_id;
+    envelope.sender_contact_id = "account:peer";
+    envelope.sender_relay_id = "relay:peer";
+    envelope.route.kind = "direct";
+    envelope.route.channel = ThreadChannel::E2e;
+    envelope.sender_seq = seq;
+    envelope.session_epoch = 1;
+    envelope.timestamp = static_cast<int64_t>(seq);
+    auto row = ChatPayloadCodec::EncodeToRow(body);
+    if (!row) {
+      throw std::runtime_error("Failed to encode payload");
+    }
+    E2eEncryptParams params;
+    params.text = body.text;
+    params.channel = CryptoChannel::E2e;
+    params.peer_contact_id = local_account_id;
+    params.sender_contact_id = "account:peer";
+    params.message_id = message_id;
+    params.sender_seq = seq;
+    params.session_epoch = 1;
+    params.timestamp = envelope.timestamp;
+    auto payload = E2eRelayPayloadCodec::EncryptChatPayloadBytes(params, *row, TestMasterPsk());
+    if (!payload) {
+      throw std::runtime_error("Failed to encrypt payload");
+    }
+    envelope.body.e2e.payload_b64 = *payload;
+    auto sign_bytes = EnvelopeSigner::BuildSignBytes(envelope);
+    if (!sign_bytes) {
+      throw std::runtime_error("Failed to build sign bytes");
+    }
+    auto signature = MlDsa::Sign(peer_keys.secret_key, *sign_bytes);
+    if (!signature) {
+      throw std::runtime_error("Failed to sign envelope");
+    }
+    envelope.signature = Base64Encode(*signature);
+    return envelope;
+  }
+
+  RelayEnvelope MakeRetract(const std::string& message_id, uint64_t seq, const std::string& target_id) const {
+    ThreadMessage retract;
+    retract.content_type = ChatContentType::Annotation;
+    retract.target_message_id = target_id;
+    retract.payload_json = BuildReactionPayloadJson(kAnnotationTypeRetract, target_id, "");
+    return MakeSignedPayloadEnvelope(message_id, seq, retract);
+  }
+
+  std::optional<ThreadMessage> Stored(const std::string& id) {
+    auto page = store.GetMessagesPage(thread.id, std::nullopt, 100);
+    if (!page) {
+      return std::nullopt;
+    }
+    for (const ThreadMessage& m : *page) {
+      if (m.id == id) {
+        return m;
+      }
+    }
+    return std::nullopt;
+  }
+
   std::filesystem::path data_dir;
   SqliteThreadStore store;
   IdentityStore identity;
@@ -206,6 +270,127 @@ TEST(MessagingCrossCuttingTest, DuplicateRelayMessageIdIsBenignDuplicate) {
   auto has_id = harness.store.HasMessageId(harness.thread.id, "dup-msg-1");
   ASSERT_TRUE(static_cast<bool>(has_id));
   EXPECT_TRUE(*has_id);
+}
+
+// "Delete for everyone" from the peer: their message becomes a tombstone here, quietly.
+TEST(MessagingCrossCuttingTest, PeerRetractTombstonesTheirMessage) {
+  PipelineHarness harness("retract", ThreadChannel::E2e);
+  std::vector<std::string> retracted;
+  harness.pipeline.SetOnMessageRetracted(
+      [&](const std::string&, const ThreadMessage& original) { retracted.push_back(original.text); });
+  ASSERT_TRUE(harness.pipeline
+                  .ProcessEnvelope(harness.MakeSignedEnvelope("peer-1", 1, "oops", ThreadChannel::E2e),
+                                   harness.local_account_id)
+                  .persisted);
+
+  const RelayReceiveOutcome outcome =
+      harness.pipeline.ProcessEnvelope(harness.MakeRetract("retract-1", 2, "peer-1"), harness.local_account_id);
+  EXPECT_TRUE(outcome.persisted);
+  EXPECT_TRUE(outcome.deleted_by_sender);
+  EXPECT_TRUE(outcome.suppress_inbox_chrome);
+  const auto target = harness.Stored("peer-1");
+  ASSERT_TRUE(target.has_value());
+  EXPECT_EQ(target->content_type, ChatContentType::Deleted);
+  EXPECT_TRUE(target->text.empty());
+  ASSERT_EQ(retracted.size(), 1u);
+  EXPECT_EQ(retracted[0], "oops");
+}
+
+// The retract can overtake its message: the message is then stored as a tombstone on arrival.
+TEST(MessagingCrossCuttingTest, MessageArrivingAfterItsRetractIsStoredDeleted) {
+  PipelineHarness harness("retract_first", ThreadChannel::E2e);
+  const RelayReceiveOutcome first =
+      harness.pipeline.ProcessEnvelope(harness.MakeRetract("retract-1", 2, "peer-1"), harness.local_account_id);
+  ASSERT_TRUE(first.persisted);
+  const RelayReceiveOutcome late = harness.pipeline.ProcessEnvelope(
+      harness.MakeSignedEnvelope("peer-1", 1, "oops", ThreadChannel::E2e), harness.local_account_id, true);
+  EXPECT_TRUE(late.persisted);
+  EXPECT_TRUE(late.deleted_by_sender);
+  const auto target = harness.Stored("peer-1");
+  ASSERT_TRUE(target.has_value());
+  EXPECT_EQ(target->content_type, ChatContentType::Deleted);
+  EXPECT_TRUE(target->text.empty());
+}
+
+// Only a message's own sender can withdraw it: a peer's retract aimed at our message does nothing.
+TEST(MessagingCrossCuttingTest, RetractOfSomeoneElsesMessageIsIgnored) {
+  PipelineHarness harness("retract_other", ThreadChannel::E2e);
+  ThreadMessage mine;
+  mine.id = "mine-1";
+  mine.thread_id = harness.thread.id;
+  mine.sender_contact_id = kLocalSelfContactId;
+  mine.text = "keep me";
+  mine.timestamp = 1;
+  ASSERT_TRUE(harness.store.AppendMessage(mine));
+  const RelayReceiveOutcome outcome =
+      harness.pipeline.ProcessEnvelope(harness.MakeRetract("retract-1", 1, "mine-1"), harness.local_account_id);
+  EXPECT_TRUE(outcome.persisted);
+  const auto target = harness.Stored("mine-1");
+  ASSERT_TRUE(target.has_value());
+  EXPECT_EQ(target->content_type, ChatContentType::Text);
+  EXPECT_EQ(target->text, "keep me");
+}
+
+// History placeholder for a message the sender deleted: a retract aimed at its own id fills the seq and is
+// stored as "This message was deleted".
+TEST(MessagingCrossCuttingTest, HistoryPlaceholderIsStoredDeleted) {
+  PipelineHarness harness("retract_placeholder", ThreadChannel::E2e);
+  const RelayReceiveOutcome outcome =
+      harness.pipeline.ProcessEnvelope(harness.MakeRetract("gone-1", 1, "gone-1"), harness.local_account_id);
+  EXPECT_TRUE(outcome.persisted);
+  EXPECT_TRUE(outcome.deleted_by_sender);
+  const auto row = harness.Stored("gone-1");
+  ASSERT_TRUE(row.has_value());
+  EXPECT_EQ(row->content_type, ChatContentType::Deleted);
+}
+
+// Only a message can be withdrawn: a retract aimed at the sender's own reaction does nothing.
+TEST(MessagingCrossCuttingTest, RetractOfAReactionIsIgnored) {
+  PipelineHarness harness("retract_reaction", ThreadChannel::E2e);
+  ASSERT_TRUE(harness.pipeline
+                  .ProcessEnvelope(harness.MakeSignedEnvelope("peer-1", 1, "hello", ThreadChannel::E2e),
+                                   harness.local_account_id)
+                  .persisted);
+  ThreadMessage reaction;
+  reaction.content_type = ChatContentType::Annotation;
+  reaction.target_message_id = "peer-1";
+  reaction.text = "x";
+  reaction.payload_json = BuildReactionPayloadJson(kAnnotationTypeReaction, "peer-1", "x");
+  ASSERT_TRUE(harness.pipeline
+                  .ProcessEnvelope(harness.MakeSignedPayloadEnvelope("react-1", 2, reaction), harness.local_account_id)
+                  .persisted);
+  ASSERT_TRUE(harness.pipeline.ProcessEnvelope(harness.MakeRetract("retract-1", 3, "react-1"), harness.local_account_id)
+                  .persisted);
+  const auto row = harness.Stored("react-1");
+  ASSERT_TRUE(row.has_value());
+  EXPECT_EQ(row->content_type, ChatContentType::Annotation);
+}
+
+// The reaction cap never stops a delete.
+TEST(MessagingCrossCuttingTest, RetractPassesTheAnnotationCap) {
+  PipelineHarness harness("retract_cap", ThreadChannel::E2e);
+  ASSERT_TRUE(harness.pipeline
+                  .ProcessEnvelope(harness.MakeSignedEnvelope("peer-1", 1, "hello", ThreadChannel::E2e),
+                                   harness.local_account_id)
+                  .persisted);
+  for (size_t i = 0; i < kMaxAnnotationsPerTarget; ++i) {
+    ThreadMessage filler;
+    filler.id = "fill-" + std::to_string(i);
+    filler.thread_id = harness.thread.id;
+    filler.sender_contact_id = kLocalSelfContactId;
+    filler.content_type = ChatContentType::Annotation;
+    filler.target_message_id = "peer-1";
+    filler.text = "x";
+    filler.payload_json = BuildReactionPayloadJson(kAnnotationTypeReaction, "peer-1", "x");
+    filler.timestamp = 2;
+    ASSERT_TRUE(harness.store.AppendMessage(filler));
+  }
+  const RelayReceiveOutcome outcome =
+      harness.pipeline.ProcessEnvelope(harness.MakeRetract("retract-1", 2, "peer-1"), harness.local_account_id);
+  EXPECT_TRUE(outcome.persisted);
+  const auto row = harness.Stored("peer-1");
+  ASSERT_TRUE(row.has_value());
+  EXPECT_EQ(row->content_type, ChatContentType::Deleted);
 }
 
 TEST(MessagingCrossCuttingTest, OversizeEnvelopeHardRejected) {

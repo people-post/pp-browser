@@ -182,6 +182,11 @@ select selectbox option:hover {
   color: #f87171;
 }
 
+/* "This message was deleted": a shade lighter than .muted (two classes, so it wins over .muted). */
+.bubble-deleted .bubble-deleted-text {
+  color: #6b7280;
+}
+
 .muted {
   color: #9ca3af;
 }

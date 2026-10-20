@@ -19,6 +19,8 @@ bool IsSupportedContentType(const ChatContentType type) {
   case ChatContentType::Attachment:
   case ChatContentType::Unsupported:
     return true;
+  case ChatContentType::Deleted: // local tombstone, never on the wire
+    return false;
   }
   return false;
 }

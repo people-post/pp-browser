@@ -27,6 +27,7 @@
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
+#include "feature/conversations/DeleteForEveryone.h"
 #include "domain/messaging/AttachmentCache.h"
 #include "domain/messaging/PlainTextLinks.h"
 #include "domain/messaging/QuoteReply.h"
@@ -1699,14 +1700,20 @@ void ChatController::OnAttachFile() {
     return;
   }
 
-  ShowOpenFileDialog(Backend::GetWindow(), [this, thread_id](std::vector<std::string> paths) {
+  auto on_picked = [this, thread_id](std::vector<std::string> paths) {
     AppRuntime::PostUI([this, thread_id, paths = std::move(paths)]() mutable {
       if (paths.empty()) {
         return;
       }
       StartAttachmentUpload(std::move(paths.front()));
     });
-  });
+  };
+  if (!Platform::IsMobile()) {
+    ShowOpenFileDialog(Backend::GetWindow(), std::move(on_picked));
+    return;
+  }
+  ShowAttachChoice([on_picked]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked); },
+                   [on_picked]() { ShowOpenFileDialog(Backend::GetWindow(), on_picked); });
 }
 
 void ChatController::StartAttachmentUpload(const std::string& path) {
@@ -1729,7 +1736,8 @@ void ChatController::StartAttachmentUpload(const std::string& path) {
       [this, thread_id, path](std::function<void(Roe<ThreadMessage>)> done) {
         facade_->SendAttachmentFromPathAsync(thread_id, path, std::move(done));
       },
-      [this](Roe<ThreadMessage> sent) {
+      [this, path](Roe<ThreadMessage> sent) {
+        ReleasePickedFile(path); // read (and kept as a CAS copy) by now
         chat_.attachment_uploading = false;
         chat_.attachment_draft_name = "";
         chat_.status = "";
@@ -1759,17 +1767,30 @@ bool ChatController::InAiComposerContext() const {
 }
 
 void ChatController::OnAttachAiImage() {
-  ShowOpenImageFileDialog(
-      Backend::GetWindow(),
-      [this](std::vector<std::string> paths) {
-        AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
-          if (paths.empty()) {
-            return;
-          }
-          StartAiImagePrepare(std::move(paths.front()));
-        });
-      },
-      /*include_heic=*/true);
+  NativeFileDialogCallback on_picked = [this](std::vector<std::string> paths) {
+    AppRuntime::PostUI([this, paths = std::move(paths)]() mutable {
+      if (paths.empty()) {
+        return;
+      }
+      StartAiImagePrepare(std::move(paths.front()));
+    });
+  };
+  if (!Platform::IsMobile()) {
+    ShowOpenImageFileDialog(Backend::GetWindow(), std::move(on_picked), /*include_heic=*/true);
+    return;
+  }
+  // Same two ways as a chat; the assistant reads images only, so "File" offers image files.
+  ShowAttachChoice([on_picked]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked, /*include_heic=*/true); },
+                   [on_picked]() { ShowOpenImageDocumentDialog(Backend::GetWindow(), on_picked, /*include_heic=*/true); });
+}
+
+void ChatController::ShowAttachChoice(std::function<void()> photo, std::function<void()> file) {
+  // A phone keeps photos and files apart: ask which (the desktop dialog shows both at once).
+  std::vector<ContextMenuAction> actions;
+  actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr, std::move(photo)});
+  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr, std::move(file)});
+  actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
+  ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions));
 }
 
 namespace {
@@ -1840,6 +1861,7 @@ void ChatController::StartAiImagePrepare(std::string path) {
   // Decoding and re-encoding a photo is blocking work: off the UI thread, reply on it.
   AppRuntime::PostWorkerNormal([this, path = std::move(path), profile_dir, generation, name = std::move(name)]() mutable {
     Roe<PreparedDraft> result = PrepareAiImageDraft(path, profile_dir);
+    ReleasePickedFile(path); // the draft keeps its own copy
     AppRuntime::PostUI([this, generation, name = std::move(name), result = std::move(result)]() mutable {
       if (generation != image_prepare_generation_) {
         if (result) {
@@ -2531,6 +2553,91 @@ std::string PlainTextOf(const ThreadMessage& message) {
 }
 
 } // namespace
+
+void ChatController::OnDeleteMessage(const std::string& message_id, const ui::Vector2i position) {
+  if (!facade_) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  auto delete_for_me = [this, thread_id, message_id]() {
+    if (!facade_) {
+      return;
+    }
+    if (auto deleted = facade_->DeleteMessageForMe(thread_id, message_id); !deleted) {
+      ShowToast(AppError::Display(deleted.error()));
+      return;
+    }
+    SyncDisplayFromThread();
+    DirtyChatTurns();
+    NotifySurfaceChanged();
+  };
+  auto thread = facade_->GetActiveThread();
+  const bool for_everyone = thread && thread->kind != ThreadKind::Ai && CanDeleteForEveryone(message_id);
+  if (!for_everyone) {
+    ShowConfirm(Tr("chat.menu.delete_title"), Tr("chat.menu.delete_confirm"), [delete_for_me](const bool ok) {
+      if (ok) {
+        delete_for_me();
+      }
+    });
+    return;
+  }
+  std::vector<ContextMenuAction> actions;
+  ContextMenuAction everyone{"delete_for_everyone", Tr("chat.menu.delete_for_everyone"), nullptr,
+                             [this, thread_id, message_id]() { DeleteMessageForEveryone(thread_id, message_id); }};
+  everyone.danger = true;
+  actions.push_back(std::move(everyone));
+  ContextMenuAction mine{"delete_for_me", Tr("chat.menu.delete_for_me"), nullptr, delete_for_me};
+  mine.danger = true;
+  actions.push_back(std::move(mine));
+  actions.push_back({"delete_cancel", Tr("common.cancel"), nullptr, []() {}});
+  // Opened after this menu is gone: a menu cannot replace itself from inside its own click.
+  AppRuntime::PostUI([position, actions = std::move(actions)]() mutable {
+    ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  });
+}
+
+void ChatController::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
+  ConversationsFacade* facade = facade_;
+  if (!facade) {
+    return;
+  }
+  // Sends a message and may call the relay: off the UI thread, refresh from the reply.
+  AppRuntime::PostWorkerNormal([this, facade, thread_id, message_id]() {
+    auto done = facade->DeleteMessageForEveryone(thread_id, message_id);
+    AppRuntime::PostUI([this, done = std::move(done)]() {
+      if (!done) {
+        ShowToast(AppError::Display(done.error()));
+        return;
+      }
+      SyncDisplayFromThread();
+      DirtyChatTurns();
+      NotifySurfaceChanged();
+    });
+  });
+}
+
+bool ChatController::CanDeleteForEveryone(const std::string& message_id) const {
+  if (!facade_ || message_id.empty()) {
+    return false;
+  }
+  auto found = facade_->GetMessage(ActiveThreadId(), message_id);
+  if (!found || !found->has_value()) {
+    return false;
+  }
+  return pbr::CanDeleteForEveryone(**found);
+}
+
+bool ChatController::IsDeletedMessage(const std::string& message_id) const {
+  if (!facade_ || message_id.empty()) {
+    return false;
+  }
+  auto found = facade_->GetMessage(ActiveThreadId(), message_id);
+  if (!found || !found->has_value()) {
+    return false;
+  }
+  const ThreadMessage& message = **found;
+  return message.content_type == ChatContentType::Deleted;
+}
 
 std::string ChatController::MessagePlainText(const std::string& message_id) const {
   if (!facade_ || message_id.empty()) {
@@ -4165,8 +4272,8 @@ bool ChatController::Setup(ui::Context* context) {
     }
 
     const std::string message_id = FindMessageIdFromElement(request.target);
-    if (message_id.empty()) {
-      return actions;
+    if (message_id.empty() || IsDeletedMessage(message_id)) {
+      return actions; // a deleted message takes no reaction, reply, copy or second delete
     }
     // Reactions sit in the row above the message, the rest in the list below it.
     for (const char* emoji : kReactionPresets) {
@@ -4202,23 +4309,9 @@ bool ChatController::Setup(ui::Context* context) {
         actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { StartQuoteReply(text, "@ai "); }});
       }
     }
-    // Delete for me: this device stops showing the message; the peer keeps theirs.
-    ContextMenuAction remove{"delete_message", Tr("common.delete"), nullptr, [this, message_id]() {
-                               ShowConfirm(Tr("chat.menu.delete_title"), Tr("chat.menu.delete_confirm"),
-                                           [this, message_id](const bool ok) {
-                                             if (!ok || !facade_) {
-                                               return;
-                                             }
-                                             if (auto hidden = facade_->HideMessageLocally(ActiveThreadId(), message_id);
-                                                 !hidden) {
-                                               ShowToast(hidden.error().message);
-                                               return;
-                                             }
-                                             SyncDisplayFromThread();
-                                             DirtyChatTurns();
-                                             NotifySurfaceChanged();
-                                           });
-                             }};
+    // Delete: our own message in a chat offers "for everyone" too; anything else is "for me" only.
+    ContextMenuAction remove{"delete_message", Tr("common.delete"), nullptr,
+                             [this, message_id, position = request.position]() { OnDeleteMessage(message_id, position); }};
     remove.danger = true;
     actions.push_back(std::move(remove));
     return actions;

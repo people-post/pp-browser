@@ -124,6 +124,55 @@ TEST(ChatHistoryResponderTest, ServesSignedOutboundRows) {
   EXPECT_TRUE(*verified);
 }
 
+// A message deleted on this device is never served again: its seq carries a retract aimed at itself, so the
+// requester's gap closes; an annotation is served as an annotation (so a missed retract can be repaired).
+TEST(ChatHistoryResponderTest, DeletedRowsServeAPlaceholderAndAnnotationsStayAnnotations) {
+  ResponderHarness harness("deleted");
+  harness.SeedOutbound(1, "hello");
+  harness.SeedOutbound(2, "world");
+  {
+    ThreadMessage reaction;
+    reaction.id = "out-3";
+    reaction.thread_id = harness.thread.id;
+    reaction.sender_contact_id = kLocalSelfContactId;
+    reaction.content_type = ChatContentType::Annotation;
+    reaction.target_message_id = "out-2";
+    reaction.payload_json = R"({"annotation_type":"reaction","target_message_id":"out-2","value":"x"})";
+    reaction.text = "x";
+    reaction.timestamp = 3;
+    reaction.delivery = MessageDelivery::Relayed;
+    reaction.relay_visible = true;
+    reaction.transport = MessageTransport::Local;
+    reaction.sender_seq = 3;
+    reaction.session_epoch = 1;
+    ASSERT_TRUE(harness.store.AppendMessage(reaction)); // annotations are not re-sent as text
+  }
+  auto deleted = harness.store.DeleteMessageContent(harness.thread.id, "out-1");
+  ASSERT_TRUE(deleted);
+  ASSERT_TRUE(*deleted);
+
+  ChatHistoryRequest request;
+  request.requester_identity_kind = "relay_user";
+  request.requester_identity_value = "relay:peer";
+  request.peer_identity_kind = "relay_user";
+  request.peer_identity_value = harness.local_relay_id;
+  request.channel = ThreadChannel::E2e;
+  request.session_epoch = 1;
+  request.limit = 10;
+  request.order = "asc";
+
+  auto response = ChatHistoryResponder::Serve(
+      harness.store, harness.psk_store, request, harness.local_relay_id,
+      harness.identity.Get()->account_id.empty() ? harness.local_relay_id : harness.identity.Get()->account_id,
+      [&](const std::vector<uint8_t>& bytes) { return harness.identity.SignBytes(bytes); });
+  ASSERT_TRUE(static_cast<bool>(response));
+  ASSERT_EQ(response->messages.size(), 3u);
+  EXPECT_EQ(response->messages[0].sender_seq, 1u); // the placeholder (content checked on the receive side)
+  EXPECT_EQ(response->messages[0].message_id, "out-1");
+  EXPECT_EQ(response->messages[1].sender_seq, 2u);
+  EXPECT_EQ(response->messages[2].sender_seq, 3u);
+}
+
 TEST(ChatHistoryResponderTest, RejectsNonParticipantRequester) {
   ResponderHarness harness("reject");
   ChatHistoryRequest request;

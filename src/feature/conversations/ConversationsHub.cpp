@@ -1,4 +1,5 @@
 #include "feature/conversations/ConversationsHub.h"
+#include "feature/conversations/DeleteForEveryone.h"
 #include "feature/node/AppRuntimeMeshExecutors.h"
 
 #include "feature/conversations/LocalAccountBackup.h"
@@ -1919,6 +1920,71 @@ Roe<BlobQuotaRecoveryPlan> ConversationsHub::PlanRelayQuotaRecovery() {
     return Error("Register on the network before using relay blob storage");
   }
   return PlanOldestRelayBlobDeletion(*blob_, identity->relay_user_id, ProtectedRelayBlobId(data_dir_));
+}
+
+Roe<void> ConversationsHub::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
+  if (!IsInitialized()) {
+    return Error("Messaging hub not initialized");
+  }
+  auto thread = Store().GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread || (*thread)->kind == ThreadKind::Ai) {
+    return Error("Delete for everyone is only for chats");
+  }
+  auto found = Store().GetMessage(thread_id, message_id);
+  if (!found) {
+    return found.error();
+  }
+  if (!found->has_value()) {
+    return Error("Message not found");
+  }
+  if ((*found)->content_type == ChatContentType::Deleted) {
+    return {};
+  }
+  if (!CanDeleteForEveryone(**found)) {
+    return Error("Only your own sent messages can be deleted for everyone");
+  }
+  const ThreadMessage original = **found;
+  // A resend still queued for it must not go out after the retract.
+  MeshMessaging().CancelPendingSend(message_id);
+  if (auto sent = MeshMessaging().SendRetract(thread_id, message_id); !sent) {
+    return sent.error();
+  }
+  if (auto deleted = Inbox().DeleteMessageForMe(thread_id, message_id); !deleted) {
+    return deleted.error();
+  }
+  DeleteUploadedCopy(original);
+  return {};
+}
+
+void ConversationsHub::DeleteUploadedCopy(const ThreadMessage& message) {
+  if (message.content_type != ChatContentType::Attachment || !blob_) {
+    return;
+  }
+  auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
+  if (!fields || fields->url.empty()) {
+    return; // sent peer-direct: nothing on the relay
+  }
+  auto identity = Identity().Get();
+  if (!identity || identity->relay_user_id.empty()) {
+    return;
+  }
+  // The message carries the public URL only; the relay's list maps it back to the blob id.
+  auto listed = blob_->List(identity->relay_user_id);
+  if (!listed) {
+    log().warning << "uploaded copy not deleted: list failed";
+    return;
+  }
+  for (const RelayBlobRecord& record : listed->blobs) {
+    if (record.url == fields->url) {
+      if (auto removed = DeleteRelayBlob(*blob_, identity->relay_user_id, record.blob_id); !removed) {
+        log().warning << "uploaded copy not deleted: " << removed.error().message;
+      }
+      return;
+    }
+  }
 }
 
 Roe<void> ConversationsHub::FreeOldestRelayBlobSlot() {

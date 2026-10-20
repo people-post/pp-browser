@@ -8,8 +8,8 @@ namespace pbr {
 
 inline constexpr const char* kAnnotationTypeReaction = "reaction";
 inline constexpr const char* kAnnotationTypeReactionClear = "reaction_clear";
-/** Local only: this device hides the target message ("delete for me"). Stored, never sent to a peer. */
-inline constexpr const char* kAnnotationTypeHiddenLocal = "hidden_local";
+/** "Delete for everyone": the sender withdraws their own message (target); receivers tombstone it. */
+inline constexpr const char* kAnnotationTypeRetract = "retract";
 
 inline std::string BuildReactionPayloadJson(const std::string& annotation_type,
                                             const std::string& target_message_id, const std::string& emoji) {

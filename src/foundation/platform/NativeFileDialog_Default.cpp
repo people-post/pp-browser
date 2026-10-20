@@ -1,3 +1,4 @@
+// SDL3 file dialog: desktop and Android. iOS has its own (NativeFileDialog_Ios.mm).
 #include "foundation/platform/NativeFileDialog.h"
 
 #include <SDL3/SDL.h>
@@ -44,6 +45,12 @@ void ShowOpenImageFileDialog(SDL_Window* window, NativeFileDialogCallback callba
   };
   auto* state = new DialogState{.callback = std::move(callback)};
   SDL_ShowOpenFileDialog(OnDialogComplete, state, window, include_heic ? filters_heic : filters, 2, nullptr, false);
+}
+
+void ReleasePickedFile(const std::string& /*path*/) {} // the dialog returns the user's own file
+
+void ShowOpenImageDocumentDialog(SDL_Window* window, NativeFileDialogCallback callback, const bool include_heic) {
+  ShowOpenImageFileDialog(window, std::move(callback), include_heic);
 }
 
 void ShowOpenFileDialog(SDL_Window* window, NativeFileDialogCallback callback) {

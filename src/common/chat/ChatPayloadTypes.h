@@ -7,7 +7,8 @@
 
 namespace pbr {
 
-enum class ChatContentType { Text, System, Annotation, ContactCard, CryptoTx, Attachment, Unsupported };
+/** `Deleted`: a local tombstone — the row keeps its id (so sync cannot bring the message back) and no content. */
+enum class ChatContentType { Text, System, Annotation, ContactCard, CryptoTx, Attachment, Unsupported, Deleted };
 
 struct ChatAnnotationFields {
   std::string text;

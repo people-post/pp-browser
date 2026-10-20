@@ -401,6 +401,20 @@ select selectbox option {
 }
 
 /* A peer's plain-text message: keeps its line breaks, like our own (.bubble-text also sets our colour). */
+/* "This message was deleted": no bubble, a small grey note on the sender's side (InboxController). */
+.bubble.bubble-deleted {
+  background-color: transparent;
+  border-width: 0;
+  padding: 2dp 4dp;
+}
+
+/* No italic: only regular font faces are loaded, and RmlUi draws nothing for a face it does not have. */
+.bubble-deleted-text {
+  margin-top: 0;
+  margin-bottom: 0;
+  font-size: 12dp;
+}
+
 .bubble-text-peer {
   margin-top: 0;
   margin-bottom: 0;

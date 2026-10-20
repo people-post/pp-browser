@@ -1,5 +1,6 @@
 #include <stdexcept>
 #include "gui/SettingsController.h"
+#include "foundation/platform/NativeFileDialog.h"
 
 #include "foundation/data/AppPaths.h"
 #include "foundation/data/LlmPreset.h"
@@ -2170,7 +2171,8 @@ void SettingsController::OnPickProfileIcon() {
         status_ = Tr("settings.profile.photo_uploading").c_str();
         BlobQuotaRecoveryFlow::RunVoidUpload(
             [this, path]() { return commands_.upload_profile_icon_file(path); },
-            [this](Roe<void> result) {
+            [this, path](Roe<void> result) {
+              ReleasePickedFile(path);
               ui_state_.profile_icon_uploading = false;
               if (!result) {
                 status_.clear();
