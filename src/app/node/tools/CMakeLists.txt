@@ -13,9 +13,6 @@ set(_pp_probe_libs
   Threads::Threads
   sodium
 )
-if(TARGET OpenSSL::Crypto)
-  list(APPEND _pp_probe_libs OpenSSL::Crypto)
-endif()
 
 add_executable(pp-node-probe probe/main.cpp)
 target_include_directories(pp-node-probe PRIVATE ${CMAKE_SOURCE_DIR}/src)

@@ -86,26 +86,13 @@ if(NOT TARGET ZLIB::ZLIB)
   endif()
 endif()
 
-# --- BoringSSL (curl TLS on Linux + PeerId SHA) ---
+# --- BoringSSL (curl's TLS on Linux, Android and iOS; Windows uses Schannel, macOS SecureTransport) ---
 pp_browser_add_vendored_boringssl()
 
 # --- standalone Asio (pp-node StatusHttpServer) ---
 pp_libp2p_add_vendored(asio)
 if(NOT TARGET Asio::asio)
   message(FATAL_ERROR "Asio::asio target not found")
-endif()
-
-# --- fmt ---
-set(FMT_DOC OFF CACHE BOOL "" FORCE)
-set(FMT_TEST OFF CACHE BOOL "" FORCE)
-set(FMT_INSTALL OFF CACHE BOOL "" FORCE)
-pp_libp2p_add_vendored(fmt)
-pp_libp2p_alias(fmt fmt::fmt)
-
-# --- standalone Outcome ---
-pp_libp2p_add_vendored(outcome)
-if(NOT TARGET Outcome::outcome)
-  message(FATAL_ERROR "Outcome::outcome target not found")
 endif()
 
 pp_configure_status("libp2p third_party dependencies ready")

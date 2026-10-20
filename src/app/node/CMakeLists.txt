@@ -39,9 +39,6 @@ target_link_libraries(pp-node PRIVATE
 if(TARGET pp_feature_node_ledger)
   target_link_libraries(pp-node PRIVATE pp_feature_node_ledger)
 endif()
-if(TARGET OpenSSL::Crypto)
-  target_link_libraries(pp-node PRIVATE OpenSSL::Crypto)
-endif()
 pp_browser_apply_warnings(pp-node)
 # Fail configure / link if a PUBLIC_LIBS edge reintroduces SDL/RmlUi/GUI.
 pp_browser_assert_no_ui_dependencies(pp-node)

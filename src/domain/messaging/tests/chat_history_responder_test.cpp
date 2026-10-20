@@ -4,7 +4,6 @@
 #include "domain/messaging/E2eRelayPayloadCodec.h"
 #include "domain/messaging/EnvelopeSigner.h"
 #include "domain/messaging/SqliteThreadStore.h"
-#include "domain/people/Ed25519Signer.h"
 #include "domain/people/IdentityStore.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
