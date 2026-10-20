@@ -1,7 +1,7 @@
 #include "feature/node/NodeLedgerRole.h"
 
 #include "mesh/testing/mesh_harness_support.h"
-#include "network/AmpLedgerServer.h"
+#include "ledger/network/AmpLedgerServer.h"
 
 #include "amp/L1/Clock.h"
 #include "amp/L1/MemoryDatagramIo.h"

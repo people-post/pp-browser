@@ -1,7 +1,7 @@
 #include "feature/node/NodeLedgerRole.h"
 
-#include "network/AmpLedgerServer.h"
-#include "server/RoleRunner.h"
+#include "ledger/network/AmpLedgerServer.h"
+#include "ledger/server/RoleRunner.h"
 
 #include <atomic>
 #include <filesystem>
