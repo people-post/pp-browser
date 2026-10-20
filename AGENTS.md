@@ -45,7 +45,7 @@ We **own and modify** the engine in sibling [`pp-cpp-ui`](https://github.com/peo
 
 PeerId derivation lives in pp-cpp-crypto (`pp::PeerIdFromMlDsaPublicKey`) — spec and golden vectors in [docs/architecture/MESH_IDENTITY.md](docs/architecture/MESH_IDENTITY.md). Dial / mux / links live in [**pp-cpp-amp**](https://github.com/people-post/pp-cpp-amp) (FetchContent; `#include "amp/..."`); the mesh on top — host, reachability, DHT, directory, relays — in [**pp-cpp-mesh**](https://github.com/people-post/pp-cpp-mesh) (FetchContent; `#include "mesh/..."`, spelled `mesh::X` in app code; lower layers may include only `mesh/types/`) — [docs/architecture/MESH.md](docs/architecture/MESH.md). There is no libp2p fork in the tree.
 
-- Shared vendored deps (BoringSSL, fmt, …) come from `cmake/libp2p_dependencies.cmake`; import or bump them with `./scripts/vendor/libp2p_vendor_import.sh` (both named after the retired fork).
+- Shared vendored deps (BoringSSL for curl's TLS, zlib, Asio, googletest) come from `cmake/libp2p_dependencies.cmake`; import or bump them with `./scripts/vendor/libp2p_vendor_import.sh` (both named after the retired fork).
 
 ## UI generation constraints
 

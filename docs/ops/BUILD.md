@@ -37,11 +37,11 @@ sudo apt install \
 
 Configure should print `pp-browser: Linux H264 — libva + libva-drm (VA-API)` when `libva-dev` is present. Missing packages only warn; the codec falls back to the unavailable stub (V017/V019). Hosts without a usable HW encoder may still decode when VLD exists; video **send** can fail (accepted).
 
-curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux.
+curl uses vendored **BoringSSL** instead of system `libssl-dev` on Linux, Android and iOS (Windows: Schannel; macOS: SecureTransport). Nothing else in the tree uses it.
 
 ## Dependencies
 
-**Vendored source** under [`third_party/`](../../third_party/): curl, SQLite (amalgamation), Opus, BoringSSL, Asio, and PeerId/wire helpers (fmt, qtils, soralog, …). JSON (`Value`/`Object`) comes from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); the mesh (host, reachability, DHT, directory, relays) from [`pp-cpp-mesh`](https://github.com/people-post/pp-cpp-mesh) (pinned tag; `-DPP_CPP_MESH_SOURCE_DIR=…` for a local checkout); libsodium + ML-KEM/ML-DSA from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling or FetchContent).
+**Vendored source** under [`third_party/`](../../third_party/): curl, SQLite (amalgamation), Opus, BoringSSL (curl's TLS), zlib, Asio, googletest. JSON (`Value`/`Object`) comes from [`pp-cpp-common`](https://github.com/people-post/pp-cpp-common); the mesh (host, reachability, DHT, directory, relays) from [`pp-cpp-mesh`](https://github.com/people-post/pp-cpp-mesh) (pinned tag; `-DPP_CPP_MESH_SOURCE_DIR=…` for a local checkout); libsodium + ML-KEM/ML-DSA from [`pp-cpp-crypto`](https://github.com/people-post/pp-cpp-crypto); RmlUi + FreeType/HarfBuzz/LunaSVG + SDL3/SDL3_image from [`pp-cpp-ui`](https://github.com/people-post/pp-cpp-ui) (sibling or FetchContent).
 
 **System packages:** Linux GUI (X11/GL) + voice (`libpulse-dev` + `libasound2-dev`) + optional video (`libva-dev`). Windows/macOS/mobile use OS audio/video stacks — see Prerequisites table above and [PLATFORMS.md § A/V media](../architecture/PLATFORMS.md#av-media-sdl--calls).
 
