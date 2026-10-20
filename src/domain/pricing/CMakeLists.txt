@@ -7,6 +7,7 @@ pp_browser_add_domain_library(pp_domain_pricing
     InitiationPricing.cpp
     PaymentPromiseAvoid.cpp
     PaymentPromiseCodec.cpp
+    PaymentPromiseInbound.cpp
     PaymentPromiseLifecycle.cpp
     PaymentPromiseStore.cpp
     PaymentPromiseWireCodec.cpp

@@ -39,8 +39,8 @@ public:
   Roe<void> StageInbound(PaymentPromise promise);
   Roe<std::optional<PaymentPromise>> GetPendingInbound(const std::string& promise_id) const;
   Roe<std::vector<PaymentPromise>> ListPendingInbound() const;
-  /** Move pending → committed (overwrites any existing committed row). */
-  Roe<PaymentPromise> AcceptInbound(const std::string& promise_id);
+  /** Commit `row` (merged from a staged receipt) and drop the staged one, in one save. */
+  Roe<void> CommitInbound(PaymentPromise row);
   /** Drop a staged inbound receipt without committing. */
   Roe<bool> IgnoreInbound(const std::string& promise_id);
 

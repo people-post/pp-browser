@@ -111,30 +111,44 @@ SystemControlFamily MakeInitiationBillingFamily(InitiationBillingStore& store, s
   return family;
 }
 
-SystemControlFamily MakePaymentPromiseFamily(PaymentPromiseStore& store) {
+SystemControlFamily MakePaymentPromiseFamily(PaymentPromiseStore& store,
+                                             std::function<std::optional<std::string>()> local_account,
+                                             AccountSigningKeyLookup account_key) {
   SystemControlFamily family;
   family.name = kPaymentPromiseFamily;
   family.owns = [](const ThreadMessage& message) {
     return PaymentPromiseWireCodec::ControlTypeFromMessage(message).has_value();
   };
-  family.apply = [&store](ThreadMessage& message, const SystemControlContext& context) -> Roe<void> {
+  family.apply = [&store, local_account = std::move(local_account), account_key = std::move(account_key)](
+                     ThreadMessage& message, const SystemControlContext& context) -> Roe<void> {
     const auto detail = DetailText(message);
     if (!detail) {
       return Error("payment promise control missing detail");
     }
-    auto decoded = PaymentPromiseWireCodec::DecodeDetail(*detail);
-    if (!decoded) {
-      return decoded.error();
+    auto incoming = PaymentPromiseWireCodec::DecodeDetail(*detail);
+    if (!incoming) {
+      return incoming.error();
     }
-    if (context.sender_identity.empty() || (decoded->payer_account_id != context.sender_identity &&
-                                            decoded->payee_account_id != context.sender_identity)) {
-      return Error("payment promise from someone not a party to it");
+    const auto local = local_account ? local_account() : std::nullopt;
+    const auto counterparty = local ? PaymentPromiseCounterparty(*incoming, *local) : std::nullopt;
+    if (!counterparty || context.sender_identity != *counterparty) {
+      return Error("payment promise not from our counterparty on it");
     }
-    auto staged = store.StageInbound(*decoded);
-    if (!staged) {
-      return staged.error();
+    if (!account_key) {
+      return Error("payment promise signer key unavailable");
     }
-    return {};
+    auto key = account_key(*counterparty);
+    if (!key) {
+      return key.error();
+    }
+    auto committed = store.Get(incoming->promise_id);
+    if (!committed) {
+      return committed.error();
+    }
+    if (auto merged = MergeInboundPaymentPromise(*committed, *incoming, *local, *key); !merged) {
+      return merged.error();
+    }
+    return store.StageInbound(*incoming);
   };
   return family;
 }

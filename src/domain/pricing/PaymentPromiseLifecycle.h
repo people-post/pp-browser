@@ -3,6 +3,7 @@
 #include "common/directory/IAccountSigningAccess.h"
 #include "common/directory/IContactTrustAccess.h"
 #include "foundation/data/PaymentPromiseTypes.h"
+#include "domain/pricing/PaymentPromiseInbound.h"
 #include "domain/pricing/PaymentPromiseStore.h"
 #include "common/Error.h"
 
@@ -51,6 +52,13 @@ public:
   static Roe<PaymentPromise> RecordOutcome(PaymentPromiseStore& store, IAccountSigningAccess& identity,
                                            const std::string& promise_id, PaymentPromiseState outcome,
                                            const std::string& note = {});
+
+  /**
+   * Commit a staged receipt from the counterparty (the user's accept, P003). Its signature and
+   * transition are checked again against our current copy (MergeInboundPaymentPromise).
+   */
+  static Roe<PaymentPromise> CommitInbound(PaymentPromiseStore& store, IAccountSigningAccess& identity,
+                                           const AccountSigningKeyLookup& account_key, const std::string& promise_id);
 
   /** Stamp local_avoid + best-effort contact Blocked for counterparty. */
   static Roe<void> AvoidCounterparty(PaymentPromiseStore& store, IContactTrustAccess& contacts,

@@ -244,7 +244,7 @@ Bound today:
 |--------|----------|-------|
 | `call` | the call stack (`feature/calls/CallControlFamily`) | Out of order; plumbing and roster updates hidden; history lines worded with names |
 | `billing` | the hub (`PricingControlFamilies`) | In order. Keyed on the authenticated sender; a message naming another peer is refused |
-| `payment promise` | the hub (`PricingControlFamilies`) | In order. An offer from a party to it is staged for the user's accept |
+| `payment promise` | the hub (`PricingControlFamilies`) | In order. Staged only from our counterparty on the promise, signed by it, and a legal change of our copy (`MergeInboundPaymentPromise`: new offer; accept of our offer; outcome by it as actor; terms never change). The user's accept re-checks and commits |
 
 The receive pipeline, delivery and the inbox read the registry; membership updates and PSK rotation
 are messaging's own and stay in it. Families bind and unbind from any thread (the call stack rebuilds

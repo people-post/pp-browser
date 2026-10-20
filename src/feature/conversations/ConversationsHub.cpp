@@ -9,6 +9,8 @@
 #include "domain/pricing/PaymentPromiseAvoid.h"
 #include "domain/pricing/PaymentPromiseWireCodec.h"
 #include "domain/pricing/PricingControlFamilies.h"
+#include "foundation/crypto/CryptoUtil.h"
+#include "common/directory/DirectoryJson.h"
 #include "common/ValueJson.h"
 
 #include "domain/people/ContactReachability.h"
@@ -1107,11 +1109,6 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   (void)initiation_billing_->Load();
   payment_promises_ = std::make_unique<PaymentPromiseStore>(data_dir_);
   (void)payment_promises_->Load();
-  system_controls_.Bind(MakeInitiationBillingFamily(*initiation_billing_, [identity = identity_.get()]() -> int64_t {
-    auto local = identity->Get();
-    return local ? local->initiation_floor : 0;
-  }));
-  system_controls_.Bind(MakePaymentPromiseFamily(*payment_promises_));
 
   {
     StartupPhase phase("ConversationsHub::ReconcileOutbox");
@@ -1242,6 +1239,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
     secrets_->RegisterDekConsumer(call_stack_->MediaKeys());
   }
   signing_resolver_ = std::make_unique<RelayDirectorySigningKeyResolver>(signing_key_store_, *directory_);
+  BindPricingFamilies();
   kem_resolver_ = std::make_unique<RelayDirectoryKemKeyResolver>(kem_key_store_, *directory_);
 
   // P2P stack without libp2p until profile unlock (relay-capable once identity exists).
@@ -2222,6 +2220,36 @@ Roe<void> ConversationsHub::SendChargeRequired(const std::string& peer_identity,
   return mesh_messaging_->SendChargeRequired(peer_identity, floor_minor);
 }
 
+AccountSigningKeyLookup ConversationsHub::AccountSigningKeys() const {
+  return [resolver = signing_resolver_.get()](const std::string& account_id) -> Roe<ByteVector> {
+    if (!resolver) {
+      return Error("account signing keys unavailable");
+    }
+    auto record = resolver->Resolve(ContactIdKindToString(mesh::ContactIdKind::Account), account_id);
+    if (!record) {
+      return record.error();
+    }
+    return Base64Decode(record->signing_public_key_b64);
+  };
+}
+
+void ConversationsHub::BindPricingFamilies() {
+  system_controls_.Bind(MakeInitiationBillingFamily(*initiation_billing_, [identity = identity_.get()]() -> int64_t {
+    auto local = identity->Get();
+    return local ? local->initiation_floor : 0;
+  }));
+  system_controls_.Bind(MakePaymentPromiseFamily(
+      *payment_promises_,
+      [identity = identity_.get()]() -> std::optional<std::string> {
+        auto account = identity->GetAccountId();
+        if (!account || account->empty()) {
+          return std::nullopt;
+        }
+        return *account;
+      },
+      AccountSigningKeys()));
+}
+
 Roe<PaymentPromise> ConversationsHub::CreatePaymentPromiseOffer(const PaymentPromiseLifecycle::OfferParams& params) {
   if (!payment_promises_) {
     return Error("payment promise store unavailable");
@@ -2302,7 +2330,7 @@ Roe<PaymentPromise> ConversationsHub::AcceptInboundPaymentPromise(const std::str
   if (!payment_promises_) {
     return Error("payment promise store unavailable");
   }
-  return payment_promises_->AcceptInbound(promise_id);
+  return PaymentPromiseLifecycle::CommitInbound(*payment_promises_, Identity(), AccountSigningKeys(), promise_id);
 }
 
 Roe<bool> ConversationsHub::IgnoreInboundPaymentPromise(const std::string& promise_id) {
@@ -2328,34 +2356,6 @@ Roe<ThreadMessage> ConversationsHub::BuildPaymentPromiseControlMessage(const std
                                                                    const PaymentPromise& promise,
                                                                    const std::string& body_text) {
   return PaymentPromiseWireCodec::BuildSystemMessage(thread_id, type, promise, body_text);
-}
-
-Roe<PaymentPromise> ConversationsHub::StagePaymentPromiseControlMessage(const ThreadMessage& message) {
-  if (!payment_promises_) {
-    return Error("payment promise store unavailable");
-  }
-  auto type = PaymentPromiseWireCodec::ControlTypeFromMessage(message);
-  if (!type) {
-    return Error("not a payment promise control message");
-  }
-  auto root = TryParseObject(message.payload_json);
-  if (!root) {
-    return Error("invalid payment promise control payload");
-  }
-  auto detail = root->getString("detail");
-  if (!detail || detail->empty()) {
-    return Error("payment promise control missing detail");
-  }
-  auto decoded = PaymentPromiseWireCodec::DecodeDetail(*detail);
-  if (!decoded) {
-    return decoded.error();
-  }
-  // P003: stage only — never auto-commit remote receipts.
-  auto staged = payment_promises_->StageInbound(*decoded);
-  if (!staged) {
-    return staged.error();
-  }
-  return *decoded;
 }
 
 Roe<void> ConversationsHub::RotateBriefLlmKey() {

@@ -216,7 +216,6 @@ public:
                                                        PaymentPromiseControlType type,
                                                        const PaymentPromise& promise,
                                                        const std::string& body_text);
-  Roe<PaymentPromise> StagePaymentPromiseControlMessage(const ThreadMessage& message);
   void SetOnLocalAction(std::function<void(const std::string&, const std::optional<std::string>&)> callback);
   void SetSharedAiConfirmCallback(MessageRouter::SharedAiConfirmCallback callback);
   void MarkSharedAiConfirmed(const std::string& thread_id);

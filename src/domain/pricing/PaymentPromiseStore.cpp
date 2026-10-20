@@ -194,23 +194,14 @@ Roe<std::vector<PaymentPromise>> PaymentPromiseStore::ListPendingInbound() const
   return out;
 }
 
-Roe<PaymentPromise> PaymentPromiseStore::AcceptInbound(const std::string& promise_id) {
-  if (promise_id.empty()) {
+Roe<void> PaymentPromiseStore::CommitInbound(PaymentPromise row) {
+  if (row.promise_id.empty()) {
     return Error("promise_id required");
   }
   std::lock_guard lock(mutex_);
-  const auto it = pending_inbound_.find(promise_id);
-  if (it == pending_inbound_.end()) {
-    return Error("pending inbound payment promise not found");
-  }
-  PaymentPromise promise = it->second;
-  pending_inbound_.erase(it);
-  rows_[promise.promise_id] = promise;
-  auto saved = SaveUnlocked();
-  if (!saved) {
-    return saved.error();
-  }
-  return promise;
+  pending_inbound_.erase(row.promise_id);
+  rows_[row.promise_id] = std::move(row);
+  return SaveUnlocked();
 }
 
 Roe<bool> PaymentPromiseStore::IgnoreInbound(const std::string& promise_id) {

@@ -23,6 +23,7 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/ThreadLocalPrefsStore.h"
+#include "domain/pricing/PaymentPromiseInbound.h"
 #include "domain/pricing/InitiationBillingStore.h"
 #include "feature/broadcast/BroadcastHub.h"
 #include "common/Lifetime.h"
@@ -294,8 +295,6 @@ public:
                                                        PaymentPromiseControlType type,
                                                        const PaymentPromise& promise,
                                                        const std::string& body_text);
-  /** Stage a remote signed receipt from an inbound control message (does not commit; P003). */
-  Roe<PaymentPromise> StagePaymentPromiseControlMessage(const ThreadMessage& message);
 
   mesh::ReachabilitySnapshot Reachability() const;
   void RunReachabilityProbe(bool try_upnp);
@@ -342,6 +341,10 @@ public:
   bool IsContactReachable(const Contact& contact) const;
 
 private:
+  /** Bind the billing and payment-promise families (after the signing-key resolver exists). */
+  void BindPricingFamilies();
+  /** Account signing keys through the directory resolver (promise signatures). */
+  AccountSigningKeyLookup AccountSigningKeys() const;
   void InstallOrgBackendClients(const AppConfig& config);
   void UpdateOrgBackendClients(const AppConfig& config);
   void WireRelayAuthSigner();

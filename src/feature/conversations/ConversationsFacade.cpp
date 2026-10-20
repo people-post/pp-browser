@@ -576,10 +576,6 @@ Roe<ThreadMessage> ConversationsFacade::BuildPaymentPromiseControlMessage(const 
   return hub_.BuildPaymentPromiseControlMessage(thread_id, type, promise, body_text);
 }
 
-Roe<PaymentPromise> ConversationsFacade::StagePaymentPromiseControlMessage(const ThreadMessage& message) {
-  return hub_.StagePaymentPromiseControlMessage(message);
-}
-
 // --- Settings / profile helpers ---------------------------------------------
 
 ProfileIdentityView ConversationsFacade::LoadProfileIdentityView() { return hub_.LoadProfileIdentityView(); }

@@ -2,7 +2,10 @@
 
 #include "domain/pricing/InitiationBillingCodec.h"
 #include "domain/pricing/InitiationBillingStore.h"
+#include "domain/pricing/PaymentPromiseCodec.h"
 #include "domain/pricing/PaymentPromiseStore.h"
+#include "foundation/crypto/MlDsa.h"
+#include "common/ValueJson.h"
 #include "domain/pricing/PaymentPromiseWireCodec.h"
 #include "common/Utilities.h"
 
@@ -53,18 +56,40 @@ protected:
     return *message;
   }
 
-  static ThreadMessage PromiseOffer(const std::string& payer, const std::string& payee) {
+  /** Bob's signed offer, as a wire message. */
+  ThreadMessage PromiseOffer(const std::string& payer = kAlice, const std::string& payee = kBob) const {
     PaymentPromise promise;
-    promise.promise_id = "pp-" + util::GenerateUuid();
+    promise.promise_id = "promise:" + util::GenerateUuid();
     promise.payer_account_id = payer;
     promise.payee_account_id = payee;
     promise.amount_minor = 100;
+    promise.created_at_ms = 1700000000000;
+    promise.payee_signature_b64 = *PaymentPromiseCodec::SignPromise(bob_.secret_key, promise);
     auto message =
         PaymentPromiseWireCodec::BuildSystemMessage("t-1", PaymentPromiseControlType::PromiseOffer, promise, "x");
     EXPECT_TRUE(message);
     return *message;
   }
 
+  /** Our family: we are Alice; only Bob's key is known. */
+  SystemControlFamily Promises() {
+    return MakePaymentPromiseFamily(
+        *promises_, []() -> std::optional<std::string> { return std::string(kAlice); },
+        [this](const std::string& account) -> Roe<ByteVector> {
+          if (account != kBob) {
+            return Error("unknown account");
+          }
+          return bob_.public_key;
+        });
+  }
+
+  size_t Pending() const {
+    auto pending = promises_->ListPendingInbound();
+    EXPECT_TRUE(pending);
+    return pending ? pending->size() : 0;
+  }
+
+  MlDsaKeyPair bob_ = *MlDsa::GenerateKeyPair();
   std::filesystem::path data_dir_;
   std::unique_ptr<InitiationBillingStore> billing_;
   std::unique_ptr<PaymentPromiseStore> promises_;
@@ -101,27 +126,43 @@ TEST_F(PricingControlFamiliesTest, BillingIsAppliedInOrderAndShown) {
   auto family = Billing();
   EXPECT_FALSE(family.apply_out_of_order);
   EXPECT_FALSE(family.hidden);
-  EXPECT_FALSE(family.owns(PromiseOffer(kAlice, kBob)));
+  EXPECT_FALSE(family.owns(PromiseOffer()));
 }
 
-TEST_F(PricingControlFamiliesTest, PromiseFromAPartyIsStaged) {
-  auto family = MakePaymentPromiseFamily(*promises_);
-  auto message = PromiseOffer(kAlice, kBob);
+TEST_F(PricingControlFamiliesTest, SignedOfferFromTheCounterpartyIsStaged) {
+  auto family = Promises();
+  auto message = PromiseOffer();
   ASSERT_TRUE(family.owns(message));
-  ASSERT_TRUE(family.apply(message, From(kAlice)));
-  auto pending = promises_->ListPendingInbound();
-  ASSERT_TRUE(pending);
-  EXPECT_EQ(pending->size(), 1u);
+  ASSERT_TRUE(family.apply(message, From(kBob)));
+  EXPECT_EQ(Pending(), 1u);
+  auto committed = promises_->List();
+  ASSERT_TRUE(committed);
+  EXPECT_TRUE(committed->empty()) << "staged only: committing takes the user's accept";
 }
 
-TEST_F(PricingControlFamiliesTest, PromiseFromAnOutsiderIsRefused) {
-  auto family = MakePaymentPromiseFamily(*promises_);
-  auto message = PromiseOffer(kAlice, kBob);
+TEST_F(PricingControlFamiliesTest, OfferFromAnyoneButTheCounterpartyIsRefused) {
+  auto family = Promises();
+  auto message = PromiseOffer();
   EXPECT_FALSE(family.apply(message, From("account:mallory")));
+  EXPECT_FALSE(family.apply(message, From(kAlice)));
   EXPECT_FALSE(family.apply(message, From("")));
-  auto pending = promises_->ListPendingInbound();
-  ASSERT_TRUE(pending);
-  EXPECT_TRUE(pending->empty());
+  auto not_ours = PromiseOffer("account:carol", kBob);
+  EXPECT_FALSE(family.apply(not_ours, From(kBob))) << "not ours";
+  EXPECT_EQ(Pending(), 0u);
+}
+
+TEST_F(PricingControlFamiliesTest, OfferWithAForgedSignatureIsRefused) {
+  auto family = Promises();
+  auto message = PromiseOffer();
+  auto payload = TryParseObject(message.payload_json);
+  ASSERT_TRUE(payload);
+  auto promise = PaymentPromiseWireCodec::DecodeDetail(*payload->getString("detail"));
+  ASSERT_TRUE(promise);
+  promise->amount_minor = 1'000'000;
+  auto forged = PaymentPromiseWireCodec::BuildSystemMessage("t-1", PaymentPromiseControlType::PromiseOffer, *promise, "x");
+  ASSERT_TRUE(forged);
+  EXPECT_FALSE(family.apply(*forged, From(kBob)));
+  EXPECT_EQ(Pending(), 0u);
 }
 
 } // namespace

@@ -132,7 +132,7 @@ TEST_F(PaymentPromiseTest, AvoidBlocksContactAndStampsReceipt) {
   EXPECT_TRUE((*got)->local_avoid);
 }
 
-TEST_F(PaymentPromiseTest, PendingInboundAcceptAndIgnore) {
+TEST_F(PaymentPromiseTest, PendingInboundCommitAndIgnore) {
   PaymentPromiseStore store(data_dir_.string());
   ASSERT_TRUE(static_cast<bool>(store.Load()));
 
@@ -149,9 +149,8 @@ TEST_F(PaymentPromiseTest, PendingInboundAcceptAndIgnore) {
   ASSERT_TRUE(pending->has_value());
   EXPECT_EQ((*pending)->amount_minor, 42);
 
-  auto accepted = store.AcceptInbound("promise:inbound-1");
+  auto accepted = store.CommitInbound(**pending);
   ASSERT_TRUE(static_cast<bool>(accepted)) << accepted.error().message;
-  EXPECT_EQ(accepted->promise_id, "promise:inbound-1");
 
   auto after_accept_pending = store.GetPendingInbound("promise:inbound-1");
   ASSERT_TRUE(static_cast<bool>(after_accept_pending));

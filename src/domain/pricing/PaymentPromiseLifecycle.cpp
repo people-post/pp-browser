@@ -180,6 +180,42 @@ Roe<PaymentPromise> PaymentPromiseLifecycle::RecordOutcome(PaymentPromiseStore& 
   return *promise;
 }
 
+Roe<PaymentPromise> PaymentPromiseLifecycle::CommitInbound(PaymentPromiseStore& store, IAccountSigningAccess& identity,
+                                                           const AccountSigningKeyLookup& account_key,
+                                                           const std::string& promise_id) {
+  auto pending = store.GetPendingInbound(promise_id);
+  if (!pending) {
+    return pending.error();
+  }
+  if (!pending->has_value()) {
+    return Error("pending inbound payment promise not found");
+  }
+  auto committed = store.Get(promise_id);
+  if (!committed) {
+    return committed.error();
+  }
+  auto local_account = RequireAccountId(identity);
+  if (!local_account) {
+    return local_account.error();
+  }
+  const auto counterparty = PaymentPromiseCounterparty(**pending, *local_account);
+  if (!counterparty || !account_key) {
+    return Error("payment promise is not between us and one counterparty");
+  }
+  auto key = account_key(*counterparty);
+  if (!key) {
+    return key.error();
+  }
+  auto row = MergeInboundPaymentPromise(*committed, **pending, *local_account, *key);
+  if (!row) {
+    return row.error();
+  }
+  if (auto saved = store.CommitInbound(*row); !saved) {
+    return saved.error();
+  }
+  return *row;
+}
+
 Roe<void> PaymentPromiseLifecycle::AvoidCounterparty(PaymentPromiseStore& store, IContactTrustAccess& contacts,
                                                      IAccountSigningAccess& identity, const std::string& promise_id) {
   auto local_account = RequireAccountId(identity);
