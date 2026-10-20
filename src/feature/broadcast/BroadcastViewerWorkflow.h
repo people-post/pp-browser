@@ -3,9 +3,9 @@
 #include "mesh/types/MediaChannel.h"
 #include "domain/media/CallMediaEngine.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
-#include "domain/messaging/BroadcastRpcCodec.h"
-#include "domain/messaging/BroadcastViewerLadder.h"
-#include "domain/messaging/PeerAnnounceTypes.h"
+#include "domain/broadcast/BroadcastRpcCodec.h"
+#include "domain/broadcast/BroadcastViewerLadder.h"
+#include "domain/broadcast/PeerAnnounceTypes.h"
 #include "foundation/runtime/OwnerOutbox.h"
 
 #include "common/Error.h"

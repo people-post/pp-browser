@@ -1,9 +1,9 @@
 #pragma once
 
 #include "mesh/host/MeshPorts.h"
-#include "domain/messaging/BroadcastJoinTicket.h"
-#include "domain/messaging/BroadcastLadderLogic.h"
-#include "domain/messaging/BroadcastRpcCodec.h"
+#include "domain/broadcast/BroadcastJoinTicket.h"
+#include "domain/broadcast/BroadcastLadderLogic.h"
+#include "domain/broadcast/BroadcastRpcCodec.h"
 
 #include "foundation/crypto/CryptoTypes.h"
 

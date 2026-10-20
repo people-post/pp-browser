@@ -7,7 +7,7 @@
 #include "domain/calls/CallMediaPlannerSelectLogic.h"
 #include "domain/calls/CallSessionLogic.h"
 #include "domain/calls/CallHopAttachLogic.h"
-#include "domain/messaging/InitiationPricing.h"
+#include "domain/pricing/InitiationPricing.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
 #include "domain/calls/SoftMigrateLogic.h"
 #include "feature/call_media/CallMediaFrameCrypto.h"

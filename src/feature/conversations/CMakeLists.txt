@@ -44,6 +44,8 @@ pp_browser_add_feature_library(pp_feature_conversations
     pp_foundation_crypto
     pp_domain_media
     pp_domain_messaging
+    pp_domain_broadcast
+    pp_domain_pricing
     pp_domain_calls
     pp_amp_link
     pp_mesh

@@ -2,7 +2,7 @@
 
 #include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
 #include "domain/media/VideoLevelProfile.h"
-#include "domain/messaging/BroadcastMedia.h"
+#include "domain/broadcast/BroadcastMedia.h"
 
 #include "common/Logger.h"
 #include "common/MeshAlias.h"

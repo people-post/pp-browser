@@ -1,8 +1,8 @@
 #pragma once
 
 #include "mesh/host/MeshPorts.h"
-#include "domain/messaging/PeerAnnounceFeed.h"
-#include "domain/messaging/PeerAnnounceRpcCodec.h"
+#include "domain/broadcast/PeerAnnounceFeed.h"
+#include "domain/broadcast/PeerAnnounceRpcCodec.h"
 
 #include "common/Error.h"
 

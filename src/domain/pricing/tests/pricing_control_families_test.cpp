@@ -1,0 +1,128 @@
+#include "domain/pricing/PricingControlFamilies.h"
+
+#include "domain/pricing/InitiationBillingCodec.h"
+#include "domain/pricing/InitiationBillingStore.h"
+#include "domain/pricing/PaymentPromiseStore.h"
+#include "domain/pricing/PaymentPromiseWireCodec.h"
+#include "common/Utilities.h"
+
+#include <filesystem>
+#include <gtest/gtest.h>
+#include "common/PbrCompat.h"
+
+namespace pbr {
+namespace {
+
+constexpr const char* kAlice = "account:alice";
+constexpr const char* kBob = "account:bob";
+
+SystemControlContext From(const std::string& sender) {
+  SystemControlContext context;
+  context.sender_identity = sender;
+  return context;
+}
+
+class PricingControlFamiliesTest : public ::testing::Test {
+protected:
+  void SetUp() override {
+    data_dir_ = std::filesystem::temp_directory_path() / ("pp_pricing_families_" + util::GenerateUuid());
+    std::filesystem::create_directories(data_dir_);
+    billing_ = std::make_unique<InitiationBillingStore>(data_dir_.string());
+    promises_ = std::make_unique<PaymentPromiseStore>(data_dir_.string());
+  }
+
+  void TearDown() override {
+    billing_.reset();
+    promises_.reset();
+    std::filesystem::remove_all(data_dir_);
+  }
+
+  SystemControlFamily Billing(int64_t local_floor = 0) {
+    return MakeInitiationBillingFamily(*billing_, [local_floor]() { return local_floor; });
+  }
+
+  static ThreadMessage ChargeRequired(const std::string& named, int64_t floor) {
+    ChargeRequiredDetail detail;
+    detail.peer_identity = named;
+    detail.floor_minor = floor;
+    auto json = InitiationBillingCodec::EncodeChargeRequired(detail);
+    EXPECT_TRUE(json);
+    auto message =
+        InitiationBillingCodec::BuildSystemMessage("t-1", InitiationBillingControlType::ChargeRequired, *json, "x");
+    EXPECT_TRUE(message);
+    return *message;
+  }
+
+  static ThreadMessage PromiseOffer(const std::string& payer, const std::string& payee) {
+    PaymentPromise promise;
+    promise.promise_id = "pp-" + util::GenerateUuid();
+    promise.payer_account_id = payer;
+    promise.payee_account_id = payee;
+    promise.amount_minor = 100;
+    auto message =
+        PaymentPromiseWireCodec::BuildSystemMessage("t-1", PaymentPromiseControlType::PromiseOffer, promise, "x");
+    EXPECT_TRUE(message);
+    return *message;
+  }
+
+  std::filesystem::path data_dir_;
+  std::unique_ptr<InitiationBillingStore> billing_;
+  std::unique_ptr<PaymentPromiseStore> promises_;
+};
+
+TEST_F(PricingControlFamiliesTest, ChargeRequiredClosesTheSendersRelationship) {
+  auto family = Billing();
+  ASSERT_TRUE(billing_->MarkOpen(kAlice));
+  auto message = ChargeRequired(kAlice, 250);
+  ASSERT_TRUE(family.owns(message));
+  ASSERT_TRUE(family.apply(message, From(kAlice)));
+  EXPECT_FALSE(billing_->IsOpen(kAlice));
+  EXPECT_EQ(billing_->Get(kAlice).floor_minor, 250);
+}
+
+TEST_F(PricingControlFamiliesTest, ChargeRequiredWithoutANameIsTheSenders) {
+  auto family = Billing();
+  auto message = ChargeRequired("", 90);
+  ASSERT_TRUE(family.apply(message, From(kAlice)));
+  EXPECT_EQ(billing_->Get(kAlice).floor_minor, 90);
+}
+
+TEST_F(PricingControlFamiliesTest, NoPeerMayCloseAnothersRelationship) {
+  auto family = Billing();
+  ASSERT_TRUE(billing_->MarkOpen(kBob));
+  auto message = ChargeRequired(kBob, 999);
+  EXPECT_FALSE(family.apply(message, From(kAlice)));
+  EXPECT_TRUE(billing_->IsOpen(kBob));
+  EXPECT_EQ(billing_->Get(kBob).floor_minor, 0);
+  EXPECT_FALSE(family.apply(message, From("")));
+}
+
+TEST_F(PricingControlFamiliesTest, BillingIsAppliedInOrderAndShown) {
+  auto family = Billing();
+  EXPECT_FALSE(family.apply_out_of_order);
+  EXPECT_FALSE(family.hidden);
+  EXPECT_FALSE(family.owns(PromiseOffer(kAlice, kBob)));
+}
+
+TEST_F(PricingControlFamiliesTest, PromiseFromAPartyIsStaged) {
+  auto family = MakePaymentPromiseFamily(*promises_);
+  auto message = PromiseOffer(kAlice, kBob);
+  ASSERT_TRUE(family.owns(message));
+  ASSERT_TRUE(family.apply(message, From(kAlice)));
+  auto pending = promises_->ListPendingInbound();
+  ASSERT_TRUE(pending);
+  EXPECT_EQ(pending->size(), 1u);
+}
+
+TEST_F(PricingControlFamiliesTest, PromiseFromAnOutsiderIsRefused) {
+  auto family = MakePaymentPromiseFamily(*promises_);
+  auto message = PromiseOffer(kAlice, kBob);
+  EXPECT_FALSE(family.apply(message, From("account:mallory")));
+  EXPECT_FALSE(family.apply(message, From("")));
+  auto pending = promises_->ListPendingInbound();
+  ASSERT_TRUE(pending);
+  EXPECT_TRUE(pending->empty());
+}
+
+} // namespace
+} // namespace pbr

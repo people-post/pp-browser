@@ -17,7 +17,7 @@
 #include "mesh/l4/media_relay/serve/MediaRelayServer.h"
 #include "mesh/l4/media_relay/client/MediaRelayFrameCrypto.h"
 #include "mesh/testing/mesh_triple_harness.h"
-#include "domain/messaging/BroadcastMedia.h"
+#include "domain/broadcast/BroadcastMedia.h"
 #include "foundation/crypto/MlDsa.h"
 #include "foundation/runtime/OwnerOutbox.h"
 #include "foundation/runtime/tests/queue_owner_executor.h"

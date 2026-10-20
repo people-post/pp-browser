@@ -1,7 +1,7 @@
 #include "feature/conversations/AmpBroadcastTransport.h"
 #include "feature/broadcast/AmpBroadcastRpcClient.h"
 
-#include "domain/messaging/BroadcastJoinTicket.h"
+#include "domain/broadcast/BroadcastJoinTicket.h"
 #include "mesh/testing/mesh_test_harness.h"
 
 #include "foundation/crypto/CryptoUtil.h"

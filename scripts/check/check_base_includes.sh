@@ -60,7 +60,7 @@ LEGACY_DOMAIN_EDGES=$(cat <<'EOF'
 EOF
 )
 
-DOMAIN_MODULES=(people messaging calls net mesh media ai ui)
+DOMAIN_MODULES=(people messaging calls broadcast pricing net mesh media ai ui)
 
 is_legacy_edge() {
   local edge="$1"
@@ -101,7 +101,7 @@ scan_domain_peer_includes() {
         echo "  Promote a contract to src/common/ or wire in feature/; do not add peer→peer includes."
         FAIL=1
       fi
-    done < <(rg -n '#include "(base|domain)/(people|messaging|calls|net|mesh|media|ai|ui)/' "$file" || true)
+    done < <(rg -n '#include "(base|domain)/(people|messaging|calls|broadcast|pricing|net|mesh|media|ai|ui)/' "$file" || true)
   done < <(find "$root_dir" \( -name '*.h' -o -name '*.hpp' -o -name '*.cpp' -o -name '*.cc' -o -name '*.mm' \) \
     ! -path '*/tests/*' -print0)
 }

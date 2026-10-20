@@ -11,6 +11,7 @@ pp_browser_add_feature_library(pp_feature_broadcast
     pp_amp_link
     pp_domain_media
     pp_domain_messaging
+    pp_domain_broadcast
     pp_mesh
     pp_foundation_runtime_core
     pp_foundation_runtime)

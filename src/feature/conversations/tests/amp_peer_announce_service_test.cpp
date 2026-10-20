@@ -1,8 +1,8 @@
 #include "feature/conversations/AmpPeerAnnounceTransport.h"
 
-#include "domain/messaging/PeerAnnounceCodec.h"
-#include "domain/messaging/PeerAnnounceKeyResolve.h"
-#include "domain/messaging/PeerAnnouncePublisher.h"
+#include "domain/broadcast/PeerAnnounceCodec.h"
+#include "domain/broadcast/PeerAnnounceKeyResolve.h"
+#include "domain/broadcast/PeerAnnouncePublisher.h"
 #include "domain/messaging/PeerSigningKeyStore.h"
 #include "mesh/testing/mesh_test_harness.h"
 

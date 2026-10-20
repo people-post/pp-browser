@@ -1,7 +1,7 @@
 #pragma once
 
 #include "mesh/host/MeshPorts.h"
-#include "domain/messaging/BroadcastRpcCodec.h"
+#include "domain/broadcast/BroadcastRpcCodec.h"
 
 #include "common/Error.h"
 

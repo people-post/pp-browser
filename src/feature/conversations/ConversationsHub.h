@@ -23,7 +23,7 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/ThreadLocalPrefsStore.h"
-#include "domain/messaging/InitiationBillingStore.h"
+#include "domain/pricing/InitiationBillingStore.h"
 #include "feature/broadcast/BroadcastHub.h"
 #include "common/Lifetime.h"
 #include "mesh/connectivity/MeshConnectivity.h"
@@ -50,9 +50,9 @@
 #include "mesh/dht/DhtTypes.h"
 #include "mesh/host/MeshHost.h"
 #include "domain/people/MeshHopPolicy.h"
-#include "domain/messaging/PaymentPromiseStore.h"
-#include "domain/messaging/PaymentPromiseLifecycle.h"
-#include "domain/messaging/PaymentPromiseWireCodec.h"
+#include "domain/pricing/PaymentPromiseStore.h"
+#include "domain/pricing/PaymentPromiseLifecycle.h"
+#include "domain/pricing/PaymentPromiseWireCodec.h"
 
 #include <atomic>
 #include <cstdint>

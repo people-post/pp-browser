@@ -7,7 +7,7 @@
 #include "foundation/crypto/CryptoUtil.h"
 #include "domain/media/CallMediaAdaptation.h"
 #include "domain/calls/CallSessionLogic.h"
-#include "domain/messaging/BroadcastJoinTicket.h"
+#include "domain/broadcast/BroadcastJoinTicket.h"
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/messaging/PairwiseFanoutLogic.h"
 #include "domain/calls/PeerCapsLogic.h"

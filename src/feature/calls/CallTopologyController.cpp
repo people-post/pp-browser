@@ -6,7 +6,7 @@
 #include "domain/media/CallMediaAdaptation.h"
 #include "domain/calls/CallHopPlan.h"
 #include "domain/calls/CallHopAttachLogic.h"
-#include "domain/messaging/InitiationPricing.h"
+#include "domain/pricing/InitiationPricing.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/people/ContactTypes.h"
 #include "domain/people/MeshHopPolicy.h"

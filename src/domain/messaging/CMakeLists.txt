@@ -29,27 +29,6 @@ pp_browser_add_domain_library(pp_domain_messaging
     GroupMembershipCodec.cpp
     GroupRosterStore.cpp
     GroupTypes.cpp
-    InitiationBillingCodec.cpp
-    InitiationBillingStore.cpp
-    PaymentPromiseAvoid.cpp
-    PaymentPromiseCodec.cpp
-    PaymentPromiseStore.cpp
-    PaymentPromiseLifecycle.cpp
-    PaymentPromiseWireCodec.cpp
-    PricingControlFamilies.cpp
-    PeerAnnounceCodec.cpp
-    PeerAnnounceFeed.cpp
-    PeerAnnouncePublisher.cpp
-    PeerAnnounceRpcCodec.cpp
-    PeerAnnounceKeyResolve.cpp
-    AnnounceOverlayReply.cpp
-    AnnounceNotificationInbox.cpp
-    BroadcastJoinTicket.cpp
-    BroadcastLadderLogic.cpp
-    BroadcastMedia.cpp
-    BroadcastViewerLadder.cpp
-    BroadcastRpcCodec.cpp
-    InitiationPricing.cpp
     PskRotateCodec.cpp
     PskSessionCoordinator.cpp
     PublicPskLockCoordinator.cpp

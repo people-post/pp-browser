@@ -3,7 +3,7 @@
 #include "domain/media/CallMediaEngine.h"
 #include "domain/media/MediaDeviceArbiter.h"
 #include "mesh/host/MeshPorts.h"
-#include "domain/messaging/PeerAnnounceTypes.h"
+#include "domain/broadcast/PeerAnnounceTypes.h"
 #include "feature/broadcast/BroadcastViewerWorkflow.h"
 #include "feature/broadcast/BroadcasterWorkflow.h"
 #include "foundation/runtime/OwnerTasks.h"

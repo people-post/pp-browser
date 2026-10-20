@@ -1,6 +1,6 @@
 #include "feature/calls/CallInitiationBilling.h"
 
-#include "domain/messaging/InitiationPricing.h"
+#include "domain/pricing/InitiationPricing.h"
 
 #include "common/PbrCompat.h"
 

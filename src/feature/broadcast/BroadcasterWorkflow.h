@@ -3,7 +3,7 @@
 #include "domain/media/CallMediaEngine.h"
 #include "mesh/l4/media_relay/MediaRelayVideoLevels.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
-#include "domain/messaging/PeerAnnounceTypes.h"
+#include "domain/broadcast/PeerAnnounceTypes.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/runtime/OwnerOutbox.h"
 
