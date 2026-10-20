@@ -237,6 +237,16 @@ public:
   std::optional<std::string> AttachmentLocalPathForMessage(const std::string& thread_id,
                                                            const std::string& message_id);
   bool AttachmentOpenNeedsConfirmForMessage(const std::string& thread_id, const std::string& message_id);
+  struct StoredAiImage {
+    std::vector<uint8_t> content_hash;
+    std::string view_path;
+  };
+  /** An image the user sends to the AI: private CAS + this thread's view file. Fails while locked. */
+  Roe<StoredAiImage> StoreAiImage(const std::string& thread_id, const std::vector<uint8_t>& bytes,
+                                  const std::string& mime);
+  /** View file of a stored AI image, materialized from the CAS when missing; nullopt while locked or gone. */
+  std::optional<std::string> AiImageViewPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
+                                             const std::string& mime);
   Roe<void> RotateBriefLlmKey();
   mesh::ReachabilitySnapshot Reachability();
   void RunReachabilityProbe(bool try_upnp);

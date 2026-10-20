@@ -475,15 +475,8 @@ private:
     int width = 0;         // pixels of the prepared image
     int height = 0;
   };
-  struct AiImageView {
-    std::string file_path;
-    int width = 0;
-    int height = 0;
-  };
   std::optional<PendingAiImage> pending_image_;
   uint64_t image_prepare_generation_ = 0; // a prepare that finishes after Discard / a newer pick is dropped
-  /** Sent image question (user message id) -> its session thumbnail file; gone after a restart. */
-  std::map<std::string, AiImageView> ai_image_files_;
 
   /** The in-flight streamed answer: shown as a synthetic last row until AssistantReady replaces it. */
   struct StreamingRow {

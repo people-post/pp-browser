@@ -66,6 +66,9 @@ Roe<std::vector<uint8_t>> TranscriptBodyCodec::Encode(const TranscriptBodyPlaint
   if (body.working_set_json && !body.working_set_json->empty()) {
     json.set("working_set_json", *body.working_set_json);
   }
+  if (body.ai_image_json && !body.ai_image_json->empty()) {
+    json.set("ai_image_json", *body.ai_image_json);
+  }
   const std::string serialized = DumpJson(json);
   return std::vector<uint8_t>(serialized.begin(), serialized.end());
 }
@@ -102,6 +105,11 @@ Roe<TranscriptBodyPlaintext> TranscriptBodyCodec::Decode(const std::vector<uint8
       body.working_set_json = *working_set_json;
     }
   }
+  if (auto ai_image_json = json->getString("ai_image_json")) {
+    if (!ai_image_json->empty()) {
+      body.ai_image_json = *ai_image_json;
+    }
+  }
   return body;
 }
 
@@ -118,6 +126,7 @@ Roe<TranscriptBodyPlaintext> TranscriptBodyCodec::FromMessage(const ThreadMessag
   body.content_rml = message.content_rml;
   body.chat_actions = message.chat_actions;
   body.working_set_json = message.working_set_json;
+  body.ai_image_json = message.ai_image_json;
   return body;
 }
 
@@ -127,6 +136,7 @@ Roe<void> TranscriptBodyCodec::ApplyToMessage(const TranscriptBodyPlaintext& bod
   message.content_rml = body.content_rml;
   message.chat_actions = body.chat_actions;
   message.working_set_json = body.working_set_json;
+  message.ai_image_json = body.ai_image_json;
   if (auto applied = ChatPayloadCodec::ApplyRowToMessage(body.chat_payload, message); !applied) {
     return applied.error();
   }

@@ -66,7 +66,8 @@ After cutover (C007 big bang), durable bytes move to a profile-level CAS with **
     blobs_view/         # optional session plaintext materialization (not source of truth)
     # blobs/            # not used; durable bytes live in cas/private only
   threads/ai-images/    # reserved name, NOT a thread (no thread.db): blobs_view/ only
-    blobs_view/         # session plaintext thumbnails of images the user sent to the AI; wiped with the others
+    blobs_view/         # pre-send preview of the image the user is about to send to the AI; removed on send / discard, cleared at startup
+                        # (sent AI images live in cas/private + the AI thread's own blobs_view, referenced by the message)
 ```
 
 | Realm | At rest | Object id | How it gets bytes |

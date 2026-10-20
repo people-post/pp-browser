@@ -28,6 +28,8 @@ public:
 
   void Put(const std::string& content_hash_hex, const ByteVector& bytes);
   bool TryGet(const std::string& content_hash_hex, ByteVector& out);
+  /** Drop one object's plaintext (its CAS object was deleted); no-op when absent. */
+  void Erase(const std::string& content_hash_hex);
   void Clear();
 
   std::size_t EntryCountForTest() const;

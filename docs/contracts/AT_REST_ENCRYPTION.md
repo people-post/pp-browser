@@ -113,7 +113,7 @@ Unit/integration tests may still call `SetDek` directly with a fixed DEK (no vau
 | Sidebar preview | `transcript-preview\|{profile_id}\|{thread_id}\|1` |
 | Thread memory value | `transcript-memory\|{profile_id}\|{thread_id}\|{key}\|1` |
 
-Plaintext inside message AEAD: `TranscriptBodyCodec` v1 JSON envelope (`chat_payload_b64`, `text`, `payload`, optional `content_rml`, `chat_actions`). Helpers: `TranscriptCipher`, `TranscriptBodyCodec` in `src/base/messaging/`.
+Plaintext inside message AEAD: `TranscriptBodyCodec` v1 JSON envelope (`chat_payload_b64`, `text`, `payload`, optional `content_rml`, `chat_actions`, optional `working_set_json`, optional `ai_image_json` = reference `{content_hash, mime, width, height}` to the private-CAS image of an AI question). Helpers: `TranscriptCipher`, `TranscriptBodyCodec` in `src/base/messaging/`.
 
 ### Attachment blob AEAD (a5 / C007 / C011)
 

@@ -61,6 +61,26 @@ public:
   Roe<std::string> EnsureLocalViewPath(const std::string& thread_id, const std::vector<uint8_t>& content_hash,
                                        const std::string& mime, const std::string& filename);
 
+  struct StoredLocalImage {
+    std::vector<uint8_t> content_hash;
+    std::string view_path;
+  };
+  /**
+   * Keep an image this device produced (a question to the AI) like a received attachment: private CAS under
+   * the profile DEK, plus the thread's blobs_view file for display. No wire fields, nothing uploaded.
+   */
+  Roe<StoredLocalImage> StoreLocalImage(const std::string& thread_id, const ByteVector& plaintext,
+                                        const std::string& mime);
+  /**
+   * Remove the CAS objects and view files of this thread's AI images (messages with `ai_image_json`):
+   * run before the thread or its history is deleted. Objects are content-addressed, so an identical
+   * image also referenced elsewhere loses its bytes too (its bubble then shows the marker).
+   */
+  Roe<void> DeleteLocalImages(const std::string& thread_id, IThreadStore& store);
+  /** The same for one message ("delete for me" on an AI question); no-op when it carries no image. */
+  Roe<void> DeleteLocalImageOfMessage(const std::string& thread_id, const std::string& message_id,
+                                      IThreadStore& store);
+
   /** Best-effort video poster under blobs_view (R012); ignores errors. */
   void MaybeBuildPoster(const std::string& thread_id, const ChatAttachmentFields& fields);
 

@@ -1023,8 +1023,12 @@ void AgentSession::StartTurn(const std::shared_ptr<Impl>& state) {
                           : util::GenerateUuid();
     user_message.thread_id = state->pending_thread_id;
     user_message.sender_contact_id = kLocalSelfContactId;
-    // Stored as text only: later history reads "[Image] <question>"; the bytes are never kept here.
+    // Stored as text: later history reads "[Image] <question>"; the bytes are never kept here. The GUI's
+    // reference to the stored image (private CAS) rides along so the bubble can show it after a restart.
     user_message.text = (state->pending_image ? std::string(kAiImageTurnMarker) : std::string()) + state->pending_user_text;
+    if (state->pending_image && !state->pending_image->ai_image_json.empty()) {
+      user_message.ai_image_json = state->pending_image->ai_image_json;
+    }
     user_message.timestamp = util::NowUnixMs();
     user_message.delivery = MessageDelivery::Local;
     user_message.transport = MessageTransport::Local;
