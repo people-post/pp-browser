@@ -364,12 +364,19 @@ Roe<void> CallStack::InitializeStoresOnOwner(const std::string& profile_db_path,
 
 void CallStack::BuildSessionsOnOwner(const CallStackDeps& deps) {
   PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
+  if (call_sessions_) {
+    // The manager holds every live call's state (ringing, accepting, media): rebuilding it ended
+    // a call already ringing or in progress. Its ports reach the owner's current objects.
+    log().info << "BuildSessions: sessions already built; kept";
+    return;
+  }
   deps_ = deps;
   call_sessions_ = std::make_unique<CallSessionManager>(*deps_.store, *deps_.contacts, *deps_.identity,
                                                         *call_session_store_, *call_media_keys_, deps_.delivery,
                                                         *deps_.psk, *call_media_engine_);
   BindSessionOutbox();
   BindCallControlInbound();
+  // No manager tracks the calls left open in the store (a previous run, or one reset since).
   call_sessions_->AbandonOrphanedCallsAfterRestart();
   call_sessions_->SetOnRingChangedMesh([this]() { SyncHubEphemeralListen(); });
   BindSessionProviders();

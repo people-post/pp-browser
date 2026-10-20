@@ -218,6 +218,43 @@ TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
 
 // H012 / H011 over call-control: a signaled punch runs offer → answer → both bursts, and our R1
 // reaches the peer's late reserve.
+TEST_F(CallDualStackComposeTest, BuildingSessionsAgainKeepsACallAlreadyRinging) {
+  // The invite reaches the answerer over the relay before its mesh is up; when the mesh came up the
+  // hub built the call sessions again, which dropped the ringing call (state and all).
+  Thread thread;
+  thread.id = "thread-dual-rebuild";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+  auto started = StartCallNow(*offer_.ui, thread.id, false, {answer_.local_identity});
+  ASSERT_TRUE(started) << started.error().message;
+  const std::string call_id = started->call_id;
+  auto key = offer_.stack->MediaKeys()->LoadEpochKey(call_id, 1);
+  ASSERT_TRUE(key && key->has_value());
+  ASSERT_TRUE(answer_.stack->MediaKeys()->PutEpochKey(call_id, 1, **key));
+  PumpWire();
+  auto pending = answer_.ui->TopPendingInvite();
+  ASSERT_TRUE(pending && pending->has_value()) << "invite should land on answerer";
+
+  answer_.stack->BuildSessions(answer_.deps);
+  AppRuntime::RunUIAndOwnerTasks();
+
+  pending = answer_.ui->TopPendingInvite();
+  ASSERT_TRUE(pending && pending->has_value()) << "the ringing call survives";
+  EXPECT_EQ((*pending)->call_id, call_id);
+
+  answer_.ui->Apply(CallLifecycleEvent::InviteSeen, call_id);
+  answer_.ui->Apply(CallLifecycleEvent::AcceptClicked, call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return answer_.ui->Phase() == CallPhase::InCall && offer_.ui->Phase() == CallPhase::InCall;
+  });
+  EXPECT_EQ(answer_.ui->Phase(), CallPhase::InCall);
+  EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall);
+  FinishAnswerLeaveExpectBothIdle(call_id);
+}
+
 TEST_F(CallDualStackComposeTest, ReachSignalsTravelOverCallControl) {
   Thread thread;
   thread.id = "thread-dual-reach";

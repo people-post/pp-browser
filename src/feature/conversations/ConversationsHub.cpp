@@ -1357,8 +1357,9 @@ Roe<void> ConversationsHub::AttachAmpMessagingStack() {
   mesh_messaging_->AttachAmpTransports(amp_links, std::move(amp_pump), std::move(amp_worker),
                                        std::move(amp_post_io), std::move(amp_post_after));
   WireAttachmentDownloads();
-  // Rebind participants now that Amp direct-chat transports exist.
-  NotifyMessagingBuilt();
+  // Same orchestrator, now with Amp transports: participants keep what they built on it (rebuilding
+  // the call sessions here abandoned a call already ringing over the relay).
+  WireMeshConnectivity();
   RegisterContactEndpoints();
   if (mesh_directory_cache_) {
     RegisterMeshDirectoryEndpoints();

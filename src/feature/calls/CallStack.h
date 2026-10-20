@@ -95,7 +95,11 @@ public:
 
   /** Phase A (profile init, no mesh): create call session store, media key store, media engine. */
   Roe<void> InitializeStores(const std::string& profile_db_path, const std::string& profile_id);
-  /** Phase A: build CSM against current p2p, wire providers, bind call state + media plane. */
+  /**
+   * Phase A: build the CSM against `deps`, wire providers, bind call state + media plane. Once:
+   * while sessions exist (until ResetSessions) a further call keeps them — rebuilding would end
+   * every live call. `deps` must therefore reach late-bound objects (delivery through the owner).
+   */
   void BuildSessions(const CallStackDeps& deps);
   /** Phase B (mesh up, mesh media wired by the owner): start Amp call-media transport + bind. */
   void OnMeshServicesStarted();

@@ -12,8 +12,8 @@ namespace pbr {
 
 /**
  * Calls riding the hub: owns the call stack and drives it from the hub's lifecycle. The call
- * stack's sessions are built when a messaging stack is and borrow the hub's stores, delivery and
- * mesh objects.
+ * stack is built when a messaging stack is (never on Amp attach: that would abandon a call
+ * already ringing over the relay) and borrows the hub's stores, delivery and mesh objects.
  */
 class CallsParticipant : public HubParticipant {
 public:
