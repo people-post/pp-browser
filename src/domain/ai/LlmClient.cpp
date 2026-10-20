@@ -4,6 +4,7 @@
 #include "common/PlatformLimits.h"
 #include "common/ValueJson.h"
 #include "foundation/error/AppError.h"
+#include "foundation/error/CurlNetworkError.h"
 #include "foundation/platform/CurlSsl.h"
 
 #include <curl/curl.h>
@@ -281,7 +282,7 @@ Roe<ChatCompletionResponse> LlmClient::Complete(const ChatCompletionRequest& req
 
   if (code != CURLE_OK) {
     log().error << "curl failed: " << curl_easy_strerror(code);
-    return AppError::Network(Err::Network::Unreachable, std::string("curl failed: ") + curl_easy_strerror(code));
+    return AppError::Network(NetworkCodeFromCurl(code), std::string("curl failed: ") + curl_easy_strerror(code));
   }
 
   if (http_code >= 400) {

@@ -192,7 +192,7 @@ TEST(SseClientTest, ThrowingHandlerIsAnErrorNotACrash) {
   EXPECT_EQ(result.error().category, static_cast<int32_t>(pbr::ErrorCategory::Internal));
 }
 
-TEST(SseClientTest, ConnectionRefusedIsUnreachable) {
+TEST(SseClientTest, ConnectionRefusedIsConnectFailed) {
   std::string url;
   {
     SseTestServer server({}, false);
@@ -206,5 +206,5 @@ TEST(SseClientTest, ConnectionRefusedIsUnreachable) {
   auto result = client.Post(request, [](const pbr::SseEvent&) {}, cancel);
   ASSERT_FALSE(static_cast<bool>(result));
   EXPECT_EQ(result.error().category, static_cast<int32_t>(pbr::ErrorCategory::Network));
-  EXPECT_EQ(result.error().code, static_cast<int32_t>(pbr::Err::Network::Unreachable));
+  EXPECT_EQ(result.error().code, static_cast<int32_t>(pbr::Err::Network::ConnectFailed));
 }

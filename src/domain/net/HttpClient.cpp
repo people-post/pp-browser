@@ -1,6 +1,7 @@
 #include "domain/net/HttpClient.h"
 
 #include "foundation/error/AppError.h"
+#include "foundation/error/CurlNetworkError.h"
 #include "foundation/platform/CurlSsl.h"
 
 #include "common/PbrCompat.h"
@@ -102,8 +103,8 @@ Roe<HttpResponse> Perform(const std::string& url, const char* method, const std:
   }
 
   if (code != CURLE_OK) {
-    return AppError::Network(Err::Network::Unreachable,
-                          std::string("HTTP request failed: ") + curl_easy_strerror(code));
+    return AppError::Network(NetworkCodeFromCurl(code),
+                             std::string("HTTP request failed: ") + curl_easy_strerror(code));
   }
 
   return HttpResponse{.status_code = status_code, .body = std::move(response_body.body)};
