@@ -116,10 +116,6 @@ jobs:
       - uses: actions/checkout@v7
         if: env.PP_RUN_PLATFORM == 'true'
 
-      - name: Free disk space
-        if: env.PP_RUN_PLATFORM == 'true' && (runner.os == 'Linux')
-        uses: ./.github/actions/free-disk-space
-
       - uses: ilammy/msvc-dev-cmd@v1
         if: env.PP_RUN_PLATFORM == 'true' && (runner.os == 'Windows')
 
@@ -296,7 +292,7 @@ jobs:
       CCACHE_NOHASHDIR: true
       CCACHE_COMPILERCHECK: string:android-ndk-r27.0.12077973
       CCACHE_SLOPPINESS: include_file_mtime,include_file_ctime,time_macros,pch_defines
-      # Keep well under GitHub-hosted runner free disk (~14GB before cleanup).
+      # ubuntu-24.04 runners now have ~86 GB free out of the box; no cleanup step needed.
       CCACHE_MAXSIZE: 2G
       CCACHE_COMPRESSLEVEL: 5
       ORG_GRADLE_PROJECT_ppBrowserCompilerCache: ON
@@ -308,9 +304,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 1
-
-      - name: Free disk space
-        uses: ./.github/actions/free-disk-space
 
       - uses: actions/setup-java@v6
         with:
