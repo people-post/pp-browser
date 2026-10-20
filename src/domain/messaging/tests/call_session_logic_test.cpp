@@ -452,5 +452,79 @@ TEST(CallSessionLogicTest, VideoAllowedFromInvite) {
 }
 
 
+TEST(CallSessionLogicTest, FanoutSelectJoinedOnly) {
+  std::vector<CallParticipant> rows(3);
+  rows[0].identity = "joined";
+  rows[0].state = CallParticipantState::Joined;
+  rows[1].identity = "ringing";
+  rows[1].state = CallParticipantState::Ringing;
+  rows[2].identity = "left";
+  rows[2].state = CallParticipantState::Left;
+
+  const auto out = SelectCallFanoutIdentities(rows, "", true, false);
+  ASSERT_EQ(out.size(), 1u);
+  EXPECT_EQ(out[0], "joined");
+}
+
+TEST(CallSessionLogicTest, FanoutSelectJoinedAndRingingInvited) {
+  std::vector<CallParticipant> rows(4);
+  rows[0].identity = "joined";
+  rows[0].state = CallParticipantState::Joined;
+  rows[1].identity = "ringing";
+  rows[1].state = CallParticipantState::Ringing;
+  rows[2].identity = "invited";
+  rows[2].state = CallParticipantState::Invited;
+  rows[3].identity = "skip-me";
+  rows[3].state = CallParticipantState::Joined;
+
+  const auto out = SelectCallFanoutIdentities(rows, "skip-me", true, true);
+  ASSERT_EQ(out.size(), 3u);
+  EXPECT_EQ(out[0], "joined");
+  EXPECT_EQ(out[1], "ringing");
+  EXPECT_EQ(out[2], "invited");
+}
+
+TEST(CallSessionLogicTest, MatchesOriginThreadAndJoinedPeer) {
+  CallSession session;
+  session.call_id = "call:1";
+  session.origin_thread_id = "t-origin";
+
+  Thread origin;
+  origin.id = "t-origin";
+  origin.kind = ThreadKind::Direct;
+  EXPECT_TRUE(ThreadMatchesActiveCall(origin, session, {}));
+
+  Thread peer_dm;
+  peer_dm.id = "t-peer";
+  peer_dm.kind = ThreadKind::Direct;
+  peer_dm.peer_identity_value = "account:bob";
+  CallParticipant bob;
+  bob.identity = "account:bob";
+  bob.state = CallParticipantState::Joined;
+  EXPECT_TRUE(ThreadMatchesActiveCall(peer_dm, session, {bob}));
+
+  bob.state = CallParticipantState::Ringing;
+  EXPECT_FALSE(ThreadMatchesActiveCall(peer_dm, session, {bob}));
+
+  Thread stranger;
+  stranger.id = "t-x";
+  stranger.kind = ThreadKind::Direct;
+  stranger.peer_identity_value = "account:carol";
+  bob.state = CallParticipantState::Joined;
+  EXPECT_FALSE(ThreadMatchesActiveCall(stranger, session, {bob}));
+}
+
+TEST(CallSessionLogicTest, MatchesGroupOrigin) {
+  CallSession session;
+  session.call_id = "call:1";
+  session.origin_group_id = "group:1";
+
+  Thread group;
+  group.id = "t-g";
+  group.kind = ThreadKind::Group;
+  group.group_id = "group:1";
+  EXPECT_TRUE(ThreadMatchesActiveCall(group, session, {}));
+}
+
 } // namespace
 } // namespace pbr

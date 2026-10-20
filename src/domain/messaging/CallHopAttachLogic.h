@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/media/MediaRelayStream.h"
+
 #include "domain/messaging/CallTypes.h"
 
 #include <cstddef>
@@ -22,8 +24,6 @@ namespace pbr {
  */
 CallSfuAttachDetail BuildSfuAttachFanout(const CallSfuAttachDetail& after_local_attach);
 
-/** FNV-1a style publisher stream id from communicating identity (stable across peers). */
-uint32_t PublisherStreamIdForIdentity(const std::string& identity);
 
 // --- Attach-wait ---
 

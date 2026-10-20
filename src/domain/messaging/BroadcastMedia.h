@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/messaging/CallHopAttachLogic.h"
+#include "common/media/MediaRelayStream.h"
 
 #include <cstdint>
 #include <string>

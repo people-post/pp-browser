@@ -10,7 +10,6 @@
 #include "domain/messaging/BroadcastJoinTicket.h"
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/messaging/PairwiseFanoutLogic.h"
-#include "domain/messaging/CallControlThreadLogic.h"
 #include "domain/messaging/PeerCapsLogic.h"
 #include "domain/messaging/SendRelayOptions.h"
 #include "domain/people/ContactIdentity.h"

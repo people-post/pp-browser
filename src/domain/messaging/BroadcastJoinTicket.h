@@ -1,6 +1,6 @@
 #pragma once
 
-#include "domain/messaging/CallMediaKeyStore.h"
+#include "foundation/crypto/MediaKeyWrap.h"
 
 #include "foundation/crypto/CryptoTypes.h"
 
@@ -13,6 +13,9 @@
 #include "common/PbrCompat.h"
 
 namespace pbr {
+
+/** The label broadcast show keys are wrapped under for a viewer (MediaKeyWrap; calls use their own). */
+inline constexpr const char* kBroadcastMediaKeyWrapLabel = "broadcast_media_key";
 
 inline constexpr int kBroadcastJoinTicketSchemaVersion = 1;
 
@@ -69,7 +72,7 @@ Roe<BroadcastJoinTicket> DecodeBroadcastJoinTicketJson(std::string_view json);
 
 /**
  * Mint a signed ticket. If `viewer_pairwise_session_key` is non-null and non-empty,
- * wraps the media key (CallMediaKeyStore AAD). Otherwise fills `key_material_b64`.
+ * wraps the media key (MediaKeyWrap, label `broadcast_media_key`). Otherwise fills `key_material_b64`.
  */
 Roe<BroadcastJoinTicket> MintBroadcastJoinTicket(BroadcastJoinTicketDraft draft,
                                                  const ByteVector& media_key_bytes,
@@ -82,7 +85,7 @@ Roe<void> VerifyBroadcastJoinTicket(const BroadcastJoinTicket& ticket,
 
 /**
  * Verify + extract plaintext media key bytes (unwrap or decode key_material).
- * Does not touch CallMediaKeyStore.
+ * Does not touch any key store.
  */
 Roe<BroadcastMediaKey> ExtractBroadcastMediaKey(const BroadcastJoinTicket& ticket,
                                                 const ByteVector& publisher_mldsa_public_key,

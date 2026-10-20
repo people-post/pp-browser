@@ -30,7 +30,7 @@
 #include "common/thread/E2eIntegrityUtil.h"
 #include "domain/messaging/E2eRelayPayloadCodec.h"
 #include "domain/messaging/E2ePublicSessionLogic.h"
-#include "domain/messaging/CallControlThreadLogic.h"
+#include "domain/messaging/ControlThreadLogic.h"
 #include "domain/messaging/GroupE2ePayloadCodec.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/EnvelopeSigner.h"

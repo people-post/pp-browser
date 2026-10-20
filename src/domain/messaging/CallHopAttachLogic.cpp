@@ -10,18 +10,6 @@ CallSfuAttachDetail BuildSfuAttachFanout(const CallSfuAttachDetail& after_local_
   return fanout;
 }
 
-uint32_t PublisherStreamIdForIdentity(const std::string& identity) {
-  if (identity.empty()) {
-    return 1u;
-  }
-  uint32_t h = 2166136261u;
-  for (unsigned char c : identity) {
-    h ^= c;
-    h *= 16777619u;
-  }
-  return h == 0 ? 1u : h;
-}
-
 SfuAttachWaitPollResult PollSfuAttachWait(const SfuAttachWaitPollInput& in) {
   if (!in.wait_active) {
     return SfuAttachWaitPollResult::Idle;

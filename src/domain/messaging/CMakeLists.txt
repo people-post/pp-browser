@@ -13,24 +13,23 @@ pp_browser_add_domain_library(pp_domain_messaging
     ChatHistoryResponder.cpp
     ChatPayloadCodec.cpp
     CallControlCodec.cpp
+    CallHopAttachLogic.cpp
+    CallHopPlan.cpp
     CallLifecycleTypes.cpp
     CallMediaKeyStore.cpp
-    CallSessionLogic.cpp
-    CallSessionStore.cpp
-    ThreadLocalPrefsStore.cpp
-    CallTypes.cpp
-    SoftMigrateLogic.cpp
-    CallHopPlan.cpp
     CallMobility.cpp
     CallPathPolicy.cpp
-    CallHopAttachLogic.cpp
+    CallSessionLogic.cpp
+    CallSessionStore.cpp
+    CallTypes.cpp
+    PeerCapsLogic.cpp
+    SoftMigrateLogic.cpp
+    ThreadLocalPrefsStore.cpp
     PairwiseFanoutLogic.cpp
-    CallThreadPresenceLogic.cpp
-    CallControlThreadLogic.cpp
+    ControlThreadLogic.cpp
     E2ePublicSessionLogic.cpp
     SqliteThreadSchema.cpp
     SqliteThreadDb.cpp
-    PeerCapsLogic.cpp
     ChatPayloadValidator.cpp
     ConversationSummaryCodec.cpp
     E2eIngestClassifier.cpp

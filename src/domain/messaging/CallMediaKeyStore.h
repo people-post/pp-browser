@@ -32,6 +32,9 @@ public:
   Roe<std::optional<ByteVector>> LoadEpochKey(const std::string& call_id, uint32_t media_epoch) const;
   Roe<ByteVector> GenerateEpochKey() const;
 
+  /** The label call media keys are wrapped under (MediaKeyWrap; broadcast uses its own). */
+  static constexpr const char* kCallMediaKeyWrapLabel = "call_media_key";
+
   static std::string BuildWrapAad(const std::string& call_id, uint32_t media_epoch, const std::string& media_key_id);
 
   /** Wrap epoch key under pairwise session_key → base64 blob (V015). */
@@ -48,6 +51,9 @@ private:
 
   std::string profile_db_path_;
   std::string profile_id_;
+  /** The call schema runs once per store, not on every short-lived connection. */
+  mutable std::mutex schema_mutex_;
+  mutable bool schema_ready_ = false;
   mutable ByteVector dek_;
   mutable std::mutex mutex_;
 };

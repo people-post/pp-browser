@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/messaging/CallTypes.h"
+#include "common/thread/ThreadTypes.h"
 
 #include <optional>
 #include <string>
@@ -74,5 +75,20 @@ public:
                                                 int64_t session_created_at_ms, int64_t now_ms,
                                                 int64_t ttl_ms = kDefaultCallInviteTtlMs);
 };
+
+/**
+ * Call-roster selectors for FanOutToJoined / FanOutToJoinedAndRinging.
+ * `include_ringing_or_invited` adds Ringing + Invited (cancel/end clear path).
+ */
+std::vector<std::string> SelectCallFanoutIdentities(const std::vector<CallParticipant>& participants,
+                                                   const std::string& skip_identity, bool include_joined,
+                                                   bool include_ringing_or_invited);
+
+/**
+ * Active call touches this thread: origin_thread_id match, or Direct peer is Joined
+ * (joined_participants is typically ListJoinedParticipants), or Group origin_group_id match.
+ */
+bool ThreadMatchesActiveCall(const Thread& thread, const CallSession& session,
+                             const std::vector<CallParticipant>& joined_participants);
 
 } // namespace pbr

@@ -1,7 +1,6 @@
 #include "domain/messaging/CallMediaKeyStore.h"
 
 #include "foundation/crypto/CryptoConstants.h"
-#include "domain/messaging/SqliteThreadStore.h"
 #include "common/Utilities.h"
 
 #include <filesystem>
@@ -93,9 +92,8 @@ protected:
   void SetUp() override {
     data_dir_ = std::filesystem::temp_directory_path() / ("pp_call_media_key_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
-    store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
-    ASSERT_TRUE(store_->ListThreads());
-    keys_ = std::make_unique<CallMediaKeyStore>(store_->ProfileDbPath());
+    std::filesystem::create_directories(data_dir_);
+    keys_ = std::make_unique<CallMediaKeyStore>((data_dir_ / "profile.db").string());
   }
 
   void TearDown() override {
@@ -103,12 +101,10 @@ protected:
       keys_->ClearDek();
     }
     keys_.reset();
-    store_.reset();
     std::filesystem::remove_all(data_dir_);
   }
 
   std::filesystem::path data_dir_;
-  std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<CallMediaKeyStore> keys_;
 };
 

@@ -7,7 +7,6 @@
 #include "common/chat/ChatPayloadTypes.h"
 #include "domain/messaging/ConversationSummaryCodec.h"
 #include "domain/messaging/GroupRosterStore.h"
-#include "domain/messaging/CallSessionStore.h"
 #include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
 #include "domain/messaging/SyncStateCodec.h"

@@ -13,6 +13,7 @@ pp_browser_add_foundation_library(pp_foundation_crypto
     IdentitySeedDeriver.cpp
     MlDsa.cpp
     MessageCipher.cpp
+    MediaKeyWrap.cpp
     PinKeyDeriver.cpp
     PinResolver.cpp
     ProfileSecretsEngine.cpp

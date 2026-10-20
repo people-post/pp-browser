@@ -1,6 +1,5 @@
 #pragma once
 
-#include "domain/messaging/CallTypes.h"
 #include "common/Error.h"
 
 #include <functional>
@@ -11,7 +10,7 @@
 namespace pbr {
 
 /**
- * Shared N× pairwise DM fan-out (calls SoftMigrate/roster + group membership).
+ * Shared N× pairwise DM fan-out (calls SoftMigrate/roster + group membership); the targets are the caller's.
  * Pure iteration policy — callers own send/crypto/IO.
  */
 enum class PairwiseFanoutMode {
@@ -34,14 +33,6 @@ struct PairwiseFanoutResult {
 std::vector<std::string> SelectPairwiseFanoutTargets(
     const std::vector<std::string>& identities, const std::string& skip_identity,
     const std::function<bool(const std::string& identity)>& include = {});
-
-/**
- * Call-roster selectors for FanOutToJoined / FanOutToJoinedAndRinging.
- * `include_ringing_or_invited` adds Ringing + Invited (cancel/end clear path).
- */
-std::vector<std::string> SelectCallFanoutIdentities(const std::vector<CallParticipant>& participants,
-                                                   const std::string& skip_identity, bool include_joined,
-                                                   bool include_ringing_or_invited);
 
 /**
  * Invoke `send` once per target. BestEffort always returns ok(); FailFast returns first_error

@@ -2,7 +2,6 @@
 
 #include "domain/messaging/SqliteThreadSchema.h"
 #include "domain/messaging/GroupRosterStore.h"
-#include "domain/messaging/CallSessionStore.h"
 #include "domain/messaging/ThreadLocalPrefsStore.h"
 #include "foundation/error/AppError.h"
 #include "common/chat/MessagingLimits.h"
@@ -166,10 +165,6 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
   GroupRosterStore roster_store(SqliteThreadProfileDbFile(data_dir_));
   if (auto group_schema = roster_store.EnsureSchema(profile_db_); !group_schema) {
     return group_schema.error();
-  }
-  CallSessionStore call_store(SqliteThreadProfileDbFile(data_dir_));
-  if (auto call_schema = call_store.EnsureSchema(profile_db_); !call_schema) {
-    return call_schema.error();
   }
   ThreadLocalPrefsStore prefs_store(SqliteThreadProfileDbFile(data_dir_));
   if (auto prefs_schema = prefs_store.EnsureSchema(profile_db_); !prefs_schema) {

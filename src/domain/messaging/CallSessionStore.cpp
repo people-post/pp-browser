@@ -134,14 +134,18 @@ Roe<sqlite3*> CallSessionStore::OpenDb() const {
   // Concurrent AcceptInvite / inbound invite / media-key writers share this file with
   // SqliteThreadStore's long-lived profile.db handle — wait out SQLITE_BUSY on Windows CI.
   sqlite3_busy_timeout(db, 5000);
-  if (auto schema = EnsureSchema(db); !schema) {
-    sqlite3_close(db);
-    return schema.error();
+  std::lock_guard<std::mutex> lock(schema_mutex_);
+  if (!schema_ready_) {
+    if (auto schema = EnsureSchema(db); !schema) {
+      sqlite3_close(db);
+      return schema.error();
+    }
+    schema_ready_ = true;
   }
   return db;
 }
 
-Roe<void> CallSessionStore::EnsureSchema(sqlite3* profile_db) const {
+Roe<void> CallSessionStore::EnsureSchema(sqlite3* profile_db) {
   char* err = nullptr;
   if (sqlite3_exec(profile_db, kCallSchemaSql, nullptr, nullptr, &err) != SQLITE_OK) {
     const std::string message = err ? err : "call schema failed";

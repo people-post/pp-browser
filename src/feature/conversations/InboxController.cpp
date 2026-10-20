@@ -1,5 +1,5 @@
 #include "feature/conversations/InboxController.h"
-#include "domain/messaging/CallThreadPresenceLogic.h"
+#include "domain/messaging/ControlThreadLogic.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include "feature/conversations/GroupMembershipWorkflow.h"

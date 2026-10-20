@@ -1,8 +1,9 @@
 #include "feature/calls/CallControlClient.h"
+#include "domain/messaging/CallSessionLogic.h"
 
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
-#include "domain/messaging/CallControlThreadLogic.h"
+#include "domain/messaging/ControlThreadLogic.h"
 #include "domain/messaging/CallMediaKeyStore.h"
 #include "domain/messaging/PairwiseFanoutLogic.h"
 #include "domain/messaging/SendRelayOptions.h"

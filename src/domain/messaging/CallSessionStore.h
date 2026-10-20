@@ -4,6 +4,7 @@
 
 #include "common/Error.h"
 
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -18,7 +19,8 @@ class CallSessionStore {
 public:
   explicit CallSessionStore(std::string profile_db_path);
 
-  Roe<void> EnsureSchema(sqlite3* profile_db) const;
+  /** Create or extend the call tables in `profile_db` (idempotent; calls own them). */
+  static Roe<void> EnsureSchema(sqlite3* profile_db);
 
   Roe<void> UpsertSession(const CallSession& session) const;
   Roe<std::optional<CallSession>> LoadSession(const std::string& call_id) const;
@@ -41,6 +43,9 @@ private:
   Roe<sqlite3*> OpenDb() const;
 
   std::string profile_db_path_;
+  /** The schema runs once per store, not on every short-lived connection. */
+  mutable std::mutex schema_mutex_;
+  mutable bool schema_ready_ = false;
 };
 
 } // namespace pbr

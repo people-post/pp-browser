@@ -148,8 +148,8 @@ Roe<BroadcastJoinTicket> MintBroadcastJoinTicket(BroadcastJoinTicketDraft draft,
   }
 
   if (viewer_pairwise_session_key != nullptr && !viewer_pairwise_session_key->empty()) {
-    auto wrapped = CallMediaKeyStore::WrapKeyB64(*viewer_pairwise_session_key, media_key_bytes,
-                                                 ticket.join_handle, ticket.media_epoch, ticket.media_key_id);
+    auto wrapped = WrapMediaKeyB64(kBroadcastMediaKeyWrapLabel, *viewer_pairwise_session_key, media_key_bytes,
+                                   ticket.join_handle, ticket.media_epoch, ticket.media_key_id);
     if (!wrapped) {
       return wrapped.error();
     }
@@ -227,8 +227,8 @@ Roe<BroadcastMediaKey> ExtractBroadcastMediaKey(const BroadcastJoinTicket& ticke
       return Error("broadcast join ticket wrap requires pairwise session key");
     }
     auto unwrapped =
-        CallMediaKeyStore::UnwrapKeyB64(*viewer_pairwise_session_key, ticket.wrapped_key_b64,
-                                        ticket.join_handle, ticket.media_epoch, ticket.media_key_id);
+        UnwrapMediaKeyB64(kBroadcastMediaKeyWrapLabel, *viewer_pairwise_session_key, ticket.wrapped_key_b64,
+                          ticket.join_handle, ticket.media_epoch, ticket.media_key_id);
     if (!unwrapped) {
       return unwrapped.error();
     }

@@ -5,6 +5,7 @@
 #include "foundation/crypto/EncryptedPayload.h"
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/MessageCipher.h"
+#include "foundation/crypto/MediaKeyWrap.h"
 #include "foundation/error/AppError.h"
 #include "domain/messaging/CallSessionStore.h"
 #include "common/Utilities.h"
@@ -56,10 +57,13 @@ Roe<sqlite3*> CallMediaKeyStore::OpenDb() const {
     return Error("Failed to open profile.db for call media keys");
   }
   sqlite3_busy_timeout(db, 5000);
-  CallSessionStore schema(profile_db_path_);
-  if (auto ensured = schema.EnsureSchema(db); !ensured) {
-    sqlite3_close(db);
-    return ensured.error();
+  std::lock_guard<std::mutex> lock(schema_mutex_);
+  if (!schema_ready_) {
+    if (auto ensured = CallSessionStore::EnsureSchema(db); !ensured) {
+      sqlite3_close(db);
+      return ensured.error();
+    }
+    schema_ready_ = true;
   }
   return db;
 }
@@ -73,49 +77,19 @@ Roe<ByteVector> CallMediaKeyStore::GenerateEpochKey() const {
 
 std::string CallMediaKeyStore::BuildWrapAad(const std::string& call_id, const uint32_t media_epoch,
                                             const std::string& media_key_id) {
-  return "call_media_key|" + call_id + "|" + std::to_string(media_epoch) + "|" + media_key_id;
+  return MediaKeyWrapAad(kCallMediaKeyWrapLabel, call_id, media_epoch, media_key_id);
 }
 
 Roe<std::string> CallMediaKeyStore::WrapKeyB64(const ByteVector& session_key, const ByteVector& key_bytes,
                                                const std::string& call_id, const uint32_t media_epoch,
                                                const std::string& media_key_id) {
-  if (session_key.empty() || key_bytes.empty() || call_id.empty() || media_key_id.empty()) {
-    return Error("WrapKeyB64 requires session_key, key_bytes, call_id, media_key_id");
-  }
-  auto nonce = MessageCipher::GenerateNonce();
-  if (!nonce) {
-    return nonce.error();
-  }
-  const std::string aad = BuildWrapAad(call_id, media_epoch, media_key_id);
-  const ByteVector aad_bytes(aad.begin(), aad.end());
-  auto encrypted = MessageCipher::Encrypt(session_key, key_bytes, aad_bytes, *nonce);
-  if (!encrypted) {
-    return encrypted.error();
-  }
-  auto blob = EncryptedPayload::EncodeBlob(*encrypted);
-  if (!blob) {
-    return blob.error();
-  }
-  return EncryptedPayload::EncodeBase64(*blob);
+  return WrapMediaKeyB64(kCallMediaKeyWrapLabel, session_key, key_bytes, call_id, media_epoch, media_key_id);
 }
 
 Roe<ByteVector> CallMediaKeyStore::UnwrapKeyB64(const ByteVector& session_key, const std::string& wrapped_key_b64,
                                                 const std::string& call_id, const uint32_t media_epoch,
                                                 const std::string& media_key_id) {
-  if (session_key.empty() || wrapped_key_b64.empty() || call_id.empty() || media_key_id.empty()) {
-    return Error("UnwrapKeyB64 requires session_key, wrapped_key_b64, call_id, media_key_id");
-  }
-  auto blob_bytes = EncryptedPayload::DecodeBase64(wrapped_key_b64);
-  if (!blob_bytes) {
-    return blob_bytes.error();
-  }
-  auto blob = EncryptedPayload::DecodeBlob(*blob_bytes);
-  if (!blob) {
-    return blob.error();
-  }
-  const std::string aad = BuildWrapAad(call_id, media_epoch, media_key_id);
-  const ByteVector aad_bytes(aad.begin(), aad.end());
-  return MessageCipher::Decrypt(session_key, *blob, aad_bytes);
+  return UnwrapMediaKeyB64(kCallMediaKeyWrapLabel, session_key, wrapped_key_b64, call_id, media_epoch, media_key_id);
 }
 
 Roe<std::string> CallMediaKeyStore::PutEpochKey(const std::string& call_id, const uint32_t media_epoch,

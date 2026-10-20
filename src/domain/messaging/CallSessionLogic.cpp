@@ -132,4 +132,45 @@ bool CallSessionLogic::ShouldAutoLeaveOutboundUnanswered(const bool outbound_cal
   return now_ms - session_created_at_ms >= ttl_ms;
 }
 
+std::vector<std::string> SelectCallFanoutIdentities(const std::vector<CallParticipant>& participants,
+                                                   const std::string& skip_identity, bool include_joined,
+                                                   bool include_ringing_or_invited) {
+  std::vector<std::string> out;
+  out.reserve(participants.size());
+  for (const CallParticipant& row : participants) {
+    if (row.identity.empty() || row.identity == skip_identity) {
+      continue;
+    }
+    const bool ok_joined = include_joined && row.state == CallParticipantState::Joined;
+    const bool ok_ring =
+        include_ringing_or_invited &&
+        (row.state == CallParticipantState::Ringing || row.state == CallParticipantState::Invited);
+    if (!ok_joined && !ok_ring) {
+      continue;
+    }
+    out.push_back(row.identity);
+  }
+  return out;
+}
+
+bool ThreadMatchesActiveCall(const Thread& thread, const CallSession& session,
+                             const std::vector<CallParticipant>& joined_participants) {
+  if (session.origin_thread_id && *session.origin_thread_id == thread.id) {
+    return true;
+  }
+  if (thread.kind == ThreadKind::Group && thread.group_id && session.origin_group_id &&
+      *thread.group_id == *session.origin_group_id) {
+    return true;
+  }
+  if (thread.kind == ThreadKind::Direct && !thread.peer_identity_value.empty()) {
+    for (const CallParticipant& row : joined_participants) {
+      // Callers typically pass ListJoinedParticipants (Joined-only); ignore other states.
+      if (row.identity == thread.peer_identity_value && row.state == CallParticipantState::Joined) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 } // namespace pbr

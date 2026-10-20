@@ -1,5 +1,4 @@
-#include "domain/messaging/CallControlThreadLogic.h"
-#include "domain/messaging/CallControlCodec.h"
+#include "domain/messaging/ControlThreadLogic.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "common/Utilities.h"
@@ -12,6 +11,19 @@ namespace {
 
 using namespace pbr;
 
+/** A control message (a feature's system message naming its control_type). */
+Roe<ThreadMessage> ControlMessage(const std::string& thread_id, const std::string& control_type,
+                                  const std::string& text) {
+  ThreadMessage message;
+  message.id = "m-" + util::GenerateUuid();
+  message.thread_id = thread_id;
+  message.sender_contact_id = "me";
+  message.content_type = ChatContentType::System;
+  message.text = text;
+  message.payload_json = R"({"control_type":")" + control_type + R"(","detail":"{}"})";
+  return message;
+}
+
 ByteVector TestDek() {
   ByteVector dek(kDataEncryptionKeySize);
   for (size_t i = 0; i < dek.size(); ++i) {
@@ -20,10 +32,10 @@ ByteVector TestDek() {
   return dek;
 }
 
-class CallControlThreadLogicTest : public ::testing::Test {
+class ControlThreadLogicTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    data_dir_ = std::filesystem::temp_directory_path() / ("pp_call_control_thread_" + util::GenerateUuid());
+    data_dir_ = std::filesystem::temp_directory_path() / ("pp_control_thread_" + util::GenerateUuid());
     std::filesystem::remove_all(data_dir_);
     store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
     ASSERT_TRUE(static_cast<bool>(store_->SetDek(TestDek())));
@@ -39,7 +51,7 @@ protected:
   std::unique_ptr<SqliteThreadStore> store_;
 };
 
-TEST_F(CallControlThreadLogicTest, PrefersOriginWhenMatchingE2ePublic) {
+TEST_F(ControlThreadLogicTest, PrefersOriginWhenMatchingE2ePublic) {
   DirectChatTarget target;
   target.peer_identity_kind = "account";
   target.peer_identity_value = "account:bob";
@@ -57,7 +69,7 @@ TEST_F(CallControlThreadLogicTest, PrefersOriginWhenMatchingE2ePublic) {
   EXPECT_EQ(*again, created->id);
 }
 
-TEST_F(CallControlThreadLogicTest, IgnoresPreferWhenWrongPeerOrChannel) {
+TEST_F(ControlThreadLogicTest, IgnoresPreferWhenWrongPeerOrChannel) {
   DirectChatTarget priv;
   priv.peer_identity_kind = "account";
   priv.peer_identity_value = "account:bob";
@@ -75,7 +87,7 @@ TEST_F(CallControlThreadLogicTest, IgnoresPreferWhenWrongPeerOrChannel) {
   EXPECT_EQ((*pub)->channel, ThreadChannel::E2ePublic);
 }
 
-TEST_F(CallControlThreadLogicTest, PruneDeletesEmptyShadowTwin) {
+TEST_F(ControlThreadLogicTest, PruneDeletesEmptyShadowTwin) {
   DirectChatTarget priv;
   priv.peer_identity_kind = "account";
   priv.peer_identity_value = "account:bob";
@@ -90,14 +102,14 @@ TEST_F(CallControlThreadLogicTest, PruneDeletesEmptyShadowTwin) {
   auto pub = store_->FindOrCreateDirectThread(pub_target, "c-bob", "Bob");
   ASSERT_TRUE(static_cast<bool>(pub));
 
-  auto pruned = PruneOrphanCallControlShadows(*store_);
+  auto pruned = PruneOrphanControlShadows(*store_);
   ASSERT_TRUE(static_cast<bool>(pruned));
   EXPECT_EQ(*pruned, 1u);
   EXPECT_FALSE(store_->GetThread(pub->id)->has_value());
   EXPECT_TRUE(store_->GetThread(private_dm->id)->has_value());
 }
 
-TEST_F(CallControlThreadLogicTest, PruneDeletesCallControlOnlyShadow) {
+TEST_F(ControlThreadLogicTest, PruneDeletesCallControlOnlyShadow) {
   DirectChatTarget priv;
   priv.peer_identity_kind = "account";
   priv.peer_identity_value = "account:carol";
@@ -112,21 +124,21 @@ TEST_F(CallControlThreadLogicTest, PruneDeletesCallControlOnlyShadow) {
   ASSERT_TRUE(static_cast<bool>(pub));
 
   auto invite =
-      CallControlCodec::BuildSystemMessage(pub->id, CallControlType::CallInvite, "ring", "{}", "me");
+      ControlMessage(pub->id, "call_invite", "ring");
   ASSERT_TRUE(static_cast<bool>(invite));
   ASSERT_TRUE(static_cast<bool>(store_->AppendMessage(*invite)));
   auto ended =
-      CallControlCodec::BuildSystemMessage(pub->id, CallControlType::CallEnded, "ended", "{}", "me");
+      ControlMessage(pub->id, "call_ended", "ended");
   ASSERT_TRUE(static_cast<bool>(ended));
   ASSERT_TRUE(static_cast<bool>(store_->AppendMessage(*ended)));
 
-  auto pruned = PruneOrphanCallControlShadows(*store_);
+  auto pruned = PruneOrphanControlShadows(*store_);
   ASSERT_TRUE(static_cast<bool>(pruned));
   EXPECT_EQ(*pruned, 1u);
   EXPECT_FALSE(store_->GetThread(pub->id)->has_value());
 }
 
-TEST_F(CallControlThreadLogicTest, PruneKeepsShadowWithUserChat) {
+TEST_F(ControlThreadLogicTest, PruneKeepsShadowWithUserChat) {
   DirectChatTarget priv;
   priv.peer_identity_kind = "account";
   priv.peer_identity_value = "account:dave";
@@ -149,13 +161,13 @@ TEST_F(CallControlThreadLogicTest, PruneKeepsShadowWithUserChat) {
   chat.timestamp = util::NowUnixMs();
   ASSERT_TRUE(static_cast<bool>(store_->AppendMessage(chat)));
 
-  auto pruned = PruneOrphanCallControlShadows(*store_);
+  auto pruned = PruneOrphanControlShadows(*store_);
   ASSERT_TRUE(static_cast<bool>(pruned));
   EXPECT_EQ(*pruned, 0u);
   EXPECT_TRUE(store_->GetThread(pub->id)->has_value());
 }
 
-TEST_F(CallControlThreadLogicTest, PruneRespectsProtectIds) {
+TEST_F(ControlThreadLogicTest, PruneRespectsProtectIds) {
   DirectChatTarget priv;
   priv.peer_identity_kind = "account";
   priv.peer_identity_value = "account:eve";
@@ -169,13 +181,13 @@ TEST_F(CallControlThreadLogicTest, PruneRespectsProtectIds) {
   auto pub = store_->FindOrCreateDirectThread(pub_target, "c-eve", "Eve");
   ASSERT_TRUE(static_cast<bool>(pub));
 
-  auto pruned = PruneOrphanCallControlShadows(*store_, std::unordered_set<std::string>{pub->id});
+  auto pruned = PruneOrphanControlShadows(*store_, std::unordered_set<std::string>{pub->id});
   ASSERT_TRUE(static_cast<bool>(pruned));
   EXPECT_EQ(*pruned, 0u);
   EXPECT_TRUE(store_->GetThread(pub->id)->has_value());
 }
 
-TEST_F(CallControlThreadLogicTest, PruneSkipsPublicWithoutPrivateSibling) {
+TEST_F(ControlThreadLogicTest, PruneSkipsPublicWithoutPrivateSibling) {
   DirectChatTarget pub_target;
   pub_target.peer_identity_kind = "account";
   pub_target.peer_identity_value = "account:solo";
@@ -183,10 +195,72 @@ TEST_F(CallControlThreadLogicTest, PruneSkipsPublicWithoutPrivateSibling) {
   auto pub = store_->FindOrCreateDirectThread(pub_target, "c-solo", "Solo");
   ASSERT_TRUE(static_cast<bool>(pub));
 
-  auto pruned = PruneOrphanCallControlShadows(*store_);
+  auto pruned = PruneOrphanControlShadows(*store_);
   ASSERT_TRUE(static_cast<bool>(pruned));
   EXPECT_EQ(*pruned, 0u);
   EXPECT_TRUE(store_->GetThread(pub->id)->has_value());
+}
+
+TEST(ControlThreadPresenceTest, ShadowRequiresPrivateSiblingAndEmptyChrome) {
+  Thread pub;
+  pub.id = "t-pub";
+  pub.kind = ThreadKind::Direct;
+  pub.channel = ThreadChannel::E2ePublic;
+  pub.peer_identity_value = "account:bob";
+  pub.preview = "";
+  pub.unread_count = 0;
+
+  Thread priv;
+  priv.id = "t-priv";
+  priv.kind = ThreadKind::Direct;
+  priv.channel = ThreadChannel::E2e;
+  priv.peer_identity_value = "account:bob";
+  priv.preview = "hello";
+
+  EXPECT_TRUE(HasPrivateE2eSibling(pub, {pub, priv}));
+  EXPECT_TRUE(IsControlShadowThread(pub, {pub, priv}));
+
+  pub.preview = "hi";
+  EXPECT_TRUE(HasPrivateE2eSibling(pub, {pub, priv}));
+  EXPECT_FALSE(IsControlShadowThread(pub, {pub, priv}));
+  pub.preview = "";
+  pub.unread_count = 1;
+  EXPECT_FALSE(IsControlShadowThread(pub, {pub, priv}));
+}
+
+TEST(ControlThreadPresenceTest, ShadowFalseWithoutPrivateSibling) {
+  Thread pub;
+  pub.id = "t-pub";
+  pub.kind = ThreadKind::Direct;
+  pub.channel = ThreadChannel::E2ePublic;
+  pub.peer_identity_value = "account:bob";
+
+  Thread other;
+  other.id = "t-other";
+  other.kind = ThreadKind::Direct;
+  other.channel = ThreadChannel::E2ePublic;
+  other.peer_identity_value = "account:bob";
+
+  EXPECT_FALSE(IsControlShadowThread(pub, {pub, other}));
+}
+
+TEST(ControlThreadPresenceTest, TranscriptOnlyControlRespectsScanLimit) {
+  EXPECT_TRUE(TranscriptIsOnlyControl({}, kOrphanControlShadowScanLimit));
+
+  auto invite = ControlMessage("t", "call_invite", "ring");
+  ASSERT_TRUE(static_cast<bool>(invite));
+  EXPECT_TRUE(TranscriptIsOnlyControl({*invite}, kOrphanControlShadowScanLimit));
+
+  ThreadMessage chat;
+  chat.content_type = ChatContentType::Text;
+  chat.text = "hi";
+  EXPECT_FALSE(TranscriptIsOnlyControl({*invite, chat}, kOrphanControlShadowScanLimit));
+
+  std::vector<ThreadMessage> full(kOrphanControlShadowScanLimit, *invite);
+  EXPECT_FALSE(TranscriptIsOnlyControl(full, kOrphanControlShadowScanLimit));
+
+  std::vector<ThreadMessage> under(kOrphanControlShadowScanLimit - 1, *invite);
+  EXPECT_TRUE(TranscriptIsOnlyControl(under, kOrphanControlShadowScanLimit));
 }
 
 } // namespace
