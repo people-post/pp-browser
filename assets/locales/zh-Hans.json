@@ -506,6 +506,8 @@
     "chat.stop": "停止",
     "chat.composer_placeholder": "输入消息",
     "chat.attach_file": "附加文件…",
+    "chat.attach.photo": "照片",
+    "chat.attach.file": "文件",
     "chat.attachment.uploading": "正在上传…",
     "chat.attachment.downloading": "正在下载…",
     "chat.attachment.download": "下载",

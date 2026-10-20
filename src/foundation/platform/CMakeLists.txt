@@ -31,7 +31,6 @@ set(_pp_platform_gui_sources
   IosPathProvider.cpp
   IPushDeviceRegistrar.cpp
   MobileWindowSizing.cpp
-  NativeFileDialog.cpp
   NetworkConnectivity.cpp
   NetworkMonitor.cpp
   PlatformEarlyInit.cpp
@@ -90,6 +89,7 @@ if(PP_BROWSER_DESKTOP_OS STREQUAL "WIN32")
     NetworkMonitor_Win32.cpp
     VideoPosterExtractor_Win32.cpp
     PlatformShare_Default.cpp
+    NativeFileDialog_Default.cpp
   )
 elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
   list(APPEND _pp_platform_core_sources
@@ -105,9 +105,12 @@ elseif(PP_BROWSER_DESKTOP_OS STREQUAL "DARWIN")
     NetworkMonitor_Darwin.mm
   )
   if(NOT PP_BROWSER_IS_IOS)
-    list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm PlatformShare_Darwin.mm)
+    list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Darwin.mm PlatformShare_Darwin.mm
+         NativeFileDialog_Default.cpp)
   else()
-    list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp PlatformShare_Ios.mm)
+    # SDL3 has no iOS file dialog (its dummy backend answers "nothing picked" at once).
+    list(APPEND _pp_platform_gui_sources VideoPosterExtractor_Default.cpp PlatformShare_Ios.mm
+         NativeFileDialog_Ios.mm)
   endif()
 else()
   list(APPEND _pp_platform_core_sources
@@ -120,6 +123,7 @@ else()
     desktop/LocalNotifier_Linux.cpp
     VideoPosterExtractor_Default.cpp
     PlatformShare_Default.cpp
+    NativeFileDialog_Default.cpp
   )
   if(PP_BROWSER_IS_ANDROID)
     list(APPEND _pp_platform_core_sources os/OsLocale_Android.cpp)
@@ -260,7 +264,9 @@ if(PP_BROWSER_IS_IOS)
     IosApnsAppDelegate.mm)
   target_link_libraries(pp_foundation_platform PUBLIC
     "-framework UserNotifications"
-    "-framework UIKit")
+    "-framework UIKit"
+    "-framework PhotosUI"
+    "-framework UniformTypeIdentifiers")
 endif()
 
 # On-screen keyboard height: only iOS needs it (its safe area leaves the keyboard out).

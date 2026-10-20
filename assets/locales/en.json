@@ -506,6 +506,8 @@
     "chat.stop": "Stop",
     "chat.composer_placeholder": "Message",
     "chat.attach_file": "Attach file…",
+    "chat.attach.photo": "Photo",
+    "chat.attach.file": "File",
     "chat.attachment.uploading": "Uploading…",
     "chat.attachment.downloading": "Downloading…",
     "chat.attachment.download": "Download",

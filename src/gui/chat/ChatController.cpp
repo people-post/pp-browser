@@ -1699,14 +1699,26 @@ void ChatController::OnAttachFile() {
     return;
   }
 
-  ShowOpenFileDialog(Backend::GetWindow(), [this, thread_id](std::vector<std::string> paths) {
+  auto on_picked = [this, thread_id](std::vector<std::string> paths) {
     AppRuntime::PostUI([this, thread_id, paths = std::move(paths)]() mutable {
       if (paths.empty()) {
         return;
       }
       StartAttachmentUpload(std::move(paths.front()));
     });
-  });
+  };
+  if (!Platform::IsMobile()) {
+    ShowOpenFileDialog(Backend::GetWindow(), std::move(on_picked));
+    return;
+  }
+  // A phone keeps photos and files apart: ask which (the desktop dialog shows both at once).
+  std::vector<ContextMenuAction> actions;
+  actions.push_back({"attach_photo", Tr("chat.attach.photo"), nullptr,
+                     [on_picked]() { ShowOpenImageFileDialog(Backend::GetWindow(), on_picked); }});
+  actions.push_back({"attach_file", Tr("chat.attach.file"), nullptr,
+                     [on_picked]() { ShowOpenFileDialog(Backend::GetWindow(), on_picked); }});
+  actions.push_back({"attach_cancel", Tr("common.cancel"), nullptr, []() {}});
+  ContextMenuHost::Instance().ShowActions(ui::Vector2i(120, 120), std::move(actions));
 }
 
 void ChatController::StartAttachmentUpload(const std::string& path) {

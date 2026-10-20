@@ -1,3 +1,4 @@
+// SDL3 file dialog: desktop and Android. iOS has its own (NativeFileDialog_Ios.mm).
 #include "foundation/platform/NativeFileDialog.h"
 
 #include <SDL3/SDL.h>
