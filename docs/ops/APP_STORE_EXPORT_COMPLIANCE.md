@@ -131,7 +131,7 @@ Algorithms (industry standard / NIST):
   - XChaCha20-Poly1305 (AEAD, messages + at-rest)
   - HKDF-SHA256, BLAKE2b-256, Argon2id
   - Ed25519; ML-DSA-65 (FIPS 204); ML-KEM-768 (FIPS 203)
-Libraries: libsodium; OpenSSL/BoringSSL EVP; mlkem-native; mldsa-native
+Libraries: libsodium; mlkem-native; mldsa-native; BoringSSL (curl's TLS only)
 Primary uses: E2E P2P messaging; PIN/DEK vault; PQ account keys; TLS/Noise transport
 Proprietary unpublished ciphers: No
 France App Store: [Yes → French declaration | No → N/A]

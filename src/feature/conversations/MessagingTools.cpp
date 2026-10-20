@@ -181,7 +181,7 @@ std::vector<ToolDescriptor> MessagingToolProvider::ListTools() {
     Object properties;
     properties.set("nickname", StringProp("Optional nickname override"));
     tools.push_back(MakeTool(
-      ToolDefinition{"register_user", "Register this device on the network with Ed25519 identity.", ObjectSchema(std::move(properties))},
+      ToolDefinition{"register_user", "Register this device on the network with its identity.", ObjectSchema(std::move(properties))},
       Meta("identity", "write", true),
       [&messaging](const Object& arguments) -> Roe<std::string> {
            auto identity = messaging.GetLocalIdentity();

@@ -4,7 +4,6 @@
 #include "common/chat/MessagingJson.h"
 #include "common/chat/PeopleDiscoveryBlocks.h"
 #include "domain/messaging/RelayWirePayload.h"
-#include "domain/people/Ed25519Signer.h"
 
 #include <gtest/gtest.h>
 #include "common/ValueJson.h"
@@ -49,14 +48,6 @@ TEST(MessagingFoundationTest, CoreMessagingUtilitiesRoundTrip) {
 
   const Object legacy = TryParseObject(R"({"thread_id":"t1","message_id":"m2","body":{"text":"nope"}})").value_or(Object{});
   EXPECT_FALSE(static_cast<bool>(ParseRelayEnvelope(legacy)));
-
-  auto keys = Ed25519Signer::GenerateKeyPair();
-  ASSERT_TRUE(static_cast<bool>(keys));
-  auto signature = Ed25519Signer::Sign("test payload", keys->private_key);
-  ASSERT_TRUE(static_cast<bool>(signature));
-  auto verified = Ed25519Signer::Verify("test payload", *signature, keys->public_key);
-  ASSERT_TRUE(static_cast<bool>(verified));
-  EXPECT_TRUE(*verified);
 
   mesh::DirectoryHit hit;
   hit.hit_id = "hit_alice";
