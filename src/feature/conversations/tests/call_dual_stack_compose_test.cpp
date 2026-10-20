@@ -82,8 +82,7 @@ protected:
       while (!answer_inbox_.empty()) {
         ThreadMessage msg = answer_inbox_.front();
         answer_inbox_.pop_front();
-        ASSERT_TRUE(answer_.inbound.apply_inbound_control(msg, offer_.local_identity, std::nullopt,
-                                                          std::nullopt));
+        ASSERT_TRUE(answer_.Deliver(msg, offer_.local_identity));
         moved = true;
       }
       while (!offer_inbox_.empty()) {
@@ -93,8 +92,7 @@ protected:
           held_to_offer_.push_back(std::move(msg));  // a relay that has not delivered it yet
           continue;
         }
-        ASSERT_TRUE(offer_.inbound.apply_inbound_control(msg, answer_.local_identity, std::nullopt,
-                                                         std::nullopt));
+        ASSERT_TRUE(offer_.Deliver(msg, answer_.local_identity));
         moved = true;
       }
       AppRuntime::RunUIAndOwnerTasks();

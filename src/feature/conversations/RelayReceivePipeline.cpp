@@ -12,7 +12,6 @@
 #include "domain/messaging/EnvelopeSigner.h"
 #include "domain/messaging/GroupMembershipApply.h"
 #include "domain/messaging/GroupMembershipCodec.h"
-#include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/InitiationBillingCodec.h"
 #include "domain/messaging/InitiationBillingStore.h"
 #include "domain/messaging/InitiationPricing.h"
@@ -97,18 +96,6 @@ bool IsGroupMembershipControlMessage(const ThreadMessage& message) {
   return GroupMembershipCodec::ControlTypeFromMessage(message).has_value();
 }
 
-bool IsCallControlMessage(const ThreadMessage& message) {
-  return CallControlCodec::IsCallControlMessage(message);
-}
-
-void MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome, const ThreadMessage& message) {
-  if (const auto type = CallControlCodec::ControlTypeFromMessage(message)) {
-    if (CallControlCodec::SuppressesInboxChrome(*type)) {
-      outcome.suppress_inbox_chrome = true;
-    }
-  }
-}
-
 } // namespace
 
 RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys,
@@ -119,14 +106,50 @@ RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyR
   redirectLogger("RelayReceivePipeline");
 }
 
-Roe<void> RelayReceivePipeline::ApplyInboundCallMessage(ThreadMessage& message,
-                                                        const std::string& actor_identity,
-                                                        const std::optional<int64_t> relay_created_at_ms,
-                                                        const std::optional<int64_t> relay_server_time_ms) const {
-  if (!call_control_.apply_inbound_control || !IsCallControlMessage(message)) {
+Roe<void> RelayReceivePipeline::ApplyInboundControl(ThreadMessage& message, const RelayEnvelope& envelope,
+                                                    RelayReceiveOutcome* outcome_on_failure,
+                                                    const std::string& thread_id) const {
+  if (!controls_) {
     return {};
   }
-  return call_control_.apply_inbound_control(message, actor_identity, relay_created_at_ms, relay_server_time_ms);
+  const auto family = controls_->Find(message);
+  if (!family || !family->apply) {
+    return {};
+  }
+  SystemControlContext context{envelope.sender_contact_id, envelope.relay_created_at_ms, envelope.relay_server_time_ms};
+  auto applied = family->apply(message, context);
+  if (!applied && outcome_on_failure) {
+    MarkReceiveFailure(*outcome_on_failure, envelope.sender_contact_id, "couldn't apply " + family->name + " update",
+                       applied.error().message, thread_id);
+  }
+  return applied;
+}
+
+bool RelayReceivePipeline::AppliesOutOfOrder(const ThreadMessage& message) const {
+  return IsGroupMembershipControlMessage(message) || (controls_ && controls_->AppliesOutOfOrder(message));
+}
+
+void RelayReceivePipeline::ApplyOutOfOrderControls(ThreadMessage& message, const RelayEnvelope& envelope,
+                                                   const IngestDecision decision, RelayReceiveOutcome& outcome) const {
+  if (IsGroupMembershipControlMessage(message)) {
+    (void)ApplyInboundMembershipMessage(message, envelope.sender_contact_id, &outcome);
+    return;
+  }
+  if (!controls_ || !controls_->AppliesOutOfOrder(message)) {
+    return;
+  }
+  log().info << "Apply system control out of order (" << static_cast<int>(decision)
+             << ") message_id=" << envelope.message_id;
+  MaybeSuppressInboxChrome(outcome, message);
+  if (auto applied = ApplyInboundControl(message, envelope); !applied) {
+    log().warning << "System control out of order failed: " << applied.error().message;
+  }
+}
+
+void RelayReceivePipeline::MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome, const ThreadMessage& message) const {
+  if (controls_ && (controls_->Hidden(message) || controls_->Quiet(message))) {
+    outcome.suppress_inbox_chrome = true;
+  }
 }
 
 Roe<void> RelayReceivePipeline::ApplyInboundBillingMessage(ThreadMessage& message,
@@ -654,9 +677,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
         }
         if (auto decrypted = E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key,
                                                                    psk_store_, local_kem_private_key)) {
-          if (IsCallControlMessage(*decrypted)) {
-            log().warning
-                << "Apply call-control on BenignDuplicate message_id=" << envelope.message_id;
+          if (AppliesOutOfOrder(*decrypted)) {
             ThreadMessage side = std::move(*decrypted);
             side.id = envelope.message_id;
             side.thread_id = resolved_thread_id;
@@ -667,9 +688,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
             side.transport = transport;
             side.sender_seq = envelope.sender_seq;
             side.session_epoch = envelope.session_epoch;
-            MaybeSuppressInboxChrome(outcome, side);
-            (void)ApplyInboundCallMessage(side, envelope.sender_contact_id, envelope.relay_created_at_ms,
-                                          envelope.relay_server_time_ms);
+            ApplyOutOfOrderControls(side, envelope, IngestDecision::BenignDuplicate, outcome);
           }
         }
       }
@@ -841,8 +860,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   const IngestClassifierResult classified = E2eIngestClassifier::Classify(classifier_input, replay_window);
   outcome.decision = classified.decision;
 
-  auto apply_call_control_side_effects = [&](IngestDecision decision_label) {
-    if (!IsCallControlMessage(message) && !IsGroupMembershipControlMessage(message)) {
+  auto apply_out_of_order = [&](IngestDecision decision_label) {
+    if (!AppliesOutOfOrder(message)) {
       return;
     }
     ThreadMessage side = message;
@@ -855,28 +874,13 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     side.transport = transport;
     side.sender_seq = envelope.sender_seq;
     side.session_epoch = envelope.session_epoch;
-    if (IsGroupMembershipControlMessage(side)) {
-      (void)ApplyInboundMembershipMessage(side, envelope.sender_contact_id, &outcome);
-    }
-    if (IsCallControlMessage(side)) {
-      log().warning
-          << "Apply call-control on " << static_cast<int>(decision_label)
-          << " message_id=" << envelope.message_id;
-      MaybeSuppressInboxChrome(outcome, side);
-      if (auto call = ApplyInboundCallMessage(side, envelope.sender_contact_id, envelope.relay_created_at_ms,
-                                              envelope.relay_server_time_ms);
-          !call) {
-        log().warning
-            << "Call-control side-effect failed: " << call.error().message;
-      }
-    }
-    (void)ApplyInboundBillingMessage(side, envelope.sender_contact_id);
-    (void)ApplyInboundPaymentPromiseMessage(side);
+    ApplyOutOfOrderControls(side, envelope, decision_label, outcome);
   };
 
   if (classified.decision == IngestDecision::SilentDiscard || classified.decision == IngestDecision::BenignDuplicate) {
-    // MediaKey/Accept are idempotent — do not skip when classifier drops a resent seq/id.
-    apply_call_control_side_effects(classified.decision);
+    // Out-of-order controls (call media keys, accepts, membership) are idempotent — do not skip when
+    // the classifier drops a resent seq/id.
+    apply_out_of_order(classified.decision);
     return outcome;
   }
   const bool strict_channel = envelope.route.channel == ThreadChannel::E2e;
@@ -887,7 +891,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       compromised_state.phase = PeerSyncPhase::Compromised;
       (void)store_.SetPeerSyncState(resolved_thread_id, envelope.session_epoch, compromised_state);
       // Defense-in-depth: membership DMs still apply on a frozen private stream.
-      if (IsGroupMembershipControlMessage(message) || IsCallControlMessage(message)) {
+      if (AppliesOutOfOrder(message)) {
         ThreadMessage persisted = message;
         persisted.id = envelope.message_id;
         persisted.thread_id = resolved_thread_id;
@@ -904,11 +908,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
                              membership.error().message, resolved_thread_id);
           return outcome;
         }
-        if (auto call = ApplyInboundCallMessage(persisted, envelope.sender_contact_id, envelope.relay_created_at_ms,
-                                                envelope.relay_server_time_ms);
-            !call) {
-          MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply call update", call.error().message,
-                             resolved_thread_id);
+        if (auto control = ApplyInboundControl(persisted, envelope, &outcome, resolved_thread_id); !control) {
           return outcome;
         }
         MaybeSuppressInboxChrome(outcome, persisted);
@@ -925,9 +925,11 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       outcome.decision = IngestDecision::SoftCompromised;
       return outcome;
     }
-    // e2e_public SoftCompromised/HardReject: still apply call-control (MediaKey) when decoded.
-    if (classified.decision == IngestDecision::SoftCompromised || IsCallControlMessage(message)) {
-      apply_call_control_side_effects(classified.decision);
+    // e2e_public SoftCompromised: out-of-order controls apply; HardReject: only bound families' (call
+    // media keys must not wait), not membership.
+    if (classified.decision == IngestDecision::SoftCompromised ||
+        (controls_ && controls_->AppliesOutOfOrder(message))) {
+      apply_out_of_order(classified.decision);
     }
     return outcome;
   }
@@ -953,12 +955,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
                        membership.error().message, resolved_thread_id);
     return outcome;
   }
-  if (auto call = ApplyInboundCallMessage(persisted, envelope.sender_contact_id, envelope.relay_created_at_ms,
-                                          envelope.relay_server_time_ms);
-      !call) {
+  if (auto control = ApplyInboundControl(persisted, envelope, &outcome, resolved_thread_id); !control) {
     outcome.decision = IngestDecision::HardReject;
-    MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't apply call update", call.error().message,
-                       resolved_thread_id);
     return outcome;
   }
   MaybeSuppressInboxChrome(outcome, persisted);

@@ -25,7 +25,7 @@
 #include "feature/calls/CallsThread.h"
 #include "feature/calls/SharedPorts.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/CallControlInboundPorts.h"
+#include "common/chat/SystemControl.h"
 #include "feature/call_media/ICallMediaTransport.h"
 #include "mesh/host/MeshHost.h"
 
@@ -56,8 +56,8 @@ struct CallStackDeps {
   SqlitePskSessionStore* psk = nullptr;
   /** Delivery + dial registration; filled from MeshDeliveryOrchestrator without typing it here. */
   CallDeliveryPorts delivery;
-  /** Wire inbound call-control into conversations receive path after CSM is built. */
-  std::function<void(CallControlInboundPorts ports)> bind_call_control;
+  /** Where call control is bound as a system-control family (after the CSM is built; unbound with it). */
+  SystemControlRegistry* system_controls = nullptr;
 
   /** Current MeshHost (null before StartMesh, reset on stop). */
   std::function<mesh::MeshHost*()> mesh;

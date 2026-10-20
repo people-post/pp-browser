@@ -1,9 +1,10 @@
 #pragma once
 
+#include "common/chat/SystemControl.h"
+
 #include "common/Module.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/ui/ChatWidgetTypes.h"
-#include "domain/messaging/CallTypes.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "feature/conversations/DirectoryShadowCache.h"
@@ -29,6 +30,8 @@ public:
                   DirectoryShadowCache* shadows = nullptr);
 
   void SetGroupMembership(GroupMembershipWorkflow* groups);
+  /** The system-control families features bind: how their messages show (hidden, worded). Not owned. */
+  void SetSystemControls(const SystemControlRegistry* controls) { controls_ = controls; }
 
   Roe<std::vector<Thread>> ListThreads();
   Roe<Thread> GetActiveThread() const;
@@ -99,17 +102,16 @@ private:
   std::string ResolveRowClass(const std::string& sender_contact_id) const;
   std::string BuildMessageRml(const ThreadMessage& message) const;
   std::string BuildSystemRml(const ThreadMessage& message) const;
-  std::string BuildCallHistoryRml(const ThreadMessage& message, CallControlType type) const;
   std::string BuildContactCardRml(const ThreadMessage& message) const;
   std::string BuildCryptoTxRml(const ThreadMessage& message) const;
   std::string BuildAttachmentRml(const ThreadMessage& message) const;
   std::string BuildUnsupportedRml(const ThreadMessage& message) const;
   std::string BuildSharedBadgeHtml(const ThreadMessage& message) const;
-  std::string FormatCallPeerLabel(const std::string& identity) const;
 
   IThreadStore& store_;
   ContactsStore& contacts_;
   PeerDisplayResolver& labels_;
+  const SystemControlRegistry* controls_ = nullptr;
   DirectoryShadowCache* shadows_ = nullptr;
   GroupMembershipWorkflow* groups_ = nullptr;
   std::string profile_data_dir_;

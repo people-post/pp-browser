@@ -421,10 +421,10 @@ void MeshDeliveryOrchestrator::SetPaymentPromiseStore(PaymentPromiseStore* store
   }
 }
 
-void MeshDeliveryOrchestrator::BindCallControlInbound(CallControlInboundPorts ports) {
-  call_control_ = std::move(ports);
+void MeshDeliveryOrchestrator::SetSystemControls(const SystemControlRegistry* controls) {
+  controls_ = controls;
   if (receive_pipeline_) {
-    receive_pipeline_->BindCallControlInbound(call_control_);
+    receive_pipeline_->SetSystemControls(controls_);
   }
 }
 
@@ -733,8 +733,8 @@ Roe<EnsuredE2ePublicSessionKey> MeshDeliveryOrchestrator::EnsureE2ePublicSession
     return Error("Peer identity required");
   }
   std::optional<std::string> prefer;
-  if (call_control_.active_call_origin_thread_id) {
-    prefer = call_control_.active_call_origin_thread_id();
+  if (controls_) {
+    prefer = controls_->PreferredPublicThread();
   }
   std::string contact_id;
   std::string dm_title = peer_identity;
@@ -948,15 +948,12 @@ bool MeshDeliveryOrchestrator::IsPskReadyToSend(const std::string& thread_id) co
   return status && status->has_psk && status->verified;
 }
 
-bool MeshDeliveryOrchestrator::HasActiveLocalCall() const {
-  if (!call_control_.has_active_local_call) {
-    return false;
-  }
-  return call_control_.has_active_local_call();
+std::optional<std::string> MeshDeliveryOrchestrator::LiveExchange() const {
+  return controls_ ? controls_->LiveFamily() : std::nullopt;
 }
 
 Roe<void> MeshDeliveryOrchestrator::MaybeSendPublicAutoRekey(const std::string& thread_id) {
-  if (HasActiveLocalCall()) {
+  if (LiveExchange()) {
     return {};
   }
   auto should = public_lock_.ShouldAutoRekey(thread_id, util::NowUnixMs());
@@ -975,8 +972,8 @@ Roe<void> MeshDeliveryOrchestrator::MaybeSendPublicAutoRekey(const std::string& 
 
 Roe<ThreadMessage> MeshDeliveryOrchestrator::SendPublicPskRotate(const std::string& thread_id,
                                                            const PublicPskRotateKind kind) {
-  if (HasActiveLocalCall()) {
-    return Error("Finish the call first");
+  if (const auto live = LiveExchange()) {
+    return Error("Finish the " + *live + " first");
   }
   ByteVector peer_account_kem_pk;
   if (kind == PublicPskRotateKind::Lock) {
@@ -1328,8 +1325,8 @@ void MeshDeliveryOrchestrator::MaybeTailSync(const std::string& thread_id) {
     return;
   }
   // SoftMigrate / Accept must not sit behind history TailSync on the Normal worker + relay HTTP.
-  if (HasActiveLocalCall()) {
-    log().info << "MaybeTailSync deferred (active call) thread=" << thread_id;
+  if (const auto live = LiveExchange()) {
+    log().info << "MaybeTailSync deferred (live " << *live << ") thread=" << thread_id;
     return;
   }
   AppRuntime::PostWorkerNormal([this, thread_id]() {
@@ -1345,8 +1342,8 @@ void MeshDeliveryOrchestrator::MaybeRepairGap(const std::string& thread_id, cons
   if (!chat_sync_ || !envelope.session_epoch) {
     return;
   }
-  if (HasActiveLocalCall()) {
-    log().info << "MaybeRepairGap deferred (active call) thread=" << thread_id;
+  if (const auto live = LiveExchange()) {
+    log().info << "MaybeRepairGap deferred (live " << *live << ") thread=" << thread_id;
     return;
   }
   auto sync_state = store_.GetPeerSyncState(thread_id, envelope.session_epoch);

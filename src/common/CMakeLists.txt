@@ -8,6 +8,7 @@ add_library(pp_pbr_common STATIC
   chat/MessagingJson.cpp
   chat/PeopleDiscoveryBlocks.cpp
   chat/RelayStreamKey.cpp
+  chat/SystemControl.cpp
   directory/DirectoryJson.cpp
   ui/WorkingSetCodec.cpp
   LengthPrefixedCodec.cpp

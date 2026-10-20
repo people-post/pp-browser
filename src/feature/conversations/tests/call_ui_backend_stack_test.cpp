@@ -34,6 +34,13 @@
 namespace pbr {
 namespace {
 
+/** Any call-control message: the call family owns it once bound. */
+ThreadMessage CallControlProbeMessage() {
+  return CallControlCodec::BuildSystemMessage("thread:probe", CallControlType::CallEnded, "Call ended", "{}",
+                                              "account:peer")
+      .value();
+}
+
 ByteVector TestDek() {
   ByteVector dek(kDataEncryptionKeySize);
   for (size_t i = 0; i < dek.size(); ++i) {
@@ -176,7 +183,6 @@ protected:
 
     app_config_ = AppConfig{};
     listen_desires_ = 0;
-    inbound_bound_ = false;
 
     stack_ = std::make_unique<CallStack>();
     ASSERT_TRUE(stack_->InitializeStores(store_->ProfileDbPath(), "stack-test"));
@@ -214,10 +220,7 @@ protected:
     deps.seed_dial_ok = []() { return false; };
     deps.prefetch_peer_reachability = [](const std::string&) {};
     deps.sync_mobile_ephemeral_listen = [this]() { ++listen_desires_; };
-    deps.bind_call_control = [this](CallControlInboundPorts ports) {
-      inbound_ = std::move(ports);
-      inbound_bound_ = static_cast<bool>(inbound_.apply_inbound_control);
-    };
+    deps.system_controls = &controls_;
 
     deps.connectivity = &connectivity_;
     deps.media_relay = &media_relay_;
@@ -227,7 +230,7 @@ protected:
     deps.address_disclosure = &disclosure_;
     stack_->BuildSessions(deps);
     ASSERT_TRUE(ui_->Available());
-    ASSERT_TRUE(inbound_bound_);
+    ASSERT_TRUE(controls_.Find(CallControlProbeMessage())) << "the call family is bound";
     sessions_identity_ = ui_->SessionsIdentity();
     if (CallMediaEngine* media = stack_->MediaEngine()) {
       media->SetSkipDeviceOpenForTest(true);
@@ -288,14 +291,17 @@ protected:
     if (!msg) {
       return msg.error();
     }
-    if (!inbound_.apply_inbound_control) {
+    const auto family = controls_.Find(*msg);
+    if (!family || !family->apply) {
       return Error("inbound not bound");
     }
-    auto applied = inbound_.apply_inbound_control(*msg, "account:peer", std::nullopt, std::nullopt);
+    auto applied = family->apply(*msg, SystemControlContext{"account:peer", std::nullopt, std::nullopt});
     AppRuntime::RunUIAndOwnerTasks();  // call control is applied on the calls owner (drained by the test)
     return applied;
   }
 
+  // First: the call stack unbinds its family here on teardown.
+  SystemControlRegistry controls_;
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<ContactsStore> contacts_;
@@ -310,8 +316,6 @@ protected:
   std::unique_ptr<FakeCallMediaTransport> transport_;
   std::unique_ptr<FakeDialRegistry> dial_;
   AppConfig app_config_;
-  CallControlInboundPorts inbound_;
-  bool inbound_bound_ = false;
   const void* sessions_identity_ = nullptr;
   std::string local_identity_;
   int sent_control_ = 0;
@@ -392,9 +396,7 @@ TEST_F(CallUiBackendStackTest, InviteAcceptLeaveThroughBackend) {
   ASSERT_TRUE(active && active->has_value());
   EXPECT_EQ((*active)->call_id, call_id);
   EXPECT_TRUE(stack_->HasActiveLocalCall());
-  if (inbound_.has_active_local_call) {
-    EXPECT_TRUE(inbound_.has_active_local_call());
-  }
+  EXPECT_EQ(controls_.LiveFamily(), std::optional<std::string>("call"));
 
   auto peer = ui_->PeerIdentityForCall(call_id);
   ASSERT_TRUE(peer && peer->has_value());

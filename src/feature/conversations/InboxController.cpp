@@ -1,13 +1,12 @@
 #include "feature/conversations/InboxController.h"
+#include "domain/messaging/CallThreadPresenceLogic.h"
 #include "foundation/runtime/AppRuntime.h"
 
-#include "domain/messaging/CallThreadPresenceLogic.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "domain/ai/StructuredTextParser.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/messaging/AttachmentCache.h"
-#include "domain/messaging/CallControlCodec.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/people/DirectChatTargetFromContact.h"
 #include "domain/messaging/GroupMembershipCodec.h"
@@ -58,37 +57,6 @@ std::string HydrateChatActions(const std::string& body_rml, const std::vector<Tr
 
 std::string SystemLineRml(const std::string& text) {
   return "<div class=\"chat-system-line muted\"><p>" + StructuredTextParser::EscapeText(text) + "</p></div>";
-}
-
-bool IsPlumbingCallControl(const CallControlType type) {
-  return CallControlCodec::IsPlumbingCallControl(type);
-}
-
-std::optional<std::string> CallDetailJson(const ThreadMessage& message) {
-  auto payload = TryParseObject(message.payload_json);
-  if (!payload) {
-    return std::nullopt;
-  }
-  return payload->getString("detail");
-}
-
-std::string FormatCallDurationMs(const int64_t duration_ms) {
-  if (duration_ms < 0) {
-    return {};
-  }
-  const int64_t total_sec = duration_ms / 1000;
-  const int64_t hours = total_sec / 3600;
-  const int64_t mins = (total_sec % 3600) / 60;
-  const int64_t secs = total_sec % 60;
-  char buf[32];
-  if (hours > 0) {
-    std::snprintf(buf, sizeof(buf), "%lld:%02lld:%02lld", static_cast<long long>(hours),
-                  static_cast<long long>(mins), static_cast<long long>(secs));
-  } else {
-    std::snprintf(buf, sizeof(buf), "%lld:%02lld", static_cast<long long>(mins),
-                  static_cast<long long>(secs));
-  }
-  return buf;
 }
 
 } // namespace
@@ -620,160 +588,16 @@ std::string InboxController::BuildSharedBadgeHtml(const ThreadMessage& message) 
   return "<span class=\"chat-shared-badge muted\">" + Tr("chat.shared_badge") + "</span>";
 }
 
-std::string InboxController::FormatCallPeerLabel(const std::string& identity) const {
-  if (identity.empty()) {
-    return Tr("call.label.someone");
-  }
-  if (identity == kLocalSelfContactId) {
-    return Tr("call.label.you");
-  }
-  const std::string label = ResolveSenderLabel(identity);
-  return label.empty() ? Tr("call.label.someone") : label;
-}
-
-std::string InboxController::BuildCallHistoryRml(const ThreadMessage& message,
-                                                 const CallControlType type) const {
-  if (IsPlumbingCallControl(type)) {
-    return {};
-  }
-
-  const auto detail_json = CallDetailJson(message);
-  const bool outbound = message.sender_contact_id == kLocalSelfContactId;
-  std::string line;
-
-  switch (type) {
-  case CallControlType::CallStarted: {
-    CallMediaMode mode = CallMediaMode::Voice;
-    if (detail_json) {
-      if (auto started = CallControlCodec::DecodeStarted(*detail_json)) {
-        mode = started->media_mode;
-      }
-    }
-    line = mode == CallMediaMode::Video ? Tr("call.history.started_video") : Tr("call.history.started_voice");
-    break;
-  }
-  case CallControlType::CallInvite: {
-    CallMediaMode mode = CallMediaMode::Voice;
-    std::string peer;
-    if (detail_json) {
-      if (auto invite = CallControlCodec::DecodeInvite(*detail_json)) {
-        mode = invite->media_mode;
-        peer = outbound ? invite->invitee_identity : invite->inviter_identity;
-      }
-    }
-    if (peer.empty() && !outbound) {
-      peer = message.sender_contact_id;
-    }
-    const std::string name = FormatCallPeerLabel(peer);
-    if (outbound) {
-      line = mode == CallMediaMode::Video ? Tr("call.history.outgoing_video", {{"name", name}})
-                                          : Tr("call.history.outgoing_voice", {{"name", name}});
-    } else {
-      line = mode == CallMediaMode::Video ? Tr("call.history.incoming_video", {{"name", name}})
-                                          : Tr("call.history.incoming_voice", {{"name", name}});
-    }
-    break;
-  }
-  case CallControlType::CallAccept: {
-    std::string identity = message.sender_contact_id;
-    if (detail_json) {
-      if (auto accept = CallControlCodec::DecodeAccept(*detail_json)) {
-        if (!accept->identity.empty()) {
-          identity = accept->identity;
-        }
-      }
-    }
-    const std::string name = outbound ? Tr("call.label.you") : FormatCallPeerLabel(identity);
-    line = Tr("call.history.joined", {{"name", name}});
-    break;
-  }
-  case CallControlType::CallDecline: {
-    std::string identity = message.sender_contact_id;
-    if (detail_json) {
-      if (auto decline = CallControlCodec::DecodeDecline(*detail_json)) {
-        if (!decline->identity.empty()) {
-          identity = decline->identity;
-        }
-      }
-    }
-    const std::string name = outbound ? Tr("call.label.you") : FormatCallPeerLabel(identity);
-    line = Tr("call.history.declined", {{"name", name}});
-    break;
-  }
-  case CallControlType::CallLeave: {
-    std::string identity = message.sender_contact_id;
-    if (detail_json) {
-      if (auto leave = CallControlCodec::DecodeLeave(*detail_json)) {
-        if (!leave->identity.empty()) {
-          identity = leave->identity;
-        }
-      }
-    }
-    const std::string name = outbound ? Tr("call.label.you") : FormatCallPeerLabel(identity);
-    line = Tr("call.history.left", {{"name", name}});
-    break;
-  }
-  case CallControlType::CallEnded: {
-    std::optional<int64_t> duration_ms;
-    if (detail_json) {
-      if (auto ended = CallControlCodec::DecodeEnded(*detail_json)) {
-        duration_ms = ended->duration_ms;
-      }
-    }
-    if (duration_ms && *duration_ms >= 0) {
-      const std::string duration = FormatCallDurationMs(*duration_ms);
-      if (!duration.empty()) {
-        line = Tr("call.history.ended_duration", {{"duration", duration}});
-        break;
-      }
-    }
-    line = Tr("call.history.ended");
-    break;
-  }
-  case CallControlType::CallRoster: {
-    size_t count = 0;
-    if (detail_json) {
-      if (auto roster = CallControlCodec::DecodeRoster(*detail_json)) {
-        for (const CallRosterEntry& entry : roster->participants) {
-          if (entry.state == CallParticipantState::Joined || entry.state == CallParticipantState::Ringing ||
-              entry.state == CallParticipantState::Invited) {
-            ++count;
-          }
-        }
-        if (count == 0) {
-          count = roster->participants.size();
-        }
-      }
-    }
-    if (count == 0) {
+std::string InboxController::BuildSystemRml(const ThreadMessage& message) const {
+  if (const auto family = controls_ ? controls_->Find(message) : std::nullopt) {
+    // A feature's control message: hidden (plumbing), or the feature's own line, names included.
+    if (family->hidden && family->hidden(message)) {
       return {};
     }
-    line = Tr("call.history.roster", {{"count", std::to_string(count)}});
-    break;
-  }
-  case CallControlType::CallMediaKey:
-  case CallControlType::CallSdp:
-  case CallControlType::CallIce:
-  case CallControlType::CallSfuAttach:
-  case CallControlType::CallSfuAttachFailed:
-  case CallControlType::CallHopRefuse:
-  case CallControlType::CallVideoRefresh:
-  case CallControlType::CallCircuitR1:
-  case CallControlType::CallPunchOffer:
-  case CallControlType::CallPunchAnswer:
-  case CallControlType::CallCapsUpdate:
-    return {};
-  }
-
-  if (line.empty()) {
-    line = message.text.empty() ? Tr("call.history.ended") : message.text;
-  }
-  return SystemLineRml(line);
-}
-
-std::string InboxController::BuildSystemRml(const ThreadMessage& message) const {
-  if (const auto call_type = CallControlCodec::ControlTypeFromMessage(message)) {
-    return BuildCallHistoryRml(message, *call_type);
+    SystemControlLabels labels;
+    labels.peer = [this](const std::string& identity) { return ResolveSenderLabel(identity); };
+    const auto line = family->line ? family->line(message, labels) : std::nullopt;
+    return line ? SystemLineRml(*line) : std::string();
   }
 
   const auto control_type = GroupMembershipCodec::ControlTypeFromMessage(message);
@@ -1160,18 +984,17 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
         message.content_type != ChatContentType::Unsupported && message.content_type != ChatContentType::Deleted) {
       continue;
     }
-    if (const auto call_type = CallControlCodec::ControlTypeFromMessage(message)) {
-      if (IsPlumbingCallControl(*call_type)) {
-        continue;
-      }
+    const auto control = controls_ ? controls_->Find(message) : std::nullopt;
+    if (control && control->hidden && control->hidden(message)) {
+      continue;
     }
 
     MessageDisplayRow row;
     row.message_id = message.id.c_str();
     row.display_order = message.display_order;
     row.ai_image_json = message.ai_image_json.value_or(std::string());
-    // Call history lines already include names; skip the sender chip above the system line.
-    if (CallControlCodec::IsCallControlMessage(message)) {
+    // A feature's control lines already include names; skip the sender chip above the system line.
+    if (control) {
       row.sender_label = "";
     } else {
       row.sender_label = ResolveSenderLabel(message.sender_contact_id).c_str();
@@ -1182,7 +1005,7 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
     }
     row.row_class = ResolveRowClass(message.sender_contact_id).c_str();
     // Local is expected for AI/system-local rows — skip it to keep meta quiet.
-    if (!CallControlCodec::IsCallControlMessage(message) && message.transport &&
+    if (!control && message.transport &&
         *message.transport != MessageTransport::Local) {
       row.transport_badge = MessageTransportBadgeLabel(*message.transport).c_str();
     }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/chat/SystemControl.h"
+
 #include "foundation/data/Config.h"
 #include "foundation/data/MeshRole.h"
 #include "foundation/data/SessionStore.h"
@@ -404,6 +406,9 @@ private:
   std::shared_ptr<const MeshConfig> mesh_config_snapshot_ = std::make_shared<const MeshConfig>();
   /** Who may learn our address; read by mesh and call paths on any thread (outlives them all). */
   mesh::AddressDisclosureGate address_disclosure_;
+  /** System-control families features bind (call control): read by receive and delivery threads,
+   *  bound by the call stack — declared early, so it outlives them all. */
+  SystemControlRegistry system_controls_;
   AgentInboundPorts agent_inbound_;
   SessionStore* session_store_ = nullptr;
   ProfileSecretsEngine* secrets_ = nullptr;

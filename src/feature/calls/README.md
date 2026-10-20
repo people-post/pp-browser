@@ -6,6 +6,7 @@ See [F004](../../../../projects/feature-layer-reorg/DECISIONS.md#f004--calls-hom
 and [F007](../../../../projects/feature-layer-reorg/DECISIONS.md#f007--vocabulary--end-state-feature-names).
 
 Built as `pp_feature_calls`. Conversations depends on calls (not the reverse):
-delivery goes through `CallDeliveryPorts`; inbound control through `CallControlInboundPorts`.
+delivery goes through `CallDeliveryPorts`; inbound control, its display and the live-call hints through the
+`call` system-control family (`CallControlFamily.*`) bound in the hub's `SystemControlRegistry`.
 
 `ConversationsHub` still owns `CallStack` for now; app-only ownership is a later peel.

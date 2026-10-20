@@ -11,7 +11,7 @@
 #include "domain/messaging/PeerSigningKeyStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "domain/people/IdentityStore.h"
-#include "feature/calls/CallControlInboundPorts.h"
+#include "common/chat/SystemControl.h"
 #include "common/Module.h"
 
 #include <optional>
@@ -65,7 +65,8 @@ public:
                        IdentityStore& identity, GroupRosterStore& group_roster,
                        GroupInviteGate* invite_gate = nullptr);
 
-  void BindCallControlInbound(CallControlInboundPorts ports) { call_control_ = std::move(ports); }
+  /** The system-control families features bind (call control, …). Not owned; null: none. */
+  void SetSystemControls(const SystemControlRegistry* controls) { controls_ = controls; }
   void SetInitiationBillingStore(InitiationBillingStore* store) { initiation_billing_ = store; }
   void SetPaymentPromiseStore(PaymentPromiseStore* store) { payment_promises_ = store; }
   /**
@@ -117,9 +118,18 @@ private:
   ReplayWindow& ReplayWindowFor(const std::string& thread_id, const uint32_t session_epoch);
   Roe<void> ApplyInboundMembershipMessage(ThreadMessage& message, const std::string& actor_identity,
                                           RelayReceiveOutcome* outcome) const;
-  Roe<void> ApplyInboundCallMessage(ThreadMessage& message, const std::string& actor_identity,
-                                    std::optional<int64_t> relay_created_at_ms = std::nullopt,
-                                    std::optional<int64_t> relay_server_time_ms = std::nullopt) const;
+  /** A bound family's side effects for `message` (none when no family owns it). */
+  Roe<void> ApplyInboundControl(ThreadMessage& message, const RelayEnvelope& envelope,
+                                RelayReceiveOutcome* outcome_on_failure = nullptr,
+                                const std::string& thread_id = {}) const;
+  /** Membership updates and families that apply out of order: they run even when the ordered stream
+   *  drops the message (authenticated, not in order). */
+  bool AppliesOutOfOrder(const ThreadMessage& message) const;
+  /** Apply what applies out of order; failures are logged, the message is not stored. */
+  void ApplyOutOfOrderControls(ThreadMessage& message, const RelayEnvelope& envelope, IngestDecision decision,
+                               RelayReceiveOutcome& outcome) const;
+  /** A hidden or quiet control message bumps no unread count, preview or notice. */
+  void MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome, const ThreadMessage& message) const;
   Roe<void> ApplyInboundBillingMessage(ThreadMessage& message, const std::string& actor_identity) const;
   /** P003: stage remote payment-promise receipts; never auto-commit. */
   Roe<void> ApplyInboundPaymentPromiseMessage(ThreadMessage& message) const;
@@ -133,7 +143,7 @@ private:
   IdentityStore& identity_;
   GroupRosterStore& group_roster_;
   GroupInviteGate* invite_gate_ = nullptr;
-  CallControlInboundPorts call_control_;
+  const SystemControlRegistry* controls_ = nullptr;
   InitiationBillingStore* initiation_billing_ = nullptr;
   PaymentPromiseStore* payment_promises_ = nullptr;
   IContactTrustAccess* contact_trust_ = nullptr;

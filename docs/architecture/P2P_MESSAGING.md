@@ -221,6 +221,27 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/gui/contacts/ContactsController.*` | Contacts list/detail UI; local edit + Sync; message gating |
 | `src/base/messaging/DirectChatTarget.*` | Contact → `ChatTargetKey` identity (relay preferred, peer fallback) |
 
+## System-control families
+
+A feature's control messages — call control today — are **system messages** whose payload names a
+`control_type`: sent end to end, sequenced and stored like any message. Messaging does not know what
+they mean. A feature binds a `SystemControlFamily` (`common/chat/SystemControl.h`) in the
+`SystemControlRegistry` the hub owns, saying:
+
+| Field | Messaging uses it for |
+|-------|-----------------------|
+| `owns` | Which system messages are the family's |
+| `apply` | Side effects of an inbound one (idempotent); an error refuses the message (`couldn't apply <family> update`) |
+| `apply_out_of_order` | Also apply when the ordered stream drops the message — a duplicate, a resent sequence, a compromised or rejected stream (signature checked, order not) |
+| `hidden` / `quiet` | Hidden: in no transcript (plumbing). Quiet: shown, but no unread count, preview or notice |
+| `line` | The transcript line, names included (`SystemControlLabels`) |
+| `live` | A live exchange (a call): messaging holds key rotation and defers background history sync |
+| `preferred_public_thread` | The public direct thread the family is acting in |
+
+The receive pipeline, delivery and the inbox read the registry; membership updates and PSK rotation
+are messaging's own and stay in it. Families bind and unbind from any thread (the call stack rebuilds
+itself); readers take an immutable snapshot.
+
 ## A/V calls (signaling over messaging)
 
 Call invite/accept/SDP/ICE/SFU controls are **system** direct messages on the same carrier. Media is a separate plane (PeerConnection or `media_relay`). Code ownership and target split: [CALLS.md](CALLS.md). Product ADRs: [projects/p2p-av-calls/](../../projects/p2p-av-calls/).

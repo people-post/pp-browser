@@ -157,9 +157,7 @@ CallStackDeps ConversationsHub::MakeCallStackDeps() {
         (void)PruneOrphanCallControlShadows(*store_);
       }
     };
-    deps.bind_call_control = [this](CallControlInboundPorts ports) {
-      mesh_messaging_->BindCallControlInbound(std::move(ports));
-    };
+    deps.system_controls = &system_controls_;
   }
   deps.mesh = [this]() { return mesh_.get(); };
   deps.mesh_config = [this]() { return MeshConfigSnapshot(); };
@@ -1126,6 +1124,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   directory_shadows_ = std::make_unique<DirectoryShadowCache>(*directory_);
   peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, *directory_shadows_, group_roster_.get());
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *peer_labels_, directory_shadows_.get());
+  inbox_->SetSystemControls(&system_controls_);
   directory_shadows_->SetOnUpdated([this]() {
     if (inbox_) {
       inbox_->NotifyThreadChanged();
@@ -1243,6 +1242,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
   mesh_messaging_ = std::make_unique<MeshDeliveryOrchestrator>(*store_, *contacts_, *identity_, relay_, *inbox_,
                                                 signing_key_store_, *signing_resolver_, kem_key_store_, *kem_resolver_,
                                                 *psk_store_, *group_roster_, group_invite_gate_.get());
+  mesh_messaging_->SetSystemControls(&system_controls_);
   mesh_messaging_->SetProfileDataDir(data_dir_);
   mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());
@@ -1331,6 +1331,7 @@ Roe<void> ConversationsHub::BuildLocalMessagingStack() {
       *store_, *contacts_, *identity_, relay_, *inbox_, signing_key_store_, *signing_resolver_, kem_key_store_,
       *kem_resolver_, *psk_store_, *group_roster_, group_invite_gate_.get(), amp_links, std::move(amp_pump),
       std::move(amp_worker));
+  mesh_messaging_->SetSystemControls(&system_controls_);
   mesh_messaging_->SetProfileDataDir(data_dir_);
   mesh_messaging_->SetAddressDisclosure(&address_disclosure_);
   mesh_messaging_->SetInitiationBillingStore(initiation_billing_.get());

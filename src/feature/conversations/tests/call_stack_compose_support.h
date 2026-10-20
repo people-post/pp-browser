@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/chat/SystemControl.h"
+
 // Shared fixture pieces for multi-CallStack compose tests (dual-stack 1:1, group SFU): one full
 // CallStack + CallUiBackend per participant over its own profile stores, with call-control
 // delivered by the test and the 1:1 transport / dial registry faked.
@@ -162,6 +164,8 @@ inline Roe<CallSession> StartCallNow(CallUiBackend& ui, const std::string& threa
 
 /** One participant: profile stores + CallStack + CallUiBackend + the faked 1:1 media path. */
 struct StackSide {
+  /** The stack binds its call-control family here and unbinds it on teardown: declared first. */
+  SystemControlRegistry controls;
   std::filesystem::path data_dir;
   std::unique_ptr<SqliteThreadStore> store;
   std::unique_ptr<ContactsStore> contacts;
@@ -174,11 +178,19 @@ struct StackSide {
   std::unique_ptr<CallUiBackend> ui;
   std::unique_ptr<FakeCallMediaTransport> transport;
   std::unique_ptr<FakeDialRegistry> dial;
-  CallControlInboundPorts inbound;
   AppConfig app_config;
   std::string local_identity;
   /** Call-control this side sends (its `send_user_message`); the test delivers it. */
   std::function<void(const ThreadMessage& msg)> on_send;
+
+  /** Deliver call control to this side, as the receive path does: to the family that owns it. */
+  Roe<void> Deliver(ThreadMessage msg, const std::string& sender) const {
+    const auto family = controls.Find(msg);
+    if (!family || !family->apply) {
+      return Error("no control family bound for the message");
+    }
+    return family->apply(msg, SystemControlContext{sender, std::nullopt, std::nullopt});
+  }
 };
 
 struct StackSideOptions {
@@ -241,13 +253,13 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   deps.seed_dial_ok = [ok = options.seed_dial_ok]() { return ok; };
   deps.prefetch_peer_reachability = [](const std::string&) {};
   deps.sync_mobile_ephemeral_listen = []() {};
-  deps.bind_call_control = [&side](CallControlInboundPorts ports) { side.inbound = std::move(ports); };
+  deps.system_controls = &side.controls;
 
   deps.connectivity = side.connectivity.get();
   deps.media_relay = side.media_relay.get();
   side.stack->BuildSessions(deps);
   ASSERT_TRUE(side.ui->Available());
-  ASSERT_TRUE(side.inbound.apply_inbound_control);
+  ASSERT_FALSE(side.controls.Snapshot()->empty()) << "the call family is bound";
   if (CallMediaEngine* media = side.stack->MediaEngine()) {
     media->SetSkipDeviceOpenForTest(true);
   }

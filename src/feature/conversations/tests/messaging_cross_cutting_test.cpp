@@ -491,3 +491,102 @@ TEST(MessagingCrossCuttingTest, RichPayloadMetadataSurvivesSqliteRestart) {
   ASSERT_TRUE(page->front().target_message_id.has_value());
   EXPECT_EQ(*page->front().target_message_id, "target-1");
 }
+
+// System-control families (call control, …): messaging routes a feature's control messages to the
+// family that claims them, without knowing what they mean.
+namespace {
+
+ThreadMessage TestControl(const std::string& control_type) {
+  ThreadMessage message;
+  message.content_type = ChatContentType::System;
+  message.text = "control";
+  message.payload_json = std::string(R"({"control_type":")") + control_type + R"(","detail":"{}"})";
+  return message;
+}
+
+struct TestFamily {
+  int applied = 0;
+  bool fail = false;
+
+  SystemControlFamily Make(const std::string& name, const std::string& control_type, bool out_of_order, bool quiet) {
+    SystemControlFamily family;
+    family.name = name;
+    family.owns = [control_type](const ThreadMessage& message) {
+      return message.payload_json.find("\"" + control_type + "\"") != std::string::npos;
+    };
+    family.apply = [this](ThreadMessage&, const SystemControlContext& context) -> Roe<void> {
+      EXPECT_EQ(context.sender_identity, "account:peer");
+      ++applied;
+      if (fail) {
+        return Error("refused by the family");
+      }
+      return {};
+    };
+    family.apply_out_of_order = out_of_order;
+    family.quiet = [quiet](const ThreadMessage&) { return quiet; };
+    return family;
+  }
+};
+
+} // namespace
+
+TEST(MessagingCrossCuttingTest, ControlFamilyAppliesAndKeepsTheInboxQuiet) {
+  PipelineHarness harness("control_quiet", ThreadChannel::E2e);
+  SystemControlRegistry controls;
+  TestFamily family;
+  controls.Bind(family.Make("ping", "test_ping", false, true));
+  harness.pipeline.SetSystemControls(&controls);
+
+  const auto envelope = harness.MakeSignedPayloadEnvelope("ctl-1", 1, TestControl("test_ping"));
+  const RelayReceiveOutcome first = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
+  EXPECT_TRUE(first.persisted) << "a control message is a message: stored, end to end";
+  EXPECT_TRUE(first.suppress_inbox_chrome);
+  EXPECT_EQ(family.applied, 1);
+
+  // Sent again: dropped by the ordered stream, and not re-applied (the family is ordered only).
+  const RelayReceiveOutcome again = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
+  EXPECT_EQ(again.decision, IngestDecision::BenignDuplicate);
+  EXPECT_EQ(family.applied, 1);
+}
+
+TEST(MessagingCrossCuttingTest, OutOfOrderControlFamilyAppliesOnDuplicates) {
+  PipelineHarness harness("control_out_of_order", ThreadChannel::E2e);
+  SystemControlRegistry controls;
+  TestFamily family;
+  controls.Bind(family.Make("key", "test_key", true, false));
+  harness.pipeline.SetSystemControls(&controls);
+
+  const auto envelope = harness.MakeSignedPayloadEnvelope("ctl-2", 1, TestControl("test_key"));
+  const RelayReceiveOutcome first = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
+  EXPECT_FALSE(first.suppress_inbox_chrome) << "not quiet: it is news";
+  const RelayReceiveOutcome again = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
+  EXPECT_EQ(again.decision, IngestDecision::BenignDuplicate);
+  EXPECT_FALSE(again.persisted);
+  EXPECT_EQ(family.applied, 2) << "idempotent side effects apply again on a resent message";
+
+  // Unbound: messaging knows nothing of it — a plain stored system message.
+  controls.Unbind("key");
+  ASSERT_TRUE(harness.pipeline
+                  .ProcessEnvelope(harness.MakeSignedPayloadEnvelope("ctl-3", 2, TestControl("test_key")),
+                                   harness.local_account_id)
+                  .persisted);
+  EXPECT_EQ(family.applied, 2);
+}
+
+TEST(MessagingCrossCuttingTest, ControlFamilyFailureRefusesTheMessage) {
+  PipelineHarness harness("control_refused", ThreadChannel::E2e);
+  SystemControlRegistry controls;
+  TestFamily family;
+  family.fail = true;
+  controls.Bind(family.Make("ping", "test_ping", false, false));
+  harness.pipeline.SetSystemControls(&controls);
+
+  const RelayReceiveOutcome outcome = harness.pipeline.ProcessEnvelope(
+      harness.MakeSignedPayloadEnvelope("ctl-4", 1, TestControl("test_ping")), harness.local_account_id);
+  EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
+  EXPECT_FALSE(outcome.persisted);
+  ASSERT_TRUE(outcome.receive_failure_notice.has_value());
+  EXPECT_NE(outcome.receive_failure_notice->find("couldn't apply ping update"), std::string::npos)
+      << *outcome.receive_failure_notice;
+  EXPECT_FALSE(harness.Stored("ctl-4").has_value());
+}

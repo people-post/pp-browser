@@ -248,7 +248,7 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
     }
     return msg;
   };
-  deps.bind_call_control = [this](CallControlInboundPorts ports) { inbound_ = std::move(ports); };
+  deps.system_controls = &controls_;
   MeshConnectivityWiringInputs reach;
   reach.mesh = deps.mesh;
   reach.contacts = deps.contacts;
@@ -646,7 +646,7 @@ Roe<void> ProductStackHarness::RegisterPeerPrivateEndpoint(const std::string& pe
 }
 
 void ProductStackHarness::OnChatInbound(RelayEnvelope env) {
-  if (env.body.e2e.payload_b64.empty() || !inbound_.apply_inbound_control) {
+  if (env.body.e2e.payload_b64.empty() || controls_.Snapshot()->empty()) {
     return;
   }
   auto bytes = Base64Decode(env.body.e2e.payload_b64);
@@ -695,7 +695,11 @@ void ProductStackHarness::OnChatInbound(RelayEnvelope env) {
   }
   const std::string sender =
       env.sender_contact_id.empty() ? env.sender_relay_id : env.sender_contact_id;
-  if (auto applied = inbound_.apply_inbound_control(msg, sender, std::nullopt, std::nullopt); !applied) {
+  const auto family = controls_.Find(msg);
+  if (!family || !family->apply) {
+    return;
+  }
+  if (auto applied = family->apply(msg, SystemControlContext{sender, std::nullopt, std::nullopt}); !applied) {
     std::cerr << "warning: product-stack inbound control: " << applied.error().message << "\n";
   }
 }

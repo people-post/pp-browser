@@ -20,7 +20,7 @@
 #include "domain/messaging/PskSessionCoordinator.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 #include "domain/messaging/E2ePublicSessionLogic.h"
-#include "feature/calls/CallControlInboundPorts.h"
+#include "common/chat/SystemControl.h"
 #include "feature/conversations/RelayReceivePipeline.h"
 #include "feature/conversations/GroupInviteGate.h"
 #include "mesh/host/MeshPorts.h"
@@ -128,7 +128,8 @@ public:
   Roe<RelayDeleteResult> ClearUndeliveredOlderThan(int older_than_days);
   void RetryFailedOutbound();
   void SetRelayClient(IRelayClient* relay);
-  void BindCallControlInbound(CallControlInboundPorts ports);
+  /** The system-control families features bind (call control, …); passed on to the receive path. Not owned. */
+  void SetSystemControls(const SystemControlRegistry* controls);
   void SetGroupMembership(GroupMembershipWorkflow* groups);
   void SetInitiationBillingStore(InitiationBillingStore* store);
   void SetPaymentPromiseStore(PaymentPromiseStore* store);
@@ -308,7 +309,8 @@ private:
   bool IsE2ePrivateThread(const std::string& thread_id) const;
   bool IsThreadCompromised(const std::string& thread_id) const;
   bool IsPskReadyToSend(const std::string& thread_id) const;
-  bool HasActiveLocalCall() const;
+  /** A family's live exchange (a call): no key rotation, no background history sync meanwhile. */
+  std::optional<std::string> LiveExchange() const;
   Roe<void> MaybeSendPublicAutoRekey(const std::string& thread_id);
   Roe<ThreadMessage> SendPublicPskRotate(const std::string& thread_id, PublicPskRotateKind kind);
   void PurgeRetryQueueForThread(const std::string& thread_id);
@@ -351,7 +353,7 @@ private:
   EpochBumpCoordinator epoch_coordinator_;
   PskSessionCoordinator psk_coordinator_;
   PublicPskLockCoordinator public_lock_;
-  CallControlInboundPorts call_control_;
+  const SystemControlRegistry* controls_ = nullptr;
   DirectoryShadowCache* directory_shadows_ = nullptr;
   mesh::IDirectoryClient* directory_ = nullptr;
   std::string support_account_id_;

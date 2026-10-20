@@ -1,4 +1,5 @@
 #include "feature/calls/CallStack.h"
+#include "feature/calls/CallControlFamily.h"
 
 #include "feature/calls/CallsThread.h"
 
@@ -394,17 +395,15 @@ void CallStack::BindSessionOutbox() {
 }
 
 void CallStack::BindCallControlInbound() {
-  if (!deps_.bind_call_control) {
+  if (!deps_.system_controls) {
     return;
   }
-  CallControlInboundPorts inbound;
+  CallControlFamilyPorts inbound;
   // Receive threads hand call control to the calls owner (thread-ownership t2a, T003): fire and
   // forget with a copy — ApplyInboundControl only reads the message; failures are logged there.
-  inbound.apply_inbound_control = [loop = loop_.Share()](ThreadMessage& message, const std::string& sender_identity,
-                                                         std::optional<int64_t> relay_created_at_ms,
-                                                         std::optional<int64_t> relay_server_time_ms) -> Roe<void> {
-    loop.Enqueue(calls_event::CallControlReceived{message, sender_identity, relay_created_at_ms, relay_server_time_ms});
-    return {};
+  inbound.receive = [loop = loop_.Share()](const ThreadMessage& message, const SystemControlContext& context) {
+    loop.Enqueue(calls_event::CallControlReceived{message, context.sender_identity, context.relay_created_at_ms,
+                                                  context.relay_server_time_ms});
   };
   inbound.has_active_local_call = [this]() { return HasActiveLocalCall(); };
   inbound.active_call_origin_thread_id = [this]() -> std::optional<std::string> {
@@ -417,7 +416,7 @@ void CallStack::BindCallControlInbound() {
     }
     return *(*active)->origin_thread_id;
   };
-  deps_.bind_call_control(std::move(inbound));
+  deps_.system_controls->Bind(MakeCallControlFamily(std::move(inbound)));
 }
 
 /** What the sessions read about this node: listen addrs, mesh PeerId, caps; and where peers' addrs go. */
@@ -704,8 +703,8 @@ void CallStack::SyncHubEphemeralListen() {
 
 void CallStack::ResetSessionsOnOwner() {
   PBR_ASSERT_ON_OWNER(OwnerThreadId::MediaSessions);
-  if (deps_.bind_call_control) {
-    deps_.bind_call_control({});
+  if (deps_.system_controls) {
+    deps_.system_controls->Unbind("call");
   }
   call_sessions_.reset();
   ++sessions_generation_;       // its events still queued go nowhere

@@ -373,7 +373,7 @@ protected:
           batch.swap(inboxes_[to]);
         }
         for (Envelope& env : batch) {
-          ASSERT_TRUE(sides_[to].inbound.apply_inbound_control(env.msg, env.sender, std::nullopt, std::nullopt));
+          ASSERT_TRUE(sides_[to].Deliver(env.msg, env.sender));
           moved = true;
         }
       }

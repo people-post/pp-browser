@@ -440,6 +440,13 @@ Keeps thin `ApplyInboundControl` switch → `CallSessionWorkflow::HandleInbound*
 
 ### 4. Inbound control flow (target)
 
+Call control reaches the calls owner as the `call` **system-control family**
+([P2P_MESSAGING § System-control families](P2P_MESSAGING.md#system-control-families)), which the stack
+binds on build and unbinds on teardown (`CallControlFamily.*`): applied out of order (media keys,
+accepts and the like are idempotent); plumbing and mid-call roster updates hidden; history lines
+(invite, joined, declined, left, started, ended) worded by calls; a live call holds key rotation and
+defers background history sync.
+
 ```text
 ApplyInboundControl(type)
   → HandleInbound*(…)

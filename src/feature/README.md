@@ -98,7 +98,7 @@ conversations → calls   (delivery / inbound ports; no reverse include)
 conversations → registration, node
 ```
 
-Conversations invoke AI through `AgentInboundPorts` (app-filled). Calls invoke delivery through `CallDeliveryPorts` (hub-filled). Conversations receive call-control via `CallControlInboundPorts`.
+Conversations invoke AI through `AgentInboundPorts` (app-filled). Calls invoke delivery through `CallDeliveryPorts` (hub-filled). Calls bind their control messages as a system-control family (`common/chat/SystemControl.h`, [P2P_MESSAGING § System-control families](../../docs/architecture/P2P_MESSAGING.md#system-control-families)): the receive path, delivery and the inbox route by the registry, not by call types.
 
 ### Guards
 

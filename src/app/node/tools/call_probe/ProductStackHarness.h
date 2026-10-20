@@ -9,7 +9,7 @@
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
-#include "feature/calls/CallControlInboundPorts.h"
+#include "common/chat/SystemControl.h"
 #include "mesh/connectivity/MeshConnectivity.h"
 #include "mesh/media_plane/MeshMediaRelay.h"
 #include "feature/calls/CallStack.h"
@@ -175,11 +175,12 @@ private:
   std::unique_ptr<mesh::MeshConnectivity> mesh_connectivity_;
   std::unique_ptr<mesh::MeshMediaRelay> mesh_media_relay_;  // built on connectivity (goes first)
   std::unique_ptr<MeshHopPolicyFeed> hop_policy_feed_;  // pushes into connectivity (goes first)
+  /** The call stack binds its control family here and unbinds it on teardown: declared first. */
+  SystemControlRegistry controls_;
   std::unique_ptr<CallStack> stack_;
   /** k5: the container's network changes reach the mesh and calls as in the product hub. */
   std::unique_ptr<NetworkMonitor> network_monitor_;
   std::unique_ptr<CallUiBackend> ui_;
-  CallControlInboundPorts inbound_;
   std::unique_ptr<AmpDirectChatTransport> chat_;
   std::unique_ptr<MediaDeviceArbiter> broadcast_devices_;
   std::unique_ptr<AmpBroadcastTransport> broadcast_server_;

@@ -19,6 +19,7 @@ pp_browser_add_feature_library(pp_feature_calls
     LiveCall.cpp
     CallMediaCoordinator.cpp
     CallControlClient.cpp
+  CallControlFamily.cpp
     CallMediaKeyExchange.cpp
     CallInitiationBilling.cpp
     CallReachSignals.cpp
