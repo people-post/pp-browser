@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Generate frozen E014 Ed25519 signing test vectors for DESIGN.md.
+"""Generate frozen E014 relay-envelope sign bytes for MESSAGE_ENCRYPTION.md.
+
+The envelope is signed with ML-DSA-65 (hedged): the sign bytes are frozen, signatures are not.
 
 Binary Wire Profile: LenUtf8 for sign-string fields (D088).
 """
@@ -7,9 +9,6 @@ Binary Wire Profile: LenUtf8 for sign-string fields (D088).
 import base64
 import hashlib
 import struct
-
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from chatpayload_codec import VECTOR_A, VECTOR_B, VECTOR_C
 from gen_aead_vectors import build_aad, e2e_blob_from_plaintext
@@ -76,16 +75,6 @@ def main() -> None:
         "relay:alice123",
     )
 
-    test_priv = bytes.fromhex(
-        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
-    )
-    test_pub = bytes.fromhex(
-        "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8"
-    )
-    key = Ed25519PrivateKey.from_private_bytes(test_priv)
-    derived_pub = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
-    assert derived_pub == test_pub
-
     print("vector_a_hex:", VECTOR_A.hex())
     print("vector_a_body_hash:", blake2b_256(bytes([0x01]) + VECTOR_A).hex())
     print("vector_b_hex:", VECTOR_B.hex())
@@ -99,11 +88,6 @@ def main() -> None:
     print("e2e_payload_b64:", base64.b64encode(e2e_blob).decode())
     print("e2e_body_hash:", e2e_body_hash.hex())
     print("e2e_sign_bytes:", e2e_sign.hex())
-    print("test_private_key_hex:", test_priv.hex())
-    print("test_public_key_hex:", test_pub.hex())
-    print("test_public_key_b64:", base64.b64encode(test_pub).decode())
-    print("pub_signature_b64:", base64.b64encode(key.sign(pub_sign)).decode())
-    print("e2e_signature_b64:", base64.b64encode(key.sign(e2e_sign)).decode())
 
 
 if __name__ == "__main__":

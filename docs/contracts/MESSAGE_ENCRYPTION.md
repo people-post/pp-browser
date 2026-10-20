@@ -15,7 +15,7 @@ Normative spec for symmetric end-to-end encryption of P2P chat message bodies. *
 - **Public direct (`e2e_public`):** hybrid KEM auto-key (E013/E024); encapsulate to the recipient **account** ML-KEM-768 (**M015**). Signing via `IPeerSigningKeyResolver` (relay v1, on-chain attestation `[later]`).
 - **HKDF-SHA256** derives per-epoch session keys from the PSK.
 - **XChaCha20-Poly1305** (libsodium AEAD) encrypts the message body with canonical associated data (AAD).
-- **Ed25519** signs the outer relay envelope (classical; PQ hybrid planned separately).
+- **ML-DSA-65** (FIPS 204) signs the outer relay envelope, with the sender's signing key (`IPeerSigningKeyResolver`).
 - Relay sees ciphertext on both direct tiers; plaintext **binary `ChatPayload`** (D087) is inside the AEAD layer only.
 - **No `public_relay`** — reject plaintext direct wire ([D090](../../projects/chat-storage-and-memory/DECISIONS.md#d090--no-public_relay--plaintext-direct-wire), [E023](../../projects/e2e-message-crypto/DECISIONS.md#e023--no-public_relay-wire-value-d090)).
 
@@ -25,10 +25,10 @@ Normative spec for symmetric end-to-end encryption of P2P chat message bodies. *
 |----------------------|--------------|
 | Relay reads E2E body | AEAD ciphertext |
 | Relay forges E2E ciphertext without PSK | AEAD + seq in AAD |
-| Relay forges envelope (wrong sender) | Ed25519 verify + pinned peer signing key |
+| Relay forges envelope (wrong sender) | ML-DSA-65 verify + pinned peer signing key |
 | Network replay of captured E2E blob | `sender_seq` in AAD + ingest rules |
 
-Not protected in v1: traffic metadata, classical Ed25519 break. Local disk: identity, PSK, and transcript bodies/previews/memory under the PIN/DEK vault ([AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md), chat-storage **D102**); transcript metadata (timestamps, delivery, titles) stays plaintext.
+Not protected in v1: traffic metadata. Local disk: identity, PSK, and transcript bodies/previews/memory under the PIN/DEK vault ([AT_REST_ENCRYPTION.md](AT_REST_ENCRYPTION.md), chat-storage **D102**); transcript metadata (timestamps, delivery, titles) stays plaintext.
 
 ## Algorithms
 
@@ -38,7 +38,7 @@ Not protected in v1: traffic metadata, classical Ed25519 break. Local disk: iden
 | Key derivation | HKDF-SHA256 | libsodium |
 | PSK fingerprint | BLAKE2b-256 | libsodium |
 | Master PSK | 32 random bytes | libsodium `randombytes_buf` |
-| Relay envelope sig | Ed25519 | OpenSSL EVP (existing) |
+| Relay envelope sig | ML-DSA-65 | `pp-cpp-crypto` (`mldsa-native`) |
 
 ## Key material
 
@@ -133,9 +133,9 @@ API: `crypto_aead_xchacha20poly1305_ietf_encrypt` / `_decrypt` with `npub` = non
 
 Reject envelopes with `thread_id`, `public_relay`, `body.content_b64`, or unknown `envelope_version`.
 
-## Ed25519 canonical signing bytes (E014)
+## Canonical relay-envelope signing bytes (E014)
 
-Do **not** sign JSON dump. Build fixed binary bytes, then Ed25519-sign. String fields use **LenUtf8** (D088).
+Do **not** sign JSON dump. Build fixed binary bytes, then sign them with ML-DSA-65 (`EnvelopeSigner::BuildSignBytes`, `MlDsa::Sign`). String fields use **LenUtf8** (D088).
 
 **Domain prefix** (34 bytes): `"pp-browser:relay-envelope-sign-v1"` + NUL.
 
@@ -149,7 +149,7 @@ body_hash = BLAKE2b-256( 0x02 || decoded_e2e_blob_bytes )
 
 Only **`body_kind = 0x02`** (E2E ciphertext blob) — no plaintext path (D090).
 
-`signature` on wire: base64 over 64-byte Ed25519 signature.
+`signature` on wire: base64 over the 3309-byte ML-DSA-65 signature. Signing is hedged (randomized), so there is no frozen signature vector: tests sign and verify; the sign bytes below are frozen.
 
 Peer verify keys: relay directory + `PeerSigningKeyStore` (E016). Inbound verify before decrypt.
 
@@ -178,17 +178,9 @@ Implementation: [projects/e2e-message-crypto/PHASES.md](../../projects/e2e-messa
 
 Regenerate: `projects/e2e-message-crypto/tools/gen_sign_vectors.py`, `gen_aead_vectors.py`, `chatpayload_codec.py`.
 
-### Shared Ed25519 test keypair (TEST ONLY)
-
-| Field | Value |
-|-------|-------|
-| Private key (hex) | `000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f` |
-| Public key (hex) | `03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8` |
-| Public key (base64) | `A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=` |
-
 Regenerate after E023 channel enum change: `projects/e2e-message-crypto/tools/gen_sign_vectors.py`, `gen_aead_vectors.py`, `chatpayload_codec.py`.
 
-### Ed25519 — `e2e` (private direct)
+### Sign bytes — `e2e` (private direct)
 
 **Note:** E023 sets `e2e` → `channel = 0` in sign/AAD bytes. Regenerate fixtures before c1 tests lock.
 
@@ -202,7 +194,6 @@ Regenerate after E023 channel enum change: `projects/e2e-message-crypto/tools/ge
 | **`payload_b64`** | `AQABAgMEBQYHCAkKCwwNDg8QERITFBUWF1vPScnCPAVe+dnJiV9kKBztMM3qj/Hi+RhfLy6wlhU=` |
 | **`body_hash` (hex)** | `b09daad4a14b17961c834c3b027c3d03ef49a0b1f3bffaa7c8c22da097a8042e` |
 | **`sign_bytes` (hex)** | `70702d62726f777365723a72656c61792d656e76656c6f70652d7369676e2d763100010100010000019063ddd3c8000000000000002a00000001b09daad4a14b17961c834c3b027c3d03ef49a0b1f3bffaa7c8c22da097a8042e000000000000002436363065383430302d653239622d343164342d613731362d343436363535343430303031000000000000000e72656c61793a616c696365313233` |
-| **`signature` (base64)** | `QeHtXYUc4uQJ+1qCSYtRpabAI/kk7Mik04kqQVOKk+O7WWO64VPnnNUUeaTmEX3BSOconoKo1ZwFVNO+JoGACA==` |
 
 ### HKDF (E015)
 
