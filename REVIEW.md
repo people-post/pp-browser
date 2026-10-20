@@ -34,7 +34,12 @@ Flag these first; everything else is secondary.
 
 ## Known gaps a reviewer should remember
 
-- CI builds macOS, Linux, Windows and Android, **not iOS**. iOS-only code (`*_Ios.*`, Objective-C++) is only
-  verified by a local device build; ask for the build log line in **Testing**.
+- CI **compiles** iOS (the `ios` job) but runs nothing there. Code that builds can still do nothing on a
+  device: SDL3's iOS file dialog is a stub that answers "nothing picked", RmlUi strips the leading `/` of an
+  absolute path (the iOS working directory is the app bundle), and a `font-style` / `font-weight` with no
+  loaded face draws no text. When a change touches **file pickers, images shown from the data dir, or
+  font styles**, ask for an iPhone check in **Testing** (2026-10-20: all three were found on a device only).
+- Changing what a **shared function** does (e.g. `PrepareThreadHistoryClear`, used by clear history *and*
+  clear downloaded media): the author lists every caller and says why the new behaviour is right for each.
 - A pull request that is **CONFLICTING** against `develop` never triggers the `pull_request` checks; "no checks
   reported" usually means "rebase first", not "CI is down".
