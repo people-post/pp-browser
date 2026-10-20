@@ -6,6 +6,7 @@
 #include "feature/conversations/InboxController.h"
 #include "feature/conversations/PeerDisplayResolver.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <memory>
@@ -23,8 +24,9 @@ ThreadMessage Text(const std::string& id, const std::string& sender, const std::
   return message;
 }
 
-// "Delete for me" hides the message and what hangs off it on this device; the row stays in the store.
-TEST(InboxHideMessageTest, HiddenMessageLeavesTheDisplayButNotTheStore) {
+// "Delete for me": the content leaves the store, an id-only tombstone stays, the transcript shows one line
+// in its place and nothing that hung off it (reactions).
+TEST(InboxHideMessageTest, DeletedMessageBecomesATombstoneLine) {
   const auto dir = std::filesystem::temp_directory_path() / "pp_browser_inbox_hide_test";
   std::filesystem::remove_all(dir);
   {
@@ -50,17 +52,36 @@ TEST(InboxHideMessageTest, HiddenMessageLeavesTheDisplayButNotTheStore) {
     ASSERT_TRUE(store.AppendMessage(reaction));
     ASSERT_EQ(inbox.BuildDisplayRows("thread-1", std::nullopt, std::nullopt).size(), 2u);
 
-    ASSERT_TRUE(inbox.HideMessageLocally("thread-1", "m2"));
+    ASSERT_TRUE(inbox.DeleteMessageForMe("thread-1", "m2"));
 
     const auto rows = inbox.BuildDisplayRows("thread-1", std::nullopt, std::nullopt);
-    ASSERT_EQ(rows.size(), 1u);
+    ASSERT_EQ(rows.size(), 2u);
     EXPECT_EQ(std::string(rows[0].message_id.c_str()), "m1");
-    // No orphan row for the reaction or the marker, and the message itself is still stored.
+    EXPECT_EQ(std::string(rows[1].message_id.c_str()), "m2");
+    EXPECT_NE(std::string(rows[1].content_rml.c_str()).find("chat-system-line"), std::string::npos);
+    EXPECT_EQ(std::string(rows[1].content_rml.c_str()).find("hide me"), std::string::npos);
+    // No orphan row for the reaction; the id is still known (dedupe), the content is gone.
     const auto has = store.HasMessageId("thread-1", "m2");
     ASSERT_TRUE(has);
     EXPECT_TRUE(*has);
+    auto page = store.GetMessagesPage("thread-1", std::nullopt, 100);
+    ASSERT_TRUE(page);
+    const auto deleted = std::find_if(page->begin(), page->end(), [](const ThreadMessage& m) { return m.id == "m2"; });
+    ASSERT_NE(deleted, page->end());
+    EXPECT_EQ(deleted->content_type, ChatContentType::Deleted);
+    EXPECT_TRUE(deleted->text.empty());
 
-    EXPECT_FALSE(inbox.HideMessageLocally("thread-1", "no-such-message"));
+    EXPECT_FALSE(inbox.DeleteMessageForMe("thread-1", "no-such-message"));
+    EXPECT_TRUE(inbox.DeleteMessageForMe("thread-1", "m2")); // again: nothing left to do
+
+    // Deleting the newest message: the list preview stops showing its text.
+    ASSERT_TRUE(store.AppendMessage(Text("m3", "contact-1", "newest secret")));
+    ASSERT_TRUE(inbox.UpdatePreview("thread-1", "newest secret"));
+    ASSERT_TRUE(inbox.DeleteMessageForMe("thread-1", "m3"));
+    auto stored = store.GetThread("thread-1");
+    ASSERT_TRUE(stored);
+    ASSERT_TRUE(stored->has_value());
+    EXPECT_EQ((*stored)->preview.find("secret"), std::string::npos);
   }
   // Windows cannot delete the database while the store above still has it open.
   std::filesystem::remove_all(dir);

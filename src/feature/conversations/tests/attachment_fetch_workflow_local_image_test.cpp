@@ -4,6 +4,7 @@
 #include "foundation/crypto/CryptoConstants.h"
 #include "domain/messaging/AttachmentPlaintextMemoryCache.h"
 #include "domain/messaging/CasStore.h"
+#include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "common/thread/ThreadRecordTypes.h"
 #include "common/Utilities.h"
@@ -80,8 +81,8 @@ TEST(AttachmentFetchWorkflowLocalImageTest, StoredImageComesBackFromTheCas) {
   EXPECT_FALSE(h.workflow.EnsureLocalViewPath("thread-ai", stored->content_hash, "image/jpeg", std::string()));
 }
 
-// Deleting the thread or clearing its history takes its AI images out of the CAS (nothing else holds them).
-TEST(AttachmentFetchWorkflowLocalImageTest, DeleteLocalImagesRemovesCasObjectAndView) {
+// Deleting the thread or clearing its history takes its media (AI images, attachments) out of the CAS.
+TEST(AttachmentFetchWorkflowLocalImageTest, DeleteThreadMediaRemovesCasObjectsAndViews) {
   LocalImageHarness h;
   ASSERT_TRUE(h.workflow.SetDek(TestDek()));
   const ByteVector bytes = {0xFF, 0xD8, 0xFF, 0xE0, 9, 8, 7, 6, 5};
@@ -139,15 +140,39 @@ TEST(AttachmentFetchWorkflowLocalImageTest, DeleteLocalImagesRemovesCasObjectAnd
     CasStore cas(h.data_dir.string(), "test");
     EXPECT_TRUE(cas.Exists(CasRealm::Private, stored->content_hash));
     EXPECT_TRUE(cas.Exists(CasRealm::Private, other->content_hash));
-    ASSERT_TRUE(h.workflow.DeleteLocalImageOfMessage(thread.id, "msg-3", store));
+    h.workflow.DeleteMessagesMedia(thread.id, {second});
     EXPECT_FALSE(cas.Exists(CasRealm::Private, other->content_hash));
     EXPECT_FALSE(std::filesystem::exists(other->view_path));
     EXPECT_TRUE(cas.Exists(CasRealm::Private, stored->content_hash));
     EXPECT_TRUE(std::filesystem::exists(stored->view_path));
-    ASSERT_TRUE(h.workflow.DeleteLocalImageOfMessage(thread.id, "msg-2", store)); // no image: nothing happens
+    h.workflow.DeleteMessagesMedia(thread.id, {plain}); // no image: nothing happens
     EXPECT_TRUE(cas.Exists(CasRealm::Private, stored->content_hash));
 
-    ASSERT_TRUE(h.workflow.DeleteLocalImages(thread.id, store));
+    // A chat attachment row: its object goes with the thread too.
+    const ByteVector file_bytes = {0x25, 0x50, 0x44, 0x46, 1, 2, 3, 4};
+    auto file = h.workflow.StoreLocalImage(thread.id, file_bytes, "application/pdf"); // same CAS, any bytes
+    ASSERT_TRUE(file);
+    ChatAttachmentFields fields;
+    fields.url = "https://cdn.example/blob";
+    fields.mime = "application/pdf";
+    fields.filename = "a.pdf";
+    fields.byte_length = file_bytes.size();
+    fields.content_hash = file->content_hash;
+    fields.content_key.assign(32, 0x11);
+    fields.blob_nonce.assign(24, 0x22);
+    ThreadMessage attachment;
+    attachment.id = "msg-4";
+    attachment.thread_id = thread.id;
+    attachment.sender_contact_id = kLocalSelfContactId;
+    attachment.content_type = ChatContentType::Attachment;
+    attachment.text = "a.pdf";
+    attachment.payload_json = ChatPayloadCodec::AttachmentFieldsToJson(fields);
+    attachment.timestamp = 4;
+    ASSERT_TRUE(store.AppendMessage(attachment));
+    EXPECT_TRUE(cas.Exists(CasRealm::Private, file->content_hash));
+
+    ASSERT_TRUE(h.workflow.DeleteThreadMedia(thread.id, store));
+    EXPECT_FALSE(cas.Exists(CasRealm::Private, file->content_hash));
     EXPECT_FALSE(cas.Exists(CasRealm::Private, stored->content_hash));
     EXPECT_FALSE(std::filesystem::exists(stored->view_path));
     EXPECT_FALSE(h.workflow.EnsureLocalViewPath(thread.id, stored->content_hash, "image/jpeg", std::string()));

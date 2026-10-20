@@ -267,6 +267,8 @@ Roe<std::vector<uint8_t>> ChatPayloadCodec::EncodeToRow(const ThreadMessage& mes
   }
   case ChatContentType::Unsupported:
     return Error("Cannot encode unsupported ChatPayload");
+  case ChatContentType::Deleted: // the row body of a tombstone: no content
+    return EncodeText(std::string());
   case ChatContentType::Text:
   default:
     return EncodeText(message.text);

@@ -34,6 +34,16 @@ public:
                                                                           int64_t after_display_order) const = 0;
   virtual Roe<ThreadMessage> AppendMessage(const ThreadMessage& message) = 0;
   virtual Roe<bool> UpdateMessage(const ThreadMessage& message) = 0;
+  /**
+   * "Delete for me": wipe the message's content (text, payload, attachment / image references) and keep an
+   * id-only tombstone (`ChatContentType::Deleted`), so dedupe and history sync still see the id and never
+   * bring the message back. false when the id is unknown. Default: unsupported (test doubles).
+   */
+  virtual Roe<bool> DeleteMessageContent(const std::string& thread_id, const std::string& message_id) {
+    (void)thread_id;
+    (void)message_id;
+    return Error("DeleteMessageContent not supported");
+  }
   virtual Roe<bool> HasMessageId(const std::string& thread_id, const std::string& message_id) const = 0;
   virtual Roe<void> ClearMessages(const std::string& thread_id, const ClearMessagesOptions& options) = 0;
   virtual Roe<std::vector<ThreadMessage>> ExportMessagesUpTo(const std::string& thread_id,

@@ -1446,3 +1446,8 @@ Chat v2a–v6 + private E2E polish from Bucket B remain in scope. Multi-device *
 None for this project’s local-storage checklist (resolved 2026-07-06). Identity / PQ / Account ID ADRs live in [multi-device-account/DECISIONS.md](../multi-device-account/DECISIONS.md) and [e2e-message-crypto/DECISIONS.md](../e2e-message-crypto/DECISIONS.md).
 
 **Resolved:** **O007** → [e2e E024](../e2e-message-crypto/DECISIONS.md#e024--auto-key-trust-anchor-for-e2e_public-o007); **O008** → D095; release scope → **D100**.
+
+## D103 — "Delete for me" wipes content and keeps an id-only tombstone
+
+**Date:** 2026-10-20 (Kenneth: "要删除就是真删除").  
+**Decision:** Deleting a message on this device replaces the row's body with an empty one and sets `content_type = 'deleted'` (`ChatContentType::Deleted`). The id, `sender_seq`, `session_epoch` and `display_order` stay, so `HasMessageId` / at-seq lookups still dedupe a resend and history sync never brings the message back. The attachment object / AI image bytes referenced by the message leave the private CAS, the view files and the RAM cache (`AttachmentFetchWorkflow::DeleteMessageMedia`). A tombstone is excluded from AI context (content_type filter), from history served to peers (`GetMessagesBySeqRange`), from attachment serving and from export; the transcript shows it as one line ("This message was deleted"); reactions on it are not shown. This replaces the `hidden_local` annotation (removed; unreleased, no migration) and amends D037's "no tombstone" note: the tombstone is the row itself, not a separate table. Deleting a thread or clearing its history also deletes its attachment objects (`DeleteThreadMedia`) and, on thread delete, its suppression entries.

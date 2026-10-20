@@ -2532,6 +2532,22 @@ std::string PlainTextOf(const ThreadMessage& message) {
 
 } // namespace
 
+bool ChatController::IsDeletedMessage(const std::string& message_id) const {
+  if (!facade_ || message_id.empty()) {
+    return false;
+  }
+  const auto page = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 500);
+  if (!page) {
+    return false;
+  }
+  for (const ThreadMessage& message : *page) {
+    if (message.id == message_id) {
+      return message.content_type == ChatContentType::Deleted;
+    }
+  }
+  return false;
+}
+
 std::string ChatController::MessagePlainText(const std::string& message_id) const {
   if (!facade_ || message_id.empty()) {
     return {};
@@ -4165,8 +4181,8 @@ bool ChatController::Setup(ui::Context* context) {
     }
 
     const std::string message_id = FindMessageIdFromElement(request.target);
-    if (message_id.empty()) {
-      return actions;
+    if (message_id.empty() || IsDeletedMessage(message_id)) {
+      return actions; // a deleted message takes no reaction, reply, copy or second delete
     }
     // Reactions sit in the row above the message, the rest in the list below it.
     for (const char* emoji : kReactionPresets) {
@@ -4202,16 +4218,16 @@ bool ChatController::Setup(ui::Context* context) {
         actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { StartQuoteReply(text, "@ai "); }});
       }
     }
-    // Delete for me: this device stops showing the message; the peer keeps theirs.
+    // Delete for me: content and bytes leave this device; the peer keeps theirs.
     ContextMenuAction remove{"delete_message", Tr("common.delete"), nullptr, [this, message_id]() {
                                ShowConfirm(Tr("chat.menu.delete_title"), Tr("chat.menu.delete_confirm"),
                                            [this, message_id](const bool ok) {
                                              if (!ok || !facade_) {
                                                return;
                                              }
-                                             if (auto hidden = facade_->HideMessageLocally(ActiveThreadId(), message_id);
-                                                 !hidden) {
-                                               ShowToast(hidden.error().message);
+                                             if (auto deleted = facade_->DeleteMessageForMe(ActiveThreadId(), message_id);
+                                                 !deleted) {
+                                               ShowToast(deleted.error().message);
                                                return;
                                              }
                                              SyncDisplayFromThread();

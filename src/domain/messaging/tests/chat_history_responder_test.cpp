@@ -124,6 +124,34 @@ TEST(ChatHistoryResponderTest, ServesSignedOutboundRows) {
   EXPECT_TRUE(*verified);
 }
 
+// A message deleted on this device is never served to the peer again, even inside the requested range.
+TEST(ChatHistoryResponderTest, SkipsDeletedRows) {
+  ResponderHarness harness("deleted");
+  harness.SeedOutbound(1, "hello");
+  harness.SeedOutbound(2, "world");
+  auto deleted = harness.store.DeleteMessageContent(harness.thread.id, "out-1");
+  ASSERT_TRUE(deleted);
+  ASSERT_TRUE(*deleted);
+
+  ChatHistoryRequest request;
+  request.requester_identity_kind = "relay_user";
+  request.requester_identity_value = "relay:peer";
+  request.peer_identity_kind = "relay_user";
+  request.peer_identity_value = harness.local_relay_id;
+  request.channel = ThreadChannel::E2e;
+  request.session_epoch = 1;
+  request.limit = 10;
+  request.order = "asc";
+
+  auto response = ChatHistoryResponder::Serve(
+      harness.store, harness.psk_store, request, harness.local_relay_id,
+      harness.identity.Get()->account_id.empty() ? harness.local_relay_id : harness.identity.Get()->account_id,
+      [&](const std::vector<uint8_t>& bytes) { return harness.identity.SignBytes(bytes); });
+  ASSERT_TRUE(static_cast<bool>(response));
+  ASSERT_EQ(response->messages.size(), 1u);
+  EXPECT_EQ(response->messages[0].sender_seq, 2u);
+}
+
 TEST(ChatHistoryResponderTest, RejectsNonParticipantRequester) {
   ResponderHarness harness("reject");
   ChatHistoryRequest request;

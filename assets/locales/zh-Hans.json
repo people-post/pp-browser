@@ -596,6 +596,7 @@
     "chat.quote.not_found": "被引用的消息不在当前已加载的聊天内容里。",
     "chat.menu.delete_confirm": "只从这台设备删除，对方那边仍然保留。",
     "chat.menu.delete_title": "删除这条消息？",
+    "chat.message.deleted": "此条信息已删除",
     "chat.menu.reply": "回复",
     "chat.menu.chat_with_ai": "与 AI 聊天",
     "chat.menu.message_a_contact": "给联系人发消息",

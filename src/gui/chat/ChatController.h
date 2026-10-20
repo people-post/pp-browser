@@ -341,6 +341,7 @@ private:
   void RetryAttachmentDownload(const std::string& message_id);
   void SyncComposerInputState();
   /** What the user reads in a message of the active thread ("" when not found). */
+  bool IsDeletedMessage(const std::string& message_id) const;
   std::string MessagePlainText(const std::string& message_id) const;
   /**
    * Reply / Ask AI: shows `text` as the quote bar above the composer; the next send carries it as a quote.

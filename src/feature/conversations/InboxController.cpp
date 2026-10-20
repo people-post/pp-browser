@@ -177,12 +177,17 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
   }
 
   const bool was_active = active_thread_id_ == thread_id;
-  if (attachment_downloads_) {
-    (void)attachment_downloads_->DeleteLocalImages(thread_id, store_); // AI images have no copy elsewhere
-  }
+  // Read what the thread refers to before its rows go; delete the bytes only once the thread is gone.
+  auto messages = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
   auto deleted = store_.DeleteThread(thread_id);
   if (!deleted || !*deleted) {
     return Error("Failed to delete thread");
+  }
+  if (attachment_downloads_) {
+    attachment_downloads_->ForgetThread(thread_id);
+    if (messages) {
+      attachment_downloads_->DeleteMessagesMedia(thread_id, *messages);
+    }
   }
 
   if (was_active) {
@@ -207,34 +212,53 @@ Roe<void> InboxController::CloseThread(const std::string& thread_id) {
   return {};
 }
 
-Roe<void> InboxController::HideMessageLocally(const std::string& thread_id, const std::string& message_id) {
-  auto has_target = store_.HasMessageId(thread_id, message_id);
-  if (!has_target) {
-    return has_target.error();
+Roe<void> InboxController::DeleteMessageForMe(const std::string& thread_id, const std::string& message_id) {
+  auto page = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
+  if (!page) {
+    return page.error();
   }
-  if (!*has_target) {
+  const auto found =
+      std::find_if(page->begin(), page->end(), [&](const ThreadMessage& m) { return m.id == message_id; });
+  if (found == page->end()) {
     return Error("Message not found");
   }
-  // A local annotation rather than a row delete: a history sync cannot bring the message back, and
-  // nothing in the stored format changes.
-  ThreadMessage marker;
-  marker.id = util::GenerateUuid();
-  marker.thread_id = thread_id;
-  marker.sender_contact_id = kLocalSelfContactId;
-  marker.content_type = ChatContentType::Annotation;
-  marker.payload_json = BuildReactionPayloadJson(kAnnotationTypeHiddenLocal, message_id, "");
-  marker.target_message_id = message_id;
-  marker.timestamp = util::NowUnixMs();
-  marker.delivery = MessageDelivery::Local;
-  marker.relay_visible = false;
-  marker.transport = MessageTransport::Local;
-  auto appended = store_.AppendMessage(marker);
-  if (!appended) {
-    return appended.error();
+  if (found->content_type == ChatContentType::Deleted) {
+    return {};
+  }
+  const ThreadMessage original = *found;
+  // The row first (the part that can fail); its bytes only once the content is gone for good.
+  auto deleted = store_.DeleteMessageContent(thread_id, message_id);
+  if (!deleted) {
+    return deleted.error();
+  }
+  if (!*deleted) {
+    return Error("Message not found");
   }
   if (attachment_downloads_) {
-    // An AI question's image has no copy anywhere else: hiding the question deletes it.
-    (void)attachment_downloads_->DeleteLocalImageOfMessage(thread_id, message_id, store_);
+    attachment_downloads_->DeleteMessagesMedia(thread_id, {original});
+  }
+  // A summary that already folded this message in still carries its words: forget it (it is rebuilt from
+  // what is left).
+  if (auto memory = store_.GetThreadMemory(thread_id); memory && *memory && (*memory)->compacted_through_display_order &&
+                                                       original.display_order <= *(*memory)->compacted_through_display_order) {
+    (void)store_.ClearThreadMemory(thread_id);
+  }
+  // The list preview shows the newest message: if that was this one, it must not keep showing its text.
+  const ThreadMessage* newest = nullptr;
+  for (const ThreadMessage& message : *page) {
+    if (message.content_type != ChatContentType::Annotation) {
+      newest = &message;
+    }
+  }
+  if (newest && newest->id == message_id) {
+    if (auto thread = store_.GetThread(thread_id); thread && *thread) {
+      Thread updated = **thread;
+      updated.preview = Tr("chat.message.deleted");
+      (void)store_.UpsertThread(updated); // updated_at untouched: deleting does not move the chat up the list
+      if (on_thread_changed_) {
+        on_thread_changed_();
+      }
+    }
   }
   return {};
 }
@@ -976,6 +1000,9 @@ std::string InboxController::BuildMessageRml(const ThreadMessage& message) const
   if (message.content_type == ChatContentType::System) {
     return BuildSystemRml(message);
   }
+  if (message.content_type == ChatContentType::Deleted) {
+    return SystemLineRml(Tr("chat.message.deleted"));
+  }
   if (message.content_type == ChatContentType::ContactCard) {
     return BuildContactCardRml(message);
   }
@@ -1076,23 +1103,18 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
   std::vector<ThreadMessage> pending_annotations;
 
   std::string pending_ai_question;
-  // Messages this device hid ("delete for me"), each marked by a local annotation.
-  std::unordered_set<std::string> hidden_ids;
+  // Messages deleted on this device: an id-only tombstone that shows as one line; what hung off them
+  // (reactions) is not shown.
+  std::unordered_set<std::string> deleted_ids;
   for (const ThreadMessage& message : messages) {
-    if (message.content_type != ChatContentType::Annotation || message.sender_contact_id != kLocalSelfContactId ||
-        !message.target_message_id) {
-      continue;
-    }
-    auto fields = ChatPayloadCodec::DecodeAnnotationJson(message.payload_json);
-    if (fields && fields->annotation_type == kAnnotationTypeHiddenLocal) {
-      hidden_ids.insert(*message.target_message_id);
+    if (message.content_type == ChatContentType::Deleted) {
+      deleted_ids.insert(message.id);
     }
   }
 
   for (const ThreadMessage& message : messages) {
-    if (hidden_ids.count(message.id) != 0 ||
-        (message.target_message_id && hidden_ids.count(*message.target_message_id) != 0)) {
-      continue; // the hidden message, and everything attached to it (its marker, its reactions)
+    if (message.target_message_id && deleted_ids.count(*message.target_message_id) != 0) {
+      continue;
     }
     if (message.content_type == ChatContentType::Annotation) {
       pending_annotations.push_back(message);
@@ -1101,7 +1123,7 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
     if (message.content_type != ChatContentType::Text && message.content_type != ChatContentType::System &&
         message.content_type != ChatContentType::ContactCard && message.content_type != ChatContentType::CryptoTx &&
         message.content_type != ChatContentType::Attachment &&
-        message.content_type != ChatContentType::Unsupported) {
+        message.content_type != ChatContentType::Unsupported && message.content_type != ChatContentType::Deleted) {
       continue;
     }
     if (const auto call_type = CallControlCodec::ControlTypeFromMessage(message)) {

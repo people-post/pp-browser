@@ -104,7 +104,7 @@ Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(const std::string& thread_i
   if (!body) {
     return body.error();
   }
-  message.content_type = ContentTypeFromDb(SqlText(stmt, 4));
+  const ChatContentType row_type = ContentTypeFromDb(SqlText(stmt, 4));
   message.timestamp = sqlite3_column_int64(stmt, 6);
   message.relay_visible = sqlite3_column_int(stmt, 7) != 0;
   message.delivery = MessageDeliveryFromString(SqlText(stmt, 8));
@@ -121,8 +121,15 @@ Roe<ThreadMessage> SqliteThreadStore::ReadMessageRow(const std::string& thread_i
   message.generation = SqlTextOpt(stmt, 13);
   message.seq_owner_contact_id = SqlTextOpt(stmt, 14);
   message.ai_invoke_mode = SqlTextOpt(stmt, 15);
+  message.content_type = row_type;
   if (auto applied = TranscriptBodyCodec::ApplyToMessage(*body, message); !applied) {
     return applied.error();
+  }
+  // A tombstone's body decodes as empty text; the row's own type wins so readers see the deletion.
+  if (row_type == ChatContentType::Deleted) {
+    message.content_type = ChatContentType::Deleted;
+    message.text.clear();
+    message.payload_json.clear();
   }
   return message;
 }
@@ -807,6 +814,44 @@ Roe<bool> SqliteThreadStore::UpdateMessage(const ThreadMessage& message) {
   return updated;
 }
 
+Roe<bool> SqliteThreadStore::DeleteMessageContent(const std::string& thread_id, const std::string& message_id) {
+  auto thread_db = db_.OpenThreadDb(thread_id);
+  if (!thread_db) {
+    return thread_db.error();
+  }
+  sqlite3_stmt* stmt = nullptr;
+  const std::string sql =
+      std::string("SELECT ") + kSqliteThreadMessageSelectColumns + " FROM messages WHERE id = ? LIMIT 1;";
+  if (sqlite3_prepare_v2(*thread_db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+    return Error("Failed to prepare message lookup");
+  }
+  sqlite3_bind_text(stmt, 1, message_id.c_str(), -1, SQLITE_TRANSIENT);
+  if (sqlite3_step(stmt) != SQLITE_ROW) {
+    sqlite3_finalize(stmt);
+    return false;
+  }
+  auto message = ReadMessageRow(thread_id, stmt);
+  sqlite3_finalize(stmt);
+  if (!message) {
+    return message.error();
+  }
+  if (message->content_type == ChatContentType::Deleted) {
+    return true;
+  }
+  // Same row, same id / seq / order: only the content goes.
+  ThreadMessage tombstone = *message;
+  tombstone.thread_id = thread_id;
+  tombstone.content_type = ChatContentType::Deleted;
+  tombstone.text.clear();
+  tombstone.payload_json.clear();
+  tombstone.content_rml.reset();
+  tombstone.chat_actions.clear();
+  tombstone.working_set_json.reset();
+  tombstone.ai_image_json.reset();
+  tombstone.ai_invoke_mode.reset();
+  return UpdateMessage(tombstone);
+}
+
 Roe<bool> SqliteThreadStore::HasMessageId(const std::string& thread_id, const std::string& message_id) const {
   auto thread_db = db_.OpenThreadDb(thread_id);
   if (!thread_db) {
@@ -1199,13 +1244,12 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::ExportMessagesUpTo(
   if (!messages) {
     return messages.error();
   }
-  if (!max_message_id) {
-    return *messages;
-  }
-  std::vector<ThreadMessage> exported;
+  std::vector<ThreadMessage> exported; // a deleted message is not exported, but still ends the range
   for (const ThreadMessage& message : *messages) {
-    exported.push_back(message);
-    if (message.id == *max_message_id) {
+    if (message.content_type != ChatContentType::Deleted) {
+      exported.push_back(message);
+    }
+    if (max_message_id && message.id == *max_message_id) {
       break;
     }
   }
@@ -1662,7 +1706,7 @@ Roe<std::vector<ThreadMessage>> SqliteThreadStore::GetMessagesBySeqRange(const s
   const char* order_clause = query.ascending ? "ASC" : "DESC";
   std::string sql = std::string("SELECT ") + kSqliteThreadMessageSelectColumns +
                     " FROM messages WHERE relay_visible = 1 AND session_epoch = ? AND sender_contact_id = ? AND "
-                    "sender_seq IS NOT NULL";
+                    "sender_seq IS NOT NULL AND content_type != 'deleted'"; // a deleted message is never served again
   if (query.min_sender_seq) {
     sql += " AND sender_seq >= ?";
   }
