@@ -152,6 +152,11 @@ Roe<ChatHistoryResponse> ChatHistoryResponder::Serve(IThreadStore& store, IPskSe
   }
 
   for (const ThreadMessage& message : *rows) {
+    // Rows are re-sent as plain text: a reaction or a retract would arrive as a text bubble. Leave them out
+    // (the requester closes the seq as empty).
+    if (message.content_type == ChatContentType::Annotation) {
+      continue;
+    }
     auto envelope = OutboundMessageToEnvelope(message, **thread, local_relay_user_id, request.requester_identity_value,
                                               local_account_id, psk_store, sign_bytes);
     if (!envelope) {

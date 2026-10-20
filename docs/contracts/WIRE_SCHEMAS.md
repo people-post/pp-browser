@@ -246,11 +246,11 @@ AEAD uses the **current** `master_psk`. New PSK is only in `body.e2e.key_init_b6
 | Field | Encoding |
 |-------|----------|
 | `sub_version` | `u8` = **`1`** |
-| `annotation_type` | **LenUtf8** — `reaction` (add) or `reaction_clear` (remove); other types reserved |
+| `annotation_type` | **LenUtf8** — `reaction` (add), `reaction_clear` (remove), or `retract` ("delete for everyone": the sender withdraws their own `target_message_id`; `value` empty; D104); other types reserved |
 | `target_message_id` | **LenUtf8** (UUID of target message) |
 | `value` | **LenUtf8** — plain UTF-8 emoji string for reactions (not JSON object) |
 
-Top-level `text` is the display glyph for `reaction` (may be empty for `reaction_clear`). See [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026) and D098.
+Top-level `text` is the display glyph for `reaction` (may be empty for `reaction_clear`, empty for `retract`). A receiver applies `retract` only when its sender is the target's sender: the target becomes a local tombstone (D103) and its bytes are deleted; a target arriving after its retract is stored as a tombstone. Annotation rows are not served by chat history (they would be re-encoded as text). See [DESIGN § ChatPayload](../../projects/chat-storage-and-memory/DESIGN.md#chatpayload-unified-message-body--d026) and D098.
 
 **`content_type = attachment` (relay blob upload a1):**
 

@@ -234,6 +234,12 @@ Roe<void> InboxController::DeleteMessageForMe(const std::string& thread_id, cons
   if (!*deleted) {
     return Error("Message not found");
   }
+  AfterMessageDeleted(thread_id, original);
+  return {};
+}
+
+void InboxController::AfterMessageDeleted(const std::string& thread_id, const ThreadMessage& original) {
+  const std::string& message_id = original.id;
   if (attachment_downloads_) {
     attachment_downloads_->DeleteMessagesMedia(thread_id, {original});
   }
@@ -244,6 +250,10 @@ Roe<void> InboxController::DeleteMessageForMe(const std::string& thread_id, cons
     (void)store_.ClearThreadMemory(thread_id);
   }
   // The list preview shows the newest message: if that was this one, it must not keep showing its text.
+  auto page = store_.GetMessagesPage(thread_id, std::nullopt, 100);
+  if (!page) {
+    return;
+  }
   const ThreadMessage* newest = nullptr;
   for (const ThreadMessage& message : *page) {
     if (message.content_type != ChatContentType::Annotation) {
@@ -260,7 +270,6 @@ Roe<void> InboxController::DeleteMessageForMe(const std::string& thread_id, cons
       }
     }
   }
-  return {};
 }
 
 Roe<void> InboxController::ClearThreadHistory(const std::string& thread_id, const bool forget_memory) {
@@ -1196,6 +1205,10 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
   };
 
   for (const ThreadMessage& annotation : pending_annotations) {
+    if (auto fields = ChatPayloadCodec::DecodeAnnotationJson(annotation.payload_json);
+        fields && fields->annotation_type == kAnnotationTypeRetract) {
+      continue; // applied to its target (or waiting for it); never shown
+    }
     const std::string target_id = annotation.target_message_id.value_or("");
     if (target_id.empty()) {
       orphan_annotations.push_back(annotation);

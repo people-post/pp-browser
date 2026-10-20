@@ -244,10 +244,18 @@ public:
   void RequestAttachmentDownload(const std::string& thread_id, const std::string& message_id);
   void DrainPendingAttachmentMedia();
   Roe<void> ClearDownloadedAttachments();
+  /**
+   * "Delete for everyone": only our own message in a chat or group. Sends the retract, then deletes the
+   * message here like "delete for me", then (best effort) the uploaded copy on the relay. Blocking: call
+   * off the UI thread.
+   */
+  Roe<void> DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
   Roe<ThreadMessage> SendAttachmentFromPath(const std::string& thread_id, const std::string& path);
   void SendAttachmentFromPathAsync(const std::string& thread_id, const std::string& path,
                                    std::function<void(Roe<ThreadMessage>)> on_done);
   AttachmentFetchWorkflow& Attachments();
+  /** Our uploaded relay copy of an attachment message, if any; best effort. */
+  void DeleteUploadedCopy(const ThreadMessage& message);
   std::string ContactIconLocalPath(const Contact& contact);
   std::string IdentityIconLocalPath(const std::string& identity);
   void EnsureDirectoryHitIconCached(const mesh::DirectoryHit& hit);

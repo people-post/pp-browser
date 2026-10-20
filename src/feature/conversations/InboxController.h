@@ -56,6 +56,11 @@ public:
    * Nothing is sent.
    */
   Roe<void> DeleteMessageForMe(const std::string& thread_id, const std::string& message_id);
+  /**
+   * After a message's row became a tombstone (here, or by its sender's retract): delete its bytes, forget a
+   * summary that folded it in, and stop the list preview from showing its text.
+   */
+  void AfterMessageDeleted(const std::string& thread_id, const ThreadMessage& original);
   Roe<void> ForgetThreadMemory(const std::string& thread_id);
 
   void MarkThreadRead(const std::string& thread_id);

@@ -74,6 +74,14 @@ TEST(InboxHideMessageTest, DeletedMessageBecomesATombstoneLine) {
     EXPECT_FALSE(inbox.DeleteMessageForMe("thread-1", "no-such-message"));
     EXPECT_TRUE(inbox.DeleteMessageForMe("thread-1", "m2")); // again: nothing left to do
 
+    // A retract waiting for its message is never shown (no orphan row).
+    ThreadMessage retract = Text("x1", "contact-1", "");
+    retract.content_type = ChatContentType::Annotation;
+    retract.target_message_id = "not-here-yet";
+    retract.payload_json = BuildReactionPayloadJson(kAnnotationTypeRetract, "not-here-yet", "");
+    ASSERT_TRUE(store.AppendMessage(retract));
+    EXPECT_EQ(inbox.BuildDisplayRows("thread-1", std::nullopt, std::nullopt).size(), 2u);
+
     // Deleting the newest message: the list preview stops showing its text.
     ASSERT_TRUE(store.AppendMessage(Text("m3", "contact-1", "newest secret")));
     ASSERT_TRUE(inbox.UpdatePreview("thread-1", "newest secret"));

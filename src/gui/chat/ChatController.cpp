@@ -2532,6 +2532,84 @@ std::string PlainTextOf(const ThreadMessage& message) {
 
 } // namespace
 
+void ChatController::OnDeleteMessage(const std::string& message_id, const ui::Vector2i position) {
+  if (!facade_) {
+    return;
+  }
+  const std::string thread_id = ActiveThreadId();
+  auto delete_for_me = [this, thread_id, message_id]() {
+    if (!facade_) {
+      return;
+    }
+    if (auto deleted = facade_->DeleteMessageForMe(thread_id, message_id); !deleted) {
+      ShowToast(AppError::Display(deleted.error()));
+      return;
+    }
+    SyncDisplayFromThread();
+    DirtyChatTurns();
+    NotifySurfaceChanged();
+  };
+  auto thread = facade_->GetActiveThread();
+  const bool for_everyone = thread && thread->kind != ThreadKind::Ai && IsOwnMessage(message_id);
+  if (!for_everyone) {
+    ShowConfirm(Tr("chat.menu.delete_title"), Tr("chat.menu.delete_confirm"), [delete_for_me](const bool ok) {
+      if (ok) {
+        delete_for_me();
+      }
+    });
+    return;
+  }
+  std::vector<ContextMenuAction> actions;
+  ContextMenuAction everyone{"delete_for_everyone", Tr("chat.menu.delete_for_everyone"), nullptr,
+                             [this, thread_id, message_id]() { DeleteMessageForEveryone(thread_id, message_id); }};
+  everyone.danger = true;
+  actions.push_back(std::move(everyone));
+  ContextMenuAction mine{"delete_for_me", Tr("chat.menu.delete_for_me"), nullptr, delete_for_me};
+  mine.danger = true;
+  actions.push_back(std::move(mine));
+  actions.push_back({"delete_cancel", Tr("common.cancel"), nullptr, []() {}});
+  // Opened after this menu is gone: a menu cannot replace itself from inside its own click.
+  AppRuntime::PostUI([position, actions = std::move(actions)]() mutable {
+    ContextMenuHost::Instance().ShowActions(position, std::move(actions));
+  });
+}
+
+void ChatController::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
+  ConversationsFacade* facade = facade_;
+  if (!facade) {
+    return;
+  }
+  // Sends a message and may call the relay: off the UI thread, refresh from the reply.
+  AppRuntime::PostWorkerNormal([this, facade, thread_id, message_id]() {
+    auto done = facade->DeleteMessageForEveryone(thread_id, message_id);
+    AppRuntime::PostUI([this, done = std::move(done)]() {
+      if (!done) {
+        ShowToast(AppError::Display(done.error()));
+        return;
+      }
+      SyncDisplayFromThread();
+      DirtyChatTurns();
+      NotifySurfaceChanged();
+    });
+  });
+}
+
+bool ChatController::IsOwnMessage(const std::string& message_id) const {
+  if (!facade_ || message_id.empty()) {
+    return false;
+  }
+  const auto page = facade_->GetMessagesPage(ActiveThreadId(), std::nullopt, 500);
+  if (!page) {
+    return false;
+  }
+  for (const ThreadMessage& message : *page) {
+    if (message.id == message_id) {
+      return message.sender_contact_id == kLocalSelfContactId;
+    }
+  }
+  return false;
+}
+
 bool ChatController::IsDeletedMessage(const std::string& message_id) const {
   if (!facade_ || message_id.empty()) {
     return false;
@@ -4218,23 +4296,9 @@ bool ChatController::Setup(ui::Context* context) {
         actions.push_back({"ask_ai_message", Tr("chat.menu.ask_ai"), nullptr, [this, text]() { StartQuoteReply(text, "@ai "); }});
       }
     }
-    // Delete for me: content and bytes leave this device; the peer keeps theirs.
-    ContextMenuAction remove{"delete_message", Tr("common.delete"), nullptr, [this, message_id]() {
-                               ShowConfirm(Tr("chat.menu.delete_title"), Tr("chat.menu.delete_confirm"),
-                                           [this, message_id](const bool ok) {
-                                             if (!ok || !facade_) {
-                                               return;
-                                             }
-                                             if (auto deleted = facade_->DeleteMessageForMe(ActiveThreadId(), message_id);
-                                                 !deleted) {
-                                               ShowToast(deleted.error().message);
-                                               return;
-                                             }
-                                             SyncDisplayFromThread();
-                                             DirtyChatTurns();
-                                             NotifySurfaceChanged();
-                                           });
-                             }};
+    // Delete: our own message in a chat offers "for everyone" too; anything else is "for me" only.
+    ContextMenuAction remove{"delete_message", Tr("common.delete"), nullptr,
+                             [this, message_id, position = request.position]() { OnDeleteMessage(message_id, position); }};
     remove.danger = true;
     actions.push_back(std::move(remove));
     return actions;

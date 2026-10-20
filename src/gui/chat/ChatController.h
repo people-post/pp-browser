@@ -341,6 +341,9 @@ private:
   void RetryAttachmentDownload(const std::string& message_id);
   void SyncComposerInputState();
   /** What the user reads in a message of the active thread ("" when not found). */
+  void OnDeleteMessage(const std::string& message_id, ui::Vector2i position);
+  void DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id);
+  bool IsOwnMessage(const std::string& message_id) const;
   bool IsDeletedMessage(const std::string& message_id) const;
   std::string MessagePlainText(const std::string& message_id) const;
   /**

@@ -1,5 +1,8 @@
 #include "feature/conversations/RelayReceivePipeline.h"
 
+#include "domain/messaging/ChatPayloadCodec.h"
+#include "domain/messaging/ReactionTypes.h"
+
 #include "domain/messaging/AutoKeyEnvelopeResolver.h"
 #include "foundation/crypto/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoUtil.h"
@@ -968,6 +971,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     return outcome;
   }
 
+  TombstoneIfRetractedBeforeArrival(persisted, outcome);
   if (auto cap = RejectIfAnnotationCapExceeded(store_, persisted); !cap) {
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't accept reaction", cap.error().message,
@@ -986,6 +990,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     outcome.persisted = true;
     outcome.thread_changed = true;
     outcome.thread_id = resolved_thread_id;
+    ApplyInboundRetract(persisted, outcome);
     if (auto rotate = ApplyInboundPskRotate(resolved_thread_id, envelope, persisted); !rotate) {
       log().warning << "psk_rotate apply failed after persist: " << rotate.error().message;
     }
@@ -1001,6 +1006,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
   outcome.persisted = true;
   outcome.thread_changed = true;
   outcome.thread_id = resolved_thread_id;
+  ApplyInboundRetract(persisted, outcome);
   if (auto rotate = ApplyInboundPskRotate(resolved_thread_id, envelope, persisted); !rotate) {
     log().warning << "psk_rotate apply failed after persist: " << rotate.error().message;
   }
@@ -1135,6 +1141,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     return outcome;
   }
 
+  TombstoneIfRetractedBeforeArrival(persisted, outcome);
   if (auto cap = RejectIfAnnotationCapExceeded(store_, persisted); !cap) {
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, "couldn't accept reaction", cap.error().message,
@@ -1150,7 +1157,82 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   outcome.persisted = true;
   outcome.thread_changed = true;
   outcome.thread_id = resolved_thread_id;
+  ApplyInboundRetract(persisted, outcome);
   return outcome;
+}
+
+namespace {
+
+/** `annotation` withdraws `target`: a retract, aimed at it, from the target's own sender. */
+bool IsRetractOf(const ThreadMessage& annotation, const ThreadMessage& target) {
+  if (annotation.content_type != ChatContentType::Annotation || annotation.target_message_id != target.id ||
+      annotation.sender_contact_id != target.sender_contact_id) {
+    return false;
+  }
+  auto fields = ChatPayloadCodec::DecodeAnnotationJson(annotation.payload_json);
+  return fields && fields->annotation_type == kAnnotationTypeRetract;
+}
+
+} // namespace
+
+void RelayReceivePipeline::ApplyInboundRetract(const ThreadMessage& persisted, RelayReceiveOutcome& outcome) {
+  if (persisted.content_type != ChatContentType::Annotation || !persisted.target_message_id) {
+    return;
+  }
+  auto fields = ChatPayloadCodec::DecodeAnnotationJson(persisted.payload_json);
+  if (!fields || fields->annotation_type != kAnnotationTypeRetract) {
+    return;
+  }
+  outcome.deleted_by_sender = true;
+  outcome.suppress_inbox_chrome = true;
+  auto page = store_.GetMessagesPage(persisted.thread_id, std::nullopt, 10000);
+  if (!page) {
+    return;
+  }
+  for (const ThreadMessage& target : *page) {
+    if (target.id != *persisted.target_message_id) {
+      continue;
+    }
+    if (target.content_type == ChatContentType::Deleted) {
+      return;
+    }
+    if (!IsRetractOf(persisted, target)) {
+      log().warning << "retract ignored: not from the message's sender";
+      return;
+    }
+    auto deleted = store_.DeleteMessageContent(persisted.thread_id, target.id);
+    if (deleted && *deleted && on_message_retracted_) {
+      on_message_retracted_(persisted.thread_id, target);
+    }
+    return;
+  }
+  // Target not here yet: the stored retract tombstones it on arrival.
+}
+
+void RelayReceivePipeline::TombstoneIfRetractedBeforeArrival(ThreadMessage& persisted, RelayReceiveOutcome& outcome) {
+  if (persisted.content_type == ChatContentType::Annotation || persisted.content_type == ChatContentType::System ||
+      persisted.content_type == ChatContentType::Deleted) {
+    return;
+  }
+  auto count = store_.CountAnnotationsForTarget(persisted.thread_id, persisted.id); // cheap, no decrypt
+  if (!count || *count == 0) {
+    return;
+  }
+  auto page = store_.GetMessagesPage(persisted.thread_id, std::nullopt, 10000);
+  if (!page) {
+    return;
+  }
+  for (const ThreadMessage& annotation : *page) {
+    if (IsRetractOf(annotation, persisted)) {
+      persisted.content_type = ChatContentType::Deleted;
+      persisted.text.clear();
+      persisted.payload_json.clear();
+      persisted.content_rml.reset();
+      outcome.deleted_by_sender = true;
+      outcome.suppress_inbox_chrome = true;
+      return;
+    }
+  }
 }
 
 } // namespace pbr

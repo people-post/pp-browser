@@ -140,6 +140,9 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_, group_roster_,
                                              invite_gate);
   receive_pipeline_->SetContactTrust(&contacts_);
+  // A peer withdrew a message we hold: its bytes, summary and preview follow (the pipeline wiped the row).
+  receive_pipeline_->SetOnMessageRetracted(
+      [this](const std::string& thread_id, const ThreadMessage& original) { inbox_.AfterMessageDeleted(thread_id, original); });
   // Blob + chat/history: Amp single entry ([A020] / D10). May also AttachAmpTransports later.
   if (amp_links) {
     AttachAmpTransports(amp_links, std::move(amp_io_pump), std::move(amp_worker_post), std::move(amp_post_io),
@@ -669,7 +672,7 @@ void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope) {
       MaybeRepairGap((*thread)->id, envelope);
     }
   }
-  if (outcome.persisted && !outcome.thread_id.empty()) {
+  if (outcome.persisted && !outcome.thread_id.empty() && !outcome.deleted_by_sender) {
     std::optional<std::string> preview;
     if (auto decoded = RelayWirePayload::DecodeInboundPayload(envelope.body.e2e.payload_b64)) {
       preview = decoded->text;
@@ -1992,6 +1995,35 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::ClearReaction(const std::string& th
                                                       const std::string& target_message_id,
                                                       const std::string& emoji) {
   return SendAnnotationReaction(*this, store_, thread_id, target_message_id, emoji, kAnnotationTypeReactionClear);
+}
+
+Roe<ThreadMessage> MeshDeliveryOrchestrator::SendRetract(const std::string& thread_id,
+                                                        const std::string& target_message_id) {
+  if (target_message_id.empty()) {
+    return Error("Missing target message");
+  }
+  auto has_target = store_.HasMessageId(thread_id, target_message_id);
+  if (!has_target) {
+    return has_target.error();
+  }
+  if (!*has_target) {
+    return Error("Target message not found");
+  }
+  SendRelayOptions opts;
+  opts.content_type = ChatContentType::Annotation;
+  opts.payload_json = BuildReactionPayloadJson(kAnnotationTypeRetract, target_message_id, "");
+  opts.update_preview = false;
+  auto thread = store_.GetThread(thread_id);
+  if (!thread) {
+    return thread.error();
+  }
+  if (!*thread) {
+    return Error("Thread not found");
+  }
+  if ((*thread)->kind == ThreadKind::Group) {
+    return SendGroupMessage(thread_id, std::string(), opts);
+  }
+  return SendUserMessage(thread_id, std::string(), opts);
 }
 
 void MeshDeliveryOrchestrator::RetryFailedOutbound() {

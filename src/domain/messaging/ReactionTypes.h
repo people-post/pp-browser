@@ -8,6 +8,8 @@ namespace pbr {
 
 inline constexpr const char* kAnnotationTypeReaction = "reaction";
 inline constexpr const char* kAnnotationTypeReactionClear = "reaction_clear";
+/** "Delete for everyone": the sender withdraws their own message (target); receivers tombstone it. */
+inline constexpr const char* kAnnotationTypeRetract = "retract";
 
 inline std::string BuildReactionPayloadJson(const std::string& annotation_type,
                                             const std::string& target_message_id, const std::string& emoji) {

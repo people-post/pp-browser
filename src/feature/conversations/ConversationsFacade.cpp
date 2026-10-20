@@ -142,6 +142,10 @@ Roe<void> ConversationsFacade::DeleteMessageForMe(const std::string& thread_id, 
   return hub_.Inbox().DeleteMessageForMe(thread_id, message_id);
 }
 
+Roe<void> ConversationsFacade::DeleteMessageForEveryone(const std::string& thread_id, const std::string& message_id) {
+  return hub_.DeleteMessageForEveryone(thread_id, message_id);
+}
+
 Roe<void> ConversationsFacade::ClearThreadHistory(const std::string& thread_id, const bool forget_memory) {
   return hub_.Inbox().ClearThreadHistory(thread_id, forget_memory);
 }

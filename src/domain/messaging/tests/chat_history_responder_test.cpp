@@ -129,6 +129,23 @@ TEST(ChatHistoryResponderTest, SkipsDeletedRows) {
   ResponderHarness harness("deleted");
   harness.SeedOutbound(1, "hello");
   harness.SeedOutbound(2, "world");
+  {
+    ThreadMessage reaction;
+    reaction.id = "out-3";
+    reaction.thread_id = harness.thread.id;
+    reaction.sender_contact_id = kLocalSelfContactId;
+    reaction.content_type = ChatContentType::Annotation;
+    reaction.target_message_id = "out-2";
+    reaction.payload_json = R"({"annotation_type":"reaction","target_message_id":"out-2","value":"x"})";
+    reaction.text = "x";
+    reaction.timestamp = 3;
+    reaction.delivery = MessageDelivery::Relayed;
+    reaction.relay_visible = true;
+    reaction.transport = MessageTransport::Local;
+    reaction.sender_seq = 3;
+    reaction.session_epoch = 1;
+    ASSERT_TRUE(harness.store.AppendMessage(reaction)); // annotations are not re-sent as text
+  }
   auto deleted = harness.store.DeleteMessageContent(harness.thread.id, "out-1");
   ASSERT_TRUE(deleted);
   ASSERT_TRUE(*deleted);
