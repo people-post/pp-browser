@@ -103,13 +103,12 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-2022, macos-14]
-    # Asset-only PRs (locales, themes, views) still need the tests, which the Ubuntu build runs; the
-    # Windows and macOS builds add nothing for them. Pushes to develop / main always build everything.
-    env:
-      PP_RUN_PLATFORM: ${{ github.event_name != 'pull_request' || needs.changes.outputs.src == 'true' || matrix.os == 'ubuntu-24.04' }}
 
     runs-on: ${{ matrix.os }}
     env:
+      # Asset-only PRs (locales, themes, views) still need the tests, which the Ubuntu build runs; the
+      # Windows and macOS builds add nothing for them. Pushes to develop / main always build everything.
+      PP_RUN_PLATFORM: ${{ github.event_name != 'pull_request' || needs.changes.outputs.src == 'true' || matrix.os == 'ubuntu-24.04' }}
       CCACHE_COMPRESSLEVEL: 5
 
     steps:
