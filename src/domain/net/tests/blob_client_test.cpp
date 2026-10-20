@@ -1,6 +1,8 @@
 #include "domain/net/BlobClient.h"
+#include "domain/net/HttpBlobClient.h"
 #include "domain/net/OrgBackendClientFactory.h"
 #include "domain/net/OrgBackendClientsImpl.h"
+#include "foundation/error/AppError.h"
 
 #include <gtest/gtest.h>
 
@@ -24,6 +26,30 @@ TEST(BlobClientTest, OrgBackendClientFactoryCreatesBlobClient) {
   config.registration.base_url = "https://registration.example";
   auto clients = CreateOrgBackendClients(config);
   ASSERT_TRUE(static_cast<bool>(clients.blob));
+}
+
+TEST(BlobClientTest, CheckBlobResponseMapsUploadNotConfigured) {
+  const auto result = CheckBlobResponse(HttpResponse{.status_code = 400, .body = R"({"error":"Blob upload is not configured"})"});
+  ASSERT_FALSE(static_cast<bool>(result));
+  EXPECT_EQ(result.error().category, static_cast<int32_t>(ErrorCategory::Blob));
+  EXPECT_EQ(result.error().code, static_cast<int32_t>(Err::Blob::UploadNotConfigured));
+  EXPECT_EQ(result.error().message, "Blob upload is not configured");
+}
+
+TEST(BlobClientTest, CheckBlobResponseKeepsQuotaAndSuccess) {
+  EXPECT_TRUE(static_cast<bool>(CheckBlobResponse(HttpResponse{.status_code = 200, .body = "{}"})));
+  const auto quota = CheckBlobResponse(HttpResponse{.status_code = 429, .body = R"({"error":"quota"})"});
+  ASSERT_FALSE(static_cast<bool>(quota));
+  EXPECT_EQ(quota.error().code, static_cast<int32_t>(Err::Blob::QuotaExceeded));
+  const auto other = CheckBlobResponse(HttpResponse{.status_code = 500, .body = "oops"});
+  ASSERT_FALSE(static_cast<bool>(other));
+  EXPECT_EQ(other.error().code, static_cast<int32_t>(Err::Blob::Generic));
+  EXPECT_EQ(other.error().message, "HTTP request failed with status 500");
+  // Server text is log detail only; a reworded gateway message must not hit the "not configured" hint.
+  const auto reworded = CheckBlobResponse(HttpResponse{.status_code = 400, .body = R"({"error":"Icon CDN not configured"})"});
+  ASSERT_FALSE(static_cast<bool>(reworded));
+  EXPECT_EQ(reworded.error().code, static_cast<int32_t>(Err::Blob::Generic));
+  EXPECT_EQ(reworded.error().message, "Icon CDN not configured");
 }
 
 TEST(BlobClientTest, BlobPurposeWireRoundTrip) {

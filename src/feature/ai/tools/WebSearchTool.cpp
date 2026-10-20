@@ -3,6 +3,8 @@
 #include "common/Logger.h"
 #include "common/Utilities.h"
 #include "common/ValueJson.h"
+#include "foundation/error/AppError.h"
+#include "foundation/error/CurlNetworkError.h"
 #include "foundation/platform/CurlSsl.h"
 #include "foundation/runtime/AppVersion.h"
 #include "foundation/runtime/ProductBranding.h"
@@ -157,7 +159,7 @@ Roe<std::string> HttpGet(const std::string& url, const std::vector<std::string>&
   curl_easy_cleanup(curl);
 
   if (code != CURLE_OK) {
-    return Error(std::string("curl failed: ") + curl_easy_strerror(code));
+    return AppError::Network(NetworkCodeFromCurl(code), std::string("curl failed: ") + curl_easy_strerror(code));
   }
   return response;
 }
@@ -199,7 +201,7 @@ Roe<std::string> HttpPost(const std::string& url, const std::string& body,
   curl_easy_cleanup(curl);
 
   if (code != CURLE_OK) {
-    return Error(std::string("curl failed: ") + curl_easy_strerror(code));
+    return AppError::Network(NetworkCodeFromCurl(code), std::string("curl failed: ") + curl_easy_strerror(code));
   }
   return response;
 }
