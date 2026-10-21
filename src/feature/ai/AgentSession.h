@@ -129,6 +129,8 @@ private:
 
   void BeginStreamTurn();
   static void ConfigureOnIO(const std::shared_ptr<Impl>& state);
+  /** Submit worker: true to start the turn now, false when the running ConfigureOnIO will start it. */
+  static bool StartNowOrWhenConfigured(const std::shared_ptr<Impl>& state);
   static void StartTurn(const std::shared_ptr<Impl>& state);
   static void RunTurnPipeline(const std::shared_ptr<Impl>& state);
   static bool UseBriefStream(const std::shared_ptr<Impl>& state);

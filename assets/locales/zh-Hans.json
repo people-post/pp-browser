@@ -492,7 +492,7 @@
     "chat.clear_history": "清除聊天记录？",
     "chat.jump_to_latest": "最新",
     "chat.copy": "复制",
-    "chat.status.connecting": "连接中…",
+    "chat.status.connecting": "正在连接…",
     "chat.status.online": "在线",
     "chat.status.offline": "离线",
     "chat.status.searching_web": "正在搜索网页…",

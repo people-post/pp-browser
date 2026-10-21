@@ -1241,6 +1241,19 @@ void AgentSession::RefreshCompactionService(const std::shared_ptr<Impl>& state) 
   }
 }
 
+// A submit made while ConfigureOnIO runs must not be lost: checking `configured` and setting
+// submit_when_ready under configure_work_mutex (which ConfigureOnIO holds until it has consumed the flag)
+// means the flag is either set before ConfigureOnIO looks at it, or the turn sees `configured` and starts.
+// True: start the turn now (outside the lock: the turn may take configure_work_mutex itself).
+bool AgentSession::StartNowOrWhenConfigured(const std::shared_ptr<Impl>& state) {
+  std::lock_guard work_lock(state->configure_work_mutex);
+  if (state->configured) {
+    return true;
+  }
+  state->submit_when_ready = true;
+  return false;
+}
+
 void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   // Configure() counted this run and releases it when the posted closure is destroyed.
   // Serialize ConfigureOnIO body — concurrent Configure() raced mcp.Start/Stop (UAF → SEGV in logger).
@@ -1250,7 +1263,7 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
   // Do not PauseBackgroundWork here: this already runs on a worker pool thread. Pausing blocked
   // concurrent posts (profile unlock, inbox) until Resume — and a missed Resume left
   // unlock_in_progress stuck on Android.
-  std::lock_guard work_lock(state->configure_work_mutex);
+  std::unique_lock work_lock(state->configure_work_mutex);
   try {
     LlmConfig llm_config = state->config.llm;
     if (ResolvePreset(state->config) == "brief") {
@@ -1317,14 +1330,21 @@ void AgentSession::ConfigureOnIO(const std::shared_ptr<Impl>& state) {
     return;
   }
 
-  if (state->submit_when_ready && !state->pending_user_text.empty()) {
-    state->submit_when_ready = false;
-    if (!state->cancelled) {
-      StartTurn(state);
-    } else {
-      // OnNewChat Cancel raced configure; do not leave busy stuck from Submit.
-      state->busy = false;
-    }
+  const bool submit = state->submit_when_ready && !state->pending_user_text.empty();
+  state->submit_when_ready = false;
+  // The turn runs outside the lock: a feed turn's re-list takes configure_work_mutex itself.
+  work_lock.unlock();
+  // Wake the UI loop (PostUI requests a frame) so a send ChatController held while configuring goes out now,
+  // not after the power-save wait.
+  AppRuntime::PostUI([] {});
+  if (!submit) {
+    return;
+  }
+  if (!state->cancelled) {
+    StartTurn(state);
+  } else {
+    // OnNewChat Cancel raced configure; do not leave busy stuck from Submit.
+    state->busy = false;
   }
 }
 
@@ -1461,8 +1481,7 @@ void AgentSession::Submit(const std::string& user_text, std::optional<std::strin
   impl_->pending_thread_id.clear();
 
   AppRuntime::PostWorkerNormal([impl = impl_]() {
-    if (!impl->configured) {
-      impl->submit_when_ready = true;
+    if (!StartNowOrWhenConfigured(impl)) {
       return;
     }
     StartTurn(impl);
@@ -1484,8 +1503,7 @@ void AgentSession::SubmitToThread(const std::string& thread_id, const std::strin
   impl_->turn_mode = AgentTurnMode::Thread;
 
   AppRuntime::PostWorkerNormal([impl = impl_]() {
-    if (!impl->configured) {
-      impl->submit_when_ready = true;
+    if (!StartNowOrWhenConfigured(impl)) {
       return;
     }
     StartTurn(impl);
@@ -1508,8 +1526,7 @@ void AgentSession::SubmitScopedAssist(const std::string& thread_id, const std::s
   impl_->assist_mode = mode;
 
   AppRuntime::PostWorkerNormal([impl = impl_]() {
-    if (!impl->configured) {
-      impl->submit_when_ready = true;
+    if (!StartNowOrWhenConfigured(impl)) {
       return;
     }
     StartTurn(impl);

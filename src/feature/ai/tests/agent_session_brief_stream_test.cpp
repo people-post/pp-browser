@@ -915,6 +915,43 @@ TEST_F(AgentSessionFeedRelistTest, DisabledPromotedMcpFailsAtOnceWithoutListing)
   EXPECT_EQ(errors[0].message, "Briefs are unavailable right now.");
 }
 
+// At launch Configure runs again once unlock applies the Brief key, so a chip can be sent mid-configure. That
+// send must run once the configure is done and leave the session free for the next one; a feed turn that
+// re-lists takes configure_work_mutex itself, so it must not be started while ConfigureOnIO still holds it.
+TEST_F(AgentSessionFeedRelistTest, SubmitDuringAConfigureRunsOnceItIsDone) {
+  StartWithPromotedMcp(true, -1);
+  auto in_configure = std::make_shared<std::atomic<bool>>(false);
+  auto release = std::make_shared<std::atomic<bool>>(false);
+  session_->SetToolRegistrationHook([in_configure, release](ToolRegistry&) {
+    *in_configure = true;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!*release && std::chrono::steady_clock::now() < deadline) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+  });
+  AppConfig config = MakeConfig("brief");
+  config.promoted_mcp.id = "brief";
+  config.promoted_mcp.enabled = true;
+  session_->Configure(config);
+  const auto started = std::chrono::steady_clock::now();
+  while (!*in_configure && std::chrono::steady_clock::now() - started < std::chrono::seconds(2)) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  ASSERT_TRUE(*in_configure);
+
+  SubmitArticles();
+  std::this_thread::sleep_for(std::chrono::milliseconds(100)); // the submit reaches a worker mid-configure
+  *release = true;
+  const auto events = WaitForTurn();
+  const auto errors = Of(events, AgentEventType::Error);
+  ASSERT_EQ(errors.size(), 1u); // the feed tool never appears (closed port): the turn ran and ended
+  EXPECT_EQ(errors[0].message, "Briefs are unavailable right now.");
+
+  session_->SubmitToThread("t1", "What is in the news today?"); // not dropped as "busy"
+  const auto next = WaitForTurn();
+  EXPECT_EQ(Of(next, AgentEventType::AssistantReady).size(), 1u);
+}
+
 TEST_F(AgentSessionPayloadTurnTest, FindSomeoneChipListsThePeopleWithoutAnyModelCall) {
   StartWithTools(true);
   session_->SubmitToThread("t1", "Find someone on the network", std::string(R"({"tool":"search_people","query":""})"));

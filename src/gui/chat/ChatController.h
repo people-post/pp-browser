@@ -8,6 +8,7 @@
 #include "gui/chat/ChatThreadChrome.h"
 #include "gui/chat/ChatTranscriptScroller.h"
 #include "gui/chat/ChatWidgetHost.h"
+#include "gui/chat/HeldAgentSend.h"
 #include "gui/chat/WorkingSetController.h"
 #include "feature/conversations/MessagingUiPorts.h"
 #include "gui/BadgeNotifyPorts.h"
@@ -442,6 +443,10 @@ private:
   bool AgentConfigured() const;
   /** Agent session + cloud/mock LLM usable (Brief/API key resolved). Peer relay ignores this. */
   bool AgentCloudReady() const;
+  /** The Brief / API key the agent needs is there (AgentCloudReady minus the configured check). */
+  bool AgentHasCredentials() const;
+  /** Sends the held send once the agent is configured, or gives it up after kHeldAgentSendTimeout. Per frame. */
+  void FlushHeldAgentSend();
 
   ui::Context* context_ = nullptr;
   ConversationsFacade* facade_ = nullptr;
@@ -475,6 +480,7 @@ private:
   ChatThreadChrome chrome_;
   ChatWidgetHost widgets_;
   std::optional<PendingReply> pending_reply_;
+  HeldAgentSend held_agent_send_; // a send made while the agent was still (re)configuring
 
   /** The prepared image waiting in the composer for its question. */
   struct PendingAiImage {
