@@ -3,6 +3,7 @@
 #include "foundation/crypto/DataKeyVault.h"
 #include "foundation/crypto/FileCipher.h"
 #include "foundation/crypto/PinKeyDeriver.h"
+#include "foundation/error/AppError.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
@@ -84,6 +85,26 @@ TEST_F(AtRestCryptoTest, ReplaceWithDekOverwritesExistingVault) {
   EXPECT_FALSE(static_cast<bool>(reopened.Unlock("wrong-pin")));
   ASSERT_TRUE(reopened.Unlock("device-pin"));
   EXPECT_EQ(*reopened.Dek(), shared_dek);
+}
+
+// A copy of the vault bytes (the local account backup keeps one) opens only with the same PIN and
+// profile id; a wrong PIN is a PIN error.
+TEST_F(AtRestCryptoTest, UnwrapDekFromVaultBytesNeedsPinAndProfile) {
+  const auto vault_path = (dir_ / "vault-copy.bin").string();
+  ByteVector dek(kDataEncryptionKeySize, 0x5a);
+  DataKeyVault vault(vault_path, "profile-copy");
+  ASSERT_TRUE(vault.CreateWithDek("copy-pin", dek));
+  auto bytes = vault.ReadVaultFile();
+  ASSERT_TRUE(bytes) << bytes.error().message;
+
+  auto ok = DataKeyVault::UnwrapDekFromVaultBytes(*bytes, "profile-copy", "copy-pin");
+  ASSERT_TRUE(ok) << ok.error().message;
+  EXPECT_EQ(*ok, dek);
+  auto wrong_pin = DataKeyVault::UnwrapDekFromVaultBytes(*bytes, "profile-copy", "other-pin");
+  ASSERT_FALSE(static_cast<bool>(wrong_pin));
+  EXPECT_EQ(AppError::CategoryOf(wrong_pin.error()), ErrorCategory::Pin);
+  EXPECT_FALSE(static_cast<bool>(DataKeyVault::UnwrapDekFromVaultBytes(*bytes, "other-profile", "copy-pin")));
+  EXPECT_FALSE(static_cast<bool>(DataKeyVault::UnwrapDekFromVaultBytes(ByteVector(8, 0), "profile-copy", "copy-pin")));
 }
 
 TEST_F(AtRestCryptoTest, PinChangeKeepsDekUsable) {

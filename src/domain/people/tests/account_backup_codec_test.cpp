@@ -21,11 +21,13 @@ Contact SampleContact() {
   return contact;
 }
 
-TEST(AccountBackupCodecTest, RoundTripsBundleAndContacts) {
-  AccountBackupV1 backup;
+TEST(AccountBackupCodecTest, RoundTripsVersion2) {
+  AccountBackupV2 backup;
   backup.updated_at_ms = 1700000000009;
-  backup.link_bundle_json = R"({"schema":"pp-browser-link-device-v1","relay_user_id":"relay:u1","nickname":"alice"})";
-  backup.contacts = {SampleContact()};
+  backup.nickname = "alice";
+  backup.profile_id = "default";
+  backup.vault = {'P', 'P', 'B', 'V', 1, 2, 3};
+  backup.sealed = {9, 8, 7, 0, 255};
 
   auto bytes = AccountBackupCodec::Serialize(backup);
   ASSERT_TRUE(static_cast<bool>(bytes)) << bytes.error().message;
@@ -33,6 +35,22 @@ TEST(AccountBackupCodecTest, RoundTripsBundleAndContacts) {
   ASSERT_TRUE(static_cast<bool>(parsed)) << parsed.error().message;
 
   EXPECT_EQ(parsed->updated_at_ms, 1700000000009);
+  EXPECT_EQ(parsed->nickname, "alice");
+  EXPECT_EQ(parsed->profile_id, "default");
+  EXPECT_EQ(parsed->vault, backup.vault);
+  EXPECT_EQ(parsed->sealed, backup.sealed);
+}
+
+TEST(AccountBackupCodecTest, RoundTripsContents) {
+  AccountBackupContents contents;
+  contents.link_bundle_json = R"({"schema":"pp-browser-link-device-v1","relay_user_id":"relay:u1","nickname":"alice"})";
+  contents.contacts = {SampleContact()};
+
+  auto bytes = AccountBackupCodec::SerializeContents(contents);
+  ASSERT_TRUE(static_cast<bool>(bytes)) << bytes.error().message;
+  auto parsed = AccountBackupCodec::ParseContents(*bytes);
+  ASSERT_TRUE(static_cast<bool>(parsed)) << parsed.error().message;
+
   EXPECT_NE(parsed->link_bundle_json.find("\"relay_user_id\":\"relay:u1\""), std::string::npos);
   ASSERT_EQ(parsed->contacts.size(), 1u);
   EXPECT_EQ(parsed->contacts[0].id, "c1");
@@ -42,17 +60,23 @@ TEST(AccountBackupCodecTest, RoundTripsBundleAndContacts) {
 }
 
 TEST(AccountBackupCodecTest, RejectsOtherSchemasAndVersions) {
-  const std::string other = R"({"schema":"something-else","version":1,"link_bundle":{}})";
+  const std::string other = R"({"schema":"something-else","version":2,"profile_id":"p","vault_b64":"AQ==","sealed_b64":"AQ=="})";
   EXPECT_FALSE(static_cast<bool>(AccountBackupCodec::Parse(std::vector<uint8_t>(other.begin(), other.end()))));
-  const std::string v2 = R"({"schema":"pp-browser-account-backup","version":2,"link_bundle":{}})";
-  EXPECT_FALSE(static_cast<bool>(AccountBackupCodec::Parse(std::vector<uint8_t>(v2.begin(), v2.end()))));
+  // Version 1 kept the link bundle in the clear; it is not read.
+  const std::string v1 = R"({"schema":"pp-browser-account-backup","version":1,"link_bundle":{},"contacts":[]})";
+  EXPECT_FALSE(static_cast<bool>(AccountBackupCodec::Parse(std::vector<uint8_t>(v1.begin(), v1.end()))));
+  const std::string no_vault = R"({"schema":"pp-browser-account-backup","version":2,"profile_id":"p","sealed_b64":"AQ=="})";
+  EXPECT_FALSE(static_cast<bool>(AccountBackupCodec::Parse(std::vector<uint8_t>(no_vault.begin(), no_vault.end()))));
   const std::string garbage = "not json";
   EXPECT_FALSE(static_cast<bool>(AccountBackupCodec::Parse(std::vector<uint8_t>(garbage.begin(), garbage.end()))));
 }
 
-TEST(AccountBackupCodecTest, SerializeNeedsAJsonBundle) {
-  AccountBackupV1 backup;
-  backup.link_bundle_json = "nope";
+TEST(AccountBackupCodecTest, SerializeNeedsAJsonBundleAndTheBlobs) {
+  AccountBackupContents contents;
+  contents.link_bundle_json = "nope";
+  EXPECT_FALSE(static_cast<bool>(AccountBackupCodec::SerializeContents(contents)));
+  AccountBackupV2 backup;
+  backup.profile_id = "default";
   EXPECT_FALSE(static_cast<bool>(AccountBackupCodec::Serialize(backup)));
 }
 

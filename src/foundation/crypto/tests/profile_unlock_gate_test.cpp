@@ -1,10 +1,15 @@
 #include "foundation/crypto/ProfileUnlockGate.h"
 
+#include "foundation/crypto/CryptoConstants.h"
+#include "foundation/crypto/PinDefaults.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"
+#include "foundation/error/AppError.h"
 
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <optional>
 #include <string>
+#include <vector>
 
 namespace pbr {
 namespace {
@@ -111,6 +116,55 @@ TEST_F(ProfileUnlockGateTest, FreshInstallFallsBackToTheForkWithoutABackup) {
 
   gate_.Cancel(); // "back" from the PIN chooser lands on the same entry page
   EXPECT_EQ(fork_shown, 2);
+}
+
+// "Restore my account": the default PIN is tried first without asking; when it does not open the
+// backup the PIN page comes up, a wrong PIN keeps it up, the right PIN restores and unlocks, and
+// "back" returns to the restore entry.
+TEST_F(ProfileUnlockGateTest, RestoreTriesTheDefaultPinThenAsksForTheAccountPin) {
+  ASSERT_FALSE(engine_.HasVault());
+  std::vector<std::string> tried;
+  std::vector<bool> pin_page; // show_restore_pin(wrong_pin) calls
+  int entry_shown = 0;
+  bool dismissed = false;
+  std::optional<bool> pin_is_default;
+  ProfileUnlockPorts ports;
+  ports.messaging_initialized = []() { return true; };
+  ports.messaging_ready = []() { return false; };
+  ports.local_backup_nickname = []() -> Roe<std::optional<std::string>> { return std::optional<std::string>("alice"); };
+  ports.restore_local_backup = [&](const std::string& pin) -> Roe<void> {
+    tried.push_back(pin);
+    if (pin != "9876") {
+      return AppError::Pin(Err::Pin::Generic, "Incorrect PIN or corrupt vault");
+    }
+    return engine_.Vault()->CreateWithDek(pin, ByteVector(kDataEncryptionKeySize, 0x61));
+  };
+  ports.set_pin_is_default = [&](const bool is_default) { pin_is_default = is_default; };
+  ports.ui.show_identity_restore = [&](const std::string&) { ++entry_shown; };
+  ports.ui.show_restore_pin = [&](const bool wrong_pin) { pin_page.push_back(wrong_pin); };
+  ports.ui.dismiss = [&]() { dismissed = true; };
+  gate_.BindPorts(std::move(ports));
+  gate_.BeginDeferredUnlockAfterFirstPresent();
+  ASSERT_EQ(entry_shown, 1);
+
+  gate_.CompleteRestoreBackup(std::string(kDefaultProfilePin), /*set_default_pin=*/true);
+  ASSERT_EQ(tried, std::vector<std::string>{std::string(kDefaultProfilePin)});
+  ASSERT_EQ(pin_page, std::vector<bool>{false}); // asked for the PIN, no "wrong PIN" yet
+  EXPECT_FALSE(gate_.IsUnlockInProgress());
+
+  gate_.CompleteRestoreBackup("0000", /*set_default_pin=*/false);
+  ASSERT_EQ(pin_page, (std::vector<bool>{false, true}));
+  EXPECT_FALSE(dismissed);
+
+  gate_.Cancel();
+  EXPECT_EQ(entry_shown, 2);
+
+  gate_.CompleteRestoreBackup("9876", /*set_default_pin=*/false);
+  EXPECT_EQ(pin_page.size(), 2u);
+  EXPECT_TRUE(dismissed);
+  EXPECT_TRUE(engine_.IsUnlocked());
+  ASSERT_TRUE(pin_is_default.has_value());
+  EXPECT_FALSE(*pin_is_default);
 }
 
 } // namespace

@@ -25,6 +25,8 @@ public:
   void ShowIdentityFork();
   /** Identity fork plus "Restore my account: <nickname>" (local backup found on a fresh install). */
   void ShowIdentityRestore(const std::string& nickname);
+  /** Restore: ask for the PIN the account used (enter mode); `wrong_pin` shows "that PIN is not right". */
+  void ShowRestorePin(bool wrong_pin);
   void ShowChooser();
   void ShowUnlock();
   void Dismiss();
@@ -52,8 +54,6 @@ private:
   ShellPinGatePorts shell_pin_gate_;
   PinGateState pin_state_;
   bool link_flow_ = false;
-  /** PIN chosen here completes a local-backup restore instead of creating a new vault. */
-  bool restore_flow_ = false;
   bool pending_link_default_pin_ = false;
   std::string pending_link_pin_;
 };

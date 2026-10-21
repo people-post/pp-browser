@@ -38,6 +38,19 @@ Roe<uint64_t> ReadU64Le(const ByteVector& bytes, const size_t offset) {
   return value;
 }
 
+Roe<void> CheckVaultHeader(const ByteVector& bytes) {
+  if (bytes.size() < kVaultHeaderSize + crypto_aead_xchacha20poly1305_ietf_abytes()) {
+    return Error("vault.bin too short");
+  }
+  if (std::memcmp(bytes.data(), kVaultMagic, 4) != 0) {
+    return Error("Invalid vault.bin magic");
+  }
+  if (bytes[4] != kVaultFileVersion) {
+    return Error("Unsupported vault.bin version");
+  }
+  return {};
+}
+
 } // namespace
 
 DataKeyVault::DataKeyVault(std::string vault_path, std::string profile_id)
@@ -84,25 +97,14 @@ Roe<ByteVector> DataKeyVault::WrapDek(const ByteVector& kek, const ByteVector& d
   return FileCipher::Encrypt(kek, dek, aad);
 }
 
-Roe<ByteVector> DataKeyVault::UnwrapDek(const ByteVector& kek, const ByteVector& wrapped) const {
-  const std::string aad = FileCipher::BuildAad("vault-dek", profile_id_);
-  return FileCipher::Decrypt(kek, wrapped, aad);
-}
-
 Roe<ByteVector> DataKeyVault::ReadVaultFile() const {
   std::ifstream in(vault_path_, std::ios::binary);
   if (!in) {
     return Error("Failed to open vault.bin");
   }
   ByteVector bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-  if (bytes.size() < kVaultHeaderSize + crypto_aead_xchacha20poly1305_ietf_abytes()) {
-    return Error("vault.bin too short");
-  }
-  if (std::memcmp(bytes.data(), kVaultMagic, 4) != 0) {
-    return Error("Invalid vault.bin magic");
-  }
-  if (bytes[4] != kVaultFileVersion) {
-    return Error("Unsupported vault.bin version");
+  if (auto checked = CheckVaultHeader(bytes); !checked) {
+    return checked.error();
   }
   return bytes;
 }
@@ -185,22 +187,36 @@ Roe<void> DataKeyVault::Unlock(std::string_view pin) {
   if (!bytes) {
     return bytes.error();
   }
-  auto opslimit = ReadU64Le(*bytes, 5);
+  auto dek = UnwrapDekFromVaultBytes(*bytes, profile_id_, pin);
+  if (!dek) {
+    return dek.error();
+  }
+  Lock();
+  dek_ = std::move(*dek);
+  return {};
+}
+
+Roe<ByteVector> DataKeyVault::UnwrapDekFromVaultBytes(const ByteVector& vault_bytes, std::string_view profile_id,
+                                                      std::string_view pin) {
+  if (auto checked = CheckVaultHeader(vault_bytes); !checked) {
+    return checked.error();
+  }
+  auto opslimit = ReadU64Le(vault_bytes, 5);
   if (!opslimit) {
     return opslimit.error();
   }
-  auto memlimit = ReadU64Le(*bytes, 13);
+  auto memlimit = ReadU64Le(vault_bytes, 13);
   if (!memlimit) {
     return memlimit.error();
   }
   PinKdfParams params;
   params.opslimit = *opslimit;
   params.memlimit = *memlimit;
-  params.salt.assign(bytes->begin() + 21, bytes->begin() + 21 + crypto_pwhash_SALTBYTES);
+  params.salt.assign(vault_bytes.begin() + 21, vault_bytes.begin() + 21 + crypto_pwhash_SALTBYTES);
   const size_t nonce_off = 21 + crypto_pwhash_SALTBYTES;
   EncryptedBlob wrapped_blob;
-  wrapped_blob.nonce.assign(bytes->begin() + nonce_off, bytes->begin() + nonce_off + kAeadNonceSize);
-  wrapped_blob.ciphertext.assign(bytes->begin() + nonce_off + kAeadNonceSize, bytes->end());
+  wrapped_blob.nonce.assign(vault_bytes.begin() + nonce_off, vault_bytes.begin() + nonce_off + kAeadNonceSize);
+  wrapped_blob.ciphertext.assign(vault_bytes.begin() + nonce_off + kAeadNonceSize, vault_bytes.end());
   auto wrapped = EncryptedPayload::EncodeBlob(wrapped_blob);
   if (!wrapped) {
     return wrapped.error();
@@ -209,15 +225,13 @@ Roe<void> DataKeyVault::Unlock(std::string_view pin) {
   if (!kek) {
     return kek.error();
   }
-  auto dek = UnwrapDek(*kek, *wrapped);
+  auto dek = FileCipher::Decrypt(*kek, *wrapped, FileCipher::BuildAad("vault-dek", profile_id));
   sodium_memzero(kek->data(), kek->size());
   if (!dek) {
     return AppError::Pin(Err::Pin::Generic, "Incorrect PIN or corrupt vault")
         .WithUser("Incorrect PIN or corrupt vault");
   }
-  Lock();
-  dek_ = std::move(*dek);
-  return {};
+  return dek;
 }
 
 Roe<void> DataKeyVault::ChangePin(std::string_view old_pin, std::string_view new_pin) {

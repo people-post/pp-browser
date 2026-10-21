@@ -1,6 +1,6 @@
 #include "domain/people/LocalAccountBackup.h"
 
-#include "foundation/crypto/LinkDeviceCodec.h"
+#include "foundation/crypto/FileCipher.h"
 #include "foundation/platform/os/OsSecureBlob.h"
 #include "domain/people/LinkDeviceCoordinator.h"
 
@@ -21,19 +21,24 @@ public:
   Roe<void> Delete(const std::string& name) override { return os::SecureBlobDelete(name); }
 };
 
-Roe<std::optional<AccountBackupV1>> ReadBackup(ISecureBlobStore& store) {
+Roe<std::optional<AccountBackupV2>> ReadBackup(ISecureBlobStore& store) {
   auto bytes = store.Read(AccountBackupCodec::kBlobName);
   if (!bytes) {
     return bytes.error();
   }
   if (!bytes->has_value()) {
-    return std::optional<AccountBackupV1>{};
+    return std::optional<AccountBackupV2>{};
   }
   auto parsed = AccountBackupCodec::Parse(**bytes);
   if (!parsed) {
     return parsed.error();
   }
-  return std::optional<AccountBackupV1>(std::move(*parsed));
+  return std::optional<AccountBackupV2>(std::move(*parsed));
+}
+
+/** The sealed contents are bound to the profile id of the vault stored next to them. */
+std::string SealedAad(const std::string& profile_id) {
+  return FileCipher::BuildAad(AccountBackupCodec::kBlobName, profile_id, AccountBackupCodec::kSchemaVersion);
 }
 
 } // namespace
@@ -63,10 +68,28 @@ Roe<void> LocalAccountBackup::Write(ISecureBlobStore& store, IdentityStore& iden
   if (!list) {
     return list.error();
   }
-  AccountBackupV1 backup;
+  auto dek = vault.Dek();
+  if (!dek) {
+    return dek.error();
+  }
+  auto vault_bytes = vault.ReadVaultFile();
+  if (!vault_bytes) {
+    return vault_bytes.error();
+  }
+  auto contents = AccountBackupCodec::SerializeContents({std::move(*bundle), std::move(*list)});
+  if (!contents) {
+    return contents.error();
+  }
+  auto sealed = FileCipher::Encrypt(*dek, *contents, SealedAad(vault.ProfileId()));
+  if (!sealed) {
+    return sealed.error();
+  }
+  AccountBackupV2 backup;
   backup.updated_at_ms = now_ms;
-  backup.link_bundle_json = std::move(*bundle);
-  backup.contacts = std::move(*list);
+  backup.nickname = loaded->nickname;
+  backup.profile_id = vault.ProfileId();
+  backup.vault = std::move(*vault_bytes);
+  backup.sealed = std::move(*sealed);
   auto bytes = AccountBackupCodec::Serialize(backup);
   if (!bytes) {
     return bytes.error();
@@ -82,11 +105,7 @@ Roe<std::optional<std::string>> LocalAccountBackup::PeekNickname(ISecureBlobStor
   if (!backup->has_value()) {
     return std::optional<std::string>{};
   }
-  auto bundle = LinkDeviceCodec::Parse((**backup).link_bundle_json);
-  if (!bundle) {
-    return bundle.error();
-  }
-  return std::optional<std::string>(bundle->nickname);
+  return std::optional<std::string>((**backup).nickname);
 }
 
 Roe<void> LocalAccountBackup::Restore(ISecureBlobStore& store, IdentityStore& identity, DataKeyVault& vault,
@@ -99,12 +118,25 @@ Roe<void> LocalAccountBackup::Restore(ISecureBlobStore& store, IdentityStore& id
   if (!backup->has_value()) {
     return Error("No local account backup");
   }
-  auto imported = LinkDeviceCoordinator::Import(identity, vault, psk_store, secrets, (**backup).link_bundle_json, pin,
-                                                now_ms);
+  // The PIN the account used opens the stored vault copy; a wrong one fails here, before anything is written.
+  auto dek = DataKeyVault::UnwrapDekFromVaultBytes((**backup).vault, (**backup).profile_id, pin);
+  if (!dek) {
+    return dek.error();
+  }
+  auto opened = FileCipher::Decrypt(*dek, (**backup).sealed, SealedAad((**backup).profile_id));
+  if (!opened) {
+    return Error("Account backup: contents do not open");
+  }
+  auto contents = AccountBackupCodec::ParseContents(*opened);
+  if (!contents) {
+    return contents.error();
+  }
+  auto imported =
+      LinkDeviceCoordinator::Import(identity, vault, psk_store, secrets, contents->link_bundle_json, pin, now_ms);
   if (!imported) {
     return imported.error();
   }
-  for (const Contact& contact : (**backup).contacts) {
+  for (const Contact& contact : contents->contacts) {
     if (auto upserted = contacts.Upsert(contact); !upserted) {
       return upserted.error();
     }

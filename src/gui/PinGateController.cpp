@@ -65,7 +65,6 @@ void PinGateController::ShowError(const std::string& message) {
 void PinGateController::Dismiss() {
   pin_state_ = {};
   link_flow_ = false;
-  restore_flow_ = false;
   pending_link_default_pin_ = false;
   pending_link_pin_.clear();
   ApplyPinGate();
@@ -79,7 +78,6 @@ void PinGateController::ShowIdentityFork() {
     return;
   }
   link_flow_ = false;
-  restore_flow_ = false;
   pending_link_default_pin_ = false;
   pending_link_pin_.clear();
   pin_state_ = {};
@@ -110,7 +108,6 @@ void PinGateController::ShowChooser() {
     return;
   }
   link_flow_ = false;
-  restore_flow_ = false;
   pin_state_ = {};
   pin_state_.active = true;
   pin_state_.chooser_mode = true;
@@ -143,7 +140,6 @@ void PinGateController::ShowUnlock() {
     return;
   }
   link_flow_ = false;
-  restore_flow_ = false;
   pin_state_ = {};
   pin_state_.active = true;
   pin_state_.create_mode = false;
@@ -210,16 +206,30 @@ void PinGateController::OnIdentityRestore() {
   if (!pin_state_.active || !pin_state_.identity_fork_mode || pin_state_.restore_label.empty()) {
     return;
   }
+  if (!shell_pin_gate_.apply_pin_gate || !gate_complete_.complete_restore_backup) {
+    return;
+  }
+  link_flow_ = false;
+  pin_state_.error = "";
+  ApplyPinGate();
+  DirtyPinFields();
+  // Accounts on the default PIN come back without a question; otherwise the gate calls ShowRestorePin.
+  gate_complete_.complete_restore_backup(std::string(kDefaultProfilePin), /*set_default_pin=*/true);
+}
+
+void PinGateController::ShowRestorePin(const bool wrong_pin) {
   if (!shell_pin_gate_.apply_pin_gate) {
     return;
   }
+  link_flow_ = false;
   pin_state_ = {};
   pin_state_.active = true;
-  pin_state_.chooser_mode = true;
-  pin_state_.title = Tr("pin.restore_chooser_title").c_str();
-  pin_state_.message = Tr("pin.restore_chooser_message").c_str();
-  link_flow_ = false;
-  restore_flow_ = true;
+  pin_state_.restore_pin_mode = true;
+  pin_state_.title = Tr("pin.restore_pin_title").c_str();
+  pin_state_.message = Tr("pin.restore_pin_message").c_str();
+  if (wrong_pin) {
+    pin_state_.error = Tr("pin.restore_pin_wrong").c_str();
+  }
   ApplyPinGate();
   if (shell_pin_gate_.remount_pin_gate) {
     shell_pin_gate_.remount_pin_gate();
@@ -247,16 +257,6 @@ void PinGateController::OnUseDefaultPin() {
     pending_link_pin_ = std::string(kDefaultProfilePin);
     pending_link_default_pin_ = true;
     ShowLinkPaste();
-    return;
-  }
-  if (restore_flow_) {
-    if (!gate_complete_.complete_restore_backup) {
-      return;
-    }
-    pin_state_.error = "";
-    ApplyPinGate();
-    DirtyPinFields();
-    gate_complete_.complete_restore_backup(std::string(kDefaultProfilePin), /*set_default_pin=*/true);
     return;
   }
   if (!gate_complete_.complete_with_default_pin) {
@@ -297,15 +297,25 @@ void PinGateController::OnSubmit() {
     return;
   }
 
-  if (!gate_complete_.complete_with_pin) {
-    return;
-  }
-
   const std::string pin = pin_state_.pin.c_str();
   if (pin.empty()) {
     pin_state_.error = Tr("pin.error.required").c_str();
     ApplyPinGate();
     DirtyPinFields();
+    return;
+  }
+  if (pin_state_.restore_pin_mode) {
+    if (!gate_complete_.complete_restore_backup) {
+      return;
+    }
+    pin_state_.error = "";
+    ApplyPinGate();
+    DirtyPinFields();
+    gate_complete_.complete_restore_backup(pin, /*set_default_pin=*/false);
+    return;
+  }
+
+  if (!gate_complete_.complete_with_pin) {
     return;
   }
   if (pin_state_.create_mode) {
@@ -328,16 +338,6 @@ void PinGateController::OnSubmit() {
       ShowLinkPaste();
       return;
     }
-    if (restore_flow_) {
-      if (!gate_complete_.complete_restore_backup) {
-        return;
-      }
-      pin_state_.error = "";
-      ApplyPinGate();
-      DirtyPinFields();
-      gate_complete_.complete_restore_backup(pin, /*set_default_pin=*/false);
-      return;
-    }
   }
 
   pin_state_.error = "";
@@ -351,7 +351,7 @@ void PinGateController::OnCancel() {
     return;
   }
   const bool cancellable = pin_state_.create_mode || pin_state_.chooser_mode || pin_state_.identity_fork_mode ||
-                           pin_state_.link_paste_mode;
+                           pin_state_.link_paste_mode || pin_state_.restore_pin_mode;
   if (!cancellable || !gate_complete_.cancel) {
     return;
   }

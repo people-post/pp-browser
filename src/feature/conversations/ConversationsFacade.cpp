@@ -82,6 +82,8 @@ Roe<void> ConversationsFacade::RestoreLocalBackup(const std::string& pin) {
                                      *hub_.PskStore(), hub_.Secrets(), hub_.Contacts(), pin, util::NowUnixMs());
 }
 
+void ConversationsFacade::WriteLocalBackupAsync() { hub_.WriteLocalBackupAsync(); }
+
 Roe<void> ConversationsFacade::DeleteLocalBackup() {
   return LocalAccountBackup::Delete(OsSecureBlobStore());
 }

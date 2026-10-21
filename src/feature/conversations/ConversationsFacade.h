@@ -65,6 +65,8 @@ public:
   /** Local account backup (uninstall-surviving store). Nickname works before any vault exists. */
   Roe<std::optional<std::string>> LocalBackupNickname();
   Roe<void> RestoreLocalBackup(const std::string& pin);
+  /** Rewrite the local account backup on a worker (e.g. after a PIN change). Best effort. */
+  void WriteLocalBackupAsync();
   Roe<void> DeleteLocalBackup();
   void SuspendMeshColdPeers();
 
