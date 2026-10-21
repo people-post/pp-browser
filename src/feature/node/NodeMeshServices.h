@@ -5,6 +5,7 @@
 #include "domain/people/IdentityStore.h"
 #include "foundation/data/Config.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 #include "common/PbrCompat.h"
@@ -36,7 +37,13 @@ void ConfigureNodeAmpDht(mesh::MeshHost& mesh, IdentityStore& identity, const Me
                          std::vector<std::string> query_peer_keys);
 
 /** Amp directory: query `query_peer_keys`; host the directory twin only as a node. */
-void ConfigureNodeAmpDirectory(mesh::MeshHost& mesh, bool node_role, std::vector<std::string> query_peer_keys);
+/**
+ * `choose_query_peers`: which of the keys a list asks (`MeshConnectivity::ChoosePeers`); none =
+ * every key.
+ */
+void ConfigureNodeAmpDirectory(
+    mesh::MeshHost& mesh, bool node_role, std::vector<std::string> query_peer_keys,
+    std::function<std::vector<std::string>(const std::vector<std::string>&)> choose_query_peers = {});
 
 /** This node's directory row: identity, capabilities, advertised (then listen, then configured) addrs. */
 mesh::MeshNodeHit BuildLocalMeshNodeHit(IdentityStore& identity, mesh::MeshHost& mesh, const MeshConfig& config);

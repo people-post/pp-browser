@@ -938,7 +938,13 @@ void ConversationsHub::ConfigureAmpDirectoryProtocol() {
     query_keys.push_back(key);
   }
 
-  ConfigureNodeAmpDirectory(*mesh_, host_directory, std::move(query_keys));
+  // A refresh asks a couple of providers that are up or answered lately — not every one, and not
+  // one the mesh found gone (pp-cpp-mesh docs/PEER_REACH.md, § 5).
+  constexpr size_t kDirectoryPeersPerList = 2;
+  ConfigureNodeAmpDirectory(*mesh_, host_directory, std::move(query_keys),
+                            [connectivity = mesh_connectivity_.get()](const std::vector<std::string>& keys) {
+                              return connectivity ? connectivity->ChoosePeers(keys, kDirectoryPeersPerList) : keys;
+                            });
 
   if (host_directory) {
     mesh_->AmpDirectory()->SetNodesProvider([this, mesh_cfg]() {

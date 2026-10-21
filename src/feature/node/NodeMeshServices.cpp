@@ -95,13 +95,16 @@ void ConfigureNodeAmpDht(mesh::MeshHost& mesh, IdentityStore& identity, const Me
   mesh.RefreshAmpDhtHosting(participate);
 }
 
-void ConfigureNodeAmpDirectory(mesh::MeshHost& mesh, bool node_role, std::vector<std::string> query_peer_keys) {
+void ConfigureNodeAmpDirectory(
+    mesh::MeshHost& mesh, bool node_role, std::vector<std::string> query_peer_keys,
+    std::function<std::vector<std::string>(const std::vector<std::string>&)> choose_query_peers) {
   if (!mesh.Amp() || !mesh.AmpDirectory()) {
     return;
   }
   mesh::AmpDirectoryProtocolConfig cfg;
   cfg.local_peer_id = mesh.Amp()->LocalPeerId();
   cfg.query_peer_keys = std::move(query_peer_keys);
+  cfg.choose_query_peers = std::move(choose_query_peers);
   mesh.ConfigureAmpDirectory(std::move(cfg));
   mesh.RefreshAmpDirectoryHosting(node_role);
 }

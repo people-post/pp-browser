@@ -1,6 +1,7 @@
 #include "feature/calls/CallMediaPlane.h"
 
 #include "foundation/data/MeshRole.h"
+#include "mesh/reach/PeerReachSelect.h"
 
 #include <functional>
 #include <memory>
@@ -76,6 +77,9 @@ CallTopologyController::MediaRelayDeps CallMediaPlane::BuildMediaRelayDeps() con
   deps.list_directory_nodes = deps_.list_directory_nodes;
   deps.list_dht_nodes = deps_.list_dht_nodes;
   deps.seed_dial_ok = deps_.seed_dial_ok;
+  deps.reach_held_down = [connectivity = connectivity_](const std::string& peer_id) {
+    return mesh::ReachHeldDown(connectivity->ReachFacts(peer_id), mesh::PeerReachRecord::NowMs());
+  };
   deps.prefer_local_as_hop =
       ResolveMeshRole(*snapshot) == MeshRole::Node && mesh_cfg.capabilities.media_relay && use_amp_relay;
   const std::vector<std::string> advertised =

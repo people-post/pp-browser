@@ -46,6 +46,11 @@ std::vector<mesh::MeshHopCandidate> CallHopRanking::Ranked() const {
   const bool include_seeds = !deps_->seed_dial_ok || deps_->seed_dial_ok();
   auto merged = BuildCircuitHopList(contacts, directory_nodes, dht_nodes, deps_->bootstrap_peers,
                                     deps_->prefer_contacts, include_seeds);
+  if (deps_->reach_held_down) {
+    for (mesh::MeshHopCandidate& hop : merged) {
+      hop.recently_failed = deps_->reach_held_down(hop.peer_id);  // ranking drops it
+    }
+  }
   auto ranked = RankMediaHopsEscalating(std::move(merged), deps_->prefer_contacts, deps_->local_listen_multiaddr);
   if (const std::string self = LocalPeerId(); !self.empty()) {
     ranked = ExcludeSelfHop(std::move(ranked), self);

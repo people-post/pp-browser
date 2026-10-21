@@ -53,6 +53,22 @@ TEST(MeshHopPolicyTest, CandidateRelayScopesLinkOnSameSubnet) {
   EXPECT_TRUE(mesh::RelayScopeMaskHas(scopes, mesh::RelayScope::Social));
 }
 
+// A hop found through the DHT is a stranger: Public, so only consumers that take Public hops get it
+// (it used to have no scope at all, and ranking dropped it everywhere).
+TEST(MeshHopPolicyTest, DhtHopsArePublic) {
+  mesh::MeshHopCandidate c;
+  c.peer_id = "dht-node";
+  c.affinity = mesh::MeshHopAffinity::DhtDiscovered;
+  c.dialable = true;
+  c.residual_capacity = 1.0;
+  EXPECT_EQ(CandidateRelayScopes(c, ""), static_cast<mesh::RelayScopeMask>(mesh::RelayScope::Public));
+  EXPECT_TRUE(RankMediaHopsEscalating({c}, true, "").empty()) << "short-term consumers take no Public hops";
+  const auto with_public = RankMediaHopsEscalating(
+      {c}, true, "", mesh::kRelayScopeShortTerm | static_cast<mesh::RelayScopeMask>(mesh::RelayScope::Public));
+  ASSERT_EQ(with_public.size(), 1u);
+  EXPECT_EQ(with_public.front().peer_id, "dht-node");
+}
+
 TEST(MeshHopPolicyTest, CircuitOrdersContactsBeforeSeeds) {
   auto contacts = CollectContactHopCandidates({MakeContact("12D3KooWFriend")});
   auto seeds = CollectSeedHopCandidates(

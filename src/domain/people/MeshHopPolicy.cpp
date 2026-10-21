@@ -58,6 +58,10 @@ mesh::RelayScopeMask CandidateRelayScopes(const mesh::MeshHopCandidate& candidat
       candidate.affinity == mesh::MeshHopAffinity::DirectoryNode) {
     return static_cast<mesh::RelayScopeMask>(mesh::RelayScope::Org);
   }
+  if (candidate.affinity == mesh::MeshHopAffinity::DhtDiscovered) {
+    // Found through the DHT: a stranger — offered only to consumers that take Public hops.
+    return static_cast<mesh::RelayScopeMask>(mesh::RelayScope::Public);
+  }
   if (candidate.affinity != mesh::MeshHopAffinity::Contact) {
     return mask;
   }
