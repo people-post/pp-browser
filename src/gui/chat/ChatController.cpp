@@ -3770,7 +3770,7 @@ void ChatController::HandleAgentEvent(const AgentEvent& event) {
     break;
   case AgentEventType::AssistantReady:
     ClearStreamingRow();
-    FinishAssistantReply(event.entry_id, event.text, !StructuredTextParser::IsBlocksJsonDocument(event.text),
+    FinishAssistantReply(event.entry_id, event.text, event.from_model,
                          event.finish_reason, event.thread_id, event.response_goal, event.render_mode,
                          event.shared_ai_mode, event.sources);
     break;
