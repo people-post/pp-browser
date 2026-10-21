@@ -1,4 +1,4 @@
-#include "feature/ai/ToolPermissionPolicy.h"
+#include "domain/ai/ToolPermissionPolicy.h"
 
 namespace pbr {
 

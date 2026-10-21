@@ -10,8 +10,8 @@
 #include "foundation/data/Config.h"
 #include "foundation/data/ToolPermissions.h"
 #include "common/Error.h"
-#include "feature/ai/BriefTurnRunner.h"
-#include "feature/ai/ParkedApproval.h"
+#include "domain/ai/BriefTurnRunner.h"
+#include "domain/ai/ParkedApproval.h"
 #include "feature/ai/TurnExecutor.h"
 
 #include <functional>

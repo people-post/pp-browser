@@ -1,4 +1,4 @@
-#include "feature/ai/ToolPermissionPrompt.h"
+#include "domain/ai/ToolPermissionPrompt.h"
 
 #include "common/ValueJson.h"
 #include "foundation/i18n/LocalizationService.h"

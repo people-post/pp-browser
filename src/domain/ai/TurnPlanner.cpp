@@ -1,4 +1,4 @@
-#include "feature/ai/TurnPlanner.h"
+#include "domain/ai/TurnPlanner.h"
 
 #include "domain/ai/PromptBuilder.h"
 #include "common/PbrCompat.h"

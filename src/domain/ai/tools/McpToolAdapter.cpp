@@ -1,4 +1,4 @@
-#include "feature/ai/tools/McpToolAdapter.h"
+#include "domain/ai/tools/McpToolAdapter.h"
 
 #include "domain/ai/LlmClient.h"
 #include "domain/ai/mcp/SchemaAdapter.h"

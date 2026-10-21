@@ -127,7 +127,7 @@ crypto
 | `domain/content/` | The profile's content store ([C012](../../projects/content-cas/DECISIONS.md#c012--module-home-stay-in-messaging-until-public-cas-has-a-second-owner)): content-addressed private and public realms (`CasStore`, `ObjectIndex`, `CasTypes`), the library (`CasLibrary`), private content by hash (`PrivateContent`). Messaging never includes it: features wire attachments to it (`feature/conversations/AttachmentContent`, `ChatBlobContentSource`) |
 | `domain/net/` | HTTP client, service clients (no people/messaging policy) |
 | `domain/media/` | `CallMediaEngine` — capture/playback + HW H264 |
-| `domain/ai/` | LLM client, turn types, parsers, payload plan builder; `conversation/`, `mcp/` sublibs |
+| `domain/ai/` | LLM client, turn types, parsers, payload plan builder; turn planning and the Brief turn runner (`TurnPlanner`, `BriefTurnRunner`); tool permissions and their prompt (`ToolPermissionPolicy`, `ToolPermissionPrompt`, `ParkedApproval`); `conversation/`, `mcp/` and `tools/` (web search, MCP tool adapters, the registry built from them) sublibs |
 | `domain/ui/` | Product shell: theme, catalogs, input, context menu, `ShellLayout`, `ShellInterruption`, `ShellGestureAxis`, calendar/form helpers, `UiEditSession`, chat widget config builders |
 
 Window host / Backend / overlays: `foundation/platform/ui/` (not a domain peer).
@@ -174,7 +174,7 @@ Module map, dependency rules, and test placement: [`src/feature/README.md`](../.
 | `feature/product/` | `ProductStack` (`pp_feature_product`): owns the hub and registers calls (`CallsParticipant`) and broadcast (`BroadcastParticipant`) on it; only app/ and gui/ include it |
 | `feature/calls/` | Call session (`pp_feature_calls`); delivery via ports |
 | `feature/broadcast/` | Live broadcast (`pp_feature_broadcast`): `BroadcastHub`, viewer / broadcaster workflows; `BroadcastServices` (the announce feed, publisher, notifications and ticket server on the mesh — `AmpPeerAnnounceTransport`, `AmpBroadcastTransport`); never includes calls / conversations (sibling, [media-client-layers L001](../../projects/media-client-layers/DECISIONS.md)) |
-| `feature/ai/` | AgentSession, turn pipeline, tools, bindings |
+| `feature/ai/` | AgentSession (the agent's runner), TurnExecutor (runs a plan's tools, people included), UI ports, bindings |
 | `feature/registration/` | Registration finish / renew / nickname (`pp_feature_registration`) — **headless**, linked by pp-node |
 | `feature/node/` | Node-role mesh services (`pp_feature_node`): hosting from capabilities, DHT / directory config, self row, org-seed admission — **headless**, shared by pp-node and desktop `MeshRole::Node` |
 

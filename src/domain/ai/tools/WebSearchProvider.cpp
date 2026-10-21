@@ -1,6 +1,6 @@
-#include "feature/ai/tools/WebSearchProvider.h"
+#include "domain/ai/tools/WebSearchProvider.h"
 
-#include "feature/ai/tools/WebSearchTool.h"
+#include "domain/ai/tools/WebSearchTool.h"
 
 namespace pbr {
 

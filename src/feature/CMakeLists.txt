@@ -15,7 +15,6 @@ set(PP_FEATURE_MODULE_LIBS
   pp_feature_node
   pp_feature_call_media
   pp_feature_settings
-  pp_feature_ai_tools
   pp_feature_ai_bindings
   pp_feature_ai
   pp_feature_calls

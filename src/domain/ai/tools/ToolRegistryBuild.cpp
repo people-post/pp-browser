@@ -1,7 +1,7 @@
-#include "feature/ai/ToolRegistryBuild.h"
+#include "domain/ai/tools/ToolRegistryBuild.h"
 
-#include "feature/ai/tools/McpToolProvider.h"
-#include "feature/ai/tools/WebSearchProvider.h"
+#include "domain/ai/tools/McpToolProvider.h"
+#include "domain/ai/tools/WebSearchProvider.h"
 
 namespace pbr {
 

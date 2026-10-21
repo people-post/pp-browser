@@ -1,4 +1,4 @@
-#include "feature/ai/tools/McpToolProvider.h"
+#include "domain/ai/tools/McpToolProvider.h"
 
 #include "domain/ai/mcp/McpClient.h"
 
