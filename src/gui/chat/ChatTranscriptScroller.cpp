@@ -25,6 +25,7 @@ ChatTranscriptScroller::ChatTranscriptScroller(ui::Context*& context, View view,
 
 void ChatTranscriptScroller::Reset() {
   pinned_to_bottom_ = true;
+  last_client_height_ = 0.f;
   pending_scroll_to_bottom_ = false;
   pending_scroll_settle_frames_ = 0;
   pending_scroll_attempts_ = 0;
@@ -84,6 +85,17 @@ void ChatTranscriptScroller::RequestScrollToLatest() {
   SetShowJumpToLatest(false);
 }
 
+float ChatTranscriptScroller::ScrollTopAfterViewportResize(const float top, const float old_client_height,
+                                                            const float new_client_height,
+                                                            const float scroll_height, const bool pinned_to_bottom) {
+  const float max_top = std::max(0.f, scroll_height - new_client_height);
+  if (pinned_to_bottom) {
+    return max_top;
+  }
+  // Keep the bottom edge of what was in view where it was: the content moves with the composer.
+  return std::clamp(top + (old_client_height - new_client_height), 0.f, max_top);
+}
+
 void ChatTranscriptScroller::ScrollMessagesToBottom() {
   ui::Element* el = FindMessagesScrollElement();
   if (!el) {
@@ -115,7 +127,17 @@ void ChatTranscriptScroller::ApplyPolicy() {
   }
 
   const float scroll_height = el->GetScrollHeight();
-  const float max_top = std::max(0.f, scroll_height - el->GetClientHeight());
+  // The viewport changed height (the on-screen keyboard came up or went away): the scroll offset alone
+  // would leave the newest messages under the keyboard, so re-anchor before judging near-bottom.
+  const float client_height = el->GetClientHeight();
+  if (last_client_height_ > 0.f && std::abs(client_height - last_client_height_) > 0.5f) {
+    suppress_scroll_handler_ = true;
+    el->SetScrollTop(ScrollTopAfterViewportResize(el->GetScrollTop(), last_client_height_, client_height,
+                                                  scroll_height, pinned_to_bottom_));
+    suppress_scroll_handler_ = false;
+  }
+  last_client_height_ = client_height;
+  const float max_top = std::max(0.f, scroll_height - client_height);
   const float top = el->GetScrollTop();
   constexpr float kNearBottomPx = 64.f;
   const bool near_bottom = max_top <= 0.5f || (max_top - top) <= kNearBottomPx;
