@@ -4,6 +4,7 @@
 #include "foundation/data/MeshRole.h"
 #include "foundation/runtime/AppRuntime.h"
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 #include "common/PbrCompat.h"
@@ -63,8 +64,15 @@ mesh::MeshHopPolicy ComputeMeshHopPolicy(const MeshConnectivityWiringInputs& in)
       BuildCircuitHopList(contacts, directory_nodes, dht_nodes, ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes),
                           mesh_cfg.prefer_contacts_for_routing, include_seeds);
   // Trusted relays only: the configured org seeds, not the directory's volunteers merged into them.
+  // Seeds known unreachable are no park target either: Accept would wait out the park for nothing.
   policy.bootstrap_seeds = CollectSeedHopCandidates(
       mesh_cfg.trusted_relays_only ? mesh_cfg.bootstrap_peers : ResolveEffectiveBootstrapPeers(mesh_cfg, directory_nodes));
+  if (!include_seeds) {
+    const std::vector<std::string> org = PeerIds(CollectSeedHopCandidates(mesh_cfg.bootstrap_peers));
+    std::erase_if(policy.bootstrap_seeds, [&org](const mesh::MeshHopCandidate& hop) {
+      return std::find(org.begin(), org.end(), hop.peer_id) != org.end();
+    });
+  }
   policy.punch_introducers.contact_peer_ids = PeerIds(CollectContactHopCandidates(contacts));
   policy.punch_introducers.seed_peer_ids = PeerIds(CollectSeedHopCandidates(mesh_cfg.bootstrap_peers));
   if (mesh_cfg.trusted_relays_only) {  // privacy T4; an introducer sees both ends' addresses

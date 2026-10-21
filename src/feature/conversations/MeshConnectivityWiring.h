@@ -26,7 +26,7 @@ struct MeshConnectivityWiringInputs {
   std::function<std::shared_ptr<const MeshConfig>()> mesh_config;
   std::function<std::vector<mesh::MeshDirectoryNode>()> list_directory_nodes;
   std::function<std::vector<mesh::MeshDirectoryNode>()> list_dht_nodes;
-  /** Reachability seed probe — when false, the rendezvous surface skips org seeds. */
+  /** False once a seed dial failed: the rendezvous surface and the park skip org seeds. */
   std::function<bool()> seed_dial_ok;
   std::function<void(const std::string& peer_id)> note_lan_peer_id;
   std::function<void(const std::string& key, const std::string& multiaddr)> register_direct_endpoint;

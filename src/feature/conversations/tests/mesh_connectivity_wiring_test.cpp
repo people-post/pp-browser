@@ -102,6 +102,28 @@ TEST_F(MeshConnectivityWiringTest, TrustedRelaysOnlyNarrowsEveryRelayRole) {
   EXPECT_EQ(trusted.punch_introducers.contact_peer_ids, std::vector<std::string>{kFriend});
 }
 
+// Seeds a probe found unreachable are neither on the rendezvous surface nor a park target: Accept
+// waits for the park, and waiting on seeds that cannot connect held every answer for 12 s.
+TEST_F(MeshConnectivityWiringTest, UnreachableSeedsAreNoParkTarget) {
+  MeshConfig normalized;
+  NormalizeMeshConfig(normalized);
+  const std::vector<std::string> seeds = Ids(CollectSeedHopCandidates(normalized.bootstrap_peers));
+  ASSERT_FALSE(seeds.empty());
+  const auto reachable = Ids(ComputeMeshHopPolicy(Inputs(false)).bootstrap_seeds);
+  for (const std::string& seed : seeds) {
+    EXPECT_NE(std::find(reachable.begin(), reachable.end(), seed), reachable.end()) << "reachable (or never probed)";
+  }
+
+  MeshConnectivityWiringInputs in = Inputs(false);
+  in.seed_dial_ok = []() { return false; };
+  const mesh::MeshHopPolicy unreachable = ComputeMeshHopPolicy(in);
+  EXPECT_EQ(Ids(unreachable.bootstrap_seeds), std::vector<std::string>{kVolunteer}) << "the directory's still count";
+  const auto surface = Ids(unreachable.rendezvous_candidates);
+  for (const std::string& seed : seeds) {
+    EXPECT_EQ(std::find(surface.begin(), surface.end(), seed), surface.end()) << seed;
+  }
+}
+
 // THREADING.md § Mesh threads, rule 1: the app pushes the policy; the mesh never computes it. Start
 // pushes on the caller (the policy is in before connectivity wires), changes push from a worker, and
 // nothing is pushed between Stop and the next Start (the inputs read a mesh that may be going).

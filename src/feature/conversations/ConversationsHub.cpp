@@ -148,7 +148,10 @@ MeshConnectivityWiringInputs ConversationsHub::MeshInputs() {
     if (!mesh_) {
       return true;
     }
-    return mesh_->Reachability().Snapshot().signals.seed_dial_ok;
+    // Only a seed dial that failed rules the seeds out. A device that never probed (client role —
+    // every phone — or a node before its first probe) has not learned they are unreachable.
+    const mesh::ReachabilitySignals signals = mesh_->Reachability().Snapshot().signals;
+    return signals.seed_dial_ok || signals.seed_dial_error.empty();
   };
   reach.note_lan_peer_id = [this](const std::string& peer_id) { NoteLanMdnsPeerId(peer_id); };
   reach.register_direct_endpoint = [this](const std::string& identity, const std::string& multiaddr) {
