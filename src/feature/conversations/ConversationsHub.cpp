@@ -70,6 +70,7 @@
 #include "mesh/discovery/NameDirectory.h"
 #include "mesh/host/MeshPorts.h"
 #include "mesh/reachability/NatTraversal.h"
+#include "mesh/reach/PeerReachSelect.h"
 #include "mesh/reachability/Reachability.h"
 #include "common/StartupTiming.h"
 #include "common/Utilities.h"
@@ -886,8 +887,14 @@ void ConversationsHub::ConfigureAmpDhtProtocol() {
   }
   MeshConfig mesh_cfg = config_.mesh;
   NormalizeMeshConfig(mesh_cfg);
+  // The DHT's liveness is the reach record's (pp-cpp-mesh docs/DHT.md D5). mesh_ (and its DHT)
+  // goes before mesh_connectivity_.
   ConfigureNodeAmpDht(*mesh_, *identity_, config_.mesh, ResolveMeshRole(config_.mesh) == MeshRole::Node,
-                      CollectNodeQueryPeerKeys(mesh_cfg.bootstrap_peers, directory_nodes));
+                      CollectNodeQueryPeerKeys(mesh_cfg.bootstrap_peers, directory_nodes),
+                      [connectivity = mesh_connectivity_.get()](const std::string& peer_id) {
+                        return connectivity &&
+                               mesh::ReachHeldDown(connectivity->ReachFacts(peer_id), mesh::PeerReachRecord::NowMs());
+                      });
 }
 
 namespace {

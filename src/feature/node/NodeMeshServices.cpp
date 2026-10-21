@@ -68,7 +68,8 @@ std::vector<std::string> CollectNodeQueryPeerKeys(const std::vector<std::string>
 }
 
 void ConfigureNodeAmpDht(mesh::MeshHost& mesh, IdentityStore& identity, const MeshConfig& config, bool node_role,
-                         std::vector<std::string> query_peer_keys) {
+                         std::vector<std::string> query_peer_keys,
+                         std::function<bool(const std::string& peer_id)> reach_held_down) {
   if (!mesh.Amp() || !mesh.AmpDht()) {
     return;
   }
@@ -91,6 +92,7 @@ void ConfigureNodeAmpDht(mesh::MeshHost& mesh, IdentityStore& identity, const Me
   cfg.participate = participate;
   cfg.publish_circuit_relay = participate && config.capabilities.circuit_relay;
   cfg.publish_media_relay = participate && config.capabilities.media_relay;
+  cfg.reach_held_down = std::move(reach_held_down);
   mesh.ConfigureAmpDht(std::move(cfg));
   mesh.RefreshAmpDhtHosting(participate);
 }
