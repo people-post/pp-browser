@@ -4,6 +4,7 @@
 #include "common/MeshAlias.h"
 
 #include <deque>
+#include <tuple>
 #include <string>
 
 namespace pbr {
@@ -289,6 +290,93 @@ TEST_F(CallDualStackComposeTest, HangingUpBeforeAnAnswerIsSummarizedAsCancelled)
   ASSERT_TRUE(summary);
   EXPECT_EQ(summary->outcome, CallOutcome::Cancelled) << "rang, nobody answered: the callee missed it";
   EXPECT_FALSE(summary->duration_ms.has_value()) << "ringing is not talk time";
+}
+
+/** A direct thread on `side` for the other side's account. */
+Thread DmOn(StackSide& side, const std::string& id) {
+  Thread thread;
+  thread.id = id;
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Peer";
+  thread.updated_at = util::NowUnixMs();
+  EXPECT_TRUE(side.store->UpsertThread(thread));
+  return thread;
+}
+
+TEST_F(CallDualStackComposeTest, ARedialStormEndsInOneCallThatConnects) {
+  // Couldn't get through, so: call, hang up, call again — five times in a few seconds.
+  const Thread thread = DmOn(offer_, "thread-dual-redial");
+  std::string last_call;
+  for (int attempt = 0; attempt < 5; ++attempt) {
+    auto started = StartCallNow(*offer_.ui, thread.id, false, {answer_.local_identity});
+    ASSERT_TRUE(started) << "attempt " << attempt << ": " << started.error().message;
+    last_call = started->call_id;
+    auto key = offer_.stack->MediaKeys()->LoadEpochKey(last_call, 1);
+    ASSERT_TRUE(key && key->has_value());
+    ASSERT_TRUE(answer_.stack->MediaKeys()->PutEpochKey(last_call, 1, **key));
+    PumpWire(2);
+    if (attempt < 4) {
+      offer_.ui->Apply(CallLifecycleEvent::LeaveClicked, last_call);
+      PumpWire(2);
+    }
+  }
+  PumpWire();
+  auto pending = answer_.ui->TopPendingInvite();
+  ASSERT_TRUE(pending && pending->has_value()) << "the last call rings";
+  EXPECT_EQ((*pending)->call_id, last_call) << "not a stale one from the storm";
+  answer_.ui->Apply(CallLifecycleEvent::InviteSeen, last_call);
+  answer_.ui->Apply(CallLifecycleEvent::AcceptClicked, last_call);
+  DrainUntil([&]() {
+    PumpWire();
+    return answer_.ui->Phase() == CallPhase::InCall && offer_.ui->Phase() == CallPhase::InCall;
+  });
+  EXPECT_EQ(answer_.ui->Phase(), CallPhase::InCall);
+  EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall);
+  FinishAnswerLeaveExpectBothIdle(last_call);
+  pending = answer_.ui->TopPendingInvite();
+  EXPECT_TRUE(!pending || !pending->has_value()) << "nothing left ringing after the storm";
+}
+
+TEST_F(CallDualStackComposeTest, CallingEachOtherAtOnceStillConnects) {
+  const Thread offer_thread = DmOn(offer_, "thread-dual-glare-a");
+  const Thread answer_thread = DmOn(answer_, "thread-dual-glare-b");
+  auto from_offer = StartCallNow(*offer_.ui, offer_thread.id, false, {answer_.local_identity});
+  auto from_answer = StartCallNow(*answer_.ui, answer_thread.id, false, {offer_.local_identity});
+  ASSERT_TRUE(from_offer) << from_offer.error().message;
+  ASSERT_TRUE(from_answer) << from_answer.error().message;
+  for (const auto& [call, from, to] : {std::tuple{from_offer->call_id, &offer_, &answer_},
+                                       std::tuple{from_answer->call_id, &answer_, &offer_}}) {
+    auto key = from->stack->MediaKeys()->LoadEpochKey(call, 1);
+    ASSERT_TRUE(key && key->has_value());
+    ASSERT_TRUE(to->stack->MediaKeys()->PutEpochKey(call, 1, **key));
+  }
+  PumpWire();
+  // Whatever the two calls became, one press of Accept on a ringing side must connect them.
+  StackSide* ringing = nullptr;
+  std::string ringing_call;
+  for (StackSide* side : {&offer_, &answer_}) {
+    if (auto pending = side->ui->TopPendingInvite(); pending && pending->has_value()) {
+      ringing = side;
+      ringing_call = (*pending)->call_id;
+      break;
+    }
+  }
+  if (ringing == nullptr) {
+    // Merged on their own: both already in one call.
+    DrainUntil([&]() {
+      PumpWire();
+      return answer_.ui->Phase() == CallPhase::InCall && offer_.ui->Phase() == CallPhase::InCall;
+    });
+  } else {
+    ringing->ui->Apply(CallLifecycleEvent::InviteSeen, ringing_call);
+    ringing->ui->Apply(CallLifecycleEvent::AcceptClicked, ringing_call);
+    DrainUntil([&]() {
+      PumpWire();
+      return answer_.ui->Phase() == CallPhase::InCall && offer_.ui->Phase() == CallPhase::InCall;
+    });
+  }
+  EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall) << "offer side";
+  EXPECT_EQ(answer_.ui->Phase(), CallPhase::InCall) << "answer side";
 }
 
 // H012 / H011 over call-control: a signaled punch runs offer → answer → both bursts, and our R1
