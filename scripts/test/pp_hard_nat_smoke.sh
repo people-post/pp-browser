@@ -239,8 +239,9 @@ assert_flip() {
     pp_hard_die "${label}: the offerer's NetworkMonitor never reported the address change"
   echo "ok  flip: NetworkMonitor saw the move ($(grep -oE 'network change gen=[0-9]+ online=[^ ]+' <<<"${after}" | head -1))"
   # The dead direct link goes either way: the network-change probe (2 s), or at once when a send in
-  # the address gap fails at the OS (unreachable).
-  grep -qE 'MeshLink\] link dropped .*path=punched.*reason=(network-changed|transport-failed)' <<<"${after}" ||
+  # the address gap fails at the OS (unreachable). It is the punched link, or — when the dual-dial
+  # election at call start kept the peer's inbound one — a `direct` one.
+  grep -qE 'MeshLink\] link dropped .*path=(punched|direct).*reason=(network-changed|transport-failed)' <<<"${after}" ||
     pp_hard_die "${label}: the dead direct link was not dropped (network-change probe / unreachable send)"
   echo "ok  flip: dead link dropped ($(grep -oE 'path=punched.*reason=(network-changed|transport-failed)' <<<"${after}" | head -1 | sed 's/.*reason=//'))"
   grep -qx 'not-recovered' "${marks}" && pp_hard_die "${label}: the call never moved to a new path after the flip"
