@@ -5,6 +5,7 @@ pp_browser_add_domain_library(pp_domain_calls
     CallControlCodec.cpp
     CallControlFamily.cpp
     CallHopAttachLogic.cpp
+    CallHopJoinLogic.cpp
     CallHopPlan.cpp
     CallLifecycleTypes.cpp
     CallMediaKeyExchange.cpp

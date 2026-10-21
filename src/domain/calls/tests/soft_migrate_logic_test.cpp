@@ -126,3 +126,76 @@ TEST(SoftMigrateLogicTest, FreshGroupCallInitiatorPicks) {
 
 } // namespace
 } // namespace pbr
+
+namespace pbr {
+namespace {
+
+TEST(SoftMigrateArmingTest, A1To1StaysDirectUnlessRecoveringOrNamed) {
+  SoftMigrateArmingInput in;
+  EXPECT_EQ(DecideSoftMigrateArming(in), SoftMigrateArming::Proceed) << "no arming bound";
+  in.arming_bound = true;
+  in.n_joined = 2;
+  in.soft_migrate_may_arm = true;
+  EXPECT_EQ(DecideSoftMigrateArming(in), SoftMigrateArming::StayDirect) << "a relay-cap nudge on a 1:1";
+  in.trigger = SoftMigrateTrigger::IceRecover;
+  EXPECT_EQ(DecideSoftMigrateArming(in), SoftMigrateArming::ArmAndProceed);
+  in.trigger = SoftMigrateTrigger::JoinedCountObserved;
+  in.prefer_named = true;
+  EXPECT_EQ(DecideSoftMigrateArming(in), SoftMigrateArming::ArmAndProceed);
+  in.prefer_named = false;
+  in.n_joined = 3;
+  EXPECT_EQ(DecideSoftMigrateArming(in), SoftMigrateArming::ArmAndProceed);
+
+  in.soft_migrate_may_arm = false;
+  EXPECT_EQ(DecideSoftMigrateArming(in), SoftMigrateArming::NotArmed);
+  in.migrate_ops_allowed = true;
+  EXPECT_EQ(DecideSoftMigrateArming(in), SoftMigrateArming::Proceed) << "already migrating";
+}
+
+TEST(SoftMigrateHostingTest, WhoHostsAdjustsWhoPicks) {
+  HopHostingFacts node;
+  node.hosts_hops = true;
+  node.prefer_local_allowed = true;
+  EXPECT_EQ(AdjustForHopHosting(SoftMigrateAction::WaitForAttach, node), SoftMigrateAction::PickHop);
+  node.prefer_local_allowed = false;
+  EXPECT_EQ(AdjustForHopHosting(SoftMigrateAction::WaitForAttach, node), SoftMigrateAction::WaitForAttach);
+
+  HopHostingFacts phone;
+  EXPECT_EQ(AdjustForHopHosting(SoftMigrateAction::PickHop, phone), SoftMigrateAction::PickHop);
+  phone.durable_hop_known = true;
+  EXPECT_EQ(AdjustForHopHosting(SoftMigrateAction::PickHop, phone), SoftMigrateAction::WaitForAttach);
+  EXPECT_EQ(AdjustForHopHosting(SoftMigrateAction::NoOp, phone), SoftMigrateAction::NoOp);
+}
+
+TEST(SoftMigrateRepickTest, ARepickOnAHopNeverDetachesForTheSameHop) {
+  RepickOnHopInput in;
+  in.current_hop = "hop:a";
+  EXPECT_EQ(DecideRepickOnHop(in), RepickOnHopAction::KeepCurrentHop);
+  in.prefer_hop = "hop:a";
+  EXPECT_EQ(DecideRepickOnHop(in), RepickOnHopAction::StayOnNamedHop);
+
+  in.prefer_hop = "hop:b";
+  EXPECT_EQ(DecideRepickOnHop(in), RepickOnHopAction::KeepNotDialable);
+  in.prefer_dialable = true;
+  EXPECT_EQ(DecideRepickOnHop(in), RepickOnHopAction::Detach);
+
+  in.local_peer_id = "hop:self";
+  in.local_hop_attached = true;
+  EXPECT_EQ(DecideRepickOnHop(in), RepickOnHopAction::Detach) << "leave PreferLocal for a different shared hop";
+  in.prefer_hop = "hop:self";
+  in.current_hop.clear();
+  EXPECT_EQ(DecideRepickOnHop(in), RepickOnHopAction::KeepPreferLocal);
+  in.prefer_hop.clear();
+  EXPECT_EQ(DecideRepickOnHop(in), RepickOnHopAction::KeepPreferLocal) << "hosting here, nothing named";
+}
+
+TEST(SoftMigrateRepickTest, WhatAFailedPickTellsTheUser) {
+  EXPECT_EQ(ClassifyHopPickFailures({}), HopPickFailure::NoneTried);
+  EXPECT_EQ(ClassifyHopPickFailures({"quote: payment_unavailable", "payment_unavailable"}), HopPickFailure::AllPayment);
+  EXPECT_EQ(ClassifyHopPickFailures({"hop not dialable (hop=a)", "hop not dialable (hop=b)"}),
+            HopPickFailure::AllUndialable);
+  EXPECT_EQ(ClassifyHopPickFailures({"hop not dialable (hop=a)", "payment_unavailable"}), HopPickFailure::Other);
+}
+
+} // namespace
+} // namespace pbr

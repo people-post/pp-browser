@@ -1,6 +1,9 @@
 #include "domain/calls/SoftMigrateLogic.h"
 
+#include "domain/calls/CallMediaPlannerSelectLogic.h"
 #include "domain/calls/CallSessionLogic.h"
+
+#include <algorithm>
 
 namespace pbr {
 
@@ -59,6 +62,58 @@ SoftMigrateAction DecideSoftMigrate(const SoftMigrateDecisionInput& in) {
   }
   }
   return SoftMigrateAction::NoOp;
+}
+
+SoftMigrateArming DecideSoftMigrateArming(const SoftMigrateArmingInput& in) {
+  if (!in.arming_bound) {
+    return SoftMigrateArming::Proceed;
+  }
+  const bool group = ShouldArmHopPlanner(in.n_joined);
+  const bool recover_or_named = in.trigger == SoftMigrateTrigger::IceRecover || in.prefer_named;
+  if (in.soft_migrate_may_arm) {
+    return group || recover_or_named ? SoftMigrateArming::ArmAndProceed : SoftMigrateArming::StayDirect;
+  }
+  return in.migrate_ops_allowed ? SoftMigrateArming::Proceed : SoftMigrateArming::NotArmed;
+}
+
+SoftMigrateAction AdjustForHopHosting(const SoftMigrateAction action, const HopHostingFacts& facts) {
+  if (action == SoftMigrateAction::WaitForAttach && facts.prefer_local_allowed) {
+    return SoftMigrateAction::PickHop;  // V035: a PreferLocal Node hosts the hop on a confirmed LAN
+  }
+  if (action == SoftMigrateAction::PickHop && !facts.hosts_hops && facts.durable_hop_known) {
+    return SoftMigrateAction::WaitForAttach;
+  }
+  return action;
+}
+
+RepickOnHopAction DecideRepickOnHop(const RepickOnHopInput& in) {
+  if (!in.current_hop.empty() && (in.prefer_hop.empty() || in.prefer_hop == in.current_hop)) {
+    return in.prefer_hop == in.current_hop ? RepickOnHopAction::StayOnNamedHop : RepickOnHopAction::KeepCurrentHop;
+  }
+  const bool named = !in.prefer_hop.empty() && !in.local_peer_id.empty();
+  const bool named_self = named && in.prefer_hop == in.local_peer_id;
+  const bool named_other = named && in.prefer_hop != in.local_peer_id;
+  if ((named_self || in.local_hop_attached) && !named_other) {
+    return RepickOnHopAction::KeepPreferLocal;
+  }
+  if (in.prefer_hop.empty() || !in.prefer_dialable) {
+    return RepickOnHopAction::KeepNotDialable;
+  }
+  return RepickOnHopAction::Detach;
+}
+
+HopPickFailure ClassifyHopPickFailures(const std::vector<std::string>& failures) {
+  if (failures.empty()) {
+    return HopPickFailure::NoneTried;
+  }
+  auto all = [&](const char* needle) {
+    return std::all_of(failures.begin(), failures.end(),
+                       [&](const std::string& f) { return f.find(needle) != std::string::npos; });
+  };
+  if (all("payment_unavailable")) {
+    return HopPickFailure::AllPayment;
+  }
+  return all("hop not dialable") ? HopPickFailure::AllUndialable : HopPickFailure::Other;
 }
 
 } // namespace pbr

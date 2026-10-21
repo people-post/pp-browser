@@ -42,6 +42,17 @@ std::vector<mesh::MeshHopCandidate> SelectCallMediaHop(std::vector<mesh::MeshHop
                                                  const std::string& local_advertise_ma,
                                                  bool lan_reachability_confirmed = false);
 
+/** `hop_peer_id` moved to the front of `ranked` when it is listed (order otherwise kept). */
+std::vector<mesh::MeshHopCandidate> PreferNamedHopFirst(std::vector<mesh::MeshHopCandidate> ranked,
+                                                        const std::string& hop_peer_id);
+
+/**
+ * V050: the hop planned from the invite list at StartCall goes first. Invitees were told about it,
+ * so it stays a candidate (from its stored multiaddr) even when the listing no longer has it.
+ */
+std::vector<mesh::MeshHopCandidate> PlannedHopFirst(std::vector<mesh::MeshHopCandidate> ranked,
+                                                    const CallPlannedHop& planned);
+
 /**
  * PreferLocal eligibility (V035).
  * - Link + private advertise → only when lan_reachability_confirmed
