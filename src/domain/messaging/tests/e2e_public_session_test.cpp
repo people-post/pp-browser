@@ -11,9 +11,8 @@
 #include "domain/messaging/PeerSigningKeyStore.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/messaging/SqliteThreadStore.h"
-#include "domain/people/IdentityStore.h"
 #include "domain/messaging/RelayReceivePipeline.h"
-#include "feature/conversations/LocalKeysFromIdentity.h"
+#include "domain/messaging/tests/TestAccount.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/directory/DirectoryJson.h"
@@ -41,12 +40,8 @@ struct Side {
   explicit Side(const std::string& tag, uint8_t seed) : tag(tag), seed(seed) {
     root = std::filesystem::temp_directory_path() / ("pp_session_" + tag + "_" + util::GenerateUuid());
     std::filesystem::create_directories(root);
-    identity = std::make_unique<IdentityStore>((root / "identity").string(), tag);
-    std::filesystem::create_directories(root / "identity");
-    if (!identity->SetDek(TestDek(seed)) || !identity->LoadOrCreate()) {
-      throw std::runtime_error("identity");
-    }
-    account = identity->Get()->account_id;
+    keys = test::TestAccount::Make();
+    account = keys.account_id;
     OpenProfile("profile-1");
   }
 
@@ -56,7 +51,6 @@ struct Side {
     psk.reset();
     roster.reset();
     store.reset();
-    identity.reset();
     std::filesystem::remove_all(root);
   }
 
@@ -78,7 +72,7 @@ struct Side {
       throw std::runtime_error("psk");
     }
     seen = std::make_unique<ControlLaneSeenStore>(store->ProfileDbPath());
-    pipeline = std::make_unique<RelayReceivePipeline>(*store, resolver, *psk, LocalKeysFromIdentity(*identity), *roster);
+    pipeline = std::make_unique<RelayReceivePipeline>(*store, resolver, *psk, keys.Keys(), *roster);
     pipeline->SetSystemControls(&controls);
     pipeline->SetControlLaneSeen(seen.get());
     SystemControlFamily family;
@@ -95,10 +89,10 @@ struct Side {
   /** Learn `peer`'s published keys (as the directory hands them out). */
   void Know(const Side& peer) {
     PeerSigningKeyRecord record;
-    record.signing_public_key_b64 = peer.identity->Get()->account_signing_public_key_b64;
+    record.signing_public_key_b64 = peer.keys.SigningPublicB64();
     record.source = "test";
     signing.Put(ContactIdKindToString(mesh::ContactIdKind::Account), peer.account, record);
-    peer_kem[peer.account] = *peer.identity->GetHybridKemPublicKeyB64();
+    peer_kem[peer.account] = peer.keys.KemPublicB64();
   }
 
   /** A lane signal to `peer`, as SendControl builds it (opening the session when there is none). */
@@ -129,7 +123,7 @@ struct Side {
     params.key_init_b64 = session->key_init_b64;
     params.order_key = 1;
     auto envelope = BuildControlLaneEnvelope(params, control, [this](const std::vector<uint8_t>& bytes) {
-      return identity->SignBytes(bytes);
+      return keys.Sign(bytes);
     });
     EXPECT_TRUE(envelope) << envelope.error().message;
     return *envelope;
@@ -145,7 +139,7 @@ struct Side {
   std::string tag;
   uint8_t seed;
   std::filesystem::path root;
-  std::unique_ptr<IdentityStore> identity;
+  test::TestAccount keys;
   std::string account;
   PeerSigningKeyStore signing;
   PeerSigningKeyResolver resolver{signing};

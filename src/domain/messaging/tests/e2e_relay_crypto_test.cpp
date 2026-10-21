@@ -6,10 +6,9 @@
 #include "domain/messaging/PeerSigningKeyStore.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "foundation/crypto/MlDsa.h"
-#include "domain/people/IdentityStore.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/RelayReceivePipeline.h"
-#include "feature/conversations/LocalKeysFromIdentity.h"
+#include "domain/messaging/tests/TestAccount.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
 #include <filesystem>
@@ -103,10 +102,8 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
   SqlitePskSessionStore psk_store(store.ProfileDbPath(), "test");
   ASSERT_TRUE(static_cast<bool>(store.SetDek(TestDek())));
   ASSERT_TRUE(static_cast<bool>(psk_store.SetDek(TestDek())));
-  IdentityStore identity(data_dir.string(), "test");
-  ASSERT_TRUE(static_cast<bool>(identity.SetDek(TestDek())));
-  ASSERT_TRUE(static_cast<bool>(identity.LoadOrCreate()));
-  const std::string local_account_id = identity.Get()->account_id;
+  const test::TestAccount local = test::TestAccount::Make();
+  const std::string local_account_id = local.account_id;
   PeerSigningKeyStore key_store;
 
   auto peer_keys = MlDsa::GenerateKeyPair();
@@ -126,7 +123,7 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
 
   PeerSigningKeyResolver key_resolver(key_store);
   GroupRosterStore roster_store(store.ProfileDbPath());
-  RelayReceivePipeline pipeline(store, key_resolver, psk_store, LocalKeysFromIdentity(identity), roster_store);
+  RelayReceivePipeline pipeline(store, key_resolver, psk_store, local.Keys(), roster_store);
 
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;

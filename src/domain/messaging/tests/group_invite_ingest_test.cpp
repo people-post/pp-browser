@@ -10,14 +10,11 @@
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/PeerSigningKeyStore.h"
 #include "domain/messaging/SqliteThreadStore.h"
-#include "domain/people/ContactTypes.h"
-#include "domain/people/ContactsStore.h"
+#include "common/directory/IContactTrustAccess.h"
 #include "foundation/crypto/MlDsa.h"
-#include "domain/people/IdentityStore.h"
 #include "domain/messaging/GroupInviteGate.h"
-#include "feature/conversations/GroupInviteStanding.h"
 #include "domain/messaging/RelayReceivePipeline.h"
-#include "feature/conversations/LocalKeysFromIdentity.h"
+#include "domain/messaging/tests/TestAccount.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
 #include "common/Utilities.h"
@@ -26,8 +23,8 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <map>
+#include <set>
 #include "common/PbrCompat.h"
-#include "common/MeshAlias.h"
 
 namespace {
 
@@ -47,6 +44,29 @@ ByteVector TestDek() {
   return dek;
 }
 
+/** The device's contacts as messaging asks about them (people's): who is blocked, who is a contact. */
+struct FakeContacts : IContactTrustAccess {
+  std::set<std::string> known;
+  std::set<std::string> blocked;
+
+  Roe<bool> IsAccountBlocked(const std::string& account_id) const override { return blocked.count(account_id) > 0; }
+  Roe<void> BlockAccountIfPresent(const std::string& account_id) override {
+    if (known.count(account_id) > 0) {
+      blocked.insert(account_id);
+    }
+    return {};
+  }
+  GroupInviteGate::StandingFn Standing() const {
+    return [this](const std::string& identity) {
+      if (blocked.count(identity) > 0) {
+        return GroupInviteGate::InviterStanding::Blocked;
+      }
+      return known.count(identity) > 0 ? GroupInviteGate::InviterStanding::Contact
+                                       : GroupInviteGate::InviterStanding::Unknown;
+    };
+  }
+};
+
 // Temp-dir cleanup (Windows CI): do not call remove_all while SqliteThreadStore /
 // GroupRosterStore / SqlitePskSessionStore still hold open DB handles. Member
 // destructors close SQLite first; a harness destructor that remove_all's first
@@ -57,25 +77,18 @@ struct PartyHarness {
                         const ThreadChannel channel = ThreadChannel::E2e)
       : data_dir(std::filesystem::temp_directory_path() /
                  ("pp_invite_ingest_" + suffix + "_" + util::GenerateUuid())),
-        store(data_dir.string()), identity(data_dir.string(), "test"), roster(store.ProfileDbPath()),
-        contacts(data_dir.string()), psk_store(store.ProfileDbPath(), "test"), key_resolver(key_store),
-        gate(InviterStandingFromContacts(contacts), roster), pipeline(store, key_resolver, psk_store, LocalKeysFromIdentity(identity), roster, &gate),
+        store(data_dir.string()), keys(test::TestAccount::Make()), roster(store.ProfileDbPath()),
+        psk_store(store.ProfileDbPath(), "test"), key_resolver(key_store), gate(contacts.Standing(), roster),
+        pipeline(store, key_resolver, psk_store,
+                 LocalKeys{[local_account]() -> Roe<std::string> { return local_account; },
+                           [kem = keys.kem_private]() -> Roe<ByteVector> { return kem; }},
+                 roster, &gate),
         local_account(local_account), peer_account(peer_account),
         local_relay(RelayForAccount(local_account)), peer_relay(RelayForAccount(peer_account)), channel(channel) {
     std::filesystem::remove_all(data_dir);
     std::filesystem::create_directories(data_dir);
-    if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
+    if (!psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
-    }
-    auto loaded = identity.LoadOrCreate();
-    if (!loaded) {
-      throw std::runtime_error("Failed to load identity");
-    }
-    LocalIdentity id = *loaded;
-    id.account_id = local_account;
-    id.relay_user_id = local_relay;
-    if (!identity.Update(id)) {
-      throw std::runtime_error("Failed to update identity");
     }
 
     auto generated = MlDsa::GenerateKeyPair();
@@ -88,16 +101,7 @@ struct PartyHarness {
     record.source = "test";
     key_store.PutUncheckedForTest("account", peer_account, record);
 
-    Contact contact;
-    contact.id = "contact-peer";
-    contact.local.display_name = peer_account;
-    contact.local.trust = TrustLevel::Friendly;
-    contact.remote.ids = {{mesh::ContactIdKind::Account, peer_account, true},
-                          {mesh::ContactIdKind::RelayUser, peer_relay, false}};
-    SyncContactMirrors(contact);
-    if (!contacts.Upsert(contact)) {
-      throw std::runtime_error("Failed to upsert contact");
-    }
+    contacts.known.insert(peer_account); // a friendly contact
     gate.SetInboundPolicy(GroupInvitePolicy::ContactsOnly);
 
     DirectChatTarget target;
@@ -184,9 +188,9 @@ struct PartyHarness {
 
   std::filesystem::path data_dir;
   SqliteThreadStore store;
-  IdentityStore identity;
+  test::TestAccount keys;
+  FakeContacts contacts;
   GroupRosterStore roster;
-  ContactsStore contacts;
   SqlitePskSessionStore psk_store;
   PeerSigningKeyStore key_store;
   PeerSigningKeyResolver key_resolver;

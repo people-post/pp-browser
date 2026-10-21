@@ -4,7 +4,7 @@
 #include "domain/messaging/E2eRelayPayloadCodec.h"
 #include "domain/messaging/EnvelopeSigner.h"
 #include "domain/messaging/SqliteThreadStore.h"
-#include "domain/people/IdentityStore.h"
+#include "domain/messaging/tests/TestAccount.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/messaging/PeerRequestAuth.h"
 #include "domain/messaging/PeerSigningKeyStore.h"
@@ -29,31 +29,18 @@ class ResponderHarness {
 public:
   explicit ResponderHarness(const std::string& suffix)
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_chat_history_" + suffix + "_" + util::GenerateUuid())),
-        store(data_dir.string()), identity(data_dir.string(), "test"), psk_store(store.ProfileDbPath(), "test"),
-        requester((data_dir / "requester").string(), "requester"), keys_resolver(keys) {
+        store(data_dir.string()), local(test::TestAccount::Make()), psk_store(store.ProfileDbPath(), "test"),
+        requester(test::TestAccount::Make()), keys_resolver(keys) {
     std::filesystem::remove_all(data_dir);
-    std::filesystem::create_directories(data_dir / "requester");
-    if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek()) ||
-        !requester.SetDek(TestDek())) {
+    if (!psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("dek setup failed");
     }
-    if (!identity.LoadOrCreate() || !requester.LoadOrCreate()) {
-      throw std::runtime_error("identity load failed");
-    }
-    requester_account = requester.Get()->account_id;
+    requester_account = requester.account_id;
     PeerSigningKeyRecord record;
-    record.signing_public_key_b64 = requester.Get()->account_signing_public_key_b64;
+    record.signing_public_key_b64 = requester.SigningPublicB64();
     record.source = "test";
     keys.Put("account", requester_account, record);
-    {
-      LocalIdentity updated = *identity.Get();
-      updated.relay_user_id = "relay:local";
-      updated.registered = true;
-      if (!identity.Update(updated)) {
-        throw std::runtime_error("Failed to set test relay id");
-      }
-    }
-    local_relay_id = identity.Get()->relay_user_id;
+    local_relay_id = "relay:local";
 
     DirectChatTarget target;
     target.peer_identity_kind = "account";
@@ -108,8 +95,8 @@ public:
     request.limit = 10;
     request.order = "asc";
     auto signed_ok = PeerRequestAuth::Sign(request, requester_account,
-                                           *PeerRequestAuth::DevicePeerId(requester.Get()->public_key_b64), now_ms,
-                                           [this](const std::vector<uint8_t>& bytes) { return requester.SignBytes(bytes); });
+                                           *PeerRequestAuth::DevicePeerId(requester.DevicePublicB64()), now_ms,
+                                           [this](const std::vector<uint8_t>& bytes) { return requester.Sign(bytes); });
     if (!signed_ok) {
       throw std::runtime_error("sign request");
     }
@@ -119,16 +106,15 @@ public:
   Roe<ChatHistoryResponse> Serve(const ChatHistoryRequest& request, const std::string& remote_peer_id) {
     return ChatHistoryResponder::Serve(
         store, psk_store, request, local_relay_id,
-        identity.Get()->account_id.empty() ? local_relay_id : identity.Get()->account_id,
-        [this](const std::vector<uint8_t>& bytes) { return identity.SignBytes(bytes); }, remote_peer_id, keys_resolver,
+        local.account_id, [this](const std::vector<uint8_t>& bytes) { return local.Sign(bytes); }, remote_peer_id, keys_resolver,
         util::NowUnixMs());
   }
 
   std::filesystem::path data_dir;
   SqliteThreadStore store;
-  IdentityStore identity;
+  test::TestAccount local;
   SqlitePskSessionStore psk_store;
-  IdentityStore requester;
+  test::TestAccount requester;
   PeerSigningKeyStore keys;
   PeerSigningKeyResolver keys_resolver;
   std::string requester_account;
@@ -149,7 +135,7 @@ TEST(ChatHistoryResponderTest, ServesSignedOutboundRows) {
   ASSERT_EQ(response->messages.size(), 2u);
   EXPECT_EQ(response->messages[0].sender_seq, 1u);
   EXPECT_EQ(response->messages[1].sender_seq, 2u);
-  auto verified = EnvelopeSigner::Verify(response->messages[0], harness.identity.Get()->account_signing_public_key_b64);
+  auto verified = EnvelopeSigner::Verify(response->messages[0], harness.local.SigningPublicB64());
   ASSERT_TRUE(static_cast<bool>(verified));
   EXPECT_TRUE(*verified);
 }

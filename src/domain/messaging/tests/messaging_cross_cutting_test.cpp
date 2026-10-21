@@ -5,18 +5,16 @@
 #include "common/chat/MessagingLimits.h"
 #include "foundation/crypto/AutoKeyEstablishment.h"
 #include "foundation/crypto/MlDsa.h"
-#include "domain/people/IdentityStore.h"
 #include "domain/messaging/RelayWirePayload.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/messaging/ReactionTypes.h"
 #include "foundation/crypto/AutoKeyEstablishment.h"
 #include "foundation/crypto/MlDsa.h"
-#include "domain/people/IdentityStore.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/ControlLaneEnvelope.h"
 #include "domain/messaging/ControlLaneSeenStore.h"
 #include "domain/messaging/RelayReceivePipeline.h"
-#include "feature/conversations/LocalKeysFromIdentity.h"
+#include "domain/messaging/tests/TestAccount.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
 #include <cstdlib>
@@ -47,13 +45,13 @@ public:
   explicit   PipelineHarness(const std::string& suffix, const ThreadChannel channel)
       : data_dir(std::filesystem::temp_directory_path() / ("pp_browser_cross_cutting_" + suffix)),
         store(data_dir.string()),
-        identity(data_dir.string(), "test"),
+        local(test::TestAccount::Make()),
         roster_store(store.ProfileDbPath()),
         psk_store(store.ProfileDbPath(), "test"),
         key_resolver(key_store),
-        pipeline(store, key_resolver, psk_store, LocalKeysFromIdentity(identity), roster_store) {
+        pipeline(store, key_resolver, psk_store, local.Keys(), roster_store) {
     std::filesystem::remove_all(data_dir);
-    if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
+    if (!psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");
     }
 
@@ -79,10 +77,7 @@ public:
     }
     thread = *created;
 
-    if (!identity.LoadOrCreate()) {
-      throw std::runtime_error("Failed to load local identity");
-    }
-    local_account_id = identity.Get()->account_id;
+    local_account_id = local.account_id;
 
     if (channel == ThreadChannel::E2e) {
       PskSessionRecord psk;
@@ -94,11 +89,7 @@ public:
         throw std::runtime_error("Failed to save test PSK");
       }
     } else if (channel == ThreadChannel::E2ePublic) {
-      auto kem_private = identity.GetOrCreateHybridKemPrivateKey();
-      if (!kem_private) {
-        throw std::runtime_error("Failed to load local KEM key");
-      }
-      local_kem_private = std::move(*kem_private);
+      local_kem_private = local.kem_private;
     }
   }
 
@@ -131,7 +122,7 @@ public:
       }
       envelope.body.e2e.payload_b64 = *payload;
     } else if (channel == ThreadChannel::E2ePublic) {
-      auto local_public_b64 = identity.GetHybridKemPublicKeyB64();
+      auto local_public_b64 = Roe<std::string>(local.KemPublicB64());
       if (!local_public_b64) {
         throw std::runtime_error("Missing local KEM public key");
       }
@@ -227,7 +218,7 @@ public:
    */
   RelayEnvelope MakeControlEnvelope(const std::string& message_id, const ThreadMessage& body, int64_t sent_ms) const {
     if (!lane_session) {
-      auto local_public_b64 = identity.GetHybridKemPublicKeyB64();
+      auto local_public_b64 = Roe<std::string>(local.KemPublicB64());
       auto local_public = local_public_b64 ? Base64Decode(*local_public_b64) : Roe<ByteVector>(Error("no kem"));
       auto opened = local_public ? AutoKeyEstablishment::EncapsulateForRecipient(*local_public)
                                  : Roe<AutoKeyEncapsulation>(local_public.error());
@@ -284,7 +275,7 @@ public:
 
   std::filesystem::path data_dir;
   SqliteThreadStore store;
-  IdentityStore identity;
+  test::TestAccount local;
   GroupRosterStore roster_store;
   SqlitePskSessionStore psk_store;
   PeerSigningKeyStore key_store;
