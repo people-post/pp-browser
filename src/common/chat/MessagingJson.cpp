@@ -620,6 +620,12 @@ Object ChatHistoryRequestToJson(const ChatHistoryRequest& request) {
   if (request.max_sender_seq) {
     json.setJsonUInt("max_sender_seq", *request.max_sender_seq);
   }
+  if (!request.signature.empty()) {
+    json.set("requester_account_id", request.requester_account_id);
+    json.set("requester_peer_id", request.requester_peer_id);
+    json.set("timestamp_ms", request.timestamp_ms);
+    json.set("signature", request.signature);
+  }
   return json;
 }
 
@@ -651,6 +657,18 @@ Roe<ChatHistoryRequest> ChatHistoryRequestFromJson(const Object& json) {
   }
   if (auto order = json.getString("order")) {
     request.order = *order;
+  }
+  if (auto account = json.getString("requester_account_id")) {
+    request.requester_account_id = *account;
+  }
+  if (auto peer_id = json.getString("requester_peer_id")) {
+    request.requester_peer_id = *peer_id;
+  }
+  if (auto timestamp = json.getIf<int64_t>("timestamp_ms")) {
+    request.timestamp_ms = *timestamp;
+  }
+  if (auto signature = json.getString("signature")) {
+    request.signature = *signature;
   }
   return request;
 }
@@ -839,6 +857,12 @@ Object ChatBlobRequestToJson(const ChatBlobRequest& request) {
   json.set("thread_id", request.thread_id);
   json.set("content_hash_hex", request.content_hash_hex);
   json.set("channel", ThreadChannelToString(request.channel));
+  if (!request.signature.empty()) {
+    json.set("requester_account_id", request.requester_account_id);
+    json.set("requester_peer_id", request.requester_peer_id);
+    json.set("timestamp_ms", request.timestamp_ms);
+    json.set("signature", request.signature);
+  }
   return json;
 }
 
@@ -860,6 +884,18 @@ Roe<ChatBlobRequest> ChatBlobRequestFromJson(const Object& json) {
   request.peer_identity_kind = *peer_kind;
   request.peer_identity_value = *peer_value;
   request.content_hash_hex = *content_hash;
+  if (auto account = json.getString("requester_account_id")) {
+    request.requester_account_id = *account;
+  }
+  if (auto peer_id = json.getString("requester_peer_id")) {
+    request.requester_peer_id = *peer_id;
+  }
+  if (auto timestamp = json.getIf<int64_t>("timestamp_ms")) {
+    request.timestamp_ms = *timestamp;
+  }
+  if (auto signature = json.getString("signature")) {
+    request.signature = *signature;
+  }
   if (request.op == ChatBlobOp::FetchPublic) {
     if (auto thread_id = json.getString("thread_id")) {
       request.thread_id = *thread_id;

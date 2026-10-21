@@ -331,6 +331,12 @@ Example libp2p / client JSON:
 | `max_sender_seq` | integer | no | Inclusive upper bound — mapped to relay `max_index_key` in v1 |
 | `limit` | integer | no | Default **50**, max **100** (D029) |
 | `order` | string | no | `asc` (default) \| `desc` |
+| `requester_account_id` | string | peer-direct | The requesting **account** — the responder serves this account's thread only |
+| `requester_peer_id` | string | peer-direct | The requester's device PeerId — must be the Amp link's authenticated remote peer |
+| `timestamp_ms` | integer | peer-direct | Signing time; refused beyond ±5 min of the responder's clock |
+| `signature` | string | peer-direct | ML-DSA-65 by the requester's account key over `PeerRequestAuth::SignBytes` (domain `"pp-browser:peer-request-sign-v1"`, kind `history`, the three fields above, then every request field LenUtf8 / BE ints) |
+
+**Peer-direct requests are authenticated** (history and `/pp-browser/blob/1.0.0` alike): the Amp link proves a device, not an account, so the body's `requester_identity_*` is never trusted on its own. The responder verifies the signature with the account's known signing key, requires `requester_peer_id` to be the link's peer and the time to be recent, then serves only that account's direct thread. A blob fetch serves only attachments this device sent in that thread. Every refusal answers the same (blob: `{"ok":false,"error":"Not available"}`; history: no answer). The relay's HTTP history path is authenticated by the relay and does not use these fields.
 
 ### Stream history (HTTP relay)
 

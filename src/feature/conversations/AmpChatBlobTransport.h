@@ -5,6 +5,7 @@
 #include "common/thread/ThreadTypes.h"
 #include "mesh/host/MeshPorts.h"
 #include "domain/net/OrgBackendClients.h"
+#include "domain/messaging/PeerSigningKeyStore.h"
 #include "domain/people/IdentityStore.h"
 
 #include "common/Error.h"
@@ -30,12 +31,15 @@ public:
   using IoAfter = std::function<void(std::chrono::milliseconds, std::function<void()>)>;
 
   AmpChatBlobTransport(mesh::IChatPeerLinks& links, IoPump io_pump, IThreadStore& store, IdentityStore& identity,
-                     WorkerPost post_worker = {}, IoPost post_io = {}, IoAfter post_after = {});
+                     IPeerSigningKeyResolver& signing_keys, WorkerPost post_worker = {}, IoPost post_io = {},
+                     IoAfter post_after = {});
   ~AmpChatBlobTransport() override;
 
   AmpChatBlobTransport(const AmpChatBlobTransport&) = delete;
   AmpChatBlobTransport& operator=(const AmpChatBlobTransport&) = delete;
 
+  /** Tests whose mesh does not run on the identity's device key: the PeerId requests are signed for. */
+  void SetLocalPeerIdForTest(std::string peer_id) { local_peer_id_override_ = std::move(peer_id); }
   void SetProfileDataDir(std::string profile_data_dir) override;
   void SetProfileId(std::string profile_id) override;
   void Start();
@@ -62,6 +66,7 @@ private:
   IoPost post_io_;
   IoAfter post_after_;
   bool started_ = false;
+  std::string local_peer_id_override_;
 };
 
 } // namespace pbr

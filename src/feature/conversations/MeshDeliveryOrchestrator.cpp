@@ -2211,13 +2211,13 @@ void MeshDeliveryOrchestrator::AttachAmpTransports(mesh::IChatPeerLinks* amp_lin
     worker = [](std::function<void()> task) { AppRuntime::PostWorkerNormal(std::move(task)); };
   }
 
-  auto blob = std::make_unique<AmpChatBlobTransport>(people, amp_io_pump, store_, identity_, worker, amp_post_io,
-                                                     amp_post_after);
+  auto blob = std::make_unique<AmpChatBlobTransport>(people, amp_io_pump, store_, identity_, signing_key_resolver_,
+                                                     worker, amp_post_io, amp_post_after);
   blob->Start();
   peer_blob_ = std::move(blob);
 
   auto history = std::make_unique<AmpChatHistoryTransport>(people, amp_io_pump, store_, identity_, psk_store_,
-                                                         worker, amp_post_io, amp_post_after);
+                                                         signing_key_resolver_, worker, amp_post_io, amp_post_after);
   history->Start();
   auto chat = std::make_unique<AmpDirectChatTransport>(people, amp_io_pump, worker, amp_post_io, amp_post_after);
   chat->SetInboundHandler([this](RelayEnvelope envelope) { HandleDirectInbound(std::move(envelope)); });

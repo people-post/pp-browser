@@ -7,6 +7,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     AtAiParser.cpp
     ChatBlobResponder.cpp
     ChatHistoryResponder.cpp
+    PeerRequestAuth.cpp
     ChatPayloadCodec.cpp
     ThreadLocalPrefsStore.cpp
     PairwiseFanoutLogic.cpp

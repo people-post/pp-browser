@@ -1,3 +1,4 @@
+#include "domain/messaging/PeerSigningKeyStore.h"
 #include "feature/conversations/AmpChatHistoryTransport.h"
 
 #include "foundation/crypto/CryptoConstants.h"
@@ -56,8 +57,8 @@ public:
     }
 
     DirectChatTarget target;
-    target.peer_identity_kind = "relay_user";
-    target.peer_identity_value = "relay:requester";
+    target.peer_identity_kind = "account";
+    target.peer_identity_value = identity->Get()->account_id;  // the requester signs as this account
     target.channel = ThreadChannel::E2e;
     auto created = store->FindOrCreateDirectThread(target, "contact-requester", "Requester");
     if (!created) {
@@ -122,10 +123,15 @@ protected:
 
     responder_history_ = std::make_unique<AmpChatHistoryTransport>(
         mesh_->chat_b(), [this] { mesh_->PumpBoth(); }, *data_->store, *data_->identity, *data_->psk_store,
-        AmpChatHistoryTransport::WorkerPost{}, mesh_->MakePostIoB(), mesh_->MakePostAfterB());
+        keys_resolver_, AmpChatHistoryTransport::WorkerPost{}, mesh_->MakePostIoB(), mesh_->MakePostAfterB());
     client_history_ = std::make_unique<AmpChatHistoryTransport>(
         mesh_->chat_a(), [this] { mesh_->PumpBoth(); }, *data_->store, *data_->identity, *data_->psk_store,
-        AmpChatHistoryTransport::WorkerPost{}, mesh_->MakePostIoA(), mesh_->MakePostAfterA());
+        keys_resolver_, AmpChatHistoryTransport::WorkerPost{}, mesh_->MakePostIoA(), mesh_->MakePostAfterA());
+    client_history_->SetLocalPeerIdForTest(mesh_->peer_id_a);
+    PeerSigningKeyRecord key;
+    key.signing_public_key_b64 = data_->identity->Get()->account_signing_public_key_b64;
+    key.source = "test";
+    keys_.Put("account", data_->identity->Get()->account_id, key);
 
     ASSERT_TRUE(static_cast<bool>(mesh_->chat_a().RegisterEndpoint("relay:responder", mesh_->ma_b)));
 
@@ -142,6 +148,8 @@ protected:
     data_.reset();
   }
 
+  PeerSigningKeyStore keys_;
+  PeerSigningKeyResolver keys_resolver_{keys_};
   std::unique_ptr<HistoryHarness> data_;
   std::unique_ptr<mesh::test::AmpMeshHarness> mesh_;
   std::unique_ptr<AmpChatHistoryTransport> responder_history_;
