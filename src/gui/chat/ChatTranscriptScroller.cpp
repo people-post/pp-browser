@@ -129,14 +129,17 @@ void ChatTranscriptScroller::ApplyPolicy() {
   const float scroll_height = el->GetScrollHeight();
   // The viewport changed height (the on-screen keyboard came up or went away): the scroll offset alone
   // would leave the newest messages under the keyboard, so re-anchor before judging near-bottom.
+  // A 0 reading (element not laid out yet, e.g. right after a remount) is not a size change.
   const float client_height = el->GetClientHeight();
-  if (last_client_height_ > 0.f && std::abs(client_height - last_client_height_) > 0.5f) {
-    suppress_scroll_handler_ = true;
-    el->SetScrollTop(ScrollTopAfterViewportResize(el->GetScrollTop(), last_client_height_, client_height,
-                                                  scroll_height, pinned_to_bottom_));
-    suppress_scroll_handler_ = false;
+  if (client_height > 0.f) {
+    if (last_client_height_ > 0.f && std::abs(client_height - last_client_height_) > 0.5f) {
+      suppress_scroll_handler_ = true;
+      el->SetScrollTop(ScrollTopAfterViewportResize(el->GetScrollTop(), last_client_height_, client_height,
+                                                    scroll_height, pinned_to_bottom_));
+      suppress_scroll_handler_ = false;
+    }
+    last_client_height_ = client_height;
   }
-  last_client_height_ = client_height;
   const float max_top = std::max(0.f, scroll_height - client_height);
   const float top = el->GetScrollTop();
   constexpr float kNearBottomPx = 64.f;

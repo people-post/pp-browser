@@ -3,6 +3,7 @@
 #include "common/PbrCompat.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <ctime>
@@ -34,8 +35,12 @@ std::string HostOf(const std::string& url) {
   if (const size_t colon = authority.find(':'); colon != std::string::npos) {
     authority.erase(colon);
   }
+  // Hosts are case-insensitive: show them lower-case, and drop a leading "www." (shorter on a
+  // phone-width meta row, and no less clear).
+  std::transform(authority.begin(), authority.end(), authority.begin(),
+                 [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
   if (authority.compare(0, 4, "www.") == 0) {
-    authority.erase(0, 4); // shorter on a phone-width meta row, and no less clear
+    authority.erase(0, 4);
   }
   return authority;
 }

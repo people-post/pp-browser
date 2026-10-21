@@ -511,8 +511,15 @@ std::string RenderLongListItemBody(const Object& item, const std::string& inline
     out << "<p class=\"muted chat-long-list-subtitle\">" << StructuredTextParser::EscapeText(*subtitle) << "</p>";
   }
   // Meta row: `meta` shrinks with an ellipsis, `meta_end` (a time) and the link keep their width.
-  const auto meta = item.getString("meta");
-  const auto meta_end = item.getString("meta_end");
+  // An empty string counts as absent, so no empty flex item and no dangling separator.
+  auto meta = item.getString("meta");
+  auto meta_end = item.getString("meta_end");
+  if (meta && meta->empty()) {
+    meta.reset();
+  }
+  if (meta_end && meta_end->empty()) {
+    meta_end.reset();
+  }
   if (meta || meta_end || !inline_tail.empty()) {
     out << "<div class=\"row chat-long-list-meta-row\">";
     if (meta) {

@@ -66,8 +66,23 @@ TEST(ArticleFeedBlocksTest, BuildsIntroAndLongListThatTheParserAccepts) {
 
 TEST(ArticleFeedBlocksTest, MetaHostDropsTheWwwPrefix) {
   const std::string json = BuildArticleFeedBlocksJson(
-      R"({"articles":[{"id":"w","title":"T","content":"C","link_to":"https://www.zaobao.com.sg/a","created_at":1759000000}]})");
-  EXPECT_NE(json.find(R"("meta":"zaobao.com.sg)"), std::string::npos) << json; // the open link keeps the full host
+      R"({"articles":[{"id":"w","title":"T","content":"C","link_to":"https://www.zaobao.com.sg/a","created_at":1759000000},)"
+      R"({"id":"W","title":"T","content":"C","link_to":"https://WWW.Zaobao.com.sg/b","created_at":1759000000}]})");
+  // The open link keeps the full host; the meta shows it lower-case without www., whatever the case.
+  EXPECT_NE(json.find(R"("meta":"zaobao.com.sg)"), std::string::npos) << json;
+  EXPECT_EQ(json.find(R"("meta":"WWW)"), std::string::npos) << json;
+  EXPECT_EQ(json.find(R"("meta":"Zaobao)"), std::string::npos) << json;
+}
+
+// An empty meta string is treated as absent: no empty flex item, no dangling separator before the time.
+TEST(ArticleFeedBlocksTest, EmptyMetaStringIsAbsent) {
+  const std::string json = R"({"blocks":[{"type":"long_list","items":[{"title":"T","meta":"","meta_end":"2h ago"}]}]})";
+  auto parsed = StructuredTextParser::ParseBlocksJson(json, ResponseGoal::DisplayFeed);
+  ASSERT_TRUE(parsed.ok) << parsed.error;
+  ASSERT_EQ(parsed.working_set_candidates.size(), 1u);
+  const std::string& rml = parsed.working_set_candidates[0].artifact_rml;
+  EXPECT_EQ(rml.find("chat-long-list-meta\""), std::string::npos);
+  EXPECT_NE(rml.find("chat-long-list-meta-end\">2h ago"), std::string::npos) << rml;
 }
 
 // An item with a link but no meta still gets the row, so the link keeps its place on the right.
