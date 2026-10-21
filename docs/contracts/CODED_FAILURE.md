@@ -129,7 +129,7 @@ pp-browser Phase 1 implements the **adapter** row:
 - [x] Tests: `mesh_ports_test.cpp`
 - [x] [AMP-LINK-ERRORS.md](AMP-LINK-ERRORS.md) port alias note
 
-### Phase 2 — L4 owning layers (in progress)
+### Phase 2 — L4 owning layers (mesh done; call-media leg pending)
 
 Each coordinator gets a **local `Err` enum**, `Failure` / `Roe` aliases, and
 **`WrapLinkFailure(const …::Failure&)`** (name may vary). Wrap at every
@@ -140,9 +140,14 @@ carrier — not string copy alone.
 |--------|---------------|------------------------|--------|
 | Dial-back | `reachability/dial_back/` (`DialBackTypes`, `client/DialBackClient`, `serve/DialBackServer`) | `NotStarted`, `EndpointNotRegistered`, `LinkFailed`, `Timeout`, `ChannelFailed`, `ProtocolError`, `Generic` | **done** — wraps `PeerLinkManager::Failure` |
 | DHT | `dht/client/DhtClient.{h,cpp}` (via `AmpDhtProtocol`) | `NotStarted`, `LinkFailed`, `Timeout`, `ChannelFailed`, `NotFound`, `Generic`, … | **done** — wraps `PeerLinkManager::Failure`; `FindPeer` returns `FindPeerRoe` |
-| Circuit tunnel | `l4/circuit/client/CircuitClientCoordinator.{h,cpp}`, `serve/CircuitRelayServer.{h,cpp}` | `NotStarted`, `LinkFailed`, `Timeout`, `Rejected`, `Generic` | pending |
+| Circuit tunnel | `l4/circuit/client/CircuitClientCoordinator.{h,cpp}`, `serve/CircuitRelayServer.{h,cpp}` | `CircuitTunnelErr` | **done** (pp-cpp-mesh) — the relay's refusal is a wire `code` |
+| Circuit reach | `reach/AmpCircuitHopReach`, `ICircuitHopReach` (`MeshReachPorts.h`) | `CircuitReachErr` | **done** (pp-cpp-mesh) |
+| Punch walk | `reach/PunchIntroducerWalk`, `PunchErr` | `PunchIntroducerWalk::Err` | **done** (pp-cpp-mesh) — the introducer's refusal is a wire `code` |
+| Peer reach | `reach/PeerReachCoordinator` | `PeerReachCoordinator::Err` | **done** (pp-cpp-mesh); `IDialRegistry` passes link codes through |
+| Media relay | `l4/media_relay/client/MediaRelayClientCoordinator`, `IMediaRelayClient`, `media_plane/MediaRelayAttach` | `MediaRelayErr` | **done** (pp-cpp-mesh) — the hop's refusal is a wire `code` |
 | Call-media leg | `feature/call_media/CallMediaLegCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `Glare`, `Aborted`, `Generic` | pending |
-| Media relay | `l4/media_relay/client/MediaRelayClientCoordinator.{h,cpp}` | `LinkFailed`, `Timeout`, `QuoteRejected`, `Generic` | pending |
+
+The mesh's code tables and wire codes: pp-cpp-mesh `docs/ERRORS.md`.
 
 **Note:** Dial-back / DHT currently own `PeerLinkManager&` directly (mesh-internal), so
 `WrapLinkFailure` takes `PeerLinkManager::Failure`. Feature-facing L4 that goes through
@@ -167,6 +172,16 @@ carrier — not string copy alone.
 - [ ] Retry/backoff branches on **`DialInBackoff`**, **`AssociationNotReady`**, **`EndpointNotRegistered`**
       via port/coordinator code — not message substring alone.
 - [ ] Stop stripping codes at `Error(child.message)` unless converting to `AppError` with mapped category.
+      Known strips: `CallMediaConnectCoordinator::OnLinkReady` and `BroadcastHub`'s reach port
+      (a peer reach failure becomes text), `ConversationsHub::RequestCircuitBridgePreferred`.
+- [ ] `CallMediaConnectCoordinator` decides "dial a fresh link next time" by finding
+      `"transport failed"` in the connect error — needs the call-media leg's code (Phase 2 row).
+- [ ] Chat send notices: `ClassifySendFailure` (`domain/messaging/DeliveryNotice`) still matches
+      transport text, much of it from transports that no longer exist. The direct send
+      (`AmpDirectChatTransport`) should report link / channel codes, the relay send
+      (`HttpRelayClient::Send`) its HTTP outcome (rate limited, …) as a code, and
+      `MeshDeliveryOrchestrator` should keep the direct send's failure instead of reporting
+      "mesh dial failed" when there is no relay route.
 
 ### Phase 4 — UI boundary
 
