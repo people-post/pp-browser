@@ -515,7 +515,7 @@ Roe<void> ProductStackHarness::SendCallControl(const std::string& peer_account,
     control_sends_.fetch_add(1, std::memory_order_release);
     return Error(!chat_ ? "chat transport not started" : "missing amp dial key for call-control");
   }
-  chat_->SendEnvelopeAsync(dial_key, env, [sends = &control_sends_, id = msg.id](Roe<void> sent) {
+  chat_->SendEnvelopeAsync(dial_key, env, [sends = &control_sends_, id = msg.id](DirectSendRoe sent) {
     if (!sent) {
       std::cerr << "warning: call-control send failed message_id=" << id << " err=" << sent.error().message
                 << std::endl;

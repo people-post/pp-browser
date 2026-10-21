@@ -167,7 +167,7 @@ The mesh's code tables and wire codes: pp-cpp-mesh `docs/ERRORS.md`.
 
 ### Phase 3 — Feature Amp services
 
-- [ ] `AmpDirectChatTransport`, `AmpChatHistoryTransport`, `AmpChatBlobTransport`, `AmpCircuitHopReach`:
+- [ ] `AmpChatHistoryTransport`, `AmpChatBlobTransport` (`AmpDirectChatTransport` done; `AmpCircuitHopReach` is pp-cpp-mesh's, done):
       `WrapL4Failure` (or wrap link where L4 not yet coded).
 - [ ] Retry/backoff branches on **`DialInBackoff`**, **`AssociationNotReady`**, **`EndpointNotRegistered`**
       via port/coordinator code — not message substring alone.
@@ -176,12 +176,11 @@ The mesh's code tables and wire codes: pp-cpp-mesh `docs/ERRORS.md`.
       (a peer reach failure becomes text), `ConversationsHub::RequestCircuitBridgePreferred`.
 - [ ] `CallMediaConnectCoordinator` decides "dial a fresh link next time" by finding
       `"transport failed"` in the connect error — needs the call-media leg's code (Phase 2 row).
-- [ ] Chat send notices: `ClassifySendFailure` (`domain/messaging/DeliveryNotice`) still matches
-      transport text, much of it from transports that no longer exist. The direct send
-      (`AmpDirectChatTransport`) should report link / channel codes, the relay send
-      (`HttpRelayClient::Send`) its HTTP outcome (rate limited, …) as a code, and
-      `MeshDeliveryOrchestrator` should keep the direct send's failure instead of reporting
-      "mesh dial failed" when there is no relay route.
+- [x] Chat send notices by code: the direct send reports `DirectSendErr` (`IDirectMessageClient`;
+      `AmpDirectChatTransport::WrapLinkFailure`), the relay send `AppError` codes
+      (`HttpRelayClient::Send`: rate limited, not configured, HTTP status; network failures were
+      coded already), and `domain/messaging/DeliveryNotice` maps them (`SendFailureFromDirect`,
+      `SendFailureFromRelay`). With no relay route, the notice says why the direct send failed.
 
 ### Phase 4 — UI boundary
 

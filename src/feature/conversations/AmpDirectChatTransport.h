@@ -41,10 +41,13 @@ public:
   void SetInboundHandler(InboundHandler handler);
 
   bool IsPeerReachable(const std::string& peer_identity_value) const override;
-  Roe<void> SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) override;
+  DirectSendRoe SendEnvelope(const std::string& peer_relay_user_id, const RelayEnvelope& envelope) override;
 
   void SendEnvelopeAsync(const std::string& peer_relay_user_id, const RelayEnvelope& envelope,
-                         std::function<void(Roe<void>)> on_done) override;
+                         std::function<void(DirectSendRoe)> on_done) override;
+
+  /** Opening the chat channel failed at the link: our code, the link's chain in `message`. */
+  static DirectSendFailure WrapLinkFailure(const mesh::IChatPeerLinks::Failure& link);
 
 private:
   struct Impl;

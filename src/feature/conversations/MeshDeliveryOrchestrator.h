@@ -257,14 +257,17 @@ private:
   Roe<ByteVector> PeerKemPublicKey(const ChatTargetKey& key) const;
   uint64_t NextControlOrderKey();
   void EnqueueRetry(PendingRelaySend pending);
-  void NotifyDeliveryIssue(const Thread& thread, const std::string& error_message);
+  void NotifyDeliveryIssue(const Thread& thread, SendFailure failure, const std::string& detail);
   void NotifyRelayFallback(const std::string& thread_id);
   void MaybeSurfaceReceiveFailure(const RelayReceiveOutcome& outcome);
   void MaybeEnqueueAttachmentDownload(const RelayReceiveOutcome& outcome);
-  void ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,
-                       const std::string& error_message = {},
-                       MessageTransport transport = MessageTransport::Relay,
-                       bool relay_after_direct_attempt = false);
+  void ApplySendSucceeded(const std::string& thread_id, const std::string& message_id, MessageTransport transport,
+                          bool relay_after_direct_attempt = false);
+  /** `detail`: the transport's own text, for the log. */
+  void ApplySendFailed(const std::string& thread_id, const std::string& message_id, SendFailure failure,
+                       const std::string& detail);
+  /** The message row's delivery state; false when there is no row (a control-lane send). */
+  bool MarkDelivery(const std::string& thread_id, const std::string& message_id, bool success, MessageTransport transport);
   void MaybeRepairGap(const std::string& thread_id, const RelayEnvelope& envelope);
   void RunSyncOnIo(const std::string& thread_id,
                    std::function<void(std::function<void(Roe<ChatSyncResult>)>)> task,

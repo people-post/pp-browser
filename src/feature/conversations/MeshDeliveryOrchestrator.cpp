@@ -604,7 +604,7 @@ Roe<void> MeshDeliveryOrchestrator::SendControl(const std::string& peer_identity
       via_relay();
       return;
     }
-    direct_chat_->SendEnvelopeAsync(peer_identity, envelope, [this, envelope](Roe<void> direct) {
+    direct_chat_->SendEnvelopeAsync(peer_identity, envelope, [this, envelope](DirectSendRoe direct) {
       if (!direct) {
         log().warning << "control lane Amp send failed message_id=" << envelope.message_id
                       << " err=" << direct.error().message;
@@ -991,14 +991,16 @@ void MeshDeliveryOrchestrator::EnqueueRetry(PendingRelaySend pending) {
   retry_queue_.push_back(std::move(pending));
 }
 
-void MeshDeliveryOrchestrator::NotifyDeliveryIssue(const Thread& thread, const std::string& error_message) {
-  if (!on_delivery_notice_ || error_message.empty()) {
+void MeshDeliveryOrchestrator::NotifyDeliveryIssue(const Thread& thread, const SendFailure failure,
+                                                   const std::string& detail) {
+  if (!on_delivery_notice_) {
     return;
   }
+  log().info << "send failed thread=" << thread.id << " detail=" << detail;
   DeliveryNotice notice;
   notice.kind = DeliveryNotice::Kind::SendFailed;
-  notice.send = ClassifySendFailure(error_message, ResolveThreadTrust(thread) == TrustLevel::Friendly);
-  notice.detail = error_message;
+  notice.send = SendFailureForThread(failure, ResolveThreadTrust(thread) == TrustLevel::Friendly);
+  notice.detail = detail;
   AppRuntime::PostUI([this, notice]() {
     if (on_delivery_notice_) {
       on_delivery_notice_(notice);
@@ -1064,15 +1066,14 @@ void MeshDeliveryOrchestrator::MaybeRepairGap(const std::string& thread_id, cons
   });
 }
 
-void MeshDeliveryOrchestrator::ApplySendResult(const std::string& thread_id, const std::string& message_id, bool success,
-                                          const std::string& error_message, MessageTransport transport,
-                                          bool relay_after_direct_attempt) {
+bool MeshDeliveryOrchestrator::MarkDelivery(const std::string& thread_id, const std::string& message_id,
+                                            const bool success, const MessageTransport transport) {
   if (thread_id.empty()) {
-    return;  // a control-lane send: no transcript row to update
+    return false;  // a control-lane send: no transcript row to update
   }
   auto messages = store_.GetMessagesPage(thread_id, std::nullopt, 10000);
   if (!messages) {
-    return;
+    return false;
   }
   for (ThreadMessage& existing : *messages) {
     if (existing.id == message_id) {
@@ -1084,14 +1085,30 @@ void MeshDeliveryOrchestrator::ApplySendResult(const std::string& thread_id, con
       break;
     }
   }
-  if (success && transport == MessageTransport::Relay && relay_after_direct_attempt) {
+  return true;
+}
+
+void MeshDeliveryOrchestrator::ApplySendSucceeded(const std::string& thread_id, const std::string& message_id,
+                                                  const MessageTransport transport,
+                                                  const bool relay_after_direct_attempt) {
+  if (!MarkDelivery(thread_id, message_id, true, transport)) {
+    return;
+  }
+  if (transport == MessageTransport::Relay && relay_after_direct_attempt) {
     NotifyRelayFallback(thread_id);
   }
-  if (!success) {
-    auto thread = store_.GetThread(thread_id);
-    if (thread && *thread) {
-      NotifyDeliveryIssue(**thread, error_message);
-    }
+  if (on_messages_changed_) {
+    AppRuntime::PostUI([this]() { on_messages_changed_(); });
+  }
+}
+
+void MeshDeliveryOrchestrator::ApplySendFailed(const std::string& thread_id, const std::string& message_id,
+                                               const SendFailure failure, const std::string& detail) {
+  if (!MarkDelivery(thread_id, message_id, false, MessageTransport::Relay)) {
+    return;
+  }
+  if (auto thread = store_.GetThread(thread_id); thread && *thread) {
+    NotifyDeliveryIssue(**thread, failure, detail);
   }
   if (on_messages_changed_) {
     AppRuntime::PostUI([this]() { on_messages_changed_(); });
@@ -1196,16 +1213,25 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
         AppRuntime::PostWorkerNormal(std::move(fn));
       }
     };
+    // `direct`: the direct send's failure when it was tried — what the notice says when the relay
+    // cannot carry the message either.
     auto finish_relay = [this, thread_id, message_id, envelope, peer_relay_id,
-                         critical_lane](bool tried_direct) mutable {
+                         critical_lane](std::optional<DirectSendFailure> direct) mutable {
+      const bool tried_direct = direct.has_value();
       if (!peer_relay_id) {
-        ApplySendResult(thread_id, message_id, false,
-                        tried_direct ? "mesh dial failed" : "Direct thread missing peer relay id");
+        if (direct) {
+          ApplySendFailed(thread_id, message_id, SendFailureFromDirect(direct->GetCode()), direct->message);
+        } else {
+          ApplySendFailed(thread_id, message_id, SendFailure::NoAddress, "Direct thread missing peer relay id");
+        }
         return;
       }
       if (!relay_) {
-        ApplySendResult(thread_id, message_id, false,
-                        tried_direct ? "mesh dial failed" : "Relay client not configured");
+        if (direct) {
+          ApplySendFailed(thread_id, message_id, SendFailureFromDirect(direct->GetCode()), direct->message);
+        } else {
+          ApplySendFailed(thread_id, message_id, SendFailure::RelayNotConfigured, "Relay client not configured");
+        }
         return;
       }
       const auto result = relay_->Send(envelope);
@@ -1214,14 +1240,14 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
                       << " err=" << result.error().message;
         EnqueueRetry(PendingRelaySend{.envelope = envelope, .message_id = message_id, .thread_id = thread_id,
                                       .attempt_count = 1});
-        ApplySendResult(thread_id, message_id, false, result.error().message);
+        ApplySendFailed(thread_id, message_id, SendFailureFromRelay(result.error()), result.error().message);
         return;
       }
       if (critical_lane) {
         log().info << "Relay Send ok (call-control) message_id=" << message_id
                    << " peer=" << *peer_relay_id;
       }
-      ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Relay, tried_direct);
+      ApplySendSucceeded(thread_id, message_id, MessageTransport::Relay, tried_direct);
     };
 
     // Call-control (critical_lane): Amp chat Open+ack-per-message races SoftMigrate/media and
@@ -1230,18 +1256,18 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
     const bool try_amp = DirectSendTriesAmpFirst(direct_chat_ && direct_chat_->IsPeerReachable(amp_peer_key),
                                                  peer_relay_id.has_value(), critical_lane);
     if (!try_amp) {
-      finish_relay(false);
+      finish_relay(std::nullopt);
       return;
     }
     // Fire-and-forget Amp send: free this worker while MeshPump drives Open+ack.
     direct_chat_->SendEnvelopeAsync(
         amp_peer_key, envelope,
         [this, thread_id, message_id, amp_peer_key, critical_lane, post_continue,
-         finish_relay = std::move(finish_relay)](Roe<void> direct) mutable {
+         finish_relay = std::move(finish_relay)](DirectSendRoe direct) mutable {
           post_continue([this, thread_id, message_id, amp_peer_key, critical_lane, direct = std::move(direct),
                          finish_relay = std::move(finish_relay)]() mutable {
             if (direct) {
-              ApplySendResult(thread_id, message_id, true, {}, MessageTransport::Direct);
+              ApplySendSucceeded(thread_id, message_id, MessageTransport::Direct);
               return;
             }
             if (critical_lane) {
@@ -1249,7 +1275,7 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
                             << " peer=" << amp_peer_key << " err=" << direct.error().message
                             << " (will try Brief if relay route known)";
             }
-            finish_relay(true);
+            finish_relay(direct.error());
           });
         });
   };
@@ -1567,7 +1593,7 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
                                                              bool tried_direct) mutable {
         const auto result = relay_->Send(item.envelope);
         if (result) {
-          ApplySendResult(item.thread_id, item.message_id, true, {}, MessageTransport::Relay, tried_direct);
+          ApplySendSucceeded(item.thread_id, item.message_id, MessageTransport::Relay, tried_direct);
           (*process)(index + 1);
           return;
         }
@@ -1577,7 +1603,7 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
           (*process)(index + 1);
           return;
         }
-        ApplySendResult(item.thread_id, item.message_id, false, result.error().message);
+        ApplySendFailed(item.thread_id, item.message_id, SendFailureFromRelay(result.error()), result.error().message);
         (*process)(index + 1);
       };
 
@@ -1588,12 +1614,12 @@ void MeshDeliveryOrchestrator::RetryFailedOutbound() {
         direct_chat_->SendEnvelopeAsync(
             peer_key, envelope,
             [this, still_pending, process, index, item = std::move(item),
-             try_relay = std::move(try_relay)](Roe<void> direct) mutable {
+             try_relay = std::move(try_relay)](DirectSendRoe direct) mutable {
               AppRuntime::PostWorkerNormal([this, still_pending, process, index, item = std::move(item),
                                             try_relay = std::move(try_relay),
                                             direct = std::move(direct)]() mutable {
                 if (direct) {
-                  ApplySendResult(item.thread_id, item.message_id, true, {}, MessageTransport::Direct);
+                  ApplySendSucceeded(item.thread_id, item.message_id, MessageTransport::Direct);
                   (*process)(index + 1);
                   return;
                 }

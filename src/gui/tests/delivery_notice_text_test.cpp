@@ -20,7 +20,7 @@ protected:
 };
 
 TEST_F(DeliveryNoticeTextTest, EveryKindHasWords) {
-  for (int i = static_cast<int>(SendFailure::Unknown); i <= static_cast<int>(SendFailure::RelayRateLimited); ++i) {
+  for (int i = static_cast<int>(SendFailure::Unknown); i <= static_cast<int>(SendFailure::RelayRejected); ++i) {
     DeliveryNotice notice;
     notice.send = static_cast<SendFailure>(i);
     const std::string text = DeliveryNoticeText(notice);

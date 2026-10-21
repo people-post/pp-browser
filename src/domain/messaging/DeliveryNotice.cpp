@@ -1,14 +1,12 @@
 #include "domain/messaging/DeliveryNotice.h"
 
+#include "foundation/error/AppError.h"
+
 #include <array>
 #include <utility>
 
 namespace pbr {
 namespace {
-
-bool Has(const std::string& text, const char* needle) {
-  return text.find(needle) != std::string::npos;
-}
 
 constexpr std::array<std::pair<ReceiveFailure, const char*>, 15> kReceiveWire = {{
     {ReceiveFailure::ApplyFailed, "apply_failed"},
@@ -30,39 +28,48 @@ constexpr std::array<std::pair<ReceiveFailure, const char*>, 15> kReceiveWire = 
 
 } // namespace
 
-SendFailure ClassifySendFailure(const std::string& error, const bool trusted_peer) {
-  if (Has(error, "rate limit")) {
-    return trusted_peer ? SendFailure::RelayBusy : SendFailure::RelayRateLimited;
-  }
-  if (Has(error, "host not running")) {
+SendFailure SendFailureFromDirect(const DirectSendErr code) {
+  switch (code) {
+  case DirectSendErr::NotStarted:
     return SendFailure::MeshOff;
-  }
-  if (Has(error, "Empty peer endpoint") || Has(error, "Invalid multiaddr") || Has(error, "missing /p2p/") ||
-      Has(error, "Invalid PeerId")) {
-    return SendFailure::BadAddress;
-  }
-  if (Has(error, "not registered") || Has(error, "missing PeerInfo") || Has(error, "Peer-direct endpoint")) {
+  case DirectSendErr::NoAddress:
     return SendFailure::NoAddress;
-  }
-  if (Has(error, "backoff")) {
+  case DirectSendErr::DialInBackoff:
     return SendFailure::BackingOff;
-  }
-  if (Has(error, "Too many concurrent")) {
+  case DirectSendErr::DialBusy:
     return SendFailure::DialBusy;
-  }
-  if (Has(error, "dial failed") || Has(error, "timed out") || Has(error, "timeout")) {
+  case DirectSendErr::NoAnswer:
+  case DirectSendErr::TransportFailed:
     return SendFailure::PeerNoAnswer;
-  }
-  if (Has(error, "stream open failed")) {
+  case DirectSendErr::Refused:
+  case DirectSendErr::ChannelFailed:
     return SendFailure::HandshakeFailed;
-  }
-  if (Has(error, "Failed to send") || Has(error, "Failed to read") || Has(error, "ack")) {
+  case DirectSendErr::NotConfirmed:
     return SendFailure::DirectUnconfirmed;
-  }
-  if (Has(error, "Relay client not configured")) {
-    return SendFailure::RelayNotConfigured;
+  case DirectSendErr::Ok:
+  case DirectSendErr::Generic:
+    break;
   }
   return SendFailure::Unknown;
+}
+
+SendFailure SendFailureFromRelay(const Error& error) {
+  switch (AppError::CategoryOf(error)) {
+  case ErrorCategory::Auth:
+    return static_cast<Err::Auth>(error.code) == Err::Auth::RateLimited ? SendFailure::RelayRateLimited
+                                                                         : SendFailure::RelayRejected;
+  case ErrorCategory::Config:
+    return SendFailure::RelayNotConfigured;
+  case ErrorCategory::Network:
+    return static_cast<Err::Network>(error.code) == Err::Network::HttpError ? SendFailure::RelayRejected
+                                                                             : SendFailure::RelayUnreachable;
+  default:
+    return SendFailure::Unknown;
+  }
+}
+
+SendFailure SendFailureForThread(const SendFailure failure, const bool trusted_peer) {
+  return failure == SendFailure::RelayRateLimited && trusted_peer ? SendFailure::RelayBusy : failure;
 }
 
 const char* ReceiveFailureWire(const ReceiveFailure reason) {

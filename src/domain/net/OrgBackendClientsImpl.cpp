@@ -7,6 +7,7 @@
 #include "domain/net/HttpBlobClient.h"
 #include "domain/net/HttpClient.h"
 #include "domain/net/RelayApiSignPayload.h"
+#include "foundation/error/AppError.h"
 #include "common/directory/DirectoryJson.h"
 
 #include "common/Logger.h"
@@ -40,7 +41,7 @@ Error RelayHttpStatusError(const char* action, long status_code, const std::stri
     detail += " body=" + TruncateForLog(body, 200);
   }
   logging::getLogger("HttpRelayClient").warning << detail;
-  return Error(detail);
+  return AppError::Network(Err::Network::HttpError, detail);
 }
 
 } // namespace
@@ -59,7 +60,7 @@ HttpRelayClient::HttpRelayClient(std::string base_url) : base_url_(std::move(bas
 
 Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
   if (base_url_.empty()) {
-    return Error("Relay base_url not configured");
+    return AppError::Config(Err::Config::MissingKey, "Relay base_url not configured");
   }
   auto record = RelayWireSendRecordFromEnvelope(envelope);
   if (!record) {
@@ -83,7 +84,7 @@ Roe<void> HttpRelayClient::Send(const RelayEnvelope& envelope) {
     return response.error();
   }
   if (response.value().status_code == 429) {
-    return Error("Relay rate limit exceeded");
+    return AppError::Auth(Err::Auth::RateLimited, "Relay rate limit exceeded");
   }
   if (response.value().status_code < 200 || response.value().status_code >= 300) {
     return RelayHttpStatusError("send", response.value().status_code, response.value().body);

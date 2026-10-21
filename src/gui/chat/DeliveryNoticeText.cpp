@@ -10,8 +10,6 @@ const char* SendKey(const SendFailure failure) {
   switch (failure) {
   case SendFailure::MeshOff:
     return "chat.notice.send.mesh_off";
-  case SendFailure::BadAddress:
-    return "chat.notice.send.bad_address";
   case SendFailure::NoAddress:
     return "chat.notice.send.no_address";
   case SendFailure::BackingOff:
@@ -30,6 +28,10 @@ const char* SendKey(const SendFailure failure) {
     return "chat.notice.send.relay_busy";
   case SendFailure::RelayRateLimited:
     return "chat.notice.send.relay_rate_limited";
+  case SendFailure::RelayUnreachable:
+    return "chat.notice.send.relay_unreachable";
+  case SendFailure::RelayRejected:
+    return "chat.notice.send.relay_rejected";
   case SendFailure::Unknown:
     break;
   }
