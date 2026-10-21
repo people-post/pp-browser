@@ -630,9 +630,8 @@ SCENARIOS = [
     ("seed_down", scenario_seed_down),
 ]
 
-# Run only when named (--only): seed_down documents a known gap — with the seed silently gone, the
-# answer still waits out the whole seed park (call_accept waits on it, ≤ 12 s).
-OPT_IN = {"seed_down"}
+# Scenarios run only when named (--only).
+OPT_IN = set()
 
 
 def main():
