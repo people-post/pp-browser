@@ -10,6 +10,10 @@
 
 #include <chrono>
 
+#ifdef __APPLE__
+#include <sys/xattr.h>
+#endif
+
 namespace pbr {
 namespace {
 
@@ -38,6 +42,22 @@ protected:
   const std::string profile_id_ = "profile-a";
   const ByteVector plain_{'h', 'e', 'l', 'l', 'o', '-', 'b', 'l', 'o', 'b'};
 };
+
+TEST_F(AttachmentCacheAtRestTest, ViewFileIsMarkedAsDownloadedFromInternet) {
+#ifdef __APPLE__
+  auto hash = AttachmentContentHash(plain_);
+  ASSERT_TRUE(hash);
+  auto view = EnsureAttachmentViewPath(profile_dir_, thread_id_, *hash, "application/msword", "a.doc",
+                                       [&]() -> Roe<ByteVector> { return plain_; });
+  ASSERT_TRUE(view) << view.error().message;
+  char buf[256] = {};
+  const ssize_t n = ::getxattr(view->c_str(), "com.apple.quarantine", buf, sizeof(buf), 0, 0);
+  ASSERT_GT(n, 0) << "quarantine xattr missing";
+  EXPECT_EQ(std::string(buf, static_cast<size_t>(n)).rfind("0081;", 0), 0u);
+#else
+  GTEST_SKIP() << "macOS only";
+#endif
+}
 
 TEST_F(AttachmentCacheAtRestTest, SaveWithDekWritesPpbaMagicAndLoads) {
   auto hash = AttachmentContentHash(plain_);
