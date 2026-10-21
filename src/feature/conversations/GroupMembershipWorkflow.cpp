@@ -527,11 +527,13 @@ Roe<void> GroupMembershipWorkflow::RemoveMemberInternal(const std::string& group
     return Error("Owner cannot remove self — transfer ownership or leave");
   }
 
-  if (auto removed = roster_.RemoveMember(group_id, member_identity); !removed) {
-    return removed.error();
+  // The same change every member applies from the event (one rule for both replicas).
+  const GroupMembershipCodec::MemberRemovedPayload removal{group_id, member_identity, metadata->roster_epoch + 1};
+  if (auto applied = ApplyMemberRemovedToRoster(roster_, removal, *local); !applied) {
+    return applied.error();
   }
-  metadata->roster_epoch += 1;
-  (void)roster_.UpsertMetadata(*metadata);
+  metadata->roster_epoch = removal.roster_epoch;
+  // The removed member must not read what follows: our group session moves on.
   (void)roster_.BumpGroupSessionEpoch(group_id, metadata->session_epoch + 1);
   ClearMemberUnreachable(group_id, member_identity);
 
@@ -581,16 +583,17 @@ Roe<void> GroupMembershipWorkflow::LeaveGroup(const std::string& group_id) {
     return Error("Owner must transfer ownership before leaving");
   }
 
-  metadata->roster_epoch += 1;
-  auto detail = GroupMembershipCodec::EncodeMemberLeft(group_id, *local, metadata->roster_epoch);
+  const GroupMembershipCodec::MemberLeftPayload leave{group_id, *local, metadata->roster_epoch + 1};
+  auto detail = GroupMembershipCodec::EncodeMemberLeft(group_id, *local, leave.roster_epoch);
   if (!detail) {
     return detail.error();
   }
-  // Best-effort notify remaining members; local leave always proceeds so close cannot get stuck.
+  // Best-effort notify remaining members (while we still hold the roster); local leave always
+  // proceeds so close cannot get stuck.
   (void)FanOutMembershipEvent(group_id, GroupMembershipControlType::MemberLeft, *detail, "Member left", *local);
-
-  (void)roster_.RemoveMember(group_id, *local);
-  (void)roster_.UpsertMetadata(*metadata);
+  if (auto applied = ApplyMemberLeftToRoster(roster_, leave, *local); !applied) {
+    log().warning << "LeaveGroup local roster: " << applied.error().message << " group=" << group_id;
+  }
   (void)roster_.ClearGroupTarget(group_id);
   return {};
 }
@@ -621,24 +624,14 @@ Roe<void> GroupMembershipWorkflow::LeaveAsOwner(const std::string& group_id, con
     return Error("Successor is unreachable — dismiss locally or pick someone else");
   }
 
-  metadata->roster_epoch += 1;
-  metadata->owner_identity = new_owner_identity;
-  GroupRosterMember successor;
-  successor.member_identity = new_owner_identity;
-  successor.role = MemberRole::Owner;
-  successor.joined_at = util::NowUnixMs();
-  if (auto upserted = roster_.UpsertMember(group_id, successor); !upserted) {
-    return upserted.error();
-  }
-  if (auto removed = roster_.RemoveMember(group_id, *local); !removed) {
-    return removed.error();
-  }
-  if (auto saved = roster_.UpsertMetadata(*metadata); !saved) {
-    return saved.error();
+  const GroupMembershipCodec::OwnerTransferredPayload transfer{group_id, new_owner_identity,
+                                                               metadata->roster_epoch + 1, /*leave_previous=*/true};
+  if (auto applied = ApplyOwnerTransferredToRoster(roster_, transfer, *local); !applied) {
+    return applied.error();
   }
 
   auto detail =
-      GroupMembershipCodec::EncodeOwnerTransferred(group_id, new_owner_identity, metadata->roster_epoch, true);
+      GroupMembershipCodec::EncodeOwnerTransferred(group_id, new_owner_identity, transfer.roster_epoch, true);
   if (!detail) {
     return detail.error();
   }
