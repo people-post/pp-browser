@@ -51,6 +51,20 @@ bool IsStickyInitiator(const CallSessionStore& sessions, const std::string& call
 bool SenderIsInCall(const CallSessionStore& sessions, const std::string& call_id,
                     const std::string& sender_identity);
 
+/**
+ * Calling each other at once: a 1:1 call this device placed to `peer` (not `except_call_id`, not a
+ * group's) that `peer` has not answered yet and nobody else is in.
+ */
+std::optional<CallSession> OurUnansweredCallTo(const CallSessionStore& sessions, const std::string& peer,
+                                               const std::string& local_identity, const std::string& except_call_id);
+
+/**
+ * B30: a 1:1 call we are in whose one remote, `peer`, is still invited or ringing (its call-media
+ * hello arriving first is it accepting).
+ */
+bool PeerStillToAnswerOurCall(const CallSessionStore& sessions, const std::string& call_id, const std::string& peer,
+                              const std::string& local_identity);
+
 } // namespace call_queries
 
 /**

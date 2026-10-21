@@ -139,6 +139,23 @@ TEST_F(CallSessionQueriesTest, APeerRosterNeverOverridesOurOwnStateNorResurrects
   EXPECT_EQ(calls_->LoadSession(kCall).value()->media_epoch, 3u);
 }
 
+TEST_F(CallSessionQueriesTest, CallingEachOtherAndAnEarlyHello) {
+  // kCall: alice placed it; bob is still ringing.
+  Participant("account:alice", CallParticipantState::Joined, 10);
+  Participant("account:bob", CallParticipantState::Ringing);
+  auto crossed = call_queries::OurUnansweredCallTo(*calls_, "account:bob", "account:alice", "call:bobs");
+  ASSERT_TRUE(crossed);
+  EXPECT_EQ(crossed->call_id, kCall);
+  EXPECT_FALSE(call_queries::OurUnansweredCallTo(*calls_, "account:bob", "account:alice", kCall)) << "not itself";
+  EXPECT_FALSE(call_queries::OurUnansweredCallTo(*calls_, "account:bob", "account:bob", "call:x")) << "not ours";
+  EXPECT_TRUE(call_queries::PeerStillToAnswerOurCall(*calls_, kCall, "account:bob", "account:alice"));
+
+  Participant("account:carol", CallParticipantState::Invited);
+  EXPECT_FALSE(call_queries::OurUnansweredCallTo(*calls_, "account:bob", "account:alice", "call:bobs"))
+      << "someone else is in it";
+  EXPECT_FALSE(call_queries::PeerStillToAnswerOurCall(*calls_, kCall, "account:bob", "account:alice")) << "1:1 only";
+}
+
 TEST(CallSessionLogicRosterTest, StampsAndCoInvitees) {
   std::vector<CallRosterEntry> roster(1);
   roster[0].identity = "account:alice";

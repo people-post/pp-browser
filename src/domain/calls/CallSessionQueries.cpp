@@ -144,6 +144,70 @@ bool SenderIsInCall(const CallSessionStore& sessions, const std::string& call_id
   return false;
 }
 
+namespace {
+
+bool Unanswered(const CallParticipantState state) {
+  return state == CallParticipantState::Invited || state == CallParticipantState::Ringing;
+}
+
+bool GroupCall(const CallSession& session) {
+  return session.origin_group_id && !session.origin_group_id->empty();
+}
+
+} // namespace
+
+std::optional<CallSession> OurUnansweredCallTo(const CallSessionStore& sessions, const std::string& peer,
+                                               const std::string& local_identity, const std::string& except_call_id) {
+  auto active = sessions.ListActiveSessions();
+  if (!active) {
+    return std::nullopt;
+  }
+  for (const CallSession& session : *active) {
+    if (session.call_id == except_call_id || session.initiator_identity != local_identity || GroupCall(session)) {
+      continue;
+    }
+    auto participants = sessions.ListParticipants(session.call_id);
+    if (!participants) {
+      continue;
+    }
+    bool peer_unanswered = false;
+    bool others = false;
+    for (const CallParticipant& participant : *participants) {
+      if (participant.identity == peer) {
+        peer_unanswered = Unanswered(participant.state);
+      } else if (participant.identity != local_identity) {
+        others = true;
+      }
+    }
+    if (peer_unanswered && !others) {
+      return session;
+    }
+  }
+  return std::nullopt;
+}
+
+bool PeerStillToAnswerOurCall(const CallSessionStore& sessions, const std::string& call_id, const std::string& peer,
+                              const std::string& local_identity) {
+  auto session = sessions.LoadSession(call_id);
+  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
+    return false;
+  }
+  auto participants = sessions.ListParticipants(call_id);
+  if (!participants || participants->size() != 2) {
+    return false;
+  }
+  bool local_joined = false;
+  bool peer_pending = false;
+  for (const CallParticipant& p : *participants) {
+    if (p.identity == local_identity) {
+      local_joined = p.state == CallParticipantState::Joined;
+    } else if (p.identity == peer) {
+      peer_pending = Unanswered(p.state);
+    }
+  }
+  return local_joined && peer_pending;
+}
+
 } // namespace call_queries
 
 Roe<void> ApplyCallRosterToStore(const CallSessionStore& sessions, const CallRosterDetail& roster,

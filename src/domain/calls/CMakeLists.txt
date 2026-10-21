@@ -21,6 +21,7 @@ pp_browser_add_domain_library(pp_domain_calls
     CallSessionLogic.cpp
     CallSessionQueries.cpp
     CallSessionStore.cpp
+    CallSummaryLogic.cpp
     CallTypes.cpp
     LiveCall.cpp
     PeerCapsLogic.cpp

@@ -567,7 +567,8 @@ Landed (behavior-preserving + who-picks fix):
 | `src/domain/media/CallMediaEngine.*` | Opus/H264/SDL capture; libp2p/SFU packet transport |
 | `src/domain/media/CallMediaAdaptation.*` | V024 + `CallMediaTopology` |
 | `src/domain/calls/CallSessionStore.*` | Persistence |
-| `src/domain/calls/CallSessionQueries.*` | What a call's rows say (who is in it, who is awaited, sticky initiator); a peer's roster applied (our own row never overridden, no resurrection, no demotion) |
+| `src/domain/calls/CallSessionQueries.*` | What a call's rows say (who is in it, who is awaited, sticky initiator, our unanswered call to a peer, a peer still to answer our 1:1); a peer's roster applied (our own row never overridden, no resurrection, no demotion) |
+| `src/domain/calls/CallSummaryLogic.*` | The history entry a device writes when a call ends (who reports, answered / outcome, talk time, local only) |
 | `src/domain/calls/CallSessionLogic.*` | Pure transitions / expiry / coordinator pick / roster join stamps and co-invitees |
 | `src/domain/calls/SoftMigrateLogic.*` | Pure who-picks, the arming gate (1:1 stays Direct), who hosts the hop, a re-pick while on a hop, what a failed pick tells the user |
 | `src/domain/calls/CallHopAttachLogic.*` | Pure attach-wait / fan-out / hop-hint |

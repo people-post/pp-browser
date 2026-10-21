@@ -1,6 +1,7 @@
 #include "feature/calls/CallSessionWorkflow.h"
 
 #include "domain/calls/CallSessionQueries.h"
+#include "domain/calls/CallSummaryLogic.h"
 #include "domain/calls/CallListenAddrsLogic.h"
 #include "domain/calls/CallMediaPlannerSelectLogic.h"
 #include "domain/calls/CallSessionLogic.h"
@@ -867,9 +868,6 @@ Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, c
 }
 
 void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCallEndReason reason) {
-  if (reason == LiveCallEndReason::Merged) {
-    return;  // gave way to the call both sides are now in: that one is the history
-  }
   if (!session.origin_thread_id || !host_.wire.send_summary) {
     return;
   }
@@ -877,56 +875,13 @@ void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCall
   if (!local) {
     return;
   }
-  const bool group = session.origin_group_id.has_value() && !session.origin_group_id->empty();
-  const bool started = session.initiator_identity == *local;
-  if (!group && !started) {
-    return;  // 1:1: the starter reports the call; the other side reads its summary
+  auto participants = sessions_.ListParticipants(session.call_id);
+  const auto plan = PlanCallSummary(session, participants ? *participants : std::vector<CallParticipant>{}, *local,
+                                    reason, util::NowUnixMs());
+  if (!plan) {
+    return;
   }
-  CallSummaryDetail summary;
-  summary.call_id = session.call_id;
-  summary.media_mode = session.media_mode;
-  summary.group = group;
-  summary.started = started;
-
-  // 1:1: answered when the other side joined. Group: each device notes the call as it went for its
-  // own user — answered when we were in it with someone else; talk time from when both were.
-  std::optional<int64_t> self_joined;
-  std::optional<int64_t> other_joined;
-  if (auto participants = sessions_.ListParticipants(session.call_id)) {
-    for (const CallParticipant& participant : *participants) {
-      if (!participant.joined_at || *participant.joined_at <= 0) {
-        continue;
-      }
-      const bool self = participant.identity == *local;
-      if (!group && participant.identity == session.initiator_identity) {
-        continue;
-      }
-      auto& slot = self ? self_joined : other_joined;
-      slot = slot ? std::min(*slot, *participant.joined_at) : *participant.joined_at;
-    }
-  }
-  std::optional<int64_t> answered_at;
-  if (!group) {
-    answered_at = other_joined;
-  } else if (self_joined && other_joined) {
-    answered_at = std::max(*self_joined, *other_joined);
-  }
-  if (reason == LiveCallEndReason::Orphaned) {
-    answered_at.reset();  // ended by a restart, maybe hours later: no talk time to report
-  }
-  summary.outcome = SummaryOutcome(answered_at.has_value(), reason);
-  if (group && !answered_at && !started) {
-    // An invitee that never joined: it declined, or it missed the call.
-    summary.outcome = reason == LiveCallEndReason::Declined ? CallOutcome::Declined : CallOutcome::Missed;
-  }
-  if (answered_at) {
-    const int64_t ended_at = session.ended_at.value_or(util::NowUnixMs());
-    summary.duration_ms = std::max<int64_t>(0, ended_at - *answered_at);
-  }
-  // A group has no one view of a call: the summary stays on this device. 1:1 goes to both sides,
-  // unless the app is going down.
-  const bool local_only = group || reason == LiveCallEndReason::Shutdown;
-  if (auto sent = host_.wire.send_summary(*session.origin_thread_id, summary, local_only); !sent) {
+  if (auto sent = host_.wire.send_summary(*session.origin_thread_id, plan->detail, plan->local_only); !sent) {
     log().warning << "call summary not written call_id=" << session.call_id << " err=" << sent.error().message;
   }
 }
@@ -1207,34 +1162,7 @@ std::optional<CallSession> CallSessionWorkflow::CrossedCall(const CallInviteDeta
       return std::nullopt;  // more than the two of us
     }
   }
-  auto active = sessions_.ListActiveSessions();
-  if (!active) {
-    return std::nullopt;
-  }
-  for (const CallSession& session : *active) {
-    if (session.call_id == invite.call_id || session.initiator_identity != local_identity ||
-        (session.origin_group_id && !session.origin_group_id->empty())) {
-      continue;
-    }
-    auto participants = sessions_.ListParticipants(session.call_id);
-    if (!participants) {
-      continue;
-    }
-    bool peer_unanswered = false;
-    bool others = false;
-    for (const CallParticipant& participant : *participants) {
-      if (participant.identity == peer) {
-        peer_unanswered = participant.state == CallParticipantState::Invited ||
-                          participant.state == CallParticipantState::Ringing;
-      } else if (participant.identity != local_identity) {
-        others = true;
-      }
-    }
-    if (peer_unanswered && !others) {
-      return session;
-    }
-  }
-  return std::nullopt;
+  return call_queries::OurUnansweredCallTo(sessions_, peer, local_identity, invite.call_id);
 }
 
 void CallSessionWorkflow::SwallowCrossedInvite(const CallInviteDetail& invite, const std::string& inviter) {
@@ -1415,24 +1343,7 @@ Roe<void> CallSessionWorkflow::ApplyImplicitAccept(const std::string& call_id, c
   // B30: the relay can deliver CallAccept tens of seconds late (CN cellular) while the answerer's
   // call-media hello — keyed from the invite — already reached us. Only for a 1:1 call we started
   // whose one remote is still invited: then the hello is the answerer accepting.
-  auto session = sessions_.LoadSession(call_id);
-  if (!session || !session->has_value() || (*session)->state == CallSessionState::Ended) {
-    return {};
-  }
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants || participants->size() != 2) {
-    return {};
-  }
-  bool local_joined = false;
-  bool peer_pending = false;
-  for (const CallParticipant& p : *participants) {
-    if (p.identity == local_identity) {
-      local_joined = p.state == CallParticipantState::Joined;
-    } else if (p.identity == identity) {
-      peer_pending = p.state == CallParticipantState::Invited || p.state == CallParticipantState::Ringing;
-    }
-  }
-  if (!local_joined || !peer_pending) {
+  if (!call_queries::PeerStillToAnswerOurCall(sessions_, call_id, identity, local_identity)) {
     return {};
   }
   log().info << "Implicit CallAccept (inbound call-media hello before the relay's Accept) call_id=" << call_id
