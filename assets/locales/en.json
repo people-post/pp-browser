@@ -608,6 +608,8 @@
     "chat.tool.search_complete": "Search complete",
     "chat.tool.search_failed": "Search failed",
     "chat.tool.running": "Running {tool}...",
+    "chat.tool.fetching_briefs": "Fetching the latest briefs...",
+    "chat.tool.briefs_fetched": "Briefs fetched",
     "chat.tool.finished": "Finished {tool}",
     "chat.error.delete_failed": "Could not delete conversation",
     "chat.error.message_too_long": "Message is too long to send.",

@@ -130,6 +130,15 @@ std::string ToolActivityLabel(const std::string& tool_name, const std::string& s
   if (tool_name == "get_quote") {
     return Tr("chat.status.getting_quote");
   }
+  if (tool_name == "blog_articles") {
+    // The briefs feed: never show the raw tool name to the user.
+    if (status == "running") {
+      return Tr("chat.tool.fetching_briefs");
+    }
+    if (status == "done") {
+      return Tr("chat.tool.briefs_fetched");
+    }
+  }
   if (tool_name == "web_search") {
     if (status == "running") {
       return Tr("chat.tool.searching_web");
