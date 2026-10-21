@@ -1010,6 +1010,22 @@ void CallSessionManager::StopMediaIfCall(const std::string& call_id) {
 
 Roe<CallSession> CallSessionManager::StartCall(const std::string& origin_thread_id, const bool video_allowed,
                                                const std::vector<std::string>& invitee_identities) {
+  // Calling someone whose call is ringing here is answering it (they got there first).
+  if (invitee_identities.size() == 1) {
+    if (auto pending = workflow_.TopPendingInvite(); pending && pending->has_value() &&
+        (*pending)->inviter_identity == invitee_identities.front() &&
+        !((*pending)->origin_group_id && !(*pending)->origin_group_id->empty())) {
+      const std::string call_id = (*pending)->call_id;
+      log().info << "StartCall to " << invitee_identities.front() << " while their call rings — answering call_id="
+                 << call_id;
+      workflow_.SetPendingAcceptVoiceOnly(!video_allowed);
+      ClickAccept(call_id);
+      if (auto session = sessions_.LoadSession(call_id); session && session->has_value()) {
+        return **session;
+      }
+      return Error("Call session not found");
+    }
+  }
   auto started = workflow_.StartCall(origin_thread_id, video_allowed, invitee_identities);
   if (started) {
     // Circuit path often chooses R1 before Invite (product-stack / hard-w5); flush wire announce.
@@ -1253,7 +1269,14 @@ Roe<void> CallSessionManager::HandleInboundInvite(const std::string& detail_json
                                                   const std::optional<int64_t> relay_created_at_ms,
                                                   const std::optional<int64_t> relay_server_time_ms,
                                                   const std::string& local_identity) {
-  return workflow_.HandleInboundInvite(detail_json, sender_identity, message, relay_created_at_ms, relay_server_time_ms, local_identity);
+  auto answer = workflow_.HandleInboundInvite(detail_json, sender_identity, message, relay_created_at_ms, relay_server_time_ms, local_identity);
+  if (!answer) {
+    return answer.error();
+  }
+  if (*answer) {
+    ClickAccept(**answer);  // calling each other: theirs won, ours gave way
+  }
+  return {};
 }
 
 

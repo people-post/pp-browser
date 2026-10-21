@@ -915,6 +915,9 @@ Roe<void> CallSessionWorkflow::MaybeRotateMediaKey(const std::string& call_id, c
 }
 
 void CallSessionWorkflow::SendSummary(const CallSession& session, const LiveCallEndReason reason) {
+  if (reason == LiveCallEndReason::Merged) {
+    return;  // gave way to the call both sides are now in: that one is the history
+  }
   if (!session.origin_thread_id || !host_.wire.send_summary) {
     return;
   }
@@ -1185,20 +1188,28 @@ void CallSessionWorkflow::AbandonOrphanedCallsAfterRestart() {
   host_.wire.notify_ring_changed();
 }
 
-Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_json,
-                                                  const std::string& sender_identity,
-                                                  const ThreadMessage& message,
-                                                  const std::optional<int64_t> relay_created_at_ms,
-                                                  const std::optional<int64_t> relay_server_time_ms,
-                                                  const std::string& local_identity) {
+Roe<std::optional<std::string>> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_json,
+                                                                        const std::string& sender_identity,
+                                                                        const ThreadMessage& message,
+                                                                        const std::optional<int64_t> relay_created_at_ms,
+                                                                        const std::optional<int64_t> relay_server_time_ms,
+                                                                        const std::string& local_identity) {
+  using Answer = std::optional<std::string>;
   auto invite = CallControlCodec::DecodeInvite(detail_json);
   if (!invite) {
     return invite.error();
   }
   if (ShouldIgnoreInvite(*invite, sender_identity, local_identity, relay_created_at_ms, relay_server_time_ms)) {
-    return {};
+    return Answer{};
   }
   const std::string inviter = invite->inviter_identity.empty() ? sender_identity : invite->inviter_identity;
+  const std::optional<CallSession> crossed = CrossedCall(*invite, inviter, local_identity);
+  if (crossed && crossed->call_id < invite->call_id) {
+    log().info << "Calling each other: our call_id=" << crossed->call_id << " wins over call_id=" << invite->call_id
+               << " from " << inviter;
+    SwallowCrossedInvite(*invite, inviter);
+    return Answer{};
+  }
   auto session = StoreRingingInvite(*invite, inviter, message, local_identity);
   if (!session) {
     return session.error();
@@ -1219,8 +1230,72 @@ Roe<void> CallSessionWorkflow::HandleInboundInvite(const std::string& detail_jso
   if (host_.reach.ensure_circuit_ready) {
     host_.reach.ensure_circuit_ready();
   }
+  if (crossed) {
+    // Their call wins: ours gives way (no history entry) and theirs is answered as ours was placed.
+    log().info << "Calling each other: call_id=" << invite->call_id << " from " << inviter
+               << " wins over our call_id=" << crossed->call_id << " — answering it";
+    if (auto left = LeaveCall(crossed->call_id, LiveCallEndReason::Merged); !left) {
+      log().warning << "Calling each other: leaving call_id=" << crossed->call_id << " failed: " << left.error().message;
+    }
+    pending_accept_voice_only_ = !crossed->video_allowed;
+    host_.wire.notify_ring_changed();
+    return Answer{invite->call_id};
+  }
   host_.wire.notify_ring_changed();
-  return {};
+  return Answer{};
+}
+
+std::optional<CallSession> CallSessionWorkflow::CrossedCall(const CallInviteDetail& invite, const std::string& peer,
+                                                            const std::string& local_identity) const {
+  if (invite.origin_group_id && !invite.origin_group_id->empty()) {
+    return std::nullopt;
+  }
+  for (const CallRosterEntry& entry : invite.participants) {
+    if (entry.identity != peer && entry.identity != local_identity) {
+      return std::nullopt;  // more than the two of us
+    }
+  }
+  auto active = sessions_.ListActiveSessions();
+  if (!active) {
+    return std::nullopt;
+  }
+  for (const CallSession& session : *active) {
+    if (session.call_id == invite.call_id || session.initiator_identity != local_identity ||
+        (session.origin_group_id && !session.origin_group_id->empty())) {
+      continue;
+    }
+    auto participants = sessions_.ListParticipants(session.call_id);
+    if (!participants) {
+      continue;
+    }
+    bool peer_unanswered = false;
+    bool others = false;
+    for (const CallParticipant& participant : *participants) {
+      if (participant.identity == peer) {
+        peer_unanswered = participant.state == CallParticipantState::Invited ||
+                          participant.state == CallParticipantState::Ringing;
+      } else if (participant.identity != local_identity) {
+        others = true;
+      }
+    }
+    if (peer_unanswered && !others) {
+      return session;
+    }
+  }
+  return std::nullopt;
+}
+
+void CallSessionWorkflow::SwallowCrossedInvite(const CallInviteDetail& invite, const std::string& inviter) {
+  CallSession session;
+  session.call_id = invite.call_id;
+  session.initiator_identity = inviter;
+  session.media_mode = invite.media_mode;
+  session.video_allowed = CallSessionLogic::VideoAllowedFromInvite(invite);
+  session.state = CallSessionState::Ended;
+  session.created_at = util::NowUnixMs();
+  session.ended_at = session.created_at;
+  session.media_epoch = invite.media_epoch > 0 ? invite.media_epoch : 1;
+  (void)sessions_.UpsertSession(session);
 }
 
 bool CallSessionWorkflow::ShouldIgnoreInvite(const CallInviteDetail& invite, const std::string& sender_identity,

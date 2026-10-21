@@ -171,9 +171,15 @@ public:
   /** No sweep, no writes (UI reads): expired invites are skipped instead. */
   Roe<std::optional<PendingCallInvite>> PeekTopPendingInvite() const;
 
-  Roe<void> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
-                                const ThreadMessage& message, std::optional<int64_t> relay_created_at_ms,
-                                std::optional<int64_t> relay_server_time_ms, const std::string& local_identity);
+  /**
+   * A call invite. Returns the call to answer at once: the inviter and this device called each
+   * other at the same moment and the inviter's call won (CrossedCall), so ours gave way.
+   */
+  Roe<std::optional<std::string>> HandleInboundInvite(const std::string& detail_json, const std::string& sender_identity,
+                                                      const ThreadMessage& message,
+                                                      std::optional<int64_t> relay_created_at_ms,
+                                                      std::optional<int64_t> relay_server_time_ms,
+                                                      const std::string& local_identity);
   Roe<void> HandleInboundAccept(const std::string& detail_json, const std::string& sender_identity,
                                 const std::string& local_identity);
   /**
@@ -235,6 +241,15 @@ private:
   /** The invite is on the wire: the invitee Ringing, its pending row, the offer booked, the LiveCall's peer. */
   Roe<void> RecordInviteSent(const CallSession& session, const CallInviteDetail& invite);
   // --- HandleInboundInvite steps ---
+  /**
+   * This device's own unanswered 1:1 call to `peer`, when `peer` just invited us to another one:
+   * both called each other at once. Both sides keep the call with the lower id (the same choice on
+   * each side, no message needed): the loser's side answers the winner and drops its own.
+   */
+  std::optional<CallSession> CrossedCall(const CallInviteDetail& invite, const std::string& peer,
+                                         const std::string& local_identity) const;
+  /** Our call won: their invite never rings, and a redelivery of it is ignored (Ended here). */
+  void SwallowCrossedInvite(const CallInviteDetail& invite, const std::string& inviter);
   /** Already joined / ended here, an offer below our floor (declined), or a stale replay. */
   bool ShouldIgnoreInvite(const CallInviteDetail& invite, const std::string& sender_identity,
                           const std::string& local_identity, std::optional<int64_t> relay_created_at_ms,

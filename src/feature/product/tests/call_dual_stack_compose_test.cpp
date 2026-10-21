@@ -337,7 +337,9 @@ TEST_F(CallDualStackComposeTest, ARedialStormEndsInOneCallThatConnects) {
   EXPECT_TRUE(!pending || !pending->has_value()) << "nothing left ringing after the storm";
 }
 
-TEST_F(CallDualStackComposeTest, CallingEachOtherAtOnceStillConnects) {
+TEST_F(CallDualStackComposeTest, CallingEachOtherAtOnceMergesIntoOneCall) {
+  // Both press Call before either invite lands. Each side keeps the lower call id: the side whose
+  // call lost answers the winner and drops its own. No ring, no tap — one call.
   const Thread offer_thread = DmOn(offer_, "thread-dual-glare-a");
   const Thread answer_thread = DmOn(answer_, "thread-dual-glare-b");
   auto from_offer = StartCallNow(*offer_.ui, offer_thread.id, false, {answer_.local_identity});
@@ -350,33 +352,43 @@ TEST_F(CallDualStackComposeTest, CallingEachOtherAtOnceStillConnects) {
     ASSERT_TRUE(key && key->has_value());
     ASSERT_TRUE(to->stack->MediaKeys()->PutEpochKey(call, 1, **key));
   }
-  PumpWire();
-  // Whatever the two calls became, one press of Accept on a ringing side must connect them.
-  StackSide* ringing = nullptr;
-  std::string ringing_call;
-  for (StackSide* side : {&offer_, &answer_}) {
-    if (auto pending = side->ui->TopPendingInvite(); pending && pending->has_value()) {
-      ringing = side;
-      ringing_call = (*pending)->call_id;
-      break;
-    }
-  }
-  if (ringing == nullptr) {
-    // Merged on their own: both already in one call.
-    DrainUntil([&]() {
-      PumpWire();
-      return answer_.ui->Phase() == CallPhase::InCall && offer_.ui->Phase() == CallPhase::InCall;
-    });
-  } else {
-    ringing->ui->Apply(CallLifecycleEvent::InviteSeen, ringing_call);
-    ringing->ui->Apply(CallLifecycleEvent::AcceptClicked, ringing_call);
-    DrainUntil([&]() {
-      PumpWire();
-      return answer_.ui->Phase() == CallPhase::InCall && offer_.ui->Phase() == CallPhase::InCall;
-    });
-  }
+  const std::string winner = std::min(from_offer->call_id, from_answer->call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return answer_.ui->Phase() == CallPhase::InCall && offer_.ui->Phase() == CallPhase::InCall;
+  });
   EXPECT_EQ(offer_.ui->Phase(), CallPhase::InCall) << "offer side";
   EXPECT_EQ(answer_.ui->Phase(), CallPhase::InCall) << "answer side";
+  EXPECT_EQ(offer_.ui->ActiveCallId(), winner);
+  EXPECT_EQ(answer_.ui->ActiveCallId(), winner);
+  for (StackSide* side : {&offer_, &answer_}) {
+    auto pending = side->ui->TopPendingInvite();
+    EXPECT_TRUE(pending && !pending->has_value()) << "nothing rings";
+  }
+}
+
+TEST_F(CallDualStackComposeTest, CallingBackWhileTheirCallRingsAnswersIt) {
+  const Thread offer_thread = DmOn(offer_, "thread-dual-callback-a");
+  const Thread answer_thread = DmOn(answer_, "thread-dual-callback-b");
+  auto placed = StartCallNow(*offer_.ui, offer_thread.id, false, {answer_.local_identity});
+  ASSERT_TRUE(placed) << placed.error().message;
+  auto key = offer_.stack->MediaKeys()->LoadEpochKey(placed->call_id, 1);
+  ASSERT_TRUE(key && key->has_value());
+  ASSERT_TRUE(answer_.stack->MediaKeys()->PutEpochKey(placed->call_id, 1, **key));
+  DrainUntil([&]() {
+    PumpWire();
+    auto pending = answer_.ui->TopPendingInvite();
+    return pending && pending->has_value();
+  });
+  auto called_back = StartCallNow(*answer_.ui, answer_thread.id, false, {offer_.local_identity});
+  ASSERT_TRUE(called_back) << called_back.error().message;
+  EXPECT_EQ(called_back->call_id, placed->call_id) << "calling back is answering";
+  DrainUntil([&]() {
+    PumpWire();
+    return answer_.ui->Phase() == CallPhase::InCall && offer_.ui->Phase() == CallPhase::InCall;
+  });
+  EXPECT_EQ(offer_.ui->ActiveCallId(), placed->call_id);
+  EXPECT_EQ(answer_.ui->ActiveCallId(), placed->call_id);
 }
 
 // H012 / H011 over call-control: a signaled punch runs offer → answer → both bursts, and our R1

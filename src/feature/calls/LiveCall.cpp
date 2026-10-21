@@ -108,6 +108,7 @@ CallOutcome SummaryOutcome(const bool answered, const LiveCallEndReason reason) 
   case LiveCallEndReason::MediaUnavailable:
   case LiveCallEndReason::Shutdown:
   case LiveCallEndReason::Orphaned:
+  case LiveCallEndReason::Merged:
     return CallOutcome::Failed;
   }
   return CallOutcome::Failed;
@@ -139,6 +140,8 @@ const char* LiveCallEndReasonName(const LiveCallEndReason reason) {
     return "Shutdown";
   case LiveCallEndReason::Orphaned:
     return "Orphaned";
+  case LiveCallEndReason::Merged:
+    return "Merged";
   }
   return "?";
 }

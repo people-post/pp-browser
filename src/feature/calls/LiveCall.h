@@ -60,6 +60,8 @@ enum class LiveCallEndReason {
   Shutdown,
   /** Left over from before a restart. */
   Orphaned,
+  /** Both called each other at once: this call gave way to the other one (no history entry). */
+  Merged,
 };
 
 /** How a call's media is doing (V037 Status) and what it has reached — per call. */
