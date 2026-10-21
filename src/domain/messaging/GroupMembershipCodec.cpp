@@ -390,11 +390,12 @@ Roe<GroupMembershipCodec::OwnerTransferredPayload> GroupMembershipCodec::DecodeO
 }
 
 Roe<std::string> GroupMembershipCodec::EncodeGroupRenamed(const std::string& group_id, const std::string& title,
-                                                          const uint64_t roster_epoch) {
+                                                          const uint64_t roster_epoch, const uint64_t title_version) {
   Object json;
   json.set("group_id", group_id);
   json.set("title", title);
   json.setJsonUInt("roster_epoch", roster_epoch);
+  json.setJsonUInt("title_version", title_version);
   return DumpJson(json);
 }
 
@@ -412,6 +413,9 @@ Roe<GroupMembershipCodec::GroupRenamedPayload> GroupMembershipCodec::DecodeGroup
     payload.title = *title;
   }
   payload.roster_epoch = ReadRosterEpoch(*json);
+  if (auto version = json->getNonNegInt("title_version")) {
+    payload.title_version = *version;
+  }
   if (payload.group_id.empty() || payload.title.empty()) {
     return Error("group_renamed missing group_id or title");
   }

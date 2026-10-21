@@ -257,6 +257,7 @@ TEST(GroupInviteIngestTest, InboundAcceptAddsInviteeToOwnerRoster) {
   pending.roster_epoch = 1;
   pending.status = InviteStatus::Pending;
   pending.created_at = util::NowUnixMs();
+  pending.outbound = true;  // alice issued it
   ASSERT_TRUE(owner.roster.UpsertPendingInvite(pending));
 
   auto detail = GroupMembershipCodec::EncodeInviteResponse("nonce-accept-1", "group:hike");
@@ -329,6 +330,7 @@ TEST(GroupInviteIngestTest, InboundAcceptAppliesEvenWhenDmSoftCompromised) {
   pending.roster_epoch = 1;
   pending.status = InviteStatus::Pending;
   pending.created_at = util::NowUnixMs();
+  pending.outbound = true;  // alice issued it
   ASSERT_TRUE(owner.roster.UpsertPendingInvite(pending));
 
   PeerSyncState compromised = DefaultPeerSyncState();
@@ -378,6 +380,7 @@ TEST(GroupInviteIngestTest, InboundAcceptOnPublicClearsCompromisedLatch) {
   pending.roster_epoch = 1;
   pending.status = InviteStatus::Pending;
   pending.created_at = util::NowUnixMs();
+  pending.outbound = true;  // alice issued it
   ASSERT_TRUE(owner.roster.UpsertPendingInvite(pending));
 
   PeerSyncState compromised = DefaultPeerSyncState();
@@ -576,6 +579,106 @@ TEST(GroupInviteIngestTest, GroupEnvelopeHardRejectsNonMember) {
   const RelayReceiveOutcome outcome = invitee.pipeline.ProcessEnvelope(envelope, "account:bob");
   EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
   EXPECT_FALSE(outcome.persisted);
+}
+
+namespace {
+
+RelayEnvelope GroupEnvelopeFrom(const std::string& sender, const std::string& group_id, const std::string& to) {
+  RelayEnvelope envelope;
+  envelope.envelope_version = kRelayEnvelopeVersion;
+  envelope.message_id = util::GenerateUuid();
+  envelope.sender_contact_id = sender;
+  envelope.sender_relay_id = PartyHarness::RelayForAccount(sender);
+  envelope.route.kind = "group";
+  envelope.route.group_id = group_id;
+  envelope.sender_seq = 1;
+  envelope.session_epoch = 1;
+  envelope.body.e2e.member_payloads = std::map<std::string, std::string>{{to, "deadbeef"}};
+  return envelope;
+}
+
+void SeedHike(PartyHarness& party, const std::vector<std::string>& members) {
+  GroupMetadata metadata;
+  metadata.group_id = "group:hike";
+  metadata.owner_identity = "account:alice";
+  metadata.title = "Weekend hike";
+  metadata.roster_epoch = 1;
+  ASSERT_TRUE(party.roster.UpsertMetadata(metadata));
+  for (const std::string& identity : members) {
+    GroupRosterMember member;
+    member.member_identity = identity;
+    member.role = identity == "account:alice" ? MemberRole::Owner : MemberRole::Member;
+    member.joined_at = util::NowUnixMs();
+    ASSERT_TRUE(party.roster.UpsertMember("group:hike", member));
+  }
+  ASSERT_TRUE(party.store.FindOrCreateGroupThread("group:hike", "Weekend hike", {}));
+}
+
+}  // namespace
+
+// Group messages need both ends on this device's roster: dropped (silently, before signature and
+// decrypt) when the sender is not a member...
+TEST(GroupInviteIngestTest, GroupEnvelopeFromASenderOffTheRosterIsDropped) {
+  PartyHarness bob("offroster", "account:bob", "account:alice");
+  SeedHike(bob, {"account:bob", "account:carol"});
+  const RelayReceiveOutcome outcome =
+      bob.pipeline.ProcessEnvelope(GroupEnvelopeFrom("account:alice", "group:hike", "account:bob"), "account:bob");
+  EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
+  EXPECT_FALSE(outcome.persisted);
+  EXPECT_FALSE(outcome.receive_failure_notice) << "dropped on the roster, not at signature / decrypt";
+}
+
+// ...and when we are no longer a member, though the group's thread is still there (removed by the owner).
+TEST(GroupInviteIngestTest, GroupEnvelopeAfterLocalRemovalIsDropped) {
+  PartyHarness bob("removed", "account:bob", "account:alice");
+  SeedHike(bob, {"account:alice"});
+  ASSERT_TRUE(bob.store.FindGroupThread("group:hike")->has_value());
+  const RelayReceiveOutcome outcome =
+      bob.pipeline.ProcessEnvelope(GroupEnvelopeFrom("account:alice", "group:hike", "account:bob"), "account:bob");
+  EXPECT_EQ(outcome.decision, IngestDecision::HardReject);
+  EXPECT_FALSE(outcome.persisted);
+  EXPECT_FALSE(outcome.receive_failure_notice) << "dropped on the roster, not at signature / decrypt";
+}
+
+// An invite is recorded only when its sender is the inviter and we are the invitee, and only from
+// the owner of a group we already know.
+TEST(GroupInviteIngestTest, AnInviteIsRecordedOnlyFromItsInviterToUs) {
+  PartyHarness bob("invite_bind", "account:bob", "account:alice");
+  const auto send = [&bob](GroupInvitePayload invite, uint64_t seq) {
+    invite.group_title = "Weekend hike";
+    invite.roster_epoch = 1;
+    invite.expires_at = util::NowUnixMs() + 86400000;
+    auto detail = GroupMembershipCodec::EncodeInvite(invite);
+    EXPECT_TRUE(detail);
+    (void)bob.pipeline.ProcessEnvelope(bob.MakeSystemEnvelope("group_invite", *detail, "Group invitation", seq),
+                                       "account:bob");
+    auto pending = bob.roster.LoadPendingInvite(invite.invite_nonce);
+    return pending && pending->has_value();
+  };
+  GroupInvitePayload invite;
+  invite.group_id = "group:hike";
+  invite.inviter_identity = "account:alice";
+  invite.invitee_identity = "account:carol";
+  invite.invite_nonce = "not-for-us";
+  EXPECT_FALSE(send(invite, 1)) << "addressed to someone else";
+  invite.inviter_identity = "account:dave";
+  invite.invitee_identity = "account:bob";
+  invite.invite_nonce = "not-from-sender";
+  EXPECT_FALSE(send(invite, 2)) << "names another inviter";
+
+  GroupMetadata known;
+  known.group_id = "group:known";
+  known.owner_identity = "account:dave";
+  known.roster_epoch = 1;
+  ASSERT_TRUE(bob.roster.UpsertMetadata(known));
+  invite.group_id = "group:known";
+  invite.inviter_identity = "account:alice";
+  invite.invite_nonce = "not-the-owner";
+  EXPECT_FALSE(send(invite, 3)) << "a known group the sender does not own";
+
+  invite.group_id = "group:hike";
+  invite.invite_nonce = "fine";
+  EXPECT_TRUE(send(invite, 4));
 }
 
 } // namespace

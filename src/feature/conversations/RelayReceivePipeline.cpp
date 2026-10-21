@@ -164,10 +164,14 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   auto response = GroupMembershipCodec::DecodeInviteResponseFromMessage(message);
   if (response) {
     if (response->control_type == GroupMembershipControlType::GroupInviteAccept) {
-      // Pending invite is required — no fallback seed. Owner then publishes member_joined.
-      if (auto applied = ApplyInviteAcceptToRoster(group_roster_, response->invite_nonce, actor_identity);
-          !applied) {
+      // An invite this device issued for a group it owns is required. Owner then publishes member_joined.
+      auto applied = ApplyInviteAcceptToRoster(group_roster_, response->invite_nonce, actor_identity,
+                                               response->group_id, local_account, util::NowUnixMs());
+      if (!applied) {
         return applied.error();
+      }
+      if (!*applied) {
+        return {};  // already accepted: nothing new to apply or announce
       }
       auto metadata = group_roster_.LoadMetadata(response->group_id);
       if (outcome && metadata && *metadata) {
@@ -177,7 +181,8 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       }
       return {};
     }
-    if (auto declined = ApplyInviteDeclineToRoster(group_roster_, response->invite_nonce, actor_identity);
+    if (auto declined = ApplyInviteDeclineToRoster(group_roster_, response->invite_nonce, actor_identity,
+                                                   response->group_id);
         !declined) {
       return declined.error();
     }
@@ -305,23 +310,12 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     if (auto ignore = ignore_if_not_member(renamed->group_id); ignore && *ignore) {
       return {};
     }
-    auto metadata = group_roster_.LoadMetadata(renamed->group_id);
-    if (!metadata) {
-      return metadata.error();
+    auto applied = ApplyGroupRenamedToRoster(group_roster_, *renamed, actor_identity);
+    if (!applied) {
+      return applied.error();
     }
-    if (!*metadata) {
-      return Error("Unknown group for rename");
-    }
-    if ((*metadata)->owner_identity != actor_identity) {
-      return Error("Rename rejected: actor is not the group owner");
-    }
-    GroupMetadata updated = **metadata;
-    updated.title = renamed->title;
-    if (renamed->roster_epoch > updated.roster_epoch) {
-      updated.roster_epoch = renamed->roster_epoch;
-    }
-    if (auto saved = group_roster_.UpsertMetadata(updated); !saved) {
-      return saved.error();
+    if (!*applied) {
+      return {};  // not newer than the title we hold
     }
     auto thread = store_.FindGroupThread(renamed->group_id);
     if (thread && *thread) {
@@ -330,7 +324,8 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
       row.updated_at = util::NowUnixMs();
       (void)store_.UpsertThread(row);
       auto detail =
-          GroupMembershipCodec::EncodeGroupRenamed(renamed->group_id, renamed->title, updated.roster_epoch);
+          GroupMembershipCodec::EncodeGroupRenamed(renamed->group_id, renamed->title, renamed->roster_epoch,
+                                                   renamed->title_version);
       if (detail) {
         auto sys = GroupMembershipCodec::BuildSystemMessage(row.id, GroupMembershipControlType::GroupRenamed,
                                                             "Group renamed to " + renamed->title, *detail,
@@ -357,6 +352,28 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
     }
     return invite.error();
   }
+  // An invite speaks for its signed sender only, and only to us.
+  if (invite->inviter_identity != actor_identity) {
+    return Error("Invite rejected: inviter is not the sender");
+  }
+  if (local_account.empty() || invite->invitee_identity != local_account) {
+    return Error("Invite rejected: not addressed to the local account");
+  }
+  // A group we already know is the owner's to invite to, and not one we are in already.
+  if (auto known = group_roster_.LoadMetadata(invite->group_id); !known) {
+    return known.error();
+  } else if (*known) {
+    if ((*known)->owner_identity != actor_identity) {
+      return Error("Invite rejected: sender does not own the group");
+    }
+    auto member = group_roster_.IsMember(invite->group_id, local_account);
+    if (!member) {
+      return member.error();
+    }
+    if (*member) {
+      return Error("Invite rejected: already a member");
+    }
+  }
   auto allowed = invite_gate_->AllowsInboundInvite(*invite);
   if (!allowed) {
     return allowed.error();
@@ -375,6 +392,7 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
   pending.status = InviteStatus::Pending;
   pending.expires_at = invite->expires_at;
   pending.created_at = util::NowUnixMs();
+  pending.outbound = false;
   if (auto recorded = group_roster_.UpsertPendingInvite(pending); !recorded) {
     return recorded.error();
   }
@@ -1000,8 +1018,19 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     return outcome;
   }
   const std::string& group_id = *envelope.route.group_id;
-  if (!group_roster_.IsMember(group_id, local_relay_user_id)) {
-    // Expected after leave/dismiss while peers still fan out — silent.
+  // Both ends must be on this device's roster for the group: us (after leave / dismiss / removal
+  // peers may still fan out — silent), and the sender (a member, not blocked).
+  auto local_member = group_roster_.IsMember(group_id, local_relay_user_id);
+  if (!local_member || !*local_member) {
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
+  if (SenderBlocked(envelope.sender_contact_id)) {
+    outcome.decision = IngestDecision::HardReject;
+    return outcome;
+  }
+  auto sender_member = group_roster_.IsMember(group_id, envelope.sender_contact_id);
+  if (!sender_member || !*sender_member) {
     outcome.decision = IngestDecision::HardReject;
     return outcome;
   }

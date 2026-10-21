@@ -6,17 +6,18 @@ namespace pbr {
 namespace {
 
 TEST(GroupRenamedCodecTest, RoundTripDetail) {
-  auto encoded = GroupMembershipCodec::EncodeGroupRenamed("group:1", "New Title", 3);
+  auto encoded = GroupMembershipCodec::EncodeGroupRenamed("group:1", "New Title", 3, 7);
   ASSERT_TRUE(encoded);
   auto decoded = GroupMembershipCodec::DecodeGroupRenamed(*encoded);
   ASSERT_TRUE(decoded);
   EXPECT_EQ(decoded->group_id, "group:1");
   EXPECT_EQ(decoded->title, "New Title");
   EXPECT_EQ(decoded->roster_epoch, 3u);
+  EXPECT_EQ(decoded->title_version, 7u);
 }
 
 TEST(GroupRenamedCodecTest, DecodeFromSystemMessage) {
-  auto detail = GroupMembershipCodec::EncodeGroupRenamed("group:2", "Crew", 1);
+  auto detail = GroupMembershipCodec::EncodeGroupRenamed("group:2", "Crew", 1, 1);
   ASSERT_TRUE(detail);
   auto message = GroupMembershipCodec::BuildSystemMessage("thread-1", GroupMembershipControlType::GroupRenamed,
                                                           "Group renamed to Crew", *detail, "relay:owner");

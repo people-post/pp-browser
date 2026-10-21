@@ -64,6 +64,8 @@ struct GroupMetadata {
   uint64_t roster_epoch = 1;
   GroupPolicy policy;
   uint32_t session_epoch = 1;
+  /** Bumped by the owner on each rename; a rename applies only when newer (renames keep roster_epoch). */
+  uint64_t title_version = 0;
 };
 
 struct GroupInvitePayload {
@@ -98,6 +100,8 @@ struct PendingGroupInvite {
   InviteStatus status = InviteStatus::Pending;
   std::optional<int64_t> expires_at;
   int64_t created_at = 0;
+  /** This device issued the invite (we own the group); false for one we received. */
+  bool outbound = false;
 };
 
 std::string GenerateGroupId();

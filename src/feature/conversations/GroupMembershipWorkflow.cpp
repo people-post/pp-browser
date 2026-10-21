@@ -1,6 +1,7 @@
 #include "feature/conversations/GroupMembershipWorkflow.h"
 
 #include "domain/people/DirectChatTargetFromContact.h"
+#include "domain/messaging/GroupMembershipApply.h"
 #include "domain/messaging/GroupMembershipCodec.h"
 #include "domain/messaging/GroupTypes.h"
 #include "domain/messaging/PairwiseFanoutLogic.h"
@@ -185,7 +186,7 @@ Roe<void> GroupMembershipWorkflow::InviteMember(const std::string& group_id, con
   if (*local != metadata->owner_identity) {
     return Error("Only the group owner may invite members");
   }
-  if (!invite_gate_.CanSendInvite(MemberRole::Owner)) {
+  if (auto can = invite_gate_.CanSendInvite(MemberRole::Owner); !can || !*can) {
     return Error("Actor lacks invite permission");
   }
 
@@ -214,6 +215,7 @@ Roe<void> GroupMembershipWorkflow::InviteMember(const std::string& group_id, con
   pending.status = InviteStatus::Pending;
   pending.expires_at = invite.expires_at;
   pending.created_at = util::NowUnixMs();
+  pending.outbound = true;
   if (auto recorded = invite_gate_.RecordPendingInvite(pending); !recorded) {
     return recorded.error();
   }
@@ -275,7 +277,7 @@ Roe<void> GroupMembershipWorkflow::SendInviteResponseDirectMessage(const std::st
 
 Roe<Thread> GroupMembershipWorkflow::AcceptInvite(const std::string& invite_nonce) {
   auto pending = roster_.LoadPendingInvite(invite_nonce);
-  if (!pending || !pending->has_value()) {
+  if (!pending || !pending->has_value() || (*pending)->outbound) {
     return Error("Invite not found");
   }
   if ((*pending)->status != InviteStatus::Pending) {
@@ -351,7 +353,7 @@ Roe<Thread> GroupMembershipWorkflow::AcceptInvite(const std::string& invite_nonc
 
 Roe<void> GroupMembershipWorkflow::DeclineInvite(const std::string& invite_nonce) {
   auto pending = roster_.LoadPendingInvite(invite_nonce);
-  if (!pending || !pending->has_value()) {
+  if (!pending || !pending->has_value() || (*pending)->outbound) {
     return Error("Invite not found");
   }
   if ((*pending)->status != InviteStatus::Pending) {
@@ -861,8 +863,9 @@ Roe<Thread> GroupMembershipWorkflow::ForkGroup(const std::string& group_id, cons
 
 Roe<void> GroupMembershipWorkflow::SendRenameDirectMessage(const std::string& member_identity,
                                                           const std::string& group_id, const std::string& title,
-                                                          const uint64_t roster_epoch) {
-  auto detail = GroupMembershipCodec::EncodeGroupRenamed(group_id, title, roster_epoch);
+                                                          const uint64_t roster_epoch,
+                                                          const uint64_t title_version) {
+  auto detail = GroupMembershipCodec::EncodeGroupRenamed(group_id, title, roster_epoch, title_version);
   if (!detail) {
     return detail.error();
   }
@@ -890,6 +893,7 @@ Roe<void> GroupMembershipWorkflow::RenameGroupShared(const std::string& group_id
   }
 
   metadata->title = title;
+  metadata->title_version += 1;
   if (auto saved = roster_.UpsertMetadata(*metadata); !saved) {
     return saved.error();
   }
@@ -905,7 +909,8 @@ Roe<void> GroupMembershipWorkflow::RenameGroupShared(const std::string& group_id
     if (auto upserted = store_.UpsertThread(updated); !upserted) {
       return upserted.error();
     }
-    auto detail = GroupMembershipCodec::EncodeGroupRenamed(group_id, title, metadata->roster_epoch);
+    auto detail = GroupMembershipCodec::EncodeGroupRenamed(group_id, title, metadata->roster_epoch,
+                                                           metadata->title_version);
     if (!detail) {
       return detail.error();
     }
@@ -924,7 +929,9 @@ Roe<void> GroupMembershipWorkflow::RenameGroupShared(const std::string& group_id
     if (member.member_identity == *local) {
       continue;
     }
-    if (auto sent = SendRenameDirectMessage(member.member_identity, group_id, title, metadata->roster_epoch); !sent) {
+    if (auto sent = SendRenameDirectMessage(member.member_identity, group_id, title, metadata->roster_epoch,
+                                            metadata->title_version);
+        !sent) {
       return sent.error();
     }
   }
@@ -933,23 +940,12 @@ Roe<void> GroupMembershipWorkflow::RenameGroupShared(const std::string& group_id
 
 Roe<void> GroupMembershipWorkflow::ApplyInboundGroupRenamed(const GroupMembershipCodec::GroupRenamedPayload& payload,
                                                            const std::string& actor_identity) {
-  auto metadata = roster_.LoadMetadata(payload.group_id);
-  if (!metadata) {
-    return metadata.error();
+  auto applied = ApplyGroupRenamedToRoster(roster_, payload, actor_identity);
+  if (!applied) {
+    return applied.error();
   }
-  if (!*metadata) {
-    return Error("Unknown group for rename");
-  }
-  if (!actor_identity.empty() && (*metadata)->owner_identity != actor_identity) {
-    return Error("Rename rejected: actor is not the group owner");
-  }
-  GroupMetadata updated = **metadata;
-  updated.title = payload.title;
-  if (payload.roster_epoch > updated.roster_epoch) {
-    updated.roster_epoch = payload.roster_epoch;
-  }
-  if (auto saved = roster_.UpsertMetadata(updated); !saved) {
-    return saved.error();
+  if (!*applied) {
+    return {};
   }
 
   auto thread = store_.FindGroupThread(payload.group_id);
@@ -963,7 +959,8 @@ Roe<void> GroupMembershipWorkflow::ApplyInboundGroupRenamed(const GroupMembershi
     if (auto upserted = store_.UpsertThread(row); !upserted) {
       return upserted.error();
     }
-    auto detail = GroupMembershipCodec::EncodeGroupRenamed(payload.group_id, payload.title, updated.roster_epoch);
+    auto detail = GroupMembershipCodec::EncodeGroupRenamed(payload.group_id, payload.title, payload.roster_epoch,
+                                                           payload.title_version);
     if (detail) {
       (void)AppendMembershipSystemEvent(row.id, GroupMembershipControlType::GroupRenamed,
                                         "Group renamed to " + payload.title, *detail, actor_identity);

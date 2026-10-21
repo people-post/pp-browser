@@ -78,11 +78,12 @@ public:
   static Roe<OwnerTransferredPayload> DecodeOwnerTransferredFromMessage(const ThreadMessage& message);
 
   static Roe<std::string> EncodeGroupRenamed(const std::string& group_id, const std::string& title,
-                                            uint64_t roster_epoch);
+                                            uint64_t roster_epoch, uint64_t title_version);
   struct GroupRenamedPayload {
     std::string group_id;
     std::string title;
     uint64_t roster_epoch = 0;
+    uint64_t title_version = 0;
   };
   static Roe<GroupRenamedPayload> DecodeGroupRenamed(const std::string& detail_json);
   static Roe<GroupRenamedPayload> DecodeGroupRenamedFromMessage(const ThreadMessage& message);
