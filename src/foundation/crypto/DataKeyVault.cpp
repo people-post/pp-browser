@@ -235,10 +235,17 @@ Roe<ByteVector> DataKeyVault::UnwrapDekFromVaultBytes(const ByteVector& vault_by
 }
 
 Roe<void> DataKeyVault::ChangePin(std::string_view old_pin, std::string_view new_pin) {
-  if (auto unlocked = Unlock(old_pin); !unlocked) {
-    return unlocked.error();
+  // Verify the old PIN without touching dek_: the local backup writer may be reading it on a
+  // worker thread, and the DEK itself does not change — only its wrap does.
+  auto bytes = ReadVaultFile();
+  if (!bytes) {
+    return bytes.error();
   }
-  ByteVector dek = dek_;
+  auto unwrapped = UnwrapDekFromVaultBytes(*bytes, profile_id_, old_pin);
+  if (!unwrapped) {
+    return unwrapped.error();
+  }
+  ByteVector dek = std::move(*unwrapped);
   auto params = PinKeyDeriver::GenerateParams();
   if (!params) {
     return params.error();
@@ -253,10 +260,14 @@ Roe<void> DataKeyVault::ChangePin(std::string_view old_pin, std::string_view new
     return wrapped.error();
   }
   if (auto written = WriteVaultFile(*params, *wrapped); !written) {
+    sodium_memzero(dek.data(), dek.size());
     return written.error();
   }
-  Lock();
-  dek_ = std::move(dek);
+  if (dek_.empty()) {
+    dek_ = std::move(dek);
+  } else {
+    sodium_memzero(dek.data(), dek.size());
+  }
   return {};
 }
 

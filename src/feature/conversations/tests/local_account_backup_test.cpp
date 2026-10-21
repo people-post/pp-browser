@@ -197,6 +197,32 @@ TEST(LocalAccountBackupTest, RestoreNeedsOriginalPin) {
   EXPECT_TRUE(b.vault->Unlock("9876"));
 }
 
+// A PIN change does not touch the live DEK; the next Write carries the re-wrapped vault, so the
+// backup opens with the new PIN only.
+TEST(LocalAccountBackupTest, ChangePinThenWriteOpensWithTheNewPinOnly) {
+  MemoryBlobStore store;
+  const ByteVector dek = DekOf(0x53);
+  Device a("pin_change_a");
+  SeedRegisteredAccount(a, dek, "1111");
+  ASSERT_TRUE(a.vault->ChangePin("1111", "2222"));
+  EXPECT_TRUE(a.vault->IsUnlocked());
+  auto live = a.vault->Dek();
+  ASSERT_TRUE(live);
+  EXPECT_EQ(*live, dek);
+  ASSERT_TRUE(LocalAccountBackup::Write(store, *a.identity, *a.vault, *a.psks, *a.contacts, kNow));
+
+  Device b("pin_change_b");
+  ASSERT_TRUE(b.psks->SetDek(dek));
+  EXPECT_FALSE(LocalAccountBackup::Restore(store, *b.identity, *b.vault, *b.psks, nullptr, *b.contacts, "1111", kNow));
+  EXPECT_FALSE(b.vault->Exists());
+  auto restored =
+      LocalAccountBackup::Restore(store, *b.identity, *b.vault, *b.psks, nullptr, *b.contacts, "2222", kNow);
+  ASSERT_TRUE(restored) << restored.error().message;
+  auto b_dek = b.vault->Dek();
+  ASSERT_TRUE(b_dek);
+  EXPECT_EQ(*b_dek, dek);
+}
+
 // An account that kept the app default PIN restores with it (the restore page tries it first).
 TEST(LocalAccountBackupTest, DefaultPinAccountRestoresWithTheDefaultPin) {
   MemoryBlobStore store;

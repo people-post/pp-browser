@@ -131,14 +131,16 @@ Roe<void> LocalAccountBackup::Restore(ISecureBlobStore& store, IdentityStore& id
   if (!contents) {
     return contents.error();
   }
+  // From here on the PIN is known to be right: report later failures outside the PIN category so
+  // the gate does not show them as a wrong PIN.
   auto imported =
       LinkDeviceCoordinator::Import(identity, vault, psk_store, secrets, contents->link_bundle_json, pin, now_ms);
   if (!imported) {
-    return imported.error();
+    return Error("Account restore failed: " + imported.error().message);
   }
   for (const Contact& contact : contents->contacts) {
     if (auto upserted = contacts.Upsert(contact); !upserted) {
-      return upserted.error();
+      return Error("Account restore failed: " + upserted.error().message);
     }
   }
   return {};
