@@ -240,7 +240,7 @@ private:
   std::optional<std::string> ResolvePeerRelayId(const Thread& thread) const;
   /** Sync directory LookupByAccount when contacts/learned/shadow miss (send path). */
   std::optional<std::string> ResolvePeerRelayIdWithDirectory(const Thread& thread);
-  void RememberRouteFromEnvelope(const RelayEnvelope& envelope);
+  void RememberRouteFromEnvelope(const RelayEnvelope& envelope, const RelayReceiveOutcome& outcome);
   TrustLevel ResolveThreadTrust(const Thread& thread) const;
   /** The pair's e2e_public session as the lane and media-key wraps use it. */
   struct E2ePublicSession {

@@ -28,6 +28,8 @@ class GroupInviteGate;
 struct RelayReceiveOutcome {
   bool persisted = false;
   bool thread_changed = false;
+  /** The sender's signature verified (only then may its signed claims, e.g. its relay route, be learned). */
+  bool sender_verified = false;
   IngestDecision decision = IngestDecision::HardReject;
   /** Set when `persisted` is true. */
   std::string thread_id;

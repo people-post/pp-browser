@@ -74,7 +74,7 @@ TEST_F(E2ePublicSessionLogicTest, CreatesOnceAndAnnouncesUntilConfirmed) {
   EXPECT_EQ(second->master_psk, first->master_psk);
 
   // Bob wrote under it: confirmed, no more key_init.
-  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{first->master_psk, false}, std::nullopt));
+  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{first->master_psk, false}, std::nullopt, 1000));
   auto third = EnsureE2ePublicMasterPsk(*psk_, key, 1, bob->public_key);
   ASSERT_TRUE(static_cast<bool>(third));
   EXPECT_FALSE(third->key_init_b64.has_value());
@@ -104,8 +104,8 @@ TEST_F(E2ePublicSessionLogicTest, BothOpeningAtOnceSettleOnTheLowerId) {
   auto at_alice = AutoKeyEstablishment::DeriveMasterPskFromKeyInit(alice->private_key, *bob_opened->key_init_b64);
   auto at_bob = AutoKeyEstablishment::DeriveMasterPskFromKeyInit(bob->private_key, *alice_opened->key_init_b64);
   ASSERT_TRUE(at_alice && at_bob);
-  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, to_bob, 1, AutoKeyRead{*at_alice, true}, bob_opened->key_init_b64));
-  ASSERT_TRUE(ReconcileE2ePublicSession(bob_psk, to_alice, 1, AutoKeyRead{*at_bob, true}, alice_opened->key_init_b64));
+  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, to_bob, 1, AutoKeyRead{*at_alice, true}, bob_opened->key_init_b64, 1000));
+  ASSERT_TRUE(ReconcileE2ePublicSession(bob_psk, to_alice, 1, AutoKeyRead{*at_bob, true}, alice_opened->key_init_b64, 1000));
 
   auto alice_now = psk_->Load(to_bob);
   auto bob_now = bob_psk.Load(to_alice);
@@ -120,18 +120,44 @@ TEST_F(E2ePublicSessionLogicTest, AConfirmedSessionGivesWayToTheOneThePeerNowUse
   ChatTargetKey key{"account", "account:bob", CryptoChannel::E2ePublic};
   auto opened = EnsureE2ePublicMasterPsk(*psk_, key, 1, bob->public_key);
   ASSERT_TRUE(opened);
-  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{opened->master_psk, false}, std::nullopt));
+  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{opened->master_psk, false}, std::nullopt, 1000));
 
   // Bob starts over (reinstall) and opens a new session to us.
   auto alice = HybridKem::GenerateKeyPair();
   ASSERT_TRUE(alice);
   auto fresh = AutoKeyEstablishment::EncapsulateForRecipient(alice->public_key);
   ASSERT_TRUE(fresh);
-  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{fresh->master_psk, true}, fresh->key_init_b64));
+  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{fresh->master_psk, true}, fresh->key_init_b64, 2000));
   auto now = psk_->Load(key);
   ASSERT_TRUE(now && now->has_value());
   EXPECT_EQ((*now)->master_psk_b64, std::optional<std::string>(Base64Encode(fresh->master_psk)));
   EXPECT_FALSE((*now)->auto_key_init_pending.has_value());
+}
+
+/** The pair settled on one session and the peer has written under it since: an opener for another
+ *  session signed before that (it arrived late) does not move the pair back; a later one does. */
+TEST_F(E2ePublicSessionLogicTest, AnOlderOpenerDoesNotUndoTheSessionThePeerUses) {
+  auto alice = HybridKem::GenerateKeyPair();
+  ASSERT_TRUE(alice);
+  ChatTargetKey key{"account", "account:bob", CryptoChannel::E2ePublic};
+  auto current = AutoKeyEstablishment::EncapsulateForRecipient(alice->public_key);
+  auto earlier = AutoKeyEstablishment::EncapsulateForRecipient(alice->public_key);
+  ASSERT_TRUE(current && earlier);
+  // Bob's session, then Bob writing under it at t=3000.
+  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{current->master_psk, true}, current->key_init_b64, 2000));
+  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{current->master_psk, false}, std::nullopt, 3000));
+
+  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{earlier->master_psk, true}, earlier->key_init_b64, 1500));
+  auto now = psk_->Load(key);
+  ASSERT_TRUE(now && now->has_value());
+  EXPECT_EQ((*now)->master_psk_b64, std::optional<std::string>(Base64Encode(current->master_psk))) << "kept";
+
+  auto later = AutoKeyEstablishment::EncapsulateForRecipient(alice->public_key);
+  ASSERT_TRUE(later);
+  ASSERT_TRUE(ReconcileE2ePublicSession(*psk_, key, 1, AutoKeyRead{later->master_psk, true}, later->key_init_b64, 4000));
+  now = psk_->Load(key);
+  ASSERT_TRUE(now && now->has_value());
+  EXPECT_EQ((*now)->master_psk_b64, std::optional<std::string>(Base64Encode(later->master_psk))) << "a newer start wins";
 }
 
 } // namespace

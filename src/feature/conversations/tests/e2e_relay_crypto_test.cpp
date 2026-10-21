@@ -82,9 +82,9 @@ TEST(E2eRelayCryptoTest, EncryptDecryptRoundTrip) {
   ASSERT_TRUE(static_cast<bool>(payload_b64));
   envelope.body.e2e.payload_b64 = *payload_b64;
 
-  auto body_hash = EnvelopeSigner::BodyHash(envelope.body);
+  auto body_hash = EnvelopeSigner::BodyHash(envelope);
   ASSERT_TRUE(static_cast<bool>(body_hash));
-  auto body_hash_again = EnvelopeSigner::BodyHash(envelope.body);
+  auto body_hash_again = EnvelopeSigner::BodyHash(envelope);
   ASSERT_TRUE(static_cast<bool>(body_hash_again));
   EXPECT_EQ(*body_hash, *body_hash_again);
 

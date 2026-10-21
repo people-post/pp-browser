@@ -5,6 +5,7 @@
 #include "common/chat/PeopleDiscoveryBlocks.h"
 #include "domain/messaging/RelayWirePayload.h"
 
+#include <functional>
 #include <gtest/gtest.h>
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
@@ -123,3 +124,46 @@ TEST(PlainTextLinksTest, FindsHttpsLinksAndViewDetailsLabels) {
   EXPECT_EQ(links[0].url, "https://example.com/a");
   EXPECT_TRUE(FindPlainTextLinks("no links here").empty());
 }
+
+namespace pbr {
+
+// The wire parser keeps one body shape per route and no unknown route kinds.
+TEST(MessagingFoundationTest, RelayEnvelopeParserRefusesMixedShapes) {
+  RelayEnvelope direct;
+  direct.message_id = "m1";
+  direct.sender_relay_id = "relay:a";
+  direct.sender_contact_id = "account:a";
+  direct.route.kind = kRelayRouteDirect;
+  direct.route.channel = ThreadChannel::E2ePublic;
+  direct.body.e2e.payload_b64 = "AQID";
+  direct.timestamp = 1;
+  ASSERT_TRUE(static_cast<bool>(ParseRelayEnvelope(RelayEnvelopeToJson(direct))));
+
+  const auto with = [&](const std::function<void(Object&)>& edit) {
+    Object json = RelayEnvelopeToJson(direct);
+    edit(json);
+    return static_cast<bool>(ParseRelayEnvelope(json));
+  };
+  EXPECT_FALSE(with([](Object& json) {
+    Object body = *json.getObject("body");
+    Object e2e = *body.getObject("e2e");
+    Object members;
+    members.set("x", "AQID");
+    e2e.set("member_payloads", members);
+    body.set("e2e", e2e);
+    json.set("body", body);
+  })) << "direct with member_payloads";
+  EXPECT_FALSE(with([](Object& json) {
+    Object route = *json.getObject("route");
+    route.set("kind", "other");
+    json.set("route", route);
+  })) << "unknown route kind";
+  EXPECT_FALSE(with([](Object& json) {
+    Object route;
+    route.set("kind", "group");
+    route.set("group_id", "group:a");
+    json.set("route", route);
+  })) << "group with payload_b64";
+}
+
+} // namespace pbr

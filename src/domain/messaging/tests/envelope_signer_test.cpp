@@ -28,9 +28,9 @@ RelayEnvelope MakeE2eVectorEnvelope() {
 
 TEST(EnvelopeSignerTest, BodyHashMatchesFrozenVector) {
   const RelayEnvelope envelope = MakeE2eVectorEnvelope();
-  auto body_hash = EnvelopeSigner::BodyHash(envelope.body);
+  auto body_hash = EnvelopeSigner::BodyHash(envelope);
   ASSERT_TRUE(body_hash);
-  EXPECT_EQ(BytesToHex(*body_hash), "b09daad4a14b17961c834c3b027c3d03ef49a0b1f3bffaa7c8c22da097a8042e");
+  EXPECT_EQ(BytesToHex(*body_hash), "f046c5fdbe2e312864d2dc1386e8c63eda7062f3ce2a2c1abed3860a1a566f3c");
 }
 
 TEST(EnvelopeSignerTest, BuildSignBytesUsesE2eChannelZero) {
@@ -57,6 +57,67 @@ TEST(EnvelopeSignerTest, SignAndVerifyRoundTrip) {
   const auto verified = EnvelopeSigner::Verify(envelope, Base64Encode(keys->public_key));
   ASSERT_TRUE(verified);
   EXPECT_TRUE(*verified);
+}
+
+// v2: everything that decides something on receipt is signed — the decrypted blob, the group,
+// the AutoKey key_init and the sender's relay id.
+TEST(EnvelopeSignerTest, SignBytesCoverEveryFieldTheReceiverActsOn) {
+  const RelayEnvelope base = MakeE2eVectorEnvelope();
+  auto base_bytes = EnvelopeSigner::BuildSignBytes(base);
+  ASSERT_TRUE(base_bytes);
+  const auto differs = [&](const RelayEnvelope& changed) {
+    auto bytes = EnvelopeSigner::BuildSignBytes(changed);
+    return !bytes || *bytes != *base_bytes;
+  };
+  RelayEnvelope changed = base;
+  changed.body.e2e.payload_b64 = "AQID";
+  EXPECT_TRUE(differs(changed)) << "payload";
+  changed = base;
+  changed.body.e2e.key_init_b64 = "AQID";
+  EXPECT_TRUE(differs(changed)) << "key_init";
+  changed = base;
+  changed.sender_relay_id = "relay:other";
+  EXPECT_TRUE(differs(changed)) << "sender_relay_id";
+
+  RelayEnvelope group = base;
+  group.route.kind = kRelayRouteGroup;
+  group.route.group_id = "group:a";
+  group.body.e2e.member_payloads = std::map<std::string, std::string>{{"account:bob", base.body.e2e.payload_b64}};
+  group.body.e2e.payload_b64.clear();
+  auto group_bytes = EnvelopeSigner::BuildSignBytes(group);
+  ASSERT_TRUE(group_bytes) << group_bytes.error().message;
+  RelayEnvelope other_group = group;
+  other_group.route.group_id = "group:b";
+  auto other_bytes = EnvelopeSigner::BuildSignBytes(other_group);
+  ASSERT_TRUE(other_bytes);
+  EXPECT_NE(*group_bytes, *other_bytes) << "group_id";
+  RelayEnvelope other_member = group;
+  other_member.body.e2e.member_payloads = std::map<std::string, std::string>{{"account:carol", base.body.e2e.payload_b64}};
+  auto member_bytes = EnvelopeSigner::BuildSignBytes(other_member);
+  ASSERT_TRUE(member_bytes);
+  EXPECT_NE(*group_bytes, *member_bytes) << "member id";
+}
+
+// One body shape per route: the signer refuses (and so verification fails on) anything else.
+TEST(EnvelopeSignerTest, MixedBodyShapesAreRefused) {
+  RelayEnvelope direct = MakeE2eVectorEnvelope();
+  direct.body.e2e.member_payloads = std::map<std::string, std::string>{{"x", direct.body.e2e.payload_b64}};
+  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(direct)) << "direct with member_payloads";
+
+  RelayEnvelope control = MakeE2eVectorEnvelope();
+  control.route.kind = kRelayRouteControl;
+  control.body.e2e.member_payloads = std::map<std::string, std::string>{{"x", control.body.e2e.payload_b64}};
+  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(control)) << "control with member_payloads";
+
+  RelayEnvelope group = MakeE2eVectorEnvelope();
+  group.route.kind = kRelayRouteGroup;
+  group.route.group_id = "group:a";
+  group.body.e2e.member_payloads = std::map<std::string, std::string>{{"x", group.body.e2e.payload_b64}};
+  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(group)) << "group with payload_b64";
+
+  RelayEnvelope unknown = MakeE2eVectorEnvelope();
+  unknown.route.kind = "other";
+  EXPECT_FALSE(EnvelopeSigner::BuildSignBytes(unknown)) << "unknown route kind";
 }
 
 } // namespace pbr

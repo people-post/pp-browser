@@ -167,6 +167,8 @@ Roe<void> SqliteThreadDb::OpenProfileDbUnguarded() const {
                      nullptr);
   (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN auto_key_init_pending TEXT;", nullptr, nullptr,
                      nullptr);
+  (void)sqlite3_exec(profile_db_, "ALTER TABLE chat_targets ADD COLUMN auto_key_peer_heard_ms INTEGER;", nullptr,
+                     nullptr, nullptr);
   GroupRosterStore roster_store(SqliteThreadProfileDbFile(data_dir_));
   if (auto group_schema = roster_store.EnsureSchema(profile_db_); !group_schema) {
     return group_schema.error();

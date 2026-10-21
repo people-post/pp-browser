@@ -23,6 +23,8 @@ struct GroupMemberTarget {
 
 struct GroupEncryptResult {
   std::map<std::string, std::string> member_payloads;
+  /** The AutoKey key_init opening a member's pairwise session on this send (none when it had one). */
+  std::map<std::string, std::string> member_key_inits;
   /** Members skipped because pairwise encrypt/key resolution failed. */
   std::vector<std::string> failed_member_identities;
 };

@@ -128,10 +128,10 @@ Implement via **`EnvelopeSigner`** in `base/messaging`. **Do not** sign JSON `du
 | Topic | v1 rule |
 |-------|---------|
 | Sign bytes | Fixed binary: domain prefix + `sign_version` + fields — full layout in [e2e DESIGN § Ed25519 signing](../../projects/e2e-message-crypto/DESIGN.md#ed25519-canonical-signing-bytes) |
-| Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `route` (as enums), `timestamp`, `body_hash`, `sender_seq`, `session_epoch` |
+| Signed fields | `envelope_version`, `message_id`, `sender_contact_id`, `sender_relay_id`, `route` (kind / channel as enums, `group_id`), `timestamp`, `body_hash`, `sender_seq`, `session_epoch`, `body.e2e.key_init_b64` (sign v2 — [MESSAGE_ENCRYPTION](MESSAGE_ENCRYPTION.md)) |
 | Direct channel enum | `0` = `e2e`, `1` = `e2e_public` (D090) |
-| `body_hash` | BLAKE2b-256(`0x02` \|\| decoded E2E blob bytes) only — no `0x01` public path |
-| Not signed | `thread_id`, `sender_relay_id`, `signature`, unknown keys |
+| `body_hash` | BLAKE2b-256 over exactly what the receiver decrypts: `0x02` ‖ LenBytes(blob) (direct / control), or `0x02` ‖ each LenUtf8(member_id) ‖ LenBytes(blob) (group) — no `0x01` public path |
+| Not signed | `thread_id`, `recipient_contact_id`, `stream_key`, `order_key`, `signature`, relay metadata, unknown keys |
 | `signature` encoding | Standard **base64** (RFC 4648, padded) only in v1 |
 
 | Field | Type | Required | Notes |
@@ -172,7 +172,7 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 | Field | Type | Required | Notes |
 |-------|------|----------|-------|
 | `payload_b64` | string | yes | RFC 4648 base64 of `[version:1][nonce:24][ciphertext+tag]` (E009) |
-| `key_init_b64` | string | no | **`e2e_public` only** — ML-KEM-768 encapsulation. First message: wrap to the recipient **account** KEM (E024 / **M015**). `psk_rotate`: wrap to account KEM or conversation KEM (**E027**); authenticity via AEAD `detail.key_init_hash`. Relay may store/forward; must not learn PSK. **Not signed** (outside `body_hash` — hash covers `payload_b64` blob only). Omit on **`e2e` (private)** and when recipient already has PSK (except `psk_rotate`). |
+| `key_init_b64` | string | no | **`e2e_public` only** — ML-KEM-768 encapsulation. First message: wrap to the recipient **account** KEM (E024 / **M015**). `psk_rotate`: wrap to account KEM or conversation KEM (**E027**); authenticity via AEAD `detail.key_init_hash`. Relay may store/forward; must not learn PSK. **Signed** (sign v2). Group envelopes carry the recipient's `key_init` when the sender opened that member's pairwise session on this send. Omit on **`e2e` (private)** and when recipient already has PSK (except `psk_rotate`). |
 
 ### `body.e2e` (group tier — D095, E022)
 
@@ -180,7 +180,7 @@ Set by the **sender client** in the HTTP `RelayWireRecord` (not inside `blob_b64
 |-------|------|----------|-------|
 | `member_payloads` | object map | yes | Keys = recipient relay ids; values = RFC 4648 base64 ciphertext blobs (pairwise `e2e_public` per member). Each value uses the same AEAD layout as direct `payload_b64`. |
 
-**Rules:** `route.kind=group` requires `member_payloads`; omit `payload_b64` and `route.channel`. One envelope is fan-out per member on send (client may emit N relay records). See [group chat DESIGN](../../projects/group-chat/DESIGN.md).
+**Rules:** `route.kind=group` requires `member_payloads` (non-empty) and `group_id`; `payload_b64` must be absent (rejected), and `route.channel` omitted. `direct` / `control` envelopes must not carry `member_payloads` or `group_id`. One envelope is fan-out per member on send (client may emit N relay records). See [group chat DESIGN](../../projects/group-chat/DESIGN.md).
 
 ---
 
@@ -279,7 +279,7 @@ Regenerate: [`chatpayload_codec.py`](../../projects/e2e-message-crypto/tools/cha
 |-------|-------|
 | Logical | `content_type=text`, `text="Hello"` |
 | **`bytes` (hex)** | `0100000000000000000548656c6c6f` |
-| **`body_hash` (E2E blob, hex)** | `b09daad4a14b17961c834c3b027c3d03ef49a0b1f3bffaa7c8c22da097a8042e` *(example — hash of `0x02` ‖ E2E blob)* |
+| **`body_hash` (E2E blob, hex)** | `f046c5fdbe2e312864d2dc1386e8c63eda7062f3ce2a2c1abed3860a1a566f3c` *(example — hash of `0x02` ‖ E2E blob)* |
 
 #### Vector B — non-ASCII text, plain default
 

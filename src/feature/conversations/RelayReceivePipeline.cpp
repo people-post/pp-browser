@@ -513,6 +513,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
                   << " sender=" << envelope.sender_contact_id;
     return outcome;
   }
+  outcome.sender_verified = true;
   if (local_relay_user_id.empty()) {
     return outcome;
   }
@@ -532,13 +533,6 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
                   << " err=" << decrypted.error().message;
     return outcome;
   }
-  // Signed by the peer and read: what that proves about the pair's session is kept.
-  if (auto kept = ReconcileE2ePublicSession(psk_store_, target_key, envelope.session_epoch, read,
-                                            envelope.body.e2e.key_init_b64);
-      !kept) {
-    log().warning << "control lane: session not updated: " << kept.error().message;
-  }
-
   ThreadMessage message = std::move(*decrypted);
   const auto family = controls_ ? controls_->Find(message) : std::nullopt;
   if (message.content_type != ChatContentType::System || !family || !family->on_lane || !family->on_lane(message)) {
@@ -563,6 +557,12 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
       outcome.decision = IngestDecision::BenignDuplicate;
       return outcome;
     }
+  }
+  // Signed by the peer, read, fresh and first seen: what that proves about the pair's session is kept.
+  if (auto kept = ReconcileE2ePublicSession(psk_store_, target_key, envelope.session_epoch, read,
+                                            envelope.body.e2e.key_init_b64, envelope.timestamp);
+      !kept) {
+    log().warning << "control lane: session not updated: " << kept.error().message;
   }
 
   message.id = envelope.message_id;
@@ -641,6 +641,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       // Message body may never have run call-control (history sync / prior drop). Decrypt and
       // apply idempotent CallMediaKey/Accept side effects before returning.
       auto verified_dup = VerifySignature(envelope, inbound_target);
+      outcome.sender_verified = verified_dup && *verified_dup;
       if (verified_dup && *verified_dup && E2eRelayPayloadCodec::RequiresEncryption(envelope.route.channel)) {
         ChatTargetKey target_key;
         target_key.peer_identity_kind = inbound_target.peer_identity_kind;
@@ -687,6 +688,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
                        resolved_thread_id.empty() ? std::nullopt : std::optional(resolved_thread_id));
     return outcome;
   }
+  outcome.sender_verified = true;
 
   ThreadMessage message;
   if (E2eRelayPayloadCodec::RequiresEncryption(envelope.route.channel)) {
@@ -731,7 +733,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
         !PskRotateCodec::IsPskRotateMessage(message)) {
       // Signed by the peer (checked above) and read: keep what that proves about the pair's session.
       if (auto kept = ReconcileE2ePublicSession(psk_store_, target_key, envelope.session_epoch, read,
-                                                envelope.body.e2e.key_init_b64);
+                                                envelope.body.e2e.key_init_b64, envelope.timestamp);
           !kept) {
         log().warning << "e2e_public session not updated: " << kept.error().message;
       }
@@ -1020,6 +1022,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     MarkReceiveFailure(outcome, envelope.sender_contact_id, "bad signature", "Group envelope signature did not verify");
     return outcome;
   }
+  outcome.sender_verified = true;
 
   auto kem_private = identity_.GetOrCreateHybridKemPrivateKey();
   if (!kem_private) {

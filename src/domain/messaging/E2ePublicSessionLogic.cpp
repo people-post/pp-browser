@@ -75,7 +75,8 @@ std::string AutoKeySessionId(const std::string& key_init_b64) {
 
 Roe<void> ReconcileE2ePublicSession(IPskSessionStore& psk_store, const ChatTargetKey& target_key,
                                     const uint32_t session_epoch, const AutoKeyRead& read,
-                                    const std::optional<std::string>& envelope_key_init_b64) {
+                                    const std::optional<std::string>& envelope_key_init_b64,
+                                    const int64_t envelope_timestamp_ms) {
   auto loaded = psk_store.Load(target_key);
   if (!loaded) {
     return loaded.error();
@@ -91,14 +92,23 @@ Roe<void> ReconcileE2ePublicSession(IPskSessionStore& psk_store, const ChatTarge
   if (have_row && record.master_psk_b64 && record.session_epoch != session_epoch) {
     return {};  // another epoch (a retired one, or one rotation owns): not this rule's to change
   }
+  // The peer was heard under the stored session at this (its own, signed) time.
+  const auto note_heard = [&record, envelope_timestamp_ms]() {
+    if (!record.auto_key_peer_heard_ms || envelope_timestamp_ms > *record.auto_key_peer_heard_ms) {
+      record.auto_key_peer_heard_ms = envelope_timestamp_ms;
+      return true;
+    }
+    return false;
+  };
 
   if (!read.via_key_init) {
     // The peer wrote under our stored session: it has it. A session we opened is confirmed.
+    bool changed = note_heard();
     if (record.auto_key_init_pending) {
       record.auto_key_init_pending.reset();
-      return psk_store.Save(record);
+      changed = true;
     }
-    return {};
+    return changed ? psk_store.Save(record) : Roe<void>{};
   }
 
   if (!envelope_key_init_b64 || envelope_key_init_b64->empty()) {
@@ -106,16 +116,22 @@ Roe<void> ReconcileE2ePublicSession(IPskSessionStore& psk_store, const ChatTarge
   }
   const std::string theirs = AutoKeySessionId(*envelope_key_init_b64);
   if (record.master_psk_b64 && record.auto_key_session_id == theirs) {
-    return {};  // already ours
+    return note_heard() ? psk_store.Save(record) : Roe<void>{};  // already ours
   }
   if (record.master_psk_b64 && record.auto_key_init_pending && record.auto_key_session_id &&
       *record.auto_key_session_id < theirs) {
     return {};  // both opened at once; ours wins the tie — the peer moves to it
   }
+  if (record.master_psk_b64 && record.auto_key_peer_heard_ms && envelope_timestamp_ms <= *record.auto_key_peer_heard_ms) {
+    // The peer has since written under the stored session: this opener is older than that (late or
+    // replayed) — adopting it would roll the pair back to a session the peer has left.
+    return {};
+  }
   record.session_epoch = session_epoch;
   record.master_psk_b64 = Base64Encode(read.master_psk);
   record.auto_key_session_id = theirs;
   record.auto_key_init_pending.reset();  // the peer opened it: nothing of ours to announce
+  record.auto_key_peer_heard_ms = envelope_timestamp_ms;
   return psk_store.Save(record);
 }
 

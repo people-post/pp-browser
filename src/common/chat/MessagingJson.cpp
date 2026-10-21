@@ -440,9 +440,11 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   if (const Object* payloads = e2e->getObject("member_payloads")) {
     std::map<std::string, std::string> mapped;
     for (const auto& [key, value] : payloads->fields()) {
-      if (auto s = asString(value)) {
-        mapped[key] = *s;
+      auto s = asString(value);
+      if (!s || key.empty()) {
+        return Error("Invalid body.e2e.member_payloads entry");
       }
+      mapped[key] = *s;
     }
     envelope.body.e2e.member_payloads = std::move(mapped);
   }
@@ -477,6 +479,20 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
   }
   if (envelope.route.kind == "group" && !envelope.route.group_id) {
     return Error("Missing route.group_id for group envelope");
+  }
+  // One body shape per route (both are signed as such): a direct / control envelope carries
+  // payload_b64 only, a group envelope member_payloads only.
+  if (envelope.route.kind == "group") {
+    if (!envelope.body.e2e.member_payloads || envelope.body.e2e.member_payloads->empty() ||
+        e2e->contains("payload_b64")) {
+      return Error("Group envelope must carry member_payloads only");
+    }
+  } else if (envelope.route.kind == "direct" || envelope.route.kind == kRelayRouteControl) {
+    if (e2e->contains("member_payloads") || envelope.body.e2e.payload_b64.empty() || envelope.route.group_id) {
+      return Error("Direct / control envelope must carry payload_b64 only");
+    }
+  } else {
+    return Error("Unknown route.kind");
   }
 
   if (auto sender_seq = json.getNonNegInt("sender_seq")) {

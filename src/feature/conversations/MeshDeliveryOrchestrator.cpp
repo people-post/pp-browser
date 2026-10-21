@@ -347,21 +347,18 @@ void MeshDeliveryOrchestrator::NoteAccountRelayRoute(const std::string& account_
   if (!IsAccountIdentityValue(account_id) || !IsRelayUserIdValue(relay_user_id)) {
     return;
   }
-  {
-    std::lock_guard lock(account_relay_mutex_);
-    account_to_relay_[account_id] = relay_user_id;
-  }
-  if (directory_shadows_) {
-    mesh::DirectoryHit hit;
-    hit.hit_id = relay_user_id;
-    hit.account_id = account_id;
-    hit.ids = {{mesh::ContactIdKind::Account, account_id, true},
-               {mesh::ContactIdKind::RelayUser, relay_user_id, false}};
-    directory_shadows_->Put(hit);
-  }
+  // A route only — never a directory answer: the directory cache holds what the directory said.
+  std::lock_guard lock(account_relay_mutex_);
+  account_to_relay_[account_id] = relay_user_id;
 }
 
-void MeshDeliveryOrchestrator::RememberRouteFromEnvelope(const RelayEnvelope& envelope) {
+void MeshDeliveryOrchestrator::RememberRouteFromEnvelope(const RelayEnvelope& envelope,
+                                                          const RelayReceiveOutcome& outcome) {
+  // Learned only from an envelope whose signature verified: its sender_relay_id is then the
+  // sender's own signed claim, not whatever an unauthenticated envelope said.
+  if (!outcome.sender_verified) {
+    return;
+  }
   NoteAccountRelayRoute(envelope.sender_contact_id, envelope.sender_relay_id);
 }
 
@@ -449,13 +446,13 @@ void MeshDeliveryOrchestrator::MaybeSurfaceReceiveFailure(const RelayReceiveOutc
 }
 
 void MeshDeliveryOrchestrator::HandleDirectInbound(RelayEnvelope envelope) {
-  RememberRouteFromEnvelope(envelope);
   auto identity = identity_.Get();
   if (!identity) {
     return;
   }
   const RelayReceiveOutcome outcome =
       receive_pipeline_->ProcessEnvelope(envelope, identity->account_id, false, MessageTransport::Direct);
+  RememberRouteFromEnvelope(envelope, outcome);
   MaybePublishMemberJoinedAfterIngest(groups_, outcome);
   MaybeSurfaceReceiveFailure(outcome);
   if (outcome.decision == IngestDecision::AcceptGap) {
@@ -1101,6 +1098,9 @@ std::optional<std::string> MeshDeliveryOrchestrator::ResolvePeerRelayIdWithDirec
     return std::nullopt;
   }
   NoteAccountRelayRoute(thread.peer_identity_value, *relay);
+  if (directory_shadows_) {
+    directory_shadows_->Put(*hit);  // the directory's own answer
+  }
   return relay;
 }
 
@@ -1789,6 +1789,10 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendGroupMessage(const std::string&
     envelope.route.kind = "group";
     envelope.route.group_id = group_id;
     envelope.body.e2e.member_payloads = std::map<std::string, std::string>{{recipient, payload_b64}};
+    // A member with no pairwise session yet derives it from the key_init (it used to be dropped).
+    if (auto key_init = encrypted->member_key_inits.find(recipient); key_init != encrypted->member_key_inits.end()) {
+      envelope.body.e2e.key_init_b64 = key_init->second;
+    }
     envelope.sender_seq = *message.sender_seq;
     envelope.order_key = envelope.sender_seq;
     envelope.session_epoch = *message.session_epoch;
@@ -2094,8 +2098,8 @@ void MeshDeliveryOrchestrator::SyncInboxFromWake(const bool /*force*/) {
         };
         std::vector<UnreadNotice> background_notices;
         for (const RelayEnvelope& envelope : messages) {
-          RememberRouteFromEnvelope(envelope);
           const RelayReceiveOutcome outcome = receive_pipeline_->ProcessEnvelope(envelope, local_account_id);
+          RememberRouteFromEnvelope(envelope, outcome);
           MaybePublishMemberJoinedAfterIngest(groups_, outcome);
           MaybeSurfaceReceiveFailure(outcome);
           if (outcome.decision == IngestDecision::AcceptGap) {
