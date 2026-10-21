@@ -442,10 +442,19 @@ Keeps thin `ApplyInboundControl` switch → `CallSessionWorkflow::HandleInbound*
 
 Call control reaches the calls owner as the `call` **system-control family**
 ([P2P_MESSAGING § System-control families](P2P_MESSAGING.md#system-control-families)), which the stack
-binds on build and unbinds on teardown (`CallControlFamily.*`): applied out of order (media keys,
-accepts and the like are idempotent); plumbing and mid-call roster updates hidden; history lines
-(invite, joined, declined, left, started, ended) worded by calls; a live call holds key rotation and
-defers background history sync.
+binds on build and unbinds on teardown (`CallControlFamily.*`). Every signaling type rides the
+**control lane** (`CallControlClient::SendDirect` → `send_control`): applied once while fresh, never a
+transcript row, no thread. A live call holds key rotation and defers background history sync.
+
+**History** is one `call_summary` per call (`CallSummaryDetail`: outcome, media, talk time from the
+first answer, group or not), sent by the call's starter into the call's thread as a normal chat
+message when the call ends (`CallSessionWorkflow::SendSummary`; kept locally when it cannot be sent).
+The line is worded from the reader's side — "Outgoing voice call · 3:21", "Missed voice call", "Bob
+started a voice call · 12:03" — and is quiet unless it is a call we missed.
+
+**The call's thread** is local to each device: the starter's is the thread it called from; an
+invitee resolves its own (`resolve_call_thread`: the group's thread for a group call, else its DM
+with the caller — the private one when there is one). Invites carry no thread id.
 
 ```text
 ApplyInboundControl(type)

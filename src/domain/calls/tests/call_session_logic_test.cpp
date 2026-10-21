@@ -101,7 +101,8 @@ TEST(CallSessionLogicTest, HonorInboundVideoRefreshOnlyJoinedOnActiveCall) {
 TEST(CallControlTypeTest, WireRoundTrip) {
   EXPECT_EQ(CallControlTypeToWire(CallControlType::CallInvite), "call_invite");
   EXPECT_EQ(CallControlTypeFromWire("call_join"), CallControlType::CallAccept);
-  EXPECT_EQ(CallControlTypeFromWire("call_started"), CallControlType::CallStarted);
+  EXPECT_EQ(CallControlTypeFromWire("call_summary"), CallControlType::CallSummary);
+  EXPECT_FALSE(CallControlTypeFromWire("call_started").has_value()) << "history is a summary now";
   EXPECT_FALSE(CallControlTypeFromWire("member_joined").has_value());
 }
 
@@ -199,7 +200,7 @@ TEST(CallControlCodecTest, CapsUpdateRoundTrip) {
   EXPECT_FALSE(CallControlCodec::DecodeCapsUpdate(R"({"call_id":"call:x"})")) << "caps required";
   EXPECT_EQ(CallControlTypeFromWire(CallControlTypeToWire(CallControlType::CallCapsUpdate)),
             CallControlType::CallCapsUpdate);
-  EXPECT_TRUE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallCapsUpdate));
+  EXPECT_TRUE(CallControlCodec::TravelsOnLane(CallControlType::CallCapsUpdate));
 }
 
 TEST(CallControlCodecTest, InviteAcceptListenMultiaddrsRoundTrip) {
@@ -390,8 +391,7 @@ TEST(CallControlCodecTest, CircuitR1RoundTrip) {
   EXPECT_EQ(decoded->circuit_r1, detail.circuit_r1);
   EXPECT_FALSE(CallControlCodec::DecodeCircuitR1(R"({"call_id":"call:r1"})"));
   EXPECT_FALSE(CallControlCodec::DecodeCircuitR1(R"({"call_id":"call:r1","circuit_r1":""})"));
-  EXPECT_TRUE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallCircuitR1));
-  EXPECT_TRUE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallCircuitR1));
+  EXPECT_TRUE(CallControlCodec::TravelsOnLane(CallControlType::CallCircuitR1));
 }
 
 TEST(CallControlTypeTest, PunchWireRoundTrip) {
@@ -412,21 +412,53 @@ TEST(CallControlTypeTest, PunchWireRoundTrip) {
   ASSERT_EQ(decoded->addrs.size(), 1u);
   EXPECT_EQ(decoded->addrs.front(), detail.addrs.front());
   EXPECT_FALSE(CallControlCodec::DecodePunch(R"({"call_id":"call:x","epoch_id":"e"})"));
-  EXPECT_TRUE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallPunchOffer));
-  EXPECT_TRUE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallPunchAnswer));
-  EXPECT_TRUE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallPunchOffer));
+  EXPECT_TRUE(CallControlCodec::TravelsOnLane(CallControlType::CallPunchOffer));
+  EXPECT_TRUE(CallControlCodec::TravelsOnLane(CallControlType::CallPunchAnswer));
 }
 
-TEST(CallControlCodecTest, PlumbingAndInboxChromeSuppress) {
-  EXPECT_TRUE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallMediaKey));
-  EXPECT_TRUE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallSfuAttach));
-  EXPECT_FALSE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallInvite));
-  EXPECT_FALSE(CallControlCodec::IsPlumbingCallControl(CallControlType::CallRoster));
+TEST(CallControlCodecTest, SignalingRidesTheLaneTheSummaryTheStream) {
+  EXPECT_TRUE(CallControlCodec::TravelsOnLane(CallControlType::CallInvite));
+  EXPECT_TRUE(CallControlCodec::TravelsOnLane(CallControlType::CallMediaKey));
+  EXPECT_TRUE(CallControlCodec::TravelsOnLane(CallControlType::CallRoster));
+  EXPECT_TRUE(CallControlCodec::TravelsOnLane(CallControlType::CallEnded));
+  EXPECT_FALSE(CallControlCodec::TravelsOnLane(CallControlType::CallSummary));
+}
 
-  EXPECT_TRUE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallMediaKey));
-  EXPECT_TRUE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallRoster));
-  EXPECT_FALSE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallInvite));
-  EXPECT_FALSE(CallControlCodec::SuppressesInboxChrome(CallControlType::CallEnded));
+TEST(CallControlCodecTest, SummaryRoundTrip) {
+  CallSummaryDetail summary;
+  summary.call_id = "call:s";
+  summary.media_mode = CallMediaMode::Video;
+  summary.outcome = CallOutcome::Completed;
+  summary.duration_ms = 61'000;
+  summary.group = true;
+  auto encoded = CallControlCodec::EncodeSummary(summary);
+  ASSERT_TRUE(encoded);
+  auto decoded = CallControlCodec::DecodeSummary(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->call_id, "call:s");
+  EXPECT_EQ(decoded->media_mode, CallMediaMode::Video);
+  EXPECT_EQ(decoded->outcome, CallOutcome::Completed);
+  EXPECT_EQ(decoded->duration_ms, std::optional<int64_t>(61'000));
+  EXPECT_TRUE(decoded->group);
+  EXPECT_FALSE(CallControlCodec::DecodeSummary(R"({"outcome":"missed"})")) << "call id required";
+  for (CallOutcome outcome : {CallOutcome::Completed, CallOutcome::Missed, CallOutcome::Declined,
+                              CallOutcome::Cancelled, CallOutcome::Failed}) {
+    EXPECT_EQ(CallOutcomeFromString(CallOutcomeToString(outcome)), outcome);
+  }
+}
+
+TEST(CallControlCodecTest, InviteCarriesNoThreadId) {
+  CallInviteDetail invite;
+  invite.call_id = "call:i";
+  invite.inviter_identity = "account:alice";
+  invite.invitee_identity = "account:bob";
+  invite.origin_group_id = "group:1";
+  auto encoded = CallControlCodec::EncodeInvite(invite);
+  ASSERT_TRUE(encoded);
+  EXPECT_EQ(encoded->find("thread"), std::string::npos) << "the caller's thread id means nothing to the callee";
+  auto decoded = CallControlCodec::DecodeInvite(*encoded);
+  ASSERT_TRUE(decoded);
+  EXPECT_EQ(decoded->origin_group_id, std::optional<std::string>("group:1"));
 }
 
 TEST(CallSessionLogicTest, VoiceAnswerNarrowsOnlyDirectOriginCalls) {

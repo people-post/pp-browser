@@ -181,7 +181,9 @@ struct StackSide {
   AppConfig app_config;
   std::string local_identity;
   /** Call-control this side sends (its `send_user_message`); the test delivers it. */
-  std::function<void(const ThreadMessage& msg)> on_send;
+  std::function<void(const std::string& peer, const ThreadMessage& msg)> on_send;
+  /** Call summaries this side wrote into the chat stream (its send_to_thread). */
+  std::vector<ThreadMessage> summaries;
   /** What the stack was built with (a test may build its sessions again). */
   CallStackDeps deps;
 
@@ -233,20 +235,26 @@ inline void BuildStackSide(StackSide& side, const std::string& tag, uint8_t dek_
   deps.contacts = side.contacts.get();
   deps.identity = side.identity.get();
   deps.psk = side.psk.get();
-  deps.delivery.send_user_message = [&side](const std::string& thread_id, const std::string& text,
-                                            const SendRelayOptions& send_options) -> Roe<ThreadMessage> {
+  deps.delivery.send_control = [&side](const std::string& peer, const ThreadMessage& control,
+                                       const std::optional<std::string>& /*key_init*/) -> Roe<void> {
+    if (side.on_send) {
+      side.on_send(peer, control);
+    }
+    return {};
+  };
+  deps.delivery.send_to_thread = [&side](const std::string& thread_id, const std::string& text,
+                                         const SendRelayOptions& send_options) -> Roe<ThreadMessage> {
     ThreadMessage msg;
     msg.id = util::GenerateUuid();
     msg.thread_id = thread_id;
     msg.text = text;
+    msg.sender_contact_id = kLocalSelfContactId;
     msg.content_type = send_options.content_type.value_or(ChatContentType::System);
     msg.payload_json = send_options.payload_json.value_or("");
-    msg.timestamp = util::NowUnixMs();
-    if (side.on_send) {
-      side.on_send(msg);
-    }
+    side.summaries.push_back(msg);
     return msg;
   };
+  deps.delivery.resolve_peer_thread = [](const std::string& peer) -> Roe<std::string> { return "dm:" + peer; };
   deps.delivery.sync_inbox_from_wake = [](bool) {};
   deps.mesh_config = [&side]() { return std::make_shared<const MeshConfig>(side.app_config.mesh); };
   deps.mesh = []() -> mesh::MeshHost* { return nullptr; };

@@ -1,4 +1,6 @@
 #include "feature/product/tests/call_stack_compose_support.h"
+#include "domain/calls/CallControlCodec.h"
+#include "common/ValueJson.h"
 #include "common/MeshAlias.h"
 
 #include <deque>
@@ -21,8 +23,8 @@ protected:
     AppRuntime::Initialize(ManualOwnerRuntimeConfig());
     AppRuntime::InitializeUI();
 
-    offer_.on_send = [this](const ThreadMessage& msg) { answer_inbox_.push_back(msg); };
-    answer_.on_send = [this](const ThreadMessage& msg) { offer_inbox_.push_back(msg); };
+    offer_.on_send = [this](const std::string&, const ThreadMessage& msg) { answer_inbox_.push_back(msg); };
+    answer_.on_send = [this](const std::string&, const ThreadMessage& msg) { offer_inbox_.push_back(msg); };
     BuildStackSide(offer_, "offer", 0xa0);
     BuildStackSide(answer_, "answer", 0xb0);
 
@@ -214,6 +216,79 @@ TEST_F(CallDualStackComposeTest, OfferInviteAcceptInCallLeave) {
   // Each side's LiveCall ended for its own reason: the answerer left, the offerer was left.
   ExpectLive(answer_, call_id, LiveCallState::Ended, LiveCallEndReason::LocalLeave, "answer");
   ExpectLive(offer_, call_id, LiveCallState::Ended, LiveCallEndReason::RemoteEnded, "offer");
+}
+
+/** The summary a side wrote, decoded (control type checked). */
+std::optional<CallSummaryDetail> SummaryOf(const ThreadMessage& message) {
+  auto payload = TryParseObject(message.payload_json);
+  if (!payload || payload->getString("control_type") != std::optional<std::string>("call_summary")) {
+    return std::nullopt;
+  }
+  auto detail = payload->getString("detail");
+  if (!detail) {
+    return std::nullopt;
+  }
+  auto decoded = CallControlCodec::DecodeSummary(*detail);
+  return decoded ? std::optional<CallSummaryDetail>(*decoded) : std::nullopt;
+}
+
+TEST_F(CallDualStackComposeTest, TheStarterWritesOneSummaryIntoItsThread) {
+  Thread thread;
+  thread.id = "thread-dual-summary";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+
+  const std::string call_id = RunOfferAnswerInCallLeave(thread.id);
+  ASSERT_FALSE(call_id.empty());
+  ASSERT_EQ(offer_.summaries.size(), 1u) << "one line per call, by its starter";
+  EXPECT_EQ(offer_.summaries.front().thread_id, thread.id);
+  const auto summary = SummaryOf(offer_.summaries.front());
+  ASSERT_TRUE(summary);
+  EXPECT_EQ(summary->call_id, call_id);
+  EXPECT_EQ(summary->outcome, CallOutcome::Completed);
+  EXPECT_TRUE(summary->duration_ms.has_value());
+  EXPECT_FALSE(summary->group);
+  EXPECT_TRUE(answer_.summaries.empty()) << "the invitee reads the starter's summary";
+}
+
+TEST_F(CallDualStackComposeTest, TheCalleeFilesTheCallUnderItsOwnDm) {
+  Thread thread;
+  thread.id = "thread-dual-callee";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+  auto started = StartCallNow(*offer_.ui, thread.id, false, {answer_.local_identity});
+  ASSERT_TRUE(started) << started.error().message;
+  PumpWire();
+  auto pending = answer_.ui->TopPendingInvite();
+  ASSERT_TRUE(pending && pending->has_value());
+  EXPECT_EQ((*pending)->origin_thread_id, std::optional<std::string>("dm:" + offer_.local_identity))
+      << "not the caller's thread id: that one means nothing here";
+}
+
+TEST_F(CallDualStackComposeTest, HangingUpBeforeAnAnswerIsSummarizedAsCancelled) {
+  Thread thread;
+  thread.id = "thread-dual-cancel";
+  thread.kind = ThreadKind::Direct;
+  thread.title = "Answer";
+  thread.updated_at = util::NowUnixMs();
+  ASSERT_TRUE(offer_.store->UpsertThread(thread));
+  auto started = StartCallNow(*offer_.ui, thread.id, false, {answer_.local_identity});
+  ASSERT_TRUE(started) << started.error().message;
+  PumpWire();
+  offer_.ui->Apply(CallLifecycleEvent::LeaveClicked, started->call_id);
+  DrainUntil([&]() {
+    PumpWire();
+    return !offer_.stack->HasActiveLocalCall();
+  });
+  ASSERT_EQ(offer_.summaries.size(), 1u);
+  const auto summary = SummaryOf(offer_.summaries.front());
+  ASSERT_TRUE(summary);
+  EXPECT_EQ(summary->outcome, CallOutcome::Cancelled) << "rang, nobody answered: the callee missed it";
+  EXPECT_FALSE(summary->duration_ms.has_value()) << "ringing is not talk time";
 }
 
 // H012 / H011 over call-control: a signaled punch runs offer → answer → both bursts, and our R1

@@ -12,6 +12,15 @@ namespace pbr {
 
 inline constexpr int kRelayEnvelopeVersion = 1;
 
+/** Route kinds: a 1:1 chat stream, a group stream, the control lane (signaling off the stream). */
+inline constexpr const char* kRelayRouteDirect = "direct";
+inline constexpr const char* kRelayRouteGroup = "group";
+/**
+ * The control lane: system-control messages a feature sends a peer outside the ordered chat stream
+ * (call signaling) — E2E under the e2e_public session, not sequenced, never a transcript row.
+ */
+inline constexpr const char* kRelayRouteControl = "control";
+
 struct RelayRoute {
   std::string kind = "direct";
   ThreadChannel channel = ThreadChannel::E2e;

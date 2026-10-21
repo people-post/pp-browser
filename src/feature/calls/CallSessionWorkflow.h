@@ -36,17 +36,24 @@ public:
     std::function<Roe<void>(const std::string& peer, CallControlType type, const std::string& detail,
                             const std::string& display)>
         send_direct;
-    /** Pre-mint e2e_public control DM so SoftMigrate/roster fan-out does not race catalog create. */
-    std::function<Roe<std::string>(const std::string& peer)> ensure_control_thread;
     std::function<Roe<void>(const std::string& call_id, CallControlType type, const std::string& detail,
                             const std::string& display, const std::string& skip)>
         fan_out_joined;
     std::function<Roe<void>(const std::string& call_id, CallControlType type, const std::string& detail,
                             const std::string& display, const std::string& skip)>
         fan_out_joined_and_ringing;
-    std::function<Roe<void>(const std::string& thread_id, CallControlType type, const std::string& text,
-                            const std::string& detail)>
-        append_origin_history;
+    /**
+     * The call's history line: a summary into its thread (the starter's side writes it); `local_only`
+     * keeps it on this device (the app is going down: no sends).
+     */
+    std::function<Roe<void>(const std::string& thread_id, const CallSummaryDetail& summary, bool local_only)>
+        send_summary;
+    /**
+     * This device's thread for an inbound call: the group's (`group_id`), else the DM with `inviter`.
+     * Invites carry no thread id — the caller's is meaningless here.
+     */
+    std::function<std::optional<std::string>(const std::string& inviter, const std::optional<std::string>& group_id)>
+        resolve_call_thread;
     std::function<Roe<CallRosterDetail>(const std::string& call_id)> build_roster_detail;
     std::function<void()> sync_inbox_from_wake;
     std::function<void()> clear_media_activity;
@@ -209,7 +216,8 @@ private:
   Roe<void> PlaceCall(CallSession& session, const std::vector<std::string>& invitee_identities,
                       const std::string& local_identity);
   /** "Call started" in the origin thread's history. */
-  Roe<void> AppendCallStarted(const CallSession& session);
+  /** The starter's summary of a call that just ended (no-op on an invitee's side). */
+  void SendSummary(const CallSession& session, LiveCallEndReason reason);
   /** Invite every invitee (control thread warmed first), then prefetch their reach. */
   Roe<void> InviteAll(const std::string& call_id, const std::vector<std::string>& invitee_identities,
                       const std::string& local_identity);

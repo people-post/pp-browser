@@ -20,6 +20,8 @@ enum class IngestDecision {
   AcceptGap,
   SoftCompromised,
   HardReject,
+  /** A control-lane message applied by its family (nothing stored; not part of any stream). */
+  AcceptControl,
 };
 
 struct IngestClassifierInput {

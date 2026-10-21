@@ -35,8 +35,8 @@ public:
   static Roe<std::string> EncodeEnded(const CallEndedDetail& detail);
   static Roe<CallEndedDetail> DecodeEnded(const std::string& detail_json);
 
-  static Roe<std::string> EncodeStarted(const CallStartedDetail& detail);
-  static Roe<CallStartedDetail> DecodeStarted(const std::string& detail_json);
+  static Roe<std::string> EncodeSummary(const CallSummaryDetail& detail);
+  static Roe<CallSummaryDetail> DecodeSummary(const std::string& detail_json);
 
   static Roe<std::string> EncodeSdp(const CallSdpDetail& detail);
   static Roe<CallSdpDetail> DecodeSdp(const std::string& detail_json);
@@ -70,13 +70,8 @@ public:
 
   static std::optional<CallControlType> ControlTypeFromMessage(const ThreadMessage& message);
   static bool IsCallControlMessage(const ThreadMessage& message);
-  /** MediaKey / SFU / ICE — hide from transcript (not user history). */
-  static bool IsPlumbingCallControl(CallControlType type);
-  /**
-   * Do not bump thread list preview / unread / OS notices (plumbing + mid-call roster).
-   * Invite/Accept/Ended/Leave still surface in the sidebar.
-   */
-  static bool SuppressesInboxChrome(CallControlType type);
+  /** Signaling (everything but the summary) travels on the control lane, never in a transcript. */
+  static bool TravelsOnLane(CallControlType type);
 };
 
 } // namespace pbr

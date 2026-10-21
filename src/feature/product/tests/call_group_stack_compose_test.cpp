@@ -254,7 +254,7 @@ protected:
       relays_[i] = std::make_unique<FakeHopClient>(hop_, MeshPeerIdOf(i));
       // The hop is an org seed every participant knows (Wide scope → seed pick, V035).
       sides_[i].app_config.mesh.bootstrap_peers = {kHopMultiaddr};
-      sides_[i].on_send = [this, i](const ThreadMessage& msg) { Route(i, msg); };
+      sides_[i].on_send = [this, i](const std::string& peer, const ThreadMessage& msg) { Route(i, peer, msg); };
       StackSideOptions options;
       options.seed_dial_ok = true;
       options.relay = relays_[i].get();
@@ -322,14 +322,8 @@ protected:
 
   static std::string MeshPeerIdOf(size_t i) { return std::string("12D3KooWGroupSide") + static_cast<char>('A' + i); }
 
-  /** Call-control from `from`: the direct thread's peer names the recipient. */
-  void Route(size_t from, const ThreadMessage& msg) {
-    auto thread = sides_[from].store->GetThread(msg.thread_id);
-    if (!thread || !*thread) {
-      ADD_FAILURE() << "call-control on unknown thread " << msg.thread_id;
-      return;
-    }
-    const std::string& peer = (*thread)->peer_identity_value;
+  /** Call-control from `from` on the lane, to `peer`. */
+  void Route(size_t from, const std::string& peer, const ThreadMessage& msg) {
     for (size_t to = 0; to < kSides; ++to) {
       if (to != from && sides_[to].local_identity == peer) {
         std::lock_guard lock(wire_mu_);
@@ -337,7 +331,7 @@ protected:
         return;
       }
     }
-    ADD_FAILURE() << "call-control to unknown peer '" << peer << "' on thread " << msg.thread_id;
+    ADD_FAILURE() << "call-control to unknown peer '" << peer << "'";
   }
 
   void DeliverDirectHello(size_t from, CallMediaDirectConnectParams params) {

@@ -2,6 +2,7 @@
 
 #include "domain/calls/CallLifecycleTypes.h"
 #include "domain/calls/CallMediaStatusLogic.h"
+#include "domain/calls/CallTypes.h"
 #include "feature/calls/CallMediaCoordinator.h"
 
 #include <cstdint>
@@ -72,6 +73,8 @@ struct LiveCallMediaProgress {
 
 const char* LiveCallStateName(LiveCallState state);
 const char* LiveCallEndReasonName(LiveCallEndReason reason);
+/** How a call went for its summary, from the starter's side: completed when someone answered, else by why it ended. */
+CallOutcome SummaryOutcome(bool answered, LiveCallEndReason reason);
 
 /**
  * One call as it lives on this device, from admission to close — the in-process counterpart of the

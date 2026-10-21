@@ -45,7 +45,9 @@ AadFields AadFromEncryptParams(const E2eEncryptParams& params) {
 }
 
 Roe<AadFields> ExpectedReceiveAad(const RelayEnvelope& envelope, const std::string& local_contact_id) {
-  if (envelope.sender_seq == 0 || envelope.session_epoch == 0) {
+  // The control lane is unsequenced (seq 0, bound into the AAD); a chat stream message never is.
+  const bool lane = envelope.route.kind == kRelayRouteControl;
+  if ((envelope.sender_seq == 0) != lane || envelope.session_epoch == 0) {
     return Error("Envelope missing seq fields for E2E decrypt");
   }
   AadFields fields;

@@ -44,14 +44,9 @@ std::optional<SystemControlFamily> SystemControlRegistry::Find(const ThreadMessa
   return std::nullopt;
 }
 
-bool SystemControlRegistry::AppliesOutOfOrder(const ThreadMessage& message) const {
+bool SystemControlRegistry::OnLane(const ThreadMessage& message) const {
   const auto family = Find(message);
-  return family && family->apply_out_of_order;
-}
-
-bool SystemControlRegistry::Hidden(const ThreadMessage& message) const {
-  const auto family = Find(message);
-  return family && family->hidden && family->hidden(message);
+  return family && family->on_lane && family->on_lane(message);
 }
 
 bool SystemControlRegistry::Quiet(const ThreadMessage& message) const {
@@ -64,18 +59,6 @@ std::optional<std::string> SystemControlRegistry::LiveFamily() const {
   for (const auto& family : *families) {
     if (family.live && family.live()) {
       return family.name;
-    }
-  }
-  return std::nullopt;
-}
-
-std::optional<std::string> SystemControlRegistry::PreferredPublicThread() const {
-  const auto families = Snapshot();
-  for (const auto& family : *families) {
-    if (family.preferred_public_thread) {
-      if (auto thread = family.preferred_public_thread()) {
-        return thread;
-      }
     }
   }
   return std::nullopt;

@@ -9,6 +9,38 @@ std::string GenerateCallId() {
   return std::string(kCallIdPrefix) + util::GenerateUuid();
 }
 
+std::string CallOutcomeToString(const CallOutcome outcome) {
+  switch (outcome) {
+  case CallOutcome::Completed:
+    return "completed";
+  case CallOutcome::Missed:
+    return "missed";
+  case CallOutcome::Declined:
+    return "declined";
+  case CallOutcome::Cancelled:
+    return "cancelled";
+  case CallOutcome::Failed:
+    return "failed";
+  }
+  return "failed";
+}
+
+CallOutcome CallOutcomeFromString(const std::string& value) {
+  if (value == "completed") {
+    return CallOutcome::Completed;
+  }
+  if (value == "missed") {
+    return CallOutcome::Missed;
+  }
+  if (value == "declined") {
+    return CallOutcome::Declined;
+  }
+  if (value == "cancelled") {
+    return CallOutcome::Cancelled;
+  }
+  return CallOutcome::Failed;
+}
+
 std::string CallMediaModeToString(const CallMediaMode mode) {
   switch (mode) {
   case CallMediaMode::Voice:
@@ -118,8 +150,8 @@ std::string CallControlTypeToWire(const CallControlType type) {
     return "call_media_key";
   case CallControlType::CallEnded:
     return "call_ended";
-  case CallControlType::CallStarted:
-    return "call_started";
+  case CallControlType::CallSummary:
+    return "call_summary";
   case CallControlType::CallSdp:
     return "call_sdp";
   case CallControlType::CallIce:
@@ -166,8 +198,8 @@ std::optional<CallControlType> CallControlTypeFromWire(const std::string& value)
   if (value == "call_ended") {
     return CallControlType::CallEnded;
   }
-  if (value == "call_started") {
-    return CallControlType::CallStarted;
+  if (value == "call_summary") {
+    return CallControlType::CallSummary;
   }
   if (value == "call_sdp") {
     return CallControlType::CallSdp;

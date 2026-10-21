@@ -39,34 +39,41 @@ TEST(SystemControlRegistryTest, BindReplacesAndUnbindRemoves) {
   SystemControlRegistry registry;
   registry.Bind(Family("call", "call_invite"));
   auto replacement = Family("call", "call_invite");
-  replacement.apply_out_of_order = true;
+  replacement.on_lane = [](const ThreadMessage&) { return true; };
   registry.Bind(replacement);
   EXPECT_EQ(registry.Snapshot()->size(), 1u) << "one family per name";
-  EXPECT_TRUE(registry.AppliesOutOfOrder(Control("call_invite")));
+  EXPECT_TRUE(registry.OnLane(Control("call_invite")));
 
   const auto before = registry.Snapshot();
   registry.Unbind("call");
   EXPECT_FALSE(registry.Find(Control("call_invite")));
+  EXPECT_FALSE(registry.OnLane(Control("call_invite"))) << "unbound: nothing rides the lane";
   EXPECT_EQ(before->size(), 1u) << "a snapshot taken before stays whole";
 }
 
-TEST(SystemControlRegistryTest, LiveAndPreferredThreadComeFromTheFamilies) {
+TEST(SystemControlRegistryTest, LaneMembershipIsPerMessage) {
+  SystemControlRegistry registry;
+  auto family = Family("call", "call_");
+  family.owns = [](const ThreadMessage& message) { return message.payload_json.find("call_") != std::string::npos; };
+  family.on_lane = [](const ThreadMessage& message) {
+    return message.payload_json.find("call_summary") == std::string::npos;
+  };
+  registry.Bind(family);
+  EXPECT_TRUE(registry.OnLane(Control("call_invite")));
+  EXPECT_FALSE(registry.OnLane(Control("call_summary"))) << "history stays in the chat stream";
+  EXPECT_FALSE(registry.OnLane(Control("charge_required"))) << "not the family's";
+}
+
+TEST(SystemControlRegistryTest, LiveAndQuietComeFromTheFamilies) {
   SystemControlRegistry registry;
   bool live = false;
   auto family = Family("call", "call_invite");
   family.live = [&live]() { return live; };
-  family.preferred_public_thread = [&live]() -> std::optional<std::string> {
-    return live ? std::optional<std::string>("thread:origin") : std::nullopt;
-  };
-  family.hidden = [](const ThreadMessage&) { return true; };
   registry.Bind(family);
 
   EXPECT_FALSE(registry.LiveFamily());
-  EXPECT_FALSE(registry.PreferredPublicThread());
   live = true;
   EXPECT_EQ(registry.LiveFamily(), std::optional<std::string>("call"));
-  EXPECT_EQ(registry.PreferredPublicThread(), std::optional<std::string>("thread:origin"));
-  EXPECT_TRUE(registry.Hidden(Control("call_invite")));
   EXPECT_FALSE(registry.Quiet(Control("call_invite"))) << "no quiet rule: not quiet";
 }
 

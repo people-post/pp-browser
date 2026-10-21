@@ -413,16 +413,6 @@ void CallStack::BindCallControlInbound() {
                                                   context.relay_server_time_ms});
   };
   inbound.has_active_local_call = [this]() { return HasActiveLocalCall(); };
-  inbound.active_call_origin_thread_id = [this]() -> std::optional<std::string> {
-    if (!call_sessions_) {
-      return std::nullopt;
-    }
-    auto active = call_sessions_->ActiveLocalCall();
-    if (!active || !*active || !(*active)->origin_thread_id) {
-      return std::nullopt;
-    }
-    return *(*active)->origin_thread_id;
-  };
   deps_.system_controls->Bind(MakeCallControlFamily(std::move(inbound)));
 }
 

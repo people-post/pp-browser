@@ -122,10 +122,9 @@ TEST_F(PricingControlFamiliesTest, NoPeerMayCloseAnothersRelationship) {
   EXPECT_FALSE(family.apply(message, From("")));
 }
 
-TEST_F(PricingControlFamiliesTest, BillingIsAppliedInOrderAndShown) {
+TEST_F(PricingControlFamiliesTest, BillingStaysInTheChatStream) {
   auto family = Billing();
-  EXPECT_FALSE(family.apply_out_of_order);
-  EXPECT_FALSE(family.hidden);
+  EXPECT_FALSE(family.on_lane) << "billing is chat-stream history";
   EXPECT_FALSE(family.owns(PromiseOffer()));
 }
 

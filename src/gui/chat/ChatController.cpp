@@ -54,7 +54,6 @@
 #include "domain/people/ContactJson.h"
 #include "feature/registration/RegistrationClient.h"
 #include "domain/messaging/AtAiParser.h"
-#include "domain/messaging/ControlThreadLogic.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/ChatPayloadValidator.h"
 #include "common/chat/MessagingLimits.h"
@@ -1549,7 +1548,7 @@ void ChatController::SyncShellSessions() {
   const int64_t now_ms = util::NowUnixMs();
   int archived_count = 0;
   for (const Thread& thread : sorted_threads) {
-    if (!IsControlShadowThread(thread, sorted_threads) && prefs_of(thread).archived) {
+    if (prefs_of(thread).archived) {
       ++archived_count;
     }
   }
@@ -1561,9 +1560,6 @@ void ChatController::SyncShellSessions() {
                                     ? Tr("sidebar.archived.back").c_str()
                                     : Tr("sidebar.archived.entry", {{"count", std::to_string(archived_count)}}).c_str();
   for (const Thread& thread : sorted_threads) {
-    if (IsControlShadowThread(thread, sorted_threads)) {
-      continue;
-    }
     const ThreadLocalPrefs thread_prefs = prefs_of(thread);
     if (thread_prefs.archived != shell_.showing_archived) {
       continue;

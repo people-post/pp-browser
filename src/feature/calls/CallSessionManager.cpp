@@ -72,14 +72,7 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
     : contacts_(contacts), sessions_(sessions), media_keys_(media_keys),
       delivery_(std::move(delivery)), media_(media),
       topology_(sessions, contacts, media),
-      control_(store, contacts, identity, sessions, psk_store, delivery_,
-               [this]() -> std::optional<std::string> {
-                 auto active = ActiveLocalCall();
-                 if (active && *active && (*active)->origin_thread_id) {
-                   return *(*active)->origin_thread_id;
-                 }
-                 return std::nullopt;
-               }),
+      control_(store, identity, sessions, psk_store, delivery_),
       key_exchange_(sessions, media_keys, control_), billing_(identity), reach_signals_(control_),
       workflow_(store, sessions, key_exchange_, billing_, live_calls_), peer_accounts_(contacts) {
   redirectLogger("CallSessionManager");
@@ -141,7 +134,6 @@ CallSessionWorkflow::WirePorts CallSessionManager::MakeWorkflowWirePorts() {
                              const std::string& display) {
     return control_.SendDirect(peer, type, detail, display);
   };
-  ports.ensure_control_thread = [this](const std::string& peer) { return control_.EnsureCallControlThread(peer); };
   ports.fan_out_joined = [this](const std::string& call_id, CallControlType type, const std::string& detail,
                                 const std::string& display, const std::string& skip) {
     return control_.FanOutToJoined(call_id, type, detail, display, skip);
@@ -151,9 +143,23 @@ CallSessionWorkflow::WirePorts CallSessionManager::MakeWorkflowWirePorts() {
                                             const std::string& skip) {
     return control_.FanOutToJoinedAndRinging(call_id, type, detail, display, skip);
   };
-  ports.append_origin_history = [this](const std::string& thread_id, CallControlType type,
-                                       const std::string& text, const std::string& detail) {
-    return control_.AppendOriginHistory(thread_id, type, text, detail);
+  ports.send_summary = [this](const std::string& thread_id, const CallSummaryDetail& summary, bool local_only) {
+    return control_.SendSummary(thread_id, summary, local_only);
+  };
+  ports.resolve_call_thread = [this](const std::string& inviter,
+                                     const std::optional<std::string>& group_id) -> std::optional<std::string> {
+    if (group_id && !group_id->empty()) {
+      return delivery_.resolve_group_thread ? delivery_.resolve_group_thread(*group_id) : std::nullopt;
+    }
+    if (!delivery_.resolve_peer_thread) {
+      return std::nullopt;
+    }
+    auto thread = delivery_.resolve_peer_thread(inviter);
+    if (!thread) {
+      log().warning << "no thread for the call from " << inviter << ": " << thread.error().message;
+      return std::nullopt;
+    }
+    return *thread;
   };
   ports.build_roster_detail = [this](const std::string& call_id) { return BuildRosterDetail(call_id); };
   ports.clear_media_activity = [this]() { TopologyClearMediaActivity(); };
@@ -1377,8 +1383,8 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
     return reach_signals_.HandleInboundPunchAnswer(detail_json);
   case CallControlType::CallEnded:
     return HandleInboundEnded(detail_json, *local);
-  case CallControlType::CallStarted:
-    return {};
+  case CallControlType::CallSummary:
+    return {};  // history in the chat stream, not signaling
   }
   return {};
 }

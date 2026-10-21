@@ -14,7 +14,9 @@ pp_browser_add_domain_library(pp_domain_messaging
     ChatPayloadCodec.cpp
     ThreadLocalPrefsStore.cpp
     PairwiseFanoutLogic.cpp
-    ControlThreadLogic.cpp
+    PeerThreadLogic.cpp
+    ControlLaneEnvelope.cpp
+    ControlLaneSeenStore.cpp
     E2ePublicSessionLogic.cpp
     SqliteThreadSchema.cpp
     SqliteThreadDb.cpp

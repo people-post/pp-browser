@@ -1,5 +1,7 @@
 #include "feature/conversations/RelayReceivePipeline.h"
 
+#include <cstdlib>
+
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/messaging/ReactionTypes.h"
 
@@ -27,6 +29,7 @@
 
 #include "common/Logger.h"
 #include "common/Utilities.h"
+#include "domain/messaging/ControlLaneSeenStore.h"
 #include "common/ValueJson.h"
 #include "common/PbrCompat.h"
 #include "common/MeshAlias.h"
@@ -121,28 +124,20 @@ Roe<void> RelayReceivePipeline::ApplyInboundControl(ThreadMessage& message, cons
 }
 
 bool RelayReceivePipeline::AppliesOutOfOrder(const ThreadMessage& message) const {
-  return IsGroupMembershipControlMessage(message) || (controls_ && controls_->AppliesOutOfOrder(message));
+  return IsGroupMembershipControlMessage(message);
 }
 
 void RelayReceivePipeline::ApplyOutOfOrderControls(ThreadMessage& message, const RelayEnvelope& envelope,
                                                    const IngestDecision decision, RelayReceiveOutcome& outcome) const {
   if (IsGroupMembershipControlMessage(message)) {
+    log().info << "Apply membership out of order (" << static_cast<int>(decision)
+               << ") message_id=" << envelope.message_id;
     (void)ApplyInboundMembershipMessage(message, envelope.sender_contact_id, &outcome);
-    return;
-  }
-  if (!controls_ || !controls_->AppliesOutOfOrder(message)) {
-    return;
-  }
-  log().info << "Apply system control out of order (" << static_cast<int>(decision)
-             << ") message_id=" << envelope.message_id;
-  MaybeSuppressInboxChrome(outcome, message);
-  if (auto applied = ApplyInboundControl(message, envelope); !applied) {
-    log().warning << "System control out of order failed: " << applied.error().message;
   }
 }
 
 void RelayReceivePipeline::MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome, const ThreadMessage& message) const {
-  if (controls_ && (controls_->Hidden(message) || controls_->Quiet(message))) {
+  if (controls_ && controls_->Quiet(message)) {
     outcome.suppress_inbox_chrome = true;
   }
 }
@@ -496,10 +491,108 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessEnvelope(const RelayEnvelope& e
                                                           const std::string& local_relay_user_id,
                                                           const bool authorized_older_backfill,
                                                           const MessageTransport transport) {
-  if (envelope.route.kind == "group") {
+  if (envelope.route.kind == kRelayRouteGroup) {
     return ProcessGroupEnvelope(envelope, local_relay_user_id, authorized_older_backfill, transport);
   }
+  if (envelope.route.kind == kRelayRouteControl) {
+    return ProcessControlEnvelope(envelope, local_relay_user_id);
+  }
   return ProcessDirectEnvelope(envelope, local_relay_user_id, authorized_older_backfill, transport);
+}
+
+bool ControlLaneFresh(const RelayEnvelope& envelope, const int64_t max_age_ms, const int64_t now_ms) {
+  // The sender's signed time, against ours: bounds a replay whatever the transport claims (devices'
+  // clocks may drift, so the bound is generous; the seen-store covers it).
+  if (envelope.timestamp <= 0 || std::llabs(now_ms - envelope.timestamp) > kControlLaneSignedSkewMs) {
+    return false;
+  }
+  // Through the relay: how long it waited there, on the relay's own clock (no skew between devices).
+  if (envelope.relay_created_at_ms && envelope.relay_server_time_ms) {
+    return *envelope.relay_server_time_ms - *envelope.relay_created_at_ms <= max_age_ms;
+  }
+  return true;  // direct (Amp): delivered as sent
+}
+
+RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnvelope& envelope,
+                                                                 const std::string& local_relay_user_id) {
+  RelayReceiveOutcome outcome;
+  outcome.decision = IngestDecision::HardReject;
+  if (envelope.envelope_version != kRelayEnvelopeVersion ||
+      DumpJson(RelayEnvelopeToJson(envelope)).size() > kMaxRelayEnvelopeBytes) {
+    return outcome;
+  }
+  if (envelope.route.channel != ThreadChannel::E2ePublic || envelope.sender_seq != 0 ||
+      envelope.message_id.empty() || envelope.sender_contact_id.empty()) {
+    return outcome;
+  }
+  if (SenderBlocked(envelope.sender_contact_id)) {
+    outcome.decision = IngestDecision::SilentDiscard;
+    return outcome;
+  }
+  const DirectChatTarget inbound_target = InboundTargetFromEnvelope(envelope);
+  auto verified = VerifySignature(envelope, inbound_target);
+  if (!verified || !*verified) {
+    log().warning << "control lane: signature check failed message_id=" << envelope.message_id
+                  << " sender=" << envelope.sender_contact_id;
+    return outcome;
+  }
+  if (local_relay_user_id.empty()) {
+    return outcome;
+  }
+  auto kem_private = identity_.GetOrCreateHybridKemPrivateKey();
+  if (!kem_private) {
+    return outcome;
+  }
+  ChatTargetKey target_key;
+  target_key.peer_identity_kind = inbound_target.peer_identity_kind;
+  target_key.peer_identity_value = inbound_target.peer_identity_value;
+  target_key.channel = CryptoChannel::E2ePublic;
+  auto decrypted =
+      E2eRelayPayloadCodec::DecryptEnvelope(envelope, local_relay_user_id, target_key, psk_store_, *kem_private);
+  if (!decrypted) {
+    log().warning << "control lane: couldn't decrypt message_id=" << envelope.message_id
+                  << " err=" << decrypted.error().message;
+    return outcome;
+  }
+  if (auto master_psk = ResolveOrDeriveMasterPsk(envelope, target_key, psk_store_, *kem_private)) {
+    (void)PersistDerivedAutoKeyPsk(envelope, target_key, *master_psk);
+  }
+
+  ThreadMessage message = std::move(*decrypted);
+  const auto family = controls_ ? controls_->Find(message) : std::nullopt;
+  if (message.content_type != ChatContentType::System || !family || !family->on_lane || !family->on_lane(message)) {
+    // Only a bound family's lane signaling rides the lane; anything else is not ours to apply.
+    outcome.decision = IngestDecision::SilentDiscard;
+    return outcome;
+  }
+  const int64_t now_ms = util::NowUnixMs();
+  if (!ControlLaneFresh(envelope, family->lane_max_age_ms, now_ms)) {
+    log().info << "control lane: stale message dropped family=" << family->name << " message_id=" << envelope.message_id
+               << " sent_ms=" << envelope.timestamp << " now_ms=" << now_ms;
+    outcome.decision = IngestDecision::SilentDiscard;
+    return outcome;
+  }
+  if (control_lane_seen_) {
+    auto first = control_lane_seen_->FirstSight(envelope.sender_contact_id, envelope.message_id, now_ms);
+    if (!first) {
+      log().warning << "control lane: seen-check failed: " << first.error().message;
+      return outcome;
+    }
+    if (!*first) {
+      outcome.decision = IngestDecision::BenignDuplicate;
+      return outcome;
+    }
+  }
+
+  message.id = envelope.message_id;
+  message.thread_id.clear();
+  message.sender_contact_id = envelope.sender_contact_id;
+  message.timestamp = envelope.timestamp;
+  if (auto applied = ApplyInboundControl(message, envelope, &outcome); !applied) {
+    return outcome;
+  }
+  outcome.decision = IngestDecision::AcceptControl;
+  return outcome;
 }
 
 RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvelope& envelope,
@@ -695,6 +788,13 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
     return outcome;
   }
 
+  if (controls_ && controls_->OnLane(message)) {
+    // Lane-only signaling has no place in the chat stream: never applied, never stored here.
+    log().info << "drop control-lane message sent in the chat stream message_id=" << envelope.message_id;
+    outcome.decision = IngestDecision::SilentDiscard;
+    return outcome;
+  }
+
   if (auto_create) {
     const std::string fallback_title = ShortRelayId(envelope.sender_contact_id);
     auto created = store_.FindOrCreateDirectThread(
@@ -829,10 +929,8 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
       outcome.decision = IngestDecision::SoftCompromised;
       return outcome;
     }
-    // e2e_public SoftCompromised: out-of-order controls apply; HardReject: only bound families' (call
-    // media keys must not wait), not membership.
-    if (classified.decision == IngestDecision::SoftCompromised ||
-        (controls_ && controls_->AppliesOutOfOrder(message))) {
+    // e2e_public SoftCompromised: membership still applies out of order.
+    if (classified.decision == IngestDecision::SoftCompromised) {
       apply_out_of_order(classified.decision);
     }
     return outcome;
@@ -959,6 +1057,11 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     return outcome;
   }
   ThreadMessage message = std::move(*decrypted);
+  if (controls_ && controls_->OnLane(message)) {
+    log().info << "drop control-lane message sent in a group stream message_id=" << envelope.message_id;
+    outcome.decision = IngestDecision::SilentDiscard;
+    return outcome;
+  }
 
   auto thread = store_.FindGroupThread(group_id);
   if (!thread) {
@@ -1035,6 +1138,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
     return outcome;
   }
 
+  MaybeSuppressInboxChrome(outcome, persisted);  // a family's quiet line (a group call summary)
   TombstoneIfRetractedBeforeArrival(persisted, outcome);
   if (auto cap = RejectIfAnnotationCapExceeded(store_, persisted); !cap) {
     outcome.decision = IngestDecision::HardReject;

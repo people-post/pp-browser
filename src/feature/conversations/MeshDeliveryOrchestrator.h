@@ -21,6 +21,7 @@
 #include "domain/messaging/PublicPskLockCoordinator.h"
 #include "domain/messaging/E2ePublicSessionLogic.h"
 #include "common/chat/SystemControl.h"
+#include "domain/messaging/ControlLaneSeenStore.h"
 #include "feature/conversations/RelayReceivePipeline.h"
 #include "feature/conversations/GroupInviteGate.h"
 #include "mesh/host/MeshPorts.h"
@@ -273,6 +274,14 @@ public:
    * Caller attaches `first_message_key_init_b64` on the outbound CallInvite send.
    */
   Roe<EnsuredE2ePublicSessionKey> EnsureE2ePublicSessionKey(const std::string& peer_identity);
+  /**
+   * Send `control` (an identified system message) to `peer_identity` on the control lane
+   * (kRelayRouteControl): E2E under the pair's e2e_public session (opened on first use; a
+   * `key_init_b64` the caller holds rides along), not sequenced, never stored. Queued on the
+   * critical lane — relay when a route is known (retried while fresh), else Amp.
+   */
+  Roe<void> SendControl(const std::string& peer_identity, const ThreadMessage& control,
+                        const std::optional<std::string>& key_init_b64 = std::nullopt);
   /** Snapshotted link UX for the open thread (header + soft banner). */
   ThreadPeerLinkView GetThreadPeerLink(const std::string& thread_id) const;
   /** Clear dial backoff and dial again for the thread's peer. */
@@ -291,6 +300,18 @@ private:
   std::optional<std::string> ResolvePeerRelayIdWithDirectory(const Thread& thread);
   void RememberRouteFromEnvelope(const RelayEnvelope& envelope);
   TrustLevel ResolveThreadTrust(const Thread& thread) const;
+  /** The pair's e2e_public session as the lane and media-key wraps use it. */
+  struct E2ePublicSession {
+    ChatTargetKey target_key;
+    uint32_t epoch = 1;
+    ByteVector master_psk;
+    /** Set when this call just opened the session (attach on the first send). */
+    std::optional<std::string> key_init_b64;
+  };
+  Roe<E2ePublicSession> ResolveE2ePublicSession(const std::string& peer_identity);
+  uint64_t NextControlOrderKey();
+  /** A control-lane send still unsent this long after it was made is dropped from the retry queue. */
+  static constexpr int64_t kControlRetryWindowMs = 2 * 60 * 1000;
   void EnqueueRetry(PendingRelaySend pending);
   void NotifyDeliveryIssue(const Thread& thread, const std::string& error_message);
   void NotifyRelayFallback(const std::string& thread_id);
@@ -338,6 +359,8 @@ private:
   const mesh::AddressDisclosureGate* address_disclosure_ = nullptr;
   /** `amp_links_` limited to the audience, for the people-facing transports (outlives them). */
   std::unique_ptr<mesh::DisclosureGatedPeerLinks> people_links_;
+  /** Control-lane ids applied (profile.db); declared before the pipeline that reads it. */
+  std::unique_ptr<ControlLaneSeenStore> control_lane_seen_;
   std::unique_ptr<RelayReceivePipeline> receive_pipeline_;
   std::unique_ptr<IChatHistoryPeerClient> peer_history_;
   std::unique_ptr<IChatBlobPeerService> peer_blob_;
@@ -361,6 +384,7 @@ private:
   std::function<void(std::string, std::string, std::string)> on_background_unread_;
   mutable std::mutex retry_mutex_;
   std::vector<PendingRelaySend> retry_queue_;
+  std::atomic<uint64_t> control_order_key_{0};
   mutable std::mutex link_ux_mutex_;
   mutable std::string relay_fallback_notice_thread_id_;
   mutable std::string relay_fallback_notice_text_;

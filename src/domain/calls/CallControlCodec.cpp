@@ -112,9 +112,6 @@ Roe<std::string> CallControlCodec::EncodeInvite(const CallInviteDetail& detail) 
   json.set("inviter_identity", detail.inviter_identity);
   json.set("invitee_identity", detail.invitee_identity);
   json.set("media_mode", CallMediaModeToString(detail.media_mode));
-  if (detail.origin_thread_id) {
-    json.set("origin_thread_id", *detail.origin_thread_id);
-  }
   if (detail.origin_group_id) {
     json.set("origin_group_id", *detail.origin_group_id);
   }
@@ -168,7 +165,6 @@ Roe<CallInviteDetail> CallControlCodec::DecodeInvite(const std::string& detail_j
   detail.inviter_identity = json->getString("inviter_identity").value_or("");
   detail.invitee_identity = json->getString("invitee_identity").value_or("");
   detail.media_mode = CallMediaModeFromString(json->getString("media_mode").value_or("voice"));
-  detail.origin_thread_id = json->getString("origin_thread_id");
   detail.origin_group_id = json->getString("origin_group_id");
   detail.sfu_hint = json->getString("sfu_hint");
   if (auto planned = json->getString("planned_hop"); planned && !planned->empty()) {
@@ -352,28 +348,32 @@ Roe<CallEndedDetail> CallControlCodec::DecodeEnded(const std::string& detail_jso
   return detail;
 }
 
-Roe<std::string> CallControlCodec::EncodeStarted(const CallStartedDetail& detail) {
+Roe<std::string> CallControlCodec::EncodeSummary(const CallSummaryDetail& detail) {
   Object json;
   json.set("call_id", detail.call_id);
   json.set("media_mode", CallMediaModeToString(detail.media_mode));
-  json.set("video_allowed", detail.video_allowed);
+  json.set("outcome", CallOutcomeToString(detail.outcome));
+  if (detail.duration_ms) {
+    json.set("duration_ms", *detail.duration_ms);
+  }
+  if (detail.group) {
+    json.set("group", true);
+  }
   return DumpJson(json);
 }
 
-Roe<CallStartedDetail> CallControlCodec::DecodeStarted(const std::string& detail_json) {
+Roe<CallSummaryDetail> CallControlCodec::DecodeSummary(const std::string& detail_json) {
   auto json = TryParseObject(detail_json);
   auto call_id = json ? json->getString("call_id") : std::nullopt;
   if (!json || !call_id) {
-    return Error("Invalid call_started detail");
+    return Error("Invalid call_summary detail");
   }
-  CallStartedDetail detail;
+  CallSummaryDetail detail;
   detail.call_id = *call_id;
   detail.media_mode = CallMediaModeFromString(json->getString("media_mode").value_or("voice"));
-  if (json->contains("video_allowed")) {
-    detail.video_allowed = json->getIf<bool>("video_allowed").value_or(false);
-  } else {
-    detail.video_allowed = detail.media_mode == CallMediaMode::Video;
-  }
+  detail.outcome = CallOutcomeFromString(json->getString("outcome").value_or("failed"));
+  detail.duration_ms = json->getIf<int64_t>("duration_ms");
+  detail.group = json->getIf<bool>("group").value_or(false);
   return detail;
 }
 
@@ -649,31 +649,8 @@ bool CallControlCodec::IsCallControlMessage(const ThreadMessage& message) {
   return ControlTypeFromMessage(message).has_value();
 }
 
-bool CallControlCodec::IsPlumbingCallControl(const CallControlType type) {
-  switch (type) {
-  case CallControlType::CallMediaKey:
-  case CallControlType::CallSdp:
-  case CallControlType::CallIce:
-  case CallControlType::CallSfuAttach:
-  case CallControlType::CallSfuAttachFailed:
-  case CallControlType::CallHopRefuse:
-  case CallControlType::CallVideoRefresh:
-  case CallControlType::CallCircuitR1:
-  case CallControlType::CallPunchOffer:
-  case CallControlType::CallPunchAnswer:
-  case CallControlType::CallCapsUpdate:
-    return true;
-  default:
-    return false;
-  }
-}
-
-bool CallControlCodec::SuppressesInboxChrome(const CallControlType type) {
-  if (IsPlumbingCallControl(type)) {
-    return true;
-  }
-  // Mid-call mute/camera roster fan-out — keep optional history line, not sidebar noise.
-  return type == CallControlType::CallRoster;
+bool CallControlCodec::TravelsOnLane(const CallControlType type) {
+  return type != CallControlType::CallSummary;
 }
 
 } // namespace pbr

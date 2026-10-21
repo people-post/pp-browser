@@ -225,29 +225,17 @@ Roe<void> ProductStackHarness::InitStoresAndStack(const std::string& hop_ma,
       (void)host_->Amp()->Links().RegisterEndpoint(*pid, multiaddr);
     }
   };
-  deps.delivery.send_user_message = [this](const std::string& thread_id, const std::string& text,
-                                           const SendRelayOptions& options) -> Roe<ThreadMessage> {
-    ThreadMessage msg;
-    msg.id = util::GenerateUuid();
-    msg.thread_id = thread_id;
-    msg.text = text;
-    msg.content_type = options.content_type.value_or(ChatContentType::System);
-    msg.payload_json = options.payload_json.value_or("");
-    msg.timestamp = util::NowUnixMs();
+  deps.delivery.send_control = [this](const std::string& peer_account, const ThreadMessage& control,
+                                      const std::optional<std::string>& /*key_init*/) -> Roe<void> {
+    ThreadMessage msg = control;
     msg.sender_contact_id = local_account_;
-
-    // Resolve recipient from the call-control thread's peer identity (E2ePublic direct).
-    std::string peer_account;
-    if (auto thr = store_->GetThread(thread_id); thr && thr->has_value()) {
-      peer_account = (*thr)->peer_identity_value;
-    }
     if (peer_account.empty()) {
-      return Error("call-control thread missing peer");
+      return Error("call control without a peer");
     }
     if (auto sent = SendCallControl(peer_account, msg); !sent) {
       return sent.error();
     }
-    return msg;
+    return {};
   };
   deps.system_controls = &controls_;
   MeshConnectivityWiringInputs reach;

@@ -467,6 +467,8 @@ Roe<RelayEnvelope> ParseRelayEnvelope(const Object& json) {
     }
   } else if (envelope.route.kind == "group") {
     envelope.route.channel = ThreadChannel::None;
+  } else if (envelope.route.kind == kRelayRouteControl) {
+    envelope.route.channel = ThreadChannel::E2ePublic;  // the lane rides the e2e_public session
   } else if (auto channel_value = route->getString("channel")) {
     envelope.route.channel = ThreadChannelFromString(*channel_value);
   }

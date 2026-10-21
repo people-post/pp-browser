@@ -1,7 +1,7 @@
 #include "feature/product/CallsParticipant.h"
 
 #include "domain/calls/CallSessionLogic.h"
-#include "domain/messaging/ControlThreadLogic.h"
+#include "domain/messaging/PeerThreadLogic.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/LocalNetworkReaction.h"
 #include "feature/conversations/ConversationsHub.h"
@@ -23,13 +23,50 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub) {
   deps.identity = &hub.Identity();
   deps.psk = hub.PskSessions();
   if (hub.MeshMessagingOrNull()) {
-    deps.delivery.send_user_message = [&hub](const std::string& thread_id, const std::string& text,
-                                             const SendRelayOptions& options) -> Roe<ThreadMessage> {
+    deps.delivery.send_control = [&hub](const std::string& peer_identity, const ThreadMessage& control,
+                                        const std::optional<std::string>& key_init_b64) -> Roe<void> {
       auto* messaging = hub.MeshMessagingOrNull();
       if (!messaging) {
         return Error("Messaging not ready");
       }
+      return messaging->SendControl(peer_identity, control, key_init_b64);
+    };
+    deps.delivery.send_to_thread = [&hub](const std::string& thread_id, const std::string& text,
+                                          const SendRelayOptions& options) -> Roe<ThreadMessage> {
+      auto* messaging = hub.MeshMessagingOrNull();
+      if (!messaging) {
+        return Error("Messaging not ready");
+      }
+      auto thread = hub.Store().GetThread(thread_id);
+      if (!thread) {
+        return thread.error();
+      }
+      if (*thread && (*thread)->kind == ThreadKind::Group) {
+        return messaging->SendGroupMessage(thread_id, text, options);
+      }
       return messaging->SendUserMessage(thread_id, text, options);
+    };
+    deps.delivery.resolve_peer_thread = [&hub](const std::string& peer_identity) -> Roe<std::string> {
+      std::string contact_id;
+      std::string title;
+      if (auto contact = hub.Contacts().FindByIdentity(peer_identity, mesh::ContactIdKind::Account);
+          contact && *contact) {
+        contact_id = (*contact)->id;
+        title = (*contact)->display_name.empty() ? (*contact)->server_nickname : (*contact)->display_name;
+      }
+      return ResolveDirectThreadForPeer(hub.Store(), peer_identity, contact_id, title);
+    };
+    deps.delivery.resolve_group_thread = [&hub](const std::string& group_id) -> std::optional<std::string> {
+      auto threads = hub.Store().ListThreads();
+      if (!threads) {
+        return std::nullopt;
+      }
+      for (const Thread& thread : *threads) {
+        if (thread.kind == ThreadKind::Group && thread.group_id && *thread.group_id == group_id) {
+          return thread.id;
+        }
+      }
+      return std::nullopt;
     };
     deps.delivery.sync_inbox_from_wake = [&hub](bool force) {
       if (auto* messaging = hub.MeshMessagingOrNull()) {
@@ -53,7 +90,6 @@ CallStackDeps MakeCallStackDeps(ConversationsHub& hub) {
         messaging->SyncInboxFromWake(true);
         messaging->TailSyncActiveE2eThread();
       }
-      (void)PruneOrphanControlShadows(hub.Store());
     };
     deps.system_controls = &hub.SystemControls();
   }

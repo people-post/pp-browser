@@ -20,7 +20,6 @@
 #include "feature/conversations/RelayDirectoryKemKeyResolver.h"
 #include "feature/conversations/RelayDirectorySigningKeyResolver.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
-#include "domain/messaging/ControlThreadLogic.h"
 
 #include "feature/conversations/PushDeviceCoordinator.h"
 #include "foundation/crypto/ProfileSecretsEngine.h"

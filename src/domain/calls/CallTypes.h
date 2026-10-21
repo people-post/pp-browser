@@ -52,8 +52,11 @@ enum class CallControlType {
   CallRoster,
   CallMediaKey,
   CallEnded,
-  /** Origin-thread history only (local); not required on pairwise wire. */
-  CallStarted,
+  /**
+   * One per call, in the call's thread: the history the user reads (outcome, media, duration). A
+   * normal chat-stream message — every other type is signaling on the control lane.
+   */
+  CallSummary,
   /** WebRTC SDP offer/answer (a2). */
   CallSdp,
   /** Trickle ICE candidate (a2). */
@@ -100,7 +103,10 @@ struct CallPlannedHop {
 
 struct CallSession {
   std::string call_id;
+  /** This device's thread for the call (the group's, or the DM with the peer) — local, never on the wire. */
   std::optional<std::string> origin_thread_id;
+  /** Who started the call (the local account when we did): the starter writes its summary. */
+  std::string initiator_identity;
   std::optional<std::string> origin_group_id;
   CallMediaMode media_mode = CallMediaMode::Voice;
   /** Initiator policy: participants may publish video when true (V035). */
@@ -176,7 +182,7 @@ struct CallInviteDetail {
   std::string invitee_identity;
   CallMediaMode media_mode = CallMediaMode::Voice;
   bool video_allowed = false;
-  std::optional<std::string> origin_thread_id;
+  /** The group the call is in (each side finds its own thread for it); none: a 1:1 call. */
   std::optional<std::string> origin_group_id;
   std::optional<std::string> sfu_hint;
   /** V050: planned hop (additive; old peers ignore). Distinct from `sfu_hint` = the hop in use. */
@@ -276,10 +282,30 @@ struct CallEndedDetail {
   std::optional<int64_t> duration_ms;
 };
 
-struct CallStartedDetail {
+/** How a call went, from its starter's side (what a summary reports). */
+enum class CallOutcome {
+  /** Someone joined; the summary carries the duration. */
+  Completed,
+  /** Rang out unanswered. */
+  Missed,
+  /** The invitee declined. */
+  Declined,
+  /** The starter hung up before anyone joined. */
+  Cancelled,
+  /** It could not be placed or kept (no media, the app quit, a restart). */
+  Failed,
+};
+
+std::string CallOutcomeToString(CallOutcome outcome);
+CallOutcome CallOutcomeFromString(const std::string& value);
+
+struct CallSummaryDetail {
   std::string call_id;
   CallMediaMode media_mode = CallMediaMode::Voice;
-  bool video_allowed = false;
+  CallOutcome outcome = CallOutcome::Completed;
+  std::optional<int64_t> duration_ms;
+  /** A group call (the summary is in the group's thread). */
+  bool group = false;
 };
 
 struct CallSdpDetail {

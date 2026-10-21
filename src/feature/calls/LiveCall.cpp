@@ -88,6 +88,31 @@ const char* LiveCallStateName(const LiveCallState state) {
   return "?";
 }
 
+CallOutcome SummaryOutcome(const bool answered, const LiveCallEndReason reason) {
+  if (answered) {
+    return CallOutcome::Completed;
+  }
+  switch (reason) {
+  case LiveCallEndReason::DeclinedByPeer:
+    return CallOutcome::Declined;
+  case LiveCallEndReason::Unanswered:
+  case LiveCallEndReason::Expired:
+    return CallOutcome::Missed;
+  case LiveCallEndReason::LocalLeave:
+  case LiveCallEndReason::RemoteEnded:
+  case LiveCallEndReason::Superseded:
+  case LiveCallEndReason::Declined:
+    return CallOutcome::Cancelled;
+  case LiveCallEndReason::None:
+  case LiveCallEndReason::StartFailed:
+  case LiveCallEndReason::MediaUnavailable:
+  case LiveCallEndReason::Shutdown:
+  case LiveCallEndReason::Orphaned:
+    return CallOutcome::Failed;
+  }
+  return CallOutcome::Failed;
+}
+
 const char* LiveCallEndReasonName(const LiveCallEndReason reason) {
   switch (reason) {
   case LiveCallEndReason::None:

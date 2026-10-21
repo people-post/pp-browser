@@ -196,22 +196,29 @@ protected:
     deps.contacts = contacts_.get();
     deps.identity = identity_.get();
     deps.psk = psk_.get();
-    deps.delivery.send_user_message = [this](const std::string& thread_id, const std::string& text,
-                                             const SendRelayOptions& options) -> Roe<ThreadMessage> {
+    deps.delivery.send_control = [this](const std::string& /*peer*/, const ThreadMessage& control,
+                                        const std::optional<std::string>& /*key_init*/) -> Roe<void> {
+      ++sent_control_;
+      {
+        std::lock_guard lock(sent_mu_);
+        sent_payloads_.push_back(control.payload_json);
+      }
+      return {};
+    };
+    deps.delivery.send_to_thread = [this](const std::string& thread_id, const std::string& text,
+                                          const SendRelayOptions& options) -> Roe<ThreadMessage> {
       ThreadMessage msg;
       msg.id = util::GenerateUuid();
       msg.thread_id = thread_id;
       msg.text = text;
+      msg.sender_contact_id = kLocalSelfContactId;
       msg.content_type = options.content_type.value_or(ChatContentType::System);
       msg.payload_json = options.payload_json.value_or("");
-      msg.timestamp = util::NowUnixMs();
-      ++sent_control_;
-      {
-        std::lock_guard lock(sent_mu_);
-        sent_payloads_.push_back(msg.payload_json);
-      }
+      std::lock_guard lock(sent_mu_);
+      summaries_.push_back(msg);
       return msg;
     };
+    deps.delivery.resolve_peer_thread = [](const std::string& peer) -> Roe<std::string> { return "dm:" + peer; };
     deps.delivery.sync_inbox_from_wake = [this](bool /*force*/) { ++inbox_syncs_; };
     deps.mesh_config = [this]() { return std::make_shared<const MeshConfig>(app_config_.mesh); };
     deps.mesh = []() -> mesh::MeshHost* { return nullptr; };
@@ -278,7 +285,6 @@ protected:
     invite.invitee_identity = local_identity_;
     invite.media_mode = CallMediaMode::Voice;
     invite.video_allowed = false;
-    invite.origin_thread_id = "thread:origin";
     invite.media_epoch = 1;
     invite.media_key_id = "mk:1";
     invite.expires_at = util::NowUnixMs() + kDefaultCallInviteTtlMs;
@@ -321,6 +327,7 @@ protected:
   int sent_control_ = 0;
   std::mutex sent_mu_;
   std::vector<std::string> sent_payloads_;
+  std::vector<ThreadMessage> summaries_;
   int inbox_syncs_ = 0;
   int listen_desires_ = 0;
   /** Ring-changed may fire on IO/worker threads (LeaveCall runs on Critical) — fixture-owned, atomic. */

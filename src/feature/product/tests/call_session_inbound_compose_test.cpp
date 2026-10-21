@@ -227,18 +227,12 @@ protected:
     transport_ = std::make_unique<FakeCallMediaTransport>();
 
     CallDeliveryPorts delivery;
-    delivery.send_user_message = [this](const std::string& thread_id, const std::string& text,
-                                        const SendRelayOptions& options) -> Roe<ThreadMessage> {
+    delivery.send_control = [this](const std::string& /*peer*/, const ThreadMessage& control,
+                                   const std::optional<std::string>& /*key_init*/) -> Roe<void> {
       if (fail_sends_) {
         return Error("offline (test)");
       }
-      ThreadMessage msg;
-      msg.id = util::GenerateUuid();
-      msg.thread_id = thread_id;
-      msg.text = text;
-      msg.content_type = options.content_type.value_or(ChatContentType::System);
-      msg.payload_json = options.payload_json.value_or("");
-      msg.timestamp = util::NowUnixMs();
+      const ThreadMessage& msg = control;
       ++sent_control_messages_;
       last_sent_payload_ = msg.payload_json;
       if (auto payload = TryParseObject(msg.payload_json); payload) {
@@ -249,8 +243,21 @@ protected:
           ++sent_rosters_;
         }
       }
+      return {};
+    };
+    delivery.send_to_thread = [this](const std::string& thread_id, const std::string& text,
+                                     const SendRelayOptions& options) -> Roe<ThreadMessage> {
+      ThreadMessage msg;
+      msg.id = util::GenerateUuid();
+      msg.thread_id = thread_id;
+      msg.text = text;
+      msg.sender_contact_id = kLocalSelfContactId;
+      msg.content_type = options.content_type.value_or(ChatContentType::System);
+      msg.payload_json = options.payload_json.value_or("");
+      summaries_.push_back(msg);
       return msg;
     };
+    delivery.resolve_peer_thread = [](const std::string& peer) -> Roe<std::string> { return "dm:" + peer; };
     delivery.sync_inbox_from_wake = [this](bool /*force*/) { ++inbox_syncs_; };
 
     csm_ = std::make_unique<CallSessionManager>(*store_, *contacts_, *identity_, *sessions_, *keys_,
@@ -314,7 +321,6 @@ protected:
     invite.invitee_identity = local_identity_;
     invite.media_mode = CallMediaMode::Voice;
     invite.video_allowed = video_allowed.value_or(false);
-    invite.origin_thread_id = "thread:origin";
     invite.media_epoch = 1;
     invite.media_key_id = "mk:1";
     invite.listen_multiaddrs = {"/ip4/10.0.0.2/tcp/4001/p2p/12D3KooWPeer"};
@@ -424,6 +430,7 @@ protected:
   /** The last CallAccept on the wire (the answerer start may send more after it). */
   std::string last_sent_accept_payload_;
   int sent_rosters_ = 0;
+  std::vector<ThreadMessage> summaries_;
 };
 
 TEST_F(CallSessionInboundComposeTest, InboundInviteCreatesPendingAndRingingSession) {

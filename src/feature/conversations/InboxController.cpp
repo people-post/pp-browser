@@ -1,5 +1,4 @@
 #include "feature/conversations/InboxController.h"
-#include "domain/messaging/ControlThreadLogic.h"
 #include "foundation/runtime/AppRuntime.h"
 
 #include "feature/conversations/GroupMembershipWorkflow.h"
@@ -450,10 +449,6 @@ int InboxController::SumUnread() const {
   }
   int total = 0;
   for (const Thread& thread : *threads) {
-    // Public twin of a private DM — call/group control; never inflate the global badge.
-    if (HasPrivateE2eSibling(thread, *threads)) {
-      continue;
-    }
     total += thread.unread_count;
   }
   return total;
@@ -471,9 +466,6 @@ int InboxController::SumUnreadForContact(const std::string& contact_id) const {
   for (const Thread& thread : *threads) {
     if (std::find(thread.participant_contact_ids.begin(), thread.participant_contact_ids.end(), contact_id) ==
         thread.participant_contact_ids.end()) {
-      continue;
-    }
-    if (HasPrivateE2eSibling(thread, *threads)) {
       continue;
     }
     total += thread.unread_count;
@@ -590,14 +582,11 @@ std::string InboxController::BuildSharedBadgeHtml(const ThreadMessage& message) 
 
 std::string InboxController::BuildSystemRml(const ThreadMessage& message) const {
   if (const auto family = controls_ ? controls_->Find(message) : std::nullopt) {
-    // A feature's control message: hidden (plumbing), or the feature's own line, names included.
-    if (family->hidden && family->hidden(message)) {
-      return {};
-    }
+    // A feature's message: its own line, names included, else the message's text.
     SystemControlLabels labels;
     labels.peer = [this](const std::string& identity) { return ResolveSenderLabel(identity); };
     const auto line = family->line ? family->line(message, labels) : std::nullopt;
-    return line ? SystemLineRml(*line) : std::string();
+    return SystemLineRml(line.value_or(message.text));
   }
 
   const auto control_type = GroupMembershipCodec::ControlTypeFromMessage(message);
@@ -985,8 +974,8 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
       continue;
     }
     const auto control = controls_ ? controls_->Find(message) : std::nullopt;
-    if (control && control->hidden && control->hidden(message)) {
-      continue;
+    if (control && control->on_lane && control->on_lane(message)) {
+      continue;  // lane signaling is never a transcript row (an old store may still hold some)
     }
 
     MessageDisplayRow row;

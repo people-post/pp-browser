@@ -12,23 +12,23 @@ namespace pbr {
 
 /** What the call-control family reads from the call stack while bound. */
 struct CallControlFamilyPorts {
-  /** Hand an inbound call-control message to the calls owner (fire and forget: idempotent there). */
+  /** Hand an inbound call-control message to the calls owner (fire and forget). */
   std::function<void(const ThreadMessage& message, const SystemControlContext& context)> receive;
   std::function<bool()> has_active_local_call;
-  /** The active local call's origin thread, when it has one. */
-  std::function<std::optional<std::string>()> active_call_origin_thread_id;
 };
 
 /**
- * Call control as a system-control family: messaging carries it end to end and routes it here.
- * Applied out of order (media keys, accepts and the like are idempotent); plumbing and mid-call
- * roster updates are never shown; history lines (invite, joined, declined, left, started, ended)
- * are worded here, with names.
+ * Call control as a system-control family. Signaling (invite, accept, media keys, SDP / ICE, hop
+ * moves, roster …) rides the control lane: applied once while fresh, never a transcript row. The
+ * call's summary — one per call, sent by its starter into the call's thread — is the only call
+ * message in the chat stream; its line is worded here, from the reader's side.
  */
 SystemControlFamily MakeCallControlFamily(CallControlFamilyPorts ports);
 
-/** The transcript line of a call-control message; none when it is not shown. */
-std::optional<std::string> CallHistoryLine(const ThreadMessage& message, CallControlType type,
-                                           const SystemControlLabels& labels);
+/** A call summary's transcript line; none when the message is no summary. */
+std::optional<std::string> CallSummaryLine(const ThreadMessage& message, const SystemControlLabels& labels);
+
+/** A summary the reader should hear about (unread, notice): a call to them that they missed. */
+bool CallSummaryIsNews(const ThreadMessage& message);
 
 } // namespace pbr

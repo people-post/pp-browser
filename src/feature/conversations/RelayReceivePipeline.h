@@ -21,6 +21,8 @@
 
 namespace pbr {
 
+class ControlLaneSeenStore;
+
 class GroupInviteGate;
 
 struct RelayReceiveOutcome {
@@ -56,6 +58,18 @@ struct RelayReceiveOutcome {
   std::string receive_failure_detail;
 };
 
+/**
+ * How far a control-lane message's signed time may be from ours (devices' clocks drift); the
+ * seen-store keeps ids at least this long, so a replay inside it is a duplicate.
+ */
+inline constexpr int64_t kControlLaneSignedSkewMs = 60 * 60 * 1000;
+
+/**
+ * Whether a control-lane message may still apply: within the signed-time bound and, when it came
+ * through the relay, waiting there no longer than `max_age_ms` (relay clock).
+ */
+bool ControlLaneFresh(const RelayEnvelope& envelope, int64_t max_age_ms, int64_t now_ms);
+
 /** v6 receive pipeline steps 0–12 (feature layer orchestration). */
 class RelayReceivePipeline : public Module {
 public:
@@ -65,6 +79,8 @@ public:
 
   /** The system-control families features bind (call control, …). Not owned; null: none. */
   void SetSystemControls(const SystemControlRegistry* controls) { controls_ = controls; }
+  /** Where control-lane ids are remembered (at most once per message); none: no dedupe. */
+  void SetControlLaneSeen(ControlLaneSeenStore* seen) { control_lane_seen_ = seen; }
   /**
    * projects/privacy T3: direct messages (chat and call control) from a Blocked sender are dropped
    * on receipt. Not owned; null = no blocking.
@@ -88,6 +104,11 @@ private:
 
   RelayReceiveOutcome ProcessDirectEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                             bool authorized_older_backfill, MessageTransport transport);
+  /**
+   * The control lane: verified, decrypted under the pair's e2e_public session, handed to the family
+   * that sends it on the lane while fresh and not seen before. Never stored.
+   */
+  RelayReceiveOutcome ProcessControlEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id);
   RelayReceiveOutcome ProcessGroupEnvelope(const RelayEnvelope& envelope, const std::string& local_relay_user_id,
                                            bool authorized_older_backfill, MessageTransport transport);
   struct ReplayKey {
@@ -118,13 +139,13 @@ private:
   Roe<void> ApplyInboundControl(ThreadMessage& message, const RelayEnvelope& envelope,
                                 RelayReceiveOutcome* outcome_on_failure = nullptr,
                                 const std::string& thread_id = {}) const;
-  /** Membership updates and families that apply out of order: they run even when the ordered stream
-   *  drops the message (authenticated, not in order). */
+  /** Membership updates apply out of order: they run even when the ordered stream drops the message
+   *  (authenticated, not in order). */
   bool AppliesOutOfOrder(const ThreadMessage& message) const;
   /** Apply what applies out of order; failures are logged, the message is not stored. */
   void ApplyOutOfOrderControls(ThreadMessage& message, const RelayEnvelope& envelope, IngestDecision decision,
                                RelayReceiveOutcome& outcome) const;
-  /** A hidden or quiet control message bumps no unread count, preview or notice. */
+  /** A quiet control message bumps no unread count, preview or notice. */
   void MaybeSuppressInboxChrome(RelayReceiveOutcome& outcome, const ThreadMessage& message) const;
   Roe<void> ValidateInboundPskRotate(const RelayEnvelope& envelope, const ThreadMessage& message) const;
   Roe<void> ApplyInboundPskRotate(const std::string& thread_id, const RelayEnvelope& envelope,
@@ -137,6 +158,8 @@ private:
   GroupRosterStore& group_roster_;
   GroupInviteGate* invite_gate_ = nullptr;
   const SystemControlRegistry* controls_ = nullptr;
+  ControlLaneSeenStore* control_lane_seen_ = nullptr;
+
   IContactTrustAccess* contact_trust_ = nullptr;
   bool SenderBlocked(const std::string& sender) const;
   PublicPskLockCoordinator public_lock_;

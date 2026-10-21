@@ -13,6 +13,8 @@
 #include "foundation/crypto/MlDsa.h"
 #include "domain/people/IdentityStore.h"
 #include "domain/messaging/GroupRosterStore.h"
+#include "domain/messaging/ControlLaneEnvelope.h"
+#include "domain/messaging/ControlLaneSeenStore.h"
 #include "feature/conversations/RelayReceivePipeline.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
@@ -218,6 +220,46 @@ public:
     return envelope;
   }
 
+  /**
+   * The peer's control-lane envelope carrying `body`, sent at `sent_ms` — built by the product's
+   * BuildControlLaneEnvelope, the peer opening the pair's session once (AutoKey to our KEM key).
+   */
+  RelayEnvelope MakeControlEnvelope(const std::string& message_id, const ThreadMessage& body, int64_t sent_ms) const {
+    if (!lane_session) {
+      auto local_public_b64 = identity.GetHybridKemPublicKeyB64();
+      auto local_public = local_public_b64 ? Base64Decode(*local_public_b64) : Roe<ByteVector>(Error("no kem"));
+      auto opened = local_public ? AutoKeyEstablishment::EncapsulateForRecipient(*local_public)
+                                 : Roe<AutoKeyEncapsulation>(local_public.error());
+      if (!opened) {
+        throw std::runtime_error("Failed to establish auto-key");
+      }
+      lane_session = *opened;
+    }
+    ControlLaneSendParams params;
+    params.sender_account_id = "account:peer";
+    params.sender_relay_id = "relay:peer";
+    params.peer_account_id = local_account_id;
+    params.route_party = "relay:local";
+    params.session_epoch = 1;
+    params.master_psk = lane_session->master_psk;
+    params.key_init_b64 = lane_session->key_init_b64;
+    params.order_key = 1;
+    ThreadMessage control = body;
+    control.id = message_id;
+    control.timestamp = sent_ms;
+    auto envelope = BuildControlLaneEnvelope(params, control, [this](const std::vector<uint8_t>& bytes) -> Roe<std::string> {
+      auto signature = MlDsa::Sign(peer_keys.secret_key, bytes);
+      if (!signature) {
+        return signature.error();
+      }
+      return Base64Encode(*signature);
+    });
+    if (!envelope) {
+      throw std::runtime_error("Failed to build control envelope: " + envelope.error().message);
+    }
+    return *envelope;
+  }
+
   RelayEnvelope MakeRetract(const std::string& message_id, uint64_t seq, const std::string& target_id) const {
     ThreadMessage retract;
     retract.content_type = ChatContentType::Annotation;
@@ -251,6 +293,8 @@ public:
   MlDsaKeyPair peer_keys;
   std::string local_account_id;
   std::optional<ByteVector> local_kem_private;
+  /** The peer's e2e_public session as its control-lane sends use it. */
+  mutable std::optional<AutoKeyEncapsulation> lane_session;
 };
 
 } // namespace
@@ -508,7 +552,7 @@ struct TestFamily {
   int applied = 0;
   bool fail = false;
 
-  SystemControlFamily Make(const std::string& name, const std::string& control_type, bool out_of_order, bool quiet) {
+  SystemControlFamily Make(const std::string& name, const std::string& control_type, bool lane, bool quiet) {
     SystemControlFamily family;
     family.name = name;
     family.owns = [control_type](const ThreadMessage& message) {
@@ -522,15 +566,38 @@ struct TestFamily {
       }
       return {};
     };
-    family.apply_out_of_order = out_of_order;
+    if (lane) {
+      family.on_lane = [](const ThreadMessage&) { return true; };
+      family.lane_max_age_ms = 60'000;
+    }
     family.quiet = [quiet](const ThreadMessage&) { return quiet; };
     return family;
   }
 };
 
+/** A pipeline harness with the lane's seen-store wired. */
+struct LaneHarness {
+  explicit LaneHarness(const std::string& suffix)
+      : harness(suffix, ThreadChannel::E2ePublic), seen(harness.store.ProfileDbPath()) {
+    harness.pipeline.SetSystemControls(&controls);
+    harness.pipeline.SetControlLaneSeen(&seen);
+  }
+  RelayReceiveOutcome Ingest(const RelayEnvelope& envelope) {
+    return harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
+  }
+  size_t StoredCount() {
+    auto page = harness.store.GetMessagesPage(harness.thread.id, std::nullopt, 100);
+    return page ? page->size() : 0;
+  }
+
+  SystemControlRegistry controls;
+  PipelineHarness harness;
+  ControlLaneSeenStore seen;
+};
+
 } // namespace
 
-TEST(MessagingCrossCuttingTest, ControlFamilyAppliesAndKeepsTheInboxQuiet) {
+TEST(MessagingCrossCuttingTest, StreamControlFamilyAppliesAndKeepsTheInboxQuiet) {
   PipelineHarness harness("control_quiet", ThreadChannel::E2e);
   SystemControlRegistry controls;
   TestFamily family;
@@ -539,38 +606,93 @@ TEST(MessagingCrossCuttingTest, ControlFamilyAppliesAndKeepsTheInboxQuiet) {
 
   const auto envelope = harness.MakeSignedPayloadEnvelope("ctl-1", 1, TestControl("test_ping"));
   const RelayReceiveOutcome first = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
-  EXPECT_TRUE(first.persisted) << "a control message is a message: stored, end to end";
+  EXPECT_TRUE(first.persisted) << "a chat-stream control message is a message: stored, end to end";
   EXPECT_TRUE(first.suppress_inbox_chrome);
   EXPECT_EQ(family.applied, 1);
 
-  // Sent again: dropped by the ordered stream, and not re-applied (the family is ordered only).
   const RelayReceiveOutcome again = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
+  EXPECT_EQ(again.decision, IngestDecision::BenignDuplicate);
+  EXPECT_EQ(family.applied, 1) << "dropped by the ordered stream, not applied again";
+}
+
+TEST(MessagingCrossCuttingTest, LaneMessageAppliesOnceAndIsNeverStored) {
+  LaneHarness lane("lane_once");
+  TestFamily family;
+  lane.controls.Bind(family.Make("call", "test_signal", true, true));
+  const auto envelope = lane.harness.MakeControlEnvelope("lane-1", TestControl("test_signal"), util::NowUnixMs());
+
+  const RelayReceiveOutcome first = lane.Ingest(envelope);
+  EXPECT_EQ(first.decision, IngestDecision::AcceptControl);
+  EXPECT_FALSE(first.persisted);
+  EXPECT_EQ(family.applied, 1);
+  EXPECT_EQ(lane.StoredCount(), 0u) << "no transcript row, no twin thread";
+
+  const RelayReceiveOutcome again = lane.Ingest(envelope);  // relay redelivery / second transport
   EXPECT_EQ(again.decision, IngestDecision::BenignDuplicate);
   EXPECT_EQ(family.applied, 1);
 }
 
-TEST(MessagingCrossCuttingTest, OutOfOrderControlFamilyAppliesOnDuplicates) {
-  PipelineHarness harness("control_out_of_order", ThreadChannel::E2e);
+TEST(MessagingCrossCuttingTest, LaneMessageInTheChatStreamIsDropped) {
+  PipelineHarness harness("lane_in_stream", ThreadChannel::E2e);
   SystemControlRegistry controls;
   TestFamily family;
-  controls.Bind(family.Make("key", "test_key", true, false));
+  controls.Bind(family.Make("call", "test_signal", true, false));
   harness.pipeline.SetSystemControls(&controls);
 
-  const auto envelope = harness.MakeSignedPayloadEnvelope("ctl-2", 1, TestControl("test_key"));
-  const RelayReceiveOutcome first = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
-  EXPECT_FALSE(first.suppress_inbox_chrome) << "not quiet: it is news";
-  const RelayReceiveOutcome again = harness.pipeline.ProcessEnvelope(envelope, harness.local_account_id);
-  EXPECT_EQ(again.decision, IngestDecision::BenignDuplicate);
-  EXPECT_FALSE(again.persisted);
-  EXPECT_EQ(family.applied, 2) << "idempotent side effects apply again on a resent message";
+  const RelayReceiveOutcome outcome = harness.pipeline.ProcessEnvelope(
+      harness.MakeSignedPayloadEnvelope("stream-signal", 1, TestControl("test_signal")), harness.local_account_id);
+  EXPECT_EQ(outcome.decision, IngestDecision::SilentDiscard);
+  EXPECT_FALSE(outcome.persisted);
+  EXPECT_EQ(family.applied, 0);
+  EXPECT_FALSE(harness.Stored("stream-signal").has_value());
+}
 
-  // Unbound: messaging knows nothing of it — a plain stored system message.
-  controls.Unbind("key");
-  ASSERT_TRUE(harness.pipeline
-                  .ProcessEnvelope(harness.MakeSignedPayloadEnvelope("ctl-3", 2, TestControl("test_key")),
-                                   harness.local_account_id)
-                  .persisted);
-  EXPECT_EQ(family.applied, 2);
+TEST(MessagingCrossCuttingTest, StaleLaneMessageIsDropped) {
+  LaneHarness lane("lane_stale");
+  TestFamily family;
+  lane.controls.Bind(family.Make("call", "test_signal", true, false));
+  const int64_t now = util::NowUnixMs();
+
+  // Waited past the family's age in the relay (relay clock: no skew between devices).
+  auto waited = lane.harness.MakeControlEnvelope("lane-waited", TestControl("test_signal"), now);
+  waited.relay_created_at_ms = 1'000'000;
+  waited.relay_server_time_ms = 1'000'000 + 61'000;
+  EXPECT_EQ(lane.Ingest(waited).decision, IngestDecision::SilentDiscard);
+
+  // Sent long ago by the sender's signed clock, whatever the relay says.
+  auto old = lane.harness.MakeControlEnvelope("lane-old", TestControl("test_signal"), now - 2 * 60 * 60 * 1000);
+  old.relay_created_at_ms = now;
+  old.relay_server_time_ms = now;
+  EXPECT_EQ(lane.Ingest(old).decision, IngestDecision::SilentDiscard);
+
+  // Fresh in the relay, and a skewed sender clock within bounds: applies.
+  auto skewed = lane.harness.MakeControlEnvelope("lane-skewed", TestControl("test_signal"), now - 10 * 60 * 1000);
+  skewed.relay_created_at_ms = 5'000;
+  skewed.relay_server_time_ms = 6'000;
+  EXPECT_EQ(lane.Ingest(skewed).decision, IngestDecision::AcceptControl);
+  EXPECT_EQ(family.applied, 1);
+}
+
+TEST(MessagingCrossCuttingTest, LaneCarriesOnlyLaneFamilies) {
+  LaneHarness lane("lane_only_lane");
+  TestFamily stream_family;
+  lane.controls.Bind(stream_family.Make("billing", "test_billing", false, false));
+  const int64_t now = util::NowUnixMs();
+  EXPECT_EQ(lane.Ingest(lane.harness.MakeControlEnvelope("lane-billing", TestControl("test_billing"), now)).decision,
+            IngestDecision::SilentDiscard);
+  EXPECT_EQ(lane.Ingest(lane.harness.MakeControlEnvelope("lane-nobody", TestControl("test_unknown"), now)).decision,
+            IngestDecision::SilentDiscard);
+  EXPECT_EQ(stream_family.applied, 0);
+}
+
+TEST(MessagingCrossCuttingTest, LaneRejectsABadSignature) {
+  LaneHarness lane("lane_forged");
+  TestFamily family;
+  lane.controls.Bind(family.Make("call", "test_signal", true, false));
+  auto envelope = lane.harness.MakeControlEnvelope("lane-forged", TestControl("test_signal"), util::NowUnixMs());
+  envelope.timestamp += 1;  // signed field changed after signing
+  EXPECT_EQ(lane.Ingest(envelope).decision, IngestDecision::HardReject);
+  EXPECT_EQ(family.applied, 0);
 }
 
 TEST(MessagingCrossCuttingTest, ControlFamilyFailureRefusesTheMessage) {
