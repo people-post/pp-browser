@@ -39,6 +39,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     PeerSigningKeyStore.cpp
     RelayWirePayload.cpp
     TranscriptBodyCodec.cpp
+    TranscriptAssembly.cpp
     TranscriptCipher.cpp
     SqlitePskSessionStore.cpp
     SqliteThreadStore.cpp

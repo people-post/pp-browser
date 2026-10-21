@@ -32,6 +32,11 @@ public:
   void BindConversationsFacade(ConversationsFacade* facade);
 
   void SetDirtyTurns(std::function<void()> dirty_turns) { dirty_turns_ = std::move(dirty_turns); }
+  /** Draws a thread's transcript window as bound rows (the chat controller renders and decorates). */
+  using RowBuilder = std::function<std::vector<MessageDisplayRow>(const std::string& thread_id,
+                                                                  std::optional<int64_t> oldest_inclusive,
+                                                                  std::optional<int64_t> newest_inclusive)>;
+  void SetRowBuilder(RowBuilder rows) { rows_ = std::move(rows); }
 
   void Reset();
   void RequestScrollToLatest();
@@ -94,6 +99,7 @@ private:
   float last_messages_scroll_height_ = 0.f;
   int unread_while_scrolled_ = 0;
   ConversationsFacade* facade_ = nullptr;
+  RowBuilder rows_;
 };
 
 } // namespace pbr

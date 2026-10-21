@@ -4,6 +4,7 @@
 #include "domain/people/ContactsStore.h"
 #include "feature/conversations/DirectoryShadowCache.h"
 #include "feature/conversations/InboxController.h"
+#include "gui/chat/TranscriptRml.h"
 #include "feature/conversations/PeerDisplayResolver.h"
 
 #include <algorithm>
@@ -50,11 +51,11 @@ TEST(InboxHideMessageTest, DeletedMessageBecomesATombstoneLine) {
     reaction.target_message_id = "m2";
     reaction.payload_json = BuildReactionPayloadJson(kAnnotationTypeReaction, "m2", "\xF0\x9F\x91\x8D");
     ASSERT_TRUE(store.AppendMessage(reaction));
-    ASSERT_EQ(inbox.BuildDisplayRows("thread-1", std::nullopt, std::nullopt).size(), 2u);
+    ASSERT_EQ(RenderTranscript(inbox.BuildTranscript("thread-1", std::nullopt, std::nullopt), inbox.Facts()).size(), 2u);
 
     ASSERT_TRUE(inbox.DeleteMessageForMe("thread-1", "m2"));
 
-    const auto rows = inbox.BuildDisplayRows("thread-1", std::nullopt, std::nullopt);
+    const auto rows = RenderTranscript(inbox.BuildTranscript("thread-1", std::nullopt, std::nullopt), inbox.Facts());
     ASSERT_EQ(rows.size(), 2u);
     EXPECT_EQ(std::string(rows[0].message_id.c_str()), "m1");
     EXPECT_EQ(std::string(rows[1].message_id.c_str()), "m2");
@@ -81,7 +82,7 @@ TEST(InboxHideMessageTest, DeletedMessageBecomesATombstoneLine) {
     retract.target_message_id = "not-here-yet";
     retract.payload_json = BuildReactionPayloadJson(kAnnotationTypeRetract, "not-here-yet", "");
     ASSERT_TRUE(store.AppendMessage(retract));
-    EXPECT_EQ(inbox.BuildDisplayRows("thread-1", std::nullopt, std::nullopt).size(), 2u);
+    EXPECT_EQ(RenderTranscript(inbox.BuildTranscript("thread-1", std::nullopt, std::nullopt), inbox.Facts()).size(), 2u);
 
     // Deleting the newest message: the list preview stops showing its text.
     ASSERT_TRUE(store.AppendMessage(Text("m3", "contact-1", "newest secret")));
@@ -117,7 +118,7 @@ TEST(InboxMessageLinksTest, SharedArticleShowsTheLabelAsALink) {
     ASSERT_TRUE(store.AppendMessage(Text("m1", "contact-1", "Oil news.\n[View details]https://example.com/a?x=1")));
     ASSERT_TRUE(store.AppendMessage(Text("m2", "contact-1", "plain <b>text</b>, no link")));
 
-    const auto rows = inbox.BuildDisplayRows("thread-1", std::nullopt, std::nullopt);
+    const auto rows = RenderTranscript(inbox.BuildTranscript("thread-1", std::nullopt, std::nullopt), inbox.Facts());
     ASSERT_EQ(rows.size(), 2u);
     const std::string shared = rows[0].content_rml.c_str();
     EXPECT_NE(shared.find("open_message_link('m1', 0)"), std::string::npos);
@@ -129,6 +130,59 @@ TEST(InboxMessageLinksTest, SharedArticleShowsTheLabelAsALink) {
   }
   // Windows cannot delete the database while the store above still has it open.
   std::filesystem::remove_all(dir);
+}
+
+} // namespace
+} // namespace pbr
+
+namespace pbr {
+namespace {
+
+TEST(TranscriptRmlTest, ClickArgumentsStayInsideTheirAttribute) {
+  TranscriptRow row;
+  row.message.id = "m'\"<x>";
+  row.message.thread_id = "t";
+  row.message.sender_contact_id = "account:peer";
+  row.message.content_type = ChatContentType::Text;
+  row.message.text = "hi";
+  row.message.chat_actions.push_back(TranscriptChatAction{});
+  row.message.chat_actions.back().label = "Go";
+  row.reactions.push_back(TranscriptReaction{"\"><b>", 2, false});
+  const auto rows = RenderTranscript({row}, TranscriptFacts{});
+  ASSERT_EQ(rows.size(), 1u);
+  const std::string rml = rows[0].content_rml.c_str();
+  EXPECT_EQ(rml.find("<b>"), std::string::npos) << rml;
+  EXPECT_EQ(rml.find("<x>"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("toggle_reaction('m\\'&quot;&lt;x&gt;', '&quot;&gt;&lt;b&gt;')"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("send_chat_action('m\\'&quot;&lt;x&gt;', 0)"), std::string::npos) << rml;
+  EXPECT_NE(rml.find("&quot;&gt;&lt;b&gt; 2</button>"), std::string::npos) << "count shown, text escaped";
+}
+
+TEST(TranscriptRmlTest, AnAiAnswerShowsTheQuestionAndAControlLineHasNoSenderChip) {
+  TranscriptRow answer;
+  answer.message.id = "a1";
+  answer.message.sender_contact_id = kAiAssistantContactId;
+  answer.message.content_type = ChatContentType::Text;
+  answer.message.text = "42";
+  answer.asked_question = "what\nis it";
+  TranscriptRow control;
+  control.message.id = "c1";
+  control.message.sender_contact_id = "account:peer";
+  control.message.content_type = ChatContentType::System;
+  control.message.text = "raw";
+  control.message.transport = MessageTransport::Relay;
+  control.control = true;
+  TranscriptFacts facts;
+  facts.sender_label = [](const std::string&) { return std::string("Peer"); };
+  facts.control_line = [](const ThreadMessage&) { return std::optional<std::string>("Peer called"); };
+  const auto rows = RenderTranscript({answer, control}, facts);
+  ASSERT_EQ(rows.size(), 2u);
+  EXPECT_NE(std::string(rows[0].content_rml.c_str()).find("chat-quote--asked\"><p class=\"chat-quote-text\">what is it"),
+            std::string::npos);
+  EXPECT_EQ(std::string(rows[0].row_class.c_str()), "message-row-ai");
+  EXPECT_NE(std::string(rows[1].content_rml.c_str()).find("Peer called"), std::string::npos);
+  EXPECT_TRUE(rows[1].sender_label.empty());
+  EXPECT_TRUE(rows[1].transport_badge.empty());
 }
 
 } // namespace

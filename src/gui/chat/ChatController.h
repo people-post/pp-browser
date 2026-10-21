@@ -337,6 +337,9 @@ private:
   void DiscardPendingAiImage();
   /** False when the question could not be sent (not ready, no thread); the draft and the chip then stay. */
   bool SendImageQuestion(const std::string& text);
+  /** A thread's transcript window drawn as bound rows, AI question images decorated. */
+  std::vector<MessageDisplayRow> BuildMessageRows(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
+                                                  std::optional<int64_t> newest_inclusive) const;
   void DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const;
   void OpenAttachment(const std::string& message_id);
   void DownloadAttachment(const std::string& message_id);

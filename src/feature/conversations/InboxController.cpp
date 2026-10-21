@@ -4,31 +4,15 @@
 
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
-#include "domain/ai/StructuredTextParser.h"
 #include "foundation/i18n/LocalizationService.h"
 #include "domain/messaging/AttachmentCache.h"
 #include "domain/messaging/ChatPayloadCodec.h"
 #include "domain/people/DirectChatTargetFromContact.h"
-#include "domain/messaging/GroupMembershipCodec.h"
-#include "common/chat/MessagingJson.h"
 #include "common/chat/MessagingLimits.h"
-#include "domain/messaging/PskRotateCodec.h"
-#include "domain/messaging/AtAiParser.h"
-#include "domain/messaging/PlainTextLinks.h"
-#include "domain/messaging/QuoteReply.h"
-#include "domain/messaging/ReactionTypes.h"
-#include "domain/ui/ChatFormHelper.h"
-#include "common/ui/WorkingSetCodec.h"
-#include "common/EmojiKey.h"
 #include "common/Utilities.h"
 
 #include <algorithm>
-#include <cctype>
-#include <cstdio>
-#include <map>
-#include <sstream>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "common/ValueJson.h"
@@ -36,30 +20,6 @@
 
 namespace pbr {
 
-namespace {
-
-std::string InlineChatActionButtonsRml(const std::vector<TranscriptChatAction>& chat_actions) {
-  std::ostringstream out;
-  for (size_t i = 0; i < chat_actions.size(); ++i) {
-    out << "<button class=\"chat-suggestion\" data-event-click=\"send_chat_action('__ENTRY__', " << i << ")\">"
-        << StructuredTextParser::EscapeText(chat_actions[i].label) << "</button>";
-  }
-  return out.str();
-}
-
-std::string HydrateChatActions(const std::string& body_rml, const std::vector<TranscriptChatAction>& chat_actions) {
-  if (chat_actions.empty() || body_rml.find("chat-suggestion") != std::string::npos ||
-      body_rml.find("chat-working-set-chip") != std::string::npos) {
-    return body_rml;
-  }
-  return body_rml + InlineChatActionButtonsRml(chat_actions);
-}
-
-std::string SystemLineRml(const std::string& text) {
-  return "<div class=\"chat-system-line muted\"><p>" + StructuredTextParser::EscapeText(text) + "</p></div>";
-}
-
-} // namespace
 
 InboxController::InboxController(IThreadStore& store, ContactsStore& contacts, PeerDisplayResolver& labels,
                                  DirectoryShadowCache* shadows)
@@ -563,349 +523,15 @@ std::string InboxController::ResolveSenderLabel(const std::string& sender_contac
   return labels_.ResolveSender(sender_contact_id).title;
 }
 
-std::string InboxController::ResolveRowClass(const std::string& sender_contact_id) const {
-  if (sender_contact_id == kLocalSelfContactId) {
-    return "message-row-user";
-  }
-  if (sender_contact_id == kAiAssistantContactId) {
-    return "message-row-ai";
-  }
-  return "message-row-peer";
-}
-
-std::string InboxController::BuildSharedBadgeHtml(const ThreadMessage& message) const {
-  if (!message.ai_invoke_mode ||
-      (message.ai_invoke_mode != "shared_reply" && message.ai_invoke_mode != "shared_full")) {
-    return "";
-  }
-  return "<span class=\"chat-shared-badge muted\">" + Tr("chat.shared_badge") + "</span>";
-}
-
-std::string InboxController::BuildSystemRml(const ThreadMessage& message) const {
-  if (const auto family = controls_ ? controls_->Find(message) : std::nullopt) {
-    // A feature's message: its own line, names included, else the message's text.
-    SystemControlLabels labels;
-    labels.peer = [this](const std::string& identity) { return ResolveSenderLabel(identity); };
-    const auto line = family->line ? family->line(message, labels) : std::nullopt;
-    return SystemLineRml(line.value_or(message.text));
-  }
-
-  const auto control_type = GroupMembershipCodec::ControlTypeFromMessage(message);
-  if (control_type && *control_type == GroupMembershipControlType::GroupInvite) {
-    if (GroupMembershipCodec::InviteResolutionFromMessage(message)) {
-      return SystemLineRml(message.text);
-    }
-    auto invite = GroupMembershipCodec::DecodeInviteFromMessage(message);
-    const std::string title =
-        invite ? invite->group_title : (message.text.empty() ? "Group invitation" : message.text);
-    std::string html = "<div class=\"chat-card chat-group-invite\"><h3 class=\"heading-3\">" +
-                       StructuredTextParser::EscapeText(title) + "</h3>";
-    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(message.text) + "</p>";
-    html += HydrateChatActions("", message.chat_actions);
-    html += "</div>";
-    if (!message.chat_actions.empty() && html.find("__ENTRY__") != std::string::npos) {
-      return InjectEntryPlaceholders(html, message.id);
-    }
-    return html;
-  }
-  if (control_type && *control_type == GroupMembershipControlType::GroupOwnerUnreachable) {
-    if (GroupMembershipCodec::IsOwnerUnreachableResolved(message)) {
-      return SystemLineRml(message.text);
-    }
-    const std::string body =
-        "You can keep chatting with people who are online. Inviting, renaming for everyone, and removing "
-        "members need the owner. If they’ve left for good, start a new group from this one.";
-    std::string html = "<div class=\"chat-card chat-group-invite\"><h3 class=\"heading-3\">" +
-                       StructuredTextParser::EscapeText("Owner hasn’t been reachable") + "</h3>";
-    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(body) + "</p>";
-    html += HydrateChatActions("", message.chat_actions);
-    html += "</div>";
-    if (!message.chat_actions.empty() && html.find("__ENTRY__") != std::string::npos) {
-      return InjectEntryPlaceholders(html, message.id);
-    }
-    return html;
-  }
-  if (PskRotateCodec::IsPskRotateMessage(message) && message.sender_contact_id != kLocalSelfContactId) {
-    return SystemLineRml("They're using only this device for new messages.");
-  }
-  return SystemLineRml(message.text);
-}
-
-std::string InboxController::BuildContactCardRml(const ThreadMessage& message) const {
-  auto fields = ChatPayloadCodec::DecodeContactCardJson(message.payload_json);
-  const std::string name =
-      fields ? fields->display_name : (message.text.empty() ? "Contact" : message.text);
-  const std::string relay = fields && !fields->relay_user_id.empty() ? fields->relay_user_id : "";
-  std::string html = "<div class=\"chat-card chat-contact-card\">";
-  if (fields && !fields->avatar_url.empty()) {
-    html += "<img class=\"chat-contact-card-avatar\" src=\"" +
-            StructuredTextParser::EscapeText(fields->avatar_url) + "\"/>";
-  }
-  html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(name) + "</h3>";
-  if (!relay.empty()) {
-    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(relay) + "</p>";
-  }
-  html += "</div>";
-  return html;
-}
-
-std::string InboxController::BuildCryptoTxRml(const ThreadMessage& message) const {
-  auto fields = ChatPayloadCodec::DecodeCryptoTxJson(message.payload_json);
-  const std::string summary = message.text.empty() ? "Transaction" : message.text;
-  std::string html = "<div class=\"chat-card chat-tx-card\"><h3 class=\"heading-3\">" +
-                     StructuredTextParser::EscapeText(summary) + "</h3>";
-  if (fields) {
-    html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(fields->asset) + " · " +
-            StructuredTextParser::EscapeText(fields->amount) + " · " +
-            StructuredTextParser::EscapeText(fields->direction) + "</p>";
-    if (!fields->status.empty()) {
-      html += "<p class=\"text muted\">Status: " + StructuredTextParser::EscapeText(fields->status) + "</p>";
-    }
-  }
-  html += "</div>";
-  return html;
-}
-
-std::string InboxController::BuildAttachmentRml(const ThreadMessage& message) const {
-  auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
-  const std::string label = fields && !fields->filename.empty()
-                                ? fields->filename
-                                : (message.text.empty() ? "Attachment" : message.text);
-  // Backslash-escape for the invoker's single-quoted string literal, then HTML-attribute-
-  // escape the result: the value sits inside a double-quoted RML attribute
-  // (data-event-click="fn('...')") that the DOM parser HTML-decodes before the invoker ever
-  // sees it, so a raw '"' in the id would close that attribute early regardless of the JS-side
-  // escaping (message_id is peer-controlled on inbound messages).
-  auto escape_js_arg = [](const std::string& value) {
-    std::string out;
-    out.reserve(value.size());
-    for (const char ch : value) {
-      switch (ch) {
-      case '\\':
-        out += "\\\\";
-        break;
-      case '\'':
-        out += "\\'";
-        break;
-      case '"':
-        out += "&quot;";
-        break;
-      case '<':
-        out += "&lt;";
-        break;
-      case '>':
-        out += "&gt;";
-        break;
-      case '&':
-        out += "&amp;";
-        break;
-      default:
-        out.push_back(ch);
-        break;
-      }
-    }
-    return out;
-  };
-
-  std::string local_path;
-  if (fields) {
-    const bool allow_inline = AttachmentAllowsInlinePrivateView(fields->mime, fields->byte_length);
-    if (allow_inline) {
-      if (attachment_downloads_) {
-        if (auto view = attachment_downloads_->EnsureLocalViewPath(message.thread_id, fields->content_hash, fields->mime,
-                                                                  fields->filename)) {
-          local_path = *view;
-        }
-      } else if (!profile_data_dir_.empty()) {
-        local_path = AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime,
-                                         fields->filename);
-      }
-    } else if (!profile_data_dir_.empty()) {
-      // Large private video: keep plaintext off disk until explicit open.
-      local_path = AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime,
-                                       fields->filename);
-    }
-  }
-  AttachmentFetchWorkflow::DownloadState state = AttachmentFetchWorkflow::DownloadState::Pending;
-  if (fields && attachment_downloads_) {
-    state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash, fields->byte_length);
-  } else if (!local_path.empty() ||
-             (fields && !profile_data_dir_.empty() &&
-              AttachmentBlobExists(profile_data_dir_, fields->content_hash))) {
-    state = AttachmentFetchWorkflow::DownloadState::Ready;
-  }
-
-  std::string html = "<div class=\"chat-card chat-attachment-card\">";
-  const bool ready = fields && state == AttachmentFetchWorkflow::DownloadState::Ready;
-  if (ready && IsAttachmentImageMime(fields->mime) && !local_path.empty()) {
-    html += "<img class=\"chat-attachment-image\" src=\"" + StructuredTextParser::EscapeText(local_path) + "\"/>";
-  } else if (ready && IsAttachmentVideoMime(fields->mime)) {
-    html += "<div class=\"chat-attachment-video\">";
-    std::string poster_path;
-    if (!profile_data_dir_.empty() &&
-        AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
-      poster_path = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
-    }
-    if (!poster_path.empty()) {
-      html += "<img class=\"chat-attachment-video-poster\" src=\"" +
-              StructuredTextParser::EscapeText(poster_path) + "\"/>";
-    } else {
-      html += "<div class=\"chat-attachment-video-badge\">Video</div>";
-      html += "<p class=\"text\">" + StructuredTextParser::EscapeText(label) + "</p>";
-    }
-    if (fields->byte_length > 0) {
-      html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
-              "</p>";
-    }
-    html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
-            escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
-    html += "</div>";
-  } else if (ready && !local_path.empty()) {
-    html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
-    if (fields->byte_length > 0) {
-      html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
-              "</p>";
-    }
-    html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"open_attachment('" +
-            escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.open") + "</button>";
-  } else {
-    html += "<h3 class=\"heading-3\">" + StructuredTextParser::EscapeText(label) + "</h3>";
-    if (fields && fields->byte_length > 0) {
-      html += "<p class=\"text muted\">" + StructuredTextParser::EscapeText(FormatAttachmentByteSize(fields->byte_length)) +
-              "</p>";
-    }
-    if (state == AttachmentFetchWorkflow::DownloadState::Downloading) {
-      html += "<p class=\"text muted\">" + Tr("chat.attachment.downloading") + "</p>";
-    } else if (state == AttachmentFetchWorkflow::DownloadState::Pending) {
-      html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"download_attachment('" +
-              escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.download") + "</button>";
-    } else {
-      html += "<p class=\"text muted\">" + Tr("chat.attachment.download_failed") + "</p>";
-      html += "<button class=\"chat-suggestion\" type=\"button\" data-event-click=\"retry_attachment('" +
-              escape_js_arg(message.id) + "')\">" + Tr("chat.attachment.retry") + "</button>";
-    }
-  }
-  html += "</div>";
-  return html;
-}
-
-std::string InboxController::BuildUnsupportedRml(const ThreadMessage& /*message*/) const {
-  return "<div class=\"chat-card chat-unsupported-card\"><p class=\"text muted\">Update to view this "
-         "message.</p></div>";
-}
-
-namespace {
-
-// Escaped text with its https links tappable. The click carries the message id and the link's index;
-// the handler finds the URL again in the stored text (PlainTextLinks.h), so none sits in the markup.
-// `text` must be the message text or a prefix of it, so the indexes agree.
-std::string LinkedTextRml(const std::string& text, const std::string& id_arg) {
-  const std::vector<PlainTextLink> links = FindPlainTextLinks(text);
-  if (links.empty() || id_arg.empty()) {
-    return StructuredTextParser::EscapeText(text);
-  }
-  std::string out;
-  size_t pos = 0;
-  for (size_t i = 0; i < links.size(); ++i) {
-    out += StructuredTextParser::EscapeText(text.substr(pos, links[i].begin - pos));
-    out += "<span class=\"chat-link\" data-event-click=\"open_message_link('" + id_arg + "', " + std::to_string(i) +
-           ")\">" + StructuredTextParser::EscapeText(links[i].display) + "</span>";
-    pos = links[i].end;
-  }
-  out += StructuredTextParser::EscapeText(text.substr(pos));
-  return out;
-}
-
-// A quote shows at most two lines: line breaks would waste them.
-std::string OneLine(std::string text) {
-  std::replace(text.begin(), text.end(), '\n', ' ');
-  std::replace(text.begin(), text.end(), '\r', ' ');
-  return text;
-}
-
-} // namespace
-
-std::string InboxController::BuildMessageRml(const ThreadMessage& message) const {
-  if (message.content_rml) {
-    std::string rml = *message.content_rml;
-    if (rml.find("__ENTRY__") != std::string::npos) {
-      rml = InjectEntryPlaceholders(rml, message.id);
-    }
-    const bool has_snapshot = message.working_set_json && !message.working_set_json->empty() &&
-                              !WorkingSetCandidatesFromJson(*message.working_set_json).empty();
-    // Legacy bug: panel row actions were dumped into the bubble as chat-suggestion chips.
-    if (ContentRmlHasWorkingSetChip(rml) || has_snapshot) {
-      rml = StripInlinedWorkingSetActionSuggestions(rml);
-    }
-    if (ContentRmlHasActiveWorkingSetChip(rml) && !has_snapshot) {
-      rml = MarkWorkingSetChipsUnavailable(rml);
-    }
-    return rml;
-  }
-  if (message.content_type == ChatContentType::System) {
-    return BuildSystemRml(message);
-  }
-  if (message.content_type == ChatContentType::Deleted) {
-    // On the sender's side, small and grey, so it is clear whose message it was.
-    const std::string side = message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
-    return "<div class=\"bubble " + side + " bubble-deleted\"><p class=\"bubble-deleted-text\">" +
-           StructuredTextParser::EscapeText(Tr("chat.message.deleted")) + "</p></div>";
-  }
-  if (message.content_type == ChatContentType::ContactCard) {
-    return BuildContactCardRml(message);
-  }
-  if (message.content_type == ChatContentType::CryptoTx) {
-    return BuildCryptoTxRml(message);
-  }
-  if (message.content_type == ChatContentType::Attachment) {
-    return BuildAttachmentRml(message);
-  }
-  if (message.content_type == ChatContentType::Unsupported) {
-    return BuildUnsupportedRml(message);
-  }
-  const std::string bubble_class = message.sender_contact_id == kLocalSelfContactId ? "bubble-user" : "bubble-assistant";
-  const std::string paragraph =
-      message.sender_contact_id == kLocalSelfContactId ? "<p class=\"bubble-text\">" : "<p class=\"bubble-text-peer\">";
-  std::string badges = BuildSharedBadgeHtml(message);
-  if (!badges.empty()) {
-    badges = "<div class=\"chat-message-meta\">" + badges + "</div>";
-  }
-  // Message ids are generated locally or validated on receive; still keep the click argument to id characters.
-  std::string id_arg;
-  for (const char ch : message.id) {
-    if (std::isalnum(static_cast<unsigned char>(ch)) || ch == '-' || ch == '_') {
-      id_arg.push_back(ch);
-    }
-  }
-  // A reply that quotes a message: the quote as a block on top (no "> " markers shown), the reply under it.
-  std::string text_rml;
-  if (const auto parts = SplitQuoteReply(message.text)) {
-    text_rml = "<div class=\"chat-quote chat-quote--jump\" data-event-click=\"jump_to_quote('" + id_arg +
-               "')\"><p class=\"chat-quote-text\">" + StructuredTextParser::EscapeText(OneLine(parts->quote)) + "</p></div>" +
-               paragraph + LinkedTextRml(parts->reply, id_arg) + "</p>";
-  } else {
-    text_rml = paragraph + LinkedTextRml(message.text, id_arg) + "</p>";
-  }
-  std::string body = badges + "<div class=\"bubble " + bubble_class + "\" selectable=\"text\">" + text_rml + "</div>";
-  body = HydrateChatActions(body, message.chat_actions);
-  // __ENTRY__ is only ever introduced by HydrateChatActions' own template above; never treat a
-  // literal "__ENTRY__" typed into message.text (peer-controlled) as a placeholder to fill in.
-  if (!message.chat_actions.empty() && body.find("__ENTRY__") != std::string::npos) {
-    return InjectEntryPlaceholders(body, message.id);
-  }
-  return body;
-}
-
 bool InboxController::HasLocalMessagesBefore(const std::string& thread_id,
                                              int64_t before_display_order) const {
   auto page = store_.GetMessagesPage(thread_id, before_display_order, 1);
   return page && !page->empty();
 }
 
-std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
+std::vector<TranscriptRow> InboxController::BuildTranscript(
     const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
     std::optional<int64_t> newest_inclusive) const {
-  std::vector<MessageDisplayRow> rows;
   std::vector<ThreadMessage> messages;
   std::optional<int64_t> before;
   for (;;) {
@@ -945,255 +571,59 @@ std::vector<MessageDisplayRow> InboxController::BuildDisplayRows(
                    messages.end());
   }
 
-  std::unordered_map<std::string, size_t> row_index_by_id;
-  std::unordered_map<std::string, size_t> annotation_count_by_target;
-  std::vector<ThreadMessage> orphan_annotations;
-  std::vector<ThreadMessage> pending_annotations;
+  return AssembleTranscript(messages, controls_);
+}
 
-  std::string pending_ai_question;
-  // Messages deleted on this device: an id-only tombstone that shows as one line; what hung off them
-  // (reactions) is not shown.
-  std::unordered_set<std::string> deleted_ids;
-  for (const ThreadMessage& message : messages) {
-    if (message.content_type == ChatContentType::Deleted) {
-      deleted_ids.insert(message.id);
-    }
+TranscriptFacts InboxController::Facts() const {
+  TranscriptFacts facts;
+  facts.sender_label = [this](const std::string& contact_id) { return ResolveSenderLabel(contact_id); };
+  facts.control_line = [this](const ThreadMessage& message) { return ControlLine(message); };
+  facts.attachment = [this](const ThreadMessage& message) { return AttachmentView(message); };
+  return facts;
+}
+
+std::optional<std::string> InboxController::ControlLine(const ThreadMessage& message) const {
+  const auto family = controls_ ? controls_->Find(message) : std::nullopt;
+  if (!family || !family->line) {
+    return std::nullopt;
   }
+  SystemControlLabels labels;
+  labels.peer = [this](const std::string& identity) { return ResolveSenderLabel(identity); };
+  return family->line(message, labels);
+}
 
-  for (const ThreadMessage& message : messages) {
-    if (message.target_message_id && deleted_ids.count(*message.target_message_id) != 0) {
-      continue;
-    }
-    if (message.content_type == ChatContentType::Annotation) {
-      pending_annotations.push_back(message);
-      continue;
-    }
-    if (message.content_type != ChatContentType::Text && message.content_type != ChatContentType::System &&
-        message.content_type != ChatContentType::ContactCard && message.content_type != ChatContentType::CryptoTx &&
-        message.content_type != ChatContentType::Attachment &&
-        message.content_type != ChatContentType::Unsupported && message.content_type != ChatContentType::Deleted) {
-      continue;
-    }
-    const auto control = controls_ ? controls_->Find(message) : std::nullopt;
-    if (control && control->on_lane && control->on_lane(message)) {
-      continue;  // lane signaling is never a transcript row (an old store may still hold some)
-    }
-
-    MessageDisplayRow row;
-    row.message_id = message.id.c_str();
-    row.display_order = message.display_order;
-    row.ai_image_json = message.ai_image_json.value_or(std::string());
-    // A feature's control lines already include names; skip the sender chip above the system line.
-    if (control) {
-      row.sender_label = "";
-    } else {
-      row.sender_label = ResolveSenderLabel(message.sender_contact_id).c_str();
-    }
-    row.content_rml = BuildMessageRml(message).c_str();
-    if (row.content_rml.empty()) {
-      continue;
-    }
-    row.row_class = ResolveRowClass(message.sender_contact_id).c_str();
-    // Local is expected for AI/system-local rows — skip it to keep meta quiet.
-    if (!control && message.transport &&
-        *message.transport != MessageTransport::Local) {
-      row.transport_badge = MessageTransportBadgeLabel(*message.transport).c_str();
-    }
-    // An "@ai" question and its answer: the answer shows what was asked on top, like a reply.
-    if (message.sender_contact_id == kLocalSelfContactId) {
-      const AtAiParseResult asked = ParseAtAiPrefix(message.text);
-      pending_ai_question.clear();
-      if (asked.is_ai_invoke) {
-        const auto parts = SplitQuoteReply(asked.prompt);
-        pending_ai_question = parts ? parts->reply : asked.prompt;
+TranscriptAttachmentView InboxController::AttachmentView(const ThreadMessage& message) const {
+  TranscriptAttachmentView view;
+  auto fields = ChatPayloadCodec::DecodeAttachmentJson(message.payload_json);
+  if (!fields) {
+    return view;
+  }
+  if (AttachmentAllowsInlinePrivateView(fields->mime, fields->byte_length)) {
+    if (attachment_downloads_) {
+      if (auto local = attachment_downloads_->EnsureLocalViewPath(message.thread_id, fields->content_hash, fields->mime,
+                                                                 fields->filename)) {
+        view.local_path = *local;
       }
-    } else if (message.sender_contact_id == kAiAssistantContactId && !pending_ai_question.empty()) {
-      row.content_rml = ("<div class=\"chat-quote chat-quote--asked\"><p class=\"chat-quote-text\">" +
-                         StructuredTextParser::EscapeText(OneLine(pending_ai_question)) + "</p></div>" +
-                         std::string(row.content_rml.c_str()))
-                            .c_str();
-      pending_ai_question.clear();
+    } else if (!profile_data_dir_.empty()) {
+      view.local_path = AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime,
+                                            fields->filename);
     }
-    row.has_content = true;
-    row_index_by_id[message.id] = rows.size();
-    rows.push_back(std::move(row));
+  } else if (!profile_data_dir_.empty()) {
+    // Large private video: keep plaintext off disk until explicit open.
+    view.local_path =
+        AttachmentLocalPath(profile_data_dir_, message.thread_id, fields->content_hash, fields->mime, fields->filename);
   }
-
-  // D098 — resolve latest reaction/reaction_clear per (sender, target, emoji_key), then group counts.
-  struct ActiveReaction {
-    std::string emoji_display;
-    std::string emoji_key;
-    std::string sender_contact_id;
-    int64_t display_order = 0;
-  };
-  std::map<std::string, ActiveReaction> latest_by_sender_emoji; // key: target|sender|emoji_key
-  std::vector<ThreadMessage> non_reaction_annotations;
-
-  auto annotation_fields = [](const ThreadMessage& annotation) -> std::optional<ChatAnnotationFields> {
-    auto fields = ChatPayloadCodec::DecodeAnnotationJson(annotation.payload_json);
-    if (!fields) {
-      ChatAnnotationFields fallback;
-      fallback.annotation_type = kAnnotationTypeReaction;
-      fallback.target_message_id = annotation.target_message_id.value_or("");
-      fallback.value = annotation.text;
-      fallback.text = annotation.text;
-      return fallback;
-    }
-    return *fields;
-  };
-
-  for (const ThreadMessage& annotation : pending_annotations) {
-    if (auto fields = ChatPayloadCodec::DecodeAnnotationJson(annotation.payload_json);
-        fields && fields->annotation_type == kAnnotationTypeRetract) {
-      continue; // applied to its target (or waiting for it); never shown
-    }
-    const std::string target_id = annotation.target_message_id.value_or("");
-    if (target_id.empty()) {
-      orphan_annotations.push_back(annotation);
-      continue;
-    }
-    const auto row_it = row_index_by_id.find(target_id);
-    if (row_it == row_index_by_id.end()) {
-      orphan_annotations.push_back(annotation);
-      continue;
-    }
-    if (annotation_count_by_target[target_id] >= kMaxAnnotationsPerTarget) {
-      continue;
-    }
-    ++annotation_count_by_target[target_id];
-
-    auto fields = annotation_fields(annotation);
-    if (!fields || !IsReactionAnnotationType(fields->annotation_type)) {
-      non_reaction_annotations.push_back(annotation);
-      continue;
-    }
-    const std::string emoji_raw = fields->value.empty() ? annotation.text : fields->value;
-    const std::string emoji_key = NormalizeEmojiKey(emoji_raw);
-    if (emoji_key.empty()) {
-      continue;
-    }
-    const std::string map_key = target_id + "|" + annotation.sender_contact_id + "|" + emoji_key;
-    ActiveReaction& slot = latest_by_sender_emoji[map_key];
-    if (annotation.display_order < slot.display_order && !slot.emoji_key.empty()) {
-      continue;
-    }
-    slot.display_order = annotation.display_order;
-    slot.sender_contact_id = annotation.sender_contact_id;
-    slot.emoji_key = emoji_key;
-    if (fields->annotation_type == kAnnotationTypeReactionClear) {
-      slot.emoji_display.clear(); // cleared
-    } else {
-      slot.emoji_display = annotation.text.empty() ? emoji_raw : annotation.text;
-    }
+  if (attachment_downloads_) {
+    view.state = attachment_downloads_->StateFor(message.thread_id, fields->content_hash, fields->byte_length);
+  } else if (!view.local_path.empty() ||
+             (!profile_data_dir_.empty() && AttachmentBlobExists(profile_data_dir_, fields->content_hash))) {
+    view.state = AttachmentFetchWorkflow::DownloadState::Ready;
   }
-
-  struct ChipAgg {
-    std::string emoji_display;
-    std::string emoji_key;
-    size_t count = 0;
-    bool mine = false;
-  };
-  std::unordered_map<std::string, std::vector<ChipAgg>> chips_by_target;
-
-  for (const auto& [map_key, slot] : latest_by_sender_emoji) {
-    if (slot.emoji_display.empty()) {
-      continue; // cleared
-    }
-    const size_t bar = map_key.find('|');
-    if (bar == std::string::npos) {
-      continue;
-    }
-    const std::string target_id = map_key.substr(0, bar);
-    auto& chips = chips_by_target[target_id];
-    ChipAgg* found = nullptr;
-    for (ChipAgg& chip : chips) {
-      if (chip.emoji_key == slot.emoji_key) {
-        found = &chip;
-        break;
-      }
-    }
-    if (!found) {
-      chips.push_back(ChipAgg{slot.emoji_display, slot.emoji_key, 0, false});
-      found = &chips.back();
-    }
-    ++found->count;
-    if (slot.sender_contact_id == kLocalSelfContactId) {
-      found->mine = true;
-    }
+  if (IsAttachmentVideoMime(fields->mime) && !profile_data_dir_.empty() &&
+      AttachmentPosterExists(profile_data_dir_, message.thread_id, fields->content_hash)) {
+    view.poster_path = AttachmentPosterPath(profile_data_dir_, message.thread_id, fields->content_hash);
   }
-
-  auto escape_js_arg = [](const std::string& value) {
-    std::string out;
-    out.reserve(value.size());
-    for (char ch : value) {
-      if (ch == '\\' || ch == '\'') {
-        out.push_back('\\');
-      }
-      out.push_back(ch);
-    }
-    return out;
-  };
-
-  for (auto& [target_id, chips] : chips_by_target) {
-    const auto row_it = row_index_by_id.find(target_id);
-    if (row_it == row_index_by_id.end() || chips.empty()) {
-      continue;
-    }
-    std::ostringstream chip_rml;
-    // menu-anchor-end: the message menu opens right under the bubble, over this row (ContextMenuHost).
-    chip_rml << "<div class=\"chat-reaction-row\" menu-anchor-end=\"\">";
-    for (const ChipAgg& chip : chips) {
-      chip_rml << "<button class=\"chat-reaction-chip";
-      if (chip.mine) {
-        chip_rml << " chat-reaction-chip--mine";
-      }
-      chip_rml << "\" type=\"button\" data-event-click=\"toggle_reaction('" << escape_js_arg(target_id) << "', '"
-               << escape_js_arg(chip.emoji_display) << "')\">"
-               << StructuredTextParser::EscapeText(chip.emoji_display);
-      if (chip.count > 1) {
-        chip_rml << " " << chip.count;
-      }
-      chip_rml << "</button>";
-    }
-    chip_rml << "</div>";
-    rows[row_it->second].content_rml =
-        (std::string(rows[row_it->second].content_rml.c_str()) + chip_rml.str()).c_str();
-  }
-
-  for (const ThreadMessage& annotation : non_reaction_annotations) {
-    const std::string target_id = annotation.target_message_id.value_or("");
-    const auto row_it = row_index_by_id.find(target_id);
-    if (row_it == row_index_by_id.end()) {
-      continue;
-    }
-    const std::string badge = "<span class=\"chat-annotation-badge\" title=\"" +
-                              StructuredTextParser::EscapeText(annotation.text) + "\">" +
-                              StructuredTextParser::EscapeText(annotation.text) + "</span>";
-    rows[row_it->second].content_rml =
-        (std::string(rows[row_it->second].content_rml.c_str()) + badge).c_str();
-  }
-
-  for (const ThreadMessage& annotation : orphan_annotations) {
-    MessageDisplayRow row;
-    row.message_id = annotation.id.c_str();
-    row.display_order = annotation.display_order;
-    row.sender_label = ResolveSenderLabel(annotation.sender_contact_id).c_str();
-    const std::string orphan_text = annotation.text.empty() ? "?" : annotation.text;
-    row.content_rml =
-        ("<div class=\"chat-orphan-annotation muted\"><span class=\"chat-annotation-badge\">" +
-         StructuredTextParser::EscapeText(orphan_text) +
-         "</span> <span class=\"text-xs\">(unlinked)</span></div>")
-            .c_str();
-    row.row_class = "message-row-annotation-orphan";
-    row.has_content = true;
-    rows.push_back(std::move(row));
-  }
-
-  // Orphan rows were appended last; put every row back where it belongs in time.
-  std::stable_sort(rows.begin(), rows.end(), [](const MessageDisplayRow& a, const MessageDisplayRow& b) {
-    return a.display_order < b.display_order;
-  });
-  return rows;
+  return view;
 }
 
 } // namespace pbr

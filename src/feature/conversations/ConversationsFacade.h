@@ -99,11 +99,10 @@ public:
   void NotifyThreadChanged();
   void SetOnThreadChanged(std::function<void()> callback);
   PeerDisplayLabel ResolveThreadLabel(const Thread& thread);
-  std::vector<MessageDisplayRow> BuildDisplayRows(const std::string& thread_id,
-                                                  std::optional<int64_t> oldest_inclusive,
-                                                  std::optional<int64_t> newest_inclusive = std::nullopt);
-  /** Lets the GUI rewrite built rows in place (e.g. a local image thumbnail in an AI question's bubble). */
-  void SetDisplayRowDecorator(std::function<void(std::vector<MessageDisplayRow>&)> decorator);
+  /** The thread's transcript (D031 window); the GUI draws it with TranscriptFactsFor(). */
+  std::vector<TranscriptRow> BuildTranscript(const std::string& thread_id, std::optional<int64_t> oldest_inclusive,
+                                             std::optional<int64_t> newest_inclusive = std::nullopt);
+  TranscriptFacts TranscriptFactsFor();
   /** Active profile data directory (stores, session plaintext views). */
   const std::string& ProfileDataDir() const;
   bool HasLocalMessagesBefore(const std::string& thread_id, int64_t before_display_order);
@@ -276,7 +275,6 @@ public:
 
 private:
   ConversationsHub& hub_;
-  std::function<void(std::vector<MessageDisplayRow>&)> display_row_decorator_;
   std::function<bool(const Thread& thread)> active_call_query_;
 };
 

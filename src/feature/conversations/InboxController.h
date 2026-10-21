@@ -4,7 +4,7 @@
 
 #include "common/Module.h"
 #include "domain/people/ContactsStore.h"
-#include "domain/ui/ChatWidgetTypes.h"
+#include "domain/messaging/TranscriptAssembly.h"
 #include "common/thread/IThreadStore.h"
 #include "common/thread/ThreadTypes.h"
 #include "feature/conversations/DirectoryShadowCache.h"
@@ -20,6 +20,23 @@
 namespace pbr {
 
 class GroupMembershipWorkflow;
+
+/** What a message's attachment card shows: its download state and the files on disk. */
+struct TranscriptAttachmentView {
+  AttachmentFetchWorkflow::DownloadState state = AttachmentFetchWorkflow::DownloadState::Pending;
+  /** The viewable file (empty: none on disk, or a large private video kept off disk until opened). */
+  std::string local_path;
+  /** A video's poster frame (empty: none). */
+  std::string poster_path;
+};
+
+/** What drawing a transcript needs besides its entries: names, control lines, attachment state. */
+struct TranscriptFacts {
+  std::function<std::string(const std::string& contact_id)> sender_label;
+  /** A feature's control message line, names included; none: the message's own text. */
+  std::function<std::optional<std::string>(const ThreadMessage&)> control_line;
+  std::function<TranscriptAttachmentView(const ThreadMessage&)> attachment;
+};
 
 /** Stored title of a new AI thread until its first question names it (shown localized by the GUI). */
 inline constexpr const char* kDefaultAiThreadTitle = "New chat";
@@ -75,13 +92,15 @@ public:
   Roe<void> UpdatePreview(const std::string& thread_id, const std::string& preview);
 
   /**
-   * Build visible transcript rows (D031).
+   * The thread's transcript entries (D031), drawn by the GUI with Facts().
    * @param oldest_inclusive when set, load pages until this display_order is included
    *        (expanded window after scroll-up); otherwise newest page only.
    */
-  std::vector<MessageDisplayRow> BuildDisplayRows(
-      const std::string& thread_id, std::optional<int64_t> oldest_inclusive = std::nullopt,
-      std::optional<int64_t> newest_inclusive = std::nullopt) const;
+  std::vector<TranscriptRow> BuildTranscript(const std::string& thread_id,
+                                               std::optional<int64_t> oldest_inclusive = std::nullopt,
+                                               std::optional<int64_t> newest_inclusive = std::nullopt) const;
+  /** Bound to this controller; valid while it lives. */
+  TranscriptFacts Facts() const;
   /** True when local transcript has rows older than the given display_order. */
   bool HasLocalMessagesBefore(const std::string& thread_id, int64_t before_display_order) const;
 
@@ -99,14 +118,8 @@ public:
 
 private:
   std::string ResolveSenderLabel(const std::string& sender_contact_id) const;
-  std::string ResolveRowClass(const std::string& sender_contact_id) const;
-  std::string BuildMessageRml(const ThreadMessage& message) const;
-  std::string BuildSystemRml(const ThreadMessage& message) const;
-  std::string BuildContactCardRml(const ThreadMessage& message) const;
-  std::string BuildCryptoTxRml(const ThreadMessage& message) const;
-  std::string BuildAttachmentRml(const ThreadMessage& message) const;
-  std::string BuildUnsupportedRml(const ThreadMessage& message) const;
-  std::string BuildSharedBadgeHtml(const ThreadMessage& message) const;
+  std::optional<std::string> ControlLine(const ThreadMessage& message) const;
+  TranscriptAttachmentView AttachmentView(const ThreadMessage& message) const;
 
   IThreadStore& store_;
   ContactsStore& contacts_;

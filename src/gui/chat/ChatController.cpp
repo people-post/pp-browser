@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <fstream>
 #include "gui/chat/ChatController.h"
+
+#include "gui/chat/TranscriptRml.h"
 #include "gui/chat/AttachmentBackfillPolicy.h"
 #include "common/Metrics.h"
 #include "feature/conversations/ConversationsFacade.h"
@@ -373,9 +375,8 @@ void ChatController::BindConversationsFacade(ConversationsFacade* facade) {
   facade_ = facade;
   scroller_.BindConversationsFacade(facade);
   chrome_.BindConversationsFacade(facade);
-  if (facade) {
-    facade->SetDisplayRowDecorator([this](std::vector<MessageDisplayRow>& rows) { DecorateAiImageRows(rows); });
-  }
+  scroller_.SetRowBuilder([this](const std::string& thread_id, std::optional<int64_t> oldest,
+                                 std::optional<int64_t> newest) { return BuildMessageRows(thread_id, oldest, newest); });
 }
 
 void ChatController::BindRegisterMessagingTools(std::function<void(ToolRegistry&)> hook) {
@@ -1978,6 +1979,18 @@ bool ChatController::SendImageQuestion(const std::string& text) {
   return true;
 }
 
+std::vector<MessageDisplayRow> ChatController::BuildMessageRows(const std::string& thread_id,
+                                                                std::optional<int64_t> oldest_inclusive,
+                                                                std::optional<int64_t> newest_inclusive) const {
+  if (!facade_) {
+    return {};
+  }
+  std::vector<MessageDisplayRow> rows = RenderTranscript(
+      facade_->BuildTranscript(thread_id, oldest_inclusive, newest_inclusive), facade_->TranscriptFactsFor());
+  DecorateAiImageRows(rows);
+  return rows;
+}
+
 void ChatController::DecorateAiImageRows(std::vector<MessageDisplayRow>& rows) const {
   // Only the user's own questions in an AI thread carry the marker; a peer's or the AI's text that
   // happens to start with it is left alone.
@@ -2098,10 +2111,8 @@ void ChatController::SyncDisplayFromThread() {
       chat_.messages.empty() ? std::string() : std::string(chat_.messages.back().message_id.c_str());
   const size_t prev_count = chat_.messages.size();
 
-  chat_.messages = facade_
-      ? facade_->BuildDisplayRows(thread_id, scroller_.LoadedMinDisplayOrder(),
-                                  scroller_.LoadedMaxDisplayOrder())
-      : std::vector<MessageDisplayRow>{};
+  chat_.messages =
+      BuildMessageRows(thread_id, scroller_.LoadedMinDisplayOrder(), scroller_.LoadedMaxDisplayOrder());
   chat_.turns.clear();
   chat_.has_turns = !chat_.messages.empty();
   chat_.use_messages_layout = true;

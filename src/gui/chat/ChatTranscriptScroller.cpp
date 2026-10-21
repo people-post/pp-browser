@@ -233,17 +233,15 @@ void ChatTranscriptScroller::LoadOlderLocalHistory() {
       facade_ &&
       facade_->HasLocalMessagesBefore(thread_id, *loaded_min_display_order_);
 
-  view_.messages = facade_
-                       ? facade_->BuildDisplayRows(thread_id, loaded_min_display_order_, loaded_max_display_order_)
-                       : std::vector<MessageDisplayRow>{};
+  view_.messages = rows_ ? rows_(thread_id, loaded_min_display_order_, loaded_max_display_order_)
+                            : std::vector<MessageDisplayRow>{};
   if (TrimDomWindow(view_.messages, /*pinned_to_bottom=*/false, loaded_min_display_order_,
                     loaded_max_display_order_, has_more_local_history_)) {
     pinned_to_bottom_ = false;
     SetShowJumpToLatest(true);
     // Rebuild with new max bound so store sync stays coherent.
-    view_.messages = facade_
-                         ? facade_->BuildDisplayRows(thread_id, loaded_min_display_order_, loaded_max_display_order_)
-                         : std::vector<MessageDisplayRow>{};
+    view_.messages = rows_ ? rows_(thread_id, loaded_min_display_order_, loaded_max_display_order_)
+                              : std::vector<MessageDisplayRow>{};
   }
   view_.has_turns = !view_.messages.empty();
   if (dirty_turns_) {
@@ -279,7 +277,7 @@ void ChatTranscriptScroller::OnJumpToLatest() {
   if (facade_) {
     const std::string thread_id = facade_->ActiveThreadId();
     if (!thread_id.empty()) {
-      view_.messages = facade_->BuildDisplayRows(thread_id, std::nullopt, std::nullopt);
+      view_.messages = rows_ ? rows_(thread_id, std::nullopt, std::nullopt) : std::vector<MessageDisplayRow>{};
       view_.has_turns = !view_.messages.empty();
       if (!view_.messages.empty()) {
         loaded_min_display_order_ = view_.messages.front().display_order;
@@ -325,8 +323,8 @@ void ChatTranscriptScroller::EndDisplaySync(bool thread_changed, const std::stri
                       has_more_local_history_)) {
       if (pinned_to_bottom_ && facade_) {
         const std::string thread_id = facade_->ActiveThreadId();
-        view_.messages =
-            facade_->BuildDisplayRows(thread_id, loaded_min_display_order_, loaded_max_display_order_);
+        view_.messages = rows_ ? rows_(thread_id, loaded_min_display_order_, loaded_max_display_order_)
+                               : std::vector<MessageDisplayRow>{};
         view_.has_turns = !view_.messages.empty();
       } else if (!pinned_to_bottom_) {
         SetShowJumpToLatest(true);

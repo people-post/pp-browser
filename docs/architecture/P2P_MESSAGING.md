@@ -208,7 +208,9 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | pp-cpp-mesh `MeshHost.*` | Shared mesh host (NodeRuntime + dial-back + circuit/media relay + reachability); also used by `pp-node` |
 | `src/feature/calls/CallStack.*` | Call media / CSM / lifecycle / bridge (app-only) |
 | `src/feature/conversations/ConversationsFacade.*` | UI/tools façade over Hub (no direct accessor peeks) |
-| `src/feature/conversations/InboxController.*` | Active thread, display rows |
+| `src/feature/conversations/InboxController.*` | Active thread, unread, the transcript window (paging) and the facts drawing it needs (names, control lines, attachment state) |
+| `src/domain/messaging/TranscriptAssembly.*` | Which rows a transcript shows (never lane signaling, never what hung off a deleted message), reactions / badges folded onto their targets, unlinked annotations, the asked question on an AI answer |
+| `src/gui/chat/TranscriptRml.*` | The transcript drawn as bound rows (bubbles, cards, system lines, chips); every click argument escaped for its attribute |
 | `src/feature/conversations/MeshDeliveryOrchestrator.*` | Send (direct→relay), poll, dedup, sync UX |
 | `src/domain/messaging/ChatSyncLogic.*` | Chat-history sync rules over the peer watermarks: what a tail sync / gap repair / older backfill asks for, the floor and batch bounds, closing an empty gap, extending the contiguous run |
 | `src/domain/messaging/OutboundMessage.*` | What a send of ours writes and puts on the wire: the outbound row (sender seq, epoch, reaction cap), the direct send gate, the sealed payload (master PSK, or a public session opened to the peer's account key with its key_init), the direct / group-member envelope, Amp-first vs relay-first |
