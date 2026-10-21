@@ -74,6 +74,17 @@ public:
   static bool ShouldAutoLeaveOutboundUnanswered(bool outbound_calling, bool media_active,
                                                 int64_t session_created_at_ms, int64_t now_ms,
                                                 int64_t ttl_ms = kDefaultCallInviteTtlMs);
+
+  /** Join stamp the roster carries for `identity` (the sender's clock), if any. */
+  static std::optional<int64_t> RosterJoinStamp(const std::vector<CallRosterEntry>& participants,
+                                                const std::string& identity);
+  /** Old peers send no stamps: this device's receipt time (still earlier than later acceptors). */
+  static int64_t LocalJoinStampFallback(const CallSession& session);
+  /** Distinct invitees other than `local_identity` (empty ids skipped). */
+  static size_t CountDistinctInvitees(const std::vector<std::string>& invitees, const std::string& local_identity);
+  /** Roster entries (Invited) for co-invitees the roster does not list yet (V050 full invite roster). */
+  static void AppendInvitedCoInvitees(std::vector<CallRosterEntry>& participants,
+                                      const std::vector<std::string>& co_invitees, const std::string& local_identity);
 };
 
 /**

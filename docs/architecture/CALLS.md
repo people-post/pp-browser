@@ -299,28 +299,28 @@ sequenceDiagram
 
 ## Layer ownership
 
-Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → feature → base → common`. Object lifetimes follow [OWNERSHIP.md](OWNERSHIP.md) (parent-only destroy; UI affinity for SDL / ringtone teardown).
+Respect [`SRC_LAYOUT.md`](SRC_LAYOUT.md): `app → gui → feature → domain → foundation → common`. Object lifetimes follow [OWNERSHIP.md](OWNERSHIP.md) (parent-only destroy; UI affinity for SDL / ringtone teardown).
 
 | Concern | Layer | Today | Target |
 |---------|-------|-------|--------|
-| Session rows, invites, participants | `base/messaging` | `CallSessionStore`, `CallTypes`, `CallSessionLogic` | Unchanged |
-| Control encode/decode | `base/messaging` | `CallControlCodec` | Unchanged |
+| Session rows, invites, participants | `domain/calls` | `CallSessionStore`, `CallTypes`, `CallSessionLogic`; what a call's rows say and a peer's roster applied to them in **`CallSessionQueries`** (`call_queries::*`, `ApplyCallRosterToStore`) | Unchanged |
+| Control encode/decode | `domain/calls` | `CallControlCodec` | Unchanged |
 | PC / Opus / H264 / SDL | `domain/media` | `CallMediaEngine` | libp2p/SFU packet transport only |
 | Adaptation policy | `domain/media` | `CallMediaAdaptation`, `CallMediaTopology` | Unchanged |
 | Call stack ownership (phase assembly + media plane) | `feature/calls` | **`CallStack`** + **`CallMediaPlane`** | Stack owns stores / CSM and phase-orders the plane; plane owns the call_media Amp transport and builds the 1:1 path's deps and the topology's relay deps (CSM owns the seat and both paths) ([V040](../../projects/p2p-av-calls/DECISIONS.md#v040--callmediaplane--callstack-ownership-collapse)); dial registry / circuit reach / parking are the hub's shared `MeshConnectivity` and the media_relay client its `MeshMediaRelay`, both borrowed ([L015](../../projects/media-client-layers/DECISIONS.md#l015--a-neutral-meshmediaplane-in-domainmesh-owned-by-the-product-hub-lent-to-calls-and-broadcast)); `CallsParticipant` (`feature/product`) owns the stack and drives it from the hub's lifecycle; `CallUiBackend` binds the stack |
 | **Exclusive media bind (epoch)** | `domain/calls` | **`CallMediaSeat`**, driven per call by **`CallMediaCoordinator`** ([V036](../../projects/p2p-av-calls/DECISIONS.md#v036--mediaseat--exclusive-media-epoch)) | Sole `Acquire`/`Release`/`NoteLive`/`IsBound`; path ops token-gated (`AllowsPathOp`); SoftMigrate = path replace under same token |
-| Session lifecycle + inbound dispatch | `feature/messaging` | **`CallSessionManager`** | Signaling only for duplex start/stop (seat + path façades); mute/camera stay device controls |
+| Session lifecycle + inbound dispatch | `feature/calls` | **`CallSessionManager`** | Signaling only for duplex start/stop (seat + path façades); mute/camera stay device controls |
 | 1:1 phase / ring / listen desire | `feature/calls` | **`LiveCalls`** projection; intents on **`CallSessionManager::Apply`** | Phase projected from the calls; see [Ringing handling](#ringing-handling) |
-| 1:1 Amp dial + connect-fail / Retry | `feature/messaging` | **`CallMediaBridge`** (the call's `CallDirectDriver`) | Direct path under seat token |
-| Soft-migrate / attach-wait / hop pick | `feature/messaging` | **`CallTopologyController`** (hop side of the call's coordinator) | Hop path under seat token |
-| N→planner select (pure) | `domain/messaging` | **`CallMediaPlannerSelectLogic`** | Joined N (V050); arm Hop vs Direct; relay-cap SoftMigrate nudge gates |
-| Direct planner Apply (V039) | `feature/calls` | **`CallMediaBridge`** + **`CallDirectPlannerLogic`** (`domain/messaging`) | Schedule/Key/Connect/TX-only/Release; health timer |
-| Hop planner Apply (V039) | `feature/calls` | **`CallTopologyController`** + **`CallHopPlannerLogic`** (`domain/messaging`) | SoftMigrate/attach-wait/inbound SFU; attach-wait timer |
-| Media keys wrap/unwrap | `feature/messaging` | `CallMediaKeyStore` | Unchanged |
+| 1:1 Amp dial + connect-fail / Retry | `feature/calls` | **`CallMediaBridge`** (the call's `CallDirectDriver`) | Direct path under seat token |
+| Soft-migrate / attach-wait / hop pick | `feature/calls` | **`CallTopologyController`** (hop side of the call's coordinator) | Hop path under seat token |
+| N→planner select (pure) | `domain/calls` | **`CallMediaPlannerSelectLogic`** | Joined N (V050); arm Hop vs Direct; relay-cap SoftMigrate nudge gates |
+| Direct planner Apply (V039) | `feature/calls` | **`CallMediaBridge`** + **`CallDirectPlannerLogic`** (`domain/calls`) | Schedule/Key/Connect/TX-only/Release; health timer |
+| Hop planner Apply (V039) | `feature/calls` | **`CallTopologyController`** + **`CallHopPlannerLogic`** (`domain/calls`) | SoftMigrate/attach-wait/inbound SFU; attach-wait timer |
+| Media keys wrap/unwrap | `domain/calls` | `CallMediaKeyStore` | Unchanged |
 | Media keys between peers | `domain/calls` | **`CallMediaKeyExchange`** (owned by `CallSessionManager`, which fills its `Transport` from `CallControlClient`) | Mint (new call / rotation), wrap into the invite, send `CallMediaKey` (accept, resend, rotation), take a peer's wrapped key → "key ready" (V015 answerer start); the workflow decides when |
 | Ring / in-call chrome | `feature/ui` | `CallController`, `CallChromeSync`, `ShellCallChromeGesture`, `ShellHost::ApplyCallChromeUpdate` | Layer identity / control *presence* / **mode** (Expanded/Immersive/Minimized — V031) / status kind → remount; mute/speaker/camera icons → DirtyCallChrome (`data-attr-src` + `data-class-*--on`); meters/pulse/quality chip → DirtyCallChrome; mobile speaker via `CallAudioSession` |
 | Call media health | `domain/media` + `feature/ui` | `CallMediaHealth`, `CallMediaEngine::HealthSnapshot`, hop `HealthSnapshot`, `CallController::ApplyMediaHealth` / `ShowCallDetails` | Tier A quality bars always; Call details for everyone, with a **Network** line when the call's link is known — smoothed round trip and Reliable resend % between 2 s samples (`CallLinkHealthBetween`) of the association the call rides: the 1:1 call-media link (`ICallMediaTransport::ActiveLinkCounters`; a relayed call reads the association under its carrier) or, on a hop, the link to the relay (`CallHopHealth::link`). Informative only: media is BestEffort, so these figures do not grade the call; debug subtitle + rich diagnostics behind profile `call_diagnostics` or `--debug`; `media_health` INFO ~2s |
-| Blind SFU protocol | `base/p2p` | `MediaRelayService` | Unchanged |
+| Blind SFU protocol | pp-cpp-mesh | `MediaRelayServer` | Unchanged |
 
 UI must not choose P2P vs SFU. It posts clicks to `CallSessionManager::Apply` and paints from session + the projected phase; it does not invent listen or media policy.
 
@@ -406,7 +406,7 @@ Desktop/org Node capability. Blind hop ranks contact∪seed hops, quotes, attach
 
 Extract without changing the external façade (`ConversationsHub::Calls()`, `CallController`).
 
-### Pure units (`base/messaging`, gtest — no libp2p)
+### Pure units (`domain/calls`, gtest — no libp2p)
 
 | Unit | Job |
 |------|-----|
@@ -565,12 +565,13 @@ Landed (behavior-preserving + who-picks fix):
 | `src/gui/CallController.*` | Ring + in-call UI (thin; lifecycle clicks) |
 | `src/domain/media/CallMediaEngine.*` | Opus/H264/SDL capture; libp2p/SFU packet transport |
 | `src/domain/media/CallMediaAdaptation.*` | V024 + `CallMediaTopology` |
-| `src/base/messaging/CallSessionStore.*` | Persistence |
-| `src/base/messaging/CallSessionLogic.*` | Pure transitions / expiry / coordinator pick |
-| `src/base/messaging/SoftMigrateLogic.*` | Pure who-picks |
+| `src/domain/calls/CallSessionStore.*` | Persistence |
+| `src/domain/calls/CallSessionQueries.*` | What a call's rows say (who is in it, who is awaited, sticky initiator); a peer's roster applied (our own row never overridden, no resurrection, no demotion) |
+| `src/domain/calls/CallSessionLogic.*` | Pure transitions / expiry / coordinator pick / roster join stamps and co-invitees |
+| `src/domain/calls/SoftMigrateLogic.*` | Pure who-picks |
 | `src/domain/calls/CallHopAttachLogic.*` | Pure attach-wait / fan-out / hop-hint |
-| `src/base/messaging/CallControlCodec.*` | Wire JSON for call controls |
-| `src/base/people/MeshHopPolicy.*` | Contact∪seed hop rank / ExcludeSelfHop |
+| `src/domain/calls/CallControlCodec.*` | Wire JSON for call controls |
+| `src/domain/people/MeshHopPolicy.*` | Contact∪seed hop rank / ExcludeSelfHop |
 | pp-cpp-mesh `l4/media_relay/serve/MediaRelayServer.*` | Blind SFU |
 
 ---

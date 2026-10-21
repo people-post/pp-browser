@@ -14,6 +14,7 @@ pp_browser_add_domain_library(pp_domain_calls
     CallPathMobility.cpp
     CallPathPolicy.cpp
     CallSessionLogic.cpp
+    CallSessionQueries.cpp
     CallSessionStore.cpp
     CallTypes.cpp
     PeerCapsLogic.cpp

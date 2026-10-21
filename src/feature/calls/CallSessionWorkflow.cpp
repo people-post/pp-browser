@@ -1,5 +1,6 @@
 #include "feature/calls/CallSessionWorkflow.h"
 
+#include "domain/calls/CallSessionQueries.h"
 #include "domain/calls/CallListenAddrsLogic.h"
 #include "domain/calls/CallMediaPlannerSelectLogic.h"
 #include "domain/calls/CallSessionLogic.h"
@@ -131,53 +132,6 @@ Roe<void> CallSessionWorkflow::LeaveCallIfActiveExcept(const std::string& keep_c
   return {};
 }
 
-namespace {
-
-/** Join stamp the roster carries for `identity` (the sender's clock), if any. */
-std::optional<int64_t> RosterJoinStamp(const std::vector<CallRosterEntry>& participants, const std::string& identity) {
-  for (const CallRosterEntry& entry : participants) {
-    if (entry.identity == identity && entry.joined_at) {
-      return entry.joined_at;
-    }
-  }
-  return std::nullopt;
-}
-
-/** Old peers send no stamps: this device's receipt time (still earlier than later acceptors). */
-int64_t LocalJoinStampFallback(const CallSession& session) {
-  return session.created_at > 0 ? session.created_at : 1;
-}
-
-size_t CountDistinctInvitees(const std::vector<std::string>& invitees, const std::string& local_identity) {
-  std::vector<std::string> seen;
-  for (const std::string& identity : invitees) {
-    if (!identity.empty() && identity != local_identity &&
-        std::find(seen.begin(), seen.end(), identity) == seen.end()) {
-      seen.push_back(identity);
-    }
-  }
-  return seen.size();
-}
-
-/** Roster entries for invitees the store has no row for yet (V050 full invite roster). */
-void AppendInvitedCoInvitees(std::vector<CallRosterEntry>& participants, const std::vector<std::string>& co_invitees,
-                             const std::string& local_identity) {
-  for (const std::string& identity : co_invitees) {
-    if (identity.empty() || identity == local_identity) {
-      continue;
-    }
-    const bool listed = std::any_of(participants.begin(), participants.end(),
-                                    [&identity](const CallRosterEntry& e) { return e.identity == identity; });
-    if (!listed) {
-      CallRosterEntry entry;
-      entry.identity = identity;
-      entry.state = CallParticipantState::Invited;
-      participants.push_back(std::move(entry));
-    }
-  }
-}
-
-} // namespace
 
 Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread_id, const bool video_allowed,
                                                const std::vector<std::string>& invitee_identities) {
@@ -206,7 +160,8 @@ Roe<CallSession> CallSessionWorkflow::StartCall(const std::string& origin_thread
 Roe<void> CallSessionWorkflow::PlaceCall(CallSession& session, const std::vector<std::string>& invitee_identities,
                                          const std::string& local_identity) {
   // V050: plan the group hop from everyone invited (not attached until the third join).
-  if (CountDistinctInvitees(invitee_identities, local_identity) >= 2 && host_.hop.plan_hop_for_invitees) {
+  if (CallSessionLogic::CountDistinctInvitees(invitee_identities, local_identity) >= 2 &&
+      host_.hop.plan_hop_for_invitees) {
     if (auto planned = host_.hop.plan_hop_for_invitees(invitee_identities, local_identity)) {
       session.planned_hop = std::move(planned);
       if (auto saved = sessions_.UpsertSession(session); !saved) {
@@ -405,7 +360,7 @@ Roe<CallInviteDetail> CallSessionWorkflow::BuildInvite(const CallSession& sessio
       invite.participants = std::move(roster->participants);
     }
   }
-  AppendInvitedCoInvitees(invite.participants, co_invitees, local_identity);
+  CallSessionLogic::AppendInvitedCoInvitees(invite.participants, co_invitees, local_identity);
   if (host_.reach.prefetch_reach) {
     host_.reach.prefetch_reach(invitee_identity);
   }
@@ -1406,7 +1361,8 @@ void CallSessionWorkflow::SeedInviteRoster(const CallInviteDetail& invite, const
     if (row.state == CallParticipantState::Joined) {
       // V050 gt2b: the inviter's stamp (one clock for everyone) — this device's receipt time only
       // for peers that send none; it still precedes later acceptors (initiator detection).
-      row.joined_at = entry.joined_at ? entry.joined_at : std::optional<int64_t>(LocalJoinStampFallback(session));
+      row.joined_at = entry.joined_at ? entry.joined_at
+                                      : std::optional<int64_t>(CallSessionLogic::LocalJoinStampFallback(session));
     }
     (void)sessions_.UpsertParticipant(row);
   }
@@ -1414,7 +1370,8 @@ void CallSessionWorkflow::SeedInviteRoster(const CallInviteDetail& invite, const
   inviter_row.call_id = invite.call_id;
   inviter_row.identity = inviter;
   inviter_row.state = CallParticipantState::Joined;
-  inviter_row.joined_at = RosterJoinStamp(invite.participants, inviter).value_or(LocalJoinStampFallback(session));
+  inviter_row.joined_at = CallSessionLogic::RosterJoinStamp(invite.participants, inviter)
+                              .value_or(CallSessionLogic::LocalJoinStampFallback(session));
   (void)sessions_.UpsertParticipant(inviter_row);
   CallParticipant self;
   self.call_id = invite.call_id;
@@ -1693,63 +1650,9 @@ Roe<void> CallSessionWorkflow::HandleInboundRoster(const std::string& detail_jso
   if (!roster) {
     return roster.error();
   }
-  auto session = sessions_.LoadSession(roster->call_id);
-  if (session && session->has_value()) {
-    (*session)->media_epoch = roster->media_epoch;
-    (void)sessions_.UpsertSession(**session);
-  }
   auto local = host_.wire.local_relay_identity ? host_.wire.local_relay_identity() : Roe<std::string>(std::string());
-  for (const CallRosterEntry& entry : roster->participants) {
-    if (entry.identity.empty()) {
-      continue;
-    }
-    // Our own entry is the sender's (possibly stale, relay-delayed) view of us; only we know our
-    // camera/mic, so never let a peer roster overwrite our own state or media (a callee's
-    // accept-time roster arriving late turned the caller's just-enabled camera "off" for both
-    // sides). The join stamp is the exception: V050 stamps joins on the inviter's clock only and
-    // an invitee learns its own from the roster.
-    if (local && !local->empty() && entry.identity == *local) {
-      if (entry.joined_at) {
-        if (auto own = sessions_.FindParticipant(roster->call_id, entry.identity);
-            own && own->has_value() && (*own)->joined_at != entry.joined_at) {
-          CallParticipant stamped = **own;
-          stamped.joined_at = entry.joined_at;
-          (void)sessions_.UpsertParticipant(stamped);
-        }
-      }
-      continue;
-    }
-    // Do not resurrect Left/Declined peers from a stale roster fan-out (blocks re-invite).
-    if (entry.state == CallParticipantState::Joined || entry.state == CallParticipantState::Ringing ||
-        entry.state == CallParticipantState::Invited) {
-      if (auto existing = sessions_.FindParticipant(roster->call_id, entry.identity);
-          existing && existing->has_value()) {
-        const CallParticipantState prior = (*existing)->state;
-        if (prior == CallParticipantState::Left || prior == CallParticipantState::Declined ||
-            prior == CallParticipantState::Missed) {
-          continue;
-        }
-        // Joiner BuildRoster still lists earlier invitees as Ringing. Applying that must not
-        // demote peers who already Accepted (SoftMigrate N≥3 / in-call UI depend on Joined).
-        if (prior == CallParticipantState::Joined &&
-            (entry.state == CallParticipantState::Ringing ||
-             entry.state == CallParticipantState::Invited)) {
-          CallParticipant keep = **existing;
-          keep.media.audio_muted = entry.audio_muted;
-          keep.media.video_enabled = entry.video_enabled;
-          (void)sessions_.UpsertParticipant(keep);
-          continue;
-        }
-      }
-    }
-    CallParticipant participant;
-    participant.call_id = roster->call_id;
-    participant.identity = entry.identity;
-    participant.state = entry.state;
-    participant.media.audio_muted = entry.audio_muted;
-    participant.media.video_enabled = entry.video_enabled;
-    participant.joined_at = entry.joined_at;
-    (void)sessions_.UpsertParticipant(participant);
+  if (auto applied = ApplyCallRosterToStore(sessions_, *roster, local ? *local : std::string()); !applied) {
+    return applied.error();
   }
   // Mid-call invite: CallAccept only reaches the inviter; initiator SoftMigrates when roster
   // shows N≥3 (V021 sticky initiator / V022 payer).

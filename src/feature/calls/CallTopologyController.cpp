@@ -1,4 +1,6 @@
 #include "feature/calls/CallTopologyController.h"
+
+#include "domain/calls/CallSessionQueries.h"
 #include "mesh/types/MediaChannel.h"
 #include "domain/calls/CallMediaPlannerSelectLogic.h"
 #include "domain/calls/CallHopPlannerLogic.h"
@@ -480,15 +482,7 @@ bool CallTopologyController::IsMigrateGenerationCurrent(uint64_t gen) const {
 
 std::vector<std::string> CallTopologyController::JoinedRemoteIdentities(const std::string& call_id,
                                                                      const std::string& local_identity) const {
-  std::vector<std::string> out;
-  if (auto participants = sessions_.ListParticipants(call_id)) {
-    for (const CallParticipant& p : *participants) {
-      if (p.state == CallParticipantState::Joined && !p.identity.empty() && p.identity != local_identity) {
-        out.push_back(p.identity);
-      }
-    }
-  }
-  return out;
+  return call_queries::JoinedRemoteIdentities(sessions_, call_id, local_identity);
 }
 
 std::vector<std::string> CallTopologyController::JoinedMembersOtherThan(const std::string& call_id,
@@ -516,15 +510,7 @@ bool CallTopologyController::ResolveGroupHopForJoin(const std::string& call_id, 
 
 bool CallTopologyController::AwaitsOwnInviteeAccept(const std::string& call_id,
                                                     const std::string& local_identity) const {
-  for (const std::string& identity : JoinedRemoteIdentities(call_id, local_identity)) {
-    auto invite = sessions_.LoadPendingInvite(call_id, identity);
-    // Inbound CallAccept marks the row "accepted" before OnRemoteAcceptJoined runs.
-    if (invite && invite->has_value() && (*invite)->inviter_identity == local_identity &&
-        (*invite)->status == "pending") {
-      return true;
-    }
-  }
-  return false;
+  return call_queries::AwaitsOwnInviteeAccept(sessions_, call_id, local_identity);
 }
 
 CallHopScope CallTopologyController::InferScopeForCall(const std::string& call_id,
@@ -1658,21 +1644,7 @@ void CallTopologyController::OnInboundSfuAttachFailed(const CallSfuAttachFailedD
 }
 
 bool CallTopologyController::IsStickyInitiator(const std::string& call_id, const std::string& local_identity) const {
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return false;
-  }
-  std::vector<SoftMigrateJoinedPeer> joined_peers;
-  for (const CallParticipant& p : *participants) {
-    if (p.state != CallParticipantState::Joined) {
-      continue;
-    }
-    SoftMigrateJoinedPeer peer;
-    peer.identity = p.identity;
-    peer.joined_at = p.joined_at;
-    joined_peers.push_back(std::move(peer));
-  }
-  return SelectCallInitiator(joined_peers) == local_identity;
+  return call_queries::IsStickyInitiator(sessions_, call_id, local_identity);
 }
 
 bool CallTopologyController::HopHintMayLeavePreferLocal(const std::string& prefer_hop_peer_id) const {

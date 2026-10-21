@@ -1,4 +1,6 @@
 #include "feature/calls/CallSessionManager.h"
+
+#include "domain/calls/CallSessionQueries.h"
 #include "feature/calls/CallControlClient.h"
 #include "domain/calls/CallListenAddrsLogic.h"
 #include "domain/calls/CallAnswererKickLogic.h"
@@ -984,27 +986,7 @@ void CallSessionManager::NotifyRingChanged() {
 
 
 Roe<CallRosterDetail> CallSessionManager::BuildRosterDetail(const std::string& call_id) const {
-  auto session = sessions_.LoadSession(call_id);
-  if (!session || !session->has_value()) {
-    return Error("Call session not found");
-  }
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return participants.error();
-  }
-  CallRosterDetail detail;
-  detail.call_id = call_id;
-  detail.media_epoch = (*session)->media_epoch;
-  for (const CallParticipant& row : *participants) {
-    CallRosterEntry entry;
-    entry.identity = row.identity;
-    entry.state = row.state;
-    entry.audio_muted = row.media.audio_muted;
-    entry.video_enabled = row.media.video_enabled;
-    entry.joined_at = row.joined_at;
-    detail.participants.push_back(std::move(entry));
-  }
-  return detail;
+  return call_queries::RosterDetail(sessions_, call_id);
 }
 
 
@@ -1135,16 +1117,11 @@ Roe<std::optional<std::string>> CallSessionManager::PeerIdentityForCall(const st
   if (!local) {
     return local.error();
   }
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return participants.error();
+  auto peer = call_queries::FirstRemoteParticipant(sessions_, call_id, *local);
+  if (!peer) {
+    return peer.error();
   }
-  for (const CallParticipant& row : *participants) {
-    if (row.identity != *local && !row.identity.empty()) {
-      return std::optional<std::string>{row.identity};
-    }
-  }
-  return std::optional<std::string>{};
+  return *peer ? std::optional<std::string>{(*peer)->identity} : std::optional<std::string>{};
 }
 
 Roe<std::optional<bool>> CallSessionManager::PeerVideoEnabledForCall(const std::string& call_id) const {
@@ -1152,16 +1129,11 @@ Roe<std::optional<bool>> CallSessionManager::PeerVideoEnabledForCall(const std::
   if (!local) {
     return local.error();
   }
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return participants.error();
+  auto peer = call_queries::FirstRemoteParticipant(sessions_, call_id, *local);
+  if (!peer) {
+    return peer.error();
   }
-  for (const CallParticipant& row : *participants) {
-    if (row.identity != *local && !row.identity.empty()) {
-      return std::optional<bool>{row.media.video_enabled};
-    }
-  }
-  return std::optional<bool>{};
+  return *peer ? std::optional<bool>{(*peer)->media.video_enabled} : std::optional<bool>{};
 }
 
 Roe<std::optional<bool>> CallSessionManager::VideoAllowedForCall(const std::string& call_id) const {
@@ -1176,32 +1148,11 @@ Roe<std::optional<bool>> CallSessionManager::VideoAllowedForCall(const std::stri
 }
 
 Roe<bool> CallSessionManager::AwaitingExplicitAnswerForCall(const std::string& call_id) const {
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return participants.error();
-  }
-  for (const CallParticipant& p : *participants) {
-    auto invite = sessions_.LoadPendingInvite(call_id, p.identity);
-    if (invite && invite->has_value() && (*invite)->status == "accepted_implicit") {
-      return true;
-    }
-  }
-  return false;
+  return call_queries::AwaitingExplicitAnswer(sessions_, call_id);
 }
 
 Roe<std::vector<CallParticipant>> CallSessionManager::ListJoinedParticipants(const std::string& call_id) const {
-  auto participants = sessions_.ListParticipants(call_id);
-  if (!participants) {
-    return participants.error();
-  }
-  std::vector<CallParticipant> joined;
-  joined.reserve(participants->size());
-  for (const CallParticipant& row : *participants) {
-    if (row.state == CallParticipantState::Joined) {
-      joined.push_back(row);
-    }
-  }
-  return joined;
+  return call_queries::JoinedParticipants(sessions_, call_id);
 }
 
 bool CallSessionManager::IsAwaitingSfuRecovery() const {
@@ -1438,28 +1389,7 @@ Roe<void> CallSessionManager::ApplyInboundControl(ThreadMessage& message, const 
 bool CallSessionManager::SenderIsInCall(const std::string& detail_json, const std::string& sender_identity) const {
   auto detail = TryParseObject(detail_json);
   auto call_id = detail ? detail->getString("call_id") : std::nullopt;
-  if (!call_id || call_id->empty() || sender_identity.empty()) {
-    return false;
-  }
-  if (auto session = sessions_.LoadSession(*call_id); session && session->has_value() &&
-                                                     (*session)->initiator_identity == sender_identity) {
-    return true;
-  }
-  auto participant = sessions_.FindParticipant(*call_id, sender_identity);
-  if (!participant || !participant->has_value()) {
-    return false;
-  }
-  switch ((*participant)->state) {
-  case CallParticipantState::Invited:
-  case CallParticipantState::Ringing:
-  case CallParticipantState::Joined:
-    return true;
-  case CallParticipantState::Left:
-  case CallParticipantState::Declined:
-  case CallParticipantState::Missed:
-    return false;
-  }
-  return false;
+  return call_id && call_queries::SenderIsInCall(sessions_, *call_id, sender_identity);
 }
 
 Roe<std::string> CallSessionManager::TopologyLocalIdentity() const {
