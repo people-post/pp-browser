@@ -12,7 +12,8 @@
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/people/IdentityStore.h"
-#include "feature/conversations/RelayReceivePipeline.h"
+#include "domain/messaging/RelayReceivePipeline.h"
+#include "feature/conversations/LocalKeysFromIdentity.h"
 #include "foundation/crypto/CryptoConstants.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/directory/DirectoryJson.h"
@@ -77,7 +78,7 @@ struct Side {
       throw std::runtime_error("psk");
     }
     seen = std::make_unique<ControlLaneSeenStore>(store->ProfileDbPath());
-    pipeline = std::make_unique<RelayReceivePipeline>(*store, resolver, *psk, *identity, *roster);
+    pipeline = std::make_unique<RelayReceivePipeline>(*store, resolver, *psk, LocalKeysFromIdentity(*identity), *roster);
     pipeline->SetSystemControls(&controls);
     pipeline->SetControlLaneSeen(seen.get());
     SystemControlFamily family;

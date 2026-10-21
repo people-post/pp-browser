@@ -16,7 +16,8 @@
 #include "domain/people/IdentityStore.h"
 #include "domain/messaging/GroupInviteGate.h"
 #include "feature/conversations/GroupInviteStanding.h"
-#include "feature/conversations/RelayReceivePipeline.h"
+#include "domain/messaging/RelayReceivePipeline.h"
+#include "feature/conversations/LocalKeysFromIdentity.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
 #include "common/Utilities.h"
@@ -58,7 +59,7 @@ struct PartyHarness {
                  ("pp_invite_ingest_" + suffix + "_" + util::GenerateUuid())),
         store(data_dir.string()), identity(data_dir.string(), "test"), roster(store.ProfileDbPath()),
         contacts(data_dir.string()), psk_store(store.ProfileDbPath(), "test"), key_resolver(key_store),
-        gate(InviterStandingFromContacts(contacts), roster), pipeline(store, key_resolver, psk_store, identity, roster, &gate),
+        gate(InviterStandingFromContacts(contacts), roster), pipeline(store, key_resolver, psk_store, LocalKeysFromIdentity(identity), roster, &gate),
         local_account(local_account), peer_account(peer_account),
         local_relay(RelayForAccount(local_account)), peer_relay(RelayForAccount(peer_account)), channel(channel) {
     std::filesystem::remove_all(data_dir);

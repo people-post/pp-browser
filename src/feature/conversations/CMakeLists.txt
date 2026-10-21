@@ -29,7 +29,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     PushDeviceCoordinator.cpp
     RelayDirectoryKemKeyResolver.cpp
     RelayDirectorySigningKeyResolver.cpp
-    RelayReceivePipeline.cpp
     AttachmentContent.cpp
     MeshNetworkReaction.cpp
   PUBLIC_LIBS

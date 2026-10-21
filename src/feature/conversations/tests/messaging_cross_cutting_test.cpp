@@ -15,7 +15,8 @@
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/ControlLaneEnvelope.h"
 #include "domain/messaging/ControlLaneSeenStore.h"
-#include "feature/conversations/RelayReceivePipeline.h"
+#include "domain/messaging/RelayReceivePipeline.h"
+#include "feature/conversations/LocalKeysFromIdentity.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
 #include <cstdlib>
@@ -50,7 +51,7 @@ public:
         roster_store(store.ProfileDbPath()),
         psk_store(store.ProfileDbPath(), "test"),
         key_resolver(key_store),
-        pipeline(store, key_resolver, psk_store, identity, roster_store) {
+        pipeline(store, key_resolver, psk_store, LocalKeysFromIdentity(identity), roster_store) {
     std::filesystem::remove_all(data_dir);
     if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {
       throw std::runtime_error("Failed to set test DEK");

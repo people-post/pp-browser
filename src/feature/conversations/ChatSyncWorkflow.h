@@ -4,7 +4,7 @@
 #include "common/thread/ThreadTypes.h"
 #include "domain/net/OrgBackendClients.h"
 #include "domain/people/IdentityStore.h"
-#include "feature/conversations/RelayReceivePipeline.h"
+#include "domain/messaging/RelayReceivePipeline.h"
 
 #include <cstdint>
 #include <functional>

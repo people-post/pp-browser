@@ -1,4 +1,4 @@
-#include "feature/conversations/RelayReceivePipeline.h"
+#include "domain/messaging/RelayReceivePipeline.h"
 
 #include <cstdlib>
 
@@ -15,14 +15,13 @@
 #include "domain/messaging/GroupMembershipCodec.h"
 #include "common/chat/MessagingJson.h"
 #include "common/directory/DirectoryJson.h"
+#include "common/directory/ShortRelayId.h"
 #include "common/chat/MessagingLimits.h"
 #include "domain/messaging/GroupE2ePayloadCodec.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/PskRotateCodec.h"
 #include "domain/messaging/RelayWirePayload.h"
 #include "domain/messaging/SyncStateCodec.h"
-#include "domain/people/ContactTypes.h"
-#include "domain/people/PeerDisplayLabel.h"
 #include "domain/messaging/GroupInviteGate.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 
@@ -96,9 +95,9 @@ bool IsGroupMembershipControlMessage(const ThreadMessage& message) {
 } // namespace
 
 RelayReceivePipeline::RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys,
-                                           IPskSessionStore& psk_store, IdentityStore& identity,
+                                           IPskSessionStore& psk_store, LocalKeys local_keys,
                                            GroupRosterStore& group_roster, GroupInviteGate* invite_gate)
-    : store_(store), signing_keys_(signing_keys), psk_store_(psk_store), identity_(identity),
+    : store_(store), signing_keys_(signing_keys), psk_store_(psk_store), local_keys_(std::move(local_keys)),
       group_roster_(group_roster), invite_gate_(invite_gate), public_lock_(store, psk_store) {
   redirectLogger("RelayReceivePipeline");
 }
@@ -146,9 +145,8 @@ Roe<void> RelayReceivePipeline::ApplyInboundMembershipMessage(ThreadMessage& mes
                                                               RelayReceiveOutcome* outcome) const {
   // Resolve group_id from any membership control we understand, then ignore events for groups
   // the local user has already left/dismissed (prevents transfer-to-leaver resurrection).
-  auto local_id = identity_.Get();
-  const std::string local_account =
-      (local_id && !local_id->account_id.empty()) ? local_id->account_id : std::string();
+  auto local_id = local_keys_.account_id();
+  const std::string local_account = local_id ? *local_id : std::string();
 
   auto ignore_if_not_member = [this, &local_account](const std::string& group_id) -> Roe<bool> {
     if (local_account.empty() || group_id.empty()) {
@@ -441,15 +439,15 @@ Roe<void> RelayReceivePipeline::ApplyInboundPskRotate(const std::string& thread_
   if (!PskRotateCodec::IsPskRotateMessage(message)) {
     return {};
   }
-  auto kem = identity_.GetOrCreateHybridKemPrivateKey();
+  auto kem = local_keys_.kem_private_key();
   if (!kem) {
     return kem.error();
   }
-  auto identity = identity_.Get();
-  if (!identity) {
-    return identity.error();
+  auto account = local_keys_.account_id();
+  if (!account) {
+    return account.error();
   }
-  auto applied = public_lock_.ApplyInbound(thread_id, envelope, message, *kem, identity->account_id,
+  auto applied = public_lock_.ApplyInbound(thread_id, envelope, message, *kem, *account,
                                           util::NowUnixMs());
   if (!applied) {
     return applied.error();
@@ -535,7 +533,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessControlEnvelope(const RelayEnve
   if (local_relay_user_id.empty()) {
     return outcome;
   }
-  auto kem_private = identity_.GetOrCreateHybridKemPrivateKey();
+  auto kem_private = local_keys_.kem_private_key();
   if (!kem_private) {
     return outcome;
   }
@@ -671,7 +669,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
         std::optional<ByteVector> local_kem_private_key;
         if (envelope.route.channel == ThreadChannel::E2ePublic) {
           // Account KEM secret (shared across linked devices after import — M015).
-          if (auto kem_private = identity_.GetOrCreateHybridKemPrivateKey()) {
+          if (auto kem_private = local_keys_.kem_private_key()) {
             local_kem_private_key = std::move(*kem_private);
           }
         }
@@ -729,7 +727,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessDirectEnvelope(const RelayEnvel
 
     std::optional<ByteVector> local_kem_private_key;
     if (envelope.route.channel == ThreadChannel::E2ePublic) {
-      auto kem_private = identity_.GetOrCreateHybridKemPrivateKey();
+      auto kem_private = local_keys_.kem_private_key();
       if (!kem_private) {
         outcome.decision = IngestDecision::HardReject;
         MarkReceiveFailure(outcome, envelope.sender_contact_id, "missing decryption key", kem_private.error().message,
@@ -1065,7 +1063,7 @@ RelayReceiveOutcome RelayReceivePipeline::ProcessGroupEnvelope(const RelayEnvelo
   }
   outcome.sender_verified = true;
 
-  auto kem_private = identity_.GetOrCreateHybridKemPrivateKey();
+  auto kem_private = local_keys_.kem_private_key();
   if (!kem_private) {
     outcome.decision = IngestDecision::HardReject;
     MarkReceiveFailure(outcome, envelope.sender_contact_id, "missing decryption key", kem_private.error().message);

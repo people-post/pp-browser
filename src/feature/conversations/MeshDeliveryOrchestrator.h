@@ -22,7 +22,7 @@
 #include "domain/messaging/E2ePublicSessionLogic.h"
 #include "common/chat/SystemControl.h"
 #include "domain/messaging/ControlLaneSeenStore.h"
-#include "feature/conversations/RelayReceivePipeline.h"
+#include "domain/messaging/RelayReceivePipeline.h"
 #include "domain/messaging/GroupInviteGate.h"
 #include "mesh/host/MeshPorts.h"
 #include "domain/net/OrgBackendClients.h"

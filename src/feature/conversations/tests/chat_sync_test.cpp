@@ -16,7 +16,8 @@
 #include "feature/conversations/InboxController.h"
 #include "feature/conversations/PeerDisplayResolver.h"
 #include "domain/messaging/GroupRosterStore.h"
-#include "feature/conversations/RelayReceivePipeline.h"
+#include "domain/messaging/RelayReceivePipeline.h"
+#include "feature/conversations/LocalKeysFromIdentity.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 #include "common/MeshAlias.h"
 
@@ -50,7 +51,7 @@ public:
         shadows(directory),
         labels(contacts, shadows),
         inbox(store, contacts, labels, &shadows),
-        receive_pipeline(store, key_resolver, psk_store, identity, roster_store),
+        receive_pipeline(store, key_resolver, psk_store, LocalKeysFromIdentity(identity), roster_store),
         sync(store, identity, contacts, &relay, receive_pipeline, inbox, &peer_history) {
     std::filesystem::remove_all(data_dir);
     if (!identity.SetDek(TestDek()) || !psk_store.SetDek(TestDek()) || !store.SetDek(TestDek())) {

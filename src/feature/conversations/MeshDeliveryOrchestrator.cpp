@@ -1,4 +1,5 @@
 #include "domain/people/ContactTypes.h"
+#include "feature/conversations/LocalKeysFromIdentity.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "feature/conversations/AmpChatBlobTransport.h"
@@ -132,7 +133,7 @@ MeshDeliveryOrchestrator::MeshDeliveryOrchestrator(IThreadStore& store, Contacts
       epoch_coordinator_(store), psk_coordinator_(store, psk_store), public_lock_(store, psk_store) {
   redirectLogger("MeshDeliveryOrchestrator");
   receive_pipeline_ =
-      std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, identity_, group_roster_,
+      std::make_unique<RelayReceivePipeline>(store_, signing_key_resolver_, psk_store_, LocalKeysFromIdentity(identity_), group_roster_,
                                              invite_gate);
   receive_pipeline_->SetContactTrust(&contacts_);
   // A peer withdrew a message we hold: its bytes, summary and preview follow (the pipeline wiped the row).

@@ -213,7 +213,7 @@ Local `@ai` uses `AgentSession::SubmitScopedAssist` with thread transcript conte
 | `src/feature/conversations/Libp2pChatHistoryService.*` | D060 history over shared host |
 | `src/feature/conversations/Libp2pDirectChatService.*` | `/pp-browser/rpc/chat/1.0.0` push |
 | `src/feature/conversations/ChatSyncWorkflow.*` | `FetchChatTargetMessages`, tail/gap/user sync (D058–D059) |
-| `src/feature/conversations/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest |
+| `src/domain/messaging/RelayReceivePipeline.*` | Inbound verify + classifier + backfill ingest (the local keys from people through `LocalKeys`) |
 | `src/feature/conversations/MessageRouter.*` | Composer routing |
 | `src/feature/conversations/ContactActionDispatcher.*` | Chip payloads |
 | `src/feature/conversations/MessagingTools.*` | Agent tool definitions |
@@ -246,7 +246,7 @@ Bound today:
 
 | Family | Bound by | Notes |
 |--------|----------|-------|
-| `call` | the call stack (`feature/calls/CallControlFamily`) | All signaling on the lane; one `call_summary` per call in the chat stream, worded from the reader's side (quiet unless it is a call we missed) |
+| `call` | the call stack (`domain/calls/CallControlFamily`) | All signaling on the lane; one `call_summary` per call in the chat stream, worded from the reader's side (quiet unless it is a call we missed) |
 | `billing` | the hub (`PricingControlFamilies`) | Chat stream. Keyed on the authenticated sender; a message naming another peer is refused |
 | `payment promise` | the hub (`PricingControlFamilies`) | Chat stream. Staged only from our counterparty on the promise, signed by it, and a legal change of our copy (`MergeInboundPaymentPromise`: new offer; accept of our offer; outcome by it as actor; terms never change). The user's accept re-checks and commits |
 

@@ -10,10 +10,10 @@
 #include "common/thread/IThreadStore.h"
 #include "domain/messaging/PeerSigningKeyStore.h"
 #include "common/thread/ThreadTypes.h"
-#include "domain/people/IdentityStore.h"
 #include "common/chat/SystemControl.h"
 #include "common/Module.h"
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -74,11 +74,20 @@ inline constexpr int64_t kControlLaneSignedSkewMs = 60 * 60 * 1000;
  */
 bool ControlLaneFresh(const RelayEnvelope& envelope, int64_t max_age_ms, int64_t now_ms);
 
-/** v6 receive pipeline steps 0–12 (feature layer orchestration). */
+/**
+ * This device's account id and hybrid KEM private key (people's): what decrypting, PSK rotation and
+ * group membership need of the local identity.
+ */
+struct LocalKeys {
+  std::function<Roe<std::string>()> account_id;
+  std::function<Roe<ByteVector>()> kem_private_key;
+};
+
+/** v6 receive pipeline steps 0–12: an inbound envelope verified, decrypted, applied and stored. */
 class RelayReceivePipeline : public Module {
 public:
   RelayReceivePipeline(IThreadStore& store, IPeerSigningKeyResolver& signing_keys, IPskSessionStore& psk_store,
-                       IdentityStore& identity, GroupRosterStore& group_roster,
+                       LocalKeys local_keys, GroupRosterStore& group_roster,
                        GroupInviteGate* invite_gate = nullptr);
 
   /** The system-control families features bind (call control, …). Not owned; null: none. */
@@ -156,7 +165,7 @@ private:
   IThreadStore& store_;
   IPeerSigningKeyResolver& signing_keys_;
   IPskSessionStore& psk_store_;
-  IdentityStore& identity_;
+  LocalKeys local_keys_;
   GroupRosterStore& group_roster_;
   GroupInviteGate* invite_gate_ = nullptr;
   const SystemControlRegistry* controls_ = nullptr;

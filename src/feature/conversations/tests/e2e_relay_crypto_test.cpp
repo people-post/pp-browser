@@ -8,7 +8,8 @@
 #include "foundation/crypto/MlDsa.h"
 #include "domain/people/IdentityStore.h"
 #include "domain/messaging/GroupRosterStore.h"
-#include "feature/conversations/RelayReceivePipeline.h"
+#include "domain/messaging/RelayReceivePipeline.h"
+#include "feature/conversations/LocalKeysFromIdentity.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
 #include <filesystem>
@@ -125,7 +126,7 @@ TEST(E2eRelayCryptoTest, ReceivePipelineDecryptsEncryptedEnvelope) {
 
   PeerSigningKeyResolver key_resolver(key_store);
   GroupRosterStore roster_store(store.ProfileDbPath());
-  RelayReceivePipeline pipeline(store, key_resolver, psk_store, identity, roster_store);
+  RelayReceivePipeline pipeline(store, key_resolver, psk_store, LocalKeysFromIdentity(identity), roster_store);
 
   RelayEnvelope envelope;
   envelope.envelope_version = kRelayEnvelopeVersion;

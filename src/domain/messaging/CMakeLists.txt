@@ -13,6 +13,7 @@ pp_browser_add_domain_library(pp_domain_messaging
     PairwiseFanoutLogic.cpp
     PeerThreadLogic.cpp
     GroupInviteGate.cpp
+    RelayReceivePipeline.cpp
     ControlLaneEnvelope.cpp
     ControlLaneSeenStore.cpp
     E2ePublicSessionLogic.cpp
