@@ -27,7 +27,7 @@
 #include "foundation/platform/Platform.h"
 #include "foundation/platform/IPushDeviceRegistrar.h"
 #include "foundation/platform/NativeFileDialog.h"
-#include "feature/conversations/DeleteForEveryone.h"
+#include "domain/messaging/DeleteForEveryone.h"
 #include "domain/messaging/AttachmentCache.h"
 #include "domain/messaging/PlainTextLinks.h"
 #include "domain/messaging/QuoteReply.h"

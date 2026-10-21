@@ -1,4 +1,4 @@
-#include "feature/calls/CallMediaKeyExchange.h"
+#include "domain/calls/CallMediaKeyExchange.h"
 
 #include "domain/calls/CallControlCodec.h"
 
@@ -8,8 +8,8 @@
 namespace pbr {
 
 CallMediaKeyExchange::CallMediaKeyExchange(CallSessionStore& sessions, CallMediaKeyStore& keys,
-                                           CallControlClient& control)
-    : sessions_(sessions), keys_(keys), control_(control) {
+                                           Transport transport)
+    : sessions_(sessions), keys_(keys), transport_(std::move(transport)) {
   redirectLogger("CallMediaKeyExchange");
 }
 
@@ -60,7 +60,7 @@ Roe<CallMediaKeyExchange::EpochKey> CallMediaKeyExchange::Current(const std::str
 
 std::string CallMediaKeyExchange::WrapForPeer(const std::string& call_id, const EpochKey& key,
                                               const std::string& peer_identity) {
-  auto session_key = control_.ResolvePeerSessionKey(peer_identity);
+  auto session_key = transport_.resolve_peer_session_key(peer_identity);
   if (!session_key) {
     log().warning << "Media key wrap skip; no peer session key call_id=" << call_id << " peer=" << peer_identity
                   << " err=" << session_key.error().message;
@@ -76,7 +76,7 @@ std::string CallMediaKeyExchange::WrapForPeer(const std::string& call_id, const 
 
 Roe<void> CallMediaKeyExchange::Send(const std::string& call_id, const std::string& peer_identity,
                                      const EpochKey& key) {
-  if (auto sent = control_.SendMediaKey(call_id, peer_identity, key.epoch, key.key_id, key.key); !sent) {
+  if (auto sent = transport_.send_media_key(call_id, peer_identity, key.epoch, key.key_id, key.key); !sent) {
     log().warning << "CallMediaKey send failed call_id=" << call_id << " peer=" << peer_identity
                   << " err=" << sent.error().message;
     return sent.error();
@@ -101,7 +101,7 @@ bool CallMediaKeyExchange::TakeWrapped(const std::string& call_id, const uint32_
   if (wrapped_key_b64.empty()) {
     return false;
   }
-  auto session_key = control_.ResolvePeerSessionKey(sender_identity);
+  auto session_key = transport_.resolve_peer_session_key(sender_identity);
   if (!session_key) {
     log().warning << what << " media key missing peer session key from=" << sender_identity;
     return false;

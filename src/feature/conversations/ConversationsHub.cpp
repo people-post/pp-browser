@@ -1,9 +1,9 @@
 #include "feature/conversations/ConversationsHub.h"
 #include "feature/conversations/AttachmentContent.h"
-#include "feature/conversations/DeleteForEveryone.h"
+#include "domain/messaging/DeleteForEveryone.h"
 #include "feature/node/AppRuntimeMeshExecutors.h"
 
-#include "feature/conversations/LocalAccountBackup.h"
+#include "domain/people/LocalAccountBackup.h"
 #include "feature/conversations/MeshConnectivityWiring.h"
 #include "feature/conversations/ProductMeshProtocols.h"
 #include "domain/pricing/PaymentPromiseLifecycle.h"
@@ -15,7 +15,8 @@
 #include "common/ValueJson.h"
 
 #include "domain/people/ContactReachability.h"
-#include "feature/conversations/GroupInviteGate.h"
+#include "domain/messaging/GroupInviteGate.h"
+#include "feature/conversations/GroupInviteStanding.h"
 #include "feature/conversations/AttachmentFetchWorkflow.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/RelayDirectoryKemKeyResolver.h"
@@ -1082,7 +1083,7 @@ Roe<void> ConversationsHub::Initialize(const AppConfig& config, const std::strin
       return opened.error();
     }
   }
-  group_invite_gate_ = std::make_unique<GroupInviteGate>(*contacts_, *group_roster_);
+  group_invite_gate_ = std::make_unique<GroupInviteGate>(InviterStandingFromContacts(*contacts_), *group_roster_);
   directory_shadows_ = std::make_unique<DirectoryShadowCache>(*directory_);
   peer_labels_ = std::make_unique<PeerDisplayResolver>(*contacts_, *directory_shadows_, group_roster_.get());
   inbox_ = std::make_unique<InboxController>(*store_, *contacts_, *peer_labels_, directory_shadows_.get());

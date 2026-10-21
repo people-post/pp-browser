@@ -3,7 +3,7 @@
 #include "domain/media/CallMediaEngine.h"
 #include "feature/calls/CallDirectDriver.h"
 #include "feature/calls/CallHopDriver.h"
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 
 #include "common/Error.h"
 

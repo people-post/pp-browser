@@ -1,4 +1,4 @@
-#include "feature/conversations/AiImageRef.h"
+#include "domain/messaging/AiImageRef.h"
 
 #include <gtest/gtest.h>
 

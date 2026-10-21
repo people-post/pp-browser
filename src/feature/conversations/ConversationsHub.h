@@ -19,7 +19,7 @@
 #include "domain/messaging/PeerKemKeyStore.h"
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/PeerSigningKeyStore.h"
-#include "feature/conversations/GroupInviteGate.h"
+#include "domain/messaging/GroupInviteGate.h"
 #include "feature/conversations/GroupMembershipWorkflow.h"
 #include "feature/conversations/HubParticipant.h"
 #include "feature/conversations/HubPolicyPrefs.h"

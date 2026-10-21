@@ -1,4 +1,4 @@
-#include "feature/conversations/LinkDeviceCoordinator.h"
+#include "domain/people/LinkDeviceCoordinator.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {

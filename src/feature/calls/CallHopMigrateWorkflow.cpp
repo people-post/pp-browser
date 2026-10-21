@@ -1,6 +1,6 @@
 #include "feature/calls/CallHopMigrateWorkflow.h"
 
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 
 #include "domain/media/CallMediaAdaptation.h"
 #include "domain/calls/CallHopPlan.h"

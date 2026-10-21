@@ -1,4 +1,4 @@
-#include "feature/conversations/DeleteForEveryone.h"
+#include "domain/messaging/DeleteForEveryone.h"
 
 #include <gtest/gtest.h>
 

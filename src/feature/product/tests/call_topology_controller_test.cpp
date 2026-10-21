@@ -1,6 +1,6 @@
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 #include "feature/calls/LiveCall.h"
 #include "domain/calls/CallLifecycleTypes.h"
 #include "feature/product/tests/calls_loopback_outbox.h"

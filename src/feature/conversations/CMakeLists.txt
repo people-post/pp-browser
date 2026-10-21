@@ -7,7 +7,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     ChatSyncWorkflow.cpp
     ContactActionDispatcher.cpp
     DirectoryShadowCache.cpp
-    GroupInviteGate.cpp
     GroupMembershipWorkflow.cpp
     InboxController.cpp
     AmpDirectChatTransport.cpp
@@ -28,8 +27,6 @@ pp_browser_add_feature_library(pp_feature_conversations
     ProfileIconClient.cpp
     ProfileIconFetch.cpp
     PushDeviceCoordinator.cpp
-    LinkDeviceCoordinator.cpp
-    LocalAccountBackup.cpp
     RelayDirectoryKemKeyResolver.cpp
     RelayDirectorySigningKeyResolver.cpp
     RelayReceivePipeline.cpp

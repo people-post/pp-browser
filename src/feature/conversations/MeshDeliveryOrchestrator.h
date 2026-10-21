@@ -23,7 +23,7 @@
 #include "common/chat/SystemControl.h"
 #include "domain/messaging/ControlLaneSeenStore.h"
 #include "feature/conversations/RelayReceivePipeline.h"
-#include "feature/conversations/GroupInviteGate.h"
+#include "domain/messaging/GroupInviteGate.h"
 #include "mesh/host/MeshPorts.h"
 #include "domain/net/OrgBackendClients.h"
 

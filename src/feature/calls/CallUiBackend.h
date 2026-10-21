@@ -5,7 +5,7 @@
 #include "domain/calls/CallTypes.h"
 #include "common/Error.h"
 #include "domain/calls/CallLifecycleTypes.h"
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 #include "feature/calls/CallUiState.h"
 #include "feature/calls/LiveCall.h"
 

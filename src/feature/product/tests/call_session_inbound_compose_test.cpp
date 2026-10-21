@@ -2,7 +2,7 @@
 #include "feature/product/tests/calls_loopback_outbox.h"
 #include "feature/product/tests/calls_on_owner.h"
 #include "feature/calls/CallMediaBridge.h"
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 #include "feature/calls/CallSessionManager.h"
 #include "feature/calls/CallTopologyController.h"
 #include "feature/calls/CallTopologyRelayDeps.h"

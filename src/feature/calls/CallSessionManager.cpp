@@ -73,7 +73,13 @@ CallSessionManager::CallSessionManager(IThreadStore& store, ContactsStore& conta
       delivery_(std::move(delivery)), media_(media),
       topology_(sessions, contacts, media),
       control_(store, identity, sessions, psk_store, delivery_),
-      key_exchange_(sessions, media_keys, control_), billing_(identity), reach_signals_(control_),
+      key_exchange_(sessions, media_keys,
+                    CallMediaKeyExchange::Transport{
+                        [this](const std::string& peer) { return control_.ResolvePeerSessionKey(peer); },
+                        [this](const std::string& call_id, const std::string& peer, uint32_t epoch,
+                               const std::string& key_id, const ByteVector& key) {
+                          return control_.SendMediaKey(call_id, peer, epoch, key_id, key);
+                        }}), billing_(identity), reach_signals_(control_),
       workflow_(store, sessions, key_exchange_, billing_, live_calls_), peer_accounts_(contacts) {
   redirectLogger("CallSessionManager");
   topology_.SetMediaKeyStore(&media_keys_);

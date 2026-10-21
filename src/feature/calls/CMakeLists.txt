@@ -4,7 +4,6 @@ pp_browser_add_feature_library(pp_feature_calls
   SOURCES
     CallMediaBridge.cpp
     CallMediaConnectCoordinator.cpp
-    CallMediaSeat.cpp
     CallMediaPlane.cpp
     CallHopMigrateWorkflow.cpp
     CallSessionWorkflow.cpp
@@ -19,13 +18,10 @@ pp_browser_add_feature_library(pp_feature_calls
     LiveCall.cpp
     CallMediaCoordinator.cpp
     CallControlClient.cpp
-  CallControlFamily.cpp
-    CallMediaKeyExchange.cpp
     CallInitiationBilling.cpp
     CallReachSignals.cpp
     CallHopRanking.cpp
     CallHopPlanning.cpp
-    CallPathMobility.cpp
   PUBLIC_LIBS
     pp_foundation_crypto
     pp_domain_media

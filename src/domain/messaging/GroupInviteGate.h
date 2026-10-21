@@ -2,12 +2,10 @@
 
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/GroupTypes.h"
-#include "domain/people/ContactTypes.h"
-#include "domain/people/ContactsStore.h"
 
 #include "common/Error.h"
 
-#include <optional>
+#include <functional>
 #include <string>
 #include "common/PbrCompat.h"
 
@@ -18,7 +16,11 @@ class GroupInviteGate {
 public:
   static constexpr size_t kMaxPendingInvitesPerDay = 20;
 
-  GroupInviteGate(ContactsStore& contacts, GroupRosterStore& roster);
+  /** How this device stands with an inviter: a contact, blocked, or neither (people's to say). */
+  enum class InviterStanding { Unknown, Contact, Blocked };
+  using StandingFn = std::function<InviterStanding(const std::string& identity)>;
+
+  GroupInviteGate(StandingFn standing, GroupRosterStore& roster);
 
   void SetInboundPolicy(GroupInvitePolicy policy);
   GroupInvitePolicy inbound_policy() const { return inbound_policy_; }
@@ -28,9 +30,7 @@ public:
   Roe<void> RecordPendingInvite(const PendingGroupInvite& invite) const;
 
 private:
-  std::optional<Contact> FindContactByIdentity(const std::string& identity) const;
-
-  ContactsStore& contacts_;
+  StandingFn standing_;
   GroupRosterStore& roster_;
   GroupInvitePolicy inbound_policy_ = GroupInvitePolicy::ContactsOnly;
 };

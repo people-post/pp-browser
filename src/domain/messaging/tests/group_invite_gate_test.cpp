@@ -1,15 +1,15 @@
 #include "domain/messaging/GroupRosterStore.h"
 #include "domain/messaging/GroupTypes.h"
 #include "domain/messaging/SqliteThreadStore.h"
-#include "domain/people/ContactsStore.h"
-#include "feature/conversations/GroupInviteGate.h"
+#include "domain/messaging/GroupInviteGate.h"
 
 #include "common/Utilities.h"
 
 #include <filesystem>
+#include <map>
+#include <memory>
 #include <gtest/gtest.h>
 #include "common/PbrCompat.h"
-#include "common/MeshAlias.h"
 
 namespace pbr {
 namespace {
@@ -35,35 +35,31 @@ protected:
     store_ = std::make_unique<SqliteThreadStore>(data_dir_.string());
     ASSERT_TRUE(store_->ListThreads());
     roster_ = std::make_unique<GroupRosterStore>(store_->ProfileDbPath());
-    contacts_ = std::make_unique<ContactsStore>(data_dir_.string());
-    gate_ = std::make_unique<GroupInviteGate>(*contacts_, *roster_);
+    gate_ = std::make_unique<GroupInviteGate>(
+        [this](const std::string& identity) {
+          auto it = standings_.find(identity);
+          return it == standings_.end() ? GroupInviteGate::InviterStanding::Unknown : it->second;
+        },
+        *roster_);
   }
 
   void TearDown() override {
     gate_.reset();
-    contacts_.reset();
     roster_.reset();
     store_.reset();
     std::filesystem::remove_all(data_dir_);
   }
 
-  void AddContact(const std::string& relay_id, const TrustLevel trust = TrustLevel::Friendly) {
-    Contact contact;
-    contact.id = util::GenerateUuid();
-    contact.display_name = relay_id;
-    contact.trust = trust;
-    mesh::ContactId id;
-    id.kind = mesh::ContactIdKind::Account;
-    id.value = relay_id;
-    id.primary = true;
-    contact.ids.push_back(id);
-    ASSERT_TRUE(contacts_->Upsert(contact));
+  /** As people would say: a contact, or a blocked one. */
+  void AddContact(const std::string& relay_id, const bool blocked = false) {
+    standings_[relay_id] =
+        blocked ? GroupInviteGate::InviterStanding::Blocked : GroupInviteGate::InviterStanding::Contact;
   }
 
   std::filesystem::path data_dir_;
   std::unique_ptr<SqliteThreadStore> store_;
   std::unique_ptr<GroupRosterStore> roster_;
-  std::unique_ptr<ContactsStore> contacts_;
+  std::map<std::string, GroupInviteGate::InviterStanding> standings_;
   std::unique_ptr<GroupInviteGate> gate_;
 };
 
@@ -99,7 +95,7 @@ TEST_F(GroupInviteGateTest, EveryoneAllowsUnknown) {
 
 TEST_F(GroupInviteGateTest, BlockedContactRejected) {
   gate_->SetInboundPolicy(GroupInvitePolicy::Everyone);
-  AddContact("account:alice", TrustLevel::Blocked);
+  AddContact("account:alice", /*blocked=*/true);
   auto allowed = gate_->AllowsInboundInvite(MakeInvite());
   ASSERT_TRUE(allowed);
   EXPECT_FALSE(*allowed);

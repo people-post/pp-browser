@@ -4,7 +4,7 @@
 #include "common/Module.h"
 #include "domain/calls/CallMediaKeyStore.h"
 #include "domain/calls/CallSessionStore.h"
-#include "feature/calls/CallControlClient.h"
+#include "foundation/crypto/CryptoTypes.h"
 
 #include <cstdint>
 #include <functional>
@@ -22,6 +22,13 @@ namespace pbr {
  */
 class CallMediaKeyExchange : public Module {
 public:
+  /** What it needs from the control lane: the peer's E2E session key, and a CallMediaKey send. */
+  struct Transport {
+    std::function<Roe<ByteVector>(const std::string& peer_identity)> resolve_peer_session_key;
+    std::function<Roe<void>(const std::string& call_id, const std::string& peer_identity, uint32_t media_epoch,
+                            const std::string& media_key_id, const ByteVector& key)>
+        send_media_key;
+  };
   /** One epoch key of a call. */
   struct EpochKey {
     uint32_t epoch = 0;
@@ -30,7 +37,7 @@ public:
   };
   using KeyReadyFn = std::function<void(const std::string& call_id)>;
 
-  CallMediaKeyExchange(CallSessionStore& sessions, CallMediaKeyStore& keys, CallControlClient& control);
+  CallMediaKeyExchange(CallSessionStore& sessions, CallMediaKeyStore& keys, Transport transport);
 
   /** Runs after a peer's key is stored (the 1:1 start may be waiting for it). */
   void SetOnKeyReady(KeyReadyFn fn) { on_key_ready_ = std::move(fn); }
@@ -63,7 +70,7 @@ public:
 private:
   CallSessionStore& sessions_;
   CallMediaKeyStore& keys_;
-  CallControlClient& control_;
+  Transport transport_;
   KeyReadyFn on_key_ready_;
 };
 

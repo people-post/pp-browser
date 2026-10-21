@@ -1,8 +1,8 @@
-#include "feature/conversations/LocalAccountBackup.h"
+#include "domain/people/LocalAccountBackup.h"
 
 #include "foundation/crypto/LinkDeviceCodec.h"
 #include "foundation/platform/os/OsSecureBlob.h"
-#include "feature/conversations/LinkDeviceCoordinator.h"
+#include "domain/people/LinkDeviceCoordinator.h"
 
 #include <string>
 #include <vector>

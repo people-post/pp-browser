@@ -5,7 +5,7 @@
 #include "common/thread/IThreadStore.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
-#include "feature/conversations/GroupInviteGate.h"
+#include "domain/messaging/GroupInviteGate.h"
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 
 #include "common/Module.h"

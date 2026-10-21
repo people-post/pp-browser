@@ -7,7 +7,6 @@
 #include "feature/conversations/MeshDeliveryOrchestrator.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 
-#include "foundation/crypto/AutoKeyEstablishment.h"
 #include "foundation/crypto/CryptoTypes.h"
 #include "foundation/crypto/CryptoUtil.h"
 #include "common/Utilities.h"
@@ -1402,30 +1401,16 @@ Roe<ThreadMessage> MeshDeliveryOrchestrator::SendUserMessage(const std::string& 
         (void)store_.UpdateMessage(*appended);
         return peer_public.error();
       }
-      // Directory KEM is the recipient account key (M015).
-      auto established = AutoKeyEstablishment::EncapsulateForRecipient(*peer_public);
-      if (!established) {
+      // Directory KEM is the recipient account key (M015). The session opened here is ours until the
+      // peer is heard under it: every send carries its key_init (E2ePublicSessionLogic).
+      auto ensured = EnsureE2ePublicMasterPsk(psk_store_, target_key, *message.session_epoch, *peer_public);
+      if (!ensured) {
         appended->delivery = MessageDelivery::Failed;
         (void)store_.UpdateMessage(*appended);
-        return established.error();
+        return ensured.error();
       }
-      master_psk = std::move(established->master_psk);
-      key_init_b64 = std::move(established->key_init_b64);
-      PskSessionRecord record;
-      if (auto existing = psk_store_.Load(target_key); existing && existing->has_value()) {
-        record = **existing;
-      }
-      record.key = target_key;
-      record.session_epoch = *message.session_epoch;
-      record.master_psk_b64 = Base64Encode(master_psk);
-      // Ours until the peer is heard under it: every send carries the key_init (see EnsureE2ePublicMasterPsk).
-      record.auto_key_session_id = AutoKeySessionId(*key_init_b64);
-      record.auto_key_init_pending = key_init_b64;
-      if (auto saved = psk_store_.Save(record); !saved) {
-        appended->delivery = MessageDelivery::Failed;
-        (void)store_.UpdateMessage(*appended);
-        return saved.error();
-      }
+      master_psk = std::move(ensured->master_psk);
+      key_init_b64 = std::move(ensured->key_init_b64);
     } else {
       auto decoded = Base64Decode(**master_psk_b64);
       if (!decoded) {

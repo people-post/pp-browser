@@ -9,7 +9,9 @@ set(PP_DOMAIN_PEOPLE_SOURCES
   ContactsStore.cpp
   ContactAddressDisclosure.cpp
   IdentityStore.cpp
+  LinkDeviceCoordinator.cpp
   LinkDeviceExchange.cpp
+  LocalAccountBackup.cpp
   MeshHopPolicy.cpp
   PeerAccountBook.cpp
   PeerBriefRoute.cpp

@@ -4,7 +4,7 @@
 #include "domain/messaging/SqliteThreadStore.h"
 #include "domain/people/ContactsStore.h"
 #include "domain/people/IdentityStore.h"
-#include "feature/conversations/LocalAccountBackup.h"
+#include "domain/people/LocalAccountBackup.h"
 
 #include "common/Utilities.h"
 

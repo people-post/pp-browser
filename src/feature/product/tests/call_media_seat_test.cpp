@@ -1,4 +1,4 @@
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 
 #include "foundation/runtime/AppRuntime.h"
 

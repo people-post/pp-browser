@@ -8,7 +8,7 @@
 #include "common/thread/ThreadRecordTypes.h"
 #include "domain/calls/CallSessionStore.h"
 #include "feature/calls/CallInitiationBilling.h"
-#include "feature/calls/CallMediaKeyExchange.h"
+#include "domain/calls/CallMediaKeyExchange.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "foundation/runtime/OwnerOutbox.h"
 #include "foundation/runtime/OwnerSteps.h"

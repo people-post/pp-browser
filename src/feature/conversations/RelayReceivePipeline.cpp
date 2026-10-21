@@ -23,7 +23,7 @@
 #include "domain/messaging/SyncStateCodec.h"
 #include "domain/people/ContactTypes.h"
 #include "domain/people/PeerDisplayLabel.h"
-#include "feature/conversations/GroupInviteGate.h"
+#include "domain/messaging/GroupInviteGate.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 
 #include "common/Logger.h"

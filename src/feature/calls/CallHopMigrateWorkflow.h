@@ -11,7 +11,7 @@
 #include "domain/calls/SoftMigrateLogic.h"
 #include "domain/calls/CallMediaKeyStore.h"
 #include "domain/people/MeshHopPolicy.h"
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 #include "mesh/media_plane/MediaRelayAttach.h"
 #include "feature/calls/CallSessionEvents.h"
 #include "feature/calls/CallTopologyRelayDeps.h"

@@ -1,35 +1,26 @@
-#include "feature/conversations/GroupInviteGate.h"
+#include "domain/messaging/GroupInviteGate.h"
 
-#include "domain/people/ContactTypes.h"
 #include "common/Utilities.h"
 #include "common/PbrCompat.h"
 
 namespace pbr {
 
-GroupInviteGate::GroupInviteGate(ContactsStore& contacts, GroupRosterStore& roster)
-    : contacts_(contacts), roster_(roster) {}
+GroupInviteGate::GroupInviteGate(StandingFn standing, GroupRosterStore& roster)
+    : standing_(std::move(standing)), roster_(roster) {}
 
 void GroupInviteGate::SetInboundPolicy(const GroupInvitePolicy policy) {
   inbound_policy_ = policy;
-}
-
-std::optional<Contact> GroupInviteGate::FindContactByIdentity(const std::string& identity) const {
-  auto contact = contacts_.FindByIdentity(identity);
-  if (!contact || !*contact) {
-    return std::nullopt;
-  }
-  return **contact;
 }
 
 Roe<bool> GroupInviteGate::AllowsInboundInvite(const GroupInvitePayload& invite) const {
   if (inbound_policy_ == GroupInvitePolicy::Nobody) {
     return false;
   }
-  if (auto contact = FindContactByIdentity(invite.inviter_identity)) {
-    if (contact->trust == TrustLevel::Blocked) {
-      return false;
-    }
-  } else if (inbound_policy_ == GroupInvitePolicy::ContactsOnly) {
+  const InviterStanding standing = standing_ ? standing_(invite.inviter_identity) : InviterStanding::Unknown;
+  if (standing == InviterStanding::Blocked) {
+    return false;
+  }
+  if (standing == InviterStanding::Unknown && inbound_policy_ == GroupInvitePolicy::ContactsOnly) {
     return false;
   }
   if (invite.expires_at && *invite.expires_at < util::NowUnixMs()) {

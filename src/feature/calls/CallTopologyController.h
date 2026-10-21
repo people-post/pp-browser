@@ -18,7 +18,7 @@
 #include "feature/calls/CallTopologyRelayDeps.h"
 #include "foundation/runtime/OwnerOutbox.h"
 #include "foundation/runtime/OwnerSteps.h"
-#include "feature/calls/CallMediaSeat.h"
+#include "domain/calls/CallMediaSeat.h"
 #include "feature/calls/CallHopMigrateWorkflow.h"
 #include "domain/calls/CallHopPlannerLogic.h"
 

@@ -7,7 +7,7 @@
 #include "common/chat/RelayEnvelope.h"
 #include "domain/messaging/SqliteThreadStore.h"
 #include "common/thread/ThreadTypes.h"
-#include "feature/conversations/LinkDeviceCoordinator.h"
+#include "domain/people/LinkDeviceCoordinator.h"
 #include "domain/messaging/PublicPskLockCoordinator.h"
 #include "domain/messaging/SqlitePskSessionStore.h"
 
